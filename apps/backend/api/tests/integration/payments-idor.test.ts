@@ -116,14 +116,15 @@ describe('IDOR — vendors router', () => {
   test('create derives the owner from ctx.userId, never from a client-supplied field', async () => {
     let receivedUserId: string | null = null;
     Container.set(VendorRepository, {
-      findByAlias: async () => undefined,
-      create: async (data: { userId: string }) => {
-        receivedUserId = data.userId;
+      resolve: async () => undefined,
+      createForUser: async (userId: string) => {
+        receivedUserId = userId;
         return {
           id: VENDOR_INTO_ID,
-          userId: data.userId,
+          userId,
           displayName: 'Acme',
           normalizedName: 'acme',
+          matchKey: 'acme',
           category: null,
           website: null,
           createdAt: new Date(),

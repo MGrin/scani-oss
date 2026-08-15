@@ -69,10 +69,17 @@ export interface TransactionRouterResult {
   firstEventAt: Date | null;
   lastEventAt: Date | null;
   /**
-   * Best-effort claim: true when the run has no `since` and the
-   * provider didn't truncate. The new providers don't yet surface a
-   * truncation flag in `TransactionEvent`, so today we conservatively
-   * report `!since` only.
+   * True only when the caller asked for the whole ledger AND the provider
+   * declares no look-back horizon of its own
+   * (`TransactionsProvider.transactionHistoryHorizonMs`). Calling this
+   * "best-effort" and deriving it from `!since` alone was the bug: a
+   * provider that substitutes its own 30-day window still satisfies
+   * `!since`, so the optimistic reading was wrong exactly where it mattered
+   * (SC-166).
+   *
+   * Still not a truncation detector — a provider whose paginator silently
+   * stops short reports complete. Horizon is the part that is declarable
+   * today; a per-event truncation flag remains the wider fix.
    */
   hasCompleteTxHistory: boolean;
 }
@@ -127,11 +134,28 @@ export class TransactionRouter {
     };
 
     const events = await provider.fetchTransactions(ctx);
+    const complete = this.claimsCompleteHistory(provider, request);
     if (events.length === 0) {
-      return this.emptyResult(!request.since);
+      return this.emptyResult(complete);
     }
 
-    return this.materializeEvents(events, request);
+    return this.materializeEvents(events, request, complete);
+  }
+
+  /**
+   * Whether this run really did walk the account's whole ledger.
+   *
+   * Two conditions, and the second one is the fix. `!request.since` says the
+   * caller asked for everything; `transactionHistoryHorizonMs` says whether
+   * the provider can deliver it. Asking was previously taken as receiving,
+   * so Bybit — which substitutes a 30-day look-back when handed no `since` —
+   * marked coverage complete on a month of history (SC-166).
+   */
+  private claimsCompleteHistory(
+    provider: TransactionsProvider,
+    request: TransactionRouterRequest
+  ): boolean {
+    return !request.since && provider.transactionHistoryHorizonMs === undefined;
   }
 
   // ============================================================
@@ -163,7 +187,8 @@ export class TransactionRouter {
    */
   private async materializeEvents(
     events: readonly TransactionEvent[],
-    request: TransactionRouterRequest
+    request: TransactionRouterRequest,
+    hasCompleteTxHistory: boolean
   ): Promise<TransactionRouterResult> {
     const transactions: NewHoldingTransaction[] = [];
     const warnings: string[] = [];
@@ -330,7 +355,7 @@ export class TransactionRouter {
       warnings,
       firstEventAt: accumulator.first,
       lastEventAt: accumulator.last,
-      hasCompleteTxHistory: !request.since,
+      hasCompleteTxHistory,
     };
   }
 

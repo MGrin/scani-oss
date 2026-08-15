@@ -21,6 +21,7 @@
 import { db } from '@scani/db/connection';
 import * as schema from '@scani/db/schema';
 import { createComponentLogger } from '@scani/logging';
+import { ProviderError } from '@scani/providers/core/errors';
 import { eq } from 'drizzle-orm';
 import { Container, Service } from 'typedi';
 import { HoldingBalanceObservationRepository } from '../../repositories/HoldingBalanceObservationRepository';
@@ -122,6 +123,55 @@ export class TransactionImportCoordinator {
   private readonly router = Container.get(TransactionRouter);
 
   async execute(input: TransactionImportInput): Promise<TransactionImportResult> {
+    try {
+      return await this.run(input);
+    } catch (error) {
+      await this.retractCompleteHistoryClaim(input.accountId, input.source);
+      throw error;
+    }
+  }
+
+  /**
+   * A run that failed must not leave the previous run's "we have the
+   * whole ledger" claim standing (SC-168).
+   *
+   * `has_complete_tx_history` is written only by `persistAndReport`, on
+   * the success path, so before this every throw above it left the flag
+   * at whatever the last success wrote. SC-149 made that flag drive cost
+   * basis, which turned a stale note into a confident figure computed
+   * from data we know we could not read — six weeks of it on a Bybit
+   * account whose importer failed on every run.
+   *
+   * Fired on *any* failure rather than only a terminal one, for two
+   * reasons. The flag already means "as far as we know", and after a
+   * failed attempt we do not know; an attempt that then succeeds writes
+   * the claim straight back within the same job, so a transient blip is
+   * a no-op end to end. And terminality lives in `WorkerClient`, which
+   * is deliberately domain-free — routing it back here would buy a
+   * strictly weaker guarantee (the flag would keep asserting
+   * completeness for the whole retry window) for more machinery.
+   *
+   * Its own failure is swallowed: this is bookkeeping about a failure,
+   * and it must not replace the failure the caller needs to see.
+   */
+  private async retractCompleteHistoryClaim(accountId: string, source: string): Promise<void> {
+    try {
+      const retracted = await this.coverageRepo.retractCompleteHistoryClaim(accountId, source);
+      if (retracted > 0) {
+        this.logger.warn(
+          { accountId, source, holdings: retracted },
+          'Import failed — retracted the complete-history claim it can no longer support'
+        );
+      }
+    } catch (error) {
+      this.logger.error(
+        { accountId, source, error: error instanceof Error ? error.message : error },
+        'Could not retract the complete-history claim after a failed import'
+      );
+    }
+  }
+
+  private async run(input: TransactionImportInput): Promise<TransactionImportResult> {
     const { userId, accountId, source, since } = input;
 
     // Fetch the account to confirm ownership and pick up its institutionId
@@ -268,14 +318,19 @@ export class TransactionImportCoordinator {
         },
       });
     } catch (error) {
+      // Deliberately re-thrown unwrapped. `ProviderError` carries the
+      // provider's own `kind`, and the processor reads it to decide retry
+      // policy (SC-166) — wrapping it here would erase the one field that
+      // decision is made from.
       this.logger.error(
         {
           source,
           institutionCode,
           accountId,
+          kind: error instanceof ProviderError ? error.kind : undefined,
           error: error instanceof Error ? error.message : error,
         },
-        'Provider fetchTransactions threw — surfacing to BullMQ for retry'
+        'Provider fetchTransactions threw — the processor classifies it'
       );
       throw error;
     }

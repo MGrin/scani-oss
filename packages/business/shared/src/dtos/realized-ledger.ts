@@ -62,6 +62,21 @@ export const disposalLotMatchSchema = z.object({
    *  realized figure the rest of the app shows, exactly. */
   gain: z.string().nullable(),
   holdingDays: z.number().nullable(),
+  /**
+   * Which share of its outflow this row belongs to (SC-181).
+   *
+   * One outflow can be answered as several things at once — 3,500 moved to an
+   * untracked account and 500 genuinely left — and the two halves have
+   * different outcomes, different proceeds and different gains. Grouping the
+   * ledger by `transactionId` alone would fold them into one row whose single
+   * `outcome` is true of neither half, which is a ledger that has stopped
+   * explaining. `transactionId + portionIndex` is the event a reader
+   * recognises; `portionCount` is what lets the row say it is a part.
+   *
+   * `0` / `1` on every unsplit row, which is almost all of them.
+   */
+  portionIndex: z.number().int().nonnegative(),
+  portionCount: z.number().int().positive(),
   /** `known` | `partial` | `unknown` — see `CostBasisQuality` (SC-149). A
    *  gain derived from a knowingly-truncated history has to say so here, or
    *  the explanation misleads more confidently than the bare number did. */

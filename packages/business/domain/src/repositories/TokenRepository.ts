@@ -276,6 +276,51 @@ export class TokenRepository extends BaseRepository<Token, NewToken> {
     return new Set(rows.map((r) => r.id));
   }
 
+  /**
+   * The subset of `tokenIds` that is unpriceable **in fact**: never had a
+   * single `token_prices` row, and is currently inside an unpriceable
+   * cooldown. Both halves are required and the conjunction is the whole
+   * point (SC-146).
+   *
+   * The obvious lever looks like `tokens.is_scam_probability`, and it is
+   * a trap. Measured on the production account, that column takes three
+   * values across held tokens — 0.0, 0.3, 0.8 — and the 0.3 bucket holds
+   * `USDT` (1,439 price rows) next to fourteen airdrop spam tokens. Any
+   * threshold that catches the spam deletes Tether from the portfolio.
+   *
+   * This predicate is behavioural instead: a token the system has
+   * repeatedly failed to price and has *never once* priced cannot be
+   * priced, whatever a name-shape heuristic believes. On the same data it
+   * matched the unpriced holdings 15 for 15 with no false positives, and
+   * USDT falls out on its own because it has prices. It also self-heals —
+   * the day a provider finally quotes the token, the backfill clears the
+   * cooldown and writes a price row, and the token re-enters the
+   * denominator with no intervention.
+   */
+  async findNeverPricedInCooldownTokenIds(
+    tokenIds: readonly string[],
+    at: Date,
+    transaction?: DatabaseTransaction
+  ): Promise<Set<string>> {
+    if (tokenIds.length === 0) return new Set();
+    const database = this.getDb(transaction);
+    const rows = await database
+      .select({ id: schema.tokens.id })
+      .from(schema.tokens)
+      .where(
+        and(
+          inArray(schema.tokens.id, [...tokenIds]),
+          isNotNull(schema.tokens.unpriceableUntil),
+          gt(schema.tokens.unpriceableUntil, at),
+          sql`NOT EXISTS (
+            SELECT 1 FROM ${schema.tokenPrices}
+            WHERE ${schema.tokenPrices.tokenId} = ${schema.tokens.id}
+          )`
+        )
+      );
+    return new Set(rows.map((r) => r.id));
+  }
+
   // Apply the result of a backfill pass: tokens whose entire requested
   // range came back empty get an `unpriceable_until` cooldown; tokens
   // that returned at least one quote have any prior cooldown cleared.

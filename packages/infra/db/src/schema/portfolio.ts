@@ -36,6 +36,36 @@ export const portfolioValueDaily = pgTable(
     coverageQuality: text('coverage_quality').notNull(),
     holdingsWithKnownValue: integer('holdings_with_known_value').notNull(),
     holdingsTotal: integer('holdings_total').notNull(),
+    // Of `holdings_total`, how many no provider can price *in fact* —
+    // never had a single price row and currently inside an unpriceable
+    // cooldown. `holdings_total` keeps its original meaning (every
+    // holding in scope) so old rows are not retroactively reinterpreted;
+    // coverage is `holdings_with_known_value / (holdings_total -
+    // holdings_unpriceable)`. See SC-146.
+    holdingsUnpriceable: integer('holdings_unpriceable').notNull().default(0),
+    // Of `holdings_with_known_value`, how many were valued from a price
+    // older than the freshness window. They stay in `total_value` — an old
+    // price is still the best measurement of what something is worth, and
+    // dropping it would open a hole in the chart on a pure data-gap day —
+    // but the count travels with the figure so no surface presents it as a
+    // quote from the day it is plotted on. See SC-151.
+    holdingsStalePriced: integer('holdings_stale_priced').notNull().default(0),
+    // Of `holdings_total`, how many carry a cost basis we do not know:
+    // no cost-relevant transaction, a provider that reported its history
+    // truncated, a leg priced beyond the staleness cap, or an inflow
+    // booked at zero cost for want of any price reference. The cost
+    // columns below still include them — pulling a holding's cost while
+    // its value stays would move the whole value into unrealized gain,
+    // which is the error this exists to expose, not to commit. See SC-149.
+    holdingsBasisUnknown: integer('holdings_basis_unknown').notNull().default(0),
+    // Outflows on or before this date whose lots left with no gain booked,
+    // because SC-150 realizes only a person's `left_control` answer. A count
+    // of TRANSACTIONS, not of holdings — the review queue lists transactions
+    // and is answered one at a time — and only of rows that queue actually
+    // holds, so the number and the page it points at agree. The one count on
+    // this table whose error runs downward: `realized_pnl` is short by
+    // whatever the genuine disposals among them were worth. See SC-160.
+    transfersUnreviewed: integer('transfers_unreviewed').notNull().default(0),
     // PnL columns: nullable until the rollup runs (back-compat with
     // pre-C3 rows). cost_basis is the sum of remaining open lots'
     // cost in the row's base currency (FX-converted at purchase

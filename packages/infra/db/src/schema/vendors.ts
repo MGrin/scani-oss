@@ -1,6 +1,23 @@
-import { relations } from 'drizzle-orm';
+import { relations, sql } from 'drizzle-orm';
 import { index, pgTable, text, timestamp, unique, uuid } from 'drizzle-orm/pg-core';
 import { users } from './users';
+
+// Trailing legal forms, stripped from `normalized_name` to produce
+// `match_key`. Kept as one string applied four times rather than four literals,
+// because the whole point of the column is that there is exactly one definition
+// of it — see migration 0027, and the parity test in `VendorRepository.test.ts`
+// that holds this to what `vendorMatchKey` computes in TypeScript.
+const LEGAL_FORM_SUFFIX_SQL =
+  '\\s(?:s a r l|s r l|s a s|s p a|sp z o o|z o o|d o o|incorporated|corporation|company|limited|gmbh|mbh|kgaa|nyrt|sarl|ltda|slu|sdn|bhd|kft|zrt|sro|doo|oyj|aps|pty|pte|plc|llc|llp|inc|corp|ltd|spa|sas|srl|nv|bv|ab|oy|ag|ug|kg|eg|ev|sa|sl|co|as)$';
+
+const stripLegalForm = (expression: string) =>
+  `regexp_replace(${expression}, '${LEGAL_FORM_SUFFIX_SQL}', '')`;
+
+// Four passes: "Muster GmbH & Co. KG" needs three, and the cap is what keeps
+// this and `vendorMatchKey`'s own loop in step on a pathological name.
+const MATCH_KEY_EXPRESSION = stripLegalForm(
+  stripLegalForm(stripLegalForm(stripLegalForm('normalized_name')))
+);
 
 // Who the user pays or gets paid by — never an institution. AWS is a
 // vendor; Wise (where the money moves through) is an institution.
@@ -16,6 +33,12 @@ export const vendors = pgTable(
       .references(() => users.id, { onDelete: 'cascade' }),
     displayName: text('display_name').notNull(),
     normalizedName: text('normalized_name').notNull(),
+    // `normalizedName` with the trailing legal form dropped — the key
+    // near-duplicate detection compares on. GENERATED, so no writer has to
+    // know it exists and none can disagree about what it should hold; the
+    // TypeScript twin (`vendorMatchKey`) exists only to compute the same key
+    // for the string being SEARCHED for, never for a row being stored.
+    matchKey: text('match_key').notNull().generatedAlwaysAs(sql.raw(MATCH_KEY_EXPRESSION)),
     category: text('category'),
     website: text('website'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -26,6 +49,7 @@ export const vendors = pgTable(
       table.userId,
       table.normalizedName
     ),
+    userMatchKeyIdx: index('idx_vendors_user_match_key').on(table.userId, table.matchKey),
   })
 );
 

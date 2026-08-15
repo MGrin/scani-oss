@@ -1,7 +1,7 @@
 import { BaseRepository, type DatabaseTransaction } from '@scani/db';
 import type { HoldingTransaction, NewHoldingTransaction } from '@scani/db/schema';
 import * as schema from '@scani/db/schema';
-import { and, asc, desc, eq, gt, gte, inArray, lt, lte, ne, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, gte, inArray, isNotNull, lt, lte, ne, sql } from 'drizzle-orm';
 import { Service } from 'typedi';
 
 export interface TransactionRangeOptions {
@@ -189,6 +189,72 @@ export class HoldingTransactionRepository extends BaseRepository<
       this.logger.error(
         { count: holdingIds.length, error: error instanceof Error ? error.message : error },
         'Failed bulk-fetch transactions for holdings'
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * Every holding reachable from `holdingIds` through a shared
+   * `transfer_group_id`, including the seeds themselves (SC-152).
+   *
+   * Cost basis for a transfer-linked holding cannot be computed in isolation —
+   * a transfer carries lots across accounts intact, so a lot sold on a Ledger
+   * may have been bought on Kraken. `PnLAtTimeService` gets this by
+   * partitioning the user's *whole* portfolio, which is right when it is about
+   * to walk all of it anyway. Asking about one holding should not read every
+   * transaction the user has, so this expands outward from the seeds instead.
+   *
+   * A fixpoint rather than one join because the relation is transitive: A pairs
+   * with B on one group and B with C on another, and C's acquisitions are still
+   * part of A's answer. In practice it converges in one or two rounds — the
+   * loop exists for correctness, not because portfolios are deep.
+   */
+  async findTransferLinkedHoldingIds(
+    userId: string,
+    holdingIds: string[],
+    transaction?: DatabaseTransaction
+  ): Promise<string[]> {
+    const reached = new Set(holdingIds);
+    if (holdingIds.length === 0) return [];
+    try {
+      const database = this.getDb(transaction);
+      let frontier = holdingIds;
+      const seenGroups = new Set<string>();
+      while (frontier.length > 0) {
+        const groupRows = await database
+          .selectDistinct({ groupId: schema.holdingTransactions.transferGroupId })
+          .from(schema.holdingTransactions)
+          .where(
+            and(
+              eq(schema.holdingTransactions.userId, userId),
+              inArray(schema.holdingTransactions.holdingId, frontier),
+              isNotNull(schema.holdingTransactions.transferGroupId)
+            )
+          );
+        const groupIds = groupRows
+          .map((r) => r.groupId)
+          .filter((g): g is string => g !== null && !seenGroups.has(g));
+        if (groupIds.length === 0) break;
+        for (const g of groupIds) seenGroups.add(g);
+
+        const holdingRows = await database
+          .selectDistinct({ holdingId: schema.holdingTransactions.holdingId })
+          .from(schema.holdingTransactions)
+          .where(
+            and(
+              eq(schema.holdingTransactions.userId, userId),
+              inArray(schema.holdingTransactions.transferGroupId, groupIds)
+            )
+          );
+        frontier = holdingRows.map((r) => r.holdingId).filter((h) => !reached.has(h));
+        for (const h of frontier) reached.add(h);
+      }
+      return [...reached];
+    } catch (error) {
+      this.logger.error(
+        { count: holdingIds.length, error: error instanceof Error ? error.message : error },
+        'Failed to expand transfer-linked holdings'
       );
       throw error;
     }
@@ -412,6 +478,61 @@ export class HoldingTransactionRepository extends BaseRepository<
       this.logger.error(
         { opts, error: error instanceof Error ? error.message : error },
         'Failed to find transactions by range'
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * Statement rows that could still be hiding a fee (SC-159).
+   *
+   * A row imported before SC-136 dropped its statement fee, so the ledger is
+   * short by it and the derived opening balance with it. The candidates are
+   * the statement rows that have no `<external_id>:fee` sibling — that suffix
+   * is the ingester's own idempotency key, so its absence is exactly "not
+   * backfilled and not imported with a fee", and its presence is the reason a
+   * second run of the backfill finds nothing.
+   *
+   * Whether a candidate *actually* carries a fee is a question about the CSV
+   * cell inside `raw_payload`, and the column it lives in is bank-specific —
+   * that is `statementFeeFromRawPayload`'s job, not SQL's. This returns the
+   * superset and keeps the reading in one place.
+   *
+   * Keyset-paginated by `id` so a long backfill neither holds a cursor open
+   * nor pays a growing OFFSET.
+   */
+  async findStatementRowsWithoutFeeSibling(
+    opts: { limit: number; afterId?: string; userId?: string },
+    transaction?: DatabaseTransaction
+  ): Promise<HoldingTransaction[]> {
+    try {
+      const database = this.getDb(transaction);
+      const parent = schema.holdingTransactions;
+      const conditions = [
+        sql`${parent.source} like 'statement-%'`,
+        ne(parent.kind, 'fee'),
+        sql`${parent.rawPayload} is not null`,
+        sql`not exists (
+          select 1 from ${parent} sibling
+          where sibling.holding_id = ${parent.holdingId}
+            and sibling.source = ${parent.source}
+            and sibling.external_id = ${parent.externalId} || ':fee'
+        )`,
+      ];
+      if (opts.afterId) conditions.push(gt(parent.id, opts.afterId));
+      if (opts.userId) conditions.push(eq(parent.userId, opts.userId));
+
+      const results = await database
+        .select()
+        .from(parent)
+        .where(and(...conditions))
+        .orderBy(asc(parent.id))
+        .limit(opts.limit);
+      return results as HoldingTransaction[];
+    } catch (error) {
+      this.logger.error(
+        { opts, error: error instanceof Error ? error.message : error },
+        'Failed to find statement rows without a fee sibling'
       );
       throw error;
     }

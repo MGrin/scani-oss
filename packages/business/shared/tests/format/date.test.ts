@@ -77,13 +77,26 @@ describe('formatRelative', () => {
 describe('locale handling', () => {
   const when = '2026-07-16T01:06:00Z';
 
-  test('no locale argument means the reader\'s, not "en-US"', () => {
-    expect(formatDate(when)).toBe(
-      new Date(when).toLocaleDateString(undefined, { dateStyle: 'medium' })
-    );
-    expect(formatDateTime(when)).toBe(
-      new Date(when).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
-    );
+  test("no locale argument means APP_LOCALE, NOT the runtime's", () => {
+    // The first SC-175 fix made these follow the runtime locale. That shipped
+    // `14 \u0430\u0432\u0433. 2026 \u0433., 16:43` to a reader whose device was Russian, inside an
+    // interface with no i18n and every other string in English.
+    //
+    // Asserted against the literal, deliberately. The previous version of this
+    // test compared the helper to `toLocaleDateString(undefined, ...)` — which
+    // is the same call the helper makes, so it passed no matter what the
+    // default was, and only *looked* like it pinned anything because the
+    // machine running it happened to be en-US.
+    expect(formatDate(when)).toBe('16 Jul 2026');
+    expect(formatDateTime(when)).toBe('16 Jul 2026 at 01:06');
+  });
+
+  test('is stable when the runtime locale is not English', () => {
+    // The production report was from a Russian device. Nothing about the
+    // reader's OS may reach the string.
+    const ru = new Date(when).toLocaleDateString('ru-RU', { dateStyle: 'medium' });
+    expect(ru).not.toBe(formatDate(when));
+    expect(formatDate(when)).toBe('16 Jul 2026');
   });
 
   test('an explicit locale is still honoured, and the orders really do differ', () => {

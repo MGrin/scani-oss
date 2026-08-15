@@ -2,7 +2,7 @@ import { getCloudClient } from '@scani/cloud-client/runtime';
 import type { DbType } from '@scani/db/connection';
 import type * as schema from '@scani/db/schema';
 import { TokenPriceRepository } from '@scani/domain/repositories/TokenPriceRepository';
-import { TokenPriceHistoryService, TokenService } from '@scani/domain/services';
+import { CurrencyConverter, TokenPriceHistoryService, TokenService } from '@scani/domain/services';
 import { createComponentLogger } from '@scani/logging';
 import { isFiatCode } from '@scani/providers/core/utils/fiat-codes';
 import { emitEntityChange } from '@scani/realtime';
@@ -91,6 +91,55 @@ export function createTokensRouter(db: DbType, schemaObj: typeof schema) {
         .orderBy(schemaObj.tokens.symbol);
       return tokens;
     }),
+
+    /**
+     * FX rates from each of `currencyTokenIds` into the caller's base
+     * currency, with the moment each rate is from.
+     *
+     * This is the *only* way a frontend surface converts money. It goes
+     * through the same `CurrencyConverter` every portfolio valuation
+     * uses — cache, then the price graph, then exchangerate-api — so a
+     * converted total on the Money tab and a converted holding on the
+     * dashboard can never disagree about a rate.
+     *
+     * `rate: null` means the pair has no resolvable rate right now.
+     * Callers MUST show the un-convertible part rather than dropping it
+     * from a total: silently omitting it understates what the user owes,
+     * which is worse than the per-currency list this replaced.
+     */
+    getBaseCurrencyRates: protectedProcedure
+      .input(z.object({ currencyTokenIds: z.array(z.string().uuid()).max(25) }))
+      .query(async ({ ctx, input }) => {
+        const { dbUser } = await requireAuth(ctx);
+        const [base] = dbUser.baseCurrencyId
+          ? await tokenService.getTokensByIds([dbUser.baseCurrencyId])
+          : [];
+        if (!base) return { baseTokenId: null, baseSymbol: null, rates: [] };
+
+        const uniqueIds = Array.from(new Set(input.currencyTokenIds));
+        const tokens = await tokenService.getTokensByIds(uniqueIds);
+        const tokenById = new Map(tokens.map((token) => [token.id, token]));
+        const at = new Date();
+        const converter = Container.get(CurrencyConverter);
+
+        const rates = await Promise.all(
+          uniqueIds.map(async (currencyTokenId) => {
+            const token = tokenById.get(currencyTokenId);
+            if (!token) {
+              return { currencyTokenId, symbol: null, rate: null, asOf: null };
+            }
+            const detail = await converter.getRateDetail(token.symbol, base.symbol, at);
+            return {
+              currencyTokenId,
+              symbol: token.symbol,
+              rate: detail?.rate ?? null,
+              asOf: detail?.asOf.toISOString() ?? null,
+            };
+          })
+        );
+
+        return { baseTokenId: base.id, baseSymbol: base.symbol, rates };
+      }),
 
     // Search tokens across database and external providers
     // KEEP
@@ -572,11 +621,22 @@ export function createTokensRouter(db: DbType, schemaObj: typeof schema) {
       }),
 
     /**
-     * List custom tokens (types private-company and other) with their
-     * latest manual price and the base currency that price was recorded
-     * in. Used by the /tokens catalog page.
+     * List custom tokens (types private-company and other) with the price
+     * that is actually in force for them and the base currency it was
+     * recorded in. Used by the /tokens catalog page.
+     *
+     * "In force", not "the latest manual price": this used to ask
+     * `findLatestManualPricesForTokensAnyBase`, while every valuation asks
+     * `findLatestPricesForTokensAnyBase` through `PricingService`. Two lookups
+     * over one table give two answers whenever the latest row is not a manual
+     * one — /tokens said "Never priced" about a token the holdings peek was
+     * pricing at €14.75 and the home screen was calling 8% of net worth
+     * (SC-77 2). One lookup, one answer. `source` comes back with it so the
+     * peek can say whether a human set the number or a provider did; for a
+     * private-company token those are very different claims.
      */
-    listCustom: protectedProcedure.query(async () => {
+    listCustom: protectedProcedure.query(async ({ ctx }) => {
+      const { dbUser } = await requireAuth(ctx);
       const customTypes = await db
         .select({ id: schemaObj.tokenTypes.id, code: schemaObj.tokenTypes.code })
         .from(schemaObj.tokenTypes)
@@ -607,8 +667,12 @@ export function createTokensRouter(db: DbType, schemaObj: typeof schema) {
 
       if (tokenRows.length === 0) return [];
 
-      const priceMap = await tokenPriceRepository.findLatestManualPricesForTokensAnyBase(
-        tokenRows.map((t) => t.id)
+      // The reader's own base currency is the tie-break, exactly as it is in
+      // `PortfolioValuationService`: when a token carries prices against
+      // several bases, both surfaces pick the same row.
+      const priceMap = await tokenPriceRepository.findLatestPricesForTokensAnyBase(
+        tokenRows.map((t) => t.id),
+        dbUser.baseCurrencyId ?? ''
       );
 
       const baseTokenIds = Array.from(
@@ -634,6 +698,7 @@ export function createTokensRouter(db: DbType, schemaObj: typeof schema) {
           typeCode: customTypeCodeById.get(t.typeId) ?? null,
           latestPrice: latest?.price ?? null,
           latestPriceAt: latest?.timestamp ?? null,
+          latestPriceSource: latest?.source ?? null,
           latestPriceBaseCurrency: latest?.baseTokenId
             ? (baseTokenSymbolMap.get(latest.baseTokenId) ?? null)
             : null,

@@ -16,13 +16,20 @@ export class UpdateHoldingPriceUseCase {
     userId: string,
     baseCurrencySymbol: string
   ): Promise<{
+    // "The job ran without error" — NOT "the price moved". The two were
+    // conflated into one green toast that claimed a refresh over a price line
+    // still reading `25m ago` (SC-148); `fetched` is what separates them.
     success: boolean;
     // `null` when no provider had a quote and no stale fallback was
     // usable. The request technically succeeded (no error, no rate
     // limit) but produced no price; the UI shows "—" rather than $0.
     price: string | null;
     source: string;
+    /** When the price being returned was recorded — not when this job ran. */
     timestamp: string;
+    /** False when the stored price was already current and nothing was
+        fetched. The caller owes the user a different sentence for each. */
+    fetched: boolean;
   }> {
     const holding = await this.holdingRepository.findById(holdingId);
     if (!holding) {
@@ -33,10 +40,8 @@ export class UpdateHoldingPriceUseCase {
     }
 
     try {
-      const { price, source, timestamp } = await this.pricingService.fetchAndStoreFreshPrice(
-        holding.tokenId,
-        baseCurrencySymbol
-      );
+      const { price, source, timestamp, fetched } =
+        await this.pricingService.fetchAndStoreFreshPrice(holding.tokenId, baseCurrencySymbol);
 
       // Vault recalc is best-effort — a stale vault total is preferable
       // to failing the price update the user explicitly requested.
@@ -54,6 +59,7 @@ export class UpdateHoldingPriceUseCase {
         price,
         source,
         timestamp: timestamp.toISOString(),
+        fetched,
       };
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);

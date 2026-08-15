@@ -86,6 +86,8 @@ export {
 } from './payments/matchOccurrences';
 export {
   type CreatePaymentInput,
+  type PaymentDeleteImpact,
+  PaymentHasSettledOccurrencesError,
   PaymentService,
   type SettleOccurrenceInput,
   type UpdatePaymentInput,
@@ -101,6 +103,11 @@ export {
 export { AssetAllocationService } from './portfolio/AssetAllocationService';
 export { DashboardService } from './portfolio/DashboardService';
 export {
+  type GroupValuationResult,
+  GroupValuationService,
+  type GroupValue,
+} from './portfolio/GroupValuationService';
+export {
   type PnLAtTimePerHolding,
   type PnLAtTimeResult,
   PnLAtTimeService,
@@ -113,6 +120,7 @@ export {
 } from './portfolio/PortfolioValuationAtTimeService';
 export { PortfolioValuationService } from './portfolio/PortfolioValuationService';
 export { PortfolioValueCache } from './portfolio/PortfolioValueCache';
+export { RealizedLedgerService } from './portfolio/RealizedLedgerService';
 // pricing/
 export {
   type BalanceAtTimeResult,
@@ -120,8 +128,11 @@ export {
 } from './pricing/BalanceAtTimeService';
 export {
   type CostBasisAtTime,
+  type CostBasisQuality,
   CostBasisService,
   type CostLot,
+  type DisposalLotMatch,
+  type DisposalOutcome,
 } from './pricing/CostBasisService';
 export { CurrencyConverter } from './pricing/CurrencyConverter';
 export {
@@ -140,6 +151,7 @@ export { PricingProviderRouter } from './pricing/PricingProviderRouter';
 export { PricingService } from './pricing/PricingService';
 // review/
 export { ReviewFeedService } from './ReviewFeedService';
+export { TransferReviewService } from './TransferReviewService';
 // tokens/
 export { ScamTokenDetectionService } from './tokens/ScamTokenDetectionService';
 export { TokenIdentityService } from './tokens/TokenIdentityService';

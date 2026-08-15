@@ -2,6 +2,33 @@ import { describe, expect, it } from 'bun:test';
 import { parseCsvStatement } from '../src/csv-parser';
 
 describe('parseCsvStatement', () => {
+  // SC-137: the tester's exact fixture. Wise used to win this header on a
+  // partial match and map balances to a column that is not there, so every
+  // row parsed with `balance: undefined`, no closing anchor was written and
+  // the import created a 0-balance holding while reporting success.
+  describe('generic broker CSV (no bank template)', () => {
+    const brokerCsv = `Date,Description,Amount,Currency,Balance
+2026-06-01,Opening cash,1000.00,USD,1000.00
+2026-06-09,Dividend AAPL,32.40,USD,1032.40
+2026-06-21,Buy 2 AAPL,-402.00,USD,630.40`;
+
+    it('falls through to auto-detection instead of claiming Wise', () => {
+      expect(parseCsvStatement(brokerCsv).bankTemplate).toBe('auto');
+    });
+
+    it('reads the closing balance the file actually carries', () => {
+      const result = parseCsvStatement(brokerCsv);
+      expect(result.transactions).toHaveLength(3);
+      expect(result.transactions.at(-1)!.balance).toBe(630.4);
+    });
+
+    it('keeps the currency and amounts intact', () => {
+      const result = parseCsvStatement(brokerCsv);
+      expect(result.detectedCurrency).toBe('USD');
+      expect(result.transactions[0]!.amount).toBe(1000);
+      expect(result.transactions[2]!.amount).toBe(-402);
+    });
+  });
   describe('Revolut CSV format', () => {
     const revolutCsv = `Started Date,Description,Amount,Currency,Balance
 2024-03-15 10:30:00,Salary Deposit,5000.00,EUR,5000.00
@@ -239,5 +266,50 @@ tx_002,13/03/2026,07:09:51,Faster payment,Employer,,Income,2000.00,GBP,2000.00,G
       const result = parseCsvStatement(csv);
       expect(result.transactions).toHaveLength(1);
     });
+  });
+});
+
+describe('parseCsvStatement — fee columns (SC-136)', () => {
+  // A real Revolut export: one ATM withdrawal with a separate charge, and the
+  // Balance column proving the account moved by both.
+  const revolut = [
+    'Type,Product,Started Date,Completed Date,Description,Amount,Fee,Currency,State,Balance',
+    'ATM,Current,2026-07-15 09:12:00,2026-07-15 09:12:00,Cash at Barclays ATM,-120.00,1.50,GBP,COMPLETED,3551.43',
+    'CARD_PAYMENT,Current,2026-07-16 12:00:00,2026-07-16 12:00:00,Tesco,-12.40,0.00,GBP,COMPLETED,3539.03',
+  ].join('\n');
+
+  it('reads the Fee column on the Revolut template', () => {
+    const result = parseCsvStatement(revolut, 'revolut');
+    expect(result.transactions[0]?.amount).toBe(-120);
+    expect(result.transactions[0]?.fee).toBe(1.5);
+  });
+
+  // Every row of a Revolut export carries the column; almost all are 0.00, and
+  // a ledger full of zero-value fee rows is noise the reader skips past.
+  it('normalises a zero fee to absent', () => {
+    const result = parseCsvStatement(revolut, 'revolut');
+    expect(result.transactions[1]?.fee).toBeUndefined();
+  });
+
+  // The statement states a charge, not a signed movement — the ingester owns
+  // the sign, so a bank that writes `-1.50` must not invert it.
+  it('reads a fee as a magnitude whichever sign the bank wrote', () => {
+    const negative = revolut.replace(',1.50,', ',-1.50,');
+    expect(parseCsvStatement(negative, 'revolut').transactions[0]?.fee).toBe(1.5);
+  });
+
+  it('auto-detects a fee column on an untemplated statement', () => {
+    const generic = [
+      'date,description,amount,currency,fee',
+      '2026-07-15,ATM,-120.00,GBP,1.50',
+    ].join('\n');
+    expect(parseCsvStatement(generic).transactions[0]?.fee).toBe(1.5);
+  });
+
+  it('a statement with no fee column parses unchanged', () => {
+    const noFee = ['date,description,amount,currency', '2026-07-15,ATM,-120.00,GBP'].join('\n');
+    const tx = parseCsvStatement(noFee).transactions[0];
+    expect(tx?.amount).toBe(-120);
+    expect(tx?.fee).toBeUndefined();
   });
 });

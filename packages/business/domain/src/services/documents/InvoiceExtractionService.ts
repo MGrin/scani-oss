@@ -168,6 +168,34 @@ function asString(value: unknown): string | null {
   return typeof value === 'string' && value.length > 0 ? value : null;
 }
 
+const ISO_DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+/**
+ * Only a real calendar day in `YYYY-MM-DD` survives.
+ *
+ * `issue_date` / `due_date` are postgres `date` columns, and postgres is
+ * far more permissive than the contract: it parses `'August 10, 2026'`
+ * happily and reads `'03/04/2026'` through whatever `DateStyle` the
+ * session happens to carry — so a model that answered in prose or in an
+ * ambiguous numeric format would be *stored*, in the wrong slot, with no
+ * error anywhere. Rejecting here keeps "the model ignored the format
+ * rule" indistinguishable from "the document had no date", which is the
+ * honest reading: neither one tells us which day the bill is due.
+ *
+ * The round-trip check is what rejects `2026-02-30` and `2026-13-01`;
+ * the regex alone accepts both.
+ */
+function asIsoDate(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const match = ISO_DATE.exec(value.trim());
+  if (!match) return null;
+  const [, year, month, day] = match;
+  const parsed = new Date(`${year}-${month}-${day}T00:00:00Z`);
+  return Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== value.trim()
+    ? null
+    : value.trim();
+}
+
 /** Only a string that Decimal.js can parse passes through — a JS number
     from a model that ignored the prompt's "as a string" instruction is
     rejected rather than silently re-stringified, since that number may
@@ -264,8 +292,8 @@ function normalizeInvoice(
     ordinal,
     vendorNameRaw: asString(rec.vendorNameRaw) ?? '',
     invoiceNumber: asString(rec.invoiceNumber),
-    issueDate: asString(rec.issueDate),
-    dueDate: asString(rec.dueDate),
+    issueDate: asIsoDate(rec.issueDate),
+    dueDate: asIsoDate(rec.dueDate),
     totalAmount: asDecimalString(rec.totalAmount),
     currencyCode: asString(rec.currencyCode),
     paymentStatus: asPaymentStatus(rec.paymentStatus),

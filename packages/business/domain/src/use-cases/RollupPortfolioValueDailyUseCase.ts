@@ -23,6 +23,7 @@ import { and, eq, sql } from 'drizzle-orm';
 import { Container, Service } from 'typedi';
 import { AccountRepository } from '../repositories/AccountRepository';
 import { HoldingBalanceObservationRepository } from '../repositories/HoldingBalanceObservationRepository';
+import { HoldingCoverageRepository } from '../repositories/HoldingCoverageRepository';
 import { HoldingRepository } from '../repositories/HoldingRepository';
 import { HoldingTransactionRepository } from '../repositories/HoldingTransactionRepository';
 import { PortfolioValueDailyRepository } from '../repositories/PortfolioValueDailyRepository';
@@ -83,6 +84,7 @@ export class RollupPortfolioValueDailyUseCase {
   private readonly tokenRepository = Container.get(TokenRepository);
   private readonly txRepository = Container.get(HoldingTransactionRepository);
   private readonly observationRepository = Container.get(HoldingBalanceObservationRepository);
+  private readonly coverageRepository = Container.get(HoldingCoverageRepository);
 
   // Compute rollup rows for every active user for every day in
   // `lookbackDays` that isn't already cached. Defaults to 30 days
@@ -180,10 +182,24 @@ export class RollupPortfolioValueDailyUseCase {
             // a future code path needs but the prefetch missed.
             const userHoldings = await this.holdingRepository.findByUser(user.id);
             const holdingIds = userHoldings.map((h) => h.id);
-            const [txHistory, observations] = await Promise.all([
+            // Coverage joins the same prefetch: `has_complete_tx_history`
+            // is a property of the import, not of the snapshot date, so
+            // one read serves all `lookback` days (SC-149).
+            const [txHistory, observations, coverageByHolding] = await Promise.all([
               this.txRepository.findForHoldingsAll(holdingIds),
               this.observationRepository.findForHoldingsAll(holdingIds),
+              this.coverageRepository.findManyByHoldingIds(holdingIds),
             ]);
+
+            // Resolved once for all `lookback` days: "never had a price
+            // row and still in cooldown" is a statement about the token's
+            // entire history, not about any one snapshot date, so the
+            // same set is correct for every day in the window (SC-146).
+            const unpriceableTokenIds =
+              await this.tokenRepository.findNeverPricedInCooldownTokenIds(
+                [...new Set(userHoldings.map((h) => h.tokenId))],
+                runStart
+              );
             const caches: BalanceAtTimeCaches = {
               holdings: new Map(userHoldings.map((h) => [h.id, h])),
               observations,
@@ -205,6 +221,8 @@ export class RollupPortfolioValueDailyUseCase {
               const userResult = await this.pnlService.getPnL(user.id, at, baseCurrencyId, {
                 priceLookup,
                 caches,
+                unpriceableTokenIds,
+                coverageByHolding,
               });
 
               // Write the user-scope row directly from the result.
@@ -218,6 +236,10 @@ export class RollupPortfolioValueDailyUseCase {
                 coverageQuality: userResult.coverageQuality,
                 holdingsWithKnownValue: userResult.holdingsWithKnownValue,
                 holdingsTotal: userResult.holdingsTotal,
+                holdingsUnpriceable: userResult.holdingsUnpriceable,
+                holdingsStalePriced: userResult.holdingsStalePriced,
+                holdingsBasisUnknown: userResult.holdingsBasisUnknown,
+                transfersUnreviewed: userResult.transfersUnreviewed,
                 costBasis: userResult.totalCostBasis.toString(),
                 realizedPnl: userResult.totalRealizedPnl.toString(),
                 unrealizedPnl: userResult.totalUnrealizedPnl.toString(),
@@ -355,8 +377,18 @@ export class RollupPortfolioValueDailyUseCase {
   // Aggregate a slice of `perHolding` (institution / account / holding
   // subset) into a single rollup row and upsert it. Mirrors the
   // totals + coverage_quality logic in PortfolioValuationAtTimeService
-  // — keep them in sync. Empty slice → zeroed row with coverage='full'
-  // (matches the "no holdings in scope" degenerate case).
+  // — keep them in sync. Empty slice → zeroed row with
+  // coverage='unknown': nothing was priced, so the zero is an absence
+  // of measurement rather than a measured zero.
+  //
+  // Including the stale-price downgrade to 'partial', which this method
+  // used to omit (SC-151). That omission was not cosmetic: the home chart
+  // and both exports are built from the **per-holding** scope rows written
+  // here, not from the user-scope row above, and `aggregateIncludedHoldingRows`
+  // decides a day is 'partial' by looking for a 'partial' among them. No
+  // writer ever produced one, so its `anyPartial` branch was unreachable
+  // and every stale price arrived at the reader indistinguishable from a
+  // quote taken on the day.
   private async upsertScopeRow(
     userId: string,
     baseCurrencyId: string,
@@ -369,22 +401,40 @@ export class RollupPortfolioValueDailyUseCase {
     let totalCost = new Decimal(0);
     let totalRealized = new Decimal(0);
     let knownCount = 0;
+    let unpriceableCount = 0;
+    let stalePricedCount = 0;
+    let basisUnknownCount = 0;
+    let transfersUnreviewed = 0;
     for (const ph of slice) {
       if (ph.value !== null) {
         totalValue = totalValue.add(ph.value);
         knownCount++;
+        if (ph.priceStale) stalePricedCount++;
       }
+      if (ph.unpriceable) {
+        unpriceableCount++;
+        continue; // out of the value side, out of the cost side
+      }
+      if (ph.basisQuality !== 'known') basisUnknownCount++;
+      // Written here and not only on the user-scope row above: the home
+      // chart, the PnL series and both exports are built from these
+      // per-holding rows, so a quality signal that only reaches the user row
+      // reaches nobody. That is exactly how SC-151's stale-price downgrade
+      // was invisible for two tickets.
+      transfersUnreviewed += ph.transfersUnreviewed;
       totalCost = totalCost.add(ph.costBasis);
       totalRealized = totalRealized.add(ph.realizedPnl);
     }
     const totalUnrealized = totalValue.minus(totalCost);
     const holdingsTotal = slice.length;
+    const priceableTotal = holdingsTotal - unpriceableCount;
     let coverageQuality: CoverageQuality;
-    if (holdingsTotal === 0) {
-      coverageQuality = 'full';
+    if (priceableTotal === 0) {
+      coverageQuality = 'unknown';
     } else {
-      const knownRatio = knownCount / holdingsTotal;
-      if (knownRatio >= COVERAGE_FULL_THRESHOLD) coverageQuality = 'full';
+      const knownRatio = knownCount / priceableTotal;
+      if (knownRatio >= COVERAGE_FULL_THRESHOLD)
+        coverageQuality = stalePricedCount > 0 ? 'partial' : 'full';
       else if (knownRatio >= COVERAGE_PARTIAL_THRESHOLD) coverageQuality = 'estimated';
       else coverageQuality = 'unknown';
     }
@@ -398,6 +448,10 @@ export class RollupPortfolioValueDailyUseCase {
       coverageQuality,
       holdingsWithKnownValue: knownCount,
       holdingsTotal,
+      holdingsUnpriceable: unpriceableCount,
+      holdingsStalePriced: stalePricedCount,
+      holdingsBasisUnknown: basisUnknownCount,
+      transfersUnreviewed,
       costBasis: totalCost.toString(),
       realizedPnl: totalRealized.toString(),
       unrealizedPnl: totalUnrealized.toString(),

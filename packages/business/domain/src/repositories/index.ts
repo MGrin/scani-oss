@@ -49,4 +49,10 @@ export { UserJobRepository } from './UserJobRepository';
 export { UserRepository } from './UserRepository';
 export { UserWalletRepository } from './UserWalletRepository';
 export { VaultRepository } from './VaultRepository';
-export { VendorRepository } from './VendorRepository';
+export {
+  type VendorDeleteImpact,
+  VendorHasPaymentsError,
+  VendorNameConflictError,
+  VendorNotFoundError,
+  VendorRepository,
+} from './VendorRepository';

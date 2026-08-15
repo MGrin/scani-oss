@@ -4,14 +4,26 @@ import Container from 'typedi';
 import { DocumentExtractionRepository } from '../../src/repositories/DocumentExtractionRepository';
 import { UserJobRepository } from '../../src/repositories/UserJobRepository';
 import { ReviewFeedService } from '../../src/services/ReviewFeedService';
+import { TransferReviewService } from '../../src/services/TransferReviewService';
 
-function makeService(jobs: unknown[], extractions: unknown[] = []): ReviewFeedService {
+function makeService(
+  jobs: unknown[],
+  extractions: unknown[] = [],
+  transfers: { count: number; latestCreatedAt: Date | null } = { count: 0, latestCreatedAt: null },
+  deadJobs: unknown[] = []
+): ReviewFeedService {
   Container.set(UserJobRepository, {
     findPendingReview: async () => jobs,
+    // The dead-job collector (SC-153) queries this too; these suites are
+    // about the review half, so it answers empty.
+    findDeadUnacknowledged: async () => deadJobs,
   } as unknown as UserJobRepository);
   Container.set(DocumentExtractionRepository, {
     findPendingByUser: async () => extractions,
   } as unknown as DocumentExtractionRepository);
+  Container.set(TransferReviewService, {
+    pendingSummary: async () => transfers,
+  } as unknown as TransferReviewService);
   const instance = new ReviewFeedService();
   Container.set(ReviewFeedService, instance);
   return instance;
@@ -94,5 +106,54 @@ describe('ReviewFeedService.listPending', () => {
     expect(extractionItem?.href).toBe('/documents/doc-1');
     expect(extractionItem?.subtitle).toBe('Acme Utilities — 42.50 USD');
     expect(() => reviewItemSchema.parse(extractionItem)).not.toThrow();
+  });
+
+  /**
+   * SC-150. The transfer queue is the one collector that aggregates: it emits
+   * ONE row carrying a count, where the others emit one row per record.
+   *
+   * A heavy-CEX user can have hundreds of unpaired outflows, every one of them
+   * pointing at the same screen. Enumerating them here would bury the three
+   * imports that each point somewhere different, and turn the badge from
+   * "things to do" into a number nobody reads.
+   */
+  test('the transfer queue arrives as one row for the whole queue', async () => {
+    const svc = makeService([], [], {
+      count: 12,
+      latestCreatedAt: new Date('2026-08-12T00:00:00Z'),
+    });
+    const items = await svc.listPending('user-1');
+
+    expect(items).toHaveLength(1);
+    expect(items[0]?.id).toBe('transfer-review:pending');
+    expect(items[0]?.kind).toBe('transfer-review');
+    expect(items[0]?.subtitle).toBe('12 transfers out with no matching deposit');
+    expect(items[0]?.href).toBe('/review/transfers');
+    expect(() => reviewItemSchema.parse(items[0])).not.toThrow();
+  });
+
+  test('one waiting transfer is not described as "1 transfers"', async () => {
+    const svc = makeService([], [], { count: 1, latestCreatedAt: new Date() });
+    const [item] = await svc.listPending('user-1');
+    expect(item?.subtitle).toBe('1 transfer out with no matching deposit');
+  });
+
+  /** An empty queue contributes nothing — not a row reading zero, which is a
+   *  chore that cannot be completed. */
+  test('an empty transfer queue adds no row', async () => {
+    const svc = makeService([], [], { count: 0, latestCreatedAt: null });
+    expect(await svc.listPending('user-1')).toEqual([]);
+  });
+
+  /**
+   * `subtitle` must not parse as money. `splitReviewSubtitle` pulls a trailing
+   * `<number> <ISO CODE>` into the row's value column, and a count that
+   * rendered there as a currency would put "12" under the same heading as
+   * "€87.31" on the same list.
+   */
+  test('the count does not read as an amount to the feed row renderer', async () => {
+    const svc = makeService([], [], { count: 12, latestCreatedAt: new Date() });
+    const [item] = await svc.listPending('user-1');
+    expect(item?.subtitle).not.toMatch(/\d+\s+[A-Z]{3}$/);
   });
 });

@@ -326,6 +326,29 @@ const CHAIN_CATALOG: ChainConfig[] = [
 
 const chainIdSchema = z.union([z.string(), z.number()]);
 
+// Published response schemas (SC-108). `chainConfigOut` mirrors
+// `ChainConfig` above; `tokenBalanceOut` is the projection this router
+// builds from `HoldingSnapshot`, which is the shape `@scani/cloud-client`
+// consumes.
+const chainConfigOut = z.object({
+  chainId: chainIdSchema,
+  name: z.string(),
+  type: z.enum(['evm', 'bitcoin', 'solana', 'tron', 'ton']),
+  nativeSymbol: z.string(),
+  nativeName: z.string(),
+  isActive: z.boolean(),
+});
+
+const tokenBalanceOut = z.object({
+  symbol: z.string(),
+  name: z.string(),
+  balance: z.string(),
+  decimals: z.number(),
+  isNative: z.boolean(),
+  tokenAddress: z.string().optional(),
+  iconUrl: z.string().optional(),
+});
+
 export const chainsRouter = router({
   /**
    * Returns every supported chain config. Backend uses this to seed
@@ -343,7 +366,7 @@ export const chainsRouter = router({
       },
     })
     .input(z.void())
-    .output(z.unknown())
+    .output(z.array(chainConfigOut))
     .query((): ChainConfig[] => CHAIN_CATALOG),
 
   /**
@@ -363,7 +386,7 @@ export const chainsRouter = router({
       },
     })
     .input(z.object({ chainId: chainIdSchema, address: z.string() }))
-    .output(z.unknown())
+    .output(z.array(tokenBalanceOut))
     .mutation(async ({ input }) => {
       const institutionCode = institutionCodeForChainId(input.chainId);
       if (!institutionCode) {
@@ -437,7 +460,7 @@ export const chainsRouter = router({
       },
     })
     .input(z.object({ chainId: chainIdSchema, address: z.string() }))
-    .output(z.unknown())
+    .output(z.boolean())
     .mutation(async ({ input, ctx }) => {
       const budget = await chainsAddressProbeLimiter.tryConsume(ctx.auth.apiKeyId);
       if (!budget.ok) {
@@ -475,7 +498,7 @@ export const chainsRouter = router({
       },
     })
     .input(z.object({ chainId: chainIdSchema, address: z.string() }))
-    .output(z.unknown())
+    .output(z.string().nullable())
     .mutation(async ({ input, ctx }): Promise<string | null> => {
       const budget = await chainsAddressProbeLimiter.tryConsume(ctx.auth.apiKeyId);
       if (!budget.ok) {

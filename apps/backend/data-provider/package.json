@@ -25,6 +25,7 @@
     "@scani/logging": "workspace:*",
     "@scani/providers": "workspace:*",
     "@scani/rate-limiter": "workspace:*",
+    "@scani/shared": "workspace:*",
     "@scani/storage": "workspace:*",
     "@sentry/node": "^8.49.0",
     "@sinclair/typebox": "^0.34.0",

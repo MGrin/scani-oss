@@ -35,7 +35,15 @@ export {
   type ScheduledJobDescriptor,
   type UserJobDescriptor,
 } from './core/job-descriptor';
-export { ResultTruncator } from './core/result-truncator';
+export {
+  DURABLE_RESULT_MAX_BYTES,
+  ResultTruncator,
+  readTruncationNotice,
+  TRUNCATION_KEY,
+  TRUNCATION_ROOT_FIELD,
+  type TruncationNotice,
+  WIRE_RESULT_MAX_BYTES,
+} from './core/result-truncator';
 export type {
   EnqueuedJobMeta,
   JobEventPayload,

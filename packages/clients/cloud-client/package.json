@@ -13,7 +13,8 @@
     "./facades/storage-facade": "./src/facades/storage-facade.ts",
     "./facades/email-facade": "./src/facades/email-facade.ts",
     "./health-probe": "./src/health-probe.ts",
-    "./runtime": "./src/runtime.ts"
+    "./runtime": "./src/runtime.ts",
+    "./health-monitor": "./src/health-monitor.ts"
   },
   "scripts": {
     "lint": "biome check .",
@@ -27,6 +28,7 @@
     "@scani/email": "workspace:*",
     "@scani/logging": "workspace:*",
     "@scani/providers": "workspace:*",
+    "@scani/rate-limiter": "workspace:*",
     "@scani/storage": "workspace:*",
     "@trpc/client": "^10.45.4",
     "typedi": "^0.10.0",

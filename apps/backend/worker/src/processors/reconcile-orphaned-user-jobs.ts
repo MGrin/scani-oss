@@ -1,7 +1,7 @@
 import { UserJobRepository } from '@scani/domain/repositories';
 import { RECONCILE_ORPHANED_USER_JOBS_SCHEDULE } from '@scani/jobs';
 import { createComponentLogger } from '@scani/logging';
-import { ScheduledJobProcessor } from '@scani/queue';
+import { QueueClient, ScheduledJobProcessor } from '@scani/queue';
 import { Container, Service } from 'typedi';
 
 const logger = createComponentLogger('processor:reconcile-orphaned-user-jobs');
@@ -16,13 +16,14 @@ const PENDING_CUTOFF_MS = 30 * 1000; // 30s
 // steps the row sits in `queued` forever with no BullMQ entry — `/jobs`
 // shows a phantom in-flight job. We don't re-enqueue (user_jobs stores
 // only payload_summary, not the full payload, so we can't replay) — we
-// mark the row failed and the user retries from the UI.
+// mark the row dead and the user starts it again from the UI.
 @Service()
 export class ReconcileOrphanedUserJobsProcessor extends ScheduledJobProcessor {
   readonly descriptor = RECONCILE_ORPHANED_USER_JOBS_SCHEDULE;
 
   protected async handle(): Promise<void> {
     const userJobRepo = Container.get(UserJobRepository);
+    const queue = Container.get(QueueClient).get();
     const cutoff = new Date(Date.now() - PENDING_CUTOFF_MS);
     const orphans = await userJobRepo.findOrphanedQueued(cutoff);
     if (orphans.length === 0) return;
@@ -32,22 +33,30 @@ export class ReconcileOrphanedUserJobsProcessor extends ScheduledJobProcessor {
     );
     for (const row of orphans) {
       try {
-        await userJobRepo.markFailed(
-          row.jobId,
-          'Enqueue reconciler: job was never delivered to Redis (api likely crashed between DB insert and queue.add). Retry from the UI.',
-          {
-            attemptsMade: 0,
-            attemptsAllowed: row.attemptsAllowed,
-          }
-        );
+        // "Queued for more than 30s" is not the same claim as "never
+        // delivered" — a job can sit in the waiting set that long simply
+        // because every slot is busy, and this processor's whole output is a
+        // *terminal* verdict now (SC-153). Ask Redis before declaring one:
+        // if BullMQ still holds the job, the row is behind, not orphaned.
+        const live = await queue.getJob(row.jobId);
+        if (live) continue;
+
+        const marked = await userJobRepo.markDead(row.jobId, {
+          reason: 'never_delivered',
+          error:
+            'Enqueue reconciler: job was never delivered to Redis (api likely crashed between DB insert and queue.add). Nothing ran; start it again from where you began it.',
+          attemptsMade: 0,
+          attemptsAllowed: row.attemptsAllowed,
+        });
+        if (!marked) continue;
         logger.info(
           { jobId: row.jobId, jobName: row.jobName, userId: row.userId },
-          'Marked orphaned user_job as failed'
+          'Marked orphaned user_job as dead'
         );
       } catch (err) {
         logger.error(
           { jobId: row.jobId, error: err instanceof Error ? err.message : String(err) },
-          'Failed to mark orphaned user_job as failed — will retry next tick'
+          'Failed to mark orphaned user_job as dead — will retry next tick'
         );
       }
     }

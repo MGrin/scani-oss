@@ -49,8 +49,13 @@ export class GroupRepository extends BaseRepository<Group, NewGroup> {
           isActive: schema.groups.isActive,
           createdAt: schema.groups.createdAt,
           updatedAt: schema.groups.updatedAt,
-          holdingsCount: sql<number>`COALESCE(COUNT(DISTINCT ${schema.holdingGroups.holdingId}), 0)`,
-          accountsCount: sql<number>`COALESCE(COUNT(DISTINCT ${schema.accountGroups.accountId}), 0)`,
+          // `::int` is load-bearing: COUNT returns bigint, and postgres.js
+          // hands bigint back as a decimal string because a JS number cannot
+          // hold its full range. Without the cast the field is typed `number`
+          // and delivered as `"1"`, which is how the groups list came to read
+          // "1 holdings" (SC-88).
+          holdingsCount: sql<number>`COALESCE(COUNT(DISTINCT ${schema.holdingGroups.holdingId}), 0)::int`,
+          accountsCount: sql<number>`COALESCE(COUNT(DISTINCT ${schema.accountGroups.accountId}), 0)::int`,
         })
         .from(schema.groups)
         .leftJoin(schema.holdingGroups, eq(schema.groups.id, schema.holdingGroups.groupId))

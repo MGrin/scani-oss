@@ -14,7 +14,7 @@
  * regression from a wording tweak we shipped ourselves.
  */
 
-export const PROMPT_VERSION = 'invoice-extraction-v2';
+export const PROMPT_VERSION = 'invoice-extraction-v3';
 
 /**
  * Shared between the text path (`parseDocumentText(markdown, hint)`) and
@@ -64,6 +64,32 @@ Rules:
   number beyond stripping currency symbols and thousands separators.
 - If a field is not present on the document, use null rather than
   guessing.
+- "issueDate" is the date the document itself was issued — labelled
+  "Invoice date", "Issue date", or just "Date". A receipt that shows no
+  issue date of its own is issued on the date it records a payment
+  ("Date paid", "Date of payment", "Paid on", "paid on <date>"): use that.
+  Do not return null for a receipt merely because no label says "issue".
+- "dueDate" is the payment deadline, and ONLY where the document states
+  one ("Due date", "Payment due", "Pay by"; "Due on receipt" means the
+  same date as "issueDate"). If the document states no deadline,
+  "dueDate" is null — never derive one from payment terms, and never
+  copy "issueDate" into it as a stand-in.
+- A service or billing period ("Service period", "Jul 1 – Jul 31, 2026",
+  "Aug 10–Sep 10, 2026") is NEITHER date. Ignore those ranges when
+  filling "issueDate" and "dueDate", even when they are the most
+  prominent dates on the page.
+- Emit both dates as "YYYY-MM-DD". Translate month names from any
+  language ("15 augustus 2026", "15. August 2026", "15 авг. 2026 г.")
+  and resolve a two-digit year to the century the rest of the document
+  sits in.
+- For an all-numeric date, decide day-vs-month order from the document's
+  own evidence — the vendor's or the customer's country, the currency,
+  the language of the labels — not from a default. European documents
+  write DD/MM/YYYY. If both orders yield a real date and the document
+  offers no such evidence, return null rather than picking one: a wrong
+  date is worse than a missing one.
+- A date you cannot read off the document is null. Do not estimate one
+  from the filename, from the other dates, or from today.
 - "paymentStatus" is "paid" ONLY when the document itself shows the
   invoice as already settled — a "PAID" / "payment received" stamp or
   label, a recorded payment method or card last-4, a receipt/confirmation

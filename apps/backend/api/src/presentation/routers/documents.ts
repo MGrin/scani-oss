@@ -15,6 +15,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
+import { StorageFacade } from '@scani/cloud-client/facades/storage-facade';
 import type { Document, DocumentExtraction, DocumentSourceKind } from '@scani/db/schema';
 import { DOCUMENT_PURPOSES } from '@scani/db/schema';
 import {
@@ -43,6 +44,42 @@ function assertOwnedDocumentKey(key: string, userId: string): void {
     throw new TRPCError({
       code: 'FORBIDDEN',
       message: 'Upload key does not belong to the current user',
+    });
+  }
+}
+
+/**
+ * Refuse to queue a parse for bytes that never arrived (SC-167).
+ *
+ * The two upload pages await the presigned PUT and throw on a non-2xx before
+ * they get here, so the browser path is already guarded — but the guard lives
+ * in the caller, and the endpoint took the client's word for it. Anything
+ * that reaches this mutation with a key whose object is absent buys a job
+ * that can only fail, and it fails on the worker minutes later reading "The
+ * uploaded file is no longer available", which describes a file that was
+ * there and went away rather than one that never landed. Two of mgrin's jobs
+ * died on exactly that sentence and it sent the investigation looking for a
+ * deletion.
+ *
+ * One HEAD, said at the moment the user is still watching the upload.
+ *
+ * A storage error is NOT a refusal: `exists` throws rather than guessing when
+ * it cannot read a status, and swallowing that here would turn a bucket blip
+ * into "your file did not upload" for a file that uploaded fine. We enqueue
+ * and let the worker's own missing-object classification handle it, which is
+ * the behaviour that existed before this check.
+ */
+async function assertUploadLanded(r2Key: string): Promise<void> {
+  let landed: boolean;
+  try {
+    landed = await Container.get(StorageFacade).exists(r2Key);
+  } catch {
+    return;
+  }
+  if (!landed) {
+    throw new TRPCError({
+      code: 'PRECONDITION_FAILED',
+      message: "The upload didn't finish, so there's nothing to read yet. Please upload it again.",
     });
   }
 }
@@ -76,6 +113,12 @@ function serializeDocument(document: Document) {
   return {
     ...document,
     createdAt: document.createdAt.toISOString(),
+    // The same fact `serializeListItem` carries, for the same reason. Without
+    // it the detail page had to assume the object was still there, so a file
+    // the list had already marked "no longer stored" was offered a
+    // full-weight Download that could only ever return PRECONDITION_FAILED
+    // (SC-69 3.1).
+    downloadable: Container.get(DocumentRetentionService).isRetained(document.r2Key),
   };
 }
 
@@ -137,6 +180,7 @@ export const documentsRouter = router({
     )
     .mutation(async ({ ctx, input }) => {
       assertOwnedDocumentKey(input.r2Key, ctx.userId);
+      await assertUploadLanded(input.r2Key);
       const jobId = await Container.get(BullMqEnqueueService).add(DOCUMENT_PARSE, {
         userId: ctx.userId,
         requestId: input.requestId,

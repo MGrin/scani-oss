@@ -190,7 +190,7 @@ export async function getActiveConnectionsCount(): Promise<number> {
     const result = await db.execute<{ count: number }>(
       // Query pg_stat_activity for connections from this application
       // biome-ignore lint/suspicious/noExplicitAny: Raw SQL query with unknown result type
-      `SELECT COUNT(*) as count FROM pg_stat_activity WHERE application_name LIKE 'scani-%'` as any
+      `SELECT COUNT(*)::int as count FROM pg_stat_activity WHERE application_name LIKE 'scani-%'` as any
     );
     // biome-ignore lint/suspicious/noExplicitAny: Result type varies by query
     return (result as any)?.rows?.[0]?.count || 0;

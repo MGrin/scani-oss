@@ -11,8 +11,8 @@
  * document already says they paid.
  *
  * Composition only, no new rules: vendor resolution goes through
- * `VendorRepository.findByAlias` + `normalizeVendorName` (the same
- * two-tier lookup `vendors.create` and `ReconcilePaymentsUseCase` use),
+ * `VendorRepository.resolve` (the same resolution ladder `vendors.create`
+ * and `ReconcilePaymentsUseCase` use),
  * payment creation and occurrence materialisation go through
  * `PaymentService.create`, and settlement goes through
  * `PaymentService.settleOccurrence` — never a raw repository write, so
@@ -28,7 +28,6 @@
 import type { DatabaseTransaction } from '@scani/db';
 import type { Payment, PaymentDirection, PaymentIntervalUnit, PaymentKind } from '@scani/db/schema';
 import { Container, Service } from 'typedi';
-import { normalizeVendorName } from '../lib/normalize-vendor-name';
 import { DocumentExtractionRepository } from '../repositories/DocumentExtractionRepository';
 import { PaymentOccurrenceRepository } from '../repositories/PaymentOccurrenceRepository';
 import { VendorRepository } from '../repositories/VendorRepository';
@@ -158,27 +157,29 @@ export class CreatePaymentFromExtractionUseCase {
   }
 
   /**
-   * Find-or-create by NORMALISED name. `findByAlias` already does the
-   * two-tier lookup (canonical `normalizedName`, then an explicit
-   * `vendor_aliases.rawName`), which is why re-approving a second
-   * 1Password invoice resolves to the vendor the first one created
-   * instead of tripping `vendors_user_normalized_unique`.
+   * Find-or-create. `resolve` runs the two exact tiers first (canonical
+   * `normalizedName`, then an explicit `vendor_aliases.rawName`) and only then
+   * the similarity tiers, which is why re-approving a second 1Password invoice
+   * resolves to the vendor the first one created — and why an invoice that says
+   * "Hetzner Online GmbH" no longer mints a second vendor next to the "Hetzner
+   * Online" an earlier one created.
+   *
+   * A weaker resemblance deliberately falls through to a NEW vendor rather than
+   * being guessed at here: the review surface offers those candidates before
+   * approval, so silently attaching the bill to the wrong company is the one
+   * outcome this path must not produce on its own.
    */
   private async resolveVendorId(
     userId: string,
     vendorNameRaw: string,
     transaction?: DatabaseTransaction
   ): Promise<string> {
-    const existing = await this.vendorRepository.findByAlias(userId, vendorNameRaw, transaction);
-    if (existing) return existing.id;
+    const existing = await this.vendorRepository.resolve(userId, vendorNameRaw, transaction);
+    if (existing) return existing.vendor.id;
 
-    const displayName = vendorNameRaw.trim();
-    const created = await this.vendorRepository.create(
-      {
-        userId,
-        displayName,
-        normalizedName: normalizeVendorName(displayName),
-      },
+    const created = await this.vendorRepository.createForUser(
+      userId,
+      { displayName: vendorNameRaw },
       transaction
     );
     return created.id;
