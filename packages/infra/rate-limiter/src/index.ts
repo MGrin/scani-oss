@@ -19,6 +19,7 @@ export { RedisInflowRateLimiter } from './inflow/redis';
 export { InMemoryOutflowRateLimiter } from './outflow/in-memory';
 export { OutflowRateLimiter } from './outflow/outflow-rate-limiter';
 export {
+  OutflowLimiterUnavailableError,
   RedisOutflowRateLimiter,
   type RedisOutflowRateLimiterOptions,
 } from './outflow/redis';
