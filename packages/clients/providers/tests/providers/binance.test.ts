@@ -85,16 +85,106 @@ describe('BinanceProvider', () => {
     }
   });
 
-  test('fetchBalances tolerates funding-wallet permission failure', async () => {
-    const p = new BinanceProvider(passthroughLimiter());
-    const originalFetch = globalThis.fetch;
-    globalThis.fetch = (async (url: string) => {
+  // SC-237: an opt-in wallet may only be dropped when Binance *refuses*
+  // it. Every other failure has to reach the caller, because an empty
+  // wallet reads downstream as a genuine zero and wipes the holdings
+  // sourced from it.
+  const spotOnlyRoutes = (
+    walletResponse: (url: string) => Response | Promise<Response>
+  ): typeof fetch =>
+    (async (url: string) => {
       if (url.includes('/api/v3/account')) {
         return new Response(
           JSON.stringify({ balances: [{ asset: 'BTC', free: '0.5', locked: '0' }] }),
           { status: 200 }
         );
       }
+      return walletResponse(url);
+    }) as typeof fetch;
+
+  // Real payload: -2015 REJECTED_MBX_KEY, the code Binance returns for a
+  // key without the wallet's permission.
+  // https://developers.binance.com/docs/margin_trading/error-code
+  const REJECTED_MBX_KEY = JSON.stringify({
+    code: -2015,
+    msg: 'Invalid API-key, IP, or permissions for action.',
+  });
+  // -3003 NO_OPENED_MARGIN_ACCOUNT — the account never opened Margin.
+  const NO_OPENED_MARGIN_ACCOUNT = JSON.stringify({
+    code: -3003,
+    msg: 'Margin account does not exist.',
+  });
+
+  test('fetchBalances tolerates a funding wallet the key has no permission for', async () => {
+    const p = new BinanceProvider(passthroughLimiter());
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = spotOnlyRoutes((url) => {
+      if (url.includes('/sapi/v1/margin/account')) {
+        return new Response(JSON.stringify({ userAssets: [] }), { status: 200 });
+      }
+      if (url.includes('/sapi/v1/asset/get-funding-asset')) {
+        return new Response(REJECTED_MBX_KEY, { status: 401 });
+      }
+      throw new Error(`Unexpected URL: ${url}`);
+    });
+
+    try {
+      const out = await p.fetchBalances(ctx as never);
+      const byAsset = Object.fromEntries(out.map((h) => [h.tokenIdentity.symbol, h.balance]));
+      expect(byAsset.BTC).toBe('0.5');
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test('fetchBalances tolerates an account that never opened a margin wallet', async () => {
+    const p = new BinanceProvider(passthroughLimiter());
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = spotOnlyRoutes((url) => {
+      if (url.includes('/sapi/v1/margin/account')) {
+        return new Response(NO_OPENED_MARGIN_ACCOUNT, { status: 400 });
+      }
+      if (url.includes('/sapi/v1/asset/get-funding-asset')) {
+        return new Response(JSON.stringify([]), { status: 200 });
+      }
+      throw new Error(`Unexpected URL: ${url}`);
+    });
+
+    try {
+      const out = await p.fetchBalances(ctx as never);
+      const byAsset = Object.fromEntries(out.map((h) => [h.tokenIdentity.symbol, h.balance]));
+      expect(byAsset.BTC).toBe('0.5');
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test('fetchBalances throws when the margin call fails at the transport', async () => {
+    const p = new BinanceProvider(passthroughLimiter());
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = spotOnlyRoutes((url) => {
+      if (url.includes('/sapi/v1/margin/account')) {
+        throw new TypeError('Unable to reach api.binance.com');
+      }
+      if (url.includes('/sapi/v1/asset/get-funding-asset')) {
+        return new Response(JSON.stringify([]), { status: 200 });
+      }
+      throw new Error(`Unexpected URL: ${url}`);
+    });
+
+    try {
+      // Before SC-237 this resolved to the spot-only snapshot, which
+      // then zeroed every margin-sourced holding as stale.
+      await expect(p.fetchBalances(ctx as never)).rejects.toThrow(/Unable to reach/);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test('fetchBalances throws on a bare 403 — Binance uses it for WAF blocks', async () => {
+    const p = new BinanceProvider(passthroughLimiter());
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = spotOnlyRoutes((url) => {
       if (url.includes('/sapi/v1/margin/account')) {
         return new Response(JSON.stringify({ userAssets: [] }), { status: 200 });
       }
@@ -102,13 +192,33 @@ describe('BinanceProvider', () => {
         return new Response('Forbidden', { status: 403 });
       }
       throw new Error(`Unexpected URL: ${url}`);
+    });
+
+    try {
+      await expect(p.fetchBalances(ctx as never)).rejects.toThrow(/binance HTTP 403/);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test('fetchBalances never tolerates a spot failure — spot is not opt-in', async () => {
+    const p = new BinanceProvider(passthroughLimiter());
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (url: string) => {
+      if (url.includes('/api/v3/account')) {
+        return new Response(REJECTED_MBX_KEY, { status: 401 });
+      }
+      if (url.includes('/sapi/v1/margin/account')) {
+        return new Response(JSON.stringify({ userAssets: [] }), { status: 200 });
+      }
+      if (url.includes('/sapi/v1/asset/get-funding-asset')) {
+        return new Response(JSON.stringify([]), { status: 200 });
+      }
+      throw new Error(`Unexpected URL: ${url}`);
     }) as typeof fetch;
 
     try {
-      const out = await p.fetchBalances(ctx as never);
-      // Funding-wallet 403 doesn't kill the sync — spot still flows.
-      const byAsset = Object.fromEntries(out.map((h) => [h.tokenIdentity.symbol, h.balance]));
-      expect(byAsset.BTC).toBe('0.5');
+      await expect(p.fetchBalances(ctx as never)).rejects.toThrow(/binance HTTP 401/);
     } finally {
       globalThis.fetch = originalFetch;
     }
