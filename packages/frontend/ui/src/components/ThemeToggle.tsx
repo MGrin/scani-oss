@@ -64,7 +64,16 @@ export function ThemeToggle({
           {variant === 'row' && !hideLabel && (
             <>
               <span className="truncate">Theme</span>
-              <span className="ml-auto text-xs text-muted-foreground/70">
+              {/* Full-opacity `--muted-foreground`, not `/70`. The token
+                  clears 4.5:1 on its own; taking 70% of it drops the current
+                  theme's name to 3.4:1 in light, which is §2.6's "the opacity
+                  modifier is the bug" row, found by the v3 axe gate.
+
+                  13px, matching the row's own size rather than `text-xs`: at
+                  12px this was the smallest text in the More drawer and below
+                  v3's caption floor (SC-71 6.1). It is the *answer* to the
+                  label beside it, so it has no business being smaller. */}
+              <span className="ml-auto text-[13px] text-muted-foreground">
                 {currentOption.label}
               </span>
             </>

@@ -38,7 +38,7 @@ describe('scrubSentryEvent', () => {
     const event = {
       message: 'failed for bob@example.com',
       extra: {
-        url: 'https://api.example.com/?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjMifQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c',
+        url: 'https://api.scani.xyz/?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjMifQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c',
         nested: ['contact c@d.com'],
       },
     };

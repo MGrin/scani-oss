@@ -1,6 +1,7 @@
 import { RefreshCw } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { cn } from '../lib/cn';
+import { canArmPullToRefresh } from '../lib/pull-to-refresh';
 import { isPWA } from '../lib/pwa-utils';
 
 interface PullToRefreshProps {
@@ -15,8 +16,13 @@ export function PullToRefresh({ onRefresh, children, disabled = false }: PullToR
   const [isRefreshing, setIsRefreshing] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const startY = useRef(0);
+  const startX = useRef(0);
   const currentY = useRef(0);
-  const startScrollTop = useRef(0);
+  // Whether *this* gesture may pull. Decided once, in `touchstart`. Without
+  // it `startY` kept whatever the last armed gesture left behind, so scrolling
+  // down and flicking back to the top mid-gesture produced a large positive
+  // delta against a stale origin and pulled a page the user was still reading.
+  const armed = useRef(false);
 
   // Only enable pull-to-refresh in PWA mode. Detected after mount, never
   // during render: this component is SSR'd in the Next.js apps where
@@ -59,45 +65,45 @@ export function PullToRefresh({ onRefresh, children, disabled = false }: PullToR
 
     const handleTouchStart = (e: TouchEvent) => {
       const scrollableElement = getScrollableElement();
-      // Only start if we're at the top of the scrollable container
-      const scrollTop = scrollableElement.scrollTop;
+      const touch = e.touches[0];
 
-      // Check if the touch target is within a horizontally scrollable element
-      const target = e.target as HTMLElement;
-      // Only check for table and overflow-x-auto (horizontal scrolling), not overflow-auto
-      const isInHorizontalScroll = target.closest('table, .overflow-x-auto');
+      // One decision, at the start of the gesture: is this scroller's own
+      // content being pulled, from rest, at the top, with one finger?
+      armed.current =
+        !isRefreshing &&
+        !!touch &&
+        e.touches.length === 1 &&
+        scrollableElement.scrollTop <= 1 &&
+        canArmPullToRefresh(e.target as Element | null, scrollableElement).armed;
 
-      // Don't start pull-to-refresh if touching inside a horizontally scrollable element
-      if (isInHorizontalScroll) {
-        return;
-      }
-
-      if (scrollTop <= 1 && !isRefreshing && e.touches[0]) {
-        startY.current = e.touches[0].clientY;
-        startScrollTop.current = scrollTop;
+      if (armed.current && touch) {
+        startY.current = touch.clientY;
+        startX.current = touch.clientX;
       }
     };
 
     const handleTouchMove = (e: TouchEvent) => {
-      if (isRefreshing || !e.touches[0]) return;
+      if (!armed.current || isRefreshing || !e.touches[0]) return;
 
       const scrollableElement = getScrollableElement();
       currentY.current = e.touches[0].clientY;
       const deltaY = currentY.current - startY.current;
+      const deltaX = e.touches[0].clientX - startX.current;
+
+      // A swipe that happens to begin at the top of the page is a swipe, not
+      // a pull — a carousel or an allocation bar must not cost a refetch.
+      if (Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > MIN_PULL_DISTANCE) {
+        armed.current = false;
+        if (isPulling) {
+          setIsPulling(false);
+          setPullDistance(0);
+        }
+        return;
+      }
 
       // Only pull down (positive deltaY) and only if we're still at the top
       const scrollTop = scrollableElement.scrollTop;
       if (deltaY > MIN_PULL_DISTANCE && scrollTop <= 1) {
-        // Check if the touch is happening within a horizontally scrollable element
-        const target = e.target as HTMLElement;
-        // Only check for table and overflow-x-auto (horizontal scrolling), not overflow-auto
-        const isInHorizontalScroll = target.closest('table, .overflow-x-auto');
-
-        // Don't trigger pull-to-refresh if touching inside a horizontally scrollable element
-        if (isInHorizontalScroll) {
-          return;
-        }
-
         // Start pulling if we haven't already
         if (!isPulling) {
           setIsPulling(true);
@@ -125,6 +131,7 @@ export function PullToRefresh({ onRefresh, children, disabled = false }: PullToR
     };
 
     const handleTouchEnd = async () => {
+      armed.current = false;
       if (!isPulling) return;
 
       setIsPulling(false);
