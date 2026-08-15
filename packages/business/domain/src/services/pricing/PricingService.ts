@@ -150,38 +150,62 @@ export class PricingService {
     return finalPrice;
   }
 
-  // Fetch a fresh price for `tokenId` against `baseCurrencySymbol`,
-  // persist it via the provider router (already handled inside
-  // `getTokenPrice`), and return the latest stored metadata so callers
-  // (e.g. UpdateHoldingPriceUseCase) don't need to re-query the
-  // repository themselves.
+  // Ask for a price for `tokenId` against `baseCurrencySymbol` and return the
+  // latest stored metadata, so callers (e.g. UpdateHoldingPriceUseCase) don't
+  // re-query the repository themselves.
+  //
+  // Despite the name it does NOT guarantee a network call: `getTokenPrice`
+  // serves anything inside `LIVE_PRICE_WINDOW_MS` from `token_prices` without
+  // touching a provider, which is the right behaviour — a manual refresh must
+  // not be a way to spend the hourly rate-limit budget on a price that is
+  // already current.
+  //
+  // What it owes the caller is the DIFFERENCE. "Refresh price" reported a
+  // green "BTC price refreshed" over a line that still read `25m ago`, because
+  // the only signal it had was `success: true`, which meant "a price came
+  // back" (SC-148). So the stored row is read once before and once after: the
+  // clock is Postgres's on both sides, which is what makes the comparison
+  // exact rather than a guess about how long a fetch should take.
   async fetchAndStoreFreshPrice(
     tokenId: string,
     baseCurrencySymbol: string,
     timestamp?: Date
-  ): Promise<{ price: string | null; source: string; timestamp: Date }> {
+  ): Promise<{
+    price: string | null;
+    source: string;
+    timestamp: Date;
+    /** False when the price returned is the one that was already stored. */
+    fetched: boolean;
+  }> {
     const now = timestamp ?? new Date();
     const token = await this.tokenRepository.findById(tokenId);
     if (!token) {
       throw new Error(`Token not found: ${tokenId}`);
     }
 
-    const price = await this.getTokenPrice(token, baseCurrencySymbol, now);
-
+    // Resolved before the price call rather than after, so an unknown base
+    // currency fails without first spending a provider request on it.
     const baseCurrencyToken = await this.tokenRepository.findBySymbol(baseCurrencySymbol);
     if (!baseCurrencyToken) {
       throw new Error(`Base currency token not found: ${baseCurrencySymbol}`);
     }
 
+    const before = await this.tokenPriceRepository.findLatestPrice(token.id, baseCurrencyToken.id);
+    const price = await this.getTokenPrice(token, baseCurrencySymbol, now);
     const metadata = await this.tokenPriceRepository.findLatestPrice(
       token.id,
       baseCurrencyToken.id
     );
 
+    const fetched =
+      metadata !== null &&
+      (before === null || metadata.timestamp.getTime() > before.timestamp.getTime());
+
     return {
       price,
       source: metadata?.source ?? 'unknown',
       timestamp: metadata?.timestamp ?? now,
+      fetched,
     };
   }
 

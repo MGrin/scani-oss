@@ -168,6 +168,53 @@ describe('UserJobRepository', () => {
     });
   });
 
+  /**
+   * SC-155. The payload leaves the row through the SELECT, not through a
+   * `.map` in the router afterwards.
+   *
+   * The router has always stripped `result` before it reached the client, so
+   * the wire bytes were never the problem — the DATABASE read was. `SELECT *`
+   * detoasted up to 50 jsonb payloads (258 KB apiece for a large wallet
+   * import) so the router could throw them away, on a query invalidated by
+   * every WS event during a recompute.
+   *
+   * Asserted at the repository rather than at the router because that is
+   * where the cost is: a router test would pass just as happily against the
+   * `.map`, which is precisely the version that was wrong.
+   */
+  test('findMine does not read the result payload (SC-155)', async () => {
+    await withTestDb(async (tx) => {
+      const user = await makeUser(tx);
+      const jobId = `wallet-import_${user.id}_big`;
+      await repo().insertEnqueued(
+        {
+          jobId,
+          userId: user.id,
+          jobName: 'wallet-import',
+          payloadSummary: {},
+          attemptsAllowed: 1,
+        },
+        tx
+      );
+      // The shape SC-145 measured: ~292 bytes per candidate.
+      const chains = Array.from({ length: 200 }, (_, i) => ({
+        externalId: `token-${i}`,
+        balance: '1',
+        capturedAt: new Date().toISOString(),
+      }));
+      await repo().markCompleted(jobId, { chains, chainsDetected: 1 }, tx);
+
+      const [listed] = await repo().findMine(user.id, {}, tx);
+      expect(listed?.jobId).toBe(jobId);
+      expect('result' in (listed as object)).toBe(false);
+
+      // And the detail path still has it — the point is that one query pays
+      // for the payload and the other does not, not that it went away.
+      const detail = await repo().findOneMine(user.id, jobId, tx);
+      expect((detail?.result as { chains: unknown[] }).chains).toHaveLength(200);
+    });
+  });
+
   test('findOneMine scopes by userId (no cross-user leaks)', async () => {
     await withTestDb(async (tx) => {
       const userA = await makeUser(tx);

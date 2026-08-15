@@ -40,15 +40,18 @@ const tokenSchema = z.object({
   updatedAt: z.coerce.date(),
 });
 
-const priceQuoteOut = z
-  .object({
-    tokenId: z.string(),
-    baseTokenId: z.string(),
-    price: z.string(),
-    timestamp: z.coerce.date(),
-    source: z.string(),
-  })
-  .nullable();
+// `PriceQuote` from @scani/providers, 1:1. Doubles as the published
+// OpenAPI response schema, so it is the wire contract as well as the
+// runtime output check (SC-108).
+const priceQuote = z.object({
+  tokenId: z.string(),
+  baseTokenId: z.string(),
+  price: z.string(),
+  timestamp: z.coerce.date(),
+  source: z.string(),
+});
+
+const priceQuoteOut = priceQuote.nullable();
 
 function findCurrentPricer(providerKey: string): CurrentPriceProvider {
   const provider = Container.get(ProviderRegistry)
@@ -95,7 +98,7 @@ export const pricingRouter = router({
         timestamp: z.coerce.date().optional(),
       })
     )
-    .output(z.unknown())
+    .output(priceQuoteOut)
     .mutation(async ({ input }): Promise<z.infer<typeof priceQuoteOut>> => {
       const provider = findCurrentPricer(input.providerKey);
       const token = input.token as unknown as Parameters<
@@ -137,7 +140,7 @@ export const pricingRouter = router({
         timestamp: z.coerce.date().optional(),
       })
     )
-    .output(z.unknown())
+    .output(z.array(z.object({ tokenId: z.string(), quote: priceQuote })))
     .mutation(
       async ({
         input,
@@ -196,7 +199,7 @@ export const pricingRouter = router({
         baseCurrency: tokenSchema,
       })
     )
-    .output(z.unknown())
+    .output(priceQuoteOut)
     .mutation(async ({ input }): Promise<z.infer<typeof priceQuoteOut>> => {
       const provider = findHistoricalPricer(input.providerKey);
       const token = input.token as unknown as Parameters<
@@ -239,7 +242,7 @@ export const pricingRouter = router({
         baseCurrency: tokenSchema,
       })
     )
-    .output(z.unknown())
+    .output(z.array(priceQuote))
     .mutation(async ({ input }): Promise<NonNullable<z.infer<typeof priceQuoteOut>>[]> => {
       const provider = findHistoricalPricer(input.providerKey);
       if (typeof provider.fetchHistoricalRange !== 'function') {
@@ -295,7 +298,7 @@ export const pricingRouter = router({
         toCurrency: z.string(),
       })
     )
-    .output(z.unknown())
+    .output(z.object({ rate: z.string() }))
     .query(async ({ input }): Promise<{ rate: string }> => {
       if (input.fromCurrency === input.toCurrency) return { rate: '1' };
       try {

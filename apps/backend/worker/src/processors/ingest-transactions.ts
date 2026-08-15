@@ -9,6 +9,7 @@ import {
 } from '@scani/jobs';
 import { createComponentLogger } from '@scani/logging';
 import { captureException } from '@scani/logging/sentry';
+import { ProviderError } from '@scani/providers/core/errors';
 import {
   BullMqEnqueueService,
   type ProcessorContext,
@@ -39,6 +40,38 @@ const LOOKBACK_SAFETY_PAD_DAYS = 7;
 const LOOKBACK_DEFAULT_DAYS = PORTFOLIO_HISTORY_LOOKBACK_DAYS;
 const LOOKBACK_MIN_DAYS = 1;
 
+/**
+ * The message to fail with when a provider has already told us retrying is
+ * pointless, or null when the failure is worth another attempt (SC-166).
+ *
+ * `ProviderError.kind` exists precisely to carry this, and its own docblock
+ * says `unrecoverable` and `auth-failed` mean "don't retry, surface to the
+ * user" — but nothing on the transaction-import path read it. So a provider
+ * rejecting a request as malformed was indistinguishable from a dropped
+ * connection and spent the whole retry budget losing: Bybit answered
+ * `retCode=131002` (a start/end span its endpoint will not serve) to the
+ * same request three times per run, six runs across 2026-07-10..12 on
+ * mgrin's account, and the only thing three attempts bought was three
+ * identical rejections and six weeks of a portfolio quietly missing its
+ * Bybit ledger.
+ *
+ * `rate-limited` and `retryable` stay retryable — those are what the budget
+ * is for. `not-supported` cannot reach here; the coordinator checks
+ * `hasProviderFor` before dispatching.
+ *
+ * Classifying here rather than in the coordinator keeps the domain service
+ * free of BullMQ: what a failure *is* belongs to the provider, and what the
+ * queue should do about it belongs to the processor.
+ */
+function describeTerminalProviderFailure(error: unknown): string | null {
+  if (!(error instanceof ProviderError)) return null;
+  if (error.kind === 'unrecoverable') return error.message;
+  if (error.kind === 'auth-failed') {
+    return `${error.message} — reconnect the integration to re-run.`;
+  }
+  return null;
+}
+
 // Dispatches a single transaction-import to TransactionImportCoordinator,
 // then kicks off downstream price-backfill + portfolio-rollup so the
 // net-worth chart fills in once the tx ledger has new dates to price.
@@ -68,6 +101,8 @@ export class IngestTransactionsProcessor extends UserJobProcessor<TransactionImp
       if (error instanceof TransactionImportUnrecoverableError) {
         throw new UnrecoverableError(error.message);
       }
+      const terminal = describeTerminalProviderFailure(error);
+      if (terminal) throw new UnrecoverableError(terminal);
       throw error;
     }
 

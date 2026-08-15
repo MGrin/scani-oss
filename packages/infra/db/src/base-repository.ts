@@ -122,7 +122,7 @@ export abstract class BaseRepository<TEntity, TNewEntity = Partial<TEntity>> {
       const offset = (page - 1) * limit;
 
       let dataQuery = database.select().from(this.table);
-      let countQuery = database.select({ count: sql<number>`count(*)` }).from(this.table);
+      let countQuery = database.select({ count: sql<number>`count(*)::int` }).from(this.table);
 
       if (filters) {
         const conditions = this.buildWhereConditions(filters);
@@ -140,7 +140,7 @@ export abstract class BaseRepository<TEntity, TNewEntity = Partial<TEntity>> {
         countQuery,
       ]);
 
-      const total = Number(countResult[0]?.count || 0);
+      const total = countResult[0]?.count ?? 0;
 
       return {
         data: data as TEntity[],
@@ -306,7 +306,7 @@ export abstract class BaseRepository<TEntity, TNewEntity = Partial<TEntity>> {
   ): Promise<number> {
     try {
       const database = this.getDb(transaction);
-      let query = database.select({ count: sql<number>`count(*)` }).from(this.table);
+      let query = database.select({ count: sql<number>`count(*)::int` }).from(this.table);
 
       if (filters) {
         const conditions = this.buildWhereConditions(filters);

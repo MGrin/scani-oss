@@ -1,7 +1,16 @@
 process.env.DATABASE_URL = process.env.DATABASE_URL || 'postgresql://dummy:dummy@localhost/dummy';
 
-import { describe, expect, it } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, it, test } from 'bun:test';
+import { randomUUID } from 'node:crypto';
+import { db } from '@scani/db/connection';
+import type { Token } from '@scani/db/schema';
+import * as schema from '@scani/db/schema';
 import Decimal from 'decimal.js';
+import { eq, inArray } from 'drizzle-orm';
+import { Container } from 'typedi';
+import { PortfolioValuationService } from '../../../src/services/portfolio/PortfolioValuationService';
+import { PortfolioValueCache } from '../../../src/services/portfolio/PortfolioValueCache';
+import { PricingService } from '../../../src/services/pricing/PricingService';
 
 /**
  * PortfolioValuationService — pure math unit tests.
@@ -285,5 +294,150 @@ describe('PortfolioValuationService (unit — math)', () => {
       const result = calculateTotalValue(holdings, prices, baseCurrencyId);
       expect(result.totalValue).toBe('100');
     });
+  });
+});
+
+/**
+ * The metadata half of the service, against the real database.
+ *
+ * `getCachedTokenPrices` resolves a price from whatever base it was cached
+ * against and converts it, so a EUR-base user gets a value out of a USD-cached
+ * CoinGecko price. The metadata lookup beside it used to fall back to *manual*
+ * prices only, so those same holdings came back with no `priceTimestamp` and
+ * `HoldingQueryService` dropped them — every crypto and equity row on /holdings
+ * printed its value, its gain, and "—" for its price (SC-66 / D-1).
+ */
+describe('PortfolioValuationService (integration — price metadata)', () => {
+  interface MetadataFixture {
+    userId: string;
+    tokenIds: string[];
+    tokenTypeId: string;
+    institutionId: string;
+    institutionTypeId: string;
+    accountTypeId: string;
+  }
+
+  let fixture: MetadataFixture;
+  const suffix = randomUUID().slice(0, 6);
+
+  async function makeToken(typeId: string, symbol: string): Promise<Token> {
+    const [token] = await db
+      .insert(schema.tokens)
+      .values({ symbol, name: symbol, typeId })
+      .returning();
+    if (!token) throw new Error(`token insert failed: ${symbol}`);
+    return token;
+  }
+
+  beforeAll(async () => {
+    const [tokenType] = await db
+      .insert(schema.tokenTypes)
+      .values({ code: `pvs-${suffix}`, name: 'PVS Token Type' })
+      .returning();
+    if (!tokenType) throw new Error('token type insert failed');
+
+    // EUR-like base, USD-like quote, and an asset priced against the quote —
+    // the exact shape of a European user holding CoinGecko-priced crypto.
+    const base = await makeToken(tokenType.id, `PVSEUR${suffix.toUpperCase()}`);
+    const quote = await makeToken(tokenType.id, `PVSUSD${suffix.toUpperCase()}`);
+    const asset = await makeToken(tokenType.id, `PVSBTC${suffix.toUpperCase()}`);
+
+    const [user] = await db
+      .insert(schema.users)
+      .values({
+        email: `pvs-${randomUUID().slice(0, 8)}@scani.local`,
+        name: 'PVS User',
+        baseCurrencyId: base.id,
+      })
+      .returning();
+    if (!user) throw new Error('user insert failed');
+
+    const [institutionType] = await db
+      .insert(schema.institutionTypes)
+      .values({ code: `pvs-inst-${suffix}`, name: 'PVS Institution Type' })
+      .returning();
+    const [institution] = await db
+      .insert(schema.institutions)
+      .values({ name: 'PVS Exchange', typeId: institutionType!.id })
+      .returning();
+    const [accountType] = await db
+      .insert(schema.accountTypes)
+      .values({ code: `pvs-acct-${suffix}`, name: 'PVS Account Type' })
+      .returning();
+    const [account] = await db
+      .insert(schema.accounts)
+      .values({
+        userId: user.id,
+        institutionId: institution!.id,
+        name: 'PVS Account',
+        typeId: accountType!.id,
+      })
+      .returning();
+
+    await db.insert(schema.holdings).values({
+      userId: user.id,
+      accountId: account!.id,
+      tokenId: asset.id,
+      balance: '2',
+    });
+
+    // The provider row: priced in the QUOTE currency, not the user's base.
+    await db.insert(schema.tokenPrices).values({
+      tokenId: asset.id,
+      baseTokenId: quote.id,
+      price: '60000',
+      timestamp: new Date('2026-08-13T06:00:00Z'),
+      source: 'coingecko',
+    });
+
+    fixture = {
+      userId: user.id,
+      tokenIds: [base.id, quote.id, asset.id],
+      tokenTypeId: tokenType.id,
+      institutionId: institution!.id,
+      institutionTypeId: institutionType!.id,
+      accountTypeId: accountType!.id,
+    };
+
+    // Stand in for the pricing pipeline: it resolved the USD row and converted
+    // it, which is why the holding has a value at all.
+    Container.set(PricingService, {
+      getCachedTokenPrices: async () => new Map([[asset.id, '55200']]),
+    } as unknown as PricingService);
+    // Redis is not part of this assertion; compute every time.
+    Container.set(PortfolioValueCache, {
+      getOrCompute: async (_key: string, factory: () => Promise<unknown>) => factory(),
+      bust: async () => {},
+    } as unknown as PortfolioValueCache);
+    Container.set(PortfolioValuationService, new PortfolioValuationService());
+  });
+
+  afterAll(async () => {
+    await db.delete(schema.users).where(eq(schema.users.id, fixture.userId));
+    await db
+      .delete(schema.tokenPrices)
+      .where(inArray(schema.tokenPrices.tokenId, fixture.tokenIds));
+    await db.delete(schema.tokens).where(inArray(schema.tokens.id, fixture.tokenIds));
+    await db.delete(schema.tokenTypes).where(eq(schema.tokenTypes.id, fixture.tokenTypeId));
+    await db.delete(schema.accountTypes).where(eq(schema.accountTypes.id, fixture.accountTypeId));
+    await db.delete(schema.institutions).where(eq(schema.institutions.id, fixture.institutionId));
+    await db
+      .delete(schema.institutionTypes)
+      .where(eq(schema.institutionTypes.id, fixture.institutionTypeId));
+
+    Container.set(PricingService, new PricingService());
+    Container.set(PortfolioValueCache, new PortfolioValueCache());
+    Container.set(PortfolioValuationService, new PortfolioValuationService());
+  });
+
+  test('a provider price cached in another currency still carries its timestamp and source', async () => {
+    const portfolio = await Container.get(PortfolioValuationService).getUserPortfolioValue(
+      fixture.userId
+    );
+
+    const holding = portfolio.holdings[0];
+    expect(holding?.value).toBe('110400');
+    expect(holding?.priceSource).toBe('coingecko');
+    expect(holding?.priceTimestamp?.toISOString()).toBe('2026-08-13T06:00:00.000Z');
   });
 });

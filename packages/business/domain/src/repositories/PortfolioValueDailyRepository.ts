@@ -41,6 +41,10 @@ export interface IncludedHoldingScopeRow {
   coverageQuality: CoverageQuality;
   holdingsWithKnownValue: number;
   holdingsTotal: number;
+  holdingsUnpriceable: number;
+  holdingsStalePriced: number;
+  holdingsBasisUnknown: number;
+  transfersUnreviewed: number;
 }
 
 // Composite primary key (user_id, snapshot_date, base_currency_id); can't use
@@ -120,6 +124,10 @@ export class PortfolioValueDailyRepository {
           coverageQuality: schema.portfolioValueDaily.coverageQuality,
           holdingsWithKnownValue: schema.portfolioValueDaily.holdingsWithKnownValue,
           holdingsTotal: schema.portfolioValueDaily.holdingsTotal,
+          holdingsUnpriceable: schema.portfolioValueDaily.holdingsUnpriceable,
+          holdingsStalePriced: schema.portfolioValueDaily.holdingsStalePriced,
+          holdingsBasisUnknown: schema.portfolioValueDaily.holdingsBasisUnknown,
+          transfersUnreviewed: schema.portfolioValueDaily.transfersUnreviewed,
         })
         .from(schema.portfolioValueDaily)
         .innerJoin(schema.holdings, eq(schema.holdings.id, schema.portfolioValueDaily.scopeId))
@@ -317,6 +325,10 @@ export class PortfolioValueDailyRepository {
             coverageQuality: sql`EXCLUDED.coverage_quality`,
             holdingsWithKnownValue: sql`EXCLUDED.holdings_with_known_value`,
             holdingsTotal: sql`EXCLUDED.holdings_total`,
+            holdingsUnpriceable: sql`EXCLUDED.holdings_unpriceable`,
+            holdingsStalePriced: sql`EXCLUDED.holdings_stale_priced`,
+            holdingsBasisUnknown: sql`EXCLUDED.holdings_basis_unknown`,
+            transfersUnreviewed: sql`EXCLUDED.transfers_unreviewed`,
             // Without these, re-running the rollup for an already-cached
             // day left the PnL columns stale (the rollup writes them on
             // INSERT but the conflict path skipped them).
@@ -366,6 +378,10 @@ export class PortfolioValueDailyRepository {
             coverageQuality: sql`EXCLUDED.coverage_quality`,
             holdingsWithKnownValue: sql`EXCLUDED.holdings_with_known_value`,
             holdingsTotal: sql`EXCLUDED.holdings_total`,
+            holdingsUnpriceable: sql`EXCLUDED.holdings_unpriceable`,
+            holdingsStalePriced: sql`EXCLUDED.holdings_stale_priced`,
+            holdingsBasisUnknown: sql`EXCLUDED.holdings_basis_unknown`,
+            transfersUnreviewed: sql`EXCLUDED.transfers_unreviewed`,
             // Without these, re-running the rollup for an already-cached
             // day left the PnL columns stale (the rollup writes them on
             // INSERT but the conflict path skipped them).

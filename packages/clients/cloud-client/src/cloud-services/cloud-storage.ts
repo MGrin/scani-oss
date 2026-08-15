@@ -1,4 +1,8 @@
-import type { PresignedUpload, PresignUploadOptions } from '@scani/storage';
+import {
+  isMissingObjectError,
+  type PresignedUpload,
+  type PresignUploadOptions,
+} from '@scani/storage';
 import type { CloudClient } from '../client';
 import { CloudError } from '../errors';
 
@@ -17,6 +21,15 @@ export class CloudStorage {
     try {
       const { url } = await this.client.storage.presignDownload.query({ key, ttlSeconds });
       return url;
+    } catch (err) {
+      throw CloudError.wrap(err);
+    }
+  }
+
+  async exists(key: string): Promise<boolean> {
+    try {
+      const { exists } = await this.client.storage.objectExists.mutate({ key });
+      return exists;
     } catch (err) {
       throw CloudError.wrap(err);
     }
@@ -43,10 +56,10 @@ export class CloudStorage {
     try {
       await this.client.storage.deleteTempBlob.mutate({ key });
     } catch (err) {
-      // Match @scani/storage's local-side behaviour: lifecycle rules can race
-      // a sweep and delete the blob first. Treat 404 as success.
+      // Match @scani/storage's local-side behaviour: a concurrent delete or
+      // a lifecycle sweep can remove the blob first. Already gone is success.
       const cloudErr = CloudError.wrap(err);
-      if (/NoSuchKey|404|not found/i.test(String(cloudErr.message))) return;
+      if (isMissingObjectError(cloudErr)) return;
       throw cloudErr;
     }
   }

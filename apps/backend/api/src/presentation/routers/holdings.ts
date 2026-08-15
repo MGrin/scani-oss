@@ -6,7 +6,7 @@ import {
   HoldingApyConfigRepository,
   HoldingRepository,
 } from '@scani/domain/repositories';
-import { HoldingQueryService, HoldingService } from '@scani/domain/services';
+import { HoldingQueryService, HoldingService, RealizedLedgerService } from '@scani/domain/services';
 import {
   BulkAssignHoldingGroupsUseCase,
   DeleteHoldingUseCase,
@@ -15,7 +15,12 @@ import {
 import { HOLDING_PRICE_UPDATE, REFRESH_ACCOUNT_BALANCE } from '@scani/jobs';
 import { BullMqEnqueueService } from '@scani/queue';
 import { emitBulkEntityChanges, emitEntityChange } from '@scani/realtime';
-import { UpdateHoldingDto, UpsertHoldingApyConfigDto } from '@scani/shared';
+import {
+  Decimal,
+  type RealizedLedger,
+  UpdateHoldingDto,
+  UpsertHoldingApyConfigDto,
+} from '@scani/shared';
 import { TRPCError } from '@trpc/server';
 import { Container } from 'typedi';
 import { z } from 'zod';
@@ -36,6 +41,75 @@ export const holdingsRouter = router({
       ctx.requestCache
     );
   }),
+
+  /**
+   * The lots behind this holding's realized figure (SC-152).
+   *
+   * Computed on the read, not stored: no table, no migration, no job, and the
+   * nightly rollup keeps walking without collecting anything, so this adds no
+   * recurring cost. It is only ever called when somebody opens a record and
+   * asks why.
+   *
+   * Deliberately not folded into `getWithDetails`. That query loads the whole
+   * holdings list on every visit, and putting a per-holding lot walk in it
+   * would make the ordinary case pay for the rare question.
+   *
+   * Not a tax export and must not become one — see
+   * `docs/technical/2026-08-14_why-no-tax-statement.md`.
+   */
+  realizedLedger: protectedProcedure
+    .input(z.object({ holdingId: z.string().uuid() }))
+    .query(async ({ ctx, input }): Promise<RealizedLedger> => {
+      const { dbUser } = await requireAuth(ctx);
+      // Ownership guard — without it the endpoint is an IDOR, and this one
+      // returns acquisition prices and dates.
+      const holding = await Container.get(HoldingRepository).findById(input.holdingId);
+      if (!holding || holding.userId !== dbUser.id) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Holding not found' });
+      }
+      const baseCurrencyId = dbUser.baseCurrencyId ?? null;
+      if (!baseCurrencyId) {
+        // Every figure in the ledger is denominated in the base currency, so
+        // without one there is no ledger to report — not an empty one.
+        return {
+          holdingId: input.holdingId,
+          baseCurrencyId: null,
+          rows: [],
+          realizedTotal: '0',
+        };
+      }
+      const rows = await Container.get(RealizedLedgerService).forHolding(
+        dbUser.id,
+        input.holdingId,
+        baseCurrencyId
+      );
+      const realizedTotal = rows.reduce(
+        (sum, row) => (row.gain ? sum.add(row.gain) : sum),
+        new Decimal(0)
+      );
+      return {
+        holdingId: input.holdingId,
+        baseCurrencyId,
+        rows: rows.map((row) => ({
+          transactionId: row.transactionId,
+          holdingId: row.holdingId,
+          tokenId: row.tokenId,
+          kind: row.kind,
+          disposedAt: row.disposedAt.toISOString(),
+          acquiredAt: row.acquiredAt?.toISOString() ?? null,
+          quantity: row.quantity.toString(),
+          proceeds: row.proceeds?.toString() ?? null,
+          costBasis: row.costBasis.toString(),
+          gain: row.gain?.toString() ?? null,
+          holdingDays: row.holdingDays,
+          portionIndex: row.portionIndex,
+          portionCount: row.portionCount,
+          basisQuality: row.basisQuality,
+          outcome: row.outcome,
+        })),
+        realizedTotal: realizedTotal.toString(),
+      };
+    }),
 
   // Holdings hidden from the dashboard — user-hidden or auto-flagged as
   // scam. Powers the Tokens page "Hidden Holdings" section.

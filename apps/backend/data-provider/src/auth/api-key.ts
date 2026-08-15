@@ -30,6 +30,30 @@ export interface ApiKeyContext {
 
 export const OSS_KEY_ID = 'oss-shared-key';
 
+/**
+ * Every way a bearer credential can be refused, said in the caller's
+ * terms (SC-106).
+ *
+ * All of them are still `UNAUTHORIZED` / 401. The only one that may
+ * mention the header is the one where the header is genuinely absent —
+ * anything else sends an operator to audit proxies and env wiring for a
+ * problem that is on our side of the wire. None of them lets a caller
+ * probe whether a key they do not hold exists: an unrecognised token is
+ * unrecognised whether it was never issued or was deleted with its
+ * account.
+ */
+export const AUTH_MESSAGES = {
+  missingHeader: 'Authorization: Bearer <api-key> header required',
+  unknownKey: 'API key not recognised — check the key, or create a new one at cloud.scani.xyz',
+  revoked: (revokedAt: Date) =>
+    `API key was revoked on ${revokedAt.toISOString().slice(0, 10)} — create a new one at cloud.scani.xyz`,
+  suspended: 'API key is suspended — check billing at cloud.scani.xyz',
+  cancelled: 'API key belongs to a cancelled subscription — reactivate at cloud.scani.xyz',
+  superuserExpired: 'Superuser token expired — rotate via DATA_PROVIDER_API_KEY',
+  /** The DB lookup itself failed. Not the caller's fault; don't blame their key. */
+  verificationFailed: 'Could not verify the API key right now — retry shortly',
+} as const;
+
 export interface ValidateBearerOptions {
   authHeader: string | null | undefined;
   expectedToken: string | undefined;
@@ -54,7 +78,7 @@ export async function validateBearerToken(opts: ValidateBearerOptions): Promise<
   }
 
   if (!authHeader?.toLowerCase().startsWith('bearer ')) {
-    throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Missing Bearer token' });
+    throw new TRPCError({ code: 'UNAUTHORIZED', message: AUTH_MESSAGES.missingHeader });
   }
   const presented = authHeader.slice('bearer '.length).trim();
 
@@ -63,7 +87,7 @@ export async function validateBearerToken(opts: ValidateBearerOptions): Promise<
     if (expectedTokenExpiresAt && expectedTokenExpiresAt.getTime() < Date.now()) {
       throw new TRPCError({
         code: 'UNAUTHORIZED',
-        message: 'Superuser token expired — rotate via DATA_PROVIDER_API_KEY',
+        message: AUTH_MESSAGES.superuserExpired,
       });
     }
     // Trail every superuser invocation in Sentry. This is the only
@@ -82,18 +106,34 @@ export async function validateBearerToken(opts: ValidateBearerOptions): Promise<
 
   // Tier 2/3 DB lookup.
   if (cloudDb) {
-    const verified = await verifyCloudApiKey(cloudDb, presented);
-    if (verified) {
-      return {
-        apiKeyId: verified.apiKeyId,
-        tenantId: verified.tenantId,
-        ownerUserId: verified.ownerUserId,
-        tier: 'managed',
-      };
+    const lookup = await verifyCloudApiKey(cloudDb, presented);
+    switch (lookup.status) {
+      case 'valid':
+        return {
+          apiKeyId: lookup.key.apiKeyId,
+          tenantId: lookup.key.tenantId,
+          ownerUserId: lookup.key.ownerUserId,
+          tier: 'managed',
+        };
+      case 'revoked':
+        throw new TRPCError({
+          code: 'UNAUTHORIZED',
+          message: AUTH_MESSAGES.revoked(lookup.revokedAt),
+        });
+      case 'billing-blocked':
+        throw new TRPCError({
+          code: 'UNAUTHORIZED',
+          message:
+            lookup.billingStatus === 'suspended'
+              ? AUTH_MESSAGES.suspended
+              : AUTH_MESSAGES.cancelled,
+        });
+      case 'unknown':
+        break;
     }
   }
 
-  throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Invalid API key' });
+  throw new TRPCError({ code: 'UNAUTHORIZED', message: AUTH_MESSAGES.unknownKey });
 }
 
 // Constant-time string comparison — prevents leaking the expected token's

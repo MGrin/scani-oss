@@ -2,7 +2,12 @@ import { createComponentLogger } from '@scani/logging';
 import type { Job } from 'bullmq';
 import { Container } from 'typedi';
 import type { UserJobDescriptor } from '../core/job-descriptor';
-import { ResultTruncator } from '../core/result-truncator';
+import {
+  DURABLE_RESULT_MAX_BYTES,
+  ResultTruncator,
+  readTruncationNotice,
+  WIRE_RESULT_MAX_BYTES,
+} from '../core/result-truncator';
 import type { JobEventPayload, LifecycleEvent, ProcessorContext, UserJobBase } from '../core/types';
 import { RedisLifecyclePublisher } from '../lifecycle/redis-lifecycle-publisher';
 import { LIFECYCLE_MIRROR, type LifecycleMirror } from './lifecycle-mirror';
@@ -84,17 +89,52 @@ export abstract class UserJobProcessor<TPayload extends UserJobBase, TResult = u
 
     try {
       const result = await this.handle(data, ctx);
-      const sanitized = this.descriptor.sanitizeResult
+      // Two copies, two budgets. The durable row is what the review UI
+      // reads and what a confirm mutation replays from, so it holds the
+      // real payload; the WS copy only has to survive until the page
+      // refetches, and pushing a megabyte of wallet candidates at every
+      // open tab is what the 32 KB cap was actually protecting against.
+      // Sharing one budget between them is what made a 2,766-token
+      // wallet unimportable (SC-145).
+      const durable = this.descriptor.sanitizeResult
         ? this.descriptor.sanitizeResult(result)
-        : new ResultTruncator().truncate(result);
+        : new ResultTruncator(DURABLE_RESULT_MAX_BYTES).truncate(result);
+      const wire = new ResultTruncator(WIRE_RESULT_MAX_BYTES).truncate(durable);
+      // The DURABLE budget being hit is a different event from the wire one
+      // and the only one worth a log line. The wire copy is trimmed on almost
+      // every wallet import by design; the durable copy is what the review UI
+      // renders and what `confirmHoldings` replays, so dropping a field there
+      // means a user cannot import something — the SC-145 failure, one size
+      // up. It was silent: the omission was recorded in the user's own row
+      // and nowhere else, so "no one has hit 2 MB yet" was an assumption
+      // rather than an observation.
+      //
+      // SC-155 weighed moving these payloads out of the row entirely and
+      // decided against it at this scale; this is the trigger that would
+      // reopen that. Deferring a decision without an alarm attached is how it
+      // gets deferred forever.
+      const dropped = readTruncationNotice(durable);
+      if (dropped) {
+        log.warn(
+          {
+            jobId,
+            userId: data.userId,
+            name: this.descriptor.name,
+            omittedFields: dropped.omittedFields,
+            originalBytes: dropped.originalBytes,
+            maxBytes: DURABLE_RESULT_MAX_BYTES,
+          },
+          'Durable job result exceeded its budget — fields dropped (SC-155)'
+        );
+      }
       await this.fire({
         type: 'completed',
         jobId,
         userId: data.userId,
         jobName: this.descriptor.name,
-        result: sanitized,
+        result: durable,
       });
-      await this.publish(data.userId, jobId, { state: 'completed', result: sanitized });
+      await this.publish(data.userId, jobId, { state: 'completed', result: wire });
       return result;
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);

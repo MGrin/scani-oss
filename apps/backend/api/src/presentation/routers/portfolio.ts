@@ -13,13 +13,8 @@
 
 import { randomUUID } from 'node:crypto';
 import { db } from '@scani/db/connection';
-import type { PortfolioValueDaily } from '@scani/db/schema';
 import * as schema from '@scani/db/schema';
-import {
-  type IncludedHoldingScopeRow,
-  PortfolioValueDailyRepository,
-  UserJobRepository,
-} from '@scani/domain/repositories';
+import { PortfolioValueDailyRepository, UserJobRepository } from '@scani/domain/repositories';
 import { HIDE_CLOSED_HOLDINGS_STALE_DAYS } from '@scani/domain/use-cases';
 import { PORTFOLIO_HISTORY_BACKFILL, PORTFOLIO_HISTORY_LOOKBACK_DAYS } from '@scani/jobs';
 import { BullMqEnqueueService } from '@scani/queue';
@@ -28,6 +23,16 @@ import Decimal from 'decimal.js';
 import { and, eq, sql } from 'drizzle-orm';
 import { Container } from 'typedi';
 import { z } from 'zod';
+import {
+  type AggregatedDailyPoint,
+  aggregateIncludedHoldingRows,
+  hasKnownCoverage,
+  type NetWorthHistoryRow,
+  toAggregatedDaily,
+  toNetWorthHistoryRow,
+  unmeasuredDates,
+  userNetWorthDaily,
+} from '../../lib/net-worth-series';
 import { requireAuth } from '../middleware/auth';
 import { protectedProcedure, router } from '../trpc';
 
@@ -141,97 +146,6 @@ function lttbDownsample<T>(data: LttbPoint<T>[], target: number): LttbPoint<T>[]
   return sampled;
 }
 
-// One user-wide daily chart point. Both the net-worth and PnL series
-// downsample + render from this shape, sourced either from the
-// inclusion-filtered per-holding rollup rows (user-wide) or the
-// pre-aggregated per-entity rollup row (scoped).
-interface AggregatedDailyPoint {
-  snapshotDate: string;
-  totalValue: string;
-  costBasis: string | null;
-  realizedPnl: string | null;
-  unrealizedPnl: string | null;
-  coverageQuality: string;
-  holdingsWithKnownValue: number;
-  holdingsTotal: number;
-}
-
-// Map a pre-aggregated rollup row (scoped series path) to the shared
-// daily-point shape.
-function toAggregatedDaily(row: PortfolioValueDaily): AggregatedDailyPoint {
-  return {
-    snapshotDate: String(row.snapshotDate).slice(0, 10),
-    totalValue: row.totalValue,
-    costBasis: row.costBasis,
-    realizedPnl: row.realizedPnl,
-    unrealizedPnl: row.unrealizedPnl,
-    coverageQuality: row.coverageQuality,
-    holdingsWithKnownValue: row.holdingsWithKnownValue,
-    holdingsTotal: row.holdingsTotal,
-  };
-}
-
-// Group inclusion-filtered per-holding rollup rows into one user-wide
-// point per date. coverage_quality is re-derived from the known/total
-// ratio with the rollup's thresholds; a fully-priced day stays
-// 'partial' when any holding used a stale anchor/price. The day's PnL
-// is null unless every holding row carries cost columns (pre-rebuild
-// rows may not), since a partial sum would be misleading.
-function aggregateIncludedHoldingRows(rows: IncludedHoldingScopeRow[]): AggregatedDailyPoint[] {
-  const byDate = new Map<string, IncludedHoldingScopeRow[]>();
-  for (const row of rows) {
-    const key = String(row.snapshotDate).slice(0, 10);
-    const list = byDate.get(key);
-    if (list) list.push(row);
-    else byDate.set(key, [row]);
-  }
-  const out: AggregatedDailyPoint[] = [];
-  for (const [date, dayRows] of byDate) {
-    let totalValue = new Decimal(0);
-    let costBasis = new Decimal(0);
-    let realizedPnl = new Decimal(0);
-    let unrealizedPnl = new Decimal(0);
-    let known = 0;
-    let total = 0;
-    let anyPartial = false;
-    let pnlComplete = true;
-    for (const r of dayRows) {
-      totalValue = totalValue.add(new Decimal(r.totalValue));
-      known += r.holdingsWithKnownValue;
-      total += r.holdingsTotal;
-      if (r.coverageQuality === 'partial') anyPartial = true;
-      if (r.costBasis == null || r.realizedPnl == null || r.unrealizedPnl == null) {
-        pnlComplete = false;
-      } else {
-        costBasis = costBasis.add(new Decimal(r.costBasis));
-        realizedPnl = realizedPnl.add(new Decimal(r.realizedPnl));
-        unrealizedPnl = unrealizedPnl.add(new Decimal(r.unrealizedPnl));
-      }
-    }
-    let coverageQuality: string;
-    if (total === 0) {
-      coverageQuality = 'full';
-    } else {
-      const ratio = known / total;
-      if (ratio >= 0.95) coverageQuality = anyPartial ? 'partial' : 'full';
-      else if (ratio >= 0.5) coverageQuality = 'estimated';
-      else coverageQuality = 'unknown';
-    }
-    out.push({
-      snapshotDate: date,
-      totalValue: totalValue.toString(),
-      costBasis: pnlComplete ? costBasis.toString() : null,
-      realizedPnl: pnlComplete ? realizedPnl.toString() : null,
-      unrealizedPnl: pnlComplete ? unrealizedPnl.toString() : null,
-      coverageQuality,
-      holdingsWithKnownValue: known,
-      holdingsTotal: total,
-    });
-  }
-  out.sort((a, b) => a.snapshotDate.localeCompare(b.snapshotDate));
-  return out;
-}
-
 const NetWorthSeriesInput = z
   .object({
     from: z.coerce.date(),
@@ -247,6 +161,12 @@ const NetWorthSeriesInput = z
         id: z.string().uuid(),
       })
       .optional(),
+    // `chart` downsamples to ~200 points so a six-year curve keeps its
+    // silhouette without shipping 2,200 rows to a phone. `full` skips that
+    // entirely, and exists for the export (SC-89): the file's whole claim is
+    // "one row per day", and a spreadsheet built from LTTB-selected points
+    // would have gaps a reader cannot see and would sum to the wrong thing.
+    resolution: z.enum(['chart', 'full']).default('chart'),
   })
   .refine((v) => v.to.getTime() >= v.from.getTime(), {
     message: '`to` must be greater than or equal to `from`',
@@ -314,7 +234,12 @@ export const portfolioRouter = router({
     if (!baseId) {
       // No configured base → can't render a chart meaningfully.
       // Return empty series so the UI shows a clear "set a base currency" CTA.
-      return { series: [], baseCurrencyId: null, granularity: 'daily' as Granularity };
+      return {
+        series: [],
+        baseCurrencyId: null,
+        granularity: 'daily' as Granularity,
+        unmeasuredDates: [] as string[],
+      };
     }
     const dailyRepo = Container.get(PortfolioValueDailyRepository);
 
@@ -325,14 +250,6 @@ export const portfolioRouter = router({
     // hid mid-week deposits/withdrawals.
     const granularity: Granularity =
       input.granularity === 'auto' ? pickGranularity(input.from, input.to) : input.granularity;
-
-    type SeriesPoint = {
-      date: string;
-      totalValue: string;
-      coverageQuality: string;
-      holdingsWithKnownValue: number;
-      holdingsTotal: number;
-    };
 
     // Per-entity scope ownership guard. The detail-page charts
     // pass scope: { kind: 'institution' | 'account' | 'holding', id }
@@ -353,9 +270,9 @@ export const portfolioRouter = router({
       ? (
           await dailyRepo.findRange(dbUser.id, baseId, input.from, input.to, undefined, input.scope)
         ).map(toAggregatedDaily)
-      : aggregateIncludedHoldingRows(
-          await dailyRepo.findIncludedHoldingScopeRange(dbUser.id, baseId, input.from, input.to)
-        );
+      : // One definition of user-wide net worth, shared with the account export
+        // — see `lib/net-worth-series.ts` for why (SC-98).
+        await userNetWorthDaily(dbUser.id, baseId, input.from, input.to);
 
     // LTTB on the daily points. For ranges <= 200 days the threshold
     // is a no-op and we ship every daily row; for longer ranges the
@@ -367,17 +284,25 @@ export const portfolioRouter = router({
       y: Number(row.totalValue),
       raw: row,
     }));
-    const sampled = lttbDownsample(points, LTTB_TARGET_POINTS);
+    const sampled =
+      input.resolution === 'full' ? points : lttbDownsample(points, LTTB_TARGET_POINTS);
 
-    const series: SeriesPoint[] = sampled.map((p) => ({
-      date: p.raw.snapshotDate,
-      totalValue: p.raw.totalValue,
-      coverageQuality: p.raw.coverageQuality,
-      holdingsWithKnownValue: p.raw.holdingsWithKnownValue,
-      holdingsTotal: p.raw.holdingsTotal,
-    }));
+    // Same row shape as the account workbook writes — see `NetWorthHistoryRow`.
+    const series: NetWorthHistoryRow[] = sampled.map((p) => toNetWorthHistoryRow(p.raw));
 
-    return { series, baseCurrencyId: baseId, granularity };
+    // What the series does NOT contain, said out loud (SC-115). A chart on a
+    // category axis cannot tell a dropped day from a day that never was, and
+    // the difference is whether the line it draws to the right edge is a
+    // measurement or an interpolation. Never past today: a window that runs to
+    // the end of the week is not missing Thursday.
+    const today = new Date().toISOString().slice(0, 10);
+    const requestedThrough = input.to.toISOString().slice(0, 10);
+    const gaps = unmeasuredDates(
+      daily.filter(hasKnownCoverage).map((row) => row.snapshotDate),
+      requestedThrough < today ? requestedThrough : today
+    );
+
+    return { series, baseCurrencyId: baseId, granularity, unmeasuredDates: gaps };
   }),
 
   // PnL series: same shape as getNetWorthSeries plus cost_basis +
@@ -417,6 +342,19 @@ export const portfolioRouter = router({
       coverageQuality: string;
       holdingsWithKnownValue: number;
       holdingsTotal: number;
+      holdingsUnpriceable: number;
+      /** See `AggregatedDailyPoint` — SC-151 and SC-149. A PnL figure whose
+       *  cost side is partly unknown, or whose value side leans on prices
+       *  older than the freshness window, is wrong in one direction only:
+       *  upward. The counts are what let the chart say so. */
+      holdingsStalePriced: number;
+      holdingsBasisUnknown: number;
+      /** The one that runs the other way (SC-160): outflows whose lots left
+       *  with no gain booked because nobody has answered them, so this
+       *  figure is short by whatever the real disposals among them were
+       *  worth. Actionable, unlike the three above it — the review queue
+       *  holds exactly these rows. */
+      transfersUnreviewed: number;
     };
     const points: LttbPoint<AggregatedDailyPoint>[] = daily.map((row) => ({
       x: new Date(row.snapshotDate).getTime(),
@@ -447,6 +385,10 @@ export const portfolioRouter = router({
         coverageQuality: p.raw.coverageQuality,
         holdingsWithKnownValue: p.raw.holdingsWithKnownValue,
         holdingsTotal: p.raw.holdingsTotal,
+        holdingsUnpriceable: p.raw.holdingsUnpriceable,
+        holdingsStalePriced: p.raw.holdingsStalePriced,
+        holdingsBasisUnknown: p.raw.holdingsBasisUnknown,
+        transfersUnreviewed: p.raw.transfersUnreviewed,
       };
     });
     return { series, baseCurrencyId: baseId, granularity };
@@ -579,7 +521,22 @@ export const portfolioRouter = router({
                  SELECT 1 FROM token_prices p
                  WHERE p.token_id = h.token_id
                    AND p.timestamp > NOW() - INTERVAL '7 days'
-               ) AS is_priced
+               ) AS is_priced,
+               -- The same behavioural predicate the coverage denominator
+               -- uses (SC-146): never quoted once, and still in an
+               -- unpriceable cooldown. Split out of unpriced_visible
+               -- because an airdrop token with no market is not a defect
+               -- in our pricing, and warning about it forever trains the
+               -- reader to ignore the panel.
+               EXISTS (
+                 SELECT 1 FROM tokens t
+                 WHERE t.id = h.token_id
+                   AND t.unpriceable_until IS NOT NULL
+                   AND t.unpriceable_until > NOW()
+                   AND NOT EXISTS (
+                     SELECT 1 FROM token_prices p2 WHERE p2.token_id = t.id
+                   )
+               ) AS is_unpriceable
         FROM user_h h
       )
       SELECT
@@ -596,7 +553,13 @@ export const portfolioRouter = router({
           WHERE h.is_hidden = false
             AND h.balance_n > 0
             AND p.is_priced = false
+            AND p.is_unpriceable = false
         )::int AS unpriced_visible,
+        COUNT(*) FILTER (
+          WHERE h.is_hidden = false
+            AND h.balance_n > 0
+            AND p.is_unpriceable = true
+        )::int AS unpriceable_visible,
         COUNT(*) FILTER (
           WHERE c.opening_balance_n < 0
         )::int AS negative_opening,
@@ -613,6 +576,7 @@ export const portfolioRouter = router({
       zero_visible: number;
       stale_zero: number;
       unpriced_visible: number;
+      unpriceable_visible: number;
       negative_opening: number;
       no_coverage: number;
     }>;
@@ -623,6 +587,7 @@ export const portfolioRouter = router({
       zero_visible: 0,
       stale_zero: 0,
       unpriced_visible: 0,
+      unpriceable_visible: 0,
       negative_opening: 0,
       no_coverage: 0,
     };
@@ -635,6 +600,7 @@ export const portfolioRouter = router({
         zeroVisible: counts.zero_visible,
         zeroVisibleStale: counts.stale_zero,
         unpricedVisible: counts.unpriced_visible,
+        unpriceableVisible: counts.unpriceable_visible,
         negativeOpening: counts.negative_opening,
         missingCoverage: counts.no_coverage,
       },

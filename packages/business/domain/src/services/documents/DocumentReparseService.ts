@@ -41,11 +41,17 @@ export class DocumentReparseService {
 
   /**
    * `file-missing` is checked BEFORE anything is cleared. A document whose
-   * `r2Key` still points into `temp/` has no object behind it — the parse
-   * job deleted it and R2's lifecycle rule swept the prefix — so the
-   * worker's `storage.read` would fail. Clearing first and discovering
-   * that afterwards would cost the user their extractions for a re-parse
-   * that was never going to run.
+   * `r2Key` still points into `temp/` is treated as having no object behind
+   * it — the same `isRetained` call `DocumentDownloadService` makes, and the
+   * same conservative reading: usually the parse job deleted the key, and
+   * past 30 days the bucket's lifecycle rule has (SC-144). Clearing the
+   * extractions first and discovering that afterwards would cost the user
+   * their extractions for a re-parse that was never going to run.
+   *
+   * It is deliberately not a lookup. A temp-keyed row whose object happens to
+   * still be there is reachable this way and is refused, which costs a rare
+   * re-parse; the alternative costs a user their extractions, and only one of
+   * those is recoverable.
    */
   async prepare(documentId: string, userId: string): Promise<DocumentReparseOutcome> {
     const document = await this.documents.findByIdAndUser(documentId, userId);

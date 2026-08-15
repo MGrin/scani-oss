@@ -1,11 +1,13 @@
 import type { Group } from '@scani/db/schema';
 import { AccountRepository, GroupRepository, HoldingRepository } from '@scani/domain/repositories';
+import { GroupValuationService } from '@scani/domain/services';
 import { AssignAccountGroupsUseCase, AssignHoldingGroupsUseCase } from '@scani/domain/use-cases';
 import { emitBulkEntityChanges, emitEntityChange } from '@scani/realtime';
 import {
   AssignAccountGroupsDto,
   AssignHoldingGroupsDto,
   CreateGroupDto,
+  GroupWithCountsDto,
   IdInputDto,
   UpdateGroupDto,
 } from '@scani/shared';
@@ -32,10 +34,35 @@ export const groupsRouter = router({
     return await Container.get(GroupRepository).findByUser(dbUser.id);
   }),
 
-  // Get all groups with counts (holdings and accounts)
-  getAllWithCounts: protectedProcedure.query(async ({ ctx }) => {
+  // Get all groups with counts (holdings and accounts).
+  //
+  // The output schema is the contract, not decoration: it coerces the counts
+  // so a bigint that escapes its `::int` cast can never reach a client as a
+  // string again (SC-88).
+  getAllWithCounts: protectedProcedure
+    .output(z.array(GroupWithCountsDto))
+    .query(async ({ ctx }) => {
+      const { dbUser } = await requireAuth(ctx);
+      return await Container.get(GroupRepository).findByUserWithCounts(dbUser.id);
+    }),
+
+  /**
+   * What each group is worth, in the user's base currency.
+   *
+   * Alongside `getAllWithCounts` rather than folded into it: the counts are a
+   * repository query cheap enough for a command palette to run, and this one
+   * prices the whole portfolio. Keeping them apart means the pickers that only
+   * need names do not wait on a valuation, while every surface that shows the
+   * figure reads it from one place — one query for all groups, not one per
+   * group, and no client-side join against the allocation.
+   */
+  getValues: protectedProcedure.query(async ({ ctx }) => {
     const { dbUser } = await requireAuth(ctx);
-    return await Container.get(GroupRepository).findByUserWithCounts(dbUser.id);
+    return await Container.get(GroupValuationService).execute(
+      dbUser.id,
+      dbUser.baseCurrencyId || undefined,
+      ctx.requestCache
+    );
   }),
 
   // Get a specific group by ID

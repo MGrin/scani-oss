@@ -3,7 +3,10 @@ import type { DatabaseTransaction } from '@scani/db';
 import { Container } from 'typedi';
 import { PaymentOccurrenceRepository } from '../../../src/repositories/PaymentOccurrenceRepository';
 import { PaymentRepository } from '../../../src/repositories/PaymentRepository';
-import { PaymentService } from '../../../src/services/payments/PaymentService';
+import {
+  PaymentHasSettledOccurrencesError,
+  PaymentService,
+} from '../../../src/services/payments/PaymentService';
 import { withTestDb } from '../../../test/helpers/db';
 import { makeDocument, makeDocumentExtraction, makeUser } from '../../../test/helpers/factories';
 import {
@@ -445,6 +448,150 @@ describe('PaymentService', () => {
     });
   });
 
+  // Regression suite for the paused-edit wipe: `update`'s shape-change
+  // branch deletes every `scheduled` row and re-materialises, but
+  // `generateOccurrences` refuses to expand a paused schedule — so the
+  // delete ran, the regenerate returned nothing, and a paused payment
+  // came out of a routine edit with an empty schedule and a success
+  // toast. Nothing asserted the pair stayed balanced, which is how half
+  // of it shipped silently disabled.
+  describe('update — a paused payment keeps its schedule', () => {
+    async function makeMonthlyPayment(tx: DatabaseTransaction, userId: string) {
+      const payment = await makePayment(tx, {
+        userId,
+        anchorDate: monthsFromNowOnDay(-3, 10),
+        intervalUnit: 'month',
+        intervalCount: 1,
+        expectedAmount: '12.99',
+      });
+      await service().materialise(userId, payment.id, tx);
+      return payment;
+    }
+
+    test('a shape edit produces the same due dates whether the payment is paused or active', async () => {
+      await withTestDb(async (tx) => {
+        const user = await makeUser(tx);
+        const active = await makeMonthlyPayment(tx, user.id);
+        const paused = await makeMonthlyPayment(tx, user.id);
+        await service().pause(user.id, paused.id, tx);
+
+        const newAnchor = monthsFromNowOnDay(-3, 12);
+        await service().update(user.id, active.id, { anchorDate: newAnchor }, tx);
+        await service().update(user.id, paused.id, { anchorDate: newAnchor }, tx);
+
+        const dates = async (paymentId: string) =>
+          (await occurrences().findByPaymentId(paymentId, tx)).map((o) => o.dueDate).sort();
+
+        const activeDates = await dates(active.id);
+        const pausedDates = await dates(paused.id);
+
+        // The pause governs whether the rule keeps producing NEW due
+        // dates, not which dates the rule names. An edit must land the
+        // same either way.
+        expect(activeDates.length).toBeGreaterThan(1);
+        expect(pausedDates).toEqual(activeDates);
+        expect(pausedDates.every((d) => d.endsWith('-12'))).toBe(true);
+      });
+    });
+
+    test('the payment stays paused, and the rows it keeps are all still scheduled', async () => {
+      await withTestDb(async (tx) => {
+        const user = await makeUser(tx);
+        const payment = await makeMonthlyPayment(tx, user.id);
+        await service().pause(user.id, payment.id, tx);
+
+        const updated = await service().update(
+          user.id,
+          payment.id,
+          { anchorDate: monthsFromNowOnDay(-3, 12) },
+          tx
+        );
+
+        expect(updated.status).toBe('paused');
+        expect(updated.pausedAt).not.toBeNull();
+
+        const rows = await occurrences().findByPaymentId(payment.id, tx);
+        expect(rows.length).toBeGreaterThan(1);
+        expect(rows.every((o) => o.status === 'scheduled')).toBe(true);
+      });
+    });
+
+    test('a settled row follows the shape change while paused, with no unpaid twin beside it', async () => {
+      await withTestDb(async (tx) => {
+        const user = await makeUser(tx);
+        const payment = await makeMonthlyPayment(tx, user.id);
+
+        const target = await occurrences().findByPaymentIdAndDueDate(
+          payment.id,
+          monthsFromNowOnDay(-2, 10),
+          tx
+        );
+        if (!target) throw new Error('expected a materialised occurrence to settle');
+        const settled = await service().settleOccurrence(
+          user.id,
+          target.id,
+          { status: 'matched', actualAmount: '13.50' },
+          tx
+        );
+
+        await service().pause(user.id, payment.id, tx);
+        await service().update(user.id, payment.id, { anchorDate: monthsFromNowOnDay(-3, 8) }, tx);
+
+        const rows = await occurrences().findByPaymentId(payment.id, tx);
+        const settledRows = rows.filter((r) => r.status !== 'scheduled');
+
+        // Being paused must not exempt a settled row from the ordinal
+        // pairing: leaving it on the old rule's date while the new rule
+        // materialises its own is exactly the ghost-plus-duplicate the
+        // remap exists to prevent.
+        expect(settledRows.length).toBe(1);
+        expect(settledRows[0]?.id).toBe(settled.id);
+        expect(settledRows[0]?.dueDate).toBe(monthsFromNowOnDay(-2, 8));
+        expect(settledRows[0]?.actualAmount).toBe('13.50');
+        expect(rows.filter((r) => r.dueDate === monthsFromNowOnDay(-2, 10))).toEqual([]);
+      });
+    });
+
+    test('resuming after a paused edit adds nothing the edit did not already write', async () => {
+      await withTestDb(async (tx) => {
+        const user = await makeUser(tx);
+        const payment = await makeMonthlyPayment(tx, user.id);
+        await service().pause(user.id, payment.id, tx);
+        await service().update(user.id, payment.id, { anchorDate: monthsFromNowOnDay(-3, 12) }, tx);
+
+        const afterEdit = (await occurrences().findByPaymentId(payment.id, tx)).map(
+          (o) => o.dueDate
+        );
+        await service().resume(user.id, payment.id, tx);
+        const afterResume = (await occurrences().findByPaymentId(payment.id, tx)).map(
+          (o) => o.dueDate
+        );
+
+        // Resume re-materialises from the same anchor, so it must find
+        // every slot already filled — nothing appears, nothing doubles.
+        expect(afterResume).toEqual(afterEdit);
+      });
+    });
+
+    test('editing only the amount while paused still repriced the future rows it left in place', async () => {
+      await withTestDb(async (tx) => {
+        const user = await makeUser(tx);
+        const payment = await makeMonthlyPayment(tx, user.id);
+        await service().pause(user.id, payment.id, tx);
+
+        await service().update(user.id, payment.id, { expectedAmount: '19.99' }, tx);
+
+        const rows = await occurrences().findByPaymentId(payment.id, tx);
+        expect(rows.length).toBeGreaterThan(1);
+        expect(
+          rows
+            .filter((r) => r.dueDate >= todayUtcString())
+            .every((r) => r.expectedAmount === '19.99')
+        ).toBe(true);
+      });
+    });
+  });
+
   describe('ownership', () => {
     test('materialise throws for a payment belonging to another user and writes nothing', async () => {
       await withTestDb(async (tx) => {
@@ -533,6 +680,244 @@ describe('PaymentService', () => {
         await service().materialise(user.id, payment.id, tx);
         const after = await occurrences().findByPaymentId(payment.id, tx);
         expect(after.length).toBe(before.length);
+      });
+    });
+
+    test('records when the pause started, and re-pausing does not move that', async () => {
+      await withTestDb(async (tx) => {
+        const user = await makeUser(tx);
+        const payment = await makePayment(tx, { userId: user.id, anchorDate: todayUtcString() });
+
+        const paused = await service().pause(user.id, payment.id, tx);
+        expect(paused.pausedAt).not.toBeNull();
+
+        // Re-pausing must keep the ORIGINAL window: the elapsed due dates
+        // fell inside the first pause, not a second one starting now.
+        const again = await service().pause(user.id, payment.id, tx);
+        expect(again.pausedAt?.getTime()).toBe(paused.pausedAt?.getTime());
+      });
+    });
+  });
+
+  describe('resume', () => {
+    // A weekly cadence anchored a whole number of weeks back, so every
+    // expected due date is a fixed number of days from today regardless of
+    // the month — the month-length clamping in `recurrence.ts` can't make
+    // these assertions drift.
+    async function makeWeeklyPausedPayment(tx: DatabaseTransaction, pausedDaysAgo: number) {
+      const user = await makeUser(tx);
+      const payment = await makePayment(tx, {
+        userId: user.id,
+        intervalUnit: 'week',
+        intervalCount: 1,
+        anchorDate: pastDateString(28),
+      });
+      await service().materialise(user.id, payment.id, tx);
+      await service().pause(user.id, payment.id, tx);
+      // Backdate the pause: `pause` stamps "now", and these tests need a
+      // window that already spans due dates.
+      await payments().update(
+        payment.id,
+        { pausedAt: new Date(`${pastDateString(pausedDaysAgo)}T00:00:00.000Z`) },
+        tx
+      );
+      return { user, payment };
+    }
+
+    test('restores the ORIGINAL schedule — the anchor never moves', async () => {
+      await withTestDb(async (tx) => {
+        const user = await makeUser(tx);
+        const anchor = pastDateString(28);
+        const payment = await makePayment(tx, {
+          userId: user.id,
+          intervalUnit: 'week',
+          intervalCount: 1,
+          anchorDate: anchor,
+        });
+        await service().materialise(user.id, payment.id, tx);
+        const beforePause = (await occurrences().findByPaymentId(payment.id, tx)).map(
+          (o) => o.dueDate
+        );
+
+        await service().pause(user.id, payment.id, tx);
+        const resumed = await service().resume(user.id, payment.id, tx);
+
+        expect(resumed.status).toBe('active');
+        expect(resumed.pausedAt).toBeNull();
+        expect(resumed.anchorDate).toBe(anchor);
+
+        // Same dates, not a schedule restarted from today. Resume is not
+        // an edit to the rule.
+        const afterResume = (await occurrences().findByPaymentId(payment.id, tx)).map(
+          (o) => o.dueDate
+        );
+        expect(afterResume).toEqual(beforePause);
+      });
+    });
+
+    test('due dates the pause covered become skipped, and none of them come back overdue', async () => {
+      await withTestDb(async (tx) => {
+        const { user, payment } = await makeWeeklyPausedPayment(tx, 15);
+
+        await service().resume(user.id, payment.id, tx);
+
+        const rows = await occurrences().findByPaymentId(payment.id, tx);
+        const statusByDate = new Map(rows.map((o) => [o.dueDate, o.status]));
+
+        // Inside the window [15 days ago, today).
+        expect(statusByDate.get(pastDateString(14))).toBe('skipped');
+        expect(statusByDate.get(pastDateString(7))).toBe('skipped');
+
+        // Already overdue BEFORE the pause started — the user never
+        // decided anything about these, so they keep standing.
+        expect(statusByDate.get(pastDateString(28))).toBe('scheduled');
+        expect(statusByDate.get(pastDateString(21))).toBe('scheduled');
+
+        // Today is active again, so today's due date is live, not skipped.
+        expect(statusByDate.get(todayUtcString())).toBe('scheduled');
+
+        // Nothing in the window is left standing as a debt.
+        const overdueInWindow = rows.filter(
+          (o) =>
+            o.status === 'scheduled' &&
+            o.dueDate >= pastDateString(15) &&
+            o.dueDate < todayUtcString()
+        );
+        expect(overdueInWindow).toEqual([]);
+      });
+    });
+
+    test('a settled occurrence inside the pause window is never overwritten', async () => {
+      await withTestDb(async (tx) => {
+        const { user, payment } = await makeWeeklyPausedPayment(tx, 15);
+        const matched = await occurrences().findByPaymentIdAndDueDate(
+          payment.id,
+          pastDateString(14),
+          tx
+        );
+        if (!matched) throw new Error('expected an occurrence 14 days ago');
+        await service().settleOccurrence(
+          user.id,
+          matched.id,
+          { status: 'matched', actualAmount: '9.99' },
+          tx
+        );
+
+        await service().resume(user.id, payment.id, tx);
+
+        const after = await occurrences().findByPaymentIdAndDueDate(
+          payment.id,
+          pastDateString(14),
+          tx
+        );
+        expect(after?.status).toBe('matched');
+        expect(after?.actualAmount).toBe('9.99');
+      });
+    });
+
+    test('pausing and resuming on the same day changes nothing', async () => {
+      await withTestDb(async (tx) => {
+        const user = await makeUser(tx);
+        const payment = await makePayment(tx, {
+          userId: user.id,
+          intervalUnit: 'week',
+          intervalCount: 1,
+          anchorDate: pastDateString(28),
+        });
+        await service().materialise(user.id, payment.id, tx);
+        const before = await occurrences().findByPaymentId(payment.id, tx);
+
+        await service().pause(user.id, payment.id, tx);
+        await service().resume(user.id, payment.id, tx);
+
+        const after = await occurrences().findByPaymentId(payment.id, tx);
+        expect(after.map((o) => [o.dueDate, o.status])).toEqual(
+          before.map((o) => [o.dueDate, o.status])
+        );
+      });
+    });
+
+    test('resuming an already-active payment is a no-op, not an error', async () => {
+      await withTestDb(async (tx) => {
+        const user = await makeUser(tx);
+        const payment = await makePayment(tx, {
+          userId: user.id,
+          intervalUnit: 'week',
+          intervalCount: 1,
+          anchorDate: pastDateString(28),
+        });
+        await service().materialise(user.id, payment.id, tx);
+        const before = await occurrences().findByPaymentId(payment.id, tx);
+
+        const resumed = await service().resume(user.id, payment.id, tx);
+        expect(resumed.status).toBe('active');
+
+        const after = await occurrences().findByPaymentId(payment.id, tx);
+        expect(after.map((o) => [o.dueDate, o.status])).toEqual(
+          before.map((o) => [o.dueDate, o.status])
+        );
+      });
+    });
+
+    test('refuses to resume an ended payment', async () => {
+      await withTestDb(async (tx) => {
+        const user = await makeUser(tx);
+        const payment = await makePayment(tx, { userId: user.id, anchorDate: todayUtcString() });
+        await service().end(user.id, payment.id, todayUtcString(), tx);
+
+        await expect(service().resume(user.id, payment.id, tx)).rejects.toThrow(
+          /cannot be resumed/
+        );
+      });
+    });
+
+    test('a payment paused before pausedAt existed resumes without skipping anything', async () => {
+      await withTestDb(async (tx) => {
+        const user = await makeUser(tx);
+        const payment = await makePayment(tx, {
+          userId: user.id,
+          intervalUnit: 'week',
+          intervalCount: 1,
+          anchorDate: pastDateString(28),
+        });
+        await service().materialise(user.id, payment.id, tx);
+        // The legacy shape: paused, with no recorded pause start.
+        await payments().update(payment.id, { status: 'paused', pausedAt: null }, tx);
+
+        await service().resume(user.id, payment.id, tx);
+
+        const rows = await occurrences().findByPaymentId(payment.id, tx);
+        expect(rows.some((o) => o.status === 'skipped')).toBe(false);
+      });
+    });
+
+    test('a pause longer than the materialisation horizon still skips its whole window', async () => {
+      await withTestDb(async (tx) => {
+        const user = await makeUser(tx);
+        // Anchored well over a year back, so the rows for the tail of the
+        // pause window only come into existence when `resume`
+        // re-materialises — they must be skipped, not surface as debts.
+        const payment = await makePayment(tx, {
+          userId: user.id,
+          intervalUnit: 'month',
+          intervalCount: 1,
+          anchorDate: monthsFromNowOnDay(-20, 10),
+          status: 'paused',
+          pausedAt: new Date(`${monthsFromNowOnDay(-18, 10)}T00:00:00.000Z`),
+        });
+
+        await service().resume(user.id, payment.id, tx);
+
+        const rows = await occurrences().findByPaymentId(payment.id, tx);
+        const inWindow = rows.filter(
+          (o) => o.dueDate >= monthsFromNowOnDay(-18, 10) && o.dueDate < todayUtcString()
+        );
+        expect(inWindow.length).toBeGreaterThan(12);
+        expect(inWindow.every((o) => o.status === 'skipped')).toBe(true);
+        // And the schedule ahead is live again.
+        expect(rows.some((o) => o.dueDate > todayUtcString() && o.status === 'scheduled')).toBe(
+          true
+        );
       });
     });
   });
@@ -707,6 +1092,134 @@ describe('PaymentService', () => {
         expect(pastDates.length).toBeGreaterThan(0);
         expect(pastDates.every((d) => d.endsWith('-12'))).toBe(true);
         expect(new Set(pastDates).size).toBe(pastDates.length);
+      });
+    });
+  });
+
+  // SC-83. `delete` and `end` are two different claims about the same record —
+  // "this should never have existed" and "this really ran and has stopped" —
+  // and the whole value of having both is that only one of them destroys
+  // history. These tests pin the line between them.
+  describe('delete', () => {
+    test('removes the payment and cascades every occurrence with it', async () => {
+      await withTestDb(async (tx) => {
+        const user = await makeUser(tx);
+        const payment = await makePayment(tx, {
+          userId: user.id,
+          intervalUnit: 'month',
+          intervalCount: 1,
+          anchorDate: pastDateString(60),
+        });
+        await service().materialise(user.id, payment.id, tx);
+        expect((await occurrences().findByPaymentId(payment.id, tx)).length).toBeGreaterThan(0);
+
+        const impact = await service().delete(user.id, payment.id, tx);
+        expect(impact.settled).toBe(0);
+        expect(impact.scheduled).toBeGreaterThan(0);
+
+        expect(await payments().findByIdAndUser(payment.id, user.id, tx)).toBeNull();
+        // ON DELETE CASCADE, so nothing has to be swept afterwards.
+        expect(await occurrences().findByPaymentId(payment.id, tx)).toHaveLength(0);
+      });
+    });
+
+    test('refuses a payment with a settled occurrence, and destroys nothing', async () => {
+      await withTestDb(async (tx) => {
+        const user = await makeUser(tx);
+        const payment = await makePayment(tx, { userId: user.id });
+        await makePaymentOccurrence(tx, {
+          paymentId: payment.id,
+          dueDate: pastDateString(30),
+          status: 'matched',
+          actualAmount: '12.99',
+        });
+
+        const attempt = service().delete(user.id, payment.id, tx);
+        await expect(attempt).rejects.toThrow(PaymentHasSettledOccurrencesError);
+
+        const error = await attempt.catch((thrown: unknown) => thrown);
+        expect((error as PaymentHasSettledOccurrencesError).settledCount).toBe(1);
+
+        expect(await payments().findByIdAndUser(payment.id, user.id, tx)).not.toBeNull();
+        expect(await occurrences().findByPaymentId(payment.id, tx)).toHaveLength(1);
+      });
+    });
+
+    test('a skipped occurrence is discarded, not a blocker', async () => {
+      await withTestDb(async (tx) => {
+        const user = await makeUser(tx);
+        const payment = await makePayment(tx, { userId: user.id });
+        await makePaymentOccurrence(tx, {
+          paymentId: payment.id,
+          dueDate: pastDateString(30),
+          status: 'skipped',
+        });
+
+        // A deliberate "not this month" on a payment that should never have
+        // existed is a decision about a mistake — it is named in the
+        // confirmation, and it does not describe money that moved.
+        const impact = await service().delete(user.id, payment.id, tx);
+        expect(impact).toEqual({ scheduled: 0, settled: 0, skipped: 1 });
+        expect(await payments().findByIdAndUser(payment.id, user.id, tx)).toBeNull();
+      });
+    });
+
+    test("another user's payment is not found, and is not deleted", async () => {
+      await withTestDb(async (tx) => {
+        const owner = await makeUser(tx);
+        const stranger = await makeUser(tx);
+        const payment = await makePayment(tx, { userId: owner.id });
+
+        await expect(service().delete(stranger.id, payment.id, tx)).rejects.toThrow('not found');
+        expect(await payments().findByIdAndUser(payment.id, owner.id, tx)).not.toBeNull();
+      });
+    });
+
+    test('deleteImpact counts the three kinds without writing anything', async () => {
+      await withTestDb(async (tx) => {
+        const user = await makeUser(tx);
+        const payment = await makePayment(tx, { userId: user.id });
+        await makePaymentOccurrence(tx, {
+          paymentId: payment.id,
+          dueDate: pastDateString(60),
+          status: 'matched',
+        });
+        await makePaymentOccurrence(tx, {
+          paymentId: payment.id,
+          dueDate: pastDateString(30),
+          status: 'skipped',
+        });
+        await makePaymentOccurrence(tx, {
+          paymentId: payment.id,
+          dueDate: todayUtcString(),
+          status: 'scheduled',
+        });
+
+        expect(await service().deleteImpact(user.id, payment.id, tx)).toEqual({
+          scheduled: 1,
+          settled: 1,
+          skipped: 1,
+        });
+        expect(await occurrences().findByPaymentId(payment.id, tx)).toHaveLength(3);
+      });
+    });
+
+    test('end keeps the record delete would have removed', async () => {
+      await withTestDb(async (tx) => {
+        const user = await makeUser(tx);
+        const payment = await makePayment(tx, { userId: user.id });
+        await makePaymentOccurrence(tx, {
+          paymentId: payment.id,
+          dueDate: pastDateString(30),
+          status: 'matched',
+        });
+
+        // The pair, stated as one assertion: the operation delete refuses is
+        // exactly the operation end is for, and end leaves the history intact.
+        const ended = await service().end(user.id, payment.id, undefined, tx);
+        expect(ended.status).toBe('ended');
+        expect(await payments().findByIdAndUser(payment.id, user.id, tx)).not.toBeNull();
+        expect(await occurrences().findByPaymentId(payment.id, tx)).toHaveLength(1);
       });
     });
   });

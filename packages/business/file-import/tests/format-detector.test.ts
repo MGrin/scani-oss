@@ -108,6 +108,22 @@ describe('detectBankTemplate', () => {
   it('should return null for unknown headers', () => {
     expect(detectBankTemplate(['Col1', 'Col2', 'Col3'])).toBe(null);
   });
+
+  // SC-137. This header matches four of Wise's five columns and used to
+  // win on that alone; Wise then read balances from a 'Running Balance'
+  // column the file does not have, and the import created a 0-balance
+  // holding while reporting success.
+  it('does not claim a generic broker CSV for Wise on a partial match', () => {
+    expect(detectBankTemplate(['Date', 'Description', 'Amount', 'Currency', 'Balance'])).toBe(null);
+  });
+
+  it('rejects a template whose balance column is the one that is missing', () => {
+    expect(detectBankTemplate(['Date', 'Description', 'Amount', 'Currency'])).toBe(null);
+  });
+
+  it('rejects a partial Revolut header rather than guessing', () => {
+    expect(detectBankTemplate(['Started Date', 'Description', 'Amount'])).toBe(null);
+  });
 });
 
 describe('isInteractiveBrokersCsv', () => {

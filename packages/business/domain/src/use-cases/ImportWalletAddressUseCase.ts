@@ -589,6 +589,12 @@ export class ImportWalletAddressUseCase {
     const total = detectedInstitutionIds.length;
     for (const institutionId of detectedInstitutionIds) {
       chainIndex++;
+      // Tracked outside the try because the catch reports them: an error
+      // pushed as `chainName: 'Unknown'` is what the user reads on the
+      // review card, and it does not tell them which half of their wallet
+      // is missing (SC-139). Narrowed as soon as each is resolved.
+      let chainName = 'Unknown';
+      let chainKey = institutionId;
       try {
         const institutionCode = await this.walletDiscovery.resolveInstitutionCode(institutionId);
         const provider = institutionCode ? registry.getBalanceFetcher(institutionCode) : null;
@@ -614,6 +620,7 @@ export class ImportWalletAddressUseCase {
           });
           continue;
         }
+        chainName = institution.name;
 
         const mapping = await this.mappingRepository.findByInstitutionId(institutionId);
         if (!mapping) {
@@ -624,6 +631,7 @@ export class ImportWalletAddressUseCase {
           });
           continue;
         }
+        chainKey = mapping.chainId;
 
         const accountName = this.generateAccountName(
           institution.name,
@@ -665,11 +673,16 @@ export class ImportWalletAddressUseCase {
         });
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
+        // The chain's own name, not 'Unknown': this string is what the
+        // review card shows the user when a chain could not be read, and
+        // "Unknown: rate limited" tells nobody which wallet half is
+        // missing (SC-139). `institution` is resolved above the try's
+        // failing calls, so it is available here.
         logger.error(
-          { userId, institutionId, error: errorMessage },
-          'Failed to fetch blockchain data for institution'
+          { userId, institutionId, chainName, errorMessage },
+          `Failed to fetch blockchain data for ${chainName}: ${errorMessage}`
         );
-        errors.push({ chainId: institutionId, chainName: 'Unknown', error: errorMessage });
+        errors.push({ chainId: chainKey, chainName, error: errorMessage });
       }
     }
 

@@ -12,9 +12,15 @@
 export const UPLOAD_LIMITS = {
   /**
    * Max size for a single presigned upload (screenshots, CSV files).
-   * Enforced at admission (storage.getUploadUrl) — the URL is bound to
-   * Content-Length when possible, and the R2 bucket has a lifecycle rule
-   * that sweeps oversized blobs.
+   * Enforced at admission (storage.getUploadUrl), and by the presigned URL
+   * itself, which binds Content-Length into the SigV4 signature — R2 rejects
+   * a PUT that does not match.
+   *
+   * That signature is the whole enforcement. This used to add "and the R2
+   * bucket has a lifecycle rule that sweeps oversized blobs"; an R2 lifecycle
+   * rule can only match on prefix and age, so no such rule is expressible,
+   * and none existed (SC-144). The 30-day `temp/` expiry that exists now is
+   * an orphan backstop and knows nothing about size.
    */
   PRESIGN_UPLOAD_BYTES: 8 * 1024 * 1024, // 8 MB
 

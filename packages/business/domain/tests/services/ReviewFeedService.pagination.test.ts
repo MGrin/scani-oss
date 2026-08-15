@@ -3,6 +3,7 @@ import Container from 'typedi';
 import { DocumentExtractionRepository } from '../../src/repositories/DocumentExtractionRepository';
 import { UserJobRepository } from '../../src/repositories/UserJobRepository';
 import { ReviewFeedService } from '../../src/services/ReviewFeedService';
+import { TransferReviewService } from '../../src/services/TransferReviewService';
 
 /**
  * Regression guard for the badge/feed mismatch found during manual testing.
@@ -19,15 +20,21 @@ import { ReviewFeedService } from '../../src/services/ReviewFeedService';
  * how much recent unrelated job traffic sits in front of it.
  */
 
-function makeService(jobs: unknown[]): ReviewFeedService {
+function makeService(jobs: unknown[], deadJobs: unknown[] = []): ReviewFeedService {
   Container.set(UserJobRepository, {
     // The real repository filters by kind/state/actionTakenAt in SQL and
     // applies no recency window, so the stub returns whatever it is given.
     findPendingReview: async () => jobs,
+    // The dead-job collector (SC-153) queries this too; these suites are
+    // about the review half, so it answers empty.
+    findDeadUnacknowledged: async () => deadJobs,
   } as unknown as UserJobRepository);
   Container.set(DocumentExtractionRepository, {
     findPendingByUser: async () => [],
   } as unknown as DocumentExtractionRepository);
+  Container.set(TransferReviewService, {
+    pendingSummary: async () => ({ count: 0, latestCreatedAt: null }),
+  } as unknown as TransferReviewService);
   const instance = new ReviewFeedService();
   Container.set(ReviewFeedService, instance);
   return instance;

@@ -12,19 +12,34 @@ function toDate(input: DateInput): Date | null {
 }
 
 /**
- * The reader's own locale, always.
+ * One locale, everywhere: `en-GB`.
  *
- * These four helpers used to default `locale` to `'en-US'`, and every one of
- * the ~20 call sites in the app omitted the argument — so a European reader
- * was shown `7/16/2026` while anything that reached for a bare
- * `toLocaleDateString()` on the same screen printed `16/07/2026`. Two orders,
- * one date, no way to tell which was which: `7/5/2026` is either 5 July or
- * 7 May depending on which line of the sheet you read it on (SC-175).
+ * SC-175 found a real defect — these helpers defaulted to `'en-US'` while
+ * anything reaching for a bare `toLocaleDateString()` used the runtime's, so
+ * one screen showed `7/16/2026` and `16/07/2026` at once. `7/5/2026` is
+ * either 5 July or 7 May depending on which line you read it on.
  *
- * `undefined` is not "no locale" — it is the runtime's, which in a browser is
- * the reader's. Callers may still pass one explicitly; nothing in the app
- * needs to.
+ * The first fix dropped the default so everything followed the reader's
+ * locale. That produced a worse failure: **the app has no i18n and every
+ * string in it is English**, so a reader whose device is set to Russian saw
+ * `14 авг. 2026 г., 16:43` sitting under an English heading, in an English
+ * sheet, beside English buttons. Reported from production the same day.
+ *
+ * Following the reader's locale is only coherent once the interface follows
+ * it too. Until then the honest answer is that this is an English product,
+ * so it shows English dates.
+ *
+ * `en-GB` rather than `en-US` for two reasons: it renders `16 Jul 2026`,
+ * which is month-named and therefore unambiguous in a way no numeric order
+ * can be; and `apps/backend/api/src/lib/pdf/layout.ts` already pins `en-GB`
+ * with `timeZone: 'UTC'`, so a statement and the screen it was exported from
+ * now agree.
+ *
+ * When real localisation arrives, this constant is the single place that
+ * changes — and the call sites, which all omit the argument, need no edit.
  */
+export const APP_LOCALE = 'en-GB';
+
 export type DateLocale = string | undefined;
 
 /**
@@ -32,7 +47,7 @@ export type DateLocale = string | undefined;
  * returns "just now". For >30 days falls back to an absolute date —
  * after that point absolute dates communicate better than "62d ago".
  */
-export function formatRelative(input: DateInput, locale?: DateLocale): string {
+export function formatRelative(input: DateInput, locale: DateLocale = APP_LOCALE): string {
   const date = toDate(input);
   if (!date) return '—';
   const diffMs = Date.now() - date.getTime();
@@ -65,7 +80,7 @@ export function formatIsoDate(input: DateInput): string {
  * Locale-formatted date+time string. Sensible default for "last
  * synced at" / "transaction occurred at" displays.
  */
-export function formatDateTime(input: DateInput, locale?: DateLocale): string {
+export function formatDateTime(input: DateInput, locale: DateLocale = APP_LOCALE): string {
   const date = toDate(input);
   if (!date) return '—';
   return date.toLocaleString(locale, {
@@ -86,7 +101,7 @@ export function formatDateTime(input: DateInput, locale?: DateLocale): string {
  * SC-175 anyway.) It is also what `formatDateTime` and the chart axis already
  * print, so one screen can show a date twice without showing it two ways.
  */
-export function formatDate(input: DateInput, locale?: DateLocale): string {
+export function formatDate(input: DateInput, locale: DateLocale = APP_LOCALE): string {
   const date = toDate(input);
   if (!date) return '—';
   return date.toLocaleDateString(locale, { dateStyle: 'medium' });

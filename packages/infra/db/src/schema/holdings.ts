@@ -138,6 +138,30 @@ export const holdingTransactions = pgTable(
     swapGroupId: uuid('swap_group_id'),
     // Links CEX withdraw ↔ wallet deposit (populated by Phase 3 matcher).
     transferGroupId: uuid('transfer_group_id'),
+    // The user's answer to "what actually happened to this outflow", for the
+    // ones `LinkTransferPairsUseCase` could not pair on its own — see
+    // TRANSFER_REVIEW_DECISIONS in @scani/shared for the three values.
+    //
+    // Only outflow rows ever carry it, and only a human writes it: the
+    // matcher may set `transfer_group_id` but never this column, so
+    // `transfer_review IS NOT NULL` means a person decided. That asymmetry is
+    // the point — it is what lets the matcher skip a row it would otherwise
+    // re-examine every night, and what stops a later heuristic run from
+    // quietly overruling an answer someone gave.
+    transferReview: text('transfer_review'),
+    transferReviewedAt: timestamp('transfer_reviewed_at', { withTimezone: true }),
+    // The same answer, divided (SC-181). A withdrawal of 4,000 can be 3,500
+    // moved to an account Scani cannot see and 500 that genuinely left, and
+    // every answer above applies to the whole row — so the lesser wrong had to
+    // be picked, overstating by 3,500 or understating by 500.
+    //
+    // Set together with `transfer_review = 'split'` and never apart: the
+    // column above is what the queue predicate and the matcher read, and a
+    // split with a NULL review would be a row that is answered and in the
+    // queue at once. `TransferReviewSplit` in @scani/shared is the shape;
+    // portions are unsigned token quantities that must sum EXACTLY to
+    // |quantity|, checked on write against this very row.
+    transferReviewSplit: jsonb('transfer_review_split'),
     // 'binance-api' | 'etherscan' | 'statement-csv' | 'screenshot' |
     // 'user-entered' | 'reconciliation-opening' | ...
     source: text('source').notNull(),
@@ -164,6 +188,15 @@ export const holdingTransactions = pgTable(
     ),
     transferGroupIdx: index('idx_holding_tx_transfer_group').on(table.transferGroupId),
     swapGroupIdx: index('idx_holding_tx_swap_group').on(table.swapGroupId),
+    // The transfer-review queue's own read: unpaired, undecided outflows for
+    // one user, newest first. Partial because that set is a rounding error
+    // next to the table — every paired outflow, every answered one and every
+    // inflow stays out of the index.
+    transferReviewPendingIdx: index('idx_holding_tx_transfer_review_pending')
+      .on(table.userId, table.occurredAt.desc())
+      .where(
+        sql`transfer_group_id IS NULL AND transfer_review IS NULL AND kind IN ('withdraw', 'transfer_out')`
+      ),
   })
 );
 

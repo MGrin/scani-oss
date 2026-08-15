@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { LIFECYCLE_MIRROR } from '../../src/consumer/lifecycle-mirror';
 import { UserJobProcessor } from '../../src/consumer/user-job-processor';
 import type { UserJobDescriptor } from '../../src/core/job-descriptor';
+import { DURABLE_RESULT_MAX_BYTES, readTruncationNotice } from '../../src/core/result-truncator';
 import type { LifecycleEvent, ProcessorContext, UserJobBase } from '../../src/core/types';
 import { RedisLifecyclePublisher } from '../../src/lifecycle/redis-lifecycle-publisher';
 
@@ -144,16 +145,64 @@ describe('UserJobProcessor — orchestration', () => {
     expect(caught).toBeInstanceOf(CustomError);
   });
 
-  test('truncates oversized handler results before lifecycle/publisher fires', async () => {
+  // The durable row keeps the payload the review UI has to read back;
+  // only the WS copy is capped (SC-145).
+  test('keeps a large handler result on the durable event and caps the wire copy', async () => {
     const huge = 'x'.repeat(64 * 1024);
     const proc = new StubProcessor(async () => ({ handled: huge }));
+    await proc.process(makeJob({ userId: 'u1', requestId: 'r1', value: 'v' }));
+
+    const completedEvent = mirrorEvents.find((e) => e.type === 'completed') as Extract<
+      LifecycleEvent,
+      { type: 'completed' }
+    >;
+    expect((completedEvent.result as Record<string, unknown>).handled).toBe(huge);
+
+    const published = publisherCalls.at(-1)?.payload as Record<string, unknown>;
+    const wire = published.result as Record<string, unknown>;
+    expect('handled' in wire).toBe(false);
+    expect(readTruncationNotice(wire)?.omittedFields).toEqual(['handled']);
+  });
+
+  test('drops a result past the durable cap without changing its field type', async () => {
+    const proc = new StubProcessor(async () => ({
+      handled: 'x'.repeat(DURABLE_RESULT_MAX_BYTES + 1024),
+    }));
     await proc.process(makeJob({ userId: 'u1', requestId: 'r1', value: 'v' }));
     const completedEvent = mirrorEvents.find((e) => e.type === 'completed') as Extract<
       LifecycleEvent,
       { type: 'completed' }
     >;
-    const sanitized = completedEvent.result as Record<string, unknown>;
-    expect(sanitized.handled).toEqual({ _truncated: true, originalBytes: expect.any(Number) });
+    const durable = completedEvent.result as Record<string, unknown>;
+    expect(durable.handled).toBeUndefined();
+    expect(readTruncationNotice(durable)?.omittedFields).toEqual(['handled']);
+  });
+
+  /**
+   * SC-155. The durable notice is what the new warn log gates on, so the two
+   * cases have to be distinguishable — and this is the assertion that keeps
+   * the alarm worth having.
+   *
+   * The WIRE copy is trimmed on almost every wallet import by design; the
+   * DURABLE copy being trimmed means a user cannot import something. If a
+   * wire-only trim also left a notice on the durable result, the log would
+   * fire constantly, and a warning that fires constantly is one nobody reads
+   * by the time the real case arrives.
+   */
+  test('a wire-only trim leaves no notice on the durable result (SC-155)', async () => {
+    const proc = new StubProcessor(async () => ({ handled: 'x'.repeat(64 * 1024) }));
+    await proc.process(makeJob({ userId: 'u1', requestId: 'r1', value: 'v' }));
+
+    const completedEvent = mirrorEvents.find((e) => e.type === 'completed') as Extract<
+      LifecycleEvent,
+      { type: 'completed' }
+    >;
+    expect(readTruncationNotice(completedEvent.result)).toBeNull();
+
+    // …while the wire copy carries one, which is the pair that makes the two
+    // budgets separately observable.
+    const wire = (publisherCalls.at(-1)?.payload as Record<string, unknown>).result;
+    expect(readTruncationNotice(wire)).not.toBeNull();
   });
 
   test('honors descriptor.sanitizeResult override', async () => {

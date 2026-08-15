@@ -2,7 +2,7 @@ import type { OutflowRateLimiter } from '@scani/rate-limiter';
 import { initTRPC, TRPCError } from '@trpc/server';
 import type { OpenApiMeta } from 'trpc-openapi';
 import type { ApiKeyContext } from '../auth/api-key';
-import { validateBearerToken } from '../auth/api-key';
+import { AUTH_MESSAGES, validateBearerToken } from '../auth/api-key';
 import type { CloudBetterAuthInstance } from '../auth/better-auth';
 import type { DataProviderEnv } from '../config/env';
 import type { CloudDb } from '../db/connection';
@@ -18,13 +18,20 @@ export interface CloudSessionUser {
 
 export interface DataProviderContext {
   auth: ApiKeyContext | null;
+  /**
+   * Why bearer auth failed, when it did. Kept rather than discarded so
+   * `bearerProcedure` can tell the caller which failure this was — a
+   * revoked key used to report "Bearer token required", which sent
+   * operators to audit header plumbing they had got right (SC-106).
+   * Null when auth succeeded or when no bearer was attempted.
+   */
+  authFailure: TRPCError | null;
   cloudUser: CloudSessionUser | null;
   requestId: string;
   usage: UsageContext;
   // Best-effort client IP, read from `x-forwarded-for` (Fly's edge sets
-  // this) or `fly-client-ip`. Used by public procedures (e.g.
-  // contact.submit) for per-IP rate limiting; never persisted
-  // unhashed. Null when no
+  // this) or `fly-client-ip`. Used by public procedures (waitlist.join)
+  // for per-IP rate limiting; never persisted unhashed. Null when no
   // header is present (direct internal calls / tests).
   clientIp: string | null;
 }
@@ -59,6 +66,7 @@ export function buildCreateContext({ env, getCloudDb, getBetterAuth }: BuildCont
     const requestId = req.headers.get('x-request-id') ?? crypto.randomUUID();
 
     let auth: ApiKeyContext | null = null;
+    let authFailure: TRPCError | null = null;
     try {
       auth = await validateBearerToken({
         authHeader: req.headers.get('authorization'),
@@ -68,10 +76,21 @@ export function buildCreateContext({ env, getCloudDb, getBetterAuth }: BuildCont
           : null,
         cloudDb: getCloudDb(),
       });
-    } catch {
+    } catch (err) {
       // Bearer token absent or invalid; the cookie path may still let
-      // the request through. Procedures that require M2M re-check `ctx.auth`.
+      // the request through. Procedures that require M2M re-check
+      // `ctx.auth` and re-throw `ctx.authFailure`. A non-TRPCError here
+      // is the DB lookup itself failing — never the caller's key, so it
+      // must not be reported as one.
       auth = null;
+      authFailure =
+        err instanceof TRPCError
+          ? err
+          : new TRPCError({
+              code: 'UNAUTHORIZED',
+              message: AUTH_MESSAGES.verificationFailed,
+              cause: err,
+            });
     }
 
     let cloudUser: CloudSessionUser | null = null;
@@ -97,7 +116,7 @@ export function buildCreateContext({ env, getCloudDb, getBetterAuth }: BuildCont
     // tail — the leftmost entries are attacker-controllable, so we trust
     // only the rightmost element. Keying off the leftmost entry would
     // let a caller rotate fake prefixes and trivially bypass per-IP
-    // rate limits (e.g. contact.submit). Matches the rule applied by
+    // rate limits (e.g. waitlist.join). Matches the rule applied by
     // @scani/rate-limiter's defaultInflowKey.
     const flyClientIp = req.headers.get('fly-client-ip');
     const xff = req.headers.get('x-forwarded-for');
@@ -108,7 +127,7 @@ export function buildCreateContext({ env, getCloudDb, getBetterAuth }: BuildCont
       .at(-1);
     const clientIp = flyClientIp ?? xffTail ?? null;
 
-    return { auth, cloudUser, requestId, usage: createUsageContext(), clientIp };
+    return { auth, authFailure, cloudUser, requestId, usage: createUsageContext(), clientIp };
   };
 }
 
@@ -157,7 +176,13 @@ export const publicProcedure = t.procedure;
  */
 export const bearerProcedure = t.procedure.use(usageMiddleware).use(({ ctx, next }) => {
   if (!ctx.auth) {
-    throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Bearer token required' });
+    // `authFailure` carries which refusal this was. It is only absent
+    // when nothing ever attempted bearer auth (a cookie-only caller
+    // reaching an M2M route), and that case is the missing header.
+    throw (
+      ctx.authFailure ??
+      new TRPCError({ code: 'UNAUTHORIZED', message: AUTH_MESSAGES.missingHeader })
+    );
   }
   return next({
     ctx: {

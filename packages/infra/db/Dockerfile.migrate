@@ -17,8 +17,14 @@
 # and the managed-deploy pattern (CI runs migrations as a separate deploy
 # step).
 #
+# The migrator refuses any target that is not loopback unless the caller
+# names that target's hostname on the command line — see the gate in
+# `src/migrate.ts`. In a container the database is essentially never on
+# loopback, so the host is passed explicitly below.
+#
 # Usage (standalone):
-#   docker run --rm -e DATABASE_URL=postgres://… scani/migrate:latest
+#   docker run --rm -e DATABASE_URL=postgres://…@db.example.com/scani \
+#     scani/migrate:latest /app/migrate --allow-remote db.example.com
 #
 # Usage (docker-compose.prod.yml):
 #   docker compose -f docker-compose.prod.yml --profile migrate run --rm migrate

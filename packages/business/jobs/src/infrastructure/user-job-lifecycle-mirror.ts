@@ -27,6 +27,19 @@ export class UserJobLifecycleMirror implements LifecycleMirror {
           attemptsAllowed: event.attemptsAllowed,
         });
         return;
+      // The queue has stopped trying (SC-153). `failed` above fires on every
+      // attempt and cannot say that; this fires once, from BullMQ's own
+      // terminal event, and it is the only write that reaches a job whose
+      // payload never passed validation — that path throws before any other
+      // lifecycle event exists.
+      case 'dead':
+        await this.repo.markDead(event.jobId, {
+          reason: event.reason,
+          error: event.error,
+          attemptsMade: event.attemptsMade,
+          attemptsAllowed: event.attemptsAllowed,
+        });
+        return;
     }
   }
 }

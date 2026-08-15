@@ -1,4 +1,8 @@
-export { parseCsvStatement } from './csv-parser';
+export {
+  normaliseStatementFee,
+  parseCsvStatement,
+  statementFeeFromRawPayload,
+} from './csv-parser';
 export { detectBankTemplate, detectFormat } from './format-detector';
 export { parseIbCsvStatement } from './ib-csv-parser';
 export { parseOfxStatement } from './ofx-parser';

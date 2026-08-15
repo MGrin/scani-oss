@@ -87,14 +87,15 @@ export class CreateHoldingsWithDependenciesUseCase {
 
             logger.debug(
               { userId, institutionName: input.institution.name },
-              'Creating new institution'
+              'Resolving institution for new account'
             );
 
-            const institution = await this.institutionService.createInstitution(
+            const ensured = await this.institutionService.ensureInstitution(
               input.institution,
               userId,
               tx
             );
+            const institution = ensured.institution;
 
             logger.debug(
               { userId, institutionId: institution.id, account: input.account },
@@ -111,10 +112,13 @@ export class CreateHoldingsWithDependenciesUseCase {
 
             institutionId = institution.id;
             accountId = account.id;
-            createdInstitution = true;
+            createdInstitution = ensured.created;
             createdAccount = true;
 
-            logger.info({ userId, institutionId, accountId }, 'Created institution and account');
+            logger.info(
+              { userId, institutionId, accountId, institutionCreated: ensured.created },
+              'Resolved institution and created account'
+            );
           } else {
             // Use existing institution, create account only
             institutionId = input.account.institutionId;

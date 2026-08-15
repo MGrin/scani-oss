@@ -4,7 +4,7 @@ import { InstitutionService } from '../../../src/services/accounts/InstitutionSe
 import { withTestDb } from '../../../test/helpers/db';
 import { makeInstitutionType, makeUser } from '../../../test/helpers/factories';
 
-// InstitutionService.createInstitution is the write path behind "Add
+// InstitutionService.ensureInstitution is the write path behind "Add
 // institution". The summary method pulls in portfolio valuation, so it
 // lives in PortfolioValuationService.test.ts instead — keeping this file
 // focused on the validation boundary.
@@ -12,39 +12,63 @@ import { makeInstitutionType, makeUser } from '../../../test/helpers/factories';
 const service = () => Container.get(InstitutionService);
 
 describe('InstitutionService', () => {
-  test('createInstitution inserts a row when fields are valid', async () => {
+  test('ensureInstitution inserts a row when fields are valid', async () => {
     await withTestDb(async (tx) => {
       const user = await makeUser(tx);
       const type = await makeInstitutionType(tx);
-      const created = await service().createInstitution(
-        { name: 'Binance', typeId: type.id },
+      const { institution, created } = await service().ensureInstitution(
+        { name: 'Zzz Test Bank SC135', typeId: type.id },
         user.id,
         tx
       );
-      expect(created.name).toBe('Binance');
-      expect(created.typeId).toBe(type.id);
-      expect(created.isActive).toBe(true);
+      expect(created).toBe(true);
+      expect(institution.name).toBe('Zzz Test Bank SC135');
+      expect(institution.typeId).toBe(type.id);
+      expect(institution.isActive).toBe(true);
     });
   });
 
-  test('createInstitution rejects an empty name', async () => {
+  // SC-135: the import flow's "Add <name>" sat directly under the matching
+  // existing row, so a mis-tap produced a second identical institution
+  // holding none of the user's accounts — and the next import then told
+  // them the account did not exist.
+  test('ensureInstitution reuses a same-name row instead of duplicating it', async () => {
+    await withTestDb(async (tx) => {
+      const user = await makeUser(tx);
+      const type = await makeInstitutionType(tx);
+      const first = await service().ensureInstitution(
+        { name: 'Zzz Reuse Bank SC135', typeId: type.id },
+        user.id,
+        tx
+      );
+      const second = await service().ensureInstitution(
+        { name: '  zzz reuse bank sc135 ', typeId: type.id },
+        user.id,
+        tx
+      );
+      expect(second.created).toBe(false);
+      expect(second.institution.id).toBe(first.institution.id);
+    });
+  });
+
+  test('ensureInstitution rejects an empty name', async () => {
     await withTestDb(async (tx) => {
       const user = await makeUser(tx);
       const type = await makeInstitutionType(tx);
       await expect(
-        service().createInstitution({ name: '   ', typeId: type.id }, user.id, tx)
+        service().ensureInstitution({ name: '   ', typeId: type.id }, user.id, tx)
       ).rejects.toThrow();
     });
   });
 
-  test('createInstitution rejects when typeId is missing', async () => {
+  test('ensureInstitution rejects when typeId is missing', async () => {
     await withTestDb(async (tx) => {
       const user = await makeUser(tx);
       await expect(
-        service().createInstitution(
+        service().ensureInstitution(
           {
             name: 'X',
-          } as Parameters<InstitutionService['createInstitution']>[0],
+          } as Parameters<InstitutionService['ensureInstitution']>[0],
           user.id,
           tx
         )

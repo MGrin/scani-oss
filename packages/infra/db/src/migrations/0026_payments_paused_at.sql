@@ -1,0 +1,19 @@
+-- `payments.pause` had no inverse, so pausing a recurring bill was a
+-- one-way door. Resuming it needs one fact the row never recorded: WHEN
+-- the current pause started.
+--
+-- Without it, resume has no defensible window. The due dates that fell
+-- while paused must become `skipped` — the user's decision not to pay
+-- them, which is exactly what the pause was — while due dates that were
+-- already overdue BEFORE the pause must keep standing. Only a recorded
+-- pause start separates the two, and neither `updated_at` (nothing in
+-- `PaymentService` bumps it) nor the recurrence rule (which cannot know
+-- at pause time how long the pause will last) can stand in for it.
+--
+-- NULLABLE with no backfill on purpose. A row paused before this column
+-- existed has no provable pause start, and inventing one would either
+-- skip due dates the user never paused through (`created_at`) or claim a
+-- pause that started today. `PaymentService.resume` reads null as "no
+-- recorded pause window" and leaves every occurrence alone, and the UI
+-- states that narrower promise for exactly those rows.
+ALTER TABLE payments ADD COLUMN IF NOT EXISTS paused_at timestamptz;

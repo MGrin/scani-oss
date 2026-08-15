@@ -1,0 +1,34 @@
+-- The stated cost of SC-150, given a column so the figure it shortens can
+-- say so (SC-160).
+--
+-- SC-150 stopped realizing an unpaired `withdraw` / `transfer_out` at market
+-- value, because the nightly ±1%/±30min matcher missing a pairing between
+-- two of the user's own accounts was booking a disposal nobody made — always
+-- upward, on the chart they read. Only a person's `left_control` answer
+-- realizes now; everything else pops its lots and books nothing.
+--
+-- The honest cost: where one of those unanswered rows IS a genuine
+-- off-platform sale, `realized_pnl` is short by the gain it would have
+-- booked. Every other quality count on this table names an error that runs
+-- upward. This one runs down, and a figure that is knowingly short and does
+-- not say so is the same defect SC-149 closed on the cost side, inverted.
+--
+-- `transfers_unreviewed` — outflows at or before the snapshot date that
+-- popped their lots and booked nothing, counted only where the review queue
+-- actually holds a row for them (`transfer_group_id IS NULL AND
+-- transfer_review IS NULL`, the queue's own predicate). A wider count would
+-- send the reader to a page holding fewer rows than the number that sent
+-- them there, with no way to reach zero.
+--
+-- Transactions, not holdings, unlike the three counts above it: the queue
+-- lists transactions, the answer is given per transaction, and "3 transfers"
+-- is the sentence a reader can hold against what they see on the page.
+-- Still additive across scopes — a transaction belongs to exactly one
+-- holding, so the per-holding rows the home chart is built from sum to the
+-- user-wide count.
+--
+-- DEFAULT 0 leaves every already-written row behaving exactly as it does
+-- today until the nightly rollup rewrites it, so the migration alone changes
+-- no number on any screen. Same contract as 0029 and 0031.
+ALTER TABLE portfolio_value_daily
+  ADD COLUMN IF NOT EXISTS transfers_unreviewed integer NOT NULL DEFAULT 0;

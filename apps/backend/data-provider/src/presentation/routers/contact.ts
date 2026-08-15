@@ -1,7 +1,7 @@
 /**
  * Public contact-form endpoint.
  *
- * The landing page (example.com/contact) calls this with no bearer token.
+ * The landing page (scani.xyz/contact) calls this with no bearer token.
  * A submission fans out into two emails:
  *   1. an ops notification to `SCANI_BRAND.supportAddress` — the message
  *      itself; this MUST send, so a failure surfaces as a 500 and the
@@ -9,7 +9,7 @@
  *   2. a best-effort receipt to the submitter so they have proof in
  *      their inbox; a transient SMTP failure here is logged, not fatal.
  *
- * Abuse defenses:
+ * Abuse defenses mirror `waitlist.join`:
  *   1. zod input validation (real-looking email, capped lengths)
  *   2. per-IP rate limiter (5 submissions / hour) via the shared
  *      Redis-backed limiter, with the in-memory fallback in dev/tests
@@ -24,6 +24,7 @@ import { createOutflowLimiter, getSharedRedis } from '@scani/rate-limiter';
 import { TRPCError } from '@trpc/server';
 import { Container } from 'typedi';
 import { z } from 'zod';
+import { okOutput } from '../schemas';
 import { publicProcedure, router } from '../trpc';
 
 const log = createComponentLogger('data-provider:contact');
@@ -52,7 +53,7 @@ const TOPIC_LABELS: Record<(typeof TOPICS)[number], string> = {
 // The submitter's address can't be used as the SMTP `from` (it would fail
 // SPF/DKIM), so the ops mail is sent from the no-reply identity and the
 // real address is surfaced in the body for the team to reply to.
-const OPS_NOTIFY_FROM = 'no-reply@example.com';
+const OPS_NOTIFY_FROM = 'no-reply@scani.xyz';
 
 export const contactRouter = router({
   submit: publicProcedure
@@ -73,7 +74,7 @@ export const contactRouter = router({
         referrer: z.string().max(200).optional(),
       })
     )
-    .output(z.unknown())
+    .output(okOutput)
     .mutation(async ({ input, ctx }): Promise<{ ok: true }> => {
       // Best-effort limiter key: when no IP is available (tests, direct
       // calls) all callers share one bucket.
