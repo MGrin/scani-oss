@@ -57,11 +57,42 @@ const MAX_CAPITAL_PAGES_PER_WINDOW = 50;
 const C2C_PAGE_SIZE = 100;
 const C2C_TRADE_TYPES = ['BUY', 'SELL'] as const;
 
+/**
+ * Binance reports "this API key cannot see this wallet" as a code in the
+ * JSON error body, not as a distinct HTTP status — a permission refusal
+ * and a WAF block are both 4xx. Codes per
+ * https://developers.binance.com/docs/margin_trading/error-code:
+ *
+ *   -2015 REJECTED_MBX_KEY         "Invalid API-key, IP, or permissions for action."
+ *   -3003 NO_OPENED_MARGIN_ACCOUNT "Margin account does not exist."
+ *
+ * -2015 also covers a wholly invalid key and an IP-allowlist miss. That
+ * is safe here because it is only tolerated on the opt-in wallets: a key
+ * that is invalid outright fails the Spot read too, and Spot propagates.
+ */
+const INACCESSIBLE_WALLET_CODES: ReadonlySet<number> = new Set([-2015, -3003]);
+
+function inaccessibleWallet(err: unknown): boolean {
+  if (!(err instanceof ProviderError) || !err.body) return false;
+  try {
+    const { code } = JSON.parse(err.body) as { code?: unknown };
+    return typeof code === 'number' && INACCESSIBLE_WALLET_CODES.has(code);
+  } catch {
+    return false;
+  }
+}
+
+interface BinanceWalletBalance {
+  asset: string;
+  free: string;
+  locked: string;
+}
+
 interface BinanceSpotResponse {
-  balances?: Array<{ asset: string; free: string; locked: string }>;
+  balances?: BinanceWalletBalance[];
 }
 interface BinanceMarginResponse {
-  userAssets?: Array<{ asset: string; free: string; locked: string }>;
+  userAssets?: BinanceWalletBalance[];
 }
 
 interface BinanceTrade {
@@ -185,15 +216,19 @@ export class BinanceProvider
     const creds = await this.resolveApiCreds(ctx);
     if (!creds) return [];
 
-    // Margin + Funding permissions are opt-in per-key; tolerate failures
-    // and treat as "no such account here" rather than failing the whole
-    // sync. Funding is the C2C / Pay wallet — P2P sells lock the crypto
-    // leg here, Binance Pay receipts land here, and the assets are
-    // invisible to Spot/Margin balance reads.
+    // Margin + Funding permissions are opt-in per-key, so a key without
+    // them must not fail the whole sync — but only a *refusal* may be
+    // read as "no such account here". Any other failure propagates: an
+    // empty wallet is indistinguishable from a real zero downstream, and
+    // HoldingsSyncHelper zeroes every holding sourced from it (SC-237).
+    // Spot is not opt-in and is never tolerated.
+    // Funding is the C2C / Pay wallet — P2P sells lock the crypto leg
+    // here, Binance Pay receipts land here, and the assets are invisible
+    // to Spot/Margin balance reads.
     const [spot, margin, funding] = await Promise.all([
-      this.fetchSpot(creds).catch(() => []),
-      this.fetchMargin(creds).catch(() => []),
-      this.fetchFunding(creds).catch(() => []),
+      this.fetchSpot(creds),
+      this.optionalWallet('margin', () => this.fetchMargin(creds)),
+      this.optionalWallet('funding', () => this.fetchFunding(creds)),
     ]);
 
     const combined = new Map<string, { free: string; locked: string }>();
@@ -308,9 +343,20 @@ export class BinanceProvider
     }
   }
 
-  private async fetchSpot(
-    creds: ApiKeyCreds
-  ): Promise<Array<{ asset: string; free: string; locked: string }>> {
+  private async optionalWallet(
+    wallet: 'margin' | 'funding',
+    read: () => Promise<BinanceWalletBalance[]>
+  ): Promise<BinanceWalletBalance[]> {
+    try {
+      return await read();
+    } catch (err) {
+      if (!inaccessibleWallet(err)) throw err;
+      this.logger.debug({ wallet }, 'Binance wallet not accessible for this API key');
+      return [];
+    }
+  }
+
+  private async fetchSpot(creds: ApiKeyCreds): Promise<BinanceWalletBalance[]> {
     const query = this.signedQueryString(creds.apiSecret);
     const data = await this.signedJson<BinanceSpotResponse>(
       { method: 'GET', url: '/api/v3/account', query },
@@ -319,9 +365,7 @@ export class BinanceProvider
     return data.balances ?? [];
   }
 
-  private async fetchMargin(
-    creds: ApiKeyCreds
-  ): Promise<Array<{ asset: string; free: string; locked: string }>> {
+  private async fetchMargin(creds: ApiKeyCreds): Promise<BinanceWalletBalance[]> {
     const query = this.signedQueryString(creds.apiSecret);
     const data = await this.signedJson<BinanceMarginResponse>(
       { method: 'GET', url: '/sapi/v1/margin/account', query },
@@ -333,9 +377,7 @@ export class BinanceProvider
   // Funding wallet (C2C / Pay). `freeze` + `withdrawing` are escrowed
   // legs of in-flight P2P orders / pending withdrawals — still owned by
   // the user, so we roll them into `locked` for the combined balance.
-  private async fetchFunding(
-    creds: ApiKeyCreds
-  ): Promise<Array<{ asset: string; free: string; locked: string }>> {
+  private async fetchFunding(creds: ApiKeyCreds): Promise<BinanceWalletBalance[]> {
     const query = this.signedQueryString(creds.apiSecret);
     const rows = await this.signedJson<BinanceFundingAsset[]>(
       { method: 'POST', url: '/sapi/v1/asset/get-funding-asset', query },

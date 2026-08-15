@@ -25,14 +25,27 @@
  * provider get treated as `retryable` by default.
  */
 export class ProviderError extends Error {
+  /** HTTP status, when this error came from a non-2xx response. */
+  readonly status?: number;
+
+  /**
+   * Raw response body. `message` carries a 200-char excerpt for humans;
+   * this is what a provider pattern-matches its venue's error codes on,
+   * because the difference between "this key has no Margin wallet" and
+   * "the Margin call failed" is only ever in the body.
+   */
+  readonly body?: string;
+
   constructor(
     message: string,
     readonly kind: 'auth-failed' | 'rate-limited' | 'retryable' | 'unrecoverable' | 'not-supported',
     readonly providerKey?: string,
-    options?: { cause?: unknown }
+    options?: { cause?: unknown; status?: number; body?: string }
   ) {
     super(message, options);
     this.name = 'ProviderError';
+    this.status = options?.status;
+    this.body = options?.body;
   }
 
   /**
@@ -44,16 +57,17 @@ export class ProviderError extends Error {
   static fromHttp(providerKey: string, res: Response, body?: string): ProviderError {
     const suffix = body ? ` — ${body.slice(0, 200)}` : '';
     const message = `${providerKey} HTTP ${res.status}${suffix}`;
+    const details = { status: res.status, body };
     if (res.status === 401 || res.status === 403) {
-      return new ProviderError(message, 'auth-failed', providerKey);
+      return new ProviderError(message, 'auth-failed', providerKey, details);
     }
     if (res.status === 429) {
-      return new ProviderError(message, 'rate-limited', providerKey);
+      return new ProviderError(message, 'rate-limited', providerKey, details);
     }
     if (res.status >= 500) {
-      return new ProviderError(message, 'retryable', providerKey);
+      return new ProviderError(message, 'retryable', providerKey, details);
     }
-    return new ProviderError(message, 'unrecoverable', providerKey);
+    return new ProviderError(message, 'unrecoverable', providerKey, details);
   }
 }
 
