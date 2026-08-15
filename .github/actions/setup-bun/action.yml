@@ -36,18 +36,31 @@ runs:
         # PR with a `postinstall` script could plant secret-bearing
         # files under `node_modules` on the main-branch cache and have
         # them lifted into a later workflow with full secrets in env.
+        # ONLY the global module cache. `node_modules` is deliberately not
+        # cached: the restore-keys below have to omit the lockfile hash to be
+        # useful as a fallback, so a cache saved under one `bun.lock` was being
+        # restored into a job running a different one, and
+        # `bun install --frozen-lockfile` ran on top of it.
+        #
+        # That is survivable for the hoisted top level, which a plain install
+        # repairs — but not for a NESTED copy. `astro` pins
+        # `get-tsconfig@5.0.0-beta.4` while the hoisted tree holds `4.14.0` for
+        # everyone else, so astro needs `node_modules/astro/node_modules/`.
+        # Restore a tree from before that pin and the nested directory is
+        # absent; the hoisted `4.14.0` satisfies the check, install reports no
+        # changes, and the build dies on `readTsconfig` — a v5-only export.
+        #
+        # The global cache is content-addressed and immutable, so it is safe to
+        # share and makes the real install a ~10-15s cold start. Correct every
+        # time beats fast and occasionally wrong.
         path: |
           ~/.bun/install/cache
-          node_modules
-          apps/*/node_modules
-          packages/*/node_modules
         key: ${{ runner.os }}-bun-${{ inputs.bun-version }}-${{ github.workflow }}-${{ github.ref_name }}-${{ hashFiles('bun.lock') }}
-        # Restore-keys never reach across (workflow, ref) boundaries:
-        # the most general fallback still pins workflow + ref, so a
-        # PR job can only restore from a previous run of the same
-        # workflow on the same branch. Falls back to the global
-        # ~/.bun/install/cache via Bun's own resolution if nothing
-        # matches — at most a 10-15s `bun install` cold-start cost.
+        # Restore-keys never reach across (workflow, ref) boundaries: the most
+        # general fallback still pins workflow + ref, so a PR job can only
+        # restore from a previous run of the same workflow on the same branch.
+        # They are safe to leave lockfile-agnostic now that only the immutable
+        # module cache is restored.
         restore-keys: |
           ${{ runner.os }}-bun-${{ inputs.bun-version }}-${{ github.workflow }}-${{ github.ref_name }}-
           ${{ runner.os }}-bun-${{ inputs.bun-version }}-${{ github.workflow }}-

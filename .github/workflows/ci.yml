@@ -272,6 +272,15 @@ jobs:
         env:
           STUB_AI: "1"
 
+      # `docker compose up` reports only `service "x" didn't complete
+      # successfully: exit 1` and discards the container's own output, so a
+      # failure here is undiagnosable from the run log alone — which is exactly
+      # what happened to `migrate` on 2026-08-15. Dump the one-shot containers
+      # when the stack fails to come up.
+      - name: Stack logs (on failure)
+        if: failure()
+        run: docker compose --profile full logs --no-color migrate deps env-sync minio-init || true
+
       - name: Wait for stack health
         run: bun apps/e2e/scripts/wait-for-stack.ts
 
