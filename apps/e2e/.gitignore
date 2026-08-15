@@ -1,3 +1,5 @@
 playwright-report/
 test-results/
 node_modules/
+shots/
+.shots-session.json

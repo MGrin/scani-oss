@@ -29,6 +29,7 @@ import { useTranslation } from 'react-i18next';
 import { Link, NavLink, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
+import { UiVersionSwitch } from '@/v3/components/UiVersionSwitch';
 import { useReviewFeed } from '../hooks/useReviewFeed';
 import { SIDEBAR_COLLAPSED_WIDTH, SIDEBAR_WIDTH } from '../lib/constants';
 import { NAV_SECTIONS, resolveActiveNavPath, V2_ROUTES } from '../lib/routes';
@@ -326,18 +327,33 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
           collapsed={collapsed}
         />
         {collapsed ? (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <div>
-                <ThemeToggle variant="icon" side="right" align="end" />
-              </div>
-            </TooltipTrigger>
-            <TooltipContent side="right" sideOffset={8}>
-              {t('nav.theme')}
-            </TooltipContent>
-          </Tooltip>
+          <>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div>
+                  <ThemeToggle variant="icon" side="right" align="end" />
+                </div>
+              </TooltipTrigger>
+              <TooltipContent side="right" sideOffset={8}>
+                {t('nav.theme')}
+              </TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div>
+                  <UiVersionSwitch variant="icon" />
+                </div>
+              </TooltipTrigger>
+              <TooltipContent side="right" sideOffset={8}>
+                {t('nav.backToNewUi')}
+              </TooltipContent>
+            </Tooltip>
+          </>
         ) : (
-          <ThemeToggle variant="row" side="top" align="start" />
+          <>
+            <ThemeToggle variant="row" side="top" align="start" />
+            <UiVersionSwitch variant="row" />
+          </>
         )}
         <SidebarButton
           icon={LogOut}

@@ -1,3 +1,4 @@
+import { formatNumber } from '@scani/shared';
 import { Button } from '@scani/ui/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@scani/ui/ui/card';
 import { Progress } from '@scani/ui/ui/progress';
@@ -70,17 +71,10 @@ export function VaultsPage() {
                     <div className="flex items-baseline justify-between text-sm">
                       <span className="font-semibold">
                         {vault.currencySymbol}{' '}
-                        {Number(vault.currentAmount || 0).toLocaleString('en-US', {
-                          minimumFractionDigits: 0,
-                          maximumFractionDigits: 0,
-                        })}
+                        {formatNumber(vault.currentAmount || 0, { decimals: 0 })}
                       </span>
                       <span className="text-muted-foreground">
-                        / {vault.currencySymbol}{' '}
-                        {Number(vault.targetAmount).toLocaleString('en-US', {
-                          minimumFractionDigits: 0,
-                          maximumFractionDigits: 0,
-                        })}
+                        / {vault.currencySymbol} {formatNumber(vault.targetAmount, { decimals: 0 })}
                       </span>
                     </div>
                     <Progress value={progress} className="h-1.5" />

@@ -162,7 +162,7 @@ export async function fetchHtmlBounded(rawUrl: string): Promise<FetchHtmlBounded
       redirect: 'follow',
       headers: {
         Accept: 'text/html, application/xhtml+xml',
-        'User-Agent': 'ScaniBot/1.0 (+https://example.com)',
+        'User-Agent': 'ScaniBot/1.0 (+https://scani.xyz)',
       },
     });
   } catch (err) {

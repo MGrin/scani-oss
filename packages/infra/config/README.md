@@ -22,7 +22,7 @@ import { z } from 'zod';
 const envSchema = z.object({
   DATABASE_URL: urlSchema,
   FRONTEND_URL: httpsUrlInProduction,
-  JOBS_HMAC_SECRET: requiredInProd(z.string().min(32), 'JOBS_HMAC_SECRET'),
+  ADMIN_JOBS_HMAC_SECRET: requiredInProd(z.string().min(32), 'ADMIN_JOBS_HMAC_SECRET'),
 });
 ```
 

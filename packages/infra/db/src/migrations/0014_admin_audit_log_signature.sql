@@ -4,7 +4,7 @@
 -- row stores:
 --   * `prev_signature` — the previous row's `signature` (chains the rows)
 --   * `signature` — HMAC-SHA256 of the row's logical payload using
---     JOBS_HMAC_SECRET as the key
+--     ADMIN_JOBS_HMAC_SECRET as the key
 --
 -- Both columns are nullable so existing rows remain valid; the chain
 -- starts at the first row written after this migration applies.

@@ -1,4 +1,4 @@
-import { formatRelative } from '@scani/shared';
+import { describeJobFailure, formatRelative } from '@scani/shared';
 import { Button } from '@scani/ui/ui/button';
 import { Card, CardContent } from '@scani/ui/ui/card';
 import { showError, showSuccess } from '@scani/ui/ui/use-toast';
@@ -21,6 +21,14 @@ export interface JobHeaderJob {
   startedAt: string | Date | null;
   finishedAt: string | Date | null;
   error: string | null;
+  /** SC-153 — see the v3 header for the full note. `retry.available` is the
+   *  server's answer against Redis, not a guess from the state. */
+  /** BullMQ's own state. `state` above can be an outcome-derived failure (a
+   *  parse that extracted nothing), which has no retry story to tell. */
+  frameworkState?: string;
+  deadAt?: string | Date | null;
+  failureReason?: string | null;
+  retry?: { available: boolean; reason?: string; queueHasJob?: boolean };
   /**
    * Latest worker-emitted phase message. Optional. Surfaced above the
    * indeterminate bar so long polls (IBKR Flex Query generation) can
@@ -32,6 +40,12 @@ export interface JobHeaderJob {
 /** Generic top-of-page block for /jobs/:jobId. The job-type-specific body renders below. */
 export function JobHeader({ job }: { job: JobHeaderJob }) {
   const { label, icon: Icon } = jobLabelFor(job.jobName);
+  const failure = describeJobFailure({
+    ...job,
+    state: job.frameworkState ?? job.state,
+    queueHasJob: job.retry?.queueHasJob,
+  });
+  const retryable = job.retry?.available ?? false;
   const isRunning = job.state === 'active' || job.state === 'progress' || job.state === 'queued';
   const navigate = useNavigate();
   const utils = trpc.useUtils();
@@ -74,7 +88,14 @@ export function JobHeader({ job }: { job: JobHeaderJob }) {
               <JobSummary jobName={job.jobName} payloadSummary={job.payloadSummary} />
             </div>
           </div>
-          <JobStateChip state={job.state} />
+          <JobStateChip
+            state={job.state}
+            failure={{
+              ...job,
+              state: job.frameworkState ?? job.state,
+              queueHasJob: job.retry?.queueHasJob,
+            }}
+          />
         </div>
 
         {isRunning && (
@@ -116,23 +137,35 @@ export function JobHeader({ job }: { job: JobHeaderJob }) {
 
         {job.state === 'failed' && (
           <div className="space-y-2">
+            {failure && <p className="text-xs">{failure.sentence}</p>}
             {job.error && (
               <div className="text-xs text-destructive rounded-md border border-destructive/40 bg-destructive/5 p-2 font-mono whitespace-pre-wrap">
                 {job.error}
               </div>
             )}
+            {/* Absent rather than disabled when it cannot work: Retry needs the
+                original payload, which only the BullMQ entry holds, and
+                `removeOnFail` evicts it. A button that no-ops is the same
+                defect this ticket is about (SC-153). */}
+            {!retryable && (
+              <p className="text-[11px] text-muted-foreground">
+                This run is too old to re-run from here. Start it again from where you began it.
+              </p>
+            )}
             <div className="flex items-center gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="h-7 gap-1.5"
-                disabled={retryMutation.isPending}
-                onClick={() => retryMutation.mutate({ jobId: job.jobId })}
-              >
-                <RotateCcw className="h-3.5 w-3.5" />
-                {retryMutation.isPending ? 'Re-queueing…' : 'Retry'}
-              </Button>
+              {retryable && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-7 gap-1.5"
+                  disabled={retryMutation.isPending}
+                  onClick={() => retryMutation.mutate({ jobId: job.jobId })}
+                >
+                  <RotateCcw className="h-3.5 w-3.5" />
+                  {retryMutation.isPending ? 'Re-queueing…' : 'Retry'}
+                </Button>
+              )}
               <Button
                 type="button"
                 variant="outline"

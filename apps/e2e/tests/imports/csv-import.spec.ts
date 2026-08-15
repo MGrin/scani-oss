@@ -79,7 +79,7 @@ test.describe('imports: CSV file import', () => {
     //    Content-Type into the signature, so we must echo it verbatim.
     const putRes = await fetch(uploadUrl, {
       method: 'PUT',
-      body: csvBytes,
+      body: new Uint8Array(csvBytes),
       headers: requiredHeaders,
     });
     expect(putRes.ok, `PUT to MinIO failed: ${putRes.status} ${await putRes.text()}`).toBe(true);

@@ -5,9 +5,16 @@ import { Card, CardContent, CardHeader, CardTitle } from '@scani/ui/ui/card';
 import { PageLoader } from '@scani/ui/ui/loading';
 import { AlertCircle, CalendarClock } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { useBaseCurrencyRates } from '@/hooks/useBaseCurrencyRates';
 import { type RouterOutputs, trpc } from '@/lib/trpc';
 import { OccurrenceActions } from '../components/payments/OccurrenceActions';
-import { sumAmountsByCurrency, todayDateString } from '../lib/paymentTotals';
+import {
+  convertAmountToBase,
+  convertTotalsToBase,
+  describeConversion,
+  sumAmountsByCurrency,
+  todayDateString,
+} from '../lib/paymentTotals';
 import { V2_ROUTES } from '../lib/routes';
 
 type UpcomingOccurrence = RouterOutputs['payments']['upcoming'][number];
@@ -32,6 +39,10 @@ export function PaymentsOverviewPage() {
   const { data: allPayments } = trpc.payments.list.useQuery();
   const { data: vendors, isLoading: vendorsLoading } = trpc.vendors.list.useQuery();
   const { data: tokens, isLoading: tokensLoading } = trpc.tokens.getAll.useQuery();
+  // Before the early returns — a hook cannot sit behind a loading branch.
+  const rates = useBaseCurrencyRates(
+    (occurrences ?? []).map((occurrence) => occurrence.payment.currencyTokenId)
+  );
 
   if (occurrencesLoading || vendorsLoading || tokensLoading) return <PageLoader />;
 
@@ -81,6 +92,12 @@ export function PaymentsOverviewPage() {
         currencyTokenId: o.payment.currencyTokenId,
       }))
   );
+  // One figure, in the user's own currency. Bills in three currencies used to
+  // print as "€94.97 + $23.00 + £180.00", which is three answers to one
+  // question — and none of them the one the reader asked.
+  const committed = convertTotalsToBase(outflowTotals, rates);
+  const symbolFor = (tokenId: string) => tokenSymbolById.get(tokenId) ?? rates.baseSymbol;
+  const conversionNote = describeConversion(committed, symbolFor);
 
   const groupedByDate = new Map<string, UpcomingOccurrence[]>();
   for (const occurrence of upcoming) {
@@ -95,14 +112,9 @@ export function PaymentsOverviewPage() {
         <h2 className="text-2xl font-bold tracking-tight">Payments</h2>
         <p className="text-muted-foreground mt-1">
           {paymentsLabel} · committed outflow, next {HORIZON_DAYS} days:{' '}
-          {outflowTotals.size === 0
-            ? formatCurrency(0, 'USD')
-            : Array.from(outflowTotals.entries())
-                .map(([tokenId, total]) =>
-                  formatCurrency(total.toString(), tokenSymbolById.get(tokenId) ?? 'USD')
-                )
-                .join(' + ')}
+          {formatCurrency(committed.amount.toString(), rates.baseSymbol)}
         </p>
+        {conversionNote && <p className="text-xs text-muted-foreground mt-1">{conversionNote}</p>}
       </div>
 
       {overdue.length > 0 && (
@@ -113,6 +125,7 @@ export function PaymentsOverviewPage() {
           occurrences={overdue}
           vendorNameById={vendorNameById}
           tokenSymbolById={tokenSymbolById}
+          rates={rates}
         />
       )}
 
@@ -123,6 +136,7 @@ export function PaymentsOverviewPage() {
           occurrences={dateOccurrences}
           vendorNameById={vendorNameById}
           tokenSymbolById={tokenSymbolById}
+          rates={rates}
         />
       ))}
     </div>
@@ -135,6 +149,7 @@ function OccurrenceGroupCard({
   occurrences,
   vendorNameById,
   tokenSymbolById,
+  rates,
   showDueDate = false,
 }: {
   title: string;
@@ -142,6 +157,7 @@ function OccurrenceGroupCard({
   occurrences: UpcomingOccurrence[];
   vendorNameById: Map<string, string>;
   tokenSymbolById: Map<string, string>;
+  rates: ReturnType<typeof useBaseCurrencyRates>;
   /**
    * Date-grouped cards carry the date in their heading; the Overdue card
    * spans many dates, so without this every row reads identically —
@@ -161,6 +177,13 @@ function OccurrenceGroupCard({
       <CardContent className="divide-y">
         {occurrences.map((occurrence) => {
           const symbol = tokenSymbolById.get(occurrence.payment.currencyTokenId) ?? 'USD';
+          // The row keeps its own currency; this says what it costs in the
+          // reader's, and is marked "≈" because it is our arithmetic.
+          const equivalent = convertAmountToBase(
+            occurrence.expectedAmount,
+            occurrence.payment.currencyTokenId,
+            rates
+          );
           return (
             <div
               key={occurrence.id}
@@ -178,6 +201,8 @@ function OccurrenceGroupCard({
                   {occurrence.payment.direction === 'inflow' ? 'Incoming' : 'Outgoing'}
                   {occurrence.expectedAmount &&
                     ` · ${formatCurrency(occurrence.expectedAmount, symbol)}`}
+                  {equivalent &&
+                    ` · ≈ ${formatCurrency(equivalent.amount.toString(), rates.baseSymbol)}`}
                 </p>
               </div>
               <OccurrenceActions

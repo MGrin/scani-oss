@@ -1,3 +1,4 @@
+import { formatNumber } from '@scani/shared';
 import { Card, CardContent, CardHeader, CardTitle } from '@scani/ui/ui/card';
 import { Progress } from '@scani/ui/ui/progress';
 import { Vault } from 'lucide-react';
@@ -57,18 +58,10 @@ export function VaultProgressList({ vaults }: VaultProgressListProps) {
               <Progress value={progressClamped} className="h-1.5 mb-1" />
               <div className="flex justify-between text-xs text-muted-foreground">
                 <span>
-                  {vault.currencySymbol}{' '}
-                  {Number.parseFloat(vault.currentAmount).toLocaleString(undefined, {
-                    minimumFractionDigits: 0,
-                    maximumFractionDigits: 0,
-                  })}
+                  {vault.currencySymbol} {formatNumber(vault.currentAmount, { decimals: 0 })}
                 </span>
                 <span>
-                  of {vault.currencySymbol}{' '}
-                  {Number.parseFloat(vault.targetAmount).toLocaleString(undefined, {
-                    minimumFractionDigits: 0,
-                    maximumFractionDigits: 0,
-                  })}
+                  of {vault.currencySymbol} {formatNumber(vault.targetAmount, { decimals: 0 })}
                 </span>
               </div>
             </Link>

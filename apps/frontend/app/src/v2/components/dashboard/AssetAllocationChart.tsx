@@ -14,8 +14,8 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
+import { useBaseCurrency } from '@/contexts/BaseCurrencyContext';
 import { trpc } from '@/lib/trpc';
-import { useBaseCurrency } from '../../hooks/useBaseCurrency';
 import { STORAGE_KEYS } from '../../lib/constants';
 
 const COLORS = [

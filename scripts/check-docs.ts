@@ -6,7 +6,7 @@
 // Re-derives the lists the user-facing docs claim authority over —
 // tRPC routers, scheduled-job cron strings, provider directories,
 // env-var coverage — from the actual source files and diffs them
-// against the published docs. Anything out of sync fails CI.
+// against the published docs.
 //
 // This is the guardrail behind the audit findings cleaned up by
 // PR #41 / #42 (OSS-QA-REPORT.md). The drift these caught was the
@@ -16,9 +16,19 @@
 // promised a `tier=tier2` log line that didn't exist. Without a
 // programmatic check, the same drift sneaks back in within months.
 //
+// It has to STAY GREEN on a clean tree, and that is not a nicety
+// (SC-142). It ran red on `main` for two undocumented routers, and a
+// check that is red when nothing is wrong is a check everyone learns
+// to scroll past — which is how the one real failure gets waved
+// through as "the known one".
+//
 // Usage:
 //   bun run docs:check            # exit 1 on any mismatch
-//   bun run docs:check -- --soft  # warnings only (used by `pre-push`)
+//   bun run docs:check -- --soft  # warnings only
+//
+// Wired into `bun run check`. Not a CI job of its own yet: CI is down
+// (SC-128), so adding a gate that cannot be observed would be a claim
+// rather than a guard.
 //
 // Each check is small and self-contained; add new ones to CHECKS at
 // the bottom.

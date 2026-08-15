@@ -90,7 +90,7 @@ test.describe('imports: screenshot parse (STUB_AI)', () => {
     // 2. PUT to MinIO with the bound Content-Type.
     const putRes = await fetch(uploadUrl, {
       method: 'PUT',
-      body: pngBytes,
+      body: new Uint8Array(pngBytes),
       headers: requiredHeaders,
     });
     expect(putRes.ok, `PUT to MinIO failed: ${putRes.status} ${await putRes.text()}`).toBe(true);

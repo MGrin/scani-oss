@@ -11,6 +11,7 @@
       "payments": "Payments"
     },
     "dashboard": "Dashboard",
+    "home": "Home",
     "holdings": "Holdings",
     "accounts": "Accounts",
     "institutions": "Institutions",
@@ -21,8 +22,11 @@
     "settings": "Settings",
     "signOut": "Sign out",
     "theme": "Theme",
+    "backToNewUi": "Back to the new UI",
+    "backToClassicUi": "Back to the classic UI",
     "more": "More",
     "add": "Add",
+    "addData": "Add data",
     "addDataButton": "Add Data",
     "search": "Search",
     "openMenu": "Open menu",
@@ -33,7 +37,8 @@
     "vendors": "Vendors",
     "review": "Review",
     "files": "Files",
-    "payments": "Payments"
+    "payments": "Payments",
+    "money": "Money"
   },
   "dashboard": {
     "title": "Dashboard",

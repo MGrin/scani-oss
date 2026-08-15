@@ -66,9 +66,8 @@ export function VendorMergeDialog({
         <DialogHeader>
           <DialogTitle>Merge into {vendor.displayName}</DialogTitle>
           <DialogDescription>
-            Pick the duplicate vendor to fold in. Its aliases move to "{vendor.displayName}" and the
-            duplicate is deleted — payments already pointed at it are unaffected. This cannot be
-            undone.
+            Pick the duplicate vendor to fold in. Its aliases and any payments pointed at it move to
+            "{vendor.displayName}", then the duplicate is deleted. This cannot be undone.
           </DialogDescription>
         </DialogHeader>
 

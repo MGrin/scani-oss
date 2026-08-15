@@ -1,7 +1,11 @@
 import { spawn } from 'node:child_process';
 
 function getContainerName(): string {
-  return process.env.REDIS_CONTAINER ?? 'mgrin-e2e-suite-redis-1';
+  // `docker-compose.yml` pins `container_name: scani-redis`. The previous
+  // default here was a compose-generated name from a workspace that no longer
+  // exists, so every caller outside a `REDIS_CONTAINER=…` invocation was
+  // reaching for a container that was never going to be there.
+  return process.env.REDIS_CONTAINER ?? 'scani-redis';
 }
 
 /**

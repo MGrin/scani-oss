@@ -2,6 +2,10 @@ import { describe, expect, test } from 'bun:test';
 import { Decimal } from '@scani/shared';
 import {
   annualizedAmount,
+  type BaseCurrencyRate,
+  convertAmountToBase,
+  convertTotalsToBase,
+  describeConversion,
   formatOccurrenceStatus,
   formatPaymentInterval,
   monthlyEquivalent,
@@ -149,5 +153,172 @@ describe('formatOccurrenceStatus', () => {
 
   test('an unrecognised status passes through rather than rendering blank', () => {
     expect(formatOccurrenceStatus('something-new', 'outflow')).toBe('something-new');
+  });
+});
+
+describe('convertTotalsToBase', () => {
+  const EUR = 'token-eur';
+  const USD = 'token-usd';
+  const GBP = 'token-gbp';
+  const NOW = new Date('2026-08-13T12:00:00Z');
+  const FRESH = '2026-08-13T06:00:00Z';
+
+  const rates = (entries: Array<[string, BaseCurrencyRate | null]>) => new Map(entries);
+
+  test('one figure, not a list: every currency lands in base', () => {
+    const total = convertTotalsToBase(
+      new Map([
+        [EUR, new Decimal('94.97')],
+        [USD, new Decimal('23')],
+        [GBP, new Decimal('180')],
+      ]),
+      {
+        baseCurrencyTokenId: EUR,
+        rateByCurrencyTokenId: rates([
+          [USD, { rate: '0.9', asOf: FRESH }],
+          [GBP, { rate: '1.17', asOf: FRESH }],
+        ]),
+        now: NOW,
+      }
+    );
+    // 94.97 + (23 × 0.9) + (180 × 1.17)
+    expect(total.amount.toString()).toBe('326.27');
+    expect(total.convertedFrom).toEqual([USD, GBP]);
+    expect(total.unconverted).toEqual([]);
+  });
+
+  test('the base currency is not "converted from" itself', () => {
+    const total = convertTotalsToBase(new Map([[EUR, new Decimal('40')]]), {
+      baseCurrencyTokenId: EUR,
+      rateByCurrencyTokenId: rates([]),
+      now: NOW,
+    });
+    expect(total.amount.toString()).toBe('40');
+    expect(total.convertedFrom).toEqual([]);
+    expect(total.ratesAsOf).toBeNull();
+  });
+
+  // The failure that would be worse than the per-currency list it replaces:
+  // a bill we cannot price quietly leaving the figure the user reads as
+  // "what I owe".
+  test('an un-convertible currency is never folded in, and never dropped', () => {
+    const total = convertTotalsToBase(
+      new Map([
+        [EUR, new Decimal('100')],
+        [USD, new Decimal('23')],
+      ]),
+      {
+        baseCurrencyTokenId: EUR,
+        rateByCurrencyTokenId: rates([[USD, null]]),
+        now: NOW,
+      }
+    );
+    expect(total.amount.toString()).toBe('100');
+    expect(total.unconverted).toEqual([{ currencyTokenId: USD, amount: new Decimal('23') }]);
+  });
+
+  test('nothing converts before the base currency resolves', () => {
+    const total = convertTotalsToBase(new Map([[USD, new Decimal('23')]]), {
+      baseCurrencyTokenId: null,
+      rateByCurrencyTokenId: rates([]),
+      now: NOW,
+    });
+    expect(total.amount.toString()).toBe('0');
+    expect(total.unconverted).toHaveLength(1);
+  });
+
+  test('the oldest rate behind the figure is the one reported, and dates it stale', () => {
+    const total = convertTotalsToBase(
+      new Map([
+        [USD, new Decimal('10')],
+        [GBP, new Decimal('10')],
+      ]),
+      {
+        baseCurrencyTokenId: EUR,
+        rateByCurrencyTokenId: rates([
+          [USD, { rate: '1', asOf: FRESH }],
+          [GBP, { rate: '1', asOf: '2026-08-09T06:00:00Z' }],
+        ]),
+        now: NOW,
+      }
+    );
+    expect(total.ratesAsOf?.toISOString()).toBe('2026-08-09T06:00:00.000Z');
+    expect(total.stale).toBe(true);
+  });
+});
+
+describe('convertAmountToBase', () => {
+  const EUR = 'token-eur';
+  const GBP = 'token-gbp';
+  const NOW = new Date('2026-08-13T12:00:00Z');
+
+  test('a row in another currency gets its base-currency equivalent', () => {
+    const converted = convertAmountToBase('120', GBP, {
+      baseCurrencyTokenId: EUR,
+      rateByCurrencyTokenId: new Map([[GBP, { rate: '1.17', asOf: '2026-08-13T06:00:00Z' }]]),
+      now: NOW,
+    });
+    expect(converted?.amount.toString()).toBe('140.4');
+    expect(converted?.stale).toBe(false);
+  });
+
+  test('a row already in base currency says nothing', () => {
+    expect(
+      convertAmountToBase('120', EUR, {
+        baseCurrencyTokenId: EUR,
+        rateByCurrencyTokenId: new Map(),
+        now: NOW,
+      })
+    ).toBeNull();
+  });
+
+  test('no amount and no rate both mean no second line', () => {
+    const context = {
+      baseCurrencyTokenId: EUR,
+      rateByCurrencyTokenId: new Map([[GBP, null]]),
+      now: NOW,
+    };
+    expect(convertAmountToBase(null, GBP, context)).toBeNull();
+    expect(convertAmountToBase('120', GBP, context)).toBeNull();
+  });
+});
+
+describe('describeConversion', () => {
+  const EUR = 'token-eur';
+  const USD = 'token-usd';
+  const symbolFor = (id: string) => (id === USD ? 'USD' : 'EUR');
+
+  test('a converted total says so, and names what it folded in', () => {
+    const total = convertTotalsToBase(new Map([[USD, new Decimal('23')]]), {
+      baseCurrencyTokenId: EUR,
+      rateByCurrencyTokenId: new Map([[USD, { rate: '0.9', asOf: '2026-08-13T06:00:00Z' }]]),
+      now: new Date('2026-08-13T12:00:00Z'),
+    });
+    expect(describeConversion(total, symbolFor)).toBe("Converted from USD at today's rates");
+  });
+
+  test('a stale rate is dated rather than presented as current', () => {
+    const total = convertTotalsToBase(new Map([[USD, new Decimal('23')]]), {
+      baseCurrencyTokenId: EUR,
+      rateByCurrencyTokenId: new Map([[USD, { rate: '0.9', asOf: '2026-08-09T06:00:00Z' }]]),
+      now: new Date('2026-08-13T12:00:00Z'),
+    });
+    expect(describeConversion(total, symbolFor)).toContain('at rates from');
+  });
+
+  test('what could not be converted is named with its amount', () => {
+    const total = convertTotalsToBase(new Map([[USD, new Decimal('23')]]), {
+      baseCurrencyTokenId: EUR,
+      rateByCurrencyTokenId: new Map([[USD, null]]),
+    });
+    expect(describeConversion(total, symbolFor)).toContain('not included — no recent rate');
+  });
+
+  test('a single-currency total needs no qualification', () => {
+    const total = convertTotalsToBase(new Map([[EUR, new Decimal('40')]]), {
+      baseCurrencyTokenId: EUR,
+      rateByCurrencyTokenId: new Map(),
+    });
+    expect(describeConversion(total, symbolFor)).toBeNull();
   });
 });

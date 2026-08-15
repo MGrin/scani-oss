@@ -11,6 +11,10 @@ export interface ReviewRendererProps {
   result: unknown;
   jobId: string;
   actionTakenAt: Date | string | null;
+  /** `imported` | `discarded` | null. A stamped job says *when* it was
+   *  acted on; this says *what* happened, so a discarded parse is not
+   *  rendered as an imported one (SC-138). */
+  reviewOutcome: string | null;
 }
 
 export interface ReviewRenderer {
@@ -30,8 +34,13 @@ export interface ReviewRenderer {
 const RENDERERS: ReviewRenderer[] = [
   {
     kind: 'wallet-import',
-    render: ({ result, jobId, actionTakenAt }) => (
-      <WalletImportResult result={result} jobId={jobId} actionTakenAt={actionTakenAt} />
+    render: ({ result, jobId, actionTakenAt, reviewOutcome }) => (
+      <WalletImportResult
+        result={result}
+        jobId={jobId}
+        actionTakenAt={actionTakenAt}
+        reviewOutcome={reviewOutcome}
+      />
     ),
   },
   {
@@ -40,8 +49,13 @@ const RENDERERS: ReviewRenderer[] = [
   },
   {
     kind: 'screenshot-parse',
-    render: ({ result, jobId, actionTakenAt }) => (
-      <ScreenshotParseResult result={result} jobId={jobId} actionTakenAt={actionTakenAt} />
+    render: ({ result, jobId, actionTakenAt, reviewOutcome }) => (
+      <ScreenshotParseResult
+        result={result}
+        jobId={jobId}
+        actionTakenAt={actionTakenAt}
+        reviewOutcome={reviewOutcome}
+      />
     ),
   },
   {

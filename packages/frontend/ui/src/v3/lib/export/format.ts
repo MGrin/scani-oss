@@ -38,8 +38,8 @@ export function exportFormatDetail(format: ExportFormat): string {
  * A service locator, deliberately and narrowly: the alternative is threading a
  * renderer prop through `V3DataView` and out to twelve list configs for a
  * capability that is a property of the *application*, not of any list. It also
- * degrades correctly — a console that mounts the same list component with no
- * PDF endpoint simply never registers one, and PDF is not offered
+ * degrades correctly — `apps/frontend/cloud` mounts the same list component and
+ * has no PDF endpoint, so it simply never registers one and PDF is not offered
  * there rather than being offered and failing.
  */
 export type PdfRenderer = (workbook: ExportWorkbook) => Promise<Blob>;

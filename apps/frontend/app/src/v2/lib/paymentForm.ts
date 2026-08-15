@@ -23,6 +23,12 @@ export interface PaymentFormDraft {
   anchorDate: string;
   /** Raw input value; non-numeric and non-positive both block. */
   intervalCount: string;
+  /**
+   * `''` only on the invoice path, where the document evidenced no cadence.
+   * A manually created payment starts monthly and an edit loads the stored
+   * unit, so neither can reach this branch. See `buildInvoicePrefill`.
+   */
+  intervalUnit: string;
 }
 
 export function describePaymentFormBlockers(draft: PaymentFormDraft): string[] {
@@ -30,6 +36,7 @@ export function describePaymentFormBlockers(draft: PaymentFormDraft): string[] {
   if (!draft.vendorId && !draft.pendingVendorName?.trim()) blockers.push('choose a vendor');
   if (!draft.currencyTokenId) blockers.push('pick a currency from the list');
   if (!draft.anchorDate) blockers.push('set an anchor date');
+  if (!draft.intervalUnit) blockers.push('choose how often this repeats');
 
   // Digits-only rather than `parseInt`, which happily reads "1.5.2" as 1
   // and would submit a repeat count the user never typed.

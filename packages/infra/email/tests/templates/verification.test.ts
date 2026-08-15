@@ -10,14 +10,14 @@ describe('renderVerificationEmail', () => {
   });
 
   test('text body includes welcome message and URL', () => {
-    const url = 'https://app.example.com/verify?token=xyz';
+    const url = 'https://app.scani.xyz/verify?token=xyz';
     const out = renderVerificationEmail({ brand: SCANI_BRAND, url });
     expect(out.text).toContain('Welcome to Scani');
     expect(out.text).toContain(url);
   });
 
   test('escapes URL in HTML output', () => {
-    const url = 'https://app.example.com/verify?<bad>';
+    const url = 'https://app.scani.xyz/verify?<bad>';
     const out = renderVerificationEmail({ brand: SCANI_BRAND, url });
     expect(out.html).not.toContain('<bad>');
     expect(out.html).toContain('&lt;bad&gt;');

@@ -55,6 +55,7 @@ export function JobDetailPage() {
           jobId: job.jobId,
           jobName: job.jobName,
           state: chipState,
+          frameworkState: state,
           attemptsMade: job.attemptsMade,
           attemptsAllowed: job.attemptsAllowed,
           payloadSummary: job.payloadSummary,
@@ -62,6 +63,9 @@ export function JobDetailPage() {
           startedAt: job.startedAt,
           finishedAt: job.finishedAt,
           error: job.error,
+          deadAt: job.deadAt,
+          failureReason: job.failureReason,
+          retry: job.retry,
           statusMessage: live.statusMessage,
         }}
       />
@@ -71,6 +75,7 @@ export function JobDetailPage() {
         result={result}
         jobId={job.jobId}
         actionTakenAt={job.actionTakenAt}
+        reviewOutcome={job.reviewOutcome}
       />
     </div>
   );
@@ -121,15 +126,17 @@ function JobBody({
   result,
   jobId,
   actionTakenAt,
+  reviewOutcome,
 }: {
   jobName: string;
   state: string;
   result: unknown;
   jobId: string;
   actionTakenAt: Date | string | null;
+  reviewOutcome: string | null;
 }) {
   if (state !== 'completed') {
     return null;
   }
-  return resolveReviewRenderer(jobName).render({ result, jobId, actionTakenAt });
+  return resolveReviewRenderer(jobName).render({ result, jobId, actionTakenAt, reviewOutcome });
 }

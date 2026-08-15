@@ -1,4 +1,4 @@
-import { checkEnvIsolatedUrl, optionalUrl } from '@scani/config';
+import { checkEnvIsolatedUrl, isNodeEnvProduction, requiredInProd } from '@scani/config';
 import { z } from 'zod';
 
 const envSchema = z.object({
@@ -64,11 +64,15 @@ const envSchema = z.object({
   // signal tight: exchange-balances runs hourly, so 3h means 2 missed cycles.
   STALE_SYNC_THRESHOLD_HOURS: z.coerce.number().int().positive().default(3),
 
-  // Sentry — fully optional. Empty string is treated as unset (see
-  // `optionalUrl`). SDK init gates on DSN presence regardless.
-  SENTRY_DSN: optionalUrl,
+  // Sentry — hard-required in prod so a misconfigured deploy fails
+  // loudly; optional in dev. SDK init gates on DSN presence regardless.
+  SENTRY_DSN: requiredInProd(z.string().url(), 'SENTRY_DSN'),
   SENTRY_ENVIRONMENT: z.string().optional(),
   SENTRY_RELEASE: z.string().optional(),
+
+  STUB_AI: isNodeEnvProduction()
+    ? z.literal(undefined).optional()
+    : z.union([z.literal('1'), z.literal('')]).optional(),
 });
 
 export type WorkerEnv = z.infer<typeof envSchema>;

@@ -1,4 +1,4 @@
-import { formatCurrency } from '@scani/shared';
+import { formatCurrency, formatRelative } from '@scani/shared';
 import { ConfirmDialog } from '@scani/ui/components/ConfirmDialog';
 import { Badge } from '@scani/ui/ui/badge';
 import { Button } from '@scani/ui/ui/button';
@@ -10,33 +10,21 @@ import { Pencil, RefreshCw, Settings, Trash2, Wallet } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { NumericFormat } from 'react-number-format';
 import { useNavigate } from 'react-router-dom';
+import { useBaseCurrency } from '@/contexts/BaseCurrencyContext';
 import { getFaviconUrl } from '@/lib/icons';
 import { trpc } from '@/lib/trpc';
 import { cn } from '@/lib/utils';
 import { invalidatePortfolioQueries } from '../../hooks/invalidatePortfolioQueries';
-import { useBaseCurrency } from '../../hooks/useBaseCurrency';
 import { useHoldingActions } from '../../hooks/useHoldingActions';
 import { useJobStatus } from '../../hooks/useJobStatus';
+import { formatMoney, formatQuantity } from '../../lib/format';
+import { describePriceRefresh, type PriceRefreshReport } from '../../lib/priceRefreshOutcome';
 import { V2_ROUTES } from '../../lib/routes';
 import { PortfolioCharts } from '../dashboard/PortfolioCharts';
 import { EditCustomTokenPriceDialog } from '../tokens/EditCustomTokenPriceDialog';
 import { ApyConfigDialog } from './ApyConfigDialog';
 
 const CUSTOM_TOKEN_TYPE_CODES = new Set(['private-company', 'other']);
-
-function formatRelativeTime(dateStr: string): string {
-  const now = Date.now();
-  const date = new Date(dateStr).getTime();
-  const diffMs = now - date;
-  const diffMin = Math.floor(diffMs / 60000);
-  if (diffMin < 1) return 'just now';
-  if (diffMin < 60) return `${diffMin}m ago`;
-  const diffHr = Math.floor(diffMin / 60);
-  if (diffHr < 24) return `${diffHr}h ago`;
-  const diffDays = Math.floor(diffHr / 24);
-  if (diffDays < 30) return `${diffDays}d ago`;
-  return new Date(dateStr).toLocaleDateString();
-}
 
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const MONTH_NAMES = [
@@ -188,7 +176,13 @@ export function HoldingDetailContent({ holdingId, mode = 'panel' }: HoldingDetai
   useEffect(() => {
     if (!refreshPriceJobId) return;
     if (refreshPriceJobStatus.state === 'completed') {
-      showSuccess('Price refreshed');
+      // Same three outcomes as v3, same one boolean hiding them (SC-148).
+      const outcome = describePriceRefresh(
+        refreshPriceJobStatus.result as PriceRefreshReport | null,
+        null
+      );
+      if (outcome.kind === 'no-price') showError(new Error(outcome.message), 'Refreshing price');
+      else showSuccess(outcome.message);
       setRefreshPriceJobId(null);
       void invalidatePortfolioQueries(utils);
     } else if (refreshPriceJobStatus.state === 'failed') {
@@ -198,7 +192,13 @@ export function HoldingDetailContent({ holdingId, mode = 'panel' }: HoldingDetai
       );
       setRefreshPriceJobId(null);
     }
-  }, [refreshPriceJobId, refreshPriceJobStatus.state, refreshPriceJobStatus.error, utils]);
+  }, [
+    refreshPriceJobId,
+    refreshPriceJobStatus.state,
+    refreshPriceJobStatus.result,
+    refreshPriceJobStatus.error,
+    utils,
+  ]);
   const refreshPriceBusy = isRefreshingPrice || refreshPriceJobId !== null;
 
   // While a delete is in flight the optimistic patch has already pulled
@@ -298,7 +298,7 @@ export function HoldingDetailContent({ holdingId, mode = 'panel' }: HoldingDetai
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div>
           <p className="text-xs text-muted-foreground uppercase tracking-wider">Value</p>
-          <p className="text-xl font-semibold mt-0.5">{formatCurrency(value, currencySymbol)}</p>
+          <p className="text-xl font-semibold mt-0.5">{formatMoney(value, currencySymbol)}</p>
         </div>
         <div>
           <p className="text-xs text-muted-foreground uppercase tracking-wider">Amount</p>
@@ -325,9 +325,7 @@ export function HoldingDetailContent({ holdingId, mode = 'panel' }: HoldingDetai
             </div>
           ) : (
             <p className="text-xl font-semibold mt-0.5 flex items-center gap-2">
-              {typeof holding.amount === 'number'
-                ? holding.amount.toLocaleString('en-US', { maximumFractionDigits: 8 })
-                : holding.amount}
+              {formatQuantity(holding.amount)}
               <button
                 type="button"
                 onClick={startEditBalance}
@@ -346,9 +344,7 @@ export function HoldingDetailContent({ holdingId, mode = 'panel' }: HoldingDetai
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
             <p className="text-xs text-muted-foreground uppercase tracking-wider">Cost Basis</p>
-            <p className="text-sm font-medium mt-0.5">
-              {formatCurrency(costBasis, currencySymbol)}
-            </p>
+            <p className="text-sm font-medium mt-0.5">{formatMoney(costBasis, currencySymbol)}</p>
           </div>
           <div>
             <p className="text-xs text-muted-foreground uppercase tracking-wider">Gain / Loss</p>
@@ -385,9 +381,9 @@ export function HoldingDetailContent({ holdingId, mode = 'panel' }: HoldingDetai
             <span className="flex items-center gap-1.5">
               {holding.price?.value ? (
                 <span className="flex flex-col items-end gap-0.5">
-                  <span>{formatCurrency(Number(holding.price.value), currencySymbol)}</span>
+                  <span>{formatMoney(holding.price.value, currencySymbol)}</span>
                   <span className="text-[10px] text-muted-foreground/70">
-                    {holding.price.timestamp ? formatRelativeTime(holding.price.timestamp) : ''}
+                    {holding.price.timestamp ? formatRelative(holding.price.timestamp) : ''}
                     {holding.price.source ? ` · ${holding.price.source}` : ''}
                   </span>
                 </span>
@@ -443,7 +439,7 @@ export function HoldingDetailContent({ holdingId, mode = 'panel' }: HoldingDetai
         />
         <DetailRow
           label="Last Updated"
-          value={holding.lastUpdated ? formatRelativeTime(holding.lastUpdated) : '-'}
+          value={holding.lastUpdated ? formatRelative(holding.lastUpdated) : '-'}
         />
         {holding.source && holding.source !== 'manual' && (
           <DetailRow
@@ -524,7 +520,7 @@ export function HoldingDetailContent({ holdingId, mode = 'panel' }: HoldingDetai
                   </p>
                   {holding.apyConfig.lastPayoutAt && (
                     <p className="text-[10px] text-muted-foreground/70">
-                      Last payout: {formatRelativeTime(holding.apyConfig.lastPayoutAt)}
+                      Last payout: {formatRelative(holding.apyConfig.lastPayoutAt)}
                     </p>
                   )}
                 </div>

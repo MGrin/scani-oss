@@ -10,9 +10,7 @@
     "clean": "rm -rf dist",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
-    "type-check": "tsgo --noEmit",
-    "generate-icons": "node scripts/generate-icons.js",
-    "prebuild": "bun run generate-icons"
+    "type-check": "tsgo --noEmit"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
@@ -45,7 +43,6 @@
     "@vitejs/plugin-react": "^4.7.0",
     "autoprefixer": "^10.5.0",
     "postcss": "^8.5.10",
-    "sharp": "^0.34.5",
     "tailwindcss": "^3.4.19",
     "typescript": "^5",
     "vite": "^5.4.21"

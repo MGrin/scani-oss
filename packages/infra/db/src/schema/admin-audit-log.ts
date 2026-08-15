@@ -1,7 +1,7 @@
 import { index, jsonb, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 
-// Records operator-initiated mutations — BullMQ retry/remove, DLQ
-// replay, etc. See migration 0045. Append-only;
+// Records operator-initiated mutations from the admin app — BullMQ
+// retry/remove, DLQ replay, etc. See migration 0045. Append-only;
 // `actor` is the admin's email-or-name; `result` is 'success'|'failure'
 // (free-text for now); `details` is jsonb for any per-action payload.
 //
