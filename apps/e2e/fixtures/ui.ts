@@ -113,6 +113,43 @@ export async function createAccount(
   return { id: result.accountId, name: opts.name, institutionId: institution.id };
 }
 
+/**
+ * Open an account's v3 record surface and wait for the query its title is
+ * rendered from.
+ *
+ * `/accounts/<id>` is a v3 route, and v3's peek opens off the URL *before* its
+ * data exists: until `accounts.getByUserIdWithSummary` answers, the drawer is
+ * on screen titled "Loading". So the heading a caller is about to assert on is
+ * already present and already a level-2 heading — it just carries the wrong
+ * accessible name for the whole of that window, which is what an assertion
+ * racing it fails against.
+ *
+ * The window is wide here because the stack serves the SPA from a Vite dev
+ * server, which compiles the module graph on demand: the first navigation into
+ * a v3 route pulls the whole tree one request at a time — 442 of them on the
+ * run this replaced — and on a CI runner already driving four browser workers
+ * the last of those landed 5.4s and 6.7s after the navigation, either side of
+ * the 5s an assertion gets by default. `tests/a11y/v3-accessibility.spec.ts`
+ * met the same cost and answers it the same way, by paying it somewhere the
+ * budget is explicit rather than inside the assertion.
+ *
+ * Waiting on the response rather than widening the assertion is the point:
+ * what the title needs is that query, not more seconds, and a number chosen to
+ * cover the slowest run observed so far is a number the next slower runner
+ * invalidates silently.
+ */
+export async function gotoAccountPeek(page: Page, accountId: string): Promise<void> {
+  // Armed before navigating, not after. `page.goto` resolves on `load`, and
+  // under Vite's dev server `load` already waits on the module graph — so by
+  // the time it returns the query can have been asked and answered, and a
+  // wait registered afterwards would sit there until it timed out.
+  const accountsLoaded = page.waitForResponse(
+    (res) => res.url().includes('accounts.getByUserIdWithSummary') && res.ok()
+  );
+  await page.goto(`/accounts/${accountId}`);
+  await accountsLoaded;
+}
+
 export interface CreatedHolding {
   id: string;
   accountId: string;
