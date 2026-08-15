@@ -1,11 +1,29 @@
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
+
+// Ask compose which container is running the `redis` service rather than
+// guessing its name. A hardcoded name is a bet on `docker-compose.yml`, and
+// that file is pinned per-repo: the downstream tree sets
+// `container_name: scani-redis`, this one takes compose's generated
+// `<project>-redis-1`. The name that works in one is absent in the other, and
+// the failure surfaces as `No such container` in an unrelated account test.
+//
+// `REDIS_CONTAINER` still wins, for a stack started outside compose.
+let cached: string | null = null;
 
 function getContainerName(): string {
-  // `docker-compose.yml` pins `container_name: scani-redis`. The previous
-  // default here was a compose-generated name from a workspace that no longer
-  // exists, so every caller outside a `REDIS_CONTAINER=…` invocation was
-  // reaching for a container that was never going to be there.
-  return process.env.REDIS_CONTAINER ?? 'scani-redis';
+  const override = process.env.REDIS_CONTAINER;
+  if (override) return override;
+  if (cached) return cached;
+  const out = spawnSync('docker', ['compose', 'ps', '-q', 'redis'], { encoding: 'utf8' });
+  const id = out.stdout?.trim().split('\n')[0] ?? '';
+  if (!id) {
+    throw new Error(
+      'Could not find the compose container for the `redis` service. ' +
+        'Is the stack up (`bun dev:stack`)? Set REDIS_CONTAINER to override.'
+    );
+  }
+  cached = id;
+  return id;
 }
 
 /**
