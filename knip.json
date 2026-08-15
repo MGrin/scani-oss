@@ -32,7 +32,13 @@
       "project": ["src/**/*.{ts,tsx}"]
     },
     "apps/e2e": {
-      "entry": ["scripts/wait-for-stack.ts", "tests/**/*.spec.ts", "fixtures/**/*.ts"],
+      "entry": [
+        "scripts/wait-for-stack.ts",
+        "tests/**/*.spec.ts",
+        "fixtures/**/*.ts",
+        "playwright.shots.config.ts",
+        "capture/**/*.spec.ts"
+      ],
       "project": ["**/*.ts"]
     },
     "packages/business/domain": {
