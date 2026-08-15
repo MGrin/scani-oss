@@ -1,55 +1,20 @@
-import { spawn, spawnSync } from 'node:child_process';
+import Redis from 'ioredis';
 
-// Ask compose which container is running the `redis` service rather than
-// guessing its name. A hardcoded name is a bet on `docker-compose.yml`, and
-// that file is pinned per-repo: the downstream tree sets
-// `container_name: scani-redis`, this one takes compose's generated
-// `<project>-redis-1`. The name that works in one is absent in the other, and
-// the failure surfaces as `No such container` in an unrelated account test.
+// The dev Redis is published on a host port by `docker-compose.yml`, so talk to
+// it over that port with the client this repo already depends on.
 //
-// `REDIS_CONTAINER` still wins, for a stack started outside compose.
-let cached: string | null = null;
-
-function getContainerName(): string {
-  const override = process.env.REDIS_CONTAINER;
-  if (override) return override;
-  if (cached) return cached;
-  const out = spawnSync('docker', ['compose', 'ps', '-q', 'redis'], { encoding: 'utf8' });
-  const id = out.stdout?.trim().split('\n')[0] ?? '';
-  if (!id) {
-    throw new Error(
-      'Could not find the compose container for the `redis` service. ' +
-        'Is the stack up (`bun dev:stack`)? Set REDIS_CONTAINER to override.'
-    );
-  }
-  cached = id;
-  return id;
-}
-
-/**
- * Execute a redis command in the dev Redis via `docker exec redis-cli`.
- * Returns stdout (trimmed).
- */
-async function redisCli(args: string[]): Promise<string> {
-  const container = getContainerName();
-  return new Promise((resolve, reject) => {
-    const proc = spawn('docker', ['exec', container, 'redis-cli', ...args], {
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-    let stdout = '';
-    let stderr = '';
-    proc.stdout.on('data', (d) => {
-      stdout += d.toString();
-    });
-    proc.stderr.on('data', (d) => {
-      stderr += d.toString();
-    });
-    proc.on('close', (code) => {
-      if (code !== 0) return reject(new Error(`redis-cli exited ${code}: ${stderr}`));
-      resolve(stdout.trim());
-    });
-  });
-}
+// The previous implementation shelled out to `docker exec <name> redis-cli`,
+// which coupled the suite to three things it has no business knowing: that a
+// container runtime is involved at all, what that container is called, and that
+// `redis-cli` is installed inside the image. The name was the one that broke —
+// it was hardcoded to `scani-redis`, which the downstream tree sets via
+// `container_name` and this one does not, so four specs failed with
+// `No such container` on every CI run.
+//
+// A host port is a weaker coupling than a container name: it is declared in the
+// same compose file the suite starts, and `REDIS_URL` overrides it for a stack
+// started some other way.
+const REDIS_URL = process.env.REDIS_URL ?? 'redis://127.0.0.1:6380';
 
 /**
  * Flush all per-IP signup/auth rate-limit keys. The API rate-limits
@@ -65,14 +30,23 @@ export async function resetAuthRateLimit(): Promise<void> {
   // `rl:session-revoke:user:<userId>` (per-user revoke cap, 10/min).
   // Both can pollute consecutive specs that exercise auth or sessions.
   const patterns = ['rl:signup:*', 'rl:session-revoke:*'];
-  const all: string[] = [];
-  for (const pattern of patterns) {
-    const keys = await redisCli(['--scan', '--pattern', pattern]);
-    if (!keys) continue;
-    for (const line of keys.split('\n')) {
-      if (line.length > 0) all.push(line);
+  const redis = new Redis(REDIS_URL, { maxRetriesPerRequest: 2, lazyConnect: true });
+  try {
+    await redis.connect();
+    const all: string[] = [];
+    for (const pattern of patterns) {
+      // SCAN rather than KEYS: same reason the CLI form used `--scan`, which is
+      // a SCAN loop under the covers — KEYS blocks the server for the whole
+      // keyspace, and this runs before a lot of specs.
+      let cursor = '0';
+      do {
+        const [next, batch] = await redis.scan(cursor, 'MATCH', pattern, 'COUNT', 200);
+        cursor = next;
+        all.push(...batch);
+      } while (cursor !== '0');
     }
+    if (all.length > 0) await redis.del(...all);
+  } finally {
+    redis.disconnect();
   }
-  if (all.length === 0) return;
-  await redisCli(['DEL', ...all]);
 }
