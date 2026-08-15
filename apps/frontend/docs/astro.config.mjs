@@ -3,6 +3,7 @@
 import starlight from '@astrojs/starlight';
 import { defineConfig } from 'astro/config';
 import remarkGfm from 'remark-gfm';
+import { rehypeScrollableTables } from './src/plugins/rehype-scrollable-tables.mjs';
 
 // https://astro.build/config
 export default defineConfig({
@@ -15,9 +16,18 @@ export default defineConfig({
   // no-op. `scripts/check-tables.ts` fails the build if this ever regresses.
   markdown: {
     remarkPlugins: [remarkGfm],
+    // Wraps every table in a labelled, focusable scroll region so a phone
+    // reader can tell the off-screen columns exist (SC-102).
+    rehypePlugins: [rehypeScrollableTables],
   },
   integrations: [
     starlight({
+      head: [
+        {
+          tag: 'script',
+          attrs: { src: '/table-scroll.js', defer: true },
+        },
+      ],
       title: 'Scani docs',
       description:
         'Self-hostable, open-source portfolio tracker for crypto and traditional assets. Domain model, self-hosting guide, design decisions, and a full financial glossary.',
