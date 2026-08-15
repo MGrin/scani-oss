@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { signIn } from '../../fixtures/auth';
 import { resetAuthRateLimit } from '../../fixtures/redis';
-import { createAccount } from '../../fixtures/ui';
+import { createAccount, gotoAccountPeek } from '../../fixtures/ui';
 
 const API_BASE_URL = process.env.API_BASE_URL ?? 'http://localhost:3011';
 
@@ -29,9 +29,9 @@ test.describe('accounts: update', () => {
     const renamed = listBody.result.data.find((a) => a.id === created.id);
     expect(renamed?.name).toBe(newName);
 
-    // UI assertion: navigating to the detail page after the rename shows
-    // the new name, proving the change was persisted (not just acked).
-    await page.goto(`/accounts/${created.id}`);
+    // UI assertion: opening the record after the rename shows the new name,
+    // proving the change was persisted (not just acked).
+    await gotoAccountPeek(page, created.id);
     await expect(page.getByRole('heading', { name: newName })).toBeVisible();
   });
 });

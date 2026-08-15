@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { signIn } from '../../fixtures/auth';
 import { resetAuthRateLimit } from '../../fixtures/redis';
-import { createAccount } from '../../fixtures/ui';
+import { createAccount, gotoAccountPeek } from '../../fixtures/ui';
 
 test.describe('accounts: add manual account', () => {
   test.beforeEach(async () => {
@@ -19,11 +19,12 @@ test.describe('accounts: add manual account', () => {
     expect(account.id).toBeTruthy();
     expect(account.name).toBe(accountName);
 
-    // The account-detail page renders the account name as an h2 heading.
-    // Hitting it via URL avoids the AccountsPage's default "hide accounts
-    // with zero holdings" filter, which would otherwise mask a freshly
-    // created (and therefore empty) account.
-    await page.goto(`/accounts/${account.id}`);
+    // `/accounts/<id>` opens the account's record as a peek over the list, and
+    // that peek titles itself with the account name as a level-2 heading.
+    // Addressing the record directly is what keeps a freshly created — and so
+    // empty — account assertable at all: the list behind the peek filters on
+    // holdings, and this account has none yet.
+    await gotoAccountPeek(page, account.id);
     await expect(page.getByRole('heading', { name: accountName })).toBeVisible();
   });
 });
