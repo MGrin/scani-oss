@@ -10,7 +10,8 @@ Quick start:
 ## Viewports
 
 `fixtures/devices.ts` is the single viewport matrix, consumed by both
-`playwright.config.ts` (as projects):
+`playwright.config.ts` (as projects) and `scripts/shots.ts` (as browser
+contexts):
 
 | Project | Device | Size | Engine |
 |---|---|---|---|
@@ -127,3 +128,51 @@ in `browser_eval` — it should return your email.
 - **Ports collide across worktrees.** `lsof -nP -iTCP:5173 -sTCP:LISTEN` before
   trusting a screenshot; `--strictPort` so Vite fails loudly instead of quietly
   taking 5174.
+
+## Screenshot harness — `bun run shots`
+
+The edit → look loop against a **local** stack. Signs in, seeds a fixed
+portfolio, walks a route list, and writes PNGs an agent can `Read`.
+
+```bash
+bun dev:stack                    # repo root — the harness needs api + app + worker
+bun run shots                    # iphone + ipad, default routes
+bun run shots -- --routes=/v3 --devices=iphone
+```
+
+Output lands in `apps/e2e/shots/<device>/<route>.png` (gitignored). The
+directory is wiped at the start of each run, so what's there is always the
+current run.
+
+| Flag | Default | Effect |
+|---|---|---|
+| `--devices=` | `iphone,ipad` | Comma-separated names from the table above |
+| `--routes=` | dashboard, holdings, accounts, institutions, vaults, groups, payments, add-data, settings | Comma-separated app routes |
+| `--out=` | `shots` | Output directory, relative to `apps/e2e` |
+| `--viewport` | off (full-page) | Capture only the visible viewport |
+| `--settle=` | `1200` | Milliseconds to wait after load before the shot |
+| `--fresh` | off | New user + new seed instead of reusing the stored session |
+
+Layout: `scripts/shots.ts` is a Bun CLI wrapper that shells out to the
+Playwright runner with `playwright.shots.config.ts` (its own `testDir`,
+`capture/`, and its own globalSetup in `fixtures/shots-setup.ts`, which signs in
+and seeds). The capture itself must run under the runner — under Bun,
+`page.request`'s `Set-Cookie` parsing throws `ERR_INVALID_URL` on the relative
+URLs Better-Auth returns, which breaks `fixtures/auth.ts`. The runner executes
+under Node, where those fixtures already work for the whole spec suite.
+
+The seeded portfolio (`PORTFOLIO` in `fixtures/shots-setup.ts`) is deliberately fixed
+and fiat-only — identical data across runs is what makes two screenshot sets
+comparable, and the fiat tokens ship in migration `0000` rather than arriving
+from a CoinGecko sync a local stack may not have run.
+
+The session is cached in `apps/e2e/.shots-session.json` (gitignored) and reused
+until it stops working. That is not an optimisation: the API rate-limits
+sign-ins to 6 per IP per hour, so re-authenticating on every run would lock the
+harness out after a handful of invocations. `--fresh` when you want a clean
+account.
+
+Baselines are deliberately *not* part of this: macOS-rendered PNGs will never
+match `ubuntu-latest`. If this grows into `toHaveScreenshot` regression
+testing, baselines must be generated in CI only, inside the Playwright Docker
+image, and updated one branch at a time.
