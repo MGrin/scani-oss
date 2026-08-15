@@ -173,6 +173,7 @@ export class PricingProviderRouter {
           providerMetadata: tokenData.metadata,
           isScamProbability: 0,
           isActive: true,
+          lookalikeOf: null,
           unpriceableUntil: null,
           lastPricingAttemptAt: null,
           createdAt: new Date(),

@@ -48,7 +48,29 @@ export async function makeToken(
   const [row] = await tx
     .insert(schema.tokens)
     .values({
-      symbol: overrides.symbol ?? `TOK${randomUUID().slice(0, 4).toUpperCase()}`,
+      // The FULL uuid, not a slice. `tokens` carries a unique constraint on
+      // (symbol, type_id, COALESCE(market_segment,'')) and this default is
+      // the only thing keeping 127 call sites off each other (SC-230).
+      //
+      // It was `randomUUID().slice(0, 4).toUpperCase()` — four hex
+      // characters, a space of 65,536. Measured against the shared local
+      // database on 2026-08-15: 138 surviving `TOK####` rows and 127
+      // makeToken call sites gave roughly a 23% chance that some test in a
+      // full-suite run collided, plus another ~11% for two calls colliding
+      // with each other inside one run.
+      //
+      // It ratchets, which is why it got worse rather than staying flat: a
+      // collision fails a test, a test that fails partway through its
+      // fixture does not finish cleaning up, the surviving rows widen the
+      // occupied space, and the next run is likelier to collide. Each
+      // full-suite run left roughly six more rows behind.
+      //
+      // The damage was never in the file that failed. `PaymentService`
+      // inserts no tokens of its own and still failed on `insert into
+      // "tokens"`, on a different test each run, because it was simply the
+      // suite holding the seed when the collision landed. Chasing that took
+      // eight repeat runs and an import-graph check to rule out.
+      symbol: overrides.symbol ?? `TOK${randomUUID().replace(/-/g, '').toUpperCase()}`,
       name: overrides.name ?? 'Test Token',
       typeId,
       isScamProbability: overrides.isScamProbability ?? 0,
