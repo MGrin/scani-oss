@@ -2,8 +2,8 @@ import type { DatabaseTransaction } from '@scani/db';
 import { getDb as getDbConnection } from '@scani/db/connection';
 import type { UserJob, UserJobState } from '@scani/db/schema';
 import * as schema from '@scani/db/schema';
-import { REVIEWABLE_JOB_NAMES } from '@scani/shared';
-import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { REVIEWABLE_JOB_NAMES, type ReviewOutcome } from '@scani/shared';
+import { and, desc, eq, getTableColumns, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 import { Service } from 'typedi';
 
 /**
@@ -147,6 +147,84 @@ export class UserJobRepository {
   }
 
   /**
+   * "The queue has given up on this job" (SC-153) — the write `markFailed`
+   * could never make, because it fires on every failed attempt and cannot
+   * see whether another is coming.
+   *
+   * Three things make this deliberately unlike `markFailed`:
+   *
+   * 1. **No state guard.** By the time this runs the row is normally already
+   *    `failed` from the last attempt's write, so the usual
+   *    `state IN ('queued','active','progress')` filter would drop it. It
+   *    sets `state` too, because the row it most needs to correct is the one
+   *    still reading `queued` — a payload that fails validation throws
+   *    before any lifecycle event fires at all.
+   * 2. **`dead_at IS NULL` instead.** First terminal write wins, which is
+   *    what keeps a user's cancellation from being relabelled
+   *    "retries_exhausted" by a worker that dies moments later.
+   * 3. **`error` is only filled in if empty.** The per-attempt message is
+   *    usually the more specific one.
+   */
+  async markDead(
+    jobId: string,
+    meta: {
+      reason: string;
+      error: string;
+      attemptsMade: number;
+      attemptsAllowed: number;
+    },
+    transaction?: DatabaseTransaction
+  ): Promise<boolean> {
+    const db = this.getDb(transaction);
+    const now = new Date();
+    const updated = await db
+      .update(schema.userJobs)
+      .set({
+        state: 'failed',
+        deadAt: now,
+        failureReason: meta.reason,
+        error: sql`COALESCE(${schema.userJobs.error}, ${meta.error.slice(0, 4000)})`,
+        attemptsMade: meta.attemptsMade,
+        attemptsAllowed: meta.attemptsAllowed,
+        finishedAt: sql`COALESCE(${schema.userJobs.finishedAt}, ${now.toISOString()}::timestamptz)`,
+        updatedAt: now,
+      })
+      .where(and(eq(schema.userJobs.jobId, jobId), isNull(schema.userJobs.deadAt)))
+      .returning({ jobId: schema.userJobs.jobId });
+    return updated.length > 0;
+  }
+
+  /**
+   * Dead jobs the user has not yet dealt with — the review feed's query.
+   * Cancellations are excluded at the source rather than by the caller:
+   * `markCancelled` stamps `action_taken_at` on its way through, so a job
+   * the user stopped on purpose can never come back asking about itself.
+   */
+  async findDeadUnacknowledged(
+    userId: string,
+    limit = 50,
+    transaction?: DatabaseTransaction
+  ): Promise<UserJob[]> {
+    const db = this.getDb(transaction);
+    const rows = await db
+      .select()
+      .from(schema.userJobs)
+      .where(
+        and(
+          eq(schema.userJobs.userId, userId),
+          isNotNull(schema.userJobs.deadAt),
+          isNull(schema.userJobs.actionTakenAt)
+        )
+      )
+      // `created_at` breaks the tie: two jobs killed by the same worker
+      // shutdown share a `dead_at` to the millisecond, and an unstable sort
+      // makes the feed reshuffle itself between refetches.
+      .orderBy(desc(schema.userJobs.deadAt), desc(schema.userJobs.createdAt))
+      .limit(limit);
+    return rows as UserJob[];
+  }
+
+  /**
    * User-initiated cancellation. Locks the row into state='failed' with
    * a sentinel error message. Returns true on success, false when the
    * job is already in a terminal state (so the API can return a clear
@@ -165,6 +243,11 @@ export class UserJobRepository {
         error: 'Cancelled by user',
         finishedAt: new Date(),
         updatedAt: new Date(),
+        // Terminal, and terminal for a reason the user already knows —
+        // stamped here so a worker that fails moments later cannot relabel
+        // a deliberate stop as "we tried three times" (SC-153).
+        deadAt: new Date(),
+        failureReason: 'cancelled',
         // Stamp action_taken_at too so the cancelled row drops out of
         // the "needs review" sidebar bucket immediately.
         actionTakenAt: sql`COALESCE(${schema.userJobs.actionTakenAt}, now())`,
@@ -180,25 +263,42 @@ export class UserJobRepository {
     return updated.length > 0;
   }
 
-  /** Paginated list of jobs for a user; most recent first. */
+  /**
+   * Paginated list of jobs for a user; most recent first.
+   *
+   * **Without `result`, in SQL.** The list surfaces — the top-nav badge, the
+   * jobs page rows — render none of it, and `jobs.listMine` has always
+   * stripped the field before it reached the client. It stripped it in
+   * TypeScript: `SELECT *` still detoasted up to 50 jsonb payloads per call
+   * so the router could drop them, and that call is invalidated on **every
+   ***REMOVED***
+   ***REMOVED***
+   * ~13 MB out of Neon per invalidation.
+   *
+   * That read is the concrete cost SC-155 set out to remove, and removing it
+   * needs a column list rather than a second datastore — see the ticket's
+   * resolution. `findOneMine` and `findPendingReview` still select `result`
+   * because both actually read it.
+   */
   async findMine(
     userId: string,
     options: { state?: UserJobState; limit?: number; offset?: number },
     transaction?: DatabaseTransaction
-  ): Promise<UserJob[]> {
+  ): Promise<Omit<UserJob, 'result'>[]> {
     const db = this.getDb(transaction);
     const conditions = [eq(schema.userJobs.userId, userId)];
     if (options.state) {
       conditions.push(eq(schema.userJobs.state, options.state));
     }
+    const { result: _result, ...columns } = getTableColumns(schema.userJobs);
     const rows = await db
-      .select()
+      .select(columns)
       .from(schema.userJobs)
       .where(and(...conditions))
       .orderBy(desc(schema.userJobs.createdAt))
       .limit(options.limit ?? 50)
       .offset(options.offset ?? 0);
-    return rows as UserJob[];
+    return rows as Omit<UserJob, 'result'>[];
   }
 
   /** Ownership-gated single-row lookup — for the /jobs/:jobId detail page. */
@@ -244,10 +344,11 @@ export class UserJobRepository {
 
   /**
    * One-shot stamp when the user consumes the follow-up action on a
-   * job (e.g. confirms extracted holdings from a screenshot/PDF/CSV
-   * parse). Idempotent: subsequent calls are no-ops because of the
-   * `action_taken_at IS NULL` guard in the WHERE clause — prevents
-   * double-imports even under rapid double-click.
+   * job — either confirming the extracted holdings or discarding the
+   * parse outright (SC-138). Idempotent: subsequent calls are no-ops
+   * because of the `action_taken_at IS NULL` guard in the WHERE clause —
+   * prevents double-imports even under rapid double-click, and means a
+   * discard can never overwrite a completed import's outcome.
    *
    * Returns the stamp actually persisted (whether from this call or a
    * prior one), or `null` if the job isn't owned by this user.
@@ -255,12 +356,13 @@ export class UserJobRepository {
   async markActionTaken(
     userId: string,
     jobId: string,
+    outcome: ReviewOutcome = 'imported',
     transaction?: DatabaseTransaction
   ): Promise<Date | null> {
     const db = this.getDb(transaction);
     const [updated] = await db
       .update(schema.userJobs)
-      .set({ actionTakenAt: new Date(), updatedAt: new Date() })
+      .set({ actionTakenAt: new Date(), reviewOutcome: outcome, updatedAt: new Date() })
       .where(
         and(
           eq(schema.userJobs.jobId, jobId),
@@ -295,6 +397,11 @@ export class UserJobRepository {
         finishedAt: null,
         startedAt: null,
         updatedAt: new Date(),
+        // A job that is running again is not dead. Leaving these set would
+        // keep it in the review feed and on the "won't retry" chip while it
+        // is visibly working (SC-153).
+        deadAt: null,
+        failureReason: null,
       })
       .where(eq(schema.userJobs.jobId, jobId));
   }

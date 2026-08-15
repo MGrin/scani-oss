@@ -56,7 +56,10 @@ export class CurrencyConverter {
   private readonly tokenPriceRepository = Container.get(TokenPriceRepository);
   private readonly priceGraphService = Container.get(PriceGraphService);
 
-  private readonly currencyRateCache = new Map<string, { rate: string; expiresAt: number }>();
+  private readonly currencyRateCache = new Map<
+    string,
+    { rate: string; expiresAt: number; asOf: number }
+  >();
 
   /**
    * Convert a price between fiat currencies. Returns `null` when the
@@ -114,7 +117,27 @@ export class CurrencyConverter {
     timestamp: Date,
     cacheOnly = false
   ): Promise<string | null> {
-    if (fromCurrency === toCurrency) return '1';
+    const detail = await this.getRateDetail(fromCurrency, toCurrency, timestamp, cacheOnly);
+    return detail?.rate ?? null;
+  }
+
+  /**
+   * `getRate` plus the moment the rate is actually *from* — the timestamp
+   * of the price-graph edge it resolved through, or now for a live
+   * upstream fetch. Same null contract as `getRate`.
+   *
+   * A converted figure is a different claim from a same-currency one, so
+   * a surface that prints one has to be able to say how old the rate
+   * behind it is. This is the only way to get that out of the pipeline
+   * without a second rate path alongside the one every valuation uses.
+   */
+  async getRateDetail(
+    fromCurrency: string,
+    toCurrency: string,
+    timestamp: Date,
+    cacheOnly = false
+  ): Promise<{ rate: string; asOf: Date } | null> {
+    if (fromCurrency === toCurrency) return { rate: '1', asOf: timestamp };
 
     const cacheKey = this.cacheKey(fromCurrency, toCurrency);
     const cached = this.currencyRateCache.get(cacheKey);
@@ -123,7 +146,7 @@ export class CurrencyConverter {
     if (cached) {
       if (cached.expiresAt > now) {
         logger.debug({ fromCurrency, toCurrency }, 'Using cached currency conversion rate');
-        return cached.rate;
+        return { rate: cached.rate, asOf: new Date(cached.asOf) };
       }
       this.currencyRateCache.delete(cacheKey);
     }
@@ -131,8 +154,9 @@ export class CurrencyConverter {
     const dbRate = await this.fetchRateFromDatabase(fromCurrency, toCurrency, timestamp);
     if (dbRate) {
       this.currencyRateCache.set(cacheKey, {
-        rate: dbRate,
+        rate: dbRate.rate,
         expiresAt: now + this.CURRENCY_CONVERSION_TTL_MS,
+        asOf: dbRate.asOf.getTime(),
       });
       return dbRate;
     }
@@ -171,6 +195,7 @@ export class CurrencyConverter {
       this.currencyRateCache.set(cacheKey, {
         rate: rateString,
         expiresAt: now + this.CURRENCY_CONVERSION_TTL_MS,
+        asOf: now,
       });
 
       try {
@@ -200,7 +225,7 @@ export class CurrencyConverter {
         );
       }
 
-      return rateString;
+      return { rate: rateString, asOf: new Date(now) };
     } catch (error) {
       logger.warn({ fromCurrency, toCurrency, error }, 'Failed to get currency conversion rate');
       return null;
@@ -264,10 +289,12 @@ export class CurrencyConverter {
             this.currencyRateCache.set(this.cacheKey('USD', toCurrency), {
               rate: rate.toString(),
               expiresAt: now + this.CURRENCY_CONVERSION_TTL_MS,
+              asOf: now,
             });
             this.currencyRateCache.set(this.cacheKey(toCurrency, 'USD'), {
               rate: (1 / rate).toString(),
               expiresAt: now + this.CURRENCY_CONVERSION_TTL_MS,
+              asOf: now,
             });
           }
         }
@@ -328,13 +355,13 @@ export class CurrencyConverter {
     fromCurrencySymbol: string,
     toCurrencySymbol: string,
     timestamp: Date
-  ): Promise<string | null> {
+  ): Promise<{ rate: string; asOf: Date } | null> {
     try {
       const fromToken = await this.tokenRepository.findBySymbol(fromCurrencySymbol);
       const toToken = await this.tokenRepository.findBySymbol(toCurrencySymbol);
 
       if (!fromToken || !toToken) return null;
-      if (fromToken.id === toToken.id) return '1';
+      if (fromToken.id === toToken.id) return { rate: '1', asOf: timestamp };
 
       const conversion = await this.priceGraphService.convert(
         new Decimal(1),
@@ -378,7 +405,7 @@ export class CurrencyConverter {
         'Using conversion rate from price graph'
       );
 
-      return rateString;
+      return { rate: rateString, asOf: conversion.effectiveAt };
     } catch (error) {
       currencyLogger.warn(
         { error, fromCurrencySymbol, toCurrencySymbol },

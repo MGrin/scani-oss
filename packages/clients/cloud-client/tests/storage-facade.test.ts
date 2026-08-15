@@ -203,6 +203,21 @@ describe('StorageFacade — cloud mode (cloud client set)', () => {
     await expect(facade.delete('key')).resolves.toBeUndefined();
   });
 
+  test('delete swallows the message R2 actually sends for a missing key', async () => {
+    // The predicate here used to be /NoSuchKey|404|not found/i, which
+    // matches none of the words in R2's real wording. It only looked
+    // correct because the data-provider swallows the raw `NoSuchKey`
+    // server-side first — so the client-side guard was never the thing
+    // holding, and would have thrown the moment it was reached.
+    const { client } = stubCloudClient({
+      deleteThrows: new Error('The specified key does not exist.'),
+    });
+    setCloudClient(client);
+
+    const facade = new StorageFacade();
+    await expect(facade.delete('key')).resolves.toBeUndefined();
+  });
+
   test('delete propagates non-404 errors from the cloud client', async () => {
     const { client } = stubCloudClient({ deleteThrows: new Error('500 internal') });
     setCloudClient(client);

@@ -37,6 +37,7 @@ import { type CloudBetterAuthInstance, createCloudBetterAuth } from './auth/bett
 import { type CloudDb, closeCloudDb, getCloudDb } from './db/connection';
 import { buildOpenApiDocument, renderScalarHtml } from './presentation/openapi';
 import { appRouter, installCloudDb, installUsageDeps } from './presentation/router';
+import { securityHeaders } from './presentation/security-headers';
 import {
   buildCreateContext,
   getActiveUsageSink,
@@ -50,11 +51,12 @@ import { NoopUsageSink, PostgresUsageSink, type UsageSink } from './usage/sink';
 const PORT = env.PORT;
 const HOST = env.HOST;
 
-// A marketing site may host a public, unauthenticated contact form
-// that POSTs cross-origin to this service's tRPC endpoint. Set this
-// to that site's origin to allowlist it (unlike the cloud frontend,
-// whose origin is env-driven to vary across preview deploys).
-const MARKETING_ORIGIN = 'https://example.com';
+// A marketing site may host public, unauthenticated forms — a contact
+// form, for instance — that POST cross-origin to this
+// service's tRPC endpoint. It's a fixed Scani-owned origin, so it's
+// allowlisted directly (unlike the cloud frontend, whose origin is
+// env-driven to vary across preview deploys).
+const MARKETING_ORIGIN = 'https://scani.xyz';
 
 logger.info({ port: PORT, host: HOST, nodeEnv: env.NODE_ENV }, '🚀 Starting Scani Data-Provider');
 
@@ -163,37 +165,12 @@ const app = new Elysia()
     }
     return response;
   })
-  // Security headers — applied to every response. The api app sets the
-  // same set; the data-provider serves the same kind of bearer-auth API
-  // surface, so the headers should match. CSP defaults to `default-src
-  // 'none'` because this service returns JSON; no inline scripts, no
-  // images. HSTS only ships in production where TLS is guaranteed.
-  // The one exception is `/docs`, which embeds Scalar's API-reference
-  // bundle from jsdelivr — that page swaps in a Scalar-friendly CSP
-  // that whitelists the CDN + the assets Scalar fetches at runtime.
   .onAfterHandle(({ request, set }) => {
     set.headers = set.headers || {};
-    set.headers['X-Content-Type-Options'] = 'nosniff';
-    set.headers['X-Frame-Options'] = 'DENY';
-    set.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin';
-    set.headers['Permissions-Policy'] =
-      'camera=(), microphone=(), geolocation=(), interest-cohort=()';
-    set.headers['Cross-Origin-Resource-Policy'] = 'same-site';
-    const isDocsPage = new URL(request.url).pathname === '/docs';
-    set.headers['Content-Security-Policy'] = isDocsPage
-      ? [
-          "default-src 'self'",
-          "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net",
-          "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com",
-          "font-src 'self' data: https://cdn.jsdelivr.net https://fonts.gstatic.com",
-          "img-src 'self' data: https:",
-          "connect-src 'self'",
-          "worker-src 'self' blob:",
-        ].join('; ')
-      : "default-src 'none'; frame-ancestors 'none'; base-uri 'none'";
-    if (isNodeEnvProduction()) {
-      set.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains; preload';
-    }
+    Object.assign(
+      set.headers,
+      securityHeaders(new URL(request.url).pathname, isNodeEnvProduction())
+    );
   })
   .onError(({ code, error, request, set }) => {
     const tracked = request as RequestWithTracking;
@@ -225,7 +202,7 @@ const app = new Elysia()
       // tRPC routers). Bearer-auth (M2M) calls don't need CORS at all
       // since they're server-to-server. The browser origins that
       // legitimately reach this service are the cloud frontend and the
-      // marketing site (the latter for its public waitlist + contact
+      // marketing site (the latter for its public contact
       // forms).
       origin: env.CLOUD_FRONTEND_ORIGIN
         ? [env.CLOUD_FRONTEND_ORIGIN, MARKETING_ORIGIN]

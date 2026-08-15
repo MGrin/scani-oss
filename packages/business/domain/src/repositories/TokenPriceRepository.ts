@@ -350,7 +350,7 @@ export class TokenPriceRepository extends BaseRepository<TokenPrice, NewTokenPri
 
       // Get total count
       const countResult = await database
-        .select({ count: sql<number>`count(*)` })
+        .select({ count: sql<number>`count(*)::int` })
         .from(schema.tokenPrices)
         .where(whereClause);
 
@@ -367,7 +367,7 @@ export class TokenPriceRepository extends BaseRepository<TokenPrice, NewTokenPri
 
       return {
         items,
-        total: Number(count),
+        total: count,
       };
     } catch (error) {
       this.logger.error(
@@ -539,13 +539,22 @@ export class TokenPriceRepository extends BaseRepository<TokenPrice, NewTokenPri
   // single 'daily' row per (token, base, day): the last intraday reading of
   // each day becomes a synthesized daily close, then the collapsed intraday
   // rows are deleted. Existing 'daily' rows are authoritative and kept
-  // (ON CONFLICT DO NOTHING); 'tx-exact' rows are never touched. Callers wrap
-  // this in a transaction so intraday data is never dropped without its daily
-  // aggregate existing first.
+  // (ON CONFLICT DO NOTHING); 'tx-exact' and manual rows are never touched.
+  // Callers wrap this in a transaction so intraday data is never dropped
+  // without its daily aggregate existing first.
   //
   // Reads stay correct because every historical lookup (>36h in the past)
   // prefers 'daily' and falls through to any granularity — see
   // PriceGraphService / CostBasisService / PortfolioValuationAtTimeService.
+  //
+  // Manual prices are exempt because they are not samples of a curve. A custom
+  // token's manual price is written intraday and is the ONLY price that token
+  // will ever have; collapsing it rewrote `source` to 'downsample-daily' and
+  // deleted the original, so `findLatestManualPricesForTokensAnyBase` — the
+  // lookup `tokens.listCustom` reads — stopped finding it a week after it was
+  // set. /tokens then said "Never priced" about a token the same session was
+  // valuing at €177,000 off the surviving row (SC-77 2). Nothing is gained by
+  // compressing them: there is at most one per manual edit.
   async downsampleIntradayToDaily(
     retentionDays: number,
     transaction?: DatabaseTransaction
@@ -564,7 +573,9 @@ export class TokenPriceRepository extends BaseRepository<TokenPrice, NewTokenPri
         cross join lateral (
           select (date_trunc('day', p."timestamp" at time zone 'UTC') at time zone 'UTC') as day
         ) d
-        where p.granularity = 'intraday' and p."timestamp" < ${cutoff}
+        where p.granularity = 'intraday'
+          and (p.source is null or p.source not like 'manual%')
+          and p."timestamp" < ${cutoff}
         order by p.token_id, p.base_token_id, d.day, p."timestamp" desc
         on conflict (token_id, base_token_id, "timestamp", granularity) do nothing
         returning 1
@@ -575,7 +586,9 @@ export class TokenPriceRepository extends BaseRepository<TokenPrice, NewTokenPri
     const removed = (await database.execute(sql`
       with del as (
         delete from token_prices
-        where granularity = 'intraday' and "timestamp" < ${cutoff}
+        where granularity = 'intraday'
+          and (source is null or source not like 'manual%')
+          and "timestamp" < ${cutoff}
         returning 1
       )
       select count(*)::int as n from del

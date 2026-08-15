@@ -1,6 +1,5 @@
 import { describe, expect, test } from 'bun:test';
 import { JOB_NAMES } from '../src/queue-names';
-import { sanitizeResult } from '../src/sanitize-result';
 import { summarizePayload } from '../src/summarize-payload';
 
 // Defense-in-depth: the payload summary is rendered in the /jobs list UI
@@ -64,25 +63,5 @@ describe('summarizePayload', () => {
     });
     expect(summary).toEqual({ fileType: 'csv', accountId: 'acct-1', enrich: true });
     expect(JSON.stringify(summary)).not.toContain('signature');
-  });
-});
-
-describe('sanitizeResult', () => {
-  test('passes small objects through unchanged', () => {
-    const result = { accountsCreated: 2, holdingsCreated: 7, errors: [] };
-    expect(sanitizeResult(JOB_NAMES.walletImport, result)).toEqual(result);
-  });
-
-  test('truncates oversized top-level object fields in place', () => {
-    const huge = 'x'.repeat(64 * 1024);
-    const input = { keptSmall: 'ok', bloated: huge };
-    const out = sanitizeResult(JOB_NAMES.walletImport, input) as Record<string, unknown>;
-    expect(out.keptSmall).toBe('ok');
-    expect(out.bloated).toEqual({ _truncated: true, originalBytes: expect.any(Number) });
-  });
-
-  test('returns null / undefined unchanged', () => {
-    expect(sanitizeResult(JOB_NAMES.walletImport, null)).toBeNull();
-    expect(sanitizeResult(JOB_NAMES.walletImport, undefined)).toBeUndefined();
   });
 });

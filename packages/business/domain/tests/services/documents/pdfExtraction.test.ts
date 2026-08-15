@@ -41,14 +41,6 @@ function buildTextPdf(text: string): Uint8Array {
 // to as far as the parser's text layer is concerned. Cheap to build,
 // and it is `pagesNeedingOcr` that must drive the verdict, so a real
 // scanned image isn't needed to prove the routing.
-function buildTextlessPdf(): Uint8Array {
-  return buildPdf([
-    '1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n',
-    '2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n',
-    '3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 200] /Contents 4 0 R /Resources << >> >>\nendobj\n',
-    '4 0 obj\n<< /Length 0 >>\nstream\n\nendstream\nendobj\n',
-  ]);
-}
 
 describe('extractText', () => {
   test('returns non-empty markdown containing the document words for a text-based PDF', () => {

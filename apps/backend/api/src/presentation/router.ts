@@ -6,6 +6,7 @@ import { batchOperationsRouter } from './routers/batch-operations';
 import { clientErrorsRouter } from './routers/client-errors';
 import { dashboardRouter } from './routers/dashboard';
 import { documentsRouter } from './routers/documents';
+import { exportsRouter } from './routers/exports';
 import { fileImportRouter } from './routers/file-import';
 import { groupsRouter } from './routers/groups';
 import { holdingsRouter } from './routers/holdings';
@@ -21,6 +22,7 @@ import { sessionsRouter } from './routers/sessions';
 import { storageRouter } from './routers/storage';
 import { createTokensRouter } from './routers/tokens';
 import { transactionsRouter } from './routers/transactions';
+import { transferReviewRouter } from './routers/transfer-review';
 import { usersRouter } from './routers/users';
 import { vaultsRouter } from './routers/vaults';
 import { vendorsRouter } from './routers/vendors';
@@ -41,6 +43,9 @@ export const appRouter = router({
 
   // Manual transaction entry (protected) - power-user CRUD over holding_transactions
   transactions: transactionsRouter,
+
+  // Whole-account export (protected) - one snapshot of everything the user owns
+  exports: exportsRouter,
 
   // Core financial entities (protected)
   tokens: tokensRouter,
@@ -90,6 +95,10 @@ export const appRouter = router({
 
   // Review feed (read-model of pending items)
   review: reviewRouter,
+
+  // Unpaired transfers awaiting a human decision (SC-150). Separate from
+  // `review` because this one writes.
+  transferReview: transferReviewRouter,
 
   storage: storageRouter,
 

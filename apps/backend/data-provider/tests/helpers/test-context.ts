@@ -18,6 +18,7 @@ export function buildAuthedContext(
       ownerUserId: null,
       tier: 'oss',
     },
+    authFailure: null,
     cloudUser: null,
     requestId: 'test-request',
     usage: createUsageContext(),
@@ -31,6 +32,7 @@ export function buildUnauthedContext(
 ): DataProviderContext {
   return {
     auth: null,
+    authFailure: null,
     cloudUser: null,
     requestId: 'test-request',
     usage: createUsageContext(),

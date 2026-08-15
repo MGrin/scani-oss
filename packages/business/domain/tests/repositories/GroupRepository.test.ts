@@ -46,6 +46,46 @@ describe('GroupRepository', () => {
     });
   });
 
+  /**
+   * The counts are declared `number` and were delivered as `"1"`: an uncast
+   * `COUNT(*)` is a bigint, which postgres.js returns as a decimal string.
+   * `toBe` is strict, so this fails on the string and passes on the number —
+   * the assertion the groups list needed before it printed "1 holdings"
+   * (SC-88). Asserting the type as well as the value, because `toBe(1)`
+   * against `"1"` is the whole defect in one line.
+   */
+  test('findByUserWithCounts returns counts as numbers, not bigint strings', async () => {
+    await withTestDb(async (tx) => {
+      const { user, account } = await scaffold(tx);
+      const token = await makeToken(tx);
+      const holding = await makeHolding(tx, {
+        userId: user.id,
+        accountId: account.id,
+        tokenId: token.id,
+      });
+      const group = await repo().create({ userId: user.id, name: 'one', color: '#111' }, tx);
+      await repo().assignHoldingGroups(holding.id, [group.id], tx);
+      await repo().recomputeAccountGroups([account.id], tx);
+
+      const rows = await repo().findByUserWithCounts(user.id, tx);
+      expect(rows.length).toBe(1);
+      expect(typeof rows[0]!.holdingsCount).toBe('number');
+      expect(typeof rows[0]!.accountsCount).toBe('number');
+      expect(rows[0]!.holdingsCount).toBe(1);
+      expect(rows[0]!.accountsCount).toBe(1);
+    });
+  });
+
+  test('findByUserWithCounts returns 0, not "0", for an empty group', async () => {
+    await withTestDb(async (tx) => {
+      const user = await makeUser(tx);
+      await repo().create({ userId: user.id, name: 'empty', color: '#111' }, tx);
+      const rows = await repo().findByUserWithCounts(user.id, tx);
+      expect(rows[0]!.holdingsCount).toBe(0);
+      expect(rows[0]!.accountsCount).toBe(0);
+    });
+  });
+
   test('assignHoldingGroups replaces (not unions) existing assignments', async () => {
     await withTestDb(async (tx) => {
       const { user, account } = await scaffold(tx);

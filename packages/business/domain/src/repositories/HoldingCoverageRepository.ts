@@ -2,7 +2,7 @@ import { type DatabaseTransaction, getDb } from '@scani/db';
 import type { HoldingCoverage, NewHoldingCoverage } from '@scani/db/schema';
 import * as schema from '@scani/db/schema';
 import { createComponentLogger } from '@scani/logging';
-import { eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import { Service } from 'typedi';
 
 // Primary key is holding_id since migration 0054. We don't extend
@@ -120,6 +120,57 @@ export class HoldingCoverageRepository {
       this.logger.error(
         { row, error: error instanceof Error ? error.message : error },
         'Failed to upsert holding_coverage from ingester'
+      );
+      throw error;
+    }
+  }
+
+  // Retract the "we have the whole ledger" claim for one (account,
+  // source) — what a run that FAILED is entitled to say (SC-168).
+  //
+  // `upsertFromIngester` above is reached only on the success path, so a
+  // failed run left the previous run's claim standing. Since SC-149 that
+  // flag drives cost basis, which turned a stale note into a confident
+  // figure derived from data we know we could not read.
+  //
+  // The scope is the scope a failed run actually has, and it is also
+  // exactly the set of rows that can be holding the lie: the flag is only
+  // `true` because an earlier run of THIS source wrote it, and that same
+  // write appended the source to `tx_sources`. A holding under the same
+  // account that only ever heard from another source keeps its claim.
+  //
+  // Retraction does not touch the ledger — the transactions already
+  // imported stay. It says only that we no longer know the ledger is
+  // whole, which stands until a run succeeds and writes the claim back.
+  async retractCompleteHistoryClaim(
+    accountId: string,
+    source: string,
+    transaction?: DatabaseTransaction
+  ): Promise<number> {
+    try {
+      const db = this.getDb(transaction);
+      const updated = await db
+        .update(schema.holdingCoverage)
+        .set({ hasCompleteTxHistory: false, updatedAt: new Date() })
+        .where(
+          and(
+            eq(schema.holdingCoverage.hasCompleteTxHistory, true),
+            sql`${source}::text = ANY(${schema.holdingCoverage.txSources})`,
+            inArray(
+              schema.holdingCoverage.holdingId,
+              db
+                .select({ id: schema.holdings.id })
+                .from(schema.holdings)
+                .where(eq(schema.holdings.accountId, accountId))
+            )
+          )
+        )
+        .returning({ holdingId: schema.holdingCoverage.holdingId });
+      return updated.length;
+    } catch (error) {
+      this.logger.error(
+        { accountId, source, error: error instanceof Error ? error.message : error },
+        'Failed to retract holding_coverage complete-history claim'
       );
       throw error;
     }

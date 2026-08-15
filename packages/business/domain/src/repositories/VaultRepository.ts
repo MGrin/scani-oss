@@ -43,7 +43,9 @@ export class VaultRepository extends BaseRepository<Vault, NewVault> {
           isActive: schema.vaults.isActive,
           createdAt: schema.vaults.createdAt,
           updatedAt: schema.vaults.updatedAt,
-          holdingsCount: sql<number>`COALESCE(COUNT(DISTINCT ${schema.vaultHoldings.holdingId}), 0)`,
+          // `::int` for the same reason as GroupRepository (SC-88): an
+          // uncast COUNT is a bigint, which arrives as a string.
+          holdingsCount: sql<number>`COALESCE(COUNT(DISTINCT ${schema.vaultHoldings.holdingId}), 0)::int`,
         })
         .from(schema.vaults)
         .leftJoin(schema.vaultHoldings, eq(schema.vaults.id, schema.vaultHoldings.vaultId))

@@ -419,6 +419,48 @@ describe('BybitProvider', () => {
       fetchHook.restore();
     }
   });
+
+  // SC-166. A `since`-less run silently substitutes a 30-day look-back, and
+  // `TransactionRouter` used to read "the caller asked for everything" as
+  // "we fetched everything" — writing has_complete_tx_history = true over a
+  // month of history, which SC-149 then feeds into cost basis. The horizon
+  // is what makes that substitution visible to the router.
+  test('declares the look-back its since-less run actually reaches', () => {
+    const p = new BybitProvider(passthroughLimiter());
+    expect(p.transactionHistoryHorizonMs).toBe(30 * 24 * 60 * 60 * 1000);
+  });
+
+  test('a since-less run asks for no window Bybit will reject', async () => {
+    // retCode=131002 is the deposit/withdraw endpoints refusing a span wider
+    // than 30 days, and the execution list refuses wider than 7. Six
+    // terminal failures on mgrin's account came from asking anyway, so the
+    // assertion is on every window sent, not on the happy path.
+    const p = new BybitProvider(passthroughLimiter());
+    const spans: Array<{ path: string; span: number }> = [];
+    const fetchHook = queueFetch((url) => {
+      const u = new URL(url);
+      const start = Number(u.searchParams.get('startTime'));
+      const end = Number(u.searchParams.get('endTime'));
+      if (Number.isFinite(start) && Number.isFinite(end)) {
+        spans.push({ path: u.pathname, span: end - start });
+      }
+      return {
+        body: { retCode: 0, retMsg: 'OK', result: { list: [], rows: [], nextPageCursor: '' } },
+      };
+    });
+
+    try {
+      await p.fetchTransactions({ ...ctx } as never);
+      expect(spans.length).toBeGreaterThan(0);
+      const day = 24 * 60 * 60 * 1000;
+      for (const { path, span } of spans) {
+        expect(span).toBeGreaterThan(0);
+        expect(span).toBeLessThanOrEqual(path.includes('/execution/') ? 7 * day : 30 * day);
+      }
+    } finally {
+      fetchHook.restore();
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------

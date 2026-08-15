@@ -2,6 +2,7 @@ import { urlSchema } from '@scani/config';
 import { S3Client } from 'bun';
 import { Service } from 'typedi';
 import { z } from 'zod';
+import { isMissingObjectError } from './missing-object';
 
 export interface PresignUploadOptions {
   keyPrefix: string;
@@ -29,6 +30,10 @@ const DEFAULT_REGION = 'auto';
 const DEFAULT_UPLOAD_TTL_SECONDS = 15 * 60;
 const DEFAULT_DOWNLOAD_TTL_SECONDS = 5 * 60;
 const HEALTH_CHECK_TIMEOUT_MS = 3_000;
+// `exists` sits in front of a user-facing enqueue, so it gets its own short
+// budget: the signature only has to outlive the single HEAD it signs.
+const EXISTS_PRESIGN_TTL_SECONDS = 60;
+const EXISTS_TIMEOUT_MS = 3_000;
 
 // Allowed characters for caller-supplied `keyPrefix`. The prefix is
 // concatenated into the S3 key (`temp/<prefix>/<uuid>.<ext>`), so a
@@ -129,6 +134,37 @@ export class StorageService {
     });
   }
 
+  /**
+   * Whether an object is actually there, without pulling its bytes.
+   *
+   * A signed HEAD through `fetch` rather than Bun's `S3File.exists()`, for
+   * the reason `healthCheck` gives below: `exists()` collapses every
+   * non-200/404 status into one opaque error, and the status is the whole
+   * answer here. Production R2 tokens are object-scoped with no
+   * `s3:ListBucket`, and S3 answers HEAD-on-missing with 403 rather than 404
+   * for those — so a check that only accepted 404 would call a missing
+   * object an infrastructure failure on the one deployment that matters.
+   *
+   * 200 is the only "yes". 403 and 404 are both "no": the token demonstrably
+   * reaches this bucket (it signed the upload), so a refusal on one specific
+   * key means the key is not there. Anything else — 5xx, a bad signature, a
+   * dropped connection — throws, because "I could not tell" must not be
+   * reported as "it is missing".
+   */
+  async exists(key: string): Promise<boolean> {
+    const url = this.serverClient().file(key).presign({
+      method: 'HEAD',
+      expiresIn: EXISTS_PRESIGN_TTL_SECONDS,
+    });
+    const res = await this.fetcher(url, {
+      method: 'HEAD',
+      signal: AbortSignal.timeout(EXISTS_TIMEOUT_MS),
+    });
+    if (res.status === 200) return true;
+    if (res.status === 403 || res.status === 404) return false;
+    throw new Error(`StorageService.exists: unexpected status ${res.status} for ${key}`);
+  }
+
   async read(key: string): Promise<Buffer> {
     const bytes = await this.serverClient().file(key).arrayBuffer();
     return Buffer.from(bytes);
@@ -154,9 +190,8 @@ export class StorageService {
     try {
       await this.serverClient().file(key).delete();
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      // 404 / NoSuchKey is fine — concurrent delete or lifecycle sweep.
-      if (message.includes('NoSuchKey') || message.includes('404')) return;
+      // Already gone is fine — concurrent delete or lifecycle sweep.
+      if (isMissingObjectError(err)) return;
       throw err;
     }
   }

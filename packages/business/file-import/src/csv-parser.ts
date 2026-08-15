@@ -91,20 +91,72 @@ export function parseCsvStatement(
 
 /**
  * Case-insensitive column access: tries exact match first, then case-insensitive
+ *
+ * Values are `string` off a fresh Papa parse, but the same row comes back out
+ * of `holding_transactions.raw_payload` as JSON, where a numeric cell may have
+ * survived as a number. Coercing here keeps one lookup for both callers rather
+ * than a second, drifting copy for the stored-payload path (SC-159).
  */
 function getColumn(
-  row: Record<string, string>,
+  row: Record<string, unknown>,
   columnName: string | undefined
 ): string | undefined {
   if (!columnName) return undefined;
+  const read = (value: unknown): string | undefined =>
+    typeof value === 'string' ? value : value == null ? undefined : String(value);
   // Try exact match first
-  if (row[columnName] !== undefined) return row[columnName];
+  if (row[columnName] !== undefined) return read(row[columnName]);
   // Try case-insensitive
   const lower = columnName.toLowerCase();
   for (const key of Object.keys(row)) {
-    if (key.toLowerCase() === lower) return row[key];
+    if (key.toLowerCase() === lower) return read(row[key]);
   }
   return undefined;
+}
+
+/**
+ * Magnitude, not a signed amount: statements state a fee as a positive charge
+ * and the ingester owns the sign. A zero is normalised away — every row of a
+ * Revolut export carries `0.00` in that column, and a ledger full of
+ * zero-value fee rows is noise the reader has to skip past.
+ */
+export function normaliseStatementFee(cell: string | undefined): number | undefined {
+  const raw = parseNumber(cell);
+  return raw !== null && raw !== 0 ? Math.abs(raw) : undefined;
+}
+
+/** Header spellings auto-detection accepts for the fee column, in priority order. */
+const FEE_COLUMN_PATTERNS = ['fee', 'fees', 'total fees', 'charge', 'commission'] as const;
+
+/**
+ * The same fee, read back out of a stored `raw_payload` long after the upload.
+ *
+ * Rows imported before SC-136 dropped the charge on the floor; the CSV cell
+ * that carried it is still on the row, so it is recoverable without asking
+ * anyone to re-upload a statement (SC-159).
+ *
+ * The question it answers is deliberately **"what would re-uploading this
+ * statement today read?"** rather than "what did that import read" — which was
+ * nothing, since dropping the fee is the defect. So a row that names a template
+ * gets that template's fee column *as it stands now*, and a template naming no
+ * fee column yields no fee, exactly as a re-upload would. A row with no
+ * template gets the same header patterns auto-detection uses. Either way a
+ * backfilled row and a re-imported one are the same row.
+ */
+export function statementFeeFromRawPayload(
+  rawPayload: unknown,
+  bankTemplate?: string | null
+): number | undefined {
+  if (!rawPayload || typeof rawPayload !== 'object' || Array.isArray(rawPayload)) {
+    return undefined;
+  }
+  const row = rawPayload as Record<string, unknown>;
+
+  const template = bankTemplate ? BANK_TEMPLATES[bankTemplate] : undefined;
+  if (template) return normaliseStatementFee(getColumn(row, template.fee));
+
+  const detected = FEE_COLUMN_PATTERNS.find((pattern) => getColumn(row, pattern) !== undefined);
+  return normaliseStatementFee(getColumn(row, detected));
 }
 
 /**
@@ -133,6 +185,7 @@ function autoDetectMapping(headerMap: Map<string, string>, warnings: string[]): 
     'closing balance',
     'available balance'
   );
+  const fee = find(...FEE_COLUMN_PATTERNS);
 
   if (!date) warnings.push('Could not detect date column');
   if (!amount && !credit) warnings.push('Could not detect amount column');
@@ -145,6 +198,7 @@ function autoDetectMapping(headerMap: Map<string, string>, warnings: string[]): 
     debit,
     currency,
     balance,
+    fee,
   };
 }
 
@@ -198,11 +252,14 @@ function parseRow(
   const currency = getColumn(row, mapping.currency)?.trim() || '';
   const balance = mapping.balance ? parseNumber(getColumn(row, mapping.balance)) : undefined;
 
+  const fee = normaliseStatementFee(getColumn(row, mapping.fee));
+
   return {
     date: parseDate(dateStr, mapping.dateFormat),
     description,
     amount,
     currency,
+    fee,
     balance: balance ?? undefined,
     raw: row,
   };

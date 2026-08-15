@@ -125,6 +125,49 @@ export class StatementTransactionIngester {
         },
         rawPayload: (tx.raw ?? null) as Record<string, unknown> | null,
       });
+
+      // A statement fee is its OWN ledger row, not `fee_quantity` on the one
+      // above.
+      //
+      // `fee_quantity` is a sidecar: nothing sums it. Balance-at-time and the
+      // opening-balance reconciler both add up `quantity` alone, which is why
+      // the schema's own note on that column reads "negative for outflows
+      // (sell, withdraw, fee)". So writing the £1.50 into `fee_quantity` would
+      // have made it visible in the export and left the arithmetic exactly as
+      // wrong as dropping it: the reconciler derived a 1898.00 opening for a
+      // statement whose own first row proves 1899.50, and buried the £1.50 in
+      // a synthetic row the user never sees (SC-136).
+      //
+      // A bank fee is also a real, separately-priced movement of the same
+      // currency — the statement's Balance column has already moved by it —
+      // which is precisely what a `kind='fee'` row means here. Cost basis
+      // skips that kind by name, so this adds nothing to the lot pool.
+      if (tx.fee !== undefined && tx.fee !== 0) {
+        const feeQuantity = new Decimal(tx.fee).abs().neg();
+        transactions.push({
+          userId: input.userId,
+          holdingId: resolved.holdingId,
+          tokenId: resolved.tokenId,
+          kind: 'fee',
+          quantity: feeQuantity.toString(),
+          // Same instant as its parent. The ledger is ordered by
+          // `occurred_at` and a fee that sorts away from the movement that
+          // incurred it reads as an unexplained charge.
+          occurredAt,
+          // Suffixed from the parent's id rather than given its own ordinal,
+          // so a re-upload dedups against the same row — `bulkUpsert` keys on
+          // (holding_id, source, external_id).
+          externalId: `${externalId}:fee`,
+          source: sourceTag,
+          sourceMetadata: {
+            description: tx.description ? `Fee — ${tx.description}` : 'Fee',
+            bankTemplate: parseResult.bankTemplate ?? null,
+            format: parseResult.format,
+            feeForExternalId: externalId,
+          },
+          rawPayload: (tx.raw ?? null) as Record<string, unknown> | null,
+        });
+      }
     }
 
     // Anchor balance-at-time at the statement's period end via a single

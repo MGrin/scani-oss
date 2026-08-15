@@ -23,16 +23,42 @@ export class InstitutionService extends BaseService {
     super('InstitutionService');
   }
 
-  async createInstitution(
+  /**
+   * The institution for this name, creating it only if nothing matches.
+   *
+   * Returns `created` so callers can report what actually happened —
+   * `CreateHoldingsWithDependenciesUseCase` emits an `institution.create`
+   * realtime event off it, and firing that for a row it merely looked up
+   * would be the same kind of false claim in a different place.
+   */
+  async ensureInstitution(
     data: CreateInstitutionInput,
     userId: string,
     tx?: DatabaseTransaction
-  ): Promise<Institution> {
+  ): Promise<{ institution: Institution; created: boolean }> {
     try {
-      this.logInfo('Creating institution', { name: data.name, userId });
+      this.logInfo('Ensuring institution', { name: data.name, userId });
 
       this.validateRequiredFields(data, ['name', 'typeId']);
       this.validateNonEmptyString(data.name, 'name');
+
+      // Reuse before insert. `institutions` is a shared catalogue with no
+      // unique constraint on `name`, and the capture flow's "Add <name>"
+      // affordance sits directly under the matching existing row — so the
+      // ordinary mis-tap produced a second, identical institution holding
+      // none of the user's accounts, and the next import reported their
+      // account as missing (SC-135). The duplicate is invisible on every
+      // screen, which is what makes it worth preventing here rather than
+      // warning about it in one picker.
+      const existing = await this.institutionRepository.findByNameInsensitive(data.name, tx);
+      if (existing) {
+        this.logInfo('Reusing existing institution with the same name', {
+          institutionId: existing.id,
+          name: existing.name,
+          userId,
+        });
+        return { institution: existing, created: false };
+      }
 
       const institution = await this.institutionRepository.create(
         {
@@ -47,9 +73,9 @@ export class InstitutionService extends BaseService {
       );
 
       this.logInfo('Institution created', { institutionId: institution.id });
-      return institution;
+      return { institution, created: true };
     } catch (error) {
-      throw this.handleError(error, 'createInstitution');
+      throw this.handleError(error, 'ensureInstitution');
     }
   }
 

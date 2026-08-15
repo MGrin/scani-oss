@@ -1,0 +1,29 @@
+-- SC-181. Every answer SC-150 offers applies to the whole transaction, and a
+-- real 4,000 USD Airwallex withdrawal was 3,500 moved to an account Scani
+-- cannot see plus 500 that genuinely left. Neither whole answer is true of it:
+-- 'left_control' books a gain on all 4,000, overstating by 3,500, and
+-- 'untracked' books nothing, understating by 500. Both wrong, each in a
+-- direction — the same one-directional-error family as SC-149/150/151/166,
+-- arriving this time through the answer model rather than the data.
+--
+-- This column is the division. An array of portions, each an unsigned token
+-- quantity and one of the three decisions, summing EXACTLY to the row's own
+-- |quantity| — checked on write against the row itself, because a split that
+-- does not add up is a new way to be wrong about money.
+--
+-- jsonb rather than a `transfer_review_splits` table, for one reason that
+-- overrides the modelling instinct: `CostBasisService` already has this row in
+-- hand. The rollup walks every holding once per day per scope off a single
+-- pre-fetched `SELECT *`, and a child table would put a join — or worse, a
+-- per-row read — on that path for a field that is at most three entries long,
+-- is never queried on its own, is always read with its transaction, and is
+-- always written whole. Operational cost was a stated constraint; this column
+-- costs one more field on a read that already happens.
+--
+-- It is set together with `transfer_review = 'split'` and never apart. The
+-- queue predicate is `transfer_group_id IS NULL AND transfer_review IS NULL`
+-- and stays exactly that: a split row is ANSWERED, it leaves the queue, and
+-- the count still reaches zero. A partially-answered transaction is not
+-- representable — the write is whole or it is rejected.
+ALTER TABLE "holding_transactions"
+  ADD COLUMN IF NOT EXISTS "transfer_review_split" jsonb;

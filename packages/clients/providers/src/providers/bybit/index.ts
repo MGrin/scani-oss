@@ -25,6 +25,7 @@ import type {
 import { enforceSign, inferCounterSign, negateFee } from '../../core/utils/enforce-tx-sign';
 import { tokenTypeForCexAsset } from '../../core/utils/fiat-codes';
 import { splitConcatenatedPair } from '../../core/utils/symbol-splitter';
+import { slidingWindows } from '../../core/utils/time-windows';
 import { bybitManifest } from './manifest';
 
 export { bybitManifest } from './manifest';
@@ -42,6 +43,10 @@ const TRANSFER_PAGE_LIMIT = 50;
 // Bybit caps deposit/withdrawal record queries at a 30-day span; slide the
 // caller's [since, until] interval forward in 30-day chunks.
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
+
+// How far back a caller-supplied-nothing run reaches. Also published as
+// `transactionHistoryHorizonMs` so the coverage flag reflects it.
+const DEFAULT_LOOKBACK_MS = THIRTY_DAYS_MS;
 
 interface BybitCoin {
   coin: string;
@@ -126,6 +131,12 @@ export class BybitProvider
     'transactions',
     'credential-validator',
   ];
+  // `fetchTransactions` substitutes a 30-day look-back when the caller names
+  // no `since`, so this provider can never honestly claim to have walked an
+  // account's whole ledger. Declaring it is what stops
+  // `holding_coverage.has_complete_tx_history` being set true over a month
+  // of history (SC-166).
+  readonly transactionHistoryHorizonMs = DEFAULT_LOOKBACK_MS;
   protected readonly baseUrl: string;
 
   constructor(limiter: OutflowRateLimiter, baseUrl?: string) {
@@ -202,7 +213,7 @@ export class BybitProvider
     // execution-list 7-day window cap means longer ranges fan out
     // into more requests, so the worker normally supplies an explicit
     // `since` from its last-import cursor.
-    const since = ctx.since ?? new Date(until.getTime() - 30 * 24 * 60 * 60 * 1000);
+    const since = ctx.since ?? new Date(until.getTime() - DEFAULT_LOOKBACK_MS);
 
     const events: TransactionEvent[] = [];
     for await (const exec of this.iterateExecutions(creds, since, until)) {
@@ -250,12 +261,9 @@ export class BybitProvider
     since: Date,
     until: Date
   ): AsyncGenerator<BybitExecution> {
-    const untilMs = until.getTime();
-    let windowStart = since.getTime();
-    if (windowStart >= untilMs) return;
-
-    while (windowStart < untilMs) {
-      const windowEnd = Math.min(windowStart + SEVEN_DAYS_MS, untilMs);
+    for (const window of slidingWindows(since, until, SEVEN_DAYS_MS)) {
+      const windowStart = window.start.getTime();
+      const windowEnd = window.end.getTime();
       let cursor: string | undefined;
       while (true) {
         const params = new URLSearchParams({
@@ -281,7 +289,6 @@ export class BybitProvider
         cursor = data.result?.nextPageCursor || undefined;
         if (!cursor || list.length === 0) break;
       }
-      windowStart = windowEnd;
     }
   }
 
@@ -290,12 +297,9 @@ export class BybitProvider
     since: Date,
     until: Date
   ): AsyncGenerator<BybitDepositRow> {
-    const untilMs = until.getTime();
-    let windowStart = since.getTime();
-    if (windowStart >= untilMs) return;
-
-    while (windowStart < untilMs) {
-      const windowEnd = Math.min(windowStart + THIRTY_DAYS_MS, untilMs);
+    for (const window of slidingWindows(since, until, THIRTY_DAYS_MS)) {
+      const windowStart = window.start.getTime();
+      const windowEnd = window.end.getTime();
       let cursor: string | undefined;
       while (true) {
         const params = new URLSearchParams({
@@ -320,7 +324,6 @@ export class BybitProvider
         cursor = data.result?.nextPageCursor || undefined;
         if (!cursor || rows.length === 0) break;
       }
-      windowStart = windowEnd;
     }
   }
 
@@ -329,12 +332,9 @@ export class BybitProvider
     since: Date,
     until: Date
   ): AsyncGenerator<BybitWithdrawRow> {
-    const untilMs = until.getTime();
-    let windowStart = since.getTime();
-    if (windowStart >= untilMs) return;
-
-    while (windowStart < untilMs) {
-      const windowEnd = Math.min(windowStart + THIRTY_DAYS_MS, untilMs);
+    for (const window of slidingWindows(since, until, THIRTY_DAYS_MS)) {
+      const windowStart = window.start.getTime();
+      const windowEnd = window.end.getTime();
       let cursor: string | undefined;
       while (true) {
         const params = new URLSearchParams({
@@ -359,7 +359,6 @@ export class BybitProvider
         cursor = data.result?.nextPageCursor || undefined;
         if (!cursor || rows.length === 0) break;
       }
-      windowStart = windowEnd;
     }
   }
 

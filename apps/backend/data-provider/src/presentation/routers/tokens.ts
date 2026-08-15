@@ -20,6 +20,39 @@ import { bearerProcedure, router } from '../trpc';
 
 const log = createComponentLogger('data-provider:tokens');
 
+// Published response schemas (SC-108). `tokenMetadataOut` documents the
+// provider namespaces of `TokenMetadata` while staying `.passthrough()`
+// at both levels: the caller persists whatever comes back onto the token
+// row, so an undocumented namespace must survive the round-trip rather
+// than be silently dropped by output validation.
+const tokenSearchResultOut = z.object({
+  symbol: z.string(),
+  name: z.string(),
+  type: z.string(),
+  currency: z.string().optional(),
+  exchange: z.string().optional(),
+  provider: z.string(),
+  providerMetadata: z.record(z.unknown()).optional(),
+});
+
+const tokenMetadataOut = z
+  .object({
+    coingecko: z.object({ id: z.string(), symbol: z.string().optional() }).passthrough().optional(),
+    defillama: z.object({ coin: z.string() }).passthrough().optional(),
+    etherscan: z
+      .object({ chainId: z.number(), contractAddress: z.string().optional() })
+      .passthrough()
+      .optional(),
+    solana: z.object({ mint: z.string() }).passthrough().optional(),
+    kraken: z.object({ asset: z.string() }).passthrough().optional(),
+    finnhub: z
+      .object({ symbol: z.string(), exchange: z.string().optional() })
+      .passthrough()
+      .optional(),
+  })
+  .passthrough()
+  .nullable();
+
 export const tokensRouter = router({
   /**
    * Free-text token search across every identity-enricher provider that
@@ -48,7 +81,7 @@ export const tokensRouter = router({
         limit: z.number().int().min(1).max(50).default(10),
       })
     )
-    .output(z.unknown())
+    .output(z.array(tokenSearchResultOut))
     .query(async ({ input }): Promise<TokenSearchResult[]> => {
       const enrichers = Container.get(ProviderRegistry)
         .getIdentityEnrichers()
@@ -113,8 +146,8 @@ export const tokensRouter = router({
         force: z.boolean().optional(),
       })
     )
-    .output(z.unknown())
-    .mutation(async ({ input }): Promise<unknown> => {
+    .output(tokenMetadataOut)
+    .mutation(async ({ input }): Promise<z.input<typeof tokenMetadataOut>> => {
       const enricher = Container.get(ProviderRegistry)
         .getIdentityEnrichers()
         .find((p) => p.providerKey === input.providerKey);

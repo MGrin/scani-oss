@@ -202,3 +202,132 @@ describe('HoldingCoverageRepository', () => {
     });
   });
 });
+
+// SC-168. A failed run is the narrowest run there is — it read nothing —
+// and the flag is deliberately write-through so a narrower run can move
+// it back. These cover the scope: the source's own holdings, nobody
+// else's.
+describe('HoldingCoverageRepository.retractCompleteHistoryClaim', () => {
+  async function seed(
+    tx: Parameters<typeof makeUser>[0],
+    rows: Array<{ holdingId: string; txSources: string[]; complete: boolean }>
+  ): Promise<void> {
+    for (const r of rows) {
+      await repo().upsertFromIngester(
+        {
+          holdingId: r.holdingId,
+          firstTxAt: new Date('2024-01-01T00:00:00Z'),
+          lastTxAt: new Date('2024-12-31T23:59:59Z'),
+          firstObservationAt: null,
+          lastObservationAt: null,
+          txSources: r.txSources,
+          hasCompleteTxHistory: r.complete,
+        },
+        tx
+      );
+    }
+  }
+
+  test('a failed run retracts the claim on the holdings that source wrote', async () => {
+    await withTestDb(async (tx) => {
+      const { holdingId, accountId } = await makeHoldingFixture(tx);
+      await seed(tx, [{ holdingId, txSources: ['bybit-api'], complete: true }]);
+
+      const retracted = await repo().retractCompleteHistoryClaim(accountId, 'bybit-api', tx);
+
+      expect(retracted).toBe(1);
+      const after = await repo().findByHolding(holdingId, tx);
+      expect(after?.hasCompleteTxHistory).toBe(false);
+      // The ledger itself is untouched — only the claim about it moved.
+      expect(after?.firstTxAt?.getTime()).toBe(new Date('2024-01-01T00:00:00Z').getTime());
+      expect(after?.txSources).toEqual(['bybit-api']);
+    });
+  });
+
+  test('a holding that only ever heard from another source keeps its claim', async () => {
+    await withTestDb(async (tx) => {
+      const user = await makeUser(tx);
+      const instType = await makeInstitutionType(tx);
+      const inst = await makeInstitution(tx, { typeId: instType.id });
+      const acct = await makeAccount(tx, { userId: user.id, institutionId: inst.id });
+      const tokA = await makeToken(tx);
+      const tokB = await makeToken(tx);
+      const fromBybit = await makeHolding(tx, {
+        userId: user.id,
+        accountId: acct.id,
+        tokenId: tokA.id,
+      });
+      const fromFile = await makeHolding(tx, {
+        userId: user.id,
+        accountId: acct.id,
+        tokenId: tokB.id,
+      });
+      await seed(tx, [
+        { holdingId: fromBybit.id, txSources: ['bybit-api'], complete: true },
+        { holdingId: fromFile.id, txSources: ['file-import'], complete: true },
+      ]);
+
+      const retracted = await repo().retractCompleteHistoryClaim(acct.id, 'bybit-api', tx);
+
+      expect(retracted).toBe(1);
+      expect((await repo().findByHolding(fromBybit.id, tx))?.hasCompleteTxHistory).toBe(false);
+      expect((await repo().findByHolding(fromFile.id, tx))?.hasCompleteTxHistory).toBe(true);
+    });
+  });
+
+  test('another account running the same source is not touched', async () => {
+    await withTestDb(async (tx) => {
+      const user = await makeUser(tx);
+      const instType = await makeInstitutionType(tx);
+      const inst = await makeInstitution(tx, { typeId: instType.id });
+      const failing = await makeAccount(tx, { userId: user.id, institutionId: inst.id });
+      const healthy = await makeAccount(tx, { userId: user.id, institutionId: inst.id });
+      const tok = await makeToken(tx);
+      const hFailing = await makeHolding(tx, {
+        userId: user.id,
+        accountId: failing.id,
+        tokenId: tok.id,
+      });
+      const hHealthy = await makeHolding(tx, {
+        userId: user.id,
+        accountId: healthy.id,
+        tokenId: tok.id,
+      });
+      await seed(tx, [
+        { holdingId: hFailing.id, txSources: ['bybit-api'], complete: true },
+        { holdingId: hHealthy.id, txSources: ['bybit-api'], complete: true },
+      ]);
+
+      expect(await repo().retractCompleteHistoryClaim(failing.id, 'bybit-api', tx)).toBe(1);
+      expect((await repo().findByHolding(hHealthy.id, tx))?.hasCompleteTxHistory).toBe(true);
+    });
+  });
+
+  test('a claim already retracted reports nothing to retract', async () => {
+    await withTestDb(async (tx) => {
+      const { holdingId, accountId } = await makeHoldingFixture(tx);
+      await seed(tx, [{ holdingId, txSources: ['bybit-api'], complete: false }]);
+
+      expect(await repo().retractCompleteHistoryClaim(accountId, 'bybit-api', tx)).toBe(0);
+    });
+  });
+
+  test('a failure before any coverage row exists has nothing to lie about', async () => {
+    await withTestDb(async (tx) => {
+      const { accountId } = await makeHoldingFixture(tx);
+      expect(await repo().retractCompleteHistoryClaim(accountId, 'bybit-api', tx)).toBe(0);
+    });
+  });
+
+  test('a later successful run writes the claim back', async () => {
+    await withTestDb(async (tx) => {
+      const { holdingId, accountId } = await makeHoldingFixture(tx);
+      await seed(tx, [{ holdingId, txSources: ['bybit-api'], complete: true }]);
+      await repo().retractCompleteHistoryClaim(accountId, 'bybit-api', tx);
+
+      await seed(tx, [{ holdingId, txSources: ['bybit-api'], complete: true }]);
+
+      expect((await repo().findByHolding(holdingId, tx))?.hasCompleteTxHistory).toBe(true);
+    });
+  });
+});

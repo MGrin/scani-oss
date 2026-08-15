@@ -21,7 +21,10 @@ import Decimal from 'decimal.js';
 import { eq, inArray } from 'drizzle-orm';
 import { Container } from 'typedi';
 import { PortfolioValueDailyRepository } from '../../src/repositories/PortfolioValueDailyRepository';
-import { PnLAtTimeService } from '../../src/services/portfolio/PnLAtTimeService';
+import {
+  type PnLAtTimePerHolding,
+  PnLAtTimeService,
+} from '../../src/services/portfolio/PnLAtTimeService';
 import { RollupPortfolioValueDailyUseCase } from '../../src/use-cases/RollupPortfolioValueDailyUseCase';
 
 interface Fixture {
@@ -30,6 +33,13 @@ interface Fixture {
   // Lookup-table row ids — tracked so cleanupFixture can remove them.
   // Without this, every run leaks token_types + tokens rows.
   tokenTypeId: string;
+  // userIds[0]'s single account + holding, so the per-scope derivation
+  // (institution / account / holding rows) has something to derive.
+  assetTokenId: string;
+  holdingId: string;
+  institutionId: string;
+  institutionTypeId: string;
+  accountTypeId: string;
 }
 
 let fixture: Fixture | null = null;
@@ -47,7 +57,11 @@ let nextValuation: (
   coverageQuality: 'full' | 'partial' | 'estimated' | 'unknown';
   holdingsWithKnownValue: number;
   holdingsTotal: number;
-  perHolding: never[];
+  holdingsUnpriceable: number;
+  holdingsStalePriced: number;
+  holdingsBasisUnknown: number;
+  transfersUnreviewed: number;
+  perHolding: PnLAtTimePerHolding[];
 } = () => ({
   totalValueInBase: new Decimal(100),
   totalCostBasis: new Decimal(0),
@@ -57,6 +71,10 @@ let nextValuation: (
   coverageQuality: 'full' as const,
   holdingsWithKnownValue: 1,
   holdingsTotal: 1,
+  holdingsUnpriceable: 0,
+  holdingsStalePriced: 0,
+  holdingsBasisUnknown: 0,
+  transfersUnreviewed: 0,
   perHolding: [],
 });
 
@@ -101,7 +119,59 @@ async function setupFixture(): Promise<Fixture> {
   if (!skipped) throw new Error('skipped user insert failed');
   userIds.push(skipped.id);
 
-  return { userIds, baseCurrencyId: baseCurrency.id, tokenTypeId: tokenType!.id };
+  // One account holding one asset for userIds[0]. The rollup derives an
+  // institution / account / holding row per day from `perHolding`, and
+  // those derivations are where an empty slice used to be written as a
+  // fully-covered zero.
+  const asset = await db
+    .insert(schema.tokens)
+    .values({
+      symbol: `RPVA${randomUUID().slice(0, 4).toUpperCase()}`,
+      name: 'RPV Asset',
+      typeId: tokenType!.id,
+    })
+    .returning();
+  const [institutionType] = await db
+    .insert(schema.institutionTypes)
+    .values({ code: `rpv-inst-${randomUUID().slice(0, 6)}`, name: 'RPV Institution Type' })
+    .returning();
+  const [institution] = await db
+    .insert(schema.institutions)
+    .values({ name: 'RPV Institution', typeId: institutionType!.id })
+    .returning();
+  const [accountType] = await db
+    .insert(schema.accountTypes)
+    .values({ code: `rpv-acct-${randomUUID().slice(0, 6)}`, name: 'RPV Account Type' })
+    .returning();
+  const [account] = await db
+    .insert(schema.accounts)
+    .values({
+      userId: userIds[0]!,
+      institutionId: institution!.id,
+      name: 'RPV Account',
+      typeId: accountType!.id,
+    })
+    .returning();
+  const [holding] = await db
+    .insert(schema.holdings)
+    .values({
+      userId: userIds[0]!,
+      accountId: account!.id,
+      tokenId: asset[0]!.id,
+      balance: '3',
+    })
+    .returning();
+
+  return {
+    userIds,
+    baseCurrencyId: baseCurrency.id,
+    tokenTypeId: tokenType!.id,
+    assetTokenId: asset[0]!.id,
+    holdingId: holding!.id,
+    institutionId: institution!.id,
+    institutionTypeId: institutionType!.id,
+    accountTypeId: accountType!.id,
+  };
 }
 
 async function cleanupFixture(f: Fixture): Promise<void> {
@@ -114,7 +184,14 @@ async function cleanupFixture(f: Fixture): Promise<void> {
     .delete(schema.portfolioValueDaily)
     .where(inArray(schema.portfolioValueDaily.userId, f.userIds));
   await db.delete(schema.users).where(inArray(schema.users.id, f.userIds));
-  await db.delete(schema.tokens).where(eq(schema.tokens.id, f.baseCurrencyId));
+  await db
+    .delete(schema.tokens)
+    .where(inArray(schema.tokens.id, [f.baseCurrencyId, f.assetTokenId]));
+  await db.delete(schema.institutions).where(eq(schema.institutions.id, f.institutionId));
+  await db.delete(schema.accountTypes).where(eq(schema.accountTypes.id, f.accountTypeId));
+  await db
+    .delete(schema.institutionTypes)
+    .where(eq(schema.institutionTypes.id, f.institutionTypeId));
   await db.delete(schema.tokenTypes).where(eq(schema.tokenTypes.id, f.tokenTypeId));
 }
 
@@ -208,6 +285,10 @@ describe('RollupPortfolioValueDailyUseCase', () => {
         coverageQuality: 'full' as const,
         holdingsWithKnownValue: 1,
         holdingsTotal: 1,
+        holdingsUnpriceable: 0,
+        holdingsStalePriced: 0,
+        holdingsBasisUnknown: 0,
+        transfersUnreviewed: 0,
         perHolding: [],
       };
     };
@@ -256,6 +337,237 @@ describe('RollupPortfolioValueDailyUseCase', () => {
     }
   });
 
+  /**
+   ***REMOVED***
+   ***REMOVED***
+   ***REMOVED***
+   */
+  test('a scope with nothing priced that day is unknown coverage, not a confident zero', async () => {
+    const f = fixture!;
+    // perHolding stays empty, so every derived scope slice is empty.
+    await Container.get(RollupPortfolioValueDailyUseCase).execute({
+      userId: f.userIds[0]!,
+      lookbackDays: 1,
+    });
+
+    const repo = Container.get(PortfolioValueDailyRepository);
+    const rows = await repo.findRange(
+      f.userIds[0]!,
+      f.baseCurrencyId,
+      new Date(Date.now() - 2 * 24 * 60 * 60 * 1000),
+      new Date(Date.now() + 24 * 60 * 60 * 1000),
+      undefined,
+      { kind: 'holding', id: f.holdingId }
+    );
+
+    expect(rows.length).toBeGreaterThanOrEqual(1);
+    expect(rows[0]?.holdingsTotal).toBe(0);
+    expect(rows[0]?.totalValue).toBe('0');
+    expect(rows[0]?.coverageQuality).toBe('unknown');
+  });
+
+  /**
+   * SC-151 / SC-149. The per-entity scope rows are what the home chart and
+   * both exports are built from, and `upsertScopeRow` used to compute neither
+   * signal — so a stale price could reach the reader through a row marked
+   * 'full', and a cost basis derived from a truncated import was recorded
+   * exactly like one derived from a complete one.
+   */
+  test('per-entity scope rows carry the stale and basis-unknown counts', async () => {
+    const f = fixture!;
+    const accountId = (
+      await db
+        .select({ id: schema.accounts.id })
+        .from(schema.accounts)
+        .where(eq(schema.accounts.userId, f.userIds[0]!))
+        .limit(1)
+    )[0]!.id;
+
+    nextValuation = () => ({
+      totalValueInBase: new Decimal(1500),
+      totalCostBasis: new Decimal(900),
+      totalRealizedPnl: new Decimal(0),
+      totalUnrealizedPnl: new Decimal(600),
+      totalPnl: new Decimal(600),
+      coverageQuality: 'partial' as const,
+      holdingsWithKnownValue: 2,
+      holdingsTotal: 2,
+      holdingsUnpriceable: 0,
+      holdingsStalePriced: 1,
+      holdingsBasisUnknown: 1,
+      transfersUnreviewed: 0,
+      perHolding: [
+        {
+          // Priced from a 96-day-old quote, and its history was truncated.
+          holdingId: f.holdingId,
+          accountId,
+          tokenId: f.assetTokenId,
+          value: new Decimal(1000),
+          costBasis: new Decimal(500),
+          realizedPnl: new Decimal(0),
+          unrealizedPnl: new Decimal(500),
+          unpriceable: false,
+          priceStale: true,
+          basisQuality: 'partial' as const,
+          transfersUnreviewed: 0,
+        },
+        {
+          holdingId: 'fresh-and-complete',
+          accountId,
+          tokenId: f.assetTokenId,
+          value: new Decimal(500),
+          costBasis: new Decimal(400),
+          realizedPnl: new Decimal(0),
+          unrealizedPnl: new Decimal(100),
+          unpriceable: false,
+          priceStale: false,
+          basisQuality: 'known' as const,
+          transfersUnreviewed: 0,
+        },
+      ],
+    });
+
+    await Container.get(RollupPortfolioValueDailyUseCase).execute({
+      userId: f.userIds[0]!,
+      lookbackDays: 1,
+    });
+
+    const repo = Container.get(PortfolioValueDailyRepository);
+    const from = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
+    const to = new Date(Date.now() + 24 * 60 * 60 * 1000);
+
+    const [accountRow] = await repo.findRange(
+      f.userIds[0]!,
+      f.baseCurrencyId,
+      from,
+      to,
+      undefined,
+      {
+        kind: 'account',
+        id: accountId,
+      }
+    );
+    // Every holding priced, and still not 'full' — half the value is old.
+    expect(accountRow?.holdingsWithKnownValue).toBe(2);
+    expect(accountRow?.coverageQuality).toBe('partial');
+    expect(accountRow?.holdingsStalePriced).toBe(1);
+    expect(accountRow?.holdingsBasisUnknown).toBe(1);
+    // The figures themselves are untouched: this is about what the reader is
+    // told, not about withholding a number we have.
+    expect(accountRow?.totalValue).toBe('1500');
+    expect(accountRow?.costBasis).toBe('900');
+  });
+
+  /**
+   * SC-146. The airdrop tokens are real rows in a real wallet, so they stay
+   * in `holdings_total` and in the per-holding rows; what changes is that
+   * they stop being counted as pricing failures.
+   */
+  test('unpriceable dust is persisted as excluded, not as an unpriced holding', async () => {
+    const f = fixture!;
+    const accountId = (
+      await db
+        .select({ id: schema.accounts.id })
+        .from(schema.accounts)
+        .where(eq(schema.accounts.userId, f.userIds[0]!))
+        .limit(1)
+    )[0]!.id;
+
+    nextValuation = () => ({
+      totalValueInBase: new Decimal(1000),
+      totalCostBasis: new Decimal(700),
+      totalRealizedPnl: new Decimal(0),
+      totalUnrealizedPnl: new Decimal(300),
+      totalPnl: new Decimal(300),
+      coverageQuality: 'full' as const,
+      holdingsWithKnownValue: 1,
+      holdingsTotal: 2,
+      holdingsUnpriceable: 1,
+      holdingsStalePriced: 0,
+      holdingsBasisUnknown: 0,
+      transfersUnreviewed: 0,
+      perHolding: [
+        {
+          holdingId: 'priced-elsewhere',
+          accountId,
+          tokenId: f.assetTokenId,
+          value: new Decimal(1000),
+          costBasis: new Decimal(700),
+          realizedPnl: new Decimal(0),
+          unrealizedPnl: new Decimal(300),
+          unpriceable: false,
+          priceStale: false,
+          basisQuality: 'known' as const,
+          transfersUnreviewed: 0,
+        },
+        {
+          holdingId: f.holdingId,
+          accountId,
+          tokenId: f.assetTokenId,
+          value: null,
+          costBasis: new Decimal(400),
+          realizedPnl: new Decimal(25),
+          unrealizedPnl: null,
+          unpriceable: true,
+          priceStale: false,
+          basisQuality: 'known' as const,
+          transfersUnreviewed: 0,
+        },
+      ],
+    });
+
+    await Container.get(RollupPortfolioValueDailyUseCase).execute({
+      userId: f.userIds[0]!,
+      lookbackDays: 1,
+    });
+
+    const repo = Container.get(PortfolioValueDailyRepository);
+    const from = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
+    const to = new Date(Date.now() + 24 * 60 * 60 * 1000);
+
+    const [userRow] = await repo.findRange(f.userIds[0]!, f.baseCurrencyId, from, to);
+    expect(userRow?.holdingsTotal).toBe(2);
+    expect(userRow?.holdingsUnpriceable).toBe(1);
+
+    // Account scope: 1 of 2 valued, but only 1 of them was ever
+    // priceable — full coverage, and the dust's cost stays out of the
+    // total so no phantom unrealized loss appears.
+    const [accountRow] = await repo.findRange(
+      f.userIds[0]!,
+      f.baseCurrencyId,
+      from,
+      to,
+      undefined,
+      {
+        kind: 'account',
+        id: accountId,
+      }
+    );
+    expect(accountRow?.holdingsTotal).toBe(2);
+    expect(accountRow?.holdingsUnpriceable).toBe(1);
+    expect(accountRow?.holdingsWithKnownValue).toBe(1);
+    expect(accountRow?.coverageQuality).toBe('full');
+    expect(accountRow?.costBasis).toBe('700');
+    expect(accountRow?.realizedPnl).toBe('0');
+
+    // The dust's own holding row still exists — excluded from the
+    // denominator is not deleted.
+    const [holdingRow] = await repo.findRange(
+      f.userIds[0]!,
+      f.baseCurrencyId,
+      from,
+      to,
+      undefined,
+      {
+        kind: 'holding',
+        id: f.holdingId,
+      }
+    );
+    expect(holdingRow?.holdingsTotal).toBe(1);
+    expect(holdingRow?.holdingsUnpriceable).toBe(1);
+    expect(holdingRow?.coverageQuality).toBe('unknown');
+  });
+
   test('uses today + earlier days; today snapshot uses the runStart timestamp directly', async () => {
     const f = fixture!;
     await Container.get(RollupPortfolioValueDailyUseCase).execute({ lookbackDays: 2 });
@@ -268,5 +580,86 @@ describe('RollupPortfolioValueDailyUseCase', () => {
     // 23:59 — flaky, but unlikely in practice.)
     const hours = new Set(u1Calls.map((c) => c.at.getUTCHours()));
     expect(hours.size).toBeGreaterThanOrEqual(1);
+  });
+
+  /**
+   * SC-160. Same lesson as the test above it, applied to the one count whose
+   * error runs downward: an unanswered withdrawal books no gain, so realized
+   * PnL is short by whatever the genuine off-platform sales among those rows
+   * were worth.
+   *
+   * Written against the **per-holding** row deliberately. `upsertScopeRow` is
+   * the writer the home chart reads; the `scope_kind = 'user'` row it is
+   * tempting to assert on instead is written by a different path and is not
+   * read for user-wide history. A count that reached only that row would pass
+   * a lazier version of this test and reach no reader at all — which is
+   * exactly how SC-151's stale-price downgrade stayed invisible for two
+   * tickets.
+   */
+  test('per-holding scope rows carry the unreviewed-transfer count (SC-160)', async () => {
+    const f = fixture!;
+    const accountId = (
+      await db
+        .select({ id: schema.accounts.id })
+        .from(schema.accounts)
+        .where(eq(schema.accounts.userId, f.userIds[0]!))
+        .limit(1)
+    )[0]!.id;
+
+    nextValuation = () => ({
+      totalValueInBase: new Decimal(1000),
+      totalCostBasis: new Decimal(600),
+      totalRealizedPnl: new Decimal(0),
+      totalUnrealizedPnl: new Decimal(400),
+      totalPnl: new Decimal(400),
+      coverageQuality: 'full' as const,
+      holdingsWithKnownValue: 1,
+      holdingsTotal: 1,
+      holdingsUnpriceable: 0,
+      holdingsStalePriced: 0,
+      holdingsBasisUnknown: 0,
+      transfersUnreviewed: 2,
+      perHolding: [
+        {
+          holdingId: f.holdingId,
+          accountId,
+          tokenId: f.assetTokenId,
+          value: new Decimal(1000),
+          costBasis: new Decimal(600),
+          realizedPnl: new Decimal(0),
+          unrealizedPnl: new Decimal(400),
+          unpriceable: false,
+          priceStale: false,
+          basisQuality: 'known' as const,
+          transfersUnreviewed: 2,
+        },
+      ],
+    });
+
+    await Container.get(RollupPortfolioValueDailyUseCase).execute({
+      userId: f.userIds[0]!,
+      lookbackDays: 1,
+    });
+
+    const repo = Container.get(PortfolioValueDailyRepository);
+    const from = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
+    const to = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    const [holdingRow] = await repo.findRange(
+      f.userIds[0]!,
+      f.baseCurrencyId,
+      from,
+      to,
+      undefined,
+      {
+        kind: 'holding',
+        id: f.holdingId,
+      }
+    );
+
+    expect(holdingRow?.transfersUnreviewed).toBe(2);
+    // Untouched, as with every other quality count: this says what the figure
+    // does not include, it does not change the figure.
+    expect(holdingRow?.realizedPnl).toBe('0');
+    expect(holdingRow?.coverageQuality).toBe('full');
   });
 });

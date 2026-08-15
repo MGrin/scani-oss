@@ -39,6 +39,10 @@ const BITGET_INSTITUTION_CODE = 'bitget';
 const PAGE_LIMIT = 100;
 const MAX_PAGES = 50;
 
+// How far back a run that names no `since` reaches. Published as
+// `transactionHistoryHorizonMs` so the coverage flag reflects it.
+const DEFAULT_LOOKBACK_MS = 30 * 24 * 60 * 60 * 1000;
+
 interface BitgetAsset {
   coin: string;
   available: string;
@@ -115,6 +119,10 @@ export class BitgetProvider
     'transactions',
     'credential-validator',
   ];
+  // Same 30-day substitution as Bybit's, declared for the same reason: a run
+  // with no `since` reaches a month back, not to the account's start, so it
+  // must not mark coverage complete (SC-166).
+  readonly transactionHistoryHorizonMs = DEFAULT_LOOKBACK_MS;
   protected readonly baseUrl = 'https://api.bitget.com';
 
   protected signRequest(req: SignedRequest, creds: ApiKeyCreds): Record<string, string> {
@@ -188,7 +196,7 @@ export class BitgetProvider
     if (!creds?.passphrase) return [];
 
     const until = ctx.until ?? new Date();
-    const since = ctx.since ?? new Date(until.getTime() - 30 * 24 * 60 * 60 * 1000);
+    const since = ctx.since ?? new Date(until.getTime() - DEFAULT_LOOKBACK_MS);
 
     // We fan out to three Bitget V2 feeds rather than the unified
     // transactionRecords bills feed. Bills emit one row per coin leg, so a

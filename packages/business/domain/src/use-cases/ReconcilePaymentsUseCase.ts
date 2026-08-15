@@ -14,7 +14,7 @@
  * the pure `matchOccurrence`. This class only does the I/O `matchOccurrence`
  * deliberately can't: load scheduled occurrences, pull the account's
  * transactions in the surrounding window, resolve each transaction's
- * counterparty to a vendor via `VendorRepository.findByAlias`, and
+ * counterparty to a vendor via `VendorRepository.resolve`, and
  * persist a hit through `PaymentService.settleOccurrence` — never a raw
  * repository write, so settlement stays the single choke point that
  * enforces ownership and preserves `matchedTransactionId` on repeat runs.
@@ -152,8 +152,12 @@ export class ReconcilePaymentsUseCase {
     if (!counterparty) return null;
     if (cache.has(counterparty)) return cache.get(counterparty) ?? null;
 
-    const vendor = await this.vendorRepository.findByAlias(userId, counterparty, transaction);
-    const vendorId = vendor?.id ?? null;
+    // `resolve`, not `findByAlias`: a statement descriptor is the input most
+    // likely to phrase a vendor slightly differently from the invoice that
+    // created it, and this path only ever ATTACHES an existing vendor — it
+    // never creates one — so a miss costs a null, not a duplicate.
+    const match = await this.vendorRepository.resolve(userId, counterparty, transaction);
+    const vendorId = match?.vendor.id ?? null;
     cache.set(counterparty, vendorId);
     return vendorId;
   }

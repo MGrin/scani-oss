@@ -72,6 +72,11 @@ export class OkxProvider
     'transactions',
     'credential-validator',
   ];
+  // A `since`-less run reads the 7-day bills feed and never the 3-month
+  // archive — the archive is gated on a `since` older than that cutoff. So
+  // the trades that set cost basis reach a week back, and coverage must not
+  // be marked complete over them (SC-166).
+  readonly transactionHistoryHorizonMs = BILLS_WINDOW_MS;
   protected readonly baseUrl = 'https://www.okx.com';
 
   protected signRequest(req: SignedRequest, creds: ApiKeyCreds): Record<string, string> {

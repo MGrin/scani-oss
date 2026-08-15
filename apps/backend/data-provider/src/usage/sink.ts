@@ -9,10 +9,11 @@
 
 import { cloudUsageEvents } from '@scani/db';
 import { logger } from '@scani/logging';
+import type { UsageOutcome } from '@scani/shared';
 
 import type { CloudDb } from '../db/connection';
 
-export type UsageOutcome = 'ok' | 'error' | 'rate_limited' | 'unauthorized' | 'quota_exceeded';
+export type { UsageOutcome };
 
 export interface UsageEvent {
   /** Cloud API key the request authenticated with (null for OSS env-key). */

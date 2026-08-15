@@ -352,6 +352,55 @@ describe('InvoiceExtractionService — malformed responses', () => {
   });
 });
 
+describe('InvoiceExtractionService — date normalisation', () => {
+  async function extractDates(issueDate: unknown, dueDate: unknown) {
+    const { provider } = makeFullProvider({
+      invoices: [{ vendorNameRaw: 'Acme', issueDate, dueDate, lineItems: [] }],
+    });
+    stubRegistry(provider);
+    const result = await service().extract(TEXT_PDF, 'application/pdf');
+    return result.invoices[0];
+  }
+
+  test('an ISO date passes through untouched', async () => {
+    const invoice = await extractDates('2026-08-13', '2026-08-23');
+
+    expect(invoice?.issueDate).toBe('2026-08-13');
+    expect(invoice?.dueDate).toBe('2026-08-23');
+  });
+
+  // Postgres would parse every one of these into a `date` column — prose
+  // and US/EU-ambiguous numerics alike — so the wrong day would be stored
+  // with no error. Rejecting keeps "the model ignored the format" honest.
+  test.each([
+    'August 10, 2026',
+    '10/08/2026',
+    '13-08-2026',
+    '2026/08/13',
+    '26-08-13',
+    'unknown',
+    '',
+  ])('a non-ISO date string %p is rejected rather than stored', async (value) => {
+    expect((await extractDates(value, value))?.issueDate).toBeNull();
+  });
+
+  // The regex alone accepts both; only the round-trip catches them.
+  test.each([
+    '2026-02-30',
+    '2026-13-01',
+    '2026-00-10',
+  ])('the impossible calendar day %p is rejected', async (value) => {
+    expect((await extractDates(value, value))?.issueDate).toBeNull();
+  });
+
+  test('a missing date stays null rather than becoming a string', async () => {
+    const invoice = await extractDates(null, undefined);
+
+    expect(invoice?.issueDate).toBeNull();
+    expect(invoice?.dueDate).toBeNull();
+  });
+});
+
 describe('InvoiceExtractionService — prompt authority', () => {
   // The invoice prompt has to REPLACE the provider's default system
   // prompt, not ride under it as a hint. Passed as a hint it lost to a

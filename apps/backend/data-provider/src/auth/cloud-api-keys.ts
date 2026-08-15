@@ -2,7 +2,8 @@
  * DB-backed API-key verification + management for Tier 2/3 managed mode.
  *
  * Presented tokens are hashed with SHA-256 and looked up against
- * `cloud_api_keys.hashed_key`. Revoked or past-due keys fail closed.
+ * `cloud_api_keys.hashed_key`. Revoked and billing-blocked keys fail
+ * closed, but the lookup reports WHICH so the caller can say so.
  * Last-used timestamps are updated best-effort (fire-and-forget).
  *
  * Tier-1 OSS continues to use the env-based bearer check from
@@ -12,7 +13,7 @@
 
 import { type CloudApiKey, cloudApiKeys } from '@scani/db';
 import { logger } from '@scani/logging';
-import { and, eq, isNull, sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import type { CloudDb } from '../db/connection';
 
 export interface VerifiedCloudKey {
@@ -24,20 +25,33 @@ export interface VerifiedCloudKey {
   quotaMonthlyRequests: number | null;
 }
 
-export async function verifyCloudApiKey(
-  db: CloudDb,
-  rawToken: string
-): Promise<VerifiedCloudKey | null> {
+/**
+ * Why a presented key was refused.
+ *
+ * The lookup deliberately does NOT filter revoked rows out in SQL: an
+ * operator whose key was revoked was told the header was missing, and
+ * spent the outage auditing proxies and env wiring instead of reading
+ * the console that revoked it (SC-106). Telling the caller which of
+ * these happened leaks nothing — they already hold the key.
+ */
+export type CloudKeyLookup =
+  | { status: 'valid'; key: VerifiedCloudKey }
+  | { status: 'revoked'; revokedAt: Date }
+  | { status: 'billing-blocked'; billingStatus: 'suspended' | 'cancelled' }
+  | { status: 'unknown' };
+
+export async function verifyCloudApiKey(db: CloudDb, rawToken: string): Promise<CloudKeyLookup> {
   const hashed = await sha256Hex(rawToken);
   const rows = await db
     .select()
     .from(cloudApiKeys)
-    .where(and(eq(cloudApiKeys.hashedKey, hashed), isNull(cloudApiKeys.revokedAt)))
+    .where(eq(cloudApiKeys.hashedKey, hashed))
     .limit(1);
   const row = rows[0];
-  if (!row) return null;
+  if (!row) return { status: 'unknown' };
+  if (row.revokedAt) return { status: 'revoked', revokedAt: row.revokedAt };
   if (row.billingStatus === 'suspended' || row.billingStatus === 'cancelled') {
-    return null;
+    return { status: 'billing-blocked', billingStatus: row.billingStatus };
   }
   // Fire-and-forget last-used bump; don't block the request.
   db.update(cloudApiKeys)
@@ -47,12 +61,15 @@ export async function verifyCloudApiKey(
       logger.warn({ err, apiKeyId: row.id }, 'failed to bump cloud_api_keys.last_used_at');
     });
   return {
-    apiKeyId: row.id,
-    tenantId: row.tenantId,
-    ownerUserId: row.ownerUserId,
-    tier: row.tier as CloudApiKey['tier'],
-    billingStatus: row.billingStatus as CloudApiKey['billingStatus'],
-    quotaMonthlyRequests: row.quotaMonthlyRequests,
+    status: 'valid',
+    key: {
+      apiKeyId: row.id,
+      tenantId: row.tenantId,
+      ownerUserId: row.ownerUserId,
+      tier: row.tier as CloudApiKey['tier'],
+      billingStatus: row.billingStatus as CloudApiKey['billingStatus'],
+      quotaMonthlyRequests: row.quotaMonthlyRequests,
+    },
   };
 }
 

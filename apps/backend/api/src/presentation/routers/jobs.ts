@@ -18,8 +18,10 @@
  *      jobId stored in local state to resume the modal.
  */
 
+import type { UserJob } from '@scani/db/schema';
 import { UserJobRepository } from '@scani/domain/repositories';
 import { QueueClient } from '@scani/queue';
+import { reviewOutcomeSchema } from '@scani/shared';
 import { TRPCError } from '@trpc/server';
 import Container from 'typedi';
 import { z } from 'zod';
@@ -29,6 +31,74 @@ const getQueue = () => Container.get(QueueClient).get();
 
 const JOB_STATE_ENUM = z.enum(['queued', 'active', 'progress', 'completed', 'failed']);
 const NON_TERMINAL = new Set(['queued', 'active', 'progress']);
+
+/** Why re-running is not on offer. Each one is a different sentence to the
+ *  user, and "the queue no longer has it" is the one that must never be
+ *  rendered as a working button. */
+type RetryUnavailableReason =
+  | 'not_failed'
+  | 'cancelled'
+  | 'never_delivered'
+  | 'still_retrying'
+  | 'evicted';
+
+interface RetryAvailability {
+  available: boolean;
+  reason?: RetryUnavailableReason;
+  /** Whether Redis still holds the job — the frontend reads this to tell a
+   *  genuine pending retry from a row whose counters outlived the queue
+   *  entry (`describeJobFailure` in @scani/shared). Undefined when the
+   *  question was answered without a lookup. */
+  queueHasJob?: boolean;
+}
+
+const RETRY_REFUSALS: Record<
+  RetryUnavailableReason,
+  { code: 'BAD_REQUEST' | 'NOT_FOUND'; message: string }
+> = {
+  not_failed: { code: 'BAD_REQUEST', message: 'Only failed jobs can be retried.' },
+  cancelled: {
+    code: 'BAD_REQUEST',
+    message: 'You cancelled this job. Start it again from where you began it.',
+  },
+  never_delivered: {
+    code: 'NOT_FOUND',
+    message:
+      'This job never reached the queue, so there is nothing to re-run. Start it again from where you began it.',
+  },
+  still_retrying: {
+    code: 'BAD_REQUEST',
+    message: 'This job is already queued for another attempt — no need to retry it.',
+  },
+  evicted: {
+    code: 'NOT_FOUND',
+    message:
+      'This job is too old to re-run automatically — the queue no longer holds what it needs. Start it again from where you began it.',
+  },
+};
+
+async function describeRetryAvailability(row: UserJob): Promise<RetryAvailability> {
+  if (row.state !== 'failed') return { available: false, reason: 'not_failed' };
+  // The user stopped it on purpose; re-running is a new action, not a repair.
+  if (row.failureReason === 'cancelled') return { available: false, reason: 'cancelled' };
+  // Never reached Redis, so there is no payload to replay — by definition,
+  // not by lookup.
+  if (row.failureReason === 'never_delivered') {
+    return { available: false, reason: 'never_delivered' };
+  }
+
+  const job = await getQueue().getJob(row.jobId);
+  if (!job) return { available: false, reason: 'evicted', queueHasJob: false };
+  // `job.retry()` only accepts a job BullMQ itself considers failed. A row
+  // that is `failed` from its last attempt while the queue is already
+  // holding the next one is not a retry candidate — it is a job that is
+  // about to run.
+  const queueState = await job.getState();
+  if (queueState !== 'failed') {
+    return { available: false, reason: 'still_retrying', queueHasJob: true };
+  }
+  return { available: true, queueHasJob: true };
+}
 
 export const jobsRouter = router({
   status: protectedProcedure
@@ -69,12 +139,14 @@ export const jobsRouter = router({
    * Powers the top-nav badge count, the /jobs list page, and — via
    * `invalidate` on WS events — a near-live feed without extra server work.
    *
-   * The full job `result` payload is stripped here — it can be 20+ KB
-   * for some wallet-import / screenshot-parse jobs, and the list view
-   * (badge count, jobs page row) doesn't render it. Per-job detail
-   * pages fetch the full row via `getMine` instead. Without this trim,
-   * every WS event during a recompute invalidates `listMine` and
-   * re-fetches ~95 KB.
+   * The full job `result` payload never arrives here: `findMine` leaves it
+   * out of the SELECT (SC-155). It can be 258 KB for a large wallet import,
+   * and the list view — badge count, jobs page row — renders none of it, so
+   * per-job detail pages fetch the full row via `getMine` instead.
+   *
+   * This used to be a `.map` that dropped the field after the query had
+   * already read it, which saved the wire bytes and none of the database
+   * ones — on a query invalidated by every WS event during a recompute.
    */
   listMine: protectedProcedure
     .input(
@@ -88,18 +160,28 @@ export const jobsRouter = router({
     )
     .query(async ({ ctx, input }) => {
       const repo = Container.get(UserJobRepository);
-      const rows = await repo.findMine(ctx.userId, input ?? {});
-      return rows.map(({ result: _result, ...rest }) => rest);
+      return repo.findMine(ctx.userId, input ?? {});
     }),
 
-  /** Single job by id. Ownership-gated via `userId` column. */
+  /**
+   * Single job by id. Ownership-gated via `userId` column.
+   *
+   * Carries `retry`, which is the *honest* answer to "can this be re-run",
+   * not a guess (SC-153). Retry needs the original payload, and `user_jobs`
+   * only keeps a redacted `payload_summary` — the full data lives in the
+   * BullMQ entry, which `removeOnFail` evicts. So the question can only be
+   * answered by asking Redis, and a Retry button rendered without asking is
+   * a button that silently fails for exactly the oldest, most-stuck jobs.
+   * One lookup per detail-page open; deliberately not offered on the list,
+   * where it would be one lookup per row.
+   */
   getMine: protectedProcedure
     .input(z.object({ jobId: z.string().min(1) }))
     .query(async ({ ctx, input }) => {
       const repo = Container.get(UserJobRepository);
       const row = await repo.findOneMine(ctx.userId, input.jobId);
       if (!row) throw new TRPCError({ code: 'NOT_FOUND', message: 'Job not found' });
-      return row;
+      return { ...row, retry: await describeRetryAvailability(row) };
     }),
 
   /**
@@ -109,12 +191,22 @@ export const jobsRouter = router({
    * repo's `action_taken_at IS NULL` guard makes double-clicks a no-op),
    * so even with network retries we can't double-import the same
    * extracted holdings.
+   *
+   * `outcome: 'discarded'` is the same stamp with the opposite meaning —
+   * the user rejected the parse and nothing was written. It is the only
+   * way out of the review queue that does not import (SC-138), and it is
+   * recorded rather than inferred so the job page can say which happened.
    */
   markActionTaken: protectedProcedure
-    .input(z.object({ jobId: z.string().min(1) }))
+    .input(
+      z.object({
+        jobId: z.string().min(1),
+        outcome: reviewOutcomeSchema.default('imported'),
+      })
+    )
     .mutation(async ({ ctx, input }) => {
       const repo = Container.get(UserJobRepository);
-      const stamp = await repo.markActionTaken(ctx.userId, input.jobId);
+      const stamp = await repo.markActionTaken(ctx.userId, input.jobId, input.outcome);
       if (!stamp) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Job not found' });
       }
@@ -122,11 +214,21 @@ export const jobsRouter = router({
     }),
 
   /**
-   * Re-run a failed job. Uses BullMQ's native `job.retry()` which resets
-   * the attempts counter and moves the job back to the `waiting` set
-   * with its original payload intact — no need for the backend to
-   * reconstruct the full data from `payload_summary` (which is a
-   * redacted allowlist, not the raw payload).
+   * Re-run a failed job. Uses BullMQ's native `job.retry()`, which moves the
+   * job back to the `waiting` set with its original payload intact — no need
+   * for the backend to reconstruct the full data from `payload_summary`
+   * (which is a redacted allowlist, not the raw payload).
+   *
+   * `resetAttemptsMade` is load-bearing and was missing (SC-167). BullMQ only
+   * clears the counter when asked; the default carries it across, so a retry
+   * of a job that had already spent its budget started at `attemptsMade` =
+   * `attempts` and `shouldRetryJob` refused every further attempt. The retry
+   * a user asked for got strictly fewer tries than the run they were
+   * retrying — on `document-parse`, whose two attempts exist precisely
+   * because the extractor is transiently flaky, that is the whole point of
+   * the button gone. It also wrote `attempts_made` past `attempts_allowed`
+   * (3 of 2 on mgrin's account), which reads as a job that ran an attempt it
+   * was not entitled to and is really just an uncleared counter.
    *
    * Limitation: BullMQ only retains failed jobs up to `removeOnFail`
    * (currently 500). Older failures are evicted from Redis, so retry
@@ -146,6 +248,13 @@ export const jobsRouter = router({
           message: `Only failed jobs can be retried; this job is ${row.state}.`,
         });
       }
+      // Same check the UI used to decide whether to show the button, so the
+      // two cannot disagree — and so a stale page says why rather than
+      // appearing to work (SC-153).
+      const availability = await describeRetryAvailability(row);
+      if (!availability.available) {
+        throw new TRPCError(RETRY_REFUSALS[availability.reason ?? 'evicted']);
+      }
       const job = await getQueue().getJob(input.jobId);
       if (!job) {
         throw new TRPCError({
@@ -155,7 +264,7 @@ export const jobsRouter = router({
         });
       }
       try {
-        await job.retry();
+        await job.retry('failed', { resetAttemptsMade: true });
       } catch (err) {
         // `job.retry()` throws if the job isn't in a retriable state
         // (e.g. someone else already retried it, or it was already

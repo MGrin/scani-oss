@@ -9,6 +9,7 @@ import { HoldingApyConfigRepository } from '../../repositories/HoldingApyConfigR
 import { HoldingCoverageRepository } from '../../repositories/HoldingCoverageRepository';
 import { HoldingRepository } from '../../repositories/HoldingRepository';
 import { PortfolioValueDailyRepository } from '../../repositories/PortfolioValueDailyRepository';
+import { TokenRepository } from '../../repositories/TokenRepository';
 import { BaseService } from '../BaseService';
 import { PortfolioValuationService } from '../portfolio/PortfolioValuationService';
 
@@ -40,6 +41,7 @@ export class HoldingQueryService extends BaseService {
   private readonly holdingCoverageRepository = Container.get(HoldingCoverageRepository);
   private readonly portfolioValuationService = Container.get(PortfolioValuationService);
   private readonly portfolioValueDailyRepository = Container.get(PortfolioValueDailyRepository);
+  private readonly tokenRepository = Container.get(TokenRepository);
 
   constructor() {
     super('HoldingQueryService');
@@ -81,7 +83,11 @@ export class HoldingQueryService extends BaseService {
     }
 
     const holdingIds = holdingsWithFullDetails.map(({ holding }) => holding.id);
-    const [groupsMap, apyConfigsMap, coverageMap] = await Promise.all([
+    // Same predicate the net-worth chart excludes by (SC-146), asked here so
+    // the rows themselves can say which ones were set aside. One indexed query
+    // over the tokens already in hand — not per holding.
+    const heldTokenIds = [...new Set(holdingsWithFullDetails.map(({ token }) => token.id))];
+    const [groupsMap, apyConfigsMap, coverageMap, unpriceableTokenIds] = await Promise.all([
       this.groupRepository.findGroupsForHoldings(
         holdingsWithFullDetails.map(({ holding, account }) => ({
           id: holding.id,
@@ -90,6 +96,7 @@ export class HoldingQueryService extends BaseService {
       ),
       this.holdingApyConfigRepository.findByHoldingIds(holdingIds),
       this.holdingCoverageRepository.findManyByHoldingIds(holdingIds),
+      this.tokenRepository.findNeverPricedInCooldownTokenIds(heldTokenIds, new Date()),
     ]);
 
     // portfolioPriceMap only contains symbols we could actually price.
@@ -101,9 +108,12 @@ export class HoldingQueryService extends BaseService {
       )
     );
 
+    // Keyed on the timestamp alone: `source` is nullable in
+    // `token_prices`, and dropping the row for a missing source hid the
+    // price of a holding we had priced perfectly well.
     const priceMetadataMap = new Map(
       portfolioValue.holdings
-        .filter((h) => h.priceTimestamp && h.priceSource)
+        .filter((h) => h.priceTimestamp)
         .map((h) => [
           h.tokenSymbol,
           {
@@ -212,6 +222,13 @@ export class HoldingQueryService extends BaseService {
         // ledger doesn't reach back far enough to explain the user's
         // current balance. The chart's `BalanceAtTimeService.clamp`
         // hides this by flooring at zero — the badge tells the user.
+        // Only when there is in fact no value to show. A token inside the
+        // cooldown that we nonetheless managed to price today is not something
+        // the reader needs told about — the number is right there.
+        if (currentValue === null && unpriceableTokenIds.has(token.id)) {
+          result.unpriceable = true;
+        }
+
         const coverage = coverageMap.get(holding.id);
         if (coverage?.openingBalanceQuantity != null) {
           const opening = new Decimal(coverage.openingBalanceQuantity);

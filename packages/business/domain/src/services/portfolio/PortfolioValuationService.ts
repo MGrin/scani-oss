@@ -233,13 +233,18 @@ export class PortfolioValuationService {
     );
 
     // Fetch price metadata (timestamp and source) from database.
-    // The strict base-currency query misses manual prices recorded
-    // under a different base (e.g. a custom token priced in EUR while
-    // the user views in USD — `getCachedTokenPrices` converts the
-    // value on the fly via `findLatestManualPricesForTokensAnyBase`,
-    // but the metadata lookup below has to follow the same fallback
-    // or the holding comes back with `priceTimestamp`/`priceSource`
-    // undefined and the UI renders the price column as "-".
+    //
+    // The fallback has to be as wide as `getCachedTokenPrices`' own,
+    // which resolves a price from ANY base and converts it. Provider
+    // prices are almost all cached against USD, so a EUR-base user hits
+    // the strict query below and gets nothing back — the holding then
+    // carries a converted `currentPrice` (and therefore a `value`) with
+    // `priceTimestamp`/`priceSource` undefined, and the UI renders the
+    // price column as "—" next to a confident value. The any-base
+    // lookup covers provider and manual rows alike; the timestamp and
+    // source it returns describe the same row the price was derived
+    // from, and `currentPrice` is already expressed in the user's base
+    // currency, so nothing needs converting a second time here.
     const tokenIds = Array.from(new Set(holdings.map((h) => h.tokenId)));
     const priceMetadata = await this.tokenPriceRepository.findLatestPricesForTokens(
       tokenIds,
@@ -247,11 +252,11 @@ export class PortfolioValuationService {
     );
     const tokensWithoutMetadata = tokenIds.filter((id) => !priceMetadata.has(id));
     if (tokensWithoutMetadata.length > 0) {
-      const manualAnyBase =
-        await this.tokenPriceRepository.findLatestManualPricesForTokensAnyBase(
-          tokensWithoutMetadata
-        );
-      for (const [tokenId, price] of manualAnyBase.entries()) {
+      const anyBase = await this.tokenPriceRepository.findLatestPricesForTokensAnyBase(
+        tokensWithoutMetadata,
+        baseCurrency.id
+      );
+      for (const [tokenId, price] of anyBase.entries()) {
         priceMetadata.set(tokenId, price);
       }
     }

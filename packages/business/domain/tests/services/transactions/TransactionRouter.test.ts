@@ -52,6 +52,9 @@ interface SetupOpts {
       reports as already having a holding. Used to exercise the
       wallet-source FIND-ONLY path. */
   existingHoldingTokenIds?: Set<string>;
+  /** Mirrors a provider that substitutes its own look-back when handed no
+      `since` (Bybit, Bitget, OKX). */
+  transactionHistoryHorizonMs?: number;
 }
 
 function setup(opts: SetupOpts): {
@@ -70,6 +73,7 @@ function setup(opts: SetupOpts): {
       fetchCalls++;
       return opts.events;
     },
+    transactionHistoryHorizonMs: opts.transactionHistoryHorizonMs,
   };
 
   const registry = new ProviderRegistry();
@@ -165,6 +169,43 @@ describe('TransactionRouter.run', () => {
   test('reports incomplete history when called with a since cutoff', async () => {
     const { router, request } = setup({ events: [], withProviderForInstitution: 'kraken' });
     const result = await router.run({ ...request, since: new Date('2024-01-01') });
+    expect(result.hasCompleteTxHistory).toBe(false);
+  });
+
+  // SC-166. `!since` says the caller asked for the whole ledger; it says
+  // nothing about whether the provider can deliver one. Bybit substitutes a
+  // 30-day look-back for a missing `since`, so the old derivation marked
+  // coverage complete over a month of history — and SC-149 made that flag
+  // load-bearing for cost basis, so the wrong `true` reaches a number on a
+  // screen rather than sitting in an unread column.
+  test('refuses to claim complete history from a provider with a look-back horizon', async () => {
+    const { router, request } = setup({
+      events: [],
+      withProviderForInstitution: 'kraken',
+      transactionHistoryHorizonMs: 30 * 24 * 60 * 60 * 1000,
+    });
+    const result = await router.run(request);
+    expect(result.hasCompleteTxHistory).toBe(false);
+  });
+
+  test('the horizon suppresses the claim on a run that returned events too', async () => {
+    // The empty-result and materialized paths build the flag separately, and
+    // only the empty one was exercised — a bounded provider that actually
+    // returns transactions is the case that reaches the ledger.
+    const { router, request } = setup({
+      withProviderForInstitution: 'kraken',
+      transactionHistoryHorizonMs: 7 * 24 * 60 * 60 * 1000,
+      events: [
+        {
+          externalId: 'evt-1',
+          occurredAt: new Date('2024-06-01T10:00:00Z'),
+          kind: 'deposit',
+          primary: { tokenIdentity: { symbol: 'BTC' }, quantity: '1' },
+        } as TransactionEvent,
+      ],
+    });
+    const result = await router.run(request);
+    expect(result.transactions).toHaveLength(1);
     expect(result.hasCompleteTxHistory).toBe(false);
   });
 

@@ -166,6 +166,30 @@ describe('CurrencyConverter.getRate — DB lookup via PriceGraphService', () => 
   });
 });
 
+describe('CurrencyConverter.getRateDetail', () => {
+  const SYMBOLS = { USD: 'tok-USD', EUR: 'tok-EUR', USDT: 'tok-USDT' };
+
+  // The UI prints converted totals and has to be able to say how old the
+  // rate behind one is; without the edge's own timestamp it could only
+  // claim "today's rates" and hope.
+  test('carries the timestamp of the edge the rate came from', async () => {
+    const at = new Date('2024-06-15T12:00:00Z');
+    const effectiveAt = new Date('2024-06-15T03:30:00Z');
+    const c = makeConverter(
+      [{ tokenId: SYMBOLS.EUR, baseTokenId: SYMBOLS.USD, price: '1.08', timestamp: effectiveAt }],
+      SYMBOLS
+    );
+    const detail = await c.getRateDetail('USD', 'EUR', at, true);
+    expect(detail).not.toBeNull();
+    expect(detail?.asOf.toISOString()).toBe(effectiveAt.toISOString());
+  });
+
+  test('an unresolvable pair is null, not a confident rate', async () => {
+    const c = makeConverter([], SYMBOLS);
+    expect(await c.getRateDetail('USD', 'EUR', new Date('2024-06-15T12:00:00Z'), true)).toBeNull();
+  });
+});
+
 describe('CurrencyConverter.convert', () => {
   const SYMBOLS = { USD: 'tok-USD', EUR: 'tok-EUR', USDT: 'tok-USDT' };
 

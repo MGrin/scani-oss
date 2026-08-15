@@ -21,6 +21,19 @@
  * Writes: `holding_transactions.transfer_group_id` on both rows with a
  * fresh uuid. Idempotent — re-running skips rows that already have a
  * group_id set.
+ *
+ * What it does NOT do (SC-150): resolve anything it is unsure about. A row
+ * with several plausible matches, or none, is left alone for the review queue
+ * — `TransferReviewService` reads exactly the set this pass declines to touch
+ * — and the tolerances above stay narrow on purpose. Widening them to empty
+ * the queue would trade a visible question for a silent wrong pairing, which
+ * is the more expensive of the two: an unlinked transfer overstates a gain and
+ * says so, a mislinked one merges two unrelated lot chains and does not.
+ *
+ * It also never overrules a person. Once a human has answered a row
+ * (`transfer_review IS NOT NULL`) this pass skips it forever, including the
+ * ones they said left their control — otherwise the next nightly run would
+ * find a coincidental inflow and quietly un-answer the question.
  */
 
 import { db } from '@scani/db/connection';
@@ -29,14 +42,14 @@ import { createComponentLogger } from '@scani/logging';
 import Decimal from 'decimal.js';
 import { and, eq, gte, inArray, isNull, sql } from 'drizzle-orm';
 import { Service } from 'typedi';
+import {
+  INFLOW_KINDS,
+  MATCH_WINDOW_MS,
+  OUTFLOW_KINDS,
+  QTY_MATCH_EPSILON,
+} from '../lib/transfer-matching';
 
 const logger = createComponentLogger('use-case:link-transfer-pairs');
-const OUTFLOW_KINDS = ['withdraw', 'transfer_out'];
-const INFLOW_KINDS = ['deposit', 'transfer_in'];
-const MATCH_WINDOW_MS = 30 * 60 * 1000;
-// 1% drift absorbs typical network fees. Users with unusual fee
-// structures can re-link via a Phase-3 UI control that's not yet built.
-const QTY_MATCH_EPSILON = new Decimal('0.01');
 
 export interface LinkTransferPairsSummary {
   scanned: number;
@@ -70,9 +83,12 @@ export class LinkTransferPairsUseCase {
         .where(
           and(
             eq(schema.holdingTransactions.userId, opts.userId),
-            inArray(schema.holdingTransactions.kind, OUTFLOW_KINDS),
+            inArray(schema.holdingTransactions.kind, [...OUTFLOW_KINDS]),
             gte(schema.holdingTransactions.occurredAt, since),
-            isNull(schema.holdingTransactions.transferGroupId)
+            isNull(schema.holdingTransactions.transferGroupId),
+            // A row someone has already answered is not a candidate, whatever
+            // they answered. See the class doc.
+            isNull(schema.holdingTransactions.transferReview)
           )
         ),
       db
@@ -81,7 +97,7 @@ export class LinkTransferPairsUseCase {
         .where(
           and(
             eq(schema.holdingTransactions.userId, opts.userId),
-            inArray(schema.holdingTransactions.kind, INFLOW_KINDS),
+            inArray(schema.holdingTransactions.kind, [...INFLOW_KINDS]),
             gte(schema.holdingTransactions.occurredAt, since),
             isNull(schema.holdingTransactions.transferGroupId)
           )
@@ -127,8 +143,11 @@ export class LinkTransferPairsUseCase {
 
       if (viable.length === 0) continue;
       if (viable.length > 1) {
-        // Multiple plausible matches — ambiguous, surface to user via
-        // Phase 3 review UI, don't auto-link.
+        // Multiple plausible matches. Don't auto-link — the row stays
+        // `transfer_group_id IS NULL AND transfer_review IS NULL`, which is
+        // the review queue's definition, so it reaches the user through
+        // `TransferReviewService` without needing a second table to sit in.
+        // The counter is for the job summary only.
         ambiguous += 1;
         continue;
       }

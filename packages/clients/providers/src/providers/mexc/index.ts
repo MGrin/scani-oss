@@ -25,6 +25,7 @@ import type {
 import { enforceSign, inferCounterSign, negateFee } from '../../core/utils/enforce-tx-sign';
 import { tokenTypeForCexAsset } from '../../core/utils/fiat-codes';
 import { splitConcatenatedPair } from '../../core/utils/symbol-splitter';
+import { slidingWindows } from '../../core/utils/time-windows';
 import { mexcManifest } from './manifest';
 
 export { mexcManifest } from './manifest';
@@ -267,7 +268,7 @@ export class MexcProvider
     until: Date
   ): Promise<MexcTrade[]> {
     const all: MexcTrade[] = [];
-    for (const window of this.iterateWindows(since, until, THIRTY_DAYS_MS)) {
+    for (const window of slidingWindows(since, until, THIRTY_DAYS_MS)) {
       let fromId: string | undefined;
       for (let page = 0; page < MAX_TRADE_PAGES_PER_WINDOW; page++) {
         const params: Record<string, unknown> = {
@@ -306,7 +307,7 @@ export class MexcProvider
     until: Date
   ): Promise<MexcDeposit[]> {
     const out: MexcDeposit[] = [];
-    for (const window of this.iterateWindows(since, until, NINETY_DAYS_MS)) {
+    for (const window of slidingWindows(since, until, NINETY_DAYS_MS)) {
       const query = this.signedQueryString(creds.apiSecret, {
         coin: asset,
         startTime: window.start.getTime(),
@@ -329,7 +330,7 @@ export class MexcProvider
     until: Date
   ): Promise<MexcWithdraw[]> {
     const out: MexcWithdraw[] = [];
-    for (const window of this.iterateWindows(since, until, NINETY_DAYS_MS)) {
+    for (const window of slidingWindows(since, until, NINETY_DAYS_MS)) {
       const query = this.signedQueryString(creds.apiSecret, {
         coin: asset,
         startTime: window.start.getTime(),
@@ -343,20 +344,6 @@ export class MexcProvider
       if (Array.isArray(page$)) out.push(...page$);
     }
     return out;
-  }
-
-  private *iterateWindows(
-    since: Date,
-    until: Date,
-    spanMs: number
-  ): Generator<{ start: Date; end: Date }> {
-    let cursor = since.getTime();
-    const endMs = until.getTime();
-    while (cursor < endMs) {
-      const next = Math.min(cursor + spanMs, endMs);
-      yield { start: new Date(cursor), end: new Date(next) };
-      cursor = next;
-    }
   }
 
   // MEXC trade ids are documented as numeric but some accounts see
