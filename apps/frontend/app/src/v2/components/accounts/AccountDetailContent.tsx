@@ -1,4 +1,4 @@
-import { formatCurrency } from '@scani/shared';
+import { formatDateTime } from '@scani/shared';
 import { ConfirmDialog } from '@scani/ui/components/ConfirmDialog';
 import { Badge } from '@scani/ui/ui/badge';
 import { Button } from '@scani/ui/ui/button';
@@ -9,10 +9,11 @@ import { Skeleton } from '@scani/ui/ui/skeleton';
 import { RefreshCw } from 'lucide-react';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useBaseCurrency } from '@/contexts/BaseCurrencyContext';
 import { trpc } from '@/lib/trpc';
 import { cn } from '@/lib/utils';
 import { useAccountActions } from '../../hooks/useAccountActions';
-import { useBaseCurrency } from '../../hooks/useBaseCurrency';
+import { formatMoney, formatQuantity } from '../../lib/format';
 import { V2_ROUTES } from '../../lib/routes';
 import { PortfolioCharts } from '../dashboard/PortfolioCharts';
 import { AccountTransactionsList } from './AccountTransactionsList';
@@ -201,9 +202,7 @@ export function AccountDetailContent({ accountId, mode = 'panel' }: AccountDetai
         return (
           <div className="rounded-md bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
             <span>Last synced: </span>
-            <span className="font-medium text-foreground">
-              {new Date(lastSync).toLocaleString()}
-            </span>
+            <span className="font-medium text-foreground">{formatDateTime(lastSync)}</span>
           </div>
         );
       })()}
@@ -261,7 +260,7 @@ export function AccountDetailContent({ accountId, mode = 'panel' }: AccountDetai
                       <p className="text-xs text-muted-foreground truncate mt-0.5">
                         {[
                           h.balance
-                            ? `${Number(h.balance).toLocaleString()} ${h.token?.symbol || ''}`
+                            ? `${formatQuantity(h.balance)} ${h.token?.symbol || ''}`
                             : null,
                           h.token?.name || null,
                         ]
@@ -270,7 +269,7 @@ export function AccountDetailContent({ accountId, mode = 'panel' }: AccountDetai
                       </p>
                     </div>
                     <span className="text-sm font-semibold tabular-nums shrink-0">
-                      {formatCurrency(Number(h.value || 0), currencySymbol)}
+                      {formatMoney(h.value || 0, currencySymbol)}
                     </span>
                   </button>
                 )

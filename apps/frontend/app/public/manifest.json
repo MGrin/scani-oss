@@ -6,10 +6,16 @@
   "scope": "/",
   "display": "standalone",
   "display_override": ["standalone", "minimal-ui", "browser"],
-  "background_color": "#1a1f2e",
-  "theme_color": "#1a1f2e",
+  "background_color": "#0d0e11",
+  "theme_color": "#0d0e11",
   "orientation": "portrait-primary",
   "icons": [
+    {
+      "src": "/favicon.svg",
+      "type": "image/svg+xml",
+      "sizes": "any",
+      "purpose": "any"
+    },
     {
       "src": "/icons/icon-72x72.png",
       "sizes": "72x72",
@@ -68,9 +74,9 @@
   "categories": ["finance", "productivity"],
   "shortcuts": [
     {
-      "name": "Dashboard",
+      "name": "Home",
       "url": "/",
-      "description": "View your portfolio dashboard"
+      "description": "View your portfolio"
     },
     {
       "name": "Holdings",
@@ -78,9 +84,9 @@
       "description": "Manage your holdings"
     },
     {
-      "name": "Add Data",
-      "url": "/add-data",
-      "description": "Add new financial data"
+      "name": "Add",
+      "url": "/manual-entry",
+      "description": "Add a holding by hand"
     }
   ]
 }

@@ -1,11 +1,36 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  APP_NUMBER_LOCALE,
   formatBytes,
   formatCompact,
   formatCurrency,
   formatNumber,
   getCurrencySymbol,
 } from '../../src/format/currency';
+import { APP_LOCALE } from '../../src/format/date';
+
+describe('APP_NUMBER_LOCALE', () => {
+  test('is what every helper here defaults to, so a call site can omit it', () => {
+    expect(formatCurrency(1234.5, 'USD')).toBe(
+      formatCurrency(1234.5, 'USD', { locale: APP_NUMBER_LOCALE })
+    );
+    expect(formatCompact(12_345, 'USD')).toBe(
+      formatCompact(12_345, 'USD', { locale: APP_NUMBER_LOCALE })
+    );
+    expect(formatNumber(1234.5)).toBe(formatNumber(1234.5, { locale: APP_NUMBER_LOCALE }));
+    expect(getCurrencySymbol('USD')).toBe(getCurrencySymbol('USD', APP_NUMBER_LOCALE));
+  });
+
+  test('differs from APP_LOCALE only where the two locales disagree', () => {
+    // Not an oversight (SC-184): en-GB and en-US group and separate digits
+    // identically, so numbers lose nothing by not following the date constant
+    // — and en-GB writes the dollar `US$`, which the product has never shown.
+    expect(APP_LOCALE).toBe('en-GB');
+    expect(formatNumber(4_200_000, { locale: APP_LOCALE })).toBe(formatNumber(4_200_000));
+    expect(formatCurrency(1234.5, 'USD', { locale: APP_LOCALE })).toBe('US$1,234.50');
+    expect(formatCurrency(1234.5, 'USD')).toBe('$1,234.50');
+  });
+});
 
 describe('formatCurrency', () => {
   test('formats USD with default 2 decimals', () => {

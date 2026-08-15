@@ -1,5 +1,5 @@
 import type { HoldingWithDetails } from '@scani/shared';
-import { formatCurrency } from '@scani/shared';
+import { formatDateTime } from '@scani/shared';
 import { FaviconImg } from '@scani/ui/components/FaviconImg';
 import { Badge } from '@scani/ui/ui/badge';
 import { PieChart } from 'lucide-react';
@@ -14,6 +14,7 @@ import { AssignGroupsDialog } from '../components/groups/AssignGroupsDialog';
 import { HoldingBulkActions } from '../components/holdings/HoldingBulkActions';
 import { HoldingCard } from '../components/holdings/HoldingCard';
 import { useHoldingActions } from '../hooks/useHoldingActions';
+import { formatMoney, formatQuantity } from '../lib/format';
 import { V2_ROUTES } from '../lib/routes';
 
 const TOKEN_TYPE_COLORS: Record<string, string> = {
@@ -76,6 +77,19 @@ function getHoldingColumns(currency: string): ColumnDef<HoldingWithDetails>[] {
               inactive
             </Badge>
           )}
+          {/* Which holdings the net-worth chart set aside, not just how many
+              (SC-154). `value === null` alone renders the same dash for "we
+              could not price this today" and "nothing has ever quoted this
+              token"; only the second is permanent. */}
+          {item.unpriceable && (
+            <Badge
+              variant="secondary"
+              className="text-[10px] px-1.5 py-0"
+              title="No price source has ever quoted this token, and we have stopped asking for now. It is left out of your net worth rather than counted as zero."
+            >
+              no price
+            </Badge>
+          )}
         </div>
       ),
     },
@@ -84,7 +98,7 @@ function getHoldingColumns(currency: string): ColumnDef<HoldingWithDetails>[] {
       label: 'Amount',
       align: 'right',
       sortable: true,
-      render: (item) => <span className="tabular-nums">{item.amount.toLocaleString()}</span>,
+      render: (item) => <span className="tabular-nums">{formatQuantity(item.amount)}</span>,
     },
     {
       key: 'value',
@@ -92,7 +106,7 @@ function getHoldingColumns(currency: string): ColumnDef<HoldingWithDetails>[] {
       align: 'right',
       sortable: true,
       render: (item) => (
-        <span className="font-medium tabular-nums">{formatCurrency(item.value, currency)}</span>
+        <span className="font-medium tabular-nums">{formatMoney(item.value, currency)}</span>
       ),
     },
     {
@@ -106,14 +120,11 @@ function getHoldingColumns(currency: string): ColumnDef<HoldingWithDetails>[] {
             <span
               title={
                 item.price.timestamp
-                  ? `Updated ${new Date(item.price.timestamp).toLocaleString()}${item.price.source ? ` · ${item.price.source}` : ''}`
+                  ? `Updated ${formatDateTime(item.price.timestamp)}${item.price.source ? ` · ${item.price.source}` : ''}`
                   : undefined
               }
             >
-              {formatCurrency(
-                item.price.value === null ? null : Number.parseFloat(item.price.value),
-                currency
-              )}
+              {formatMoney(item.price.value, currency)}
             </span>
           ) : (
             '-'

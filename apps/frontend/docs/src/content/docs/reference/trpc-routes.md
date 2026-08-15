@@ -37,9 +37,11 @@ Located in `apps/backend/api/src/presentation/routers/`.
 | `vendors` | Who a payment is with. List, create, rename, and merge two vendors into one. |
 | `documents` | Upload an invoice, read its parse status, confirm or reject the extraction. |
 | `review` | Read-model over everything awaiting the user — pending job results plus pending document extractions. |
+| `transfer-review` | Outflows the `transfer-linking` matcher could not pair: `listPending`, `resolve` (`paired` with a deposit / `left_control` / `untracked`), `reopen`. |
 | `jobs` | HMAC-gated operator endpoints: retry, remove, DLQ replay. |
 | `batch-operations` | Batched mutations the SPA uses for bulk edits. |
 | `client-errors` | Endpoint the SPA posts unhandled-error reports to. |
+| `exports` | `renderPdf` typesets a workbook the client already assembled — it reads no holdings of its own, so a statement cannot drift from the CSV beside it; the account name comes from the session, never the input. `everything` returns the whole account for the "export everything" file. |
 
 Auth: every router except the user-facing magic-link entry points
 requires a Better-Auth session cookie. The `jobs` router additionally

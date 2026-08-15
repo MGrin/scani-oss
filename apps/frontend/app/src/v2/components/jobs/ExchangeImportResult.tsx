@@ -2,6 +2,7 @@ import { Button } from '@scani/ui/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@scani/ui/ui/card';
 import { AlertTriangle, CheckCircle2, PieChart } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { useGenerationPath } from '../../hooks/useGenerationRoute';
 import { V2_ROUTES } from '../../lib/routes';
 
 /**
@@ -22,6 +23,8 @@ function asRecord(v: unknown): Record<string, unknown> {
 }
 
 export function ExchangeImportResult({ result }: { result: unknown }) {
+  // Generation-aware — this body renders in the v3 shell too (SC-134).
+  const toGeneration = useGenerationPath();
   const raw = asRecord(result) as ExchangeImportResultShape & Record<string, unknown>;
   const accountsCreated = Number(raw.accountsCreated ?? 0);
   const tokensImported = Number(raw.tokensImported ?? 0);
@@ -31,9 +34,9 @@ export function ExchangeImportResult({ result }: { result: unknown }) {
   const hasErrors = errors.length > 0;
   const allFailed = tokensImported === 0 && hasErrors;
 
-  const holdingsHref = institutionId
-    ? `${V2_ROUTES.holdings}?institution=${institutionId}`
-    : V2_ROUTES.holdings;
+  const holdingsHref = toGeneration(
+    institutionId ? `${V2_ROUTES.holdings}?institution=${institutionId}` : V2_ROUTES.holdings
+  );
 
   return (
     <div className="space-y-4">

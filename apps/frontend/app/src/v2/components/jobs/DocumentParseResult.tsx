@@ -2,6 +2,7 @@ import { Badge } from '@scani/ui/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@scani/ui/ui/card';
 import { CheckCircle2, ChevronRight, Copy, FileText } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { useGenerationPath } from '../../hooks/useGenerationRoute';
 import { V2_ROUTES } from '../../lib/routes';
 
 /**
@@ -37,6 +38,10 @@ function asSummary(v: unknown): DocumentParseSummary | null {
 }
 
 export function DocumentParseResult({ result }: { result: unknown }) {
+  // Generation-aware for the same reason every other renderer here is
+  // (SC-134). v3 overrides this entry today, so nothing reaches it from the
+  // v3 shell — but that is a fact about `job-result.tsx`, not about this file.
+  const toGeneration = useGenerationPath();
   const summary = asSummary(result);
 
   if (!summary) {
@@ -65,7 +70,7 @@ export function DocumentParseResult({ result }: { result: unknown }) {
               Without this the user is told a document exists and given no
               way to reach it. */}
           <Link
-            to={V2_ROUTES.documentDetail(summary.documentId)}
+            to={toGeneration(V2_ROUTES.documentDetail(summary.documentId))}
             className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
           >
             View the original
@@ -96,7 +101,7 @@ export function DocumentParseResult({ result }: { result: unknown }) {
         {summary.extractions.map((e) => (
           <Link
             key={e.id}
-            to={V2_ROUTES.documentDetail(summary.documentId)}
+            to={toGeneration(V2_ROUTES.documentDetail(summary.documentId))}
             className="flex items-center justify-between gap-3 p-2 rounded-md border border-border hover:border-primary/50 hover:bg-accent/50 transition-colors"
           >
             <div className="min-w-0">

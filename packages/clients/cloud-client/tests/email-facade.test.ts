@@ -69,9 +69,9 @@ describe('EmailFacade — local mode (no cloud client)', () => {
 
   test('sendMagicLink renders + forwards through LocalEmailService', async () => {
     const facade = new EmailFacade();
-    await facade.sendMagicLink({ to: 'a@x', url: 'https://app.example.com/auth' });
+    await facade.sendMagicLink({ to: 'a@x', url: 'https://app.scani.xyz/auth' });
     expect(stubLocal.sent[0]?.subject).toBe('Sign in to Scani');
-    expect(stubLocal.sent[0]?.text).toContain('https://app.example.com/auth');
+    expect(stubLocal.sent[0]?.text).toContain('https://app.scani.xyz/auth');
   });
 });
 

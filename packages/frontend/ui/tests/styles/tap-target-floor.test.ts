@@ -114,7 +114,7 @@ describe('v3 coarse-pointer tap floor', () => {
  * thing generation *changes* is the very thing the block above asserts: the
  * `[data-ui='v3']` prefix is stripped, dropping the floor's specificity by one
  * component. Everything asserted above is therefore untested for the variant
- * the other Scani SPAs actually import.
+ * `apps/frontend/landing` and `apps/frontend/cloud` actually import.
  *
  * It still wins, and by construction rather than by luck: `:is()` and `:not()`
  * each contribute their most specific argument, so `a[href]` and

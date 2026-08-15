@@ -17,6 +17,7 @@ import { useEffect, useState } from 'react';
 import { NumericFormat } from 'react-number-format';
 import { trpc } from '@/lib/trpc';
 import { invalidatePortfolioQueries } from '../../hooks/invalidatePortfolioQueries';
+import { formatMoneyPlain } from '../../lib/format';
 import { FiatCurrencySelect } from '../shared/FiatCurrencySelect';
 
 interface EditCustomTokenPriceDialogProps {
@@ -106,7 +107,7 @@ export function EditCustomTokenPriceDialog({
             Current price:{' '}
             <span className="font-medium text-foreground">
               {currentPriceNum != null
-                ? `${currentPriceNum.toLocaleString('en-US', { maximumFractionDigits: 8 })} ${currentPriceCurrencyLabel}`
+                ? `${formatMoneyPlain(currentPriceNum)} ${currentPriceCurrencyLabel}`
                 : '—'}
             </span>
           </div>
@@ -175,14 +176,8 @@ export function EditCustomTokenPriceDialog({
                 )}
                 {history.data?.map((row) => {
                   const prev =
-                    row.previousPrice != null
-                      ? Number(row.previousPrice).toLocaleString('en-US', {
-                          maximumFractionDigits: 8,
-                        })
-                      : '—';
-                  const next = Number(row.newPrice).toLocaleString('en-US', {
-                    maximumFractionDigits: 8,
-                  });
+                    row.previousPrice != null ? formatMoneyPlain(row.previousPrice) : '—';
+                  const next = formatMoneyPlain(row.newPrice);
                   const editor = row.editorEmail ?? row.editorName ?? 'unknown';
                   const currency = row.baseCurrencySymbol ?? '';
                   return (

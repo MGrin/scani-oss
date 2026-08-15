@@ -1,8 +1,8 @@
 import { EmptyState } from '@scani/ui/components/EmptyState';
 import { Skeleton } from '@scani/ui/ui/skeleton';
+import { type DataViewConfig, useDataView } from '@scani/ui/v3/hooks/useDataView';
 import { Inbox } from 'lucide-react';
 import type { ReactNode } from 'react';
-import { type DataViewConfig, useDataView } from '../../hooks/useDataView';
 import { DataViewCards } from './DataViewCards';
 import type { ColumnDef } from './DataViewTable';
 import { DataViewTable } from './DataViewTable';

@@ -8,13 +8,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@scani/ui/ui/textarea';
 import { showError, showSuccess } from '@scani/ui/ui/use-toast';
 import { ArrowLeft, FileText, Loader2 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { NumericFormat } from 'react-number-format';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { useBaseCurrency } from '@/contexts/BaseCurrencyContext';
+import { baseCurrencyDefaultAction } from '@/lib/currency-default';
 import { trpc } from '@/lib/trpc';
 import { VendorPicker } from '../components/payments/VendorPicker';
 import { TokenSearchInput, type TokenSelectionValue } from '../components/tokens/TokenSearchInput';
-import { useBaseCurrency } from '../hooks/useBaseCurrency';
 import { buildInvoicePrefill, matchCurrencyToken } from '../lib/extractionPrefill';
 import { describePaymentFormBlockers } from '../lib/paymentForm';
 import { todayDateString } from '../lib/paymentTotals';
@@ -23,6 +24,9 @@ import { V2_ROUTES } from '../lib/routes';
 type Direction = 'outflow' | 'inflow';
 type Kind = 'fixed' | 'variable';
 type IntervalUnit = 'week' | 'month' | 'quarter' | 'year';
+/** `''` is the unanswered cadence an invoice with no stated period leaves
+ *  behind — see `buildInvoicePrefill`. Nothing else can produce it. */
+type IntervalUnitChoice = IntervalUnit | '';
 
 const NO_ACCOUNT = '__none__';
 
@@ -74,7 +78,7 @@ export function PaymentCreatePage() {
   const [kind, setKind] = useState<Kind>('fixed');
   const [amount, setAmount] = useState('');
   const [currency, setCurrency] = useState<TokenSelectionValue | null>(null);
-  const [intervalUnit, setIntervalUnit] = useState<IntervalUnit>('month');
+  const [intervalUnit, setIntervalUnit] = useState<IntervalUnitChoice>('month');
   const [intervalCount, setIntervalCount] = useState('1');
   const [anchorDate, setAnchorDate] = useState(todayDateString());
   const [endDate, setEndDate] = useState('');
@@ -109,14 +113,16 @@ export function PaymentCreatePage() {
   // Prefill from a parsed invoice. Only the fields the invoice actually
   // evidences are touched — direction, kind and repeat count keep the
   // form's own defaults (a bill, fixed, every 1 unit), which is what an
-  // invoice implies anyway.
+  // invoice implies anyway. The cadence unit is the exception: it is
+  // CLEARED when the invoice states none, so the empty control asks rather
+  // than answers (SC-147).
   useEffect(() => {
     if (!extraction || invoicePrefilled || !tokens) return;
-    const prefill = buildInvoicePrefill(extraction, todayDateString());
+    const prefill = buildInvoicePrefill(extraction);
     setPendingVendorName(prefill.vendorName);
     setAmount(prefill.amount);
     setAnchorDate(prefill.anchorDate);
-    setIntervalUnit(prefill.intervalUnit);
+    setIntervalUnit(prefill.intervalUnit ?? '');
     setMarkAnchorPaid(prefill.markAnchorPaid);
     const token = matchCurrencyToken(tokens, prefill.currencyCode);
     if (token) setCurrency({ id: token.id, label: `${token.symbol} — ${token.name}` });
@@ -127,12 +133,22 @@ export function PaymentCreatePage() {
   // this, `TokenSearchInput` starts empty and `currency` stays `null`
   // until the user picks a result from the dropdown — typing "USD" and
   // moving on reads as filled but leaves the form silently invalid.
+  const currencyDefaultSpent = useRef(false);
   useEffect(() => {
-    if (isEdit || currency || baseCurrencyLoading || !baseCurrencyResolved) return;
-    setCurrency({
-      id: baseCurrencyToken.id,
-      label: `${baseCurrencyToken.symbol} — ${baseCurrencyToken.name}`,
+    const action = baseCurrencyDefaultAction({
+      isEdit,
+      alreadySpent: currencyDefaultSpent.current,
+      baseCurrencyResolved: !baseCurrencyLoading && baseCurrencyResolved,
+      currency,
     });
+    if (action === 'wait') return;
+    currencyDefaultSpent.current = true;
+    if (action === 'fill') {
+      setCurrency({
+        id: baseCurrencyToken.id,
+        label: `${baseCurrencyToken.symbol} — ${baseCurrencyToken.name}`,
+      });
+    }
   }, [isEdit, currency, baseCurrencyLoading, baseCurrencyResolved, baseCurrencyToken]);
 
   const createMutation = trpc.payments.create.useMutation({
@@ -183,11 +199,12 @@ export function PaymentCreatePage() {
     currencyTokenId: currency?.id ?? null,
     anchorDate,
     intervalCount,
+    intervalUnit,
   });
   const canSubmit = blockers.length === 0;
 
   const handleSubmit = () => {
-    if (!canSubmit || !currency) return;
+    if (!canSubmit || !currency || !intervalUnit) return;
     const payload = {
       direction,
       kind,
@@ -377,7 +394,9 @@ export function PaymentCreatePage() {
                   disabled={isSaving}
                 >
                   <SelectTrigger>
-                    <SelectValue />
+                    {/* Radix renders the placeholder for the empty value, which
+                        is what an invoice with no stated cadence leaves here. */}
+                    <SelectValue placeholder="How often?" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="week">Week(s)</SelectItem>

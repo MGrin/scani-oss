@@ -5,6 +5,7 @@ import { Skeleton } from '@scani/ui/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@scani/ui/ui/table';
 import { useMemo, useState } from 'react';
 import { trpc } from '@/lib/trpc';
+import { formatQuantity } from '../../lib/format';
 
 interface AccountTransactionsListProps {
   accountId: string;
@@ -91,7 +92,7 @@ export function AccountTransactionsList({ accountId }: AccountTransactionsListPr
                         inflow ? 'text-emerald-600' : 'text-rose-600'
                       }`}
                     >
-                      {Number.isFinite(qty) ? qty.toLocaleString() : tx.quantity}
+                      {Number.isFinite(qty) ? formatQuantity(qty) : tx.quantity}
                     </TableCell>
                   </TableRow>
                 );

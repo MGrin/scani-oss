@@ -9,12 +9,12 @@ import type { CloudDb } from '../db/connection';
 
 // Second auth strategy on apps/backend/data-provider — runs alongside the
 // M2M bearer-token gate for tRPC calls from backend/worker. Cookie sessions
-// issued here authenticate browser users on cloud.example.com (FE-2) against
+// issued here authenticate browser users on cloud.scani.xyz (FE-2) against
 // `keys.list` / `keys.create` / `keys.revoke` / `usage.*`.
 //
 // The table set (cloud_users, cloud_sessions, …) is intentionally separate
 // from the backend's users / user_sessions — cloud-frontend operators are
-// a distinct identity namespace from app.example.com end-users.
+// a distinct identity namespace from app.scani.xyz end-users.
 //
 // Gated by CLOUD_MANAGEMENT_ENABLED=true. In OSS Tier 1 boot the function
 // is never called; the data-provider stays single-purpose.

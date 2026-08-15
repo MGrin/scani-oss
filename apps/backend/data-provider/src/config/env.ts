@@ -23,8 +23,8 @@ const envSchema = z.object({
   // Public origin this service is reachable on. Used by the OpenAPI
   // doc's `servers[]` so generated docs/SDKs hit the right URL. Falls
   // back to a localhost URL constructed from HOST + PORT when unset
-  // (fine for OSS / dev). Production should set this explicitly to the
-  // service's public HTTPS URL.
+  // (fine for OSS / dev). Production should set
+  // `https://api.cloud.scani.xyz` explicitly.
   PUBLIC_BASE_URL: optionalUrl,
 
   // Redis backs the per-provider rate-limiter buckets. Single-tenant in

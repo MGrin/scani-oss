@@ -4,71 +4,67 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@scan
 import { AlertCircle, CheckCircle, Loader2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { authClient } from '@/lib/auth-client';
-import { trpc } from '@/lib/trpc';
+import { useAuth } from '@/contexts/AuthContext';
 
 /**
  * Better-Auth magic-link callback.
  *
  * The backend's /api/auth/magic-link/verify handler validates the token,
  * mints a session cookie, and 302-redirects here. By the time this
- * component mounts, the cookie should already be set and
- * authClient.getSession() should return a populated session — we just
- * verify that's true and redirect onward.
+ * component mounts the cookie is already set, so all this screen does is
+ * wait for the answer and move on.
+ *
+ * **It reads `AuthProvider`'s answer rather than asking its own** (SC-163).
+ * `AuthProvider` mounts above the router and probes on mount, so a second
+ * `getSession()` here was a duplicate of a request already in flight — two
+ * probes, one answer, on the screen with the least slack in the whole app.
+ *
+ * It also used to `await` a `users.getCurrent` refetch before navigating, to
+ * "warm the backend user cache". That warm cost a full round trip on the
+ * critical path and bought nothing: `getCurrent` only returns the row
+ * `requireAuth` has already loaded, and every screen behind this one calls a
+ * procedure that loads it anyway. On the magic-link landing that awaited call
+ * delayed the navigation, and with it the interface chunk, the dashboard
+ * query and the net-worth series behind it (SC-164).
  */
 export function AuthCallback() {
   const location = useLocation();
   const searchParams = new URLSearchParams(location.search);
 
   const navigate = useNavigate();
+  const { status: authStatus } = useAuth();
   const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const returnTo = (location.state as { from?: { pathname: string } })?.from?.pathname || '/';
 
-  // Warm the backend user cache when the session is valid.
-  const getCurrentUser = trpc.users.getCurrent.useQuery(undefined, {
-    enabled: false,
-    retry: false,
-  });
+  const linkError = searchParams.get('error');
+  const linkErrorDescription = searchParams.get('error_description');
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: intentional mount-only effect; searchParams.get and refetch are stable
   useEffect(() => {
-    const run = async () => {
-      try {
-        const error = searchParams.get('error');
-        const errorDescription = searchParams.get('error_description');
-        if (error) {
-          setStatus('error');
-          setErrorMessage(errorDescription || 'Authentication failed');
-          return;
-        }
+    if (linkError) {
+      setStatus('error');
+      setErrorMessage(linkErrorDescription || 'Authentication failed');
+      return;
+    }
+    if (authStatus === 'loading') return;
 
-        const session = await authClient.getSession();
-        if (session?.data?.user) {
-          setStatus('success');
-          try {
-            await getCurrentUser.refetch();
-          } catch (syncError) {
-            console.warn('User sync failed, but authentication was successful:', syncError);
-          }
-          navigate(returnTo, { replace: true });
-          return;
-        }
+    if (authStatus === 'authenticated') {
+      setStatus('success');
+      navigate(returnTo, { replace: true });
+      return;
+    }
 
-        // No session — the magic link may have expired before the user
-        // landed here, or cookies were blocked.
-        setStatus('error');
-        setErrorMessage(
-          'Your sign-in link has expired or could not be verified. Please request a new one.'
-        );
-      } catch (err) {
-        setStatus('error');
-        setErrorMessage(err instanceof Error ? err.message : 'Unknown error occurred');
-      }
-    };
-    run();
-  }, [navigate, returnTo]);
+    setStatus('error');
+    setErrorMessage(
+      // "We could not ask" is not "you are not signed in" (SC-78 §2). Telling
+      // someone on a dead connection that their link expired sends them to
+      // request another one that will not arrive either.
+      authStatus === 'unreachable'
+        ? "We couldn't reach the server to finish signing you in. Check your connection and try the link again."
+        : 'Your sign-in link has expired or could not be verified. Please request a new one.'
+    );
+  }, [authStatus, linkError, linkErrorDescription, navigate, returnTo]);
 
   if (status === 'loading') {
     return (

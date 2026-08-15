@@ -1,10 +1,20 @@
 #!/usr/bin/env bun
 
+// Same env vars, same defaults, as the fixtures that talk to these services
+// (`fixtures/auth.ts`, `fixtures/mailpit.ts`, `playwright.config.ts`). The
+// defaults are the compose stack's host ports; overriding them is what lets
+// the suite run against host-side `bun dev` services on other ports, which is
+// the loop an agent iterating on a spec actually uses.
+const API_BASE_URL = process.env.API_BASE_URL ?? 'http://localhost:3011';
+const DATA_PROVIDER_URL = process.env.DATA_PROVIDER_URL ?? 'http://localhost:8082';
+const FRONTEND_URL = process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:5173';
+const MAILPIT_URL = process.env.MAILPIT_URL ?? 'http://localhost:8026';
+
 const TARGETS = [
-  { name: 'api', url: 'http://localhost:3011/health' },
-  { name: 'data-provider', url: 'http://localhost:8082/health' },
-  { name: 'frontend', url: 'http://localhost:5173/' },
-  { name: 'mailpit', url: 'http://localhost:8026/api/v1/info' },
+  { name: 'api', url: `${API_BASE_URL}/health` },
+  { name: 'data-provider', url: `${DATA_PROVIDER_URL}/health` },
+  { name: 'frontend', url: `${FRONTEND_URL}/` },
+  { name: 'mailpit', url: `${MAILPIT_URL}/api/v1/info` },
 ] as const;
 
 const TIMEOUT_MS = 90_000;

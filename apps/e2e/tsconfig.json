@@ -3,7 +3,18 @@
   "compilerOptions": {
     "rootDir": ".",
     "noEmit": true,
+    // `page.evaluate` callbacks are compiled here and executed in the browser,
+    // so `document`, `Element` and `getComputedStyle` have to resolve — the
+    // accessibility fixture measures the rendered tree from inside the page.
+    "lib": ["ESNext", "DOM", "DOM.Iterable"],
     "types": ["@playwright/test", "bun"]
   },
-  "include": ["tests/**/*", "fixtures/**/*", "scripts/**/*", "playwright.config.ts"]
+  "include": [
+    "tests/**/*",
+    "capture/**/*",
+    "fixtures/**/*",
+    "scripts/**/*",
+    "playwright.config.ts",
+    "playwright.shots.config.ts"
+  ]
 }

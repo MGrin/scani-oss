@@ -2,6 +2,7 @@ import { formatRelative } from '@scani/shared';
 import { CardInteractive } from '@scani/ui/ui/card';
 import { CheckCircle2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { counterpartPath } from '@/v3/lib/ui-version';
 import { DataView as DataViewComponent } from '../components/data-view/DataView';
 import type { ColumnDef } from '../components/data-view/DataViewTable';
 import { type ReviewFeedItem, useReviewFeed } from '../hooks/useReviewFeed';
@@ -106,7 +107,9 @@ export function ReviewPage() {
         }}
         columns={columns}
         renderCard={(item: ReviewFeedItem) => <ReviewCard item={item} />}
-        onRowClick={(item: ReviewFeedItem) => navigate(item.href)}
+        // The feed's hrefs are unprefixed, and unprefixed is v3's namespace
+        // since V3-19 — so a classic-UI row has to cross into `/v2` explicitly.
+        onRowClick={(item: ReviewFeedItem) => navigate(counterpartPath(item.href, 'v2'))}
         getId={(item: ReviewFeedItem) => item.id}
         isLoading={isLoading}
         emptyState={

@@ -1,3 +1,4 @@
+import { formatDateTime } from '@scani/shared';
 import { Badge } from '@scani/ui/ui/badge';
 import { Button } from '@scani/ui/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@scani/ui/ui/card';
@@ -6,10 +7,12 @@ import { showError } from '@scani/ui/ui/use-toast';
 import { ArrowLeft, Check, CheckCircle2, Loader2, Pencil, Trash2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { NumericFormat } from 'react-number-format';
-import { useNavigate } from 'react-router-dom';
 import { trpc } from '@/lib/trpc';
+import { useGenerationNavigate, useGenerationPath } from '../../hooks/useGenerationRoute';
+import { formatQuantity } from '../../lib/format';
 import { V2_ROUTES } from '../../lib/routes';
 import { TokenSearchInput } from '../tokens/TokenSearchInput';
+import { DiscardedReviewCard } from './DiscardedReviewCard';
 
 /**
  * Reusable review + confirm card for extracted holdings. Used by
@@ -61,6 +64,8 @@ interface ReviewHoldingsCardProps {
   jobId?: string;
   /** Existing stamp, if any — flips the card into read-only mode. */
   actionTakenAt?: string | Date | null;
+  /** What the stamp meant: `imported` | `discarded` | null (SC-138). */
+  reviewOutcome?: string | null;
 }
 
 function makeRow(h: ReviewHoldingInput, idx: number): Row {
@@ -80,8 +85,12 @@ export function ReviewHoldingsCard({
   title = 'Review & edit holdings',
   jobId,
   actionTakenAt,
+  reviewOutcome,
 }: ReviewHoldingsCardProps) {
-  const navigate = useNavigate();
+  // Generation-aware: this card also renders inside the v3 shell, where a
+  // hardcoded `/v2` target ejected the reader on a successful import (SC-134).
+  const navigateInGeneration = useGenerationNavigate();
+  const toGeneration = useGenerationPath();
 
   // Read-only latch: once the job's `action_taken_at` is set, we render
   // a compact confirmation instead of the editable review table. Stamp
@@ -103,7 +112,7 @@ export function ReviewHoldingsCard({
   const createBatchMutation = trpc.batchOperations.createHoldingsBatch.useMutation({
     onError: (err) => showError(err, 'Saving holdings'),
     onSuccess: ({ jobId: newJobId }) => {
-      navigate(V2_ROUTES.jobDetail(newJobId));
+      navigateInGeneration(V2_ROUTES.jobDetail(newJobId));
     },
   });
 
@@ -168,13 +177,22 @@ export function ReviewHoldingsCard({
   };
 
   const removedCount = rows.length - activeRows.length;
+  const importableCount = newHoldings.length + updateHoldings.length;
 
   // Read-only confirmation: stamp is set, the extracted holdings have
   // already been imported. Placed after every hook call (state / mutation
   // / memo) so the hook order stays stable across renders.
+  if (alreadyActed && reviewOutcome === 'discarded') {
+    return (
+      <DiscardedReviewCard
+        actionTakenAt={actionTakenAt}
+        noun={fileSource === 'statement' ? 'statement' : 'parse'}
+      />
+    );
+  }
   if (alreadyActed) {
     const when = actionTakenAt instanceof Date ? actionTakenAt : new Date(String(actionTakenAt));
-    const whenLabel = Number.isNaN(when.getTime()) ? '' : when.toLocaleString();
+    const whenLabel = Number.isNaN(when.getTime()) ? '' : formatDateTime(when);
     return (
       <Card>
         <CardHeader className="flex flex-row items-center gap-2 space-y-0">
@@ -189,7 +207,7 @@ export function ReviewHoldingsCard({
             duplicates, so this action is locked.
           </p>
           <Button variant="outline" size="sm" asChild className="mt-1 h-7 text-xs">
-            <a href={V2_ROUTES.holdings}>View holdings</a>
+            <a href={toGeneration(V2_ROUTES.holdings)}>View holdings</a>
           </Button>
         </CardContent>
       </Card>
@@ -206,8 +224,13 @@ export function ReviewHoldingsCard({
               {fileSource === 'screenshot' ? 'Screenshot' : 'Bank statement'}
             </Badge>
           )}
+          {/* Counts what the button will actually write, not what is on
+              screen. Reading `activeRows` here put "3 holdings selected"
+              above an "Import 1 holding" button, and the header is the
+              number people believe (SC-133). */}
           <span className="text-muted-foreground">
-            {activeRows.length} holding{activeRows.length === 1 ? '' : 's'} selected
+            {importableCount} holding{importableCount === 1 ? '' : 's'} selected
+            {unmatchedHoldings.length > 0 ? ` · ${unmatchedHoldings.length} unmatched` : ''}
           </span>
           {typeof overallConfidence === 'number' && (
             <Badge variant="secondary">{Math.round(overallConfidence * 100)}% confidence</Badge>
@@ -307,7 +330,7 @@ export function ReviewHoldingsCard({
                 )}
                 {isUpdate && h.existingBalance && !h.removed && editingClientId !== h.clientId && (
                   <p className="text-[10px] text-muted-foreground mt-0.5 ml-5">
-                    Current: {Number(h.existingBalance).toLocaleString()}
+                    Current: {formatQuantity(h.existingBalance)}
                   </p>
                 )}
               </div>

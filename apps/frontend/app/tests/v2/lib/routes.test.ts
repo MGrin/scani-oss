@@ -2,10 +2,12 @@ import { describe, expect, test } from 'bun:test';
 import { resolveActiveNavPath, V2_ROUTES } from '../../../src/v2/lib/routes';
 
 describe('resolveActiveNavPath', () => {
-  test('the dashboard lights only on the root, never as a prefix', () => {
-    expect(resolveActiveNavPath('/')).toBe('/');
-    expect(resolveActiveNavPath('/holdings')).toBe('/holdings');
-    expect(resolveActiveNavPath('/settings')).toBeNull();
+  // v2 moved under `/v2` when v3 took the root (V3-19), so "the root" here is
+  // v2's own base — and it still may not prefix-match its descendants.
+  test('the dashboard lights only on v2\u2019s root, never as a prefix', () => {
+    expect(resolveActiveNavPath(V2_ROUTES.dashboard)).toBe(V2_ROUTES.dashboard);
+    expect(resolveActiveNavPath(V2_ROUTES.holdings)).toBe(V2_ROUTES.holdings);
+    expect(resolveActiveNavPath(V2_ROUTES.settings)).toBeNull();
   });
 
   // The reported bug: `/payments` is a prefix of `/payments/recurring`, so
@@ -42,8 +44,8 @@ describe('resolveActiveNavPath', () => {
   });
 
   test('matching is on whole path segments, not raw string prefixes', () => {
-    expect(resolveActiveNavPath('/payments-archive')).toBeNull();
-    expect(resolveActiveNavPath('/holdingsomething')).toBeNull();
+    expect(resolveActiveNavPath(`${V2_ROUTES.payments}-archive`)).toBeNull();
+    expect(resolveActiveNavPath(`${V2_ROUTES.holdings}something`)).toBeNull();
   });
 
   test('pages outside the nav leave every entry unlit', () => {

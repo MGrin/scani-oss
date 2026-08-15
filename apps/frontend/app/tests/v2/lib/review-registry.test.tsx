@@ -8,7 +8,7 @@ import { ScreenshotParseResult } from '../../../src/v2/components/jobs/Screensho
 import { WalletImportResult } from '../../../src/v2/components/jobs/WalletImportResult';
 import { resolveReviewRenderer } from '../../../src/v2/lib/review-registry';
 
-const BASE_PROPS = { result: {}, jobId: 'j1', actionTakenAt: null };
+const BASE_PROPS = { result: {}, jobId: 'j1', actionTakenAt: null, reviewOutcome: null };
 
 describe('resolveReviewRenderer', () => {
   test('resolves every kind that previously had a switch arm', () => {

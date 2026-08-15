@@ -21,7 +21,6 @@ export const BREAKPOINTS = {
 export const STORAGE_KEYS = {
   sidebarCollapsed: 'scani-v2-sidebar-collapsed',
   viewMode: (page: string) => `scani-v2-view-${page}`,
-  dataViewState: (page: string) => `scani-v2-dv-${page}`,
   dashboardChart: 'scani-v2-dashboard-chart',
 } as const;
 

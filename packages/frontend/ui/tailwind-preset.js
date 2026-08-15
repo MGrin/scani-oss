@@ -1,5 +1,5 @@
 /**
- * Shared Tailwind preset consumed by every Scani SPA.
+ * Shared Tailwind preset consumed by apps/frontend/app and apps/frontend/cloud.
  *
  * Design-token philosophy: every color is HSL driven by a CSS variable in
  * `src/styles/globals.css`, so ThemeContext can swap light/dark simply by

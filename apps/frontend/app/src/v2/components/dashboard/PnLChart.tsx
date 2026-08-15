@@ -14,8 +14,8 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
+import { useBaseCurrency } from '@/contexts/BaseCurrencyContext';
 import { trpc } from '@/lib/trpc';
-import { useBaseCurrency } from '../../hooks/useBaseCurrency';
 import type { useUserJobs } from '../../hooks/useUserJobs';
 import { V2_ROUTES } from '../../lib/routes';
 import type { NetWorthChartScope } from './NetWorthChart';

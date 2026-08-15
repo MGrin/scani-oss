@@ -1,27 +1,66 @@
 import type { HoldingWithDetails } from '@scani/shared';
-import { formatCurrency } from '@scani/shared';
+import { formatCurrency, formatDateTime } from '@scani/shared';
 import { Badge } from '@scani/ui/ui/badge';
 import { Button } from '@scani/ui/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@scani/ui/ui/card';
 import { Checkbox } from '@scani/ui/ui/checkbox';
 import { showError, showSuccess } from '@scani/ui/ui/use-toast';
 import { AlertTriangle, CheckCircle2, Loader2, Trash2 } from 'lucide-react';
-import { useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useId, useMemo, useState } from 'react';
+import { useBaseCurrency } from '@/contexts/BaseCurrencyContext';
 import { trpc } from '@/lib/trpc';
 import { invalidatePortfolioQueries } from '@/v2/hooks/invalidatePortfolioQueries';
-import { useBaseCurrency } from '@/v2/hooks/useBaseCurrency';
+import { useGenerationNavigate, useGenerationPath } from '@/v2/hooks/useGenerationRoute';
 import { V2_ROUTES } from '@/v2/lib/routes';
+import {
+  asCount,
+  classifyFetch,
+  type FetchOutcome,
+  readChainErrors,
+} from '@/v2/lib/wallet-import-result';
+import { formatMoney, formatQuantity } from '../../lib/format';
 import { ScamBadge } from '../ScamBadge';
+import { DiscardedReviewCard } from './DiscardedReviewCard';
 
 interface WalletImportResultProps {
   result: unknown;
   jobId?: string;
   actionTakenAt?: Date | string | null;
+  reviewOutcome?: string | null;
 }
 
 function asRecord(v: unknown): Record<string, unknown> {
   return v && typeof v === 'object' ? (v as Record<string, unknown>) : {};
+}
+
+const REVIEW_TITLES: Record<FetchOutcome, string> = {
+  found: 'Review detected holdings',
+  partial: 'Review detected holdings — partial read',
+  empty: 'Nothing to review',
+  unreadable: 'This wallet could not be read',
+};
+
+function ChainErrorList({ errors }: { errors: string[] }) {
+  if (errors.length === 0) return null;
+  return (
+    <div className="rounded-md border border-amber-500/40 bg-amber-500/5 p-2 text-xs">
+      <div className="mb-1 flex items-center gap-1.5 font-medium">
+        <AlertTriangle className="h-3.5 w-3.5 text-amber-600" />
+        {errors.length} chain{errors.length === 1 ? '' : 's'} could not be read
+      </div>
+      <ul className="list-disc space-y-0.5 pl-4 font-mono">
+        {errors.slice(0, 5).map((message) => (
+          <li key={message}>{message}</li>
+        ))}
+      </ul>
+      {errors.length > 5 && (
+        <p className="mt-1 text-muted-foreground">…and {errors.length - 5} more.</p>
+      )}
+      <p className="mt-1.5 font-sans text-muted-foreground">
+        Anything held on {errors.length === 1 ? 'that chain' : 'those chains'} is not in this list.
+      </p>
+    </div>
+  );
 }
 
 /**
@@ -39,8 +78,17 @@ function asRecord(v: unknown): Record<string, unknown> {
  * Falls back to a counts-only summary when the job had no `holdingIds`
  * field (older completed jobs predating this feature).
  */
-export function WalletImportResult({ result, jobId, actionTakenAt }: WalletImportResultProps) {
+export function WalletImportResult({
+  result,
+  jobId,
+  actionTakenAt,
+  reviewOutcome,
+}: WalletImportResultProps) {
   const r = asRecord(result);
+
+  if (reviewOutcome === 'discarded') {
+    return <DiscardedReviewCard actionTakenAt={actionTakenAt} noun="wallet import" />;
+  }
 
   // Two render paths:
   //  1. Newer (review-aware) jobs: result has `needsReview: true` + a
@@ -50,11 +98,26 @@ export function WalletImportResult({ result, jobId, actionTakenAt }: WalletImpor
   //  2. Older (auto-create) jobs: result has `holdingIds` and we render
   //     the post-import review/delete UI. Kept here so jobs from before
   //     the review-aware refactor still render.
-  if (r.needsReview === true && Array.isArray(r.chains) && jobId) {
+  if (r.needsReview === true && jobId) {
+    // A review payload whose `chains` is not an array is a payload we did
+    // not receive — not an import that produced nothing. Falling through
+    // to the legacy branch here is what told someone holding 2,766 tokens
+    // that a provider had rejected their balance fetch (SC-145).
+    if (!Array.isArray(r.chains)) {
+      return (
+        <WalletReviewUnavailable
+          candidateCount={asCount(r.candidateCount)}
+          chainsDetected={asCount(r.chainsDetected)}
+          errors={readChainErrors(r.errors)}
+        />
+      );
+    }
     return (
       <WalletImportReviewCard
         jobId={jobId}
         chains={r.chains as WalletReviewChainShape[]}
+        chainsDetected={asCount(r.chainsDetected)}
+        errors={readChainErrors(r.errors)}
         actionTakenAt={actionTakenAt}
       />
     );
@@ -64,14 +127,9 @@ export function WalletImportResult({ result, jobId, actionTakenAt }: WalletImpor
   const accountsCreated = Number(r.accountsCreated ?? 0);
   const holdingsCreated = Number(r.holdingsCreated ?? 0);
   const chainsDetectedRaw = r.chainsDetected;
-  const chainsCount =
-    typeof chainsDetectedRaw === 'number'
-      ? chainsDetectedRaw
-      : Array.isArray(chainsDetectedRaw)
-        ? chainsDetectedRaw.length
-        : 0;
+  const chainsCount = asCount(chainsDetectedRaw);
   const chainsList = Array.isArray(chainsDetectedRaw) ? (chainsDetectedRaw as string[]) : null;
-  const errors = Array.isArray(r.errors) ? (r.errors as unknown[]) : [];
+  const errors = readChainErrors(r.errors);
 
   return (
     <Card>
@@ -95,53 +153,113 @@ export function WalletImportResult({ result, jobId, actionTakenAt }: WalletImpor
             actionTakenAt={actionTakenAt}
           />
         ) : (
-          <EmptyImportState chainsCount={chainsCount} accountsCreated={accountsCreated} />
+          <EmptyImportState
+            chainsCount={chainsCount}
+            accountsCreated={accountsCreated}
+            failedChains={errors.length}
+          />
         )}
-        {errors.length > 0 && (
-          <div className="text-xs rounded-md border border-destructive/40 bg-destructive/5 p-2">
-            <div className="font-medium mb-1">{errors.length} import error(s)</div>
-            <ul className="list-disc pl-4 space-y-0.5 font-mono">
-              {errors.slice(0, 5).map((e, i) => (
-                // biome-ignore lint/suspicious/noArrayIndexKey: error messages don't have ids
-                <li key={i}>{typeof e === 'string' ? e : JSON.stringify(e)}</li>
-              ))}
-            </ul>
-          </div>
-        )}
+        <ChainErrorList errors={errors} />
       </CardContent>
     </Card>
   );
 }
 
+/**
+ * Why an import wrote nothing.
+ *
+ * Every branch here used to guess at a cause and state the guess as fact —
+ * "a provider API rejected the balance fetch" was printed for a run in
+ * which no provider rejected anything (SC-145). Copy now only claims what
+ * the result actually records: `failedChains` is the count of real,
+ * captured per-chain errors, and where there are none the wording stops at
+ * "we did not find", never "a provider rejected".
+ */
 function EmptyImportState({
   chainsCount,
   accountsCreated,
+  failedChains,
 }: {
   chainsCount: number;
   accountsCreated: number;
+  failedChains: number;
 }) {
+  if (failedChains > 0) {
+    return (
+      <p className="text-xs text-muted-foreground">
+        Nothing was imported because {failedChains === 1 ? 'a chain' : `${failedChains} chains`}{' '}
+        could not be read. This is not a statement that the wallet is empty — the balances below
+        were never retrieved. The errors are listed underneath; retrying the import is safe.
+      </p>
+    );
+  }
   if (chainsCount === 0) {
     return (
       <p className="text-xs text-muted-foreground">
-        No chains were detected for this address. The wallet may not have activity on any chain the
-        app currently supports, or the detection RPCs were rate-limited. Try the import again in a
-        minute or two.
+        No chains were detected for this address. Either the wallet has no activity on a chain this
+        app supports, or the detection RPCs did not answer. Retrying the import is safe.
       </p>
     );
   }
   if (accountsCreated === 0) {
     return (
       <p className="text-xs text-muted-foreground">
-        Chains were detected but no accounts were created. This usually means a provider API
-        rejected the balance fetch. Check the worker logs for details.
+        {chainsCount} chain{chainsCount === 1 ? '' : 's'} responded and reported no balances, so no
+        account was created. No error was recorded for this run.
       </p>
     );
   }
   return (
     <p className="text-xs text-muted-foreground">
-      Accounts were created but no holdings were imported. The wallet likely has a zero balance on
-      every detected chain, or a balance provider timed out. Open the holdings page to manage.
+      Accounts were created and every detected chain reported a zero balance, so there was nothing
+      to import. No error was recorded for this run.
     </p>
+  );
+}
+
+/**
+ * The review payload did not survive to the page.
+ *
+ * Reachable when `chains` is missing from a `needsReview` result — a job
+ * result past the durable size cap, or a row written by an older worker.
+ * It deliberately states what is unknown rather than showing a zero: the
+ * candidates exist, we just do not have them here.
+ */
+function WalletReviewUnavailable({
+  candidateCount,
+  chainsDetected,
+  errors,
+}: {
+  candidateCount: number;
+  chainsDetected: number;
+  errors: string[];
+}) {
+  // Generation-aware — this body renders in the v3 shell too (SC-134).
+  const toGeneration = useGenerationPath();
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-sm">Detected holdings are unavailable</CardTitle>
+        <p className="text-xs text-muted-foreground">
+          This wallet was read{' '}
+          {chainsDetected > 0
+            ? `on ${chainsDetected} chain${chainsDetected === 1 ? '' : 's'}`
+            : 'successfully'}
+          {candidateCount > 0
+            ? `, and ${candidateCount} token${candidateCount === 1 ? '' : 's'} were found`
+            : ''}
+          , but the list of candidates was not stored with this job, so there is nothing here to
+          pick from. Nothing has been imported and nothing has been lost — run the import again to
+          get the list back.
+        </p>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <ChainErrorList errors={errors} />
+        <Button variant="outline" size="sm" asChild className="h-7 text-xs">
+          <a href={toGeneration(V2_ROUTES.walletImport)}>Import this wallet again</a>
+        </Button>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -178,7 +296,9 @@ function HoldingsReviewTable({
   jobId?: string;
   actionTakenAt?: Date | string | null;
 }) {
-  const navigate = useNavigate();
+  // Generation-aware — this body renders in the v3 shell too (SC-134).
+  const navigateInGeneration = useGenerationNavigate();
+  const toGeneration = useGenerationPath();
   const utils = trpc.useUtils();
   const { symbol: currency } = useBaseCurrency();
   const query = trpc.holdings.getWithDetails.useQuery();
@@ -207,7 +327,7 @@ function HoldingsReviewTable({
       }
     }
     await invalidatePortfolioQueries(utils, { refetchType: 'all' });
-    navigate(V2_ROUTES.holdings);
+    navigateInGeneration(V2_ROUTES.holdings);
   };
 
   const ids = new Set(holdingIds);
@@ -228,7 +348,7 @@ function HoldingsReviewTable({
 
   if (alreadyActed) {
     const when = actionTakenAt instanceof Date ? actionTakenAt : new Date(String(actionTakenAt));
-    const whenLabel = Number.isNaN(when.getTime()) ? '' : when.toLocaleString();
+    const whenLabel = Number.isNaN(when.getTime()) ? '' : formatDateTime(when);
     return (
       <div className="flex items-start gap-2 rounded-md border bg-muted/20 p-3">
         <CheckCircle2 className="h-4 w-4 text-emerald-500 mt-0.5 shrink-0" />
@@ -238,7 +358,7 @@ function HoldingsReviewTable({
             your portfolio. You can still delete them from the holdings page.
           </p>
           <Button variant="outline" size="sm" asChild className="h-7 text-xs">
-            <a href={V2_ROUTES.holdings}>View holdings</a>
+            <a href={toGeneration(V2_ROUTES.holdings)}>View holdings</a>
           </Button>
         </div>
       </div>
@@ -274,17 +394,17 @@ function HoldingsReviewTable({
                       <ScamBadge probability={h.token.isScamProbability} />
                     </div>
                     <div className="text-[11px] text-muted-foreground mt-0.5 truncate tabular-nums">
-                      {h.amount} · {h.account.name}
+                      {formatQuantity(h.amount)} · {h.account.name}
                     </div>
                   </div>
                   <div className="flex items-start gap-1 shrink-0">
                     <div className="text-right leading-tight">
                       <div className="text-sm font-medium tabular-nums whitespace-nowrap">
-                        {formatCurrency(h.value, currency)}
+                        {formatMoney(h.value, currency)}
                       </div>
                       {h.price && (
                         <div className="text-[10px] text-muted-foreground tabular-nums whitespace-nowrap">
-                          @ {formatCurrency(h.price.value, currency, { decimals: 4 })}
+                          @ {formatMoney(h.price.value, currency)}
                         </div>
                       )}
                     </div>
@@ -384,14 +504,22 @@ function looksLikeSpam(snap: WalletReviewSnapshotShape): boolean {
 function WalletImportReviewCard({
   jobId,
   chains,
+  chainsDetected,
+  errors,
   actionTakenAt,
 }: {
   jobId: string;
   chains: WalletReviewChainShape[];
+  chainsDetected: number;
+  errors: string[];
   actionTakenAt?: Date | string | null;
 }) {
-  const navigate = useNavigate();
+  // Generation-aware — this body renders in the v3 shell too (SC-134).
+  const navigateInGeneration = useGenerationNavigate();
+  const toGeneration = useGenerationPath();
   const utils = trpc.useUtils();
+  const hideSpamId = useId();
+  const rowIdPrefix = useId();
   const alreadyActed = Boolean(actionTakenAt);
 
   // selectedKeys is keyed `${institutionId}:${externalId}` so the same
@@ -412,6 +540,12 @@ function WalletImportReviewCard({
 
   const totalCandidates = chains.reduce((acc, c) => acc + c.snapshots.length, 0);
   const spamCount = chains.reduce((acc, c) => acc + c.snapshots.filter(looksLikeSpam).length, 0);
+  // `chains` holds only the chains we managed to read; `chainsDetected`
+  // is how many the address was found on. Reporting the former as the
+  // latter is how a wallet detected on one chain but read on none came
+  // out as "0 tokens across 0 chains" (SC-139).
+  const chainCount = Math.max(chainsDetected, chains.length);
+  const outcome = classifyFetch(totalCandidates, errors.length);
 
   const confirmMutation = trpc.wallet.confirmHoldings.useMutation({
     onSuccess: async (data) => {
@@ -424,7 +558,7 @@ function WalletImportReviewCard({
         utils.review.listPending.invalidate(),
         invalidatePortfolioQueries(utils, { refetchType: 'all' }),
       ]);
-      navigate(V2_ROUTES.holdings);
+      navigateInGeneration(V2_ROUTES.holdings);
     },
     onError: (err) => showError(err, 'Confirming wallet import'),
   });
@@ -441,7 +575,7 @@ function WalletImportReviewCard({
             <p>This wallet's holdings have already been confirmed and imported.</p>
           </div>
           <Button variant="outline" size="sm" asChild className="h-7 text-xs">
-            <a href={V2_ROUTES.holdings}>View holdings</a>
+            <a href={toGeneration(V2_ROUTES.holdings)}>View holdings</a>
           </Button>
         </CardContent>
       </Card>
@@ -468,65 +602,93 @@ function WalletImportReviewCard({
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-sm">Review detected holdings</CardTitle>
+        <CardTitle className="text-sm">{REVIEW_TITLES[outcome]}</CardTitle>
         <p className="text-xs text-muted-foreground">
-          We found {totalCandidates} token{totalCandidates === 1 ? '' : 's'} across {chains.length}{' '}
-          chain{chains.length === 1 ? '' : 's'}. Pick which to keep — only the selected ones will be
-          created. {spamCount > 0 ? `${spamCount} look like spam.` : ''}
+          {outcome === 'unreadable' ? (
+            <>
+              None of the {errors.length} chain{errors.length === 1 ? '' : 's'} detected for this
+              address could be read, so we do not know what it holds. This is not a reading of an
+              empty wallet. Retrying the import is safe.
+            </>
+          ) : outcome === 'empty' ? (
+            <>
+              {chainCount} chain{chainCount === 1 ? '' : 's'} answered and reported no balances, so
+              this address is empty as far as we can see. No errors were recorded.
+            </>
+          ) : (
+            <>
+              We found {totalCandidates} token{totalCandidates === 1 ? '' : 's'} across {chainCount}{' '}
+              chain{chainCount === 1 ? '' : 's'}. Pick which to keep — only the selected ones will
+              be created. {spamCount > 0 ? `${spamCount} look like spam.` : ''}
+            </>
+          )}
         </p>
       </CardHeader>
       <CardContent className="space-y-3">
-        <div className="flex items-center justify-between gap-3 rounded-md border bg-muted/30 px-3 py-2 text-xs">
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              className="flex items-center gap-2 cursor-pointer"
-              onClick={() => setHideSpam((v) => !v)}
-            >
+        <ChainErrorList errors={errors} />
+        {/* Nothing to pick from means no picker. The toolbar and the
+            confirm button used to render regardless, so a wallet we could
+            not read still offered "Select all" and "Import 0 holdings" —
+            controls whose presence implies there is a list behind them. */}
+        {totalCandidates > 0 ? (
+          <div className="flex items-center justify-between gap-3 rounded-md border bg-muted/30 px-3 py-2 text-xs">
+            {/* A `<label htmlFor>`, not a `<button>` wrapping the checkbox.
+                Radix's `Checkbox` renders its own `<button role="checkbox">`,
+                so the outer button nested one control inside another —
+                invalid markup with consequences beyond the console warning it
+                logged on every render: a screen reader announces a control
+                inside a control, and `pointer-events-none` on the inner one
+                fixed the click while leaving it in the tab order, so keyboard
+                focus landed on a control that could not be operated (SC-141).
+                The label widens the hit area on its own and is what makes the
+                checkbox reachable by its text. */}
+            <div className="flex items-center gap-3">
               <Checkbox
+                id={hideSpamId}
                 checked={hideSpam}
                 onCheckedChange={(v) => setHideSpam(v === true)}
-                className="pointer-events-none"
               />
-              <span>Hide likely spam ({spamCount})</span>
-            </button>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="text-muted-foreground tabular-nums">
-              {selected.size} of {totalCandidates}
-            </span>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="h-6 text-xs"
-              onClick={() => {
-                // Select-all skips currently-hidden rows (spam filter
-                // is on). Acting only on what the user can see matches
-                // the mental model — "tick everything I see".
-                const next = new Set(selected);
-                for (const chain of chains) {
-                  for (const snap of chain.snapshots) {
-                    if (hideSpam && looksLikeSpam(snap)) continue;
-                    next.add(`${chain.institutionId}:${snap.externalId}`);
+              <label htmlFor={hideSpamId} className="cursor-pointer select-none">
+                Hide likely spam ({spamCount})
+              </label>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-muted-foreground tabular-nums">
+                {selected.size} of {totalCandidates}
+              </span>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-6 text-xs"
+                onClick={() => {
+                  // Select-all skips currently-hidden rows (spam filter
+                  // is on). Acting only on what the user can see matches
+                  // the mental model — "tick everything I see".
+                  const next = new Set(selected);
+                  for (const chain of chains) {
+                    for (const snap of chain.snapshots) {
+                      if (hideSpam && looksLikeSpam(snap)) continue;
+                      next.add(`${chain.institutionId}:${snap.externalId}`);
+                    }
                   }
-                }
-                setSelected(next);
-              }}
-            >
-              Select all
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="h-6 text-xs"
-              onClick={() => setSelected(new Set())}
-            >
-              Deselect all
-            </Button>
+                  setSelected(next);
+                }}
+              >
+                Select all
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-6 text-xs"
+                onClick={() => setSelected(new Set())}
+              >
+                Deselect all
+              </Button>
+            </div>
           </div>
-        </div>
+        ) : null}
 
         {chains.map((chain) => {
           const visibleSnaps = chain.snapshots.filter((s) => !hideSpam || !looksLikeSpam(s));
@@ -546,17 +708,25 @@ function WalletImportReviewCard({
                   const key = `${chain.institutionId}:${snap.externalId}`;
                   const checked = selected.has(key);
                   const spam = looksLikeSpam(snap);
+                  const rowId = `${rowIdPrefix}-${key}`;
                   return (
-                    <button
-                      type="button"
+                    // The same nesting the spam toggle above had, once per row
+                    // — and this is the copy that matters, because these rows
+                    // ARE the selection that "Import N holdings" acts on
+                    // (SC-141). A `<label>` carries the click to the checkbox
+                    // it names, so the whole row stays a hit target without a
+                    // second control wrapping the first, and the only thing in
+                    // the tab order is the checkbox that actually toggles.
+                    <label
                       key={snap.externalId}
-                      onClick={() => toggle(key)}
+                      htmlFor={rowId}
                       className="flex w-full items-start gap-2 p-2.5 text-sm text-left cursor-pointer hover:bg-accent/30"
                     >
                       <Checkbox
+                        id={rowId}
                         checked={checked}
                         onCheckedChange={() => toggle(key)}
-                        className="mt-1 pointer-events-none"
+                        className="mt-1"
                       />
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-1.5 min-w-0">
@@ -580,7 +750,7 @@ function WalletImportReviewCard({
                           {snap.balance}
                         </div>
                       </div>
-                    </button>
+                    </label>
                   );
                 })}
               </div>
@@ -588,26 +758,28 @@ function WalletImportReviewCard({
           );
         })}
 
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 pt-1">
-          <p className="text-xs text-muted-foreground">
-            Holdings get created and priced after you confirm.
-          </p>
-          <Button
-            type="button"
-            size="sm"
-            disabled={selected.size === 0 || confirmMutation.isPending}
-            onClick={confirm}
-          >
-            {confirmMutation.isPending ? (
-              <>
-                <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
-                Importing…
-              </>
-            ) : (
-              `Import ${selected.size} holding${selected.size === 1 ? '' : 's'}`
-            )}
-          </Button>
-        </div>
+        {totalCandidates > 0 ? (
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 pt-1">
+            <p className="text-xs text-muted-foreground">
+              Holdings get created and priced after you confirm.
+            </p>
+            <Button
+              type="button"
+              size="sm"
+              disabled={selected.size === 0 || confirmMutation.isPending}
+              onClick={confirm}
+            >
+              {confirmMutation.isPending ? (
+                <>
+                  <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
+                  Importing…
+                </>
+              ) : (
+                `Import ${selected.size} holding${selected.size === 1 ? '' : 's'}`
+              )}
+            </Button>
+          </div>
+        ) : null}
       </CardContent>
     </Card>
   );

@@ -8,11 +8,18 @@ import { assertFrontendEnv } from '@scani/ui';
 import { ErrorBoundary } from '@scani/ui/components/ErrorBoundary';
 import { UpdateBanner } from '@scani/ui/components/UpdateBanner';
 import { ThemeProvider } from '@scani/ui/contexts/ThemeContext';
+import {
+  listenForServiceWorkerReports,
+  registerServiceWorker,
+  setServiceWorkerReporter,
+} from '@scani/ui/lib/service-worker';
 import { Toaster } from '@scani/ui/ui/toaster';
 import * as Sentry from '@sentry/react';
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { TRPCProvider } from '@/lib/trpc-provider';
+import { warmUiVersion } from '@/lib/warm-ui-version';
+import { activeUiVersion, applyDocumentUiVersion } from '@/v3/lib/ui-version';
 import App from './App.tsx';
 import './i18n';
 import './index.css';
@@ -28,8 +35,8 @@ assertFrontendEnv([
   },
 ]);
 
-// Sentry init — DSN populated at build time from VITE_SENTRY_DSN.
-// No-op if unset.
+// Sentry init — DSN populated at build time from VITE_SENTRY_DSN
+// (GH Actions secret `VITE_SENTRY_DSN_FRONTEND`). No-op if unset.
 const SENTRY_DSN = import.meta.env.VITE_SENTRY_DSN;
 
 if (SENTRY_DSN) {
@@ -65,6 +72,19 @@ if (SENTRY_DSN) {
   });
 }
 
+// The v3 token block hangs off `<html data-ui="v3">` (V3-19). Setting it here,
+// before React's first render, is what stops the document flashing the other
+// design system's background while `UiVersionDocumentScope`'s effect is still
+// queued — the attribute has to be on the element the page is already painting.
+applyDocumentUiVersion(activeUiVersion(window.location.pathname), document.documentElement);
+
+// v2 and v3 arrive as separate chunks (SC-132 #2), and the one this reader will
+// get is requested here rather than when the route renders — that is below the
+// auth gate, so it would otherwise queue behind the session probe and give the
+// split back every millisecond it saved. No-ops for a device that has never had
+// a session; it is going to the sign-in form and needs neither.
+void warmUiVersion(window.location.pathname);
+
 const rootElement = document.getElementById('root');
 if (!rootElement) {
   throw new Error('Failed to find the root element');
@@ -86,15 +106,24 @@ ReactDOM.createRoot(rootElement).render(
 
 // Register service worker for PWA support
 // Update detection is handled by useAppUpdate hook + UpdateBanner component
-if ('serviceWorker' in navigator && import.meta.env.PROD) {
+if (import.meta.env.PROD) {
+  // A registration that fails is a degraded app, not a broken one, so the
+  // helper logs at `warn` when `/sw.js` is still being served. Only a script
+  // that genuinely is not served reaches Sentry — a `sw.js` 404ing on every
+  // load is a real defect and has to stay visible.
+  setServiceWorkerReporter((error, detail) => {
+    Sentry.captureException(error, {
+      level: 'error',
+      tags: { area: 'service-worker' },
+      extra: { detail },
+    });
+  });
+
+  // The worker reports an asset it could not get served — an unreachable
+  // network is not one of them, it degrades over those silently.
+  listenForServiceWorkerReports();
+
   window.addEventListener('load', () => {
-    navigator.serviceWorker
-      .register('/sw.js')
-      .then((registration) => {
-        console.log('[SW] Service Worker registered:', registration);
-      })
-      .catch((error) => {
-        console.error('[SW] Service Worker registration failed:', error);
-      });
+    void registerServiceWorker();
   });
 }
