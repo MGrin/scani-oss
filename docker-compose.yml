@@ -148,7 +148,12 @@ services:
         condition: service_completed_successfully
     environment:
       DATABASE_URL: postgres://scani:scani@postgres:5432/scani?sslmode=disable
-    command: ["bun", "run", "packages/infra/db/src/migrate.ts"]
+    # `--allow-remote postgres`: migrate.ts only skips its target gate for
+    # loopback, and `postgres` here is a compose service name, not localhost.
+    # Naming it in the file rather than widening the gate to every single-label
+    # hostname keeps the database this rewrites visible at the call site.
+    command:
+      ["bun", "run", "packages/infra/db/src/migrate.ts", "--allow-remote", "postgres"]
     restart: "no"
 
   # Data-provider owns every outbound third-party API call (pricing, AI,
