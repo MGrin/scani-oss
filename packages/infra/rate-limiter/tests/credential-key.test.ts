@@ -20,9 +20,9 @@ describe('credentialBucketKey', () => {
   });
 
   test('does not leak the raw value', () => {
-    const raw = 'sk_live_VERYSECRETtoken_42';
+    const raw = 'upstream-cred-VERYSECRETtoken-42';
     const key = credentialBucketKey(raw);
     expect(key).not.toContain('VERYSECRET');
-    expect(key).not.toContain('sk_live');
+    expect(key).not.toContain('upstream-cred');
   });
 });
