@@ -126,6 +126,7 @@
         "@axe-core/playwright": "^4.13.0",
         "@playwright/test": "^1.60.0",
         "@types/bun": "latest",
+        "ioredis": "^5.10.1",
       },
     },
     "apps/frontend/app": {
