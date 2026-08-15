@@ -5,6 +5,7 @@ import { Badge } from '@scani/ui/ui/badge';
 import { Wallet } from 'lucide-react';
 import { useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useBaseCurrency } from '@/contexts/BaseCurrencyContext';
 import { getFaviconUrl } from '@/lib/icons';
 import { trpc } from '@/lib/trpc';
 import { AccountBulkActions } from '../components/accounts/AccountBulkActions';
@@ -13,7 +14,6 @@ import { DataView as DataViewComponent } from '../components/data-view/DataView'
 import type { ColumnDef } from '../components/data-view/DataViewTable';
 import { AssignGroupsDialog } from '../components/groups/AssignGroupsDialog';
 import { useAccountActions } from '../hooks/useAccountActions';
-import { useBaseCurrency } from '../hooks/useBaseCurrency';
 import { V2_ROUTES } from '../lib/routes';
 
 // Mirrors the worker's STALE_SYNC_THRESHOLD_HOURS default (the stale-sync

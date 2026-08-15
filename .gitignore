@@ -47,3 +47,8 @@ docker-compose.override.yml
 # Local scratch files
 .local/
 
+
+# Bun leaves a multi-megabyte intermediate here when `bun build --compile` is
+# interrupted. One reached a branch once (SC-94); a 61 MB blob in git history is
+# permanent and everyone pays to clone it forever.
+*.bun-build

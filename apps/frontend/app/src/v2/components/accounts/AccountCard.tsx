@@ -3,8 +3,8 @@ import { formatCurrency } from '@scani/shared';
 import { Badge } from '@scani/ui/ui/badge';
 import { CardInteractive } from '@scani/ui/ui/card';
 import { Checkbox } from '@scani/ui/ui/checkbox';
+import { useBaseCurrency } from '@/contexts/BaseCurrencyContext';
 import { cn } from '@/lib/utils';
-import { useBaseCurrency } from '../../hooks/useBaseCurrency';
 
 interface AccountCardProps {
   item: AccountWihSumaryDTO;

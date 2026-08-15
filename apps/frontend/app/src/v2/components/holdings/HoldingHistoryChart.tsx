@@ -11,8 +11,8 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
+import { useBaseCurrency } from '@/contexts/BaseCurrencyContext';
 import { trpc } from '@/lib/trpc';
-import { useBaseCurrency } from '../../hooks/useBaseCurrency';
 
 // Per-holding balance/value history sparkline. Reads
 // `portfolio.getHoldingHistory` which today returns an empty series —

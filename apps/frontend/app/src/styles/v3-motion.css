@@ -1,0 +1,119 @@
+/**
+ * v3 motion policy (V3-16) — route transitions and the loading ramp.
+ *
+ * Everything here is inside `@media (prefers-reduced-motion: no-preference)`
+ * or reads a `--motion-*` token that the v3 layer already collapses to 0ms.
+ * The brief's non-negotiable is that no v3 animation exists outside one of
+ * those two guards.
+ *
+ * ── Route transitions ─────────────────────────────────────────────────────
+ *
+ * The View Transitions API, driven from `hooks/useViewTransitionLocation.ts`.
+ * Only the scrolling content region carries a `view-transition-name`, so the
+ * tab bar, the sidebar and the header land in the unnamed `root` snapshot and
+ * are held still while the page under them changes. Cross-fading the whole
+ * document is what makes a nav bar look like it is being replaced by an
+ * identical nav bar.
+ */
+
+[data-v3-route-region] {
+  view-transition-name: v3-main;
+}
+
+/* The chrome. `root` is everything not otherwise named, and it is identical
+ * on both sides of a v3 route change — so animating it costs the whole
+ * transition's duration to show nothing. */
+::view-transition-group(root) {
+  animation-duration: 0s;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  ::view-transition-old(v3-main) {
+    animation: v3-route-leave var(--motion-fast, 120ms) var(--motion-ease, ease-in) both;
+  }
+
+  ::view-transition-new(v3-main) {
+    animation: v3-route-enter var(--motion-base, 180ms) var(--motion-ease, ease-out) both;
+  }
+}
+
+/* 6px, not 24: the screen is being replaced, not thrown. Past about 8px the
+ * eye starts tracking the travel instead of the arrival, which is the
+ * "page-level fade-in" §2.4 calls dated. */
+@keyframes v3-route-leave {
+  to {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+@keyframes v3-route-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+/**
+ * ── The loading ramp's 300ms–1s rail ──────────────────────────────────────
+ *
+ * A determinate bar would be a lie — nothing here knows how far along the
+ * request is. This is a third-width segment sweeping the track, which says
+ * "working" without claiming progress.
+ */
+@keyframes v3-loading-rail {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(300%);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .v3-loading-rail {
+    animation: v3-loading-rail 1.1s var(--motion-ease, ease-in-out) infinite;
+  }
+}
+
+/* Under reduced motion the rail cannot sweep, so it becomes a static
+ * three-quarter fill — still a visible acknowledgement, no movement. */
+@media (prefers-reduced-motion: reduce) {
+  .v3-loading-rail {
+    width: 75%;
+  }
+}
+
+/**
+ * ── The pull-to-refresh spinner (V3-34) ───────────────────────────────────
+ *
+ * The arrow's rotation *while pulling* is inline on the element, because it
+ * is the finger's position rather than an animation — it is correct under
+ * reduced motion and does not belong here. This is only the part that runs
+ * on its own, after the release.
+ */
+@keyframes v3-pull-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .v3-pull-spin {
+    animation: v3-pull-spin 900ms linear infinite;
+  }
+}
+
+/**
+ * ── The stalled timeout fallback ──────────────────────────────────────────
+ *
+ * Past `LOADING_BANDS.stall` the shimmer stops. `Skeleton` in `@scani/ui`
+ * owns its own `animate-pulse` and is shared with v2, so the placeholder is
+ * quietened from the container that knows the wait has gone long rather than
+ * by giving the shared primitive a v3-only prop.
+ */
+[data-v3-loading='stalled'] *,
+[data-v3-loading='stalled'] *::before,
+[data-v3-loading='stalled'] *::after {
+  animation: none;
+}

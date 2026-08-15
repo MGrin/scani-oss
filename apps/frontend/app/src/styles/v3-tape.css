@@ -1,0 +1,54 @@
+/* The digit roll of the v3 net-worth hero — §5.4 of the design brief, and the
+ * one signature element v3 spends. Kept in CSS rather than in the component
+ * because a keyframe pair plus a delay is the whole mechanism, and because a
+ * `prefers-reduced-motion` rule can then defuse it without React knowing.
+ *
+ * Class names are unprefixed by Tailwind on purpose: these are two animations
+ * used by exactly one component, not a utility. Nothing in v2 references them.
+ */
+
+@keyframes v3-tape-roll-in {
+  from {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes v3-tape-roll-out {
+  from {
+    transform: translateY(0);
+    opacity: 1;
+  }
+  to {
+    transform: translateY(-100%);
+    opacity: 0;
+  }
+}
+
+/* `--motion-base` is only defined inside `[data-ui="v3"]`; the literal is the
+ * fallback for nothing, since the hero renders nowhere else. `both` holds the
+ * end state so the outgoing digit stays hidden until the next change replaces
+ * it. Transform and opacity only — no property here triggers layout. */
+.v3-tape-roll-in {
+  animation: v3-tape-roll-in var(--motion-base, 180ms) var(--motion-ease, ease-out) both;
+}
+
+.v3-tape-roll-out {
+  animation: v3-tape-roll-out var(--motion-base, 180ms) var(--motion-ease, ease-out) both;
+}
+
+/* The v3 token layer already collapses `--motion-base` to 0ms and force-caps
+ * every animation-duration under reduced motion, but neither touches the
+ * stagger — so a reduced-motion user would still watch the figure resolve
+ * left to right over a quarter of a second. The design brief asks for an
+ * instant swap; this is the half of it the tokens cannot express. */
+@media (prefers-reduced-motion: reduce) {
+  .v3-tape-roll-in,
+  .v3-tape-roll-out {
+    animation-delay: 0ms !important;
+  }
+}

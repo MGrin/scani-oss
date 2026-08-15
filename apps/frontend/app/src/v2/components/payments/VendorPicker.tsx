@@ -1,3 +1,4 @@
+import { useDebouncedValue } from '@scani/ui/hooks/useDebouncedValue';
 import { Button } from '@scani/ui/ui/button';
 import { Input } from '@scani/ui/ui/input';
 import { Label } from '@scani/ui/ui/label';
@@ -71,6 +72,21 @@ export function VendorPicker({
 
   const stagedName = value ? '' : (pendingName?.trim() ?? '');
 
+  // The local filter is a substring match, so "Hetzner Online" finds nothing
+  // when the row on file is "Hetzner Online GmbH" — the exact case that makes
+  // the create button mint a duplicate. `vendors.similar` scores the typed
+  // name server-side; its answers go above the create button.
+  const probe = stagedName || search.trim();
+  const debouncedProbe = useDebouncedValue(probe, 250);
+  const { data: similar } = trpc.vendors.similar.useQuery(
+    { name: debouncedProbe },
+    { enabled: debouncedProbe.length > 1 }
+  );
+  const shownIds = new Set(filtered.map((v) => v.id));
+  const candidates = (similar ?? [])
+    .filter((candidate) => !shownIds.has(candidate.vendor.id))
+    .slice(0, 3);
+
   if (value || stagedName) {
     const selectedLabel = value
       ? (items.find((v) => v.id === value)?.displayName ?? valueLabel ?? value)
@@ -103,6 +119,27 @@ export function VendorPicker({
             Read from the invoice. We'll create this vendor when you save if it doesn't exist yet.
           </p>
         )}
+        {stagedName && candidates.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-[11px] text-muted-foreground">Already have:</span>
+            {candidates.map((candidate) => (
+              <Button
+                key={candidate.vendor.id}
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-7 text-xs"
+                disabled={disabled}
+                onClick={() => {
+                  onClearPending?.();
+                  onSelect(candidate.vendor.id, candidate.vendor.displayName);
+                }}
+              >
+                Use {candidate.vendor.displayName}
+              </Button>
+            ))}
+          </div>
+        )}
       </div>
     );
   }
@@ -122,6 +159,28 @@ export function VendorPicker({
       />
       {open && (
         <div className="absolute z-20 mt-1 w-full bg-popover border rounded-md shadow-lg max-h-[280px] overflow-y-auto">
+          {candidates.length > 0 && (
+            <div className="border-b bg-muted/60">
+              <p className="px-3 pt-1.5 text-[11px] text-muted-foreground">Did you mean</p>
+              {candidates.map((candidate) => (
+                <button
+                  key={candidate.vendor.id}
+                  type="button"
+                  className="w-full text-left px-3 py-2 text-sm hover:bg-accent flex items-center gap-2"
+                  onClick={() => {
+                    onSelect(candidate.vendor.id, candidate.vendor.displayName);
+                    setSearch('');
+                    setOpen(false);
+                  }}
+                >
+                  <span className="font-medium truncate">{candidate.vendor.displayName}</span>
+                  <span className="text-muted-foreground text-xs">
+                    {candidate.autoReuse ? 'Same vendor' : 'Similar'}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
           <button
             type="button"
             className="w-full text-left px-3 py-2 text-sm text-primary hover:bg-accent flex items-center gap-2 border-b disabled:opacity-50"

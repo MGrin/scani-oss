@@ -1,3 +1,4 @@
+import { describeJobFailure, type JobFailureFacts } from '@scani/shared';
 import { Badge } from '@scani/ui/ui/badge';
 import { CheckCircle2, Clock, Loader2, XCircle } from 'lucide-react';
 
@@ -11,8 +12,16 @@ const LABELS: Record<string, string> = {
   failed: 'Failed',
 };
 
-export function JobStateChip({ state }: { state: JobState }) {
-  const label = LABELS[state] ?? state;
+/**
+ * v2 is permanent chrome, not a migration affordance (see `App.tsx`), so it
+ * gets the same distinction v3 does: "Failed" alone covers a job retrying in
+ * ten seconds and a job that is permanently dead, and the second one is the
+ * whole point of SC-153. `failure` is optional so the callers that only have a
+ * state keep working, unchanged.
+ */
+export function JobStateChip({ state, failure }: { state: JobState; failure?: JobFailureFacts }) {
+  const described = failure?.state === 'failed' ? describeJobFailure(failure) : null;
+  const label = described?.label ?? LABELS[state] ?? state;
   if (state === 'completed') {
     return (
       <Badge
@@ -25,6 +34,16 @@ export function JobStateChip({ state }: { state: JobState }) {
     );
   }
   if (state === 'failed') {
+    // A retry that is genuinely coming is the system working, not an alarm —
+    // same treatment as a running job, for the same reason as v3.
+    if (described?.willRetry) {
+      return (
+        <Badge variant="secondary" className="gap-1 h-5 px-1.5 text-[10px]">
+          <Loader2 className="h-3 w-3 animate-spin" />
+          {label}
+        </Badge>
+      );
+    }
     return (
       <Badge variant="destructive" className="gap-1 h-5 px-1.5 text-[10px]">
         <XCircle className="h-3 w-3" />

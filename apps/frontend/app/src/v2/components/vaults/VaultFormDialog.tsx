@@ -1,3 +1,4 @@
+import { formatNumber } from '@scani/shared';
 import { Button } from '@scani/ui/ui/button';
 import { Checkbox } from '@scani/ui/ui/checkbox';
 import {
@@ -201,10 +202,7 @@ export function VaultFormDialog({ open, onOpenChange, vaultId }: VaultFormDialog
   const canGoNext = name.trim().length > 0 && !!targetAmount && !!currencyId;
 
   const formatValue = (value: number, symbol?: string) =>
-    `${symbol ?? baseCurrency?.symbol ?? '$'}${Number(value).toLocaleString('en-US', {
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0,
-    })}`;
+    `${symbol ?? baseCurrency?.symbol ?? '$'}${formatNumber(value, { decimals: 0 })}`;
 
   return (
     <Dialog

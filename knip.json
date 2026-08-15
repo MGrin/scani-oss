@@ -20,8 +20,20 @@
       "project": ["src/**/*.{ts,tsx}"],
       "ignoreDependencies": ["tailwindcss-animate"]
     },
-    "apps/frontend/docs": {
-      "project": ["src/**/*.ts"]
+    "apps/frontend/cloud": {
+      "project": ["src/**/*.{ts,tsx}"],
+      "ignoreDependencies": ["tailwindcss-animate"]
+    },
+    "apps/frontend/admin": {
+      "project": ["src/**/*.{ts,tsx}"]
+    },
+    "apps/frontend/landing": {
+      "entry": ["src/entry-server.tsx"],
+      "project": ["src/**/*.{ts,tsx}"]
+    },
+    "apps/e2e": {
+      "entry": ["scripts/wait-for-stack.ts", "tests/**/*.spec.ts", "fixtures/**/*.ts"],
+      "project": ["**/*.ts"]
     },
     "packages/business/domain": {
       "project": ["src/**/*.ts"]
@@ -45,6 +57,9 @@
       "project": ["src/**/*.ts"]
     },
     "packages/frontend/ui": {
+      "project": ["src/**/*.{ts,tsx}"]
+    },
+    "packages/infra/analytics": {
       "project": ["src/**/*.{ts,tsx}"]
     },
     "packages/infra/config": {

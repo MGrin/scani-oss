@@ -2,7 +2,7 @@
   "name": "@scani/ui",
   "private": true,
   "version": "0.0.0",
-  "description": "Design system + shared client plumbing for the Scani SPAs. Ships the Tailwind preset + CSS tokens, the full shadcn primitive set, ThemeContext, ErrorBoundary, UpdateBanner, MagicCodeInput, PWA helpers, and auth/tRPC client factories. apps/frontend/app is the canonical source of truth — promote primitives from there.",
+  "description": "Design system + shared client plumbing for the Scani SPAs (frontend/app, frontend/cloud). Ships the Tailwind preset + CSS tokens, the full shadcn primitive set, ThemeContext, ErrorBoundary, UpdateBanner, MagicCodeInput, PWA helpers, and auth/tRPC client factories. apps/frontend/app is the canonical source of truth \u2014 promote primitives from there.",
   "type": "module",
   "exports": {
     ".": "./src/index.ts",

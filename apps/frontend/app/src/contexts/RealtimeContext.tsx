@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { createContext, useContext, useEffect, useRef, useState } from 'react';
-import { authClient } from '@/lib/auth-client';
+import { useAuth } from '@/contexts/AuthContext';
 import { trpc } from '@/lib/trpc';
 import { invalidatePortfolioQueries } from '@/v2/hooks/invalidatePortfolioQueries';
 
@@ -116,6 +116,7 @@ interface RealtimeProviderProps {
 
 export function RealtimeProvider({ children }: RealtimeProviderProps) {
   const utils = trpc.useUtils();
+  const { user } = useAuth();
   const [connectionStatus, setConnectionStatus] =
     useState<RealtimeContextValue['connectionStatus']>('disconnected');
 
@@ -126,6 +127,13 @@ export function RealtimeProvider({ children }: RealtimeProviderProps) {
   useEffect(() => {
     utilsRef.current = utils;
   }, [utils]);
+
+  // Same trick for the session: the socket effect runs once on mount, and the
+  // reconnect path inside it needs today's answer, not the one captured then.
+  const authUserRef = useRef(user);
+  useEffect(() => {
+    authUserRef.current = user;
+  }, [user]);
 
   // Per-jobId listener registry. Populated by useJobStatus consumers and
   // dispatched from the WS message handler when entityType === 'job'.
@@ -299,8 +307,13 @@ export function RealtimeProvider({ children }: RealtimeProviderProps) {
 
       // Better-Auth: the session lives in a cookie on the api host and is
       // sent automatically during the WS handshake. No token in the URL.
-      const sessionRes = await authClient.getSession();
-      if (!sessionRes?.data?.user) {
+      //
+      // So this only needs to know *whether* there is a session, and
+      // `AuthProvider` already answered that — this provider mounts below
+      // `ProtectedRoute`, which does not render its children until it has.
+      // Asking again cost a second `get-session` starting ~6 ms after the
+      // first resolved, on the cold boot's critical path (SC-163).
+      if (!authUserRef.current) {
         setConnectionStatus('disconnected');
         return;
       }

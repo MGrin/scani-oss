@@ -1,3 +1,4 @@
+import { formatRelative } from '@scani/shared';
 import { Badge } from '@scani/ui/ui/badge';
 import { Button } from '@scani/ui/ui/button';
 import { Card, CardContent } from '@scani/ui/ui/card';
@@ -8,29 +9,15 @@ import { trpc } from '@/lib/trpc';
 import { CreateCustomTokenDialog } from '../components/tokens/CreateCustomTokenDialog';
 import { EditCustomTokenPriceDialog } from '../components/tokens/EditCustomTokenPriceDialog';
 import { HiddenHoldingsSection } from '../components/tokens/HiddenHoldingsSection';
+import { formatMoneyPlain } from '../lib/format';
 
 const SKELETON_KEYS = ['a', 'b', 'c', 'd'];
 
 function formatPrice(value: string | null, currency: string | null): string {
   if (value == null) return '—';
-  const n = Number(value);
-  if (!Number.isFinite(n)) return value;
-  const formatted = n.toLocaleString('en-US', { maximumFractionDigits: 8 });
+  if (!Number.isFinite(Number(value))) return value;
+  const formatted = formatMoneyPlain(value);
   return currency ? `${formatted} ${currency}` : formatted;
-}
-
-function formatRelative(date: string | Date | null): string {
-  if (!date) return '—';
-  const t = typeof date === 'string' ? new Date(date).getTime() : date.getTime();
-  const diffMs = Date.now() - t;
-  const diffMin = Math.floor(diffMs / 60000);
-  if (diffMin < 1) return 'just now';
-  if (diffMin < 60) return `${diffMin}m ago`;
-  const diffHr = Math.floor(diffMin / 60);
-  if (diffHr < 24) return `${diffHr}h ago`;
-  const diffDays = Math.floor(diffHr / 24);
-  if (diffDays < 30) return `${diffDays}d ago`;
-  return new Date(t).toLocaleDateString();
 }
 
 function CustomTokensSection() {
@@ -84,7 +71,7 @@ function CustomTokensSection() {
                     {formatPrice(t.latestPrice, t.latestPriceBaseCurrency)}
                   </p>
                   <p className="text-[10px] text-muted-foreground">
-                    {formatRelative(t.latestPriceAt as unknown as string | Date | null)}
+                    {formatRelative(t.latestPriceAt)}
                   </p>
                 </div>
                 <Button

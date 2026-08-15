@@ -1,8 +1,8 @@
 import { Button } from '@scani/ui/ui/button';
 import { Input } from '@scani/ui/ui/input';
+import type { FilterDef } from '@scani/ui/v3/hooks/useDataView';
 import { ArrowDown, ArrowUp, Layers, Plus, Search, XCircle } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
-import type { FilterDef } from '../../hooks/useDataView';
 
 function FilterPopover({
   filterDefs,
@@ -95,7 +95,7 @@ function FilterPopover({
 
 import { Popover, PopoverContent, PopoverTrigger } from '@scani/ui/ui/popover';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@scani/ui/ui/select';
-import type { GroupByDef, SortDef } from '../../hooks/useDataView';
+import type { GroupByDef, SortDef } from '@scani/ui/v3/hooks/useDataView';
 import { FilterPill } from './FilterPill';
 import { ViewToggle } from './ViewToggle';
 

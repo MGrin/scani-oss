@@ -1,8 +1,8 @@
 # @scani/ui
 
-Design system + shared client plumbing for the Scani SPAs (`apps/frontend/app`
-and any other React app in the estate). Anything that should look or behave
-the same across our apps lives here.
+Design system + shared client plumbing for the Scani SPAs (`apps/frontend/app`,
+`apps/frontend/cloud`, and any future React app). Anything that should look
+or behave the same across our apps lives here.
 
 ## What's inside
 

@@ -34,7 +34,7 @@ const identitiesResponse = () =>
   new Response(
     JSON.stringify({
       methodResponses: [
-        ['Identity/get', { list: [{ id: 'id-1', email: 'welcome@example.com' }] }, 'i0'],
+        ['Identity/get', { list: [{ id: 'id-1', email: 'welcome@scani.xyz' }] }, 'i0'],
       ],
     }),
     { status: 200 }
@@ -69,7 +69,7 @@ describe('FastmailEmailService', () => {
     ]);
     const svc = new FastmailEmailService({ apiToken: 'my-token', fetcher });
     await svc.send({
-      from: 'welcome@example.com',
+      from: 'welcome@scani.xyz',
       to: 'alice@example.com',
       subject: 's',
       text: 't',
@@ -89,8 +89,8 @@ describe('FastmailEmailService', () => {
       okSendResponse,
     ]);
     const svc = new FastmailEmailService({ apiToken: 't', fetcher });
-    await svc.send({ from: 'welcome@example.com', to: 'a@x', subject: 's', text: 't' });
-    await svc.send({ from: 'welcome@example.com', to: 'b@x', subject: 's', text: 't' });
+    await svc.send({ from: 'welcome@scani.xyz', to: 'a@x', subject: 's', text: 't' });
+    await svc.send({ from: 'welcome@scani.xyz', to: 'b@x', subject: 's', text: 't' });
     // 4 calls total: session + identities + drafts (one-time bootstrap) +
     // 2 sends. The second `send` reuses the cached bootstrap.
     expect(calls.length).toBe(5);
@@ -105,7 +105,7 @@ describe('FastmailEmailService', () => {
     ]);
     const svc = new FastmailEmailService({ apiToken: 't', fetcher });
     await expect(
-      svc.send({ from: 'welcome@example.com', to: 'a@x', subject: 's', text: 't' })
+      svc.send({ from: 'welcome@scani.xyz', to: 'a@x', subject: 's', text: 't' })
     ).rejects.toThrow(/JMAP send failed: 500/);
   });
 
@@ -127,7 +127,7 @@ describe('FastmailEmailService', () => {
     ]);
     const svc = new FastmailEmailService({ apiToken: 't', fetcher });
     await expect(
-      svc.send({ from: 'welcome@example.com', to: 'a@x', subject: 's', text: 't' })
+      svc.send({ from: 'welcome@scani.xyz', to: 'a@x', subject: 's', text: 't' })
     ).rejects.toThrow(/JMAP Email\/set errors/);
   });
 
@@ -143,7 +143,7 @@ describe('FastmailEmailService', () => {
                 {
                   list: [
                     { id: 'id-other', email: 'other@elsewhere.io' },
-                    { id: 'id-wild', email: '*@example.com' },
+                    { id: 'id-wild', email: '*@scani.xyz' },
                   ],
                 },
                 'i0',
@@ -157,7 +157,7 @@ describe('FastmailEmailService', () => {
     ]);
     const svc = new FastmailEmailService({ apiToken: 't', fetcher });
     await svc.send({
-      from: '"Welcome" <welcome@example.com>',
+      from: '"Welcome" <welcome@scani.xyz>',
       to: 'a@x',
       subject: 's',
       text: 't',

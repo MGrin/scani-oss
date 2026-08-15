@@ -2,6 +2,7 @@ import { Button } from '@scani/ui/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@scani/ui/ui/card';
 import { AlertTriangle, CheckCircle2, FileText } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { useGenerationPath } from '../../hooks/useGenerationRoute';
 import { V2_ROUTES } from '../../lib/routes';
 import { type ReviewHoldingInput, ReviewHoldingsCard } from './ReviewHoldingsCard';
 
@@ -48,11 +49,15 @@ export function ScreenshotParseResult({
   result,
   jobId,
   actionTakenAt,
+  reviewOutcome,
 }: {
   result: unknown;
   jobId?: string;
   actionTakenAt?: Date | string | null;
+  reviewOutcome?: string | null;
 }) {
+  // Generation-aware — this body renders in the v3 shell too (SC-134).
+  const toGeneration = useGenerationPath();
   const r = asRecord(result);
   const results = (Array.isArray(r.results) ? r.results : []) as ScreenshotFileResult[];
   const summary = asRecord(r.summary);
@@ -127,7 +132,7 @@ export function ScreenshotParseResult({
                 upload page to pick the account and confirm the extracted holdings.
               </p>
               <Button asChild size="sm" className="mt-1">
-                <Link to={V2_ROUTES.fileImport}>
+                <Link to={toGeneration(V2_ROUTES.fileImport)}>
                   <FileText className="h-3.5 w-3.5 mr-1" />
                   Review on upload page
                 </Link>
@@ -176,6 +181,7 @@ export function ScreenshotParseResult({
           overallConfidence={overallConfidence}
           jobId={jobId}
           actionTakenAt={actionTakenAt}
+          reviewOutcome={reviewOutcome}
         />
       )}
     </div>

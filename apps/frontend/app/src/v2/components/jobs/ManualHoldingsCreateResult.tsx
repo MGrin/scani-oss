@@ -1,11 +1,12 @@
-import { formatCurrency } from '@scani/shared';
 import { Badge } from '@scani/ui/ui/badge';
 import { Button } from '@scani/ui/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@scani/ui/ui/card';
 import { AlertTriangle, ArrowRight, CheckCircle2, Plus } from 'lucide-react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
+import { useBaseCurrency } from '@/contexts/BaseCurrencyContext';
 import { cn } from '@/lib/utils';
-import { useBaseCurrency } from '@/v2/hooks/useBaseCurrency';
+import { useGenerationNavigate, useGenerationPath } from '@/v2/hooks/useGenerationRoute';
+import { formatMoney, formatQuantity } from '@/v2/lib/format';
 import { V2_ROUTES } from '@/v2/lib/routes';
 
 interface HoldingResultRow {
@@ -55,7 +56,9 @@ function computeValue(balance: string, priceUsd: string | undefined): number {
 }
 
 export function ManualHoldingsCreateResult({ result }: { result: unknown }) {
-  const navigate = useNavigate();
+  // Generation-aware — this body renders in the v3 shell too (SC-134).
+  const navigateInGeneration = useGenerationNavigate();
+  const toGeneration = useGenerationPath();
   const data = asResult(result);
   const { symbol: currency } = useBaseCurrency();
 
@@ -92,7 +95,7 @@ export function ManualHoldingsCreateResult({ result }: { result: unknown }) {
           {data.holdings.map((h) => {
             const value = computeValue(h.balance, h.priceUsd);
             const subtitle = [
-              h.balance ? `${Number(h.balance).toLocaleString()} ${h.symbol}` : null,
+              h.balance ? `${formatQuantity(h.balance)} ${h.symbol}` : null,
               h.name && h.name !== h.symbol ? h.name : null,
             ]
               .filter(Boolean)
@@ -102,7 +105,7 @@ export function ManualHoldingsCreateResult({ result }: { result: unknown }) {
                 type="button"
                 key={h.id}
                 className="flex items-center gap-3 w-full p-2 rounded-md hover:bg-accent/50 transition-colors text-left border border-transparent hover:border-border"
-                onClick={() => navigate(V2_ROUTES.holdingDetail(h.id))}
+                onClick={() => navigateInGeneration(V2_ROUTES.holdingDetail(h.id))}
               >
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-1.5">
@@ -142,7 +145,7 @@ export function ManualHoldingsCreateResult({ result }: { result: unknown }) {
                   ) : (
                     <>
                       <div className="text-sm font-semibold tabular-nums whitespace-nowrap">
-                        {formatCurrency(value, currency)}
+                        {formatMoney(value, currency)}
                       </div>
                       {h.priceSource && (
                         <div className="text-[10px] text-muted-foreground tabular-nums whitespace-nowrap">
@@ -174,13 +177,17 @@ export function ManualHoldingsCreateResult({ result }: { result: unknown }) {
 
         <div className="flex flex-col sm:flex-row gap-2 pt-1">
           <Button asChild className="flex-1">
-            <Link to={`${V2_ROUTES.holdings}?account=${encodeURIComponent(data.accountId)}`}>
+            <Link
+              to={toGeneration(
+                `${V2_ROUTES.holdings}?account=${encodeURIComponent(data.accountId)}`
+              )}
+            >
               View holdings
               <ArrowRight className="h-3.5 w-3.5 ml-1" />
             </Link>
           </Button>
           <Button asChild variant="outline" className="flex-1">
-            <Link to={V2_ROUTES.manualEntry}>
+            <Link to={toGeneration(V2_ROUTES.manualEntry)}>
               <Plus className="h-3.5 w-3.5 mr-1" />
               Add more
             </Link>

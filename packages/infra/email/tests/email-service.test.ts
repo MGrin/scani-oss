@@ -23,7 +23,7 @@ describe('EmailService — high-level methods', () => {
     const svc = new CapturingEmailService();
     await svc.sendMagicLink({
       to: 'op@example.com',
-      url: 'https://cloud.example.com/auth',
+      url: 'https://cloud.scani.xyz/auth',
       brand: SCANI_CLOUD_BRAND,
     });
     expect(svc.sent[0]?.from).toBe(SCANI_CLOUD_BRAND.from);

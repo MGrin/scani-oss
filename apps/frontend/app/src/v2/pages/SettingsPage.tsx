@@ -1,3 +1,4 @@
+import { formatRelative } from '@scani/shared';
 import { ConfirmDialog } from '@scani/ui/components/ConfirmDialog';
 import { Button } from '@scani/ui/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@scani/ui/ui/card';
@@ -470,19 +471,6 @@ function summarizeUserAgent(ua: string | null): string {
   return `${browser} on ${os}`;
 }
 
-function formatRelative(d: string | Date): string {
-  const date = typeof d === 'string' ? new Date(d) : d;
-  const diff = Date.now() - date.getTime();
-  const min = Math.floor(diff / 60_000);
-  if (min < 1) return 'just now';
-  if (min < 60) return `${min} min ago`;
-  const hr = Math.floor(min / 60);
-  if (hr < 24) return `${hr} hr ago`;
-  const day = Math.floor(hr / 24);
-  if (day < 30) return `${day} d ago`;
-  return date.toLocaleDateString();
-}
-
 // Surfaces the data-quality counters that historically only showed up
 // in Sentry / DB queries: duplicate token rows, zero-balance visible
 // holdings (the cluttered list), unpriced positives, holdings whose
@@ -546,6 +534,15 @@ function DataQualityCard() {
       label: 'Visible positions with no recent price',
       value: r.holdings.unpricedVisible,
       warn: r.holdings.unpricedVisible > 0,
+    },
+    {
+      // Never warns — no market quotes these, so there is no price to
+      // fetch and nothing to fix. Listed because the net-worth chart
+      // leaves them out of its coverage figure (SC-146).
+      label: 'Visible positions nothing can price',
+      value: r.holdings.unpriceableVisible,
+      warn: false,
+      hint: 'Airdropped or delisted tokens with no market — excluded from chart coverage',
     },
     {
       label: 'Negative synthesized opening balance',

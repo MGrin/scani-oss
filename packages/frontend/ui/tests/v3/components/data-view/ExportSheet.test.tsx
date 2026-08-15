@@ -96,8 +96,7 @@ describe('initialScope', () => {
 describe('format availability', () => {
   it('falls back when the remembered format is not on offer here', () => {
     // A reader who last exported a PDF opens a surface that cannot make one —
-    // a console that mounts the list without a PDF renderer, or the whole-account
-    // export. The sheet must show a
+    // `apps/frontend/cloud`, or the whole-account export. The sheet must show a
     // format it can actually produce rather than a checked option that fails.
     const html = renderToStaticMarkup(
       <ExportSections {...BASE} scopes={NARROWED} formats={['xlsx']} format="xlsx" />
