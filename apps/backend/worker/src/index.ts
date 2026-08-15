@@ -5,6 +5,7 @@ import { loadEnv } from './config/env';
 const env = loadEnv();
 
 import { loadCloudClientConfig } from '@scani/cloud-client';
+import { DataProviderHealthMonitor } from '@scani/cloud-client/health-monitor';
 import { probeDataProvider } from '@scani/cloud-client/health-probe';
 // Import DI-registered modules so Container.get() resolves the @scani/domain
 // services + repositories the processors inject.
@@ -65,22 +66,18 @@ initSentry({ component: 'worker', release: env.SENTRY_RELEASE });
 // providers will surface their own retries via BullMQ if data-provider
 // is still down at processing time. A background re-probe (registered
 // further down) tracks recovery.
-let dataProviderReachable = true;
-{
+// The result seeds the background monitor rather than alerting here. A
+// worker that boots while the data-provider is mid-deploy is the same
+// transient the monitor exists to ride out, so it goes through the same
+// consecutive-failure threshold instead of paging immediately.
+const dataProviderReachable = await (async () => {
   const probe = await probeDataProvider();
-  if (!probe.ok) {
-    dataProviderReachable = false;
-    const message = `Data-provider unreachable at ${probe.url} after ${probe.attempts} attempt(s): ${probe.error ?? `HTTP ${probe.status}`}`;
-    console.warn(`⚠️  ${message}`);
-    // Sentry init has happened above; capture immediately so the
-    // alert fires even if the worker process is killed before the
-    // re-probe loop runs.
-    sentryCapture(new Error(message), {
-      component: 'worker',
-      kind: 'data-provider-boot-unreachable',
-    });
-  }
-}
+  if (probe.ok) return true;
+  console.warn(
+    `⚠️  Data-provider unreachable at ${probe.url} after ${probe.attempts} attempt(s): ${probe.error ?? `HTTP ${probe.status}`}`
+  );
+  return false;
+})();
 
 import { RedisRealtimeUpdatesService } from '@scani/realtime';
 import { Redis } from 'ioredis';
@@ -313,45 +310,29 @@ async function main(): Promise<void> {
 
   // --- Data-provider re-probe ----------------------------------------------
   // Background re-probe so a transient unavailability at boot doesn't
-  // latch the worker into a degraded state forever. Logs recovery once
-  // the data-provider goes green again.
-  {
-    const REPROBE_INTERVAL_MS = 60_000;
-    const probeTimer = setInterval(() => {
-      void (async () => {
-        try {
-          const probe = await probeDataProvider();
-          if (probe.ok) {
-            if (!dataProviderReachable) {
-              logger.info(
-                { url: probe.url, attempts: probe.attempts },
-                '☁️  Data-provider reachable (recovered)'
-              );
-              dataProviderReachable = true;
-            }
-            return;
-          }
-          if (dataProviderReachable) {
-            logger.warn(
-              { url: probe.url, error: probe.error, status: probe.status },
-              '⚠️  Data-provider unreachable (in re-probe)'
-            );
-            sentryCapture(
-              new Error(`data-provider re-probe failed: ${probe.error ?? probe.status}`),
-              {
-                component: 'worker',
-                kind: 'data-provider-reprobe-failed',
-              }
-            );
-            dataProviderReachable = false;
-          }
-        } catch (err) {
-          logger.warn({ err }, '⚠️  Data-provider re-probe threw');
-        }
-      })();
-    }, REPROBE_INTERVAL_MS);
-    probeTimer.unref?.();
-  }
+  // latch the worker into a degraded state forever. The threshold — not
+  // the probe — is what stops a deploy cutover paging us; see
+  // `DataProviderHealthMonitor` for the reasoning.
+  new DataProviderHealthMonitor({
+    initiallyReachable: dataProviderReachable,
+    onCycleFailed: ({ url, error, status, consecutiveFailures }) => {
+      logger.warn(
+        { url, error, status, consecutiveFailures },
+        '⚠️  Data-provider unreachable (in re-probe)'
+      );
+    },
+    onOutage: ({ error, status, consecutiveFailures }) => {
+      sentryCapture(
+        new Error(
+          `data-provider unreachable for ${consecutiveFailures} consecutive probes: ${error ?? status}`
+        ),
+        { component: 'worker', kind: 'data-provider-reprobe-failed' }
+      );
+    },
+    onRecovered: ({ url, failedCycles }) => {
+      logger.info({ url, failedCycles }, '☁️  Data-provider reachable (recovered)');
+    },
+  }).start();
 
   // --- Redis liveness monitor ----------------------------------------------
   // ioredis retries forever on Redis loss by default; the worker process

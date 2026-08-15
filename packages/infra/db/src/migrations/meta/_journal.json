@@ -176,6 +176,76 @@
       "when": 1778410000000,
       "tag": "0025_document_purpose",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1778420000000,
+      "tag": "0026_payments_paused_at",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1778430000000,
+      "tag": "0027_vendor_match_key",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1778440000000,
+      "tag": "0028_restore_downsampled_manual_price_source",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1778450000000,
+      "tag": "0029_portfolio_holdings_unpriceable",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1778460000000,
+      "tag": "0030_user_job_review_outcome",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1778470000000,
+      "tag": "0031_portfolio_quality_signals",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1778480000000,
+      "tag": "0032_transfer_review",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1778490000000,
+      "tag": "0033_portfolio_transfers_unreviewed",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1778500000000,
+      "tag": "0034_user_job_dead_letter",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1778510000000,
+      "tag": "0035_transfer_review_split",
+      "breakpoints": true
     }
   ]
 }

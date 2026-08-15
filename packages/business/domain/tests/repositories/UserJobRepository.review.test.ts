@@ -48,7 +48,7 @@ describe('UserJobRepository.findPendingReview', () => {
         tx
       );
       await repo().markCompleted('j-acted', {}, tx);
-      await repo().markActionTaken(user.id, 'j-acted', tx);
+      await repo().markActionTaken(user.id, 'j-acted', 'imported', tx);
 
       const ids = (await repo().findPendingReview(user.id, 50, tx)).map((j) => j.jobId);
 
@@ -94,6 +94,59 @@ describe('UserJobRepository.findPendingReview', () => {
       await repo().markCompleted('j-theirs', {}, tx);
 
       expect(await repo().findPendingReview(mine.id, 50, tx)).toHaveLength(0);
+    });
+  });
+});
+
+// SC-138: before `review_outcome` existed, `action_taken_at` was written
+// only by a successful import — so a parse the user did not want had no
+// way out of the queue, and once one was stamped nothing could say which
+// of the two things had happened.
+describe('UserJobRepository.markActionTaken — outcomes', () => {
+  test('discarding clears the review queue without importing', async () => {
+    await withTestDb(async (tx) => {
+      const user = await makeUser(tx);
+      await repo().insertEnqueued(
+        {
+          jobId: 'j-discard',
+          userId: user.id,
+          jobName: 'screenshot-parse',
+          payloadSummary: {},
+          attemptsAllowed: 3,
+        },
+        tx
+      );
+      await repo().markCompleted('j-discard', {}, tx);
+      expect(await repo().findPendingReview(user.id, 50, tx)).toHaveLength(1);
+
+      await repo().markActionTaken(user.id, 'j-discard', 'discarded', tx);
+
+      expect(await repo().findPendingReview(user.id, 50, tx)).toHaveLength(0);
+      const row = await repo().findOneMine(user.id, 'j-discard', tx);
+      expect(row?.reviewOutcome).toBe('discarded');
+    });
+  });
+
+  test('defaults to imported, and a later discard cannot rewrite it', async () => {
+    await withTestDb(async (tx) => {
+      const user = await makeUser(tx);
+      await repo().insertEnqueued(
+        {
+          jobId: 'j-imported',
+          userId: user.id,
+          jobName: 'file-import',
+          payloadSummary: {},
+          attemptsAllowed: 3,
+        },
+        tx
+      );
+      await repo().markCompleted('j-imported', {}, tx);
+
+      await repo().markActionTaken(user.id, 'j-imported', undefined, tx);
+      await repo().markActionTaken(user.id, 'j-imported', 'discarded', tx);
+
+      const row = await repo().findOneMine(user.id, 'j-imported', tx);
+      expect(row?.reviewOutcome).toBe('imported');
     });
   });
 });

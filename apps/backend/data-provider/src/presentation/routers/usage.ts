@@ -6,8 +6,9 @@
  */
 
 import { cloudUsageEvents } from '@scani/db';
+import { summarizeOutcomes, USAGE_FAILURE_OUTCOMES } from '@scani/shared';
 import { TRPCError } from '@trpc/server';
-import { and, desc, eq, gte, lte, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, lte, sql } from 'drizzle-orm';
 import { z } from 'zod';
 
 import type { CloudDb } from '../../db/connection';
@@ -70,14 +71,9 @@ export const usageRouter = router({
       .where(subjectWhere(subject, from, to))
       .groupBy(cloudUsageEvents.outcome);
 
-    let total = 0;
-    let errors = 0;
-    for (const row of outcomeRows) {
-      total += row.cnt;
-      if (row.outcome !== 'ok') {
-        errors += row.cnt;
-      }
-    }
+    const { totalRequests, errorRate } = summarizeOutcomes(
+      outcomeRows.map((row) => ({ outcome: row.outcome, count: row.cnt }))
+    );
 
     const [costRow] = await db
       .select({
@@ -88,11 +84,7 @@ export const usageRouter = router({
 
     const totalCostUsd = Number(costRow?.totalCost ?? 0);
 
-    return {
-      totalRequests: total,
-      totalCostUsd,
-      errorRate: total === 0 ? 0 : errors / total,
-    };
+    return { totalRequests, totalCostUsd, errorRate };
   }),
 
   daily: cookieProcedure.input(rangeSchema).query(async ({ ctx, input }) => {
@@ -105,7 +97,13 @@ export const usageRouter = router({
       .select({
         day: sql<string>`to_char(${dayBucket}, 'YYYY-MM-DD')`,
         requests: sql<number>`count(*)::int`,
-        errors: sql<number>`count(*) filter (where ${cloudUsageEvents.outcome} <> 'ok')::int`,
+        // The same allowlist the summary tile folds with, so the chart and the
+        // figure above it cannot disagree about what an error is. Written as a
+        // denylist of the success sentinel it counted every row, which drew the
+        // error series at exactly the height of the request series (SC-76).
+        errors: sql<number>`count(*) filter (where ${inArray(cloudUsageEvents.outcome, [
+          ...USAGE_FAILURE_OUTCOMES,
+        ])})::int`,
       })
       .from(cloudUsageEvents)
       .where(subjectWhere(subject, from, to))

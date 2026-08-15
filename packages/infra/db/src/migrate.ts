@@ -14,6 +14,7 @@ import { fileURLToPath } from 'node:url';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import postgres from 'postgres';
+import { decideTarget, describeTarget, formatTarget, refusalMessage } from './migrate-target';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -47,6 +48,24 @@ async function runMigrations() {
   if (!DATABASE_URL) {
     console.error('❌ DATABASE_URL environment variable is required');
     process.exit(1);
+  }
+
+  const target = describeTarget(DATABASE_URL);
+  if (!target) {
+    console.error('❌ DATABASE_URL is not a parseable connection URL');
+    console.error('   Refusing to migrate a target that cannot be identified.');
+    process.exit(1);
+  }
+
+  console.log(`🎯 Target: ${formatTarget(target)}`);
+
+  const decision = decideTarget(target, process.argv);
+  if (!decision.allowed) {
+    console.error(refusalMessage(target, decision.requested));
+    process.exit(1);
+  }
+  if (decision.reason === 'named') {
+    console.log(`🔓 Non-local target named on the command line (--allow-remote ${target.host})`);
   }
 
   console.log('🔄 Starting database migrations...');

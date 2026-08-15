@@ -430,6 +430,95 @@ describe('TokenPriceRepository', () => {
       });
     });
 
+    /**
+     * SC-77 2, as arithmetic on the table.
+     *
+     * A custom token's manual price is written intraday, and it is the only
+     * price that token will ever have. Collapsing it rewrote `source` to
+     * 'downsample-daily' and deleted the original, so the price kept valuing
+     * the holding (`findLatestPricesForTokensAnyBase` found the survivor) while
+     * `findLatestManualPricesForTokensAnyBase` — what `tokens.listCustom`
+     * asked — found nothing. /tokens said "Never priced" about a €177,000
+     * position. Both lookups have to see the same row a week later, which is
+     * what this pins.
+     */
+    test('leaves manual prices alone — they are marks, not samples', async () => {
+      await withTestDb(async (tx) => {
+        const token = await makeToken(tx);
+        const base = await makeToken(tx);
+        const setAt = daysAgo(30);
+        setAt.setUTCHours(11, 0, 0, 0);
+        await repo().create(
+          {
+            tokenId: token.id,
+            baseTokenId: base.id,
+            price: '14.75',
+            timestamp: setAt,
+            source: 'manual',
+            granularity: 'intraday',
+          },
+          tx
+        );
+
+        const { aggregated, deleted } = await repo().downsampleIntradayToDaily(7, tx);
+        expect(aggregated).toBe(0);
+        expect(deleted).toBe(0);
+
+        const rows = await tx
+          .select()
+          .from(schema.tokenPrices)
+          .where(eq(schema.tokenPrices.tokenId, token.id));
+        expect(rows).toHaveLength(1);
+        expect(rows[0]?.source).toBe('manual');
+        expect(rows[0]?.granularity).toBe('intraday');
+
+        // The two lookups the two screens use, on the same row.
+        const anyBase = await repo().findLatestPricesForTokensAnyBase([token.id], base.id, tx);
+        const manualOnly = await repo().findLatestManualPricesForTokensAnyBase([token.id], tx);
+        expect(anyBase.get(token.id)?.price).toBe('14.75');
+        expect(manualOnly.get(token.id)?.price).toBe('14.75');
+      });
+    });
+
+    test('still collapses provider intraday rows on the same token', async () => {
+      await withTestDb(async (tx) => {
+        const token = await makeToken(tx);
+        const base = await makeToken(tx);
+        const day = daysAgo(30);
+        day.setUTCHours(9, 0, 0, 0);
+        await repo().create(
+          {
+            tokenId: token.id,
+            baseTokenId: base.id,
+            price: '3',
+            timestamp: day,
+            source: 'manual',
+            granularity: 'intraday',
+          },
+          tx
+        );
+        const later = new Date(day);
+        later.setUTCHours(19, 0, 0, 0);
+        await seedIntraday(tx, token.id, base.id, later, '4');
+
+        const { aggregated, deleted } = await repo().downsampleIntradayToDaily(7, tx);
+        expect(aggregated).toBe(1);
+        expect(deleted).toBe(1);
+
+        const rows = await tx
+          .select()
+          .from(schema.tokenPrices)
+          .where(eq(schema.tokenPrices.tokenId, token.id));
+        // The manual row survives untouched; the provider row became a daily.
+        expect(rows.filter((r) => r.source === 'manual')).toHaveLength(1);
+        // The synthesized close comes from the newest COLLAPSIBLE row, so the
+        // manual price is not laundered into a daily bar attributed to nobody.
+        const daily = rows.filter((r) => r.granularity === 'daily');
+        expect(daily).toHaveLength(1);
+        expect(daily[0]?.price).toBe('4');
+      });
+    });
+
     test('never touches tx-exact rows', async () => {
       await withTestDb(async (tx) => {
         const token = await makeToken(tx);

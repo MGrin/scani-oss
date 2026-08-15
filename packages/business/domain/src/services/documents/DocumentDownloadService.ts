@@ -11,11 +11,18 @@
  * probe for another's ids.
  *
  * `file-missing` is a real state, not an error: every document ingested
- * before retention shipped points at a `temp/` key that R2 swept within
- * 24h. Presigning that key would return a URL that 404s, so the retained
- * -prefix test decides instead — the same `isRetained` guard the parse
- * path uses, for the same reason: where the object lives is the fact,
- * not a flag a caller can get wrong.
+ * before retention shipped points at a `temp/` key, and so does any document
+ * whose `retain` failed. The retained-prefix test decides rather than a
+ * lookup — the same `isRetained` guard the parse path uses, for the same
+ * reason: where the object lives is the fact, not a flag a caller can get
+ * wrong. Note the consequence, which SC-144 leans on: this reports
+ * `file-missing` for a temp key whether or not the object is still there, so
+ * a lifecycle sweep of `temp/` costs this path nothing it had not already
+ * given up.
+ *
+ * (This used to say those keys were "swept within 24h" by R2. There was no
+ * lifecycle rule on the bucket at all until SC-144 — verified against the
+ * live bucket 2026-08-12 and 2026-08-14 — and the one that landed is 30 days.)
  */
 
 import { StorageFacade } from '@scani/cloud-client/facades/storage-facade';

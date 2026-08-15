@@ -23,7 +23,7 @@
 import type { Payment, PaymentOccurrence } from '@scani/db/schema';
 import { withTransaction } from '@scani/db/transaction';
 import { PaymentOccurrenceRepository, PaymentRepository } from '@scani/domain/repositories';
-import { PaymentService } from '@scani/domain/services';
+import { PaymentHasSettledOccurrencesError, PaymentService } from '@scani/domain/services';
 import {
   AnchorOccurrenceMissingError,
   CreatePaymentFromExtractionUseCase,
@@ -85,6 +85,10 @@ const UpdatePaymentInputSchema = z.object({
 function serializePayment(payment: Payment) {
   return {
     ...payment,
+    // Null whenever the payment is not paused, so unlike the other two
+    // timestamps this one crosses as `string | null` — the client reads
+    // it to state what resuming will do to the elapsed due dates.
+    pausedAt: payment.pausedAt ? payment.pausedAt.toISOString() : null,
     createdAt: payment.createdAt.toISOString(),
     updatedAt: payment.updatedAt.toISOString(),
   };
@@ -194,6 +198,20 @@ export const paymentsRouter = router({
       return serializePayment(updated);
     }),
 
+  /**
+   * Undo a pause. See `PaymentService.resume` for what that means for the
+   * schedule — the short version is that the anchor never moves, the due
+   * dates the pause covered are recorded as `skipped`, and nothing lands
+   * overdue. Resuming an active payment is a no-op; an `ended` one is
+   * refused, since reviving it is a different operation.
+   */
+  resume: protectedProcedure
+    .input(z.object({ paymentId: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const updated = await Container.get(PaymentService).resume(ctx.userId, input.paymentId);
+      return serializePayment(updated);
+    }),
+
   end: protectedProcedure
     .input(z.object({ paymentId: z.string().uuid(), endDate: DATE_STRING.optional() }))
     .mutation(async ({ ctx, input }) => {
@@ -203,6 +221,40 @@ export const paymentsRouter = router({
         input.endDate
       );
       return serializePayment(updated);
+    }),
+
+  /**
+   * Remove a payment that should never have existed — NOT the same act as
+   * `end`, which retires one that really ran. `end` keeps the record and its
+   * history; `delete` takes both, and every figure that counted the payment
+   * stops counting it.
+   *
+   * Refused with a count when settled occurrences exist, because those are
+   * money that moved (see `PaymentHasSettledOccurrencesError`). The message
+   * names `end` rather than only saying no — a refusal with no next step is
+   * a dead end on the one screen the reader came to act on.
+   *
+   * Transactional so the recount it refuses on and the delete it performs
+   * meet the same rows.
+   */
+  delete: protectedProcedure
+    .input(z.object({ paymentId: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      try {
+        return await withTransaction(
+          (tx) => Container.get(PaymentService).delete(ctx.userId, input.paymentId, tx),
+          { name: 'payments.delete' }
+        );
+      } catch (error) {
+        if (error instanceof PaymentHasSettledOccurrencesError) {
+          const count = error.settledCount;
+          throw new TRPCError({
+            code: 'CONFLICT',
+            message: `This payment has ${count} settled ${count === 1 ? 'date' : 'dates'} against it. End it instead — deleting would erase money that really moved.`,
+          });
+        }
+        throw error;
+      }
     }),
 
   /**

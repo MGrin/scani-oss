@@ -58,7 +58,9 @@ describe('VaultRepository', () => {
       );
       const rows = await repo().findByUserWithHoldingsCounts(user.id, tx);
       expect(rows.length).toBe(1);
-      expect(Number(rows[0]!.holdingsCount)).toBe(0);
+      // Strict, and without a `Number()` around it: the count is declared a
+      // number, so an uncast bigint arriving as `"0"` must fail here (SC-88).
+      expect(rows[0]!.holdingsCount).toBe(0);
     });
   });
 

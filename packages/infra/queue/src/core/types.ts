@@ -47,7 +47,39 @@ export type LifecycleEvent =
       error: string;
       attemptsMade: number;
       attemptsAllowed: number;
+    }
+  /**
+   * The queue has given up on this job (SC-153). Distinct from 'failed',
+   * which fires on every failed *attempt* and says nothing about whether
+   * another is coming.
+   *
+   * Fired by `WorkerClient` from BullMQ's own `failed` event rather than by
+   * the processor, for two reasons: that is where terminality is already
+   * decided (the same condition that pushes to the DLQ, so there is one
+   * definition), and it catches failures the processor never saw — a payload
+   * that fails validation throws before any lifecycle event is written, which
+   * used to leave the mirror row sitting at 'queued' with nothing to correct
+   * it.
+   */
+  | {
+      type: 'dead';
+      jobId: string;
+      userId: string;
+      jobName: string;
+      error: string;
+      attemptsMade: number;
+      attemptsAllowed: number;
+      reason: JobDeathReason;
     };
+
+/**
+ * Why the queue stopped trying. `unrecoverable` is BullMQ's
+ * `UnrecoverableError` — a by-design failure the processor classified itself,
+ * where the remaining attempts were deliberately skipped rather than used up.
+ * Downstream vocabulary (`@scani/shared`) has more reasons than these two;
+ * these are the only two the queue itself can observe.
+ */
+export type JobDeathReason = 'retries_exhausted' | 'unrecoverable';
 
 export interface EnqueuedJobMeta {
   jobId: string;

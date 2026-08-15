@@ -133,7 +133,10 @@ export function registerAdminJobsRoutes(app: any, redis?: Redis | null): void {
           set.status = 404;
           return { error: 'job not found' };
         }
-        await job.retry();
+        // Same reset as the user-facing retry (SC-167): without it the job
+        // comes back with its budget already spent and gets exactly one
+        // attempt, while `attempts_made` climbs past `attempts_allowed`.
+        await job.retry('failed', { resetAttemptsMade: true });
         await audit(actor, 'job.retry', params.id, 'success', { name: job.name }, secret);
         return { ok: true, jobId: params.id };
       } catch (err) {

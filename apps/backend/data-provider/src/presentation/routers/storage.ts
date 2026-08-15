@@ -3,6 +3,7 @@ import { StorageService } from '@scani/storage';
 import { TRPCError } from '@trpc/server';
 import { Container } from 'typedi';
 import { z } from 'zod';
+import { okOutput } from '../schemas';
 import { bearerProcedure, router } from '../trpc';
 
 // Storage router — the only container with R2/MinIO credentials. For Tier
@@ -13,6 +14,15 @@ import { bearerProcedure, router } from '../trpc';
 // read-on-server path.
 
 const log = createComponentLogger('data-provider:storage');
+
+// Published response schema (SC-108) — `PresignedUpload` from
+// @scani/storage, 1:1.
+const presignedUploadOut = z.object({
+  uploadUrl: z.string(),
+  key: z.string(),
+  expiresAt: z.string(),
+  requiredHeaders: z.record(z.string()),
+});
 const storage = (): StorageService => Container.get(StorageService);
 
 export const storageRouter = router({
@@ -35,7 +45,7 @@ export const storageRouter = router({
         ttlSeconds: z.number().optional(),
       })
     )
-    .output(z.unknown())
+    .output(presignedUploadOut)
     .mutation(({ input }) => {
       try {
         return storage().presignUpload(input);
@@ -58,11 +68,41 @@ export const storageRouter = router({
       },
     })
     .input(z.object({ key: z.string(), ttlSeconds: z.number().optional() }))
-    .output(z.unknown())
+    .output(z.object({ url: z.string() }))
     .query(({ input }) => {
       try {
         return { url: storage().presignDownload(input.key, input.ttlSeconds) };
       } catch (err) {
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }),
+
+  objectExists: bearerProcedure
+    .meta({
+      openapi: {
+        method: 'POST',
+        path: '/trpc/storage.objectExists',
+        tags: ['storage'],
+        summary: 'Whether an object is present, without transferring it',
+        protect: true,
+      },
+    })
+    .input(z.object({ key: z.string() }))
+    .output(z.object({ exists: z.boolean() }))
+    .mutation(async ({ input }) => {
+      try {
+        return { exists: await storage().exists(input.key) };
+      } catch (err) {
+        // Deliberately not degraded to `{ exists: false }`. The caller
+        // refuses an upload on a false, and "the bucket did not answer" is
+        // not evidence that the user's file is missing.
+        log.warn(
+          { key: input.key, error: err instanceof Error ? err.message : String(err) },
+          'objectExists failed'
+        );
         throw new TRPCError({
           code: 'INTERNAL_SERVER_ERROR',
           message: err instanceof Error ? err.message : String(err),
@@ -84,7 +124,7 @@ export const storageRouter = router({
       },
     })
     .input(z.object({ key: z.string() }))
-    .output(z.unknown())
+    .output(z.object({ base64: z.string(), byteLength: z.number() }))
     .mutation(async ({ input }) => {
       try {
         const buf = await storage().read(input.key);
@@ -122,7 +162,7 @@ export const storageRouter = router({
         contentType: z.string().optional(),
       })
     )
-    .output(z.unknown())
+    .output(okOutput)
     .mutation(async ({ input }) => {
       try {
         await storage().copy(input.fromKey, input.toKey, input.contentType);
@@ -154,7 +194,7 @@ export const storageRouter = router({
       },
     })
     .input(z.object({ key: z.string() }))
-    .output(z.unknown())
+    .output(okOutput)
     .mutation(async ({ input }) => {
       try {
         await storage().delete(input.key);

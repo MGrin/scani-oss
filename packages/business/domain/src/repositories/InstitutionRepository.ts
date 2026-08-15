@@ -97,6 +97,37 @@ export class InstitutionRepository extends BaseRepository<Institution, NewInstit
     }));
   }
 
+  /**
+   * An active institution whose name matches, ignoring case and
+   * surrounding whitespace.
+   *
+   * `institutions` is a shared catalogue with no uniqueness on `name`, so
+   * the import flow's "Add <name>" happily inserted a second row next to
+   * the seeded one. The user then saw two identical picker rows, chose the
+   * empty one, and was told their account did not exist (SC-135).
+   *
+   * Ordered by `created_at` so the seeded catalogue row — the one every
+   * other user's data already hangs off — wins over any later duplicate.
+   */
+  async findByNameInsensitive(
+    name: string,
+    transaction?: DatabaseTransaction
+  ): Promise<Institution | null> {
+    const database = this.getDb(transaction);
+    const [row] = await database
+      .select()
+      .from(schema.institutions)
+      .where(
+        and(
+          sql`lower(trim(${schema.institutions.name})) = lower(trim(${name}))`,
+          eq(schema.institutions.isActive, true)
+        )
+      )
+      .orderBy(schema.institutions.createdAt)
+      .limit(1);
+    return row ?? null;
+  }
+
   async findSyncableInstitutions(transaction?: DatabaseTransaction): Promise<Institution[]> {
     const database = this.getDb(transaction);
     // Capability/type driven: any institution a user connected (has a

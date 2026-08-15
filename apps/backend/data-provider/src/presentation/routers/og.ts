@@ -38,6 +38,19 @@ const EMPTY: OGMetadata = {
   truncated: false,
 };
 
+// Published response schema (SC-108) — mirrors `OGMetadata` above. Every
+// refusal returns `EMPTY` rather than throwing, so every field is always
+// present and none of them is nullable.
+const ogMetadataOut = z.object({
+  title: z.string(),
+  description: z.string(),
+  siteName: z.string(),
+  image: z.string(),
+  type: z.string(),
+  finalUrl: z.string(),
+  truncated: z.boolean(),
+});
+
 export const ogRouter = router({
   fetchMetadata: bearerProcedure
     .meta({
@@ -50,7 +63,7 @@ export const ogRouter = router({
       },
     })
     .input(z.object({ url: z.string().url() }))
-    .output(z.unknown())
+    .output(ogMetadataOut)
     .query(async ({ input }): Promise<OGMetadata> => {
       try {
         const { html, truncated, finalUrl } = await fetchHtmlBounded(input.url);

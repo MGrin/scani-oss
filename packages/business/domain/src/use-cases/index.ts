@@ -20,6 +20,11 @@ export {
   type BackfillSummary,
 } from './BackfillHistoricalPricesUseCase';
 export {
+  type BackfillStatementFeesInput,
+  type BackfillStatementFeesSummary,
+  BackfillStatementFeesUseCase,
+} from './BackfillStatementFeesUseCase';
+export {
   type BulkAssignAccountGroupsInput,
   type BulkAssignAccountGroupsResult,
   BulkAssignAccountGroupsUseCase,

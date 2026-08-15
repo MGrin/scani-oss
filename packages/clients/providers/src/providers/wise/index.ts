@@ -43,6 +43,7 @@ import type {
   TransactionEvent,
   WithUserCreds,
 } from '../../core/types';
+import { slidingWindows } from '../../core/utils/time-windows';
 import { wiseManifest } from './manifest';
 
 export { wiseManifest } from './manifest';
@@ -187,7 +188,11 @@ export class WiseProvider implements BalanceProvider, TransactionsProvider, Cred
 
     const until = ctx.until ?? new Date();
     const since = ctx.since ?? new Date(until.getTime() - FIVE_YEARS_MS);
-    const windows = splitWindow(since, until, STATEMENT_MAX_DAYS);
+    // Wise's statement endpoint refuses windows wider than 469 days. Kept as
+    // an array, not the generator: the loop below re-walks these windows once
+    // per (profile, balance) pair, and a generator would be exhausted after
+    // the first one — every balance but the first would import nothing.
+    const windows = [...slidingWindows(since, until, STATEMENT_MAX_DAYS * DAY_MS)];
 
     const profiles = await this.fetchProfiles(apiToken, subKey);
     if (profiles.length === 0) return [];
@@ -313,28 +318,6 @@ export class WiseProvider implements BalanceProvider, TransactionsProvider, Cred
     if (!data || typeof data !== 'object') return { transactions: [] };
     return data as WiseStatementResponse;
   }
-}
-
-/**
- * Split [start, end] into chunks of at most `maxDays` each. Wise's
- * statement endpoint refuses windows wider than 469 days.
- */
-function splitWindow(
-  start: Date,
-  end: Date,
-  maxDays: number
-): readonly { start: Date; end: Date }[] {
-  if (end.getTime() <= start.getTime()) return [];
-  const maxMs = maxDays * DAY_MS;
-  const chunks: { start: Date; end: Date }[] = [];
-  let cursor = start.getTime();
-  const endMs = end.getTime();
-  while (cursor < endMs) {
-    const next = Math.min(cursor + maxMs, endMs);
-    chunks.push({ start: new Date(cursor), end: new Date(next) });
-    cursor = next;
-  }
-  return chunks;
 }
 
 /**

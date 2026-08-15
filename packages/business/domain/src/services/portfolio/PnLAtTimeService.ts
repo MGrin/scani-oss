@@ -1,9 +1,16 @@
-import type { CoverageQuality, HoldingTransaction } from '@scani/db/schema';
+import type { CoverageQuality, HoldingCoverage, HoldingTransaction } from '@scani/db/schema';
 import Decimal from 'decimal.js';
 import { Container, Service } from 'typedi';
+import { HoldingCoverageRepository } from '../../repositories/HoldingCoverageRepository';
 import { HoldingTransactionRepository } from '../../repositories/HoldingTransactionRepository';
 import type { BalanceAtTimeCaches } from '../pricing/BalanceAtTimeService';
-import { type CostBasisAtTime, CostBasisService } from '../pricing/CostBasisService';
+import {
+  type CostBasisAtTime,
+  type CostBasisQuality,
+  CostBasisService,
+  type HistoryCompleteness,
+  historyCompletenessOf,
+} from '../pricing/CostBasisService';
 import type { PriceLookup } from '../pricing/PriceLookup';
 import {
   PortfolioValuationAtTimeService,
@@ -21,6 +28,14 @@ export interface PnLAtTimePerHolding {
   costBasis: Decimal; // remaining open lots' cost in base at purchase time
   realizedPnl: Decimal; // cumulative realized PnL through `at`
   unrealizedPnl: Decimal | null; // value − costBasis; null when value is null
+  /** Mirrors PortfolioValueAtTimePerHolding.unpriceable — see SC-146. */
+  unpriceable: boolean;
+  /** Mirrors PortfolioValueAtTimePerHolding.priceStale — see SC-151. */
+  priceStale: boolean;
+  /** How much of this holding's cost we know — see CostBasisQuality (SC-149). */
+  basisQuality: CostBasisQuality;
+  /** Outflows out of this holding still waiting on an answer — see SC-160. */
+  transfersUnreviewed: number;
 }
 
 export interface PnLAtTimeResult {
@@ -38,6 +53,41 @@ export interface PnLAtTimeResult {
   coverageQuality: CoverageQuality;
   holdingsWithKnownValue: number;
   holdingsTotal: number;
+  holdingsUnpriceable: number;
+  /** Re-exposed from the valuation pass — see its doc (SC-151). */
+  holdingsStalePriced: number;
+  /**
+   * Of `holdingsTotal`, how many carry a cost basis we do not actually
+   * know: no cost-relevant transaction at all, a provider that reported
+   * its history truncated, a leg priced beyond the freshness window, or
+   * an inflow booked at zero cost because nothing could value it (SC-149).
+   *
+   * The figures stay in the totals. Pulling a holding's cost out while its
+   * value remains would move the whole of that value into unrealized gain
+   * — the same one-directional error this ticket exists to close, dressed
+   * as a fix. What changes is that the count travels with the number, so
+   * no surface can present the total as a settled one when it is not.
+   */
+  holdingsBasisUnknown: number;
+  /**
+   * Outflows at or before `at` that popped their lots and booked no gain
+   * because nobody has answered them yet (SC-160) — the honest cost of
+   * SC-150, which stopped an unpaired withdrawal being realized as a gain
+   * nobody made.
+   *
+   * Every other count on this result runs one way, upward; this one runs the
+   * other. Where one of these rows is a genuine off-platform disposal,
+   * `totalRealizedPnl` is short by the gain it would have booked. That is the
+   * right trade — an invented disposal is worse than a deferred one — but a
+   * figure that is knowingly short and does not say so is the same defect
+   * SC-149 closed on the cost side, pointed downward.
+   *
+   * A count of transactions, not of holdings, and only of rows the review
+   * queue actually holds — see `countsAsUnreviewed`. That makes it the same
+   * number as `TransferReviewService.pendingSummary` for a reader looking at
+   * today, and the number that was true on the day for a reader looking back.
+   */
+  transfersUnreviewed: number;
   perHolding: PnLAtTimePerHolding[];
 }
 
@@ -51,6 +101,7 @@ export class PnLAtTimeService {
   private readonly valuationService = Container.get(PortfolioValuationAtTimeService);
   private readonly costBasisService = Container.get(CostBasisService);
   private readonly txRepository = Container.get(HoldingTransactionRepository);
+  private readonly coverageRepository = Container.get(HoldingCoverageRepository);
 
   async getPnL(
     userId: string,
@@ -62,6 +113,13 @@ export class PnLAtTimeService {
       // Pre-loaded per-user caches that BalanceAtTimeService and
       // CostBasisService can use instead of per-call DB reads.
       caches?: BalanceAtTimeCaches;
+      // Forwarded verbatim to the valuation pass — see its doc.
+      unpriceableTokenIds?: ReadonlySet<string>;
+      // Pre-loaded `holding_coverage` rows, keyed by holding id. The
+      // rollup reads them once per user and hands the same map to all
+      // 30 days — completeness is a property of the import, not of the
+      // snapshot date. Omit and one bulk query resolves it.
+      coverageByHolding?: ReadonlyMap<string, HoldingCoverage>;
     } = {}
   ): Promise<PnLAtTimeResult> {
     const valuation = await this.valuationService.getPortfolioValue(
@@ -82,6 +140,18 @@ export class PnLAtTimeService {
     const txsByHolding: ReadonlyMap<string, ReadonlyArray<HoldingTransaction>> = opts.caches
       ?.transactions ?? (await this.txRepository.findForHoldingsAll(holdingIds));
 
+    // The flag every provider writes honestly and nothing has ever read
+    // (SC-149). Kraken reports `false` when its ledger endpoint pages out
+    // at 20,000 rows; any incremental `since` run reports `false` too. A
+    // holding whose acquisitions we could not fetch produced exactly the
+    // same cost basis as one that had none — zero — and the disposal's
+    // entire proceeds became gain.
+    const coverageByHolding =
+      opts.coverageByHolding ?? (await this.coverageRepository.findManyByHoldingIds(holdingIds));
+    const historyByHolding = new Map<string, HistoryCompleteness>(
+      holdingIds.map((h) => [h, historyCompletenessOf(coverageByHolding.get(h))])
+    );
+
     // Holdings linked by transfer_group_id must be cost-walked together
     // so a transfer carries the original lot cost across accounts
     // instead of resetting it to market value. Unconnected holdings keep
@@ -95,7 +165,8 @@ export class PnLAtTimeService {
         at,
         baseCurrencyId,
         heldTokenByHolding,
-        opts.priceLookup
+        opts.priceLookup,
+        historyByHolding
       );
       for (const [h, c] of result) costByHolding.set(h, c);
     }
@@ -103,6 +174,7 @@ export class PnLAtTimeService {
       const txs = txsByHolding.get(h);
       const cost = await this.costBasisService.getCostBasis(h, at, baseCurrencyId, {
         heldTokenId: heldTokenByHolding.get(h),
+        historyCompleteness: historyByHolding.get(h) ?? 'unrecorded',
         ...(opts.priceLookup ? { priceLookup: opts.priceLookup } : {}),
         ...(txs ? { txs } : {}),
       });
@@ -112,6 +184,8 @@ export class PnLAtTimeService {
     const perHolding: PnLAtTimePerHolding[] = [];
     let totalCost = new Decimal(0);
     let totalRealized = new Decimal(0);
+    let basisUnknownCount = 0;
+    let unreviewedCount = 0;
 
     for (const ph of valuation.perHolding) {
       const cost = costByHolding.get(ph.holdingId);
@@ -125,8 +199,32 @@ export class PnLAtTimeService {
       const costUnknown = ph.valueInBase !== null && !hasTransactions;
       const costBasis = costUnknown && ph.valueInBase !== null ? ph.valueInBase : rawCostBasis;
       const realizedPnl = costUnknown ? new Decimal(0) : rawRealized;
-      totalCost = totalCost.add(costBasis);
-      totalRealized = totalRealized.add(realizedPnl);
+      // A holding kept out of the value side stays out of the cost side.
+      // In practice airdrop dust costs nothing — an inflow with no price
+      // reference books a zero-cost lot — so today this changes no
+      // number. It closes the case where it would: any unpriceable
+      // holding that *did* acquire a cost basis (a manual price, an
+      // imported trade) would otherwise contribute cost to a total its
+      // value never reaches, and the chart would show the whole cost as
+      // an unrealized loss the user never took.
+      if (!ph.unpriceable) {
+        totalCost = totalCost.add(costBasis);
+        totalRealized = totalRealized.add(realizedPnl);
+      }
+      // An unpriceable holding is already outside both totals, so counting
+      // its unknown basis a second time would double-report the same
+      // absence and make a wallet of airdrop spam read as a cost-basis
+      // failure — the exact shape of the bug SC-146 closed on the value
+      // side. Only holdings that contribute a number can qualify it.
+      const basisQuality = cost?.basisQuality ?? 'unknown';
+      if (!ph.unpriceable && basisQuality !== 'known') basisUnknownCount += 1;
+      // Same gate, same argument (SC-160). An unpriceable holding's realized
+      // PnL never entered `totalRealized`, so an unanswered exit out of it
+      // cannot be understating a figure it does not contribute to — counting
+      // it would put a caveat on the chart that no answer in the queue could
+      // ever remove.
+      const transfersUnreviewed = cost?.transfersUnreviewed ?? 0;
+      if (!ph.unpriceable) unreviewedCount += transfersUnreviewed;
       perHolding.push({
         holdingId: ph.holdingId,
         accountId: ph.accountId,
@@ -135,6 +233,10 @@ export class PnLAtTimeService {
         costBasis,
         realizedPnl,
         unrealizedPnl: ph.valueInBase ? ph.valueInBase.minus(costBasis) : null,
+        unpriceable: ph.unpriceable,
+        priceStale: ph.priceStale,
+        basisQuality,
+        transfersUnreviewed,
       });
     }
 
@@ -151,6 +253,10 @@ export class PnLAtTimeService {
       coverageQuality: valuation.coverageQuality,
       holdingsWithKnownValue: valuation.holdingsWithKnownValue,
       holdingsTotal: valuation.holdingsTotal,
+      holdingsUnpriceable: valuation.holdingsUnpriceable,
+      holdingsStalePriced: valuation.holdingsStalePriced,
+      holdingsBasisUnknown: basisUnknownCount,
+      transfersUnreviewed: unreviewedCount,
       perHolding,
     };
   }

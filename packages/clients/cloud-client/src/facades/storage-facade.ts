@@ -3,6 +3,11 @@ import { Container, Service } from 'typedi';
 import { CloudStorage } from '../cloud-services/cloud-storage';
 import { getCloudClient } from '../runtime';
 
+// Re-exported here rather than made a direct `@scani/storage` dependency of
+// every consumer: callers reach object storage through this facade, so the
+// predicate that classifies its errors belongs on the same boundary.
+export { isMissingObjectError } from '@scani/storage';
+
 // Cloud-or-local dispatcher resolved via typedi. When SCANI_CLOUD_URL is set
 // the call routes through the data-provider; otherwise it falls through to
 // the in-process StorageService.
@@ -21,6 +26,12 @@ export class StorageFacade {
     const cloud = this.cloud();
     if (cloud) return cloud.presignDownload(key, ttlSeconds);
     return Promise.resolve(this.local().presignDownload(key, ttlSeconds));
+  }
+
+  exists(key: string): Promise<boolean> {
+    const cloud = this.cloud();
+    if (cloud) return cloud.exists(key);
+    return this.local().exists(key);
   }
 
   read(key: string): Promise<Buffer> {

@@ -3,9 +3,15 @@ import { StorageFacade } from '@scani/cloud-client/facades/storage-facade';
 import { DocumentRepository } from '@scani/domain/repositories';
 import { DocumentIngestionService, DocumentRetentionService } from '@scani/domain/services';
 import type { DocumentParseJob } from '@scani/jobs';
-import type { ProcessorContext } from '@scani/queue';
+import { type ProcessorContext, UnrecoverableError } from '@scani/queue';
 import { Container } from 'typedi';
 import { DocumentParseProcessor } from '../../src/processors/document-parse';
+
+// The exact string R2 returns, as it reaches the worker: the data-provider
+// stringifies the S3 error into a TRPCError message and `CloudError.wrap`
+// carries it through. Sentry SCANI-WORKER-P is four events of precisely
+// this text escaping unclassified.
+const R2_MISSING = 'The specified key does not exist.';
 
 // The parse path used to `void storage.delete(data.r2Key)` in a blanket
 // `finally`, which destroyed the uploaded file seconds after every parse —
@@ -146,9 +152,19 @@ describe('DocumentParseProcessor retention', () => {
     expect(del).toHaveBeenCalledWith(TEMP_KEY);
   });
 
-  test('a failed promotion does not fail the job', async () => {
+  test('a failed promotion does not fail the job, and keeps the object its row points at', async () => {
+    // Two things at once, and the second is the SCANI-WORKER-P bug.
+    //
     // The AI spend is already incurred; throwing here would re-bill the
-    // same file on the BullMQ retry.
+    // same file on the BullMQ retry — so the job still succeeds.
+    //
+    // But when `retain` fails the row is NEVER repointed, so it still
+    // holds the temp key. Deleting that temp object — which the cleanup
+    // did, because it keyed off `data.r2Key` alone — left a document row
+    // aimed at nothing. Re-parsing it then threw
+    // `CloudError: The specified key does not exist.` forever. The guard
+    // has to consider where the row ended up, not just where the job
+    // started.
     const { processor, del } = makeProcessor({
       document: makeDocument(TEMP_KEY),
       copy: async () => {
@@ -159,20 +175,69 @@ describe('DocumentParseProcessor retention', () => {
     const result = await processor.run(job(), makeCtx());
 
     expect(result.documentId).toBe(DOC_ID);
-    expect(del).toHaveBeenCalledWith(TEMP_KEY);
+    expect(del).not.toHaveBeenCalled();
   });
 
-  test('an unreadable retained object surfaces an actionable error', async () => {
+  test('an unreadable retained object fails terminally with an actionable error', async () => {
     const { processor } = makeProcessor({
       document: makeDocument(RETAINED_KEY),
       read: async () => {
-        throw new Error('NoSuchKey: the specified key does not exist');
+        throw new Error(R2_MISSING);
       },
     });
 
-    await expect(
-      processor.run(job({ r2Key: RETAINED_KEY, reparseOf: DOC_ID }), makeCtx())
-    ).rejects.toThrow(/Delete this document and upload it again/);
+    const err = await processor
+      .run(job({ r2Key: RETAINED_KEY, reparseOf: DOC_ID }), makeCtx())
+      .then(
+        () => null,
+        (e: unknown) => e
+      );
+
+    expect(err).toBeInstanceOf(UnrecoverableError);
+    expect((err as Error).message).toMatch(/Delete this document and upload it again/);
+  });
+
+  test('an unreadable temp object fails terminally instead of raising raw R2', async () => {
+    // SCANI-WORKER-P itself. `readSource` classified only the retained
+    // prefix, so a missing temp object rethrew the raw `CloudError` — an
+    // unactionable string for the user, a second doomed BullMQ attempt,
+    // and a Sentry error for a file that is simply gone.
+    const { processor } = makeProcessor({
+      document: makeDocument(TEMP_KEY),
+      read: async () => {
+        throw new Error(R2_MISSING);
+      },
+    });
+
+    const err = await processor.run(job(), makeCtx()).then(
+      () => null,
+      (e: unknown) => e
+    );
+
+    expect(err).toBeInstanceOf(UnrecoverableError);
+    expect((err as Error).message).toMatch(/upload it again/i);
+    expect((err as Error).message).not.toMatch(/specified key/i);
+  });
+
+  test('a storage outage stays retryable rather than being classified as gone', async () => {
+    // The counterweight: only "the object is not there" is terminal. A 500
+    // or a dropped connection must keep its retry and keep alerting, or
+    // this fix would silently swallow a real R2 incident.
+    const { processor } = makeProcessor({
+      document: makeDocument(TEMP_KEY),
+      read: async () => {
+        throw new Error('R2 is returning 503 Service Unavailable');
+      },
+    });
+
+    const err = await processor.run(job(), makeCtx()).then(
+      () => null,
+      (e: unknown) => e
+    );
+
+    expect(err).toBeInstanceOf(Error);
+    expect(err).not.toBeInstanceOf(UnrecoverableError);
+    expect((err as Error).message).toMatch(/503/);
   });
 });
 

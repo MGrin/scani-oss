@@ -3,6 +3,7 @@ import Decimal from 'decimal.js';
 import { Container, Service } from 'typedi';
 import { AccountRepository } from '../../repositories/AccountRepository';
 import { HoldingRepository } from '../../repositories/HoldingRepository';
+import { TokenRepository } from '../../repositories/TokenRepository';
 import { UserRepository } from '../../repositories/UserRepository';
 import { type BalanceAtTimeCaches, BalanceAtTimeService } from '../pricing/BalanceAtTimeService';
 import { PriceGraphService } from '../pricing/PriceGraphService';
@@ -26,6 +27,21 @@ export interface PortfolioValueAtTimePerHolding {
   anchorSource: string | null;
   pricePath: string | null;
   priceEffectiveAt: Date | null;
+  /**
+   * We could not price this holding and no provider ever will: its token
+   * has never had a price row and is inside an unpriceable cooldown. Such
+   * a holding is real and stays in `perHolding`, but it is excluded from
+   * the coverage denominator — see `holdingsUnpriceable` (SC-146).
+   */
+  unpriceable: boolean;
+  /**
+   * The price that produced `valueInBase` is older than the
+   * granularity-appropriate freshness window (SC-151). The value is still
+   * counted — see the note on `holdingsStalePriced` — but it is not a
+   * quote from the day it is presented as, and `priceEffectiveAt` says
+   * from when it actually is.
+   */
+  priceStale: boolean;
 }
 
 export interface PortfolioValueAtTimeResult {
@@ -35,22 +51,44 @@ export interface PortfolioValueAtTimeResult {
   totalValueInBase: Decimal;
   coverageQuality: CoverageQuality;
   holdingsWithKnownValue: number;
+  /** Every holding in scope, unpriceable dust included. */
   holdingsTotal: number;
+  /**
+   * Of `holdingsTotal`, the ones nothing can price. Coverage is
+   * `holdingsWithKnownValue / (holdingsTotal - holdingsUnpriceable)`.
+   */
+  holdingsUnpriceable: number;
+  /**
+   * Of `holdingsWithKnownValue`, how many were valued from a price older
+   * than the freshness window (SC-151).
+   *
+   * They stay in the total on purpose. Dropping them would open a hole in
+   * the chart on a pure data-gap day, and an old price is still the best
+   * measurement we have of what something is worth — the defect was never
+   * that we used it, it was that we presented it with the same confidence
+   * as a quote from this morning. So it counts toward the total, degrades
+   * the day to `coverage_quality: 'partial'`, and is *counted* here so the
+   * chart, the PnL series and both exports can each say how much of the
+   * figure is old rather than leaving the reader to assume none of it is.
+   */
+  holdingsStalePriced: number;
   perHolding: PortfolioValueAtTimePerHolding[];
 }
 
-// Heuristic thresholds for coverage_quality:
-//   full      = ≥ 95% of holdings priced and anchor=='holdings'|'observation-after'
+// Heuristic thresholds for coverage_quality, applied to the *priceable*
+// denominator (see `holdingsUnpriceable`):
+//   full      = ≥ 95% of priceable holdings priced, anchor=='holdings'|'observation-after'
 //   partial   = ≥ 95% priced but some via a stale anchor or a stale price
 //   estimated = 50%–95% priced
 //   unknown   = < 50% priced
 //
-// 95% (not 100%) because real-world portfolios always include a long
-// tail of pump.fun memecoins / wallet-airdrop dust that no provider
-// indexes. Requiring 100% means coverage_quality is permanently
-// "estimated" for any user with a Solana wallet, which the user
-// fairly called out as misleading — those 1–3 unpriced micro-balances
-// barely affect the total but tank the chart's quality badge.
+// The 5% slack was originally the whole defence against wallet-airdrop
+// dust, and it was not enough: an account with 14 spam tokens out of 69
+// sat permanently at 80%, i.e. 'estimated', while every asset the user
+// actually owns was priced (SC-146). Dust is now removed from the
+// denominator outright rather than absorbed by a tolerance, and the
+// slack covers what it was always meant to — a genuinely priceable
+// token missing today's quote.
 const COVERAGE_FULL_THRESHOLD = 0.95;
 const COVERAGE_PARTIAL_THRESHOLD = 0.5;
 
@@ -69,6 +107,7 @@ export class PortfolioValuationAtTimeService {
   private readonly balanceAtTimeService = Container.get(BalanceAtTimeService);
   private readonly priceGraphService = Container.get(PriceGraphService);
   private readonly userRepository = Container.get(UserRepository);
+  private readonly tokenRepository = Container.get(TokenRepository);
 
   async getPortfolioValue(
     userId: string,
@@ -81,6 +120,11 @@ export class PortfolioValuationAtTimeService {
       // instead of per-call DB reads. Threaded through from the
       // rollup loop; ad-hoc callers omit and pay the DB cost.
       caches?: BalanceAtTimeCaches;
+      // Tokens nothing can price (never priced + in cooldown). The
+      // rollup resolves this once per user and hands the same set to
+      // all 30 days — the predicate is about the token's whole history,
+      // so it does not vary by `at`. Omit and one query resolves it.
+      unpriceableTokenIds?: ReadonlySet<string>;
     } = {}
   ): Promise<PortfolioValueAtTimeResult> {
     // Resolve display base. Fall back to user's configured base_currency_id
@@ -111,16 +155,31 @@ export class PortfolioValuationAtTimeService {
     // created in the last day or two (the typical onboarding case).
     const holdings = await this.applyScope(allHoldings, opts.scope, userId);
 
+    const unpriceableTokenIds =
+      opts.unpriceableTokenIds ??
+      (await this.tokenRepository.findNeverPricedInCooldownTokenIds(
+        [...new Set(holdings.map((h) => h.tokenId))],
+        new Date()
+      ));
+
     const perHolding: PortfolioValueAtTimePerHolding[] = [];
     let total = new Decimal(0);
     let knownCount = 0;
+    let unpriceableCount = 0;
     let anyStaleAnchor = false;
-    let anyStalePrice = false;
+    let stalePricedCount = 0;
 
     for (const h of holdings) {
       const result = await this.balanceAtTimeService.getBalance(h.id, at, opts.caches);
+      // Only ever consulted on a branch that produced no value —
+      // a holding we *did* price is priceable by demonstration, and a
+      // zero balance is worth zero in any currency. Keeping the flag off
+      // those branches is what guarantees knownCount can never exceed
+      // the priceable denominator below.
+      const tokenUnpriceable = unpriceableTokenIds.has(h.tokenId);
 
       if (!result.balance) {
+        if (tokenUnpriceable) unpriceableCount += 1;
         perHolding.push({
           holdingId: h.id,
           accountId: h.accountId,
@@ -130,6 +189,8 @@ export class PortfolioValuationAtTimeService {
           anchorSource: result.anchor,
           pricePath: null,
           priceEffectiveAt: null,
+          unpriceable: tokenUnpriceable,
+          priceStale: false,
         });
         continue;
       }
@@ -154,6 +215,8 @@ export class PortfolioValuationAtTimeService {
           anchorSource: result.anchor,
           pricePath: 'zero-balance',
           priceEffectiveAt: result.anchorAt,
+          unpriceable: false,
+          priceStale: false,
         });
         continue;
       }
@@ -182,7 +245,12 @@ export class PortfolioValuationAtTimeService {
 
       if (!priced) {
         // Balance known, value unknown. Still counts as "holding present"
-        // but NOT "known value" — keep it out of the total.
+        // but NOT "known value" — keep it out of the total. When the
+        // token is unpriceable in fact it also leaves the denominator:
+        // failing to price airdrop spam is not a failure of ours, and
+        // reporting it as one is what made a fully-priced portfolio read
+        // as 80% covered.
+        if (tokenUnpriceable) unpriceableCount += 1;
         perHolding.push({
           holdingId: h.id,
           accountId: h.accountId,
@@ -192,6 +260,8 @@ export class PortfolioValuationAtTimeService {
           anchorSource: result.anchor,
           pricePath: null,
           priceEffectiveAt: null,
+          unpriceable: tokenUnpriceable,
+          priceStale: false,
         });
         continue;
       }
@@ -202,7 +272,7 @@ export class PortfolioValuationAtTimeService {
         anyStaleAnchor = true;
       }
       if (priced.stale) {
-        anyStalePrice = true;
+        stalePricedCount += 1;
       }
 
       perHolding.push({
@@ -214,19 +284,27 @@ export class PortfolioValuationAtTimeService {
         anchorSource: result.anchor,
         pricePath: priced.path,
         priceEffectiveAt: priced.effectiveAt,
+        unpriceable: false,
+        priceStale: priced.stale,
       });
     }
 
     const holdingsTotal = holdings.length;
+    const priceableTotal = holdingsTotal - unpriceableCount;
     let coverageQuality: CoverageQuality;
-    if (holdingsTotal === 0) {
-      // No holdings at all — not "unknown" (we know it was empty), but
-      // there's nothing to chart either. 'full' is correct: zero is zero.
-      coverageQuality = 'full';
+    if (priceableTotal === 0) {
+      // Nothing in scope we could ever price, so `total` is 0 because we
+      // measured nothing — not because the scope was worth nothing.
+      // Calling that 'full' let the chart draw a confident €0 between two
+      // days worth €25k (observed in production on institution-scope
+      // rows), and the period delta was then computed against that zero.
+      // A scope containing only unpriceable dust lands here too, which is
+      // the same statement: we have no measurement of it.
+      coverageQuality = 'unknown';
     } else {
-      const knownRatio = knownCount / holdingsTotal;
+      const knownRatio = knownCount / priceableTotal;
       if (knownRatio >= COVERAGE_FULL_THRESHOLD) {
-        coverageQuality = anyStaleAnchor || anyStalePrice ? 'partial' : 'full';
+        coverageQuality = anyStaleAnchor || stalePricedCount > 0 ? 'partial' : 'full';
       } else if (knownRatio >= COVERAGE_PARTIAL_THRESHOLD) {
         coverageQuality = 'estimated';
       } else {
@@ -242,6 +320,8 @@ export class PortfolioValuationAtTimeService {
       coverageQuality,
       holdingsWithKnownValue: knownCount,
       holdingsTotal,
+      holdingsUnpriceable: unpriceableCount,
+      holdingsStalePriced: stalePricedCount,
       perHolding,
     };
   }

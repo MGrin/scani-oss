@@ -3,12 +3,18 @@
  * job that read it.
  *
  * Uploads land on `temp/document/{userId}/{uuid}.{ext}`, and the parse job
- * deletes that key the moment it finishes — plus R2's lifecycle rule sweeps
- * `temp/*` after 24h regardless. `documents.r2Key` therefore pointed at an
- * object that no longer existed for every document ever ingested: the user
- * could never see their own invoice again, and `documents.reparse` could
- * never read the bytes it needs. Retention is the fix — copy the object to
- * `documents/{userId}/{documentId}.{ext}` and repoint the row.
+ * deletes that key the moment it finishes. `documents.r2Key` therefore
+ * pointed at an object that no longer existed for every document ever
+ * ingested: the user could never see their own invoice again, and
+ * `documents.reparse` could never read the bytes it needs. Retention is the
+ * fix — copy the object to `documents/{userId}/{documentId}.{ext}` and
+ * repoint the row.
+ *
+ * (This used to add "plus R2's lifecycle rule sweeps `temp/*` after 24h
+ * regardless". There was no such rule — verified against the live bucket on
+ * 2026-08-12 and again on 2026-08-14. SC-144 added one, and it is 30 days,
+ * not 24 hours: the window has to outlast the retry paths that still read
+ * the temp key, not just the job's first failure.)
  *
  * `isRetained` is the other half, and it is what the parse path's cleanup
  * guards on: an object under the retained prefix must never be deleted by

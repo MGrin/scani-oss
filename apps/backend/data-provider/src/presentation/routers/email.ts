@@ -3,6 +3,7 @@ import { createComponentLogger } from '@scani/logging';
 import { TRPCError } from '@trpc/server';
 import { Container } from 'typedi';
 import { z } from 'zod';
+import { okOutput } from '../schemas';
 import { bearerProcedure, router } from '../trpc';
 
 // Outbound transactional email only — the backend's Better-Auth setup
@@ -31,7 +32,7 @@ export const emailRouter = router({
       },
     })
     .input(sendInput)
-    .output(z.unknown())
+    .output(okOutput)
     .mutation(async ({ input }) => {
       try {
         await Container.get(LocalEmailService).send(input);

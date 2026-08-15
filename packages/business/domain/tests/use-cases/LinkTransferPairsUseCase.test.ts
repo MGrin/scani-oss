@@ -377,4 +377,52 @@ describe('LinkTransferPairsUseCase', () => {
     expect(summary.scanned).toBe(0);
     expect(summary.linked).toBe(0);
   });
+
+  /**
+   * SC-150. The user said this withdrawal left their portfolio; a deposit
+   * that would have matched perfectly arrives (or was always there). The
+   * nightly pass must not quietly link them and un-answer the question.
+   *
+   * This is the one failure the review surface cannot recover from on its
+   * own: the row would leave the queue looking resolved, with a pairing
+   * nobody chose, and the person who answered would never be told.
+   */
+  test('never re-links a withdrawal a human has already answered', async () => {
+    const f = fixture!;
+    const at = recentTransferTimestamp();
+    await db.insert(schema.holdingTransactions).values([
+      {
+        userId: f.userId,
+        holdingId: f.withdrawHoldingId,
+        tokenId: f.tokenId,
+        kind: 'withdraw',
+        quantity: '-1.0',
+        occurredAt: at,
+        source: 'kraken-api',
+        externalId: 'k-w-6',
+        transferReview: 'left_control',
+        transferReviewedAt: at,
+      },
+      {
+        userId: f.userId,
+        holdingId: f.depositHoldingId,
+        tokenId: f.tokenId,
+        kind: 'deposit',
+        quantity: '1.0',
+        occurredAt: new Date(at.getTime() + 5 * 60 * 1000),
+        source: 'etherscan',
+        externalId: 'e-d-6',
+      },
+    ]);
+
+    const summary = await Container.get(LinkTransferPairsUseCase).execute({ userId: f.userId });
+    expect(summary.scanned).toBe(0);
+    expect(summary.linked).toBe(0);
+
+    const rows = await db
+      .select()
+      .from(schema.holdingTransactions)
+      .where(eq(schema.holdingTransactions.userId, f.userId));
+    expect(rows.every((r) => r.transferGroupId === null)).toBe(true);
+  });
 });

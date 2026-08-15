@@ -3,9 +3,9 @@ import Decimal from 'decimal.js';
 import { Container, Service } from 'typedi';
 import { extractPriceMap } from '../../lib/price-map';
 import { getOrComputeFromCache } from '../../lib/request-cache';
-import { GroupRepository } from '../../repositories/GroupRepository';
 import { HoldingRepository } from '../../repositories/HoldingRepository';
 import { BaseService } from '../BaseService';
+import { GroupValuationService } from './GroupValuationService';
 import { PortfolioValuationService, type RequestCache } from './PortfolioValuationService';
 
 type PortfolioValueResult = {
@@ -63,7 +63,7 @@ type HoldingWithCompleteDetails = {
 export class AssetAllocationService extends BaseService {
   private readonly portfolioService = Container.get(PortfolioValuationService);
   private readonly holdingRepository = Container.get(HoldingRepository);
-  private readonly groupRepository = Container.get(GroupRepository);
+  private readonly groupValuation = Container.get(GroupValuationService);
 
   constructor() {
     super('AssetAllocationService');
@@ -244,132 +244,43 @@ export class AssetAllocationService extends BaseService {
     return items;
   }
 
+  /**
+   * The group cut is the one dimension whose buckets overlap — a holding can be
+   * in several groups, and can reach one both directly and through its account
+   * — so the summing lives in `GroupValuationService` and this method only
+   * shapes what comes back. Sharing it is the point: the group's page, the
+   * groups list and this cut are then the same number by construction rather
+   * than by three implementations agreeing.
+   */
   private async calculateGroupAllocation(
     holdingsWithDetails: HoldingWithCompleteDetails[],
     priceMap: Map<string, string>,
     totalValue: string,
     userId: string
   ): Promise<AssetAllocationItem[]> {
-    // Get all groups for the user
-    const groups = await this.groupRepository.findByUser(userId);
+    const { groups, ungrouped } = await this.groupValuation.valueByGroup(
+      userId,
+      holdingsWithDetails,
+      priceMap
+    );
 
-    // Create a map to aggregate values by group
-    const groupAggregationMap = new Map<
-      string,
-      { id: string; code: string; name: string; color: string; value: Decimal }
-    >();
-
-    // Track holdings that have been assigned to at least one group
-    const holdingsInGroups = new Set<string>();
-
-    // Batch the group→holdings and group→accounts membership lookups into
-    // two queries (instead of two per group), and index holdings by id and
-    // by account so the per-group loop does O(1) lookups, not full scans.
-    const groupIds = groups.map((g) => g.id);
-    const [holdingsByGroup, accountsByGroup] = await Promise.all([
-      this.groupRepository.getHoldingsByGroupIds(groupIds),
-      this.groupRepository.getAccountsByGroupIds(groupIds),
-    ]);
-    const activeHoldingById = new Map<string, HoldingWithCompleteDetails>();
-    const activeHoldingsByAccount = new Map<string, HoldingWithCompleteDetails[]>();
-    for (const h of holdingsWithDetails) {
-      if (!h.holding.isActive) continue;
-      activeHoldingById.set(h.holding.id, h);
-      const list = activeHoldingsByAccount.get(h.holding.accountId);
-      if (list) list.push(h);
-      else activeHoldingsByAccount.set(h.holding.accountId, [h]);
-    }
-
-    // For each group, get its holdings and calculate value
-    for (const group of groups) {
-      const holdingIds = holdingsByGroup.get(group.id) ?? [];
-      let groupValue = new Decimal(0);
-
-      for (const holdingId of holdingIds) {
-        const holdingWithDetails = activeHoldingById.get(holdingId);
-
-        if (holdingWithDetails) {
-          holdingsInGroups.add(holdingId);
-          const { holding, token } = holdingWithDetails;
-          const price = priceMap.get(token.symbol);
-          if (!price) continue;
-          const balance = new Decimal(holding.balance);
-          const value = balance.mul(new Decimal(price));
-          groupValue = groupValue.add(value);
-        }
-      }
-
-      // Also get account-level groups
-      const accountIds = accountsByGroup.get(group.id) ?? [];
-      for (const accountId of accountIds) {
-        // All active holdings in this account
-        const accountHoldings = activeHoldingsByAccount.get(accountId) ?? [];
-
-        for (const holdingWithDetails of accountHoldings) {
-          const holdingId = holdingWithDetails.holding.id;
-          // Only add if not already counted from direct holding assignment
-          if (!holdingsInGroups.has(holdingId)) {
-            holdingsInGroups.add(holdingId);
-            const { holding, token } = holdingWithDetails;
-            const price = priceMap.get(token.symbol);
-            if (!price) continue;
-            const balance = new Decimal(holding.balance);
-            const value = balance.mul(new Decimal(price));
-            groupValue = groupValue.add(value);
-          }
-        }
-      }
-
-      if (groupValue.greaterThan(0)) {
-        groupAggregationMap.set(group.id, {
-          id: group.id,
-          code: group.name,
-          name: group.name,
-          color: group.color,
-          value: groupValue,
-        });
-      }
-    }
-
-    // Add "Ungrouped" category for holdings not in any group
-    let ungroupedValue = new Decimal(0);
-    for (const { holding, token } of holdingsWithDetails) {
-      if (!holding.isActive || holdingsInGroups.has(holding.id)) {
-        continue;
-      }
-
-      const price = priceMap.get(token.symbol);
-      if (!price) continue;
-      const balance = new Decimal(holding.balance);
-      const value = balance.mul(new Decimal(price));
-      ungroupedValue = ungroupedValue.add(value);
-    }
-
-    if (ungroupedValue.greaterThan(0)) {
-      groupAggregationMap.set('ungrouped', {
-        id: 'ungrouped',
-        code: 'Ungrouped',
-        name: 'Ungrouped',
-        color: '#64748b', // slate color for ungrouped
-        value: ungroupedValue,
-      });
-    }
-
-    // Convert to array and calculate percentages
     const totalValueDecimal = new Decimal(totalValue);
-    const items = Array.from(groupAggregationMap.values())
+    return [
+      ...groups.map(({ group, total }) => ({
+        id: group.id,
+        code: group.name,
+        name: group.name,
+        value: total.value,
+      })),
+      { id: 'ungrouped', code: 'Ungrouped', name: 'Ungrouped', value: ungrouped.value },
+    ]
       .map((item) => ({
-        id: item.id,
-        code: item.code,
-        name: item.name,
-        value: item.value.toString(),
+        ...item,
         percentage: totalValueDecimal.greaterThan(0)
-          ? item.value.div(totalValueDecimal).mul(100).toFixed(2)
+          ? new Decimal(item.value).div(totalValueDecimal).mul(100).toFixed(2)
           : '0',
       }))
       .filter((item) => new Decimal(item.value).greaterThan(0))
       .sort((a, b) => new Decimal(b.value).comparedTo(new Decimal(a.value)));
-
-    return items;
   }
 }

@@ -1,9 +1,10 @@
 import { createComponentLogger } from '@scani/logging';
 import { type Job, Queue, UnrecoverableError, Worker } from 'bullmq';
 import type { Redis } from 'ioredis';
-import { Service } from 'typedi';
+import { Container, Service } from 'typedi';
 import { DEFAULT_DLQ_NAME, DEFAULT_QUEUE_NAME } from '../core/default-names';
 import { isScheduledJobDescriptor } from '../core/job-descriptor';
+import { LIFECYCLE_MIRROR, type LifecycleMirror } from './lifecycle-mirror';
 import type { ScheduledJobProcessor } from './scheduled-job-processor';
 import { Semaphore } from './semaphore';
 import type { UserJobProcessor } from './user-job-processor';
@@ -141,14 +142,27 @@ export class WorkerClient {
         { jobId: job.id, name: job.name, error: err instanceof Error ? err.message : String(err) },
         '❌ Job failed'
       );
-      const isTerminal = job.attemptsMade >= (job.opts.attempts ?? 1);
-      if (!isTerminal) return;
+      // Two ways the queue stops trying, and they are not the same event.
+      // `UnrecoverableError` skips the remaining attempts by design, so
+      // `attemptsMade` never reaches the ceiling — which is why terminality
+      // cannot be read off the counter alone.
+      const unrecoverable = err instanceof UnrecoverableError;
+      const retriesExhausted = job.attemptsMade >= (job.opts.attempts ?? 1);
+      if (!unrecoverable && !retriesExhausted) return;
+
+      // Tell the durable mirror the job is over (SC-153). This is the only
+      // place that knows it: the processor writes `state='failed'` from its
+      // own catch, but that fires on every attempt and cannot see whether
+      // another is coming — and it never fires at all for a payload that
+      // fails validation, which used to leave the row at 'queued' with
+      // nothing to correct it.
+      await this.markDead(job, err, unrecoverable);
 
       // Application-policy hooks (Sentry, alerts). UnrecoverableError is
       // BullMQ's signal for a classified by-design terminal failure (bad
       // creds, wrong import path, …) — surface to user via UI but skip
       // alerting to avoid burying real bugs in noise.
-      if (!(err instanceof UnrecoverableError)) {
+      if (!unrecoverable) {
         for (const hook of this.terminalFailureHooks) {
           try {
             hook(job, err);
@@ -170,7 +184,13 @@ export class WorkerClient {
       // admin UI unusable and saturated Upstash storage. The DLQ is for
       // post-mortem of recent failures, not historical archival — older
       // entries are noise.
-      if (this.dlq) {
+      //
+      // Gated on `retriesExhausted` rather than on terminality so this
+      // stays exactly what it was before SC-153: a by-design
+      // `UnrecoverableError` is not a post-mortem candidate, and putting
+      // one in here would raise the DLQ-depth alert for a user typing the
+      // wrong API key.
+      if (retriesExhausted && this.dlq) {
         try {
           await this.dlq.add(
             job.name,
@@ -206,6 +226,52 @@ export class WorkerClient {
       '🎧 Worker listening for jobs'
     );
     return this.worker;
+  }
+
+  /**
+   * Record "the queue has given up on this job" in the durable mirror.
+   *
+   * Scheduled jobs are skipped: they have no user and no row to write, and
+   * their terminal failures are what the DLQ-depth probe and the alerting
+   * hooks are for. Best-effort, like every other mirror write — a failure
+   * here must not stop the DLQ push that follows it, which is the copy that
+   * still allows a replay.
+   */
+  private async markDead(job: Job, err: Error, unrecoverable: boolean): Promise<void> {
+    if (this.scheduledNames.has(job.name) || !this.processors.has(job.name)) return;
+    const userId = (job.data as { userId?: unknown } | undefined)?.userId;
+    if (typeof userId !== 'string' || !userId) return;
+
+    let mirror: LifecycleMirror;
+    try {
+      mirror = Container.get(LIFECYCLE_MIRROR);
+    } catch {
+      // No durable mirror registered (Tier-1 OSS deploys run without a
+      // per-user job table). Live events still went out over pub/sub.
+      return;
+    }
+
+    try {
+      await mirror.onLifecycle({
+        type: 'dead',
+        jobId: String(job.id),
+        userId,
+        jobName: job.name,
+        error: err instanceof Error ? err.message : String(err),
+        attemptsMade: job.attemptsMade,
+        attemptsAllowed: (job.opts.attempts as number | undefined) ?? 1,
+        reason: unrecoverable ? 'unrecoverable' : 'retries_exhausted',
+      });
+    } catch (mirrorErr) {
+      log.error(
+        {
+          jobId: job.id,
+          name: job.name,
+          error: mirrorErr instanceof Error ? mirrorErr.message : String(mirrorErr),
+        },
+        'Failed to mark job dead in the durable mirror — the row will read as merely failed'
+      );
+    }
   }
 
   /**

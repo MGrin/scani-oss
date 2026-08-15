@@ -25,6 +25,7 @@ import type {
 import { enforceSign, inferCounterSign, negateFee } from '../../core/utils/enforce-tx-sign';
 import { tokenTypeForCexAsset } from '../../core/utils/fiat-codes';
 import { splitConcatenatedPair } from '../../core/utils/symbol-splitter';
+import { slidingWindows } from '../../core/utils/time-windows';
 import { binanceManifest } from './manifest';
 
 export { binanceManifest } from './manifest';
@@ -463,21 +464,7 @@ export class BinanceProvider
   }
 
   private *iterate90DayWindows(since: Date, until: Date): Generator<{ start: Date; end: Date }> {
-    yield* this.iterateWindows(since, until, NINETY_DAYS_MS);
-  }
-
-  private *iterateWindows(
-    since: Date,
-    until: Date,
-    windowMs: number
-  ): Generator<{ start: Date; end: Date }> {
-    let cursor = since.getTime();
-    const endMs = until.getTime();
-    while (cursor < endMs) {
-      const next = Math.min(cursor + windowMs, endMs);
-      yield { start: new Date(cursor), end: new Date(next) };
-      cursor = next;
-    }
+    yield* slidingWindows(since, until, NINETY_DAYS_MS);
   }
 
   private async fetchAllP2POrders(
@@ -486,7 +473,7 @@ export class BinanceProvider
     until: Date
   ): Promise<BinanceC2COrder[]> {
     const out: BinanceC2COrder[] = [];
-    for (const window of this.iterateWindows(since, until, THIRTY_DAYS_MS)) {
+    for (const window of slidingWindows(since, until, THIRTY_DAYS_MS)) {
       for (const tradeType of C2C_TRADE_TYPES) {
         for (let page = 1; page <= MAX_CAPITAL_PAGES_PER_WINDOW; page++) {
           const query = this.signedQueryString(creds.apiSecret, {

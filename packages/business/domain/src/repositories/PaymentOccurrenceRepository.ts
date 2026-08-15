@@ -1,7 +1,7 @@
 import { BaseRepository, type DatabaseTransaction } from '@scani/db';
 import type { NewPaymentOccurrence, PaymentOccurrence } from '@scani/db/schema';
 import * as schema from '@scani/db/schema';
-import { and, asc, eq, gte } from 'drizzle-orm';
+import { and, asc, eq, gte, lt } from 'drizzle-orm';
 import { Service } from 'typedi';
 
 // The materialised, stateful side of the payments layer — one row per
@@ -152,6 +152,48 @@ export class PaymentOccurrenceRepository extends BaseRepository<
       this.logger.error(
         { paymentId, fromDate, error },
         'Failed to update future scheduled occurrence amounts'
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * Record the due dates a pause covered as deliberately skipped.
+   *
+   * `[fromDate, beforeDate)` — half-open, because `beforeDate` is the day
+   * the pause ended and that day is active again, so an occurrence due on
+   * it is live rather than skipped (which is what makes pausing and
+   * resuming on the same day a true no-op).
+   *
+   * `status = 'scheduled'` is the whole safety property: a row the user
+   * already matched, skipped or missed carries a decision and is never
+   * overwritten here — same rule `deleteAllScheduled` and
+   * `updateFutureScheduledAmount` are built on.
+   */
+  async markScheduledSkippedInRange(
+    paymentId: string,
+    fromDate: string,
+    beforeDate: string,
+    transaction?: DatabaseTransaction
+  ): Promise<PaymentOccurrence[]> {
+    try {
+      const database = this.getDb(transaction);
+      return await database
+        .update(schema.paymentOccurrences)
+        .set({ status: 'skipped', updatedAt: new Date() })
+        .where(
+          and(
+            eq(schema.paymentOccurrences.paymentId, paymentId),
+            eq(schema.paymentOccurrences.status, 'scheduled'),
+            gte(schema.paymentOccurrences.dueDate, fromDate),
+            lt(schema.paymentOccurrences.dueDate, beforeDate)
+          )
+        )
+        .returning();
+    } catch (error) {
+      this.logger.error(
+        { paymentId, fromDate, beforeDate, error },
+        'Failed to mark paused-through occurrences skipped'
       );
       throw error;
     }

@@ -5,8 +5,18 @@
  * raw file directly to the returned URL, and then passes the returned key
  * into the async mutation (e.g. `screenshots.parseScreenshotsAsync`).
  *
- * Scoped under `temp/<purpose>/` so the bucket's 24h lifecycle rule sweeps
- * orphans from failed jobs.
+ * Scoped under `temp/<purpose>/<userId>/`. Not a choice made here —
+ * `StorageService.presignUpload` hard-codes the `temp/` prefix, so it is the
+ * only place a presigned upload can land, and the durable `documents/` prefix
+ * is unreachable from this endpoint by construction.
+ *
+ * The happy path does not depend on any sweep: the job that reads the object
+ * promotes it to `documents/{userId}/…` and deletes the temp key. What leaks
+ * is an upload whose job never ran or failed, and a 30-day lifecycle rule on
+ * the bucket (SC-144) is the backstop for those. This comment used to claim a
+ * 24h rule; there was no lifecycle rule on the bucket at all until SC-144, and
+ * 24h would have been wrong anyway — the window has to outlast the retry
+ * paths that still read the temp key.
  */
 
 import { StorageFacade } from '@scani/cloud-client/facades/storage-facade';

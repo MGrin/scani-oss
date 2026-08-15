@@ -85,6 +85,11 @@ export function generateOccurrences(
     );
   }
 
+  // A pause stops the rule producing due dates; it does not change which
+  // dates the rule names. Callers asking the second question — anything
+  // regenerating rows it just deleted, or pairing two shapes by ordinal —
+  // must pass an active-status copy, or they get a delete with no
+  // matching insert. `PaymentService.buildRuleSchedule` is that copy.
   if (schedule.status === 'paused') {
     return [];
   }

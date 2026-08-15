@@ -1,3 +1,4 @@
+export { isMissingObjectError } from './missing-object';
 export {
   type HealthResult,
   type PresignedUpload,

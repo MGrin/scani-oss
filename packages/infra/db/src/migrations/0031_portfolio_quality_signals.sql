@@ -1,0 +1,32 @@
+-- Two signals the system already computed and then threw away, given a
+-- column so they can reach the chart, the PnL series and both exports
+-- (SC-151, SC-149).
+--
+-- `holdings_stale_priced` — of `holdings_with_known_value`, how many were
+-- valued from a price older than the freshness window (7 days intraday,
+-- 45 days daily; see MAX_INTRADAY_PRICE_AGE_MS / MAX_DAILY_PRICE_AGE_MS).
+-- `PriceGraphService.convert` has always returned a `stale` flag. The
+-- user-scope rollup row folded it into coverage_quality; every *per-entity*
+-- row — institution, account, and the per-holding rows the home chart and
+-- both exports are actually built from — dropped it, so a 96-day-old price
+-- reached the reader as market value on the day, and the `anyPartial`
+-- branch that was meant to catch it could never fire.
+--
+-- `holdings_basis_unknown` — of `holdings_total`, how many carry a cost
+-- basis we do not know: no cost-relevant transaction, a provider that
+-- reported its history truncated (`holding_coverage.has_complete_tx_history
+-- = false`, written honestly by Kraken at its 20,000-row ledger cap and by
+-- every incremental sync), a leg priced beyond the staleness cap, or an
+-- inflow booked at zero cost because nothing could value it. Nothing in
+-- the cost-basis path read that flag, so a truncated import and a holding
+-- with no acquisitions produced the same answer — zero cost — and the
+-- whole of a disposal's proceeds became gain.
+--
+-- Both errors ran one way only, upward. Neither ever under-reported.
+--
+-- DEFAULT 0 leaves every already-written row behaving exactly as it does
+-- today until the nightly rollup rewrites it, so the migration alone
+-- changes no number on any screen. Same contract as 0029.
+ALTER TABLE portfolio_value_daily
+  ADD COLUMN IF NOT EXISTS holdings_stale_priced integer NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS holdings_basis_unknown integer NOT NULL DEFAULT 0;

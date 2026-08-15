@@ -8,6 +8,7 @@ const env = loadEnv();
 import { cors } from '@elysiajs/cors';
 import { trpc } from '@elysiajs/trpc';
 import { loadCloudClientConfig } from '@scani/cloud-client';
+import { DataProviderHealthMonitor } from '@scani/cloud-client/health-monitor';
 import { probeDataProvider } from '@scani/cloud-client/health-probe';
 import { getNodeEnv, isNodeEnvProduction } from '@scani/config';
 import { createComponentLogger, createTimer, logger, sanitizeUrl } from '@scani/logging';
@@ -23,24 +24,29 @@ const wsLogger = createComponentLogger('websocket');
 // Probe the data-provider at boot. The previous version exited on
 // failure; the 2026-05-09 outage taught us that a transient
 // dependency unreachability turns into a hard-down when the api
-// crashes on a rolling deploy of data-provider. We now warn + log +
-// Sentry, leaving `app.listen()` to proceed; cloud-mode tRPC calls
-// will surface their own 503 if data-provider is still down at
-// request time. A background re-probe updates the flag so
-// recovery is visible.
-let dataProviderReachable = true;
-{
+// crashes on a rolling deploy of data-provider. We now warn + log,
+// leaving `app.listen()` to proceed; cloud-mode tRPC calls will
+// surface their own 503 if data-provider is still down at request
+// time.
+//
+// The result seeds the background monitor rather than alerting here.
+// An api that boots while the data-provider is mid-deploy is the same
+// transient the monitor exists to ride out, so it goes through the same
+// consecutive-failure threshold instead of paging immediately.
+const dataProviderReachable = await (async () => {
   const probe = await probeDataProvider();
-  if (!probe.ok) {
-    dataProviderReachable = false;
-    const message = `Data-provider unreachable at ${probe.url} after ${probe.attempts} attempt(s): ${probe.error ?? `HTTP ${probe.status}`}`;
-    logger.warn({ url: probe.url, attempts: probe.attempts }, `⚠️  ${message}`);
-    // Sentry import is staged later in the boot chain; hold capture
-    // for now and surface via the periodic re-probe below.
-  } else if (probe.url) {
-    logger.info({ url: probe.url, attempts: probe.attempts }, '☁️  Data-provider reachable');
+  if (probe.ok) {
+    if (probe.url) {
+      logger.info({ url: probe.url, attempts: probe.attempts }, '☁️  Data-provider reachable');
+    }
+    return true;
   }
-}
+  logger.warn(
+    { url: probe.url, attempts: probe.attempts, error: probe.error, status: probe.status },
+    `⚠️  Data-provider unreachable at ${probe.url} after ${probe.attempts} attempt(s): ${probe.error ?? `HTTP ${probe.status}`}`
+  );
+  return false;
+})();
 
 // CRITICAL: Initialize container BEFORE importing any routers
 // This must happen before any module that calls Container.get()
@@ -99,6 +105,7 @@ import { tronFactory } from '@scani/providers/providers/tron';
 import { wiseFactory } from '@scani/providers/providers/wise';
 import { googleSheetsFactory } from '@scani/providers-google-sheets';
 import { createBetterAuth } from './auth/better-auth';
+import { buildCorsOrigins, buildTrustedOrigins } from './config/browser-origins';
 import { initializeContainer } from './config/container';
 import { registerAdminDataRoutes } from './presentation/http/admin-data';
 import { registerAdminJobsRoutes } from './presentation/http/admin-jobs';
@@ -221,18 +228,20 @@ setSharedRedis(redisConnection);
 if (!env.BETTER_AUTH_SECRET) {
   throw new Error('BETTER_AUTH_SECRET is required');
 }
+const browserOriginOptions = { isProduction: isNodeEnvProduction() };
+const trustedOrigins = buildTrustedOrigins(env.FRONTEND_URL, browserOriginOptions);
 const betterAuthInstance = createBetterAuth({
   baseURL: env.BACKEND_URL,
   secret: env.BETTER_AUTH_SECRET,
   cookieDomain: env.COOKIE_DOMAIN,
-  trustedOrigins: [env.FRONTEND_URL],
+  trustedOrigins,
   screenshotBotSecret: env.SCREENSHOT_BOT_SECRET,
 });
 setBetterAuthForContext(betterAuthInstance);
 logger.info(
   {
     backendURL: env.BACKEND_URL,
-    trustedOrigin: env.FRONTEND_URL,
+    trustedOrigins,
     cookieDomain: env.COOKIE_DOMAIN,
   },
   '🔐 Better-Auth initialized'
@@ -427,7 +436,8 @@ const app = new Elysia()
   .use(
     cors({
       // env.FRONTEND_URL is validated at startup: required + https in production.
-      origin: env.FRONTEND_URL,
+      // In dev this also allows loopback on any port — see browser-origins.ts.
+      origin: buildCorsOrigins(env.FRONTEND_URL, browserOriginOptions),
       credentials: true,
       allowedHeaders: ['Authorization', 'Content-Type'],
     })
@@ -862,56 +872,30 @@ Container.get(RedisRealtimeUpdatesService).configure(redisConnection);
 wsRealtime.pipeFromRedis(redisConnection.duplicate());
 
 // Background re-probe of the data-provider so a transient
-// unavailability at boot doesn't latch the api into "degraded"
-// forever. Logs + captures the first failure, then logs recovery
-// once it goes green again.
-{
-  const REPROBE_INTERVAL_MS = 60_000;
-  let everReportedDown = !dataProviderReachable;
-  if (!dataProviderReachable) {
-    sentryCapture(
-      new Error('data-provider unreachable at boot — api running with cloud-mode degraded'),
-      { component: 'api', kind: 'data-provider-boot-unreachable' }
+// unavailability at boot doesn't latch the api into "degraded" forever.
+// The threshold — not the probe — is what stops a deploy cutover paging
+// us; see `DataProviderHealthMonitor` for the full reasoning and for the
+// Sentry issue that motivated it.
+new DataProviderHealthMonitor({
+  initiallyReachable: dataProviderReachable,
+  onCycleFailed: ({ url, error, status, consecutiveFailures }) => {
+    logger.warn(
+      { url, error, status, consecutiveFailures },
+      '⚠️  Data-provider unreachable (in re-probe)'
     );
-  }
-  const probeTimer = setInterval(() => {
-    void (async () => {
-      try {
-        const probe = await probeDataProvider();
-        if (probe.ok) {
-          if (!dataProviderReachable) {
-            logger.info(
-              { url: probe.url, attempts: probe.attempts },
-              '☁️  Data-provider reachable (recovered)'
-            );
-            dataProviderReachable = true;
-          }
-          return;
-        }
-        if (dataProviderReachable) {
-          logger.warn(
-            { url: probe.url, error: probe.error, status: probe.status },
-            '⚠️  Data-provider unreachable (in re-probe)'
-          );
-          if (!everReportedDown) {
-            sentryCapture(
-              new Error(`data-provider re-probe failed: ${probe.error ?? probe.status}`),
-              {
-                component: 'api',
-                kind: 'data-provider-reprobe-failed',
-              }
-            );
-            everReportedDown = true;
-          }
-          dataProviderReachable = false;
-        }
-      } catch (err) {
-        logger.warn({ err }, '⚠️  Data-provider re-probe threw');
-      }
-    })();
-  }, REPROBE_INTERVAL_MS);
-  probeTimer.unref?.();
-}
+  },
+  onOutage: ({ error, status, consecutiveFailures }) => {
+    sentryCapture(
+      new Error(
+        `data-provider unreachable for ${consecutiveFailures} consecutive probes: ${error ?? status}`
+      ),
+      { component: 'api', kind: 'data-provider-reprobe-failed' }
+    );
+  },
+  onRecovered: ({ url, failedCycles }) => {
+    logger.info({ url, failedCycles }, '☁️  Data-provider reachable (recovered)');
+  },
+}).start();
 
 import { client as pgClient } from '@scani/db/connection';
 import { AIRouter, PricingService } from '@scani/domain/services';

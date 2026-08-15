@@ -11,6 +11,17 @@ export interface ParsedTransaction {
   description: string;
   amount: number;
   currency: string;
+  /**
+   * A charge the bank levied ON TOP of `amount`, as an unsigned magnitude in
+   * the same currency — a Revolut ATM row is `Amount -120.00, Fee 1.50` and
+   * its Balance column has moved by 121.50.
+   *
+   * Absent when the statement has no fee column or the cell is blank. Zero is
+   * normalised away for the same reason: a `0.00` in every row of a Revolut
+   * export is the column existing, not a fee being charged, and a ledger full
+   * of zero-value rows is noise the user has to read past.
+   */
+  fee?: number;
   /** Running balance after this transaction (if available) */
   balance?: number;
   /** Original row data for debugging */
@@ -44,6 +55,13 @@ export interface CsvColumnMapping {
   debit?: string;
   currency?: string;
   balance?: string;
+  /**
+   * A separate charge column, levied on top of `amount` in the same currency.
+   * Revolut, Wise and most FX-capable accounts export one; leaving it unmapped
+   * dropped the charge silently and left the derived opening balance short by
+   * exactly the fees (SC-136).
+   */
+  fee?: string;
   /** Date format string (e.g., 'dd/MM/yyyy', 'yyyy-MM-dd') */
   dateFormat?: string;
   /** Number of header rows to skip */
@@ -60,6 +78,7 @@ export const BANK_TEMPLATES: Record<string, CsvColumnMapping> = {
     amount: 'Amount',
     currency: 'Currency',
     balance: 'Balance',
+    fee: 'Fee',
     dateFormat: 'yyyy-MM-dd HH:mm:ss',
   },
   tinkoff: {
@@ -93,6 +112,9 @@ export const BANK_TEMPLATES: Record<string, CsvColumnMapping> = {
     amount: 'Amount',
     currency: 'Currency',
     balance: 'Running Balance',
+    // Wise's statement export spells it `Total fees` — its `Exchange To
+    // Amount` rows carry the conversion charge there rather than in `Amount`.
+    fee: 'Total fees',
     dateFormat: 'dd-MM-yyyy',
   },
   monzo: {
@@ -108,5 +130,6 @@ export const BANK_TEMPLATES: Record<string, CsvColumnMapping> = {
     amount: 'amount',
     currency: 'currency',
     balance: 'balance',
+    fee: 'fee',
   },
 };

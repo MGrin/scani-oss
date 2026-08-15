@@ -132,6 +132,30 @@ function normalizePortfolio(raw: unknown): ParsedPortfolio {
 
 const providerSchema = z.string().optional();
 
+// Published response schemas (SC-108). `raw` stays `z.unknown()`
+// deliberately: with a caller-supplied `systemPrompt` the model's own
+// schema governs that field, so this service cannot describe it.
+const parsedPortfolioSchema = z.object({
+  holdings: z.array(
+    z.object({
+      symbol: z.string(),
+      name: z.string().optional(),
+      balance: z.string(),
+      confidence: z.number(),
+      notes: z.string().optional(),
+    })
+  ),
+  overallConfidence: z.number(),
+  context: z.string().optional(),
+  detectedCurrency: z.string().optional(),
+});
+
+const aiParseOutput = z.object({
+  portfolio: parsedPortfolioSchema.optional(),
+  raw: z.unknown().optional(),
+  metadata: z.object({ provider: z.string(), processingTime: z.number() }),
+});
+
 /**
  * A caller-supplied `systemPrompt` REPLACES the provider's default
  * extraction schema, so its own schema — not the holdings one — governs
@@ -183,7 +207,7 @@ export const aiRouter = router({
           .optional(),
       })
     )
-    .output(z.unknown())
+    .output(aiParseOutput)
     .mutation(async ({ input, ctx }) => {
       // Test-only stub. Returns a fixed holdings payload so e2e tests don't
       // depend on the real AI provider (cost, flakiness, network). Reads
@@ -278,7 +302,7 @@ export const aiRouter = router({
           .optional(),
       })
     )
-    .output(z.unknown())
+    .output(aiParseOutput)
     .mutation(async ({ input, ctx }) => {
       const opts = input.options ?? {};
       const providers = selectProviders(opts.provider);
@@ -338,7 +362,7 @@ export const aiRouter = router({
           .optional(),
       })
     )
-    .output(z.unknown())
+    .output(z.object({ content: z.string(), provider: z.string() }))
     .mutation(async ({ input, ctx }) => {
       const opts = input.options ?? {};
       const providers = selectProviders(opts.provider);
@@ -383,7 +407,15 @@ export const aiRouter = router({
       },
     })
     .input(z.void())
-    .output(z.unknown())
+    .output(
+      z.object({
+        availableProviders: z.array(
+          z.object({ providerKey: z.string(), supportsPdfFileInput: z.boolean() })
+        ),
+        hasAvailableProvider: z.boolean(),
+        routeCapabilities: z.object({ systemPrompt: z.boolean() }),
+      })
+    )
     .query(() => {
       const providers = getProviders();
       return {

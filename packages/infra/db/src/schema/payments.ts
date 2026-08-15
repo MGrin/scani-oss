@@ -31,6 +31,15 @@ export const payments = pgTable(
     intervalCount: integer('interval_count').notNull(),
     anchorDate: date('anchor_date', { mode: 'string' }).notNull(),
     status: text('status').notNull().default('active'), // 'active' | 'paused' | 'ended'
+    // When the CURRENT pause started; null whenever the payment is not
+    // paused. This is what makes pausing reversible: `resume` needs to
+    // know which due dates fell inside the pause so it can record them as
+    // deliberately skipped rather than resurface them as debts. It cannot
+    // be derived from `updated_at` (nothing bumps it) and it cannot be
+    // derived at pause time from the schedule (nobody knows yet how long
+    // the pause will last). Rows paused before this column existed keep
+    // null, and `resume` then skips nothing.
+    pausedAt: timestamp('paused_at', { withTimezone: true }),
     endDate: date('end_date', { mode: 'string' }),
     accountId: uuid('account_id').references(() => accounts.id, { onDelete: 'set null' }),
     // 'detected' is kept even though nothing writes it — detection was

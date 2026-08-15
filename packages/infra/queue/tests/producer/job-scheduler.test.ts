@@ -7,16 +7,22 @@ import { QueueClient } from '../../src/producer/queue-client';
 interface FakeScheduler {
   key: string;
   pattern?: string;
+  next?: number;
 }
 
 function stubQueue(initialSchedulers: FakeScheduler[] = []) {
   const upsertCalls: Array<{ key: string; pattern: { pattern: string }; opts: unknown }> = [];
   const removeCalls: string[] = [];
+  const addCalls: Array<{ name: string; data: unknown; opts: { jobId?: string } }> = [];
   const list: FakeScheduler[] = [...initialSchedulers];
   return {
     upsertCalls,
     removeCalls,
+    addCalls,
     queue: {
+      add: mock(async (name: string, data: unknown, opts: { jobId?: string }) => {
+        addCalls.push({ name, data, opts });
+      }),
       upsertJobScheduler: mock(async (key: string, pattern: { pattern: string }, opts: unknown) => {
         upsertCalls.push({ key, pattern, opts });
         if (!list.find((s) => s.key === key)) {
@@ -105,5 +111,76 @@ describe('JobScheduler — upsertAll', () => {
       ?.opts;
     expect(opts?.attempts).toBeGreaterThanOrEqual(3);
     expect(opts?.backoff).toBeDefined();
+  });
+});
+
+// Regression: SC-49. `upsertJobScheduler` deletes whatever occurrence is
+// currently armed and re-arms from `now`, so a run that came due while no
+// worker was alive is destroyed on the next boot — silently, with no error
+// and no heartbeat. Six weeks of nightly `historical-price-backfill` pages
+// came from deploys landing on its 03:00 cron minute.
+describe('JobScheduler — replaying occurrences lost to the re-arm', () => {
+  test('replays an occurrence that was already due when upsertAll ran', async () => {
+    const dueAt = Date.now() - 60_000;
+    const { queue, addCalls } = stubQueue([
+      { key: 'scheduler:historical-price-backfill', next: dueAt },
+    ]);
+    Container.set(QueueClient, { get: () => queue } as never);
+    await new JobScheduler().upsertAll([{ name: 'historical-price-backfill', cron: '0 3 * * *' }]);
+    expect(addCalls).toHaveLength(1);
+    expect(addCalls[0]?.name).toBe('historical-price-backfill');
+  });
+
+  test('the replay job id is deterministic and colon-free so simultaneous boots dedupe', async () => {
+    const dueAt = 1_786_590_000_000;
+    const { queue, addCalls } = stubQueue([{ key: 'scheduler:pricing', next: dueAt }]);
+    Container.set(QueueClient, { get: () => queue } as never);
+    await new JobScheduler().upsertAll([{ name: 'pricing', cron: '0 * * * *' }]);
+    const jobId = addCalls[0]?.opts.jobId;
+    expect(jobId).toBe(`catchup-pricing-${dueAt}`);
+    // BullMQ rejects custom job ids containing a colon.
+    expect(jobId).not.toContain(':');
+  });
+
+  test('does not replay an occurrence still in the future', async () => {
+    const { queue, addCalls } = stubQueue([
+      { key: 'scheduler:pricing', next: Date.now() + 60 * 60_000 },
+    ]);
+    Container.set(QueueClient, { get: () => queue } as never);
+    await new JobScheduler().upsertAll([{ name: 'pricing', cron: '0 * * * *' }]);
+    expect(addCalls).toEqual([]);
+  });
+
+  test('does not replay for a scheduler being registered for the first time', async () => {
+    const { queue, addCalls } = stubQueue();
+    Container.set(QueueClient, { get: () => queue } as never);
+    await new JobScheduler().upsertAll([{ name: 'brand-new', cron: '0 3 * * *' }]);
+    expect(addCalls).toEqual([]);
+  });
+
+  test('does not replay for an orphan scheduler that is being removed', async () => {
+    const { queue, addCalls, removeCalls } = stubQueue([
+      { key: 'scheduler:removed-job', next: Date.now() - 60_000 },
+    ]);
+    Container.set(QueueClient, { get: () => queue } as never);
+    await new JobScheduler().upsertAll([{ name: 'pricing', cron: '0 * * * *' }]);
+    expect(removeCalls).toEqual(['scheduler:removed-job']);
+    expect(addCalls).toEqual([]);
+  });
+
+  test('a replay that fails does not abort registration of the remaining schedules', async () => {
+    const { queue, addCalls, upsertCalls } = stubQueue([
+      { key: 'scheduler:pricing', next: Date.now() - 60_000 },
+    ]);
+    queue.add = mock(async () => {
+      throw new Error('redis blip');
+    }) as never;
+    Container.set(QueueClient, { get: () => queue } as never);
+    await new JobScheduler().upsertAll([
+      { name: 'pricing', cron: '0 * * * *' },
+      { name: 'apy-payouts', cron: '0 0 * * *' },
+    ]);
+    expect(upsertCalls.map((c) => c.key)).toEqual(['scheduler:pricing', 'scheduler:apy-payouts']);
+    expect(addCalls).toEqual([]);
   });
 });

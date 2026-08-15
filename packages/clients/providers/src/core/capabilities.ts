@@ -240,6 +240,29 @@ export interface TransactionsProvider extends ProviderBase {
       until?: Date;
     }
   ): Promise<TransactionEvent[]>;
+
+  /**
+   * How far back this provider can actually see, when the caller asks for
+   * everything. Absent means "as far as the account goes" — the assumption
+   * every provider was silently treated as satisfying.
+   *
+   * It is not decoration. `TransactionRouter` derived
+   * `hasCompleteTxHistory` from `!request.since` alone, so a full-history
+   * run through a provider that quietly substitutes its own look-back wrote
+   * `holding_coverage.has_complete_tx_history = true` over a ledger holding
+   * 30 days of it — Bybit and Bitget do exactly that, and OKX's live bills
+   * feed reaches 7 days with the 3-month archive only consulted when the
+   * caller named a `since`. SC-149 made that flag load-bearing for cost
+   * basis, which turns a wrong `true` into a wrong number on a screen
+   * rather than a stale field nobody reads (SC-166).
+   *
+   * Declare it whenever a `since`-less `fetchTransactions` bounds its own
+   * range, and set it to how far back *that* call reaches — not to the
+   * furthest the provider could go if asked. OKX's archive covers three
+   * months, but only when a `since` names a date older than the live feed,
+   * so its horizon is the 7 days a `since`-less run actually sees.
+   */
+  readonly transactionHistoryHorizonMs?: number;
 }
 
 export interface CredentialValidator extends ProviderBase {

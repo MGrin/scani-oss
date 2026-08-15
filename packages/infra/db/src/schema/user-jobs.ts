@@ -53,6 +53,22 @@ export const userJobs = pgTable(
     // this is set render the result read-only so the same extracted
     // holdings can't be imported twice. Null for informative-only jobs.
     actionTakenAt: timestamp('action_taken_at', { withTimezone: true }),
+    // WHAT the user did, alongside WHEN. 'imported' | 'discarded'; null
+    // while `actionTakenAt` is null. A discard clears the review queue
+    // without writing holdings, and the job page has to be able to say
+    // which of the two happened rather than assuming an import (SC-138).
+    reviewOutcome: text('review_outcome'),
+    // "This will not run again" — the one thing `state` could never say
+    // (SC-153). `state='failed'` is written on every failed *attempt*, so
+    // it covers a job mid-retry, a job that is dead, and a cancellation
+    // alike. Null until something terminal happens; see migration 0034 for
+    // why this is a column rather than a new `user_job_state` value.
+    deadAt: timestamp('dead_at', { withTimezone: true }),
+    // Which kind of terminal — the sentence the user needs differs per
+    // reason. `userJobFailureReasonSchema` in @scani/shared is the
+    // authority on the values; kept as `text` because it is a display
+    // discriminator, not something a query filters on.
+    failureReason: text('failure_reason'),
   },
   (table) => ({
     userCreatedIdx: index('idx_user_jobs_user_created').on(table.userId, table.createdAt),
