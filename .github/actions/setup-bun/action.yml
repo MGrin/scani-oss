@@ -1,5 +1,5 @@
 name: "Setup Bun with cache"
-description: "Setup Bun runtime, cache ~/.bun/install/cache + workspace node_modules, run install."
+description: "Setup Bun runtime, cache Bun's global module cache, run install."
 
 inputs:
   bun-version:
@@ -23,24 +23,17 @@ runs:
       with:
         bun-version: ${{ inputs.bun-version }}
 
-    - name: Cache Bun install + node_modules
+    - name: Cache Bun global module cache
       id: cache
       uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
       with:
-        # ~/.bun/install/cache is Bun's global module cache (immutable
-        # content-addressed tarballs, safe to share across branches).
-        # node_modules holds workspace symlinks + hoisted deps after
-        # `bun install`; we scope it to the calling workflow so a cache
-        # saved by a job running on `main` is never restored into a PR
-        # branch's job, and vice versa. Without that scope, a malicious
-        # PR with a `postinstall` script could plant secret-bearing
-        # files under `node_modules` on the main-branch cache and have
-        # them lifted into a later workflow with full secrets in env.
-        # ONLY the global module cache. `node_modules` is deliberately not
-        # cached: the restore-keys below have to omit the lockfile hash to be
-        # useful as a fallback, so a cache saved under one `bun.lock` was being
-        # restored into a job running a different one, and
-        # `bun install --frozen-lockfile` ran on top of it.
+        # ONLY `~/.bun/install/cache`, Bun's global module cache: immutable
+        # content-addressed tarballs, safe to share across branches and refs.
+        #
+        # `node_modules` is deliberately NOT cached. The restore-keys below
+        # have to omit the lockfile hash to be useful as a fallback, so a tree
+        # saved under one `bun.lock` was being restored into a job running a
+        # different one, with `bun install --frozen-lockfile` on top of it.
         #
         # That is survivable for the hoisted top level, which a plain install
         # repairs — but not for a NESTED copy. `astro` pins
@@ -50,9 +43,16 @@ runs:
         # absent; the hoisted `4.14.0` satisfies the check, install reports no
         # changes, and the build dies on `readTsconfig` — a v5-only export.
         #
-        # The global cache is content-addressed and immutable, so it is safe to
-        # share and makes the real install a ~10-15s cold start. Correct every
-        # time beats fast and occasionally wrong.
+        # Not caching `node_modules` also retires a supply-chain hazard rather
+        # than containing one: a malicious PR's `postinstall` can no longer
+        # plant secret-bearing files under `node_modules` for a later
+        # main-branch job to lift, because no `node_modules` ever leaves the
+        # runner. The workflow+ref scoping in the key below was what contained
+        # that hazard while the tree WAS cached; it is kept for the reason
+        # given under restore-keys, not for this one.
+        #
+        # The global cache makes the real install a ~10-15s cold start.
+        # Correct every time beats fast and occasionally wrong.
         path: |
           ~/.bun/install/cache
         key: ${{ runner.os }}-bun-${{ inputs.bun-version }}-${{ github.workflow }}-${{ github.ref_name }}-${{ hashFiles('bun.lock') }}
