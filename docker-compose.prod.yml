@@ -56,6 +56,29 @@ services:
       timeout: 3s
       retries: 6
 
+  # Mail catcher, so a fresh box can complete its first sign-in.
+  #
+  # Scani's only sign-in path is passwordless: the api emails a one-time
+  # code. With no SMTP transport that email is never sent and the operator
+  # is locked out of the instance they just installed — which is what
+  # happened to this file before SC-453, since nothing here spoke SMTP at
+  # all. Mailpit needs no account and no outbound port; you read your own
+  # code at http://localhost:8026.
+  #
+  # Delete this service and point SMTP_URL at a real mail server before
+  # anyone other than you signs in. The UI is bound to loopback so it is
+  # not reachable from the network even by accident.
+  mailpit:
+    image: axllent/mailpit:latest
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${MAILPIT_UI_PORT:-8026}:8025"
+    healthcheck:
+      test: ["CMD", "/mailpit", "readyz"]
+      interval: 15s
+      timeout: 3s
+      retries: 6
+
   # Comment out if pointing S3_* at a managed bucket (R2 / S3 / B2 / …).
   minio:
     image: minio/minio:latest
@@ -110,6 +133,13 @@ services:
         condition: service_healthy
     environment:
       DATABASE_URL: ${DATABASE_URL:-postgres://scani:scani@postgres:5432/scani?sslmode=disable}
+    # The migrator only skips its target gate for loopback, so any host other
+    # than `localhost` has to be named on the command line. The default matches
+    # the bundled `postgres` service; point `DATABASE_URL` at a managed database
+    # and you must set `SCANI_MIGRATE_HOST` to that database's hostname too.
+    # That is deliberate — it is the one place where a stale connection string
+    # would otherwise rewrite the wrong schema unnoticed.
+    command: ["/app/migrate", "--allow-remote", "${SCANI_MIGRATE_HOST:-postgres}"]
     restart: "no"
 
   # ---- Scani services (pulled from Docker Hub) ----
@@ -145,7 +175,7 @@ services:
       SMTP_FROM: ${SMTP_FROM:-no-reply@example.com}
       FASTMAIL_API_TOKEN: ${FASTMAIL_API_TOKEN:-}
       # Logging
-      SERVICE_NAME: data-provider
+      SERVICE_NAME: scani-data-provider
       LOG_LEVEL: ${LOG_LEVEL:-info}
       LOG_ID_PEPPER: ${LOG_ID_PEPPER:?LOG_ID_PEPPER is required in production}
       # Sentry (optional)
@@ -182,7 +212,11 @@ services:
       SCANI_CLOUD_API_KEY: ${SCANI_CLOUD_API_KEY:?SCANI_CLOUD_API_KEY is required (must match DATA_PROVIDER_API_KEY)}
       COOKIE_DOMAIN: ${COOKIE_DOMAIN:-}
       # Logging
-      SERVICE_NAME: api
+      # Must be exactly `scani-backend`: WebSocketRealtimeUpdatesService
+      # refuses to attach to Elysia under any other name, so the api
+      # crash-loops at boot with a message about a service name nobody
+      # set (SC-453). Same value as fly.toml and docker-compose.yml.
+      SERVICE_NAME: scani-backend
       LOG_LEVEL: ${LOG_LEVEL:-info}
       LOG_ID_PEPPER: ${LOG_ID_PEPPER:?LOG_ID_PEPPER is required in production}
       # Sentry
@@ -224,7 +258,7 @@ services:
       S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-minioadmin}
       S3_BUCKET: ${S3_BUCKET:-job-uploads}
       # Logging
-      SERVICE_NAME: worker
+      SERVICE_NAME: scani-worker
       LOG_LEVEL: ${LOG_LEVEL:-info}
       LOG_ID_PEPPER: ${LOG_ID_PEPPER:?LOG_ID_PEPPER is required in production}
       SENTRY_DSN: ${SENTRY_DSN:-}

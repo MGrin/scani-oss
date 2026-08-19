@@ -96,12 +96,35 @@ describe('httpsUrlInProduction (production mode)', () => {
     const result = httpsUrlInProduction.safeParse('http://example.com');
     expect(result.success).toBe(false);
     if (!result.success) {
-      expect(result.error.issues[0]?.message).toBe('must use https:// in production');
+      expect(result.error.issues[0]?.message).toBe(
+        'must use https:// in production (plain http is allowed only for loopback hosts)'
+      );
     }
   });
 
   test('accepts https:// URLs', () => {
     expect(httpsUrlInProduction.safeParse('https://example.com').success).toBe(true);
+  });
+
+  // The self-host stack runs NODE_ENV=production on http://localhost — the
+  // whole one-command bring-up boots or does not boot on these four.
+  test.each([
+    'http://localhost:8080',
+    'http://127.0.0.1:8080/api',
+    'http://[::1]:8080',
+    'http://scani.localhost',
+  ])('accepts loopback http URL %s', (url) => {
+    expect(httpsUrlInProduction.safeParse(url).success).toBe(true);
+  });
+
+  // A LAN address is not a secure context in any browser, so it must not slip
+  // through with the loopback hosts.
+  test.each([
+    'http://192.168.1.10:8080',
+    'http://10.0.0.5',
+    'http://notlocalhost.com',
+  ])('still rejects non-loopback http URL %s', (url) => {
+    expect(httpsUrlInProduction.safeParse(url).success).toBe(false);
   });
 
   test('still rejects malformed URLs (urlSchema base check fires first)', () => {
