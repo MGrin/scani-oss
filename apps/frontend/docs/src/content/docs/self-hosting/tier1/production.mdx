@@ -26,8 +26,8 @@ curl -fsSL https://raw.githubusercontent.com/MGrin/scani-oss/main/scripts/self-h
 That is the whole install. `scripts/self-host.sh` fetches this compose file,
 generates a `.env` full of real secrets, pulls the images, applies migrations
 and brings the stack up, then waits for it to answer HTTP before saying so.
-Scani is on <http://localhost:8080>; your sign-in code is at
-<http://localhost:8026>.
+Scani is on [http://localhost:8080](http://localhost:8080); your sign-in code
+is at [http://localhost:8026](http://localhost:8026).
 
 Knobs, all optional: `SCANI_IMAGE_TAG` (pin a release), `SCANI_PORT`,
 `SCANI_MAIL_PORT`, `SCANI_REF`, and `SCANI_SKIP_UP=1` to write `.env` and stop
