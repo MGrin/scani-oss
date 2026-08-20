@@ -1,3 +1,15 @@
+import { acquireSuiteLock, busyMessage, nodeEnvRefusal } from './test-suite-guard';
+
+// Before anything else: the suite has one NODE_ENV, and a root `.env` can
+// take it away. See `nodeEnvRefusal` for why that is fatal rather than
+// tolerated. Checked first so a misconfigured environment is named before a
+// database connection is opened against it.
+const envRefusal = nodeEnvRefusal(process.env.NODE_ENV);
+if (envRefusal) {
+  process.stderr.write(`\n${envRefusal}\n`);
+  process.exit(1);
+}
+
 // Point repository tests at the running compose Postgres. The compose
 // stack is the standard local dev harness (`bun run dev:stack`); tests
 // don't provision their own DB. Per-test isolation is provided by
@@ -47,3 +59,23 @@ if (!looksLocal && process.env.ALLOW_REMOTE_TEST_DB !== '1') {
 // reflect-metadata must load before any @Service() class, since TypeDI
 // reads decorator metadata at class-init time.
 import 'reflect-metadata';
+import { installContainerLeakGuard } from './test/helpers/container';
+
+// One suite per database, or none. Two `bun run test` runs both land here on
+// the shared compose database, and 3 of 4 processes failed when that was
+// measured (SC-372) — on the rollup sweep and on a whole-table count, neither
+// of which says whose run broke it. `scripts/gate-db.ts` gives a run its own
+// `scani_gate_<pid>`, so gates never contend and never see this.
+if (process.env.SCANI_ALLOW_SHARED_TEST_DB !== '1') {
+  const outcome = await acquireSuiteLock(dbUrl);
+  if (outcome.kind === 'busy') {
+    process.stderr.write(`\n${busyMessage(dbUrl, outcome.holder)}\n`);
+    process.exit(1);
+  }
+}
+
+// A stub left on the process-global typedi Container is read by every test
+// file that runs after it, which is why this suite was green only in bun's
+// default file order (SC-448). Installed last, so the patched `Container.set`
+// is in place before any test file loads.
+installContainerLeakGuard();

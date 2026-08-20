@@ -59,7 +59,7 @@ class TestStorageService extends StorageService {
     return this.buildArgs.envOverride ?? super.env();
   }
 
-  protected buildSdk(opts: { endpoint: string } & Record<string, unknown>): S3Client {
+  protected override buildSdk(opts: Parameters<StorageService['buildSdk']>[0]): S3Client {
     const isServer = opts.endpoint === SERVER_ENDPOINT;
     const fake = buildFakeS3({
       label: opts.endpoint,

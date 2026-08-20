@@ -2,9 +2,10 @@ import { Block } from '@scani/ui/v3/components/Block';
 import { PageLayout } from '@scani/ui/v3/components/PageLayout';
 import { describeQueryError } from '@scani/ui/v3/lib/errors';
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { trpc } from '@/lib/trpc';
-import { uploadToR2 } from '@/v2/lib/r2-upload';
+import { uploadToR2 } from '@/v3/lib/r2-upload';
 import { AccountTargetFields } from '../components/capture/AccountTargetFields';
 import { CaptureHeader } from '../components/capture/CaptureHeader';
 import { CaptureSubmit } from '../components/capture/CaptureSubmit';
@@ -17,7 +18,7 @@ import {
   describeImportBlockers,
   describeImportFileProblem,
   IMPORT_ACCEPT,
-  IMPORT_FORMATS,
+  IMPORT_FORMATS_KEY,
   planImportFile,
 } from '../lib/capture-forms';
 import { buildEnsureAccountInput } from '../lib/manual-entry';
@@ -48,6 +49,7 @@ import { jobDetailPath } from '../lib/routes';
  * constraint.
  */
 export function FileImportPage() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const target = useAccountTarget();
   // The sheet's two upload rows land here, and the heading has to name the one
@@ -66,7 +68,7 @@ export function FileImportPage() {
   const parseScreenshots = trpc.screenshots.parseScreenshots.useMutation();
   const parseStatement = trpc.fileImport.parseAndEnrich.useMutation();
 
-  const blockers = describeImportBlockers(target.draft, file);
+  const blockers = describeImportBlockers(t, target.draft, file);
 
   const submit = async () => {
     const plan = file ? planImportFile(file) : null;
@@ -128,7 +130,7 @@ export function FileImportPage() {
 
       navigate(jobDetailPath(jobId));
     } catch (err) {
-      const copy = describeQueryError(err, 'this file');
+      const copy = describeQueryError(err, t('v3.capture.page.fileImport.subject'));
       setError(`${copy.title}. ${copy.detail}`);
       setStage(null);
     }
@@ -138,29 +140,33 @@ export function FileImportPage() {
 
   return (
     <PageLayout>
-      <CaptureHeader title={heading.title} description={heading.description} />
+      <CaptureHeader title={t(heading.titleKey)} description={t(heading.descriptionKey)} />
 
       <Block>
-        <AccountTargetFields target={target} disabled={busy} title="Where it belongs" />
+        <AccountTargetFields
+          target={target}
+          disabled={busy}
+          title={t('v3.capture.fileImport.whereItBelongs')}
+        />
       </Block>
 
       <Block>
-        <FieldSet title="The file">
+        <FieldSet title={t('v3.capture.page.fileImport.fieldset')}>
           <FileDropField
             inputId="import-file"
             accept={IMPORT_ACCEPT}
             file={file}
             onFile={setFile}
-            validate={describeImportFileProblem}
-            formats={IMPORT_FORMATS}
-            prompt="Choose a file, or drop one here"
+            validate={(filename) => describeImportFileProblem(t, filename)}
+            formats={t(IMPORT_FORMATS_KEY)}
+            prompt={t('v3.capture.page.fileImport.prompt')}
             disabled={busy}
           />
         </FieldSet>
       </Block>
 
       <CaptureSubmit
-        label="Upload and read it"
+        label={t('v3.capture.page.uploadAndRead')}
         blockers={blockers}
         onSubmit={submit}
         stage={stage}

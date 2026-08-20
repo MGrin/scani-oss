@@ -1,5 +1,6 @@
 import { ErrorBoundary } from '@scani/ui/components/ErrorBoundary';
 import type { ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
 import { reportClientError } from '@/lib/report-client-error';
 import { V3_BASE } from '../lib/ui-version';
 
@@ -9,10 +10,12 @@ import { V3_BASE } from '../lib/ui-version';
  * v3 home rather than dropping the user into the other interface.
  */
 export function V3ErrorBoundary({ children }: { children: ReactNode }) {
+  const { t } = useTranslation();
+
   return (
     <ErrorBoundary
       homeHref={V3_BASE}
-      homeLabel="Go to v3 home"
+      homeLabel={t('v3.common.errorBoundary.goHome')}
       onError={(error, info) => {
         void reportClientError({
           error,

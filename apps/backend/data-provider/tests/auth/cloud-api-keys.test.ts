@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'bun:test';
-import { generateCloudApiKey, sha256Hex } from '../../src/auth/cloud-api-keys';
+import {
+  CLOUD_API_KEY_PREFIX,
+  generateCloudApiKey,
+  sha256Hex,
+} from '../../src/auth/cloud-api-keys';
 
 describe('sha256Hex', () => {
   it('produces deterministic 64-char lowercase hex', async () => {
@@ -14,21 +18,38 @@ describe('sha256Hex', () => {
     expect(await sha256Hex('a')).not.toBe(await sha256Hex('b'));
   });
 
-  it('matches the documented sk_live_<token> hashing pattern', async () => {
-    // SHA-256 of "sk_live_abc" is fixed — guards against accidental algo
-    // swap (e.g. sha512, or upper-case hex).
-    const expected = 'd0816e2a16ec3aaab30b1b6cf0a17f3d4c0a4257f01ce8e0c20f97cdb6e8aa9b';
-    void expected; // pinned for documentation; actual value verified via implementation, not magic
-    const actual = await sha256Hex('sk_live_abc');
-    expect(actual).toMatch(/^[0-9a-f]{64}$/);
-    expect(actual).not.toBe(await sha256Hex('sk_live_abd'));
+  it('hashes the whole token, so one character changes the digest', async () => {
+    const a = await sha256Hex(`${CLOUD_API_KEY_PREFIX}abc`);
+    const b = await sha256Hex(`${CLOUD_API_KEY_PREFIX}abd`);
+    expect(a).toMatch(/^[0-9a-f]{64}$/);
+    expect(a).not.toBe(b);
   });
 });
 
 describe('generateCloudApiKey', () => {
-  it('returns rawToken in sk_live_<32hex> format', async () => {
+  it('returns rawToken as the Scani prefix + 32 hex', async () => {
     const { rawToken } = await generateCloudApiKey();
-    expect(rawToken).toMatch(/^sk_live_[0-9a-f]{32}$/);
+    expect(rawToken).toMatch(new RegExp(`^${CLOUD_API_KEY_PREFIX}[0-9a-f]{32}$`));
+  });
+
+  /**
+   * SC-189. `sk_live_` is Stripe's secret-key prefix, so under it every key we
+   * minted was read as a Stripe credential by scanners neither we nor our
+   * customers control — including GitHub push protection, which rejected a
+   * push to the public repo over an obvious placeholder in a fixture.
+   *
+   * The assertion is against third-party prefixes generally, not `sk_live_`
+   * alone: the mistake is reusing someone else's namespace, and the next one
+   * would be just as invisible until a scanner shouted.
+   */
+  it('does not mint keys under another vendor prefix', async () => {
+    const foreignPrefixes = ['sk_live_', 'sk_test_', 'pk_live_', 'ghp_', 'xoxb-', 'AKIA'];
+    const { rawToken, keyPrefix } = await generateCloudApiKey();
+    for (const foreign of foreignPrefixes) {
+      expect(rawToken.startsWith(foreign)).toBe(false);
+      expect(keyPrefix.startsWith(foreign)).toBe(false);
+    }
+    expect(rawToken.startsWith('scani_')).toBe(true);
   });
 
   it('returns hashedKey that matches sha256Hex(rawToken)', async () => {
@@ -36,10 +57,15 @@ describe('generateCloudApiKey', () => {
     expect(hashedKey).toBe(await sha256Hex(rawToken));
   });
 
-  it('returns keyPrefix as the first 12 chars of rawToken', async () => {
+  it('returns keyPrefix as the prefix plus 4 hex chars', async () => {
     const { rawToken, keyPrefix } = await generateCloudApiKey();
-    expect(keyPrefix).toBe(rawToken.slice(0, 12));
-    expect(keyPrefix.startsWith('sk_live_')).toBe(true);
+    expect(keyPrefix).toBe(rawToken.slice(0, CLOUD_API_KEY_PREFIX.length + 4));
+    expect(keyPrefix.startsWith(CLOUD_API_KEY_PREFIX)).toBe(true);
+  });
+
+  it('never returns enough of the token to reconstruct it', async () => {
+    const { rawToken, keyPrefix } = await generateCloudApiKey();
+    expect(keyPrefix.length).toBeLessThan(rawToken.length);
   });
 
   it('produces unique tokens across calls (entropy sanity)', async () => {

@@ -6,6 +6,11 @@ import { describeJobFailure, isJobAwaitingFailureDecision } from '../../src/dtos
 // alike, so three situations with three different next steps rendered as one
 // red chip. Each case below is one of those situations, and the assertion that
 // matters most is `willRetry` — the question the old chip could not answer.
+//
+// The assertions are on the CODE and its operands, not on a sentence: this
+// package has no `t()` and stopped rendering prose in SC-424. What the codes
+// are called on screen is asserted where the naming lives —
+// `apps/frontend/app/tests/v3/lib/job-failure-text.test.ts`.
 
 describe('describeJobFailure', () => {
   test('a job that has not failed has no failure to describe', () => {
@@ -22,7 +27,7 @@ describe('describeJobFailure', () => {
       attemptsAllowed: 3,
     });
     expect(described?.willRetry).toBe(true);
-    expect(described?.label).toBe('Retrying (1 of 3)');
+    expect(described).toMatchObject({ code: 'retrying', attemptsMade: 1, attemptsAllowed: 3 });
     // Nothing is being asked of the user while the queue is still working.
     expect(described?.retryWorthOffering).toBe(false);
   });
@@ -36,8 +41,7 @@ describe('describeJobFailure', () => {
       attemptsAllowed: 3,
     });
     expect(described?.willRetry).toBe(false);
-    expect(described?.label).toBe("Failed — won't retry");
-    expect(described?.sentence).toContain('tried 3 times');
+    expect(described).toMatchObject({ code: 'exhausted', attemptsAllowed: 3 });
   });
 
   test('an unrecoverable failure does not claim the attempts were spent', () => {
@@ -51,8 +55,10 @@ describe('describeJobFailure', () => {
       attemptsAllowed: 3,
     });
     expect(described?.willRetry).toBe(false);
-    expect(described?.sentence).not.toContain('3 times');
-    expect(described?.sentence).toContain('will not fix');
+    // Not `exhausted`: that code carries `attemptsAllowed` into "tried 3
+    // times", which would be false — 1 attempt ran and the other two were
+    // never used.
+    expect(described?.code).toBe('unrecoverable');
   });
 
   test('a job that never reached the queue says so, and says nothing ran', () => {
@@ -63,9 +69,8 @@ describe('describeJobFailure', () => {
       attemptsMade: 0,
       attemptsAllowed: 3,
     });
-    expect(described?.label).toBe('Never started');
+    expect(described?.code).toBe('neverDelivered');
     expect(described?.willRetry).toBe(false);
-    expect(described?.sentence).toContain('nothing was changed');
   });
 
   test('a cancellation is not reported back to the user as a failure', () => {
@@ -76,7 +81,7 @@ describe('describeJobFailure', () => {
       attemptsMade: 1,
       attemptsAllowed: 3,
     });
-    expect(described?.label).toBe('Cancelled');
+    expect(described?.code).toBe('cancelled');
     expect(described?.retryWorthOffering).toBe(false);
   });
 
@@ -90,7 +95,7 @@ describe('describeJobFailure', () => {
       attemptsMade: 3,
       attemptsAllowed: 3,
     });
-    expect(described?.label).toBe('Failed');
+    expect(described?.code).toBe('settling');
     expect(described?.willRetry).toBe(false);
   });
 
@@ -106,7 +111,7 @@ describe('describeJobFailure', () => {
       queueHasJob: false,
     });
     expect(described?.willRetry).toBe(false);
-    expect(described?.sentence).toContain('no further attempt is queued');
+    expect(described?.code).toBe('notQueued');
   });
 
   test('a confirmed queue entry still reads as retrying', () => {
@@ -128,6 +133,36 @@ describe('describeJobFailure', () => {
       attemptsAllowed: 1,
     });
     expect(described?.willRetry).toBe(false);
+    expect(described?.code).toBe('settling');
+  });
+
+  test('a describer that renders no prose cannot leak English to a translator', () => {
+    // The regression SC-424 is about: every value this returns has to be a
+    // code, a number or a boolean. A string operand added later is a sentence
+    // fragment in the making, and this package is where no `t()` can reach it.
+    const shapes = [
+      { state: 'failed', deadAt: new Date(), failureReason: 'cancelled' },
+      { state: 'failed', deadAt: new Date(), failureReason: 'never_delivered' },
+      { state: 'failed', deadAt: new Date(), failureReason: 'unrecoverable' },
+      { state: 'failed', deadAt: new Date(), attemptsAllowed: 3, attemptsMade: 3 },
+      { state: 'failed', deadAt: new Date(), attemptsAllowed: 1, attemptsMade: 1 },
+      { state: 'failed', deadAt: null, attemptsMade: 1, attemptsAllowed: 3, queueHasJob: false },
+      { state: 'failed', deadAt: null, attemptsMade: 1, attemptsAllowed: 3 },
+      { state: 'failed', deadAt: null, attemptsMade: 3, attemptsAllowed: 3 },
+    ];
+    const codes = new Set<string>();
+    for (const facts of shapes) {
+      const described = describeJobFailure(facts);
+      expect(described).not.toBeNull();
+      codes.add(described?.code ?? '');
+      for (const [field, value] of Object.entries(described ?? {})) {
+        if (field === 'code') continue;
+        expect(typeof value).not.toBe('string');
+      }
+    }
+    // Non-vacuous: every branch of the describer is covered above, so a new
+    // one that renders prose cannot hide behind an unexercised path.
+    expect(codes.size).toBe(8);
   });
 });
 

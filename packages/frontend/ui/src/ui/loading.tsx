@@ -1,4 +1,5 @@
 import type React from 'react';
+import { useUiTranslation } from '../i18n';
 import { cn } from '../lib/cn';
 
 interface LoadingSpinnerProps {
@@ -149,6 +150,7 @@ export function AccessibleLoading({
   children,
   loadingComponent,
 }: AccessibleLoadingProps) {
+  const { t } = useUiTranslation();
   // Respect user's motion preferences
   const prefersReducedMotion =
     typeof window !== 'undefined'
@@ -158,12 +160,12 @@ export function AccessibleLoading({
   const defaultLoadingComponent = prefersReducedMotion ? (
     <div className="flex items-center gap-2 text-blue-600">
       <span className="w-2 h-2 bg-current rounded-full" aria-hidden="true" />
-      <span>Loading...</span>
+      <span>{t('ui.loading.label')}</span>
     </div>
   ) : (
     <div className="flex items-center gap-2 text-blue-600">
       <LoadingDots className="text-current" />
-      <span>Loading...</span>
+      <span>{t('ui.loading.label')}</span>
     </div>
   );
 

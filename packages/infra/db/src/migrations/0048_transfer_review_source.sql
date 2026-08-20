@@ -1,0 +1,33 @@
+-- SC-350. WHO answered a transfer review, when the answer was not the user's.
+--
+***REMOVED***
+***REMOVED***
+***REMOVED***
+***REMOVED***
+***REMOVED***
+--
+-- Provenance had exactly two representable states, both derived from whether
+-- `transfer_reviewed_at` was NULL: stamped meant "the user, in the queue, on
+-- that date" and unstamped meant "not through the queue at all". A correction
+-- Scani makes on the user's behalf is neither, and both available ways of
+-- recording it assert something false. Stamping it would forge his answer and
+-- erase the only evidence the ten were ever wrong. Leaving it NULL would file a
+-- deliberate correction alongside the 560-row raw UPDATE of 2026-08-14 that
+-- `unattributed` exists to isolate — the write that cost four separate
+-- investigations precisely because nobody could tell who made it.
+--
+-- So provenance stops being inferred from a timestamp's nullness. That is the
+-- same absence-vs-refusal argument `docs/technical/2026-08-15_absence-and-refusal.md`
+-- makes and that SC-324 already cites as the reason `answerSource` is a field
+-- rather than a null-check at each reader; this applies it one value further.
+--
+-- NULL is the entire existing corpus and keeps its exact meaning — readers fall
+-- back to `transfer_reviewed_at IS NOT NULL ? 'user' : 'unattributed'`, which is
+-- what every reader already did. So there is deliberately NO BACKFILL: not one
+-- row's provenance changes by adding this column, and a backfill writing 'user'
+-- across the 560 unattributed rows would be the forgery this column exists to
+-- refuse, at 560x the scale.
+--
+-- No index. It is read on rows already selected by `user_id` + `transfer_review
+-- IS NOT NULL` and never used as a search predicate.
+ALTER TABLE "holding_transactions" ADD COLUMN IF NOT EXISTS "transfer_review_source" text;

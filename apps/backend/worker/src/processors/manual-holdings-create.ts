@@ -5,6 +5,7 @@ import { UserJobRepository } from '@scani/domain/repositories';
 import { PortfolioValuationService, PortfolioValueCache } from '@scani/domain/services';
 import {
   CreateHoldingsWithDependenciesUseCase,
+  DuplicateHoldingTokenError,
   UpdateHoldingPriceUseCase,
 } from '@scani/domain/use-cases';
 import {
@@ -14,7 +15,12 @@ import {
   PORTFOLIO_HISTORY_LOOKBACK_DAYS,
 } from '@scani/jobs';
 import { createComponentLogger } from '@scani/logging';
-import { BullMqEnqueueService, type ProcessorContext, UserJobProcessor } from '@scani/queue';
+import {
+  BullMqEnqueueService,
+  type ProcessorContext,
+  UnrecoverableError,
+  UserJobProcessor,
+} from '@scani/queue';
 import { emitEntityChange } from '@scani/realtime';
 import { eq, inArray } from 'drizzle-orm';
 import { Container, Service } from 'typedi';
@@ -26,6 +32,25 @@ import { Container, Service } from 'typedi';
 const MANUAL_BACKFILL_LOOKBACK_DAYS = PORTFOLIO_HISTORY_LOOKBACK_DAYS;
 
 const logger = createComponentLogger('processor:manual-holdings-create');
+
+/**
+ * What the user reads in /jobs when the create was refused for naming one
+ * token twice under the same name, or a name the account already holds
+ * outside a sync.
+ *
+ * Names the way out rather than only the wall. "An account holds one amount
+ * per token" was true when the only options were merge or delete; since
+ * SC-330 a second row is legitimate the moment the user says what it is, and
+ * a message that does not mention that leaves someone with four real bank
+ * pots deleting three of them.
+ *
+ * Exported for its own test: this string is the entire user-facing surface of
+ * the refusal, and the paths that build it (worker) and reject on it (form)
+ * are in different apps.
+ */
+export function describeDuplicateHoldingTokens(labels: string[]): string {
+  return `${labels.join(', ')} ${labels.length === 1 ? 'is' : 'are'} listed more than once under the same name, or already in this account. If these are separate pots, give each one a name; otherwise combine the rows or edit the existing holding instead.`;
+}
 
 interface HoldingResultRow {
   id: string;
@@ -78,19 +103,42 @@ export class ManualHoldingsCreateProcessor extends UserJobProcessor<
 
     // Phase 1: institution + account + new holdings + balance updates,
     // all atomic inside a single transaction owned by the use case.
-    const dbResult = await Container.get(CreateHoldingsWithDependenciesUseCase).execute(
-      {
-        institution: data.institution,
-        accountId: data.accountId,
-        account: data.account,
-        holdings: data.newHoldings.map((h) => ({ tokenId: h.tokenId, balance: h.balance })),
-        updateHoldings: data.updateHoldings.map((h) => ({
-          holdingId: h.holdingId,
-          balance: h.balance,
-        })),
-      },
-      user
-    );
+    let dbResult: Awaited<
+      ReturnType<InstanceType<typeof CreateHoldingsWithDependenciesUseCase>['execute']>
+    >;
+    try {
+      dbResult = await Container.get(CreateHoldingsWithDependenciesUseCase).execute(
+        {
+          institution: data.institution,
+          accountId: data.accountId,
+          account: data.account,
+          holdings: data.newHoldings.map((h) => ({
+            tokenId: h.tokenId,
+            balance: h.balance,
+            label: h.label,
+          })),
+          updateHoldings: data.updateHoldings.map((h) => ({
+            holdingId: h.holdingId,
+            balance: h.balance,
+          })),
+        },
+        user
+      );
+    } catch (error) {
+      // A payload that would leave one account holding the same token twice
+      // (SC-303). This descriptor is already RETRY_NONE, so the reason to
+      // classify is the other two: the user reads this string in /jobs and
+      // needs symbols rather than uuids, and `onTerminalFailure` skips
+      // UnrecoverableError — a person entering RUB twice is not a bug to page
+      // on, and burying real worker failures under it is how SCANI-WORKER
+      // noise starts.
+      if (error instanceof DuplicateHoldingTokenError) {
+        throw new UnrecoverableError(
+          describeDuplicateHoldingTokens(await this.labelTokens(error.tokenIds))
+        );
+      }
+      throw error;
+    }
 
     await ctx.reportProgress(PHASE_DB_DONE);
 
@@ -330,14 +378,28 @@ export class ManualHoldingsCreateProcessor extends UserJobProcessor<
     };
   }
 
-  private async loadUser(userId: string) {
+  /**
+   * The symbols behind a `DuplicateHoldingTokenError`'s uuids, so the sentence
+   ***REMOVED***
+   * a token has vanished between the write and this read — a worse message is
+   * better than a second failure while reporting the first.
+   */
+  protected async labelTokens(tokenIds: string[]): Promise<string[]> {
+    const rows = await db
+      .select({ symbol: schema.tokens.symbol })
+      .from(schema.tokens)
+      .where(inArray(schema.tokens.id, tokenIds));
+    return rows.length === tokenIds.length ? rows.map((r) => r.symbol).sort() : tokenIds;
+  }
+
+  protected async loadUser(userId: string) {
     const [user] = await db.select().from(schema.users).where(eq(schema.users.id, userId)).limit(1);
     if (!user) throw new Error(`User ${userId} not found`);
     if (!user.baseCurrencyId) throw new Error(`User ${userId} has no base currency configured`);
     return user;
   }
 
-  private async resolveBaseCurrencySymbol(baseCurrencyId: string): Promise<string> {
+  protected async resolveBaseCurrencySymbol(baseCurrencyId: string): Promise<string> {
     const [token] = await db
       .select({ symbol: schema.tokens.symbol })
       .from(schema.tokens)

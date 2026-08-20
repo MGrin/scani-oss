@@ -40,7 +40,7 @@ describe('MexcProvider', () => {
           ],
         }),
         { status: 200 }
-      )) as typeof fetch;
+      )) as unknown as typeof fetch;
     try {
       const out = await p.fetchBalances(ctx as never);
       expect(out).toHaveLength(1);
@@ -63,7 +63,7 @@ describe('MexcProvider', () => {
     const p = new MexcProvider(passthroughLimiter());
     const originalFetch = globalThis.fetch;
     globalThis.fetch = (async () =>
-      new Response(JSON.stringify({ balances: [] }), { status: 200 })) as typeof fetch;
+      new Response(JSON.stringify({ balances: [] }), { status: 200 })) as unknown as typeof fetch;
     try {
       const r = await p.validateCredentials({ apiKey: 'k', apiSecret: 's' }, 'mexc');
       expect(r.valid).toBe(true);
@@ -75,7 +75,8 @@ describe('MexcProvider', () => {
   test('validateCredentials maps 401 to invalid', async () => {
     const p = new MexcProvider(passthroughLimiter());
     const originalFetch = globalThis.fetch;
-    globalThis.fetch = (async () => new Response('Unauthorized', { status: 401 })) as typeof fetch;
+    globalThis.fetch = (async () =>
+      new Response('Unauthorized', { status: 401 })) as unknown as typeof fetch;
     try {
       const r = await p.validateCredentials({ apiKey: 'k', apiSecret: 's' }, 'mexc');
       expect(r.valid).toBe(false);
@@ -173,7 +174,7 @@ describe('MexcProvider.fetchTransactions', () => {
       }
 
       throw new Error(`Unexpected URL: ${u}`);
-    }) as typeof fetch;
+    }) as unknown as typeof fetch;
 
     try {
       const since = new Date('2023-01-01T00:00:00Z');
@@ -228,7 +229,7 @@ describe('MexcProvider.fetchTransactions', () => {
       }
       // Capital endpoints aren't the focus here — return empty.
       return new Response('[]', { status: 200 });
-    }) as typeof fetch;
+    }) as unknown as typeof fetch;
 
     try {
       // 95-day range → ⌈95/30⌉ = 4 windows per symbol.
@@ -300,7 +301,7 @@ describe('MexcProvider.fetchTransactions', () => {
         return new Response('[]', { status: 200 });
       }
       return new Response('[]', { status: 200 });
-    }) as typeof fetch;
+    }) as unknown as typeof fetch;
 
     try {
       // Single 30-day window so we only see the cursor walk once.
@@ -349,7 +350,7 @@ describe('MexcProvider.fetchTransactions', () => {
         return new Response('[]', { status: 200 });
       }
       throw new Error(`Unexpected URL: ${u}`);
-    }) as typeof fetch;
+    }) as unknown as typeof fetch;
 
     try {
       // 200-day range → ⌈200/90⌉ = 3 windows per asset (90 + 90 + 20).

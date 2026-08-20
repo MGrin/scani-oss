@@ -3,6 +3,7 @@ import { showError, showSuccess } from '@scani/ui/ui/use-toast';
 import { AmountInput } from '@scani/ui/v3/components/AmountInput';
 import { Check, Loader2, X } from 'lucide-react';
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { trpc } from '@/lib/trpc';
 
 /**
@@ -36,21 +37,24 @@ export function SettleActions({
   direction,
   onSettled,
 }: SettleActionsProps) {
+  const { t } = useTranslation();
   const [editing, setEditing] = useState(false);
   const [amount, setAmount] = useState(expectedAmount ?? '');
   const utils = trpc.useUtils();
 
-  const settleLabel = direction === 'inflow' ? 'Mark as received' : 'Mark as paid';
-  const settledLabel = direction === 'inflow' ? 'Marked as received' : 'Marked as paid';
+  const settleLabel =
+    direction === 'inflow' ? t('v3.money.settle.markReceived') : t('v3.money.settle.markPaid');
+  const settledLabel =
+    direction === 'inflow' ? t('v3.money.settle.markedReceived') : t('v3.money.settle.markedPaid');
 
   const settleMutation = trpc.payments.settleOccurrence.useMutation({
     onSuccess: (_, variables) => {
       setEditing(false);
-      showSuccess(variables.status === 'skipped' ? 'Occurrence skipped' : settledLabel);
+      showSuccess(variables.status === 'skipped' ? t('v3.money.settle.skipped') : settledLabel);
       void utils.payments.invalidate();
       onSettled?.();
     },
-    onError: (error) => showError(error, 'Updating payment occurrence'),
+    onError: (error) => showError(error, t('v3.money.pending.updatingOccurrence')),
   });
 
   if (editing) {
@@ -62,7 +66,7 @@ export function SettleActions({
           // 16px, like every other input in v3: iOS zooms the page on focusing
           // anything smaller, and the zoom reads as "the app jumped".
           className="w-32 text-body"
-          aria-label="Amount settled"
+          aria-label={t('v3.money.settle.amountSettled')}
           decimalScale={2}
           disabled={settleMutation.isPending}
           onKeyDown={(event) => {
@@ -80,11 +84,11 @@ export function SettleActions({
           ) : (
             <Check className="mr-1.5 h-4 w-4" aria-hidden="true" />
           )}
-          Confirm
+          {t('v3.money.settle.confirm')}
         </Button>
         <Button
           variant="ghost"
-          aria-label="Cancel"
+          aria-label={t('v3.money.settle.cancel')}
           disabled={settleMutation.isPending}
           onClick={() => setEditing(false)}
         >
@@ -110,7 +114,7 @@ export function SettleActions({
         disabled={settleMutation.isPending}
         onClick={() => settleMutation.mutate({ occurrenceId, status: 'skipped' })}
       >
-        Skip
+        {t('v3.money.settle.skip')}
       </Button>
     </>
   );

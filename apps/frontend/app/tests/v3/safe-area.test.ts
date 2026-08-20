@@ -24,6 +24,7 @@ const BOTTOM_EDGE = [
   'layouts/V3TabBar.tsx',
   'components/PeekSheet.tsx',
   'components/capture/CaptureSheet.tsx',
+  'components/form/FormSheet.tsx',
   'components/data-view/RefineSheet.tsx',
   'components/data-view/ExportSheet.tsx',
 ];
@@ -54,13 +55,24 @@ describe('v3 safe-area insets', () => {
     expect(missing).toEqual([]);
   });
 
-  test('the list of bottom-edge surfaces is still the whole list', () => {
+  test('the list of bottom-edge surfaces is still the whole list', async () => {
     // A new sheet, drawer or bar is a new chance to forget the inset. If this
     // trips, add the file above and give it its own bottom padding.
-    const found = files
-      .filter((file) => /Sheet\.tsx$|Drawer\.tsx$|TabBar\.tsx$/.test(file.name))
-      .map((file) => file.name)
-      .sort();
-    expect(found).toEqual([...BOTTOM_EDGE].sort());
+    //
+    // Detected by what the file RENDERS, not by what it is called. The name
+    // was the proxy until `FormSheet` arrived (SC-320 phase 3): two forms that
+    // merely *use* a shell are called `…Sheet.tsx` too, and the filename rule
+    // demanded a home-indicator spacer from files that never touch the bottom
+    // edge — which would have put the inset in three places and left the one
+    // that matters no better guarded. A drawer is `<BottomDrawerContent`; the
+    // tab bar is the one bottom-edge surface that is not a drawer at all.
+    const found: string[] = [];
+    for (const file of files) {
+      const code = await Bun.file(file.path).text();
+      if (code.includes('<BottomDrawerContent') || /TabBar\.tsx$/.test(file.name)) {
+        found.push(file.name);
+      }
+    }
+    expect(found.sort()).toEqual([...BOTTOM_EDGE].sort());
   });
 });

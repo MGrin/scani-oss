@@ -1,4 +1,5 @@
 import { Fragment } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import type { FigureQuality } from '../../lib/home';
 import { qualityHeadline, qualityOmissions, unreviewedTransfersNote } from '../../lib/home';
@@ -56,13 +57,14 @@ import { TRANSFER_REVIEW_PATH } from '../../lib/routes';
  * caption is 13px on a 327px content box, which is ~56 characters.
  */
 export function CoverageNote({ quality }: { quality: FigureQuality }) {
-  const omissions = qualityOmissions(quality);
-  const unreviewed = unreviewedTransfersNote(quality);
+  const { t } = useTranslation();
+  const omissions = qualityOmissions(quality, t);
+  const unreviewed = unreviewedTransfersNote(quality, t);
 
   return (
     <div className="flex flex-col gap-0.5">
       <span className={`text-caption ${quality.complete ? 'text-muted-foreground' : ''}`}>
-        {qualityHeadline(quality)}
+        {qualityHeadline(quality, t)}
       </span>
       {omissions.length > 0 ? (
         // One clause per `whitespace-nowrap` span, with the separator OUTSIDE

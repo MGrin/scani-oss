@@ -1,5 +1,6 @@
 import { PageLayout } from '@scani/ui/v3/components/PageLayout';
 import { mergeQueries } from '@scani/ui/v3/lib/query-state';
+import { useTranslation } from 'react-i18next';
 import { trpc } from '@/lib/trpc';
 import { CaptureHeader } from '../components/capture/CaptureHeader';
 import { IntegrationsList } from '../components/capture/IntegrationsList';
@@ -19,13 +20,14 @@ import { IntegrationsList } from '../components/capture/IntegrationsList';
  * a menu of two unrelated things.
  */
 export function IntegrationsPage() {
+  const { t } = useTranslation();
   const integrationsQuery = trpc.integrations.listAvailable.useQuery();
 
   return (
     <PageLayout measure="wide">
       <CaptureHeader
-        title="Connect a service"
-        description="Read-only API keys, encrypted at rest. Balances are synced hourly, and you can hold several connections to the same service."
+        title={t('v3.capture.integration.title')}
+        description={t('v3.capture.integration.listSubtitle')}
       />
 
       <IntegrationsList

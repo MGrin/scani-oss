@@ -1,5 +1,6 @@
 import type { Token } from '@scani/shared';
 import { createContext, type ReactNode, useContext, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { trpc } from '@/lib/trpc';
 import { createCurrencyToken } from '@/lib/utils';
 
@@ -21,6 +22,7 @@ interface BaseCurrencyContextType {
 const BaseCurrencyContext = createContext<BaseCurrencyContextType | null>(null);
 
 export function BaseCurrencyProvider({ children }: { children: ReactNode }) {
+  const { t } = useTranslation();
   const { data: baseCurrency, isLoading } = trpc.users.getBaseCurrency.useQuery();
 
   const value = useMemo(() => {
@@ -33,13 +35,13 @@ export function BaseCurrencyProvider({ children }: { children: ReactNode }) {
       // picker) can't submit a synthetic one, since every FK on
       // `currencyTokenId` validates as `z.string().uuid()`.
       token: baseCurrency
-        ? { ...createCurrencyToken(symbol), id: baseCurrency.id, name: baseCurrency.name }
-        : createCurrencyToken(symbol),
+        ? { ...createCurrencyToken(t, symbol), id: baseCurrency.id, name: baseCurrency.name }
+        : createCurrencyToken(t, symbol),
       symbol,
       isLoading,
       isResolved: Boolean(baseCurrency),
     };
-  }, [baseCurrency, isLoading]);
+  }, [baseCurrency, isLoading, t]);
 
   return <BaseCurrencyContext.Provider value={value}>{children}</BaseCurrencyContext.Provider>;
 }

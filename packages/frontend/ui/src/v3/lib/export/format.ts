@@ -1,4 +1,6 @@
+import { uiT } from '../../../i18n';
 import { importChunk } from '../../../lib/lazy-chunk';
+import { UserFacingError } from '../../../lib/user-facing-error';
 import { type CsvSeparator, defaultCsvSeparator, toCsvBlob } from './csv';
 import { type ExportProvenance, type ExportSheet, provenanceSheet } from './workbook';
 
@@ -15,19 +17,27 @@ import { type ExportProvenance, type ExportSheet, provenanceSheet } from './work
 
 export type ExportFormat = 'csv' | 'xlsx' | 'pdf';
 
+// These two used to take the caller's `t`, on the reasoning that they are
+// called during a render and a component only re-renders on a language change
+// if it subscribed through the hook — so taking the caller's `t` made that
+// "structural instead of incidental". It did not. The subscription comes from
+// calling `useUiTranslation()`, not from passing its result along, and
+// `ExportSheet` still calls it for its own group titles either way. What the
+// parameter actually made structural was the choice of *instance*, and two
+// callers chose wrong (SC-316).
 export function exportFormatLabel(format: ExportFormat): string {
-  if (format === 'csv') return 'CSV (.csv)';
-  if (format === 'xlsx') return 'Excel (.xlsx)';
-  return 'PDF (.pdf)';
+  if (format === 'csv') return uiT('ui.dataView.export.formatCsv');
+  if (format === 'xlsx') return uiT('ui.dataView.export.formatXlsx');
+  return uiT('ui.dataView.export.formatPdf');
 }
 
 export function exportFormatDetail(format: ExportFormat): string {
-  if (format === 'csv') return 'Plain text. Opens anywhere, imports into anything.';
-  if (format === 'xlsx') return 'Numbers stay numbers, headers stay put while you scroll.';
+  if (format === 'csv') return uiT('ui.dataView.export.formatCsvDetail');
+  if (format === 'xlsx') return uiT('ui.dataView.export.formatXlsxDetail');
   // Said in terms of what it is *for*, because the other two are better at
   // everything else: a PDF cannot be sorted, summed or re-imported, and the
   // reason to choose it is that you are sending it to a person.
-  return 'A statement to send to an accountant, a bank or a landlord.';
+  return uiT('ui.dataView.export.formatPdfDetail');
 }
 
 /**
@@ -91,23 +101,49 @@ export interface ExportWorkbook {
  * as a sentence about the connection. **An export button that silently does
  * nothing is worse than a slow one** — that is the standard SC-93 set for this
  * path, and a swallowed rejection here would break it.
+ *
+ * The refusals below are `UserFacingError`, not `Error` (SC-311): the toast
+ * now shows only a message somebody wrote for a reader, and "Nothing to
+ * export" is exactly that. Thrown as a plain `Error` they would arrive at the
+ * toast indistinguishable from an assertion and be replaced by "Unknown
+ * error" — collapsing "the export is empty" and "something unknown broke"
+ * into one sentence, which is the regression this file's caller exists to
+ * avoid.
  */
 export async function toExportBlob(
   workbook: ExportWorkbook,
   format: ExportFormat,
   separator: CsvSeparator
 ): Promise<Blob> {
+  // Resolved against the KIT's instance, never a caller's. Every key this
+  // module and everything under it resolves is `ui.*`, which lives only in this
+  // package's bundle — the app's instance holds none of the 133, so the `t`
+  // this used to take wrote its own key names into files people download:
+  //
+  //     # ui.export.provenance.exportedFrom: Scani
+  //     # ui.export.provenance.rows: 1
+  //
+  // Correct values under internal identifiers, in a spreadsheet someone keeps,
+  // sends to an accountant and re-imports (SC-316). The parameter was the
+  // defect, not the two callers that got it wrong: a function that resolves
+  // only this package's keys must not accept a translator that structurally
+  // cannot resolve them.
+  //
+  // The app's OWN `ui.dataView.*` keys — column headers, filter labels, the
+  // nouns — keep resolving, because `addUiLocale` forwards all 286 of them into
+  // this instance at boot. Nothing needs threading through for them.
+  const t = uiT;
   if (format === 'pdf') {
-    if (!pdfRenderer) throw new Error('PDF export is not available here');
+    if (!pdfRenderer) throw new UserFacingError(t('ui.export.pdfUnavailable'));
     return pdfRenderer(workbook);
   }
   if (format === 'csv') {
     const first = workbook.sheets[0];
-    if (!first) throw new Error('Nothing to export');
+    if (!first) throw new UserFacingError(t('ui.export.nothingToExport'));
     return toCsvBlob(first, separator, workbook.provenance);
   }
   const { toXlsxBlob } = await importChunk(() => import('./xlsx'), {
-    chunk: 'Excel writer',
+    chunk: t('ui.export.xlsxChunk'),
   });
   // About last: it is a caption, and a workbook that opens on its own metadata
   // makes the reader click before seeing their data.

@@ -36,6 +36,7 @@ export class ExchangeTransactionsProcessor extends ScheduledJobProcessor {
           accountsFound: result.accountsFound,
           enqueued,
           skippedNoSource: result.skippedNoSource,
+          fullHistoryTargets: result.fullHistoryTargets,
           durationMs: Date.now() - startTime,
         },
         '✅ Recurring transaction sync enqueued'

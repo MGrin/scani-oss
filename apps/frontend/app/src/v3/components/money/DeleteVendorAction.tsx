@@ -2,6 +2,7 @@ import { showError, showSuccess } from '@scani/ui/ui/use-toast';
 import { ConfirmAction } from '@scani/ui/v3/components/ConfirmAction';
 import { usePeekRoute } from '@scani/ui/v3/hooks/usePeekRoute';
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { trpc } from '@/lib/trpc';
 import { vendorDeleteConsequence } from '../../lib/money';
 import { V3_ROUTES } from '../../lib/routes';
@@ -34,6 +35,7 @@ interface DeleteVendorActionProps {
 }
 
 export function DeleteVendorAction({ vendorId, vendorName }: DeleteVendorActionProps) {
+  const { t } = useTranslation();
   const utils = trpc.useUtils();
   const [open, setOpen] = useState(false);
   // The sheet leaves with the record — see `DeletePaymentAction` for why an
@@ -45,26 +47,26 @@ export function DeleteVendorAction({ vendorId, vendorName }: DeleteVendorActionP
   const deleteMutation = trpc.vendors.delete.useMutation({
     onSuccess: () => {
       setOpen(false);
-      showSuccess(`${vendorName} deleted`);
+      showSuccess(t('v3.money.deleteVendor.deleted', { vendor: vendorName }));
       void utils.vendors.invalidate();
       peekRoute.close();
     },
-    onError: (error) => showError(error, 'Deleting vendor'),
+    onError: (error) => showError(error, t('v3.money.pending.deletingVendor')),
   });
 
   const counts = preview.data ?? null;
 
   return (
     <ConfirmAction
-      label="Delete"
-      confirmLabel="Delete this vendor"
+      label={t('v3.money.deleteVendor.trigger')}
+      confirmLabel={t('v3.money.deleteVendor.confirm')}
       destructive
       triggerClassName="text-destructive"
       open={open}
       onOpenChange={setOpen}
       canConfirm={counts !== null && counts.payments === 0}
       isPending={deleteMutation.isPending}
-      consequence={vendorDeleteConsequence(vendorName, counts)}
+      consequence={vendorDeleteConsequence(vendorName, counts, t)}
       onConfirm={() => deleteMutation.mutate({ vendorId })}
     />
   );

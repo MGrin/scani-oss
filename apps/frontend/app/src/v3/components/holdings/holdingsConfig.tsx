@@ -6,7 +6,14 @@ import { Numeric } from '@scani/ui/v3/components/Numeric';
 import { nameList, rowName, type V3DataViewConfig } from '@scani/ui/v3/lib/data-view';
 import { exportMoney, exportNumber, exportPercent, exportText } from '@scani/ui/v3/lib/export/cell';
 import { resolveNumeric } from '@scani/ui/v3/lib/numeric';
+import type { TFunction } from 'i18next';
 import { PieChart, Tags } from 'lucide-react';
+import {
+  type DataQualitySets,
+  dataQualityOptions,
+  HOLDINGS_QUALITY_PARAM,
+  qualityFilterFn,
+} from '../../lib/dataQuality';
 import {
   amountDecimals,
   compareHoldings,
@@ -57,7 +64,20 @@ export interface HoldingsConfigInput {
   groups: readonly Named[] | undefined;
   /** Seeded from the URL — see `holdingFiltersFromParams`. */
   defaultFilters: Record<string, string>;
+  /**
+   * The holding ids behind each data-quality kind, from
+   * `portfolio.getDataQualityReport` (SC-293).
+   *
+   * Undefined until the report lands, and undefined forever if it fails —
+   * either way the filter simply is not offered. The list is not diagnostics
+   * about itself, and a Holdings page that will not render because a counter
+   * query 500'd would be a worse trade than a missing filter.
+   */
+  qualitySets: DataQualitySets | undefined;
   peek: HoldingPeekContext;
+  /** Same instance the peek context carries — the config builds labels and the
+   *  peek builds facts, and two `t`s would be two places for a key to rot. */
+  t: TFunction;
   onAssignGroups: (ids: string[], clearSelection: () => void) => void;
   onBulkDelete: (ids: string[], clearSelection: () => void) => void;
   /** True while `holdings.bulkDelete` is in flight — disables the commit so a
@@ -121,14 +141,58 @@ function InstitutionCell({ holding }: { holding: HoldingWithDetails }) {
  * state of a wallet that has been airdropped at, not a fault the reader has to
  * act on — so it reads as a label, in the same muted register as `Inactive`.
  */
-function UnpriceableBadge() {
+function UnpriceableBadge({ t }: { t: TFunction }) {
+  return (
+    <Badge variant="secondary" className="shrink-0" title={t('v3.holdings.badge.noPriceTitle')}>
+      {t('v3.holdings.badge.noPrice')}
+    </Badge>
+  );
+}
+
+/**
+ * The symbol this row DRAWS, next to the symbol it is.
+ *
+ * `UЅDС` (Cyrillic Ѕ and С) and `USDC` are the same picture. Nine rows in
+ * production are built that way, and until this badge existed the mark sat
+ * in `tokens.lookalike_of` where nothing read it — the database knew and
+ * the user could not (SC-219).
+ *
+ * The badge says what it imitates rather than warning, because a warning
+ * does not survive the comparison the reader is actually making. "Suspicious"
+ * on a row captioned `UЅDС`, beside a row captioned `USDC`, leaves them still
+ * looking alike; "Displays as USDC" is the only form that makes the two rows
+ * different to look at, which is the whole job.
+ *
+ * Deliberately NOT the scam style, and deliberately distinct from `No price`.
+ * They are three different facts and they co-occur constantly — a lookalike is
+ * usually also unpriced. A reader who learns to read them as one thing learns
+ * the wrong lesson, and the one that means "these characters are not what they
+ * look like" is the one that never changes (SC-207, SC-218).
+ */
+function LookalikeBadge({
+  symbol,
+  impersonates,
+  t,
+}: {
+  symbol: string;
+  impersonates: string;
+  t: TFunction;
+}) {
   return (
     <Badge
       variant="secondary"
       className="shrink-0"
-      title="No price source has ever quoted this token, and we have stopped asking for now. It is left out of your net worth rather than counted as zero."
+      title={t('v3.holdings.badge.lookalikeTitle', { impersonates })}
     >
-      No price
+      {/* `symbol` is offered and English does not spend the badge width on it
+          (SC-235). "Displays as USDC" is a clause with no subject: the ROW is
+          the subject, supplied by the badge sitting beside the symbol, and a
+          translator reading `en.json` cannot see that a subject exists — let
+          alone whether their language may leave it out. Passing it makes the
+          subject available to whoever needs to state it, without English
+          paying for a word it does not need at 390px, where this badge already
+          competes with two others for the row. */}
+      {t('v3.holdings.badge.lookalike', { symbol, impersonates })}
     </Badge>
   );
 }
@@ -140,32 +204,37 @@ export function holdingsDataViewConfig({
   accounts,
   groups,
   defaultFilters,
+  qualitySets,
   peek,
   onAssignGroups,
   onBulkDelete,
   isBulkDeleting,
   onAddData,
+  t,
 }: HoldingsConfigInput): V3DataViewConfig<HoldingWithDetails> {
+  const inQualitySet = qualityFilterFn(qualitySets);
+  const qualityMatches = (item: HoldingWithDetails, value: string) => inQualitySet(item.id, value);
+
   return {
     pageKey: 'holdings',
     data: holdings,
-    noun: 'holdings',
+    nounKey: 'ui.dataView.noun.holdings',
     // Short, because at 393px it shares the row with Refine and Select and a
     // truncated placeholder is a placeholder that no longer explains anything.
-    searchPlaceholder: 'Search holdings',
+    searchPlaceholderKey: 'ui.dataView.holdings.config.searchHoldings',
     searchFn: holdingMatches,
     defaultFilters,
     defaultSort: { field: 'value', direction: 'desc' },
     filterDefs: [
       {
         key: 'tokenType',
-        label: 'Type',
+        labelKey: 'ui.dataView.holdings.filter.type',
         options: tokenTypeOptions(holdings),
         fn: (item: HoldingWithDetails, value) => item.token.typeCode === value,
       },
       {
         key: 'institution',
-        label: 'Institution',
+        labelKey: 'ui.dataView.holdings.filter.institution',
         options: entityOptions(
           institutions,
           holdings.map((item) => item.institution)
@@ -174,7 +243,7 @@ export function holdingsDataViewConfig({
       },
       {
         key: 'account',
-        label: 'Account',
+        labelKey: 'ui.dataView.holdings.filter.account',
         options: entityOptions(
           accounts,
           holdings.map((item) => item.account)
@@ -183,17 +252,38 @@ export function holdingsDataViewConfig({
       },
       {
         key: 'group',
-        label: 'Group',
+        labelKey: 'ui.dataView.holdings.filter.group',
         options: (groups ?? []).map((group) => ({ value: group.id, label: group.name })),
         fn: (item: HoldingWithDetails, value) => item.groups.some((g) => g.id === value),
       },
+      {
+        /**
+         * The data-quality dimension (SC-293) — where the Settings panel's
+         * flagged rows land.
+         *
+         * The predicate is an ID-SET LOOKUP, not a re-derivation. A local
+         * `item.amount === 0` would be a second implementation of a rule the
+         * server already applied, and the two disagreeing is precisely the
+         * defect this filter exists to close: the panel says 12 and the list
+         * it opens shows 11, with nothing on either screen admitting which is
+         * wrong. One rule, computed once, on the side that can see coverage
+         * rows and price history at all.
+         *
+         * Its options are the kinds this reader actually has, so the sheet
+         * never offers a slice that selects nothing.
+         */
+        key: HOLDINGS_QUALITY_PARAM,
+        labelKey: 'ui.dataView.holdings.filter.quality',
+        options: dataQualityOptions(qualitySets),
+        fn: qualityMatches,
+      },
     ],
     sortDefs: [
-      { key: 'value', label: 'Value' },
-      { key: 'symbol', label: 'Symbol' },
-      { key: 'amount', label: 'Amount' },
-      { key: 'price', label: 'Price' },
-      { key: 'pnl', label: 'Gain / loss' },
+      { key: 'value', labelKey: 'ui.dataView.holdings.sort.value' },
+      { key: 'symbol', labelKey: 'ui.dataView.holdings.sort.symbol' },
+      { key: 'amount', labelKey: 'ui.dataView.holdings.sort.amount' },
+      { key: 'price', labelKey: 'ui.dataView.holdings.sort.price' },
+      { key: 'pnl', labelKey: 'ui.dataView.holdings.sort.pnl' },
     ],
     sortFn: compareHoldings,
     // The IA change, made concrete: the two destinations that lost their tab
@@ -201,13 +291,17 @@ export function holdingsDataViewConfig({
     groupByDefs: [
       {
         key: 'institution',
-        label: 'Institution',
+        labelKey: 'ui.dataView.holdings.groupBy.institution',
         fn: (item: HoldingWithDetails) => item.institution.name,
       },
-      { key: 'account', label: 'Account', fn: (item: HoldingWithDetails) => item.account.name },
+      {
+        key: 'account',
+        labelKey: 'ui.dataView.holdings.groupBy.account',
+        fn: (item: HoldingWithDetails) => item.account.name,
+      },
       {
         key: 'tokenType',
-        label: 'Type',
+        labelKey: 'ui.dataView.holdings.groupBy.type',
         fn: (item: HoldingWithDetails) => item.token.type || item.token.typeCode,
       },
     ],
@@ -219,16 +313,44 @@ export function holdingsDataViewConfig({
       // in two accounts are still told apart.
       leading: <InstitutionIcon institution={item.institution} size="size-5" />,
       label:
-        item.isActive && !item.unpriceable ? (
+        item.isActive && !item.unpriceable && !item.token.lookalikeOf ? (
           item.token.symbol
         ) : (
-          <span className="flex items-center gap-2">
-            {item.token.symbol}
-            {item.isActive ? null : <Badge variant="secondary">Inactive</Badge>}
-            {item.unpriceable ? <UnpriceableBadge /> : null}
+          // `min-w-0` on the row and `truncate` on the symbol, so the SYMBOL
+          // is what gives up space and the badges survive. DataRow wraps this
+          // label in `block truncate` (overflow:hidden, nowrap), so without
+          // `min-w-0` the whole flex row overflows and is clipped from the
+          // right — which silently removed whichever badge came last at 390px.
+          //
+          // Lookalike first, immediately after the symbol it qualifies. It is
+          // the only one of the three that is a fact about the token rather
+          // than about our coverage, so it is the one that must not lose a
+          // space contest to `No price`. Adjacency and survival are the same
+          // property here.
+          <span className="flex min-w-0 items-center gap-2">
+            <span className="truncate">{item.token.symbol}</span>
+            {item.token.lookalikeOf ? (
+              <LookalikeBadge
+                symbol={item.token.symbol}
+                impersonates={item.token.lookalikeOf}
+                t={t}
+              />
+            ) : null}
+            {item.isActive ? null : (
+              <Badge variant="secondary" className="shrink-0">
+                {t('v3.holdings.peek.inactive')}
+              </Badge>
+            )}
+            {item.unpriceable ? <UnpriceableBadge t={t} /> : null}
           </span>
         ),
-      sublabel: `${item.token.name} · ${item.account.name}`,
+      // The pot's name sits between the token and the account, because that
+      // is the level it distinguishes at: four rows reading `Russian Ruble ·
+      // Tinkoff` are four rows nobody can tell apart, and the user named them
+      // precisely so they could (SC-330).
+      sublabel: item.label
+        ? `${item.token.name} · ${item.label} · ${item.account.name}`
+        : `${item.token.name} · ${item.account.name}`,
       value: <Numeric value={item.value} currency={currency} />,
       delta: holdingRowDelta(item),
       // Account and value included (SC-71 7.2): two rows for the same token in
@@ -237,30 +359,50 @@ export function holdingsDataViewConfig({
       ariaLabel: rowName([
         item.token.symbol,
         item.token.name,
+        // Spoken with the row for the same reason it is drawn: without it a
+        // screen reader reads four identical rows.
+        item.label ?? null,
         item.account.name,
         item.isActive ? null : 'inactive',
         // Read out with the row, not hidden in a tooltip: on a screen reader
         // the dash and the badge are the same silence otherwise.
-        item.unpriceable ? 'no price available' : null,
+        item.unpriceable ? t('v3.holdings.badge.noPriceSpoken') : null,
+        // And the lookalike louder than either, because a screen reader is
+        // where the attack is strongest: `UЅDС` and `USDC` are not merely
+        // similar when spoken, they are IDENTICAL. The badge is the only
+        // thing that distinguishes them, so it cannot be visual-only.
+        item.token.lookalikeOf
+          ? t('v3.holdings.badge.lookalikeSpoken', {
+              symbol: item.token.symbol,
+              impersonates: item.token.lookalikeOf,
+            })
+          : null,
         resolveNumeric(item.value, { currency }).text,
       ]),
     }),
     columns: [
       {
         key: 'symbol',
-        header: 'Holding',
+        headerKey: 'ui.dataView.holdings.col.holding',
         sortable: true,
         width: 'w-[22%]',
         render: (item) => (
           <span className="flex min-w-0 flex-col">
             <span className="flex min-w-0 items-center gap-2">
               <span className="truncate text-label">{item.token.symbol}</span>
+              {item.token.lookalikeOf ? (
+                <LookalikeBadge
+                  symbol={item.token.symbol}
+                  impersonates={item.token.lookalikeOf}
+                  t={t}
+                />
+              ) : null}
               {item.isActive ? null : (
                 <Badge variant="secondary" className="shrink-0">
-                  Inactive
+                  {t('v3.holdings.peek.inactive')}
                 </Badge>
               )}
-              {item.unpriceable ? <UnpriceableBadge /> : null}
+              {item.unpriceable ? <UnpriceableBadge t={t} /> : null}
             </span>
             <span className="truncate text-caption text-muted-foreground">{item.token.name}</span>
           </span>
@@ -271,24 +413,39 @@ export function holdingsDataViewConfig({
         // row; the token name beside it on screen is a gloss on the symbol, and
         // a spreadsheet column holding "BTC Bitcoin" is worse than one holding
         // "BTC" for every use anyone puts this file to.
-        exportValue: (item) => exportText(item.token.symbol),
+        //
+        // The lookalike rows are the one exception, and they have to be. A
+        // spreadsheet renders `UЅDС` and `USDC` identically, sorts them apart
+        // for no visible reason, and silently fails to match them against
+        // anything — so exporting the bare symbol carries the impersonation
+        // out of the app intact and into a file with no tooltip to correct it.
+        // These rows cost the column's purity; every other row keeps it.
+        exportValue: (item) =>
+          exportText(
+            item.token.lookalikeOf
+              ? t('v3.holdings.badge.lookalikeExportCell', {
+                  symbol: item.token.symbol,
+                  impersonates: item.token.lookalikeOf,
+                })
+              : item.token.symbol
+          ),
       },
       {
         key: 'account',
-        header: 'Account',
+        headerKey: 'ui.dataView.holdings.col.account',
         width: 'w-[16%]',
         render: (item) => <span className="truncate">{item.account.name}</span>,
       },
       {
         key: 'institution',
-        header: 'Institution',
+        headerKey: 'ui.dataView.holdings.col.institution',
         width: 'w-[16%]',
         render: (item) => <InstitutionCell holding={item} />,
         exportValue: (item) => exportText(item.institution.name),
       },
       {
         key: 'amount',
-        header: 'Amount',
+        headerKey: 'ui.dataView.holdings.col.amount',
         sortable: true,
         numeric: true,
         render: (item) => holdingAmount(item),
@@ -299,7 +456,7 @@ export function holdingsDataViewConfig({
       },
       {
         key: 'price',
-        header: 'Price',
+        headerKey: 'ui.dataView.holdings.col.price',
         sortable: true,
         numeric: true,
         render: (item) => <Numeric value={holdingPrice(item)} currency={currency} />,
@@ -307,7 +464,7 @@ export function holdingsDataViewConfig({
       },
       {
         key: 'value',
-        header: 'Value',
+        headerKey: 'ui.dataView.holdings.col.value',
         sortable: true,
         numeric: true,
         render: (item) => <Numeric value={item.value} currency={currency} />,
@@ -316,7 +473,7 @@ export function holdingsDataViewConfig({
       },
       {
         key: 'pnl',
-        header: 'Gain / loss',
+        headerKey: 'ui.dataView.holdings.col.gainLoss',
         sortable: true,
         numeric: true,
         width: 'w-[12%]',
@@ -326,14 +483,13 @@ export function holdingsDataViewConfig({
     ],
     empty: {
       icon: PieChart,
-      title: 'No holdings yet',
-      description:
-        'Connect an exchange, import a statement or add a position by hand — all three land here.',
+      titleKey: 'ui.dataView.holdings.empty.title',
+      descriptionKey: 'ui.dataView.holdings.empty.description',
       // The capture sheet, not a link: this description names three ways in
       // and the sheet is the thing that lists all of them. Capture stopped
       // being a route in V3-14 — it opens over whatever you are reading, so
       // an empty holdings list is still behind it when the sheet is dismissed.
-      action: <Button onClick={onAddData}>Add your first holding</Button>,
+      action: <Button onClick={onAddData}>{t('v3.holdings.empty.action')}</Button>,
     },
     peek: {
       basePath: V3_ROUTES.holdings,
@@ -343,13 +499,20 @@ export function holdingsDataViewConfig({
       <>
         <Button variant="outline" onClick={() => onAssignGroups([...selectedIds], clearSelection)}>
           <Tags className="mr-2 size-4" aria-hidden="true" />
-          Assign groups
+          {t('v3.holdings.bulk.assignGroups')}
         </Button>
         <BulkDeleteAction
           count={selectedIds.size}
-          noun="holdings"
+          nounKey="ui.dataView.noun.holdings"
           isPending={isBulkDeleting}
-          consequence={`${selectedSymbols(holdings, selectedIds)} ${selectedIds.size === 1 ? 'is' : 'are'} removed from your portfolio, and every transaction recorded against ${selectedIds.size === 1 ? 'it' : 'them'} goes too. This cannot be undone.`}
+          // One pluralised key, not a frame with pronouns interpolated into
+          // it: the sentence agrees in three places — "is/are", "it/them" —
+          // and a language that marks case would otherwise be handed an
+          // English pronoun table to fill in (SC-201).
+          consequence={t('v3.holdings.bulk.deleteConsequence', {
+            count: selectedIds.size,
+            symbols: selectedSymbols(holdings, selectedIds),
+          })}
           onConfirm={() => onBulkDelete([...selectedIds], clearSelection)}
         />
       </>

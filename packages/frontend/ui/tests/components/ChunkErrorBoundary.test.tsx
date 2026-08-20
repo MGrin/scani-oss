@@ -35,6 +35,12 @@ describe('ChunkLoadFallback', () => {
     expect(markup).toContain('did not download');
     expect(markup).toContain('update that shipped while this tab was open');
   });
+
+  it('takes its copy from the kit bundle rather than hard-coded English (SC-311)', () => {
+    // i18next resolves a missing key to the key itself, silently — the same
+    // failure SC-250 and SC-257 were both about, one layer along.
+    expect(markup).not.toContain('ui.errors.chunk');
+  });
 });
 
 describe('ChunkErrorBoundary', () => {

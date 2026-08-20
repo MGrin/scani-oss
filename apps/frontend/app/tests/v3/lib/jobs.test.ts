@@ -1,4 +1,7 @@
+import '../../i18n-preload';
+
 import { describe, expect, test } from 'bun:test';
+import i18n from 'i18next';
 import {
   compareJobs,
   deriveJobOutcomeState,
@@ -11,6 +14,11 @@ import {
   jobStateLabel,
   summariseJobPayload,
 } from '../../../src/v3/lib/jobs';
+
+const t = i18n.t.bind(i18n);
+
+/** BullMQ's five, in the order a run moves through them. */
+const BULLMQ_STATES = ['queued', 'active', 'progress', 'completed', 'failed'] as const;
 
 function job(overrides: Partial<JobRow> = {}): JobRow {
   return {
@@ -102,7 +110,7 @@ describe('jobBucket', () => {
 
 describe('jobBucketOptions', () => {
   test('offers only the buckets present, in urgency order', () => {
-    const options = jobBucketOptions([
+    const options = jobBucketOptions(t, [
       job({ state: 'failed', jobName: 'holding-price-update' }),
       job({ jobId: 'job-2' }),
     ]);
@@ -113,19 +121,41 @@ describe('jobBucketOptions', () => {
   });
 
   test('an empty list offers nothing to filter by', () => {
-    expect(jobBucketOptions([])).toEqual([]);
+    expect(jobBucketOptions(t, [])).toEqual([]);
   });
 });
 
 describe('labels', () => {
   test('names the states a person sees', () => {
-    expect(jobStateLabel('progress')).toBe('Running');
-    expect(jobStateLabel('completed')).toBe('Completed');
+    expect(jobStateLabel(t, 'progress')).toBe('Running');
+    expect(jobStateLabel(t, 'completed')).toBe('Completed');
   });
 
   test('falls back to the raw state rather than rendering nothing', () => {
-    expect(jobStateLabel('stalled')).toBe('stalled');
-    expect(jobBucketLabel('completed')).toBe('Completed');
+    expect(jobStateLabel(t, 'stalled')).toBe('stalled');
+    expect(jobBucketLabel(t, 'completed')).toBe('Completed');
+  });
+
+  // The defect itself (SC-421): the chip and the job detail header read this
+  // table, so an English word here is an English word on an otherwise Russian
+  // page. Asserting the rendered Russian rather than "a key exists" is what
+  // separates a translated label from one that silently falls back.
+  test('reads a Russian reader their own words for all five states', () => {
+    const ru = i18n.getFixedT('ru');
+    expect(BULLMQ_STATES.map((state) => jobStateLabel(ru, state))).toEqual([
+      'В очереди',
+      'Запущена',
+      'Выполняется',
+      'Завершена',
+      'Не удалось',
+    ]);
+  });
+
+  test('leaves no state rendering the same as English', () => {
+    const ru = i18n.getFixedT('ru');
+    for (const state of BULLMQ_STATES) {
+      expect(jobStateLabel(ru, state)).not.toBe(jobStateLabel(t, state));
+    }
   });
 });
 
@@ -185,31 +215,35 @@ describe('deriveJobOutcomeState', () => {
 describe('summariseJobPayload', () => {
   test('names what a wallet import was pointed at', () => {
     expect(
-      summariseJobPayload('wallet-import', { chain: 'ethereum', address: '0xabc', label: 'Cold' })
+      summariseJobPayload(t, 'wallet-import', {
+        chain: 'ethereum',
+        address: '0xabc',
+        label: 'Cold',
+      })
     ).toBe('ethereum · 0xabc · Cold');
   });
 
   test('drops the parts a payload does not carry', () => {
-    expect(summariseJobPayload('wallet-import', { chain: 'solana' })).toBe('solana');
+    expect(summariseJobPayload(t, 'wallet-import', { chain: 'solana' })).toBe('solana');
   });
 
   test('pluralises a file count and refuses to claim zero files', () => {
-    expect(summariseJobPayload('screenshot-parse', { fileCount: 1 })).toBe('1 file');
-    expect(summariseJobPayload('screenshot-parse', { fileCount: 4 })).toBe('4 files');
-    expect(summariseJobPayload('screenshot-parse', {})).toBeNull();
+    expect(summariseJobPayload(t, 'screenshot-parse', { fileCount: 1 })).toBe('1 file');
+    expect(summariseJobPayload(t, 'screenshot-parse', { fileCount: 4 })).toBe('4 files');
+    expect(summariseJobPayload(t, 'screenshot-parse', {})).toBeNull();
   });
 
   test('marks an enriched file import', () => {
-    expect(summariseJobPayload('file-import', { fileType: 'csv', enrich: true })).toBe(
+    expect(summariseJobPayload(t, 'file-import', { fileType: 'csv', enrich: true })).toBe(
       'csv · enriched'
     );
   });
 
   test('a job name with nothing to say says nothing', () => {
-    expect(summariseJobPayload('transaction-import', { anything: 1 })).toBeNull();
+    expect(summariseJobPayload(t, 'transaction-import', { anything: 1 })).toBeNull();
   });
 
   test('survives a payload that is not an object', () => {
-    expect(summariseJobPayload('wallet-import', 'oops')).toBeNull();
+    expect(summariseJobPayload(t, 'wallet-import', 'oops')).toBeNull();
   });
 });

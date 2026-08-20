@@ -1,4 +1,7 @@
+import '../../i18n-preload';
+
 import { describe, expect, test } from 'bun:test';
+import i18n from 'i18next';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { StaticRouter } from 'react-router-dom/server';
 import { CaptureList } from '../../../src/v3/components/capture/CaptureSheet';
@@ -24,17 +27,21 @@ function render(contextQuery = ''): string {
   );
 }
 
+// Resolved through the real instance against the shipped `en.json`, so a
+// missing key fails the assertion instead of rendering as itself.
+const t = i18n.t.bind(i18n);
+
 describe('the capture list', () => {
   test('offers every route, once', () => {
     const markup = render();
     for (const route of CAPTURE_ROUTES) {
-      expect(markup.split(route.title).length - 1).toBe(1);
+      expect(markup.split(t(route.titleKey)).length - 1).toBe(1);
     }
   });
 
   test('heads each group with what the person has, not with a subsystem', () => {
     const markup = render();
-    for (const group of CAPTURE_GROUPS) expect(markup).toContain(group.title);
+    for (const group of CAPTURE_GROUPS) expect(markup).toContain(t(group.titleKey));
     expect(markup).not.toContain('Portfolio');
   });
 

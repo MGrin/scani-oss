@@ -1,5 +1,6 @@
 import { formatDate } from '@scani/shared';
 import { X } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/utils';
 
 /**
@@ -66,11 +67,12 @@ export function DateField({
   id,
   value,
   onChange,
-  placeholder = 'Pick a date',
+  placeholder,
   clearable = false,
   disabled = false,
   className,
 }: DateFieldProps) {
+  const { t } = useTranslation();
   const picked = localDateFromIso(value);
   const showClear = clearable && value !== '' && !disabled;
 
@@ -101,13 +103,13 @@ export function DateField({
           picked ? 'text-foreground' : 'text-muted-foreground'
         )}
       >
-        {picked ? formatDate(picked) : placeholder}
+        {picked ? formatDate(picked) : (placeholder ?? t('v3.form.dateField.placeholder'))}
       </span>
       {showClear ? (
         <button
           type="button"
           onClick={() => onChange('')}
-          aria-label="Clear date"
+          aria-label={t('v3.form.dateField.clear')}
           className="relative z-10 shrink-0 rounded-sm p-1 text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           <X className="h-4 w-4" />

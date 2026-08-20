@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import i18n from 'i18next';
 import {
   buildCredentials,
   buildWalletImportInput,
@@ -18,6 +19,10 @@ import {
   planInvoiceFile,
 } from '@/v3/lib/capture-forms';
 import { type AccountTargetDraft, emptyAccountTarget } from '@/v3/lib/manual-entry';
+
+const t = i18n.t.bind(i18n);
+
+// Resolved through the real instance against the shipped `en.json`.
 
 function chosenAccount(): AccountTargetDraft {
   return { ...emptyAccountTarget(), institutionId: 'inst-1', accountId: 'acc-1' };
@@ -64,14 +69,14 @@ describe('what a file is', () => {
 
   test('anything else is refused, and the refusal names what would work', () => {
     expect(planImportFile({ name: 'notes.docx', type: '' })).toBeNull();
-    const problem = describeImportFileProblem('notes.docx');
+    const problem = describeImportFileProblem(t, 'notes.docx');
     expect(problem).toContain('.docx');
     expect(problem).toContain('CSV');
-    expect(describeImportFileProblem('balances.png')).toBeNull();
+    expect(describeImportFileProblem(t, 'balances.png')).toBeNull();
   });
 
   test('a file with no extension is refused by name rather than by silence', () => {
-    expect(describeImportFileProblem('screenshot')).toContain('no file extension');
+    expect(describeImportFileProblem(t, 'screenshot')).toContain('no file extension');
   });
 
   test('every extension the accept attribute offers is one the planner reads', () => {
@@ -86,7 +91,7 @@ describe('what a file is', () => {
     expect(planInvoiceFile({ name: 'bill.pdf' })).toEqual({ contentType: 'application/pdf' });
     expect(planInvoiceFile({ name: 'photo.HEIC' })).toEqual({ contentType: 'image/heic' });
     expect(planInvoiceFile({ name: 'export.csv' })).toBeNull();
-    expect(describeInvoiceFileProblem('export.csv')).toContain('PDF');
+    expect(describeInvoiceFileProblem(t, 'export.csv')).toContain('PDF');
   });
 });
 
@@ -107,7 +112,7 @@ describe('file size', () => {
 
 describe('the import blockers', () => {
   test('name the account and the file separately, in the order the form asks', () => {
-    expect(describeImportBlockers(emptyAccountTarget(), null)).toEqual([
+    expect(describeImportBlockers(t, emptyAccountTarget(), null)).toEqual([
       'choose where the account is held',
       'choose an account',
       'choose a file to upload',
@@ -115,19 +120,19 @@ describe('the import blockers', () => {
   });
 
   test('a file without an account still names only what is missing', () => {
-    expect(describeImportBlockers(emptyAccountTarget(), { name: 'a.csv' })).toEqual([
+    expect(describeImportBlockers(t, emptyAccountTarget(), { name: 'a.csv' })).toEqual([
       'choose where the account is held',
       'choose an account',
     ]);
   });
 
   test('are empty once both halves are answered', () => {
-    expect(describeImportBlockers(chosenAccount(), { name: 'a.csv' })).toEqual([]);
+    expect(describeImportBlockers(t, chosenAccount(), { name: 'a.csv' })).toEqual([]);
   });
 
   test('the invoice asks for one thing and says so', () => {
-    expect(describeInvoiceBlockers(null)).toEqual(['choose the invoice to upload']);
-    expect(describeInvoiceBlockers({ name: 'bill.pdf' })).toEqual([]);
+    expect(describeInvoiceBlockers(t, null)).toEqual(['choose the invoice to upload']);
+    expect(describeInvoiceBlockers(t, { name: 'bill.pdf' })).toEqual([]);
   });
 });
 
@@ -140,10 +145,10 @@ describe('the wallet form', () => {
   const TON = 'EQCD39VS5jcptHL8vMjEXrzGaRcCVYto7HUn4bpAOg8xqB2N';
 
   test('an empty address is named, not greyed out', () => {
-    expect(describeWalletImportBlockers(emptyWalletImportDraft())).toEqual([
+    expect(describeWalletImportBlockers(t, emptyWalletImportDraft())).toEqual([
       'enter the wallet address',
     ]);
-    expect(describeWalletAddressProblem('')).toBeNull();
+    expect(describeWalletAddressProblem(t, '')).toBeNull();
   });
 
   // One address per validator in `packages/clients/providers`. If one of these
@@ -156,39 +161,39 @@ describe('the wallet form', () => {
     ['Tron', TRON],
     ['TON', TON],
   ])('a real %s address passes', (_chain, address) => {
-    expect(describeWalletAddressProblem(address)).toBeNull();
-    expect(describeWalletImportBlockers({ address, displayName: '' })).toEqual([]);
+    expect(describeWalletAddressProblem(t, address)).toBeNull();
+    expect(describeWalletImportBlockers(t, { address, displayName: '' })).toEqual([]);
   });
 
   // D-2: this was accepted, enqueued, and failed later on `/jobs` behind a row
   // labelled `auto · not-an…ress`.
   test('prose is rejected at the field, and the field says what an address looks like', () => {
-    const problem = describeWalletAddressProblem('not-an-address');
+    const problem = describeWalletAddressProblem(t, 'not-an-address');
     expect(problem).toContain('0x and 40 hexadecimal characters');
     expect(problem).toContain('bc1');
-    expect(describeWalletImportBlockers({ address: 'not-an-address', displayName: '' })).toEqual([
-      'check the wallet address',
-    ]);
+    expect(describeWalletImportBlockers(t, { address: 'not-an-address', displayName: '' })).toEqual(
+      ['check the wallet address']
+    );
   });
 
   // Where the chain is unambiguous from the prefix, name it: "not a finished
   // Ethereum address" is a correction, "not an address" is a verdict.
   test('a truncated EVM address is named as an incomplete Ethereum one', () => {
-    const problem = describeWalletAddressProblem('0xabc');
+    const problem = describeWalletAddressProblem(t, '0xabc');
     expect(problem).toContain('Ethereum');
     expect(problem).toContain('42 in all');
     expect(problem).toContain('5 characters');
-    expect(describeWalletImportBlockers({ address: '0xabc', displayName: '' })).toEqual([
+    expect(describeWalletImportBlockers(t, { address: '0xabc', displayName: '' })).toEqual([
       'finish the wallet address',
     ]);
   });
 
   test('an EVM address one character short is rejected, not rounded up', () => {
-    expect(describeWalletAddressProblem(EVM.slice(0, -1))).toContain('Ethereum');
+    expect(describeWalletAddressProblem(t, EVM.slice(0, -1))).toContain('Ethereum');
   });
 
   test('a truncated bech32 address is named as an incomplete Bitcoin one', () => {
-    expect(describeWalletAddressProblem('bc1qar0srrr')).toContain('Bitcoin');
+    expect(describeWalletAddressProblem(t, 'bc1qar0srrr')).toContain('Bitcoin');
   });
 
   test('sends a trimmed address, an optional name, and auto chain detection', () => {
@@ -226,20 +231,20 @@ describe('the credential form', () => {
   ];
 
   test('names every required field that is still empty, by its own label', () => {
-    expect(describeCredentialBlockers(fields, {})).toEqual([
+    expect(describeCredentialBlockers(fields, {}, t)).toEqual([
       'enter the API key',
       'enter the API secret',
     ]);
   });
 
   test('whitespace is not an answer', () => {
-    expect(describeCredentialBlockers(fields, { apiKey: '  ', apiSecret: 'x' })).toEqual([
+    expect(describeCredentialBlockers(fields, { apiKey: '  ', apiSecret: 'x' }, t)).toEqual([
       'enter the API key',
     ]);
   });
 
   test('an optional field never blocks', () => {
-    expect(describeCredentialBlockers(fields, { apiKey: 'k', apiSecret: 's' })).toEqual([]);
+    expect(describeCredentialBlockers(fields, { apiKey: 'k', apiSecret: 's' }, t)).toEqual([]);
   });
 
   test('an empty optional field is omitted rather than sent as an empty string', () => {
@@ -261,8 +266,8 @@ describe('the credential form', () => {
 
 describe('integration categories', () => {
   test('name each kind of place', () => {
-    expect(integrationCategoryLabel('crypto_exchange')).toBe('Crypto exchange');
-    expect(integrationCategoryLabel('broker')).toBe('Broker');
+    expect(integrationCategoryLabel(t, 'crypto_exchange')).toBe('Crypto exchange');
+    expect(integrationCategoryLabel(t, 'broker')).toBe('Broker');
   });
 
   /**
@@ -271,19 +276,19 @@ describe('integration categories', () => {
    * Every code resolves here.
    */
   test('and an unknown one still resolves, so its provider stays connectable', () => {
-    expect(integrationCategoryLabel('pension_provider')).toBe('Other');
-    expect(integrationCategoryLabel(null)).toBe('Other');
-    expect(integrationCategoryLabel(undefined)).toBe('Other');
+    expect(integrationCategoryLabel(t, 'pension_provider')).toBe('Other');
+    expect(integrationCategoryLabel(t, null)).toBe('Other');
+    expect(integrationCategoryLabel(t, undefined)).toBe('Other');
   });
 });
 
 describe('the stages of a submission', () => {
   test('each names the step rather than the fact that something is happening', () => {
     for (const stage of ['account', 'upload', 'parse', 'enqueue', 'connect'] as const) {
-      const text = describeCaptureStage(stage);
+      const text = describeCaptureStage(t, stage);
       expect(text.length).toBeGreaterThan(0);
       expect(text).not.toContain('Loading');
     }
-    expect(describeCaptureStage('upload')).toBe('Sending the file…');
+    expect(describeCaptureStage(t, 'upload')).toBe('Sending the file…');
   });
 });

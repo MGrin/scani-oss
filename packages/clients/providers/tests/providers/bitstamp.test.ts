@@ -46,7 +46,7 @@ describe('BitstampProvider', () => {
           btc_available: '0.25', // not a *_balance key
         }),
         { status: 200 }
-      )) as typeof fetch;
+      )) as unknown as typeof fetch;
     try {
       const out = await p.fetchBalances(ctx as never);
       const symbols = out.map((h) => h.tokenIdentity.symbol).sort();
@@ -69,7 +69,7 @@ describe('BitstampProvider', () => {
   test('validateCredentials returns true on 200', async () => {
     const p = new BitstampProvider(passthroughLimiter());
     const originalFetch = globalThis.fetch;
-    globalThis.fetch = (async () => new Response('{}', { status: 200 })) as typeof fetch;
+    globalThis.fetch = (async () => new Response('{}', { status: 200 })) as unknown as typeof fetch;
     try {
       const r = await p.validateCredentials({ apiKey: 'k', apiSecret: 's' }, 'bitstamp');
       expect(r.valid).toBe(true);
@@ -81,7 +81,8 @@ describe('BitstampProvider', () => {
   test('validateCredentials maps 401 to invalid', async () => {
     const p = new BitstampProvider(passthroughLimiter());
     const originalFetch = globalThis.fetch;
-    globalThis.fetch = (async () => new Response('Unauthorized', { status: 401 })) as typeof fetch;
+    globalThis.fetch = (async () =>
+      new Response('Unauthorized', { status: 401 })) as unknown as typeof fetch;
     try {
       const r = await p.validateCredentials({ apiKey: 'k', apiSecret: 's' }, 'bitstamp');
       expect(r.valid).toBe(false);
@@ -276,7 +277,7 @@ describe('BitstampProvider.fetchTransactions', () => {
     const originalFetch = globalThis.fetch;
     const userTxCalls: number[] = [];
     let cryptoCalls = 0;
-    globalThis.fetch = (async (url: string, init?: { body?: BodyInit }) => {
+    globalThis.fetch = (async (url: string, init?: { body?: RequestInit['body'] }) => {
       const body = String(init?.body ?? '');
       if (url.includes('/api/v2/user_transactions/')) {
         const offset = Number(new URLSearchParams(body).get('offset') ?? '0');
@@ -329,7 +330,7 @@ describe('BitstampProvider.fetchTransactions', () => {
         return new Response(JSON.stringify({ deposits: [], withdrawals: [] }), { status: 200 });
       }
       throw new Error(`Unexpected URL: ${url}`);
-    }) as typeof fetch;
+    }) as unknown as typeof fetch;
 
     try {
       const out = await p.fetchTransactions(ctx as never);
@@ -356,7 +357,7 @@ describe('BitstampProvider.fetchTransactions', () => {
     const p = new BitstampProvider(passthroughLimiter());
     const originalFetch = globalThis.fetch;
     const userTxOffsets: number[] = [];
-    globalThis.fetch = (async (url: string, init?: { body?: BodyInit }) => {
+    globalThis.fetch = (async (url: string, init?: { body?: RequestInit['body'] }) => {
       const body = String(init?.body ?? '');
       if (url.includes('/api/v2/user_transactions/')) {
         const offset = Number(new URLSearchParams(body).get('offset') ?? '0');
@@ -378,7 +379,7 @@ describe('BitstampProvider.fetchTransactions', () => {
         return new Response(JSON.stringify({ deposits: [], withdrawals: [] }), { status: 200 });
       }
       throw new Error(`Unexpected URL: ${url}`);
-    }) as typeof fetch;
+    }) as unknown as typeof fetch;
 
     try {
       const out = await p.fetchTransactions(ctx as never);

@@ -6,6 +6,11 @@ import { ProviderRegistry } from '@scani/providers/core/registry';
 import { Container } from 'typedi';
 import { InvoiceExtractionService } from '../../../src/services/documents/InvoiceExtractionService';
 import { INVOICE_EXTRACTION_PROMPT } from '../../../src/services/documents/invoicePrompt';
+import { restoreContainerAfterAll } from '../../../test/helpers/container';
+
+// Container stubs are process-global; put back whatever this file changes
+// so no later test file resolves them (SC-448).
+restoreContainerAfterAll();
 
 // Every case here drives the vision path with a non-PDF mime type, which
 // reaches the same `normalizeInvoice` as the text path without needing

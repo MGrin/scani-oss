@@ -4,6 +4,7 @@ import { Numeric } from '@scani/ui/v3/components/Numeric';
 import { rowName } from '@scani/ui/v3/lib/data-view';
 import { resolveNumeric } from '@scani/ui/v3/lib/numeric';
 import { peekOpenState, peekPath } from '@scani/ui/v3/lib/peek';
+import { useTranslation } from 'react-i18next';
 import { type TopHoldingItem, topHoldingRows } from '../../lib/home';
 import { V3_ROUTES } from '../../lib/routes';
 
@@ -30,13 +31,20 @@ interface TopHoldingsBlockProps {
 }
 
 export function TopHoldingsBlock({ holdings, total, currency }: TopHoldingsBlockProps) {
+  const { t } = useTranslation();
   const rows = topHoldingRows(holdings, total);
 
   return (
     <Block>
-      <BlockHeader title="Top holdings" href={V3_ROUTES.holdings} action="See all" />
+      <BlockHeader
+        title={t('v3.home.topHoldings.title')}
+        href={V3_ROUTES.holdings}
+        action={t('v3.common.action.seeAll')}
+      />
       {rows.length === 0 ? (
-        <p className="px-4 pb-4 text-body text-muted-foreground">Nothing priced yet.</p>
+        <p className="px-4 pb-4 text-body text-muted-foreground">
+          {t('v3.home.topHoldings.empty')}
+        </p>
       ) : (
         <DataRowList className="border-t border-border">
           {rows.map((row) => (

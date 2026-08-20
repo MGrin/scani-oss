@@ -2,6 +2,7 @@ import { Block } from '@scani/ui/v3/components/Block';
 import { StatTile } from '@scani/ui/v3/components/charts/StatTile';
 import { Numeric } from '@scani/ui/v3/components/Numeric';
 import type { AllocationInput } from '@scani/ui/v3/lib/chart';
+import { useTranslation } from 'react-i18next';
 import { AllocationBar } from '../charts/AllocationBar';
 
 /**
@@ -35,13 +36,14 @@ export function EntityValueSummary({
   allocation,
   allocationLabel,
 }: EntityValueSummaryProps) {
+  const { t } = useTranslation();
   const parts = allocation.filter((item) => item.value > 0);
 
   return (
     <Block className="flex flex-col gap-4 p-4">
       <StatTile
         emphasis="hero"
-        label="Value"
+        label={t('v3.entities.value')}
         value={<Numeric value={value} currency={currency} />}
       />
       {parts.length > 1 ? (

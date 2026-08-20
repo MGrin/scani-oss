@@ -1,7 +1,9 @@
-import { SearchX } from 'lucide-react';
+import { Loader2, SearchX } from 'lucide-react';
+import { useUiTranslation } from '../../../i18n';
 import { Button } from '../../../ui/button';
 import type { ActiveFilter, EmptyStateSpec } from '../../lib/data-view';
 import { describeFilteredEmpty } from '../../lib/data-view';
+import type { V3MoreState } from '../../lib/query-state';
 
 /**
  * The two empty screens, which are not the same screen.
@@ -45,28 +47,42 @@ function Frame({
 }
 
 export function DataViewEmpty({ empty }: { empty: EmptyStateSpec }) {
+  const { t } = useUiTranslation();
   return (
     <Frame
       icon={empty.icon}
-      title={empty.title}
-      description={empty.description}
+      title={t(empty.titleKey, empty.values)}
+      description={empty.descriptionKey ? t(empty.descriptionKey, empty.values) : undefined}
       action={empty.action}
     />
   );
 }
 
+/**
+ * `more` is the third empty screen (SC-244): the narrowing ran over a page.
+ *
+ * "Clear search and filters" is the wrong *primary* action there — clearing is
+ * how you undo a narrowing that looked at everything, and here the thing to do
+ * is widen what was looked at. So Load more leads and Clear follows, which is
+ * the reverse of the settled case.
+ */
 export function DataViewFilteredEmpty({
-  noun,
+  nounKey,
   searchTerm,
   activeFilters,
   onClearFilters,
+  loadedCount = null,
+  more = null,
 }: {
-  noun: string;
+  nounKey: string;
   searchTerm: string;
   activeFilters: ActiveFilter[];
   onClearFilters: () => void;
+  loadedCount?: number | null;
+  more?: V3MoreState | null;
 }) {
-  const copy = describeFilteredEmpty(noun, searchTerm, activeFilters);
+  const { t } = useUiTranslation();
+  const copy = describeFilteredEmpty(nounKey, searchTerm, activeFilters, loadedCount);
 
   return (
     <Frame
@@ -74,10 +90,32 @@ export function DataViewFilteredEmpty({
       title={copy.title}
       description={copy.description}
       action={
-        <Button variant="outline" onClick={onClearFilters}>
-          Clear search and filters
-        </Button>
+        <div className="flex flex-wrap items-center justify-center gap-2">
+          {more ? <LoadMoreButton more={more} /> : null}
+          <Button variant={more ? 'ghost' : 'outline'} onClick={onClearFilters}>
+            {t('ui.dataView.empty.clearSearchAndFilters')}
+          </Button>
+        </div>
       }
     />
+  );
+}
+
+/**
+ * The one Load more control, drawn twice — under the rows and inside the empty
+ * screen above.
+ *
+ * It lives here rather than on each page because SC-244's defect was a page
+ * knowing its list was partial while the component rendering the list did not.
+ * A page that owns the button owns that knowledge privately; a component that
+ * owns it can spend it on the copy as well.
+ */
+export function LoadMoreButton({ more }: { more: V3MoreState }) {
+  const { t } = useUiTranslation();
+  return (
+    <Button variant="outline" disabled={more.isFetching} onClick={more.fetch}>
+      {more.isFetching ? <Loader2 className="mr-2 size-4 animate-spin" aria-hidden="true" /> : null}
+      {more.isFetching ? t('ui.dataView.toolbar.loadingMore') : t('ui.dataView.toolbar.loadMore')}
+    </Button>
   );
 }

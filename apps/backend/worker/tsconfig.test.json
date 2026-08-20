@@ -1,0 +1,15 @@
+// Generated companion to tsconfig.json — see docs/technical (SC-280).
+// Type-checks src AND tests. `tsconfig.json` stays the editor/build config;
+// this is the one `bun run type-check` uses, because it is a strict superset.
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "composite": false,
+    "declaration": false,
+    "declarationMap": false,
+    "rootDir": "../../.."
+  },
+  "include": ["src/**/*", "tests/**/*", "test/**/*"],
+  "exclude": ["dist", "node_modules"]
+}

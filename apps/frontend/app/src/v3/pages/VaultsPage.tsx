@@ -7,10 +7,11 @@ import { PageHeader, PageLayout } from '@scani/ui/v3/components/PageLayout';
 import { mergeQueries } from '@scani/ui/v3/lib/query-state';
 import { Plus } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
+import { invalidateVaultQueries } from '@/hooks/invalidatePortfolioQueries';
 import { trpc } from '@/lib/trpc';
-import { FiatCurrencySelect } from '@/v2/components/shared/FiatCurrencySelect';
-import { invalidateVaultQueries } from '@/v2/hooks/invalidatePortfolioQueries';
+import { FiatCurrencyField } from '../components/form/FiatCurrencyField';
 import { Field, FieldRow } from '../components/form/Field';
 import { GROUP_COLORS, GroupColorChoice } from '../components/groups/GroupColorChoice';
 import { VaultsList } from '../components/vaults/VaultsList';
@@ -27,11 +28,12 @@ import { vaultDetailPath } from '../lib/routes';
  * creating navigates to the vault's own page, where attaching a holding shows
  * its effect on the goal immediately.
  *
- * `FiatCurrencySelect` is borrowed from v2 rather than rebuilt. It is a select
- * of currencies with no v2 layout assumptions in it, and a vault's currency is
- * set once at creation and never again — see the note on the detail page.
+ * The currency is `FiatCurrencyField`, v3's own picker — it was borrowed from
+ * v2 until SC-320 phase 3. A vault's currency is set once at creation and never
+ * again; see the note on the detail page.
  */
 export function VaultsPage() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const utils = trpc.useUtils();
   const vaultsQuery = trpc.vaults.getAll.useQuery();
@@ -58,19 +60,19 @@ export function VaultsPage() {
   const createVault = trpc.vaults.create.useMutation({
     onSuccess: (vault) => {
       setCreating(false);
-      showSuccess(`Vault “${vault.name}” created`);
+      showSuccess(t('v3.vaults.page.created', { name: vault.name }));
       navigate(vaultDetailPath(vault.id));
     },
-    onError: (error) => showError(error, 'Creating the vault'),
+    onError: (error) => showError(error, t('v3.vaults.page.creating')),
     onSettled: () => void invalidateVaultQueries(utils, { refetchType: 'all' }),
   });
 
   const missing = !name.trim()
-    ? 'name the vault'
+    ? t('v3.vaults.page.blocker.name')
     : !(Number(targetAmount) > 0)
-      ? 'set a target above zero'
+      ? t('v3.vaults.page.blocker.target')
       : !currencyId
-        ? 'pick a currency'
+        ? t('v3.vaults.page.blocker.currency')
         : null;
   const canCreate = missing === null && !createVault.isPending;
 
@@ -82,24 +84,24 @@ export function VaultsPage() {
   return (
     <PageLayout measure="wide">
       <PageHeader
-        title="Vaults"
+        title={t('v3.vaults.page.title')}
         action={
           <Button onClick={openCreate} disabled={creating}>
             <Plus className="mr-1.5 size-4" aria-hidden="true" />
-            New vault
+            {t('v3.vaults.page.newVault')}
           </Button>
         }
       />
 
       {creating ? (
         <Block className="flex flex-col gap-3 p-4">
-          <Field label="Name" htmlFor="new-vault-name">
+          <Field label={t('v3.vaults.page.name')} htmlFor="new-vault-name">
             <Input
               id="new-vault-name"
               autoFocus
               value={name}
               onChange={(event) => setName(event.target.value)}
-              placeholder="House deposit, emergency fund…"
+              placeholder={t('v3.vaults.page.namePlaceholder')}
               disabled={createVault.isPending}
               onKeyDown={(event) => {
                 if (event.key === 'Enter') {
@@ -112,7 +114,7 @@ export function VaultsPage() {
           {/* Target and its currency are one decision, so they share a line
            *  above `lg` — the rule `FieldRow` exists for. */}
           <FieldRow>
-            <Field label="Target" htmlFor="new-vault-target">
+            <Field label={t('v3.vaults.page.target')} htmlFor="new-vault-target">
               <AmountInput
                 id="new-vault-target"
                 value={targetAmount}
@@ -122,11 +124,16 @@ export function VaultsPage() {
                 disabled={createVault.isPending}
               />
             </Field>
-            <Field label="Currency">
-              <FiatCurrencySelect value={currencyId} onChange={setCurrencyId} />
+            <Field label={t('v3.vaults.page.currency')} htmlFor="new-vault-currency">
+              <FiatCurrencyField
+                id="new-vault-currency"
+                value={currencyId}
+                onChange={setCurrencyId}
+                disabled={createVault.isPending}
+              />
             </Field>
           </FieldRow>
-          <Field label="Colour">
+          <Field label={t('v3.vaults.page.colour')}>
             <GroupColorChoice value={color} onChange={setColor} disabled={createVault.isPending} />
           </Field>
           <div className="flex items-center gap-2">
@@ -136,13 +143,15 @@ export function VaultsPage() {
               disabled={createVault.isPending}
               onClick={() => setCreating(false)}
             >
-              Cancel
+              {t('v3.vaults.page.cancel')}
             </Button>
             <Button size="sm" disabled={!canCreate} onClick={submit}>
-              Create vault
+              {t('v3.vaults.page.createVault')}
             </Button>
             {missing ? (
-              <p className="text-caption text-muted-foreground">{`To continue: ${missing}.`}</p>
+              <p className="text-caption text-muted-foreground">
+                {t('v3.vaults.page.toContinue', { missing })}
+              </p>
             ) : null}
           </div>
         </Block>

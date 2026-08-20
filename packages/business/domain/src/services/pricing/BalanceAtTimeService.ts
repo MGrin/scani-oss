@@ -27,6 +27,12 @@ export interface BalanceAtTimeResult {
   // Number of tx rows applied when walking between `at` and the anchor.
   // High counts + partial data can correlate with reconciliation drift.
   txApplied: number;
+  // `at` precedes the earliest evidence this holding has — see
+  // `earliestEvidenceAt`. The balance is still returned, and is still the
+  // best projection available, but it is a projection into a period we
+  // hold no record of rather than a reconstruction across one we do.
+  // Callers must not present it as a measurement (SC-252).
+  beforeRecords: boolean;
 }
 
 // Reconstructs a holding's balance at an arbitrary past time by walking
@@ -62,6 +68,14 @@ export class BalanceAtTimeService {
     at: Date,
     caches: BalanceAtTimeCaches = {}
   ): Promise<BalanceAtTimeResult> {
+    // Resolved ONCE, above the anchor ladder, because every anchor has the
+    // same lower-bound defect and anchor 1 reaches it first. Bounding the
+    // holdings anchor alone would leave any holding carrying observations
+    // answering exactly as before (SC-252).
+    const holding = await this.findHolding(holdingId, caches);
+    const earliest = await this.earliestEvidenceAt(holdingId, holding, caches);
+    const beforeRecords = earliest !== null && at.getTime() < earliest.getTime();
+
     // Try anchor 1: nearest observation at or after `at`.
     const after = await this.findObservationAtOrAfter(holdingId, at, caches);
     if (after) {
@@ -73,12 +87,12 @@ export class BalanceAtTimeService {
         anchor: 'observation-after',
         anchorAt: after.observedAt,
         txApplied: txs.length,
+        beforeRecords,
       };
     }
 
     // Try anchor 2: current holdings.balance. The holding row IS the
     // anchor here — fetched by PK directly, not via (account, token) lookup.
-    const holding = await this.findHolding(holdingId, caches);
     if (holding) {
       const txs = await this.findTxsInRange(holdingId, at, holding.lastUpdated, caches);
       const sumInRange = txs.reduce((acc, t) => acc.add(new Decimal(t.quantity)), new Decimal(0));
@@ -88,6 +102,7 @@ export class BalanceAtTimeService {
         anchor: 'holdings',
         anchorAt: holding.lastUpdated,
         txApplied: txs.length,
+        beforeRecords,
       };
     }
 
@@ -102,11 +117,61 @@ export class BalanceAtTimeService {
         anchor: 'observation-before',
         anchorAt: before.observedAt,
         txApplied: txs.length,
+        beforeRecords,
       };
     }
 
-    // No anchor of any kind reachable — honest "unknown".
-    return { balance: null, anchor: null, anchorAt: null, txApplied: 0 };
+    // No anchor of any kind reachable — honest "unknown". `beforeRecords`
+    // is false rather than true: there is no balance to qualify, and the
+    // claim being made is "we do not know", not "we are projecting".
+    return { balance: null, anchor: null, anchorAt: null, txApplied: 0, beforeRecords: false };
+  }
+
+  // The earliest instant this holding has any evidence for: the first
+  // transaction, the first observation, or the moment the holding row
+  // itself appeared — whichever is oldest. Below it, every anchor's walk
+  // covers the ENTIRE ledger, so the arithmetic reduces to
+  // `current balance - sum(all known transactions)`. That is zero only if
+  // the ledger is complete, and the clamp note above says plainly that
+  // imported histories frequently are not; the residue is the unexplained
+  // opening balance, and without this bound it is reported for every date
+  // before the ledger starts, forever (SC-252).
+  //
+  // The holding's own `createdAt` is included because a holding with no
+  // ledger and no observations still has one known moment. It is the
+  // OLDEST of the three, not the newest, so an imported wallet whose
+  // transactions reach back years is still answered from its first
+  // transaction rather than from the day we happened to learn of it.
+  private async earliestEvidenceAt(
+    holdingId: string,
+    holding: Holding | null,
+    caches: BalanceAtTimeCaches
+  ): Promise<Date | null> {
+    const candidates: Date[] = [];
+    if (holding) candidates.push(holding.createdAt);
+
+    // Both bulk prefetches order by their time column ASC, so on the
+    // rollup's hot path the earliest row is `[0]` and this costs nothing.
+    const cachedTxs = caches.transactions?.get(holdingId);
+    if (cachedTxs) {
+      const first = cachedTxs[0];
+      if (first) candidates.push(first.occurredAt);
+    } else {
+      const { first } = await this.transactionRepository.findExtremesForHolding(holdingId);
+      if (first) candidates.push(first);
+    }
+
+    const cachedObs = caches.observations?.get(holdingId);
+    if (cachedObs) {
+      const first = cachedObs[0];
+      if (first) candidates.push(first.observedAt);
+    } else {
+      const { first } = await this.observationRepository.findExtremesForHolding(holdingId);
+      if (first) candidates.push(first);
+    }
+
+    if (candidates.length === 0) return null;
+    return candidates.reduce((a, b) => (a.getTime() <= b.getTime() ? a : b));
   }
 
   // Cache-or-DB lookups. The rollup hands in pre-loaded Maps; ad-hoc

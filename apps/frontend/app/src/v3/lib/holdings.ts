@@ -1,6 +1,14 @@
-import { type HoldingWithDetails, quantityDecimals } from '@scani/shared';
+import {
+  formatDayMonth,
+  type HoldingWithDetails,
+  monthNameInDate,
+  quantityDecimals,
+  weekdayName,
+} from '@scani/shared';
 import type { AllocationInput } from '@scani/ui/v3/lib/chart';
-import { isScamToken } from '@/v2/components/ScamBadge';
+import type { TFunction } from 'i18next';
+import { HOLDINGS_QUALITY_PARAM } from './dataQuality';
+import { isScamToken } from './tokens';
 
 /**
  * The pure half of the v3 holdings surface: every decision the list and the
@@ -37,7 +45,7 @@ export interface HoldingGainLoss {
 }
 
 /**
- * Unrealised P/L, or `null` when there is nothing to compare against — no
+ * Unrealized P/L, or `null` when there is nothing to compare against — no
  * cost basis recorded, or no resolvable price for the position today.
  */
 export function holdingGainLoss(
@@ -251,43 +259,74 @@ export function describeSource(source: string): string {
   return source.replace(/^import_/, '').replace(/_/g, ' ');
 }
 
-const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-const MONTH_NAMES = [
-  '',
-  'January',
-  'February',
-  'March',
-  'April',
-  'May',
-  'June',
-  'July',
-  'August',
-  'September',
-  'October',
-  'November',
-  'December',
-];
+/**
+ * "Monthly on day 1". Reads as a fact under a "Payout" label rather than as
+ * v2's sentence, which repeated the word "Paid" the label already carried.
+ *
+ * Two sources, deliberately separated (SC-300). The SENTENCE is copy and comes
+ * from the catalogue. The day and month NAMES come from `Intl`, via the shared
+ * date helpers, and are not in the catalogue at all — this used to interpolate
+ * a hand-rolled `DAY_NAMES` / `MONTH_NAMES` table, and translating those tables
+ * would have been 56 entries to maintain in every language for something every
+ * runtime already knows.
+ *
+ * `APP_LOCALE` is still pinned to `en-GB` (SC-260), so the output is unchanged
+ * today. The difference is that it now follows the locale when that pin lifts
+ * instead of needing 56 new strings written first.
+ */
+/**
+ * Days in a one-indexed month — `Date.UTC(y, m, 0)` is the last day of month
+ * `m`, because day 0 of the next month is the day before it starts.
+ *
+ * The job's own `daysInMonth` (`ApplyApyPayoutsUseCase`), which is what makes
+ * the two callers below statements about what will happen rather than guesses
+ * at it: the payout date is `Math.min(configured day, this)`.
+ */
+export function daysInMonth(year: number, month: number): number {
+  return new Date(Date.UTC(year, month, 0)).getUTCDate();
+}
 
-/** "Monthly on day 1". Reads as a fact under a "Payout" label rather than as
- *  v2's sentence, which repeated the word "Paid" the label already carried. */
 export function payoutScheduleLabel(
+  t: TFunction,
   frequency: string,
   dayOfWeek: number | null,
   dayOfMonth: number | null,
-  month: number | null
+  month: number | null,
+  /** Only reachable by the yearly branch, and only to decide whether the day
+   *  exists in that month. A parameter rather than a `new Date()` inside so the
+   *  sentence stays a pure function of its arguments. */
+  year: number = new Date().getUTCFullYear()
 ): string {
   switch (frequency) {
     case 'daily':
-      return 'Daily';
+      return t('v3.holdings.payout.daily');
     case 'weekdays':
-      return 'Weekdays (Mon–Fri)';
+      return t('v3.holdings.payout.weekdays');
     case 'weekly':
-      return `Weekly on ${DAY_NAMES[dayOfWeek ?? 0]}`;
+      return t('v3.holdings.payout.weekly', { day: weekdayName(dayOfWeek ?? 0) });
     case 'monthly':
-      return `Monthly on day ${dayOfMonth ?? 1}`;
-    case 'yearly':
-      return `Yearly on ${MONTH_NAMES[month ?? 1]} ${dayOfMonth ?? 1}`;
+      return t('v3.holdings.payout.monthly', { day: dayOfMonth ?? 1 });
+    case 'yearly': {
+      const payoutMonth = month ?? 1;
+      const day = dayOfMonth ?? 1;
+      // 31 February is a date the DTO accepts and the calendar does not, so
+      // stating it would be a sentence about a day that never arrives. The job
+      // pays on the month's last day (`Math.min(day, daysInMonth)`), and which
+      // day that is moves with the leap year — hence "the last day" rather than
+      // a number this would have to be wrong about one year in four.
+      if (day > daysInMonth(year, payoutMonth)) {
+        return t('v3.holdings.payout.yearlyLastDay', { month: monthNameInDate(payoutMonth) });
+      }
+      // One formatted date rather than a day and a month name interpolated
+      // separately: the separate form fixes the word order in the template and
+      // asks `Intl` for a stand-alone month, and both are wrong somewhere —
+      // «15 февраль» for the second, `15 February` for an en-US reader for the
+      // first (SC-413).
+      return t('v3.holdings.payout.yearly', { date: formatDayMonth(day, payoutMonth) });
+    }
     default:
+      // An unrecognised frequency is echoed rather than guessed at — the same
+      // choice as before, and the reason it is not a catalogue key.
       return frequency;
   }
 }
@@ -302,7 +341,17 @@ export function payoutScheduleLabel(
  * the two generations have to agree on the spelling for the version switch to
  * carry a filtered view across.
  */
-export const HOLDING_FILTER_PARAMS = ['institution', 'account', 'tokenType', 'group'] as const;
+export const HOLDING_FILTER_PARAMS = [
+  'institution',
+  'account',
+  'tokenType',
+  'group',
+  // The data-quality dimension (SC-293). Unlike the four above it is not one
+  // of v2's parameter names — v2 has no such filter and its panel links
+  // nowhere — so this one spelling is the contract, and `dataQuality.ts` owns
+  // the values it may take.
+  HOLDINGS_QUALITY_PARAM,
+] as const;
 
 export function holdingFiltersFromParams(params: URLSearchParams): Record<string, string> {
   const filters: Record<string, string> = {};

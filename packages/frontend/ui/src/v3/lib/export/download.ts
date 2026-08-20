@@ -1,3 +1,4 @@
+import { uiT } from '../../../i18n';
 /**
  * Getting the file off the page and onto the reader's device.
  *
@@ -198,11 +199,18 @@ export function describeDownload(
   fileName: string,
   subject: string
 ): { title: string; message: string } {
+  // Resolved against the KIT's instance, never a caller's (SC-316) — see the
+  // note on `toExportBlob`. The subject stays the caller's: it is the noun for
+  // the thing that left, and this module cannot know it.
+  const t = uiT;
   if (result.strategy === 'share') {
     return {
-      title: 'Sent to your share sheet',
-      message: `Choose Save to Files to keep ${fileName}.`,
+      title: t('ui.export.download.shared'),
+      message: t('ui.export.download.sharedDetail', { fileName }),
     };
   }
-  return { title: 'Exported', message: `${subject} in ${fileName}` };
+  return {
+    title: t('ui.export.download.saved'),
+    message: t('ui.export.download.savedDetail', { subject, fileName }),
+  };
 }

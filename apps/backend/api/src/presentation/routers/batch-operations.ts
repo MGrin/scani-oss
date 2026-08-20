@@ -1,10 +1,9 @@
-import type { User } from '@scani/db';
 import { AccountRepository } from '@scani/domain/repositories';
 import { CreateHoldingsWithDependenciesUseCase } from '@scani/domain/use-cases';
 import { MANUAL_HOLDINGS_CREATE } from '@scani/jobs';
 import { BullMqEnqueueService } from '@scani/queue';
 import { emitEntityChange } from '@scani/realtime';
-import { CreateAccountDto, CreateInstitutionDto } from '@scani/shared';
+import { CreateAccountDto, CreateInstitutionDto, HOLDING_LABEL_MAX_LENGTH } from '@scani/shared';
 import Container from 'typedi';
 import { z } from 'zod';
 import { requireAuth } from '../middleware/auth';
@@ -13,6 +12,9 @@ import { protectedProcedure, router } from '../trpc';
 const newHoldingInputSchema = z.object({
   tokenId: z.string().uuid(),
   balance: z.string().min(1),
+  // What the user calls this pot. Present only when the client had to ask —
+  // one account, several rows, one token (SC-330).
+  label: z.string().trim().max(HOLDING_LABEL_MAX_LENGTH).optional(),
 });
 
 const updateHoldingInputSchema = z.object({
@@ -133,7 +135,7 @@ export const batchOperationsRouter = router({
           account: input.account,
           holdings: [],
         },
-        dbUser as User
+        dbUser
       );
       if (result.createdInstitution && result.institutionId) {
         emitEntityChange({

@@ -2,16 +2,15 @@ import type { DocumentExtraction, UserJob } from '@scani/db/schema';
 import {
   DEAD_JOB_REVIEW_KIND,
   DOCUMENT_EXTRACTION_REVIEW_KIND,
-  describeJobFailure,
   isJobAwaitingFailureDecision,
+  type ReviewAmount,
   type ReviewItem,
   TRANSFER_REVIEW_KIND,
-  userJobTitle,
 } from '@scani/shared';
 import Container, { Service } from 'typedi';
 import { DocumentExtractionRepository } from '../repositories/DocumentExtractionRepository';
 import { UserJobRepository } from '../repositories/UserJobRepository';
-import { summarisePendingReview } from './reviewSummary';
+import { describePendingReview } from './reviewDetail';
 import { TransferReviewService } from './TransferReviewService';
 
 /**
@@ -20,6 +19,14 @@ import { TransferReviewService } from './TransferReviewService';
  * Read-model only: review state stays on the domain row that owns it
  * (`user_jobs.action_taken_at` today), so there is no second copy to
  * drift. New producers add a private collector and concatenate here.
+ *
+ * **It emits operands, never prose** (SC-371). Every collector below used to
+ * compose the row's two lines in English — a job's name, a count with its own
+ * pluralisation, a vendor and a figure joined with an em dash — and both
+ * frontends printed the result verbatim, which put a copy of those strings
+ * beyond the reach of any translation and of every scanner the i18n epic has.
+ * A collector's output is now the facts the row is made of; naming them is the
+ * client's half, because the client is the half that has a `t()`.
  */
 @Service()
 export class ReviewFeedService {
@@ -42,8 +49,8 @@ export class ReviewFeedService {
     return jobs.map((j: UserJob) => ({
       id: `job:${j.jobId}`,
       kind: j.jobName,
-      title: userJobTitle(j.jobName),
-      subtitle: summarisePendingReview(j.jobName, j.result),
+      label: { code: 'job' as const, jobName: j.jobName },
+      detail: describePendingReview(j.jobName, j.result),
       createdAt: j.createdAt,
       href: `/jobs/${j.jobId}`,
     }));
@@ -75,17 +82,27 @@ export class ReviewFeedService {
     const jobs = await this.userJobs.findDeadUnacknowledged(userId);
     return jobs
       .filter((j: UserJob) => isJobAwaitingFailureDecision(j))
-      .map((j: UserJob) => {
-        const failure = describeJobFailure(j);
-        return {
-          id: `job-failed:${j.jobId}`,
-          kind: DEAD_JOB_REVIEW_KIND,
-          title: `${userJobTitle(j.jobName)} failed`,
-          subtitle: failure?.sentence,
-          createdAt: j.deadAt ?? j.createdAt,
-          href: `/jobs/${j.jobId}`,
-        };
-      });
+      .map((j: UserJob) => ({
+        id: `job-failed:${j.jobId}`,
+        kind: DEAD_JOB_REVIEW_KIND,
+        label: { code: 'jobFailed' as const, jobName: j.jobName },
+        // The facts, not the sentence: `describeJobFailure` is the one
+        // description of a failure and it already runs in both frontends, so
+        // the client calls it with these rather than reading a copy that was
+        // rendered here and can no longer be translated.
+        detail: {
+          code: 'jobFailure' as const,
+          facts: {
+            state: j.state,
+            deadAt: j.deadAt,
+            failureReason: j.failureReason,
+            attemptsMade: j.attemptsMade,
+            attemptsAllowed: j.attemptsAllowed,
+          },
+        },
+        createdAt: j.deadAt ?? j.createdAt,
+        href: `/jobs/${j.jobId}`,
+      }));
   }
 
   /**
@@ -98,14 +115,18 @@ export class ReviewFeedService {
    */
   private async fromExtractions(userId: string): Promise<ReviewItem[]> {
     const extractions = await this.documentExtractions.findPendingByUser(userId);
-    return extractions.map((e: DocumentExtraction) => ({
-      id: `extraction:${e.id}`,
-      kind: DOCUMENT_EXTRACTION_REVIEW_KIND,
-      title: 'Invoice extracted',
-      subtitle: summariseExtraction(e),
-      createdAt: e.createdAt,
-      href: `/documents/${e.documentId}`,
-    }));
+    return extractions.map((e: DocumentExtraction) => {
+      const vendor = e.vendorNameRaw.trim();
+      return {
+        id: `extraction:${e.id}`,
+        kind: DOCUMENT_EXTRACTION_REVIEW_KIND,
+        label: { code: 'invoiceExtracted' as const },
+        detail: vendor ? { code: 'vendor' as const, name: vendor } : undefined,
+        amount: extractionAmount(e),
+        createdAt: e.createdAt,
+        href: `/documents/${e.documentId}`,
+      };
+    });
   }
 
   /**
@@ -132,11 +153,8 @@ export class ReviewFeedService {
       {
         id: 'transfer-review:pending',
         kind: TRANSFER_REVIEW_KIND,
-        title: 'Transfers to confirm',
-        subtitle:
-          count === 1
-            ? '1 transfer out with no matching deposit'
-            : `${count} transfers out with no matching deposit`,
+        label: { code: 'transfersToConfirm' as const },
+        detail: { code: 'unpairedTransfers' as const, transfers: count },
         createdAt: latestCreatedAt,
         href: '/review/transfers',
       },
@@ -144,12 +162,17 @@ export class ReviewFeedService {
   }
 }
 
-function summariseExtraction(extraction: DocumentExtraction): string | undefined {
-  const vendor = extraction.vendorNameRaw.trim();
-  const amount =
-    extraction.totalAmount && extraction.currencyCode
-      ? `${extraction.totalAmount} ${extraction.currencyCode}`
-      : (extraction.totalAmount ?? undefined);
-  if (vendor && amount) return `${vendor} — ${amount}`;
-  return vendor || amount;
+/**
+ * The figure as the extractor recorded it — a decimal **string**, not a
+ * number. It used to be spelled into the subtitle as `87.31 EUR` and pulled
+ * back out of that English by a regex in v3; keeping the digits verbatim is
+ * what lets both interfaces render the same figure they render today without
+ * a float rounding `87.30` down to `87.3` on the way past.
+ *
+ * A total with no currency code cannot be an amount — there is nothing to say
+ * it in — so it is dropped rather than shown bare.
+ */
+function extractionAmount(extraction: DocumentExtraction): ReviewAmount | undefined {
+  if (!extraction.totalAmount || !extraction.currencyCode) return undefined;
+  return { value: extraction.totalAmount, currency: extraction.currencyCode };
 }

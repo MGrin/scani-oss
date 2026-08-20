@@ -64,6 +64,36 @@ const envSchema = z.object({
   // signal tight: exchange-balances runs hourly, so 3h means 2 missed cycles.
   STALE_SYNC_THRESHOLD_HOURS: z.coerce.number().int().positive().default(3),
 
+  // How long an integration must have gone without syncing before its OWNER is
+  // told (SC-459). Deliberately far above STALE_SYNC_THRESHOLD_HOURS above,
+  // which is the same measurement for a different reader: 3h means two missed
+  // hourly cycles, which is the right moment to page US and the wrong moment to
+  // mail a user about a blip that will clear itself. 24h is a fault, not a
+  // hiccup.
+  ALERT_STALE_SYNC_HOURS: z.coerce.number().int().positive().default(24),
+
+  // The two public origins the weekly digest puts in a letter (SC-460):
+  // where "Open Scani" goes, and the api host serving the unsubscribe
+  // endpoint. Both are absolute, because an email has no page to be relative
+  // to.
+  //
+  // Named after the api's own two, and set from the same root `.env` lines,
+  // because they are the same two URLs. `API_BASE_URL` was the obvious
+  // alternative and is already taken: the e2e fixtures read it as the
+  // Playwright target on port 3011.
+  //
+  // OPTIONAL — and so is SENTRY_DSN below, for the same reason, since SC-453.
+  // (This comment used to read "unlike SENTRY_DSN below"; that contrast is
+  // gone, not forgotten.) The worker runs every scheduled job in one binary,
+  // so failing boot over a variable that one job needs takes the hourly
+  // pricing, balance and reconcile jobs down with it.
+  // `SendWeeklyDigestsUseCase` refuses loudly instead — a refusal an operator
+  // can read, rather than 20 jobs that stopped. `SendIntegrationAlertsUseCase`
+  // (SC-459) refuses the same way, and both are read by their processor rather
+  // than by the use case.
+  FRONTEND_URL: optionalUrl,
+  BACKEND_URL: optionalUrl,
+
   // Sentry — optional, empty string treated as unset (see `optionalUrl`).
   // SDK init gates on DSN presence regardless.
   //

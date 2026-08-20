@@ -1,8 +1,13 @@
 import { describe, expect, test } from 'bun:test';
 import { UserJobRepository } from '@scani/domain/repositories';
+import { restoreContainerAfterAll } from '@scani/domain/test-helpers';
 import type { LifecycleEvent } from '@scani/queue';
 import Container from 'typedi';
 import { UserJobLifecycleMirror } from '../../src/infrastructure/user-job-lifecycle-mirror';
+
+// Container stubs are process-global; put back whatever this file changes
+// so no later test file resolves them (SC-448).
+restoreContainerAfterAll();
 
 /**
  * The mirror is the only thing that turns a queue event into something a user

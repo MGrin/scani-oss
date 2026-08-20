@@ -21,14 +21,17 @@ import { db } from '@scani/db/connection';
 import * as schema from '@scani/db/schema';
 import { withTransaction } from '@scani/db/transaction';
 import { createComponentLogger } from '@scani/logging';
+import { ProviderError } from '@scani/providers/core/errors';
 import { ProviderRegistry } from '@scani/providers/core/registry';
 import type { HoldingSnapshot, ProviderContext } from '@scani/providers/core/types';
 import { and, eq } from 'drizzle-orm';
 import { Container, Service } from 'typedi';
+import { deriveBalancesAsOf, withBalancesAsOf } from '../lib/balances-as-of';
 import { TokenTypeRepository } from '../repositories/EnumRepositories';
 import { HoldingRepository, type HoldingWithFullDetails } from '../repositories/HoldingRepository';
 import { InstitutionRepository } from '../repositories/InstitutionRepository';
 import {
+  EXCHANGE_BALANCE_SYNC_SOURCE,
   ExpiredCredentialsError,
   HoldingsSyncHelper,
   IntegrationCredentialsService,
@@ -44,6 +47,10 @@ export interface SyncExchangeBalancesResult {
   accountsSynced: number;
   /** Number of accounts that failed to sync */
   accountsFailed: number;
+  /** Credentials skipped because the provider refused us and its window has
+   *  not passed (SC-279). Reported so "we did not sync" and "we deliberately
+   *  did not ask" are different numbers in the same summary. */
+  credentialsBlocked: number;
   /** Total holdings updated */
   holdingsUpdated: number;
   /** Total holdings created */
@@ -64,6 +71,27 @@ export interface SyncExchangeBalancesResult {
 /**
  * Sync Exchange Balances Use Case
  */
+/**
+ * Is the provider still refusing this credential? (SC-279)
+ *
+ * Extracted so the decision can be tested without booting the whole sync —
+ * the use case reads the global `db` directly, so the branch is otherwise
+ * only reachable through an integration harness, and this is the branch whose
+ * absence kept an IBKR lockout alive for four hours.
+ *
+ * The contract is stronger than backoff: while this returns true the caller
+ * must not contact the provider for this credential AT ALL. For a lockout the
+ * attempt is itself the harm.
+ */
+export function isSyncBlocked(
+  credential: { syncBlockedUntil: Date | null },
+  now: Date = new Date()
+): boolean {
+  return (
+    credential.syncBlockedUntil !== null && credential.syncBlockedUntil.getTime() > now.getTime()
+  );
+}
+
 @Service()
 export class SyncExchangeBalancesUseCase {
   private readonly walletDiscovery = Container.get(WalletDiscoveryService);
@@ -80,6 +108,7 @@ export class SyncExchangeBalancesUseCase {
     const errors: SyncExchangeBalancesResult['errors'] = [];
     let accountsSynced = 0;
     let accountsFailed = 0;
+    let credentialsBlocked = 0;
     let holdingsUpdated = 0;
     let holdingsCreated = 0;
     let holdingsRemoved = 0;
@@ -112,6 +141,7 @@ export class SyncExchangeBalancesUseCase {
           accountsFound: 0,
           accountsSynced: 0,
           accountsFailed: 0,
+          credentialsBlocked: 0,
           holdingsUpdated: 0,
           holdingsCreated: 0,
           holdingsRemoved: 0,
@@ -165,7 +195,16 @@ export class SyncExchangeBalancesUseCase {
           const credentials = await db
             .select()
             .from(schema.userIntegrationCredentials)
-            .where(eq(schema.userIntegrationCredentials.institutionId, institutionId));
+            .where(
+              and(
+                eq(schema.userIntegrationCredentials.institutionId, institutionId),
+                // `isActive = false` is how a credential is disconnected
+                // (IntegrationCredentialsService.deleteCredentials). Every
+                // other read path already filters on it; this one did not,
+                // so a disconnected integration was still contacted hourly.
+                eq(schema.userIntegrationCredentials.isActive, true)
+              )
+            );
 
           if (credentials.length === 0) {
             logger.debug({ institutionId }, 'No credentials found for institution');
@@ -184,6 +223,28 @@ export class SyncExchangeBalancesUseCase {
           const processCredential = async (
             userCredential: (typeof credentials)[number]
           ): Promise<void> => {
+            // A provider that refused us with a window attached must not be
+            // contacted again inside it (SC-279). For IBKR Flex 1025 the
+            // attempt IS the harm: the lockout is triggered by repeated
+            // failure, so an hourly retry refreshes the counter that has to
+            // age out — the schedule was what sustained it. Skipping is the
+            // whole remedy, and it is deliberately checked before anything
+            // reads credentials or touches the network.
+            if (isSyncBlocked(userCredential)) {
+              credentialsBlocked++;
+              logger.warn(
+                {
+                  credentialsId: userCredential.id,
+                  institutionId,
+                  blockedUntil: userCredential.syncBlockedUntil?.toISOString(),
+                  lastError: userCredential.syncLastError,
+                  failureCount: userCredential.syncFailureCount,
+                },
+                'Skipping credential — provider refused us and the window has not passed'
+              );
+              return;
+            }
+
             // Get user's accounts for this institution
             const accounts = await db
               .select()
@@ -310,20 +371,64 @@ export class SyncExchangeBalancesUseCase {
                   snapshots,
                   existingHoldingsWithDetails,
                 });
+
+                // The provider answered, so whatever it was refusing is over
+                // (SC-279). The lockout is per token, not per account, so one
+                // success is enough to clear it. The repository only writes
+                // when there is something to clear, so this is a no-op on the
+                // overwhelming majority of hourly runs.
+                if (
+                  userCredential.syncBlockedUntil ||
+                  userCredential.syncLastError ||
+                  userCredential.syncFailureCount > 0
+                ) {
+                  await this.integrationCredentialsService
+                    .clearSyncRefusal(userCredential.id)
+                    .catch(() => {
+                      /* bookkeeping must never fail a successful sync */
+                    });
+                }
               } catch (error) {
                 accountsFailed++;
+                const message = error instanceof Error ? error.message : String(error);
                 logger.error(
-                  {
-                    accountId: account.id,
-                    error: error instanceof Error ? error.message : String(error),
-                  },
+                  { accountId: account.id, error: message },
                   'Failed to fetch holdings for account'
                 );
+
+                // Put the refusal in the ROW, not only in the log (SC-279).
+                // `import_last_error` was null and `import_status` was
+                // `enqueued` while IBKR was actively refusing us, so admin,
+                // the UI and a human triaging all saw a healthy integration —
+                // instance 14 of the absence-vs-refusal class. `sync_*` rather
+                // than `import_*` because the reconciler abandons a credential
+                // on `import_retry_count`, and an hourly balance failure must
+                // not spend that budget.
+                const retryAfterMs =
+                  error instanceof ProviderError ? error.retryAfterMs : undefined;
+                await this.integrationCredentialsService
+                  .recordSyncRefusal(
+                    userCredential.id,
+                    message,
+                    retryAfterMs ? new Date(Date.now() + retryAfterMs) : null
+                  )
+                  .catch((writeError: unknown) => {
+                    // Never let bookkeeping mask the sync failure itself.
+                    logger.warn(
+                      {
+                        credentialsId: userCredential.id,
+                        error:
+                          writeError instanceof Error ? writeError.message : String(writeError),
+                      },
+                      'Could not record sync refusal on the credential row'
+                    );
+                  });
+
                 errors.push({
                   accountId: account.id,
                   accountName: account.name || 'Unknown',
                   institutionId,
-                  error: error instanceof Error ? error.message : String(error),
+                  error: message,
                 });
               }
             }
@@ -364,7 +469,7 @@ export class SyncExchangeBalancesUseCase {
                 existingHoldings,
                 staleStrategy: 'zero',
                 dedupStrategy: 'tokenId',
-                sourceTag: 'sync_exchange_balances',
+                sourceTag: EXCHANGE_BALANCE_SYNC_SOURCE,
                 defaultDecimals: 8,
                 respectHiddenForCounts: false,
                 skipUnchangedUpdates: true,
@@ -372,17 +477,21 @@ export class SyncExchangeBalancesUseCase {
                 // the exchange should appear in the user's portfolio).
                 // Only the wallet recurring sync is locked down.
                 updateOnly: false,
+                arrival: 'auto_discovered',
                 tx,
               });
               holdingsUpdated += result.updated;
               holdingsCreated += result.created;
               holdingsRemoved += result.removed;
 
-              // Update account metadata with lastSync timestamp
+              // Two claims, deliberately separate (SC-384). `lastSync` is when
+              // we reached the source; `balancesAsOf` is the moment the
+              // source's answer describes, and exists only when a provider
+              // told us they differ. For every live-balance venue that is
+              // never, and `withBalancesAsOf` clears the key rather than
+              // leaving yesterday's explanation attached to today's figures.
               const updatedMetadata = {
-                ...(account.metadata && typeof account.metadata === 'object'
-                  ? account.metadata
-                  : {}),
+                ...withBalancesAsOf(account.metadata, deriveBalancesAsOf(snapshots)),
                 lastSync: new Date().toISOString(),
               };
 
@@ -425,6 +534,7 @@ export class SyncExchangeBalancesUseCase {
           accountsFound,
           accountsSynced,
           accountsFailed,
+          credentialsBlocked,
           holdingsUpdated,
           holdingsCreated,
           holdingsRemoved,
@@ -438,6 +548,7 @@ export class SyncExchangeBalancesUseCase {
         accountsFound,
         accountsSynced,
         accountsFailed,
+        credentialsBlocked,
         holdingsUpdated,
         holdingsCreated,
         holdingsRemoved,
@@ -496,6 +607,8 @@ const SYNTHETIC_BASE_CURRENCY: ProviderContext['baseCurrency'] = {
   iconUrl: null,
   providerMetadata: {},
   isScamProbability: 0,
+  scamScoreVersion: null,
+  scamScoreSource: 'heuristic',
   isActive: true,
   marketSegment: null,
   lookalikeOf: null,

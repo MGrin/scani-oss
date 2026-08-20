@@ -1,12 +1,13 @@
-import { describeJobFailure, formatRelative } from '@scani/shared';
+import { describeJobFailure } from '@scani/shared';
 import { Button } from '@scani/ui/ui/button';
 import { V3DataView } from '@scani/ui/v3/components/data-view/V3DataView';
 import type { V3DataViewConfig } from '@scani/ui/v3/lib/data-view';
 import { exportDateTime, exportText } from '@scani/ui/v3/lib/export/cell';
 import type { V3QueryState } from '@scani/ui/v3/lib/query-state';
 import { ListChecks } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
-import { jobLabelFor } from '@/v2/components/jobs/jobLabels';
+import { jobLabelFor } from '../../lib/job-labels';
 import {
   compareJobs,
   type JobBucket,
@@ -14,10 +15,12 @@ import {
   jobBucket,
   jobBucketLabel,
   jobBucketOptions,
+  jobFailureLabel,
   jobNeedsAction,
   jobStateLabel,
   summariseJobPayload,
 } from '../../lib/jobs';
+import { formatRelative } from '../../lib/relative-time';
 import { jobDetailPath } from '../../lib/routes';
 import { useOpenCapture } from '../capture/CaptureSheetContext';
 import { JobStateBadge } from './JobStateBadge';
@@ -48,6 +51,7 @@ interface JobsListProps {
 const BUCKET_RANK: Record<JobBucket, number> = { review: 0, running: 1, failed: 2, completed: 3 };
 
 export function JobsList({ jobs, query }: JobsListProps) {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   // The capture sheet, not a link: V3-14 made capture shell state precisely so
   // an empty screen — the highest-value place to offer it — can raise it
@@ -57,22 +61,22 @@ export function JobsList({ jobs, query }: JobsListProps) {
   const config: V3DataViewConfig<JobRow> = {
     pageKey: 'jobs',
     data: jobs,
-    noun: 'jobs',
-    searchPlaceholder: 'Search jobs',
+    nounKey: 'ui.dataView.noun.jobs',
+    searchPlaceholderKey: 'ui.dataView.jobs.config.searchJobs',
     searchFn: (job, query) =>
-      jobLabelFor(job.jobName).label.toLowerCase().includes(query) ||
-      (summariseJobPayload(job.jobName, job.payloadSummary) ?? '').toLowerCase().includes(query),
+      jobLabelFor(t, job.jobName).label.toLowerCase().includes(query) ||
+      (summariseJobPayload(t, job.jobName, job.payloadSummary) ?? '').toLowerCase().includes(query),
     filterDefs: [
       {
         key: 'bucket',
-        label: 'Status',
-        options: jobBucketOptions(jobs),
+        labelKey: 'ui.dataView.jobs.filter.status',
+        options: jobBucketOptions(t, jobs),
         fn: (job: JobRow, value) => jobBucket(job) === value,
       },
     ],
     sortDefs: [
-      { key: 'status', label: 'Status' },
-      { key: 'started', label: 'Started' },
+      { key: 'status', labelKey: 'ui.dataView.jobs.sort.status' },
+      { key: 'started', labelKey: 'ui.dataView.jobs.sort.started' },
     ],
     sortFn: (a, b, field, direction) => {
       if (field !== 'status') return compareJobs(a, b, field, direction);
@@ -82,10 +86,14 @@ export function JobsList({ jobs, query }: JobsListProps) {
     },
     defaultSort: { field: 'status', direction: 'asc' },
     groupByDefs: [
-      { key: 'bucket', label: 'Status', fn: (job: JobRow) => jobBucketLabel(jobBucket(job)) },
+      {
+        key: 'bucket',
+        labelKey: 'ui.dataView.jobs.group.status',
+        fn: (job: JobRow) => jobBucketLabel(t, jobBucket(job)),
+      },
     ],
     renderRow: (job) => {
-      const { label, icon: Icon } = jobLabelFor(job.jobName);
+      const { label, icon: Icon } = jobLabelFor(t, job.jobName);
       const needsAction = jobNeedsAction(job);
       // The chip and the screen-reader label read the same description, so a
       // row cannot say "Failed" aloud while showing "Retrying (1 of 3)".
@@ -93,19 +101,19 @@ export function JobsList({ jobs, query }: JobsListProps) {
       return {
         leading: <Icon className="size-5 shrink-0 text-muted-foreground" aria-hidden="true" />,
         label,
-        sublabel: summariseJobPayload(job.jobName, job.payloadSummary) ?? undefined,
+        sublabel: summariseJobPayload(t, job.jobName, job.payloadSummary) ?? undefined,
         value: <JobStateBadge state={job.state} needsAction={needsAction} failure={job} />,
-        delta: <span className="text-muted-foreground">{formatRelative(job.createdAt)}</span>,
-        ariaLabel: `${label}, ${needsAction ? 'needs review' : (failure?.label ?? jobStateLabel(job.state))}`,
+        delta: <span className="text-muted-foreground">{formatRelative(t, job.createdAt)}</span>,
+        ariaLabel: `${label}, ${needsAction ? t('v3.jobs.state.needsReviewSpoken') : failure ? jobFailureLabel(t, failure) : jobStateLabel(t, job.state)}`,
       };
     },
     columns: [
       {
         key: 'job',
-        header: 'Job',
+        headerKey: 'ui.dataView.jobs.col.job',
         width: 'w-[34%]',
         render: (job) => {
-          const { label, icon: Icon } = jobLabelFor(job.jobName);
+          const { label, icon: Icon } = jobLabelFor(t, job.jobName);
           return (
             <span className="flex min-w-0 items-center gap-2">
               <Icon className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
@@ -113,20 +121,20 @@ export function JobsList({ jobs, query }: JobsListProps) {
             </span>
           );
         },
-        exportValue: (job) => exportText(jobLabelFor(job.jobName).label),
+        exportValue: (job) => exportText(jobLabelFor(t, job.jobName).label),
       },
       {
         key: 'detail',
-        header: 'Detail',
+        headerKey: 'ui.dataView.jobs.col.detail',
         render: (job) => (
           <span className="truncate text-muted-foreground">
-            {summariseJobPayload(job.jobName, job.payloadSummary) ?? '—'}
+            {summariseJobPayload(t, job.jobName, job.payloadSummary) ?? '—'}
           </span>
         ),
       },
       {
         key: 'status',
-        header: 'Status',
+        headerKey: 'ui.dataView.jobs.col.status',
         sortable: true,
         width: 'w-40',
         render: (job) => (
@@ -135,25 +143,27 @@ export function JobsList({ jobs, query }: JobsListProps) {
         // The export carries the description rather than the raw state, for the
         // same reason the chip does: `failed` in a spreadsheet cell is the
         // ambiguity this ticket is about, one medium further from help.
-        exportValue: (job) => exportText(describeJobFailure(job)?.label ?? job.state),
+        exportValue: (job) => {
+          const failure = describeJobFailure(job);
+          return exportText(failure ? jobFailureLabel(t, failure) : jobStateLabel(t, job.state));
+        },
       },
       {
         key: 'started',
-        header: 'Started',
+        headerKey: 'ui.dataView.jobs.col.started',
         sortable: true,
         width: 'w-36',
         render: (job) => (
-          <span className="text-muted-foreground">{formatRelative(job.createdAt)}</span>
+          <span className="text-muted-foreground">{formatRelative(t, job.createdAt)}</span>
         ),
         exportValue: (job) => exportDateTime(job.createdAt),
       },
     ],
     empty: {
       icon: ListChecks,
-      title: 'No background jobs yet',
-      description:
-        'Imports, parses and price refreshes run in the background and report here while they work.',
-      action: <Button onClick={openCapture}>Import something</Button>,
+      titleKey: 'ui.dataView.jobs.empty.noBackgroundJobsYet',
+      descriptionKey: 'ui.dataView.jobs.empty.importsParsesAndPriceRefreshesRun',
+      action: <Button onClick={openCapture}>{t('v3.jobs.importSomething')}</Button>,
     },
     onRowClick: (job) => navigate(jobDetailPath(job.jobId)),
     rowHref: (job) => jobDetailPath(job.jobId),

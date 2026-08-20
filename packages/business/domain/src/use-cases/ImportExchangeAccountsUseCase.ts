@@ -216,6 +216,10 @@ export class ImportExchangeAccountsUseCase {
       userId: input.userId,
       baseCurrencyId: user.baseCurrencyId,
       sourceTag,
+      // An exchange balance exists because the user traded or deposited it in
+      // an account they connected on purpose — a permissioned venue, so
+      // nothing can be pushed at them the way it can at an address (SC-277).
+      arrival: 'user_confirmed',
       zeroStaleHoldings: true,
       skipZeroBalances: true,
       cryptoTokenTypeId: cryptoTokenType.id,

@@ -1,5 +1,6 @@
 import { Loader2 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
+import { useUiTranslation } from '../i18n';
 import { Button } from '../ui/button';
 
 interface MagicCodeInputProps {
@@ -15,6 +16,7 @@ export function MagicCodeInput({
   isLoading = false,
   error,
 }: MagicCodeInputProps) {
+  const { t } = useUiTranslation();
   const [code, setCode] = useState(['', '', '', '', '', '']);
   const [isResending, setIsResending] = useState(false);
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
@@ -95,9 +97,7 @@ export function MagicCodeInput({
   return (
     <div className="space-y-6">
       <div className="space-y-2">
-        <p className="text-sm font-medium text-center block">
-          Enter the 6-digit code from your email
-        </p>
+        <p className="text-sm font-medium text-center block">{t('ui.magicCode.prompt')}</p>
         <div className="flex gap-2 justify-center" onPaste={handlePaste}>
           {code.map((digit, index) => (
             <input
@@ -113,7 +113,7 @@ export function MagicCodeInput({
               onKeyDown={(e) => handleKeyDown(index, e)}
               disabled={isLoading || isResending}
               className="w-12 h-14 text-center text-2xl font-bold border-2 rounded-lg focus:border-primary focus:ring-2 focus:ring-primary focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              aria-label={`Digit ${index + 1}`}
+              aria-label={t('ui.magicCode.digit', { index: index + 1 })}
             />
           ))}
         </div>
@@ -128,7 +128,7 @@ export function MagicCodeInput({
           className="w-full"
         >
           {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-          Verify Code
+          {t('ui.magicCode.verify')}
         </Button>
 
         <Button
@@ -139,11 +139,11 @@ export function MagicCodeInput({
           className="w-full"
         >
           {isResending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-          Resend Code
+          {t('ui.magicCode.resend')}
         </Button>
       </div>
 
-      <p className="text-xs text-muted-foreground text-center">The code expires in 10 minutes</p>
+      <p className="text-xs text-muted-foreground text-center">{t('ui.magicCode.expiry')}</p>
     </div>
   );
 }

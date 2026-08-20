@@ -1,4 +1,6 @@
 import * as React from 'react';
+import { uiT } from '../i18n';
+import { userFacingMessage } from '../lib/user-facing-error';
 import { ToastAction, type ToastActionElement, type ToastProps } from './toast';
 
 const TOAST_LIMIT = 1;
@@ -234,11 +236,29 @@ interface ToastOptions {
   duration?: number;
 }
 
+/**
+ * `uiT` rather than `useTranslation`: these are called from mutation callbacks,
+ * outside React and outside any render, so there is no hook to hang them off —
+ * which is the reason `@scani/ui`'s i18next instance is initialised eagerly at
+ * module load rather than behind a provider (see `../i18n`).
+ *
+ * `context` is still an English string supplied by the caller, and stays one.
+ * It is a noun phrase spliced into `{{context}}: {{message}}` beside a raw
+ * server error, so translating it alone produces a French fragment in front of
+ * an English one. Retiring it means giving `showError` a key instead of a
+ * phrase at ~30 call sites, which is SC-235's restructuring, not this wiring.
+ */
 function showError(error: unknown, context?: string, options?: ToastOptions) {
-  const message = error instanceof Error ? error.message : 'Unknown error';
+  // Only a message somebody wrote for a reader (SC-311). This is the DEFAULT
+  // error surface — ~130 call sites — so `error.message` here meant every
+  // assertion in v3 and every dependency's diagnostic was a user-facing,
+  // untranslatable string. `userFacingMessage` also fixes the opposite half:
+  // a plain string used to fall through to "Unknown error", silently
+  // discarding eight call sites' deliberate, already-translated copy.
+  const message = userFacingMessage(error) ?? uiT('ui.toast.unknownError');
   toast({
-    title: 'Something went wrong',
-    description: `${context ? `${context}: ` : ''}${message}`,
+    title: uiT('ui.toast.errorTitle'),
+    description: context ? uiT('ui.toast.detail', { context, message }) : message,
     variant: 'destructive',
     duration: options?.duration ?? DEFAULT_ERROR_DURATION,
     // `ToastAction`, not `<Button variant="outline">`. The outline button
@@ -250,10 +270,10 @@ function showError(error: unknown, context?: string, options?: ToastOptions) {
     // border and hover against the destructive surface.
     action: (
       <ToastAction
-        altText="View error details in the console"
+        altText={uiT('ui.toast.viewDetailsAlt')}
         onClick={() => console.error('Error details:', error)}
       >
-        View Details
+        {uiT('ui.toast.viewDetails')}
       </ToastAction>
     ),
   });
@@ -261,7 +281,7 @@ function showError(error: unknown, context?: string, options?: ToastOptions) {
 
 function showSuccess(message: string, context?: string, options?: ToastOptions) {
   toast({
-    title: context || 'Success',
+    title: context || uiT('ui.toast.successTitle'),
     description: message,
     variant: 'default',
     duration: options?.duration ?? DEFAULT_TOAST_DURATION,

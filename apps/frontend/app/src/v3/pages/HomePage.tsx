@@ -1,16 +1,17 @@
-import { Button } from '@scani/ui/ui/button';
 import { Skeleton } from '@scani/ui/ui/skeleton';
 import { LoadingRamp } from '@scani/ui/v3/components/feedback/LoadingRamp';
 import { QueryError } from '@scani/ui/v3/components/feedback/QueryError';
 import { DashboardGrid, DashboardItem, PageLayout } from '@scani/ui/v3/components/PageLayout';
 import { useDelayedLoading } from '@scani/ui/v3/hooks/useDelayedLoading';
 import { useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { trpc } from '@/lib/trpc';
-import { useReviewFeed } from '@/v2/hooks/useReviewFeed';
+import { useReviewFeed } from '@/v3/hooks/useReviewFeed';
 import { useOpenCapture } from '../components/capture/CaptureSheetContext';
 import { StaleNotice } from '../components/feedback/StaleNotice';
 import { AllocationBlock } from '../components/home/AllocationBlock';
 import { AttentionRow } from '../components/home/AttentionRow';
+import { FirstRun } from '../components/home/FirstRun';
 import { GroupsBlock } from '../components/home/GroupsBlock';
 import { HeroBlock } from '../components/home/HeroBlock';
 import { TopHoldingsBlock } from '../components/home/TopHoldingsBlock';
@@ -111,6 +112,7 @@ function useNetWorthSeriesPrefetch(): void {
 }
 
 export function HomePage() {
+  const { t } = useTranslation();
   const overview = trpc.dashboard.getOverview.useQuery();
   const openCapture = useOpenCapture();
   const { count: reviewCount } = useReviewFeed();
@@ -129,7 +131,7 @@ export function HomePage() {
       <PageLayout>
         <QueryError
           error={overview.error}
-          subject="your portfolio"
+          subject={t('v3.home.loadingLabel')}
           onRetry={() => void overview.refetch()}
         />
       </PageLayout>
@@ -145,7 +147,7 @@ export function HomePage() {
         <LoadingRamp
           phase={loadingPhase}
           skeleton={<HomeSkeleton />}
-          label="your portfolio"
+          label={t('v3.home.loadingLabel')}
           onRetry={() => void overview.refetch()}
         />
       </PageLayout>
@@ -153,21 +155,32 @@ export function HomePage() {
   }
 
   // Genuinely empty, not filtered-empty: this is the first screen of a new
-  // account, so it is the onboarding, and it carries the one action that ends
-  // it rather than the word "None".
+  // account, so it is the onboarding — one named route in, with the sheet a
+  // lower-emphasis press away. `FirstRun` renders it, because it also has to
+  // know whether an import is already running (SC-451).
+  //
+  ***REMOVED***
+  ***REMOVED***
+  ***REMOVED***
+  ***REMOVED***
+  ***REMOVED***
+  ***REMOVED***
+  ***REMOVED***
+  //
+  ***REMOVED***
+  ***REMOVED***
+  ***REMOVED***
+  ***REMOVED***
+  ***REMOVED***
+  ***REMOVED***
+  //
+  // It names the screenshot before the file for the one measurement that is
+  // unambiguous: `file-import` has never run in production, and
+  // `screenshot-parse` has run 12 times.
   if (overview.data.counts.holdings === 0) {
     return (
       <PageLayout className="items-start">
-        <div className="flex flex-col gap-1">
-          <h1 className="text-title">Nothing tracked yet</h1>
-          <p className="text-body text-muted-foreground">
-            Connect an exchange, import a file or add a holding by hand, and your net worth shows up
-            here.
-          </p>
-        </div>
-        {/* The capture sheet rather than a link: this screen names three ways
-            in, and the sheet is the thing that lists all of them. */}
-        <Button onClick={openCapture}>Add your first holding</Button>
+        <FirstRun onOpenCapture={openCapture} />
         {/* The empty screen is exactly where a dead job hides best, and this
             branch used to return before the attention row (SC-153). Someone
             whose first import failed has no holdings *because* it failed —

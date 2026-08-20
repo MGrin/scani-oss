@@ -19,7 +19,7 @@
  * a future multi-call path (e.g. one call per scanned page) keeps
  * reporting an accurate total instead of silently under-counting.
  *
- * Total by design, same discipline as `reviewSummary.ts`: an AI response
+ * Total by design, same discipline as `reviewDetail.ts`: an AI response
  * that is `null`, a bare string, or an object with none of the expected
  * fields degrades to zero invoices rather than throwing — a bad response
  * from a paid API call should not fail the whole extraction job.

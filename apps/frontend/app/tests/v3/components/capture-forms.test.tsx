@@ -1,12 +1,20 @@
 import { describe, expect, test } from 'bun:test';
 import { SETTLED_QUERY_STATE } from '@scani/ui/v3/lib/query-state';
+import i18n from 'i18next';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { StaticRouter } from 'react-router-dom/server';
 import { CaptureHeader } from '@/v3/components/capture/CaptureHeader';
 import { CaptureSubmit } from '@/v3/components/capture/CaptureSubmit';
 import { FileDropField } from '@/v3/components/capture/FileDropField';
 import { type Integration, IntegrationsList } from '@/v3/components/capture/IntegrationsList';
-import { describeImportFileProblem, IMPORT_ACCEPT, IMPORT_FORMATS } from '@/v3/lib/capture-forms';
+import {
+  describeImportFileProblem,
+  IMPORT_ACCEPT,
+  IMPORT_FORMATS_KEY,
+} from '@/v3/lib/capture-forms';
+
+// Resolved through the real instance against the shipped `en.json`.
+const t = i18n.t.bind(i18n);
 
 /**
  * The four capture forms' shared parts, rendered rather than reasoned about.
@@ -91,13 +99,13 @@ describe('the file field', () => {
         accept={IMPORT_ACCEPT}
         file={null}
         onFile={() => {}}
-        validate={describeImportFileProblem}
-        formats={IMPORT_FORMATS}
+        validate={(filename) => describeImportFileProblem(t, filename)}
+        formats={t(IMPORT_FORMATS_KEY)}
         prompt="Choose a file, or drop one here"
       />
     );
     expect(markup).toContain('Choose a file, or drop one here');
-    expect(markup).toContain(IMPORT_FORMATS);
+    expect(markup).toContain(t(IMPORT_FORMATS_KEY));
     expect(markup).toContain(`accept="${IMPORT_ACCEPT}"`);
   });
 
@@ -109,8 +117,8 @@ describe('the file field', () => {
         accept={IMPORT_ACCEPT}
         file={file}
         onFile={() => {}}
-        validate={describeImportFileProblem}
-        formats={IMPORT_FORMATS}
+        validate={(filename) => describeImportFileProblem(t, filename)}
+        formats={t(IMPORT_FORMATS_KEY)}
         prompt="Choose a file, or drop one here"
       />
     );

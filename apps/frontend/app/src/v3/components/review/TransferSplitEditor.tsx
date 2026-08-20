@@ -1,15 +1,22 @@
-import type { PendingTransferReview, TransferReviewDecision } from '@scani/shared';
+import type {
+  PendingTransferReview,
+  TransferDestination,
+  TransferReviewDecision,
+} from '@scani/shared';
 import { formatNumber, quantityDecimals } from '@scani/shared';
 import { Button } from '@scani/ui/ui/button';
 import { AmountInput } from '@scani/ui/v3/components/AmountInput';
 import { Check } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import {
   allocationHint,
   allocationOf,
   DECISION_LABELS,
+  destinationLocation,
   remainderFor,
   type SplitDraftRow,
 } from '../../lib/transfer-review';
+import { TransferDestinationPicker } from './TransferDestinationPicker';
 
 /**
  * The amounts, one per outcome (SC-181).
@@ -23,9 +30,9 @@ import {
  *
  * Four decisions this shape makes, all of them load-bearing:
  *
- * - **All three outcomes are always on screen, and a blank is an exclusion.**
+ * - **All four outcomes are always on screen, and a blank is an exclusion.**
  *   No add-a-part button, no outcome picker per row, no way to enter the same
- *   outcome twice. The editor's whole state is three strings.
+ *   outcome twice. The editor's whole state is four strings and a destination.
  * - **Nothing is pre-filled.** Dividing 4,000 as 3,500/500 is a fact only the
  *   reader has; a default would be the queue guessing, which is the defect
  *   SC-150 refused when it declined to auto-pair a near-miss. What the editor
@@ -38,6 +45,11 @@ import {
  * - **`Same money` needs its deposit first.** Its field stays disabled until a
  *   candidate is selected above, because a paired part with no partner is not
  *   a smaller version of a valid answer — it is an unwritable one.
+ * - **`Moved somewhere Scani tracks` picks its destination in place** (SC-187),
+ *   and only once its amount is filled. The picker is a list of holdings and
+ *   would double the editor's height on a 390px screen if it were always open,
+ *   for a part that most divisions do not use. Typing an amount is the reader
+ *   saying they need it.
  */
 
 interface TransferSplitEditorProps {
@@ -46,11 +58,22 @@ interface TransferSplitEditorProps {
   onChange: (rows: SplitDraftRow[]) => void;
   /** Whether a candidate deposit has been picked, which `Same money` needs. */
   hasMatch: boolean;
+  /** Holdings the `internal` part can move to (SC-187). */
+  destinations: TransferDestination[];
+  destinationsLoading: boolean;
 }
 
-export function TransferSplitEditor({ item, rows, onChange, hasMatch }: TransferSplitEditorProps) {
+export function TransferSplitEditor({
+  item,
+  rows,
+  onChange,
+  hasMatch,
+  destinations,
+  destinationsLoading,
+}: TransferSplitEditorProps) {
+  const { t } = useTranslation();
   const allocation = allocationOf(rows, item.quantity);
-  const hint = allocationHint(allocation, item);
+  const hint = allocationHint(t, allocation, item);
   // A ceiling, never a floor: the parts of a whole number can carry decimals
   // the total does not, so a scale taken from the transfer's own precision
   // would make its own remainder untypeable.
@@ -59,6 +82,9 @@ export function TransferSplitEditor({ item, rows, onChange, hasMatch }: Transfer
   const setAmount = (index: number, amount: string) => {
     onChange(rows.map((row, i) => (i === index ? { ...row, amount } : row)));
   };
+  const setDestination = (index: number, destination: TransferDestination) => {
+    onChange(rows.map((row, i) => (i === index ? { ...row, destination } : row)));
+  };
 
   return (
     <div className="flex flex-col gap-3">
@@ -66,6 +92,7 @@ export function TransferSplitEditor({ item, rows, onChange, hasMatch }: Transfer
         {rows.map((row, index) => {
           const disabled = row.decision === 'paired' && !hasMatch;
           const rest = remainderFor(rows, index, item.quantity);
+          const needsDestination = row.decision === 'internal' && row.amount.trim() !== '';
           return (
             <div key={row.decision} className="flex flex-col gap-1">
               <div className="flex items-center gap-2">
@@ -73,7 +100,7 @@ export function TransferSplitEditor({ item, rows, onChange, hasMatch }: Transfer
                   className="min-w-0 flex-1 text-body"
                   htmlFor={`split-${item.transactionId}-${row.decision}`}
                 >
-                  {DECISION_LABELS[row.decision].trigger}
+                  {t(DECISION_LABELS[row.decision].triggerKey)}
                 </label>
                 <AmountInput
                   id={`split-${item.transactionId}-${row.decision}`}
@@ -86,13 +113,16 @@ export function TransferSplitEditor({ item, rows, onChange, hasMatch }: Transfer
                   // column that can be added up by eye.
                   className="h-11 w-28 text-right"
                   wrapperClassName="shrink-0"
-                  aria-label={`${DECISION_LABELS[row.decision].trigger} — amount in ${item.tokenSymbol}`}
+                  aria-label={t('v3.review.split.amountLabel', {
+                    outcome: t(DECISION_LABELS[row.decision].triggerKey),
+                    symbol: item.tokenSymbol,
+                  })}
                 />
               </div>
               <div className="flex min-h-5 items-center justify-end gap-2">
                 {disabled ? (
                   <span className="text-caption text-muted-foreground">
-                    Pick the deposit above first
+                    {t('v3.review.split.pickDepositFirst')}
                   </span>
                 ) : rest && rest !== row.amount ? (
                   <Button
@@ -102,10 +132,32 @@ export function TransferSplitEditor({ item, rows, onChange, hasMatch }: Transfer
                     className="h-7 px-2 text-caption"
                     onClick={() => setAmount(index, rest)}
                   >
-                    {`Take the rest — ${qtyLabel(rest)} ${item.tokenSymbol}`}
+                    {t('v3.review.transfer.split.takeRest', {
+                      amount: qtyLabel(rest),
+                      symbol: item.tokenSymbol,
+                    })}
                   </Button>
                 ) : null}
               </div>
+              {needsDestination ? (
+                <div className="flex flex-col gap-2 rounded-lg border border-border bg-surface-1 p-2">
+                  <span className="text-caption text-muted-foreground">
+                    {row.destination
+                      ? t('v3.review.split.movingTo', {
+                          location: destinationLocation(row.destination),
+                        })
+                      : t('v3.review.split.wherePrompt')}
+                  </span>
+                  <TransferDestinationPicker
+                    destinations={destinations}
+                    tokenSymbol={item.tokenSymbol}
+                    groupName={`split-destination-${item.transactionId}`}
+                    selected={row.destination}
+                    onSelect={(destination) => setDestination(index, destination)}
+                    isLoading={destinationsLoading}
+                  />
+                </div>
+              ) : null}
             </div>
           );
         })}
@@ -113,12 +165,15 @@ export function TransferSplitEditor({ item, rows, onChange, hasMatch }: Transfer
 
       <div className="flex items-baseline justify-between gap-3 border-t border-border pt-2">
         <span className="text-caption text-muted-foreground">
-          {`Transfer was ${qtyLabel(item.quantity)} ${item.tokenSymbol}`}
+          {t('v3.review.transfer.split.transferWas', {
+            amount: qtyLabel(item.quantity),
+            symbol: item.tokenSymbol,
+          })}
         </span>
         {hint === null ? (
           <span className="flex items-center gap-1 text-caption text-foreground">
             <Check className="size-3" aria-hidden="true" />
-            Adds up
+            {t('v3.review.split.addsUp')}
           </span>
         ) : (
           <span className="text-caption text-muted-foreground">{hint}</span>
@@ -128,10 +183,15 @@ export function TransferSplitEditor({ item, rows, onChange, hasMatch }: Transfer
   );
 }
 
-/** The three rows, empty — the state the editor opens in. */
+/** The four rows, empty — the state the editor opens in. */
 export function emptySplitRows(matchTransactionId: string | null): SplitDraftRow[] {
-  const decisions: TransferReviewDecision[] = ['paired', 'left_control', 'untracked'];
-  return decisions.map((decision) => ({ decision, amount: '', matchTransactionId }));
+  const decisions: TransferReviewDecision[] = ['paired', 'internal', 'left_control', 'untracked'];
+  return decisions.map((decision) => ({
+    decision,
+    amount: '',
+    matchTransactionId,
+    destination: null,
+  }));
 }
 
 function qtyLabel(value: string): string {

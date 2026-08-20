@@ -1,4 +1,5 @@
 import { ChevronRight, ClipboardCheck } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { V3_ROUTES } from '../../lib/routes';
@@ -24,6 +25,8 @@ interface AttentionRowProps {
 }
 
 export function AttentionRow({ count, className }: AttentionRowProps) {
+  const { t } = useTranslation();
+
   return (
     <Link
       to={V3_ROUTES.review}
@@ -40,7 +43,7 @@ export function AttentionRow({ count, className }: AttentionRowProps) {
           as "stale price", which is a different claim. */}
       <ClipboardCheck aria-hidden="true" className="size-5 shrink-0 text-interactive" />
       <span className="min-w-0 flex-1 text-label">
-        {count === 1 ? '1 item needs your review' : `${count} items need your review`}
+        {t('v3.home.attentionRow.needsReview', { count })}
       </span>
       <ChevronRight aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
     </Link>

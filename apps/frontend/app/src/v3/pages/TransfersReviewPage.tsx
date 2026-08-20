@@ -1,10 +1,11 @@
 import { Button } from '@scani/ui/ui/button';
 import { PageHeader, PageLayout } from '@scani/ui/v3/components/PageLayout';
 import { mergeQueries } from '@scani/ui/v3/lib/query-state';
+import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import { trpc } from '@/lib/trpc';
 import { TransferReviewList } from '../components/review/TransferReviewList';
-import { TRANSFER_ANSWERED_PATH } from '../lib/routes';
+import { TRANSFER_ANSWERED_PATH, TRANSFER_RULES_PATH } from '../lib/routes';
 
 /**
  * Transfers Scani could not match to the other half of themselves (SC-150).
@@ -20,6 +21,7 @@ import { TRANSFER_ANSWERED_PATH } from '../lib/routes';
  * filtered set and only the list knows what that is.
  */
 export function TransfersReviewPage() {
+  const { t } = useTranslation();
   const query = trpc.transferReview.listPending.useQuery();
 
   return (
@@ -29,11 +31,19 @@ export function TransfersReviewPage() {
           that working through it is finishing, and a view that also holds
           every answered row can never reach zero. */}
       <PageHeader
-        title="Transfers to confirm"
+        title={t('v3.review.page.transfersTitle')}
         action={
-          <Button asChild variant="outline">
-            <Link to={TRANSFER_ANSWERED_PATH}>Answered</Link>
-          </Button>
+          <div className="flex gap-2">
+            {/* The rules page is reachable from the queue rather than from
+                settings (SC-375): a rule is written from a row here, so the
+                place to take one back is one tap from the same screen. */}
+            <Button asChild variant="outline">
+              <Link to={TRANSFER_RULES_PATH}>{t('v3.review.rules.title')}</Link>
+            </Button>
+            <Button asChild variant="outline">
+              <Link to={TRANSFER_ANSWERED_PATH}>{t('v3.review.page.answered')}</Link>
+            </Button>
+          </div>
         }
       />
       <TransferReviewList items={query.data ?? []} query={mergeQueries(query)} />

@@ -55,6 +55,23 @@ export const userIntegrationCredentials = pgTable(
     importEnqueuedAt: timestamp('import_enqueued_at', { withTimezone: true }),
     importLastError: text('import_last_error'),
     importRetryCount: integer('import_retry_count').notNull().default(0),
+    /**
+     * The scheduled-sync lifecycle, kept apart from the import one above
+     * (SC-279).
+     *
+     * `reconcile-pending-credentials` abandons a credential once
+     * `importRetryCount >= MAX_RECONCILE_ATTEMPTS`, so an hourly balance
+     * failure bumping that counter would give up on a later, unrelated import
+     * before it had been tried once. Two lifecycles, two sets of fields.
+     *
+     * While `syncBlockedUntil` is in the future the scheduled sync does not
+     * touch this credential at all — for a lockout like IBKR Flex 1025 the
+     * attempt is itself the harm, so "skip and note it" is the only safe
+     * treatment.
+     */
+    syncBlockedUntil: timestamp('sync_blocked_until', { withTimezone: true }),
+    syncLastError: text('sync_last_error'),
+    syncFailureCount: integer('sync_failure_count').notNull().default(0),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },

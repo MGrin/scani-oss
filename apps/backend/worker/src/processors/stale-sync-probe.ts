@@ -26,7 +26,22 @@ export class StaleSyncProbeProcessor extends ScheduledJobProcessor {
         `${targets.length} integration(s) not syncing past ${hours}h: ${names}. ` +
           'Check credentials/provider for each.'
       );
-      logger.error({ count: targets.length, names }, '🚨 Stale integrations detected');
+      // Carry the credential and user ids into the log line. The row is what
+      // has to be acted on, and the previous message named only the
+      // institution — which for a shared institution does not identify it.
+      logger.error(
+        {
+          count: targets.length,
+          names,
+          targets: targets.map((t) => ({
+            credentialId: t.credentialId,
+            userId: t.userId,
+            institutionName: t.institutionName,
+            kind: t.kind,
+          })),
+        },
+        '🚨 Stale integrations detected'
+      );
       captureException(err, {
         component: 'worker',
         kind: 'stale-sync-alert',

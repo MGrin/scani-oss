@@ -1,0 +1,2645 @@
+{
+  "v3": {
+    "shell": {
+      "tabBar": {
+        "landmark": "Основная навигация",
+        "moreWithReview_one": "Ещё — {{count}} пункт ждёт разбора",
+        "moreWithReview_few": "Ещё — {{count}} пункта ждут разбора",
+        "moreWithReview_many": "Ещё — {{count}} пунктов ждут разбора",
+        "moreWithReview_other": "Ещё — {{count}} пункта ждут разбора"
+      },
+      "sidebar": {
+        "landmark": "Боковая панель"
+      },
+      "moreDrawer": {
+        "description": "Всё, что не поместилось в панель вкладок. Потяните за ручку вверх, чтобы увидеть весь список."
+      }
+    },
+    "common": {
+      "convertedTotal": {
+        "includes": "Включает <amounts></amounts>, пересчитанные по сегодняшнему курсу",
+        "includesStale": "Включает <amounts></amounts>, пересчитанные по курсу на {{date}}",
+        "notIncluded": "Не включено: <amounts></amounts> — нет свежего курса для {{currencies}}.",
+        "working": "Считаем итог",
+        "noTotal": "Итога нет — сегодняшний курс не загрузился",
+        "ratesUnavailable": "Не включено: <amounts></amounts> — сегодняшний курс не загрузился, поэтому цифра неполная."
+      },
+      "convertedFigure": {
+        "moreCurrencies_one": "{{count}} валюта без пересчёта",
+        "moreCurrencies_few": "{{count}} валюты без пересчёта",
+        "moreCurrencies_many": "{{count}} валют без пересчёта",
+        "moreCurrencies_other": "{{count}} валюты без пересчёта",
+        "working": "Считаем эту цифру",
+        "unavailableSpoken": "<value/> без пересчёта — сегодняшний курс не загрузился",
+        "unavailableSpokenMany_one": "{{count}} валюта без пересчёта — сегодняшний курс не загрузился",
+        "unavailableSpokenMany_few": "{{count}} валюты без пересчёта — сегодняшний курс не загрузился",
+        "unavailableSpokenMany_many": "{{count}} валют без пересчёта — сегодняшний курс не загрузился",
+        "unavailableSpokenMany_other": "{{count}} валюты без пересчёта — сегодняшний курс не загрузился",
+        "unconvertedSpoken": "<value/> без пересчёта — нет свежего курса",
+        "unconvertedSpokenMany_one": "{{count}} валюта без пересчёта — нет свежего курса",
+        "unconvertedSpokenMany_few": "{{count}} валюты без пересчёта — нет свежего курса",
+        "unconvertedSpokenMany_many": "{{count}} валют без пересчёта — нет свежего курса",
+        "unconvertedSpokenMany_other": "{{count}} валюты без пересчёта — нет свежего курса",
+        "unconvertedSeen": "<value/> без пересчёта"
+      },
+      "baseEquivalent": {
+        "seen": "≈ <value/>",
+        "seenStale": "≈ <value/> · по старому курсу",
+        "spoken": "Примерно <value/>",
+        "spokenStale": "Примерно <value/>, по более старому курсу"
+      },
+      "pullToRefresh": {
+        "refreshing": "Обновляем"
+      },
+      "errorBoundary": {
+        "goHome": "На главную v3"
+      },
+      "action": {
+        "seeAll": "Показать все"
+      },
+      "unknownVendor": "Неизвестный контрагент",
+      "openRecord": "{{name}} — открыть",
+      "listAnd": "{{first}} и {{second}}",
+      "listSemicolon": "{{first}}; {{second}}",
+      "cannotBeUndone": "Это нельзя отменить.",
+      "relative": {
+        "justNow": "только что",
+        "minutes_one": "{{count, number}} мин назад",
+        "minutes_few": "{{count, number}} мин назад",
+        "minutes_many": "{{count, number}} мин назад",
+        "minutes_other": "{{count, number}} мин назад",
+        "hours_one": "{{count, number}} ч назад",
+        "hours_few": "{{count, number}} ч назад",
+        "hours_many": "{{count, number}} ч назад",
+        "hours_other": "{{count, number}} ч назад",
+        "days_one": "{{count, number}} д назад",
+        "days_few": "{{count, number}} д назад",
+        "days_many": "{{count, number}} д назад",
+        "days_other": "{{count, number}} д назад"
+      }
+    },
+    "notFound": {
+      "title": "Такой страницы нет",
+      "body": "В Scani ничего нет по адресу, который вы запросили. Возможно, ссылка устарела или в адресе опечатка.",
+      "goHome": "На главную"
+    },
+    "export": {
+      "sheet": {
+        "accounts": "Счета",
+        "holdings": "Позиции",
+        "transactions": "Операции",
+        "vendors": "Контрагенты",
+        "payments": "Платежи",
+        "occurrences": "Даты платежей",
+        "groups": "Группы",
+        "groupMembers": "Участники групп",
+        "vaults": "Копилки",
+        "vaultHoldings": "Позиции копилок",
+        "documents": "Документы",
+        "history": "История чистой стоимости",
+        "netWorth": "Чистая стоимость"
+      },
+      "column": {
+        "account": "Счёт",
+        "institution": "Организация",
+        "accountType": "Тип",
+        "description": "Описание",
+        "hidden": "Скрыто",
+        "active": "Активен",
+        "added": "Добавлено",
+        "id": "Id",
+        "symbol": "Символ",
+        "token": "Токен",
+        "balance": "Остаток",
+        "source": "Источник",
+        "lastUpdated": "Обновлено",
+        "occurred": "Произошло",
+        "transactionKind": "Вид",
+        "quantity": "Количество",
+        "priceNative": "Цена (в валюте актива)",
+        "counterQuantity": "Встречное количество",
+        "fee": "Комиссия",
+        "counterparty": "Вторая сторона",
+        "externalId": "Внешний id",
+        "vendor": "Контрагент",
+        "category": "Категория",
+        "website": "Сайт",
+        "direction": "Направление",
+        "paymentKind": "Вид",
+        "amount": "Сумма",
+        "every": "Каждые",
+        "starting": "Начало",
+        "ending": "Окончание",
+        "status": "Статус",
+        "origin": "Происхождение",
+        "notes": "Заметки",
+        "due": "Срок",
+        "expected": "Ожидалось",
+        "actual": "Фактически",
+        "group": "Группа",
+        "memberKind": "Вид участника",
+        "member": "Участник",
+        "vault": "Копилка",
+        "saved": "Накоплено",
+        "target": "Цель",
+        "holding": "Позиция",
+        "share": "Доля",
+        "file": "Файл",
+        "documentKind": "Вид",
+        "mimeType": "Тип",
+        "bytes": "Байты",
+        "classification": "Классификация",
+        "uploaded": "Загружено",
+        "date": "Дата",
+        "netWorth": "Чистая стоимость",
+        "coverage": "Покрытие",
+        "holdingsPriced": "Позиций с ценой",
+        "holdingsTotal": "Позиций всего",
+        "holdingsUnpriceable": "Позиций без цены",
+        "holdingsStalePriced": "Позиций с устаревшей котировкой"
+      },
+      "value": {
+        "yes": "да",
+        "no": "нет",
+        "every_week_one": "{{count}} неделя",
+        "every_week_few": "{{count}} недели",
+        "every_week_many": "{{count}} недель",
+        "every_week_other": "{{count}} недели",
+        "every_month_one": "{{count}} месяц",
+        "every_month_few": "{{count}} месяца",
+        "every_month_many": "{{count}} месяцев",
+        "every_month_other": "{{count}} месяца",
+        "every_quarter_one": "{{count}} квартал",
+        "every_quarter_few": "{{count}} квартала",
+        "every_quarter_many": "{{count}} кварталов",
+        "every_quarter_other": "{{count}} квартала",
+        "every_year_one": "{{count}} год",
+        "every_year_few": "{{count}} года",
+        "every_year_many": "{{count}} лет",
+        "every_year_other": "{{count}} года",
+        "everyUnknown": "{{count}} × {{unit}}"
+      },
+      "provenance": {
+        "subject": "Весь аккаунт",
+        "scope": "{{holdings}}, {{transactions}}, {{history}}",
+        "scopeHoldings_one": "{{count}} позиция",
+        "scopeHoldings_few": "{{count}} позиции",
+        "scopeHoldings_many": "{{count}} позиций",
+        "scopeHoldings_other": "{{count}} позиции",
+        "scopeTransactions_one": "{{count}} операция",
+        "scopeTransactions_few": "{{count}} операции",
+        "scopeTransactions_many": "{{count}} операций",
+        "scopeTransactions_other": "{{count}} операции",
+        "scopeHistory_one": "{{count}} день истории",
+        "scopeHistory_few": "{{count}} дня истории",
+        "scopeHistory_many": "{{count}} дней истории",
+        "scopeHistory_other": "{{count}} дня истории",
+        "accountLabel": "Аккаунт",
+        "notIncludedLabel": "Не включено",
+        "notIncludedValue": "Ключи бирж и брокеров, сессии, содержимое загруженных файлов"
+      }
+    },
+    "feedback": {
+      "stale": {
+        "notice": "Не удалось связаться со Scani. Это последние цифры, которые у нас были, а не сегодняшние.",
+        "retry": "Попробовать снова"
+      }
+    },
+    "form": {
+      "dateField": {
+        "clear": "Очистить дату",
+        "placeholder": "Выберите дату"
+      },
+      "recordPicker": {
+        "change": "Изменить: {{label}}",
+        "changeAction": "Изменить",
+        "searching": "Ищем…"
+      },
+      "fiatCurrency": {
+        "noun": "валюта",
+        "searchPlaceholder": "Поиск валют…",
+        "empty": "Валюты с таким названием нет",
+        "label": "Валюта"
+      },
+      "cancel": "Отмена",
+      "blockers": "Чтобы продолжить: {{blockers}}.",
+      "sheet": {
+        "expand": "Показать всю форму",
+        "collapse": "Свернуть форму",
+        "close": "Закрыть форму"
+      }
+    },
+    "home": {
+      "loadingLabel": "ваш портфель",
+      "empty": {
+        "title": "Пока ничего не отслеживается",
+        "body": "Хватит скриншота экрана с балансом — из биржи, банка или от брокера. CSV или выписка тоже подойдут, и никуда входить не нужно.",
+        "action": "Загрузить скриншот или файл",
+        "secondaryAction": "Или выбрать другой способ",
+        "importing": {
+          "title": "Импорт выполняется",
+          "body": "Мы читаем позиции из файла. Можно уйти с этого экрана — процесс не остановится, и страница заполнится, когда он завершится.",
+          "action": "Посмотреть ход"
+        }
+      },
+      "disclosure": {
+        "showLess": "Свернуть",
+        "show": "Показать {{label}}",
+        "theOtherN_one": "ещё {{count}}",
+        "theOtherN_few": "ещё {{count}}",
+        "theOtherN_many": "ещё {{count}}",
+        "theOtherN_other": "ещё {{count}}",
+        "theNInOther_one": "{{count}} в «Прочем»",
+        "theNInOther_few": "{{count}} в «Прочем»",
+        "theNInOther_many": "{{count}} в «Прочем»",
+        "theNInOther_other": "{{count}} в «Прочем»"
+      },
+      "attentionRow": {
+        "needsReview_one": "{{count}} пункт ждёт вашего разбора",
+        "needsReview_few": "{{count}} пункта ждут вашего разбора",
+        "needsReview_many": "{{count}} пунктов ждут вашего разбора",
+        "needsReview_other": "{{count}} пункта ждут вашего разбора"
+      },
+      "topHoldings": {
+        "title": "Крупнейшие позиции",
+        "empty": "Пока ничего не оценено."
+      },
+      "tape": {
+        "noValue": "Нет стоимости"
+      },
+      "groups": {
+        "title": "Группы",
+        "openGroup": "{{name}} — открыть группу",
+        "empty": "Пусто"
+      },
+      "vaults": {
+        "title": "Копилки",
+        "progress": "{{name}}: {{percent}}% от цели",
+        "ofTarget": "из <target></target>"
+      },
+      "allocation": {
+        "title": "Распределение",
+        "cutBy": "Разбить распределение по",
+        "loadingLabel": "ваше распределение",
+        "empty": "В этом разрезе пока ничего не оценено.",
+        "barLabel": "Распределение по: {{dimension}}",
+        "dimension": {
+          "tokenType": "Тип",
+          "institution": "Организация",
+          "account": "Счёт",
+          "group": "Группа"
+        }
+      },
+      "upcoming": {
+        "title": "Ближайшие расходы",
+        "empty_one": "В ближайший {{count}} день ничего не предстоит.",
+        "empty_few": "В ближайшие {{count}} дня ничего не предстоит.",
+        "empty_many": "В ближайшие {{count}} дней ничего не предстоит.",
+        "empty_other": "В ближайшие {{count}} дня ничего не предстоит.",
+        "addPayment": "Добавить платёж",
+        "incomeExpected_one": "Ожидаемые поступления, ближайший {{count}} день",
+        "incomeExpected_few": "Ожидаемые поступления, ближайшие {{count}} дня",
+        "incomeExpected_many": "Ожидаемые поступления, ближайшие {{count}} дней",
+        "incomeExpected_other": "Ожидаемые поступления, ближайшие {{count}} дня"
+      },
+      "metric": {
+        "netWorth": "Чистая стоимость",
+        "pnl": "PnL",
+        "pnlFull": "Прибыль и убыток"
+      },
+      "period": {
+        "label7d": "1Н",
+        "suffix7d": "7д",
+        "label30d": "1М",
+        "suffix30d": "30д",
+        "label90d": "3М",
+        "suffix90d": "90д",
+        "label180d": "6М",
+        "suffix180d": "6м",
+        "label365d": "1Г",
+        "suffix365d": "1г"
+      },
+      "hero": {
+        "pnlOverPeriod": "Прибыль и убыток · {{period}}",
+        "vsPeriod": "против {{period}}",
+        "chartLabel": "{{metric}} за последние {{period}}",
+        "choosePlot": "Выберите, что показать на графике",
+        "changePeriod": "Сменить период",
+        "chartFailed": "График не загрузился. Цифры выше — последние, которые у нас были.",
+        "changeUnavailable": "Не удалось загрузить изменение за этот период",
+        "changePending": "Считаем изменение за этот период",
+        "pnlNotComputed": "PnL за этот период ещё не посчитан",
+        "noHistory": "За этот период истории пока нет",
+        "noMeasurementSince": "Измерений с {{date}} не было — последняя точка это сегодняшний живой итог, а не свёрнутый день.",
+        "retry": "Повторить",
+        "realized": "Реализовано",
+        "unrealized": "Нереализовано"
+      },
+      "quality": {
+        "allPriced_one": "Оценена {{count}} позиция",
+        "allPriced_few": "Оценены все {{count}} позиции",
+        "allPriced_many": "Оценены все {{count}} позиций",
+        "allPriced_other": "Оценены все {{count}} позиции",
+        "partlyPriced": "{{percent}}% оценено — {{priced}} из {{priceable}} позиций",
+        "withUnpriceable_one": "{{fraction}} · {{count}} без цены",
+        "withUnpriceable_few": "{{fraction}} · {{count}} без цены",
+        "withUnpriceable_many": "{{fraction}} · {{count}} без цены",
+        "withUnpriceable_other": "{{fraction}} · {{count}} без цены",
+        "staleQuotes_one": "{{count}} устаревшая котировка",
+        "staleQuotes_few": "{{count}} устаревшие котировки",
+        "staleQuotes_many": "{{count}} устаревших котировок",
+        "staleQuotes_other": "{{count}} устаревшей котировки",
+        "noBasis_one": "{{count}} без базы стоимости (прибыль — это верхняя граница)",
+        "noBasis_few": "{{count}} без базы стоимости (прибыль — это верхняя граница)",
+        "noBasis_many": "{{count}} без базы стоимости (прибыль — это верхняя граница)",
+        "noBasis_other": "{{count}} без базы стоимости (прибыль — это верхняя граница)",
+        "unreviewedTransfers_one": "Реализованный PnL не включает {{count}} неподтверждённый перевод",
+        "unreviewedTransfers_few": "Реализованный PnL не включает {{count}} неподтверждённых перевода",
+        "unreviewedTransfers_many": "Реализованный PnL не включает {{count}} неподтверждённых переводов",
+        "unreviewedTransfers_other": "Реализованный PnL не включает {{count}} неподтверждённого перевода"
+      },
+      "dueIn": {
+        "today": "Сегодня",
+        "tomorrow": "Завтра",
+        "days_one": "через {{count}} день",
+        "days_few": "через {{count}} дня",
+        "days_many": "через {{count}} дней",
+        "days_other": "через {{count}} дня",
+        "weeks_one": "через {{count}} неделю",
+        "weeks_few": "через {{count}} недели",
+        "weeks_many": "через {{count}} недель",
+        "weeks_other": "через {{count}} недели",
+        "months_one": "через {{count}} месяц",
+        "months_few": "через {{count}} месяца",
+        "months_many": "через {{count}} месяцев",
+        "months_other": "через {{count}} месяца"
+      },
+      "historyExport": {
+        "scopeWindow": "Это окно: {{period}}",
+        "scopeDays_one": "{{count}} день",
+        "scopeDays_few": "{{count}} дня",
+        "scopeDays_many": "{{count}} дней",
+        "scopeDays_other": "{{count}} дня",
+        "scopeAll": "Всё, что у нас есть",
+        "scopeAllDetail": "До шести лет",
+        "emptyTitle": "Выгружать нечего",
+        "emptyBody": "В этом окне пока нет измеренной истории.",
+        "subject": "История чистой стоимости",
+        "sheetSubject": "история чистой стоимости",
+        "currency": "Валюта",
+        "resolution": "Детализация",
+        "oneRowPerDay": "По строке на день",
+        "days_one": "{{count}} день",
+        "days_few": "{{count}} дня",
+        "days_many": "{{count}} дней",
+        "days_other": "{{count}} дня",
+        "pending": "Выгружаем историю чистой стоимости",
+        "trigger": "Выгрузить историю чистой стоимости",
+        "action": "Выгрузить историю"
+      }
+    },
+    "groups": {
+      "coverage": {
+        "empty": "Ничто в этой группе сегодня не имеет стоимости.",
+        "counted_one": "Сколько сегодня стоит {{count}} позиция, вошедшая в этот итог.",
+        "counted_few": "Сколько сегодня стоят {{count}} позиции, вошедшие в этот итог.",
+        "counted_many": "Сколько сегодня стоят {{count}} позиций, вошедших в этот итог.",
+        "counted_other": "Сколько сегодня стоят {{count}} позиции, вошедшие в этот итог.",
+        "countedAll_one": "Учтена {{count}} позиция из списка ниже — это всё.",
+        "countedAll_few": "Учтены все {{count}} позиции из списка ниже.",
+        "countedAll_many": "Учтены все {{count}} позиций из списка ниже.",
+        "countedAll_other": "Учтены все {{count}} позиции из списка ниже.",
+        "countedOf_one": "Учтена {{count}} позиция из {{listed}} в списке ниже.",
+        "countedOf_few": "Учтены {{count}} позиции из {{listed}} в списке ниже.",
+        "countedOf_many": "Учтено {{count}} позиций из {{listed}} в списке ниже.",
+        "countedOf_other": "Учтено {{count}} позиции из {{listed}} в списке ниже."
+      },
+      "accountNote": "Счёт здесь приносит всё, что на нём есть, и всё, что придёт на него позже. Позиция, попавшая сюда дважды, считается один раз.",
+      "inactiveNote_one": "Из них {{count}} неактивна: она остаётся в группе и есть в списке ниже, но в этот итог не входит.",
+      "inactiveNote_few": "Из них {{count}} неактивны: они остаются в группе и есть в списке ниже, но в этот итог не входят.",
+      "inactiveNote_many": "Из них {{count}} неактивны: они остаются в группе и есть в списке ниже, но в этот итог не входят.",
+      "inactiveNote_other": "Из них {{count}} неактивны: они остаются в группе и есть в списке ниже, но в этот итог не входят.",
+      "unpriced": {
+        "listAll": "{{head}} и {{last}}",
+        "listMore": "{{head}} и ещё {{count}}",
+        "note_one": "{{named}} не удалось оценить сегодня, поэтому этого нет в итоге.",
+        "note_few": "{{named}} не удалось оценить сегодня, поэтому этого нет в итоге.",
+        "note_many": "{{named}} не удалось оценить сегодня, поэтому этого нет в итоге.",
+        "note_other": "{{named}} не удалось оценить сегодня, поэтому этого нет в итоге."
+      },
+      "createFirst": "Создайте первую группу",
+      "colour": {
+        "legend": "Цвет",
+        "swatch": "Цвет {{color}}"
+      },
+      "detail": {
+        "toast": {
+          "updated": "Группа обновлена",
+          "updating": "Обновляем группу",
+          "deleted": "Группа удалена",
+          "deleting": "Удаляем группу"
+        },
+        "backToGroups": "Группы",
+        "removeMember": "Убрать {{label}} из группы {{group}}",
+        "notFound": "Этой группы нет в вашем списке. Возможно, её удалили или ссылка устарела.",
+        "value": "Стоимость",
+        "inThisGroup": "В этой группе",
+        "noun": "позиции и счета",
+        "note": "Если добавить счёт целиком, он остаётся в группе — вместе со всем, что придёт на него позже. Отдельные позиции убираются из списка выше.",
+        "empty": "В этой группе пока ничего нет. Добавьте позицию или счёт — и они появятся здесь.",
+        "addMembers": "Добавить позиции или счета",
+        "details": "Подробности",
+        "name": "Название",
+        "description": "Описание",
+        "colour": "Цвет",
+        "saveChanges": "Сохранить изменения",
+        "discard": "Отменить",
+        "needName": "Чтобы сохранить: дайте группе название.",
+        "dangerZone": "Опасная зона",
+        "deleteConsequence": "«{{name}}» исчезает из всех списков и фильтров. То, что в ней ({{members}}), не удаляется — просто перестаёт нести эту метку.",
+        "deleteTrigger": "Удалить группу",
+        "deleteCommit": "Удалить эту группу"
+      },
+      "page": {
+        "title": "Группы",
+        "created": "Группа «{{name}}» создана",
+        "creating": "Создаём группу",
+        "name": "Название",
+        "newGroup": "Новая группа",
+        "createGroup": "Создать группу",
+        "cancel": "Отмена",
+        "namePlaceholder": "Пенсия, облагаемое налогом, совместное…",
+        "colour": "Цвет",
+        "needName": "Чтобы продолжить: дайте группе название."
+      },
+      "assign": {
+        "title": "Назначить группы",
+        "description": "Каждая отмеченная здесь группа применяется к выбранному ({{entities}}). Группы, которые есть не у всех, в списке не показаны и остаются без изменений.",
+        "holdingCount_one": "{{count}} позиция",
+        "holdingCount_few": "{{count}} позиции",
+        "holdingCount_many": "{{count}} позиций",
+        "holdingCount_other": "{{count}} позиции",
+        "accountCount_one": "{{count}} счёт",
+        "accountCount_few": "{{count}} счёта",
+        "accountCount_many": "{{count}} счетов",
+        "accountCount_other": "{{count}} счёта",
+        "save": "Сохранить группы",
+        "saving": "Сохраняем…",
+        "newGroup": "Новая группа",
+        "loading": "Загружаем группы",
+        "stillLoading": "дождитесь загрузки групп",
+        "firstTitle": "Создайте первую группу",
+        "firstDescription": "У вас пока нет групп. Эта будет создана и применена к выбранному ({{entities}}).",
+        "createAndAssign": "Создать и назначить",
+        "creating": "Создаём…",
+        "needName": "дайте название группе",
+        "subject": "эти группы",
+        "groupSubject": "группу",
+        "toast": {
+          "added_one": "Добавлено в {{count}} группу",
+          "added_few": "Добавлено в {{count}} группы",
+          "added_many": "Добавлено в {{count}} групп",
+          "added_other": "Добавлено в {{count}} группы",
+          "removed_one": "Убрано из {{count}} группы",
+          "removed_few": "Убрано из {{count}} групп",
+          "removed_many": "Убрано из {{count}} групп",
+          "removed_other": "Убрано из {{count}} групп",
+          "changed": "Группы обновлены",
+          "createdAndAssigned": "Группа «{{name}}» создана и назначена"
+        }
+      }
+    },
+    "realizedLedger": {
+      "answerTransfers": "Ответить на ожидающие переводы",
+      "portion": "{{noun}}: часть {{index}} из {{total}}",
+      "noun": {
+        "sale": "продажа",
+        "swap": "обмен",
+        "withdrawal": "вывод",
+        "transfer": "перевод",
+        "disposal": "выбытие"
+      },
+      "verb": {
+        "sold": "Продано",
+        "swapped": "Обменяно",
+        "withdrew": "Выведено",
+        "transferredOut": "Переведено",
+        "disposed": "Выбыло"
+      },
+      "outcome": {
+        "unpriced": "Цену для этого найти не удалось, поэтому прибыль не начислена. База стоимости всё равно показана.",
+        "unreviewed": "Ждём вашего ответа, поэтому прибыль не начислена ни в ту, ни в другую сторону.",
+        "retained": "Вы сказали, что это не выходило из-под вашего контроля, поэтому ничего не реализовано.",
+        "awaitingPair": "Импортирована только одна сторона этого движения, поэтому прибыль не начислена.",
+        "realizedUnattributed": "Записано как ушедшее из вашего портфеля, поэтому прибыль начислена. Записи о том, кто на это ответил, нет — ответ был дан не в очереди разбора.",
+        "retainedUnattributed": "Записано как никогда не выходившее из-под вашего контроля, поэтому ничего не реализовано. Записи о том, кто на это ответил, нет."
+      },
+      "basis": {
+        "partialNote": "На основе истории, о неполноте которой нам известно, или цены за пределами окна свежести.",
+        "unknownNote": "У нас нет записи о приобретении, поэтому вся сумма показана как прибыль. Чаще всего это импорт, который не смог дотянуться достаточно далеко назад.",
+        "partialLabel": "Неполная база",
+        "unknownLabel": "Базы стоимости нет в записях"
+      },
+      "held": {
+        "sameDay": "в тот же день",
+        "days_one": "{{count}} день",
+        "days_few": "{{count}} дня",
+        "days_many": "{{count}} дней",
+        "days_other": "{{count}} дня",
+        "months_one": "{{count}} месяц",
+        "months_few": "{{count}} месяца",
+        "months_many": "{{count}} месяцев",
+        "months_other": "{{count}} месяца",
+        "years": "{{years}} года"
+      },
+      "answer": {
+        "unattributedLabel": "Ответ не записан"
+      },
+      "valuation": {
+        "heldTokenFallback": "Оценено по ушедшему токену, по его цене на тот день: у того, что пришло, нет истории цен, поэтому курс, по которому прошёл этот обмен, пересчитать не удалось.",
+        "estimatedLabel": "Оценено по ушедшему токену"
+      }
+    },
+    "membership": {
+      "picker": {
+        "done": "Готово"
+      },
+      "holdings_one": "Позиции ({{count}})",
+      "holdings_few": "Позиции ({{count}})",
+      "holdings_many": "Позиции ({{count}})",
+      "holdings_other": "Позиции ({{count}})",
+      "wholeAccounts_one": "Счета целиком ({{count}})",
+      "wholeAccounts_few": "Счета целиком ({{count}})",
+      "wholeAccounts_many": "Счета целиком ({{count}})",
+      "wholeAccounts_other": "Счета целиком ({{count}})",
+      "wholeAccountsNote": "Счёт входит в группу целиком — вместе с тем, что на нём сейчас, и со всем, что придёт позже. Если убрать его, уйдёт всё это.",
+      "searchPlaceholder": "Поиск: {{noun}}",
+      "searchLabel": "Найти среди: {{noun}}",
+      "add": "Добавить {{label}}",
+      "added": "Добавлено в группу: {{label}}",
+      "removed": "Убрано из группы: {{label}}",
+      "adding": "Добавляем в группу",
+      "removing": "Убираем из группы",
+      "addAction": "Добавить",
+      "addPending": "Добавляем",
+      "removeAction": "Убрать",
+      "removePending": "Убираем",
+      "noMatch": "Ничего из того, что можно добавить, не подходит под «{{query}}».",
+      "allAdded": "Всё, что у вас есть, уже здесь — больше нечего добавить в разделе «{{noun}}».",
+      "allOfCount_one": "Все: {{count}} позиция",
+      "allOfCount_few": "Все: {{count}} позиции",
+      "allOfCount_many": "Все: {{count}} позиций",
+      "allOfCount_other": "Все: {{count}} позиции",
+      "count": {
+        "holding_one": "{{count}} позиция",
+        "holding_few": "{{count}} позиции",
+        "holding_many": "{{count}} позиций",
+        "holding_other": "{{count}} позиции",
+        "account_one": "{{count}} счёт",
+        "account_few": "{{count}} счёта",
+        "account_many": "{{count}} счетов",
+        "account_other": "{{count}} счёта"
+      }
+    },
+    "money": {
+      "upcoming": {
+        "overdueTotal_one": "Просрочено, {{count}} платёж",
+        "overdueTotal_few": "Просрочено, {{count}} платежа",
+        "overdueTotal_many": "Просрочено, {{count}} платежей",
+        "overdueTotal_other": "Просрочено, {{count}} платежа",
+        "noneAhead_one": "В ближайший {{count}} день ничего не предстоит.",
+        "noneAhead_few": "В ближайшие {{count}} дня ничего не предстоит.",
+        "noneAhead_many": "В ближайшие {{count}} дней ничего не предстоит.",
+        "noneAhead_other": "В ближайшие {{count}} дня ничего не предстоит.",
+        "seeRecurring": "Смотреть регулярные платежи",
+        "addPayment": "Добавить платёж",
+        "billsCommitted_one": "Обязательные расходы, ближайший {{count}} день",
+        "billsCommitted_few": "Обязательные расходы, ближайшие {{count}} дня",
+        "billsCommitted_many": "Обязательные расходы, ближайшие {{count}} дней",
+        "billsCommitted_other": "Обязательные расходы, ближайшие {{count}} дня",
+        "row": "{{vendor}}, срок {{date}}",
+        "label": "ближайшие платежи"
+      },
+      "segments": {
+        "upcoming": "Ближайшие",
+        "recurring": "Регулярные",
+        "vendors": "Контрагенты"
+      },
+      "overdue": {
+        "unknown": "Просрочено",
+        "today": "Срок сегодня",
+        "byDays_one": "просрочка {{count}} день",
+        "byDays_few": "просрочка {{count}} дня",
+        "byDays_many": "просрочка {{count}} дней",
+        "byDays_other": "просрочка {{count}} дня"
+      },
+      "direction": {
+        "income": "Поступление",
+        "bill": "Расход"
+      },
+      "cadence": {
+        "every_week_one": "Каждую {{count}} неделю",
+        "every_week_few": "Каждые {{count}} недели",
+        "every_week_many": "Каждые {{count}} недель",
+        "every_week_other": "Каждые {{count}} недели",
+        "every_month_one": "Каждый {{count}} месяц",
+        "every_month_few": "Каждые {{count}} месяца",
+        "every_month_many": "Каждые {{count}} месяцев",
+        "every_month_other": "Каждые {{count}} месяца",
+        "every_quarter_one": "Каждый {{count}} квартал",
+        "every_quarter_few": "Каждые {{count}} квартала",
+        "every_quarter_many": "Каждые {{count}} кварталов",
+        "every_quarter_other": "Каждые {{count}} квартала",
+        "every_year_one": "Каждый {{count}} год",
+        "every_year_few": "Каждые {{count}} года",
+        "every_year_many": "Каждые {{count}} лет",
+        "every_year_other": "Каждые {{count}} года",
+        "everyUnknown": "Каждые {{count}} × {{unit}}"
+      },
+      "endPayment": {
+        "base": "Завершает платёж «{{vendor}}» {{date}}. Он перестаёт появляться в ближайших, а история оплат и пропусков сохраняется.",
+        "checking": "Считаем, сколько запланированных дат это уберёт…",
+        "noneRemoved": "После этой даты убирать нечего — запланированных дат больше нет.",
+        "removed_one": "После этой даты убирается {{count}} запланированная дата. Это нельзя отменить — вернуть завершённый платёж Scani не умеет.",
+        "removed_few": "После этой даты убираются {{count}} запланированные даты. Это нельзя отменить — вернуть завершённый платёж Scani не умеет.",
+        "removed_many": "После этой даты убирается {{count}} запланированных дат. Это нельзя отменить — вернуть завершённый платёж Scani не умеет.",
+        "removed_other": "После этой даты убирается {{count}} запланированной даты. Это нельзя отменить — вернуть завершённый платёж Scani не умеет.",
+        "trigger": "Завершить",
+        "confirm": "Завершить этот платёж",
+        "ended": "Платёж завершён",
+        "ending": "Завершаем платёж"
+      },
+      "deletePayment": {
+        "checking": "Удаляет платёж «{{vendor}}». Проверяем, что за ним числится…",
+        "blocked_one": "За этим платежом числится {{count}} закрытая дата — деньги, которые действительно двигались. Удалить его нельзя, иначе стёрлась бы и история.",
+        "blocked_few": "За этим платежом числятся {{count}} закрытые даты — деньги, которые действительно двигались. Удалить его нельзя, иначе стёрлась бы и история.",
+        "blocked_many": "За этим платежом числится {{count}} закрытых дат — деньги, которые действительно двигались. Удалить его нельзя, иначе стёрлась бы и история.",
+        "blocked_other": "За этим платежом числится {{count}} закрытой даты — деньги, которые действительно двигались. Удалить его нельзя, иначе стёрлась бы и история.",
+        "wayOutEnded": "Он уже завершён, поэтому расписание остановлено, а запись остаётся.",
+        "wayOutEnd": "Завершите его вместо этого: расписание остановится, а запись останется.",
+        "lead": "Удаляет платёж «{{vendor}}» так, будто его никогда не было.",
+        "clauseScheduled_one": "{{count}} запланированная дата",
+        "clauseScheduled_few": "{{count}} запланированные даты",
+        "clauseScheduled_many": "{{count}} запланированных дат",
+        "clauseScheduled_other": "{{count}} запланированной даты",
+        "clauseSkipped_one": "{{count}} пропущенная вами дата",
+        "clauseSkipped_few": "{{count}} пропущенные вами даты",
+        "clauseSkipped_many": "{{count}} пропущенных вами дат",
+        "clauseSkipped_other": "{{count}} пропущенной вами даты",
+        "discarded_one": "{{clauses}} уйдёт вместе с ним.",
+        "discarded_few": "{{clauses}} уйдут вместе с ним.",
+        "discarded_many": "{{clauses}} уйдёт вместе с ним.",
+        "discarded_other": "{{clauses}} уйдёт вместе с ним.",
+        "tail": "Он исчезнет из ближайших, из итогов и из этого списка. Если этот счёт действительно был — завершите его, так запись сохранится. Это нельзя отменить.",
+        "trigger": "Удалить",
+        "confirmEnd": "Завершить этот платёж",
+        "confirmDelete": "Удалить этот платёж",
+        "deleted": "Платёж удалён"
+      },
+      "deleteVendor": {
+        "checking": "Удаляет «{{vendor}}». Проверяем, что на него ссылается…",
+        "blocked_one": "На «{{vendor}}» всё ещё ссылается {{count}} платёж, и удаление забрало бы этот платёж вместе со всем, что за ним закрыто. Сначала завершите или удалите его — либо объедините «{{vendor}}» с тем контрагентом, которого вы имели в виду.",
+        "blocked_few": "На «{{vendor}}» всё ещё ссылаются {{count}} платежа, и удаление забрало бы эти платежи вместе со всем, что за ними закрыто. Сначала завершите или удалите их — либо объедините «{{vendor}}» с тем контрагентом, которого вы имели в виду.",
+        "blocked_many": "На «{{vendor}}» всё ещё ссылается {{count}} платежей, и удаление забрало бы эти платежи вместе со всем, что за ними закрыто. Сначала завершите или удалите их — либо объедините «{{vendor}}» с тем контрагентом, которого вы имели в виду.",
+        "blocked_other": "На «{{vendor}}» всё ещё ссылается {{count}} платежа, и удаление забрало бы эти платежи вместе со всем, что за ними закрыто. Сначала завершите или удалите их — либо объедините «{{vendor}}» с тем контрагентом, которого вы имели в виду.",
+        "lead": "Удаляет «{{vendor}}». Ему ничего не платится и от него ничего не приходит.",
+        "alsoAliases_one": "{{count}} название, под которым он встречался, уйдёт вместе с ним",
+        "alsoAliases_few": "{{count}} названия, под которыми он встречался, уйдут вместе с ним",
+        "alsoAliases_many": "{{count}} названий, под которыми он встречался, уйдут вместе с ним",
+        "alsoAliases_other": "{{count}} названия, под которыми он встречался, уйдут вместе с ним",
+        "alsoExtractions_one": "{{count}} разобранный инвойс сохранит свою запись, но потеряет связь с этим контрагентом",
+        "alsoExtractions_few": "{{count}} разобранных инвойса сохранят свои записи, но потеряют связь с этим контрагентом",
+        "alsoExtractions_many": "{{count}} разобранных инвойсов сохранят свои записи, но потеряют связь с этим контрагентом",
+        "alsoExtractions_other": "{{count}} разобранного инвойса сохранят свои записи, но потеряют связь с этим контрагентом",
+        "alsoFrame": "{{clauses}}.",
+        "trigger": "Удалить",
+        "confirm": "Удалить этого контрагента",
+        "deleted": "{{vendor}} удалён"
+      },
+      "mergeVendor": {
+        "base": "«{{duplicate}}» удаляется, «{{survivor}}» остаётся.",
+        "checking": "Проверяем, что переедет…",
+        "nothingMoves": "На «{{duplicate}}» ничего не ссылается, поэтому переезжать нечему. Это нельзя отменить.",
+        "clausePayments_one": "{{count}} платёж",
+        "clausePayments_few": "{{count}} платежа",
+        "clausePayments_many": "{{count}} платежей",
+        "clausePayments_other": "{{count}} платежа",
+        "clauseAliases_one": "{{count}} название",
+        "clauseAliases_few": "{{count}} названия",
+        "clauseAliases_many": "{{count}} названий",
+        "clauseAliases_other": "{{count}} названия",
+        "moves_one": "{{clauses}} переедет к «{{survivor}}». Это нельзя отменить.",
+        "moves_few": "{{clauses}} переедут к «{{survivor}}». Это нельзя отменить.",
+        "moves_many": "{{clauses}} переедет к «{{survivor}}». Это нельзя отменить.",
+        "moves_other": "{{clauses}} переедет к «{{survivor}}». Это нельзя отменить.",
+        "pickOne": "Выберите дубликат, который вольётся в «{{vendor}}». Эта запись останется; выбранная будет удалена.",
+        "trigger": "Объединить дубликат",
+        "confirmNamed": "Влить {{vendor}}",
+        "confirm": "Объединить",
+        "merged": "Контрагенты объединены",
+        "noCandidates": "Больше нет контрагентов, которых можно влить"
+      },
+      "page": {
+        "viewSwitcher": "Раздел «Деньги»",
+        "title": "Деньги",
+        "newVendor": "Новый контрагент",
+        "addPayment": "Добавить платёж"
+      },
+      "field": {
+        "direction": "Направление"
+      },
+      "paymentForm": {
+        "backToPayment": "Назад к платежу",
+        "allRecurring": "Все регулярные платежи",
+        "titleEdit": "Изменить платёж",
+        "titleNew": "Новый регулярный платёж",
+        "intro": "Счёт к оплате или регулярное поступление, которое сопоставляется с операциями по мере их появления.",
+        "suggestedFrom": "Предложено по инвойсу от {{vendor}}.",
+        "suggestedFromNumbered": "Предложено по инвойсу № {{number}} от {{vendor}}.",
+        "cadenceCaveat": "По одному инвойсу нельзя понять, как часто это повторяется, — проверьте расписание перед сохранением.",
+        "extractionGone": "Этот инвойс больше не ждёт разбора, поэтому заполнить форму заранее не удалось. Заполните её сами или откройте документ заново из раздела «Разбор».",
+        "missingTitle": "Этого платежа здесь нет",
+        "missingBody": "Возможно, он был завершён и удалён, или ссылка устарела.",
+        "sectionWho": "Кто",
+        "sectionWhat": "Что",
+        "sectionWhen": "Когда",
+        "sectionOptional": "Необязательное",
+        "directionIn": "Деньги приходят",
+        "directionOut": "Деньги уходят",
+        "amountIs": "Сумма",
+        "amountIsVariableHint": "Настоящая цифра появится, когда вы закроете очередную дату.",
+        "amountIsQuestion": "Сумма фиксированная?",
+        "kindFixed": "Всегда одна и та же",
+        "kindVariable": "Меняется",
+        "amount": "Сумма",
+        "estimate": "Оценка",
+        "estimateHint": "Необязательно.",
+        "repeatsEvery": "Повторяется каждые",
+        "repeatUnit": "Единица повтора",
+        "repeatUnitPlaceholder": "Как часто?",
+        "unitWeek": "Недель",
+        "unitMonth": "Месяцев",
+        "unitQuarter": "Кварталов",
+        "unitYear": "Лет",
+        "firstDue": "Первый срок",
+        "anchorFromIssueDate": "В инвойсе нет срока оплаты — это дата его выставления.",
+        "anchorMissing": "В инвойсе не нашлось даты. Выберите день, когда наступает срок.",
+        "anchorPlaceholder": "В инвойсе нет",
+        "stopsAfter": "Прекращается после",
+        "stopsAfterHint": "Оставьте пустым, чтобы повторялось бесконечно.",
+        "stopsAfterPlaceholder": "Никогда",
+        "markPaid": "Этот инвойс уже оплачен",
+        "markPaidHint": "Помечает покрытый им период закрытым, поэтому ближайшим вы увидите следующий платёж, а не этот.",
+        "linkedAccount": "Связанный счёт",
+        "noLinkedAccount": "Связанного счёта нет",
+        "notes": "Заметки",
+        "notesPlaceholder": "Всё, что стоит запомнить об этом платеже",
+        "saving": "Сохраняем…",
+        "saveChanges": "Сохранить изменения",
+        "create": "Создать платёж",
+        "created": "Платёж создан",
+        "createdFromInvoice": "Платёж создан по инвойсу",
+        "updated": "Платёж обновлён",
+        "repeatNoUnit": "По одному инвойсу периодичность не определить — укажите, как часто приходит этот счёт.",
+        "repeatWeek_one": "Повторяется каждую {{count}} неделю, с привязкой ко дню срока.",
+        "repeatWeek_few": "Повторяется каждые {{count}} недели, с привязкой ко дню срока.",
+        "repeatWeek_many": "Повторяется каждые {{count}} недель, с привязкой ко дню срока.",
+        "repeatWeek_other": "Повторяется каждые {{count}} недели, с привязкой ко дню срока.",
+        "repeatMonth_one": "Повторяется каждый {{count}} месяц, с привязкой ко дню срока.",
+        "repeatMonth_few": "Повторяется каждые {{count}} месяца, с привязкой ко дню срока.",
+        "repeatMonth_many": "Повторяется каждые {{count}} месяцев, с привязкой ко дню срока.",
+        "repeatMonth_other": "Повторяется каждые {{count}} месяца, с привязкой ко дню срока.",
+        "repeatQuarter_one": "Повторяется каждый {{count}} квартал, с привязкой ко дню срока.",
+        "repeatQuarter_few": "Повторяется каждые {{count}} квартала, с привязкой ко дню срока.",
+        "repeatQuarter_many": "Повторяется каждые {{count}} кварталов, с привязкой ко дню срока.",
+        "repeatQuarter_other": "Повторяется каждые {{count}} квартала, с привязкой ко дню срока.",
+        "repeatYear_one": "Повторяется каждый {{count}} год, с привязкой ко дню срока.",
+        "repeatYear_few": "Повторяется каждые {{count}} года, с привязкой ко дню срока.",
+        "repeatYear_many": "Повторяется каждые {{count}} лет, с привязкой ко дню срока.",
+        "repeatYear_other": "Повторяется каждые {{count}} года, с привязкой ко дню срока.",
+        "blockers": "Чтобы продолжить: {{blockers}}."
+      },
+      "status": {
+        "pause": "Приостановить",
+        "resume": "Возобновить",
+        "pauseConfirm": "Приостановить этот платёж",
+        "resumeConfirm": "Возобновить этот платёж",
+        "pauseConsequence": "Пока платёж на паузе, новые сроки не наступают. Всё, что выпадает на это время, записывается как пропущенное, а не как просроченное.",
+        "resumeConsequence": "Возвращает исходное расписание — те же даты, что и раньше. Прошедшие сроки остаются ровно такими, какие они есть.",
+        "resumeConsequenceSince": "Возвращает исходное расписание — те же даты, что и раньше. Всё, у чего срок наступил с {{date}}, записывается как пропущенное, а не как просроченное.",
+        "paused": "Платёж приостановлен",
+        "resumed": "Платёж возобновлён"
+      },
+      "settle": {
+        "markReceived": "Отметить как полученное",
+        "markPaid": "Отметить как оплаченное",
+        "markedReceived": "Отмечено как полученное",
+        "markedPaid": "Отмечено как оплаченное",
+        "skipped": "Дата пропущена",
+        "amountSettled": "Закрытая сумма",
+        "confirm": "Подтвердить",
+        "cancel": "Отмена",
+        "skip": "Пропустить"
+      },
+      "vendorSpend": {
+        "notSubtracted": "Не вычитается из того, что вы должны, — это две разные цифры."
+      },
+      "vendorEdit": {
+        "name": "Название",
+        "category": "Категория",
+        "categoryPlaceholder": "Без категории",
+        "website": "Сайт",
+        "websitePlaceholder": "Не указан",
+        "edit": "Изменить",
+        "cancel": "Отмена",
+        "save": "Сохранить контрагента"
+      },
+      "vendorCreate": {
+        "placeholder": "Название контрагента",
+        "label": "Название контрагента",
+        "cancel": "Отмена"
+      },
+      "vendorField": {
+        "label": "Контрагент",
+        "pendingHint": "Прочитано из инвойса. Мы создадим этого контрагента при сохранении, если его ещё нет.",
+        "searchPlaceholder": "Найти или создать контрагента",
+        "empty": "Контрагента с таким названием пока нет.",
+        "didYouMean": "Возможно, вы имели в виду",
+        "typeToCreate": "Введите название, чтобы создать контрагента",
+        "sameVendor": "Тот же контрагент",
+        "similar": "Похожие",
+        "createNamed": "Создать «{{term}}»",
+        "similarNames_one": "Контрагент с похожим названием уже есть:",
+        "similarNames_few": "Контрагенты с похожими названиями уже есть:",
+        "similarNames_many": "Контрагенты с похожими названиями уже есть:",
+        "use": "Выбрать {{name}}",
+        "similarNames_other": "Контрагенты с похожими названиями уже есть:"
+      },
+      "vendorList": {
+        "uncategorised": "Без категории",
+        "billsGroup": "Расходы",
+        "billKind": "Расход",
+        "paymentCount_one": "{{count}} платёж",
+        "paymentCount_few": "{{count}} платежа",
+        "paymentCount_many": "{{count}} платежей",
+        "paymentCount_other": "{{count}} платежа"
+      },
+      "vendor": {
+        "saved": "{{name}} сохранён",
+        "created": "{{name}} создан"
+      },
+      "currencyField": {
+        "label": "Валюта",
+        "searchPlaceholder": "USD, EUR, BTC…",
+        "empty": "В вашем списке токенов такого нет."
+      },
+      "duplicatePicker": {
+        "noMatch": "Других контрагентов под «{{query}}» не нашлось.",
+        "searchPlaceholder": "Поиск контрагентов",
+        "searchLabel": "Найти контрагента-дубликат",
+        "optionLabel": "Дубликат, который вольётся в {{vendor}}",
+        "intro": "Выберите дубликат для удаления. Он вливается в <survivor>{{vendor}}</survivor>, который остаётся."
+      },
+      "expectedIncome": {
+        "title_one": "Ожидаемые поступления, ближайший {{count}} день",
+        "title_few": "Ожидаемые поступления, ближайшие {{count}} дня",
+        "title_many": "Ожидаемые поступления, ближайшие {{count}} дней",
+        "title_other": "Ожидаемые поступления, ближайшие {{count}} дня",
+        "unknownPayer": "Плательщик неизвестен",
+        "row": "{{vendor}}, ожидается {{date}}",
+        "caption_one": "То, что вы рассчитываете получить. В цифру расходов за {{count}} день выше не входит.",
+        "caption_few": "То, что вы рассчитываете получить. В цифру расходов за {{count}} дня выше не входит.",
+        "caption_many": "То, что вы рассчитываете получить. В цифру расходов за {{count}} дней выше не входит.",
+        "caption_other": "То, что вы рассчитываете получить. В цифру расходов за {{count}} дня выше не входит.",
+        "expected": "Ожидается {{date}}",
+        "expectedLate": "Ожидалось {{date}} · пока не получено"
+      },
+      "peek": {
+        "status": "Статус",
+        "monthlyEquivalent": "В пересчёте на месяц",
+        "amountIs": "Сумма",
+        "varies": "Меняется",
+        "fixed": "Фиксированная",
+        "notSet": "Не задано",
+        "noAmount": "Суммы нет",
+        "setOnSettling": "Задаётся при закрытии",
+        "started": "Начало",
+        "schedule": "Расписание",
+        "repeats": "Повторяется",
+        "anchorDate": "Дата привязки",
+        "ends": "Окончание",
+        "never": "Никогда",
+        "pausedSince": "На паузе с",
+        "notes": "Заметки",
+        "note": "Заметка",
+        "edit": "Изменить",
+        "due": "Срок",
+        "editPayment": "Изменить платёж",
+        "cadenceAndDirection": "{{cadence}} · {{direction}}",
+        "expectedOn": "Ожидается {{date}}",
+        "expectedOnLate": "Ожидалось {{date}} · пока не получено",
+        "dueOn": "Срок {{date}}"
+      },
+      "recurringList": {
+        "addPayment": "Добавить платёж"
+      },
+      "recurringSummary": {
+        "committedEachMonth": "Обязательства на месяц"
+      },
+      "vendorPeek": {
+        "newVendor": "Новый контрагент",
+        "seePayments_one": "Смотреть платёж",
+        "seePayments_few": "Смотреть платежи",
+        "seePayments_many": "Смотреть платежи",
+        "seePayments_other": "Смотреть платежи",
+        "payments": "Платежи",
+        "incomeFromThisVendor": "Поступления от этого контрагента",
+        "recentIncome": "Недавние поступления",
+        "recentPayments": "Недавние платежи",
+        "details": "Подробности",
+        "website": "Сайт",
+        "noWebsite": "Не указан",
+        "direction": "Направление",
+        "unclassified": "По платежам этого контрагента не понять, уходят деньги или приходят, поэтому месячная цифра не показана.",
+        "notCounted": "Не учитывается"
+      },
+      "pending": {
+        "creatingVendor": "Создаём контрагента",
+        "creatingPayment": "Создаём платёж",
+        "updatingPayment": "Обновляем платёж",
+        "deletingPayment": "Удаляем платёж",
+        "deletingVendor": "Удаляем контрагента",
+        "savingVendor": "Сохраняем контрагента",
+        "mergingVendors": "Объединяем контрагентов",
+        "pausingPayment": "Ставим платёж на паузу",
+        "resumingPayment": "Возобновляем платёж",
+        "updatingOccurrence": "Обновляем дату платежа"
+      },
+      "thisPayment": "этот платёж",
+      "group": {
+        "overdue": "Просрочено"
+      },
+      "blocker": {
+        "enterAmount": "укажите сумму",
+        "estimateAboveZero": "сделайте оценку больше нуля или очистите её",
+        "chooseVendor": "выберите контрагента",
+        "pickCurrency": "выберите валюту из списка",
+        "setAnchorDate": "задайте дату привязки",
+        "chooseCadence": "выберите, как часто это повторяется",
+        "setRepeatCount": "задайте корректное число повторов"
+      }
+    },
+    "holdings": {
+      "amountFact": {
+        "edit": "Изменить количество",
+        "amount": "Количество",
+        "save": "Сохранить"
+      },
+      "deleteAction": {
+        "trigger": "Удалить",
+        "commit": "Удалить {{symbol}}",
+        "consequence": "{{symbol}} на счёте «{{account}}» удаляется вместе со всеми записанными по нему операциями — <value/> уходит из итога портфеля. Вернуть это нельзя; повторный импорт пришлось бы собирать заново. Чтобы убрать из итога, но сохранить запись, воспользуйтесь деактивацией."
+      },
+      "trendLabel": "Стоимость {{symbol}} за последние {{period}}",
+      "payout": {
+        "daily": "Ежедневно",
+        "weekdays": "По будням (пн–пт)",
+        "weekly": "Еженедельно, {{day}}",
+        "monthly": "Ежемесячно, {{day}}-го числа",
+        "yearly": "Ежегодно, {{date}}",
+        "yearlyLastDay": "Ежегодно, в последний день {{month}}"
+      },
+      "peek": {
+        "editPriceOf": "Изменить цену {{symbol}}",
+        "pot": "Основная сумма",
+        "interest": "Проценты",
+        "apy": "APY",
+        "apyEdit": "Изменить",
+        "apyRemove": "Убрать",
+        "configure": "Настроить",
+        "payout": "Выплата",
+        "lastPayout": "Последняя выплата",
+        "status": "Статус",
+        "active": "Активна",
+        "inactive": "Неактивна",
+        "lastUpdated": "Обновлено",
+        "source": "Источник",
+        "added": "Добавлена",
+        "price": "Цена",
+        "unpriceableNote": "Ни один источник ни разу не дал котировку по этому токену, и мы пока перестали спрашивать. Он исключён из вашей чистой стоимости, а не посчитан как ноль.",
+        "history": "История",
+        "incompleteHistory": "Неполная — поступлений до первой импортированной операции нет, поэтому значения до этой даты обрезаны.",
+        "performance": "Результат",
+        "costBasis": "База стоимости",
+        "gainLoss": "Прибыль / убыток",
+        "record": "Запись",
+        "groups": "Группы",
+        "in": "В",
+        "noGroups": "Групп нет",
+        "refreshing": "Обновляем…",
+        "refreshPrice": "Обновить цену",
+        "syncing": "Синхронизируем…",
+        "syncBalance": "Синхронизировать остаток",
+        "amount": "Количество",
+        "account": "Счёт",
+        "type": "Тип"
+      },
+      "badge": {
+        "noPrice": "Нет цены",
+        "noPriceTitle": "Ни один источник цен ни разу не дал котировку по этому токену, и мы пока перестали спрашивать. Он исключён из вашей чистой стоимости, а не посчитан как ноль.",
+        "lookalike": "Отображается как {{impersonates}}",
+        "lookalikeTitle": "Символ этого токена написан знаками, которые рисуют «{{impersonates}}», не будучи им. Строка сохранена, и ваш остаток вместе с ней, потому что скрыть её значило бы ничего вам не сказать, — но это не тот токен, на который она похожа.",
+        "noPriceSpoken": "цены нет",
+        "lookalikeSpoken": "отображается как {{impersonates}}",
+        "lookalikeExportCell": "{{symbol}} (отображается как {{impersonates}})"
+      },
+      "empty": {
+        "action": "Добавить первую позицию"
+      },
+      "bulk": {
+        "assignGroups": "Назначить группы",
+        "deleteConsequence_one": "{{symbols}} убирается из портфеля, и все записанные по нему операции уходят вместе с ним. Это нельзя отменить.",
+        "deleteConsequence_few": "{{symbols}} убираются из портфеля, и все записанные по ним операции уходят вместе с ними. Это нельзя отменить.",
+        "deleteConsequence_many": "{{symbols}} убираются из портфеля, и все записанные по ним операции уходят вместе с ними. Это нельзя отменить.",
+        "deleteConsequence_other": "{{symbols}} убираются из портфеля, и все записанные по ним операции уходят вместе с ними. Это нельзя отменить."
+      },
+      "realized": {
+        "heading": "Реализовано",
+        "noGain": "Прибыль не начислена",
+        "lotAcquired": "<qty/> приобретено {{date}}",
+        "lotHeld": "<qty/> приобретено {{date}} · в держании {{duration}}",
+        "lotNoAcquisition": "<qty/> без записи о приобретении",
+        "costOf": "стоимость <value/>"
+      },
+      "apy": {
+        "removed": "Настройка процентов убрана",
+        "removing": "Убираем настройку процентов",
+        "trigger": "Убрать настройку процентов",
+        "consequence": "Проценты по этой позиции перестанут начисляться. Уже записанные выплаты сохранятся.",
+        "commit": "Убрать",
+        "createTitle": "Настроить проценты",
+        "editTitle": "Изменить проценты",
+        "description": "Проценты добавляются к балансу этой позиции в каждую дату выплаты и записываются там операцией, которую видно в её истории.",
+        "subject": "настройку процентов",
+        "rate": "Годовая ставка (%)",
+        "ratePlaceholder": "4.5",
+        "frequencyLabel": "Выплата",
+        "dayOfWeek": "День недели",
+        "month": "Месяц",
+        "dayOfMonth": "День месяца",
+        "dayOfMonthPlaceholder": "1–31",
+        "needRate": "укажите годовую ставку больше 0 и не больше 100",
+        "needDayOfMonth": "укажите день месяца от 1 до 31",
+        "shortMonths": "В более коротких месяцах выплата приходится на последний день.",
+        "pastMonthEnd": "Месяц {{month}} заканчивается раньше, поэтому выплата будет в его последний день.",
+        "preview": "{{schedule}}. При текущем балансе следующая выплата — примерно {{amount}} {{symbol}}.",
+        "editRestarts": "Сохранение перезапускает расписание с сегодняшнего дня: следующая выплата будет в ближайшую подходящую дату.",
+        "saveCreate": "Начать начисление",
+        "saveEdit": "Сохранить",
+        "saving": "Сохраняем…",
+        "frequency": {
+          "daily": "Ежедневно",
+          "weekdays": "По будням",
+          "weekly": "Еженедельно",
+          "monthly": "Ежемесячно",
+          "yearly": "Ежегодно"
+        }
+      },
+      "page": {
+        "title": "Позиции"
+      },
+      "refresh": {
+        "price": "Обновляем цену",
+        "priceFailed": "Задача обновления цены не выполнена",
+        "balance": "Обновляем остаток",
+        "balanceFailed": "Задача обновления не выполнена",
+        "partialTitle": "Обновление остатков — частичное",
+        "partial_one": "{{symbol}} провайдер не вернул — остальной {{count}} остаток обновился. Повторите через минуту или переимпортируйте счёт, если это повторяется.",
+        "partial_few": "{{symbol}} провайдер не вернул — остальные {{count}} остатка обновились. Повторите через минуту или переимпортируйте счёт, если это повторяется.",
+        "partial_many": "{{symbol}} провайдер не вернул — остальные {{count}} остатков обновились. Повторите через минуту или переимпортируйте счёт, если это повторяется.",
+        "partial_other": "{{symbol}} провайдер не вернул — остальные {{count}} остатка обновились. Повторите через минуту или переимпортируйте счёт, если это повторяется.",
+        "oneBalance": "Остаток {{symbol}} обновлён",
+        "manyBalances_one": "Обновлён {{count}} остаток на этом счёте",
+        "manyBalances_few": "Обновлены {{count}} остатка на этом счёте",
+        "manyBalances_many": "Обновлено {{count}} остатков на этом счёте",
+        "manyBalances_other": "Обновлено {{count}} остатка на этом счёте",
+        "outcome": {
+          "noPrice": "Ни у одного провайдера не нашлось цены для {{symbol}}. Цифра на экране не изменилась.",
+          "storedWithAge": "Новой цены для {{symbol}} нет — показана цена от {{age}}",
+          "stored": "Новой цены для {{symbol}} нет — сохранённая не изменилась",
+          "updated": "Цена {{symbol}} обновлена"
+        }
+      },
+      "summary": {
+        "value": "Стоимость",
+        "excludes_one": "Не включает {{count}} неактивную позицию стоимостью <value/>, она есть в списке ниже.",
+        "excludes_few": "Не включает {{count}} неактивные позиции стоимостью <value/>, они есть в списке ниже.",
+        "excludes_many": "Не включает {{count}} неактивных позиций стоимостью <value/>, они есть в списке ниже.",
+        "excludes_other": "Не включает {{count}} неактивной позиции стоимостью <value/>, они есть в списке ниже.",
+        "allocation": "Распределение по типу актива"
+      },
+      "status": {
+        "confirm": "{{label}} {{symbol}}",
+        "deactivateConsequence": "{{symbol}} на счёте «{{account}}» перестаёт учитываться в итоге портфеля — <value/> уходит из него. Позиция и её история остаются и будут здесь помечены как неактивные, так что её можно вернуть.",
+        "activateConsequence": "{{symbol}} на счёте «{{account}}» снова учитывается в итоге портфеля — <value/> возвращается в него.",
+        "deactivateAction": "Деактивировать",
+        "activateAction": "Активировать"
+      },
+      "toast": {
+        "deleted": "Позиция удалена",
+        "deletingContext": "Удаляем позицию",
+        "bulkDeleted_one": "Удалена {{count}} позиция",
+        "bulkDeleted_few": "Удалены {{count}} позиции",
+        "bulkDeleted_many": "Удалено {{count}} позиций",
+        "bulkDeleted_other": "Удалено {{count}} позиции",
+        "bulkDeletedWithFailures_one": "Удалена {{count}} позиция, не удалось — {{failed}}",
+        "bulkDeletedWithFailures_few": "Удалены {{count}} позиции, не удалось — {{failed}}",
+        "bulkDeletedWithFailures_many": "Удалено {{count}} позиций, не удалось — {{failed}}",
+        "bulkDeletedWithFailures_other": "Удалено {{count}} позиции, не удалось — {{failed}}",
+        "bulkDeletingContext": "Удаляем позиции",
+        "updated": "Позиция обновлена",
+        "updatingContext": "Обновляем позицию"
+      }
+    },
+    "tokens": {
+      "custom": {
+        "nothingRecorded": "Ничего не записано",
+        "unknownSource": "Источник неизвестен",
+        "setManually": "Задано вручную",
+        "neverPriced": "Цены никогда не было",
+        "newToken": "Новый пользовательский токен",
+        "type": "Тип",
+        "pricedIn": "Оценивается в",
+        "noPrice": "Цена не записана",
+        "priceUpdated": "Цена обновлена",
+        "never": "Никогда",
+        "priceFrom": "Цена от",
+        "editPrice": "Изменить цену"
+      },
+      "hidden": {
+        "backToHoldings": "Назад к позициям",
+        "unhide": "Показать снова",
+        "likelyScam": "Похоже на скам",
+        "hidden": "Скрыто",
+        "why": "Почему скрыто",
+        "account": "Счёт",
+        "institution": "Организация",
+        "scamLikelihood": "Вероятность скама"
+      },
+      "segment": {
+        "custom": "Пользовательские",
+        "hidden": "Скрытые"
+      },
+      "hiddenReason": {
+        "user": "Скрыто вами",
+        "scam": "Помечено как вероятный скам",
+        "both": "Помечено как вероятный скам и скрыто вами"
+      },
+      "actions": {
+        "unhiding": "Возвращаем позицию",
+        "restoring": "Восстанавливаем токен",
+        "notScam": "Не скам",
+        "clearFlag": "Снять пометку о скаме для всех",
+        "clearFlagConsequence": "{{symbol}} ({{name}}) перестанет считаться скамом для всех пользователей Scani, а не только для вас, — токен вернётся в поиск и в подбор цен по всем аккаунтам. Делайте это, только если сами проверили контракт.",
+        "holdingRestored": "{{symbol}} снова в вашей сводке",
+        "tokenRestored": "{{symbol}} вернулся в поиск токенов"
+      },
+      "page": {
+        "title": "Токены",
+        "viewLabel": "Раздел токенов",
+        "newCustomToken": "Новый пользовательский токен"
+      },
+      "create": {
+        "title": "Создать пользовательский токен",
+        "description": "Для актива, который не отслеживает ни один поставщик цен. Пользовательские токены видны всем здесь, и цену может изменить любой.",
+        "subject": "токен",
+        "symbol": "Символ",
+        "symbolPlaceholder": "ACME",
+        "symbolTaken": "{{symbol}} уже существует. Возьмите другой символ или измените цену того токена.",
+        "name": "Название",
+        "namePlaceholder": "Акции «Акме»",
+        "type": "Тип",
+        "typePrivateCompany": "Частная компания",
+        "typeOther": "Прочее",
+        "initialPrice": "Начальная цена",
+        "reasonHint": "Откуда взялась цифра — это сможет прочитать любой.",
+        "notes": "Заметки",
+        "notesPlaceholder": "Всё, что стоит знать об этом активе",
+        "notesHint": "Необязательно.",
+        "needSymbol": "укажите символ",
+        "needName": "укажите название",
+        "submit": "Создать токен",
+        "submitting": "Создаём…"
+      },
+      "price": {
+        "title": "Цена {{symbol}}",
+        "description": "Задайте новую цену в любой фиатной валюте. Изменить её может любой здесь, и каждое изменение сохраняется ниже.",
+        "subject": "цену",
+        "currently": "Оценено в",
+        "newPrice": "Новая цена",
+        "pricePlaceholder": "1234.56",
+        "reason": "Обоснование",
+        "reasonPlaceholder": "Оценка по раунду за IV квартал 2025",
+        "reasonHint": "Необязательно — и это единственное, что объяснит эту цену следующему читателю.",
+        "needPrice": "укажите цену больше нуля",
+        "needCurrency": "выберите валюту",
+        "submit": "Сохранить цену",
+        "submitting": "Сохраняем…",
+        "historyTitle": "Прежние цены",
+        "historyLoading": "Загружаем прежние цены",
+        "historyEmpty": "Цену ещё ни разу не меняли.",
+        "noReasonGiven": "Обоснования нет",
+        "unknownEditor": "Неизвестно"
+      }
+    },
+    "entities": {
+      "value": "Стоимость",
+      "account": {
+        "unknownInstitution": "Организация неизвестна",
+        "unknownType": "Тип неизвестен",
+        "neverSynced": "Никогда — этот счёт ведётся вручную",
+        "valueByAccount": "Стоимость по счетам",
+        "byHand": "Вручную",
+        "lastSyncOverdue": "{{when}} · просрочено",
+        "sublabel_one": "{{institution}} · {{count}} позиция",
+        "sublabel_few": "{{institution}} · {{count}} позиции",
+        "sublabel_many": "{{institution}} · {{count}} позиций",
+        "sublabel_other": "{{institution}} · {{count}} позиции",
+        "syncOverdue": "Синхронизация просрочена",
+        "viewHoldings": "Смотреть позиции",
+        "assignGroups": "Назначить группы",
+        "pageTitle": "Счета",
+        "addFirst": "Добавьте первый счёт",
+        "holdings": "Позиции",
+        "type": "Тип",
+        "lastSynced": "Синхронизация",
+        "balancesAsOf": "Остатки на дату",
+        "groups": "Группы",
+        "bulkDeleteConsequence_one": "{{names}} удаляется, и все позиции внутри уходят вместе с ним, вместе с историей операций. Это нельзя отменить.",
+        "bulkDeleteConsequence_few": "{{names}} удаляются, и все позиции внутри уходят вместе с ними, вместе с историей операций. Это нельзя отменить.",
+        "bulkDeleteConsequence_many": "{{names}} удаляются, и все позиции внутри уходят вместе с ними, вместе с историей операций. Это нельзя отменить.",
+        "bulkDeleteConsequence_other": "{{names}} удаляются, и все позиции внутри уходят вместе с ними, вместе с историей операций. Это нельзя отменить.",
+        "toast": {
+          "deleted": "Счёт удалён",
+          "deletingContext": "Не удалось удалить счёт",
+          "bulkDeleted_one": "Удалён {{count}} счёт",
+          "bulkDeleted_few": "Удалены {{count}} счёта",
+          "bulkDeleted_many": "Удалено {{count}} счетов",
+          "bulkDeleted_other": "Удалено {{count}} счёта",
+          "bulkDeletedWithFailures_one": "Удалён {{count}} счёт, не удалось — {{failed}}",
+          "bulkDeletedWithFailures_few": "Удалены {{count}} счёта, не удалось — {{failed}}",
+          "bulkDeletedWithFailures_many": "Удалено {{count}} счетов, не удалось — {{failed}}",
+          "bulkDeletedWithFailures_other": "Удалено {{count}} счёта, не удалось — {{failed}}",
+          "bulkDeletingContext": "Не удалось удалить счета",
+          "updated": "Счёт обновлён",
+          "updatingContext": "Не удалось обновить счёт",
+          "syncing": "Синхронизируем счёт — остатки скоро обновятся",
+          "syncingContext": "Не удалось запустить синхронизацию счёта"
+        }
+      },
+      "institution": {
+        "unknownType": "Тип неизвестен",
+        "valueByInstitution": "Стоимость по организациям",
+        "sublabel_one": "{{count}} счёт",
+        "sublabel_few": "{{count}} счёта",
+        "sublabel_many": "{{count}} счетов",
+        "sublabel_other": "{{count}} счёта",
+        "viewHoldings": "Смотреть позиции",
+        "viewAccounts": "Смотреть счета",
+        "pageTitle": "Организации",
+        "connectOne": "Подключить",
+        "accounts": "Счета",
+        "type": "Тип",
+        "website": "Сайт",
+        "noWebsite": "Не указан",
+        "description": "Описание"
+      }
+    },
+    "documents": {
+      "fileRemoved": "файл удалён",
+      "uploadInvoice": "Загрузить инвойс",
+      "page": {
+        "title": "Файлы",
+        "uploadInvoice": "Загрузить инвойс"
+      },
+      "totals": {
+        "stored": "Хранится",
+        "invoicesFound": "Найдено инвойсов",
+        "fileMissing_one": "{{count}} файл больше не хранится — запись о нём здесь, самого файла нет.",
+        "fileMissing_few": "{{count}} файла больше не хранятся — записи о них здесь, самих файлов нет.",
+        "fileMissing_many": "{{count}} файлов больше не хранятся — записи о них здесь, самих файлов нет.",
+        "fileMissing_other": "{{count}} файла больше не хранятся — записи о них здесь, самих файлов нет."
+      },
+      "extraction": {
+        "state": {
+          "pending": "Ждёт разбора",
+          "accepted": "Принят",
+          "rejected": "Отклонён"
+        },
+        "invoiceNumber": "Инвойс № {{number}}",
+        "noInvoiceNumber": "Номера инвойса нет",
+        "issueDate": "Дата выставления",
+        "dueDate": "Срок оплаты",
+        "paymentStatus": "Статус оплаты",
+        "confidence": "Уверенность",
+        "notRecorded": "Не записано",
+        "approve": "Принять",
+        "paymentPaid": "Оплачен",
+        "paymentUnpaid": "Не оплачен",
+        "paymentNotStated": "Не указано",
+        "reject": "Отклонить",
+        "rejectCommit": "Отклонить этот инвойс",
+        "approveNote": "Откроет форму регулярного платежа, заполненную из этого инвойса. Ничего не сохранится, пока вы не подтвердите.",
+        "rejectConsequence": "Инвойс от {{vendor}} помечается отклонённым, и этот файл перестаёт предлагать его к разбору. Платёж не создаётся. Вернуть его можно только повторным разбором файла.",
+        "rejectConsequenceNumbered": "Инвойс № {{number}} от {{vendor}} помечается отклонённым, и этот файл перестаёт предлагать его к разбору. Платёж не создаётся. Вернуть его можно только повторным разбором файла."
+      },
+      "detail": {
+        "backToFiles": "Все файлы",
+        "copyGone": "Сохранённая копия этого файла пропала, поэтому скачать или прочитать его снова нельзя. Если удалить эту запись, файл можно будет загрузить заново.",
+        "reparsing": "Разбираем документ заново",
+        "deleted": "Файл удалён — его можно загрузить снова",
+        "deleting": "Удаляем файл",
+        "reparseTrigger": "Прочитать этот файл заново",
+        "reparseConsequence": "Прогоняет по файлу текущий разборщик и заменяет каждый инвойс, который ещё не стал платежом, — те сохраняются. Это стоит одного обращения к ИИ.",
+        "reparseCommit": "Разобрать заново",
+        "deleteTrigger": "Удалить этот файл",
+        "deleteConsequence": "Удаляет запись, все извлечённые из неё инвойсы и сохранённую копию. После этого повторная загрузка того же файла прочитает его заново, а не пропустит как дубликат. Инвойс, уже ставший платежом, блокирует удаление — сначала отвяжите этот платёж. Это нельзя отменить.",
+        "deleteCommit": "Удалить",
+        "invoiceRejected": "Инвойс отклонён",
+        "rejectingInvoice": "Отклоняем инвойс",
+        "noInvoicesFound": "В этом файле инвойсов не нашлось",
+        "noInvoicesBody": "Файл прочитан, но ничего похожего на инвойс из него не вышло. Повторный разбор прогонит по нему текущий разборщик ещё раз.",
+        "download": "Скачать",
+        "reparsePending": "Разбираем заново…",
+        "deletePending": "Удаляем…",
+        "readAs": "Прочитано как {{classification}}",
+        "uploadedAt": "Загружено {{when}}",
+        "arrivedBy": "Поступило через {{source}}",
+        "extractedCount_one": "Извлечён {{count}} инвойс",
+        "extractedCount_few": "Извлечено {{count}} инвойса",
+        "extractedCount_many": "Извлечено {{count}} инвойсов",
+        "extractedCount_other": "Извлечено {{count}} инвойса"
+      },
+      "outcome": {
+        "extracted": "Найдено инвойсов",
+        "nothingFound": "Ничего не найдено",
+        "notRead": "На инвойсы не читалось"
+      },
+      "invoiceCount_one": "{{count}} инвойс",
+      "invoiceCount_few": "{{count}} инвойса",
+      "invoiceCount_many": "{{count}} инвойсов",
+      "invoiceCount_other": "{{count}} инвойса",
+      "parse": {
+        "alreadyRead": "Уже прочитан однажды",
+        "alreadyReadNote": "Этот файл совпадает с тем, что вы присылали раньше, поэтому его не читали повторно — ни второго счёта за ИИ, ни дублей инвойсов. Всё, что нашлось в первый раз, есть в оригинале.",
+        "unrecognised": "Эта задача завершилась результатом, который мы не распознаём, поэтому разбирать нечего.",
+        "noInvoicesNote": "Файл прочитан, но ничто в нём не походило на инвойс. Выписки и скриншоты остатков идут через «Импорт файла» — именно он создаёт позиции.",
+        "approveNote": "Откроет форму платежа, заполненную из инвойса. Ничего не сохранится, пока вы не подтвердите, — по одному инвойсу нельзя понять, как часто он повторяется.",
+        "openOriginal": "Открыть оригинал",
+        "noInvoices": "В этом файле инвойсов нет",
+        "openFile": "Открыть файл",
+        "found_one": "Найден {{count}} инвойс",
+        "found_few": "Найдено {{count}} инвойса",
+        "found_many": "Найдено {{count}} инвойсов",
+        "found_other": "Найдено {{count}} инвойса",
+        "unknownVendor": "Контрагент неизвестен",
+        "turnIntoPayment": "Сделать из этого регулярный платёж",
+        "setUpNamed": "Настроить {{name}}",
+        "thisInvoice": "этот инвойс"
+      },
+      "toast": {
+        "downloadingContext": "Скачиваем файл"
+      },
+      "thisFile": "этот файл"
+    },
+    "vaults": {
+      "targetReached": "Цель достигнута",
+      "list": {
+        "rowSpoken": "{{name}}, {{percent}}% от цели"
+      },
+      "attach": {
+        "attaching": "Привязываем позицию",
+        "fullyClaimed": "{{label}} уже полностью учтено в других копилках. Сначала уменьшите его долю там.",
+        "attachedWhole": "{{label}} теперь идёт в эту копилку",
+        "attachedPartial": "{{label}} привязано на {{available}}% — остальное идёт в другую копилку"
+      },
+      "createFirst": "Создайте первую копилку",
+      "holding": {
+        "thisHolding": "эту позицию",
+        "unknownToken": "Токен неизвестен",
+        "shareLabel": "Доля {{symbol}}, идущая в эту копилку",
+        "cancel": "Отмена",
+        "saveShare": "Сохранить долю",
+        "changeShare": "Изменить долю {{symbol}} ({{percent}}%), идущую в эту копилку",
+        "remove": "Убрать",
+        "removeCommit": "Убрать {{symbol}} из этой копилки",
+        "detachConsequence": "{{symbol}} перестаёт идти в эту копилку — <value/> уходит из накопленного. Сама позиция, её доля в {{percent}}% и её история остаются; привязать её можно снова."
+      },
+      "detail": {
+        "toast": {
+          "updated": "Копилка обновлена",
+          "updating": "Обновляем копилку",
+          "deleted": "Копилка удалена",
+          "deleting": "Удаляем копилку",
+          "holdingRemoved": "Позиция убрана из копилки",
+          "removingHolding": "Убираем позицию",
+          "shareUpdated": "Доля обновлена",
+          "updatingShare": "Обновляем долю"
+        },
+        "deleteConsequence_one": "«{{name}}» и её цель исчезают. {{count}} привязанная к ней позиция не удаляется — она просто перестаёт идти к цели.",
+        "deleteConsequence_few": "«{{name}}» и её цель исчезают. {{count}} привязанные к ней позиции не удаляются — они просто перестают идти к цели.",
+        "deleteConsequence_many": "«{{name}}» и её цель исчезают. {{count}} привязанных к ней позиций не удаляются — они просто перестают идти к цели.",
+        "deleteConsequence_other": "«{{name}}» и её цель исчезают. {{count}} привязанной к ней позиции не удаляются — они просто перестают идти к цели.",
+        "backToVaults": "Копилки",
+        "notFound": "Этой копилки нет в вашем списке. Возможно, её удалили или ссылка устарела.",
+        "saved": "Накоплено",
+        "targetReached": "Цель достигнута — {{percent}}% от неё",
+        "stillToGo": "осталось <remaining/> из цели <target/>",
+        "countingToward_one": "Идёт в эту копилку ({{count}})",
+        "countingToward_few": "Идёт в эту копилку ({{count}})",
+        "countingToward_many": "Идёт в эту копилку ({{count}})",
+        "countingToward_other": "Идёт в эту копилку ({{count}})",
+        "empty": "В эту копилку пока ничего не идёт. Привяжите позицию — и она начнёт работать на цель.",
+        "attachHolding": "Привязать позицию",
+        "details": "Подробности",
+        "name": "Название",
+        "target": "Цель",
+        "targetHint": "В {{symbol}}",
+        "colour": "Цвет",
+        "saveChanges": "Сохранить изменения",
+        "discard": "Отменить",
+        "needName": "Чтобы сохранить: дайте копилке название.",
+        "needTarget": "Чтобы сохранить: задайте цель больше нуля.",
+        "dangerZone": "Опасная зона",
+        "deleteTrigger": "Удалить копилку",
+        "deleteCommit": "Удалить эту копилку"
+      },
+      "page": {
+        "title": "Копилки",
+        "created": "Копилка «{{name}}» создана",
+        "creating": "Создаём копилку",
+        "name": "Название",
+        "newVault": "Новая копилка",
+        "createVault": "Создать копилку",
+        "cancel": "Отмена",
+        "namePlaceholder": "Первый взнос за жильё, подушка безопасности…",
+        "toContinue": "Чтобы продолжить: {{missing}}.",
+        "target": "Цель",
+        "currency": "Валюта",
+        "colour": "Цвет",
+        "blocker": {
+          "name": "дайте копилке название",
+          "target": "задайте цель больше нуля",
+          "currency": "выберите валюту"
+        }
+      }
+    },
+    "jobs": {
+      "importSomething": "Что-нибудь импортировать",
+      "bucket": {
+        "review": "Ждёт вашего разбора",
+        "running": "Выполняются",
+        "failed": "Не удалось — повторов не будет",
+        "completed": "Завершены"
+      },
+      "kind": {
+        "holdingPriceRefresh": "Обновление цены позиции",
+        "fileFallback": "файл",
+        "fileEnriched": "{{type}} · обогащено",
+        "deleteAllData": "Удаление всех данных аккаунта"
+      },
+      "fileCount_one": "{{count}} файл",
+      "fileCount_few": "{{count}} файла",
+      "fileCount_many": "{{count}} файлов",
+      "fileCount_other": "{{count}} файла",
+      "page": {
+        "title": "Задачи"
+      },
+      "state": {
+        "queued": "В очереди",
+        "active": "Запущена",
+        "progress": "Выполняется",
+        "completed": "Завершена",
+        "failed": "Не удалось",
+        "needsReview": "Нужен разбор",
+        "needsReviewSpoken": "нужен разбор"
+      },
+      "retryUnavailable": {
+        "cancelled": "Вы её отменили. Запустите заново оттуда, откуда начинали.",
+        "neverDelivered": "Она так и не дошла до очереди, поэтому перезапускать нечего. Запустите заново оттуда, откуда начинали.",
+        "stillRetrying": "Ещё одна попытка уже в очереди — делать ничего не нужно.",
+        "evicted": "Этот запуск слишком стар, чтобы перезапустить его отсюда: очередь больше не хранит нужное. Запустите заново оттуда, откуда начинали.",
+        "notFailed": "Повторять нечего."
+      },
+      "detail": {
+        "backToJobs": "Все задачи",
+        "notFound": "Этой задачи нет в вашем списке. Возможно, её убрали или ссылка устарела.",
+        "attempt": "Попытка {{attempt}} из {{allowed}}",
+        "cancel": "Отменить",
+        "cancelPending": "Отменяем…",
+        "removed": "Задача убрана",
+        "retry": "Повторить",
+        "retryPending": "Ставим в очередь…",
+        "dismiss": "Скрыть",
+        "dismissPending": "Скрываем…",
+        "createdAt": "Создана {{when}}",
+        "startedAt": "Начата {{when}}",
+        "finishedAt": "Завершена {{when}}"
+      },
+      "toast": {
+        "requeued": "Задача снова в очереди",
+        "retrying": "Повторяем задачу",
+        "cancelled": "Задача отменена",
+        "cancelling": "Отменяем задачу",
+        "discarded": "Разбор отброшен — ничего не импортировано",
+        "discarding": "Отбрасываем разбор",
+        "dismissed": "Скрыто — в истории задач остаётся",
+        "dismissing": "Скрываем сбой",
+        "removing": "Убираем задачу"
+      },
+      "running": "{{label}} — выполняется",
+      "awaitingYou": "Этот запуск ждёт вас. Ничего из него в вашем портфеле пока нет.",
+      "discard": {
+        "trigger": "Отбросить",
+        "commit": "Отбросить этот разбор",
+        "consequence": "{{label}} перестанет просить разбора, и позиции из него не создадутся. В портфеле ничего не изменится. Вернуть это можно только повторным импортом."
+      },
+      "remove": {
+        "trigger": "Убрать",
+        "commit": "Убрать этот запуск",
+        "consequence": "Этот запуск ({{label}}) и ошибка над ним удаляются. Всё, что он уже импортировал, остаётся. Это нельзя отменить."
+      },
+      "label": {
+        "walletImport": "Импорт кошелька",
+        "exchangeImport": "Импорт с биржи",
+        "documentParse": "Разбор документа",
+        "invoiceParse": "Разбор инвойса",
+        "fileImport": "Импорт файла",
+        "manualHoldings": "Позиции вручную",
+        "historyBackfill": "Дозагрузка истории",
+        "priceRefresh": "Обновление цен",
+        "accountDeletion": "Удаление аккаунта",
+        "transactionImport": "Импорт истории операций"
+      },
+      "review": {
+        "title": "Проверьте распознанные активы",
+        "subject": "распознанные активы",
+        "viewHoldings": "Открыть позиции",
+        "confidence": "Уверенность {{percent}}%",
+        "importing": "Импортируем…",
+        "import_one": "Импортировать {{count}} актив",
+        "import_few": "Импортировать {{count}} актива",
+        "import_many": "Импортировать {{count}} активов",
+        "import_other": "Импортировать {{count}} актива",
+        "willImport_one": "Будет импортирована {{count}} строка",
+        "willImport_few": "Будут импортированы {{count}} строки",
+        "willImport_many": "Будут импортированы {{count}} строк",
+        "willImport_other": "Будут импортированы {{count}} строки",
+        "unmatchedNote_one": "{{count}} строка не сопоставлена с активом и будет пропущена.",
+        "unmatchedNote_few": "{{count}} строки не сопоставлены с активами и будут пропущены.",
+        "unmatchedNote_many": "{{count}} строк не сопоставлены с активами и будут пропущены.",
+        "unmatchedNote_other": "{{count}} строки не сопоставлены с активами и будут пропущены.",
+        "source": {
+          "screenshot": "Скриншот",
+          "statement": "Выписка",
+          "files": "Файлы"
+        },
+        "assetType": {
+          "fiat": "Валюта",
+          "crypto": "Криптовалюта",
+          "stock": "Акция"
+        },
+        "row": {
+          "new": "Новый",
+          "update": "Обновление",
+          "changeToken": "Сменить актив, сопоставленный с {{symbol}}",
+          "keepToken": "Оставить {{symbol}}",
+          "searchLabel": "Найти другой актив вместо {{symbol}}",
+          "nameLabel": "Название позиции {{symbol}}",
+          "namePlaceholder": "например, Накопления",
+          "amountLabel": "Количество {{symbol}}",
+          "remove": "Убрать {{symbol}}",
+          "restore": "Вернуть {{symbol}}",
+          "currentLabel": "Сейчас"
+        },
+        "blocker": {
+          "duplicatePosition": "дайте каждой строке по {{symbols}} собственное название или удалите лишние",
+          "missingAmount_one": "в {{count}} строке не указано количество — введите его или удалите строку",
+          "missingAmount_few": "в {{count}} строках не указано количество — введите его в каждой или удалите их",
+          "missingAmount_many": "в {{count}} строках не указано количество — введите его в каждой или удалите их",
+          "missingAmount_other": "в {{count}} строках не указано количество — введите его в каждой или удалите их",
+          "nothingToImport": "сопоставьте хотя бы одну строку с активом"
+        },
+        "imported": {
+          "title": "Уже импортировано",
+          "when": "Подтверждено {{when}}",
+          "body": "Эти строки подтверждены и сохранены в вашем портфеле. Повторный импорт того же разбора создал бы дубликаты, поэтому действие заблокировано."
+        },
+        "discarded": {
+          "title": "Отброшено",
+          "when": "Отброшено {{when}}",
+          "screenshot": "Из этого скриншота в портфель ничего не записано, и он больше не ждёт проверки. Вернуть эти строки можно только повторным разбором.",
+          "statement": "Из этой выписки в портфель ничего не записано, и она больше не ждёт проверки. Вернуть эти строки можно только повторным разбором.",
+          "files": "Из этих файлов в портфель ничего не записано, и они больше не ждут проверки. Вернуть эти строки можно только повторным разбором.",
+          "wallet": "Ничего из этого кошелька не записано в портфель, и он больше не ждёт проверки. Вернуть эти строки можно только повторным импортом."
+        }
+      },
+      "screenshot": {
+        "title": {
+          "image": "Разбор скриншота",
+          "pdf": "Разбор выписки",
+          "mixed": "Разбор файлов"
+        },
+        "filesRead": "Файлов прочитано",
+        "holdingsFound": "Найдено активов",
+        "ofTotal": "{{done}} из {{total}}",
+        "failedTitle_one": "{{count}} файл не удалось прочитать",
+        "failedTitle_few": "{{count}} файла не удалось прочитать",
+        "failedTitle_many": "{{count}} файлов не удалось прочитать",
+        "failedTitle_other": "{{count}} файла не удалось прочитать",
+        "failedAdvice": {
+          "image": "Так бывает с скриншотами низкого разрешения или слишком насыщенными. Сделайте снимок чётче, обрежьте его до части с остатками или загрузите выгрузку CSV либо OFX.",
+          "pdf": "Так бывает со сканами, PDF из одних картинок и защищёнными файлами, а также при необычной вёрстке. Возьмите текстовую версию или загрузите выгрузку CSV либо OFX.",
+          "mixed": "Сделайте снимок чётче или возьмите текстовую версию документа, либо загрузите выгрузку CSV либо OFX."
+        },
+        "noAccount": {
+          "title": "Этим строкам некуда попасть",
+          "body": "В этом запуске не сохранён счёт, которому принадлежат активы, поэтому записывать их некуда. Ничего не импортировано и ничего не потеряно — загрузите файл ещё раз, выбрав счёт.",
+          "action": "Загрузить заново"
+        }
+      },
+      "issues": {
+        "more_one": "…и ещё {{count}}",
+        "more_few": "…и ещё {{count}}",
+        "more_many": "…и ещё {{count}}",
+        "more_other": "…и ещё {{count}}"
+      },
+      "wallet": {
+        "subject": "этот кошелёк",
+        "chainsDetected": "Найдено сетей",
+        "chainsRead": "Прочитано сетей",
+        "tokensFound": "Найдено токенов",
+        "chainsFailed_one": "{{count}} сеть не удалось прочитать",
+        "chainsFailed_few": "{{count}} сети не удалось прочитать",
+        "chainsFailed_many": "{{count}} сетей не удалось прочитать",
+        "chainsFailed_other": "{{count}} сети не удалось прочитать",
+        "chainsFailedNote": "То, что лежит в сети, которая не ответила, в показанное здесь не попало.",
+        "outcome": {
+          "found": "Найденные позиции",
+          "partial": "Найденные позиции — прочитано не всё",
+          "empty": "Проверять нечего",
+          "unreadable": "Этот кошелёк не удалось прочитать"
+        },
+        "outcomeBody": {
+          "found": "Отметьте те строки, которые нужно сохранить. Позициями станут только отмеченные.",
+          "partial": "Отметьте те строки, которые нужно сохранить. Позициями станут только отмеченные — и как минимум одна сеть не ответила, так что это не всё, что лежит на адресе.",
+          "empty": "Все сети ответили и не сообщили ни одного баланса, так что на этом адресе, насколько мы видим, ничего нет. Ошибок не было.",
+          "unreadable": "Ни одна сеть не ответила, поэтому мы не знаем, что лежит на этом адресе. Это не значит, что кошелёк пуст, — импорт можно запустить ещё раз без последствий."
+        },
+        "hideSpam_one": "Скрыть {{count}} подозрительный токен",
+        "hideSpam_few": "Скрыть {{count}} подозрительных токена",
+        "hideSpam_many": "Скрыть {{count}} подозрительных токенов",
+        "hideSpam_other": "Скрыть {{count}} подозрительного токена",
+        "selectAll": "Отметить все показанные",
+        "selectNone": "Снять отметки",
+        "spam": {
+          "solicitation": "Похоже на рекламу",
+          "mixedScript": "Смешанные алфавиты"
+        },
+        "hiddenSelected_one": "{{count}} отмеченная строка скрыта фильтром",
+        "hiddenSelected_few": "{{count}} отмеченные строки скрыты фильтром",
+        "hiddenSelected_many": "{{count}} отмеченных строк скрыты фильтром",
+        "hiddenSelected_other": "{{count}} отмеченной строки скрыто фильтром",
+        "showHidden": "Показать их",
+        "afterConfirm": "Позиции создаются и оцениваются после подтверждения.",
+        "blocker": {
+          "nothingPicked": "отметьте хотя бы одну строку"
+        },
+        "import_one": "Импортировать {{count}} позицию",
+        "import_few": "Импортировать {{count}} позиции",
+        "import_many": "Импортировать {{count}} позиций",
+        "import_other": "Импортировать {{count}} позиции",
+        "importing": "Импортируем…",
+        "toast": {
+          "imported_one": "Импортирована {{count}} позиция",
+          "imported_few": "Импортированы {{count}} позиции",
+          "imported_many": "Импортировано {{count}} позиций",
+          "imported_other": "Импортировано {{count}} позиции"
+        },
+        "confirmed": {
+          "title": "Кошелёк импортирован",
+          "when": "Подтверждено {{when}}",
+          "body": "Оставленные строки уже созданы как позиции. Повторный импорт отсюда продублировал бы их, поэтому экран закрыт для изменений."
+        },
+        "unavailable": {
+          "title": "Списка найденных токенов здесь нет",
+          "body": "Кошелёк прочитан, но список токенов не сохранился вместе с задачей, так что выбирать здесь не из чего. Ничего не импортировано и ничего не потеряно — запустите импорт ещё раз, чтобы вернуть список."
+        },
+        "importAgain": "Импортировать этот кошелёк заново",
+        "imported": {
+          "title": "Импортированные позиции",
+          "holdings": "Создано позиций",
+          "accounts": "Создано счетов",
+          "reviewTitle": "Проверьте, что создано",
+          "pruneNote": "Удалите лишнее и завершите проверку. Пока вы этого не сделали, запуск остаётся в списке как требующий внимания.",
+          "finish": "Проверка завершена",
+          "finishing": "Завершаем…",
+          "finishedWhen": "Проверка завершена {{when}}. Эти позиции уже в портфеле, их по-прежнему можно удалить в разделе «Позиции».",
+          "remove": "Удалить {{symbol}}",
+          "allGone": "Ни одной из этих позиций больше нет в списке — они удалены или помечены.",
+          "nothingTitle": "Ничего не импортировано"
+        },
+        "empty": {
+          "unreadable": "Ничего не импортировано, потому что ни одну сеть не удалось прочитать. Это не значит, что кошелёк пуст: балансы просто не были получены. Импорт можно запустить ещё раз без последствий.",
+          "noChains": "Для этого адреса не найдено ни одной сети. Либо на поддерживаемых сетях по нему нет операций, либо запросы поиска не ответили. Импорт можно запустить ещё раз без последствий.",
+          "zeroBalances": "Все найденные сети ответили и сообщили нулевой баланс, так что импортировать было нечего. Ошибок не было."
+        }
+      },
+      "exchange": {
+        "title": "Импорт с биржи",
+        "accountsCreated": "Создано счетов",
+        "holdingsImported": "Импортировано позиций",
+        "connectedButEmpty": "Счета подключились, но провайдер не вернул ни одного баланса. Для пустого счёта это нормально — всё, что появится позже, придёт со следующей ежечасной синхронизацией.",
+        "failedTitle_one": "{{count}} счёт не удалось прочитать",
+        "failedTitle_few": "{{count}} счёта не удалось прочитать",
+        "failedTitle_many": "{{count}} счетов не удалось прочитать",
+        "failedTitle_other": "{{count}} счёта не удалось прочитать",
+        "failedNote": "То, что там лежит, в цифры выше не попало. Импорт можно запустить ещё раз без последствий."
+      },
+      "file": {
+        "title": {
+          "imported": "Файл импортирован",
+          "nothing": "Ничего не записано"
+        },
+        "nothingBody": "Файл разобран, но в нём не оказалось ни операций, ни балансов, ни позиций, которые мы могли бы использовать. Проверьте, тот ли это выгруженный файл.",
+        "format": "Формат",
+        "transactions": "Операции",
+        "newHoldings": "Новые позиции",
+        "balanceAnchors": "Опорные балансы",
+        "holdingsTitle": "Затронутые позиции",
+        "row": {
+          "new": "Новая",
+          "updated": "Обновлена",
+          "transactions_one": "{{count}} операция",
+          "transactions_few": "{{count}} операции",
+          "transactions_many": "{{count}} операций",
+          "transactions_other": "{{count}} операции",
+          "statementClose": "Остаток по выписке",
+          "noClosingBalance": "Остатка нет"
+        },
+        "warningsTitle_one": "{{count}} предупреждение",
+        "warningsTitle_few": "{{count}} предупреждения",
+        "warningsTitle_many": "{{count}} предупреждений",
+        "warningsTitle_other": "{{count}} предупреждения",
+        "importAnother": "Импортировать ещё файл",
+        "unreadablePayload": "Запуск завершился без результата, который мы можем прочитать. В портфеле ничего не изменилось.",
+        "currency": {
+          "title": "В какой валюте эта выписка?",
+          "body_one": "Из файла прочитана {{count}} операция, но валюта в нём не указана и определить её не удалось. Пока ничего не импортировано.",
+          "body_few": "Из файла прочитаны {{count}} операции, но валюта в нём не указана и определить её не удалось. Пока ничего не импортировано.",
+          "body_many": "Из файла прочитано {{count}} операций, но валюта в нём не указана и определить её не удалось. Пока ничего не импортировано.",
+          "body_other": "Из файла прочитано {{count}} операции, но валюта в нём не указана и определить её не удалось. Пока ничего не импортировано.",
+          "preview": "{{shown}} из {{total}}",
+          "noDescription": "Без описания",
+          "fieldLabel": "Валюта выписки",
+          "blocker": "выберите валюту, в которой эти операции",
+          "apply": "Импортировать в этой валюте",
+          "applying": "Импортируем заново…",
+          "subject": "этот файл"
+        }
+      },
+      "manual": {
+        "title": "Позиции сохранены",
+        "saved": "Записано строк",
+        "priced": "С ценой",
+        "row": {
+          "new": "Новая",
+          "updated": "Обновлена",
+          "noPrice": "Цены пока нет"
+        },
+        "unpricedNote_one": "У {{count}} строки пока нет цены. Она всё равно сохранена — обновите цену в разделе «Позиции» или дождитесь ближайшего ежечасного пересчёта.",
+        "unpricedNote_few": "У {{count}} строк пока нет цены. Они всё равно сохранены — обновите цены в разделе «Позиции» или дождитесь ближайшего ежечасного пересчёта.",
+        "unpricedNote_many": "У {{count}} строк пока нет цены. Они всё равно сохранены — обновите цены в разделе «Позиции» или дождитесь ближайшего ежечасного пересчёта.",
+        "unpricedNote_other": "У {{count}} строки пока нет цены. Она всё равно сохранена — обновите цену в разделе «Позиции» или дождитесь ближайшего ежечасного пересчёта.",
+        "addMore": "Добавить ещё",
+        "unreadablePayload": "Запуск завершился без результата, который мы можем прочитать. В портфеле ничего не изменилось."
+      },
+      "generic": {
+        "title": "Результат",
+        "noPayload": "Запуск завершился без результата. Действий не требуется.",
+        "nothingToShow": "В результате нет полей, которые можно показать. Исходные данные — ниже.",
+        "errorsTitle_one": "{{count}} ошибка",
+        "errorsTitle_few": "{{count}} ошибки",
+        "errorsTitle_many": "{{count}} ошибок",
+        "errorsTitle_other": "{{count}} ошибки",
+        "rawResult": "Исходный результат",
+        "warningsTitle_one": "{{count}} замечание",
+        "warningsTitle_few": "{{count}} замечания",
+        "warningsTitle_many": "{{count}} замечаний",
+        "warningsTitle_other": "{{count}} замечания",
+        "warningsNote": "Это не ошибки. Задача завершилась — здесь сказано, до чего она не дотянулась и почему записанное может выглядеть неполным."
+      },
+      "failure": {
+        "cancelled": {
+          "label": "Отменена",
+          "sentence": "Вы остановили эту задачу до того, как она завершилась."
+        },
+        "neverDelivered": {
+          "label": "Не запускалась",
+          "sentence": "Эта задача так и не была передана обработчику: она не выполнялась и ничего не изменила. Запустите её заново оттуда, откуда начинали."
+        },
+        "unrecoverable": {
+          "label": "Ошибка — без повтора",
+          "sentence": "Задача завершилась ошибкой, которую повторная попытка не исправит. Проверьте детали ниже, исправьте их и запустите её заново."
+        },
+        "exhausted": {
+          "label": "Ошибка — без повтора",
+          "sentence_one": "Была {{count, number}} попытка, и она завершилась ошибкой. Сама по себе задача больше не запустится.",
+          "sentence_few": "Было {{count, number}} попытки, и все завершились ошибкой. Сама по себе задача больше не запустится.",
+          "sentence_many": "Было {{count, number}} попыток, и все завершились ошибкой. Сама по себе задача больше не запустится.",
+          "sentence_other": "Было {{count, number}} попытки, и все завершились ошибкой. Сама по себе задача больше не запустится."
+        },
+        "noRetry": {
+          "label": "Ошибка — без повтора",
+          "sentence": "Задача завершилась ошибкой и сама по себе больше не запустится."
+        },
+        "notQueued": {
+          "label": "Ошибка",
+          "sentence": "Последняя попытка завершилась ошибкой, и следующая в очередь не поставлена."
+        },
+        "retrying": {
+          "label": "Повтор ({{made, number}} из {{allowed, number}})",
+          "sentence": "Попытка {{made, number}} из {{allowed, number}} завершилась ошибкой. Следующая начнётся автоматически — от вас пока ничего не требуется."
+        },
+        "settling": {
+          "label": "Ошибка",
+          "sentence": "Последняя попытка завершилась ошибкой. Проверяем, поставлена ли в очередь следующая."
+        }
+      }
+    },
+    "settings": {
+      "account": {
+        "deleteIntro": "Удаление ваших данных убирает все счета, позиции, кошельки, ключи интеграций, группы и копилки. Сам вход остаётся — пустым.",
+        "deleting": "Удаляем…",
+        "deleteTrigger": "Удалить все мои данные",
+        "deleteConfirm": "Удалить всё",
+        "deleteConsequence": "Уходят все счета, позиции, кошельки, ключи интеграций, группы и копилки. Ваш вход остаётся, но в нём ничего не будет. Это нельзя отменить.",
+        "deleteInFlight": "Ваши данные удаляются.",
+        "deleted": "Все ваши данные удалены",
+        "deleteFailed": "Удалить не удалось"
+      },
+      "export": {
+        "title": "Ваши данные",
+        "workbook": "Книга Excel",
+        "workbookDetail": "По листу на набор — позиции, операции, платежи, история",
+        "jsonDetail": "Все поля ровно в том виде, в каком их отдаёт API",
+        "scopeAll": "Всё в вашем аккаунте",
+        "exportJson": "Выгрузить в JSON",
+        "exportWorkbook": "Выгрузить книгу",
+        "json": "JSON",
+        "intro": "Все записи этого аккаунта в одном файле — позиции, вся книга операций, платежи, группы, копилки и история чистой стоимости. Ключи бирж и брокеров не попадают: это учётные данные, а не записи.",
+        "trigger": "Выгрузить всё",
+        "subject": "весь аккаунт"
+      },
+      "maintenance": {
+        "title": "История портфеля",
+        "rebuild": "Пересобрать историю портфеля",
+        "rebuilt": "История портфеля пересобрана",
+        "rebuildFailed": "Пересобрать не удалось",
+        "intro": "Пересобирает кэш ежедневных значений, по которым рисуются графики чистой стоимости и PnL, — та же дозагрузка за 365 дней, что идёт каждую ночь.",
+        "rebuilding": "Пересобираем…"
+      },
+      "notifications": {
+        "title": "Напоминания о платежах",
+        "intro": "Одно уведомление на этом устройстве около 17:00 накануне срока платежей — сколько их и на какую сумму. В день, когда ничего не предстоит, ничего не отправляется.",
+        "ready": "Напоминания на этом устройстве выключены.",
+        "enabled": "Напоминания для этого устройства включены.",
+        "enable": "Включить напоминания",
+        "disable": "Выключить напоминания",
+        "denied": "Этот браузер блокирует уведомления для Scani. Разрешите их в настройках браузера или системы и вернитесь.",
+        "iosNeedsInstall": "На iPhone и iPad уведомления доходят до Scani только после добавления на домашний экран. Откройте меню «Поделиться», выберите «На экран «Домой»» и включите их оттуда.",
+        "unsupported": "Этот браузер не умеет принимать уведомления.",
+        "serverUnconfigured": "На этом сервере не заданы ключи уведомлений, поэтому напоминания он пока отправлять не может.",
+        "sendTest": "Отправить тестовое уведомление",
+        "testNoDevices": "Ни одно устройство пока не подписано, поэтому отправлять было некуда.",
+        "testSentHere": "Отправлено на это устройство. Оно должно прийти за несколько секунд — если нет, проверьте, разрешены ли уведомления для Scani в настройках устройства.",
+        "testSentOther": "Отправлено на другое устройство, где вы включили напоминания.",
+        "testGoneHere": "Подписка этого устройства истекла, поэтому она удалена. Выключите и снова включите здесь напоминания, чтобы зарегистрировать новую.",
+        "testGoneOther": "У другого устройства истекла подписка, поэтому она удалена. Включите напоминания на том устройстве заново.",
+        "testVapidMismatch": "Служба push отклонила это уведомление (403). Ключ, с которым подписалось это устройство, не тот, которым подписывает сервер, поэтому напоминания до него не дойдут, пока это не исправят. Это наша проблема, не ваша.",
+        "testFailed": "Служба push отказала в этом уведомлении (HTTP {{statusCode}}). Подписка по-прежнему зарегистрирована.",
+        "testFailedNoCode": "До службы push не удалось достучаться. Подписка по-прежнему зарегистрирована."
+      },
+      "profile": {
+        "emailImmutable": "Менять это приложение пока не умеет.",
+        "baseCurrencyHint": "Все цифры в приложении пересчитываются в неё."
+      },
+      "sessions": {
+        "title": "Устройства",
+        "intro": "Везде, где сейчас выполнен вход в этот аккаунт. Завершите те, которые не узнаёте.",
+        "empty": "Активных сессий нет.",
+        "revoked": "Сессия завершена",
+        "signedOutOthers": "Выход выполнен везде, кроме этого устройства",
+        "signOutOthers": "Выйти везде, кроме этого ({{count}})",
+        "signOutOthersConfirm_one": "Выйти на {{count}} устройстве",
+        "signOutOthersConfirm_few": "Выйти на {{count}} устройствах",
+        "signOutOthersConfirm_many": "Выйти на {{count}} устройствах",
+        "signOutOthersConfirm_other": "Выйти на {{count}} устройствах",
+        "signOutOthersConsequence_one": "Выход выполняется на всех устройствах, кроме этого, — {{count}} сессия, включая те, которые вы узнаёте. Каждому придётся войти заново по новому коду из почты. Ваши данные не тронуты.",
+        "signOutOthersConsequence_few": "Выход выполняется на всех устройствах, кроме этого, — {{count}} сессии, включая те, которые вы узнаёте. Каждому придётся войти заново по новому коду из почты. Ваши данные не тронуты.",
+        "signOutOthersConsequence_many": "Выход выполняется на всех устройствах, кроме этого, — {{count}} сессий, включая те, которые вы узнаёте. Каждому придётся войти заново по новому коду из почты. Ваши данные не тронуты.",
+        "signOutOthersConsequence_other": "Выход выполняется на всех устройствах, кроме этого, — {{count}} сессии, включая те, которые вы узнаёте. Каждому придётся войти заново по новому коду из почты. Ваши данные не тронуты.",
+        "revoke": "Завершить",
+        "revokeConfirm": "Выйти на устройстве {{device}}",
+        "revokeConsequence": "На устройстве {{device}} ({{where}}) выполняется выход, и войти заново придётся по новому коду из почты. Ваши данные не тронуты, и больше нигде выход не выполняется.",
+        "currentDevice": "Это то устройство, которым вы пользуетесь, — выходите ниже",
+        "thisDevice": "{{device}} — это устройство",
+        "lastUsed": "{{where}} · последний раз {{when}}",
+        "unknownIp": "IP неизвестен",
+        "subject": "ваши устройства"
+      },
+      "device": {
+        "unknown": "Устройство неизвестно",
+        "genericBrowser": "Браузер",
+        "unknownOs": "ОС неизвестна",
+        "browserOnOs": "{{browser}} на {{os}}"
+      },
+      "dataQuality": {
+        "title": "Качество данных",
+        "flagged": "Помечено",
+        "duplicateRows": "Показанные позиции, у которых символ совпадает с другим токеном",
+        "duplicateChip": "{{symbol}}×{{count}}",
+        "duplicateChipLookalike": "{{symbol}}×{{count}} (отображается как {{lookalikeOf}})",
+        "lookalikeRows": "Показанные позиции, чей символ подделан под другой",
+        "lookalikeChip": "{{symbol}} (отображается как {{lookalikeOf}})",
+        "holdingsShown": "Показано позиций",
+        "holdingsShownHint": "всего {{count}}",
+        "zeroBalanceShown": "Позиции с нулевым остатком, всё ещё показанные",
+        "hiddenNextSweep_one": "Из них будут скрыты при ближайшей чистке за {{count}} день",
+        "hiddenNextSweep_few": "Из них будут скрыты при ближайшей чистке за {{count}} дня",
+        "hiddenNextSweep_many": "Из них будут скрыты при ближайшей чистке за {{count}} дней",
+        "hiddenNextSweep_other": "Из них будут скрыты при ближайшей чистке за {{count}} дня",
+        "noRecentPrice": "Показанные позиции без свежей цены",
+        "noPriceSource": "Показанные позиции без источника цены, которым можно пользоваться",
+        "noPriceSourceHint": "{{symbols}} — это наша настройка, а не рынок",
+        "nothingCanPrice": "Показанные позиции, которые нечем оценить",
+        "nothingCanPriceHint": "Раздаточные или делистнутые токены без рынка — исключены из покрытия графиков",
+        "negativeOpening": "Отрицательный синтезированный начальный остаток",
+        "negativeOpeningHint": "Импорт, который не дотянулся до первой сделки",
+        "missingCoverage": "Позиции без записи о покрытии",
+        "intro": "Пересчитывается при каждом заходе. Всё, что помечено как «{{flag}}», стоит проверить.",
+        "rowLink": "{{label}}: {{count}} — показать в позициях"
+      },
+      "pending": {
+        "deletingData": "Удаляем ваши данные",
+        "exportingAccount": "Выгружаем ваш аккаунт",
+        "rebuildingHistory": "Пересобираем историю портфеля",
+        "savingSettings": "Сохраняем настройки",
+        "revokingSession": "Завершаем сессию",
+        "signingOutOthers": "Завершаем остальные сессии",
+        "togglingNotifications": "Меняем настройку уведомлений",
+        "sendingTestNotification": "Отправляем тестовое уведомление"
+      }
+    },
+    "capture": {
+      "form": {
+        "enterField": "укажите: {{label}}",
+        "optionalField": "{{label}} (необязательно)",
+        "pasteField": "Вставьте: {{label}}"
+      },
+      "group": {
+        "upload": "Загрузить",
+        "connect": "Подключить",
+        "manual": "Ввести вручную"
+      },
+      "route": {
+        "screenshot": {
+          "title": "Скриншот",
+          "description": "Экран с остатками — мы считаем с него цифры."
+        },
+        "statement": {
+          "title": "Файл выписки",
+          "description": "CSV или OFX из банка либо от брокера."
+        },
+        "invoice": {
+          "title": "Инвойс",
+          "description": "PDF или фото. Мы прочитаем контрагента и сумму."
+        },
+        "wallet": {
+          "title": "Адрес кошелька",
+          "description": "Остатки читаются из блокчейна, раз в час."
+        },
+        "exchange": {
+          "title": "Вход на биржу или к брокеру",
+          "description": "API-ключи только на чтение, зашифрованные при хранении."
+        },
+        "manual": {
+          "title": "Сами цифры",
+          "description": "Внести позиции на счёт вручную."
+        },
+        "payment": {
+          "title": "Регулярный счёт",
+          "description": "Сопоставляется с операциями по мере их появления."
+        }
+      },
+      "fileImport": {
+        "screenshot": {
+          "title": "Загрузите скриншот",
+          "description": "Экран с остатками с биржи, из банка или от брокера. Мы считаем с него позиции и покажем, что нашли, до того как что-либо сохранить."
+        },
+        "statement": {
+          "title": "Загрузите файл выписки",
+          "description": "Выгрузка CSV, TSV, OFX или QIF из банка либо от брокера. Мы считаем с неё позиции и покажем, что нашли, до того как что-либо сохранить."
+        },
+        "either": {
+          "title": "Загрузите файл",
+          "description": "Скриншот остатков, банковская выписка или выгрузка от брокера. Мы считаем с них позиции и покажем, что нашли, до того как что-либо сохранить."
+        },
+        "whereItBelongs": "Куда это относится"
+      },
+      "formats": {
+        "import": "PNG, JPG, WEBP, PDF, CSV, TSV, OFX или QIF",
+        "invoice": "PDF, PNG, JPG, WEBP или HEIC"
+      },
+      "stage": {
+        "account": "Готовим счёт…",
+        "upload": "Отправляем файл…",
+        "parse": "Запускаем разбор…",
+        "enqueue": "Запускаем импорт…",
+        "connect": "Проверяем учётные данные…"
+      },
+      "file": {
+        "extension": "файл .{{ext}}",
+        "noExtension": "файл вообще без расширения",
+        "unsupported": "Это {{named}}. Scani читает {{formats}}.",
+        "remove": "Убрать {{name}}"
+      },
+      "blocker": {
+        "chooseFile": "выберите файл для загрузки",
+        "chooseInvoice": "выберите инвойс для загрузки",
+        "chooseInstitution": "выберите, где ведётся счёт",
+        "nameInstitution": "дайте название новой организации",
+        "institutionType": "выберите тип организации",
+        "chooseAccount": "выберите счёт",
+        "nameAccount": "дайте название новому счёту",
+        "accountType": "выберите тип счёта",
+        "addHolding": "добавьте позицию с токеном и количеством",
+        "duplicateToken": "дайте каждой строке с одним и тем же токеном своё название или объедините их",
+        "walletEmpty": "введите адрес кошелька",
+        "walletIncomplete": "допишите адрес кошелька",
+        "walletUnrecognised": "проверьте адрес кошелька"
+      },
+      "category": {
+        "cryptoExchange": "Криптобиржа",
+        "cryptoWallet": "Криптокошелёк",
+        "bank": "Банк",
+        "broker": "Брокер",
+        "other": "Прочее"
+      },
+      "wallet": {
+        "shape": {
+          "ethereum": "0x и затем 40 шестнадцатеричных знаков, всего 42",
+          "bitcoin": "bc1 и затем от 39 до 59 строчных букв и цифр",
+          "ton": "EQ или UQ и затем 46 знаков, всего 48",
+          "tron": "T и затем ещё 33 знака, всего 34",
+          "solana": "от 32 до 44 букв и цифр, без 0, O, I и l среди них"
+        },
+        "everyShape": "Ethereum и другие EVM-сети — это 0x и 40 шестнадцатеричных знаков; Bitcoin начинается с 1, 3 или bc1; Solana — от 32 до 44 букв и цифр; Tron начинается с T; TON — с EQ или UQ.",
+        "incomplete_one": "Это неполный адрес сети {{chain}} — он выглядит так: {{shape}}, а здесь {{count}} знак.",
+        "incomplete_few": "Это неполный адрес сети {{chain}} — он выглядит так: {{shape}}, а здесь {{count}} знака.",
+        "incomplete_many": "Это неполный адрес сети {{chain}} — он выглядит так: {{shape}}, а здесь {{count}} знаков.",
+        "incomplete_other": "Это неполный адрес сети {{chain}} — он выглядит так: {{shape}}, а здесь {{count}} знака.",
+        "unrecognised": "Scani не читает ни одну сеть, чьи адреса выглядят так. {{shapes}}"
+      },
+      "institution": {
+        "lookUpName": "Определить название по сайту",
+        "name": "Название",
+        "namePlaceholder": "Revolut",
+        "type": "Тип",
+        "typeLabel": "Тип организации",
+        "typePlaceholder": "Банк, брокер, биржа…",
+        "label": "Организация",
+        "searchPlaceholder": "Поиск банков, брокеров, бирж…",
+        "noResults": "С таким названием пока ничего нет.",
+        "addUnlisted": "Добавить ту, которой нет в списке",
+        "addNamed": "Добавить «{{name}}»",
+        "website": "Сайт",
+        "websiteHint": "Заполнит название и иконку. Необязательно.",
+        "pickExisting": "Выбрать существующую организацию"
+      },
+      "token": {
+        "defillamaUnsupported": "Результатам DeFiLlama нужен адрес контракта, поэтому отсюда их добавить нельзя.",
+        "addFailed": "Добавляем этот токен",
+        "searchPlaceholder": "BTC, AAPL, EUR…",
+        "noResults": "С таким названием ничего нет — ни здесь, ни у наших поставщиков цен.",
+        "prompt": "Введите символ или название."
+      },
+      "integrations": {
+        "uploadInstead": "Загрузить выписку вместо этого"
+      },
+      "sheet": {
+        "title": "Добавить данные",
+        "subtitle": "Выберите, что у вас есть. Остальное следует из этого.",
+        "trigger": "Показать все способы добавить данные",
+        "collapse": "Свернуть"
+      },
+      "account": {
+        "namePlaceholder": "Текущий счёт, ИИС, торговый…",
+        "type": "Тип",
+        "typeLabel": "Тип счёта",
+        "typePlaceholder": "Накопительный, брокерский, крипто…",
+        "label": "Счёт",
+        "name": "Название",
+        "newInstitutionHint": "У совсем новой организации счетов ещё нет — добавьте первый.",
+        "searchPlaceholder": "Поиск по вашим счетам…",
+        "noResults": "Счёта с таким названием здесь нет.",
+        "addNamed": "Добавить «{{name}}»",
+        "addNew": "Добавить новый счёт",
+        "pickExisting": "Выбрать существующий счёт"
+      },
+      "page": {
+        "uploadAndRead": "Загрузить и прочитать",
+        "fileImport": {
+          "fieldset": "Файл",
+          "prompt": "Выберите файл или перетащите его сюда",
+          "subject": "этот файл"
+        },
+        "invoice": {
+          "title": "Загрузите инвойс",
+          "description": "PDF или его фото. Мы прочитаем контрагента, сумму и строки и положим их в «Разбор», чтобы вы приняли или отклонили.",
+          "fieldset": "Инвойс",
+          "prompt": "Выберите инвойс или перетащите его сюда"
+        },
+        "manual": {
+          "title": "Добавить позиции вручную",
+          "description": "Скажите, где они лежат и что в них. Каждую мы оценим после сохранения.",
+          "fieldset": "Что",
+          "token": "Токен",
+          "amount": "Количество",
+          "removeHolding": "Убрать позицию {{index}}",
+          "save": "Сохранить позиции",
+          "tokenFor": "токен для позиции {{index}}",
+          "addAnother": "Добавить ещё",
+          "potName": "Которая из них эта?",
+          "potNameHint": "Вы указали этот токен больше чем в одной строке. Дайте каждой своё название, и мы сохраним их как отдельные позиции.",
+          "potNamePlaceholder": "Накопления, депозит, подарок на свадьбу…",
+          "subject": "эти позиции"
+        },
+        "wallet": {
+          "title": "Следить за адресом кошелька",
+          "description": "Мы определим, в какой он сети, прочитаем остатки из блокчейна и будем обновлять их каждый час.",
+          "fieldset": "Адрес",
+          "addressLabel": "Адрес кошелька",
+          "addressHint": "Любая поддерживаемая сеть — Ethereum, Bitcoin, Solana и остальные. Говорить какая не нужно.",
+          "addressPlaceholder": "0x… или bc1… или …",
+          "nameLabel": "Название",
+          "nameHint": "Необязательно. Как вы называете этот кошелёк, а не его адрес.",
+          "namePlaceholder": "Холодное хранение, торговый кошелёк…",
+          "submit": "Следить за этим кошельком",
+          "subject": "этот кошелёк"
+        }
+      },
+      "integration": {
+        "title": "Подключить сервис",
+        "subtitle": "Один набор ключей только на чтение, зашифрованных при хранении.",
+        "listSubtitle": "API-ключи только на чтение, зашифрованные при хранении. Остатки синхронизируются раз в час, и к одному сервису можно держать несколько подключений.",
+        "allServices": "Все сервисы",
+        "thisService": "этот сервис",
+        "notFoundTitle": "Это не наш сервис",
+        "notFoundBody": "У Scani нет интеграции с таким названием. Возможно, её переименовали или ссылка устарела.",
+        "connectNamed": "Подключить {{name}}",
+        "permissions": "Прав только на чтение Scani достаточно. Ключи шифруются при хранении и не покидают наши воркеры.",
+        "whereToGet": "Где их взять",
+        "credentials": "Учётные данные",
+        "ownDocs": "Собственная документация {{name}}",
+        "unverifiedTitle": "Не удалось проверить ключи {{name}}",
+        "unverifiedDetail": "{{name}} не ответил, поэтому мы не знаем, верны ли ключи. Ничего не сохранено — попробуйте через минуту."
+      }
+    },
+    "review": {
+      "page": {
+        "title": "Разбор",
+        "transfersTitle": "Переводы к подтверждению",
+        "answered": "Отвечено"
+      },
+      "item": {
+        "jobFailed": "{{job}} — не удалось",
+        "invoiceExtracted": "Инвойс извлечён",
+        "transfersToConfirm": "Переводы к подтверждению",
+        "holdings_one": "{{count}} позиция",
+        "holdings_few": "{{count}} позиции",
+        "holdings_many": "{{count}} позиций",
+        "holdings_other": "{{count}} позиции",
+        "holdingsWithSymbols_one": "{{count}} позиция · {{symbols}}",
+        "holdingsWithSymbols_few": "{{count}} позиции · {{symbols}}",
+        "holdingsWithSymbols_many": "{{count}} позиций · {{symbols}}",
+        "holdingsWithSymbols_other": "{{count}} позиции · {{symbols}}",
+        "symbolsOverflow": "{{symbols}} +{{hidden}}",
+        "needsCurrency_one": "{{count}} операция — нужна валюта",
+        "needsCurrency_few": "{{count}} операции — нужна валюта",
+        "needsCurrency_many": "{{count}} операций — нужна валюта",
+        "needsCurrency_other": "{{count}} операции — нужна валюта",
+        "needsCurrencyWithType_one": "{{count}} операция · {{fileType}} — нужна валюта",
+        "needsCurrencyWithType_few": "{{count}} операции · {{fileType}} — нужна валюта",
+        "needsCurrencyWithType_many": "{{count}} операций · {{fileType}} — нужна валюта",
+        "needsCurrencyWithType_other": "{{count}} операции · {{fileType}} — нужна валюта",
+        "chains_one": "{{count}} сеть",
+        "chains_few": "{{count}} сети",
+        "chains_many": "{{count}} сетей",
+        "chains_other": "{{count}} сети",
+        "candidatesAcross_one": "{{count}} кандидат в {{chains}}",
+        "candidatesAcross_few": "{{count}} кандидата в {{chains}}",
+        "candidatesAcross_many": "{{count}} кандидатов в {{chains}}",
+        "candidatesAcross_other": "{{count}} кандидата в {{chains}}",
+        "nothingFound": "ничего не найдено",
+        "labelled": "{{label}} · {{body}}",
+        "unpairedTransfers_one": "{{count}} исходящий перевод без встречного зачисления",
+        "unpairedTransfers_few": "{{count}} исходящих перевода без встречного зачисления",
+        "unpairedTransfers_many": "{{count}} исходящих переводов без встречного зачисления",
+        "unpairedTransfers_other": "{{count}} исходящего перевода без встречного зачисления"
+      },
+      "kind": {
+        "withdrawal": "Вывод",
+        "transferOut": "Исходящий перевод"
+      },
+      "list": {
+        "valueAwaiting": "<label>Стоимость, ждущая ответа:</label> <value/>",
+        "valueAwaitingUnpriced_one": "<label>Стоимость, ждущая ответа:</label> <value/><label>, и ещё {{count}} без цены на тот день</label>",
+        "valueAwaitingUnpriced_few": "<label>Стоимость, ждущая ответа:</label> <value/><label>, и ещё {{count}} без цены на тот день</label>",
+        "valueAwaitingUnpriced_many": "<label>Стоимость, ждущая ответа:</label> <value/><label>, и ещё {{count}} без цены на тот день</label>",
+        "valueAwaitingUnpriced_other": "<label>Стоимость, ждущая ответа:</label> <value/><label>, и ещё {{count}} без цены на тот день</label>",
+        "backToReview": "Назад к разбору",
+        "seeAllJobs": "Смотреть все задачи",
+        "field": {
+          "when": "Когда",
+          "to": "Куда",
+          "description": "Описание",
+          "transaction": "Операция",
+          "viewOnExplorer": "Посмотреть в обозревателе блоков",
+          "toOwnWallet": "Кошелёк, который вы добавили, — эти деньги остались в вашем портфеле"
+        }
+      },
+      "answered": {
+        "title": "Отвеченные переводы",
+        "backToQueue": "Назад в очередь",
+        "field": {
+          "answered": "Отвечено",
+          "to": "Куда"
+        },
+        "source": {
+          "unrecorded": "Не записано",
+          "unrecordedLong": "Не записано — этот ответ был дан не в очереди",
+          "user": "Вами, здесь",
+          "repair": "Исправлено Scani",
+          "repairNote": "Scani исправил этот ответ",
+          "rule": "Правилом, которое вы написали",
+          "ruleNote": "Отвечено вашим правилом: {{note}}",
+          "ruleNoteUnnamed": "Отвечено правилом, которое вы написали про это назначение"
+        },
+        "reopen": {
+          "trigger": "Изменить этот ответ",
+          "commit": "Вернуть в очередь"
+        },
+        "toast": {
+          "reopened": "Снова в очереди — ответьте там заново",
+          "reopenFailed": "Этот перевод не удалось вернуть в очередь"
+        },
+        "attribution": {
+          "user": "Вы сказали",
+          "repair": "Scani исправил это на",
+          "unattributed": "Записано как",
+          "rule": "Ваше правило ответило"
+        }
+      },
+      "split": {
+        "movingTo": "Уходит в {{location}}",
+        "wherePrompt": "Куда ушла эта часть?",
+        "amountLabel": "{{outcome}} — количество в {{symbol}}",
+        "pickDepositFirst": "Сначала выберите зачисление выше",
+        "addsUp": "Сходится"
+      },
+      "decision": {
+        "possibleMatches": "Возможные совпадения",
+        "candidatesLegend": "Возможные встречные зачисления",
+        "noCandidates": "Ни одного зачисления {{symbol}} нигде в Scani в пределах недели от этого и на сопоставимую сумму не нашлось. Если это ушло туда, где Scani не видит, скажите об этом ниже.",
+        "whatHappened": "Что произошло",
+        "noLinkTarget": "Нет зачисления, достаточно близкого, чтобы связать с ним",
+        "toast": {
+          "paired": "Связано — база стоимости переезжает вместе с этим",
+          "internal": "Записано — зачисление теперь на той стороне",
+          "leftControl": "Записано как выбытие",
+          "untracked": "Записано как всё ещё ваше",
+          "split": "Записано — каждая часть на своих условиях",
+          "gone": "Этот перевод больше не ждёт ответа",
+          "splitRejected": "Это разделение не принято"
+        },
+        "ownWalletNotice": "Это ушло на кошелёк, который вы добавили, значит деньги по-прежнему ваши. Свяжите перевод со встречным зачислением или запишите, куда он переехал, — выбор «ушло из портфеля» проведёт его как продажу.",
+        "withdrawnNotice": "Scani отозвал прежний ответ по этому переводу. Он был дан про связку, которая, как мы с тех пор показали, переводом вовсе не была, — поэтому вопрос вернулся, и указать здесь может быть не на что.",
+        "withdrawnRuleNotice": "Вы забрали назад ответ, который дало этому переводу ваше правило, поэтому он снова здесь и ждёт вашего собственного ответа. Правило больше не будет на него отвечать."
+      },
+      "destinationPicker": {
+        "loading": "Загружаем ваши счета…",
+        "legend": "Куда ушли эти деньги",
+        "noDestinations": "У вас нет другого счёта, куда это можно перевести. Если это ушло туда, где Scani не видит, скажите лучше об этом."
+      },
+      "transfer": {
+        "unreviewedBehaviour": "Пока на них нет ответа, Scani не начисляет по ним прибыль: переложить свои монеты — не продажа, а догадка, что это была продажа, — именно так на графике появляется выдуманная прибыль. Если что-то из этого действительно ушло из вашего портфеля, его прибыль не входит в реализованный итог, пока вы не скажете.",
+        "unreviewedNote": "Без ответа прибыль по этому не начисляется ни в ту, ни в другую сторону.",
+        "candidateReason": {
+          "ambiguous": "Подходит — но подходит и другое зачисление",
+          "quantity": "Количество отличается на {{pct}}",
+          "time": "За пределами окна {{window}}, по которому мы сопоставляем",
+          "both": "Отличается на {{pct}} и за пределами окна {{window}}"
+        },
+        "hint": {
+          "equallyGood_one": "{{count}} равно подходящее совпадение",
+          "equallyGood_few": "{{count}} равно подходящих совпадения",
+          "equallyGood_many": "{{count}} равно подходящих совпадений",
+          "equallyGood_other": "{{count}} равно подходящего совпадения",
+          "none": "Близких зачислений не нашлось",
+          "possible_one": "{{count}} возможное совпадение",
+          "possible_few": "{{count}} возможных совпадения",
+          "possible_many": "{{count}} возможных совпадений",
+          "possible_other": "{{count}} возможного совпадения",
+          "ownWallet": "Ушло на кошелёк, который вы добавили"
+        },
+        "consequence": {
+          "paired": "{{quantity}} {{symbol}} сохраняет то, что вы за него изначально заплатили, при переезде в {{location}}. Здесь ничего не реализуется, и прибыль не начисляется.",
+          "pairedPrompt": "Выберите зачисление, которым эти деньги пришли.",
+          "internalPrompt": "Выберите позицию, в которую эти деньги переехали.",
+          "leftControlPriced": "Считается выбытием {{date}} по рыночной стоимости — примерно {{amount}} выручки против того, что вы заплатили.",
+          "leftControlUnpriced": "Считается выбытием {{date}} по рыночной стоимости. У Scani нет цены {{symbol}} на тот день, поэтому ничего не начисляется.",
+          "untracked": "По-прежнему ваше, просто там, где Scani не видит. Не выбытие, поэтому прибыль не начисляется — {{symbol}} просто перестаёт учитываться."
+        },
+        "decision": {
+          "paired": {
+            "trigger": "Те же деньги",
+            "commit": "Связать эти две операции"
+          },
+          "internal": {
+            "trigger": "Переведено туда, где Scani видит",
+            "commit": "Записать перевод"
+          },
+          "leftControl": {
+            "trigger": "Ушло из моего портфеля",
+            "commit": "Считать это выбытием"
+          },
+          "untracked": {
+            "trigger": "Переведено туда, где Scani не видит",
+            "commit": "Записать как всё ещё моё"
+          }
+        },
+        "destination": {
+          "willCreate": "{{symbol}} здесь пока не отслеживается — позиция будет создана"
+        },
+        "internal": {
+          "carry": "{{amount}} {{symbol}} сохраняет то, что вы за него изначально заплатили, при переезде в {{location}}. Ничего не реализуется, и прибыль не начисляется.",
+          "writeNew": "Там создаётся новая позиция {{symbol}} с остатком {{amount}} {{symbol}} и зачислением от {{date}}.",
+          "writeExisting": "Там записывается зачисление {{amount}} {{symbol}} от {{date}}. Остаток остаётся {{balance}} — запись истории никогда не двигает остаток, поэтому, если он этого ещё не включает, поправьте его сами.",
+          "balanceFallback": "его остаток"
+        },
+        "allocation": {
+          "unparseable": "Одно из этих количеств не число.",
+          "over": "Это на {{amount}} {{symbol}} больше, чем сам перевод.",
+          "under": "Осталось распределить {{amount}} {{symbol}}."
+        },
+        "split": {
+          "trigger": "Это было несколько из перечисленного",
+          "commit": "Записать это разделение",
+          "note": "Вывод может быть несколькими вещами сразу: часть переехала в другую вашу позицию, часть действительно ушла. Разделите его — и с каждой частью разберутся отдельно.",
+          "oneLinkOnly": "Только одна часть может уйти туда, где Scani видит, — {{paired}} или {{internal}}, но не обе. База стоимости следует за одним назначением, а две отправили бы её ни к одному.",
+          "needTwo": "Задайте количество хотя бы двум из них. Вместе они должны дать {{amount}} {{symbol}}.",
+          "takeRest": "Забрать остаток — {{amount}} {{symbol}}",
+          "transferWas": "Перевод был на {{amount}} {{symbol}}",
+          "clause": {
+            "paired": "{{amount}} сохраняет то, что вы за него заплатили, при переезде в {{location}}",
+            "pairedFallback": "выбранное вами зачисление",
+            "internal": "{{amount}} переезжает в {{location}}, где записывается зачисление {{amount}}",
+            "internalFallback": "{{amount}} переезжает в выбранную вами позицию",
+            "leftControl": "{{amount}} считается выбытием по рыночной стоимости {{date}}",
+            "untracked": "{{amount}} по-прежнему ваше, просто там, где Scani не видит"
+          },
+          "summary": "{{clauses}}. Прибыль начисляет только выбытие.",
+          "balanceNew": "Там создаётся новая позиция {{symbol}}, и это зачисление становится её остатком.",
+          "balanceUnchanged": "Ни один остаток не меняется."
+        },
+        "answered": {
+          "paired": "Связано с зачислением — ничего не реализовано",
+          "internal": "Переехало в позицию, которую вы отслеживаете, — зачисление записано",
+          "leftControl": "Посчитано выбытием",
+          "untracked": "По-прежнему ваше, там, где Scani не видит",
+          "fallback": "Отвечено"
+        },
+        "answeredShort": {
+          "paired": "{{amount}} связано",
+          "internal": "{{amount}} переехало",
+          "leftControl": "{{amount}} выбыло",
+          "untracked": "{{amount}} вне поля зрения"
+        },
+        "reopen": {
+          "internal": "Зачисление, которое это записало на другом счёте, удаляется вместе с ответом — иначе следующий ваш ответ посчитал бы эти деньги дважды. Перевод возвращается в очередь, и ни один остаток при этом не меняется.",
+          "leftControl": "Прибыль, которую это начислило, уходит из вашего реализованного итога, пока вы не ответите заново, а перевод возвращается в очередь.",
+          "default": "Перевод возвращается в очередь, и ничего по нему не считается решённым, пока вы не ответите заново."
+        },
+        "gap": {
+          "sameMinute": "в ту же минуту",
+          "later": "на {{gap}} позже",
+          "earlier": "на {{gap}} раньше",
+          "minutes_one": "{{count}} мин",
+          "minutes_few": "{{count}} мин",
+          "minutes_many": "{{count}} мин",
+          "minutes_other": "{{count}} мин",
+          "hours_one": "{{count}} ч",
+          "hours_few": "{{count}} ч",
+          "hours_many": "{{count}} ч",
+          "hours_other": "{{count}} ч",
+          "days_one": "{{count}} д",
+          "days_few": "{{count}} д",
+          "days_many": "{{count}} д",
+          "days_other": "{{count}} д"
+        },
+        "bulk": {
+          "consequence": {
+            "loading": "Считаем, к чему это приведёт…",
+            "none": "Ни на один из выбранных переводов нельзя ответить так.",
+            "leftControl_one": "Считает {{count}} перевод выбытием — примерно {{amount}} выручки против того, что вы заплатили.",
+            "leftControl_few": "Считает {{count}} перевода выбытиями — примерно {{amount}} выручки против того, что вы заплатили.",
+            "leftControl_many": "Считает {{count}} переводов выбытиями — примерно {{amount}} выручки против того, что вы заплатили.",
+            "leftControl_other": "Считает {{count}} перевода выбытиями — примерно {{amount}} выручки против того, что вы заплатили.",
+            "leftControlUnpriced_one": "Считает {{count}} перевод выбытием. У Scani нет цены на его день, поэтому ничего не начисляется.",
+            "leftControlUnpriced_few": "Считает {{count}} перевода выбытиями. У Scani нет цены ни на один из их дней, поэтому ничего не начисляется.",
+            "leftControlUnpriced_many": "Считает {{count}} переводов выбытиями. У Scani нет цены ни на один из их дней, поэтому ничего не начисляется.",
+            "leftControlUnpriced_other": "Считает {{count}} перевода выбытиями. У Scani нет цены ни на один из их дней, поэтому ничего не начисляется.",
+            "untracked_one": "Записывает {{count}} перевод как всё ещё ваш, туда, где Scani не видит. Ничего не реализуется.",
+            "untracked_few": "Записывает {{count}} перевода как всё ещё ваши, туда, где Scani не видит. Ничего не реализуется.",
+            "untracked_many": "Записывает {{count}} переводов как всё ещё ваши, туда, где Scani не видит. Ничего не реализуется.",
+            "untracked_other": "Записывает {{count}} перевода как всё ещё ваши, туда, где Scani не видит. Ничего не реализуется.",
+            "takesBack_one": "Это заберёт примерно {{amount}} реализованной прибыли с {{count}}, который сейчас считается выбытием.",
+            "takesBack_few": "Это заберёт примерно {{amount}} реализованной прибыли с {{count}}, которые сейчас считаются выбытиями.",
+            "takesBack_many": "Это заберёт примерно {{amount}} реализованной прибыли с {{count}}, которые сейчас считаются выбытиями.",
+            "takesBack_other": "Это заберёт примерно {{amount}} реализованной прибыли с {{count}}, которые сейчас считаются выбытиями.",
+            "takesBackUnpriced_one": "{{count}} из них сейчас считается выбытием, и у Scani нет для него цены, поэтому ничего не убавится.",
+            "takesBackUnpriced_few": "{{count}} из них сейчас считаются выбытиями, и у Scani нет цены ни для одного, поэтому ничего не убавится.",
+            "takesBackUnpriced_many": "{{count}} из них сейчас считаются выбытиями, и у Scani нет цены ни для одного, поэтому ничего не убавится.",
+            "takesBackUnpriced_other": "{{count}} из них сейчас считаются выбытиями, и у Scani нет цены ни для одного, поэтому ничего не убавится.",
+            "unpriced_one": "Ещё у {{count}} нет цены на его день, и он ничего не начисляет, поэтому цифра — это нижняя граница.",
+            "unpriced_few": "Ещё у {{count}} нет цены на их день, и они ничего не начисляют, поэтому цифра — это нижняя граница.",
+            "unpriced_many": "Ещё у {{count}} нет цены на их день, и они ничего не начисляют, поэтому цифра — это нижняя граница.",
+            "unpriced_other": "Ещё у {{count}} нет цены на их день, и они ничего не начисляют, поэтому цифра — это нижняя граница."
+          },
+          "commit": {
+            "leftControl_one": "Считать {{count}} выбытием",
+            "leftControl_few": "Считать {{count}} выбытиями",
+            "leftControl_many": "Считать {{count}} выбытиями",
+            "leftControl_other": "Считать {{count}} выбытиями",
+            "untracked_one": "Записать {{count}} как всё ещё мой",
+            "untracked_few": "Записать {{count}} как всё ещё мои",
+            "untracked_many": "Записать {{count}} как всё ещё мои",
+            "untracked_other": "Записать {{count}} как всё ещё мои"
+          },
+          "refusal": {
+            "ownWallet_one": "{{count}} ушёл на {{address}} — кошелёк, который вы зарегистрировали; он не покидал ваш портфель, поэтому его нельзя посчитать выбытием.",
+            "ownWallet_few": "{{count}} ушли на кошельки, которые вы зарегистрировали, начиная с {{address}}; они не покидали ваш портфель, поэтому их нельзя посчитать выбытиями.",
+            "ownWallet_many": "{{count}} ушли на кошельки, которые вы зарегистрировали, начиная с {{address}}; они не покидали ваш портфель, поэтому их нельзя посчитать выбытиями.",
+            "ownWallet_other": "{{count}} ушли на кошельки, которые вы зарегистрировали, начиная с {{address}}; они не покидали ваш портфель, поэтому их нельзя посчитать выбытиями.",
+            "answered_one": "На {{count}} уже дан ответ «{{answer}}». Чтобы изменить, верните его в очередь из его собственной строки.",
+            "answered_few": "На {{count}} уже даны ответы «{{answer}}». Чтобы изменить, верните их в очередь из их собственных строк.",
+            "answered_many": "На {{count}} уже даны ответы «{{answer}}». Чтобы изменить, верните их в очередь из их собственных строк.",
+            "answered_other": "На {{count}} уже даны ответы «{{answer}}». Чтобы изменить, верните их в очередь из их собственных строк.",
+            "linked_one": "{{count}} уже связан с зачислением, поэтому ответ здесь ничего бы не изменил.",
+            "linked_few": "{{count}} уже связаны с зачислениями, поэтому ответ здесь ничего бы не изменил.",
+            "linked_many": "{{count}} уже связаны с зачислениями, поэтому ответ здесь ничего бы не изменил.",
+            "linked_other": "{{count}} уже связаны с зачислениями, поэтому ответ здесь ничего бы не изменил.",
+            "gone_one": "{{count}} больше не перевод, на который можно ответить.",
+            "gone_few": "{{count}} больше не переводы, на которые можно ответить.",
+            "gone_many": "{{count}} больше не переводы, на которые можно ответить.",
+            "gone_other": "{{count}} больше не переводы, на которые можно ответить."
+          },
+          "deselect_one": "Снять выбор с {{count}} перевода",
+          "deselect_few": "Снять выбор с {{count}} переводов",
+          "deselect_many": "Снять выбор с {{count}} переводов",
+          "deselect_other": "Снять выбор с {{count}} переводов",
+          "overCap": "Выбирайте не больше {{max}} переводов за раз.",
+          "undo": "Отменить",
+          "toast": {
+            "leftControl_one": "{{count}} перевод посчитан выбытием",
+            "leftControl_few": "{{count}} перевода посчитаны выбытиями",
+            "leftControl_many": "{{count}} переводов посчитаны выбытиями",
+            "leftControl_other": "{{count}} перевода посчитаны выбытиями",
+            "untracked_one": "{{count}} перевод записан как всё ещё ваш",
+            "untracked_few": "{{count}} перевода записаны как всё ещё ваши",
+            "untracked_many": "{{count}} переводов записаны как всё ещё ваши",
+            "untracked_other": "{{count}} перевода записаны как всё ещё ваши",
+            "undone_one": "{{count}} перевод возвращён как было",
+            "undone_few": "{{count}} перевода возвращены как было",
+            "undone_many": "{{count}} переводов возвращены как было",
+            "undone_other": "{{count}} перевода возвращены как было",
+            "refused": "Ничего не изменилось",
+            "undoFailed": "Отменить это не удалось"
+          }
+        }
+      },
+      "rules": {
+        "title": "Правила по назначениям",
+        "trigger": "Создать правило об этом назначении",
+        "commit": "Создать это правило",
+        "manage": "Смотреть ваши правила по назначениям",
+        "alreadyRuled": "Правило для этого назначения у вас уже есть",
+        "revoke": "Забрать это правило назад",
+        "revokeCommit": "Забрать это правило назад",
+        "field": {
+          "counterparty": "Этот перевод ушёл на",
+          "key": "Правило будет срабатывать на",
+          "keyHint": "Сумма намеренно не учитывается, чтобы следующий перевод на то же назначение тоже подошёл.",
+          "note": "Что это за назначение?",
+          "notePlaceholder": "Мой адрес пополнения на Bybit",
+          "verdict": "Что должно делать правило"
+        },
+        "verdict": {
+          "askMe": "Продолжать спрашивать, но подписывать",
+          "notADisposal": "Больше про это не спрашивать",
+          "alwaysADisposal": "Отвечать «выбытие»"
+        },
+        "consequence": {
+          "askMe": "Каждый перевод на {{key}}, на любую сумму, остаётся в этой очереди и несёт вашу подпись. Ничего не отвечается и никакая прибыль не начисляется — каждый раз решаете вы.",
+          "notADisposal": "Каждый перевод на {{key}}, на любую сумму, уходит из этой очереди и попадает в список правил по назначениям. В них ничего не записывается: перевод без ответа не начисляет прибыль, а если забрать правило назад, все они сразу вернутся сюда.",
+          "mark_one": "Отвечает на {{count}} перевод на это назначение как на ушедший из вашего портфеля, начисляя {{proceeds}} выручки. Каждый следующий перевод туда отвечается так же, не открываясь. Любой из них можно отменить по отдельности, и отмена одного навсегда снимает действие правила с этого перевода.",
+          "mark_few": "Отвечает на {{count}} перевода на это назначение как на ушедшие из вашего портфеля, начисляя {{proceeds}} выручки. Каждый следующий перевод туда отвечается так же, не открываясь. Любой из них можно отменить по отдельности, и отмена одного навсегда снимает действие правила с этого перевода.",
+          "mark_many": "Отвечает на {{count}} переводов на это назначение как на ушедшие из вашего портфеля, начисляя {{proceeds}} выручки. Каждый следующий перевод туда отвечается так же, не открываясь. Любой из них можно отменить по отдельности, и отмена одного навсегда снимает действие правила с этого перевода.",
+          "mark_other": "Отвечает на {{count}} перевода на это назначение как на ушедшие из вашего портфеля, начисляя {{proceeds}} выручки. Каждый следующий перевод туда отвечается так же, не открываясь. Любой из них можно отменить по отдельности, и отмена одного навсегда снимает действие правила с этого перевода.",
+          "markUnpriced_one": "На {{count}} перевод на это назначение отвечено как на ушедший из вашего портфеля. Ни у одного из них нет цены на его день, поэтому сегодня ничего не начисляется. Каждый следующий перевод туда отвечается так же, не открываясь.",
+          "markUnpriced_few": "На {{count}} перевода на это назначение отвечено как на ушедшие из вашего портфеля. Ни у одного из них нет цены на его день, поэтому сегодня ничего не начисляется. Каждый следующий перевод туда отвечается так же, не открываясь.",
+          "markUnpriced_many": "На {{count}} переводов на это назначение отвечено как на ушедшие из вашего портфеля. Ни у одного из них нет цены на его день, поэтому сегодня ничего не начисляется. Каждый следующий перевод туда отвечается так же, не открываясь.",
+          "markUnpriced_other": "На {{count}} перевода на это назначение отвечено как на ушедшие из вашего портфеля. Ни у одного из них нет цены на его день, поэтому сегодня ничего не начисляется. Каждый следующий перевод туда отвечается так же, не открываясь.",
+          "markUnpricedTail_one": "У {{count}} из них нет цены на его день, и он ничего не начисляет.",
+          "markUnpricedTail_few": "У {{count}} из них нет цены на их день, и они ничего не начисляют.",
+          "markUnpricedTail_many": "У {{count}} из них нет цены на их день, и они ничего не начисляют.",
+          "markUnpricedTail_other": "У {{count}} из них нет цены на их день, и они ничего не начисляют.",
+          "markFuture": "Для этого назначения сейчас ничего не ждёт, поэтому сегодня ничего не отвечается. Каждый следующий перевод туда отвечается как ушедший из вашего портфеля, не открываясь, и начисляет прибыль."
+        },
+        "revokeConsequence": {
+          "notADisposal_one": "{{count}} перевод возвращается в очередь. В него ничего не записывалось, поэтому отменять нечего.",
+          "notADisposal_few": "{{count}} перевода возвращаются в очередь. В них ничего не записывалось, поэтому отменять нечего.",
+          "notADisposal_many": "{{count}} переводов возвращаются в очередь. В них ничего не записывалось, поэтому отменять нечего.",
+          "notADisposal_other": "{{count}} перевода возвращаются в очередь. В них ничего не записывалось, поэтому отменять нечего.",
+          "askMe": "Переводы на это назначение перестают нести вашу подпись. Правило на них никогда не отвечало, поэтому больше ничего не меняется.",
+          "markKeep_one": "Правило перестаёт отвечать на новые переводы на это назначение. {{count}} перевод, на который оно уже ответило, остаётся отвеченным и продолжает начислять прибыль — отметьте галочку выше, чтобы забрать назад и его.",
+          "markKeep_few": "Правило перестаёт отвечать на новые переводы на это назначение. {{count}} перевода, на которые оно уже ответило, остаются отвеченными и продолжают начислять прибыль — отметьте галочку выше, чтобы забрать назад и их.",
+          "markKeep_many": "Правило перестаёт отвечать на новые переводы на это назначение. {{count}} переводов, на которые оно уже ответило, остаются отвеченными и продолжают начислять прибыль — отметьте галочку выше, чтобы забрать назад и их.",
+          "markKeep_other": "Правило перестаёт отвечать на новые переводы на это назначение. {{count}} перевода, на которые оно уже ответило, остаются отвеченными и продолжают начислять прибыль — отметьте галочку выше, чтобы забрать назад и их.",
+          "markWithdraw_one": "Правило перестаёт отвечать на новые переводы, а {{count}} перевод, на который оно ответило, возвращается в очередь без ответа. Его прибыль перестаёт начисляться.",
+          "markWithdraw_few": "Правило перестаёт отвечать на новые переводы, а {{count}} перевода, на которые оно ответило, возвращаются в очередь без ответа. Их прибыль перестаёт начисляться.",
+          "markWithdraw_many": "Правило перестаёт отвечать на новые переводы, а {{count}} переводов, на которые оно ответило, возвращаются в очередь без ответа. Их прибыль перестаёт начисляться.",
+          "markWithdraw_other": "Правило перестаёт отвечать на новые переводы, а {{count}} перевода, на которые оно ответило, возвращаются в очередь без ответа. Их прибыль перестаёт начисляться."
+        },
+        "row": {
+          "hiding_one": "Держит {{count}} перевод вне очереди",
+          "hiding_few": "Держит {{count}} перевода вне очереди",
+          "hiding_many": "Держит {{count}} переводов вне очереди",
+          "hiding_other": "Держит {{count}} перевода вне очереди",
+          "labelling_one": "Подписывает {{count}} перевод в очереди",
+          "labelling_few": "Подписывает {{count}} перевода в очереди",
+          "labelling_many": "Подписывает {{count}} переводов в очереди",
+          "labelling_other": "Подписывает {{count}} перевода в очереди",
+          "answering_one": "Ответило на {{count}} перевод как на выбытие",
+          "answering_few": "Ответило на {{count}} перевода как на выбытия",
+          "answering_many": "Ответило на {{count}} переводов как на выбытия",
+          "answering_other": "Ответило на {{count}} перевода как на выбытия"
+        },
+        "hidden": {
+          "title": "Переводы, которые придерживают ваши правила",
+          "body": "Ни на один из них не отвечено. Они ждут вне очереди — заберите правило назад, чтобы вернуть их сюда."
+        },
+        "empty": {
+          "title": "Правил по назначениям пока нет",
+          "body": "Откройте перевод в очереди и запишите, куда он ушёл. Каждый следующий перевод на то же назначение будет нести вашу подпись, на любую сумму, — а назначения, которые вы пометите, будут отвечаться за вас."
+        },
+        "notice": {
+          "label": "Ваша подпись об этом назначении",
+          "markExempt": "Вы пометили это назначение как выбытие и забрали этот ответ назад на этом переводе. Автоматически на него больше не ответят."
+        },
+        "toast": {
+          "created": "Правило сохранено",
+          "refused": "Это правило не сохранено",
+          "revoked": "Правило забрано назад",
+          "revokeFailed": "Это правило не удалось забрать назад",
+          "revokedWithdrawn_one": "Правило забрано назад — {{count}} ответ вернулся в очередь",
+          "revokedWithdrawn_few": "Правило забрано назад — {{count}} ответа вернулись в очередь",
+          "revokedWithdrawn_many": "Правило забрано назад — {{count}} ответов вернулись в очередь",
+          "revokedWithdrawn_other": "Правило забрано назад — {{count}} ответа вернулись в очередь",
+          "revokedKept_one": "Правило забрано назад — {{count}} данный им ответ не изменился",
+          "revokedKept_few": "Правило забрано назад — {{count}} данных им ответа не изменились",
+          "revokedKept_many": "Правило забрано назад — {{count}} данных им ответов не изменились",
+          "revokedKept_other": "Правило забрано назад — {{count}} данных им ответа не изменились"
+        },
+        "refusal": {
+          "ownWallet": "{{key}} — это один из ваших собственных кошельков. Деньги, которые на него уходят, не покидали ваш портфель, поэтому их нельзя пометить выбытием."
+        },
+        "withdrawAnswers_one": "Забрать назад и {{count}} данный им ответ",
+        "withdrawAnswers_few": "Забрать назад и {{count}} данных им ответа",
+        "withdrawAnswers_many": "Забрать назад и {{count}} данных им ответов",
+        "withdrawAnswers_other": "Забрать назад и {{count}} данных им ответа"
+      }
+    }
+  }
+}

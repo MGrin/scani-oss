@@ -39,9 +39,13 @@ const BACKFILL_COALESCE_WINDOW_MS = 5 * 60_000;
 function isUnrecoverableExchangeError(err: unknown): boolean {
   const msg = err instanceof Error ? err.message : String(err);
   return (
-    /IBKR Flex Query error \(code 10(01|10|12|18)\)/.test(msg) ||
-    /IBKR report still generating after \d+ retries/.test(msg) ||
-    /IBKR SendRequest still transient after \d+ retries/.test(msg) ||
+    // 1001/1019 are absent on purpose (SC-443): they are the "still
+    // generating" codes, they never reach `classifyFlexError`, and running out
+    // of OUR poll budget is a slow report rather than anything the user can
+    // correct. The provider now raises that as a `retryable` ProviderError and
+    // this function must not override it — the retry budget on the descriptor
+    // is what bounds it.
+    /IBKR Flex Query error \(code 10(10|12|18)\)/.test(msg) ||
     /HTTP 40[13]/.test(msg) ||
     /EAPI:Invalid (signature|nonce|key)/.test(msg) ||
     /rejected request: retCode (10003|10004|10005|10006|33004)/.test(msg) ||

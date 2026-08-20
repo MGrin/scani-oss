@@ -16,6 +16,7 @@ import { integrationsRouter } from './routers/integrations';
 import { jobsRouter } from './routers/jobs';
 import { paymentsRouter } from './routers/payments';
 import { portfolioRouter } from './routers/portfolio';
+import { pushRouter } from './routers/push';
 import { reviewRouter } from './routers/review';
 import { screenshotsRouter } from './routers/screenshots';
 import { sessionsRouter } from './routers/sessions';
@@ -105,6 +106,10 @@ export const appRouter = router({
   // Active session management (protected) - list/revoke for the
   // signed-in user, backing the Settings → Devices section.
   sessions: sessionsRouter,
+
+  // Web Push subscriptions (protected) - one row per browser per device,
+  // consumed by the payment-due reminder on the worker (SC-226).
+  push: pushRouter,
 
   // Health check (public)
   health: router({

@@ -14,7 +14,9 @@
 import { randomUUID } from 'node:crypto';
 import { db } from '@scani/db/connection';
 import * as schema from '@scani/db/schema';
+import { SCAM_PROBABILITY_THRESHOLD } from '@scani/domain/lib/constants';
 import { PortfolioValueDailyRepository, UserJobRepository } from '@scani/domain/repositories';
+import { type ReturnsScope, ReturnsService } from '@scani/domain/services';
 import { HIDE_CLOSED_HOLDINGS_STALE_DAYS } from '@scani/domain/use-cases';
 import { PORTFOLIO_HISTORY_BACKFILL, PORTFOLIO_HISTORY_LOOKBACK_DAYS } from '@scani/jobs';
 import { BullMqEnqueueService } from '@scani/queue';
@@ -33,6 +35,7 @@ import {
   unmeasuredDates,
   userNetWorthDaily,
 } from '../../lib/net-worth-series';
+import { withoutPeriodSeries } from '../../lib/returns-response';
 import { requireAuth } from '../middleware/auth';
 import { protectedProcedure, router } from '../trpc';
 
@@ -227,7 +230,101 @@ async function assertScopeOwnership(
   if (!row[0]) throw new TRPCError({ code: 'NOT_FOUND', message: 'Institution not found' });
 }
 
+/**
+ * TWR + XIRR over a window, at any level the product has a page for (SC-457).
+ *
+ * The scope is optional and absent means the whole portfolio, matching
+ * `getNetWorthSeries` above so the two are asked the same way. Ownership is
+ * NOT checked here: `ReturnsScopeResolver` resolves a scope that is not this
+ * user's to `null`, so a foreign id produces the same NOT_FOUND as one that
+ * does not exist — one gate, in the layer that knows what a scope is.
+ */
+const ReturnsInput = z.object({
+  baseCurrencyId: z.string().uuid().optional(),
+  scope: z
+    .discriminatedUnion('kind', [
+      z.object({ kind: z.literal('holding'), id: z.string().uuid() }),
+      z.object({ kind: z.literal('account'), id: z.string().uuid() }),
+      z.object({ kind: z.literal('institution'), id: z.string().uuid() }),
+      z.object({ kind: z.literal('group'), id: z.string().uuid() }),
+      z.object({ kind: z.literal('vault'), id: z.string().uuid() }),
+    ])
+    .optional(),
+  window: z
+    .discriminatedUnion('kind', [
+      z.object({ kind: z.literal('ytd') }),
+      z.object({ kind: z.literal('1y') }),
+      z.object({ kind: z.literal('all') }),
+      z.object({
+        kind: z.literal('custom'),
+        from: z.coerce.date(),
+        to: z.coerce.date(),
+      }),
+    ])
+    .default({ kind: 'all' }),
+  /**
+   * Whether the per-sub-period breakdowns cross the wire — the TWR chain's,
+   * and the FX attribution's over the same boundaries.
+   *
+   * They are always COMPUTED — `TwrResult.periods` is the boundary set SC-458
+   * attributes FX over and SC-464 chains a benchmark across, and losing it
+   * would cost those tickets a re-derivation they cannot do from the scalar.
+   * What they do not have to do is reach a browser that only prints two
+   ***REMOVED***
+   ***REMOVED***
+   ***REMOVED***
+   *
+   * One flag for both, because they share their boundaries: a client given
+   * one series and not the other could not line them up. Off by default, and
+   * ABSENT rather than empty when off — `[]` would say the window had no
+   * sub-periods, which is a different and false statement. The counts beside
+   * them still travel, so a client can tell how many there were without
+   * carrying them.
+   */
+  includePeriods: z.boolean().default(false),
+});
+
 export const portfolioRouter = router({
+  // The performance surface. Reads the same rollup rows the chart above
+  // plots, so a return can never disagree with the curve it is printed under.
+  getReturns: protectedProcedure.input(ReturnsInput).query(async ({ ctx, input }) => {
+    const { dbUser } = await requireAuth(ctx);
+
+    if (input.window.kind === 'custom') {
+      const span =
+        (input.window.to.getTime() - input.window.from.getTime()) / (24 * 60 * 60 * 1000);
+      if (span < 0 || span > MAX_NET_WORTH_SPAN_DAYS) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: `Custom window must be between 0 and ${MAX_NET_WORTH_SPAN_DAYS} days`,
+        });
+      }
+    }
+
+    const scope: ReturnsScope = input.scope ?? { kind: 'user' };
+    // The base currency is resolved by the SERVICE, not here (SC-457 review).
+    // This handler used to do it, which meant the only caller that could not
+    // reach the query without one was this one — and every script, job and
+    // test that called `compute` directly passed `undefined` straight into a
+    // primary-key column.
+    const outcome = await Container.get(ReturnsService).compute({
+      userId: dbUser.id,
+      baseCurrencyId: input.baseCurrencyId,
+      scope,
+      window: input.window,
+    });
+
+    // Same shape `getNetWorthSeries` uses for the "set a base currency" CTA:
+    // an account with none has no rollup rows either, so there is nothing to
+    // show and nothing has gone wrong.
+    if (outcome.status === 'no-base-currency') return { returns: null, baseCurrencyId: null };
+    if (outcome.status === 'scope-not-found') {
+      throw new TRPCError({ code: 'NOT_FOUND', message: 'Scope not found' });
+    }
+    const returns = input.includePeriods ? outcome.returns : withoutPeriodSeries(outcome.returns);
+    return { returns, baseCurrencyId: outcome.returns.baseCurrencyId };
+  }),
+
   getNetWorthSeries: protectedProcedure.input(NetWorthSeriesInput).query(async ({ ctx, input }) => {
     const { dbUser } = await requireAuth(ctx);
     const baseId = input.baseCurrencyId ?? dbUser.baseCurrencyId ?? null;
@@ -462,147 +559,259 @@ export const portfolioRouter = router({
     return { jobId, deduplicated: false } as const;
   }),
 
-  // Snapshot of every data-quality counter the user-facing system
-  // currently degrades on. Counts are scoped to the user's holdings,
-  // tokens are global (one user in prod). The Settings page renders
-  // this as a sanity card so duplicates / unpriced holdings / negative
-  // openings show up before they break the chart, instead of after.
+  /**
+   * Every data-quality counter the user-facing system degrades on, and — for
+   * the ones a reader can act on — **the holdings each counter counted**.
+   *
+   * The ids are the whole point (SC-293). SC-268 found that every flagged row
+   * on the Settings panel said "Look into this" while none of them was a
+   * control, and could not become one because the payload identified nothing
+   * to link to. A row can only send a reader somewhere if the server can name
+   * the set behind its number, so each actionable counter now returns that set
+   * and the count is `ids.length` rather than a second, separately-computed
+   * figure that can drift from it.
+   *
+   * **`shown` is the scope, and it is the scope the Holdings list uses.** Not
+   * hidden, and under the scam threshold — exactly `findByUserWithFullDetails`
+   * with its defaults, which is what `holdings.getWithDetails` feeds the list
+   * from. The counters used to filter on `is_hidden` alone (and the two
+   * coverage ones on nothing at all), so a scam-flagged or hidden holding
+   * could be counted here and be unreachable on every screen: the row would
+   * say 16 and the list it links to would show 15. Scoping the count to the
+   * set the destination can show is what makes the number and the list agree
+   * by construction rather than by review.
+   *
+   * The `symbol` counters are counted in POSITIONS for the same reason. Three
+   * rows used to count distinct symbols while their labels said "positions",
+   * so "2" sat above a link that would have opened five rows.
+   */
   getDataQualityReport: protectedProcedure.query(async ({ ctx }) => {
     const { dbUser } = await requireAuth(ctx);
     const userId = dbUser.id;
 
-    const dupRows = (await db.execute<{ symbol: string; n: number }>(sql`
-      SELECT symbol, COUNT(*)::int AS n FROM tokens
-      GROUP BY symbol HAVING COUNT(*) > 1 ORDER BY n DESC, symbol
-    `)) as unknown as Array<{ symbol: string; n: number }>;
-
     const staleInterval = sql.raw(`'${HIDE_CLOSED_HOLDINGS_STALE_DAYS} days'`);
-    // The previous version had a correlated `MAX(occurred_at) FROM
-    // holding_transactions WHERE holding_id = h.id` subquery in the
-    // stale_zero branch, executed once per qualifying row. For users
-    // with thousands of zero-balance holdings this dominated the
-    // query's runtime.
-    //
-    // Pre-aggregate `last_tx_at` per holding via LEFT JOIN +
-    // GROUP BY in a CTE, then derive every count from the joined
-    // CTE in a single SELECT with COUNT(*) FILTER (WHERE ...). One
-    // pass over user holdings + one pass over their transactions,
-    // independent of holding count.
-    const countsRows = (await db.execute<{
-      total: number;
-      visible: number;
-      zero_visible: number;
-      stale_zero: number;
-      unpriced_visible: number;
-      negative_opening: number;
-      no_coverage: number;
+    const scamThreshold = sql.raw(String(SCAM_PROBABILITY_THRESHOLD));
+
+    /**
+     * One row per holding the reader can actually see, carrying every fact the
+     * counters below are derived from.
+     *
+     * Per-holding rather than pre-aggregated because the ids are now part of
+     * the answer: an aggregate cannot say *which* holdings it counted, and
+     * computing the counts in one query and the ids in another is the drift
+     * this endpoint exists to remove. The row count is the size of the
+     * reader's holdings list — the same set `holdings.getWithDetails` already
+     * returns in full, with far more columns, on every visit to that screen.
+     *
+     * The pre-aggregation the previous version needed is still here where it
+     * mattered: `h_last_tx` groups the transaction join once rather than
+     * running a correlated `MAX(occurred_at)` per qualifying row.
+     */
+    const shownRows = (await db.execute<{
+      id: string;
+      symbol: string;
+      lookalike_of: string | null;
+      segment: string | null;
+      is_zero: boolean;
+      is_positive: boolean;
+      is_stale_zero: boolean;
+      is_priced: boolean;
+      is_unpriceable: boolean;
+      has_price_source: boolean;
+      is_fiat: boolean;
+      dup_symbol: boolean;
+      opening_negative: boolean;
+      has_coverage: boolean;
     }>(sql`
-      WITH user_h AS (
-        SELECT id, token_id, balance::numeric AS balance_n, is_hidden, is_active
-        FROM holdings
-        WHERE user_id = ${userId}
+      WITH shown AS (
+        SELECT h.id, h.token_id, h.balance::numeric AS balance_n,
+               t.symbol, t.lookalike_of, t.market_segment, t.provider_metadata,
+               t.unpriceable_until, tt.code AS type_code
+        FROM holdings h
+        JOIN tokens t ON t.id = h.token_id
+        JOIN token_types tt ON tt.id = t.type_id
+        WHERE h.user_id = ${userId}
+          AND h.is_hidden = false
+          AND t.is_scam_probability < ${scamThreshold}
       ),
-      h_last_tx AS (
-        SELECT h.id AS holding_id, MAX(t.occurred_at) AS last_tx_at
-        FROM user_h h
-        LEFT JOIN holding_transactions t ON t.holding_id = h.id
-        GROUP BY h.id
+      -- A symbol the reader holds under more than one TOKEN row. The
+      -- catalogue-wide version of this counted every duplicate symbol in
+      -- tokens, most of which the reader has never held: 11 in production
+      -- against 3 they actually hold, and no link could have reconciled the
+      -- two. A duplicate that fragments nobody's position is a catalogue
+      -- fact, and the catalogue is not this screen.
+      dup AS (
+        SELECT symbol FROM shown GROUP BY symbol HAVING COUNT(DISTINCT token_id) > 1
       ),
-      h_coverage AS (
-        SELECT h.id AS holding_id,
-               c.opening_balance_quantity::numeric AS opening_balance_n,
-               (c.holding_id IS NOT NULL) AS has_coverage
-        FROM user_h h
-        LEFT JOIN holding_coverage c ON c.holding_id = h.id
-      ),
-      h_priced AS (
-        SELECT h.id AS holding_id,
-               EXISTS (
-                 SELECT 1 FROM token_prices p
-                 WHERE p.token_id = h.token_id
-                   AND p.timestamp > NOW() - INTERVAL '7 days'
-               ) AS is_priced,
-               -- The same behavioural predicate the coverage denominator
-               -- uses (SC-146): never quoted once, and still in an
-               -- unpriceable cooldown. Split out of unpriced_visible
-               -- because an airdrop token with no market is not a defect
-               -- in our pricing, and warning about it forever trains the
-               -- reader to ignore the panel.
-               EXISTS (
-                 SELECT 1 FROM tokens t
-                 WHERE t.id = h.token_id
-                   AND t.unpriceable_until IS NOT NULL
-                   AND t.unpriceable_until > NOW()
-                   AND NOT EXISTS (
-                     SELECT 1 FROM token_prices p2 WHERE p2.token_id = t.id
-                   )
-               ) AS is_unpriceable
-        FROM user_h h
+      last_tx AS (
+        SELECT s.id AS holding_id, MAX(t.occurred_at) AS last_tx_at
+        FROM shown s LEFT JOIN holding_transactions t ON t.holding_id = s.id
+        GROUP BY s.id
       )
       SELECT
-        COUNT(*)::int AS total,
-        COUNT(*) FILTER (WHERE h.is_hidden = false AND h.is_active = true)::int AS visible,
-        COUNT(*) FILTER (WHERE h.is_hidden = false AND h.balance_n = 0)::int AS zero_visible,
-        COUNT(*) FILTER (
-          WHERE h.is_hidden = false
-            AND h.balance_n = 0
-            AND COALESCE(lt.last_tx_at, '1970-01-01'::timestamptz)
-                < NOW() - INTERVAL ${staleInterval}
-        )::int AS stale_zero,
-        COUNT(*) FILTER (
-          WHERE h.is_hidden = false
-            AND h.balance_n > 0
-            AND p.is_priced = false
-            AND p.is_unpriceable = false
-        )::int AS unpriced_visible,
-        COUNT(*) FILTER (
-          WHERE h.is_hidden = false
-            AND h.balance_n > 0
-            AND p.is_unpriceable = true
-        )::int AS unpriceable_visible,
-        COUNT(*) FILTER (
-          WHERE c.opening_balance_n < 0
-        )::int AS negative_opening,
-        COUNT(*) FILTER (
-          WHERE c.has_coverage = false
-        )::int AS no_coverage
-      FROM user_h h
-      LEFT JOIN h_last_tx lt ON lt.holding_id = h.id
-      LEFT JOIN h_coverage c ON c.holding_id = h.id
-      LEFT JOIN h_priced p ON p.holding_id = h.id
+        s.id,
+        s.symbol,
+        s.lookalike_of,
+        s.market_segment AS segment,
+        (s.balance_n = 0) AS is_zero,
+        (s.balance_n > 0) AS is_positive,
+        (s.balance_n = 0
+          AND COALESCE(lt.last_tx_at, '1970-01-01'::timestamptz)
+              < NOW() - INTERVAL ${staleInterval}) AS is_stale_zero,
+        EXISTS (
+          SELECT 1 FROM token_prices p
+          WHERE p.token_id = s.token_id AND p.timestamp > NOW() - INTERVAL '7 days'
+        ) AS is_priced,
+        -- Never quoted once, and still inside an unpriceable cooldown — the
+        -- same behavioural predicate the chart's coverage denominator uses
+        -- (SC-146). Split out because an airdrop token with no market is not
+        -- a defect in our pricing.
+        (s.unpriceable_until IS NOT NULL
+          AND s.unpriceable_until > NOW()
+          AND NOT EXISTS (SELECT 1 FROM token_prices p2 WHERE p2.token_id = s.token_id)
+        ) AS is_unpriceable,
+        -- A provider id PricingProviderRouter.groupTokensByProvider can
+        -- route on (SC-217). Rows whose provider_metadata is a JSON-encoded
+        -- STRING rather than an object are treated as having one: the jsonb
+        -- ? operator cannot see into them, and reporting legacy
+        -- serialisation as a pricing fault is a false positive.
+        (jsonb_typeof(s.provider_metadata) <> 'object'
+          OR (s.provider_metadata -> 'coingecko' ? 'id')
+          OR (s.provider_metadata ? 'coinGeckoId')
+          OR (s.provider_metadata -> 'finnhub' ? 'symbol')
+          OR (s.provider_metadata -> 'etherscan' ? 'contractAddress')
+          OR (s.provider_metadata -> 'solana' ? 'mint')
+        ) AS has_price_source,
+        (s.type_code = 'fiat') AS is_fiat,
+        (s.symbol IN (SELECT symbol FROM dup)) AS dup_symbol,
+        (c.opening_balance_quantity::numeric < 0) AS opening_negative,
+        (c.holding_id IS NOT NULL) AS has_coverage
+      FROM shown s
+      LEFT JOIN last_tx lt ON lt.holding_id = s.id
+      LEFT JOIN holding_coverage c ON c.holding_id = s.id
     `)) as unknown as Array<{
-      total: number;
-      visible: number;
-      zero_visible: number;
-      stale_zero: number;
-      unpriced_visible: number;
-      unpriceable_visible: number;
-      negative_opening: number;
-      no_coverage: number;
+      id: string;
+      symbol: string;
+      lookalike_of: string | null;
+      segment: string | null;
+      is_zero: boolean;
+      is_positive: boolean;
+      is_stale_zero: boolean;
+      is_priced: boolean;
+      is_unpriceable: boolean;
+      has_price_source: boolean;
+      is_fiat: boolean;
+      dup_symbol: boolean;
+      opening_negative: boolean;
+      has_coverage: boolean;
     }>;
 
-    const counts = countsRows[0] ?? {
-      total: 0,
-      visible: 0,
-      zero_visible: 0,
-      stale_zero: 0,
-      unpriced_visible: 0,
-      unpriceable_visible: 0,
-      negative_opening: 0,
-      no_coverage: 0,
+    // `total` describes the reader's whole holdings table rather than the
+    // shown set — it is the second half of "76 shown, 81 in total", and
+    // answering it from `shown` would make it say "76 of 76" forever.
+    //
+    // The first half is NOT asked here. It used to be, as
+    // `is_hidden = false AND is_active = true`, and that is a different set
+    // from the one the holdings list renders: the list keeps inactive rows and
+    // badges them, so on any account with a closed position the row understated
+    // the list it names (SC-388). `shown` is the list's own set — not hidden,
+    // under the scam threshold — and every other counter on this panel already
+    // reads it.
+    const totalsRows = (await db.execute<{ total: number }>(sql`
+      SELECT COUNT(*)::int AS total FROM holdings WHERE user_id = ${userId}
+    `)) as unknown as Array<{ total: number }>;
+    const totals = totalsRows[0] ?? { total: 0 };
+
+    const idsWhere = (predicate: (row: (typeof shownRows)[number]) => boolean): string[] =>
+      shownRows.filter(predicate).map((row) => row.id);
+
+    // A position whose price is silent, split by whose fault the silence is
+    // (SC-217). `noPriceSource` is NOT a subset of `noRecentPrice`: a token
+    // carrying no provider id is never quoted, so it earns an unpriceable
+    // cooldown and leaves the row above — which is exactly the case that hid
+    // both TRUMP rows for three months.
+    const unpriced = (row: (typeof shownRows)[number]) =>
+      row.is_positive && !row.is_priced && !row.is_unpriceable;
+    const noSource = (row: (typeof shownRows)[number]) =>
+      row.is_positive && !row.is_fiat && !row.has_price_source && !row.is_priced;
+
+    const flagged = {
+      duplicateSymbol: idsWhere((row) => row.dup_symbol),
+      lookalike: idsWhere((row) => row.lookalike_of !== null),
+      zeroBalance: idsWhere((row) => row.is_zero),
+      noRecentPrice: idsWhere(unpriced),
+      noPriceSource: idsWhere(noSource),
+      negativeOpening: idsWhere((row) => row.opening_negative),
+      noCoverage: idsWhere((row) => !row.has_coverage),
+    } as const;
+
+    /**
+     * The distinct symbols behind a flagged set, each carrying how many of the
+     * reader's positions it accounts for.
+     *
+     * `count` is POSITIONS, so a row's chips sum to the row's own number —
+     * `USDC×7, DOG×2, WETH×3` under a figure of 12. The catalogue version
+     * counted token rows under a figure that counted symbols, and the two had
+     * no arithmetic relationship at all.
+     */
+    const symbolsOf = (predicate: (row: (typeof shownRows)[number]) => boolean) => {
+      const seen = new Map<
+        string,
+        { symbol: string; count: number; lookalikeOf: string | null; segment: string | null }
+      >();
+      for (const row of shownRows) {
+        if (!predicate(row)) continue;
+        const entry = seen.get(row.symbol);
+        if (entry) entry.count += 1;
+        else
+          seen.set(row.symbol, {
+            symbol: row.symbol,
+            count: 1,
+            lookalikeOf: row.lookalike_of,
+            segment: row.segment,
+          });
+      }
+      // Lookalikes first, so the entry that needs a second look is read first.
+      return [...seen.values()].sort(
+        (a, b) =>
+          Number(b.lookalikeOf !== null) - Number(a.lookalikeOf !== null) ||
+          b.count - a.count ||
+          a.symbol.localeCompare(b.symbol)
+      );
     };
 
     return {
-      duplicateTokens: dupRows.map((r) => ({ symbol: r.symbol, count: r.n })),
+      /**
+       * The identity of each flagged set — holding ids, in the reader's own
+       * holdings. A row links to `/holdings?quality=<key>` and the list
+       * narrows to exactly these.
+       */
+      flagged,
+      duplicateTokens: symbolsOf((row) => row.dup_symbol).map((entry) => ({
+        symbol: entry.symbol,
+        count: entry.count,
+        lookalikeOf: entry.lookalikeOf,
+      })),
+      lookalikeTokens: symbolsOf((row) => row.lookalike_of !== null).map((entry) => ({
+        symbol: entry.symbol,
+        lookalikeOf: entry.lookalikeOf ?? '',
+      })),
+      unroutableTokens: symbolsOf(noSource).map((entry) => ({
+        symbol: entry.symbol,
+        segment: entry.segment,
+      })),
       holdings: {
-        total: counts.total,
-        visible: counts.visible,
-        zeroVisible: counts.zero_visible,
-        zeroVisibleStale: counts.stale_zero,
-        unpricedVisible: counts.unpriced_visible,
-        unpriceableVisible: counts.unpriceable_visible,
-        negativeOpening: counts.negative_opening,
-        missingCoverage: counts.no_coverage,
+        total: totals.total,
+        visible: shownRows.length,
+        // Derived from the id arrays rather than counted a second time: the
+        // number a row shows and the list it opens cannot disagree if there
+        // is only one of them.
+        zeroVisible: flagged.zeroBalance.length,
+        zeroVisibleStale: shownRows.filter((row) => row.is_stale_zero).length,
+        unpricedVisible: flagged.noRecentPrice.length,
+        unpriceableVisible: shownRows.filter((row) => row.is_positive && row.is_unpriceable).length,
+        negativeOpening: flagged.negativeOpening.length,
+        missingCoverage: flagged.noCoverage.length,
       },
       thresholds: {
         staleClosedDays: HIDE_CLOSED_HOLDINGS_STALE_DAYS,

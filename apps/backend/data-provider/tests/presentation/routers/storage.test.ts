@@ -1,8 +1,15 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { type PresignedUpload, type PresignUploadOptions, StorageService } from '@scani/storage';
 import { Container } from 'typedi';
+// This workspace cannot depend on @scani/domain (it sits below it), so the
+// shared helper is reached the same way the shared test preload is: by path.
+import { restoreContainerAfterAll } from '../../../../../../packages/business/domain/test/helpers/container';
 import { storageRouter } from '../../../src/presentation/routers/storage';
 import { buildAuthedContext, buildUnauthedContext } from '../../helpers/test-context';
+
+// Container stubs are process-global; put back whatever this file changes
+// so no later test file resolves them (SC-448).
+restoreContainerAfterAll();
 
 // Typed against `PresignUploadOptions` / `PresignedUpload` rather than an
 // inline shape: the previous fixture answered `{ url, key, fields }`, which

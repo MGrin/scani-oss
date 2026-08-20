@@ -34,30 +34,18 @@ export class BulkAssignAccountGroupsUseCase {
       );
     }
 
-    // Account membership is derived from holding membership: an account
-    // is "in" group G iff every visible holding of the account is in G.
-    // So an account-level group add cascades down to every visible
-    // holding of each account, and a removal is the symmetric operation.
-    // The accountGroups table is a cache and gets rebuilt after the
-    // holding-layer writes.
-    const holdingIds = await this.groupRepository.findVisibleHoldingIdsForAccounts(
-      input.accountIds
-    );
-
-    if (holdingIds.length > 0) {
-      if (input.addedGroupIds.length > 0) {
-        await this.groupRepository.bulkAddHoldingGroups(holdingIds, input.addedGroupIds);
-      }
-      if (input.removedGroupIds.length > 0) {
-        await this.groupRepository.bulkRemoveHoldingGroups(holdingIds, input.removedGroupIds);
-      }
-    }
-
-    // Always recompute — even if the account had zero holdings and
-    // therefore nothing actually changed at the holding layer — because
-    // the cache may be holding stale rows from before this model was
-    // introduced.
-    await this.groupRepository.recomputeAccountGroups(input.accountIds);
+    // An account in a group is a STANDING RULE (SC-386): the account is in the
+    // group, and so is every holding it holds now or receives later. So this
+    // writes `account_groups` and nothing else — the old cascade onto every
+    // visible holding was the snapshot semantic, and it is what left the
+    // account claiming a group its newest positions were not in.
+    //
+    // Removal is not the mirror of addition. Taking an account out has to be
+    // total, so `removeAccountGroups` also drops the holdings' own rows — most
+    // of which that cascade wrote — or removing the account would change
+    // nothing a reader can see.
+    await this.groupRepository.addAccountGroups(input.accountIds, input.addedGroupIds);
+    await this.groupRepository.removeAccountGroups(input.accountIds, input.removedGroupIds);
 
     return {
       success: true,

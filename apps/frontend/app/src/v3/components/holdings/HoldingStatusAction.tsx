@@ -2,6 +2,7 @@ import type { HoldingWithDetails } from '@scani/shared';
 import { ConfirmAction } from '@scani/ui/v3/components/ConfirmAction';
 import { Numeric } from '@scani/ui/v3/components/Numeric';
 import { useState } from 'react';
+import { Trans, useTranslation } from 'react-i18next';
 
 /**
  * Take a holding out of the portfolio total, or put it back.
@@ -46,32 +47,36 @@ export function HoldingStatusAction({
   onToggle,
   isPending,
 }: HoldingStatusActionProps) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
-  const label = holding.isActive ? 'Deactivate' : 'Activate';
+  const label = holding.isActive
+    ? t('v3.holdings.status.deactivateAction')
+    : t('v3.holdings.status.activateAction');
 
   return (
     <ConfirmAction
       label={label}
-      confirmLabel={`${label} ${holding.token.symbol}`}
+      confirmLabel={t('v3.holdings.status.confirm', { label, symbol: holding.token.symbol })}
       open={open}
       onOpenChange={setOpen}
       isPending={isPending}
       consequence={
-        holding.isActive ? (
-          <>
-            {`${holding.token.symbol} in ${holding.account.name} stops counting toward your portfolio total — `}
-            <Numeric value={holding.value} currency={currency} className="text-caption" />
-            {
-              ' comes off it. The holding and its history stay, listed here as Inactive, so you can turn it back on.'
-            }
-          </>
-        ) : (
-          <>
-            {`${holding.token.symbol} in ${holding.account.name} counts toward your portfolio total again — `}
-            <Numeric value={holding.value} currency={currency} className="text-caption" />
-            {' goes back on it.'}
-          </>
-        )
+        // `<Trans>` rather than lead + `<Numeric>` + tail, matching the delete
+        // action beside it (SC-235). The two halves were one sentence with the
+        // figure wedged into the middle of it, so a translator could change
+        // the words on either side and never move the amount — and the amount
+        // is the part of this sentence a reader is deciding on.
+        <Trans
+          i18nKey={
+            holding.isActive
+              ? 'v3.holdings.status.deactivateConsequence'
+              : 'v3.holdings.status.activateConsequence'
+          }
+          values={{ symbol: holding.token.symbol, account: holding.account.name }}
+          components={{
+            value: <Numeric value={holding.value} currency={currency} className="text-caption" />,
+          }}
+        />
       }
       onConfirm={() => {
         // Closed here rather than on the mutation settling: `updateHolding`

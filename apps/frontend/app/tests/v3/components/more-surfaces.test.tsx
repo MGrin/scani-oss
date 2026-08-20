@@ -1,6 +1,13 @@
+import '../../i18n-preload';
+
+const t = i18n.t.bind(i18n);
+
 import { describe, expect, test } from 'bun:test';
+import { Numeric } from '@scani/ui/v3/components/Numeric';
 import { SETTLED_QUERY_STATE } from '@scani/ui/v3/lib/query-state';
+import i18n from 'i18next';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { Trans } from 'react-i18next';
 import { StaticRouter } from 'react-router-dom/server';
 import { AccountsList } from '../../../src/v3/components/entities/AccountsList';
 import { InstitutionsList } from '../../../src/v3/components/entities/InstitutionsList';
@@ -12,7 +19,7 @@ import { HiddenHoldingsList } from '../../../src/v3/components/tokens/HiddenHold
 import { VaultsList } from '../../../src/v3/components/vaults/VaultsList';
 import type { AccountRow, InstitutionRow } from '../../../src/v3/lib/accounts';
 import type { JobRow } from '../../../src/v3/lib/jobs';
-import type { ReviewRow } from '../../../src/v3/lib/review';
+import type { ReviewWireRow } from '../../../src/v3/lib/review-text';
 import type { HiddenHoldingRow } from '../../../src/v3/lib/tokens';
 import type { VaultRow } from '../../../src/v3/lib/vaults';
 
@@ -34,12 +41,12 @@ function render(node: React.ReactNode, path = '/v3'): string {
   return renderToStaticMarkup(<StaticRouter location={path}>{node}</StaticRouter>);
 }
 
-const REVIEW_ITEMS: ReviewRow[] = [
+const REVIEW_ITEMS: ReviewWireRow[] = [
   {
     id: 'job:parse-1',
     kind: 'screenshot-parse',
-    title: 'Document parse',
-    subtitle: '2 files',
+    label: { code: 'job', jobName: 'screenshot-parse' },
+    detail: { code: 'parsedHoldings', holdings: 2, symbols: ['BTC', 'ETH'] },
     href: '/jobs/parse-1',
     createdAt: '2026-08-10T09:00:00.000Z',
   },
@@ -157,8 +164,10 @@ const noop = () => {};
 describe('ReviewList', () => {
   test('renders each waiting item with what it is and how long it has waited', () => {
     const html = render(<ReviewList items={REVIEW_ITEMS} query={SETTLED_QUERY_STATE} />);
+    // Named here rather than on the server, from the operands the feed sends
+    // (SC-371): the job's own label table, and a count with its symbols.
     expect(html).toContain('Document parse');
-    expect(html).toContain('2 files');
+    expect(html).toContain('2 holdings · BTC, ETH');
   });
 
   test('the empty state is an all-clear, not "no items found"', () => {
@@ -265,7 +274,7 @@ describe('GroupsList', () => {
     { id: 'g2', name: 'Empty', color: '#3b82f6', holdingsCount: 0, accountsCount: 0 },
   ];
   const VALUES = [
-    { groupId: 'g1', value: '48250.5', holdingsCounted: 12, unpricedSymbols: [] },
+    { groupId: 'g1', value: '48250.5', holdingsCounted: 12, unpricedSymbols: [] as string[] },
     { groupId: 'g2', value: '0', holdingsCounted: 0, unpricedSymbols: [] },
   ];
 
@@ -428,11 +437,11 @@ describe('CustomTokensList', () => {
       latestPriceBaseCurrency: 'EUR',
       latestPriceAt: '2026-05-02T09:00:00.000Z',
     };
-    expect(priceOrigin({ ...base, latestPriceSource: 'manual' })).toBe('Set manually');
-    expect(priceOrigin({ ...base, latestPriceSource: 'coingecko' })).toBe('coingecko');
-    expect(priceOrigin({ ...base, latestPriceSource: null })).toBe('Unknown source');
+    expect(priceOrigin(t, { ...base, latestPriceSource: 'manual' })).toBe('Set manually');
+    expect(priceOrigin(t, { ...base, latestPriceSource: 'coingecko' })).toBe('coingecko');
+    expect(priceOrigin(t, { ...base, latestPriceSource: null })).toBe('Unknown source');
     expect(
-      priceOrigin({ ...base, latestPriceAt: null, latestPrice: null, latestPriceSource: null })
+      priceOrigin(t, { ...base, latestPriceAt: null, latestPrice: null, latestPriceSource: null })
     ).toBe('Nothing recorded');
   });
 });
@@ -480,5 +489,48 @@ describe('the query state reaches the list', () => {
     expect(render(<VaultsList vaults={[]} query={waiting} onCreate={noop} />)).not.toContain(
       'No vaults yet'
     );
+  });
+});
+
+/**
+ * SC-202. What actually decides whether a `<Trans>` keeps its figures.
+ *
+ * **Corrected.** #865 claimed the paired form (`<remaining></remaining>`)
+ * rendered both amounts EMPTY and that self-closing was the fix. That was
+ * wrong about the product, and the fault was this test: its double was
+ * `<span>{'€1,200'}</span>`, an element WITH children.
+ *
+ * react-i18next replaces a mapped element's CHILDREN with the text between the
+ * placeholder tags. So the variable is not paired-vs-self-closing at all — it
+ * is whether the mapped element has children to lose:
+ *
+ *     paired    + <b>AMT</b>          ->  A <b></b> B          (lost)
+ *     paired    + <Numeric value=… />  ->  A €1,200.00 B        (kept)
+ *     selfClose + either               ->  kept
+ *
+ * `<Numeric>` renders from props and has no children, so `stillToGo` was never
+ * broken on screen — and neither are the four `convertedTotal` keys or
+ * `v3.home.vaults.ofTarget`, which use the paired form against the same kind of
+ * component. Self-closing is still preferred because it cannot lose anything,
+ * but the paired form is not a bug by itself.
+ *
+ * This asserts the REAL component for that reason: a double that does not share
+ * the product's shape tests the double.
+ */
+describe('the vault progress sentence keeps its figures', () => {
+  test('both amounts survive the Trans interpolation', () => {
+    const html = renderToStaticMarkup(
+      <Trans
+        i18nKey="v3.vaults.detail.stillToGo"
+        components={{
+          remaining: <Numeric value={1200} currency="EUR" />,
+          target: <Numeric value={5000} currency="EUR" />,
+        }}
+      />
+    );
+
+    expect(html).toContain('1,200');
+    expect(html).toContain('5,000');
+    expect(html).toContain('still to go');
   });
 });

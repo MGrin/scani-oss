@@ -6,6 +6,7 @@ import type { V3DataViewConfig } from '@scani/ui/v3/lib/data-view';
 import { exportNumber, exportText } from '@scani/ui/v3/lib/export/cell';
 import type { V3QueryState } from '@scani/ui/v3/lib/query-state';
 import { EyeOff, ShieldAlert } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import { amountDecimals } from '../../lib/holdings';
 import { V3_ROUTES } from '../../lib/routes';
@@ -49,47 +50,48 @@ interface HiddenHoldingsListProps {
 }
 
 function ReasonBadge({ holding }: { holding: HiddenHoldingRow }) {
+  const { t } = useTranslation();
   if (isScamFlagged(holding)) {
     return (
       <Badge variant="outline" className="gap-1 border-border-strong">
         <ShieldAlert className="size-3" aria-hidden="true" />
-        Likely scam
+        {t('v3.tokens.hidden.likelyScam')}
       </Badge>
     );
   }
   return (
     <Badge variant="secondary" className="gap-1">
       <EyeOff className="size-3" aria-hidden="true" />
-      Hidden
+      {t('v3.tokens.hidden.hidden')}
     </Badge>
   );
 }
 
 export function HiddenHoldingsList({ holdings, query }: HiddenHoldingsListProps) {
+  const { t } = useTranslation();
   const config: V3DataViewConfig<HiddenHoldingRow> = {
     pageKey: 'tokens:hidden',
     data: holdings,
-    noun: 'hidden holdings',
-    nounSingular: 'hidden holding',
-    searchPlaceholder: 'Search hidden',
+    nounKey: 'ui.dataView.noun.hiddenHoldings',
+    searchPlaceholderKey: 'ui.dataView.hiddenHoldings.config.searchHidden',
     searchFn: (holding, query) =>
       holding.token.symbol.toLowerCase().includes(query) ||
       holding.token.name.toLowerCase().includes(query),
     filterDefs: [
       {
         key: 'reason',
-        label: 'Reason',
+        labelKey: 'ui.dataView.hiddenHoldings.filter.reason',
         options: [
-          { value: 'user_hidden', label: 'Hidden by you' },
-          { value: 'scam', label: 'Likely scam' },
+          { value: 'user_hidden', labelKey: 'ui.dataView.hiddenHoldings.option.hiddenByYou' },
+          { value: 'scam', labelKey: 'ui.dataView.hiddenHoldings.option.likelyScam' },
         ],
         fn: (holding: HiddenHoldingRow, value) =>
           value === 'scam' ? isScamFlagged(holding) : holding.hiddenReason !== 'scam',
       },
     ],
     sortDefs: [
-      { key: 'symbol', label: 'Symbol' },
-      { key: 'balance', label: 'Balance' },
+      { key: 'symbol', labelKey: 'ui.dataView.hiddenHoldings.sort.symbol' },
+      { key: 'balance', labelKey: 'ui.dataView.hiddenHoldings.sort.balance' },
     ],
     sortFn: (a, b, field, direction) => {
       const mult = direction === 'asc' ? 1 : -1;
@@ -101,7 +103,7 @@ export function HiddenHoldingsList({ holdings, query }: HiddenHoldingsListProps)
     groupByDefs: [
       {
         key: 'institution',
-        label: 'Institution',
+        labelKey: 'ui.dataView.hiddenHoldings.group.institution',
         fn: (holding: HiddenHoldingRow) => holding.institution.name,
       },
     ],
@@ -114,12 +116,12 @@ export function HiddenHoldingsList({ holdings, query }: HiddenHoldingsListProps)
       ),
       sublabel: `${holding.token.name} · ${holding.account.name}`,
       value: <Balance balance={holding.balance} />,
-      ariaLabel: `${holding.token.symbol}, ${hiddenReasonLabel(holding.hiddenReason)}`,
+      ariaLabel: `${holding.token.symbol}, ${hiddenReasonLabel(t, holding.hiddenReason)}`,
     }),
     columns: [
       {
         key: 'symbol',
-        header: 'Token',
+        headerKey: 'ui.dataView.hiddenHoldings.col.token',
         sortable: true,
         width: 'w-[26%]',
         render: (holding) => (
@@ -134,21 +136,21 @@ export function HiddenHoldingsList({ holdings, query }: HiddenHoldingsListProps)
       },
       {
         key: 'where',
-        header: 'Account',
+        headerKey: 'ui.dataView.hiddenHoldings.col.account',
         render: (holding) => (
           <span className="truncate">{`${holding.institution.name} · ${holding.account.name}`}</span>
         ),
       },
       {
         key: 'reason',
-        header: 'Reason',
+        headerKey: 'ui.dataView.hiddenHoldings.col.reason',
         width: 'w-40',
         render: (holding) => <ReasonBadge holding={holding} />,
-        exportValue: (holding) => exportText(hiddenReasonLabel(holding.hiddenReason)),
+        exportValue: (holding) => exportText(hiddenReasonLabel(t, holding.hiddenReason)),
       },
       {
         key: 'balance',
-        header: 'Balance',
+        headerKey: 'ui.dataView.hiddenHoldings.col.balance',
         sortable: true,
         numeric: true,
         render: (holding) => <Balance balance={holding.balance} />,
@@ -158,11 +160,11 @@ export function HiddenHoldingsList({ holdings, query }: HiddenHoldingsListProps)
     ],
     empty: {
       icon: EyeOff,
-      title: 'Nothing is hidden',
-      description: 'Everything you own is counted on your dashboard.',
+      titleKey: 'ui.dataView.hiddenHoldings.empty.nothingIsHidden',
+      descriptionKey: 'ui.dataView.hiddenHoldings.empty.everythingYouOwnIsCountedOnYourDashboard',
       action: (
         <Button asChild variant="outline">
-          <Link to={V3_ROUTES.holdings}>Back to holdings</Link>
+          <Link to={V3_ROUTES.holdings}>{t('v3.tokens.hidden.backToHoldings')}</Link>
         </Button>
       ),
     },
@@ -173,13 +175,13 @@ export function HiddenHoldingsList({ holdings, query }: HiddenHoldingsListProps)
         subtitle: holding.token.name,
         value: <Balance balance={holding.balance} />,
         primary: [
-          { label: 'Why it is hidden', value: hiddenReasonLabel(holding.hiddenReason) },
-          { label: 'Account', value: holding.account.name },
-          { label: 'Institution', value: holding.institution.name },
+          { label: t('v3.tokens.hidden.why'), value: hiddenReasonLabel(t, holding.hiddenReason) },
+          { label: t('v3.tokens.hidden.account'), value: holding.account.name },
+          { label: t('v3.tokens.hidden.institution'), value: holding.institution.name },
           ...(isScamFlagged(holding)
             ? [
                 {
-                  label: 'Scam likelihood',
+                  label: t('v3.tokens.hidden.scamLikelihood'),
                   // `isScamProbability` is 0-1 and `format="percent"` appends a
                   // `%` to whatever it is given, so the scaling belongs here.
                   value: (

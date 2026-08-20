@@ -1,18 +1,20 @@
 import { describe, expect, test } from 'bun:test';
 import { Decimal } from '@scani/shared';
+import i18n from 'i18next';
 import {
   type CommitmentInput,
+  commitmentLabel,
   comparableBaseAmount,
   formatConvertedFigure,
-  INCOME_COMMITMENT_LABEL,
+  incomeCommitmentLabel,
   isIncomeVendor,
   mergeCurrencyTotals,
   monthlyCommitmentByVendor,
   noSettledSpend,
-  PAID_ALL_TIME_LABEL,
-  PER_MONTH_LABEL,
+  paidAllTimeLabel,
   paidWindowLabel,
-  RECEIVED_ALL_TIME_LABEL,
+  perMonthLabel,
+  receivedAllTimeLabel,
   receivedWindowLabel,
   settledByVendor,
   settlementsByVendor,
@@ -23,7 +25,10 @@ import {
   vendorDirectionKinds,
   vendorKindLabel,
 } from '@/lib/vendorSpend';
-import type { BaseCurrencyRate } from '@/v2/lib/paymentTotals';
+import type { BaseCurrencyRate } from '@/v3/lib/paymentTotals';
+
+const t = i18n.getFixedT('en');
+const ru = i18n.getFixedT('ru');
 
 const EUR = 'token-eur';
 const USD = 'token-usd';
@@ -34,6 +39,7 @@ const FRESH = '2026-08-13T06:00:00Z';
 const context = (entries: Array<[string, BaseCurrencyRate | null]>) => ({
   baseCurrencyTokenId: EUR,
   rateByCurrencyTokenId: new Map(entries),
+  ratesStatus: 'ready' as const,
   now: NOW,
 });
 
@@ -112,7 +118,7 @@ describe('settledByVendor', () => {
     const none = settled.get('v1') ?? noSettledSpend();
     expect(none.allTime.size).toBe(0);
     expect(none.settledCount).toBe(0);
-    expect(formatConvertedFigure(none.allTime, context([]), '€', () => '€')).toBe('€ 0.00');
+    expect(formatConvertedFigure(t, none.allTime, context([]), '€', () => '€')).toBe('€ 0.00');
   });
 });
 
@@ -159,6 +165,7 @@ describe('comparableBaseAmount', () => {
 describe('formatConvertedFigure', () => {
   test('one figure when everything converts', () => {
     const figure = formatConvertedFigure(
+      t,
       new Map([
         [EUR, new Decimal('100')],
         [USD, new Decimal('10')],
@@ -174,6 +181,7 @@ describe('formatConvertedFigure', () => {
   // we hold no rate for reading as costing nothing.
   test('an un-convertible currency is printed beside the total, never as zero', () => {
     const figure = formatConvertedFigure(
+      t,
       new Map([[GBP, new Decimal('30')]]),
       context([[GBP, null]]),
       '€',
@@ -199,14 +207,60 @@ describe('mergeCurrencyTotals', () => {
 
 describe('labels', () => {
   test('every paid figure names its window', () => {
-    expect(paidWindowLabel(12)).toBe('Paid, last 12 months');
-    expect(paidWindowLabel(6)).toBe('Paid, last 6 months');
+    expect(paidWindowLabel(t, 12)).toBe('Paid, last 12 months');
+    expect(paidWindowLabel(t, 6)).toBe('Paid, last 6 months');
+    // The window used to be `windowMonths === 12 ? … : …`, two branches of one
+    // sentence. One month is the form that special case never had (SC-411).
+    expect(paidWindowLabel(t, 1)).toBe('Paid, last 1 month');
   });
 
   test('settlements with no amount are declared, not silently zeroed', () => {
-    expect(unpricedNote(0)).toBeNull();
-    expect(unpricedNote(1)).toContain('1 settlement has no amount');
-    expect(unpricedNote(3)).toContain('3 settlements have no amount');
+    expect(unpricedNote(t, 0)).toBeNull();
+    expect(unpricedNote(t, 1)).toContain('1 settlement has no amount');
+    expect(unpricedNote(t, 3)).toContain('3 settlements have no amount');
+  });
+});
+
+/**
+ * The defect `_one`/`_other` exists to remove (SC-411).
+ *
+ * `unpricedNote` was a hand-rolled English plural — two whole sentences picked
+ * by `count === 1`. No arrangement of two sentences can serve Russian, which
+ * has FOUR plural categories, and the failure is silent: the sentence is
+ * grammatical, it is just about the wrong number of things.
+ */
+describe('a plural that four categories can hold', () => {
+  test('Russian inflects the noun differently for 1, 2 and 5', () => {
+    // `_one`, `_few`, `_many` — three of the four, and the three a hand-rolled
+    // `count === 1` cannot reach. The verb agrees too: вошёл / вошли.
+    expect(unpricedNote(ru, 1)).toBe('1 платёж без записанной суммы не вошёл в этот итог.');
+    expect(unpricedNote(ru, 2)).toBe('2 платежа без записанной суммы не вошли в этот итог.');
+    expect(unpricedNote(ru, 5)).toBe('5 платежей без записанной суммы не вошли в этот итог.');
+    // 21 is `_one` again, which is the case a two-form language has no way to
+    // express and the one a translator most often loses.
+    expect(unpricedNote(ru, 21)).toInclude('21 платёж ');
+    expect(unpricedNote(ru, 0)).toBeNull();
+  });
+
+  test('and for the window, where English only ever had two', () => {
+    expect(paidWindowLabel(ru, 1)).toBe('Оплачено за 1 месяц');
+    expect(paidWindowLabel(ru, 3)).toBe('Оплачено за 3 месяца');
+    expect(paidWindowLabel(ru, 12)).toBe('Оплачено за 12 месяцев');
+  });
+
+  test('every label is translated rather than falling through to English', () => {
+    for (const label of [
+      commitmentLabel(ru),
+      incomeCommitmentLabel(ru),
+      paidAllTimeLabel(ru),
+      receivedAllTimeLabel(ru),
+      perMonthLabel(ru),
+      vendorKindLabel(ru, 'income'),
+      vendorKindLabel(ru, 'both'),
+      vendorKindLabel(ru, 'unclassified'),
+    ]) {
+      expect(label).not.toMatch(/[A-Za-z]/);
+    }
   });
 });
 
@@ -279,23 +333,32 @@ describe('classifying a vendor by the direction its money moves', () => {
 
 describe('income wording', () => {
   test('income is expected and received, never committed and paid', () => {
-    expect(INCOME_COMMITMENT_LABEL).toBe('Expected per month');
-    expect(receivedWindowLabel(12)).toBe('Received, last 12 months');
-    expect(receivedWindowLabel(3)).toBe('Received, last 3 months');
-    expect(RECEIVED_ALL_TIME_LABEL).toBe('Received, all time');
+    expect(incomeCommitmentLabel(t)).toBe('Expected per month');
+    expect(receivedWindowLabel(t, 12)).toBe('Received, last 12 months');
+    expect(receivedWindowLabel(t, 3)).toBe('Received, last 3 months');
+    expect(receivedAllTimeLabel(t)).toBe('Received, all time');
     // The spend wording is untouched — the two vocabularies stay distinct.
-    expect(PAID_ALL_TIME_LABEL).toBe('Paid, all time');
+    expect(paidAllTimeLabel(t)).toBe('Paid, all time');
+  });
+
+  test('the two vocabularies stay distinct in Russian too', () => {
+    // The whole point of the pair: a translation that collapses them undoes
+    // V3-47 silently, in a language the reviewer may not read.
+    expect(incomeCommitmentLabel(ru)).not.toBe(commitmentLabel(ru));
+    expect(receivedAllTimeLabel(ru)).not.toBe(paidAllTimeLabel(ru));
+    expect(receivedWindowLabel(ru, 12)).not.toBe(paidWindowLabel(ru, 12));
   });
 
   test('the column header is direction-neutral, because the column is', () => {
-    expect(PER_MONTH_LABEL).toBe('Per month');
+    // One spelling now: the key the data-view kit already resolved (SC-411).
+    expect(perMonthLabel(t)).toBe('Per month');
   });
 
   test('a row says what it is only when the direction adds something', () => {
-    expect(vendorKindLabel('income')).toBe('Income');
-    expect(vendorKindLabel('both')).toBe('Bills & income');
-    expect(vendorKindLabel('unclassified')).toBe('Direction not recorded');
-    expect(vendorKindLabel('spend')).toBeNull();
-    expect(vendorKindLabel('none')).toBeNull();
+    expect(vendorKindLabel(t, 'income')).toBe('Income');
+    expect(vendorKindLabel(t, 'both')).toBe('Bills & income');
+    expect(vendorKindLabel(t, 'unclassified')).toBe('Direction not recorded');
+    expect(vendorKindLabel(t, 'spend')).toBeNull();
+    expect(vendorKindLabel(t, 'none')).toBeNull();
   });
 });

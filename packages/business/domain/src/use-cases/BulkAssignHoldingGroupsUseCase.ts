@@ -43,15 +43,9 @@ export class BulkAssignHoldingGroupsUseCase {
       await this.groupRepository.bulkRemoveHoldingGroups(input.holdingIds, input.removedGroupIds);
     }
 
-    // Any holdingGroups change can flip derived account membership — an
-    // account is "in" G iff all of its holdings are. Recompute the cache.
-    const parentAccountIds = await this.groupRepository.findParentAccountIdsForHoldings(
-      input.holdingIds
-    );
-    if (parentAccountIds.length > 0) {
-      await this.groupRepository.recomputeAccountGroups(parentAccountIds);
-    }
-
+    // Nothing to recompute: an account's membership is its own standing rule
+    // now, not a projection of its holdings' (SC-386). The removal itself is
+    // what writes the per-holding veto, in `bulkRemoveHoldingGroups`.
     return { success: true, updatedHoldingIds: input.holdingIds };
   }
 }

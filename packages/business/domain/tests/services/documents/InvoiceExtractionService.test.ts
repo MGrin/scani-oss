@@ -9,6 +9,11 @@ import {
   INVOICE_EXTRACTION_PROMPT,
   PROMPT_VERSION,
 } from '../../../src/services/documents/invoicePrompt';
+import { restoreContainerAfterAll } from '../../../test/helpers/container';
+
+// Container stubs are process-global; put back whatever this file changes
+// so no later test file resolves them (SC-448).
+restoreContainerAfterAll();
 
 // Fixtures reuse the hand-built minimal-PDF pattern from
 // `pdfExtraction.test.ts` — small, portable, no binary blobs in git.
@@ -424,7 +429,7 @@ describe('InvoiceExtractionService — prompt authority', () => {
     await new InvoiceExtractionService().extract(TEXT_PDF, 'application/pdf');
 
     expect(seen).toHaveLength(1);
-    expect(seen[0].systemPrompt).toBe(INVOICE_EXTRACTION_PROMPT);
-    expect(seen[0].hint).toBeUndefined();
+    expect(seen[0]?.systemPrompt).toBe(INVOICE_EXTRACTION_PROMPT);
+    expect(seen[0]?.hint).toBeUndefined();
   });
 });

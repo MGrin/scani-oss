@@ -1,4 +1,3 @@
-import type { User } from '@scani/db';
 import { AccountRepository, GroupRepository } from '@scani/domain/repositories';
 import { AccountService, HoldingQueryService } from '@scani/domain/services';
 import { BulkAssignAccountGroupsUseCase } from '@scani/domain/use-cases';
@@ -44,7 +43,7 @@ export const accountsRouter = router({
     .query(async ({ input, ctx }) => {
       const { dbUser } = await requireAuth(ctx);
       return await Container.get(HoldingQueryService).getHoldingsByAccountIdWithSummary(
-        dbUser as User,
+        dbUser,
         input.id,
         input.includeHidden
       );
@@ -146,12 +145,12 @@ export const accountsRouter = router({
         // multi-thousand-row mutation in one round-trip.
         accountIds: z.array(z.string()).min(1).max(200),
         // Diff-based like `holdings.bulkAssignGroups` — see that
-        // procedure for the rationale. Under the current model, an
-        // account is "in" a group iff all of its visible holdings are
-        // in that group. Assigning a group to an account adds that
-        // group to every visible holding of the account; removing a
-        // group from an account removes that group from every visible
-        // holding. `accountGroups` is then recomputed as a cache.
+        // procedure for the rationale. An account in a group is a
+        // STANDING RULE (SC-386): everything it holds now and receives
+        // later is in the group, until a single holding is vetoed out
+        // of it. Adding writes `account_groups` alone; removing also
+        // drops the holdings' own rows, so "not in this group" is
+        // total.
         addedGroupIds: z.array(z.string()).max(50).default([]),
         removedGroupIds: z.array(z.string()).max(50).default([]),
       })

@@ -9,6 +9,11 @@ import { PortfolioValueDailyRepository } from '../../../src/repositories/Portfol
 import { TokenRepository } from '../../../src/repositories/TokenRepository';
 import { HoldingQueryService } from '../../../src/services/holdings/HoldingQueryService';
 import { PortfolioValuationService } from '../../../src/services/portfolio/PortfolioValuationService';
+import { restoreContainerAfterAll } from '../../../test/helpers/container';
+
+// Container stubs are process-global; put back whatever this file changes
+// so no later test file resolves them (SC-448).
+restoreContainerAfterAll();
 
 /**
  * SC-154. `value === null` is two facts wearing one face — "we could not

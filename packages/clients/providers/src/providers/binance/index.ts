@@ -14,7 +14,7 @@ import type {
   CredentialValidator,
   TransactionsProvider,
 } from '../../core/capabilities';
-import { ProviderError } from '../../core/errors';
+import { credentialRejection, ProviderError } from '../../core/errors';
 import type {
   DecryptedCredentials,
   HoldingSnapshot,
@@ -179,6 +179,15 @@ export class BinanceProvider
     'transactions',
     'credential-validator',
   ];
+  // A `since`-less run does not reach the account's start: it substitutes
+  // `until - FIVE_YEARS_MS` and every deposit, withdrawal and P2P order walk
+  // is bounded by it. Declared so the router stops claiming a complete history
+  // over an account older than that — the same substitution Bybit and Bitget
+  // declare, five years out instead of thirty days (SC-418, SC-166).
+  //
+  // It is what the `since`-less call ACTUALLY reaches, not the furthest
+  // Binance would go if asked, which is the rule `capabilities.ts` states.
+  readonly transactionHistoryHorizonMs = FIVE_YEARS_MS;
   protected readonly baseUrl: string;
 
   constructor(limiter: OutflowRateLimiter, baseUrl = 'https://api.binance.com') {
@@ -336,10 +345,7 @@ export class BinanceProvider
       );
       return { valid: true };
     } catch (err) {
-      if (err instanceof ProviderError && err.kind === 'auth-failed') {
-        return { valid: false, message: err.message };
-      }
-      return { valid: false, message: err instanceof Error ? err.message : String(err) };
+      return credentialRejection(err);
     }
   }
 

@@ -4,6 +4,7 @@ import { showError, showSuccess } from '@scani/ui/ui/use-toast';
 import { QueryError } from '@scani/ui/v3/components/feedback/QueryError';
 import { PageLayout } from '@scani/ui/v3/components/PageLayout';
 import { ArrowLeft, FileText } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { trpc } from '@/lib/trpc';
 import { DocumentDetailHeader } from '../components/documents/DocumentDetailHeader';
@@ -26,6 +27,7 @@ import { V3_PAYMENT_ROUTES, V3_ROUTES } from '../lib/routes';
  * disagree about whether the file exists.
  */
 export function DocumentDetailPage() {
+  const { t } = useTranslation();
   const { documentId = '' } = useParams<{ documentId: string }>();
   const navigate = useNavigate();
   const utils = trpc.useUtils();
@@ -36,8 +38,8 @@ export function DocumentDetailPage() {
   );
 
   const reject = trpc.documents.rejectExtraction.useMutation({
-    onSuccess: () => showSuccess('Invoice rejected'),
-    onError: (error) => showError(error, 'Rejecting the invoice'),
+    onSuccess: () => showSuccess(t('v3.documents.detail.invoiceRejected')),
+    onError: (error) => showError(error, t('v3.documents.detail.rejectingInvoice')),
     onSettled: () => {
       void utils.documents.invalidate();
       void utils.review.listPending.invalidate();
@@ -59,7 +61,7 @@ export function DocumentDetailPage() {
         <BackLink />
         <QueryError
           error={documentQuery.error}
-          subject="this file"
+          subject={t('v3.documents.thisFile')}
           onRetry={() => void documentQuery.refetch()}
         />
       </PageLayout>
@@ -93,10 +95,9 @@ export function DocumentDetailPage() {
         // is already in the header directly above.
         <div className="flex flex-col items-center gap-2 rounded-lg border border-border bg-surface-1 p-8 text-center">
           <FileText className="size-8 text-muted-foreground" aria-hidden="true" />
-          <p className="text-label">No invoices were found in this file</p>
+          <p className="text-label">{t('v3.documents.detail.noInvoicesFound')}</p>
           <p className="text-body text-muted-foreground">
-            The file was read and nothing invoice-shaped came out of it. Re-parse runs the current
-            extractor over it again.
+            {t('v3.documents.detail.noInvoicesBody')}
           </p>
         </div>
       ) : null}
@@ -115,11 +116,12 @@ export function DocumentDetailPage() {
 }
 
 function BackLink() {
+  const { t } = useTranslation();
   return (
     <Button variant="ghost" size="sm" asChild className="-ml-2 self-start">
       <Link to={V3_ROUTES.files}>
         <ArrowLeft className="mr-2 size-4" aria-hidden="true" />
-        All files
+        {t('v3.documents.detail.backToFiles')}
       </Link>
     </Button>
   );

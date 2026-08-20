@@ -10,10 +10,9 @@
     "clean": "rm -rf dist",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
-    "type-check": "tsgo --noEmit"
+    "type-check": "tsgo --noEmit -p tsconfig.test.json"
   },
   "dependencies": {
-    "@hookform/resolvers": "^5.2.2",
     "@scani/backend": "workspace:*",
     "@scani/shared": "workspace:*",
     "@scani/ui": "workspace:*",
@@ -30,12 +29,10 @@
     "react-dom": "^18.3.1",
     "react-hook-form": "^7.72.1",
     "react-i18next": "^17.0.8",
-    "react-number-format": "^5.4.5",
     "react-router-dom": "^6.30.3",
     "recharts": "^3.8.1",
     "tailwindcss-animate": "^1.0.7",
-    "vite-plugin-svgr": "^4.5.0",
-    "zod": "^3.25.76"
+    "vite-plugin-svgr": "^4.5.0"
   },
   "devDependencies": {
     "@types/react": "^18.3.28",

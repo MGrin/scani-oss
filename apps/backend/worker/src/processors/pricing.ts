@@ -19,6 +19,12 @@ export class PricingProcessor extends ScheduledJobProcessor {
       logger.info(
         {
           tokensFound: result.tokensFound,
+          // The line SC-296 was found in read `tokensFound=50 tokensUpdated=37
+          // tokensFailed=13`, and all 13 were tokens deliberately skipped. Now
+          // they leave by their own field rather than as failures — and they
+          // are still REPORTED, because a run that quietly drops 13 of 50 and
+          // says nothing is the other way to be wrong about this.
+          tokensSuppressed: result.tokensSuppressed,
           tokensUpdated: result.tokensUpdated,
           tokensFailed: result.tokensFailed,
           errorCount: result.errors.length,

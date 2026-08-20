@@ -5,11 +5,12 @@ import { ConfirmAction } from '@scani/ui/v3/components/ConfirmAction';
 import { DataRowList } from '@scani/ui/v3/components/DataRow';
 import { QueryError } from '@scani/ui/v3/components/feedback/QueryError';
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { trpc } from '@/lib/trpc';
 import {
   optimisticRevokeOtherSessions,
   optimisticRevokeSession,
-} from '@/v2/hooks/optimisticUpdates';
+} from '@/v3/hooks/optimisticUpdates';
 import { SessionRow } from './SessionRow';
 
 /**
@@ -33,6 +34,7 @@ import { SessionRow } from './SessionRow';
  * button in the block below, which does the same thing and tells you it will.
  */
 export function SessionsSettings() {
+  const { t } = useTranslation();
   const utils = trpc.useUtils();
   const [confirmingOthers, setConfirmingOthers] = useState(false);
   const sessionsQuery = trpc.sessions.list.useQuery(undefined, { refetchOnWindowFocus: true });
@@ -41,10 +43,10 @@ export function SessionsSettings() {
 
   const revoke = trpc.sessions.revoke.useMutation({
     onMutate: ({ token }) => optimisticRevokeSession(utils, token),
-    onSuccess: () => showSuccess('Session revoked'),
+    onSuccess: () => showSuccess(t('v3.settings.sessions.revoked')),
     onError: (error, _variables, context) => {
       context?.restore();
-      showError(error, 'Revoking the session');
+      showError(error, t('v3.settings.pending.revokingSession'));
     },
     onSettled: settle,
   });
@@ -53,11 +55,11 @@ export function SessionsSettings() {
     onMutate: () => optimisticRevokeOtherSessions(utils),
     onSuccess: () => {
       setConfirmingOthers(false);
-      showSuccess('Signed out everywhere else');
+      showSuccess(t('v3.settings.sessions.signedOutOthers'));
     },
     onError: (error, _variables, context) => {
       context?.restore();
-      showError(error, 'Signing out the other sessions');
+      showError(error, t('v3.settings.pending.signingOutOthers'));
     },
     onSettled: settle,
   });
@@ -68,17 +70,15 @@ export function SessionsSettings() {
   return (
     <Block className="flex flex-col">
       <div className="flex flex-col gap-1 p-4 pb-3">
-        <h2 className="text-label text-muted-foreground">Devices</h2>
-        <p className="text-body text-muted-foreground">
-          Everywhere this account is currently signed in. End any you do not recognise.
-        </p>
+        <h2 className="text-label text-muted-foreground">{t('v3.settings.sessions.title')}</h2>
+        <p className="text-body text-muted-foreground">{t('v3.settings.sessions.intro')}</p>
       </div>
 
       {sessionsQuery.isError ? (
         <div className="p-4 pt-0">
           <QueryError
             error={sessionsQuery.error}
-            subject="your devices"
+            subject={t('v3.settings.sessions.subject')}
             onRetry={() => void sessionsQuery.refetch()}
           />
         </div>
@@ -88,7 +88,9 @@ export function SessionsSettings() {
           <Skeleton className="h-10 w-full" aria-hidden="true" />
         </div>
       ) : sessions.length === 0 ? (
-        <p className="p-4 pt-0 text-body text-muted-foreground">No active sessions.</p>
+        <p className="p-4 pt-0 text-body text-muted-foreground">
+          {t('v3.settings.sessions.empty')}
+        </p>
       ) : (
         <DataRowList className="border-t border-border">
           {sessions.map((session) => (
@@ -105,15 +107,23 @@ export function SessionsSettings() {
       {otherCount > 0 ? (
         <div className="border-t border-border p-4">
           <ConfirmAction
-            label={`Sign out everywhere else (${otherCount})`}
+            label={t('v3.settings.sessions.signOutOthers', { count: otherCount })}
             // The count moves into the commit too. The trigger carries it
             // because it is also the answer to "how many are there"; the
             // commit carries it because that is the button being pressed.
-            confirmLabel={`Sign out ${otherCount} ${otherCount === 1 ? 'device' : 'devices'}`}
+            confirmLabel={t('v3.settings.sessions.signOutOthersConfirm', {
+              count: otherCount,
+            })}
             open={confirmingOthers}
             onOpenChange={setConfirmingOthers}
             isPending={revokeOthers.isPending}
-            consequence={`Every device except this one is signed out — ${otherCount} ${otherCount === 1 ? 'session' : 'sessions'}, including any you do recognise. Each has to sign in again with a new code from your email. Your data is untouched.`}
+            // One pluralised key per branch, not a ternary inside a template:
+            // English has two forms and the rule is "if it varies on a count,
+            // it is a plural key" (SC-201). Russian and Arabic have more, and a
+            // ternary can only ever produce two.
+            consequence={t('v3.settings.sessions.signOutOthersConsequence', {
+              count: otherCount,
+            })}
             onConfirm={() => revokeOthers.mutate()}
           />
         </div>

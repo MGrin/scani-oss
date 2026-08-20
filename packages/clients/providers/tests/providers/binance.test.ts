@@ -69,7 +69,7 @@ describe('BinanceProvider', () => {
         );
       }
       throw new Error(`Unexpected URL: ${url}`);
-    }) as typeof fetch;
+    }) as unknown as typeof fetch;
 
     try {
       const out = await p.fetchBalances(ctx as never);
@@ -100,7 +100,7 @@ describe('BinanceProvider', () => {
         );
       }
       return walletResponse(url);
-    }) as typeof fetch;
+    }) as unknown as typeof fetch;
 
   // Real payload: -2015 REJECTED_MBX_KEY, the code Binance returns for a
   // key without the wallet's permission.
@@ -215,7 +215,7 @@ describe('BinanceProvider', () => {
         return new Response(JSON.stringify([]), { status: 200 });
       }
       throw new Error(`Unexpected URL: ${url}`);
-    }) as typeof fetch;
+    }) as unknown as typeof fetch;
 
     try {
       await expect(p.fetchBalances(ctx as never)).rejects.toThrow(/binance HTTP 401/);
@@ -227,7 +227,8 @@ describe('BinanceProvider', () => {
   test('validateCredentials maps 401 to invalid (auth-failed via ProviderError catch)', async () => {
     const p = new BinanceProvider(passthroughLimiter());
     const originalFetch = globalThis.fetch;
-    globalThis.fetch = (async () => new Response('Unauthorized', { status: 401 })) as typeof fetch;
+    globalThis.fetch = (async () =>
+      new Response('Unauthorized', { status: 401 })) as unknown as typeof fetch;
     try {
       const result = await p.validateCredentials({ apiKey: 'k', apiSecret: 's' }, 'binance');
       expect(result.valid).toBe(false);
@@ -241,7 +242,7 @@ describe('BinanceProvider', () => {
     const p = new BinanceProvider(passthroughLimiter());
     const originalFetch = globalThis.fetch;
     globalThis.fetch = (async () =>
-      new Response('{"balances":[]}', { status: 200 })) as typeof fetch;
+      new Response('{"balances":[]}', { status: 200 })) as unknown as typeof fetch;
     try {
       const result = await p.validateCredentials({ apiKey: 'k', apiSecret: 's' }, 'binance');
       expect(result.valid).toBe(true);
@@ -380,7 +381,7 @@ describe('BinanceProvider.fetchTransactions', () => {
         return new Response(JSON.stringify(filtered), { status: 200 });
       }
       throw new Error(`Unexpected URL: ${u}`);
-    }) as typeof fetch;
+    }) as unknown as typeof fetch;
 
     try {
       const since = new Date('2023-01-01T00:00:00Z');
@@ -506,7 +507,7 @@ describe('BinanceProvider.fetchTransactions', () => {
         });
       }
       throw new Error(`Unexpected URL: ${u}`);
-    }) as typeof fetch;
+    }) as unknown as typeof fetch;
 
     try {
       const since = new Date('2023-12-01T00:00:00Z');
@@ -586,7 +587,7 @@ describe('BinanceProvider.fetchTransactions', () => {
         return new Response('Forbidden', { status: 403 });
       }
       throw new Error(`Unexpected URL: ${u}`);
-    }) as typeof fetch;
+    }) as unknown as typeof fetch;
 
     try {
       const events = await p.fetchTransactions({

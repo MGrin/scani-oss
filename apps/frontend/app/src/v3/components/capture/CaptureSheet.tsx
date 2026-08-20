@@ -19,6 +19,7 @@ import {
   Repeat,
   Wallet,
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { Link, useSearchParams } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import {
@@ -62,8 +63,8 @@ const ICONS: Record<string, LucideIcon> = {
  *  drawer, so nothing is ever unreachable. */
 const CAPTURE_SNAP_POINTS = [0.85, 1] as const;
 
-const TITLE = 'Add data';
-const DESCRIPTION = 'Pick what you have. Everything else follows from that.';
+const TITLE_KEY = 'v3.capture.sheet.title';
+const DESCRIPTION_KEY = 'v3.capture.sheet.subtitle';
 
 interface CaptureRowProps {
   route: CaptureRoute;
@@ -82,6 +83,7 @@ interface CaptureRowProps {
  * there is nothing else for the row to do on the way out.
  */
 function CaptureRow({ route, contextQuery }: CaptureRowProps) {
+  const { t } = useTranslation();
   const Icon = ICONS[route.icon] ?? Keyboard;
 
   return (
@@ -100,8 +102,8 @@ function CaptureRow({ route, contextQuery }: CaptureRowProps) {
           <Icon className="h-5 w-5" aria-hidden="true" />
         </span>
         <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <span className="text-label">{route.title}</span>
-          <span className="text-caption text-muted-foreground">{route.description}</span>
+          <span className="text-label">{t(route.titleKey)}</span>
+          <span className="text-caption text-muted-foreground">{t(route.descriptionKey)}</span>
         </span>
         <ChevronRight className="mt-2 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
       </Link>
@@ -115,12 +117,13 @@ function CaptureRow({ route, contextQuery }: CaptureRowProps) {
  * sheet a test can assert on.
  */
 export function CaptureList({ contextQuery }: { contextQuery: string }) {
+  const { t } = useTranslation();
   return (
     <div className="flex flex-col gap-4">
       {CAPTURE_GROUPS.map((group) => (
         <section key={group.key} className="flex flex-col gap-1">
           <h3 className="px-3 text-caption font-medium uppercase tracking-wide text-muted-foreground">
-            {group.title}
+            {t(group.titleKey)}
           </h3>
           <ul className="flex flex-col divide-y divide-border">
             {group.routes.map((route) => (
@@ -139,6 +142,7 @@ interface CaptureSheetProps {
 }
 
 export function CaptureSheet({ open, onOpenChange }: CaptureSheetProps) {
+  const { t } = useTranslation();
   const isDesktop = useIsDesktop();
   const [searchParams] = useSearchParams();
   // Read off the URL the sheet was opened over, so reaching capture from an
@@ -157,8 +161,8 @@ export function CaptureSheet({ open, onOpenChange }: CaptureSheetProps) {
           style={{ backgroundColor: 'hsl(var(--surface-2))' }}
         >
           <SheetHeader className="pr-8 text-left">
-            <SheetTitle className="text-title">{TITLE}</SheetTitle>
-            <SheetDescription className="text-caption">{DESCRIPTION}</SheetDescription>
+            <SheetTitle className="text-title">{t(TITLE_KEY)}</SheetTitle>
+            <SheetDescription className="text-caption">{t(DESCRIPTION_KEY)}</SheetDescription>
           </SheetHeader>
           <div className="pt-4">
             <CaptureList contextQuery={contextQuery} />
@@ -172,13 +176,13 @@ export function CaptureSheet({ open, onOpenChange }: CaptureSheetProps) {
     <BottomDrawer open={open} onOpenChange={onOpenChange}>
       <BottomDrawerContent
         snapPoints={CAPTURE_SNAP_POINTS}
-        expandLabel="Show every way to add data"
-        collapseLabel="Show less"
+        expandLabel={t('v3.capture.sheet.trigger')}
+        collapseLabel={t('v3.capture.sheet.collapse')}
         style={{ backgroundColor: 'hsl(var(--surface-2))' }}
       >
         <BottomDrawerHeader>
-          <BottomDrawerTitle>{TITLE}</BottomDrawerTitle>
-          <BottomDrawerDescription>{DESCRIPTION}</BottomDrawerDescription>
+          <BottomDrawerTitle>{t(TITLE_KEY)}</BottomDrawerTitle>
+          <BottomDrawerDescription>{t(DESCRIPTION_KEY)}</BottomDrawerDescription>
         </BottomDrawerHeader>
         <BottomDrawerBody>
           <CaptureList contextQuery={contextQuery} />

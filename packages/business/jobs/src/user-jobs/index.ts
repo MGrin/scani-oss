@@ -1,3 +1,9 @@
+export {
+  CURRENCY_RATE_REFRESH,
+  CURRENCY_RATE_REFRESH_COALESCE_MS,
+  type CurrencyRateRefreshJob,
+  currencyRateRefreshSchema,
+} from './currency-rate-refresh';
 export { DOCUMENT_PARSE, type DocumentParseJob, documentParseSchema } from './document-parse';
 export { EXCHANGE_IMPORT, type ExchangeImportJob, exchangeImportSchema } from './exchange-import';
 export { FILE_IMPORT, type FileImportJob, fileImportSchema } from './file-import';

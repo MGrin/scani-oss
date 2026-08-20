@@ -15,7 +15,7 @@ import type {
   TransactionsProvider,
 } from '../../core/capabilities';
 import { loadProvidersConfig } from '../../core/config';
-import { ProviderError } from '../../core/errors';
+import { credentialRejection, ProviderError } from '../../core/errors';
 import type {
   DecryptedCredentials,
   HoldingSnapshot,
@@ -236,10 +236,7 @@ export class OkxProvider
       }
       return { valid: true };
     } catch (err) {
-      if (err instanceof ProviderError && err.kind === 'auth-failed') {
-        return { valid: false, message: err.message };
-      }
-      return { valid: false, message: err instanceof Error ? err.message : String(err) };
+      return credentialRejection(err);
     }
   }
 

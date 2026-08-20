@@ -6,7 +6,7 @@ import {
   sameUrlState,
   writeDataViewUrl,
 } from '../lib/data-view-url';
-import type { DataViewReturn, FilterDef } from './useDataView';
+import type { DataViewReturn, FilterDefBase } from './useDataView';
 
 /**
  * Binds a list's filters and grouping to the URL — `usePeekRoute` for the state
@@ -41,7 +41,7 @@ export interface DataViewUrlBinding {
 
 export function useDataViewUrlState<T>(
   pageKey: string,
-  filterDefs: FilterDef[] | undefined,
+  filterDefs: FilterDefBase[] | undefined,
   dv: DataViewReturn<T>
 ): DataViewUrlBinding {
   const location = useLocation();

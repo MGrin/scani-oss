@@ -10,23 +10,25 @@ import { Numeric } from '@scani/ui/v3/components/Numeric';
 import { PageLayout } from '@scani/ui/v3/components/PageLayout';
 import { ArrowLeft, Plus } from 'lucide-react';
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Link, useNavigate, useParams } from 'react-router-dom';
+import { invalidatePortfolioQueries } from '@/hooks/invalidatePortfolioQueries';
 import { trpc } from '@/lib/trpc';
-import { invalidatePortfolioQueries } from '@/v2/hooks/invalidatePortfolioQueries';
-import { optimisticPatchGroup, optimisticRemoveGroups } from '@/v2/hooks/optimisticUpdates';
+import { optimisticPatchGroup, optimisticRemoveGroups } from '@/v3/hooks/optimisticUpdates';
 import { Field } from '../components/form/Field';
 import { GroupColorChoice } from '../components/groups/GroupColorChoice';
 import { MemberList } from '../components/membership/MemberList';
 import { MemberPicker } from '../components/membership/MemberPicker';
 import { useGroupMembership } from '../hooks/useGroupMembership';
 import {
-  GROUP_ACCOUNT_NOTE,
+  GROUP_ACCOUNT_NOTE_KEY,
   groupAmount,
   groupCoverageLine,
   groupValuesById,
+  inactiveGroupNote,
   unpricedGroupNote,
 } from '../lib/groups';
-import { memberCountLine } from '../lib/membership';
+import { countOfKind, inactiveMemberCount, memberCountLine } from '../lib/membership';
 import { V3_ROUTES } from '../lib/routes';
 
 /**
@@ -58,8 +60,19 @@ import { V3_ROUTES } from '../lib/routes';
  * with what it covers, because two things about it are not self-evident: an
  * account in a group contributes through its own holdings rather than as a
  * thing of its own, and a position we cannot price is unknown rather than zero.
+ *
+ * **Three counts used to render here and no two of them agreed** (SC-388): a
+ * header reading "36 holdings · 10 accounts", a section titled "In this group
+ * (46)" over a list of 36, and a figure explained as "the 22 active holdings in
+ * this group". They were counting three different things and only the first
+ * said which. So every number on this page now names its own set — the runs of
+ * the list count themselves, nothing prints their sum, and the figure states
+ * both what it covers and what it leaves out. That is a labelling change and
+ * not a membership one: `GroupValuationService` still resolves who is in this
+ * group exactly once (SC-385/386), and none of these figures moved.
  */
 export function GroupDetailPage() {
+  const { t } = useTranslation();
   const { id = '' } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const utils = trpc.useUtils();
@@ -85,11 +98,11 @@ export function GroupDetailPage() {
       }),
     onSuccess: () => {
       setDraft(null);
-      showSuccess('Group updated');
+      showSuccess(t('v3.groups.detail.toast.updated'));
     },
     onError: (error, _vars, ctx) => {
       ctx?.restore();
-      showError(error, 'Updating the group');
+      showError(error, t('v3.groups.detail.toast.updating'));
     },
     onSettled: () => void invalidatePortfolioQueries(utils),
   });
@@ -97,12 +110,12 @@ export function GroupDetailPage() {
   const deleteGroup = trpc.groups.delete.useMutation({
     onMutate: ({ id: groupId }) => optimisticRemoveGroups(utils, [groupId]),
     onSuccess: () => {
-      showSuccess('Group deleted');
+      showSuccess(t('v3.groups.detail.toast.deleted'));
       navigate(V3_ROUTES.groups, { replace: true });
     },
     onError: (error, _vars, ctx) => {
       ctx?.restore();
-      showError(error, 'Deleting the group');
+      showError(error, t('v3.groups.detail.toast.deleting'));
     },
     onSettled: () => void invalidatePortfolioQueries(utils),
   });
@@ -122,9 +135,7 @@ export function GroupDetailPage() {
     return (
       <PageLayout measure="wide">
         <BackLink />
-        <p className="text-body text-muted-foreground">
-          This group is not on your list. It may have been deleted, or the link may be out of date.
-        </p>
+        <p className="text-body text-muted-foreground">{t('v3.groups.detail.notFound')}</p>
       </PageLayout>
     );
   }
@@ -145,7 +156,11 @@ export function GroupDetailPage() {
   const patch = (change: Partial<typeof current>) => setDraft({ ...current, ...change });
 
   const hasAccountMembers = membership.members.some((member) => member.kind === 'account');
-  const unpriced = unpricedGroupNote(groupValue?.unpricedSymbols ?? []);
+  const unpriced = unpricedGroupNote(groupValue?.unpricedSymbols ?? [], t);
+  // Null rather than 0 while the list is still arriving: "covers 22 of the 0
+  // listed below" is a worse sentence than the one this replaced.
+  const listedHoldings = membership.isLoading ? null : countOfKind(membership.members, 'holding');
+  const inactive = inactiveGroupNote(inactiveMemberCount(membership.members), t);
 
   return (
     <PageLayout measure="wide">
@@ -162,7 +177,7 @@ export function GroupDetailPage() {
             <h1 className="min-w-0 truncate text-title">{group.name}</h1>
           </div>
           <p className="text-caption text-muted-foreground">
-            {memberCountLine(membership.members)}
+            {memberCountLine(membership.members, t)}
           </p>
         </div>
 
@@ -171,7 +186,7 @@ export function GroupDetailPage() {
         ) : (
           <StatTile
             emphasis="hero"
-            label="Value"
+            label={t('v3.groups.detail.value')}
             value={
               <Numeric
                 value={groupAmount(groupValue)}
@@ -182,16 +197,19 @@ export function GroupDetailPage() {
         )}
 
         <div className="flex flex-col gap-1 text-caption text-muted-foreground">
-          <p>{groupCoverageLine(groupValue)}</p>
+          <p>{groupCoverageLine(groupValue, listedHoldings, t)}</p>
+          {/* The two reasons the figure covers fewer rows than the list shows,
+           *  together and directly under the sentence that states the gap. */}
+          {inactive ? <p>{inactive}</p> : null}
+          {unpriced ? <p>{unpriced}</p> : null}
           {/* Said only where it can bite: on a group with no account in it the
            *  sentence explains a mechanism the reader cannot see. */}
-          {hasAccountMembers ? <p>{GROUP_ACCOUNT_NOTE}</p> : null}
-          {unpriced ? <p>{unpriced}</p> : null}
+          {hasAccountMembers ? <p>{t(GROUP_ACCOUNT_NOTE_KEY)}</p> : null}
         </div>
       </Block>
 
       <Block>
-        <BlockHeader title={`In this group (${membership.members.length})`} />
+        <BlockHeader title={t('v3.groups.detail.inThisGroup')} />
         {membership.isLoading ? (
           <Skeleton className="mx-4 mb-4 h-24" aria-hidden="true" />
         ) : membership.members.length > 0 ? (
@@ -199,12 +217,12 @@ export function GroupDetailPage() {
             members={membership.members}
             pendingIds={membership.pendingIds}
             onRemove={membership.remove}
-            removeLabel={(entry) => `Remove ${entry.label} from ${group.name}`}
+            removeLabel={(entry) =>
+              t('v3.groups.detail.removeMember', { label: entry.label, group: group.name })
+            }
           />
         ) : (
-          <p className="px-4 pb-4 text-body text-muted-foreground">
-            Nothing is in this group yet. Add a holding or an account and it will show up here.
-          </p>
+          <p className="px-4 pb-4 text-body text-muted-foreground">{t('v3.groups.detail.empty')}</p>
         )}
 
         {adding ? (
@@ -214,24 +232,24 @@ export function GroupDetailPage() {
               pendingIds={membership.pendingIds}
               onAdd={membership.add}
               onDone={() => setAdding(false)}
-              noun="holdings and accounts"
-              note="Adding a whole account adds every holding in it."
+              noun={t('v3.groups.detail.noun')}
+              note={t('v3.groups.detail.note')}
             />
           </div>
         ) : (
           <div className="px-4 pt-3 pb-4">
             <Button variant="outline" size="sm" onClick={() => setAdding(true)}>
               <Plus className="mr-2 size-4" aria-hidden="true" />
-              Add holdings or accounts
+              {t('v3.groups.detail.addMembers')}
             </Button>
           </div>
         )}
       </Block>
 
       <Block>
-        <BlockHeader title="Details" />
+        <BlockHeader title={t('v3.groups.detail.details')} />
         <div className="flex flex-col gap-3 border-border border-t p-4">
-          <Field label="Name" htmlFor="group-name">
+          <Field label={t('v3.groups.detail.name')} htmlFor="group-name">
             <Input
               id="group-name"
               value={current.name}
@@ -239,7 +257,7 @@ export function GroupDetailPage() {
               disabled={updateGroup.isPending}
             />
           </Field>
-          <Field label="Description" htmlFor="group-description">
+          <Field label={t('v3.groups.detail.description')} htmlFor="group-description">
             <Textarea
               id="group-description"
               value={current.description}
@@ -249,7 +267,7 @@ export function GroupDetailPage() {
               disabled={updateGroup.isPending}
             />
           </Field>
-          <Field label="Colour">
+          <Field label={t('v3.groups.detail.colour')}>
             <GroupColorChoice
               value={current.color}
               onChange={(color) => patch({ color })}
@@ -271,7 +289,7 @@ export function GroupDetailPage() {
                 })
               }
             >
-              Save changes
+              {t('v3.groups.detail.saveChanges')}
             </Button>
             {dirty ? (
               <Button
@@ -280,36 +298,33 @@ export function GroupDetailPage() {
                 disabled={updateGroup.isPending}
                 onClick={() => setDraft(null)}
               >
-                Discard
+                {t('v3.groups.detail.discard')}
               </Button>
             ) : null}
             {/* §7: say what is missing rather than leaving a pale button to be
              *  interpreted — the gap QA 10.1 flagged on the wizard's Next. */}
             {nameIsEmpty ? (
-              <p className="text-caption text-muted-foreground">To save: give the group a name.</p>
+              <p className="text-caption text-muted-foreground">{t('v3.groups.detail.needName')}</p>
             ) : null}
           </div>
         </div>
       </Block>
 
       <Block>
-        <BlockHeader title="Danger zone" />
+        <BlockHeader title={t('v3.groups.detail.dangerZone')} />
         <div className="p-4">
           <ConfirmAction
-            label="Delete group"
-            confirmLabel="Delete this group"
+            label={t('v3.groups.detail.deleteTrigger')}
+            confirmLabel={t('v3.groups.detail.deleteCommit')}
             destructive
             open={confirmingDelete}
             onOpenChange={setConfirmingDelete}
             isPending={deleteGroup.isPending}
             onConfirm={() => deleteGroup.mutate({ id })}
-            consequence={
-              <>
-                “{group.name}” disappears from every list and filter. The{' '}
-                {memberCountLine(membership.members)} in it are not deleted — they simply stop
-                carrying this label.
-              </>
-            }
+            consequence={t('v3.groups.detail.deleteConsequence', {
+              name: group.name,
+              members: memberCountLine(membership.members, t),
+            })}
           />
         </div>
       </Block>
@@ -318,11 +333,12 @@ export function GroupDetailPage() {
 }
 
 function BackLink() {
+  const { t } = useTranslation();
   return (
     <Button variant="ghost" size="sm" asChild className="-ml-2 self-start">
       <Link to={V3_ROUTES.groups}>
         <ArrowLeft className="mr-2 size-4" aria-hidden="true" />
-        Groups
+        {t('v3.groups.detail.backToGroups')}
       </Link>
     </Button>
   );

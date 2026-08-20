@@ -1,6 +1,6 @@
 process.env.DATABASE_URL = process.env.DATABASE_URL || 'postgresql://dummy:dummy@localhost/dummy';
 
-import { afterAll, describe, expect, test } from 'bun:test';
+import { describe, expect, test } from 'bun:test';
 import type { HoldingCoverage, HoldingTransaction } from '@scani/db/schema';
 import { Container } from 'typedi';
 import { HoldingCoverageRepository } from '../../../src/repositories/HoldingCoverageRepository';
@@ -9,6 +9,11 @@ import { HoldingTransactionRepository } from '../../../src/repositories/HoldingT
 import { RealizedLedgerService } from '../../../src/services/portfolio/RealizedLedgerService';
 import { CostBasisService } from '../../../src/services/pricing/CostBasisService';
 import { PriceGraphService } from '../../../src/services/pricing/PriceGraphService';
+import { restoreContainerAfterAll } from '../../../test/helpers/container';
+
+// Container stubs are process-global; put back whatever this file changes
+// so no later test file resolves them (SC-448).
+restoreContainerAfterAll();
 
 /**
  * `RealizedLedgerService` — the read side of SC-152.
@@ -29,15 +34,6 @@ import { PriceGraphService } from '../../../src/services/pricing/PriceGraphServi
 
 const USD = 'token-USD';
 const BTC = 'token-BTC';
-
-afterAll(() => {
-  Container.set(HoldingRepository, new HoldingRepository());
-  Container.set(HoldingTransactionRepository, new HoldingTransactionRepository());
-  Container.set(HoldingCoverageRepository, new HoldingCoverageRepository());
-  Container.set(PriceGraphService, new PriceGraphService());
-  Container.set(CostBasisService, new CostBasisService());
-  Container.set(RealizedLedgerService, new RealizedLedgerService());
-});
 
 let txSeq = 0;
 function tx(p: {
@@ -80,12 +76,13 @@ function tx(p: {
 }
 
 function makeService(opts: {
-  component: string[];
+  component: string[] | ((seed: string) => string[]);
   txsByHolding: Map<string, HoldingTransaction[]>;
   coverage?: Map<string, HoldingCoverage>;
 }): RealizedLedgerService {
   Container.set(HoldingTransactionRepository, {
-    findTransferLinkedHoldingIds: async () => opts.component,
+    findTransferLinkedHoldingIds: async (_userId: string, ids: string[]) =>
+      typeof opts.component === 'function' ? opts.component(ids[0] as string) : opts.component,
     findForHoldingsAll: async () => opts.txsByHolding,
     // `getCostBasis` prefers the handed-in `txs`, so this must never fire.
     findForHoldingUpTo: async () => {
@@ -304,5 +301,139 @@ describe('RealizedLedgerService.forHolding', () => {
     // deserves.
     expect(rows[0]?.gain?.toString()).toBe('400');
     expect(rows[0]?.basisQuality).toBe('partial');
+  });
+});
+
+/**
+ * `forComponentsOf` — the total, and the reason it has to exist (SC-379).
+ *
+ * `forHolding` partitions: it walks the component and keeps only the rows on
+ * the holding it was asked about. Two repair scripts used that as a *component*
+ * total by walking one representative holding per component, and the fixtures
+ * below are that mistake in miniature — a two-holding component whose members
+ * report DIFFERENT numbers of rows, so no single representative can stand in
+ * for the pair.
+ */
+describe('RealizedLedgerService.forComponentsOf', () => {
+  /** Two linked holdings: `kraken` books two rows, `wallet` one. */
+  function lopsidedComponent(): Map<string, HoldingTransaction[]> {
+    const kraken = [
+      tx({
+        holdingId: 'kraken',
+        kind: 'buy',
+        quantity: '10',
+        occurredAt: '2023-01-01',
+        priceNative: '100',
+      }),
+      // Never paired — recorded by the end-of-walk pass as an open question.
+      tx({
+        holdingId: 'kraken',
+        kind: 'transfer_out',
+        quantity: '-2',
+        occurredAt: '2024-02-01',
+        transferGroupId: 'orphan',
+      }),
+      tx({
+        holdingId: 'kraken',
+        kind: 'transfer_out',
+        quantity: '-5',
+        occurredAt: '2024-03-01',
+        transferGroupId: 'g1',
+      }),
+      tx({
+        holdingId: 'kraken',
+        kind: 'sell',
+        quantity: '-3',
+        occurredAt: '2024-09-01',
+        priceNative: '200',
+      }),
+    ];
+    const wallet = [
+      tx({
+        holdingId: 'wallet',
+        kind: 'transfer_in',
+        quantity: '5',
+        occurredAt: '2024-03-01',
+        transferGroupId: 'g1',
+      }),
+      tx({
+        holdingId: 'wallet',
+        kind: 'sell',
+        quantity: '-5',
+        occurredAt: '2024-12-01',
+        priceNative: '400',
+      }),
+    ];
+    return new Map([
+      ['kraken', kraken],
+      ['wallet', wallet],
+    ]);
+  }
+
+  function gainOf(rows: ReadonlyArray<{ gain: { toString(): string } | null }>): number {
+    return rows.reduce((sum, r) => sum + (r.gain === null ? 0 : Number(r.gain.toString())), 0);
+  }
+
+  test('reports every holding of the component, not one representative', async () => {
+    const svc = makeService({ component: ['kraken', 'wallet'], txsByHolding: lopsidedComponent() });
+    const at = new Date('2026-01-01');
+
+    const all = await svc.forComponentsOf('u', ['wallet'], USD, at);
+
+    // Both members, with the counts that make a representative wrong: asking
+    // `wallet` to speak for the component loses two rows and 300 of gain,
+    // asking `kraken` loses one row and 1500.
+    expect(all.map((r) => r.holdingId).sort()).toEqual(['kraken', 'kraken', 'wallet']);
+    expect(gainOf(all)).toBe(1800);
+
+    const viaWallet = await svc.forHolding('u', 'wallet', USD, at);
+    const viaKraken = await svc.forHolding('u', 'kraken', USD, at);
+    expect(viaWallet).toHaveLength(1);
+    expect(viaKraken).toHaveLength(2);
+    expect(gainOf(viaWallet)).toBe(1500);
+    expect(gainOf(viaKraken)).toBe(300);
+    // The partition property the totals rest on: the slices reassemble the
+    // whole, so summing them double-counts nothing.
+    expect(gainOf(viaWallet) + gainOf(viaKraken)).toBe(gainOf(all));
+  });
+
+  test('two seeds in one component are walked once, not twice', async () => {
+    const svc = makeService({ component: ['kraken', 'wallet'], txsByHolding: lopsidedComponent() });
+
+    const rows = await svc.forComponentsOf('u', ['wallet', 'kraken'], USD, new Date('2026-01-01'));
+
+    // The repair scripts pass every touched holding, and a component is
+    // routinely touched twice — once by an outflow and once by its arrival.
+    expect(rows).toHaveLength(3);
+    expect(gainOf(rows)).toBe(1800);
+  });
+
+  test('seeds in unrelated components each get walked', async () => {
+    const txsByHolding = lopsidedComponent();
+    txsByHolding.set('solo', [
+      tx({
+        holdingId: 'solo',
+        kind: 'buy',
+        quantity: '1',
+        occurredAt: '2024-01-01',
+        priceNative: '50',
+      }),
+      tx({
+        holdingId: 'solo',
+        kind: 'sell',
+        quantity: '-1',
+        occurredAt: '2024-07-01',
+        priceNative: '90',
+      }),
+    ]);
+    const svc = makeService({
+      component: (seed) => (seed === 'solo' ? ['solo'] : ['kraken', 'wallet']),
+      txsByHolding,
+    });
+
+    const rows = await svc.forComponentsOf('u', ['wallet', 'solo'], USD, new Date('2026-01-01'));
+
+    expect(rows.map((r) => r.holdingId).sort()).toEqual(['kraken', 'kraken', 'solo', 'wallet']);
+    expect(gainOf(rows)).toBe(1840);
   });
 });

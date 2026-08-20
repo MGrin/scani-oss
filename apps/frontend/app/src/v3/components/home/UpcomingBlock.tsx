@@ -4,20 +4,20 @@ import { DataRow, DataRowList } from '@scani/ui/v3/components/DataRow';
 import { Numeric } from '@scani/ui/v3/components/Numeric';
 import { peekOpenState, peekPath } from '@scani/ui/v3/lib/peek';
 import { CalendarClock } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import { useBaseCurrencyRates } from '@/hooks/useBaseCurrencyRates';
 import { trpc } from '@/lib/trpc';
-import { todayDateString } from '@/v2/lib/paymentTotals';
 import { formatDueIn, nextPayments } from '../../lib/home';
 import {
   INCOME_HORIZON_DAYS,
   occurrenceTotals,
-  overdueTotalLabel,
   PAYMENTS_HORIZON_DAYS,
   splitByDirection,
   splitByDueness,
   withinDays,
 } from '../../lib/money';
+import { todayDateString } from '../../lib/paymentTotals';
 import { V3_ROUTES } from '../../lib/routes';
 import { BaseEquivalent } from '../BaseEquivalent';
 import { ConvertedFigure } from '../ConvertedFigure';
@@ -45,6 +45,7 @@ interface UpcomingBlockProps {
 }
 
 export function UpcomingBlock({ currency }: UpcomingBlockProps) {
+  const { t } = useTranslation();
   // The income window, which is the longer one — the same query the Money tab
   // issues, so the two share a cache entry and can never disagree about the
   // total they both print.
@@ -81,20 +82,25 @@ export function UpcomingBlock({ currency }: UpcomingBlockProps) {
 
   return (
     <Block>
-      <BlockHeader title="Upcoming bills" href={V3_ROUTES.money} action="See all" />
+      <BlockHeader
+        title={t('v3.home.upcoming.title')}
+        href={V3_ROUTES.money}
+        action={t('v3.common.action.seeAll')}
+      />
       {due.length === 0 ? (
         <div className="flex flex-col items-start gap-3 px-4 pb-4">
           <p className="text-body text-muted-foreground">
-            Nothing due in the next {PAYMENTS_HORIZON_DAYS} days.
+            {t('v3.home.upcoming.empty', { count: PAYMENTS_HORIZON_DAYS })}
           </p>
           <Button asChild variant="outline" size="sm">
-            <Link to={V3_ROUTES.recurring}>Add a payment</Link>
+            <Link to={V3_ROUTES.recurring}>{t('v3.home.upcoming.addPayment')}</Link>
           </Button>
         </div>
       ) : (
         <DataRowList className="border-t border-border">
           {due.map((occurrence) => {
-            const vendorName = vendorNameById.get(occurrence.payment.vendorId) ?? 'Unknown vendor';
+            const vendorName =
+              vendorNameById.get(occurrence.payment.vendorId) ?? t('v3.common.unknownVendor');
             return (
               <DataRow
                 key={occurrence.id}
@@ -102,7 +108,7 @@ export function UpcomingBlock({ currency }: UpcomingBlockProps) {
                   <CalendarClock aria-hidden="true" className="size-4 text-muted-foreground" />
                 }
                 label={vendorName}
-                sublabel={formatDueIn(occurrence.dueDate, today)}
+                sublabel={formatDueIn(occurrence.dueDate, today, t)}
                 // The two cards beside this one — Top holdings and Groups — are
                 // runs of `DataRow`s with an `onClick`, at the same row height
                 // and in the same style. These rows had none, so on the first
@@ -115,7 +121,7 @@ export function UpcomingBlock({ currency }: UpcomingBlockProps) {
                 // making the row a control should not cost the reader the URL.
                 href={peekPath(V3_ROUTES.money, occurrence.id)}
                 linkState={peekOpenState(V3_ROUTES.money)}
-                aria-label={`${vendorName} — open`}
+                aria-label={t('v3.common.openRecord', { name: vendorName })}
                 value={
                   <Numeric
                     value={occurrence.expectedAmount ?? occurrence.actualAmount}
@@ -148,7 +154,7 @@ export function UpcomingBlock({ currency }: UpcomingBlockProps) {
       {overdue.length > 0 ? (
         <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-t border-border px-4 py-3">
           <span className="text-caption text-muted-foreground">
-            {overdueTotalLabel(overdue.length)}
+            {t('v3.money.upcoming.overdueTotal', { count: overdue.length })}
           </span>
           <span className="text-label">
             <ConvertedFigure
@@ -163,7 +169,7 @@ export function UpcomingBlock({ currency }: UpcomingBlockProps) {
       {income.length > 0 ? (
         <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-t border-border px-4 py-3">
           <span className="text-caption text-muted-foreground">
-            Income expected, next {INCOME_HORIZON_DAYS} days
+            {t('v3.home.upcoming.incomeExpected', { count: INCOME_HORIZON_DAYS })}
           </span>
           <span className="text-label">
             <ConvertedFigure

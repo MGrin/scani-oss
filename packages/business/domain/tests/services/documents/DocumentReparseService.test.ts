@@ -7,6 +7,11 @@ import { DocumentExtractionRepository } from '../../../src/repositories/Document
 import { DocumentRepository } from '../../../src/repositories/DocumentRepository';
 import { DocumentReparseService } from '../../../src/services/documents/DocumentReparseService';
 import { DocumentRetentionService } from '../../../src/services/documents/DocumentRetentionService';
+import { restoreContainerAfterAll } from '../../../test/helpers/container';
+
+// Container stubs are process-global; put back whatever this file changes
+// so no later test file resolves them (SC-448).
+restoreContainerAfterAll();
 
 const DOC_ID = '11111111-1111-4111-8111-111111111111';
 const RETAINED_KEY = `documents/user-1/${DOC_ID}.pdf`;
@@ -53,7 +58,7 @@ describe('DocumentReparseService.prepare', () => {
 
     const outcome = await instance.prepare(DOC_ID, 'user-1');
 
-    expect(outcome).toEqual({ outcome: 'file-missing', document });
+    expect(outcome).toEqual({ outcome: 'file-missing', document } as typeof outcome);
     expect(deleteUnlinkedByDocumentId).not.toHaveBeenCalled();
   });
 
@@ -69,7 +74,7 @@ describe('DocumentReparseService.prepare', () => {
 
     expect(outcome.outcome).toBe('ready');
     if (outcome.outcome !== 'ready') throw new Error('unreachable');
-    expect(outcome.plan.document).toBe(document);
+    expect(outcome.plan.document).toBe(document as typeof outcome.plan.document);
     expect(outcome.plan.clearedExtractionIds).toEqual(['stale']);
     // The survivor is the one a payment occurrence points at.
     expect(outcome.plan.keptExtractionIds).toEqual(['kept']);

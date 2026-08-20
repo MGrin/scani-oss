@@ -3,6 +3,74 @@
     "name": "English",
     "nativeName": "English"
   },
+  "auth": {
+    "signIn": {
+      "title": "Welcome",
+      "subtitle": "Enter your email to sign in or create an account",
+      "emailLabel": "Email",
+      "emailPlaceholder": "Enter your email address",
+      "emailRequired": "Email is required",
+      "emailInvalid": "Please enter a valid email address",
+      "submit": "Continue with Email",
+      "offline": "You’re offline. We’ll send your code as soon as the connection is back.",
+      "hintCode": "We'll send you a 6-digit code to sign in.",
+      "hintLink": "We'll send you a secure magic link to sign in.",
+      "newAccount": "New to Scani? Your account will be created automatically."
+    },
+    "code": {
+      "title": "Enter verification code",
+      "sentTo": "We've sent a 6-digit code to {{email}}",
+      "differentEmail": "Use a different email"
+    },
+    "linkSent": {
+      "title": "Check your email",
+      "subtitle": "We've sent you a magic link to sign in",
+      "body": "Click the link in your email to access your account. If this is your first time, we'll create an account for you automatically.",
+      "resend": "Send another email"
+    },
+    "callback": {
+      "signingInTitle": "Signing you in…",
+      "signingInSubtitle": "Please wait while we verify your authentication",
+      "signingInBody": "This should only take a moment.",
+      "successTitle": "Welcome!",
+      "successSubtitle": "You've been successfully signed in",
+      "successBody": "Redirecting you to your dashboard…",
+      "errorTitle": "Authentication Error",
+      "errorSubtitle": "There was a problem signing you in",
+      "tryAgain": "Try again",
+      "support": "If you continue to have issues, please contact support.",
+      "linkFailed": "Authentication failed",
+      "unreachable": "We couldn't reach the server to finish signing you in. Check your connection and try the link again.",
+      "expired": "Your sign-in link has expired or could not be verified. Please request a new one."
+    },
+    "failure": {
+      "offline": "You're offline, so we couldn't reach Scani. We'll try again on our own as soon as you're back.",
+      "timeout": "Scani took too long to answer. Check your connection and tap Continue again.",
+      "unreachable": "We couldn't reach Scani. Check your connection and tap Continue again.",
+      "server": "Something went wrong. Try again."
+    }
+  },
+  "currency": {
+    "unknownName": "{{symbol}} Currency"
+  },
+  "vendors": {
+    "paidWindow_one": "Paid, last {{count}} month",
+    "paidWindow_other": "Paid, last {{count}} months",
+    "receivedWindow_one": "Received, last {{count}} month",
+    "receivedWindow_other": "Received, last {{count}} months",
+    "committedPerMonth": "Committed per month",
+    "expectedPerMonth": "Expected per month",
+    "paidAllTime": "Paid, all time",
+    "receivedAllTime": "Received, all time",
+    "withUnconverted": "{{base}} + {{rest}} unconverted",
+    "unpriced_one": "{{count}} settlement has no amount recorded and is not in this total.",
+    "unpriced_other": "{{count}} settlements have no amount recorded and are not in this total.",
+    "kind": {
+      "income": "Income",
+      "both": "Bills & income",
+      "unclassified": "Direction not recorded"
+    }
+  },
   "nav": {
     "sections": {
       "portfolio": "Portfolio",
@@ -10,7 +78,6 @@
       "activity": "Activity",
       "payments": "Payments"
     },
-    "dashboard": "Dashboard",
     "home": "Home",
     "holdings": "Holdings",
     "accounts": "Accounts",
@@ -21,17 +88,10 @@
     "jobs": "Jobs",
     "settings": "Settings",
     "signOut": "Sign out",
-    "theme": "Theme",
-    "backToNewUi": "Back to the new UI",
-    "backToClassicUi": "Back to the classic UI",
     "more": "More",
     "add": "Add",
     "addData": "Add data",
     "addDataButton": "Add Data",
-    "search": "Search",
-    "openMenu": "Open menu",
-    "expandSidebar": "Expand sidebar",
-    "collapseSidebar": "Collapse sidebar",
     "paymentsOverview": "Overview",
     "recurringPayments": "Recurring Payments",
     "vendors": "Vendors",
@@ -39,15 +99,6 @@
     "files": "Files",
     "payments": "Payments",
     "money": "Money"
-  },
-  "dashboard": {
-    "title": "Dashboard",
-    "subtitle": "Your portfolio overview",
-    "stats": {
-      "institutions": "Institutions",
-      "accounts": "Accounts",
-      "holdings": "Holdings"
-    }
   },
   "settings": {
     "title": "Settings",
@@ -60,9 +111,564 @@
     "baseCurrency": "Base Currency",
     "language": "Language",
     "languageHint": "Translations are community-contributed. Missing strings fall back to English.",
+    "region": "Region",
+    "regionAuto": "Follow interface language",
+    "regionHint": "Dates and numbers are showing as {{sample}}.",
     "saving": "Saving...",
     "autoSave": "Changes will auto-save",
     "account": "Account",
     "signOut": "Sign out"
+  },
+  "ui": {
+    "dataView": {
+      "noun": {
+        "holdings_one": "holding",
+        "holdings_other": "holdings",
+        "holdings_counted_one": "{{count}} holding",
+        "holdings_counted_other": "{{count}} holdings",
+        "payments_one": "payment",
+        "payments_other": "payments",
+        "payments_counted_one": "{{count}} payment",
+        "payments_counted_other": "{{count}} payments",
+        "vendors_one": "vendor",
+        "vendors_other": "vendors",
+        "vendors_counted_one": "{{count}} vendor",
+        "vendors_counted_other": "{{count}} vendors",
+        "accounts_one": "account",
+        "accounts_other": "accounts",
+        "accounts_counted_one": "{{count}} account",
+        "accounts_counted_other": "{{count}} accounts",
+        "institutions_one": "institution",
+        "institutions_other": "institutions",
+        "institutions_counted_one": "{{count}} institution",
+        "institutions_counted_other": "{{count}} institutions",
+        "groups_one": "group",
+        "groups_other": "groups",
+        "groups_counted_one": "{{count}} group",
+        "groups_counted_other": "{{count}} groups",
+        "vaults_one": "vault",
+        "vaults_other": "vaults",
+        "vaults_counted_one": "{{count}} vault",
+        "vaults_counted_other": "{{count}} vaults",
+        "jobs_one": "job",
+        "jobs_other": "jobs",
+        "jobs_counted_one": "{{count}} job",
+        "jobs_counted_other": "{{count}} jobs",
+        "files_one": "file",
+        "files_other": "files",
+        "files_counted_one": "{{count}} file",
+        "files_counted_other": "{{count}} files",
+        "integrations_one": "integration",
+        "integrations_other": "integrations",
+        "integrations_counted_one": "{{count}} integration",
+        "integrations_counted_other": "{{count}} integrations",
+        "reviewItems_one": "item",
+        "reviewItems_other": "items",
+        "reviewItems_counted_one": "{{count}} item",
+        "reviewItems_counted_other": "{{count}} items",
+        "transfers_one": "transfer",
+        "transfers_other": "transfers",
+        "transfers_counted_one": "{{count}} transfer",
+        "transfers_counted_other": "{{count}} transfers",
+        "hiddenHoldings_one": "hidden holding",
+        "hiddenHoldings_other": "hidden holdings",
+        "hiddenHoldings_counted_one": "{{count}} hidden holding",
+        "hiddenHoldings_counted_other": "{{count}} hidden holdings",
+        "customTokens_one": "custom token",
+        "customTokens_other": "custom tokens",
+        "customTokens_counted_one": "{{count}} custom token",
+        "customTokens_counted_other": "{{count}} custom tokens"
+      },
+      "accounts": {
+        "col": {
+          "account": "Account",
+          "holdings": "Holdings",
+          "institution": "Institution",
+          "lastSynced": "Last synced",
+          "type": "Type",
+          "value": "Value"
+        },
+        "config": {
+          "search": "Search"
+        },
+        "empty": {
+          "anAccountIsCreatedForYou": "An account is created for you when you connect an integration or import a statement.",
+          "noAccountsYet": "No accounts yet"
+        },
+        "filter": {
+          "contents": "Contents",
+          "group": "Group",
+          "institution": "Institution",
+          "type": "Type"
+        },
+        "group": {
+          "institution": "Institution",
+          "type": "Type"
+        },
+        "sort": {
+          "holdings": "Holdings",
+          "name": "Name",
+          "value": "Value"
+        },
+        "option": {
+          "holdsSomething": "Holds something",
+          "empty": "Empty"
+        }
+      },
+      "answeredTransfers": {
+        "col": {
+          "answer": "Answer",
+          "answered": "Answered",
+          "from": "From",
+          "left": "Left",
+          "when": "When"
+        },
+        "config": {
+          "searchAnsweredTransfers": "Search answered transfers"
+        },
+        "empty": {
+          "answersYouGiveInTheTransfer": "Answers you give in the transfer queue land here, so you can come back and change one.",
+          "noTransfersAnsweredYet": "No transfers answered yet"
+        },
+        "filter": {
+          "answered": "Answered"
+        },
+        "sort": {
+          "answered": "Answered",
+          "asset": "Asset",
+          "when": "When"
+        }
+      },
+      "customTokens": {
+        "col": {
+          "price": "Price",
+          "priceUpdated": "Price updated",
+          "token": "Token",
+          "type": "Type"
+        },
+        "config": {
+          "searchCustomTokens": "Search custom tokens"
+        },
+        "empty": {
+          "createOneForAnAssetNo": "Create one for an asset no pricing provider tracks — private company shares, a physical holding. The token and its price are shared with every Scani user.",
+          "noCustomTokensYet": "No custom tokens yet"
+        },
+        "filter": {
+          "type": "Type"
+        },
+        "group": {
+          "type": "Type"
+        },
+        "sort": {
+          "priceUpdated": "Price updated",
+          "symbol": "Symbol"
+        }
+      },
+      "files": {
+        "col": {
+          "invoices": "Invoices",
+          "kind": "Kind",
+          "name": "Name",
+          "size": "Size",
+          "uploaded": "Uploaded"
+        },
+        "config": {
+          "searchFiles": "Search files"
+        },
+        "empty": {
+          "invoicesScreenshotsAndStatementFilesYou": "Invoices, screenshots and statement files you upload are kept here, with whatever was read out of them.",
+          "noFilesYet": "No files yet"
+        },
+        "filter": {
+          "invoices": "Invoices",
+          "kind": "Kind"
+        },
+        "group": {
+          "invoices": "Invoices",
+          "kind": "Kind"
+        },
+        "sort": {
+          "kind": "Kind",
+          "name": "Name",
+          "size": "Size",
+          "uploaded": "Uploaded"
+        }
+      },
+      "groups": {
+        "col": {
+          "accounts": "Accounts",
+          "group": "Group",
+          "holdings": "Holdings",
+          "value": "Value"
+        },
+        "config": {
+          "searchGroups": "Search groups",
+          "value": "Value"
+        },
+        "empty": {
+          "aGroupIsYourOwnLabel": "A group is your own label across holdings and accounts — \"retirement\", \"taxable\", \"the joint one\".",
+          "noGroupsYet": "No groups yet"
+        },
+        "filter": {
+          "members": "Members"
+        },
+        "sort": {
+          "accounts": "Accounts",
+          "holdings": "Holdings",
+          "name": "Name",
+          "value": "Value"
+        },
+        "option": {
+          "hasMembers": "Has members",
+          "empty": "Empty"
+        }
+      },
+      "hiddenHoldings": {
+        "col": {
+          "account": "Account",
+          "balance": "Balance",
+          "reason": "Reason",
+          "token": "Token"
+        },
+        "config": {
+          "searchHidden": "Search hidden"
+        },
+        "empty": {
+          "everythingYouOwnIsCountedOnYourDashboard": "Everything you own is counted on your dashboard.",
+          "nothingIsHidden": "Nothing is hidden"
+        },
+        "filter": {
+          "reason": "Reason"
+        },
+        "group": {
+          "institution": "Institution"
+        },
+        "sort": {
+          "balance": "Balance",
+          "symbol": "Symbol"
+        },
+        "option": {
+          "hiddenByYou": "Hidden by you",
+          "likelyScam": "Likely scam"
+        }
+      },
+      "holdings": {
+        "col": {
+          "account": "Account",
+          "amount": "Amount",
+          "gainLoss": "Gain / loss",
+          "holding": "Holding",
+          "institution": "Institution",
+          "price": "Price",
+          "value": "Value"
+        },
+        "config": {
+          "searchHoldings": "Search holdings"
+        },
+        "empty": {
+          "description": "Connect an exchange, import a statement or add a position by hand — all three land here.",
+          "title": "No holdings yet"
+        },
+        "filter": {
+          "account": "Account",
+          "group": "Group",
+          "institution": "Institution",
+          "type": "Type",
+          "quality": "Data quality"
+        },
+        "groupBy": {
+          "account": "Account",
+          "institution": "Institution",
+          "type": "Type"
+        },
+        "sort": {
+          "amount": "Amount",
+          "pnl": "Gain / loss",
+          "price": "Price",
+          "symbol": "Symbol",
+          "value": "Value"
+        },
+        "qualityOption": {
+          "duplicateSymbol": "Symbol held under more than one token row",
+          "lookalike": "Symbol imitates another",
+          "zeroBalance": "Zero balance",
+          "noRecentPrice": "No recent price",
+          "noPriceSource": "No price source we can use",
+          "negativeOpening": "Negative opening balance",
+          "noCoverage": "No coverage row"
+        }
+      },
+      "institutions": {
+        "col": {
+          "accounts": "Accounts",
+          "institution": "Institution",
+          "type": "Type",
+          "value": "Value"
+        },
+        "config": {
+          "searchInstitutions": "Search institutions"
+        },
+        "empty": {
+          "anInstitutionAppearsHereTheFirst": "An institution appears here the first time an import or an integration brings an account in from it.",
+          "noInstitutionsYet": "No institutions yet"
+        },
+        "filter": {
+          "type": "Type"
+        },
+        "group": {
+          "type": "Type"
+        },
+        "sort": {
+          "accounts": "Accounts",
+          "name": "Name",
+          "value": "Value"
+        }
+      },
+      "integrations": {
+        "col": {
+          "kind": "Kind",
+          "service": "Service",
+          "whatItSyncs": "What it syncs"
+        },
+        "config": {
+          "search": "Search"
+        },
+        "empty": {
+          "noServicesToConnect": "No services to connect",
+          "scaniShipsItsIntegrationsWithThe": "Scani ships its integrations with the app, so an empty list means the catalogue failed to load rather than that there are none to have."
+        },
+        "filter": {
+          "kind": "Kind"
+        },
+        "group": {
+          "kind": "Kind"
+        },
+        "sort": {
+          "name": "Name"
+        }
+      },
+      "jobs": {
+        "col": {
+          "detail": "Detail",
+          "job": "Job",
+          "started": "Started",
+          "status": "Status"
+        },
+        "config": {
+          "searchJobs": "Search jobs"
+        },
+        "empty": {
+          "importsParsesAndPriceRefreshesRun": "Imports, parses and price refreshes run in the background and report here while they work.",
+          "noBackgroundJobsYet": "No background jobs yet"
+        },
+        "filter": {
+          "status": "Status"
+        },
+        "group": {
+          "status": "Status"
+        },
+        "sort": {
+          "started": "Started",
+          "status": "Status"
+        }
+      },
+      "keys": {
+        "col": {},
+        "empty": {},
+        "filter": {},
+        "group": {},
+        "sort": {}
+      },
+      "kitchenSink": {
+        "col": {
+          "24h": "24h",
+          "holding": "Holding",
+          "institution": "Institution",
+          "price": "Price",
+          "units": "Units",
+          "value": "Value"
+        },
+        "config": {
+          "searchHoldings": "Search holdings"
+        },
+        "empty": {
+          "connectAnExchangeOrImportAStatementAndYourPositionsAppearHere": "Connect an exchange or import a statement and your positions appear here.",
+          "noHoldingsYet": "No holdings yet"
+        },
+        "filter": {
+          "institution": "Institution",
+          "type": "Type"
+        },
+        "group": {
+          "institution": "Institution",
+          "type": "Type"
+        },
+        "sort": {
+          "change": "Change",
+          "name": "Name",
+          "value": "Value"
+        }
+      },
+      "payments": {
+        "col": {
+          "amount": "Amount",
+          "cadence": "Cadence",
+          "direction": "Direction",
+          "status": "Status",
+          "vendor": "Vendor"
+        },
+        "config": {
+          "searchByVendor": "Search by vendor"
+        },
+        "empty": {
+          "addABillOrRecurringIncomeAndScaniTracksEveryDateItFallsDue": "Add a bill or recurring income and Scani tracks every date it falls due.",
+          "noRecurringPaymentsYet": "No recurring payments yet"
+        },
+        "filter": {
+          "direction": "Direction",
+          "status": "Status",
+          "vendor": "Vendor"
+        },
+        "group": {
+          "direction": "Direction",
+          "status": "Status"
+        },
+        "sort": {
+          "amount": "Amount",
+          "status": "Status",
+          "vendor": "Vendor"
+        },
+        "option": {
+          "active": "Active",
+          "paused": "Paused",
+          "ended": "Ended",
+          "bill": "Bill",
+          "income": "Income"
+        }
+      },
+      "review": {
+        "col": {
+          "amount": "Amount",
+          "arrived": "Arrived",
+          "detail": "Detail",
+          "item": "Item"
+        },
+        "config": {
+          "searchReview": "Search review"
+        },
+        "empty": {
+          "importsLandHereWhenTheyFinish": "Imports land here when they finish and want a confirmation before their holdings count.",
+          "nothingNeedsYourReview": "Nothing needs your review"
+        },
+        "filter": {
+          "type": "Type"
+        },
+        "group": {
+          "type": "Type"
+        },
+        "sort": {
+          "arrived": "Arrived",
+          "item": "Item"
+        }
+      },
+      "transferReview": {
+        "col": {
+          "from": "From",
+          "ifItWasASale": "If it was a sale",
+          "left": "Left",
+          "when": "When",
+          "whyItIsHere": "Why it is here"
+        },
+        "config": {
+          "searchTransfers": "Search transfers"
+        },
+        "empty": {
+          "everyTransferIsAccountedFor": "Every transfer is accounted for",
+          "moneyMovingBetweenYourOwnAccounts": "Money moving between your own accounts is matched up automatically. Anything the matcher cannot settle on its own lands here for you to answer."
+        },
+        "sort": {
+          "asset": "Asset",
+          "value": "Value",
+          "when": "When"
+        }
+      },
+      "usage": {
+        "empty": {}
+      },
+      "vaults": {
+        "col": {
+          "progress": "Progress",
+          "saved": "Saved",
+          "target": "Target",
+          "vault": "Vault"
+        },
+        "config": {
+          "searchVaults": "Search vaults"
+        },
+        "empty": {
+          "aVaultIsASavingsGoal": "A vault is a savings goal: name it, set a target, and attach the holdings that count toward it.",
+          "noVaultsYet": "No vaults yet"
+        },
+        "filter": {
+          "status": "Status"
+        },
+        "sort": {
+          "name": "Name",
+          "progress": "Progress",
+          "saved": "Saved",
+          "target": "Target"
+        },
+        "option": {
+          "stillSaving": "Still saving",
+          "targetReached": "Target reached"
+        }
+      },
+      "vendors": {
+        "col": {
+          "category": "Category",
+          "kind": "Kind",
+          "payments": "Payments",
+          "vendor": "Vendor",
+          "perMonth": "Per month"
+        },
+        "config": {
+          "searchVendors": "Search vendors"
+        },
+        "empty": {
+          "aVendorIsCreatedForYou": "A vendor is created for you the first time you point a payment at one. You can also add one here.",
+          "noVendorsYet": "No vendors yet"
+        },
+        "group": {
+          "billsIncome": "Bills / income",
+          "category": "Category"
+        },
+        "sort": {
+          "name": "Name",
+          "payments": "Payments"
+        }
+      },
+      "upcoming": {
+        "empty": {
+          "nothingDue_one": "Nothing due in the next {{count}} day",
+          "nothingDue_other": "Nothing due in the next {{count}} days",
+          "noPayments": "No recurring payments yet",
+          "outsideWindow": "Your standing payments fall due outside this window.",
+          "addOne": "Add a bill or recurring income and its next dates show up here."
+        }
+      }
+    }
+  },
+  "offline": {
+    "title": "Can’t reach Scani",
+    "subtitleOnline": "Your device is online, but Scani’s server didn’t answer.",
+    "subtitleOffline": "This device has no connection right now.",
+    "bodySignedIn": "You’re still signed in as {{email}}. Nothing has been logged out — we just can’t load your data until the server answers.",
+    "bodyUnknown": "We can’t load anything until the server answers.",
+    "reassurance": "This retries on its own as soon as the connection is back.",
+    "retry": "Try again",
+    "retrying": "Trying again…",
+    "signInDifferent": "Sign in with a different email",
+    "connectionIssue": "Connection issue",
+    "connectionIssueRetrying": "Connection issue — retrying"
   }
 }

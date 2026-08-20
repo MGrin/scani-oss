@@ -37,7 +37,9 @@
         "tests/**/*.spec.ts",
         "fixtures/**/*.ts",
         "playwright.shots.config.ts",
-        "capture/**/*.spec.ts"
+        "capture/**/*.spec.ts",
+        "playwright.visual.config.ts",
+        "visual/**/*.spec.ts"
       ],
       "project": ["**/*.ts"]
     },
@@ -97,7 +99,10 @@
     }
   },
   "ignore": ["**/*.test.ts"],
-  "ignoreUnresolved": ["./packages/business/domain/test-preload.ts"],
+  "ignoreUnresolved": [
+    "./packages/business/domain/test-preload.ts",
+    "./apps/frontend/app/tests/i18n-preload.ts"
+  ],
   "rules": {
     "exports": "off",
     "types": "off",

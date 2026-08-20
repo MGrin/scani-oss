@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { resolve } from 'node:path';
 import { v3Sources } from './helpers/v3-sources';
 
 /**
@@ -22,7 +23,14 @@ interface Hit {
  * naming the class it removed. */
 function isComment(line: string): boolean {
   const trimmed = line.trimStart();
-  return trimmed.startsWith('*') || trimmed.startsWith('//') || trimmed.startsWith('/*');
+  return (
+    trimmed.startsWith('*') ||
+    trimmed.startsWith('//') ||
+    trimmed.startsWith('/*') ||
+    // A JSX comment, which is the only kind available in child position — and
+    // therefore the only kind a fix inside a rendered tree can leave behind.
+    trimmed.startsWith('{/*')
+  );
 }
 
 /** Both v3 roots — the app's and `@scani/ui`'s. A class name that stopped
@@ -150,5 +158,66 @@ describe('v3 token hygiene', () => {
       }),
     ];
     expect(format(hits)).toEqual([]);
+  });
+
+  /**
+   * A colour utility naming a token the preset does not define.
+   *
+   * This is the same failure the file opens with — it type-checks, it lints, it
+   * renders, and it is only *invisible* — but it is the one shape the scans
+   * above could not have caught, because there is nothing wrong with the class
+   * except that no rule exists for it. Tailwind emits nothing for an unknown
+   * colour and says nothing about it.
+   *
+   * Found while writing v3's review card (SC-320 slice 5): `warning` reads like
+   * a design-system token and is not one. Three shipped v3 surfaces used it,
+   * and `border-warning/40 bg-warning/10` on the own-wallet notice meant that
+   * callout drew neither a border nor a fill — a box designed to stand out,
+   * rendering as bare text.
+   *
+   * The list of names is derived from the preset rather than written here, so
+   * adding a real `warning` token to `tailwind-preset.js` silences this on its
+   * own instead of leaving a stale ban behind.
+   */
+  const SEMANTIC_COLOUR_NAMES = [
+    'warning',
+    'success',
+    'info',
+    'danger',
+    'error',
+    'positive',
+    'negative',
+    'caution',
+  ];
+  const COLOUR_PREFIXES =
+    'text|bg|border|ring|fill|stroke|from|to|via|divide|outline|shadow|decoration|caret|placeholder';
+
+  async function definedColours(): Promise<Set<string>> {
+    const preset = await Bun.file(
+      resolve(import.meta.dir, '../../../../../packages/frontend/ui/tailwind-preset.js')
+    ).text();
+    const colours = preset.slice(preset.indexOf('colors: {'));
+    return new Set(
+      [...colours.matchAll(/^\s{8}'?([a-z][a-z0-9-]*)'?:/gm)].map((m) => m[1] as string)
+    );
+  }
+
+  test('every semantic colour utility names a token the preset defines', async () => {
+    const defined = await definedColours();
+    // The scan itself has to be able to see the preset, or an empty set would
+    // make this pass by declaring every name undefined and then matching none.
+    expect(defined.has('destructive')).toBe(true);
+    expect(defined.has('surface-1')).toBe(true);
+
+    const undefinedNames = SEMANTIC_COLOUR_NAMES.filter((name) => !defined.has(name));
+    expect(undefinedNames.length).toBeGreaterThan(0);
+
+    const pattern = new RegExp(
+      `\\b(?:${COLOUR_PREFIXES})-(?:${undefinedNames.join('|')})(?:\\b|/)`
+    );
+    expect(pattern.test('border-warning/40 bg-warning/10')).toBe(true);
+    expect(pattern.test('border-border bg-surface-hover')).toBe(false);
+
+    expect(format(await scan(pattern))).toEqual([]);
   });
 });

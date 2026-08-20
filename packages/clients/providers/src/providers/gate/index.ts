@@ -14,7 +14,7 @@ import type {
   CredentialValidator,
   TransactionsProvider,
 } from '../../core/capabilities';
-import { ProviderError } from '../../core/errors';
+import { credentialRejection } from '../../core/errors';
 import type {
   DecryptedCredentials,
   HoldingSnapshot,
@@ -107,6 +107,11 @@ export class GateProvider
     'transactions',
     'credential-validator',
   ];
+  // Same five-year substitution as Binance's, declared for the same reason:
+  // a `since`-less run bounds the ledger, trade, deposit and withdrawal walks
+  // at `until - FIVE_YEARS_MS`, so it must not mark coverage complete over an
+  // older account (SC-418, SC-166).
+  readonly transactionHistoryHorizonMs = FIVE_YEARS_MS;
   protected readonly baseUrl = 'https://api.gateio.ws/api/v4';
 
   protected signRequest(req: SignedRequest, creds: ApiKeyCreds): Record<string, string> {
@@ -235,10 +240,7 @@ export class GateProvider
       await this.signedFetch({ method: 'GET', url: '/spot/accounts' }, { apiKey, apiSecret });
       return { valid: true };
     } catch (err) {
-      if (err instanceof ProviderError && err.kind === 'auth-failed') {
-        return { valid: false, message: err.message };
-      }
-      return { valid: false, message: err instanceof Error ? err.message : String(err) };
+      return credentialRejection(err);
     }
   }
 
