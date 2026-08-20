@@ -7,6 +7,11 @@ import type { OutflowRateLimiter } from './outflow/outflow-rate-limiter';
 import { RedisOutflowRateLimiter } from './outflow/redis';
 
 export { credentialBucketKey } from './credential-key';
+export {
+  type InflowDegradedHandler,
+  type InflowDegradedReport,
+  setInflowDegradedHandler,
+} from './inflow/degraded';
 export { InMemoryInflowRateLimiter } from './inflow/in-memory';
 export {
   defaultInflowKey,

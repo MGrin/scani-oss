@@ -1,25 +1,24 @@
-import { expect, test } from '@playwright/test';
 import { signIn } from '../../fixtures/auth';
 import { mailpit } from '../../fixtures/mailpit';
-import { resetAuthRateLimit } from '../../fixtures/redis';
+import { expect, isolatedContextOptions, test } from '../../fixtures/test';
 
 const API_BASE_URL = process.env.API_BASE_URL ?? 'http://localhost:3011';
 
 test.describe('sessions: list + revoke', () => {
-  test.beforeEach(async () => {
-    await resetAuthRateLimit();
-  });
-
   test('user can list two sessions and revoke one from another context', async ({
     browser,
   }, testInfo) => {
+    // Two contexts built by hand, so each needs its rate-limit identity passed
+    // in — the `context` fixture's options do not reach them (SC-489). They get
+    // different ones: this test is two devices, and the api counts auth
+    // attempts per device.
     // Context A: sign in as user X
-    const contextA = await browser.newContext();
+    const contextA = await browser.newContext(isolatedContextOptions(testInfo, 'session-a'));
     const pageA = await contextA.newPage();
     const { email } = await signIn({ page: pageA, testInfo });
 
     // Context B: sign in as SAME user X (fresh browser context = fresh cookies)
-    const contextB = await browser.newContext();
+    const contextB = await browser.newContext(isolatedContextOptions(testInfo, 'session-b'));
     const pageB = await contextB.newPage();
     const sendRes = await pageB.request.post(
       `${API_BASE_URL}/api/auth/email-otp/send-verification-otp`,

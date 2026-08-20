@@ -1,4 +1,4 @@
-import { type BrowserContext, expect, type Page, test } from '@playwright/test';
+import type { BrowserContext, Page } from '@playwright/test';
 import {
   type A11yFinding,
   formatFindings,
@@ -8,7 +8,7 @@ import {
 } from '../../fixtures/a11y';
 import { signIn } from '../../fixtures/auth';
 import { type ViewportName, viewportDescriptor } from '../../fixtures/devices';
-import { resetAuthRateLimit } from '../../fixtures/redis';
+import { expect, isolatedContextOptions, test } from '../../fixtures/test';
 import { createAccount, createHolding } from '../../fixtures/ui';
 import { V3_A11Y_ROUTES } from '../../fixtures/v3-routes';
 
@@ -26,9 +26,10 @@ import { V3_A11Y_ROUTES } from '../../fixtures/v3-routes';
  * one pass already has.
  *
  * One signed-in context serves the file rather than the per-test `page`
- * fixture, because the API rate-limits sign-ins to 6 per IP per hour and a
- * context per test would lock the suite out inside one run across two
- * projects. `mode: serial` follows from that shared state.
+ * fixture, because signing in twice would pay the OTP round-trip twice for a
+ * walk that is already the longest thing in the suite. `mode: serial` follows
+ * from that shared state. (It used to be about the 6-per-IP-per-hour sign-in
+ * cap; each sign-in has carried a client identity of its own since SC-489.)
  */
 test.describe.configure({ mode: 'serial' });
 
@@ -114,13 +115,18 @@ test.beforeAll(async ({ browser }, testInfo) => {
   // one sign-in serves the whole file (see the note above), which means the
   // device descriptor and the base URL have to be reapplied here. Same env
   // var and default as `playwright.config.ts`.
-  context = await browser.newContext({ ...descriptor, baseURL: BASE_URL });
+  // `isolatedContextOptions` gives this file a rate-limit identity of its own:
+  // the walk is seventeen routes of API traffic and the `context` fixture's
+  // options do not reach a context the test built itself, so without it every
+  // request here lands in the identity every other spec shares (SC-489). It
+  // must come after `...descriptor`, which carries the device's own
+  // User-Agent — the identity is appended to that.
+  context = await browser.newContext({
+    ...descriptor,
+    baseURL: BASE_URL,
+    ...isolatedContextOptions(testInfo, 'a11y'),
+  });
   page = await context.newPage();
-  // The per-IP cap is 6 sign-ins an hour and this file spends one per
-  // project. That is well inside the budget on its own — but a retried run,
-  // or a run that follows the rest of the suite, is not, and a gate that
-  // fails on the limiter says nothing about accessibility.
-  await resetAuthRateLimit();
   await signIn({ page, label: `a11y-${testInfo.project.name}` });
   await seed(page);
   // Pay the Vite compile once, here, where the budget is explicit — rather
