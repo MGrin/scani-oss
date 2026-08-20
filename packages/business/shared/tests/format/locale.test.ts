@@ -60,9 +60,16 @@ describe('resolveFormatLocale', () => {
   test('English text with European dates is one tag, and it renders', () => {
     // The mixed-preference reader this setting exists for: the interface
     // stays English, the dates stop being American.
+    //
+    // Matched rather than pinned, because the day separator is CLDR data and
+    // not a property of this code: `en-DE` medium renders `16. Jul 2026` on
+    // macOS ICU and `16 Jul 2026` on the Linux ICU that CI runs. Pinning
+    // either one makes the suite pass on one platform and fail on the other.
+    // What the test is actually about — the day leads the month — holds in
+    // both, and `Jul 16` would still fail.
     const locale = resolveFormatLocale('en', 'DE');
-    expect(REFERENCE.toLocaleDateString(locale.dateLocale, { dateStyle: 'medium' })).toBe(
-      '16. Jul 2026'
+    expect(REFERENCE.toLocaleDateString(locale.dateLocale, { dateStyle: 'medium' })).toMatch(
+      /^16\.? Jul 2026$/
     );
     expect((1234567.5).toLocaleString(locale.numberLocale)).toBe('1.234.567,5');
   });
@@ -154,7 +161,8 @@ describe('setFormatLocale', () => {
     // `formatCurrency(x, 'USD')` are unchanged at all 44 v3 call sites and
     // they now render the reader's locale.
     setFormatLocale('en', 'DE');
-    expect(formatDate(REFERENCE)).toBe('16. Jul 2026');
+    // Matched, not pinned — see the note on the `en-DE` case above.
+    expect(formatDate(REFERENCE)).toMatch(/^16\.? Jul 2026$/);
     expect(formatNumber(1234.5)).toBe('1.234,5');
 
     setFormatLocale('fr');
