@@ -30,6 +30,11 @@
 #   DRY_RUN=1 scripts/publish-images-local.sh 0.13.0   # print the plan, touch nothing
 #   PUSH=0 scripts/publish-images-local.sh 0.13.0      # build both arches, push nothing
 #
+# This script refuses to run outside a MGrin/scani-oss checkout. The build
+# context is its own parent directory and the file exists in the private repo
+# too, so the copy you invoke is the source that gets published — see the
+# build-context guard below. `DRY_RUN=1` still prints the plan from anywhere.
+#
 # Credentials: `docker login` must already hold a Docker Hub token with
 # write on the `scani/*` repos (the same DOCKERHUB_TOKEN the workflow uses).
 # This script never reads a secret file and never logs one.
@@ -49,9 +54,21 @@ BUILDER="scani-publish"
 DRY_RUN="${DRY_RUN:-0}"
 PUSH="${PUSH:-1}"
 
+# The repository these images come from, named once. The build-context guard
+# below and the `org.opencontainers.image.source` label stamped on every image
+# make the same claim, so they read the same constant rather than agreeing by
+# hand.
+SOURCE_REPO="MGrin/scani-oss"
+SOURCE_REPO_URL="https://github.com/${SOURCE_REPO}"
+
+# A file the private repo carries and the public one never will. See the
+# build-context guard below.
+PRIVATE_MARKER=".private-repo"
+
 log()  { printf '\033[36m▸\033[0m %s\n' "$*"; }
 ok()   { printf '\033[32m✓\033[0m %s\n' "$*"; }
 die()  { printf '\033[31m✗\033[0m %s\n' "$*" >&2; exit 1; }
+warn() { printf '\033[33m!\033[0m %s\n' "$*" >&2; }
 
 dockerfile_for() {
   case "$1" in
@@ -85,6 +102,106 @@ IMAGES=("$@")
 for image in "${IMAGES[@]}"; do
   dockerfile_for "$image" >/dev/null || die "unknown image '$image'. Known: ${ALL_IMAGES[*]}"
 done
+
+
+# ── the build-context guard ───────────────────────────────────────────────
+#
+# The build context is this file's own parent directory (`REPO_ROOT` above),
+# and this file exists in BOTH MGrin/scani (private) and MGrin/scani-oss
+# (public). Run the private copy and it builds `scani/*` from private source
+# and pushes it to a public registry under the org account: the images build,
+# the manifests push, `:latest` moves, every self-hoster pulls private code,
+# and nothing in the output looks wrong. Once an image is on someone else's
+# disk it cannot be unpublished. This is the one failure the repo split exists
+# to prevent, and the only one with no undo (SC-478).
+#
+# It came within one judgement call of happening on 2026-08-20. A worker
+# recommended publishing from the private branch and its reasoning was careful
+# and evidence-backed: it had verified that tree byte-identical to post-merge
+# OSS main, and at the moment it checked, it was. The claim went stale within
+# hours when another PR merged privately. What stopped it was one reader
+# overriding one report — which is a judgement, not a control. This is the
+# control.
+#
+# Two independent checks, because there is no undo:
+#
+#   1. `origin` must be $SOURCE_REPO. A remote is the soundest cheap identity
+#      for a checkout: paths get copied and branches get renamed, but `origin`
+#      is what the tree actually pushes to. It must be `origin` SPECIFICALLY —
+#      the private repo carries $SOURCE_REPO as `upstream`, so "some remote is
+#      scani-oss" is true in both trees and would wave the private one through.
+#   2. No $PRIVATE_MARKER in the build context. This catches what the remote
+#      check cannot: a tree whose `origin` is right but which has had private
+#      files copied into it, or a private clone whose remotes were renamed.
+#
+# Both fail CLOSED — an unidentifiable context is refused, not assumed public.
+#
+# DRY_RUN=1 downgrades a refusal to a warning, so the plan can still be printed
+# from anywhere: printing a plan builds nothing, tags nothing and pushes
+# nothing.
+
+# `https://github.com/MGrin/scani-oss.git`, `git@github.com:MGrin/scani-oss.git`
+# and `ssh://git@github.com/MGrin/scani-oss` are the same repository. Reduce any
+# of them to `mgrin/scani-oss` rather than comparing whole URLs, so a checkout
+# cloned over ssh is not refused for a reason that has nothing to do with which
+# repository it is.
+remote_slug() {
+  local url="${1%/}"
+  url="${url%.git}"
+  url="$(printf '%s' "$url" | tr ':' '/' | tr '[:upper:]' '[:lower:]')"
+  local repo="${url##*/}"
+  local rest="${url%/*}"
+  printf '%s/%s' "${rest##*/}" "$repo"
+}
+
+# Prints one block per reason to refuse, and nothing at all when the context is
+# the public repo. Each block states what was required and what was found: this
+# fires at the moment somebody is trying to ship, and the message is the whole
+# value.
+build_context_refusals() {
+  local origin=''
+
+  if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    printf '%s\n' \
+      "the build context is not a git checkout, so it cannot be identified" \
+      "  required  a checkout of ${SOURCE_REPO}" \
+      "  found     ${REPO_ROOT} — no git repository"
+  elif ! origin="$(git remote get-url origin 2>/dev/null)" || [ -z "$origin" ]; then
+    printf '%s\n' \
+      "the build context has no 'origin' remote, so it cannot be identified" \
+      "  required  origin = ${SOURCE_REPO_URL}" \
+      "  found     ${REPO_ROOT} — no 'origin' remote"
+  elif [ "$(remote_slug "$origin")" != "$(remote_slug "$SOURCE_REPO_URL")" ]; then
+    printf '%s\n' \
+      "the build context is not ${SOURCE_REPO}" \
+      "  required  origin = ${SOURCE_REPO_URL}" \
+      "  found     origin = ${origin}" \
+      "  note      'origin' and not any remote: the private repo carries ${SOURCE_REPO} as 'upstream'"
+  fi
+
+  if [ -e "${REPO_ROOT}/${PRIVATE_MARKER}" ]; then
+    printf '%s\n' \
+      "the build context carries the private-repo marker '${PRIVATE_MARKER}'" \
+      "  required  no '${PRIVATE_MARKER}' in the build context" \
+      "  found     ${REPO_ROOT}/${PRIVATE_MARKER}"
+  fi
+}
+
+REFUSALS="$(build_context_refusals)"
+if [ -n "$REFUSALS" ]; then
+  if [ "$DRY_RUN" = "1" ]; then
+    warn "the build-context guard would REFUSE this run (DRY_RUN=1 — printing the plan anyway):"
+    while IFS= read -r line; do warn "  $line"; done <<< "$REFUSALS"
+    warn ""
+  else
+    printf '\033[31m✗\033[0m %s\n' "refusing to publish: the build context is not ${SOURCE_REPO}." >&2
+    while IFS= read -r line; do printf '  %s\n' "$line" >&2; done <<< "$REFUSALS"
+    printf '\n  %s\n' "Run the script from the ${SOURCE_REPO} checkout. The build context is this" >&2
+    printf '  %s\n' "file's own parent directory, so the copy you invoke IS the source published." >&2
+    printf '  %s\n\n' "DRY_RUN=1 prints the plan from anywhere." >&2
+    exit 1
+  fi
+fi
 
 # The build takes the working tree as its context, so publishing from a dirty
 # or behind-main tree ships something no commit describes. Refuse rather than
@@ -161,7 +278,7 @@ for image in "${IMAGES[@]}"; do
     "${build_args[@]}" \
     --label "org.opencontainers.image.revision=${GIT_SHA}" \
     --label "org.opencontainers.image.version=${VERSION}" \
-    --label "org.opencontainers.image.source=https://github.com/MGrin/scani-oss" \
+    --label "org.opencontainers.image.source=${SOURCE_REPO_URL}" \
     --provenance=false \
     "$output_arg" \
     . </dev/null
