@@ -63,6 +63,17 @@ interface ToncenterTransactionsResponse {
   result?: ToncenterTx[];
 }
 
+/**
+ * Structural TON address check. Pure and offline; the chain-stub
+ * provider reuses it so a stubbed boot answers address shape exactly
+ * as the live one does.
+ */
+export function isTonAddress(address: string): boolean {
+  if (/^[EUk0]Q[A-Za-z0-9_-]{46}$/.test(address)) return true;
+  if (/^-?[0-9]:[a-fA-F0-9]{64}$/.test(address)) return true;
+  return false;
+}
+
 export class TonProvider
   implements BalanceProvider, TransactionsProvider, AddressValidatorProvider
 {
@@ -96,9 +107,7 @@ export class TonProvider
   }
 
   isValidAddress(address: string, _institutionCode?: string): boolean {
-    if (/^[EUk0]Q[A-Za-z0-9_-]{46}$/.test(address)) return true;
-    if (/^-?[0-9]:[a-fA-F0-9]{64}$/.test(address)) return true;
-    return false;
+    return isTonAddress(address);
   }
 
   /**
@@ -112,22 +121,18 @@ export class TonProvider
     _ctx: ProviderContext
   ): Promise<boolean> {
     if (!this.isValidAddress(address)) return false;
-    try {
-      const url = `${this.apiUrl}/getAddressInformation?address=${encodeURIComponent(address)}`;
-      const response = await this.limiter.execute(async () =>
-        fetchWithTimeout(url, this.requestInit())
-      );
-      if (!response.ok) return false;
-      const data = (await response.json()) as { ok?: boolean; result?: { state?: string } };
-      if (!data.ok || !data.result) return false;
-      return data.result.state !== undefined && data.result.state !== 'uninit';
-    } catch (err) {
-      this.logger.debug(
-        { address: `${address.substring(0, 10)}...`, error: err },
-        'TON hasActivity probe failed; treating as no activity'
-      );
-      return false;
+    const url = `${this.apiUrl}/getAddressInformation?address=${encodeURIComponent(address)}`;
+    const response = await this.limiter.execute(async () =>
+      fetchWithTimeout(url, this.requestInit())
+    );
+    if (!response.ok) {
+      throw new Error(`toncenter: HTTP ${response.status} for getAddressInformation`);
     }
+    const data = (await response.json()) as { ok?: boolean; result?: { state?: string } };
+    if (!data.ok || !data.result) {
+      throw new Error('toncenter: getAddressInformation returned no result');
+    }
+    return data.result.state !== undefined && data.result.state !== 'uninit';
   }
 
   async fetchBalances(

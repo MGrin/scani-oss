@@ -300,9 +300,19 @@ export interface AddressValidatorProvider extends ProviderBase {
   canValidate(institutionCode: string): boolean;
   /** Cheap syntactic check (regex / checksum). No network. */
   isValidAddress(address: string, institutionCode: string): boolean;
-  /** Lightweight existence probe — one tx call, short page. Used by
-      `detectWalletChains` to decide which chains an address actually
-      lives on. */
+  /**
+   * Lightweight existence probe — one tx call, short page. Used by
+   * `detectWalletChains` to decide which chains an address actually
+   * lives on.
+   *
+   * `false` means the chain answered and reported nothing. A probe that
+   * could not be completed — network error, HTTP 429, an upstream
+   * error body — MUST throw. Returning `false` there makes an upstream
+   * throttle and a wallet with no history the same value, and the caller
+   * has no way to tell them apart afterwards: that is what made a live
+   * blockchain.info 429 read as `chains: [], errors: []` with nothing
+   * logged (SC-490).
+   */
   hasActivity(address: string, institutionCode: string, ctx: ProviderContext): Promise<boolean>;
   /** ENS / NS / domain resolution. Optional — only Etherscan implements. */
   resolveAddressName?(name: string, ctx: ProviderContext): Promise<string | null>;
