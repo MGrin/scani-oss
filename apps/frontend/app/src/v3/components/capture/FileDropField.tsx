@@ -1,6 +1,7 @@
 import { Button } from '@scani/ui/ui/button';
 import { FileUp, Paperclip, X } from 'lucide-react';
 import { type DragEvent, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/utils';
 import { formatFileSize } from '../../lib/capture-forms';
 
@@ -47,6 +48,7 @@ export function FileDropField({
   prompt,
   disabled,
 }: FileDropFieldProps) {
+  const { t } = useTranslation();
   const [problem, setProblem] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
 
@@ -78,7 +80,7 @@ export function FileDropField({
           variant="ghost"
           size="icon"
           className="shrink-0 text-muted-foreground"
-          aria-label={`Remove ${file.name}`}
+          aria-label={t('v3.capture.file.remove', { name: file.name })}
           disabled={disabled}
           onClick={() => {
             setProblem(null);

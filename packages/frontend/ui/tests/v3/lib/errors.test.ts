@@ -1,6 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 import { describeQueryError, type ErrorCopy } from '@scani/ui/v3/lib/errors';
 
+// The KIT's instance, not the global one: `@scani/ui` owns its own i18next
+// (SC-250), and the global default is empty inside this package's tests.
+
 /**
  * §2.5's voice rules, asserted rather than reviewed.
  *

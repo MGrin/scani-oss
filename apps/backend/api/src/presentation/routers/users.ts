@@ -3,7 +3,7 @@ import { USER_DATA_DELETE } from '@scani/jobs';
 import { createComponentLogger } from '@scani/logging';
 import { BullMqEnqueueService } from '@scani/queue';
 import { emitEntityChange } from '@scani/realtime';
-import { UpdateUserDto } from '@scani/shared';
+import { ReportTimezoneDto, UpdateUserDto } from '@scani/shared';
 import { Container } from 'typedi';
 import { z } from 'zod';
 import { requireAuth } from '../middleware/auth';
@@ -45,6 +45,26 @@ export const usersRouter = router({
       });
     }
     return updated;
+  }),
+
+  /**
+   * Record the browser's IANA timezone (SC-226).
+   *
+   * This is the only thing that ever writes `users.timezone`, and the payment
+   * reminder cannot fire for a user whose zone is null — so if this endpoint
+   * stops being called, the feature becomes a no-op that reports success. The
+   * job counts and logs those users on every fire for exactly that reason.
+   *
+   * Not folded into `updateCurrent`: that mutation is a profile edit, and a
+   * page load is not one.
+   */
+  reportTimezone: protectedProcedure.input(ReportTimezoneDto).mutation(async ({ input, ctx }) => {
+    const { dbUser } = await requireAuth(ctx);
+    const result = await Container.get(UserService).reportTimezone(dbUser.id, input.timezone);
+    if (result.changed) {
+      usersLogger.info({ userId: dbUser.id, timezone: input.timezone }, 'Recorded user timezone');
+    }
+    return result;
   }),
 
   // Get supported fiat currencies (tokens) for base currency selection

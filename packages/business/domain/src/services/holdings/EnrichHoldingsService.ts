@@ -67,6 +67,13 @@ export interface EnrichedParsedHolding {
   tokenId?: string;
   holdingId?: string;
   existingBalance?: string;
+  // The name on the holding this line was matched to, when it has one. The
+  ***REMOVED***
+  ***REMOVED***
+  ***REMOVED***
+  // the name does not fix the matching — it gives the human reviewing it
+  // something to catch the mismatch with (SC-330).
+  existingLabel?: string | null;
 }
 
 // Resolves parsed-holding symbols to (tokenId, existing-holdingId) tuples.
@@ -106,7 +113,7 @@ export class EnrichHoldingsService {
     );
 
     let existingHoldings: Array<{
-      holding: { id: string; tokenId: string; balance: string };
+      holding: { id: string; tokenId: string; balance: string; label: string | null };
       token: { id: string; symbol: string; name: string };
     }> = [];
 
@@ -182,6 +189,7 @@ export class EnrichHoldingsService {
             if (holdingIndex < matchingHoldings.length && matchingHoldings[holdingIndex]) {
               enrichedHolding.holdingId = matchingHoldings[holdingIndex].holding.id;
               enrichedHolding.existingBalance = matchingHoldings[holdingIndex].holding.balance;
+              enrichedHolding.existingLabel = matchingHoldings[holdingIndex].holding.label;
             }
           }
         }
@@ -199,6 +207,7 @@ export class EnrichHoldingsService {
               enrichedHolding.tokenId = matchingHolding.token.id;
               enrichedHolding.holdingId = matchingHolding.holding.id;
               enrichedHolding.existingBalance = matchingHolding.holding.balance;
+              enrichedHolding.existingLabel = matchingHolding.holding.label;
             }
           } else {
             for (const [existingSymbol, matchingHoldings] of holdingsBySymbol.entries()) {
@@ -210,6 +219,7 @@ export class EnrichHoldingsService {
                 enrichedHolding.tokenId = matchingHoldings[0].token.id;
                 enrichedHolding.holdingId = matchingHoldings[0].holding.id;
                 enrichedHolding.existingBalance = matchingHoldings[0].holding.balance;
+                enrichedHolding.existingLabel = matchingHoldings[0].holding.label;
                 break;
               }
             }

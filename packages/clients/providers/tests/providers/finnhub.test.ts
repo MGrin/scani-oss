@@ -66,7 +66,7 @@ describe('FinnhubProvider', () => {
         JSON.stringify({ c: 175.5, d: 0, dp: 0, h: 0, l: 0, o: 0, pc: 0, t: 0 }),
         { status: 200 }
       );
-    }) as typeof fetch;
+    }) as unknown as typeof fetch;
     try {
       const quote = await p.fetchCurrentPrice(aapl, { baseCurrency: usdToken });
       expect(quote?.price).toBe('175.5');
@@ -85,7 +85,7 @@ describe('FinnhubProvider', () => {
     globalThis.fetch = (async () =>
       new Response(JSON.stringify({ c: 0, d: 0, dp: 0, h: 0, l: 0, o: 0, pc: 0, t: 0 }), {
         status: 200,
-      })) as typeof fetch;
+      })) as unknown as typeof fetch;
     try {
       const quote = await p.fetchCurrentPrice(aapl, { baseCurrency: usdToken });
       expect(quote).toBeNull();
@@ -148,7 +148,7 @@ describe('FinnhubProvider', () => {
     globalThis.fetch = (async (url: string) => {
       capturedUrl = url;
       return new Response(JSON.stringify(candles), { status: 200 });
-    }) as typeof fetch;
+    }) as unknown as typeof fetch;
     try {
       // Target halfway between bar[2] (t0 + 2d) and bar[3] (t0 + 3d),
       // ever so slightly closer to bar[2] — closest-bar should pick it.
@@ -169,7 +169,7 @@ describe('FinnhubProvider', () => {
     const aapl = makeMockToken({ id: 'aapl', symbol: 'AAPL' });
     const originalFetch = globalThis.fetch;
     globalThis.fetch = (async () =>
-      new Response(JSON.stringify({ s: 'no_data' }), { status: 200 })) as typeof fetch;
+      new Response(JSON.stringify({ s: 'no_data' }), { status: 200 })) as unknown as typeof fetch;
     try {
       const at = new Date('2024-03-05T12:00:00Z');
       const quote = await p.fetchHistoricalPrice(aapl, at, { baseCurrency: usdToken });
@@ -216,7 +216,7 @@ describe('FinnhubProvider', () => {
           ],
         }),
         { status: 200 }
-      )) as typeof fetch;
+      )) as unknown as typeof fetch;
     try {
       const results = await p.searchTokens('TSLA', 2);
       expect(results).toHaveLength(2);
@@ -256,7 +256,7 @@ describe('FinnhubProvider', () => {
         }),
         { status: 200 }
       );
-    }) as typeof fetch;
+    }) as unknown as typeof fetch;
     try {
       const quotes = await p.fetchHistoricalRange(aapl, from, to, { baseCurrency: usdToken });
       // 2022-01-01 → 2024-06-01 spans ~2.4 years; 1-year windows ⇒ 3 calls.

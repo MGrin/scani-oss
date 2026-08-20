@@ -59,7 +59,7 @@ export function V3TabBar({
   return (
     <nav
       ref={navRef}
-      aria-label="Primary"
+      aria-label={t('v3.shell.tabBar.landmark')}
       className="fixed inset-x-0 bottom-0 z-40 flex items-stretch border-t border-border bg-surface-1 lg:hidden"
       style={{
         height: `calc(${BAR_HEIGHT} + env(safe-area-inset-bottom, 0px))`,
@@ -126,11 +126,13 @@ export function V3TabBar({
       <button
         type="button"
         onClick={onMorePress}
+        // One interpolated, pluralised key rather than a sentence assembled
+        // from three fragments (SC-201). The English happened to need only
+        // "needs"/"need"; a language with six plural forms cannot be served by
+        // a ternary, and the concatenation order is not universal either.
         aria-label={
           hasActionRequired
-            ? `${t('nav.more')} — ${actionRequiredCount} ${
-                actionRequiredCount === 1 ? 'item needs' : 'items need'
-              } review`
+            ? t('v3.shell.tabBar.moreWithReview', { count: actionRequiredCount })
             : t('nav.more')
         }
         className={cn(

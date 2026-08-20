@@ -4,11 +4,12 @@ import { PageHeader, PageLayout } from '@scani/ui/v3/components/PageLayout';
 import { mergeQueries } from '@scani/ui/v3/lib/query-state';
 import { Plus } from 'lucide-react';
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { trpc } from '@/lib/trpc';
-import { CreateCustomTokenDialog } from '@/v2/components/tokens/CreateCustomTokenDialog';
-import { EditCustomTokenPriceDialog } from '@/v2/components/tokens/EditCustomTokenPriceDialog';
+import { CreateCustomTokenSheet } from '../components/tokens/CreateCustomTokenSheet';
 import { type CustomTokenRow, CustomTokensList } from '../components/tokens/CustomTokensList';
+import { EditCustomTokenPriceSheet } from '../components/tokens/EditCustomTokenPriceSheet';
 import { HiddenHoldingsList } from '../components/tokens/HiddenHoldingsList';
 import {
   type HiddenHoldingRow,
@@ -32,6 +33,7 @@ import {
  * so moving between the two is instant rather than a fresh skeleton each time.
  */
 export function TokensPage() {
+  const { t } = useTranslation();
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const segment = resolveTokenSegment(pathname);
@@ -45,12 +47,12 @@ export function TokensPage() {
   return (
     <PageLayout measure="wide">
       <PageHeader
-        title="Tokens"
+        title={t('v3.tokens.page.title')}
         action={
           segment === 'custom' ? (
             <Button onClick={() => setCreating(true)}>
               <Plus className="mr-1.5 size-4" aria-hidden="true" />
-              New custom token
+              {t('v3.tokens.page.newCustomToken')}
             </Button>
           ) : undefined
         }
@@ -59,11 +61,11 @@ export function TokensPage() {
       <Segmented
         value={segment}
         onValueChange={(next) => navigate(tokenSegmentPath(next as TokenSegment))}
-        aria-label="Tokens view"
+        aria-label={t('v3.tokens.page.viewLabel')}
       >
         {TOKEN_SEGMENTS.map((entry) => (
           <SegmentedItem key={entry.key} value={entry.key}>
-            {entry.label}
+            {t(entry.labelKey)}
           </SegmentedItem>
         ))}
       </Segmented>
@@ -82,12 +84,12 @@ export function TokensPage() {
         />
       )}
 
-      <CreateCustomTokenDialog open={creating} onOpenChange={setCreating} />
+      <CreateCustomTokenSheet open={creating} onOpenChange={setCreating} />
 
       {/* Mounted only while targeted, so the price form starts from the token it
           was opened for rather than from the last one. */}
       {pricing ? (
-        <EditCustomTokenPriceDialog
+        <EditCustomTokenPriceSheet
           open
           onOpenChange={(open) => {
             if (!open) setPricing(null);

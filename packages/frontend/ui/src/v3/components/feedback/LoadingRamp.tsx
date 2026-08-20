@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { useUiTranslation } from '../../../i18n';
 import type { LoadingPhase } from '../../lib/loading';
 
 /**
@@ -28,11 +29,12 @@ interface LoadingRampProps {
 }
 
 export function LoadingRamp({ phase, skeleton, label, onRetry }: LoadingRampProps) {
+  const { t } = useUiTranslation();
   if (phase === 'idle') return null;
 
   return (
     <div role="status" aria-busy="true" data-v3-loading={phase} className="flex flex-col gap-3">
-      <span className="sr-only">Loading {label}</span>
+      <span className="sr-only">{t('ui.loadingRamp.loading', { label })}</span>
 
       {phase === 'indicator' ? (
         // The 300ms–1s band. A 2px rail rather than a spinner or a partial
@@ -48,16 +50,14 @@ export function LoadingRamp({ phase, skeleton, label, onRetry }: LoadingRampProp
 
       {phase === 'stalled' ? (
         <div className="flex flex-wrap items-center gap-3 px-4">
-          <p className="text-caption text-muted-foreground">
-            Still waiting on the server. Nothing has been changed.
-          </p>
+          <p className="text-caption text-muted-foreground">{t('ui.loadingRamp.stalled')}</p>
           {onRetry ? (
             <button
               type="button"
               onClick={onRetry}
               className="rounded-md border border-border-strong px-2 py-1 text-caption transition-colors duration-fast ease-emphasized hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             >
-              Try again
+              {t('ui.loadingRamp.retry')}
             </button>
           ) : null}
         </div>

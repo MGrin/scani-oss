@@ -37,7 +37,12 @@ import type {
 } from '../../core/capabilities';
 import type { PriceQuote, ProviderContext } from '../../core/types';
 import { fetchWithTimeout } from '../../core/utils/fetch';
-import { resolveCoingeckoId } from './well-known-ids';
+import {
+  contractRefFromMetadata,
+  contradictsDeployments,
+  resolveCoingeckoId,
+  WELL_KNOWN_COINGECKO_IDS,
+} from './well-known-ids';
 
 const COINGECKO_BASE_URL = 'https://api.coingecko.com/api/v3';
 const COINGECKO_PRO_BASE_URL = 'https://pro-api.coingecko.com/api/v3';
@@ -114,6 +119,8 @@ interface CoinListEntry {
   id: string;
   symbol: string;
   name: string;
+  /** Present only because `fetchCoinList` asks for `include_platform=true`. */
+  platforms?: Record<string, string | null>;
 }
 
 /**
@@ -154,9 +161,22 @@ export class CoinGeckoProvider implements HistoricalPriceProvider, TokenIdentity
   // CurrentPriceProvider + HistoricalPriceProvider
   // ============================================================
 
+  /**
+   * The CoinGecko id this token may be priced under — the single place
+   * every pricing entry point asks, so none of them can resolve a
+   * symbol without also weighing the contract address it came with.
+   */
+  private coingeckoIdFor(t: Token): string | null {
+    const metadata = t.providerMetadata as TokenMetadata | null;
+    return resolveCoingeckoId({
+      metadataId: metadata?.coingecko?.id,
+      symbol: t.symbol,
+      contract: contractRefFromMetadata(metadata),
+    });
+  }
+
   canPrice(t: Token): boolean {
-    const metaId = (t.providerMetadata as TokenMetadata | null)?.coingecko?.id;
-    return Boolean(resolveCoingeckoId({ metadataId: metaId, symbol: t.symbol }));
+    return Boolean(this.coingeckoIdFor(t));
   }
 
   async fetchCurrentPrice(t: Token, ctx: ProviderContext): Promise<PriceQuote | null> {
@@ -190,8 +210,7 @@ export class CoinGeckoProvider implements HistoricalPriceProvider, TokenIdentity
     const baseLower = ctx.baseCurrency.symbol.toLowerCase();
     const idMap = new Map<string, Token>();
     for (const t of tokens) {
-      const meta = (t.providerMetadata as TokenMetadata | null)?.coingecko?.id;
-      const id = resolveCoingeckoId({ metadataId: meta, symbol: t.symbol });
+      const id = this.coingeckoIdFor(t);
       if (id) idMap.set(id, t);
     }
     if (idMap.size === 0) return new Map();
@@ -207,8 +226,7 @@ export class CoinGeckoProvider implements HistoricalPriceProvider, TokenIdentity
     if (!primary) return out;
 
     const hasAny = tokens.some((t) => {
-      const meta = (t.providerMetadata as TokenMetadata | null)?.coingecko?.id;
-      const id = resolveCoingeckoId({ metadataId: meta, symbol: t.symbol });
+      const id = this.coingeckoIdFor(t);
       if (!id) return false;
       const v = primary[id]?.[baseLower];
       return typeof v === 'number' && v > 0;
@@ -276,8 +294,7 @@ export class CoinGeckoProvider implements HistoricalPriceProvider, TokenIdentity
     to: Date,
     ctx: ProviderContext
   ): Promise<PriceQuote[]> {
-    const meta = (t.providerMetadata as TokenMetadata | null)?.coingecko?.id;
-    const id = resolveCoingeckoId({ metadataId: meta, symbol: t.symbol });
+    const id = this.coingeckoIdFor(t);
     if (!id) return [];
     if (to.getTime() < from.getTime()) return [];
 
@@ -366,8 +383,7 @@ export class CoinGeckoProvider implements HistoricalPriceProvider, TokenIdentity
   }
 
   async fetchHistoricalPrice(t: Token, at: Date, ctx: ProviderContext): Promise<PriceQuote | null> {
-    const meta = (t.providerMetadata as TokenMetadata | null)?.coingecko?.id;
-    const id = resolveCoingeckoId({ metadataId: meta, symbol: t.symbol });
+    const id = this.coingeckoIdFor(t);
     if (!id) return null;
 
     // CoinGecko's /coins/{id}/history wants DD-MM-YYYY.
@@ -443,9 +459,22 @@ export class CoinGeckoProvider implements HistoricalPriceProvider, TokenIdentity
     // should never go through CoinGecko at all.
     if (FIAT_SYMBOLS.has(symbol)) return null;
 
-    const wellKnown = resolveCoingeckoId({ metadataId: undefined, symbol });
+    // The contract address is the strongest identity signal we were
+    // handed and it is what makes the symbol map safe to use: an id
+    // inferred from `USDT` must not be stamped onto a contract that is
+    // demonstrably not Tether (SC-389).
+    const contract = contractRefFromMetadata(partial.providerMetadata as TokenMetadata | undefined);
+
+    const wellKnown = resolveCoingeckoId({ metadataId: undefined, symbol, contract });
     if (wellKnown) {
       return { coingecko: { id: wellKnown, symbol: symbol.toUpperCase() } };
+    }
+    if (contract && WELL_KNOWN_COINGECKO_IDS[symbol]) {
+      this.logger.debug(
+        { symbol, contract, candidate: WELL_KNOWN_COINGECKO_IDS[symbol] },
+        'CoinGecko well-known id contradicted by contract address; not stamping'
+      );
+      return null;
     }
 
     const list = await this.fetchCoinList();
@@ -465,6 +494,16 @@ export class CoinGeckoProvider implements HistoricalPriceProvider, TokenIdentity
     }
     const match = matches[0];
     if (!match) return null;
+    // Same rule one layer out: `/coins/list?include_platform=true`
+    // carries the match's own deployments, so a single-candidate symbol
+    // match is still refused when its contract says otherwise.
+    if (contract && contradictsDeployments(match.platforms, contract)) {
+      this.logger.debug(
+        { symbol, contract, candidate: match.id },
+        'CoinGecko symbol match contradicted by contract address; not stamping'
+      );
+      return null;
+    }
     return { coingecko: { id: match.id, symbol: match.symbol.toUpperCase() } };
   }
 
@@ -515,7 +554,7 @@ export class CoinGeckoProvider implements HistoricalPriceProvider, TokenIdentity
    */
   private async fetchCoinList(): Promise<CoinListEntry[] | null> {
     if (this.coinListCache) return this.coinListCache;
-    const url = `${this.baseUrl()}/coins/list`;
+    const url = `${this.baseUrl()}/coins/list?include_platform=true`;
     try {
       const response = await this.limiter.execute(async () =>
         fetchWithTimeout(url, { headers: this.headers() })
@@ -586,4 +625,10 @@ export const coingeckoFactory: ProviderFactory = async (deps) => {
   });
 };
 
-export { resolveCoingeckoId, WELL_KNOWN_COINGECKO_IDS } from './well-known-ids';
+export {
+  type ContractRef,
+  contractRefFromMetadata,
+  contradictsDeployments,
+  resolveCoingeckoId,
+  WELL_KNOWN_COINGECKO_IDS,
+} from './well-known-ids';

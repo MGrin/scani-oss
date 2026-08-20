@@ -1,7 +1,7 @@
 import { BaseRepository, type DatabaseTransaction } from '@scani/db';
 import type { Holding, NewHolding, Token } from '@scani/db/schema';
 import * as schema from '@scani/db/schema';
-import { and, eq, gt, lt, ne } from 'drizzle-orm';
+import { and, asc, eq, gt, inArray, isNull, lt, ne, sql } from 'drizzle-orm';
 import { Service } from 'typedi';
 import { SCAM_PROBABILITY_THRESHOLD } from '../lib/constants';
 
@@ -25,6 +25,27 @@ export interface HoldingWithFullDetails {
     typeName: string;
     website: string | null;
   };
+}
+
+/**
+ * The ordering that decides which holding an importer writes into.
+ *
+ * Exported so `HoldingRepository.test.ts` can assert it directly, and that is
+ * not ceremony. Removing this ordering does NOT make the behavioural tests
+ * fail: on a two-row fixture Postgres returns the imported row anyway, so the
+ * broken query produces the right answer at test scale. It produced the wrong
+ * one 25 times out of 73 in production (SC-193). A test that only checks the
+ * outcome would have gone green against the very code that caused the bug —
+ * so the regression guard has to be on the ordering itself.
+ */
+export function ingestHoldingOrder() {
+  return [
+    // `false < true` in Postgres, so rows WITH an externalId — the ones the
+    // import side created — sort ahead of the user's manual row.
+    sql`${schema.holdings.externalId} is null`,
+    asc(schema.holdings.createdAt),
+    asc(schema.holdings.id),
+  ];
 }
 
 @Service()
@@ -116,6 +137,11 @@ export class HoldingRepository extends BaseRepository<Holding, NewHolding> {
         .select()
         .from(schema.holdings)
         .where(and(...conditions))
+        // `holdings` has no unique constraint on (userId, accountId, tokenId),
+        // so this can match more than one row — and until SC-193 it took
+        // whichever the plan reached first. Oldest-first, id as the tie-break:
+        // the choice matters less than it being the same choice every time.
+        .orderBy(asc(schema.holdings.createdAt), asc(schema.holdings.id))
         .limit(1);
 
       return results[0] || null;
@@ -123,6 +149,131 @@ export class HoldingRepository extends BaseRepository<Holding, NewHolding> {
       this.logger.error(
         { accountId, tokenId, userId, excludeId, error },
         'Failed to find holding by account and token'
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * The unsynced holdings this account already has for any of `tokenIds` —
+   * the rows a manual create would duplicate.
+   *
+   * `external_id IS NULL` is the whole filter, and it is the same line
+   * `findByAccountTokenAndExternalId` draws: a synced position carries the
+   * key its importer dedupes on, an unsynced one carries nothing. So a
+   * manual USD row and an `import_airwallex` USD row in the same account are
+   * two positions, not one duplicated — the importer owns its own row and
+   * overwrites it on every sync.
+   *
+   * Unsynced is wider than `source = 'manual'` on purpose: `statement-import`
+   * and `ingest-backfill` also write `external_id IS NULL`, and a hand-entered
+   * row beside one of those is the same (account, token) duplicate — nothing
+   * will ever reconcile the two.
+   *
+   * Hidden rows count. A hidden holding still owns the (account, token) slot
+   * and comes back the moment it is unhidden, so creating a second one beside
+   * it produces the duplicate a moment later instead of now.
+   */
+  async findUnsyncedByAccountAndTokens(
+    accountId: string,
+    tokenIds: string[],
+    userId: string,
+    transaction?: DatabaseTransaction
+  ): Promise<Holding[]> {
+    if (tokenIds.length === 0) return [];
+    const database = this.getDb(transaction);
+    return await database
+      .select()
+      .from(schema.holdings)
+      .where(
+        and(
+          eq(schema.holdings.accountId, accountId),
+          inArray(schema.holdings.tokenId, tokenIds),
+          eq(schema.holdings.userId, userId),
+          isNull(schema.holdings.externalId)
+        )
+      );
+  }
+
+  /**
+   * The holding an importer should attribute a transaction to.
+   *
+   * Same filter as `findByAccountAndToken`, different preference: a row the
+   * import side created outranks one the user maintains by hand.
+   *
+   * **Why `externalId` and not `source`.** `source` cannot answer this. The tag
+   * an import writes is built two incompatible ways — `import_${institution
+   * .name}` in `ImportExchangeAccountsUseCase`, a hardcoded `'import_ibkr'` in
+   * `ImportIbkrAccountsUseCase`, and `'sync_exchange_balances'` from the
+   * balance sync — while the transaction carries a third vocabulary entirely
+   * (`airwallex-api`). There is no string equality that holds across those.
+   * `externalId` is the key the import side already dedupes on, and
+   * `findByAccountTokenAndExternalId` above states the intent this restores:
+   * match synced holdings *"without conflicting with manual holdings (which
+   * have NULL externalId)"*. That contract existed; the transaction path just
+   * never honoured it (SC-193).
+   *
+   * `IS NULL` sorts after `IS NOT NULL` because `false < true` in Postgres, so
+   * imported rows come first and manual rows are the fallback rather than the
+   * coin-flip they were.
+   *
+   * **Why it reads two rows to return one.** The ordering makes the choice
+   * deterministic; it does not make the choice safe. Whenever a second row
+   * exists, the winner is decided by `externalId`, `createdAt` and `id` — and
+   * every one of those can change under the position. Delete the imported row,
+   * or null its `externalId`, and the next run resolves to the manual row and
+   * re-ingests the entire history onto it, because `holding_tx_dedup` is
+   * UNIQUE per HOLDING and has nothing to dedupe against there. That is
+   ***REMOVED***
+   ***REMOVED***
+   * moment the hazard becomes live into a log line naming both candidates.
+   * Ambiguity is not an error — production holds legitimately split positions
+   * (SC-325) — so it warns and proceeds with the deterministic winner.
+   */
+  async findForIngest(
+    accountId: string,
+    tokenId: string,
+    userId: string,
+    transaction?: DatabaseTransaction
+  ): Promise<Holding | null> {
+    try {
+      const database = this.getDb(transaction);
+      const results = await database
+        .select()
+        .from(schema.holdings)
+        .where(
+          and(
+            eq(schema.holdings.accountId, accountId),
+            eq(schema.holdings.tokenId, tokenId),
+            eq(schema.holdings.userId, userId)
+          )
+        )
+        .orderBy(...ingestHoldingOrder())
+        .limit(2);
+
+      if (results.length > 1) {
+        const [chosen, runnerUp] = results;
+        this.logger.warn(
+          {
+            accountId,
+            tokenId,
+            userId,
+            chosenHoldingId: chosen?.id,
+            chosenSource: chosen?.source,
+            chosenExternalId: chosen?.externalId,
+            runnerUpHoldingId: runnerUp?.id,
+            runnerUpSource: runnerUp?.source,
+            runnerUpExternalId: runnerUp?.externalId,
+          },
+          'Ambiguous ingest holding: (account, token) holds more than one row'
+        );
+      }
+
+      return results[0] || null;
+    } catch (error) {
+      this.logger.error(
+        { accountId, tokenId, userId, error },
+        'Failed to find ingest holding by account and token'
       );
       throw error;
     }
@@ -206,9 +357,11 @@ export class HoldingRepository extends BaseRepository<Holding, NewHolding> {
           holdingTokenId: schema.holdings.tokenId,
           holdingBalance: schema.holdings.balance,
           holdingSource: schema.holdings.source,
+          holdingArrival: schema.holdings.arrival,
           holdingIsHidden: schema.holdings.isHidden,
           holdingIsActive: schema.holdings.isActive,
           holdingExternalId: schema.holdings.externalId,
+          holdingLabel: schema.holdings.label,
           holdingLastUpdated: schema.holdings.lastUpdated,
           holdingCreatedAt: schema.holdings.createdAt,
           // Token data with type
@@ -247,7 +400,9 @@ export class HoldingRepository extends BaseRepository<Holding, NewHolding> {
           accountId: r.holdingAccountId,
           tokenId: r.holdingTokenId,
           balance: r.holdingBalance,
+          label: r.holdingLabel,
           source: r.holdingSource,
+          arrival: r.holdingArrival,
           isHidden: r.holdingIsHidden,
           isActive: r.holdingIsActive,
           externalId: r.holdingExternalId,
@@ -316,6 +471,41 @@ export class HoldingRepository extends BaseRepository<Holding, NewHolding> {
       return results.map((r) => r.holding);
     } catch (error) {
       this.logger.error({ accountId, error }, 'Failed to find holdings by account');
+      throw error;
+    }
+  }
+
+  /**
+   * Just the ids of this user's holdings, optionally narrowed to one account
+   * or one institution (SC-457).
+   *
+   * Deliberately unfiltered by the inclusion contract. Its only caller
+   * (`ReturnsScopeResolver`) feeds the result straight into
+   * `PortfolioValueDailyRepository.findIncludedHoldingScopeRange`, which
+   * applies hidden / inactive / scam in SQL — applying it twice, in two
+   * places, is how the chart and the headline came to disagree in the first
+   * place (`isIncludedInTotal`). One gate, and this is not it.
+   */
+  async findIdsForUser(
+    userId: string,
+    filter?: { accountId?: string; institutionId?: string },
+    transaction?: DatabaseTransaction
+  ): Promise<string[]> {
+    try {
+      const database = this.getDb(transaction);
+      const conditions = [eq(schema.holdings.userId, userId)];
+      if (filter?.accountId) conditions.push(eq(schema.holdings.accountId, filter.accountId));
+      if (filter?.institutionId) {
+        conditions.push(eq(schema.accounts.institutionId, filter.institutionId));
+      }
+      const rows = await database
+        .select({ id: schema.holdings.id })
+        .from(schema.holdings)
+        .innerJoin(schema.accounts, eq(schema.accounts.id, schema.holdings.accountId))
+        .where(and(...conditions));
+      return rows.map((row) => row.id);
+    } catch (error) {
+      this.logger.error({ userId, filter, error }, 'Failed to find holding ids for user');
       throw error;
     }
   }

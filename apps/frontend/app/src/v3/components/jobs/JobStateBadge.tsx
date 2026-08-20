@@ -1,7 +1,8 @@
 import { describeJobFailure, type JobFailureFacts } from '@scani/shared';
 import { Badge } from '@scani/ui/ui/badge';
 import { AlertCircle, CheckCircle2, Clock, Loader2, XCircle } from 'lucide-react';
-import { jobStateLabel } from '../../lib/jobs';
+import { useTranslation } from 'react-i18next';
+import { jobFailureLabel, jobStateLabel } from '../../lib/jobs';
 
 /**
  * A job's state, as a chip.
@@ -28,6 +29,7 @@ interface JobStateBadgeProps {
 }
 
 export function JobStateBadge({ state, needsAction, failure }: JobStateBadgeProps) {
+  const { t } = useTranslation();
   // `--interactive`, the same accent `AttentionRow` spends on the home screen:
   // the palette's rule is that the accent marks what you can act on, and this
   // is the only chip on the list that is an instruction.
@@ -35,7 +37,7 @@ export function JobStateBadge({ state, needsAction, failure }: JobStateBadgeProp
     return (
       <Badge variant="outline" className="gap-1 border-border-strong text-interactive">
         <AlertCircle className="size-3" aria-hidden="true" />
-        Needs review
+        {t('v3.jobs.state.needsReview')}
       </Badge>
     );
   }
@@ -56,14 +58,14 @@ export function JobStateBadge({ state, needsAction, failure }: JobStateBadgeProp
       return (
         <Badge variant="secondary" className="gap-1">
           <Loader2 className="size-3 motion-safe:animate-spin" aria-hidden="true" />
-          {described.label}
+          {jobFailureLabel(t, described)}
         </Badge>
       );
     }
     return (
       <Badge variant="destructive" className="gap-1">
         <XCircle className="size-3" aria-hidden="true" />
-        {described?.label ?? jobStateLabel(state)}
+        {described ? jobFailureLabel(t, described) : jobStateLabel(t, state)}
       </Badge>
     );
   }
@@ -72,7 +74,7 @@ export function JobStateBadge({ state, needsAction, failure }: JobStateBadgeProp
     return (
       <Badge variant="secondary" className="gap-1">
         <CheckCircle2 className="size-3" aria-hidden="true" />
-        {jobStateLabel(state)}
+        {jobStateLabel(t, state)}
       </Badge>
     );
   }
@@ -81,7 +83,7 @@ export function JobStateBadge({ state, needsAction, failure }: JobStateBadgeProp
     return (
       <Badge variant="outline" className="gap-1">
         <Clock className="size-3" aria-hidden="true" />
-        {jobStateLabel(state)}
+        {jobStateLabel(t, state)}
       </Badge>
     );
   }
@@ -92,7 +94,7 @@ export function JobStateBadge({ state, needsAction, failure }: JobStateBadgeProp
           `prefers-reduced-motion` is for and this one is on screen for as long
           as the job runs. */}
       <Loader2 className="size-3 motion-safe:animate-spin" aria-hidden="true" />
-      {jobStateLabel(state)}
+      {jobStateLabel(t, state)}
     </Badge>
   );
 }

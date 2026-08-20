@@ -3,6 +3,7 @@ import { Button } from '@scani/ui/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@scani/ui/ui/card';
 import { CloudOff, Loader2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import { useOnlineStatus } from '@/hooks/useOnlineStatus';
 import { serverUnreachableCopy } from '@/lib/offline-shell';
@@ -36,9 +37,10 @@ interface ServerUnreachableProps {
 }
 
 export function ServerUnreachable({ email, onRetry }: ServerUnreachableProps) {
+  const { t } = useTranslation();
   const [retrying, setRetrying] = useState(false);
   const online = useOnlineStatus();
-  const copy = serverUnreachableCopy({ email, online });
+  const copy = serverUnreachableCopy({ email, online, t });
 
   useEffect(() => {
     if (!online) return;

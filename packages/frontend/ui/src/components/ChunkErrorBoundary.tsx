@@ -1,4 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
+import { uiT } from '../i18n';
 import { isChunkLoadError } from '../lib/lazy-chunk';
 
 /**
@@ -42,19 +43,18 @@ export function ChunkLoadFallback({ chunk, onReload }: { chunk: string; onReload
   return (
     <div className="flex min-h-screen items-center justify-center bg-background p-4">
       <div className="w-full max-w-md space-y-4 text-center">
-        <h1 className="text-2xl font-bold text-foreground">Could not load the {chunk}</h1>
+        <h1 className="text-2xl font-bold text-foreground">
+          {uiT('ui.errors.chunk.title', { chunk })}
+        </h1>
         {/* Two causes, both true, both actionable — and neither is "the app is
             broken", which is what a bare spinner or a blank page says. */}
-        <p className="text-muted-foreground">
-          Part of the app did not download. This is usually a connection that dropped, or an update
-          that shipped while this tab was open.
-        </p>
+        <p className="text-muted-foreground">{uiT('ui.errors.chunk.detail')}</p>
         <button
           type="button"
           onClick={onReload}
           className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
         >
-          Reload the page
+          {uiT('ui.errors.chunk.reload')}
         </button>
       </div>
     </div>

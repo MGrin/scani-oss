@@ -1,4 +1,6 @@
 import { PDF_MAX_ROWS } from '@scani/shared';
+import { uiT } from '@scani/ui/i18n';
+import { UserFacingError } from '@scani/ui/lib/user-facing-error';
 import { registerPdfRenderer } from '@scani/ui/v3/lib/export/format';
 import { useEffect } from 'react';
 import { trpc } from '@/lib/trpc';
@@ -21,6 +23,13 @@ import { trpc } from '@/lib/trpc';
  * A hook rather than a module side effect because the tRPC client is created
  * inside the provider — there is no importable singleton to reach for, and
  * inventing one would be a second client with its own auth headers.
+ *
+ * Both refusals below are `UserFacingError` carrying a `ui.*` message (SC-311).
+ * `uiT` rather than the app's `t`: this renderer is handed to `@scani/ui` and
+ * runs inside its export path, so its copy belongs to the kit's bundle — the
+ * one the kit's own toast resolves against. Thrown as plain `Error`s these
+ * became "Unknown error", which is the absence-vs-refusal collapse the export
+ * path was built to avoid.
  */
 export function useInstallPdfExport(): void {
   const utils = trpc.useContext();
@@ -28,15 +37,18 @@ export function useInstallPdfExport(): void {
   useEffect(() => {
     registerPdfRenderer(async (workbook) => {
       const sheet = workbook.sheets[0];
-      if (!sheet) throw new Error('Nothing to export');
+      if (!sheet) throw new UserFacingError(uiT('ui.export.nothingToExport'));
       // The server refuses past this too, and its refusal is the one that
       // matters — but a zod error arrives as a validation blob after a
       // megabyte has gone over the wire, and "Everything we have" on a
       // six-year net-worth history is 2,190 rows, so this is a request people
       // will actually make. Said here, in one sentence, before the round trip.
       if (sheet.rows.length > PDF_MAX_ROWS) {
-        throw new Error(
-          `A PDF holds ${PDF_MAX_ROWS.toLocaleString()} rows at most and this is ${sheet.rows.length.toLocaleString()} — export CSV or Excel instead, or narrow the range.`
+        throw new UserFacingError(
+          uiT('ui.export.pdfTooManyRows', {
+            max: PDF_MAX_ROWS.toLocaleString(),
+            rows: sheet.rows.length.toLocaleString(),
+          })
         );
       }
 

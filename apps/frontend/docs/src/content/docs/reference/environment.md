@@ -41,8 +41,9 @@ ownership rule.
 | `REDIS_URL` | app | Redis 7+ connection string. |
 | `PORT` | app (api / data-provider) | HTTP bind port. |
 | `HOST` | app | HTTP bind host. |
-| `FRONTEND_URL` | app (api) | Browser-facing SPA URL. CORS + cookie scope. |
-| `BACKEND_URL` | app (api) | Browser-facing api URL. Embedded in magic-link emails. |
+| `ALERT_STALE_SYNC_HOURS` | worker | How long an integration must have gone without syncing before its OWNER is emailed by `alert-sweep` (SC-459). Default 24. Deliberately far above `STALE_SYNC_THRESHOLD_HOURS`, which is the same measurement aimed at Sentry: 3h is two missed hourly cycles, the right moment to page us and the wrong moment to mail a user about a blip that clears itself. |
+| `FRONTEND_URL` | app (api), worker | Browser-facing SPA URL. CORS + cookie scope on the api; where the weekly digest's "Open Scani" button goes, and where the integration alert's "Reconnect" button goes, on the worker (SC-460, SC-459). Optional on the worker — absent, both jobs log a refusal and send nothing. |
+| `BACKEND_URL` | app (api), worker | Browser-facing api URL. Embedded in magic-link emails, and in the one-click unsubscribe links (`/e/u/:token` for the digest, `/e/a/:token` for alerts — SC-460, SC-459). Optional on the worker — absent, both jobs log a refusal and send nothing. |
 | `COOKIE_DOMAIN` | app (api) | Cross-subdomain cookie scope. Leave unset for same-origin. |
 | `BETTER_AUTH_SECRET` | app (api) | 32+ chars. Better-Auth session signing key. |
 | `JOBS_HMAC_SECRET` | app (api) | 32+ chars. HMAC for operator job endpoints. |
@@ -198,6 +199,7 @@ production deployment — operators can ignore this section.
 |---|---|---|
 | `STUB_AI` | data-provider (`ai.parseScreenshot`) | When `1`, returns a fixed holdings payload instead of calling a real AI provider. Refused in production by the data-provider env schema. |
 | `ALLOW_REMOTE_TEST_DB` | `packages/business/domain/test-preload.ts` | Escape hatch for the guard that refuses to run the suite against a non-local `DATABASE_URL`. Repository tests truncate and roll back real tables, so pointing them at a remote branch is destructive — set to `1` only when you have deliberately provisioned a throwaway database. |
+| `SCANI_ALLOW_SHARED_TEST_DB` | `packages/business/domain/test-preload.ts` | Escape hatch for the one-suite-per-database lock. The preload takes a Postgres advisory lock on the test database and refuses to start when another suite already holds it: two suites on one database interfere in ways the output attributes to neither run (SC-370, SC-372). Set to `1` only to share a database deliberately — the supported way to run two suites at once is `bun scripts/gate-db.ts -- bun run test`, which gives each run its own `scani_gate_<pid>`. |
 | `API_BASE_URL` | e2e (Playwright fixtures) | Base URL the e2e suite hits for tRPC requests. Defaults to the dev-compose api at `http://localhost:3011`. |
 | `PLAYWRIGHT_BASE_URL` | Playwright config | Base URL Playwright treats as the SPA origin. Defaults to `http://localhost:5173`. |
 | `MAILPIT_URL` | e2e (magic-link helper) | Mailpit HTTP API used to read auth emails during sign-in. Default `http://localhost:8026`. |
@@ -206,6 +208,8 @@ production deployment — operators can ignore this section.
 | `KEEP_STACK_ON_FAILURE` | `apps/e2e/scripts/run.ts` | When `1`, leaves the docker-compose stack running after a failed e2e run so the operator can poke at it. |
 | `DATA_PROVIDER_URL` | `apps/e2e/scripts/wait-for-stack.ts` | Health endpoint the e2e runner polls before starting. Default `http://localhost:8082`. |
 | `SHOT_FRESH` | `apps/e2e/fixtures/shots-setup.ts` | When `1`, ignores the stored browser session and signs in again before capturing screenshots. |
+| `PW_VISUAL_WS` | `apps/e2e/fixtures/visual-setup.ts` | WebSocket endpoint of the Playwright browser server the visual-baseline suite attaches to. `apps/e2e/scripts/visual.ts` starts that server inside the Playwright Docker image and sets this; the fixture THROWS when it is unset rather than falling back to a local browser, because a macOS-rendered baseline does not match a Linux-rendered one and a silent fallback would produce baselines nobody can reproduce. |
+| `VISUAL_FRESH` | `apps/e2e/fixtures/visual-setup.ts` | When `1`, ignores the stored session and reseeds a new user and portfolio before capturing baselines. Without it the suite reuses a valid stored session, so two runs compare the same portfolio rather than two different ones. |
 | `COLD_BOOT_API` | `apps/e2e/scripts/measure-cold-boot.ts` | Upstream the cold-boot harness proxies `/api` and `/trpc` to. Default `http://127.0.0.1:3099`. |
 | `COLD_BOOT_API_LOG` | `apps/e2e/scripts/measure-cold-boot.ts` | Where that api writes its stdout. The harness reads the sign-in OTP out of it — an api started without an email transport prints the code rather than sending it. |
 | `COLD_BOOT_DIST` | `apps/e2e/scripts/measure-cold-boot.ts` | A built `dist/` to serve instead of `apps/frontend/app/dist`. How a before/after sweep serves a baseline build from a second worktree. |

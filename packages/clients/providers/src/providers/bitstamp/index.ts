@@ -14,16 +14,18 @@ import type {
   CredentialValidator,
   TransactionsProvider,
 } from '../../core/capabilities';
-import { ProviderError } from '../../core/errors';
+import { credentialRejection } from '../../core/errors';
 import type {
   DecryptedCredentials,
   HoldingSnapshot,
   ProviderContext,
   TransactionEvent,
+  TransactionFetchContext,
   WithUserCreds,
 } from '../../core/types';
 import { enforceSign, inferCounterSign, negateFee } from '../../core/utils/enforce-tx-sign';
 import { tokenTypeForCexAsset } from '../../core/utils/fiat-codes';
+import { PageCapWatch } from '../../core/utils/page-cap';
 import { bitstampManifest } from './manifest';
 import { resolvePair, resolveSingleAsset } from './pair-resolver';
 
@@ -250,16 +252,11 @@ export class BitstampProvider
     return out;
   }
 
-  async fetchTransactions(
-    ctx: WithUserCreds<ProviderContext> & {
-      institutionCode: string;
-      since?: Date;
-      until?: Date;
-    }
-  ): Promise<TransactionEvent[]> {
+  async fetchTransactions(ctx: TransactionFetchContext): Promise<TransactionEvent[]> {
     const creds = await this.resolveApiCreds(ctx);
     if (!creds) return [];
 
+    const capped = new PageCapWatch();
     const events: TransactionEvent[] = [];
     const seen = new Set<string>();
     const push = (event: TransactionEvent | null): void => {
@@ -285,9 +282,15 @@ export class BitstampProvider
       for (const row of rows) push(userTransactionToEvent(row));
       if (rows.length < USER_TX_PAGE_SIZE) break;
       offset += rows.length;
+      // Last allowed page, and the feed still had a full one to give. The
+      // walk is ascending, so what is missing is the recent end.
+      if (page === MAX_PAGES - 1) {
+        capped.note({ walk: 'the user-transactions ledger', pages: MAX_PAGES, rows: offset });
+      }
     }
 
-    const cryptoTxByMatch = await this.collectCryptoTxIds(creds);
+    const annotationCap = new PageCapWatch();
+    const cryptoTxByMatch = await this.collectCryptoTxIds(creds, annotationCap);
     if (cryptoTxByMatch.size > 0) {
       for (const event of events) {
         if (event.kind !== 'deposit' && event.kind !== 'withdraw') continue;
@@ -301,6 +304,15 @@ export class BitstampProvider
       }
     }
 
+    capped.retract(ctx, this.providerKey);
+    // A warning, never a retraction: this walk annotates events the ledger
+    // walk above already produced, so a short one costs a txid and not a row
+    // (SC-426). Saying nothing at all was what SC-428 was filed for.
+    annotationCap.warn(
+      ctx,
+      this.providerKey,
+      'some deposits and withdrawals in this run carry no on-chain transaction id'
+    );
     return events;
   }
 
@@ -309,8 +321,18 @@ export class BitstampProvider
    * lookup. Used to enrich user_transactions deposit/withdraw events
    * with the on-chain hash, which user_transactions itself does not
    * surface.
+   *
+   * Its `MAX_PAGES` cap deliberately does NOT retract the history claim. This
+   * walk adds a `txid` to events the ledger walk above already produced; a
+   * short one costs an annotation, not a row, so it is not evidence that the
+   * ledger is incomplete (SC-426). It does say so, through the non-retracting
+   * half of the same channel — the reader whose deposits lost their on-chain
+   * ids is owed the reason, and until SC-428 there was nowhere to put it.
    */
-  private async collectCryptoTxIds(creds: ApiKeyCreds): Promise<Map<string, string>> {
+  private async collectCryptoTxIds(
+    creds: ApiKeyCreds,
+    capped: PageCapWatch
+  ): Promise<Map<string, string>> {
     const out = new Map<string, string>();
     let offset = 0;
     for (let page = 0; page < MAX_PAGES; page++) {
@@ -332,6 +354,9 @@ export class BitstampProvider
       }
       if (all.length < CRYPTO_TX_PAGE_SIZE) break;
       offset += all.length;
+      if (page === MAX_PAGES - 1) {
+        capped.note({ walk: 'the crypto-transactions lookup', pages: MAX_PAGES, rows: offset });
+      }
     }
     return out;
   }
@@ -350,10 +375,7 @@ export class BitstampProvider
       await this.signedFetch({ method: 'POST', url: '/api/v2/balance/' }, { apiKey, apiSecret });
       return { valid: true };
     } catch (err) {
-      if (err instanceof ProviderError && err.kind === 'auth-failed') {
-        return { valid: false, message: err.message };
-      }
-      return { valid: false, message: err instanceof Error ? err.message : String(err) };
+      return credentialRejection(err);
     }
   }
 }

@@ -7,11 +7,10 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useVisualViewportShell } from '@/hooks/useVisualViewportShell';
 import { trpc } from '@/lib/trpc';
 import { cn } from '@/lib/utils';
-import { useReviewFeed } from '@/v2/hooks/useReviewFeed';
+import { useReviewFeed } from '@/v3/hooks/useReviewFeed';
 import { CaptureSheet } from '../components/capture/CaptureSheet';
 import { CaptureSheetProvider } from '../components/capture/CaptureSheetContext';
 import { PullToRefreshIndicator } from '../components/PullToRefreshIndicator';
-import { UiVersionSwitch } from '../components/UiVersionSwitch';
 import { V3TokenScope } from '../components/V3TokenScope';
 import { usePullToRefresh } from '../hooks/usePullToRefresh';
 import { resolveActiveTabPath, resolveActiveV3Path } from '../lib/routes';
@@ -96,7 +95,6 @@ export function V3Shell() {
           <span className="text-title">Scani</span>
           <div className="ml-auto flex items-center gap-1">
             <ThemeToggle variant="icon" side="bottom" align="end" />
-            <UiVersionSwitch variant="icon" />
           </div>
         </header>
 

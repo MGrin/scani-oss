@@ -14,7 +14,7 @@ import type {
   CredentialValidator,
   TransactionsProvider,
 } from '../../core/capabilities';
-import { ProviderError } from '../../core/errors';
+import { credentialRejection } from '../../core/errors';
 import type {
   DecryptedCredentials,
   HoldingSnapshot,
@@ -103,6 +103,10 @@ export class MexcProvider
     'transactions',
     'credential-validator',
   ];
+  // Same five-year substitution as Binance's and Gate's: a `since`-less run
+  // reaches `until - FIVE_YEARS_MS` and no further, across trades, deposits
+  // and withdrawals alike (SC-418, SC-166).
+  readonly transactionHistoryHorizonMs = FIVE_YEARS_MS;
   protected readonly baseUrl = 'https://api.mexc.com';
 
   // MEXC puts the signature in the query string itself. signRequest just
@@ -219,10 +223,7 @@ export class MexcProvider
       );
       return { valid: true };
     } catch (err) {
-      if (err instanceof ProviderError && err.kind === 'auth-failed') {
-        return { valid: false, message: err.message };
-      }
-      return { valid: false, message: err instanceof Error ? err.message : String(err) };
+      return credentialRejection(err);
     }
   }
 

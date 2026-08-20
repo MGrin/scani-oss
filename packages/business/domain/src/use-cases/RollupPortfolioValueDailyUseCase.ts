@@ -18,6 +18,7 @@ import { db } from '@scani/db/connection';
 import type { CoverageQuality } from '@scani/db/schema';
 import * as schema from '@scani/db/schema';
 import { createComponentLogger } from '@scani/logging';
+import { parseCostBasisMethod } from '@scani/shared';
 import Decimal from 'decimal.js';
 import { and, eq, sql } from 'drizzle-orm';
 import { Container, Service } from 'typedi';
@@ -27,12 +28,11 @@ import { HoldingCoverageRepository } from '../repositories/HoldingCoverageReposi
 import { HoldingRepository } from '../repositories/HoldingRepository';
 import { HoldingTransactionRepository } from '../repositories/HoldingTransactionRepository';
 import { PortfolioValueDailyRepository } from '../repositories/PortfolioValueDailyRepository';
-import { TokenPriceRepository } from '../repositories/TokenPriceRepository';
 import { TokenRepository } from '../repositories/TokenRepository';
 import { PnLAtTimeService } from '../services';
 import type { PnLAtTimePerHolding } from '../services/portfolio/PnLAtTimeService';
 import type { BalanceAtTimeCaches } from '../services/pricing/BalanceAtTimeService';
-import { PriceLookup } from '../services/pricing/PriceLookup';
+import { PriceGraphService } from '../services/pricing/PriceGraphService';
 
 // Coverage thresholds — keep in sync with
 // PortfolioValuationAtTimeService. Aggregation logic mirrors that
@@ -65,11 +65,6 @@ export interface RollupSummary {
   durationMs: number;
 }
 
-// Hub symbols PriceGraphService walks when no direct edge exists.
-// Mirrored here so the prefetch knows which (token, hub) pairs to
-// preload — keep in sync with PriceGraphService.resolveHubTokenIds.
-const PRICE_HUB_SYMBOLS = ['USD', 'USDT', 'EUR'] as const;
-
 @Service()
 export class RollupPortfolioValueDailyUseCase {
   // Class-field DI — see note in BalanceAtTimeService.ts. Previously
@@ -80,8 +75,8 @@ export class RollupPortfolioValueDailyUseCase {
   private readonly dailyRepository = Container.get(PortfolioValueDailyRepository);
   private readonly holdingRepository = Container.get(HoldingRepository);
   private readonly accountRepository = Container.get(AccountRepository);
-  private readonly tokenPriceRepository = Container.get(TokenPriceRepository);
   private readonly tokenRepository = Container.get(TokenRepository);
+  private readonly priceGraphService = Container.get(PriceGraphService);
   private readonly txRepository = Container.get(HoldingTransactionRepository);
   private readonly observationRepository = Container.get(HoldingBalanceObservationRepository);
   private readonly coverageRepository = Container.get(HoldingCoverageRepository);
@@ -138,14 +133,22 @@ export class RollupPortfolioValueDailyUseCase {
     while (true) {
       const page = opts.userId
         ? await db
-            .select({ id: schema.users.id, baseCurrencyId: schema.users.baseCurrencyId })
+            .select({
+              id: schema.users.id,
+              baseCurrencyId: schema.users.baseCurrencyId,
+              costBasisMethod: schema.users.costBasisMethod,
+            })
             .from(schema.users)
             .where(
               and(eq(schema.users.id, opts.userId), sql`${schema.users.baseCurrencyId} IS NOT NULL`)
             )
             .limit(1)
         : await db
-            .select({ id: schema.users.id, baseCurrencyId: schema.users.baseCurrencyId })
+            .select({
+              id: schema.users.id,
+              baseCurrencyId: schema.users.baseCurrencyId,
+              costBasisMethod: schema.users.costBasisMethod,
+            })
             .from(schema.users)
             .where(sql`${schema.users.baseCurrencyId} IS NOT NULL`)
             .limit(PAGE)
@@ -166,13 +169,6 @@ export class RollupPortfolioValueDailyUseCase {
           // on a redeploy, …). Lock-held users are skipped — the holder
           // is producing fresh rows; we'll catch this user the next tick.
           const outcome = await withAdvisoryLock(rollupLockKey(user.id), async () => {
-            // Prefetch all the prices the inner per-(day, holding)
-            // loop is about to ask for — single query instead of
-            // ~80k. Falls through silently to the per-call DB path
-            // for any pair the prefetch missed (defensive; should be
-            // a no-op in practice).
-            const priceLookup = await this.buildPriceLookup(user.id, baseCurrencyId, runStart);
-
             // Pre-load every per-user state BalanceAtTimeService and
             // CostBasisService would otherwise hit the DB for —
             // holdings (anchor 2), observations (anchors 1 and 3),
@@ -181,6 +177,16 @@ export class RollupPortfolioValueDailyUseCase {
             // through silently to the per-call DB path for anything
             // a future code path needs but the prefetch missed.
             const userHoldings = await this.holdingRepository.findByUser(user.id);
+
+            // Prefetch all the prices the inner per-(day, holding)
+            // loop is about to ask for — single query instead of
+            // ~80k. Any pair the prefetch did not cover falls through
+            // to the per-call DB path rather than answering "no price".
+            const priceLookup = await this.priceGraphService.buildPriceLookup(
+              userHoldings.map((h) => h.tokenId),
+              baseCurrencyId,
+              runStart
+            );
             const holdingIds = userHoldings.map((h) => h.id);
             // Coverage joins the same prefetch: `has_complete_tx_history`
             // is a property of the import, not of the snapshot date, so
@@ -223,6 +229,14 @@ export class RollupPortfolioValueDailyUseCase {
                 caches,
                 unpriceableTokenIds,
                 coverageByHolding,
+                // Every row this loop writes is stamped with the rule it was
+                // computed under, in the sense that it was computed under
+                // whatever the account had set at the time (SC-462). Changing
+                // the setting therefore does not rewrite history by itself —
+                // the rows move as the rollup re-walks each day in its
+                // lookback window, which is why the change is announced to the
+                // reader rather than applied silently.
+                costBasisMethod: parseCostBasisMethod(user.costBasisMethod),
               });
 
               // Write the user-scope row directly from the result.
@@ -238,6 +252,9 @@ export class RollupPortfolioValueDailyUseCase {
                 holdingsTotal: userResult.holdingsTotal,
                 holdingsUnpriceable: userResult.holdingsUnpriceable,
                 holdingsStalePriced: userResult.holdingsStalePriced,
+                holdingsStaleAnchored: userResult.holdingsStaleAnchored,
+                oldestAnchorAt: userResult.oldestAnchorAt,
+                holdingsBeforeRecords: userResult.holdingsBeforeRecords,
                 holdingsBasisUnknown: userResult.holdingsBasisUnknown,
                 transfersUnreviewed: userResult.transfersUnreviewed,
                 costBasis: userResult.totalCostBasis.toString(),
@@ -324,56 +341,6 @@ export class RollupPortfolioValueDailyUseCase {
     return summary;
   }
 
-  // Build the per-user price index used by the inner per-(day, holding)
-  // loop. Pulls every row matching (heldToken | hub, base | hub, ts <=
-  // runStart) — this is the union of every (from, to) tuple
-  // PriceGraphService.tryDirect could ask for during the rollup pass.
-  private async buildPriceLookup(
-    userId: string,
-    baseCurrencyId: string,
-    until: Date
-  ): Promise<PriceLookup> {
-    const [holdings, hubIds] = await Promise.all([
-      this.holdingRepository.findByUser(userId),
-      this.resolveHubIds(),
-    ]);
-    const heldTokenIds = new Set(holdings.map((h) => h.tokenId));
-    const baseAndHubs = new Set<string>([baseCurrencyId, ...hubIds]);
-    // Pairs we'll query: every held token quoted in base + each hub,
-    // plus every reverse leg (base -> heldToken, hub -> heldToken)
-    // because PriceGraphService.tryDirect inverts when forward misses.
-    // Plus base ↔ hub legs for the multi-hop conversions.
-    const pairs: Array<{ tokenId: string; baseTokenId: string }> = [];
-    const pushPair = (a: string, b: string): void => {
-      if (a === b) return;
-      pairs.push({ tokenId: a, baseTokenId: b });
-    };
-    for (const t of heldTokenIds) {
-      for (const b of baseAndHubs) {
-        pushPair(t, b);
-        pushPair(b, t);
-      }
-    }
-    // Hub ↔ hub legs (incl base ↔ hub).
-    const hubArr = [...baseAndHubs];
-    for (const a of hubArr) {
-      for (const b of hubArr) {
-        pushPair(a, b);
-      }
-    }
-    const rows = await this.tokenPriceRepository.findManyForPairsUpTo(pairs, until);
-    return new PriceLookup(rows);
-  }
-
-  private async resolveHubIds(): Promise<string[]> {
-    const out: string[] = [];
-    for (const symbol of PRICE_HUB_SYMBOLS) {
-      const t = await this.tokenRepository.findBySymbol(symbol);
-      if (t) out.push(t.id);
-    }
-    return out;
-  }
-
   // Aggregate a slice of `perHolding` (institution / account / holding
   // subset) into a single rollup row and upsert it. Mirrors the
   // totals + coverage_quality logic in PortfolioValuationAtTimeService
@@ -403,6 +370,17 @@ export class RollupPortfolioValueDailyUseCase {
     let knownCount = 0;
     let unpriceableCount = 0;
     let stalePricedCount = 0;
+    // Re-derived per scope rather than inherited from the user row: a
+    // stale anchor on one holding is a fact about the institution, account
+    // and holding rows that contain it, and not about the ones that do not.
+    // Copying the user-wide number down would mark every scope 'partial'
+    // because one unrelated holding was.
+    let staleAnchoredCount = 0;
+    // Re-derived per scope for the same reason `staleAnchoredCount` is: a
+    // balance projected below its holding's first evidence is a fact about
+    // the scopes containing that holding and about no others.
+    let beforeRecordsCount = 0;
+    let oldestAnchorAt: Date | null = null;
     let basisUnknownCount = 0;
     let transfersUnreviewed = 0;
     for (const ph of slice) {
@@ -410,6 +388,13 @@ export class RollupPortfolioValueDailyUseCase {
         totalValue = totalValue.add(ph.value);
         knownCount++;
         if (ph.priceStale) stalePricedCount++;
+        if (ph.anchorSource === 'observation-before') {
+          staleAnchoredCount++;
+          if (ph.anchorAt && (!oldestAnchorAt || ph.anchorAt < oldestAnchorAt)) {
+            oldestAnchorAt = ph.anchorAt;
+          }
+        }
+        if (ph.balanceBeforeRecords) beforeRecordsCount++;
       }
       if (ph.unpriceable) {
         unpriceableCount++;
@@ -434,7 +419,28 @@ export class RollupPortfolioValueDailyUseCase {
     } else {
       const knownRatio = knownCount / priceableTotal;
       if (knownRatio >= COVERAGE_FULL_THRESHOLD)
-        coverageQuality = stalePricedCount > 0 ? 'partial' : 'full';
+        // `staleAnchoredCount` was missing from this condition until SC-249,
+        // and its absence made the scoped rows disagree with the user row
+        // about the same holdings. `PortfolioValuationAtTimeService` has
+        // always downgraded on a backward anchor; this mirror of its logic
+        // only downgraded on a stale price. So an account whose one holding
+        // was reconstructed from an observation 71 days back read 'full' on
+        // its own detail chart while the user-wide chart above it read
+        // 'partial' — and the detail chart is the one a reader opens to find
+        // out why.
+        //
+        // `beforeRecordsCount` joined it in SC-252, and this mirror is the
+        // half that matters: the home chart, the PnL series and both exports
+        // read these per-holding rows, so a downgrade applied only in
+        // `PortfolioValuationAtTimeService` above would reach no reader at
+        // all. Production held `total_value = 586.94, coverage_quality =
+        // 'full'` for 2025-06-21 on a holding whose first transaction is
+        // 2026-06-22 — every other quality signal on that row reads clean,
+        // which is precisely why it read 'full'.
+        coverageQuality =
+          staleAnchoredCount > 0 || stalePricedCount > 0 || beforeRecordsCount > 0
+            ? 'partial'
+            : 'full';
       else if (knownRatio >= COVERAGE_PARTIAL_THRESHOLD) coverageQuality = 'estimated';
       else coverageQuality = 'unknown';
     }
@@ -450,6 +456,12 @@ export class RollupPortfolioValueDailyUseCase {
       holdingsTotal,
       holdingsUnpriceable: unpriceableCount,
       holdingsStalePriced: stalePricedCount,
+      holdingsStaleAnchored: staleAnchoredCount,
+      oldestAnchorAt,
+      // Recorded, not just consulted (SC-317). It has driven the downgrade
+      // since SC-252 and reached no column, so the row said 'partial' with
+      // every count at zero — confidence reduced, cause unstated.
+      holdingsBeforeRecords: beforeRecordsCount,
       holdingsBasisUnknown: basisUnknownCount,
       transfersUnreviewed,
       costBasis: totalCost.toString(),

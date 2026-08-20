@@ -3,6 +3,7 @@ import { Button } from '@scani/ui/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@scani/ui/ui/card';
 import { AlertCircle, CheckCircle, Loader2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -28,6 +29,7 @@ import { useAuth } from '@/contexts/AuthContext';
  * query and the net-worth series behind it (SC-164).
  */
 export function AuthCallback() {
+  const { t } = useTranslation();
   const location = useLocation();
   const searchParams = new URLSearchParams(location.search);
 
@@ -44,7 +46,7 @@ export function AuthCallback() {
   useEffect(() => {
     if (linkError) {
       setStatus('error');
-      setErrorMessage(linkErrorDescription || 'Authentication failed');
+      setErrorMessage(linkErrorDescription || t('auth.callback.linkFailed'));
       return;
     }
     if (authStatus === 'loading') return;
@@ -60,11 +62,9 @@ export function AuthCallback() {
       // "We could not ask" is not "you are not signed in" (SC-78 §2). Telling
       // someone on a dead connection that their link expired sends them to
       // request another one that will not arrive either.
-      authStatus === 'unreachable'
-        ? "We couldn't reach the server to finish signing you in. Check your connection and try the link again."
-        : 'Your sign-in link has expired or could not be verified. Please request a new one.'
+      authStatus === 'unreachable' ? t('auth.callback.unreachable') : t('auth.callback.expired')
     );
-  }, [authStatus, linkError, linkErrorDescription, navigate, returnTo]);
+  }, [authStatus, linkError, linkErrorDescription, navigate, returnTo, t]);
 
   if (status === 'loading') {
     return (
@@ -79,14 +79,16 @@ export function AuthCallback() {
       >
         <Card className="w-full max-w-md">
           <CardHeader className="space-y-1">
-            <CardTitle className="text-2xl text-center">Signing you in...</CardTitle>
+            <CardTitle className="text-2xl text-center">
+              {t('auth.callback.signingInTitle')}
+            </CardTitle>
             <CardDescription className="text-center">
-              Please wait while we verify your authentication
+              {t('auth.callback.signingInSubtitle')}
             </CardDescription>
           </CardHeader>
           <CardContent className="text-center space-y-4">
             <Loader2 className="mx-auto h-12 w-12 animate-spin text-blue-600" />
-            <p className="text-sm text-muted-foreground">This should only take a moment.</p>
+            <p className="text-sm text-muted-foreground">{t('auth.callback.signingInBody')}</p>
           </CardContent>
         </Card>
       </div>
@@ -106,14 +108,16 @@ export function AuthCallback() {
       >
         <Card className="w-full max-w-md">
           <CardHeader className="space-y-1">
-            <CardTitle className="text-2xl text-center">Welcome!</CardTitle>
+            <CardTitle className="text-2xl text-center">
+              {t('auth.callback.successTitle')}
+            </CardTitle>
             <CardDescription className="text-center">
-              You've been successfully signed in
+              {t('auth.callback.successSubtitle')}
             </CardDescription>
           </CardHeader>
           <CardContent className="text-center space-y-4">
             <CheckCircle className="mx-auto h-12 w-12 text-green-600" />
-            <p className="text-sm text-muted-foreground">Redirecting you to your dashboard...</p>
+            <p className="text-sm text-muted-foreground">{t('auth.callback.successBody')}</p>
           </CardContent>
         </Card>
       </div>
@@ -132,9 +136,9 @@ export function AuthCallback() {
     >
       <Card className="w-full max-w-md">
         <CardHeader className="space-y-1">
-          <CardTitle className="text-2xl text-center">Authentication Error</CardTitle>
+          <CardTitle className="text-2xl text-center">{t('auth.callback.errorTitle')}</CardTitle>
           <CardDescription className="text-center">
-            There was a problem signing you in
+            {t('auth.callback.errorSubtitle')}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -150,12 +154,12 @@ export function AuthCallback() {
 
           <div className="space-y-2">
             <Button asChild className="w-full">
-              <Link to="/auth">Try again</Link>
+              <Link to="/auth">{t('auth.callback.tryAgain')}</Link>
             </Button>
           </div>
 
           <div className="text-center text-sm text-muted-foreground">
-            <p>If you continue to have issues, please contact support.</p>
+            <p>{t('auth.callback.support')}</p>
           </div>
         </CardContent>
       </Card>

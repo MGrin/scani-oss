@@ -1,7 +1,8 @@
 import { showError, showSuccess } from '@scani/ui/ui/use-toast';
 import { useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { invalidateVaultQueries } from '@/hooks/invalidatePortfolioQueries';
 import { trpc } from '@/lib/trpc';
-import { invalidateVaultQueries } from '@/v2/hooks/invalidatePortfolioQueries';
 import { compareMembers, type MemberEntry } from '../lib/membership';
 
 /**
@@ -18,6 +19,7 @@ import { compareMembers, type MemberEntry } from '../lib/membership';
  * percentage belongs — beside the figure it is a share *of*.
  */
 export function useVaultAttach(vaultId: string, attachedHoldingIds: ReadonlySet<string>) {
+  const { t } = useTranslation();
   const utils = trpc.useUtils();
   const holdingsQuery = trpc.holdings.getWithDetails.useQuery();
   const [pendingIds, setPendingIds] = useState<ReadonlySet<string>>(new Set());
@@ -54,10 +56,8 @@ export function useVaultAttach(vaultId: string, attachedHoldingIds: ReadonlySet<
 
       if (available === 0) {
         showError(
-          new Error(
-            `${entry.label} is already fully counted toward other vaults. Lower its share there first.`
-          ),
-          'Attaching the holding'
+          new Error(t('v3.vaults.attach.fullyClaimed', { label: entry.label })),
+          t('v3.vaults.attach.attaching')
         );
         return;
       }
@@ -66,11 +66,11 @@ export function useVaultAttach(vaultId: string, attachedHoldingIds: ReadonlySet<
       await invalidateVaultQueries(utils);
       showSuccess(
         available === 100
-          ? `${entry.label} now counts toward this vault`
-          : `${entry.label} attached at ${available}% — the rest counts toward another vault`
+          ? t('v3.vaults.attach.attachedWhole', { label: entry.label })
+          : t('v3.vaults.attach.attachedPartial', { label: entry.label, available })
       );
     } catch (error) {
-      showError(error, 'Attaching the holding');
+      showError(error, t('v3.vaults.attach.attaching'));
     } finally {
       setPendingIds((prev) => {
         const next = new Set(prev);

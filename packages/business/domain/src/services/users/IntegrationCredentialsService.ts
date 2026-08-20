@@ -189,6 +189,35 @@ export class IntegrationCredentialsService extends BaseService {
    * Mark a row failed when enqueue throws. The row stays (so the UI can show
    * the error); the reconciler may later reset it to pending_enqueue for retry.
    */
+  /**
+   * A scheduled sync was refused by the provider (SC-279).
+   *
+   * Deliberately not `markImportFailed`: that belongs to the import lifecycle
+   * and bumps the counter `reconcile-pending-credentials` uses to give up on a
+   * credential, so an hourly balance failure writing there would abandon a
+   * later import before it had been tried once.
+   */
+  async recordSyncRefusal(
+    id: string,
+    errorMessage: string,
+    blockedUntil: Date | null
+  ): Promise<void> {
+    try {
+      await this.credentialsRepository.markSyncRefused(id, errorMessage, blockedUntil);
+    } catch (error) {
+      throw this.handleError(error, 'recordSyncRefusal');
+    }
+  }
+
+  /** A scheduled sync succeeded — stop the row claiming a refusal. */
+  async clearSyncRefusal(id: string): Promise<void> {
+    try {
+      await this.credentialsRepository.clearSyncRefusal(id);
+    } catch (error) {
+      throw this.handleError(error, 'clearSyncRefusal');
+    }
+  }
+
   async markImportFailed(id: string, errorMessage: string): Promise<void> {
     try {
       await this.credentialsRepository.markImportFailed(id, errorMessage);

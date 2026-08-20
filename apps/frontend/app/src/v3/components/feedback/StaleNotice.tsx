@@ -1,5 +1,6 @@
 import { Button } from '@scani/ui/ui/button';
 import { CloudOff } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 /**
  * Says that the figures on screen are the last ones we had, rather than the
@@ -20,6 +21,7 @@ import { CloudOff } from 'lucide-react';
  * qualification on everything below it.
  */
 export function StaleNotice({ onRetry }: { onRetry: () => void }) {
+  const { t } = useTranslation();
   return (
     <div
       role="status"
@@ -27,10 +29,10 @@ export function StaleNotice({ onRetry }: { onRetry: () => void }) {
     >
       <CloudOff className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
       <p className="min-w-0 flex-1 text-caption text-muted-foreground">
-        Couldn't reach Scani. These are the last figures we had, not today's.
+        {t('v3.feedback.stale.notice')}
       </p>
       <Button variant="outline" size="sm" onClick={onRetry}>
-        Try again
+        {t('v3.feedback.stale.retry')}
       </Button>
     </div>
   );

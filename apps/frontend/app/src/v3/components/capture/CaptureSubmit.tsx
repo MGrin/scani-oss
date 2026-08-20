@@ -1,4 +1,5 @@
 import { Button } from '@scani/ui/ui/button';
+import { useTranslation } from 'react-i18next';
 import type { CaptureStage } from '../../lib/capture-forms';
 import { CaptureProgress } from './CaptureProgress';
 
@@ -39,6 +40,8 @@ export function CaptureSubmit({
   busyLabel,
   error,
 }: CaptureSubmitProps) {
+  const { t } = useTranslation();
+
   if (stage) {
     // `min-h-10` holds the button's height for the ramp's first 300ms, so the
     // page does not jump on submit and jump back on failure.
@@ -56,7 +59,7 @@ export function CaptureSubmit({
       </Button>
       {blockers.length > 0 ? (
         <p className="text-center text-caption text-muted-foreground">
-          To continue: {blockers.join(', ')}.
+          {t('v3.form.blockers', { blockers: blockers.join(', ') })}
         </p>
       ) : null}
       {error ? <p className="text-center text-caption text-destructive">{error}</p> : null}

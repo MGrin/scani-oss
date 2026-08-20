@@ -14,10 +14,14 @@
  * with GET parameters; SendRequest's response carries the GetStatement URL
  * IBKR wants us to hit (typically `gdcdyn`).
  *
- * Error code map:
- *   - 1010, 1012  → auth-failed
- *   - 1018        → rate-limited
- *   - 1001, 1019  → "still generating" — poll loop with delay
+ * Error code map, implemented in `classifyFlexError` — see the docblock there
+ * for why 1025 carries a day-long window rather than a retry hint:
+ *   - 1025        → rate-limited, 24h lockout (SC-279)
+ *   - 1018        → rate-limited, 60s
+ *   - 1010, 1012  → auth-failed, no window
+ *   - 1001, 1019  → "still generating" — poll loop with delay, and
+ *                   `retryable` once the budget runs out (SC-443)
+ *   - anything else → unrecoverable
  *
  * Uses regex-based XML parsing (Flex Query XML is well-structured and a
  * full parser is overkill for the limited subset of nodes we extract).
@@ -39,17 +43,27 @@ import type {
   CredentialValidator,
   TransactionsProvider,
 } from '../../core/capabilities';
+import { credentialRejection, ProviderError } from '../../core/errors';
 import type {
   DecryptedCredentials,
   DiscoveredAccount,
   HoldingSnapshot,
   ProviderContext,
   TransactionEvent,
+  TransactionFetchContext,
   WithUserCreds,
 } from '../../core/types';
 import { enforceSign, inferCounterSign, negateFee } from '../../core/utils/enforce-tx-sign';
 import { fetchWithTimeout } from '../../core/utils/fetch';
 import { ibkrManifest } from './manifest';
+import {
+  BALANCE_SECTIONS,
+  describeMissingSections,
+  describeUnmappedCashTypes,
+  hasFlexSection,
+  missingFlexSections,
+  TRANSACTION_SECTIONS,
+} from './statement-warnings';
 
 export { ibkrManifest } from './manifest';
 
@@ -83,6 +97,72 @@ const logger = createComponentLogger('provider:ibkr');
 // difference is purely semantic (1019 = generation in progress, 1001 =
 // generation hasn't yielded a statement yet).
 const TRANSIENT_GENERATION_ERROR_CODES = new Set(['1001', '1019']);
+
+/**
+ * The error-code map at the top of this file, actually implemented (SC-279).
+ *
+ * It has described 1010/1012 as auth-failed and 1018 as rate-limited since the
+ * provider was written, and the code classified none of them — every
+ * non-transient code threw a plain `Error`, which orchestrators treat as
+ * `retryable`. So an hourly schedule retried a lockout hourly.
+ *
+ * **1025 is the one that matters and it is not an ordinary rate limit.** IBKR
+ * returns "Too many failed attempts" after repeated failure and keeps
+ * returning it; each further attempt is another failed attempt against the
+ * counter that has to age out. Retrying is not recovery, it is the mechanism
+ * that sustains the lockout — so this carries a window the caller must honour
+ * by NOT CALLING AT ALL, not by sleeping and trying again.
+ *
+ * **The window is 24 hours, chosen to be obviously safe rather than
+ * optimistically short.** IBKR does not document 1025's cooldown, so there is
+ * no correct number to look up; what is known is the asymmetry. Waiting too
+ * long costs one more day of staleness on an integration that is already stale
+ * and — since this ticket — visibly flagged in its own row. Waiting too little
+ * costs the lockout never ageing out at all, which is the failure we are in.
+ * A day also exceeds any plausible rolling-counter window and is the unit a
+ * human would use ("try again tomorrow").
+ */
+const IBKR_LOCKOUT_MS = 24 * 60 * 60 * 1000;
+// 1018 is the throughput limiter — ~1 request per 15s per token — so it clears
+// on its own in seconds. A minute is generous and still same-run recoverable.
+const IBKR_RATE_LIMIT_MS = 60_000;
+
+function classifyFlexError(code: string, message: string): ProviderError {
+  const full = `IBKR Flex Query error (code ${code}): ${message}`;
+  if (code === '1025') {
+    return new ProviderError(full, 'rate-limited', 'ibkr', { retryAfterMs: IBKR_LOCKOUT_MS });
+  }
+  if (code === '1018') {
+    return new ProviderError(full, 'rate-limited', 'ibkr', { retryAfterMs: IBKR_RATE_LIMIT_MS });
+  }
+  if (code === '1010' || code === '1012') {
+    // No window: time does not fix a bad token. It needs the user, and
+    // `syncBlockedUntil` would only postpone telling them.
+    return new ProviderError(full, 'auth-failed', 'ibkr');
+  }
+  return new ProviderError(full, 'unrecoverable', 'ibkr');
+}
+
+/**
+ * The poll ran out of OUR budget while IBKR was still saying "generating"
+ * (SC-443).
+ *
+ * `retryable`, not `unrecoverable`. Exhaustion means the report was accepted
+ * and had not been built yet: a slow generation, not a broken credential, and
+ * nothing the user can correct. Classifying it terminal told them "this failed
+ * for a reason another attempt will not fix" — an instruction to go repair
+ * something that is not broken.
+ *
+ * No `retryAfterMs`. That contract means "do not contact the provider at all",
+ * which is right for the 1025 lockout and wrong here — the next attempt is the
+ * queue's to schedule, and every caller already bounds it: `RETRY_EXTERNAL`
+ * gives exchange-import 3 attempts, transaction-import allows 4, and the
+ * hourly `exchange-balances` cron simply runs again. Retrying forever is not
+ * one of the outcomes on offer.
+ */
+function flexPollExhausted(message: string): ProviderError {
+  return new ProviderError(message, 'retryable', 'ibkr');
+}
 
 // IBKR `<Trade>` rows cover stocks, ETFs, options, futures, forex, bonds.
 // We map only equities for now; derivatives need cost-basis logic we
@@ -122,10 +202,14 @@ interface OpenPosition {
   currency: string;
   assetCategory: string;
   listingExchange: string;
+  /** The row's own as-of date, verbatim. Optional in IBKR's schema, so the
+   *  statement's `toDate` is the fallback and our clock the last resort. */
+  reportDate: string;
 }
 interface CashBalance {
   currency: string;
   endingCash: string;
+  reportDate: string;
 }
 
 interface TradeRow {
@@ -205,6 +289,68 @@ function parseFlexDateTime(s: string): Date {
   );
 }
 
+/**
+ * Parse a Flex date-only attribute (`toDate`, `reportDate`) into the instant
+ * that day ENDS, UTC.
+ *
+ * Two spellings, because the date format is a per-query setting the user
+ * picks in Account Management and we do not set it for them: the default is
+ * `yyyyMMdd`, and `yyyy-MM-dd` is the other common choice (it is what IBKR's
+ * own published samples use). A parser that knew one of them would report a
+ * correct date for some users' statements and `Invalid Date` for the rest —
+ * which is the same silence we are fixing, one layer down.
+ *
+ * End of day rather than midnight because that is what the number means. An
+ * activity statement's positions are the CLOSING positions for `reportDate`,
+ * so 23:59:59Z is the latest instant they are known to describe; midnight
+ * would place a whole day's trading after the observation instead of before
+ * it. IBKR reports in the account's timezone and we treat it as UTC — the
+ * same simplification `parseFlexDateTime` above already makes, and it cannot
+ * move the date by more than the hours in a day.
+ */
+function parseFlexDate(s: string): Date {
+  const m = s.match(/^(\d{4})-?(\d{2})-?(\d{2})$/);
+  if (!m) return new Date(Number.NaN);
+  const [, y, mo, d] = m as unknown as [string, string, string, string];
+  return new Date(Date.UTC(Number(y), Number(mo) - 1, Number(d), 23, 59, 59));
+}
+
+/**
+ * The date the STATEMENT claims to describe, from `<FlexStatement>`'s own
+ * attributes — the account-wide fallback for rows that carry no `reportDate`
+ * of their own.
+ *
+ * `toDate` is the answer and `whenGenerated` is not: the second says when
+ * IBKR built the report, which for an intraday fetch is today even when the
+ * data in it is not. Reading the generation stamp as an as-of date would
+ * reproduce exactly the lie this function exists to stop telling.
+ */
+function parseStatementAsOf(xml: string): Date | null {
+  const match = xml.match(/<FlexStatement\s+([^>]*?)\/?>/);
+  if (!match) return null;
+  const at = parseFlexDate(extractAttr(match[1] ?? '', 'toDate'));
+  return Number.isNaN(at.getTime()) ? null : at;
+}
+
+/**
+ * Said on every IBKR sync, unconditionally, because the lag is a property of
+ * the interface rather than of a particular run (SC-384).
+ *
+ * The Flex Web Service is a REPORTING interface: IBKR generates an activity
+ * statement after the close and serves that same statement all day. Same-day
+ * positions exist — IBKR's Client Portal Web API has them — but that API
+ * authenticates by OAuth 1.0a signature or a gateway session, and a Flex
+ * token cannot produce either (measured 2026-08-19: every Client Portal
+ * endpoint answers 401 to a Flex token, and ignores the `t=` parameter
+ * entirely). So the credential a user pastes into Scani reaches the lagging
+ * source and no other, and the honest move is to say so next to the number
+ * rather than let a reader who just traded conclude their broker data is
+ * wrong.
+ */
+const IBKR_AS_OF_NOTE =
+  'Interactive Brokers generates this statement after the close and serves it all day, ' +
+  'so positions are as of the date shown — trades made since then appear tomorrow.';
+
 function parsePositions(xml: string): OpenPosition[] {
   const out: OpenPosition[] = [];
   for (const match of xml.matchAll(/<OpenPosition\s+([^>]*)\/?>/g)) {
@@ -221,6 +367,7 @@ function parsePositions(xml: string): OpenPosition[] {
       currency: extractAttr(attrs, 'currency'),
       assetCategory: extractAttr(attrs, 'assetCategory'),
       listingExchange: extractAttr(attrs, 'listingExchange'),
+      reportDate: extractAttr(attrs, 'reportDate'),
     });
   }
   return out;
@@ -239,7 +386,7 @@ function parseCashBalances(xml: string): CashBalance[] {
     // short positions above — a negative cash balance is a liability, not
     // a holding, and holdings.balance is constrained to >= 0.
     if (!Number.isFinite(cash) || cash <= 0) continue;
-    out.push({ currency, endingCash });
+    out.push({ currency, endingCash, reportDate: extractAttr(attrs, 'reportDate') });
   }
   return out;
 }
@@ -387,9 +534,29 @@ function tradeToEvent(t: TradeRow): TransactionEvent | null {
   return event;
 }
 
+/**
+ * Why a cash row produced no event — separated from producing one because the
+ * three reasons are not alike (SC-435).
+ *
+ * `summary` is IBKR's own BASE_SUMMARY total line and is meant to be dropped.
+ * `unmapped-type` is the one that matters: `classifyCashType` matches IBKR's
+ * `type` attribute EXACTLY, so a string the map has never seen — a category we
+ * did not know existed, or one IBKR renamed — takes real money out of the
+ * ledger and says nothing. That is the same defect as a section the query
+ * never sent, arriving through a different door, and it is the other half of
+ * what could have made every IBKR transaction in production a `<Trade>`.
+ */
+type CashDropReason = 'summary' | 'incomplete' | 'unmapped-type';
+
+function cashTxDropReason(c: CashTransactionRow): CashDropReason | null {
+  if (c.currency === 'BASE_SUMMARY') return 'summary';
+  if (!c.type || !c.currency || !c.amount) return 'incomplete';
+  if (!classifyCashType(c.type, c.amount)) return 'unmapped-type';
+  return null;
+}
+
 function cashTxToEvent(c: CashTransactionRow): TransactionEvent | null {
-  if (!c.type || !c.currency || !c.amount) return null;
-  if (c.currency === 'BASE_SUMMARY') return null;
+  if (cashTxDropReason(c)) return null;
   const kind = classifyCashType(c.type, c.amount);
   if (!kind) return null;
   return {
@@ -417,7 +584,15 @@ export class IbkrProvider
     'account-discoverer',
   ];
 
-  constructor(private readonly limiter: OutflowRateLimiter) {}
+  /**
+   * `sleep` is injected only so the poll budget can be exercised. Exhausting
+   * GetStatement legitimately takes 24×12s, and a test that proves what
+   * exhaustion classifies AS cannot be the test that sits through it.
+   */
+  constructor(
+    private readonly limiter: OutflowRateLimiter,
+    private readonly sleep: (ms: number) => Promise<void> = delay
+  ) {}
 
   canFetchBalances(c: string): boolean {
     return c === IBKR_INSTITUTION_CODE;
@@ -464,6 +639,20 @@ export class IbkrProvider
     const positions = parsePositions(xml);
     const cashBalances = parseCashBalances(xml);
 
+    // Three sources for "when is this true", narrowest first: the row's own
+    // `reportDate`, the statement's `toDate`, and — only if IBKR sent neither
+    // and only so a sync never fails over a missing attribute — the clock.
+    // The last one is the pre-SC-384 behaviour and it is a lie; it is here
+    // because a wrong date on a working balance beats no balance, not because
+    // it is acceptable.
+    const statementAsOf = parseStatementAsOf(xml);
+    const fetchedAt = new Date();
+    const asOf = (reportDate: string): Date => {
+      const row = parseFlexDate(reportDate);
+      if (!Number.isNaN(row.getTime())) return row;
+      return statementAsOf ?? fetchedAt;
+    };
+
     const out: HoldingSnapshot[] = [];
 
     // Equity / ETF positions. `marketSegment` derived from the
@@ -508,7 +697,8 @@ export class IbkrProvider
         externalId: p.symbol,
         tokenIdentity,
         balance: p.position,
-        capturedAt: new Date(),
+        capturedAt: asOf(p.reportDate),
+        asOfNote: IBKR_AS_OF_NOTE,
         tokenType: 'stock',
       });
     }
@@ -529,7 +719,8 @@ export class IbkrProvider
         externalId: c.currency,
         tokenIdentity,
         balance: new Decimal(c.endingCash).toString(),
-        capturedAt: new Date(),
+        capturedAt: asOf(c.reportDate),
+        asOfNote: IBKR_AS_OF_NOTE,
         tokenType: 'fiat',
       });
     }
@@ -537,19 +728,20 @@ export class IbkrProvider
     return out;
   }
 
-  async fetchTransactions(
-    ctx: WithUserCreds<ProviderContext> & {
-      institutionCode: string;
-      since?: Date;
-      until?: Date;
-    }
-  ): Promise<TransactionEvent[]> {
+  async fetchTransactions(ctx: TransactionFetchContext): Promise<TransactionEvent[]> {
     const creds = await ctx.resolveCredentials(ctx.credentialsRef);
     const token = creds.flexQueryToken as string | undefined;
     const queryId = creds.flexQueryId as string | undefined;
     if (!token || !queryId) return [];
 
     const xml = await this.runFlexQuery(token, queryId, ctx.onStatus);
+
+    // Before parsing, not after. A section the query never sent and a section
+    // that is simply empty produce the same zero rows, and only the statement
+    // itself can tell them apart (SC-435).
+    const missing = describeMissingSections(missingFlexSections(xml, TRANSACTION_SECTIONS));
+    if (missing) ctx.noteWarning?.(missing);
+
     const trades = parseTrades(xml);
     const cashTxs = parseCashTransactions(xml);
 
@@ -558,13 +750,41 @@ export class IbkrProvider
       const e = tradeToEvent(t);
       if (e) events.push(e);
     }
+
+    // A row we received and could not place is money that moved with nothing
+    // to say so — the same outcome as a section we never received, so it gets
+    // the same voice rather than a log line (SC-435).
+    const unmappedTypes = new Map<string, number>();
     for (const c of cashTxs) {
       const e = cashTxToEvent(c);
-      if (e) events.push(e);
+      if (e) {
+        events.push(e);
+        continue;
+      }
+      if (cashTxDropReason(c) === 'unmapped-type') {
+        unmappedTypes.set(c.type, (unmappedTypes.get(c.type) ?? 0) + 1);
+      }
     }
+    const unmapped = describeUnmappedCashTypes(unmappedTypes);
+    if (unmapped) ctx.noteWarning?.(unmapped);
+
     return events;
   }
 
+  /**
+   * **Not on the connect path**, and that is deliberate: `ibkrManifest` sets
+   * `skipServerValidation`, so `integrations.validateKeys` stores the
+   * credential and enqueues the import without calling this. One SendRequest
+   * per minute is the whole budget, and spending it here spends the worker's.
+   * What a user sees after connecting IBKR is the import job's own outcome.
+   *
+   * It still has to be right for the day that flag flips, and for anything
+   * that reaches a validator through the registry. Only IBKR's documented
+   * bad-token codes (1010, 1012) are an answer about the credential; a
+   * lockout, a throughput limit, a report IBKR has not finished generating
+   * and a network failure all leave the token's validity unknown, and
+   * `credentialRejection` re-throws them rather than blaming it (SC-445).
+   */
   async validateCredentials(
     creds: DecryptedCredentials,
     institutionCode: string
@@ -584,7 +804,7 @@ export class IbkrProvider
       await this.requestReport(token, queryId);
       return { valid: true };
     } catch (err) {
-      return { valid: false, message: err instanceof Error ? err.message : String(err) };
+      return credentialRejection(err);
     }
   }
 
@@ -592,14 +812,40 @@ export class IbkrProvider
   // Internals
   // ============================================================
 
+  /**
+   * Logged on every statement, both callers, whether or not anything is
+   * missing — because the question SC-435 asks is answered by one line from
+   * one scheduled sync, and a line that only appears when something is wrong
+   * cannot distinguish "nothing wrong" from "never ran".
+   *
+   * It names the four sections and the statement's size. No account
+   * identifier, no token: which report sections a user selected is a
+   * configuration fact, and the log already carries the run's identity.
+   */
+  private logSectionInventory(xml: string, queryId: string): void {
+    const sections = [...BALANCE_SECTIONS, ...TRANSACTION_SECTIONS];
+    logger.info(
+      {
+        queryId,
+        bytes: xml.length,
+        sections: Object.fromEntries(
+          sections.map((section) => [section.element, hasFlexSection(xml, section.element)])
+        ),
+      },
+      'IBKR statement: sections present'
+    );
+  }
+
   private async runFlexQuery(
     token: string,
     queryId: string,
     onStatus?: (message: string) => void | Promise<void>
   ): Promise<string> {
     const sent = await this.requestReport(token, queryId, onStatus);
-    await delay(FETCH_DELAY_MS);
-    return this.fetchReport(token, sent.referenceCode, sent.getStatementUrl, onStatus);
+    await this.sleep(FETCH_DELAY_MS);
+    const xml = await this.fetchReport(token, sent.referenceCode, sent.getStatementUrl, onStatus);
+    this.logSectionInventory(xml, queryId);
+    return xml;
   }
 
   private async requestReport(
@@ -622,6 +868,10 @@ export class IbkrProvider
     // and explicit catch on network/timeout errors so we don't blow out
     // the inline retry budget on a single hang.
     let lastErrorMsg = 'unknown';
+    const exhausted = () =>
+      flexPollExhausted(
+        `IBKR SendRequest still transient after ${MAX_SEND_RETRIES} retries (last: ${lastErrorMsg})`
+      );
     for (let attempt = 0; attempt < MAX_SEND_RETRIES; attempt++) {
       if (attempt === 0) {
         await reportStatus(onStatus, 'Connecting to IBKR Flex Web Service…');
@@ -643,7 +893,7 @@ export class IbkrProvider
             onStatus,
             `IBKR Flex Web Service unreachable — retrying (${attempt + 2}/${MAX_SEND_RETRIES})…`
           );
-          await delay(SEND_DELAY_MS);
+          await this.sleep(SEND_DELAY_MS);
           continue;
         }
         logger.error(
@@ -657,24 +907,32 @@ export class IbkrProvider
           { tokenSuffix, queryId, status: response.status, attempt },
           'IBKR SendRequest: non-2xx HTTP'
         );
-        throw new Error(`IBKR SendRequest HTTP ${response.status}`);
+        throw ProviderError.fromHttp(IBKR_INSTITUTION_CODE, response);
       }
       const xml = await response.text();
       const errorMatch = xml.match(/<ErrorCode>(\d+)<\/ErrorCode>/);
       if (errorMatch) {
         const code = errorMatch[1] ?? '';
         const errorMsg = xml.match(/<ErrorMessage>([^<]*)<\/ErrorMessage>/)?.[1] ?? 'Unknown';
-        if (TRANSIENT_GENERATION_ERROR_CODES.has(code) && attempt < MAX_SEND_RETRIES - 1) {
+        if (TRANSIENT_GENERATION_ERROR_CODES.has(code)) {
+          lastErrorMsg = `code ${code}: ${errorMsg}`;
+          if (attempt < MAX_SEND_RETRIES - 1) {
+            logger.warn(
+              { tokenSuffix, queryId, code, errorMsg, attempt, retryDelayMs: SEND_DELAY_MS },
+              'IBKR SendRequest: transient error, retrying'
+            );
+            await reportStatus(
+              onStatus,
+              `IBKR queue busy — retrying SendRequest (${attempt + 2}/${MAX_SEND_RETRIES})…`
+            );
+            await this.sleep(SEND_DELAY_MS);
+            continue;
+          }
           logger.warn(
-            { tokenSuffix, queryId, code, errorMsg, attempt, retryDelayMs: SEND_DELAY_MS },
-            'IBKR SendRequest: transient error, retrying'
+            { tokenSuffix, queryId, code, errorMsg, attempts: MAX_SEND_RETRIES },
+            'IBKR SendRequest: still queued after the full budget'
           );
-          await reportStatus(
-            onStatus,
-            `IBKR queue busy — retrying SendRequest (${attempt + 2}/${MAX_SEND_RETRIES})…`
-          );
-          await delay(SEND_DELAY_MS);
-          continue;
+          throw exhausted();
         }
         // Last-ditch: dump the full XML so we can see if IBKR included
         // additional context (extra tags, account-specific notes, etc.)
@@ -691,7 +949,7 @@ export class IbkrProvider
           },
           'IBKR SendRequest: failed permanently'
         );
-        throw new Error(`IBKR Flex Query error (code ${code}): ${errorMsg}`);
+        throw classifyFlexError(code, errorMsg);
       }
       const refMatch = xml.match(/<ReferenceCode>([^<]+)<\/ReferenceCode>/);
       if (!refMatch?.[1]) {
@@ -712,9 +970,10 @@ export class IbkrProvider
       );
       return { referenceCode: refMatch[1], getStatementUrl };
     }
-    throw new Error(
-      `IBKR SendRequest still transient after ${MAX_SEND_RETRIES} retries (last: ${lastErrorMsg})`
-    );
+    // Unreachable: the last attempt returns or throws. Present because the
+    // compiler cannot prove a bounded loop runs, and identical to the throw
+    // above so the two can never drift apart.
+    throw exhausted();
   }
 
   private async fetchReport(
@@ -732,6 +991,10 @@ export class IbkrProvider
       'IBKR GetStatement: starting'
     );
     let lastErrorMsg = 'unknown';
+    const exhausted = () =>
+      flexPollExhausted(
+        `IBKR report still generating after ${MAX_FETCH_RETRIES} retries (last: ${lastErrorMsg})`
+      );
     for (let attempt = 0; attempt < MAX_FETCH_RETRIES; attempt++) {
       if (attempt === 0) {
         await reportStatus(onStatus, 'IBKR is generating your Flex statement…');
@@ -759,7 +1022,7 @@ export class IbkrProvider
             onStatus,
             `IBKR Flex Web Service unreachable — retrying GetStatement (${attempt + 2}/${MAX_FETCH_RETRIES})…`
           );
-          await delay(FETCH_DELAY_MS);
+          await this.sleep(FETCH_DELAY_MS);
           continue;
         }
         logger.error(
@@ -773,24 +1036,32 @@ export class IbkrProvider
           { tokenSuffix, referenceCode, status: response.status, attempt },
           'IBKR GetStatement: non-2xx HTTP'
         );
-        throw new Error(`IBKR GetStatement HTTP ${response.status}`);
+        throw ProviderError.fromHttp(IBKR_INSTITUTION_CODE, response);
       }
       const xml = await response.text();
       const errorMatch = xml.match(/<ErrorCode>(\d+)<\/ErrorCode>/);
       if (errorMatch) {
         const code = errorMatch[1] ?? '';
         const errorMsg = xml.match(/<ErrorMessage>([^<]*)<\/ErrorMessage>/)?.[1] ?? 'Unknown';
-        if (TRANSIENT_GENERATION_ERROR_CODES.has(code) && attempt < MAX_FETCH_RETRIES - 1) {
+        if (TRANSIENT_GENERATION_ERROR_CODES.has(code)) {
+          lastErrorMsg = `code ${code}: ${errorMsg}`;
+          if (attempt < MAX_FETCH_RETRIES - 1) {
+            logger.warn(
+              { tokenSuffix, referenceCode, code, errorMsg, attempt, retryDelayMs: FETCH_DELAY_MS },
+              'IBKR GetStatement: transient error, retrying'
+            );
+            await reportStatus(
+              onStatus,
+              `Waiting for IBKR — generating report (attempt ${attempt + 2}/${MAX_FETCH_RETRIES})…`
+            );
+            await this.sleep(FETCH_DELAY_MS);
+            continue;
+          }
           logger.warn(
-            { tokenSuffix, referenceCode, code, errorMsg, attempt, retryDelayMs: FETCH_DELAY_MS },
-            'IBKR GetStatement: transient error, retrying'
+            { tokenSuffix, referenceCode, code, errorMsg, attempts: MAX_FETCH_RETRIES },
+            'IBKR GetStatement: still generating after the full budget'
           );
-          await reportStatus(
-            onStatus,
-            `Waiting for IBKR — generating report (attempt ${attempt + 2}/${MAX_FETCH_RETRIES})…`
-          );
-          await delay(FETCH_DELAY_MS);
-          continue;
+          throw exhausted();
         }
         logger.error(
           {
@@ -804,7 +1075,7 @@ export class IbkrProvider
           },
           'IBKR GetStatement: failed permanently'
         );
-        throw new Error(`IBKR Flex Query error (code ${code}): ${errorMsg}`);
+        throw classifyFlexError(code, errorMsg);
       }
       logger.info(
         { tokenSuffix, referenceCode, attempt, xmlLength: xml.length },
@@ -812,9 +1083,8 @@ export class IbkrProvider
       );
       return xml;
     }
-    throw new Error(
-      `IBKR report still generating after ${MAX_FETCH_RETRIES} retries (last: ${lastErrorMsg})`
-    );
+    // Unreachable, for the same reason as in `requestReport`.
+    throw exhausted();
   }
 }
 

@@ -3,9 +3,11 @@ import { createComponentLogger } from '@scani/logging';
 import Decimal from 'decimal.js';
 import { Container, Service } from 'typedi';
 import { MAX_DAILY_PRICE_AGE_MS, MAX_INTRADAY_PRICE_AGE_MS } from '../../lib/constants';
+import { TokenTypeRepository } from '../../repositories/EnumRepositories';
 import { TokenPriceRepository } from '../../repositories/TokenPriceRepository';
 import { TokenRepository } from '../../repositories/TokenRepository';
-import type { PriceLookup } from './PriceLookup';
+import { PriceLookup } from './PriceLookup';
+import { PRICE_HUBS, type PriceHub, priceHubKey } from './price-hubs';
 
 export interface PriceGraphConversion {
   // The resulting amount, already denominated in toTokenId.
@@ -26,18 +28,17 @@ export interface PriceGraphConversion {
 export interface PriceGraphOptions {
   // Prefer this granularity at each leg when reading `token_prices`.
   preferGranularity?: TokenPriceGranularity;
-  // Symbols of tokens to use as hubs when no direct edge exists.
-  // Evaluated in order; first hub whose legs resolve wins.
-  // Defaults to ['USD', 'USDT', 'EUR']. User's display base is folded in
-  // automatically by PortfolioValuationAtTimeService when it has one.
-  hubSymbols?: string[];
+  // Tokens to use as hubs when no direct edge exists, each pinned to its
+  // type. Evaluated in order; first hub whose legs resolve wins.
+  // Defaults to PRICE_HUBS.
+  hubs?: readonly PriceHub[];
   // Max path depth. 1 = direct only. 2 = allow one hub (recommended).
   // 3 = allow two hubs; rarely useful, costs extra lookups.
   maxDepth?: 1 | 2 | 3;
-  // Optional pre-fetched price index. When set, tryDirect reads from
-  // the in-memory dataset instead of the DB; falls back to the repo
-  // only for pairs the lookup didn't preload (defensive). Used by the
-  // rollup hot-path to avoid 80k DB round-trips per backfill.
+  // Optional pre-fetched price index. When set, tryDirect reads from the
+  // in-memory dataset instead of the DB for every pair the lookup was built
+  // to cover, and falls back to the repository for the rest. Build it with
+  // `buildPriceLookup` so the covered set matches what this walks.
   priceLookup?: PriceLookup;
 }
 
@@ -55,14 +56,17 @@ export interface PriceGraphOptions {
 @Service()
 export class PriceGraphService {
   private readonly logger = createComponentLogger('service:PriceGraphService');
-  // Small cache scoped to the service instance for the hub-symbol → token-id
+  // Small cache scoped to the service instance for the hub → token-id
   // lookup. Invalidated on process restart; that's fine — tokens are seeded
-  // by migration and stable for the process lifetime.
-  private hubIdCache = new Map<string, string>();
+  // by migration and stable for the process lifetime. `null` is cached too:
+  // a hub that does not resolve used to re-query on every single convert()
+  // call, which is the hot path.
+  private hubIdCache = new Map<string, string | null>();
 
   // Class-field DI — see note in BalanceAtTimeService.ts.
   private readonly tokenPriceRepository = Container.get(TokenPriceRepository);
   private readonly tokenRepository = Container.get(TokenRepository);
+  private readonly tokenTypeRepository = Container.get(TokenTypeRepository);
 
   async convert(
     amount: Decimal | string,
@@ -110,7 +114,7 @@ export class PriceGraphService {
     // and a repeated id in the two-hop loop produces degenerate paths
     // (`A → hub → same-hub → B` yielding rate = p × 1/p = 1, which
     // looks valid but is noise).
-    const hubIds = [...new Set(await this.resolveHubTokenIds(options.hubSymbols))];
+    const hubIds = [...new Set(await this.resolveHubTokenIds(options.hubs))];
     for (const hubId of hubIds) {
       if (hubId === fromTokenId || hubId === toTokenId) continue;
       const legA = await this.tryDirect(fromTokenId, hubId, at, prefer, lookup);
@@ -134,7 +138,7 @@ export class PriceGraphService {
 
     // Depth 3 — two hops (bridging two hubs). Rare; only runs when the
     // hub list can't directly bridge. Hard cap on iterations so a
-    // future expansion of `PRICE_HUB_SYMBOLS` (today: USD, USDT, EUR)
+    // future expansion of `PRICE_HUBS` (today: USD, USDT, EUR)
     // doesn't quietly turn this into an O(hubCount^2) hot-loop in
     // the rollup. At 3 hubs we walk ≤6 (hubA,hubB) pairs; 10 leaves
     // headroom for going up to ~5 hubs without a config change.
@@ -171,10 +175,51 @@ export class PriceGraphService {
     return null;
   }
 
+  // Prefetch every price row `convert` could consult for these tokens into
+  // one index, in one query.
+  //
+  // The pair set is the union of everything `tryDirect` can ask for while
+  // converting any of `tokenIds` to `baseCurrencyId`: each token against the
+  // base and against every hub, both directions because a missing forward
+  // edge is inverted from the reverse, plus the hub-to-hub legs the two-hop
+  // path walks. It lives here rather than in a caller because that list is
+  // this class's own traversal, and the rollup's copy of it carried a
+  // "keep in sync" hazard whose failure mode is silent — a pair the preload
+  // misses is a DB round-trip at best and, before `PriceLookup.covers`,
+  // a fabricated "no price" at worst.
+  async buildPriceLookup(
+    tokenIds: Iterable<string>,
+    baseCurrencyId: string,
+    until: Date
+  ): Promise<PriceLookup> {
+    const hubIds = await this.resolveHubTokenIds();
+    const baseAndHubs = new Set<string>([baseCurrencyId, ...hubIds]);
+    const pairs: Array<{ tokenId: string; baseTokenId: string }> = [];
+    const pushPair = (a: string, b: string): void => {
+      if (a !== b) pairs.push({ tokenId: a, baseTokenId: b });
+    };
+    for (const tokenId of new Set(tokenIds)) {
+      for (const other of baseAndHubs) {
+        pushPair(tokenId, other);
+        pushPair(other, tokenId);
+      }
+    }
+    const anchors = [...baseAndHubs];
+    for (const a of anchors) {
+      for (const b of anchors) pushPair(a, b);
+    }
+    const rows = await this.tokenPriceRepository.findManyForPairsUpTo(pairs, until);
+    return new PriceLookup(rows, pairs);
+  }
+
   // Try a direct edge between two tokens. Uses the forward price if
   // available; otherwise inverts a reverse price. Returns null when
-  // neither exists. When a `priceLookup` is supplied (rollup hot-path
-  // only), reads from the in-memory index instead of the DB.
+  // neither exists.
+  //
+  // A supplied `priceLookup` answers for the pairs it was built to cover;
+  // anything else still goes to the repository. Forward and reverse are
+  // separate pairs and are decided separately, so a prefetch that covers one
+  // direction does not suppress the read for the other.
   private async tryDirect(
     fromTokenId: string,
     toTokenId: string,
@@ -182,25 +227,27 @@ export class PriceGraphService {
     prefer: TokenPriceGranularity | null,
     lookup: PriceLookup | null
   ): Promise<{ rate: Decimal; at: Date } | null> {
-    const forward = lookup
-      ? lookup.findClosestByGranularity(fromTokenId, toTokenId, at, prefer)
-      : await this.tokenPriceRepository.findClosestPriceByGranularity(
-          fromTokenId,
-          toTokenId,
-          at,
-          prefer
-        );
+    const forward =
+      lookup?.covers(fromTokenId, toTokenId) === true
+        ? lookup.findClosestByGranularity(fromTokenId, toTokenId, at, prefer)
+        : await this.tokenPriceRepository.findClosestPriceByGranularity(
+            fromTokenId,
+            toTokenId,
+            at,
+            prefer
+          );
     if (forward) {
       return { rate: new Decimal(forward.price), at: forward.timestamp };
     }
-    const reverse = lookup
-      ? lookup.findClosestByGranularity(toTokenId, fromTokenId, at, prefer)
-      : await this.tokenPriceRepository.findClosestPriceByGranularity(
-          toTokenId,
-          fromTokenId,
-          at,
-          prefer
-        );
+    const reverse =
+      lookup?.covers(toTokenId, fromTokenId) === true
+        ? lookup.findClosestByGranularity(toTokenId, fromTokenId, at, prefer)
+        : await this.tokenPriceRepository.findClosestPriceByGranularity(
+            toTokenId,
+            fromTokenId,
+            at,
+            prefer
+          );
     if (reverse) {
       const rp = new Decimal(reverse.price);
       if (rp.isZero()) return null;
@@ -209,21 +256,64 @@ export class PriceGraphService {
     return null;
   }
 
-  private async resolveHubTokenIds(symbolsOverride?: string[]): Promise<string[]> {
-    const symbols = symbolsOverride ?? ['USD', 'USDT', 'EUR'];
+  // Resolve each hub to the `tokens` row it names. Public because the
+  // nightly rollup prefetches every (token, hub) price pair into a
+  // PriceLookup and has to preload the same ids this walks — it used to
+  // keep its own hub list and its own resolver, with a "keep in sync"
+  // comment and nothing that checked (SC-315).
+  //
+  // Each hub is resolved on `(symbol, typeId, marketSegment: null)`,
+  // which the `tokens_symbol_type_segment_unique` constraint makes at
+  // most one row. That matters because a symbol is not an identity here:
+  ***REMOVED***
+  // type alone still leaves `findBySymbolAndType`'s
+  // `asc(isScamProbability), desc(createdAt)` tiebreak to guess between
+  // the merged canonical row and one chain's ERC-20. The canonical row
+  // is the one carrying the price edges (migration 0007 merged the
+  // chain-spread duplicates into it and forced its segment to NULL), so
+  // guessing the other one takes the entire USDT lane out of service —
+  // every one-hop route through it fails and falls through to the next
+  // hub, silently.
+  async resolveHubTokenIds(hubs: readonly PriceHub[] = PRICE_HUBS): Promise<string[]> {
     const ids: string[] = [];
-    for (const symbol of symbols) {
-      const cached = this.hubIdCache.get(symbol);
-      if (cached) {
-        ids.push(cached);
+    for (const hub of hubs) {
+      const key = priceHubKey(hub);
+      const cached = this.hubIdCache.get(key);
+      if (cached !== undefined) {
+        if (cached) ids.push(cached);
         continue;
       }
-      const token = await this.tokenRepository.findBySymbol(symbol);
-      if (token) {
-        this.hubIdCache.set(symbol, token.id);
-        ids.push(token.id);
-      }
+      const id = await this.resolveHub(hub);
+      this.hubIdCache.set(key, id);
+      if (id) ids.push(id);
     }
     return ids;
+  }
+
+  private async resolveHub(hub: PriceHub): Promise<string | null> {
+    const type = await this.tokenTypeRepository.findByCode(hub.typeCode);
+    if (!type) {
+      this.logger.warn({ hub }, 'PriceGraphService: hub token type is not seeded, hub disabled');
+      return null;
+    }
+
+    const canonical = await this.tokenRepository.findByIdentityTuple(hub.symbol, type.id, null);
+    if (canonical) return canonical.id;
+
+    // No un-segmented row. Every hub is expected to have one, so this is
+    // a database we don't recognise rather than a routing decision —
+    // fall back to the type-scoped lookup so an existing lane keeps
+    // working, but say out loud that the row was picked by a tiebreak.
+    const segmented = await this.tokenRepository.findBySymbolAndType(hub.symbol, type.id);
+    if (segmented) {
+      this.logger.warn(
+        { hub, tokenId: segmented.id, marketSegment: segmented.marketSegment },
+        'PriceGraphService: no canonical hub row, falling back to a tie-broken match'
+      );
+      return segmented.id;
+    }
+
+    this.logger.warn({ hub }, 'PriceGraphService: hub token not found, hub disabled');
+    return null;
   }
 }

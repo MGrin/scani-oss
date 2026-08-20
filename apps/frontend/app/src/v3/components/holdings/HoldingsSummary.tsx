@@ -2,6 +2,7 @@ import type { HoldingWithDetails } from '@scani/shared';
 import { Block } from '@scani/ui/v3/components/Block';
 import { StatTile } from '@scani/ui/v3/components/charts/StatTile';
 import { Numeric } from '@scani/ui/v3/components/Numeric';
+import { Trans, useTranslation } from 'react-i18next';
 import { excludedFromTotal, holdingAllocation, holdingsValue } from '../../lib/holdings';
 import { AllocationBar } from '../charts/AllocationBar';
 
@@ -34,6 +35,7 @@ interface HoldingsSummaryProps {
 }
 
 export function HoldingsSummary({ holdings, currency }: HoldingsSummaryProps) {
+  const { t } = useTranslation();
   const allocation = holdingAllocation(holdings);
   const excluded = excludedFromTotal(holdings);
 
@@ -42,19 +44,33 @@ export function HoldingsSummary({ holdings, currency }: HoldingsSummaryProps) {
       <div className="flex flex-col gap-1">
         <StatTile
           emphasis="hero"
-          label="Value"
+          label={t('v3.holdings.summary.value')}
           value={<Numeric value={holdingsValue(holdings)} currency={currency} />}
         />
         {excluded.count > 0 ? (
           <p className="text-caption text-muted-foreground">
-            {`Excludes ${excluded.count} inactive ${excluded.count === 1 ? 'holding' : 'holdings'} worth `}
-            <Numeric value={excluded.value} currency={currency} className="text-caption" />
-            {', still listed below.'}
+            {/* One sentence, one key, the figure as a slot (SC-235). Built as
+                lead + `<Numeric>` + tail it handed a translator two halves and
+                pinned the amount between them — and no language is obliged to
+                put a figure between "worth" and "still listed below". */}
+            <Trans
+              i18nKey="v3.holdings.summary.excludes"
+              count={excluded.count}
+              components={{
+                value: (
+                  <Numeric value={excluded.value} currency={currency} className="text-caption" />
+                ),
+              }}
+            />
           </p>
         ) : null}
       </div>
       {allocation.length > 1 ? (
-        <AllocationBar items={allocation} currency={currency} label="Allocation by asset type" />
+        <AllocationBar
+          items={allocation}
+          currency={currency}
+          label={t('v3.holdings.summary.allocation')}
+        />
       ) : null}
     </Block>
   );

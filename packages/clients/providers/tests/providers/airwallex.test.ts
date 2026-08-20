@@ -63,7 +63,7 @@ describe('AirwallexProvider', () => {
         );
       }
       throw new Error(`Unexpected URL: ${url}`);
-    }) as typeof fetch;
+    }) as unknown as typeof fetch;
 
     const p = new AirwallexProvider(passthroughLimiter());
     const out = await p.fetchBalances(ctx as never);
@@ -94,14 +94,15 @@ describe('AirwallexProvider', () => {
       if (url.endsWith('/api/v1/authentication/login')) return loginResponse();
       if (url.endsWith('/api/v1/balances/current')) return new Response('[]', { status: 200 });
       throw new Error(`Unexpected URL: ${url}`);
-    }) as typeof fetch;
+    }) as unknown as typeof fetch;
     const p = new AirwallexProvider(passthroughLimiter());
     const r = await p.validateCredentials({ clientId: 'cid', apiKey: 'key' }, 'airwallex');
     expect(r.valid).toBe(true);
   });
 
   test('validateCredentials surfaces auth HTTP failure', async () => {
-    globalThis.fetch = (async () => new Response('Unauthorized', { status: 401 })) as typeof fetch;
+    globalThis.fetch = (async () =>
+      new Response('Unauthorized', { status: 401 })) as unknown as typeof fetch;
     const p = new AirwallexProvider(passthroughLimiter());
     const r = await p.validateCredentials({ clientId: 'cid', apiKey: 'key' }, 'airwallex');
     expect(r.valid).toBe(false);
@@ -164,7 +165,7 @@ describe('AirwallexProvider', () => {
         );
       }
       throw new Error(`Unexpected URL: ${url}`);
-    }) as typeof fetch;
+    }) as unknown as typeof fetch;
 
     const p = new AirwallexProvider(passthroughLimiter());
     const events = await p.fetchTransactions({

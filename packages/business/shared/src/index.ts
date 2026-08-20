@@ -11,7 +11,15 @@ export * from './decimal';
 export * from './dtos';
 export * from './format/currency';
 export * from './format/date';
+export * from './format/locale';
 export * from './format/precision';
+export {
+  counterpartyFromPayload,
+  type ExplorerLinks,
+  explorerLinks,
+  normalizeCounterparty,
+  txHashFromPayload,
+} from './lib/block-explorer';
 export * from './token-validatiion';
 export * from './usage/outcomes';
 export { safeExternalUrl } from './utils/safe-external-url';

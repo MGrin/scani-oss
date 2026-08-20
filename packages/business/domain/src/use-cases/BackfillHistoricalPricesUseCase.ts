@@ -16,7 +16,8 @@ import { withAdvisoryLock } from '@scani/db';
 import { db } from '@scani/db/connection';
 import * as schema from '@scani/db/schema';
 import { createComponentLogger } from '@scani/logging';
-import { and, eq, gte, ne, sql } from 'drizzle-orm';
+import { ProviderRegistry } from '@scani/providers/core/registry';
+import { and, eq, gte, inArray, ne, sql } from 'drizzle-orm';
 import { Container, Service } from 'typedi';
 import { TokenRepository } from '../repositories/TokenRepository';
 import { HistoricalPriceBackfillService } from '../services';
@@ -42,12 +43,54 @@ export interface BackfillSummary {
   // Tokens we skipped entirely because they're inside an unpriceable
   // cooldown window from a previous failed backfill.
   skippedUnpriceable: number;
+  // Tokens whose providers ERRORED rather than answering. Deliberately
+  // not folded into `providerMissing`: that number reads as "nobody has
+  // this data", and these are runs that never found out. A non-zero
+  // value here is an upstream or request problem to investigate, not a
+  // fact about the tokens.
+  attemptsFailed: number;
   // True when the per-user advisory lock was already held — another
   // backfill or rollup is in flight for this user, so we no-oped.
   // Caller (typically the user job processor) can re-queue a delayed
   // retry rather than reporting an empty success.
   skippedDueToLock?: boolean;
+  // Only set by `planOnly`. The per-token windows this run WOULD have
+  // requested, so an operator can read them before any provider is
+  // called rather than inferring them from what came back.
+  plan?: BackfillPlanEntry[];
   durationMs: number;
+}
+
+/** postgres.js hands aggregate timestamps back as either a Date or a string
+ *  depending on the driver path; both reach the window arithmetic below. */
+function toDate(value: Date | string | null): Date | null {
+  if (value instanceof Date) return value;
+  return value ? new Date(value) : null;
+}
+
+/** One token's intended request window, for `planOnly` runs. */
+export interface BackfillPlanEntry {
+  tokenId: string;
+  /** Days with no price row — what the range fetch is actually for. */
+  missingDays: number;
+  /**
+   * Inclusive bounds of those days, `null` when `missingDays` is 0.
+   *
+   * A candidate token with **nothing to request** is in this list on
+   * purpose. Reporting only the tokens with work leaves the interesting
+   * failure invisible: a token whose per-token start resolved later than
+   * its first transaction has an empty window and looks identical to a
+   * token that is fully priced. That is the shape of the bug this whole
+   * ticket is made of, so the plan has to be able to say "considered, asked
+   * for nothing" out loud.
+   */
+  from: Date | null;
+  to: Date | null;
+  /** The token's earliest transaction, as discovery resolved it. `null` when
+   *  it has no `holding_coverage` row and fell back to the lookback window —
+   *  which is itself worth seeing, because that fallback is what the fixed
+   *  5-year floor used to truncate. */
+  firstTxAt: Date | null;
 }
 
 @Service()
@@ -73,6 +116,9 @@ export class BackfillHistoricalPricesUseCase {
       // follow-up flow that wants to backfill exactly the tokens the
       // user just added.
       tokenIds?: string[];
+      /** Compute the per-token windows and return WITHOUT calling any
+       *  provider or writing a row. What `--dry-run` is made of. */
+      planOnly?: boolean;
     } = { usdTokenId: '' }
   ): Promise<BackfillSummary> {
     if (!opts.usdTokenId) {
@@ -97,6 +143,7 @@ export class BackfillHistoricalPricesUseCase {
         alreadyHad: 0,
         providerMissing: 0,
         skippedUnpriceable: 0,
+        attemptsFailed: 0,
         skippedDueToLock: true,
         durationMs: 0,
       };
@@ -109,6 +156,7 @@ export class BackfillHistoricalPricesUseCase {
     lookbackDays?: number;
     userId?: string;
     tokenIds?: string[];
+    planOnly?: boolean;
   }): Promise<BackfillSummary> {
     const start = Date.now();
     const lookback = opts.lookbackDays ?? 365 * 5;
@@ -150,7 +198,7 @@ export class BackfillHistoricalPricesUseCase {
     // held the token — for closed positions, we don't need to keep
     // pricing them through to today. Tokens whose holding_coverage
     // row hasn't been populated (~22 % of prod holdings as of 2026-05)
-    // fall through to the lookback default.
+    // fall back to the ledger itself, below.
     const lifetimeRows = await db
       .select({
         tokenId: schema.holdings.tokenId,
@@ -167,41 +215,75 @@ export class BackfillHistoricalPricesUseCase {
       { firstTxAt: Date | null; lastTxAt: Date | null; stillHeld: boolean }
     >();
     for (const row of lifetimeRows) {
-      const firstTxAt =
-        row.firstTxAt instanceof Date
-          ? row.firstTxAt
-          : row.firstTxAt
-            ? new Date(row.firstTxAt)
-            : null;
-      const lastTxAt =
-        row.lastTxAt instanceof Date ? row.lastTxAt : row.lastTxAt ? new Date(row.lastTxAt) : null;
       tokenLifetime.set(row.tokenId, {
-        firstTxAt,
-        lastTxAt,
+        firstTxAt: toDate(row.firstTxAt),
+        lastTxAt: toDate(row.lastTxAt),
         stillHeld: row.stillHeld === true,
       });
     }
+
+    // The same lifetime, read off the ledger instead of off the summary
+    // of it. This is also the token-discovery query — it carries no date
+    // bound because the bound it used to carry depends on the start dates
+    // it is being read to derive.
+    const txLifetimeRows = await db
+      .select({
+        tokenId: schema.holdingTransactions.tokenId,
+        firstTxAt: sql<Date | null>`MIN(${schema.holdingTransactions.occurredAt})`,
+        lastTxAt: sql<Date | null>`MAX(${schema.holdingTransactions.occurredAt})`,
+      })
+      .from(schema.holdingTransactions)
+      .where(opts.userId ? eq(schema.holdingTransactions.userId, opts.userId) : undefined)
+      .groupBy(schema.holdingTransactions.tokenId);
+
+    // A missing `holding_coverage` row used to send the token to the full
+    // 1,826-day lookback — the widest window in the run, applied to exactly
+    // the tokens we know least about. On a production dry run that was
+    ***REMOVED***
+    ***REMOVED***
+    //
+    // Coverage stays the authority where it exists; only a NULL falls
+    // through to here. Both ends fall through together, so a closed
+    // position without coverage gets the same lifetime bound as one with it.
+    for (const row of txLifetimeRows) {
+      const existing = tokenLifetime.get(row.tokenId);
+      if (!existing) {
+        // No `holdings` row for a token that has transactions — the FK
+        // makes this unreachable, and if it ever is, an open-ended window
+        // is what the token had before.
+        tokenLifetime.set(row.tokenId, {
+          firstTxAt: toDate(row.firstTxAt),
+          lastTxAt: null,
+          stillHeld: true,
+        });
+        continue;
+      }
+      if (!existing.firstTxAt) existing.firstTxAt = toDate(row.firstTxAt);
+      if (!existing.lastTxAt) existing.lastTxAt = toDate(row.lastTxAt);
+    }
+
+    // Earliest day any candidate token can need. `since` is the default
+    // for tokens with neither a coverage row nor a transaction; a token
+    // whose first transaction predates it reaches back to that transaction
+    // instead, so discovery and the existing-price dedup below have to
+    // reach at least as far back as the earliest per-token start or they
+    // would re-request days we already hold.
+    let earliestFirstTx: Date | null = null;
+    for (const lifetime of tokenLifetime.values()) {
+      const first = lifetime.firstTxAt;
+      if (!first) continue;
+      if (earliestFirstTx === null || first < earliestFirstTx) earliestFirstTx = first;
+    }
+    const discoverySince = earliestFirstTx && earliestFirstTx < since ? earliestFirstTx : since;
 
     const heldTokens = await db
       .select({ tokenId: schema.holdings.tokenId })
       .from(schema.holdings)
       .where(opts.userId ? eq(schema.holdings.userId, opts.userId) : undefined)
       .groupBy(schema.holdings.tokenId);
-    const txTokens = await db
-      .select({ tokenId: schema.holdingTransactions.tokenId })
-      .from(schema.holdingTransactions)
-      .where(
-        opts.userId
-          ? and(
-              gte(schema.holdingTransactions.occurredAt, since),
-              eq(schema.holdingTransactions.userId, opts.userId)
-            )
-          : gte(schema.holdingTransactions.occurredAt, since)
-      )
-      .groupBy(schema.holdingTransactions.tokenId);
     const userTokenSet = new Set<string>();
     for (const r of heldTokens) userTokenSet.add(r.tokenId);
-    for (const r of txTokens) userTokenSet.add(r.tokenId);
+    for (const r of txLifetimeRows) userTokenSet.add(r.tokenId);
     userTokenSet.delete(opts.usdTokenId); // base → identity; skip
     if (opts.tokenIds && opts.tokenIds.length > 0) {
       const restrict = new Set(opts.tokenIds);
@@ -228,21 +310,29 @@ export class BackfillHistoricalPricesUseCase {
       .select({
         tokenId: schema.tokenPrices.tokenId,
         // Bucket to day in SQL so the JS set key matches the series
-        // format. `date_trunc('day', ts)` returns midnight UTC of the
-        // row's day, which mirrors how we construct `dayAt` below.
+        // format, which is built at midnight UTC.
+        //
+        // The `AT TIME ZONE` pair is load-bearing: `date_trunc('day', ts)`
+        // on a `timestamptz` buckets in the SESSION timezone, which nothing
+        // in this repo pins. On a connection an hour east of UTC every key
+        // here lands a day off the ones built below, the dedup matches
+        // nothing, and the run re-requests days it already holds. Prod's
+        // sessions are UTC, so this is identical there — that is the point,
+        // the correctness stops depending on a server setting nobody set.
+        //
         // We accept ANY granularity here ('daily' OR 'intraday' OR
         // 'tx-exact') — if some other path already wrote a price for
         // (token, day), there's no point hitting the provider again.
         // The previous version filtered to granularity='daily' only,
         // which let intraday rows from the hourly pricing job slip
         // past the dedup and forced redundant provider lookups.
-        day: sql<Date>`date_trunc('day', ${schema.tokenPrices.timestamp})`,
+        day: sql<Date>`date_trunc('day', ${schema.tokenPrices.timestamp} AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'`,
       })
       .from(schema.tokenPrices)
       .where(
         and(
           eq(schema.tokenPrices.baseTokenId, opts.usdTokenId),
-          gte(schema.tokenPrices.timestamp, since),
+          gte(schema.tokenPrices.timestamp, discoverySince),
           ne(schema.tokenPrices.tokenId, opts.usdTokenId)
         )
       );
@@ -268,15 +358,24 @@ export class BackfillHistoricalPricesUseCase {
       const lifetime = tokenLifetime.get(tokenId);
       // Bound per-token range by the holding's actual lifetime. UTC-day
       // floor on first_tx_at lines up with the candidate keys.
+      //
+      // The start is the token's FIRST TRANSACTION, not the later of that
+      // and the lookback window. It used to be `Math.max(sinceDay,
+      // firstDay)`, which silently truncated the range for anyone whose
+      // history predated the fixed 5-year window — a bug with a start
+      // date rather than a trigger, and one nobody would have connected
+      // to the lookback constant when it fired. As of 2026-08-15 the
+      ***REMOVED***
+      // production (SC-171). `sinceDay` now applies only to a token with
+      // neither a coverage row nor a transaction to read (SC-229).
       let tokenStart = sinceDay.getTime();
       let tokenEnd = todayDay.getTime();
       if (lifetime?.firstTxAt) {
-        const firstDay = Date.UTC(
+        tokenStart = Date.UTC(
           lifetime.firstTxAt.getUTCFullYear(),
           lifetime.firstTxAt.getUTCMonth(),
           lifetime.firstTxAt.getUTCDate()
         );
-        tokenStart = Math.max(tokenStart, firstDay);
       }
       if (!lifetime?.stillHeld && lifetime?.lastTxAt) {
         const lastDay = Date.UTC(
@@ -313,6 +412,7 @@ export class BackfillHistoricalPricesUseCase {
       alreadyHad: alreadyHadCount,
       providerMissing: 0,
       skippedUnpriceable,
+      attemptsFailed: 0,
       durationMs: 0,
     };
 
@@ -333,6 +433,28 @@ export class BackfillHistoricalPricesUseCase {
     }
     const tokenIds = [...daysByToken.keys()];
 
+    // Everything above is discovery — three indexed reads and a
+    // cross-product in memory, no provider touched and no row written. So
+    // `planOnly` can return the exact windows the run WOULD request,
+    // computed by the same code that would request them. An operator
+    // reading a plan derived some other way is reading a guess about this
+    // one (SC-171).
+    if (opts.planOnly) {
+      // Every CANDIDATE, not every token with work — see `BackfillPlanEntry`.
+      summary.plan = [...userTokenSet].map((tokenId) => {
+        const days = (daysByToken.get(tokenId) ?? []).map((d) => d.getTime()).sort((a, b) => a - b);
+        return {
+          tokenId,
+          missingDays: days.length,
+          from: days.length > 0 ? new Date(days[0] as number) : null,
+          to: days.length > 0 ? new Date(days[days.length - 1] as number) : null,
+          firstTxAt: tokenLifetime.get(tokenId)?.firstTxAt ?? null,
+        };
+      });
+      summary.durationMs = Date.now() - start;
+      return summary;
+    }
+
     // Cap fan-out so we don't open dozens of HTTP connections at
     // once when the same provider would handle them all anyway.
     // Different tokens land on different providers (each with its
@@ -340,6 +462,27 @@ export class BackfillHistoricalPricesUseCase {
     // covers the typical 5-10 distinct holdings without DOS-ing
     // any single provider.
     const TOKEN_CONCURRENCY = 10;
+    // Nobody to ask is not the same as nobody has it.
+    //
+    // A process that never registered a historical pricer answers every day
+    // with `providerMissing`, which reads identically to "we asked five
+    // providers and none had this token" — and `inserted === 0` over a range
+    // past the floor then marks every token unpriceable for a week. That is
+    // the SC-171 ratchet rebuilt out of a boot mistake instead of a 400: a
+    // one-shot runner missing `buildProviderRegistry` took ETH, BTC, SOL,
+    // USDC and MATIC out of the nightly backfill in 1.4 seconds without
+    // making a single HTTP call.
+    //
+    // Same rule `attemptFailed` already carries one layer down: a run that
+    // never got an answer has established nothing and may not record one.
+    const canAsk = Container.get(ProviderRegistry).getAllHistoricalPricers().length > 0;
+    if (!canAsk) {
+      logger.warn(
+        { attempted: summary.attempted },
+        'No historical price providers registered — backfilling nothing and marking nothing'
+      );
+    }
+
     const markUnpriceable: string[] = [];
     const clearUnpriceable: string[] = [];
     for (let i = 0; i < tokenIds.length; i += TOKEN_CONCURRENCY) {
@@ -360,7 +503,16 @@ export class BackfillHistoricalPricesUseCase {
             const requested = daysByToken.get(tokenId)?.length ?? 0;
             if (result.value.inserted > 0) {
               clearUnpriceable.push(tokenId);
-            } else if (requested >= UNPRICEABLE_MIN_RANGE_DAYS) {
+            } else if (result.value.attemptFailed) {
+              // A run that never got an answer has established nothing.
+              // Marking here is how a 400 from a malformed request took
+              // ETH, BTC, AAPL and 117 other tokens out of the backfill
+              // for a week at a time, re-marked on every retry, so the
+              // gap that caused it could never close (SC-171). Only a
+              // provider that answered — cleanly, with nothing — may
+              // count toward this decision.
+              summary.attemptsFailed++;
+            } else if (canAsk && requested >= UNPRICEABLE_MIN_RANGE_DAYS) {
               markUnpriceable.push(tokenId);
             }
           }
@@ -375,9 +527,34 @@ export class BackfillHistoricalPricesUseCase {
       }
     }
 
-    if (markUnpriceable.length > 0 || clearUnpriceable.length > 0) {
+    // A cooldown only means anything for a token we have NEVER priced, and
+    // until now only the read side knew that. `findNeverPricedInCooldownTokenIds`
+    // — the method the rollup, holdings and valuation all consult — carries
+    //
+    //     NOT EXISTS (SELECT 1 FROM token_prices WHERE token_id = tokens.id)
+    //
+    // in its WHERE, so a mark on a token with stored rows was already inert
+    // everywhere except here, where it silently removed the token from the
+    // nightly backfill for a week. Same condition on the write, and the two
+    // halves finally agree (SC-232).
+    //
+    // The bug this closes gets WORSE as the backfill gets better: a large
+    // successful run is precisely what leaves a stubborn residual behind, so
+    // `inserted === 0` over that residual marked the tokens the job had just
+    // done the most work for. ETH carried a cooldown while holding 1,956
+    // price rows back to 2021. Under this rule it inverts — the more a token
+    // has, the less markable it becomes.
+    const markable = await this.withoutStoredPrices(markUnpriceable);
+    if (markable.length !== markUnpriceable.length) {
+      logger.info(
+        { considered: markUnpriceable.length, marked: markable.length },
+        'Some tokens were not marked unpriceable because they already have stored prices'
+      );
+    }
+
+    if (markable.length > 0 || clearUnpriceable.length > 0) {
       await this.tokenRepository.applyPricingResults({
-        markUnpriceable,
+        markUnpriceable: markable,
         clearUnpriceable,
         cooldownMs: UNPRICEABLE_COOLDOWN_MS,
         now,
@@ -386,9 +563,23 @@ export class BackfillHistoricalPricesUseCase {
 
     summary.durationMs = Date.now() - start;
     logger.info(
-      { summary, markedUnpriceable: markUnpriceable.length, cleared: clearUnpriceable.length },
+      { summary, markedUnpriceable: markable.length, cleared: clearUnpriceable.length },
       'Historical price backfill complete'
     );
     return summary;
+  }
+
+  /** The subset with no `token_prices` row at all — the only tokens a
+   *  cooldown is meaningful for. Mirrors the `NOT EXISTS` in
+   *  `TokenRepository.findNeverPricedInCooldownTokenIds`, which is the read
+   *  side of the same rule (SC-232). */
+  private async withoutStoredPrices(tokenIds: readonly string[]): Promise<string[]> {
+    if (tokenIds.length === 0) return [];
+    const priced = await db
+      .selectDistinct({ tokenId: schema.tokenPrices.tokenId })
+      .from(schema.tokenPrices)
+      .where(inArray(schema.tokenPrices.tokenId, [...tokenIds]));
+    const hasPrices = new Set(priced.map((row) => row.tokenId));
+    return tokenIds.filter((id) => !hasPrices.has(id));
   }
 }

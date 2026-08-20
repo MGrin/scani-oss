@@ -1,4 +1,5 @@
 import { showError, showSuccess } from '@scani/ui/ui/use-toast';
+import { useTranslation } from 'react-i18next';
 import { trpc } from '@/lib/trpc';
 
 /**
@@ -16,15 +17,16 @@ import { trpc } from '@/lib/trpc';
  * none, and neither surface sends one.
  */
 export function useEndPayment(onEnded?: () => void) {
+  const { t } = useTranslation();
   const utils = trpc.useUtils();
 
   const mutation = trpc.payments.end.useMutation({
     onSuccess: () => {
-      showSuccess('Payment ended');
+      showSuccess(t('v3.money.endPayment.ended'));
       void utils.payments.invalidate();
       onEnded?.();
     },
-    onError: (error) => showError(error, 'Ending payment'),
+    onError: (error) => showError(error, t('v3.money.endPayment.ending')),
   });
 
   return {

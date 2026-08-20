@@ -8,7 +8,9 @@ import {
 
 describe('scheduleLockHeldRetry', () => {
   it('enqueues a delayed backfill with the fixed retry requestId', async () => {
-    const add = mock(async () => 'job-id-stub');
+    const add = mock(
+      async (_descriptor: unknown, _payload: unknown, _opts?: unknown) => 'job-id-stub'
+    );
     await scheduleLockHeldRetry('user-1', { add });
 
     expect(add).toHaveBeenCalledTimes(1);

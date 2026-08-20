@@ -52,6 +52,7 @@ import type {
   PriceQuote,
   ProviderContext,
   TransactionEvent,
+  TransactionFetchContext,
   WithUserCreds,
 } from '../types';
 
@@ -91,6 +92,20 @@ export interface CexNormalizedEvent {
   /** Stable provider-native id; feeds the (source, externalId) dedup. */
   externalId: string;
   rawPayload?: unknown;
+}
+
+/**
+ * What a CEX paginator knows about its own walk when the generator ends.
+ *
+ * `hasCompleteTxHistory: false` is a statement about the FEED, not about
+ * the request: a `since`-bounded walk reaches the end of its window every
+ * time and must still report `true`, because whether a window counts as a
+ * whole ledger is the router's question and not the paginator's (SC-395).
+ */
+export interface CexWalkVerdict {
+  hasCompleteTxHistory: boolean;
+  /** Why not, in the words the run's warnings will carry. */
+  reason?: string;
 }
 
 /**
@@ -145,14 +160,22 @@ export abstract class BaseCexProvider implements ProviderBase {
    * Yield raw events page-by-page. The base consumes the generator
    * and produces sign-corrected `TransactionEvent`s.
    *
-   * The generator's terminal value reports whether the entire
-   * history was retrieved — `hasCompleteTxHistory: false` means the
-   * caller should preserve any prior coverage state instead of
-   * extending it.
+   * The generator's TERMINAL value is the walk's own verdict on whether
+   * it reached the end of the account's history, and
+   * `fetchTransactionsViaPagination` forwards a `false` to
+   * `ctx.retractHistoryClaim`. Until SC-395 it forwarded it nowhere: the
+   * drain loop read `step.done` and discarded `step.value`, so Kraken's
+   * paginator computed `hasCompleteTxHistory` over every page it had just
+   * walked and the coverage row went on claiming a complete ledger.
+   *
+   * `reason` is what the run tells the user. Say what the walk observed,
+   * not that it failed — "20,000-row page cap reached" and "the ledger
+   * contradicts its own running balance" are different facts about the
+   * same `false`, and the warning is the only place either one is legible.
    */
   protected abstract fetchHistoryPaginated(
     ctx: WithUserCreds<ProviderContext> & { institutionCode: string; since?: Date; until?: Date }
-  ): AsyncGenerator<CexNormalizedEvent, { hasCompleteTxHistory: boolean }, void>;
+  ): AsyncGenerator<CexNormalizedEvent, CexWalkVerdict, void>;
 
   /**
    * Default `TransactionsProvider.fetchTransactions` implementation
@@ -161,18 +184,17 @@ export abstract class BaseCexProvider implements ProviderBase {
    * (Coinbase v2's mixed accounts/ledgers feed) override directly.
    */
   protected async fetchTransactionsViaPagination(
-    ctx: WithUserCreds<ProviderContext> & {
-      institutionCode: string;
-      since?: Date;
-      until?: Date;
-    }
+    ctx: TransactionFetchContext
   ): Promise<TransactionEvent[]> {
     const events: TransactionEvent[] = [];
     const generator = this.fetchHistoryPaginated(ctx);
 
     while (true) {
       const step = await generator.next();
-      if (step.done) break;
+      if (step.done) {
+        this.reportWalkVerdict(ctx, step.value);
+        break;
+      }
 
       const raw = step.value;
       const primary = this.mapAssetIdentity(raw.assetCode);
@@ -221,6 +243,25 @@ export abstract class BaseCexProvider implements ProviderBase {
     }
 
     return events;
+  }
+
+  /**
+   * Hand a partial walk to the caller's retraction channel.
+   *
+   * A generator that `return`s nothing types as `undefined` at runtime
+   * however the signature reads, and a subclass that forgets the terminal
+   * value must not be read as declaring its history complete — so an
+   * absent verdict retracts, and says that it was absent. The message is
+   * the provider's, because "Kraken paged out at 20,000 rows" survives
+   * being read a month later and "incomplete history" does not.
+   */
+  private reportWalkVerdict(ctx: TransactionFetchContext, verdict: CexWalkVerdict): void {
+    if (verdict?.hasCompleteTxHistory) return;
+    const reason =
+      verdict?.reason ??
+      `${this.providerKey}: the paginator did not confirm it reached the end of this account's history`;
+    this.logger.warn({ providerKey: this.providerKey, reason }, 'Transaction walk was partial');
+    ctx.retractHistoryClaim?.(reason);
   }
 
   /**

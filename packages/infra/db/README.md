@@ -8,7 +8,8 @@ Database infrastructure layer. Owns:
 - `transaction.ts` — typed transaction helper
 - `base-repository.ts` — abstract `BaseRepository<TEntity>` that every domain repository extends
 - `migrate.ts` — production migration runner (used by `bun run db:migrate`)
-- `migrations/` — Drizzle-generated SQL plus hand-authored RLS / index migrations registered in `meta/_journal.json`
+- `migration-runner.ts` / `migration-files.ts` — what "applied" means and what a migration may be called
+- `migrations/` — one SQL file per migration; the folder is the manifest
 
 Domain logic lives in `@scani/domain`; this package is intentionally
 domain-free — a DB-shaped API surface, not a business-rules layer.
@@ -99,13 +100,10 @@ workspaces.
    export type NewMyThing = typeof myThings.$inferInsert;
    ```
 3. **Add `export * from './my-things'`** to `src/schema/index.ts`.
-4. **Generate the migration**: `bun --cwd packages/infra/db run db:generate`.
-   Drizzle-kit reads the barrel via `drizzle.config.ts` and emits a
-   new SQL file under `src/migrations/`.
-5. **Hand-author any expression indexes / RLS / triggers** that
-   Drizzle's builder can't express — register them by name in
-   `meta/_journal.json` so the migrator picks them up.
-6. **Run the migration locally**: `bun --cwd packages/infra/db run db:migrate`
+4. **Create the migration**: `bun run db:new "add my things"`. That
+   writes `src/migrations/<UTC stamp>_add_my_things.sql` and prints the
+   path; write the SQL there.
+5. **Run the migration locally**: `bun --cwd packages/infra/db run db:migrate`
    (against the docker-compose Postgres on `localhost:5433`).
 
 ## Public API surface
@@ -147,17 +145,32 @@ for a canonical example.
 
 ## Migrations
 
-- **Schema-first generation**: `bun run db:generate` introspects the
-  Drizzle schema and emits SQL diffs.
-- **Hand-authored migrations** for expression indexes, partial
-  indexes, RLS, triggers, or jsonb path expressions Drizzle can't
-  express. Drop the file in `src/migrations/` and register it in
-  `meta/_journal.json` (Drizzle reads the journal in order).
+**A migration is one file.** `bun run db:new "<what it does>"`
+creates `src/migrations/<14-digit UTC stamp>_<slug>.sql`; write the
+SQL there and you are done. There is no index to pick and no journal
+to register in — both were shared resources that two branches had to
+agree on, which is why four migrations collided in one day
+(SC-335). See
+`docs/technical/2026-08-17_sc335-migration-identity.md`.
+
+- **What "applied" means**: one row per migration in
+  `drizzle.__scani_migrations`, keyed by filename. Not a high-water
+  mark — that is what let a migration land below the newest recorded
+  timestamp and be skipped in silence (SC-290).
+- **Apply order**: the sorted filenames. `0000`–`0050` keep their
+  four-digit names permanently, and a 14-digit stamp sorts after all
+  of them.
 - **Production migrate**: `bun run db:migrate` (used by the deploy
   workflow before the api/worker boot — see
-  `.github/workflows/deploy-fly.yaml`).
-- **Drizzle Studio**: `bun run db:studio` opens a GUI against the
-  configured DATABASE_URL.
+  `.github/workflows/deploy-fly.yaml`). It refuses, naming the
+  migration, when an applied file has been edited, renamed, or
+  deleted.
+- **Recovery for a database with no record of its own migrations**:
+  `bun run db:migrate -- --assume-applied-through <tag>`.
+- **Drizzle Kit**: `bun run db:generate` regenerates
+  `meta/_journal.json` (gitignored) first, because drizzle-kit needs
+  it; nothing else reads it. `bun run db:studio` opens a GUI against
+  the configured DATABASE_URL.
 
 ## Connection pool
 

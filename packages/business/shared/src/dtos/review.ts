@@ -49,12 +49,113 @@ export const reviewOutcomeSchema = z.enum(REVIEW_OUTCOMES);
 
 export type ReviewOutcome = (typeof REVIEW_OUTCOMES)[number];
 
+/**
+ * What a review row **is**, in operands — never in a sentence (SC-371).
+ *
+ * `title` and `subtitle` used to be free text, assembled on the server: the
+ * job's English name, `` `${name} failed` ``, a literal `'Invoice extracted'`,
+ * and whole pluralised sentences from `reviewSummary.ts` (now `reviewDetail.ts`). Both frontends
+ * printed them verbatim, so the same job read `t('v3.jobs.label.walletImport')`
+ * on /jobs and the server's `'Wallet import'` on /review, and translating the
+ * frontend could not reach the second one. There is no `t()` on the server and
+ * there never will be — the API and the worker import this package — so the
+ * only place the naming can happen is the client, and the only thing the wire
+ * can carry is what the row is made of.
+ *
+ * It is also why the amount below is a decimal **string**: the extraction row
+ * used to spell its figure into the subtitle as `Albert Heijn — 87.31 EUR`,
+ * and v3 pulled it back out with a regex over that English. A figure that
+ * survives a round trip through prose is a figure waiting to be misread the
+ * first time the prose changes.
+ */
+export const reviewLabelSchema = z.discriminatedUnion('code', [
+  /** A completed job whose result is waiting to be confirmed. */
+  z.object({ code: z.literal('job'), jobName: z.string().min(1) }),
+  /** A job the queue has given up on (SC-153). */
+  z.object({ code: z.literal('jobFailed'), jobName: z.string().min(1) }),
+  z.object({ code: z.literal('invoiceExtracted') }),
+  z.object({ code: z.literal('transfersToConfirm') }),
+]);
+
+export type ReviewLabel = z.infer<typeof reviewLabelSchema>;
+
+/**
+ * The row facts `describeJobFailure` reads, forwarded rather than rendered.
+ *
+ * The dead-job row's second line is `describeJobFailure(...).sentence`, and
+ * that describer lives in this package precisely so the server, v2 and v3
+ * cannot disagree about a failure. Sending the facts instead of the sentence
+ * keeps that single source and moves the call to the side that has a `t()`:
+ * whenever the describer's own English becomes keys (SC-369 group 3), /review
+ * inherits it with no second change here.
+ *
+ * Structurally typed against `JobFailureFacts` rather than importing its shape
+ * — one direction of dependency, and `job-failure.ts` stays untouched.
+ */
+export const reviewJobFailureFactsSchema = z.object({
+  state: z.string(),
+  /** A `Date` on the server, the ISO string it serialises to on the client —
+   *  this router runs without a transformer, and `describeJobFailure` reads
+   *  the field for truthiness alone, so both are the same fact. */
+  deadAt: z.union([z.date(), z.string()]).nullish(),
+  failureReason: z.string().nullish(),
+  attemptsMade: z.number().nullish(),
+  attemptsAllowed: z.number().nullish(),
+});
+
+/**
+ * What the row contains, for the second line. One variant per producer, each
+ * pinned to the operands that producer actually has — the counts, the symbols,
+ * the wallet's own label. The sentence they used to be assembled into is the
+ * client's business now.
+ *
+ * `symbols` arrives whole and uncapped: which three to show and how to say
+ * "+3" is a decision about a 390px row, not about the import.
+ */
+export const reviewDetailSchema = z.discriminatedUnion('code', [
+  z.object({
+    code: z.literal('parsedHoldings'),
+    holdings: z.number().int().nonnegative(),
+    /** Distinct, in first-seen order. Empty when nothing was named. */
+    symbols: z.array(z.string().min(1)),
+  }),
+  z.object({
+    code: z.literal('transactionsNeedCurrency'),
+    transactions: z.number().int().nonnegative(),
+    /** As the worker recorded it (`csv`, `ofx`); the client cases it. */
+    fileType: z.string().min(1).optional(),
+  }),
+  z.object({
+    code: z.literal('walletCandidates'),
+    walletLabel: z.string().min(1).optional(),
+    candidates: z.number().int().nonnegative(),
+    chains: z.number().int().nonnegative(),
+  }),
+  z.object({ code: z.literal('vendor'), name: z.string().min(1) }),
+  z.object({
+    code: z.literal('unpairedTransfers'),
+    transfers: z.number().int().nonnegative(),
+  }),
+  z.object({ code: z.literal('jobFailure'), facts: reviewJobFailureFactsSchema }),
+]);
+
+export type ReviewDetail = z.infer<typeof reviewDetailSchema>;
+
+/** A figure, not a phrase. The value stays a decimal string end to end. */
+export const reviewAmountSchema = z.object({
+  value: z.string().min(1),
+  currency: z.string().length(3),
+});
+
+export type ReviewAmount = z.infer<typeof reviewAmountSchema>;
+
 export const reviewItemSchema = z.object({
   /** Source-prefixed so ids stay unique once non-job sources join. */
   id: z.string().min(1),
   kind: z.string().min(1),
-  title: z.string().min(1),
-  subtitle: z.string().optional(),
+  label: reviewLabelSchema,
+  detail: reviewDetailSchema.optional(),
+  amount: reviewAmountSchema.optional(),
   createdAt: z.date(),
   href: z.string().min(1),
 });

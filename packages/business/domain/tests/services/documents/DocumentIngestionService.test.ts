@@ -6,6 +6,11 @@ import { DocumentExtractionRepository } from '../../../src/repositories/Document
 import { DocumentRepository } from '../../../src/repositories/DocumentRepository';
 import { DocumentIngestionService } from '../../../src/services/documents/DocumentIngestionService';
 import { InvoiceExtractionService } from '../../../src/services/documents/InvoiceExtractionService';
+import { restoreContainerAfterAll } from '../../../test/helpers/container';
+
+// Container stubs are process-global; put back whatever this file changes
+// so no later test file resolves them (SC-448).
+restoreContainerAfterAll();
 
 const DOC_ID = 'doc-1';
 
@@ -90,7 +95,7 @@ describe('DocumentIngestionService.ingest', () => {
     });
 
     expect(result.deduped).toBe(true);
-    expect(result.document).toBe(existingDocument);
+    expect(result.document).toBe(existingDocument as typeof result.document);
     expect(result.extractions).toEqual([]);
     expect(result.upstreamCostUsd).toBe(0);
 
@@ -122,8 +127,8 @@ describe('DocumentIngestionService.ingest', () => {
     });
 
     expect(findByContentHash).toHaveBeenCalledTimes(2);
-    const [, firstHash] = findByContentHash.mock.calls[0] ?? [];
-    const [, secondHash] = findByContentHash.mock.calls[1] ?? [];
+    const [, firstHash] = findByContentHash.mock.calls[0] ?? [undefined, undefined];
+    const [, secondHash] = findByContentHash.mock.calls[1] ?? [undefined, undefined];
     expect(firstHash).toBe(secondHash);
     expect(extract).not.toHaveBeenCalled();
   });
@@ -296,7 +301,7 @@ describe('DocumentIngestionService.ingest — reparseOf', () => {
     expect(extract).toHaveBeenCalledTimes(1);
     // Attached to THAT document — no second `documents` row for the same file.
     expect(documentsCreate).not.toHaveBeenCalled();
-    expect(result.document).toBe(target);
+    expect(result.document).toBe(target as typeof result.document);
     expect(result.deduped).toBe(false);
     expect(result.extractions).toHaveLength(1);
     expect(result.upstreamCostUsd).toBe(0.002);

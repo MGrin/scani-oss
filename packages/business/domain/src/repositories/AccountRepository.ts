@@ -1,8 +1,18 @@
 import { BaseRepository, type DatabaseTransaction } from '@scani/db';
 import type { Account, NewAccount } from '@scani/db/schema';
 import * as schema from '@scani/db/schema';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { Service } from 'typedi';
+
+/**
+ * What `findByUser` actually returns. The method joins `account_types` and
+ * spreads `type` + `typeName` onto every row, but declared `Promise<Account[]>`
+ * — a type with neither field. Consumers read both, so the declaration was
+ * narrower than the value for as long as it existed; nothing caught it because
+ * the only assertion on those fields lives in a test file, and test files were
+ * not type-checked until SC-280.
+ */
+export type AccountWithType = Account & { type: string; typeName: string };
 
 @Service()
 export class AccountRepository extends BaseRepository<Account, NewAccount> {
@@ -64,7 +74,31 @@ export class AccountRepository extends BaseRepository<Account, NewAccount> {
     }
   }
 
-  async findByUser(userId: string, transaction?: DatabaseTransaction): Promise<Account[]> {
+  /**
+   * How many active accounts a user still holds at an institution. Read by
+   * `AccountService.deleteAccount` to decide whether the integration has any
+   * account left to sync — zero means the credential is now unreachable.
+   */
+  async countActiveByUserAndInstitution(
+    userId: string,
+    institutionId: string,
+    transaction?: DatabaseTransaction
+  ): Promise<number> {
+    const database = this.getDb(transaction);
+    const [row] = await database
+      .select({ count: sql<number>`count(*)::int` })
+      .from(schema.accounts)
+      .where(
+        and(
+          eq(schema.accounts.userId, userId),
+          eq(schema.accounts.institutionId, institutionId),
+          eq(schema.accounts.isActive, true)
+        )
+      );
+    return row?.count ?? 0;
+  }
+
+  async findByUser(userId: string, transaction?: DatabaseTransaction): Promise<AccountWithType[]> {
     try {
       const database = this.getDb(transaction);
       const results = await database

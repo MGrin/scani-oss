@@ -1,12 +1,19 @@
-import type { NewToken, Token, TokenMetadata } from '@scani/db/schema';
+import {
+  mergeIdentityDeltas,
+  type NewToken,
+  type Token,
+  type TokenMetadata,
+} from '@scani/db/schema';
 import type { DatabaseTransaction } from '@scani/db/transaction';
 import { ProviderRegistry } from '@scani/providers/core/registry';
 import { isFiatCode } from '@scani/providers/core/utils/fiat-codes';
 import { Container, Service } from 'typedi';
+import { decodeProviderText, decodeProviderTextOptional } from '../../lib/decode-provider-text';
 import { TokenTypeRepository } from '../../repositories/EnumRepositories';
 import { TokenRepository } from '../../repositories/TokenRepository';
 import { BaseService } from '../BaseService';
-import { ScamTokenDetectionService } from './ScamTokenDetectionService';
+import { SCAM_SCORE_VERSION, ScamTokenDetectionService } from './ScamTokenDetectionService';
+import { judgeTokenIdentity } from './token-identity-safety';
 
 // Thrown by `findOrCreateByIdentity` when the supplied symbol+name
 // matches the obvious-scam heuristics (score ≥ 0.95). Wallet- and
@@ -26,6 +33,20 @@ export class ScamTokenRejectedError extends Error {
     this.tokenName = tokenName;
     this.scamProbability = scamProbability;
   }
+}
+
+/**
+ * What one lookup pass established: the row this identity already resolves
+ * to, plus the normalized components a create would need. Carried between
+ * the two halves so the find-only caller runs the identical lookup rather
+ * than a second implementation of it that can drift.
+ */
+interface ResolvedIdentity {
+  existing: Token | null;
+  symbol: string;
+  name: string | undefined;
+  effectiveTypeId: string;
+  marketSegment: string | null;
 }
 
 // TokenIdentityService — federated find-or-create-by-identity flow.
@@ -78,14 +99,55 @@ export class TokenIdentityService extends BaseService {
     partial: Partial<NewToken>,
     transaction?: DatabaseTransaction
   ): Promise<Token> {
+    const resolved = await this.resolveIdentity(partial, 'findOrCreateByIdentity', transaction);
+    if (resolved.existing) return resolved.existing;
+    return await this.createFromIdentity(partial, resolved, transaction);
+  }
+
+  /**
+   * The lookup half of `findOrCreateByIdentity`, on its own: the row this
+   * identity already resolves to, or `null`.
+   *
+   * Wallet-derived transaction imports need exactly this. They resolve
+   * holdings FIND-ONLY — only what the user kept at wallet review — and a
+   * holding cannot exist without a `tokens` row, so an identity the database
+   * does not already know can never yield one. Creating it is work whose
+   * every result is then discarded, and the row it leaves behind is the
+   ***REMOVED***
+   ***REMOVED***
+   ***REMOVED***
+   */
+  async findByIdentity(
+    partial: Partial<NewToken>,
+    transaction?: DatabaseTransaction
+  ): Promise<Token | null> {
+    return (await this.resolveIdentity(partial, 'findByIdentity', transaction)).existing;
+  }
+
+  private async resolveIdentity(
+    partial: Partial<NewToken>,
+    caller: string,
+    transaction?: DatabaseTransaction
+  ): Promise<ResolvedIdentity> {
     if (!partial.symbol) {
-      throw new Error('findOrCreateByIdentity: partial.symbol is required');
+      throw new Error(`${caller}: partial.symbol is required`);
     }
     if (!partial.typeId) {
-      throw new Error('findOrCreateByIdentity: partial.typeId is required');
+      throw new Error(`${caller}: partial.typeId is required`);
     }
 
-    const symbol = partial.symbol.toUpperCase();
+    // Provider display text is decoded HERE, beside the uppercasing, because
+    // this is the one place every provider's token identity is normalised —
+    // balance imports arrive through `TokenService.findOrCreateTokenFromIntegration`
+    // and transaction imports through `TransactionRouter`, and both land on
+    // this method. IBKR serves an HTML-derived instrument description, so
+    // `S&P 500` reached the database as `S&amp;P 500` and every consumer saw
+    // it: the phone, the exports, the PDF, and search — where somebody typing
+    // `S&P` matches nothing at all (SC-276).
+    //
+    // Not decoded at render, deliberately. That leaves the row itself wrong.
+    const symbol = decodeProviderText(partial.symbol).toUpperCase();
+    const name = decodeProviderTextOptional(partial.name);
     const inboundMetadata = (partial.providerMetadata ?? {}) as TokenMetadata;
 
     // Fiat ISO-4217 invariant. The Kraken transaction-import path used
@@ -115,14 +177,6 @@ export class TokenIdentityService extends BaseService {
     //    canonical Circle contract on chain id 1.
     const evmContract = inboundMetadata.etherscan?.contractAddress;
     const evmChainId = inboundMetadata.etherscan?.chainId;
-    if (evmChainId && evmContract) {
-      const byContract = await this.tokenRepository.findByEvmContract(
-        evmChainId,
-        evmContract,
-        transaction
-      );
-      if (byContract) return byContract;
-    }
 
     // marketSegment doubles as the tie-breaker for the
     // `tokens_symbol_type_segment_unique` constraint. EVM tokens get
@@ -143,6 +197,16 @@ export class TokenIdentityService extends BaseService {
       ? null
       : (partial.marketSegment ??
         (evmChainId && evmContract ? `evm:${evmChainId}:${evmContract.toLowerCase()}` : null));
+    const base = { symbol, name, effectiveTypeId, marketSegment };
+
+    if (evmChainId && evmContract) {
+      const byContract = await this.tokenRepository.findByEvmContract(
+        evmChainId,
+        evmContract,
+        transaction
+      );
+      if (byContract) return { ...base, existing: byContract };
+    }
 
     // 2. Fall through to the `(symbol, typeId, marketSegment)` tuple.
     //    Safe to re-enable for EVM tokens now that marketSegment
@@ -155,7 +219,7 @@ export class TokenIdentityService extends BaseService {
       marketSegment,
       transaction
     );
-    if (byTuple) return byTuple;
+    if (byTuple) return { ...base, existing: byTuple };
 
     // 2b. Self-healing fallback for stocks: when an exact tuple match
     // misses but the symbol exists with `market_segment IS NULL` (legacy
@@ -181,14 +245,32 @@ export class TokenIdentityService extends BaseService {
             tokenId: byNullSegment.id,
             newSegment: marketSegment,
           });
-          return await this.tokenRepository.updateMarketSegment(
-            byNullSegment.id,
-            marketSegment,
-            transaction
-          );
+          return {
+            ...base,
+            existing: await this.tokenRepository.updateMarketSegment(
+              byNullSegment.id,
+              marketSegment,
+              transaction
+            ),
+          };
         }
       }
     }
+
+    return { ...base, existing: null };
+  }
+
+  /**
+   * The create half. Only reached when `resolveIdentity` found nothing, so
+   * every early return above is a row that already existed.
+   */
+  private async createFromIdentity(
+    partial: Partial<NewToken>,
+    resolved: ResolvedIdentity,
+    transaction?: DatabaseTransaction
+  ): Promise<Token> {
+    const { symbol, name, effectiveTypeId, marketSegment } = resolved;
+    const inboundMetadata = (partial.providerMetadata ?? {}) as TokenMetadata;
 
     // 3. Federated enrichment. Every TokenIdentityProvider runs in
     //    parallel — each owns its own namespace key in providerMetadata
@@ -213,18 +295,16 @@ export class TokenIdentityService extends BaseService {
             }
           })
         );
-        enrichedMetadata = { ...inboundMetadata };
-        for (const delta of deltas) {
-          if (!delta) continue;
-          for (const [key, value] of Object.entries(delta)) {
-            if (key in enrichedMetadata && enrichedMetadata[key] !== undefined) {
-              this.logDebug('Identity enrichment namespace collision (keeping first writer)', {
-                key,
-              });
-              continue;
-            }
-            (enrichedMetadata as Record<string, unknown>)[key] = value;
-          }
+        const merge = mergeIdentityDeltas(
+          inboundMetadata as Record<string, unknown>,
+          deltas as ReadonlyArray<Record<string, unknown> | null>
+        );
+        enrichedMetadata = merge.merged as TokenMetadata;
+        for (const reason of merge.refused) {
+          this.logDebug('Identity enrichment refused: contradicts the row identity', {
+            symbol,
+            reason,
+          });
         }
       }
     } catch (err) {
@@ -241,42 +321,98 @@ export class TokenIdentityService extends BaseService {
     //    Symbol/name heuristics drive the score at create time;
     //    price-volatility detection runs later when a price arrives.
     let scamProbability = 0;
+    let scamScoreVersion: number | null = null;
+    // `unscored` until the function actually runs. A stock's 0 is the absence
+    // of a verdict, not a stale one: scored as if it were crypto,
+    // `AMAZON.COM INC` returns 0.50 — a literal dot and a three-character TLD
+    // — which is over the 0.35 threshold and would drop Amazon out of the
+    // portfolio total (SC-286).
+    let scamScoreSource = 'unscored';
     const tokenType = await this.tokenTypeRepository.findById(effectiveTypeId, transaction);
     if (tokenType?.code === 'crypto') {
       scamProbability = this.scamDetectionService.calculateScamProbability(
         symbol,
-        partial.name ?? symbol,
-        new Date(),
-        false
+        // The DECODED name, and the decoded symbol above it. Scoring happens
+        // after the decode on purpose: the detector must see the string that
+        // will actually be stored and shown, not its encoded form. `&amp;` and
+        // `&#39;` add characters a homoglyph or URL heuristic can trip on, and
+        // scoring one string while storing another is how a verdict stops
+        // describing the row it is attached to (SC-276, on top of SC-207).
+        name ?? symbol,
+        new Date()
       );
+      scamScoreVersion = SCAM_SCORE_VERSION;
+      scamScoreSource = 'heuristic';
     }
 
-    // Hard-reject obvious scams (URL-laden symbols / phishing payloads
-    // like `T.ME/S/US_POOL`, Cyrillic-spoofed `UЅDС`, ✅TRUMP AIRDROP).
-    // Threshold 0.95 keeps the false-positive rate at zero — observed
-    // bucket-90 contains some genuine memecoins (LOOKS, MATIC) that we
-    // do NOT want to silently swallow. ScamTokenRejectedError is
-    // typed so the wallet/transaction-import pipelines can catch it
-    // and skip the offending event without aborting the whole import.
-    if (scamProbability >= 0.95) {
+    // Judge the identity from the characters themselves. The SYMBOL half
+    // is independent of the score, and deliberately so: a homoglyph
+    // symbol scores 1.00 while we hold no price for it and 0.70 once we
+    // do, because "no pricing data available" is worth 0.30 — a fact
+    // about OUR coverage that the token has no part in.
+    // `WarmTokenPricesForImport` then re-scores priced tokens downward.
+    // Quarantine cannot depend on a number that moves for reasons the
+    // token did not cause (SC-197).
+    //
+    // The NAME half takes the score as one of two required signals, and
+    // it must be THIS score — computed just above, from symbol and name,
+    // with `hasPriceData: false`. It is deterministic and it is never
+    // written back, so it does not inherit the drift above (SC-207). A
+    // bare-host name refuses only in conjunction with it: no rule over
+    // the string separates `BOOKING.COM` from `Draf.io`, and getting
+    // that wrong in either direction has already cost us both a blocked
+    // import (SC-220) and seven admitted scam rows (SC-224).
+    const identityVerdict = judgeTokenIdentity({
+      symbol,
+      name,
+      scamProbability,
+    });
+
+    // Hard-reject names that are instructions rather than names — a
+    // `✅ SWAP YOUR VOUCHER ON T.LY/SHIBASWAP` has no reading that is a
+    // token identity and no balance behind it worth preserving. The
+    // score's own 0.95 gate stays as the second line, for the URL-laden
+    // and emoji-laden shapes it already caught; 0.95 keeps its
+    // false-positive rate at zero because bucket-90 holds genuine
+    // memecoins (LOOKS, MATIC) we do not want to swallow.
+    //
+    // A LOOKALIKE SYMBOL IS NOT REJECTED HERE. It is created and
+    // permanently marked, because the danger is that the row is
+    // indistinguishable from the real one, not that it exists — and the
+    // case that actually matters is a user who was tricked into BUYING
+    // one and holds a real balance. Refusing the row shows them nothing,
+    // and nothing reads as safe.
+    if (identityVerdict.nameAttack || scamProbability >= 0.95) {
       this.logDebug('Refusing to create obvious-scam token', {
         symbol,
-        name: partial.name,
+        name,
         scamProbability,
+        reasons: identityVerdict.reasons,
       });
-      throw new ScamTokenRejectedError(symbol, partial.name ?? symbol, scamProbability);
+      throw new ScamTokenRejectedError(symbol, name ?? symbol, scamProbability);
+    }
+
+    if (identityVerdict.lookalike) {
+      this.logWarning('Creating token with a lookalike symbol, quarantined', {
+        symbol,
+        lookalikeOf: identityVerdict.lookalikeOf,
+        reasons: identityVerdict.reasons,
+      });
     }
 
     const created = await this.tokenRepository.create(
       {
         symbol,
-        name: partial.name ?? symbol,
+        name: name ?? symbol,
         typeId: effectiveTypeId,
         decimals: partial.decimals ?? 18,
         marketSegment,
         iconUrl: partial.iconUrl ?? null,
         providerMetadata: enrichedMetadata,
         isScamProbability: scamProbability,
+        scamScoreVersion,
+        scamScoreSource,
+        lookalikeOf: identityVerdict.lookalikeOf,
         isActive: true,
       },
       transaction

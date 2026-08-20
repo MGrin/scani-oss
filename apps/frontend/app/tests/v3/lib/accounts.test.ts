@@ -1,10 +1,14 @@
+import '../../i18n-preload';
+
 import { describe, expect, test } from 'bun:test';
 import {
   type AccountRow,
+  accountBalancesAsOf,
   accountFiltersFromParams,
   accountLastSync,
   accountsValue,
   accountValue,
+  balancesAsOfFact,
   compareAccounts,
   compareInstitutions,
   type InstitutionRow,
@@ -139,5 +143,60 @@ describe('comparators', () => {
     expect(compareInstitutions(big, small, 'value', 'desc')).toBeLessThan(0);
     expect(compareInstitutions(big, small, 'accounts', 'desc')).toBeGreaterThan(0);
     expect(compareInstitutions(big, small, 'unknown', 'asc')).toBe(0);
+  });
+});
+
+/**
+ * SC-384 — the second claim on an account, next to `lastSync`.
+ *
+ * Every guard here is about refusing to render half a fact. A date with no
+ * reason reads as "your data is old" and leaves the reader to decide whether
+ * it is also wrong; that decision is what made a correct IBKR sync look like
+ * a broken integration in the first place.
+ */
+describe('accountBalancesAsOf', () => {
+  const NOTE = 'Interactive Brokers generates this statement after the close.';
+
+  test('reads the pair the sync writes', () => {
+    expect(
+      accountBalancesAsOf({ balancesAsOf: { at: '2026-08-16T23:59:59.000Z', note: NOTE } })
+    ).toEqual({ at: '2026-08-16T23:59:59.000Z', note: NOTE });
+  });
+
+  test('a live-balance account has nothing to say', () => {
+    expect(accountBalancesAsOf({ lastSync: '2026-08-17T15:10:52.000Z' })).toBeNull();
+  });
+
+  test.each([
+    ['no note', { balancesAsOf: { at: '2026-08-16T23:59:59.000Z' } }],
+    ['empty note', { balancesAsOf: { at: '2026-08-16T23:59:59.000Z', note: '' } }],
+    ['no date', { balancesAsOf: { note: NOTE } }],
+    ['unparseable date', { balancesAsOf: { at: 'yesterday-ish', note: NOTE } }],
+    ['wrong shape', { balancesAsOf: 'soon' }],
+  ])('%s renders nothing rather than half a fact', (_label, metadata) => {
+    expect(accountBalancesAsOf(metadata)).toBeNull();
+  });
+
+  test('a missing metadata column is not an error', () => {
+    expect(accountBalancesAsOf(undefined)).toBeNull();
+    expect(accountBalancesAsOf(null)).toBeNull();
+    expect(accountBalancesAsOf('nonsense')).toBeNull();
+  });
+});
+
+describe('balancesAsOfFact', () => {
+  const NOTE = 'Interactive Brokers generates this statement after the close.';
+
+  test('the date and the reason are one string, never two facts', () => {
+    // A layout that could show one without the other is the pre-SC-384 screen
+    // again, with a date on it.
+    const fact = balancesAsOfFact({ balancesAsOf: { at: '2026-08-16T23:59:59.000Z', note: NOTE } });
+    expect(fact).toContain(NOTE);
+    expect(fact).toContain('2026');
+  });
+
+  test('null for a live-balance account, so the peek omits the row entirely', () => {
+    expect(balancesAsOfFact({ lastSync: '2026-08-17T15:10:52.000Z' })).toBeNull();
+    expect(balancesAsOfFact(undefined)).toBeNull();
   });
 });

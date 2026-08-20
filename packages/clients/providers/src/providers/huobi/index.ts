@@ -14,16 +14,18 @@ import type {
   CredentialValidator,
   TransactionsProvider,
 } from '../../core/capabilities';
-import { ProviderError } from '../../core/errors';
+import { credentialRejection, ProviderError } from '../../core/errors';
 import type {
   DecryptedCredentials,
   HoldingSnapshot,
   ProviderContext,
   TransactionEvent,
+  TransactionFetchContext,
   WithUserCreds,
 } from '../../core/types';
 import { enforceSign, inferCounterSign, negateFee } from '../../core/utils/enforce-tx-sign';
 import { tokenTypeForCexAsset } from '../../core/utils/fiat-codes';
+import { PageCapWatch } from '../../core/utils/page-cap';
 import { splitConcatenatedPair } from '../../core/utils/symbol-splitter';
 import { huobiManifest } from './manifest';
 
@@ -175,15 +177,11 @@ export class HuobiProvider
     return c === HUOBI_INSTITUTION_CODE;
   }
 
-  async fetchTransactions(
-    ctx: WithUserCreds<ProviderContext> & {
-      institutionCode: string;
-      since?: Date;
-      until?: Date;
-    }
-  ): Promise<TransactionEvent[]> {
+  async fetchTransactions(ctx: TransactionFetchContext): Promise<TransactionEvent[]> {
     const creds = await this.resolveApiCreds(ctx);
     if (!creds) return [];
+
+    const capped = new PageCapWatch();
 
     const balances = await this.fetchAggregateSpotBalances(creds);
     const currencies = [...balances.keys()].map((c) => c.toLowerCase());
@@ -202,7 +200,7 @@ export class HuobiProvider
     };
 
     for (const symbol of buildCandidateSymbols(currencies, MAX_CANDIDATE_SYMBOLS)) {
-      for await (const row of this.iterateMatchResults(creds, symbol, sinceMs, untilMs)) {
+      for await (const row of this.iterateMatchResults(creds, symbol, sinceMs, untilMs, capped)) {
         push(matchResultToEvent(row));
       }
     }
@@ -213,7 +211,8 @@ export class HuobiProvider
         currency,
         'deposit',
         sinceMs,
-        untilMs
+        untilMs,
+        capped
       )) {
         push(depositWithdrawToEvent(row));
       }
@@ -222,12 +221,14 @@ export class HuobiProvider
         currency,
         'withdraw',
         sinceMs,
-        untilMs
+        untilMs,
+        capped
       )) {
         push(depositWithdrawToEvent(row));
       }
     }
 
+    capped.retract(ctx, this.providerKey);
     return events;
   }
 
@@ -253,10 +254,7 @@ export class HuobiProvider
       if (data.status !== 'ok') return { valid: false, message: `Huobi: ${data.status}` };
       return { valid: true };
     } catch (err) {
-      if (err instanceof ProviderError && err.kind === 'auth-failed') {
-        return { valid: false, message: err.message };
-      }
-      return { valid: false, message: err instanceof Error ? err.message : String(err) };
+      return credentialRejection(err);
     }
   }
 
@@ -301,11 +299,13 @@ export class HuobiProvider
     creds: ApiKeyCreds,
     symbol: string,
     sinceMs: number | undefined,
-    untilMs: number | undefined
+    untilMs: number | undefined,
+    capped: PageCapWatch
   ): AsyncGenerator<HuobiMatchResult> {
     const path = '/v1/order/matchresults';
     let fromId: string | undefined;
     let pages = 0;
+    let rows = 0;
     while (pages < MAX_PAGES) {
       pages += 1;
       const extra: Record<string, string> = {
@@ -326,13 +326,17 @@ export class HuobiProvider
         // rather than abort the whole transactions sync.
         return;
       }
-      const rows = data.data ?? [];
-      for (const row of rows) yield row;
-      if (rows.length < MATCHRESULTS_PAGE_SIZE) return;
-      const last = rows[rows.length - 1];
+      const page = data.data ?? [];
+      rows += page.length;
+      for (const row of page) yield row;
+      if (page.length < MATCHRESULTS_PAGE_SIZE) return;
+      const last = page[page.length - 1];
       if (!last) return;
       fromId = String(last.id);
     }
+    // Every early exit above `return`s, so reaching here means the `pages`
+    // bound is what stopped the walk — not the end of the feed.
+    capped.note({ walk: `${symbol} trades`, pages: MAX_PAGES, rows });
   }
 
   private async *iterateDepositWithdraw(
@@ -340,11 +344,13 @@ export class HuobiProvider
     currency: string,
     type: 'deposit' | 'withdraw',
     sinceMs: number | undefined,
-    untilMs: number | undefined
+    untilMs: number | undefined,
+    capped: PageCapWatch
   ): AsyncGenerator<HuobiDepositWithdrawRow> {
     const path = '/v1/query/deposit-withdraw';
     let from: string | undefined;
     let pages = 0;
+    let rows = 0;
     while (pages < MAX_PAGES) {
       pages += 1;
       const extra: Record<string, string> = {
@@ -360,19 +366,21 @@ export class HuobiProvider
         creds
       );
       if (data.status !== 'ok') return;
-      const rows = data.data ?? [];
+      const page = data.data ?? [];
+      rows += page.length;
       let lastId: number | undefined;
-      for (const row of rows) {
+      for (const row of page) {
         lastId = row.id;
         const ts = (row['updated-at'] ?? row['created-at']) || 0;
         if (sinceMs !== undefined && ts < sinceMs) continue;
         if (untilMs !== undefined && ts > untilMs) continue;
         yield row;
       }
-      if (rows.length < DEPOSIT_WITHDRAW_PAGE_SIZE) return;
+      if (page.length < DEPOSIT_WITHDRAW_PAGE_SIZE) return;
       if (lastId === undefined) return;
       from = String(lastId);
     }
+    capped.note({ walk: `${currency} ${type}s`, pages: MAX_PAGES, rows });
   }
 }
 

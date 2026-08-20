@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { useUiTranslation } from '../../i18n';
 import {
   BottomDrawer,
   BottomDrawerBody,
@@ -77,6 +78,7 @@ function Facts({ facts }: { facts: PeekFact[] }) {
  * whether or not the record has a header to put it in.
  */
 export function PeekHeader({ spec }: { spec: PeekSpec }) {
+  const { t } = useUiTranslation();
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-start gap-3">
@@ -90,7 +92,7 @@ export function PeekHeader({ spec }: { spec: PeekSpec }) {
           ) : (
             // Radix warns without a description, and a sheet that describes
             // itself twice is worse than one that describes itself once.
-            <SheetDescription className="sr-only">Record detail</SheetDescription>
+            <SheetDescription className="sr-only">{t('ui.peek.recordDetail')}</SheetDescription>
           )}
         </div>
       </div>
@@ -146,11 +148,8 @@ export function PeekBody({ spec }: { spec: PeekSpec }) {
  * person who followed the link, as "the link did nothing".
  */
 function MissingBody({ noun }: { noun: string }) {
-  return (
-    <p className="text-body text-muted-foreground">
-      {`This ${noun} is not on this list. It may have been removed, or the link may be out of date.`}
-    </p>
-  );
+  const { t } = useUiTranslation();
+  return <p className="text-body text-muted-foreground">{t('ui.peek.notOnList', { noun })}</p>;
 }
 
 /** The fact rows the sheet is about to show, at their real height. Drawn only
@@ -180,10 +179,14 @@ interface PeekSheetProps {
 }
 
 export function PeekSheet({ open, onOpenChange, spec, noun, isLoading }: PeekSheetProps) {
+  const { t } = useUiTranslation();
   const isDesktop = useIsDesktop();
   const loadingPhase = useDelayedLoading(Boolean(isLoading));
 
-  const resolved: PeekSpec = spec ?? { title: isLoading ? 'Loading' : 'Not found', primary: [] };
+  const resolved: PeekSpec = spec ?? {
+    title: isLoading ? t('ui.peek.loading') : t('ui.peek.notFound'),
+    primary: [],
+  };
 
   let body: ReactNode;
   if (spec) body = <PeekBody spec={spec} />;
@@ -217,8 +220,8 @@ export function PeekSheet({ open, onOpenChange, spec, noun, isLoading }: PeekShe
     <BottomDrawer open={open} onOpenChange={onOpenChange}>
       <BottomDrawerContent
         snapPoints={PEEK_SNAP_POINTS}
-        expandLabel="Show full detail"
-        collapseLabel="Show less"
+        expandLabel={t('ui.peek.expand')}
+        collapseLabel={t('ui.peek.collapse')}
         style={{ backgroundColor: 'hsl(var(--surface-2))' }}
       >
         <BottomDrawerHeader className="border-b border-border pb-4">

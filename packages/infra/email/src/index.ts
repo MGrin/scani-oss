@@ -3,9 +3,13 @@ export { EmailService } from './email-service';
 export { LocalEmailService } from './local-email-service';
 export {
   renderContactReceivedEmail,
+  renderIntegrationAlertEmail,
   renderMagicLinkEmail,
   renderOtpEmail,
   renderVerificationEmail,
+  renderWeeklyDigestEmail,
+  type StaleIntegrationItem,
+  type WeeklyDigestContent,
 } from './templates';
 export { FastmailEmailService } from './transports/fastmail-email-service';
 export { LoggingEmailService } from './transports/logging-email-service';

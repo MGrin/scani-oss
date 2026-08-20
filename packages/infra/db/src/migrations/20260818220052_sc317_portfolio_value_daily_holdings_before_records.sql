@@ -1,0 +1,35 @@
+-- SC-317. Why a day is 'partial' when every count on the row reads zero.
+--
+-- SC-252 downgrades `coverage_quality` from 'full' to 'partial' for any date
+-- before a holding's first evidence — min(holdings.created_at, first tx
+-- occurred_at, first observation observed_at). That is right: production held
+-- `total_value = 586.94, coverage_quality = 'full'` for 2025-06-21 on a
+-- holding whose first transaction is 2026-06-22.
+--
+-- On this table the bucket carries SEVERITY and the reason lives in the count
+-- columns. There was no count for this case, so the row read 'partial' with
+-- `holdings_stale_priced = 0` and `holdings_stale_anchored = 0` — a reader can
+-- see confidence was reduced and cannot see why, which is the same defect
+-- SC-428 fixed one screen over.
+--
+-- WHY `holdings_stale_anchored` WAS NOT REUSED, and this is the part worth
+-- keeping: it means projected FORWARD from a stale observation. This is
+-- projected BACKWARD past first evidence. The remedies differ — sync the
+-- source, versus import older history or accept there is none — and collapsing
+-- two causes with different remedies into one count is exactly what SC-249
+-- un-collapsed.
+--
+-- NULLABLE, deliberately, and not `NOT NULL DEFAULT 0`. A zero would be a
+-- positive claim that the day was measured and nothing was found, on 80,406
+-- rows nobody counted. `holdings_unpriceable` (0029), `holdings_stale_priced`
+-- (0031), `holdings_basis_unknown` (0031) and `transfers_unreviewed` (0033)
+-- each took that route and each now asserts a confident zero it cannot
+-- support (SC-255); `holdings_stale_anchored` (0037) took this one, and the
+-- contrast is the point — it can say "unknown" and they cannot. NULL means NOT
+-- RECORDED; 0 means counted and none.
+--
+-- No backfill, for the reason SC-255 documents on the schema: the cutoff would
+-- have to be invented, and inventing one discards genuine zeros on the recent
+-- side to remove false ones on the other. NULL says what is true.
+ALTER TABLE "portfolio_value_daily"
+  ADD COLUMN "holdings_before_records" integer;

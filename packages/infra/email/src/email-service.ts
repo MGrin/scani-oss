@@ -10,12 +10,23 @@ import {
 export abstract class EmailService {
   protected abstract sendMessage(message: EmailMessage): Promise<void>;
 
-  async sendMagicLink(input: { to: string; url: string; brand?: EmailBrand }): Promise<void> {
+  async sendMagicLink(input: {
+    to: string;
+    url: string;
+    brand?: EmailBrand;
+    /**
+     * The reader's interface language (SC-412), as reported by the surface
+     * that asked for the link. Absent is the ordinary case, not an error — a
+     * surface with no language picker sends nothing and gets the English
+     * letter, whole.
+     */
+    language?: string | null;
+  }): Promise<void> {
     const brand = input.brand ?? SCANI_BRAND;
     await this.deliver({
       to: input.to,
       brand,
-      content: renderMagicLinkEmail({ brand, url: input.url }),
+      content: renderMagicLinkEmail({ brand, url: input.url, language: input.language }),
     });
   }
 
@@ -23,12 +34,13 @@ export abstract class EmailService {
     to: string;
     url: string;
     brand?: EmailBrand;
+    language?: string | null;
   }): Promise<void> {
     const brand = input.brand ?? SCANI_BRAND;
     await this.deliver({
       to: input.to,
       brand,
-      content: renderVerificationEmail({ brand, url: input.url }),
+      content: renderVerificationEmail({ brand, url: input.url, language: input.language }),
     });
   }
 
@@ -37,12 +49,18 @@ export abstract class EmailService {
     code: string;
     type: OtpType;
     brand?: EmailBrand;
+    language?: string | null;
   }): Promise<void> {
     const brand = input.brand ?? SCANI_BRAND;
     await this.deliver({
       to: input.to,
       brand,
-      content: renderOtpEmail({ brand, code: input.code, type: input.type }),
+      content: renderOtpEmail({
+        brand,
+        code: input.code,
+        type: input.type,
+        language: input.language,
+      }),
     });
   }
 

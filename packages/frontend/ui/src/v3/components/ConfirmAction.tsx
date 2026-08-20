@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { useDismissOnHide } from '../../hooks/useDismissOnHide';
+import { useUiTranslation } from '../../i18n';
 import { Button } from '../../ui/button';
 
 /**
@@ -137,6 +138,7 @@ export function ConfirmAction({
   disabledReason,
   dismissOnly,
 }: ConfirmActionProps) {
+  const { t } = useUiTranslation();
   // Not while the commit is in flight: the decision is already made and the
   // write is already gone: closing then would only take away the surface that
   // is about to report what happened.
@@ -169,7 +171,7 @@ export function ConfirmAction({
             this one: "Cancel" is exactly what dismissing an explanation of a
             refusal does. */}
         <Button variant="ghost" disabled={isPending} onClick={() => onOpenChange(false)}>
-          Cancel
+          {t('ui.confirmAction.cancel')}
         </Button>
         {dismissOnly ? null : (
           <Button

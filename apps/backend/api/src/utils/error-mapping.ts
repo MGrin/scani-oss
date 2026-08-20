@@ -11,6 +11,7 @@
  */
 
 import { ExpiredCredentialsError } from '@scani/domain/services';
+import { ProviderError } from '@scani/providers/core/errors';
 import { TRPCError } from '@trpc/server';
 
 export type TRPCErrorCode = ConstructorParameters<typeof TRPCError>[0]['code'];
@@ -87,6 +88,78 @@ export function toTRPCError(error: unknown, context: ToTRPCErrorContext): TRPCEr
   return new TRPCError({
     code: context.fallbackCode,
     message: context.fallbackMessage,
+    cause: error,
+  });
+}
+
+/**
+ * A failed credential check, told apart from a credential that failed
+ * (SC-445).
+ *
+ * `validateKeys` is the connect form's only answer, and every code below
+ * becomes a different sentence on it. `BAD_REQUEST` is the one that says
+ * "these details were rejected" — the reader's next move is to go back to the
+ * venue and issue new keys — so it is reserved for a service that recognised
+ * the request and refused it, which is what a provider signals by returning
+ * `valid: false` or throwing `auth-failed`.
+ *
+ * Everything else is us failing to reach a verdict. Saying "rejected" there
+ * sends someone to regenerate a credential that was never wrong, and on a
+ * venue that counts failed attempts — IBKR's 1025 lockout, SC-279 — each
+ * regeneration-and-retry is what keeps the lockout alive.
+ *
+ * `unrecoverable` and `not-supported` stay on `BAD_REQUEST` with the
+ * provider's own words: both mean the request will not succeed as posed, and
+ * the operand a user can act on (a wrong query id, an unsupported account
+ * type) is in that message.
+ */
+export function toCredentialCheckError(error: unknown, institutionName: string): TRPCError {
+  if (error instanceof TRPCError) return error;
+
+  if (error instanceof ProviderError) {
+    const detail = `${institutionName}: ${error.message}`;
+    switch (error.kind) {
+      case 'auth-failed':
+      case 'unrecoverable':
+      case 'not-supported':
+        return new TRPCError({ code: 'BAD_REQUEST', message: detail, cause: error });
+      case 'rate-limited':
+        return new TRPCError({
+          code: 'TOO_MANY_REQUESTS',
+          message: `${institutionName} asked us to slow down — try again shortly`,
+          cause: error,
+        });
+      case 'retryable':
+        return new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: `Couldn't reach ${institutionName} to check these credentials`,
+          cause: error,
+        });
+    }
+  }
+
+  const err = error as Error & { code?: string | number };
+  const codeStr = typeof err?.code === 'string' ? err.code : undefined;
+  const msg = err?.message?.toLowerCase() ?? '';
+  if (
+    codeStr === 'ETIMEDOUT' ||
+    codeStr === 'UND_ERR_CONNECT_TIMEOUT' ||
+    msg.includes('timeout') ||
+    msg.includes('timed out')
+  ) {
+    return new TRPCError({
+      code: 'TIMEOUT',
+      message: `${institutionName} took too long to answer`,
+      cause: error,
+    });
+  }
+
+  // An unclassified throw is not evidence about the credential. It used to
+  // fall through to BAD_REQUEST, which made every unhandled failure read as
+  // a rejection.
+  return new TRPCError({
+    code: 'INTERNAL_SERVER_ERROR',
+    message: `Couldn't reach ${institutionName} to check these credentials`,
     cause: error,
   });
 }

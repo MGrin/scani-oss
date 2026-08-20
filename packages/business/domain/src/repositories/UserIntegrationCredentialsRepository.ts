@@ -1,7 +1,7 @@
 import { BaseRepository, type DatabaseTransaction } from '@scani/db';
 import type { NewUserIntegrationCredentials, UserIntegrationCredentials } from '@scani/db/schema';
 import * as schema from '@scani/db/schema';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, gt, isNotNull, or, sql } from 'drizzle-orm';
 import { Service } from 'typedi';
 
 @Service()
@@ -232,6 +232,71 @@ export class UserIntegrationCredentialsRepository extends BaseRepository<
         updatedAt: new Date(),
       })
       .where(eq(schema.userIntegrationCredentials.id, id))
+      .returning();
+    return results[0];
+  }
+
+  /**
+   * Record that a scheduled sync was REFUSED by the provider (SC-279).
+   *
+   * Separate from `markImportFailed` on purpose. That one belongs to the
+   * import lifecycle and bumps `importRetryCount`, which
+   * `reconcile-pending-credentials` reads to decide a credential is beyond
+   * help — so an hourly balance failure writing there would abandon a later,
+   * unrelated import before it had been tried once.
+   *
+   * `blockedUntil` is the window the provider attached, when it attached one.
+   * While it is in the future the sync must not contact the provider for this
+   * credential at all; for a lockout the attempt is itself the harm.
+   */
+  async markSyncRefused(
+    id: string,
+    errorMessage: string,
+    blockedUntil: Date | null,
+    transaction?: DatabaseTransaction
+  ): Promise<UserIntegrationCredentials | undefined> {
+    const database = this.getDb(transaction);
+    const results = await database
+      .update(schema.userIntegrationCredentials)
+      .set({
+        syncLastError: errorMessage.slice(0, 2000),
+        syncFailureCount: sql`${schema.userIntegrationCredentials.syncFailureCount} + 1`,
+        ...(blockedUntil ? { syncBlockedUntil: blockedUntil } : {}),
+        updatedAt: new Date(),
+      })
+      .where(eq(schema.userIntegrationCredentials.id, id))
+      .returning();
+    return results[0];
+  }
+
+  /**
+   * A scheduled sync succeeded — clear the refusal so the row stops claiming
+   * one. Only writes when there is something to clear, so an ordinary hourly
+   * success does not churn `updated_at` on every credential.
+   */
+  async clearSyncRefusal(
+    id: string,
+    transaction?: DatabaseTransaction
+  ): Promise<UserIntegrationCredentials | undefined> {
+    const database = this.getDb(transaction);
+    const results = await database
+      .update(schema.userIntegrationCredentials)
+      .set({
+        syncBlockedUntil: null,
+        syncLastError: null,
+        syncFailureCount: 0,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(schema.userIntegrationCredentials.id, id),
+          or(
+            isNotNull(schema.userIntegrationCredentials.syncBlockedUntil),
+            isNotNull(schema.userIntegrationCredentials.syncLastError),
+            gt(schema.userIntegrationCredentials.syncFailureCount, 0)
+          )
+        )
+      )
       .returning();
     return results[0];
   }

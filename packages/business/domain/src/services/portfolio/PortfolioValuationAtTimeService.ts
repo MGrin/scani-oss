@@ -25,6 +25,13 @@ export interface PortfolioValueAtTimePerHolding {
   balance: Decimal | null;
   valueInBase: Decimal | null;
   anchorSource: string | null;
+  /**
+   * When the anchor `anchorSource` names was observed. Carried because
+   * `anchorSource` alone cannot rank two reconstructions: `observation-before`
+   * says the balance was extrapolated forward from older data, and only this
+   * says whether "older" means 54 seconds or 71 days (SC-249).
+   */
+  anchorAt: Date | null;
   pricePath: string | null;
   priceEffectiveAt: Date | null;
   /**
@@ -42,6 +49,16 @@ export interface PortfolioValueAtTimePerHolding {
    * from when it actually is.
    */
   priceStale: boolean;
+  /**
+   * `at` precedes every record we hold for this holding — its first
+   * transaction, its first observation and the holding row itself all
+   * begin later (SC-252). `balance` is still populated: below that point
+   * the walk covers the whole ledger, so what it returns is the
+   * unexplained opening balance projected backward, which is the best
+   * guess available and is what the history chart is built on. It is not
+   * a measurement, and this says so.
+   */
+  balanceBeforeRecords: boolean;
 }
 
 export interface PortfolioValueAtTimeResult {
@@ -72,6 +89,42 @@ export interface PortfolioValueAtTimeResult {
    * figure is old rather than leaving the reader to assume none of it is.
    */
   holdingsStalePriced: number;
+  /**
+   * Of `holdingsWithKnownValue`, how many had their balance extrapolated
+   * FORWARD from an observation before `at`, because nothing at or after it
+   * existed to anchor on (SC-249).
+   *
+   * The sibling of `holdingsStalePriced`, and deliberately separate from it:
+   * both degrade the day to `'partial'`, but a stale PRICE means the quantity
+   * is known and its valuation is old, while a stale ANCHOR means the
+   * quantity itself is a projection. Collapsing them into one indicator —
+   * which is all a reader had until now — hides which of the two happened
+   * and offers no remedy, because the remedies are different.
+   */
+  holdingsStaleAnchored: number;
+  /**
+   * The oldest anchor among the backward-anchored holdings: the far end of
+   * the weakest reconstruction behind this total. `null` when none were.
+   *
+   * This is the number that ranks two `'partial'` days against each other.
+   * Production has both extremes in the same portfolio — one holding
+   ***REMOVED***
+   * it they are the same answer.
+   */
+  oldestAnchorAt: Date | null;
+  /**
+   * Of `holdingsWithKnownValue`, how many were valued from a balance that
+   * predates every record we hold for the holding (SC-252).
+   *
+   * The third member of the family `holdingsStalePriced` and
+   * `holdingsStaleAnchored` belong to, and separate from both for the same
+   * reason they are separate from each other: the remedies differ. A stale
+   * price wants a fresh quote; a stale anchor wants a sync; this wants
+   * older history imported, or the admission that none exists. What it has
+   * in common with them is that the figure still counts and the day stops
+   * being 'full'.
+   */
+  holdingsBeforeRecords: number;
   perHolding: PortfolioValueAtTimePerHolding[];
 }
 
@@ -166,8 +219,13 @@ export class PortfolioValuationAtTimeService {
     let total = new Decimal(0);
     let knownCount = 0;
     let unpriceableCount = 0;
-    let anyStaleAnchor = false;
+    // Was a bare boolean until SC-249. A boolean is exactly enough to pick
+    // 'partial' and exactly not enough for a reader to do anything about it:
+    // it cannot say how many holdings, nor how far back the worst one is.
+    let staleAnchoredCount = 0;
+    let oldestAnchorAt: Date | null = null;
     let stalePricedCount = 0;
+    let beforeRecordsCount = 0;
 
     for (const h of holdings) {
       const result = await this.balanceAtTimeService.getBalance(h.id, at, opts.caches);
@@ -187,10 +245,12 @@ export class PortfolioValuationAtTimeService {
           balance: null,
           valueInBase: null,
           anchorSource: result.anchor,
+          anchorAt: result.anchorAt,
           pricePath: null,
           priceEffectiveAt: null,
           unpriceable: tokenUnpriceable,
           priceStale: false,
+          balanceBeforeRecords: result.beforeRecords,
         });
         continue;
       }
@@ -206,6 +266,10 @@ export class PortfolioValuationAtTimeService {
       if (result.balance.isZero()) {
         total = total.add(0);
         knownCount += 1;
+        // A zero reconstructed below our earliest record is as unfounded as
+        // a non-zero one: it is `current balance - sum(all known txs)`
+        // landing on zero, not an observation of an empty position.
+        if (result.beforeRecords) beforeRecordsCount += 1;
         perHolding.push({
           holdingId: h.id,
           accountId: h.accountId,
@@ -213,10 +277,18 @@ export class PortfolioValuationAtTimeService {
           balance: result.balance,
           valueInBase: result.balance, // 0
           anchorSource: result.anchor,
+          anchorAt: result.anchorAt,
           pricePath: 'zero-balance',
-          priceEffectiveAt: result.anchorAt,
+          // Was `result.anchorAt` until SC-249, which is the BALANCE
+          // anchor's time, not a price's. No price is looked up on this
+          // branch, so the honest answer is null and the anchor time now
+          // has its own field. Nothing read it — grep found no consumer of
+          // `priceEffectiveAt` outside this file — so the smear was
+          // invisible rather than harmless.
+          priceEffectiveAt: null,
           unpriceable: false,
           priceStale: false,
+          balanceBeforeRecords: result.beforeRecords,
         });
         continue;
       }
@@ -258,18 +330,24 @@ export class PortfolioValuationAtTimeService {
           balance: result.balance,
           valueInBase: null,
           anchorSource: result.anchor,
+          anchorAt: result.anchorAt,
           pricePath: null,
           priceEffectiveAt: null,
           unpriceable: tokenUnpriceable,
           priceStale: false,
+          balanceBeforeRecords: result.beforeRecords,
         });
         continue;
       }
 
       total = total.add(priced.amount);
       knownCount += 1;
+      if (result.beforeRecords) beforeRecordsCount += 1;
       if (result.anchor === 'observation-before') {
-        anyStaleAnchor = true;
+        staleAnchoredCount += 1;
+        if (result.anchorAt && (!oldestAnchorAt || result.anchorAt < oldestAnchorAt)) {
+          oldestAnchorAt = result.anchorAt;
+        }
       }
       if (priced.stale) {
         stalePricedCount += 1;
@@ -282,10 +360,12 @@ export class PortfolioValuationAtTimeService {
         balance: result.balance,
         valueInBase: priced.amount,
         anchorSource: result.anchor,
+        anchorAt: result.anchorAt,
         pricePath: priced.path,
         priceEffectiveAt: priced.effectiveAt,
         unpriceable: false,
         priceStale: priced.stale,
+        balanceBeforeRecords: result.beforeRecords,
       });
     }
 
@@ -304,7 +384,14 @@ export class PortfolioValuationAtTimeService {
     } else {
       const knownRatio = knownCount / priceableTotal;
       if (knownRatio >= COVERAGE_FULL_THRESHOLD) {
-        coverageQuality = anyStaleAnchor || stalePricedCount > 0 ? 'partial' : 'full';
+        // `beforeRecordsCount` joined this condition in SC-252. Without it a
+        // date more than a year before a holding's first transaction read
+        // 'full' — the strongest claim the vocabulary has, about a period
+        // nothing in our data describes.
+        coverageQuality =
+          staleAnchoredCount > 0 || stalePricedCount > 0 || beforeRecordsCount > 0
+            ? 'partial'
+            : 'full';
       } else if (knownRatio >= COVERAGE_PARTIAL_THRESHOLD) {
         coverageQuality = 'estimated';
       } else {
@@ -322,6 +409,9 @@ export class PortfolioValuationAtTimeService {
       holdingsTotal,
       holdingsUnpriceable: unpriceableCount,
       holdingsStalePriced: stalePricedCount,
+      holdingsStaleAnchored: staleAnchoredCount,
+      oldestAnchorAt,
+      holdingsBeforeRecords: beforeRecordsCount,
       perHolding,
     };
   }

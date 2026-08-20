@@ -4,6 +4,7 @@ import { Download, X } from 'lucide-react';
 import { useState } from 'react';
 import { useBannerOffset } from '../hooks/useBannerOffset';
 import { useInstallPrompt } from '../hooks/useInstallPrompt';
+import { useUiTranslation } from '../i18n';
 import { InstallInstructionsSheet } from './InstallInstructionsSheet';
 
 export interface InstallPromptBannerProps {
@@ -19,6 +20,7 @@ export interface InstallPromptBannerProps {
  * directly; on iOS, it opens a bottom sheet with Add-to-Home-Screen steps.
  */
 export function InstallPromptBanner({ isLoggedIn, appName = 'Scani' }: InstallPromptBannerProps) {
+  const { t } = useUiTranslation();
   const { visible, platform, canPrompt, prompt, dismiss } = useInstallPrompt();
   const [instructionsOpen, setInstructionsOpen] = useState(false);
   const bannerRef = useBannerOffset<HTMLDivElement>();
@@ -50,19 +52,19 @@ export function InstallPromptBanner({ isLoggedIn, appName = 'Scani' }: InstallPr
         }}
       >
         <Download className="h-4 w-4 shrink-0" />
-        <span className="flex-1 truncate">Install {appName} on your phone</span>
+        <span className="flex-1 truncate">{t('ui.install.headline', { appName })}</span>
         <button
           type="button"
           onClick={handleAction}
           className="font-semibold underline underline-offset-2 hover:no-underline"
         >
-          {canPrompt ? 'Install' : 'How?'}
+          {canPrompt ? t('ui.install.installAction') : t('ui.install.howAction')}
         </button>
         <button
           type="button"
           onClick={dismiss}
           className="p-0.5 rounded hover:bg-white/20 transition-colors"
-          aria-label="Dismiss install prompt"
+          aria-label={t('ui.install.dismissPrompt')}
         >
           <X className="h-3.5 w-3.5" />
         </button>

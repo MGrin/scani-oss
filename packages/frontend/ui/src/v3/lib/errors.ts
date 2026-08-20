@@ -1,3 +1,5 @@
+import { uiT } from '../../i18n';
+import { errorMessage, httpStatus, rejectionReason } from '../../lib/user-facing-error';
 /**
  * Error copy, under the voice rules of §2.5.
  *
@@ -19,6 +21,11 @@
  * Duck-typed rather than importing `TRPCClientError`: the shape is stable, the
  * import is not free, and this file has to stay a pure function of its
  * arguments so the voice rules can be asserted in a test.
+ *
+ * `httpStatus` / `errorMessage` / `rejectionReason` live in
+ * `lib/user-facing-error` (SC-311) rather than here: the same "did a person
+ * write this for a reader?" decision is now made by the toast helper and the
+ * crash boundary too, and neither of those is v3-scoped.
  */
 
 export interface ErrorCopy {
@@ -27,29 +34,11 @@ export interface ErrorCopy {
   retryLabel: string;
 }
 
-/** The `data` envelope a tRPC client error carries. */
-interface ErrorWithStatus {
-  data?: { httpStatus?: unknown } | null;
-  message?: unknown;
-}
-
-function httpStatus(error: unknown): number | null {
-  if (typeof error !== 'object' || error === null) return null;
-  const status = (error as ErrorWithStatus).data?.httpStatus;
-  return typeof status === 'number' ? status : null;
-}
-
-function message(error: unknown): string {
-  if (typeof error !== 'object' || error === null) return '';
-  const raw = (error as ErrorWithStatus).message;
-  return typeof raw === 'string' ? raw : '';
-}
-
 /** A request that never reached the server at all. `fetch` rejects with a
  *  `TypeError` whose wording differs per engine, so this matches on all three
  *  of the phrasings the browsers in scope produce. */
 function isNetworkFailure(error: unknown): boolean {
-  const text = message(error).toLowerCase();
+  const text = errorMessage(error).toLowerCase();
   return (
     httpStatus(error) === null &&
     (text.includes('failed to fetch') ||
@@ -60,47 +49,44 @@ function isNetworkFailure(error: unknown): boolean {
 }
 
 /**
- * A rejection reason the server wrote FOR the reader, or null.
+ * What the caller was doing, as a closed set rather than a free string.
  *
- * A 400 is the one status where the message is the point: the API validates
- * exchange keys against the provider before storing anything and rethrows the
- * provider's own words (`Kraken rejected request: EAPI:Invalid key`), and it is
- * the only place the app can learn *which* thing the reader got wrong. Throwing
- * it away turned every upstream rejection — wrong key, missing permission, IP
- * allowlist, expired key — into one sentence that blamed "the server", so the
- * rational next step was to wait rather than re-check the field (SC-140).
- *
- * Not every 400 carries prose. tRPC serialises a failed input schema into the
- * same status with a JSON array of zod issues as its message, and a wall of
- * `[{"code":"too_small",…}]` on screen is worse than the generic sentence. A
- * `TRPCError` thrown with no message at all also arrives carrying its own code
- * as the message, so a bare `BAD_REQUEST` has to be refused too. Only a short,
- * single-line, non-JSON, non-SHOUTING message survives — anything else was
- * written for a log, and the generic branch is the honest answer to it.
+ * It was a `string` defaulting to `'load'`, and every caller passed an English
+ * word straight into a sentence this file then translates — so a Russian
+ * reader got "Не удалось load этот кошелёк" (SC-201). A union resolved through
+ * `ui.errors.verb.*` is the smallest change that makes the frame and its verb
+ * come from the same bundle; the four values are every one a caller uses.
  */
-const TRPC_CODE = /^[A-Z][A-Z_]*$/;
-
-function rejectionReason(error: unknown): string | null {
-  const raw = message(error).trim();
-  if (!raw || raw.length > 200) return null;
-  if (raw.startsWith('[') || raw.startsWith('{')) return null;
-  if (raw.includes('\n')) return null;
-  if (TRPC_CODE.test(raw)) return null;
-  return raw;
-}
+export type ErrorVerb = 'load' | 'create' | 'save' | 'connect';
 
 /**
  * @param subject the noun the caller is acting on — `this payment`, `Kraken`.
+ *   Callers pass a translated noun or a proper name; never an English literal.
  * @param verb what the caller was doing, for the title. Defaults to `load`,
  *   which is wrong for a write: a rejected *connect* that says "Couldn't load
  *   Kraken" describes an action the reader never took.
  */
-export function describeQueryError(error: unknown, subject: string, verb = 'load'): ErrorCopy {
+export function describeQueryError(
+  error: unknown,
+  subject: string,
+  verbKey: ErrorVerb = 'load'
+): ErrorCopy {
+  // Resolved against the KIT's instance, never a caller's. Every key below is
+  // `ui.*`, which lives only in this package's bundle — the app's instance
+  // holds none of them, so a caller passing its own `t` got the key back as
+  // the string. Five v3 import flows rendered `ui.errors.offline.title` in
+  // their FAILURE state, which is the moment the copy matters most (SC-316).
+  //
+  // Taking a `t` parameter was the defect, not the callers: a function that
+  // resolves only this package's keys must not accept a translator that
+  // structurally cannot resolve them.
+  const t = uiT;
+  const verb = t(`ui.errors.verb.${verbKey}`);
   if (isNetworkFailure(error)) {
     return {
-      title: "Couldn't reach the server",
-      detail: 'Check your connection. Nothing has been changed.',
-      retryLabel: 'Try again',
+      title: t('ui.errors.offline.title'),
+      detail: t('ui.errors.offline.detail'),
+      retryLabel: t('ui.errors.tryAgain'),
     };
   }
 
@@ -108,25 +94,25 @@ export function describeQueryError(error: unknown, subject: string, verb = 'load
 
   if (status === 401 || status === 403) {
     return {
-      title: 'Your session ended',
-      detail: `Sign in again to see ${subject}.`,
-      retryLabel: 'Try again',
+      title: t('ui.errors.session.title'),
+      detail: t('ui.errors.session.detail', { subject }),
+      retryLabel: t('ui.errors.tryAgain'),
     };
   }
 
   if (status === 408 || status === 504) {
     return {
-      title: 'The server took too long',
-      detail: `That request to ${verb} ${subject} timed out. Your data is untouched.`,
-      retryLabel: 'Try again',
+      title: t('ui.errors.timeout.title'),
+      detail: t('ui.errors.timeout.detail', { verb, subject }),
+      retryLabel: t('ui.errors.tryAgain'),
     };
   }
 
   if (status === 429) {
     return {
-      title: 'Too many requests',
-      detail: 'The server asked us to slow down. Wait a moment, then retry.',
-      retryLabel: 'Retry',
+      title: t('ui.errors.rateLimit.title'),
+      detail: t('ui.errors.rateLimit.detail'),
+      retryLabel: t('ui.errors.retry'),
     };
   }
 
@@ -136,16 +122,16 @@ export function describeQueryError(error: unknown, subject: string, verb = 'load
     const reason = rejectionReason(error);
     if (reason) {
       return {
-        title: `Couldn't ${verb} ${subject}`,
-        detail: `${reason.replace(/[.!]$/, '')}. Your data is untouched.`,
-        retryLabel: 'Try again',
+        title: t('ui.errors.generic.title', { verb, subject }),
+        detail: t('ui.errors.rejected.detail', { reason: reason.replace(/[.!]$/, '') }),
+        retryLabel: t('ui.errors.tryAgain'),
       };
     }
   }
 
   return {
-    title: `Couldn't ${verb} ${subject}`,
-    detail: 'The server returned an error. Your data is untouched.',
-    retryLabel: 'Try again',
+    title: t('ui.errors.generic.title', { verb, subject }),
+    detail: t('ui.errors.generic.detail'),
+    retryLabel: t('ui.errors.tryAgain'),
   };
 }

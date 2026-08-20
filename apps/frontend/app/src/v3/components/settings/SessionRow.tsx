@@ -1,7 +1,8 @@
-import { formatRelative } from '@scani/shared';
 import { ConfirmAction } from '@scani/ui/v3/components/ConfirmAction';
 import { Monitor } from 'lucide-react';
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { formatRelative } from '../../lib/relative-time';
 import { summariseUserAgent } from '../../lib/settings';
 
 /**
@@ -42,40 +43,40 @@ interface SessionRowProps {
 }
 
 export function SessionRow({ session, isPending, onRevoke }: SessionRowProps) {
+  const { t } = useTranslation();
   const [confirming, setConfirming] = useState(false);
-  const device = summariseUserAgent(session.userAgent);
-  const where = session.ipAddress ?? 'unknown IP';
+  const device = summariseUserAgent(t, session.userAgent);
+  const where = session.ipAddress ?? t('v3.settings.sessions.unknownIp');
 
   return (
     <li className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-2">
       <Monitor className="size-5 shrink-0 text-muted-foreground" aria-hidden="true" />
       <div className="min-w-0 flex-1">
         <p className="truncate text-label">
-          {session.isCurrent ? `${device} — this device` : device}
+          {session.isCurrent ? t('v3.settings.sessions.thisDevice', { device }) : device}
         </p>
         <p className="truncate text-caption text-muted-foreground">
-          {`${where} · last used ${formatRelative(session.updatedAt)}`}
+          {t('v3.settings.sessions.lastUsed', {
+            where,
+            when: formatRelative(t, session.updatedAt),
+          })}
         </p>
       </div>
       <ConfirmAction
-        label="Revoke"
+        label={t('v3.settings.sessions.revoke')}
         triggerClassName="text-destructive hover:text-destructive"
         // The commit names the device rather than repeating the trigger's
         // verb, so the second tap is a different act — and at 390px the
         // button is the part that gets read.
-        confirmLabel={`Sign out ${device}`}
+        confirmLabel={t('v3.settings.sessions.revokeConfirm', { device })}
         open={confirming}
         onOpenChange={setConfirming}
         isPending={isPending}
         // The current device's own row cannot revoke itself: doing so signs
         // the reader out of the screen they are standing on. `Sign out` in
         // the block below does exactly that and says so.
-        disabledReason={
-          session.isCurrent
-            ? 'This is the device you are using — sign out below instead'
-            : undefined
-        }
-        consequence={`${device} at ${where} is signed out and has to sign in again with a new code from your email. Your data is untouched, and nothing else is signed out.`}
+        disabledReason={session.isCurrent ? t('v3.settings.sessions.currentDevice') : undefined}
+        consequence={t('v3.settings.sessions.revokeConsequence', { device, where })}
         onConfirm={() => {
           onRevoke(session.token);
           setConfirming(false);

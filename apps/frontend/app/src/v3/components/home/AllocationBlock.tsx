@@ -7,6 +7,7 @@ import { TruncatedText } from '@scani/ui/v3/components/TruncatedText';
 import { useDelayedLoading } from '@scani/ui/v3/hooks/useDelayedLoading';
 import { CHART_OTHER_COLOR, foldAllocation } from '@scani/ui/v3/lib/chart';
 import { type ReactNode, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import { trpc } from '@/lib/trpc';
 import { cn } from '@/lib/utils';
@@ -98,6 +99,7 @@ function FoldedRow({
 }
 
 export function AllocationBlock() {
+  const { t } = useTranslation();
   // The cut survives a reload (V3-48): it is the one thing on this screen the
   // reader sets *about* the screen, and v2 has remembered it since the start.
   const [dimension, setDimension] = useViewPreference(
@@ -115,11 +117,17 @@ export function AllocationBlock() {
   const segments = foldAllocation(items);
   const folded = foldedAllocationItems(items, segments);
 
-  const label = ALLOCATION_DIMENSIONS.find((option) => option.key === dimension)?.label ?? 'Type';
+  const labelKey =
+    ALLOCATION_DIMENSIONS.find((option) => option.key === dimension)?.labelKey ??
+    'v3.home.allocation.dimension.tokenType';
 
   return (
     <Block>
-      <BlockHeader title="Allocation" href={V3_ROUTES.holdings} action="Holdings" />
+      <BlockHeader
+        title={t('v3.home.allocation.title')}
+        href={V3_ROUTES.holdings}
+        action={t('nav.holdings')}
+      />
       <div className="flex flex-col gap-4 px-4 pb-4">
         <Segmented
           value={dimension}
@@ -130,11 +138,11 @@ export function AllocationBlock() {
             // never asked to see, of parts with different names.
             setExpanded(false);
           }}
-          aria-label="Cut the allocation by"
+          aria-label={t('v3.home.allocation.cutBy')}
         >
           {ALLOCATION_DIMENSIONS.map((option) => (
             <SegmentedItem key={option.key} value={option.key} className="px-2 text-caption">
-              {option.label}
+              {t(option.labelKey)}
             </SegmentedItem>
           ))}
         </Segmented>
@@ -153,11 +161,11 @@ export function AllocationBlock() {
                 <Skeleton className="h-4 w-2/3" />
               </div>
             }
-            label="your allocation"
+            label={t('v3.home.allocation.loadingLabel')}
             onRetry={() => void allocation.refetch()}
           />
         ) : segments.length === 0 ? (
-          <p className="text-body text-muted-foreground">Nothing priced under this cut yet.</p>
+          <p className="text-body text-muted-foreground">{t('v3.home.allocation.empty')}</p>
         ) : (
           <>
             {/* Every row reaches the holdings behind its share (SC-74). The
@@ -167,7 +175,7 @@ export function AllocationBlock() {
             <AllocationBar
               items={items}
               currency={currency}
-              label={`Allocation by ${label}`}
+              label={t('v3.home.allocation.barLabel', { dimension: t(labelKey) })}
               itemHref={(segment) => allocationHref(dimension, segment.key)}
             />
 
@@ -176,7 +184,7 @@ export function AllocationBlock() {
                 <DisclosureButton
                   expanded={expanded}
                   onToggle={() => setExpanded((open) => !open)}
-                  label={`the ${folded.length} in Other`}
+                  label={t('v3.home.disclosure.theNInOther', { count: folded.length })}
                 />
 
                 {/* The list is flush, like the bar's own above it and for the

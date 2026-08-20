@@ -1,7 +1,12 @@
 import { describe, expect, test } from 'bun:test';
 import { UserJobRepository } from '../../src/repositories/UserJobRepository';
+import { restoreContainerAfterAll } from '../../test/helpers/container';
 import { withTestDb } from '../../test/helpers/db';
 import { makeUser } from '../../test/helpers/factories';
+
+// Container stubs are process-global; put back whatever this file changes
+// so no later test file resolves them (SC-448).
+restoreContainerAfterAll();
 
 // Realistic DB-backed coverage for UserJobRepository — this is the durable
 // mirror of every user-initiated BullMQ job, and every method here gets

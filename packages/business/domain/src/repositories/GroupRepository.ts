@@ -3,7 +3,35 @@ import type { Group, NewGroup } from '@scani/db/schema';
 import * as schema from '@scani/db/schema';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { Service } from 'typedi';
+import { SCAM_PROBABILITY_THRESHOLD } from '../lib/constants';
 
+/**
+ * Groups, and the three states a (holding, group) pair can be in.
+ *
+ * Membership is a **standing rule**, chosen by mgrin on 2026-08-18 over the
+ * snapshot semantic SC-385 had measured and taken the other side of. Adding an
+ * account to a group means that account is in the group permanently — what it
+ * holds now and everything it receives later. So:
+ *
+ *   1. **in by its own row** — `holding_groups`
+ *   2. **in via its account** — `account_groups` on the holding's `account_id`
+ *   3. **explicitly out** — `holding_group_exclusions`, which beats both
+ *
+ * and every read of membership resolves the same expression, in
+ * `resolveMembership` and nowhere else:
+ *
+ *     (holding_groups ∪ inherited) − exclusions
+ *
+ * The third state is what makes the first two survivable. Six of these wallets
+ * receive airdrops continuously; a rule with nothing to oppose it would drag
+ * every one of them into the group, scam dust included. The veto is what the
+ * user reaches for instead of ungrouping the whole account.
+ *
+ * `account_groups` is therefore no longer a cache and `recomputeAccountGroups`
+ * is gone: under a live rule there is nothing to recompute, and the eight rows
+ * that were stale on production are true again because the rule that wrote them
+ * is now the rule that reads them (SC-386).
+ */
 @Service()
 export class GroupRepository extends BaseRepository<Group, NewGroup> {
   protected readonly table = schema.groups;
@@ -37,7 +65,6 @@ export class GroupRepository extends BaseRepository<Group, NewGroup> {
     try {
       const database = this.getDb(transaction);
 
-      // Optimized query using subqueries for counts - single DB query instead of N+1
       const results = await database
         .select({
           id: schema.groups.id,
@@ -49,29 +76,58 @@ export class GroupRepository extends BaseRepository<Group, NewGroup> {
           isActive: schema.groups.isActive,
           createdAt: schema.groups.createdAt,
           updatedAt: schema.groups.updatedAt,
+          // The same three states `resolveMembership` reads, as one scalar
+          // subquery per group — counting `holding_groups` rows alone would
+          // now undercount every holding that is in by its account's rule.
+          //
+          // Hidden and scam-flagged holdings are left out so the number
+          // matches the list it labels: `findByUserWithFullDetails` filters
+          // both, so the group's page cannot show them however they are
+          // grouped. The scam half was missing until SC-388, which is a
+          // fourth number on a screen that already had three.
+          //
           // `::int` is load-bearing: COUNT returns bigint, and postgres.js
           // hands bigint back as a decimal string because a JS number cannot
           // hold its full range. Without the cast the field is typed `number`
           // and delivered as `"1"`, which is how the groups list came to read
           // "1 holdings" (SC-88).
-          holdingsCount: sql<number>`COALESCE(COUNT(DISTINCT ${schema.holdingGroups.holdingId}), 0)::int`,
-          accountsCount: sql<number>`COALESCE(COUNT(DISTINCT ${schema.accountGroups.accountId}), 0)::int`,
+          //
+          // The outer table is spelled out rather than interpolated: drizzle
+          // renders a column passed into a `sql` template in the SELECT list
+          // UNQUALIFIED (`"id"`, not `"groups"."id"`), and inside a correlated
+          // subquery that binds to the SUBQUERY's own table instead. It does
+          // not error — `hg.group_id = "id"` is a valid comparison against
+          // `holdings.id` — it just counts zero, forever.
+          holdingsCount: sql<number>`(
+            SELECT COUNT(*)::int
+            FROM holdings h
+            JOIN tokens tk ON tk.id = h.token_id
+            WHERE h.user_id = "groups"."user_id"
+              AND h.is_hidden = false
+              AND tk.is_scam_probability < ${SCAM_PROBABILITY_THRESHOLD}
+              AND (
+                EXISTS (
+                  SELECT 1 FROM holding_groups hg
+                  WHERE hg.holding_id = h.id AND hg.group_id = "groups"."id"
+                )
+                OR EXISTS (
+                  SELECT 1 FROM account_groups ag
+                  WHERE ag.account_id = h.account_id AND ag.group_id = "groups"."id"
+                )
+              )
+              AND NOT EXISTS (
+                SELECT 1 FROM holding_group_exclusions ex
+                WHERE ex.holding_id = h.id AND ex.group_id = "groups"."id"
+              )
+          )`,
+          accountsCount: sql<number>`(
+            SELECT COUNT(*)::int
+            FROM account_groups ag
+            WHERE ag.group_id = "groups"."id"
+          )`,
         })
         .from(schema.groups)
-        .leftJoin(schema.holdingGroups, eq(schema.groups.id, schema.holdingGroups.groupId))
-        .leftJoin(schema.accountGroups, eq(schema.groups.id, schema.accountGroups.groupId))
         .where(and(eq(schema.groups.userId, userId), eq(schema.groups.isActive, true)))
-        .groupBy(
-          schema.groups.id,
-          schema.groups.userId,
-          schema.groups.name,
-          schema.groups.color,
-          schema.groups.description,
-          schema.groups.displayOrder,
-          schema.groups.isActive,
-          schema.groups.createdAt,
-          schema.groups.updatedAt
-        )
         .orderBy(schema.groups.displayOrder, schema.groups.name);
 
       return results as Array<
@@ -86,21 +142,72 @@ export class GroupRepository extends BaseRepository<Group, NewGroup> {
     }
   }
 
+  /**
+   * The one place the three states are resolved into an answer.
+   *
+   * Three indexed reads rather than one query with correlated subqueries in a
+   * join: the expression is `(direct ∪ inherited) − vetoed`, and written this
+   * way the code says that and can be checked against it. They run in sequence
+   * because a caller may hand us a transaction, and a transaction is one
+   * connection.
+   *
+   * Every requested holding gets an entry, empty array included, so callers
+   * never have to distinguish "no groups" from "not in the map".
+   */
+  private async resolveMembership(
+    holdingIds: string[],
+    transaction?: DatabaseTransaction
+  ): Promise<Map<string, Group[]>> {
+    const out = new Map<string, Group[]>();
+    for (const id of holdingIds) out.set(id, []);
+    if (holdingIds.length === 0) return out;
+
+    const database = this.getDb(transaction);
+
+    const direct = await database
+      .select({ holdingId: schema.holdingGroups.holdingId, group: schema.groups })
+      .from(schema.holdingGroups)
+      .innerJoin(schema.groups, eq(schema.holdingGroups.groupId, schema.groups.id))
+      .where(inArray(schema.holdingGroups.holdingId, holdingIds));
+
+    const inherited = await database
+      .select({ holdingId: schema.holdings.id, group: schema.groups })
+      .from(schema.holdings)
+      .innerJoin(
+        schema.accountGroups,
+        eq(schema.accountGroups.accountId, schema.holdings.accountId)
+      )
+      .innerJoin(schema.groups, eq(schema.accountGroups.groupId, schema.groups.id))
+      .where(inArray(schema.holdings.id, holdingIds));
+
+    const vetoed = await database
+      .select({
+        holdingId: schema.holdingGroupExclusions.holdingId,
+        groupId: schema.holdingGroupExclusions.groupId,
+      })
+      .from(schema.holdingGroupExclusions)
+      .where(inArray(schema.holdingGroupExclusions.holdingId, holdingIds));
+
+    const excluded = new Set(vetoed.map((row) => `${row.holdingId}:${row.groupId}`));
+    const seen = new Set<string>();
+    for (const row of [...direct, ...inherited]) {
+      const key = `${row.holdingId}:${row.group.id}`;
+      // A holding can be reached by both paths — its own row AND its account's
+      // rule — and is still in the group exactly once.
+      if (seen.has(key) || excluded.has(key)) continue;
+      seen.add(key);
+      out.get(row.holdingId)?.push(row.group);
+    }
+    return out;
+  }
+
   async findGroupsByHoldingId(
     holdingId: string,
     transaction?: DatabaseTransaction
   ): Promise<Group[]> {
     try {
-      const database = this.getDb(transaction);
-      const results = await database
-        .select({
-          group: schema.groups,
-        })
-        .from(schema.holdingGroups)
-        .innerJoin(schema.groups, eq(schema.holdingGroups.groupId, schema.groups.id))
-        .where(eq(schema.holdingGroups.holdingId, holdingId));
-
-      return results.map((r) => r.group);
+      const resolved = await this.resolveMembership([holdingId], transaction);
+      return resolved.get(holdingId) ?? [];
     } catch (error) {
       this.logger.error({ holdingId, error }, 'Failed to find groups by holding');
       throw error;
@@ -108,19 +215,11 @@ export class GroupRepository extends BaseRepository<Group, NewGroup> {
   }
 
   /**
-   * Batch lookup of groups for many holdings, with ownership-scoped
-   * filtering. Replaces N sequential `findGroupsByHoldingId` calls
-   * with one indexed query.
+   * Batch lookup of groups for many holdings, with ownership-scoped filtering.
    *
-   * Joins through `holdings` so we can require `holdings.user_id =
-   * userId` in the same statement — callers don't need a pre-flight
-   * ownership check. Holdings the user doesn't own are silently
-   * absent from the returned map; callers can detect that as
-   * `result.has(id) === false`.
-   *
-   * Returns a `Map<holdingId, Group[]>`. Holdings with no groups
-   * still appear in the map with an empty array, so the caller can
-   * distinguish "no groups" from "unknown holding".
+   * Holdings the user doesn't own are silently absent from the returned map;
+   * callers can detect that as `result.has(id) === false`. Owned holdings with
+   * no groups are present with an empty array.
    */
   async findGroupsByHoldingIds(
     userId: string,
@@ -131,49 +230,13 @@ export class GroupRepository extends BaseRepository<Group, NewGroup> {
     if (holdingIds.length === 0) return out;
     try {
       const database = this.getDb(transaction);
-      const rows = await database
-        .select({
-          holdingId: schema.holdingGroups.holdingId,
-          group: schema.groups,
-        })
-        .from(schema.holdingGroups)
-        .innerJoin(schema.groups, eq(schema.holdingGroups.groupId, schema.groups.id))
-        .innerJoin(schema.holdings, eq(schema.holdingGroups.holdingId, schema.holdings.id))
-        .where(
-          and(
-            inArray(schema.holdingGroups.holdingId, holdingIds),
-            eq(schema.holdings.userId, userId)
-          )
-        );
-
-      // Seed the map so caller can distinguish "owned holding with
-      // zero groups" (key present, empty array) from "unknown /
-      // unauthorized holding" (key absent).
-      for (const row of rows) {
-        const ownedId = row.holdingId;
-        const bucket = out.get(ownedId);
-        if (bucket) {
-          bucket.push(row.group);
-        } else {
-          out.set(ownedId, [row.group]);
-        }
-      }
-      // Any input id NOT seen in rows could be either unowned OR
-      // owned-with-no-groups. Re-check ownership for the missing
-      // ones so we can correctly insert empty arrays for owned
-      // holdings.
-      const seenIds = new Set(out.keys());
-      const unseen = holdingIds.filter((id) => !seenIds.has(id));
-      if (unseen.length > 0) {
-        const ownedRows = await database
-          .select({ id: schema.holdings.id })
-          .from(schema.holdings)
-          .where(and(eq(schema.holdings.userId, userId), inArray(schema.holdings.id, unseen)));
-        for (const row of ownedRows) {
-          out.set(row.id, []);
-        }
-      }
-      return out;
+      const owned = await database
+        .select({ id: schema.holdings.id })
+        .from(schema.holdings)
+        .where(and(eq(schema.holdings.userId, userId), inArray(schema.holdings.id, holdingIds)));
+      const ownedIds = owned.map((row) => row.id);
+      if (ownedIds.length === 0) return out;
+      return await this.resolveMembership(ownedIds, transaction);
     } catch (error) {
       this.logger.error(
         { userId, count: holdingIds.length, error },
@@ -204,300 +267,28 @@ export class GroupRepository extends BaseRepository<Group, NewGroup> {
     }
   }
 
-  // Holding Groups methods
-  async assignHoldingGroups(
-    holdingId: string,
-    groupIds: string[],
-    transaction?: DatabaseTransaction
-  ): Promise<void> {
-    try {
-      const database = this.getDb(transaction);
-
-      // Remove existing assignments
-      await database
-        .delete(schema.holdingGroups)
-        .where(eq(schema.holdingGroups.holdingId, holdingId));
-
-      // Add new assignments
-      if (groupIds.length > 0) {
-        await database.insert(schema.holdingGroups).values(
-          groupIds.map((groupId) => ({
-            holdingId,
-            groupId,
-          }))
-        );
-      }
-    } catch (error) {
-      this.logger.error({ holdingId, groupIds, error }, 'Failed to assign holding groups');
-      throw error;
-    }
-  }
-
-  // Account Groups methods
-  async assignAccountGroups(
-    accountId: string,
-    groupIds: string[],
-    transaction?: DatabaseTransaction
-  ): Promise<void> {
-    try {
-      const database = this.getDb(transaction);
-
-      // Remove existing assignments
-      await database
-        .delete(schema.accountGroups)
-        .where(eq(schema.accountGroups.accountId, accountId));
-
-      // Add new assignments
-      if (groupIds.length > 0) {
-        await database.insert(schema.accountGroups).values(
-          groupIds.map((groupId) => ({
-            accountId,
-            groupId,
-          }))
-        );
-      }
-    } catch (error) {
-      this.logger.error({ accountId, groupIds, error }, 'Failed to assign account groups');
-      throw error;
-    }
-  }
-
   /**
-   * PERFORMANCE: Bulk assign groups to multiple accounts in a single transaction
-   * Much more efficient than calling assignAccountGroups in a loop
-   */
-  async bulkAssignAccountGroups(
-    accountIds: string[],
-    groupIds: string[],
-    transaction?: DatabaseTransaction
-  ): Promise<{ successCount: number; failedCount: number }> {
-    if (accountIds.length === 0) {
-      return { successCount: 0, failedCount: 0 };
-    }
-
-    try {
-      const database = this.getDb(transaction);
-
-      // Remove existing assignments for all accounts in one query
-      await database
-        .delete(schema.accountGroups)
-        .where(inArray(schema.accountGroups.accountId, accountIds));
-
-      // Add new assignments for all accounts in one batch insert
-      if (groupIds.length > 0) {
-        const values = accountIds.flatMap((accountId) =>
-          groupIds.map((groupId) => ({
-            accountId,
-            groupId,
-          }))
-        );
-
-        await database.insert(schema.accountGroups).values(values);
-      }
-
-      this.logger.debug(
-        { accountCount: accountIds.length, groupCount: groupIds.length },
-        'Bulk assigned account groups'
-      );
-
-      return { successCount: accountIds.length, failedCount: 0 };
-    } catch (error) {
-      this.logger.error({ accountIds, groupIds, error }, 'Failed to bulk assign account groups');
-      throw error;
-    }
-  }
-
-  /**
-   * PERFORMANCE: Bulk assign groups to multiple holdings in a single transaction
-   * Much more efficient than calling assignHoldingGroups in a loop
-   */
-  async bulkAssignHoldingGroups(
-    holdingIds: string[],
-    groupIds: string[],
-    transaction?: DatabaseTransaction
-  ): Promise<{ successCount: number; failedCount: number }> {
-    if (holdingIds.length === 0) {
-      return { successCount: 0, failedCount: 0 };
-    }
-
-    try {
-      const database = this.getDb(transaction);
-
-      // Remove existing assignments for all holdings in one query
-      await database
-        .delete(schema.holdingGroups)
-        .where(inArray(schema.holdingGroups.holdingId, holdingIds));
-
-      // Add new assignments for all holdings in one batch insert
-      if (groupIds.length > 0) {
-        const values = holdingIds.flatMap((holdingId) =>
-          groupIds.map((groupId) => ({
-            holdingId,
-            groupId,
-          }))
-        );
-
-        await database.insert(schema.holdingGroups).values(values);
-      }
-
-      this.logger.debug(
-        { holdingCount: holdingIds.length, groupCount: groupIds.length },
-        'Bulk assigned holding groups'
-      );
-
-      return { successCount: holdingIds.length, failedCount: 0 };
-    } catch (error) {
-      this.logger.error({ holdingIds, groupIds, error }, 'Failed to bulk assign holding groups');
-      throw error;
-    }
-  }
-
-  async getHoldingsByGroupId(
-    groupId: string,
-    transaction?: DatabaseTransaction
-  ): Promise<string[]> {
-    try {
-      const database = this.getDb(transaction);
-      const results = await database
-        .select({ holdingId: schema.holdingGroups.holdingId })
-        .from(schema.holdingGroups)
-        .where(eq(schema.holdingGroups.groupId, groupId));
-
-      return results.map((r) => r.holdingId);
-    } catch (error) {
-      this.logger.error({ groupId, error }, 'Failed to get holdings by group');
-      throw error;
-    }
-  }
-
-  async getAccountsByGroupId(
-    groupId: string,
-    transaction?: DatabaseTransaction
-  ): Promise<string[]> {
-    try {
-      const database = this.getDb(transaction);
-      const results = await database
-        .select({ accountId: schema.accountGroups.accountId })
-        .from(schema.accountGroups)
-        .where(eq(schema.accountGroups.groupId, groupId));
-
-      return results.map((r) => r.accountId);
-    } catch (error) {
-      this.logger.error({ groupId, error }, 'Failed to get accounts by group');
-      throw error;
-    }
-  }
-
-  /** Batch variant of getHoldingsByGroupId — one query for every group. */
-  async getHoldingsByGroupIds(
-    groupIds: string[],
-    transaction?: DatabaseTransaction
-  ): Promise<Map<string, string[]>> {
-    const result = new Map<string, string[]>();
-    if (groupIds.length === 0) return result;
-    try {
-      const database = this.getDb(transaction);
-      const rows = await database
-        .select({
-          groupId: schema.holdingGroups.groupId,
-          holdingId: schema.holdingGroups.holdingId,
-        })
-        .from(schema.holdingGroups)
-        .where(inArray(schema.holdingGroups.groupId, groupIds));
-      for (const r of rows) {
-        const list = result.get(r.groupId);
-        if (list) list.push(r.holdingId);
-        else result.set(r.groupId, [r.holdingId]);
-      }
-      return result;
-    } catch (error) {
-      this.logger.error({ groupIds, error }, 'Failed to batch-get holdings by groups');
-      throw error;
-    }
-  }
-
-  /** Batch variant of getAccountsByGroupId — one query for every group. */
-  async getAccountsByGroupIds(
-    groupIds: string[],
-    transaction?: DatabaseTransaction
-  ): Promise<Map<string, string[]>> {
-    const result = new Map<string, string[]>();
-    if (groupIds.length === 0) return result;
-    try {
-      const database = this.getDb(transaction);
-      const rows = await database
-        .select({
-          groupId: schema.accountGroups.groupId,
-          accountId: schema.accountGroups.accountId,
-        })
-        .from(schema.accountGroups)
-        .where(inArray(schema.accountGroups.groupId, groupIds));
-      for (const r of rows) {
-        const list = result.get(r.groupId);
-        if (list) list.push(r.accountId);
-        else result.set(r.groupId, [r.accountId]);
-      }
-      return result;
-    } catch (error) {
-      this.logger.error({ groupIds, error }, 'Failed to batch-get accounts by groups');
-      throw error;
-    }
-  }
-
-  /**
-   * Get groups for multiple holdings. Returns a map of holdingId → groups.
+   * Groups for multiple holdings, as a `Map<holdingId, Group[]>`.
    *
-   * IMPORTANT: Under the current group-assignment model, holdings are the
-   * atomic unit of group membership. An account is "in" a group iff all
-   * of its holdings are in that group. This function therefore returns
-   * ONLY the direct holding→group rows from `holdingGroups`; it does NOT
-   * inherit groups from the holding's account. Account-level membership
-   * is a read-only projection of holding-level membership, cached in the
-   * `accountGroups` table and updated via `recomputeAccountGroups`.
+   * The one membership resolution SC-385 collapsed the surfaces onto: this is
+   * what `holdings.getWithDetails` puts on the wire AND what
+   * `GroupValuationService` sums, so the allocation card and the holdings list
+   * it opens cannot answer "who is in this group" differently. SC-386 changed
+   * what the answer IS — it now includes the account's standing rule, minus any
+   * per-holding veto — without splitting it back into two readings.
    *
-   * An earlier version of this function combined holding groups with
-   * account groups to show the "effective" group set on each holding.
-   * That was the right thing under the old model (where accounts had
-   * independent group membership that holdings inherited), but under the
-   * new model it would double-count group membership and make the
-   * accountGroups cache semantically meaningless.
+   * `accountId` is taken but not read: the account's rule is joined through
+   * `holdings.account_id`, so a caller cannot hand us a stale parent.
    */
   async findGroupsForHoldings(
     holdings: Array<{ id: string; accountId: string }>,
     transaction?: DatabaseTransaction
   ): Promise<Map<string, Group[]>> {
     try {
-      const database = this.getDb(transaction);
-
-      if (holdings.length === 0) {
-        return new Map();
-      }
-
-      const holdingIds = holdings.map((h) => h.id);
-
-      const holdingGroupsResults = await database
-        .select({
-          holdingId: schema.holdingGroups.holdingId,
-          group: schema.groups,
-        })
-        .from(schema.holdingGroups)
-        .innerJoin(schema.groups, eq(schema.holdingGroups.groupId, schema.groups.id))
-        .where(inArray(schema.holdingGroups.holdingId, holdingIds));
-
-      const groupsMap = new Map<string, Group[]>();
-      for (const result of holdingGroupsResults) {
-        const existing = groupsMap.get(result.holdingId) || [];
-        groupsMap.set(result.holdingId, [...existing, result.group]);
-      }
-      // Ensure every requested holding has an entry (even empty) so
-      // callers don't need to null-check the map lookup.
-      for (const holding of holdings) {
-        if (!groupsMap.has(holding.id)) {
-          groupsMap.set(holding.id, []);
-        }
-      }
-
-      return groupsMap;
+      return await this.resolveMembership(
+        holdings.map((holding) => holding.id),
+        transaction
+      );
     } catch (error) {
       this.logger.error({ error }, 'Failed to find groups for holdings');
       throw error;
@@ -505,14 +296,48 @@ export class GroupRepository extends BaseRepository<Group, NewGroup> {
   }
 
   /**
-   * Add a set of groups to a set of holdings (UNION, not REPLACE).
+   * Every holding that is in one of these groups, by any of the three states.
+   * Ownership-scoped, for the account-data export — which would otherwise
+   * describe a group by its explicit rows alone and omit both what the standing
+   * rule pulls in and what a veto keeps out.
+   */
+  async findHoldingIdsByGroupIds(
+    userId: string,
+    groupIds: string[],
+    transaction?: DatabaseTransaction
+  ): Promise<Array<{ groupId: string; holdingId: string }>> {
+    if (groupIds.length === 0) return [];
+    try {
+      const database = this.getDb(transaction);
+      const rows = await database
+        .select({ id: schema.holdings.id })
+        .from(schema.holdings)
+        .where(and(eq(schema.holdings.userId, userId), eq(schema.holdings.isHidden, false)));
+      const resolved = await this.resolveMembership(
+        rows.map((row) => row.id),
+        transaction
+      );
+      const wanted = new Set(groupIds);
+      const out: Array<{ groupId: string; holdingId: string }> = [];
+      for (const [holdingId, groups] of resolved) {
+        for (const group of groups) {
+          if (wanted.has(group.id)) out.push({ groupId: group.id, holdingId });
+        }
+      }
+      return out;
+    } catch (error) {
+      this.logger.error({ userId, groupIds, error }, 'Failed to find holdings by groups');
+      throw error;
+    }
+  }
+
+  /**
+   * Put a set of holdings in a set of groups (UNION, not REPLACE).
    *
-   * `ON CONFLICT DO NOTHING` ensures we don't fail on the `(holdingId,
-   * groupId)` unique constraint when a holding already has the group.
-   *
-   * Caller is responsible for calling `recomputeAccountGroups` for the
-   * affected parent accounts afterwards if they want the `accountGroups`
-   * cache to stay consistent with the new holding-group rows.
+   * Also **clears any veto** on those pairs, which is the undo of
+   * `bulkRemoveHoldingGroups` — without it a holding excluded once could never
+   * be put back, because its account's rule would keep being overridden by a
+   * row the user has no other way to reach.
    */
   async bulkAddHoldingGroups(
     holdingIds: string[],
@@ -531,6 +356,14 @@ export class GroupRepository extends BaseRepository<Group, NewGroup> {
         .onConflictDoNothing({
           target: [schema.holdingGroups.holdingId, schema.holdingGroups.groupId],
         });
+      await database
+        .delete(schema.holdingGroupExclusions)
+        .where(
+          and(
+            inArray(schema.holdingGroupExclusions.holdingId, holdingIds),
+            inArray(schema.holdingGroupExclusions.groupId, groupIds)
+          )
+        );
     } catch (error) {
       this.logger.error({ holdingIds, groupIds, error }, 'Failed to bulk add holding groups');
       throw error;
@@ -538,11 +371,14 @@ export class GroupRepository extends BaseRepository<Group, NewGroup> {
   }
 
   /**
-   * Remove a set of groups from a set of holdings. No-op for pairs that
-   * don't exist.
+   * Take a set of holdings out of a set of groups.
    *
-   * Caller is responsible for calling `recomputeAccountGroups` afterwards
-   * for the affected parent accounts.
+   * Deleting the `holding_groups` row is only half of it now: if the holding's
+   * account is in the group, the standing rule would put it straight back, and
+   * the remove would read to the user as an action that did nothing. So a veto
+   * is written for exactly those pairs — and for no others, because a veto on a
+   * pair nothing puts together is an assertion with no referent, and it would
+   * silently outrank a later "add this whole account".
    */
   async bulkRemoveHoldingGroups(
     holdingIds: string[],
@@ -560,6 +396,23 @@ export class GroupRepository extends BaseRepository<Group, NewGroup> {
             inArray(schema.holdingGroups.groupId, groupIds)
           )
         );
+      const holdingIdsLiteral = sql.join(
+        holdingIds.map((id) => sql`${id}::uuid`),
+        sql`, `
+      );
+      const groupIdsLiteral = sql.join(
+        groupIds.map((id) => sql`${id}::uuid`),
+        sql`, `
+      );
+      await database.execute(sql`
+        INSERT INTO holding_group_exclusions (holding_id, group_id)
+        SELECT h.id, ag.group_id
+        FROM holdings h
+        INNER JOIN account_groups ag ON ag.account_id = h.account_id
+        WHERE h.id IN (${holdingIdsLiteral})
+          AND ag.group_id IN (${groupIdsLiteral})
+        ON CONFLICT (holding_id, group_id) DO NOTHING
+      `);
     } catch (error) {
       this.logger.error({ holdingIds, groupIds, error }, 'Failed to bulk remove holding groups');
       throw error;
@@ -567,124 +420,105 @@ export class GroupRepository extends BaseRepository<Group, NewGroup> {
   }
 
   /**
-   * Recompute the `accountGroups` cache for a set of accounts.
+   * Put a set of accounts in a set of groups — the standing rule itself.
    *
-   * An account is considered "in" a group G iff every one of its
-   * visible holdings (active AND not hidden) is in G. This matches the
-   * user-facing model: hiding a holding removes it from consideration
-   * in every place it shows up in the UI, including group membership.
-   *
-   * The SQL below:
-   *   1. Deletes all existing `accountGroups` rows for the given
-   *      accountIds (unconditional cache invalidation for those rows).
-   *   2. Re-inserts rows for every (account, group) pair where all of
-   *      that account's visible holdings are in that group.
-   *
-   * The `HAVING` clause does the "all holdings of the account are in
-   * this group" check by counting distinct holdings in the join and
-   * comparing to the total number of visible holdings on the account.
-   * Accounts with zero visible holdings produce no rows, so they end
-   * up in no groups — the intuitive edge case.
+   * Clears every veto those accounts' holdings carry for those groups. Adding
+   * an account is a fresh assertion about the whole of it, so it has to be
+   * total: otherwise re-adding an account would quietly not re-add the
+   * positions the user vetoed months ago, and there would be no bulk way back.
    */
-  async recomputeAccountGroups(
+  async addAccountGroups(
     accountIds: string[],
+    groupIds: string[],
     transaction?: DatabaseTransaction
   ): Promise<void> {
-    if (accountIds.length === 0) return;
+    if (accountIds.length === 0 || groupIds.length === 0) return;
     try {
       const database = this.getDb(transaction);
+      const values = accountIds.flatMap((accountId) =>
+        groupIds.map((groupId) => ({ accountId, groupId }))
+      );
+      await database
+        .insert(schema.accountGroups)
+        .values(values)
+        .onConflictDoNothing({
+          target: [schema.accountGroups.accountId, schema.accountGroups.groupId],
+        });
+      await this.clearExclusionsForAccounts(accountIds, groupIds, transaction);
+    } catch (error) {
+      this.logger.error({ accountIds, groupIds, error }, 'Failed to add account groups');
+      throw error;
+    }
+  }
 
-      // Step 1: clear the cache rows we're about to rebuild.
+  /**
+   * Take a set of accounts out of a set of groups.
+   *
+   * "This account is not in this group" has to be total, so the holdings' own
+   * rows go too. Most of them were written by the cascade this model replaced —
+   * leaving them would mean removing the account changed nothing visible, which
+   * is the mirror image of the bug SC-385 found. The vetoes go with them: a
+   * veto only means anything while the rule it opposes is in force.
+   */
+  async removeAccountGroups(
+    accountIds: string[],
+    groupIds: string[],
+    transaction?: DatabaseTransaction
+  ): Promise<void> {
+    if (accountIds.length === 0 || groupIds.length === 0) return;
+    try {
+      const database = this.getDb(transaction);
       await database
         .delete(schema.accountGroups)
-        .where(inArray(schema.accountGroups.accountId, accountIds));
-
-      // Step 2: rebuild. One statement covers every account in the list.
-      // We use a raw `sql` template because the HAVING clause needs a
-      // correlated subquery that drizzle's fluent API would make
-      // awkward to express.
+        .where(
+          and(
+            inArray(schema.accountGroups.accountId, accountIds),
+            inArray(schema.accountGroups.groupId, groupIds)
+          )
+        );
       const accountIdsLiteral = sql.join(
         accountIds.map((id) => sql`${id}::uuid`),
         sql`, `
       );
-      // "Visible" here means non-hidden only. Inactive holdings are still
-      // user-visible (they're just excluded from the aggregated portfolio
-      // value) so they must count toward the "every visible holding is in
-      // this group" rule — otherwise an account whose sole holding is
-      // inactive could never be added to a group, because the account
-      // would appear to have zero countable holdings after the filter.
+      const groupIdsLiteral = sql.join(
+        groupIds.map((id) => sql`${id}::uuid`),
+        sql`, `
+      );
       await database.execute(sql`
-        INSERT INTO account_groups (account_id, group_id)
-        SELECT h.account_id, hg.group_id
-        FROM holding_groups hg
-        INNER JOIN holdings h
-          ON h.id = hg.holding_id
-         AND h.is_hidden = false
-        WHERE h.account_id IN (${accountIdsLiteral})
-        GROUP BY h.account_id, hg.group_id
-        HAVING COUNT(DISTINCT hg.holding_id) = (
-          SELECT COUNT(*)
-          FROM holdings sub
-          WHERE sub.account_id = h.account_id
-            AND sub.is_hidden = false
-        )
+        DELETE FROM holding_groups hg
+        USING holdings h
+        WHERE hg.holding_id = h.id
+          AND h.account_id IN (${accountIdsLiteral})
+          AND hg.group_id IN (${groupIdsLiteral})
       `);
+      await this.clearExclusionsForAccounts(accountIds, groupIds, transaction);
     } catch (error) {
-      this.logger.error({ accountIds, error }, 'Failed to recompute account groups');
+      this.logger.error({ accountIds, groupIds, error }, 'Failed to remove account groups');
       throw error;
     }
   }
 
-  /**
-   * Find the parent account IDs for a set of holding IDs. Used by callers
-   * who need to invoke `recomputeAccountGroups` after changing
-   * `holdingGroups` rows.
-   */
-  async findParentAccountIdsForHoldings(
-    holdingIds: string[],
-    transaction?: DatabaseTransaction
-  ): Promise<string[]> {
-    if (holdingIds.length === 0) return [];
-    try {
-      const database = this.getDb(transaction);
-      const rows = await database
-        .selectDistinct({ accountId: schema.holdings.accountId })
-        .from(schema.holdings)
-        .where(inArray(schema.holdings.id, holdingIds));
-      return rows.map((r) => r.accountId);
-    } catch (error) {
-      this.logger.error({ holdingIds, error }, 'Failed to find parent accounts for holdings');
-      throw error;
-    }
-  }
-
-  /**
-   * Find all visible holding IDs that belong to a set of accounts.
-   * Used when the caller wants to propagate an account-level group
-   * operation down to the underlying holdings. "Visible" here means
-   * non-hidden — inactive holdings are still visible in the UI (they
-   * just don't contribute to the aggregated portfolio value) so they
-   * must be included, otherwise assigning a group to an account that
-   * only has inactive holdings would be a silent no-op.
-   */
-  async findVisibleHoldingIdsForAccounts(
+  private async clearExclusionsForAccounts(
     accountIds: string[],
+    groupIds: string[],
     transaction?: DatabaseTransaction
-  ): Promise<string[]> {
-    if (accountIds.length === 0) return [];
-    try {
-      const database = this.getDb(transaction);
-      const rows = await database
-        .select({ id: schema.holdings.id })
-        .from(schema.holdings)
-        .where(
-          and(inArray(schema.holdings.accountId, accountIds), eq(schema.holdings.isHidden, false))
-        );
-      return rows.map((r) => r.id);
-    } catch (error) {
-      this.logger.error({ accountIds, error }, 'Failed to find holdings for accounts');
-      throw error;
-    }
+  ): Promise<void> {
+    const database = this.getDb(transaction);
+    const accountIdsLiteral = sql.join(
+      accountIds.map((id) => sql`${id}::uuid`),
+      sql`, `
+    );
+    const groupIdsLiteral = sql.join(
+      groupIds.map((id) => sql`${id}::uuid`),
+      sql`, `
+    );
+    await database.execute(sql`
+      DELETE FROM holding_group_exclusions ex
+      USING holdings h
+      WHERE ex.holding_id = h.id
+        AND h.account_id IN (${accountIdsLiteral})
+        AND ex.group_id IN (${groupIdsLiteral})
+    `);
   }
 
   /**

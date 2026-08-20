@@ -3,11 +3,10 @@ import { slidingWindows } from '../../../src/core/utils/time-windows';
 
 const DAY = 24 * 60 * 60 * 1000;
 
-function walk(sinceMs: number, untilMs: number, spanMs: number) {
-  return [...slidingWindows(new Date(sinceMs), new Date(untilMs), spanMs)].map((w) => [
-    w.start.getTime(),
-    w.end.getTime(),
-  ]);
+function walk(sinceMs: number, untilMs: number, spanMs: number): Array<[number, number]> {
+  return [...slidingWindows(new Date(sinceMs), new Date(untilMs), spanMs)].map(
+    (w): [number, number] => [w.start.getTime(), w.end.getTime()]
+  );
 }
 
 describe('slidingWindows', () => {

@@ -1,8 +1,15 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { Container } from 'typedi';
+// This workspace cannot depend on @scani/domain (it sits below it), so the
+// shared helper is reached the same way the shared test preload is: by path.
+import { restoreContainerAfterAll } from '../../../../business/domain/test/helpers/container';
 import { JOB_LOCK, JobLock } from '../../src/consumer/job-lock';
 import { ScheduledJobProcessor } from '../../src/consumer/scheduled-job-processor';
 import type { ScheduledJobDescriptor } from '../../src/core/job-descriptor';
+
+// Container stubs are process-global; put back whatever this file changes
+// so no later test file resolves them (SC-448).
+restoreContainerAfterAll();
 
 class StubProcessor extends ScheduledJobProcessor {
   readonly descriptor: ScheduledJobDescriptor;

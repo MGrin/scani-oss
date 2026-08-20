@@ -3,6 +3,7 @@ import { Input } from '@scani/ui/ui/input';
 import { useDelayedLoading } from '@scani/ui/v3/hooks/useDelayedLoading';
 import { Loader2, Plus, X } from 'lucide-react';
 import { useEffect, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/utils';
 
 /**
@@ -91,6 +92,7 @@ export function RecordPicker({
   disabled,
   inputId,
 }: RecordPickerProps) {
+  const { t } = useTranslation();
   const containerRef = useRef<HTMLDivElement>(null);
   const loadingPhase = useDelayedLoading(Boolean(isLoading));
 
@@ -117,10 +119,10 @@ export function RecordPicker({
           variant="ghost"
           disabled={disabled}
           onClick={onClear}
-          aria-label={`Change ${ariaLabel}`}
+          aria-label={t('v3.form.recordPicker.change', { label: ariaLabel })}
         >
           <X className="mr-1.5 h-4 w-4" aria-hidden="true" />
-          Change
+          {t('v3.form.recordPicker.changeAction')}
         </Button>
       </div>
     );
@@ -190,7 +192,7 @@ export function RecordPicker({
               className="flex items-center gap-2 px-3 py-3 text-body text-muted-foreground"
             >
               <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-              Searching…
+              {t('v3.form.recordPicker.searching')}
             </p>
           ) : null}
 

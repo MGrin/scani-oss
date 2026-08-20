@@ -1,7 +1,7 @@
 import { ALLOCATION_OTHER_KEY, type AllocationInput } from '@scani/ui/v3/lib/chart';
 import { toFiniteNumber } from '@scani/ui/v3/lib/numeric';
+import type { TFunction } from 'i18next';
 import { compareGroupAmounts, type GroupValue, groupAmount, groupValuesById } from './groups';
-import { countLabel } from './membership';
 import { V3_ROUTES } from './routes';
 
 /**
@@ -26,19 +26,41 @@ import { V3_ROUTES } from './routes';
 
 export interface HomePeriod {
   key: string;
-  /** Segmented-control label. */
-  label: string;
-  /** Read after "vs" beneath the hero. */
-  suffix: string;
+  /** Segmented-control label, as an i18n key — this table is plain data and
+   *  has no `t` (SC-201). */
+  labelKey: string;
+  /** Read after "vs" beneath the hero, also as a key. `1W` and `7d` are not
+   *  universal abbreviations; a Japanese or Russian reader needs their own. */
+  suffixKey: string;
   days: number;
 }
 
 export const HOME_PERIODS: readonly HomePeriod[] = [
-  { key: '7d', label: '1W', suffix: '7d', days: 7 },
-  { key: '30d', label: '1M', suffix: '30d', days: 30 },
-  { key: '90d', label: '3M', suffix: '90d', days: 90 },
-  { key: '180d', label: '6M', suffix: '6m', days: 180 },
-  { key: '365d', label: '1Y', suffix: '1y', days: 365 },
+  { key: '7d', labelKey: 'v3.home.period.label7d', suffixKey: 'v3.home.period.suffix7d', days: 7 },
+  {
+    key: '30d',
+    labelKey: 'v3.home.period.label30d',
+    suffixKey: 'v3.home.period.suffix30d',
+    days: 30,
+  },
+  {
+    key: '90d',
+    labelKey: 'v3.home.period.label90d',
+    suffixKey: 'v3.home.period.suffix90d',
+    days: 90,
+  },
+  {
+    key: '180d',
+    labelKey: 'v3.home.period.label180d',
+    suffixKey: 'v3.home.period.suffix180d',
+    days: 180,
+  },
+  {
+    key: '365d',
+    labelKey: 'v3.home.period.label365d',
+    suffixKey: 'v3.home.period.suffix365d',
+    days: 365,
+  },
 ];
 
 export const DEFAULT_HOME_PERIOD = HOME_PERIODS[1] as HomePeriod;
@@ -99,9 +121,9 @@ export function homePeriodRange(
  */
 export type HomeMetric = 'net-worth' | 'pnl';
 
-export const HOME_METRICS: readonly { key: HomeMetric; label: string }[] = [
-  { key: 'net-worth', label: 'Net worth' },
-  { key: 'pnl', label: 'PnL' },
+export const HOME_METRICS: readonly { key: HomeMetric; labelKey: string }[] = [
+  { key: 'net-worth', labelKey: 'v3.home.metric.netWorth' },
+  { key: 'pnl', labelKey: 'v3.home.metric.pnl' },
 ];
 
 export const HOME_METRIC_KEYS: readonly HomeMetric[] = HOME_METRICS.map((metric) => metric.key);
@@ -230,17 +252,23 @@ export function summariseQuality(
  * makes it checkable — "28 of 30 holdings" can be held against the holdings
  * list and "93%" cannot.
  */
-export function qualityHeadline(quality: FigureQuality): string {
+export function qualityHeadline(quality: FigureQuality, t: TFunction): string {
   const fraction = quality.complete
-    ? `All ${quality.priceable} holdings priced`
-    : `${quality.percent}% priced — ${quality.priced} of ${quality.priceable} holdings`;
+    ? t('v3.home.quality.allPriced', { count: quality.priceable })
+    : t('v3.home.quality.partlyPriced', {
+        percent: quality.percent,
+        priced: quality.priced,
+        priceable: quality.priceable,
+      });
   // The unpriceable count belongs HERE, not in the omissions run below, because
   // it is the only one of the four that is about the *denominator*. Under it,
   // "All 12 holdings priced" was followed a line later by "2 unpriceable" and
   // read as a correction — a reader had to reconstruct that there were 14 and
   // that 2 of them are not quotable by anyone. Beside the fraction it defines,
   // it reads as the arithmetic it is (SC-176).
-  return quality.unpriceable > 0 ? `${fraction} · ${quality.unpriceable} unpriceable` : fraction;
+  return quality.unpriceable > 0
+    ? t('v3.home.quality.withUnpriceable', { fraction, count: quality.unpriceable })
+    : fraction;
 }
 
 /**
@@ -264,13 +292,13 @@ export function qualityHeadline(quality: FigureQuality): string {
  * The unpriceable count is deliberately absent — `qualityHeadline` carries it,
  * next to the denominator it explains.
  */
-export function qualityOmissions(quality: FigureQuality): string[] {
+export function qualityOmissions(quality: FigureQuality, t: TFunction): string[] {
   const parts: string[] = [];
   if (quality.stalePriced > 0) {
-    parts.push(`${quality.stalePriced} stale ${quality.stalePriced === 1 ? 'quote' : 'quotes'}`);
+    parts.push(t('v3.home.quality.staleQuotes', { count: quality.stalePriced }));
   }
   if (quality.basisUnknown > 0) {
-    parts.push(`${quality.basisUnknown} no cost basis (gain is an upper bound)`);
+    parts.push(t('v3.home.quality.noBasis', { count: quality.basisUnknown }));
   }
   return parts;
 }
@@ -296,7 +324,7 @@ export function qualityOmissions(quality: FigureQuality): string[] {
  * because a string cannot carry one and the whole point of this clause is
  * that it is answerable.
  */
-export function unreviewedTransfersNote(quality: FigureQuality): string | null {
+export function unreviewedTransfersNote(quality: FigureQuality, t: TFunction): string | null {
   const count = quality.transfersUnreviewed;
   if (count <= 0) return null;
   // "unconfirmed", not "you have not confirmed" — the same claim in 11 fewer
@@ -304,7 +332,7 @@ export function unreviewedTransfersNote(quality: FigureQuality): string | null {
   // long form wrapped, and because the whole sentence is the tap target the
   // underline then ran across two lines with "confirmed" orphaned on the
   // second: a link that looks like two links (SC-176).
-  return `Realized PnL excludes ${count} unconfirmed ${count === 1 ? 'transfer' : 'transfers'}`;
+  return t('v3.home.quality.unreviewedTransfers', { count });
 }
 
 /**
@@ -615,11 +643,19 @@ export interface AllocationItem {
  * three buckets that nobody groups by. Four options is also the width a
  * segmented control can carry on a 390px phone without truncating a label.
  */
+/**
+ * The four cuts, carrying i18n KEYS rather than English (SC-201).
+ *
+ * The same shape `V3_TAB_ITEMS` already uses, and for the same reason: a data
+ * table in `lib/` has no `t` and must not acquire one — it is imported by
+ * `holdingsConfig` and by tests as plain data. Resolving the key at the call
+ * site keeps the table pure and keeps the string in `en.json`.
+ */
 export const ALLOCATION_DIMENSIONS = [
-  { key: 'token_type', label: 'Type' },
-  { key: 'institution', label: 'Institution' },
-  { key: 'account', label: 'Account' },
-  { key: 'group', label: 'Group' },
+  { key: 'token_type', labelKey: 'v3.home.allocation.dimension.tokenType' },
+  { key: 'institution', labelKey: 'v3.home.allocation.dimension.institution' },
+  { key: 'account', labelKey: 'v3.home.allocation.dimension.account' },
+  { key: 'group', labelKey: 'v3.home.allocation.dimension.group' },
 ] as const;
 
 export type AllocationDimension = (typeof ALLOCATION_DIMENSIONS)[number]['key'];
@@ -802,9 +838,9 @@ export interface GroupRow {
  * `1 holding`, `2 holdings`, nothing at zero — the groups block drops an empty
  * half of the line rather than printing "0 accounts" next to a real count.
  */
-function countPhrase(count: number, noun: string): string | null {
+function countPhrase(count: number, nounKey: string, t: TFunction): string | null {
   if (!Number.isFinite(count) || count <= 0) return null;
-  return countLabel(count, noun);
+  return t(nounKey, { count });
 }
 
 /**
@@ -821,7 +857,11 @@ function countPhrase(count: number, noun: string): string | null {
  * Ordered by value, biggest first, with the unpriceable last — the same ranking
  * the rest of the screen uses.
  */
-export function groupRows(groups: readonly GroupItem[], values: readonly GroupValue[]): GroupRow[] {
+export function groupRows(
+  groups: readonly GroupItem[],
+  values: readonly GroupValue[],
+  t: TFunction
+): GroupRow[] {
   const valueById = groupValuesById(values);
 
   return groups
@@ -830,9 +870,12 @@ export function groupRows(groups: readonly GroupItem[], values: readonly GroupVa
       name: group.name,
       color: group.color,
       sublabel:
-        [countPhrase(group.holdingsCount, 'holding'), countPhrase(group.accountsCount, 'account')]
+        [
+          countPhrase(group.holdingsCount, 'v3.membership.count.holding', t),
+          countPhrase(group.accountsCount, 'v3.membership.count.account', t),
+        ]
           .filter(Boolean)
-          .join(' · ') || 'Empty',
+          .join(' · ') || t('v3.home.groups.empty'),
       value: groupAmount(valueById.get(group.id)),
     }))
     .sort((a, b) => compareGroupAmounts(a.value, b.value, 'desc'));
@@ -908,10 +951,10 @@ export function nextPayments<T extends UpcomingOccurrence>(
     .slice(0, limit);
 }
 
-const DUE_UNITS: readonly { limit: number; divisor: number; unit: string }[] = [
-  { limit: 14, divisor: 1, unit: 'day' },
-  { limit: 60, divisor: 7, unit: 'week' },
-  { limit: Number.POSITIVE_INFINITY, divisor: 30, unit: 'month' },
+const DUE_UNITS: readonly { limit: number; divisor: number; key: string }[] = [
+  { limit: 14, divisor: 1, key: 'v3.home.dueIn.days' },
+  { limit: 60, divisor: 7, key: 'v3.home.dueIn.weeks' },
+  { limit: Number.POSITIVE_INFINITY, divisor: 30, key: 'v3.home.dueIn.months' },
 ];
 
 /**
@@ -922,16 +965,19 @@ const DUE_UNITS: readonly { limit: number; divisor: number; unit: string }[] = [
  * through a local `Date` would move a bill due at midnight by a day for anyone
  * east of Greenwich.
  */
-export function formatDueIn(dueDate: string, today: string): string {
+export function formatDueIn(dueDate: string, today: string, t: TFunction): string {
   const due = Date.parse(`${dueDate}T00:00:00Z`);
   const from = Date.parse(`${today}T00:00:00Z`);
   if (!Number.isFinite(due) || !Number.isFinite(from)) return dueDate;
 
   const days = Math.round((due - from) / DAY_MS);
-  if (days <= 0) return 'Today';
-  if (days === 1) return 'Tomorrow';
+  if (days <= 0) return t('v3.home.dueIn.today');
+  if (days === 1) return t('v3.home.dueIn.tomorrow');
 
+  // The unit's whole phrase is the key — "in {{count}} weeks" rather than
+  // "in " + count + " " + unit + plural-s (SC-201). The preposition, the
+  // number's position and the unit's plural all vary together by language, so
+  // they cannot be three separate pieces.
   const scale = DUE_UNITS.find((entry) => days < entry.limit) as (typeof DUE_UNITS)[number];
-  const count = Math.round(days / scale.divisor);
-  return `in ${count} ${scale.unit}${count === 1 ? '' : 's'}`;
+  return t(scale.key, { count: Math.round(days / scale.divisor) });
 }

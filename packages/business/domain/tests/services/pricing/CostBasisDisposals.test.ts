@@ -1,6 +1,6 @@
 process.env.DATABASE_URL = process.env.DATABASE_URL || 'postgresql://dummy:dummy@localhost/dummy';
 
-import { afterAll, describe, expect, test } from 'bun:test';
+import { describe, expect, test } from 'bun:test';
 import type { HoldingTransaction } from '@scani/db/schema';
 import Decimal from 'decimal.js';
 import { Container } from 'typedi';
@@ -12,6 +12,11 @@ import {
   type HistoryCompleteness,
 } from '../../../src/services/pricing/CostBasisService';
 import { PriceGraphService } from '../../../src/services/pricing/PriceGraphService';
+import { restoreContainerAfterAll } from '../../../test/helpers/container';
+
+// Container stubs are process-global; put back whatever this file changes
+// so no later test file resolves them (SC-448).
+restoreContainerAfterAll();
 
 /**
  * The per-disposal ledger (SC-152).
@@ -29,14 +34,6 @@ import { PriceGraphService } from '../../../src/services/pricing/PriceGraphServi
  * are the same arithmetic and different answers.
  */
 
-// Stubs leak across files because typedi's Container is process-global.
-afterAll(() => {
-  Container.set(HoldingRepository, new HoldingRepository());
-  Container.set(HoldingTransactionRepository, new HoldingTransactionRepository());
-  Container.set(PriceGraphService, new PriceGraphService());
-  Container.set(CostBasisService, new CostBasisService());
-});
-
 const USD = 'token-USD';
 const BTC = 'token-BTC';
 
@@ -53,6 +50,25 @@ function makeService(): CostBasisService {
   return instance;
 }
 
+/**
+ * A service whose price graph answers for exactly one token (SC-397).
+ *
+ * The asymmetry is the point: production's two refusing legs are swaps where
+ * one side has price history and the other has none, so the leg denominated
+ * in the priceless side cannot be converted while the token in hand can.
+ */
+function makeServiceWithSpot(priceable: string, rate: string): CostBasisService {
+  Container.set(HoldingRepository, {} as unknown as HoldingRepository);
+  Container.set(HoldingTransactionRepository, {} as unknown as HoldingTransactionRepository);
+  Container.set(PriceGraphService, {
+    convert: async (amount: Decimal, from: string) =>
+      from === priceable ? { amount: amount.mul(rate), stale: false } : null,
+  } as unknown as PriceGraphService);
+  const instance = new CostBasisService();
+  Container.set(CostBasisService, instance);
+  return instance;
+}
+
 let txSeq = 0;
 function tx(p: {
   holdingId: string;
@@ -60,9 +76,14 @@ function tx(p: {
   quantity: string;
   occurredAt: string;
   priceNative?: string;
+  priceNativeTokenId?: string;
   transferGroupId?: string;
   transferReview?: string;
   transferReviewSplit?: unknown;
+  /** Defaults to a stamp whenever an answer is present — which is what every
+   *  application write path does. Pass `null` for the state that only a raw
+   ***REMOVED*** */
+  transferReviewedAt?: Date | null;
 }): HoldingTransaction {
   txSeq += 1;
   return {
@@ -73,7 +94,7 @@ function tx(p: {
     kind: p.kind,
     quantity: p.quantity,
     priceNative: p.priceNative ?? null,
-    priceNativeTokenId: p.priceNative ? USD : null,
+    priceNativeTokenId: p.priceNativeTokenId ?? (p.priceNative ? USD : null),
     counterTokenId: null,
     counterQuantity: null,
     counterPriceNative: null,
@@ -86,7 +107,12 @@ function tx(p: {
     transferGroupId: p.transferGroupId ?? null,
     transferReview: p.transferReview ?? null,
     transferReviewSplit: p.transferReviewSplit ?? null,
-    transferReviewedAt: p.transferReview ? new Date() : null,
+    transferReviewedAt:
+      p.transferReviewedAt !== undefined
+        ? p.transferReviewedAt
+        : p.transferReview
+          ? new Date()
+          : null,
     source: 's',
     sourceMetadata: {},
     rawPayload: null,
@@ -222,8 +248,8 @@ describe('walkLots disposal ledger', () => {
     expect(gainTotal(ledger).toString()).toBe(r.realizedPnl.toString());
   });
 
-  test('an unpriceable swap_out reports null proceeds, never a zero', async () => {
-    const svc = makeService();
+  test('a swap_out whose counter has no price is valued from the held token, and says so (SC-397)', async () => {
+    const svc = makeServiceWithSpot(BTC, '130');
     const ledger: DisposalLotMatch[] = [];
     const r = await svc.walkLots(
       [
@@ -245,9 +271,203 @@ describe('walkLots disposal ledger', () => {
 
     expect(ledger).toHaveLength(1);
     const row = ledger[0] as DisposalLotMatch;
+    expect(row.outcome).toBe('realized');
+    expect(row.proceeds?.toString()).toBe('1300');
+    expect(row.gain?.toString()).toBe('300');
+    // The load-bearing half. The arithmetic above is right either way a
+    // reader might guess it was produced, and the two guesses differ by up to
+    // 2.44% on this ledger's own swaps — so the row names the price it used.
+    expect(row.valuationBasis).toBe('held_token');
+    expect(r.realizedPnl.toString()).toBe('300');
+    expect(gainTotal(ledger).toString()).toBe(r.realizedPnl.toString());
+  });
+
+  test('a swap leg carrying a stale answer is not stamped unattributed (SC-402)', async () => {
+    // The state, and it needs no migration to reach: an outflow answered
+    // `left_control` while it was a `transfer_out` is re-imported and
+    // recognised as a swap leg. `bulkUpsert` carries `kind` through
+    // `ON CONFLICT` and deliberately does NOT carry `transfer_review`, so the
+    // answer survives a change of the question it was given about.
+    //
+    // `transferReviewedAt: null` is the shape that made it visible — no stamp,
+    // so `answerSourceOf` reads `unattributed` and the ledger rendered
+    // "Recorded as having left your portfolio, so this gain was booked. There
+    // is no record of anyone answering it." on a DEX swap.
+    const svc = makeServiceWithSpot(BTC, '130');
+    const ledger: DisposalLotMatch[] = [];
+    const r = await svc.walkLots(
+      [
+        tx({
+          holdingId: 'h',
+          kind: 'buy',
+          quantity: '10',
+          occurredAt: '2024-01-01',
+          priceNative: '100',
+        }),
+        tx({
+          holdingId: 'h',
+          kind: 'swap_out',
+          quantity: '-10',
+          occurredAt: '2024-02-01',
+          transferReview: 'left_control',
+          transferReviewedAt: null,
+        }),
+      ],
+      USD,
+      BTC,
+      undefined,
+      'complete',
+      ledger
+    );
+
+    const row = ledger[0] as DisposalLotMatch;
+    // Not a cent moves. The gain was already booked on the kind — the sell
+    // branch never read the answer — so this changes what the row SAYS and
+    // nothing about what it is worth.
+    expect(row.outcome).toBe('realized');
+    expect(row.gain?.toString()).toBe('300');
+    expect(r.realizedPnl.toString()).toBe('300');
+    expect(gainTotal(ledger).toString()).toBe(r.realizedPnl.toString());
+
+    expect(row.answerSource).toBe('none');
+  });
+
+  test('a stamped answer on a swap leg is still not provenance for the swap (SC-402)', async () => {
+    // The row SC-338's repair refuses to touch: a person really did answer it,
+    // back when it was an answerable outflow. `user` on the ledger would be a
+    // truer sentence than `unattributed` and still the wrong one — it would
+    // attribute a swap's gain to a decision that did not produce it. The kind
+    // gate is on the question, not on the quality of the answer.
+    const svc = makeServiceWithSpot(BTC, '130');
+    const ledger: DisposalLotMatch[] = [];
+    await svc.walkLots(
+      [
+        tx({
+          holdingId: 'h',
+          kind: 'buy',
+          quantity: '10',
+          occurredAt: '2024-01-01',
+          priceNative: '100',
+        }),
+        tx({
+          holdingId: 'h',
+          kind: 'swap_out',
+          quantity: '-10',
+          occurredAt: '2024-02-01',
+          transferReview: 'left_control',
+        }),
+      ],
+      USD,
+      BTC,
+      undefined,
+      'complete',
+      ledger
+    );
+
+    expect((ledger[0] as DisposalLotMatch).answerSource).toBe('none');
+  });
+
+  test('an answerable outflow still reports whose answer it rests on (SC-402)', async () => {
+    // The gate must not be a blanket silence: `withdraw` is exactly the kind
+    // the question IS asked about, and SC-324's whole point is that the row
+    // books money on an answer nobody is recorded as giving.
+    const svc = makeService();
+    const ledger: DisposalLotMatch[] = [];
+    await svc.walkLots(
+      [
+        tx({
+          holdingId: 'h',
+          kind: 'buy',
+          quantity: '10',
+          occurredAt: '2024-01-01',
+          priceNative: '100',
+        }),
+        tx({
+          holdingId: 'h',
+          kind: 'withdraw',
+          quantity: '-10',
+          occurredAt: '2024-02-01',
+          priceNative: '130',
+          transferReview: 'left_control',
+          transferReviewedAt: null,
+        }),
+      ],
+      USD,
+      BTC,
+      undefined,
+      'complete',
+      ledger
+    );
+
+    expect((ledger[0] as DisposalLotMatch).answerSource).toBe('unattributed');
+  });
+
+  test('a swap_out priced from its counter leg is marked execution_rate, not the fallback', async () => {
+    const svc = makeServiceWithSpot(BTC, '130');
+    const ledger: DisposalLotMatch[] = [];
+    await svc.walkLots(
+      [
+        tx({
+          holdingId: 'h',
+          kind: 'buy',
+          quantity: '10',
+          occurredAt: '2024-01-01',
+          priceNative: '100',
+        }),
+        // priceNative denominated in the base currency, so the execution rate
+        // converts and is preferred: 10 × 140 rather than 10 × 130. The exact
+        // rate from the venue beats a spot price we looked up, always.
+        tx({
+          holdingId: 'h',
+          kind: 'swap_out',
+          quantity: '-10',
+          occurredAt: '2024-02-01',
+          priceNative: '140',
+          priceNativeTokenId: USD,
+        }),
+      ],
+      USD,
+      BTC,
+      undefined,
+      'complete',
+      ledger
+    );
+
+    const row = ledger[0] as DisposalLotMatch;
+    expect(row.proceeds?.toString()).toBe('1400');
+    expect(row.valuationBasis).toBe('execution_rate');
+  });
+
+  test('an unpriceable swap_out reports null proceeds, never a zero', async () => {
+    // Neither route resolves: no counter price AND no held token. This is the
+    // residue SC-397 could not remove, and it is the one that still has to be
+    // legible — `outcome` is what the ledger renders a sentence from.
+    const svc = makeService();
+    const ledger: DisposalLotMatch[] = [];
+    const r = await svc.walkLots(
+      [
+        tx({
+          holdingId: 'h',
+          kind: 'buy',
+          quantity: '10',
+          occurredAt: '2024-01-01',
+          priceNative: '100',
+        }),
+        tx({ holdingId: 'h', kind: 'swap_out', quantity: '-10', occurredAt: '2024-02-01' }),
+      ],
+      USD,
+      null,
+      undefined,
+      'complete',
+      ledger
+    );
+
+    expect(ledger).toHaveLength(1);
+    const row = ledger[0] as DisposalLotMatch;
     expect(row.outcome).toBe('unpriced');
     expect(row.proceeds).toBeNull();
     expect(row.gain).toBeNull();
+    expect(row.valuationBasis).toBeNull();
     // Basis is known even when proceeds are not — shown, and never netted
     // against a figure that does not exist.
     expect(row.costBasis.toString()).toBe('1000');
@@ -371,6 +591,107 @@ describe('walkLots disposal ledger', () => {
     expect(r.transfersUnreviewed).toBe(0);
   });
 
+  test('an unattributed left_control still realizes, and says so (SC-324)', async () => {
+    const svc = makeService();
+    const ledger: DisposalLotMatch[] = [];
+    const r = await svc.walkLots(
+      [
+        tx({
+          holdingId: 'h',
+          kind: 'buy',
+          quantity: '10',
+          occurredAt: '2024-01-01',
+          priceNative: '100',
+        }),
+        tx({
+          holdingId: 'h',
+          kind: 'withdraw',
+          quantity: '-10',
+          occurredAt: '2024-02-01',
+          priceNative: '150',
+          transferReview: 'left_control',
+          transferReviewedAt: null,
+        }),
+      ],
+      USD,
+      BTC,
+      undefined,
+      'complete',
+      ledger
+    );
+
+    // The arithmetic is UNCHANGED and that is the assertion, not an oversight.
+    ***REMOVED***
+    ***REMOVED***
+    ***REMOVED***
+    // test exists so that change is a deliberate one — it must be edited to be
+    // made, rather than merely not noticed.
+    const row = ledger[0] as DisposalLotMatch;
+    expect(row.outcome).toBe('realized');
+    expect(row.gain?.toString()).toBe('500');
+    expect(r.realizedPnl.toString()).toBe('500');
+
+    // What DID change: the row no longer claims a person decided it.
+    expect(row.answerSource).toBe('unattributed');
+    expect(gainTotal(ledger).toString()).toBe(r.realizedPnl.toString());
+  });
+
+  test('answerSource separates an answer given from an answer recorded (SC-324)', async () => {
+    const svc = makeService();
+    const ledger: DisposalLotMatch[] = [];
+    await svc.walkLots(
+      [
+        tx({
+          holdingId: 'h',
+          kind: 'buy',
+          quantity: '30',
+          occurredAt: '2024-01-01',
+          priceNative: '100',
+        }),
+        // Answered in the queue: stamped, and provably the caller's.
+        tx({
+          holdingId: 'h',
+          kind: 'withdraw',
+          quantity: '-10',
+          occurredAt: '2024-02-01',
+          priceNative: '150',
+          transferReview: 'left_control',
+        }),
+        // Answered by something that left no trace of itself.
+        tx({
+          holdingId: 'h',
+          kind: 'withdraw',
+          quantity: '-10',
+          occurredAt: '2024-03-01',
+          priceNative: '150',
+          transferReview: 'untracked',
+          transferReviewedAt: null,
+        }),
+        // Nobody answered anything: the question was never asked of a sale.
+        tx({
+          holdingId: 'h',
+          kind: 'sell',
+          quantity: '-10',
+          occurredAt: '2024-04-01',
+          priceNative: '150',
+        }),
+      ],
+      USD,
+      BTC,
+      undefined,
+      'complete',
+      ledger
+    );
+
+    expect(ledger.map((row) => [row.outcome, row.answerSource])).toEqual([
+      ['realized', 'user'],
+      // `retained` from a value nobody is recorded as having chosen — the copy
+      // above this row used to read "You said this never left your control".
+      ['retained', 'unattributed'],
+      ['realized', 'none'],
+    ]);
+  });
+
   test('a truncated history grades every row it produced as partial (SC-149)', async () => {
     const svc = makeService();
     const ledger: DisposalLotMatch[] = [];
@@ -407,12 +728,48 @@ describe('walkLots disposal ledger', () => {
     expect(gainTotal(ledger).toString()).toBe(r.realizedPnl.toString());
   });
 
+  test('a swap_in whose counter has no price opens a priced lot, not a zero-cost one (SC-397)', async () => {
+    // Production's live instance of this bug, and it is on the ACQUISITION
+    // side: `swap_in SAND` on 2022-05-10 is denominated in MATIC, whose first
+    // price row is 2023-10-25. The lot opened at zero, so the SAND sold two
+    // minutes later booked its entire proceeds as gain.
+    const svc = makeServiceWithSpot(BTC, '50');
+    const ledger: DisposalLotMatch[] = [];
+    const r = await svc.walkLots(
+      [
+        tx({ holdingId: 'h', kind: 'swap_in', quantity: '10', occurredAt: '2024-01-01' }),
+        tx({
+          holdingId: 'h',
+          kind: 'sell',
+          quantity: '-10',
+          occurredAt: '2024-02-01',
+          priceNative: '100',
+          priceNativeTokenId: USD,
+        }),
+      ],
+      USD,
+      BTC,
+      undefined,
+      'complete',
+      ledger
+    );
+
+    const row = ledger[0] as DisposalLotMatch;
+    // Acquired at 10 × 50 = 500, sold for 1,000. Before SC-397 the basis was
+    // 0 and the whole 1,000 read as gain — the acquisition was not free, we
+    // just declined to price it.
+    expect(row.costBasis.toString()).toBe('500');
+    expect(row.gain?.toString()).toBe('500');
+    expect(row.basisQuality).toBe('known');
+    expect(gainTotal(ledger).toString()).toBe(r.realizedPnl.toString());
+  });
+
   test('an inflow nothing could value grades its disposal partial, not known', async () => {
     const svc = makeService();
     const ledger: DisposalLotMatch[] = [];
-    // No priceNative and the held token is not the base currency, so the
-    // fallback would need FX — and the stub throws if it is asked. Nothing
-    // values this inflow, so the lot opens at zero cost.
+    // No priceNative and no held token, so neither route resolves and the
+    // stub is never asked. Nothing values this inflow, so the lot opens at
+    // zero cost — and the grade is what says the zero was a choice.
     const r = await svc.walkLots(
       [
         tx({ holdingId: 'h', kind: 'swap_in', quantity: '10', occurredAt: '2024-01-01' }),
@@ -425,7 +782,7 @@ describe('walkLots disposal ledger', () => {
         }),
       ],
       USD,
-      BTC,
+      null,
       undefined,
       'complete',
       ledger
@@ -585,6 +942,96 @@ describe('walkComponent disposal ledger', () => {
     expect(scalar.toString()).toBe('0');
     expect(gainTotal(ledger).toString()).toBe(scalar.toString());
     expect(result.get('kraken')?.transfersUnreviewed).toBe(0);
+  });
+
+  test('two linked outflows in one group do not pool their lots (SC-90)', async () => {
+    // Found by the generated property in `CostBasisWalkerAgreement.test.ts`,
+    // not by anyone reading the code. The group's buffered-lot bucket used to
+    // BE the first outflow's own popped-lot array rather than a copy, so the
+    // second outflow appending to the bucket also appended to the first
+    // outflow's cost basis. The answered leg then booked six units of cost
+    // against three units of proceeds — realized 240 became -60 — and the
+    // ledger emitted the leg twice, once per lot now sitting in the array,
+    // each row taking the whole proceeds because `recordDisposal` divides by
+    // the transaction's quantity and not by what the slices happen to sum to.
+    //
+    // Both walkers folded the same private walk, so both were wrong in
+    // exactly the same way and agreed with each other throughout. Production
+    // carries no group with two outflow legs today, so no figure ever shown
+    // was affected; this pins the arithmetic before one appears.
+    const svc = makeService();
+    const ledger: DisposalLotMatch[] = [];
+    const txs = [
+      tx({
+        holdingId: 'kraken',
+        kind: 'buy',
+        quantity: '10',
+        occurredAt: '2023-01-01',
+        priceNative: '100',
+      }),
+      tx({
+        holdingId: 'kraken',
+        kind: 'transfer_out',
+        quantity: '-3',
+        occurredAt: '2024-01-01',
+        priceNative: '180',
+        transferGroupId: 'g-multi',
+        transferReview: 'left_control',
+      }),
+      tx({
+        holdingId: 'kraken',
+        kind: 'transfer_out',
+        quantity: '-3',
+        occurredAt: '2024-02-01',
+        transferGroupId: 'g-multi',
+      }),
+      // A second holding so walkComponent is genuinely the walker under test.
+      tx({
+        holdingId: 'ledger',
+        kind: 'buy',
+        quantity: '1',
+        occurredAt: '2023-01-01',
+        priceNative: '100',
+      }),
+    ];
+
+    const result = await svc.walkComponent(
+      ['kraken', 'ledger'],
+      componentInputs(txs),
+      new Date('2026-01-01'),
+      USD,
+      new Map([
+        ['kraken', BTC],
+        ['ledger', BTC],
+      ]),
+      undefined,
+      new Map<string, HistoryCompleteness>([
+        ['kraken', 'complete'],
+        ['ledger', 'complete'],
+      ]),
+      ledger
+    );
+
+    // One row per leg. Two rows for the answered leg is the duplicate.
+    expect(ledger).toHaveLength(2);
+
+    const answered = ledger.filter((r) => r.outcome === 'realized');
+    expect(answered).toHaveLength(1);
+    // Its own three units at 100, not its own three plus its neighbour's.
+    expect((answered[0] as DisposalLotMatch).costBasis.toString()).toBe('300');
+    expect((answered[0] as DisposalLotMatch).proceeds?.toString()).toBe('540');
+    expect((answered[0] as DisposalLotMatch).gain?.toString()).toBe('240');
+
+    const unpaired = ledger.filter((r) => r.outcome === 'awaiting_pair');
+    expect(unpaired).toHaveLength(1);
+    expect((unpaired[0] as DisposalLotMatch).gain).toBeNull();
+    expect((unpaired[0] as DisposalLotMatch).costBasis.toString()).toBe('300');
+
+    const scalar = [...result.values()].reduce((sum, c) => sum.add(c.realizedPnl), new Decimal(0));
+    expect(scalar.toString()).toBe('240');
+    expect(gainTotal(ledger).toString()).toBe(scalar.toString());
+    // Four of ten units left the holding; the rest keeps its cost intact.
+    expect(result.get('kraken')?.costBasis.toString()).toBe('400');
   });
 
   test('a sale spanning lots from two accounts splits into one row per lot', async () => {
@@ -1117,5 +1564,179 @@ describe('a divided answer', () => {
     expect(ledger).toHaveLength(1);
     expect(ledger[0]?.portionIndex).toBe(0);
     expect(ledger[0]?.portionCount).toBe(1);
+  });
+});
+
+/**
+ * The fourth answer, in the walk (SC-187).
+ *
+ * `internal` is `paired` reached the other way: the destination is a holding
+ * nobody imports for, so the counterpart deposit does not exist and
+ * `TransferReviewService` writes it. By the time the walk sees it there is
+ * nothing left to distinguish the two — one `transfer_group_id`, one
+ * `transfer_in` carrying it — which is exactly the property these tests are
+ * here to pin down. If a future change gives `internal` its own branch, the
+ * `carry` assertions below are what should stop it.
+ */
+describe('a share moved to a holding Scani tracks', () => {
+  const DESTINATION = {
+    accountId: '11111111-2222-4333-8444-555555555555',
+    holdingId: '66666666-7777-4888-8999-aaaaaaaaaaaa',
+  };
+
+  test('carries its lots across at original cost, exactly as a paired share does', async () => {
+    const svc = makeService();
+    const ledger: DisposalLotMatch[] = [];
+    const group = 'grp-internal';
+    const txs = [
+      tx({
+        holdingId: 'src',
+        kind: 'buy',
+        quantity: '4000',
+        occurredAt: '2024-01-01',
+        priceNative: '1',
+      }),
+      tx({
+        holdingId: 'src',
+        kind: 'withdraw',
+        quantity: '-4000',
+        occurredAt: '2025-01-01',
+        priceNative: '2',
+        transferGroupId: group,
+        transferReview: 'split',
+        transferReviewSplit: [
+          { decision: 'internal', quantity: '3500', destination: DESTINATION },
+          { decision: 'left_control', quantity: '500' },
+        ],
+      }),
+      // The row `resolveSplit` writes: same group id, the PORTION's quantity.
+      tx({
+        holdingId: 'dst',
+        kind: 'transfer_in',
+        quantity: '3500',
+        occurredAt: '2025-01-01',
+        transferGroupId: group,
+      }),
+    ];
+
+    const out = await svc.walkComponent(
+      ['src', 'dst'],
+      componentInputs(txs),
+      new Date('2025-06-01'),
+      USD,
+      new Map([
+        ['src', BTC],
+        ['dst', BTC],
+      ]),
+      undefined,
+      new Map(),
+      ledger
+    );
+
+    // Original cost of 1, not the market value of 2. This is the whole point:
+    // answering `left_control` on the row would have booked 4,000 of proceeds
+    // against 4,000 of basis at a price the money never fetched.
+    const dst = out.get('dst');
+    expect(dst?.openQty.toString()).toBe('3500');
+    expect(dst?.costBasis.toString()).toBe('3500');
+
+    expect(out.get('src')?.realizedPnl.toString()).toBe('500');
+    expect(gainTotal(ledger).toString()).toBe('500');
+    expect(ledger).toHaveLength(1);
+    expect(ledger[0]?.quantity.toString()).toBe('500');
+  });
+
+  test('works when the destination is a second holding in the SAME account', async () => {
+    // Production shape: one Airwallex account, two USD holdings, and money
+    // moved between them. Nothing in the component walk cares that both legs
+    // share an account — the ledger is keyed on holdings — and this is here so
+    // that stays true.
+    const svc = makeService();
+    const group = 'grp-same-account';
+    const txs = [
+      tx({
+        holdingId: 'airwallex-manual',
+        kind: 'buy',
+        quantity: '700',
+        occurredAt: '2024-01-01',
+        priceNative: '1',
+      }),
+      tx({
+        holdingId: 'airwallex-manual',
+        kind: 'withdraw',
+        quantity: '-700',
+        occurredAt: '2025-01-01',
+        priceNative: '3',
+        transferGroupId: group,
+        transferReview: 'internal',
+      }),
+      tx({
+        holdingId: 'airwallex-imported',
+        kind: 'transfer_in',
+        quantity: '700',
+        occurredAt: '2025-01-01',
+        transferGroupId: group,
+      }),
+    ];
+
+    const out = await svc.walkComponent(
+      ['airwallex-manual', 'airwallex-imported'],
+      componentInputs(txs),
+      new Date('2025-06-01'),
+      USD,
+      new Map([
+        ['airwallex-manual', BTC],
+        ['airwallex-imported', BTC],
+      ]),
+      undefined,
+      new Map(),
+      []
+    );
+
+    expect(out.get('airwallex-manual')?.openQty.toString()).toBe('0');
+    expect(out.get('airwallex-manual')?.realizedPnl.toString()).toBe('0');
+    expect(out.get('airwallex-imported')?.openQty.toString()).toBe('700');
+    expect(out.get('airwallex-imported')?.costBasis.toString()).toBe('700');
+  });
+
+  test('books nothing when its written deposit is missing, rather than a gain', async () => {
+    // The deposit is written inside the same transaction as the answer, so
+    // this should not happen — but "should not happen" is how the invented
+    // gain got in the first time. A half-linked move is an open question, not
+    // a disposal.
+    const svc = makeService();
+    const ledger: DisposalLotMatch[] = [];
+    const txs = [
+      tx({
+        holdingId: 'src',
+        kind: 'buy',
+        quantity: '4000',
+        occurredAt: '2024-01-01',
+        priceNative: '1',
+      }),
+      tx({
+        holdingId: 'src',
+        kind: 'withdraw',
+        quantity: '-4000',
+        occurredAt: '2025-01-01',
+        priceNative: '2',
+        transferGroupId: 'grp-internal-orphan',
+        transferReview: 'internal',
+      }),
+    ];
+
+    const out = await svc.walkComponent(
+      ['src'],
+      componentInputs(txs),
+      new Date('2025-06-01'),
+      USD,
+      new Map([['src', BTC]]),
+      undefined,
+      new Map(),
+      ledger
+    );
+
+    expect(out.get('src')?.realizedPnl.toString()).toBe('0');
+    expect(ledger.map((row) => row.outcome)).toEqual(['awaiting_pair']);
   });
 });

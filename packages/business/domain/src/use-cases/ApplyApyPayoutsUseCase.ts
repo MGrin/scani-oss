@@ -1,6 +1,7 @@
 import { withAdvisoryLock } from '@scani/db';
 import { withTransaction } from '@scani/db/transaction';
 import { createComponentLogger } from '@scani/logging';
+import { PAYOUTS_PER_YEAR } from '@scani/shared';
 import Decimal from 'decimal.js';
 import { Container, Service } from 'typedi';
 import {
@@ -12,14 +13,6 @@ import { HoldingTransactionRepository } from '../repositories/HoldingTransaction
 import { HoldingService, VaultService } from '../services';
 
 const logger = createComponentLogger('use-case:apply-apy-payouts');
-
-const PAYOUTS_PER_YEAR: Record<string, number> = {
-  daily: 365,
-  weekdays: 260,
-  weekly: 52,
-  monthly: 12,
-  yearly: 1,
-};
 
 /** Maximum catch-up window to prevent runaway compounding */
 const MAX_CATCHUP_DAYS = 366;
@@ -187,7 +180,7 @@ export class ApplyApyPayoutsUseCase {
   ): Promise<{ applied: boolean; payoutCount: number; interestApplied: Decimal }> {
     const { config } = entry;
     const frequency = config.payoutFrequency;
-    const perYear = PAYOUTS_PER_YEAR[frequency];
+    const perYear = PAYOUTS_PER_YEAR[frequency as keyof typeof PAYOUTS_PER_YEAR];
 
     if (!perYear) {
       throw new Error(`Unknown payout frequency: ${frequency}`);

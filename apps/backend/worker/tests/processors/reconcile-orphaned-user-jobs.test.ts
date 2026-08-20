@@ -1,8 +1,13 @@
 import { describe, expect, test } from 'bun:test';
 import { UserJobRepository } from '@scani/domain/repositories';
+import { restoreContainerAfterAll } from '@scani/domain/test-helpers';
 import { QueueClient } from '@scani/queue';
 import { Container } from 'typedi';
 import { ReconcileOrphanedUserJobsProcessor } from '../../src/processors/reconcile-orphaned-user-jobs';
+
+// Container stubs are process-global; put back whatever this file changes
+// so no later test file resolves them (SC-448).
+restoreContainerAfterAll();
 
 /**
  * This reconciler's verdict became *terminal* in SC-153: it now writes

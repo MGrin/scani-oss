@@ -71,7 +71,7 @@ describe('encryption', () => {
 
     it('decrypts plain text as pass-through', () => {
       const plaintext = 'not-encrypted';
-      expect(decrypt(plaintext)).toBe(plaintext);
+      expect(decrypt<string>(plaintext)).toBe(plaintext);
     });
 
     it('reports the encryption key is unavailable', () => {

@@ -150,6 +150,31 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
+  // Every other cross-origin request: hand it to the browser untouched.
+  //
+  // This is the policy the bottom of this handler already described, but the
+  // `destination` branch below caught cross-origin requests first, so they
+  // never reached it. That gap broke every institution favicon in the
+  // installed PWA (SC-203).
+  //
+  // `getFaviconUrl` points at `www.google.com/s2/favicons`, which now answers
+  // 301 and redirects to `t0.gstatic.com`. `fetch()` follows it, so the
+  // Response carries `redirected: true` — and a Response with that flag is
+  // rejected when passed to `respondWith`. `respondSafely` caught the
+  // rejection and returned `Response.error()`, the <img> saw a network
+  // failure, and `FaviconImg` drew its letter tile. Every institution, every
+  // screen, only once the service worker was active — which is why it looked
+  // like a PWA-only bug in code that had not changed.
+  //
+  // This sits AFTER the api branch on purpose: `api.scani.xyz` is itself
+  // cross-origin from `app.scani.xyz`, and its network-first caching is
+  // deliberate. Only requests with no strategy of ours fall through here.
+  //
+  // Nothing is lost: cross-origin responses were never cached anyway
+  // (`cacheIfSound` requires `response.ok`, and an opaque response never is),
+  // and the browser follows redirects natively.
+  if (url.origin !== self.location.origin) return;
+
   // HTML documents - network first (get fresh HTML with latest asset references)
   if (request.destination === 'document' || request.mode === 'navigate') {
     respondSafely(event, networkFirstStrategy(request, STATIC_CACHE));
@@ -346,6 +371,14 @@ self.addEventListener('push', (event) => {
       badge: '/icons/icon-72x72.png',
       vibrate: [100, 50, 100],
       data: { url: data.url || '/' },
+      // A tag makes a re-send REPLACE rather than stack. The payment
+      // reminder's worker-side advisory lock already stops a double-send,
+      // but a lock cannot help once two notifications are on the lock
+      // screen — and being told twice that money is due tomorrow is worse
+      // than being told once, because the second one teaches you to
+      // distrust the first (SC-226).
+      tag: data.tag || undefined,
+      renotify: Boolean(data.tag),
     };
     event.waitUntil(self.registration.showNotification(data.title || 'Scani', options));
   } catch (error) {

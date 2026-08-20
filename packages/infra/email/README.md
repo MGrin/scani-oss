@@ -41,10 +41,29 @@ between `CloudEmailService` (when `SCANI_CLOUD_URL` is set) and a
 
 | Method | Purpose |
 |---|---|
-| `sendMagicLink({ to, url, brand? })` | Renders the magic-link template and sends. Brand defaults to `SCANI_BRAND`. |
-| `sendVerificationEmail({ to, url, brand? })` | Sign-up "confirm your email" template. |
-| `sendOtp({ to, code, type, brand? })` | 6-digit code template. `type` switches the headline copy: `'sign-in' \| 'email-verification' \| 'forget-password' \| 'change-email'`. |
+| `sendMagicLink({ to, url, brand?, language? })` | Renders the magic-link template and sends. Brand defaults to `SCANI_BRAND`. |
+| `sendVerificationEmail({ to, url, brand?, language? })` | Sign-up "confirm your email" template. |
+| `sendOtp({ to, code, type, brand?, language? })` | 6-digit code template. `type` switches the headline copy: `'sign-in' \| 'email-verification' \| 'forget-password' \| 'change-email'`. |
 | `send(message)` | Bypass templating; ship a fully-rendered `EmailMessage`. Used by the data-provider's `email.send` tRPC route to relay payloads from cloud-routed callers. |
+
+## Languages (SC-412)
+
+`src/i18n/locales/<code>.ts` holds one `EmailStrings` bundle per language;
+`resolveEmailStrings(tag)` picks one. Pass `language` to any of the three
+high-level methods — the api reads it off the `x-scani-language` header the
+app sets on every auth request, because a signed-out sender knows only an
+email address and there is no stored preference to read.
+
+**A letter falls back to English WHOLE, never key by key.** The bundle is a
+typed record, so a locale that omits a string does not compile, and a language
+with no bundle at all gets the English letter entire. Per-key fallback is right
+for a screen and wrong for a letter: it produces one paragraph in Russian and
+the sentence explaining it in English, in the first message a new account
+receives.
+
+Adding a language is one file — about 35 strings — and
+`tests/i18n/app-languages.test.ts` fails when the app learns a language the
+mail cannot speak, so the gap cannot open silently.
 
 ## Brands
 
@@ -106,10 +125,10 @@ locally).
 ## Why this package owns its env schema
 
 Two apps used to declare `SMTP_URL` / `SMTP_FROM` / `FASTMAIL_API_TOKEN`
-in their own `env.ts`, with matching values in `.env.example` and
-`docker-compose.yml` — and their boot code each ran an identical "if env
-is set, build a transport" block. Three duplications of the same
-contract; any drift silently broke one tier. Owning the env
+in their own `env.ts`, with matching values in `.env.example`,
+`fly.toml`, `docker-compose.yml` — and their boot code each ran an
+identical "if env is set, build a transport" block. Three duplications of
+the same contract; any drift silently broke one tier. Owning the env
 shape inside the package means:
 
 - Apps add nothing to their `env.ts`.

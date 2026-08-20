@@ -1,11 +1,18 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 import { Container } from 'typedi';
 import { z } from 'zod';
+// This workspace cannot depend on @scani/domain (it sits below it), so the
+// shared helper is reached the same way the shared test preload is: by path.
+import { restoreContainerAfterAll } from '../../../../business/domain/test/helpers/container';
 import type { UserJobDescriptor } from '../../src/core/job-descriptor';
 import type { EnqueuedJobMeta, UserJobBase } from '../../src/core/types';
 import { BullMqEnqueueService } from '../../src/producer/bullmq-enqueue-service';
 import { ENQUEUE_MIRROR } from '../../src/producer/enqueue-mirror';
 import { QueueClient } from '../../src/producer/queue-client';
+
+// Container stubs are process-global; put back whatever this file changes
+// so no later test file resolves them (SC-448).
+restoreContainerAfterAll();
 
 interface TestPayload extends UserJobBase {
   resourceId: string;

@@ -107,7 +107,7 @@ export class BackfillStatementFeesUseCase {
 
       if (feeRows.length > 0 && !dryRun) {
         const written = await this.transactionRepository.bulkUpsert(feeRows);
-        feesWritten += written.length;
+        feesWritten += written.rows.length;
       }
 
       // A short page means the keyset is exhausted. On a real run the rows just

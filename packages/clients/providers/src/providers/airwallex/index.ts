@@ -34,6 +34,7 @@ import type {
   TransactionsProvider,
 } from '../../core/capabilities';
 import { extractCounterparty } from '../../core/counterparty';
+import { credentialRejection, ProviderError } from '../../core/errors';
 import type {
   DecryptedCredentials,
   HoldingSnapshot,
@@ -115,6 +116,12 @@ export class AirwallexProvider
     'transactions',
     'credential-validator',
   ];
+  // Found by the SC-418 audit, not named in the ticket: the same
+  // `until - FIVE_YEARS_MS` substitution as Binance, Gate and MEXC. Airwallex
+  // differs in one way that matters — it is CONNECTED in production, so this
+  // is one full re-import away from a wrong `complete` on a real screen rather
+  // than latent (SC-418, SC-166).
+  readonly transactionHistoryHorizonMs = FIVE_YEARS_MS;
 
   private readonly baseUrl: string;
   // In-process bearer-token cache, keyed by the credential bucket. A
@@ -211,7 +218,7 @@ export class AirwallexProvider
       await this.fetchCurrentBalances(token, auth.subKey);
       return { valid: true };
     } catch (err) {
-      return { valid: false, message: err instanceof Error ? err.message : String(err) };
+      return credentialRejection(err);
     }
   }
 
@@ -247,7 +254,7 @@ export class AirwallexProvider
         }),
       subKey
     );
-    if (!response.ok) throw new Error(`Airwallex auth HTTP ${response.status}`);
+    if (!response.ok) throw ProviderError.fromHttp(AIRWALLEX_INSTITUTION_CODE, response);
     const data = (await response.json()) as AirwallexLoginResponse;
     if (!data?.token) throw new Error('Airwallex auth returned no token');
     const expiresAt = data.expires_at
@@ -265,7 +272,7 @@ export class AirwallexProvider
         }),
       subKey
     );
-    if (!response.ok) throw new Error(`Airwallex balances HTTP ${response.status}`);
+    if (!response.ok) throw ProviderError.fromHttp(AIRWALLEX_INSTITUTION_CODE, response);
     const data = (await response.json()) as unknown;
     if (!Array.isArray(data)) return [];
     return data as AirwallexBalance[];
@@ -292,7 +299,7 @@ export class AirwallexProvider
         }),
       subKey
     );
-    if (!response.ok) throw new Error(`Airwallex transactions HTTP ${response.status}`);
+    if (!response.ok) throw ProviderError.fromHttp(AIRWALLEX_INSTITUTION_CODE, response);
     const data = (await response.json()) as unknown;
     if (Array.isArray(data)) return { items: data as AirwallexFinancialTransaction[] };
     if (data && typeof data === 'object') return data as AirwallexTransactionPage;

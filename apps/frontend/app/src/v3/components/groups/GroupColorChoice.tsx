@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/utils';
 
 /**
@@ -33,8 +34,13 @@ interface GroupColorChoiceProps {
 }
 
 export function GroupColorChoice({ value, onChange, disabled }: GroupColorChoiceProps) {
+  const { t } = useTranslation();
   return (
-    <div role="radiogroup" aria-label="Colour" className="flex flex-wrap items-center gap-2">
+    <div
+      role="radiogroup"
+      aria-label={t('v3.groups.colour.legend')}
+      className="flex flex-wrap items-center gap-2"
+    >
       {GROUP_COLORS.map((color) => (
         // biome-ignore lint/a11y/useSemanticElements: a native input[type=radio] is excluded from the token layer's coarse-pointer 44px rule (v3-tokens.css keys it off `button`), so swapping it in would silently drop the touch target on the surface this is built for
         <button
@@ -42,7 +48,7 @@ export function GroupColorChoice({ value, onChange, disabled }: GroupColorChoice
           type="button"
           role="radio"
           aria-checked={value === color}
-          aria-label={`Colour ${color}`}
+          aria-label={t('v3.groups.colour.swatch', { color })}
           disabled={disabled}
           onClick={() => onChange(color)}
           className={cn(

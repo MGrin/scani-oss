@@ -15,7 +15,7 @@
  * both sides already depend on, and geometry is data, not UI.
  *
  * The estate's rasters — every favicon, `.ico` and PWA icon — are **generated**
- * from the marketing site's `public/favicon.svg` by `bun run icons:generate`
+ * from `apps/frontend/landing/public/favicon.svg` by `bun run icons:generate`
  * (SC-80). That file is plain SVG on a CDN path with no build step, so it
  * cannot import this one and carries the same numbers by value. Changing the
  * mark means changing both and re-running the generator; there is no third

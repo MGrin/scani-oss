@@ -26,10 +26,25 @@ import { TruncatedText } from './TruncatedText';
  */
 
 interface DataRowProps {
-  /** Zone 1. Truncates. */
+  /** Zone 1. Truncates unless `wrapIdentity`. */
   label: ReactNode;
-  /** One secondary identity line. Truncates. */
+  /** One secondary identity line. Truncates unless `wrapIdentity`. */
   sublabel?: ReactNode;
+  /**
+   * Let the identity zone take the height it needs instead of clipping (SC-200).
+   *
+   * Opt-in, because clipping is right for the usual case and this is not it. A
+   * clipped **name** is still recognisable — "Orbital Systems Ltd · JPMorgan
+   * Cha…" is the row you were looking for, and `TruncatedText` hands back the
+   * rest on hover. A clipped **sentence** is not: the data-quality panel showed
+   * "Shown positions with no recent pri…" and "An import that did not reach
+   * back bef…", where the ending carries the whole meaning and there is no
+   * hover on a phone to recover it.
+   *
+   * The row's contract is unchanged — the value zone still never gives way.
+   * This only changes *how* identity gives way: by height rather than by width.
+   */
+  wrapIdentity?: boolean;
   /** Fixed-width slot before the identity: favicon, avatar, selection box. */
   leading?: ReactNode;
   /** Zone 2. Never truncates. A `<Numeric>` in almost every case. */
@@ -114,6 +129,7 @@ const CONTROL =
 export function DataRow({
   label,
   sublabel,
+  wrapIdentity,
   leading,
   value,
   delta,
@@ -130,6 +146,10 @@ export function DataRow({
     ? 'grid-cols-[auto_minmax(0,1fr)_auto]'
     : 'grid-cols-[minmax(0,1fr)_auto]';
 
+  // `text-pretty` rather than a bare wrap: these are sentences, and a last line
+  // holding one word is the shape that reads as a rendering fault.
+  const identityLine = wrapIdentity ? 'text-pretty' : 'truncate';
+
   const zones = (
     <>
       {leading ? <span className="flex shrink-0 items-center">{leading}</span> : null}
@@ -137,15 +157,32 @@ export function DataRow({
         {/* Both identity lines offer their full text on hover once the zone
             has cut them short (SC-114) — home's Top holdings reads
             "Orbital Systems Ltd · JPMorgan Cha…" and the rest of it was
-            reachable nowhere in the product. */}
-        <TruncatedText className="block truncate text-label">{label}</TruncatedText>
+            reachable nowhere in the product. Under `wrapIdentity` nothing is
+            cut, so `useOverflowTitle` measures no overflow and adds no
+            attribute; the component stays for the surfaces that do clip. */}
+        {/* Class order matches the pre-SC-200 output exactly — `block`, then
+            the clip/wrap utility, then the type. `money.test.tsx` asserts on
+            the rendered class string, so a reorder that changes nothing about
+            the CSS still fails it. */}
+        <TruncatedText className={cn('block', identityLine, 'text-label')}>{label}</TruncatedText>
         {sublabel ? (
-          <TruncatedText className="block truncate text-caption text-muted-foreground">
+          <TruncatedText
+            className={cn('block', identityLine, 'text-caption text-muted-foreground')}
+          >
             {sublabel}
           </TruncatedText>
         ) : null}
       </span>
-      <span className="flex flex-col items-end whitespace-nowrap">
+      <span
+        className={cn(
+          'flex flex-col items-end whitespace-nowrap',
+          // A wrapped identity can be three lines tall; centring the figure
+          // against it floats it in the middle of a paragraph it belongs to
+          // the top of. Only for the wrapping case — every clipped row is one
+          // line and centring is what pairs the figure with it.
+          wrapIdentity ? 'self-start' : undefined
+        )}
+      >
         <span className="text-label">{value}</span>
         {delta ? <span className="text-caption">{delta}</span> : null}
       </span>

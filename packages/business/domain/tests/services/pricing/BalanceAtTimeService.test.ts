@@ -1,22 +1,16 @@
 process.env.DATABASE_URL = process.env.DATABASE_URL || 'postgresql://dummy:dummy@localhost/dummy';
 
-import { afterAll, describe, expect, test } from 'bun:test';
+import { describe, expect, test } from 'bun:test';
 import { Container } from 'typedi';
 import { HoldingBalanceObservationRepository } from '../../../src/repositories/HoldingBalanceObservationRepository';
 import { HoldingRepository } from '../../../src/repositories/HoldingRepository';
 import { HoldingTransactionRepository } from '../../../src/repositories/HoldingTransactionRepository';
 import { BalanceAtTimeService } from '../../../src/services/pricing/BalanceAtTimeService';
+import { restoreContainerAfterAll } from '../../../test/helpers/container';
 
-// Stubs leak across files because typedi's Container is process-global.
-// After this suite, restore real @Service() instances so a later
-// repo/service test that ran in the same `bun test` invocation can
-// resolve the real DB-backed implementation.
-afterAll(() => {
-  Container.set(HoldingRepository, new HoldingRepository());
-  Container.set(HoldingBalanceObservationRepository, new HoldingBalanceObservationRepository());
-  Container.set(HoldingTransactionRepository, new HoldingTransactionRepository());
-  Container.set(BalanceAtTimeService, new BalanceAtTimeService());
-});
+// Container stubs are process-global; put back whatever this file changes
+// so no later test file resolves them (SC-448).
+restoreContainerAfterAll();
 
 // Minimal in-memory stubs. Only the methods BalanceAtTimeService calls are
 // implemented; anything else would throw if touched. Keeps the tests honest
@@ -60,6 +54,15 @@ function makeObservationStub(
           } as never)
         : null;
     },
+    findExtremesForHolding: async (holdingId: string) => {
+      const times = rows
+        .filter((r) => r.holdingId === holdingId)
+        .map((r) => r.observedAt.getTime())
+        .sort((a, b) => a - b);
+      return times.length
+        ? { first: new Date(times[0] as number), last: new Date(times[times.length - 1] as number) }
+        : { first: null, last: null };
+    },
   } as unknown as HoldingBalanceObservationRepository;
 }
 
@@ -90,6 +93,15 @@ function makeTransactionStub(
           updatedAt: new Date(),
         })) as never;
     },
+    findExtremesForHolding: async (holdingId: string) => {
+      const times = rows
+        .filter((r) => r.holdingId === holdingId)
+        .map((r) => r.occurredAt.getTime())
+        .sort((a, b) => a - b);
+      return times.length
+        ? { first: new Date(times[0] as number), last: new Date(times[times.length - 1] as number) }
+        : { first: null, last: null };
+    },
   } as unknown as HoldingTransactionRepository;
 }
 
@@ -101,6 +113,7 @@ function makeHoldingStub(
     tokenId: string;
     balance: string;
     lastUpdated: Date;
+    createdAt: Date;
   } | null
 ): HoldingRepository {
   return {
@@ -179,12 +192,14 @@ describe('BalanceAtTimeService.getBalance', () => {
         tokenId: 'tok-1',
         balance: '20',
         lastUpdated: new Date('2024-12-01T00:00:00Z'),
+        createdAt: new Date('2024-06-01T00:00:00Z'),
       }
     );
     const r = await svc.getBalance(HOLD, new Date('2024-07-01T00:00:00Z'));
     expect(r.balance?.toString()).toBe('17');
     expect(r.anchor).toBe('holdings');
     expect(r.txApplied).toBe(2);
+    expect(r.beforeRecords).toBe(false);
   });
 
   test('uses observation-before as last-ditch anchor, walking forward', async () => {
@@ -222,5 +237,89 @@ describe('BalanceAtTimeService.getBalance', () => {
     const r = await svc.getBalance(HOLD, new Date('2024-05-01T00:00:00Z'));
     expect(r.balance?.toString()).toBe('10');
     expect(r.txApplied).toBe(0);
+  });
+});
+
+// SC-252. The reconstruction had no lower bound: it answered for any past
+// instant, including before the holding, the account or the user existed.
+// Below the earliest evidence we hold, `current balance - sum(all known
+// txs)` stops being a reconstruction and becomes the unexplained opening
+// balance, asserted for all of time. The value is still returned — the
+// history chart is built on propagating a balance backward and dropping it
+// would empty the chart for a newly-onboarded user — but `beforeRecords`
+// travels with it so no caller can present it as a measurement.
+describe('BalanceAtTimeService.getBalance — the lower bound (SC-252)', () => {
+  // Production numbers, from the ticket: an Airwallex USD holding whose
+  // current balance is 0 and whose ledger holds one withdraw of -586.94.
+  // 0 - (-586.94) = +586.94, reported for every date before the ledger
+  // starts, and stored coverage_quality = 'full'.
+  const SC252 = {
+    holding: {
+      id: HOLD,
+      userId: 'u1',
+      accountId: 'acc-1',
+      tokenId: 'tok-1',
+      balance: '0',
+      lastUpdated: new Date('2026-08-01T00:00:00Z'),
+      createdAt: new Date('2026-06-22T00:00:00Z'),
+    },
+    withdraw: {
+      holdingId: HOLD,
+      quantity: '-586.94',
+      occurredAt: new Date('2026-07-23T00:00:00Z'),
+    },
+    phantomDate: new Date('2025-06-21T00:00:00Z'),
+  };
+
+  test('flags a pre-existence date as before-records via the holdings anchor', async () => {
+    const svc = makeService([], [SC252.withdraw], SC252.holding);
+    const r = await svc.getBalance(HOLD, SC252.phantomDate);
+    // The value is deliberately unchanged — this bounds confidence, not the number.
+    expect(r.balance?.toString()).toBe('586.94');
+    expect(r.anchor).toBe('holdings');
+    expect(r.beforeRecords).toBe(true);
+  });
+
+  // The case a bound on anchor 2 alone would miss. `findObservationAtOrAfter`
+  // runs FIRST, so any holding carrying observations never reaches the
+  // holdings anchor — and for a pre-existence date the earliest observation
+  // is always "at or after", putting the whole ledger inside the walk and
+  // producing the identical residue.
+  test('flags a pre-existence date as before-records via the observation-after anchor', async () => {
+    const svc = makeService(
+      [{ holdingId: HOLD, balance: '0', observedAt: new Date('2026-08-01T00:00:00Z') }],
+      [SC252.withdraw],
+      SC252.holding
+    );
+    const r = await svc.getBalance(HOLD, SC252.phantomDate);
+    expect(r.balance?.toString()).toBe('586.94');
+    expect(r.anchor).toBe('observation-after');
+    expect(r.beforeRecords).toBe(true);
+  });
+
+  test('a date at the earliest evidence is not before-records', async () => {
+    const svc = makeService([], [SC252.withdraw], SC252.holding);
+    const r = await svc.getBalance(HOLD, SC252.holding.createdAt);
+    expect(r.beforeRecords).toBe(false);
+  });
+
+  // The bound is the EARLIEST of the three, so an imported wallet whose
+  // ledger reaches back years is answered from its first transaction and
+  // not from the day we happened to learn of it.
+  test('a transaction older than the holding row extends the bound backward', async () => {
+    const svc = makeService(
+      [],
+      [{ holdingId: HOLD, quantity: '5', occurredAt: new Date('2021-03-01T00:00:00Z') }],
+      SC252.holding
+    );
+    const r = await svc.getBalance(HOLD, new Date('2022-01-01T00:00:00Z'));
+    expect(r.beforeRecords).toBe(false);
+  });
+
+  test('no evidence of any kind stays an honest unknown', async () => {
+    const svc = makeService([], []);
+    const r = await svc.getBalance(HOLD, SC252.phantomDate);
+    expect(r.balance).toBeNull();
+    expect(r.beforeRecords).toBe(false);
   });
 });

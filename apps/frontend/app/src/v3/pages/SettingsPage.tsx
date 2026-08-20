@@ -4,6 +4,7 @@ import { AccountSettings } from '../components/settings/AccountSettings';
 import { DataExportSettings } from '../components/settings/DataExportSettings';
 import { DataQualitySettings } from '../components/settings/DataQualitySettings';
 import { MaintenanceSettings } from '../components/settings/MaintenanceSettings';
+import { NotificationSettings } from '../components/settings/NotificationSettings';
 import { ProfileSettings } from '../components/settings/ProfileSettings';
 import { SessionsSettings } from '../components/settings/SessionsSettings';
 
@@ -13,8 +14,14 @@ import { SessionsSettings } from '../components/settings/SessionsSettings';
  * A form surface, so `PageLayout` at the `narrow` measure and `FieldSet`/`Field`
  * throughout — never `V3DataView`, even where a block happens to render a run
  * of rows. The blocks are ordered by how often anyone opens the page for them:
- * who you are and what currency you read in, then where you are signed in,
- * then the two diagnostic blocks, then leaving.
+ * who you are and what currency you read in, then what this device is allowed
+ * to do, then where you are signed in, then the two diagnostic blocks, then
+ * leaving.
+ *
+ * Notifications sit with the preferences rather than with the devices below
+ * because a push subscription is per BROWSER, not per session — signing out
+ * does not end it — and grouping it with the sessions list would suggest the
+ * two revoke together.
  *
  * Theme and the v2/v3 switch are deliberately absent. Both live in the shell —
  * the sidebar's footer on a desktop, the More drawer's on a phone — where they
@@ -30,6 +37,7 @@ export function SettingsPage() {
       <p className="text-body text-muted-foreground">{t('settings.subtitle')}</p>
 
       <ProfileSettings />
+      <NotificationSettings />
       <SessionsSettings />
       <DataExportSettings />
       <MaintenanceSettings />

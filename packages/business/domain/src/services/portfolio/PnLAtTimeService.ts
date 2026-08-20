@@ -6,6 +6,7 @@ import { HoldingTransactionRepository } from '../../repositories/HoldingTransact
 import type { BalanceAtTimeCaches } from '../pricing/BalanceAtTimeService';
 import {
   type CostBasisAtTime,
+  type CostBasisMethod,
   type CostBasisQuality,
   CostBasisService,
   type HistoryCompleteness,
@@ -32,6 +33,23 @@ export interface PnLAtTimePerHolding {
   unpriceable: boolean;
   /** Mirrors PortfolioValueAtTimePerHolding.priceStale — see SC-151. */
   priceStale: boolean;
+  /**
+   * Mirrors PortfolioValueAtTimePerHolding.anchorSource / .anchorAt — see
+   * SC-249. These two were the only quality signals the valuation pass
+   * produced that this mirror did NOT carry, which is where the provenance
+   * died: `unpriceable` and `priceStale` above were both added when the
+   * defect they describe was found, and nobody came back for the anchor.
+   */
+  anchorSource: string | null;
+  anchorAt: Date | null;
+  /**
+   * Mirrors PortfolioValueAtTimePerHolding.balanceBeforeRecords — see
+   * SC-252. Carried for the same reason the two fields above finally were:
+   * the rollup builds every scope row from THIS shape, so a quality signal
+   * the valuation pass computes and this mirror drops is a signal no stored
+   * row and no reader ever sees.
+   */
+  balanceBeforeRecords: boolean;
   /** How much of this holding's cost we know — see CostBasisQuality (SC-149). */
   basisQuality: CostBasisQuality;
   /** Outflows out of this holding still waiting on an answer — see SC-160. */
@@ -56,6 +74,12 @@ export interface PnLAtTimeResult {
   holdingsUnpriceable: number;
   /** Re-exposed from the valuation pass — see its doc (SC-151). */
   holdingsStalePriced: number;
+  /** Re-exposed from the valuation pass — see its doc (SC-249). */
+  holdingsStaleAnchored: number;
+  /** Re-exposed from the valuation pass — see its doc (SC-249). */
+  oldestAnchorAt: Date | null;
+  /** Re-exposed from the valuation pass — see its doc (SC-252). */
+  holdingsBeforeRecords: number;
   /**
    * Of `holdingsTotal`, how many carry a cost basis we do not actually
    * know: no cost-relevant transaction at all, a provider that reported
@@ -83,9 +107,18 @@ export interface PnLAtTimeResult {
    * SC-149 closed on the cost side, pointed downward.
    *
    * A count of transactions, not of holdings, and only of rows the review
-   * queue actually holds — see `countsAsUnreviewed`. That makes it the same
+   * queue actually holds — see `countsAsUnreviewed`. That made it the same
    * number as `TransferReviewService.pendingSummary` for a reader looking at
    * today, and the number that was true on the day for a reader looking back.
+   *
+   * **Since SC-375 the first half of that can differ, and deliberately so.** A
+   * `not_a_disposal` address rule removes a row from what the queue *shows*
+   * while writing nothing to it, so the row still pops its lots and still
+   * books no gain. The understatement this count exists to declare is
+   * therefore unchanged by a rule, and following `pendingSummary` down would
+   * quietly retract a caveat that is still true. The queue's own count is the
+   * one that may shrink, because it measures questions outstanding rather than
+   * gains deferred.
    */
   transfersUnreviewed: number;
   perHolding: PnLAtTimePerHolding[];
@@ -120,6 +153,10 @@ export class PnLAtTimeService {
       // 30 days — completeness is a property of the import, not of the
       // snapshot date. Omit and one bulk query resolves it.
       coverageByHolding?: ReadonlyMap<string, HoldingCoverage>;
+      // Which identification rule the cost walk matches disposals under
+      // (SC-462), from `users.cost_basis_method`. Omitted is `fifo`, which is
+      // what every stored figure was computed with.
+      costBasisMethod?: CostBasisMethod;
     } = {}
   ): Promise<PnLAtTimeResult> {
     const valuation = await this.valuationService.getPortfolioValue(
@@ -166,7 +203,9 @@ export class PnLAtTimeService {
         baseCurrencyId,
         heldTokenByHolding,
         opts.priceLookup,
-        historyByHolding
+        historyByHolding,
+        undefined,
+        opts.costBasisMethod
       );
       for (const [h, c] of result) costByHolding.set(h, c);
     }
@@ -177,6 +216,7 @@ export class PnLAtTimeService {
         historyCompleteness: historyByHolding.get(h) ?? 'unrecorded',
         ...(opts.priceLookup ? { priceLookup: opts.priceLookup } : {}),
         ...(txs ? { txs } : {}),
+        ...(opts.costBasisMethod ? { method: opts.costBasisMethod } : {}),
       });
       costByHolding.set(h, cost);
     }
@@ -235,6 +275,9 @@ export class PnLAtTimeService {
         unrealizedPnl: ph.valueInBase ? ph.valueInBase.minus(costBasis) : null,
         unpriceable: ph.unpriceable,
         priceStale: ph.priceStale,
+        anchorSource: ph.anchorSource,
+        anchorAt: ph.anchorAt,
+        balanceBeforeRecords: ph.balanceBeforeRecords,
         basisQuality,
         transfersUnreviewed,
       });
@@ -255,6 +298,9 @@ export class PnLAtTimeService {
       holdingsTotal: valuation.holdingsTotal,
       holdingsUnpriceable: valuation.holdingsUnpriceable,
       holdingsStalePriced: valuation.holdingsStalePriced,
+      holdingsStaleAnchored: valuation.holdingsStaleAnchored,
+      oldestAnchorAt: valuation.oldestAnchorAt,
+      holdingsBeforeRecords: valuation.holdingsBeforeRecords,
       holdingsBasisUnknown: basisUnknownCount,
       transfersUnreviewed: unreviewedCount,
       perHolding,

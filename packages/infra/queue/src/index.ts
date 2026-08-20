@@ -60,3 +60,18 @@ export { ENQUEUE_MIRROR, type EnqueueMirror } from './producer/enqueue-mirror';
 export { EnqueueService } from './producer/enqueue-service';
 export { JobScheduler } from './producer/job-scheduler';
 export { QueueClient, type QueueClientConfig } from './producer/queue-client';
+// SC-225 / SC-321. The bounded ping and the reachability tracker moved to
+// `@scani/rate-limiter`, which the data-provider already depends on and this
+// package's BullMQ weight made unusable there. Both are zero-import pure
+// logic and both are upstream-boundary resilience primitives, which is what
+// that package is for. Importers take them from `@scani/rate-limiter`.
+
+// SC-298. An opt-in boot assertion for the bindings a deployment requires.
+// The `catch { return null }` at each resolve site stays — it is correct for
+// OSS and tests — and this is how a managed deployment says it is not one of
+// them, without changing anything for the deployments that are.
+export {
+  assertQueueBindings,
+  isQueueBindingRegistered,
+  type QueueBinding,
+} from './required-bindings';

@@ -12,7 +12,6 @@
  */
 
 export { ConfirmDialog } from './components/ConfirmDialog';
-export { EmptyState } from './components/EmptyState';
 export { ErrorBoundary } from './components/ErrorBoundary';
 export { FaviconImg } from './components/FaviconImg';
 export {

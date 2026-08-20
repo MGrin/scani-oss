@@ -1,8 +1,9 @@
 import { BaseRepository, type DatabaseTransaction } from '@scani/db';
 import type { Document, DocumentPurpose, NewDocument } from '@scani/db/schema';
 import * as schema from '@scani/db/schema';
-import { and, desc, eq, lt, or, sql } from 'drizzle-orm';
+import { and, desc, eq, ilike, inArray, lt, or, sql } from 'drizzle-orm';
 import { Service } from 'typedi';
+import { ilikePattern } from '../lib/text-search';
 
 /** One row of the "every file you've uploaded" list. */
 export interface DocumentListItem {
@@ -22,6 +23,25 @@ export interface ListDocumentsOptions {
   purpose?: DocumentPurpose;
   limit: number;
   cursor?: DocumentListCursor;
+  /**
+   * Narrows to the filename, over EVERY row rather than over the page the
+   * caller happens to hold (SC-244).
+   *
+   * The v3 Files surface used to search client-side above this read, so a
+   * search on page one reported "No files match" about 100 of 400 rows in the
+   * same words it uses for an account with none.
+   */
+  search?: string;
+  /**
+   * Purposes whose *label* matched the same term — ORed with `search`.
+   *
+   * The caller resolves these because the labels are its copy and are not
+   * derivable here: `file-import` is displayed as **"Import"**, so no
+   * transformation of the enum value reproduces what the reader searched.
+   * Sending the resolved purposes keeps the label's authority where the labels
+   * live, and keeps this read from guessing at copy it cannot see.
+   */
+  matchPurposes?: readonly DocumentPurpose[];
 }
 
 // One row per uploaded FILE. `findByContentHash` backs the dedup that
@@ -128,6 +148,8 @@ export class DocumentRepository extends BaseRepository<Document, NewDocument> {
     transaction?: DatabaseTransaction
   ): Promise<DocumentListItem[]> {
     const { userId, purpose, limit, cursor } = options;
+    const search = ilikePattern(options.search);
+    const matchPurposes = options.matchPurposes ?? [];
     try {
       const database = this.getDb(transaction);
       const rows = await database
@@ -147,6 +169,14 @@ export class DocumentRepository extends BaseRepository<Document, NewDocument> {
           and(
             eq(schema.documents.userId, userId),
             purpose ? eq(schema.documents.purpose, purpose) : undefined,
+            search || matchPurposes.length > 0
+              ? or(
+                  search ? ilike(schema.documents.originalFilename, search) : undefined,
+                  matchPurposes.length > 0
+                    ? inArray(schema.documents.purpose, [...matchPurposes])
+                    : undefined
+                )
+              : undefined,
             cursor
               ? or(
                   lt(schema.documents.createdAt, cursor.createdAt),

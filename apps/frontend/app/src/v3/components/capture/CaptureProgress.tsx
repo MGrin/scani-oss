@@ -1,6 +1,7 @@
 import { Skeleton } from '@scani/ui/ui/skeleton';
 import { LoadingRamp } from '@scani/ui/v3/components/feedback/LoadingRamp';
 import { useDelayedLoading } from '@scani/ui/v3/hooks/useDelayedLoading';
+import { useTranslation } from 'react-i18next';
 import { type CaptureStage, describeCaptureStage } from '../../lib/capture-forms';
 
 /**
@@ -19,6 +20,7 @@ import { type CaptureStage, describeCaptureStage } from '../../lib/capture-forms
  * the six rectangles that a skeleton read aloud would be.
  */
 export function CaptureProgress({ stage, label }: { stage: CaptureStage; label: string }) {
+  const { t } = useTranslation();
   // Constant `true`: this component is mounted only while the submission is
   // running, so the ramp's clock starts when the submission does.
   const phase = useDelayedLoading(true);
@@ -28,7 +30,7 @@ export function CaptureProgress({ stage, label }: { stage: CaptureStage; label: 
     <div className="flex flex-col gap-2">
       <LoadingRamp phase={phase} label={label} skeleton={<JobHandoffSkeleton />} />
       <p className="text-caption text-muted-foreground" aria-live="polite">
-        {describeCaptureStage(stage)}
+        {describeCaptureStage(t, stage)}
       </p>
     </div>
   );

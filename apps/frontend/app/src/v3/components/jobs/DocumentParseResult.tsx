@@ -3,6 +3,7 @@ import { Block, BlockHeader } from '@scani/ui/v3/components/Block';
 import { DataRow, DataRowList } from '@scani/ui/v3/components/DataRow';
 import { Numeric } from '@scani/ui/v3/components/Numeric';
 import { ArrowRight, CheckCircle2, Copy, FileText } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import { documentDetailPath, V3_PAYMENT_ROUTES } from '../../lib/routes';
 
@@ -57,14 +58,13 @@ export function asDocumentParseSummary(value: unknown): DocumentParseSummary | n
 }
 
 export function DocumentParseResult({ result }: { result: unknown }) {
+  const { t } = useTranslation();
   const summary = asDocumentParseSummary(result);
 
   if (!summary) {
     return (
       <Block className="p-4">
-        <p className="text-body text-muted-foreground">
-          This job finished without a result we recognise, so there is nothing to review.
-        </p>
+        <p className="text-body text-muted-foreground">{t('v3.documents.parse.unrecognised')}</p>
       </Block>
     );
   }
@@ -74,14 +74,13 @@ export function DocumentParseResult({ result }: { result: unknown }) {
       <Block className="flex flex-col gap-3 p-4">
         <div className="flex items-center gap-2">
           <Copy className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-          <h2 className="text-title">Already read once</h2>
+          <h2 className="text-title">{t('v3.documents.parse.alreadyRead')}</h2>
         </div>
-        <p className="text-body text-muted-foreground">
-          This file matches one you sent before, so it wasn't read again — no second AI charge, and
-          no duplicate invoices. Whatever it found the first time is on the original.
-        </p>
+        <p className="text-body text-muted-foreground">{t('v3.documents.parse.alreadyReadNote')}</p>
         <Button asChild variant="outline" className="self-start">
-          <Link to={documentDetailPath(summary.documentId)}>Open the original</Link>
+          <Link to={documentDetailPath(summary.documentId)}>
+            {t('v3.documents.parse.openOriginal')}
+          </Link>
         </Button>
       </Block>
     );
@@ -92,14 +91,13 @@ export function DocumentParseResult({ result }: { result: unknown }) {
       <Block className="flex flex-col gap-3 p-4">
         <div className="flex items-center gap-2">
           <FileText className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-          <h2 className="text-title">No invoices in this file</h2>
+          <h2 className="text-title">{t('v3.documents.parse.noInvoices')}</h2>
         </div>
-        <p className="text-body text-muted-foreground">
-          The file was read but nothing in it looked like an invoice. Statements and balance
-          screenshots go through Import a file instead — that's the one that creates holdings.
-        </p>
+        <p className="text-body text-muted-foreground">{t('v3.documents.parse.noInvoicesNote')}</p>
         <Button asChild variant="outline" className="self-start">
-          <Link to={documentDetailPath(summary.documentId)}>Open the file</Link>
+          <Link to={documentDetailPath(summary.documentId)}>
+            {t('v3.documents.parse.openFile')}
+          </Link>
         </Button>
       </Block>
     );
@@ -108,9 +106,9 @@ export function DocumentParseResult({ result }: { result: unknown }) {
   return (
     <Block className="flex flex-col">
       <BlockHeader
-        title={`${summary.extractions.length} invoice${summary.extractions.length === 1 ? '' : 's'} found`}
+        title={t('v3.documents.parse.found', { count: summary.extractions.length })}
         href={documentDetailPath(summary.documentId)}
-        action="Open the file"
+        action={t('v3.documents.parse.openFile')}
       />
       {/* The em dash lives in the value zone rather than removing the row: a
           figure the extractor could not read is the thing a reviewer is looking
@@ -119,9 +117,11 @@ export function DocumentParseResult({ result }: { result: unknown }) {
         {summary.extractions.map((extraction) => (
           <DataRow
             key={extraction.id}
-            label={extraction.vendorNameRaw || 'Unknown vendor'}
+            label={extraction.vendorNameRaw || t('v3.documents.parse.unknownVendor')}
             sublabel={
-              extraction.invoiceNumber ? `Invoice ${extraction.invoiceNumber}` : 'No invoice number'
+              extraction.invoiceNumber
+                ? t('v3.documents.extraction.invoiceNumber', { number: extraction.invoiceNumber })
+                : t('v3.documents.extraction.noInvoiceNumber')
             }
             value={
               // A total with no currency stays a bare number. Defaulting it to
@@ -147,8 +147,10 @@ export function DocumentParseResult({ result }: { result: unknown }) {
             <Link to={V3_PAYMENT_ROUTES.fromExtraction(extraction.id)}>
               <span className="truncate">
                 {summary.extractions.length === 1
-                  ? 'Turn this into a recurring payment'
-                  : `Set up ${extraction.vendorNameRaw || 'this invoice'}`}
+                  ? t('v3.documents.parse.turnIntoPayment')
+                  : t('v3.documents.parse.setUpNamed', {
+                      name: extraction.vendorNameRaw || t('v3.documents.parse.thisInvoice'),
+                    })}
               </span>
               <ArrowRight className="ml-2 size-4 shrink-0" aria-hidden="true" />
             </Link>
@@ -156,10 +158,7 @@ export function DocumentParseResult({ result }: { result: unknown }) {
         ))}
         <p className="flex items-start gap-1.5 text-caption text-muted-foreground">
           <CheckCircle2 className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
-          <span>
-            Opens a payment form filled in from the invoice. Nothing is saved until you confirm it —
-            one invoice can't prove how often it repeats.
-          </span>
+          <span>{t('v3.documents.parse.approveNote')}</span>
         </p>
       </div>
     </Block>

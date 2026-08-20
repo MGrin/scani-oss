@@ -1,4 +1,3 @@
-import { formatRelative } from '@scani/shared';
 import { Button } from '@scani/ui/ui/button';
 import { V3DataView } from '@scani/ui/v3/components/data-view/V3DataView';
 import { Numeric } from '@scani/ui/v3/components/Numeric';
@@ -7,15 +6,17 @@ import { BLANK_CELL, exportDateTime, exportMoney } from '@scani/ui/v3/lib/export
 import { resolveNumeric } from '@scani/ui/v3/lib/numeric';
 import type { V3QueryState } from '@scani/ui/v3/lib/query-state';
 import { CheckCircle2 } from 'lucide-react';
+import { useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Link, useNavigate } from 'react-router-dom';
+import { formatRelative } from '../../lib/relative-time';
 import {
   compareReviewItems,
   type ReviewRow,
-  reviewHref,
   reviewKindOptions,
   reviewMatches,
-  splitReviewSubtitle,
 } from '../../lib/review';
+import { type ReviewWireRow, toReviewRow, v3ReviewTexts } from '../../lib/review-text';
 import { V3_ROUTES } from '../../lib/routes';
 
 /**
@@ -32,20 +33,27 @@ import { V3_ROUTES } from '../../lib/routes';
  */
 
 interface ReviewListProps {
-  items: ReviewRow[];
+  items: ReviewWireRow[];
   query: V3QueryState;
 }
 
 export function ReviewList({ items, query }: ReviewListProps) {
+  const { t } = useTranslation();
   const navigate = useNavigate();
-  const kindOptions = reviewKindOptions(items);
+  // The feed arrives as operands and is named here (SC-371) — once per render
+  // rather than per cell, because the filter labels, the sort and the search
+  // all read the same rendered words the reader does.
+  const rows = useMemo(() => {
+    const texts = v3ReviewTexts(t);
+    return items.map((item) => toReviewRow(texts, item));
+  }, [items, t]);
+  const kindOptions = reviewKindOptions(rows);
 
   const config: V3DataViewConfig<ReviewRow> = {
     pageKey: 'review',
-    data: items,
-    noun: 'items',
-    nounSingular: 'item',
-    searchPlaceholder: 'Search review',
+    data: rows,
+    nounKey: 'ui.dataView.noun.reviewItems',
+    searchPlaceholderKey: 'ui.dataView.review.config.searchReview',
     searchFn: reviewMatches,
     // One kind is not a dimension — a filter whose only option is "everything
     // currently on screen" is a control that cannot change the view.
@@ -54,93 +62,100 @@ export function ReviewList({ items, query }: ReviewListProps) {
         ? [
             {
               key: 'kind',
-              label: 'Type',
+              labelKey: 'ui.dataView.review.filter.type',
               options: kindOptions,
               fn: (item: ReviewRow, value) => item.kind === value,
             },
           ]
         : [],
     sortDefs: [
-      { key: 'arrived', label: 'Arrived' },
-      { key: 'title', label: 'Item' },
+      { key: 'arrived', labelKey: 'ui.dataView.review.sort.arrived' },
+      { key: 'title', labelKey: 'ui.dataView.review.sort.item' },
     ],
     sortFn: compareReviewItems,
     defaultSort: { field: 'arrived', direction: 'desc' },
-    groupByDefs: [{ key: 'kind', label: 'Type', fn: (item: ReviewRow) => item.title }],
+    groupByDefs: [
+      {
+        key: 'kind',
+        labelKey: 'ui.dataView.review.group.type',
+        fn: (item: ReviewRow) => item.title,
+      },
+    ],
     // The value zone holds the *value* — SC-71 10.3. It used to hold the
     // arrival time, on the reading that the time is the only figure a review
     // item has; the invoice rows disproved that, and they were spelling their
     // amount inline in the subtitle as `87.31 EUR` while every other list in
     // v3 right-aligns a `<Numeric>`. The time moves to the delta zone, which
     // is where the jobs list — the nearest sibling surface — already puts it.
-    renderRow: (item) => {
-      const { detail, amount } = splitReviewSubtitle(item.subtitle);
-      return {
-        label: item.title,
-        sublabel: detail ?? undefined,
-        value: amount ? <Numeric value={amount.value} currency={amount.currency} /> : null,
-        delta: <span className="text-muted-foreground">{formatRelative(item.createdAt)}</span>,
-        ariaLabel: rowName([
-          item.title,
-          detail,
-          amount ? resolveNumeric(amount.value, { currency: amount.currency }).text : null,
-          formatRelative(item.createdAt),
-        ]),
-      };
-    },
+    renderRow: (item) => ({
+      label: item.title,
+      sublabel: item.detail ?? undefined,
+      value: item.amount ? (
+        <Numeric value={item.amount.value} currency={item.amount.currency} />
+      ) : null,
+      delta: <span className="text-muted-foreground">{formatRelative(t, item.createdAt)}</span>,
+      ariaLabel: rowName([
+        item.title,
+        item.detail,
+        item.amount
+          ? resolveNumeric(item.amount.value, { currency: item.amount.currency }).text
+          : null,
+        formatRelative(t, item.createdAt),
+      ]),
+    }),
     columns: [
-      { key: 'title', header: 'Item', sortable: true, render: (item) => item.title },
+      {
+        key: 'title',
+        headerKey: 'ui.dataView.review.col.item',
+        sortable: true,
+        render: (item) => item.title,
+      },
       {
         key: 'subtitle',
-        header: 'Detail',
+        headerKey: 'ui.dataView.review.col.detail',
         render: (item) => (
-          <span className="truncate text-muted-foreground">
-            {splitReviewSubtitle(item.subtitle).detail ?? '—'}
-          </span>
+          <span className="truncate text-muted-foreground">{item.detail ?? '—'}</span>
         ),
       },
       {
         key: 'amount',
-        header: 'Amount',
+        headerKey: 'ui.dataView.review.col.amount',
         numeric: true,
         width: 'w-36',
-        render: (item) => {
-          const { amount } = splitReviewSubtitle(item.subtitle);
-          // A blank cell, not a dash: a dash is v3's "we have no value for
-          // this", and most review kinds are not the sort of thing that has
-          // one. The column is empty because the row is not about money.
-          return amount ? <Numeric value={amount.value} currency={amount.currency} /> : null;
-        },
-        exportValue: (item) => {
-          const { amount } = splitReviewSubtitle(item.subtitle);
-          return amount ? exportMoney(amount.value, amount.currency) : BLANK_CELL;
-        },
+        // A blank cell, not a dash: a dash is v3's "we have no value for
+        // this", and most review kinds are not the sort of thing that has
+        // one. The column is empty because the row is not about money.
+        render: (item) =>
+          item.amount ? (
+            <Numeric value={item.amount.value} currency={item.amount.currency} />
+          ) : null,
+        exportValue: (item) =>
+          item.amount ? exportMoney(item.amount.value, item.amount.currency) : BLANK_CELL,
         exportTotal: true,
       },
       {
         key: 'arrived',
-        header: 'Arrived',
+        headerKey: 'ui.dataView.review.col.arrived',
         sortable: true,
         width: 'w-40',
         render: (item) => (
-          <span className="text-muted-foreground">{formatRelative(item.createdAt)}</span>
+          <span className="text-muted-foreground">{formatRelative(t, item.createdAt)}</span>
         ),
         exportValue: (item) => exportDateTime(item.createdAt),
       },
     ],
     empty: {
       icon: CheckCircle2,
-      title: 'Nothing needs your review',
-      description:
-        'Imports land here when they finish and want a confirmation before their holdings count.',
+      titleKey: 'ui.dataView.review.empty.nothingNeedsYourReview',
+      descriptionKey: 'ui.dataView.review.empty.importsLandHereWhenTheyFinish',
       action: (
         <Button asChild variant="outline">
-          <Link to={V3_ROUTES.jobs}>See all jobs</Link>
+          <Link to={V3_ROUTES.jobs}>{t('v3.review.list.seeAllJobs')}</Link>
         </Button>
       ),
     },
-    onRowClick: (item) => navigate(reviewHref(item.href)),
-    rowHref: (item) => reviewHref(item.href),
+    onRowClick: (item) => navigate(item.href),
+    rowHref: (item) => item.href,
   };
 
   return <V3DataView config={config} getId={(item) => item.id} query={query} />;

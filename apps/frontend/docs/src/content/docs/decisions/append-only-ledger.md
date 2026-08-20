@@ -22,7 +22,7 @@ overwrites the row in place. Smaller table, simpler ingester code.
 
 **Cost basis is a function of every event.** A buy three years ago,
 plus a transfer to self-custody two years ago, plus a sell yesterday
-collectively determine the realised PnL of yesterday's close. If the
+collectively determine the realized PnL of yesterday's close. If the
 two-year-old transfer is silently rewritten by a re-ingest (with a
 different fee, a corrected counterparty, a fixed timestamp), the
 PnL of yesterday's close silently changes too. Tax-relevant numbers

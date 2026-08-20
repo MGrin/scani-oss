@@ -34,7 +34,7 @@ function queueFetch(handler: (url: string) => FakeResponse): {
       status: r.status ?? 200,
       headers: { 'content-type': 'application/json' },
     });
-  }) as typeof fetch;
+  }) as unknown as typeof fetch;
   return { restore: () => (globalThis.fetch = original), calls };
 }
 

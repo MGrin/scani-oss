@@ -1,0 +1,265 @@
+{
+  "$meta": {
+    "name": "English",
+    "nativeName": "English"
+  },
+  "ui": {
+    "brand": {
+      "logoAlt": "{{name}} logo"
+    },
+    "toast": {
+      "errorTitle": "Something went wrong",
+      "successTitle": "Success",
+      "unknownError": "Unknown error",
+      "viewDetails": "View Details",
+      "dismiss": "Dismiss",
+      "viewDetailsAlt": "View error details in the console",
+      "detail": "{{context}}: {{message}}"
+    },
+    "dataView": {
+      "itemCount_one": "{{count}} item",
+      "itemCount_other": "{{count}} items",
+      "nameList": {
+        "all": "{{head}} and {{last}}",
+        "more": "{{head}} and {{count}} more"
+      },
+      "toolbar": {
+        "refine": "Refine",
+        "refineAria": "Filter, sort and group",
+        "select": "Select",
+        "done": "Done",
+        "export": "Export",
+        "search": "Search {{noun}}",
+        "filteredOf": "{{shown}} of {{counted}}",
+        "loadedSoFar": "{{counted}} loaded so far",
+        "filteredOfLoaded": "{{shown}} of {{counted}} loaded so far",
+        "loadMore": "Load more",
+        "loadingMore": "Loading more…",
+        "selected": "{{counted}} selected",
+        "removeFilter": "Remove filter {{label}}: {{value}}"
+      },
+      "table": {
+        "clearSelection": "Clear selection",
+        "selectAll": "Select all",
+        "selectRow": "Select {{name}}",
+        "sortBy": "Sort by {{header}}",
+        "rowCount_one": "{{count}} row",
+        "rowCount_other": "{{count}} rows"
+      },
+      "empty": {
+        "clearSearchAndFilters": "Clear search and filters",
+        "noMatchSearch": "No {{noun}} match “{{search}}”",
+        "noMatchFilters": "No {{noun}} match those filters",
+        "noMatchLoaded": "No matches in what is loaded",
+        "loadedOnly": "Search and filters only see the {{counted}} loaded so far. Load more to widen them.",
+        "filteredBy": "Filtered by {{list}}."
+      },
+      "bulk": {
+        "delete": "Delete",
+        "deleteCount": "Delete {{counted}}"
+      },
+      "refine": {
+        "title": "Refine",
+        "filter": "Filter",
+        "sortBy": "Sort by",
+        "groupBy": "Group by",
+        "any": "Any",
+        "noGrouping": "No grouping",
+        "lowToHigh": "Low to high",
+        "highToLow": "High to low",
+        "clearAll": "Clear all",
+        "done": "Done",
+        "expand": "Show every option",
+        "collapse": "Show fewer options",
+        "close": "Close refine",
+        "liveCount": "{{counted}} · changes apply as you make them"
+      },
+      "export": {
+        "title": "Export",
+        "whatToExport": "What to export",
+        "format": "Format",
+        "separator": "Separator",
+        "privacy": "Privacy",
+        "hideAmounts": "Hide amounts",
+        "hideAmountsDetail": "Removes every value, gain/loss and converted column. The file says they were withheld.",
+        "cancel": "Cancel",
+        "preparing": "Preparing…",
+        "expand": "Show every option",
+        "collapse": "Show fewer options",
+        "close": "Close export",
+        "separatorComma": "Comma",
+        "separatorCommaDetail": "a,b,c — the usual choice",
+        "separatorSemicolon": "Semicolon",
+        "separatorSemicolonDetail": "a;b;c — for a spreadsheet set to a European locale",
+        "formatCsv": "CSV (.csv)",
+        "formatCsvDetail": "Plain text. Opens anywhere, imports into anything.",
+        "formatXlsx": "Excel (.xlsx)",
+        "formatXlsxDetail": "Numbers stay numbers, headers stay put while you scroll.",
+        "formatPdf": "PDF (.pdf)",
+        "formatPdfDetail": "A statement to send to an accountant, a bank or a landlord.",
+        "onScreenNow": "What is on screen now",
+        "ignoresFilters": "Ignores the filters and the search",
+        "nothingTitle": "Nothing to export",
+        "nothingFiltered": "Nothing matches those filters, so there is nothing to put in a file.",
+        "nothingAtAll": "There is nothing here yet, so there is nothing to put in a file.",
+        "action": "Export {{counted}}",
+        "scopeThese": "These {{counted}}",
+        "scopeAllShort": "All {{counted}}",
+        "scopeAllLoadedShort": "All {{counted}} loaded",
+        "scopeAll": "All {{counted}}",
+        "scopeAllLoaded": "All {{counted}} loaded so far",
+        "scopeFiltered": "Filtered — {{shown}} of {{counted}}",
+        "scopeFilteredLoaded": "Filtered — {{shown}} of {{counted}} loaded so far",
+        "loadedOnly": "Only the rows loaded so far — the rest were never fetched",
+        "partialSet": "Not the whole set",
+        "partialSetDetail": "Only the {{counted}} loaded on screen were exported.",
+        "errorContext": "Exporting {{noun}}",
+        "groupedBy": "Grouped by",
+        "search": "Search",
+        "sortedBy": "Sorted by",
+        "sortedAscending": "{{label}}, low to high",
+        "sortedDescending": "{{label}}, high to low",
+        "subjectDescription": "Download your {{subject}} as a file you own."
+      }
+    },
+    "export": {
+      "pdfUnavailable": "PDF export is not available here",
+      "nothingToExport": "Nothing to export",
+      "pdfTooManyRows": "A PDF holds {{max}} rows at most and this is {{rows}} — export CSV or Excel instead, or narrow the range.",
+      "xlsxChunk": "Excel writer",
+      "workbook": {
+        "currency": "{{header}} ({{currency}})",
+        "currencyConverted": "{{header}} ({{currency}}, converted)",
+        "currencyColumn": "{{header}} currency"
+      },
+      "provenance": {
+        "exportedFrom": "Exported from",
+        "subject": "Subject",
+        "scope": "Scope",
+        "generated": "Generated",
+        "rows": "Rows",
+        "amounts": "Amounts",
+        "withheld": "Withheld — every value, gain/loss and converted column was removed on purpose",
+        "aboutSheet": "About",
+        "field": "Field",
+        "value": "Value"
+      },
+      "download": {
+        "shared": "Sent to your share sheet",
+        "sharedDetail": "Choose Save to Files to keep {{fileName}}.",
+        "saved": "Exported",
+        "savedDetail": "{{subject}} in {{fileName}}"
+      }
+    },
+    "errors": {
+      "offline": {
+        "title": "Couldn't reach the server",
+        "detail": "Check your connection. Nothing has been changed."
+      },
+      "session": {
+        "title": "Your session ended",
+        "detail": "Sign in again to see {{subject}}."
+      },
+      "timeout": {
+        "title": "The server took too long",
+        "detail": "That request to {{verb}} {{subject}} timed out. Your data is untouched."
+      },
+      "rateLimit": {
+        "title": "Too many requests",
+        "detail": "The server asked us to slow down. Wait a moment, then retry."
+      },
+      "generic": {
+        "title": "Couldn't {{verb}} {{subject}}",
+        "detail": "The server returned an error. Your data is untouched."
+      },
+      "rejected": {
+        "detail": "{{reason}}. Your data is untouched."
+      },
+      "chunk": {
+        "message": "Could not load the {{chunk}}. Check your connection and try again — if the app was updated while this tab was open, reloading the page will fix it.",
+        "title": "Could not load the {{chunk}}",
+        "detail": "Part of the app did not download. This is usually a connection that dropped, or an update that shipped while this tab was open.",
+        "reload": "Reload the page"
+      },
+      "crash": {
+        "title": "Something went wrong",
+        "detail": "An unexpected error occurred. Your data is untouched.",
+        "home": "Go to Dashboard"
+      },
+      "verb": {
+        "load": "load",
+        "create": "create",
+        "save": "save",
+        "connect": "connect"
+      },
+      "tryAgain": "Try again",
+      "retry": "Retry"
+    },
+    "magicCode": {
+      "prompt": "Enter the 6-digit code from your email",
+      "verify": "Verify Code",
+      "resend": "Resend Code",
+      "digit": "Digit {{index}}",
+      "expiry": "The code expires in 10 minutes"
+    },
+    "update": {
+      "updating": "Updating... please wait",
+      "available": "New version available",
+      "action": "Update",
+      "dismiss": "Dismiss"
+    },
+    "dialog": {
+      "close": "Close"
+    },
+    "sheet": {
+      "close": "Close"
+    },
+    "loading": {
+      "label": "Loading..."
+    },
+    "numeric": {
+      "noValue": "No value"
+    },
+    "confirmAction": {
+      "cancel": "Cancel"
+    },
+    "loadingRamp": {
+      "stalled": "Still waiting on the server. Nothing has been changed.",
+      "retry": "Try again",
+      "loading": "Loading {{label}}"
+    },
+    "peek": {
+      "recordDetail": "Record detail",
+      "loading": "Loading",
+      "notFound": "Not found",
+      "notOnList": "This {{noun}} is not on this list. It may have been removed, or the link may be out of date.",
+      "expand": "Show full detail",
+      "collapse": "Show less"
+    },
+    "amountInput": {
+      "readAsWhole": "Read as {{amount}} — this field takes whole numbers only.",
+      "readAsDecimal": "Read as {{amount}} — a comma and a full stop both mean a decimal point here. Delete the separator if you meant a thousand."
+    },
+    "theme": {
+      "label": "Theme",
+      "system": "System",
+      "light": "Light",
+      "dark": "Dark",
+      "trigger": "Theme: {{theme}}"
+    },
+    "install": {
+      "headline": "Install {{appName}} on your phone",
+      "installAction": "Install",
+      "howAction": "How?",
+      "sheetDescription": "Add a home-screen icon for full-screen, app-like access.",
+      "safariOnly": "On iOS, only Safari supports adding apps to the home screen. Open this page in Safari, then follow the steps below.",
+      "dismissPrompt": "Dismiss install prompt",
+      "iosStep1": "Tap the <icon/> Share button in Safari's toolbar.",
+      "iosStep2": "Scroll the share sheet and tap <icon/> <b>Add to Home Screen</b>.",
+      "iosStep3": "Confirm with <b>Add</b>. {{appName}} now opens from the home screen like a native app.",
+      "androidStep1": "Tap the <b>⋮</b> menu in your browser's top-right corner.",
+      "androidStep2": "Choose <b>Install app</b> (Chrome) or <b>Add to Home screen</b> (Firefox / Samsung Internet).",
+      "androidStep3": "Confirm. {{appName}} launches from your app drawer like any other installed app."
+    }
+  }
+}

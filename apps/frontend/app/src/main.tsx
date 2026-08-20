@@ -1,9 +1,8 @@
 import {
   isThirdPartyOnlyStack,
   SENTRY_IGNORED_ERROR_PATTERNS,
-  scrubSentryBreadcrumb,
-  scrubSentryEvent,
-} from '@scani/shared';
+} from '@scani/shared/utils/sentry-noise';
+import { scrubSentryBreadcrumb, scrubSentryEvent } from '@scani/shared/utils/sentry-scrubber';
 import { assertFrontendEnv } from '@scani/ui';
 import { ErrorBoundary } from '@scani/ui/components/ErrorBoundary';
 import { UpdateBanner } from '@scani/ui/components/UpdateBanner';
@@ -18,10 +17,11 @@ import * as Sentry from '@sentry/react';
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { TRPCProvider } from '@/lib/trpc-provider';
-import { warmUiVersion } from '@/lib/warm-ui-version';
-import { activeUiVersion, applyDocumentUiVersion } from '@/v3/lib/ui-version';
+import { warmInterface } from '@/lib/warm-interface';
+import { applyDocumentUiVersion } from '@/v3/lib/ui-version';
 import App from './App.tsx';
-import './i18n';
+import i18n from './i18n';
+import { applyFormatLocale, browserStorage, readStoredRegion } from './i18n/format-locale';
 import './index.css';
 
 // Fail loudly if the build pipeline forgot to stage VITE_API_URL — better
@@ -73,17 +73,30 @@ if (SENTRY_DSN) {
 }
 
 // The v3 token block hangs off `<html data-ui="v3">` (V3-19). Setting it here,
-// before React's first render, is what stops the document flashing the other
-// design system's background while `UiVersionDocumentScope`'s effect is still
-// queued — the attribute has to be on the element the page is already painting.
-applyDocumentUiVersion(activeUiVersion(window.location.pathname), document.documentElement);
+// before React's first render, is what stops the document painting a frame
+// without the token layer — the attribute has to be on the element the page is
+// already painting. It used to come back off on a classic-UI route, which is
+// why a component kept it in step across navigations; with one interface it is
+// set once and stays (SC-423).
+applyDocumentUiVersion(document.documentElement);
 
-// v2 and v3 arrive as separate chunks (SC-132 #2), and the one this reader will
-// get is requested here rather than when the route renders — that is below the
-// auth gate, so it would otherwise queue behind the session probe and give the
-// split back every millisecond it saved. No-ops for a device that has never had
-// a session; it is going to the sign-in form and needs neither.
-void warmUiVersion(window.location.pathname);
+// Same reasoning one line up, for `<html lang>` and `<html dir>` (SC-201).
+// `FormatLocaleProvider` keeps both in step from here on; doing it once before
+// React's first render is what stops the document announcing the wrong language
+// — and, once a right-to-left locale exists, painting one frame left-to-right.
+// The detector has already run: `./i18n` initialises i18next at import time.
+applyFormatLocale(
+  i18n.resolvedLanguage ?? i18n.language,
+  readStoredRegion(browserStorage()),
+  document
+);
+
+// The interface arrives as its own chunk (SC-132 #2), and it is requested here
+// rather than when the route renders — that is below the auth gate, so it would
+// otherwise queue behind the session probe and give the split back every
+// millisecond it saved. No-ops for a device that has never had a session; it is
+// going to the sign-in form and needs none of it.
+void warmInterface(window.location.pathname);
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {

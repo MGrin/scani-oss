@@ -44,14 +44,30 @@ export interface GroupValuationResult {
  * screen's groups block — and a fourth (the allocation cut by group) shows it
  * again as a share. They now all read this.
  *
- * **Membership is counted once per group.** A holding can reach a group two
- * ways: assigned to it directly, or through an account assigned to it — and an
- * account's membership is itself derived (`GroupRepository.recomputeAccountGroups`
- * puts an account in a group iff *every* visible holding in it is). So the two
- * paths overlap by construction, and the union has to be taken per group before
- * anything is summed. The code this replaced took the union across *all* groups
- * with one shared set, which silently zeroed a holding's contribution to every
- * group after the first that claimed it.
+ * **Membership is read exactly once, from `findGroupsForHoldings`** — the same
+ * call that puts `HoldingWithDetails.groups` on the wire, so the money and the
+ * list that opens under it cannot answer "who is in this group" differently.
+ * That single resolution is SC-385's fix and it survives SC-386 unchanged;
+ * what SC-386 changed is what the resolution ANSWERS.
+ *
+ * Membership is a standing rule now (mgrin, 2026-08-18): a holding is in a
+ * group by its own `holding_groups` row OR because its account is in the group,
+ * unless it carries a `holding_group_exclusions` veto. `account_groups` stopped
+ ***REMOVED***
+ ***REMOVED***
+ ***REMOVED***
+ ***REMOVED***
+ ***REMOVED***
+ *
+ ***REMOVED***
+ * airdrops continuously; without a per-holding way out, a standing rule would
+ * drag every one of them into the group. With one, the remove the user already
+ * has takes a single position out and leaves the account where it is.
+ *
+ * Summing per group off one map also keeps the defect this service was
+ * extracted to fix fixed: the code it replaced carried ONE set of already-
+ * counted holdings across every group, so a holding claimed by the first group
+ * contributed nothing to the second.
  *
  * **Conversion is not done here and must not be.** Every price arrives already
  * expressed in the user's base currency — `PortfolioValuationService` resolves
@@ -113,39 +129,50 @@ export class GroupValuationService extends BaseService {
     priceMap: Map<string, string>
   ): Promise<{ groups: Array<{ group: Group; total: GroupValue }>; ungrouped: GroupValue }> {
     const groups = await this.groupRepository.findByUser(userId);
-    const groupIds = groups.map((group) => group.id);
-    const [holdingsByGroup, accountsByGroup] = await Promise.all([
-      this.groupRepository.getHoldingsByGroupIds(groupIds),
-      this.groupRepository.getAccountsByGroupIds(groupIds),
-    ]);
 
     const activeById = new Map<string, ValuableHolding>();
-    const activeByAccount = new Map<string, ValuableHolding[]>();
     for (const entry of holdingsWithDetails) {
       if (!entry.holding.isActive) continue;
       activeById.set(entry.holding.id, entry);
-      const list = activeByAccount.get(entry.holding.accountId);
-      if (list) list.push(entry);
-      else activeByAccount.set(entry.holding.accountId, [entry]);
     }
 
-    const inSomeGroup = new Set<string>();
-    const valued = groups.map((group) => {
-      const members = new Set(holdingsByGroup.get(group.id) ?? []);
-      for (const accountId of accountsByGroup.get(group.id) ?? []) {
-        for (const entry of activeByAccount.get(accountId) ?? []) members.add(entry.holding.id);
-      }
-      for (const holdingId of members) inSomeGroup.add(holdingId);
-      return { group, total: this.sumMembers(group.id, members, activeById, priceMap) };
-    });
+    const membership = await this.groupRepository.findGroupsForHoldings(
+      [...activeById.values()].map(({ holding }) => ({
+        id: holding.id,
+        accountId: holding.accountId,
+      }))
+    );
 
+    // `findGroupsForHoldings` joins every group row, `findByUser` only the
+    // active ones — so a holding whose only group was deactivated belongs to
+    // none of the groups anybody can see, and lands in `ungrouped` rather than
+    // vanishing from every bucket.
+    const visible = new Set(groups.map((group) => group.id));
+    const membersByGroup = new Map<string, Set<string>>();
     const ungroupedMembers = new Set<string>();
     for (const holdingId of activeById.keys()) {
-      if (!inSomeGroup.has(holdingId)) ungroupedMembers.add(holdingId);
+      const memberOf = (membership.get(holdingId) ?? []).filter((group) => visible.has(group.id));
+      if (memberOf.length === 0) {
+        ungroupedMembers.add(holdingId);
+        continue;
+      }
+      for (const group of memberOf) {
+        const members = membersByGroup.get(group.id);
+        if (members) members.add(holdingId);
+        else membersByGroup.set(group.id, new Set([holdingId]));
+      }
     }
 
     return {
-      groups: valued,
+      groups: groups.map((group) => ({
+        group,
+        total: this.sumMembers(
+          group.id,
+          membersByGroup.get(group.id) ?? new Set<string>(),
+          activeById,
+          priceMap
+        ),
+      })),
       ungrouped: this.sumMembers('ungrouped', ungroupedMembers, activeById, priceMap),
     };
   }

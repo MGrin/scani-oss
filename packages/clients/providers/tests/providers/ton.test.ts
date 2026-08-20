@@ -44,7 +44,7 @@ describe('TonProvider', () => {
       new Response(
         JSON.stringify({ ok: true, result: '2500000000' }), // 2.5 TON
         { status: 200 }
-      )) as typeof fetch;
+      )) as unknown as typeof fetch;
     try {
       const out = await p.fetchBalances(ctx as never);
       expect(out).toHaveLength(1);
@@ -59,7 +59,9 @@ describe('TonProvider', () => {
     const p = new TonProvider(passthroughLimiter(), 'http://api');
     const originalFetch = globalThis.fetch;
     globalThis.fetch = (async () =>
-      new Response(JSON.stringify({ ok: true, result: '0' }), { status: 200 })) as typeof fetch;
+      new Response(JSON.stringify({ ok: true, result: '0' }), {
+        status: 200,
+      })) as unknown as typeof fetch;
     try {
       const out = await p.fetchBalances(ctx as never);
       expect(out).toEqual([]);
@@ -71,15 +73,15 @@ describe('TonProvider', () => {
   test('fetchBalances forwards X-API-Key header when key configured', async () => {
     const p = new TonProvider(passthroughLimiter(), 'http://api', 'sekret');
     const originalFetch = globalThis.fetch;
-    let seenKey: string | null = null;
+    const seenKeys: Array<string | null> = [];
     globalThis.fetch = (async (_url: string, init?: RequestInit) => {
       const headers = new Headers(init?.headers);
-      seenKey = headers.get('x-api-key');
+      seenKeys.push(headers.get('x-api-key'));
       return new Response(JSON.stringify({ ok: true, result: '0' }), { status: 200 });
-    }) as typeof fetch;
+    }) as unknown as typeof fetch;
     try {
       await p.fetchBalances(ctx as never);
-      expect(seenKey).toBe('sekret');
+      expect(seenKeys[0]).toBe('sekret');
     } finally {
       globalThis.fetch = originalFetch;
     }
@@ -114,7 +116,7 @@ describe('TonProvider', () => {
         ],
       };
       return new Response(JSON.stringify(body), { status: 200 });
-    }) as typeof fetch;
+    }) as unknown as typeof fetch;
     try {
       const events = await p.fetchTransactions(ctx as never);
       expect(events).toHaveLength(2);
@@ -160,7 +162,7 @@ describe('TonProvider', () => {
         ],
       };
       return new Response(JSON.stringify(body), { status: 200 });
-    }) as typeof fetch;
+    }) as unknown as typeof fetch;
     try {
       const events = await p.fetchTransactions(ctx as never);
       expect(events).toEqual([]);
@@ -206,7 +208,7 @@ describe('TonProvider', () => {
       const isFirst = !url.includes('hash=');
       const body = isFirst ? { ok: true, result: fullPage } : { ok: true, result: tailPage };
       return new Response(JSON.stringify(body), { status: 200 });
-    }) as typeof fetch;
+    }) as unknown as typeof fetch;
     try {
       const events = await p.fetchTransactions(ctx as never);
       expect(calls).toHaveLength(2);
@@ -252,7 +254,7 @@ describe('TonProvider', () => {
           ],
         }),
         { status: 200 }
-      )) as typeof fetch;
+      )) as unknown as typeof fetch;
     try {
       const events = await p.fetchTransactions({
         ...ctx,

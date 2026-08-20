@@ -4,6 +4,7 @@ import { HoldingCoverageRepository } from '../../repositories/HoldingCoverageRep
 import { HoldingRepository } from '../../repositories/HoldingRepository';
 import { HoldingTransactionRepository } from '../../repositories/HoldingTransactionRepository';
 import {
+  type CostBasisMethod,
   CostBasisService,
   type DisposalLotMatch,
   type HistoryCompleteness,
@@ -67,42 +68,116 @@ export class RealizedLedgerService {
     userId: string,
     holdingId: string,
     baseCurrencyId: string,
-    at: Date = new Date()
+    at: Date = new Date(),
+    method?: CostBasisMethod
   ): Promise<DisposalLotMatch[]> {
     const componentIds = await this.txRepository.findTransferLinkedHoldingIds(userId, [holdingId]);
+    const ledger = await this.walkOneComponent(componentIds, baseCurrencyId, at, method);
+
+    return ledger
+      .filter((row) => row.holdingId === holdingId)
+      .sort((a, b) => b.disposedAt.getTime() - a.disposedAt.getTime());
+  }
+
+  /**
+   * Every lot match in every transfer component these holdings belong to —
+   * the whole answer rather than one holding's slice of it (SC-379).
+   *
+   * `forHolding` walks the component and then keeps `row.holdingId ===
+   * holdingId`, so the per-holding results PARTITION the component. That makes
+   * one holding a perfectly good handle to walk *by* and a terrible one to
+   ***REMOVED***
+   ***REMOVED***
+   ***REMOVED***
+   * summed one representative per component and called it the component's
+   * realized PnL.
+   *
+   * Those figures were not small versions of the truth, they were ARBITRARY:
+   * which holding survived depended on `Set` insertion order, so the same
+   * question asked twice could answer with a different magnitude and a
+   * different SIGN. Re-derived on production 2026-08-18, SC-328's delta is
+   ***REMOVED***
+   ***REMOVED***
+   ***REMOVED***
+   *
+   * So this walks each distinct component ONCE and returns everything it
+   * emits. No cross-holding de-duplication is applied or needed, and none
+   * should be added: two lot matches of one transaction can be identical in
+   * every field `DisposalLotMatch` exposes (same portion, same acquisition
+   * instant, same quantity) and production has such a pair, so a set of field
+   * tuples would silently drop a real row.
+   */
+  async forComponentsOf(
+    userId: string,
+    holdingIds: ReadonlyArray<string>,
+    baseCurrencyId: string,
+    at: Date = new Date(),
+    method?: CostBasisMethod
+  ): Promise<DisposalLotMatch[]> {
+    const components: string[][] = [];
+    const covered = new Set<string>();
+    for (const holdingId of holdingIds) {
+      if (covered.has(holdingId)) continue;
+      const componentIds = await this.txRepository.findTransferLinkedHoldingIds(userId, [
+        holdingId,
+      ]);
+      // `findTransferLinkedHoldingIds` walks transfer groups to a fixpoint, so
+      // this set is the whole component and every member of it is now covered.
+      // Seeds sharing a component therefore collapse to one walk — which is
+      // what the representative optimisation was reaching for, and is safe
+      // here because the walk's OUTPUT is no longer thrown away.
+      for (const id of componentIds) covered.add(id);
+      components.push(componentIds);
+    }
+
+    const ledger: DisposalLotMatch[] = [];
+    for (const componentIds of components) {
+      ledger.push(...(await this.walkOneComponent(componentIds, baseCurrencyId, at, method)));
+    }
+    return ledger.sort((a, b) => b.disposedAt.getTime() - a.disposedAt.getTime());
+  }
+
+  /** The walk itself, unfiltered: every row the component emits at or before `at`. */
+  private async walkOneComponent(
+    componentIds: ReadonlyArray<string>,
+    baseCurrencyId: string,
+    at: Date,
+    method?: CostBasisMethod
+  ): Promise<DisposalLotMatch[]> {
+    const ids = [...componentIds];
     const [txsByHolding, holdings, coverageByHolding] = await Promise.all([
-      this.txRepository.findForHoldingsAll(componentIds),
-      this.holdingRepository.findByIds(componentIds),
-      this.coverageRepository.findManyByHoldingIds(componentIds),
+      this.txRepository.findForHoldingsAll(ids),
+      this.holdingRepository.findByIds(ids),
+      this.coverageRepository.findManyByHoldingIds(ids),
     ]);
     const heldTokenByHolding = new Map(holdings.map((h) => [h.id, h.tokenId]));
     const historyByHolding = new Map<string, HistoryCompleteness>(
-      componentIds.map((h) => [h, historyCompletenessOf(coverageByHolding.get(h))])
+      ids.map((h) => [h, historyCompletenessOf(coverageByHolding.get(h))])
     );
 
     const ledger: DisposalLotMatch[] = [];
-    if (componentIds.length === 1) {
-      await this.costBasisService.getCostBasis(holdingId, at, baseCurrencyId, {
-        heldTokenId: heldTokenByHolding.get(holdingId) ?? undefined,
-        historyCompleteness: historyByHolding.get(holdingId) ?? 'unrecorded',
-        txs: txsByHolding.get(holdingId) ?? ([] as ReadonlyArray<HoldingTransaction>),
+    const only = ids.length === 1 ? ids[0] : undefined;
+    if (only !== undefined) {
+      await this.costBasisService.getCostBasis(only, at, baseCurrencyId, {
+        heldTokenId: heldTokenByHolding.get(only) ?? undefined,
+        historyCompleteness: historyByHolding.get(only) ?? 'unrecorded',
+        txs: txsByHolding.get(only) ?? ([] as ReadonlyArray<HoldingTransaction>),
         collect: ledger,
+        ...(method ? { method } : {}),
       });
     } else {
       await this.costBasisService.walkComponent(
-        componentIds,
+        ids,
         txsByHolding,
         at,
         baseCurrencyId,
         heldTokenByHolding,
         undefined,
         historyByHolding,
-        ledger
+        ledger,
+        method
       );
     }
-
-    return ledger
-      .filter((row) => row.holdingId === holdingId)
-      .sort((a, b) => b.disposedAt.getTime() - a.disposedAt.getTime());
+    return ledger;
   }
 }
