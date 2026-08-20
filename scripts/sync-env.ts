@@ -131,6 +131,15 @@ export function renderRootEnv(exampleSrc: string, secret: () => string = generat
   return out.join('\n');
 }
 
+function readIfPresent(path: string): string | null {
+  try {
+    return readFileSync(path, 'utf8');
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+    throw error;
+  }
+}
+
 /**
  * Create the root `.env` if — and only if — there is not one already.
  *
@@ -138,18 +147,28 @@ export function renderRootEnv(exampleSrc: string, secret: () => string = generat
  * than at the call site: a root `.env` holds whatever provider keys its owner
  * pasted in, and this script runs unattended on every `docker compose up`.
  * Returns false without touching anything when the file exists.
+ *
+ * `flag: 'wx'` rather than an `existsSync` guard, so "does it exist" and "do
+ * not overwrite it" are one syscall instead of two with a window between
+ * them. `docker compose up` starts the `env-sync` service while a person may
+ * be running `bun run dev:stack` in the same checkout, and a lost `.env` is
+ * not a recoverable kind of race.
  */
 export function bootstrapRootEnv(envPath: string, examplePath: string): boolean {
-  if (existsSync(envPath)) return false;
-  if (!existsSync(examplePath)) {
+  const example = readIfPresent(examplePath);
+  if (example === null) {
     console.error(
       `❌ neither ${envPath} nor ${examplePath} exists.\n` +
         `   There is nothing to bootstrap from — is this a complete checkout?`
     );
     process.exit(1);
   }
-  const rendered = renderRootEnv(readFileSync(examplePath, 'utf8'));
-  writeFileSync(envPath, rendered, { mode: 0o600 });
+  try {
+    writeFileSync(envPath, renderRootEnv(example), { flag: 'wx', mode: 0o600 });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'EEXIST') return false;
+    throw error;
+  }
   const generated = [...GENERATED_KEYS].join(', ');
   console.log(
     `✅ wrote ${envPath} from .env.example (mode 600) — generated ${generated}.\n` +
@@ -238,7 +257,7 @@ function main(): void {
     // rewrite here (fired every time the `env-sync` compose service reruns,
     // e.g. on backend rebuilds) has repeatedly deadlocked Vite mid-restart.
     // Idempotency fixes that at the source.
-    const current = existsSync(outPath) ? readFileSync(outPath, 'utf8') : null;
+    const current = readIfPresent(outPath);
     const resolved = allowedKeys.filter(
       (k) => root[k] !== undefined || appDefaults[k] !== undefined
     ).length;
