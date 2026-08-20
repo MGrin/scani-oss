@@ -47,5 +47,16 @@ export {
 // `@scani/db` while present in `@scani/db/schema` is that shadow, not a
 // resolver quirk; no table needs a hand-written re-export here.
 export * from './schema/index';
+export {
+  checkSchemaDrift,
+  type DatabaseColumnRow,
+  describeSchemaDrift,
+  diffSchema,
+  expectedSchema,
+  SCHEMA_DRIFT_TIMEOUT_MS,
+  type SchemaDriftOptions,
+  type SchemaDriftReport,
+  SchemaDriftTimeoutError,
+} from './schema-drift';
 export { awaitSchemaReady, type SchemaReadyOptions } from './schema-ready';
 export * from './transaction';
