@@ -177,7 +177,10 @@ async function main() {
     // intentional: progress marker for CI logs, and the one place a person can
     // read which stack this run is about to create and later delete
     console.log(`Starting docker-compose stack (Mode B) — project ${PROJECT}, api ${API_BASE_URL}`);
-    const upStatus = compose(['up', '-d', '--build', ...STACK_SERVICES], { STUB_AI: '1' });
+    const upStatus = compose(['up', '-d', '--build', ...STACK_SERVICES], {
+      STUB_AI: '1',
+      STUB_CHAIN_DATA: '1',
+    });
     if (upStatus !== 0) {
       console.error('Stack failed to start.');
       dumpOneShotLogs();

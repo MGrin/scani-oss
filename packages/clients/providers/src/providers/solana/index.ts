@@ -120,6 +120,15 @@ interface HeliusEnhancedTx {
   accountData?: HeliusAccountData[];
 }
 
+/**
+ * Structural Solana address check. Pure and offline; the chain-stub
+ * provider reuses it so a stubbed boot answers address shape exactly
+ * as the live one does.
+ */
+export function isSolanaAddress(address: string): boolean {
+  return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(address);
+}
+
 export class SolanaProvider
   implements BalanceProvider, TransactionsProvider, AddressValidatorProvider
 {
@@ -153,7 +162,7 @@ export class SolanaProvider
   }
 
   isValidAddress(address: string, _institutionCode?: string): boolean {
-    return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(address);
+    return isSolanaAddress(address);
   }
 
   /**
@@ -167,29 +176,26 @@ export class SolanaProvider
     _ctx: ProviderContext
   ): Promise<boolean> {
     if (!this.isValidAddress(address)) return false;
-    try {
-      const response = await this.limiter.execute(async () =>
-        fetchWithTimeout(this.rpcUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            jsonrpc: '2.0',
-            id: 1,
-            method: 'getSignaturesForAddress',
-            params: [address, { limit: 1 }],
-          }),
-        })
-      );
-      if (!response.ok) return false;
-      const data = (await response.json()) as RpcResponse<unknown[]>;
-      return Array.isArray(data.result) && data.result.length > 0;
-    } catch (err) {
-      this.logger.debug(
-        { address: `${address.substring(0, 10)}...`, error: err },
-        'Solana hasActivity probe failed; treating as no activity'
-      );
-      return false;
+    const response = await this.limiter.execute(async () =>
+      fetchWithTimeout(this.rpcUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'getSignaturesForAddress',
+          params: [address, { limit: 1 }],
+        }),
+      })
+    );
+    if (!response.ok) {
+      throw new Error(`solana rpc: HTTP ${response.status} for getSignaturesForAddress`);
     }
+    const data = (await response.json()) as RpcResponse<unknown[]>;
+    if (!Array.isArray(data.result)) {
+      throw new Error(`solana rpc: no result for getSignaturesForAddress`);
+    }
+    return data.result.length > 0;
   }
 
   async fetchBalances(

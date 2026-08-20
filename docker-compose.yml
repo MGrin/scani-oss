@@ -228,6 +228,11 @@ services:
       S3_SECRET_ACCESS_KEY: minioadmin
       S3_BUCKET: job-uploads-dev
       STUB_AI: "${STUB_AI:-}"
+      # Same for the chain fixtures: wallet-import detection and balance
+      # fetch resolve locally instead of calling blockchain.info / Etherscan /
+      # a Solana RPC, so the E2E gate does not depend on a public API's rate
+      # limiter. Refused in production by every env schema (SC-490).
+      STUB_CHAIN_DATA: "${STUB_CHAIN_DATA:-}"
 
   api:
     profiles: ["full"]
@@ -290,6 +295,11 @@ services:
       # provider in front of the real chain. No effect in prod (the
       # data-provider rejects STUB_AI=1 in production at boot).
       STUB_AI: "${STUB_AI:-}"
+      # Same for the chain fixtures: wallet-import detection and balance
+      # fetch resolve locally instead of calling blockchain.info / Etherscan /
+      # a Solana RPC, so the E2E gate does not depend on a public API's rate
+      # limiter. Refused in production by every env schema (SC-490).
+      STUB_CHAIN_DATA: "${STUB_CHAIN_DATA:-}"
 
   worker:
     profiles: ["full"]
@@ -335,6 +345,11 @@ services:
       # provider in front of the real chain. No effect in prod (the
       # data-provider rejects STUB_AI=1 in production at boot).
       STUB_AI: "${STUB_AI:-}"
+      # Same for the chain fixtures: wallet-import detection and balance
+      # fetch resolve locally instead of calling blockchain.info / Etherscan /
+      # a Solana RPC, so the E2E gate does not depend on a public API's rate
+      # limiter. Refused in production by every env schema (SC-490).
+      STUB_CHAIN_DATA: "${STUB_CHAIN_DATA:-}"
 
   # Frontend SPA dev server. Source is mounted read-write so edits on the
   # host trigger HMR inside the container; node_modules is the shared
