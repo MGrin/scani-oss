@@ -1,4 +1,4 @@
-import { checkEnvIsolatedUrl, isNodeEnvProduction, requiredInProd } from '@scani/config';
+import { checkEnvIsolatedUrl, isNodeEnvProduction, optionalUrl } from '@scani/config';
 import { z } from 'zod';
 
 const envSchema = z.object({
@@ -64,9 +64,18 @@ const envSchema = z.object({
   // signal tight: exchange-balances runs hourly, so 3h means 2 missed cycles.
   STALE_SYNC_THRESHOLD_HOURS: z.coerce.number().int().positive().default(3),
 
-  // Sentry — hard-required in prod so a misconfigured deploy fails
-  // loudly; optional in dev. SDK init gates on DSN presence regardless.
-  SENTRY_DSN: requiredInProd(z.string().url(), 'SENTRY_DSN'),
+  // Sentry — optional, empty string treated as unset (see `optionalUrl`).
+  // SDK init gates on DSN presence regardless.
+  //
+  // This was `requiredInProd` until SC-453, which is how the api and the
+  // data-provider already had it before they were changed for exactly this
+  // reason. The worker being the odd one out meant a self-hoster with no
+  // Sentry account got a stack where everything came up healthy except the
+  // worker, which restart-looped on a variable the compose file passes as
+  // `${SENTRY_DSN:-}` — an empty string, which `requiredInProd` rejects.
+  // Jobs then queue and never run, and nothing in the UI says why.
+  // Managed deployments enforce the DSN in their own pipeline, not here.
+  SENTRY_DSN: optionalUrl,
   SENTRY_ENVIRONMENT: z.string().optional(),
   SENTRY_RELEASE: z.string().optional(),
 
