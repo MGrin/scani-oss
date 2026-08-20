@@ -189,6 +189,19 @@ port. The prod `frontend-app` image exposes `/healthz` (nginx alive),
 not to be confused with `/api/health/*` (which goes through to the
 api).
 
+## Local development stack
+
+Set by `scripts/dev-stack.ts` and by the e2e runner (`apps/e2e/scripts/run.ts`)
+from the checkout's own path, so two checkouts can hold a stack at once
+(SC-491, SC-493). Nobody sets them by hand — but a value already in the
+environment wins, because a person driving several stacks has a reason.
+
+| Variable | Read by | What it does |
+|---|---|---|
+| `COMPOSE_PROJECT_NAME` | `docker compose` | Namespaces a checkout's containers, volumes and networks. Left unset, compose names the project after the directory leaf — `scani` in every worktree and in the primary checkout — so a second `up` does not conflict with the first, it ADOPTS and recreates its containers, and a `down -v` deletes its volumes. |
+| `SCANI_STACK_TAG` | compose files that pin the tag of a built image | One image tag per checkout, so the tree that built last does not decide which source every other stack runs. |
+| `<SERVICE>_HOST_PORT` | `docker-compose.yml` | One host port per published service (`POSTGRES_HOST_PORT`, `API_HOST_PORT`, `FRONTEND_HOST_PORT`, …). The primary checkout keeps the documented defaults; a linked worktree is offset by a multiple of 100. |
+
 ## Testing-only
 
 These vars are read **only** by the e2e test runner under `apps/e2e/`
