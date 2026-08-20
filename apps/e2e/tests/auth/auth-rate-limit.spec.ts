@@ -1,25 +1,25 @@
-import { expect, rateLimitIdentity, test } from '../../fixtures/test';
+import { expect, test } from '../../fixtures/test';
 
 const API_BASE_URL = process.env.API_BASE_URL ?? 'http://localhost:3011';
 
 /**
  * The per-client cap on auth attempts, asserted rather than dodged.
  *
- * Before SC-489 the suite had no test for this limiter at all: it only ever
- * met it by accident, as a 429 that `fixtures/auth.ts` quietly retried past.
- * That is the shape a required CI job must not have — the limiter could have
- * stopped working entirely and every run would still be green.
+ * Before SC-489 the suite had no test for this limiter at all: it only ever met
+ * it by accident, as a 429 that `fixtures/auth.ts` quietly retried past. That
+ * is the shape a required CI job must not have — the limiter could have stopped
+ * working entirely and every run would still have been green.
  *
- * It is deterministic because it owns its identity. `send-verification-otp`
- * and `sign-in` share one 6-per-hour budget per client IP
- * (`signupLimiter`, `apps/backend/api/src/index.ts`), and this test spends
- * exactly eight of its own, which no other test can touch or reset.
+ * It is deterministic because it owns its identity. `send-verification-otp` and
+ * `sign-in` share one 6-per-hour budget per client
+ * (`signupLimiter`, `apps/backend/api/src/index.ts`), this test is its own
+ * client, and it signs in nowhere else — so all six admitted attempts below are
+ * its own and no sibling can spend or reset them.
  */
 test.describe('auth: per-client attempt cap', () => {
   test('7th auth attempt from one client within the hour is rejected', async ({
     page,
   }, testInfo) => {
-    const identity = rateLimitIdentity(testInfo, 'signup-cap');
     const email = `e2e-cap-${testInfo.testId}-${testInfo.retry}@example.com`;
 
     const statuses: number[] = [];
@@ -28,11 +28,7 @@ test.describe('auth: per-client attempt cap', () => {
         `${API_BASE_URL}/api/auth/email-otp/send-verification-otp`,
         {
           data: { email, type: 'sign-in' },
-          headers: {
-            'content-type': 'application/json',
-            origin: 'http://localhost:5173',
-            'x-real-ip': identity,
-          },
+          headers: { 'content-type': 'application/json', origin: 'http://localhost:5173' },
         }
       );
       statuses.push(res.status());

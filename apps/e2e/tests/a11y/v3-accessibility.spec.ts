@@ -118,7 +118,9 @@ test.beforeAll(async ({ browser }, testInfo) => {
   // `isolatedContextOptions` gives this file a rate-limit identity of its own:
   // the walk is seventeen routes of API traffic and the `context` fixture's
   // options do not reach a context the test built itself, so without it every
-  // request here lands in the identity every other spec shares (SC-489).
+  // request here lands in the identity every other spec shares (SC-489). It
+  // must come after `...descriptor`, which carries the device's own
+  // User-Agent — the identity is appended to that.
   context = await browser.newContext({
     ...descriptor,
     baseURL: BASE_URL,
