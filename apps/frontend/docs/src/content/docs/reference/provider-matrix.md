@@ -69,6 +69,7 @@ leave your api.
 | Perplexity | `PERPLEXITY_API_KEY` | AI inference | Token-identity enrichment helper. Optional. |
 | DeepSeek | `DEEPSEEK_API_KEY` | AI inference | Token-identity enrichment helper. Optional. |
 | AI stub | `STUB_AI=1` | AI inference (stub) | Test-only. Returns a fixed holdings payload so e2e tests don't depend on a real AI provider. Refused in production by the data-provider env schema. |
+| Chain stub | `STUB_CHAIN_DATA=1` | Balances, transactions, address validation (stub) | Test-only. Answers every chain from a local fixture so e2e tests don't depend on a public chain API's rate limiter. Address-shape checks are the real providers' own, so a stubbed boot cannot disagree with a live one about what a valid address looks like. Refused in production by the api, worker and data-provider env schemas. |
 
 ## Picking what to enable
 

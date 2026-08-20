@@ -68,6 +68,15 @@ interface EtherscanResponse<T> {
  */
 type TokenTxResultRow = EvmTokenTxRow;
 
+/**
+ * Structural EVM address check. Pure and offline; the chain-stub
+ * provider reuses it so a stubbed boot answers address shape exactly
+ * as the live one does.
+ */
+export function isEvmAddress(address: string): boolean {
+  return /^0x[a-fA-F0-9]{40}$/.test(address);
+}
+
 export class EtherscanProvider
   extends BaseEvmProvider
   implements BalanceProvider, TransactionsProvider, AddressValidatorProvider
@@ -92,7 +101,7 @@ export class EtherscanProvider
   // ============================================================
 
   isValidAddress(address: string, _institutionCode?: string): boolean {
-    return /^0x[a-fA-F0-9]{40}$/.test(address);
+    return isEvmAddress(address);
   }
 
   canFetchBalances(institutionCode: string): boolean {
@@ -123,29 +132,34 @@ export class EtherscanProvider
     if (!this.isValidAddress(address)) return false;
     const chain = findChainConfig(institutionCode);
     if (!chain) return false;
-    try {
-      const apiKey = this.defaultApiKey ?? '';
-      const params = new URLSearchParams({
-        chainid: String(chain.chainId),
-        module: 'account',
-        action: 'txlist',
-        address,
-        startblock: '0',
-        endblock: '99999999',
-        page: '1',
-        offset: '1',
-        sort: 'desc',
-      });
-      if (apiKey) params.set('apikey', apiKey);
-      const response = await this.limiter.execute(async () =>
-        fetchWithTimeout(`${ETHERSCAN_V2_URL}?${params.toString()}`)
-      );
-      if (!response.ok) return false;
-      const data = (await response.json()) as EtherscanResponse<unknown[]>;
-      return data.status === '1' && Array.isArray(data.result) && data.result.length > 0;
-    } catch {
-      return false;
+    const apiKey = this.defaultApiKey ?? '';
+    const params = new URLSearchParams({
+      chainid: String(chain.chainId),
+      module: 'account',
+      action: 'txlist',
+      address,
+      startblock: '0',
+      endblock: '99999999',
+      page: '1',
+      offset: '1',
+      sort: 'desc',
+    });
+    if (apiKey) params.set('apikey', apiKey);
+    const response = await this.limiter.execute(async () =>
+      fetchWithTimeout(`${ETHERSCAN_V2_URL}?${params.toString()}`)
+    );
+    if (!response.ok) {
+      throw new Error(`etherscan: HTTP ${response.status} for chain ${chain.chainId}`);
     }
+    const data = (await response.json()) as EtherscanResponse<unknown[]>;
+    // Etherscan answers an empty history with `status: '0'` and an empty
+    // `result` array, and an error — rate limit, bad key — with `status:
+    // '0'` and a `result` STRING carrying the reason. The array is what
+    // separates "we asked and there is nothing" from "we could not ask".
+    if (!Array.isArray(data.result)) {
+      throw new Error(`etherscan: ${data.message ?? 'request failed'} (${String(data.result)})`);
+    }
+    return data.result.length > 0;
   }
 
   /**

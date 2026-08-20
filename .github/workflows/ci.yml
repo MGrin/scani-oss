@@ -249,6 +249,11 @@ jobs:
     # STUB_AI=1 short-circuits OpenAI/Perplexity/DeepSeek calls in the
     # data-provider so screenshot-parse + AI-touching specs are
     # deterministic and don't need network keys.
+    # STUB_CHAIN_DATA=1 does the same for chains. Without it the
+    # wallet-import spec imported the Bitcoin genesis address from LIVE
+    # blockchain.info, so this required job — `CI Success` is gated on it,
+    # and the ruleset is gated on `CI Success` — depended on a third
+    # party's rate limiter and the runner's IP luck (SC-490).
     name: E2E (Playwright)
     needs: detect-changes
     if: ${{ needs.detect-changes.outputs.code == 'true' }}
@@ -273,6 +278,7 @@ jobs:
         run: cp .env.example .env && bun dev:stack
         env:
           STUB_AI: "1"
+          STUB_CHAIN_DATA: "1"
 
       # `docker compose up` reports only `service "x" didn't complete
       # successfully: exit 1` and discards the container's own output, so a

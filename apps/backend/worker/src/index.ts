@@ -27,6 +27,7 @@ import { bitcoinFactory } from '@scani/providers/providers/bitcoin';
 import { bitgetFactory } from '@scani/providers/providers/bitget';
 import { bitstampFactory } from '@scani/providers/providers/bitstamp';
 import { bybitFactory } from '@scani/providers/providers/bybit';
+import { chainStubFactory } from '@scani/providers/providers/chain-stub';
 import { coinbaseFactory } from '@scani/providers/providers/coinbase';
 import { coingeckoFactory } from '@scani/providers/providers/coingecko';
 import { defillamaFactory } from '@scani/providers/providers/defillama';
@@ -210,6 +211,13 @@ async function main(): Promise<void> {
         yahooFinanceFactory,
         // Chain providers — public-endpoint balance + address-validator
         // dispatch for wallet sync flows.
+        // STUB_CHAIN_DATA=1 registers a fixture chain provider FIRST so
+        // wallet-import detection + balance fetch resolve locally instead
+        // of calling blockchain.info / Etherscan / a Solana RPC. The env
+        // schemas refuse STUB_CHAIN_DATA=1 in production, so a misconfigured
+        // prod deploy crashes at boot rather than serving fixture balances
+        // (SC-490).
+        ...(process.env.STUB_CHAIN_DATA === '1' ? [chainStubFactory] : []),
         etherscanFactory,
         bitcoinFactory,
         solanaFactory,
