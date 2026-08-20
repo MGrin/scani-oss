@@ -1,6 +1,5 @@
-import { expect, test } from '@playwright/test';
 import { signIn } from '../../fixtures/auth';
-import { resetAuthRateLimit } from '../../fixtures/redis';
+import { expect, test } from '../../fixtures/test';
 
 const API_BASE_URL = process.env.API_BASE_URL ?? 'http://localhost:3011';
 const ORIGIN = 'http://localhost:5173';
@@ -31,10 +30,6 @@ interface VaultListRow {
  * suffix keeps debug output unambiguous).
  */
 test.describe('vaults: create + list', () => {
-  test.beforeEach(async () => {
-    await resetAuthRateLimit();
-  });
-
   test('user creates a vault and it appears in vaults.getAll', async ({ page }, testInfo) => {
     await signIn({ page, testInfo });
 

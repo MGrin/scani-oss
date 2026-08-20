@@ -28,6 +28,40 @@ at a phone on demand:
 cd apps/e2e && bunx playwright test --project=iphone tests/holdings
 ```
 
+## Rate-limit isolation — why specs import `test` from `fixtures/test`
+
+The api rate-limits inbound requests per client IP. Nothing sits in front of the
+compose stack, so `defaultInflowKey` falls all the way through to
+`user-agent|origin|method` — one identity for every test in a Playwright
+project, sharing one 300-request/minute bucket. `waitForJob` polls four times a
+second and `workers: 4` runs four tests at once, so the suite aimed roughly 960
+requests a minute at a 300/minute budget. Which test got the 429 depended only
+on what its siblings had already spent, which is why the failing set was
+different every run and why six CI runs across two branches could not agree on a
+cause (SC-489).
+
+Every test now carries a User-Agent of its own — the project's, with an
+identity appended as a product token — so each gets the whole budget alone. It
+rides on the UA rather than a header of its own for a reason: the SPA's calls to
+the api are cross-origin, so a custom request header turns every one of them
+into a preflight the api's `allowedHeaders` does not permit, and the app stops
+being able to fetch its own session. That is not theoretical; it is what the
+first attempt at this did.
+
+Three rules keep it true; `tests/lib/rate-limit-isolation.spec.ts` enforces the
+first two:
+
+1. Import `test` and `expect` from `../../fixtures/test`, never from
+   `@playwright/test`. That import is what attaches the identity.
+2. A context built by hand — `browser.newContext()` — needs
+   `isolatedContextOptions(testInfo)`, spread *after* any device descriptor.
+   The `context` fixture's options do not reach it.
+3. Nothing retries a 429 and nothing flushes another test's budget. This makes
+   the limiters *isolated*, not lenient: every cap is still enforced exactly as
+   configured, and `tests/auth/auth-rate-limit.spec.ts` asserts one of them
+   fires — coverage the suite did not have while it was quietly retrying past
+   them.
+
 ## Accessibility gate — `tests/a11y`
 
 The §2.6 floor of the v3 research brief, enforced on every v3 surface. Runs in

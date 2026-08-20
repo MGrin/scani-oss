@@ -1,12 +1,9 @@
-import { expect, test } from '@playwright/test';
 import { mailpit } from '../../fixtures/mailpit';
-import { resetAuthRateLimit } from '../../fixtures/redis';
+import { expect, test } from '../../fixtures/test';
 
 const API_BASE_URL = process.env.API_BASE_URL ?? 'http://localhost:3011';
 
 test.describe('auth: magic-link sign-in', () => {
-  test.beforeEach(resetAuthRateLimit);
-
   test('clicking the magic link in the email signs the user in', async ({ page }, testInfo) => {
     const email = `e2e-ml-${testInfo.testId}-${Date.now()}@example.com`;
 
