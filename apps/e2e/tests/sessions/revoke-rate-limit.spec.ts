@@ -1,14 +1,20 @@
-import { expect, test } from '@playwright/test';
 import { signIn } from '../../fixtures/auth';
-import { resetAuthRateLimit } from '../../fixtures/redis';
+import { expect, test } from '../../fixtures/test';
 
 const API_BASE_URL = process.env.API_BASE_URL ?? 'http://localhost:3011';
 
+/**
+ * The per-user cap on `sessions.revoke`.
+ *
+ * Nothing resets the limiter before this runs, and that is the point: the
+ * budget is keyed on `userId` and `signIn` mints a user nobody else has, so the
+ * bucket is empty because it is this test's alone. It used to reset the whole
+ * `rl:session-revoke:*` namespace, and so did twenty-five specs that have
+ * nothing to do with sessions — any one of them entering its `beforeEach`
+ * during the twelve calls below flushed the budget mid-loop, and the eleventh
+ * call sailed through to the ownership check and returned 404 (SC-489).
+ */
 test.describe('sessions: revoke rate limit', () => {
-  test.beforeEach(async () => {
-    await resetAuthRateLimit();
-  });
-
   test('11th sessions.revoke call within a minute returns 429', async ({ page }, testInfo) => {
     await signIn({ page, testInfo });
 

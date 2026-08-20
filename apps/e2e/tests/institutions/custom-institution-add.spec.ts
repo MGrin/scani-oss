@@ -1,6 +1,5 @@
-import { expect, test } from '@playwright/test';
 import { signIn } from '../../fixtures/auth';
-import { resetAuthRateLimit } from '../../fixtures/redis';
+import { expect, test } from '../../fixtures/test';
 
 const API_BASE_URL = process.env.API_BASE_URL ?? 'http://localhost:3011';
 const ORIGIN = 'http://localhost:5173';
@@ -38,10 +37,6 @@ interface InstitutionRow {
  * covered by the manual-entry / file-import specs in Task 15.
  */
 test.describe('institutions: custom add via OG metadata', () => {
-  test.beforeEach(async () => {
-    await resetAuthRateLimit();
-  });
-
   test('user fetches OG metadata then creates a custom institution', async ({ page }, testInfo) => {
     await signIn({ page, testInfo });
 
@@ -71,7 +66,16 @@ test.describe('institutions: custom add via OG metadata', () => {
     // project name gives deterministic, collision-free names.
     const ogTitle = ogBody.result.data.siteName || ogBody.result.data.title;
     void ogTitle; // exercised above; not used for name to keep test deterministic
-    const projectTag = `${testInfo.testId}-${testInfo.project.name}`;
+    // `Date.now()` is load-bearing, not decoration. `institutions.name` is
+    // matched globally by `ensureAccount`, and testIds recycle across
+    // sequential `playwright test` invocations — so a name built from the
+    // testId alone makes this spec pass exactly once against a given database
+    // and return `createdInstitution: false` on every run after. That is
+    // invisible in CI, which gets a fresh database each run, and it is the
+    // first thing you hit when you try to measure a pass rate by running the
+    // suite repeatedly (SC-489). The `website` field dodged the same problem
+    // by being omitted; the name cannot be.
+    const projectTag = `${testInfo.testId}-${testInfo.project.name}-${Date.now()}`;
     const institutionName = `e2e-CustomInst-${projectTag}`;
 
     // Step 2: pick the first available institution type — any type

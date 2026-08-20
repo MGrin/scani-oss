@@ -1,6 +1,5 @@
-import { expect, test } from '@playwright/test';
 import { signIn } from '../../fixtures/auth';
-import { resetAuthRateLimit } from '../../fixtures/redis';
+import { expect, test } from '../../fixtures/test';
 import { waitForJob } from '../../fixtures/ui';
 
 const API_BASE_URL = process.env.API_BASE_URL ?? 'http://localhost:3011';
@@ -37,10 +36,6 @@ test.describe('wallet-import: stable mainnet address import', () => {
   // Depends on Bitcoin RPC reachability (mempool.space / public node).
   // Retry once on network flake.
   test.describe.configure({ retries: 1 });
-
-  test.beforeEach(async () => {
-    await resetAuthRateLimit();
-  });
 
   test('paste stable mainnet address → enqueue import → job completes with BTC holding', async ({
     page,

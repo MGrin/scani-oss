@@ -1,6 +1,5 @@
-import { expect, test } from '@playwright/test';
 import { signIn } from '../../fixtures/auth';
-import { resetAuthRateLimit } from '../../fixtures/redis';
+import { expect, test } from '../../fixtures/test';
 import { createAccount, createHolding } from '../../fixtures/ui';
 
 const API_BASE_URL = process.env.API_BASE_URL ?? 'http://localhost:3011';
@@ -18,10 +17,6 @@ interface HoldingsListResponse {
 }
 
 test.describe('holdings: update', () => {
-  test.beforeEach(async () => {
-    await resetAuthRateLimit();
-  });
-
   test('user can update balance; change persists across reload', async ({ page }, testInfo) => {
     await signIn({ page, testInfo });
     const account = await createAccount(page, { name: `e2e-acct-${testInfo.testId}` });
