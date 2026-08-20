@@ -76,7 +76,9 @@ import { Container } from 'typedi';
 import '@scani/jobs';
 import {
   awaitSchemaReady,
+  checkSchemaDrift,
   db,
+  describeSchemaDrift,
   endConnectionTracking,
   getActiveConnectionsCount,
   getConnectionMonitoringStats,
@@ -792,6 +794,29 @@ app
       checks.db = { ok: true, latencyMs: Math.round(performance.now() - t0) };
     } catch (err) {
       checks.db = { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+
+    // SC-480. `SELECT 1` above proves a connection, and proves nothing about
+    // the schema on the other end of it: it names no column of any table the
+    // deploy just changed, so a code/schema mismatch is invisible to it BY
+    // CONSTRUCTION. On 2026-08-20 a deploy that omitted the `migrate` target
+    // shipped an api selecting `users.cost_basis_method` against a database
+    // without it; this endpoint answered 200, the deploy smoke passed, and
+    // sign-in — the one flow that reads `users` by email — failed for six
+    // hours. This is the check that would have failed instead.
+    //
+    // Only run when the connection is up: against an unreachable database it
+    // reports every table missing, which reads as catastrophic drift and is
+    // really just `checks.db` again, said louder.
+    if (checks.db.ok) {
+      try {
+        const drift = await checkSchemaDrift();
+        checks.schema = drift.ok
+          ? { ok: true, latencyMs: drift.latencyMs }
+          : { ok: false, latencyMs: drift.latencyMs, error: describeSchemaDrift(drift) };
+      } catch (err) {
+        checks.schema = { ok: false, error: err instanceof Error ? err.message : String(err) };
+      }
     }
 
     const tRedis = performance.now();
