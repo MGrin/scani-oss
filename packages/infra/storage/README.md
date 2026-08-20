@@ -80,8 +80,8 @@ is to make sure the `S3_*` vars are set before the first storage call.
 ## Why this package owns its env schema
 
 Three apps used to declare `R2_*` vars in their own `env.ts`, with
-matching values in `.env.example` and docker-compose.yml — and their
-boot code each ran an identical "if env is set, configure storage"
+matching values in `.env.example`, fly.toml, docker-compose.yml — and
+their boot code each ran an identical "if env is set, configure storage"
 block. That's three duplications of the same contract, and any drift
 silently breaks one tier. Owning the env shape inside the package means:
 

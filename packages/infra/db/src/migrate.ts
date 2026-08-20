@@ -11,10 +11,9 @@
 import { existsSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { drizzle } from 'drizzle-orm/postgres-js';
-import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import postgres from 'postgres';
 import { decideTarget, describeTarget, formatTarget, refusalMessage } from './migrate-target';
+import { applyMigrations, parseAssumeAppliedThrough } from './migration-runner';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -105,8 +104,6 @@ async function runMigrations() {
     onnotice: () => {}, // Suppress notices during migration
   });
 
-  const db = drizzle(migrationClient);
-
   try {
     // Source-run (`bun src/migrate.ts`): SQL files sit next to this script
     // at `__dirname/migrations`. Compiled-run (`bun build --compile`): the
@@ -123,9 +120,16 @@ async function runMigrations() {
     }
     console.log(`📂 Migrations folder: ${migrationsFolder}`);
 
-    await migrate(db, { migrationsFolder });
+    const result = await applyMigrations(migrationClient, {
+      folder: migrationsFolder,
+      assumeAppliedThrough: parseAssumeAppliedThrough(process.argv),
+      log: (line) => console.log(line),
+    });
 
-    console.log('✅ Migrations completed successfully');
+    console.log(
+      `✅ Migrations completed successfully — ${result.applied.length} applied, ` +
+        `${result.alreadyApplied.length} already present`
+    );
 
     // Close the connection
     await migrationClient.end();

@@ -12,15 +12,16 @@ import { Numeric } from '@scani/ui/v3/components/Numeric';
 import { PageLayout } from '@scani/ui/v3/components/PageLayout';
 import { ArrowLeft, Plus } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { Trans, useTranslation } from 'react-i18next';
 import { Link, useNavigate, useParams } from 'react-router-dom';
+import { invalidateVaultQueries } from '@/hooks/invalidatePortfolioQueries';
 import { trpc } from '@/lib/trpc';
-import { invalidateVaultQueries } from '@/v2/hooks/invalidatePortfolioQueries';
 import {
   optimisticDetachVaultHolding,
   optimisticPatchVault,
   optimisticRemoveVaults,
   optimisticSetVaultHoldingPercentage,
-} from '@/v2/hooks/optimisticUpdates';
+} from '@/v3/hooks/optimisticUpdates';
 import { Field } from '../components/form/Field';
 import { GroupColorChoice } from '../components/groups/GroupColorChoice';
 import { MemberPicker } from '../components/membership/MemberPicker';
@@ -52,6 +53,7 @@ import { compareVaultHoldings, vaultIsMet, vaultProgress, vaultRemaining } from 
  * invalidate is not optional.
  */
 export function VaultDetailPage() {
+  const { t } = useTranslation();
   const { id = '' } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const utils = trpc.useUtils();
@@ -78,11 +80,11 @@ export function VaultDetailPage() {
       }),
     onSuccess: () => {
       setDraft(null);
-      showSuccess('Vault updated');
+      showSuccess(t('v3.vaults.detail.toast.updated'));
     },
     onError: (error, _vars, ctx) => {
       ctx?.restore();
-      showError(error, 'Updating the vault');
+      showError(error, t('v3.vaults.detail.toast.updating'));
     },
     onSettled: () => void invalidateVaultQueries(utils),
   });
@@ -90,12 +92,12 @@ export function VaultDetailPage() {
   const deleteVault = trpc.vaults.delete.useMutation({
     onMutate: ({ id: vaultId }) => optimisticRemoveVaults(utils, [vaultId]),
     onSuccess: () => {
-      showSuccess('Vault deleted');
+      showSuccess(t('v3.vaults.detail.toast.deleted'));
       navigate(V3_ROUTES.vaults, { replace: true });
     },
     onError: (error, _vars, ctx) => {
       ctx?.restore();
-      showError(error, 'Deleting the vault');
+      showError(error, t('v3.vaults.detail.toast.deleting'));
     },
     // `'all'`, so the destination list refetches even though it is not mounted
     // yet at settle time.
@@ -104,10 +106,10 @@ export function VaultDetailPage() {
 
   const detach = trpc.vaults.detachHolding.useMutation({
     onMutate: ({ vaultId, holdingId }) => optimisticDetachVaultHolding(utils, vaultId, holdingId),
-    onSuccess: () => showSuccess('Holding removed from the vault'),
+    onSuccess: () => showSuccess(t('v3.vaults.detail.toast.holdingRemoved')),
     onError: (error, _vars, ctx) => {
       ctx?.restore();
-      showError(error, 'Removing the holding');
+      showError(error, t('v3.vaults.detail.toast.removingHolding'));
     },
     onSettled: () => void invalidateVaultQueries(utils),
   });
@@ -115,10 +117,10 @@ export function VaultDetailPage() {
   const setPercentage = trpc.vaults.updateHoldingPercentage.useMutation({
     onMutate: ({ vaultId, holdingId, percentage }) =>
       optimisticSetVaultHoldingPercentage(utils, vaultId, holdingId, percentage),
-    onSuccess: () => showSuccess('Share updated'),
+    onSuccess: () => showSuccess(t('v3.vaults.detail.toast.shareUpdated')),
     onError: (error, _vars, ctx) => {
       ctx?.restore();
-      showError(error, 'Updating the share');
+      showError(error, t('v3.vaults.detail.toast.updatingShare'));
     },
     onSettled: () => void invalidateVaultQueries(utils),
   });
@@ -139,9 +141,7 @@ export function VaultDetailPage() {
     return (
       <PageLayout measure="wide">
         <BackLink />
-        <p className="text-body text-muted-foreground">
-          This vault is not on your list. It may have been deleted, or the link may be out of date.
-        </p>
+        <p className="text-body text-muted-foreground">{t('v3.vaults.detail.notFound')}</p>
       </PageLayout>
     );
   }
@@ -178,26 +178,34 @@ export function VaultDetailPage() {
       <Block className="flex flex-col gap-3 p-4">
         <StatTile
           emphasis="hero"
-          label="Saved"
+          label={t('v3.vaults.detail.saved')}
           value={<Numeric value={vault.currentAmount} currency={vault.currencySymbol} />}
         />
         <Progress value={progress} className="h-2" />
         <p className="text-caption text-muted-foreground">
           {vaultIsMet(vault) ? (
-            `Target reached — ${progress.toFixed(0)}% of the goal`
+            t('v3.vaults.detail.targetReached', { percent: progress.toFixed(0) })
           ) : (
-            <>
-              <Numeric value={vaultRemaining(vault)} currency={vault.currencySymbol} />
-              {' still to go, of a '}
-              <Numeric value={vault.targetAmount} currency={vault.currencySymbol} />
-              {' target'}
-            </>
+            // A sentence with two figures inside it, so `<Trans>` rather
+            // than three concatenated fragments — a translator needs to move
+            // the amounts, not just the words between them.
+            <Trans
+              i18nKey="v3.vaults.detail.stillToGo"
+              components={{
+                remaining: (
+                  <Numeric value={vaultRemaining(vault)} currency={vault.currencySymbol} />
+                ),
+                target: <Numeric value={vault.targetAmount} currency={vault.currencySymbol} />,
+              }}
+            />
           )}
         </p>
       </Block>
 
       <Block>
-        <BlockHeader title={`Counting toward this vault (${vault.holdingsCount || 0})`} />
+        <BlockHeader
+          title={t('v3.vaults.detail.countingToward', { count: vault.holdingsCount || 0 })}
+        />
         {holdings.length > 0 ? (
           <DataRowList className="border-border border-t">
             {holdings.map((holding) => (
@@ -214,10 +222,7 @@ export function VaultDetailPage() {
             ))}
           </DataRowList>
         ) : (
-          <p className="px-4 pb-4 text-body text-muted-foreground">
-            Nothing counts toward this vault yet. Attach a holding and it will start contributing to
-            the goal.
-          </p>
+          <p className="px-4 pb-4 text-body text-muted-foreground">{t('v3.vaults.detail.empty')}</p>
         )}
 
         {attaching ? (
@@ -234,16 +239,16 @@ export function VaultDetailPage() {
           <div className="px-4 pt-3 pb-4">
             <Button variant="outline" size="sm" onClick={() => setAttaching(true)}>
               <Plus className="mr-2 size-4" aria-hidden="true" />
-              Attach a holding
+              {t('v3.vaults.detail.attachHolding')}
             </Button>
           </div>
         )}
       </Block>
 
       <Block>
-        <BlockHeader title="Details" />
+        <BlockHeader title={t('v3.vaults.detail.details')} />
         <div className="flex flex-col gap-3 border-border border-t p-4">
-          <Field label="Name" htmlFor="vault-name">
+          <Field label={t('v3.vaults.detail.name')} htmlFor="vault-name">
             <Input
               id="vault-name"
               value={current.name}
@@ -255,7 +260,11 @@ export function VaultDetailPage() {
            *  unit every stored figure on this vault is already denominated in,
            *  so changing it would silently reinterpret the target and the
            *  saved amount rather than convert them. */}
-          <Field label="Target" htmlFor="vault-target" hint={`In ${vault.currencySymbol}`}>
+          <Field
+            label={t('v3.vaults.detail.target')}
+            htmlFor="vault-target"
+            hint={t('v3.vaults.detail.targetHint', { symbol: vault.currencySymbol })}
+          >
             <AmountInput
               id="vault-target"
               value={current.targetAmount}
@@ -264,7 +273,7 @@ export function VaultDetailPage() {
               disabled={updateVault.isPending}
             />
           </Field>
-          <Field label="Colour">
+          <Field label={t('v3.vaults.detail.colour')}>
             <GroupColorChoice
               value={current.color}
               onChange={(color) => patch({ color })}
@@ -286,7 +295,7 @@ export function VaultDetailPage() {
                 })
               }
             >
-              Save changes
+              {t('v3.vaults.detail.saveChanges')}
             </Button>
             {dirty ? (
               <Button
@@ -295,14 +304,14 @@ export function VaultDetailPage() {
                 disabled={updateVault.isPending}
                 onClick={() => setDraft(null)}
               >
-                Discard
+                {t('v3.vaults.detail.discard')}
               </Button>
             ) : null}
             {nameIsEmpty ? (
-              <p className="text-caption text-muted-foreground">To save: give the vault a name.</p>
+              <p className="text-caption text-muted-foreground">{t('v3.vaults.detail.needName')}</p>
             ) : targetIsInvalid ? (
               <p className="text-caption text-muted-foreground">
-                To save: set a target above zero.
+                {t('v3.vaults.detail.needTarget')}
               </p>
             ) : null}
           </div>
@@ -310,23 +319,20 @@ export function VaultDetailPage() {
       </Block>
 
       <Block>
-        <BlockHeader title="Danger zone" />
+        <BlockHeader title={t('v3.vaults.detail.dangerZone')} />
         <div className="p-4">
           <ConfirmAction
-            label="Delete vault"
-            confirmLabel="Delete this vault"
+            label={t('v3.vaults.detail.deleteTrigger')}
+            confirmLabel={t('v3.vaults.detail.deleteCommit')}
             destructive
             open={confirmingDelete}
             onOpenChange={setConfirmingDelete}
             isPending={deleteVault.isPending}
             onConfirm={() => deleteVault.mutate({ id })}
-            consequence={
-              <>
-                “{vault.name}” and its target disappear. The {holdings.length}{' '}
-                {holdings.length === 1 ? 'holding' : 'holdings'} attached to it are not deleted —
-                they simply stop counting toward a goal.
-              </>
-            }
+            consequence={t('v3.vaults.detail.deleteConsequence', {
+              count: holdings.length,
+              name: vault.name,
+            })}
           />
         </div>
       </Block>
@@ -335,11 +341,12 @@ export function VaultDetailPage() {
 }
 
 function BackLink() {
+  const { t } = useTranslation();
   return (
     <Button variant="ghost" size="sm" asChild className="-ml-2 self-start">
       <Link to={V3_ROUTES.vaults}>
         <ArrowLeft className="mr-2 size-4" aria-hidden="true" />
-        Vaults
+        {t('v3.vaults.detail.backToVaults')}
       </Link>
     </Button>
   );

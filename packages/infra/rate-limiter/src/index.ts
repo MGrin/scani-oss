@@ -27,6 +27,39 @@ export {
   type OutflowLimiterConfig,
   OutflowRateLimiterRegistry,
 } from './outflow/registry';
+// SC-225 / SC-321. A bounded Redis PING and the tracker that says how long a
+// Redis has been unreachable and whether it is the kind that recovers.
+//
+// They live here rather than in `@scani/queue` — where they started — because
+// the data-provider needs them and is not a queue consumer: taking them from
+// there would have pulled BullMQ into a service with no queue, to answer a
+// health probe. Both files are pure logic with no imports at all, and "is the
+// upstream reachable, and for how long has it not been" is the same
+// boundary-protection question as the limiters and breakers beside them.
+//
+// The probe that could not see this is what made SC-321 a production
+// incident: the deploy's post-worker recycle verified the data-provider
+// against `/ready`, which answers a bare boolean, so a machine that came back
+// on an unresolvable Redis name looked healthy and never got its one retry.
+export { type PingableRedis, pingWithin, RedisPingTimeoutError } from './ping-within';
+export {
+  createReachabilityTracker,
+  isNameResolutionError,
+  observeRedisReachability,
+  type ReachabilityLogger,
+  type RedisEventSource,
+  type RedisReachability,
+} from './redis-reachability';
+// SC-327. The tracker above says a Redis has been unreachable for N ms; this
+// decides when N means nobody is coming and raises it to Sentry. Every
+// consumer runs one against its own connection, because the failure this
+// catches strands ONE machine of a load-balanced pair as readily as all of
+// them, and a probe fetching a public hostname cannot see that.
+export {
+  type StrandReport,
+  startRedisStrandWatchdog,
+  strandedRedisError,
+} from './redis-strand-watchdog';
 // Resilience primitives — sit in this package alongside rate-limiting
 // because both are upstream-boundary protections. Limiters cap call
 // rate; circuit breakers stop calling when the upstream is clearly

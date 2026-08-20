@@ -99,7 +99,7 @@ describe('SolanaProvider', () => {
         );
       }
       throw new Error('Unexpected RPC call');
-    }) as typeof fetch;
+    }) as unknown as typeof fetch;
     try {
       const out = await p.fetchBalances(ctx as never);
       expect(rpcCalls).toBe(2);
@@ -139,7 +139,7 @@ describe('SolanaProvider', () => {
     globalThis.fetch = (async () => {
       calls += 1;
       return new Response('[]', { status: 200 });
-    }) as typeof fetch;
+    }) as unknown as typeof fetch;
     try {
       const events = await p.fetchTransactions(ctx as never);
       expect(events).toEqual([]);
@@ -149,141 +149,328 @@ describe('SolanaProvider', () => {
     }
   });
 
-  test('fetchTransactions: emits direction-aware native, token, and swap legs', async () => {
-    const heliusUrl = 'https://mainnet.helius-rpc.com/?api-key=test-key';
-    const p = new SolanaProvider(passthroughLimiter(), heliusUrl);
+  // ── SC-357: one net movement per token per transaction ───────────────
+  //
+  // Everything below reads `accountData` and nothing else. The fixtures
+  // are the shapes Helius actually returned for the two production
+  // wallets — see the provider header for the 312-transaction sweep that
+  // produced them.
 
-    const tx = {
-      signature: 'SIG1',
-      timestamp: 1_700_000_000,
-      nativeTransfers: [
-        // outflow from wallet → counterparty (1 SOL = 1e9 lamports)
-        { fromUserAccount: VALID_SOL, toUserAccount: 'OTHER', amount: 1_000_000_000 },
-        // inflow to wallet from counterparty (0.25 SOL)
-        { fromUserAccount: 'OTHER', toUserAccount: VALID_SOL, amount: 250_000_000 },
-        // unrelated transfer (neither side is wallet)
-        { fromUserAccount: 'A', toUserAccount: 'B', amount: 999 },
-      ],
-      tokenTransfers: [
-        // outbound USDC: wallet → counterparty
-        {
-          fromUserAccount: VALID_SOL,
-          toUserAccount: 'OTHER',
-          tokenAmount: 50,
-          decimals: 6,
-          mint: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
-        },
-      ],
-      events: {
-        // Swap: wallet sends 0.5 SOL in, gets 12.5 USDC out.
-        swap: {
-          nativeInput: { account: VALID_SOL, amount: '500000000' },
-          tokenOutputs: [
-            {
-              userAccount: VALID_SOL,
-              tokenAccount: 'TA',
-              mint: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
-              rawTokenAmount: { tokenAmount: '12500000', decimals: 6 },
-            },
-          ],
-        },
-      },
-    };
+  const WSOL = 'So11111111111111111111111111111111111111112';
+  const USDC = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
 
+  function heliusOnce(page: unknown[]): () => void {
     const originalFetch = globalThis.fetch;
-    let heliusCalls = 0;
-    const captured: string[] = [];
+    let served = false;
     globalThis.fetch = (async (url: string) => {
-      const urlStr = url.toString();
-      // Jupiter mint resolver runs once per unique mint per page;
-      // returning [] means the mint stays as the legacy 8-char prefix
-      // and the existing `mint` assertions below still pass.
-      if (urlStr.includes('lite-api.jup.ag')) {
-        return new Response('[]', { status: 200 });
-      }
-      heliusCalls += 1;
-      captured.push(urlStr);
-      // First page returns one tx; second page returns []
-      if (heliusCalls === 1) return new Response(JSON.stringify([tx]), { status: 200 });
-      return new Response('[]', { status: 200 });
-    }) as typeof fetch;
+      if (url.toString().includes('lite-api.jup.ag')) return new Response('[]', { status: 200 });
+      if (served) return new Response('[]', { status: 200 });
+      served = true;
+      return new Response(JSON.stringify(page), { status: 200 });
+    }) as unknown as typeof fetch;
+    return () => {
+      globalThis.fetch = originalFetch;
+    };
+  }
 
+  function helius(): SolanaProvider {
+    return new SolanaProvider(passthroughLimiter(), 'https://mainnet.helius-rpc.com/?api-key=k');
+  }
+
+  test('fetchTransactions: a wrap/unwrap round trip books the lamports ONCE', async () => {
+    // `4YzxNz4EiWCs…` in production, trimmed to the accounts that matter.
+    // The wallet spent 0.500005 SOL (0.5 plus the fee) and received
+    // 0.367789122 mSOL. The transfer legs said -1.0 SOL, because the
+    // native leg funding the temp WSOL account and the WSOL leg leaving
+    // it are the same money and WSOL is the same token identity as SOL.
+    const p = helius();
+    const restore = heliusOnce([
+      {
+        signature: 'WRAP',
+        timestamp: 1_700_000_000,
+        accountData: [
+          { account: VALID_SOL, nativeBalanceChange: -500_005_000, tokenBalanceChanges: [] },
+          {
+            // The temp WSOL ATA opened and closed inside the transaction:
+            // Helius reports no net change, and there is none.
+            account: 'WSOLATA',
+            nativeBalanceChange: 0,
+            tokenBalanceChanges: [],
+          },
+          {
+            account: 'MSOLATA',
+            nativeBalanceChange: 0,
+            tokenBalanceChanges: [
+              {
+                userAccount: VALID_SOL,
+                tokenAccount: 'MSOLATA',
+                mint: 'mSoLzYCxHdYgdzU16g5QSh3i5K3z3KZK7ytfqcJm7So',
+                rawTokenAmount: { tokenAmount: '367789122', decimals: 9 },
+              },
+            ],
+          },
+        ],
+      },
+    ]);
     try {
       const events = await p.fetchTransactions(ctx as never);
-      // single page (length < HELIUS_PAGE_LIMIT) → loop exits without
-      // a follow-up `before` page
-      expect(heliusCalls).toBe(1);
-      expect(captured[0]).toContain('https://api.helius.xyz/v0/addresses/');
-      expect(captured[0]).toContain(`/${VALID_SOL}/transactions`);
-      expect(captured[0]).toContain('api-key=test-key');
-      expect(captured[0]).toContain('limit=100');
-
-      // 2 native (out + in, the unrelated one is dropped) + 1 token out
-      // + 2 swap legs = 5 events
-      expect(events).toHaveLength(5);
-
-      const nativeOut = events.find((e) => e.externalId === 'SIG1-native-0');
-      expect(nativeOut?.kind).toBe('transfer_out');
-      expect(nativeOut?.primary.quantity).toBe('-1');
-      expect(nativeOut?.primary.tokenIdentity.symbol).toBe('SOL');
-      expect(nativeOut?.occurredAt.getTime()).toBe(1_700_000_000 * 1000);
-
-      const nativeIn = events.find((e) => e.externalId === 'SIG1-native-1');
-      expect(nativeIn?.kind).toBe('transfer_in');
-      expect(nativeIn?.primary.quantity).toBe('0.25');
-
-      // Unrelated nativeTransfers[2] must NOT produce an event
-      expect(events.find((e) => e.externalId === 'SIG1-native-2')).toBeUndefined();
-
-      const tokenOut = events.find((e) => e.externalId === 'SIG1-token-0');
-      expect(tokenOut?.kind).toBe('transfer_out');
-      expect(tokenOut?.primary.quantity).toBe('-50');
-      expect(
-        (
-          tokenOut?.primary.tokenIdentity.providerMetadata as
-            | { solana?: { mint: string } }
-            | undefined
-        )?.solana?.mint
-      ).toBe('EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v');
-
-      const swapOut = events.find((e) => e.externalId === 'SIG1-swap-0');
-      expect(swapOut?.kind).toBe('swap_out');
-      expect(swapOut?.primary.tokenIdentity.symbol).toBe('SOL');
-      expect(swapOut?.primary.quantity).toBe('-0.5');
-
-      const swapIn = events.find((e) => e.externalId === 'SIG1-swap-1');
-      expect(swapIn?.kind).toBe('swap_in');
-      expect(swapIn?.primary.quantity).toBe('12.5');
-      expect(
-        (
-          swapIn?.primary.tokenIdentity.providerMetadata as
-            | { solana?: { mint: string } }
-            | undefined
-        )?.solana?.mint
-      ).toBe('EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v');
+      expect(events.map((e) => e.externalId)).toEqual([
+        'WRAP-net-mSoLzYCxHdYgdzU16g5QSh3i5K3z3KZK7ytfqcJm7So',
+        'WRAP-net-native',
+      ]);
+      const sol = events.find((e) => e.externalId === 'WRAP-net-native');
+      expect(sol?.kind).toBe('transfer_out');
+      expect(sol?.primary.quantity).toBe('-0.500005');
+      expect(sol?.primary.tokenIdentity.symbol).toBe('SOL');
+      expect(sol?.occurredAt.getTime()).toBe(1_700_000_000 * 1000);
+      const msol = events.find((e) => e.kind === 'transfer_in');
+      expect(msol?.primary.quantity).toBe('0.367789122');
     } finally {
-      globalThis.fetch = originalFetch;
+      restore();
+    }
+  });
+
+  test('fetchTransactions: WSOL nets against native SOL rather than beside it', async () => {
+    // Wallet unwraps 2 WSOL and keeps the SOL: nothing left the wallet,
+    // so nothing is booked. Netting WSOL under its own key would have
+    // emitted a -2 SOL outflow and a +2 SOL inflow.
+    const p = helius();
+    const restore = heliusOnce([
+      {
+        signature: 'UNWRAP',
+        timestamp: 1_700_000_000,
+        accountData: [
+          { account: VALID_SOL, nativeBalanceChange: 2_000_000_000, tokenBalanceChanges: [] },
+          {
+            account: 'WSOLATA',
+            nativeBalanceChange: -2_000_000_000,
+            tokenBalanceChanges: [
+              {
+                userAccount: VALID_SOL,
+                tokenAccount: 'WSOLATA',
+                mint: WSOL,
+                rawTokenAmount: { tokenAmount: '-2000000000', decimals: 9 },
+              },
+            ],
+          },
+        ],
+      },
+    ]);
+    try {
+      expect(await p.fetchTransactions(ctx as never)).toEqual([]);
+    } finally {
+      restore();
+    }
+  });
+
+  test('fetchTransactions: the fee stays inside the native net', async () => {
+    // A transaction that moved nothing but cost 5000 lamports is still a
+    // disposal of 0.000005 SOL. `feeQuantity` is written by the router
+    // and read by no cost-basis walk, so a separate fee leg would leave
+    // the ledger's total above the chain's.
+    const p = helius();
+    const restore = heliusOnce([
+      {
+        signature: 'FEEONLY',
+        timestamp: 1_700_000_000,
+        accountData: [{ account: VALID_SOL, nativeBalanceChange: -5_000, tokenBalanceChanges: [] }],
+      },
+    ]);
+    try {
+      const events = await p.fetchTransactions(ctx as never);
+      expect(events.map((e) => e.externalId)).toEqual(['FEEONLY-net-native']);
+      expect(events[0]?.kind).toBe('transfer_out');
+      expect(events[0]?.primary.quantity).toBe('-0.000005');
+      expect(events[0]?.fee).toBeUndefined();
+    } finally {
+      restore();
+    }
+  });
+
+  test('fetchTransactions: ignores balance changes on accounts the wallet does not own', async () => {
+    const p = helius();
+    const restore = heliusOnce([
+      {
+        signature: 'THIRDPARTY',
+        timestamp: 1_700_000_000,
+        accountData: [
+          { account: 'SOMEONE', nativeBalanceChange: -9_000_000_000, tokenBalanceChanges: [] },
+          {
+            account: 'THEIRATA',
+            nativeBalanceChange: 0,
+            tokenBalanceChanges: [
+              {
+                userAccount: 'SOMEONE',
+                tokenAccount: 'THEIRATA',
+                mint: USDC,
+                rawTokenAmount: { tokenAmount: '1000000', decimals: 6 },
+              },
+            ],
+          },
+          { account: VALID_SOL, nativeBalanceChange: 250_000_000, tokenBalanceChanges: [] },
+        ],
+      },
+    ]);
+    try {
+      const events = await p.fetchTransactions(ctx as never);
+      expect(events.map((e) => e.externalId)).toEqual(['THIRDPARTY-net-native']);
+      expect(events[0]?.primary.quantity).toBe('0.25');
+    } finally {
+      restore();
+    }
+  });
+
+  test('fetchTransactions: several accounts of the same mint net into one event', async () => {
+    // Two USDC token accounts under the same owner, moving in opposite
+    // directions. One event, carrying the difference.
+    const p = helius();
+    const restore = heliusOnce([
+      {
+        signature: 'TWOATAS',
+        timestamp: 1_700_000_000,
+        accountData: [
+          {
+            account: 'ATA1',
+            nativeBalanceChange: 0,
+            tokenBalanceChanges: [
+              {
+                userAccount: VALID_SOL,
+                tokenAccount: 'ATA1',
+                mint: USDC,
+                rawTokenAmount: { tokenAmount: '-7000000', decimals: 6 },
+              },
+            ],
+          },
+          {
+            account: 'ATA2',
+            nativeBalanceChange: 0,
+            tokenBalanceChanges: [
+              {
+                userAccount: VALID_SOL,
+                tokenAccount: 'ATA2',
+                mint: USDC,
+                rawTokenAmount: { tokenAmount: '2500000', decimals: 6 },
+              },
+            ],
+          },
+        ],
+      },
+    ]);
+    try {
+      const events = await p.fetchTransactions(ctx as never);
+      expect(events).toHaveLength(1);
+      expect(events[0]?.externalId).toBe(`TWOATAS-net-${USDC}`);
+      expect(events[0]?.kind).toBe('transfer_out');
+      expect(events[0]?.primary.quantity).toBe('-4.5');
+      expect(
+        (events[0]?.primary.tokenIdentity.providerMetadata as { solana?: { mint: string } })?.solana
+          ?.mint
+      ).toBe(USDC);
+    } finally {
+      restore();
+    }
+  });
+
+  test('fetchTransactions: a transaction with no accountData emits nothing', async () => {
+    // Legs are what this stopped trusting, so a payload carrying only
+    ***REMOVED***
+    // transactions was shaped this way.
+    const p = helius();
+    const restore = heliusOnce([
+      {
+        signature: 'LEGSONLY',
+        timestamp: 1_700_000_000,
+        nativeTransfers: [
+          { fromUserAccount: VALID_SOL, toUserAccount: 'OTHER', amount: 1_000_000_000 },
+        ],
+        tokenTransfers: [
+          { fromUserAccount: VALID_SOL, toUserAccount: 'OTHER', tokenAmount: 50, mint: USDC },
+        ],
+      },
+    ]);
+    try {
+      expect(await p.fetchTransactions(ctx as never)).toEqual([]);
+    } finally {
+      restore();
+    }
+  });
+
+  // SC-362 asked whether a self-transfer inside ONE signature — the
+  // wallet on both sides, which produced 4 of production's same-holding
+  // transfer groups — still reaches the ledger as a pair. It cannot:
+  // the two sides are two accountData entries of one owner and they net
+  // to zero, so the shape SC-362 describes for Kraken is already closed
+  // here. Asserted directly rather than inferred from the two adjacent
+  // tests, because it is the shape the ticket names.
+  test('fetchTransactions: a self-transfer within one signature emits nothing (SC-362)', async () => {
+    const p = helius();
+    const restore = heliusOnce([
+      {
+        signature: 'SELFXFER',
+        timestamp: 1_700_000_000,
+        accountData: [
+          {
+            account: 'ATA1',
+            nativeBalanceChange: 0,
+            tokenBalanceChanges: [
+              {
+                userAccount: VALID_SOL,
+                tokenAccount: 'ATA1',
+                mint: USDC,
+                rawTokenAmount: { tokenAmount: '-12500000', decimals: 6 },
+              },
+            ],
+          },
+          {
+            account: 'ATA2',
+            nativeBalanceChange: 0,
+            tokenBalanceChanges: [
+              {
+                userAccount: VALID_SOL,
+                tokenAccount: 'ATA2',
+                mint: USDC,
+                rawTokenAmount: { tokenAmount: '12500000', decimals: 6 },
+              },
+            ],
+          },
+        ],
+      },
+    ]);
+    try {
+      expect(await p.fetchTransactions(ctx as never)).toEqual([]);
+    } finally {
+      restore();
+    }
+  });
+
+  test('fetchTransactions: a net of zero emits nothing (SC-352)', async () => {
+    const p = helius();
+    const restore = heliusOnce([
+      {
+        signature: 'SPAM',
+        timestamp: 1_700_000_000,
+        accountData: [{ account: VALID_SOL, nativeBalanceChange: 0, tokenBalanceChanges: [] }],
+      },
+    ]);
+    try {
+      expect(await p.fetchTransactions(ctx as never)).toEqual([]);
+    } finally {
+      restore();
     }
   });
 
   test('fetchTransactions: paginates via `before` cursor until short page', async () => {
-    const heliusUrl = 'https://mainnet.helius-rpc.com/?api-key=k';
-    const p = new SolanaProvider(passthroughLimiter(), heliusUrl);
-
+    const p = helius();
     const fullPage = Array.from({ length: 100 }, (_, i) => ({
       signature: `S${i}`,
       timestamp: 1_700_000_000 + i,
-      nativeTransfers: [{ fromUserAccount: 'OTHER', toUserAccount: VALID_SOL, amount: 1 }],
-      tokenTransfers: [],
-      events: {},
+      accountData: [{ account: VALID_SOL, nativeBalanceChange: 1, tokenBalanceChanges: [] }],
     }));
     const shortPage = [
       {
         signature: 'TAIL',
         timestamp: 1_700_000_999,
-        nativeTransfers: [{ fromUserAccount: 'OTHER', toUserAccount: VALID_SOL, amount: 2 }],
-        tokenTransfers: [],
-        events: {},
+        accountData: [{ account: VALID_SOL, nativeBalanceChange: 2, tokenBalanceChanges: [] }],
       },
     ];
 
@@ -295,62 +482,154 @@ describe('SolanaProvider', () => {
       const body = pageIndex === 0 ? fullPage : shortPage;
       pageIndex += 1;
       return new Response(JSON.stringify(body), { status: 200 });
-    }) as typeof fetch;
+    }) as unknown as typeof fetch;
 
     try {
       const events = await p.fetchTransactions(ctx as never);
       expect(beforeParams).toEqual([null, 'S99']);
-      // 100 + 1 native-in events
       expect(events).toHaveLength(101);
-      expect(events.at(-1)?.externalId).toBe('TAIL-native-0');
+      expect(events.at(-1)?.externalId).toBe('TAIL-net-native');
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  // SC-360. The nightly sync passes a 30-day `since`; before this the walk
+  // ran to the wallet's first ever transaction regardless, then threw the
+  // result away in the filter below.
+  test('fetchTransactions: `since` stops the walk once a page ends older than it', async () => {
+    const p = helius();
+    // Page 1 is entirely newer than the cutoff, page 2 straddles it, page 3
+    // must never be requested.
+    const page = (base: number) =>
+      Array.from({ length: 100 }, (_, i) => ({
+        signature: `S${base + i}`,
+        timestamp: base + i,
+        accountData: [{ account: VALID_SOL, nativeBalanceChange: 1, tokenBalanceChanges: [] }],
+      })).reverse();
+
+    const cutoff = 1_700_000_050;
+    const pages = [page(1_700_000_100), page(1_700_000_000), page(1_600_000_000)];
+
+    const originalFetch = globalThis.fetch;
+    let requests = 0;
+    globalThis.fetch = (async () => {
+      const body = pages[requests] ?? [];
+      requests += 1;
+      return new Response(JSON.stringify(body), { status: 200 });
+    }) as unknown as typeof fetch;
+
+    try {
+      const events = await p.fetchTransactions({
+        ...ctx,
+        since: new Date(cutoff * 1000),
+      } as never);
+
+      expect(requests).toBe(2);
+      // The straddling page is still sifted event by event, so the boundary
+      // is exact rather than page-aligned.
+      expect(events).toHaveLength(150);
+      for (const event of events) {
+        expect(event.occurredAt.getTime()).toBeGreaterThanOrEqual(cutoff * 1000);
+      }
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test('fetchTransactions: without `since` the walk still runs to the end', async () => {
+    const p = helius();
+    const fullPage = Array.from({ length: 100 }, (_, i) => ({
+      signature: `A${i}`,
+      timestamp: 1_600_000_000 + i,
+      accountData: [{ account: VALID_SOL, nativeBalanceChange: 1, tokenBalanceChanges: [] }],
+    }));
+    const originalFetch = globalThis.fetch;
+    let requests = 0;
+    globalThis.fetch = (async () => {
+      const body = requests === 0 ? fullPage : [];
+      requests += 1;
+      return new Response(JSON.stringify(body), { status: 200 });
+    }) as unknown as typeof fetch;
+
+    try {
+      const events = await p.fetchTransactions(ctx as never);
+      expect(requests).toBe(2);
+      expect(events).toHaveLength(100);
     } finally {
       globalThis.fetch = originalFetch;
     }
   });
 
   test('fetchTransactions: applies since/until filters in-memory', async () => {
-    const heliusUrl = 'https://mainnet.helius-rpc.com/?api-key=k';
-    const p = new SolanaProvider(passthroughLimiter(), heliusUrl);
-
-    const txs = [
+    const p = helius();
+    const restore = heliusOnce([
       {
         signature: 'OLD',
         timestamp: 1_600_000_000,
-        nativeTransfers: [{ fromUserAccount: 'X', toUserAccount: VALID_SOL, amount: 1 }],
-        tokenTransfers: [],
-        events: {},
+        accountData: [{ account: VALID_SOL, nativeBalanceChange: 1, tokenBalanceChanges: [] }],
       },
       {
         signature: 'NEW',
         timestamp: 1_800_000_000,
-        nativeTransfers: [{ fromUserAccount: 'X', toUserAccount: VALID_SOL, amount: 2 }],
-        tokenTransfers: [],
-        events: {},
+        accountData: [{ account: VALID_SOL, nativeBalanceChange: 2, tokenBalanceChanges: [] }],
       },
-    ];
-
-    const originalFetch = globalThis.fetch;
-    globalThis.fetch = (async () =>
-      new Response(JSON.stringify(txs), { status: 200 })) as typeof fetch;
-
+    ]);
     try {
       const events = await p.fetchTransactions({
         ...ctx,
         since: new Date(1_700_000_000 * 1000),
       } as never);
-      expect(events.map((e) => e.externalId)).toEqual(['NEW-native-0']);
+      expect(events.map((e) => e.externalId)).toEqual(['NEW-net-native']);
     } finally {
-      globalThis.fetch = originalFetch;
+      restore();
     }
   });
 
   test('fetchTransactions: returns [] for invalid wallet address', async () => {
-    const p = new SolanaProvider(passthroughLimiter(), 'https://mainnet.helius-rpc.com/?api-key=k');
+    const p = helius();
     const events = await p.fetchTransactions({
       ...ctx,
       resolveCredentials: async () => ({ walletAddress: 'bad' }),
     } as never);
     expect(events).toEqual([]);
+  });
+
+  test('fetchTransactions: never emits a swap kind (SC-339)', async () => {
+    // A swap is still recorded as two transfers. Recognising it needs a
+    // partner test that only became possible once the quantities stopped
+    // being doubled; until one exists, a priced disposal on a leg with no
+    // reachable partner is worse than no price.
+    const p = helius();
+    const restore = heliusOnce([
+      {
+        signature: 'SWAPSIG',
+        timestamp: 1_700_000_000,
+        accountData: [
+          { account: VALID_SOL, nativeBalanceChange: -500_005_000, tokenBalanceChanges: [] },
+          {
+            account: 'UATA',
+            nativeBalanceChange: 0,
+            tokenBalanceChanges: [
+              {
+                userAccount: VALID_SOL,
+                tokenAccount: 'UATA',
+                mint: USDC,
+                rawTokenAmount: { tokenAmount: '12500000', decimals: 6 },
+              },
+            ],
+          },
+        ],
+      },
+    ]);
+    try {
+      const events = await p.fetchTransactions(ctx as never);
+      expect(events).toHaveLength(2);
+      expect(events.some((e) => e.kind === 'swap_out' || e.kind === 'swap_in')).toBe(false);
+      expect(events.some((e) => e.externalId.includes('-swap-'))).toBe(false);
+    } finally {
+      restore();
+    }
   });
 });
 

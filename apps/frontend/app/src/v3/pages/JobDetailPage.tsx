@@ -2,9 +2,10 @@ import { Button } from '@scani/ui/ui/button';
 import { Skeleton } from '@scani/ui/ui/skeleton';
 import { PageLayout } from '@scani/ui/v3/components/PageLayout';
 import { ArrowLeft } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { Link, useParams } from 'react-router-dom';
 import { trpc } from '@/lib/trpc';
-import { useJobStatus } from '@/v2/hooks/useJobStatus';
+import { useJobStatus } from '@/v3/hooks/useJobStatus';
 import { JobDetailHeader } from '../components/jobs/JobDetailHeader';
 import { resolveV3ReviewRenderer } from '../lib/job-result';
 import { deriveJobOutcomeState } from '../lib/jobs';
@@ -31,6 +32,7 @@ import { V3_ROUTES } from '../lib/routes';
  * finished job back to "active" on screen.
  */
 export function JobDetailPage() {
+  const { t } = useTranslation();
   const { jobId = '' } = useParams<{ jobId: string }>();
   const jobQuery = trpc.jobs.getMine.useQuery({ jobId }, { enabled: Boolean(jobId) });
   const live = useJobStatus(jobId || null);
@@ -48,9 +50,7 @@ export function JobDetailPage() {
     return (
       <PageLayout measure="wide">
         <BackLink />
-        <p className="text-body text-muted-foreground">
-          This job is not on your list. It may have been removed, or the link may be out of date.
-        </p>
+        <p className="text-body text-muted-foreground">{t('v3.jobs.detail.notFound')}</p>
       </PageLayout>
     );
   }
@@ -96,11 +96,12 @@ export function JobDetailPage() {
 }
 
 function BackLink() {
+  const { t } = useTranslation();
   return (
     <Button variant="ghost" size="sm" asChild className="-ml-2 self-start">
       <Link to={V3_ROUTES.jobs}>
         <ArrowLeft className="mr-2 size-4" aria-hidden="true" />
-        All jobs
+        {t('v3.jobs.detail.backToJobs')}
       </Link>
     </Button>
   );

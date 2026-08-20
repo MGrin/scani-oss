@@ -12,7 +12,7 @@ function makeFakeFetch(responses: Array<() => Response>): {
 } {
   const calls: FetchCall[] = [];
   let i = 0;
-  const fetcher = (async (url: RequestInfo | URL, init?: RequestInit) => {
+  const fetcher = (async (url: Parameters<typeof fetch>[0] | URL, init?: RequestInit) => {
     calls.push({ url: String(url), init: init ?? {} });
     const next = responses[i++];
     if (!next) throw new Error(`no response queued for fetch call #${i}`);

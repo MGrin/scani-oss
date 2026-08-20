@@ -8,7 +8,7 @@ import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { trpc } from '@/lib/trpc';
-import { useJobStatus } from '@/v2/hooks/useJobStatus';
+import { useJobStatus } from '@/v3/hooks/useJobStatus';
 import { V3_BASE } from '../../lib/ui-version';
 
 /**
@@ -52,7 +52,7 @@ export function AccountSettings() {
       setConfirmDelete(false);
       setJobId(enqueued);
     },
-    onError: (error) => showError(error, 'Deleting your data'),
+    onError: (error) => showError(error, t('v3.settings.pending.deletingData')),
   });
 
   const status = useJobStatus(jobId);
@@ -60,15 +60,21 @@ export function AccountSettings() {
   useEffect(() => {
     if (!jobId) return;
     if (status.state === 'completed') {
-      showSuccess('All your data has been deleted');
+      showSuccess(t('v3.settings.account.deleted'));
       setJobId(null);
       utils.invalidate();
       navigate(V3_BASE);
     } else if (status.state === 'failed') {
-      showError(new Error(status.error ?? 'The delete failed'), 'Deleting your data');
+      showError(
+        new Error(status.error ?? t('v3.settings.account.deleteFailed')),
+        t('v3.settings.pending.deletingData')
+      );
       setJobId(null);
     }
-  }, [jobId, status.state, status.error, navigate, utils]);
+    // `t` is a dependency: the effect fires a toast, and without it the
+    // message keeps the language the effect was created in. A delete runs for
+    // a while, which is exactly long enough for someone to change it.
+  }, [jobId, status.state, status.error, navigate, utils, t]);
 
   const deleting = deleteAll.isPending || jobId !== null;
 
@@ -83,23 +89,22 @@ export function AccountSettings() {
       </div>
 
       <div className="flex flex-col items-start gap-2 border-t border-border pt-4">
-        <p className="text-body text-muted-foreground">
-          Deleting your data removes every account, holding, wallet, integration credential, group
-          and vault. The login itself stays, empty.
-        </p>
+        <p className="text-body text-muted-foreground">{t('v3.settings.account.deleteIntro')}</p>
         <ConfirmAction
           label={
             <>
               <Trash2 className="mr-2 size-4" aria-hidden="true" />
-              {deleting ? 'Deleting…' : 'Delete all my data'}
+              {deleting
+                ? t('v3.settings.account.deleting')
+                : t('v3.settings.account.deleteTrigger')}
             </>
           }
           triggerClassName="text-destructive hover:text-destructive"
-          confirmLabel="Delete everything"
-          consequence="Every account, holding, wallet, integration credential, group and vault goes. Your login remains, with nothing in it. This cannot be undone."
+          confirmLabel={t('v3.settings.account.deleteConfirm')}
+          consequence={t('v3.settings.account.deleteConsequence')}
           destructive
           isPending={deleting}
-          disabledReason={deleting ? 'Your data is being deleted.' : undefined}
+          disabledReason={deleting ? t('v3.settings.account.deleteInFlight') : undefined}
           open={confirmDelete}
           onOpenChange={setConfirmDelete}
           onConfirm={() => deleteAll.mutate({ requestId: crypto.randomUUID() })}

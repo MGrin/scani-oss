@@ -5,9 +5,14 @@ import { ProviderRegistry } from '@scani/providers/core/registry';
 import type { ProviderContext } from '@scani/providers/core/types';
 import { and, eq } from 'drizzle-orm';
 import { Container, Service } from 'typedi';
+import { deriveBalancesAsOf, withBalancesAsOf } from '../lib/balances-as-of';
 import { SCAM_PROBABILITY_THRESHOLD } from '../lib/constants';
 import { TokenTypeRepository } from '../repositories/EnumRepositories';
 import { HoldingRepository } from '../repositories/HoldingRepository';
+import {
+  EXCHANGE_BALANCE_SYNC_SOURCE,
+  WALLET_BALANCE_SYNC_SOURCE,
+} from '../services/holdings/balance-sync-sources';
 import { HoldingsSyncHelper } from '../services/holdings/HoldingsSyncHelper';
 import { IntegrationCredentialsService } from '../services/users/IntegrationCredentialsService';
 import { WalletDiscoveryService } from '../services/users/WalletDiscoveryService';
@@ -200,7 +205,7 @@ export class RefreshAccountBalanceUseCase {
         // externalId dedup + 18 decimals; exchange path uses tokenId
         // dedup + 8 decimals.
         dedupStrategy: isWallet ? 'externalId' : 'tokenId',
-        sourceTag: isWallet ? 'blockchain' : 'sync_exchange_balances',
+        sourceTag: isWallet ? WALLET_BALANCE_SYNC_SOURCE : EXCHANGE_BALANCE_SYNC_SOURCE,
         defaultDecimals: isWallet ? 18 : 8,
         respectHiddenForCounts: isWallet,
         skipUnchangedUpdates: false,
@@ -210,6 +215,10 @@ export class RefreshAccountBalanceUseCase {
         // Exchange refresh allows auto-create so a fresh deposit on
         // the CEX appears immediately, matching exchange-cron behavior.
         updateOnly: isWallet,
+        // A person pressed Refresh, but nobody was shown the rows that
+        // creates — same claim the cron makes, because this IS the cron
+        // triggered once (SC-277).
+        arrival: 'auto_discovered',
         tx,
       });
       holdingsUpdated = result.updated;
@@ -217,9 +226,11 @@ export class RefreshAccountBalanceUseCase {
       holdingsRemoved = result.removed;
 
       // Stamp lastSync metadata so the holdings list can show "synced
-      // X minutes ago". Same shape the cron writes.
+      // X minutes ago". Same shape the cron writes — including the second
+      // claim, because a person who presses Refresh on an IBKR account and
+      // watches the number not move is exactly the reader SC-384 is about.
       const updatedMetadata = {
-        ...(meta || {}),
+        ...withBalancesAsOf(meta, deriveBalancesAsOf(snapshots)),
         lastSync: new Date().toISOString(),
       };
       await tx
@@ -359,6 +370,8 @@ const SYNTHETIC_BASE_CURRENCY: ProviderContext['baseCurrency'] = {
   iconUrl: null,
   providerMetadata: {},
   isScamProbability: 0,
+  scamScoreVersion: null,
+  scamScoreSource: 'heuristic',
   isActive: true,
   marketSegment: null,
   lookalikeOf: null,

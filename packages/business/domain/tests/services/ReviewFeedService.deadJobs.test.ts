@@ -1,10 +1,15 @@
 import { describe, expect, test } from 'bun:test';
-import { DEAD_JOB_REVIEW_KIND, reviewItemSchema } from '@scani/shared';
+import { DEAD_JOB_REVIEW_KIND, describeJobFailure, reviewItemSchema } from '@scani/shared';
 import Container from 'typedi';
 import { DocumentExtractionRepository } from '../../src/repositories/DocumentExtractionRepository';
 import { UserJobRepository } from '../../src/repositories/UserJobRepository';
 import { ReviewFeedService } from '../../src/services/ReviewFeedService';
 import { TransferReviewService } from '../../src/services/TransferReviewService';
+import { restoreContainerAfterAll } from '../../test/helpers/container';
+
+// Container stubs are process-global; put back whatever this file changes
+// so no later test file resolves them (SC-448).
+restoreContainerAfterAll();
 
 /**
  * SC-153: a job the queue has given up on has to reach the person whose data
@@ -51,9 +56,39 @@ describe('ReviewFeedService — dead jobs', () => {
     expect(items).toHaveLength(1);
     expect(reviewItemSchema.parse(items[0])).toBeTruthy();
     expect(items[0]?.kind).toBe(DEAD_JOB_REVIEW_KIND);
-    expect(items[0]?.title).toBe('Wallet import failed');
-    expect(items[0]?.subtitle).toContain('will not be tried again');
+    expect(items[0]?.label).toEqual({ code: 'jobFailed', jobName: 'wallet-import' });
     expect(items[0]?.href).toBe('/jobs/job-1');
+  });
+
+  /**
+   * The facts, not the sentence (SC-371).
+   *
+   * `describeJobFailure` is the one description of a failure and it already
+   * runs in both frontends, so what this feed owes the client is what the
+   * describer reads — forwarding its output instead would have been a copy of
+   * that English no `t()` could reach, in the row whose whole job is to
+   * explain something that went wrong.
+   */
+  test('the row carries what describeJobFailure reads, not what it said', async () => {
+    const items = await makeService([deadJob()]).listPending('user-1');
+    const detail = items[0]?.detail;
+
+    expect(detail?.code).toBe('jobFailure');
+    expect(detail).toEqual({
+      code: 'jobFailure',
+      facts: {
+        state: 'failed',
+        deadAt: new Date('2026-08-14T12:00:00Z'),
+        failureReason: 'retries_exhausted',
+        attemptsMade: 3,
+        attemptsAllowed: 3,
+      },
+    });
+    // And that the shared describer reads them into the terminal code — the
+    // naming is the client's (SC-424), the classification is still one.
+    expect(
+      describeJobFailure(detail?.code === 'jobFailure' ? detail.facts : { state: 'x' })?.code
+    ).toBe('exhausted');
   });
 
   test('the item is dated by the death, not by the enqueue', async () => {
@@ -88,11 +123,16 @@ describe('ReviewFeedService — dead jobs', () => {
     expect(items).toHaveLength(0);
   });
 
-  test('a job that never reached the queue says nothing ran', async () => {
+  test('a job that never reached the queue is forwarded as never delivered', async () => {
     const items = await makeService([
       deadJob({ failureReason: 'never_delivered', attemptsMade: 0 }),
     ]).listPending('user-1');
-    expect(items[0]?.subtitle).toContain('never ran');
+    const detail = items[0]?.detail;
+    expect(detail?.code === 'jobFailure' && detail.facts.failureReason).toBe('never_delivered');
+    // Which is what makes the reader's copy say it — the describer is shared.
+    expect(
+      describeJobFailure(detail?.code === 'jobFailure' ? detail.facts : { state: 'x' })?.code
+    ).toBe('neverDelivered');
   });
 
   test('dead jobs and pending reviews share one feed, newest first', async () => {

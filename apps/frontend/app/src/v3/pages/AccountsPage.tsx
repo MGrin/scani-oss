@@ -1,12 +1,13 @@
 import { PageHeader, PageLayout } from '@scani/ui/v3/components/PageLayout';
 import { mergeQueries } from '@scani/ui/v3/lib/query-state';
 import { useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
 import { useBaseCurrency } from '@/contexts/BaseCurrencyContext';
 import { trpc } from '@/lib/trpc';
-import { AssignGroupsDialog } from '@/v2/components/groups/AssignGroupsDialog';
-import { useAccountActions } from '@/v2/hooks/useAccountActions';
+import { useAccountActions } from '@/v3/hooks/useAccountActions';
 import { AccountsList } from '../components/entities/AccountsList';
+import { AssignGroupsSheet } from '../components/groups/AssignGroupsSheet';
 import { accountFiltersFromParams } from '../lib/accounts';
 
 /**
@@ -24,6 +25,7 @@ import { accountFiltersFromParams } from '../lib/accounts';
  * own copy of it on every surface.
  */
 export function AccountsPage() {
+  const { t } = useTranslation();
   const accountsQuery = trpc.accounts.getByUserIdWithSummary.useQuery();
   const groupsQuery = trpc.groups.getAll.useQuery();
   const institutionsQuery = trpc.institutions.getByUserId.useQuery();
@@ -43,7 +45,7 @@ export function AccountsPage() {
 
   return (
     <PageLayout measure="wide">
-      <PageHeader title="Accounts" />
+      <PageHeader title={t('v3.entities.account.pageTitle')} />
 
       <AccountsList
         accounts={accountsQuery.data ?? []}
@@ -60,19 +62,25 @@ export function AccountsPage() {
         isBulkDeleting={actions.isBulkDeleting}
       />
 
-      <AssignGroupsDialog
-        open={assignTarget !== null}
-        onOpenChange={(open) => {
-          if (open) return;
-          // Clearing on close rather than on save: the dialog reports its own
-          // outcome, and a selection surviving a cancelled assignment is a
-          // banner claiming rows are selected that the user has moved on from.
-          assignTarget?.clear();
-          setAssignTarget(null);
-        }}
-        entityType="accounts"
-        entityIds={assignTarget?.ids ?? []}
-      />
+      {/* Mounted only while targeted, so the checked set starts from the
+          selection it was opened for. Left mounted, the sheet reopened with the
+          PREVIOUS batch's groups ticked and an empty diff baseline under them,
+          and a Save in that window put those groups onto rows never in them. */}
+      {assignTarget ? (
+        <AssignGroupsSheet
+          open
+          onOpenChange={(open) => {
+            if (open) return;
+            // Clearing on close rather than on save: the sheet reports its own
+            // outcome, and a selection surviving a cancelled assignment is a
+            // banner claiming rows are selected that the user has moved on from.
+            assignTarget.clear();
+            setAssignTarget(null);
+          }}
+          entityType="accounts"
+          entityIds={assignTarget.ids}
+        />
+      ) : null}
     </PageLayout>
   );
 }

@@ -1,3 +1,5 @@
+import '../../i18n-preload';
+
 import { describe, expect, test } from 'bun:test';
 import { SETTLED_QUERY_STATE } from '@scani/ui/v3/lib/query-state';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -61,7 +63,9 @@ const FILES: DocumentRow[] = [
 
 describe('the Files list', () => {
   test('every file is a row, whatever brought it in', () => {
-    const html = render(<DocumentsList documents={FILES} query={SETTLED_QUERY_STATE} />);
+    const html = render(
+      <DocumentsList documents={FILES} query={SETTLED_QUERY_STATE} onSearch={() => {}} />
+    );
     expect(html).toInclude('acme-october.pdf');
     expect(html).toInclude('blurry-photo.heic');
     expect(html).toInclude('kraken-2026.csv');
@@ -74,25 +78,35 @@ describe('the Files list', () => {
    * only one of which anyone can act on.
    */
   test('a read that found nothing reads differently from a file never read', () => {
-    const html = render(<DocumentsList documents={FILES} query={SETTLED_QUERY_STATE} />);
+    const html = render(
+      <DocumentsList documents={FILES} query={SETTLED_QUERY_STATE} onSearch={() => {}} />
+    );
     expect(html).toInclude('2 invoices');
     expect(html).toInclude('Nothing found');
   });
 
   test('a file whose stored copy is gone says so on the row', () => {
-    const html = render(<DocumentsList documents={FILES} query={SETTLED_QUERY_STATE} />);
+    const html = render(
+      <DocumentsList documents={FILES} query={SETTLED_QUERY_STATE} onSearch={() => {}} />
+    );
     expect(html).toInclude('file removed');
   });
 
   test('the empty screen offers the upload, and offers it inside v3', () => {
-    const html = render(<DocumentsList documents={[]} query={SETTLED_QUERY_STATE} />);
+    const html = render(
+      <DocumentsList documents={[]} query={SETTLED_QUERY_STATE} onSearch={() => {}} />
+    );
     expect(html).toInclude('No files yet');
     expect(html).toInclude('/documents/upload');
   });
 
   test('nothing has settled yet is not the same as owning no files', () => {
     const html = render(
-      <DocumentsList documents={[]} query={{ ...SETTLED_QUERY_STATE, isLoading: true }} />
+      <DocumentsList
+        documents={[]}
+        query={{ ...SETTLED_QUERY_STATE, isLoading: true }}
+        onSearch={() => {}}
+      />
     );
     expect(html).not.toInclude('No files yet');
   });

@@ -1,39 +1,33 @@
-import type { Token } from '@scani/shared';
+import { getFormatLocale, type Token } from '@scani/shared';
+import type { TFunction } from 'i18next';
 
 export { cn } from '@scani/ui/lib/cn';
 
 /**
- * Create a currency token object for display purposes
- * This creates a mock Token object for fiat currencies
+ * A display-only `Token` for a fiat currency, for before the real one loads.
+ *
+ * The name comes from `Intl.DisplayNames` rather than a table (SC-411). There
+ * was a hand-written English name per currency here — twenty of them, from
+ * `US Dollar` to `South African Rand` — and every one was byte-identical to
+ * what CLDR already answers for `en-US`, measured across all twenty. So the
+ * table was not a set of product decisions that happened to look like CLDR; it
+ * was CLDR, transcribed, in one language, needing eight translations per row
+ * the moment a second language shipped.
+ *
+ * `Intl.DisplayNames` returns the CODE for a currency it does not know, which
+ * is a worse `name` than a `symbol` beside it already is, so an unknown code
+ * gets a keyed sentence instead.
+ *
+ * **This name is the PLACEHOLDER's, and usually not the one on screen.** Once
+ * `users.getBaseCurrency` resolves, `BaseCurrencyProvider` carries
+ * `tokens.name` from Postgres through instead — an English string in a
+ * database column, which no key can reach. See SC-419.
  */
-export function createCurrencyToken(currencySymbol: string): Token {
-  const currencyNames: Record<string, string> = {
-    USD: 'US Dollar',
-    EUR: 'Euro',
-    GBP: 'British Pound',
-    JPY: 'Japanese Yen',
-    CAD: 'Canadian Dollar',
-    AUD: 'Australian Dollar',
-    CHF: 'Swiss Franc',
-    CNY: 'Chinese Yuan',
-    SEK: 'Swedish Krona',
-    NZD: 'New Zealand Dollar',
-    MXN: 'Mexican Peso',
-    SGD: 'Singapore Dollar',
-    HKD: 'Hong Kong Dollar',
-    NOK: 'Norwegian Krone',
-    KRW: 'South Korean Won',
-    TRY: 'Turkish Lira',
-    RUB: 'Russian Ruble',
-    INR: 'Indian Rupee',
-    BRL: 'Brazilian Real',
-    ZAR: 'South African Rand',
-  };
-
+export function createCurrencyToken(t: TFunction, currencySymbol: string): Token {
   return {
     id: `currency-${currencySymbol}`,
     symbol: currencySymbol,
-    name: currencyNames[currencySymbol] || `${currencySymbol} Currency`,
+    name: currencyDisplayName(t, currencySymbol),
     decimals: 2,
     iconUrl: null,
     isActive: true,
@@ -43,30 +37,13 @@ export function createCurrencyToken(currencySymbol: string): Token {
 }
 
 /**
- * Normalize a symbol string
+ * `getFormatLocale().language`, not `numberLocale` — this is a WORD, and the
+ * region only decides how figures are punctuated. A reader on English copy
+ * with German dates still wants "Swiss Franc".
  */
-export function normalizeSymbol(symbol: string): string {
-  return symbol.trim().toUpperCase();
-}
-
-/**
- * Format an interval string (e.g., "2w", "3M") into a human-readable description
- */
-export function formatInterval(interval: string): string {
-  const match = interval.match(/^(\d+)(d|w|M|y)$/);
-  if (!match?.[1] || !match[2]) return interval;
-
-  const value = match[1];
-  const unit = match[2];
-  const unitNames: Record<string, string> = {
-    d: 'day',
-    w: 'week',
-    M: 'month',
-    y: 'year',
-  };
-
-  const unitName = unitNames[unit] || unit;
-  const plural = value !== '1' ? 's' : '';
-
-  return `Every ${value} ${unitName}${plural}`;
+function currencyDisplayName(t: TFunction, code: string): string {
+  const named = new Intl.DisplayNames([getFormatLocale().language], { type: 'currency' }).of(code);
+  return named === undefined || named === code
+    ? t('currency.unknownName', { symbol: code })
+    : named;
 }

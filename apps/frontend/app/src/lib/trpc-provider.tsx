@@ -1,6 +1,7 @@
 import { showError } from '@scani/ui/ui/use-toast';
 import { MutationCache, QueryCache, QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { httpBatchLink, splitLink, TRPCClientError } from '@trpc/client';
+import i18n from 'i18next';
 import { useEffect, useState } from 'react';
 import { authClient } from './auth-client';
 import { trpc } from './trpc';
@@ -22,7 +23,7 @@ export function TRPCProvider({ children }: TRPCProviderProps) {
       new QueryClient({
         queryCache: new QueryCache({
           onError: (error) => {
-            if (isNetworkError(error)) showError(error, 'Connection issue — retrying');
+            if (isNetworkError(error)) showError(error, i18n.t('offline.connectionIssueRetrying'));
           },
         }),
         mutationCache: new MutationCache({
@@ -31,7 +32,7 @@ export function TRPCProvider({ children }: TRPCProviderProps) {
             // (if any) for the same error — skip the generic toast there so the
             // local handler's context-specific message isn't raced/overridden.
             if (mutation.options.onError) return;
-            if (isNetworkError(error)) showError(error, 'Connection issue');
+            if (isNetworkError(error)) showError(error, i18n.t('offline.connectionIssue'));
           },
         }),
         defaultOptions: {

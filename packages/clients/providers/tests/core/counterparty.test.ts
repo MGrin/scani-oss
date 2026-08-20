@@ -5,7 +5,7 @@ import { extractCounterparty } from '../../src/core/counterparty';
 // backfill sweep (~1850 rows of unstructured `raw_payload` on first run,
 // then every new row going forward). One shape we didn't anticipate must
 // yield `{}`, not an exception that aborts the batch — see
-// `packages/business/domain/src/services/reviewSummary.ts` for the same
+// `packages/business/domain/src/services/reviewDetail.ts` for the same
 // discipline applied to the review feed.
 
 describe('extractCounterparty — wise', () => {

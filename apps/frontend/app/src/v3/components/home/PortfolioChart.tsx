@@ -1,3 +1,4 @@
+import { getFormatLocale } from '@scani/shared';
 import { ChartFrame } from '@scani/ui/v3/components/charts/ChartFrame';
 import { Numeric } from '@scani/ui/v3/components/Numeric';
 import { resolveNumeric } from '@scani/ui/v3/lib/numeric';
@@ -26,28 +27,35 @@ import type { PnLChartPoint, TrendPoint } from '../../lib/home';
  *   `ChartFrame`: that is what makes a theme flip repaint without a re-render.
  */
 
-const MONTH_SHORT = [
-  'Jan',
-  'Feb',
-  'Mar',
-  'Apr',
-  'May',
-  'Jun',
-  'Jul',
-  'Aug',
-  'Sep',
-  'Oct',
-  'Nov',
-  'Dec',
-];
-
-/** `2026-08-12` → `Aug 12`, or `Aug 2026` once the window is long enough that
- *  a day-of-month tick is noise. */
+/**
+ * `2026-08-12` → `12 Aug`, or `Aug 2026` once the window is long enough that a
+ * day-of-month tick is noise.
+ *
+ * Through `Intl` and the resolved date locale, not a twelve-string table. The
+ * table was English-only, so the axis under a Russian interface read
+ * `Jul 20 … Aug 18` while every figure beside it was `383 936,00 €` (SC-201).
+ * `monthName` had already replaced one such array elsewhere (SC-300); this was
+ * the last one.
+ *
+ * **The English output changes**, from `Aug 12` to `12 Aug`. That is the axis
+ * being brought into line with the rest of the app rather than a new opinion:
+ * `APP_LOCALE` is `en-GB` and every other date on the screen has been
+ * day-first since SC-175. The array was the one place still printing an
+ * American order, and it did so in every language.
+ *
+ * `timeZone: 'UTC'` and a mid-day reference hour: the input is a calendar day
+ * with no time, and a local-midnight `Date` in a negative offset renders the
+ * day before.
+ */
 export function formatChartDate(iso: string, granularity: string): string {
   const [year, month, day] = iso.split('-').map(Number);
   if (!year || !month || !day) return iso;
-  const name = MONTH_SHORT[month - 1] ?? '';
-  return granularity === 'monthly' ? `${name} ${year}` : `${name} ${day}`;
+  const at = new Date(Date.UTC(year, month - 1, day, 12));
+  return at.toLocaleDateString(getFormatLocale().dateLocale, {
+    timeZone: 'UTC',
+    month: 'short',
+    ...(granularity === 'monthly' ? { year: 'numeric' } : { day: 'numeric' }),
+  });
 }
 
 /**

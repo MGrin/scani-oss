@@ -1,8 +1,11 @@
+import '../../i18n-preload';
+
 import { describe, expect, test } from 'bun:test';
 import type { HoldingWithDetails } from '@scani/shared';
 import { PeekBody } from '@scani/ui/v3/components/PeekSheet';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { httpBatchLink } from '@trpc/client';
+import i18n from 'i18next';
 import { createElement, Fragment, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { StaticRouter } from 'react-router-dom/server';
@@ -29,7 +32,14 @@ import {
  * `tests/v3/lib/realized-ledger.ts`, where it needs no DOM at all.
  */
 
+/** The app's own `t`, from the instance the preload above initialises — not a
+ *  stub. A stub would let these tests agree with themselves; the real one makes
+ *  them agree with `en.json`, so the English they assert on is the English the
+ *  product ships (SC-201). */
+const t = i18n.t.bind(i18n);
+
 const CONTEXT: HoldingPeekContext = {
+  t,
   currency: 'USD',
   onSetAmount: () => undefined,
   onToggleActive: () => undefined,

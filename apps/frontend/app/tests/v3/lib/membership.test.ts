@@ -1,11 +1,18 @@
+import '../../i18n-preload';
+
 import { describe, expect, test } from 'bun:test';
+import i18n from 'i18next';
 import {
   candidatesFor,
   compareMembers,
+  countOfKind,
+  inactiveMemberCount,
   type MemberEntry,
   memberCountLine,
   memberMatches,
 } from '../../../src/v3/lib/membership';
+
+const t = i18n.t.bind(i18n);
 
 function holding(id: string, label: string, sublabel = 'Bitcoin · Kraken'): MemberEntry {
   return { id, kind: 'holding', label, sublabel };
@@ -43,18 +50,47 @@ describe('memberMatches', () => {
 
 describe('memberCountLine', () => {
   test('reads the singular as a singular — "1 holdings" is the defect it fixes', () => {
-    expect(memberCountLine([holding('h1', 'BTC'), account('a1', 'Main')])).toBe(
+    expect(memberCountLine([holding('h1', 'BTC'), account('a1', 'Main')], t)).toBe(
       '1 holding · 1 account'
     );
   });
 
   test('says zero of both rather than going blank', () => {
-    expect(memberCountLine([])).toBe('0 holdings · 0 accounts');
+    expect(memberCountLine([], t)).toBe('0 holdings · 0 accounts');
   });
 
   test('counts each kind independently', () => {
     const members = [holding('h1', 'BTC'), holding('h2', 'ETH'), account('a1', 'Main')];
-    expect(memberCountLine(members)).toBe('2 holdings · 1 account');
+    expect(memberCountLine(members, t)).toBe('2 holdings · 1 account');
+  });
+});
+
+describe('countOfKind', () => {
+  /**
+   * SC-388: the group page titled its member list with `members.length` — 46
+   * over a group of 36 holdings and 10 accounts, printed directly above 36
+   * rows. Counting is per kind now and there is no helper that adds them.
+   */
+  test('counts one kind at a time', () => {
+    const members = [holding('h1', 'BTC'), holding('h2', 'ETH'), account('a1', 'Main')];
+    expect(countOfKind(members, 'holding')).toBe(2);
+    expect(countOfKind(members, 'account')).toBe(1);
+  });
+});
+
+describe('inactiveMemberCount', () => {
+  test('an ordinary group has none', () => {
+    expect(inactiveMemberCount([holding('h1', 'BTC'), account('a1', 'Main')])).toBe(0);
+  });
+
+  test('counts the listed holdings the group total leaves out', () => {
+    const members = [
+      holding('h1', 'BTC'),
+      { ...holding('h2', 'ETH'), inactive: true },
+      { ...holding('h3', 'SOL'), inactive: true },
+      account('a1', 'Main'),
+    ];
+    expect(inactiveMemberCount(members)).toBe(2);
   });
 });
 

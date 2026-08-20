@@ -1,3 +1,4 @@
+import type { TFunction } from 'i18next';
 import { type AccountTargetDraft, describeAccountTargetBlockers } from './manual-entry';
 
 /**
@@ -31,7 +32,7 @@ export const IMPORT_EXTENSIONS: readonly string[] = [
 export const IMPORT_ACCEPT = IMPORT_EXTENSIONS.map((ext) => `.${ext}`).join(',');
 
 /** The same set said to a person rather than to a file dialog. */
-export const IMPORT_FORMATS = 'PNG, JPG, WEBP, PDF, CSV, TSV, OFX or QIF';
+export const IMPORT_FORMATS_KEY = 'v3.capture.formats.import';
 
 /**
  * `pdf` is deliberately on the screenshot path: the parse job reads a rendered
@@ -92,7 +93,7 @@ export const INVOICE_ACCEPT = Object.keys(INVOICE_MIME_TYPES)
   .map((ext) => `.${ext}`)
   .join(',');
 
-export const INVOICE_FORMATS = 'PDF, PNG, JPG, WEBP or HEIC';
+export const INVOICE_FORMATS_KEY = 'v3.capture.formats.invoice';
 
 export function planInvoiceFile(file: { name: string }): { contentType: string } | null {
   const contentType = INVOICE_MIME_TYPES[fileExtension(file.name)];
@@ -104,20 +105,20 @@ export function planInvoiceFile(file: { name: string }): { contentType: string }
  * rather than at submit: a file the form will not take is not a blocker to list
  * under the button, it is a choice to undo.
  */
-export function describeImportFileProblem(filename: string): string | null {
+export function describeImportFileProblem(t: TFunction, filename: string): string | null {
   if (planImportFile({ name: filename })) return null;
-  return unsupportedFileMessage(filename, IMPORT_FORMATS);
+  return unsupportedFileMessage(t, filename, t(IMPORT_FORMATS_KEY));
 }
 
-export function describeInvoiceFileProblem(filename: string): string | null {
+export function describeInvoiceFileProblem(t: TFunction, filename: string): string | null {
   if (planInvoiceFile({ name: filename })) return null;
-  return unsupportedFileMessage(filename, INVOICE_FORMATS);
+  return unsupportedFileMessage(t, filename, t(INVOICE_FORMATS_KEY));
 }
 
-function unsupportedFileMessage(filename: string, formats: string): string {
+function unsupportedFileMessage(t: TFunction, filename: string, formats: string): string {
   const ext = fileExtension(filename);
-  const named = ext ? `a .${ext}` : 'no file extension at all';
-  return `This one is ${named}. Scani reads ${formats}.`;
+  const named = ext ? t('v3.capture.file.extension', { ext }) : t('v3.capture.file.noExtension');
+  return t('v3.capture.file.unsupported', { named, formats });
 }
 
 const SIZE_UNITS = ['B', 'KB', 'MB', 'GB'] as const;
@@ -147,32 +148,33 @@ export function formatFileSize(bytes: number): string {
  */
 export type CaptureStage = 'account' | 'upload' | 'parse' | 'enqueue' | 'connect';
 
-const STAGE_TEXT: Record<CaptureStage, string> = {
-  account: 'Setting up the account…',
-  upload: 'Sending the file…',
-  parse: 'Starting the parse…',
-  enqueue: 'Starting the import…',
-  connect: 'Checking the credentials…',
+const STAGE_KEYS: Record<CaptureStage, string> = {
+  account: 'v3.capture.stage.account',
+  upload: 'v3.capture.stage.upload',
+  parse: 'v3.capture.stage.parse',
+  enqueue: 'v3.capture.stage.enqueue',
+  connect: 'v3.capture.stage.connect',
 };
 
-export function describeCaptureStage(stage: CaptureStage): string {
-  return STAGE_TEXT[stage];
+export function describeCaptureStage(t: TFunction, stage: CaptureStage): string {
+  return t(STAGE_KEYS[stage]);
 }
 
 /** What the file import is still missing. The "where" half is manual entry's,
  *  unchanged — the two forms ask the same question and now say the same thing
  *  about it. */
 export function describeImportBlockers(
+  t: TFunction,
   target: AccountTargetDraft,
   file: { name: string } | null
 ): string[] {
-  const blockers = describeAccountTargetBlockers(target);
-  if (!file) blockers.push('choose a file to upload');
+  const blockers = describeAccountTargetBlockers(t, target);
+  if (!file) blockers.push(t('v3.capture.blocker.chooseFile'));
   return blockers;
 }
 
-export function describeInvoiceBlockers(file: { name: string } | null): string[] {
-  return file ? [] : ['choose the invoice to upload'];
+export function describeInvoiceBlockers(t: TFunction, file: { name: string } | null): string[] {
+  return file ? [] : [t('v3.capture.blocker.chooseInvoice')];
 }
 
 export interface WalletImportDraft {
@@ -211,7 +213,7 @@ interface WalletAddressShape {
   valid: RegExp;
   claim?: RegExp;
   /** What a valid one looks like, said to a person. */
-  looksLike: string;
+  looksLikeKey: string;
 }
 
 const WALLET_ADDRESS_SHAPES: readonly WalletAddressShape[] = [
@@ -219,37 +221,34 @@ const WALLET_ADDRESS_SHAPES: readonly WalletAddressShape[] = [
     chain: 'Ethereum',
     valid: /^0x[a-fA-F0-9]{40}$/,
     claim: /^0x/i,
-    looksLike: '0x and then 40 hexadecimal characters, 42 in all',
+    looksLikeKey: 'v3.capture.wallet.shape.ethereum',
   },
   {
     chain: 'Bitcoin',
     valid: /^(?:[13][a-km-zA-HJ-NP-Z1-9]{25,34}|bc1[a-z0-9]{39,59})$/,
     claim: /^bc1/i,
-    looksLike: 'bc1 and then 39 to 59 lowercase letters and digits',
+    looksLikeKey: 'v3.capture.wallet.shape.bitcoin',
   },
   {
     chain: 'TON',
     valid: /^(?:[EUk0]Q[A-Za-z0-9_-]{46}|-?[0-9]:[a-fA-F0-9]{64})$/,
     claim: /^[EUk0]Q/,
-    looksLike: 'EQ or UQ and then 46 characters, 48 in all',
+    looksLikeKey: 'v3.capture.wallet.shape.ton',
   },
   {
     chain: 'Tron',
     valid: /^T[1-9A-HJ-NP-Za-km-z]{33}$/,
-    looksLike: 'T and then 33 more characters, 34 in all',
+    looksLikeKey: 'v3.capture.wallet.shape.tron',
   },
   {
     chain: 'Solana',
     valid: /^[1-9A-HJ-NP-Za-km-z]{32,44}$/,
-    looksLike: '32 to 44 letters and digits, with no 0, O, I or l among them',
+    looksLikeKey: 'v3.capture.wallet.shape.solana',
   },
 ];
 
 /** Every shape at once, for the case where nothing was even aimed at. */
-const EVERY_ADDRESS_SHAPE =
-  'Ethereum and the other EVM chains are 0x and 40 hexadecimal characters; ' +
-  'Bitcoin starts 1, 3 or bc1; Solana is 32 to 44 letters and digits; ' +
-  'Tron starts T; TON starts EQ or UQ.';
+const EVERY_ADDRESS_SHAPE_KEY = 'v3.capture.wallet.everyShape';
 
 export type WalletAddressVerdict =
   | { status: 'empty' }
@@ -258,7 +257,17 @@ export type WalletAddressVerdict =
   | { status: 'incomplete'; problem: string }
   | { status: 'unrecognised'; problem: string };
 
-export function classifyWalletAddress(address: string): WalletAddressVerdict {
+/** The status alone, with no sentence attached — what the builders ask for. */
+export function walletAddressStatus(address: string): WalletAddressVerdict['status'] {
+  const value = address.trim();
+  if (!value) return 'empty';
+  if (WALLET_ADDRESS_SHAPES.some((shape) => shape.valid.test(value))) return 'valid';
+  return WALLET_ADDRESS_SHAPES.some((shape) => shape.claim?.test(value))
+    ? 'incomplete'
+    : 'unrecognised';
+}
+
+export function classifyWalletAddress(t: TFunction, address: string): WalletAddressVerdict {
   const value = address.trim();
   if (!value) return { status: 'empty' };
   if (WALLET_ADDRESS_SHAPES.some((shape) => shape.valid.test(value))) return { status: 'valid' };
@@ -267,12 +276,19 @@ export function classifyWalletAddress(address: string): WalletAddressVerdict {
   if (claimed) {
     return {
       status: 'incomplete',
-      problem: `That is not a complete ${claimed.chain} address — one is ${claimed.looksLike}, and this is ${value.length} characters.`,
+      // `count` first, deliberately: `i18n-keys.test.ts` reads three lines
+      // past a wrapped `t()` looking for it, and that bound is what stops it
+      // finding a NEIGHBOURING call's count. Four arguments would fall outside.
+      problem: t('v3.capture.wallet.incomplete', {
+        count: value.length,
+        chain: claimed.chain,
+        shape: t(claimed.looksLikeKey),
+      }),
     };
   }
   return {
     status: 'unrecognised',
-    problem: `Scani does not read any chain whose addresses look like that. ${EVERY_ADDRESS_SHAPE}`,
+    problem: t('v3.capture.wallet.unrecognised', { shapes: t(EVERY_ADDRESS_SHAPE_KEY) }),
   };
 }
 
@@ -281,26 +297,29 @@ export function classifyWalletAddress(address: string): WalletAddressVerdict {
  * reason `describeImportFileProblem` is: what is wrong with a value the user
  * typed is a correction to make in place, not an item on a list under a button.
  */
-export function describeWalletAddressProblem(address: string): string | null {
-  const verdict = classifyWalletAddress(address);
+export function describeWalletAddressProblem(t: TFunction, address: string): string | null {
+  const verdict = classifyWalletAddress(t, address);
   return verdict.status === 'incomplete' || verdict.status === 'unrecognised'
     ? verdict.problem
     : null;
 }
 
 /** The short version, under the button. The field carries the detail. */
-export function describeWalletImportBlockers(draft: WalletImportDraft): string[] {
-  const verdict = classifyWalletAddress(draft.address);
-  switch (verdict.status) {
+export function walletImportBlockerKeys(draft: WalletImportDraft): string[] {
+  switch (walletAddressStatus(draft.address)) {
     case 'empty':
-      return ['enter the wallet address'];
+      return ['v3.capture.blocker.walletEmpty'];
     case 'incomplete':
-      return ['finish the wallet address'];
+      return ['v3.capture.blocker.walletIncomplete'];
     case 'unrecognised':
-      return ['check the wallet address'];
+      return ['v3.capture.blocker.walletUnrecognised'];
     default:
       return [];
   }
+}
+
+export function describeWalletImportBlockers(t: TFunction, draft: WalletImportDraft): string[] {
+  return walletImportBlockerKeys(draft).map((key) => t(key));
 }
 
 export interface WalletImportInput {
@@ -314,7 +333,7 @@ export function buildWalletImportInput(
   draft: WalletImportDraft,
   requestId: string
 ): WalletImportInput | null {
-  if (describeWalletImportBlockers(draft).length > 0) return null;
+  if (walletImportBlockerKeys(draft).length > 0) return null;
   return {
     address: draft.address.trim(),
     displayName: draft.displayName.trim() || undefined,
@@ -333,11 +352,12 @@ export interface CredentialFieldLike {
 
 export function describeCredentialBlockers(
   fields: readonly CredentialFieldLike[],
-  values: Record<string, string>
+  values: Record<string, string>,
+  t: TFunction
 ): string[] {
   return fields
     .filter((field) => field.required && !(values[field.name] ?? '').trim())
-    .map((field) => `enter the ${field.label}`);
+    .map((field) => t('v3.capture.form.enterField', { label: field.label }));
 }
 
 /**
@@ -366,15 +386,18 @@ export function buildCredentials(
  * here, and an unrecognised one resolves to "Other" — visible and connectable,
  * which is the whole point of the screen.
  */
-const CATEGORY_LABELS: Record<string, string> = {
-  crypto_exchange: 'Crypto exchange',
-  crypto_wallet: 'Crypto wallet',
-  bank: 'Bank',
-  broker: 'Broker',
+const CATEGORY_LABEL_KEYS: Record<string, string> = {
+  crypto_exchange: 'v3.capture.category.cryptoExchange',
+  crypto_wallet: 'v3.capture.category.cryptoWallet',
+  bank: 'v3.capture.category.bank',
+  broker: 'v3.capture.category.broker',
 };
 
-export const INTEGRATION_CATEGORY_FALLBACK = 'Other';
+export const INTEGRATION_CATEGORY_FALLBACK_KEY = 'v3.capture.category.other';
 
-export function integrationCategoryLabel(typeCode: string | null | undefined): string {
-  return (typeCode && CATEGORY_LABELS[typeCode]) || INTEGRATION_CATEGORY_FALLBACK;
+export function integrationCategoryLabel(
+  t: TFunction,
+  typeCode: string | null | undefined
+): string {
+  return t((typeCode && CATEGORY_LABEL_KEYS[typeCode]) || INTEGRATION_CATEGORY_FALLBACK_KEY);
 }

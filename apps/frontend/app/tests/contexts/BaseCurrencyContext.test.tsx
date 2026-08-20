@@ -25,18 +25,17 @@ describe('useBaseCurrency', () => {
 });
 
 describe('provider placement', () => {
-  test('BaseCurrencyProvider is mounted in App, above the v2/v3 split', () => {
+  test('BaseCurrencyProvider is mounted in App, above the lazily loaded tree', () => {
     const app = read('App.tsx');
     expect(app).toInclude("import { BaseCurrencyProvider } from '@/contexts/BaseCurrencyContext'");
     expect(app).toInclude('<BaseCurrencyProvider>');
   });
 
-  test('neither app tree mounts its own provider', () => {
+  test('the app tree does not mount its own provider', () => {
     // Two providers reading the same endpoint drift, and a nested one would
-    // re-fire `users.getBaseCurrency` for the subtree under it.
-    for (const file of ['v2/V2App.tsx', 'v3/V3App.tsx']) {
-      expect(read(file)).not.toInclude('BaseCurrencyProvider');
-    }
+    // re-fire `users.getBaseCurrency` for the subtree under it. This used to
+    // check both trees; the classic one went in SC-423.
+    expect(read('v3/V3App.tsx')).not.toInclude('BaseCurrencyProvider');
   });
 
   test('the v3 tree reads the base currency through the hook, never the query', () => {

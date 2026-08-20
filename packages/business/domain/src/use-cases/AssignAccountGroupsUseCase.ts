@@ -27,26 +27,18 @@ export class AssignAccountGroupsUseCase {
       }
     }
 
-    // Single-account endpoint — route through the bulk path so it picks
-    // up the cascade-to-holdings semantics.
+    // Membership is the account's own standing assertion now, so this writes
+    // `account_groups` and stops there — no cascade onto the holdings, which is
+    // what made the old model a snapshot (SC-386). Removal is not symmetric
+    // with addition and cannot be: see `removeAccountGroups`.
     const currentGroups = await this.groupRepository.findGroupsByAccountId(input.accountId);
     const currentIds = new Set(currentGroups.map((g) => g.id));
     const desired = new Set(input.groupIds);
     const addedGroupIds = input.groupIds.filter((id) => !currentIds.has(id));
     const removedGroupIds = Array.from(currentIds).filter((id) => !desired.has(id));
 
-    const holdingIds = await this.groupRepository.findVisibleHoldingIdsForAccounts([
-      input.accountId,
-    ]);
-    if (holdingIds.length > 0) {
-      if (addedGroupIds.length > 0) {
-        await this.groupRepository.bulkAddHoldingGroups(holdingIds, addedGroupIds);
-      }
-      if (removedGroupIds.length > 0) {
-        await this.groupRepository.bulkRemoveHoldingGroups(holdingIds, removedGroupIds);
-      }
-    }
-    await this.groupRepository.recomputeAccountGroups([input.accountId]);
+    await this.groupRepository.addAccountGroups([input.accountId], addedGroupIds);
+    await this.groupRepository.removeAccountGroups([input.accountId], removedGroupIds);
     return { success: true };
   }
 }

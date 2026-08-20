@@ -1,10 +1,15 @@
 import { describe, expect, test } from 'bun:test';
 import { TransactionImportCoordinator, TransactionImportUnrecoverableError } from '@scani/domain';
+import { restoreContainerAfterAll } from '@scani/domain/test-helpers';
 import type { TransactionImportJob } from '@scani/jobs';
 import { ProviderError } from '@scani/providers/core/errors';
 import { type ProcessorContext, UnrecoverableError } from '@scani/queue';
 import { Container } from 'typedi';
 import { IngestTransactionsProcessor } from '../../src/processors/ingest-transactions';
+
+// Container stubs are process-global; put back whatever this file changes
+// so no later test file resolves them (SC-448).
+restoreContainerAfterAll();
 
 /**
  * SC-166. Bybit answered `retCode=131002` — a start/end span its endpoint

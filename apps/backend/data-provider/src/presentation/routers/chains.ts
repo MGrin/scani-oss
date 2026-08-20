@@ -100,6 +100,8 @@ const SYNTHETIC_USD_TOKEN: Token = {
   iconUrl: null,
   providerMetadata: {},
   isScamProbability: 0,
+  scamScoreVersion: null,
+  scamScoreSource: 'heuristic',
   isActive: true,
   marketSegment: null,
   lookalikeOf: null,

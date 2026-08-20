@@ -2,10 +2,15 @@ import { describe, expect, mock, test } from 'bun:test';
 import { StorageFacade } from '@scani/cloud-client/facades/storage-facade';
 import { DocumentRepository } from '@scani/domain/repositories';
 import { DocumentIngestionService, DocumentRetentionService } from '@scani/domain/services';
+import { restoreContainerAfterAll } from '@scani/domain/test-helpers';
 import type { DocumentParseJob } from '@scani/jobs';
 import { type ProcessorContext, UnrecoverableError } from '@scani/queue';
 import { Container } from 'typedi';
 import { DocumentParseProcessor } from '../../src/processors/document-parse';
+
+// Container stubs are process-global; put back whatever this file changes
+// so no later test file resolves them (SC-448).
+restoreContainerAfterAll();
 
 // The exact string R2 returns, as it reaches the worker: the data-provider
 // stringifies the S3 error into a TRPCError message and `CloudError.wrap`

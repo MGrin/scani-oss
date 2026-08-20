@@ -3,6 +3,7 @@ import { Block } from '@scani/ui/v3/components/Block';
 import { PageLayout } from '@scani/ui/v3/components/PageLayout';
 import { describeQueryError } from '@scani/ui/v3/lib/errors';
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { trpc } from '@/lib/trpc';
 import { CaptureHeader } from '../components/capture/CaptureHeader';
@@ -34,6 +35,7 @@ import { jobDetailPath } from '../lib/routes';
  * to go and find, for a mistake one keystroke would have fixed here.
  */
 export function WalletImportPage() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
 
   const [draft, setDraft] = useState(emptyWalletImportDraft);
@@ -41,7 +43,7 @@ export function WalletImportPage() {
   const [error, setError] = useState<string | null>(null);
   const [addressLeft, setAddressLeft] = useState(false);
 
-  const addressProblem = describeWalletAddressProblem(draft.address);
+  const addressProblem = describeWalletAddressProblem(t, draft.address);
   // Said once the field has been left, and — for anything already long enough
   // to be a finished paste — while it still has focus. Neither on its own is
   // enough: a wrong paste should not have to wait for a blur to be named, and
@@ -52,7 +54,7 @@ export function WalletImportPage() {
   const importAddress = trpc.wallet.importAddress.useMutation({
     onSuccess: ({ jobId }) => navigate(jobDetailPath(jobId)),
     onError: (err) => {
-      const copy = describeQueryError(err, 'this wallet');
+      const copy = describeQueryError(err, t('v3.capture.page.wallet.subject'));
       setError(`${copy.title}. ${copy.detail}`);
       setStage(null);
     },
@@ -71,14 +73,14 @@ export function WalletImportPage() {
   return (
     <PageLayout>
       <CaptureHeader
-        title="Watch a wallet address"
-        description="We detect which chain it is on, read its balances off the chain, and refresh them every hour."
+        title={t('v3.capture.page.wallet.title')}
+        description={t('v3.capture.page.wallet.description')}
       />
 
       <Block>
-        <FieldSet title="The address">
+        <FieldSet title={t('v3.capture.page.wallet.fieldset')}>
           <Field
-            label="Wallet address"
+            label={t('v3.capture.page.wallet.addressLabel')}
             htmlFor="wallet-address"
             hint={
               showAddressProblem ? (
@@ -86,7 +88,7 @@ export function WalletImportPage() {
                   {addressProblem}
                 </span>
               ) : (
-                'Any supported chain — Ethereum, Bitcoin, Solana and the rest. You do not have to say which.'
+                t('v3.capture.page.wallet.addressHint')
               )
             }
           >
@@ -103,7 +105,7 @@ export function WalletImportPage() {
                   submit();
                 }
               }}
-              placeholder="0x… or bc1… or …"
+              placeholder={t('v3.capture.page.wallet.addressPlaceholder')}
               className="font-mono text-body"
               autoCapitalize="none"
               autoCorrect="off"
@@ -115,9 +117,9 @@ export function WalletImportPage() {
           </Field>
 
           <Field
-            label="Name"
+            label={t('v3.capture.page.wallet.nameLabel')}
             htmlFor="wallet-name"
-            hint="Optional. What you call this wallet, rather than its address."
+            hint={t('v3.capture.page.wallet.nameHint')}
           >
             <Input
               id="wallet-name"
@@ -125,7 +127,7 @@ export function WalletImportPage() {
               onChange={(event) =>
                 setDraft((current) => ({ ...current, displayName: event.target.value }))
               }
-              placeholder="Cold storage, Trading wallet…"
+              placeholder={t('v3.capture.page.wallet.namePlaceholder')}
               className="text-body"
               disabled={busy}
             />
@@ -134,8 +136,8 @@ export function WalletImportPage() {
       </Block>
 
       <CaptureSubmit
-        label="Watch this wallet"
-        blockers={describeWalletImportBlockers(draft)}
+        label={t('v3.capture.page.wallet.submit')}
+        blockers={describeWalletImportBlockers(t, draft)}
         onSubmit={submit}
         stage={stage}
         busyLabel="the import"

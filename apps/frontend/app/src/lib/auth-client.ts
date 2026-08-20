@@ -1,5 +1,7 @@
+import { LANGUAGE_HEADER } from '@scani/shared';
 import { emailOTPClient, magicLinkClient } from 'better-auth/client/plugins';
 import { createAuthClient } from 'better-auth/react';
+import i18n from '@/i18n';
 import { fetchWithDeadline } from '@/lib/auth-network';
 
 /**
@@ -24,6 +26,23 @@ export const authClient = createAuthClient({
     // (SC-78 §1 and §2).
     customFetchImpl: (input, init) =>
       fetchWithDeadline(input as string | URL | Request, init as RequestInit | undefined),
+    // The reader's interface language, on every auth request (SC-412).
+    //
+    // This is the only way the language reaches the letter: the sender is
+    // signed out, so there is no stored preference to read, and the sign-in
+    // mail is the one step of the flow that leaves the browser. Read here
+    // rather than captured at module load because the language can change
+    // after this file runs — and read from i18next rather than
+    // `navigator.language`, because the DEVICE's language is exactly what
+    // this app refuses to let decide anything (SC-175, SC-201).
+    //
+    // On every request rather than at the two sign-in call sites: sign-up
+    // verification and change-email also send mail, from screens that have no
+    // idea one is about to go out.
+    onRequest: (context) => {
+      if (i18n.language) context.headers.set(LANGUAGE_HEADER, i18n.language);
+      return context;
+    },
   },
   plugins: [magicLinkClient(), emailOTPClient()],
 });

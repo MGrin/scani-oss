@@ -23,8 +23,13 @@ import {
   VendorRepository,
 } from '@scani/domain/repositories';
 import { PaymentService } from '@scani/domain/services';
+import { restoreContainerAfterAll } from '@scani/domain/test-helpers';
 import { Container } from 'typedi';
 import { makeAuthedCaller } from '../helpers/test-caller';
+
+// Container stubs are process-global; put back whatever this file changes
+// so no later test file resolves them (SC-448).
+restoreContainerAfterAll();
 
 let realPaymentRepository: PaymentRepository;
 let realOccurrenceRepository: PaymentOccurrenceRepository;
@@ -114,11 +119,11 @@ describe('IDOR — payments router', () => {
 
 describe('IDOR — vendors router', () => {
   test('create derives the owner from ctx.userId, never from a client-supplied field', async () => {
-    let receivedUserId: string | null = null;
+    const receivedUserIds: Array<string | null> = [];
     Container.set(VendorRepository, {
       resolve: async () => undefined,
       createForUser: async (userId: string) => {
-        receivedUserId = userId;
+        receivedUserIds.push(userId);
         return {
           id: VENDOR_INTO_ID,
           userId,
@@ -137,7 +142,7 @@ describe('IDOR — vendors router', () => {
     const result = await caller.vendors.create({ displayName: 'Acme' });
     // `create`'s input schema has no `userId` field at all — this pins
     // that the value written through is the AUTHENTICATED caller's id.
-    expect(receivedUserId).toBe(ATTACKER_ID);
+    expect(receivedUserIds[0]).toBe(ATTACKER_ID);
     expect(result.userId).toBe(ATTACKER_ID);
   });
 
@@ -159,10 +164,10 @@ describe('IDOR — vendors router', () => {
   });
 
   test("merge refuses to fold another user's vendor and passes ctx.userId, never a client field", async () => {
-    let receivedUserId: string | null = null;
+    const receivedUserIds: Array<string | null> = [];
     Container.set(VendorRepository, {
       merge: async (userId: string) => {
-        receivedUserId = userId;
+        receivedUserIds.push(userId);
         throw new Error(
           `Cannot merge vendors: ${VENDOR_INTO_ID} and ${VENDOR_FROM_ID} must both belong to user ${userId}`
         );
@@ -177,7 +182,7 @@ describe('IDOR — vendors router', () => {
     // input — the merge input schema has no userId field at all, and
     // this pins that the value passed through is the AUTHENTICATED
     // caller's id.
-    expect(receivedUserId).toBe(ATTACKER_ID);
+    expect(receivedUserIds[0]).toBe(ATTACKER_ID);
   });
 });
 

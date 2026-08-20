@@ -1,5 +1,6 @@
 import { Sparkline } from '@scani/ui/v3/components/charts/Sparkline';
 import { useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { trpc } from '@/lib/trpc';
 import { DEFAULT_HOME_PERIOD, periodRange, sparklineSeries } from '../../lib/home';
 
@@ -32,6 +33,7 @@ interface HoldingTrendProps {
 }
 
 export function HoldingTrend({ holdingId, value, symbol }: HoldingTrendProps) {
+  const { t } = useTranslation();
   // Pinned on mount rather than recomputed per render, so a refetch cannot
   // shift the window under the shape already on screen.
   const range = useMemo(() => periodRange(DEFAULT_HOME_PERIOD, new Date()), []);
@@ -53,7 +55,10 @@ export function HoldingTrend({ holdingId, value, symbol }: HoldingTrendProps) {
     <Sparkline
       data={points}
       height={40}
-      label={`${symbol} value over the last ${DEFAULT_HOME_PERIOD.suffix}`}
+      label={t('v3.holdings.trendLabel', {
+        symbol,
+        period: t(DEFAULT_HOME_PERIOD.suffixKey),
+      })}
     />
   );
 }

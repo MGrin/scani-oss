@@ -7,6 +7,7 @@ import type { V3DataViewConfig } from '@scani/ui/v3/lib/data-view';
 import { exportMoney, exportPercent } from '@scani/ui/v3/lib/export/cell';
 import type { V3QueryState } from '@scani/ui/v3/lib/query-state';
 import { PiggyBank } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { vaultDetailPath } from '../../lib/routes';
 import {
@@ -58,30 +59,31 @@ function VaultProgressCell({ vault }: { vault: VaultRow }) {
 }
 
 export function VaultsList({ vaults, query, onCreate }: VaultsListProps) {
+  const { t } = useTranslation();
   const navigate = useNavigate();
 
   const config: V3DataViewConfig<VaultRow> = {
     pageKey: 'vaults',
     data: vaults,
-    noun: 'vaults',
-    searchPlaceholder: 'Search vaults',
+    nounKey: 'ui.dataView.noun.vaults',
+    searchPlaceholderKey: 'ui.dataView.vaults.config.searchVaults',
     searchFn: (vault, query) => vault.name.toLowerCase().includes(query),
     filterDefs: [
       {
         key: 'status',
-        label: 'Status',
+        labelKey: 'ui.dataView.vaults.filter.status',
         options: [
-          { value: 'open', label: 'Still saving' },
-          { value: 'met', label: 'Target reached' },
+          { value: 'open', labelKey: 'ui.dataView.vaults.option.stillSaving' },
+          { value: 'met', labelKey: 'ui.dataView.vaults.option.targetReached' },
         ],
         fn: (vault: VaultRow, value) => (value === 'met' ? vaultIsMet(vault) : !vaultIsMet(vault)),
       },
     ],
     sortDefs: [
-      { key: 'saved', label: 'Saved' },
-      { key: 'progress', label: 'Progress' },
-      { key: 'target', label: 'Target' },
-      { key: 'name', label: 'Name' },
+      { key: 'saved', labelKey: 'ui.dataView.vaults.sort.saved' },
+      { key: 'progress', labelKey: 'ui.dataView.vaults.sort.progress' },
+      { key: 'target', labelKey: 'ui.dataView.vaults.sort.target' },
+      { key: 'name', labelKey: 'ui.dataView.vaults.sort.name' },
     ],
     sortFn: compareVaults,
     defaultSort: { field: 'saved', direction: 'desc' },
@@ -104,7 +106,7 @@ export function VaultsList({ vaults, query, onCreate }: VaultsListProps) {
       delta: (
         <span className="text-muted-foreground">
           {vaultIsMet(vault) ? (
-            'Target reached'
+            t('v3.vaults.targetReached')
           ) : (
             <>
               <Numeric value={vaultRemaining(vault)} currency={vault.currencySymbol} decimals={0} />
@@ -113,12 +115,15 @@ export function VaultsList({ vaults, query, onCreate }: VaultsListProps) {
           )}
         </span>
       ),
-      ariaLabel: `${vault.name}, ${Math.round(vaultProgress(vault))}% of target`,
+      ariaLabel: t('v3.vaults.list.rowSpoken', {
+        name: vault.name,
+        percent: Math.round(vaultProgress(vault)),
+      }),
     }),
     columns: [
       {
         key: 'name',
-        header: 'Vault',
+        headerKey: 'ui.dataView.vaults.col.vault',
         sortable: true,
         width: 'w-[28%]',
         render: (vault) => (
@@ -134,13 +139,13 @@ export function VaultsList({ vaults, query, onCreate }: VaultsListProps) {
       },
       {
         key: 'progressBar',
-        header: 'Progress',
+        headerKey: 'ui.dataView.vaults.col.progress',
         render: (vault) => <VaultProgressCell vault={vault} />,
         exportValue: (vault) => exportPercent(vault.progress),
       },
       {
         key: 'saved',
-        header: 'Saved',
+        headerKey: 'ui.dataView.vaults.col.saved',
         sortable: true,
         numeric: true,
         render: (vault) => (
@@ -151,7 +156,7 @@ export function VaultsList({ vaults, query, onCreate }: VaultsListProps) {
       },
       {
         key: 'target',
-        header: 'Target',
+        headerKey: 'ui.dataView.vaults.col.target',
         sortable: true,
         numeric: true,
         render: (vault) => (
@@ -163,10 +168,9 @@ export function VaultsList({ vaults, query, onCreate }: VaultsListProps) {
     ],
     empty: {
       icon: PiggyBank,
-      title: 'No vaults yet',
-      description:
-        'A vault is a savings goal: name it, set a target, and attach the holdings that count toward it.',
-      action: <Button onClick={onCreate}>Create your first vault</Button>,
+      titleKey: 'ui.dataView.vaults.empty.noVaultsYet',
+      descriptionKey: 'ui.dataView.vaults.empty.aVaultIsASavingsGoal',
+      action: <Button onClick={onCreate}>{t('v3.vaults.createFirst')}</Button>,
     },
     onRowClick: (vault) => navigate(vaultDetailPath(vault.id)),
     rowHref: (vault) => vaultDetailPath(vault.id),

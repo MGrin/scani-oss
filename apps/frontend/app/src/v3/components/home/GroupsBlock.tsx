@@ -2,6 +2,7 @@ import { Block, BlockHeader } from '@scani/ui/v3/components/Block';
 import { DataRow, DataRowList } from '@scani/ui/v3/components/DataRow';
 import { Numeric } from '@scani/ui/v3/components/Numeric';
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { trpc } from '@/lib/trpc';
 import { groupRows } from '../../lib/home';
 import { groupDetailPath } from '../../lib/routes';
@@ -39,13 +40,14 @@ import { DisclosureButton } from './DisclosureButton';
 const GROUPS_SHOWN = 5;
 
 export function GroupsBlock() {
+  const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
 
   const groups = trpc.groups.getAllWithCounts.useQuery();
   const values = trpc.groups.getValues.useQuery();
 
   const currency = values.data?.baseCurrency ?? 'USD';
-  const rows = groupRows(groups.data ?? [], values.data?.groups ?? []);
+  const rows = groupRows(groups.data ?? [], values.data?.groups ?? [], t);
 
   // Nothing to summarise and nothing to offer: the user has not organised
   // anything into groups, and an empty block teaching him that groups exist is
@@ -56,7 +58,7 @@ export function GroupsBlock() {
 
   return (
     <Block>
-      <BlockHeader title="Groups" />
+      <BlockHeader title={t('v3.home.groups.title')} />
       <DataRowList className="border-t border-border">
         {shown.map((row) => (
           <DataRow
@@ -77,7 +79,7 @@ export function GroupsBlock() {
             sublabel={row.sublabel}
             value={<Numeric value={row.value} currency={currency} compact />}
             href={groupDetailPath(row.id)}
-            aria-label={`${row.name} — open the group`}
+            aria-label={t('v3.home.groups.openGroup', { name: row.name })}
           />
         ))}
       </DataRowList>
@@ -86,7 +88,7 @@ export function GroupsBlock() {
           <DisclosureButton
             expanded={expanded}
             onToggle={() => setExpanded((open) => !open)}
-            label={`the other ${rows.length - GROUPS_SHOWN}`}
+            label={t('v3.home.disclosure.theOtherN', { count: rows.length - GROUPS_SHOWN })}
           />
         </div>
       ) : null}

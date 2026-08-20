@@ -86,7 +86,7 @@ describe('EtherscanProvider', () => {
         );
       }
       throw new Error(`Unexpected url: ${url}`);
-    }) as typeof fetch;
+    }) as unknown as typeof fetch;
     try {
       const out = await p.fetchBalances(ctx as never);
       const eth = out.find((h) => h.tokenIdentity.symbol === 'ETH');

@@ -3,6 +3,11 @@ import type { User } from '@scani/db/schema';
 import { Container } from 'typedi';
 import { HoldingRepository } from '../../../src/repositories/HoldingRepository';
 import { HoldingQueryService } from '../../../src/services/holdings/HoldingQueryService';
+import { restoreContainerAfterAll } from '../../../test/helpers/container';
+
+// Container stubs are process-global; put back whatever this file changes
+// so no later test file resolves them (SC-448).
+restoreContainerAfterAll();
 
 // getHiddenHoldings powers the Tokens page "Hidden holdings" section. It
 // must surface every holding kept off the dashboard — user-hidden OR

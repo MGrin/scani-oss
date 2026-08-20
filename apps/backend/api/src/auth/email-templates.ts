@@ -10,9 +10,9 @@
 
 const BRAND = {
   appName: 'Scani',
-  appUrl: 'https://app.example.com',
-  marketingUrl: 'https://example.com',
-  supportAddress: 'support@example.com',
+  appUrl: 'https://app.scani.xyz',
+  marketingUrl: 'https://scani.xyz',
+  supportAddress: 'support@scani.xyz',
   accent: '#111111',
   accentText: '#ffffff',
   bodyBg: '#f5f6f8',

@@ -81,7 +81,7 @@ describe('TronProvider', () => {
         );
       }
       throw new Error(`Unexpected url: ${url}`);
-    }) as typeof fetch;
+    }) as unknown as typeof fetch;
     try {
       const out = await p.fetchBalances(ctx as never);
       const trx = out.find((h) => h.tokenIdentity.symbol === 'TRX');
@@ -211,7 +211,7 @@ describe('TronProvider.fetchTransactions — native', () => {
       }
       // empty TRC20 page so the parallel loop finishes
       return new Response(JSON.stringify({ data: [], meta: {} }), { status: 200 });
-    }) as typeof fetch;
+    }) as unknown as typeof fetch;
 
     try {
       const events = await p.fetchTransactions(ctx as never);
@@ -300,7 +300,7 @@ describe('TronProvider.fetchTransactions — native', () => {
         return new Response(JSON.stringify(pages[1]), { status: 200 });
       }
       return new Response(JSON.stringify({ data: [], meta: {} }), { status: 200 });
-    }) as typeof fetch;
+    }) as unknown as typeof fetch;
 
     try {
       const events = await p.fetchTransactions(ctx as never);
@@ -369,7 +369,7 @@ describe('TronProvider.fetchTransactions — native', () => {
         );
       }
       return new Response(JSON.stringify({ data: [], meta: {} }), { status: 200 });
-    }) as typeof fetch;
+    }) as unknown as typeof fetch;
 
     try {
       const events = await p.fetchTransactions({
@@ -459,7 +459,7 @@ describe('TronProvider.fetchTransactions — TRC20', () => {
       }
       // native side returns nothing
       return new Response(JSON.stringify({ data: [], meta: {} }), { status: 200 });
-    }) as typeof fetch;
+    }) as unknown as typeof fetch;
 
     try {
       const events = await p.fetchTransactions(ctx as never);
@@ -484,12 +484,12 @@ describe('TronProvider — API key header', () => {
   test('attaches TRON-PRO-API-KEY when configured', async () => {
     const p = new TronProvider(passthroughLimiter(), 'http://api', 'secret-key');
 
-    let seenHeaders: HeadersInit | undefined;
+    let seenHeaders: RequestInit['headers'];
     const originalFetch = globalThis.fetch;
     globalThis.fetch = (async (_url: string, init?: RequestInit) => {
       seenHeaders = init?.headers;
       return new Response(JSON.stringify({ data: [], meta: {} }), { status: 200 });
-    }) as typeof fetch;
+    }) as unknown as typeof fetch;
 
     try {
       await p.fetchTransactions(ctx as never);

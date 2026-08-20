@@ -1,6 +1,6 @@
 process.env.DATABASE_URL = process.env.DATABASE_URL || 'postgresql://dummy:dummy@localhost/dummy';
 
-import { afterAll, describe, expect, test } from 'bun:test';
+import { describe, expect, test } from 'bun:test';
 import type { NewToken, Token } from '@scani/db/schema';
 import { Container } from 'typedi';
 import { TokenTypeRepository } from '../../../src/repositories/EnumRepositories';
@@ -8,16 +8,11 @@ import { TokenPriceRepository } from '../../../src/repositories/TokenPriceReposi
 import { TokenRepository } from '../../../src/repositories/TokenRepository';
 import { TokenIdentityService } from '../../../src/services/tokens/TokenIdentityService';
 import { TokenService } from '../../../src/services/tokens/TokenService';
+import { restoreContainerAfterAll } from '../../../test/helpers/container';
 
-// Stubs leak across files because typedi's Container is process-global.
-// Restore real @Service() instances after the suite.
-afterAll(() => {
-  Container.set(TokenRepository, new TokenRepository());
-  Container.set(TokenPriceRepository, new TokenPriceRepository());
-  Container.set(TokenTypeRepository, new TokenTypeRepository());
-  Container.set(TokenIdentityService, new TokenIdentityService());
-  Container.set(TokenService, new TokenService());
-});
+// Container stubs are process-global; put back whatever this file changes
+// so no later test file resolves them (SC-448).
+restoreContainerAfterAll();
 
 function makeToken(): Token {
   return {

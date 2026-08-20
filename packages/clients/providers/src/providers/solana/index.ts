@@ -11,6 +11,41 @@
  *    so when no Helius URL is configured we warn-once and return [].
  *  - `address-validator`: base58, 32–44 chars.
  *
+ * TRANSFER LEGS ARE NOT A SOURCE OF EVENTS (SC-357). Helius reports
+ * every account-level movement a transaction makes, and several of
+ * them are the same money seen from different sides. A wrap/unwrap
+ * round trip moves lamports into the wallet's own WSOL account and
+ * then moves WSOL out of it; WSOL resolves to the same token identity
+ * as native SOL, so replaying both legs booked the same 0.5 SOL twice.
+ * `events.swap` restated it a third time, which is what SC-339
+ ***REMOVED***
+ ***REMOVED***
+ ***REMOVED***
+ *
+ * The primitive that cannot double count is `accountData[]`:
+ * `nativeBalanceChange` on the wallet's own account plus
+ * `tokenBalanceChanges` on the accounts it owns is the transaction's
+ * NET effect per token, stated once. This provider projects that and
+ * nothing else — one event per token per transaction, keyed
+ ***REMOVED***
+ ***REMOVED***
+ ***REMOVED***
+ *
+ * Three consequences worth stating, because each looks like a bug
+ * until you know it is the point:
+ *
+ *  - WSOL folds into native SOL rather than being netted separately.
+ *    They are the same asset and the same token identity, so a wrap
+ *    that stays wrapped is a movement of nothing and emits no event.
+ *  - The transaction FEE is inside `nativeBalanceChange` and stays
+ *    there. It is a real disposal of SOL, and `feeQuantity` is written
+ *    by the router but read by no cost-basis walk, so a separate fee
+ *    leg would silently vanish from the ledger's total.
+ *  - A transaction Helius returns without `accountData` emits nothing.
+ *    None of the 312 lacked it; if one ever does, saying nothing is
+ *    the only honest option left, because every other field on the
+ *    payload is a leg and legs are what this stopped trusting.
+ *
  * The public Solana RPC throttles aggressively; in production we
  * STRONGLY recommend Helius. The boot-time log emits a warning when
  * the public path is selected so ops sees it once per process.
@@ -40,6 +75,9 @@ const SOL_INSTITUTION_CODE = 'solana';
 const LAMPORTS_PER_SOL = 1_000_000_000;
 const HELIUS_ENHANCED_BASE = 'https://api.helius.xyz/v0';
 const HELIUS_PAGE_LIMIT = 100;
+const WSOL_MINT = 'So11111111111111111111111111111111111111112';
+/** `external_id` and net-map key for native SOL, which has no mint. */
+const NATIVE_KEY = 'native';
 
 interface RpcResponse<T> {
   jsonrpc: string;
@@ -62,53 +100,24 @@ interface SolanaTokenAccount {
   pubkey: string;
 }
 
-interface HeliusNativeTransfer {
-  fromUserAccount?: string;
-  toUserAccount?: string;
-  amount: number;
-}
-
-interface HeliusTokenTransfer {
-  fromUserAccount?: string;
-  toUserAccount?: string;
-  fromTokenAccount?: string;
-  toTokenAccount?: string;
-  tokenAmount: number;
-  decimals?: number;
-  mint: string;
-  tokenStandard?: string;
-}
-
-interface HeliusSwapNativeLeg {
-  account?: string;
-  amount: string | number;
-}
-
-interface HeliusSwapTokenLeg {
+interface HeliusTokenBalanceChange {
+  /** Owner of `tokenAccount` — the wallet, for its own ATAs. */
   userAccount?: string;
-  tokenAccount?: string;
   mint: string;
-  rawTokenAmount?: { tokenAmount: string; decimals: number };
+  rawTokenAmount: { tokenAmount: string; decimals: number };
 }
 
-interface HeliusSwapEvent {
-  nativeInput?: HeliusSwapNativeLeg;
-  nativeOutput?: HeliusSwapNativeLeg;
-  tokenInputs?: HeliusSwapTokenLeg[];
-  tokenOutputs?: HeliusSwapTokenLeg[];
+interface HeliusAccountData {
+  account: string;
+  /** Signed lamport delta for `account`, fee included for the payer. */
+  nativeBalanceChange?: number;
+  tokenBalanceChanges?: HeliusTokenBalanceChange[];
 }
 
 interface HeliusEnhancedTx {
   signature: string;
   timestamp: number;
-  description?: string;
-  type?: string;
-  source?: string;
-  fee?: number;
-  feePayer?: string;
-  nativeTransfers?: HeliusNativeTransfer[];
-  tokenTransfers?: HeliusTokenTransfer[];
-  events?: { swap?: HeliusSwapEvent };
+  accountData?: HeliusAccountData[];
 }
 
 export class SolanaProvider
@@ -210,6 +219,16 @@ export class SolanaProvider
    * configured `rpcUrl` is the public Solana RPC we warn-once and
    * return []. Pagination uses Helius's `before=<signature>` cursor on
    * the last item of each page; we stop when a page comes back short.
+   *
+   * `since` also stops the walk. Helius returns an address's transactions
+   * newest-first — which is the whole reason `before` pages BACKWARDS — so
+   * once a page ends older than the cutoff, every later page is older
+   * still and every event on it would be filtered out below. Without this
+   * the nightly sync re-walked a wallet's entire history to keep a 30-day
+   * window: 4 Helius calls per wallet per night for mgrin's larger wallet,
+   * against 1 (SC-360). The filter below stays — it is what makes the
+   * boundary page correct, since a page straddling the cutoff carries
+   * events on both sides of it.
    */
   async fetchTransactions(
     ctx: WithUserCreds<ProviderContext> & {
@@ -253,6 +272,7 @@ export class SolanaProvider
       }
       const last = page[page.length - 1];
       if (!last?.signature || page.length < HELIUS_PAGE_LIMIT) break;
+      if (ctx.since && new Date(last.timestamp * 1000) < ctx.since) break;
       before = last.signature;
     }
 
@@ -385,89 +405,61 @@ export class SolanaProvider
     );
   }
 
+  /**
+   * One event per token per transaction, netted from `accountData`.
+   *
+   * The wallet's `nativeBalanceChange` and the `tokenBalanceChanges` of
+   * the token accounts it owns are, together, the whole of what the
+   * transaction did to it. Nothing here reads a transfer leg, so no
+   * amount can be counted twice — see the file header for the 3.4x
+   * that motivated it (SC-357).
+   */
   private toTransactionEvents(
     tx: HeliusEnhancedTx,
     wallet: string,
     mintMap: Map<string, Partial<NewToken>>
   ): TransactionEvent[] {
-    const events: TransactionEvent[] = [];
     const occurredAt = new Date(tx.timestamp * 1000);
+    const net = new Map<string, Decimal>();
+    const add = (key: string, qty: Decimal) =>
+      net.set(key, (net.get(key) ?? new Decimal(0)).plus(qty));
 
-    const nativeTransfers = tx.nativeTransfers ?? [];
-    for (let i = 0; i < nativeTransfers.length; i++) {
-      const t = nativeTransfers[i];
-      if (!t) continue;
-      const sol = new Decimal(t.amount).div(LAMPORTS_PER_SOL);
-      if (t.fromUserAccount === wallet) {
-        events.push({
-          externalId: `${tx.signature}-native-${i}`,
-          occurredAt,
-          kind: 'transfer_out',
-          primary: { tokenIdentity: solIdentity(), quantity: sol.negated().toString() },
-        });
-      } else if (t.toUserAccount === wallet) {
-        events.push({
-          externalId: `${tx.signature}-native-${i}`,
-          occurredAt,
-          kind: 'transfer_in',
-          primary: { tokenIdentity: solIdentity(), quantity: sol.toString() },
-        });
+    for (const account of tx.accountData ?? []) {
+      if (account.account === wallet && account.nativeBalanceChange) {
+        add(NATIVE_KEY, new Decimal(account.nativeBalanceChange).div(LAMPORTS_PER_SOL));
+      }
+      for (const change of account.tokenBalanceChanges ?? []) {
+        if (change.userAccount !== wallet) continue;
+        const { tokenAmount, decimals } = change.rawTokenAmount;
+        add(mintKey(change.mint), new Decimal(tokenAmount).div(new Decimal(10).pow(decimals)));
       }
     }
 
-    const tokenTransfers = tx.tokenTransfers ?? [];
-    for (let i = 0; i < tokenTransfers.length; i++) {
-      const t = tokenTransfers[i];
-      if (!t) continue;
-      const qty = new Decimal(t.tokenAmount);
-      const tokenId = lookupMintIdentity(mintMap, t.mint, t.decimals);
-      if (t.fromUserAccount === wallet) {
-        events.push({
-          externalId: `${tx.signature}-token-${i}`,
-          occurredAt,
-          kind: 'transfer_out',
-          primary: { tokenIdentity: tokenId, quantity: qty.negated().toString() },
-        });
-      } else if (t.toUserAccount === wallet) {
-        events.push({
-          externalId: `${tx.signature}-token-${i}`,
-          occurredAt,
-          kind: 'transfer_in',
-          primary: { tokenIdentity: tokenId, quantity: qty.toString() },
-        });
-      }
+    const events: TransactionEvent[] = [];
+    // Sorted so a re-import produces the same events in the same order
+    // whatever order Helius listed the accounts in.
+    for (const key of [...net.keys()].sort()) {
+      const qty = net.get(key) as Decimal;
+      if (qty.isZero()) continue;
+      events.push({
+        externalId: `${tx.signature}-net-${key}`,
+        occurredAt,
+        kind: qty.isNegative() ? 'transfer_out' : 'transfer_in',
+        primary: {
+          tokenIdentity: key === NATIVE_KEY ? solIdentity() : lookupMintIdentity(mintMap, key),
+          quantity: qty.toString(),
+        },
+      });
     }
-
-    const swap = tx.events?.swap;
-    if (swap) {
-      const outLeg = pickSwapLeg(swap, wallet, 'out', mintMap);
-      if (outLeg) {
-        events.push({
-          externalId: `${tx.signature}-swap-0`,
-          occurredAt,
-          kind: 'swap_out',
-          primary: {
-            tokenIdentity: outLeg.tokenIdentity,
-            quantity: outLeg.quantity.negated().toString(),
-          },
-        });
-      }
-      const inLeg = pickSwapLeg(swap, wallet, 'in', mintMap);
-      if (inLeg) {
-        events.push({
-          externalId: `${tx.signature}-swap-1`,
-          occurredAt,
-          kind: 'swap_in',
-          primary: {
-            tokenIdentity: inLeg.tokenIdentity,
-            quantity: inLeg.quantity.toString(),
-          },
-        });
-      }
-    }
-
     return events;
   }
+}
+
+// WSOL is native SOL in a token account. It resolves to the same token
+// identity, so netting it under a separate key would leave a wrap and
+// its unwrap as two full-sized movements of the same lamports.
+function mintKey(mint: string): string {
+  return mint === WSOL_MINT ? NATIVE_KEY : mint;
 }
 
 function solIdentity(): Partial<NewToken> {
@@ -511,25 +503,25 @@ function splIdentity(
 // Pre-resolve all unique mints on a page of Helius txs so the
 // synchronous projection function can look them up without awaiting.
 // Concurrent Jupiter lookups; per-mint cache means subsequent pages
-// touching the same mint are free.
+// touching the same mint are free. Scans `accountData` because that is
+// what the projection reads — WSOL is skipped, since it is emitted
+// under the native SOL identity and never looked up as a mint.
 async function collectMintIdentities(
   txs: HeliusEnhancedTx[]
 ): Promise<Map<string, Partial<NewToken>>> {
-  const mints = new Set<string>();
+  const mints = new Map<string, number>();
   for (const tx of txs) {
-    for (const t of tx.tokenTransfers ?? []) {
-      if (t.mint) mints.add(t.mint);
-    }
-    const swap = tx.events?.swap;
-    if (swap) {
-      for (const leg of swap.tokenInputs ?? []) if (leg.mint) mints.add(leg.mint);
-      for (const leg of swap.tokenOutputs ?? []) if (leg.mint) mints.add(leg.mint);
+    for (const account of tx.accountData ?? []) {
+      for (const change of account.tokenBalanceChanges ?? []) {
+        if (!change.mint || change.mint === WSOL_MINT) continue;
+        mints.set(change.mint, change.rawTokenAmount.decimals);
+      }
     }
   }
   const entries = await Promise.all(
-    Array.from(mints).map(async (mint) => {
+    Array.from(mints).map(async ([mint, decimals]) => {
       const jup = await resolveJupiterMint(mint);
-      return [mint, splIdentity(mint, jup?.decimals ?? 0, jup)] as const;
+      return [mint, splIdentity(mint, jup?.decimals ?? decimals, jup)] as const;
     })
   );
   return new Map(entries);
@@ -537,42 +529,13 @@ async function collectMintIdentities(
 
 function lookupMintIdentity(
   mintMap: Map<string, Partial<NewToken>>,
-  mint: string,
-  decimalsHint?: number
+  mint: string
 ): Partial<NewToken> {
   const cached = mintMap.get(mint);
   if (cached) return cached;
   // Fallback when the mint wasn't pre-resolved (defensive — should not
   // happen because collectMintIdentities scans every tx).
-  return splIdentity(mint, decimalsHint ?? 0, null);
-}
-
-function pickSwapLeg(
-  swap: HeliusSwapEvent,
-  wallet: string,
-  direction: 'in' | 'out',
-  mintMap: Map<string, Partial<NewToken>>
-): { tokenIdentity: Partial<NewToken>; quantity: Decimal } | null {
-  const nativeLeg = direction === 'out' ? swap.nativeInput : swap.nativeOutput;
-  if (nativeLeg && nativeLeg.account === wallet) {
-    const lamports = new Decimal(nativeLeg.amount);
-    return {
-      tokenIdentity: solIdentity(),
-      quantity: lamports.div(LAMPORTS_PER_SOL),
-    };
-  }
-  const tokenLegs = direction === 'out' ? swap.tokenInputs : swap.tokenOutputs;
-  for (const leg of tokenLegs ?? []) {
-    if (leg.userAccount !== wallet) continue;
-    const raw = leg.rawTokenAmount;
-    if (!raw) continue;
-    const qty = new Decimal(raw.tokenAmount).div(new Decimal(10).pow(raw.decimals));
-    return {
-      tokenIdentity: lookupMintIdentity(mintMap, leg.mint, raw.decimals),
-      quantity: qty,
-    };
-  }
-  return null;
+  return splIdentity(mint, 0, null);
 }
 
 export const solanaFactory: ProviderFactory = async (deps) => {

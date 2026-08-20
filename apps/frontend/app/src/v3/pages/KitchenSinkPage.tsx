@@ -698,14 +698,14 @@ type SpecimenHolding = (typeof SPECIMEN_HOLDINGS)[number];
 
 const SPECIMEN_CONFIG: Omit<V3DataViewConfig<SpecimenHolding>, 'data'> = {
   pageKey: 'kitchen-sink-holdings',
-  noun: 'holdings',
-  searchPlaceholder: 'Search holdings',
+  nounKey: 'ui.dataView.noun.holdings',
+  searchPlaceholderKey: 'ui.dataView.kitchenSink.config.searchHoldings',
   searchFn: (item, query) =>
     `${item.symbol} ${item.name} ${item.institution}`.toLowerCase().includes(query),
   filterDefs: [
     {
       key: 'type',
-      label: 'Type',
+      labelKey: 'ui.dataView.kitchenSink.filter.type',
       options: [
         { value: 'Crypto', label: 'Crypto' },
         { value: 'Equity', label: 'Equity' },
@@ -715,7 +715,7 @@ const SPECIMEN_CONFIG: Omit<V3DataViewConfig<SpecimenHolding>, 'data'> = {
     },
     {
       key: 'institution',
-      label: 'Institution',
+      labelKey: 'ui.dataView.kitchenSink.filter.institution',
       options: [
         { value: 'Kraken', label: 'Kraken' },
         { value: 'Coinbase', label: 'Coinbase' },
@@ -727,9 +727,9 @@ const SPECIMEN_CONFIG: Omit<V3DataViewConfig<SpecimenHolding>, 'data'> = {
     },
   ],
   sortDefs: [
-    { key: 'value', label: 'Value' },
-    { key: 'symbol', label: 'Name' },
-    { key: 'change', label: 'Change' },
+    { key: 'value', labelKey: 'ui.dataView.kitchenSink.sort.value' },
+    { key: 'symbol', labelKey: 'ui.dataView.kitchenSink.sort.name' },
+    { key: 'change', labelKey: 'ui.dataView.kitchenSink.sort.change' },
   ],
   sortFn: (a, b, field, direction) => {
     const factor = direction === 'asc' ? 1 : -1;
@@ -739,8 +739,16 @@ const SPECIMEN_CONFIG: Omit<V3DataViewConfig<SpecimenHolding>, 'data'> = {
   },
   defaultSort: { field: 'value', direction: 'desc' },
   groupByDefs: [
-    { key: 'institution', label: 'Institution', fn: (item: SpecimenHolding) => item.institution },
-    { key: 'type', label: 'Type', fn: (item: SpecimenHolding) => item.type },
+    {
+      key: 'institution',
+      labelKey: 'ui.dataView.kitchenSink.group.institution',
+      fn: (item: SpecimenHolding) => item.institution,
+    },
+    {
+      key: 'type',
+      labelKey: 'ui.dataView.kitchenSink.group.type',
+      fn: (item: SpecimenHolding) => item.type,
+    },
   ],
   renderRow: (item) => ({
     label: item.symbol,
@@ -752,7 +760,7 @@ const SPECIMEN_CONFIG: Omit<V3DataViewConfig<SpecimenHolding>, 'data'> = {
   columns: [
     {
       key: 'symbol',
-      header: 'Holding',
+      headerKey: 'ui.dataView.kitchenSink.col.holding',
       sortable: true,
       width: 'w-[28%]',
       render: (item) => (
@@ -764,32 +772,32 @@ const SPECIMEN_CONFIG: Omit<V3DataViewConfig<SpecimenHolding>, 'data'> = {
     },
     {
       key: 'institution',
-      header: 'Institution',
+      headerKey: 'ui.dataView.kitchenSink.col.institution',
       width: 'w-[18%]',
       render: (item) => <span className="text-body">{item.institution}</span>,
     },
     {
       key: 'units',
-      header: 'Units',
+      headerKey: 'ui.dataView.kitchenSink.col.units',
       numeric: true,
       render: (item) => <Numeric value={item.units} format="plain" className="text-body" />,
     },
     {
       key: 'price',
-      header: 'Price',
+      headerKey: 'ui.dataView.kitchenSink.col.price',
       numeric: true,
       render: (item) => <Numeric value={item.price} currency="USD" className="text-body" />,
     },
     {
       key: 'value',
-      header: 'Value',
+      headerKey: 'ui.dataView.kitchenSink.col.value',
       sortable: true,
       numeric: true,
       render: (item) => <Numeric value={item.value} currency="USD" className="text-body" />,
     },
     {
       key: 'change',
-      header: '24h',
+      headerKey: 'ui.dataView.kitchenSink.col.24h',
       sortable: true,
       numeric: true,
       render: (item) => (
@@ -799,8 +807,9 @@ const SPECIMEN_CONFIG: Omit<V3DataViewConfig<SpecimenHolding>, 'data'> = {
   ],
   empty: {
     icon: Wallet,
-    title: 'No holdings yet',
-    description: 'Connect an exchange or import a statement and your positions appear here.',
+    titleKey: 'ui.dataView.kitchenSink.empty.noHoldingsYet',
+    descriptionKey:
+      'ui.dataView.kitchenSink.empty.connectAnExchangeOrImportAStatementAndYourPositionsAppearHere',
     action: <Button>Connect an exchange</Button>,
   },
   // The peek sheet (V3-11). Twelve facts, which is the count §2.2 says a v2
@@ -901,6 +910,8 @@ function ListSurfaceSpecimen() {
           isError: state === 'error',
           error: SPECIMEN_ERROR,
           retry: () => setState('data'),
+          // The specimen holds every row it has — this surface is not paginated.
+          more: null,
         }}
       />
     </V3TokenScope>

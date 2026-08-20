@@ -71,7 +71,7 @@ describe('buildTrustedOrigins', () => {
  * which correctly produces no `Access-Control-Allow-Origin`. Asserting both the
  * with-Origin and without-Origin cases keeps that misreading from recurring.
  */
-function buildApp(frontendUrl: string, opts: { isProduction: boolean }): Elysia {
+function buildApp(frontendUrl: string, opts: { isProduction: boolean }) {
   return new Elysia()
     .use(
       cors({
@@ -84,7 +84,7 @@ function buildApp(frontendUrl: string, opts: { isProduction: boolean }): Elysia 
 }
 
 async function allowOriginFor(
-  app: Elysia,
+  app: ReturnType<typeof buildApp>,
   origin: string | undefined,
   init: RequestInit = {}
 ): Promise<string | null> {

@@ -29,7 +29,7 @@ describe('CoinGeckoProvider', () => {
         return new Response(JSON.stringify({ bitcoin: { usd: 50000 } }), { status: 200 });
       }
       throw new Error(`Unexpected URL: ${url}`);
-    }) as typeof fetch;
+    }) as unknown as typeof fetch;
     try {
       const quote = await p.fetchCurrentPrice(btc, { baseCurrency: usdToken });
       expect(quote?.price).toBe('50000');
@@ -49,7 +49,7 @@ describe('CoinGeckoProvider', () => {
       return new Response(JSON.stringify({ market_data: { current_price: { usd: 30000 } } }), {
         status: 200,
       });
-    }) as typeof fetch;
+    }) as unknown as typeof fetch;
     try {
       const at = new Date('2024-03-05T12:00:00Z');
       const quote = await p.fetchHistoricalPrice(btc, at, { baseCurrency: usdToken });

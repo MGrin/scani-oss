@@ -5,7 +5,6 @@ import { eq } from 'drizzle-orm';
 import Container, { Service } from 'typedi';
 import { TokenRepository } from '../repositories/TokenRepository';
 import { PricingService } from '../services/pricing/PricingService';
-import { ScamTokenDetectionService } from '../services/tokens/ScamTokenDetectionService';
 
 const logger = createComponentLogger('use-case:warm-token-prices-for-import');
 
@@ -24,11 +23,20 @@ interface WarmInput {
 
 /**
  * After a wallet import commits, warm token prices so the review screen
- * shows values immediately instead of waiting for the hourly pricing
- * cron. Also re-scores scam probability once prices land — scoring at
- * creation time inflates the score because `hasPriceData=false`; now
- * that we have prices, legitimate tokens (ETH, USDC) drop out of the
- * scam filter.
+ * shows values immediately instead of waiting for the hourly pricing cron.
+ *
+ * **Prices, and nothing else.** This paragraph used to continue "Also
+ * re-scores scam probability once prices land", and both that sentence and
+ * the `ScamTokenDetectionService` it named outlived the behaviour by one
+ * ticket: SC-207 removed the re-scoring and left the description and the
+ * injected dependency behind (SC-297). The file then said two opposite
+ * things about itself — this header claimed the re-scoring happened, and the
+ * note at the end of `runWarmUp` explained why it had been deleted.
+ *
+ * That combination is worse than either half alone. A reader who found scam
+ * detection wired into the price-warming path would reasonably conclude that
+ * pricing still moves the scam score, which is the exact defect SC-207
+ * existed to remove, in the one file whose history makes it plausible.
  *
  * Extracted from `ImportWalletAddressUseCase` (was a 130-LOC private
  * method). Splitting it out means the main import use case is smaller
@@ -39,7 +47,6 @@ interface WarmInput {
 export class WarmTokenPricesForImportUseCase {
   private readonly tokenRepository = Container.get(TokenRepository);
   private readonly pricingService = Container.get(PricingService);
-  private readonly scamDetectionService = Container.get(ScamTokenDetectionService);
 
   async execute(input: WarmInput): Promise<Map<string, string>> {
     const emptyPrices = new Map<string, string>();
@@ -115,38 +122,24 @@ export class WarmTokenPricesForImportUseCase {
       'Token price warm-up completed'
     );
 
-    // Re-evaluate scam scores for tokens that received a valid price.
-    // At creation time, hasPriceData=false inflates the score. Now that
-    // we have pricing data, re-run detection to lower false positives
-    // for legitimate tokens like ETH, USDC, etc.
-    const tokensToReScore = tokens.filter((t) => {
-      const price = prices.get(t.id);
-      return price && price !== '0';
-    });
-
-    if (tokensToReScore.length > 0) {
-      let reScored = 0;
-      for (const token of tokensToReScore) {
-        const newScore = this.scamDetectionService.calculateScamProbability(
-          token.symbol,
-          token.name,
-          token.createdAt,
-          true // hasPriceData — the key difference vs. creation-time score
-        );
-        if (newScore !== token.isScamProbability) {
-          await this.tokenRepository.update(token.id, {
-            isScamProbability: newScore,
-          });
-          reScored++;
-        }
-      }
-      if (reScored > 0) {
-        logger.info(
-          { reScored, total: tokensToReScore.length },
-          'Re-evaluated scam scores after pricing — lowered false positives'
-        );
-      }
-    }
+    // The re-scoring that used to live here is GONE (SC-207).
+    //
+    // It re-ran detection with `hasPriceData: true` and persisted the lower
+    // number, so a token's scam score fell when our pricing coverage improved.
+    // Its log line read "lowered false positives", which is one true reading
+    // of the same write; the other is that a token quarantined at 1.00 became
+    // 0.70 and read as ordinary, with nothing recording that it had ever been
+    // otherwise.
+    //
+    // With the coverage signal removed from the score, re-scoring here could
+    // only ever compute the number the token already has — the inputs are its
+    // symbol and its name, and neither changed. So this is not a behaviour
+    // that moved elsewhere; it is one that had no honest version.
+    //
+    // **A scam score is now a creation-time verdict and nothing revises it
+    // downward.** If a later signal should raise or clear one, it needs its
+    // own additive field and its own provenance, the way `lookalike_of` does
+    // (SC-197) — not a silent overwrite of the column every filter reads.
 
     return prices;
   }

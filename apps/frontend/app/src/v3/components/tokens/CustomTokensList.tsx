@@ -1,4 +1,3 @@
-import { formatRelative } from '@scani/shared';
 import { Badge } from '@scani/ui/ui/badge';
 import { Button } from '@scani/ui/ui/button';
 import { V3DataView } from '@scani/ui/v3/components/data-view/V3DataView';
@@ -6,8 +5,11 @@ import { Numeric } from '@scani/ui/v3/components/Numeric';
 import type { V3DataViewConfig } from '@scani/ui/v3/lib/data-view';
 import { exportDateTime, exportMoney, exportText } from '@scani/ui/v3/lib/export/cell';
 import type { V3QueryState } from '@scani/ui/v3/lib/query-state';
+import type { TFunction } from 'i18next';
 import { Coins, Pencil } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { amountDecimals } from '../../lib/holdings';
+import { formatRelative } from '../../lib/relative-time';
 import { V3_ROUTES } from '../../lib/routes';
 
 /**
@@ -45,11 +47,12 @@ export interface CustomTokenRow {
  * nightly backfill made because `filterProvidersByTokenType` keeps every
  * provider for types it cannot reason about.
  */
-export function priceOrigin(token: CustomTokenRow): string {
-  if (!token.latestPriceAt) return 'Nothing recorded';
+export function priceOrigin(t: TFunction, token: CustomTokenRow): string {
+  if (!token.latestPriceAt) return t('v3.tokens.custom.nothingRecorded');
   const source = token.latestPriceSource;
-  if (!source) return 'Unknown source';
-  return source.startsWith('manual') ? 'Set manually' : source;
+  if (!source) return t('v3.tokens.custom.unknownSource');
+  // The raw source is a provider key — an identifier, never translated.
+  return source.startsWith('manual') ? t('v3.tokens.custom.setManually') : source;
 }
 
 interface CustomTokensListProps {
@@ -90,6 +93,7 @@ function TokenPrice({ token }: { token: CustomTokenRow }) {
 }
 
 export function CustomTokensList({ tokens, query, onCreate, onEditPrice }: CustomTokensListProps) {
+  const { t } = useTranslation();
   const typeOptions = [...new Set(tokens.map(typeLabel))]
     .sort((a, b) => a.localeCompare(b))
     .map((label) => ({ value: label, label }));
@@ -97,9 +101,8 @@ export function CustomTokensList({ tokens, query, onCreate, onEditPrice }: Custo
   const config: V3DataViewConfig<CustomTokenRow> = {
     pageKey: 'tokens:custom',
     data: tokens,
-    noun: 'custom tokens',
-    nounSingular: 'custom token',
-    searchPlaceholder: 'Search custom tokens',
+    nounKey: 'ui.dataView.noun.customTokens',
+    searchPlaceholderKey: 'ui.dataView.customTokens.config.searchCustomTokens',
     searchFn: (token, query) =>
       token.symbol.toLowerCase().includes(query) || token.name.toLowerCase().includes(query),
     filterDefs:
@@ -107,15 +110,15 @@ export function CustomTokensList({ tokens, query, onCreate, onEditPrice }: Custo
         ? [
             {
               key: 'type',
-              label: 'Type',
+              labelKey: 'ui.dataView.customTokens.filter.type',
               options: typeOptions,
               fn: (token: CustomTokenRow, value) => typeLabel(token) === value,
             },
           ]
         : [],
     sortDefs: [
-      { key: 'priced', label: 'Price updated' },
-      { key: 'symbol', label: 'Symbol' },
+      { key: 'priced', labelKey: 'ui.dataView.customTokens.sort.priceUpdated' },
+      { key: 'symbol', labelKey: 'ui.dataView.customTokens.sort.symbol' },
     ],
     sortFn: (a, b, field, direction) => {
       const mult = direction === 'asc' ? 1 : -1;
@@ -125,7 +128,7 @@ export function CustomTokensList({ tokens, query, onCreate, onEditPrice }: Custo
     },
     // Oldest price first: the list exists to find the one that has drifted.
     defaultSort: { field: 'priced', direction: 'asc' },
-    groupByDefs: [{ key: 'type', label: 'Type', fn: typeLabel }],
+    groupByDefs: [{ key: 'type', labelKey: 'ui.dataView.customTokens.group.type', fn: typeLabel }],
     renderRow: (token) => ({
       label: (
         <span className="flex items-center gap-2">
@@ -139,7 +142,9 @@ export function CustomTokensList({ tokens, query, onCreate, onEditPrice }: Custo
       value: <TokenPrice token={token} />,
       delta: (
         <span className="text-muted-foreground">
-          {token.latestPriceAt ? formatRelative(token.latestPriceAt) : 'Never priced'}
+          {token.latestPriceAt
+            ? formatRelative(t, token.latestPriceAt)
+            : t('v3.tokens.custom.neverPriced')}
         </span>
       ),
       ariaLabel: `${token.symbol}, ${token.name}`,
@@ -147,7 +152,7 @@ export function CustomTokensList({ tokens, query, onCreate, onEditPrice }: Custo
     columns: [
       {
         key: 'symbol',
-        header: 'Token',
+        headerKey: 'ui.dataView.customTokens.col.token',
         sortable: true,
         width: 'w-[30%]',
         render: (token) => (
@@ -160,24 +165,26 @@ export function CustomTokensList({ tokens, query, onCreate, onEditPrice }: Custo
       },
       {
         key: 'type',
-        header: 'Type',
+        headerKey: 'ui.dataView.customTokens.col.type',
         render: (token) => <span className="capitalize">{typeLabel(token)}</span>,
       },
       {
         key: 'price',
-        header: 'Price',
+        headerKey: 'ui.dataView.customTokens.col.price',
         numeric: true,
         render: (token) => <TokenPrice token={token} />,
         exportValue: (token) => exportMoney(token.latestPrice, token.latestPriceBaseCurrency),
       },
       {
         key: 'priced',
-        header: 'Price updated',
+        headerKey: 'ui.dataView.customTokens.col.priceUpdated',
         sortable: true,
         width: 'w-40',
         render: (token) => (
           <span className="text-muted-foreground">
-            {token.latestPriceAt ? formatRelative(token.latestPriceAt) : 'Never'}
+            {token.latestPriceAt
+              ? formatRelative(t, token.latestPriceAt)
+              : t('v3.tokens.custom.never')}
           </span>
         ),
         exportValue: (token) => exportDateTime(token.latestPriceAt),
@@ -185,10 +192,9 @@ export function CustomTokensList({ tokens, query, onCreate, onEditPrice }: Custo
     ],
     empty: {
       icon: Coins,
-      title: 'No custom tokens yet',
-      description:
-        'Create one for an asset no pricing provider tracks — private company shares, a physical holding. The token and its price are shared with every Scani user.',
-      action: <Button onClick={onCreate}>New custom token</Button>,
+      titleKey: 'ui.dataView.customTokens.empty.noCustomTokensYet',
+      descriptionKey: 'ui.dataView.customTokens.empty.createOneForAnAssetNo',
+      action: <Button onClick={onCreate}>{t('v3.tokens.custom.newToken')}</Button>,
     },
     peek: {
       basePath: V3_ROUTES.tokens,
@@ -197,21 +203,26 @@ export function CustomTokensList({ tokens, query, onCreate, onEditPrice }: Custo
         subtitle: token.name,
         value: <TokenPrice token={token} />,
         primary: [
-          { label: 'Type', value: <span className="capitalize">{typeLabel(token)}</span> },
           {
-            label: 'Priced in',
-            value: token.latestPriceBaseCurrency ?? 'No price recorded',
+            label: t('v3.tokens.custom.type'),
+            value: <span className="capitalize">{typeLabel(token)}</span>,
           },
           {
-            label: 'Price updated',
-            value: token.latestPriceAt ? formatRelative(token.latestPriceAt) : 'Never',
+            label: t('v3.tokens.custom.pricedIn'),
+            value: token.latestPriceBaseCurrency ?? t('v3.tokens.custom.noPrice'),
           },
-          { label: 'Price from', value: priceOrigin(token) },
+          {
+            label: t('v3.tokens.custom.priceUpdated'),
+            value: token.latestPriceAt
+              ? formatRelative(t, token.latestPriceAt)
+              : t('v3.tokens.custom.never'),
+          },
+          { label: t('v3.tokens.custom.priceFrom'), value: priceOrigin(t, token) },
         ],
         actions: (
           <Button size="sm" variant="outline" onClick={() => onEditPrice(token)}>
             <Pencil className="mr-2 size-4" aria-hidden="true" />
-            Edit price
+            {t('v3.tokens.custom.editPrice')}
           </Button>
         ),
       }),

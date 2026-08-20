@@ -94,7 +94,7 @@ describe('YahooFinanceProvider fetchHistoricalPrice', () => {
         }),
         { status: 200 }
       );
-    }) as typeof fetch;
+    }) as unknown as typeof fetch;
     try {
       const q = await p.fetchHistoricalPrice(token, at, { baseCurrency: usdToken });
       expect(q?.price).toBe('184.5');
@@ -132,7 +132,7 @@ describe('YahooFinanceProvider fetchHistoricalPrice', () => {
         }),
         { status: 200 }
       );
-    }) as typeof fetch;
+    }) as unknown as typeof fetch;
     try {
       const q = await p.fetchHistoricalPrice(token, at, { baseCurrency: usdToken });
       // 30 CAD × 0.74 USD/CAD = 22.20 USD
@@ -167,7 +167,7 @@ describe('YahooFinanceProvider fetchHistoricalPrice', () => {
         }),
         { status: 200 }
       );
-    }) as typeof fetch;
+    }) as unknown as typeof fetch;
     try {
       const q = await p.fetchHistoricalPrice(rub, at, { baseCurrency: usdToken });
       expect(q?.price).toBe('0.0133');
@@ -186,7 +186,7 @@ describe('YahooFinanceProvider fetchHistoricalPrice', () => {
     globalThis.fetch = (async () =>
       new Response(JSON.stringify({ chart: { result: [], error: null } }), {
         status: 200,
-      })) as typeof fetch;
+      })) as unknown as typeof fetch;
     try {
       const q = await p.fetchHistoricalPrice(token, at, { baseCurrency: usdToken });
       expect(q).toBeNull();
@@ -199,7 +199,8 @@ describe('YahooFinanceProvider fetchHistoricalPrice', () => {
     const p = new YahooFinanceProvider(passthroughLimiter());
     const token = makeMockToken({ id: 'x', symbol: 'AAPL' });
     const originalFetch = globalThis.fetch;
-    globalThis.fetch = (async () => new Response('Not Found', { status: 404 })) as typeof fetch;
+    globalThis.fetch = (async () =>
+      new Response('Not Found', { status: 404 })) as unknown as typeof fetch;
     try {
       const q = await p.fetchHistoricalPrice(token, at, { baseCurrency: usdToken });
       expect(q).toBeNull();

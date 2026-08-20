@@ -3,6 +3,7 @@ import { V3DataView } from '@scani/ui/v3/components/data-view/V3DataView';
 import type { V3DataViewConfig } from '@scani/ui/v3/lib/data-view';
 import type { V3QueryState } from '@scani/ui/v3/lib/query-state';
 import { Plug } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { Link, useNavigate } from 'react-router-dom';
 import type { RouterOutputs } from '@/lib/trpc';
 import { integrationCategoryLabel } from '../../lib/capture-forms';
@@ -34,34 +35,36 @@ export function IntegrationsList({
   integrations: Integration[];
   query: V3QueryState;
 }) {
+  const { t } = useTranslation();
   const navigate = useNavigate();
 
   const category = (integration: Integration) =>
-    integrationCategoryLabel(integration.institution.type?.code);
+    integrationCategoryLabel(t, integration.institution.type?.code);
 
   const config: V3DataViewConfig<Integration> = {
     pageKey: 'integrations',
     data: integrations,
-    noun: 'integrations',
-    nounSingular: 'integration',
-    searchPlaceholder: 'Search',
+    nounKey: 'ui.dataView.noun.integrations',
+    searchPlaceholderKey: 'ui.dataView.integrations.config.search',
     searchFn: (integration, term) =>
       integration.institution.name.toLowerCase().includes(term) ||
       (integration.institution.description ?? '').toLowerCase().includes(term),
     filterDefs: [
       {
         key: 'category',
-        label: 'Kind',
+        labelKey: 'ui.dataView.integrations.filter.kind',
         options: [...new Set(integrations.map(category))]
           .sort((a, b) => a.localeCompare(b))
           .map((label) => ({ value: label, label })),
         fn: (integration: Integration, value) => category(integration) === value,
       },
     ],
-    sortDefs: [{ key: 'name', label: 'Name' }],
+    sortDefs: [{ key: 'name', labelKey: 'ui.dataView.integrations.sort.name' }],
     sortFn: (a, b) => a.institution.name.localeCompare(b.institution.name),
     defaultSort: { field: 'name', direction: 'asc' },
-    groupByDefs: [{ key: 'category', label: 'Kind', fn: category }],
+    groupByDefs: [
+      { key: 'category', labelKey: 'ui.dataView.integrations.group.kind', fn: category },
+    ],
     renderRow: (integration) => ({
       leading: (
         <InstitutionMark
@@ -80,7 +83,7 @@ export function IntegrationsList({
     columns: [
       {
         key: 'name',
-        header: 'Service',
+        headerKey: 'ui.dataView.integrations.col.service',
         sortable: true,
         render: (integration) => (
           <span className="flex min-w-0 items-center gap-2">
@@ -93,10 +96,15 @@ export function IntegrationsList({
           </span>
         ),
       },
-      { key: 'category', header: 'Kind', render: category, width: 'w-40' },
+      {
+        key: 'category',
+        headerKey: 'ui.dataView.integrations.col.kind',
+        render: category,
+        width: 'w-40',
+      },
       {
         key: 'description',
-        header: 'What it syncs',
+        headerKey: 'ui.dataView.integrations.col.whatItSyncs',
         render: (integration) => (
           <span className="text-muted-foreground">
             {integration.institution.description ?? '—'}
@@ -106,12 +114,13 @@ export function IntegrationsList({
     ],
     empty: {
       icon: Plug,
-      title: 'No services to connect',
-      description:
-        'Scani ships its integrations with the app, so an empty list means the catalogue failed to load rather than that there are none to have.',
+      titleKey: 'ui.dataView.integrations.empty.noServicesToConnect',
+      descriptionKey: 'ui.dataView.integrations.empty.scaniShipsItsIntegrationsWithThe',
       action: (
         <Button asChild>
-          <Link to={V3_CAPTURE_ROUTES.fileImport}>Upload a statement instead</Link>
+          <Link to={V3_CAPTURE_ROUTES.fileImport}>
+            {t('v3.capture.integrations.uploadInstead')}
+          </Link>
         </Button>
       ),
     },

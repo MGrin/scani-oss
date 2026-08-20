@@ -14,8 +14,10 @@ import { PageLayout } from '@scani/ui/v3/components/PageLayout';
 import { useDelayedLoading } from '@scani/ui/v3/hooks/useDelayedLoading';
 import { peekPath } from '@scani/ui/v3/lib/peek';
 import { mergeQueries } from '@scani/ui/v3/lib/query-state';
+import type { TFunction } from 'i18next';
 import { ArrowLeft, FileText, Loader2 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useBaseCurrency } from '@/contexts/BaseCurrencyContext';
 import { baseCurrencyDefaultAction } from '@/lib/currency-default';
@@ -24,8 +26,7 @@ import {
   type AnchorDateSource,
   buildInvoicePrefill,
   matchCurrencyToken,
-} from '@/v2/lib/extractionPrefill';
-import { todayDateString } from '@/v2/lib/paymentTotals';
+} from '@/v3/lib/extractionPrefill';
 import { DateField } from '../components/form/DateField';
 import { Field, FieldRow, FieldSet } from '../components/form/Field';
 import { CurrencyField, tokenLabel } from '../components/money/CurrencyField';
@@ -33,8 +34,11 @@ import { VendorField } from '../components/money/VendorField';
 import {
   describeRepeatInterval,
   describeV3PaymentFormBlockers,
+  type IntervalUnit,
+  type IntervalUnitChoice,
   type PaymentKind,
 } from '../lib/payment-form';
+import { todayDateString } from '../lib/paymentTotals';
 import { V3_ROUTES } from '../lib/routes';
 
 /**
@@ -71,10 +75,6 @@ import { V3_ROUTES } from '../lib/routes';
  */
 
 type Direction = 'outflow' | 'inflow';
-type IntervalUnit = 'week' | 'month' | 'quarter' | 'year';
-/** `''` is the unanswered cadence an invoice with no stated period leaves
- *  behind — see `buildInvoicePrefill`. Nothing else can produce it. */
-type IntervalUnitChoice = IntervalUnit | '';
 
 const NO_ACCOUNT = '__none__';
 
@@ -83,20 +83,28 @@ const NO_ACCOUNT = '__none__';
  * came from is the one thing a human has to check before confirming. Only
  * a stated due date is evidence; the other two are a substitution and a
  * blank, and neither should be able to pass for a date off the document.
+ *
+ * A switch rather than a `Record` of keys: the guard test reads `t('…')` call
+ * sites, and a key sitting in a table as a bare value is invisible to it.
  */
-const ANCHOR_DATE_HINTS: Record<AnchorDateSource, string | undefined> = {
-  'due-date': undefined,
-  'issue-date': 'The invoice states no due date — this is its issue date.',
-  none: 'No date found on the invoice. Pick the day this is due.',
-};
+function anchorDateHint(t: TFunction, source: AnchorDateSource): string | undefined {
+  switch (source) {
+    case 'due-date':
+      return undefined;
+    case 'issue-date':
+      return t('v3.money.paymentForm.anchorFromIssueDate');
+    case 'none':
+      return t('v3.money.paymentForm.anchorMissing');
+  }
+}
 
 /** Narrower than the Money list. A form is read one field at a time and a
  *  1000px-wide text input has nothing to do with the length of its answer. */
-const INTERVAL_UNITS: { value: IntervalUnit; label: string }[] = [
-  { value: 'week', label: 'Week(s)' },
-  { value: 'month', label: 'Month(s)' },
-  { value: 'quarter', label: 'Quarter(s)' },
-  { value: 'year', label: 'Year(s)' },
+const INTERVAL_UNITS: { value: IntervalUnit; labelKey: string }[] = [
+  { value: 'week', labelKey: 'v3.money.paymentForm.unitWeek' },
+  { value: 'month', labelKey: 'v3.money.paymentForm.unitMonth' },
+  { value: 'quarter', labelKey: 'v3.money.paymentForm.unitQuarter' },
+  { value: 'year', labelKey: 'v3.money.paymentForm.unitYear' },
 ];
 
 /** The form's three cards at their real height. Drawn only from the
@@ -121,6 +129,7 @@ function FormSkeleton() {
 }
 
 export function PaymentFormPage() {
+  const { t } = useTranslation();
   const { id } = useParams<{ id: string }>();
   const isEdit = Boolean(id);
   const [searchParams] = useSearchParams();
@@ -253,9 +262,16 @@ export function PaymentFormPage() {
     navigate(peekPath(V3_ROUTES.recurring, paymentId), { replace: true });
   };
 
+  // The success MESSAGE is translated and the error CONTEXT is not, and the
+  // difference is what the toast does with each. `showSuccess` renders the
+  // message verbatim; `showError` splices its context into
+  // `${context}: ${serverMessage}` under a hardcoded English "Something went
+  // wrong", both of which live in `@scani/ui` where there is no `t`. Half a
+  // sentence in French over an English title is worse than the English one —
+  // SC-235.
   const createMutation = trpc.payments.create.useMutation({
-    onSuccess: (payment) => afterWrite(payment.id, 'Payment created'),
-    onError: (error) => showError(error, 'Creating payment'),
+    onSuccess: (payment) => afterWrite(payment.id, t('v3.money.paymentForm.created')),
+    onError: (error) => showError(error, t('v3.money.pending.creatingPayment')),
   });
 
   const createFromExtractionMutation = trpc.payments.createFromExtraction.useMutation({
@@ -265,14 +281,14 @@ export function PaymentFormPage() {
       // and the document page are both stale now.
       void utils.documents.invalidate();
       void utils.review.listPending.invalidate();
-      afterWrite(payment.id, 'Payment created from invoice');
+      afterWrite(payment.id, t('v3.money.paymentForm.createdFromInvoice'));
     },
-    onError: (error) => showError(error, 'Creating payment'),
+    onError: (error) => showError(error, t('v3.money.pending.creatingPayment')),
   });
 
   const updateMutation = trpc.payments.update.useMutation({
-    onSuccess: (payment) => afterWrite(payment.id, 'Payment updated'),
-    onError: (error) => showError(error, 'Updating payment'),
+    onSuccess: (payment) => afterWrite(payment.id, t('v3.money.paymentForm.updated')),
+    onError: (error) => showError(error, t('v3.money.pending.updatingPayment')),
   });
 
   const isSaving =
@@ -281,7 +297,7 @@ export function PaymentFormPage() {
   // hand: a stale link must degrade to the plain form rather than submit an id
   // the server will reject.
   const createsFromInvoice = Boolean(extractionId && extraction);
-  const blockers = describeV3PaymentFormBlockers({
+  const blockers = describeV3PaymentFormBlockers(t, {
     vendorId,
     pendingVendorName: createsFromInvoice ? pendingVendorName : '',
     currencyTokenId: currency?.id ?? null,
@@ -330,10 +346,18 @@ export function PaymentFormPage() {
   if (formState.isLoading) {
     return (
       <PageLayout>
+        {/* `label` here and `subject` below are the SAME noun, deliberately —
+            both land in a sentence assembled in `@scani/ui`, the ramp's
+            sr-only line and every branch of `describeQueryError`. SC-235 left
+            them English because a translator could not see which frame the
+            noun lands in; the first real locale showed those frames are three
+            keys in the kit's own bundle, all taking the noun in one slot, so
+            the noun is keyed and the rule is written down instead: a subject
+            key is accusative in a language that marks case (SC-201). */}
         <LoadingRamp
           phase={loadingPhase}
           skeleton={<FormSkeleton />}
-          label="this payment"
+          label={t('v3.money.thisPayment')}
           onRetry={formState.retry}
         />
       </PageLayout>
@@ -346,7 +370,11 @@ export function PaymentFormPage() {
   if (formState.isError) {
     return (
       <PageLayout>
-        <QueryError error={formState.error} subject="this payment" onRetry={formState.retry} />
+        <QueryError
+          error={formState.error}
+          subject={t('v3.money.thisPayment')}
+          onRetry={formState.retry}
+        />
       </PageLayout>
     );
   }
@@ -355,13 +383,11 @@ export function PaymentFormPage() {
     return (
       <PageLayout className="items-start">
         <div className="flex flex-col gap-1">
-          <h1 className="text-title">That payment isn't here</h1>
-          <p className="text-body text-muted-foreground">
-            It may have been ended and removed, or the link may be out of date.
-          </p>
+          <h1 className="text-title">{t('v3.money.paymentForm.missingTitle')}</h1>
+          <p className="text-body text-muted-foreground">{t('v3.money.paymentForm.missingBody')}</p>
         </div>
         <Button asChild variant="outline">
-          <Link to={V3_ROUTES.recurring}>All recurring payments</Link>
+          <Link to={V3_ROUTES.recurring}>{t('v3.money.paymentForm.allRecurring')}</Link>
         </Button>
       </PageLayout>
     );
@@ -375,38 +401,45 @@ export function PaymentFormPage() {
         <Button variant="ghost" size="sm" asChild className="-ml-2 self-start">
           <Link to={isEdit && id ? peekPath(V3_ROUTES.recurring, id) : V3_ROUTES.recurring}>
             <ArrowLeft className="mr-1 h-4 w-4" aria-hidden="true" />
-            {isEdit ? 'Back to payment' : 'All recurring payments'}
+            {isEdit
+              ? t('v3.money.paymentForm.backToPayment')
+              : t('v3.money.paymentForm.allRecurring')}
           </Link>
         </Button>
-        <h1 className="text-title">{isEdit ? 'Edit payment' : 'New recurring payment'}</h1>
-        <p className="text-body text-muted-foreground">
-          A bill or recurring income, matched against transactions as they arrive.
-        </p>
+        <h1 className="text-title">
+          {isEdit ? t('v3.money.paymentForm.titleEdit') : t('v3.money.paymentForm.titleNew')}
+        </h1>
+        <p className="text-body text-muted-foreground">{t('v3.money.paymentForm.intro')}</p>
         {createsFromInvoice ? (
           <p className="flex items-start gap-1.5 text-caption text-muted-foreground">
             <FileText className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
             <span>
-              Suggested from {extraction?.vendorNameRaw}
-              {extraction?.invoiceNumber ? ` invoice #${extraction.invoiceNumber}` : ' invoice'}.
+              {/* Two whole sentences with the invoice number in or out, rather
+                  than one sentence with " invoice #N" glued on: the number sits
+                  after its noun in English and before it in half the languages
+                  SC-201 adds, and a fragment cannot move. */}
+              {extraction?.invoiceNumber
+                ? t('v3.money.paymentForm.suggestedFromNumbered', {
+                    vendor: extraction?.vendorNameRaw,
+                    number: extraction.invoiceNumber,
+                  })
+                : t('v3.money.paymentForm.suggestedFrom', { vendor: extraction?.vendorNameRaw })}
               {/* Only worth saying when a cadence WAS read off the document.
                   With none, the empty control and its own hint are the
                   message, and this sentence would read as a second one. */}
-              {intervalUnit
-                ? " One invoice can't prove how often it repeats — check the schedule before saving."
-                : null}
+              {intervalUnit ? <> {t('v3.money.paymentForm.cadenceCaveat')}</> : null}
             </span>
           </p>
         ) : null}
         {fromExtraction && !extraction ? (
           <p className="text-caption text-destructive">
-            That invoice is no longer awaiting review, so nothing could be prefilled. Fill the form
-            in yourself, or reopen the document from Review.
+            {t('v3.money.paymentForm.extractionGone')}
           </p>
         ) : null}
       </div>
 
       <Block>
-        <FieldSet title="Who">
+        <FieldSet title={t('v3.money.paymentForm.sectionWho')}>
           <VendorField
             value={vendorId}
             valueLabel={vendorName}
@@ -422,16 +455,27 @@ export function PaymentFormPage() {
       </Block>
 
       <Block>
-        <FieldSet title="What">
-          <Field label="Direction" hint={direction === 'inflow' ? 'Money in' : 'Money out'}>
+        <FieldSet title={t('v3.money.paymentForm.sectionWhat')}>
+          {/* The field's own name and its two values are the same three words
+              the Money list filters on — one key each, shared, so a translator
+              cannot make the form and the list disagree about what a "Bill"
+              is. */}
+          <Field
+            label={t('v3.money.field.direction')}
+            hint={
+              direction === 'inflow'
+                ? t('v3.money.paymentForm.directionIn')
+                : t('v3.money.paymentForm.directionOut')
+            }
+          >
             <Segmented
               value={direction}
               onValueChange={(next) => setDirection(next as Direction)}
-              aria-label="Direction"
+              aria-label={t('v3.money.field.direction')}
               className="w-full"
             >
-              <SegmentedItem value="outflow">Bill</SegmentedItem>
-              <SegmentedItem value="inflow">Income</SegmentedItem>
+              <SegmentedItem value="outflow">{t('v3.money.direction.bill')}</SegmentedItem>
+              <SegmentedItem value="inflow">{t('v3.money.direction.income')}</SegmentedItem>
             </Segmented>
           </Field>
 
@@ -439,19 +483,19 @@ export function PaymentFormPage() {
               which is a column name. The question a person is answering is
               whether the figure in the next field will hold. */}
           <Field
-            label="Amount is"
-            hint={
-              kind === 'variable' ? 'The real figure is set when you settle each one.' : undefined
-            }
+            label={t('v3.money.paymentForm.amountIs')}
+            hint={kind === 'variable' ? t('v3.money.paymentForm.amountIsVariableHint') : undefined}
           >
             <Segmented
               value={kind}
               onValueChange={(next) => setKind(next as PaymentKind)}
-              aria-label="Is the amount fixed?"
+              aria-label={t('v3.money.paymentForm.amountIsQuestion')}
               className="w-full"
             >
-              <SegmentedItem value="fixed">Same every time</SegmentedItem>
-              <SegmentedItem value="variable">Varies</SegmentedItem>
+              <SegmentedItem value="fixed">{t('v3.money.paymentForm.kindFixed')}</SegmentedItem>
+              <SegmentedItem value="variable">
+                {t('v3.money.paymentForm.kindVariable')}
+              </SegmentedItem>
             </Segmented>
           </Field>
 
@@ -460,9 +504,13 @@ export function PaymentFormPage() {
                 empty, and only because "varies" is an answer. A fixed amount
                 is not optional — see `lib/payment-form.ts`. */}
             <Field
-              label={kind === 'variable' ? 'Estimate' : 'Amount'}
+              label={
+                kind === 'variable'
+                  ? t('v3.money.paymentForm.estimate')
+                  : t('v3.money.paymentForm.amount')
+              }
               htmlFor="payment-amount"
-              hint={kind === 'variable' ? 'Optional.' : undefined}
+              hint={kind === 'variable' ? t('v3.money.paymentForm.estimateHint') : undefined}
             >
               <AmountInput
                 id="payment-amount"
@@ -485,14 +533,14 @@ export function PaymentFormPage() {
       </Block>
 
       <Block>
-        <FieldSet title="When">
+        <FieldSet title={t('v3.money.paymentForm.sectionWhen')}>
           {/* `Repeats every` keeps the full row: it is already two controls in a
               trench coat (a count and its unit), and pairing it with a third
               puts four controls on one line. */}
           <Field
-            label="Repeats every"
+            label={t('v3.money.paymentForm.repeatsEvery')}
             htmlFor="payment-interval-count"
-            hint={describeRepeatInterval(intervalCount, intervalUnit)}
+            hint={describeRepeatInterval(t, intervalCount, intervalUnit)}
           >
             <div className="flex gap-2">
               <AmountInput
@@ -509,15 +557,18 @@ export function PaymentFormPage() {
                 onValueChange={(next) => setIntervalUnit(next as IntervalUnit)}
                 disabled={isSaving}
               >
-                <SelectTrigger className="text-body" aria-label="Repeat unit">
+                <SelectTrigger
+                  className="text-body"
+                  aria-label={t('v3.money.paymentForm.repeatUnit')}
+                >
                   {/* Radix renders the placeholder for the empty value, which
                       is what an invoice with no stated cadence leaves here. */}
-                  <SelectValue placeholder="How often?" />
+                  <SelectValue placeholder={t('v3.money.paymentForm.repeatUnitPlaceholder')} />
                 </SelectTrigger>
                 <SelectContent>
                   {INTERVAL_UNITS.map((unit) => (
                     <SelectItem key={unit.value} value={unit.value} className="text-body">
-                      {unit.label}
+                      {t(unit.labelKey)}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -533,29 +584,33 @@ export function PaymentFormPage() {
               in the structural sense rather than the literal one. */}
           <FieldRow>
             <Field
-              label="First due"
+              label={t('v3.money.paymentForm.firstDue')}
               htmlFor="payment-anchor-date"
-              hint={createsFromInvoice ? ANCHOR_DATE_HINTS[anchorDateSource] : undefined}
+              hint={createsFromInvoice ? anchorDateHint(t, anchorDateSource) : undefined}
             >
               <DateField
                 id="payment-anchor-date"
                 value={anchorDate}
                 onChange={setAnchorDate}
-                placeholder={anchorDateSource === 'none' ? 'Not on the invoice' : undefined}
+                placeholder={
+                  anchorDateSource === 'none'
+                    ? t('v3.money.paymentForm.anchorPlaceholder')
+                    : undefined
+                }
                 disabled={isSaving}
               />
             </Field>
 
             <Field
-              label="Stops after"
+              label={t('v3.money.paymentForm.stopsAfter')}
               htmlFor="payment-end-date"
-              hint="Leave empty to repeat forever."
+              hint={t('v3.money.paymentForm.stopsAfterHint')}
             >
               <DateField
                 id="payment-end-date"
                 value={endDate}
                 onChange={setEndDate}
-                placeholder="Never"
+                placeholder={t('v3.money.paymentForm.stopsAfterPlaceholder')}
                 clearable
                 disabled={isSaving}
               />
@@ -573,11 +628,10 @@ export function PaymentFormPage() {
               />
               <div className="flex flex-col gap-0.5">
                 <Label htmlFor="mark-anchor-paid" className="text-label">
-                  This invoice is already paid
+                  {t('v3.money.paymentForm.markPaid')}
                 </Label>
                 <p className="text-caption text-muted-foreground">
-                  Marks the period it covers as settled, so the one you'll see coming up is the next
-                  payment, not this one.
+                  {t('v3.money.paymentForm.markPaidHint')}
                 </p>
               </div>
             </div>
@@ -586,15 +640,18 @@ export function PaymentFormPage() {
       </Block>
 
       <Block>
-        <FieldSet title="Optional">
-          <Field label="Linked account">
+        <FieldSet title={t('v3.money.paymentForm.sectionOptional')}>
+          <Field label={t('v3.money.paymentForm.linkedAccount')}>
             <Select value={accountId} onValueChange={setAccountId} disabled={isSaving}>
-              <SelectTrigger className="text-body" aria-label="Linked account">
+              <SelectTrigger
+                className="text-body"
+                aria-label={t('v3.money.paymentForm.linkedAccount')}
+              >
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value={NO_ACCOUNT} className="text-body">
-                  No linked account
+                  {t('v3.money.paymentForm.noLinkedAccount')}
                 </SelectItem>
                 {accounts.map((account) => (
                   <SelectItem key={account.id} value={account.id} className="text-body">
@@ -605,12 +662,12 @@ export function PaymentFormPage() {
             </Select>
           </Field>
 
-          <Field label="Notes" htmlFor="payment-notes">
+          <Field label={t('v3.money.paymentForm.notes')} htmlFor="payment-notes">
             <Textarea
               id="payment-notes"
               value={notes}
               onChange={(event) => setNotes(event.target.value)}
-              placeholder="Anything worth remembering about this payment"
+              placeholder={t('v3.money.paymentForm.notesPlaceholder')}
               disabled={isSaving}
               className="text-body"
             />
@@ -623,20 +680,35 @@ export function PaymentFormPage() {
           {isSaving ? (
             <>
               <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
-              Saving…
+              {t('v3.money.paymentForm.saving')}
             </>
           ) : isEdit ? (
-            'Save changes'
+            t('v3.money.paymentForm.saveChanges')
           ) : (
-            'Create payment'
+            t('v3.money.paymentForm.create')
           )}
         </Button>
         {/* A disabled button with no explanation is itself the defect the field
             validation was hiding, so the gate reports reasons rather than a
-            boolean and the form prints them. */}
+            boolean and the form prints them.
+
+            The frame was the one string in v3 left deliberately in English
+            (SC-235): it wraps a list of imperative clauses that are
+            grammatically dependent on it, and the reason given for leaving it
+            was that `describePaymentFormBlockers` built most of those clauses
+            in `src/v2/`. That has not been true since v3 grew
+            `describeV3PaymentFormBlockers` — every clause is a
+            `v3.money.blocker.*` key — and SC-423 deleted the tree the
+            exemption named, so the piece is whole and moves as one.
+
+            The comma-space join stays in code, and it is the same open
+            question `groups.ts`, `money.ts` and `ConvertedTotal` already
+            carry: `Intl.ListFormat` is the right answer for all four and
+            belongs with the step that does them together, not with one of
+            them. */}
         {!canSubmit && !isSaving && blockers.length > 0 ? (
           <p className="text-center text-caption text-muted-foreground">
-            To continue: {blockers.join(', ')}.
+            {t('v3.money.paymentForm.blockers', { blockers: blockers.join(', ') })}
           </p>
         ) : null}
       </div>

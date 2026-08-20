@@ -1,3 +1,5 @@
+import '../../i18n-preload';
+
 import { describe, expect, test } from 'bun:test';
 import {
   attributedValue,

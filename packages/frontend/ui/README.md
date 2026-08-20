@@ -50,7 +50,6 @@ helper:
 | `ErrorBoundary`                               | App-level boundary with optional `onError` Sentry hook + home link     |
 | `UpdateBanner` + `useAppUpdate`               | Service-worker version polling + a banner that prompts a reload        |
 | `MagicCodeInput`                              | 6-digit OTP input with autofocus, paste, resend                        |
-| `EmptyState`                                  | Icon + title + description + action layout                             |
 | `ConfirmDialog`                               | Standard confirm/cancel modal with pending state                       |
 | `FaviconImg`                                  | Image with letter-fallback on load failure                             |
 | `PullToRefresh`                               | iOS PWA-only pull-to-refresh gesture (no-op outside PWA mode)          |

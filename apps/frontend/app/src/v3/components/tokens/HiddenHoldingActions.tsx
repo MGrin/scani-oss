@@ -3,11 +3,12 @@ import { showError, showSuccess } from '@scani/ui/ui/use-toast';
 import { ConfirmAction } from '@scani/ui/v3/components/ConfirmAction';
 import { Eye } from 'lucide-react';
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { trpc } from '@/lib/trpc';
 import {
   optimisticRemoveHiddenHolding,
   optimisticSetTokenScam,
-} from '@/v2/hooks/optimisticUpdates';
+} from '@/v3/hooks/optimisticUpdates';
 import { type HiddenHoldingRow, isScamFlagged } from '../../lib/tokens';
 
 /**
@@ -46,6 +47,7 @@ interface HiddenHoldingActionsProps {
 }
 
 export function HiddenHoldingActions({ holding }: HiddenHoldingActionsProps) {
+  const { t } = useTranslation();
   const utils = trpc.useUtils();
   const [confirmingUnmark, setConfirmingUnmark] = useState(false);
 
@@ -56,20 +58,22 @@ export function HiddenHoldingActions({ holding }: HiddenHoldingActionsProps) {
 
   const restore = trpc.holdings.restore.useMutation({
     onMutate: () => optimisticRemoveHiddenHolding(utils, holding.id),
-    onSuccess: () => showSuccess(`${holding.token.symbol} is back on your dashboard`),
+    onSuccess: () =>
+      showSuccess(t('v3.tokens.actions.holdingRestored', { symbol: holding.token.symbol })),
     onError: (error, _vars, ctx) => {
       ctx?.restore();
-      showError(error, 'Unhiding the holding');
+      showError(error, t('v3.tokens.actions.unhiding'));
     },
     onSettled: settle,
   });
 
   const unmarkScam = trpc.tokens.unmarkAsScam.useMutation({
     onMutate: () => optimisticSetTokenScam(utils, holding.token.id, false),
-    onSuccess: () => showSuccess(`${holding.token.symbol} restored in token search`),
+    onSuccess: () =>
+      showSuccess(t('v3.tokens.actions.tokenRestored', { symbol: holding.token.symbol })),
     onError: (error, _vars, ctx) => {
       ctx?.restore();
-      showError(error, 'Restoring the token');
+      showError(error, t('v3.tokens.actions.restoring'));
     },
     onSettled: settle,
   });
@@ -85,22 +89,25 @@ export function HiddenHoldingActions({ holding }: HiddenHoldingActionsProps) {
           onClick={() => restore.mutate({ id: holding.id })}
         >
           <Eye className="mr-2 size-4" aria-hidden="true" />
-          Unhide
+          {t('v3.tokens.hidden.unhide')}
         </Button>
       ) : null}
 
       {isScamFlagged(holding) ? (
         <ConfirmAction
-          label="Not a scam"
+          label={t('v3.tokens.actions.notScam')}
           // Never "Not a scam" twice. The trigger is a claim about the token;
           // the commit is the act, and the act is global — so the word every
           // reader has to see before the second tap is "everyone".
-          confirmLabel="Clear the scam flag for everyone"
+          confirmLabel={t('v3.tokens.actions.clearFlag')}
           destructive
           open={confirmingUnmark}
           onOpenChange={setConfirmingUnmark}
           isPending={unmarkScam.isPending}
-          consequence={`${holding.token.symbol} (${holding.token.name}) stops being flagged as a scam for every Scani user, not just you — it reappears in token search and in price lookups account-wide. Only do this if you have checked the contract yourself.`}
+          consequence={t('v3.tokens.actions.clearFlagConsequence', {
+            symbol: holding.token.symbol,
+            name: holding.token.name,
+          })}
           onConfirm={() => unmarkScam.mutate({ tokenId: holding.token.id })}
         />
       ) : null}

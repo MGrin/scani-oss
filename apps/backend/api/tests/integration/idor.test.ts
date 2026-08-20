@@ -12,8 +12,13 @@
 import { afterEach, beforeAll, describe, expect, test } from 'bun:test';
 import type * as schema from '@scani/db/schema';
 import { HoldingApyConfigRepository, HoldingRepository } from '@scani/domain/repositories';
+import { restoreContainerAfterAll } from '@scani/domain/test-helpers';
 import { Container } from 'typedi';
 import { makeAuthedCaller, makeUnauthedCaller } from '../helpers/test-caller';
+
+// Container stubs are process-global; put back whatever this file changes
+// so no later test file resolves them (SC-448).
+restoreContainerAfterAll();
 
 // Capture the @Service()-registered originals BEFORE any test mutates
 // the container. Each test restores them in afterEach so a stub from
@@ -57,8 +62,9 @@ function fakeHolding(opts: { id: string; userId: string }): typeof schema.holdin
     source: 'manual',
     isActive: true,
     isHidden: false,
+    externalId: null,
     createdAt: new Date(),
-    updatedAt: new Date(),
+    lastUpdated: new Date(),
   } as typeof schema.holdings.$inferSelect;
 }
 

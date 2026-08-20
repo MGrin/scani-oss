@@ -1,40 +1,31 @@
 import { Outlet, Route, BrowserRouter as Router, Routes } from 'react-router-dom';
+import { InstallPromptHost } from '@/components/InstallPromptHost';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
+import { TimezoneReporter } from '@/components/TimezoneReporter';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { BaseCurrencyProvider } from '@/contexts/BaseCurrencyContext';
+import { FormatLocaleProvider } from '@/contexts/FormatLocaleContext';
 import { RealtimeProvider } from '@/contexts/RealtimeContext';
 import { useFocusedFieldVisibility } from '@/hooks/useFocusedFieldVisibility';
 import { useViewportScrollRecovery } from '@/hooks/useViewportScrollRecovery';
 import { lazyRoute } from '@/lib/lazy-route';
 import { Auth } from '@/pages/Auth';
 import { AuthCallback } from '@/pages/AuthCallback';
-import { InstallPromptHost } from '@/v2/components/InstallPromptHost';
-import { UiVersionDocumentScope } from '@/v3/components/UiVersionDocumentScope';
-import { LegacyV3PathRedirect, UiVersionGate } from '@/v3/components/UiVersionGate';
-import { V2_BASE } from '@/v3/lib/ui-version';
+import { LegacyV2PathRedirect, LegacyV3PathRedirect } from '@/v3/components/LegacyPathRedirects';
 
 /**
- * The two UI generations arrive separately (SC-132 #2).
+ * The interface arrives separately from the shell (SC-132 #2).
  *
- * Both used to ship to everyone — 581 KB, 27% of the bundle — while exactly one
- * of them ever rendered, because only one of the two child routes below can
- * match. That was the single largest avoidable payload on the surface users
- * actually open, and on a cold Slow 4G load the whole 4183 ms to first
- * interactive control was download with **0 ms** of main-thread blocking.
- *
- * Splitting *here* rather than per page is deliberate. The boundary is the one
- * place the app already knows a reader will use one tree and not the other, and
- * it keeps the shell — auth, the providers below, the install prompt, the theme
- * and token layer — eagerly loaded and whole. Per-page splitting underneath
- * would make the interface appear in pieces, which is worse than appearing
- * late; `lazyRoute` carries the rest of that reasoning.
- *
- * **v2 stays fully reachable.** It is permanent chrome in both directions, not
- * a migration affordance — see `v3/lib/ui-version.ts`. It is deferred, not
- * removed, and a v2 reader pays one extra request for it exactly as a v3 reader
- * now does.
+ * The split was drawn here because this is where the app used to know a reader
+ * would use one of two trees and not the other — 581 KB of which 27% of the
+ * bundle was the one they would never see. One of those trees is gone (SC-423)
+ * and the boundary is still the right one: it keeps the shell — auth, the
+ * providers below, the install prompt, the theme and token layer — eagerly
+ * loaded and whole, and defers everything behind the auth gate that a
+ * signed-out visitor never renders. Per-page splitting underneath would make
+ * the interface appear in pieces, which is worse than appearing late;
+ * `lazyRoute` carries the rest of that reasoning.
  */
-const V2App = lazyRoute('classic interface', () => import('@/v2/V2App').then((m) => m.V2App));
 const V3App = lazyRoute('interface', () => import('@/v3/V3App').then((m) => m.V3App));
 
 function App() {
@@ -47,84 +38,81 @@ function App() {
   useFocusedFieldVisibility();
 
   return (
-    <AuthProvider>
-      <InstallPromptHost />
-      <Router
-        future={{
-          v7_startTransition: true,
-          v7_relativeSplatPath: true,
-        }}
-      >
-        <UiVersionDocumentScope />
-        <Routes>
-          {/* Public auth routes */}
-          <Route path="/auth" element={<Auth />} />
-          <Route path="/signin" element={<Auth />} />
-          <Route path="/signup" element={<Auth />} />
-          <Route path="/auth/callback" element={<AuthCallback />} />
+    // Above the auth gate and above the v2/v3 split, because dates and numbers
+    // are rendered on the sign-in screen and in both trees. It owns `<html
+    // lang>` / `<html dir>` too, which are document-wide by definition.
+    <FormatLocaleProvider>
+      <AuthProvider>
+        <InstallPromptHost />
+        <Router
+          future={{
+            v7_startTransition: true,
+            v7_relativeSplatPath: true,
+          }}
+        >
+          <Routes>
+            {/* Public auth routes */}
+            <Route path="/auth" element={<Auth />} />
+            <Route path="/signin" element={<Auth />} />
+            <Route path="/signup" element={<Auth />} />
+            <Route path="/auth/callback" element={<AuthCallback />} />
 
-          {/* Everything authenticated hangs off one pathless layout route so
+            {/* Everything authenticated hangs off one pathless layout route so
               the auth gate, the base currency and the realtime socket are
-              resolved once, above the v2/v3 split.
+              resolved once, above the lazily loaded interface.
 
-              Both providers used to live inside V2App. `BaseCurrencyProvider`
-              left `useBaseCurrency()` in v3 reading the context default — a
-              USD placeholder that renders plausible money in the wrong
-              currency (SC-36). `RealtimeProvider` was worse: `useJobStatus`
-              calls `useRealtimeConnection()`, which *throws* when the context
-              is absent, so every v3 screen that watches a job (Holdings, via
+              Both providers used to live inside the classic interface's own
+              root, below this point. `BaseCurrencyProvider` left
+              `useBaseCurrency()` in v3 reading the context default — a USD
+              placeholder that renders plausible money in the wrong currency
+              (SC-36). `RealtimeProvider` was worse: `useJobStatus` calls
+              `useRealtimeConnection()`, which *throws* when the context is
+              absent, so every v3 screen that watches a job (Holdings, via
               `useHoldingRefresh`) rendered the error boundary instead of the
-              page (SC-39). Anything both trees consume belongs here; the guard
-              in `tests/v3/provider-scope.test.ts` fails the build if a third
-              one is ever added below the split.
+              page (SC-39). Both defects survived the tree that caused them,
+              which is why the guard in `tests/v3/provider-scope.test.ts`
+              outlives it too: it fails the build if a third provider is ever
+              added below this route rather than above it.
 
-              Only one of the two child routes ever matches, so each provider
-              still mounts exactly once — `users.getBaseCurrency` fires once
-              and exactly one WebSocket is opened, as before. They stay below
-              `ProtectedRoute` on purpose: both are user-scoped and must not
-              run while signed out. */}
-          <Route
-            element={
-              <ProtectedRoute>
-                <BaseCurrencyProvider>
-                  <RealtimeProvider>
-                    <Outlet />
-                  </RealtimeProvider>
-                </BaseCurrencyProvider>
-              </ProtectedRoute>
-            }
-          >
-            {/* The classic interface, at its own prefix since V3-19. It owns
-                its own layout (AppShell), its own `TooltipProvider` (v3 mounts
-                its own too, so neither tree depends on the other's), and nested
-                routes for dashboard, holdings, accounts, etc. Its route table
-                is relative and every link in it is built from `V2_ROUTES`, so
-                the move cost one prefix in that table and nothing else.
-
-                Registered before the root splat because that splat matches
-                everything. */}
-            <Route path={`${V2_BASE}/*`} element={<V2App />} />
-
-            {/* Where v3 lived while it was being built. Kept as a redirect so a
-                tester's bookmark survives the flip. */}
-            <Route path="/v3/*" element={<LegacyV3PathRedirect />} />
-
-            {/* v3 is what `/` serves now. The gate above it honours a stored
-                preference for the classic UI by sending the same screen to
-                `/v2`; v3's own catch-all hands anything it does not route —
-                every pre-flip bookmark to a v2-only screen — across to v2. */}
+              They stay below `ProtectedRoute` on purpose: both are user-scoped
+              and must not run while signed out. */}
             <Route
-              path="/*"
               element={
-                <UiVersionGate>
-                  <V3App />
-                </UiVersionGate>
+                <ProtectedRoute>
+                  <BaseCurrencyProvider>
+                    <RealtimeProvider>
+                      {/* Renders nothing; fills `users.timezone`, which is what
+                        the payment-due reminder selects on (SC-226). Here
+                        rather than on a screen because a zone captured only
+                        from Settings is a feature that works only for people
+                        who open Settings. */}
+                      <TimezoneReporter />
+                      <Outlet />
+                    </RealtimeProvider>
+                  </BaseCurrencyProvider>
+                </ProtectedRoute>
               }
-            />
-          </Route>
-        </Routes>
-      </Router>
-    </AuthProvider>
+            >
+              {/* The two prefixes the app has answered on and no longer
+                serves: `/v3` while v3 was being built, and `/v2` for the
+                classic interface until SC-423 deleted it. Both are stripped
+                rather than left to fall through — they are in bookmarks, in
+                shared links, and in the installed PWA's start URL for anyone
+                who had chosen the classic UI. Registered before the root splat
+                because that splat matches everything. */}
+              <Route path="/v3/*" element={<LegacyV3PathRedirect />} />
+              <Route path="/v2/*" element={<LegacyV2PathRedirect />} />
+
+              {/* v3 is what `/` serves. Anything it does not route reaches its
+                own not-found screen, inside its own shell — it used to be
+                handed to the classic interface, which is what made that tree
+                the terminal 404 for the whole app. */}
+              <Route path="/*" element={<V3App />} />
+            </Route>
+          </Routes>
+        </Router>
+      </AuthProvider>
+    </FormatLocaleProvider>
   );
 }
 

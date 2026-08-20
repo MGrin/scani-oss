@@ -3,12 +3,28 @@
 
 // accounts/
 export { AccountService } from './accounts/AccountService';
+export {
+  BalanceSyncOwnershipService,
+  type SyncOwnableAccount,
+} from './accounts/BalanceSyncOwnershipService';
 export { InstitutionService } from './accounts/InstitutionService';
 // ai/
 export { AIRouter } from './ai/AIRouter';
 export { CsvColumnDetectionService } from './ai/CsvColumnDetectionService';
 export { ScreenshotParsingService } from './ai/ScreenshotParsingService';
 export { BaseService } from './BaseService';
+// digest/
+export {
+  DIGEST_MAX_SNAPSHOT_AGE_DAYS,
+  DIGEST_WINDOW_DAYS,
+  type DigestBill,
+  type DigestChange,
+  type DigestMover,
+  type DigestOutcome,
+  type DigestSkipReason,
+  type WeeklyDigest,
+  WeeklyDigestService,
+} from './digest/WeeklyDigestService';
 // documents/
 export {
   type DocumentDeletionOutcome,
@@ -42,6 +58,11 @@ export {
   UploadedFileService,
 } from './documents/UploadedFileService';
 // holdings/
+export {
+  type BalanceSyncSource,
+  EXCHANGE_BALANCE_SYNC_SOURCE,
+  WALLET_BALANCE_SYNC_SOURCE,
+} from './holdings/balance-sync-sources';
 export {
   type EnrichedParsedHolding,
   type EnrichHoldingsInput,
@@ -84,6 +105,18 @@ export {
   type OccurrenceToMatch,
   type PaymentMatchDirection,
 } from './payments/matchOccurrences';
+export {
+  type DueOccurrence,
+  localDate,
+  localHour,
+  localTomorrow,
+  REMINDER_LOCAL_HOUR,
+  type ReminderCandidate,
+  type ReminderSummary,
+  reminderBody,
+  shouldRemindNow,
+  summariseForTomorrow,
+} from './payments/PaymentReminderService';
 export {
   type CreatePaymentInput,
   type PaymentDeleteImpact,
@@ -134,7 +167,7 @@ export {
   type DisposalLotMatch,
   type DisposalOutcome,
 } from './pricing/CostBasisService';
-export { CurrencyConverter } from './pricing/CurrencyConverter';
+export { CurrencyConverter, type CurrencyRef } from './pricing/CurrencyConverter';
 export {
   type BackfillManyRequest,
   type BackfillOneResult,
@@ -149,15 +182,61 @@ export { PriceWarmupService, type WarmTokenPricesInput } from './pricing/PriceWa
 export { PricingFailureCacher } from './pricing/PricingFailureCacher';
 export { PricingProviderRouter } from './pricing/PricingProviderRouter';
 export { PricingService } from './pricing/PricingService';
+export { PRICE_HUBS, type PriceHub } from './pricing/price-hubs';
 // review/
 export { ReviewFeedService } from './ReviewFeedService';
-export { TransferReviewService } from './TransferReviewService';
+// returns/
+export { AssetCurrencyService } from './returns/AssetCurrencyService';
+export {
+  type ExternalFlow,
+  type ExternalFlowSeries,
+  ExternalFlowService,
+  netFlowByDate,
+} from './returns/ExternalFlowService';
+export {
+  type ReturnsScope,
+  ReturnsScopeResolver,
+  type WeightedHolding,
+} from './returns/ReturnsScopeResolver';
+export {
+  type ReturnsCoverage,
+  type ReturnsRequest,
+  type ReturnsResult,
+  ReturnsService,
+} from './returns/ReturnsService';
+export {
+  type CreateRuleInput,
+  type CreateRuleResult,
+  TransferReviewRuleService,
+} from './TransferReviewRuleService';
+export {
+  type BulkResolveResult,
+  MalformedCursorError,
+  type SplitResolveResult,
+  type TransferResolveResult,
+  TransferReviewService,
+} from './TransferReviewService';
 // tokens/
-export { ScamTokenDetectionService } from './tokens/ScamTokenDetectionService';
+export {
+  RESCORE_BATCH_SIZE,
+  RescoreScamTokensService,
+} from './tokens/RescoreScamTokensService';
+export {
+  SCAM_SCORE_VERSION,
+  ScamTokenDetectionService,
+} from './tokens/ScamTokenDetectionService';
 export { TokenIdentityService } from './tokens/TokenIdentityService';
 export { TokenPriceHistoryService } from './tokens/TokenPriceHistoryService';
 export { TokenService } from './tokens/TokenService';
 export { TokenValidationService } from './tokens/TokenValidationService';
+export type { IdentityVerdict, SymbolVerdict } from './tokens/token-identity-safety';
+export {
+  asciiSkeleton,
+  judgeSymbol,
+  judgeTokenIdentity,
+  nameIsAttack,
+  scriptsOf,
+} from './tokens/token-identity-safety';
 // transactions/
 export {
   TransactionImportCoordinator,
@@ -165,7 +244,7 @@ export {
   type TransactionImportResult,
   TransactionImportUnrecoverableError,
 } from './transactions/TransactionImportCoordinator';
-export { sourceForProvider } from './transactions/transaction-source';
+export { sourceForChainId, sourceForProvider } from './transactions/transaction-source';
 // users/
 export {
   ExpiredCredentialsError,

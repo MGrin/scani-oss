@@ -18,7 +18,6 @@ const read = (path: string) => Bun.file(join(SRC, path)).text();
 const EFFECT = await read('hooks/useViewportEffect.ts');
 const PIN = await read('hooks/useVisualViewportPin.ts');
 const RECOVERY = await read('hooks/useViewportScrollRecovery.ts');
-const MOBILE_NAV = await read('v2/layouts/MobileNav.tsx');
 const TAB_BAR = await read('v3/layouts/V3TabBar.tsx');
 const SHELL_PIN = await read('hooks/useVisualViewportShell.ts');
 const FIELD = await read('hooks/useFocusedFieldVisibility.ts');
@@ -58,17 +57,17 @@ describe('coming back from the background re-reads the viewport', () => {
   });
 });
 
-describe('one pin, shared by both shells', () => {
-  // v3 was corrected in V3-35 and v2 — the shell the user actually runs — was
-  // left on `window.innerHeight`, so the bug he reported stayed live in the UI
-  // he reported it from. Two copies is what let that happen.
-  test('neither shell carries its own copy of the hook', () => {
-    for (const source of [MOBILE_NAV, TAB_BAR]) {
-      expect(source).toContain(
-        "import { useVisualViewportPin } from '@/hooks/useVisualViewportPin'"
-      );
-      expect(source).not.toContain('function useVisualViewportPin');
-    }
+describe('one pin, shared by the shell', () => {
+  // There were two shells and two copies of this hook. v3 was corrected in
+  // V3-35 and the classic one — the shell the user actually ran — was left on
+  // `window.innerHeight`, so the bug he reported stayed live in the UI he
+  // reported it from. One shell remains (SC-423); the rule that it does not
+  // carry its own copy is what stops the next one starting the same way.
+  test('the tab bar does not carry its own copy of the hook', () => {
+    expect(TAB_BAR).toContain(
+      "import { useVisualViewportPin } from '@/hooks/useVisualViewportPin'"
+    );
+    expect(TAB_BAR).not.toContain('function useVisualViewportPin');
   });
 
   test('the keyboard is measured against the layout viewport', () => {
@@ -78,7 +77,7 @@ describe('one pin, shared by both shells', () => {
     // cancel. `clientHeight` did not move in any sample.
     expect(code(PIN)).toContain('document.documentElement.clientHeight');
     expect(code(PIN)).not.toContain('window.innerHeight');
-    expect(code(MOBILE_NAV)).not.toContain('window.innerHeight');
+    expect(code(TAB_BAR)).not.toContain('window.innerHeight');
   });
 
   test('both viewport hooks share one scheduler', () => {
@@ -96,13 +95,6 @@ describe('the shell is sized to the keyboard, not to the document (SC-65)', () =
       "import { useVisualViewportShell } from '@/hooks/useVisualViewportShell'"
     );
     expect(code(V3_SHELL)).toContain('useVisualViewportShell(shellRef)');
-  });
-
-  test('v2 does not, and must not', () => {
-    // Taking v2's scroll offset away without sizing its shell to the visible
-    // band would put the field that offset was lifting back behind the
-    // keyboard. The two halves are one fix and v2 has neither.
-    expect(MOBILE_NAV).not.toContain('useVisualViewportShell');
   });
 
   test('it sizes and un-scrolls together, because either alone is worse', () => {

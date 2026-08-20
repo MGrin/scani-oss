@@ -118,6 +118,8 @@ export function makeMockToken(over: Partial<Token> = {}): Token {
     iconUrl: null,
     providerMetadata: {},
     isScamProbability: 0,
+    scamScoreVersion: null,
+    scamScoreSource: 'heuristic',
     lookalikeOf: null,
     isActive: true,
     unpriceableUntil: null,

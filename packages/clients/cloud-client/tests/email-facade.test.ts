@@ -1,9 +1,16 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { type EmailMessage, LocalEmailService } from '@scani/email';
 import { Container } from 'typedi';
+// This workspace cannot depend on @scani/domain (it sits below it), so the
+// shared helper is reached the same way the shared test preload is: by path.
+import { restoreContainerAfterAll } from '../../../business/domain/test/helpers/container';
 import type { CloudClient } from '../src/client';
 import { EmailFacade } from '../src/facades/email-facade';
 import { resetCloudClient, setCloudClient } from '../src/runtime';
+
+// Container stubs are process-global; put back whatever this file changes
+// so no later test file resolves them (SC-448).
+restoreContainerAfterAll();
 
 class StubLocalEmailService extends LocalEmailService {
   public sent: EmailMessage[] = [];

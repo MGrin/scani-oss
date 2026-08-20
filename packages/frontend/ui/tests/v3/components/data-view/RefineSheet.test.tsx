@@ -1,13 +1,57 @@
 import { describe, expect, test } from 'bun:test';
+import { addUiLocale } from '@scani/ui/i18n';
 import { Sheet } from '@scani/ui/ui/sheet';
 import {
   RefineFooter,
   RefineHeader,
   RefineSections,
 } from '@scani/ui/v3/components/data-view/RefineSheet';
-import type { FilterDef, GroupByDef, SortDef } from '@scani/ui/v3/hooks/useDataView';
+import type { V3FilterDef, V3GroupByDef, V3SortDef } from '@scani/ui/v3/lib/data-view';
 import type { ReactElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
+
+// The fixtures' own labels, registered the way a host registers its own
+// (SC-262). The assertions below are unchanged English — that is what shows
+// the extraction moved no copy.
+addUiLocale('en', {
+  ui: {
+    dataView: {
+      test: {
+        account: 'Account',
+        all69Holdings: 'All 69 holdings',
+        connectAnExchangeAndYour: 'Connect an exchange and your positions appear here.',
+        everythingWeHave: 'Everything we have',
+        group: 'Group',
+        holding: 'Holding',
+        institution: 'Institution',
+        noHoldingsYet: 'No holdings yet',
+        none: 'None',
+        symbol: 'Symbol',
+        these12Holdings: 'These 12 holdings',
+        this1mWindow: 'This 1M window',
+        this1wWindow: 'This 1W window',
+        this3mWindow: 'This 3M window',
+        type: 'Type',
+        value: 'Value',
+        vault: 'vault',
+      },
+    },
+  },
+});
+
+// A host registering its list nouns — what the two apps do at boot (SC-257).
+addUiLocale('en', {
+  ui: {
+    dataView: {
+      noun: {
+        holdings_one: 'holding',
+        holdings_other: 'holdings',
+        holdings_counted_one: '{{count}} holding',
+        holdings_counted_other: '{{count}} holdings',
+      },
+    },
+  },
+});
 
 /**
  * `RefineSheet` itself renders nothing under `renderToStaticMarkup` — it is a
@@ -28,26 +72,26 @@ function render(node: ReactElement): string {
 const FILTER_DEFS = [
   {
     key: 'tokenType',
-    label: 'Type',
+    labelKey: 'ui.dataView.test.type',
     options: [
       { value: 'crypto', label: 'Cryptocurrency' },
       { value: 'fiat', label: 'Fiat Currency' },
     ],
     fn: () => true,
   },
-  { key: 'institution', label: 'Institution', options: [], fn: () => true },
-  { key: 'account', label: 'Account', options: [], fn: () => true },
-  { key: 'group', label: 'Group', options: [], fn: () => true },
-] as unknown as FilterDef[];
+  { key: 'institution', labelKey: 'ui.dataView.test.institution', options: [], fn: () => true },
+  { key: 'account', labelKey: 'ui.dataView.test.account', options: [], fn: () => true },
+  { key: 'group', labelKey: 'ui.dataView.test.group', options: [], fn: () => true },
+] as unknown as V3FilterDef[];
 
-const SORT_DEFS: SortDef[] = [
-  { key: 'value', label: 'Value' },
-  { key: 'symbol', label: 'Symbol' },
+const SORT_DEFS: V3SortDef[] = [
+  { key: 'value', labelKey: 'ui.dataView.test.value' },
+  { key: 'symbol', labelKey: 'ui.dataView.test.symbol' },
 ];
 
 const GROUP_BY_DEFS = [
-  { key: 'institution', label: 'Institution', fn: () => '' },
-] as unknown as GroupByDef[];
+  { key: 'institution', labelKey: 'ui.dataView.test.institution', fn: () => '' },
+] as unknown as V3GroupByDef[];
 
 function sections(filters: Record<string, string> = {}): string {
   return render(
@@ -106,19 +150,19 @@ describe('RefineSections — the order the axes come in', () => {
 
 describe('RefineHeader — the count, above the fold', () => {
   test('states the live result count and that changes are live', () => {
-    const html = render(<RefineHeader noun="holdings" filteredCount={69} />);
+    const html = render(<RefineHeader nounKey="ui.dataView.noun.holdings" filteredCount={69} />);
     expect(html).toInclude('69 holdings');
     expect(html).toInclude('changes apply as you make them');
   });
 
   test('the count is announced when it moves', () => {
-    expect(render(<RefineHeader noun="holdings" filteredCount={69} />)).toInclude(
-      'aria-live="polite"'
-    );
+    expect(
+      render(<RefineHeader nounKey="ui.dataView.noun.holdings" filteredCount={69} />)
+    ).toInclude('aria-live="polite"');
   });
 
   test('one result is one noun', () => {
-    const html = render(<RefineHeader noun="holdings" filteredCount={1} />);
+    const html = render(<RefineHeader nounKey="ui.dataView.noun.holdings" filteredCount={1} />);
     expect(html).toInclude('1 holding ');
   });
 });

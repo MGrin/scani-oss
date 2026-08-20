@@ -25,7 +25,7 @@ type Route = { match: (url: string) => boolean; body: unknown; status?: number }
 
 function installFetch(routes: Route[]): () => void {
   const original = globalThis.fetch;
-  globalThis.fetch = (async (input: RequestInfo | URL) => {
+  globalThis.fetch = (async (input: Parameters<typeof fetch>[0]) => {
     const url = typeof input === 'string' ? input : input.toString();
     for (const r of routes) {
       if (r.match(url)) {
@@ -35,7 +35,7 @@ function installFetch(routes: Route[]): () => void {
     return new Response(JSON.stringify({ code: '404', msg: `no route for ${url}` }), {
       status: 200,
     });
-  }) as typeof fetch;
+  }) as unknown as typeof fetch;
   return () => {
     globalThis.fetch = original;
   };
@@ -318,7 +318,7 @@ describe('KucoinProvider', () => {
           ],
         }),
         { status: 200 }
-      )) as typeof fetch;
+      )) as unknown as typeof fetch;
     try {
       const out = await p.fetchBalances(ctx as never);
       expect(out).toHaveLength(1);
@@ -342,7 +342,7 @@ describe('KucoinProvider', () => {
     const p = new KucoinProvider(passthroughLimiter());
     const originalFetch = globalThis.fetch;
     globalThis.fetch = (async () =>
-      new Response(JSON.stringify({ code: '200000' }), { status: 200 })) as typeof fetch;
+      new Response(JSON.stringify({ code: '200000' }), { status: 200 })) as unknown as typeof fetch;
     try {
       const r = await p.validateCredentials(
         { apiKey: 'k', apiSecret: 's', passphrase: 'p' },
@@ -360,7 +360,7 @@ describe('KucoinProvider', () => {
     globalThis.fetch = (async () =>
       new Response(JSON.stringify({ code: '400003', msg: 'bad' }), {
         status: 200,
-      })) as typeof fetch;
+      })) as unknown as typeof fetch;
     try {
       const r = await p.validateCredentials(
         { apiKey: 'k', apiSecret: 's', passphrase: 'p' },

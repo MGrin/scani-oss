@@ -3,7 +3,14 @@ import { createComponentLogger, logConfig } from '@scani/logging';
 import { drizzle as drizzlePostgres } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 import { recordQueryExecuted } from './connection-monitor';
-import * as schema from './schema';
+import {
+  assertNoConflictingOptionsParam,
+  READ_ONLY_STARTUP_OPTION,
+  resolveReadOnlyIntent,
+} from './read-only';
+// `./schema/index`, not `./schema` — a file named `schema.ts` would shadow the
+// directory, and a stale one silently did until SC-278.
+import * as schema from './schema/index';
 
 const dbLogger = createComponentLogger('database');
 
@@ -67,6 +74,17 @@ const poolMax = (() => {
   return Number.isFinite(n) && n > 0 ? n : 20;
 })();
 
+/**
+ * Whether every session this process opens refuses writes (SC-422).
+ *
+ * Decided here, at the only moment it CAN be decided: the client is built when
+ * this module loads, and a caller cannot set it afterwards. The inputs are
+ * therefore argv and env — see `./read-only` for the policy and for what a
+ * repair script's dry run gets for free because of it.
+ */
+const readOnlySession = resolveReadOnlyIntent({ argv: process.argv, env: process.env });
+if (readOnlySession) assertNoConflictingOptionsParam(finalDatabaseUrl);
+
 const connectionConfig: postgres.Options<Record<string, postgres.PostgresType>> = {
   max: poolMax, // Direct connection - can use larger pool (Render allows up to 97 connections)
   idle_timeout: 120, // Must exceed longest operation (wallet import ~75s) to avoid postgres.js negative timeout warnings
@@ -81,6 +99,11 @@ const connectionConfig: postgres.Options<Record<string, postgres.PostgresType>> 
     // indefinitely under load. Cron jobs run heavier sweeps, so they get
     // the longer ceiling (also applied via the URL param above).
     statement_timeout: IS_CRON_JOB ? 120000 : 30000,
+    // Postgres refuses the write itself, so a bug in a dry run fails with
+    // 25006 instead of succeeding. `options` and not a URL param: query params
+    // are spread OVER this object by postgres.js, so the URL is the one place
+    // it could be replaced without anyone noticing.
+    ...(readOnlySession ? { options: READ_ONLY_STARTUP_OPTION } : {}),
   },
 };
 
@@ -145,7 +168,21 @@ dbLogger.info(
   '🐘 Connected to PostgreSQL database'
 );
 
+if (readOnlySession) {
+  dbLogger.warn(
+    { url: DATABASE_URL.replace(/:[^:@]*@/, ':***@') },
+    '🔒 Read-only session: every write will be refused by Postgres. ' +
+      'Confirm it with assertSessionReadOnly — a config is not a session.'
+  );
+}
+
 export { client, db };
+
+/**
+ * Whether this process's sessions refuse writes. Read it to EXPLAIN the mode;
+ * `assertSessionReadOnly` is what proves it.
+ */
+export const isReadOnlySession = readOnlySession;
 
 // Type-safe database instance
 export type DbType = typeof db;

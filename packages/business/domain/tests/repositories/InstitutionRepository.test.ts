@@ -94,7 +94,7 @@ describe('findSyncableInstitutions', () => {
     });
   });
 
-  test('excludes crypto_wallet institutions (owned by wallet-balances)', async () => {
+  test('excludes crypto_wallet institutions (balances are owned by wallet-balances)', async () => {
     await withTestDb(async (tx) => {
       const user = await makeUser(tx);
       const wallet = await makeInstitutionType(tx, { code: 'crypto_wallet' });
@@ -128,6 +128,44 @@ describe('findSyncableInstitutions', () => {
   });
 });
 
+// The transaction sync's set is the balance sync's set PLUS wallets. The
+// two were one method, and reading its wallet exclusion as covering both
+// froze every wallet's ledger at its import (SC-360).
+describe('findTransactionSyncableInstitutions', () => {
+  test('INCLUDES crypto_wallet institutions — nothing else re-reads their ledger', async () => {
+    await withTestDb(async (tx) => {
+      const user = await makeUser(tx);
+      const wallet = await makeInstitutionType(tx, { code: 'crypto_wallet' });
+      const sol = await makeInstitution(tx, { name: 'Solana', typeId: wallet.id });
+      await makeCredential(tx, { userId: user.id, institutionId: sol.id });
+      const rows = await repo().findTransactionSyncableInstitutions(tx);
+      expect(rows.map((r) => r.id)).toContain(sol.id);
+    });
+  });
+
+  test('still includes non-wallet institutions', async () => {
+    await withTestDb(async (tx) => {
+      const user = await makeUser(tx);
+      const broker = await makeInstitutionType(tx, { code: 'broker' });
+      const ibkr = await makeInstitution(tx, { name: 'Interactive Brokers', typeId: broker.id });
+      await makeCredential(tx, { userId: user.id, institutionId: ibkr.id });
+      const rows = await repo().findTransactionSyncableInstitutions(tx);
+      expect(rows.map((r) => r.id)).toContain(ibkr.id);
+    });
+  });
+
+  test('excludes a wallet whose credential was soft-deleted', async () => {
+    await withTestDb(async (tx) => {
+      const user = await makeUser(tx);
+      const wallet = await makeInstitutionType(tx, { code: 'crypto_wallet' });
+      const eth = await makeInstitution(tx, { name: 'Ethereum', typeId: wallet.id });
+      await makeCredential(tx, { userId: user.id, institutionId: eth.id, isActive: false });
+      const rows = await repo().findTransactionSyncableInstitutions(tx);
+      expect(rows.map((r) => r.id)).not.toContain(eth.id);
+    });
+  });
+});
+
 describe('findStaleSyncTargets', () => {
   test('flags an active credentialed account whose lastSync is older than cutoff', async () => {
     await withTestDb(async (tx) => {
@@ -156,26 +194,79 @@ describe('findStaleSyncTargets', () => {
         importStatus: 'failed',
       });
       const targets = await repo().findStaleSyncTargets(new Date('2026-01-01'), tx);
-      expect(targets.find((t) => t.institutionId === binance.id)?.kind).toBe('no-account');
+      expect(targets.find((t) => t.institutionId === binance.id)?.kind).toBe('orphaned-credential');
     });
   });
 
-  test('does NOT flag a zero-account institution whose import succeeded but is empty', async () => {
-    // Regression: an exchange that imported cleanly but holds zero (or only
-    // dust) balances creates 0 accounts and sits at import_status='enqueued'
-    // — the healthy terminal state. The probe used to page on this hourly
-    // forever (Sentry SCANI-WORKER-G, 181 events on one empty Binance link).
+  test('flags an active credential with zero accounts even at import_status=enqueued', async () => {
+    // This assertion is INVERTED from the one it replaces (SC-248). The old
+    // test encoded the theory that a cleanly-imported-but-empty exchange
+    // lands at 0 accounts / 'enqueued' and must stay silent. That state is
+    // not reachable: IntegrationImportService creates the account row before
+    // skipZeroBalances is consulted, and an import discovering no accounts
+    // throws. What actually lands here is a credential whose accounts were
+    ***REMOVED***
+    // in production because of this guard.
     await withTestDb(async (tx) => {
       const user = await makeUser(tx);
       const cex = await makeInstitutionType(tx, { code: 'crypto_exchange' });
       const binance = await makeInstitution(tx, { name: 'Binance', typeId: cex.id });
-      await makeCredential(tx, {
+      const credential = await makeCredential(tx, {
         userId: user.id,
         institutionId: binance.id,
         importStatus: 'enqueued',
       });
       const targets = await repo().findStaleSyncTargets(new Date('2026-01-01'), tx);
-      expect(targets.find((t) => t.institutionId === binance.id)).toBeUndefined();
+      const hit = targets.find((t) => t.credentialId === credential.id);
+      expect(hit?.kind).toBe('orphaned-credential');
+      expect(hit?.userId).toBe(user.id);
+    });
+  });
+
+  test('does NOT flag a credential the user disconnected (isActive = false)', async () => {
+    // The soft delete AccountService performs when the last account goes is
+    // what keeps the branch above from becoming the next hourly page.
+    await withTestDb(async (tx) => {
+      const user = await makeUser(tx);
+      const cex = await makeInstitutionType(tx, { code: 'crypto_exchange' });
+      const binance = await makeInstitution(tx, { name: 'Binance', typeId: cex.id });
+      const credential = await makeCredential(tx, {
+        userId: user.id,
+        institutionId: binance.id,
+        isActive: false,
+      });
+      const targets = await repo().findStaleSyncTargets(new Date('2026-01-01'), tx);
+      expect(targets.find((t) => t.credentialId === credential.id)).toBeUndefined();
+    });
+  });
+
+  test('one user’s accounts do not mask another user’s orphaned credential', async () => {
+    // The query used to group by institution alone, so any account on a
+    // shared institution satisfied `count(a.id) > 0` for every credential on
+    // it. Production has two users on one Bybit institution today.
+    await withTestDb(async (tx) => {
+      const healthy = await makeUser(tx);
+      const orphaned = await makeUser(tx);
+      const cex = await makeInstitutionType(tx, { code: 'crypto_exchange' });
+      const bybit = await makeInstitution(tx, { name: 'Bybit', typeId: cex.id });
+
+      await makeCredential(tx, { userId: healthy.id, institutionId: bybit.id });
+      await makeAccount(tx, {
+        userId: healthy.id,
+        institutionId: bybit.id,
+        metadata: { lastSync: new Date('2026-06-27').toISOString() },
+      });
+
+      const orphanCredential = await makeCredential(tx, {
+        userId: orphaned.id,
+        institutionId: bybit.id,
+      });
+
+      const targets = await repo().findStaleSyncTargets(new Date('2026-06-01'), tx);
+      expect(targets.find((t) => t.credentialId === orphanCredential.id)?.kind).toBe(
+        'orphaned-credential'
+      );
+      expect(targets.find((t) => t.userId === healthy.id)).toBeUndefined();
     });
   });
 

@@ -1,9 +1,12 @@
+import '../../i18n-preload';
+
 import { describe, expect, test } from 'bun:test';
 import type { HoldingWithDetails } from '@scani/shared';
 import {
   BulkDeleteAction,
   bulkDeleteCommitLabel,
 } from '@scani/ui/v3/components/data-view/BulkDeleteAction';
+import i18n from 'i18next';
 import {
   Children,
   createElement,
@@ -19,6 +22,11 @@ import {
   selectedSymbols,
 } from '../../../src/v3/components/holdings/holdingsConfig';
 import type { AccountRow } from '../../../src/v3/lib/accounts';
+
+// The nouns themselves are registered by `tests/i18n-preload.ts`, which
+// mirrors what `src/i18n` forwards at boot (SC-257).
+const HOLDINGS_NOUN = 'ui.dataView.noun.holdings';
+const ACCOUNTS_NOUN = 'ui.dataView.noun.accounts';
 
 /**
  * SC-63's blocker, pinned.
@@ -89,6 +97,12 @@ function holding(overrides: Partial<HoldingWithDetails> = {}): HoldingWithDetail
   };
 }
 
+/** The app's own `t`, from the instance the preload above initialises — not a
+ *  stub. A stub would let these tests agree with themselves; the real one makes
+ *  them agree with `en.json`, so the English they assert on is the English the
+ *  product ships (SC-201). */
+const t = i18n.t.bind(i18n);
+
 const HOLDINGS = [
   holding({ id: 'h1' }),
   holding({ id: 'h2', token: { ...holding().token, id: 't2', symbol: 'ETH', name: 'Ethereum' } }),
@@ -96,6 +110,7 @@ const HOLDINGS = [
 ];
 
 const PEEK = {
+  t,
   currency: '$',
   onSetAmount: () => undefined,
   onToggleActive: () => undefined,
@@ -112,18 +127,24 @@ const PEEK = {
 function bulkBar(onBulkDelete: (ids: string[]) => void) {
   const config = holdingsDataViewConfig({
     holdings: HOLDINGS,
+    t,
     currency: '$',
     institutions: undefined,
     accounts: undefined,
     groups: undefined,
     defaultFilters: {},
+    qualitySets: undefined,
     peek: PEEK,
     onAssignGroups: () => undefined,
     onBulkDelete,
     onAddData: () => undefined,
   });
   if (!config.renderBulkActions) throw new Error('the holdings bar has no bulk actions');
-  return config.renderBulkActions(new Set(['h1', 'h2', 'h3']), () => undefined);
+  return config.renderBulkActions(
+    new Set(['h1', 'h2', 'h3']),
+    () => undefined,
+    () => undefined
+  );
 }
 
 describe('the holdings bulk bar', () => {
@@ -151,7 +172,7 @@ describe('the holdings bulk bar', () => {
 describe('BulkDeleteAction', () => {
   const BASE = {
     count: 3,
-    noun: 'holdings',
+    nounKey: 'ui.dataView.noun.holdings',
     consequence: 'BTC, ETH and SOL are removed. This cannot be undone.',
     onConfirm: () => undefined,
   };
@@ -170,14 +191,14 @@ describe('BulkDeleteAction', () => {
    * the label handed to it, so the label is a function it can call.
    */
   test('the commit names the count and is not labelled like the trigger', () => {
-    expect(bulkDeleteCommitLabel(3, 'holdings')).toBe('Delete 3 holdings');
-    expect(bulkDeleteCommitLabel(3, 'holdings')).not.toBe('Delete');
+    expect(bulkDeleteCommitLabel(HOLDINGS_NOUN, 3)).toBe('Delete 3 holdings');
+    expect(bulkDeleteCommitLabel(HOLDINGS_NOUN, 3)).not.toBe('Delete');
     expect(render(<BulkDeleteAction {...BASE} />)).not.toContain('Delete 3 holdings');
   });
 
   test('singularises, so a bar over one row does not offer to delete 1 holdings', () => {
-    expect(bulkDeleteCommitLabel(1, 'holdings')).toBe('Delete 1 holding');
-    expect(bulkDeleteCommitLabel(1, 'accounts')).toBe('Delete 1 account');
+    expect(bulkDeleteCommitLabel(HOLDINGS_NOUN, 1)).toBe('Delete 1 holding');
+    expect(bulkDeleteCommitLabel(ACCOUNTS_NOUN, 1)).toBe('Delete 1 account');
   });
 });
 

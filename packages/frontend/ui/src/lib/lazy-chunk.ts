@@ -24,18 +24,22 @@
  *    the toast and boundary wording downstream both key off it.
  */
 
+import { uiT } from '../i18n';
+import { UserFacingError } from './user-facing-error';
+
 /** Recognisable downstream, so a failed chunk fetch can be worded as the
- *  connectivity problem it almost always is rather than as a crash. */
-export class ChunkLoadError extends Error {
+ *  connectivity problem it almost always is rather than as a crash.
+ *
+ *  A `UserFacingError` (SC-311) because this sentence is the answer, not a
+ *  diagnostic: the reader is told what did not arrive and what to do about it,
+ *  and the renderers only show a message somebody vouched for. */
+export class ChunkLoadError extends UserFacingError {
   readonly chunk: string;
 
   constructor(chunk: string, cause: unknown) {
-    super(
-      `Could not load the ${chunk}. Check your connection and try again — if the app was updated while this tab was open, reloading the page will fix it.`
-    );
+    super(uiT('ui.errors.chunk.message', { chunk }), { cause });
     this.name = 'ChunkLoadError';
     this.chunk = chunk;
-    this.cause = cause;
   }
 }
 

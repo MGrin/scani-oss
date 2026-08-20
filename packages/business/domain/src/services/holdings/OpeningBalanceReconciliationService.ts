@@ -24,7 +24,12 @@ export interface ReconciliationResult {
 // Decimal fiat has at most a few decimal places, crypto can have 18 — use
 // absolute floor rather than relative because a 1e-8 BTC diff is meaningful
 // but a 1e-8 USD diff is not. Callers can override per-token if needed.
-const DEFAULT_OPENING_EPSILON = new Decimal('1e-12');
+/**
+ * Exported so a caller that previews a reconciliation before running it
+ * compares against the same threshold the service will use, rather than a
+ * copy that can drift from it (SC-242).
+ */
+export const DEFAULT_OPENING_EPSILON = new Decimal('1e-12');
 
 // Reconciles (sum-of-transactions) against (current holdings.balance) per
 // holding. When they disagree, inserts a synthetic kind='opening_balance'
@@ -56,7 +61,10 @@ export class OpeningBalanceReconciliationService {
       return null;
     }
 
-    const extremes = await this.transactionRepository.findExtremesForHolding(holdingId);
+    const extremes = await this.transactionRepository.findExtremesForHolding(holdingId, undefined, {
+      // The reconciler must not read its own previous output (SC-199).
+      excludeReconciliationOpening: true,
+    });
     if (!extremes.first) {
       // No transactions yet — nothing to reconcile.
       return null;
@@ -112,10 +120,73 @@ export class OpeningBalanceReconciliationService {
       };
     }
 
+    const openingAt = new Date(extremes.first.getTime() - 1);
+
+    // A NEGATIVE opening is not a fact, and is not written to the ledger
+    // (SC-199).
+    //
+    // The plug exists so the transaction chain fully explains the current
+    // balance. Where it comes out positive that is a real statement: the user
+    // already held this much when our history begins. Where it comes out
+    // negative it says they held −4474 USDT before their history begins,
+    // which is not a thing that can have been true. Production held eleven of
+    // these.
+    //
+    // What is actually true is that inflows are MISSING — the ledger does not
+    // reach far enough back — and the honest output is to say so rather than
+    // to balance the books with an impossible number. Writing it also
+    // corrupts everything downstream that trusts the chain: cost basis reads
+    // a negative acquisition, and `BalanceAtTimeService.clamp` floors the
+    // chart at zero, which hides the discrepancy it was invented to expose.
+    //
+    // **Silence is not the alternative**, and this is the half worth being
+    // careful about: a user whose balance does not reconcile has a real
+    // problem, and this codebase's characteristic failure is replacing a
+    // wrong number with nothing. So the gap is still recorded, on the
+    // coverage row, in the same column and with the same sign the UI already
+    // keys on — `HoldingQueryService` raises `dataIntegrity.incompleteHistory`
+    // from `openingBalanceQuantity < 0`, and the Data quality panel counts the
+    // same predicate. The badge the reader sees is unchanged. What changes is
+    // that the assertion is now "we are missing 4474 USDT of inflows before
+    // 2026-07-14" instead of "you held −4474 USDT".
+    //
+    // Any row a previous run wrote is deleted, so re-running repairs the
+    // ledger rather than leaving the old claim standing beside the new note.
+    if (computedOpening.lt(0)) {
+      await this.transactionRepository.deleteReconciliationOpening(holdingId);
+      const gapNotes = `Missing inflows of ${computedOpening.abs().toString()} before ${openingAt.toISOString()} — the transaction history does not reach far enough back to explain the current balance. No opening balance was synthesized, because a negative holding is not a possible fact.`;
+      await this.coverageRepository.upsertReconciliation({
+        holdingId,
+        lastReconciledAt: new Date(),
+        openingBalanceQuantity: computedOpening.toString(),
+        reconciliationNotes: gapNotes,
+      });
+      this.logger.warn(
+        {
+          holdingId,
+          accountId: holding.accountId,
+          tokenId: holding.tokenId,
+          missingQuantity: computedOpening.abs().toString(),
+          before: openingAt.toISOString(),
+        },
+        'Unreconciled holding — missing inflows, no opening balance synthesized'
+      );
+      return {
+        holdingId,
+        accountId: holding.accountId,
+        tokenId: holding.tokenId,
+        holdingsBalance,
+        txSumAllTime,
+        computedOpening,
+        openingBalanceSynthesized: false,
+        openingAt: null,
+        notes: gapNotes,
+      };
+    }
+
     // Synthesize an opening_balance tx one millisecond before the first
     // real tx. This keeps the ledger chronologically consistent and leaves
     // room for the real tx to follow.
-    const openingAt = new Date(extremes.first.getTime() - 1);
     await this.transactionRepository.bulkUpsert([
       {
         userId: holding.userId,
@@ -134,9 +205,8 @@ export class OpeningBalanceReconciliationService {
       },
     ]);
 
-    const notes = computedOpening.gt(0)
-      ? `Synthesized opening balance of ${computedOpening.toString()} at ${openingAt.toISOString()} — tx history began after user already held this amount.`
-      : `Synthesized negative opening balance of ${computedOpening.toString()} — implies missing inflows before ${openingAt.toISOString()}.`;
+    // Only positive openings reach here — the negative branch returned above.
+    const notes = `Synthesized opening balance of ${computedOpening.toString()} at ${openingAt.toISOString()} — tx history began after user already held this amount.`;
 
     await this.coverageRepository.upsertReconciliation({
       holdingId,

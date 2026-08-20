@@ -1,4 +1,8 @@
-import { TRANSFER_MATCH_WINDOW_MS, TRANSFER_QTY_EPSILON } from '@scani/shared';
+import {
+  ANSWERABLE_OUTFLOW_KINDS,
+  TRANSFER_MATCH_WINDOW_MS,
+  TRANSFER_QTY_EPSILON,
+} from '@scani/shared';
 import Decimal from 'decimal.js';
 
 /**
@@ -12,7 +16,11 @@ import Decimal from 'decimal.js';
  * tunes one of them.
  */
 
-export const OUTFLOW_KINDS = ['withdraw', 'transfer_out'] as const;
+/** The kinds the review queue can ask about. Re-exported from `@scani/shared`
+ *  under the name eight call sites here already use, because the realized
+ *  ledger needs the same set in the browser and a second copy of it is exactly
+ *  how a row ended up on no queue and yet stamped "nobody answered" (SC-402). */
+export const OUTFLOW_KINDS = ANSWERABLE_OUTFLOW_KINDS;
 export const INFLOW_KINDS = ['deposit', 'transfer_in'] as const;
 
 /** CEX queues delay; chain finality is minutes. Re-exported from
@@ -49,3 +57,119 @@ export const CANDIDATE_REASON_RANK: Record<string, number> = {
   time_outside_window: 2,
   both_outside: 3,
 };
+
+/**
+ * One side of a possible pair, reduced to the facts that decide whether the
+ * two sides can be the same money at all.
+ *
+ * Deliberately not a `HoldingTransaction`: the identity facts live on three
+ * other tables (the token's canonical key, the account's wallet and chain),
+ * and a predicate that took the row would have to reach for them itself. Both
+ * callers already join those tables for their own reasons.
+ */
+export interface TransferLeg {
+  readonly transactionId: string;
+  readonly holdingId: string;
+  readonly tokenId: string;
+  /**
+   * WHICH ASSET this is, according to something other than us:
+   * `tokens.providerMetadata.coingecko.id`. Null when we hold no such id,
+   * which is most memecoins and every private asset — and null never matches
+   * null, so an asset we cannot name cannot be paired across chains.
+   */
+  readonly canonicalAssetKey: string | null;
+  /** The wallet entity behind this leg's account. Null for exchange accounts. */
+  readonly walletId: string | null;
+  /** The chain that account lives on. Null for exchange accounts. */
+  readonly chainKey: string | null;
+  readonly occurredAt: Date;
+  readonly quantityAbs: Decimal;
+}
+
+/**
+ * Why two legs could be one movement.
+ *
+ * - `same_token` — one token row, two holdings. The original case: a CEX
+ *   withdrawal and the wallet deposit it became. Native assets fall in here
+ *   across chains too, because ETH on Base and ETH on mainnet are ONE token
+ *   row (production, 2026-08-17), which is why two of the bridges in this
+ *   ledger were already paired before SC-336 existed.
+ * - `bridged_asset` — two token rows that are the same asset on two chains.
+ */
+export type CandidatePairClass = 'same_token' | 'bridged_asset';
+
+/**
+ * Whether an outflow and an inflow can be the same money, on identity and
+ * direction alone (SC-336). Quantity and time are the CALLER's to apply —
+ * the matcher and the review surface deliberately use different bounds for
+ * those, and only for those.
+ *
+ * A bridge moves an asset to another chain; the value never leaves the
+ * portfolio, so nothing is realized. Ingest cannot see it — the two legs are
+ * in different runs on different chains — so this is the matcher's shape, and
+ * the question it has to answer is "same asset, two chains?" without letting
+ * anything counterfeit that shape. Five conditions, each closing one way to
+ * counterfeit it — condition 4 applying to every pair and the other four to a
+ * bridge, which the two paragraphs after the list account for:
+ *
+ * 1. **The asset is named by an outside authority, never by its symbol.**
+ *    `coingecko.id`, the same key `TokenRepository.findPricingSiblings` uses
+ *    for the same reason (SC-198): production holds nine rows whose whole
+ *    purpose is to carry a symbol matching a real token's, and two honest
+ *    `TRUMP`s that are different coins. Symbol equality is how a memecoin
+ *    named USDC gets paired with real USDC. It also keeps WETH out of ETH —
+ *    `weth` and `ethereum` are different ids, and a wrapper is a different
+ *    asset with a different basis.
+ * 2. **The two rows are DIFFERENT token rows.** Same row is `same_token`,
+ *    which needs none of this.
+ * 3. **One wallet, two chains.** The wallet entity (`accounts.metadata
+ *    .userWalletId`) rather than an address string, so it holds for any chain
+ *    family; the chain from the same place. A default bridge sends to the
+ *    sender's own address, and requiring that is what separates a bridge from
+ *    a payment that happens to be followed by an unrelated arrival. A bridge
+ *    to a DIFFERENT wallet the user owns is real and is deliberately not
+ *    recognised here — it needs the destination address, which no column
+ *    carries yet.
+ * 4. **Two holdings.** A pair that resolves to one holding describes a move
+ *    from a position to itself, which is not a thing that happens (SC-347).
+ * 5. **The arrival does not precede the departure.** Physics, not tolerance,
+ *    so it belongs here and not in a window. Measured on production: the
+ ***REMOVED***
+ ***REMOVED***
+ *
+ * **Condition 5 is deliberately NOT applied to `same_token`, and that is not
+ * an oversight.** A `same_token` pair can be one movement reported by two
+ ***REMOVED***
+ ***REMOVED***
+ ***REMOVED***
+ * legitimately precedes the departure. Physics constrains the money, not two
+ * vendors' timestamps; a bridge is held to the stricter rule because its two
+ * legs come from the same kind of source and skew is not available as an
+ * excuse.
+ *
+ * **Condition 4 IS applied to both, and used not to be.** `same_token`
+ * returned before the holding was looked at, so the rule this docblock has
+ * always claimed held for bridges alone — while every same-holding group ever
+ * written to production is a `same_token` pair (43 of them, SC-347). The
+ * matcher carried its own copy of the guard at the call site and was therefore
+ * safe; `candidatesFor` and `claimInflow` had none, which is how a reader was
+ * shown, and answered `paired` on, an arrival three days older than the
+ * departure on the same holding.
+ */
+export function candidatePairClass(
+  out: TransferLeg,
+  inflow: TransferLeg
+): CandidatePairClass | null {
+  if (out.transactionId === inflow.transactionId) return null;
+  if (out.holdingId === inflow.holdingId) return null;
+  if (out.tokenId === inflow.tokenId) return 'same_token';
+  if (out.canonicalAssetKey === null || out.canonicalAssetKey !== inflow.canonicalAssetKey) {
+    return null;
+  }
+  if (out.walletId === null || out.walletId !== inflow.walletId) return null;
+  if (out.chainKey === null || inflow.chainKey === null || out.chainKey === inflow.chainKey) {
+    return null;
+  }
+  if (inflow.occurredAt.getTime() < out.occurredAt.getTime()) return null;
+  return 'bridged_asset';
+}

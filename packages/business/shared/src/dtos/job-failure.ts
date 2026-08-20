@@ -63,19 +63,51 @@ export interface JobFailureFacts {
   queueHasJob?: boolean;
 }
 
-export interface JobFailureDescription {
-  /** Chip text. Short enough for a 390px row. */
-  label: string;
+/**
+ * What the failure IS, as a code and its operands — never as a sentence.
+ *
+ * This package is the wire contract: `apps/backend/api` and the worker import
+ * it, there is no `t()` on the server and there never will be, so a string
+ * rendered here is a string no translator can reach. Every one of these used
+ * to be English prose, and a Russian reader watching an import die was handed
+ * "Failed — won't retry" in a language they did not choose, at the one moment
+ * the interface has something urgent to say (SC-424).
+ *
+ * Same shape and same reason as `reviewLabelSchema` in `review.ts` (SC-371):
+ * the server sends what the row is MADE OF, and the side that has a `t()`
+ * names it. The operands are the numbers the sentence needs, carried as
+ * numbers — a count that survives a round trip through prose is a count
+ * waiting to be misread the first time the prose changes.
+ */
+export type JobFailureNaming =
+  /** The user stopped it. */
+  | { code: 'cancelled' }
+  /** Never reached Redis: it did not run and changed nothing. */
+  | { code: 'neverDelivered' }
+  /** `UnrecoverableError` — another attempt on its own changes nothing. */
+  | { code: 'unrecoverable' }
+  /** Dead after more than one attempt, all of which failed. */
+  | { code: 'exhausted'; attemptsAllowed: number }
+  /** Dead, and only ever entitled to the one attempt. */
+  | { code: 'noRetry' }
+  /** Not dead, but the queue holds nothing for it. */
+  | { code: 'notQueued' }
+  /** A retry is genuinely coming. */
+  | { code: 'retrying'; attemptsMade: number; attemptsAllowed: number }
+  /** Out of attempts, not yet stamped dead — the gap between the two writes. */
+  | { code: 'settling' };
+
+export type JobFailureCode = JobFailureNaming['code'];
+
+export type JobFailureDescription = JobFailureNaming & {
   /** Whether the queue will make another attempt without being asked. The
    *  single question the old red chip could not answer. */
   willRetry: boolean;
-  /** One sentence, for the detail page. */
-  sentence: string;
   /** Whether re-running it is a sensible thing to offer at all. False for a
    *  cancellation (the user meant it) — separate from whether the queue still
    *  holds the payload, which only the server can answer. */
   retryWorthOffering: boolean;
-}
+};
 
 /**
  * The one description of a failure, shared by the server's review feed and both
@@ -91,38 +123,15 @@ export function describeJobFailure(job: JobFailureFacts): JobFailureDescription 
   if (job.deadAt) {
     switch (job.failureReason) {
       case 'cancelled':
-        return {
-          label: 'Cancelled',
-          willRetry: false,
-          sentence: 'You stopped this job before it finished.',
-          retryWorthOffering: false,
-        };
+        return { code: 'cancelled', willRetry: false, retryWorthOffering: false };
       case 'never_delivered':
-        return {
-          label: 'Never started',
-          willRetry: false,
-          sentence:
-            'This job was never handed to the worker, so it never ran and nothing was changed. Start it again from where you began it.',
-          retryWorthOffering: true,
-        };
+        return { code: 'neverDelivered', willRetry: false, retryWorthOffering: true };
       case 'unrecoverable':
-        return {
-          label: "Failed — won't retry",
-          willRetry: false,
-          sentence:
-            'This failed for a reason another attempt will not fix. Check the details below, correct them, and start it again.',
-          retryWorthOffering: true,
-        };
+        return { code: 'unrecoverable', willRetry: false, retryWorthOffering: true };
       default:
-        return {
-          label: "Failed — won't retry",
-          willRetry: false,
-          sentence:
-            attemptsAllowed > 1
-              ? `This was tried ${attemptsAllowed} times and failed every time. It will not be tried again on its own.`
-              : 'This failed and will not be tried again on its own.',
-          retryWorthOffering: true,
-        };
+        return attemptsAllowed > 1
+          ? { code: 'exhausted', attemptsAllowed, willRetry: false, retryWorthOffering: true }
+          : { code: 'noRetry', willRetry: false, retryWorthOffering: true };
     }
   }
 
@@ -130,21 +139,17 @@ export function describeJobFailure(job: JobFailureFacts): JobFailureDescription 
   // counters say a retry is due; the queue says otherwise, and the queue is
   // the one that would have to run it.
   if (job.queueHasJob === false) {
-    return {
-      label: 'Failed',
-      willRetry: false,
-      sentence: 'The last attempt failed, and no further attempt is queued for it.',
-      retryWorthOffering: true,
-    };
+    return { code: 'notQueued', willRetry: false, retryWorthOffering: true };
   }
 
   // Not dead yet. A retry is genuinely coming — the row is `failed` because
   // the last attempt was, not because the job is over.
   if (attemptsMade > 0 && attemptsMade < attemptsAllowed) {
     return {
-      label: `Retrying (${attemptsMade} of ${attemptsAllowed})`,
+      code: 'retrying',
+      attemptsMade,
+      attemptsAllowed,
       willRetry: true,
-      sentence: `Attempt ${attemptsMade} of ${attemptsAllowed} failed. The next one starts automatically — nothing for you to do yet.`,
       retryWorthOffering: false,
     };
   }
@@ -153,12 +158,7 @@ export function describeJobFailure(job: JobFailureFacts): JobFailureDescription 
   // before the queue declares the job over, so this is the gap of a second or
   // two between them. Claiming a retry is coming would be the lie; claiming it
   // is permanently dead would be premature.
-  return {
-    label: 'Failed',
-    willRetry: false,
-    sentence: 'The last attempt failed. Checking whether anything else is queued for it.',
-    retryWorthOffering: true,
-  };
+  return { code: 'settling', willRetry: false, retryWorthOffering: true };
 }
 
 /** Terminal *and* not yet dealt with — what the review feed asks about. */

@@ -1,3 +1,5 @@
+import { type EmailStrings, fill } from '../i18n';
+import { en } from '../i18n/locales/en';
 import type { EmailBrand } from '../types';
 
 export function escapeHtml(value: string): string {
@@ -14,10 +16,18 @@ export function layout({
   preheader,
   content,
   footerNote,
+  strings = en,
 }: {
   brand: EmailBrand;
   preheader: string;
   content: string;
+  /**
+   * The letter's language (SC-412). Defaults to English rather than being
+   * required, because the one caller that is not an auth template — the
+   * contact confirmation — is marketing mail written in one language and
+   * passes a `footerNote` of its own.
+   */
+  strings?: EmailStrings;
   // Override the default sign-in footer for emails that aren't auth-
   // related (e.g. a transactional notification). When omitted,
   // the body keeps the canonical "someone requested sign-in" language
@@ -25,13 +35,14 @@ export function layout({
   // any interpolated values inside the override.
   footerNote?: string;
 }): string {
-  const footerHtml =
-    footerNote ??
-    `You're getting this email because someone requested sign-in to
-                <a href="${brand.appUrl}" style="color:${brand.textMuted};">${escapeHtml(brand.appName)}</a>
-                using this address. If that wasn't you, you can safely ignore this message — no account action was taken.`;
+  const appLink = `<a href="${brand.appUrl}" style="color:${brand.textMuted};">${escapeHtml(
+    brand.appName
+  )}</a>`;
+  // `{appLink}` is substituted AFTER escaping the sentence around it, so the
+  // anchor survives and nothing a brand carries can open a tag.
+  const footerHtml = footerNote ?? fill(escapeHtml(strings.layout.footer), { appLink });
   return `<!doctype html>
-<html lang="en">
+<html lang="${strings.lang}">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -68,7 +79,7 @@ export function layout({
           <table role="presentation" width="480" cellpadding="0" cellspacing="0" border="0" style="max-width:480px;width:100%;margin-top:16px;">
             <tr>
               <td align="center" style="font-size:12px;color:${brand.textMuted};">
-                ${escapeHtml(brand.appName)} &middot; Personal wealth, one place
+                ${escapeHtml(brand.appName)} &middot; ${escapeHtml(strings.layout.tagline)}
               </td>
             </tr>
           </table>

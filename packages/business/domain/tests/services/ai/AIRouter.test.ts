@@ -1,13 +1,14 @@
 process.env.DATABASE_URL = process.env.DATABASE_URL || 'postgresql://dummy:dummy@localhost/dummy';
 
-import { afterAll, describe, expect, test } from 'bun:test';
+import { describe, expect, test } from 'bun:test';
 import { ProviderRegistry } from '@scani/providers/core/registry';
 import { Container } from 'typedi';
 import { AIRouter } from '../../../src/services/ai/AIRouter';
+import { restoreContainerAfterAll } from '../../../test/helpers/container';
 
-afterAll(() => {
-  Container.set(ProviderRegistry, new ProviderRegistry());
-});
+// Container stubs are process-global; put back whatever this file changes
+// so no later test file resolves them (SC-448).
+restoreContainerAfterAll();
 
 // Registers a stub AI provider that returns `aiData` verbatim from
 // parseScreenshot, then builds an AIRouter over that registry.

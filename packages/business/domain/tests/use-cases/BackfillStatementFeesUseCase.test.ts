@@ -17,18 +17,42 @@ import { makeAccount, makeHolding, makeToken } from '../../test/helpers/factorie
  * connections — a rolled-back transaction would hide exactly the behaviour
  * that matters. Every run is scoped to its own `userId` so it cannot see, or
  * be seen by, a suite running beside it, and the fixture user is deleted
- * afterwards (FK cascade takes the rest).
+ * afterwards.
+ *
+ * Deleting the user does NOT take the rest, which is what made this file the
+ * one that leaked (SC-230). `tokens` carries no `user_id` — it is shared
+ * reference data, not user data — so the FK cascade never reaches it and six
+ * rows survived every full-suite run. They accumulated in the shared local
+ * database until the `tokens` unique constraint started rejecting other
+ * suites' fixtures, and the file that failed was never this one.
+ *
+ * So the token ids are tracked and deleted explicitly. Anything committed
+ * here that is not reachable from `users` by a cascade has to be.
  */
 
 const useCase = () => Container.get(BackfillStatementFeesUseCase);
 
 const createdUserIds: string[] = [];
+const createdTokenIds: string[] = [];
+const createdInstitutionIds: string[] = [];
 
 afterEach(async () => {
   const db = getDb();
   while (createdUserIds.length > 0) {
     const userId = createdUserIds.pop() as string;
     await db.delete(schema.users).where(eq(schema.users.id, userId));
+  }
+  // After the users, because holdings and holding_transactions reference the
+  // token and only disappear with the user that owns them.
+  while (createdTokenIds.length > 0) {
+    const tokenId = createdTokenIds.pop() as string;
+    await db.delete(schema.tokens).where(eq(schema.tokens.id, tokenId));
+  }
+  // Institutions are shared reference data too, for the same reason and with
+  // the same consequence — they were accumulating six a run beside the tokens.
+  while (createdInstitutionIds.length > 0) {
+    const institutionId = createdInstitutionIds.pop() as string;
+    await db.delete(schema.institutions).where(eq(schema.institutions.id, institutionId));
   }
 });
 
@@ -91,6 +115,8 @@ async function seedPreFixImport(rows: { amount: string; fee: string | null }[]):
     );
 
     createdUserIds.push(user.id);
+    createdTokenIds.push(token.id);
+    createdInstitutionIds.push(institution.id);
     return { userId: user.id, holdingId: holding.id, tokenId: token.id };
   });
 }

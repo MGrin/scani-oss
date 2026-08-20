@@ -28,6 +28,8 @@
  * our server — and what to do next.
  */
 
+import type { TFunction } from 'i18next';
+
 /** Long enough for a cold Fly machine to answer, short enough that nobody
  *  believes the app is broken. Both numbers are per attempt. */
 export const AUTH_FETCH_TIMEOUT_MS = 12_000;
@@ -89,17 +91,27 @@ export function classifyAuthFailure(error: unknown, online: boolean): AuthFailur
  * What the screen says. Every message names the next action, because an error
  * with no next action on a screen with no back button is the wedge again in
  * slower motion.
+ *
+ * `t` is passed in rather than taken from a hook (SC-405). This is a lib
+ * module, so it has no hook to take one from — and the alternative, returning a
+ * key for the screen to resolve, would put the `server` case's fallback on the
+ * wrong side of the boundary: only this function knows whether the server sent
+ * a usable message, and that message arrives already worded by the server.
  */
-export function authFailureMessage(kind: AuthFailureKind, serverMessage?: string): string {
+export function authFailureMessage(
+  t: TFunction,
+  kind: AuthFailureKind,
+  serverMessage?: string
+): string {
   switch (kind) {
     case 'offline':
-      return "You're offline, so we couldn't reach Scani. We'll try again on our own as soon as you're back.";
+      return t('auth.failure.offline');
     case 'timeout':
-      return 'Scani took too long to answer. Check your connection and tap Continue again.';
+      return t('auth.failure.timeout');
     case 'unreachable':
-      return "We couldn't reach Scani. Check your connection and tap Continue again.";
+      return t('auth.failure.unreachable');
     case 'server':
-      return serverMessage?.trim() || 'Something went wrong. Try again.';
+      return serverMessage?.trim() || t('auth.failure.server');
   }
 }
 

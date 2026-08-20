@@ -55,6 +55,48 @@ copy the Flex Query ID + Token into Scani.
 The single Flex Query report covers every section we parse — Scani
 fetches it once per sync and demultiplexes locally.
 
+### When a section is missing (SC-435)
+
+The section list belongs to the user's saved query, not to us, so a
+query without "Cash Transactions" returns a statement that parses
+perfectly and never contains a dividend, interest payment, deposit or
+withdrawal. Until SC-435 that was indistinguishable from an account
+***REMOVED***
+***REMOVED***
+
+`statement-warnings.ts` checks the **container** element — `<CashTransactions>`,
+not `<CashTransaction>` — because that is what a *selected* section
+produces. Its absence is about the query; its presence with no rows
+inside is about the account, and that case stays silent.
+
+- `fetchTransactions` reports a missing `Trades` or `CashTransactions`
+  section through `ctx.noteWarning` (SC-428), which renders verbatim in
+  the import job's result.
+- `runFlexQuery` logs all four sections and the statement's size on
+  **every** fetch (`IBKR statement: sections present`), whether or not
+  anything is missing — a line that only appears when something is
+  wrong cannot distinguish "nothing wrong" from "never ran".
+
+`fetchBalances` gets no warning, only the log: the balance context has
+no warning channel, just the per-snapshot `asOfNote` (SC-384).
+
+### When a cash row arrives and we cannot place it (SC-435)
+
+The other door to the same symptom. `classifyCashType` matches IBKR's
+`type` attribute **exactly**, so a category we never knew about — or one
+IBKR renames — silently drops real money out of the ledger, and from the
+reader's side that is indistinguishable from a section we never got.
+
+`fetchTransactions` counts those rows and reports them through
+`ctx.noteWarning`, naming each type verbatim: the string is what has to
+be added to the map, so a user who forwards the warning has forwarded
+the whole bug report. Unlike the missing-section warning it does **not**
+send them to IBKR — there is nothing for them to change, and telling
+them to check a setting that is already correct is worse than silence.
+
+`BASE_SUMMARY` rows are IBKR's own total line and are dropped on
+purpose; they never count as unmapped.
+
 ## Auth + env
 
 - Per-user `flexQueryToken` + `flexQueryId` (both encrypted; user
@@ -64,44 +106,145 @@ fetches it once per sync and demultiplexes locally.
 
 ## Rate limit + namespace
 
-- IBKR throttles aggressively: ~1 req/s sustained, with hour-long
-  blocks for repeated violations.
-- Rate-limiter namespace: `ibkr` (per credential).
-- Polling backoff: 10s → 20s → 30s → 45s → 60s, max 6 attempts. If
-  the report isn't ready after that we throw.
+- Rate-limiter namespace: `ibkr-flex`, per credential, 1 request per 5s
+  (`ibkrFactory`). Deliberately below the ~1 req/15s at which 1018 fires, so
+  a user can validate and then sync without tripping it.
+- Each HTTP call has a 60s timeout (`FLEX_REQUEST_TIMEOUT_MS`); SendRequest
+  can hang for tens of seconds when a previous report has not cleared
+  server-side.
+- **Polling is a fixed delay, not a backoff.** SendRequest retries 6 times at
+  8s; GetStatement polls 24 times at 12s, ~5 minutes of patience, because a
+  heavy template can take several minutes to generate. BullMQ auto-extends
+  its 30s lock at `lockDuration/2` while the handler is alive, so a
+  multi-minute poll does not trigger stalled-job recovery.
+- **Exhausting the poll is `retryable` (SC-443).** Running out of budget is
+  our clock expiring, not IBKR refusing us: the report was accepted and had
+  not been built yet. Both loops raise a `ProviderError` of kind `retryable`
+  carrying `IBKR SendRequest still transient after 6 retries` or `IBKR report
+  still generating after 24 retries`, and neither sets `retryAfterMs` —
+  scheduling the next attempt is the caller's job. Network/timeout failures
+  behave the same way by a different route: the last one rethrows the
+  underlying plain `Error`, which callers also treat as retryable.
+- **Nothing retries forever.** The budget above is spent inside one attempt;
+  the attempt count belongs to the job descriptor in `@scani/jobs`.
+  `exchange-import` gets `RETRY_EXTERNAL` (3 attempts, 10s exponential),
+  `transaction-import` allows 4 at 15s, `refresh-account-balance` 2 at 5s, and
+  the hourly `exchange-balances` cron has no BullMQ retry at all — its retry
+  is the next hour. Once those run out the job is `retries_exhausted`, which
+  the user reads as "this was tried 3 times and failed every time", with a
+  re-run offered and a row in the review feed.
 
 ## Error taxonomy
 
-- HTTP 4xx/5xx → `Error` thrown after `fetchWithTimeout` retries.
-- `<Status>Fail</Status>` in the response body → `Error` with the
-  IBKR error code + message. Common codes:
-  - 1019 — invalid token (auth-failed equivalent).
-  - 1018 — Flex Query ID not found.
-  - 1009 — token expired (Flex tokens have a 1-year TTL).
-  - 1006 — no data in range.
-- Polling timeout (6 attempts × max 60s ≈ 4 min total) → `Error`
-  with "report not ready". Background sync retries on next cron tick.
+`classifyFlexError()` in `index.ts` is the whole of it: every
+`<Status>Fail</Status>` body, from either endpoint, is turned into a
+`ProviderError` by that function. Read it there — this table is a summary of
+it, and where the two disagree the function is right.
 
-`validateCredentials` does the SendRequest call only and short-
-circuits to `{ valid: false }` on 1019 / 1018 / 1009.
+| Code | `kind` | `retryAfterMs` | Why |
+|---|---|---|---|
+| `1025` | `rate-limited` | **24 hours** | Lockout, not throughput. See below. |
+| `1018` | `rate-limited` | 60s | Ordinary throughput limit; clears on its own. |
+| `1010`, `1012` | `auth-failed` | none | Time does not fix a bad token — it needs the user, and a window would only postpone telling them. |
+| anything else | `unrecoverable` | none | Deliberate: an unmapped code is not silently retried. |
+
+`1001` and `1019` never reach `classifyFlexError` at all. Both poll loops own
+them end to end: `TRANSIENT_GENERATION_ERROR_CODES` retries them with a delay,
+and the attempt that runs out of budget raises `flexPollExhausted` rather than
+falling through. So the `anything else` row means what it says — a code this
+provider has never been asked to rank — and cannot quietly absorb a code that
+merely took too long.
+
+Until SC-443 it did absorb exactly that, and the fall-through landed on
+`unrecoverable`, which renders to the user as "this failed for a reason
+another attempt will not fix. Check the details below, correct them, and start
+it again". There is nothing in a slow report to correct. The reversal is
+argued at `flexPollExhausted` in `index.ts`; the short version is that the
+counter-argument — that surviving five minutes of polling proves the template
+is too heavy — asserts a cause the code cannot observe, and production has
+never produced one instance of it (measured 2026-08-19: no `user_jobs` row in
+three months carries any Flex code, and the single live credential has
+`sync_failure_count = 0`).
+
+**1025 is the one that matters, and it is not an ordinary rate limit (SC-279).**
+IBKR returns it after repeated failure and keeps returning it; each further
+attempt is another failed attempt against the counter that has to age out.
+Retrying is not recovery, it is the mechanism that *sustains* the lockout. The
+window must be honoured by not calling at all, not by sleeping and retrying —
+an hourly schedule retried one hourly, for 57 Sentry events. The 24 hours is
+chosen to be obviously safe rather than accurate: IBKR does not document the
+cooldown, and waiting too long costs one more day of staleness that is already
+flagged in the account row, while waiting too little costs a lockout that
+never ages out. The reasoning is argued in full at `IBKR_LOCKOUT_MS`.
+
+HTTP 4xx/5xx from either endpoint throws `ProviderError.fromHttp` before any
+code classification, so a 503 from the Flex service is `retryable` and a
+401 is `auth-failed` — the status is the only evidence available at that
+point, and it is enough to keep an outage out of the `unrecoverable` bucket.
+
+`validateCredentials` returns `{ valid: false }` for IBKR's bad-token codes
+(1010, 1012) and for its own shape checks — a wrong `institutionCode`, a
+missing `flexQueryToken` / `flexQueryId`. **Everything else it re-throws**
+(SC-445). It used to answer `{ valid: false, message }` on any throw at all,
+which reported a 24-hour lockout, a throughput limit, a report IBKR had not
+finished generating and a network failure as an invalid credential — and the
+reasonable response to that is to go regenerate the token, which on 1025 is
+the mechanism that sustains the lockout. `credentialRejection` in
+`core/errors.ts` is the catch that draws the line; the api turns the re-thrown
+`kind` into "we could not check right now".
+
+**Nothing user-facing runs through it today.** `ibkrManifest` sets
+`skipServerValidation`, so `integrations.validateKeys` stores the credential
+and enqueues the import without calling any validator — one SendRequest per
+minute is the whole budget and the worker needs it. What a user sees after
+connecting IBKR is the import job's own outcome, which is SC-443's subject.
+The fix above is for the day that flag flips, and for the contract every other
+credentialed provider now shares.
+
+Pinned by `packages/clients/providers/tests/providers/ibkr.test.ts`
+("IbkrProvider — Flex error classification").
+
+## Freshness — the statement is a day behind, by design (SC-384)
+
+The Flex Web Service is a **reporting** interface. IBKR generates an activity
+statement after the close and serves that same statement all day, so a sync at
+15:10Z returns the previous business day's closing positions. That is not a
+bug and it is not fixable from here: IBKR's Client Portal Web API does return
+same-day positions, but it authenticates by OAuth 1.0a signature or a gateway
+session and a Flex token can produce neither — measured, every Client Portal
+endpoint answers 401 to one and ignores the `t=` parameter entirely. See
+`docs/technical/2026-08-19_sc384-ibkr-flex-lag-is-inherent.md`.
+
+So `fetchBalances` reports the date the statement claims rather than the clock:
+
+- `capturedAt` ← `<OpenPosition>` / `<CashReportCurrency>` `reportDate`, then
+  `<FlexStatement toDate>`, then (only if IBKR sends neither) `new Date()`.
+- **Never `whenGenerated`** — that is when IBKR built the report, which for an
+  intraday fetch is today even when the data in it is not.
+- Both date spellings parse (`20260817`, `2026-08-17`); the format is a
+  per-query setting the user picks and we do not set it for them.
+- `asOfNote` carries the one-sentence reason, so the date never reaches a
+  reader bare. The sync writes both to `accounts.metadata.balancesAsOf`,
+  beside `lastSync` rather than over it.
 
 ## Known quirks + gotchas
 
-- **Two-step protocol with linear backoff**. The XML report is
-  asynchronous; SendRequest enqueues it, GetStatement polls until
-  ready. Linear backoff (10s → 60s) over 6 attempts. Fastify
-  request budget tolerates this; user-facing UI should show
-  "fetching IBKR report" while it's running.
+- **Two-step protocol, and it is slow**. The XML report is asynchronous;
+  SendRequest enqueues it, GetStatement polls until ready at a fixed 12s
+  across up to 24 attempts. A user-initiated sync can therefore sit for
+  minutes; the provider reports progress through `onStatus` ("Waiting for
+  IBKR — generating report (attempt n/24)…") and the UI should show it.
 - **`flexQueryId` is per-report-template**. A user has multiple
   Flex Queries (one for trades, one for positions, one for cash
   txs) and Scani only stores ONE id. The default expectation is
   the user creates a single "Activity" Flex Query that includes
-  all three sections. The setup wizard's instructions reflect
+  all four sections. The setup wizard's instructions reflect
   this.
-- **Token lifetime is 1 year**. IBKR doesn't auto-rotate. We
-  detect 1009 in the validator and surface "regenerate token in
-  IBKR" to the user; auto-rotation requires OAuth which IBKR
-  hasn't shipped for retail.
+- **Token lifetime is 1 year**. IBKR doesn't auto-rotate, and nothing here
+  detects an expiry code specifically — an expired token surfaces as whatever
+  `classifyFlexError` makes of the code IBKR returns, with the raw IBKR
+  message attached. Auto-rotation would need OAuth, which IBKR hasn't shipped
+  for retail.
 - **Account discovery returns synthetic single PORTFOLIO** when
   the user has only one account. Multi-account users (advisors,
   family-office logins) get one row per `<AccountInformation>`

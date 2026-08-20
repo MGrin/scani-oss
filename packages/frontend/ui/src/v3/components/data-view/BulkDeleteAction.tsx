@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { useState } from 'react';
+import { uiT, useUiTranslation } from '../../../i18n';
 import { countLabel } from '../../lib/data-view';
 import { ConfirmAction } from '../ConfirmAction';
 
@@ -43,17 +44,21 @@ import { ConfirmAction } from '../ConfirmAction';
  * without a DOM. `ConfirmAction` renders the open frame and this suite has no
  * way to open one, so the two halves of rule 2 (the commit is not labelled
  * like the trigger, and it carries the count) are pinned here.
+ *
+ * The fifth signature of the SC-318 shape, found by the pass that removed the
+ * other four. `ui.dataView.bulk.deleteCount` is THIS package's copy, so an
+ * app-side caller's `t` would label the one irrecoverable button on the surface
+ * with a raw key. It is exported, so that caller only needed to exist.
  */
-export function bulkDeleteCommitLabel(count: number, noun: string, nounSingular?: string): string {
-  return `Delete ${countLabel(count, noun, nounSingular)}`;
+export function bulkDeleteCommitLabel(nounKey: string, count: number): string {
+  return uiT('ui.dataView.bulk.deleteCount', { counted: countLabel(nounKey, count) });
 }
 
 interface BulkDeleteActionProps {
   /** How many records the trigger is standing over. */
   count: number;
   /** Plural, lowercase — "holdings". Singularised for a count of one. */
-  noun: string;
-  nounSingular?: string;
+  nounKey: string;
   /** What is destroyed, in the reader's terms. Prose, not a title. */
   consequence: ReactNode;
   isPending?: boolean;
@@ -62,18 +67,18 @@ interface BulkDeleteActionProps {
 
 export function BulkDeleteAction({
   count,
-  noun,
-  nounSingular,
+  nounKey,
   consequence,
   isPending,
   onConfirm,
 }: BulkDeleteActionProps) {
+  const { t } = useUiTranslation();
   const [open, setOpen] = useState(false);
 
   return (
     <ConfirmAction
-      label="Delete"
-      confirmLabel={bulkDeleteCommitLabel(count, noun, nounSingular)}
+      label={t('ui.dataView.bulk.delete')}
+      confirmLabel={bulkDeleteCommitLabel(nounKey, count)}
       destructive
       open={open}
       onOpenChange={setOpen}

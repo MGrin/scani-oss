@@ -1,4 +1,12 @@
-import type { DisposalLotMatchDto, DisposalOutcomeDto } from '@scani/shared';
+import {
+  answerIsOwedFor,
+  type DisposalAnswerSourceDto,
+  type DisposalLotMatchDto,
+  type DisposalOutcomeDto,
+  formatNumber,
+  type ValuationBasisDto,
+} from '@scani/shared';
+import type { TFunction } from 'i18next';
 
 /**
  * Copy and grouping for the realized-PnL ledger (SC-152).
@@ -19,6 +27,13 @@ export interface DisposalGroup {
   kind: string;
   disposedAt: string;
   outcome: DisposalOutcomeDto;
+  /** Whose answer the outcome rests on (SC-324). A property of the outflow,
+   *  so every row in a group carries the same value. */
+  answerSource: DisposalAnswerSourceDto;
+  /** Which price produced the proceeds (SC-397). Also a property of the
+   *  outflow — every lot in a group is a pro-rata share of one valuation —
+   *  so the group takes the first row's and never disagrees with itself. */
+  valuationBasis: ValuationBasisDto | null;
   /** Unsigned, summed across the group's lots. */
   quantity: string;
   /** Null wherever nothing was realized — the group's own reason is `outcome`. */
@@ -69,6 +84,8 @@ export function groupDisposals(rows: readonly DisposalLotMatchDto[]): DisposalGr
       kind: row.kind,
       disposedAt: row.disposedAt,
       outcome: row.outcome,
+      answerSource: row.answerSource,
+      valuationBasis: row.valuationBasis,
       quantity: row.quantity,
       gain: row.gain,
       qualified: row.basisQuality !== 'known',
@@ -93,24 +110,28 @@ export function groupDisposals(rows: readonly DisposalLotMatchDto[]): DisposalGr
  * rows above and below each other are one event, and would otherwise read as
  * two separate withdrawals on the same day.
  */
-export function portionLabel(group: DisposalGroup): string | null {
+export function portionLabel(group: DisposalGroup, t: TFunction): string | null {
   if (group.portionCount <= 1) return null;
-  return `Part ${group.portionIndex + 1} of ${group.portionCount} of one ${disposalNoun(group.kind)}`;
+  return t('v3.realizedLedger.portion', {
+    index: group.portionIndex + 1,
+    total: group.portionCount,
+    noun: t(disposalNounKey(group.kind)),
+  });
 }
 
 /** The event as a noun, for a sentence `disposalVerb` cannot fit into. */
-function disposalNoun(kind: string): string {
+function disposalNounKey(kind: string): string {
   switch (kind) {
     case 'sell':
-      return 'sale';
+      return 'v3.realizedLedger.noun.sale';
     case 'swap_out':
-      return 'swap';
+      return 'v3.realizedLedger.noun.swap';
     case 'withdraw':
-      return 'withdrawal';
+      return 'v3.realizedLedger.noun.withdrawal';
     case 'transfer_out':
-      return 'transfer';
+      return 'v3.realizedLedger.noun.transfer';
     default:
-      return 'disposal';
+      return 'v3.realizedLedger.noun.disposal';
   }
 }
 
@@ -120,18 +141,18 @@ function addStrings(a: string, b: string): string {
 
 /** What the ledger calls the event, from the row's raw `kind`. Deliberately not
  *  "sold" for a withdrawal — see `DisposalLotMatch.kind`. */
-export function disposalVerb(kind: string): string {
+export function disposalVerb(kind: string, t: TFunction): string {
   switch (kind) {
     case 'sell':
-      return 'Sold';
+      return t('v3.realizedLedger.verb.sold');
     case 'swap_out':
-      return 'Swapped';
+      return t('v3.realizedLedger.verb.swapped');
     case 'withdraw':
-      return 'Withdrew';
+      return t('v3.realizedLedger.verb.withdrew');
     case 'transfer_out':
-      return 'Transferred out';
+      return t('v3.realizedLedger.verb.transferredOut');
     default:
-      return 'Disposed';
+      return t('v3.realizedLedger.verb.disposed');
   }
 }
 
@@ -139,51 +160,155 @@ export function disposalVerb(kind: string): string {
  * Why this event did or did not move the realized figure.
  *
  * Written as a consequence rather than a state, because a reader who opened
- * this to explain a number does not want a taxonomy. `realized` has no note —
- * the gain beside it is the whole answer, and a sentence saying so would be
- * noise on the majority of rows.
+ * this to explain a number does not want a taxonomy. A `realized` row answered
+ * by a person has no note — the gain beside it is the whole answer, and a
+ * sentence saying so would be noise on the majority of rows.
+ *
+ * **The two outcomes that come from an answer take the answer's provenance**
+ * (SC-324). `retained` said *"You said this never left your control"* on every
+ * row, and `realized` said nothing at all, on both the rows a person answered
+ ***REMOVED***
+ ***REMOVED***
+ ***REMOVED***
+ ***REMOVED***
+ *
+ * **`kind` is here because provenance is only a question for the kinds the
+ * review queue asks about** (SC-402). A `swap_out` books its gain on its kind
+ * alone, so "there is no record of anyone answering it" is not a caveat about
+ * it — it is a sentence about a question nobody put. The server no longer
+ * sends `unattributed` on such a row; this refuses to render it if one ever
+ * arrives, because the false sentence exists on the screen and a guard one
+ * layer back cannot fail here.
  */
-export function outcomeNote(outcome: DisposalOutcomeDto): string | null {
+export function outcomeNote(
+  kind: string,
+  outcome: DisposalOutcomeDto,
+  answerSource: DisposalAnswerSourceDto,
+  t: TFunction
+): string | null {
+  const unattributed = answerIsOwedFor(kind) && answerSource === 'unattributed';
   switch (outcome) {
     case 'realized':
-      return null;
+      return unattributed ? t('v3.realizedLedger.outcome.realizedUnattributed') : null;
     case 'unpriced':
-      return 'No price could be found for this, so no gain was booked. The cost is still shown.';
+      return t('v3.realizedLedger.outcome.unpriced');
     case 'unreviewed':
-      return 'Waiting on your answer, so no gain was booked either way.';
+      return t('v3.realizedLedger.outcome.unreviewed');
     case 'retained':
-      return 'You said this never left your control, so nothing was realized.';
+      return t(
+        unattributed
+          ? 'v3.realizedLedger.outcome.retainedUnattributed'
+          : 'v3.realizedLedger.outcome.retained'
+      );
     case 'awaiting_pair':
-      return 'Only one side of this move was imported, so no gain was booked.';
+      return t('v3.realizedLedger.outcome.awaitingPair');
   }
 }
 
+/**
+ * Kinds whose value is denominated in something other than the token that
+ * moved. Only these can fall back (SC-397) — everything else is *always*
+ * valued from the token in hand, so saying so would be noise on every row.
+ */
+const COUNTER_PRICED_KINDS = new Set(['swap_in', 'swap_out']);
+
+/**
+ * "This swap was valued from the token that left, because what came back has
+ * no price" — or null, which is almost every row.
+ *
+ * A swap carries the rate it executed at, taken off its other leg, and that
+ * rate is exact. When the asset on the other side has no price history the
+ * rate cannot be converted to the reader's currency, and the leg is valued
+ * from the token in hand instead.
+ *
+ * **This note is the whole of SC-397's visible half.** Before it, that row
+ * booked 0.00 and said nothing — and 0.00 is also what a disposal that
+ * genuinely earned nothing books, so the two were the same thing on screen.
+ * Valuing it properly fixes the arithmetic and would have replaced a silent
+ * zero with a silent estimate; this is what stops it doing that.
+ */
+export function valuationNote(
+  kind: string,
+  basis: ValuationBasisDto | null,
+  t: TFunction
+): string | null {
+  if (basis !== 'held_token' || !COUNTER_PRICED_KINDS.has(kind)) return null;
+  return t('v3.realizedLedger.valuation.heldTokenFallback');
+}
+
+/**
+ * The "Answer not recorded" chip, or null — the scannable half of
+ * `outcomeNote`'s provenance sentence (SC-324).
+ *
+ * Lifted out of the component and given the same kind gate as the sentence it
+ * summarises (SC-402). It was a ternary inline in the JSX reading
+ * `answerSource === 'unattributed'`, which meant the badge and the paragraph
+ * under it tested two different conditions written in two places — and a chip
+ * saying "Answer not recorded" above a paragraph saying nothing is the same
+ * false claim in fewer words.
+ */
+export function answerLabel(
+  kind: string,
+  answerSource: DisposalAnswerSourceDto,
+  t: TFunction
+): string | null {
+  if (!answerIsOwedFor(kind) || answerSource !== 'unattributed') return null;
+  return t('v3.realizedLedger.answer.unattributedLabel');
+}
+
+/** The chip that carries `valuationNote` up into the scannable row. Same
+ *  reasoning as the unattributed badge (SC-324): a caveat that exists only as
+ *  prose in a paragraph the reader is skipping is not on the screen. */
+export function valuationLabel(
+  kind: string,
+  basis: ValuationBasisDto | null,
+  t: TFunction
+): string | null {
+  if (basis !== 'held_token' || !COUNTER_PRICED_KINDS.has(kind)) return null;
+  return t('v3.realizedLedger.valuation.estimatedLabel');
+}
+
 /** The caveat a non-`known` row carries (SC-149). `known` gets none. */
-export function basisQualityNote(quality: DisposalLotMatchDto['basisQuality']): string | null {
+export function basisQualityNote(
+  quality: DisposalLotMatchDto['basisQuality'],
+  t: TFunction
+): string | null {
   switch (quality) {
     case 'known':
       return null;
     case 'partial':
-      return 'Based on history we know is incomplete or a price outside our freshness window.';
+      return t('v3.realizedLedger.basis.partialNote');
     case 'unknown':
-      return 'We have no record of acquiring this, so the whole amount shows as gain. Most often that is an import that could not fetch far enough back.';
+      return t('v3.realizedLedger.basis.unknownNote');
   }
 }
 
 /** The one-word chip beside a lot whose basis is not settled. */
-export function basisQualityLabel(quality: DisposalLotMatchDto['basisQuality']): string | null {
+export function basisQualityLabel(
+  quality: DisposalLotMatchDto['basisQuality'],
+  t: TFunction
+): string | null {
   return quality === 'known'
     ? null
     : quality === 'partial'
-      ? 'Partial basis'
-      : 'No basis on record';
+      ? t('v3.realizedLedger.basis.partialLabel')
+      : t('v3.realizedLedger.basis.unknownLabel');
 }
 
 /** How long the lot was held, in the units a person would say it in. */
-export function holdingPeriodLabel(days: number | null): string | null {
+export function holdingPeriodLabel(days: number | null, t: TFunction): string | null {
   if (days === null) return null;
-  if (days < 1) return 'same day';
-  if (days < 60) return `${days} days`;
-  if (days < 730) return `${Math.round(days / 30)} months`;
-  return `${(days / 365).toFixed(1)} years`;
+  if (days < 1) return t('v3.realizedLedger.held.sameDay');
+  if (days < 60) return t('v3.realizedLedger.held.days', { count: days });
+  if (days < 730) return t('v3.realizedLedger.held.months', { count: Math.round(days / 30) });
+  // One decimal place, through the reader's number locale rather than
+  // `toFixed`: `toFixed` is fixed to a full stop, so a Russian reader saw
+  // "2.0 года" beside every other figure on the page rendered "1 234,50"
+  // (SC-201). The value stays a STRING so i18next cannot pluralise on it —
+  // that is deliberate, because a fractional year takes one form in every
+  // language checked, and `{{years}}` is what a language that needs more
+  // gets to work with.
+  return t('v3.realizedLedger.held.years', {
+    years: formatNumber(days / 365, { decimals: 1 }),
+  });
 }

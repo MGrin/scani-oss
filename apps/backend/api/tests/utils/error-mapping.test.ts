@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import { ExpiredCredentialsError } from '@scani/domain/services';
+import { ProviderError } from '@scani/providers/core/errors';
 import { TRPCError } from '@trpc/server';
-import { toTRPCError } from '../../src/utils/error-mapping';
+import { toCredentialCheckError, toTRPCError } from '../../src/utils/error-mapping';
 
 const ctx = {
   fallbackCode: 'BAD_REQUEST' as const,
@@ -108,5 +109,69 @@ describe('toTRPCError', () => {
     const err = new Error('orig');
     const out = toTRPCError(err, ctx);
     expect(out.cause).toBe(err);
+  });
+});
+
+/**
+ * The connect form's only sentence, and what decides which one it is
+ * (SC-445).
+ *
+ * `BAD_REQUEST` is "these details were rejected" — the reader's next move is
+ * to go back to the venue and issue new keys. Every other code says we could
+ * not reach a verdict, which is the truth about a 5xx, a timeout, a rate
+ * limit and a report the venue has not finished generating. Sending someone
+ * to reissue keys over those is the defect; on a venue that counts failed
+ * attempts it is also what sustains the lockout (SC-279).
+ */
+describe('toCredentialCheckError', () => {
+  test('auth-failed is the only provider kind that blames the credential', () => {
+    const err = new ProviderError('kraken HTTP 401 — EAPI:Invalid key', 'auth-failed', 'kraken');
+    const out = toCredentialCheckError(err, 'Kraken');
+    expect(out.code).toBe('BAD_REQUEST');
+    expect(out.message).toContain('EAPI:Invalid key');
+    expect(out.cause).toBe(err);
+  });
+
+  test('rate-limited asks for a pause, not for new keys', () => {
+    const err = new ProviderError('IBKR Flex Query error (code 1025)', 'rate-limited', 'ibkr', {
+      retryAfterMs: 86_400_000,
+    });
+    const out = toCredentialCheckError(err, 'Interactive Brokers');
+    expect(out.code).toBe('TOO_MANY_REQUESTS');
+    expect(out.message).not.toMatch(/invalid|rejected/i);
+  });
+
+  test('retryable — a report still generating — says we could not check', () => {
+    const err = new ProviderError(
+      'IBKR SendRequest still transient after 6 retries',
+      'retryable',
+      'ibkr'
+    );
+    const out = toCredentialCheckError(err, 'Interactive Brokers');
+    expect(out.code).toBe('INTERNAL_SERVER_ERROR');
+    expect(out.message).toBe("Couldn't reach Interactive Brokers to check these credentials");
+  });
+
+  test('unrecoverable keeps the provider’s own words — the operand is in them', () => {
+    const err = new ProviderError('IBKR Flex Query error (code 1003)', 'unrecoverable', 'ibkr');
+    const out = toCredentialCheckError(err, 'Interactive Brokers');
+    expect(out.code).toBe('BAD_REQUEST');
+    expect(out.message).toContain('1003');
+  });
+
+  test('a timeout is a timeout, not a rejection', () => {
+    const out = toCredentialCheckError(new Error('request timed out'), 'Wise');
+    expect(out.code).toBe('TIMEOUT');
+  });
+
+  test('an unclassified throw stops falling through to BAD_REQUEST', () => {
+    const out = toCredentialCheckError(new Error('socket hang up'), 'Binance');
+    expect(out.code).toBe('INTERNAL_SERVER_ERROR');
+    expect(out.message).toBe("Couldn't reach Binance to check these credentials");
+  });
+
+  test('an existing TRPCError passes through', () => {
+    const original = new TRPCError({ code: 'TOO_MANY_REQUESTS', message: 'slow down' });
+    expect(toCredentialCheckError(original, 'Kraken')).toBe(original);
   });
 });

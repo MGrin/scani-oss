@@ -153,7 +153,7 @@ describe('v3 type faces', () => {
 });
 
 describe('preset font wiring', () => {
-  const fonts = preset.theme.extend.fontFamily as Record<string, string>;
+  const fonts = preset.theme?.extend?.fontFamily as Record<string, string>;
 
   test.each([
     ['sans', defaultTheme.fontFamily.sans],

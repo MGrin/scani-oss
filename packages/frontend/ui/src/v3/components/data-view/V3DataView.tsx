@@ -1,6 +1,7 @@
 import { Download, Search, Sliders, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
+import { englishNoun, useUiTranslation } from '../../../i18n';
 import { cn } from '../../../lib/cn';
 import { Badge } from '../../../ui/badge';
 import { Button } from '../../../ui/button';
@@ -18,13 +19,14 @@ import { useStickyOffset } from '../../hooks/useStickyOffset';
 import {
   countLabel,
   resolveActiveFilters,
-  singularNoun,
+  resolveDataViewSurface,
   type V3DataViewConfig,
 } from '../../lib/data-view';
 import { readDataViewUrl } from '../../lib/data-view-url';
 import {
   buildDataViewSheets,
   describeExportRefinement,
+  exportAllScopeLabel,
   nodeText,
 } from '../../lib/export/data-view';
 import { describeDownload, downloadFile, exportFileName } from '../../lib/export/download';
@@ -34,7 +36,7 @@ import { exportSheet, refineSheet } from '../../lib/sheet';
 import { LoadingRamp } from '../feedback/LoadingRamp';
 import { QueryError } from '../feedback/QueryError';
 import { PeekSheet } from '../PeekSheet';
-import { DataViewEmpty, DataViewFilteredEmpty } from './DataViewEmpty';
+import { DataViewEmpty, DataViewFilteredEmpty, LoadMoreButton } from './DataViewEmpty';
 import { DataViewRows } from './DataViewRows';
 import { DataViewSkeleton } from './DataViewSkeleton';
 import { type DataViewGroup, DataViewTable } from './DataViewTable';
@@ -100,13 +102,14 @@ const SEARCH_DEBOUNCE_MS = 300;
  * pairing; the `sr-only` noun is what stops it being read as a bare number.
  */
 export function DataViewGroupHeading({ label, count }: { label: string; count: number }) {
+  const { t } = useUiTranslation();
   return (
     <h3 className="flex items-baseline gap-2 border-b border-border pb-1 pt-2 text-caption font-medium uppercase tracking-wide text-muted-foreground">
       <span className="min-w-0 truncate">{label}</span>
       <span className="shrink-0 tabular-nums">
         <span aria-hidden="true">· </span>
         {count}
-        <span className="sr-only"> {count === 1 ? 'item' : 'items'}</span>
+        <span className="sr-only"> {t('ui.dataView.itemCount', { count })}</span>
       </span>
     </h3>
   );
@@ -128,12 +131,13 @@ interface V3DataViewProps<T> {
 }
 
 export function V3DataView<T>({ config, getId, query = SETTLED_QUERY_STATE }: V3DataViewProps<T>) {
+  const { t, i18n } = useUiTranslation();
+  const language = i18n.language;
   const {
-    noun,
-    nounSingular,
-    searchPlaceholder,
+    nounKey,
+    searchPlaceholderKey,
     renderRow,
-    valueHeader,
+    valueHeaderKey,
     columns,
     empty,
     peek,
@@ -160,6 +164,12 @@ export function V3DataView<T>({ config, getId, query = SETTLED_QUERY_STATE }: V3
       ...config,
       pageKey: `v3:${config.pageKey}`,
       defaultFilters: { ...config.defaultFilters, ...seeded.current },
+      // A surface that searches on the server must not also search on the
+      // client: two predicates over one term is a list narrowed twice, and the
+      // second pass is the one that only sees a page. Dropped here rather than
+      // asked of the call site, so declaring both is harmless rather than
+      // silently wrong.
+      searchFn: config.onSearch ? undefined : config.searchFn,
     },
     getId
   );
@@ -192,15 +202,51 @@ export function V3DataView<T>({ config, getId, query = SETTLED_QUERY_STATE }: V3
   const stickyHeight = useStickyOffset();
 
   const { setSearchTerm } = dv;
+  // Held in a ref so the debounce does not restart on every parent render: a
+  // surface that passes an inline `onSearch` would otherwise clear and reset
+  // the timer forever and the search would never fire.
+  const onSearch = useRef(config.onSearch);
   useEffect(() => {
-    const timer = setTimeout(() => setSearchTerm(localSearch), SEARCH_DEBOUNCE_MS);
+    onSearch.current = config.onSearch;
+  });
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setSearchTerm(localSearch);
+      onSearch.current?.(localSearch);
+    }, SEARCH_DEBOUNCE_MS);
     return () => clearTimeout(timer);
   }, [localSearch, setSearchTerm]);
 
+  // The LANGUAGE is a dependency now that the filters are resolved rather than
+  // carried as keys: without it the chips keep the language they were first
+  // memoised in, so switching language would leave "Institution: Kraken" beside
+  // a translated sheet. Biome caught this; it is not cosmetic.
+  //
+  // It is `i18n.language` rather than `t` because `resolveActiveFilters` no
+  // longer takes one (SC-318). Naming the language is the honest dependency
+  // either way — `t` was only ever a proxy for it, and the proxy is what let a
+  // caller hand over an instance that could not resolve the keys.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `resolveActiveFilters` resolves against `uiT` internally, so the language it read is a real input Biome cannot see from the call site.
   const activeFilters = useMemo(
     () => resolveActiveFilters(dv.filters, config.filterDefs),
-    [dv.filters, config.filterDefs]
+    [language, dv.filters, config.filterDefs]
   );
+
+  /**
+   * SC-244. Three facts this component used to collapse into one.
+   *
+   * - `partial` — `config.data` is a *page* of a larger set, so every count and
+   *   every local narrowing below reasons about a fraction of the user's rows.
+   *   It arrives on the query state rather than as a prop of its own precisely
+   *   so a surface cannot forget to declare it; see `lib/query-state.ts`.
+   * - `searchIsRemote` — the server ran the search over every row. That makes
+   *   "No files match “x”" a true sentence about the whole set even on page
+   *   one, which a *filter* over the same page is not.
+   * - `narrowedLocally` — the narrowing that only ever saw the fetched rows.
+   *   This is the one that has to say so.
+   */
+  const partial = query.more !== null;
+  const searchIsRemote = config.onSearch !== undefined;
 
   /**
    * The export (SC-89). One implementation for every list surface, and the
@@ -217,15 +263,27 @@ export function V3DataView<T>({ config, getId, query = SETTLED_QUERY_STATE }: V3
    *   on error, and a toast that distinguishes a saved file from one handed to
    *   the share sheet and then dismissed.
    */
+  // "All 25" over a page of 579 is the screen's defect written to a file, where
+  // it outlives the screen: someone opens that spreadsheet next month with no
+  // way left to tell it was a quarter of their transfers (SC-244).
+  const allScopeLabel = exportAllScopeLabel(nounKey, dv.totalCount, partial);
   // Only offered when the two differ: a list nothing has narrowed has one set,
   // and two identically-sized options is a question with one answer.
   const exportScopes =
     dv.filteredCount === dv.totalCount
-      ? [{ key: 'all', label: `All ${countLabel(dv.totalCount, noun, nounSingular)}` }]
+      ? [
+          {
+            key: 'all',
+            label: allScopeLabel,
+            detail: partial ? t('ui.dataView.export.loadedOnly') : undefined,
+          },
+        ]
       : [
           {
             key: 'filtered',
-            label: `These ${countLabel(dv.filteredCount, noun, nounSingular)}`,
+            label: t('ui.dataView.export.scopeThese', {
+              counted: countLabel(nounKey, dv.filteredCount),
+            }),
             detail:
               describeExportRefinement(
                 activeFilters,
@@ -235,12 +293,14 @@ export function V3DataView<T>({ config, getId, query = SETTLED_QUERY_STATE }: V3
                 config.sortDefs
               )
                 .map((detail) => `${detail.label}: ${detail.value}`)
-                .join(' · ') || 'What is on screen now',
+                .join(' · ') || t('ui.dataView.export.onScreenNow'),
           },
           {
             key: 'all',
-            label: `All ${countLabel(dv.totalCount, noun, nounSingular)}`,
-            detail: 'Ignores the filters and the search',
+            label: allScopeLabel,
+            detail: partial
+              ? t('ui.dataView.export.loadedOnly')
+              : t('ui.dataView.export.ignoresFilters'),
           },
         ];
 
@@ -260,10 +320,8 @@ export function V3DataView<T>({ config, getId, query = SETTLED_QUERY_STATE }: V3
       // success message attached to nothing, which is exactly what someone
       // discovers a week later on a phone with no way to tell why.
       showSuccess(
-        filtered
-          ? 'Nothing matches those filters, so there is nothing to put in a file.'
-          : 'There is nothing here yet, so there is nothing to put in a file.',
-        'Nothing to export'
+        filtered ? t('ui.dataView.export.nothingFiltered') : t('ui.dataView.export.nothingAtAll'),
+        t('ui.dataView.export.nothingTitle')
       );
       return;
     }
@@ -282,20 +340,26 @@ export function V3DataView<T>({ config, getId, query = SETTLED_QUERY_STATE }: V3
         sortDirection: dv.sortDirection,
         generatedAt: new Date(),
         hideAmounts,
+        partial,
       });
       const blob = await toExportBlob(workbook, format, separator);
-      const fileName = exportFileName(noun, format, { filtered });
+      // The filename is an IDENTIFIER, not copy, so it is pinned to English
+      // rather than following the interface. `exportFileName` slugifies to
+      // `[a-z0-9-]`, so a Japanese noun would slug to empty and every export
+      // would land as `scani-export-2026-08-15.csv` — one name for every list.
+      // A file someone keeps, re-imports and lays beside last month's should
+      // also not change its name because they changed language.
+      const fileName = exportFileName(englishNoun(nounKey), format, { filtered });
       const result = await downloadFile(blob, fileName);
       if (result.completed) {
-        const said = describeDownload(
-          result,
-          fileName,
-          countLabel(items.length, noun, nounSingular)
-        );
+        const said = describeDownload(result, fileName, countLabel(nounKey, items.length));
         showSuccess(said.message, said.title);
       }
     } catch (error) {
-      showErrorToast(error, `Exporting ${noun}`);
+      showErrorToast(
+        error,
+        t('ui.dataView.export.errorContext', { noun: t(nounKey, { count: 2 }) })
+      );
     }
   };
 
@@ -311,17 +375,20 @@ export function V3DataView<T>({ config, getId, query = SETTLED_QUERY_STATE }: V3
   };
 
   const isEmpty = dv.filteredData.length === 0;
-  const hasNothingAtAll = dv.totalCount === 0;
-
-  // A failed refetch behind a list that is already on screen leaves the list
-  // standing: the data is stale, not gone, and replacing it with an error
-  // panel costs the user the thing they were reading. The error only takes
-  // the surface when there is nothing else to put there.
-  const showError = query.isError && hasNothingAtAll;
-  // Nothing settled means "no answer yet" — not "you own none of these".
-  // Showing the onboarding empty state during a wait is how a slow request
-  // gets read as an empty account.
-  const showEmpty = !query.isLoading && !showError && isEmpty;
+  // One resolved value rather than four booleans read in three places — see
+  // `resolveDataViewSurface`, which is where the two "nothing here" cases stop
+  // being the same case.
+  const { surface, hasNothingAtAll } = resolveDataViewSurface({
+    isLoading: query.isLoading,
+    isError: query.isError,
+    totalCount: dv.totalCount,
+    filteredCount: dv.filteredCount,
+    partial,
+    searchTerm: dv.searchTerm,
+    searchIsRemote,
+    activeFilterCount: activeFilters.length,
+  });
+  const showError = surface === 'error';
 
   // One shape for both surfaces. Ungrouped is one unlabelled group rather than
   // a separate branch, so the table below is always rendered exactly once and
@@ -367,8 +434,8 @@ export function V3DataView<T>({ config, getId, query = SETTLED_QUERY_STATE }: V3
         )}
         {/* Once, over the first run of rows — it names the column, and a
             column does not change meaning between groups. */}
-        {valueHeader && index === 0 ? (
-          <p className="px-4 text-right text-caption text-muted-foreground">{valueHeader}</p>
+        {valueHeaderKey && index === 0 ? (
+          <p className="px-4 text-right text-caption text-muted-foreground">{t(valueHeaderKey)}</p>
         ) : null}
         <DataViewRows
           data={group.items}
@@ -419,8 +486,13 @@ export function V3DataView<T>({ config, getId, query = SETTLED_QUERY_STATE }: V3
                 type="search"
                 value={localSearch}
                 onChange={(e) => setLocalSearch(e.target.value)}
-                placeholder={searchPlaceholder ?? `Search ${noun}`}
-                aria-label={`Search ${noun}`}
+                placeholder={
+                  (searchPlaceholderKey ? t(searchPlaceholderKey) : undefined) ??
+                  t('ui.dataView.toolbar.search', { noun: t(nounKey, { count: 2 }) })
+                }
+                aria-label={t('ui.dataView.toolbar.search', {
+                  noun: t(nounKey, { count: 2 }),
+                })}
                 // `text-body` is 16px. The shared Input is `text-sm`, and iOS
                 // zooms the page on focusing anything below 16px — a bug that
                 // reads as "the app jumped" and never gets filed as one.
@@ -431,11 +503,11 @@ export function V3DataView<T>({ config, getId, query = SETTLED_QUERY_STATE }: V3
             <Button
               variant="outline"
               onClick={refine.open}
-              aria-label="Filter, sort and group"
+              aria-label={t('ui.dataView.toolbar.refineAria')}
               className="shrink-0 gap-2"
             >
               <Sliders className="h-4 w-4" aria-hidden="true" />
-              <span className="hidden sm:inline">Refine</span>
+              <span className="hidden sm:inline">{t('ui.dataView.toolbar.refine')}</span>
               {activeFilters.length > 0 ? (
                 <Badge variant="secondary" className="tabular-nums">
                   {activeFilters.length}
@@ -449,7 +521,7 @@ export function V3DataView<T>({ config, getId, query = SETTLED_QUERY_STATE }: V3
                 onClick={() => (selecting ? leaveSelectionMode() : setSelecting(true))}
                 className="shrink-0"
               >
-                {selecting ? 'Done' : 'Select'}
+                {selecting ? t('ui.dataView.toolbar.done') : t('ui.dataView.toolbar.select')}
               </Button>
             ) : null}
           </div>
@@ -463,7 +535,10 @@ export function V3DataView<T>({ config, getId, query = SETTLED_QUERY_STATE }: V3
                   key={filter.key}
                   type="button"
                   onClick={() => url.setFilter(filter.key, '')}
-                  aria-label={`Remove filter ${filter.label}: ${filter.value}`}
+                  aria-label={t('ui.dataView.toolbar.removeFilter', {
+                    label: filter.label,
+                    value: filter.value,
+                  })}
                   className={cn(
                     // `border-border-strong`, not `border-border`: since V3-23
                     // the plain token is the decorative hairline and owes no
@@ -494,10 +569,31 @@ export function V3DataView<T>({ config, getId, query = SETTLED_QUERY_STATE }: V3
             // needs at 390px, and search is the thing on this bar that is used
             // constantly.
             <div className="flex items-center justify-between gap-2">
+              {/* "25 transfers" is `data.length`, and over a paginated read
+                  that is the loaded count wearing the total's clothes — the
+                  half of SC-244 the ticket called honest. It is the same
+                  number either way; what changes is whether the sentence
+                  claims it is all of them. */}
+              {/* `filteredCount !== totalCount` rather than `hasActiveFilters`:
+                  a REMOTE search narrows nothing locally, so the two counts are
+                  always equal and the old condition rendered "1 of 1 file" —
+                  an "of" with nothing on either side of it. */}
               <p className="min-w-0 truncate text-caption text-muted-foreground">
-                {dv.hasActiveFilters
-                  ? `${dv.filteredCount} of ${countLabel(dv.totalCount, noun, nounSingular)}`
-                  : countLabel(dv.totalCount, noun, nounSingular)}
+                {dv.filteredCount !== dv.totalCount
+                  ? t(
+                      partial
+                        ? 'ui.dataView.toolbar.filteredOfLoaded'
+                        : 'ui.dataView.toolbar.filteredOf',
+                      {
+                        shown: dv.filteredCount,
+                        counted: countLabel(nounKey, dv.totalCount),
+                      }
+                    )
+                  : partial
+                    ? t('ui.dataView.toolbar.loadedSoFar', {
+                        counted: countLabel(nounKey, dv.totalCount),
+                      })
+                    : countLabel(nounKey, dv.totalCount)}
               </p>
               <button
                 type="button"
@@ -510,8 +606,8 @@ export function V3DataView<T>({ config, getId, query = SETTLED_QUERY_STATE }: V3
                 )}
               >
                 <Download className="h-3.5 w-3.5" aria-hidden="true" />
-                Export
-                <span className="sr-only"> {noun}</span>
+                {t('ui.dataView.toolbar.export')}
+                <span className="sr-only"> {t(nounKey, { count: 2 })}</span>
               </button>
             </div>
           ) : null}
@@ -524,15 +620,19 @@ export function V3DataView<T>({ config, getId, query = SETTLED_QUERY_STATE }: V3
         // reaching for on a short viewport.
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border bg-surface-1 p-3">
           <span className="shrink-0 text-label">
-            {countLabel(dv.selectedIds.size, noun, nounSingular)} selected
+            {t('ui.dataView.toolbar.selected', {
+              counted: countLabel(nounKey, dv.selectedIds.size),
+            })}
           </span>
           <div className="flex flex-wrap items-center justify-end gap-2">
-            {renderBulkActions(dv.selectedIds, dv.clearSelection)}
+            {renderBulkActions(dv.selectedIds, dv.clearSelection, dv.deselect)}
           </div>
         </div>
       ) : null}
 
-      {showError ? <QueryError error={query.error} subject={noun} onRetry={query.retry} /> : null}
+      {showError ? (
+        <QueryError error={query.error} subject={t(nounKey, { count: 2 })} onRetry={query.retry} />
+      ) : null}
 
       {/* Nothing for 300ms, a rail to 1s, the skeleton after that, and a
           stalled notice once the wait stops being credible — §2.5's ramp,
@@ -540,17 +640,23 @@ export function V3DataView<T>({ config, getId, query = SETTLED_QUERY_STATE }: V3
       <LoadingRamp
         phase={loadingPhase}
         skeleton={<DataViewSkeleton />}
-        label={noun}
+        label={t(nounKey, { count: 2 })}
         onRetry={query.retry}
       />
 
-      {showEmpty && hasNothingAtAll ? <DataViewEmpty empty={empty} /> : null}
+      {surface === 'empty' ? <DataViewEmpty empty={empty} /> : null}
 
-      {showEmpty && !hasNothingAtAll ? (
+      {surface === 'no-match' || surface === 'no-match-loaded' ? (
         <DataViewFilteredEmpty
-          noun={noun}
+          nounKey={nounKey}
           searchTerm={dv.searchTerm}
           activeFilters={activeFilters}
+          // Only when the narrowing itself was partial. A remote search that
+          // came back empty looked at every row, and telling that reader to
+          // "load more" would send them paging through a set the server has
+          // already reported holds no match.
+          loadedCount={surface === 'no-match-loaded' ? dv.totalCount : null}
+          more={surface === 'no-match-loaded' ? query.more : null}
           onClearFilters={() => {
             setLocalSearch('');
             url.clearFilters();
@@ -560,11 +666,20 @@ export function V3DataView<T>({ config, getId, query = SETTLED_QUERY_STATE }: V3
 
       {!isEmpty ? content : null}
 
+      {/* Under the rows rather than inside them: the button widens what this
+          surface can reason about, it does not page through it. Rendered here
+          rather than by each page (SC-244) so the count line, the empty screen
+          and the export label all read from the same fact. */}
+      {query.more && !isEmpty ? (
+        <div className="flex justify-center">
+          <LoadMoreButton more={query.more} />
+        </div>
+      ) : null}
+
       <RefineSheet
         open={refine.isOpen}
         onOpenChange={refine.setOpen}
-        noun={noun}
-        nounSingular={nounSingular}
+        nounKey={nounKey}
         filters={dv.filters}
         filterDefs={config.filterDefs}
         onSetFilter={url.setFilter}
@@ -586,14 +701,12 @@ export function V3DataView<T>({ config, getId, query = SETTLED_QUERY_STATE }: V3
       <ExportSheet
         open={exporting.isOpen}
         onOpenChange={exporting.setOpen}
-        subject={noun}
+        subject={t(nounKey, { count: 2 })}
         scopes={exportScopes}
         actionLabel={(scope) =>
-          `Export ${countLabel(
-            scope === 'filtered' ? dv.filteredCount : dv.totalCount,
-            noun,
-            nounSingular
-          )}`
+          t('ui.dataView.export.action', {
+            counted: countLabel(nounKey, scope === 'filtered' ? dv.filteredCount : dv.totalCount),
+          })
         }
         // SC-116: the confirm goes dead on the empty scope rather than
         // producing a header-only file and calling it a success. The other
@@ -611,7 +724,7 @@ export function V3DataView<T>({ config, getId, query = SETTLED_QUERY_STATE }: V3
             if (!next) peekRoute.close();
           }}
           spec={peekItem ? peek.render(peekItem) : null}
-          noun={singularNoun(noun, nounSingular)}
+          noun={t(nounKey, { count: 1 })}
           isLoading={query.isLoading}
         />
       ) : null}

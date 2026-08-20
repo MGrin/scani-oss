@@ -2,9 +2,10 @@ import type { Institution } from '@scani/db/schema';
 import * as schema from '@scani/db/schema';
 import { type DatabaseTransaction, withTransaction } from '@scani/db/transaction';
 import type { HoldingSnapshot } from '@scani/providers/core/types';
-import { isValidDecimalString } from '@scani/shared';
+import { type HoldingArrivalAttribution, isValidDecimalString } from '@scani/shared';
 import { and, eq } from 'drizzle-orm';
 import { Container, Service } from 'typedi';
+import { type BalancesAsOf, deriveBalancesAsOf, withBalancesAsOf } from '../../lib/balances-as-of';
 import { HoldingRepository } from '../../repositories/HoldingRepository';
 import { BaseService } from '../BaseService';
 import { TokenService } from '../tokens/TokenService';
@@ -53,6 +54,11 @@ export interface IntegrationImportOptions {
   // Tag stored on holdings.source — used by the stale-zero pass and
   // downstream sync flows to attribute rows to the right importer.
   sourceTag: string;
+  // Stamped on holdings.arrival for rows this import creates. Required for
+  // the same reason as on HoldingsSyncHelper: an importer that acquired its
+  // snapshots without showing them to anyone must not inherit the answer of
+  // one that did (SC-277).
+  arrival: HoldingArrivalAttribution;
   // Wallet imports preserve user-deleted holdings; exchange/IBKR zero
   // any holding that the upstream API stops returning.
   zeroStaleHoldings: boolean;
@@ -182,18 +188,18 @@ export class IntegrationImportService extends BaseService {
     const accountId = await this.resolveAccountRow(target, options, result, tx);
     if (!accountId) return;
 
-    if (accountMetadataPatch) {
-      await this.patchAccountMetadata(accountId, accountMetadataPatch, tx);
-    } else if (preExistingAccountId) {
-      // Bump lastSync timestamp on existing rows even when nothing
-      // structural changed.
-      await tx
-        .update(schema.accounts)
-        .set({
-          metadata: { lastSync: new Date().toISOString() },
-          updatedAt: new Date(),
-        })
-        .where(eq(schema.accounts.id, accountId));
+    // One path rather than two (SC-384). The `preExistingAccountId` branch
+    // used to `set({ metadata: { lastSync } })`, which REPLACES the column —
+    // so a re-import dropped every other key the account carried, including
+    // the as-of this ticket adds. `patchAccountMetadata` reads and merges,
+    // which is what "bump lastSync" always meant.
+    if (accountMetadataPatch || preExistingAccountId) {
+      await this.patchAccountMetadata(
+        accountId,
+        accountMetadataPatch ?? {},
+        deriveBalancesAsOf(snapshots),
+        tx
+      );
     }
 
     const holdingsResult = projectSnapshotsToHoldings(snapshots, accountId);
@@ -298,6 +304,7 @@ export class IntegrationImportService extends BaseService {
               tokenId: token.id,
               balance: holding.balance,
               source: options.sourceTag,
+              arrival: options.arrival,
               externalId,
               eventContext: options.baseCurrencyId
                 ? { baseCurrencyId: options.baseCurrencyId }
@@ -439,8 +446,14 @@ export class IntegrationImportService extends BaseService {
         name: accountName ?? accountInfo.name,
         description: accountDescription ?? accountInfo.description,
         metadata: {
-          ...baseMetadata,
-          ...(target.accountMetadataPatch ?? {}),
+          // The as-of lands on the very first import rather than an hour
+          // later, on the first scheduled sync — a user who has just
+          // connected IBKR and is looking at the numbers is precisely the
+          // reader this fact is for.
+          ...withBalancesAsOf(
+            { ...baseMetadata, ...(target.accountMetadataPatch ?? {}) },
+            deriveBalancesAsOf(target.snapshots)
+          ),
           lastSync: new Date().toISOString(),
         },
         isActive: accountInfo.isActive ?? true,
@@ -466,6 +479,7 @@ export class IntegrationImportService extends BaseService {
   private async patchAccountMetadata(
     accountId: string,
     patch: Record<string, unknown>,
+    asOf: BalancesAsOf | null,
     tx: DatabaseTransaction
   ): Promise<void> {
     const [existing] = await tx
@@ -475,8 +489,10 @@ export class IntegrationImportService extends BaseService {
       .limit(1);
 
     const merged: Record<string, unknown> = {
-      ...((existing?.metadata as Record<string, unknown>) ?? {}),
-      ...patch,
+      ...withBalancesAsOf(
+        { ...((existing?.metadata as Record<string, unknown>) ?? {}), ...patch },
+        asOf
+      ),
       lastSync: new Date().toISOString(),
     };
 

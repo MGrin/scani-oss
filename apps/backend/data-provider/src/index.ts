@@ -25,8 +25,17 @@ import { solanaFactory } from '@scani/providers/providers/solana';
 import { tonFactory } from '@scani/providers/providers/ton';
 import { tronFactory } from '@scani/providers/providers/tron';
 import { yahooFinanceFactory } from '@scani/providers/providers/yahoo-finance';
-import { createOutflowLimiter, setSharedRedis } from '@scani/rate-limiter';
+import {
+  createOutflowLimiter,
+  observeRedisReachability,
+  pingWithin,
+  type StrandReport,
+  setSharedRedis,
+  startRedisStrandWatchdog,
+  strandedRedisError,
+} from '@scani/rate-limiter';
 import { StorageService } from '@scani/storage';
+import { sql } from 'drizzle-orm';
 import { Elysia } from 'elysia';
 import { Redis } from 'ioredis';
 import { Container } from 'typedi';
@@ -65,6 +74,58 @@ logger.info({ port: PORT, host: HOST, nodeEnv: env.NODE_ENV }, '🚀 Starting Sc
 // buckets live in Redis where every data-provider replica shares fairness.
 const redisConnection = new Redis(env.REDIS_URL, { maxRetriesPerRequest: null });
 setSharedRedis(redisConnection);
+
+/**
+ * How long `/health/deep` waits for a Redis PING before calling it
+ * unreachable. Sized against ioredis's own retry cadence rather than a
+ * latency budget: its default `retryStrategy` tops out at one attempt every
+ * 2000ms, so a ping unanswered for a full retry interval is not waiting on a
+ * slow Redis, it is waiting on one that is not there. Healthy production
+ * latency on this check is 1ms.
+ */
+const REDIS_PING_TIMEOUT_MS = 2_000;
+
+/**
+ * Turns a Redis this process cannot reach from a console line every two
+ * seconds into state a probe can report (SC-225), including whether the
+ * failure is name resolution — which does NOT self-heal and needs the machine
+ * replaced — or connection, which does.
+ */
+const redisReachability = observeRedisReachability(redisConnection, logger, 'redis');
+
+/**
+ * SC-327. Raises the strand to Sentry once it has outlasted the window in
+ * which a repair would have arrived.
+ *
+ * This service is the reason the alert cannot be a probe somewhere else: after
+ * a worker deploy on 2026-08-17 the data-provider sat looping ENOTFOUND for
+ * three hours while its `/ready` probe answered 200, found only because
+ * somebody was reading logs for an unrelated reason. Whatever is watching has
+ * to be inside the process that is stranded, looking at the connection that is
+ * stranded.
+ */
+startRedisStrandWatchdog({
+  reachability: redisReachability,
+  redis: redisConnection,
+  pingTimeoutMs: REDIS_PING_TIMEOUT_MS,
+  onStranded: (report: StrandReport) => {
+    const err = strandedRedisError(report);
+    logger.error(
+      {
+        unreachableForMs: report.unreachableForMs,
+        consecutiveErrors: report.consecutiveErrors,
+        nameResolutionFailure: report.nameResolutionFailure,
+        lastError: report.lastError,
+        pingError: report.pingError,
+      },
+      err.message
+    );
+    sentryCapture(err, {
+      component: 'data-provider',
+      redis_name_resolution_failure: String(report.nameResolutionFailure),
+    });
+  },
+});
 
 // Object storage self-loads from S3_* env vars (see @scani/storage).
 
@@ -306,6 +367,88 @@ const app = new Elysia()
   .head('/ready', ({ set }: { set: { status: number } }) => {
     set.status = bootState.ready ? 200 : 503;
     return;
+  })
+  // The probe the deploy's post-worker recycle verifies against, and the one
+  // this service did not have (SC-321).
+  //
+  // Redis lives INSIDE the scani-worker machine, so replacing that machine
+  // invalidates this service's connection and ioredis loops
+  // `getaddrinfo ENOTFOUND` every two seconds without ever self-healing.
+  // `deploy-local.sh` restarts every Redis consumer afterwards and then
+  // verifies each machine, giving one more restart to any that came back on
+  // a name it cannot resolve — but it verified this one against `/ready`,
+  // which answers a bare `{ ready: true }` off a boot flag and touches no
+  // dependency at all. So a machine that came back broken looked healthy,
+  // the one retry never fired, and it sat looping: 21 minutes on 2026-08-16,
+  // three hours on 2026-08-15, both found by reading logs for another reason.
+  //
+  // `/health` cannot be that probe either, and deliberately so: `fly.toml`
+  // gates traffic on it, so it must keep answering while a dependency is
+  // down. Two questions, two endpoints — this is the one allowed to fail.
+  .get('/health/deep', async ({ set }: { set: { status: number } }) => {
+    const checks: Record<string, { ok: boolean; latencyMs?: number; error?: string }> = {};
+
+    const tRedis = performance.now();
+    try {
+      // BOUNDED, and the bound is the point. ioredis QUEUES a command issued
+      // while the connection is down and resolves it if the connection comes
+      // back — which, for a machine whose Redis host does not resolve, is
+      // never. Unbounded, this await hangs until Fly's proxy gives up at
+      // ~31s and returns a bodyless 502: the endpoint carrying the diagnosis
+      // would fail to deliver it during the exact outage it describes.
+      const reply = await pingWithin(redisConnection, REDIS_PING_TIMEOUT_MS);
+      checks.redis = {
+        ok: reply === 'PONG',
+        latencyMs: Math.round(performance.now() - tRedis),
+        ...(reply !== 'PONG' ? { error: `unexpected reply ${reply}` } : {}),
+      };
+    } catch (err) {
+      checks.redis = {
+        ok: false,
+        latencyMs: Math.round(performance.now() - tRedis),
+        error: err instanceof Error ? err.message : String(err),
+      };
+    }
+
+    // "Can I reach Redis right now" and "how long have I not been able to,
+    // and is it the kind that recovers" are different questions, and only the
+    // second one distinguishes a worker deploy in progress from a machine
+    // that will never recover on its own.
+    //
+    // Gated on the ping deliberately: ioredis emits `error` for faults that
+    // do not close the socket, and those are never followed by a `ready` to
+    // clear the tracker — so reporting the tracker alone would fail this
+    // endpoint forever against a perfectly healthy Redis.
+    const reachability = redisReachability.current();
+    if (reachability.state === 'unreachable' && checks.redis?.ok !== true) {
+      checks.redisReachability = {
+        ok: false,
+        error: reachability.nameResolutionFailure
+          ? `host does not resolve from this machine for ${reachability.unreachableForMs}ms (${reachability.consecutiveErrors} attempts) — will not self-heal`
+          : `unreachable for ${reachability.unreachableForMs}ms (${reachability.consecutiveErrors} attempts): ${reachability.lastError}`,
+      };
+    }
+
+    // Only when cloud mode is on. A self-hosted tier-1 data-provider has no
+    // cloud DB, and reporting a check it does not have as failing would make
+    // this endpoint useless exactly where it is the only one.
+    if (bootState.cloudDb) {
+      const tDb = performance.now();
+      try {
+        await bootState.cloudDb.execute(sql`select 1`);
+        checks.cloudDb = { ok: true, latencyMs: Math.round(performance.now() - tDb) };
+      } catch (err) {
+        checks.cloudDb = {
+          ok: false,
+          latencyMs: Math.round(performance.now() - tDb),
+          error: err instanceof Error ? err.message : String(err),
+        };
+      }
+    }
+
+    const ok = Object.values(checks).every((c) => c.ok);
+    if (!ok) set.status = 503;
+    return { status: ok ? 'ok' : 'degraded', timestamp: new Date().toISOString(), checks };
   })
   // Probe of the R2 bucket the data-provider holds credentials for.
   // Backend's /health proxies through this so a storage outage shows up
