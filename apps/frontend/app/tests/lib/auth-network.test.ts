@@ -1,4 +1,6 @@
 import { describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import type { TFunction } from 'i18next';
 import {
   AUTH_CALL_TIMEOUT_MS,
   AUTH_FETCH_TIMEOUT_MS,
@@ -41,19 +43,19 @@ describe('deadlines', () => {
   });
 
   test('a fetch that hangs is aborted rather than awaited forever', async () => {
-    const hanging: typeof fetch = (_input, init) =>
+    const hanging: (...args: Parameters<typeof fetch>) => Promise<Response> = (_input, init) =>
       new Promise((_resolve, reject) => {
         init?.signal?.addEventListener('abort', () => reject(init.signal?.reason));
       });
 
     await expect(
-      fetchWithDeadline('https://api.example/x', undefined, 5, hanging)
+      fetchWithDeadline('https://api.example/x', undefined, 5, hanging as unknown as typeof fetch)
     ).rejects.toBeInstanceOf(AuthTimeoutError);
   });
 
   test("a caller's own abort still works alongside the deadline", async () => {
     const controller = new AbortController();
-    const hanging: typeof fetch = (_input, init) =>
+    const hanging: (...args: Parameters<typeof fetch>) => Promise<Response> = (_input, init) =>
       new Promise((_resolve, reject) => {
         init?.signal?.addEventListener('abort', () => reject(new Error('aborted')));
       });
@@ -62,7 +64,7 @@ describe('deadlines', () => {
       'https://api.example/x',
       { signal: controller.signal },
       10_000,
-      hanging
+      hanging as unknown as typeof fetch
     );
     controller.abort();
     await expect(inFlight).rejects.toThrow('aborted');
@@ -104,19 +106,36 @@ describe('classifying an auth failure', () => {
   });
 });
 
+/**
+ * Resolved against the REAL English locale, not a stub (SC-405).
+ *
+ * The wording moved into `locales/en.json` when the sign-in screen was keyed,
+ * and a stubbed `t` would assert that this function calls `t` with some string
+ * — which stays true when the key does not exist, because i18next returns the
+ * key itself. Reading the shipped file means a missing or renamed key fails
+ * here, on the assertions that name the wording a reader acts on.
+ */
+const en = JSON.parse(
+  readFileSync(new URL('../../src/i18n/locales/en.json', import.meta.url), 'utf8')
+) as Record<string, unknown>;
+
+const t = ((key: string) =>
+  key.split('.').reduce<unknown>((node, part) => (node as Record<string, unknown>)?.[part], en) ??
+  key) as unknown as TFunction;
+
 describe('what the reader is told', () => {
   test('every connectivity message names the next thing to do', () => {
-    expect(authFailureMessage('offline')).toMatch(/offline/i);
-    expect(authFailureMessage('timeout')).toMatch(/tap Continue again/);
-    expect(authFailureMessage('unreachable')).toMatch(/tap Continue again/);
+    expect(authFailureMessage(t, 'offline')).toMatch(/offline/i);
+    expect(authFailureMessage(t, 'timeout')).toMatch(/tap Continue again/);
+    expect(authFailureMessage(t, 'unreachable')).toMatch(/tap Continue again/);
   });
 
   test("the server's own wording is kept when it has any", () => {
-    expect(authFailureMessage('server', 'Invalid code')).toBe('Invalid code');
+    expect(authFailureMessage(t, 'server', 'Invalid code')).toBe('Invalid code');
   });
 
   test('an empty server message still produces a sentence, never a blank alert', () => {
-    expect(authFailureMessage('server', '   ')).toBe('Something went wrong. Try again.');
-    expect(authFailureMessage('server')).toBe('Something went wrong. Try again.');
+    expect(authFailureMessage(t, 'server', '   ')).toBe('Something went wrong. Try again.');
+    expect(authFailureMessage(t, 'server')).toBe('Something went wrong. Try again.');
   });
 });

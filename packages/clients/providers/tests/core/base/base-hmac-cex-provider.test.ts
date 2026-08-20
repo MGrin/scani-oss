@@ -8,6 +8,7 @@ import {
 } from '../../../src/core/base/base-hmac-cex-provider';
 import type { Capability } from '../../../src/core/capabilities';
 import { ProviderError } from '../../../src/core/errors';
+import type { ProviderContext, WithUserCreds } from '../../../src/core/types';
 
 // Pass-through limiter — fn called immediately, no Redis.
 function passthroughLimiter(): OutflowRateLimiter {
@@ -24,7 +25,11 @@ class TestProvider extends BaseHmacCexProvider {
   readonly capabilities: readonly Capability[] = [];
   protected readonly baseUrl = 'https://api.test.example';
 
-  protected signRequest(req: SignedRequest, creds: ApiKeyCreds): Record<string, string> {
+  // Public here, `protected` on the base. A subclass may widen visibility, and
+  // this file's whole purpose is to drive the base's wiring directly — going
+  // through a cast at each call site would type the assertions as `any` and
+  // stop catching the signature drift these tests exist to catch.
+  public override signRequest(req: SignedRequest, creds: ApiKeyCreds): Record<string, string> {
     const sig = crypto
       .createHmac('sha256', creds.apiSecret)
       .update(`${req.method}${req.url}${req.body ?? ''}`)
@@ -33,6 +38,20 @@ class TestProvider extends BaseHmacCexProvider {
       'X-Api-Key': creds.apiKey,
       'X-Api-Sign': sig,
     };
+  }
+
+  public override signedFetch(req: SignedRequest, creds: ApiKeyCreds): Promise<Response> {
+    return super.signedFetch(req, creds);
+  }
+
+  public override signedJson<T>(req: SignedRequest, creds: ApiKeyCreds): Promise<T> {
+    return super.signedJson<T>(req, creds);
+  }
+
+  public override resolveApiCreds(
+    ctx: WithUserCreds<ProviderContext>
+  ): Promise<ApiKeyCreds | null> {
+    return super.resolveApiCreds(ctx);
   }
 }
 
@@ -45,7 +64,7 @@ describe('BaseHmacCexProvider', () => {
     globalThis.fetch = (async (url: string, init?: RequestInit) => {
       calls.push({ url, init });
       return new Response('{"ok":true}', { status: 200 });
-    }) as typeof fetch;
+    }) as unknown as typeof fetch;
 
     try {
       await provider.signedFetch(
@@ -72,7 +91,8 @@ describe('BaseHmacCexProvider', () => {
   test('signedFetch wraps non-2xx as ProviderError with the right kind', async () => {
     const provider = new TestProvider(passthroughLimiter());
     const originalFetch = globalThis.fetch;
-    globalThis.fetch = (async () => new Response('Forbidden', { status: 403 })) as typeof fetch;
+    globalThis.fetch = (async () =>
+      new Response('Forbidden', { status: 403 })) as unknown as typeof fetch;
     try {
       await expect(
         provider.signedFetch({ method: 'GET', url: '/x' }, { apiKey: 'k', apiSecret: 's' })
@@ -88,7 +108,8 @@ describe('BaseHmacCexProvider', () => {
   test('signedFetch wraps 5xx as retryable ProviderError', async () => {
     const provider = new TestProvider(passthroughLimiter());
     const originalFetch = globalThis.fetch;
-    globalThis.fetch = (async () => new Response('boom', { status: 503 })) as typeof fetch;
+    globalThis.fetch = (async () =>
+      new Response('boom', { status: 503 })) as unknown as typeof fetch;
     try {
       await expect(
         provider.signedFetch({ method: 'GET', url: '/x' }, { apiKey: 'k', apiSecret: 's' })
@@ -102,7 +123,7 @@ describe('BaseHmacCexProvider', () => {
     const provider = new TestProvider(passthroughLimiter());
     const originalFetch = globalThis.fetch;
     globalThis.fetch = (async () =>
-      new Response(JSON.stringify({ value: 42 }), { status: 200 })) as typeof fetch;
+      new Response(JSON.stringify({ value: 42 }), { status: 200 })) as unknown as typeof fetch;
     try {
       const data = await provider.signedJson<{ value: number }>(
         { method: 'GET', url: '/x' },

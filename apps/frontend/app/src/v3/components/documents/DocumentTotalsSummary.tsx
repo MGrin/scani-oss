@@ -1,6 +1,7 @@
 import { formatBytes } from '@scani/shared';
 import { Block } from '@scani/ui/v3/components/Block';
 import { StatTile } from '@scani/ui/v3/components/charts/StatTile';
+import { useTranslation } from 'react-i18next';
 import { type DocumentRow, documentTotals } from '../../lib/documents';
 
 /**
@@ -20,24 +21,27 @@ import { type DocumentRow, documentTotals } from '../../lib/documents';
  * two much larger figures reads as unimportant precisely when it is not.
  */
 export function DocumentTotalsSummary({ documents }: { documents: readonly DocumentRow[] }) {
+  const { t } = useTranslation();
   const totals = documentTotals(documents);
 
   return (
     <Block className="flex flex-col gap-3 p-4">
       <div className="flex flex-wrap items-start gap-x-10 gap-y-3">
-        <StatTile emphasis="hero" label="Stored" value={formatBytes(totals.byteSize)} />
+        <StatTile
+          emphasis="hero"
+          label={t('v3.documents.totals.stored')}
+          value={formatBytes(totals.byteSize)}
+        />
         {totals.extractions > 0 ? (
           <StatTile
-            label="Invoices found"
+            label={t('v3.documents.totals.invoicesFound')}
             value={<span className="tabular-nums">{totals.extractions}</span>}
           />
         ) : null}
       </div>
       {totals.fileMissing > 0 ? (
         <p className="text-caption text-muted-foreground">
-          {totals.fileMissing === 1
-            ? '1 file is no longer stored — its record is here, the file itself is not.'
-            : `${totals.fileMissing} files are no longer stored — their records are here, the files themselves are not.`}
+          {t('v3.documents.totals.fileMissing', { count: totals.fileMissing })}
         </p>
       ) : null}
     </Block>

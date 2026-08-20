@@ -1,3 +1,4 @@
+import type { TFunction } from 'i18next';
 import { V3_ROUTES } from './routes';
 
 /**
@@ -20,15 +21,15 @@ export type TokenSegment = 'custom' | 'hidden';
 
 export interface TokenSegmentDef {
   key: TokenSegment;
-  label: string;
+  labelKey: string;
   path: string;
 }
 
 export const TOKENS_HIDDEN_PATH = `${V3_ROUTES.tokens}/hidden`;
 
 export const TOKEN_SEGMENTS: readonly TokenSegmentDef[] = [
-  { key: 'custom', label: 'Custom', path: V3_ROUTES.tokens },
-  { key: 'hidden', label: 'Hidden', path: TOKENS_HIDDEN_PATH },
+  { key: 'custom', labelKey: 'v3.tokens.segment.custom', path: V3_ROUTES.tokens },
+  { key: 'hidden', labelKey: 'v3.tokens.segment.hidden', path: TOKENS_HIDDEN_PATH },
 ];
 
 export const DEFAULT_TOKEN_SEGMENT: TokenSegment = 'custom';
@@ -57,16 +58,32 @@ export interface HiddenHoldingRow {
   institution: { id: string; name: string };
 }
 
-const HIDDEN_REASONS: Record<HiddenHoldingRow['hiddenReason'], string> = {
-  user_hidden: 'Hidden by you',
-  scam: 'Flagged as a likely scam',
-  both: 'Flagged as a likely scam, and hidden by you',
+const HIDDEN_REASON_KEYS: Record<HiddenHoldingRow['hiddenReason'], string> = {
+  user_hidden: 'v3.tokens.hiddenReason.user',
+  scam: 'v3.tokens.hiddenReason.scam',
+  both: 'v3.tokens.hiddenReason.both',
 };
 
-export function hiddenReasonLabel(reason: HiddenHoldingRow['hiddenReason']): string {
-  return HIDDEN_REASONS[reason] ?? reason;
+export function hiddenReasonLabel(t: TFunction, reason: HiddenHoldingRow['hiddenReason']): string {
+  return t(HIDDEN_REASON_KEYS[reason]) ?? reason;
 }
 
 export function isScamFlagged(holding: Pick<HiddenHoldingRow, 'hiddenReason'>): boolean {
   return holding.hiddenReason === 'scam' || holding.hiddenReason === 'both';
+}
+
+/** Kept aligned with `packages/core/src/config/tokens.ts`. */
+const SCAM_PROBABILITY_THRESHOLD = 0.35;
+
+/**
+ * Does this token's `isScamProbability` count as scam?
+ *
+ * NOT `isScamFlagged`, which asks a different question of a different row.
+ * That one reads `hiddenReason` off `holdings.getHidden` — the server's record
+ * that *this holding* was hidden for being a scam. This one is the score, and
+ * it is what a surface holding a plain token uses to decide whether the row is
+ * badged or subtracted from a total.
+ */
+export function isScamToken(probability: number | null | undefined): boolean {
+  return typeof probability === 'number' && probability >= SCAM_PROBABILITY_THRESHOLD;
 }

@@ -1,24 +1,44 @@
 // @ts-check
 
+import { unified } from '@astrojs/markdown-remark';
 import starlight from '@astrojs/starlight';
 import { defineConfig } from 'astro/config';
-import remarkGfm from 'remark-gfm';
 import { rehypeScrollableTables } from './src/plugins/rehype-scrollable-tables.mjs';
 
 // https://astro.build/config
 export default defineConfig({
   site: 'https://docs.scani.xyz',
-  // Astro applies GFM to `.md` through an internal flag that `@astrojs/mdx`
-  // does not inherit, so every pipe table in an `.mdx` page rendered as a
-  // paragraph of raw `|` characters — 15 pages of schema and env-var tables,
-  // live in production. Listing the plugin explicitly puts both pipelines on
-  // the same parser; `.md` already had it, and applying it twice there is a
-  // no-op. `scripts/check-tables.ts` fails the build if this ever regresses.
+  // The pipeline hangs off `markdown.processor` rather than the top-level
+  // `markdown.remarkPlugins` / `markdown.rehypePlugins` keys, which Astro
+  // deprecated in 6.x. The deprecated keys still work — Astro migrates them
+  // onto an implicit `unified()` — but when they are removed the plugins stop
+  // running with the build still green, which is precisely how SC-182 shipped.
+  // `scripts/check-tables.ts` asserts on the built HTML, not on this config,
+  // because a config Astro accepts says nothing about what rendered.
+  //
+  // Requires `@astrojs/mdx` >= 6: mdx 5 read the deprecated keys only and
+  // never looked at `markdown.processor`, so registering here and nowhere
+  // else silently emptied every table on the 15 `.mdx` pages. Starlight pins
+  // mdx transitively, which is why it moves to 0.40 in the same change.
   markdown: {
-    remarkPlugins: [remarkGfm],
-    // Wraps every table in a labelled, focusable scroll region so a phone
-    // reader can tell the off-screen columns exist (SC-102).
-    rehypePlugins: [rehypeScrollableTables],
+    processor: unified({
+      // Explicit rather than left to the default, because a pipe table that
+      // stops being a table is invisible: SC-182 shipped 15 `.mdx` pages of
+      // schema and env-var tables as paragraphs of raw `|` characters, in
+      // production, for as long as the pages existed. This is the switch
+      // `scripts/check-tables.ts` is armed against — flip it to `false` and
+      // the build goes red rather than quietly losing every table.
+      //
+      // `remark-gfm` used to be listed here as a plugin instead. Under mdx 5
+      // that was load-bearing (mdx did not inherit Astro's GFM flag); under
+      // mdx 6 it is redundant, because mdx reads `gfm` off the processor and
+      // adds the plugin itself. A redundant listing is worse than none — no
+      // mutation of it can fail, so it reads as a guarded line and is not one.
+      gfm: true,
+      // Wraps every table in a labelled, focusable scroll region so a phone
+      // reader can tell the off-screen columns exist (SC-102).
+      rehypePlugins: [rehypeScrollableTables],
+    }),
   },
   integrations: [
     starlight({

@@ -3,6 +3,7 @@ import { Input } from '@scani/ui/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@scani/ui/ui/select';
 import { ArrowLeft, Globe, Loader2 } from 'lucide-react';
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { getFaviconUrl } from '@/lib/icons';
 import { trpc } from '@/lib/trpc';
 import type { NewInstitutionDraft, PickMode } from '../../lib/manual-entry';
@@ -43,6 +44,7 @@ export function InstitutionField({
   onDraftChange,
   disabled,
 }: InstitutionFieldProps) {
+  const { t } = useTranslation();
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
   const [fetchingSite, setFetchingSite] = useState(false);
@@ -97,7 +99,7 @@ export function InstitutionField({
 
   if (mode === 'existing') {
     return (
-      <Field label="Institution" htmlFor="manual-institution">
+      <Field label={t('v3.capture.institution.label')} htmlFor="manual-institution">
         <RecordPicker
           inputId="manual-institution"
           ariaLabel="institution"
@@ -117,9 +119,13 @@ export function InstitutionField({
           onOpenChange={setOpen}
           options={options}
           isLoading={institutions.isLoading}
-          placeholder="Search banks, brokers, exchanges…"
-          emptyLabel="Nothing by that name yet."
-          createLabel={(text) => (text ? `Add “${text}”` : 'Add one that is not listed')}
+          placeholder={t('v3.capture.institution.searchPlaceholder')}
+          emptyLabel={t('v3.capture.institution.noResults')}
+          createLabel={(text) =>
+            text
+              ? t('v3.capture.institution.addNamed', { name: text })
+              : t('v3.capture.institution.addUnlisted')
+          }
           onCreate={(text) => {
             onDraftChange({ name: text });
             onModeChange('new');
@@ -144,13 +150,13 @@ export function InstitutionField({
         }}
       >
         <ArrowLeft className="mr-1 h-4 w-4" aria-hidden="true" />
-        Pick an existing institution
+        {t('v3.capture.institution.pickExisting')}
       </Button>
 
       <Field
-        label="Website"
+        label={t('v3.capture.institution.website')}
         htmlFor="manual-institution-website"
-        hint="Fills the name and the icon. Optional."
+        hint={t('v3.capture.institution.websiteHint')}
       >
         <div className="flex gap-2">
           <Input
@@ -169,7 +175,7 @@ export function InstitutionField({
             variant="outline"
             size="icon"
             className="shrink-0"
-            aria-label="Look up the name from the website"
+            aria-label={t('v3.capture.institution.lookUpName')}
             onClick={() => void fetchSiteName()}
             disabled={fetchingSite || !draft.website.trim() || disabled}
           >
@@ -182,25 +188,25 @@ export function InstitutionField({
         </div>
       </Field>
 
-      <Field label="Name" htmlFor="manual-institution-name">
+      <Field label={t('v3.capture.institution.name')} htmlFor="manual-institution-name">
         <Input
           id="manual-institution-name"
           value={draft.name}
           onChange={(event) => onDraftChange({ name: event.target.value })}
-          placeholder="Revolut"
+          placeholder={t('v3.capture.institution.namePlaceholder')}
           className="text-body"
           disabled={disabled}
         />
       </Field>
 
-      <Field label="Type">
+      <Field label={t('v3.capture.institution.type')}>
         <Select
           value={draft.typeId}
           onValueChange={(typeId) => onDraftChange({ typeId })}
           disabled={disabled}
         >
-          <SelectTrigger className="text-body" aria-label="Institution type">
-            <SelectValue placeholder="Bank, broker, exchange…" />
+          <SelectTrigger className="text-body" aria-label={t('v3.capture.institution.typeLabel')}>
+            <SelectValue placeholder={t('v3.capture.institution.typePlaceholder')} />
           </SelectTrigger>
           <SelectContent>
             {(types.data ?? []).map((type) => (

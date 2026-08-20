@@ -34,7 +34,7 @@ function queueFetch(handler: (url: string) => FakeResponse): {
       status: r.status ?? 200,
       headers: { 'content-type': 'application/json' },
     });
-  }) as typeof fetch;
+  }) as unknown as typeof fetch;
   return { restore: () => (globalThis.fetch = original), calls };
 }
 
@@ -61,7 +61,7 @@ describe('GateProvider', () => {
           { currency: 'usdt', available: '0', locked: '0' },
         ]),
         { status: 200 }
-      )) as typeof fetch;
+      )) as unknown as typeof fetch;
     try {
       const out = await p.fetchBalances(ctx as never);
       expect(out).toHaveLength(1);
@@ -83,7 +83,7 @@ describe('GateProvider', () => {
   test('validateCredentials returns true on 200', async () => {
     const p = new GateProvider(passthroughLimiter());
     const originalFetch = globalThis.fetch;
-    globalThis.fetch = (async () => new Response('[]', { status: 200 })) as typeof fetch;
+    globalThis.fetch = (async () => new Response('[]', { status: 200 })) as unknown as typeof fetch;
     try {
       const r = await p.validateCredentials({ apiKey: 'k', apiSecret: 's' }, 'gate');
       expect(r.valid).toBe(true);
@@ -95,7 +95,8 @@ describe('GateProvider', () => {
   test('validateCredentials maps 401 to invalid', async () => {
     const p = new GateProvider(passthroughLimiter());
     const originalFetch = globalThis.fetch;
-    globalThis.fetch = (async () => new Response('Unauthorized', { status: 401 })) as typeof fetch;
+    globalThis.fetch = (async () =>
+      new Response('Unauthorized', { status: 401 })) as unknown as typeof fetch;
     try {
       const r = await p.validateCredentials({ apiKey: 'k', apiSecret: 's' }, 'gate');
       expect(r.valid).toBe(false);

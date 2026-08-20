@@ -1,0 +1,28 @@
+{
+  "$comment": [
+    "Locales allowed to be missing English keys, and why (SC-409).",
+    "",
+    "A locale NOT named here must answer every key in en.json — that is the",
+    "guard in tests/lib/i18n-locales.test.ts, and it exists because i18next",
+    "resolves a missing key to the English string and renders it. Russian was",
+    "50 keys behind within hours of shipping complete, and nothing failed.",
+    "",
+    "Naming a locale here exempts it from COMPLETENESS only. Every structural",
+    "check still applies: it must exist on both sides of the split, name itself",
+    "in $meta, have a row in LANGUAGE_FORMATS, and carry every plural form its",
+    "language has for the keys it does define.",
+    "",
+    "This is a file someone edits deliberately, not a threshold. Adding a line",
+    "is a reviewable act that says 'this language is knowingly partial'. The",
+    "test also fails when a named locale has CAUGHT UP, so the exemption cannot",
+    "outlive the reason for it.",
+    "",
+    "Trade-off, stated rather than hidden: a locale named here can drift",
+    "further with nothing failing. That is strictly better than the defect this",
+    "replaces, where a locale believed COMPLETE drifted with nothing failing —",
+    "the win is turning a silent unknown into a stated known, not eliminating",
+    "drift. A locale should be here for as long as one person is actively",
+    "finishing it, and no longer."
+  ],
+  "incomplete": {}
+}

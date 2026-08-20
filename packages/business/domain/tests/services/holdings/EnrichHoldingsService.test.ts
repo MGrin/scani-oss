@@ -1,20 +1,16 @@
 process.env.DATABASE_URL = process.env.DATABASE_URL || 'postgresql://dummy:dummy@localhost/dummy';
 
-import { afterAll, describe, expect, test } from 'bun:test';
+import { describe, expect, test } from 'bun:test';
 import { Container } from 'typedi';
 import { TokenTypeRepository } from '../../../src/repositories/EnumRepositories';
 import { HoldingRepository } from '../../../src/repositories/HoldingRepository';
 import { TokenRepository } from '../../../src/repositories/TokenRepository';
 import { EnrichHoldingsService } from '../../../src/services/holdings/EnrichHoldingsService';
+import { restoreContainerAfterAll } from '../../../test/helpers/container';
 
-// Stubs leak across files because typedi's Container is process-global.
-// Restore real @Service() instances after this suite.
-afterAll(() => {
-  Container.set(TokenRepository, new TokenRepository());
-  Container.set(HoldingRepository, new HoldingRepository());
-  Container.set(TokenTypeRepository, new TokenTypeRepository());
-  Container.set(EnrichHoldingsService, new EnrichHoldingsService());
-});
+// Container stubs are process-global; put back whatever this file changes
+// so no later test file resolves them (SC-448).
+restoreContainerAfterAll();
 
 type StubToken = { id: string; symbol: string; name: string };
 

@@ -3,13 +3,19 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./brand/scani-mark": "./src/brand/scani-mark.ts",
+    "./utils/safe-redirect": "./src/utils/safe-redirect.ts",
+    "./utils/sentry-noise": "./src/utils/sentry-noise.ts",
+    "./utils/sentry-scrubber": "./src/utils/sentry-scrubber.ts",
+    "./validators": "./src/validators/index.ts",
+    "./validators/email": "./src/validators/email.ts"
   },
   "scripts": {
     "clean": "rm -rf dist",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
-    "type-check": "tsgo --noEmit",
+    "type-check": "tsgo --noEmit -p tsconfig.test.json",
     "test": "bun test",
     "test:watch": "bun test --watch",
     "test:coverage": "bun test --coverage",

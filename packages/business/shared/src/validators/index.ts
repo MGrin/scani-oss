@@ -1,14 +1,20 @@
 import { z } from 'zod';
+import { EMAIL_PATTERN } from './email';
 
 // Canonical zod schemas for the most common input validations. Forms
 // and tRPC inputs both should reach for these so error messages stay
 // consistent and we don't re-test the same regex 12 times.
 
+export * from './email';
+
+// The pattern rather than `.email()`, so `./email` can answer the same
+// question without zod — see the note there (SC-169). Same two messages, in
+// the same order, so a caller cannot tell which side validated.
 export const emailSchema = z
   .string()
   .trim()
   .min(1, 'Email is required')
-  .email('Please enter a valid email address');
+  .regex(EMAIL_PATTERN, 'Please enter a valid email address');
 
 export const urlSchema = z
   .string()

@@ -1,6 +1,36 @@
 import { describe, expect, it } from 'bun:test';
+import { addUiLocale } from '@scani/ui/i18n';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { ExportSections, initialScope } from '../../../../src/v3/components/data-view/ExportSheet';
+
+// The fixtures' own labels, registered the way a host registers its own
+// (SC-262). The assertions below are unchanged English — that is what shows
+// the extraction moved no copy.
+addUiLocale('en', {
+  ui: {
+    dataView: {
+      test: {
+        account: 'Account',
+        all69Holdings: 'All 69 holdings',
+        connectAnExchangeAndYour: 'Connect an exchange and your positions appear here.',
+        everythingWeHave: 'Everything we have',
+        group: 'Group',
+        holding: 'Holding',
+        institution: 'Institution',
+        noHoldingsYet: 'No holdings yet',
+        none: 'None',
+        symbol: 'Symbol',
+        these12Holdings: 'These 12 holdings',
+        this1mWindow: 'This 1M window',
+        this1wWindow: 'This 1W window',
+        this3mWindow: 'This 3M window',
+        type: 'Type',
+        value: 'Value',
+        vault: 'vault',
+      },
+    },
+  },
+});
 
 /**
  * The sheet itself is a Radix portal and draws nothing under
@@ -16,11 +46,17 @@ const BASE = {
   onFormatChange: () => {},
   separator: ',' as const,
   onSeparatorChange: () => {},
+  hideAmounts: false,
+  onHideAmountsChange: () => {},
 };
 
 const NARROWED = [
   { key: 'filtered', label: 'These 12 holdings', detail: 'Institution: Kraken' },
-  { key: 'all', label: 'All 69 holdings', detail: 'Ignores the filters and the search' },
+  {
+    key: 'all',
+    label: 'All 69 holdings',
+    detail: 'Ignores the filters and the search',
+  },
 ];
 
 describe('ExportSections', () => {

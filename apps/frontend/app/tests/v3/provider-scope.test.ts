@@ -5,12 +5,11 @@ import { dirname, join, relative, resolve } from 'node:path';
 /**
  * The provider-scope guard.
  *
- * v3 is a second app rendered from the same bundle, and it reaches into v2 for
- * hooks and helpers on purpose — rewriting `useDataView` to port one screen
- * would be worse than borrowing it. But a borrowed hook drags its whole
+ * The v3 tree is loaded as its own chunk and shares `src/hooks` and
+ * `src/contexts` with the shell above it. A shared hook drags its whole
  * dependency chain with it, and if anything in that chain calls a context hook
- * whose provider is mounted *inside* `V2App`, the context is simply absent in
- * the v3 tree.
+ * whose provider is mounted *inside* that chunk rather than above it, the
+ * context is absent for everything else that reaches the same hook.
  *
  * That has now shipped twice. `BaseCurrencyProvider` failed quietly (SC-36):
  * `useBaseCurrency()` read a USD placeholder and rendered believable money in
@@ -108,13 +107,22 @@ describe('providers the v3 tree depends on', () => {
     expect([...hooks.entries()].sort()).toEqual([
       ['useAuth', 'AuthProvider'],
       ['useBaseCurrency', 'BaseCurrencyProvider'],
+      ['useFormatLocale', 'FormatLocaleProvider'],
       ['useRealtimeConnection', 'RealtimeProvider'],
     ]);
   });
 
-  test('the v3 import graph reaches into v2, which is why this test exists', () => {
-    const borrowed = [...v3Closure.keys()].filter((f) => f.startsWith(join(SRC, 'v2/')));
-    expect(borrowed.length).toBeGreaterThan(0);
+  test('the v3 import graph reaches the shell it depends on', () => {
+    // This used to assert the borrow list into `src/v2` was empty — SC-320
+    // emptied it, SC-423 deleted the tree, and an import of a directory that
+    // does not exist fails type-check rather than needing a guard. What
+    // remains is the load-bearing half: v3 reaches `src/hooks` and
+    // `src/contexts`, which is where both shipped provider failures actually
+    // lived, and an empty closure would make every per-hook test below return
+    // early on zero callers and pass over nothing.
+    expect(v3Closure.size).toBeGreaterThan(100);
+    expect([...v3Closure.keys()].some((f) => f.startsWith(join(SRC, 'contexts/')))).toBe(true);
+    expect([...v3Closure.keys()].some((f) => f.startsWith(join(SRC, 'hooks/')))).toBe(true);
   });
 
   for (const [hook, provider] of hooks) {
@@ -125,8 +133,8 @@ describe('providers the v3 tree depends on', () => {
         .sort();
       if (callers.length === 0) return;
 
-      // Mounted above the v2/v3 split, or by v3 itself. Anywhere else — most
-      // plausibly `V2App.tsx` — means these callers throw or read a default.
+      // Mounted above the lazy boundary in `App.tsx`, or by v3 itself.
+      // Anywhere else means these callers throw or read a default.
       const mounted = appSource.includes(`<${provider}`) || v3Sources.includes(`<${provider}`);
       // Listing the callers rather than asserting the boolean: a bare `false`
       // says the guard tripped, this says which import chain to go and cut.
@@ -168,6 +176,10 @@ describe('providers the v3 tree depends on', () => {
     expect(Object.fromEntries([...counts].map(([k, v]) => [k, v.sort()]))).toEqual({
       AuthProvider: ['App.tsx'],
       BaseCurrencyProvider: ['App.tsx'],
+      // Above `AuthProvider` rather than beside the other two, because the
+      // sign-in screen renders dates too and `<html lang>` is document-wide
+      // (SC-201). Still exactly one mount, which is what this asserts.
+      FormatLocaleProvider: ['App.tsx'],
       RealtimeProvider: ['App.tsx'],
     });
   });

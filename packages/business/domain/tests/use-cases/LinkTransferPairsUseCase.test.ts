@@ -104,7 +104,7 @@ async function setupFixture(): Promise<Fixture> {
   const [token] = await db
     .insert(schema.tokens)
     .values({
-      symbol: `LT${randomUUID().slice(0, 4).toUpperCase()}`,
+      symbol: `LT${randomUUID().toUpperCase()}`,
       name: 'LinkTest Token',
       typeId: tokenType.id,
     })
@@ -424,5 +424,413 @@ describe('LinkTransferPairsUseCase', () => {
       .from(schema.holdingTransactions)
       .where(eq(schema.holdingTransactions.userId, f.userId));
     expect(rows.every((r) => r.transferGroupId === null)).toBe(true);
+  });
+  /**
+   * Both legs on ONE holding is not a transfer (SC-350).
+   *
+   * Nothing moved between accounts: a departure and an arrival happened close
+   * together in the same wallet, and token + time — the only two facts this
+   * matcher reads — cannot tell that from a hop. It produced a wrong answer four
+   * times in production. `0x1414` sent 1,000 USDC to `0x9d8a`, then three
+   * minutes later `0x9d8a` sent 1,000 USDC to a stranger; this paired the
+   * arrival to the departure, which made the genuine pairing unrecordable
+   * because `claimInflow` will not take a claimed inflow.
+   */
+  test('does NOT pair an inflow and outflow that sit on the same holding', async () => {
+    const f = fixture!;
+    const at = recentTransferTimestamp();
+    await db.insert(schema.holdingTransactions).values([
+      {
+        userId: f.userId,
+        holdingId: f.withdrawHoldingId,
+        tokenId: f.tokenId,
+        kind: 'transfer_in',
+        quantity: '1000',
+        occurredAt: at,
+        source: 'etherscan',
+        externalId: 'same-in',
+      },
+      {
+        userId: f.userId,
+        holdingId: f.withdrawHoldingId,
+        tokenId: f.tokenId,
+        kind: 'transfer_out',
+        quantity: '-1000',
+        occurredAt: new Date(at.getTime() + 3 * 60 * 1000),
+        source: 'etherscan',
+        externalId: 'same-out',
+      },
+    ]);
+
+    const summary = await Container.get(LinkTransferPairsUseCase).execute({ userId: f.userId });
+    expect(summary.scanned).toBe(1);
+    expect(summary.linked).toBe(0);
+    // Not `ambiguous` either — the candidate is excluded before the count, so
+    // the job summary does not report a judgement it never made.
+    expect(summary.ambiguous).toBe(0);
+
+    const rows = await db
+      .select({ groupId: schema.holdingTransactions.transferGroupId })
+      .from(schema.holdingTransactions)
+      .where(eq(schema.holdingTransactions.userId, f.userId));
+    expect(rows.every((r) => r.groupId === null)).toBe(true);
+  });
+
+  test('still pairs across two holdings when the amounts and times match', async () => {
+    const f = fixture!;
+    // The guard above must not be a blanket refusal of same-token pairs: this is
+    // the case the matcher exists for and it has to keep working.
+    const at = recentTransferTimestamp();
+    await db.insert(schema.holdingTransactions).values([
+      {
+        userId: f.userId,
+        holdingId: f.withdrawHoldingId,
+        tokenId: f.tokenId,
+        kind: 'transfer_out',
+        quantity: '-1000',
+        occurredAt: at,
+        source: 'etherscan',
+        externalId: 'cross-out',
+      },
+      {
+        userId: f.userId,
+        holdingId: f.depositHoldingId,
+        tokenId: f.tokenId,
+        kind: 'transfer_in',
+        quantity: '1000',
+        occurredAt: new Date(at.getTime() + 3 * 60 * 1000),
+        source: 'etherscan',
+        externalId: 'cross-in',
+      },
+    ]);
+
+    const summary = await Container.get(LinkTransferPairsUseCase).execute({ userId: f.userId });
+    expect(summary.linked).toBe(1);
+  });
+});
+
+/**
+ * SC-336 — a bridge's two legs are two token rows on two chains, so the
+ * same-token pass cannot see them. Every test here builds the real shape:
+ * one wallet, two chain accounts, two token rows for one asset.
+ */
+describe('LinkTransferPairsUseCase — bridged assets', () => {
+  interface Bridge {
+    userId: string;
+    walletId: string;
+    outHoldingId: string;
+    inHoldingId: string;
+    outTokenId: string;
+    inTokenId: string;
+    cleanup: () => Promise<void>;
+  }
+
+  let bridge: Bridge | null = null;
+
+  async function setupBridge(opts: {
+    /** The canonical key on each token row, in order (out, in). */
+    keys: [string | null, string | null];
+    /** `userWalletId` on each account, in order (out, in). */
+    wallets?: [string | null, string | null];
+    /** `chainId` on each account, in order (out, in). */
+    chains?: [string | null, string | null];
+  }): Promise<Bridge> {
+    const [user] = await db
+      .insert(schema.users)
+      .values({ email: `bridge-${randomUUID().slice(0, 8)}@scani.local`, name: 'BridgeTest' })
+      .returning();
+    if (!user) throw new Error('user insert failed');
+    const [instType] = await db
+      .insert(schema.institutionTypes)
+      .values({ code: `bt-${randomUUID().slice(0, 6)}`, name: 'BridgeTest Type' })
+      .returning();
+    if (!instType) throw new Error('instType insert failed');
+    const [inst] = await db
+      .insert(schema.institutions)
+      .values({ name: `BT-${randomUUID().slice(0, 6)}`, typeId: instType.id })
+      .returning();
+    if (!inst) throw new Error('inst insert failed');
+    const [acctType] = await db
+      .insert(schema.accountTypes)
+      .values({ code: `bt-acct-${randomUUID().slice(0, 6)}`, name: 'BridgeTest Account' })
+      .returning();
+    if (!acctType) throw new Error('acctType insert failed');
+    const [tokenType] = await db
+      .insert(schema.tokenTypes)
+      .values({ code: `bt-tok-${randomUUID().slice(0, 6)}`, name: 'BridgeTest Token Type' })
+      .returning();
+    if (!tokenType) throw new Error('tokenType insert failed');
+
+    const walletId = randomUUID();
+    const wallets = opts.wallets ?? [walletId, walletId];
+    const chains = opts.chains ?? ['1', '8453'];
+
+    const accounts = await Promise.all(
+      chains.map(async (chainId, i) => {
+        const [account] = await db
+          .insert(schema.accounts)
+          .values({
+            userId: user.id,
+            institutionId: inst.id,
+            typeId: acctType.id,
+            name: `bridge-${i}-${randomUUID().slice(0, 6)}`,
+            metadata: {
+              ...(chainId === null ? {} : { chainId }),
+              ...(wallets[i] === null ? {} : { userWalletId: wallets[i] }),
+            },
+          })
+          .returning();
+        if (!account) throw new Error('account insert failed');
+        return account;
+      })
+    );
+
+    const tokens = await Promise.all(
+      opts.keys.map(async (key) => {
+        const [token] = await db
+          .insert(schema.tokens)
+          .values({
+            symbol: `USDC${randomUUID().toUpperCase()}`,
+            name: 'BridgeTest USDC',
+            typeId: tokenType.id,
+            providerMetadata: key === null ? {} : { coingecko: { id: key } },
+          })
+          .returning();
+        if (!token) throw new Error('token insert failed');
+        return token;
+      })
+    );
+
+    const holdings = await Promise.all(
+      tokens.map(async (token, i) => {
+        const account = accounts[i];
+        if (!account) throw new Error('account missing');
+        const [holding] = await db
+          .insert(schema.holdings)
+          .values({
+            userId: user.id,
+            accountId: account.id,
+            tokenId: token.id,
+            balance: '0',
+          })
+          .returning();
+        if (!holding) throw new Error('holding insert failed');
+        return holding;
+      })
+    );
+
+    const outHolding = holdings[0];
+    const inHolding = holdings[1];
+    const outToken = tokens[0];
+    const inToken = tokens[1];
+    if (!outHolding || !inHolding || !outToken || !inToken) throw new Error('fixture incomplete');
+
+    return {
+      userId: user.id,
+      walletId,
+      outHoldingId: outHolding.id,
+      inHoldingId: inHolding.id,
+      outTokenId: outToken.id,
+      inTokenId: inToken.id,
+      cleanup: async () => {
+        await db.delete(schema.users).where(eq(schema.users.id, user.id));
+        for (const token of tokens) {
+          await db.delete(schema.tokens).where(eq(schema.tokens.id, token.id));
+        }
+        await db.delete(schema.tokenTypes).where(eq(schema.tokenTypes.id, tokenType.id));
+        await db.delete(schema.accountTypes).where(eq(schema.accountTypes.id, acctType.id));
+        await db.delete(schema.institutions).where(eq(schema.institutions.id, inst.id));
+        await db.delete(schema.institutionTypes).where(eq(schema.institutionTypes.id, instType.id));
+      },
+    };
+  }
+
+  async function insertLegs(
+    b: Bridge,
+    opts: { outAt: Date; inAt: Date; outQty?: string; inQty?: string }
+  ): Promise<void> {
+    await db.insert(schema.holdingTransactions).values([
+      {
+        userId: b.userId,
+        holdingId: b.outHoldingId,
+        tokenId: b.outTokenId,
+        kind: 'transfer_out',
+        quantity: opts.outQty ?? '-100',
+        occurredAt: opts.outAt,
+        source: 'etherscan',
+        externalId: `bridge-out-${randomUUID().slice(0, 8)}`,
+      },
+      {
+        userId: b.userId,
+        holdingId: b.inHoldingId,
+        tokenId: b.inTokenId,
+        kind: 'transfer_in',
+        quantity: opts.inQty ?? '99.987151',
+        occurredAt: opts.inAt,
+        source: 'etherscan',
+        externalId: `bridge-in-${randomUUID().slice(0, 8)}`,
+      },
+    ]);
+  }
+
+  async function groupIdsFor(userId: string): Promise<Array<string | null>> {
+    const rows = await db
+      .select({ groupId: schema.holdingTransactions.transferGroupId })
+      .from(schema.holdingTransactions)
+      .where(eq(schema.holdingTransactions.userId, userId));
+    return rows.map((r) => r.groupId);
+  }
+
+  afterEach(async () => {
+    if (bridge) await bridge.cleanup();
+    bridge = null;
+  });
+
+  test('links a bridge: one asset, two chains, one wallet', async () => {
+    bridge = await setupBridge({ keys: ['usd-coin', 'usd-coin'] });
+    const b = bridge;
+    const at = recentTransferTimestamp();
+    await insertLegs(b, { outAt: at, inAt: new Date(at.getTime() + 6_000) });
+
+    const summary = await Container.get(LinkTransferPairsUseCase).execute({ userId: b.userId });
+    expect(summary.linked).toBe(1);
+    expect(summary.ambiguous).toBe(0);
+
+    const groups = await groupIdsFor(b.userId);
+    expect(groups).toHaveLength(2);
+    expect(new Set(groups).size).toBe(1);
+    expect(groups[0]).not.toBeNull();
+  });
+
+  test('refuses two assets that only share a symbol — neither carries a canonical id', async () => {
+    bridge = await setupBridge({ keys: [null, null] });
+    const b = bridge;
+    const at = recentTransferTimestamp();
+    await insertLegs(b, { outAt: at, inAt: new Date(at.getTime() + 6_000) });
+
+    const summary = await Container.get(LinkTransferPairsUseCase).execute({ userId: b.userId });
+    expect(summary.linked).toBe(0);
+    expect(await groupIdsFor(b.userId)).toEqual([null, null]);
+  });
+
+  test('refuses a wrapper against its underlying asset', async () => {
+    bridge = await setupBridge({ keys: ['weth', 'ethereum'] });
+    const b = bridge;
+    const at = recentTransferTimestamp();
+    await insertLegs(b, { outAt: at, inAt: new Date(at.getTime() + 6_000) });
+
+    const summary = await Container.get(LinkTransferPairsUseCase).execute({ userId: b.userId });
+    expect(summary.linked).toBe(0);
+    expect(await groupIdsFor(b.userId)).toEqual([null, null]);
+  });
+
+  test('refuses an arrival that landed BEFORE the money left', async () => {
+    bridge = await setupBridge({ keys: ['usd-coin', 'usd-coin'] });
+    const b = bridge;
+    const at = recentTransferTimestamp();
+    await insertLegs(b, { outAt: at, inAt: new Date(at.getTime() - 6 * 60 * 1000) });
+
+    const summary = await Container.get(LinkTransferPairsUseCase).execute({ userId: b.userId });
+    expect(summary.linked).toBe(0);
+    expect(await groupIdsFor(b.userId)).toEqual([null, null]);
+  });
+
+  test('refuses two chains that are not the same wallet', async () => {
+    bridge = await setupBridge({
+      keys: ['usd-coin', 'usd-coin'],
+      wallets: [randomUUID(), randomUUID()],
+    });
+    const b = bridge;
+    const at = recentTransferTimestamp();
+    await insertLegs(b, { outAt: at, inAt: new Date(at.getTime() + 6_000) });
+
+    const summary = await Container.get(LinkTransferPairsUseCase).execute({ userId: b.userId });
+    expect(summary.linked).toBe(0);
+    expect(await groupIdsFor(b.userId)).toEqual([null, null]);
+  });
+
+  test('refuses one wallet on ONE chain — two token rows for one asset is a wrap, not a bridge', async () => {
+    bridge = await setupBridge({
+      keys: ['usd-coin', 'usd-coin'],
+      chains: ['1', '1'],
+    });
+    const b = bridge;
+    const at = recentTransferTimestamp();
+    await insertLegs(b, { outAt: at, inAt: new Date(at.getTime() + 6_000) });
+
+    const summary = await Container.get(LinkTransferPairsUseCase).execute({ userId: b.userId });
+    expect(summary.linked).toBe(0);
+    expect(await groupIdsFor(b.userId)).toEqual([null, null]);
+  });
+
+  test('refuses an exchange leg, which has no chain to bridge from', async () => {
+    bridge = await setupBridge({
+      keys: ['usd-coin', 'usd-coin'],
+      chains: [null, '8453'],
+    });
+    const b = bridge;
+    const at = recentTransferTimestamp();
+    await insertLegs(b, { outAt: at, inAt: new Date(at.getTime() + 6_000) });
+
+    const summary = await Container.get(LinkTransferPairsUseCase).execute({ userId: b.userId });
+    expect(summary.linked).toBe(0);
+    expect(await groupIdsFor(b.userId)).toEqual([null, null]);
+  });
+
+  test('refuses a bridge whose fee exceeds the same ±1% the matcher already allows', async () => {
+    bridge = await setupBridge({ keys: ['usd-coin', 'usd-coin'] });
+    const b = bridge;
+    const at = recentTransferTimestamp();
+    await insertLegs(b, {
+      outAt: at,
+      inAt: new Date(at.getTime() + 6_000),
+      inQty: '98.5',
+    });
+
+    const summary = await Container.get(LinkTransferPairsUseCase).execute({ userId: b.userId });
+    expect(summary.linked).toBe(0);
+    expect(await groupIdsFor(b.userId)).toEqual([null, null]);
+  });
+
+  /**
+   * The interaction that decides whether this rule can make anything worse.
+   * A same-chain arrival on the source holding and a genuine bridge arrival
+   * both fit: two candidates, so the matcher takes neither. Production has
+   * exactly this row — 200.082083 USDC arrived on mainnet six minutes before
+   * the same amount was bridged to Base — and without this the pass would
+   * pair the outflow with the arrival that never moved.
+   */
+  test('declines rather than choose between a same-token arrival and a bridged one', async () => {
+    bridge = await setupBridge({ keys: ['usd-coin', 'usd-coin'] });
+    const b = bridge;
+    const at = recentTransferTimestamp();
+    await insertLegs(b, { outAt: at, inAt: new Date(at.getTime() + 6_000) });
+    // A second arrival, same token row as the outflow, on a third holding.
+    const [otherAccount] = await db
+      .select({ id: schema.accounts.id })
+      .from(schema.accounts)
+      .where(eq(schema.accounts.userId, b.userId))
+      .limit(1);
+    if (!otherAccount) throw new Error('account missing');
+    const [rival] = await db
+      .insert(schema.holdings)
+      .values({ userId: b.userId, accountId: otherAccount.id, tokenId: b.outTokenId, balance: '0' })
+      .returning();
+    if (!rival) throw new Error('rival holding insert failed');
+    await db.insert(schema.holdingTransactions).values({
+      userId: b.userId,
+      holdingId: rival.id,
+      tokenId: b.outTokenId,
+      kind: 'transfer_in',
+      quantity: '100',
+      occurredAt: new Date(at.getTime() + 60_000),
+      source: 'etherscan',
+      externalId: `rival-${randomUUID().slice(0, 8)}`,
+    });
+
+    const summary = await Container.get(LinkTransferPairsUseCase).execute({ userId: b.userId });
+    expect(summary.linked).toBe(0);
+    expect(summary.ambiguous).toBe(1);
+    expect((await groupIdsFor(b.userId)).every((g) => g === null)).toBe(true);
   });
 });

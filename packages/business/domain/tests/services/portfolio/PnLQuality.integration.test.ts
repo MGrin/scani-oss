@@ -73,7 +73,7 @@ async function setupFixture(): Promise<Fixture> {
   const [baseCurrency] = await db
     .insert(schema.tokens)
     .values({
-      symbol: `PQB${suffix.slice(0, 4).toUpperCase()}`,
+      symbol: `PQB${suffix.toUpperCase()}`,
       name: 'PnLQ Base',
       typeId: tokenType!.id,
     })
@@ -116,7 +116,7 @@ async function setupFixture(): Promise<Fixture> {
     const [token] = await db
       .insert(schema.tokens)
       .values({
-        symbol: `PQ${spec.key.slice(0, 2).toUpperCase()}${randomUUID().slice(0, 4).toUpperCase()}`,
+        symbol: `PQ${spec.key.slice(0, 2).toUpperCase()}${randomUUID().toUpperCase()}`,
         name: `PnLQ ${spec.key}`,
         typeId: tokenType!.id,
       })

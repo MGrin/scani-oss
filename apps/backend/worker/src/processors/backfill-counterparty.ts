@@ -53,6 +53,9 @@ export class BackfillCounterpartyProcessor extends ScheduledJobProcessor {
         .select({
           id: schema.holdingTransactions.id,
           source: schema.holdingTransactions.source,
+          // `etherscan` needs it to know whether the counterparty is the
+          // payload's `to` or its `from` (SC-329). Ledger sources ignore it.
+          kind: schema.holdingTransactions.kind,
           rawPayload: schema.holdingTransactions.rawPayload,
         })
         .from(schema.holdingTransactions)
@@ -76,7 +79,7 @@ export class BackfillCounterpartyProcessor extends ScheduledJobProcessor {
 
         let result: { counterparty?: string; description?: string };
         try {
-          result = extractCounterparty(row.source, row.rawPayload);
+          result = extractCounterparty(row.source, row.rawPayload, row.kind);
         } catch (err) {
           // extractCounterparty is defensive by contract, but this sweep
           // runs unattended over every historical payload — a row we

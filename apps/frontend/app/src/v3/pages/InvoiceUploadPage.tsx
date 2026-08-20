@@ -2,9 +2,10 @@ import { Block } from '@scani/ui/v3/components/Block';
 import { PageLayout } from '@scani/ui/v3/components/PageLayout';
 import { describeQueryError } from '@scani/ui/v3/lib/errors';
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { trpc } from '@/lib/trpc';
-import { uploadToR2 } from '@/v2/lib/r2-upload';
+import { uploadToR2 } from '@/v3/lib/r2-upload';
 import { CaptureHeader } from '../components/capture/CaptureHeader';
 import { CaptureSubmit } from '../components/capture/CaptureSubmit';
 import { FileDropField } from '../components/capture/FileDropField';
@@ -14,7 +15,7 @@ import {
   describeInvoiceBlockers,
   describeInvoiceFileProblem,
   INVOICE_ACCEPT,
-  INVOICE_FORMATS,
+  INVOICE_FORMATS_KEY,
   planInvoiceFile,
 } from '../lib/capture-forms';
 import { jobDetailPath } from '../lib/routes';
@@ -33,6 +34,7 @@ import { jobDetailPath } from '../lib/routes';
  * holdings will conclude the upload failed.
  */
 export function InvoiceUploadPage() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
 
   const [file, setFile] = useState<File | null>(null);
@@ -70,7 +72,7 @@ export function InvoiceUploadPage() {
 
       navigate(jobDetailPath(jobId));
     } catch (err) {
-      const copy = describeQueryError(err, 'this invoice');
+      const copy = describeQueryError(err, t('v3.documents.parse.thisInvoice'));
       setError(`${copy.title}. ${copy.detail}`);
       setStage(null);
     }
@@ -79,28 +81,28 @@ export function InvoiceUploadPage() {
   return (
     <PageLayout>
       <CaptureHeader
-        title="Upload an invoice"
-        description="A PDF or a photo of one. We read the vendor, the amount and the line items, and put them on Review for you to accept or reject."
+        title={t('v3.capture.page.invoice.title')}
+        description={t('v3.capture.page.invoice.description')}
       />
 
       <Block>
-        <FieldSet title="The invoice">
+        <FieldSet title={t('v3.capture.page.invoice.fieldset')}>
           <FileDropField
             inputId="invoice-file"
             accept={INVOICE_ACCEPT}
             file={file}
             onFile={setFile}
-            validate={describeInvoiceFileProblem}
-            formats={INVOICE_FORMATS}
-            prompt="Choose an invoice, or drop one here"
+            validate={(filename) => describeInvoiceFileProblem(t, filename)}
+            formats={t(INVOICE_FORMATS_KEY)}
+            prompt={t('v3.capture.page.invoice.prompt')}
             disabled={stage !== null}
           />
         </FieldSet>
       </Block>
 
       <CaptureSubmit
-        label="Upload and read it"
-        blockers={describeInvoiceBlockers(file)}
+        label={t('v3.capture.page.uploadAndRead')}
+        blockers={describeInvoiceBlockers(t, file)}
         onSubmit={submit}
         stage={stage}
         busyLabel="the upload"

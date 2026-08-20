@@ -1,3 +1,4 @@
+import type { TFunction } from 'i18next';
 import { FileImage, FileSpreadsheet, FileText, type LucideIcon, Paperclip } from 'lucide-react';
 
 /**
@@ -38,15 +39,38 @@ export interface DocumentRow {
   downloadable: boolean;
 }
 
-const PURPOSE_LABELS: Record<string, string> = {
+const PURPOSE_LABELS = {
   invoice: 'Invoice',
   screenshot: 'Screenshot',
   'file-import': 'Import',
-};
+} as const satisfies Record<string, string>;
+
+/** The purposes this app has a word for. A purpose added on the API side is
+ *  not one, and falls through to its raw value everywhere below. */
+export type LabelledDocumentPurpose = keyof typeof PURPOSE_LABELS;
 
 /** Falls back to the raw value so a purpose added on the API side still reads. */
 export function documentPurposeLabel(purpose: string): string {
-  return PURPOSE_LABELS[purpose] ?? purpose;
+  return (PURPOSE_LABELS as Record<string, string>)[purpose] ?? purpose;
+}
+
+/**
+ * The kinds whose LABEL matches what the reader typed (SC-244).
+ *
+ * Files searches on the server now, and the server cannot do this half: the
+ * label is this app's copy and is not a transformation of the value it stores
+ * — `file-import` is displayed as "Import", so a reader searching "import"
+ * means a kind and a reader searching "file" does not. Resolving it here and
+ * sending the result keeps the search matching exactly what the reader can see
+ * on the rows, which is what `matchesDocumentSearch` did while the whole list
+ * was in the browser.
+ */
+export function documentPurposesMatching(term: string): LabelledDocumentPurpose[] {
+  const query = term.trim().toLowerCase();
+  if (query === '') return [];
+  return (Object.keys(PURPOSE_LABELS) as LabelledDocumentPurpose[]).filter((purpose) =>
+    PURPOSE_LABELS[purpose].toLowerCase().includes(query)
+  );
 }
 
 /**
@@ -78,25 +102,26 @@ export function extractionOutcome(document: DocumentRow): ExtractionOutcome {
   return document.extractionCount > 0 ? 'extracted' : 'nothing-found';
 }
 
-const OUTCOME_LABELS: Record<ExtractionOutcome, string> = {
-  extracted: 'Invoices found',
-  'nothing-found': 'Nothing found',
-  'not-read': 'Not read for invoices',
+const OUTCOME_LABEL_KEYS: Record<ExtractionOutcome, string> = {
+  extracted: 'v3.documents.outcome.extracted',
+  'nothing-found': 'v3.documents.outcome.nothingFound',
+  'not-read': 'v3.documents.outcome.notRead',
 };
 
 /** The filter's own name for an outcome. The row says it more briefly — see
  *  `extractionSummary`. */
-export function extractionOutcomeLabel(outcome: ExtractionOutcome): string {
-  return OUTCOME_LABELS[outcome];
+export function extractionOutcomeLabel(t: TFunction, outcome: ExtractionOutcome): string {
+  return t(OUTCOME_LABEL_KEYS[outcome]);
 }
 
 export function extractionOutcomeOptions(
+  t: TFunction,
   documents: readonly DocumentRow[]
 ): { value: string; label: string }[] {
   const present = new Set(documents.map(extractionOutcome));
   return (['extracted', 'nothing-found', 'not-read'] as const)
     .filter((outcome) => present.has(outcome))
-    .map((outcome) => ({ value: outcome, label: extractionOutcomeLabel(outcome) }));
+    .map((outcome) => ({ value: outcome, label: extractionOutcomeLabel(t, outcome) }));
 }
 
 /**
@@ -106,12 +131,12 @@ export function extractionOutcomeOptions(
  * noun, and the value zone is the only place on a phone row where the reader
  * is looking for the outcome.
  */
-export function extractionSummary(document: DocumentRow): string {
+export function extractionSummary(t: TFunction, document: DocumentRow): string {
   switch (extractionOutcome(document)) {
     case 'extracted':
-      return `${document.extractionCount} invoice${document.extractionCount === 1 ? '' : 's'}`;
+      return t('v3.documents.invoiceCount', { count: document.extractionCount });
     case 'nothing-found':
-      return 'Nothing found';
+      return t('v3.documents.outcome.nothingFound');
     default:
       return '—';
   }
@@ -132,13 +157,6 @@ export function documentIcon(mimeType: string): LucideIcon {
     return FileSpreadsheet;
   }
   return Paperclip;
-}
-
-export function matchesDocumentSearch(document: DocumentRow, query: string): boolean {
-  return (
-    document.originalFilename.toLowerCase().includes(query) ||
-    documentPurposeLabel(document.purpose).toLowerCase().includes(query)
-  );
 }
 
 export function compareDocuments(

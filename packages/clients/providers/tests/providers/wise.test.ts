@@ -67,7 +67,7 @@ describe('WiseProvider', () => {
         );
       }
       throw new Error(`Unexpected URL: ${url}`);
-    }) as typeof fetch;
+    }) as unknown as typeof fetch;
     try {
       const out = await p.fetchBalances(ctx as never);
       const usd = out.find((h) => h.tokenIdentity.symbol === 'USD');
@@ -99,7 +99,7 @@ describe('WiseProvider', () => {
     globalThis.fetch = (async () =>
       new Response(JSON.stringify([{ id: 1, type: 'PERSONAL', fullName: 'a' }]), {
         status: 200,
-      })) as typeof fetch;
+      })) as unknown as typeof fetch;
     try {
       const r = await p.validateCredentials({ apiToken: 'tok' }, 'wise');
       expect(r.valid).toBe(true);
@@ -111,7 +111,7 @@ describe('WiseProvider', () => {
   test('validateCredentials returns false when zero profiles', async () => {
     const p = new WiseProvider(passthroughLimiter());
     const originalFetch = globalThis.fetch;
-    globalThis.fetch = (async () => new Response('[]', { status: 200 })) as typeof fetch;
+    globalThis.fetch = (async () => new Response('[]', { status: 200 })) as unknown as typeof fetch;
     try {
       const r = await p.validateCredentials({ apiToken: 'tok' }, 'wise');
       expect(r.valid).toBe(false);
@@ -124,7 +124,8 @@ describe('WiseProvider', () => {
   test('validateCredentials surfaces HTTP 401 message', async () => {
     const p = new WiseProvider(passthroughLimiter());
     const originalFetch = globalThis.fetch;
-    globalThis.fetch = (async () => new Response('Unauthorized', { status: 401 })) as typeof fetch;
+    globalThis.fetch = (async () =>
+      new Response('Unauthorized', { status: 401 })) as unknown as typeof fetch;
     try {
       const r = await p.validateCredentials({ apiToken: 'tok' }, 'wise');
       expect(r.valid).toBe(false);
@@ -233,7 +234,7 @@ describe('WiseProvider.fetchTransactions', () => {
         );
       }
       throw new Error(`Unexpected URL: ${url}`);
-    }) as typeof fetch;
+    }) as unknown as typeof fetch;
   });
 
   test('maps CREDIT/DEBIT/CONVERSION rows and emits sibling fee events', async () => {
@@ -285,7 +286,7 @@ describe('WiseProvider.fetchTransactions', () => {
     globalThis.fetch = (async (url: string) => {
       captured.push(url);
       return inner(url);
-    }) as typeof fetch;
+    }) as unknown as typeof fetch;
 
     const p = new WiseProvider(passthroughLimiter());
     await p.fetchTransactions({
@@ -331,7 +332,7 @@ describe('WiseProvider.fetchTransactions window splitting', () => {
         return new Response(JSON.stringify({ transactions: [] }), { status: 200 });
       }
       throw new Error(`Unexpected URL: ${url}`);
-    }) as typeof fetch;
+    }) as unknown as typeof fetch;
     try {
       const p = new WiseProvider(passthroughLimiter());
       // 1000 days >> 469 → expect 3 chunks (469 + 469 + 62).

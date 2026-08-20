@@ -4,6 +4,7 @@ import { PageHeader, PageLayout } from '@scani/ui/v3/components/PageLayout';
 import { mergeQueries } from '@scani/ui/v3/lib/query-state';
 import { Plus } from 'lucide-react';
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useBaseCurrencyRates } from '@/hooks/useBaseCurrencyRates';
 import { trpc } from '@/lib/trpc';
@@ -39,6 +40,7 @@ import { V3_PAYMENT_ROUTES } from '../lib/routes';
  */
 
 export function MoneyPage() {
+  const { t } = useTranslation();
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const segment = resolveMoneySegment(pathname);
@@ -87,28 +89,32 @@ export function MoneyPage() {
     // exists to delete. On a phone the measure never binds.
     <PageLayout measure="wide">
       <PageHeader
-        title="Money"
+        title={t('v3.money.page.title')}
         action={
           segment === 'vendors' ? (
             <Button variant="outline" onClick={() => setCreatingVendor(true)}>
               <Plus className="mr-1.5 h-4 w-4" aria-hidden="true" />
-              New vendor
+              {t('v3.money.page.newVendor')}
             </Button>
           ) : (
             <Button asChild>
               <Link to={V3_PAYMENT_ROUTES.create}>
                 <Plus className="mr-1.5 h-4 w-4" aria-hidden="true" />
-                Add payment
+                {t('v3.money.page.addPayment')}
               </Link>
             </Button>
           )
         }
       />
 
-      <Segmented value={segment} onValueChange={changeSegment} aria-label="Money view">
+      <Segmented
+        value={segment}
+        onValueChange={changeSegment}
+        aria-label={t('v3.money.page.viewSwitcher')}
+      >
         {MONEY_SEGMENTS.map((entry) => (
           <SegmentedItem key={entry.key} value={entry.key}>
-            {entry.label}
+            {t(entry.labelKey)}
           </SegmentedItem>
         ))}
       </Segmented>

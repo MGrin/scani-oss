@@ -4,6 +4,11 @@ import { DocumentExtractionRepository } from '../../src/repositories/DocumentExt
 import { UserJobRepository } from '../../src/repositories/UserJobRepository';
 import { ReviewFeedService } from '../../src/services/ReviewFeedService';
 import { TransferReviewService } from '../../src/services/TransferReviewService';
+import { restoreContainerAfterAll } from '../../test/helpers/container';
+
+// Container stubs are process-global; put back whatever this file changes
+// so no later test file resolves them (SC-448).
+restoreContainerAfterAll();
 
 /**
  * Regression guard for the badge/feed mismatch found during manual testing.
@@ -55,7 +60,7 @@ describe('ReviewFeedService — recency window regression', () => {
     const items = await svc.listPending('user-1');
 
     expect(items).toHaveLength(1);
-    expect(items[0].id).toBe('job:old-screenshot');
+    expect(items[0]?.id).toBe('job:old-screenshot');
   });
 
   test('does not cap the feed at a recent-jobs window', async () => {

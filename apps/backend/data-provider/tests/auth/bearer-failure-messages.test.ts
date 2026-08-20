@@ -16,11 +16,12 @@ import { buildUnauthedContext } from '../helpers/test-context';
  */
 
 const ENV_TOKEN = 'env-superuser-token-0123456789';
-// Deliberately not key-shaped. `validateBearerToken` checks the `bearer `
-// header prefix and then SHA-256s whatever follows, so the token's format
-// is not load-bearing here — and a fixture shaped like a live credential
-// trips secret scanners on a public mirror (SC-189).
-const PRESENTED = 'a-token-that-was-never-issued';
+// Any string exercises this path — `validateBearerToken` checks the `bearer `
+// scheme and then SHA-256s whatever follows, so the token's shape is not
+// load-bearing here. It is deliberately not key-shaped: a realistic-looking
+// key in a fixture is what tripped push protection on the public repo, and a
+// placeholder that cannot be mistaken for a credential costs nothing (SC-189).
+const PRESENTED = 'not-a-real-key-placeholder';
 
 interface KeyRow {
   id: string;

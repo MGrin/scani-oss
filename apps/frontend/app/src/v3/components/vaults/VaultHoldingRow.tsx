@@ -4,6 +4,7 @@ import { ConfirmAction } from '@scani/ui/v3/components/ConfirmAction';
 import { Numeric } from '@scani/ui/v3/components/Numeric';
 import { Check, Pencil, X } from 'lucide-react';
 import { useState } from 'react';
+import { Trans, useTranslation } from 'react-i18next';
 import {
   attributedValue,
   isValidVaultPercentage,
@@ -53,11 +54,12 @@ export function VaultHoldingRow({
   onDetach,
   isSaving,
 }: VaultHoldingRowProps) {
+  const { t } = useTranslation();
   const [draft, setDraft] = useState<string | null>(null);
   const [confirmingDetach, setConfirmingDetach] = useState(false);
   const editing = draft !== null;
   const valid = editing && isValidVaultPercentage(Number(draft));
-  const symbol = holding.tokenSymbol || 'This holding';
+  const symbol = holding.tokenSymbol || t('v3.vaults.holding.thisHolding');
 
   const save = () => {
     if (!valid) return;
@@ -70,7 +72,9 @@ export function VaultHoldingRow({
   return (
     <li className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-2">
       <div className="min-w-0 flex-1">
-        <p className="truncate text-label">{holding.tokenSymbol || 'Unknown token'}</p>
+        <p className="truncate text-label">
+          {holding.tokenSymbol || t('v3.vaults.holding.unknownToken')}
+        </p>
         <p className="truncate text-caption text-muted-foreground">{where}</p>
       </div>
 
@@ -84,17 +88,27 @@ export function VaultHoldingRow({
             className="h-9 w-20 text-body"
             decimalScale={1}
             suffix="%"
-            aria-label={`Share of ${holding.tokenSymbol} counted toward this vault`}
+            aria-label={t('v3.vaults.holding.shareLabel', { symbol: holding.tokenSymbol })}
             autoFocus
             onKeyDown={(event) => {
               if (event.key === 'Enter') save();
               if (event.key === 'Escape') setDraft(null);
             }}
           />
-          <Button size="icon" variant="ghost" aria-label="Cancel" onClick={() => setDraft(null)}>
+          <Button
+            size="icon"
+            variant="ghost"
+            aria-label={t('v3.vaults.holding.cancel')}
+            onClick={() => setDraft(null)}
+          >
             <X className="size-4" aria-hidden="true" />
           </Button>
-          <Button size="icon" aria-label="Save share" disabled={!valid || isSaving} onClick={save}>
+          <Button
+            size="icon"
+            aria-label={t('v3.vaults.holding.saveShare')}
+            disabled={!valid || isSaving}
+            onClick={save}
+          >
             <Check className="size-4" aria-hidden="true" />
           </Button>
         </div>
@@ -109,7 +123,10 @@ export function VaultHoldingRow({
             <button
               type="button"
               onClick={() => setDraft(String(holding.percentage))}
-              aria-label={`Change the ${holding.percentage}% share of ${holding.tokenSymbol} counted toward this vault`}
+              aria-label={t('v3.vaults.holding.changeShare', {
+                percent: holding.percentage,
+                symbol: holding.tokenSymbol,
+              })}
               className="inline-flex items-center gap-1 rounded-md px-1 text-caption text-muted-foreground transition-colors duration-fast ease-emphasized hover:bg-surface-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               <span className="font-mono tabular-nums tracking-numeric">
@@ -119,21 +136,28 @@ export function VaultHoldingRow({
             </button>
           </div>
           <ConfirmAction
-            label="Remove"
+            label={t('v3.vaults.holding.remove')}
             triggerClassName="shrink-0 text-muted-foreground"
-            confirmLabel={`Remove ${symbol} from this vault`}
+            confirmLabel={t('v3.vaults.holding.removeCommit', { symbol })}
             open={confirmingDetach}
             onOpenChange={setConfirmingDetach}
             consequence={
-              <>
-                {`${symbol} stops counting toward this vault — `}
-                <Numeric
-                  value={attributedValue(holding)}
-                  currency={currencySymbol}
-                  className="text-caption"
-                />
-                {` comes off the saved figure. The holding itself, its ${holding.percentage}% share and its history all stay; you can attach it again.`}
-              </>
+              // One sentence, one key, the figure as a slot (SC-235). Split
+              // into lead and tail around `<Numeric>` it read correctly only
+              // in a language that puts the amount exactly there.
+              <Trans
+                i18nKey="v3.vaults.holding.detachConsequence"
+                values={{ symbol, percent: holding.percentage }}
+                components={{
+                  value: (
+                    <Numeric
+                      value={attributedValue(holding)}
+                      currency={currencySymbol}
+                      className="text-caption"
+                    />
+                  ),
+                }}
+              />
             }
             onConfirm={() => {
               onDetach(holding.holdingId);

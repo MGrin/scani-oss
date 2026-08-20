@@ -3,7 +3,7 @@
 import type { Account, Holding } from '@scani/db/schema';
 import type { DatabaseTransaction } from '@scani/db/transaction';
 import type { HoldingSnapshot } from '@scani/providers/core/types';
-import { isValidDecimalString } from '@scani/shared';
+import { type HoldingArrivalAttribution, isValidDecimalString } from '@scani/shared';
 import Decimal from 'decimal.js';
 import { Container, Service } from 'typedi';
 import { BaseService } from '../BaseService';
@@ -42,6 +42,11 @@ export interface ProcessSnapshotsForAccountInput {
   // up-front (e.g. against `holding_exclusions`) keep deliberately-rejected
   // tokens out before they reach the helper.
   updateOnly: boolean;
+  // Stamped on rows this call CREATES; an update never revises how an
+  // existing row arrived. Required and undefaulted because this helper is
+  // the one create path shared by the wallet-import review and the hourly
+  // sync — a default here would let one inherit the other's answer.
+  arrival: HoldingArrivalAttribution;
   tx: DatabaseTransaction;
 }
 
@@ -85,6 +90,7 @@ export class HoldingsSyncHelper extends BaseService {
       respectHiddenForCounts,
       updateOnly,
       skipUnchangedUpdates,
+      arrival,
       tx,
     } = input;
 
@@ -206,6 +212,7 @@ export class HoldingsSyncHelper extends BaseService {
               tokenId: token.id,
               balance,
               source: sourceTag,
+              arrival,
               externalId: dedupStrategy === 'externalId' ? lookupExternalId : undefined,
               eventContext: eventContext
                 ? { baseCurrencyId: eventContext.baseCurrencyId }
@@ -229,23 +236,42 @@ export class HoldingsSyncHelper extends BaseService {
     }
 
     if (staleStrategy === 'zero') {
-      for (const [tokenId, existing] of existingByTokenId) {
-        if (seenTokenIds.has(tokenId)) continue;
-        if (existing.balance === '0') continue;
-        try {
-          await this.holdingService.updateHoldingBalanceWithEvent(
-            { holdingId: existing.id, balance: '0', eventContext },
-            tx
+      // An empty snapshot is not evidence the user holds nothing (SC-236).
+      // Every HMAC exchange provider answers an unreadable credential with
+      // `return []` — same value a genuinely-empty account produces — so
+      // zeroing on it wipes the account hourly. Requiring one row before
+      // zeroing costs a cycle of staleness on a real sell-out, which is
+      // visible and self-correcting; a wipe is neither, and erases the
+      // evidence that anything went wrong.
+      if (snapshots.length === 0) {
+        const atRisk = [...existingByTokenId.values()].filter((h) => h.balance !== '0').length;
+        // Declining to act silently would reproduce the defect this guards
+        // against: "we protected you" must not look like "nothing to do".
+        if (atRisk > 0) {
+          this.logger.warn(
+            { accountId: account.id, userId, sourceTag, preservedHoldings: atRisk },
+            'Empty snapshot under staleStrategy=zero — refusing to zero holdings; balances left stale'
           );
-          removed++;
-        } catch (error) {
-          this.logger.error(
-            {
-              holdingId: existing.id,
-              error: error instanceof Error ? error.message : String(error),
-            },
-            'Failed to zero out stale holding'
-          );
+        }
+      } else {
+        for (const [tokenId, existing] of existingByTokenId) {
+          if (seenTokenIds.has(tokenId)) continue;
+          if (existing.balance === '0') continue;
+          try {
+            await this.holdingService.updateHoldingBalanceWithEvent(
+              { holdingId: existing.id, balance: '0', eventContext },
+              tx
+            );
+            removed++;
+          } catch (error) {
+            this.logger.error(
+              {
+                holdingId: existing.id,
+                error: error instanceof Error ? error.message : String(error),
+              },
+              'Failed to zero out stale holding'
+            );
+          }
         }
       }
     }

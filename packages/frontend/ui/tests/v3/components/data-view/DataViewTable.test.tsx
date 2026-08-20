@@ -1,8 +1,38 @@
 import { describe, expect, test } from 'bun:test';
+import { addUiLocale } from '@scani/ui/i18n';
 import { DataViewTable } from '@scani/ui/v3/components/data-view/DataViewTable';
 import type { V3ColumnDef } from '@scani/ui/v3/lib/data-view';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { StaticRouter } from 'react-router-dom/server';
+
+// The fixtures' own labels, registered the way a host registers its own
+// (SC-262). The assertions below are unchanged English — that is what shows
+// the extraction moved no copy.
+addUiLocale('en', {
+  ui: {
+    dataView: {
+      test: {
+        account: 'Account',
+        all69Holdings: 'All 69 holdings',
+        connectAnExchangeAndYour: 'Connect an exchange and your positions appear here.',
+        everythingWeHave: 'Everything we have',
+        group: 'Group',
+        holding: 'Holding',
+        institution: 'Institution',
+        noHoldingsYet: 'No holdings yet',
+        none: 'None',
+        symbol: 'Symbol',
+        these12Holdings: 'These 12 holdings',
+        this1mWindow: 'This 1M window',
+        this1wWindow: 'This 1W window',
+        this3mWindow: 'This 3M window',
+        type: 'Type',
+        value: 'Value',
+        vault: 'vault',
+      },
+    },
+  },
+});
 
 interface Holding {
   id: string;
@@ -16,8 +46,20 @@ const DATA: Holding[] = [
 ];
 
 const COLUMNS: V3ColumnDef<Holding>[] = [
-  { key: 'symbol', header: 'Holding', sortable: true, width: 'w-[40%]', render: (i) => i.symbol },
-  { key: 'value', header: 'Value', sortable: true, numeric: true, render: (i) => i.value },
+  {
+    key: 'symbol',
+    headerKey: 'ui.dataView.test.holding',
+    sortable: true,
+    width: 'w-[40%]',
+    render: (i) => i.symbol,
+  },
+  {
+    key: 'value',
+    headerKey: 'ui.dataView.test.value',
+    sortable: true,
+    numeric: true,
+    render: (i) => i.value,
+  },
 ];
 
 function render(overrides: Partial<Parameters<typeof DataViewTable<Holding>>[0]> = {}) {
@@ -83,7 +125,9 @@ describe('DataViewTable — sorting', () => {
 
   test('a non-sortable header is not a button', () => {
     const html = render({
-      columns: [{ key: 'symbol', header: 'Holding', render: (i: Holding) => i.symbol }],
+      columns: [
+        { key: 'symbol', headerKey: 'ui.dataView.test.holding', render: (i: Holding) => i.symbol },
+      ],
     });
     expect(html).not.toInclude('<button');
   });

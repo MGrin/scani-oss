@@ -1,5 +1,5 @@
-import { zodResolver } from '@hookform/resolvers/zod';
-import { emailSchema, safeRedirectPath } from '@scani/shared';
+import { safeRedirectPath } from '@scani/shared/utils/safe-redirect';
+import { emailErrorReason } from '@scani/shared/validators/email';
 import { MagicCodeInput } from '@scani/ui/components/MagicCodeInput';
 import { ScaniLogo } from '@scani/ui/components/ScaniLogo';
 import { isPWA } from '@scani/ui/lib/pwa-utils';
@@ -8,19 +8,48 @@ import { Button } from '@scani/ui/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@scani/ui/ui/card';
 import { Input } from '@scani/ui/ui/input';
 import { Label } from '@scani/ui/ui/label';
+import type { TFunction } from 'i18next';
 import { CloudOff, Loader2, Mail } from 'lucide-react';
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
-import { useForm } from 'react-hook-form';
+import { type ResolverResult, useForm } from 'react-hook-form';
+import { useTranslation } from 'react-i18next';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { z } from 'zod';
 import { useAuth } from '@/contexts/AuthContext';
 import { useOnlineStatus } from '@/hooks/useOnlineStatus';
 
-const authSchema = z.object({
-  email: emailSchema,
-});
+interface AuthFormData {
+  email: string;
+}
 
-type AuthFormData = z.infer<typeof authSchema>;
+/**
+ * One field, validated without zod.
+ *
+ * `zodResolver(z.object({ email: emailSchema }))` read better and cost 13 KB
+ * brotli in the bundle every cold visitor waits for, because `@scani/shared`'s
+ * validators were the eager bundle's only route to zod (SC-169). The rule
+ * itself has not moved — `emailError` is what `emailSchema` is now built from,
+ * so the form and the schema cannot disagree.
+ *
+ * Trimming here rather than in `sendTo`: the zod schema trimmed before handing
+ * the value on, and an address with a trailing space pasted from a mail client
+ * is common enough that dropping that would be a regression nobody attributed
+ * to this change.
+ *
+ * It takes the REASON and names it here (SC-405). `emailError` returns English,
+ * because `@scani/shared` is the contract the api and worker import and has no
+ * `t()` to reach — so the one field on this screen answered a Russian reader in
+ * English while everything around it was translated.
+ */
+function resolveAuthForm(values: AuthFormData, t: TFunction): ResolverResult<AuthFormData> {
+  const reason = emailErrorReason(values.email ?? '');
+  if (reason) {
+    const message = t(
+      reason === 'required' ? 'auth.signIn.emailRequired' : 'auth.signIn.emailInvalid'
+    );
+    return { values: {}, errors: { email: { type: 'validate', message } } };
+  }
+  return { values: { email: values.email.trim() }, errors: {} };
+}
 
 /**
  * Sign-in, and the app's most exposed screen (SC-78 §1).
@@ -33,6 +62,7 @@ type AuthFormData = z.infer<typeof authSchema>;
  * offline is retried on its own the moment the network returns.
  */
 export function Auth() {
+  const { t } = useTranslation();
   const { user, loading, authenticate, verifyCode } = useAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -62,9 +92,6 @@ export function Auth() {
   // Detect if running in PWA
   const runningAsPWA = isPWA();
 
-  // Log for debugging
-  console.log('[Auth Page] Running as PWA:', runningAsPWA);
-
   const emailId = useId();
 
   const {
@@ -72,7 +99,7 @@ export function Auth() {
     handleSubmit,
     formState: { errors },
   } = useForm<AuthFormData>({
-    resolver: zodResolver(authSchema),
+    resolver: useCallback((values: AuthFormData) => resolveAuthForm(values, t), [t]),
   });
 
   const sendTo = useCallback(
@@ -150,9 +177,9 @@ export function Auth() {
             </div>
             <Card className="w-full">
               <CardHeader className="space-y-1">
-                <CardTitle className="text-2xl text-center">Enter verification code</CardTitle>
+                <CardTitle className="text-2xl text-center">{t('auth.code.title')}</CardTitle>
                 <CardDescription className="text-center">
-                  We've sent a 6-digit code to {userEmail}
+                  {t('auth.code.sentTo', { email: userEmail })}
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -171,7 +198,7 @@ export function Auth() {
                   }}
                   className="w-full mt-4"
                 >
-                  Use a different email
+                  {t('auth.code.differentEmail')}
                 </Button>
               </CardContent>
             </Card>
@@ -198,17 +225,14 @@ export function Auth() {
           </div>
           <Card className="w-full">
             <CardHeader className="space-y-1">
-              <CardTitle className="text-2xl text-center">Check your email</CardTitle>
+              <CardTitle className="text-2xl text-center">{t('auth.linkSent.title')}</CardTitle>
               <CardDescription className="text-center">
-                We've sent you a magic link to sign in
+                {t('auth.linkSent.subtitle')}
               </CardDescription>
             </CardHeader>
             <CardContent className="text-center space-y-4">
               <Mail className="mx-auto h-12 w-12 text-blue-600" />
-              <p className="text-sm text-muted-foreground">
-                Click the link in your email to access your account. If this is your first time,
-                we'll create an account for you automatically.
-              </p>
+              <p className="text-sm text-muted-foreground">{t('auth.linkSent.body')}</p>
               <Button
                 type="button"
                 variant="outline"
@@ -218,7 +242,7 @@ export function Auth() {
                 }}
                 className="w-full"
               >
-                Send another email
+                {t('auth.linkSent.resend')}
               </Button>
             </CardContent>
           </Card>
@@ -244,10 +268,8 @@ export function Auth() {
         </div>
         <Card className="w-full">
           <CardHeader className="space-y-1">
-            <CardTitle className="text-2xl text-center">Welcome</CardTitle>
-            <CardDescription className="text-center">
-              Enter your email to sign in or create an account
-            </CardDescription>
+            <CardTitle className="text-2xl text-center">{t('auth.signIn.title')}</CardTitle>
+            <CardDescription className="text-center">{t('auth.signIn.subtitle')}</CardDescription>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
@@ -258,9 +280,7 @@ export function Auth() {
                 <Alert>
                   <AlertDescription className="flex items-start gap-2">
                     <CloudOff className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-                    <span>
-                      You’re offline. We’ll send your code as soon as the connection is back.
-                    </span>
+                    <span>{t('auth.signIn.offline')}</span>
                   </AlertDescription>
                 </Alert>
               )}
@@ -272,11 +292,11 @@ export function Auth() {
               )}
 
               <div className="space-y-2">
-                <Label htmlFor={emailId}>Email</Label>
+                <Label htmlFor={emailId}>{t('auth.signIn.emailLabel')}</Label>
                 <Input
                   id={emailId}
                   type="email"
-                  placeholder="Enter your email address"
+                  placeholder={t('auth.signIn.emailPlaceholder')}
                   {...register('email')}
                   disabled={isLoading}
                 />
@@ -285,23 +305,15 @@ export function Auth() {
 
               <Button type="submit" className="w-full" disabled={isLoading}>
                 {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Continue with Email
+                {t('auth.signIn.submit')}
               </Button>
 
               <div className="text-center text-sm text-muted-foreground">
                 <p>
-                  {runningAsPWA
-                    ? "We'll send you a 6-digit code to sign in."
-                    : "We'll send you a secure magic link to sign in."}{' '}
-                  <br />
-                  New to Scani? Your account will be created automatically.
+                  {runningAsPWA ? t('auth.signIn.hintCode') : t('auth.signIn.hintLink')} <br />
+                  {t('auth.signIn.newAccount')}
                 </p>
               </div>
-              {import.meta.env.DEV && (
-                <div className="text-center text-xs text-muted-foreground mt-2">
-                  Mode: {runningAsPWA ? 'PWA (Code)' : 'Browser (Link)'}
-                </div>
-              )}
             </form>
           </CardContent>
         </Card>

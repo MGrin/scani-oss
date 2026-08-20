@@ -82,10 +82,37 @@ export async function sha256Hex(value: string): Promise<string> {
 }
 
 /**
+ * Prefix for every cloud API key we mint.
+ *
+ * Deliberately NOT `sk_live_`, which is Stripe's secret-key prefix and the
+ * most widely scanned secret shape there is. Under it every Scani key read
+ * as a Stripe credential to tooling neither we nor our customers control:
+ * a customer pasting theirs anywhere scanned had it quarantined as Stripe's,
+ * a leaked Scani key sent whoever found it to a Stripe account that had
+ * nothing to do with us, our own public repo tripped push protection on any
+ * realistic key in a fixture, and — the direction nobody expects — a real
+ * Stripe key pasted into a Scani ticket read as one of ours and got none of
+ * the urgency a live payment credential is owed (SC-189).
+ *
+ * A prefix exists so a found key names its issuer. This one does.
+ *
+ * Changing it needs no migration and no dual-accept window: `verifyCloudApiKey`
+ * hashes the whole presented token and looks up `hashed_key`, and
+ * `validateBearerToken` only checks the `bearer ` scheme. Nothing on the auth
+ * path reads these bytes, so keys minted under the old prefix keep working
+ * indefinitely and simply carry their original `key_prefix` for display.
+ */
+export const CLOUD_API_KEY_PREFIX = 'scani_sk_';
+
+// Hex characters shown after the prefix in the console's key list. Enough to
+// tell two keys apart; far short of the 32 that would make one guessable.
+const KEY_PREFIX_HEX_CHARS = 4;
+
+/**
  * Generate a new raw token + its SHA-256 hash + a human-readable prefix.
- * Raw token format: `sk_live_` + 32 hex chars (128 bits entropy).
- * Callers (the `keys.create` tRPC mutation) show the raw token to the user
- * exactly once and persist only the hash.
+ * Raw token format: {@link CLOUD_API_KEY_PREFIX} + 32 hex chars (128 bits
+ * entropy). Callers (the `keys.create` tRPC mutation) show the raw token to
+ * the user exactly once and persist only the hash.
  */
 export async function generateCloudApiKey(): Promise<{
   rawToken: string;
@@ -97,8 +124,8 @@ export async function generateCloudApiKey(): Promise<{
   const hex = Array.from(bytes)
     .map((b) => b.toString(16).padStart(2, '0'))
     .join('');
-  const rawToken = `sk_live_${hex}`;
+  const rawToken = `${CLOUD_API_KEY_PREFIX}${hex}`;
   const hashedKey = await sha256Hex(rawToken);
-  const keyPrefix = rawToken.slice(0, 12);
+  const keyPrefix = rawToken.slice(0, CLOUD_API_KEY_PREFIX.length + KEY_PREFIX_HEX_CHARS);
   return { rawToken, hashedKey, keyPrefix };
 }

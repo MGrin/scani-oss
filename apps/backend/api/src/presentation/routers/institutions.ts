@@ -25,8 +25,8 @@ const EMPTY_OG: OGData = { title: '', description: '', siteName: '', image: '', 
 // In-memory LRU-ish cache for OpenGraph metadata. Successful results are
 // cached for an hour (OG data rarely changes); failures / empty results
 // only for 5 minutes so we don't hide transient network or upstream
-// issues for too long. Cache is process-local — fine when the api runs
-// as a single replica; scale via Redis if you horizontally scale the api.
+// issues for too long. Cache is process-local — fine for our
+// single-machine backend (fly.toml: max_machines_running = 1).
 interface OGCacheEntry {
   data: OGData;
   expiresAt: number;

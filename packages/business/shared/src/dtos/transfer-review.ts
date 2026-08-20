@@ -30,7 +30,7 @@ export const TRANSFER_MATCH_WINDOW_LABEL = '30-minute';
 export const TRANSFER_QTY_EPSILON = 0.01;
 
 /**
- * What a person can say about an unpaired outflow. Three answers, no snooze:
+ * What a person can say about an unpaired outflow. Four answers, no snooze:
  * a queue that can be deferred is a queue that is never emptied, and the whole
  * value here is that the count reaching zero means something.
  *
@@ -38,6 +38,11 @@ export const TRANSFER_QTY_EPSILON = 0.01;
  *   `transfer_group_id` on both legs, so the lots carry across accounts intact
  *   instead of being retired here and re-opened at market value over there.
  *   This is the answer that actually improves cost basis.
+ * - `internal` — "it moved to that holding of mine, and nothing imported the
+ *   arrival". Same destination as `paired` and the same shared
+ *   `transfer_group_id`; the difference is that there is no inflow row to
+ *   point at, so this one **writes it** (SC-187). See
+ *   `TRANSFER_REVIEW_CREATED_SOURCE`.
  * - `left_control` — it really did leave the portfolio: sold off-platform,
  *   gifted, spent. Realizing at market is correct for this row — the change is
  *   that somebody chose it.
@@ -45,10 +50,84 @@ export const TRANSFER_QTY_EPSILON = 0.01;
  *   cold wallet, an exchange we have no key for). Not a disposal, so nothing
  *   is realized.
  *
+ * `internal` exists because the three above assume the destination is either
+ * *pairable* or *outside Scani*, and the reported case is neither: money moved
+ * to a Revolut account the user keeps up to date by hand. Nothing imports for
+ * it, so the matcher was never failing to find the counterpart — there was
+ * nothing to find. Every other answer is false about that row, and one of them
+ * (`left_control`) books a gain nobody made.
+ *
  * There is deliberately no "not sure" value. Not answering is already
  * representable — it is `NULL` — and it is the state the row is in.
  */
-export const TRANSFER_REVIEW_DECISIONS = ['paired', 'left_control', 'untracked'] as const;
+export const TRANSFER_REVIEW_DECISIONS = [
+  'paired',
+  'internal',
+  'left_control',
+  'untracked',
+] as const;
+
+/**
+ * The `holding_transactions.kind` values the review queue asks the question
+ * about — and therefore the only kinds an answer is ever owed for.
+ *
+ * The definition lives here rather than in `@scani/domain/lib/transfer-matching`
+ * (which now re-exports it as `OUTFLOW_KINDS`) because the *realized ledger*
+ * needs it, and the ledger reads it twice: once on the server, deciding what a
+ * row's `answerSource` is, and once in the browser, deciding whether to say
+ * anything about it. A second list in the frontend is the drift this file
+ * exists to prevent — `transfer_review` semantics have one home.
+ *
+ * A `sell` or a `swap_out` is a disposal on its kind alone: nobody is asked
+ * whether it left the portfolio, because the transaction already says so. That
+ * is why they are absent, and it is the same reason they never appear in the
+ * queue.
+ */
+export const ANSWERABLE_OUTFLOW_KINDS = ['withdraw', 'transfer_out'] as const;
+
+/**
+ * Is a `transfer_review` answer owed about this kind at all? (SC-402)
+ *
+ * The predicate rather than the set at each call site, because the three
+ * readers that need it phrase the same test three different ways — an
+ * `inArray` in SQL, an `includes` on a widened tuple, a negation in a repair —
+ * and the one that got written as neither is how this became a bug:
+ * `disposalAnswerSourceOf` read `transfer_review` with no kind test, so a
+ * `swap_out` that still carried a stale answer was stamped `unattributed` and
+ * the realized ledger rendered *"Recorded as having left your portfolio, so
+ * this gain was booked. There is no record of anyone answering it."* Both
+ * halves are false about a swap: the gain was booked because it IS a swap, and
+ * no answer is owed.
+ */
+export function answerIsOwedFor(kind: string): boolean {
+  return (ANSWERABLE_OUTFLOW_KINDS as readonly string[]).includes(kind);
+}
+
+/**
+ * The two answers that link the outflow to a holding via `transfer_group_id`.
+ *
+ * They share the column, and the column is singular — which is why at most one
+ * portion of a split may carry either of them. See rule 3 on
+ * `transferReviewSplitSchema`.
+ */
+export const TRANSFER_LINKING_DECISIONS = ['paired', 'internal'] as const;
+
+export function isLinkingDecision(decision: TransferReviewDecision): boolean {
+  return (TRANSFER_LINKING_DECISIONS as readonly string[]).includes(decision);
+}
+
+/**
+ * `holding_transactions.source` on the inflow an `internal` answer writes, and
+ * the marker that makes the answer reversible (SC-187).
+ *
+ * Reopening an `internal` answer must delete the row it created, or the next
+ * answer double-counts the arrival. The created row is found by
+ * `(source, external_id)` where `external_id` is the **outflow's transaction
+ * id** — a natural key that survives the group id being cleared, that makes
+ * the write idempotent under the `(holding_id, source, external_id)` unique
+ * constraint, and that says in the data itself which question produced it.
+ */
+export const TRANSFER_REVIEW_CREATED_SOURCE = 'transfer-review';
 
 export const transferReviewDecisionSchema = z.enum(TRANSFER_REVIEW_DECISIONS);
 
@@ -70,11 +149,57 @@ export const TRANSFER_REVIEW_SPLIT = 'split';
 /**
  * The most portions one outflow can be divided into.
  *
- * Three, because there are three answers and a portion per answer is the whole
- * of what can be said — two portions carrying the same decision are one
- * portion written twice, and `transferReviewSplitSchema` rejects them.
+ * One per answer, because a portion per answer is the whole of what can be
+ * said — two portions carrying the same decision are one portion written
+ * twice, and `transferReviewSplitSchema` rejects them. The *reachable* maximum
+ * is one lower than this, since `paired` and `internal` both need the single
+ * `transfer_group_id` column and only one of them can have it.
  */
-export const MAX_TRANSFER_REVIEW_PORTIONS = 3;
+export const MAX_TRANSFER_REVIEW_PORTIONS = TRANSFER_REVIEW_DECISIONS.length;
+
+/**
+ * Where an `internal` answer says the money went (SC-187).
+ *
+ * The destination is a **holding**, not an account, and that is not a detail.
+ * Production has one Airwallex account carrying two USD holdings — one
+ * imported, one manual, balances 1,201.50 and 6,217.15 — and a withdrawal that
+ * moved between them. An account-level destination cannot express that: both
+ * candidates are "Airwallex", same currency, and the reader has no way to say
+ * which.
+ *
+ * `holdingId` is null for the one case a holding id cannot express: the
+ * account tracks no position in this token yet, and answering creates one. The
+ * account is always named, so the destination is never ambiguous either way.
+ */
+export const transferDestinationRefSchema = z.object({
+  accountId: z.string().uuid(),
+  /** `null` = create a holding for this token in that account. */
+  holdingId: z.string().uuid().nullable(),
+});
+
+export type TransferDestinationRef = z.infer<typeof transferDestinationRefSchema>;
+
+/**
+ * A destination as the picker shows it.
+ *
+ * `source` and `balance` are on the row because they are how a person tells
+ * two same-token holdings in the same account apart — the name and the symbol
+ * are identical, and "6,217.15, manual" versus "1,201.50, imported" is the
+ * whole of the distinction.
+ */
+export const transferDestinationSchema = z.object({
+  accountId: z.string().uuid(),
+  holdingId: z.string().uuid().nullable(),
+  accountName: z.string(),
+  institutionName: z.string().nullable(),
+  /** `holdings.source` — 'manual', 'import_airwallex', 'blockchain', … Null
+   *  when no holding exists yet. */
+  source: z.string().nullable(),
+  /** Current balance as a Decimal string, or null when no holding exists. */
+  balance: z.string().nullable(),
+});
+
+export type TransferDestination = z.infer<typeof transferDestinationSchema>;
 
 /**
  * One share of an outflow, and what happened to it.
@@ -95,6 +220,8 @@ export const transferReviewSplitPortionSchema = z.object({
   }),
   /** Required on the `paired` portion, meaningless on the others. */
   matchTransactionId: z.string().uuid().optional(),
+  /** Required on the `internal` portion, meaningless on the others. */
+  destination: transferDestinationRefSchema.optional(),
 });
 
 export type TransferReviewSplitPortion = z.infer<typeof transferReviewSplitPortionSchema>;
@@ -110,18 +237,28 @@ export type TransferReviewSplitPortion = z.infer<typeof transferReviewSplitPorti
  *    written as one, or the same state has two representations and every
  *    reader has to handle both.
  * 2. **Each decision at most once.** See `MAX_TRANSFER_REVIEW_PORTIONS`.
- * 3. **At most one `paired` portion**, and it needs its deposit. This is a
- *    real limit, not an oversight: pairing writes a shared
- *    `transfer_group_id`, that is one column on the outflow row, and
- *    `buildTransferComponents` walks it to decide which holdings share a lot
- *    ledger. A second pairing would need a second group id in a place the
- *    component builder does not look, and the destination holding would then
- *    be walked on its own and open a fresh market-value lot — the exact defect
- *    SC-150 closed. A withdrawal spread across two *tracked* destinations is
- *    therefore still one question this cannot answer; it is rare next to the
- *    reported shape (one tracked or untracked destination plus a fee or a
- *    disposal) and it is honest to refuse it rather than half-record it.
- * 4. **The sum is checked against the transaction**, which this schema cannot
+ * 3. **At most one LINKING portion** — one `paired` or one `internal`, never
+ *    both and never two of either. This is a real limit, not an oversight:
+ *    linking writes a shared `transfer_group_id`, that is one column on the
+ *    outflow row, and `buildTransferComponents` walks it to decide which
+ *    holdings share a lot ledger. A second link would need a second group id
+ *    in a place the component builder does not look, and the destination
+ *    holding would then be walked on its own and open a fresh market-value lot
+ *    — the exact defect SC-150 closed. A withdrawal spread across two
+ *    *tracked* destinations is therefore still one question this cannot
+ *    answer; it is rare next to the reported shape (one tracked destination
+ *    plus a fee or a disposal) and it is honest to refuse it rather than
+ *    half-record it.
+ *
+ *    SC-187 widened what "linking" covers without widening how many there can
+ *    be, which is why the rule reads on the pair of decisions rather than on
+ *    `paired` alone. `internal` is the same claim reached differently — the
+ *    deposit is written rather than found — and it consumes the same column.
+ * 4. **A linking portion carries its target**: `paired` its deposit,
+ *    `internal` its destination. Without one there is nothing to write the
+ *    group id on, so the portion is not a smaller version of a valid answer —
+ *    it is an unwritable one.
+ * 5. **The sum is checked against the transaction**, which this schema cannot
  *    see. `splitSumMatches` does it, at the API boundary and in the form.
  */
 export const transferReviewSplitSchema = z
@@ -140,12 +277,29 @@ export const transferReviewSplitSchema = z
       }
       seen.add(portion.decision);
     }
-    const paired = portions.filter((p) => p.decision === 'paired');
-    if (paired.length > 0 && !paired[0]?.matchTransactionId) {
+    const linking = portions.filter((p) => isLinkingDecision(p.decision));
+    if (linking.length > 1) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          'Only one part of a transfer can move to somewhere Scani tracks — the rest has to be a disposal or untracked',
+      });
+      return;
+    }
+    const pairedIndex = portions.findIndex((p) => p.decision === 'paired');
+    if (pairedIndex >= 0 && !portions[pairedIndex]?.matchTransactionId) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message: 'Pairing part of a transfer requires the matching deposit',
-        path: [portions.findIndex((p) => p.decision === 'paired'), 'matchTransactionId'],
+        path: [pairedIndex, 'matchTransactionId'],
+      });
+    }
+    const internalIndex = portions.findIndex((p) => p.decision === 'internal');
+    if (internalIndex >= 0 && !portions[internalIndex]?.destination) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Moving part of a transfer requires the holding it moved to',
+        path: [internalIndex, 'destination'],
       });
     }
   });
@@ -168,6 +322,186 @@ export function splitSumMatches(split: TransferReviewSplit, quantity: string): b
 /** The portions' sum, unsigned. Exported for the form's "left to allocate". */
 export function splitTotal(split: readonly TransferReviewSplitPortion[]): Decimal {
   return split.reduce((sum, p) => sum.add(new Decimal(p.quantity).abs()), new Decimal(0));
+}
+
+/**
+ * Where an answer came from (SC-241).
+ *
+ * `user` is a positive claim and is provable: `transfer_reviewed_at` is written
+ * in exactly two places, both inside `TransferReviewService`, both behind an
+ * authenticated session, and the column arrived in the same commit as the queue
+ * itself — so a stamped row was answered by the caller, in the queue, on that
+ * date. There has never been a version that answered without stamping.
+ *
+ * `unattributed` is the contrapositive and nothing more: **no stamp means the
+ * answer was not given through the queue.** It does not say who gave it, and
+ * naming these `import` or `machine` would claim a provenance the data does not
+ * carry.
+ *
+ * **What they actually are, measured rather than inferred (SC-324).** This
+ * paragraph used to say they were "inserted with `transfer_review` already
+ * populated by an import that no longer exists in the tree", and that is
+ * disprovable: on 2026-08-17 production held 560 unattributed rows against 1
+ * attributed one, 535 of the 560 created on 2026-05-17 with `updated_at =
+ * created_at`, and the column itself did not exist until migration 0032 landed
+ * on 2026-08-14. Nothing can have been inserted with a column that was three
+ * months away. All 535 share one transaction id, committed between 14:31:19Z
+ * and 15:00:22Z on 2026-08-14 — bracketed by the `xmin` of neighbouring rows,
+ * since the app's own write path sets `updated_at` alongside the answer and
+ * these rows' `updated_at` never moved. So: **one raw `UPDATE`, on the day the
+ * queue shipped, touching neither timestamp.** Who ran it and on what basis is
+ * not in the database, which is the whole of what `unattributed` claims.
+ *
+ * It is a field rather than a `reviewedAt === null` check at each reader
+ * because a nullable timestamp is the exact shape catalogued in
+ * `docs/technical/2026-08-15_absence-and-refusal.md`: one value carrying both
+ * "nobody answered this" and "we did not record when". The UI dropped it
+ * silently for precisely that reason.
+ *
+ * **`repair` is the third, and it exists because two were not enough (SC-350).**
+ * Ten of mgrin's own `left_control` answers sent money to addresses in his own
+ * `user_wallets`, booking 10,500 of disposals on money that never left the
+ * portfolio; he asked for them to be corrected in production. A correction made
+ * ON a user's behalf is neither of the two values above, and both available ways
+ * of recording it are false:
+ *
+ * - **Stamping `transfer_reviewed_at`** would read as `user` — which this file
+ *   documents as provable and means "the caller answered it, in the queue, on
+ *   that date". He did not; he answered the opposite. It would also erase the
+ *   only evidence the ten were ever wrong, leaving the repair indistinguishable
+ *   from his own judgement. That is SC-302's 560-row failure exactly: a write
+ *   with no attribution, and four investigations to work out who did it.
+ * - **Leaving it NULL** would read as `unattributed` — "not given through the
+ *   queue, and the database does not say by whom". Here the database can say:
+ *   this task, this reasoning, this commit. Filing a deliberate correction next
+ *   to the raw UPDATE would discard the one distinction the vocabulary is for.
+ *
+ * So provenance gets its own column rather than being inferred from a
+ * timestamp's nullness — which is the same absence-vs-refusal argument the
+ * paragraph above already makes, applied one value further. `transfer_reviewed_at`
+ * is still written for a repair, because it is not in dispute: it records WHEN
+ * the correction happened, and only `answerSource` claims WHO. The invariant
+ * below therefore still holds — `reviewedAt` is null exactly when the source is
+ * `unattributed`.
+ *
+ * A `repair` row is a real answer in every other respect: it leaves the queue,
+ * the matcher will not overrule it, and the user can reopen it like any other.
+ * The surface says Scani made it and why, so the reader can disagree.
+ *
+ * **`rule` is the fourth, and it is the only one that is not a person**
+ * (SC-380). mgrin marked a destination *"always a disposal"* and the queue,
+ * next time it was read, wrote `left_control` on every unanswered transfer to
+ * it. That answer is his in the sense that he authorized the standing sentence
+ * behind it, and it is emphatically NOT his in the sense the other three
+ * values are about: he did not look at this row, and the measurement he
+ * accepted when he asked for it says roughly one in twenty-three of them will
+ * be wrong — always in the direction of a gain he did not make (SC-345).
+ *
+ * So it cannot be recorded as `user`, which this file documents as provable
+ * and means "the caller answered THIS transfer, in the queue, on that date".
+ * It cannot be `repair` either: a repair is Scani correcting a specific answer
+ * it can argue about, and this is a rule firing on a row nobody has read. And
+ * it must not be `unattributed`, because the provenance here is completely
+ * known — there is a rule row, with the user's own note on it, named by
+ * `holding_transactions.transfer_review_rule_id`.
+ *
+ * `transfer_reviewed_at` IS stamped for a rule answer, exactly as it is for a
+ * repair: the column records WHEN the answer was written and only
+ * `answerSource` claims WHO. The invariant that `reviewedAt` is null exactly
+ * when the source is `unattributed` therefore still holds.
+ */
+export const ANSWER_SOURCES = ['user', 'rule', 'repair', 'unattributed'] as const;
+
+export type AnswerSource = (typeof ANSWER_SOURCES)[number];
+
+/**
+ * The value `holding_transactions.transfer_review_source` carries when a
+ * standing rule wrote the answer (SC-380).
+ *
+ * A named constant because it is read as three different claims in three
+ * places and they have to be the same string: the answered list attributes the
+ * answer to a rule, the write gate refuses to touch a row that already carries
+ * ANY source, and the per-row undo tests for it to decide whether to leave the
+ * exemption marker behind.
+ */
+export const RULE_ANSWER_SOURCE = 'rule';
+
+/**
+ * The one answer a rule is allowed to assert, as a value rather than a literal
+ * repeated at each writer (SC-380).
+ *
+ * It is `left_control` and nothing else, because `left_control` is the only
+ * decision `isConfirmedDisposal` books — and being able to book a disposal
+ * unattended is the entire thing mgrin authorized and the entire risk he
+ * accepted. A rule that could assert `paired` or `internal` would need a
+ * destination it has no way to know; one that could assert `untracked` would
+ * be a second, quieter way to say `not_a_disposal`, which already exists and
+ * writes nothing.
+ *
+ * Deliberately NOT a new member of `TRANSFER_REVIEW_DECISIONS`. Adding one
+ * there would silently raise `MAX_TRANSFER_REVIEW_PORTIONS`, which is defined
+ * as that list's length, and move the split cap for reasons having nothing to
+ * do with splits.
+ */
+export const RULE_ASSERTED_DECISION: TransferReviewDecision & BulkTransferDecision = 'left_control';
+
+/**
+ * The sources a *writer* may claim. `unattributed` is missing on purpose: it is
+ * a conclusion drawn from the absence of a record, so nothing can assert it.
+ */
+export const ANSWER_ATTRIBUTIONS = ['user', 'repair'] as const;
+
+export type AnswerAttribution = (typeof ANSWER_ATTRIBUTIONS)[number];
+
+/**
+ * `answerSource` from the two columns that carry it.
+ *
+ * One function because three readers need the same answer — the answered list,
+ * the realized ledger, and any repair that has to check its own work — and
+ * three copies of a fallback chain is how the middle value gets forgotten in
+ * one of them.
+ */
+export function answerSourceOf(row: {
+  transferReviewSource: string | null;
+  transferReviewedAt: Date | null;
+}): AnswerSource {
+  if (row.transferReviewSource === RULE_ANSWER_SOURCE) return 'rule';
+  if (row.transferReviewSource === 'repair') return 'repair';
+  if (row.transferReviewSource === 'user') return 'user';
+  return row.transferReviewedAt === null ? 'unattributed' : 'user';
+}
+
+/**
+ * Who took the answer OFF this row, when it carries none (SC-378).
+ *
+ * The state it reads is `transfer_review IS NULL AND transfer_review_source IS
+ * NOT NULL`, which no ordinary path produces: `resolve` and `resolveSplit`
+ * always write a decision alongside the source, and `reopen` — the user
+ * withdrawing their own answer — nulls both. So a source surviving a null
+ * decision means something cleared the answer and left its name.
+ *
+ * A function rather than the comparison inlined at the call site, because the
+ * rule is a conjunction over two columns and the half that gets forgotten is
+ * always the first one: reading the source alone would report `repair` on
+ * every row a repair has ever *answered*.
+ *
+ * **`'user'` became reachable in SC-380 and means one specific thing: the
+ * reader took back an answer a RULE gave.** `reopen` leaves the source null
+ * when it withdraws an answer the user themselves wrote — the row is then
+ * exactly as unanswered as one nobody ever answered — and leaves `'user'` when
+ * it withdraws a rule's, because that is the marker the rule engine's write
+ * gate reads to never answer this row again. So the value is not decoration:
+ * it IS the per-row undo, and a reader seeing it is being told why the
+ * standing rule about this destination stopped applying here.
+ */
+export function answerWithdrawnBy(row: {
+  transferReview: string | null;
+  transferReviewSource: string | null;
+}): AnswerAttribution | null {
+  if (row.transferReview !== null) return null;
+  return (ANSWER_ATTRIBUTIONS as readonly string[]).includes(row.transferReviewSource ?? '')
+    ? (row.transferReviewSource as AnswerAttribution)
+    : null;
 }
 
 /**
@@ -194,7 +528,24 @@ export const answeredTransferReviewSchema = z.object({
   decision: z.string(),
   /** Present only on a split row. */
   split: transferReviewSplitSchema.nullable(),
+  /** When the caller answered it. Null exactly when `answerSource` is
+   *  `unattributed` — read that instead of testing this for null. */
   reviewedAt: z.string().nullable(),
+  answerSource: z.enum(ANSWER_SOURCES),
+  /**
+   * The note on the rule that answered it — present exactly when
+   * `answerSource` is `rule` (SC-380).
+   *
+   * The whole reason `transfer_review_rule_id` is a column. "Answered by a
+   * rule" is a provenance; "answered by the rule you wrote saying this is your
+   * Bybit deposit address" is the thing a reader can actually check three
+   * years later, which is the standard mgrin set when he said of 560 answered
+   * transfers that he could not remember them anyway.
+   *
+   * Survives revocation, because a revoked rule is soft-deleted on purpose: the
+   * row it answered is still owed an explanation.
+   */
+  ruleNote: z.string().nullable(),
 });
 
 export type AnsweredTransferReview = z.infer<typeof answeredTransferReviewSchema>;
@@ -257,6 +608,14 @@ export const transferCandidateSchema = z.object({
   /** Where it landed, in the words the rest of the app uses. */
   accountName: z.string(),
   institutionName: z.string().nullable(),
+  /**
+   * The candidate's OWN symbol, which is not always the outflow's (SC-336).
+   * A bridge's two legs are two token rows — USDC on mainnet and USDC on Base
+   * — and until this field existed the surface had only the outflow's symbol
+   * to label a candidate with, so a cross-chain arrival would have been
+   * described in the words of the thing it is not.
+   */
+  tokenSymbol: z.string(),
   kind: z.string(),
   /** Unsigned, as a Decimal string — the row's own precision, not a float. */
   quantity: z.string(),
@@ -278,6 +637,227 @@ export const transferCandidateSchema = z.object({
 
 export type TransferCandidate = z.infer<typeof transferCandidateSchema>;
 
+/**
+ * What a standing rule about a counterparty is allowed to say (SC-375, third
+ * verdict added by SC-380).
+ *
+ * mgrin asked for "a rule about all the transfers to that address", and when
+ * the open question was put to him — may a rule ever answer `left_control`
+ * unattended? — he chose *"auto-answer, but only on addresses I explicitly
+ * mark"*. The first two values below are the default half of that answer and
+ * were the whole of SC-375: **neither writes a `transfer_review`.** The third
+ * is the marking, and it is the only one that writes anything at all.
+ *
+ * - `not_a_disposal` — "stop asking me about this address". The row leaves the
+ *   pending queue and appears in the hidden list, naming the rule that took it.
+ * - `ask_me` — "keep asking, but tell me what this address is". The row stays
+ *   in the queue wearing the note, so the same question is asked about an
+ *   address the reader can now recognise.
+ * - `always_a_disposal` — **the marking** (SC-380). Every unanswered transfer
+ *   to this destination is answered `left_control`, attributed to the rule
+ *   rather than to the reader, and left individually undoable. The cost is
+ *   measured rather than guessed: SC-345 put an address rule at right 111
+ *   times in 116 at the disposal-or-not level, and all five errors asserted a
+ *   disposal on money that had STAYED — so the mistake runs only toward a gain
+ *   he did not make. He took that trade for addresses he marks himself.
+ *
+ * For the first two the safety property is structural rather than careful. An
+ * outflow carrying no review realizes nothing — `isConfirmedDisposal` is
+ * `left_control` alone — so those rules change exactly one thing, whether the
+ * question is asked, and change no number in the ledger. That is what makes
+ * them safe to apply unattended, retroactively, and against a key an attacker
+ * can write to (see `transferReviewRules.matchCounterparty`). The third
+ * removes that argument by design, and what replaces it is written out in
+ * `ruleWritablePredicate` and in SC-380's migration: the key is still never
+ * typed, the write gate is `transfer_review_source IS NULL`, and the group-id
+ * gate comes along with `pendingPredicate`.
+ *
+ * **Marking is per-destination and never inferred.** No verdict is a default,
+ * nothing derives one from how similar rows were answered before, and
+ * `always_a_disposal` is reachable only by choosing it against a consequence
+ * line that quotes the money it is about to book (`RuleMarkPreview`).
+ *
+ * `ask_me` is not a weaker `not_a_disposal`; it is the half of the feature that
+ * carries the actual value. SC-345's measurement of the expensive part of this
+ * queue is mgrin's own sentence about 560 answered rows — *"I honestly can not
+ * remember that anymore anyway"* — so a rule that says "this is the address you
+ * told me is your Bybit deposit" answers the expensive half and leaves the tap.
+ */
+export const TRANSFER_REVIEW_RULE_VERDICTS = [
+  'not_a_disposal',
+  'ask_me',
+  'always_a_disposal',
+] as const;
+
+/**
+ * Whether this verdict is the one that WRITES.
+ *
+ * A function rather than an equality at each call site because the question is
+ * asked in three places that must agree — the authoring refusal, the eager
+ * apply, and the rules list's choice of which number to show — and the string
+ * it compares is the one value in this file that books capital gains.
+ */
+export function ruleAssertsDisposal(verdict: string): boolean {
+  return verdict === 'always_a_disposal';
+}
+
+export const transferReviewRuleVerdictSchema = z.enum(TRANSFER_REVIEW_RULE_VERDICTS);
+
+export type TransferReviewRuleVerdict = (typeof TRANSFER_REVIEW_RULE_VERDICTS)[number];
+
+/** The longest note a rule may carry. Long enough for a sentence, short enough
+ *  to render on one row of a list. */
+export const TRANSFER_REVIEW_RULE_NOTE_MAX = 200;
+
+export const transferReviewRuleNoteSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(TRANSFER_REVIEW_RULE_NOTE_MAX);
+
+/**
+ * One standing rule, as the rules list shows it.
+ *
+ * `matchCounterparty` is the whole key, never a truncated display form: the
+ * reader revoking a rule has to be able to tell it from a lookalike, which is
+ * the same reason the authoring dialog shows all of it. For a chain transfer
+ * that is all 42 characters; for a payment rail it is the recipient the rail
+ * named, with the per-payment amount stripped (SC-381).
+ */
+export const transferReviewRuleSchema = z.object({
+  id: z.string().uuid(),
+  matchCounterparty: z.string(),
+  verdict: transferReviewRuleVerdictSchema,
+  note: z.string(),
+  createdAt: z.string(),
+  /**
+   * How many transfers in this user's queue the rule currently applies to —
+   * hidden, for `not_a_disposal`; labelled, for `ask_me`.
+   *
+   * It is on the rule rather than left to a reader's arithmetic because it is
+   * the only way to see what revoking would bring back, and because a rule
+   * matching nothing — or matching only the row it was written from — is the
+   * failure mode this feature is most likely to have. A rule keyed on the
+   * `counterparty` column would today match zero rows in production, and the
+   * first real rule anybody wrote matched exactly one row forever (SC-381).
+   * Both look identical to a rule with nothing to do.
+   */
+  affectedCount: z.number().int(),
+  /**
+   * How many transfers this rule has ANSWERED and still owns — always 0 for the
+   * two verdicts that write nothing (SC-380).
+   *
+   * A second number rather than a per-verdict meaning for `affectedCount`,
+   * because they count opposite sets and the reader needs both at once. An
+   * `always_a_disposal` rule that has done its work has `affectedCount` 0 —
+   * nothing left waiting — and that is indistinguishable from a rule that
+   * matched nothing at all, which is the exact failure `affectedCount` was
+   * added to make visible (SC-381).
+   *
+   * It is also the number the revoke confirmation has to quote. Revoking stops
+   * the rule from answering anything further; it does not un-answer what it
+   * already did, and a reader who assumed otherwise would leave N booked
+   * disposals behind believing they had undone them.
+   */
+  answeredCount: z.number().int(),
+});
+
+export type TransferReviewRule = z.infer<typeof transferReviewRuleSchema>;
+
+/**
+ * What marking this destination *"always a disposal"* would do, in money,
+ * before it is done (SC-380).
+ *
+ * This is the confirmation the slice turns on. Every other rule verdict is
+ * reversible by revocation with nothing written, so a consequence line was
+ * enough; this one books capital gains on transfers the reader has not looked
+ * at, and a confirmation that could only say "some transfers" would be asking
+ * them to authorize an amount nobody had computed.
+ *
+ * The numbers come from `bulkPreview` — the same pass SC-382's bulk apply
+ * confirms with, against the same `marketValue` the queue's own "if it was a
+ * sale" column shows — so the figure quoted here is one the reader has already
+ * seen per row.
+ */
+export const ruleMarkPreviewSchema = z.object({
+  /** The string the rule would be written on, normalized. Null when this
+   *  transfer names no destination, which is when `create` refuses. */
+  counterpartyKey: z.string().nullable(),
+  /** Transfers that would be answered `left_control` right now. */
+  affectedCount: z.number().int(),
+  /** What those transfers would book as proceeds. Null when no price could be
+   *  resolved for any of them. */
+  proceedsInBase: z.string().nullable(),
+  /** Of `affectedCount`, how many have no price on their day and so book
+   *  nothing — counted rather than folded in as zero. */
+  unpricedCount: z.number().int(),
+  baseCurrencyCode: z.string(),
+  /**
+   * Why this destination cannot be marked, when it cannot be.
+   *
+   * `own_wallet` is the SC-350 refusal raised one level: ten `left_control`
+   * answers on addresses in the reader's own `user_wallets` booked 10,500 of
+   * disposals on money that never left the portfolio, and a standing rule is
+   * that same mistake with a repeat count on it.
+   */
+  refusal: z.enum(['no_counterparty', 'own_wallet', 'duplicate']).nullable(),
+});
+
+export type RuleMarkPreview = z.infer<typeof ruleMarkPreviewSchema>;
+
+/**
+ * The rule an `ask_me` match puts on a pending row.
+ *
+ * Deliberately carried on the row rather than looked up by the client: the
+ * pairing "row → rule" is recomputed from the same predicate that produced it,
+ * every read, so it can never go stale against a revoked rule.
+ */
+export const matchedTransferRuleSchema = z.object({
+  ruleId: z.string().uuid(),
+  note: z.string(),
+  /**
+   * Which sentence the rule is (SC-380).
+   *
+   * `ask_me` was the only verdict that could reach a pending row before, so the
+   * surface could assume it. It cannot now: a row an `always_a_disposal` rule
+   * WOULD have answered still appears here when the reader has taken that
+   * answer back on it, and telling them "your note about this destination"
+   * while withholding "and a rule marks it a disposal, but not this one any
+   * more" is the misreading worth a field to prevent.
+   */
+  verdict: transferReviewRuleVerdictSchema,
+});
+
+export type MatchedTransferRule = z.infer<typeof matchedTransferRuleSchema>;
+
+/**
+ * A transfer a `not_a_disposal` rule is keeping out of the queue.
+ *
+ * Thin like `AnsweredTransferReview` and for the same reason — no candidate
+ * search, no price lookup — but it exists for a different one: **a row a rule
+ * removed must be visible somewhere rather than vanished.** A queue that
+ * silently drops rows is indistinguishable from one that lost them, and the
+ * hidden list is also where the undo is proved: revoke the rule and every row
+ * here goes straight back to being pending, because nothing was ever written
+ * to it.
+ */
+export const hiddenTransferReviewSchema = z.object({
+  transactionId: z.string().uuid(),
+  holdingId: z.string().uuid(),
+  tokenSymbol: z.string(),
+  accountName: z.string(),
+  institutionName: z.string().nullable(),
+  kind: z.string(),
+  quantity: z.string(),
+  occurredAt: z.string(),
+  counterparty: z.string().nullable(),
+  /** The rule that is hiding it, so the row can say who removed it. */
+  ruleId: z.string().uuid(),
+  ruleNote: z.string(),
+});
+
+export type HiddenTransferReview = z.infer<typeof hiddenTransferReviewSchema>;
+
 /** An unpaired outflow, with everything needed to judge it. */
 export const pendingTransferReviewSchema = z.object({
   transactionId: z.string().uuid(),
@@ -290,6 +870,28 @@ export const pendingTransferReviewSchema = z.object({
   quantity: z.string(),
   occurredAt: z.string(),
   counterparty: z.string().nullable(),
+  /**
+   * The key a rule authored from this row would be written on, and matched by
+   * (SC-381).
+   *
+   * A separate field from `counterparty` because after normalization they are
+   * different strings, and the reader has to be shown the one that will
+   * actually do the work. `counterparty` is what this transfer says —
+   * `Pay 500.00 USD to Nikita Grishin (Dividends)` — and it belongs on the row
+   * because it names the payment. The key is `nikita grishin (dividends)`, and
+   * it is what "make a rule about this" means: the next payment, at the next
+   * amount, to the same person.
+   *
+   * Showing only `counterparty` in the authoring dialog would be the SC-375
+   * containment saying the wrong sentence. The point of copying the key off
+   * the caller's own row rather than accepting a typed one is that the reader
+   * confirms what they are ruling on; a dialog that shows a string the rule is
+   * not keyed on confirms nothing.
+   *
+   * Null on the 202 of 470 production outflows that name no destination at any
+   * layer, which is exactly when `rules.create` refuses.
+   */
+  counterpartyKey: z.string().nullable(),
   description: z.string().nullable(),
   /**
    * What realizing this row at market value would book as a gain, in the
@@ -302,7 +904,276 @@ export const pendingTransferReviewSchema = z.object({
    */
   marketValueInBase: z.string().nullable(),
   baseCurrencyCode: z.string(),
+  /**
+   * The transaction on its chain's block explorer, and the counterparty
+   * address on the same one (SC-346). Null for a row with no chain behind it
+   * — an exchange withdrawal has no hash to look up — and null rather than a
+   * guessed root for a chain we have no explorer for.
+   *
+   * The queue asks "did this leave your portfolio?" about a row whose only
+   * marks are an amount and a date. For a chain transfer that is not enough
+   * to remember by: mgrin's answer to 560 of them was that he could not.
+   * These two links are what make one identifiable.
+   */
+  explorerTxUrl: z.string().nullable(),
+  explorerAddressUrl: z.string().nullable(),
+  /**
+   * True when `counterparty` is an address in this user's own `user_wallets` —
+   * the one fact that makes the question answerable rather than a guess (SC-350).
+   *
+   * SC-346 put the destination on the row and mgrin answered ten transfers
+   * `left_control` anyway, at 08:27-08:31 on 2026-08-17, forty-four minutes
+   * after the address shipped. Every one of them had gone to a wallet he had
+   * registered himself. The row was not wrong and it was not missing anything
+   * it claimed to show: it showed `0x9d8ae06a94c5592f57812e0f045438602a7e14ab`,
+   * and a 42-character hex string is not something a person recognises. He
+   * booked 10,500 of disposals on his own money, and `left_control` is the one
+   * answer that cannot be un-booked by a later matcher run.
+   *
+   * `user_wallets` already held the answer and nothing joined it. So the fix is
+   * not more address — it is the sentence the address was standing in for.
+   *
+   * **False is not "this address is a stranger's".** It is "not among the
+   * wallets you have registered", which covers a cold wallet he never added and
+   * an exchange deposit address alike. So the surface may assert the positive
+   * case and must not assert the negative one; see the copy at the call site.
+   */
+  counterpartyIsOwnWallet: z.boolean(),
+  /**
+   * The `ask_me` rule this row's destination matches, or null (SC-375).
+   *
+   * Present on a row that is still being asked about — a `not_a_disposal`
+   * match removes the row from this list entirely and it appears in
+   * `listHiddenByRule` instead. So this field is never a claim that the
+   * question was answered; it is the note the reader wrote about an address
+   * they will not recognise, shown at the moment they are being asked to
+   * recognise it.
+   */
+  matchedRule: matchedTransferRuleSchema.nullable(),
+  /**
+   * Set when this row is in the queue because a REPAIR took an earlier answer
+   * off it, rather than because nobody has answered it yet (SC-378).
+   *
+   * The seven rows it was built for were answered `paired` against an arrival
+   * on the SAME holding — a movement that did not happen, offered as a
+   * candidate by a matcher that no longer would. Withdrawing the answer is
+   * Scani's to do because Scani asked the question, but a question that comes
+   * back with no explanation reads as the queue losing an answer, which is
+   * exactly the thing that stops a careful reader answering at all.
+   *
+   * It is read off `transfer_review_source` being set while `transfer_review`
+   * is null — a state no other writer produces — so it needs no column of its
+   * own and it clears itself the moment the row is answered again.
+   *
+   * Null is the ordinary case: never answered, or the user reopened it
+   * themselves, which needs no notice because they did it.
+   */
+  answerWithdrawnBy: z.enum(ANSWER_ATTRIBUTIONS).nullable(),
   candidates: z.array(transferCandidateSchema),
 });
 
 export type PendingTransferReview = z.infer<typeof pendingTransferReviewSchema>;
+
+/**
+ * The answers one tap may give to MANY transfers at once (SC-382).
+ *
+ * mgrin asked for this directly — *"I want to select multiple transfers and
+ * apply the same decision to them"* — and the list is two of the four, not
+ * four, because the other two are not harder to build. They are unrepresentable
+ * in bulk:
+ *
+ * - **`paired` names one `matchTransactionId`.** A single deposit cannot be the
+ *   other half of twelve withdrawals, and `claimInflow` would refuse the second
+ *   through twelfth anyway once the first claimed the inflow. "Apply `paired` to
+ *   these twelve" is not an operation with a meaning.
+ * - **`internal` names one destination HOLDING.** `listDestinations` is scoped
+ *   to the outflow's own token and excludes the holding it left, so a selection
+ *   spanning two tokens has no destination that is valid for all of it; and with
+ *   `holdingId: null` each row writes a deposit and may open a holding
+ *   (SC-187/SC-356). Twelve rows, twelve arrivals, twelve amounts — that is
+ *   twelve judgements wearing one tap.
+ * - **`split` is quantities in the row's own units** that must sum exactly to
+ *   *that row's* quantity. No division is true of two different rows.
+ *
+ * What is left is the pair that needs nothing from the row but the row itself.
+ * They are also, precisely, the two states the ledger can move between with a
+ * column write: see `BULK_ELIGIBLE_ANSWERS`.
+ */
+export const BULK_TRANSFER_DECISIONS = ['left_control', 'untracked'] as const;
+
+export type BulkTransferDecision = (typeof BULK_TRANSFER_DECISIONS)[number];
+
+export const bulkTransferDecisionSchema = z.enum(BULK_TRANSFER_DECISIONS);
+
+/**
+ * The answers a row may ALREADY carry and still be bulk-writable — the
+ * containment the whole feature rests on.
+ *
+ * `null` (never answered), `left_control` and `untracked` are exactly the
+ * answers that write nothing but the review columns: no `transfer_group_id` on
+ * either leg, no deposit row created. So moving a row between any two of them
+ * is a pure column write, and moving it *back* is the same write again. That is
+ * what makes the undo below exact rather than best-effort.
+ *
+ * `paired`, `internal` and `split` are excluded from the SOURCE side for the
+ * same reason they are excluded from the target side: undoing them means
+ * deleting a deposit and clearing a group id from two rows, which is `reopen`'s
+ * job and is a per-row decision. It is also the pair of gates SC-378 deadlocked
+ * on — `unlinkPair` refuses a reviewed row, `reopen` refuses an unreviewed one
+ * — and a bulk path that never enters that state cannot be caught between them.
+ */
+export const BULK_ELIGIBLE_ANSWERS = [null, 'left_control', 'untracked'] as const;
+
+export function isBulkEligibleAnswer(decision: string | null): boolean {
+  return (BULK_ELIGIBLE_ANSWERS as readonly (string | null)[]).includes(decision);
+}
+
+/**
+ * The most transfers one apply may write.
+ *
+ * Above every population this queue has ever had — 74 pending and 219 answered
+ * `left_control` in production on 2026-08-18 — and far below anything that
+ * makes a single transaction long-running, since the write is at most three
+ * `UPDATE … WHERE id = ANY` statements regardless of N.
+ */
+export const MAX_BULK_TRANSFER_ROWS = 500;
+
+/**
+ * One row and what it is being told to say.
+ *
+ * `decision: null` means "put it back in the queue", and it exists for exactly
+ * one caller: **the undo.** `bulkResolve` returns the answer it replaced on
+ * every row it wrote, and undoing is that list handed straight back. It is not
+ * offered as a bulk action of its own, deliberately — of the outflows answered
+ * `left_control` in bulk, none has a plausible inbound to pair with even under
+ * a ±10% / ±7-day net, so a "put these back in the queue" button hands the
+ * reader rows with no candidates and the same question they already answered
+ * (SC-186, folded into SC-382). Re-answering is the operation with value;
+ * un-answering is only ever the way back from a tap just taken.
+ */
+export const bulkTransferEntrySchema = z.object({
+  transactionId: z.string().uuid(),
+  decision: bulkTransferDecisionSchema.nullable(),
+});
+
+export type BulkTransferEntry = z.infer<typeof bulkTransferEntrySchema>;
+
+export const bulkTransferEntriesSchema = z
+  .array(bulkTransferEntrySchema)
+  .min(1)
+  .max(MAX_BULK_TRANSFER_ROWS)
+  // One row, one instruction. The same id twice carrying two answers is not a
+  // batch to resolve in some order — it is a caller that does not know what it
+  // is asking for, and picking a winner would make the outcome depend on
+  // array position.
+  .refine((entries) => new Set(entries.map((e) => e.transactionId)).size === entries.length, {
+    message: 'Each transfer can only appear once',
+  });
+
+/**
+ * Why a selected row cannot be written, per row.
+ *
+ * Named rather than counted because a bulk write that quietly drops rows is the
+ * defect this whole area keeps producing. The reader is told which row, and
+ * why, before anything is written — and the write itself is all-or-nothing, so
+ * "12 selected" and "12 written" are never different numbers.
+ *
+ * - `gone` — not this user's, not an outflow, or a zero-quantity row (the
+ *   address-poisoning corpus, which `pendingPredicate` also excludes).
+ * - `linked` — it carries a `transfer_group_id`. Either the matcher paired it,
+ *   or a `paired`/`internal` answer did. **This gate is load-bearing and is not
+ *   implied by the answer column**: 29 of production's 236 unanswered outflows
+ *   carry a group id, they are invisible to the queue, and `CostBasisService`
+ *   reads `transferGroupId` BEFORE `isConfirmedDisposal` — so a `left_control`
+ *   written onto one would book nothing while reading as answered.
+ * - `answered_otherwise` — it carries `paired`, `internal` or `split`. `detail`
+ *   is that answer. Reopening it is a per-row decision with its own undo.
+ * - `own_wallet` — a `left_control` target whose destination is an address in
+ *   the caller's own `user_wallets`. `detail` is the address. The same refusal
+ *   `resolve` gives (SC-365), applied before a batch can give it twelve times.
+ */
+export const BULK_TRANSFER_REFUSALS = [
+  'gone',
+  'linked',
+  'answered_otherwise',
+  'own_wallet',
+] as const;
+
+export type BulkTransferRefusalReason = (typeof BULK_TRANSFER_REFUSALS)[number];
+
+export const bulkTransferRefusalSchema = z.object({
+  transactionId: z.string().uuid(),
+  reason: z.enum(BULK_TRANSFER_REFUSALS),
+  /** The answer in the way, or the wallet address. Null when the reason says
+   *  everything — `gone` and `linked` have nothing to add. */
+  detail: z.string().nullable(),
+});
+
+export type BulkTransferRefusal = z.infer<typeof bulkTransferRefusalSchema>;
+
+/**
+ * What a bulk apply would do, **in money** — the thing the confirmation shows.
+ *
+ * A bulk `left_control` books N capital gains on one tap, which makes it the
+ * most consequential control in the product. A confirmation that says "12
+ * transfers" asks the reader to trust a count; the number that lets them check
+ * is the one the ledger will move by, and it is not derivable on the client for
+ * the answered list — `AnsweredTransferReview` carries no price, on purpose.
+ *
+ * So the figure is computed server-side, over the same rows the write will
+ * take, by the same `PriceGraphService` call `listPending` uses for the "if it
+ * was a sale" column. The confirmation and the write cannot disagree about
+ * which rows they are about, because they are handed the same list.
+ */
+export const bulkTransferPreviewSchema = z.object({
+  /** The rows that would be written, in the order they were asked about. */
+  eligible: z.array(z.string().uuid()),
+  refusals: z.array(bulkTransferRefusalSchema),
+  baseCurrencyCode: z.string(),
+  /**
+   * Market value at each eligible transfer's own moment, summed — what a
+   * `left_control` target books as proceeds. Null when nothing is priceable,
+   * which is a different claim from zero.
+   */
+  proceedsInBase: z.string().nullable(),
+  /** Eligible rows with no price on their day. They book nothing either way,
+   *  and they are why the total above can be an understatement. */
+  unpricedCount: z.number().int(),
+  /**
+   * The eligible rows that ALREADY carry `left_control`, and their share of
+   * the proceeds above.
+   *
+   * The other direction of the same sentence: answering these `untracked`
+   * takes that much realized gain back OFF the ledger. A confirmation that
+   * only ever describes what is being added would say nothing at all about the
+   * operation SC-186 asked for, which is re-answering 219 rows that already
+   * book a disposal.
+   */
+  alreadyDisposedCount: z.number().int(),
+  alreadyDisposedInBase: z.string().nullable(),
+});
+
+export type BulkTransferPreview = z.infer<typeof bulkTransferPreviewSchema>;
+
+/** One row that was written, and the answer it used to carry. Handed straight
+ *  back to `bulkResolve` to undo the batch. */
+export const bulkTransferAppliedSchema = z.object({
+  transactionId: z.string().uuid(),
+  previous: bulkTransferDecisionSchema.nullable(),
+});
+
+export type BulkTransferApplied = z.infer<typeof bulkTransferAppliedSchema>;
+
+/**
+ * The batch, reversed — `bulkResolve`'s output turned back into its input.
+ *
+ * A function rather than a `.map` at each call site because the two shapes
+ * differ by one field name and nothing catches the confusion at runtime: an
+ * entry whose `decision` is `undefined` is not rejected, it is read as `null`,
+ * so a hand-written undo silently puts every row back in the queue instead of
+ * restoring the answers it replaced. That is the wrong write in the one place
+ * the feature exists to make reversible.
+ */
+export function undoEntriesFor(applied: readonly BulkTransferApplied[]): BulkTransferEntry[] {
+  return applied.map((row) => ({ transactionId: row.transactionId, decision: row.previous }));
+}

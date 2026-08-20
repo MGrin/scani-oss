@@ -8,11 +8,13 @@ import {
   text,
   timestamp,
   unique,
+  uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core';
 import { accounts } from './accounts';
 import { holdingGroups } from './groups';
 import { tokens } from './tokens';
+import { transferReviewRules } from './transfer-review-rules';
 import { users } from './users';
 import { vaultHoldings } from './vaults';
 
@@ -34,7 +36,20 @@ export const holdings = pgTable(
       .references(() => tokens.id, { onDelete: 'restrict' }), // Prevent token deletion if holdings exist
     balance: text('balance').notNull(), // Store as string for Decimal.js precision
     source: text('source').notNull().default('manual'), // 'blockchain' or 'manual' - tracks origin of holding
+    // `source` says which system wrote the row; `arrival` says whether a
+    // human ever picked it, and on a public chain those are different
+    // questions — the wallet-import review and the hourly auto-discovering
+    // sync both wrote `source = 'blockchain'`. A signal, never a verdict:
+    // 2 of the 17 rows migration 0042 backfills are legitimate. SC-277.
+    arrival: text('arrival').notNull().default('unattributed'),
     externalId: text('external_id'), // Exchange-specific asset identifier for synced holdings (e.g., 'BTC' for Binance). NULL for manual holdings.
+    // What the user calls this pot ("Savings", "Wedding gift"). NULL is the
+    // ordinary case; it earns its keep only when an account holds several rows
+    // for one token, where it is the difference between four positions and one
+    // typed four times. `external_id` cannot serve: it is the address an
+    // importer dedupes on, and inventing one for a hand-entered row makes that
+    // row a sync target (SC-330).
+    label: text('label'),
     isHidden: boolean('is_hidden').notNull().default(false),
     isActive: boolean('is_active').notNull().default(true),
     lastUpdated: timestamp('last_updated', { withTimezone: true }).notNull().defaultNow(),
@@ -62,6 +77,21 @@ export const holdings = pgTable(
       table.tokenId,
       table.externalId
     ),
+    // One row per externally-addressed position (migration 0043, SC-325).
+    // `external_id` is the key an importer dedupes on, so two rows sharing one
+    // mean the importer forked its own position and every later sync lands on
+    // whichever `findByAccountTokenAndExternalId` happens to return first.
+    //
+    // PARTIAL on purpose: a row with no external_id is not addressable by any
+    // importer, so this says nothing about it. Production holds four manual RUB
+    // rows in one Tinkoff account that the user maintains independently — a
+    // `NULLS NOT DISTINCT` key would forbid them, and no automatic repair keeps
+    // all four. Whether a second hand-entered row is allowed is a product
+    // policy, enforced where those rows are created
+    // (`CreateHoldingsWithDependenciesUseCase`, SC-303), not here.
+    accountTokenExternalUq: uniqueIndex('holdings_account_token_external_uq')
+      .on(table.accountId, table.tokenId, table.externalId)
+      .where(sql`external_id IS NOT NULL`),
   })
 );
 
@@ -150,6 +180,34 @@ export const holdingTransactions = pgTable(
     // quietly overruling an answer someone gave.
     transferReview: text('transfer_review'),
     transferReviewedAt: timestamp('transfer_reviewed_at', { withTimezone: true }),
+    // WHO decided, when the answer did not come from the person whose row it is
+    // (SC-350). `AnswerSource` in @scani/shared is the vocabulary and carries
+    // the full reasoning; the short version is that provenance had exactly two
+    // representable states — stamped meant "the user, in the queue" and
+    // unstamped meant "not through the queue at all" — and a correction Scani
+    // makes on the user's behalf is neither. Writing the stamp would forge his
+    // answer; leaving it null would file the correction alongside the 560-row
+    // raw UPDATE this vocabulary exists to tell apart.
+    //
+    // NULL is the whole of the existing corpus and keeps its exact meaning:
+    // read it as `transfer_reviewed_at IS NOT NULL ? 'user' : 'unattributed'`.
+    // So nothing is backfilled and no row's provenance changes by adding this.
+    transferReviewSource: text('transfer_review_source'),
+    // WHICH standing rule answered it, when `transfer_review_source` is
+    // `'rule'` (SC-380). A database CHECK ties the two together in both
+    // directions, because the direction that gets forgotten is the undo: a
+    // per-row undo leaves the source reading `'user'`, and a rule id surviving
+    // that would let the answered list go on naming a rule for an answer that
+    // is no longer on the row.
+    //
+    // Not merely "a rule did this". The sentence this whole feature exists to
+    // preserve is mgrin's about 560 already-answered transfers — "I honestly
+    // can not remember that anymore anyway" — and a row that cannot name the
+    // rule cannot repeat back the note he wrote about the destination, which
+    // is the only part of it he will still understand in three years.
+    transferReviewRuleId: uuid('transfer_review_rule_id').references(() => transferReviewRules.id, {
+      onDelete: 'set null',
+    }),
     // The same answer, divided (SC-181). A withdrawal of 4,000 can be 3,500
     // moved to an account Scani cannot see and 500 that genuinely left, and
     // every answer above applies to the whole row — so the lesser wrong had to
@@ -197,6 +255,12 @@ export const holdingTransactions = pgTable(
       .where(
         sql`transfer_group_id IS NULL AND transfer_review IS NULL AND kind IN ('withdraw', 'transfer_out')`
       ),
+    // Every row one rule has answered, for its answered count and for the
+    // withdraw half of `revoke` (SC-380). Partial because the column is null on
+    // every row no rule has ever touched, which today is all of them.
+    transferReviewRuleIdx: index('idx_holding_tx_transfer_review_rule')
+      .on(table.transferReviewRuleId)
+      .where(sql`transfer_review_rule_id IS NOT NULL`),
   })
 );
 
@@ -247,8 +311,6 @@ export const holdingCoverage = pgTable('holding_coverage', {
     .references(() => holdings.id, { onDelete: 'cascade' }),
   firstTxAt: timestamp('first_tx_at', { withTimezone: true }),
   lastTxAt: timestamp('last_tx_at', { withTimezone: true }),
-  firstObservationAt: timestamp('first_observation_at', { withTimezone: true }),
-  lastObservationAt: timestamp('last_observation_at', { withTimezone: true }),
   // Names of ingester sources that have contributed — e.g.
   // ['etherscan', 'binance-api'].
   txSources: text('tx_sources').array().notNull().default(sql`'{}'`),

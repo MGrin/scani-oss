@@ -22,6 +22,7 @@ import {
   type IntegrationImportTarget,
   PriceWarmupService,
   UserWalletService,
+  WALLET_BALANCE_SYNC_SOURCE,
   WalletDiscoveryService,
 } from '../services';
 import { safeStatus } from './lib/safeStatus';
@@ -123,163 +124,6 @@ export class ImportWalletAddressUseCase {
   private readonly mappingRepository = Container.get(InstitutionBlockchainMappingRepository);
   private readonly integrationImportService = Container.get(IntegrationImportService);
   private readonly priceWarmupService = Container.get(PriceWarmupService);
-
-  async execute(input: ImportWalletInput, userId: string): Promise<ImportWalletResult> {
-    logger.info(
-      { userId, address: `${input.address.substring(0, 10)}...` },
-      'Starting wallet import'
-    );
-
-    const [user] = await db.select().from(schema.users).where(eq(schema.users.id, userId)).limit(1);
-    if (!user) throw new Error('User not found');
-
-    const detectedInstitutionIds = await this.resolveDetectedInstitutionIds(input, userId);
-    if (detectedInstitutionIds.length === 0) {
-      return {
-        walletLabel: this.computeWalletLabel(input.displayName, input.address),
-        accounts: [],
-        holdings: [],
-        chainsDetected: 0,
-        tokensImported: 0,
-        errors: [],
-      };
-    }
-
-    const userWallet = await this.upsertUserWallet(input, userId, detectedInstitutionIds);
-
-    const [walletAccountType] = await db
-      .select()
-      .from(schema.accountTypes)
-      .where(eq(schema.accountTypes.code, 'crypto'))
-      .limit(1);
-    if (!walletAccountType) throw new Error('Account type "crypto" not found');
-
-    const [cryptoTokenType] = await db
-      .select()
-      .from(schema.tokenTypes)
-      .where(eq(schema.tokenTypes.code, 'crypto'))
-      .limit(1);
-    if (!cryptoTokenType) throw new Error('Token type "crypto" not found');
-
-    const errors: ImportWalletResult['errors'] = [];
-    const chains = await this.fetchChainData(input, userId, detectedInstitutionIds, errors);
-
-    const targets: IntegrationImportTarget[] = chains.map((chain) => {
-      const accountInfo: DiscoveredAccountInfo = {
-        externalId: chain.preExistingAccountId ?? input.address,
-        name: chain.accountName,
-        accountType: 'crypto',
-        description: `Crypto wallet on ${chain.institution.name}`,
-      };
-      return {
-        institution: chain.institution,
-        accountInfo,
-        snapshots: chain.snapshots,
-        preExistingAccountId: chain.preExistingAccountId,
-        accountTypeId: walletAccountType.id,
-        accountName: chain.accountName,
-        accountDescription: `Crypto wallet on ${chain.institution.name}`,
-        accountMetadataPatch: {
-          walletAddress: input.address,
-          chainId: chain.chainId,
-          chainName: chain.institution.name,
-          displayName: input.displayName,
-          userWalletId: userWallet.id,
-          migrated: true,
-        },
-      };
-    });
-
-    const importResult = await this.integrationImportService.import(targets, {
-      userId,
-      baseCurrencyId: user.baseCurrencyId,
-      sourceTag: 'blockchain',
-      zeroStaleHoldings: false,
-      cryptoTokenTypeId: cryptoTokenType.id,
-      tokenTypeMap: { crypto: cryptoTokenType.id },
-      defaultDecimals: () => 18,
-      resolveTokenTypeId: (_snapshot, fallbackCryptoTypeId) => fallbackCryptoTypeId,
-      transactionName: 'importWallet',
-      transactionTimeoutMs: 120_000,
-    });
-
-    for (const err of importResult.errors) {
-      errors.push({
-        chainId: err.accountInfo.externalId,
-        chainName: 'Unknown',
-        error: err.error,
-      });
-    }
-
-    await this.storePublicRpcMarkers(
-      userId,
-      chains.map((c) => c.institution.id),
-      input.address
-    );
-
-    const prices = await this.priceWarmupService.warm({
-      userId,
-      tokenIds: importResult.tokenIds,
-      rescanScamScores: true,
-    });
-
-    const accountById = new Map(importResult.accounts.map((a) => [a.id, a]));
-    const chainByInstitutionId = new Map(chains.map((c) => [c.institution.id, c]));
-
-    const accounts: ImportWalletResult['accounts'] = importResult.accounts.map((a) => {
-      const chain = chainByInstitutionId.get(a.institutionId);
-      return {
-        id: a.id,
-        name: a.name,
-        chainId: chain?.chainId ?? a.institutionId,
-        chainName: a.institutionName,
-        institutionId: a.institutionId,
-        institutionName: a.institutionName,
-      };
-    });
-
-    const holdings: ImportWalletResult['holdings'] = importResult.holdings.map((h) => {
-      const account = accountById.get(h.accountId);
-      const price = prices.get(h.tokenId);
-      return {
-        id: h.id,
-        accountId: h.accountId,
-        accountName: h.accountName,
-        chainName: account?.institutionName ?? '',
-        tokenId: h.tokenId,
-        tokenSymbol: h.tokenSymbol,
-        tokenName: h.tokenName,
-        tokenIconUrl: h.tokenIconUrl,
-        tokenIsNew: h.tokenIsNew,
-        tokenScamProbability: h.tokenScamProbability,
-        balance: h.balance,
-        priceInBaseCurrency: price && price !== '0' ? price : null,
-      };
-    });
-
-    const result: ImportWalletResult = {
-      walletLabel: this.computeWalletLabel(input.displayName, input.address),
-      accounts,
-      holdings,
-      chainsDetected: detectedInstitutionIds.length,
-      tokensImported: holdings.length,
-      errors,
-    };
-
-    logger.info(
-      {
-        userId,
-        institutionsDetected: detectedInstitutionIds.length,
-        accountsCreated: result.accounts.length,
-        holdingsCreated: result.holdings.length,
-        errorsCount: errors.length,
-        success: result.accounts.length > 0 || result.holdings.length > 0,
-      },
-      'Wallet import completed with integrations'
-    );
-
-    return result;
-  }
 
   /**
    * Phase 1 of the review-aware wallet-import flow. Detects chains +
@@ -444,7 +288,11 @@ export class ImportWalletAddressUseCase {
     const importResult = await this.integrationImportService.import(targets, {
       userId,
       baseCurrencyId: args.userBaseCurrencyId,
-      sourceTag: 'blockchain',
+      sourceTag: WALLET_BALANCE_SYNC_SOURCE,
+      // `args.chains` carries only the snapshots the user kept at review —
+      // the ones they dropped went to `holding_exclusions` — so every row
+      // this creates was shown to a person and kept (SC-277).
+      arrival: 'user_confirmed',
       zeroStaleHoldings: false,
       cryptoTokenTypeId: args.cryptoTokenTypeId,
       tokenTypeMap: { crypto: args.cryptoTokenTypeId },
@@ -463,7 +311,6 @@ export class ImportWalletAddressUseCase {
     const prices = await this.priceWarmupService.warm({
       userId,
       tokenIds: importResult.tokenIds,
-      rescanScamScores: true,
     });
 
     const accountById = new Map(importResult.accounts.map((a) => [a.id, a]));

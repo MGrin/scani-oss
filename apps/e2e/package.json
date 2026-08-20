@@ -8,6 +8,7 @@
     "test:e2e:a11y": "bun scripts/run.ts tests/a11y tests/smoke --project chromium --project iphone",
     "test:e2e:install": "bunx playwright install --with-deps chromium webkit",
     "shots": "bun scripts/shots.ts",
+    "visual": "bun scripts/visual.ts",
     "perf:tti": "bun scripts/measure-bundle-tti.ts",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",

@@ -1,0 +1,2338 @@
+{
+  "v3": {
+    "shell": {
+      "tabBar": {
+        "landmark": "Primary",
+        "moreWithReview_one": "More — {{count}} item needs review",
+        "moreWithReview_other": "More — {{count}} items need review"
+      },
+      "sidebar": {
+        "landmark": "Sidebar"
+      },
+      "moreDrawer": {
+        "description": "Everything that does not fit in the tab bar. Drag the handle up for the full list."
+      }
+    },
+    "common": {
+      "convertedTotal": {
+        "includes": "Includes <amounts></amounts> converted at today’s rates",
+        "includesStale": "Includes <amounts></amounts> converted at rates from {{date}}",
+        "notIncluded": "Not included: <amounts></amounts> — no recent rate for {{currencies}}.",
+        "working": "Working out the total",
+        "noTotal": "No total — today’s rates could not be loaded",
+        "ratesUnavailable": "Not included: <amounts></amounts> — today’s rates could not be loaded, so this figure is incomplete."
+      },
+      "convertedFigure": {
+        "moreCurrencies_one": "{{count}} currency unconverted",
+        "moreCurrencies_other": "{{count}} currencies unconverted",
+        "working": "Working out this figure",
+        "unavailableSpoken": "<value/> not converted — today’s rates could not be loaded",
+        "unavailableSpokenMany_one": "{{count}} currency not converted — today’s rates could not be loaded",
+        "unavailableSpokenMany_other": "{{count}} currencies not converted — today’s rates could not be loaded",
+        "unconvertedSpoken": "<value/> not converted — no recent rate",
+        "unconvertedSpokenMany_one": "{{count}} currency not converted — no recent rate",
+        "unconvertedSpokenMany_other": "{{count}} currencies not converted — no recent rate",
+        "unconvertedSeen": "<value/> unconverted"
+      },
+      "baseEquivalent": {
+        "seen": "≈ <value/>",
+        "seenStale": "≈ <value/> · older rate",
+        "spoken": "About <value/>",
+        "spokenStale": "About <value/>, at an older rate"
+      },
+      "pullToRefresh": {
+        "refreshing": "Refreshing"
+      },
+      "errorBoundary": {
+        "goHome": "Go to v3 home"
+      },
+      "action": {
+        "seeAll": "See all"
+      },
+      "unknownVendor": "Unknown vendor",
+      "openRecord": "{{name}} — open",
+      "listAnd": "{{first}} and {{second}}",
+      "listSemicolon": "{{first}}; {{second}}",
+      "cannotBeUndone": "This cannot be undone.",
+      "relative": {
+        "justNow": "just now",
+        "minutes_one": "{{count, number}}m ago",
+        "minutes_other": "{{count, number}}m ago",
+        "hours_one": "{{count, number}}h ago",
+        "hours_other": "{{count, number}}h ago",
+        "days_one": "{{count, number}}d ago",
+        "days_other": "{{count, number}}d ago"
+      }
+    },
+    "notFound": {
+      "title": "This page doesn’t exist",
+      "body": "Nothing in Scani is at the address you asked for. The link may be out of date, or the address may have a typo in it.",
+      "goHome": "Go to home"
+    },
+    "home": {
+      "loadingLabel": "your portfolio",
+      "empty": {
+        "title": "Nothing tracked yet",
+        "body": "A screenshot of a balance screen is enough — from an exchange, a bank or a broker. A CSV or statement export works too, and there is nothing to log into.",
+        "action": "Upload a screenshot or file",
+        "secondaryAction": "Or pick another way in",
+        "importing": {
+          "title": "An import is running",
+          "body": "We are reading the holdings out of it. You can leave this screen — it keeps going, and this page fills in once it lands.",
+          "action": "See progress"
+        }
+      },
+      "disclosure": {
+        "showLess": "Show less",
+        "show": "Show {{label}}",
+        "theOtherN_one": "the other {{count}}",
+        "theOtherN_other": "the other {{count}}",
+        "theNInOther_one": "the {{count}} in Other",
+        "theNInOther_other": "the {{count}} in Other"
+      },
+      "attentionRow": {
+        "needsReview_one": "{{count}} item needs your review",
+        "needsReview_other": "{{count}} items need your review"
+      },
+      "topHoldings": {
+        "title": "Top holdings",
+        "empty": "Nothing priced yet."
+      },
+      "tape": {
+        "noValue": "No value"
+      },
+      "groups": {
+        "title": "Groups",
+        "openGroup": "{{name}} — open the group",
+        "empty": "Empty"
+      },
+      "vaults": {
+        "title": "Vaults",
+        "progress": "{{name}}: {{percent}}% of target",
+        "ofTarget": "of <target></target>"
+      },
+      "allocation": {
+        "title": "Allocation",
+        "cutBy": "Cut the allocation by",
+        "loadingLabel": "your allocation",
+        "empty": "Nothing priced under this cut yet.",
+        "barLabel": "Allocation by {{dimension}}",
+        "dimension": {
+          "tokenType": "Type",
+          "institution": "Institution",
+          "account": "Account",
+          "group": "Group"
+        }
+      },
+      "upcoming": {
+        "title": "Upcoming bills",
+        "empty_one": "Nothing due in the next {{count}} day.",
+        "empty_other": "Nothing due in the next {{count}} days.",
+        "addPayment": "Add a payment",
+        "incomeExpected_one": "Income expected, next {{count}} day",
+        "incomeExpected_other": "Income expected, next {{count}} days"
+      },
+      "metric": {
+        "netWorth": "Net worth",
+        "pnl": "PnL",
+        "pnlFull": "Profit and loss"
+      },
+      "period": {
+        "label7d": "1W",
+        "suffix7d": "7d",
+        "label30d": "1M",
+        "suffix30d": "30d",
+        "label90d": "3M",
+        "suffix90d": "90d",
+        "label180d": "6M",
+        "suffix180d": "6m",
+        "label365d": "1Y",
+        "suffix365d": "1y"
+      },
+      "hero": {
+        "pnlOverPeriod": "Profit and loss · {{period}}",
+        "vsPeriod": "vs {{period}}",
+        "chartLabel": "{{metric}} over the last {{period}}",
+        "choosePlot": "Choose what to plot",
+        "changePeriod": "Change the period",
+        "chartFailed": "The chart could not be loaded. Your figures above are the last ones we had.",
+        "changeUnavailable": "Couldn't load the change for this period",
+        "changePending": "Working out the change for this period",
+        "pnlNotComputed": "PnL is not computed for this period yet",
+        "noHistory": "No history for this period yet",
+        "noMeasurementSince": "No measurement since {{date}} — the last point is today's live total, not a rolled-up day.",
+        "retry": "Retry",
+        "realized": "Realized",
+        "unrealized": "Unrealized"
+      },
+      "quality": {
+        "allPriced_one": "All {{count}} holding priced",
+        "allPriced_other": "All {{count}} holdings priced",
+        "partlyPriced": "{{percent}}% priced — {{priced}} of {{priceable}} holdings",
+        "withUnpriceable_one": "{{fraction}} · {{count}} unpriceable",
+        "withUnpriceable_other": "{{fraction}} · {{count}} unpriceable",
+        "staleQuotes_one": "{{count}} stale quote",
+        "staleQuotes_other": "{{count}} stale quotes",
+        "noBasis_one": "{{count}} no cost basis (gain is an upper bound)",
+        "noBasis_other": "{{count}} no cost basis (gain is an upper bound)",
+        "unreviewedTransfers_one": "Realized PnL excludes {{count}} unconfirmed transfer",
+        "unreviewedTransfers_other": "Realized PnL excludes {{count}} unconfirmed transfers"
+      },
+      "dueIn": {
+        "today": "Today",
+        "tomorrow": "Tomorrow",
+        "days_one": "in {{count}} day",
+        "days_other": "in {{count}} days",
+        "weeks_one": "in {{count}} week",
+        "weeks_other": "in {{count}} weeks",
+        "months_one": "in {{count}} month",
+        "months_other": "in {{count}} months"
+      },
+      "historyExport": {
+        "scopeWindow": "This {{period}} window",
+        "scopeDays_one": "{{count}} day",
+        "scopeDays_other": "{{count}} days",
+        "scopeAll": "Everything we have",
+        "scopeAllDetail": "Up to six years",
+        "emptyTitle": "Nothing to export",
+        "emptyBody": "There is no measured history in that window yet.",
+        "subject": "Net worth history",
+        "sheetSubject": "net-worth history",
+        "currency": "Currency",
+        "resolution": "Resolution",
+        "oneRowPerDay": "One row per day",
+        "days_one": "{{count}} day",
+        "days_other": "{{count}} days",
+        "pending": "Exporting your net-worth history",
+        "trigger": "Export net-worth history",
+        "action": "Export history"
+      }
+    },
+    "money": {
+      "upcoming": {
+        "overdueTotal_one": "Overdue, {{count}} bill",
+        "overdueTotal_other": "Overdue, {{count}} bills",
+        "noneAhead_one": "Nothing due in the next {{count}} day.",
+        "noneAhead_other": "Nothing due in the next {{count}} days.",
+        "seeRecurring": "See recurring payments",
+        "addPayment": "Add a payment",
+        "billsCommitted_one": "Bills committed, next {{count}} day",
+        "billsCommitted_other": "Bills committed, next {{count}} days",
+        "row": "{{vendor}}, due {{date}}",
+        "label": "upcoming payments"
+      },
+      "segments": {
+        "upcoming": "Upcoming",
+        "recurring": "Recurring",
+        "vendors": "Vendors"
+      },
+      "overdue": {
+        "unknown": "Overdue",
+        "today": "Due today",
+        "byDays_one": "{{count}} day overdue",
+        "byDays_other": "{{count}} days overdue"
+      },
+      "direction": {
+        "income": "Income",
+        "bill": "Bill"
+      },
+      "cadence": {
+        "every_week_one": "Every week",
+        "every_week_other": "Every {{count}} weeks",
+        "every_month_one": "Every month",
+        "every_month_other": "Every {{count}} months",
+        "every_quarter_one": "Every quarter",
+        "every_quarter_other": "Every {{count}} quarters",
+        "every_year_one": "Every year",
+        "every_year_other": "Every {{count}} years",
+        "everyUnknown": "Every {{count}} × {{unit}}"
+      },
+      "endPayment": {
+        "base": "Ends {{vendor}} on {{date}}. It stops appearing in Upcoming, and its paid and skipped history is kept.",
+        "checking": "Checking how many scheduled dates this removes…",
+        "noneRemoved": "There are no scheduled dates after that to remove.",
+        "removed_one": "{{count}} scheduled date after that is removed. This cannot be undone — reviving an ended payment is not something Scani can do.",
+        "removed_other": "{{count}} scheduled dates after that are removed. This cannot be undone — reviving an ended payment is not something Scani can do.",
+        "trigger": "End",
+        "confirm": "End this payment",
+        "ended": "Payment ended",
+        "ending": "Ending payment"
+      },
+      "deletePayment": {
+        "checking": "Deletes the {{vendor}} payment. Checking what it has against it…",
+        "blocked_one": "This payment has {{count}} date settled against it — money that really moved. It cannot be deleted, because that would erase the history too.",
+        "blocked_other": "This payment has {{count}} dates settled against it — money that really moved. It cannot be deleted, because that would erase the history too.",
+        "wayOutEnded": "It has already ended, so the schedule is stopped and the record stays.",
+        "wayOutEnd": "End it instead: the schedule stops and the record stays.",
+        "lead": "Deletes the {{vendor}} payment as if it had never existed.",
+        "clauseScheduled_one": "{{count}} date still scheduled",
+        "clauseScheduled_other": "{{count}} dates still scheduled",
+        "clauseSkipped_one": "{{count}} date you skipped",
+        "clauseSkipped_other": "{{count}} dates you skipped",
+        "discarded_one": "{{clauses}} goes with it.",
+        "discarded_other": "{{clauses}} go with it.",
+        "tail": "It leaves Upcoming, the totals and this list. Use End instead if this bill really ran — that keeps the record. This cannot be undone.",
+        "trigger": "Delete",
+        "confirmEnd": "End this payment",
+        "confirmDelete": "Delete this payment",
+        "deleted": "Payment deleted"
+      },
+      "deleteVendor": {
+        "checking": "Deletes \"{{vendor}}\". Checking what points at it…",
+        "blocked_one": "\"{{vendor}}\" still has {{count}} payment pointing at it, and deleting it would take that payment and everything settled against it. End or delete it first, or merge \"{{vendor}}\" into the vendor you meant.",
+        "blocked_other": "\"{{vendor}}\" still has {{count}} payments pointing at it, and deleting it would take those payments and everything settled against them. End or delete them first, or merge \"{{vendor}}\" into the vendor you meant.",
+        "lead": "Deletes \"{{vendor}}\". Nothing is paid to or by it.",
+        "alsoAliases_one": "{{count}} alias it has been seen under goes with it",
+        "alsoAliases_other": "{{count}} aliases it has been seen under go with it",
+        "alsoExtractions_one": "{{count}} parsed invoice keeps its own record but loses its link to this vendor",
+        "alsoExtractions_other": "{{count}} parsed invoices keep their own records but lose their link to this vendor",
+        "alsoFrame": "{{clauses}}.",
+        "trigger": "Delete",
+        "confirm": "Delete this vendor",
+        "deleted": "{{vendor}} deleted"
+      },
+      "mergeVendor": {
+        "base": "\"{{duplicate}}\" is deleted and \"{{survivor}}\" is kept.",
+        "checking": "Checking what moves across…",
+        "nothingMoves": "Nothing points at \"{{duplicate}}\", so nothing moves. This cannot be undone.",
+        "clausePayments_one": "{{count}} payment",
+        "clausePayments_other": "{{count}} payments",
+        "clauseAliases_one": "{{count}} alias",
+        "clauseAliases_other": "{{count}} aliases",
+        "moves_one": "{{clauses}} moves to \"{{survivor}}\". This cannot be undone.",
+        "moves_other": "{{clauses}} move to \"{{survivor}}\". This cannot be undone.",
+        "pickOne": "Pick a duplicate to fold into \"{{vendor}}\". It keeps this record; the one you pick is deleted.",
+        "trigger": "Merge duplicate",
+        "confirmNamed": "Merge {{vendor}} in",
+        "confirm": "Merge",
+        "merged": "Vendors merged",
+        "noCandidates": "There is no other vendor to merge in"
+      },
+      "page": {
+        "viewSwitcher": "Money view",
+        "title": "Money",
+        "newVendor": "New vendor",
+        "addPayment": "Add payment"
+      },
+      "field": {
+        "direction": "Direction"
+      },
+      "paymentForm": {
+        "backToPayment": "Back to payment",
+        "allRecurring": "All recurring payments",
+        "titleEdit": "Edit payment",
+        "titleNew": "New recurring payment",
+        "intro": "A bill or recurring income, matched against transactions as they arrive.",
+        "suggestedFrom": "Suggested from {{vendor}} invoice.",
+        "suggestedFromNumbered": "Suggested from {{vendor}} invoice #{{number}}.",
+        "cadenceCaveat": "One invoice can't prove how often it repeats — check the schedule before saving.",
+        "extractionGone": "That invoice is no longer awaiting review, so nothing could be prefilled. Fill the form in yourself, or reopen the document from Review.",
+        "missingTitle": "That payment isn't here",
+        "missingBody": "It may have been ended and removed, or the link may be out of date.",
+        "sectionWho": "Who",
+        "sectionWhat": "What",
+        "sectionWhen": "When",
+        "sectionOptional": "Optional",
+        "directionIn": "Money in",
+        "directionOut": "Money out",
+        "amountIs": "Amount is",
+        "amountIsVariableHint": "The real figure is set when you settle each one.",
+        "amountIsQuestion": "Is the amount fixed?",
+        "kindFixed": "Same every time",
+        "kindVariable": "Varies",
+        "amount": "Amount",
+        "estimate": "Estimate",
+        "estimateHint": "Optional.",
+        "repeatsEvery": "Repeats every",
+        "repeatUnit": "Repeat unit",
+        "repeatUnitPlaceholder": "How often?",
+        "unitWeek": "Week(s)",
+        "unitMonth": "Month(s)",
+        "unitQuarter": "Quarter(s)",
+        "unitYear": "Year(s)",
+        "firstDue": "First due",
+        "anchorFromIssueDate": "The invoice states no due date — this is its issue date.",
+        "anchorMissing": "No date found on the invoice. Pick the day this is due.",
+        "anchorPlaceholder": "Not on the invoice",
+        "stopsAfter": "Stops after",
+        "stopsAfterHint": "Leave empty to repeat forever.",
+        "stopsAfterPlaceholder": "Never",
+        "markPaid": "This invoice is already paid",
+        "markPaidHint": "Marks the period it covers as settled, so the one you'll see coming up is the next payment, not this one.",
+        "linkedAccount": "Linked account",
+        "noLinkedAccount": "No linked account",
+        "notes": "Notes",
+        "notesPlaceholder": "Anything worth remembering about this payment",
+        "saving": "Saving…",
+        "saveChanges": "Save changes",
+        "create": "Create payment",
+        "created": "Payment created",
+        "createdFromInvoice": "Payment created from invoice",
+        "updated": "Payment updated",
+        "repeatNoUnit": "One invoice never proves a cadence — say how often this bill arrives.",
+        "repeatWeek_one": "Repeats every week, anchored on the day it's due.",
+        "repeatWeek_other": "Repeats every {{count}} weeks, anchored on the day it's due.",
+        "repeatMonth_one": "Repeats every month, anchored on the day it's due.",
+        "repeatMonth_other": "Repeats every {{count}} months, anchored on the day it's due.",
+        "repeatQuarter_one": "Repeats every quarter, anchored on the day it's due.",
+        "repeatQuarter_other": "Repeats every {{count}} quarters, anchored on the day it's due.",
+        "repeatYear_one": "Repeats every year, anchored on the day it's due.",
+        "repeatYear_other": "Repeats every {{count}} years, anchored on the day it's due.",
+        "blockers": "To continue: {{blockers}}."
+      },
+      "status": {
+        "pause": "Pause",
+        "resume": "Resume",
+        "pauseConfirm": "Pause this payment",
+        "resumeConfirm": "Resume this payment",
+        "pauseConsequence": "No new due dates while paused. Anything that falls due meanwhile is recorded as skipped, not overdue.",
+        "resumeConsequence": "Picks up the original schedule — the same dates as before. Past due dates are left exactly as they are.",
+        "resumeConsequenceSince": "Picks up the original schedule — the same dates as before. Anything due since {{date}} is recorded as skipped, not overdue.",
+        "paused": "Payment paused",
+        "resumed": "Payment resumed"
+      },
+      "settle": {
+        "markReceived": "Mark as received",
+        "markPaid": "Mark as paid",
+        "markedReceived": "Marked as received",
+        "markedPaid": "Marked as paid",
+        "skipped": "Occurrence skipped",
+        "amountSettled": "Amount settled",
+        "confirm": "Confirm",
+        "cancel": "Cancel",
+        "skip": "Skip"
+      },
+      "vendorSpend": {
+        "notSubtracted": "Not subtracted from what you owe — these are two separate figures."
+      },
+      "vendorEdit": {
+        "name": "Name",
+        "category": "Category",
+        "categoryPlaceholder": "Uncategorised",
+        "website": "Website",
+        "websitePlaceholder": "None on file",
+        "edit": "Edit",
+        "cancel": "Cancel",
+        "save": "Save vendor"
+      },
+      "vendorCreate": {
+        "placeholder": "Vendor name",
+        "label": "Vendor name",
+        "cancel": "Cancel"
+      },
+      "vendorField": {
+        "label": "Vendor",
+        "pendingHint": "Read from the invoice. We'll create this vendor when you save if it doesn't exist yet.",
+        "searchPlaceholder": "Search or create a vendor",
+        "empty": "No vendor by that name yet.",
+        "didYouMean": "Did you mean",
+        "typeToCreate": "Type a name to create a vendor",
+        "sameVendor": "Same vendor",
+        "similar": "Similar",
+        "createNamed": "Create “{{term}}”",
+        "similarNames_one": "Already have a vendor with a similar name:",
+        "similarNames_other": "Already have vendors with a similar name:",
+        "use": "Use {{name}}"
+      },
+      "vendorList": {
+        "uncategorised": "Uncategorised",
+        "billsGroup": "Bills",
+        "billKind": "Bill",
+        "paymentCount_one": "{{count}} payment",
+        "paymentCount_other": "{{count}} payments"
+      },
+      "vendor": {
+        "saved": "{{name}} saved",
+        "created": "{{name}} created"
+      },
+      "currencyField": {
+        "label": "Currency",
+        "searchPlaceholder": "USD, EUR, BTC…",
+        "empty": "Nothing in your token list matches that."
+      },
+      "duplicatePicker": {
+        "noMatch": "No other vendor matches “{{query}}”.",
+        "searchPlaceholder": "Search vendors",
+        "searchLabel": "Search for the duplicate vendor",
+        "optionLabel": "Duplicate to fold into {{vendor}}",
+        "intro": "Pick the duplicate to delete. It is folded into <survivor>{{vendor}}</survivor>, which is kept."
+      },
+      "expectedIncome": {
+        "title_one": "Income expected, next {{count}} day",
+        "title_other": "Income expected, next {{count}} days",
+        "unknownPayer": "Unknown payer",
+        "row": "{{vendor}}, expected {{date}}",
+        "caption_one": "What you expect to receive. Not counted against the {{count}}-day bill figure above.",
+        "caption_other": "What you expect to receive. Not counted against the {{count}}-day bill figure above.",
+        "expected": "Expected {{date}}",
+        "expectedLate": "Expected {{date}} · not received yet"
+      },
+      "peek": {
+        "status": "Status",
+        "monthlyEquivalent": "Monthly equivalent",
+        "amountIs": "Amount is",
+        "varies": "Varies",
+        "fixed": "Fixed",
+        "notSet": "Not set",
+        "noAmount": "No amount",
+        "setOnSettling": "Set on settling",
+        "started": "Started",
+        "schedule": "Schedule",
+        "repeats": "Repeats",
+        "anchorDate": "Anchor date",
+        "ends": "Ends",
+        "never": "Never",
+        "pausedSince": "Paused since",
+        "notes": "Notes",
+        "note": "Note",
+        "edit": "Edit",
+        "due": "Due",
+        "editPayment": "Edit payment",
+        "cadenceAndDirection": "{{cadence}} · {{direction}}",
+        "expectedOn": "Expected {{date}}",
+        "expectedOnLate": "Expected {{date}} · not received yet",
+        "dueOn": "Due {{date}}"
+      },
+      "recurringList": {
+        "addPayment": "Add a payment"
+      },
+      "recurringSummary": {
+        "committedEachMonth": "Committed each month"
+      },
+      "vendorPeek": {
+        "newVendor": "New vendor",
+        "seePayments_one": "See payment",
+        "seePayments_other": "See payments",
+        "payments": "Payments",
+        "incomeFromThisVendor": "Income from this vendor",
+        "recentIncome": "Recent income",
+        "recentPayments": "Recent payments",
+        "details": "Details",
+        "website": "Website",
+        "noWebsite": "None on file",
+        "direction": "Direction",
+        "unclassified": "This vendor’s payments do not say whether the money goes out or comes in, so no monthly figure is shown.",
+        "notCounted": "Not counted"
+      },
+      "pending": {
+        "creatingVendor": "Creating vendor",
+        "creatingPayment": "Creating payment",
+        "updatingPayment": "Updating payment",
+        "deletingPayment": "Deleting payment",
+        "deletingVendor": "Deleting vendor",
+        "savingVendor": "Saving vendor",
+        "mergingVendors": "Merging vendors",
+        "pausingPayment": "Pausing payment",
+        "resumingPayment": "Resuming payment",
+        "updatingOccurrence": "Updating payment occurrence"
+      },
+      "thisPayment": "this payment",
+      "group": {
+        "overdue": "Overdue"
+      },
+      "blocker": {
+        "enterAmount": "enter the amount",
+        "estimateAboveZero": "make the estimate more than zero, or clear it",
+        "chooseVendor": "choose a vendor",
+        "pickCurrency": "pick a currency from the list",
+        "setAnchorDate": "set an anchor date",
+        "chooseCadence": "choose how often this repeats",
+        "setRepeatCount": "set a valid repeat count"
+      }
+    },
+    "groups": {
+      "coverage": {
+        "empty": "Nothing in this group carries a value today.",
+        "counted_one": "What the {{count}} holding behind this total is worth today.",
+        "counted_other": "What the {{count}} holdings behind this total are worth today.",
+        "countedAll_one": "Covers the {{count}} holding listed below.",
+        "countedAll_other": "Covers all {{count}} holdings listed below.",
+        "countedOf_one": "Covers {{count}} of the {{listed}} holdings listed below.",
+        "countedOf_other": "Covers {{count}} of the {{listed}} holdings listed below."
+      },
+      "accountNote": "An account here brings everything it holds and anything it receives later. A holding counted by both is still counted once.",
+      "inactiveNote_one": "{{count}} of them is inactive: it stays in the group and is listed below, but it is not in this total.",
+      "inactiveNote_other": "{{count}} of them are inactive: they stay in the group and are listed below, but they are not in this total.",
+      "unpriced": {
+        "listAll": "{{head}} and {{last}}",
+        "listMore": "{{head}} and {{count}} more",
+        "note_one": "{{named}} could not be priced today, so it is not in this total.",
+        "note_other": "{{named}} could not be priced today, so they are not in this total."
+      },
+      "createFirst": "Create your first group",
+      "assign": {
+        "title": "Assign groups",
+        "description": "Every group ticked here is applied to {{entities}}. A group they do not all already share is not on the list, and is left alone.",
+        "holdingCount_one": "{{count}} holding",
+        "holdingCount_other": "{{count}} holdings",
+        "accountCount_one": "{{count}} account",
+        "accountCount_other": "{{count}} accounts",
+        "save": "Save groups",
+        "saving": "Saving…",
+        "newGroup": "New group",
+        "loading": "Loading groups",
+        "stillLoading": "wait for the groups to load",
+        "firstTitle": "Create your first group",
+        "firstDescription": "You have no groups yet. This one is created and applied to {{entities}}.",
+        "createAndAssign": "Create and assign",
+        "creating": "Creating…",
+        "needName": "name the group",
+        "subject": "these groups",
+        "groupSubject": "the group",
+        "toast": {
+          "added_one": "Added to {{count}} group",
+          "added_other": "Added to {{count}} groups",
+          "removed_one": "Removed from {{count}} group",
+          "removed_other": "Removed from {{count}} groups",
+          "changed": "Groups updated",
+          "createdAndAssigned": "Group “{{name}}” created and assigned"
+        }
+      },
+      "colour": {
+        "legend": "Colour",
+        "swatch": "Colour {{color}}"
+      },
+      "detail": {
+        "toast": {
+          "updated": "Group updated",
+          "updating": "Updating the group",
+          "deleted": "Group deleted",
+          "deleting": "Deleting the group"
+        },
+        "backToGroups": "Groups",
+        "removeMember": "Remove {{label}} from {{group}}",
+        "notFound": "This group is not on your list. It may have been deleted, or the link may be out of date.",
+        "value": "Value",
+        "inThisGroup": "In this group",
+        "noun": "holdings and accounts",
+        "note": "Adding a whole account keeps it in the group — including whatever it receives later. Take single holdings out from the list above.",
+        "empty": "Nothing is in this group yet. Add a holding or an account and it will show up here.",
+        "addMembers": "Add holdings or accounts",
+        "details": "Details",
+        "name": "Name",
+        "description": "Description",
+        "colour": "Colour",
+        "saveChanges": "Save changes",
+        "discard": "Discard",
+        "needName": "To save: give the group a name.",
+        "dangerZone": "Danger zone",
+        "deleteConsequence": "“{{name}}” disappears from every list and filter. The {{members}} in it are not deleted — they simply stop carrying this label.",
+        "deleteTrigger": "Delete group",
+        "deleteCommit": "Delete this group"
+      },
+      "page": {
+        "title": "Groups",
+        "created": "Group “{{name}}” created",
+        "creating": "Creating the group",
+        "name": "Name",
+        "newGroup": "New group",
+        "createGroup": "Create group",
+        "cancel": "Cancel",
+        "namePlaceholder": "Retirement, taxable, the joint one…",
+        "colour": "Colour",
+        "needName": "To continue: name the group."
+      }
+    },
+    "realizedLedger": {
+      "answerTransfers": "Answer the waiting transfers",
+      "portion": "Part {{index}} of {{total}} of one {{noun}}",
+      "noun": {
+        "sale": "sale",
+        "swap": "swap",
+        "withdrawal": "withdrawal",
+        "transfer": "transfer",
+        "disposal": "disposal"
+      },
+      "verb": {
+        "sold": "Sold",
+        "swapped": "Swapped",
+        "withdrew": "Withdrew",
+        "transferredOut": "Transferred out",
+        "disposed": "Disposed"
+      },
+      "outcome": {
+        "unpriced": "No price could be found for this, so no gain was booked. The cost is still shown.",
+        "unreviewed": "Waiting on your answer, so no gain was booked either way.",
+        "retained": "You said this never left your control, so nothing was realized.",
+        "awaitingPair": "Only one side of this move was imported, so no gain was booked.",
+        "realizedUnattributed": "Recorded as having left your portfolio, so this gain was booked. There is no record of anyone answering it — the answer was not given in the review queue.",
+        "retainedUnattributed": "Recorded as never having left your control, so nothing was realized. There is no record of anyone answering it."
+      },
+      "basis": {
+        "partialNote": "Based on history we know is incomplete or a price outside our freshness window.",
+        "unknownNote": "We have no record of acquiring this, so the whole amount shows as gain. Most often that is an import that could not fetch far enough back.",
+        "partialLabel": "Partial basis",
+        "unknownLabel": "No basis on record"
+      },
+      "held": {
+        "sameDay": "same day",
+        "days_one": "{{count}} day",
+        "days_other": "{{count}} days",
+        "months_one": "{{count}} month",
+        "months_other": "{{count}} months",
+        "years": "{{years}} years"
+      },
+      "answer": {
+        "unattributedLabel": "Answer not recorded"
+      },
+      "valuation": {
+        "heldTokenFallback": "Valued from the token that left, at its price on the day: what came back has no price history, so the rate this swap executed at could not be converted.",
+        "estimatedLabel": "Valued from the token that left"
+      }
+    },
+    "holdings": {
+      "amountFact": {
+        "edit": "Edit amount",
+        "amount": "Amount",
+        "save": "Save"
+      },
+      "deleteAction": {
+        "trigger": "Delete",
+        "commit": "Delete {{symbol}}",
+        "consequence": "{{symbol}} in {{account}} is removed, along with every transaction recorded against it — <value/> comes off your portfolio total. Nothing restores it; a re-import would have to rebuild the history. To take it out of the total and keep the record, use Deactivate."
+      },
+      "trendLabel": "{{symbol}} value over the last {{period}}",
+      "payout": {
+        "daily": "Daily",
+        "weekdays": "Weekdays (Mon–Fri)",
+        "weekly": "Weekly on {{day}}",
+        "monthly": "Monthly on day {{day}}",
+        "yearly": "Yearly on {{date}}",
+        "yearlyLastDay": "Yearly on the last day of {{month}}"
+      },
+      "peek": {
+        "editPriceOf": "Edit the price of {{symbol}}",
+        "pot": "Pot",
+        "interest": "Interest",
+        "apy": "APY",
+        "apyEdit": "Edit",
+        "apyRemove": "Remove",
+        "configure": "Configure",
+        "payout": "Payout",
+        "lastPayout": "Last payout",
+        "status": "Status",
+        "active": "Active",
+        "inactive": "Inactive",
+        "lastUpdated": "Last updated",
+        "source": "Source",
+        "added": "Added",
+        "price": "Price",
+        "unpriceableNote": "No source has ever quoted this token, and we have stopped asking for now. It is left out of your net worth rather than counted as zero.",
+        "history": "History",
+        "incompleteHistory": "Incomplete — inflows from before the first imported transaction are missing, so values before that date are clamped.",
+        "performance": "Performance",
+        "costBasis": "Cost basis",
+        "gainLoss": "Gain / loss",
+        "record": "Record",
+        "groups": "Groups",
+        "in": "In",
+        "noGroups": "No groups",
+        "refreshing": "Refreshing…",
+        "refreshPrice": "Refresh price",
+        "syncing": "Syncing…",
+        "syncBalance": "Sync balance",
+        "amount": "Amount",
+        "account": "Account",
+        "type": "Type"
+      },
+      "badge": {
+        "noPrice": "No price",
+        "noPriceTitle": "No price source has ever quoted this token, and we have stopped asking for now. It is left out of your net worth rather than counted as zero.",
+        "lookalike": "Displays as {{impersonates}}",
+        "lookalikeTitle": "This token's symbol is written with characters that draw \"{{impersonates}}\" without being it. The row is kept, and your balance with it, because hiding it would tell you nothing — but it is not the token it resembles.",
+        "noPriceSpoken": "no price available",
+        "lookalikeSpoken": "displays as {{impersonates}}",
+        "lookalikeExportCell": "{{symbol}} (displays as {{impersonates}})"
+      },
+      "filter": {},
+      "sort": {},
+      "groupBy": {},
+      "empty": {
+        "action": "Add your first holding"
+      },
+      "bulk": {
+        "assignGroups": "Assign groups",
+        "deleteConsequence_one": "{{symbols}} is removed from your portfolio, and every transaction recorded against it goes too. This cannot be undone.",
+        "deleteConsequence_other": "{{symbols}} are removed from your portfolio, and every transaction recorded against them goes too. This cannot be undone."
+      },
+      "realized": {
+        "heading": "Realized",
+        "noGain": "No gain booked",
+        "lotAcquired": "<qty/> acquired {{date}}",
+        "lotHeld": "<qty/> acquired {{date}} · held {{duration}}",
+        "lotNoAcquisition": "<qty/> with no acquisition on record",
+        "costOf": "cost <value/>"
+      },
+      "apy": {
+        "removed": "Interest configuration removed",
+        "removing": "Removing the interest configuration",
+        "trigger": "Remove interest configuration",
+        "consequence": "Interest will stop accruing on this holding. Payouts already recorded are kept.",
+        "commit": "Remove",
+        "createTitle": "Configure interest",
+        "editTitle": "Edit interest",
+        "description": "Interest is added to this holding’s balance on every payout date, and recorded there as a transaction you can see in its history.",
+        "subject": "the interest configuration",
+        "rate": "Annual rate (%)",
+        "ratePlaceholder": "4.5",
+        "frequencyLabel": "Paid",
+        "dayOfWeek": "Day of the week",
+        "month": "Month",
+        "dayOfMonth": "Day of the month",
+        "dayOfMonthPlaceholder": "1–31",
+        "needRate": "enter an annual rate above 0 and no more than 100",
+        "needDayOfMonth": "enter a day of the month between 1 and 31",
+        "shortMonths": "Shorter months pay on their last day.",
+        "pastMonthEnd": "{{month}} ends before that, so this pays on its last day.",
+        "preview": "{{schedule}}. At today’s balance the next payout is about {{amount}} {{symbol}}.",
+        "editRestarts": "Saving restarts the schedule from today — the next payout is the first matching date from now.",
+        "saveCreate": "Start accruing",
+        "saveEdit": "Save",
+        "saving": "Saving…",
+        "frequency": {
+          "daily": "Every day",
+          "weekdays": "Every weekday",
+          "weekly": "Every week",
+          "monthly": "Every month",
+          "yearly": "Every year"
+        }
+      },
+      "page": {
+        "title": "Holdings"
+      },
+      "refresh": {
+        "price": "Refreshing price",
+        "priceFailed": "Price refresh job failed",
+        "balance": "Refreshing balance",
+        "balanceFailed": "Refresh job failed",
+        "partialTitle": "Balance refresh — partial",
+        "partial_one": "{{symbol}} wasn't returned by the provider — your other {{count}} balance refreshed. Try again in a minute, or re-import the account if this keeps happening.",
+        "partial_other": "{{symbol}} wasn't returned by the provider — your other {{count}} balances refreshed. Try again in a minute, or re-import the account if this keeps happening.",
+        "oneBalance": "{{symbol}} balance refreshed",
+        "manyBalances_one": "Refreshed {{count}} balance on this account",
+        "manyBalances_other": "Refreshed {{count}} balances on this account",
+        "outcome": {
+          "noPrice": "No provider had a price for {{symbol}}. The figure on screen is unchanged.",
+          "storedWithAge": "No new price for {{symbol}} — showing the one from {{age}}",
+          "stored": "No new price for {{symbol}} — the stored one is unchanged",
+          "updated": "{{symbol}} price updated"
+        }
+      },
+      "summary": {
+        "value": "Value",
+        "excludes_one": "Excludes {{count}} inactive holding worth <value/>, still listed below.",
+        "excludes_other": "Excludes {{count}} inactive holdings worth <value/>, still listed below.",
+        "allocation": "Allocation by asset type"
+      },
+      "status": {
+        "confirm": "{{label}} {{symbol}}",
+        "deactivateConsequence": "{{symbol}} in {{account}} stops counting toward your portfolio total — <value/> comes off it. The holding and its history stay, listed here as Inactive, so you can turn it back on.",
+        "activateConsequence": "{{symbol}} in {{account}} counts toward your portfolio total again — <value/> goes back on it.",
+        "deactivateAction": "Deactivate",
+        "activateAction": "Activate"
+      },
+      "toast": {
+        "deleted": "Holding deleted",
+        "deletingContext": "Deleting holding",
+        "bulkDeleted_one": "{{count}} holding deleted",
+        "bulkDeleted_other": "{{count}} holdings deleted",
+        "bulkDeletedWithFailures_one": "{{count}} holding deleted, {{failed}} failed",
+        "bulkDeletedWithFailures_other": "{{count}} holdings deleted, {{failed}} failed",
+        "bulkDeletingContext": "Deleting holdings",
+        "updated": "Holding updated",
+        "updatingContext": "Updating holding"
+      }
+    },
+    "export": {
+      "sheet": {
+        "accounts": "Accounts",
+        "holdings": "Holdings",
+        "transactions": "Transactions",
+        "vendors": "Vendors",
+        "payments": "Payments",
+        "occurrences": "Payment occurrences",
+        "groups": "Groups",
+        "groupMembers": "Group members",
+        "vaults": "Vaults",
+        "vaultHoldings": "Vault holdings",
+        "documents": "Documents",
+        "history": "Net worth history",
+        "netWorth": "Net worth"
+      },
+      "column": {
+        "account": "Account",
+        "institution": "Institution",
+        "accountType": "Type",
+        "description": "Description",
+        "hidden": "Hidden",
+        "active": "Active",
+        "added": "Added",
+        "id": "Id",
+        "symbol": "Symbol",
+        "token": "Token",
+        "balance": "Balance",
+        "source": "Source",
+        "lastUpdated": "Last updated",
+        "occurred": "Occurred",
+        "transactionKind": "Kind",
+        "quantity": "Quantity",
+        "priceNative": "Price (native)",
+        "counterQuantity": "Counter quantity",
+        "fee": "Fee",
+        "counterparty": "Counterparty",
+        "externalId": "External id",
+        "vendor": "Vendor",
+        "category": "Category",
+        "website": "Website",
+        "direction": "Direction",
+        "paymentKind": "Kind",
+        "amount": "Amount",
+        "every": "Every",
+        "starting": "Starting",
+        "ending": "Ending",
+        "status": "Status",
+        "origin": "Origin",
+        "notes": "Notes",
+        "due": "Due",
+        "expected": "Expected",
+        "actual": "Actual",
+        "group": "Group",
+        "memberKind": "Member kind",
+        "member": "Member",
+        "vault": "Vault",
+        "saved": "Saved",
+        "target": "Target",
+        "holding": "Holding",
+        "share": "Share",
+        "file": "File",
+        "documentKind": "Kind",
+        "mimeType": "Type",
+        "bytes": "Bytes",
+        "classification": "Classification",
+        "uploaded": "Uploaded",
+        "date": "Date",
+        "netWorth": "Net worth",
+        "coverage": "Coverage",
+        "holdingsPriced": "Holdings priced",
+        "holdingsTotal": "Holdings total",
+        "holdingsUnpriceable": "Holdings unpriceable",
+        "holdingsStalePriced": "Holdings priced from a stale quote"
+      },
+      "value": {
+        "yes": "yes",
+        "no": "no",
+        "every_week_one": "{{count}} week",
+        "every_week_other": "{{count}} weeks",
+        "every_month_one": "{{count}} month",
+        "every_month_other": "{{count}} months",
+        "every_quarter_one": "{{count}} quarter",
+        "every_quarter_other": "{{count}} quarters",
+        "every_year_one": "{{count}} year",
+        "every_year_other": "{{count}} years",
+        "everyUnknown": "{{count}} × {{unit}}"
+      },
+      "provenance": {
+        "subject": "Whole account",
+        "scope": "{{holdings}}, {{transactions}}, {{history}}",
+        "scopeHoldings_one": "{{count}} holding",
+        "scopeHoldings_other": "{{count}} holdings",
+        "scopeTransactions_one": "{{count}} transaction",
+        "scopeTransactions_other": "{{count}} transactions",
+        "scopeHistory_one": "{{count}} day of history",
+        "scopeHistory_other": "{{count}} days of history",
+        "accountLabel": "Account",
+        "notIncludedLabel": "Not included",
+        "notIncludedValue": "Exchange and brokerage credentials, sessions, uploaded file contents"
+      }
+    },
+    "settings": {
+      "account": {
+        "deleteIntro": "Deleting your data removes every account, holding, wallet, integration credential, group and vault. The login itself stays, empty.",
+        "deleting": "Deleting…",
+        "deleteTrigger": "Delete all my data",
+        "deleteConfirm": "Delete everything",
+        "deleteConsequence": "Every account, holding, wallet, integration credential, group and vault goes. Your login remains, with nothing in it. This cannot be undone.",
+        "deleteInFlight": "Your data is being deleted.",
+        "deleted": "All your data has been deleted",
+        "deleteFailed": "The delete failed"
+      },
+      "export": {
+        "title": "Your data",
+        "subject": "whole account",
+        "workbook": "Excel workbook",
+        "workbookDetail": "One sheet per set — holdings, transactions, payments, history",
+        "jsonDetail": "Every field, exactly as the API returns it",
+        "scopeAll": "Everything on your account",
+        "exportJson": "Export as JSON",
+        "exportWorkbook": "Export workbook",
+        "json": "JSON",
+        "intro": "Every record on this account in one file — holdings, the whole transaction ledger, payments, groups, vaults and your net-worth history. Exchange and brokerage keys are left out: they are credentials, not records.",
+        "trigger": "Export everything"
+      },
+      "maintenance": {
+        "title": "Portfolio history",
+        "rebuild": "Rebuild portfolio history",
+        "rebuilt": "Portfolio history rebuilt",
+        "rebuildFailed": "The rebuild failed",
+        "intro": "Rebuilds the cached daily values the Net worth and PnL charts are drawn from — the same 365-day backfill that runs nightly.",
+        "rebuilding": "Rebuilding…"
+      },
+      "notifications": {
+        "title": "Payment reminders",
+        "intro": "A single notification on this device at around 5PM, the day before payments are due — how many, and what they add up to. Nothing is sent on a day with nothing due.",
+        "ready": "Reminders are off on this device.",
+        "enabled": "Reminders are on for this device.",
+        "enable": "Turn on reminders",
+        "disable": "Turn off reminders",
+        "denied": "This browser is blocking notifications for Scani. Allow them in your browser or system settings, then come back.",
+        "iosNeedsInstall": "On iPhone and iPad, notifications only reach Scani once it is added to the Home Screen. Open the Share menu and choose Add to Home Screen, then turn them on from there.",
+        "unsupported": "This browser cannot receive notifications.",
+        "serverUnconfigured": "This server has no notification keys set, so it cannot send reminders yet.",
+        "sendTest": "Send a test notification",
+        "testNoDevices": "No device is subscribed yet, so there was nothing to send to.",
+        "testSentHere": "Sent to this device. It should appear within a few seconds — if it does not, check that notifications are allowed for Scani in your device settings.",
+        "testSentOther": "Sent to another device you have turned reminders on for.",
+        "testGoneHere": "This device's subscription had expired, so it has been removed. Turn reminders off and back on here to register a new one.",
+        "testGoneOther": "Another device had an expired subscription, so it has been removed. Turn reminders on again on that device.",
+        "testVapidMismatch": "The push service rejected this notification (403). The key this device subscribed with is not the key the server signs with, so no reminder can reach it until that is fixed. This one is ours, not yours.",
+        "testFailed": "The push service refused this notification (HTTP {{statusCode}}). The subscription is still registered.",
+        "testFailedNoCode": "The push service could not be reached. The subscription is still registered."
+      },
+      "profile": {
+        "emailImmutable": "Changing this is not something the app can do yet.",
+        "baseCurrencyHint": "Every figure in the app is converted into this."
+      },
+      "sessions": {
+        "title": "Devices",
+        "subject": "your devices",
+        "intro": "Everywhere this account is currently signed in. End any you do not recognise.",
+        "empty": "No active sessions.",
+        "revoked": "Session revoked",
+        "signedOutOthers": "Signed out everywhere else",
+        "signOutOthers": "Sign out everywhere else ({{count}})",
+        "signOutOthersConfirm_one": "Sign out {{count}} device",
+        "signOutOthersConfirm_other": "Sign out {{count}} devices",
+        "signOutOthersConsequence_one": "Every device except this one is signed out — {{count}} session, including any you do recognise. Each has to sign in again with a new code from your email. Your data is untouched.",
+        "signOutOthersConsequence_other": "Every device except this one is signed out — {{count}} sessions, including any you do recognise. Each has to sign in again with a new code from your email. Your data is untouched.",
+        "revoke": "Revoke",
+        "revokeConfirm": "Sign out {{device}}",
+        "revokeConsequence": "{{device}} at {{where}} is signed out and has to sign in again with a new code from your email. Your data is untouched, and nothing else is signed out.",
+        "currentDevice": "This is the device you are using — sign out below instead",
+        "thisDevice": "{{device}} — this device",
+        "lastUsed": "{{where}} · last used {{when}}",
+        "unknownIp": "unknown IP"
+      },
+      "device": {
+        "unknown": "Unknown device",
+        "genericBrowser": "Browser",
+        "unknownOs": "Unknown OS",
+        "browserOnOs": "{{browser}} on {{os}}"
+      },
+      "dataQuality": {
+        "title": "Data quality",
+        "flagged": "Flagged",
+        "duplicateRows": "Shown positions sharing a symbol with another token row",
+        "duplicateChip": "{{symbol}}×{{count}}",
+        "duplicateChipLookalike": "{{symbol}}×{{count}} (displays as {{lookalikeOf}})",
+        "lookalikeRows": "Shown positions whose symbol imitates another",
+        "lookalikeChip": "{{symbol}} (displays as {{lookalikeOf}})",
+        "holdingsShown": "Holdings shown",
+        "holdingsShownHint": "{{count}} in total",
+        "zeroBalanceShown": "Zero-balance holdings still shown",
+        "hiddenNextSweep_one": "Of those, hidden on the next {{count}}-day sweep",
+        "hiddenNextSweep_other": "Of those, hidden on the next {{count}}-day sweep",
+        "noRecentPrice": "Shown positions with no recent price",
+        "noPriceSource": "Shown positions missing a price source we can use",
+        "noPriceSourceHint": "{{symbols}} — our configuration, not the market",
+        "nothingCanPrice": "Shown positions nothing can price",
+        "nothingCanPriceHint": "Airdropped or delisted tokens with no market — excluded from chart coverage",
+        "negativeOpening": "Negative synthesised opening balance",
+        "negativeOpeningHint": "An import that did not reach back before the first trade",
+        "missingCoverage": "Holdings with no coverage row",
+        "intro": "Recounted on every visit. Anything marked “{{flag}}” is worth looking into.",
+        "rowLink": "{{label}}: {{count}} — show in Holdings"
+      },
+      "pending": {
+        "deletingData": "Deleting your data",
+        "exportingAccount": "Exporting your account",
+        "rebuildingHistory": "Rebuilding your portfolio history",
+        "savingSettings": "Saving your settings",
+        "revokingSession": "Revoking the session",
+        "signingOutOthers": "Signing out the other sessions",
+        "togglingNotifications": "Changing your notification setting",
+        "sendingTestNotification": "Sending a test notification"
+      }
+    },
+    "feedback": {
+      "stale": {
+        "notice": "Couldn't reach Scani. These are the last figures we had, not today's.",
+        "retry": "Try again"
+      }
+    },
+    "review": {
+      "page": {
+        "title": "Review",
+        "transfersTitle": "Transfers to confirm",
+        "answered": "Answered"
+      },
+      "item": {
+        "jobFailed": "{{job}} failed",
+        "invoiceExtracted": "Invoice extracted",
+        "transfersToConfirm": "Transfers to confirm",
+        "holdings_one": "{{count}} holding",
+        "holdings_other": "{{count}} holdings",
+        "holdingsWithSymbols_one": "{{count}} holding · {{symbols}}",
+        "holdingsWithSymbols_other": "{{count}} holdings · {{symbols}}",
+        "symbolsOverflow": "{{symbols}} +{{hidden}}",
+        "needsCurrency_one": "{{count}} transaction — needs a currency",
+        "needsCurrency_other": "{{count}} transactions — needs a currency",
+        "needsCurrencyWithType_one": "{{count}} transaction · {{fileType}} — needs a currency",
+        "needsCurrencyWithType_other": "{{count}} transactions · {{fileType}} — needs a currency",
+        "chains_one": "{{count}} chain",
+        "chains_other": "{{count}} chains",
+        "candidatesAcross_one": "{{count}} candidate across {{chains}}",
+        "candidatesAcross_other": "{{count}} candidates across {{chains}}",
+        "nothingFound": "nothing found",
+        "labelled": "{{label}} · {{body}}",
+        "unpairedTransfers_one": "{{count}} transfer out with no matching deposit",
+        "unpairedTransfers_other": "{{count}} transfers out with no matching deposit"
+      },
+      "kind": {
+        "withdrawal": "Withdrawal",
+        "transferOut": "Transfer out"
+      },
+      "list": {
+        "valueAwaiting": "<label>Value awaiting an answer:</label> <value/>",
+        "valueAwaitingUnpriced_one": "<label>Value awaiting an answer:</label> <value/><label>, and {{count}} more with no price that day</label>",
+        "valueAwaitingUnpriced_other": "<label>Value awaiting an answer:</label> <value/><label>, and {{count}} more with no price that day</label>",
+        "backToReview": "Back to review",
+        "seeAllJobs": "See all jobs",
+        "field": {
+          "when": "When",
+          "to": "To",
+          "description": "Description",
+          "transaction": "Transaction",
+          "viewOnExplorer": "View on the block explorer",
+          "toOwnWallet": "A wallet you added — this money stayed in your portfolio"
+        }
+      },
+      "answered": {
+        "title": "Answered transfers",
+        "backToQueue": "Back to the queue",
+        "field": {
+          "answered": "Answered",
+          "to": "To"
+        },
+        "source": {
+          "unrecorded": "Not recorded",
+          "unrecordedLong": "Not recorded — this answer was not given in the queue",
+          "user": "By you, here",
+          "repair": "Corrected by Scani",
+          "repairNote": "Scani corrected this answer",
+          "rule": "By a rule you wrote",
+          "ruleNote": "Answered by your rule: {{note}}",
+          "ruleNoteUnnamed": "Answered by a rule you wrote about this destination"
+        },
+        "reopen": {
+          "trigger": "Change this answer",
+          "commit": "Put it back in the queue"
+        },
+        "toast": {
+          "reopened": "Back in the queue — answer it again there",
+          "reopenFailed": "That transfer could not be reopened"
+        },
+        "attribution": {
+          "user": "You said",
+          "repair": "Scani corrected this to",
+          "unattributed": "Recorded as",
+          "rule": "Your rule answered"
+        }
+      },
+      "split": {
+        "movingTo": "Moving to {{location}}",
+        "wherePrompt": "Where did this part go?",
+        "amountLabel": "{{outcome}} — amount in {{symbol}}",
+        "pickDepositFirst": "Pick the deposit above first",
+        "addsUp": "Adds up"
+      },
+      "decision": {
+        "possibleMatches": "Possible matches",
+        "candidatesLegend": "Possible matching deposits",
+        "noCandidates": "No deposit of {{symbol}} landed anywhere in Scani within a week of this, at a comparable amount. If it went somewhere Scani cannot see, say so below.",
+        "whatHappened": "What happened",
+        "noLinkTarget": "No deposit close enough to link this to",
+        "toast": {
+          "paired": "Linked — the cost basis moves with it",
+          "internal": "Recorded — the deposit is on the other side now",
+          "leftControl": "Recorded as a disposal",
+          "untracked": "Recorded as still yours",
+          "split": "Recorded — each part on its own terms",
+          "gone": "That transfer is no longer waiting",
+          "splitRejected": "That division was not accepted"
+        },
+        "ownWalletNotice": "This went to a wallet you added, so the money is still yours. Pair it with the matching deposit, or record where it moved to — choosing that it left your portfolio books it as a sale.",
+        "withdrawnNotice": "Scani withdrew an earlier answer on this transfer. It was given about a pairing we have since shown was not a transfer at all, so the question is back — and there may be no deposit here to point at.",
+        "withdrawnRuleNotice": "You took back the answer your rule gave this transfer, so it is back here for you to answer yourself. The rule will not answer it again."
+      },
+      "destinationPicker": {
+        "loading": "Loading your accounts…",
+        "legend": "Where this money went",
+        "noDestinations": "You have no other account to move this to. If it went somewhere Scani cannot see, say that instead."
+      },
+      "transfer": {
+        "unreviewedBehaviour": "While these are unanswered, Scani books no gain on them — moving your own coins is not a sale, and guessing that it was is how an invented gain gets onto your chart. If one of these really did leave your portfolio, its gain is missing from your realized total until you say so.",
+        "unreviewedNote": "Unanswered, this books no gain either way.",
+        "candidateReason": {
+          "ambiguous": "Matches — but so does another deposit",
+          "quantity": "Amount differs by {{pct}}",
+          "time": "Outside the {{window}} window we match on",
+          "both": "{{pct}} off, and outside the {{window}} window"
+        },
+        "hint": {
+          "equallyGood_one": "{{count}} equally good match",
+          "equallyGood_other": "{{count}} equally good matches",
+          "none": "No close deposit found",
+          "possible_one": "{{count}} possible match",
+          "possible_other": "{{count}} possible matches",
+          "ownWallet": "Went to a wallet you added"
+        },
+        "consequence": {
+          "paired": "The {{quantity}} {{symbol}} keeps what you originally paid for it as it moves to {{location}}. Nothing is realized here, and no gain is booked.",
+          "pairedPrompt": "Pick the deposit this money arrived in.",
+          "internalPrompt": "Pick the holding this money moved to.",
+          "leftControlPriced": "Counted as a disposal on {{date}} at market value — about {{amount}} of proceeds against what you paid.",
+          "leftControlUnpriced": "Counted as a disposal on {{date}} at market value. Scani has no price for {{symbol}} that day, so nothing is booked.",
+          "untracked": "Still yours, just somewhere Scani cannot see. Not a disposal, so no gain is booked — the {{symbol}} simply stops being counted."
+        },
+        "decision": {
+          "paired": {
+            "trigger": "Same money",
+            "commit": "Link these two"
+          },
+          "internal": {
+            "trigger": "Moved somewhere Scani tracks",
+            "commit": "Record the move"
+          },
+          "leftControl": {
+            "trigger": "It left my portfolio",
+            "commit": "Count it as a disposal"
+          },
+          "untracked": {
+            "trigger": "Moved somewhere untracked",
+            "commit": "Record it as still mine"
+          }
+        },
+        "destination": {
+          "willCreate": "No {{symbol}} tracked here yet — a holding will be created"
+        },
+        "internal": {
+          "carry": "The {{amount}} {{symbol}} keeps what you originally paid for it as it moves to {{location}}. Nothing is realized, and no gain is booked.",
+          "writeNew": "A new {{symbol}} holding is created there with a balance of {{amount}} {{symbol}}, holding a deposit dated {{date}}.",
+          "writeExisting": "A deposit of {{amount}} {{symbol}} dated {{date}} is recorded there. Its balance stays at {{balance}} — recording history never moves a balance, so if it does not already include this, change it yourself.",
+          "balanceFallback": "its balance"
+        },
+        "allocation": {
+          "unparseable": "One of those amounts is not a number.",
+          "over": "That is {{amount}} {{symbol}} more than the transfer.",
+          "under": "{{amount}} {{symbol}} still to account for."
+        },
+        "split": {
+          "trigger": "It was more than one of these",
+          "commit": "Record this division",
+          "note": "A withdrawal can be more than one thing at once — part moved to another holding of yours, part genuinely left. Divide it and each part is treated on its own.",
+          "oneLinkOnly": "Only one part can move somewhere Scani tracks — {{paired}} or {{internal}}, not both. Cost basis follows one destination, and two would send it to neither.",
+          "needTwo": "Give at least two of these an amount. Together they have to come to {{amount}} {{symbol}}.",
+          "takeRest": "Take the rest — {{amount}} {{symbol}}",
+          "transferWas": "Transfer was {{amount}} {{symbol}}",
+          "clause": {
+            "paired": "{{amount}} keeps what you paid for it as it moves to {{location}}",
+            "pairedFallback": "the deposit you picked",
+            "internal": "{{amount}} moves to {{location}}, where a deposit of {{amount}} is recorded",
+            "internalFallback": "{{amount}} moves to the holding you picked",
+            "leftControl": "{{amount}} is counted as a disposal at market value on {{date}}",
+            "untracked": "{{amount}} is still yours, somewhere Scani cannot see"
+          },
+          "summary": "{{clauses}}. Only the disposal books a gain.",
+          "balanceNew": "A new {{symbol}} holding is created there, with that deposit as its balance.",
+          "balanceUnchanged": "No balance is changed."
+        },
+        "answered": {
+          "paired": "Linked to a deposit — nothing realized",
+          "internal": "Moved to a holding you track — deposit recorded",
+          "leftControl": "Counted as a disposal",
+          "untracked": "Still yours, somewhere untracked",
+          "fallback": "Answered"
+        },
+        "answeredShort": {
+          "paired": "{{amount}} linked",
+          "internal": "{{amount}} moved",
+          "leftControl": "{{amount}} disposed",
+          "untracked": "{{amount}} untracked"
+        },
+        "reopen": {
+          "internal": "The deposit this recorded on the other account is deleted with it — otherwise your next answer would count that money twice. The transfer rejoins the queue, and no balance changes either way.",
+          "leftControl": "The gain this booked comes off your realized total until you answer it again, and the transfer rejoins the queue.",
+          "default": "The transfer rejoins the queue, and nothing about it is settled until you answer it again."
+        },
+        "gap": {
+          "sameMinute": "same minute",
+          "later": "{{gap}} later",
+          "earlier": "{{gap}} earlier",
+          "minutes_one": "{{count}} min",
+          "minutes_other": "{{count}} min",
+          "hours_one": "{{count}} h",
+          "hours_other": "{{count}} h",
+          "days_one": "{{count}} day",
+          "days_other": "{{count}} days"
+        },
+        "bulk": {
+          "consequence": {
+            "loading": "Working out what this would do…",
+            "none": "None of the selected transfers can be answered this way.",
+            "leftControl_one": "Counts {{count}} transfer as a disposal — about {{amount}} of proceeds against what you paid.",
+            "leftControl_other": "Counts {{count}} transfers as disposals — about {{amount}} of proceeds against what you paid.",
+            "leftControlUnpriced_one": "Counts {{count}} transfer as a disposal. Scani has no price for it that day, so nothing is booked.",
+            "leftControlUnpriced_other": "Counts {{count}} transfers as disposals. Scani has no price for any of them on their day, so nothing is booked.",
+            "untracked_one": "Records {{count}} transfer as still yours, somewhere Scani cannot see. Nothing is realized.",
+            "untracked_other": "Records {{count}} transfers as still yours, somewhere Scani cannot see. Nothing is realized.",
+            "takesBack_one": "That takes about {{amount}} of realized gains back off the {{count}} currently counted as a disposal.",
+            "takesBack_other": "That takes about {{amount}} of realized gains back off the {{count}} currently counted as disposals.",
+            "takesBackUnpriced_one": "{{count}} of them is currently counted as a disposal, and Scani has no price for it, so nothing comes off.",
+            "takesBackUnpriced_other": "{{count}} of them are currently counted as disposals, and Scani has no price for any of them, so nothing comes off.",
+            "unpriced_one": "{{count}} more has no price on its day and books nothing, so the figure is a floor.",
+            "unpriced_other": "{{count}} more have no price on their day and book nothing, so the figure is a floor."
+          },
+          "commit": {
+            "leftControl_one": "Count {{count}} as a disposal",
+            "leftControl_other": "Count {{count}} as disposals",
+            "untracked_one": "Record {{count}} as still mine",
+            "untracked_other": "Record {{count}} as still mine"
+          },
+          "refusal": {
+            "ownWallet_one": "{{count}} went to {{address}}, a wallet you registered — it did not leave your portfolio, so it cannot be counted as a disposal.",
+            "ownWallet_other": "{{count}} went to wallets you registered, starting with {{address}} — they did not leave your portfolio, so they cannot be counted as disposals.",
+            "answered_one": "{{count}} is already answered “{{answer}}”. Reopen it from its own row to change it.",
+            "answered_other": "{{count}} are already answered “{{answer}}”. Reopen them from their own rows to change them.",
+            "linked_one": "{{count}} is already linked to a deposit, so an answer here would change nothing.",
+            "linked_other": "{{count}} are already linked to deposits, so an answer here would change nothing.",
+            "gone_one": "{{count}} is no longer a transfer that can be answered.",
+            "gone_other": "{{count}} are no longer transfers that can be answered."
+          },
+          "deselect_one": "Deselect that {{count}} transfer",
+          "deselect_other": "Deselect those {{count}} transfers",
+          "overCap": "Select at most {{max}} transfers at a time.",
+          "undo": "Undo",
+          "toast": {
+            "leftControl_one": "{{count}} transfer counted as a disposal",
+            "leftControl_other": "{{count}} transfers counted as disposals",
+            "untracked_one": "{{count}} transfer recorded as still yours",
+            "untracked_other": "{{count}} transfers recorded as still yours",
+            "undone_one": "Put {{count}} transfer back the way it was",
+            "undone_other": "Put {{count}} transfers back the way they were",
+            "refused": "Nothing was changed",
+            "undoFailed": "Could not undo that"
+          }
+        }
+      },
+      "rules": {
+        "title": "Destination rules",
+        "trigger": "Make a rule about this destination",
+        "commit": "Create this rule",
+        "manage": "See your destination rules",
+        "alreadyRuled": "You already have a rule for this destination",
+        "revoke": "Take this rule back",
+        "revokeCommit": "Take this rule back",
+        "field": {
+          "counterparty": "This transfer went to",
+          "key": "The rule will match",
+          "keyHint": "The amount is left out on purpose, so the next transfer to the same destination matches too.",
+          "note": "What is this destination?",
+          "notePlaceholder": "My Bybit deposit address",
+          "verdict": "What the rule should do"
+        },
+        "verdict": {
+          "askMe": "Keep asking, but name it",
+          "notADisposal": "Stop asking about it",
+          "alwaysADisposal": "Answer it as a disposal"
+        },
+        "consequence": {
+          "askMe": "Every transfer to {{key}}, at any amount, stays in this queue and carries your note. Nothing is answered and no gain is booked — you still decide each one.",
+          "notADisposal": "Every transfer to {{key}}, at any amount, leaves this queue and is listed under Destination rules instead. Nothing is written to them: an unanswered transfer books no gain, and taking the rule back brings every one of them straight back here.",
+          "mark_other": "Answers {{count}} transfers to this destination as having left your portfolio, booking {{proceeds}} of proceeds. Every later transfer to it is answered the same way, unopened. Each one stays undoable on its own, and taking one back stops the rule covering that transfer for good.",
+          "markUnpriced_other": "{{count}} transfers to this destination are answered as having left your portfolio. None of them has a price on its day, so nothing is booked today. Every later transfer to it is answered the same way, unopened.",
+          "markUnpricedTail_other": "{{count}} of them have no price on their day and book nothing.",
+          "markFuture": "Nothing is waiting for this destination right now, so nothing is answered today. Every later transfer to it is answered as having left your portfolio, unopened, and books a gain.",
+          "mark_one": "Answers {{count}} transfer to this destination as having left your portfolio, booking {{proceeds}} of proceeds. Every later transfer to it is answered the same way, unopened. Each one stays undoable on its own, and taking one back stops the rule covering that transfer for good.",
+          "markUnpriced_one": "{{count}} transfer to this destination is answered as having left your portfolio. None of them has a price on its day, so nothing is booked today. Every later transfer to it is answered the same way, unopened.",
+          "markUnpricedTail_one": "{{count}} of them has no price on its day and books nothing."
+        },
+        "revokeConsequence": {
+          "notADisposal_one": "{{count}} transfer comes back into the queue. Nothing was written to it, so there is nothing to undo.",
+          "notADisposal_other": "{{count}} transfers come back into the queue. Nothing was written to them, so there is nothing to undo.",
+          "askMe": "Transfers to this destination stop carrying your note. They were never answered by the rule, so nothing else changes.",
+          "markKeep_one": "The rule stops answering new transfers to this destination. The {{count}} transfer it already answered stays answered and keeps booking its gain — tick the box above to take it back too.",
+          "markKeep_other": "The rule stops answering new transfers to this destination. The {{count}} transfers it already answered stay answered and keep booking their gains — tick the box above to take them back too.",
+          "markWithdraw_one": "The rule stops answering new transfers, and the {{count}} transfer it answered goes back into the queue unanswered. Its gain stops being booked.",
+          "markWithdraw_other": "The rule stops answering new transfers, and the {{count}} transfers it answered go back into the queue unanswered. Their gains stop being booked."
+        },
+        "row": {
+          "hiding_one": "Keeping {{count}} transfer out of the queue",
+          "hiding_other": "Keeping {{count}} transfers out of the queue",
+          "labelling_one": "Naming {{count}} transfer in the queue",
+          "labelling_other": "Naming {{count}} transfers in the queue",
+          "answering_one": "Answered {{count}} transfer as a disposal",
+          "answering_other": "Answered {{count}} transfers as a disposal"
+        },
+        "hidden": {
+          "title": "Transfers your rules are holding back",
+          "body": "None of these has been answered. They are waiting, out of the queue, and take the rule back to bring them in."
+        },
+        "empty": {
+          "title": "No destination rules yet",
+          "body": "Open a transfer in the queue and write down where it went. Every later transfer to the same destination will carry your note, whatever the amount — and destinations you mark are answered for you."
+        },
+        "notice": {
+          "label": "Your note about this destination",
+          "markExempt": "You marked this destination a disposal, and you took that answer back on this transfer. It will not be answered automatically again."
+        },
+        "toast": {
+          "created": "Rule saved",
+          "refused": "That rule was not saved",
+          "revoked": "Rule taken back",
+          "revokeFailed": "That rule was not taken back",
+          "revokedWithdrawn_one": "Rule taken back — {{count}} answer returned to the queue",
+          "revokedWithdrawn_other": "Rule taken back — {{count}} answers returned to the queue",
+          "revokedKept_one": "Rule taken back — {{count}} answer it gave is unchanged",
+          "revokedKept_other": "Rule taken back — {{count}} answers it gave are unchanged"
+        },
+        "refusal": {
+          "ownWallet": "{{key}} is one of your own wallets. Money moving to it has not left your portfolio, so it cannot be marked a disposal."
+        },
+        "withdrawAnswers_one": "Also take back the {{count}} answer it gave",
+        "withdrawAnswers_other": "Also take back the {{count}} answers it gave"
+      }
+    },
+    "form": {
+      "dateField": {
+        "clear": "Clear date",
+        "placeholder": "Pick a date"
+      },
+      "recordPicker": {
+        "change": "Change {{label}}",
+        "changeAction": "Change",
+        "searching": "Searching…"
+      },
+      "fiatCurrency": {
+        "noun": "currency",
+        "searchPlaceholder": "Search currencies…",
+        "empty": "No currency by that name",
+        "label": "Currency"
+      },
+      "cancel": "Cancel",
+      "blockers": "To continue: {{blockers}}.",
+      "sheet": {
+        "expand": "Show the whole form",
+        "collapse": "Shrink the form",
+        "close": "Close the form"
+      }
+    },
+    "capture": {
+      "form": {
+        "enterField": "enter the {{label}}",
+        "optionalField": "{{label}} (optional)",
+        "pasteField": "Paste your {{label}}"
+      },
+      "group": {
+        "upload": "Upload",
+        "connect": "Connect",
+        "manual": "Type it in"
+      },
+      "route": {
+        "screenshot": {
+          "title": "A screenshot",
+          "description": "A balance screen we read the figures off."
+        },
+        "statement": {
+          "title": "A statement file",
+          "description": "CSV or OFX from a bank or a broker."
+        },
+        "invoice": {
+          "title": "An invoice",
+          "description": "A PDF or a photo. We read the vendor and the amount."
+        },
+        "wallet": {
+          "title": "A wallet address",
+          "description": "Balances read off the chain, hourly."
+        },
+        "exchange": {
+          "title": "An exchange or broker login",
+          "description": "Read-only API keys, encrypted at rest."
+        },
+        "manual": {
+          "title": "The figures themselves",
+          "description": "Type holdings into an account."
+        },
+        "payment": {
+          "title": "A bill that repeats",
+          "description": "Matched to transactions as they arrive."
+        }
+      },
+      "fileImport": {
+        "screenshot": {
+          "title": "Upload a screenshot",
+          "description": "A balance screen from an exchange, a bank or a broker. We read the holdings off it and show you what we found before anything is saved."
+        },
+        "statement": {
+          "title": "Upload a statement file",
+          "description": "A CSV, TSV, OFX or QIF export from a bank or a broker. We read the holdings off it and show you what we found before anything is saved."
+        },
+        "either": {
+          "title": "Upload a file",
+          "description": "A balance screenshot, a bank statement or a broker's export. We read the holdings off it and show you what we found before anything is saved."
+        },
+        "whereItBelongs": "Where it belongs"
+      },
+      "formats": {
+        "import": "PNG, JPG, WEBP, PDF, CSV, TSV, OFX or QIF",
+        "invoice": "PDF, PNG, JPG, WEBP or HEIC"
+      },
+      "stage": {
+        "account": "Setting up the account…",
+        "upload": "Sending the file…",
+        "parse": "Starting the parse…",
+        "enqueue": "Starting the import…",
+        "connect": "Checking the credentials…"
+      },
+      "file": {
+        "extension": "a .{{ext}}",
+        "noExtension": "no file extension at all",
+        "unsupported": "This one is {{named}}. Scani reads {{formats}}.",
+        "remove": "Remove {{name}}"
+      },
+      "blocker": {
+        "chooseFile": "choose a file to upload",
+        "chooseInvoice": "choose the invoice to upload",
+        "chooseInstitution": "choose where the account is held",
+        "nameInstitution": "name the new institution",
+        "institutionType": "choose the institution's type",
+        "chooseAccount": "choose an account",
+        "nameAccount": "name the new account",
+        "accountType": "choose the account's type",
+        "addHolding": "add a holding with both a token and an amount",
+        "duplicateToken": "give each row that names the same token its own name, or merge them",
+        "walletEmpty": "enter the wallet address",
+        "walletIncomplete": "finish the wallet address",
+        "walletUnrecognised": "check the wallet address"
+      },
+      "category": {
+        "cryptoExchange": "Crypto exchange",
+        "cryptoWallet": "Crypto wallet",
+        "bank": "Bank",
+        "broker": "Broker",
+        "other": "Other"
+      },
+      "wallet": {
+        "shape": {
+          "ethereum": "0x and then 40 hexadecimal characters, 42 in all",
+          "bitcoin": "bc1 and then 39 to 59 lowercase letters and digits",
+          "ton": "EQ or UQ and then 46 characters, 48 in all",
+          "tron": "T and then 33 more characters, 34 in all",
+          "solana": "32 to 44 letters and digits, with no 0, O, I or l among them"
+        },
+        "everyShape": "Ethereum and the other EVM chains are 0x and 40 hexadecimal characters; Bitcoin starts 1, 3 or bc1; Solana is 32 to 44 letters and digits; Tron starts T; TON starts EQ or UQ.",
+        "incomplete_one": "That is not a complete {{chain}} address — one is {{shape}}, and this is {{count}} character.",
+        "incomplete_other": "That is not a complete {{chain}} address — one is {{shape}}, and this is {{count}} characters.",
+        "unrecognised": "Scani does not read any chain whose addresses look like that. {{shapes}}"
+      },
+      "institution": {
+        "lookUpName": "Look up the name from the website",
+        "name": "Name",
+        "namePlaceholder": "Revolut",
+        "type": "Type",
+        "typeLabel": "Institution type",
+        "typePlaceholder": "Bank, broker, exchange…",
+        "label": "Institution",
+        "searchPlaceholder": "Search banks, brokers, exchanges…",
+        "noResults": "Nothing by that name yet.",
+        "addUnlisted": "Add one that is not listed",
+        "addNamed": "Add “{{name}}”",
+        "website": "Website",
+        "websiteHint": "Fills the name and the icon. Optional.",
+        "pickExisting": "Pick an existing institution"
+      },
+      "token": {
+        "defillamaUnsupported": "DeFiLlama results need a contract address, so they cannot be added from here.",
+        "addFailed": "Adding that token",
+        "searchPlaceholder": "BTC, AAPL, EUR…",
+        "noResults": "Nothing by that name, here or at our pricing providers.",
+        "prompt": "Type a symbol or a name."
+      },
+      "integrations": {
+        "uploadInstead": "Upload a statement instead"
+      },
+      "sheet": {
+        "title": "Add data",
+        "subtitle": "Pick what you have. Everything else follows from that.",
+        "trigger": "Show every way to add data",
+        "collapse": "Show less"
+      },
+      "account": {
+        "namePlaceholder": "Current account, ISA, Trading…",
+        "type": "Type",
+        "typeLabel": "Account type",
+        "typePlaceholder": "Savings, brokerage, crypto…",
+        "label": "Account",
+        "name": "Name",
+        "newInstitutionHint": "A brand-new institution has no accounts yet — add the first one.",
+        "searchPlaceholder": "Search your accounts…",
+        "noResults": "No account by that name here.",
+        "addNamed": "Add “{{name}}”",
+        "addNew": "Add a new account",
+        "pickExisting": "Pick an existing account"
+      },
+      "page": {
+        "uploadAndRead": "Upload and read it",
+        "fileImport": {
+          "fieldset": "The file",
+          "subject": "this file",
+          "prompt": "Choose a file, or drop one here"
+        },
+        "invoice": {
+          "title": "Upload an invoice",
+          "description": "A PDF or a photo of one. We read the vendor, the amount and the line items, and put them on Review for you to accept or reject.",
+          "fieldset": "The invoice",
+          "prompt": "Choose an invoice, or drop one here"
+        },
+        "manual": {
+          "subject": "these holdings",
+          "title": "Add holdings by hand",
+          "description": "Say where they are held and what is in them. We price each one after you save.",
+          "fieldset": "What",
+          "token": "Token",
+          "amount": "Amount",
+          "removeHolding": "Remove holding {{index}}",
+          "save": "Save holdings",
+          "tokenFor": "token for holding {{index}}",
+          "addAnother": "Add another",
+          "potName": "Which one is this?",
+          "potNameHint": "You have named this token on more than one row. Give each one its own name and we will keep them as separate positions.",
+          "potNamePlaceholder": "Savings, Deposit, Wedding gift…"
+        },
+        "wallet": {
+          "subject": "this wallet",
+          "title": "Watch a wallet address",
+          "description": "We detect which chain it is on, read its balances off the chain, and refresh them every hour.",
+          "fieldset": "The address",
+          "addressLabel": "Wallet address",
+          "addressHint": "Any supported chain — Ethereum, Bitcoin, Solana and the rest. You do not have to say which.",
+          "addressPlaceholder": "0x… or bc1… or …",
+          "nameLabel": "Name",
+          "nameHint": "Optional. What you call this wallet, rather than its address.",
+          "namePlaceholder": "Cold storage, Trading wallet…",
+          "submit": "Watch this wallet"
+        }
+      },
+      "integration": {
+        "title": "Connect a service",
+        "subtitle": "One set of read-only keys, encrypted at rest.",
+        "listSubtitle": "Read-only API keys, encrypted at rest. Balances are synced hourly, and you can hold several connections to the same service.",
+        "allServices": "All services",
+        "thisService": "this service",
+        "notFoundTitle": "Not one of ours",
+        "notFoundBody": "Scani has no integration by that name. It may have been renamed, or the link may be out of date.",
+        "connectNamed": "Connect {{name}}",
+        "permissions": "Read-only permissions are all Scani needs. Keys are encrypted at rest and never leave our workers.",
+        "whereToGet": "Where to get them",
+        "credentials": "Credentials",
+        "ownDocs": "{{name}}'s own documentation",
+        "unverifiedTitle": "Couldn't check your {{name}} keys",
+        "unverifiedDetail": "{{name}} didn't answer, so we can't say whether the keys are right. Nothing was saved — try again in a minute."
+      }
+    },
+    "tokens": {
+      "custom": {
+        "nothingRecorded": "Nothing recorded",
+        "unknownSource": "Unknown source",
+        "setManually": "Set manually",
+        "neverPriced": "Never priced",
+        "newToken": "New custom token",
+        "type": "Type",
+        "pricedIn": "Priced in",
+        "noPrice": "No price recorded",
+        "priceUpdated": "Price updated",
+        "never": "Never",
+        "priceFrom": "Price from",
+        "editPrice": "Edit price"
+      },
+      "hidden": {
+        "backToHoldings": "Back to holdings",
+        "unhide": "Unhide",
+        "likelyScam": "Likely scam",
+        "hidden": "Hidden",
+        "why": "Why it is hidden",
+        "account": "Account",
+        "institution": "Institution",
+        "scamLikelihood": "Scam likelihood"
+      },
+      "segment": {
+        "custom": "Custom",
+        "hidden": "Hidden"
+      },
+      "hiddenReason": {
+        "user": "Hidden by you",
+        "scam": "Flagged as a likely scam",
+        "both": "Flagged as a likely scam, and hidden by you"
+      },
+      "actions": {
+        "unhiding": "Unhiding the holding",
+        "restoring": "Restoring the token",
+        "notScam": "Not a scam",
+        "clearFlag": "Clear the scam flag for everyone",
+        "clearFlagConsequence": "{{symbol}} ({{name}}) stops being flagged as a scam for every Scani user, not just you — it reappears in token search and in price lookups account-wide. Only do this if you have checked the contract yourself.",
+        "holdingRestored": "{{symbol}} is back on your dashboard",
+        "tokenRestored": "{{symbol}} restored in token search"
+      },
+      "page": {
+        "title": "Tokens",
+        "viewLabel": "Tokens view",
+        "newCustomToken": "New custom token"
+      },
+      "create": {
+        "title": "Create a custom token",
+        "description": "For an asset no pricing provider tracks. Custom tokens are shared with everyone here, and anyone can change the price.",
+        "subject": "the token",
+        "symbol": "Symbol",
+        "symbolPlaceholder": "ACME",
+        "symbolTaken": "{{symbol}} already exists. Pick another symbol, or edit that token’s price instead.",
+        "name": "Name",
+        "namePlaceholder": "Acme Corp shares",
+        "type": "Type",
+        "typePrivateCompany": "Private company",
+        "typeOther": "Other",
+        "initialPrice": "Initial price",
+        "reasonHint": "Where the number came from — anyone can read it later.",
+        "notes": "Notes",
+        "notesPlaceholder": "Anything worth knowing about this asset",
+        "notesHint": "Optional.",
+        "needSymbol": "enter a symbol",
+        "needName": "enter a name",
+        "submit": "Create token",
+        "submitting": "Creating…"
+      },
+      "price": {
+        "title": "{{symbol}} price",
+        "description": "Set a new price in any fiat currency. Anyone here can change it, and every change is kept below.",
+        "subject": "the price",
+        "currently": "Priced at",
+        "newPrice": "New price",
+        "pricePlaceholder": "1234.56",
+        "reason": "Reason",
+        "reasonPlaceholder": "Q4 2025 valuation round",
+        "reasonHint": "Optional, and the only thing that explains this price to the next reader.",
+        "needPrice": "enter a price above zero",
+        "needCurrency": "choose a currency",
+        "submit": "Save price",
+        "submitting": "Saving…",
+        "historyTitle": "Earlier prices",
+        "historyLoading": "Loading the earlier prices",
+        "historyEmpty": "No price has been changed yet.",
+        "noReasonGiven": "No reason given",
+        "unknownEditor": "Unknown"
+      }
+    },
+    "entities": {
+      "value": "Value",
+      "account": {
+        "unknownInstitution": "Unknown institution",
+        "unknownType": "Unknown type",
+        "neverSynced": "Never — this account is maintained by hand",
+        "valueByAccount": "Value by account",
+        "byHand": "By hand",
+        "lastSyncOverdue": "{{when}} · overdue",
+        "sublabel_one": "{{institution}} · {{count}} holding",
+        "sublabel_other": "{{institution}} · {{count}} holdings",
+        "syncOverdue": "Sync overdue",
+        "viewHoldings": "View holdings",
+        "assignGroups": "Assign groups",
+        "pageTitle": "Accounts",
+        "addFirst": "Add your first account",
+        "holdings": "Holdings",
+        "type": "Type",
+        "lastSynced": "Last synced",
+        "balancesAsOf": "Balances as of",
+        "groups": "Groups",
+        "bulkDeleteConsequence_one": "{{names}} is removed, and every holding inside it goes too, along with its transaction history. This cannot be undone.",
+        "bulkDeleteConsequence_other": "{{names}} are removed, and every holding inside them goes too, along with its transaction history. This cannot be undone.",
+        "toast": {
+          "deleted": "Account deleted successfully",
+          "deletingContext": "Failed to delete account",
+          "bulkDeleted_one": "{{count}} account deleted",
+          "bulkDeleted_other": "{{count}} accounts deleted",
+          "bulkDeletedWithFailures_one": "{{count}} account deleted, {{failed}} failed",
+          "bulkDeletedWithFailures_other": "{{count}} accounts deleted, {{failed}} failed",
+          "bulkDeletingContext": "Failed to delete accounts",
+          "updated": "Account updated successfully",
+          "updatingContext": "Failed to update account",
+          "syncing": "Syncing account — balances will refresh shortly",
+          "syncingContext": "Failed to start account sync"
+        }
+      },
+      "institution": {
+        "unknownType": "Unknown type",
+        "valueByInstitution": "Value by institution",
+        "sublabel_one": "{{count}} account",
+        "sublabel_other": "{{count}} accounts",
+        "viewHoldings": "View holdings",
+        "viewAccounts": "View accounts",
+        "pageTitle": "Institutions",
+        "connectOne": "Connect one",
+        "accounts": "Accounts",
+        "type": "Type",
+        "website": "Website",
+        "noWebsite": "None on file",
+        "description": "Description"
+      }
+    },
+    "documents": {
+      "fileRemoved": "file removed",
+      "thisFile": "this file",
+      "uploadInvoice": "Upload an invoice",
+      "page": {
+        "title": "Files",
+        "uploadInvoice": "Upload invoice"
+      },
+      "totals": {
+        "stored": "Stored",
+        "invoicesFound": "Invoices found",
+        "fileMissing_one": "{{count}} file is no longer stored — its record is here, the file itself is not.",
+        "fileMissing_other": "{{count}} files are no longer stored — their records are here, the files themselves are not."
+      },
+      "extraction": {
+        "state": {
+          "pending": "Awaiting review",
+          "accepted": "Accepted",
+          "rejected": "Rejected"
+        },
+        "invoiceNumber": "Invoice {{number}}",
+        "noInvoiceNumber": "No invoice number",
+        "issueDate": "Issue date",
+        "dueDate": "Due date",
+        "paymentStatus": "Payment status",
+        "confidence": "Confidence",
+        "notRecorded": "Not recorded",
+        "approve": "Approve",
+        "paymentPaid": "Paid",
+        "paymentUnpaid": "Unpaid",
+        "paymentNotStated": "Not stated",
+        "reject": "Reject",
+        "rejectCommit": "Reject this invoice",
+        "approveNote": "Opens a recurring payment prefilled from this invoice. Nothing is saved until you confirm it.",
+        "rejectConsequence": "The invoice from {{vendor}} is marked rejected and this file stops offering it for review. No payment is created. Re-parsing the file is the only way to get it back.",
+        "rejectConsequenceNumbered": "The invoice {{number}} from {{vendor}} is marked rejected and this file stops offering it for review. No payment is created. Re-parsing the file is the only way to get it back."
+      },
+      "detail": {
+        "backToFiles": "All files",
+        "copyGone": "The stored copy of this file is gone, so it cannot be downloaded or read again. Deleting this record frees the file to be uploaded fresh.",
+        "reparsing": "Re-parsing the document",
+        "deleted": "File deleted — you can upload it again",
+        "deleting": "Deleting the file",
+        "reparseTrigger": "Read this file again",
+        "reparseConsequence": "Runs the current extractor over the file and replaces every invoice that has not already been turned into a payment — those are kept. This costs an AI call.",
+        "reparseCommit": "Re-parse",
+        "deleteTrigger": "Delete this file",
+        "deleteConsequence": "Removes the record, every invoice extracted from it, and the stored copy. Uploading the same file again will then read it fresh instead of being skipped as a duplicate. An invoice already turned into a payment blocks the delete — detach that payment first. This cannot be undone.",
+        "deleteCommit": "Delete",
+        "invoiceRejected": "Invoice rejected",
+        "rejectingInvoice": "Rejecting the invoice",
+        "noInvoicesFound": "No invoices were found in this file",
+        "noInvoicesBody": "The file was read and nothing invoice-shaped came out of it. Re-parse runs the current extractor over it again.",
+        "download": "Download",
+        "reparsePending": "Re-parsing…",
+        "deletePending": "Deleting…",
+        "readAs": "Read as {{classification}}",
+        "uploadedAt": "Uploaded {{when}}",
+        "arrivedBy": "Arrived by {{source}}",
+        "extractedCount_one": "{{count}} invoice extracted",
+        "extractedCount_other": "{{count}} invoices extracted"
+      },
+      "outcome": {
+        "extracted": "Invoices found",
+        "nothingFound": "Nothing found",
+        "notRead": "Not read for invoices"
+      },
+      "invoiceCount_one": "{{count}} invoice",
+      "invoiceCount_other": "{{count}} invoices",
+      "parse": {
+        "alreadyRead": "Already read once",
+        "alreadyReadNote": "This file matches one you sent before, so it wasn't read again — no second AI charge, and no duplicate invoices. Whatever it found the first time is on the original.",
+        "unrecognised": "This job finished without a result we recognise, so there is nothing to review.",
+        "noInvoicesNote": "The file was read but nothing in it looked like an invoice. Statements and balance screenshots go through Import a file instead — that's the one that creates holdings.",
+        "approveNote": "Opens a payment form filled in from the invoice. Nothing is saved until you confirm it — one invoice can't prove how often it repeats.",
+        "openOriginal": "Open the original",
+        "noInvoices": "No invoices in this file",
+        "openFile": "Open the file",
+        "found_one": "{{count}} invoice found",
+        "found_other": "{{count}} invoices found",
+        "unknownVendor": "Unknown vendor",
+        "turnIntoPayment": "Turn this into a recurring payment",
+        "setUpNamed": "Set up {{name}}",
+        "thisInvoice": "this invoice"
+      },
+      "toast": {
+        "downloadingContext": "Downloading file"
+      }
+    },
+    "vaults": {
+      "targetReached": "Target reached",
+      "list": {
+        "rowSpoken": "{{name}}, {{percent}}% of target"
+      },
+      "attach": {
+        "attaching": "Attaching the holding",
+        "fullyClaimed": "{{label}} is already fully counted toward other vaults. Lower its share there first.",
+        "attachedWhole": "{{label}} now counts toward this vault",
+        "attachedPartial": "{{label}} attached at {{available}}% — the rest counts toward another vault"
+      },
+      "createFirst": "Create your first vault",
+      "holding": {
+        "thisHolding": "This holding",
+        "unknownToken": "Unknown token",
+        "shareLabel": "Share of {{symbol}} counted toward this vault",
+        "cancel": "Cancel",
+        "saveShare": "Save share",
+        "changeShare": "Change the {{percent}}% share of {{symbol}} counted toward this vault",
+        "remove": "Remove",
+        "removeCommit": "Remove {{symbol}} from this vault",
+        "detachConsequence": "{{symbol}} stops counting toward this vault — <value/> comes off the saved figure. The holding itself, its {{percent}}% share and its history all stay; you can attach it again."
+      },
+      "detail": {
+        "toast": {
+          "updated": "Vault updated",
+          "updating": "Updating the vault",
+          "deleted": "Vault deleted",
+          "deleting": "Deleting the vault",
+          "holdingRemoved": "Holding removed from the vault",
+          "removingHolding": "Removing the holding",
+          "shareUpdated": "Share updated",
+          "updatingShare": "Updating the share"
+        },
+        "deleteConsequence_one": "“{{name}}” and its target disappear. The {{count}} holding attached to it are not deleted — they simply stop counting toward a goal.",
+        "deleteConsequence_other": "“{{name}}” and its target disappear. The {{count}} holdings attached to it are not deleted — they simply stop counting toward a goal.",
+        "backToVaults": "Vaults",
+        "notFound": "This vault is not on your list. It may have been deleted, or the link may be out of date.",
+        "saved": "Saved",
+        "targetReached": "Target reached — {{percent}}% of the goal",
+        "stillToGo": "<remaining/> still to go, of a <target/> target",
+        "countingToward_one": "Counting toward this vault ({{count}})",
+        "countingToward_other": "Counting toward this vault ({{count}})",
+        "empty": "Nothing counts toward this vault yet. Attach a holding and it will start contributing to the goal.",
+        "attachHolding": "Attach a holding",
+        "details": "Details",
+        "name": "Name",
+        "target": "Target",
+        "targetHint": "In {{symbol}}",
+        "colour": "Colour",
+        "saveChanges": "Save changes",
+        "discard": "Discard",
+        "needName": "To save: give the vault a name.",
+        "needTarget": "To save: set a target above zero.",
+        "dangerZone": "Danger zone",
+        "deleteTrigger": "Delete vault",
+        "deleteCommit": "Delete this vault"
+      },
+      "page": {
+        "title": "Vaults",
+        "created": "Vault “{{name}}” created",
+        "creating": "Creating the vault",
+        "name": "Name",
+        "newVault": "New vault",
+        "createVault": "Create vault",
+        "cancel": "Cancel",
+        "namePlaceholder": "House deposit, emergency fund…",
+        "toContinue": "To continue: {{missing}}.",
+        "target": "Target",
+        "currency": "Currency",
+        "colour": "Colour",
+        "blocker": {
+          "name": "name the vault",
+          "target": "set a target above zero",
+          "currency": "pick a currency"
+        }
+      }
+    },
+    "jobs": {
+      "importSomething": "Import something",
+      "bucket": {
+        "review": "Needs your review",
+        "running": "Running",
+        "failed": "Failed — won't retry",
+        "completed": "Completed"
+      },
+      "kind": {
+        "holdingPriceRefresh": "Holding price refresh",
+        "fileFallback": "file",
+        "fileEnriched": "{{type}} · enriched",
+        "deleteAllData": "Delete all account data"
+      },
+      "fileCount_one": "{{count}} file",
+      "fileCount_other": "{{count}} files",
+      "page": {
+        "title": "Jobs"
+      },
+      "state": {
+        "queued": "Queued",
+        "active": "Active",
+        "progress": "Running",
+        "completed": "Completed",
+        "failed": "Failed",
+        "needsReview": "Needs review",
+        "needsReviewSpoken": "needs review"
+      },
+      "retryUnavailable": {
+        "cancelled": "You cancelled this one. Start it again from where you began it.",
+        "neverDelivered": "This never reached the queue, so there is nothing to re-run. Start it again from where you began it.",
+        "stillRetrying": "Another attempt is already queued — nothing to do.",
+        "evicted": "This run is too old to re-run from here: the queue no longer holds what it needs. Start it again from where you began it.",
+        "notFailed": "Nothing to retry."
+      },
+      "detail": {
+        "backToJobs": "All jobs",
+        "notFound": "This job is not on your list. It may have been removed, or the link may be out of date.",
+        "attempt": "Attempt {{attempt}} of {{allowed}}",
+        "cancel": "Cancel",
+        "cancelPending": "Cancelling…",
+        "removed": "Job removed",
+        "retry": "Retry",
+        "retryPending": "Re-queueing…",
+        "dismiss": "Dismiss",
+        "dismissPending": "Dismissing…",
+        "createdAt": "Created {{when}}",
+        "startedAt": "Started {{when}}",
+        "finishedAt": "Finished {{when}}"
+      },
+      "toast": {
+        "requeued": "Job re-queued",
+        "retrying": "Retrying the job",
+        "cancelled": "Job cancelled",
+        "cancelling": "Cancelling the job",
+        "discarded": "Parse discarded — nothing was imported",
+        "discarding": "Discarding the parse",
+        "dismissed": "Dismissed — it stays in your job history",
+        "dismissing": "Dismissing the failure",
+        "removing": "Removing the job"
+      },
+      "running": "{{label}} is running",
+      "awaitingYou": "This run is waiting on you. Nothing from it is in your portfolio yet.",
+      "discard": {
+        "trigger": "Discard",
+        "commit": "Discard this parse",
+        "consequence": "This {{label}} stops asking for review and no holdings are created from it. Nothing in your portfolio changes. Re-running the import is the only way to get it back."
+      },
+      "remove": {
+        "trigger": "Remove",
+        "commit": "Remove this run",
+        "consequence": "This {{label}} run and the error above it are deleted. Anything it already imported stays. This cannot be undone."
+      },
+      "label": {
+        "walletImport": "Wallet import",
+        "exchangeImport": "Exchange import",
+        "documentParse": "Document parse",
+        "invoiceParse": "Invoice parse",
+        "fileImport": "File import",
+        "manualHoldings": "Manual holdings",
+        "historyBackfill": "History backfill",
+        "priceRefresh": "Price refresh",
+        "accountDeletion": "Account deletion",
+        "transactionImport": "Transaction history import"
+      },
+      "review": {
+        "title": "Review extracted holdings",
+        "subject": "the extracted holdings",
+        "viewHoldings": "View holdings",
+        "confidence": "{{percent}}% confidence",
+        "importing": "Importing…",
+        "import_one": "Import {{count}} holding",
+        "import_other": "Import {{count}} holdings",
+        "willImport_one": "{{count}} row will be imported",
+        "willImport_other": "{{count}} rows will be imported",
+        "unmatchedNote_one": "{{count}} row matched no token and will be skipped.",
+        "unmatchedNote_other": "{{count}} rows matched no token and will be skipped.",
+        "source": {
+          "screenshot": "Screenshot",
+          "statement": "Statement",
+          "files": "Files"
+        },
+        "assetType": {
+          "fiat": "Fiat",
+          "crypto": "Crypto",
+          "stock": "Stock"
+        },
+        "row": {
+          "new": "New",
+          "update": "Update",
+          "changeToken": "Change the token matched to {{symbol}}",
+          "keepToken": "Keep {{symbol}}",
+          "searchLabel": "Find a different token for {{symbol}}",
+          "nameLabel": "Name for this {{symbol}} position",
+          "namePlaceholder": "e.g. Savings",
+          "amountLabel": "Amount of {{symbol}}",
+          "remove": "Remove {{symbol}}",
+          "restore": "Restore {{symbol}}",
+          "currentLabel": "Now"
+        },
+        "blocker": {
+          "duplicatePosition": "give every row under {{symbols}} its own name, or remove the extras",
+          "missingAmount_one": "{{count}} row has no amount — type one, or remove the row",
+          "missingAmount_other": "{{count}} rows have no amount — type one on each, or remove them",
+          "nothingToImport": "match at least one row to a token"
+        },
+        "imported": {
+          "title": "Already imported",
+          "when": "Confirmed on {{when}}",
+          "body": "These rows were confirmed and saved to your portfolio. Importing the same parse again would duplicate them, so this is locked."
+        },
+        "discarded": {
+          "title": "Discarded",
+          "when": "Discarded on {{when}}",
+          "screenshot": "Nothing from this screenshot was written to your portfolio, and it no longer waits for review. Parsing it again is the only way to get these rows back.",
+          "statement": "Nothing from this statement was written to your portfolio, and it no longer waits for review. Parsing it again is the only way to get these rows back.",
+          "files": "Nothing from these files was written to your portfolio, and they no longer wait for review. Parsing them again is the only way to get these rows back.",
+          "wallet": "Nothing from this wallet was written to your portfolio, and it no longer waits for review. Running the import again is the only way to get these rows back."
+        }
+      },
+      "screenshot": {
+        "title": {
+          "image": "Screenshot parse",
+          "pdf": "Statement parse",
+          "mixed": "File parse"
+        },
+        "filesRead": "Files read",
+        "holdingsFound": "Holdings found",
+        "ofTotal": "{{done}} of {{total}}",
+        "failedTitle_one": "{{count}} file could not be read",
+        "failedTitle_other": "{{count}} files could not be read",
+        "failedAdvice": {
+          "image": "This happens with low-resolution or very busy screenshots. Try a clearer capture, crop to the part that lists the balances, or upload a CSV or OFX export instead.",
+          "pdf": "This happens with scanned, image-only or encrypted PDFs, and when the layout is unusual. Try a text-based copy, or upload a CSV or OFX export instead.",
+          "mixed": "Try a clearer capture or a text-based copy of the document, or upload a CSV or OFX export instead."
+        },
+        "noAccount": {
+          "title": "These rows have nowhere to go",
+          "body": "This run did not record which account the holdings belong to, so there is nothing here to save them into. Nothing was imported and nothing was lost — upload the file again with an account chosen.",
+          "action": "Upload again"
+        }
+      },
+      "issues": {
+        "more_one": "…and {{count}} more",
+        "more_other": "…and {{count}} more"
+      },
+      "wallet": {
+        "subject": "this wallet",
+        "chainsDetected": "Chains detected",
+        "chainsRead": "Chains read",
+        "tokensFound": "Tokens found",
+        "chainsFailed_one": "{{count}} chain could not be read",
+        "chainsFailed_other": "{{count}} chains could not be read",
+        "chainsFailedNote": "Anything held on a chain that did not answer is missing from what is shown here.",
+        "outcome": {
+          "found": "Detected holdings",
+          "partial": "Detected holdings — partial read",
+          "empty": "Nothing to review",
+          "unreadable": "This wallet could not be read"
+        },
+        "outcomeBody": {
+          "found": "Pick which of these to keep. Only the ticked rows become holdings.",
+          "partial": "Pick which of these to keep. Only the ticked rows become holdings — and at least one chain did not answer, so this is not everything the address holds.",
+          "empty": "Every chain answered and reported no balances, so this address is empty as far as we can see. Nothing failed.",
+          "unreadable": "No chain answered, so we do not know what this address holds. This is not a reading of an empty wallet — running the import again is safe."
+        },
+        "hideSpam_one": "Hide {{count}} likely spam token",
+        "hideSpam_other": "Hide {{count}} likely spam tokens",
+        "selectAll": "Select all shown",
+        "selectNone": "Clear selection",
+        "spam": {
+          "solicitation": "Looks like an ad",
+          "mixedScript": "Mixed alphabets"
+        },
+        "hiddenSelected_one": "{{count}} ticked row is hidden by the filter",
+        "hiddenSelected_other": "{{count}} ticked rows are hidden by the filter",
+        "showHidden": "Show them",
+        "afterConfirm": "Holdings are created and priced after you confirm.",
+        "blocker": {
+          "nothingPicked": "tick at least one row"
+        },
+        "import_one": "Import {{count}} holding",
+        "import_other": "Import {{count}} holdings",
+        "importing": "Importing…",
+        "toast": {
+          "imported_one": "{{count}} holding imported",
+          "imported_other": "{{count}} holdings imported"
+        },
+        "confirmed": {
+          "title": "Wallet imported",
+          "when": "Confirmed on {{when}}",
+          "body": "The rows you kept were created as holdings. Importing this wallet again from here would duplicate them, so this is locked."
+        },
+        "unavailable": {
+          "title": "The detected list is not here",
+          "body": "This wallet was read, but the list of tokens was not stored with the job, so there is nothing here to pick from. Nothing was imported and nothing was lost — run the import again to get the list back."
+        },
+        "importAgain": "Import this wallet again",
+        "imported": {
+          "title": "Imported holdings",
+          "holdings": "Holdings created",
+          "accounts": "Accounts created",
+          "reviewTitle": "Review what was created",
+          "pruneNote": "Delete anything you do not want, then finish. Until you do, this run stays on your list as needing action.",
+          "finish": "Done reviewing",
+          "finishing": "Finishing…",
+          "finishedWhen": "Review finished on {{when}}. These holdings are live in your portfolio and can still be deleted from Holdings.",
+          "remove": "Delete {{symbol}}",
+          "allGone": "None of these holdings are on your list any more — they were deleted or flagged.",
+          "nothingTitle": "Nothing was imported"
+        },
+        "empty": {
+          "unreadable": "Nothing was imported because no chain could be read. This is not a reading of an empty wallet: the balances were never retrieved. Running the import again is safe.",
+          "noChains": "No chain was detected for this address. Either it has no activity on a chain this app supports, or the detection calls did not answer. Running the import again is safe.",
+          "zeroBalances": "Every detected chain answered and reported a zero balance, so there was nothing to import. Nothing failed."
+        }
+      },
+      "exchange": {
+        "title": "Exchange import",
+        "accountsCreated": "Accounts created",
+        "holdingsImported": "Holdings imported",
+        "connectedButEmpty": "The accounts connected and the provider returned no balances. That is normal for an empty account — anything added later arrives on the next hourly sync.",
+        "failedTitle_one": "{{count}} account could not be read",
+        "failedTitle_other": "{{count}} accounts could not be read",
+        "failedNote": "Anything held there is missing from the figures above. Running the import again is safe."
+      },
+      "file": {
+        "title": {
+          "imported": "File imported",
+          "nothing": "Nothing was written"
+        },
+        "nothingBody": "The file parsed, but it carried no transactions, no balances and no positions we could use. Check that it is the export you meant to upload.",
+        "format": "Format",
+        "transactions": "Transactions",
+        "newHoldings": "New holdings",
+        "balanceAnchors": "Balance anchors",
+        "holdingsTitle": "Holdings touched",
+        "row": {
+          "new": "New",
+          "updated": "Updated",
+          "transactions_one": "{{count}} transaction",
+          "transactions_other": "{{count}} transactions",
+          "statementClose": "Statement close",
+          "noClosingBalance": "No closing balance"
+        },
+        "warningsTitle_one": "{{count}} warning",
+        "warningsTitle_other": "{{count}} warnings",
+        "importAnother": "Import another file",
+        "unreadablePayload": "This run finished without a result we can read. Nothing about your portfolio changed.",
+        "currency": {
+          "title": "Which currency is this statement in?",
+          "body_one": "We read {{count}} transaction from this file, but it names no currency and none could be detected. Nothing has been imported yet.",
+          "body_other": "We read {{count}} transactions from this file, but it names no currency and none could be detected. Nothing has been imported yet.",
+          "preview": "{{shown}} of {{total}}",
+          "noDescription": "No description",
+          "fieldLabel": "Statement currency",
+          "blocker": "pick the currency these transactions are in",
+          "apply": "Import with this currency",
+          "applying": "Re-importing…",
+          "subject": "this file"
+        }
+      },
+      "manual": {
+        "title": "Holdings saved",
+        "saved": "Rows written",
+        "priced": "Priced",
+        "row": {
+          "new": "New",
+          "updated": "Updated",
+          "noPrice": "No price yet"
+        },
+        "unpricedNote_one": "{{count}} row has no price yet. It is saved either way — refresh it from Holdings, or wait for the next hourly pricing sweep.",
+        "unpricedNote_other": "{{count}} rows have no price yet. They are saved either way — refresh them from Holdings, or wait for the next hourly pricing sweep.",
+        "addMore": "Add more",
+        "unreadablePayload": "This run finished without a result we can read. Nothing about your portfolio changed."
+      },
+      "generic": {
+        "title": "Result",
+        "noPayload": "This run finished without a result payload. There is nothing to act on.",
+        "nothingToShow": "The result carried no fields we can show. The raw payload is below.",
+        "errorsTitle_one": "{{count}} error",
+        "errorsTitle_other": "{{count}} errors",
+        "rawResult": "Raw result",
+        "warningsTitle_one": "{{count}} thing worth knowing",
+        "warningsTitle_other": "{{count}} things worth knowing",
+        "warningsNote": "Not failures. The run finished — these say what it could not reach, and why what it wrote may look short."
+      },
+      "failure": {
+        "cancelled": {
+          "label": "Cancelled",
+          "sentence": "You stopped this job before it finished."
+        },
+        "neverDelivered": {
+          "label": "Never started",
+          "sentence": "This job was never handed to the worker, so it never ran and nothing was changed. Start it again from where you began it."
+        },
+        "unrecoverable": {
+          "label": "Failed — won't retry",
+          "sentence": "This failed for a reason another attempt will not fix. Check the details below, correct them, and start it again."
+        },
+        "exhausted": {
+          "label": "Failed — won't retry",
+          "sentence_one": "This was tried {{count, number}} time and failed. It will not be tried again on its own.",
+          "sentence_other": "This was tried {{count, number}} times and failed every time. It will not be tried again on its own."
+        },
+        "noRetry": {
+          "label": "Failed — won't retry",
+          "sentence": "This failed and will not be tried again on its own."
+        },
+        "notQueued": {
+          "label": "Failed",
+          "sentence": "The last attempt failed, and no further attempt is queued for it."
+        },
+        "retrying": {
+          "label": "Retrying ({{made, number}} of {{allowed, number}})",
+          "sentence": "Attempt {{made, number}} of {{allowed, number}} failed. The next one starts automatically — nothing for you to do yet."
+        },
+        "settling": {
+          "label": "Failed",
+          "sentence": "The last attempt failed. Checking whether anything else is queued for it."
+        }
+      }
+    },
+    "membership": {
+      "picker": {
+        "done": "Done"
+      },
+      "holdings_one": "Holdings ({{count}})",
+      "holdings_other": "Holdings ({{count}})",
+      "wholeAccounts_one": "Whole accounts ({{count}})",
+      "wholeAccounts_other": "Whole accounts ({{count}})",
+      "wholeAccountsNote": "The whole account is in the group — what it holds now and anything it receives later. Removing it takes all of that out.",
+      "searchPlaceholder": "Search {{noun}}",
+      "searchLabel": "Search {{noun}} to add",
+      "add": "Add {{label}}",
+      "added": "{{label}} added to the group",
+      "removed": "{{label}} removed from the group",
+      "adding": "Adding to the group",
+      "removing": "Removing from the group",
+      "addAction": "Add",
+      "addPending": "Adding",
+      "removeAction": "Remove",
+      "removePending": "Removing",
+      "noMatch": "Nothing left to add matches “{{query}}”.",
+      "allAdded": "Everything you have is already here — there are no other {{noun}} to add.",
+      "allOfCount_one": "All {{count}} holding",
+      "allOfCount_other": "All {{count}} holdings",
+      "count": {
+        "holding_one": "{{count}} holding",
+        "holding_other": "{{count}} holdings",
+        "account_one": "{{count}} account",
+        "account_other": "{{count}} accounts"
+      }
+    }
+  }
+}

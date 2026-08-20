@@ -1,7 +1,8 @@
 import { showError, showSuccess } from '@scani/ui/ui/use-toast';
 import { useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { invalidatePortfolioQueries } from '@/hooks/invalidatePortfolioQueries';
 import { trpc } from '@/lib/trpc';
-import { invalidatePortfolioQueries } from '@/v2/hooks/invalidatePortfolioQueries';
 import { candidatesFor, compareMembers, type MemberEntry } from '../lib/membership';
 
 /**
@@ -21,6 +22,7 @@ import { candidatesFor, compareMembers, type MemberEntry } from '../lib/membersh
  * the first would make the second impossible.
  */
 export function useGroupMembership(groupId: string) {
+  const { t } = useTranslation();
   const utils = trpc.useUtils();
   const holdingsQuery = trpc.holdings.getWithDetails.useQuery();
   const accountsQuery = trpc.accounts.getByUserIdWithSummary.useQuery();
@@ -42,24 +44,27 @@ export function useGroupMembership(groupId: string) {
       kind: 'holding' as const,
       label: holding.token.symbol,
       sublabel: `${holding.token.name} · ${holding.institution.name}`,
+      // Carried because the group's total does not count it and the list does
+      // show it (SC-388). The flag is the holdings list's own — the row is
+      // badged there too — so the two surfaces cannot call the same position
+      // closed and open.
+      inactive: !holding.isActive,
     }));
-    // An account is never a member in its own right — `account_groups` is a
-    // cache the backend rebuilds from `holding_groups`, and the rule is *every*
-    // visible holding in the account. So the row has to say what it stands for,
-    // or a reader sees an account they never added appear the moment its last
-    // holding goes in, and reads that as a bug.
+    // An account IS a member in its own right now (SC-386): `account_groups` is
+    // a standing rule, not a cache, so the row stands for the account and
+    // everything it holds or later receives. The sublabel still says how many
+    // that is today, because "Airwallex" and "Airwallex — all 12" are different
+    // claims and only the second one is true.
     const accounts = (accountsQuery.data ?? []).map((account) => {
-      const count = account.summary.holdingsCount;
-      const noun = count === 1 ? 'holding' : 'holdings';
       return {
         id: account.id,
         kind: 'account' as const,
         label: account.name,
-        sublabel: `All ${count} ${noun}`,
+        sublabel: t('v3.membership.allOfCount', { count: account.summary.holdingsCount }),
       };
     });
     return [...holdings, ...accounts];
-  }, [holdingsQuery.data, accountsQuery.data]);
+  }, [holdingsQuery.data, accountsQuery.data, t]);
 
   const members: MemberEntry[] = useMemo(() => {
     const holdingIds = new Set(
@@ -104,12 +109,15 @@ export function useGroupMembership(groupId: string) {
       ]);
       showSuccess(
         direction === 'add'
-          ? `${entry.label} added to the group`
-          : `${entry.label} removed from the group`
+          ? t('v3.membership.added', { label: entry.label })
+          : t('v3.membership.removed', { label: entry.label })
       );
       void invalidatePortfolioQueries(utils);
     } catch (error) {
-      showError(error, direction === 'add' ? 'Adding to the group' : 'Removing from the group');
+      showError(
+        error,
+        direction === 'add' ? t('v3.membership.adding') : t('v3.membership.removing')
+      );
     } finally {
       settle(key);
     }

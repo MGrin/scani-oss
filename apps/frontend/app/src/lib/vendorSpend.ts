@@ -1,11 +1,12 @@
 import { Decimal, formatCurrency } from '@scani/shared';
+import type { TFunction } from 'i18next';
 import {
   asPaymentIntervalUnit,
   type ConversionContext,
   convertTotalsToBase,
   sumAmountsByCurrency,
   sumMonthlyEquivalentByCurrency,
-} from '@/v2/lib/paymentTotals';
+} from '@/v3/lib/paymentTotals';
 
 /**
  * "How much do I pay this vendor" — the two answers, kept apart.
@@ -267,6 +268,7 @@ export function mergeCurrencyTotals(maps: readonly Map<string, Decimal>[]): Map<
  * in a currency we cannot convert never reads as costing nothing.
  */
 export function formatConvertedFigure(
+  t: TFunction,
   totals: ReadonlyMap<string, Decimal>,
   context: ConversionContext,
   baseSymbol: string,
@@ -278,17 +280,30 @@ export function formatConvertedFigure(
   const rest = total.unconverted
     .map((part) => formatCurrency(part.amount.toString(), symbolFor(part.currencyTokenId)))
     .join(' + ');
-  return `${base} + ${rest} unconverted`;
+  return t('vendors.withUnconverted', { base, rest });
 }
 
-/** "Paid, last 12 months". The window is always in the label — an unqualified
- *  total is a figure nobody can act on. */
-export function paidWindowLabel(windowMonths: number): string {
-  return windowMonths === 12 ? 'Paid, last 12 months' : `Paid, last ${windowMonths} months`;
+/**
+ * "Paid, last 12 months". The window is always in the label — an unqualified
+ * total is a figure nobody can act on.
+ *
+ * The `windowMonths === 12` special case is gone (SC-411): both branches were
+ * the same sentence with the same number substituted, so the twelve was
+ * redundant in English and would have been one more thing to get wrong in
+ * every other language. It is a plural key now, which is also the only shape
+ * that can say `12 месяцев` and `3 месяца`.
+ */
+export function paidWindowLabel(t: TFunction, windowMonths: number): string {
+  return t('vendors.paidWindow', { count: windowMonths });
 }
 
-export const COMMITMENT_LABEL = 'Committed per month';
-export const PAID_ALL_TIME_LABEL = 'Paid, all time';
+export function commitmentLabel(t: TFunction): string {
+  return t('vendors.committedPerMonth');
+}
+
+export function paidAllTimeLabel(t: TFunction): string {
+  return t('vendors.paidAllTime');
+}
 
 /**
  * The income wording, kept apart from the spend wording rather than reusing it
@@ -299,11 +314,16 @@ export const PAID_ALL_TIME_LABEL = 'Paid, all time';
  * on. "Expected" carries it. Likewise "Paid" describes money you sent, so a
  * salary that landed is "Received".
  */
-export const INCOME_COMMITMENT_LABEL = 'Expected per month';
-export const RECEIVED_ALL_TIME_LABEL = 'Received, all time';
+export function incomeCommitmentLabel(t: TFunction): string {
+  return t('vendors.expectedPerMonth');
+}
 
-export function receivedWindowLabel(windowMonths: number): string {
-  return windowMonths === 12 ? 'Received, last 12 months' : `Received, last ${windowMonths} months`;
+export function receivedAllTimeLabel(t: TFunction): string {
+  return t('vendors.receivedAllTime');
+}
+
+export function receivedWindowLabel(t: TFunction, windowMonths: number): string {
+  return t('vendors.receivedWindow', { count: windowMonths });
 }
 
 /**
@@ -318,29 +338,47 @@ export function receivedWindowLabel(windowMonths: number): string {
  * carries `<Numeric delta>`'s sign and gain token, and says "Income" in its
  * sublabel. The two are never added together anywhere.
  */
-export const PER_MONTH_LABEL = 'Per month';
+export const PER_MONTH_LABEL_KEY = 'ui.dataView.vendors.col.perMonth';
+
+/**
+ * The same heading as a rendered string, for the caller that needs one rather
+ * than a key to hand the data-view kit.
+ *
+ * It used to be a second CONSTANT holding the English, with a comment saying
+ * the pair existed so "the two cannot drift into two spellings of one column
+ * heading". They cannot drift now because there is only one spelling: the key
+ * above, resolved (SC-411).
+ */
+export function perMonthLabel(t: TFunction): string {
+  return t(PER_MONTH_LABEL_KEY);
+}
 
 /** "Income" / "Bills & income" / "Bill" — what a row says it is. `null` where
  *  the direction adds nothing a reader needs (an ordinary bill, or a vendor
  *  with nothing pointing at it). */
-export function vendorKindLabel(kind: VendorDirectionKind): string | null {
+export function vendorKindLabel(t: TFunction, kind: VendorDirectionKind): string | null {
   switch (kind) {
     case 'income':
-      return 'Income';
+      return t('vendors.kind.income');
     case 'both':
-      return 'Bills & income';
+      return t('vendors.kind.both');
     case 'unclassified':
-      return 'Direction not recorded';
+      return t('vendors.kind.unclassified');
     default:
       return null;
   }
 }
 
-/** "2 settlements have no amount recorded" — said only when it is true, and
- *  next to the total it is missing from. */
-export function unpricedNote(unpricedCount: number): string | null {
+/**
+ * "2 settlements have no amount recorded" — said only when it is true, and
+ * next to the total it is missing from.
+ *
+ * It was a hand-rolled English plural: two whole sentences, picked by
+ * `count === 1`. That arrangement cannot survive a language with more than two
+ * forms, and Russian has four (SC-411) — `1 платёж`, `2 платежа`,
+ * `5 платежей`. The key carries the count and i18next picks the form.
+ */
+export function unpricedNote(t: TFunction, unpricedCount: number): string | null {
   if (unpricedCount <= 0) return null;
-  return unpricedCount === 1
-    ? '1 settlement has no amount recorded and is not in this total.'
-    : `${unpricedCount} settlements have no amount recorded and are not in this total.`;
+  return t('vendors.unpriced', { count: unpricedCount });
 }

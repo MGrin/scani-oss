@@ -9,6 +9,11 @@ import {
 } from '../../../src/repositories/DocumentExtractionRepository';
 import { DocumentRepository } from '../../../src/repositories/DocumentRepository';
 import { DocumentDeletionService } from '../../../src/services/documents/DocumentDeletionService';
+import { restoreContainerAfterAll } from '../../../test/helpers/container';
+
+// Container stubs are process-global; put back whatever this file changes
+// so no later test file resolves them (SC-448).
+restoreContainerAfterAll();
 
 const DOC_ID = '11111111-1111-4111-8111-111111111111';
 

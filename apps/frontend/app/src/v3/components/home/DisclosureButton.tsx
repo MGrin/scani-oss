@@ -1,4 +1,5 @@
 import { ChevronDown } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/utils';
 
 /**
@@ -20,6 +21,8 @@ interface DisclosureButtonProps {
 }
 
 export function DisclosureButton({ expanded, onToggle, label, className }: DisclosureButtonProps) {
+  const { t } = useTranslation();
+
   return (
     <button
       type="button"
@@ -39,7 +42,11 @@ export function DisclosureButton({ expanded, onToggle, label, className }: Discl
           expanded && 'rotate-180'
         )}
       />
-      {expanded ? 'Show less' : `Show ${label}`}
+      {/* `label` arrives already translated from the block that owns it —
+          "the 14 in Other" is that block's sentence, not this button's. Here it
+          is an interpolated value so the verb and the object can swap order.
+          (SC-201) */}
+      {expanded ? t('v3.home.disclosure.showLess') : t('v3.home.disclosure.show', { label })}
     </button>
   );
 }

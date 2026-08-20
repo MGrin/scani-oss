@@ -1,18 +1,22 @@
 import { TooltipProvider } from '@scani/ui/ui/tooltip';
-import { type Location, Navigate, Route, Routes } from 'react-router-dom';
+import { Navigate, Route, Routes } from 'react-router-dom';
 import { lazyRoute } from '@/lib/lazy-route';
 import { V3ErrorBoundary } from './components/V3ErrorBoundary';
+// Registers v3's own half of every locale into the app's i18next instance.
+// Side-effect import, and it belongs here rather than deeper: this is the
+// module every v3 route is reached through (SC-169).
+import './i18n';
 import { useViewTransitionLocation } from './hooks/useViewTransitionLocation';
 import { V3Shell } from './layouts/V3Shell';
 import { useInstallPdfExport } from './lib/pdf-export';
 import {
   TRANSFER_ANSWERED_PATH,
   TRANSFER_REVIEW_PATH,
+  TRANSFER_RULES_PATH,
   V3_CAPTURE_ROUTES,
-  V3_NAV_PATHS,
   V3_ROUTES,
 } from './lib/routes';
-import { counterpartPath, V3_BASE } from './lib/ui-version';
+import { V3_BASE } from './lib/ui-version';
 import { AccountsPage } from './pages/AccountsPage';
 import { AnsweredTransfersPage } from './pages/AnsweredTransfersPage';
 import { DocumentDetailPage } from './pages/DocumentDetailPage';
@@ -30,34 +34,16 @@ import { JobDetailPage } from './pages/JobDetailPage';
 import { JobsPage } from './pages/JobsPage';
 import { ManualEntryPage } from './pages/ManualEntryPage';
 import { MoneyPage } from './pages/MoneyPage';
+import { NotFoundPage } from './pages/NotFoundPage';
 import { PaymentFormPage } from './pages/PaymentFormPage';
 import { ReviewPage } from './pages/ReviewPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { TokensPage } from './pages/TokensPage';
+import { TransferRulesPage } from './pages/TransferRulesPage';
 import { TransfersReviewPage } from './pages/TransfersReviewPage';
-import { V3PlaceholderPage } from './pages/V3PlaceholderPage';
 import { VaultDetailPage } from './pages/VaultDetailPage';
 import { VaultsPage } from './pages/VaultsPage';
 import { WalletImportPage } from './pages/WalletImportPage';
-
-/** Nav destinations that now have a real screen. Everything else keeps its
- *  placeholder, so the shell stays walkable end to end. */
-const BUILT_NAV_PATHS: readonly string[] = [
-  V3_BASE,
-  V3_ROUTES.holdings,
-  V3_ROUTES.money,
-  V3_ROUTES.recurring,
-  V3_ROUTES.vendors,
-  V3_ROUTES.review,
-  V3_ROUTES.jobs,
-  V3_ROUTES.accounts,
-  V3_ROUTES.institutions,
-  V3_ROUTES.vaults,
-  V3_ROUTES.groups,
-  V3_ROUTES.tokens,
-  V3_ROUTES.files,
-  V3_ROUTES.settings,
-];
 
 /** `/payments` → `payments`. Routes inside `V3Shell` are relative to it. */
 function relative(path: string): string {
@@ -75,24 +61,6 @@ function relative(path: string): string {
 const KitchenSinkPage = lazyRoute('component gallery', () =>
   import('./pages/KitchenSinkPage').then((m) => m.KitchenSinkPage)
 );
-
-/**
- * Anything v3 does not route belongs to the classic UI (V3-19).
- *
- * v3 owns the root now, so this catch-all is where every pre-flip bookmark to a
- * v2-only screen arrives — `/add-data`, a settings sub-page, anything v3 never
- * built. Sending it to `/v2` + the same path is what keeps those links working
- * instead of 404ing or silently landing on Home.
- *
- * It takes the location as a prop rather than calling `useLocation`, because the
- * tree it lives in renders a location that lags the router by one commit while a
- * view transition runs (V3-16). Reading the router's own location here would
- * redirect using the path that is arriving rather than the one that failed to
- * match.
- */
-function CrossToClassic({ location }: { location: Location }) {
-  return <Navigate to={counterpartPath(location.pathname, 'v2', location.search)} replace />;
-}
 
 export function V3App() {
   // Teaches the shared export path how to make a PDF (SC-94). Registered here
@@ -228,6 +196,9 @@ export function V3App() {
               path={`${relative(TRANSFER_ANSWERED_PATH)}/:peekId?`}
               element={<AnsweredTransfersPage />}
             />
+            {/* `rules` is a segment too (SC-375), and the same ordering rule
+                applies to it. */}
+            <Route path={relative(TRANSFER_RULES_PATH)} element={<TransferRulesPage />} />
             <Route
               path={`${relative(TRANSFER_REVIEW_PATH)}/:peekId?`}
               element={<TransfersReviewPage />}
@@ -250,21 +221,17 @@ export function V3App() {
             />
             <Route path={`${relative(V3_ROUTES.tokens)}/:peekId?`} element={<TokensPage />} />
 
-            {/* Every remaining nav destination resolves, so the shell can be
-                exercised end to end before the screens behind it exist. A
-                tab that bounces back to Home is not a shell you can judge.
-                Each later ticket replaces one of these placeholders with
-                the real page and adds its path to `V3_ROUTE_PATTERNS` in
-                lib/ui-version.ts — that list stays short deliberately,
-                because it decides where the v2→v3 switch is allowed to
-                land, and landing on a placeholder is worse than landing
-                on Home. */}
-            {V3_NAV_PATHS.filter((path) => !BUILT_NAV_PATHS.includes(path)).map((path) => (
-              <Route key={path} path={relative(path)} element={<V3PlaceholderPage />} />
-            ))}
-            {/* Everything else is a v2 address the reader reached at the root,
-                which is where every pre-flip bookmark points. */}
-            <Route path="*" element={<CrossToClassic location={location} />} />
+            {/* The terminal 404, and it is terminal for the whole app (SC-423).
+
+                This used to forward to `/v2/<same path>` on the assumption
+                that v2 would show something — v2's own catch-all was the
+                screen that actually answered, and it is the only reason an
+                unrouted path was not a white page. Inside the layout route,
+                not beside it, for the reason v2's carried: a layout route
+                whose children all miss renders `null`, and in the installed
+                PWA there is no address bar to leave a blank screen by (SC-62,
+                SC-73). */}
+            <Route path="*" element={<NotFoundPage location={location} />} />
           </Route>
         </Routes>
       </TooltipProvider>

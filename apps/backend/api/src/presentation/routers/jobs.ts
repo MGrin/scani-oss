@@ -339,10 +339,19 @@ export const jobsRouter = router({
     }),
 
   /**
-   * Permanently drop a failed job's mirror row. Lets the user clear a
-   * job out of the failed list once they've decided not to retry; the
-   * underlying BullMQ entry (if still in Redis) is removed too so it
-   * can't be retried later.
+   * Clear a failed job out of the user's list once they have decided not to
+   * retry. The underlying BullMQ entry (if still in Redis) is removed too, so
+   * it cannot be retried later.
+   *
+   * **The mirror row is kept, and stamped `dismissed_at` (SC-292).** This used
+   * to delete it. Two `document-parse` failures on 2026-08-11 left four DLQ
+   * entries and no row at all, which made "I never uploaded that"
+   * indistinguishable from "I uploaded it and it failed" — and the user still
+   * had the document. Dismissal is a refusal, and a refusal has to leave a
+   * mark; the row is hidden from the listing, not destroyed.
+   *
+   * The name stays `remove` because that is what it does from the user's side
+   * and the SPA already calls it.
    */
   remove: protectedProcedure
     .input(z.object({ jobId: z.string().min(1) }))
@@ -356,11 +365,11 @@ export const jobsRouter = router({
           message: `Only failed jobs can be removed; this job is ${row.state}.`,
         });
       }
-      const ok = await repo.deleteFailed(ctx.userId, input.jobId);
+      const ok = await repo.dismissFailed(ctx.userId, input.jobId);
       if (!ok) {
         throw new TRPCError({
           code: 'BAD_REQUEST',
-          message: 'Job is no longer in failed state.',
+          message: 'Job is no longer in failed state, or was already dismissed.',
         });
       }
       const job = await getQueue().getJob(input.jobId);

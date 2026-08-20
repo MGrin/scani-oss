@@ -1,8 +1,15 @@
+import '../../i18n-preload';
+
 import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { StaticRouter } from 'react-router-dom/server';
 import { CoverageNote } from '../../../src/v3/components/home/CoverageNote';
 import { DisclosureButton } from '../../../src/v3/components/home/DisclosureButton';
+import {
+  type FirstRunJob,
+  FirstRunPanel,
+  resolveFirstRunState,
+} from '../../../src/v3/components/home/FirstRunPanel';
 import { formatChartDate } from '../../../src/v3/components/home/PortfolioChart';
 import { VaultProgressRow } from '../../../src/v3/components/home/VaultsBlock';
 import type { FigureQuality, VaultRow } from '../../../src/v3/lib/home';
@@ -18,8 +25,10 @@ import type { FigureQuality, VaultRow } from '../../../src/v3/lib/home';
 
 describe('formatChartDate', () => {
   test.each([
-    ['2026-08-12', 'daily', 'Aug 12'],
-    ['2026-08-12', 'weekly', 'Aug 12'],
+    // Day-first, because the axis reads `APP_LOCALE` now instead of an
+    // English-only month table — see `formatChartDate` (SC-201).
+    ['2026-08-12', 'daily', '12 Aug'],
+    ['2026-08-12', 'weekly', '12 Aug'],
     // Past a year of history a day-of-month tick is noise, so the axis names
     // the month and the year instead.
     ['2026-08-12', 'monthly', 'Aug 2026'],
@@ -249,5 +258,94 @@ describe('CoverageNote', () => {
 
   test('an empty queue renders no clause at all', () => {
     expect(renderNote({ ...FULL, basisUnknown: 1 })).not.toInclude('Realized PnL excludes');
+  });
+});
+
+/**
+ * The first screen of an empty account (SC-451).
+ *
+ * `FirstRun` owns the query; `FirstRunPanel` is the half that can be rendered
+ * without a tRPC client, which is the same split every other block on this
+ * screen uses. #1069 shipped the invitation with no test of any kind, so these
+ * cover both states rather than only the one this branch added.
+ */
+const job = (over: Partial<FirstRunJob>): FirstRunJob => ({
+  jobId: 'j-1',
+  jobName: 'file-import',
+  state: 'queued',
+  ...over,
+});
+
+describe('resolveFirstRunState', () => {
+  test('no jobs at all is the invitation', () => {
+    expect(resolveFirstRunState([])).toEqual({ kind: 'invite' });
+  });
+
+  test('a running capture is named, so the screen stops saying "nothing tracked yet"', () => {
+    const state = resolveFirstRunState([job({ jobId: 'parse-7', state: 'active' })]);
+    expect(state).toEqual({ kind: 'importing', jobId: 'parse-7' });
+  });
+
+  test.each(['queued', 'active', 'progress'] as const)('%s counts as in flight', (state) => {
+    expect(resolveFirstRunState([job({ state })]).kind).toBe('importing');
+  });
+
+  test.each(['completed', 'failed'] as const)('%s does not', (state) => {
+    // A completed parse that produced holdings takes the whole panel away, and
+    // one that failed is the review feed's to report — neither is "running".
+    expect(resolveFirstRunState([job({ state })]).kind).toBe('invite');
+  });
+
+  test('a job that is not a capture leaves the invitation standing', () => {
+    // Re-pricing a holding the account does not have yet is not an attempt to
+    // get data in, and reporting it as one would tell the reader to wait for
+    // something that can never fill this screen.
+    expect(resolveFirstRunState([job({ jobName: 'holding-price-update' })]).kind).toBe('invite');
+  });
+
+  test('the newest in-flight capture wins — the list arrives newest first', () => {
+    const state = resolveFirstRunState([
+      job({ jobId: 'newest', state: 'active' }),
+      job({ jobId: 'older', state: 'queued' }),
+    ]);
+    expect(state).toEqual({ kind: 'importing', jobId: 'newest' });
+  });
+});
+
+describe('FirstRunPanel', () => {
+  const render = (state: Parameters<typeof FirstRunPanel>[0]['state']) =>
+    renderToStaticMarkup(
+      <StaticRouter location="/">
+        <FirstRunPanel state={state} onOpenCapture={() => {}} />
+      </StaticRouter>
+    );
+
+  test('leads with one route in, and it is a link rather than a chooser', () => {
+    const html = render({ kind: 'invite' });
+    expect(html).toInclude('href="/import"');
+    expect(html).toInclude('Upload a screenshot or file');
+    // The screenshot is named before the file: `screenshot-parse` has run 12
+    // times in production and `file-import` has never run at all.
+    expect(html.indexOf('screenshot')).toBeLessThan(html.indexOf('CSV'));
+    // And it says outright that no credential is wanted — the ask this route
+    // exists to avoid.
+    expect(html).toInclude('nothing to log into');
+  });
+
+  test('still admits the other routes exist, quietly', () => {
+    expect(render({ kind: 'invite' })).toInclude('Or pick another way in');
+  });
+
+  test('a running import replaces the invitation rather than sitting beside it', () => {
+    const html = render({ kind: 'importing', jobId: 'parse-7' });
+    expect(html).toInclude('An import is running');
+    expect(html).toInclude('href="/jobs/parse-7"');
+    // "Nothing tracked yet" over a parse in flight reads as "you have not
+    // tried" — the SC-153 defect, one state along.
+    expect(html).not.toInclude('Nothing tracked yet');
+    expect(html).not.toInclude('href="/import"');
+    // The sheet stays offered: a running import does not cover the account the
+    // reader was about to add.
+    expect(html).toInclude('Or pick another way in');
   });
 });

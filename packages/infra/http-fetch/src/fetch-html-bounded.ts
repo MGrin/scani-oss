@@ -87,7 +87,13 @@ function isPrivateOrReservedAddress(address: string): boolean {
   return true;
 }
 
-async function assertHostIsPublic(hostname: string): Promise<void> {
+/**
+ * Exported so a second fetcher reuses THIS guard rather than growing its own
+ * (SC-208). A private-address check that exists twice is one that will be
+ * right in one place and stale in the other, and the second copy is always the
+ * one nobody reviews.
+ */
+export async function assertHostIsPublic(hostname: string): Promise<void> {
   const lowered = hostname.toLowerCase();
   if (lowered === 'localhost') {
     throw new BoundedFetchError('Blocked host (localhost)', 'blocked-host');
@@ -139,6 +145,55 @@ export interface FetchHtmlBoundedResult {
  * bad status, timeout). The caller should treat any throw as "no OG
  * data available" and surface an empty result to the client.
  */
+/** Redirect hops we are willing to walk. Three is generous for a real site. */
+const MAX_REDIRECTS = 3;
+
+/** The fetch this module uses. Injectable so the hop walk is testable without a network. */
+export type FetchLike = (url: string, init: RequestInit) => Promise<Response>;
+
+/**
+ * Follow redirects ONE HOP AT A TIME, re-validating the host each time (SC-208).
+ *
+ * This used to be `redirect: 'follow'`, with `assertHostIsPublic` called once
+ * on the URL the caller supplied. That guard is worth nothing against a
+ * redirect: a public host answers 302 to `http://169.254.169.254/` or a
+ * `.internal` name and `fetch` walks there on our behalf, from inside the Fly
+ * network. `response.url` — the address we actually ended up at — was returned
+ * to the caller and never checked.
+ *
+ * It matters more than the SC-208 ticket assumed. That ticket reasons the risk
+ * is low because `institutions.website` is data we seed; but
+ * `InstitutionService.create` lets a USER create an institution with any
+ * `website` they like, so the URL is attacker-influenced and always was.
+ */
+export async function followRedirectsSafely(
+  start: URL,
+  init: RequestInit,
+  fetchImpl: FetchLike = fetch
+): Promise<Response> {
+  let current = start;
+  for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
+    const response = await fetchImpl(current.toString(), { ...init, redirect: 'manual' });
+    const location = response.headers.get('location');
+    const isRedirect = response.status >= 300 && response.status < 400 && location;
+    if (!isRedirect) return response;
+
+    let next: URL;
+    try {
+      next = new URL(location, current);
+    } catch {
+      throw new BoundedFetchError('Invalid redirect target', 'invalid-url');
+    }
+    if (next.protocol !== 'http:' && next.protocol !== 'https:') {
+      throw new BoundedFetchError(`Unsupported redirect protocol ${next.protocol}`, 'invalid-url');
+    }
+    // The whole point: every hop is validated, not just the first.
+    await assertHostIsPublic(next.hostname);
+    current = next;
+  }
+  throw new BoundedFetchError(`More than ${MAX_REDIRECTS} redirects`, 'network');
+}
+
 export async function fetchHtmlBounded(rawUrl: string): Promise<FetchHtmlBoundedResult> {
   let parsed: URL;
   try {
@@ -157,15 +212,18 @@ export async function fetchHtmlBounded(rawUrl: string): Promise<FetchHtmlBounded
 
   let response: Response;
   try {
-    response = await fetch(parsed.toString(), {
+    response = await followRedirectsSafely(parsed, {
       signal: controller.signal,
-      redirect: 'follow',
       headers: {
         Accept: 'text/html, application/xhtml+xml',
         'User-Agent': 'ScaniBot/1.0 (+https://scani.xyz)',
       },
     });
   } catch (err) {
+    if (err instanceof BoundedFetchError) {
+      clearTimeout(timeoutId);
+      throw err;
+    }
     clearTimeout(timeoutId);
     if (err instanceof Error && (err.name === 'AbortError' || err.name === 'TimeoutError')) {
       throw new BoundedFetchError('Fetch timed out', 'timeout');

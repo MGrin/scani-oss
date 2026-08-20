@@ -1,12 +1,19 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 import { Container } from 'typedi';
 import { z } from 'zod';
+// This workspace cannot depend on @scani/domain (it sits below it), so the
+// shared helper is reached the same way the shared test preload is: by path.
+import { restoreContainerAfterAll } from '../../../../business/domain/test/helpers/container';
 import { LIFECYCLE_MIRROR } from '../../src/consumer/lifecycle-mirror';
 import { UserJobProcessor } from '../../src/consumer/user-job-processor';
 import type { UserJobDescriptor } from '../../src/core/job-descriptor';
 import { DURABLE_RESULT_MAX_BYTES, readTruncationNotice } from '../../src/core/result-truncator';
 import type { LifecycleEvent, ProcessorContext, UserJobBase } from '../../src/core/types';
 import { RedisLifecyclePublisher } from '../../src/lifecycle/redis-lifecycle-publisher';
+
+// Container stubs are process-global; put back whatever this file changes
+// so no later test file resolves them (SC-448).
+restoreContainerAfterAll();
 
 interface TestPayload extends UserJobBase {
   value: string;

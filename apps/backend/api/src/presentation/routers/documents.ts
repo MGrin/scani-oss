@@ -291,6 +291,12 @@ export const documentsRouter = router({
         purpose: z.enum(DOCUMENT_PURPOSES).optional(),
         limit: z.number().int().min(1).max(MAX_LIST_LIMIT).default(25),
         cursor: z.string().min(1).optional(),
+        /** Filename, matched over every row rather than over the page the
+         *  caller holds (SC-244). */
+        search: z.string().max(200).optional(),
+        /** Purposes whose label matched the same term — the client resolves
+         *  them because the labels are its copy. See `ListDocumentsOptions`. */
+        matchPurposes: z.array(z.enum(DOCUMENT_PURPOSES)).max(DOCUMENT_PURPOSES.length).optional(),
       })
     )
     .query(async ({ ctx, input }) => {
@@ -299,6 +305,8 @@ export const documentsRouter = router({
         purpose: input.purpose,
         limit: input.limit,
         cursor: input.cursor ? decodeCursor(input.cursor) : undefined,
+        search: input.search,
+        matchPurposes: input.matchPurposes,
       });
 
       const hasMore = rows.length > input.limit;

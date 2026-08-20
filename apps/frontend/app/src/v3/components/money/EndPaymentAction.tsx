@@ -1,5 +1,6 @@
 import { ConfirmAction } from '@scani/ui/v3/components/ConfirmAction';
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { trpc } from '@/lib/trpc';
 import { useEndPayment } from '../../hooks/useEndPayment';
 import { endConsequence, occurrencesEndWouldRemove } from '../../lib/money';
@@ -30,6 +31,7 @@ interface EndPaymentActionProps {
 }
 
 export function EndPaymentAction({ paymentId, vendorName, status }: EndPaymentActionProps) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
 
   // `PaymentService.end` defaults the end date to today when the caller
@@ -50,8 +52,8 @@ export function EndPaymentAction({ paymentId, vendorName, status }: EndPaymentAc
 
   return (
     <ConfirmAction
-      label="End"
-      confirmLabel="End this payment"
+      label={t('v3.money.endPayment.trigger')}
+      confirmLabel={t('v3.money.endPayment.confirm')}
       destructive
       open={open}
       onOpenChange={setOpen}
@@ -60,7 +62,7 @@ export function EndPaymentAction({ paymentId, vendorName, status }: EndPaymentAc
       // many dates this removes…", which is agreeing to nothing.
       canConfirm={removed !== null}
       isPending={ending.isPending}
-      consequence={endConsequence(vendorName, endDate, removed)}
+      consequence={endConsequence(vendorName, endDate, removed, t)}
       onConfirm={() => ending.end(paymentId)}
     />
   );

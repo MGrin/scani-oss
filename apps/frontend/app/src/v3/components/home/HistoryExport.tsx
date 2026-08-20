@@ -11,7 +11,9 @@ import { exportCount, exportDate, exportMoney, exportText } from '@scani/ui/v3/l
 import { describeDownload, downloadFile, exportFileName } from '@scani/ui/v3/lib/export/download';
 import { toExportBlob } from '@scani/ui/v3/lib/export/format';
 import { buildSheet, type ExportField } from '@scani/ui/v3/lib/export/workbook';
+import type { TFunction } from 'i18next';
 import { Download } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { trpc } from '@/lib/trpc';
 import { HOME_PERIODS } from '../../lib/home';
 
@@ -66,17 +68,31 @@ const MAX_HISTORY_DAYS = 365 * 6;
  * fixing here, and the fix is the same one — mirror the screen, offer wider as
  * a deliberate opt-out.
  */
-export const HISTORY_SCOPES: readonly (ExportScopeOption & { days: number })[] = [
-  ...HOME_PERIODS.map((period) => ({
-    key: period.key,
-    // Named as the list sheets name their scope: what you are looking at, and
-    // how big it is, so the count is checkable before the file exists.
-    label: `This ${period.label} window`,
-    detail: `${period.days} days`,
-    days: period.days,
-  })),
-  { key: 'all', label: 'Everything we have', detail: 'Up to six years', days: MAX_HISTORY_DAYS },
-];
+/**
+ * A FUNCTION of `t`, not a module constant (SC-201).
+ *
+ * It reads `HOME_PERIODS`, whose labels are now i18n keys, and a module-level
+ * constant cannot resolve one: there is no `t` at import time, and a value
+ * captured once would not follow a language change either.
+ */
+export function historyScopes(t: TFunction): readonly (ExportScopeOption & { days: number })[] {
+  return [
+    ...HOME_PERIODS.map((period) => ({
+      key: period.key,
+      // Named as the list sheets name their scope: what you are looking at, and
+      // how big it is, so the count is checkable before the file exists.
+      label: t('v3.home.historyExport.scopeWindow', { period: t(period.labelKey) }),
+      detail: t('v3.home.historyExport.scopeDays', { count: period.days }),
+      days: period.days,
+    })),
+    {
+      key: 'all',
+      label: t('v3.home.historyExport.scopeAll'),
+      detail: t('v3.home.historyExport.scopeAllDetail'),
+      days: MAX_HISTORY_DAYS,
+    },
+  ];
+}
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -111,18 +127,27 @@ function dayTotal(value: string): string {
 
 /** Exported so the columns are checkable without a browser, a router or a
  *  server — the file's shape is the deliverable here, not the button. */
-export function historyFields(currency: string): ExportField<HistoryPoint>[] {
+export function historyFields(currency: string, t: TFunction): ExportField<HistoryPoint>[] {
   return [
-    { header: 'Date', value: (point) => exportDate(point.date) },
-    { header: 'Net worth', value: (point) => exportMoney(dayTotal(point.totalValue), currency) },
-    { header: 'Coverage', value: (point) => exportText(point.coverageQuality) },
-    { header: 'Holdings priced', value: (point) => exportCount(point.holdingsWithKnownValue) },
-    { header: 'Holdings total', value: (point) => exportCount(point.holdingsTotal) },
+    { header: t('v3.export.column.date'), value: (point) => exportDate(point.date) },
+    {
+      header: t('v3.export.column.netWorth'),
+      value: (point) => exportMoney(dayTotal(point.totalValue), currency),
+    },
+    { header: t('v3.export.column.coverage'), value: (point) => exportText(point.coverageQuality) },
+    {
+      header: t('v3.export.column.holdingsPriced'),
+      value: (point) => exportCount(point.holdingsWithKnownValue),
+    },
+    {
+      header: t('v3.export.column.holdingsTotal'),
+      value: (point) => exportCount(point.holdingsTotal),
+    },
     // The reader cannot reconcile "priced" against "total" without this:
     // the gap between them is partly holdings nothing quotes, and a file
     // that shows only the gap reads as a pricing failure (SC-146).
     {
-      header: 'Holdings unpriceable',
+      header: t('v3.export.column.holdingsUnpriceable'),
       value: (point) => exportCount(point.holdingsUnpriceable),
     },
     // A day can be 100% priced and still be built on quotes weeks old, and
@@ -131,7 +156,7 @@ export function historyFields(currency: string): ExportField<HistoryPoint>[] {
     // the one that survives being forwarded: whoever opens the file next has
     // no chart, no tooltip and no session, only these columns (SC-151).
     {
-      header: 'Holdings priced from a stale quote',
+      header: t('v3.export.column.holdingsStalePriced'),
       value: (point) => exportCount(point.holdingsStalePriced),
     },
   ];
@@ -143,13 +168,13 @@ export function historyFields(currency: string): ExportField<HistoryPoint>[] {
  * and then pressed Export did not ask for ninety days.
  */
 export function HistoryExport({ currency, periodKey }: { currency: string; periodKey: string }) {
+  const { t } = useTranslation();
+  const scopes = historyScopes(t);
   const sheet = useSheetRoute(EXPORT_SHEET);
   const utils = trpc.useContext();
 
   const run = async ({ scope, format, separator, hideAmounts }: ExportRequest) => {
-    const chosen =
-      HISTORY_SCOPES.find((option) => option.key === scope) ??
-      HISTORY_SCOPES[HISTORY_SCOPES.length - 1];
+    const chosen = scopes.find((option) => option.key === scope) ?? scopes[scopes.length - 1];
     if (!chosen) return;
 
     try {
@@ -165,23 +190,30 @@ export function HistoryExport({ currency, periodKey }: { currency: string; perio
         // Since SC-95 the server omits days nothing was priced on rather than
         // reporting them as zero, so an empty answer here means the window
         // genuinely holds no measurement — not that the request failed.
-        showSuccess('There is no measured history in that window yet.', 'Nothing to export');
+        showSuccess(t('v3.home.historyExport.emptyBody'), t('v3.home.historyExport.emptyTitle'));
         return;
       }
 
       const workbook = {
-        sheets: [buildSheet('Net worth', historyFields(currency), result.series, { hideAmounts })],
+        sheets: [
+          buildSheet(t('v3.export.sheet.netWorth'), historyFields(currency, t), result.series, {
+            hideAmounts,
+          }),
+        ],
         provenance: {
-          subject: 'Net worth history',
+          subject: t('v3.home.historyExport.subject'),
           scope: chosen.label,
           generatedAt: now,
           rowCount: result.series.length,
           amountsWithheld: hideAmounts,
           details: [
-            { label: 'Currency', value: currency },
+            { label: t('v3.home.historyExport.currency'), value: currency },
             // Named because it is the difference between this file and the
             // chart: every day is here, not a curve-preserving sample of them.
-            { label: 'Resolution', value: 'One row per day' },
+            {
+              label: t('v3.home.historyExport.resolution'),
+              value: t('v3.home.historyExport.oneRowPerDay'),
+            },
           ],
         },
       };
@@ -190,11 +222,15 @@ export function HistoryExport({ currency, periodKey }: { currency: string; perio
       const fileName = exportFileName('net-worth-history', format);
       const saved = await downloadFile(blob, fileName);
       if (saved.completed) {
-        const said = describeDownload(saved, fileName, `${result.series.length} days`);
+        const said = describeDownload(
+          saved,
+          fileName,
+          t('v3.home.historyExport.days', { count: result.series.length })
+        );
         showSuccess(said.message, said.title);
       }
     } catch (error) {
-      showErrorToast(error, 'Exporting your net-worth history');
+      showErrorToast(error, t('v3.home.historyExport.pending'));
     }
   };
 
@@ -204,7 +240,7 @@ export function HistoryExport({ currency, periodKey }: { currency: string; perio
         variant="outline"
         size="icon"
         onClick={sheet.open}
-        aria-label="Export net-worth history"
+        aria-label={t('v3.home.historyExport.trigger')}
         className="shrink-0"
       >
         <Download className="h-4 w-4" aria-hidden="true" />
@@ -213,14 +249,14 @@ export function HistoryExport({ currency, periodKey }: { currency: string; perio
       <ExportSheet
         open={sheet.isOpen}
         onOpenChange={sheet.setOpen}
-        subject="net-worth history"
-        scopes={HISTORY_SCOPES}
+        subject={t('v3.home.historyExport.sheetSubject')}
+        scopes={scopes}
         defaultScope={periodKey}
         // No count on the button: the row count is a fact about the server's
         // rollup that this side does not know until it has asked, and a button
         // that promised a number it had to correct would be worse than one
         // that promises none.
-        actionLabel={() => 'Export history'}
+        actionLabel={() => t('v3.home.historyExport.action')}
         onExport={run}
       />
     </>

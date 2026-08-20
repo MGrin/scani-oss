@@ -11,6 +11,7 @@ import { and, eq, inArray, lt, sql } from 'drizzle-orm';
 import Container from 'typedi';
 import { z } from 'zod';
 import { LruCache } from '../../lib/lru-cache';
+import { enqueueCurrencyRateRefresh } from '../lib/currency-rate-refresh';
 import { requireAuth } from '../middleware/auth';
 import { protectedProcedure, router } from '../trpc';
 
@@ -98,11 +99,19 @@ export function createTokensRouter(db: DbType, schemaObj: typeof schema) {
      *
      * This is the *only* way a frontend surface converts money. It goes
      * through the same `CurrencyConverter` every portfolio valuation
-     * uses — cache, then the price graph, then exchangerate-api — so a
-     * converted total on the Money tab and a converted holding on the
-     * dashboard can never disagree about a rate.
+     * uses — so a converted total on the Money tab and a converted
+     * holding on the dashboard can never disagree about a rate.
      *
-     * `rate: null` means the pair has no resolvable rate right now.
+     * **It reads storage and never fetches (SC-222).** It used to end in a
+     * live exchangerate-api call for any pair the price graph could not
+     * answer, and that call sits behind an outflow limiter of two requests
+     * per sixty seconds whose acquire *sleeps*. Measured against production:
+     * 78–180 ms warm, **7.2 s** once the converter's ten-minute memory cache
+     * expired, **26 s** for three pairs with nothing stored — one blocked
+     * user request paying for the backfill nobody had run. A pair we cannot
+     * answer is queued for the worker to fetch and returned as `null` now.
+     *
+     * `rate: null` means the pair has no resolvable rate *right now*.
      * Callers MUST show the un-convertible part rather than dropping it
      * from a total: silently omitting it understates what the user owes,
      * which is worse than the per-currency list this replaced.
@@ -128,13 +137,24 @@ export function createTokensRouter(db: DbType, schemaObj: typeof schema) {
             if (!token) {
               return { currencyTokenId, symbol: null, rate: null, asOf: null };
             }
-            const detail = await converter.getRateDetail(token.symbol, base.symbol, at);
+            const detail = await converter.getStoredRateDetail(token, base, at);
             return {
               currencyTokenId,
               symbol: token.symbol,
               rate: detail?.rate ?? null,
               asOf: detail?.asOf.toISOString() ?? null,
             };
+          })
+        );
+
+        // Fire-and-forget: the answer above does not wait on it, and a queue
+        // that is down must not turn a partial figure into a failed request.
+        void enqueueCurrencyRateRefresh(
+          dbUser.id,
+          base,
+          rates.flatMap((rate) => {
+            const token = rate.rate === null ? tokenById.get(rate.currencyTokenId) : undefined;
+            return token ? [token] : [];
           })
         );
 
@@ -414,7 +434,7 @@ export function createTokensRouter(db: DbType, schemaObj: typeof schema) {
 
         await db
           .update(schemaObj.tokens)
-          .set({ isScamProbability: 1.0, updatedAt: new Date() })
+          .set({ isScamProbability: 1.0, scamScoreSource: 'user', updatedAt: new Date() })
           .where(eq(schemaObj.tokens.id, input.tokenId));
 
         tokensLogger.info(
@@ -460,7 +480,7 @@ export function createTokensRouter(db: DbType, schemaObj: typeof schema) {
 
         await db
           .update(schemaObj.tokens)
-          .set({ isScamProbability: 0, updatedAt: new Date() })
+          .set({ isScamProbability: 0, scamScoreSource: 'user', updatedAt: new Date() })
           .where(eq(schemaObj.tokens.id, input.tokenId));
 
         tokensLogger.info(

@@ -3,6 +3,8 @@
 // need arises (i18n relative-time, business-day math, timezone juggling)
 // upgrade to Intl.RelativeTimeFormat or import a real lib.
 
+import { getFormatLocale } from './locale';
+
 export type DateInput = string | number | Date | null | undefined;
 
 function toDate(input: DateInput): Date | null {
@@ -35,10 +37,22 @@ function toDate(input: DateInput): Date | null {
  * with `timeZone: 'UTC'`, so a statement and the screen it was exported from
  * now agree.
  *
- * When real localisation arrives, this constant is the single place that
- * changes — and the call sites, which all omit the argument, need no edit.
+ * **That arrival is SC-201, and it has happened.** The pin is no longer the
+ * value the helpers read — `./locale.ts` resolves one from the interface
+ * language and the reader's optional region, and this constant is what that
+ * resolution returns for English with no region chosen. It stays exported and
+ * stays `'en-GB'` because two callers legitimately want the English tag rather
+ * than the reader's: `apps/backend/api/src/lib/pdf/layout.ts`, which renders a
+ * statement server-side where there is no reader, and the tests that pin what
+ * English renders. A test asserts it still equals what the table resolves, so
+ * the two cannot drift.
  */
 export const APP_LOCALE = 'en-GB';
+
+/** The locale a call site gets when it omits the argument, as it should. */
+function defaultDateLocale(): string {
+  return getFormatLocale().dateLocale;
+}
 
 export type DateLocale = string | undefined;
 
@@ -47,7 +61,7 @@ export type DateLocale = string | undefined;
  * returns "just now". For >30 days falls back to an absolute date —
  * after that point absolute dates communicate better than "62d ago".
  */
-export function formatRelative(input: DateInput, locale: DateLocale = APP_LOCALE): string {
+export function formatRelative(input: DateInput, locale?: DateLocale): string {
   const date = toDate(input);
   if (!date) return '—';
   const diffMs = Date.now() - date.getTime();
@@ -80,10 +94,10 @@ export function formatIsoDate(input: DateInput): string {
  * Locale-formatted date+time string. Sensible default for "last
  * synced at" / "transaction occurred at" displays.
  */
-export function formatDateTime(input: DateInput, locale: DateLocale = APP_LOCALE): string {
+export function formatDateTime(input: DateInput, locale?: DateLocale): string {
   const date = toDate(input);
   if (!date) return '—';
-  return date.toLocaleString(locale, {
+  return date.toLocaleString(locale ?? defaultDateLocale(), {
     dateStyle: 'medium',
     timeStyle: 'short',
   });
@@ -101,8 +115,119 @@ export function formatDateTime(input: DateInput, locale: DateLocale = APP_LOCALE
  * SC-175 anyway.) It is also what `formatDateTime` and the chart axis already
  * print, so one screen can show a date twice without showing it two ways.
  */
-export function formatDate(input: DateInput, locale: DateLocale = APP_LOCALE): string {
+export function formatDate(input: DateInput, locale?: DateLocale): string {
   const date = toDate(input);
   if (!date) return '—';
-  return date.toLocaleDateString(locale, { dateStyle: 'medium' });
+  return date.toLocaleDateString(locale ?? defaultDateLocale(), { dateStyle: 'medium' });
+}
+
+/**
+ * The name of a weekday, from `Intl` (SC-300).
+ *
+ * `dayOfWeek` is 0 = Sunday … 6 = Saturday, matching `payment_schedules.day_of_week`.
+ *
+ * **This lives here rather than at the call site on purpose.** It replaced a
+ * hand-rolled `DAY_NAMES` array in `v3/lib/holdings.ts`, and the failure that
+ * array represents is not that it was English — the app is English today and
+ * `APP_LOCALE` is pinned to `en-GB` deliberately. It is that the name could
+ * never follow the locale when that pin lifts, and that the alternative fix —
+ * seven day names and twelve month names in the string catalogue — is 56
+ * entries to maintain in every language for something every runtime already
+ * knows.
+ *
+ * Putting it in `date.ts` is the point: this file owns `APP_LOCALE` and every
+ * other date rendering, and a second module that formats dates is exactly how
+ * the "always go through the helpers" rule was broken in the first place
+ * (SC-175, then this).
+ *
+ * The reference date is a real Sunday — 2024-01-07 — advanced by `dayOfWeek`,
+ * and formatted with `timeZone: 'UTC'`. The timezone is load-bearing, not
+ * decoration: without it a runtime west of UTC renders midnight UTC as the
+ * previous evening, and every name comes out one day early.
+ *
+ * Returns `'—'` for anything outside 0-6, matching how the rest of this file
+ * answers an input it cannot render.
+ */
+export function weekdayName(dayOfWeek: number, locale?: DateLocale): string {
+  if (!Number.isInteger(dayOfWeek) || dayOfWeek < 0 || dayOfWeek > 6) return '—';
+  // 2024-01-07 is a Sunday, so + dayOfWeek lands on the day asked for.
+  const reference = new Date(Date.UTC(2024, 0, 7 + dayOfWeek));
+  return reference.toLocaleDateString(locale ?? defaultDateLocale(), {
+    weekday: 'long',
+    timeZone: 'UTC',
+  });
+}
+
+/**
+ * The name of a month, from `Intl` (SC-300).
+ *
+ * `month` is 1 = January … 12 = December, matching `payment_schedules.month`
+ * — one-based, unlike `Date`'s own zero-based months, which is why the array
+ * this replaces carried an empty string at index 0.
+ *
+ * Same reasoning as `weekdayName`: `timeZone: 'UTC'` and a mid-month reference
+ * day so no offset can push the result into an adjacent month.
+ */
+export function monthName(month: number, locale?: DateLocale): string {
+  if (!Number.isInteger(month) || month < 1 || month > 12) return '—';
+  const reference = new Date(Date.UTC(2024, month - 1, 15));
+  return reference.toLocaleDateString(locale ?? defaultDateLocale(), {
+    month: 'long',
+    timeZone: 'UTC',
+  });
+}
+
+/**
+ * A day and a month together — "15 February", «15 февраля», "February 15"
+ * (SC-413).
+ *
+ * **This exists because a month name alone is the wrong word in most of the
+ * world's languages.** `monthName` asks `Intl` for `{ month: 'long' }` and
+ * gets the *stand-alone* form, which is what a picker needs and what a date
+ * does not: Russian dates take the genitive, so a template reading
+ * `«{{day}} {{month}}»` over `monthName(2)` renders «15 февраль» where the
+ * sentence needs «15 февраля». Polish and Czech do the same thing; German and
+ * French do not, which is why it survived review in an English product.
+ *
+ * The word order is `Intl`'s too, and that is the second half of the fix. A
+ * template that concatenates a day and a month has already decided the order,
+ * and it is wrong for half the readers it reaches — this renders `15 February`
+ * for en-GB and `February 15` for en-US off the same string.
+ *
+ * `month` is one-based, as everywhere else in this file. The reference year is
+ * a leap year so that 29 February is a date rather than a roll-over into
+ * March; a `day` the month does not have returns `'—'` rather than the day it
+ * would spill onto.
+ */
+export function formatDayMonth(day: number, month: number, locale?: DateLocale): string {
+  if (!Number.isInteger(month) || month < 1 || month > 12) return '—';
+  if (!Number.isInteger(day) || day < 1) return '—';
+  // Day 0 of the following month is the last day of this one.
+  if (day > new Date(Date.UTC(2024, month, 0)).getUTCDate()) return '—';
+  return new Date(Date.UTC(2024, month - 1, day)).toLocaleDateString(
+    locale ?? defaultDateLocale(),
+    { day: 'numeric', month: 'long', timeZone: 'UTC' }
+  );
+}
+
+/**
+ * The month as it appears *inside a date* — «февраля», not «февраль» (SC-413).
+ *
+ * Same distinction as `formatDayMonth`, for the sentences that name a month
+ * without a day: "the last day of February", «в последний день февраля». The
+ * form is read back out of a formatted day-and-month with `formatToParts`,
+ * because `Intl` exposes the two contexts only through what it is asked to
+ * format — there is no option that says "genitive".
+ *
+ * `monthName` remains the right call for a list of months and for a month that
+ * starts a sentence; this one is only for a month standing in a phrase.
+ */
+export function monthNameInDate(month: number, locale?: DateLocale): string {
+  if (!Number.isInteger(month) || month < 1 || month > 12) return '—';
+  const parts = new Intl.DateTimeFormat(locale ?? defaultDateLocale(), {
+    day: 'numeric',
+    month: 'long',
+    timeZone: 'UTC',
+  }).formatToParts(new Date(Date.UTC(2024, month - 1, 15)));
+  return parts.find((part) => part.type === 'month')?.value ?? monthName(month, locale);
 }

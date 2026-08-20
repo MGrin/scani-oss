@@ -63,14 +63,14 @@ describe('the shell is never split', () => {
     }
   });
 
-  test('App.tsx loads auth, the gate and the install prompt eagerly', async () => {
+  test('App.tsx loads auth, the legacy redirects and the install prompt eagerly', async () => {
     const source = await read(APP_ENTRY);
     for (const shell of [
       'AuthProvider',
       'ProtectedRoute',
       'InstallPromptHost',
-      'UiVersionGate',
-      'UiVersionDocumentScope',
+      'LegacyV2PathRedirect',
+      'LegacyV3PathRedirect',
     ]) {
       expect(source).toMatch(new RegExp(`^import[^;]*\\b${shell}\\b`, 'm'));
     }
@@ -81,33 +81,37 @@ describe('the shell is never split', () => {
   });
 });
 
-describe('both UI generations are deferred', () => {
-  test('App.tsx reaches v2 and v3 only through lazyRoute', async () => {
+describe('the interface is deferred', () => {
+  test('App.tsx reaches it only through lazyRoute', async () => {
     const source = await read(APP_ENTRY);
-    // A static import of either one puts it back in the entry chunk and
-    // silently undoes the split — the build still succeeds and nothing fails
-    // but the byte count.
-    expect(source).not.toMatch(/^import\s*\{[^}]*\bV2App\b[^}]*\}\s*from/m);
+    // A static import puts it back in the entry chunk and silently undoes the
+    // split — the build still succeeds and nothing fails but the byte count.
     expect(source).not.toMatch(/^import\s*\{[^}]*\bV3App\b[^}]*\}\s*from/m);
     expect(source).toContain('lazyRoute');
-    expect(source).toMatch(/import\(['"]@\/v2\/V2App['"]\)/);
     expect(source).toMatch(/import\(['"]@\/v3\/V3App['"]\)/);
   });
 
-  test('v2 is still reachable — deferred, never removed', async () => {
-    // v2 is permanent chrome in both directions (see v3/lib/ui-version.ts), so
-    // its route has to stay registered.
-    expect(await read(APP_ENTRY)).toMatch(/path=\{`\$\{V2_BASE\}\/\*`\}/);
+  /**
+   * The classic interface was the second half of this split until SC-423
+   * deleted it. Its namespace outlives it as a redirect: `/v2` is in
+   * bookmarks, in shared links, and in the installed PWA's start URL for every
+   * reader who had chosen it, and a prefix nobody strips is a path that falls
+   * to the catch-all with the prefix still on it.
+   */
+  test('the retired prefixes are still routed, as redirects', async () => {
+    const source = await read(APP_ENTRY);
+    expect(source).toMatch(/path="\/v2\/\*"/);
+    expect(source).toMatch(/path="\/v3\/\*"/);
   });
 });
 
 describe('every dynamic import handles its own failure', () => {
   /**
-   * `warm-ui-version.ts` is the one exemption and it earns it: it is a
+   * `warm-interface.ts` is the one exemption and it earns it: it is a
    * best-effort prefetch that catches, and whose result nothing awaits. The
    * real load still goes through `lazyRoute`.
    */
-  const EXEMPT = ['lib/warm-ui-version.ts'];
+  const EXEMPT = ['lib/warm-interface.ts'];
 
   test('no import() is left to reject into the render path', async () => {
     const offenders: string[] = [];
@@ -132,26 +136,30 @@ describe('every dynamic import handles its own failure', () => {
   });
 
   test('the exemption really does swallow its own rejection', async () => {
-    const source = await read(join(SRC, 'lib/warm-ui-version.ts'));
+    const source = await read(join(SRC, 'lib/warm-interface.ts'));
     expect(source).toMatch(/\.catch\(/);
   });
 
+  /**
+   * Vite computes `__vitePreload`'s dependency list statically, so a
+   * conditional whose branches are both `import()` collapses to ONE list and
+   * warming either branch fetches both chunks. Writing it as
+   * `if (…) return import(a); return import(b);` does not help: esbuild folds
+   * that back into a ternary before Vite sees it.
+   *
+   * There is one chunk to warm since SC-423, so the trap is not live — but it
+   * is a property of Vite rather than of the tree that is gone, and it comes
+   * back the moment a second `import()` is put behind a condition here.
+   * Nothing else catches it: the chunk hash is identical, type-check is happy,
+   * and it is visible only in a browser's request list.
+   *
+   * Comments stripped first — the file explains the trap using the very syntax
+   * it forbids, and a guard that trips on its own documentation is a guard
+   * nobody keeps.
+   */
   test('the warm-up never picks between two imports in one expression', async () => {
-    // Vite computes `__vitePreload`'s dependency list statically, so a
-    // conditional whose branches are both `import()` collapses to ONE list —
-    // v3's — and warming v2 fetches the v3 chunk as well. Writing it as
-    // `if (…) return import(a); return import(b);` does not help: esbuild folds
-    // that back into a ternary before Vite sees it. Only separate function
-    // bodies survive, which is why `LOADERS` is a map.
-    //
-    // Nothing else catches this. The chunk hash is identical, type-check is
-    // happy, and it is visible only in a browser's request list.
-    // Comments stripped first — the file explains the trap using the very
-    // syntax it forbids, and a guard that trips on its own documentation is a
-    // guard nobody keeps.
-    const code = stripComments(await read(join(SRC, 'lib/warm-ui-version.ts')));
+    const code = stripComments(await read(join(SRC, 'lib/warm-interface.ts')));
     expect(code).not.toMatch(/[?:]\s*import\(/);
-    expect(code).toMatch(/v2:\s*\(\)\s*=>\s*import\(/);
-    expect(code).toMatch(/v3:\s*\(\)\s*=>\s*import\(/);
+    expect(code.match(/(?<![.\w])import\s*\(/g) ?? []).toHaveLength(1);
   });
 });

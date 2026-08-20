@@ -207,6 +207,9 @@ export class ImportIbkrAccountsUseCase {
       userId: input.userId,
       baseCurrencyId: user.baseCurrencyId,
       sourceTag: 'import_ibkr',
+      // A brokerage position exists because the user traded it in an account
+      // they connected on purpose — nothing can be pushed at them (SC-277).
+      arrival: 'user_confirmed',
       zeroStaleHoldings: true,
       skipZeroBalances: false,
       cryptoTokenTypeId: stockTokenType.id,

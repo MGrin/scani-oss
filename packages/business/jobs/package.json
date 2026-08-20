@@ -10,13 +10,14 @@
   "scripts": {
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
-    "type-check": "tsgo --noEmit"
+    "type-check": "tsgo --noEmit -p tsconfig.test.json"
   },
   "dependencies": {
     "@scani/db": "workspace:*",
     "@scani/domain": "workspace:*",
     "@scani/logging": "workspace:*",
     "@scani/queue": "workspace:*",
+    "@scani/shared": "workspace:*",
     "typedi": "^0.10.0",
     "zod": "^3.25.76"
   },

@@ -1,8 +1,9 @@
 import type { Decimal } from '@scani/shared';
 import { Block } from '@scani/ui/v3/components/Block';
+import { useTranslation } from 'react-i18next';
 import type { BaseCurrencyRates } from '@/hooks/useBaseCurrencyRates';
 import {
-  INCOME_COMMITMENT_LABEL,
+  incomeCommitmentLabel,
   mergeCurrencyTotals,
   paidWindowLabel,
   unpricedNote,
@@ -45,7 +46,8 @@ export function VendorSpendSummary({
   tokenSymbolById,
   rates,
 }: VendorSpendSummaryProps) {
-  const unpriced = unpricedNote(unpricedCount);
+  const { t } = useTranslation();
+  const unpriced = unpricedNote(t, unpricedCount);
   const income = mergeCurrencyTotals(expectedIncome);
 
   return (
@@ -53,7 +55,7 @@ export function VendorSpendSummary({
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="flex flex-col gap-2">
           <ConvertedTotal
-            label="Committed each month"
+            label={t('v3.money.recurringSummary.committedEachMonth')}
             totals={mergeCurrencyTotals(commitment)}
             tokenSymbolById={tokenSymbolById}
             rates={rates}
@@ -62,7 +64,7 @@ export function VendorSpendSummary({
         <div className="flex flex-col gap-2">
           <ConvertedTotal
             emphasis="default"
-            label={paidWindowLabel(windowMonths)}
+            label={paidWindowLabel(t, windowMonths)}
             totals={mergeCurrencyTotals(paidInWindow)}
             tokenSymbolById={tokenSymbolById}
             rates={rates}
@@ -82,13 +84,13 @@ export function VendorSpendSummary({
           <ConvertedTotal
             emphasis="default"
             delta
-            label={INCOME_COMMITMENT_LABEL}
+            label={incomeCommitmentLabel(t)}
             totals={income}
             tokenSymbolById={tokenSymbolById}
             rates={rates}
           />
           <p className="text-caption text-muted-foreground">
-            Not subtracted from what you owe — these are two separate figures.
+            {t('v3.money.vendorSpend.notSubtracted')}
           </p>
         </div>
       ) : null}

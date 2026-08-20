@@ -1,4 +1,3 @@
-import { formatRelative } from '@scani/shared';
 import { Badge } from '@scani/ui/ui/badge';
 import { Button } from '@scani/ui/ui/button';
 import { BulkDeleteAction } from '@scani/ui/v3/components/data-view/BulkDeleteAction';
@@ -8,16 +7,19 @@ import { nameList, type V3DataViewConfig } from '@scani/ui/v3/lib/data-view';
 import { exportCount, exportMoney, exportText } from '@scani/ui/v3/lib/export/cell';
 import type { V3QueryState } from '@scani/ui/v3/lib/query-state';
 import { PieChart, Tags, Wallet } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import {
   type AccountRow,
   accountLastSync,
   accountsValue,
   accountValue,
+  balancesAsOfFact,
   compareAccounts,
   isStaleSync,
   namedAllocation,
 } from '../../lib/accounts';
+import { formatRelative } from '../../lib/relative-time';
 import { V3_ROUTES } from '../../lib/routes';
 import { useOpenCapture } from '../capture/CaptureSheetContext';
 import { EntityValueSummary } from './EntityValueSummary';
@@ -101,13 +103,15 @@ export function AccountsList({
   onBulkDelete,
   isBulkDeleting,
 }: AccountsListProps) {
+  const { t } = useTranslation();
   const openCapture = useOpenCapture();
   const institutionById = nameById(institutions);
   const typeById = nameById(accountTypes);
 
   const institutionName = (account: AccountRow) =>
-    institutionById.get(account.institutionId)?.name ?? 'Unknown institution';
-  const typeName = (account: AccountRow) => typeById.get(account.typeId)?.name ?? 'Unknown type';
+    institutionById.get(account.institutionId)?.name ?? t('v3.entities.account.unknownInstitution');
+  const typeName = (account: AccountRow) =>
+    typeById.get(account.typeId)?.name ?? t('v3.entities.account.unknownType');
 
   /**
    * The whole answer — for the peek and for the file, where there is room for
@@ -115,10 +119,10 @@ export function AccountsList({
    */
   const lastSyncFact = (account: AccountRow) => {
     const lastSync = accountLastSync(account.metadata);
-    if (!lastSync) return 'Never — this account is maintained by hand';
+    if (!lastSync) return t('v3.entities.account.neverSynced');
     return isStaleSync(lastSync)
-      ? `${formatRelative(lastSync)} · overdue`
-      : formatRelative(lastSync);
+      ? t('v3.entities.account.lastSyncOverdue', { when: formatRelative(t, lastSync) })
+      : formatRelative(t, lastSync);
   };
 
   /**
@@ -130,18 +134,18 @@ export function AccountsList({
    * in full.
    */
   const lastSyncCell = (account: AccountRow) =>
-    accountLastSync(account.metadata) ? lastSyncFact(account) : 'By hand';
+    accountLastSync(account.metadata) ? lastSyncFact(account) : t('v3.entities.account.byHand');
 
   const config: V3DataViewConfig<AccountRow> = {
     pageKey: 'accounts',
     data: accounts,
-    noun: 'accounts',
+    nounKey: 'ui.dataView.noun.accounts',
     // Just "Search". This is the one surface here whose toolbar carries three
     // controls — Refine *and* Select — and at 393px "Search accounts" is
     // clipped by the input's own edge to "Search account", which reads as a
     // different, wrong word. The `aria-label` `V3DataView` derives from `noun`
     // still says "Search accounts", so nothing is lost to a screen reader.
-    searchPlaceholder: 'Search',
+    searchPlaceholderKey: 'ui.dataView.accounts.config.search',
     defaultFilters,
     searchFn: (account, query) =>
       account.name.toLowerCase().includes(query) ||
@@ -149,7 +153,7 @@ export function AccountsList({
     filterDefs: [
       {
         key: 'institution',
-        label: 'Institution',
+        labelKey: 'ui.dataView.accounts.filter.institution',
         options: referencedOptions(
           institutionById,
           accounts.map((account) => account.institutionId)
@@ -158,7 +162,7 @@ export function AccountsList({
       },
       {
         key: 'type',
-        label: 'Type',
+        labelKey: 'ui.dataView.accounts.filter.type',
         options: referencedOptions(
           typeById,
           accounts.map((account) => account.typeId)
@@ -167,16 +171,16 @@ export function AccountsList({
       },
       {
         key: 'group',
-        label: 'Group',
+        labelKey: 'ui.dataView.accounts.filter.group',
         options: (groups ?? []).map((group) => ({ value: group.id, label: group.name })),
         fn: (account: AccountRow, value) => account.groups.some((group) => group.id === value),
       },
       {
         key: 'contents',
-        label: 'Contents',
+        labelKey: 'ui.dataView.accounts.filter.contents',
         options: [
-          { value: 'holding', label: 'Holds something' },
-          { value: 'empty', label: 'Empty' },
+          { value: 'holding', labelKey: 'ui.dataView.accounts.option.holdsSomething' },
+          { value: 'empty', labelKey: 'ui.dataView.accounts.option.empty' },
         ],
         fn: (account: AccountRow, value) =>
           value === 'empty'
@@ -185,22 +189,26 @@ export function AccountsList({
       },
     ],
     sortDefs: [
-      { key: 'value', label: 'Value' },
-      { key: 'name', label: 'Name' },
-      { key: 'holdings', label: 'Holdings' },
+      { key: 'value', labelKey: 'ui.dataView.accounts.sort.value' },
+      { key: 'name', labelKey: 'ui.dataView.accounts.sort.name' },
+      { key: 'holdings', labelKey: 'ui.dataView.accounts.sort.holdings' },
     ],
     sortFn: compareAccounts,
     defaultSort: { field: 'value', direction: 'desc' },
     groupByDefs: [
-      { key: 'institution', label: 'Institution', fn: institutionName },
-      { key: 'type', label: 'Type', fn: typeName },
+      {
+        key: 'institution',
+        labelKey: 'ui.dataView.accounts.group.institution',
+        fn: institutionName,
+      },
+      { key: 'type', labelKey: 'ui.dataView.accounts.group.type', fn: typeName },
     ],
     summary: (items) => (
       <EntityValueSummary
         value={accountsValue(items)}
         currency={currency}
         allocation={namedAllocation(items, accountValue)}
-        allocationLabel="Value by account"
+        allocationLabel={t('v3.entities.account.valueByAccount')}
       />
     ),
     renderRow: (account) => {
@@ -214,7 +222,14 @@ export function AccountsList({
           />
         ),
         label: account.name,
-        sublabel: `${institutionName(account)} · ${account.summary.holdingsCount} ${account.summary.holdingsCount === 1 ? 'holding' : 'holdings'}`,
+        // `count` first, before an argument that carries a `)`.
+        // `i18n-keys.test.ts` reads a wrapped `t()` call across three lines and
+        // stops at the first `)`, so `institution: institutionName(account)`
+        // ahead of the count hides it and the key reads as missing.
+        sublabel: t('v3.entities.account.sublabel', {
+          count: account.summary.holdingsCount,
+          institution: institutionName(account),
+        }),
         value: <Numeric value={accountValue(account)} currency={currency} />,
         // The badge goes in the delta zone, not next to the name. The identity
         // zone truncates — that is its job — and "Ledger Nano — cold storage"
@@ -224,23 +239,33 @@ export function AccountsList({
         // warning needs.
         delta: stale ? (
           <Badge variant="outline" className="border-border-strong">
-            Sync overdue
+            {t('v3.entities.account.syncOverdue')}
           </Badge>
         ) : undefined,
-        ariaLabel: `${account.name}, ${institutionName(account)}${stale ? ', sync overdue' : ''}`,
+        // A comma-joined ENUMERATION of three independent facts, not a
+        // sentence — so the separator is markup and each fact is the same
+        // whole key the badge above uses (SC-235). It was `", sync overdue"`,
+        // a key carrying the comma that attached it to the name before it.
+        ariaLabel: [
+          account.name,
+          institutionName(account),
+          stale ? t('v3.entities.account.syncOverdue') : null,
+        ]
+          .filter(Boolean)
+          .join(', '),
       };
     },
     columns: [
       {
         key: 'name',
-        header: 'Account',
+        headerKey: 'ui.dataView.accounts.col.account',
         sortable: true,
         width: 'w-[26%]',
         render: (account) => <span className="truncate text-label">{account.name}</span>,
       },
       {
         key: 'institution',
-        header: 'Institution',
+        headerKey: 'ui.dataView.accounts.col.institution',
         width: 'w-[20%]',
         render: (account) => (
           <span className="flex min-w-0 items-center gap-2">
@@ -256,12 +281,12 @@ export function AccountsList({
       },
       {
         key: 'type',
-        header: 'Type',
+        headerKey: 'ui.dataView.accounts.col.type',
         render: (account) => <span className="truncate">{typeName(account)}</span>,
       },
       {
         key: 'lastSync',
-        header: 'Last synced',
+        headerKey: 'ui.dataView.accounts.col.lastSynced',
         render: (account) => (
           <span className="truncate text-muted-foreground">{lastSyncCell(account)}</span>
         ),
@@ -271,7 +296,7 @@ export function AccountsList({
       },
       {
         key: 'holdings',
-        header: 'Holdings',
+        headerKey: 'ui.dataView.accounts.col.holdings',
         sortable: true,
         numeric: true,
         width: 'w-24',
@@ -282,7 +307,7 @@ export function AccountsList({
       },
       {
         key: 'value',
-        header: 'Value',
+        headerKey: 'ui.dataView.accounts.col.value',
         sortable: true,
         numeric: true,
         render: (account) => <Numeric value={accountValue(account)} currency={currency} />,
@@ -292,50 +317,63 @@ export function AccountsList({
     ],
     empty: {
       icon: Wallet,
-      title: 'No accounts yet',
-      description:
-        'An account is created for you when you connect an integration or import a statement.',
+      titleKey: 'ui.dataView.accounts.empty.noAccountsYet',
+      descriptionKey: 'ui.dataView.accounts.empty.anAccountIsCreatedForYou',
       // The capture sheet rather than a link — V3-14 made capture shell state
       // so an empty screen can offer it without costing the reader their place.
-      action: <Button onClick={openCapture}>Add your first account</Button>,
+      action: <Button onClick={openCapture}>{t('v3.entities.account.addFirst')}</Button>,
     },
     peek: {
       basePath: V3_ROUTES.accounts,
-      render: (account) => ({
-        title: account.name,
-        subtitle: institutionName(account),
-        leading: (
-          <InstitutionMark
-            name={institutionName(account)}
-            website={institutionById.get(account.institutionId)?.website}
-            size="size-8"
-          />
-        ),
-        value: <Numeric value={accountValue(account)} currency={currency} />,
-        primary: [
-          {
-            label: 'Holdings',
-            value: <Numeric value={account.summary.holdingsCount} format="plain" decimals={0} />,
-          },
-          { label: 'Type', value: typeName(account) },
-          { label: 'Last synced', value: lastSyncFact(account) },
-          {
-            label: 'Groups',
-            value:
-              account.groups.length > 0
-                ? account.groups.map((group) => group.name).join(', ')
-                : 'None',
-          },
-        ],
-        actions: (
-          <Button asChild variant="outline" size="sm">
-            <Link to={`${V3_ROUTES.holdings}?account=${encodeURIComponent(account.id)}`}>
-              <PieChart className="mr-2 size-4" aria-hidden="true" />
-              View holdings
-            </Link>
-          </Button>
-        ),
-      }),
+      render: (account) => {
+        const asOfFact = balancesAsOfFact(account.metadata);
+        return {
+          title: account.name,
+          subtitle: institutionName(account),
+          leading: (
+            <InstitutionMark
+              name={institutionName(account)}
+              website={institutionById.get(account.institutionId)?.website}
+              size="size-8"
+            />
+          ),
+          value: <Numeric value={accountValue(account)} currency={currency} />,
+          primary: [
+            {
+              label: t('v3.entities.account.holdings'),
+              value: <Numeric value={account.summary.holdingsCount} format="plain" decimals={0} />,
+            },
+            { label: t('v3.entities.account.type'), value: typeName(account) },
+            { label: t('v3.entities.account.lastSynced'), value: lastSyncFact(account) },
+            // SC-384's whole point, and the only fact here that is sometimes
+            // absent. "Last synced: just now" was true and answered a question
+            // nobody asked — the request was minutes ago, the IBKR positions in
+            // it were the previous business day's close, and a reader who had
+            // just traded took the fresh timestamp as a claim about the numbers
+            // under it. Omitted entirely for a live-balance account, which is
+            // all of them but one: twenty rows saying "as of now" would train
+            // the eye past the row where this means something.
+            ...(asOfFact
+              ? [{ label: t('v3.entities.account.balancesAsOf'), value: asOfFact }]
+              : []),
+            {
+              label: t('v3.entities.account.groups'),
+              value:
+                account.groups.length > 0
+                  ? account.groups.map((group) => group.name).join(', ')
+                  : 'None',
+            },
+          ],
+          actions: (
+            <Button asChild variant="outline" size="sm">
+              <Link to={`${V3_ROUTES.holdings}?account=${encodeURIComponent(account.id)}`}>
+                <PieChart className="mr-2 size-4" aria-hidden="true" />
+                {t('v3.entities.account.viewHoldings')}
+              </Link>
+            </Button>
+          ),
+        };
+      },
     },
     // Same bar, same act, same component as `/holdings` (SC-63). This surface
     // already confirmed — but through a `ConfirmDialog` mounted on the page,
@@ -345,13 +383,16 @@ export function AccountsList({
       <>
         <Button variant="outline" onClick={() => onAssignGroups([...selectedIds], clearSelection)}>
           <Tags className="mr-2 size-4" aria-hidden="true" />
-          Assign groups
+          {t('v3.entities.account.assignGroups')}
         </Button>
         <BulkDeleteAction
           count={selectedIds.size}
-          noun="accounts"
+          nounKey="ui.dataView.noun.accounts"
           isPending={isBulkDeleting}
-          consequence={`${selectedNames(accounts, selectedIds)} ${selectedIds.size === 1 ? 'is' : 'are'} removed, and every holding inside ${selectedIds.size === 1 ? 'it' : 'them'} goes too, along with its transaction history. This cannot be undone.`}
+          consequence={t('v3.entities.account.bulkDeleteConsequence', {
+            count: selectedIds.size,
+            names: selectedNames(accounts, selectedIds),
+          })}
           onConfirm={() => onBulkDelete([...selectedIds], clearSelection)}
         />
       </>

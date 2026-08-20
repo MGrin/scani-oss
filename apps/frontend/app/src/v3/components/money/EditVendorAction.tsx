@@ -2,6 +2,7 @@ import { Button } from '@scani/ui/ui/button';
 import { Input } from '@scani/ui/ui/input';
 import { showError, showSuccess } from '@scani/ui/ui/use-toast';
 import { useId, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { trpc } from '@/lib/trpc';
 import { Field } from '../form/Field';
 
@@ -43,6 +44,7 @@ export function EditVendorAction({
   category,
   website,
 }: EditVendorActionProps) {
+  const { t } = useTranslation();
   const utils = trpc.useUtils();
   const fieldId = useId();
   const [open, setOpen] = useState(false);
@@ -63,14 +65,14 @@ export function EditVendorAction({
   const updateMutation = trpc.vendors.update.useMutation({
     onSuccess: (vendor) => {
       setOpen(false);
-      showSuccess(`${vendor.displayName} saved`);
+      showSuccess(t('v3.money.vendor.saved', { name: vendor.displayName }));
       void utils.vendors.invalidate();
       // The name appears on every payment row, on the upcoming feed and on
       // each extraction's match; none of those caches hold the vendor itself.
       void utils.payments.invalidate();
       void utils.documents.invalidate();
     },
-    onError: (error) => showError(error, 'Saving vendor'),
+    onError: (error) => showError(error, t('v3.money.pending.savingVendor')),
   });
 
   const trimmed = name.trim();
@@ -94,14 +96,14 @@ export function EditVendorAction({
   if (!open) {
     return (
       <Button variant="outline" onClick={() => setOpen(true)}>
-        Edit
+        {t('v3.money.vendorEdit.edit')}
       </Button>
     );
   }
 
   return (
     <div className="w-full space-y-3">
-      <Field label="Name" htmlFor={`${fieldId}-name`}>
+      <Field label={t('v3.money.vendorEdit.name')} htmlFor={`${fieldId}-name`}>
         <Input
           autoFocus
           id={`${fieldId}-name`}
@@ -115,22 +117,22 @@ export function EditVendorAction({
           }}
         />
       </Field>
-      <Field label="Category" htmlFor={`${fieldId}-category`}>
+      <Field label={t('v3.money.vendorEdit.category')} htmlFor={`${fieldId}-category`}>
         <Input
           id={`${fieldId}-category`}
           value={categoryValue}
           onChange={(event) => setCategoryValue(event.target.value)}
-          placeholder="Uncategorised"
+          placeholder={t('v3.money.vendorEdit.categoryPlaceholder')}
           className="text-body"
           disabled={updateMutation.isPending}
         />
       </Field>
-      <Field label="Website" htmlFor={`${fieldId}-website`}>
+      <Field label={t('v3.money.vendorEdit.website')} htmlFor={`${fieldId}-website`}>
         <Input
           id={`${fieldId}-website`}
           value={websiteValue}
           onChange={(event) => setWebsiteValue(event.target.value)}
-          placeholder="None on file"
+          placeholder={t('v3.money.vendorEdit.websitePlaceholder')}
           className="text-body"
           disabled={updateMutation.isPending}
         />
@@ -139,10 +141,10 @@ export function EditVendorAction({
         {/* Cancel first — the same rule `ConfirmAction` enforces, and for the
             same reason: the trigger was here a moment ago. */}
         <Button variant="ghost" disabled={updateMutation.isPending} onClick={close}>
-          Cancel
+          {t('v3.money.vendorEdit.cancel')}
         </Button>
         <Button disabled={!trimmed || unchanged || updateMutation.isPending} onClick={save}>
-          Save vendor
+          {t('v3.money.vendorEdit.save')}
         </Button>
       </div>
     </div>

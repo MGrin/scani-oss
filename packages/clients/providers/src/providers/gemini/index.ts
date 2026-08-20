@@ -14,16 +14,18 @@ import type {
   CredentialValidator,
   TransactionsProvider,
 } from '../../core/capabilities';
-import { ProviderError } from '../../core/errors';
+import { credentialRejection } from '../../core/errors';
 import type {
   DecryptedCredentials,
   HoldingSnapshot,
   ProviderContext,
   TransactionEvent,
+  TransactionFetchContext,
   WithUserCreds,
 } from '../../core/types';
 import { enforceSign, inferCounterSign, negateFee } from '../../core/utils/enforce-tx-sign';
 import { tokenTypeForCexAsset } from '../../core/utils/fiat-codes';
+import { PageCapWatch } from '../../core/utils/page-cap';
 import { geminiManifest } from './manifest';
 
 export { geminiManifest } from './manifest';
@@ -171,15 +173,11 @@ export class GeminiProvider
       }));
   }
 
-  async fetchTransactions(
-    ctx: WithUserCreds<ProviderContext> & {
-      institutionCode: string;
-      since?: Date;
-      until?: Date;
-    }
-  ): Promise<TransactionEvent[]> {
+  async fetchTransactions(ctx: TransactionFetchContext): Promise<TransactionEvent[]> {
     const creds = await this.resolveApiCreds(ctx);
     if (!creds) return [];
+
+    const capped = new PageCapWatch();
 
     const balances = await this.signedJson<GeminiBalance[]>(
       { method: 'POST', url: '/v1/balances' },
@@ -202,13 +200,14 @@ export class GeminiProvider
     };
 
     for (const symbol of this.buildCandidateSymbols(heldAssets)) {
-      const trades = await this.fetchAllTradesForSymbol(creds, symbol).catch(() => []);
+      const trades = await this.fetchAllTradesForSymbol(creds, symbol, capped).catch(() => []);
       for (const trade of trades) push(this.tradeToEvent(symbol, trade));
     }
 
-    const transfers = await this.fetchAllTransfers(creds).catch(() => []);
+    const transfers = await this.fetchAllTransfers(creds, capped).catch(() => []);
     for (const transfer of transfers) push(this.transferToEvent(transfer));
 
+    capped.retract(ctx, this.providerKey);
     return events;
   }
 
@@ -227,10 +226,7 @@ export class GeminiProvider
       await this.signedFetch({ method: 'POST', url: '/v1/balances' }, { apiKey, apiSecret });
       return { valid: true };
     } catch (err) {
-      if (err instanceof ProviderError && err.kind === 'auth-failed') {
-        return { valid: false, message: err.message };
-      }
-      return { valid: false, message: err instanceof Error ? err.message : String(err) };
+      return credentialRejection(err);
     }
   }
 
@@ -251,7 +247,8 @@ export class GeminiProvider
 
   private async fetchAllTradesForSymbol(
     creds: ApiKeyCreds,
-    symbol: string
+    symbol: string,
+    capped: PageCapWatch
   ): Promise<GeminiTrade[]> {
     const all: GeminiTrade[] = [];
     let cursor: number | undefined;
@@ -277,11 +274,19 @@ export class GeminiProvider
       if (cursor !== undefined && nextCursor >= cursor) break;
       cursor = nextCursor;
       if (trades.length < MYTRADES_PAGE_SIZE) break;
+      // Last allowed page, and the cursor was still advancing into older
+      // trades. Everything before this point is missing.
+      if (page === MAX_TRADE_PAGES - 1) {
+        capped.note({ walk: `${symbol} trades`, pages: MAX_TRADE_PAGES, rows: all.length });
+      }
     }
     return all;
   }
 
-  private async fetchAllTransfers(creds: ApiKeyCreds): Promise<GeminiTransfer[]> {
+  private async fetchAllTransfers(
+    creds: ApiKeyCreds,
+    capped: PageCapWatch
+  ): Promise<GeminiTransfer[]> {
     const all: GeminiTransfer[] = [];
     let continuationToken: string | undefined;
     for (let page = 0; page < MAX_TRANSFER_PAGES; page++) {
@@ -302,6 +307,9 @@ export class GeminiProvider
       if (!headerToken) break;
       if (headerToken === continuationToken) break;
       continuationToken = headerToken;
+      if (page === MAX_TRANSFER_PAGES - 1) {
+        capped.note({ walk: 'transfers', pages: MAX_TRANSFER_PAGES, rows: all.length });
+      }
     }
     return all;
   }

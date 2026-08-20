@@ -1,12 +1,15 @@
 import type {
   PendingTransferReview,
   TransferCandidate,
+  TransferDestination,
   TransferReviewDecision,
 } from '@scani/shared';
+import { userFacingMessage } from '@scani/ui/lib/user-facing-error';
 import { useToast } from '@scani/ui/ui/use-toast';
 import { ConfirmAction } from '@scani/ui/v3/components/ConfirmAction';
-import { Check } from 'lucide-react';
+import { Check, RotateCcw, StickyNote, Wallet } from 'lucide-react';
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { trpc } from '@/lib/trpc';
 import {
   candidateLocation,
@@ -15,13 +18,14 @@ import {
   DECISION_LABELS,
   decisionConsequence,
   SPLIT_LABELS,
-  SPLIT_NOTE,
+  SPLIT_NOTE_KEY,
   type SplitDraftRow,
   splitConsequence,
   splitIsCommittable,
   toSplitPortions,
-  UNREVIEWED_TRANSFER_NOTE,
+  UNREVIEWED_TRANSFER_NOTE_KEY,
 } from '../../lib/transfer-review';
+import { TransferDestinationPicker } from './TransferDestinationPicker';
 import { emptySplitRows, TransferSplitEditor } from './TransferSplitEditor';
 
 /**
@@ -65,11 +69,22 @@ interface TransferDecisionProps {
 type OpenAnswer = TransferReviewDecision | 'split' | null;
 
 export function TransferDecision({ item, onResolved }: TransferDecisionProps) {
+  const { t } = useTranslation();
   const { toast } = useToast();
   const utils = trpc.useUtils();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [openDecision, setOpenDecision] = useState<OpenAnswer>(null);
+  const [destination, setDestination] = useState<TransferDestination | null>(null);
   const [splitRows, setSplitRows] = useState<SplitDraftRow[]>(() => emptySplitRows(null));
+
+  // Fetched only once one of the two answers that can use it is open. The
+  // queue's common path is one tap on a row that never opens either, and
+  // paying for every row's account list on a queue of hundreds would be the
+  // candidate search's cost charged a second time for nothing.
+  const destinations = trpc.transferReview.listDestinations.useQuery(
+    { transactionId: item.transactionId },
+    { enabled: openDecision === 'internal' || openDecision === 'split' }
+  );
 
   const invalidate = async () => {
     // Three reads of one fact since SC-181: the queue's list, the review
@@ -90,10 +105,12 @@ export function TransferDecision({ item, onResolved }: TransferDecisionProps) {
       toast({
         title:
           variables.decision === 'paired'
-            ? 'Linked — the cost basis moves with it'
-            : variables.decision === 'left_control'
-              ? 'Recorded as a disposal'
-              : 'Recorded as still yours',
+            ? t('v3.review.decision.toast.paired')
+            : variables.decision === 'internal'
+              ? t('v3.review.decision.toast.internal')
+              : variables.decision === 'left_control'
+                ? t('v3.review.decision.toast.leftControl')
+                : t('v3.review.decision.toast.untracked'),
       });
       setOpenDecision(null);
       onResolved();
@@ -104,8 +121,8 @@ export function TransferDecision({ item, onResolved }: TransferDecisionProps) {
       // response: the row goes away and the reader sees why.
       await utils.transferReview.listPending.invalidate();
       toast({
-        title: 'That transfer is no longer waiting',
-        description: error.message,
+        title: t('v3.review.decision.toast.gone'),
+        description: userFacingMessage(error) ?? undefined,
         variant: 'destructive',
       });
       setOpenDecision(null);
@@ -115,7 +132,7 @@ export function TransferDecision({ item, onResolved }: TransferDecisionProps) {
   const resolveSplit = trpc.transferReview.resolveSplit.useMutation({
     onSuccess: async () => {
       await invalidate();
-      toast({ title: 'Recorded — each part on its own terms' });
+      toast({ title: t('v3.review.decision.toast.split') });
       setOpenDecision(null);
       onResolved();
     },
@@ -128,8 +145,10 @@ export function TransferDecision({ item, onResolved }: TransferDecisionProps) {
       const gone = error.data?.code === 'NOT_FOUND';
       if (gone) await utils.transferReview.listPending.invalidate();
       toast({
-        title: gone ? 'That transfer is no longer waiting' : 'That division was not accepted',
-        description: error.message,
+        title: gone
+          ? t('v3.review.decision.toast.gone')
+          : t('v3.review.decision.toast.splitRejected'),
+        description: userFacingMessage(error) ?? undefined,
         variant: 'destructive',
       });
       if (gone) setOpenDecision(null);
@@ -138,8 +157,10 @@ export function TransferDecision({ item, onResolved }: TransferDecisionProps) {
 
   const chosen = item.candidates.find((c) => c.transactionId === selectedId) ?? null;
   const isPending = resolve.isPending || resolveSplit.isPending;
-  // The picker lives above both answers, so a candidate chosen before the
-  // editor was opened has to reach the `paired` row inside it.
+  // The candidate picker lives above both answers, so a candidate chosen
+  // before the editor was opened has to reach the `paired` row inside it. The
+  // destination is the split editor's own — it is picked per row, inside the
+  // editor, because only the `internal` row has one.
   const rowsWithMatch = splitRows.map((row) =>
     row.decision === 'paired' ? { ...row, matchTransactionId: chosen?.transactionId ?? null } : row
   );
@@ -149,6 +170,14 @@ export function TransferDecision({ item, onResolved }: TransferDecisionProps) {
       transactionId: item.transactionId,
       decision,
       ...(decision === 'paired' && chosen ? { matchTransactionId: chosen.transactionId } : {}),
+      ...(decision === 'internal' && destination
+        ? {
+            destination: {
+              accountId: destination.accountId,
+              holdingId: destination.holdingId,
+            },
+          }
+        : {}),
     });
   };
 
@@ -161,24 +190,25 @@ export function TransferDecision({ item, onResolved }: TransferDecisionProps) {
 
   return (
     <div className="flex flex-col gap-4">
+      <WithdrawnAnswerNotice item={item} />
+      <OwnWalletNotice item={item} />
+      <RuleNotice item={item} />
       <section className="flex flex-col gap-2">
         <h3 className="text-caption font-medium uppercase tracking-wide text-muted-foreground">
-          Possible matches
+          {t('v3.review.decision.possibleMatches')}
         </h3>
         {item.candidates.length === 0 ? (
           <p className="text-body text-muted-foreground">
-            No deposit of {item.tokenSymbol} landed anywhere in Scani within a week of this, at a
-            comparable amount. If it went somewhere Scani cannot see, say so below.
+            {t('v3.review.decision.noCandidates', { symbol: item.tokenSymbol })}
           </p>
         ) : (
           <fieldset className="flex flex-col gap-2">
-            <legend className="sr-only">Possible matching deposits</legend>
+            <legend className="sr-only">{t('v3.review.decision.candidatesLegend')}</legend>
             {item.candidates.map((candidate) => (
               <CandidateRow
                 key={candidate.transactionId}
                 candidate={candidate}
                 groupName={`match-${item.transactionId}`}
-                tokenSymbol={item.tokenSymbol}
                 selected={candidate.transactionId === selectedId}
                 onSelect={() => setSelectedId(candidate.transactionId)}
               />
@@ -189,10 +219,10 @@ export function TransferDecision({ item, onResolved }: TransferDecisionProps) {
 
       <section className="flex flex-col gap-2">
         <h3 className="text-caption font-medium uppercase tracking-wide text-muted-foreground">
-          What happened
+          {t('v3.review.decision.whatHappened')}
         </h3>
         {openDecision === null ? (
-          <p className="text-caption text-muted-foreground">{UNREVIEWED_TRANSFER_NOTE}</p>
+          <p className="text-caption text-muted-foreground">{t(UNREVIEWED_TRANSFER_NOTE_KEY)}</p>
         ) : null}
         {/*
           While one answer is open, the other two are NOT rendered.
@@ -208,9 +238,9 @@ export function TransferDecision({ item, onResolved }: TransferDecisionProps) {
         <div className="flex flex-col gap-2">
           {(openDecision === null || openDecision === 'paired') && (
             <ConfirmAction
-              label={DECISION_LABELS.paired.trigger}
-              confirmLabel={DECISION_LABELS.paired.commit}
-              consequence={decisionConsequence('paired', item, chosen)}
+              label={t(DECISION_LABELS.paired.triggerKey)}
+              confirmLabel={t(DECISION_LABELS.paired.commitKey)}
+              consequence={decisionConsequence(t, 'paired', item, chosen)}
               // `canConfirm` false is "not yet — pick one", which is what the
               // consequence line says. `disabledReason` is for the case where
               // picking is not possible at all, and the two are not the same
@@ -218,7 +248,7 @@ export function TransferDecision({ item, onResolved }: TransferDecisionProps) {
               // thing `ConfirmAction`'s own doc calls out.
               canConfirm={Boolean(chosen)}
               {...(item.candidates.length === 0
-                ? { disabledReason: 'No deposit close enough to link this to' }
+                ? { disabledReason: t('v3.review.decision.noLinkTarget') }
                 : {})}
               isPending={isPending}
               open={openDecision === 'paired'}
@@ -226,11 +256,43 @@ export function TransferDecision({ item, onResolved }: TransferDecisionProps) {
               onConfirm={() => commit('paired')}
             />
           )}
+          {/*
+            The answer this queue was missing (SC-187).
+
+            Second, directly under `Same money`, because it is the same claim —
+            "it moved to a holding of mine" — reached the other way: there is
+            no deposit to point at, so answering writes one. Putting it beside
+            its twin is what makes the pair legible; putting it below the two
+            answers that book or forfeit a gain would bury the correct answer
+            under two wrong ones.
+          */}
+          {(openDecision === null || openDecision === 'internal') && (
+            <ConfirmAction
+              label={t(DECISION_LABELS.internal.triggerKey)}
+              confirmLabel={t(DECISION_LABELS.internal.commitKey)}
+              chooser={
+                <TransferDestinationPicker
+                  destinations={destinations.data ?? []}
+                  tokenSymbol={item.tokenSymbol}
+                  groupName={`destination-${item.transactionId}`}
+                  selected={destination}
+                  onSelect={setDestination}
+                  isLoading={destinations.isLoading}
+                />
+              }
+              consequence={decisionConsequence(t, 'internal', item, null, destination)}
+              canConfirm={Boolean(destination)}
+              isPending={isPending}
+              open={openDecision === 'internal'}
+              onOpenChange={(open) => setOpenDecision(open ? 'internal' : null)}
+              onConfirm={() => commit('internal')}
+            />
+          )}
           {(openDecision === null || openDecision === 'left_control') && (
             <ConfirmAction
-              label={DECISION_LABELS.left_control.trigger}
-              confirmLabel={DECISION_LABELS.left_control.commit}
-              consequence={decisionConsequence('left_control', item, null)}
+              label={t(DECISION_LABELS.left_control.triggerKey)}
+              confirmLabel={t(DECISION_LABELS.left_control.commitKey)}
+              consequence={decisionConsequence(t, 'left_control', item, null)}
               isPending={isPending}
               open={openDecision === 'left_control'}
               onOpenChange={(open) => setOpenDecision(open ? 'left_control' : null)}
@@ -239,9 +301,9 @@ export function TransferDecision({ item, onResolved }: TransferDecisionProps) {
           )}
           {(openDecision === null || openDecision === 'untracked') && (
             <ConfirmAction
-              label={DECISION_LABELS.untracked.trigger}
-              confirmLabel={DECISION_LABELS.untracked.commit}
-              consequence={decisionConsequence('untracked', item, null)}
+              label={t(DECISION_LABELS.untracked.triggerKey)}
+              confirmLabel={t(DECISION_LABELS.untracked.commitKey)}
+              consequence={decisionConsequence(t, 'untracked', item, null)}
               isPending={isPending}
               open={openDecision === 'untracked'}
               onOpenChange={(open) => setOpenDecision(open ? 'untracked' : null)}
@@ -261,17 +323,19 @@ export function TransferDecision({ item, onResolved }: TransferDecisionProps) {
           */}
           {(openDecision === null || openDecision === 'split') && (
             <ConfirmAction
-              label={SPLIT_LABELS.trigger}
-              confirmLabel={SPLIT_LABELS.commit}
+              label={t(SPLIT_LABELS.triggerKey)}
+              confirmLabel={t(SPLIT_LABELS.commitKey)}
               chooser={
                 <TransferSplitEditor
                   item={item}
                   rows={rowsWithMatch}
                   onChange={setSplitRows}
                   hasMatch={Boolean(chosen)}
+                  destinations={destinations.data ?? []}
+                  destinationsLoading={destinations.isLoading}
                 />
               }
-              consequence={splitConsequence(rowsWithMatch, item, (id) =>
+              consequence={splitConsequence(t, rowsWithMatch, item, (id) =>
                 id ? (item.candidates.find((c) => c.transactionId === id) ?? null) : null
               )}
               canConfirm={splitIsCommittable(rowsWithMatch, item)}
@@ -283,9 +347,164 @@ export function TransferDecision({ item, onResolved }: TransferDecisionProps) {
           )}
         </div>
         {openDecision === null ? (
-          <p className="text-caption text-muted-foreground">{SPLIT_NOTE}</p>
+          <p className="text-caption text-muted-foreground">{t(SPLIT_NOTE_KEY)}</p>
         ) : null}
       </section>
+    </div>
+  );
+}
+
+/**
+ * "You wrote this down" — the note the reader left about this address
+ * (SC-375).
+ *
+ * Above the answers for the same reason `OwnWalletNotice` is: the failure this
+ * queue keeps producing is not a missing fact but a fact that arrives beside a
+ * decision instead of in front of it. mgrin answered 560 transfers and his
+ * summary of the experience was *"I honestly can not remember that anymore
+ * anyway"* — so the note, in his own words, is the single most useful thing
+ * that can be on this screen.
+ *
+ * It says a rule matched and it never says a rule answered — because a rule
+ * that HAD answered this row would have taken it out of the queue. That was
+ * trivially true in SC-375, where no verdict could write anything. It stays
+ * true after SC-380 for a subtler reason worth stating: an `always_a_disposal`
+ * rule can only reach this screen on a row whose answer the reader personally
+ * took back, and that row is exempt from it permanently. So the second line
+ * exists — the reader has to be told the standing sentence about this
+ * destination is a disposal AND that this transfer is no longer covered by it,
+ * or the note reads as a claim about the row in front of them.
+ *
+ * **Nothing below is pre-selected because of it**, whatever the verdict, which
+ * is the same rule `OwnWalletNotice` follows for the strongest fact in the
+ * dataset. A rule that pre-selected `left_control` here would be answering the
+ * row it was just overruled on.
+ */
+function RuleNotice({ item }: { item: PendingTransferReview }) {
+  const { t } = useTranslation();
+  if (item.matchedRule === null) return null;
+  return (
+    <div className="flex gap-3 rounded-md border border-border bg-surface-1 p-3">
+      <StickyNote className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+      <div className="flex min-w-0 flex-col gap-1">
+        <p className="text-caption text-muted-foreground">{t('v3.review.rules.notice.label')}</p>
+        <p className="text-body">{item.matchedRule.note}</p>
+        {item.matchedRule.verdict === 'always_a_disposal' ? (
+          <p className="text-caption text-muted-foreground">
+            {t('v3.review.rules.notice.markExempt')}
+          </p>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * "You answered this once, and Scani took the answer back" (SC-378).
+ *
+ * A question that reappears with no explanation reads as the queue losing an
+ * answer, and the thing this whole surface depends on is a reader who trusts
+ * it enough to keep answering. So the withdrawal says so, on the row, above
+ * the candidates.
+ *
+ * It also does the work of the empty candidate list. These rows come back
+ * with nothing to pair against, which without a sentence looks like a broken
+ * search rather than the point: nothing arrived anywhere, so `left_control`
+ * and `untracked` — both answerable with no candidate — are the answers.
+ *
+ * FIRST OF THE THREE NOTICES, AND THE ORDER IS THE MESSAGE.
+ *
+ * A row can carry all three at once — withdrawn, own-wallet, rule-matched, and
+ * after SC-380 that combination is the ordinary shape of an overruled mark —
+ * and they answer three different questions, in this sequence: *why am I
+ * looking at this again* (withdrawn), then *what do I need in order to answer
+ * it* (the address is yours; here is the note you left). Framing first, and
+ * the two decision inputs nearest the buttons they inform. `OwnWalletNotice`
+ * and `RuleNotice` keep the relative order SC-350 and SC-375 settled between
+ * them; nothing here reopens that.
+ *
+ * The one arrangement that is actively WRONG is `RuleNotice` above this one.
+ * Stacked that way it reads as the note having caused the question to come
+ * back, and the causality runs the other way in both of the cases that reach
+ * here: Scani withdrew a pairing it disproved, or the READER overruled the
+ * rule's answer. A marking rule never un-answers anything — it only ever
+ * writes, and only onto rows nobody has recorded a decision about (SC-380).
+ * Conflating the two mechanisms on the one screen where both appear is the
+ * misreading worth spending the position to prevent.
+ *
+ * **`user` became reachable in SC-380 and is not silent.** It used to mean the
+ * reader reopening their own answer, which needs no explanation — but `reopen`
+ * leaves the source null for that, and leaves `'user'` only when the answer it
+ * withdrew came from a RULE. So this value now means one thing: you overruled
+ * the standing sentence about this destination on this transfer. It is worth
+ * saying because the consequence is invisible otherwise — the rule will never
+ * answer this row again, and a reader who assumed it would is waiting for
+ * something that is not coming.
+ */
+function WithdrawnAnswerNotice({ item }: { item: PendingTransferReview }) {
+  const { t } = useTranslation();
+  if (item.answerWithdrawnBy === null) return null;
+  return (
+    <div className="flex gap-3 rounded-md border border-border bg-surface-1 p-3">
+      <RotateCcw className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+      <p className="text-caption">
+        {t(
+          item.answerWithdrawnBy === 'repair'
+            ? 'v3.review.decision.withdrawnNotice'
+            : 'v3.review.decision.withdrawnRuleNotice'
+        )}
+      </p>
+    </div>
+  );
+}
+
+/**
+ * "That address is one of yours" — the sentence the address was standing in for
+ * (SC-350).
+ *
+ * On 2026-08-17 mgrin answered ten transfers `left_control` in four minutes,
+ * booking 6,500 USDT and 4,000 USDC of disposals on money that moved between two
+ * of his own wallets. Every row already showed the destination: SC-346 had
+ * shipped it forty-four minutes earlier, linked to Etherscan. It showed
+ * `0x9d8ae06a94c5592f57812e0f045438602a7e14ab`, and he had registered that wallet
+ * himself. A 42-character hex string is not a thing a person recognises, and
+ * `left_control` is the one answer that books a disposal.
+ *
+ * `user_wallets` held the answer the entire time and nothing joined it.
+ *
+ * ABOVE the candidates and the answers rather than beside the address in the
+ * peek's field list, because the failure was not that the fact was unavailable
+ * — it was on screen — but that it arrived as data at the moment a decision was
+ * being made quickly. Ten answers in four minutes is roughly 25 seconds each;
+ * this has to be in the path of the tap, not adjacent to it.
+ *
+ * It names the answer it is pointing at. "This is one of your wallets" still
+ * leaves the reader to work out which of four buttons that implies, and the
+ * whole lesson here is that a true fact placed near a decision is not the same
+ * as a decision made easier.
+ *
+ * Nothing is disabled and nothing is pre-selected. A transfer to an address you
+ * control CAN be a disposal — paying someone from a wallet you own is exactly
+ * that — so the answer stays the reader's. SC-150's position is that the fix for
+ * an ambiguous transfer is to ask, and this is a better-informed question, not a
+ * narrower one.
+ */
+function OwnWalletNotice({ item }: { item: PendingTransferReview }) {
+  const { t } = useTranslation();
+  // Deliberately silent when false. `false` means "not among the wallets you
+  // have registered", which is not the same as "this address is a stranger's" —
+  // a cold wallet he never added reads identically — so the positive case may be
+  // asserted and the negative one must not be.
+  if (!item.counterpartyIsOwnWallet) return null;
+  return (
+    // `warning` is not a colour in the preset — `border-warning/40`,
+    // `bg-warning/10` and `text-warning` each compiled to nothing, so the
+    // callout rendered as bare text with no border, no fill and no icon
+    // colour. The tokens that exist are the surface ramp and the border
+    // hairline, which is what an informational callout is built from.
+    <div className="flex gap-3 rounded-md border border-border bg-surface-hover p-3">
+      <Wallet className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+      <p className="text-caption">{t('v3.review.decision.ownWalletNotice')}</p>
     </div>
   );
 }
@@ -310,16 +529,15 @@ export function TransferDecision({ item, onResolved }: TransferDecisionProps) {
 function CandidateRow({
   candidate,
   groupName,
-  tokenSymbol,
   selected,
   onSelect,
 }: {
   candidate: TransferCandidate;
   groupName: string;
-  tokenSymbol: string;
   selected: boolean;
   onSelect: () => void;
 }) {
+  const { t } = useTranslation();
   return (
     <label
       // `min-h-11` is the 44px touch target.
@@ -346,13 +564,11 @@ function CandidateRow({
       </span>
       <span className="flex min-w-0 flex-col gap-0.5">
         <span className="truncate text-body font-medium">{candidateLocation(candidate)}</span>
-        <span className="text-caption text-muted-foreground">
-          {candidateSummary(candidate, tokenSymbol)}
-        </span>
+        <span className="text-caption text-muted-foreground">{candidateSummary(t, candidate)}</span>
         <span
           className={`text-caption ${candidate.withinStrictTolerance ? 'text-foreground' : 'text-muted-foreground'}`}
         >
-          {candidateReasonLabel(candidate)}
+          {candidateReasonLabel(t, candidate)}
         </span>
       </span>
     </label>

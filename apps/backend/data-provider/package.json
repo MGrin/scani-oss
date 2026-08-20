@@ -12,7 +12,7 @@
     "clean": "rm -rf dist",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
-    "type-check": "tsgo --noEmit",
+    "type-check": "tsgo --noEmit -p tsconfig.test.json",
     "test": "bun test --preload ./test-preload.ts --timeout 30000 src/ tests/"
   },
   "dependencies": {

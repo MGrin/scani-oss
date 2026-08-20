@@ -1,6 +1,6 @@
 process.env.DATABASE_URL = process.env.DATABASE_URL || 'postgresql://dummy:dummy@localhost/dummy';
 
-import { afterAll, describe, expect, test } from 'bun:test';
+import { describe, expect, test } from 'bun:test';
 import Decimal from 'decimal.js';
 import { Container } from 'typedi';
 import { AccountRepository } from '../../../src/repositories/AccountRepository';
@@ -10,6 +10,11 @@ import { UserRepository } from '../../../src/repositories/UserRepository';
 import { PortfolioValuationAtTimeService } from '../../../src/services/portfolio/PortfolioValuationAtTimeService';
 import { BalanceAtTimeService } from '../../../src/services/pricing/BalanceAtTimeService';
 import { PriceGraphService } from '../../../src/services/pricing/PriceGraphService';
+import { restoreContainerAfterAll } from '../../../test/helpers/container';
+
+// Container stubs are process-global; put back whatever this file changes
+// so no later test file resolves them (SC-448).
+restoreContainerAfterAll();
 
 /**
  * The coverage denominator (SC-146).
@@ -23,16 +28,6 @@ import { PriceGraphService } from '../../../src/services/pricing/PriceGraphServi
  * behaviour deletes Tether from the portfolio.
  */
 
-afterAll(() => {
-  Container.set(HoldingRepository, new HoldingRepository());
-  Container.set(AccountRepository, new AccountRepository());
-  Container.set(BalanceAtTimeService, new BalanceAtTimeService());
-  Container.set(PriceGraphService, new PriceGraphService());
-  Container.set(UserRepository, new UserRepository());
-  Container.set(TokenRepository, new TokenRepository());
-  Container.set(PortfolioValuationAtTimeService, new PortfolioValuationAtTimeService());
-});
-
 const USD = 'token-USD';
 const AT = new Date('2026-08-14T12:00:00Z');
 
@@ -42,6 +37,8 @@ interface Fixture {
   /** null → the price graph cannot value it at `at`. */
   price: number | null;
   balance?: number;
+  /** `at` precedes every record we hold for this holding — see SC-252. */
+  beforeRecords?: boolean;
 }
 
 function makeService(
@@ -63,6 +60,7 @@ function makeService(
         anchor: 'holdings' as const,
         anchorAt: AT,
         txApplied: 0,
+        beforeRecords: h?.beforeRecords ?? false,
       };
     },
   } as unknown as BalanceAtTimeService);
@@ -184,5 +182,62 @@ describe('PortfolioValuationAtTimeService — unpriceable holdings', () => {
     expect(r.holdingsUnpriceable).toBe(0);
     expect(r.holdingsWithKnownValue).toBe(2);
     expect(r.holdingsWithKnownValue).toBeLessThanOrEqual(r.holdingsTotal - r.holdingsUnpriceable);
+  });
+});
+
+/**
+ * Balances that predate every record we hold (SC-252).
+ *
+ * Production wrote `total_value = 586.94, coverage_quality = 'full'` for
+ * 2025-06-21 on a holding whose first transaction is 2026-06-22 — a
+ * confident assertion about a period more than a year before the holding
+ * existed. The value is left alone here on purpose: propagating a balance
+ * backward is the history chart's intended behaviour, and the ticket's
+ * complaint was never that a number was drawn, it was that the number was
+ * stamped 'full'. So the number survives and the confidence does not.
+ */
+describe('PortfolioValuationAtTimeService — balances predating our records', () => {
+  const AIRWALLEX: Fixture[] = [
+    { holdingId: 'h-awx', tokenId: 't-usd', price: 1, balance: 586.94, beforeRecords: true },
+  ];
+
+  test('a pre-existence date is never stamped full', async () => {
+    const svc = makeService(AIRWALLEX, []);
+
+    const r = await svc.getPortfolioValue('u', AT, USD);
+
+    expect(r.coverageQuality).not.toBe('full');
+    expect(r.coverageQuality).toBe('partial');
+  });
+
+  test('the value is kept, so the chart keeps its line', async () => {
+    const svc = makeService(AIRWALLEX, []);
+
+    const r = await svc.getPortfolioValue('u', AT, USD);
+
+    expect(r.totalValueInBase.toString()).toBe('586.94');
+    expect(r.holdingsWithKnownValue).toBe(1);
+  });
+
+  test('the count travels with the figure', async () => {
+    const svc = makeService(
+      [...AIRWALLEX, { holdingId: 'h-btc', tokenId: 't-btc', price: 60000 }],
+      []
+    );
+
+    const r = await svc.getPortfolioValue('u', AT, USD);
+
+    expect(r.holdingsBeforeRecords).toBe(1);
+    expect(r.perHolding.find((p) => p.holdingId === 'h-awx')?.balanceBeforeRecords).toBe(true);
+    expect(r.perHolding.find((p) => p.holdingId === 'h-btc')?.balanceBeforeRecords).toBe(false);
+  });
+
+  test('a portfolio inside its own records still reads full', async () => {
+    const svc = makeService([{ holdingId: 'h-btc', tokenId: 't-btc', price: 60000 }], []);
+
+    const r = await svc.getPortfolioValue('u', AT, USD);
+
+    expect(r.holdingsBeforeRecords).toBe(0);
+    expect(r.coverageQuality).toBe('full');
   });
 });

@@ -79,8 +79,8 @@ export class PricingService {
 
           return await this.currencyConverter.convert(
             cached.price,
-            cachedBaseCurrencyToken.symbol,
-            baseCurrencyToken.symbol,
+            cachedBaseCurrencyToken,
+            baseCurrencyToken,
             timestamp
           );
         }
@@ -279,7 +279,7 @@ export class PricingService {
         const tokensNeedingConversion: Array<{
           token: Token;
           cachedPrice: string;
-          fromCurrency: string;
+          fromCurrency: Token;
         }> = [];
 
         for (const token of tokensToProcess) {
@@ -292,7 +292,7 @@ export class PricingService {
                 tokensNeedingConversion.push({
                   token,
                   cachedPrice: cached.price,
-                  fromCurrency: cachedBaseCurrencyToken.symbol,
+                  fromCurrency: cachedBaseCurrencyToken,
                 });
                 continue;
               }
@@ -318,7 +318,7 @@ export class PricingService {
               const convertedPrice = await this.currencyConverter.convert(
                 cachedPrice,
                 fromCurrency,
-                baseCurrencyToken.symbol,
+                baseCurrencyToken,
                 timestamp
               );
               return { tokenId: token.id, convertedPrice };
@@ -586,6 +586,68 @@ export class PricingService {
       }
     }
 
+    // Last resort: borrow from a SIBLING ROW OF THE SAME ASSET (SC-198).
+    //
+    // One asset is routinely spread across several token rows — USDC is
+    // held on `evm:1`, `evm:8453` and a `(generic)` row, and only some of
+    // them accumulate prices, so a holding on the wrong row shows no value
+    // while an identical holding beside it shows one.
+    //
+    // Keyed on `coingecko.id` and NEVER on the symbol; `findPricingSiblings`
+    // carries the two reasons. The short version is that a symbol-keyed
+    // version would price a DogTrump holding as Official Trump, and would
+    // hand a homoglyph `UЅDС` row the real USDC price.
+    //
+    // A borrowed price is marked `_sibling_fallback` in `source` so it is
+    // traceable to a row the user does not hold. It is still a price we
+    // stand behind — same asset, same market — but it did not come from
+    // the row it is displayed against, and a number whose provenance is
+    // invisible is how the manual-price and downsample defects happened.
+    const stillUnpriced = tokensToProcess.filter(
+      (t) => !cachedPrices.has(t.id) && !fallbackPrices.has(t.id)
+    );
+    if (stillUnpriced.length > 0) {
+      const siblingsByToken = await this.tokenRepository.findPricingSiblings(
+        stillUnpriced.map((t) => t.id)
+      );
+      const donorIds = Array.from(new Set(Array.from(siblingsByToken.values()).flat()));
+      if (donorIds.length > 0) {
+        const donorPrices = await this.tokenPriceRepository.findLatestPricesForTokensAnyBase(
+          donorIds,
+          baseCurrencyToken.id
+        );
+        for (const token of stillUnpriced) {
+          const siblings = siblingsByToken.get(token.id);
+          if (!siblings) continue;
+          // Newest across the donors — a sibling that stopped being priced
+          // months ago is not a better answer than one priced today.
+          let best: { price: string; timestamp: Date; baseTokenId: string } | null = null;
+          for (const siblingId of siblings) {
+            const candidate = donorPrices.get(siblingId);
+            if (!candidate) continue;
+            if (candidate.price === '0' || candidate.source?.startsWith('manual')) continue;
+            const value = parseFloat(candidate.price);
+            if (Number.isNaN(value) || value <= 0) continue;
+            if (!best || candidate.timestamp > best.timestamp) {
+              best = {
+                price: candidate.price,
+                timestamp: candidate.timestamp,
+                baseTokenId: candidate.baseTokenId,
+              };
+            }
+          }
+          if (best) {
+            fallbackPrices.set(token.id, {
+              price: best.price,
+              timestamp: best.timestamp,
+              source: 'sibling_fallback',
+              baseTokenId: best.baseTokenId,
+            });
+          }
+        }
+      }
+    }
+
     const uniqueFallbackBaseCurrencyIds = new Set<string>();
     for (const fallbackPrice of fallbackPrices.values()) {
       if (fallbackPrice.baseTokenId !== baseCurrencyToken.id) {
@@ -606,7 +668,7 @@ export class PricingService {
     const tokensNeedingConversion: Array<{
       tokenId: string;
       price: string;
-      fromCurrency: string;
+      fromCurrency: Token;
     }> = [];
     const tokensNeedingFallbackConversion: Array<{
       tokenId: string;
@@ -623,7 +685,7 @@ export class PricingService {
             tokensNeedingConversion.push({
               tokenId: token.id,
               price: cached.price,
-              fromCurrency: cachedBaseCurrencyToken.symbol,
+              fromCurrency: cachedBaseCurrencyToken,
             });
             continue;
           }
@@ -650,10 +712,10 @@ export class PricingService {
     // `convert` loop below resolves out of the in-memory cache. Without
     // this warm-up, a base-currency switch leaves the cache cold and
     // every conversion returns null → silent unpriced holdings.
-    const pairsToWarm: Array<{ from: string; to: string }> = [];
+    const pairsToWarm: Array<{ from: Token; to: Token }> = [];
     for (const { fromCurrency } of tokensNeedingConversion) {
-      if (fromCurrency !== baseCurrencyToken.symbol) {
-        pairsToWarm.push({ from: fromCurrency, to: baseCurrencyToken.symbol });
+      if (fromCurrency.id !== baseCurrencyToken.id) {
+        pairsToWarm.push({ from: fromCurrency, to: baseCurrencyToken });
       }
     }
     for (const { fallbackPrice } of tokensNeedingFallbackConversion) {
@@ -661,8 +723,8 @@ export class PricingService {
         const fallbackBaseCurrency = fallbackBaseCurrencyTokensMap.get(fallbackPrice.baseTokenId);
         if (fallbackBaseCurrency) {
           pairsToWarm.push({
-            from: fallbackBaseCurrency.symbol,
-            to: baseCurrencyToken.symbol,
+            from: fallbackBaseCurrency,
+            to: baseCurrencyToken,
           });
         }
       }
@@ -671,7 +733,7 @@ export class PricingService {
     if (pairsToWarm.length > 0) {
       pricingLogger.debug(
         {
-          pairs: pairsToWarm.map((p) => `${p.from}->${p.to}`),
+          pairs: pairsToWarm.map((p) => `${p.from.symbol}->${p.to.symbol}`),
         },
         'Pre-warming conversion rate cache for unique currency pairs'
       );
@@ -688,7 +750,7 @@ export class PricingService {
     for (const { tokenId, price, fromCurrency } of tokensNeedingConversion) {
       conversionPromises.push(
         this.currencyConverter
-          .convert(price, fromCurrency, baseCurrencyToken.symbol, timestamp, true)
+          .convert(price, fromCurrency, baseCurrencyToken, timestamp, true)
           .then((convertedPrice) => ({ tokenId, price: convertedPrice }))
       );
     }
@@ -855,8 +917,8 @@ export class PricingService {
       if (targetToken) {
         return await this.currencyConverter.convert(
           cachedPrice.price,
-          cachedBaseCurrencyToken.symbol,
-          targetToken.symbol,
+          cachedBaseCurrencyToken,
+          targetToken,
           timestamp
         );
       }

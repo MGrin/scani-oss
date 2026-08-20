@@ -4,6 +4,7 @@ import { Loader2, RefreshCw, X } from 'lucide-react';
 import { useState } from 'react';
 import { useAppUpdate } from '../hooks/useAppUpdate';
 import { useBannerOffset } from '../hooks/useBannerOffset';
+import { useUiTranslation } from '../i18n';
 
 /**
  * Non-intrusive banner that appears when a new version of the app is deployed.
@@ -11,6 +12,7 @@ import { useBannerOffset } from '../hooks/useBannerOffset';
  * Works with both regular browser tabs and installed PWAs.
  */
 export function UpdateBanner() {
+  const { t } = useUiTranslation();
   const { updateAvailable, applyUpdate, dismissUpdate } = useAppUpdate();
   const [updating, setUpdating] = useState(false);
   const bannerRef = useBannerOffset<HTMLDivElement>();
@@ -34,24 +36,24 @@ export function UpdateBanner() {
       {updating ? (
         <>
           <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
-          <span>Updating... please wait</span>
+          <span>{t('ui.update.updating')}</span>
         </>
       ) : (
         <>
           <RefreshCw className="h-4 w-4 shrink-0" />
-          <span>New version available</span>
+          <span>{t('ui.update.available')}</span>
           <button
             type="button"
             onClick={handleUpdate}
             className="font-semibold underline underline-offset-2 hover:no-underline"
           >
-            Update
+            {t('ui.update.action')}
           </button>
           <button
             type="button"
             onClick={dismissUpdate}
             className="ml-2 p-0.5 rounded hover:bg-white/20 transition-colors"
-            aria-label="Dismiss"
+            aria-label={t('ui.update.dismiss')}
           >
             <X className="h-3.5 w-3.5" />
           </button>

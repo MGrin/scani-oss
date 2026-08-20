@@ -2,7 +2,7 @@ import * as SheetPrimitive from '@radix-ui/react-dialog';
 import { cva, type VariantProps } from 'class-variance-authority';
 import { X } from 'lucide-react';
 import * as React from 'react';
-
+import { useUiTranslation } from '../i18n';
 import { cn } from '../lib/cn';
 import { type PortalContainer, usePortalContainer } from '../lib/portal-container';
 
@@ -91,6 +91,7 @@ const SheetContent = React.forwardRef<
     { side = 'right', className, children, style, container, dismissible = true, ...props },
     ref
   ) => {
+    const { t } = useUiTranslation();
     const portalContainer = usePortalContainer(container);
     return (
       <SheetPortal container={portalContainer}>
@@ -122,7 +123,7 @@ const SheetContent = React.forwardRef<
               style={{ top: 'calc(0.875rem + env(safe-area-inset-top, 0px))' }}
             >
               <X className="h-4 w-4" />
-              <span className="sr-only">Close</span>
+              <span className="sr-only">{t('ui.sheet.close')}</span>
             </SheetPrimitive.Close>
           ) : null}
         </SheetPrimitive.Content>

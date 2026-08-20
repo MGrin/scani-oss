@@ -6,12 +6,19 @@ import type {
 } from '@scani/providers/core/capabilities';
 import type { ProviderContext } from '@scani/providers/core/types';
 import { TRPCError } from '@trpc/server';
+// This workspace cannot depend on @scani/domain (it sits below it), so the
+// shared helper is reached the same way the shared test preload is: by path.
+import { restoreContainerAfterAll } from '../../../../../../packages/business/domain/test/helpers/container';
 import { pricingRouter } from '../../../src/presentation/routers/pricing';
 import {
   buildAuthedContext,
   buildUnauthedContext,
   installFreshRegistry,
 } from '../../helpers/test-context';
+
+// `installFreshRegistry()` stubs ProviderRegistry per test; this is the
+// file-level guarantee that nothing it installs outlives the file (SC-448).
+restoreContainerAfterAll();
 
 const fakeToken: Token = {
   id: 'tok-eth',
@@ -20,8 +27,13 @@ const fakeToken: Token = {
   typeId: 'crypto',
   decimals: 18,
   iconUrl: null,
+  lastPricingAttemptAt: null,
+  lookalikeOf: null,
+  unpriceableUntil: null,
   providerMetadata: {},
   isScamProbability: 0,
+  scamScoreVersion: null,
+  scamScoreSource: 'heuristic',
   isActive: true,
   marketSegment: null,
   createdAt: new Date('2024-01-01T00:00:00Z'),

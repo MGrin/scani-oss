@@ -1,4 +1,4 @@
-import { formatCurrency, UNPRICEABLE_PLACEHOLDER } from '@scani/shared';
+import { formatCurrency, getFormatLocale, UNPRICEABLE_PLACEHOLDER } from '@scani/shared';
 import { toFiniteNumber } from '@scani/ui/v3/lib/numeric';
 
 /**
@@ -57,7 +57,10 @@ const PLACEHOLDER: TapeParts = {
   group: '',
   decimal: '',
   fraction: '',
-  accessibleText: 'No value',
+  // Empty, and filled in by whoever renders it. The placeholder's spoken text
+  // is the one string in this module a reader hears, and this module has no `t`
+  // — so `isPlaceholder` is what the caller branches on (SC-368).
+  accessibleText: '',
   isPlaceholder: true,
 };
 
@@ -81,10 +84,19 @@ interface SplitParts {
  */
 function splitParts(absolute: number, currency: string, decimals: number): SplitParts {
   const options = { minimumFractionDigits: decimals, maximumFractionDigits: decimals } as const;
+  // The reader's number locale, not `en-US` (SC-201). The comment below has
+  // always said the grouping glyph is read off `formatToParts` rather than
+  // assumed to be a comma — and the literal three lines up made that
+  // impossible. Under a Russian interface the hero read `383,936` while
+  // `accessibleText` beside it read `383 936,00 €`: the same figure, and a
+  // Russian reader parses the visible one as three hundred eighty-three point
+  // nine three six. The spoken value was right and the printed one was wrong,
+  // on the largest number in the app.
+  const locale = getFormatLocale().numberLocale;
   let parts: Intl.NumberFormatPart[];
   let symbol: string;
   try {
-    parts = new Intl.NumberFormat('en-US', {
+    parts = new Intl.NumberFormat(locale, {
       style: 'currency',
       currency,
       ...options,
@@ -94,7 +106,7 @@ function splitParts(absolute: number, currency: string, decimals: number): Split
       .map((part) => part.value)
       .join('');
   } catch {
-    parts = new Intl.NumberFormat('en-US', options).formatToParts(absolute);
+    parts = new Intl.NumberFormat(locale, options).formatToParts(absolute);
     symbol = currency;
   }
 

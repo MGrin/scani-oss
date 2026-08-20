@@ -1,7 +1,9 @@
 import { formatDate } from '@scani/shared';
 import { showError, showSuccess } from '@scani/ui/ui/use-toast';
 import { ConfirmAction } from '@scani/ui/v3/components/ConfirmAction';
+import type { TFunction } from 'i18next';
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { trpc } from '@/lib/trpc';
 
 /**
@@ -31,8 +33,7 @@ import { trpc } from '@/lib/trpc';
  * because "paused" alone reads as "nothing happens" and the thing the reader
  * actually needs to know is what becomes of the dates that pass meanwhile.
  */
-export const PAUSE_CONSEQUENCE =
-  'No new due dates while paused. Anything that falls due meanwhile is recorded as skipped, not overdue.';
+export const PAUSE_CONSEQUENCE_KEY = 'v3.money.status.pauseConsequence';
 
 /**
  * What resuming does, which is the answer to the question the pause raises:
@@ -44,11 +45,14 @@ export const PAUSE_CONSEQUENCE =
  * promise instead of the general one: there is no provable window for them, so
  * `PaymentService.resume` leaves their past alone and so does this sentence.
  */
-export function resumeConsequence(pausedAt: string | null): string {
-  if (!pausedAt) {
-    return 'Picks up the original schedule — the same dates as before. Past due dates are left exactly as they are.';
-  }
-  return `Picks up the original schedule — the same dates as before. Anything due since ${formatDate(pausedAt.slice(0, 10))} is recorded as skipped, not overdue.`;
+export function resumeConsequence(t: TFunction, pausedAt: string | null): string {
+  if (!pausedAt) return t('v3.money.status.resumeConsequence');
+  // The date is interpolated, never translated — it comes from `formatDate`,
+  // which pins `APP_LOCALE` (en-GB). A date inside a translation key is a bug
+  // that is very hard to find later.
+  return t('v3.money.status.resumeConsequenceSince', {
+    date: formatDate(pausedAt.slice(0, 10)),
+  });
 }
 
 interface PaymentStatusToggleProps {
@@ -58,25 +62,26 @@ interface PaymentStatusToggleProps {
 }
 
 export function PaymentStatusToggle({ paymentId, status, pausedAt }: PaymentStatusToggleProps) {
+  const { t } = useTranslation();
   const utils = trpc.useUtils();
   const [confirming, setConfirming] = useState(false);
 
   const pauseMutation = trpc.payments.pause.useMutation({
     onSuccess: () => {
       setConfirming(false);
-      showSuccess('Payment paused');
+      showSuccess(t('v3.money.status.paused'));
       void utils.payments.invalidate();
     },
-    onError: (error) => showError(error, 'Pausing payment'),
+    onError: (error) => showError(error, t('v3.money.pending.pausingPayment')),
   });
 
   const resumeMutation = trpc.payments.resume.useMutation({
     onSuccess: () => {
       setConfirming(false);
-      showSuccess('Payment resumed');
+      showSuccess(t('v3.money.status.resumed'));
       void utils.payments.invalidate();
     },
-    onError: (error) => showError(error, 'Resuming payment'),
+    onError: (error) => showError(error, t('v3.money.pending.resumingPayment')),
   });
 
   // An ended payment has no toggle: resuming it is a different operation
@@ -86,16 +91,16 @@ export function PaymentStatusToggle({ paymentId, status, pausedAt }: PaymentStat
 
   const paused = status === 'paused';
   const mutation = paused ? resumeMutation : pauseMutation;
-  const label = paused ? 'Resume' : 'Pause';
+  const label = paused ? t('v3.money.status.resume') : t('v3.money.status.pause');
 
   return (
     <ConfirmAction
       label={label}
-      confirmLabel={paused ? 'Resume this payment' : 'Pause this payment'}
+      confirmLabel={paused ? t('v3.money.status.resumeConfirm') : t('v3.money.status.pauseConfirm')}
       open={confirming}
       onOpenChange={setConfirming}
       isPending={mutation.isPending}
-      consequence={paused ? resumeConsequence(pausedAt) : PAUSE_CONSEQUENCE}
+      consequence={paused ? resumeConsequence(t, pausedAt) : t(PAUSE_CONSEQUENCE_KEY)}
       onConfirm={() => mutation.mutate({ paymentId })}
     />
   );

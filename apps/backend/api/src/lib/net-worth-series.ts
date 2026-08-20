@@ -65,6 +65,46 @@ export interface AggregatedDailyPoint {
    */
   holdingsStalePriced: number;
   /**
+   * Of `holdingsWithKnownValue`, how many had their BALANCE extrapolated
+   * forward from an observation before this date, because nothing at or
+   * after it existed to anchor on (SC-249).
+   *
+   * The sibling of `holdingsStalePriced` and not the same thing: a stale
+   * price means the quantity is known and its valuation is old; a stale
+   * anchor means the quantity itself is a projection. Both land the day on
+   * `'partial'`, which is why one number could never tell a reader which
+   * happened — or what to do about it, since the remedies differ.
+   *
+   * `null` means NOT RECORDED: the row was computed before the rollup
+   * carried provenance. Distinct from `0`, which means counted and none.
+   */
+  holdingsStaleAnchored: number | null;
+  /**
+   * The oldest anchor behind this day's total — the far end of its weakest
+   * reconstruction (SC-249). `null` when nothing was backward-anchored, or
+   * when the row predates the column; `holdingsStaleAnchored` separates
+   * those (`0` vs `null`).
+   *
+   * This is what ranks two `'partial'` days. Production holds both extremes
+   * at once: one holding anchored 54 seconds back, another 71 days back.
+   */
+  oldestAnchorAt: string | null;
+  /**
+   * Of `holdingsWithKnownValue`, how many were valued on a date BEFORE the
+   * holding's own first evidence, so the balance is projected backward past
+   * anything that records it (SC-252, counted since SC-317).
+   *
+   * The third member of the family, and separate from `holdingsStaleAnchored`
+   * for the reason that one is separate from `holdingsStalePriced`: that is
+   * projected FORWARD from a stale observation, this is projected BACKWARD
+   * past first evidence, and the remedies differ — sync the source, versus
+   * import older history or accept there is none.
+   *
+   * `null` means NOT RECORDED: the row predates the column. Distinct from
+   * `0`, which means counted and none.
+   */
+  holdingsBeforeRecords: number | null;
+  /**
    * Of `holdingsTotal`, how many carry a cost basis we do not know (SC-149) —
    * truncated provider history, a leg priced beyond the staleness window, an
    * inflow nothing could value, or no acquisition on record at all. Reading
@@ -99,6 +139,9 @@ export function toAggregatedDaily(row: PortfolioValueDaily): AggregatedDailyPoin
     holdingsTotal: row.holdingsTotal,
     holdingsUnpriceable: row.holdingsUnpriceable,
     holdingsStalePriced: row.holdingsStalePriced,
+    holdingsStaleAnchored: row.holdingsStaleAnchored ?? null,
+    oldestAnchorAt: row.oldestAnchorAt ? row.oldestAnchorAt.toISOString() : null,
+    holdingsBeforeRecords: row.holdingsBeforeRecords ?? null,
     holdingsBasisUnknown: row.holdingsBasisUnknown,
     transfersUnreviewed: row.transfersUnreviewed,
   };
@@ -130,6 +173,16 @@ export function aggregateIncludedHoldingRows(
     let total = 0;
     let unpriceable = 0;
     let stalePriced = 0;
+    // `null` propagates: if ANY holding row on this day predates the column,
+    // the day's count is not knowable, and summing the ones that do have it
+    // would report a confident undercount. That is the mistake
+    // `holdings_stale_priced` made by taking NOT NULL DEFAULT 0.
+    let staleAnchored: number | null = 0;
+    // Same null propagation, same reason (SC-317): a day one of whose holding
+    // rows predates the column has no knowable count, and summing the rest
+    // would report a confident undercount.
+    let beforeRecords: number | null = 0;
+    let oldestAnchorAt: Date | null = null;
     let basisUnknown = 0;
     let transfersUnreviewed = 0;
     let anyPartial = false;
@@ -142,9 +195,40 @@ export function aggregateIncludedHoldingRows(
       stalePriced += r.holdingsStalePriced;
       basisUnknown += r.holdingsBasisUnknown;
       transfersUnreviewed += r.transfersUnreviewed;
-      // Rows written before SC-151 carry a 0 count and never 'partial',
-      // so both readings agree on them; a rebuilt row sets both together.
-      if (r.coverageQuality === 'partial' || r.holdingsStalePriced > 0) anyPartial = true;
+      if (r.holdingsStaleAnchored == null) staleAnchored = null;
+      else if (staleAnchored !== null) staleAnchored += r.holdingsStaleAnchored;
+      if (r.holdingsBeforeRecords == null) beforeRecords = null;
+      else if (beforeRecords !== null) beforeRecords += r.holdingsBeforeRecords;
+      if (r.oldestAnchorAt && (!oldestAnchorAt || r.oldestAnchorAt < oldestAnchorAt)) {
+        oldestAnchorAt = r.oldestAnchorAt;
+      }
+      // Rows written before SC-151 carry a 0 count and never 'partial', so
+      // both readings agree on them; a rebuilt row sets both together.
+      //
+      // Worth being exact about what that agreement is worth (SC-255): it is
+      // two readings of the same DEFAULT, not two measurements that concur.
+      // `holdings_stale_priced` is `NOT NULL DEFAULT 0`, so a row predating
+      // the column reports a confident zero nobody computed, and this `||`
+      // then reads it as "nothing was stale". The day aggregates cleaner than
+      // the evidence supports.
+      //
+      // Left as-is on purpose. The fix is not here — it is the column, and
+      // repairing the column needs a cutoff that does not exist: on
+      // production all 37,245 rows computed before 2026-08-14 carry 0 in
+      // every quality count, and the migration timestamps are hand-authored
+      // journal values rather than deploy times. See the block comment above
+      // these columns in `schema/portfolio.ts`.
+      //
+      // `holdingsStaleAnchored` below is nullable for exactly this reason and
+      // propagates NULL rather than summing around it, which is the shape
+      // these four would need and cannot retroactively get.
+      if (
+        r.coverageQuality === 'partial' ||
+        r.holdingsStalePriced > 0 ||
+        (r.holdingsStaleAnchored ?? 0) > 0 ||
+        (r.holdingsBeforeRecords ?? 0) > 0
+      )
+        anyPartial = true;
       if (r.costBasis == null || r.realizedPnl == null || r.unrealizedPnl == null) {
         pnlComplete = false;
       } else {
@@ -178,6 +262,9 @@ export function aggregateIncludedHoldingRows(
       holdingsTotal: total,
       holdingsUnpriceable: unpriceable,
       holdingsStalePriced: stalePriced,
+      holdingsStaleAnchored: staleAnchored,
+      oldestAnchorAt: oldestAnchorAt ? (oldestAnchorAt as Date).toISOString() : null,
+      holdingsBeforeRecords: beforeRecords,
       holdingsBasisUnknown: basisUnknown,
       transfersUnreviewed,
     });
@@ -273,6 +360,24 @@ export interface NetWorthHistoryRow {
   holdingsUnpriceable: number;
   /** See AggregatedDailyPoint — the two columns that keep a spreadsheet honest. */
   holdingsStalePriced: number;
+  /**
+   * SC-249. Carried into both exports for the same reason
+   * `holdingsStalePriced` is: a spreadsheet the reader lays beside the chart
+   * must be able to say which figures rest on a projected quantity.
+   * `null` = the row predates the column, not zero.
+   */
+  holdingsStaleAnchored: number | null;
+  /** SC-249. ISO timestamp of the oldest anchor behind the day, or null. */
+  oldestAnchorAt: string | null;
+  /**
+   * SC-317. Carried beside `holdingsStaleAnchored` because the two are only
+   * legible together: one says a quantity was projected forward from a stale
+   * observation, the other that it was projected backward past anything
+   * recording the holding at all. A file carrying one and not the other lets
+   * a reader attribute a 'partial' day to the wrong cause.
+   * `null` = the row predates the column, not zero.
+   */
+  holdingsBeforeRecords: number | null;
   holdingsBasisUnknown: number;
   // `transfersUnreviewed` is deliberately NOT here. It qualifies realized
   // PnL, and neither file this shape writes contains a PnL column — a count
@@ -290,6 +395,9 @@ export function toNetWorthHistoryRow(point: AggregatedDailyPoint): NetWorthHisto
     holdingsTotal: point.holdingsTotal,
     holdingsUnpriceable: point.holdingsUnpriceable,
     holdingsStalePriced: point.holdingsStalePriced,
+    holdingsStaleAnchored: point.holdingsStaleAnchored,
+    oldestAnchorAt: point.oldestAnchorAt,
+    holdingsBeforeRecords: point.holdingsBeforeRecords,
     holdingsBasisUnknown: point.holdingsBasisUnknown,
   };
 }

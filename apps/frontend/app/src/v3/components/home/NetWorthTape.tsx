@@ -1,5 +1,6 @@
 import { figureFitStyle } from '@scani/ui/v3/lib/figure';
 import { memo, useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/utils';
 import { composeTape, rollFrom, type TapeCell, tapeCells } from '../../lib/tape';
 
@@ -90,6 +91,7 @@ interface NetWorthTapeProps {
 }
 
 export function NetWorthTape({ value, currency, className }: NetWorthTapeProps) {
+  const { t } = useTranslation();
   const parts = useMemo(() => composeTape(value, currency), [value, currency]);
   const cells = useMemo(() => tapeCells(parts), [parts]);
   const signature = signatureOf(cells);
@@ -142,7 +144,9 @@ export function NetWorthTape({ value, currency, className }: NetWorthTapeProps) 
       {/* The figure is a run of separately-positioned glyphs, which is not
           something to make a screen reader walk. It hears the ordinary
           formatted currency instead. */}
-      <span className="sr-only">{parts.accessibleText}</span>
+      <span className="sr-only">
+        {parts.isPlaceholder ? t('v3.home.tape.noValue') : parts.accessibleText}
+      </span>
       {/* Two elements rather than one: the size role stays on the outer span so
           the fit rule's `1em` still means the display size, and the inner one
           carries the reduction. */}

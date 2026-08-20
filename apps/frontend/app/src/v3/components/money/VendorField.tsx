@@ -2,6 +2,7 @@ import { useDebouncedValue } from '@scani/ui/hooks/useDebouncedValue';
 import { Button } from '@scani/ui/ui/button';
 import { showError } from '@scani/ui/ui/use-toast';
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { trpc } from '@/lib/trpc';
 import { Field } from '../form/Field';
 import { RecordPicker } from '../form/RecordPicker';
@@ -52,6 +53,7 @@ export function VendorField({
   const [open, setOpen] = useState(false);
   const utils = trpc.useUtils();
 
+  const { t } = useTranslation();
   const vendors = trpc.vendors.list.useQuery();
   const createMutation = trpc.vendors.create.useMutation({
     onSuccess: (vendor) => {
@@ -60,7 +62,7 @@ export function VendorField({
       setQuery('');
       setOpen(false);
     },
-    onError: (error) => showError(error, 'Creating vendor'),
+    onError: (error) => showError(error, t('v3.money.pending.creatingVendor')),
   });
 
   const items = vendors.data ?? [];
@@ -96,16 +98,14 @@ export function VendorField({
 
   return (
     <Field
-      label="Vendor"
+      label={t('v3.money.vendorField.label')}
       htmlFor="payment-vendor"
-      hint={
-        staged
-          ? "Read from the invoice. We'll create this vendor when you save if it doesn't exist yet."
-          : undefined
-      }
+      hint={staged ? t('v3.money.vendorField.pendingHint') : undefined}
     >
       <RecordPicker
         inputId="payment-vendor"
+        // NOT extracted, same as `CurrencyField` — `RecordPicker` splices this
+        // into `Change ${ariaLabel}`. SC-235.
         ariaLabel="vendor"
         value={value || staged ? { id: value || staged, label: selectedLabel } : null}
         onSelect={onSelect}
@@ -121,19 +121,26 @@ export function VendorField({
         onOpenChange={setOpen}
         options={options}
         isLoading={vendors.isLoading}
-        placeholder="Search or create a vendor"
-        emptyLabel="No vendor by that name yet."
+        placeholder={t('v3.money.vendorField.searchPlaceholder')}
+        emptyLabel={t('v3.money.vendorField.empty')}
         suggestions={
           staged
             ? undefined
             : candidates.map((candidate) => ({
                 id: candidate.vendor.id,
                 label: candidate.vendor.displayName,
-                hint: candidate.autoReuse ? 'Same vendor' : 'Similar',
+                hint: candidate.autoReuse
+                  ? t('v3.money.vendorField.sameVendor')
+                  : t('v3.money.vendorField.similar'),
               }))
         }
-        suggestionsLabel="Did you mean"
-        createLabel={(term) => (term ? `Create “${term}”` : 'Type a name to create a vendor')}
+        suggestionsLabel={t('v3.money.vendorField.didYouMean')}
+        createLabel={(term) =>
+          // The term is what the reader typed — data, interpolated, never a key.
+          term
+            ? t('v3.money.vendorField.createNamed', { term })
+            : t('v3.money.vendorField.typeToCreate')
+        }
         onCreate={(term) => term && createMutation.mutate({ displayName: term })}
         isCreating={createMutation.isPending}
         disabled={disabled}
@@ -146,7 +153,7 @@ export function VendorField({
       {staged && candidates.length > 0 ? (
         <div className="mt-2 space-y-1">
           <p className="text-caption text-muted-foreground">
-            Already have {candidates.length === 1 ? 'a vendor' : 'vendors'} with a similar name:
+            {t('v3.money.vendorField.similarNames', { count: candidates.length })}
           </p>
           <div className="flex flex-wrap gap-2">
             {candidates.map((candidate) => (
@@ -159,7 +166,7 @@ export function VendorField({
                   onSelect(candidate.vendor.id, candidate.vendor.displayName);
                 }}
               >
-                Use {candidate.vendor.displayName}
+                {t('v3.money.vendorField.use', { name: candidate.vendor.displayName })}
               </Button>
             ))}
           </div>

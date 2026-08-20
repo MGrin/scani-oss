@@ -72,7 +72,7 @@ the user edits them or re-imports. Each user edit appends a
 historical chart picks up the change at the correct timestamp.
 
 If the user changes the holding's balance without adding a
-corresponding transaction (e.g. "I just realised this is actually 1.5
+corresponding transaction (e.g. "I just realized this is actually 1.5
 BTC, not 1.0"), the
 [opening-balance reconciliation](/concepts/observations/#opening-balance-reconciliation)
 flow synthesises the implied difference. The user sees this as a

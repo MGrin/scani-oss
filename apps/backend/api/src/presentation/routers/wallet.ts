@@ -9,7 +9,7 @@ import {
   InstitutionBlockchainMappingRepository,
   UserJobRepository,
 } from '@scani/domain/repositories';
-import { WalletDiscoveryService } from '@scani/domain/services';
+import { sourceForChainId, WalletDiscoveryService } from '@scani/domain/services';
 import { ImportWalletAddressUseCase, type WalletReviewChain } from '@scani/domain/use-cases';
 import {
   PORTFOLIO_HISTORY_BACKFILL,
@@ -382,23 +382,4 @@ function instCodeForChain(chainId: number | string): string | null {
   };
   if (typeof chainId === 'number') return evm[chainId] ?? nonEvm[String(chainId)] ?? null;
   return nonEvm[chainId] ?? evm[Number(chainId)] ?? null;
-}
-
-// Map a chain id to the `source` tag the transaction-import job + the
-// TransactionImportCoordinator dispatch by. EVM chains all share
-// `'etherscan'`; non-EVM chains use their own slug (we currently wire
-// Solana via the Helius API). Bitcoin / TON / Tron return null today —
-// their providers have BalanceProvider but not TransactionsProvider.
-function sourceForChainId(chainId: string | number): string | null {
-  const evmIds = new Set([
-    1, 56, 137, 43114, 42161, 10, 8453, 250, 25, 42170, 324, 534352, 59144, 81457, 5000, 204, 100,
-    42220, 1284, 1285,
-  ]);
-  const num = typeof chainId === 'number' ? chainId : Number(chainId);
-  if (Number.isFinite(num) && evmIds.has(num)) return 'etherscan';
-  // Non-EVM by sentinel chainId. The wallet detection layer encodes
-  // these as negative ints in `accounts.metadata.chainId`.
-  const str = String(chainId);
-  if (str === '-2') return 'solana';
-  return null;
 }

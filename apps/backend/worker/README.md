@@ -14,7 +14,8 @@ src/
     ├── apy-payouts.ts                  (scheduled, daily 00:00 UTC)
     ├── backfill-counterparty.ts        (scheduled, nightly 05:30 UTC)
     ├── backfill-token-identity.ts      (scheduled, weekly Sun 02:00 UTC)
-    ├── dlq-depth-probe.ts              (scheduled, every 5 minutes)
+    ├── currency-rate-refresh.ts        (user-initiated)
+    ├── dlq-depth-probe.ts              (scheduled, every 15 minutes)
     ├── document-parse.ts               (user-initiated)
     ├── exchange-balances.ts            (scheduled, hourly)
     ├── exchange-import.ts              (user-initiated)
@@ -25,28 +26,27 @@ src/
     ├── historical-price-backfill.ts    (scheduled, nightly 03:00 UTC)
     ├── holding-price-update.ts         (user-initiated)
     ├── ingest-transactions.ts          (user-initiated; chains follow-up jobs)
-    ├── job-heartbeat-probe.ts          (scheduled, every 10 minutes)
+    ├── job-heartbeat-probe.ts          (scheduled, every 15 minutes)
     ├── manual-holdings-create.ts       (user-initiated)
+    ├── payment-due-reminder.ts         (scheduled, hourly — selects users at local 17:00)
     ├── portfolio-history-backfill.ts   (user-initiated)
     ├── portfolio-value-rollup.ts       (scheduled, nightly 04:00 UTC)
     ├── pricing.ts                      (scheduled, hourly)
-    ├── reconcile-orphaned-user-jobs.ts (scheduled, every minute — sweep stuck rows)
-    ├── reconcile-pending-credentials.ts (scheduled, every minute)
+    ├── reconcile-orphaned-user-jobs.ts (scheduled, every 15 minutes — sweep stuck rows)
+    ├── reconcile-pending-credentials.ts (scheduled, every 15 minutes)
     ├── refresh-account-balance.ts      (user-initiated)
+    ├── rescore-scam-tokens.ts          (scheduled, nightly 02:30 UTC)
     ├── screenshot-parse.ts             (user-initiated)
+    ├── alert-sweep.ts                 (scheduled, daily 09:00 UTC)
+    ├── split-holding-probe.ts          (scheduled, nightly 04:30 UTC)
     ├── stale-sync-probe.ts             (scheduled, hourly)
     ├── token-prices-downsample.ts      (scheduled, nightly 05:00 UTC)
     ├── transfer-linking.ts             (scheduled, nightly 03:45 UTC)
     ├── user-data-delete.ts             (user-initiated)
     ├── wallet-balances.ts              (scheduled, hourly)
-    └── wallet-import.ts                (user-initiated)
+    ├── wallet-import.ts                (user-initiated)
+    └── weekly-digest.ts                (scheduled, Monday 08:00 UTC)
 ```
-
-Single source of truth for scheduled-job cron strings:
-`packages/business/jobs/src/scheduled-jobs/*.ts`. User-job descriptors:
-`packages/business/jobs/src/user-jobs/*.ts`. The
-[`@scani/docs` jobs reference](../../../apps/frontend/docs/src/content/docs/reference/jobs.md)
-mirrors this list with frequency + purpose.
 
 ## Boot flow (load-bearing)
 
@@ -103,7 +103,7 @@ bun dev:worker
 
 ## Deploy
 
-Compiled to a single binary via `bun build --compile`. Runtime image is `debian:bookworm-slim` + `/app/server`. No HTTP port, no healthcheck — the container runtime observes the process's exit status; BullMQ liveness is the signal that the worker is healthy. Deploy the image to any container host.
+Compiled to a single binary via `bun build --compile`. Runtime image is `debian:bookworm-slim` + `/app/server`. No HTTP port, no healthcheck — Fly observes the machine's exit status; BullMQ liveness is the signal that the worker is healthy. Deploys to Fly as `scani-worker` from `fly.toml`.
 
 ## Tests
 

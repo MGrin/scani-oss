@@ -213,7 +213,10 @@ export class UserJobRepository {
         and(
           eq(schema.userJobs.userId, userId),
           isNotNull(schema.userJobs.deadAt),
-          isNull(schema.userJobs.actionTakenAt)
+          isNull(schema.userJobs.actionTakenAt),
+          // Dismissing IS dealing with it — the feed must not ask again
+          // (SC-292). Same reasoning as the `markCancelled` exclusion above.
+          isNull(schema.userJobs.dismissedAt)
         )
       )
       // `created_at` breaks the tie: two jobs killed by the same worker
@@ -286,7 +289,9 @@ export class UserJobRepository {
     transaction?: DatabaseTransaction
   ): Promise<Omit<UserJob, 'result'>[]> {
     const db = this.getDb(transaction);
-    const conditions = [eq(schema.userJobs.userId, userId)];
+    // A dismissed row is hidden, not gone. The user asked for it out of their
+    // list and that is honoured here; `findOneMine` still returns it (SC-292).
+    const conditions = [eq(schema.userJobs.userId, userId), isNull(schema.userJobs.dismissedAt)];
     if (options.state) {
       conditions.push(eq(schema.userJobs.state, options.state));
     }
@@ -413,23 +418,48 @@ export class UserJobRepository {
    * stray click can't drop an active job's row out from under the
    * worker's lifecycle writes.
    */
-  async deleteFailed(
+  /**
+   * The user has cleared a failed job out of their list (SC-292).
+   *
+   * This was a hard DELETE, and that is how two `document-parse` failures on
+   * 2026-08-11 came to have no record at all: four DLQ entries, two documents,
+   * and not one matching row. Every `document-parse` row in the table is
+   * `completed` — not because the job has never failed, but because the rows
+   * that recorded failures were removed.
+   *
+   * Deleting made a dismissal indistinguishable from an upload that never
+   * happened, and the user still holds the document. If they knew the parse
+   * had failed they would upload it again; silence reads as "I already did
+   * that one".
+   *
+   * So the row is kept and stamped. The user still gets the empty failed list
+   * they asked for — `findMine` and `findDeadUnacknowledged` hide dismissed
+   * rows — but `findOneMine` still returns it, so the record is retrievable
+   * rather than destroyed.
+   *
+   * Still gated on `state = 'failed'` and on `dismissed_at IS NULL`: the
+   * second makes it idempotent, and keeps a re-dismissal from overwriting the
+   * original timestamp with a later one.
+   */
+  async dismissFailed(
     userId: string,
     jobId: string,
     transaction?: DatabaseTransaction
   ): Promise<boolean> {
     const db = this.getDb(transaction);
-    const deleted = await db
-      .delete(schema.userJobs)
+    const updated = await db
+      .update(schema.userJobs)
+      .set({ dismissedAt: new Date(), updatedAt: new Date() })
       .where(
         and(
           eq(schema.userJobs.jobId, jobId),
           eq(schema.userJobs.userId, userId),
-          eq(schema.userJobs.state, 'failed')
+          eq(schema.userJobs.state, 'failed'),
+          isNull(schema.userJobs.dismissedAt)
         )
       )
       .returning({ jobId: schema.userJobs.jobId });
-    return deleted.length > 0;
+    return updated.length > 0;
   }
 
   /** Count of in-flight jobs for the top-nav badge. */

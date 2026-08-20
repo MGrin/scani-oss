@@ -203,8 +203,19 @@ export class HistoricalPriceBackfillService {
     alreadyHad: number;
     providerMissing: number;
     providerUsed: string | null;
+    // True when a provider attempt FAILED rather than answering with an
+    // empty range. The caller must not conclude anything about the
+    // token's priceability from a run that never got an answer — see
+    // `attemptFailed` handling in BackfillHistoricalPricesUseCase.
+    attemptFailed: boolean;
   }> {
-    const empty = { inserted: 0, alreadyHad: 0, providerMissing: 0, providerUsed: null };
+    const empty = {
+      inserted: 0,
+      alreadyHad: 0,
+      providerMissing: 0,
+      providerUsed: null,
+      attemptFailed: false,
+    };
     if (neededDays.length === 0) return empty;
 
     const token = await this.tokenRepository.findWithType(tokenId);
@@ -235,10 +246,17 @@ export class HistoricalPriceBackfillService {
     // quote wins. We don't merge across providers because that
     // complicates source attribution — one provider per token-range
     // is the right granularity for "this curve came from X".
+    //
+    // `attemptFailed` accumulates across providers: if ANY of them threw
+    // rather than answering, this run has not established that the token
+    // is unpriceable, no matter how many others answered empty.
+    let attemptFailed = false;
     for (const provider of providers) {
-      const quotes = provider.fetchHistoricalRange
+      const attempt = provider.fetchHistoricalRange
         ? await this.tryRangeFetch(provider, token, from, to, ctx)
         : await this.tryPerDayFetch(provider, token, neededDays, ctx);
+      if (attempt.failed) attemptFailed = true;
+      const quotes = attempt.quotes;
       if (quotes.length === 0) continue;
 
       await this.tokenPriceRepository.bulkUpsertDailyBackfill(
@@ -265,25 +283,32 @@ export class HistoricalPriceBackfillService {
         alreadyHad: 0,
         providerMissing,
         providerUsed: provider.providerKey,
+        attemptFailed,
       };
     }
 
-    return { ...empty, providerMissing: neededDays.length };
+    return { ...empty, providerMissing: neededDays.length, attemptFailed };
   }
 
   // Range fetch via the provider's optional fetchHistoricalRange. One
   // HTTP call returns N quotes covering the requested period.
+  //
+  // `failed` separates "the provider answered, with nothing" from "we
+  // never got an answer". Both used to return `[]` and the caller could
+  // not tell them apart, which is how a malformed request became a
+  // week-long unpriceable cooldown (SC-171).
   private async tryRangeFetch(
     provider: HistoricalPriceProvider,
     token: NonNullable<Awaited<ReturnType<TokenRepository['findById']>>>,
     from: Date,
     to: Date,
     ctx: ProviderContext
-  ): Promise<PriceQuote[]> {
-    if (!provider.fetchHistoricalRange) return [];
+  ): Promise<ProviderAttempt> {
+    if (!provider.fetchHistoricalRange) return { quotes: [], failed: false };
     try {
       const result = await provider.fetchHistoricalRange(token, from, to, ctx);
-      return Array.isArray(result) ? result.filter((q): q is PriceQuote => Boolean(q)) : [];
+      const quotes = Array.isArray(result) ? result.filter((q): q is PriceQuote => Boolean(q)) : [];
+      return { quotes, failed: false };
     } catch (err) {
       this.logger.warn(
         {
@@ -293,9 +318,9 @@ export class HistoricalPriceBackfillService {
           to,
           error: err instanceof Error ? err.message : err,
         },
-        'Provider range fetch threw; falling through'
+        'Provider range fetch threw; falling through without judging the token'
       );
-      return [];
+      return { quotes: [], failed: true };
     }
   }
 
@@ -303,21 +328,42 @@ export class HistoricalPriceBackfillService {
   // per-day calls in parallel within the provider's own rate limiter
   // (every provider wraps its fetch in `limiter.execute`), so this is
   // automatically throttled — no need for an outer concurrency cap.
+  //
+  // A single rejected day is enough to set `failed`: the run then knows
+  // it saw an error, and declines to conclude the token is unpriceable.
   private async tryPerDayFetch(
     provider: HistoricalPriceProvider,
     token: NonNullable<Awaited<ReturnType<TokenRepository['findById']>>>,
     days: Date[],
     ctx: ProviderContext
-  ): Promise<PriceQuote[]> {
+  ): Promise<ProviderAttempt> {
     const settled = await Promise.allSettled(
       days.map((day) => provider.fetchHistoricalPrice(token, day, ctx))
     );
     const out: PriceQuote[] = [];
+    let failed = false;
     for (const result of settled) {
-      if (result.status === 'fulfilled' && result.value) out.push(result.value);
+      if (result.status === 'fulfilled') {
+        if (result.value) out.push(result.value);
+      } else {
+        failed = true;
+      }
     }
-    return out;
+    if (failed) {
+      this.logger.warn(
+        { provider: provider.providerKey, tokenId: token.id, days: days.length },
+        'Per-day fetch had rejections; not judging the token from this run'
+      );
+    }
+    return { quotes: out, failed };
   }
+}
+
+// One provider's answer to a range request: what it returned, and
+// whether it returned at all.
+interface ProviderAttempt {
+  quotes: PriceQuote[];
+  failed: boolean;
 }
 
 // Restrict the historical-pricer list to providers whose asset

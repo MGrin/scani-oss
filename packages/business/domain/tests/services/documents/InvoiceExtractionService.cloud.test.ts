@@ -7,6 +7,11 @@ import { ProviderRegistry } from '@scani/providers/core/registry';
 import { Container } from 'typedi';
 import { InvoiceExtractionService } from '../../../src/services/documents/InvoiceExtractionService';
 import { INVOICE_EXTRACTION_PROMPT } from '../../../src/services/documents/invoicePrompt';
+import { restoreContainerAfterAll } from '../../../test/helpers/container';
+
+// Container stubs are process-global; put back whatever this file changes
+// so no later test file resolves them (SC-448).
+restoreContainerAfterAll();
 
 // Tier 2/3 runs the exact same service against `CloudAIProvider` instead of
 // `OpenAIProvider`. These tests drive the real proxy — only the wire is a

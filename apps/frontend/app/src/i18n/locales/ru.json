@@ -1,0 +1,987 @@
+{
+  "$meta": {
+    "name": "Russian",
+    "nativeName": "Русский"
+  },
+  "auth": {
+    "signIn": {
+      "title": "Добро пожаловать",
+      "subtitle": "Введите почту, чтобы войти или создать аккаунт",
+      "emailLabel": "Почта",
+      "emailPlaceholder": "Введите адрес почты",
+      "emailRequired": "Укажите адрес почты",
+      "emailInvalid": "Введите корректный адрес почты",
+      "submit": "Продолжить по почте",
+      "offline": "Вы офлайн. Мы отправим код, как только связь вернётся.",
+      "hintCode": "Мы отправим 6-значный код для входа.",
+      "hintLink": "Мы отправим защищённую ссылку для входа.",
+      "newAccount": "Впервые в Scani? Аккаунт создастся автоматически."
+    },
+    "code": {
+      "title": "Введите код подтверждения",
+      "sentTo": "Мы отправили 6-значный код на {{email}}",
+      "differentEmail": "Войти с другой почтой"
+    },
+    "linkSent": {
+      "title": "Проверьте почту",
+      "subtitle": "Мы отправили вам ссылку для входа",
+      "body": "Откройте ссылку из письма, чтобы войти в аккаунт. Если вы здесь впервые, аккаунт создастся автоматически.",
+      "resend": "Отправить письмо ещё раз"
+    },
+    "callback": {
+      "signingInTitle": "Выполняем вход…",
+      "signingInSubtitle": "Подождите, мы проверяем вашу ссылку",
+      "signingInBody": "Это займёт всего мгновение.",
+      "successTitle": "Добро пожаловать!",
+      "successSubtitle": "Вы успешно вошли",
+      "successBody": "Перенаправляем вас в сводку…",
+      "errorTitle": "Ошибка входа",
+      "errorSubtitle": "Не удалось выполнить вход",
+      "tryAgain": "Попробовать снова",
+      "support": "Если проблема повторяется, напишите в поддержку.",
+      "linkFailed": "Не удалось войти",
+      "unreachable": "Не удалось связаться с сервером, чтобы завершить вход. Проверьте соединение и откройте ссылку ещё раз.",
+      "expired": "Срок действия ссылки истёк, или её не удалось проверить. Запросите новую."
+    },
+    "failure": {
+      "offline": "Вы офлайн, поэтому мы не смогли связаться со Scani. Мы попробуем снова сами, как только связь вернётся.",
+      "timeout": "Scani слишком долго не отвечает. Проверьте соединение и нажмите «Продолжить» ещё раз.",
+      "unreachable": "Не удалось связаться со Scani. Проверьте соединение и нажмите «Продолжить» ещё раз.",
+      "server": "Что-то пошло не так. Попробуйте снова."
+    }
+  },
+  "currency": {
+    "unknownName": "Валюта {{symbol}}"
+  },
+  "vendors": {
+    "paidWindow_one": "Оплачено за {{count}} месяц",
+    "paidWindow_few": "Оплачено за {{count}} месяца",
+    "paidWindow_many": "Оплачено за {{count}} месяцев",
+    "paidWindow_other": "Оплачено за {{count}} месяца",
+    "receivedWindow_one": "Получено за {{count}} месяц",
+    "receivedWindow_few": "Получено за {{count}} месяца",
+    "receivedWindow_many": "Получено за {{count}} месяцев",
+    "receivedWindow_other": "Получено за {{count}} месяца",
+    "committedPerMonth": "Обязательства в месяц",
+    "expectedPerMonth": "Ожидается в месяц",
+    "paidAllTime": "Оплачено за всё время",
+    "receivedAllTime": "Получено за всё время",
+    "withUnconverted": "{{base}} + {{rest}} без пересчёта",
+    "unpriced_one": "{{count}} платёж без записанной суммы не вошёл в этот итог.",
+    "unpriced_few": "{{count}} платежа без записанной суммы не вошли в этот итог.",
+    "unpriced_many": "{{count}} платежей без записанной суммы не вошли в этот итог.",
+    "unpriced_other": "{{count}} платежей без записанной суммы не вошли в этот итог.",
+    "kind": {
+      "income": "Поступления",
+      "both": "Расходы и поступления",
+      "unclassified": "Направление не указано"
+    }
+  },
+  "nav": {
+    "sections": {
+      "portfolio": "Портфель",
+      "organization": "Структура",
+      "activity": "Активность",
+      "payments": "Платежи"
+    },
+    "home": "Главная",
+    "holdings": "Позиции",
+    "accounts": "Счета",
+    "institutions": "Организации",
+    "groups": "Группы",
+    "vaults": "Копилки",
+    "tokens": "Токены",
+    "jobs": "Задачи",
+    "settings": "Настройки",
+    "signOut": "Выйти",
+    "more": "Ещё",
+    "add": "Добавить",
+    "addData": "Добавить данные",
+    "addDataButton": "Добавить данные",
+    "paymentsOverview": "Обзор",
+    "recurringPayments": "Регулярные платежи",
+    "vendors": "Контрагенты",
+    "review": "Разбор",
+    "files": "Файлы",
+    "payments": "Платежи",
+    "money": "Деньги"
+  },
+  "settings": {
+    "title": "Настройки",
+    "subtitle": "Управление предпочтениями",
+    "profile": "Профиль",
+    "name": "Имя",
+    "namePlaceholder": "Ваше имя",
+    "email": "Эл. почта",
+    "preferences": "Предпочтения",
+    "baseCurrency": "Базовая валюта",
+    "language": "Язык",
+    "languageHint": "Переводы делает сообщество. Недостающие строки показываются по-английски.",
+    "region": "Регион",
+    "regionAuto": "Следовать языку интерфейса",
+    "regionHint": "Даты и числа отображаются так: {{sample}}.",
+    "saving": "Сохранение…",
+    "autoSave": "Изменения сохранятся автоматически",
+    "account": "Учётная запись",
+    "signOut": "Выйти"
+  },
+  "ui": {
+    "dataView": {
+      "noun": {
+        "holdings_one": "позиция",
+        "holdings_few": "позиции",
+        "holdings_many": "позиций",
+        "holdings_other": "позиции",
+        "holdings_counted_one": "{{count}} позиция",
+        "holdings_counted_few": "{{count}} позиции",
+        "holdings_counted_many": "{{count}} позиций",
+        "holdings_counted_other": "{{count}} позиции",
+        "payments_one": "платёж",
+        "payments_few": "платежа",
+        "payments_many": "платежей",
+        "payments_other": "платежа",
+        "payments_counted_one": "{{count}} платёж",
+        "payments_counted_few": "{{count}} платежа",
+        "payments_counted_many": "{{count}} платежей",
+        "payments_counted_other": "{{count}} платежа",
+        "vendors_one": "контрагент",
+        "vendors_few": "контрагента",
+        "vendors_many": "контрагентов",
+        "vendors_other": "контрагента",
+        "vendors_counted_one": "{{count}} контрагент",
+        "vendors_counted_few": "{{count}} контрагента",
+        "vendors_counted_many": "{{count}} контрагентов",
+        "vendors_counted_other": "{{count}} контрагента",
+        "accounts_one": "счёт",
+        "accounts_few": "счёта",
+        "accounts_many": "счетов",
+        "accounts_other": "счёта",
+        "accounts_counted_one": "{{count}} счёт",
+        "accounts_counted_few": "{{count}} счёта",
+        "accounts_counted_many": "{{count}} счетов",
+        "accounts_counted_other": "{{count}} счёта",
+        "institutions_one": "организация",
+        "institutions_few": "организации",
+        "institutions_many": "организаций",
+        "institutions_other": "организации",
+        "institutions_counted_one": "{{count}} организация",
+        "institutions_counted_few": "{{count}} организации",
+        "institutions_counted_many": "{{count}} организаций",
+        "institutions_counted_other": "{{count}} организации",
+        "groups_one": "группа",
+        "groups_few": "группы",
+        "groups_many": "групп",
+        "groups_other": "группы",
+        "groups_counted_one": "{{count}} группа",
+        "groups_counted_few": "{{count}} группы",
+        "groups_counted_many": "{{count}} групп",
+        "groups_counted_other": "{{count}} группы",
+        "vaults_one": "копилка",
+        "vaults_few": "копилки",
+        "vaults_many": "копилок",
+        "vaults_other": "копилки",
+        "vaults_counted_one": "{{count}} копилка",
+        "vaults_counted_few": "{{count}} копилки",
+        "vaults_counted_many": "{{count}} копилок",
+        "vaults_counted_other": "{{count}} копилки",
+        "jobs_one": "задача",
+        "jobs_few": "задачи",
+        "jobs_many": "задач",
+        "jobs_other": "задачи",
+        "jobs_counted_one": "{{count}} задача",
+        "jobs_counted_few": "{{count}} задачи",
+        "jobs_counted_many": "{{count}} задач",
+        "jobs_counted_other": "{{count}} задачи",
+        "files_one": "файл",
+        "files_few": "файла",
+        "files_many": "файлов",
+        "files_other": "файла",
+        "files_counted_one": "{{count}} файл",
+        "files_counted_few": "{{count}} файла",
+        "files_counted_many": "{{count}} файлов",
+        "files_counted_other": "{{count}} файла",
+        "integrations_one": "интеграция",
+        "integrations_few": "интеграции",
+        "integrations_many": "интеграций",
+        "integrations_other": "интеграции",
+        "integrations_counted_one": "{{count}} интеграция",
+        "integrations_counted_few": "{{count}} интеграции",
+        "integrations_counted_many": "{{count}} интеграций",
+        "integrations_counted_other": "{{count}} интеграции",
+        "reviewItems_one": "пункт",
+        "reviewItems_few": "пункта",
+        "reviewItems_many": "пунктов",
+        "reviewItems_other": "пункта",
+        "reviewItems_counted_one": "{{count}} пункт",
+        "reviewItems_counted_few": "{{count}} пункта",
+        "reviewItems_counted_many": "{{count}} пунктов",
+        "reviewItems_counted_other": "{{count}} пункта",
+        "transfers_one": "перевод",
+        "transfers_few": "перевода",
+        "transfers_many": "переводов",
+        "transfers_other": "перевода",
+        "transfers_counted_one": "{{count}} перевод",
+        "transfers_counted_few": "{{count}} перевода",
+        "transfers_counted_many": "{{count}} переводов",
+        "transfers_counted_other": "{{count}} перевода",
+        "hiddenHoldings_one": "скрытая позиция",
+        "hiddenHoldings_few": "скрытые позиции",
+        "hiddenHoldings_many": "скрытых позиций",
+        "hiddenHoldings_other": "скрытой позиции",
+        "hiddenHoldings_counted_one": "{{count}} скрытая позиция",
+        "hiddenHoldings_counted_few": "{{count}} скрытые позиции",
+        "hiddenHoldings_counted_many": "{{count}} скрытых позиций",
+        "hiddenHoldings_counted_other": "{{count}} скрытой позиции",
+        "customTokens_one": "пользовательский токен",
+        "customTokens_few": "пользовательских токена",
+        "customTokens_many": "пользовательских токенов",
+        "customTokens_other": "пользовательского токена",
+        "customTokens_counted_one": "{{count}} пользовательский токен",
+        "customTokens_counted_few": "{{count}} пользовательских токена",
+        "customTokens_counted_many": "{{count}} пользовательских токенов",
+        "customTokens_counted_other": "{{count}} пользовательского токена"
+      },
+      "accounts": {
+        "col": {
+          "account": "Счёт",
+          "holdings": "Позиции",
+          "institution": "Организация",
+          "lastSynced": "Синхронизация",
+          "type": "Тип",
+          "value": "Стоимость"
+        },
+        "config": {
+          "search": "Поиск"
+        },
+        "empty": {
+          "anAccountIsCreatedForYou": "Счёт создаётся сам, когда вы подключаете интеграцию или загружаете выписку.",
+          "noAccountsYet": "Счетов пока нет"
+        },
+        "filter": {
+          "contents": "Содержимое",
+          "group": "Группа",
+          "institution": "Организация",
+          "type": "Тип"
+        },
+        "group": {
+          "institution": "Организация",
+          "type": "Тип"
+        },
+        "sort": {
+          "holdings": "Позиции",
+          "name": "Название",
+          "value": "Стоимость"
+        },
+        "option": {
+          "holdsSomething": "Есть содержимое",
+          "empty": "Пусто"
+        }
+      },
+      "answeredTransfers": {
+        "col": {
+          "answer": "Ответ",
+          "answered": "Отвечено",
+          "from": "Откуда",
+          "left": "Ушло",
+          "when": "Когда"
+        },
+        "config": {
+          "searchAnsweredTransfers": "Поиск по отвеченным переводам"
+        },
+        "empty": {
+          "answersYouGiveInTheTransfer": "Ответы, которые вы даёте в очереди переводов, попадают сюда — можно вернуться и изменить любой.",
+          "noTransfersAnsweredYet": "Ни на один перевод пока не отвечено"
+        },
+        "filter": {
+          "answered": "Отвечено"
+        },
+        "sort": {
+          "answered": "Отвечено",
+          "asset": "Актив",
+          "when": "Когда"
+        }
+      },
+      "customTokens": {
+        "col": {
+          "price": "Цена",
+          "priceUpdated": "Цена обновлена",
+          "token": "Токен",
+          "type": "Тип"
+        },
+        "config": {
+          "searchCustomTokens": "Поиск по пользовательским токенам"
+        },
+        "empty": {
+          "createOneForAnAssetNo": "Создайте его для актива, который не отслеживает ни один поставщик цен, — доли в частной компании, физического имущества. Токен и его цена видны всем пользователям Scani.",
+          "noCustomTokensYet": "Пользовательских токенов пока нет"
+        },
+        "filter": {
+          "type": "Тип"
+        },
+        "group": {
+          "type": "Тип"
+        },
+        "sort": {
+          "priceUpdated": "Цена обновлена",
+          "symbol": "Символ"
+        }
+      },
+      "files": {
+        "col": {
+          "invoices": "Инвойсы",
+          "kind": "Вид",
+          "name": "Название",
+          "size": "Размер",
+          "uploaded": "Загружен"
+        },
+        "config": {
+          "searchFiles": "Поиск по файлам"
+        },
+        "empty": {
+          "invoicesScreenshotsAndStatementFilesYou": "Инвойсы, скриншоты и файлы выписок, которые вы загружаете, хранятся здесь вместе со всем, что удалось из них прочитать.",
+          "noFilesYet": "Файлов пока нет"
+        },
+        "filter": {
+          "invoices": "Инвойсы",
+          "kind": "Вид"
+        },
+        "group": {
+          "invoices": "Инвойсы",
+          "kind": "Вид"
+        },
+        "sort": {
+          "kind": "Вид",
+          "name": "Название",
+          "size": "Размер",
+          "uploaded": "Загружен"
+        }
+      },
+      "groups": {
+        "col": {
+          "accounts": "Счета",
+          "group": "Группа",
+          "holdings": "Позиции",
+          "value": "Стоимость"
+        },
+        "config": {
+          "searchGroups": "Поиск по группам",
+          "value": "Стоимость"
+        },
+        "empty": {
+          "aGroupIsYourOwnLabel": "Группа — это ваша собственная метка на позициях и счетах: «пенсия», «облагаемое налогом», «совместное».",
+          "noGroupsYet": "Групп пока нет"
+        },
+        "filter": {
+          "members": "Участники"
+        },
+        "sort": {
+          "accounts": "Счета",
+          "holdings": "Позиции",
+          "name": "Название",
+          "value": "Стоимость"
+        },
+        "option": {
+          "hasMembers": "Есть участники",
+          "empty": "Пусто"
+        }
+      },
+      "hiddenHoldings": {
+        "col": {
+          "account": "Счёт",
+          "balance": "Остаток",
+          "reason": "Причина",
+          "token": "Токен"
+        },
+        "config": {
+          "searchHidden": "Поиск по скрытым"
+        },
+        "empty": {
+          "everythingYouOwnIsCountedOnYourDashboard": "Всё, чем вы владеете, учтено в сводке.",
+          "nothingIsHidden": "Ничего не скрыто"
+        },
+        "filter": {
+          "reason": "Причина"
+        },
+        "group": {
+          "institution": "Организация"
+        },
+        "sort": {
+          "balance": "Остаток",
+          "symbol": "Символ"
+        },
+        "option": {
+          "hiddenByYou": "Скрыто вами",
+          "likelyScam": "Похоже на скам"
+        }
+      },
+      "holdings": {
+        "col": {
+          "account": "Счёт",
+          "amount": "Количество",
+          "gainLoss": "Прибыль / убыток",
+          "holding": "Позиция",
+          "institution": "Организация",
+          "price": "Цена",
+          "value": "Стоимость"
+        },
+        "config": {
+          "searchHoldings": "Поиск по позициям"
+        },
+        "empty": {
+          "description": "Подключите биржу, загрузите выписку или добавьте позицию вручную — всё это попадёт сюда.",
+          "title": "Позиций пока нет"
+        },
+        "filter": {
+          "account": "Счёт",
+          "group": "Группа",
+          "institution": "Организация",
+          "type": "Тип",
+          "quality": "Качество данных"
+        },
+        "groupBy": {
+          "account": "Счёт",
+          "institution": "Организация",
+          "type": "Тип"
+        },
+        "sort": {
+          "amount": "Количество",
+          "pnl": "Прибыль / убыток",
+          "price": "Цена",
+          "symbol": "Символ",
+          "value": "Стоимость"
+        },
+        "qualityOption": {
+          "duplicateSymbol": "Символ встречается больше чем у одного токена",
+          "lookalike": "Символ подделан под другой",
+          "zeroBalance": "Нулевой остаток",
+          "noRecentPrice": "Нет свежей цены",
+          "noPriceSource": "Нет источника цены, которым можно пользоваться",
+          "negativeOpening": "Отрицательный начальный остаток",
+          "noCoverage": "Нет записи о покрытии"
+        }
+      },
+      "institutions": {
+        "col": {
+          "accounts": "Счета",
+          "institution": "Организация",
+          "type": "Тип",
+          "value": "Стоимость"
+        },
+        "config": {
+          "searchInstitutions": "Поиск по организациям"
+        },
+        "empty": {
+          "anInstitutionAppearsHereTheFirst": "Организация появляется здесь в тот момент, когда импорт или интеграция впервые приносит из неё счёт.",
+          "noInstitutionsYet": "Организаций пока нет"
+        },
+        "filter": {
+          "type": "Тип"
+        },
+        "group": {
+          "type": "Тип"
+        },
+        "sort": {
+          "accounts": "Счета",
+          "name": "Название",
+          "value": "Стоимость"
+        }
+      },
+      "integrations": {
+        "col": {
+          "kind": "Вид",
+          "service": "Сервис",
+          "whatItSyncs": "Что синхронизирует"
+        },
+        "config": {
+          "search": "Поиск"
+        },
+        "empty": {
+          "noServicesToConnect": "Нет сервисов для подключения",
+          "scaniShipsItsIntegrationsWithThe": "Scani поставляет интеграции вместе с приложением, поэтому пустой список означает, что каталог не загрузился, а не что подключать нечего."
+        },
+        "filter": {
+          "kind": "Вид"
+        },
+        "group": {
+          "kind": "Вид"
+        },
+        "sort": {
+          "name": "Название"
+        }
+      },
+      "jobs": {
+        "col": {
+          "detail": "Подробности",
+          "job": "Задача",
+          "started": "Начата",
+          "status": "Статус"
+        },
+        "config": {
+          "searchJobs": "Поиск по задачам"
+        },
+        "empty": {
+          "importsParsesAndPriceRefreshesRun": "Импорт, разбор файлов и обновление цен идут в фоне и отчитываются здесь по ходу работы.",
+          "noBackgroundJobsYet": "Фоновых задач пока нет"
+        },
+        "filter": {
+          "status": "Статус"
+        },
+        "group": {
+          "status": "Статус"
+        },
+        "sort": {
+          "started": "Начата",
+          "status": "Статус"
+        }
+      },
+      "kitchenSink": {
+        "col": {
+          "24h": "24 ч",
+          "holding": "Позиция",
+          "institution": "Организация",
+          "price": "Цена",
+          "units": "Единицы",
+          "value": "Стоимость"
+        },
+        "config": {
+          "searchHoldings": "Поиск по позициям"
+        },
+        "empty": {
+          "connectAnExchangeOrImportAStatementAndYourPositionsAppearHere": "Подключите биржу или загрузите выписку — и ваши позиции появятся здесь.",
+          "noHoldingsYet": "Позиций пока нет"
+        },
+        "filter": {
+          "institution": "Организация",
+          "type": "Тип"
+        },
+        "group": {
+          "institution": "Организация",
+          "type": "Тип"
+        },
+        "sort": {
+          "change": "Изменение",
+          "name": "Название",
+          "value": "Стоимость"
+        }
+      },
+      "payments": {
+        "col": {
+          "amount": "Сумма",
+          "cadence": "Периодичность",
+          "direction": "Направление",
+          "status": "Статус",
+          "vendor": "Контрагент"
+        },
+        "config": {
+          "searchByVendor": "Поиск по контрагенту"
+        },
+        "empty": {
+          "addABillOrRecurringIncomeAndScaniTracksEveryDateItFallsDue": "Добавьте счёт к оплате или регулярное поступление — и Scani будет следить за каждой датой, когда наступает срок.",
+          "noRecurringPaymentsYet": "Регулярных платежей пока нет"
+        },
+        "filter": {
+          "direction": "Направление",
+          "status": "Статус",
+          "vendor": "Контрагент"
+        },
+        "group": {
+          "direction": "Направление",
+          "status": "Статус"
+        },
+        "sort": {
+          "amount": "Сумма",
+          "status": "Статус",
+          "vendor": "Контрагент"
+        },
+        "option": {
+          "active": "Активен",
+          "paused": "Приостановлен",
+          "ended": "Завершён",
+          "bill": "Расход",
+          "income": "Поступление"
+        }
+      },
+      "review": {
+        "col": {
+          "amount": "Сумма",
+          "arrived": "Поступило",
+          "detail": "Подробности",
+          "item": "Пункт"
+        },
+        "config": {
+          "searchReview": "Поиск по разбору"
+        },
+        "empty": {
+          "importsLandHereWhenTheyFinish": "Импорт попадает сюда, когда он закончен и ждёт вашего подтверждения, прежде чем его позиции пойдут в счёт.",
+          "nothingNeedsYourReview": "Ничего не ждёт вашего разбора"
+        },
+        "filter": {
+          "type": "Тип"
+        },
+        "group": {
+          "type": "Тип"
+        },
+        "sort": {
+          "arrived": "Поступило",
+          "item": "Пункт"
+        }
+      },
+      "transferReview": {
+        "col": {
+          "from": "Откуда",
+          "ifItWasASale": "Если это была продажа",
+          "left": "Ушло",
+          "when": "Когда",
+          "whyItIsHere": "Почему здесь"
+        },
+        "config": {
+          "searchTransfers": "Поиск по переводам"
+        },
+        "empty": {
+          "everyTransferIsAccountedFor": "Все переводы объяснены",
+          "moneyMovingBetweenYourOwnAccounts": "Деньги, которые ходят между вашими собственными счетами, сопоставляются автоматически. Всё, с чем сопоставление не справилось само, попадает сюда — на ваш ответ."
+        },
+        "sort": {
+          "asset": "Актив",
+          "value": "Стоимость",
+          "when": "Когда"
+        }
+      },
+      "vaults": {
+        "col": {
+          "progress": "Прогресс",
+          "saved": "Накоплено",
+          "target": "Цель",
+          "vault": "Копилка"
+        },
+        "config": {
+          "searchVaults": "Поиск по копилкам"
+        },
+        "empty": {
+          "aVaultIsASavingsGoal": "Копилка — это цель накопления: дайте ей название, задайте сумму и привяжите позиции, которые в неё идут.",
+          "noVaultsYet": "Копилок пока нет"
+        },
+        "filter": {
+          "status": "Статус"
+        },
+        "sort": {
+          "name": "Название",
+          "progress": "Прогресс",
+          "saved": "Накоплено",
+          "target": "Цель"
+        },
+        "option": {
+          "stillSaving": "Ещё копится",
+          "targetReached": "Цель достигнута"
+        }
+      },
+      "vendors": {
+        "col": {
+          "category": "Категория",
+          "kind": "Вид",
+          "payments": "Платежи",
+          "vendor": "Контрагент",
+          "perMonth": "В месяц"
+        },
+        "config": {
+          "searchVendors": "Поиск по контрагентам"
+        },
+        "empty": {
+          "aVendorIsCreatedForYou": "Контрагент создаётся сам, когда вы впервые указываете его в платеже. Можно добавить и здесь.",
+          "noVendorsYet": "Контрагентов пока нет"
+        },
+        "group": {
+          "billsIncome": "Расходы / поступления",
+          "category": "Категория"
+        },
+        "sort": {
+          "name": "Название",
+          "payments": "Платежи"
+        }
+      },
+      "upcoming": {
+        "empty": {
+          "nothingDue_one": "В ближайший {{count}} день ничего не предстоит",
+          "nothingDue_few": "В ближайшие {{count}} дня ничего не предстоит",
+          "nothingDue_many": "В ближайшие {{count}} дней ничего не предстоит",
+          "nothingDue_other": "В ближайшие {{count}} дня ничего не предстоит",
+          "noPayments": "Регулярных платежей пока нет",
+          "outsideWindow": "Сроки ваших постоянных платежей выпадают за пределы этого окна.",
+          "addOne": "Добавьте счёт к оплате или регулярное поступление — и его ближайшие даты появятся здесь."
+        }
+      },
+      "itemCount_one": "{{count}} пункт",
+      "itemCount_few": "{{count}} пункта",
+      "itemCount_many": "{{count}} пунктов",
+      "itemCount_other": "{{count}} пункта",
+      "nameList": {
+        "all": "{{head}} и {{last}}",
+        "more": "{{head}} и ещё {{count}}"
+      },
+      "toolbar": {
+        "refine": "Настроить",
+        "refineAria": "Фильтры, сортировка и группировка",
+        "select": "Выбрать",
+        "done": "Готово",
+        "export": "Выгрузить",
+        "search": "Поиск: {{noun}}",
+        "filteredOf": "{{shown}} из {{counted}}",
+        "loadedSoFar": "загружено {{counted}}",
+        "filteredOfLoaded": "{{shown}} из {{counted}} загруженных",
+        "loadMore": "Загрузить ещё",
+        "loadingMore": "Загружаем ещё…",
+        "selected": "выбрано {{counted}}",
+        "removeFilter": "Убрать фильтр {{label}}: {{value}}"
+      },
+      "table": {
+        "clearSelection": "Снять выделение",
+        "selectAll": "Выбрать все",
+        "selectRow": "Выбрать {{name}}",
+        "sortBy": "Сортировать по: {{header}}",
+        "rowCount_one": "{{count}} строка",
+        "rowCount_few": "{{count}} строки",
+        "rowCount_many": "{{count}} строк",
+        "rowCount_other": "{{count}} строки"
+      },
+      "empty": {
+        "clearSearchAndFilters": "Сбросить поиск и фильтры",
+        "noMatchSearch": "{{noun}} — ничего не подходит под «{{search}}»",
+        "noMatchFilters": "{{noun}} — ничего не подходит под эти фильтры",
+        "noMatchLoaded": "Среди загруженного совпадений нет",
+        "loadedOnly": "Поиск и фильтры видят только {{counted}} загруженных. Загрузите ещё, чтобы расширить их.",
+        "filteredBy": "Отфильтровано по: {{list}}."
+      },
+      "bulk": {
+        "delete": "Удалить",
+        "deleteCount": "Удалить {{counted}}"
+      },
+      "refine": {
+        "title": "Настроить",
+        "filter": "Фильтр",
+        "sortBy": "Сортировать по",
+        "groupBy": "Группировать по",
+        "any": "Любое",
+        "noGrouping": "Без группировки",
+        "lowToHigh": "От меньшего к большему",
+        "highToLow": "От большего к меньшему",
+        "clearAll": "Сбросить всё",
+        "done": "Готово",
+        "expand": "Показать все варианты",
+        "collapse": "Показать меньше вариантов",
+        "close": "Закрыть настройку",
+        "liveCount": "{{counted}} · изменения применяются сразу"
+      },
+      "export": {
+        "title": "Выгрузка",
+        "whatToExport": "Что выгружать",
+        "format": "Формат",
+        "separator": "Разделитель",
+        "privacy": "Приватность",
+        "hideAmounts": "Скрыть суммы",
+        "hideAmountsDetail": "Убирает каждую колонку со стоимостью, прибылью/убытком и пересчётом. В файле будет сказано, что их удержали.",
+        "cancel": "Отмена",
+        "preparing": "Готовим…",
+        "expand": "Показать все варианты",
+        "collapse": "Показать меньше вариантов",
+        "close": "Закрыть выгрузку",
+        "separatorComma": "Запятая",
+        "separatorCommaDetail": "a,b,c — обычный выбор",
+        "separatorSemicolon": "Точка с запятой",
+        "separatorSemicolonDetail": "a;b;c — для таблицы с европейскими настройками",
+        "formatCsv": "CSV (.csv)",
+        "formatCsvDetail": "Обычный текст. Откроется где угодно, импортируется во что угодно.",
+        "formatXlsx": "Excel (.xlsx)",
+        "formatXlsxDetail": "Числа останутся числами, заголовки не уедут при прокрутке.",
+        "formatPdf": "PDF (.pdf)",
+        "formatPdfDetail": "Выписка, которую можно отправить бухгалтеру, в банк или арендодателю.",
+        "onScreenNow": "То, что сейчас на экране",
+        "ignoresFilters": "Не учитывает фильтры и поиск",
+        "nothingTitle": "Выгружать нечего",
+        "nothingFiltered": "Под эти фильтры ничего не подходит, поэтому в файл класть нечего.",
+        "nothingAtAll": "Здесь пока ничего нет, поэтому в файл класть нечего.",
+        "action": "Выгрузить {{counted}}",
+        "scopeThese": "Эти {{counted}}",
+        "scopeAllShort": "Все {{counted}}",
+        "scopeAllLoadedShort": "Все загруженные {{counted}}",
+        "scopeAll": "Все {{counted}}",
+        "scopeAllLoaded": "Все {{counted}}, загруженные к этому моменту",
+        "scopeFiltered": "С фильтрами — {{shown}} из {{counted}}",
+        "scopeFilteredLoaded": "С фильтрами — {{shown}} из {{counted}}, загруженных к этому моменту",
+        "loadedOnly": "Только загруженные строки — остальные никогда не запрашивались",
+        "partialSet": "Не весь набор",
+        "partialSetDetail": "Выгружены только {{counted}}, загруженные на экране.",
+        "errorContext": "Выгружаем: {{noun}}",
+        "groupedBy": "Сгруппировано по",
+        "search": "Поиск",
+        "sortedBy": "Сортировка по",
+        "sortedAscending": "{{label}}, от меньшего к большему",
+        "sortedDescending": "{{label}}, от большего к меньшему",
+        "subjectDescription": "Скачайте файлом, который принадлежит вам: {{subject}}."
+      }
+    },
+    "brand": {
+      "logoAlt": "Логотип {{name}}"
+    },
+    "toast": {
+      "errorTitle": "Что-то пошло не так",
+      "successTitle": "Готово",
+      "unknownError": "Неизвестная ошибка",
+      "viewDetails": "Подробности",
+      "dismiss": "Скрыть",
+      "viewDetailsAlt": "Посмотреть подробности ошибки в консоли",
+      "detail": "{{context}}: {{message}}"
+    },
+    "export": {
+      "pdfUnavailable": "Выгрузка в PDF здесь недоступна",
+      "nothingToExport": "Выгружать нечего",
+      "pdfTooManyRows": "В PDF помещается не больше {{max}} строк, а здесь {{rows}} — выгрузите CSV или Excel либо сузьте диапазон.",
+      "xlsxChunk": "модуль записи Excel",
+      "workbook": {
+        "currency": "{{header}} ({{currency}})",
+        "currencyConverted": "{{header}} ({{currency}}, пересчёт)",
+        "currencyColumn": "Валюта: {{header}}"
+      },
+      "provenance": {
+        "exportedFrom": "Выгружено из",
+        "subject": "Предмет",
+        "scope": "Охват",
+        "generated": "Сформировано",
+        "rows": "Строк",
+        "amounts": "Суммы",
+        "withheld": "Удержаны — каждая колонка со стоимостью, прибылью/убытком и пересчётом убрана намеренно",
+        "aboutSheet": "О выгрузке",
+        "field": "Поле",
+        "value": "Значение"
+      },
+      "download": {
+        "shared": "Отправлено в меню «Поделиться»",
+        "sharedDetail": "Выберите «Сохранить в файлы», чтобы оставить {{fileName}}.",
+        "saved": "Выгружено",
+        "savedDetail": "{{subject}} — в файле {{fileName}}"
+      }
+    },
+    "errors": {
+      "offline": {
+        "title": "Не удалось связаться с сервером",
+        "detail": "Проверьте соединение. Ничего не изменилось."
+      },
+      "session": {
+        "title": "Ваша сессия закончилась",
+        "detail": "Войдите снова, чтобы увидеть {{subject}}."
+      },
+      "timeout": {
+        "title": "Сервер отвечал слишком долго",
+        "detail": "Запрос «{{verb}} {{subject}}» не уложился во время. Ваши данные не тронуты."
+      },
+      "rateLimit": {
+        "title": "Слишком много запросов",
+        "detail": "Сервер попросил сбавить темп. Подождите немного и повторите."
+      },
+      "generic": {
+        "title": "Не удалось {{verb}} {{subject}}",
+        "detail": "Сервер вернул ошибку. Ваши данные не тронуты."
+      },
+      "rejected": {
+        "detail": "{{reason}}. Ваши данные не тронуты."
+      },
+      "chunk": {
+        "message": "Не удалось загрузить {{chunk}}. Проверьте соединение и попробуйте снова — если приложение обновилось, пока эта вкладка была открыта, перезагрузка страницы это исправит.",
+        "title": "Не удалось загрузить {{chunk}}",
+        "detail": "Часть приложения не догрузилась. Обычно это оборвавшееся соединение или обновление, которое вышло, пока вкладка была открыта.",
+        "reload": "Перезагрузить страницу"
+      },
+      "crash": {
+        "title": "Что-то пошло не так",
+        "detail": "Произошла непредвиденная ошибка. Ваши данные не тронуты.",
+        "home": "На главную"
+      },
+      "tryAgain": "Попробовать снова",
+      "retry": "Повторить",
+      "verb": {
+        "load": "загрузить",
+        "create": "создать",
+        "save": "сохранить",
+        "connect": "подключить"
+      }
+    },
+    "magicCode": {
+      "prompt": "Введите код из 6 цифр, пришедший на почту",
+      "verify": "Проверить код",
+      "resend": "Отправить код заново",
+      "digit": "Цифра {{index}}",
+      "expiry": "Код действует 10 минут"
+    },
+    "update": {
+      "updating": "Обновляем… подождите",
+      "available": "Доступна новая версия",
+      "action": "Обновить",
+      "dismiss": "Скрыть"
+    },
+    "dialog": {
+      "close": "Закрыть"
+    },
+    "sheet": {
+      "close": "Закрыть"
+    },
+    "loading": {
+      "label": "Загрузка…"
+    },
+    "numeric": {
+      "noValue": "Нет значения"
+    },
+    "confirmAction": {
+      "cancel": "Отмена"
+    },
+    "loadingRamp": {
+      "stalled": "Всё ещё ждём сервер. Ничего не изменилось.",
+      "retry": "Попробовать снова",
+      "loading": "Загрузка: {{label}}"
+    },
+    "peek": {
+      "recordDetail": "Карточка записи",
+      "loading": "Загружаем",
+      "notFound": "Не найдено",
+      "notOnList": "Этого в списке нет: {{noun}}. Возможно, запись убрали или ссылка устарела.",
+      "expand": "Показать полностью",
+      "collapse": "Свернуть"
+    },
+    "amountInput": {
+      "readAsWhole": "Прочитано как {{amount}} — в это поле идут только целые числа.",
+      "readAsDecimal": "Прочитано как {{amount}} — и запятая, и точка здесь означают десятичный разделитель. Если вы имели в виду тысячи, уберите разделитель."
+    },
+    "theme": {
+      "label": "Тема",
+      "system": "Системная",
+      "light": "Светлая",
+      "dark": "Тёмная",
+      "trigger": "Тема: {{theme}}"
+    },
+    "install": {
+      "headline": "Установите {{appName}} на телефон",
+      "installAction": "Установить",
+      "howAction": "Как?",
+      "sheetDescription": "Добавьте значок на домашний экран — приложение откроется во весь экран, как обычное.",
+      "safariOnly": "На iOS добавлять приложения на домашний экран умеет только Safari. Откройте эту страницу в Safari и выполните шаги ниже.",
+      "dismissPrompt": "Скрыть предложение установить",
+      "iosStep1": "Нажмите кнопку <icon/> «Поделиться» на панели Safari.",
+      "iosStep2": "Прокрутите меню «Поделиться» и нажмите <icon/> <b>На экран «Домой»</b>.",
+      "iosStep3": "Подтвердите кнопкой <b>Добавить</b>. Теперь {{appName}} открывается с домашнего экрана как обычное приложение.",
+      "androidStep1": "Нажмите на меню <b>⋮</b> в правом верхнем углу браузера.",
+      "androidStep2": "Выберите <b>Установить приложение</b> (Chrome) или <b>Добавить на главный экран</b> (Firefox / Samsung Internet).",
+      "androidStep3": "Подтвердите. {{appName}} запускается из списка приложений, как любое другое установленное приложение."
+    }
+  },
+  "offline": {
+    "title": "Не удаётся связаться со Scani",
+    "subtitleOnline": "Устройство в сети, но сервер Scani не ответил.",
+    "subtitleOffline": "Сейчас у этого устройства нет связи.",
+    "bodySignedIn": "Вы по-прежнему вошли как {{email}}. Из аккаунта вас не выводили — мы просто не можем загрузить данные, пока сервер не ответит.",
+    "bodyUnknown": "Мы не можем ничего загрузить, пока сервер не ответит.",
+    "reassurance": "Попытки продолжатся автоматически, как только связь вернётся.",
+    "retry": "Попробовать снова",
+    "retrying": "Пробуем снова…",
+    "signInDifferent": "Войти с другой почтой",
+    "connectionIssue": "Проблема со связью",
+    "connectionIssueRetrying": "Проблема со связью — повторяем"
+  }
+}

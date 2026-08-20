@@ -9,6 +9,8 @@
 // callers want "always shows something reasonable" without sanitizing
 // upstream.
 
+import { getFormatLocale } from './locale';
+
 /**
  * One locale for every number the app renders: `en-US`.
  *
@@ -26,10 +28,20 @@
  * dollar — en-GB renders `US$1,234.50`. Dates chose en-GB for its named month,
  * which numbers have no equivalent of.
  *
- * When real localisation arrives this is the single place that changes, and
- * the call sites — which all omit the argument — need no edit.
+ * **That arrival is SC-201, and it has happened.** `./locale.ts` resolves the
+ * tag now, from the interface language and the reader's optional region, and
+ * this constant is what it returns for English with no region chosen — the
+ * `numberRegion: 'US'` on the `en` row is this value, kept so that no screen
+ * shipping today changes. It stays exported for the callers that want the
+ * English tag rather than the reader's, and a test asserts the table still
+ * resolves to it.
  */
 export const APP_NUMBER_LOCALE = 'en-US';
+
+/** The locale a call site gets when it omits the argument, as it should. */
+function defaultNumberLocale(): string {
+  return getFormatLocale().numberLocale;
+}
 
 export interface FormatCurrencyOptions {
   /** Decimal places (defaults to 2). Use 0 for compact summary displays. */
@@ -63,7 +75,7 @@ export function formatCurrency(
   if (value === null || value === undefined) {
     return UNPRICEABLE_PLACEHOLDER;
   }
-  const { decimals = 2, locale = APP_NUMBER_LOCALE } = options;
+  const { decimals = 2, locale = defaultNumberLocale() } = options;
   const numeric = typeof value === 'number' ? value : Number(value);
   const safe = Number.isFinite(numeric) ? numeric : 0;
 
@@ -92,7 +104,7 @@ export function formatCompact(
   currency: string,
   options: FormatCurrencyOptions = {}
 ): string {
-  const { locale = APP_NUMBER_LOCALE } = options;
+  const { locale = defaultNumberLocale() } = options;
   const numeric = typeof value === 'number' ? value : Number(value);
   const safe = Number.isFinite(numeric) ? numeric : 0;
 
@@ -117,7 +129,7 @@ export function formatCompact(
  * where the currency is shown elsewhere on the row.
  */
 export function formatNumber(value: number | string, options: FormatCurrencyOptions = {}): string {
-  const { decimals, locale = APP_NUMBER_LOCALE } = options;
+  const { decimals, locale = defaultNumberLocale() } = options;
   const numeric = typeof value === 'number' ? value : Number(value);
   const safe = Number.isFinite(numeric) ? numeric : 0;
   return safe.toLocaleString(locale, {
@@ -132,9 +144,13 @@ export function formatNumber(value: number | string, options: FormatCurrencyOpti
  * the common ones. Used when the UI wants to render the symbol next to
  * an input box (e.g. "$ ___" prefix on the buy/sell form).
  */
-export function getCurrencySymbol(currencyCode: string, locale = APP_NUMBER_LOCALE): string {
+export function getCurrencySymbol(currencyCode: string, locale?: string): string {
   try {
-    const formatter = new Intl.NumberFormat(locale, {
+    // `locale ?? defaultNumberLocale()`, never a bare `locale`: passing
+    // `undefined` to `Intl` means the RUNTIME's locale, which is the defect
+    // SC-184 named — the one place a missing argument silently follows the
+    // device instead of the app.
+    const formatter = new Intl.NumberFormat(locale ?? defaultNumberLocale(), {
       style: 'currency',
       currency: currencyCode,
       minimumFractionDigits: 0,

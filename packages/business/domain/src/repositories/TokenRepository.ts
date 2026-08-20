@@ -134,6 +134,17 @@ export class TokenRepository extends BaseRepository<Token, NewToken> {
    * Rows carrying `lookalike_of` are excluded as DONORS as well: a
    * quarantined row must never become the source of a number that a real
    * holding displays.
+   *
+   * "NEVER on the symbol" is a claim about this function that was, until
+   * SC-389, false of the system it sits in. `CoinGeckoProvider` derived
+   * the id FROM the symbol via a well-known map without reading the
+   * contract address it had been handed, so a spam ERC-20 called `USDT`
+   * on a hostile contract arrived here already carrying `tether` and
+   * shared a bucket with the real one. Keying off the id is necessary and
+   * still not sufficient: it holds only because
+   * `resolveCoingeckoId` now requires the contract and refuses an id its
+   * canonical deployment contradicts. If that guard is weakened, this one
+   * is void again — the two are one mechanism, not two.
    */
   async findPricingSiblings(
     tokenIds: string[],
@@ -258,6 +269,11 @@ export class TokenRepository extends BaseRepository<Token, NewToken> {
         name: schema.tokens.name,
         typeId: schema.tokens.typeId,
         decimals: schema.tokens.decimals,
+        // Part of `Token`, and this projection asserted it was present while
+        // omitting it — every reader got `undefined` where the type said
+        // `string | null`. SC-458 is the first caller that needs it: an
+        // equity's listing venue is what says which currency its price is in.
+        marketSegment: schema.tokens.marketSegment,
         iconUrl: schema.tokens.iconUrl,
         providerMetadata: schema.tokens.providerMetadata,
         isScamProbability: schema.tokens.isScamProbability,
@@ -309,6 +325,71 @@ export class TokenRepository extends BaseRepository<Token, NewToken> {
   // Promote a (symbol, type, NULL) row's marketSegment in place when a
   // segmented import would otherwise create a duplicate. Used by
   // TokenIdentityService's self-healing path. Returns the updated row.
+  /**
+   * Crypto tokens whose stored scam score did not come from the current
+   * version of the scoring function (SC-286).
+   *
+   * **Crypto only, matching the creation gate.** `TokenIdentityService` scores
+   * a token only when its type is `crypto`; every stock, fiat and commodity
+   * row holds a 0 that no heuristic produced. Recomputing across all types
+   * would not be a backfill, it would be scam-scoring the S&P 500 — `V` is a
+   * homoglyph-adjacent single character and `MOON` is a real ticker.
+   *
+   * NULL version is stale by definition: it means the row predates the column,
+   * which is exactly the 371-token population that carried the drift.
+   *
+   * `IS DISTINCT FROM` rather than `<>` because `<>` is NULL for a NULL left
+   * side, so the NULL rows — the ones that matter most — would silently not
+   * match. That is the same absence-vs-refusal shape as SC-255.
+   */
+  async findWithStaleScamScore(
+    version: number,
+    limit: number,
+    transaction?: DatabaseTransaction
+  ): Promise<Token[]> {
+    const database = this.getDb(transaction);
+    const rows = await database
+      .select({ token: schema.tokens })
+      .from(schema.tokens)
+      .innerJoin(schema.tokenTypes, eq(schema.tokens.typeId, schema.tokenTypes.id))
+      .where(
+        and(
+          eq(schema.tokenTypes.code, 'crypto'),
+          // A user's explicit verdict is not a stale score. `markAsScam` /
+          // `unmarkAsScam` write into the same column, and recomputing over
+          // them would silently undo a decision a human made on purpose.
+          eq(schema.tokens.scamScoreSource, 'heuristic'),
+          sql`${schema.tokens.scamScoreVersion} IS DISTINCT FROM ${version}`
+        )
+      )
+      // Oldest first, so a run that hits the limit makes deterministic
+      // progress instead of re-examining the same page forever.
+      .orderBy(asc(schema.tokens.createdAt))
+      .limit(limit);
+
+    return rows.map((r) => r.token as Token);
+  }
+
+  /**
+   * Stamp the recomputed score and the version that produced it (SC-286).
+   *
+   * Both columns move together, in one statement, on purpose: a row whose
+   * version says `1` while its score came from something else is worse than a
+   * row that admits it is stale, because the next run will skip it.
+   */
+  async applyScamScore(
+    tokenId: string,
+    score: number,
+    version: number,
+    transaction?: DatabaseTransaction
+  ): Promise<void> {
+    const database = this.getDb(transaction);
+    await database
+      .update(schema.tokens)
+      .set({ isScamProbability: score, scamScoreVersion: version, updatedAt: new Date() })
+      .where(eq(schema.tokens.id, tokenId));
+  }
+
   async updateMarketSegment(
     tokenId: string,
     marketSegment: string,

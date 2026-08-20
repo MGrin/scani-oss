@@ -1,6 +1,6 @@
 process.env.DATABASE_URL = process.env.DATABASE_URL || 'postgresql://dummy:dummy@localhost/dummy';
 
-import { afterAll, describe, expect, test } from 'bun:test';
+import { describe, expect, test } from 'bun:test';
 import type { HoldingTransaction } from '@scani/db/schema';
 import Decimal from 'decimal.js';
 import { Container } from 'typedi';
@@ -12,14 +12,11 @@ import {
   type HistoryCompleteness,
 } from '../../../src/services/pricing/CostBasisService';
 import { PriceGraphService } from '../../../src/services/pricing/PriceGraphService';
+import { restoreContainerAfterAll } from '../../../test/helpers/container';
 
-// Stubs leak across files because typedi's Container is process-global.
-afterAll(() => {
-  Container.set(HoldingRepository, new HoldingRepository());
-  Container.set(HoldingTransactionRepository, new HoldingTransactionRepository());
-  Container.set(PriceGraphService, new PriceGraphService());
-  Container.set(CostBasisService, new CostBasisService());
-});
+// Container stubs are process-global; put back whatever this file changes
+// so no later test file resolves them (SC-448).
+restoreContainerAfterAll();
 
 const USD = 'token-USD';
 const BTC = 'token-BTC';
@@ -39,6 +36,26 @@ function makeService(): CostBasisService {
   Container.set(HoldingRepository, {} as unknown as HoldingRepository);
   Container.set(HoldingTransactionRepository, {} as unknown as HoldingTransactionRepository);
   Container.set(PriceGraphService, makePriceGraphStub());
+  const instance = new CostBasisService();
+  Container.set(CostBasisService, instance);
+  return instance;
+}
+
+/**
+ * A service whose price graph answers for exactly one token (SC-397).
+ *
+ * The fallback tests need the asymmetry that produces the bug in production:
+ * one side of a swap prices and the other does not. `priceable` is the token
+ * that does; anything else converts to null, the way a token with no price
+ * history behaves.
+ */
+function makeServiceWithSpot(priceable: string, rate: string): CostBasisService {
+  Container.set(HoldingRepository, {} as unknown as HoldingRepository);
+  Container.set(HoldingTransactionRepository, {} as unknown as HoldingTransactionRepository);
+  Container.set(PriceGraphService, {
+    convert: async (amount: Decimal, from: string) =>
+      from === priceable ? { amount: amount.mul(rate), stale: false } : null,
+  } as unknown as PriceGraphService);
   const instance = new CostBasisService();
   Container.set(CostBasisService, instance);
   return instance;
@@ -125,7 +142,38 @@ describe('CostBasisService.walkLots', () => {
     expect(r.hasTransactions).toBe(true);
   });
 
-  test('swap_out without priceNative pops at ZERO realized — no phantom loss', async () => {
+  test('a swap_out whose counter cannot be priced realizes from the held token (SC-397)', async () => {
+    // BTC prices at 130; the counter asset does not price at all, which is
+    // the production shape — MATIC has no price row before 2023-10-25 and the
+    // swap against it is dated 2022-05-10.
+    const svc = makeServiceWithSpot(BTC, '130');
+    const r = await svc.walkLots(
+      [
+        tx({
+          holdingId: 'h',
+          kind: 'buy',
+          quantity: '10',
+          occurredAt: '2024-01-01',
+          priceNative: '100',
+          priceNativeTokenId: USD,
+        }),
+        // swap_out with no usable counter price — before SC-397 this popped
+        // its lots and added NOTHING to realized, so a disposal that made 300
+        // read as one that made nothing.
+        tx({ holdingId: 'h', kind: 'swap_out', quantity: '-10', occurredAt: '2024-02-01' }),
+      ],
+      USD,
+      BTC
+    );
+    // 10 BTC at 130 = 1,300 proceeds against a 1,000 basis. The refusal's
+    // stated reason was that this route "would imply zero realized PnL on the
+    // swap"; it implies 300, because realized is proceeds minus LOT COST and
+    // the lot cost 100 a unit, not 130.
+    expect(r.realizedPnl.toString()).toBe('300');
+    expect(r.openQty.toString()).toBe('0');
+  });
+
+  test('a swap_out neither price can reach still books nothing, never a phantom loss', async () => {
     const svc = makeService();
     const r = await svc.walkLots(
       [
@@ -137,13 +185,15 @@ describe('CostBasisService.walkLots', () => {
           priceNative: '100',
           priceNativeTokenId: USD,
         }),
-        // swap_out with no priceNative — proceeds are in the counter token.
         tx({ holdingId: 'h', kind: 'swap_out', quantity: '-10', occurredAt: '2024-02-01' }),
       ],
       USD,
-      BTC
+      // No held token either, so the SC-397 fallback has nothing to fall back
+      // to and the walk is back where it started: lots popped, nothing booked.
+      null
     );
-    // Old behaviour: realized 0 − 1000 = −1000 (phantom loss). Fixed: 0.
+    // Booking zero PROCEEDS would realize −1,000, a loss of the whole basis
+    // that nobody took. The row says `unpriced` instead — see the ledger test.
     expect(r.realizedPnl.toString()).toBe('0');
     expect(r.openQty.toString()).toBe('0');
   });

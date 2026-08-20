@@ -1,8 +1,17 @@
 import { BaseRepository, type DatabaseTransaction } from '@scani/db';
 import type { NewPaymentOccurrence, PaymentOccurrence } from '@scani/db/schema';
 import * as schema from '@scani/db/schema';
-import { and, asc, eq, gte, lt } from 'drizzle-orm';
+import { and, asc, eq, gte, lt, lte, sql } from 'drizzle-orm';
 import { Service } from 'typedi';
+// Type-only, so nothing links the repository to the service at runtime. The
+// alternative is a second declaration of the same five fields, and the shape
+// the reminder reads is exactly the shape this query has to produce.
+import type { DueOccurrence } from '../services/payments/PaymentReminderService';
+
+/** A `DueOccurrence` plus the name the digest prints beside it (SC-460). */
+export interface UpcomingOccurrence extends DueOccurrence {
+  vendorName: string;
+}
 
 // The materialised, stateful side of the payments layer — one row per
 // dated instance a `payments` recurrence rule expands into. See the
@@ -264,6 +273,129 @@ export class PaymentOccurrenceRepository extends BaseRepository<
       this.logger.error(
         { paymentId, fromDate, error },
         'Failed to delete scheduled occurrences on or after date'
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * Everything one user still owes on a single calendar day (SC-226).
+   *
+   * One joined query rather than `findByUser` + a `findByPaymentId` per
+   * payment, which is what `payments.upcoming` does. That composition is right
+   * for a request serving one user; this runs on the worker for every
+   * subscribed user on every hourly fire, and the per-payment fan-out would
+   * make the cost of the reminder scale with how many bills the whole
+   * userbase has rather than with how many are due.
+   *
+   * Four filters, each of which changes what the notification would say:
+   *
+   * - **`direction = 'outflow'`.** The ask is "whether to move money tonight"
+   *   (SC-226), so incoming money is not part of it. Netting salary against
+   *   rent would produce a number that is true and useless.
+   * - **`status = 'scheduled'`.** A `matched` occurrence has already been
+   *   paid, and `skipped`/`missed` were settled deliberately. Reminding
+   *   someone to pay a bill they paid this morning is how a reminder loses
+   *   its authority.
+   * - **`payments.status = 'active'`.** A paused payment keeps its future
+   *   occurrences on purpose (see `PaymentService`), so filtering on the
+   *   occurrence alone would remind about bills the user has stopped.
+   * - **the exact due date**, computed in the USER's zone by the caller. A
+   *   range would silently re-include today's overdue items, which is a
+   *   different and unrequested notification.
+   *
+   * The amount coalesces the occurrence's own value over the payment's
+   * estimate, matching how the Money screen reads it: a variable bill whose
+   * real amount arrived keeps that amount, and one that never got an estimate
+   * stays null and is COUNTED but never summed.
+   */
+  async findDueOnDateForUser(
+    userId: string,
+    dueDate: string,
+    transaction?: DatabaseTransaction
+  ): Promise<DueOccurrence[]> {
+    try {
+      const database = this.getDb(transaction);
+      return await database
+        .select({
+          occurrenceId: schema.paymentOccurrences.id,
+          dueDate: schema.paymentOccurrences.dueDate,
+          expectedAmount: sql<
+            string | null
+          >`coalesce(${schema.paymentOccurrences.expectedAmount}, ${schema.payments.expectedAmount})`,
+          currencyTokenId: schema.payments.currencyTokenId,
+          currencySymbol: schema.tokens.symbol,
+        })
+        .from(schema.paymentOccurrences)
+        .innerJoin(schema.payments, eq(schema.paymentOccurrences.paymentId, schema.payments.id))
+        .innerJoin(schema.tokens, eq(schema.payments.currencyTokenId, schema.tokens.id))
+        .where(
+          and(
+            eq(schema.payments.userId, userId),
+            eq(schema.payments.status, 'active'),
+            eq(schema.payments.direction, 'outflow'),
+            eq(schema.paymentOccurrences.status, 'scheduled'),
+            eq(schema.paymentOccurrences.dueDate, dueDate)
+          )
+        );
+    } catch (error) {
+      this.logger.error({ userId, dueDate, error }, 'Failed to load occurrences due on date');
+      throw error;
+    }
+  }
+
+  /**
+   * Everything one user owes across a DATE RANGE, vendor included (SC-460).
+   *
+   * Sibling of `findDueOnDateForUser` above rather than a parameter on it, and
+   * the note there says why: that method takes an exact date deliberately,
+   * because widening it to a range would silently re-include today's overdue
+   * items in a push that promises tomorrow's. The digest is the other case —
+   * it is explicitly "what is coming", so a range is what it means, and the
+   * two callers should not have to agree about which mode they are in.
+   *
+   * Carries `vendorName` because the digest names bills and the push counts
+   * them: "Rent and 2 others" is a reason to open the mail, "3 payments due"
+   * is not.
+   */
+  async findDueBetweenForUser(
+    userId: string,
+    fromDate: string,
+    toDate: string,
+    transaction?: DatabaseTransaction
+  ): Promise<UpcomingOccurrence[]> {
+    try {
+      const database = this.getDb(transaction);
+      return await database
+        .select({
+          occurrenceId: schema.paymentOccurrences.id,
+          dueDate: schema.paymentOccurrences.dueDate,
+          expectedAmount: sql<
+            string | null
+          >`coalesce(${schema.paymentOccurrences.expectedAmount}, ${schema.payments.expectedAmount})`,
+          currencyTokenId: schema.payments.currencyTokenId,
+          currencySymbol: schema.tokens.symbol,
+          vendorName: schema.vendors.displayName,
+        })
+        .from(schema.paymentOccurrences)
+        .innerJoin(schema.payments, eq(schema.paymentOccurrences.paymentId, schema.payments.id))
+        .innerJoin(schema.tokens, eq(schema.payments.currencyTokenId, schema.tokens.id))
+        .innerJoin(schema.vendors, eq(schema.payments.vendorId, schema.vendors.id))
+        .where(
+          and(
+            eq(schema.payments.userId, userId),
+            eq(schema.payments.status, 'active'),
+            eq(schema.payments.direction, 'outflow'),
+            eq(schema.paymentOccurrences.status, 'scheduled'),
+            gte(schema.paymentOccurrences.dueDate, fromDate),
+            lte(schema.paymentOccurrences.dueDate, toDate)
+          )
+        )
+        .orderBy(asc(schema.paymentOccurrences.dueDate));
+    } catch (error) {
+      this.logger.error(
+        { userId, fromDate, toDate, error },
+        'Failed to load occurrences due between dates'
       );
       throw error;
     }

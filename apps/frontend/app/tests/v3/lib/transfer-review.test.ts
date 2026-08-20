@@ -1,17 +1,22 @@
+import '../../i18n-preload';
+
 import { describe, expect, test } from 'bun:test';
 import {
   type AnsweredTransferReview,
+  type BulkTransferPreview,
   formatDate,
   type PendingTransferReview,
   TRANSFER_MATCH_WINDOW_LABEL,
   TRANSFER_MATCH_WINDOW_MS,
   type TransferCandidate,
 } from '@scani/shared';
-import { reviewHref } from '../../../src/v3/lib/review';
+import i18n from 'i18next';
 import {
   allocationHint,
   allocationOf,
   answeredSummary,
+  bulkConsequence,
+  bulkRefusalNotes,
   candidateHint,
   candidateReasonLabel,
   candidateSummary,
@@ -28,6 +33,10 @@ import {
   toSplitPortions,
 } from '../../../src/v3/lib/transfer-review';
 
+// The real instance against the shipped `en.json` — a stub `t` would assert
+// the key scheme rather than the sentence a reader gets.
+const t = i18n.t.bind(i18n);
+
 /**
  * The transfer-review surface's words (SC-150).
  *
@@ -42,6 +51,7 @@ function candidate(overrides: Partial<TransferCandidate> = {}): TransferCandidat
     holdingId: 'h-in',
     accountName: 'Main',
     institutionName: 'Ledger',
+    tokenSymbol: 'ETH',
     kind: 'deposit',
     quantity: '0.995',
     occurredAt: '2026-08-10T09:12:00.000Z',
@@ -56,6 +66,12 @@ function candidate(overrides: Partial<TransferCandidate> = {}): TransferCandidat
 function pending(overrides: Partial<PendingTransferReview> = {}): PendingTransferReview {
   return {
     transactionId: 'tx-out',
+    counterpartyKey: null,
+    explorerTxUrl: null,
+    explorerAddressUrl: null,
+    counterpartyIsOwnWallet: false,
+    matchedRule: null,
+    answerWithdrawnBy: null,
     holdingId: 'h-out',
     tokenSymbol: 'ETH',
     tokenName: 'Ethereum',
@@ -75,7 +91,7 @@ function pending(overrides: Partial<PendingTransferReview> = {}): PendingTransfe
 
 describe('candidateReasonLabel', () => {
   test('an ambiguous candidate says the reader is the tie-break', () => {
-    expect(candidateReasonLabel(candidate({ reason: 'ambiguous' }))).toBe(
+    expect(candidateReasonLabel(t, candidate({ reason: 'ambiguous' }))).toBe(
       'Matches — but so does another deposit'
     );
   });
@@ -83,6 +99,7 @@ describe('candidateReasonLabel', () => {
   test('a quantity miss names the actual percentage, not "roughly"', () => {
     expect(
       candidateReasonLabel(
+        t,
         candidate({ reason: 'quantity_outside_tolerance', quantityDeltaPct: -3.42 })
       )
     ).toBe('Amount differs by 3.4%');
@@ -96,6 +113,7 @@ describe('candidateReasonLabel', () => {
   test('a sub-1% difference is not rounded away', () => {
     expect(
       candidateReasonLabel(
+        t,
         candidate({ reason: 'quantity_outside_tolerance', quantityDeltaPct: -0.42 })
       )
     ).toBe('Amount differs by 0.42%');
@@ -109,6 +127,7 @@ describe('candidateReasonLabel', () => {
    */
   test('a time miss names the rule rather than repeating the gap', () => {
     const label = candidateReasonLabel(
+      t,
       candidate({ reason: 'time_outside_window', timeDeltaMs: 4 * 60 * 60_000 })
     );
     expect(label).toBe('Outside the 30-minute window we match on');
@@ -118,6 +137,7 @@ describe('candidateReasonLabel', () => {
   test('a candidate that misses on both says so, and is not dressed up', () => {
     expect(
       candidateReasonLabel(
+        t,
         candidate({ reason: 'both_outside', quantityDeltaPct: 4.5, timeDeltaMs: -3 * 60 * 60_000 })
       )
     ).toBe('4.5% off, and outside the 30-minute window');
@@ -127,7 +147,7 @@ describe('candidateReasonLabel', () => {
    *  read by both, so tuning one cannot make the other lie. */
   test('the stated window is the matcher’s own', () => {
     expect(TRANSFER_MATCH_WINDOW_MS).toBe(30 * 60 * 1000);
-    expect(candidateReasonLabel(candidate({ reason: 'time_outside_window' }))).toContain(
+    expect(candidateReasonLabel(t, candidate({ reason: 'time_outside_window' }))).toContain(
       TRANSFER_MATCH_WINDOW_LABEL
     );
   });
@@ -137,26 +157,70 @@ describe('candidateSummary', () => {
   /** Direction matters: "earlier" is the case that should make a reader look
    *  twice, because money usually arrives after it leaves. */
   test('carries the direction of the gap, not just its size', () => {
-    expect(candidateSummary(candidate({ timeDeltaMs: 12 * 60_000 }), 'ETH')).toBe(
+    expect(candidateSummary(t, candidate({ timeDeltaMs: 12 * 60_000 }))).toBe(
       '0.995 ETH · 12 min later'
     );
-    expect(candidateSummary(candidate({ timeDeltaMs: -12 * 60_000 }), 'ETH')).toBe(
+    expect(candidateSummary(t, candidate({ timeDeltaMs: -12 * 60_000 }))).toBe(
       '0.995 ETH · 12 min earlier'
     );
-    expect(candidateSummary(candidate({ timeDeltaMs: 4_000 }), 'ETH')).toBe(
-      '0.995 ETH · same minute'
+    expect(candidateSummary(t, candidate({ timeDeltaMs: 4_000 }))).toBe('0.995 ETH · same minute');
+  });
+
+  /**
+   * SC-336. A bridge's arrival is a DIFFERENT token row from the withdrawal —
+   * USDC on Base against USDC on mainnet — so labelling it with the
+   * withdrawal's symbol would describe it as the thing it is not, and on a
+   * memecoin-adjacent symbol that is the difference between two assets.
+   */
+  test('names a cross-chain arrival by its own symbol', () => {
+    expect(
+      candidateSummary(t, candidate({ tokenSymbol: 'USDC', quantity: '99.98', timeDeltaMs: 6_000 }))
+    ).toBe('99.98 USDC · same minute');
+  });
+});
+
+describe('candidateHint — own wallet outranks every match count (SC-350)', () => {
+  test('says the destination is a wallet you added', () => {
+    // The ten mis-answered rows all read "No close deposit found", which was
+    // true and the least useful true thing available. This is a fact about the
+    // transfer; a match count is a fact about our search.
+    expect(candidateHint(t, pending({ counterpartyIsOwnWallet: true, candidates: [] }))).toBe(
+      'Went to a wallet you added'
+    );
+  });
+
+  test('wins even when candidates exist', () => {
+    const near = candidate();
+    expect(
+      candidateHint(
+        t,
+        pending({
+          counterpartyIsOwnWallet: true,
+          candidates: [near, { ...near, transactionId: 'b' }],
+        })
+      )
+    ).toBe('Went to a wallet you added');
+  });
+
+  test('is silent when the address is not a registered wallet', () => {
+    // `false` means "not among the wallets you registered", not "this belongs to
+    // a stranger" — a cold wallet never added reads identically — so the
+    // negative case must assert nothing.
+    expect(candidateHint(t, pending({ counterpartyIsOwnWallet: false, candidates: [] }))).toBe(
+      'No close deposit found'
     );
   });
 });
 
 describe('candidateHint', () => {
   test('no candidate is a finding, not a shrug', () => {
-    expect(candidateHint(pending({ candidates: [] }))).toBe('No close deposit found');
+    expect(candidateHint(t, pending({ candidates: [] }))).toBe('No close deposit found');
   });
 
   test('several equally-good matches is the case the matcher exists to refuse', () => {
     expect(
       candidateHint(
+        t,
         pending({
           candidates: [
             candidate({ transactionId: 'a' }),
@@ -170,8 +234,8 @@ describe('candidateHint', () => {
 
   test('near misses are counted as possibilities, singular when there is one', () => {
     const near = candidate({ withinStrictTolerance: false, reason: 'time_outside_window' });
-    expect(candidateHint(pending({ candidates: [near] }))).toBe('1 possible match');
-    expect(candidateHint(pending({ candidates: [near, { ...near, transactionId: 'b' }] }))).toBe(
+    expect(candidateHint(t, pending({ candidates: [near] }))).toBe('1 possible match');
+    expect(candidateHint(t, pending({ candidates: [near, { ...near, transactionId: 'b' }] }))).toBe(
       '2 possible matches'
     );
   });
@@ -179,18 +243,18 @@ describe('candidateHint', () => {
 
 describe('decisionConsequence', () => {
   test('pairing names the destination, so the reader can check they picked right', () => {
-    expect(decisionConsequence('paired', pending(), candidate())).toContain('Ledger · Main');
-    expect(decisionConsequence('paired', pending(), candidate())).toContain('no gain is booked');
+    expect(decisionConsequence(t, 'paired', pending(), candidate())).toContain('Ledger · Main');
+    expect(decisionConsequence(t, 'paired', pending(), candidate())).toContain('no gain is booked');
   });
 
   test('pairing with nothing picked asks for a pick rather than describing a write', () => {
-    expect(decisionConsequence('paired', pending(), null)).toBe(
+    expect(decisionConsequence(t, 'paired', pending(), null)).toBe(
       'Pick the deposit this money arrived in.'
     );
   });
 
   test('a disposal states the figure it will book, as money', () => {
-    expect(decisionConsequence('left_control', pending(), null)).toContain('€3,120.44');
+    expect(decisionConsequence(t, 'left_control', pending(), null)).toContain('€3,120.44');
   });
 
   /**
@@ -202,6 +266,7 @@ describe('decisionConsequence', () => {
    */
   test('a disposal reads as money even when the value arrives as a raw float', () => {
     const consequence = decisionConsequence(
+      t,
       'left_control',
       pending({ marketValueInBase: '3041.163666295339' }),
       null
@@ -213,22 +278,23 @@ describe('decisionConsequence', () => {
 
   test('a sub-cent disposal is not described as being worth nothing', () => {
     expect(
-      decisionConsequence('left_control', pending({ marketValueInBase: '0.00007714' }), null)
+      decisionConsequence(t, 'left_control', pending({ marketValueInBase: '0.00007714' }), null)
     ).toContain('€0.00007714');
   });
 
   test('pairing quotes the quantity at the precision it carries', () => {
     expect(
-      decisionConsequence('paired', pending({ quantity: '0.05000000' }), candidate())
+      decisionConsequence(t, 'paired', pending({ quantity: '0.05000000' }), candidate())
     ).toContain('The 0.05 ETH');
     expect(
-      decisionConsequence('paired', pending({ quantity: '500000000.00000000' }), candidate())
+      decisionConsequence(t, 'paired', pending({ quantity: '500000000.00000000' }), candidate())
     ).toContain('The 500,000,000 ETH');
   });
 
   /** No price that day is its own answer, and it is not zero. */
   test('a disposal with no price says nothing is booked, not that nothing is worth', () => {
     const consequence = decisionConsequence(
+      t,
       'left_control',
       pending({ marketValueInBase: null }),
       null
@@ -238,7 +304,7 @@ describe('decisionConsequence', () => {
   });
 
   test('an untracked move is explicitly not a disposal', () => {
-    expect(decisionConsequence('untracked', pending(), null)).toContain('Not a disposal');
+    expect(decisionConsequence(t, 'untracked', pending(), null)).toContain('Not a disposal');
   });
 });
 
@@ -261,11 +327,11 @@ describe('one date format across the surface', () => {
     // Aged past 30 days, which is the only point at which the row shows a date
     // at all — and therefore the only point at which they could disagree.
     const old = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
-    expect(exactMoment(old).startsWith(occurredLabel(old))).toBe(true);
+    expect(exactMoment(old).startsWith(occurredLabel(t, old))).toBe(true);
   });
 
   test('the peek and the disposal confirmation agree', () => {
-    const consequence = decisionConsequence('left_control', pending({ occurredAt: iso }), null);
+    const consequence = decisionConsequence(t, 'left_control', pending({ occurredAt: iso }), null);
     expect(consequence).toContain(formatDate(iso));
     expect(exactMoment(iso).startsWith(formatDate(iso))).toBe(true);
   });
@@ -273,7 +339,7 @@ describe('one date format across the surface', () => {
   test('no surface on this screen numbers the month', () => {
     // `16/07/2026` vs `7/16/2026` is the defect; a month name cannot be read
     // in the wrong order.
-    const consequence = decisionConsequence('left_control', pending({ occurredAt: iso }), null);
+    const consequence = decisionConsequence(t, 'left_control', pending({ occurredAt: iso }), null);
     expect(consequence).not.toMatch(/\d{1,2}\/\d{1,2}\/\d{4}/);
     expect(exactMoment(iso)).not.toMatch(/\d{1,2}\/\d{1,2}\/\d{4}/);
   });
@@ -314,18 +380,6 @@ describe('list plumbing', () => {
 });
 
 /**
- * The feed's row for this queue has no id segment, so the prefix list cannot
- * match it. Without an exact entry the row would send the reader to
- * `/v2/review/transfers` — a 404 reached by clicking the thing that told them
- * something needed doing.
- */
-describe('the feed can reach the queue', () => {
-  test('the queue path stays in v3 rather than crossing to v2', () => {
-    expect(reviewHref('/review/transfers')).toBe('/review/transfers');
-  });
-});
-
-/**
  * The arithmetic behind the split (SC-181).
  *
  * A split that does not add up to the transaction is a new way to be wrong
@@ -337,28 +391,33 @@ describe('allocationOf', () => {
   const item = pending({ quantity: '4000', tokenSymbol: 'USDT' });
 
   const rows = (untracked: string, left: string, paired = ''): SplitDraftRow[] => [
-    { decision: 'paired', amount: paired, matchTransactionId: paired ? 'tx-in' : null },
-    { decision: 'left_control', amount: left, matchTransactionId: null },
-    { decision: 'untracked', amount: untracked, matchTransactionId: null },
+    {
+      decision: 'paired',
+      amount: paired,
+      matchTransactionId: paired ? 'tx-in' : null,
+      destination: null,
+    },
+    { decision: 'left_control', amount: left, matchTransactionId: null, destination: null },
+    { decision: 'untracked', amount: untracked, matchTransactionId: null, destination: null },
   ];
 
   test('the reported division adds up exactly', () => {
     const allocation = allocationOf(rows('3500', '500'), item.quantity);
     expect(allocation.status).toBe('exact');
     expect(allocation.remaining?.toString()).toBe('0');
-    expect(allocationHint(allocation, item)).toBeNull();
+    expect(allocationHint(t, allocation, item)).toBeNull();
   });
 
   test('an incomplete division says how much is left, not that it is wrong', () => {
     const allocation = allocationOf(rows('3500', ''), item.quantity);
     expect(allocation.status).toBe('under');
-    expect(allocationHint(allocation, item)).toBe('500 USDT still to account for.');
+    expect(allocationHint(t, allocation, item)).toBe('500 USDT still to account for.');
   });
 
   test('an over-allocation says by how much', () => {
     const allocation = allocationOf(rows('3500', '600'), item.quantity);
     expect(allocation.status).toBe('over');
-    expect(allocationHint(allocation, item)).toBe('That is 100 USDT more than the transfer.');
+    expect(allocationHint(t, allocation, item)).toBe('That is 100 USDT more than the transfer.');
   });
 
   test('nothing entered is not an error — it is where the editor opens', () => {
@@ -381,9 +440,9 @@ describe('splitIsCommittable', () => {
     untracked: string,
     match: string | null = null
   ): SplitDraftRow[] => [
-    { decision: 'paired', amount: paired, matchTransactionId: match },
-    { decision: 'left_control', amount: left, matchTransactionId: null },
-    { decision: 'untracked', amount: untracked, matchTransactionId: null },
+    { decision: 'paired', amount: paired, matchTransactionId: match, destination: null },
+    { decision: 'left_control', amount: left, matchTransactionId: null, destination: null },
+    { decision: 'untracked', amount: untracked, matchTransactionId: null, destination: null },
   ];
 
   test('two parts that add up', () => {
@@ -413,9 +472,9 @@ describe('splitIsCommittable', () => {
 describe('toSplitPortions', () => {
   test('drops the untouched outcomes and keeps the order on screen', () => {
     const portions = toSplitPortions([
-      { decision: 'paired', amount: '', matchTransactionId: null },
-      { decision: 'left_control', amount: '500', matchTransactionId: null },
-      { decision: 'untracked', amount: '3500', matchTransactionId: null },
+      { decision: 'paired', amount: '', matchTransactionId: null, destination: null },
+      { decision: 'left_control', amount: '500', matchTransactionId: null, destination: null },
+      { decision: 'untracked', amount: '3500', matchTransactionId: null, destination: null },
     ]);
     expect(portions).toEqual([
       { decision: 'left_control', quantity: '500' },
@@ -425,9 +484,9 @@ describe('toSplitPortions', () => {
 
   test('carries the deposit only on the paired part', () => {
     const portions = toSplitPortions([
-      { decision: 'paired', amount: '3500', matchTransactionId: 'tx-in' },
-      { decision: 'left_control', amount: '500', matchTransactionId: 'tx-in' },
-      { decision: 'untracked', amount: '', matchTransactionId: null },
+      { decision: 'paired', amount: '3500', matchTransactionId: 'tx-in', destination: null },
+      { decision: 'left_control', amount: '500', matchTransactionId: 'tx-in', destination: null },
+      { decision: 'untracked', amount: '', matchTransactionId: null, destination: null },
     ]);
     expect(portions[0]).toEqual({
       decision: 'paired',
@@ -443,18 +502,18 @@ describe('remainderFor', () => {
 
   test('offers what the other parts have left over', () => {
     const rows: SplitDraftRow[] = [
-      { decision: 'paired', amount: '', matchTransactionId: null },
-      { decision: 'left_control', amount: '', matchTransactionId: null },
-      { decision: 'untracked', amount: '3500', matchTransactionId: null },
+      { decision: 'paired', amount: '', matchTransactionId: null, destination: null },
+      { decision: 'left_control', amount: '', matchTransactionId: null, destination: null },
+      { decision: 'untracked', amount: '3500', matchTransactionId: null, destination: null },
     ];
     expect(remainderFor(rows, 1, item.quantity)).toBe('500');
   });
 
   test('offers nothing once the transfer is fully accounted for', () => {
     const rows: SplitDraftRow[] = [
-      { decision: 'paired', amount: '', matchTransactionId: null },
-      { decision: 'left_control', amount: '500', matchTransactionId: null },
-      { decision: 'untracked', amount: '3500', matchTransactionId: null },
+      { decision: 'paired', amount: '', matchTransactionId: null, destination: null },
+      { decision: 'left_control', amount: '500', matchTransactionId: null, destination: null },
+      { decision: 'untracked', amount: '3500', matchTransactionId: null, destination: null },
     ];
     expect(remainderFor(rows, 0, item.quantity)).toBeNull();
   });
@@ -463,9 +522,9 @@ describe('remainderFor', () => {
     // The first phone capture: the row holding `3500` carried "Take the rest —
     // 4,000 USD" directly beneath it, because the OTHER rows summed to nothing.
     const rows: SplitDraftRow[] = [
-      { decision: 'paired', amount: '', matchTransactionId: null },
-      { decision: 'left_control', amount: '', matchTransactionId: null },
-      { decision: 'untracked', amount: '3500', matchTransactionId: null },
+      { decision: 'paired', amount: '', matchTransactionId: null, destination: null },
+      { decision: 'left_control', amount: '', matchTransactionId: null, destination: null },
+      { decision: 'untracked', amount: '3500', matchTransactionId: null, destination: null },
     ];
     expect(remainderFor(rows, 2, item.quantity)).toBeNull();
   });
@@ -476,10 +535,16 @@ describe('splitConsequence', () => {
 
   test('names every part with its own amount before anything is written', () => {
     const sentence = splitConsequence(
+      t,
       [
-        { decision: 'paired', amount: '', matchTransactionId: null },
-        { decision: 'left_control', amount: '500', matchTransactionId: null },
-        { decision: 'untracked', amount: '3,500'.replace(',', ''), matchTransactionId: null },
+        { decision: 'paired', amount: '', matchTransactionId: null, destination: null },
+        { decision: 'left_control', amount: '500', matchTransactionId: null, destination: null },
+        {
+          decision: 'untracked',
+          amount: '3,500'.replace(',', ''),
+          matchTransactionId: null,
+          destination: null,
+        },
       ],
       item,
       () => null
@@ -491,10 +556,11 @@ describe('splitConsequence', () => {
 
   test('an incomplete division asks for the total rather than describing one', () => {
     const sentence = splitConsequence(
+      t,
       [
-        { decision: 'paired', amount: '', matchTransactionId: null },
-        { decision: 'left_control', amount: '500', matchTransactionId: null },
-        { decision: 'untracked', amount: '', matchTransactionId: null },
+        { decision: 'paired', amount: '', matchTransactionId: null, destination: null },
+        { decision: 'left_control', amount: '500', matchTransactionId: null, destination: null },
+        { decision: 'untracked', amount: '', matchTransactionId: null, destination: null },
       ],
       item,
       () => null
@@ -517,12 +583,16 @@ describe('answeredSummary', () => {
     decision: 'left_control',
     split: null,
     reviewedAt: '2026-08-11T09:00:00.000Z',
+    answerSource: 'unattributed',
+    ruleNote: null,
     ...over,
   });
 
   test('a whole answer reads as the answer', () => {
-    expect(answeredSummary(answered({ decision: 'left_control' }))).toBe('Counted as a disposal');
-    expect(answeredSummary(answered({ decision: 'untracked' }))).toBe(
+    expect(answeredSummary(t, answered({ decision: 'left_control' }))).toBe(
+      'Counted as a disposal'
+    );
+    expect(answeredSummary(t, answered({ decision: 'untracked' }))).toBe(
       'Still yours, somewhere untracked'
     );
   });
@@ -530,6 +600,7 @@ describe('answeredSummary', () => {
   test('a divided answer shows the division, which is the whole reason to find it again', () => {
     expect(
       answeredSummary(
+        t,
         answered({
           decision: 'split',
           split: [
@@ -539,5 +610,94 @@ describe('answeredSummary', () => {
         })
       )
     ).toBe('3,500 untracked · 500 disposed');
+  });
+});
+
+/**
+ * The bulk confirmation's sentence (SC-382).
+ *
+ * Tested at the same weight as `decisionConsequence` and for a sharper reason:
+ * this one stands between a single tap and N capital gains, and the failure
+ * SC-173 caught on its single-row sibling — a raw twelve-decimal float where a
+ * formatted amount belonged — is the same failure multiplied here.
+ */
+describe('bulkConsequence', () => {
+  function preview(overrides: Partial<BulkTransferPreview> = {}): BulkTransferPreview {
+    return {
+      eligible: ['a', 'b', 'c'],
+      refusals: [],
+      baseCurrencyCode: 'EUR',
+      proceedsInBase: '41203.554321',
+      unpricedCount: 0,
+      alreadyDisposedCount: 0,
+      alreadyDisposedInBase: null,
+      ...overrides,
+    };
+  }
+
+  test('states the disposal in money, formatted — never a raw figure', () => {
+    const said = bulkConsequence(t, 'left_control', preview());
+    expect(said).toInclude('3 transfers');
+    expect(said).toInclude('€41,203.55');
+    expect(said).not.toInclude('41203.554321');
+  });
+
+  test('says nothing is booked when no selected row has a price', () => {
+    const said = bulkConsequence(
+      t,
+      'left_control',
+      preview({ proceedsInBase: null, unpricedCount: 3 })
+    );
+    expect(said).toInclude('nothing is booked');
+    // The "so the figure is a floor" qualifier would be qualifying nothing.
+    expect(said).not.toInclude('floor');
+  });
+
+  test('marks the total as a floor when only some rows are unpriced', () => {
+    const said = bulkConsequence(t, 'left_control', preview({ unpricedCount: 1 }));
+    expect(said).toInclude('€41,203.55');
+    expect(said).toInclude('floor');
+  });
+
+  test('states what an untracked answer takes back OFF — the SC-186 direction', () => {
+    const said = bulkConsequence(
+      t,
+      'untracked',
+      preview({ alreadyDisposedCount: 2, alreadyDisposedInBase: '10500' })
+    );
+    expect(said).toInclude('Nothing is realized');
+    expect(said).toInclude('takes about €10,500.00 of realized gains back off');
+  });
+
+  test('refuses to state a figure before the preview lands', () => {
+    expect(bulkConsequence(t, 'left_control', undefined)).not.toInclude('€');
+  });
+
+  test('says so plainly when nothing in the selection can be answered', () => {
+    expect(bulkConsequence(t, 'left_control', preview({ eligible: [] }))).toInclude(
+      'None of the selected transfers'
+    );
+  });
+});
+
+describe('bulkRefusalNotes', () => {
+  test('names the own wallet rather than counting it', () => {
+    const notes = bulkRefusalNotes(t, [
+      { transactionId: 'a', reason: 'own_wallet', detail: '0x9d8ae06a…14ab' },
+    ]);
+    expect(notes).toHaveLength(1);
+    expect(notes[0]).toInclude('0x9d8ae06a…14ab');
+    expect(notes[0]).toInclude('cannot be counted as a disposal');
+  });
+
+  test('groups one line per reason, not one per row', () => {
+    const notes = bulkRefusalNotes(t, [
+      { transactionId: 'a', reason: 'linked', detail: null },
+      { transactionId: 'b', reason: 'linked', detail: null },
+      { transactionId: 'c', reason: 'answered_otherwise', detail: 'paired' },
+    ]);
+    expect(notes).toHaveLength(2);
+    expect(notes.join(' ')).toInclude('2 are already linked');
+    expect(notes.join(' ')).toInclude('“paired”');
   });
 });

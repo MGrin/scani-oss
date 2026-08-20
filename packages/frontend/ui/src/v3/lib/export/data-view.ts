@@ -1,10 +1,12 @@
 import { isValidElement, type ReactNode } from 'react';
-import type { GroupByDef, SortDef } from '../../hooks/useDataView';
+import { uiT } from '../../../i18n';
 import {
   type ActiveFilter,
   countLabel,
   type V3ColumnDef,
   type V3DataViewConfig,
+  type V3GroupByDef,
+  type V3SortDef,
 } from '../data-view';
 import { type ExportCell, exportText } from './cell';
 import type { ExportWorkbook } from './format';
@@ -51,7 +53,7 @@ export function nodeText(node: ReactNode): string {
 
 function columnField<T>(column: V3ColumnDef<T>): ExportField<T> {
   return {
-    header: column.header,
+    header: uiT(column.headerKey),
     total: column.exportTotal,
     value: column.exportValue
       ? column.exportValue
@@ -59,10 +61,10 @@ function columnField<T>(column: V3ColumnDef<T>): ExportField<T> {
   };
 }
 
-function groupField<T>(def: GroupByDef): ExportField<T> {
+function groupField<T>(def: V3GroupByDef): ExportField<T> {
   const groupFn = def.fn || def.groupFn;
   return {
-    header: def.label,
+    header: uiT(def.labelKey),
     value: (item: T) => exportText(groupFn ? groupFn(item) : ''),
   };
 }
@@ -84,15 +86,44 @@ export interface DataViewExportInput<T> {
   generatedAt: Date;
   /** SC-93 item 3 — withhold every column that discloses value. */
   hideAmounts?: boolean;
+  /**
+   * The screen held a PAGE of a larger set (SC-244), so `totalCount` is the
+   * loaded count and the file is not the export it would otherwise claim to be.
+   *
+   * A file outlives the screen it left. "All 25 transfers" opened next month
+   * carries no trace that the account holds 579, and the About sheet is the
+   * only place left to say so.
+   */
+  partial?: boolean;
 }
 
 /** "Filtered — 12 of 69 holdings" / "All 69 holdings". The sentence the sheet
  *  shows and the About sheet repeats, so the two cannot disagree. */
 export function describeExportScope<T>(input: DataViewExportInput<T>): string {
-  const { config, filtered, filteredCount, totalCount } = input;
-  const all = countLabel(totalCount, config.noun, config.nounSingular);
-  if (!filtered) return `All ${all}`;
-  return `Filtered — ${filteredCount} of ${all}`;
+  const { config, filtered, filteredCount, totalCount, partial } = input;
+  const t = uiT;
+  const all = countLabel(config.nounKey, totalCount);
+  if (!filtered) {
+    return t(partial ? 'ui.dataView.export.scopeAllLoaded' : 'ui.dataView.export.scopeAll', {
+      counted: all,
+    });
+  }
+  return t(
+    partial ? 'ui.dataView.export.scopeFilteredLoaded' : 'ui.dataView.export.scopeFiltered',
+    { shown: filteredCount, counted: all }
+  );
+}
+
+/**
+ * The "everything" option's own label in the sheet — the short form of the
+ * sentence above, and here beside it so the button and the file it produces
+ * cannot disagree about what left (SC-244).
+ */
+export function exportAllScopeLabel(nounKey: string, totalCount: number, partial: boolean): string {
+  return uiT(
+    partial ? 'ui.dataView.export.scopeAllLoadedShort' : 'ui.dataView.export.scopeAllShort',
+    { counted: countLabel(nounKey, totalCount) }
+  );
 }
 
 /**
@@ -104,18 +135,23 @@ export function describeExportRefinement(
   searchTerm: string,
   sortField: string,
   sortDirection: 'asc' | 'desc',
-  sortDefs: readonly SortDef[] | undefined
+  sortDefs: readonly V3SortDef[] | undefined
 ): { label: string; value: string }[] {
+  const t = uiT;
   const details: { label: string; value: string }[] = [];
-  if (searchTerm) details.push({ label: 'Search', value: searchTerm });
+  if (searchTerm) details.push({ label: t('ui.dataView.export.search'), value: searchTerm });
   for (const filter of activeFilters) {
     details.push({ label: filter.label, value: filter.value });
   }
-  const sortLabel = sortDefs?.find((def) => def.key === sortField)?.label;
+  const sortKey = sortDefs?.find((def) => def.key === sortField)?.labelKey;
+  const sortLabel = sortKey ? t(sortKey) : undefined;
   if (sortLabel) {
     details.push({
-      label: 'Sorted by',
-      value: `${sortLabel}, ${sortDirection === 'asc' ? 'low to high' : 'high to low'}`,
+      label: t('ui.dataView.export.sortedBy'),
+      value:
+        sortDirection === 'asc'
+          ? t('ui.dataView.export.sortedAscending', { label: sortLabel })
+          : t('ui.dataView.export.sortedDescending', { label: sortLabel }),
     });
   }
   return details;
@@ -150,6 +186,11 @@ function groupItems<T>(
 
 export function buildDataViewSheets<T>(input: DataViewExportInput<T>): ExportWorkbook {
   const { config, groupBy, generatedAt, hideAmounts } = input;
+  // Every key resolved below is `ui.*`. The surface's own column headers, group
+  // labels and nouns are `ui.dataView.*` too — the app declares them and
+  // `addUiLocale` forwards all 286 into this instance at boot, so they resolve
+  // here without the `t` this input used to carry (SC-316).
+  const t = uiT;
 
   const groupDef = groupBy ? config.groupByDefs?.find((def) => def.key === groupBy) : undefined;
   const groupFn = groupDef ? groupDef.fn || groupDef.groupFn : undefined;
@@ -162,10 +203,12 @@ export function buildDataViewSheets<T>(input: DataViewExportInput<T>): ExportWor
   // it is a dimension the columns do not already carry.
   const groupIsNewColumn =
     groupDef !== undefined &&
-    !config.columns.some((column) => column.header.toLowerCase() === groupDef.label.toLowerCase());
+    !config.columns.some(
+      (column) => t(column.headerKey).toLowerCase() === t(groupDef.labelKey).toLowerCase()
+    );
   const fields: ExportField<T>[] = [
     ...(groupDef && groupIsNewColumn ? [groupField<T>(groupDef)] : []),
-    ...config.columns.map(columnField),
+    ...config.columns.map((column) => columnField(column)),
   ];
 
   const details = describeExportRefinement(
@@ -175,10 +218,23 @@ export function buildDataViewSheets<T>(input: DataViewExportInput<T>): ExportWor
     input.sortDirection,
     config.sortDefs
   );
-  if (groupDef) details.push({ label: 'Grouped by', value: groupDef.label });
+  if (groupDef) {
+    details.push({
+      label: t('ui.dataView.export.groupedBy'),
+      value: t(groupDef.labelKey),
+    });
+  }
+  if (input.partial) {
+    details.push({
+      label: t('ui.dataView.export.partialSet'),
+      value: t('ui.dataView.export.partialSetDetail', {
+        counted: countLabel(config.nounKey, input.totalCount),
+      }),
+    });
+  }
 
   const provenance: ExportProvenance = {
-    subject: sentenceNoun(config.noun),
+    subject: sentenceNoun(t(config.nounKey, { count: 2 })),
     scope: describeExportScope(input),
     generatedAt,
     details,
@@ -188,7 +244,7 @@ export function buildDataViewSheets<T>(input: DataViewExportInput<T>): ExportWor
 
   return {
     sheets: [
-      buildSheet(sentenceNoun(config.noun), fields, items, {
+      buildSheet(sentenceNoun(t(config.nounKey, { count: 2 })), fields, items, {
         hideAmounts,
         groups: grouped?.groups,
         groupField: groupDef !== undefined && groupIsNewColumn,

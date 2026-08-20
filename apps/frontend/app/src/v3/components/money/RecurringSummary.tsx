@@ -1,7 +1,8 @@
 import { Block } from '@scani/ui/v3/components/Block';
+import { useTranslation } from 'react-i18next';
 import type { BaseCurrencyRates } from '@/hooks/useBaseCurrencyRates';
 import type { RouterOutputs } from '@/lib/trpc';
-import { asPaymentIntervalUnit, sumMonthlyEquivalentByCurrency } from '@/v2/lib/paymentTotals';
+import { asPaymentIntervalUnit, sumMonthlyEquivalentByCurrency } from '../../lib/paymentTotals';
 import { ConvertedTotal } from '../ConvertedTotal';
 
 /**
@@ -32,6 +33,7 @@ interface RecurringSummaryProps {
 }
 
 export function RecurringSummary({ payments, tokenSymbolById, rates }: RecurringSummaryProps) {
+  const { t } = useTranslation();
   const commitment = sumMonthlyEquivalentByCurrency(
     payments
       .filter((payment) => payment.status === 'active' && payment.direction === 'outflow')
@@ -46,7 +48,7 @@ export function RecurringSummary({ payments, tokenSymbolById, rates }: Recurring
   return (
     <Block className="flex flex-col gap-2 p-4">
       <ConvertedTotal
-        label="Committed each month"
+        label={t('v3.money.recurringSummary.committedEachMonth')}
         totals={commitment}
         tokenSymbolById={tokenSymbolById}
         rates={rates}

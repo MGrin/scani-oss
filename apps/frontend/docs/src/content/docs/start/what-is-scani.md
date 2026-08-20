@@ -68,7 +68,7 @@ or a private-equity stake. That symmetry is the design — see
 - **Not an exchange.** Scani has no order book, no custody, no settlement.
   Read-only credentials and read-only blockchain RPCs are how it reads
   your portfolio.
-- **Not a tax engine.** Cost basis, realised PnL, and FIFO/LIFO lot
+- **Not a tax engine.** Cost basis, realized PnL, and FIFO/LIFO lot
   selection are tracked (see [Portfolio value rollup](/concepts/rollup/)),
   but Scani does not file returns or render jurisdiction-specific tax
   reports.

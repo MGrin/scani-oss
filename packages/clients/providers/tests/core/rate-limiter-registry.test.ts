@@ -4,7 +4,7 @@ import { RateLimiterRegistry } from '../../src/core/rate-limiter-registry';
 
 function fakeLimiter(): OutflowRateLimiter {
   return {
-    execute: async (_fn, _key) => undefined,
+    execute: async (_fn: unknown, _key?: unknown) => undefined,
   } as unknown as OutflowRateLimiter;
 }
 

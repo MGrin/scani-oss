@@ -1,13 +1,16 @@
+import '../../i18n-preload';
+
 import { describe, expect, test } from 'bun:test';
 import { formatDate } from '@scani/shared';
 import { SETTLED_QUERY_STATE } from '@scani/ui/v3/lib/query-state';
+import i18n from 'i18next';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { StaticRouter } from 'react-router-dom/server';
 import type { BaseCurrencyRates } from '../../../src/hooks/useBaseCurrencyRates';
 import { rankCurrencyMatches, tokenLabel } from '../../../src/v3/components/money/CurrencyField';
 import { DuplicateVendorPicker } from '../../../src/v3/components/money/DuplicateVendorPicker';
 import {
-  PAUSE_CONSEQUENCE,
+  PAUSE_CONSEQUENCE_KEY,
   resumeConsequence,
 } from '../../../src/v3/components/money/PaymentStatusToggle';
 import { RecurringList } from '../../../src/v3/components/money/RecurringList';
@@ -54,7 +57,7 @@ const RATES: BaseCurrencyRates = {
   baseCurrencyTokenId: 'token-eur',
   baseSymbol: 'EUR',
   rateByCurrencyTokenId: new Map([['token-gbp', { rate: '1.15', asOf: new Date().toISOString() }]]),
-  isLoading: false,
+  ratesStatus: 'ready',
 };
 
 /** The same rates with GBP unresolvable — the case a total must not paper over. */
@@ -429,7 +432,7 @@ describe('RecurringList', () => {
  */
 describe('PaymentStatusToggle copy', () => {
   test('resuming promises the original dates, and names where the skipped window starts', () => {
-    const copy = resumeConsequence('2026-07-28T09:12:00.000Z');
+    const copy = resumeConsequence(i18n.t.bind(i18n), '2026-07-28T09:12:00.000Z');
     expect(copy).toInclude('original schedule');
     expect(copy).toInclude(formatDate('2026-07-28'));
     expect(copy).toInclude('skipped, not overdue');
@@ -438,7 +441,7 @@ describe('PaymentStatusToggle copy', () => {
   });
 
   test('a payment paused before Scani recorded pause dates gets the narrower promise', () => {
-    const copy = resumeConsequence(null);
+    const copy = resumeConsequence(i18n.t.bind(i18n), null);
     expect(copy).toInclude('original schedule');
     expect(copy).toInclude('left exactly as they are');
     // No window exists for these rows, so promising one would be a lie.
@@ -446,7 +449,7 @@ describe('PaymentStatusToggle copy', () => {
   });
 
   test('pausing says what becomes of the dates that pass meanwhile', () => {
-    expect(PAUSE_CONSEQUENCE).toInclude('skipped, not overdue');
+    expect(i18n.t(PAUSE_CONSEQUENCE_KEY)).toInclude('skipped, not overdue');
   });
 });
 

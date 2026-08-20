@@ -4,7 +4,9 @@ import { Numeric } from '@scani/ui/v3/components/Numeric';
 import type { V3DataViewConfig } from '@scani/ui/v3/lib/data-view';
 import { exportCount, exportMoney } from '@scani/ui/v3/lib/export/cell';
 import type { V3QueryState } from '@scani/ui/v3/lib/query-state';
+import type { TFunction } from 'i18next';
 import { Tags } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import {
   compareGroupAmounts,
@@ -12,7 +14,6 @@ import {
   groupAmount,
   groupValuesById,
 } from '../../lib/groups';
-import { countLabel } from '../../lib/membership';
 import { groupDetailPath } from '../../lib/routes';
 
 /**
@@ -61,10 +62,11 @@ function accounts(group: GroupRow): number {
   return group.accountsCount ?? 0;
 }
 
-function memberLine(group: GroupRow): string {
-  return [countLabel(holdings(group), 'holding'), countLabel(accounts(group), 'account')].join(
-    ' · '
-  );
+function memberLine(group: GroupRow, t: TFunction): string {
+  return [
+    t('v3.membership.count.holding', { count: holdings(group) }),
+    t('v3.membership.count.account', { count: accounts(group) }),
+  ].join(' · ');
 }
 
 function ColorMark({ color }: { color: string }) {
@@ -78,6 +80,7 @@ function ColorMark({ color }: { color: string }) {
 }
 
 export function GroupsList({ groups, values, baseCurrency, query, onCreate }: GroupsListProps) {
+  const { t } = useTranslation();
   const navigate = useNavigate();
 
   const valueById = groupValuesById(values);
@@ -87,16 +90,16 @@ export function GroupsList({ groups, values, baseCurrency, query, onCreate }: Gr
   const config: V3DataViewConfig<GroupRow> = {
     pageKey: 'groups',
     data: groups,
-    noun: 'groups',
-    searchPlaceholder: 'Search groups',
+    nounKey: 'ui.dataView.noun.groups',
+    searchPlaceholderKey: 'ui.dataView.groups.config.searchGroups',
     searchFn: (group, query) => group.name.toLowerCase().includes(query),
     filterDefs: [
       {
         key: 'members',
-        label: 'Members',
+        labelKey: 'ui.dataView.groups.filter.members',
         options: [
-          { value: 'any', label: 'Has members' },
-          { value: 'none', label: 'Empty' },
+          { value: 'any', labelKey: 'ui.dataView.groups.option.hasMembers' },
+          { value: 'none', labelKey: 'ui.dataView.groups.option.empty' },
         ],
         fn: (group: GroupRow, value) => {
           const total = holdings(group) + accounts(group);
@@ -105,10 +108,10 @@ export function GroupsList({ groups, values, baseCurrency, query, onCreate }: Gr
       },
     ],
     sortDefs: [
-      { key: 'value', label: 'Value' },
-      { key: 'holdings', label: 'Holdings' },
-      { key: 'accounts', label: 'Accounts' },
-      { key: 'name', label: 'Name' },
+      { key: 'value', labelKey: 'ui.dataView.groups.sort.value' },
+      { key: 'holdings', labelKey: 'ui.dataView.groups.sort.holdings' },
+      { key: 'accounts', labelKey: 'ui.dataView.groups.sort.accounts' },
+      { key: 'name', labelKey: 'ui.dataView.groups.sort.name' },
     ],
     sortFn: (a, b, field, direction) => {
       const mult = direction === 'asc' ? 1 : -1;
@@ -127,17 +130,17 @@ export function GroupsList({ groups, values, baseCurrency, query, onCreate }: Gr
     renderRow: (group) => ({
       leading: <ColorMark color={group.color} />,
       label: group.name,
-      sublabel: memberLine(group),
+      sublabel: memberLine(group, t),
       value: figure(group),
-      ariaLabel: `${group.name}, ${memberLine(group)}`,
+      ariaLabel: `${group.name}, ${memberLine(group, t)}`,
     }),
     // The phone list's answer to the desktop table's header: a money column
     // with no name above it belongs to no claim (SC-69 3.3).
-    valueHeader: 'Value',
+    valueHeaderKey: 'ui.dataView.groups.config.value',
     columns: [
       {
         key: 'name',
-        header: 'Group',
+        headerKey: 'ui.dataView.groups.col.group',
         sortable: true,
         width: 'w-[40%]',
         render: (group) => (
@@ -149,7 +152,7 @@ export function GroupsList({ groups, values, baseCurrency, query, onCreate }: Gr
       },
       {
         key: 'value',
-        header: 'Value',
+        headerKey: 'ui.dataView.groups.col.value',
         sortable: true,
         numeric: true,
         width: 'w-40',
@@ -159,7 +162,7 @@ export function GroupsList({ groups, values, baseCurrency, query, onCreate }: Gr
       },
       {
         key: 'holdings',
-        header: 'Holdings',
+        headerKey: 'ui.dataView.groups.col.holdings',
         sortable: true,
         numeric: true,
         render: (group) => <Numeric value={holdings(group)} format="plain" decimals={0} />,
@@ -167,7 +170,7 @@ export function GroupsList({ groups, values, baseCurrency, query, onCreate }: Gr
       },
       {
         key: 'accounts',
-        header: 'Accounts',
+        headerKey: 'ui.dataView.groups.col.accounts',
         sortable: true,
         numeric: true,
         render: (group) => <Numeric value={accounts(group)} format="plain" decimals={0} />,
@@ -176,10 +179,9 @@ export function GroupsList({ groups, values, baseCurrency, query, onCreate }: Gr
     ],
     empty: {
       icon: Tags,
-      title: 'No groups yet',
-      description:
-        'A group is your own label across holdings and accounts — "retirement", "taxable", "the joint one".',
-      action: <Button onClick={onCreate}>Create your first group</Button>,
+      titleKey: 'ui.dataView.groups.empty.noGroupsYet',
+      descriptionKey: 'ui.dataView.groups.empty.aGroupIsYourOwnLabel',
+      action: <Button onClick={onCreate}>{t('v3.groups.createFirst')}</Button>,
     },
     onRowClick: (group) => navigate(groupDetailPath(group.id)),
     rowHref: (group) => groupDetailPath(group.id),

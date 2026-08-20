@@ -1,10 +1,11 @@
 import { showError, showSuccess } from '@scani/ui/ui/use-toast';
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { invalidatePortfolioQueries } from '@/hooks/invalidatePortfolioQueries';
 import { trpc } from '@/lib/trpc';
-import { invalidatePortfolioQueries } from '@/v2/hooks/invalidatePortfolioQueries';
-import type { useHoldingActions } from '@/v2/hooks/useHoldingActions';
-import { useJobStatus } from '@/v2/hooks/useJobStatus';
-import { describePriceRefresh, type PriceRefreshReport } from '@/v2/lib/priceRefreshOutcome';
+import type { useHoldingActions } from '@/v3/hooks/useHoldingActions';
+import { useJobStatus } from '@/v3/hooks/useJobStatus';
+import { describePriceRefresh, type PriceRefreshReport } from '@/v3/lib/price-refresh-outcome';
 
 /**
  * The two refreshes that are not mutations but jobs, and the toast each one
@@ -45,6 +46,7 @@ export interface HoldingRefresh {
 }
 
 export function useHoldingRefresh(actions: ReturnType<typeof useHoldingActions>): HoldingRefresh {
+  const { t } = useTranslation();
   const utils = trpc.useUtils();
   const [priceJob, setPriceJob] = useState<HoldingJob | null>(null);
   const [balanceJob, setBalanceJob] = useState<HoldingJob | null>(null);
@@ -64,18 +66,23 @@ export function useHoldingRefresh(actions: ReturnType<typeof useHoldingActions>)
       // below, on the same screen (SC-148). The result now distinguishes the
       // two, so the sentence can.
       const outcome = describePriceRefresh(
+        t,
         priceStatus.result as PriceRefreshReport | null,
         priceJob.symbol
       );
-      if (outcome.kind === 'no-price') showError(new Error(outcome.message), 'Refreshing price');
+      if (outcome.kind === 'no-price')
+        showError(new Error(outcome.message), t('v3.holdings.refresh.price'));
       else showSuccess(outcome.message);
       setPriceJob(null);
       void invalidatePortfolioQueries(utils);
     } else if (priceStatus.state === 'failed') {
-      showError(new Error(priceStatus.error ?? 'Price refresh job failed'), 'Refreshing price');
+      showError(
+        new Error(priceStatus.error ?? t('v3.holdings.refresh.priceFailed')),
+        t('v3.holdings.refresh.price')
+      );
       setPriceJob(null);
     }
-  }, [priceJob, priceStatus.state, priceStatus.result, priceStatus.error, utils]);
+  }, [priceJob, priceStatus.state, priceStatus.result, priceStatus.error, utils, t]);
 
   useEffect(() => {
     if (!balanceJob) return;
@@ -94,23 +101,24 @@ export function useHoldingRefresh(actions: ReturnType<typeof useHoldingActions>)
 
       if (symbol && missing.includes(symbol) && !synced.includes(symbol)) {
         showError(
-          new Error(
-            `${symbol} wasn't returned by the provider — your other ${synced.length} balance(s) refreshed. Try again in a minute, or re-import the account if this keeps happening.`
-          ),
-          'Balance refresh — partial'
+          new Error(t('v3.holdings.refresh.partial', { symbol, count: synced.length })),
+          t('v3.holdings.refresh.partialTitle')
         );
       } else if (symbol && synced.includes(symbol)) {
-        showSuccess(`${symbol} balance refreshed`);
+        showSuccess(t('v3.holdings.refresh.oneBalance', { symbol }));
       } else {
-        showSuccess(`Refreshed ${synced.length} balance(s) on this account`);
+        showSuccess(t('v3.holdings.refresh.manyBalances', { count: synced.length }));
       }
       setBalanceJob(null);
       void invalidatePortfolioQueries(utils);
     } else if (balanceStatus.state === 'failed') {
-      showError(new Error(balanceStatus.error ?? 'Refresh job failed'), 'Refreshing balance');
+      showError(
+        new Error(balanceStatus.error ?? t('v3.holdings.refresh.balanceFailed')),
+        t('v3.holdings.refresh.balance')
+      );
       setBalanceJob(null);
     }
-  }, [balanceJob, balanceStatus.state, balanceStatus.result, balanceStatus.error, utils]);
+  }, [balanceJob, balanceStatus.state, balanceStatus.result, balanceStatus.error, utils, t]);
 
   return {
     refreshPrice: (holding) => {
