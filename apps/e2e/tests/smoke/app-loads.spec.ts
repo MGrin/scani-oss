@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from '../../fixtures/test';
 
 test.describe('smoke: app loads', () => {
   test('anonymous GET / responds 200 and shows the Sign in CTA', async ({ page }) => {

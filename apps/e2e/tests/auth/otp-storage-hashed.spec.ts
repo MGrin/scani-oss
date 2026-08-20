@@ -1,13 +1,10 @@
-import { expect, test } from '@playwright/test';
 import { queryDb } from '../../fixtures/db';
 import { mailpit } from '../../fixtures/mailpit';
-import { resetAuthRateLimit } from '../../fixtures/redis';
+import { expect, test } from '../../fixtures/test';
 
 const API_BASE_URL = process.env.API_BASE_URL ?? 'http://localhost:3011';
 
 test.describe('auth: OTP storage is hashed', () => {
-  test.beforeEach(resetAuthRateLimit);
-
   test('user_verifications.value stores the OTP hash, not the plain code', async ({
     page,
   }, testInfo) => {
