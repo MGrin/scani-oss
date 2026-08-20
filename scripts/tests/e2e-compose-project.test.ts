@@ -31,8 +31,20 @@ describe('the e2e runner can only ever compose against its own project', () => {
 
   test('there is exactly one path to compose', () => {
     // Two would mean one of them can drift. The guard above only holds
-    // because every call goes through the single `compose()` helper.
+    // because every call goes through the single `composeArgv()` builder.
     expect(COMPOSE_ARGV_LINES).toHaveLength(1);
+  });
+
+  test('every docker spawn is built by that one builder', () => {
+    // SC-496 added a second spawn — the `config --services` probe that asks
+    // this repo's compose what it calls the api service. It captures stdout,
+    // so it cannot reuse `run()`, and a hand-assembled argv next to it would
+    // be exactly the unnamed project the test above exists to forbid.
+    const dockerSpawns = SOURCE.split('\n').filter((line) => /['"]docker['"]/.test(line));
+    expect(dockerSpawns.length).toBeGreaterThan(0);
+    for (const line of dockerSpawns) {
+      expect(line).toContain('composeArgv(');
+    }
   });
 
   test('`down -v` is reachable only through that path', () => {
