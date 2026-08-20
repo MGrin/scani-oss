@@ -175,7 +175,7 @@ services:
       SMTP_FROM: ${SMTP_FROM:-no-reply@example.com}
       FASTMAIL_API_TOKEN: ${FASTMAIL_API_TOKEN:-}
       # Logging
-      SERVICE_NAME: scani-data-provider
+      SERVICE_NAME: data-provider
       LOG_LEVEL: ${LOG_LEVEL:-info}
       LOG_ID_PEPPER: ${LOG_ID_PEPPER:?LOG_ID_PEPPER is required in production}
       # Sentry (optional)
@@ -212,11 +212,17 @@ services:
       SCANI_CLOUD_API_KEY: ${SCANI_CLOUD_API_KEY:?SCANI_CLOUD_API_KEY is required (must match DATA_PROVIDER_API_KEY)}
       COOKIE_DOMAIN: ${COOKIE_DOMAIN:-}
       # Logging
-      # Must be exactly `scani-backend`: WebSocketRealtimeUpdatesService
-      # refuses to attach to Elysia under any other name, so the api
-      # crash-loops at boot with a message about a service name nobody
-      # set (SC-453). Same value as fly.toml and docker-compose.yml.
-      SERVICE_NAME: scani-backend
+      # Must match the SERVICE_NAME the image you are running was built to
+      # expect. The api asserts it during boot wiring and THROWS on a mismatch,
+      # before it serves anything — so a wrong value here does not degrade a
+      # feature, it crash-loops the container.
+      #
+      # The published images expect `api` / `worker` / `data-provider`, which is
+      # what this file sets. Build the images yourself and you must check
+      # `REQUIRED_SERVICE_NAME` in `packages/infra/realtime/src/websocket.ts` in
+      # the tree you built from, and set these to match it. Nothing validates
+      # this pairing; the only signal is the api failing to start.
+      SERVICE_NAME: api
       LOG_LEVEL: ${LOG_LEVEL:-info}
       LOG_ID_PEPPER: ${LOG_ID_PEPPER:?LOG_ID_PEPPER is required in production}
       # Sentry
@@ -258,7 +264,7 @@ services:
       S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-minioadmin}
       S3_BUCKET: ${S3_BUCKET:-job-uploads}
       # Logging
-      SERVICE_NAME: scani-worker
+      SERVICE_NAME: worker
       LOG_LEVEL: ${LOG_LEVEL:-info}
       LOG_ID_PEPPER: ${LOG_ID_PEPPER:?LOG_ID_PEPPER is required in production}
       SENTRY_DSN: ${SENTRY_DSN:-}
