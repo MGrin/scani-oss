@@ -10,12 +10,42 @@ import { Steps, Aside, Tabs, TabItem } from '@astrojs/starlight/components';
 `docker-compose.prod.yml` is the production-shaped compose file. It
 pulls pre-built multi-arch images from Docker Hub
 (`scani/api`, `scani/worker`, `scani/data-provider`,
-`scani/frontend-app`) and wires them up with Postgres, Redis, and
-MinIO. Run it as-is for a one-box deploy, or comment out the
+`scani/frontend-app`) and wires them up with Postgres, Redis, MinIO
+and a mail catcher. Run it as-is for a one-box deploy, or comment out the
 data-plane services and point at managed Postgres / Redis / S3
 endpoints (see [Managed services](/self-hosting/tier1/managed-services/)).
 
 ## The one-command bring-up
+
+From any empty directory:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/MGrin/scani-oss/main/scripts/self-host.sh | bash
+```
+
+That is the whole install. `scripts/self-host.sh` fetches this compose file,
+generates a `.env` full of real secrets, pulls the images, applies migrations
+and brings the stack up, then waits for it to answer HTTP before saying so.
+Scani is on [http://localhost:8080](http://localhost:8080); your sign-in code
+is at [http://localhost:8026](http://localhost:8026).
+
+Knobs, all optional: `SCANI_IMAGE_TAG` (pin a release), `SCANI_PORT`,
+`SCANI_MAIL_PORT`, `SCANI_REF`, and `SCANI_SKIP_UP=1` to write `.env` and stop
+before anything boots.
+
+<Aside type="caution" title="Do not assemble .env by hand">
+  The older instructions here said to copy `.env.example` and fill in eight
+  values. That path is worse than it looks: `.env.example` carries **dev**
+  secrets — `ENCRYPTION_KEY=0123456789abcdef…` is published in a public repo,
+  so every credential you store would be encrypted under a key anyone can
+  read — and it does not boot either, because `LOG_ID_PEPPER` is deliberately
+  empty there. Let the script generate them.
+</Aside>
+
+## Doing it by hand
+
+If you would rather run each step yourself, or you are wiring this into
+another orchestrator:
 
 <Steps>
 
@@ -23,16 +53,18 @@ endpoints (see [Managed services](/self-hosting/tier1/managed-services/)).
 
    ```sh
    curl -O https://raw.githubusercontent.com/MGrin/scani-oss/main/docker-compose.prod.yml
-   curl -O https://raw.githubusercontent.com/MGrin/scani-oss/main/.env.example
-   mv .env.example .env
    ```
 
-2. Fill in the required values in `.env`.
-
-   See [Required environment variables](/self-hosting/tier1/required-env/)
-   — at minimum: `BACKEND_URL`, `FRONTEND_URL`,
+2. Write a `.env` beside it. Every value below must be a real secret, not a
+   placeholder — generate each with `openssl rand -hex 32`:
    `BETTER_AUTH_SECRET`, `ENCRYPTION_KEY`, `JOBS_HMAC_SECRET`,
-   `DATA_PROVIDER_API_KEY`, `SCANI_CLOUD_API_KEY`, `LOG_ID_PEPPER`.
+   `LOG_ID_PEPPER`, and `DATA_PROVIDER_API_KEY` / `SCANI_CLOUD_API_KEY`
+   (those last two are two ends of one bearer and must be equal).
+
+   Then `FRONTEND_URL` and `BACKEND_URL`, both the public origin of your
+   instance. `BACKEND_URL` must carry **no path** even though the API is
+   reached under `/api` — Better-Auth derives its route base path from it,
+   and a path there silently moves every auth route out of reach.
 
 3. Apply database migrations. **Do this on every fresh install AND
    on every upgrade**, before bringing the long-running services up.
@@ -74,6 +106,7 @@ endpoints (see [Managed services](/self-hosting/tier1/managed-services/)).
 | `postgres` | `postgres:16-alpine` | (internal) | Other compose services. |
 | `redis` | `redis:7-alpine` | (internal) | Other compose services. |
 | `minio` + `minio-init` | `minio/minio:latest`, `minio/mc:latest` | (internal) | Other compose services. |
+| `mailpit` | `axllent/mailpit:latest` | `127.0.0.1:8026` | You, to read your own sign-in code. Replace with real SMTP before anyone else signs in. |
 | `migrate` (profile-gated) | `scani/migrate:${SCANI_IMAGE_TAG:-latest}` | (none) | One-shot; exits after applying migrations. |
 | `data-provider` | `scani/data-provider:${SCANI_IMAGE_TAG:-latest}` | (internal) | `api`, `worker`. |
 | `api` | `scani/api:${SCANI_IMAGE_TAG:-latest}` | (internal) | `frontend-app` via nginx reverse proxy. |

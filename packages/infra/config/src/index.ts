@@ -28,13 +28,39 @@ export function isNodeEnvProduction(): boolean {
 
 export const urlSchema = z.string().url({ message: 'must be a valid URL' });
 
+// Loopback is a secure context by the browser's own rules, so `http://localhost`
+// carries the same cookie and mixed-content guarantees `https://` is required
+// for. Without this carve-out a self-hoster cannot reach a first working
+// instance at all: docker-compose.prod.yml runs with NODE_ENV=production (which
+// is what makes @scani/security refuse to store credentials in plaintext), the
+// stack serves on http://localhost:8080, and the api refused to boot on exactly
+// that URL. The alternative — telling someone to obtain a hostname and a
+// certificate before their first `up` — is not a one-command self-host, and the
+// alternative to THAT, running the stack as NODE_ENV=development, silently turns
+// credential encryption into a passthrough (SC-453).
+//
+// Deliberately loopback only. A LAN address like 192.168.1.10 is NOT a secure
+// context in any browser, so widening this to private ranges would be waving
+// through the case the rule exists for.
+const LOOPBACK_HOSTNAMES = new Set(['localhost', '127.0.0.1', '::1', '[::1]']);
+
+function isLoopbackHttpUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    if (url.protocol !== 'http:') return false;
+    return LOOPBACK_HOSTNAMES.has(url.hostname) || url.hostname.endsWith('.localhost');
+  } catch {
+    return false;
+  }
+}
+
 // The refine reads NODE_ENV at parse time (not at module load) so a single
 // schema instance handles both dev and prod. In real apps NODE_ENV is stable
 // from boot, so this is behaviourally identical to a load-time gate; the
 // payoff is that tests can exercise both branches in one process.
 export const httpsUrlInProduction = urlSchema.refine(
-  (v) => !isNodeEnvProduction() || v.startsWith('https://'),
-  { message: 'must use https:// in production' }
+  (v) => !isNodeEnvProduction() || v.startsWith('https://') || isLoopbackHttpUrl(v),
+  { message: 'must use https:// in production (plain http is allowed only for loopback hosts)' }
 );
 
 /**
