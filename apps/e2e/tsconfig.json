@@ -1,7 +1,11 @@
 {
   "extends": "../../tsconfig.json",
   "compilerOptions": {
-    "rootDir": ".",
+    // The repo root, not this workspace: `scripts/run.ts` derives its compose
+    // project name from `scripts/lib/worktree.ts`, which is the one place a
+    // checkout's identity is decided (SC-493). Nothing is emitted here, so
+    // `rootDir` only decides which files the program is allowed to reach.
+    "rootDir": "../..",
     "noEmit": true,
     // `page.evaluate` callbacks are compiled here and executed in the browser,
     // so `document`, `Element` and `getComputedStyle` have to resolve — the
