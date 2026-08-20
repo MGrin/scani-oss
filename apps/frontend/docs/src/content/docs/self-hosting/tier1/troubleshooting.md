@@ -5,6 +5,50 @@ sidebar:
   order: 10
 ---
 
+## A failed install cannot be re-run
+
+**Symptom.** `scripts/self-host.sh` stops with:
+
+```
+a previous install's data is still on this machine, and the secrets that
+unlock it are not.
+```
+
+Or, on any version before this check existed, the migration step dies with:
+
+```
+G1: password authentication failed for user "scani"
+ severity: FATAL   code: 28P01   routine: auth_failed
+```
+
+**Cause.** A first run got far enough to start Postgres — which initialised
+its volume with that run's generated password — and then failed. Any ordinary
+hiccup does it: a host port already taken, a Ctrl-C, a dropped image pull, a
+laptop going to sleep. The `.env` holding that password is then deleted or
+never kept, and Compose names its volumes after the **project**, which comes
+from the directory's name and not from anything inside it. So deleting the
+install directory removes the secrets and leaves the database, and a fresh
+install into a directory of the same name meets a Postgres that wants a
+password nobody has any more.
+
+**Fix.** Two, and the script prints both with your project's names in them:
+
+- **Keep the data.** Put that run's `.env` back next to the compose file and
+  run the script again. Nothing is regenerated and the install converges —
+  this is the ordinary recovery, and it works from any partly-failed run as
+  long as the `.env` survived.
+- **Throw the data away.** Re-run with `SCANI_RESET=1`, which deletes this
+  project's containers and its `postgres-data`, `redis-data` and `minio-data`
+  volumes before installing. By hand, the same thing:
+
+  ```sh
+  docker rm -f $(docker ps -aq --filter label=com.docker.compose.project=<project>)
+  docker volume rm <project>_postgres-data <project>_redis-data <project>_minio-data
+  ```
+
+`<project>` is the install directory's name unless you set
+`COMPOSE_PROJECT_NAME`. `docker volume ls` will show them.
+
 ## Running two scani checkouts in parallel
 
 **Symptom.** `bun run dev:stack` in a second worktree fails with
