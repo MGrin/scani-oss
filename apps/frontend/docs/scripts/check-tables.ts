@@ -8,6 +8,12 @@
 // in production, for as long as the pages existed, with a green build. The
 // pipeline is one line of config and nothing else asserted its effect.
 //
+// Both the GFM switch and the scroll plugin are registered on
+// `markdown.processor` (`unified({...})` from `@astrojs/markdown-remark`).
+// Nothing about that registration is asserted here on purpose: SC-182 had a
+// config Astro accepted without complaint and fifteen pages of `|` characters
+// in production. Only the built HTML answers the question this script asks.
+//
 // It also asserts every built table sits inside a `.table-scroll-viewport`.
 // That wrapper is what carries the edge fade, the `tabindex` and the
 // accessible name — without it a four-column reference table on a 390px screen
@@ -127,12 +133,25 @@ async function main(): Promise<void> {
     wrapped += tables;
   }
 
+  // A check that finds nothing to check passes for the same reason a broken
+  // one does. `checked` only falls to zero if the content root moved or the
+  // pipe-table detector stopped matching — either way this script is inert and
+  // the pipeline it guards is unobserved again.
+  if (checked === 0) {
+    console.error(
+      `\nNo page under ${relative(ROOT, DOCS_ROOT)} authors a Markdown pipe table.\n` +
+        'This check has nothing to assert, so it is not protecting anything.\n'
+    );
+    process.exit(1);
+  }
+
   if (failures.length > 0) {
     console.error(`\nTable rendering is broken on ${failures.length} of ${checked} pages:\n`);
     for (const failure of failures) console.error(`  ✗ ${failure}`);
     console.error(
-      '\nGFM is configured in astro.config.mjs (markdown.remarkPlugins); the scroll\n' +
-        'region comes from markdown.rehypePlugins (rehype-scrollable-tables.mjs).\n'
+      '\nBoth come off `markdown.processor` in astro.config.mjs: the table itself\n' +
+        'from `unified({ gfm })`, the scroll region from `unified({ rehypePlugins })`\n' +
+        '(rehype-scrollable-tables.mjs).\n'
     );
     process.exit(1);
   }

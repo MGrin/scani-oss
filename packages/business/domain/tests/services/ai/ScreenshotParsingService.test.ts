@@ -1,16 +1,15 @@
 process.env.DATABASE_URL = process.env.DATABASE_URL || 'postgresql://dummy:dummy@localhost/dummy';
 
-import { afterAll, describe, expect, test } from 'bun:test';
+import { describe, expect, test } from 'bun:test';
 import { Container } from 'typedi';
 import { AIRouter, type ParsedPortfolio } from '../../../src/services/ai/AIRouter';
 import { ScreenshotParsingService } from '../../../src/services/ai/ScreenshotParsingService';
 import { TokenValidationService } from '../../../src/services/tokens/TokenValidationService';
+import { restoreContainerAfterAll } from '../../../test/helpers/container';
 
-afterAll(() => {
-  Container.set(AIRouter, new AIRouter());
-  Container.set(TokenValidationService, new TokenValidationService());
-  Container.set(ScreenshotParsingService, new ScreenshotParsingService());
-});
+// Container stubs are process-global; put back whatever this file changes
+// so no later test file resolves them (SC-448).
+restoreContainerAfterAll();
 
 interface ValidateCall {
   symbol: string;

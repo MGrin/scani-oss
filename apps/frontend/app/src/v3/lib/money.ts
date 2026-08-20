@@ -1,5 +1,6 @@
 import { type Decimal, formatDate } from '@scani/shared';
-import { sumAmountsByCurrency } from '@/v2/lib/paymentTotals';
+import type { TFunction } from 'i18next';
+import { sumAmountsByCurrency } from './paymentTotals';
 import { V3_ROUTES } from './routes';
 
 /**
@@ -24,15 +25,16 @@ export type MoneySegment = 'upcoming' | 'recurring' | 'vendors';
 
 export interface MoneySegmentDef {
   key: MoneySegment;
-  /** Segmented-control label. */
-  label: string;
+  /** Segmented-control label, as an i18n key — this table is plain data and
+   *  has no `t` (SC-201). Same shape as `V3_TAB_ITEMS`. */
+  labelKey: string;
   path: string;
 }
 
 export const MONEY_SEGMENTS: readonly MoneySegmentDef[] = [
-  { key: 'upcoming', label: 'Upcoming', path: V3_ROUTES.money },
-  { key: 'recurring', label: 'Recurring', path: V3_ROUTES.recurring },
-  { key: 'vendors', label: 'Vendors', path: V3_ROUTES.vendors },
+  { key: 'upcoming', labelKey: 'v3.money.segments.upcoming', path: V3_ROUTES.money },
+  { key: 'recurring', labelKey: 'v3.money.segments.recurring', path: V3_ROUTES.recurring },
+  { key: 'vendors', labelKey: 'v3.money.segments.vendors', path: V3_ROUTES.vendors },
 ];
 
 /** The default view. Bills have deadlines; the standing list does not. */
@@ -116,6 +118,7 @@ export interface OccurrenceGroup<T> {
  * date alone would bury a missed bill above the fold only by accident.
  */
 export function groupUpcoming<T extends DatedOccurrence>(
+  t: TFunction,
   occurrences: readonly T[],
   today: string
 ): OccurrenceGroup<T>[] {
@@ -124,7 +127,12 @@ export function groupUpcoming<T extends DatedOccurrence>(
 
   const groups: OccurrenceGroup<T>[] = [];
   if (overdue.length > 0) {
-    groups.push({ key: 'overdue', label: 'Overdue', overdue: true, items: overdue });
+    groups.push({
+      key: 'overdue',
+      label: t('v3.money.group.overdue'),
+      overdue: true,
+      items: overdue,
+    });
   }
 
   for (const occurrence of sorted) {
@@ -152,21 +160,21 @@ const DAY_MS = 24 * 60 * 60 * 1000;
  * in UTC — the same comparison `payments.upcoming` makes server-side, so a bill
  * due at midnight does not shift by a day for anyone east of Greenwich.
  */
-export function formatOverdueBy(dueDate: string, today: string): string {
+export function formatOverdueBy(dueDate: string, today: string, t: TFunction): string {
   const due = Date.parse(`${dueDate}T00:00:00Z`);
   const from = Date.parse(`${today}T00:00:00Z`);
-  if (!Number.isFinite(due) || !Number.isFinite(from)) return 'Overdue';
+  if (!Number.isFinite(due) || !Number.isFinite(from)) return t('v3.money.overdue.unknown');
 
   const days = Math.round((from - due) / DAY_MS);
-  if (days <= 0) return 'Due today';
-  return `${days} day${days === 1 ? '' : 's'} overdue`;
+  if (days <= 0) return t('v3.money.overdue.today');
+  return t('v3.money.overdue.byDays', { count: days });
 }
 
 /** "Bill" / "Income" — the word a direction gets in the interface. v2 said
  *  "Outgoing"/"Incoming" on the feed and "Bill"/"Income" on the list, for the
  *  same field. One noun. */
-export function directionLabel(direction: string): string {
-  return direction === 'inflow' ? 'Income' : 'Bill';
+export function directionLabel(direction: string, t: TFunction): string {
+  return direction === 'inflow' ? t('v3.money.direction.income') : t('v3.money.direction.bill');
 }
 
 /** The fields a direction split and a currency total read off a
@@ -253,10 +261,6 @@ export function splitByDueness<T extends DatedOccurrence>(
 
 /** The label over the overdue figure. The count is part of the claim: the
  *  figure is what those bills come to, not a running balance. */
-export function overdueTotalLabel(count: number): string {
-  return `Overdue, ${count} ${count === 1 ? 'bill' : 'bills'}`;
-}
-
 /**
  * What a set of occurrences comes to, per currency.
  *
@@ -319,13 +323,16 @@ export function occurrencesEndWouldRemove(
 export function endConsequence(
   vendorName: string,
   endDate: string,
-  removedCount: number | null
+  removedCount: number | null,
+  t: TFunction
 ): string {
-  const base = `Ends ${vendorName} on ${formatDate(endDate)}. It stops appearing in Upcoming, and its paid and skipped history is kept.`;
-  if (removedCount === null) return `${base} Checking how many scheduled dates this removes…`;
-  if (removedCount === 0) return `${base} There are no scheduled dates after that to remove.`;
-  const dates = removedCount === 1 ? '1 scheduled date' : `${removedCount} scheduled dates`;
-  return `${base} ${dates} after that ${removedCount === 1 ? 'is' : 'are'} removed. This cannot be undone — reviving an ended payment is not something Scani can do.`;
+  // Two whole SENTENCES joined by a space, not two fragments (SC-201). A
+  // sentence boundary is the one join that is safe in every language; the verb
+  // agreement and the count both live inside their own sentence's key.
+  const base = t('v3.money.endPayment.base', { vendor: vendorName, date: formatDate(endDate) });
+  if (removedCount === null) return `${base} ${t('v3.money.endPayment.checking')}`;
+  if (removedCount === 0) return `${base} ${t('v3.money.endPayment.noneRemoved')}`;
+  return `${base} ${t('v3.money.endPayment.removed', { count: removedCount })}`;
 }
 
 /**
@@ -358,8 +365,37 @@ export function paymentDeleteCounts(
   return { scheduled, settled, skipped };
 }
 
-function dateCount(count: number): string {
-  return count === 1 ? '1 date' : `${count} dates`;
+/**
+ * The two clauses a discarded-dates sentence can be built from, and the frame
+ * that joins them (SC-201).
+ *
+ * "1 date still scheduled and 2 dates you skipped go with it" cannot be one
+ * key: i18next pluralises on ONE `count`, and this sentence counts two things
+ * whose forms vary independently. So each clause is its own pluralised key and
+ * the frame is a third — which is also what gives a translator the freedom to
+ * move the verb, drop the conjunction, or reorder the clauses. The English
+ * verb agrees with the TOTAL, not with the last noun, so the frame is chosen
+ * on the total.
+ *
+ * FRAGILE, flagged not fixed: `listAnd` hard-codes a two-item conjunction.
+ * `Intl.ListFormat` is the right answer and belongs with step 5, alongside the
+ * `join(', ')` currency lists in `ConvertedTotal`.
+ */
+function discardedClauses(counts: PaymentDeleteCounts, t: TFunction): string {
+  const clauses: string[] = [];
+  if (counts.scheduled > 0) {
+    clauses.push(t('v3.money.deletePayment.clauseScheduled', { count: counts.scheduled }));
+  }
+  if (counts.skipped > 0) {
+    clauses.push(t('v3.money.deletePayment.clauseSkipped', { count: counts.skipped }));
+  }
+  if (clauses.length === 0) return '';
+  const joined =
+    clauses.length === 1
+      ? clauses[0]
+      : t('v3.common.listAnd', { first: clauses[0], second: clauses[1] });
+  const total = counts.scheduled + counts.skipped;
+  return ` ${t('v3.money.deletePayment.discarded', { count: total, clauses: joined })}`;
 }
 
 /**
@@ -375,6 +411,7 @@ function dateCount(count: number): string {
 export function paymentDeleteConsequence(
   vendorName: string,
   counts: PaymentDeleteCounts | null,
+  t: TFunction,
   /**
    * The payment has already ended, so "End it instead" is not a next step — it
    * is a description of what already happened. The refusal is the same; only
@@ -383,26 +420,14 @@ export function paymentDeleteConsequence(
    */
   alreadyEnded = false
 ): string {
-  if (!counts) {
-    return `Deletes the ${vendorName} payment. Checking what it has against it…`;
-  }
+  if (!counts) return t('v3.money.deletePayment.checking', { vendor: vendorName });
   if (counts.settled > 0) {
     const wayOut = alreadyEnded
-      ? 'It has already ended, so the schedule is stopped and the record stays.'
-      : 'End it instead: the schedule stops and the record stays.';
-    return `This payment has ${dateCount(counts.settled)} settled against it — money that really moved. It cannot be deleted, because that would erase the history too. ${wayOut}`;
+      ? t('v3.money.deletePayment.wayOutEnded')
+      : t('v3.money.deletePayment.wayOutEnd');
+    return `${t('v3.money.deletePayment.blocked', { count: counts.settled })} ${wayOut}`;
   }
-  const discarded: string[] = [];
-  if (counts.scheduled > 0) discarded.push(`${dateCount(counts.scheduled)} still scheduled`);
-  if (counts.skipped > 0) discarded.push(`${dateCount(counts.skipped)} you skipped`);
-  // The verb agrees with the whole subject, not with the last noun in it —
-  // same rule `mergeConsequence` follows.
-  const discardedTotal = counts.scheduled + counts.skipped;
-  const tail =
-    discarded.length > 0
-      ? ` ${discarded.join(' and ')} ${discardedTotal === 1 ? 'goes' : 'go'} with it.`
-      : '';
-  return `Deletes the ${vendorName} payment as if it had never existed.${tail} It leaves Upcoming, the totals and this list. Use End instead if this bill really ran — that keeps the record. This cannot be undone.`;
+  return `${t('v3.money.deletePayment.lead', { vendor: vendorName })}${discardedClauses(counts, t)} ${t('v3.money.deletePayment.tail')}`;
 }
 
 /** What `vendors.deletePreview` returns, as the confirmation needs it. */
@@ -427,30 +452,34 @@ export interface VendorDeleteCounts {
  */
 export function vendorDeleteConsequence(
   vendorName: string,
-  counts: VendorDeleteCounts | null
+  counts: VendorDeleteCounts | null,
+  t: TFunction
 ): string {
-  if (!counts) return `Deletes "${vendorName}". Checking what points at it…`;
+  if (!counts) return t('v3.money.deleteVendor.checking', { vendor: vendorName });
+  // The blocked sentence carries FOUR agreements off one count — "those
+  // payments", "against them", "delete them" — so it is one key per plural
+  // form rather than a frame with pronouns interpolated into it. A language
+  // that marks case would otherwise get an English pronoun table.
   if (counts.payments > 0) {
-    const payments = counts.payments === 1 ? '1 payment' : `${counts.payments} payments`;
-    return `"${vendorName}" still has ${payments} pointing at it, and deleting it would take ${counts.payments === 1 ? 'that payment' : 'those payments'} and everything settled against ${counts.payments === 1 ? 'it' : 'them'}. End or delete ${counts.payments === 1 ? 'it' : 'them'} first, or merge "${vendorName}" into the vendor you meant.`;
+    return t('v3.money.deleteVendor.blocked', { count: counts.payments, vendor: vendorName });
   }
   const also: string[] = [];
   if (counts.aliases > 0) {
-    also.push(
-      counts.aliases === 1
-        ? '1 alias it has been seen under goes with it'
-        : `${counts.aliases} aliases it has been seen under go with it`
-    );
+    also.push(t('v3.money.deleteVendor.alsoAliases', { count: counts.aliases }));
   }
   if (counts.extractions > 0) {
-    also.push(
-      counts.extractions === 1
-        ? '1 parsed invoice keeps its own record but loses its link to this vendor'
-        : `${counts.extractions} parsed invoices keep their own records but lose their link to this vendor`
-    );
+    also.push(t('v3.money.deleteVendor.alsoExtractions', { count: counts.extractions }));
   }
-  const tail = also.length > 0 ? ` ${also.join('; ')}.` : '';
-  return `Deletes "${vendorName}". Nothing is paid to or by it.${tail} This cannot be undone.`;
+  // Semicolon-joined, and the separator is the translator's — see
+  // `discardedClauses` for why this is a frame key rather than a `join`.
+  const joined =
+    also.length === 0
+      ? ''
+      : also.length === 1
+        ? also[0]
+        : t('v3.common.listSemicolon', { first: also[0], second: also[1] });
+  const tail = joined ? ` ${t('v3.money.deleteVendor.alsoFrame', { clauses: joined })}` : '';
+  return `${t('v3.money.deleteVendor.lead', { vendor: vendorName })}${tail} ${t('v3.common.cannotBeUndone')}`;
 }
 
 /** A vendor as the merge picker needs it. */
@@ -485,22 +514,28 @@ export function filterMergeCandidates<T extends MergeCandidate>(
 export function mergeConsequence(
   survivorName: string,
   duplicateName: string,
-  impact: { payments: number; aliases: number } | null
+  impact: { payments: number; aliases: number } | null,
+  t: TFunction
 ): string {
-  const base = `"${duplicateName}" is deleted and "${survivorName}" is kept.`;
-  if (!impact) return `${base} Checking what moves across…`;
+  const base = t('v3.money.mergeVendor.base', {
+    duplicate: duplicateName,
+    survivor: survivorName,
+  });
+  if (!impact) return `${base} ${t('v3.money.mergeVendor.checking')}`;
   const moved: string[] = [];
   if (impact.payments > 0) {
-    moved.push(impact.payments === 1 ? '1 payment' : `${impact.payments} payments`);
+    moved.push(t('v3.money.mergeVendor.clausePayments', { count: impact.payments }));
   }
   if (impact.aliases > 0) {
-    moved.push(impact.aliases === 1 ? '1 alias' : `${impact.aliases} aliases`);
+    moved.push(t('v3.money.mergeVendor.clauseAliases', { count: impact.aliases }));
   }
   if (moved.length === 0) {
-    return `${base} Nothing points at "${duplicateName}", so nothing moves. This cannot be undone.`;
+    return `${base} ${t('v3.money.mergeVendor.nothingMoves', { duplicate: duplicateName })}`;
   }
-  // "1 payment moves", "2 payments move", "1 payment and 1 alias move" — the
-  // verb agrees with the whole subject, not with the last noun in it.
-  const verb = impact.payments + impact.aliases === 1 ? 'moves' : 'move';
-  return `${base} ${moved.join(' and ')} ${verb} to "${survivorName}". This cannot be undone.`;
+  const joined =
+    moved.length === 1 ? moved[0] : t('v3.common.listAnd', { first: moved[0], second: moved[1] });
+  // The verb agrees with the whole subject, not with the last noun in it, so
+  // the frame is chosen on the TOTAL — see `discardedClauses`.
+  const total = impact.payments + impact.aliases;
+  return `${base} ${t('v3.money.mergeVendor.moves', { count: total, clauses: joined, survivor: survivorName })}`;
 }

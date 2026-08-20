@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { StorageFacade } from '@scani/cloud-client/facades/storage-facade';
 import {
+  describeMergedRows,
   HoldingBalanceObservationRepository,
   HoldingRepository,
   HoldingTransactionRepository,
@@ -206,6 +207,9 @@ export class FileImportProcessor extends UserJobProcessor<FileImportJob, FileImp
         balance: '0',
         userId: data.userId,
         source: 'statement-import',
+        // The user uploaded the statement this currency was read from
+        // (SC-277).
+        arrival: 'user_confirmed',
         skipSyncCapture: true,
       });
       holdingByCurrency.set(symbol, {
@@ -238,7 +242,17 @@ export class FileImportProcessor extends UserJobProcessor<FileImportJob, FileImp
     // dedup keys are (holdingId, source, externalId) for transactions
     // and (holdingId, observedAt, source) for observations.
     await ctx.reportStatus('Saving transactions to your account…');
-    await txRepo.bulkUpsert(ingestResult.transactions);
+    const written = await txRepo.bulkUpsert(ingestResult.transactions);
+    // A statement's synthetic externalId is built from the parsed row, so
+    // two rows a bank genuinely repeated on one day collapse into one and
+    // the import used to report only the surviving count (SC-349). The
+    // merge is legitimate often enough that it must not fail the import —
+    // but the user is the only one who can tell a real duplicate from a
+    // row their statement lost.
+    const merged = describeMergedRows(written.merges);
+    if (merged) {
+      ingestResult.warnings.push(`${merged} Check the statement for genuinely repeated entries.`);
+    }
     await obsRepo.bulkAppend(ingestResult.observations);
 
     // Update each affected holding's `balance` column to the latest

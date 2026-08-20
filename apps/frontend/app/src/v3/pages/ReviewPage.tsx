@@ -1,6 +1,7 @@
 import { PageHeader, PageLayout } from '@scani/ui/v3/components/PageLayout';
 import { loadingOnly } from '@scani/ui/v3/lib/query-state';
-import { useReviewFeed } from '@/v2/hooks/useReviewFeed';
+import { useTranslation } from 'react-i18next';
+import { useReviewFeed } from '@/v3/hooks/useReviewFeed';
 import { ReviewList } from '../components/review/ReviewList';
 
 /**
@@ -14,11 +15,12 @@ import { ReviewList } from '../components/review/ReviewList';
  * badge and this page cannot disagree.
  */
 export function ReviewPage() {
+  const { t } = useTranslation();
   const { items, isLoading } = useReviewFeed();
 
   return (
     <PageLayout measure="wide">
-      <PageHeader title="Review" />
+      <PageHeader title={t('v3.review.page.title')} />
       <ReviewList items={items} query={loadingOnly(isLoading)} />
     </PageLayout>
   );

@@ -48,13 +48,20 @@ import { wiseFactory } from '@scani/providers/providers/wise';
 import { yahooFinanceFactory } from '@scani/providers/providers/yahoo-finance';
 import { googleSheetsFactory } from '@scani/providers-google-sheets';
 import {
+  assertQueueBindings,
   JobScheduler,
   QueueClient,
   RedisLifecyclePublisher,
   RedisResourceLock,
   WorkerClient,
 } from '@scani/queue';
-import { setSharedRedis } from '@scani/rate-limiter';
+import {
+  observeRedisReachability,
+  type StrandReport,
+  setSharedRedis,
+  startRedisStrandWatchdog,
+  strandedRedisError,
+} from '@scani/rate-limiter';
 
 initSentry({ component: 'worker', release: env.SENTRY_RELEASE });
 
@@ -85,9 +92,11 @@ import { Container } from 'typedi';
 // Side-effect imports so each processor's @Service decorator runs and
 // the class registers with the typedi Container before WorkerClient
 // pulls them out and registers them.
+import { AlertSweepProcessor } from './processors/alert-sweep';
 import { ApyPayoutsProcessor } from './processors/apy-payouts';
 import { BackfillCounterpartyProcessor } from './processors/backfill-counterparty';
 import { BackfillTokenIdentityProcessor } from './processors/backfill-token-identity';
+import { CurrencyRateRefreshProcessor } from './processors/currency-rate-refresh';
 import { DlqDepthProbeProcessor } from './processors/dlq-depth-probe';
 import { DocumentParseProcessor } from './processors/document-parse';
 import { ExchangeBalancesProcessor } from './processors/exchange-balances';
@@ -101,19 +110,23 @@ import { HoldingPriceUpdateProcessor } from './processors/holding-price-update';
 import { IngestTransactionsProcessor } from './processors/ingest-transactions';
 import { JobHeartbeatProbeProcessor } from './processors/job-heartbeat-probe';
 import { ManualHoldingsCreateProcessor } from './processors/manual-holdings-create';
+import { PaymentDueReminderProcessor } from './processors/payment-due-reminder';
 import { PortfolioHistoryBackfillProcessor } from './processors/portfolio-history-backfill';
 import { PortfolioValueRollupProcessor } from './processors/portfolio-value-rollup';
 import { PricingProcessor } from './processors/pricing';
 import { ReconcileOrphanedUserJobsProcessor } from './processors/reconcile-orphaned-user-jobs';
 import { ReconcilePendingCredentialsProcessor } from './processors/reconcile-pending-credentials';
 import { RefreshAccountBalanceProcessor } from './processors/refresh-account-balance';
+import { RescoreScamTokensProcessor } from './processors/rescore-scam-tokens';
 import { ScreenshotParseProcessor } from './processors/screenshot-parse';
+import { SplitHoldingProbeProcessor } from './processors/split-holding-probe';
 import { StaleSyncProbeProcessor } from './processors/stale-sync-probe';
 import { TokenPricesDownsampleProcessor } from './processors/token-prices-downsample';
 import { TransferLinkingProcessor } from './processors/transfer-linking';
 import { UserDataDeleteProcessor } from './processors/user-data-delete';
 import { WalletBalancesProcessor } from './processors/wallet-balances';
 import { WalletImportProcessor } from './processors/wallet-import';
+import { WeeklyDigestProcessor } from './processors/weekly-digest';
 
 const logger = createComponentLogger('worker');
 
@@ -142,6 +155,11 @@ function resolveProcessors() {
     Container.get(DlqDepthProbeProcessor),
     Container.get(JobHeartbeatProbeProcessor),
     Container.get(StaleSyncProbeProcessor),
+    Container.get(SplitHoldingProbeProcessor),
+    Container.get(RescoreScamTokensProcessor),
+    Container.get(PaymentDueReminderProcessor),
+    Container.get(WeeklyDigestProcessor),
+    Container.get(AlertSweepProcessor),
     // User-initiated (payload via UserJobDescriptor schema).
     Container.get(ScreenshotParseProcessor),
     Container.get(DocumentParseProcessor),
@@ -154,6 +172,7 @@ function resolveProcessors() {
     Container.get(RefreshAccountBalanceProcessor),
     Container.get(UserDataDeleteProcessor),
     Container.get(IngestTransactionsProcessor),
+    Container.get(CurrencyRateRefreshProcessor),
   ];
 }
 
@@ -242,6 +261,28 @@ async function main(): Promise<void> {
     enableReadyCheck: true,
   });
 
+  // SC-327. The worker is the machine Redis runs INSIDE, so it is never the
+  // one stranded by a worker replacement — the case it covers is the other
+  // one: `redis-server` dying (AOF replay failure, OOM inside the machine)
+  // while this process keeps running. Every job then silently stops being
+  // consumed, and the heartbeat probe that would notice needs the queue it
+  // cannot reach. Same detector, same grace, no extra cost.
+  startRedisStrandWatchdog({
+    reachability: observeRedisReachability(connection, logger, 'redis'),
+    redis: connection,
+    // NOT the consumer recycle: restarting the api and data-provider repairs
+    // nothing when the Redis inside this machine is the thing that died.
+    remedy: 'fly machine restart -a scani-worker (redis-server runs inside it)',
+    onStranded: (report: StrandReport) => {
+      const err = strandedRedisError(report);
+      logger.error({ ...report }, err.message);
+      sentryCapture(err, {
+        component: 'worker',
+        redis_name_resolution_failure: String(report.nameResolutionFailure),
+      });
+    },
+  });
+
   // Separate publisher connection for WS job events so publishes don't
   // interfere with BullMQ's blocking commands on `connection`.
   const publisher = connection.duplicate();
@@ -257,6 +298,18 @@ async function main(): Promise<void> {
   // Producer side: QueueClient lets processors chain-enqueue follow-up
   // jobs (e.g., wallet-import → transaction-import per account).
   Container.get(QueueClient).configure({ connection });
+  // SC-298. All four, because this process uses all four: it consumes user
+  // jobs (lifecycle mirror), runs the scheduled processors (advisory lock and
+  // heartbeat writer) and chain-enqueues follow-on work (enqueue mirror).
+  // Each registers as a decorator side-effect of `import '@scani/jobs'`, and
+  // each fails SILENTLY when absent — a scheduled job with no lock does not
+  // skip, it races, which is the opposite of what the lock exists for.
+  //
+  // Same caveat as the api's: this worker also imports `SCHEDULED_JOB_DESCRIPTORS`
+  // by name from that module, so removing the bare side-effect import would not
+  // trip this. It catches the registration being genuinely absent, and it states
+  // in code which bindings this process depends on.
+  assertQueueBindings(['enqueue-mirror', 'lifecycle-mirror', 'job-lock', 'heartbeat-writer']);
 
   // Consumer side: WorkerClient owns the BullMQ Worker + dispatch table
   // + DLQ push on terminal failure.

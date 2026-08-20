@@ -7,8 +7,8 @@ sidebar:
 
 The schema lives in `packages/infra/db/src/schema/`. One file per
 entity bundle; `schema/index.ts` is the barrel. Migrations live in
-`packages/infra/db/src/migrations/` and are registered in
-`meta/_journal.json`.
+`packages/infra/db/src/migrations/`, one SQL file each — see
+[Adding a database migration](/contributing/adding-a-migration/).
 
 Every relevant concept also has its own page in
 [Concepts](/concepts/mental-model/). This page is the dense

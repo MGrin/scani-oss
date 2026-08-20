@@ -1,6 +1,6 @@
 import { db } from '@scani/db/connection';
-import type { TokenMetadata } from '@scani/db/schema';
 import * as schema from '@scani/db/schema';
+import { mergeIdentityDeltas, type TokenMetadata } from '@scani/db/schema';
 import { BACKFILL_TOKEN_IDENTITY_SCHEDULE } from '@scani/jobs';
 import { createComponentLogger } from '@scani/logging';
 import { ProviderRegistry } from '@scani/providers/core/registry';
@@ -37,6 +37,7 @@ export class BackfillTokenIdentityProcessor extends ScheduledJobProcessor {
     let totalUpdated = 0;
     let totalSkipped = 0;
     let totalFailed = 0;
+    let totalRefused = 0;
 
     // Each token enriches independently — process tokens in bounded
     // batches instead of strictly one after another.
@@ -67,21 +68,26 @@ export class BackfillTokenIdentityProcessor extends ScheduledJobProcessor {
         })
       );
 
-      const merged: TokenMetadata = { ...existing };
-      let changed = false;
-      for (const delta of deltas) {
-        if (!delta) continue;
-        for (const [key, value] of Object.entries(delta)) {
-          if (key in merged && merged[key] !== undefined) continue;
-          (merged as Record<string, unknown>)[key] = value;
-          changed = true;
-        }
+      const merge = mergeIdentityDeltas(
+        existing as Record<string, unknown>,
+        deltas as ReadonlyArray<Record<string, unknown> | null>
+      );
+      // A refusal is the sweep declining to write something an enricher
+      // offered, so it is logged at warn: it is the only trace that the row
+      // was reached and deliberately left alone (SC-403).
+      for (const reason of merge.refused) {
+        logger.warn(
+          { tokenId: token.id, symbol: token.symbol, reason },
+          'Refused identity enrichment that contradicts the row identity'
+        );
+        totalRefused += 1;
       }
 
-      if (!changed) {
+      if (!merge.changed) {
         totalSkipped += 1;
         return;
       }
+      const merged = merge.merged as TokenMetadata;
 
       try {
         await db
@@ -108,6 +114,7 @@ export class BackfillTokenIdentityProcessor extends ScheduledJobProcessor {
         enrichers: enrichers.length,
         updated: totalUpdated,
         skipped: totalSkipped,
+        refused: totalRefused,
         failed: totalFailed,
         totalMs: Date.now() - start,
       },

@@ -30,7 +30,7 @@ describe('HoldingTransactionRepository counterparty/description', () => {
   test('round-trips counterparty and description when provided', async () => {
     await withTestDb(async (tx) => {
       const { userId, holdingId, tokenId } = await makeHoldingFixture(tx);
-      const inserted = await repo().bulkUpsert(
+      const { rows: inserted } = await repo().bulkUpsert(
         [
           {
             userId,
@@ -66,14 +66,14 @@ describe('HoldingTransactionRepository counterparty/description', () => {
         source: 'statement-csv',
         externalId: 'stmt-1',
       };
-      const first = await repo().bulkUpsert(
+      const { rows: first } = await repo().bulkUpsert(
         [{ ...row, counterparty: 'Acme Landlord LLC', description: 'RENT AUG 2024' }],
         tx
       );
       // Normalizer improvement re-parses the same statement line with a
       // corrected counterparty — the conflict path must pick it up, not
       // silently keep the stale value.
-      const second = await repo().bulkUpsert(
+      const { rows: second } = await repo().bulkUpsert(
         [{ ...row, counterparty: 'Acme Property Management', description: 'RENT - AUGUST' }],
         tx
       );
@@ -88,7 +88,7 @@ describe('HoldingTransactionRepository counterparty/description', () => {
   test('leaves counterparty and description null when omitted', async () => {
     await withTestDb(async (tx) => {
       const { userId, holdingId, tokenId } = await makeHoldingFixture(tx);
-      const inserted = await repo().bulkUpsert(
+      const { rows: inserted } = await repo().bulkUpsert(
         [
           {
             userId,

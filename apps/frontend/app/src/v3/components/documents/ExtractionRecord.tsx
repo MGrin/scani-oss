@@ -5,8 +5,10 @@ import { Block } from '@scani/ui/v3/components/Block';
 import { ConfirmAction } from '@scani/ui/v3/components/ConfirmAction';
 import { DataRow, DataRowList } from '@scani/ui/v3/components/DataRow';
 import { Numeric } from '@scani/ui/v3/components/Numeric';
+import type { TFunction } from 'i18next';
 import { ArrowRight } from 'lucide-react';
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { extractionConfidence } from '../../lib/documents';
 
 /**
@@ -48,10 +50,10 @@ const REVIEW_STATE_VARIANT: Record<string, 'default' | 'secondary' | 'outline'> 
  * and "accepted" as a chip directly beside it — which is what v2 does and what
  * the first screenshot of this component showed.
  */
-const REVIEW_STATE_LABEL: Record<string, string> = {
-  pending: 'Awaiting review',
-  accepted: 'Accepted',
-  rejected: 'Rejected',
+const REVIEW_STATE_LABEL_KEYS: Record<string, string> = {
+  pending: 'v3.documents.extraction.state.pending',
+  accepted: 'v3.documents.extraction.state.accepted',
+  rejected: 'v3.documents.extraction.state.rejected',
 };
 
 /**
@@ -61,10 +63,10 @@ const REVIEW_STATE_LABEL: Record<string, string> = {
  * sentence-case ones; rendering the null as "unpaid" would invent the answer
  * the column was deliberately left empty to avoid.
  */
-function paymentStatusLabel(status: string | null): string {
-  if (status === 'paid') return 'Paid';
-  if (status === 'unpaid') return 'Unpaid';
-  return 'Not stated';
+function paymentStatusLabel(status: string | null, t: TFunction): string {
+  if (status === 'paid') return t('v3.documents.extraction.paymentPaid');
+  if (status === 'unpaid') return t('v3.documents.extraction.paymentUnpaid');
+  return t('v3.documents.extraction.paymentNotStated');
 }
 
 interface ExtractionRecordProps {
@@ -80,6 +82,7 @@ export function ExtractionRecord({
   onReject,
   isRejecting,
 }: ExtractionRecordProps) {
+  const { t } = useTranslation();
   const [confirmingReject, setConfirmingReject] = useState(false);
   const confidence = extractionConfidence(extraction.confidence);
   const pending = extraction.reviewState === 'pending';
@@ -90,7 +93,9 @@ export function ExtractionRecord({
         <div className="min-w-0">
           <h3 className="truncate text-label">{extraction.vendorNameRaw}</h3>
           <p className="truncate text-caption text-muted-foreground">
-            {extraction.invoiceNumber ? `Invoice ${extraction.invoiceNumber}` : 'No invoice number'}
+            {extraction.invoiceNumber
+              ? t('v3.documents.extraction.invoiceNumber', { number: extraction.invoiceNumber })
+              : t('v3.documents.extraction.noInvoiceNumber')}
           </p>
         </div>
         {/* Stacked, not side by side — the `<DataRow>` value/delta arrangement.
@@ -110,24 +115,27 @@ export function ExtractionRecord({
             )}
           </span>
           <Badge variant={REVIEW_STATE_VARIANT[extraction.reviewState] ?? 'outline'}>
-            {REVIEW_STATE_LABEL[extraction.reviewState] ?? extraction.reviewState}
+            {t(REVIEW_STATE_LABEL_KEYS[extraction.reviewState] ?? extraction.reviewState)}
           </Badge>
         </div>
       </div>
 
       <DataRowList className="border-t border-border">
         <DataRow
-          label="Issue date"
+          label={t('v3.documents.extraction.issueDate')}
           value={extraction.issueDate ? formatDate(extraction.issueDate) : '—'}
         />
         <DataRow
-          label="Due date"
+          label={t('v3.documents.extraction.dueDate')}
           value={extraction.dueDate ? formatDate(extraction.dueDate) : '—'}
         />
-        <DataRow label="Payment status" value={paymentStatusLabel(extraction.paymentStatus)} />
         <DataRow
-          label="Confidence"
-          value={confidence === null ? 'Not recorded' : `${confidence}%`}
+          label={t('v3.documents.extraction.paymentStatus')}
+          value={paymentStatusLabel(extraction.paymentStatus, t)}
+        />
+        <DataRow
+          label={t('v3.documents.extraction.confidence')}
+          value={confidence === null ? t('v3.documents.extraction.notRecorded') : `${confidence}%`}
         />
       </DataRowList>
 
@@ -135,7 +143,7 @@ export function ExtractionRecord({
         <div className="flex flex-col gap-1.5 border-t border-border p-4">
           <div className="flex flex-wrap items-center gap-2">
             <Button size="sm" disabled={isRejecting} onClick={onApprove}>
-              Approve
+              {t('v3.documents.extraction.approve')}
               <ArrowRight className="ml-2 size-4" aria-hidden="true" />
             </Button>
             {/* Confirmed, unlike `Approve` (SC-73). Approving opens a form
@@ -147,21 +155,33 @@ export function ExtractionRecord({
                 extractor is the only route to the same invoice. `destructive`
                 for exactly that: no inverse. */}
             <ConfirmAction
-              label="Reject"
-              confirmLabel="Reject this invoice"
+              label={t('v3.documents.extraction.reject')}
+              confirmLabel={t('v3.documents.extraction.rejectCommit')}
               destructive
               open={confirmingReject}
               onOpenChange={setConfirmingReject}
               isPending={isRejecting}
-              consequence={`The invoice ${extraction.invoiceNumber ? `${extraction.invoiceNumber} ` : ''}from ${extraction.vendorNameRaw} is marked rejected and this file stops offering it for review. No payment is created. Re-parsing the file is the only way to get it back.`}
+              // Two keys rather than one with an optional `{{number}} `: the
+              // number and the space before it are one unit, and a language
+              // that puts the number elsewhere in the sentence cannot express
+              // that by interpolating a pre-spaced fragment.
+              consequence={
+                extraction.invoiceNumber
+                  ? t('v3.documents.extraction.rejectConsequenceNumbered', {
+                      number: extraction.invoiceNumber,
+                      vendor: extraction.vendorNameRaw,
+                    })
+                  : t('v3.documents.extraction.rejectConsequence', {
+                      vendor: extraction.vendorNameRaw,
+                    })
+              }
               onConfirm={onReject}
             />
           </div>
           {/* One invoice cannot prove a cadence, so approving opens the form
               rather than writing a payment the user never confirmed. */}
           <p className="text-caption text-muted-foreground">
-            Opens a recurring payment prefilled from this invoice. Nothing is saved until you
-            confirm it.
+            {t('v3.documents.extraction.approveNote')}
           </p>
         </div>
       ) : null}

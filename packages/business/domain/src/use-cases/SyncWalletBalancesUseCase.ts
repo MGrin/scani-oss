@@ -37,8 +37,10 @@ import {
   HoldingQueryService,
   HoldingsSyncHelper,
   PriceWarmupService,
+  SCAM_SCORE_VERSION,
   ScamTokenDetectionService,
   UserWalletService,
+  WALLET_BALANCE_SYNC_SOURCE,
   WalletDiscoveryService,
 } from '../services';
 
@@ -289,7 +291,8 @@ export class SyncWalletBalancesUseCase {
           // time operation: the user re-imports the same wallet address
           // (idempotent via `findByUserAndAddress`) and the import flow
           // detects and merges any new chains into the existing wallet
-          // row. See `ImportWalletAddressUseCase.executeWithIntegrations`.
+          // row. See `ImportWalletAddressUseCase.upsertUserWallet`, reached
+          // from `prepareReview`.
 
           // Process each institution for this wallet
           for (const institutionId of institutionIds) {
@@ -478,7 +481,7 @@ export class SyncWalletBalancesUseCase {
               existingHoldings,
               staleStrategy: 'preserve',
               dedupStrategy: 'externalId',
-              sourceTag: 'blockchain',
+              sourceTag: WALLET_BALANCE_SYNC_SOURCE,
               defaultDecimals: 18,
               respectHiddenForCounts: true,
               skipUnchangedUpdates: false,
@@ -486,6 +489,10 @@ export class SyncWalletBalancesUseCase {
               // the user rejected at import review were already filtered
               // out above against `holding_exclusions`.
               updateOnly: false,
+              // Nobody is asked about anything this cron creates — that is
+              // the point of the line above, and the whole of what
+              // `auto_discovered` claims (SC-277).
+              arrival: 'auto_discovered',
               tx,
             });
             holdingsUpdated += result.updated;
@@ -579,12 +586,13 @@ export class SyncWalletBalancesUseCase {
         const score = this.scamDetectionService.calculateScamProbability(
           token.symbol,
           token.name,
-          token.createdAt,
-          false
+          token.createdAt
         );
-        if (score !== token.isScamProbability) {
-          await this.tokenRepository.update(token.id, { isScamProbability: score });
-        }
+        // The version goes with the score, always — including when the score
+        // is unchanged. An unstamped row is stale by definition, so skipping
+        // the write here would hand every wallet-created token to the nightly
+        // recompute forever (SC-286).
+        await this.tokenRepository.applyScamScore(token.id, score, SCAM_SCORE_VERSION);
       }
     } catch (error) {
       logger.warn(
@@ -602,7 +610,6 @@ export class SyncWalletBalancesUseCase {
         await this.priceWarmupService.warm({
           userId,
           tokenIds: newForUser,
-          rescanScamScores: true,
         });
       } catch (error) {
         logger.warn(
@@ -656,6 +663,8 @@ const SYNTHETIC_BASE_CURRENCY: ProviderContext['baseCurrency'] = {
   iconUrl: null,
   providerMetadata: {},
   isScamProbability: 0,
+  scamScoreVersion: null,
+  scamScoreSource: 'heuristic',
   isActive: true,
   marketSegment: null,
   lookalikeOf: null,

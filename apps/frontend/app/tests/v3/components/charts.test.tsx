@@ -1,3 +1,5 @@
+import '../../i18n-preload';
+
 import { describe, expect, test } from 'bun:test';
 import { DeltaPill } from '@scani/ui/v3/components/charts/DeltaPill';
 import { resolveSparklineTone } from '@scani/ui/v3/components/charts/Sparkline';

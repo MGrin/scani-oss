@@ -34,6 +34,7 @@ import type {
   PriceQuote,
   ProviderContext,
   TransactionEvent,
+  TransactionFetchContext,
   WithUserCreds,
 } from './types';
 
@@ -233,13 +234,7 @@ export interface BalanceProvider extends ProviderBase {
 
 export interface TransactionsProvider extends ProviderBase {
   canFetchTransactions(institutionCode: string): boolean;
-  fetchTransactions(
-    ctx: WithUserCreds<ProviderContext> & {
-      institutionCode: string;
-      since?: Date;
-      until?: Date;
-    }
-  ): Promise<TransactionEvent[]>;
+  fetchTransactions(ctx: TransactionFetchContext): Promise<TransactionEvent[]>;
 
   /**
    * How far back this provider can actually see, when the caller asks for
@@ -266,9 +261,25 @@ export interface TransactionsProvider extends ProviderBase {
 }
 
 export interface CredentialValidator extends ProviderBase {
-  /** Validate a fresh credential at integration setup time. Receives
-      the plaintext directly because the validation flow happens before
-      the credential is persisted, so there's nothing to resolve. */
+  /**
+   * Validate a fresh credential at integration setup time. Receives the
+   * plaintext directly because the validation flow happens before the
+   * credential is persisted, so there's nothing to resolve.
+   *
+   * **`valid: false` is a VERDICT about the credential, not a report that the
+   * check failed (SC-445).** Return it only when the service recognised the
+   * request and refused it — an `auth-failed` `ProviderError`, a success
+   * envelope carrying a rejection code — or when this provider can see the
+   * credential is unusable without asking (a missing field, the wrong
+   * `institutionCode`).
+   *
+   * Anything else — a 5xx, a timeout, a rate limit, a report the venue has
+   * not finished generating — must THROW, ideally a `ProviderError` whose
+   * `kind` says which. The caller renders `valid: false` as "these details
+   * were rejected", so answering it for a transient condition sends someone
+   * to regenerate a credential that was never wrong. `credentialRejection`
+   * in `core/errors.ts` is the one-line catch that gets this right.
+   */
   validateCredentials(
     creds: DecryptedCredentials,
     institutionCode: string

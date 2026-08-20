@@ -29,6 +29,10 @@ const FORWARDED = process.argv.slice(2).filter((arg) => !OWN_FLAGS.has(arg));
  */
 const STACK_SERVICES = ['data-provider', 'backend', 'worker', 'frontend', 'mailpit'];
 
+/** The `depends_on` gates above — they run to completion, so `up` reports only
+ *  their exit code and their own output is where a boot failure explains itself. */
+const ONE_SHOT_SERVICES = ['migrate', 'deps', 'env-sync', 'minio-init'];
+
 async function probeStack(): Promise<boolean> {
   try {
     const res = await fetch(HEALTH_URL, { signal: AbortSignal.timeout(2_000) });
@@ -45,6 +49,17 @@ function run(cmd: string, args: string[], env: Record<string, string> = {}): num
     env: { ...process.env, ...env },
   });
   return result.status ?? 1;
+}
+
+// `docker compose up` reports only `service "x" didn't complete successfully:
+// exit 1` and discards the container's own output, so a boot failure here is
+// undiagnosable from a CI log alone — which is exactly what happened to
+// `migrate` upstream on 2026-08-15, where the reason ("Refusing to migrate a
+// non-local database") only became visible once the one-shot containers were
+// dumped. Ported from scani-oss caebf28e, which put the dump in `ci.yml`;
+// this repo boots the stack from here rather than from a workflow step.
+function dumpOneShotLogs() {
+  run('docker', ['compose', '--profile', 'full', 'logs', '--no-color', ...ONE_SHOT_SERVICES]);
 }
 
 function ensureEnvFile() {
@@ -81,6 +96,7 @@ async function main() {
     );
     if (upStatus !== 0) {
       console.error('Stack failed to start.');
+      dumpOneShotLogs();
       process.exit(upStatus);
     }
   } else {
@@ -91,6 +107,7 @@ async function main() {
   const waitScript = resolve(E2E_ROOT, 'scripts/wait-for-stack.ts');
   const healthStatus = run('bun', [waitScript], {});
   if (healthStatus !== 0) {
+    dumpOneShotLogs();
     if (!stackWasUp && !KEEP_STACK) {
       run('docker', ['compose', '--profile', 'full', 'down', '-v']);
     }

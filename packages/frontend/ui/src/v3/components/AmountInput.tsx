@@ -1,5 +1,5 @@
 import * as React from 'react';
-
+import { useUiTranslation } from '../../i18n';
 import { cn } from '../../lib/cn';
 import { Input } from '../../ui/input';
 import { type AmountRules, formatAmountForDisplay, parseAmountInput } from '../lib/amount-input';
@@ -12,9 +12,10 @@ import { type AmountRules, formatAmountForDisplay, parseAmountInput } from '../l
  * **Grouping is a display state, not an edit state.** Focused, the field shows
  * bare digits and whichever separator the reader typed, so nothing on screen
  * can be mistaken for a group separator. Blurred, it shows the canonical
- * reading with `en-US` grouping. That swap is the safety property: you type
- * `12,99`, you look away, and the field says `12.99` — the interpretation is
- * on screen rather than in the database.
+ * reading grouped the way the app prints every other figure — the reader's
+ * locale, not `en-US` (SC-415). That swap is the safety property: you type
+ * `12,99`, you look away, and the field says `12.99` in English and `12,99` in
+ * Russian — the interpretation is on screen rather than in the database.
  *
  * **A rejected character is never allowed to change the magnitude.** Anything
  * the parser refuses simply does not appear, and the digits around it do not
@@ -50,6 +51,7 @@ export const AmountInput = React.forwardRef<HTMLInputElement, AmountInputProps>(
     },
     ref
   ) => {
+    const { t } = useUiTranslation();
     // Non-null exactly while the field is being edited. Holding the reader's
     // own text here — rather than deriving it from `value` — is what lets a
     // half-typed `12,` survive the render that follows its own keystroke.
@@ -98,10 +100,13 @@ export const AmountInput = React.forwardRef<HTMLInputElement, AmountInputProps>(
           // Only on blur. Mid-typing it would flash on the way through
           // `1.234` to `1.2345` and teach the reader to ignore it.
           <span id={noticeId} role="status" className="text-caption text-muted-foreground">
-            Read as {formatAmountForDisplay(value, suffix)}
             {decimalScale === 0
-              ? ' — this field takes whole numbers only.'
-              : ' — a comma and a full stop both mean a decimal point here. Delete the separator if you meant a thousand.'}
+              ? t('ui.amountInput.readAsWhole', {
+                  amount: formatAmountForDisplay(value, suffix),
+                })
+              : t('ui.amountInput.readAsDecimal', {
+                  amount: formatAmountForDisplay(value, suffix),
+                })}
           </span>
         ) : null}
       </span>

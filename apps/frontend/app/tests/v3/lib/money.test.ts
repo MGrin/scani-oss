@@ -1,4 +1,7 @@
+import '../../i18n-preload';
+
 import { describe, expect, test } from 'bun:test';
+import i18n from 'i18next';
 import {
   countByVendorId,
   DEFAULT_MONEY_SEGMENT,
@@ -14,7 +17,6 @@ import {
   moneySegmentPath,
   occurrencesEndWouldRemove,
   occurrenceTotals,
-  overdueTotalLabel,
   PAYMENTS_HORIZON_DAYS,
   paymentDeleteConsequence,
   paymentDeleteCounts,
@@ -24,6 +26,17 @@ import {
   vendorDeleteConsequence,
   withinDays,
 } from '../../../src/v3/lib/money';
+
+/**
+ * The real `t`, bound to the real `en.json` (SC-201).
+ *
+ * These assertions were written against English built by template literal.
+ * They now assert the SAME English assembled from keys — which makes this file
+ * the strongest no-behaviour-change check in the extraction: a wrong key, a
+ * missing plural form or a reordered frame all change the string these tests
+ * already pin.
+ */
+const t = i18n.t.bind(i18n);
 
 describe('resolveMoneySegment', () => {
   test('the tab opens on what is due, not on the standing list', () => {
@@ -70,6 +83,7 @@ describe('groupUpcoming', () => {
 
   test('everything already late leads, in one group', () => {
     const groups = groupUpcoming(
+      t,
       [occurrence('c', '2026-08-20'), occurrence('a', '2026-07-01'), occurrence('b', '2026-08-01')],
       '2026-08-12'
     );
@@ -80,12 +94,13 @@ describe('groupUpcoming', () => {
   });
 
   test('there is no overdue group when nothing is overdue', () => {
-    const groups = groupUpcoming([occurrence('a', '2026-08-20')], '2026-08-12');
+    const groups = groupUpcoming(t, [occurrence('a', '2026-08-20')], '2026-08-12');
     expect(groups.every((group) => !group.overdue)).toBe(true);
   });
 
   test('the rest is one group per due date, earliest first', () => {
     const groups = groupUpcoming(
+      t,
       [occurrence('c', '2026-08-20'), occurrence('a', '2026-08-14'), occurrence('b', '2026-08-14')],
       '2026-08-12'
     );
@@ -95,38 +110,38 @@ describe('groupUpcoming', () => {
   });
 
   test('today is upcoming, not overdue', () => {
-    const groups = groupUpcoming([occurrence('a', '2026-08-12')], '2026-08-12');
+    const groups = groupUpcoming(t, [occurrence('a', '2026-08-12')], '2026-08-12');
     expect(groups).toHaveLength(1);
     expect(groups[0]?.overdue).toBe(false);
   });
 
   test('no rows means no groups, never one empty one', () => {
-    expect(groupUpcoming([], '2026-08-12')).toEqual([]);
+    expect(groupUpcoming(t, [], '2026-08-12')).toEqual([]);
   });
 });
 
 describe('formatOverdueBy', () => {
   test('counts whole days, singular at one', () => {
-    expect(formatOverdueBy('2026-08-11', '2026-08-12')).toBe('1 day overdue');
-    expect(formatOverdueBy('2026-08-01', '2026-08-12')).toBe('11 days overdue');
+    expect(formatOverdueBy('2026-08-11', '2026-08-12', t)).toBe('1 day overdue');
+    expect(formatOverdueBy('2026-08-01', '2026-08-12', t)).toBe('11 days overdue');
   });
 
   // Both dates are compared in UTC, the same way `payments.upcoming` compares
   // them server-side — a local `Date` would move a midnight bill by a day for
   // anyone east of Greenwich.
   test('a date that is not past is not overdue', () => {
-    expect(formatOverdueBy('2026-08-12', '2026-08-12')).toBe('Due today');
+    expect(formatOverdueBy('2026-08-12', '2026-08-12', t)).toBe('Due today');
   });
 
   test('an unparseable date degrades to a word rather than throwing', () => {
-    expect(formatOverdueBy('not-a-date', '2026-08-12')).toBe('Overdue');
+    expect(formatOverdueBy('not-a-date', '2026-08-12', t)).toBe('Overdue');
   });
 });
 
 describe('directionLabel', () => {
   test('one noun for the field, on both views', () => {
-    expect(directionLabel('inflow')).toBe('Income');
-    expect(directionLabel('outflow')).toBe('Bill');
+    expect(directionLabel('inflow', t)).toBe('Income');
+    expect(directionLabel('outflow', t)).toBe('Bill');
   });
 });
 
@@ -174,31 +189,31 @@ describe('occurrencesEndWouldRemove', () => {
 
 describe('endConsequence', () => {
   test('names the vendor, the date and the exact number of dates removed', () => {
-    const sentence = endConsequence('Hetzner', '2026-08-13', 3);
+    const sentence = endConsequence('Hetzner', '2026-08-13', 3, t);
     expect(sentence).toContain('Hetzner');
     expect(sentence).toContain('3 scheduled dates');
     expect(sentence).toContain('cannot be undone');
   });
 
   test('singular reads as a sentence, not as “1 scheduled dates are”', () => {
-    const sentence = endConsequence('Hetzner', '2026-08-13', 1);
+    const sentence = endConsequence('Hetzner', '2026-08-13', 1, t);
     expect(sentence).toContain('1 scheduled date after that is removed');
     expect(sentence).not.toContain('dates');
   });
 
   test('says so plainly when nothing is removed, instead of claiming “0”', () => {
-    const sentence = endConsequence('Hetzner', '2026-08-13', 0);
+    const sentence = endConsequence('Hetzner', '2026-08-13', 0, t);
     expect(sentence).toContain('no scheduled dates after that');
     // Nothing is destroyed, so the irreversibility warning would be noise.
     expect(sentence).not.toContain('cannot be undone');
   });
 
   test('admits it does not know yet rather than showing a number it may correct', () => {
-    expect(endConsequence('Hetzner', '2026-08-13', null)).toContain('Checking how many');
+    expect(endConsequence('Hetzner', '2026-08-13', null, t)).toContain('Checking how many');
   });
 
   test('promises the settled history is kept, which is what end actually does', () => {
-    expect(endConsequence('Hetzner', '2026-08-13', 2)).toContain(
+    expect(endConsequence('Hetzner', '2026-08-13', 2, t)).toContain(
       'paid and skipped history is kept'
     );
   });
@@ -206,43 +221,43 @@ describe('endConsequence', () => {
 
 describe('mergeConsequence', () => {
   test('names which vendor survives and which is deleted, in both directions', () => {
-    const sentence = mergeConsequence('Amazon', 'AMZN', { payments: 2, aliases: 1 });
+    const sentence = mergeConsequence('Amazon', 'AMZN', { payments: 2, aliases: 1 }, t);
     expect(sentence).toContain('"AMZN" is deleted');
     expect(sentence).toContain('"Amazon" is kept');
   });
 
   test('states what moves across, so “absorbs” is a count and not a metaphor', () => {
-    expect(mergeConsequence('Amazon', 'AMZN', { payments: 2, aliases: 1 })).toContain(
+    expect(mergeConsequence('Amazon', 'AMZN', { payments: 2, aliases: 1 }, t)).toContain(
       '2 payments and 1 alias move to "Amazon"'
     );
   });
 
   test('the verb agrees with the whole subject, not the last noun in it', () => {
-    expect(mergeConsequence('Amazon', 'AMZN', { payments: 1, aliases: 0 })).toContain(
+    expect(mergeConsequence('Amazon', 'AMZN', { payments: 1, aliases: 0 }, t)).toContain(
       '1 payment moves to'
     );
-    expect(mergeConsequence('Amazon', 'AMZN', { payments: 2, aliases: 0 })).toContain(
+    expect(mergeConsequence('Amazon', 'AMZN', { payments: 2, aliases: 0 }, t)).toContain(
       '2 payments move to'
     );
-    expect(mergeConsequence('Amazon', 'AMZN', { payments: 1, aliases: 1 })).toContain(
+    expect(mergeConsequence('Amazon', 'AMZN', { payments: 1, aliases: 1 }, t)).toContain(
       '1 payment and 1 alias move to'
     );
   });
 
   test('omits a zero rather than printing “0 aliases”', () => {
-    const sentence = mergeConsequence('Amazon', 'AMZN', { payments: 3, aliases: 0 });
+    const sentence = mergeConsequence('Amazon', 'AMZN', { payments: 3, aliases: 0 }, t);
     expect(sentence).toContain('3 payments move');
     expect(sentence).not.toContain('alias');
   });
 
   test('says nothing moves when nothing points at the duplicate', () => {
-    expect(mergeConsequence('Amazon', 'AMZN', { payments: 0, aliases: 0 })).toContain(
+    expect(mergeConsequence('Amazon', 'AMZN', { payments: 0, aliases: 0 }, t)).toContain(
       'Nothing points at "AMZN"'
     );
   });
 
   test('admits it does not know yet while the counts load', () => {
-    expect(mergeConsequence('Amazon', 'AMZN', null)).toContain('Checking what moves');
+    expect(mergeConsequence('Amazon', 'AMZN', null, t)).toContain('Checking what moves');
   });
 });
 
@@ -337,11 +352,6 @@ describe('splitting overdue bills from the ones still ahead', () => {
     expect(sum(overdue)).toBe('4169.79');
     // And the number that used to be printed under the forward label.
     expect(sum(reported)).toBe('5314.52');
-  });
-
-  test('the overdue label carries the count, so the figure names its own set', () => {
-    expect(overdueTotalLabel(8)).toBe('Overdue, 8 bills');
-    expect(overdueTotalLabel(1)).toBe('Overdue, 1 bill');
   });
 });
 
@@ -477,17 +487,21 @@ describe('paymentDeleteCounts', () => {
 
 describe('paymentDeleteConsequence', () => {
   test('says it is still checking rather than guessing a count', () => {
-    const sentence = paymentDeleteConsequence('Netflix', null);
+    const sentence = paymentDeleteConsequence('Netflix', null, t);
     expect(sentence).toContain('Checking');
     expect(sentence).not.toMatch(/\d/);
   });
 
   test('a settled date turns the sentence into the reason it will not happen', () => {
-    const sentence = paymentDeleteConsequence('Netflix', {
-      scheduled: 4,
-      settled: 3,
-      skipped: 0,
-    });
+    const sentence = paymentDeleteConsequence(
+      'Netflix',
+      {
+        scheduled: 4,
+        settled: 3,
+        skipped: 0,
+      },
+      t
+    );
     expect(sentence).toContain('3 dates settled');
     expect(sentence).toContain('money that really moved');
     // The refusal has to name the action that DOES fit, or it is a dead end.
@@ -502,6 +516,7 @@ describe('paymentDeleteConsequence', () => {
     const sentence = paymentDeleteConsequence(
       'Netflix',
       { scheduled: 0, settled: 3, skipped: 0 },
+      t,
       true
     );
     expect(sentence).toContain('3 dates settled');
@@ -511,20 +526,24 @@ describe('paymentDeleteConsequence', () => {
   });
 
   test('names what goes with it, with the verb agreeing with the whole subject', () => {
-    expect(paymentDeleteConsequence('Netflix', { scheduled: 1, settled: 0, skipped: 0 })).toContain(
-      '1 date still scheduled goes with it'
-    );
-    expect(paymentDeleteConsequence('Netflix', { scheduled: 1, settled: 0, skipped: 1 })).toContain(
-      '1 date still scheduled and 1 date you skipped go with it'
-    );
+    expect(
+      paymentDeleteConsequence('Netflix', { scheduled: 1, settled: 0, skipped: 0 }, t)
+    ).toContain('1 date still scheduled goes with it');
+    expect(
+      paymentDeleteConsequence('Netflix', { scheduled: 1, settled: 0, skipped: 1 }, t)
+    ).toContain('1 date still scheduled and 1 date you skipped go with it');
   });
 
   test('a payment with no occurrences at all still states the claim', () => {
-    const sentence = paymentDeleteConsequence('Netflix', {
-      scheduled: 0,
-      settled: 0,
-      skipped: 0,
-    });
+    const sentence = paymentDeleteConsequence(
+      'Netflix',
+      {
+        scheduled: 0,
+        settled: 0,
+        skipped: 0,
+      },
+      t
+    );
     expect(sentence).toContain('as if it had never existed');
     expect(sentence).toContain('cannot be undone');
     // The distinction from End is the point of having both.
@@ -534,36 +553,48 @@ describe('paymentDeleteConsequence', () => {
 
 describe('vendorDeleteConsequence', () => {
   test('says it is still checking rather than guessing', () => {
-    expect(vendorDeleteConsequence('Acme', null)).toContain('Checking');
+    expect(vendorDeleteConsequence('Acme', null, t)).toContain('Checking');
   });
 
   test('a vendor with payments gets the count and both ways out', () => {
-    const sentence = vendorDeleteConsequence('Acme', {
-      payments: 2,
-      aliases: 0,
-      extractions: 0,
-    });
+    const sentence = vendorDeleteConsequence(
+      'Acme',
+      {
+        payments: 2,
+        aliases: 0,
+        extractions: 0,
+      },
+      t
+    );
     expect(sentence).toContain('2 payments');
     expect(sentence).toContain('End or delete them first');
     expect(sentence).toContain('merge');
   });
 
   test('one payment reads as one payment, not "1 payments"', () => {
-    const sentence = vendorDeleteConsequence('Acme', {
-      payments: 1,
-      aliases: 0,
-      extractions: 0,
-    });
+    const sentence = vendorDeleteConsequence(
+      'Acme',
+      {
+        payments: 1,
+        aliases: 0,
+        extractions: 0,
+      },
+      t
+    );
     expect(sentence).toContain('1 payment pointing at it');
     expect(sentence).not.toContain('1 payments');
   });
 
   test('names the extractions whose link is cut, since nothing else would', () => {
-    const sentence = vendorDeleteConsequence('Acme', {
-      payments: 0,
-      aliases: 2,
-      extractions: 1,
-    });
+    const sentence = vendorDeleteConsequence(
+      'Acme',
+      {
+        payments: 0,
+        aliases: 2,
+        extractions: 1,
+      },
+      t
+    );
     expect(sentence).toContain('2 aliases');
     // ON DELETE SET NULL is silent — the SC-31 half that "succeeded".
     expect(sentence).toContain('1 parsed invoice keeps its own record');
@@ -571,11 +602,15 @@ describe('vendorDeleteConsequence', () => {
   });
 
   test('a vendor nothing points at says exactly that', () => {
-    const sentence = vendorDeleteConsequence('Acme', {
-      payments: 0,
-      aliases: 0,
-      extractions: 0,
-    });
+    const sentence = vendorDeleteConsequence(
+      'Acme',
+      {
+        payments: 0,
+        aliases: 0,
+        extractions: 0,
+      },
+      t
+    );
     expect(sentence).toContain('Nothing is paid to or by it');
     expect(sentence).not.toMatch(/\d/);
   });

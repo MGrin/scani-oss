@@ -18,23 +18,33 @@ import { useBulkSelection } from './useBulkSelection';
  */
 const dataViewStateKey = (page: string) => `scani-v2-dv-${page}`;
 
-export interface FilterDef {
+/**
+ * What this HOOK needs from a definition, which is not its copy (SC-262).
+ *
+ * The hook reads `key`, `fn` and `groupFn` and never touches a label — so the
+ * label belongs to whoever renders it. Splitting the base out is what lets v2
+ * keep `label: string` and v3 carry `labelKey: string` without either dictating
+ * to the other.
+ *
+ * That link was backwards before: `src/v2/components/data-view/DataViewToolbar.tsx`
+ * imports `FilterDef` from here, so v3's type surface was constrained by what v2
+ * needed, and SC-202 could not give v3 a key without editing a tree it may not
+ * touch. The v3 definitions live in `../lib/data-view`.
+ */
+export interface FilterDefBase {
   key: string;
-  label: string;
-  options: { value: string; label: string }[];
+  options: { value: string }[];
   /** Custom filter function. If not provided, no automatic filtering is done for this key. */
   // biome-ignore lint/suspicious/noExplicitAny: Generic filter function
   fn?: (item: any, value: string) => boolean;
 }
 
-export interface SortDef {
+export interface SortDefBase {
   key: string;
-  label: string;
 }
 
-export interface GroupByDef {
+export interface GroupByDefBase {
   key: string;
-  label: string;
   /** Function to extract group label from an item */
   // biome-ignore lint/suspicious/noExplicitAny: Generic group function
   groupFn?: (item: any) => string;
@@ -43,17 +53,45 @@ export interface GroupByDef {
   fn?: (item: any) => string;
 }
 
-export interface DataViewConfig<T> {
+/** v2's definitions, unchanged — English labels, rendered by `DataViewToolbar`. */
+export interface FilterDef extends FilterDefBase {
+  label: string;
+  options: { value: string; label: string }[];
+}
+
+export interface SortDef extends SortDefBase {
+  label: string;
+}
+
+export interface GroupByDef extends GroupByDefBase {
+  label: string;
+}
+
+/**
+ * What the HOOK accepts — labels omitted, because it never reads one.
+ *
+ * `useDataView` takes this rather than `DataViewConfig` so v2's dialect and
+ * v3's can both be passed in. `DataViewConfig` below is unchanged and remains
+ * v2's: widening IT broke eight v2 pages, which is the wrong half to move.
+ */
+export interface DataViewConfigBase<T> {
   pageKey: string;
   data: T[];
   searchFn?: (item: T, query: string) => boolean;
-  filterDefs?: FilterDef[];
-  sortDefs?: SortDef[];
+  filterDefs?: FilterDefBase[];
+  sortDefs?: SortDefBase[];
   sortFn?: (a: T, b: T, field: string, direction: 'asc' | 'desc') => number;
-  groupByDefs?: GroupByDef[];
+  groupByDefs?: GroupByDefBase[];
   defaultSort?: { field: string; direction: 'asc' | 'desc' };
   defaultView?: 'table' | 'cards';
   defaultFilters?: Record<string, string>;
+}
+
+/** v2's config, with v2's English-labelled definitions. Unchanged. */
+export interface DataViewConfig<T> extends DataViewConfigBase<T> {
+  filterDefs?: FilterDef[];
+  sortDefs?: SortDef[];
+  groupByDefs?: GroupByDef[];
 }
 
 export interface DataViewReturn<T> {
@@ -76,6 +114,8 @@ export interface DataViewReturn<T> {
   filteredCount: number;
   selectedIds: Set<string>;
   toggleSelect: (id: string) => void;
+  /** Drop a named subset without discarding the rest of the selection. */
+  deselect: (ids: readonly string[]) => void;
   selectAll: () => void;
   clearSelection: () => void;
   isAllSelected: boolean;
@@ -100,7 +140,7 @@ function persistState(pageKey: string, state: Record<string, unknown>) {
 }
 
 export function useDataView<T>(
-  config: DataViewConfig<T>,
+  config: DataViewConfigBase<T>,
   getId: (item: T) => string
 ): DataViewReturn<T> {
   const {
@@ -226,7 +266,7 @@ export function useDataView<T>(
 
   // Selection
   const ids = useMemo(() => filteredData.map(getId), [filteredData, getId]);
-  const { selectedIds, toggleSelect, selectAll, clearSelection, isAllSelected } =
+  const { selectedIds, toggleSelect, deselect, selectAll, clearSelection, isAllSelected } =
     useBulkSelection(ids);
 
   return {
@@ -249,6 +289,7 @@ export function useDataView<T>(
     filteredCount: filteredData.length,
     selectedIds,
     toggleSelect,
+    deselect,
     selectAll,
     clearSelection,
     isAllSelected,

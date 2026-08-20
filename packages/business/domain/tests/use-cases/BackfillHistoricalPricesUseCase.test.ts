@@ -12,10 +12,11 @@
  *   - Cleaning up via cascade-delete on the user in `afterEach`.
  */
 
-import { afterAll, afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { randomUUID } from 'node:crypto';
 import { db } from '@scani/db/connection';
 import * as schema from '@scani/db/schema';
+import { ProviderRegistry } from '@scani/providers/core/registry';
 import { eq, inArray } from 'drizzle-orm';
 import { Container } from 'typedi';
 import {
@@ -23,6 +24,11 @@ import {
   HistoricalPriceBackfillService,
 } from '../../src/services/pricing/HistoricalPriceBackfillService';
 import { BackfillHistoricalPricesUseCase } from '../../src/use-cases/BackfillHistoricalPricesUseCase';
+import { restoreContainerAfterAll } from '../../test/helpers/container';
+
+// Container stubs are process-global; put back whatever this file changes
+// so no later test file resolves them (SC-448).
+restoreContainerAfterAll();
 
 interface Fixture {
   userId: string;
@@ -41,6 +47,9 @@ interface Fixture {
 
 let fixture: Fixture | null = null;
 let backfillCalls: Array<{ tokenId: string; at: Date; baseTokenId: string }> = [];
+// Stands in for a provider that ERRORED rather than answering — the
+// distinction `attemptFailed` exists to carry (SC-171).
+let nextAttemptFailed = false;
 // Per-call result the stubbed service returns. Tests can override.
 let nextResult: (tokenId: string, at: Date, baseTokenId: string) => BackfillOneResult = (
   tokenId,
@@ -55,6 +64,32 @@ let nextResult: (tokenId: string, at: Date, baseTokenId: string) => BackfillOneR
   providerUsed: 'stub',
 });
 
+/**
+ * EVERY `execute` BELOW PASSES `userId`, AND IT IS LOAD-BEARING (SC-230).
+ *
+ * The use case discovers candidates from holdings and transactions, and
+ * without `opts.userId` it discovers them across the WHOLE database. These
+ * tests then assert absolute numbers — `skippedUnpriceable` is 1, `attempted`
+ * is 0 — against a shared local Postgres that also holds dev data and every
+ * other suite's fixtures.
+ *
+ * `skips tokens still inside an unpriceable cooldown` failed for exactly that
+ * reason: it marks its own BTC unpriceable and expects a count of 1, while 22
+ * unrelated rows in the same database carry `unpriceable_until` from real
+ * work. The assertion was measuring the machine, not the code, so it passed
+ * on a fresh scratch database and failed on one with history — which is how
+ * two people ran the same suite and reported different results to each other.
+ *
+ * Scoping to the fixture's own user makes every count mean what it says.
+ *
+ * **This paragraph was false for four calls when SC-272 was filed**, including
+ * `planOnly`, whose `expect(summary.attempted).toBe(4)` read the whole table
+ * and returned 16 against a database holding one neighbouring user. Two
+ * threads lost time to it in a day, each proving the failure was not theirs.
+ * So the claim is now checked rather than asserted — see the guard at the
+ * bottom of this file. A comment is what failed here; do not add another in
+ * place of one.
+ */
 async function setupFixture(): Promise<Fixture> {
   const [user] = await db
     .insert(schema.users)
@@ -92,7 +127,7 @@ async function setupFixture(): Promise<Fixture> {
   const [usdToken] = await db
     .insert(schema.tokens)
     .values({
-      symbol: `BHPUSD${randomUUID().slice(0, 4).toUpperCase()}`,
+      symbol: `BHPUSD${randomUUID().toUpperCase()}`,
       name: 'BHP USD',
       typeId: tokenType!.id,
     })
@@ -100,7 +135,7 @@ async function setupFixture(): Promise<Fixture> {
   const [btcToken] = await db
     .insert(schema.tokens)
     .values({
-      symbol: `BHPBTC${randomUUID().slice(0, 4).toUpperCase()}`,
+      symbol: `BHPBTC${randomUUID().toUpperCase()}`,
       name: 'BHP BTC',
       typeId: tokenType!.id,
     })
@@ -159,6 +194,15 @@ async function cleanupFixture(f: Fixture): Promise<void> {
 beforeEach(async () => {
   fixture = await setupFixture();
   backfillCalls = [];
+  nextAttemptFailed = false;
+
+  // A registry with one historical pricer — what a booted process looks
+  // like. Without it every test runs in the "nobody was asked" state the
+  // no-provider guard refuses to mark from, which is correct behaviour and
+  // the wrong precondition for testing what a real run does (SC-171).
+  Container.set(ProviderRegistry, {
+    getAllHistoricalPricers: () => [{ providerKey: 'stub' }],
+  } as unknown as ProviderRegistry);
 
   // Stub HistoricalPriceBackfillService so we capture invocations
   // without making HTTP calls. The use case now fans out per-token via
@@ -195,7 +239,13 @@ beforeEach(async () => {
           providerMissing++;
         }
       }
-      return { inserted, alreadyHad, providerMissing, providerUsed };
+      return {
+        inserted,
+        alreadyHad,
+        providerMissing,
+        providerUsed,
+        attemptFailed: nextAttemptFailed,
+      };
     },
   } as unknown as HistoricalPriceBackfillService;
   Container.set(HistoricalPriceBackfillService, stub);
@@ -207,13 +257,6 @@ beforeEach(async () => {
 afterEach(async () => {
   if (fixture) await cleanupFixture(fixture);
   fixture = null;
-});
-
-// Restore real @Service() instances so a later repo/service test sharing
-// the process-global typedi Container doesn't pick up our stub.
-afterAll(() => {
-  Container.set(HistoricalPriceBackfillService, new HistoricalPriceBackfillService());
-  Container.set(BackfillHistoricalPricesUseCase, new BackfillHistoricalPricesUseCase());
 });
 
 describe('BackfillHistoricalPricesUseCase', () => {
@@ -228,6 +271,7 @@ describe('BackfillHistoricalPricesUseCase', () => {
     await db.delete(schema.holdings).where(eq(schema.holdings.id, f.holdingId));
     // Tiny lookback so we don't iterate years of empty days.
     const summary = await Container.get(BackfillHistoricalPricesUseCase).execute({
+      userId: f.userId,
       usdTokenId: f.usdTokenId,
       lookbackDays: 1,
     });
@@ -242,6 +286,7 @@ describe('BackfillHistoricalPricesUseCase', () => {
     // The use case walks `sinceDay..todayDay` inclusive, so
     // `lookbackDays=3` yields 4 candidate days (today + 3 prior).
     const summary = await Container.get(BackfillHistoricalPricesUseCase).execute({
+      userId: f.userId,
       usdTokenId: f.usdTokenId,
       lookbackDays: 3,
     });
@@ -250,6 +295,77 @@ describe('BackfillHistoricalPricesUseCase', () => {
     // Every call addressed the BTC token in USD.
     expect(backfillCalls.every((c) => c.tokenId === f.btcTokenId)).toBe(true);
     expect(backfillCalls.every((c) => c.baseTokenId === f.usdTokenId)).toBe(true);
+  });
+
+  /**
+   * `planOnly` — what `scripts/run-historical-price-backfill.ts` reads out
+   * before it is allowed to touch a provider (SC-171).
+   *
+   * The property that matters is not the shape of the plan, it is that
+   * producing it costs nothing: an operator asking "what would this do"
+   * against production must not be the thing that does it.
+   */
+  test('planOnly returns the per-token windows and calls no provider', async () => {
+    const f = fixture!;
+    const summary = await Container.get(BackfillHistoricalPricesUseCase).execute({
+      userId: f.userId,
+      usdTokenId: f.usdTokenId,
+      lookbackDays: 3,
+      planOnly: true,
+    });
+
+    expect(backfillCalls).toHaveLength(0);
+    expect(summary.inserted).toBe(0);
+    expect(summary.attempted).toBe(4);
+
+    const entry = summary.plan?.find((p) => p.tokenId === f.btcTokenId);
+    expect(entry?.missingDays).toBe(4);
+    // Inclusive bounds over today + 3 prior days.
+    const spanDays = ((entry?.to?.getTime() ?? 0) - (entry?.from?.getTime() ?? 0)) / 86_400_000;
+    expect(spanDays).toBe(3);
+  });
+
+  test('the plan describes exactly the work the real run then does', async () => {
+    // A plan derived differently from the run is a plan about a different
+    // run. Same options, both paths, and the day count has to agree — this
+    // is what makes the dry run evidence rather than decoration.
+    const f = fixture!;
+    const opts = { userId: f.userId, usdTokenId: f.usdTokenId, lookbackDays: 3 };
+    const planned = await Container.get(BackfillHistoricalPricesUseCase).execute({
+      ...opts,
+      planOnly: true,
+    });
+    const ran = await Container.get(BackfillHistoricalPricesUseCase).execute(opts);
+
+    const plannedDays = (planned.plan ?? []).reduce((n, p) => n + p.missingDays, 0);
+    expect(plannedDays).toBe(ran.attempted);
+    expect(backfillCalls).toHaveLength(plannedDays);
+  });
+
+  test('planOnly still reports what it would skip for a cooldown', async () => {
+    // Otherwise a plan of zero tokens reads as "nothing to do" when the
+    // truth is "everything is suppressed" — the exact confusion the
+    // unpriceable ratchet lived inside for months.
+    const f = fixture!;
+    await db
+      .update(schema.tokens)
+      .set({ unpriceableUntil: new Date(Date.now() + 60_000) })
+      .where(eq(schema.tokens.id, f.btcTokenId));
+
+    const summary = await Container.get(BackfillHistoricalPricesUseCase).execute({
+      // Scoped, like every other call in this file (SC-230). Without it the
+      // use case discovers candidates across the whole shared database and
+      // `skippedUnpriceable` counts the 22 unrelated rows that carry a real
+      // `unpriceable_until`, so this assertion measures the machine.
+      userId: f.userId,
+      usdTokenId: f.usdTokenId,
+      lookbackDays: 3,
+      planOnly: true,
+    });
+
+    expect(summary.plan).toEqual([]);
+    expect(summary.skippedUnpriceable).toBe(1);
+    expect(backfillCalls).toHaveLength(0);
   });
 
   test('skips dates that already have a daily-granularity price row', async () => {
@@ -268,6 +384,7 @@ describe('BackfillHistoricalPricesUseCase', () => {
     });
 
     const summary = await Container.get(BackfillHistoricalPricesUseCase).execute({
+      userId: f.userId,
       usdTokenId: f.usdTokenId,
       lookbackDays: 3,
     });
@@ -301,6 +418,7 @@ describe('BackfillHistoricalPricesUseCase', () => {
       return { tokenId, baseTokenId, at, status: 'inserted', priceStored: '1' };
     };
     const summary = await Container.get(BackfillHistoricalPricesUseCase).execute({
+      userId: f.userId,
       usdTokenId: f.usdTokenId,
       lookbackDays: 3,
     });
@@ -320,6 +438,7 @@ describe('BackfillHistoricalPricesUseCase', () => {
       .where(eq(schema.tokens.id, f.btcTokenId));
 
     const summary = await Container.get(BackfillHistoricalPricesUseCase).execute({
+      userId: f.userId,
       usdTokenId: f.usdTokenId,
       lookbackDays: 3,
     });
@@ -339,6 +458,7 @@ describe('BackfillHistoricalPricesUseCase', () => {
       status: 'provider-missing',
     });
     const summary = await Container.get(BackfillHistoricalPricesUseCase).execute({
+      userId: f.userId,
       usdTokenId: f.usdTokenId,
       lookbackDays: 60,
     });
@@ -352,6 +472,133 @@ describe('BackfillHistoricalPricesUseCase', () => {
     expect(token!.unpriceableUntil!.getTime()).toBeGreaterThan(Date.now());
   });
 
+  /**
+   * The assertion the whole of SC-171 reduces to.
+   *
+   * DeFiLlama's `/chart` refuses spans over 500 points, we asked for up
+   * to 1825, and the resulting HTTP 400 came back as an empty range.
+   * Empty meant "no price history", which meant a 7-day unpriceable
+   * cooldown, which meant the token was skipped before it could be
+   * retried — and re-marked when it finally was. 120 tokens sat in that
+   * state in production, ETH, BTC, AAPL and NVDA among them, 17 of them
+   * stamped by a single run to the millisecond.
+   *
+   * A run that never got an answer must not produce a verdict.
+   */
+  test('does NOT mark a token unpriceable when the provider ERRORED rather than answered', async () => {
+    const f = fixture!;
+    nextAttemptFailed = true;
+    nextResult = (tokenId, at, baseTokenId) => ({
+      tokenId,
+      baseTokenId,
+      at,
+      status: 'provider-missing',
+    });
+    // 60 days is well past the 30-day floor, so the ONLY thing standing
+    // between this token and a cooldown is the failed-attempt check.
+    const summary = await Container.get(BackfillHistoricalPricesUseCase).execute({
+      userId: f.userId,
+      usdTokenId: f.usdTokenId,
+      lookbackDays: 60,
+    });
+    expect(summary.inserted).toBe(0);
+    expect(summary.attemptsFailed).toBeGreaterThan(0);
+    const [token] = await db
+      .select({ unpriceableUntil: schema.tokens.unpriceableUntil })
+      .from(schema.tokens)
+      .where(eq(schema.tokens.id, f.btcTokenId));
+    expect(token?.unpriceableUntil).toBeNull();
+  });
+
+  /**
+   * "Nobody to ask" is not "nobody has it" (SC-171, second time).
+   *
+   * A process that never registered a historical pricer answers every day
+   * with `providerMissing`, which is indistinguishable from five providers
+   * having genuinely missed — and `inserted === 0` past the floor then marks
+   * every token unpriceable for a week. A one-shot runner missing
+   * `buildProviderRegistry` did exactly that to ETH, BTC, SOL, USDC and MATIC
+   * against production, in 1.4 seconds, without one HTTP call.
+   */
+  test('does NOT mark a token unpriceable when no provider was registered at all', async () => {
+    const f = fixture!;
+    const registry = Container.get(ProviderRegistry);
+    // A registry with no historical pricers — the boot mistake, in miniature.
+    Container.set(ProviderRegistry, {
+      getAllHistoricalPricers: () => [],
+    } as unknown as ProviderRegistry);
+    nextResult = (tokenId, at, baseTokenId) => ({
+      tokenId,
+      baseTokenId,
+      at,
+      status: 'provider-missing',
+    });
+
+    try {
+      const summary = await Container.get(BackfillHistoricalPricesUseCase).execute({
+        userId: f.userId,
+        usdTokenId: f.usdTokenId,
+        // Past UNPRICEABLE_MIN_RANGE_DAYS, so the registry check is the only
+        // thing standing between this token and a week-long cooldown.
+        lookbackDays: 60,
+      });
+      expect(summary.inserted).toBe(0);
+
+      const [token] = await db
+        .select({ unpriceableUntil: schema.tokens.unpriceableUntil })
+        .from(schema.tokens)
+        .where(eq(schema.tokens.id, f.btcTokenId));
+      expect(token?.unpriceableUntil ?? null).toBeNull();
+    } finally {
+      Container.set(ProviderRegistry, registry);
+    }
+  });
+
+  /**
+   * A cooldown only means anything for a token we have NEVER priced (SC-232).
+   *
+   * The read side already encodes this: `findNeverPricedInCooldownTokenIds`
+   * — consulted by the rollup, holdings and valuation — carries
+   * `NOT EXISTS (SELECT 1 FROM token_prices ...)` in its WHERE. The write
+   * side did not, so a token with thousands of stored rows could be removed
+   * from the nightly backfill for a week by a residual gap nobody covers.
+   * ETH carried exactly that, holding 1,956 rows back to 2021.
+   */
+  test('does NOT mark a token unpriceable when it already has stored prices', async () => {
+    const f = fixture!;
+    // One price row, far outside the requested window — enough to make the
+    // token "priced" for the purpose the cooldown serves.
+    await db.insert(schema.tokenPrices).values({
+      tokenId: f.btcTokenId,
+      baseTokenId: f.usdTokenId,
+      price: '30000',
+      timestamp: new Date('2021-09-06T00:00:00Z'),
+      source: 'preseeded',
+      granularity: 'daily',
+    });
+    nextResult = (tokenId, at, baseTokenId) => ({
+      tokenId,
+      baseTokenId,
+      at,
+      status: 'provider-missing',
+    });
+
+    const summary = await Container.get(BackfillHistoricalPricesUseCase).execute({
+      userId: f.userId,
+      usdTokenId: f.usdTokenId,
+      // Past the 30-day floor, so the stored-price check is the only thing
+      // between this token and a week-long cooldown.
+      lookbackDays: 60,
+    });
+    expect(summary.inserted).toBe(0);
+
+    const [token] = await db
+      .select({ unpriceableUntil: schema.tokens.unpriceableUntil })
+      .from(schema.tokens)
+      .where(eq(schema.tokens.id, f.btcTokenId));
+    expect(token?.unpriceableUntil ?? null).toBeNull();
+  });
+
   test('does NOT mark a token unpriceable when the range is shorter than the floor', async () => {
     const f = fixture!;
     nextResult = (tokenId, at, baseTokenId) => ({
@@ -362,6 +609,7 @@ describe('BackfillHistoricalPricesUseCase', () => {
     });
     // 5 days < 30-day floor, so even with 0 inserted we don't blocklist.
     await Container.get(BackfillHistoricalPricesUseCase).execute({
+      userId: f.userId,
       usdTokenId: f.usdTokenId,
       lookbackDays: 5,
     });
@@ -390,6 +638,7 @@ describe('BackfillHistoricalPricesUseCase', () => {
       priceStored: '1',
     });
     await Container.get(BackfillHistoricalPricesUseCase).execute({
+      userId: f.userId,
       usdTokenId: f.usdTokenId,
       lookbackDays: 3,
     });
@@ -415,6 +664,7 @@ describe('BackfillHistoricalPricesUseCase', () => {
       };
     }) as typeof nextResult;
     const summary = await Container.get(BackfillHistoricalPricesUseCase).execute({
+      userId: f.userId,
       usdTokenId: f.usdTokenId,
       lookbackDays: 3,
     });
@@ -422,5 +672,193 @@ describe('BackfillHistoricalPricesUseCase', () => {
     expect(summary.attempted).toBe(4);
     expect(summary.inserted).toBe(3);
     expect(summary.providerMissing).toBe(1);
+  });
+});
+
+/**
+ * SC-229 — where the window comes from when `holding_coverage` has nothing.
+ *
+ * The per-token start used to read `holding_coverage.first_tx_at` and, on a
+ * NULL, fall all the way back to the 1,826-day lookback. The widest window in
+ * the run therefore landed on the tokens we knew least about: on a production
+ * dry run, 14 tokens with no coverage row accounted for 25,564 of 52,022
+ * missing days and 56 of ~128 provider requests — half a run's budget spent
+ * establishing that a set of memecoins has no price feed.
+ *
+ * The transactions were there the whole time. They are why discovery finds
+ * these tokens at all.
+ */
+describe('BackfillHistoricalPricesUseCase — start date with no coverage row', () => {
+  const DAY_MS = 86_400_000;
+  const utcDay = (offsetDays: number): Date => {
+    const at = new Date(Date.now() - offsetDays * DAY_MS);
+    return new Date(Date.UTC(at.getUTCFullYear(), at.getUTCMonth(), at.getUTCDate()));
+  };
+
+  async function addTransaction(f: Fixture, occurredAt: Date, externalId: string): Promise<void> {
+    await db.insert(schema.holdingTransactions).values({
+      userId: f.userId,
+      holdingId: f.holdingId,
+      tokenId: f.btcTokenId,
+      kind: 'buy',
+      quantity: '1',
+      occurredAt,
+      externalId,
+      source: 'statement-csv',
+    });
+  }
+
+  test('starts at the earliest transaction, not the lookback floor', async () => {
+    const f = fixture!;
+    await addTransaction(f, utcDay(10), 'sc229-first');
+    const summary = await Container.get(BackfillHistoricalPricesUseCase).execute({
+      userId: f.userId,
+      usdTokenId: f.usdTokenId,
+      lookbackDays: 60,
+      planOnly: true,
+    });
+    // 10 days back through today inclusive — not the 61 the lookback gives.
+    expect(summary.attempted).toBe(11);
+    const [entry] = summary.plan ?? [];
+    expect(entry?.from).toEqual(utcDay(10));
+    expect(entry?.firstTxAt).toEqual(utcDay(10));
+  });
+
+  test('a coverage row still wins over the transactions when it has one', async () => {
+    const f = fixture!;
+    await addTransaction(f, utcDay(40), 'sc229-old-tx');
+    await db.insert(schema.holdingCoverage).values({
+      holdingId: f.holdingId,
+      firstTxAt: utcDay(3),
+      lastTxAt: utcDay(1),
+      txSources: ['statement-csv'],
+      hasCompleteTxHistory: true,
+    });
+    const summary = await Container.get(BackfillHistoricalPricesUseCase).execute({
+      userId: f.userId,
+      usdTokenId: f.usdTokenId,
+      lookbackDays: 60,
+      planOnly: true,
+    });
+    // The coverage row is the authority when it exists — 3 days back
+    // through today, and NOT the 41 the older transaction would give.
+    expect(summary.attempted).toBe(4);
+  });
+
+  test('a closed position with no coverage row ends at its last transaction', async () => {
+    const f = fixture!;
+    await db
+      .update(schema.holdings)
+      .set({ balance: '0' })
+      .where(eq(schema.holdings.id, f.holdingId));
+    await addTransaction(f, utcDay(20), 'sc229-open');
+    await addTransaction(f, utcDay(10), 'sc229-close');
+    const summary = await Container.get(BackfillHistoricalPricesUseCase).execute({
+      userId: f.userId,
+      usdTokenId: f.usdTokenId,
+      lookbackDays: 60,
+      planOnly: true,
+    });
+    // 20 days back through 10 days back, inclusive — the same lifetime
+    // bound a coverage row would have given, now reachable without one.
+    expect(summary.attempted).toBe(11);
+    const [entry] = summary.plan ?? [];
+    expect(entry?.from).toEqual(utcDay(20));
+    expect(entry?.to).toEqual(utcDay(10));
+  });
+
+  /**
+   * The dedup window has to move with the start date.
+   *
+   * `discoverySince` bounds the existing-price query, and a token whose first
+   * transaction predates the lookback now starts before it. If that bound did
+   * not follow, every already-priced day older than the lookback would read as
+   * missing and be requested again — a fix for a cost ticket that costs more.
+   */
+  test('does not re-request already-priced days that predate the lookback window', async () => {
+    const f = fixture!;
+    const firstTx = utcDay(70);
+    await addTransaction(f, firstTx, 'sc229-ancient');
+    await db.insert(schema.tokenPrices).values({
+      tokenId: f.btcTokenId,
+      baseTokenId: f.usdTokenId,
+      timestamp: firstTx,
+      price: '50000',
+      granularity: 'daily',
+      source: 'test',
+    });
+    const summary = await Container.get(BackfillHistoricalPricesUseCase).execute({
+      userId: f.userId,
+      usdTokenId: f.usdTokenId,
+      lookbackDays: 60,
+      planOnly: true,
+    });
+    expect(summary.alreadyHad).toBe(1);
+    const [entry] = summary.plan ?? [];
+    expect(entry?.from).toEqual(utcDay(69));
+  });
+});
+
+/**
+ * The invariant at the top of this file, enforced rather than stated (SC-272).
+ *
+ * SC-230 scoped eleven `execute` calls and left a comment saying every call
+ * below passes `userId` and why. The comment was **already false when this
+ * ticket was filed**: four calls did not, including `planOnly`, whose
+ * `expect(summary.attempted).toBe(4)` reads the whole table. Two threads lost
+ * time to it in one day, each proving the failure was not theirs.
+ *
+ * `docs/technical/2026-08-15_absence-and-refusal.md` predicted this in the
+ * entry about SC-230 itself — *"One branch later a new test was added without
+ * it, by someone who had read the file. Documentation of an invariant is not
+ * enforcement of it."* This is that enforcement, and it is a source check
+ * rather than a runtime one because the failure mode is a call that is never
+ * written, which no runtime assertion can observe.
+ */
+describe('every execute in this file is scoped to the fixture user', () => {
+  test('no call discovers candidates across the whole database', async () => {
+    const source = await Bun.file(import.meta.path).text();
+    const unscoped: string[] = [];
+
+    for (const match of source.matchAll(/\.execute\(\s*\{/g)) {
+      const start = match.index ?? 0;
+      let depth = 0;
+      let end = start;
+      for (let i = source.indexOf('{', start); i < source.length; i += 1) {
+        if (source[i] === '{') depth += 1;
+        if (source[i] === '}') depth -= 1;
+        if (depth === 0) {
+          end = i;
+          break;
+        }
+      }
+      const call = source.slice(start, end + 1);
+      // The one legitimate exception: it asserts the guard that throws before
+      // any discovery happens, so there is nothing for a user to scope.
+      if (call.includes("usdTokenId: ''")) continue;
+      if (call.includes('userId')) continue;
+
+      // A spread carries the option in from a shared object, which the plan
+      // vs run test needs so both paths provably use the SAME options.
+      // Resolved exactly — the declaration must exist and must carry
+      // `userId` — rather than accepted on sight, and it fails closed when
+      // the declaration cannot be found. A guard that shrugs at what it
+      // cannot parse is the shape this file is already an example of.
+      const spread = call.match(/\.\.\.(\w+)/);
+      if (spread?.[1]) {
+        const declaration = source.match(new RegExp(`const ${spread[1]}\\s*=\\s*\\{[^}]*\\}`));
+        if (declaration?.[0].includes('userId')) continue;
+        unscoped.push(
+          declaration
+            ? `${spread[1]} is spread in but declared without userId`
+            : `${spread[1]} is spread in and its declaration was not found`
+        );
+        continue;
+      }
+
+      unscoped.push(call.replace(/\s+/g, ' ').slice(0, 90));
+    }
+
+    expect(unscoped).toEqual([]);
   });
 });

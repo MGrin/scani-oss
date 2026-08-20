@@ -1,6 +1,7 @@
 import { Block, BlockHeader } from '@scani/ui/v3/components/Block';
 import { Numeric } from '@scani/ui/v3/components/Numeric';
 import { useState } from 'react';
+import { Trans, useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import { trpc } from '@/lib/trpc';
 import { cn } from '@/lib/utils';
@@ -44,6 +45,8 @@ const VAULTS_SHOWN = 3;
  * every pointer type anyway; the rule is what guarantees it.
  */
 export function VaultProgressRow({ row }: { row: VaultRow }) {
+  const { t } = useTranslation();
+
   return (
     <li>
       <Link
@@ -78,7 +81,10 @@ export function VaultProgressRow({ row }: { row: VaultRow }) {
         <span
           className="block h-1.5 overflow-hidden rounded-full bg-muted"
           role="img"
-          aria-label={`${row.name}: ${Math.round(row.progress)}% of target`}
+          aria-label={t('v3.home.vaults.progress', {
+            name: row.name,
+            percent: Math.round(row.progress),
+          })}
         >
           <span
             className="block h-full rounded-full"
@@ -91,7 +97,12 @@ export function VaultProgressRow({ row }: { row: VaultRow }) {
         <span className="flex items-baseline justify-between gap-3 text-caption text-muted-foreground">
           <Numeric value={row.current} currency={row.currency} compact />
           <span>
-            of <Numeric value={row.target} currency={row.currency} compact />
+            <Trans
+              i18nKey="v3.home.vaults.ofTarget"
+              components={{
+                target: <Numeric value={row.target} currency={row.currency} compact />,
+              }}
+            />
           </span>
         </span>
       </Link>
@@ -100,6 +111,7 @@ export function VaultProgressRow({ row }: { row: VaultRow }) {
 }
 
 export function VaultsBlock() {
+  const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
   const vaults = trpc.vaults.getAll.useQuery();
 
@@ -110,7 +122,7 @@ export function VaultsBlock() {
 
   return (
     <Block>
-      <BlockHeader title="Vaults" />
+      <BlockHeader title={t('v3.home.vaults.title')} />
       <ul className="divide-y divide-border border-t border-border">
         {shown.map((row) => (
           <VaultProgressRow key={row.id} row={row} />
@@ -121,7 +133,7 @@ export function VaultsBlock() {
           <DisclosureButton
             expanded={expanded}
             onToggle={() => setExpanded((open) => !open)}
-            label={`the other ${rows.length - VAULTS_SHOWN}`}
+            label={t('v3.home.disclosure.theOtherN', { count: rows.length - VAULTS_SHOWN })}
           />
         </div>
       ) : null}

@@ -1,5 +1,6 @@
 import { PageHeader, PageLayout } from '@scani/ui/v3/components/PageLayout';
 import { mergeQueries } from '@scani/ui/v3/lib/query-state';
+import { useTranslation } from 'react-i18next';
 import { useBaseCurrency } from '@/contexts/BaseCurrencyContext';
 import { trpc } from '@/lib/trpc';
 import { InstitutionsList } from '../components/entities/InstitutionsList';
@@ -13,13 +14,14 @@ import type { InstitutionRow } from '../lib/accounts';
  * two queries and a list.
  */
 export function InstitutionsPage() {
+  const { t } = useTranslation();
   const institutionsQuery = trpc.institutions.getByUserIdWithSummary.useQuery();
   const typesQuery = trpc.institutionTypes.getAll.useQuery();
   const { symbol: currency } = useBaseCurrency();
 
   return (
     <PageLayout measure="wide">
-      <PageHeader title="Institutions" />
+      <PageHeader title={t('v3.entities.institution.pageTitle')} />
       <InstitutionsList
         institutions={(institutionsQuery.data ?? []) as InstitutionRow[]}
         currency={currency}

@@ -5,6 +5,11 @@ import { DocumentExtractionRepository } from '../../src/repositories/DocumentExt
 import { UserJobRepository } from '../../src/repositories/UserJobRepository';
 import { ReviewFeedService } from '../../src/services/ReviewFeedService';
 import { TransferReviewService } from '../../src/services/TransferReviewService';
+import { restoreContainerAfterAll } from '../../test/helpers/container';
+
+// Container stubs are process-global; put back whatever this file changes
+// so no later test file resolves them (SC-448).
+restoreContainerAfterAll();
 
 function makeService(
   jobs: unknown[],
@@ -62,9 +67,12 @@ describe('ReviewFeedService.listPending', () => {
     const items = await svc.listPending('user-1');
 
     expect(items).toHaveLength(1);
-    expect(items[0].id).toBe('job:a1');
-    expect(items[0].kind).toBe('screenshot-parse');
-    expect(items[0].href).toBe('/jobs/a1');
+    expect(items[0]?.id).toBe('job:a1');
+    expect(items[0]?.kind).toBe('screenshot-parse');
+    // The job's NAME, not its English title: nothing on this side spells
+    // "Document parse" any more (SC-371).
+    expect(items[0]?.label).toEqual({ code: 'job', jobName: 'screenshot-parse' });
+    expect(items[0]?.href).toBe('/jobs/a1');
   });
 
   test('returns newest first', async () => {
@@ -104,7 +112,12 @@ describe('ReviewFeedService.listPending', () => {
     const extractionItem = items.find((i) => i.id === 'extraction:newer-extraction');
     expect(extractionItem?.kind).toBe('document-extraction');
     expect(extractionItem?.href).toBe('/documents/doc-1');
-    expect(extractionItem?.subtitle).toBe('Acme Utilities — 42.50 USD');
+    expect(extractionItem?.label).toEqual({ code: 'invoiceExtracted' });
+    expect(extractionItem?.detail).toEqual({ code: 'vendor', name: 'Acme Utilities' });
+    // The digits the extractor recorded, not a float's rendering of them: a
+    // trailing zero survives the wire because the value never becomes a
+    // number on the way (SC-371).
+    expect(extractionItem?.amount).toEqual({ value: '42.50', currency: 'USD' });
     expect(() => reviewItemSchema.parse(extractionItem)).not.toThrow();
   });
 
@@ -127,15 +140,22 @@ describe('ReviewFeedService.listPending', () => {
     expect(items).toHaveLength(1);
     expect(items[0]?.id).toBe('transfer-review:pending');
     expect(items[0]?.kind).toBe('transfer-review');
-    expect(items[0]?.subtitle).toBe('12 transfers out with no matching deposit');
+    expect(items[0]?.label).toEqual({ code: 'transfersToConfirm' });
+    expect(items[0]?.detail).toEqual({ code: 'unpairedTransfers', transfers: 12 });
     expect(items[0]?.href).toBe('/review/transfers');
     expect(() => reviewItemSchema.parse(items[0])).not.toThrow();
   });
 
-  test('one waiting transfer is not described as "1 transfers"', async () => {
+  /**
+   * The count travels as a number, so "1 transfer" versus "12 transfers" is a
+   * decision the reader's own language makes — English's rule is no longer
+   * hard-coded on a server that has no `t()` (SC-371). The sentence itself is
+   * asserted in `tests/v3/lib/review-text.test.ts`.
+   */
+  test('one waiting transfer arrives as a count of one, not as a phrase', async () => {
     const svc = makeService([], [], { count: 1, latestCreatedAt: new Date() });
     const [item] = await svc.listPending('user-1');
-    expect(item?.subtitle).toBe('1 transfer out with no matching deposit');
+    expect(item?.detail).toEqual({ code: 'unpairedTransfers', transfers: 1 });
   });
 
   /** An empty queue contributes nothing — not a row reading zero, which is a
@@ -146,14 +166,16 @@ describe('ReviewFeedService.listPending', () => {
   });
 
   /**
-   * `subtitle` must not parse as money. `splitReviewSubtitle` pulls a trailing
-   * `<number> <ISO CODE>` into the row's value column, and a count that
-   * rendered there as a currency would put "12" under the same heading as
-   * "€87.31" on the same list.
+   * A count is not money, and now it cannot be mistaken for money.
+   *
+   * The row's figure used to be recovered by running a regex for a trailing
+   * `<number> <ISO CODE>` over the English second line, so `2 files` was one
+   * rephrasing away from being printed as two of a currency called FILES.
+   * The value column reads `amount` and nothing else; a transfer row has none.
    */
-  test('the count does not read as an amount to the feed row renderer', async () => {
+  test('the count never reaches the value column', async () => {
     const svc = makeService([], [], { count: 12, latestCreatedAt: new Date() });
     const [item] = await svc.listPending('user-1');
-    expect(item?.subtitle).not.toMatch(/\d+\s+[A-Z]{3}$/);
+    expect(item?.amount).toBeUndefined();
   });
 });

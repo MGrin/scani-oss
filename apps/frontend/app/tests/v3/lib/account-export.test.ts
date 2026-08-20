@@ -1,7 +1,11 @@
+import '../../i18n-preload';
+
 import { describe, expect, it } from 'bun:test';
+import i18n from 'i18next';
 import {
   type AccountExport,
   accountExportSheets,
+  formatInterval,
   withheldAccount,
 } from '../../../src/v3/lib/account-export';
 
@@ -13,7 +17,17 @@ import {
  * spreadsheet and hands over an unredacted JSON beside it is not a privacy
  * control, it is a trap, and it is the sort of gap that is only visible if
  * something asserts on the bytes.
+ *
+ * The English assertions below are unchanged after SC-201 moved every header
+ * into `en.json`, and that is the point of leaving them as literals: they now
+ * assert that the extraction changed no behaviour, resolved through the real
+ * `t` against the file the app ships.
  */
+
+/** The app's own `t`, from the initialised instance the preload above sets
+ *  up — not a stub. A stub would make these tests agree with themselves
+ *  rather than with `en.json`. */
+const t = i18n.t.bind(i18n);
 
 const DATA = {
   profile: { email: 'a@b.c', name: 'A', baseCurrency: 'eur-id', createdAt: new Date(0) },
@@ -100,7 +114,7 @@ const AT = new Date('2026-08-14T10:00:00.000Z');
 
 describe('accountExportSheets', () => {
   it('names one sheet per set', () => {
-    const { sheets } = accountExportSheets(DATA, AT);
+    const { sheets } = accountExportSheets(DATA, AT, t);
     expect(sheets.map((s) => s.name)).toEqual([
       'Accounts',
       'Holdings',
@@ -118,13 +132,13 @@ describe('accountExportSheets', () => {
   });
 
   it('carries the figures when nothing is withheld', () => {
-    const { sheets } = accountExportSheets(DATA, AT);
+    const { sheets } = accountExportSheets(DATA, AT, t);
     const holdings = sheets.find((s) => s.name === 'Holdings');
     expect(holdings?.headers).toContain('Balance');
   });
 
   it('drops every value column and says so when amounts are withheld', () => {
-    const { sheets, provenance } = accountExportSheets(DATA, AT, { hideAmounts: true });
+    const { sheets, provenance } = accountExportSheets(DATA, AT, t, { hideAmounts: true });
     expect(provenance.amountsWithheld).toBe(true);
 
     expect(sheets.find((s) => s.name === 'Holdings')?.headers).not.toContain('Balance');
@@ -134,7 +148,7 @@ describe('accountExportSheets', () => {
   });
 
   it('keeps the counts that are tallies rather than money', () => {
-    const { sheets } = accountExportSheets(DATA, AT, { hideAmounts: true });
+    const { sheets } = accountExportSheets(DATA, AT, t, { hideAmounts: true });
     const history = sheets.find((s) => s.name === 'Net worth history');
     expect(history?.headers).toEqual([
       'Date',
@@ -149,7 +163,7 @@ describe('accountExportSheets', () => {
   });
 
   it('leaves the identity of every record intact, so the file is still useful', () => {
-    const { sheets } = accountExportSheets(DATA, AT, { hideAmounts: true });
+    const { sheets } = accountExportSheets(DATA, AT, t, { hideAmounts: true });
     expect(sheets.find((s) => s.name === 'Holdings')?.headers).toContain('Symbol');
     expect(sheets.find((s) => s.name === 'Accounts')?.headers).toContain('Institution');
   });
@@ -180,5 +194,50 @@ describe('withheldAccount', () => {
     // from it in the same session.
     withheldAccount(DATA);
     expect(DATA.holdings[0]?.balance).toBe('0.62');
+  });
+});
+
+/**
+ * SC-235. The Every column used to be one key — `{{count}} {{unit}}` — with
+ * `unit` interpolated straight off the wire, so every account export ever
+ * downloaded reads "2 month" in the only language we ship. That is a live
+ * English bug, not a translation-readiness one, and it was flagged rather than
+ * fixed when the strings were extracted because fixing it changes the English.
+ *
+ * A frame like that is also untranslatable in principle: the noun arrives as
+ * untranslated data, and no language can make it agree with a number it never
+ * sees. English needs two forms; Russian needs three. One pluralised key per
+ * unit is the shape that works, because pluralisation is a property of the
+ * noun and i18next selects on `count`.
+ */
+describe('SC-235 — the Every column agrees with its number', () => {
+  const t = i18n.t.bind(i18n) as Parameters<typeof formatInterval>[0];
+
+  it.each([
+    ['month', 1, '1 month'],
+    ['month', 2, '2 months'],
+    ['week', 1, '1 week'],
+    ['week', 3, '3 weeks'],
+    ['quarter', 1, '1 quarter'],
+    ['quarter', 4, '4 quarters'],
+    ['year', 1, '1 year'],
+    ['year', 5, '5 years'],
+  ])('%s x%d renders "%s"', (unit, count, expected) => {
+    expect(formatInterval(t, unit as string, count as number)).toBe(expected as string);
+  });
+
+  it('the plural form is real, not an appended s', () => {
+    // The v2 helper this replaces did `${unit}s`. That happens to work for
+    // these four nouns and is why the bug survived review: the shape is wrong
+    // even where the output looks right.
+    expect(formatInterval(t, 'month', 2)).toBe('2 months');
+    expect(formatInterval(t, 'month', 0)).toBe('0 months');
+  });
+
+  it('an unrecognised unit prints data, not invented grammar', () => {
+    // interval_unit is a `text` column, not an enum, so this is reachable.
+    // "2 × fortnight" says we did not understand the value; "2 fortnights"
+    // would be a guess at a noun we have never seen.
+    expect(formatInterval(t, 'fortnight', 2)).toBe('2 × fortnight');
   });
 });

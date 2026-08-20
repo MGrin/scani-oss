@@ -1,4 +1,5 @@
-import { describeJobFailure, isReviewableJobName } from '@scani/shared';
+import { describeJobFailure, isReviewableJobName, type JobFailureDescription } from '@scani/shared';
+import type { TFunction } from 'i18next';
 
 /**
  * The jobs list's pure half — what a job's state is called, whether it is still
@@ -32,16 +33,79 @@ export interface JobRow {
 }
 
 /** BullMQ's own states, in the order a run moves through them. */
-const STATE_LABELS: Record<string, string> = {
-  queued: 'Queued',
-  active: 'Active',
-  progress: 'Running',
-  completed: 'Completed',
-  failed: 'Failed',
+const STATE_KEYS: Record<string, string> = {
+  queued: 'v3.jobs.state.queued',
+  active: 'v3.jobs.state.active',
+  progress: 'v3.jobs.state.progress',
+  completed: 'v3.jobs.state.completed',
+  failed: 'v3.jobs.state.failed',
 };
 
-export function jobStateLabel(state: string): string {
-  return STATE_LABELS[state] ?? state;
+/**
+ * A state a *reader* can read. The framework's own vocabulary is not it: these
+ * five arrive as `completed` / `failed` and were rendered by a hardcoded
+ * English table, so the job detail header said "Completed" over an otherwise
+ * Russian page (SC-421).
+ *
+ * The fallback is the raw state rather than a key, because BullMQ can emit one
+ * we have no word for (`stalled`) and a bare `v3.jobs.state.stalled` on screen
+ * is worse than the state's own name.
+ */
+export function jobStateLabel(t: TFunction, state: string): string {
+  const key = STATE_KEYS[state];
+  return key ? t(key) : state;
+}
+
+/**
+ * The failure, named (SC-424).
+ *
+ * `describeJobFailure` answers with a code and its operands because it lives in
+ * `@scani/shared`, which the API and the worker import and which therefore has
+ * no `t()`. This is the naming half, and it is why the chip beside a Russian
+ * "Завершена" no longer reads "Failed — won't retry".
+ *
+ * Both halves take the same `description` so a chip and the sentence under it
+ * cannot describe different failures — the property SC-153 bought and the one
+ * worth keeping through a refactor of the return type.
+ *
+ * `t` is narrowed to what these two actually call rather than to i18next's
+ * `TFunction`, for the same reason `ReviewTexts.t` in `review-text.ts` is:
+ * the review feed composes a dead job's line through the same naming, and
+ * passes the `t` it was handed rather than an i18next instance.
+ */
+export type JobFailureTranslate = (key: string, vars?: Record<string, unknown>) => string;
+
+export function jobFailureLabel(
+  t: JobFailureTranslate,
+  description: JobFailureDescription
+): string {
+  if (description.code === 'retrying') {
+    return t('v3.jobs.failure.retrying.label', {
+      made: description.attemptsMade,
+      allowed: description.attemptsAllowed,
+    });
+  }
+  return t(`v3.jobs.failure.${description.code}.label`);
+}
+
+export function jobFailureSentence(
+  t: JobFailureTranslate,
+  description: JobFailureDescription
+): string {
+  switch (description.code) {
+    case 'retrying':
+      return t('v3.jobs.failure.retrying.sentence', {
+        made: description.attemptsMade,
+        allowed: description.attemptsAllowed,
+      });
+    case 'exhausted':
+      // `count`, not a plain operand: "tried 2 times" and "tried 5 times" are
+      // different words in Russian, and this is the one sentence here that
+      // interpolates a number into a noun phrase.
+      return t('v3.jobs.failure.exhausted.sentence', { count: description.attemptsAllowed });
+    default:
+      return t(`v3.jobs.failure.${description.code}.sentence`);
+  }
 }
 
 const RUNNING_STATES = new Set(['queued', 'active', 'progress']);
@@ -82,19 +146,20 @@ export function jobBucket(job: JobRow): JobBucket {
 
 interface BucketDef {
   key: JobBucket;
-  label: string;
+  labelKey: string;
 }
 
 /** Ordered by urgency, which is the order the group headings appear in. */
 export const JOB_BUCKETS: readonly BucketDef[] = [
-  { key: 'review', label: 'Needs your review' },
-  { key: 'running', label: 'Running' },
-  { key: 'failed', label: "Failed — won't retry" },
-  { key: 'completed', label: 'Completed' },
+  { key: 'review', labelKey: 'v3.jobs.bucket.review' },
+  { key: 'running', labelKey: 'v3.jobs.bucket.running' },
+  { key: 'failed', labelKey: 'v3.jobs.bucket.failed' },
+  { key: 'completed', labelKey: 'v3.jobs.bucket.completed' },
 ];
 
-export function jobBucketLabel(bucket: JobBucket): string {
-  return JOB_BUCKETS.find((entry) => entry.key === bucket)?.label ?? bucket;
+export function jobBucketLabel(t: TFunction, bucket: JobBucket): string {
+  const found = JOB_BUCKETS.find((entry) => entry.key === bucket);
+  return found ? t(found.labelKey) : bucket;
 }
 
 /**
@@ -102,11 +167,14 @@ export function jobBucketLabel(bucket: JobBucket): string {
  * present. An option that can only ever produce the filtered-empty screen is a
  * control that lies about what the list contains.
  */
-export function jobBucketOptions(jobs: readonly JobRow[]): { value: string; label: string }[] {
+export function jobBucketOptions(
+  t: TFunction,
+  jobs: readonly JobRow[]
+): { value: string; label: string }[] {
   const present = new Set(jobs.map(jobBucket));
   return JOB_BUCKETS.filter((entry) => present.has(entry.key)).map((entry) => ({
     value: entry.key,
-    label: entry.label,
+    label: t(entry.labelKey),
   }));
 }
 
@@ -119,8 +187,6 @@ export function compareJobs(a: JobRow, b: JobRow, field: string, direction: stri
   switch (field) {
     case 'started':
       return (time(a.createdAt) - time(b.createdAt)) * mult;
-    case 'state':
-      return jobStateLabel(a.state).localeCompare(jobStateLabel(b.state)) * mult;
     default:
       return 0;
   }
@@ -176,7 +242,11 @@ function asRecord(value: unknown): Record<string, unknown> {
  * the sublabel, which truncates, and the row's own `aria-label` has to be able
  * to say it. Field names track the backend's sanitised `payload_summary`.
  */
-export function summariseJobPayload(jobName: string, payloadSummary: unknown): string | null {
+export function summariseJobPayload(
+  t: TFunction,
+  jobName: string,
+  payloadSummary: unknown
+): string | null {
   const summary = asRecord(payloadSummary);
   switch (jobName) {
     case 'wallet-import': {
@@ -187,18 +257,19 @@ export function summariseJobPayload(jobName: string, payloadSummary: unknown): s
     }
     case 'screenshot-parse': {
       const count = Number(summary.fileCount ?? 0);
-      return Number.isFinite(count) && count > 0 ? `${count} file${count === 1 ? '' : 's'}` : null;
+      return Number.isFinite(count) && count > 0 ? t('v3.jobs.fileCount', { count }) : null;
     }
     case 'exchange-import':
       return typeof summary.provider === 'string' ? summary.provider : null;
     case 'file-import': {
-      const type = typeof summary.fileType === 'string' ? summary.fileType : 'file';
-      return summary.enrich ? `${type} · enriched` : type;
+      const type =
+        typeof summary.fileType === 'string' ? summary.fileType : t('v3.jobs.kind.fileFallback');
+      return summary.enrich ? t('v3.jobs.kind.fileEnriched', { type }) : type;
     }
     case 'holding-price-update':
-      return 'Holding price refresh';
+      return t('v3.jobs.kind.holdingPriceRefresh');
     case 'user-data-delete':
-      return 'Delete all account data';
+      return t('v3.jobs.kind.deleteAllData');
     default:
       return null;
   }

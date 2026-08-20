@@ -9,8 +9,10 @@ import {
 import { useSheetRoute } from '@scani/ui/v3/hooks/useSheetRoute';
 import { describeDownload, downloadFile, exportFileName } from '@scani/ui/v3/lib/export/download';
 import { toExportBlob } from '@scani/ui/v3/lib/export/format';
+import type { TFunction } from 'i18next';
 import { Download } from 'lucide-react';
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { trpc } from '@/lib/trpc';
 import { type AccountExport, accountExportSheets, withheldAccount } from '../../lib/account-export';
 
@@ -39,16 +41,22 @@ import { type AccountExport, accountExportSheets, withheldAccount } from '../../
 
 const EXPORT_SHEET = 'export:account';
 
-const SCOPES: readonly ExportScopeOption[] = [
+/**
+ * A function of `t` rather than a module constant: `ExportScopeOption.label` is
+ * consumed as a resolved string by `ExportSheet`, and the same shape the export
+ * chunk settled on for `ExportField.header` (SC-202).
+ */
+const scopes = (t: TFunction): readonly ExportScopeOption[] => [
   {
     key: 'xlsx',
-    label: 'Excel workbook',
-    detail: 'One sheet per set — holdings, transactions, payments, history',
+    label: t('v3.settings.export.workbook'),
+    detail: t('v3.settings.export.workbookDetail'),
   },
-  { key: 'json', label: 'JSON', detail: 'Every field, exactly as the API returns it' },
+  { key: 'json', label: t('v3.settings.export.json'), detail: t('v3.settings.export.jsonDetail') },
 ];
 
 export function DataExportSettings() {
+  const { t } = useTranslation();
   const sheet = useSheetRoute(EXPORT_SHEET);
   const utils = trpc.useContext();
   const [running, setRunning] = useState(false);
@@ -79,7 +87,7 @@ export function DataExportSettings() {
               { type: 'application/json' }
             )
           : await toExportBlob(
-              accountExportSheets(data, generatedAt, { hideAmounts }),
+              accountExportSheets(data, generatedAt, t, { hideAmounts }),
               'xlsx',
               ','
             );
@@ -91,11 +99,11 @@ export function DataExportSettings() {
 
       const saved = await downloadFile(blob, fileName);
       if (saved.completed) {
-        const said = describeDownload(saved, fileName, 'Everything on your account');
+        const said = describeDownload(saved, fileName, t('v3.settings.export.scopeAll'));
         showSuccess(said.message, said.title);
       }
     } catch (error) {
-      showErrorToast(error, 'Exporting your account');
+      showErrorToast(error, t('v3.settings.pending.exportingAccount'));
     } finally {
       setRunning(false);
     }
@@ -104,12 +112,8 @@ export function DataExportSettings() {
   return (
     <Block className="flex flex-col gap-3 p-4">
       <div className="flex flex-col gap-1">
-        <h2 className="text-label text-muted-foreground">Your data</h2>
-        <p className="text-body text-muted-foreground">
-          Every record on this account in one file — holdings, the whole transaction ledger,
-          payments, groups, vaults and your net-worth history. Exchange and brokerage keys are left
-          out: they are credentials, not records.
-        </p>
+        <h2 className="text-label text-muted-foreground">{t('v3.settings.export.title')}</h2>
+        <p className="text-body text-muted-foreground">{t('v3.settings.export.intro')}</p>
       </div>
       <Button
         variant="outline"
@@ -118,15 +122,19 @@ export function DataExportSettings() {
         className="gap-2 self-start"
       >
         <Download className="size-4" aria-hidden="true" />
-        Export everything
+        {t('v3.settings.export.trigger')}
       </Button>
 
       <ExportSheet
         open={sheet.isOpen}
         onOpenChange={sheet.setOpen}
-        subject="whole account"
-        scopes={SCOPES}
-        actionLabel={(scope) => (scope === 'json' ? 'Export as JSON' : 'Export workbook')}
+        subject={t('v3.settings.export.subject')}
+        scopes={scopes(t)}
+        actionLabel={(scope) =>
+          scope === 'json'
+            ? t('v3.settings.export.exportJson')
+            : t('v3.settings.export.exportWorkbook')
+        }
         formats={['xlsx']}
         onExport={run}
       />

@@ -38,7 +38,7 @@ describe('FrankfurterProvider', () => {
       return new Response(JSON.stringify({ rates: { EUR: 0.92 }, date: '2024-03-05' }), {
         status: 200,
       });
-    }) as typeof fetch;
+    }) as unknown as typeof fetch;
     try {
       const quote = await p.fetchCurrentPrice(usd, { baseCurrency: eurToken });
       expect(quote?.price).toBe('0.92');
@@ -69,7 +69,7 @@ describe('FrankfurterProvider', () => {
         return new Response(JSON.stringify({ rates: { USD: 0.0107 } }), { status: 200 });
       }
       return new Response('not found', { status: 404 });
-    }) as typeof fetch;
+    }) as unknown as typeof fetch;
     try {
       const quote = await p.fetchCurrentPrice(rub, { baseCurrency: usdToken });
       expect(quote?.price).toBe('0.0107');
@@ -100,7 +100,7 @@ describe('FrankfurterProvider', () => {
       return new Response(JSON.stringify({ rates: { EUR: 0.92 }, date: '2024-03-05' }), {
         status: 200,
       });
-    }) as typeof fetch;
+    }) as unknown as typeof fetch;
     try {
       const at = new Date('2024-03-05T00:00:00Z');
       const quote = await p.fetchHistoricalPrice(usd, at, { baseCurrency: eurToken });

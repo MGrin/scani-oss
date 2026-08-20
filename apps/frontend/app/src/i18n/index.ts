@@ -1,6 +1,8 @@
+import { addUiLocale, setUiLanguage } from '@scani/ui/i18n';
 import i18n from 'i18next';
 import LanguageDetector from 'i18next-browser-languagedetector';
 import { initReactI18next } from 'react-i18next';
+import { resolveUiLocale } from './resolve-ui-locale';
 
 // Auto-discover every JSON file under `locales/`. Adding `es.json` (or
 // any other ISO code) is enough — no other file needs to be touched.
@@ -59,5 +61,46 @@ void i18n
       caches: ['localStorage'],
     },
   });
+
+/**
+ * Keep `@scani/ui` on the same language as the app (SC-250).
+ *
+ * The package runs its OWN i18next instance, because three of its four
+ * consumers have no i18n at all and a bare `useTranslation()` there renders the
+ * raw key. That independence is the point, and it is also why the two have to
+ * be joined up explicitly here rather than sharing a singleton.
+ *
+ * The `ui` half of each locale file is handed over rather than duplicated into
+ * the package: `locales/` is the directory a translator is given, and a second
+ * set of files somewhere else is a second set nobody remembers to translate.
+ * A locale with no `ui` section simply keeps the package's bundled English,
+ * which is the same partial-translation fallback the app already relies on.
+ */
+function syncUiLocale(language: string | undefined): void {
+  // `i18n.language` is unset until the detector has run, and this module is
+  // imported for its side effect — so the first call can legitimately have
+  // nothing to sync. The package keeps its own English until it does.
+  if (!language) return;
+
+  // Resolve against the language that actually HAS a bundle, not the one the
+  // detector reported (SC-257). The decision lives in `resolveUiLocale` rather
+  // than inline because this module cannot be imported under `bun test` —
+  // `import.meta.glob` above is undefined there — so a loop written here is a
+  // loop nothing can cover (SC-260).
+  const match = resolveUiLocale(language, i18n.languages ?? [], (code) => {
+    const bundle = i18n.getResourceBundle(code, 'translation') as
+      | { ui?: Record<string, unknown> }
+      | undefined;
+    return bundle?.ui;
+  });
+  if (match) addUiLocale(match.code, { ui: match.bundle });
+  setUiLanguage(language);
+}
+
+syncUiLocale(i18n.language);
+// `initialized` as well as the immediate call: the detector runs inside
+// `init`, so on a slower path the language can arrive after this module's body.
+i18n.on('initialized', () => syncUiLocale(i18n.language));
+i18n.on('languageChanged', syncUiLocale);
 
 export default i18n;

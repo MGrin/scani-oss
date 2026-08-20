@@ -3,21 +3,22 @@ import { Badge } from '@scani/ui/ui/badge';
 import { Button } from '@scani/ui/ui/button';
 import { V3DataView } from '@scani/ui/v3/components/data-view/V3DataView';
 import { Numeric } from '@scani/ui/v3/components/Numeric';
-import type { V3DataViewConfig } from '@scani/ui/v3/lib/data-view';
+import type { V3DataViewConfig, V3FilterOption } from '@scani/ui/v3/lib/data-view';
 import { exportText } from '@scani/ui/v3/lib/export/cell';
 import type { V3QueryState } from '@scani/ui/v3/lib/query-state';
 import { Repeat } from 'lucide-react';
 import { useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import type { BaseCurrencyRates } from '@/hooks/useBaseCurrencyRates';
 import type { RouterOutputs } from '@/lib/trpc';
+import { exportMoneyInBase } from '../../lib/export-money';
+import { directionLabel } from '../../lib/money';
 import {
   asPaymentIntervalUnit,
   formatPaymentInterval,
   monthlyEquivalent,
-} from '@/v2/lib/paymentTotals';
-import { exportMoneyInBase } from '../../lib/export-money';
-import { directionLabel } from '../../lib/money';
+} from '../../lib/paymentTotals';
 import { V3_PAYMENT_ROUTES, V3_ROUTES } from '../../lib/routes';
 import { BaseEquivalent } from '../BaseEquivalent';
 import { DeletePaymentAction } from './DeletePaymentAction';
@@ -57,15 +58,15 @@ function StatusCell({ status }: { status: string }) {
   );
 }
 
-const STATUS_OPTIONS = [
-  { label: 'Active', value: 'active' },
-  { label: 'Paused', value: 'paused' },
-  { label: 'Ended', value: 'ended' },
+const STATUS_OPTIONS: V3FilterOption[] = [
+  { labelKey: 'ui.dataView.payments.option.active', value: 'active' },
+  { labelKey: 'ui.dataView.payments.option.paused', value: 'paused' },
+  { labelKey: 'ui.dataView.payments.option.ended', value: 'ended' },
 ];
 
-const DIRECTION_OPTIONS = [
-  { label: 'Bill', value: 'outflow' },
-  { label: 'Income', value: 'inflow' },
+const DIRECTION_OPTIONS: V3FilterOption[] = [
+  { labelKey: 'ui.dataView.payments.option.bill', value: 'outflow' },
+  { labelKey: 'ui.dataView.payments.option.income', value: 'inflow' },
 ];
 
 interface RecurringListProps {
@@ -84,8 +85,9 @@ export function RecurringList({
   rates,
   query,
 }: RecurringListProps) {
+  const { t } = useTranslation();
   const vendorName = (payment: PaymentRow) =>
-    vendorNameById.get(payment.vendorId) ?? 'Unknown vendor';
+    vendorNameById.get(payment.vendorId) ?? t('v3.common.unknownVendor');
   const symbolFor = (payment: PaymentRow) => tokenSymbolById.get(payment.currencyTokenId) ?? 'USD';
 
   // Only vendors that actually own a payment, so the Refine sheet never offers
@@ -95,18 +97,25 @@ export function RecurringList({
     const seen = new Map<string, string>();
     for (const payment of payments) {
       if (!seen.has(payment.vendorId)) {
-        seen.set(payment.vendorId, vendorNameById.get(payment.vendorId) ?? 'Unknown vendor');
+        seen.set(
+          payment.vendorId,
+          vendorNameById.get(payment.vendorId) ?? t('v3.common.unknownVendor')
+        );
       }
     }
     return [...seen.entries()]
       .map(([value, label]) => ({ value, label }))
       .sort((a, b) => a.label.localeCompare(b.label));
-  }, [payments, vendorNameById]);
+    // `t` is a dependency: the fallback for a vendor with no name is a
+    // translated string now, so without it the filter options keep the
+    // language this memo was first built in (the fourth time extraction has
+    // put `t` into a hook that never had one — SC-202).
+  }, [payments, vendorNameById, t]);
 
   const config: V3DataViewConfig<PaymentRow> = {
     pageKey: 'payments',
-    noun: 'payments',
-    searchPlaceholder: 'Search by vendor',
+    nounKey: 'ui.dataView.noun.payments',
+    searchPlaceholderKey: 'ui.dataView.payments.config.searchByVendor',
     data: payments,
     searchFn: (payment, query) => vendorName(payment).toLowerCase().includes(query),
     filterDefs: [
@@ -116,27 +125,27 @@ export function RecurringList({
       // is seeded straight into it by `V3DataView` (SC-83).
       {
         key: 'vendor',
-        label: 'Vendor',
+        labelKey: 'ui.dataView.payments.filter.vendor',
         options: vendorOptions,
         fn: (payment: PaymentRow, value: string) => payment.vendorId === value,
       },
       {
         key: 'direction',
-        label: 'Direction',
+        labelKey: 'ui.dataView.payments.filter.direction',
         options: DIRECTION_OPTIONS,
         fn: (payment: PaymentRow, value: string) => payment.direction === value,
       },
       {
         key: 'status',
-        label: 'Status',
+        labelKey: 'ui.dataView.payments.filter.status',
         options: STATUS_OPTIONS,
         fn: (payment: PaymentRow, value: string) => payment.status === value,
       },
     ],
     sortDefs: [
-      { key: 'vendor', label: 'Vendor' },
-      { key: 'amount', label: 'Amount' },
-      { key: 'status', label: 'Status' },
+      { key: 'vendor', labelKey: 'ui.dataView.payments.sort.vendor' },
+      { key: 'amount', labelKey: 'ui.dataView.payments.sort.amount' },
+      { key: 'status', labelKey: 'ui.dataView.payments.sort.status' },
     ],
     sortFn: (a, b, field, direction) => {
       const mult = direction === 'asc' ? 1 : -1;
@@ -156,11 +165,15 @@ export function RecurringList({
       }
     },
     groupByDefs: [
-      { key: 'status', label: 'Status', fn: (payment: PaymentRow) => payment.status },
+      {
+        key: 'status',
+        labelKey: 'ui.dataView.payments.group.status',
+        fn: (payment: PaymentRow) => payment.status,
+      },
       {
         key: 'direction',
-        label: 'Direction',
-        fn: (payment: PaymentRow) => directionLabel(payment.direction),
+        labelKey: 'ui.dataView.payments.group.direction',
+        fn: (payment: PaymentRow) => directionLabel(payment.direction, t),
       },
     ],
     defaultSort: { field: 'vendor', direction: 'asc' },
@@ -169,10 +182,7 @@ export function RecurringList({
     ),
     renderRow: (payment) => ({
       label: vendorName(payment),
-      sublabel: `${formatPaymentInterval(
-        asPaymentIntervalUnit(payment.intervalUnit),
-        payment.intervalCount
-      )} · ${directionLabel(payment.direction)}${payment.status === 'active' ? '' : ` · ${payment.status}`}`,
+      sublabel: `${formatPaymentInterval(t, payment.intervalUnit, payment.intervalCount)} · ${directionLabel(payment.direction, t)}${payment.status === 'active' ? '' : ` · ${payment.status}`}`,
       value: <Numeric value={payment.expectedAmount} currency={symbolFor(payment)} />,
       delta: (
         <BaseEquivalent
@@ -183,23 +193,27 @@ export function RecurringList({
       ),
     }),
     columns: [
-      { key: 'vendor', header: 'Vendor', sortable: true, render: vendorName },
+      {
+        key: 'vendor',
+        headerKey: 'ui.dataView.payments.col.vendor',
+        sortable: true,
+        render: vendorName,
+      },
       {
         key: 'direction',
-        header: 'Direction',
+        headerKey: 'ui.dataView.payments.col.direction',
         width: 'w-28',
-        render: (payment) => directionLabel(payment.direction),
+        render: (payment) => directionLabel(payment.direction, t),
       },
       {
         key: 'cadence',
-        header: 'Cadence',
+        headerKey: 'ui.dataView.payments.col.cadence',
         width: 'w-40',
-        render: (payment) =>
-          formatPaymentInterval(asPaymentIntervalUnit(payment.intervalUnit), payment.intervalCount),
+        render: (payment) => formatPaymentInterval(t, payment.intervalUnit, payment.intervalCount),
       },
       {
         key: 'status',
-        header: 'Status',
+        headerKey: 'ui.dataView.payments.col.status',
         sortable: true,
         width: 'w-28',
         render: (payment) => <StatusCell status={payment.status} />,
@@ -207,7 +221,7 @@ export function RecurringList({
       },
       {
         key: 'amount',
-        header: 'Amount',
+        headerKey: 'ui.dataView.payments.col.amount',
         sortable: true,
         numeric: true,
         width: 'w-36',
@@ -240,11 +254,12 @@ export function RecurringList({
     ],
     empty: {
       icon: Repeat,
-      title: 'No recurring payments yet',
-      description: 'Add a bill or recurring income and Scani tracks every date it falls due.',
+      titleKey: 'ui.dataView.payments.empty.noRecurringPaymentsYet',
+      descriptionKey:
+        'ui.dataView.payments.empty.addABillOrRecurringIncomeAndScaniTracksEveryDateItFallsDue',
       action: (
         <Button asChild>
-          <Link to={V3_PAYMENT_ROUTES.create}>Add a payment</Link>
+          <Link to={V3_PAYMENT_ROUTES.create}>{t('v3.money.recurringList.addPayment')}</Link>
         </Button>
       ),
     },
@@ -259,7 +274,12 @@ export function RecurringList({
 
         return {
           title: vendorName(payment),
-          subtitle: `${formatPaymentInterval(unit, payment.intervalCount)} · ${directionLabel(payment.direction)}`,
+          // Both halves are keys now: the cadence came out of v2 with SC-320,
+          // and the frame joining it to the direction has been one since SC-235.
+          subtitle: t('v3.money.peek.cadenceAndDirection', {
+            cadence: formatPaymentInterval(t, payment.intervalUnit, payment.intervalCount),
+            direction: directionLabel(payment.direction, t),
+          }),
           // Words rather than `<Numeric>`'s placeholder when there is no
           // figure. A lone grey em dash where the headline amount goes is
           // indistinguishable from a skeleton that never resolved (SC-67), and
@@ -270,13 +290,15 @@ export function RecurringList({
             <Numeric value={payment.expectedAmount} currency={symbol} />
           ) : (
             <span className="text-muted-foreground">
-              {payment.kind === 'variable' ? 'Set on settling' : 'No amount'}
+              {payment.kind === 'variable'
+                ? t('v3.money.peek.setOnSettling')
+                : t('v3.money.peek.noAmount')}
             </span>
           ),
           actions: (
             <>
               <Button asChild>
-                <Link to={V3_PAYMENT_ROUTES.edit(payment.id)}>Edit</Link>
+                <Link to={V3_PAYMENT_ROUTES.edit(payment.id)}>{t('v3.money.peek.edit')}</Link>
               </Button>
               <PaymentStatusToggle
                 paymentId={payment.id}
@@ -300,9 +322,15 @@ export function RecurringList({
             </>
           ),
           primary: [
-            { label: 'Status', value: <span className="capitalize">{payment.status}</span> },
             {
-              label: 'Monthly equivalent',
+              label: t('v3.money.peek.status'),
+              // NOT extracted: the value is the raw `payments.status` enum with
+              // a `capitalize` class on it. Capitalising a wire value is not a
+              // translation, and giving it one means a status map — SC-235.
+              value: <span className="capitalize">{payment.status}</span>,
+            },
+            {
+              label: t('v3.money.peek.monthlyEquivalent'),
               // Annualised then divided by 12 — never a period amount scaled
               // up, or a fortnightly bill reads as 24 payments a year.
               //
@@ -313,34 +341,54 @@ export function RecurringList({
               value: monthly ? (
                 <Numeric value={monthly.toString()} currency={symbol} />
               ) : payment.kind === 'variable' ? (
-                'Varies'
+                t('v3.money.peek.varies')
               ) : (
-                'Not set'
+                t('v3.money.peek.notSet')
               ),
             },
             // "Amount is", not "Amount" — the figure above the facts is the
             // amount, and a second row headed the same thing reads as a
             // contradiction rather than as the fixed/variable distinction.
-            { label: 'Amount is', value: payment.kind === 'variable' ? 'Varies' : 'Fixed' },
-            { label: 'Started', value: formatDate(payment.anchorDate) },
+            {
+              label: t('v3.money.peek.amountIs'),
+              value:
+                payment.kind === 'variable' ? t('v3.money.peek.varies') : t('v3.money.peek.fixed'),
+            },
+            { label: t('v3.money.peek.started'), value: formatDate(payment.anchorDate) },
           ],
           sections: [
             {
-              title: 'Schedule',
+              title: t('v3.money.peek.schedule'),
               facts: [
-                { label: 'Repeats', value: formatPaymentInterval(unit, payment.intervalCount) },
-                { label: 'Anchor date', value: formatDate(payment.anchorDate) },
-                { label: 'Ends', value: payment.endDate ? formatDate(payment.endDate) : 'Never' },
+                {
+                  label: t('v3.money.peek.repeats'),
+                  value: formatPaymentInterval(t, payment.intervalUnit, payment.intervalCount),
+                },
+                { label: t('v3.money.peek.anchorDate'), value: formatDate(payment.anchorDate) },
+                {
+                  label: t('v3.money.peek.ends'),
+                  value: payment.endDate ? formatDate(payment.endDate) : t('v3.money.peek.never'),
+                },
                 // Only while paused, and only when there is a real date to
                 // show — it is the boundary the Resume action acts on, so
                 // the reader can see the window before committing to it.
                 ...(payment.status === 'paused' && payment.pausedAt
-                  ? [{ label: 'Paused since', value: formatDate(payment.pausedAt.slice(0, 10)) }]
+                  ? [
+                      {
+                        label: t('v3.money.peek.pausedSince'),
+                        value: formatDate(payment.pausedAt.slice(0, 10)),
+                      },
+                    ]
                   : []),
               ],
             },
             ...(payment.notes
-              ? [{ title: 'Notes', facts: [{ label: 'Note', value: payment.notes }] }]
+              ? [
+                  {
+                    title: t('v3.money.peek.notes'),
+                    facts: [{ label: t('v3.money.peek.note'), value: payment.notes }],
+                  },
+                ]
               : []),
           ],
         };

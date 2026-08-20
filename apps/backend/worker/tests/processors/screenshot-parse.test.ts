@@ -2,11 +2,16 @@ import { describe, expect, mock, test } from 'bun:test';
 import { StorageFacade } from '@scani/cloud-client/facades/storage-facade';
 import { DocumentRepository, UserJobRepository } from '@scani/domain/repositories';
 import { DocumentRetentionService, UploadedFileService } from '@scani/domain/services';
+import { restoreContainerAfterAll } from '@scani/domain/test-helpers';
 import { ParseScreenshotUseCase } from '@scani/domain/use-cases/ParseScreenshotUseCase';
 import type { ScreenshotParseJob } from '@scani/jobs';
 import type { ProcessorContext } from '@scani/queue';
 import { Container } from 'typedi';
 import { ScreenshotParseProcessor } from '../../src/processors/screenshot-parse';
+
+// Container stubs are process-global; put back whatever this file changes
+// so no later test file resolves them (SC-448).
+restoreContainerAfterAll();
 
 // Screenshots used to leave no trace at all: the r2Key existed only inside
 // the job payload and the file was deleted the moment the parse finished.

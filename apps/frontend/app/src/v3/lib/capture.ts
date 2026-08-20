@@ -38,9 +38,9 @@ export interface CaptureRoute {
   id: string;
   group: CaptureGroupKey;
   /** What the person has, in their words. */
-  title: string;
+  titleKey: string;
   /** One line on what happens to it. Never a second title. */
-  description: string;
+  descriptionKey: string;
   /** lucide-react icon name, mapped where it is rendered. */
   icon: string;
   path: string;
@@ -52,7 +52,7 @@ export interface CaptureRoute {
 
 export interface CaptureGroup {
   key: CaptureGroupKey;
-  title: string;
+  titleKey: string;
   routes: CaptureRoute[];
 }
 
@@ -60,8 +60,8 @@ const ROUTES: readonly CaptureRoute[] = [
   {
     id: 'screenshot',
     group: 'upload',
-    title: 'A screenshot',
-    description: 'A balance screen we read the figures off.',
+    titleKey: 'v3.capture.route.screenshot.title',
+    descriptionKey: 'v3.capture.route.screenshot.description',
     icon: 'Image',
     path: V3_CAPTURE_ROUTES.fileImport,
     acceptsContext: true,
@@ -70,8 +70,8 @@ const ROUTES: readonly CaptureRoute[] = [
   {
     id: 'statement',
     group: 'upload',
-    title: 'A statement file',
-    description: 'CSV or OFX from a bank or a broker.',
+    titleKey: 'v3.capture.route.statement.title',
+    descriptionKey: 'v3.capture.route.statement.description',
     icon: 'FileUp',
     path: V3_CAPTURE_ROUTES.fileImport,
     acceptsContext: true,
@@ -80,32 +80,32 @@ const ROUTES: readonly CaptureRoute[] = [
   {
     id: 'invoice',
     group: 'upload',
-    title: 'An invoice',
-    description: 'A PDF or a photo. We read the vendor and the amount.',
+    titleKey: 'v3.capture.route.invoice.title',
+    descriptionKey: 'v3.capture.route.invoice.description',
     icon: 'FileText',
     path: V3_CAPTURE_ROUTES.invoiceUpload,
   },
   {
     id: 'wallet',
     group: 'connect',
-    title: 'A wallet address',
-    description: 'Balances read off the chain, hourly.',
+    titleKey: 'v3.capture.route.wallet.title',
+    descriptionKey: 'v3.capture.route.wallet.description',
     icon: 'Wallet',
     path: V3_CAPTURE_ROUTES.walletImport,
   },
   {
     id: 'exchange',
     group: 'connect',
-    title: 'An exchange or broker login',
-    description: 'Read-only API keys, encrypted at rest.',
+    titleKey: 'v3.capture.route.exchange.title',
+    descriptionKey: 'v3.capture.route.exchange.description',
     icon: 'Plug',
     path: V3_CAPTURE_ROUTES.integrations,
   },
   {
     id: 'manual',
     group: 'manual',
-    title: 'The figures themselves',
-    description: 'Type holdings into an account.',
+    titleKey: 'v3.capture.route.manual.title',
+    descriptionKey: 'v3.capture.route.manual.description',
     icon: 'Keyboard',
     path: V3_CAPTURE_ROUTES.manualEntry,
     acceptsContext: true,
@@ -113,17 +113,17 @@ const ROUTES: readonly CaptureRoute[] = [
   {
     id: 'payment',
     group: 'manual',
-    title: 'A bill that repeats',
-    description: 'Matched to transactions as they arrive.',
+    titleKey: 'v3.capture.route.payment.title',
+    descriptionKey: 'v3.capture.route.payment.description',
     icon: 'Repeat',
     path: V3_PAYMENT_ROUTES.create,
   },
 ];
 
-const GROUP_TITLES: Record<CaptureGroupKey, string> = {
-  upload: 'Upload',
-  connect: 'Connect',
-  manual: 'Type it in',
+const GROUP_TITLE_KEYS: Record<CaptureGroupKey, string> = {
+  upload: 'v3.capture.group.upload',
+  connect: 'v3.capture.group.connect',
+  manual: 'v3.capture.group.manual',
 };
 
 /** Group order is the order of `GROUP_TITLES`; route order inside a group is
@@ -131,10 +131,10 @@ const GROUP_TITLES: Record<CaptureGroupKey, string> = {
  *  thing a phone has most often, and typing leads nothing because it is the
  *  fallback for everything the other five could not take. */
 export const CAPTURE_GROUPS: readonly CaptureGroup[] = (
-  Object.keys(GROUP_TITLES) as CaptureGroupKey[]
+  Object.keys(GROUP_TITLE_KEYS) as CaptureGroupKey[]
 ).map((key) => ({
   key,
-  title: GROUP_TITLES[key],
+  titleKey: GROUP_TITLE_KEYS[key],
   routes: ROUTES.filter((route) => route.group === key),
 }));
 
@@ -172,20 +172,18 @@ export function captureHref(route: CaptureRoute, contextQuery: string): string {
 }
 
 interface FileImportCopy {
-  title: string;
-  description: string;
+  titleKey: string;
+  descriptionKey: string;
 }
 
 const FILE_IMPORT_COPY: Record<FileImportKind, FileImportCopy> = {
   screenshot: {
-    title: 'Upload a screenshot',
-    description:
-      'A balance screen from an exchange, a bank or a broker. We read the holdings off it and show you what we found before anything is saved.',
+    titleKey: 'v3.capture.fileImport.screenshot.title',
+    descriptionKey: 'v3.capture.fileImport.screenshot.description',
   },
   statement: {
-    title: 'Upload a statement file',
-    description:
-      'A CSV, TSV, OFX or QIF export from a bank or a broker. We read the holdings off it and show you what we found before anything is saved.',
+    titleKey: 'v3.capture.fileImport.statement.title',
+    descriptionKey: 'v3.capture.fileImport.statement.description',
   },
 };
 
@@ -200,8 +198,7 @@ const FILE_IMPORT_COPY: Record<FileImportKind, FileImportCopy> = {
 export function fileImportCopy(kind: string | null): FileImportCopy {
   if (kind === 'screenshot' || kind === 'statement') return FILE_IMPORT_COPY[kind];
   return {
-    title: 'Upload a file',
-    description:
-      "A balance screenshot, a bank statement or a broker's export. We read the holdings off it and show you what we found before anything is saved.",
+    titleKey: 'v3.capture.fileImport.either.title',
+    descriptionKey: 'v3.capture.fileImport.either.description',
   };
 }

@@ -1,11 +1,18 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import type { AddressValidatorProvider, BalanceProvider } from '@scani/providers/core/capabilities';
+// This workspace cannot depend on @scani/domain (it sits below it), so the
+// shared helper is reached the same way the shared test preload is: by path.
+import { restoreContainerAfterAll } from '../../../../../../packages/business/domain/test/helpers/container';
 import { chainsRouter } from '../../../src/presentation/routers/chains';
 import {
   buildAuthedContext,
   buildUnauthedContext,
   installFreshRegistry,
 } from '../../helpers/test-context';
+
+// `installFreshRegistry()` stubs ProviderRegistry per test; this is the
+// file-level guarantee that nothing it installs outlives the file (SC-448).
+restoreContainerAfterAll();
 
 let restoreRegistry: () => void;
 let registry: ReturnType<typeof installFreshRegistry>['registry'];

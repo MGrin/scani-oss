@@ -47,7 +47,7 @@ describe('DeFiLlamaProvider', () => {
         }),
         { status: 200 }
       );
-    }) as typeof fetch;
+    }) as unknown as typeof fetch;
     try {
       const q = await p.fetchCurrentPrice(token, { baseCurrency: usdToken });
       expect(q?.price).toBe('50000');
@@ -71,7 +71,7 @@ describe('DeFiLlamaProvider', () => {
           coins: { 'coingecko:bitcoin': { price: 1, confidence: 0.1 } },
         }),
         { status: 200 }
-      )) as typeof fetch;
+      )) as unknown as typeof fetch;
     try {
       const q = await p.fetchCurrentPrice(token, { baseCurrency: usdToken });
       expect(q).toBeNull();
@@ -102,13 +102,13 @@ describe('DeFiLlamaProvider', () => {
     } {
       const originalFetch = globalThis.fetch;
       const spans: number[] = [];
-      globalThis.fetch = (async (input: RequestInfo | URL) => {
+      globalThis.fetch = (async (input: Parameters<typeof fetch>[0]) => {
         const url = String(input);
         const span = Number(new URL(url).searchParams.get('span'));
         const start = Number(new URL(url).searchParams.get('start'));
         spans.push(span);
         return handler(url, span, start);
-      }) as typeof fetch;
+      }) as unknown as typeof fetch;
       return { restore: () => (globalThis.fetch = originalFetch), spans };
     }
 
@@ -151,12 +151,12 @@ describe('DeFiLlamaProvider', () => {
       const to = new Date(from.getTime() + 1200 * dayMs);
       const starts: number[] = [];
       const originalFetch = globalThis.fetch;
-      globalThis.fetch = (async (input: RequestInfo | URL) => {
+      globalThis.fetch = (async (input: Parameters<typeof fetch>[0]) => {
         const params = new URL(String(input)).searchParams;
         const start = Number(params.get('start'));
         starts.push(start);
         return barsResponse(start, Number(params.get('span')));
-      }) as typeof fetch;
+      }) as unknown as typeof fetch;
       try {
         await p.fetchHistoricalRange(btc, from, to, { baseCurrency: usdToken });
         expect(starts).toEqual([

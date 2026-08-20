@@ -1,4 +1,5 @@
 import type { ComponentPropsWithoutRef } from 'react';
+import { useUiTranslation } from '../../i18n';
 import { cn } from '../../lib/cn';
 import { figureCells, figureFitStyle } from '../lib/figure';
 import { type NumericFormat, type NumericTone, resolveNumeric } from '../lib/numeric';
@@ -64,6 +65,7 @@ export function Numeric({
   className,
   ...rest
 }: NumericProps) {
+  const { t } = useUiTranslation();
   const parts = resolveNumeric(value, { format, currency, decimals, compact, delta });
 
   if (parts.isPlaceholder) {
@@ -72,7 +74,7 @@ export function Numeric({
         {/* An em dash alone is announced as nothing by most screen readers, so
             the absence of a value has to be said in words. */}
         <span aria-hidden="true">{parts.magnitude}</span>
-        <span className="sr-only">No value</span>
+        <span className="sr-only">{t('ui.numeric.noValue')}</span>
       </span>
     );
   }

@@ -1,14 +1,60 @@
 import { describe, expect, it } from 'bun:test';
 import { RenderPdfInput } from '@scani/shared';
 import { createElement } from 'react';
+import { addUiLocale } from '../../../../src/i18n';
 import type { V3DataViewConfig } from '../../../../src/v3/lib/data-view';
 import { exportMoney } from '../../../../src/v3/lib/export/cell';
 import {
   buildDataViewSheets,
   describeExportScope,
+  exportAllScopeLabel,
   nodeText,
 } from '../../../../src/v3/lib/export/data-view';
+import { toExportBlob } from '../../../../src/v3/lib/export/format';
 import { provenanceLines } from '../../../../src/v3/lib/export/workbook';
+
+// The fixtures' own labels, registered the way a host registers its own
+// (SC-262). The assertions below are unchanged English — that is what shows
+// the extraction moved no copy.
+addUiLocale('en', {
+  ui: {
+    dataView: {
+      test: {
+        account: 'Account',
+        all69Holdings: 'All 69 holdings',
+        connectAnExchangeAndYour: 'Connect an exchange and your positions appear here.',
+        everythingWeHave: 'Everything we have',
+        group: 'Group',
+        holding: 'Holding',
+        institution: 'Institution',
+        noHoldingsYet: 'No holdings yet',
+        none: 'None',
+        symbol: 'Symbol',
+        these12Holdings: 'These 12 holdings',
+        this1mWindow: 'This 1M window',
+        this1wWindow: 'This 1W window',
+        this3mWindow: 'This 3M window',
+        type: 'Type',
+        value: 'Value',
+        vault: 'vault',
+      },
+    },
+  },
+});
+
+// A host registering its list nouns — what the two apps do at boot (SC-257).
+addUiLocale('en', {
+  ui: {
+    dataView: {
+      noun: {
+        holdings_one: 'holding',
+        holdings_other: 'holdings',
+        holdings_counted_one: '{{count}} holding',
+        holdings_counted_other: '{{count}} holdings',
+      },
+    },
+  },
+});
 
 interface Holding {
   id: string;
@@ -26,19 +72,19 @@ function config(): V3DataViewConfig<Holding> {
   return {
     pageKey: 'holdings',
     data: HOLDINGS,
-    noun: 'holdings',
+    nounKey: 'ui.dataView.noun.holdings',
     renderRow: (item) => ({ label: item.symbol, value: item.value }),
-    empty: { icon: (() => null) as never, title: 'None', action: null },
+    empty: { icon: (() => null) as never, titleKey: 'ui.dataView.test.none', action: null },
     columns: [
-      { key: 'symbol', header: 'Holding', render: (item) => item.symbol },
+      { key: 'symbol', headerKey: 'ui.dataView.test.holding', render: (item) => item.symbol },
       {
         key: 'account',
-        header: 'Account',
+        headerKey: 'ui.dataView.test.account',
         render: (item) => createElement('span', null, item.account),
       },
       {
         key: 'value',
-        header: 'Value',
+        headerKey: 'ui.dataView.test.value',
         numeric: true,
         render: () =>
           createElement(function Numeric() {
@@ -47,8 +93,10 @@ function config(): V3DataViewConfig<Holding> {
         exportValue: (item) => exportMoney(item.value, 'EUR'),
       },
     ],
-    sortDefs: [{ key: 'value', label: 'Value' }],
-    groupByDefs: [{ key: 'account', label: 'Account', fn: (item: Holding) => item.account }],
+    sortDefs: [{ key: 'value', labelKey: 'ui.dataView.test.value' }],
+    groupByDefs: [
+      { key: 'account', labelKey: 'ui.dataView.test.account', fn: (item: Holding) => item.account },
+    ],
   };
 }
 
@@ -108,7 +156,7 @@ describe('buildDataViewSheets', () => {
     grouped.groupByDefs = [
       {
         key: 'institution',
-        label: 'Institution',
+        labelKey: 'ui.dataView.test.institution',
         fn: (item: Holding) => item.account.split(' ')[0] as string,
       },
     ];
@@ -171,6 +219,69 @@ describe('describeExportScope', () => {
       describeExportScope({ config: config(), ...BASE, filtered: true, filteredCount: 1 })
     ).toBe('Filtered — 1 of 2 holdings');
   });
+
+  /**
+   * SC-244. A file outlives the screen it left: "All 2 holdings" opened next
+   * month carries no trace that the account holds five hundred and this was
+   * page one.
+   */
+  it('does not call a page "all"', () => {
+    expect(describeExportScope({ config: config(), ...BASE, partial: true })).toBe(
+      'All 2 holdings loaded so far'
+    );
+    expect(
+      describeExportScope({
+        config: config(),
+        ...BASE,
+        partial: true,
+        filtered: true,
+        filteredCount: 1,
+      })
+    ).toBe('Filtered — 1 of 2 holdings loaded so far');
+  });
+
+  it('and the button that produced the file says the same thing', () => {
+    expect(exportAllScopeLabel('ui.dataView.noun.holdings', 2, false)).toBe('All 2 holdings');
+    expect(exportAllScopeLabel('ui.dataView.noun.holdings', 2, true)).toBe('All 2 holdings loaded');
+  });
+
+  /**
+   * The bytes, for the path every list export takes (SC-316).
+   *
+   * `buildDataViewSheets` resolves twelve surfaces' column headers, group
+   * labels, nouns and provenance against `@scani/ui`'s own instance. Until this
+   * assertion existed the only thing standing between a wrong instance and a
+   * spreadsheet full of `ui.dataView.holdings.col.amount` was the partial-set
+   * test below, which happens to read two provenance lines. The app's twin of
+   * this lives in `apps/frontend/app/tests/v3/lib/export-artifact.test.ts`.
+   */
+  it('writes no raw ui.* key into a list CSV', async () => {
+    const workbook = buildDataViewSheets({
+      config: config(),
+      ...BASE,
+      filtered: true,
+      filteredCount: 1,
+      searchTerm: 'btc',
+      partial: true,
+    });
+    const text = await (await toExportBlob(workbook, 'csv', ',')).text();
+
+    expect(text).not.toMatch(/\bui\.[a-z][a-zA-Z]*\.[a-zA-Z.]+/);
+    expect(text).toContain('# Subject: Holdings');
+    expect(text).toContain('# Search: btc');
+    expect(text).toContain('# Sorted by: Value, high to low');
+    expect(text).toContain('Holding,Account,Value (EUR)');
+  });
+
+  /** The About sheet is the only place a partial export can still say so. */
+  it('records the partial set in the file itself', () => {
+    const workbook = buildDataViewSheets({ config: config(), ...BASE, partial: true });
+    const lines = provenanceLines(workbook.provenance).map((l) => `${l.label}: ${l.value}`);
+    expect(lines).toContain('Scope: All 2 holdings loaded so far');
+    expect(lines).toContain(
+      'Not the whole set: Only the 2 holdings loaded on screen were exported.'
+    );
+  });
 });
 
 describe('the grouped export, and the PDF wire contract', () => {
@@ -179,7 +290,7 @@ describe('the grouped export, and the PDF wire contract', () => {
     withInstitution.groupByDefs = [
       {
         key: 'institution',
-        label: 'Institution',
+        labelKey: 'ui.dataView.test.institution',
         fn: (item: Holding) => item.account.split(' ')[0] as string,
       },
     ];
@@ -245,7 +356,11 @@ describe('the grouped export, and the PDF wire contract', () => {
     // one thing that can break between them is the *shape*. This parses what
     // the client would actually send through the server's own schema — the two
     // sides share `@scani/shared`, and this is the assertion that they do.
-    const workbook = buildDataViewSheets({ config: grouped(), ...BASE, groupBy: 'institution' });
+    const workbook = buildDataViewSheets({
+      config: grouped(),
+      ...BASE,
+      groupBy: 'institution',
+    });
     const parsed = RenderPdfInput.safeParse({
       sheet: workbook.sheets[0],
       provenance: {
@@ -258,7 +373,11 @@ describe('the grouped export, and the PDF wire contract', () => {
   });
 
   it('is rejected when the runs do not cover the rows', () => {
-    const workbook = buildDataViewSheets({ config: grouped(), ...BASE, groupBy: 'institution' });
+    const workbook = buildDataViewSheets({
+      config: grouped(),
+      ...BASE,
+      groupBy: 'institution',
+    });
     const parsed = RenderPdfInput.safeParse({
       sheet: { ...workbook.sheets[0], groups: [{ label: 'Kraken', rowCount: 99 }] },
       provenance: {

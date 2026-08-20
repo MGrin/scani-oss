@@ -172,6 +172,8 @@ export class PricingProviderRouter {
           marketSegment: null,
           providerMetadata: tokenData.metadata,
           isScamProbability: 0,
+          scamScoreVersion: null,
+          scamScoreSource: 'heuristic',
           isActive: true,
           lookalikeOf: null,
           unpriceableUntil: null,

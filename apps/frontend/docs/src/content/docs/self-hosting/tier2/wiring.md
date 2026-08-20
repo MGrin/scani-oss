@@ -32,7 +32,7 @@ Fastmail token, `DATA_PROVIDER_API_KEY`):
 ```ini
 NODE_ENV=production
 SCANI_CLOUD_URL=https://api.cloud.scani.xyz
-SCANI_CLOUD_API_KEY=sk_live_…   # from cloud.scani.xyz
+SCANI_CLOUD_API_KEY=scani_sk_…   # from cloud.scani.xyz
 
 # Plus everything Tier 1 already required: DATABASE_URL, REDIS_URL,
 # FRONTEND_URL, BACKEND_URL, ENCRYPTION_KEY, BETTER_AUTH_SECRET,

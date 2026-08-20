@@ -2,6 +2,7 @@ import { ArrowDown, ArrowUp, ArrowUpDown } from 'lucide-react';
 import type { MouseEvent, ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { useOverflowTitle } from '../../../hooks/useOverflowTitle';
+import { useUiTranslation } from '../../../i18n';
 import { cn } from '../../../lib/cn';
 import { Checkbox } from '../../../ui/checkbox';
 import type { V3ColumnDef } from '../../lib/data-view';
@@ -154,6 +155,7 @@ export function DataViewTable<T>({
   onSetSort,
   onRowClick,
 }: DataViewTableProps<T>) {
+  const { t } = useUiTranslation();
   const hasSelection = selectedIds.size > 0;
 
   return (
@@ -173,7 +175,11 @@ export function DataViewTable<T>({
               <Checkbox
                 checked={isAllSelected}
                 onCheckedChange={() => (hasSelection ? onClearSelection() : onSelectAll())}
-                aria-label={hasSelection ? 'Clear selection' : 'Select all'}
+                aria-label={
+                  hasSelection
+                    ? t('ui.dataView.table.clearSelection')
+                    : t('ui.dataView.table.selectAll')
+                }
               />
             </th>
           )}
@@ -194,7 +200,7 @@ export function DataViewTable<T>({
                 <button
                   type="button"
                   onClick={() => onSetSort(col.key)}
-                  aria-label={`Sort by ${col.header}`}
+                  aria-label={t('ui.dataView.table.sortBy', { header: t(col.headerKey) })}
                   className={cn(
                     'inline-flex items-center gap-1.5 text-label',
                     'transition-colors duration-fast ease-emphasized hover:text-foreground',
@@ -202,11 +208,11 @@ export function DataViewTable<T>({
                     col.numeric && 'flex-row-reverse'
                   )}
                 >
-                  <span className="truncate">{col.header}</span>
+                  <span className="truncate">{t(col.headerKey)}</span>
                   <SortIcon field={col.key} sortField={sortField} sortDirection={sortDirection} />
                 </button>
               ) : (
-                <span className="block truncate text-label">{col.header}</span>
+                <span className="block truncate text-label">{t(col.headerKey)}</span>
               )}
             </th>
           ))}
@@ -230,7 +236,10 @@ export function DataViewTable<T>({
                   <span className="shrink-0 tabular-nums">
                     <span aria-hidden="true">· </span>
                     {group.items.length}
-                    <span className="sr-only"> {group.items.length === 1 ? 'row' : 'rows'}</span>
+                    <span className="sr-only">
+                      {' '}
+                      {t('ui.dataView.table.rowCount', { count: group.items.length })}
+                    </span>
                   </span>
                 </span>
               </th>
@@ -325,7 +334,11 @@ export function DataViewTable<T>({
                       // the fallback only because a name is worse than useless
                       // when it is absent, and every surface that can supply
                       // one does.
-                      aria-label={`Select ${rowLabel?.(item) || id}`}
+                      // The name is DATA — a holding's symbol, a vendor's
+                      // name — so it interpolates rather than translating.
+                      aria-label={t('ui.dataView.table.selectRow', {
+                        name: rowLabel?.(item) || id,
+                      })}
                     />
                   </td>
                 )}

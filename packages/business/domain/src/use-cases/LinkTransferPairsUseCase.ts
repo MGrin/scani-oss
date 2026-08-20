@@ -10,7 +10,10 @@
  * Matching rules:
  *   1. Kinds: `withdraw` / `transfer_out` on one side, `deposit` /
  *      `transfer_in` on the other.
- *   2. Same tokenId AND same user.
+ *   2. Same user, and either the same tokenId or the SAME ASSET ON ANOTHER
+ *      CHAIN — see `candidatePairClass` for what makes two token rows the
+ *      same asset, and for the four conditions a bridge has to satisfy that
+ *      a same-token pair does not (SC-336).
  *   3. Same |quantity| within a small epsilon (fees often differ by
  *      the chain-side gas; we match on the WITHDRAW amount to
  *      the DEPOSIT amount directly, tolerating ±1% drift which
@@ -34,6 +37,15 @@
  * (`transfer_review IS NOT NULL`) this pass skips it forever, including the
  * ones they said left their control — otherwise the next nightly run would
  * find a coincidental inflow and quietly un-answer the question.
+ *
+ * **That skip is why the bridge rule below changes nothing in production
+ * today, and it is deliberate** (SC-336). All twelve bridge outflows in this
+ * ledger already carry a `left_control` answer, so this pass never sees them:
+ * measured 2026-08-17, the rule forms 9 pairs on the stored population — 3 of
+ * them the same-token pass already had — and 0 of them are reachable while
+ * those answers stand. Reopening them is a separate decision (SC-302/SC-324)
+ * and this pass is the thing that has to exist first, or reopening would put
+ * twelve bridges into the queue with no arrival to pair them to.
  */
 
 import { db } from '@scani/db/connection';
@@ -43,10 +55,12 @@ import Decimal from 'decimal.js';
 import { and, eq, gte, inArray, isNull, sql } from 'drizzle-orm';
 import { Service } from 'typedi';
 import {
+  candidatePairClass,
   INFLOW_KINDS,
   MATCH_WINDOW_MS,
   OUTFLOW_KINDS,
   QTY_MATCH_EPSILON,
+  type TransferLeg,
 } from '../lib/transfer-matching';
 
 const logger = createComponentLogger('use-case:link-transfer-pairs');
@@ -55,7 +69,53 @@ export interface LinkTransferPairsSummary {
   scanned: number;
   linked: number;
   ambiguous: number;
+  /** Of `linked`, how many joined two chains rather than two accounts. */
+  bridged: number;
   durationMs: number;
+}
+
+/**
+ * The identity facts a pair is judged on, read alongside the rows.
+ *
+ * `metadata` on a wallet account carries `userWalletId` and `chainId` (written
+ * by the wallet importer); an exchange account has neither, which is exactly
+ * the right answer for it — an exchange has no chain to bridge from.
+ */
+const legColumns = {
+  id: schema.holdingTransactions.id,
+  holdingId: schema.holdingTransactions.holdingId,
+  tokenId: schema.holdingTransactions.tokenId,
+  quantity: schema.holdingTransactions.quantity,
+  occurredAt: schema.holdingTransactions.occurredAt,
+  canonicalAssetKey: sql<
+    string | null
+  >`case when ${schema.tokens.lookalikeOf} is null then ${schema.tokens.providerMetadata}->'coingecko'->>'id' end`,
+  walletId: sql<string | null>`${schema.accounts.metadata}->>'userWalletId'`,
+  chainKey: sql<string | null>`${schema.accounts.metadata}->>'chainId'`,
+} as const;
+
+type LegRow = {
+  id: string;
+  holdingId: string;
+  tokenId: string;
+  quantity: string;
+  occurredAt: Date;
+  canonicalAssetKey: string | null;
+  walletId: string | null;
+  chainKey: string | null;
+};
+
+function toLeg(row: LegRow): TransferLeg {
+  return {
+    transactionId: row.id,
+    holdingId: row.holdingId,
+    tokenId: row.tokenId,
+    canonicalAssetKey: row.canonicalAssetKey,
+    walletId: row.walletId,
+    chainKey: row.chainKey,
+    occurredAt: row.occurredAt,
+    quantityAbs: new Decimal(row.quantity).abs(),
+  };
 }
 
 @Service()
@@ -76,10 +136,13 @@ export class LinkTransferPairsUseCase {
     // run and timed out before finishing. Two queries × in-memory
     // time-windowed matching is O(n log n) per user and finishes
     // comfortably within the cron budget.
-    const [outflows, inflowsByToken] = await Promise.all([
+    const [outflows, inflows] = await Promise.all([
       db
-        .select()
+        .select(legColumns)
         .from(schema.holdingTransactions)
+        .innerJoin(schema.tokens, eq(schema.tokens.id, schema.holdingTransactions.tokenId))
+        .innerJoin(schema.holdings, eq(schema.holdings.id, schema.holdingTransactions.holdingId))
+        .innerJoin(schema.accounts, eq(schema.accounts.id, schema.holdings.accountId))
         .where(
           and(
             eq(schema.holdingTransactions.userId, opts.userId),
@@ -90,10 +153,14 @@ export class LinkTransferPairsUseCase {
             // they answered. See the class doc.
             isNull(schema.holdingTransactions.transferReview)
           )
-        ),
+        )
+        .then((rows) => rows.map(toLeg)),
       db
-        .select()
+        .select(legColumns)
         .from(schema.holdingTransactions)
+        .innerJoin(schema.tokens, eq(schema.tokens.id, schema.holdingTransactions.tokenId))
+        .innerJoin(schema.holdings, eq(schema.holdings.id, schema.holdingTransactions.holdingId))
+        .innerJoin(schema.accounts, eq(schema.accounts.id, schema.holdings.accountId))
         .where(
           and(
             eq(schema.holdingTransactions.userId, opts.userId),
@@ -103,31 +170,67 @@ export class LinkTransferPairsUseCase {
           )
         )
         .then((rows) => {
-          // Group by tokenId + sort by occurredAt so the matching
-          // loop can binary-window without resorting every iteration.
-          const map = new Map<string, typeof rows>();
-          for (const r of rows) {
-            const list = map.get(r.tokenId);
-            if (list) list.push(r);
-            else map.set(r.tokenId, [r]);
+          // Indexed twice — by token row for a same-token pair, and by
+          // canonical asset for a bridge, whose two legs are two token rows by
+          // definition. One arrival can sit in both indexes, so the matching
+          // loop de-duplicates by transaction id before counting: a native
+          // asset's bridge is BOTH (ETH is one token row across chains), and
+          // counting it twice would read as ambiguity and refuse a pair the
+          // evidence is unanimous about.
+          const byToken = new Map<string, TransferLeg[]>();
+          const byAsset = new Map<string, TransferLeg[]>();
+          const push = (map: Map<string, TransferLeg[]>, key: string, leg: TransferLeg): void => {
+            const list = map.get(key);
+            if (list) list.push(leg);
+            else map.set(key, [leg]);
+          };
+          for (const row of rows) {
+            const leg = toLeg(row);
+            push(byToken, leg.tokenId, leg);
+            if (leg.canonicalAssetKey !== null) push(byAsset, leg.canonicalAssetKey, leg);
           }
-          for (const list of map.values()) {
-            list.sort((a, b) => a.occurredAt.getTime() - b.occurredAt.getTime());
+          for (const map of [byToken, byAsset]) {
+            for (const list of map.values()) {
+              list.sort((a, b) => a.occurredAt.getTime() - b.occurredAt.getTime());
+            }
           }
-          return map;
+          return { byToken, byAsset };
         }),
     ]);
 
     let linked = 0;
     let ambiguous = 0;
+    let bridged = 0;
 
     for (const out of outflows) {
-      const winStart = new Date(out.occurredAt.getTime() - MATCH_WINDOW_MS);
-      const winEnd = new Date(out.occurredAt.getTime() + MATCH_WINDOW_MS);
-      const outQty = new Decimal(out.quantity).abs();
+      const winStart = out.occurredAt.getTime() - MATCH_WINDOW_MS;
+      const winEnd = out.occurredAt.getTime() + MATCH_WINDOW_MS;
+      const outQty = out.quantityAbs;
 
-      const perToken = inflowsByToken.get(out.tokenId) ?? [];
-      const candidates = perToken.filter((c) => c.occurredAt >= winStart && c.occurredAt <= winEnd);
+      const seen = new Set<string>();
+      const candidates: Array<{ leg: TransferLeg; bridge: boolean }> = [];
+      for (const list of [
+        inflows.byToken.get(out.tokenId) ?? [],
+        out.canonicalAssetKey === null ? [] : (inflows.byAsset.get(out.canonicalAssetKey) ?? []),
+      ]) {
+        for (const leg of list) {
+          const at = leg.occurredAt.getTime();
+          if (at < winStart || at > winEnd) continue;
+          // Both legs on ONE holding is not a transfer (SC-350) — the guard
+          // that used to sit HERE, as a second copy of `candidatePairClass`'s
+          // condition 4. It moved into that predicate (SC-347) because the copy
+          // protected this matcher and nothing else: `candidatesFor` and
+          // `claimInflow` share the predicate and had no copy, so the review
+          // queue went on offering same-holding arrivals and a reader answered
+          // `paired` on one. A rule that has to be restated at every call site
+          // is a rule that is enforced at some of them.
+          if (seen.has(leg.transactionId)) continue;
+          const pairClass = candidatePairClass(out, leg);
+          if (pairClass === null) continue;
+          seen.add(leg.transactionId);
+          candidates.push({ leg, bridge: pairClass === 'bridged_asset' });
+        }
+      }
 
       // Pick the candidate closest in quantity that's within epsilon.
       // Ties break on closest timestamp. Anything else is flagged
@@ -135,9 +238,10 @@ export class LinkTransferPairsUseCase {
       // more than not linking at all.
       const viable = candidates
         .map((c) => ({
-          row: c,
-          qtyDelta: outQty.sub(new Decimal(c.quantity).abs()).abs(),
-          timeDelta: Math.abs(c.occurredAt.getTime() - out.occurredAt.getTime()),
+          row: { id: c.leg.transactionId },
+          bridge: c.bridge,
+          qtyDelta: outQty.sub(c.leg.quantityAbs).abs(),
+          timeDelta: Math.abs(c.leg.occurredAt.getTime() - out.occurredAt.getTime()),
         }))
         .filter((v) => v.qtyDelta.lte(outQty.mul(QTY_MATCH_EPSILON)));
 
@@ -166,7 +270,7 @@ export class LinkTransferPairsUseCase {
         .set({ transferGroupId: groupId, updatedAt: sql`now()` })
         .where(
           and(
-            inArray(schema.holdingTransactions.id, [out.id, best.row.id]),
+            inArray(schema.holdingTransactions.id, [out.transactionId, best.row.id]),
             isNull(schema.holdingTransactions.transferGroupId)
           )
         )
@@ -187,12 +291,14 @@ export class LinkTransferPairsUseCase {
         continue;
       }
       linked += 1;
+      if (best.bridge) bridged += 1;
     }
 
     const summary = {
       scanned: outflows.length,
       linked,
       ambiguous,
+      bridged,
       durationMs: Date.now() - startTime,
     };
     logger.info({ summary, userId: opts.userId }, 'Transfer-pair linking complete');

@@ -7,9 +7,11 @@
  *    (no batch endpoint).
  *  - `historical-price`: `/prices/historical/{unix}/{chain}:{address}`
  *    — primary backfill source for crypto, no date cap.
- *  - `token-identity`: derives the DeFiLlama coin spec
- *    (`"chain:address"` for EVM, `"coingecko:id"` as a fallback)
- *    from the token's etherscan + coingecko metadata namespaces.
+ *  - `token-identity`: derives the DeFiLlama coin spec — `"solana:<mint>"`
+ *    for a row with a Solana mint, then `"chain:address"` for EVM, then
+ *    `"coingecko:id"` as a fallback. The mint comes FIRST because it is what
+ *    such a row IS; an EVM contract beside it belongs to another token
+ *    (SC-403).
  *
  * Pre-refactor location:
  * `packages/pricing-providers/src/providers/defillama.ts`. The
@@ -22,7 +24,12 @@
  * falls through to the next provider tier.
  */
 
-import type { NewToken, Token, TokenMetadata } from '@scani/db/schema';
+import {
+  foreignNativeChainKey,
+  type NewToken,
+  type Token,
+  type TokenMetadata,
+} from '@scani/db/schema';
 import { type CustomLogger, createComponentLogger } from '@scani/logging';
 import { createOutflowLimiter, type OutflowRateLimiter } from '@scani/rate-limiter';
 import type { ProviderFactory } from '../../core/boot';
@@ -283,6 +290,13 @@ export class DeFiLlamaProvider implements HistoricalPriceProvider, TokenIdentity
     const meta = partial.providerMetadata as TokenMetadata | undefined;
     if (meta?.defillama && !opts?.force) return null;
 
+    // Foreign-native first, for the same reason `coinKey` does (SC-403): an
+    // EVM contract beside a Solana mint does not identify the row, and
+    // deriving the coin key from it is how production BONK and TRUMP came to
+    // carry `base:0x…` for a token that is not theirs.
+    const foreignNative = foreignNativeChainKey(meta);
+    if (foreignNative) return { defillama: { coin: foreignNative } };
+
     // Prefer EVM chain:contract — most precise identity.
     const eth = meta?.etherscan;
     if (eth?.chainId && eth.contractAddress) {
@@ -292,12 +306,6 @@ export class DeFiLlamaProvider implements HistoricalPriceProvider, TokenIdentity
           defillama: { coin: `${chainName}:${eth.contractAddress.toLowerCase()}` },
         };
       }
-    }
-
-    // Solana SPL — DeFiLlama indexes by mint under the `solana:` chain.
-    const sol = meta?.solana?.mint;
-    if (sol) {
-      return { defillama: { coin: `solana:${sol}` } };
     }
 
     // Fall back to coingecko id (DeFiLlama accepts `coingecko:bitcoin`
@@ -322,19 +330,26 @@ export class DeFiLlamaProvider implements HistoricalPriceProvider, TokenIdentity
    */
   private coinKey(t: Token): string | null {
     const meta = t.providerMetadata as TokenMetadata | null;
+    // Solana SPL tokens — DeFiLlama indexes them under `solana:<mint>` and
+    // serves both current and historical prices, including for long-tail SPL
+    // tokens CoinGecko doesn't track. Without this every Solana wallet is a
+    // flat dashed line on the chart because no provider can price it.
+    //
+    // It is FIRST, ahead of the stored `defillama.coin` and the contract,
+    // because the mint is what the row IS (SC-403). Production BONK and TRUMP
+    // each carried a Base contract for a different token of the same ticker
+    // and a stored coin key pointing at it; DeFiLlama has no data for either
+    // address, so the key that went upstream could not return a price at all.
+    // Reading the mint first repairs pricing for those rows without waiting
+    // for their metadata to be cleaned up.
+    const foreignNative = foreignNativeChainKey(meta);
+    if (foreignNative) return foreignNative;
     if (meta?.defillama?.coin) return meta.defillama.coin;
     const eth = meta?.etherscan;
     if (eth?.chainId && eth.contractAddress) {
       const chainName = CHAIN_ID_TO_DEFILLAMA[eth.chainId];
       if (chainName) return `${chainName}:${eth.contractAddress.toLowerCase()}`;
     }
-    // Solana SPL tokens — DeFiLlama indexes them under `solana:<mint>`
-    // and provides both current and historical prices, including for
-    // long-tail SPL tokens that CoinGecko doesn't track. Without this
-    // branch every Solana wallet shows up as a flat dashed line on
-    // the chart because no provider can price the SPL holdings.
-    const sol = meta?.solana?.mint;
-    if (sol) return `solana:${sol}`;
     const cg = meta?.coingecko?.id;
     if (cg) return `coingecko:${cg}`;
     return null;

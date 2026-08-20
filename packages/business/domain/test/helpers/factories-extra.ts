@@ -97,11 +97,9 @@ export async function makeAccount(
   const [row] = await tx
     .insert(schema.accounts)
     .values({
-      userId: overrides.userId,
-      institutionId: overrides.institutionId,
+      ...overrides,
       typeId,
       name: overrides.name ?? `Account-${randomUUID().slice(0, 6)}`,
-      ...overrides,
     })
     .returning();
   if (!row) throw new Error('accounts insert failed');
@@ -119,12 +117,9 @@ export async function makeHolding(
   const [row] = await tx
     .insert(schema.holdings)
     .values({
-      userId: overrides.userId,
-      accountId: overrides.accountId,
-      tokenId: overrides.tokenId,
+      ...overrides,
       balance: overrides.balance ?? '100',
       source: overrides.source ?? 'manual',
-      ...overrides,
     })
     .returning();
   if (!row) throw new Error('holdings insert failed');

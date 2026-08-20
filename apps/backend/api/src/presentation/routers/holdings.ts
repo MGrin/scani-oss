@@ -1,4 +1,3 @@
-import type { User } from '@scani/db';
 import {
   AccountRepository,
   AccountTypeRepository,
@@ -17,6 +16,7 @@ import { BullMqEnqueueService } from '@scani/queue';
 import { emitBulkEntityChanges, emitEntityChange } from '@scani/realtime';
 import {
   Decimal,
+  parseCostBasisMethod,
   type RealizedLedger,
   UpdateHoldingDto,
   UpsertHoldingApyConfigDto,
@@ -35,7 +35,7 @@ export const holdingsRouter = router({
   getWithDetails: protectedProcedure.query(async ({ ctx }) => {
     const { dbUser } = await requireAuth(ctx);
     return await Container.get(HoldingQueryService).getHoldingsByAccountIdWithSummary(
-      dbUser as User,
+      dbUser,
       undefined,
       false,
       ctx.requestCache
@@ -81,7 +81,13 @@ export const holdingsRouter = router({
       const rows = await Container.get(RealizedLedgerService).forHolding(
         dbUser.id,
         input.holdingId,
-        baseCurrencyId
+        baseCurrencyId,
+        new Date(),
+        // The account's own identification rule (SC-462). Read on every walk
+        // rather than cached: this ledger is what a reader opens to find out
+        // WHY a gain is what it is, so it must be computed under the rule the
+        // rest of their figures now use.
+        parseCostBasisMethod(dbUser.costBasisMethod)
       );
       const realizedTotal = rows.reduce(
         (sum, row) => (row.gain ? sum.add(row.gain) : sum),
@@ -106,6 +112,8 @@ export const holdingsRouter = router({
           portionCount: row.portionCount,
           basisQuality: row.basisQuality,
           outcome: row.outcome,
+          valuationBasis: row.valuationBasis,
+          answerSource: row.answerSource,
         })),
         realizedTotal: realizedTotal.toString(),
       };
@@ -115,7 +123,7 @@ export const holdingsRouter = router({
   // scam. Powers the Tokens page "Hidden Holdings" section.
   getHidden: protectedProcedure.query(async ({ ctx }) => {
     const { dbUser } = await requireAuth(ctx);
-    return await Container.get(HoldingQueryService).getHiddenHoldings(dbUser as User);
+    return await Container.get(HoldingQueryService).getHiddenHoldings(dbUser);
   }),
 
   update: protectedProcedure
@@ -139,8 +147,7 @@ export const holdingsRouter = router({
         const updatedHolding = await Container.get(UpdateHoldingUseCase).execute(
           input.id,
           input.data,
-          dbUser.id,
-          { baseCurrencyId: dbUser.baseCurrencyId || undefined }
+          dbUser.id
         );
 
         emitEntityChange({

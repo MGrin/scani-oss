@@ -3,6 +3,7 @@ import { Input } from '@scani/ui/ui/input';
 import { DataRow, DataRowList } from '@scani/ui/v3/components/DataRow';
 import { Check, Plus, Search } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { type MemberEntry, memberMatches } from '../../lib/membership';
 
 /**
@@ -50,6 +51,7 @@ export function MemberPicker({
   noun,
   note,
 }: MemberPickerProps) {
+  const { t } = useTranslation();
   const [query, setQuery] = useState('');
 
   const matches = useMemo(
@@ -67,8 +69,8 @@ export function MemberPicker({
         <Input
           value={query}
           onChange={(event) => setQuery(event.target.value)}
-          placeholder={`Search ${noun}`}
-          aria-label={`Search ${noun} to add`}
+          placeholder={t('v3.membership.searchPlaceholder', { noun })}
+          aria-label={t('v3.membership.searchLabel', { noun })}
           className="pl-9"
         />
       </div>
@@ -90,14 +92,16 @@ export function MemberPicker({
                     variant="outline"
                     disabled={pending}
                     onClick={() => onAdd(entry)}
-                    aria-label={`Add ${entry.label}`}
+                    aria-label={t('v3.membership.add', { label: entry.label })}
                   >
                     {pending ? (
                       <Check className="size-4" aria-hidden="true" />
                     ) : (
                       <Plus className="size-4" aria-hidden="true" />
                     )}
-                    <span className="ml-1.5">{pending ? 'Adding' : 'Add'}</span>
+                    <span className="ml-1.5">
+                      {pending ? t('v3.membership.addPending') : t('v3.membership.addAction')}
+                    </span>
                   </Button>
                 }
               />
@@ -109,14 +113,14 @@ export function MemberPicker({
         // actions — the house rule from §7 of the design brief.
         <p className="text-body text-muted-foreground">
           {query.trim()
-            ? `Nothing left to add matches “${query.trim()}”.`
-            : `Everything you have is already here — there are no other ${noun} to add.`}
+            ? t('v3.membership.noMatch', { query: query.trim() })
+            : t('v3.membership.allAdded', { noun })}
         </p>
       )}
 
       <div>
         <Button variant="ghost" size="sm" onClick={onDone}>
-          Done
+          {t('v3.membership.picker.done')}
         </Button>
       </div>
     </div>

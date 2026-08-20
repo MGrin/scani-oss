@@ -12,7 +12,7 @@
  * cleanup in `afterEach`.
  */
 
-import { afterAll, afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { randomUUID } from 'node:crypto';
 import { withAdvisoryLock } from '@scani/db';
 import { db } from '@scani/db/connection';
@@ -21,11 +21,18 @@ import Decimal from 'decimal.js';
 import { eq, inArray } from 'drizzle-orm';
 import { Container } from 'typedi';
 import { PortfolioValueDailyRepository } from '../../src/repositories/PortfolioValueDailyRepository';
+import { TokenPriceRepository } from '../../src/repositories/TokenPriceRepository';
 import {
   type PnLAtTimePerHolding,
   PnLAtTimeService,
 } from '../../src/services/portfolio/PnLAtTimeService';
+import { PriceGraphService } from '../../src/services/pricing/PriceGraphService';
 import { RollupPortfolioValueDailyUseCase } from '../../src/use-cases/RollupPortfolioValueDailyUseCase';
+import { restoreContainerAfterAll } from '../../test/helpers/container';
+
+// Container stubs are process-global; put back whatever this file changes
+// so no later test file resolves them (SC-448).
+restoreContainerAfterAll();
 
 interface Fixture {
   userIds: string[];
@@ -87,7 +94,7 @@ async function setupFixture(): Promise<Fixture> {
   const [baseCurrency] = await db
     .insert(schema.tokens)
     .values({
-      symbol: `RPV${randomUUID().slice(0, 4).toUpperCase()}`,
+      symbol: `RPV${randomUUID().toUpperCase()}`,
       name: 'RPV Base',
       typeId: tokenType!.id,
     })
@@ -126,7 +133,7 @@ async function setupFixture(): Promise<Fixture> {
   const asset = await db
     .insert(schema.tokens)
     .values({
-      symbol: `RPVA${randomUUID().slice(0, 4).toUpperCase()}`,
+      symbol: `RPVA${randomUUID().toUpperCase()}`,
       name: 'RPV Asset',
       typeId: tokenType!.id,
     })
@@ -222,13 +229,6 @@ beforeEach(async () => {
 afterEach(async () => {
   if (fixture) await cleanupFixture(fixture);
   fixture = null;
-});
-
-// Restore real @Service() instances so a later repo/service test sharing
-// the process-global typedi Container doesn't pick up our stub.
-afterAll(() => {
-  Container.set(PnLAtTimeService, new PnLAtTimeService());
-  Container.set(RollupPortfolioValueDailyUseCase, new RollupPortfolioValueDailyUseCase());
 });
 
 describe('RollupPortfolioValueDailyUseCase', () => {
@@ -408,6 +408,9 @@ describe('RollupPortfolioValueDailyUseCase', () => {
           unrealizedPnl: new Decimal(500),
           unpriceable: false,
           priceStale: true,
+          anchorSource: null,
+          anchorAt: null,
+          balanceBeforeRecords: false,
           basisQuality: 'partial' as const,
           transfersUnreviewed: 0,
         },
@@ -421,6 +424,9 @@ describe('RollupPortfolioValueDailyUseCase', () => {
           unrealizedPnl: new Decimal(100),
           unpriceable: false,
           priceStale: false,
+          anchorSource: null,
+          anchorAt: null,
+          balanceBeforeRecords: false,
           basisQuality: 'known' as const,
           transfersUnreviewed: 0,
         },
@@ -497,6 +503,9 @@ describe('RollupPortfolioValueDailyUseCase', () => {
           unrealizedPnl: new Decimal(300),
           unpriceable: false,
           priceStale: false,
+          anchorSource: null,
+          anchorAt: null,
+          balanceBeforeRecords: false,
           basisQuality: 'known' as const,
           transfersUnreviewed: 0,
         },
@@ -510,6 +519,9 @@ describe('RollupPortfolioValueDailyUseCase', () => {
           unrealizedPnl: null,
           unpriceable: true,
           priceStale: false,
+          anchorSource: null,
+          anchorAt: null,
+          balanceBeforeRecords: false,
           basisQuality: 'known' as const,
           transfersUnreviewed: 0,
         },
@@ -630,6 +642,9 @@ describe('RollupPortfolioValueDailyUseCase', () => {
           unrealizedPnl: new Decimal(400),
           unpriceable: false,
           priceStale: false,
+          anchorSource: null,
+          anchorAt: null,
+          balanceBeforeRecords: false,
           basisQuality: 'known' as const,
           transfersUnreviewed: 2,
         },
@@ -661,5 +676,140 @@ describe('RollupPortfolioValueDailyUseCase', () => {
     // does not include, it does not change the figure.
     expect(holdingRow?.realizedPnl).toBe('0');
     expect(holdingRow?.coverageQuality).toBe('full');
+  });
+
+  /**
+   * SC-252. The row this asserts is the one the reporting thread found:
+   * `total_value = 586.94, coverage_quality = 'full'` on 2025-06-21, for a
+   * holding whose first transaction is 2026-06-22.
+   *
+   * It is asserted on the PERSISTED row rather than on the valuation pass
+   * because the stored row is the whole of what any reader gets — the home
+   * chart, the PnL series and both exports are built from these per-holding
+   * rows, and `upsertScopeRow` re-derives coverage rather than inheriting
+   * it. A downgrade that lives only in the service above would never reach
+   * a single surface (SC-151, and again SC-249).
+   */
+  test('a value reconstructed from before our records is never stored as full', async () => {
+    const f = fixture!;
+    const accountId = (
+      await db
+        .select({ id: schema.accounts.id })
+        .from(schema.accounts)
+        .where(eq(schema.accounts.userId, f.userIds[0]!))
+        .limit(1)
+    )[0]!.id;
+
+    nextValuation = () => ({
+      totalValueInBase: new Decimal('586.94'),
+      totalCostBasis: new Decimal(0),
+      totalRealizedPnl: new Decimal(0),
+      totalUnrealizedPnl: new Decimal('586.94'),
+      totalPnl: new Decimal('586.94'),
+      coverageQuality: 'partial' as const,
+      holdingsWithKnownValue: 1,
+      holdingsTotal: 1,
+      holdingsUnpriceable: 0,
+      holdingsStalePriced: 0,
+      holdingsBasisUnknown: 0,
+      transfersUnreviewed: 0,
+      perHolding: [
+        {
+          holdingId: f.holdingId,
+          accountId,
+          tokenId: f.assetTokenId,
+          value: new Decimal('586.94'),
+          costBasis: new Decimal(0),
+          realizedPnl: new Decimal(0),
+          unrealizedPnl: new Decimal('586.94'),
+          unpriceable: false,
+          // Nothing else is wrong with this holding: the price is fresh, the
+          // anchor is forward, the basis is known. Every other quality signal
+          // reads clean, which is exactly why the day read 'full'.
+          priceStale: false,
+          anchorSource: 'holdings',
+          anchorAt: new Date(),
+          balanceBeforeRecords: true,
+          basisQuality: 'known' as const,
+          transfersUnreviewed: 0,
+        },
+      ],
+    });
+
+    await Container.get(RollupPortfolioValueDailyUseCase).execute({
+      userId: f.userIds[0]!,
+      lookbackDays: 1,
+    });
+
+    const repo = Container.get(PortfolioValueDailyRepository);
+    const from = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
+    const to = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    const [holdingRow] = await repo.findRange(
+      f.userIds[0]!,
+      f.baseCurrencyId,
+      from,
+      to,
+      undefined,
+      { kind: 'holding', id: f.holdingId }
+    );
+
+    expect(holdingRow?.coverageQuality).not.toBe('full');
+    expect(holdingRow?.coverageQuality).toBe('partial');
+    // The figure survives. Bounding the claim is the fix; withholding the
+    // number would empty the chart for every newly-onboarded user, which
+    // `PortfolioValuationAtTimeService` deliberately does not do.
+    expect(holdingRow?.totalValue).toBe('586.94');
+    expect(holdingRow?.holdingsWithKnownValue).toBe(1);
+    // SC-317. The grade WITH its cause. Until this column the row said
+    // 'partial' while both existing reason counts read zero, so a reader
+    // could see that confidence had been reduced and not why — and the two
+    // zeros actively pointed away from the answer, because they are the
+    // causes it was NOT.
+    expect(holdingRow?.holdingsBeforeRecords).toBe(1);
+    expect(holdingRow?.holdingsStaleAnchored).toBe(0);
+    expect(holdingRow?.holdingsStalePriced).toBe(0);
+  });
+  // SC-315. The prefetch exists to preload every (from, to) pair
+  // `PriceGraphService.tryDirect` can ask for during the pass, which
+  // includes each hub. It used to derive those hubs from its own
+  // `PRICE_HUB_SYMBOLS` copy under a "keep in sync" comment; a
+  // disagreement between the two lists is silent, because a missing
+  // pair degrades to a per-leg DB round-trip rather than a wrong
+  // number. Emptying that list failed no test.
+  //
+  // The enumeration itself moved onto `PriceGraphService.buildPriceLookup`
+  // (SC-471), which is why this uses a REAL graph with only its hub
+  // resolution and its conversions stubbed: a fully stubbed graph would
+  // stand in for the code under test and pass no matter what the rollup
+  // handed it. What the rollup still owns is WHICH tokens it asks about.
+  test('the price prefetch preloads exactly the hubs the price graph will walk', async () => {
+    const f = fixture!;
+    const hubIds = ['hub-alpha', 'hub-beta'];
+    let pairs: ReadonlyArray<{ tokenId: string; baseTokenId: string }> = [];
+
+    Container.set(TokenPriceRepository, {
+      findManyForPairsUpTo: async (p: ReadonlyArray<{ tokenId: string; baseTokenId: string }>) => {
+        pairs = p;
+        return [];
+      },
+    } as unknown as TokenPriceRepository);
+    const graph = new PriceGraphService();
+    graph.resolveHubTokenIds = async () => hubIds;
+    graph.convert = async () => null;
+    Container.set(PriceGraphService, graph);
+    Container.set(RollupPortfolioValueDailyUseCase, new RollupPortfolioValueDailyUseCase());
+
+    await Container.get(RollupPortfolioValueDailyUseCase).execute({
+      userId: f.userIds[0]!,
+      lookbackDays: 1,
+    });
+
+    const asked = new Set(pairs.flatMap((p) => [p.tokenId, p.baseTokenId]));
+    for (const hubId of hubIds) {
+      expect(asked.has(hubId)).toBe(true);
+      // Both directions: tryDirect inverts when the forward leg misses.
+      expect(pairs.some((p) => p.tokenId === f.assetTokenId && p.baseTokenId === hubId)).toBe(true);
+      expect(pairs.some((p) => p.tokenId === hubId && p.baseTokenId === f.assetTokenId)).toBe(true);
+    }
   });
 });

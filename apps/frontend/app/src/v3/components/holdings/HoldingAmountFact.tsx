@@ -3,6 +3,7 @@ import { AmountInput } from '@scani/ui/v3/components/AmountInput';
 import { Numeric } from '@scani/ui/v3/components/Numeric';
 import { Pencil } from 'lucide-react';
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { amountDecimals } from '../../lib/holdings';
 
 /**
@@ -28,6 +29,7 @@ interface HoldingAmountFactProps {
 }
 
 export function HoldingAmountFact({ amount, onSave }: HoldingAmountFactProps) {
+  const { t } = useTranslation();
   const [draft, setDraft] = useState<string | null>(null);
 
   if (draft === null) {
@@ -37,7 +39,7 @@ export function HoldingAmountFact({ amount, onSave }: HoldingAmountFactProps) {
         <button
           type="button"
           onClick={() => setDraft(String(amount))}
-          aria-label="Edit amount"
+          aria-label={t('v3.holdings.amountFact.edit')}
           className="-my-1 rounded-md p-1 text-muted-foreground transition-colors duration-fast ease-emphasized hover:bg-surface-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           <Pencil className="size-4" aria-hidden="true" />
@@ -59,7 +61,7 @@ export function HoldingAmountFact({ amount, onSave }: HoldingAmountFactProps) {
         onValueChange={setDraft}
         className="h-9 w-32 text-right text-body"
         decimalScale={8}
-        aria-label="Amount"
+        aria-label={t('v3.holdings.amountFact.amount')}
         autoFocus
         onKeyDown={(event) => {
           if (event.key === 'Enter') commit();
@@ -67,7 +69,7 @@ export function HoldingAmountFact({ amount, onSave }: HoldingAmountFactProps) {
         }}
       />
       <Button size="sm" onClick={commit}>
-        Save
+        {t('v3.holdings.amountFact.save')}
       </Button>
     </span>
   );

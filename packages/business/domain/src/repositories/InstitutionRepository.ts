@@ -5,9 +5,16 @@ import { and, eq, ne, sql } from 'drizzle-orm';
 import { Service } from 'typedi';
 
 export type StaleSyncTarget = {
+  credentialId: string;
+  userId: string;
   institutionId: string;
   institutionName: string;
-  kind: 'stale-account' | 'no-account';
+  /**
+   * `orphaned-credential` — the credential has no active account, so the
+   * scheduled sync skips it before reading it and can never create one.
+   * `stale-account` — it has accounts and every one is older than the cutoff.
+   */
+  kind: 'stale-account' | 'orphaned-credential';
 };
 
 @Service()
@@ -62,35 +69,51 @@ export class InstitutionRepository extends BaseRepository<Institution, NewInstit
   ): Promise<StaleSyncTarget[]> {
     const database = this.getDb(transaction);
     const rows = (await database.execute(sql`
-      select i.id as institution_id, i.name as institution_name,
-        case when count(a.id) = 0 then 'no-account'
+      select uic.id as credential_id, uic.user_id, i.id as institution_id, i.name as institution_name,
+        case when count(a.id) = 0 then 'orphaned-credential'
              else 'stale-account' end as kind
-      from institutions i
+      from user_integration_credentials uic
+      join institutions i on i.id = uic.institution_id
       join institution_types it on it.id = i.type_id
-      join user_integration_credentials uic on uic.institution_id = i.id
-      left join accounts a on a.institution_id = i.id and a.is_active
+      left join accounts a
+        on a.institution_id = uic.institution_id
+       and a.user_id = uic.user_id
+       and a.is_active
       where it.code <> 'crypto_wallet'
-      group by i.id, i.name
+        and uic.is_active
+      group by uic.id, uic.user_id, i.id, i.name
       having
-        -- no-account: a credentialed institution with zero accounts, but
-        -- ONLY when a credential is actually in a non-healthy import state
-        -- (pending_enqueue / failed). A successfully-imported-but-empty
-        -- exchange (zero or dust-only balances dropped by skipZeroBalances)
-        -- sits at import_status='enqueued' — the healthy terminal state,
-        -- since the enum has no 'completed' value — and must NOT alert.
-        -- Without this guard an empty Binance connection paged hourly forever.
-        (count(a.id) = 0 and bool_or(uic.import_status <> 'enqueued'))
+        -- orphaned-credential: no active account, which the sync treats as
+        -- "nothing to do" — it returns before it ever reads the credential
+        -- (SyncExchangeBalancesUseCase), and account creation lives only in
+        -- the user-initiated import. So this state cannot recover on its own
+        -- and is never healthy.
+        --
+        -- It used to be guarded by bool_or(import_status <> 'enqueued') on
+        -- the theory that a successfully-imported-but-empty exchange lands
+        -- here. It does not: IntegrationImportService.resolveAccountRow
+        -- creates the account row BEFORE skipZeroBalances is consulted, and
+        -- an import that discovers no accounts throws instead. Measured on
+        -- production 2026-08-16 — an Airwallex import with tokensImported: 0
+        -- still recorded accountsCreated: 1 and still syncs hourly. An empty
+        -- exchange therefore has an account and is judged by the freshness
+        -- branch below; it still does not page. The guard was silencing the
+        -- fault it was named after (SC-248).
+        count(a.id) = 0
         -- stale-account: has accounts, but every one last synced before the
-        -- cutoff. Guarded on count > 0 so the 'epoch' fallback on the single
-        -- NULL row a zero-account institution produces can't masquerade as stale.
-        or (count(a.id) > 0
-            and bool_and(coalesce((a.metadata->>'lastSync')::timestamptz, 'epoch') < ${cutoff.toISOString()}::timestamptz))
+        -- cutoff. The 'epoch' coalesce makes an account that has never synced
+        -- at all count as infinitely stale rather than as unknown.
+        or bool_and(coalesce((a.metadata->>'lastSync')::timestamptz, 'epoch') < ${cutoff.toISOString()}::timestamptz)
     `)) as unknown as Array<{
+      credential_id: string;
+      user_id: string;
       institution_id: string;
       institution_name: string;
-      kind: 'stale-account' | 'no-account';
+      kind: 'stale-account' | 'orphaned-credential';
     }>;
     return rows.map((r) => ({
+      credentialId: r.credential_id,
+      userId: r.user_id,
       institutionId: r.institution_id,
       institutionName: r.institution_name,
       kind: r.kind,
@@ -128,12 +151,40 @@ export class InstitutionRepository extends BaseRepository<Institution, NewInstit
     return row ?? null;
   }
 
+  /**
+   * Institutions the hourly BALANCE sync owns.
+   *
+   * Capability/type driven: any institution a user connected (has a
+   * credential) that isn't a blockchain wallet. Replaces the old hardcoded
+   * display-name list that silently dropped renamed/new providers (IBKR,
+   * Airwallex).
+   *
+   * Blockchain wallets are excluded because their BALANCES are refreshed by
+   * the `wallet-balances` job — and only their balances. Reading that
+   * exclusion as "wallets are covered elsewhere, full stop" is what kept
+   * every wallet's transaction LEDGER frozen at its import for as long as
+   * the wallet existed (SC-360). The transaction sync must therefore NOT
+   * use this method; it uses `findTransactionSyncableInstitutions` below.
+   */
   async findSyncableInstitutions(transaction?: DatabaseTransaction): Promise<Institution[]> {
+    return this.findCredentialedInstitutions(false, transaction);
+  }
+
+  /**
+   * Institutions the daily TRANSACTION sync owns — the same set plus
+   * blockchain wallets, which have no other path back to their ledger.
+   */
+  async findTransactionSyncableInstitutions(
+    transaction?: DatabaseTransaction
+  ): Promise<Institution[]> {
+    return this.findCredentialedInstitutions(true, transaction);
+  }
+
+  private async findCredentialedInstitutions(
+    includeWallets: boolean,
+    transaction?: DatabaseTransaction
+  ): Promise<Institution[]> {
     const database = this.getDb(transaction);
-    // Capability/type driven: any institution a user connected (has a
-    // credential) that isn't a blockchain wallet (those sync via the
-    // wallet-balances job). Replaces the old hardcoded display-name list
-    // that silently dropped renamed/new providers (IBKR, Airwallex).
     const rows = await database
       .selectDistinct({ institution: schema.institutions })
       .from(schema.institutions)
@@ -145,7 +196,16 @@ export class InstitutionRepository extends BaseRepository<Institution, NewInstit
         schema.userIntegrationCredentials,
         eq(schema.userIntegrationCredentials.institutionId, schema.institutions.id)
       )
-      .where(ne(schema.institutionTypes.code, 'crypto_wallet'));
+      .where(
+        and(
+          includeWallets ? undefined : ne(schema.institutionTypes.code, 'crypto_wallet'),
+          // A soft-deleted credential (AccountService removes the last
+          // account → IntegrationCredentialsService.deleteCredentials) is
+          // not a connection any more, so it must not keep its institution
+          // in the hourly sync loop.
+          eq(schema.userIntegrationCredentials.isActive, true)
+        )
+      );
     return rows.map((r) => r.institution);
   }
 }

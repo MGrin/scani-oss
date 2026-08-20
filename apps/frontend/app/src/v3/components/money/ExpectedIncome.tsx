@@ -3,6 +3,7 @@ import { Block } from '@scani/ui/v3/components/Block';
 import { DataRow, DataRowList } from '@scani/ui/v3/components/DataRow';
 import { Numeric } from '@scani/ui/v3/components/Numeric';
 import { ArrowDownLeft } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import type { BaseCurrencyRates } from '@/hooks/useBaseCurrencyRates';
 import type { RouterOutputs } from '@/lib/trpc';
 import { INCOME_HORIZON_DAYS, occurrenceTotals, PAYMENTS_HORIZON_DAYS } from '../../lib/money';
@@ -64,6 +65,7 @@ export function ExpectedIncome({
   today,
   onPeek,
 }: ExpectedIncomeProps) {
+  const { t } = useTranslation();
   // No income at all is not a fact worth a block. A reader with only bills is
   // looking at a bills screen, and an empty "expected income" panel under it
   // would be chrome describing something that does not exist.
@@ -81,7 +83,7 @@ export function ExpectedIncome({
         <ConvertedTotal
           delta
           emphasis="default"
-          label={`Income expected, next ${INCOME_HORIZON_DAYS} days`}
+          label={t('v3.money.expectedIncome.title', { count: INCOME_HORIZON_DAYS })}
           totals={totals}
           tokenSymbolById={tokenSymbolById}
           rates={rates}
@@ -89,14 +91,15 @@ export function ExpectedIncome({
         {/* Said in words, because the difference between the two figures on this
             screen is one of *certainty*, and no amount of layout carries that. */}
         <p className="text-caption text-muted-foreground">
-          What you expect to receive. Not counted against the {PAYMENTS_HORIZON_DAYS}-day bill
-          figure above.
+          {t('v3.money.expectedIncome.caption', { count: PAYMENTS_HORIZON_DAYS })}
         </p>
       </div>
 
       <DataRowList className="border-t border-border">
         {rows.map((occurrence) => {
-          const vendorName = vendorNameById.get(occurrence.payment.vendorId) ?? 'Unknown payer';
+          const vendorName =
+            vendorNameById.get(occurrence.payment.vendorId) ??
+            t('v3.money.expectedIncome.unknownPayer');
           const late = occurrence.dueDate < today;
           return (
             <DataRow
@@ -112,9 +115,15 @@ export function ExpectedIncome({
               // overdue": nobody is late on their own account here, and calling
               // a client's slow invoice overdue reads as the reader's problem.
               sublabel={
+                // The date is interpolated through `formatDate` (APP_LOCALE,
+                // en-GB) rather than being part of the key.
                 late
-                  ? `Expected ${formatDate(occurrence.dueDate)} · not received yet`
-                  : `Expected ${formatDate(occurrence.dueDate)}`
+                  ? t('v3.money.expectedIncome.expectedLate', {
+                      date: formatDate(occurrence.dueDate),
+                    })
+                  : t('v3.money.expectedIncome.expected', {
+                      date: formatDate(occurrence.dueDate),
+                    })
               }
               value={
                 <Numeric
@@ -135,7 +144,10 @@ export function ExpectedIncome({
                 />
               }
               onClick={() => onPeek(occurrence.id)}
-              aria-label={`${vendorName}, expected ${formatDate(occurrence.dueDate)}`}
+              aria-label={t('v3.money.expectedIncome.row', {
+                vendor: vendorName,
+                date: formatDate(occurrence.dueDate),
+              })}
             />
           );
         })}

@@ -3,18 +3,25 @@
  * `rawPayload`.
  *
  * Only sources whose transactions carry a real payee/payer get an
- * extractor: today that's Wise and Airwallex (multi-currency account
- * ledgers where every line has a counterparty). Crypto exchange trades
- * and chain swaps are asset-centric — there is no payee to find, and a
- * missing entry in `EXTRACTORS` yields `{}` for them, which is correct,
- * not a gap.
+ * extractor: Wise and Airwallex (multi-currency account ledgers where
+ * every line has a counterparty), and Etherscan, where a transfer names
+ * the address on the other side of it.
+ *
+ * Exchange TRADES stay unextracted and that is still correct — a Kraken
+ * buy is asset-centric and has no payee, so a missing entry yields `{}`.
+ * That reasoning used to be written as "crypto is asset-centric", which
+ * swept chain TRANSFERS in with it and was wrong about them (SC-329):
+ * every one of the 385 `etherscan` rows in production carried `to` and
+ * `from` in its payload and a NULL counterparty, while the transfer
+ * review queue rendered that empty column under the label "to" — the
+ * one screen whose whole question is where the money went.
  *
  * Runs over every historical `holding_transactions` row during the
  * counterparty backfill (see
  * `apps/backend/worker/src/processors/backfill-counterparty.ts`), so it
  * must be total: an unexpected `rawPayload` shape must never throw, only
  * yield `{}`. Same discipline as
- * `packages/business/domain/src/services/reviewSummary.ts`.
+ * `packages/business/domain/src/services/reviewDetail.ts`.
  */
 
 export interface CounterpartyExtraction {
@@ -67,24 +74,65 @@ function extractAirwallex(raw: unknown): CounterpartyExtraction {
   return { counterparty: description, description };
 }
 
+/**
+ * etherscan: a normal-transaction / token-transfer row — `{ from, to,
+ * hash, value, ... }`. Both sides are always present, so which one is
+ * the counterparty depends on which way the value moved: for an outflow
+ * it is `to`, for an inflow it is `from`. That is why this extractor
+ * needs `kind` and the ledger ones do not.
+ *
+ * Deliberately returns NO `description`. `to` is a 42-character hex
+ * address, not prose — it belongs in the field the review queue labels
+ * "to", and putting it in `description` as well would render the same
+ * address twice on one row.
+ *
+ * An unknown `kind` yields `{}` rather than guessing a direction. A
+ * counterparty pointing the wrong way is worse than an absent one: it
+ * would say the user sent funds to themselves.
+ */
+function extractEtherscan(raw: unknown, kind?: string): CounterpartyExtraction {
+  const root = asRecord(raw);
+  if (!root) return {};
+  if (kind && OUTFLOW_KINDS.has(kind)) {
+    const to = asNonEmptyString(root.to);
+    return to ? { counterparty: to } : {};
+  }
+  if (kind && INFLOW_KINDS.has(kind)) {
+    const from = asNonEmptyString(root.from);
+    return from ? { counterparty: from } : {};
+  }
+  return {};
+}
+
+/** Value leaving the wallet — the counterparty is the destination. */
+const OUTFLOW_KINDS = new Set(['transfer_out', 'withdraw', 'swap_out', 'sell']);
+/** Value arriving — the counterparty is the sender. */
+const INFLOW_KINDS = new Set(['transfer_in', 'deposit', 'swap_in', 'buy', 'airdrop']);
+
 // Keyed by the `holding_transactions.source` tag (see
 // `packages/business/domain/src/services/transactions/transaction-source.ts`).
 // Both the `-api` tag and the bare provider name are registered: Wise's
 // tag isn't wired into that map yet (`sourceForProvider('wise')` returns
 // null today — transaction import is dormant for it), so 'wise-api' is
 // the forward-compatible tag and 'wise' is a defensive alias.
-const EXTRACTORS: Record<string, (raw: unknown) => CounterpartyExtraction> = {
+const EXTRACTORS: Record<string, (raw: unknown, kind?: string) => CounterpartyExtraction> = {
   'wise-api': extractWise,
   wise: extractWise,
   'airwallex-api': extractAirwallex,
   airwallex: extractAirwallex,
+  etherscan: extractEtherscan,
 };
 
-export function extractCounterparty(source: string, rawPayload: unknown): CounterpartyExtraction {
+export function extractCounterparty(
+  source: string,
+  rawPayload: unknown,
+  /** Required only by direction-dependent sources; the ledger ones ignore it. */
+  kind?: string
+): CounterpartyExtraction {
   const extractor = EXTRACTORS[source];
   if (!extractor) return {};
   try {
-    return extractor(rawPayload);
+    return extractor(rawPayload, kind);
   } catch {
     // Defensive accessors above should make this unreachable, but the
     // backfill sweep runs unattended over ~1850 unstructured historical

@@ -1,3 +1,4 @@
+import { type DataQualityKind, HOLDINGS_QUALITY_PARAM } from './dataQuality';
 import { V3_BASE } from './ui-version';
 
 /**
@@ -62,6 +63,24 @@ export const V3_PAYMENT_ROUTES = {
  */
 export function vendorPaymentsPath(vendorId: string): string {
   return `${V3_ROUTES.recurring}?vendor=${encodeURIComponent(vendorId)}`;
+}
+
+/**
+ * The holdings list narrowed to one data-quality kind — where a flagged row on
+ * the Settings panel goes (SC-293).
+ *
+ * Same shape as `vendorPaymentsPath` above and it works for the same reason: a
+ * filter's key is its parameter name, so `V3DataView` seeds itself from the
+ * query string and no bespoke reader is needed.
+ *
+ * It exists because the panel stated "Holdings with no coverage row  12" and
+ * offered no way to reach any of the twelve. SC-268 removed the instruction
+ * rather than inventing a destination; this is the destination, and the
+ * instruction is not coming back — the row is a link now, and still says
+ * "Flagged" rather than telling anybody what to do about it.
+ */
+export function holdingsQualityPath(kind: DataQualityKind): string {
+  return `${V3_ROUTES.holdings}?${HOLDINGS_QUALITY_PARAM}=${encodeURIComponent(kind)}`;
 }
 
 /**
@@ -174,6 +193,19 @@ export const TRANSFER_REVIEW_PATH = `${V3_ROUTES.review}/transfers`;
  * thing enforcing it.
  */
 export const TRANSFER_ANSWERED_PATH = `${TRANSFER_REVIEW_PATH}/answered`;
+
+/**
+ * The standing address rules, and the undo (SC-375).
+ *
+ * A third static segment under the queue, registered before `:peekId?` for the
+ * same reason `answered` is: `rules` is a segment, not a transaction id, and
+ * static-over-dynamic ranking should not be the only thing enforcing it.
+ *
+ * It is where a rule is revoked, which makes it the page the whole feature's
+ * safety argument points at — a rule can only remove a question, and this is
+ * where the questions come back.
+ */
+export const TRANSFER_RULES_PATH = `${TRANSFER_REVIEW_PATH}/rules`;
 
 export interface V3NavItem {
   /** i18n key resolved with `t()` at render time. */

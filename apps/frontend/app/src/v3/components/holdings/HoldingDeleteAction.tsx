@@ -3,6 +3,7 @@ import { ConfirmAction } from '@scani/ui/v3/components/ConfirmAction';
 import { Numeric } from '@scani/ui/v3/components/Numeric';
 import { Trash2 } from 'lucide-react';
 import { useState } from 'react';
+import { Trans, useTranslation } from 'react-i18next';
 
 /**
  * Delete one holding, from the peek sheet that record is open in.
@@ -45,6 +46,7 @@ export function HoldingDeleteAction({
   onDelete,
   isPending,
 }: HoldingDeleteActionProps) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
 
   return (
@@ -52,23 +54,29 @@ export function HoldingDeleteAction({
       label={
         <>
           <Trash2 className="mr-2 size-4" aria-hidden="true" />
-          Delete
+          {t('v3.holdings.deleteAction.trigger')}
         </>
       }
       triggerClassName="text-destructive hover:text-destructive"
-      confirmLabel={`Delete ${holding.token.symbol}`}
+      confirmLabel={t('v3.holdings.deleteAction.commit', { symbol: holding.token.symbol })}
       destructive
       open={open}
       onOpenChange={setOpen}
       isPending={isPending}
       consequence={
-        <>
-          {`${holding.token.symbol} in ${holding.account.name} is removed, along with every transaction recorded against it — `}
-          <Numeric value={holding.value} currency={currency} className="text-caption" />
-          {
-            ' comes off your portfolio total. Nothing restores it; a re-import would have to rebuild the history. To take it out of the total and keep the record, use Deactivate.'
-          }
-        </>
+        // `<Trans>` rather than `t()`, because the figure is a rendered node
+        // sitting INSIDE the sentence. Splitting it into two `t()` halves with
+        // `<Numeric>` between them would hand a translator two fragments and
+        // pin English word order into the JSX — and no language is obliged to
+        // put the amount between "recorded against it" and "comes off your
+        // portfolio total". One sentence, one key, the figure as a slot.
+        <Trans
+          i18nKey="v3.holdings.deleteAction.consequence"
+          values={{ symbol: holding.token.symbol, account: holding.account.name }}
+          components={{
+            value: <Numeric value={holding.value} currency={currency} className="text-caption" />,
+          }}
+        />
       }
       onConfirm={() => onDelete(holding)}
     />

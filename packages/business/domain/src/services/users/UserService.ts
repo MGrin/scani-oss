@@ -39,6 +39,32 @@ export class UserService extends BaseService {
     }
   }
 
+  /**
+   * Record the IANA zone the browser reported (SC-226).
+   *
+   * Separate from `updateUser` because it is not a preference anyone typed: it
+   * is a fact about the device, reported whenever the app is opened. Routing
+   * it through the profile mutation would make every app launch look like a
+   * profile edit — including to the `user:update` realtime event, which exists
+   * to refetch every screen that renders money.
+   *
+   * **Writes only on a real change.** The app reports on every load, so this
+   * is the difference between one row touched when someone flies somewhere new
+   * and one write per session per user, forever.
+   */
+  async reportTimezone(userId: string, timezone: string): Promise<{ changed: boolean }> {
+    try {
+      const existingUser = await this.userRepository.findById(userId);
+      this.assertExists(existingUser, `User with ID ${userId} not found`);
+      if (existingUser.timezone === timezone) return { changed: false };
+      const updated = await this.userRepository.update(userId, { timezone });
+      this.assertExists(updated, 'Failed to record timezone');
+      return { changed: true };
+    } catch (error) {
+      throw this.handleError(error, 'reportTimezone');
+    }
+  }
+
   async getUserById(userId: string): Promise<User | null> {
     try {
       return await this.userRepository.findById(userId);

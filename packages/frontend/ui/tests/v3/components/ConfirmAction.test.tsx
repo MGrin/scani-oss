@@ -37,7 +37,7 @@ describe('ConfirmAction', () => {
 
   test('states the consequence before a commit button exists to press', () => {
     const markup = renderToStaticMarkup(<ConfirmAction {...BASE} open />);
-    const [consequence, commit] = order(markup, 'Ends Hetzner', 'End this payment');
+    const [consequence = -1, commit = -1] = order(markup, 'Ends Hetzner', 'End this payment');
     expect(consequence).toBeGreaterThan(-1);
     expect(commit).toBeGreaterThan(consequence);
   });
@@ -49,7 +49,7 @@ describe('ConfirmAction', () => {
    */
   test('Cancel comes before the commit, so a double-tap cancels', () => {
     const markup = renderToStaticMarkup(<ConfirmAction {...BASE} open />);
-    const [cancel, commit] = order(markup, 'Cancel', 'End this payment');
+    const [cancel = -1, commit = -1] = order(markup, 'Cancel', 'End this payment');
     expect(cancel).toBeGreaterThan(-1);
     expect(cancel).toBeLessThan(commit);
   });
@@ -72,7 +72,7 @@ describe('ConfirmAction', () => {
     const markup = renderToStaticMarkup(
       <ConfirmAction {...BASE} open chooser={<span>pick-a-vendor</span>} />
     );
-    const [chooser, consequence] = order(markup, 'pick-a-vendor', 'Ends Hetzner');
+    const [chooser = -1, consequence = -1] = order(markup, 'pick-a-vendor', 'Ends Hetzner');
     expect(chooser).toBeGreaterThan(-1);
     expect(chooser).toBeLessThan(consequence);
   });

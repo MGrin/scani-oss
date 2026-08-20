@@ -5,6 +5,7 @@ import { Block } from '@scani/ui/v3/components/Block';
 import { peekPath } from '@scani/ui/v3/lib/peek';
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { trpc } from '@/lib/trpc';
 import { V3_ROUTES } from '../../lib/routes';
@@ -18,13 +19,14 @@ import { V3_ROUTES } from '../../lib/routes';
  * list can be rendered without a client.
  */
 export function VendorCreateRow({ onDone }: { onDone: () => void }) {
+  const { t } = useTranslation();
   const [name, setName] = useState('');
   const navigate = useNavigate();
   const utils = trpc.useUtils();
 
   const createMutation = trpc.vendors.create.useMutation({
     onSuccess: (vendor) => {
-      showSuccess(`${vendor.displayName} created`);
+      showSuccess(t('v3.money.vendor.created', { name: vendor.displayName }));
       void utils.vendors.invalidate();
       onDone();
       // Straight into the new vendor's peek. `vendors.create` is get-or-create
@@ -32,7 +34,7 @@ export function VendorCreateRow({ onDone }: { onDone: () => void }) {
       // existing record rather than failing on the unique constraint.
       navigate(peekPath(V3_ROUTES.vendors, vendor.id));
     },
-    onError: (error) => showError(error, 'Creating vendor'),
+    onError: (error) => showError(error, t('v3.money.pending.creatingVendor')),
   });
 
   const submit = () => {
@@ -49,8 +51,8 @@ export function VendorCreateRow({ onDone }: { onDone: () => void }) {
         autoFocus
         value={name}
         onChange={(event) => setName(event.target.value)}
-        placeholder="Vendor name"
-        aria-label="Vendor name"
+        placeholder={t('v3.money.vendorCreate.placeholder')}
+        aria-label={t('v3.money.vendorCreate.label')}
         className="min-w-0 flex-1 text-body"
         disabled={createMutation.isPending}
         onKeyDown={(event) => {
@@ -66,7 +68,7 @@ export function VendorCreateRow({ onDone }: { onDone: () => void }) {
         )}
       </Button>
       <Button variant="ghost" disabled={createMutation.isPending} onClick={onDone}>
-        Cancel
+        {t('v3.money.vendorCreate.cancel')}
       </Button>
     </Block>
   );

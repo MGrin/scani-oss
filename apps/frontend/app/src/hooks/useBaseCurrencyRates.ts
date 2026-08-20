@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { useBaseCurrency } from '@/contexts/BaseCurrencyContext';
 import { trpc } from '@/lib/trpc';
-import type { BaseCurrencyRate, ConversionContext } from '@/v2/lib/paymentTotals';
+import type { BaseCurrencyRate, ConversionContext, RatesStatus } from '@/v3/lib/paymentTotals';
 
 /**
  * FX rates into the user's base currency, for every currency a surface is
@@ -26,8 +26,6 @@ export interface BaseCurrencyRates extends ConversionContext {
   rateByCurrencyTokenId: Map<string, BaseCurrencyRate | null>;
   /** The symbol every converted figure is denominated in. */
   baseSymbol: string;
-  /** True while the base currency or the rates are still in flight. */
-  isLoading: boolean;
 }
 
 export function useBaseCurrencyRates(currencyTokenIds: readonly string[]): BaseCurrencyRates {
@@ -59,6 +57,49 @@ export function useBaseCurrencyRates(currencyTokenIds: readonly string[]): BaseC
     baseCurrencyTokenId,
     rateByCurrencyTokenId,
     baseSymbol: baseCurrency.symbol,
-    isLoading: baseCurrency.isLoading || (requested.length > 0 && rates.isLoading),
+    ratesStatus: resolveStatus({
+      baseCurrencyLoading: baseCurrency.isLoading,
+      baseCurrencyTokenId,
+      requestedCount: requested.length,
+      failed: rates.isError,
+      // Read off the DATA, not off `isLoading`. React Query v4 reports a
+      // disabled query as `status: 'loading'` forever, so a flag-driven
+      // version of this says "still coming" about a request that was never
+      // made — which is how the figure below it would sit under a skeleton
+      // that never resolves.
+      answered: Boolean(rates.data),
+    }),
   };
+}
+
+export interface StatusInputs {
+  baseCurrencyLoading: boolean;
+  baseCurrencyTokenId: string | null;
+  requestedCount: number;
+  failed: boolean;
+  answered: boolean;
+}
+
+/**
+ * Exported for its own test: this is the whole of SC-210's judgement about
+ * what the app knows, and it is the one part of the fix a component test
+ * cannot reach — every branch here is a react-query state that a static
+ * render never enters.
+ */
+export function resolveStatus({
+  baseCurrencyLoading,
+  baseCurrencyTokenId,
+  requestedCount,
+  failed,
+  answered,
+}: StatusInputs): RatesStatus {
+  if (baseCurrencyLoading) return 'loading';
+  // Settled, and still no base currency: there is nothing to convert *into*,
+  // so every figure on the surface is unknowable rather than merely late.
+  if (!baseCurrencyTokenId) return 'unavailable';
+  // Nothing foreign on screen. The query is disabled and the empty map is the
+  // complete and correct answer, not a missing one.
+  if (requestedCount === 0) return 'ready';
+  if (failed) return 'unavailable';
+  return answered ? 'ready' : 'loading';
 }

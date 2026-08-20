@@ -1,5 +1,38 @@
 import { Service } from 'typedi';
 import { BaseService } from '../BaseService';
+import { normalizeForDetection } from './token-identity-safety';
+
+/**
+ * Which revision of `calculateScamProbability` the stored score came from.
+ *
+ * **Bump this in the same commit as any change to the function's output.**
+ * That is the entire contract: the number is meaningless as a version of the
+ * file, and load-bearing as an answer to "would the current function still
+ * produce what is stored?".
+ *
+ * The score is written once, at token creation, and both call sites refuse to
+ * touch a token that already exists — so before SC-286 every improvement to
+ * the heuristic applied to future tokens and to nothing else. 29 of 371
+ * production tokens held a score the shipped function would not produce; six
+ * of those crossed the 0.35 UI threshold. One was `USCON`, scored 0.80 because
+ * "Network" begins with "net", and it was a real holding being subtracted from
+ * the portfolio total.
+ *
+ * Version 1 is the function as of SC-207 — the revision that dropped the
+ * `hasPriceData` input. It is deliberately NOT backdated onto existing rows:
+ * a row scored before this column existed carries NULL, which means "unknown,
+ * therefore stale", not "version 1".
+ *
+ * Version 2 is SC-281: the content checks below judge
+ * `normalizeForDetection(text)` instead of the raw string, so an entity-encoded
+ * or confusable separator is seen. This bump invalidates every crypto row and
+ * `RescoreScamTokensService` will re-examine all of them on its next fire —
+ * which is the designed cost of a bump, paid once. Only names carrying an
+ * entity or a confusable can actually move: normalization is the identity
+ * function on plain ASCII, so the other rows recompute to what they already
+ * hold and are simply restamped.
+ */
+export const SCAM_SCORE_VERSION = 2;
 
 /**
  * Service for detecting scam crypto tokens based on various heuristics
@@ -32,14 +65,41 @@ export class ScamTokenDetectionService extends BaseService {
     'participate',
   ]);
 
-  // URL pattern regex - matches various URL patterns including special unicode dots
+  /**
+   * A URL needs a DOT, not a space (SC-275).
+   *
+   * This used to accept `[\s˳.]` before each TLD, so a space followed by
+   * `to`, `me`, `net`, `app`… read as a domain. Measured against the 371
+   * token names in production, that scored **`LooksRare Token`,
+   * `Liquid Staking Token`, `BullRun Meme` and `Base Lotto` at 0.80** — over
+   * the 0.35 gate, so excluded from every portfolio total, the holdings total
+   * and the historical chart. The word "Token" was enough.
+   *
+   * Every genuine URL-shaped name in that corpus uses a real dot —
+   * `Aintiution.io`, `Draf.io`, `EthFork2.com`, `@ MetaWin.to`,
+   * `#HEXPool.net`, `yield-farming.io` — so requiring one loses no true
+   * positive. The trailing boundary stops `.token` matching as `.to`.
+   */
   private readonly URL_PATTERN =
-    /(?:https?:\/\/|www\.|[\s˳.]com|[\s˳.]io|[\s˳.]net|[\s˳.]org|[\s˳.]xyz|[\s˳.]app|[\s˳.]gg|[\s˳.]me|[\s˳.]to|[\s˳.]pm|[\s˳.]fun)/i;
+    /(?:https?:\/\/|www\.|[˳.](?:com|net|org|io|xyz|app|gg|me|to|pm|fun)(?![a-z0-9]))/i;
 
-  // TLD pattern - catches things like "GIVEAWAYSCOM" or "GIVEAWAYS˳COM"
-  // Requires at least 4 chars before the TLD to avoid false positives on
-  // legitimate short symbols (ME, IO, FUN, BIO, JTO, etc.)
-  private readonly TLD_PATTERN = /^.{4,}(?:com|net|org|io|xyz|app|gg|me|to|pm|fun)$/i;
+  /**
+   * A glued domain — `GIVEAWAYSCOM`, `GIVEAWAYS˳COM` — after separators are
+   * stripped. **Three-character TLDs and longer only** (SC-275).
+   *
+   * It used to include the two-character ones, and since this rule ignores
+   * separators entirely, "ends in -to" or "-me" was enough: in production
+   * that scored `Base Lotto`, `Slop Sato` and `BullRun Meme` at 0.80 and
+   * excluded them from every total. Ordinary words end in `to` and `me`;
+   * essentially none end in `com`, `net` or `xyz`. Measured over all 371
+   * token names, the long-TLD form matches exactly three rows and all three
+   * are real: `EthFork2.com` and `#HEXPool.net` twice.
+   *
+   * The short TLDs are not lost — `URL_PATTERN` still catches them when a
+   * real dot is present, which is how `Draf.io` and `@ MetaWin.to` are
+   * caught. What goes is only the separator-less guess.
+   */
+  private readonly TLD_PATTERN = /^.{4,}(?:com|net|org|xyz|app|fun)$/i;
 
   // Emoji pattern regex (simplified - matches common emoji ranges)
   private readonly EMOJI_PATTERN =
@@ -61,28 +121,46 @@ export class ScamTokenDetectionService extends BaseService {
    * @param symbol - Token symbol
    * @param name - Token name
    * @param createdAt - Token creation date
-   * @param hasPriceData - Whether the token has pricing data from reliable sources
    * @returns Probability score between 0 (not scam) and 1 (likely scam)
+   *
+   * **A function of the token's own characters, and nothing else (SC-207).**
+   * It took a `hasPriceData` argument worth 0.3, which is a fact about OUR
+   * coverage that the token has no part in, and the parameter is removed
+   * rather than defaulted so every caller had to be revisited — a default
+   * would have left the two write-back sites compiling unchanged.
+   *
+   * What that 0.3 cost, measured before removing it: a homoglyph scores 0.7,
+   * `TokenIdentityService` always scores with no price data, and its gate
+   * refuses at 0.95 — so 0.7 + 0.3 = 1.00 and **every newly-arriving
+   * lookalike token was refused**, while the file's own comment said "A
+   * LOOKALIKE SYMBOL IS NOT REJECTED HERE" and SC-197 shipped a UI for
+   * marking them. At 0.7 alone the row is created and marked, which is the
+   * design that was intended.
    */
-  calculateScamProbability(
-    symbol: string,
-    name: string,
-    _createdAt: Date,
-    hasPriceData: boolean = false
-  ): number {
+  calculateScamProbability(symbol: string, name: string, _createdAt: Date): number {
     let probability = 0;
     const reasons: string[] = [];
 
+    // CONTENT checks read the normalized text; CHARACTER-CLASS checks read the
+    // original (SC-281). `yield-farming&period;io` is a host and must score as
+    // one, but `UЅDС` normalizes to `USDC` and a homoglyph check handed that
+    // would report a clean ASCII ticker — deleting the 0.70 signal that is the
+    // whole reason the check exists. The split is the fix; applying
+    // normalization uniformly would be a regression wearing its clothes.
+    const detectableSymbol = normalizeForDetection(symbol);
+    const detectableName = normalizeForDetection(name);
+
     // Check 1: URL in symbol or name (very strong indicator)
-    const hasUrl = this.hasUrl(symbol) || this.hasUrl(name);
-    const hasTld = this.hasTldPattern(symbol) || this.hasTldPattern(name);
+    const hasUrl = this.hasUrl(detectableSymbol) || this.hasUrl(detectableName);
+    const hasTld = this.hasTldPattern(detectableSymbol) || this.hasTldPattern(detectableName);
     if (hasUrl || hasTld) {
       probability += 0.5;
       reasons.push('Contains URL or domain pattern');
     }
 
     // Check 2: Suspicious words in name or symbol
-    const hasSuspicious = this.hasSuspiciousWords(symbol) || this.hasSuspiciousWords(name);
+    const hasSuspicious =
+      this.hasSuspiciousWords(detectableSymbol) || this.hasSuspiciousWords(detectableName);
     if (hasSuspicious) {
       probability += 0.4;
       reasons.push('Contains suspicious words (visit, claim, etc.)');
@@ -120,15 +198,16 @@ export class ScamTokenDetectionService extends BaseService {
     // legitimate tokens like ETH/USDC always trigger this, causing false
     // positives. Real scam tokens are caught by URL/name pattern checks above.
 
-    // Check 6: No pricing data from reliable sources
-    // Weight is kept below SCAM_PROBABILITY_THRESHOLD (0.35) so this signal
-    // alone doesn't filter out legitimate tokens that simply haven't been
-    // priced yet (e.g., freshly imported tokens). It still contributes
-    // meaningfully when combined with other signals.
-    if (!hasPriceData) {
-      probability += 0.3;
-      reasons.push('No pricing data available');
-    }
+    // Check 6 — REMOVED (SC-207). It awarded 0.3 for "No pricing data
+    // available", which measures our coverage rather than the token, and it
+    // was written back: `WarmTokenPricesForImportUseCase` re-scored priced
+    // tokens and persisted the lower number, so a token's scam score fell
+    // when our pricing improved. Every token was created at ≥0.3 and drifted
+    // to its true score later, which made the number un-comparable across
+    // time and across machines.
+    //
+    // It also decided admissions it had no business deciding — see the note
+    // on `calculateScamProbability` for the lookalike case it broke.
 
     // Cap probability at 1.0
     probability = Math.min(probability, 1.0);
@@ -201,18 +280,12 @@ export class ScamTokenDetectionService extends BaseService {
       symbol: string;
       name: string;
       createdAt: Date;
-      hasPriceData?: boolean;
     }>
   ): Promise<Map<string, number>> {
     const results = new Map<string, number>();
 
     for (const token of tokens) {
-      const probability = this.calculateScamProbability(
-        token.symbol,
-        token.name,
-        token.createdAt,
-        token.hasPriceData ?? false
-      );
+      const probability = this.calculateScamProbability(token.symbol, token.name, token.createdAt);
       results.set(`${token.symbol}-${token.name}`, probability);
     }
 

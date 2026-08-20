@@ -1,4 +1,4 @@
-import type { FilterDef } from '../hooks/useDataView';
+import type { FilterDefBase } from '../hooks/useDataView';
 
 /**
  * Where a list's refinement lives — the query string (SC-71 5.1).
@@ -57,7 +57,7 @@ export function viewParamName(pageKey: string, key: string): string {
 export function readDataViewUrl(
   search: string,
   pageKey: string,
-  filterDefs: FilterDef[] | undefined
+  filterDefs: FilterDefBase[] | undefined
 ): DataViewUrlState {
   const params = new URLSearchParams(search);
   const filters: Record<string, string> = {};
@@ -81,7 +81,7 @@ export function readDataViewUrl(
 export function writeDataViewUrl(
   search: string,
   pageKey: string,
-  filterDefs: FilterDef[] | undefined,
+  filterDefs: FilterDefBase[] | undefined,
   next: DataViewUrlState
 ): string {
   const params = new URLSearchParams(search);

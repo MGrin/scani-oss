@@ -1,8 +1,8 @@
 import type { ReactNode } from 'react';
 import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { invalidatePortfolioQueries } from '@/hooks/invalidatePortfolioQueries';
 import { trpc } from '@/lib/trpc';
-import { invalidatePortfolioQueries } from '@/v2/hooks/invalidatePortfolioQueries';
 
 /**
  * RealtimeProvider

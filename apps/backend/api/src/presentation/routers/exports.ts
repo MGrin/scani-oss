@@ -1,7 +1,9 @@
 import { db } from '@scani/db/connection';
 import * as schema from '@scani/db/schema';
+import { GroupRepository, UserRepository } from '@scani/domain/repositories';
 import { RenderPdfInput } from '@scani/shared';
 import { desc, eq, inArray } from 'drizzle-orm';
+import { Container } from 'typedi';
 import { toNetWorthHistoryRow, userNetWorthDaily } from '../../lib/net-worth-series';
 import { accountLabel } from '../../lib/pdf/layout';
 import { renderStatement } from '../../lib/pdf/statement';
@@ -77,6 +79,7 @@ export const exportsRouter = router({
       ...input,
       account: accountLabel(dbUser.name, dbUser.email),
     });
+    await Container.get(UserRepository).markFirstExport(dbUser.id);
     return { base64: pdf.toString('base64') };
   }),
 
@@ -243,15 +246,12 @@ export const exportsRouter = router({
               .from(schema.paymentOccurrences)
               .where(inArray(schema.paymentOccurrences.paymentId, paymentIds)),
 
-        groupIds.length === 0
-          ? []
-          : db
-              .select({
-                groupId: schema.holdingGroups.groupId,
-                holdingId: schema.holdingGroups.holdingId,
-              })
-              .from(schema.holdingGroups)
-              .where(inArray(schema.holdingGroups.groupId, groupIds)),
+        // EFFECTIVE membership, not the `holding_groups` rows: an account in a
+        // group carries everything in it (SC-386), and a vetoed holding is out
+        // of it despite having a row. Reading the table raw would export a
+        // group that omits what its own page lists and lists what its own page
+        // omits.
+        Container.get(GroupRepository).findHoldingIdsByGroupIds(userId, groupIds),
 
         groupIds.length === 0
           ? []
@@ -297,6 +297,13 @@ export const exportsRouter = router({
     const groupName = new Map(groups.map((group) => [group.id, group.name]));
     const vaultName = new Map(vaults.map((vault) => [vault.id, vault.name]));
     const paymentVendor = new Map(payments.map((payment) => [payment.id, payment.vendorName]));
+
+    // Funnel step 6 (SC-450). After the payload is assembled, so a query that
+    // threw halfway is not recorded as a file someone received. It is a query
+    // rather than a mutation for cacheability, but nothing mounts it — both
+    // call sites are an imperative `.query()` behind a button — so this fires
+    // once per real export, not once per page view.
+    await Container.get(UserRepository).markFirstExport(userId);
 
     return {
       profile: {

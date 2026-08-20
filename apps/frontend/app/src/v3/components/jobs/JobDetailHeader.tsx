@@ -1,14 +1,21 @@
-import { describeJobFailure, formatRelative, isJobAwaitingFailureDecision } from '@scani/shared';
+import { describeJobFailure, isJobAwaitingFailureDecision } from '@scani/shared';
 import { Button } from '@scani/ui/ui/button';
 import { showError, showSuccess } from '@scani/ui/ui/use-toast';
 import { Block } from '@scani/ui/v3/components/Block';
 import { ConfirmAction } from '@scani/ui/v3/components/ConfirmAction';
 import { Check, RotateCcw, X } from 'lucide-react';
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { trpc } from '@/lib/trpc';
-import { jobLabelFor } from '@/v2/components/jobs/jobLabels';
-import { isJobRunning, jobNeedsAction, summariseJobPayload } from '../../lib/jobs';
+import { jobLabelFor } from '../../lib/job-labels';
+import {
+  isJobRunning,
+  jobFailureSentence,
+  jobNeedsAction,
+  summariseJobPayload,
+} from '../../lib/jobs';
+import { formatRelative } from '../../lib/relative-time';
 import { V3_ROUTES } from '../../lib/routes';
 import { JobStateBadge } from './JobStateBadge';
 
@@ -55,14 +62,12 @@ export interface JobDetailHeaderJob {
 /** Why Retry is not on offer — the server decided this, the page only says it.
  *  Each one ends with what to do instead, because "you cannot retry" alone
  *  leaves someone on a page with a dead import and no next move. */
-const RETRY_UNAVAILABLE: Record<string, string> = {
-  cancelled: 'You cancelled this one. Start it again from where you began it.',
-  never_delivered:
-    'This never reached the queue, so there is nothing to re-run. Start it again from where you began it.',
-  still_retrying: 'Another attempt is already queued — nothing to do.',
-  evicted:
-    'This run is too old to re-run from here: the queue no longer holds what it needs. Start it again from where you began it.',
-  not_failed: 'Nothing to retry.',
+const RETRY_UNAVAILABLE_KEYS: Record<string, string> = {
+  cancelled: 'v3.jobs.retryUnavailable.cancelled',
+  never_delivered: 'v3.jobs.retryUnavailable.neverDelivered',
+  still_retrying: 'v3.jobs.retryUnavailable.stillRetrying',
+  evicted: 'v3.jobs.retryUnavailable.evicted',
+  not_failed: 'v3.jobs.retryUnavailable.notFailed',
 };
 
 /** Reasons whose own failure sentence already tells the reader what to do.
@@ -71,7 +76,8 @@ const RETRY_UNAVAILABLE: Record<string, string> = {
 const SENTENCE_SAYS_IT = new Set(['never_delivered', 'cancelled']);
 
 export function JobDetailHeader({ job }: { job: JobDetailHeaderJob }) {
-  const { label, icon: Icon } = jobLabelFor(job.jobName);
+  const { t } = useTranslation();
+  const { label, icon: Icon } = jobLabelFor(t, job.jobName);
   const identity = { jobId: job.jobId, jobName: job.jobName, createdAt: job.createdAt };
   const running = isJobRunning({ ...identity, state: job.frameworkState });
   const failed = job.frameworkState === 'failed';
@@ -92,20 +98,20 @@ export function JobDetailHeader({ job }: { job: JobDetailHeaderJob }) {
   };
 
   const retry = trpc.jobs.retry.useMutation({
-    onSuccess: () => showSuccess('Job re-queued'),
-    onError: (error) => showError(error, 'Retrying the job'),
+    onSuccess: () => showSuccess(t('v3.jobs.toast.requeued')),
+    onError: (error) => showError(error, t('v3.jobs.toast.retrying')),
     onSettled: settle,
   });
 
   const cancel = trpc.jobs.cancel.useMutation({
-    onSuccess: () => showSuccess('Job cancelled'),
-    onError: (error) => showError(error, 'Cancelling the job'),
+    onSuccess: () => showSuccess(t('v3.jobs.toast.cancelled')),
+    onError: (error) => showError(error, t('v3.jobs.toast.cancelling')),
     onSettled: settle,
   });
 
   const discard = trpc.jobs.markActionTaken.useMutation({
-    onSuccess: () => showSuccess('Parse discarded — nothing was imported'),
-    onError: (error) => showError(error, 'Discarding the parse'),
+    onSuccess: () => showSuccess(t('v3.jobs.toast.discarded')),
+    onError: (error) => showError(error, t('v3.jobs.toast.discarding')),
     onSettled: settle,
   });
 
@@ -114,21 +120,21 @@ export function JobDetailHeader({ job }: { job: JobDetailHeaderJob }) {
   // acknowledging. react-query fixes the callback at hook creation, so the two
   // meanings need two hooks rather than one with a conditional toast.
   const dismissFailure = trpc.jobs.markActionTaken.useMutation({
-    onSuccess: () => showSuccess('Dismissed — it stays in your job history'),
-    onError: (error) => showError(error, 'Dismissing the failure'),
+    onSuccess: () => showSuccess(t('v3.jobs.toast.dismissed')),
+    onError: (error) => showError(error, t('v3.jobs.toast.dismissing')),
     onSettled: settle,
   });
 
   const remove = trpc.jobs.remove.useMutation({
     onSuccess: () => {
-      showSuccess('Job removed');
+      showSuccess(t('v3.jobs.detail.removed'));
       navigate(V3_ROUTES.jobs, { replace: true });
     },
-    onError: (error) => showError(error, 'Removing the job'),
+    onError: (error) => showError(error, t('v3.jobs.toast.removing')),
     onSettled: settle,
   });
 
-  const detail = summariseJobPayload(job.jobName, job.payloadSummary);
+  const detail = summariseJobPayload(t, job.jobName, job.payloadSummary);
   // One description, shared with the chip and with the list, so this page and
   // the row that led here cannot disagree about what happened.
   const failure = describeJobFailure({
@@ -177,14 +183,17 @@ export function JobDetailHeader({ job }: { job: JobDetailHeaderJob }) {
               so a determinate bar would have to invent a number. */}
           <div
             role="progressbar"
-            aria-label={`${label} is running`}
+            aria-label={t('v3.jobs.running', { label })}
             className="relative h-1 w-full overflow-hidden rounded-full bg-surface-hover"
           >
             <div className="absolute inset-y-0 left-0 w-1/3 rounded-full bg-primary motion-safe:animate-loading-bar" />
           </div>
           <div className="flex items-center justify-between gap-3">
             <span className="text-caption text-muted-foreground">
-              {`Attempt ${job.attemptsMade || 1} of ${job.attemptsAllowed}`}
+              {t('v3.jobs.detail.attempt', {
+                attempt: job.attemptsMade || 1,
+                allowed: job.attemptsAllowed,
+              })}
             </span>
             <Button
               variant="outline"
@@ -193,16 +202,20 @@ export function JobDetailHeader({ job }: { job: JobDetailHeaderJob }) {
               onClick={() => cancel.mutate({ jobId: job.jobId })}
             >
               <X className="mr-2 size-4" aria-hidden="true" />
-              {cancel.isPending ? 'Cancelling…' : 'Cancel'}
+              {cancel.isPending ? t('v3.jobs.detail.cancelPending') : t('v3.jobs.detail.cancel')}
             </Button>
           </div>
         </div>
       ) : null}
 
       <dl className="flex flex-wrap gap-x-4 gap-y-1 text-caption text-muted-foreground">
-        <span>{`Created ${formatRelative(job.createdAt)}`}</span>
-        {job.startedAt ? <span>{`Started ${formatRelative(job.startedAt)}`}</span> : null}
-        {job.finishedAt ? <span>{`Finished ${formatRelative(job.finishedAt)}`}</span> : null}
+        <span>{t('v3.jobs.detail.createdAt', { when: formatRelative(t, job.createdAt) })}</span>
+        {job.startedAt ? (
+          <span>{t('v3.jobs.detail.startedAt', { when: formatRelative(t, job.startedAt) })}</span>
+        ) : null}
+        {job.finishedAt ? (
+          <span>{t('v3.jobs.detail.finishedAt', { when: formatRelative(t, job.finishedAt) })}</span>
+        ) : null}
       </dl>
 
       {/* The state that used to offer nothing. `running` gets Cancel and
@@ -213,17 +226,15 @@ export function JobDetailHeader({ job }: { job: JobDetailHeaderJob }) {
           and leaves the run itself intact for Remove to delete. */}
       {needsReview ? (
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <p className="text-caption text-muted-foreground">
-            This run is waiting on you. Nothing from it is in your portfolio yet.
-          </p>
+          <p className="text-caption text-muted-foreground">{t('v3.jobs.awaitingYou')}</p>
           <ConfirmAction
-            label="Discard"
-            confirmLabel="Discard this parse"
+            label={t('v3.jobs.discard.trigger')}
+            confirmLabel={t('v3.jobs.discard.commit')}
             destructive
             open={confirmingDiscard}
             onOpenChange={setConfirmingDiscard}
             isPending={discard.isPending}
-            consequence={`This ${label.toLowerCase()} stops asking for review and no holdings are created from it. Nothing in your portfolio changes. Re-running the import is the only way to get it back.`}
+            consequence={t('v3.jobs.discard.consequence', { label: label.toLowerCase() })}
             onConfirm={() => discard.mutate({ jobId: job.jobId, outcome: 'discarded' })}
           />
         </div>
@@ -235,7 +246,7 @@ export function JobDetailHeader({ job }: { job: JobDetailHeaderJob }) {
               page needs first is whether anything is still going to happen,
               and the error text answers a different question — one they
               usually cannot act on. */}
-          {failure ? <p className="text-body">{failure.sentence}</p> : null}
+          {failure ? <p className="text-body">{jobFailureSentence(t, failure)}</p> : null}
           {job.error ? (
             // `whitespace-pre-wrap` and the mono face: this is a stack trace or
             // an upstream API's message, and reflowing it destroys the only
@@ -248,7 +259,9 @@ export function JobDetailHeader({ job }: { job: JobDetailHeaderJob }) {
               the way back", and for an evicted job it is not — starting the
               import again is. Saying so is the whole affordance. */}
           {retryable || SENTENCE_SAYS_IT.has(retryReason) ? null : (
-            <p className="text-caption text-muted-foreground">{RETRY_UNAVAILABLE[retryReason]}</p>
+            <p className="text-caption text-muted-foreground">
+              {t(RETRY_UNAVAILABLE_KEYS[retryReason] ?? 'v3.jobs.retryUnavailable.notFailed')}
+            </p>
           )}
           <div className="flex flex-wrap gap-2">
             {retryable ? (
@@ -259,7 +272,7 @@ export function JobDetailHeader({ job }: { job: JobDetailHeaderJob }) {
                 onClick={() => retry.mutate({ jobId: job.jobId })}
               >
                 <RotateCcw className="mr-2 size-4" aria-hidden="true" />
-                {retry.isPending ? 'Re-queueing…' : 'Retry'}
+                {retry.isPending ? t('v3.jobs.detail.retryPending') : t('v3.jobs.detail.retry')}
               </Button>
             ) : null}
             {/* The non-destructive way out of the review feed. Remove deletes
@@ -275,7 +288,9 @@ export function JobDetailHeader({ job }: { job: JobDetailHeaderJob }) {
                 onClick={() => dismissFailure.mutate({ jobId: job.jobId, outcome: 'discarded' })}
               >
                 <Check className="mr-2 size-4" aria-hidden="true" />
-                {dismissFailure.isPending ? 'Dismissing…' : 'Dismiss'}
+                {dismissFailure.isPending
+                  ? t('v3.jobs.detail.dismissPending')
+                  : t('v3.jobs.detail.dismiss')}
               </Button>
             ) : null}
             {/* Confirmed, unlike its neighbour: `Retry` re-queues something
@@ -286,13 +301,13 @@ export function JobDetailHeader({ job }: { job: JobDetailHeaderJob }) {
                 the same component, and here it can be inline because this row
                 already wraps. */}
             <ConfirmAction
-              label="Remove"
-              confirmLabel="Remove this run"
+              label={t('v3.jobs.remove.trigger')}
+              confirmLabel={t('v3.jobs.remove.commit')}
               destructive
               open={confirmingRemove}
               onOpenChange={setConfirmingRemove}
               isPending={remove.isPending}
-              consequence={`This ${label.toLowerCase()} run and the error above it are deleted. Anything it already imported stays. This cannot be undone.`}
+              consequence={t('v3.jobs.remove.consequence', { label: label.toLowerCase() })}
               onConfirm={() => remove.mutate({ jobId: job.jobId })}
             />
           </div>

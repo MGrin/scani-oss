@@ -14,7 +14,7 @@
  *    fetched per-token via `module=account&action=tokenbalance`. Spam
  *    tokens filtered before they reach the federated identity flow.
  *  - `transactions`: extends `BaseEvmProvider` for the `(startblock,
- *    endblock)` pagination of `txlist` + `tokentx`.
+ *    endblock)` pagination of `txlist` + `tokentx` + `txlistinternal`.
  *  - `address-validator`: 0x-prefixed 40-hex.
  *
  * Pre-refactor sources:
@@ -29,6 +29,7 @@ import Decimal from 'decimal.js';
 import {
   BaseEvmProvider,
   type EvmChainConfig,
+  type EvmInternalTxRow,
   type EvmNativeTxRow,
   type EvmPaginationPage,
   type EvmTokenTxRow,
@@ -256,6 +257,32 @@ export class EtherscanProvider
       apikey: apiKey,
     });
     const data = await this.callJson<EtherscanResponse<EvmTokenTxRow[]>>(url);
+    if (!data || data.status !== '1') {
+      return { rows: [], hitPageCap: false };
+    }
+    const rows = data.result ?? [];
+    return { rows, hitPageCap: rows.length >= 10000 };
+  }
+
+  protected async fetchInternalTxPage(
+    chain: EvmChainConfig,
+    walletAddress: string,
+    startBlock: number,
+    endBlock: number,
+    apiKey: string
+  ): Promise<EvmPaginationPage<EvmInternalTxRow>> {
+    const url = this.buildUrl(chain.chainId, {
+      module: 'account',
+      action: 'txlistinternal',
+      address: walletAddress,
+      startblock: String(startBlock),
+      endblock: String(endBlock),
+      page: '1',
+      offset: '10000',
+      sort: 'asc',
+      apikey: apiKey,
+    });
+    const data = await this.callJson<EtherscanResponse<EvmInternalTxRow[]>>(url);
     if (!data || data.status !== '1') {
       return { rows: [], hitPageCap: false };
     }

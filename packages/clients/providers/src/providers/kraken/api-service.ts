@@ -17,6 +17,7 @@
 
 import crypto from 'node:crypto';
 import { credentialBucketKey, type OutflowRateLimiter } from '@scani/rate-limiter';
+import { ProviderError } from '../../core/errors';
 
 const API_VERSION = '0';
 
@@ -38,6 +39,31 @@ export interface KrakenLedgerEntry {
   /** Always positive. */
   fee: string;
   balance: string;
+}
+
+/**
+ * What Kraken's `error` array means for a credential check (SC-445).
+ *
+ * `/private/Balance` takes no arguments beyond the nonce, so a rejection of
+ * one is a rejection of the key — with two documented exceptions that are the
+ * venue talking about itself rather than about the caller: `EService:*` is
+ * Kraken down or in maintenance, and the rate-limit codes are Kraken asking
+ * for a pause. Both would otherwise be reported to the user as bad keys.
+ *
+ * `EAPI:Invalid nonce` stays in the rejection bucket deliberately. It is
+ * recoverable by retrying, but the recovery is the user pressing the button
+ * again, and every other cause of it — a key used concurrently elsewhere, a
+ * clock that moved — is something only they can resolve.
+ */
+function krakenRejection(errors: string[]): ProviderError {
+  const message = `Kraken rejected request: ${errors.join('; ')}`;
+  if (errors.some((e) => /rate limit|too many requests/i.test(e))) {
+    return new ProviderError(message, 'rate-limited', 'kraken');
+  }
+  if (errors.some((e) => /^EService:/.test(e))) {
+    return new ProviderError(message, 'retryable', 'kraken');
+  }
+  return new ProviderError(message, 'auth-failed', 'kraken');
 }
 
 export class KrakenApiService {
@@ -85,6 +111,15 @@ export class KrakenApiService {
    * (e.g. `EAPI:Invalid signature`, `EAPI:Invalid nonce`,
    * `EGeneral:Permission denied`) — much more useful than the
    * pre-refactor "always returns false on error" pattern.
+   *
+   * A `ProviderError`, not a plain `Error`, and only here of the three
+   * endpoints in this file (SC-445). Its caller has to answer a user
+   * pressing "Connect Kraken" with either "Kraken refused these keys" or
+   * "we could not reach Kraken", and a bare message string cannot tell
+   * those apart — `EAPI:Invalid key` and `EService:Unavailable` read the
+   * same to a `catch`. The balance and ledger paths feed retry logic that
+   * already treats an unclassified throw as retryable, which is the
+   * answer they want.
    */
   async validateApiKey(apiKey: string, apiSecret: string): Promise<boolean> {
     const trimmedSecret = apiSecret.trim();
@@ -93,8 +128,10 @@ export class KrakenApiService {
       secretBuffer = Buffer.from(trimmedSecret, 'base64');
       if (secretBuffer.length === 0) throw new Error('empty');
     } catch {
-      throw new Error(
-        'API secret is not valid base64. Copy it exactly as Kraken shows it — no wrapping, no leading/trailing whitespace.'
+      throw new ProviderError(
+        'API secret is not valid base64. Copy it exactly as Kraken shows it — no wrapping, no leading/trailing whitespace.',
+        'auth-failed',
+        'kraken'
       );
     }
 
@@ -121,11 +158,11 @@ export class KrakenApiService {
 
     if (!response.ok) {
       const body = await response.text().catch(() => '');
-      throw new Error(`Kraken HTTP ${response.status}${body ? `: ${body.slice(0, 200)}` : ''}`);
+      throw ProviderError.fromHttp('kraken', response, body || undefined);
     }
     const data = (await response.json()) as { error?: string[] };
     if (data.error && data.error.length > 0) {
-      throw new Error(`Kraken rejected request: ${data.error.join('; ')}`);
+      throw krakenRejection(data.error);
     }
     return true;
   }

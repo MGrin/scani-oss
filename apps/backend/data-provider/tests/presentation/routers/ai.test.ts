@@ -1,11 +1,18 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import type { AIInferenceProvider } from '@scani/providers/core/capabilities';
+// This workspace cannot depend on @scani/domain (it sits below it), so the
+// shared helper is reached the same way the shared test preload is: by path.
+import { restoreContainerAfterAll } from '../../../../../../packages/business/domain/test/helpers/container';
 import { aiRouter } from '../../../src/presentation/routers/ai';
 import {
   buildAuthedContext,
   buildUnauthedContext,
   installFreshRegistry,
 } from '../../helpers/test-context';
+
+// `installFreshRegistry()` stubs ProviderRegistry per test; this is the
+// file-level guarantee that nothing it installs outlives the file (SC-448).
+restoreContainerAfterAll();
 
 let restoreRegistry: () => void;
 let registry: ReturnType<typeof installFreshRegistry>['registry'];
@@ -59,8 +66,8 @@ describe('aiRouter.parseScreenshot', () => {
       imageBase64: 'aW1nLWRhdGE=',
       options: { mimeType: 'image/png' },
     });
-    expect(out.portfolio.holdings).toHaveLength(2);
-    expect(out.portfolio.overallConfidence).toBeCloseTo(0.87);
+    expect(out.portfolio?.holdings).toHaveLength(2);
+    expect(out.portfolio?.overallConfidence).toBeCloseTo(0.87);
     expect(out.metadata?.provider).toBe('openai');
   });
 
@@ -117,7 +124,7 @@ describe('aiRouter.parseDocumentText', () => {
     registry.register(makeAi());
     const caller = aiRouter.createCaller(buildAuthedContext());
     const out = await caller.parseDocumentText({ text: 'document body here' });
-    expect(out.portfolio.holdings.length).toBeGreaterThan(0);
+    expect(out.portfolio?.holdings.length).toBeGreaterThan(0);
   });
 
   test('skips providers without parseDocumentText support', async () => {
@@ -197,11 +204,11 @@ describe('aiRouter — systemPrompt replaces the holdings schema', () => {
       options: { mimeType: 'image/png' },
     });
     expect(seen[0]?.systemPrompt).toBeUndefined();
-    expect(shot.portfolio.holdings).toHaveLength(2);
+    expect(shot.portfolio?.holdings).toHaveLength(2);
     expect(shot).not.toHaveProperty('raw');
 
     const doc = await caller.parseDocumentText({ text: 'statement text' });
-    expect(doc.portfolio.holdings).toHaveLength(2);
+    expect(doc.portfolio?.holdings).toHaveLength(2);
     expect(doc).not.toHaveProperty('raw');
   });
 });

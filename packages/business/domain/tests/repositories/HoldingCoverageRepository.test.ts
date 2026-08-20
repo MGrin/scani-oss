@@ -1,9 +1,20 @@
 import { describe, expect, test } from 'bun:test';
+import type { HoldingCoverage, NewHoldingCoverage } from '@scani/db/schema';
+import * as schema from '@scani/db/schema';
+import { eq } from 'drizzle-orm';
 import { Container } from 'typedi';
-import { HoldingCoverageRepository } from '../../src/repositories/HoldingCoverageRepository';
+import {
+  describeMergedCoverageRows,
+  HoldingCoverageRepository,
+} from '../../src/repositories/HoldingCoverageRepository';
 import { withTestDb } from '../../test/helpers/db';
 import { makeInstitution, makeInstitutionType, makeUser } from '../../test/helpers/factories';
-import { makeAccount, makeHolding, makeToken } from '../../test/helpers/factories-extra';
+import {
+  makeAccount,
+  makeHolding,
+  makeHoldingTransaction,
+  makeToken,
+} from '../../test/helpers/factories-extra';
 
 const repo = () => Container.get(HoldingCoverageRepository);
 
@@ -26,6 +37,19 @@ async function makeHoldingFixture(tx: Parameters<typeof makeUser>[0]): Promise<{
   return { userId: user.id, holdingId: holding.id, accountId: acct.id, tokenId: tok.id };
 }
 
+// `upsertManyFromIngester` is the only ingester writer since SC-394 deleted the
+// singular one beside it. It answers with a count rather than the row it wrote,
+// so a test asserting on the ON CONFLICT merge has to read the row back.
+async function ingest(
+  tx: Parameters<typeof makeUser>[0],
+  row: NewHoldingCoverage
+): Promise<HoldingCoverage> {
+  await repo().upsertManyFromIngester([row], {}, tx);
+  const after = await repo().findByHolding(row.holdingId, tx);
+  if (!after) throw new Error(`no coverage row was written for holding ${row.holdingId}`);
+  return after;
+}
+
 describe('HoldingCoverageRepository', () => {
   test('findByHolding returns null when no coverage row exists', async () => {
     await withTestDb(async (tx) => {
@@ -35,21 +59,16 @@ describe('HoldingCoverageRepository', () => {
     });
   });
 
-  test('upsertFromIngester inserts a fresh coverage row when none exists', async () => {
+  test('upsertManyFromIngester inserts a fresh coverage row when none exists', async () => {
     await withTestDb(async (tx) => {
       const { holdingId } = await makeHoldingFixture(tx);
-      const row = await repo().upsertFromIngester(
-        {
-          holdingId,
-          firstTxAt: new Date('2024-01-01T00:00:00Z'),
-          lastTxAt: new Date('2024-12-31T23:59:59Z'),
-          firstObservationAt: null,
-          lastObservationAt: null,
-          txSources: ['kraken-api'],
-          hasCompleteTxHistory: true,
-        },
-        tx
-      );
+      const row = await ingest(tx, {
+        holdingId,
+        firstTxAt: new Date('2024-01-01T00:00:00Z'),
+        lastTxAt: new Date('2024-12-31T23:59:59Z'),
+        txSources: ['kraken-api'],
+        hasCompleteTxHistory: true,
+      });
       expect(row.holdingId).toBe(holdingId);
       expect(row.txSources).toEqual(['kraken-api']);
       expect(row.hasCompleteTxHistory).toBe(true);
@@ -57,35 +76,25 @@ describe('HoldingCoverageRepository', () => {
     });
   });
 
-  test('upsertFromIngester widens the tx range and unions tx sources on subsequent calls', async () => {
+  test('upsertManyFromIngester widens the tx range and unions tx sources on subsequent calls', async () => {
     await withTestDb(async (tx) => {
       const { holdingId } = await makeHoldingFixture(tx);
       // First ingest covers 2024 Q2 with kraken-api.
-      await repo().upsertFromIngester(
-        {
-          holdingId,
-          firstTxAt: new Date('2024-04-01T00:00:00Z'),
-          lastTxAt: new Date('2024-06-30T23:59:59Z'),
-          firstObservationAt: null,
-          lastObservationAt: null,
-          txSources: ['kraken-api'],
-          hasCompleteTxHistory: false,
-        },
-        tx
-      );
+      await ingest(tx, {
+        holdingId,
+        firstTxAt: new Date('2024-04-01T00:00:00Z'),
+        lastTxAt: new Date('2024-06-30T23:59:59Z'),
+        txSources: ['kraken-api'],
+        hasCompleteTxHistory: false,
+      });
       // Second ingest extends to 2024 H1 + adds binance-api.
-      const after = await repo().upsertFromIngester(
-        {
-          holdingId,
-          firstTxAt: new Date('2024-01-01T00:00:00Z'),
-          lastTxAt: new Date('2024-12-31T23:59:59Z'),
-          firstObservationAt: null,
-          lastObservationAt: null,
-          txSources: ['binance-api'],
-          hasCompleteTxHistory: true,
-        },
-        tx
-      );
+      const after = await ingest(tx, {
+        holdingId,
+        firstTxAt: new Date('2024-01-01T00:00:00Z'),
+        lastTxAt: new Date('2024-12-31T23:59:59Z'),
+        txSources: ['binance-api'],
+        hasCompleteTxHistory: true,
+      });
       // Range widens: earliest of firsts, latest of lasts.
       expect(after.firstTxAt?.getTime()).toBe(new Date('2024-01-01T00:00:00Z').getTime());
       expect(after.lastTxAt?.getTime()).toBe(new Date('2024-12-31T23:59:59Z').getTime());
@@ -100,18 +109,13 @@ describe('HoldingCoverageRepository', () => {
     await withTestDb(async (tx) => {
       const { holdingId } = await makeHoldingFixture(tx);
       // Seed with ingester data first.
-      await repo().upsertFromIngester(
-        {
-          holdingId,
-          firstTxAt: new Date('2024-01-01T00:00:00Z'),
-          lastTxAt: new Date('2024-12-31T23:59:59Z'),
-          firstObservationAt: null,
-          lastObservationAt: null,
-          txSources: ['kraken-api'],
-          hasCompleteTxHistory: false,
-        },
-        tx
-      );
+      await ingest(tx, {
+        holdingId,
+        firstTxAt: new Date('2024-01-01T00:00:00Z'),
+        lastTxAt: new Date('2024-12-31T23:59:59Z'),
+        txSources: ['kraken-api'],
+        hasCompleteTxHistory: false,
+      });
       const reconciledAt = new Date('2025-01-15T00:00:00Z');
       const after = await repo().upsertReconciliation(
         {
@@ -150,57 +154,6 @@ describe('HoldingCoverageRepository', () => {
       expect(after.txSources).toEqual([]);
     });
   });
-
-  test('findByUser returns coverage rows for the user across multiple holdings', async () => {
-    await withTestDb(async (tx) => {
-      const userA = await makeUser(tx);
-      const userB = await makeUser(tx);
-      const instType = await makeInstitutionType(tx);
-      const inst = await makeInstitution(tx, { typeId: instType.id });
-      const acctA = await makeAccount(tx, { userId: userA.id, institutionId: inst.id });
-      const acctB = await makeAccount(tx, { userId: userB.id, institutionId: inst.id });
-      const tok1 = await makeToken(tx);
-      const tok2 = await makeToken(tx);
-      const hA1 = await makeHolding(tx, {
-        userId: userA.id,
-        accountId: acctA.id,
-        tokenId: tok1.id,
-      });
-      const hA2 = await makeHolding(tx, {
-        userId: userA.id,
-        accountId: acctA.id,
-        tokenId: tok2.id,
-      });
-      const hB1 = await makeHolding(tx, {
-        userId: userB.id,
-        accountId: acctB.id,
-        tokenId: tok1.id,
-      });
-
-      for (const h of [hA1, hA2, hB1]) {
-        await repo().upsertFromIngester(
-          {
-            holdingId: h.id,
-            firstTxAt: new Date('2024-01-01T00:00:00Z'),
-            lastTxAt: new Date('2024-12-31T23:59:59Z'),
-            firstObservationAt: null,
-            lastObservationAt: null,
-            txSources: [`source-${h.id.slice(0, 4)}`],
-            hasCompleteTxHistory: false,
-          },
-          tx
-        );
-      }
-
-      const coverageA = await repo().findByUser(userA.id, tx);
-      // userA has 2 holdings → 2 coverage rows.
-      expect(coverageA).toHaveLength(2);
-      const idsA = new Set(coverageA.map((c) => c.holdingId));
-      expect(idsA.has(hA1.id)).toBe(true);
-      expect(idsA.has(hA2.id)).toBe(true);
-      expect(idsA.has(hB1.id)).toBe(false);
-    });
-  });
 });
 
 // SC-168. A failed run is the narrowest run there is — it read nothing —
@@ -213,18 +166,13 @@ describe('HoldingCoverageRepository.retractCompleteHistoryClaim', () => {
     rows: Array<{ holdingId: string; txSources: string[]; complete: boolean }>
   ): Promise<void> {
     for (const r of rows) {
-      await repo().upsertFromIngester(
-        {
-          holdingId: r.holdingId,
-          firstTxAt: new Date('2024-01-01T00:00:00Z'),
-          lastTxAt: new Date('2024-12-31T23:59:59Z'),
-          firstObservationAt: null,
-          lastObservationAt: null,
-          txSources: r.txSources,
-          hasCompleteTxHistory: r.complete,
-        },
-        tx
-      );
+      await ingest(tx, {
+        holdingId: r.holdingId,
+        firstTxAt: new Date('2024-01-01T00:00:00Z'),
+        lastTxAt: new Date('2024-12-31T23:59:59Z'),
+        txSources: r.txSources,
+        hasCompleteTxHistory: r.complete,
+      });
     }
   }
 
@@ -329,5 +277,332 @@ describe('HoldingCoverageRepository.retractCompleteHistoryClaim', () => {
 
       expect((await repo().findByHolding(holdingId, tx))?.hasCompleteTxHistory).toBe(true);
     });
+  });
+});
+
+// SC-307 / SC-308. `first_tx_at` is a summary of `holding_transactions`,
+// so it is derived from that table rather than reported by whichever
+// writer happened to touch the ledger. Every assertion here is about the
+// ledger being the authority.
+describe('HoldingCoverageRepository.syncTxBoundsFromLedger', () => {
+  async function twoHoldings(tx: Parameters<typeof makeUser>[0]): Promise<{
+    userId: string;
+    old: string;
+    recent: string;
+  }> {
+    const user = await makeUser(tx);
+    const instType = await makeInstitutionType(tx);
+    const inst = await makeInstitution(tx, { typeId: instType.id });
+    const acct = await makeAccount(tx, { userId: user.id, institutionId: inst.id });
+    const tokOld = await makeToken(tx);
+    const tokRecent = await makeToken(tx);
+    const old = await makeHolding(tx, {
+      userId: user.id,
+      accountId: acct.id,
+      tokenId: tokOld.id,
+    });
+    const recent = await makeHolding(tx, {
+      userId: user.id,
+      accountId: acct.id,
+      tokenId: tokRecent.id,
+    });
+    return { userId: user.id, old: old.id, recent: recent.id };
+  }
+
+  // THE SC-308 assertion. One run, two holdings, four years between their
+  // first transactions. Before this, both rows were stamped with the run's
+  // oldest event and the newer holding read as four years older than it is.
+  test('each holding gets its OWN first/last, never the set-wide oldest event', async () => {
+    await withTestDb(async (tx) => {
+      const { userId, old, recent } = await twoHoldings(tx);
+      await makeHoldingTransaction(tx, {
+        userId,
+        holdingId: old,
+        occurredAt: new Date('2021-03-04T00:00:00Z'),
+      });
+      await makeHoldingTransaction(tx, {
+        userId,
+        holdingId: old,
+        occurredAt: new Date('2026-08-01T00:00:00Z'),
+      });
+      await makeHoldingTransaction(tx, {
+        userId,
+        holdingId: recent,
+        occurredAt: new Date('2026-07-09T00:00:00Z'),
+      });
+
+      await repo().syncTxBoundsFromLedger([old, recent], tx);
+
+      const oldRow = await repo().findByHolding(old, tx);
+      const recentRow = await repo().findByHolding(recent, tx);
+      expect(oldRow?.firstTxAt?.toISOString()).toBe('2021-03-04T00:00:00.000Z');
+      expect(oldRow?.lastTxAt?.toISOString()).toBe('2026-08-01T00:00:00.000Z');
+      // The run's oldest event is 2021-03-04. This holding's is not.
+      expect(recentRow?.firstTxAt?.toISOString()).toBe('2026-07-09T00:00:00.000Z');
+      expect(recentRow?.lastTxAt?.toISOString()).toBe('2026-07-09T00:00:00.000Z');
+    });
+  });
+
+  // SC-307: the population that has transactions and no coverage row at
+  // all, because the path that wrote the ledger wrote no coverage.
+  test('creates the row for a holding that has transactions and no coverage', async () => {
+    await withTestDb(async (tx) => {
+      const { holdingId, userId } = await makeHoldingFixture(tx);
+      await makeHoldingTransaction(tx, {
+        userId,
+        holdingId,
+        occurredAt: new Date('2025-02-02T00:00:00Z'),
+      });
+      expect(await repo().findByHolding(holdingId, tx)).toBeNull();
+
+      await repo().syncTxBoundsFromLedger([holdingId], tx);
+
+      expect((await repo().findByHolding(holdingId, tx))?.firstTxAt?.toISOString()).toBe(
+        '2025-02-02T00:00:00.000Z'
+      );
+    });
+  });
+
+  // The old `LEAST`/`GREATEST` upsert could only ever widen, so deleting
+  // the oldest transaction left a first_tx_at nothing in the ledger
+  // supported. Deriving means the value can move back.
+  test('narrows when the oldest transaction is removed', async () => {
+    await withTestDb(async (tx) => {
+      const { holdingId, userId } = await makeHoldingFixture(tx);
+      const oldest = await makeHoldingTransaction(tx, {
+        userId,
+        holdingId,
+        occurredAt: new Date('2020-01-01T00:00:00Z'),
+      });
+      await makeHoldingTransaction(tx, {
+        userId,
+        holdingId,
+        occurredAt: new Date('2026-01-01T00:00:00Z'),
+      });
+      await repo().syncTxBoundsFromLedger([holdingId], tx);
+      expect((await repo().findByHolding(holdingId, tx))?.firstTxAt?.getUTCFullYear()).toBe(2020);
+
+      await tx
+        .delete(schema.holdingTransactions)
+        .where(eq(schema.holdingTransactions.id, oldest.id));
+      await repo().syncTxBoundsFromLedger([holdingId], tx);
+
+      expect((await repo().findByHolding(holdingId, tx))?.firstTxAt?.getUTCFullYear()).toBe(2026);
+    });
+  });
+
+  test('a holding whose last transaction is gone reports no tx bounds at all', async () => {
+    await withTestDb(async (tx) => {
+      const { holdingId, userId } = await makeHoldingFixture(tx);
+      const only = await makeHoldingTransaction(tx, {
+        userId,
+        holdingId,
+        occurredAt: new Date('2026-01-01T00:00:00Z'),
+      });
+      await repo().syncTxBoundsFromLedger([holdingId], tx);
+
+      await tx.delete(schema.holdingTransactions).where(eq(schema.holdingTransactions.id, only.id));
+      await repo().syncTxBoundsFromLedger([holdingId], tx);
+
+      const row = await repo().findByHolding(holdingId, tx);
+      expect(row?.firstTxAt).toBeNull();
+      expect(row?.lastTxAt).toBeNull();
+    });
+  });
+
+  // The split this repository already draws between ingester-owned and
+  // reconciliation-owned columns has to survive a third writer.
+  test('leaves reconciliation state and the completeness claim alone', async () => {
+    await withTestDb(async (tx) => {
+      const { holdingId, userId } = await makeHoldingFixture(tx);
+      await ingest(tx, {
+        holdingId,
+        firstTxAt: null,
+        lastTxAt: null,
+        txSources: ['kraken-api'],
+        hasCompleteTxHistory: true,
+      });
+      await repo().upsertReconciliation(
+        {
+          holdingId,
+          lastReconciledAt: new Date('2026-08-01T00:00:00Z'),
+          openingBalanceQuantity: '12.5',
+          reconciliationNotes: 'synthesized',
+        },
+        tx
+      );
+      await makeHoldingTransaction(tx, {
+        userId,
+        holdingId,
+        occurredAt: new Date('2024-04-04T00:00:00Z'),
+      });
+
+      await repo().syncTxBoundsFromLedger([holdingId], tx);
+
+      const row = await repo().findByHolding(holdingId, tx);
+      expect(row?.firstTxAt?.toISOString()).toBe('2024-04-04T00:00:00.000Z');
+      expect(row?.hasCompleteTxHistory).toBe(true);
+      expect(row?.txSources).toEqual(['kraken-api']);
+      expect(row?.openingBalanceQuantity).toBe('12.5');
+      expect(row?.reconciliationNotes).toBe('synthesized');
+    });
+  });
+
+  test('an empty holding list is a no-op', async () => {
+    await withTestDb(async (tx) => {
+      expect(await repo().syncTxBoundsFromLedger([], tx)).toBe(0);
+    });
+  });
+});
+
+// SC-360: an incremental run must not retract a full import's claim.
+// `TransactionRouter.claimsCompleteHistory` returns false for ANY run that
+// carries a `since` — because a window is not the ledger, not because the
+// ledger is short — and that false used to be written straight through.
+describe('upsertManyFromIngester — completeness is a claim, not a side effect', () => {
+  const row = (holdingId: string, hasCompleteTxHistory: boolean) => ({
+    holdingId,
+    firstTxAt: null,
+    lastTxAt: null,
+    txSources: ['etherscan'],
+    hasCompleteTxHistory,
+  });
+
+  test('a claiming run writes its verdict, true or false', async () => {
+    await withTestDb(async (tx) => {
+      const { holdingId } = await makeHoldingFixture(tx);
+      await repo().upsertManyFromIngester([row(holdingId, true)], {}, tx);
+      expect((await repo().findByHolding(holdingId, tx))?.hasCompleteTxHistory).toBe(true);
+
+      await repo().upsertManyFromIngester(
+        [row(holdingId, false)],
+        { completenessIsClaimed: true },
+        tx
+      );
+      expect((await repo().findByHolding(holdingId, tx))?.hasCompleteTxHistory).toBe(false);
+    });
+  });
+
+  test('a non-claiming run leaves a standing true alone', async () => {
+    await withTestDb(async (tx) => {
+      const { holdingId } = await makeHoldingFixture(tx);
+      await repo().upsertManyFromIngester([row(holdingId, true)], {}, tx);
+
+      await repo().upsertManyFromIngester(
+        [row(holdingId, false)],
+        { completenessIsClaimed: false },
+        tx
+      );
+
+      expect((await repo().findByHolding(holdingId, tx))?.hasCompleteTxHistory).toBe(true);
+    });
+  });
+
+  test('a non-claiming run still merges the bounds and sources it did observe', async () => {
+    await withTestDb(async (tx) => {
+      const { holdingId } = await makeHoldingFixture(tx);
+      await repo().upsertManyFromIngester([row(holdingId, true)], {}, tx);
+
+      await repo().upsertManyFromIngester(
+        [
+          {
+            ...row(holdingId, false),
+            txSources: ['solana'],
+            lastTxAt: new Date('2026-08-17T00:00:00Z'),
+          },
+        ],
+        { completenessIsClaimed: false },
+        tx
+      );
+
+      const after = await repo().findByHolding(holdingId, tx);
+      expect(after?.hasCompleteTxHistory).toBe(true);
+      expect([...(after?.txSources ?? [])].sort()).toEqual(['etherscan', 'solana']);
+      expect(after?.lastTxAt?.toISOString()).toBe('2026-08-17T00:00:00.000Z');
+    });
+  });
+
+  test('a first-ever non-claiming run inserts without claiming completeness', async () => {
+    await withTestDb(async (tx) => {
+      const { holdingId } = await makeHoldingFixture(tx);
+      await repo().upsertManyFromIngester(
+        [row(holdingId, false)],
+        { completenessIsClaimed: false },
+        tx
+      );
+      expect((await repo().findByHolding(holdingId, tx))?.hasCompleteTxHistory).toBe(false);
+    });
+  });
+});
+
+// SC-366. `ON CONFLICT DO UPDATE` refuses a statement carrying the conflict
+// key twice, so a repeated holding HAS to collapse — but the collapse used
+// to reach nobody. The row that loses takes its `txSources` and its
+// completeness claim with it, because it never reaches the statement at all.
+describe('upsertManyFromIngester — a collapsed batch says so', () => {
+  const row = (holdingId: string, txSources: string[]) => ({
+    holdingId,
+    firstTxAt: null,
+    lastTxAt: null,
+    txSources,
+    hasCompleteTxHistory: false,
+  });
+
+  test('one row lands, and the caller is told the other was merged into it', async () => {
+    await withTestDb(async (tx) => {
+      const { holdingId } = await makeHoldingFixture(tx);
+
+      const result = await repo().upsertManyFromIngester(
+        [row(holdingId, ['etherscan']), row(holdingId, ['solana'])],
+        {},
+        tx
+      );
+
+      expect(result.written).toBe(1);
+      expect(result.merges).toEqual([{ holdingId, dropped: 1 }]);
+      // The loser is gone, not merged: `ARRAY(SELECT DISTINCT UNNEST(...))`
+      // in the `ON CONFLICT` never sees a row that was dropped first.
+      expect((await repo().findByHolding(holdingId, tx))?.txSources).toEqual(['solana']);
+    });
+  });
+
+  test('a batch of distinct holdings reports nothing merged', async () => {
+    await withTestDb(async (tx) => {
+      const a = await makeHoldingFixture(tx);
+      const b = await makeHoldingFixture(tx);
+
+      const result = await repo().upsertManyFromIngester(
+        [row(a.holdingId, ['etherscan']), row(b.holdingId, ['etherscan'])],
+        {},
+        tx
+      );
+
+      expect(result.written).toBe(2);
+      expect(result.merges).toEqual([]);
+    });
+  });
+
+  test('an empty batch is still a no-op', async () => {
+    await withTestDb(async (tx) => {
+      expect(await repo().upsertManyFromIngester([], {}, tx)).toEqual({ written: 0, merges: [] });
+    });
+  });
+
+  // Same sentence the ledger's `describeMergedRows` produces, with coverage's
+  // nouns — one wording, so a reader meeting both can tell they are one bug.
+  test('describeMergedCoverageRows states how many rows went and which holdings took them', () => {
+    expect(
+      describeMergedCoverageRows([
+        { holdingId: 'h1', dropped: 2 },
+        { holdingId: 'h2', dropped: 1 },
+      ])
+    ).toBe(
+      '3 coverage row(s) across 2 dedup key(s) shared (holding) with another row in the ' +
+        'same batch and were merged into one. Keys: h1, h2'
+    );
+  });
+
+  test('describeMergedCoverageRows says nothing when nothing was merged', () => {
+    expect(describeMergedCoverageRows([])).toBeNull();
   });
 });

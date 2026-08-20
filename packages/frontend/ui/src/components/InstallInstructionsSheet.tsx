@@ -1,6 +1,8 @@
 'use client';
 
 import { Share, SquarePlus } from 'lucide-react';
+import { Trans } from 'react-i18next';
+import { uiI18n, useUiTranslation } from '../i18n';
 import type { Platform } from '../lib/pwa-utils';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '../ui/sheet';
 
@@ -25,14 +27,13 @@ export function InstallInstructionsSheet({
   platform,
   appName,
 }: InstallInstructionsSheetProps) {
+  const { t } = useUiTranslation();
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent side="bottom" className="max-h-[85vh] overflow-y-auto">
         <SheetHeader>
-          <SheetTitle>Install {appName} on your phone</SheetTitle>
-          <SheetDescription>
-            Add a home-screen icon for full-screen, app-like access.
-          </SheetDescription>
+          <SheetTitle>{t('ui.install.headline', { appName })}</SheetTitle>
+          <SheetDescription>{t('ui.install.sheetDescription')}</SheetDescription>
         </SheetHeader>
 
         {platform === 'ios' ? (
@@ -46,13 +47,13 @@ export function InstallInstructionsSheet({
 }
 
 function IosInstructions({ appName }: { appName: string }) {
+  const { t } = useUiTranslation();
   const safariOnly = isNonSafariOnIos();
   return (
     <ol className="mt-4 space-y-4 text-sm text-foreground">
       {safariOnly && (
         <li className="rounded-md border border-border bg-muted px-3 py-2 text-muted-foreground">
-          On iOS, only Safari supports adding apps to the home screen. Open this page in Safari,
-          then follow the steps below.
+          {t('ui.install.safariOnly')}
         </li>
       )}
       {/* Plain inline flow, NOT `flex items-center gap-2`.
@@ -73,8 +74,11 @@ function IosInstructions({ appName }: { appName: string }) {
           1
         </span>
         <span className="flex-1">
-          Tap the <Share className="inline h-4 w-4 align-text-bottom" /> Share button in Safari's
-          toolbar.
+          <Trans
+            i18n={uiI18n}
+            i18nKey="ui.install.iosStep1"
+            components={{ icon: <Share className="inline h-4 w-4 align-text-bottom" /> }}
+          />
         </span>
       </li>
       <li className="flex gap-3">
@@ -82,11 +86,23 @@ function IosInstructions({ appName }: { appName: string }) {
           2
         </span>
         <span className="flex-1">
-          Scroll the share sheet and tap{' '}
-          <span className="whitespace-nowrap">
-            <SquarePlus className="inline h-4 w-4 align-text-bottom" />{' '}
-            <strong>Add to Home Screen</strong>.
-          </span>
+          {/* Paired tags, deliberately: the text belongs to the `<strong>`, so
+              the element is passed WITHOUT children and takes them from the
+              key. The opposite of a props-driven component like `<Numeric>`,
+              which supplies its own content and wants `<x/>`.
+
+              `i18n={uiI18n}` is not optional. This package's instance never
+              calls `initReactI18next` (SC-250), so a bare `<Trans>` resolves
+              against react-i18next's GLOBAL default — which the app happens to
+              initialise and `cloud` does not, where it renders EMPTY. */}
+          <Trans
+            i18n={uiI18n}
+            i18nKey="ui.install.iosStep2"
+            components={{
+              icon: <SquarePlus className="inline h-4 w-4 align-text-bottom" />,
+              b: <strong />,
+            }}
+          />
         </span>
       </li>
       <li className="flex gap-3">
@@ -94,8 +110,12 @@ function IosInstructions({ appName }: { appName: string }) {
           3
         </span>
         <span className="flex-1">
-          Confirm with <strong>Add</strong>. {appName} now opens from the home screen like a native
-          app.
+          <Trans
+            i18n={uiI18n}
+            i18nKey="ui.install.iosStep3"
+            values={{ appName }}
+            components={{ b: <strong /> }}
+          />
         </span>
       </li>
     </ol>
@@ -103,6 +123,7 @@ function IosInstructions({ appName }: { appName: string }) {
 }
 
 function AndroidInstructions({ appName }: { appName: string }) {
+  const { t } = useUiTranslation();
   return (
     <ol className="mt-4 space-y-4 text-sm text-foreground">
       <li className="flex gap-3">
@@ -110,7 +131,7 @@ function AndroidInstructions({ appName }: { appName: string }) {
           1
         </span>
         <span className="flex-1">
-          Tap the <strong>⋮</strong> menu in your browser's top-right corner.
+          <Trans i18n={uiI18n} i18nKey="ui.install.androidStep1" components={{ b: <strong /> }} />
         </span>
       </li>
       <li className="flex gap-3">
@@ -118,17 +139,14 @@ function AndroidInstructions({ appName }: { appName: string }) {
           2
         </span>
         <span className="flex-1">
-          Choose <strong>Install app</strong> (Chrome) or <strong>Add to Home screen</strong>{' '}
-          (Firefox / Samsung Internet).
+          <Trans i18n={uiI18n} i18nKey="ui.install.androidStep2" components={{ b: <strong /> }} />
         </span>
       </li>
       <li className="flex gap-3">
         <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground">
           3
         </span>
-        <span className="flex-1">
-          Confirm. {appName} launches from your app drawer like any other installed app.
-        </span>
+        <span className="flex-1">{t('ui.install.androidStep3', { appName })}</span>
       </li>
     </ol>
   );

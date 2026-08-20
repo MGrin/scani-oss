@@ -8,6 +8,7 @@
     ".": "./src/index.ts",
     "./schema": "./src/schema/index.ts",
     "./connection": "./src/connection.ts",
+    "./read-only": "./src/read-only.ts",
     "./transaction": "./src/transaction.ts",
     "./base-repository": "./src/base-repository.ts",
     "./migrate": "./src/migrate.ts"
@@ -15,8 +16,10 @@
   "scripts": {
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
-    "type-check": "tsgo --noEmit",
-    "db:generate": "bun drizzle-kit generate",
+    "type-check": "tsgo --noEmit -p tsconfig.test.json",
+    "db:generate": "bun src/migration-cli.ts journal && bun drizzle-kit generate",
+    "db:new": "bun src/migration-cli.ts new",
+    "db:journal": "bun src/migration-cli.ts journal",
     "db:drop": "bun drizzle-kit drop",
     "db:migrate": "bun src/migrate.ts",
     "db:studio": "bun drizzle-kit studio"

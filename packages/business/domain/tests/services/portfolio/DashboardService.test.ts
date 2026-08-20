@@ -156,8 +156,14 @@ function buildDashboardOverview(
 // Fixtures
 // ---------------------------------------------------------------------------
 
+// `Omit<..., 'holding' | 'token'>` is load-bearing. `Partial<HoldingWithDetails>`
+// carries `holding?: <the full type>`, and intersecting it with the relaxed
+// `{ holding: Partial<...> & Pick<...> }` below ANDs the two — putting every
+// field back to required. So a caller passing `{ id, balance }` was an error and
+// the defaults above the spread were dead. Omitting the two keys first lets the
+// relaxed shapes be the only ones that apply.
 function makeHolding(
-  overrides: Partial<HoldingWithDetails> & {
+  overrides: Omit<Partial<HoldingWithDetails>, 'holding' | 'token'> & {
     holding: Partial<HoldingWithDetails['holding']> &
       Pick<HoldingWithDetails['holding'], 'id' | 'balance'>;
     token: Partial<HoldingWithDetails['token']> &
@@ -222,8 +228,8 @@ describe('DashboardService (unit)', () => {
         totalValue: '270000',
         baseCurrency: 'USD',
         holdings: [
-          { tokenSymbol: 'BTC', balance: '2', value: '120000' },
-          { tokenSymbol: 'ETH', balance: '50', value: '150000' },
+          { tokenSymbol: 'BTC', balance: '2', currentPrice: '60000', value: '120000' },
+          { tokenSymbol: 'ETH', balance: '50', currentPrice: '3000', value: '150000' },
         ],
       };
 
@@ -237,8 +243,8 @@ describe('DashboardService (unit)', () => {
       expect(result.topHoldings).toHaveLength(2);
 
       // Top holding should be ETH (150k > 120k)
-      expect(result.topHoldings[0].symbol).toBe('ETH');
-      expect(result.topHoldings[1].symbol).toBe('BTC');
+      expect(result.topHoldings[0]?.symbol).toBe('ETH');
+      expect(result.topHoldings[1]?.symbol).toBe('BTC');
     });
 
     it('should only count active holdings and exclude inactive from top holdings', () => {
@@ -257,8 +263,8 @@ describe('DashboardService (unit)', () => {
         totalValue: '60000',
         baseCurrency: 'USD',
         holdings: [
-          { tokenSymbol: 'BTC', balance: '1', value: '60000' },
-          { tokenSymbol: 'ETH', balance: '100', value: '300000' },
+          { tokenSymbol: 'BTC', balance: '1', currentPrice: '60000', value: '60000' },
+          { tokenSymbol: 'ETH', balance: '100', currentPrice: '3000', value: '300000' },
         ],
       };
 
@@ -266,7 +272,7 @@ describe('DashboardService (unit)', () => {
 
       expect(result.counts.holdings).toBe(1);
       expect(result.topHoldings).toHaveLength(1);
-      expect(result.topHoldings[0].symbol).toBe('BTC');
+      expect(result.topHoldings[0]?.symbol).toBe('BTC');
     });
 
     it('should cap top holdings at 5', () => {
@@ -283,6 +289,7 @@ describe('DashboardService (unit)', () => {
         holdings: holdings.map((h, i) => ({
           tokenSymbol: h.token.symbol,
           balance: h.holding.balance,
+          currentPrice: String(((10 - i) * 10) / Number(h.holding.balance)),
           value: String((10 - i) * 10),
         })),
       };

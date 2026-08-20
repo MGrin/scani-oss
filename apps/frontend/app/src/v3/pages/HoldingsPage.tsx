@@ -5,16 +5,18 @@ import { V3DataView } from '@scani/ui/v3/components/data-view/V3DataView';
 import { PageLayout } from '@scani/ui/v3/components/PageLayout';
 import { mergeQueries } from '@scani/ui/v3/lib/query-state';
 import { useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { invalidatePortfolioQueries } from '@/hooks/invalidatePortfolioQueries';
 import { trpc } from '@/lib/trpc';
-import { AssignGroupsDialog } from '@/v2/components/groups/AssignGroupsDialog';
-import { ApyConfigDialog } from '@/v2/components/holdings/ApyConfigDialog';
-import { EditCustomTokenPriceDialog } from '@/v2/components/tokens/EditCustomTokenPriceDialog';
-import { invalidatePortfolioQueries } from '@/v2/hooks/invalidatePortfolioQueries';
-import { useHoldingActions } from '@/v2/hooks/useHoldingActions';
+import { useHoldingActions } from '@/v3/hooks/useHoldingActions';
 import { useOpenCapture } from '../components/capture/CaptureSheetContext';
+import { AssignGroupsSheet } from '../components/groups/AssignGroupsSheet';
+import { ApyConfigSheet } from '../components/holdings/ApyConfigSheet';
 import { holdingsDataViewConfig } from '../components/holdings/holdingsConfig';
+import { EditCustomTokenPriceSheet } from '../components/tokens/EditCustomTokenPriceSheet';
 import { useHoldingRefresh } from '../hooks/useHoldingRefresh';
+import { HOLDINGS_QUALITY_PARAM } from '../lib/dataQuality';
 import { holdingFiltersFromParams } from '../lib/holdings';
 import { V3_ROUTES } from '../lib/routes';
 
@@ -50,6 +52,7 @@ import { V3_ROUTES } from '../lib/routes';
  */
 
 export function HoldingsPage() {
+  const { t } = useTranslation();
   const holdingsQuery = trpc.holdings.getWithDetails.useQuery();
   const groupsQuery = trpc.groups.getAll.useQuery();
   const baseCurrencyQuery = trpc.users.getBaseCurrency.useQuery();
@@ -60,20 +63,44 @@ export function HoldingsPage() {
   const institutionsQuery = trpc.institutions.getAll.useQuery();
   const accountsQuery = trpc.accounts.getAll.useQuery();
 
-  // The five queries the list actually depends on, collapsed so the error half
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+
+  /**
+   * The data-quality dimension (SC-293) — the ids behind each flagged counter
+   * on the Settings panel, which is where `?quality=<kind>` links come from.
+   *
+   * The same query key the panel uses, so arriving from it costs nothing: it
+   * is already in the cache and inside its 60s staleness window. Fetched on
+   * every visit rather than only when the parameter is present, because a
+   * filter that exists in Refine only for readers who came via a link is a
+   * control that appears and disappears.
+   */
+  const qualityQuery = trpc.portfolio.getDataQualityReport.useQuery(undefined, {
+    refetchOnWindowFocus: false,
+    staleTime: 60_000,
+  });
+  const qualityParam = searchParams.get(HOLDINGS_QUALITY_PARAM);
+
+  // The queries the list actually depends on, collapsed so the error half
   // cannot be dropped (V3-16). `holdings.getWithDetails` failing while the
   // filter dimensions succeed would otherwise render the onboarding empty
   // state over an account that has holdings.
+  //
+  // The report joins them ONLY when the URL asks for a quality slice. Then it
+  // is load-bearing — an unfiltered list rendered while its filter is still
+  // loading would show every holding under a chip claiming twelve, and a
+  // failed report would show every holding under a chip claiming anything at
+  // all. Without the parameter it is an optional extra dimension, and a
+  // diagnostics query must not be able to take the Holdings page down.
   const holdingsState = mergeQueries(
     holdingsQuery,
     groupsQuery,
     baseCurrencyQuery,
     institutionsQuery,
-    accountsQuery
+    accountsQuery,
+    ...(qualityParam ? [qualityQuery] : [])
   );
-
-  const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
   const utils = trpc.useUtils();
 
   const actions = useHoldingActions();
@@ -89,10 +116,10 @@ export function HoldingsPage() {
   const removeApyMutation = trpc.holdings.deleteApyConfig.useMutation({
     onSuccess: () => {
       setApyRemoveTarget(null);
-      showSuccess('Interest configuration removed');
+      showSuccess(t('v3.holdings.apy.removed'));
       void invalidatePortfolioQueries(utils);
     },
-    onError: (error) => showError(error, 'Removing the interest configuration'),
+    onError: (error) => showError(error, t('v3.holdings.apy.removing')),
   });
 
   const holdings = holdingsQuery.data?.holdings ?? [];
@@ -111,6 +138,7 @@ export function HoldingsPage() {
     accounts: accountsQuery.data,
     groups: groupsQuery.data,
     defaultFilters,
+    qualitySets: qualityQuery.data?.flagged,
     onAssignGroups: (ids, clear) => setAssignTarget({ ids, clear }),
     // The confirmation is `BulkDeleteAction`'s, inline in the bar the trigger
     // is in (SC-63) — by the time this runs the user has read what goes and
@@ -118,8 +146,10 @@ export function HoldingsPage() {
     onBulkDelete: (ids, clear) => actions.bulkDeleteHoldings(ids, { onSuccess: clear }),
     isBulkDeleting: actions.isBulkDeleting,
     onAddData: openCapture,
+    t,
     peek: {
       currency,
+      t,
       onSetAmount: (holding, balance) => actions.updateHolding(holding.id, { balance }),
       onToggleActive: (holding) =>
         actions.updateHolding(holding.id, { isActive: !holding.isActive }),
@@ -148,7 +178,7 @@ export function HoldingsPage() {
     // and it converts every pixel it is given into a column the reader would
     // otherwise have to open the peek sheet to see.
     <PageLayout measure="wide">
-      <h1 className="text-title">Holdings</h1>
+      <h1 className="text-title">{t('v3.holdings.page.title')}</h1>
 
       <V3DataView config={config} getId={(item) => item.id} query={holdingsState} />
 
@@ -157,9 +187,9 @@ export function HoldingsPage() {
         onOpenChange={(open) => {
           if (!open) setApyRemoveTarget(null);
         }}
-        title="Remove interest configuration"
-        description="Interest will stop accruing on this holding. Payouts already recorded are kept."
-        confirmLabel="Remove"
+        title={t('v3.holdings.apy.trigger')}
+        description={t('v3.holdings.apy.consequence')}
+        confirmLabel={t('v3.holdings.apy.commit')}
         variant="destructive"
         isPending={removeApyMutation.isPending}
         onConfirm={() => {
@@ -170,18 +200,22 @@ export function HoldingsPage() {
       {/* Mounted only while targeted, so each dialog's own form state starts
           from the holding it was opened for rather than from the last one. */}
       {apyTarget ? (
-        <ApyConfigDialog
+        <ApyConfigSheet
+          // Keyed as well as mounted conditionally: the sheet reads its whole
+          // form state from this holding once, at mount, and has no reset
+          // effect to fall back on if a second holding ever arrived through
+          // the same element.
+          key={apyTarget.id}
           open
           onOpenChange={(open) => {
             if (!open) setApyTarget(null);
           }}
-          holdingId={apyTarget.id}
-          existingConfig={apyTarget.apyConfig ?? undefined}
+          holding={apyTarget}
         />
       ) : null}
 
       {priceTarget ? (
-        <EditCustomTokenPriceDialog
+        <EditCustomTokenPriceSheet
           open
           onOpenChange={(open) => {
             if (!open) setPriceTarget(null);
@@ -193,19 +227,26 @@ export function HoldingsPage() {
         />
       ) : null}
 
-      <AssignGroupsDialog
-        open={assignTarget !== null}
-        onOpenChange={(open) => {
-          if (open) return;
-          // Clearing on close rather than on save: the dialog reports its own
-          // outcome, and a selection surviving a cancelled assignment is a
-          // banner claiming rows are selected that the user has moved on from.
-          assignTarget?.clear();
-          setAssignTarget(null);
-        }}
-        entityType="holdings"
-        entityIds={assignTarget?.ids ?? []}
-      />
+      {/* Mounted only while targeted, for the reason written above the two
+          dialogs: the checked set has to start from the selection this was
+          opened for. Left mounted, the sheet reopened with the PREVIOUS batch's
+          groups ticked over an empty diff baseline, and a Save in that window
+          put those groups onto holdings that were never in them. */}
+      {assignTarget ? (
+        <AssignGroupsSheet
+          open
+          onOpenChange={(open) => {
+            if (open) return;
+            // Clearing on close rather than on save: the sheet reports its own
+            // outcome, and a selection surviving a cancelled assignment is a
+            // banner claiming rows are selected that the user has moved on from.
+            assignTarget.clear();
+            setAssignTarget(null);
+          }}
+          entityType="holdings"
+          entityIds={assignTarget.ids}
+        />
+      ) : null}
     </PageLayout>
   );
 }

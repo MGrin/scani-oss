@@ -1,0 +1,25 @@
+{
+  "name": "@scani/push",
+  "private": true,
+  "type": "module",
+  "version": "1.0.0",
+  "description": "Web Push transport: VAPID config + an encrypted send that reports a dead subscription as a distinct outcome rather than an error.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "type-check": "tsgo --noEmit -p tsconfig.test.json"
+  },
+  "dependencies": {
+    "@scani/logging": "workspace:*",
+    "typedi": "^0.10.0",
+    "web-push": "^3.6.7",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/web-push": "^3.6.4",
+    "typescript": "^5"
+  }
+}

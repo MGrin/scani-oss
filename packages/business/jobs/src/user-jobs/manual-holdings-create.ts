@@ -1,4 +1,5 @@
 import type { UserJobBase, UserJobDescriptor } from '@scani/queue';
+import { HOLDING_LABEL_MAX_LENGTH } from '@scani/shared';
 import { z } from 'zod';
 import { JOB_NAMES } from '../job-names';
 import { RETRY_NONE } from '../retry-policies';
@@ -6,6 +7,11 @@ import { RETRY_NONE } from '../retry-policies';
 const newHoldingSchema = z.object({
   tokenId: z.string().uuid(),
   balance: z.string().min(1),
+  // The pot's name, when the account holds several rows for one token. It
+  // rides the job payload because the guard that reads it runs in the use
+  // case, and a label dropped in transit turns four named positions back into
+  // a refusal (SC-330).
+  label: z.string().trim().max(HOLDING_LABEL_MAX_LENGTH).optional(),
 });
 
 const updateHoldingSchema = z.object({
@@ -30,7 +36,7 @@ export interface ManualHoldingsCreateJob extends UserJobBase {
   institution?: { name: string; typeId: string; website?: string };
   accountId?: string;
   account?: { name: string; typeId: string; institutionId?: string };
-  newHoldings: Array<{ tokenId: string; balance: string }>;
+  newHoldings: Array<{ tokenId: string; balance: string; label?: string }>;
   updateHoldings: Array<{ holdingId: string; balance: string }>;
   parentJobIdToStampOnSuccess?: string;
 }

@@ -11,6 +11,11 @@ import { Container } from 'typedi';
 import { PortfolioValuationService } from '../../../src/services/portfolio/PortfolioValuationService';
 import { PortfolioValueCache } from '../../../src/services/portfolio/PortfolioValueCache';
 import { PricingService } from '../../../src/services/pricing/PricingService';
+import { restoreContainerAfterAll } from '../../../test/helpers/container';
+
+// Container stubs are process-global; put back whatever this file changes
+// so no later test file resolves them (SC-448).
+restoreContainerAfterAll();
 
 /**
  * PortfolioValuationService — pure math unit tests.
@@ -132,7 +137,7 @@ describe('PortfolioValuationService (unit — math)', () => {
 
       const result = calculateTotalValue(holdings, {}, baseCurrencyId);
       expect(result.totalValue).toBe('0');
-      expect(result.holdingValues[0].value).toBeNull();
+      expect(result.holdingValues[0]?.value).toBeNull();
     });
 
     it('should exclude unpriceable holdings from total while including priced ones', () => {
@@ -145,7 +150,7 @@ describe('PortfolioValuationService (unit — math)', () => {
       const result = calculateTotalValue(holdings, prices, baseCurrencyId);
       expect(result.totalValue).toBe('60000');
       expect(result.holdingValues).toHaveLength(2);
-      expect(result.holdingValues[1].value).toBeNull();
+      expect(result.holdingValues[1]?.value).toBeNull();
     });
 
     it('should handle empty holdings', () => {
@@ -200,8 +205,8 @@ describe('PortfolioValuationService (unit — math)', () => {
 
       const result = calculateAssetAllocation(holdingValues);
       expect(result).toHaveLength(1);
-      expect(result[0].typeCode).toBe('crypto');
-      expect(result[0].percentage).toBe('100.00');
+      expect(result[0]?.typeCode).toBe('crypto');
+      expect(result[0]?.percentage).toBe('100.00');
     });
 
     it('should return 0% when all values are zero', () => {
@@ -229,9 +234,9 @@ describe('PortfolioValuationService (unit — math)', () => {
       ];
 
       const result = calculateAssetAllocation(holdingValues);
-      expect(result[0].typeCode).toBe('crypto');
-      expect(result[1].typeCode).toBe('stock');
-      expect(result[2].typeCode).toBe('fiat');
+      expect(result[0]?.typeCode).toBe('crypto');
+      expect(result[1]?.typeCode).toBe('stock');
+      expect(result[2]?.typeCode).toBe('fiat');
     });
   });
 
@@ -242,7 +247,7 @@ describe('PortfolioValuationService (unit — math)', () => {
 
       const result = calculateTotalValue(holdings, prices, baseCurrencyId);
       expect(result.totalValue).toBe('0');
-      expect(result.holdingValues[0].value).toBe('0');
+      expect(result.holdingValues[0]?.value).toBe('0');
     });
 
     it('should not affect total when mixed with non-zero balances', () => {

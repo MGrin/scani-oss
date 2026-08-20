@@ -44,7 +44,7 @@
  * a win measured here is not an artefact of the harness.
  */
 
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, readdirSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { brotliCompressSync, constants as zlibConstants } from 'node:zlib';
@@ -156,9 +156,45 @@ async function selfSignedCert(): Promise<{ cert: string; key: string }> {
   };
 }
 
-function startServer(dist: string, session: boolean, tls: { cert: string; key: string }) {
+/**
+ * Every asset, brotli'd, before a browser exists.
+ *
+ * This used to happen on first request and cost the first run of every sweep
+ * the best part of a second of server CPU — `signed-in` measured 10694 ms on
+ * run 1 against a 4551 ms median, and a sweep of two or three runs would have
+ * published that as the number. It is the same trap `measure-cold-boot.ts`
+ * documents and had already fixed; this script did not (SC-169).
+ */
+function compressDist(dist: string): Map<string, Uint8Array<ArrayBuffer>> {
   const cache = new Map<string, Uint8Array<ArrayBuffer>>();
+  const walk = (dir: string, prefix: string): void => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const rel = `${prefix}/${entry.name}`;
+      if (entry.isDirectory()) {
+        walk(path.join(dir, entry.name), rel);
+        continue;
+      }
+      const raw = new Uint8Array(readFileSync(path.join(dir, entry.name)));
+      cache.set(
+        rel,
+        shouldCompress(rel)
+          ? new Uint8Array(
+              brotliCompressSync(raw, { params: { [zlibConstants.BROTLI_PARAM_QUALITY]: 11 } })
+            )
+          : raw
+      );
+    }
+  };
+  walk(dist, '');
+  return cache;
+}
 
+function startServer(
+  dist: string,
+  session: boolean,
+  tls: { cert: string; key: string },
+  cache: Map<string, Uint8Array<ArrayBuffer>>
+) {
   return Bun.serve({
     port: PORT,
     hostname: '127.0.0.1',
@@ -189,18 +225,8 @@ function startServer(dist: string, session: boolean, tls: { cert: string; key: s
       const file = Bun.file(`${dist}${pathname}`);
       const target = (await file.exists()) ? pathname : '/index.html';
 
-      let body = cache.get(target);
-      if (!body) {
-        const raw = new Uint8Array(await Bun.file(`${dist}${target}`).arrayBuffer());
-        body = shouldCompress(target)
-          ? new Uint8Array(
-              brotliCompressSync(raw, {
-                params: { [zlibConstants.BROTLI_PARAM_QUALITY]: 11 },
-              })
-            )
-          : raw;
-        cache.set(target, body);
-      }
+      const body = cache.get(target);
+      if (!body) return new Response('not found', { status: 404 });
 
       // What Cloudflare Pages sends: hashed assets are immutable, the entry
       // document never is.
@@ -343,11 +369,12 @@ if (!(await Bun.file(`${dist}/index.html`).exists())) {
 }
 
 const tls = await selfSignedCert();
+const assets = compressDist(dist);
 const browser = await chromium.launch();
 const rows: string[] = [];
 
 for (const scenario of SCENARIOS) {
-  const server = startServer(dist, scenario.session, tls);
+  const server = startServer(dist, scenario.session, tls, assets);
   const results: RunResult[] = [];
 
   for (let run = 0; run < runs; run++) {

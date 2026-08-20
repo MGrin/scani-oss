@@ -1,6 +1,7 @@
 import { showError, showSuccess } from '@scani/ui/ui/use-toast';
 import { ConfirmAction } from '@scani/ui/v3/components/ConfirmAction';
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { trpc } from '@/lib/trpc';
 import { type MergeCandidate, mergeConsequence } from '../../lib/money';
 import { DuplicateVendorPicker } from './DuplicateVendorPicker';
@@ -40,6 +41,7 @@ interface MergeVendorActionProps {
 }
 
 export function MergeVendorAction({ vendorId, vendorName, candidates }: MergeVendorActionProps) {
+  const { t } = useTranslation();
   const utils = trpc.useUtils();
   const [open, setOpen] = useState(false);
   const [fromId, setFromId] = useState<string>('');
@@ -53,21 +55,25 @@ export function MergeVendorAction({ vendorId, vendorName, candidates }: MergeVen
     onSuccess: () => {
       setOpen(false);
       setFromId('');
-      showSuccess('Vendors merged');
+      showSuccess(t('v3.money.mergeVendor.merged'));
       // Payments move with the vendor, so the payment cache is stale too —
       // the merged-away name is still on those rows until it refetches.
       void utils.vendors.invalidate();
       void utils.payments.invalidate();
     },
-    onError: (error) => showError(error, 'Merging vendors'),
+    onError: (error) => showError(error, t('v3.money.pending.mergingVendors')),
   });
 
   const duplicate = candidates.find((candidate) => candidate.id === fromId);
 
   return (
     <ConfirmAction
-      label="Merge duplicate"
-      confirmLabel={duplicate ? `Merge ${duplicate.displayName} in` : 'Merge'}
+      label={t('v3.money.mergeVendor.trigger')}
+      confirmLabel={
+        duplicate
+          ? t('v3.money.mergeVendor.confirmNamed', { vendor: duplicate.displayName })
+          : t('v3.money.mergeVendor.confirm')
+      }
       destructive
       open={open}
       onOpenChange={(next) => {
@@ -76,7 +82,7 @@ export function MergeVendorAction({ vendorId, vendorName, candidates }: MergeVen
         // half-made decision the reader already backed out of.
         if (!next) setFromId('');
       }}
-      disabledReason={candidates.length === 0 ? 'There is no other vendor to merge in' : undefined}
+      disabledReason={candidates.length === 0 ? t('v3.money.mergeVendor.noCandidates') : undefined}
       // Picking the duplicate IS the deliberate second act; the commit is
       // the third. Until then there is nothing to agree to.
       canConfirm={Boolean(duplicate) && preview.data !== undefined}
@@ -92,8 +98,8 @@ export function MergeVendorAction({ vendorId, vendorName, candidates }: MergeVen
       }
       consequence={
         duplicate
-          ? mergeConsequence(vendorName, duplicate.displayName, preview.data ?? null)
-          : `Pick a duplicate to fold into "${vendorName}". It keeps this record; the one you pick is deleted.`
+          ? mergeConsequence(vendorName, duplicate.displayName, preview.data ?? null, t)
+          : t('v3.money.mergeVendor.pickOne', { vendor: vendorName })
       }
       onConfirm={() => {
         if (!duplicate) return;

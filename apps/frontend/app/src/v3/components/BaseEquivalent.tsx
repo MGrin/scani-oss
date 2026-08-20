@@ -1,6 +1,7 @@
 import { Numeric } from '@scani/ui/v3/components/Numeric';
+import { Trans } from 'react-i18next';
 import type { useBaseCurrencyRates } from '@/hooks/useBaseCurrencyRates';
-import { convertAmountToBase } from '@/v2/lib/paymentTotals';
+import { convertAmountToBase } from '../lib/paymentTotals';
 
 /**
  * The base-currency equivalent of a row's own figure — the secondary line
@@ -27,12 +28,34 @@ export function BaseEquivalent({ amount, currencyTokenId, rates }: BaseEquivalen
   const converted = convertAmountToBase(amount, currencyTokenId, rates);
   if (!converted) return null;
 
+  const figure = <Numeric value={converted.amount.toString()} currency={rates.baseSymbol} />;
+
+  // Seen and spoken are two whole phrases rather than one figure wearing a
+  // prefix and a suffix (SC-235). "About " before it and " · older rate" after
+  // it were both pinned by their position in this element, so a translator
+  // could rewrite either and move neither — and the seen register uses a glyph
+  // where the spoken one needs a word, which is a difference no single key can
+  // carry. The figure renders twice; only one of the two is ever announced.
   return (
     <span className="text-muted-foreground">
-      <span aria-hidden="true">≈ </span>
-      <span className="sr-only">About </span>
-      <Numeric value={converted.amount.toString()} currency={rates.baseSymbol} />
-      {converted.stale ? ' · older rate' : null}
+      <span aria-hidden="true">
+        <Trans
+          i18nKey={
+            converted.stale ? 'v3.common.baseEquivalent.seenStale' : 'v3.common.baseEquivalent.seen'
+          }
+          components={{ value: figure }}
+        />
+      </span>
+      <span className="sr-only">
+        <Trans
+          i18nKey={
+            converted.stale
+              ? 'v3.common.baseEquivalent.spokenStale'
+              : 'v3.common.baseEquivalent.spoken'
+          }
+          components={{ value: figure }}
+        />
+      </span>
     </span>
   );
 }

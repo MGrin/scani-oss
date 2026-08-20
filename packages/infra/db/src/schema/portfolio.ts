@@ -36,6 +36,43 @@ export const portfolioValueDaily = pgTable(
     coverageQuality: text('coverage_quality').notNull(),
     holdingsWithKnownValue: integer('holdings_with_known_value').notNull(),
     holdingsTotal: integer('holdings_total').notNull(),
+    // ---------------------------------------------------------------------
+    // A ZERO IN THE FOUR QUALITY COUNTS BELOW IS NOT ALWAYS A MEASUREMENT.
+    //
+    // `holdings_unpriceable` (0029), `holdings_stale_priced` (0031),
+    // `holdings_basis_unknown` (0031) and `transfers_unreviewed` (0033) were
+    // each added `NOT NULL DEFAULT 0`, so every row written before its column
+    // existed reads `0` — a positive claim that the day was measured and
+    // nothing was wrong, where the truth is that nobody counted. SC-255.
+    //
+    // `holdings_stale_anchored` further down took the opposite route
+    // deliberately (nullable, NULL = not recorded), and the contrast is the
+    // point: it can say "unknown" and these four cannot.
+    //
+    // **This is documented rather than repaired, because no honest cutoff
+    // exists.** Measured on production 2026-08-15, read-only:
+    //
+    //   * 80,406 rows, computed_at spanning 2026-05-15..2026-08-15.
+    //   * All 37,245 rows computed before 2026-08-14 carry 0 in all four.
+    //   * The first non-zero value in ANY of them appears 2026-08-14 18:07.
+    //   * `transfers_unreviewed` is 0 in all 80,406 rows — no signal at all.
+    //   * `drizzle.__drizzle_migrations.created_at` cannot date the boundary:
+    //     the timestamps are hand-authored journal values, evenly spaced
+    //     10,000s apart, not deploy times.
+    //
+    // So a backfill would have to invent the cutoff, and would then discard
+    // genuine zeros on the recent side of it to remove false ones on the
+    // other — two unfounded assertions in place of one. Recomputing instead
+    // is 80,406 rows and was already declined once, for a larger benefit,
+    // under SC-242.
+    //
+    // What a reader can use instead is a fact already recorded rather than
+    // guessed: `holdings_stale_anchored IS NULL` marks every row written
+    // before migration 0037, and 0037 is later than 0029/0031/0033 — so a
+    // NULL there is sufficient to say the four counts below are of unknown
+    // provenance on that row. It is not necessary: a row written after 0037
+    // has trustworthy counts, a row before it may or may not.
+    // ---------------------------------------------------------------------
     // Of `holdings_total`, how many no provider can price *in fact* —
     // never had a single price row and currently inside an unpriceable
     // cooldown. `holdings_total` keeps its original meaning (every
@@ -50,6 +87,45 @@ export const portfolioValueDaily = pgTable(
     // but the count travels with the figure so no surface presents it as a
     // quote from the day it is plotted on. See SC-151.
     holdingsStalePriced: integer('holdings_stale_priced').notNull().default(0),
+    // Of `holdings_with_known_value`, how many had their balance
+    // extrapolated FORWARD from an observation before this date, because
+    // nothing at or after it existed to anchor on. A weaker claim than the
+    // other two anchors, and how much weaker depends on how far back —
+    // which `oldest_anchor_at` says. Until SC-249 neither number left
+    // `BalanceAtTimeService`, so a balance anchored 54 seconds back and one
+    // anchored 71 days back reached the chart identically.
+    //
+    // NULLABLE on purpose, unlike every count above it. NULL means NOT
+    // RECORDED — the row predates SC-249 — where `0` means counted and
+    // none. `holdings_stale_priced` above took the `NOT NULL DEFAULT 0`
+    // route in migration 0031 and so asserts a confident zero for every row
+    // written before it existed; that is the failure this column is here to
+    // stop making, and repeating it one column to the right would have been
+    // absurd.
+    holdingsStaleAnchored: integer('holdings_stale_anchored'),
+    // The oldest anchor among the backward-anchored holdings — the far end
+    // of the weakest reconstruction behind this row's total. NULL when none
+    // were backward-anchored OR when the row predates SC-249;
+    // `holdings_stale_anchored` tells the two apart (NULL vs 0).
+    oldestAnchorAt: timestamp('oldest_anchor_at', { withTimezone: true }),
+    // Of `holdings_with_known_value`, how many were valued on a date BEFORE
+    // the holding's own first evidence — min(created_at, first tx, first
+    // observation) — so the balance is projected backward past anything that
+    // records it. SC-252 downgrades those days to 'partial' and until SC-317
+    // the row said so with every count at zero: confidence reduced, cause
+    // unstated.
+    //
+    // NOT folded into `holdings_stale_anchored`, which is the near neighbour
+    // and the wrong one. That means projected FORWARD from a stale
+    // observation; this is projected BACKWARD past first evidence. The
+    // remedies differ — sync the source, versus import older history or accept
+    // there is none — and collapsing two causes with different remedies into
+    // one count is what SC-249 un-collapsed.
+    //
+    // NULLABLE for the same reason `holdings_stale_anchored` is, and not the
+    // `NOT NULL DEFAULT 0` route the four counts above took: NULL means NOT
+    // RECORDED, `0` means counted and none. See the block comment above them.
+    holdingsBeforeRecords: integer('holdings_before_records'),
     // Of `holdings_total`, how many carry a cost basis we do not know:
     // no cost-relevant transaction, a provider that reported its history
     // truncated, a leg priced beyond the staleness cap, or an inflow

@@ -69,6 +69,23 @@ const BTC_DECIMALS = 8;
 const SATOSHIS_PER_BTC = 100_000_000;
 const TX_PAGE_SIZE = 50;
 
+/**
+ * How far a later page's timestamps may run AHEAD of the page before it.
+ *
+ * `/rawaddr` pages by block height, newest block first — but `time` is
+ * the block's own stamp, and consensus only requires it to beat the
+ * median of the previous eleven blocks while allowing up to two hours
+ * ahead of network time. So a lower block can legitimately carry a newer
+ * stamp than the block above it. Measured against the genesis address on
+ * 2026-08-17: one inversion in a 50-tx page, 1h48m at its widest.
+ *
+ * The `since` walk below therefore stops a margin PAST the cutoff rather
+ * than at it. Stopping at the cutoff would drop a transaction whose stamp
+ * sits just inside the window but whose block sits just outside the page,
+ * and dropping it is silent — the ledger simply never learns of it.
+ */
+const BLOCK_TIME_SKEW_MS = 2 * 60 * 60 * 1000;
+
 export class BitcoinProvider
   implements BalanceProvider, TransactionsProvider, AddressValidatorProvider
 {
@@ -183,6 +200,25 @@ export class BitcoinProvider
     ];
   }
 
+  /**
+   * Transactions for a Bitcoin address. Pages `/rawaddr` on an offset
+   * cursor, summing each tx's outputs to the wallet against its inputs
+   * from the wallet to get one signed net delta per tx.
+   *
+   * `since` stops the walk. blockchain.info pages newest-block-first, so
+   * once a page runs older than the cutoff (plus `BLOCK_TIME_SKEW_MS`,
+   * which is what makes that comparison safe) every later page is older
+   * still and every event on it would be dropped by the filter below —
+   * which stays, because a page straddling the cutoff carries events on
+   * both sides of it. Same shape as the Helius fix in SC-360; without it
+   * the nightly 30-day sync re-walked the wallet's whole history every
+   * night.
+   *
+   * One event per tx, keyed on the tx hash, is also what keeps the
+   * ledger's `(holding, source, external_id)` key unique: a tx paying
+   * several outputs to the same wallet is one net delta here, not
+   * several rows racing for one key.
+   */
   async fetchTransactions(
     ctx: WithUserCreds<ProviderContext> & {
       institutionCode: string;
@@ -216,6 +252,10 @@ export class BitcoinProvider
         if (event) events.push(event);
       }
       if (txs.length < TX_PAGE_SIZE) break;
+      if (ctx.since) {
+        const oldestOnPage = Math.min(...txs.map((tx) => tx.time)) * 1000;
+        if (oldestOnPage < ctx.since.getTime() - BLOCK_TIME_SKEW_MS) break;
+      }
       offset += TX_PAGE_SIZE;
     }
 
@@ -253,10 +293,24 @@ export class BitcoinProvider
 }
 
 export const bitcoinFactory: ProviderFactory = async (deps) => {
-  // blockchain.info has no documented public limit but is conservative
-  // about sustained traffic; 5 req/s keeps us out of trouble.
+  // 1 req/s, not the 5 this used to claim "keeps us out of trouble".
+  //
+  // Measured 2026-08-17 (SC-364): ONE burst of ~27 calls inside ~90s
+  // earned a 429 whose body is the literal string "Rate limited", and it
+  // was still 429 on all 13 probes over the NEXT 40 MINUTES. So this is
+  // not a per-second throttle that recovers in a moment — it is a
+  // long-window budget with a long penalty, and 5/s only spent that
+  // budget faster.
+  //
+  // Which means 1/s lowers the rate we spend the budget at and does NOT
+  // remove the exposure. The run that is exposed is a COLD full-history
+  // import: no `since`, so `ceil(n_tx / 50)` requests back to back.
+  // `fetchTransactions` throws on a non-ok response and the retry starts
+  // again from offset 0, so a large wallet's first import can fail the
+  // same way every attempt. Resumable paging or a 429-aware backoff is
+  // the real fix if that ever bites; this is the cheap half.
   const limiter = createOutflowLimiter({
-    maxRequests: 5,
+    maxRequests: 1,
     windowMs: 1000,
     redis: deps.redis ?? undefined,
     namespace: 'bitcoin',
@@ -265,7 +319,7 @@ export const bitcoinFactory: ProviderFactory = async (deps) => {
     namespace: 'bitcoin',
     limiter,
     registeredFrom: 'providers/bitcoin',
-    description: 'blockchain.info: 5 req / 1s',
+    description: 'blockchain.info: 1 req / 1s',
   });
   return new BitcoinProvider(registered);
 };

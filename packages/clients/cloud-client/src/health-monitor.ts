@@ -12,10 +12,12 @@ import { type ProbeResult, probeDataProvider } from './health-probe';
  * Sentry SCANI-BACKEND-7 was three `data-provider re-probe failed: The
  * operation was aborted.` errors, and all three landed inside a deploy
  * window — the api on release N probing while release N+1 replaced the
- * data-provider machine. A single-machine deployment with a rolling
- * strategy takes its only machine down on every deploy, briefly 5xx-ing
- * outbound calls from the api and worker during the cutover. The loop was
- * paging us about a documented, self-healing, designed-in event.
+ * data-provider machine. `apps/backend/data-provider/fly.toml` runs
+ * `min_machines_running = max_machines_running = 1` with a rolling
+ * strategy, so the only machine goes down on every deploy; the file's own
+ * comment accepts that ("Deploys briefly 5xx backend/worker outbound calls
+ * during the cutover"). The loop was paging us about a documented,
+ * self-healing, designed-in event.
  *
  * The probe budget is not the problem and is deliberately not changed:
  * `/health` is a static object literal with no I/O, and the same Sentry

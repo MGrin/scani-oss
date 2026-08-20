@@ -36,6 +36,7 @@ import type {
   TransactionsProvider,
 } from '../../core/capabilities';
 import { extractCounterparty } from '../../core/counterparty';
+import { credentialRejection, ProviderError } from '../../core/errors';
 import type {
   DecryptedCredentials,
   HoldingSnapshot,
@@ -112,6 +113,10 @@ export class WiseProvider implements BalanceProvider, TransactionsProvider, Cred
     'transactions',
     'credential-validator',
   ];
+  // Same five-year substitution, found by the same audit. Wise's own 469-day
+  // statement cap is a paging detail — the horizon is how far back a
+  // `since`-less run reaches in total, which is five years (SC-418, SC-166).
+  readonly transactionHistoryHorizonMs = FIVE_YEARS_MS;
 
   private readonly baseUrl: string;
 
@@ -250,7 +255,7 @@ export class WiseProvider implements BalanceProvider, TransactionsProvider, Cred
       }
       return { valid: true };
     } catch (err) {
-      return { valid: false, message: err instanceof Error ? err.message : String(err) };
+      return credentialRejection(err);
     }
   }
 
@@ -266,7 +271,7 @@ export class WiseProvider implements BalanceProvider, TransactionsProvider, Cred
         }),
       subKey
     );
-    if (!response.ok) throw new Error(`Wise profiles HTTP ${response.status}`);
+    if (!response.ok) throw ProviderError.fromHttp(WISE_INSTITUTION_CODE, response);
     const data = (await response.json()) as unknown;
     if (!Array.isArray(data)) return [];
     return data as WiseProfile[];
@@ -284,7 +289,7 @@ export class WiseProvider implements BalanceProvider, TransactionsProvider, Cred
         }),
       subKey
     );
-    if (!response.ok) throw new Error(`Wise balances HTTP ${response.status}`);
+    if (!response.ok) throw ProviderError.fromHttp(WISE_INSTITUTION_CODE, response);
     const data = (await response.json()) as unknown;
     if (!Array.isArray(data)) return [];
     return data as WiseBalance[];
@@ -313,7 +318,7 @@ export class WiseProvider implements BalanceProvider, TransactionsProvider, Cred
         }),
       subKey
     );
-    if (!response.ok) throw new Error(`Wise statement HTTP ${response.status}`);
+    if (!response.ok) throw ProviderError.fromHttp(WISE_INSTITUTION_CODE, response);
     const data = (await response.json()) as unknown;
     if (!data || typeof data !== 'object') return { transactions: [] };
     return data as WiseStatementResponse;

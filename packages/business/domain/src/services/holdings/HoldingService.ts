@@ -1,6 +1,6 @@
 import type { DatabaseTransaction } from '@scani/db';
 import type { Holding } from '@scani/db/schema';
-import type { CreateHoldingInput } from '@scani/shared';
+import type { CreateHoldingInput, HoldingArrivalAttribution } from '@scani/shared';
 import Decimal from 'decimal.js';
 import { Container, Service } from 'typedi';
 import { AccountRepository } from '../../repositories/AccountRepository';
@@ -17,7 +17,15 @@ export interface CreateHoldingWithEventInput {
   balance: string;
   userId: string;
   source?: string;
+  // Required rather than defaulted: every caller knows whether a human
+  // picked this position, and a default would let the one that never
+  // thought about it inherit `unattributed` while looking deliberate.
+  arrival: HoldingArrivalAttribution;
   externalId?: string; // Exchange-specific identifier for synced holdings
+  // What the user calls this pot, when one account holds several rows for one
+  // token (SC-330). Importers leave it null — they address a position by
+  // `externalId`, and a name is a thing only a human can supply.
+  label?: string | null;
   lastUpdated?: Date;
   // Event context (optional - if not provided, events won't be created)
   eventContext?: {
@@ -56,6 +64,20 @@ export class HoldingService extends BaseService {
   // Every balance mutation appends a 'sync-capture' observation, giving
   // the historical-PnL subsystem a forward-history floor for every account
   // whether or not a transaction-ingester is wired for its source.
+  //
+  // That sentence was false for two years, in exactly one place, and the
+  // comment is why nobody looked: `UpdateHoldingUseCase` — the only path a
+  // user can edit a MANUAL holding's balance through — wrote the table
+  // directly and never reached this service. Measured on production
+  // 2026-08-15: zero missing observations across all 65 synced holdings,
+  // five across 22 manual ones, 29,746.55 of unrecorded drift. A clean
+  // partition along the one write path that skipped the service (SC-245).
+  //
+  // `recordBalanceObservation` below is public so that path can satisfy
+  // the invariant without duplicating it. The invariant is still
+  // convention rather than enforcement — nothing stops the next caller
+  // writing `holdings` directly — but there is now exactly one
+  // implementation of it to call.
   private readonly observationRepository = Container.get(HoldingBalanceObservationRepository);
 
   constructor() {
@@ -66,11 +88,17 @@ export class HoldingService extends BaseService {
   // must NOT cause the originating holding mutation to fail, because the
   // observation table is a pure additive side effect.
   //
-  // The dedup key is (account, token, observed_at, source); using a
-  // fresh Date per call means we rarely collide in practice. On the
-  // off-chance of a sub-millisecond collision, the unique constraint
-  // turns the second write into a no-op and we log-and-continue.
-  private async appendSyncCaptureObservation(
+  // The dedup key is (holding, observed_at, source); using a fresh Date
+  // per call means we rarely collide in practice. On the off-chance of a
+  // sub-millisecond collision, the unique constraint turns the second
+  // write into a no-op and we log-and-continue.
+  //
+  // Public because callers that must scope their own write by `userId`
+  // cannot go through `updateHoldingBalance`, which keys on `holdingId`
+  // alone. They do the ownership-scoped update themselves and then call
+  // this with the row it returned — no second round-trip, and no second
+  // copy of the observation logic (SC-245).
+  async recordBalanceObservation(
     holding: { id: string; userId: string; accountId: string; tokenId: string; balance: string },
     transaction?: DatabaseTransaction,
     meta?: Record<string, unknown>
@@ -142,7 +170,7 @@ export class HoldingService extends BaseService {
 
       this.assertExists(holding, 'Failed to create holding');
 
-      await this.appendSyncCaptureObservation(
+      await this.recordBalanceObservation(
         {
           id: holding.id,
           userId,
@@ -178,13 +206,15 @@ export class HoldingService extends BaseService {
           balance: input.balance,
           userId: input.userId,
           source: input.source || 'manual',
+          arrival: input.arrival,
           externalId: input.externalId || null,
+          label: input.label || null,
           lastUpdated: input.lastUpdated || new Date(),
         },
         transaction
       );
       if (!input.skipSyncCapture) {
-        await this.appendSyncCaptureObservation(
+        await this.recordBalanceObservation(
           {
             id: holding.id,
             userId: input.userId,
@@ -276,7 +306,7 @@ export class HoldingService extends BaseService {
       // serious time per holding.
       const holding = await this.holdingRepository.findById(holdingId, transaction);
       if (holding) {
-        await this.appendSyncCaptureObservation(
+        await this.recordBalanceObservation(
           {
             id: holding.id,
             userId: holding.userId,
@@ -310,7 +340,7 @@ export class HoldingService extends BaseService {
 
       // Update the balance
       await this.holdingRepository.updateBalance(input.holdingId, input.balance, transaction);
-      await this.appendSyncCaptureObservation(
+      await this.recordBalanceObservation(
         {
           id: holding.id,
           userId: holding.userId,
@@ -447,12 +477,28 @@ export class HoldingService extends BaseService {
   // the ledger an anchor for tx attribution on fully-sold or delisted
   // positions; the UI shows them with "0" balance and a full tx history.
   //
-  // The "find" half relies on the standard repo lookup (newest row
-  // wins) because `holdings` has no unique constraint on
-  // (userId, accountId, tokenId). The balance-import path keeps its own
-  // `externalId` key for dedup; this helper only triggers for tokens
-  // the balance sync didn't return — historical-only positions where
-  // there's exactly one row per (account, token) by definition.
+  // The "find" half goes through `findForIngest`, which prefers a row
+  // the import side created (`externalId IS NOT NULL`) over one the
+  // user maintains by hand, then orders oldest-first.
+  //
+  // Both halves of that sentence used to be wrong, and the comment was
+  // what kept the bug from being found (SC-193). It claimed "newest row
+  // wins", which described a tie-break the query did not have — there
+  // was no ORDER BY at all, so a `.limit(1)` over two matching rows took
+  // whichever the plan reached first. And it claimed this helper "only
+  // triggers for tokens the balance sync didn't return — historical-only
+  // positions where there's exactly one row per (account, token) by
+  // definition", which is false exactly when the balance importer has
+  // already created its own `externalId`-keyed row for that token. That
+  // is not an edge case: it is the shape of every integration that
+  // imports balances and transactions both.
+  //
+  // What it cost: 73 Airwallex transactions split 48/25 across two USD
+  // holdings in one account over the same window, the majority landing
+  // on the row marked `manual`. `TransactionRouter` memoises the
+  // resolution per run, so each run was internally consistent and
+  // different runs disagreed — which is why it reads as two blocks
+  // rather than as noise.
   /**
    * Read-only sibling of `findOrCreateForIngest`. Returns the existing
    * holding for `(account, token)` or `null`. Used by the wallet
@@ -466,13 +512,11 @@ export class HoldingService extends BaseService {
     input: { userId: string; accountId: string; tokenId: string },
     transaction?: DatabaseTransaction
   ): Promise<Holding | null> {
-    return this.holdingRepository.findByAccountAndToken(
+    return this.holdingRepository.findForIngest(
       input.accountId,
       input.tokenId,
       input.userId,
-      undefined,
-      transaction,
-      true
+      transaction
     );
   }
 
@@ -480,13 +524,13 @@ export class HoldingService extends BaseService {
     input: { userId: string; accountId: string; tokenId: string },
     transaction?: DatabaseTransaction
   ): Promise<Holding> {
-    const existing = await this.holdingRepository.findByAccountAndToken(
+    // includeHidden is implicit: `findForIngest` does not filter on
+    // `isHidden`, because an ingester needs the row even if the user hid it.
+    const existing = await this.holdingRepository.findForIngest(
       input.accountId,
       input.tokenId,
       input.userId,
-      undefined, // excludeId
-      transaction,
-      true // includeHidden — ingester needs the row even if user hid it
+      transaction
     );
     if (existing) return existing;
 

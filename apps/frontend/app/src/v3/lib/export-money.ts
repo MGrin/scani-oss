@@ -1,6 +1,6 @@
 import { type ExportCell, exportMoney } from '@scani/ui/v3/lib/export/cell';
 import type { BaseCurrencyRates } from '@/hooks/useBaseCurrencyRates';
-import { convertAmountToBase } from '@/v2/lib/paymentTotals';
+import { convertAmountToBase } from './paymentTotals';
 
 /**
  * A money cell that carries what the screen carries.

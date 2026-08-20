@@ -44,7 +44,7 @@ describe('GeminiProvider', () => {
           { currency: 'eth', amount: '1.5', type: 'exchange' },
         ]),
         { status: 200 }
-      )) as typeof fetch;
+      )) as unknown as typeof fetch;
     try {
       const out = await p.fetchBalances(ctx as never);
       const symbols = out.map((h) => h.tokenIdentity.symbol).sort();
@@ -64,7 +64,7 @@ describe('GeminiProvider', () => {
   test('validateCredentials returns true on 200', async () => {
     const p = new GeminiProvider(passthroughLimiter());
     const originalFetch = globalThis.fetch;
-    globalThis.fetch = (async () => new Response('[]', { status: 200 })) as typeof fetch;
+    globalThis.fetch = (async () => new Response('[]', { status: 200 })) as unknown as typeof fetch;
     try {
       const r = await p.validateCredentials({ apiKey: 'k', apiSecret: 's' }, 'gemini');
       expect(r.valid).toBe(true);
@@ -76,7 +76,8 @@ describe('GeminiProvider', () => {
   test('validateCredentials maps 401 to invalid', async () => {
     const p = new GeminiProvider(passthroughLimiter());
     const originalFetch = globalThis.fetch;
-    globalThis.fetch = (async () => new Response('Unauthorized', { status: 401 })) as typeof fetch;
+    globalThis.fetch = (async () =>
+      new Response('Unauthorized', { status: 401 })) as unknown as typeof fetch;
     try {
       const r = await p.validateCredentials({ apiKey: 'k', apiSecret: 's' }, 'gemini');
       expect(r.valid).toBe(false);
@@ -100,7 +101,7 @@ describe('GeminiProvider.signRequest payload merge', () => {
         capturedPayload = JSON.parse(Buffer.from(b64, 'base64').toString('utf8'));
       }
       return new Response('[]', { status: 200 });
-    }) as typeof fetch;
+    }) as unknown as typeof fetch;
 
     try {
       await p.fetchTransactions({ ...ctx } as never);
@@ -155,7 +156,7 @@ describe('GeminiProvider.signRequest payload merge', () => {
         return new Response('[]', { status: 200 });
       }
       throw new Error(`unexpected url: ${u}`);
-    }) as typeof fetch;
+    }) as unknown as typeof fetch;
 
     try {
       await p.fetchTransactions({ ...ctx } as never);
@@ -224,7 +225,7 @@ describe('GeminiProvider.fetchTransactions', () => {
         return new Response('[]', { status: 200 });
       }
       throw new Error(`unexpected url: ${u}`);
-    }) as typeof fetch;
+    }) as unknown as typeof fetch;
 
     try {
       const events = await p.fetchTransactions({ ...ctx } as never);
@@ -308,7 +309,7 @@ describe('GeminiProvider.fetchTransactions', () => {
         return new Response('[]', { status: 200 });
       }
       throw new Error(`unexpected url: ${u}`);
-    }) as typeof fetch;
+    }) as unknown as typeof fetch;
 
     try {
       const events = await p.fetchTransactions({ ...ctx } as never);

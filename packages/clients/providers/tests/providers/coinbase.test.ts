@@ -75,7 +75,7 @@ describe('CoinbaseProvider', () => {
       return new Response(JSON.stringify({ data: [], pagination: { next_uri: null } }), {
         status: 200,
       });
-    }) as typeof fetch;
+    }) as unknown as typeof fetch;
     try {
       const out = await p.fetchBalances(ctx as never);
       expect(out).toHaveLength(1);
@@ -97,7 +97,7 @@ describe('CoinbaseProvider', () => {
     const p = new CoinbaseProvider(passthroughLimiter());
     const originalFetch = globalThis.fetch;
     globalThis.fetch = (async () =>
-      new Response(JSON.stringify({ data: [] }), { status: 200 })) as typeof fetch;
+      new Response(JSON.stringify({ data: [] }), { status: 200 })) as unknown as typeof fetch;
     try {
       const r = await p.validateCredentials({ apiKey: 'k', apiSecret: 's' }, 'coinbase');
       expect(r.valid).toBe(true);
@@ -109,7 +109,8 @@ describe('CoinbaseProvider', () => {
   test('validateCredentials maps 401 to invalid', async () => {
     const p = new CoinbaseProvider(passthroughLimiter());
     const originalFetch = globalThis.fetch;
-    globalThis.fetch = (async () => new Response('Unauthorized', { status: 401 })) as typeof fetch;
+    globalThis.fetch = (async () =>
+      new Response('Unauthorized', { status: 401 })) as unknown as typeof fetch;
     try {
       const r = await p.validateCredentials({ apiKey: 'k', apiSecret: 's' }, 'coinbase');
       expect(r.valid).toBe(false);
@@ -213,7 +214,7 @@ describe('CoinbaseProvider', () => {
       }
 
       throw new Error(`Unexpected URL: ${url}`);
-    }) as typeof fetch;
+    }) as unknown as typeof fetch;
 
     try {
       const out = await p.fetchTransactions(ctx as never);
@@ -384,7 +385,7 @@ describe('CoinbaseProvider', () => {
         });
       }
       throw new Error(`Unexpected URL: ${url}`);
-    }) as typeof fetch;
+    }) as unknown as typeof fetch;
 
     try {
       const out = await p.fetchTransactions(ctx as never);
@@ -489,7 +490,7 @@ describe('CoinbaseProvider', () => {
         }),
         { status: 200 }
       );
-    }) as typeof fetch;
+    }) as unknown as typeof fetch;
 
     try {
       const out = await p.fetchTransactions({

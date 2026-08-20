@@ -16,28 +16,60 @@ Scheduled jobs use the
 [advisory-lock wrapper](/decisions/bullmq-advisory-locks/) — two
 overlapping fires of the same name silently no-op rather than race.
 
+The reconcilers and probes all run on the same quarter-hour cadence on
+purpose: aligning them means their advisory locks batch into one wake, so
+the database can scale to zero between runs instead of being nudged awake
+four times an hour.
+
 ## Scheduled jobs
 
 | Name | Frequency | Purpose |
 |---|---|---|
 | `pricing` | Hourly (`0 * * * *`) | Refresh current prices for every token referenced by an active holding. |
-| `wallet-balances` | Hourly | Re-sync on-chain wallet balances + transactions across Etherscan, Helius, Bitcoin, Tron, TON. |
-| `exchange-balances` | Hourly | Re-sync exchange holdings + recent trades for every connected exchange integration. |
+| `wallet-balances` | Hourly (`0 * * * *`) | Re-sync on-chain wallet balances + transactions across Etherscan, Helius, Bitcoin, Tron, TON. |
+| `exchange-balances` | Hourly (`0 * * * *`) | Re-sync exchange holdings + recent trades for every connected exchange integration. |
 | `exchange-transactions` | Daily (`0 1 * * *`) | Refresh the transaction ledger for every connected exchange/broker/bank integration — fans out a `transaction-import` per account with a 30-day rolling window. |
-| `apy-payouts` | Daily, 00:00 UTC | Apply accrued interest to holdings with an [APY config](/concepts/apy/) due for payout. |
-| `historical-price-backfill` | Nightly, 03:00 UTC | Fill `daily`-granularity price history for tokens with holdings; respects `unpriceableUntil` cooldown. |
-| `forex-backfill` | Nightly, 03:30 UTC | Fill historical FX pairs (via Frankfurter) needed by the rollup. |
-| `token-prices-downsample` | Nightly, 05:00 UTC | Collapse `intraday` prices older than 7 days into one `daily` row per token/base/day (keeps the day's last reading); preserves existing `daily` and `tx-exact` rows. Caps `token_prices` growth. |
-| `portfolio-value-rollup` | Nightly, 04:00 UTC | Recompute `portfolio_value_daily` for every user at user / institution / account / holding scope. |
-| `transfer-linking` | Nightly, 03:45 UTC | Pair CEX withdrawals with wallet deposits via `LinkTransferPairsUseCase`. |
-| `backfill-token-identity` | Weekly, Sunday 02:00 UTC | Re-enrich tokens whose `providerMetadata` hasn't been touched lately. |
-| `backfill-counterparty` | Nightly, 05:30 UTC | Extract a counterparty + description onto `holding_transactions` rows that predate the per-provider extractors. |
-| `reconcile-pending-credentials` | Every minute | Sweep stuck `pending` integration-credential rows (UI flow interruptions). |
-| `reconcile-orphaned-user-jobs` | Every minute | Sweep stuck `running` user-job rows whose worker process died. |
-| `dlq-depth-probe` | Every 5 minutes | Read the dead-letter queue depth; emit a warn log when it crosses thresholds. |
-| `job-heartbeat-probe` | Every 10 minutes | Detect jobs whose heartbeat went silent; mark them stuck. |
+| `apy-payouts` | Daily, 00:00 UTC (`0 0 * * *`) | Apply accrued interest to holdings with an [APY config](/concepts/apy/) due for payout. |
+| `historical-price-backfill` | Nightly, 03:00 UTC (`0 3 * * *`) | Fill `daily`-granularity price history for tokens with holdings; respects `unpriceableUntil` cooldown. |
+| `forex-backfill` | Nightly, 03:30 UTC (`30 3 * * *`) | Fill historical FX pairs (via Frankfurter) needed by the rollup. |
+| `token-prices-downsample` | Nightly, 05:00 UTC (`0 5 * * *`) | Collapse `intraday` prices older than 7 days into one `daily` row per token/base/day (keeps the day's last reading); preserves existing `daily` and `tx-exact` rows. Caps `token_prices` growth. |
+| `portfolio-value-rollup` | Nightly, 04:00 UTC (`0 4 * * *`) | Recompute `portfolio_value_daily` for every user at user / institution / account / holding scope. |
+| `transfer-linking` | Nightly, 03:45 UTC (`45 3 * * *`) | Pair CEX withdrawals with wallet deposits via `LinkTransferPairsUseCase`. |
+| `backfill-token-identity` | Weekly, Sunday 02:00 UTC (`0 2 * * 0`) | Re-enrich tokens whose `providerMetadata` hasn't been touched lately. |
+| `backfill-counterparty` | Nightly, 05:30 UTC (`30 5 * * *`) | Extract a counterparty + description onto `holding_transactions` rows that predate the per-provider extractors. |
+| `reconcile-pending-credentials` | Every 15 minutes (`*/15 * * * *`) | Sweep stuck `pending` integration-credential rows (UI flow interruptions). |
+| `reconcile-orphaned-user-jobs` | Every 15 minutes (`*/15 * * * *`) | Sweep stuck `running` user-job rows whose worker process died. |
+| `dlq-depth-probe` | Every 15 minutes (`*/15 * * * *`) | Read the dead-letter queue depth; emit a warn log when it crosses thresholds. |
+| `job-heartbeat-probe` | Every 15 minutes (`*/15 * * * *`) | Detect jobs whose heartbeat went silent; mark them stuck. |
 | `stale-sync-probe` | Hourly (`0 * * * *`) | Detect active, credentialed integrations that have silently stopped syncing — stale `lastSync` or zero accounts — and alert via Sentry. |
-| `hide-closed-holdings` | Nightly, 04:30 UTC | Auto-hide holdings that have been at zero balance for the configured window. |
+| `hide-closed-holdings` | Nightly, 04:30 UTC (`30 4 * * *`) | Auto-hide holdings that have been at zero balance for the configured window. |
+| `split-holding-probe` | Nightly, 04:30 UTC (`30 4 * * *`) | Find upstream events recorded against more than one holding of the same (account, token) and escalate to Sentry. `holding_tx_dedup` is unique per *holding*, so a position split across two rows can carry the same event twice with no constraint objecting, and every per-holding reconciliation still passes (SC-239). Reads only; runs after the nightly chain has finished writing, so it audits the day's settled state rather than racing it. |
+| `rescore-scam-tokens` | Nightly, 02:30 UTC (`30 2 * * *`) | Recompute `is_scam_probability` for crypto tokens whose `scam_score_version` is stale, so a change to the scoring heuristic reaches tokens already stored. Non-crypto tokens are `unscored` and never enter the population; rows marked by a person are never recomputed. |
+| `payment-due-reminder` | Hourly (`5 * * * *`) | One Web Push a day at ~17:00 in each user's **own** local time, summarising the payments due on their local tomorrow as a count and a per-currency total. Fires hourly and selects only the users for whom it is currently 17:00 locally — a single daily fire happens at one UTC hour, and one UTC hour is a different clock time in every zone. A user whose `users.timezone` is still NULL is SKIPPED, never defaulted to UTC, and counted in the job's log line. Nothing is sent on a day with nothing due. Needs `VAPID_SUBJECT` / `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY`; without them the job logs a refusal on every fire and sends nothing. |
+| `weekly-digest` | Weekly, Monday 08:00 UTC (`0 8 * * 1`) | One email a week per account: base-currency net worth and its change over seven days, the biggest movers, bills due in the coming week, and anything waiting in the review queue. Every figure comes from `portfolio_value_daily`, so the letter and the dashboard cannot disagree — which is also why it fires on Monday morning rather than Sunday night, after the 04:00 rollup. An account with no portfolio is **not** mailed, and neither is one whose newest rollup row is more than 8 days old. Every letter carries a one-click, no-login unsubscribe (`GET /e/u/:token` on the api). Needs `FRONTEND_URL` + `BACKEND_URL` on the worker; without them the job logs a refusal on every fire and sends nothing. |
+
+| `alert-sweep` | Daily, 09:00 UTC (`0 9 * * *`) | Evaluate the named alert rules and email each affected account at most once per fault. Today there is one rule, `integration-stale`: an active, credentialed integration whose accounts have not synced for `ALERT_STALE_SYNC_HOURS` (default 24), or which has never produced an account at all. Same signal as `stale-sync-probe` above, at a far looser threshold and pointed at the USER rather than at Sentry — 3h is two missed cycles and the right moment to page us, and the wrong moment to mail somebody about a blip. One letter per account however many connections it names, and it names only the ones this run claimed, never everything still broken. `alert_deliveries` is what makes that true across a BullMQ retry; a row is deleted when the integration syncs again, so a fault that recurs alerts a second time. Unverified addresses and accounts that opted out are never claimed for. Every letter carries a one-click, no-login unsubscribe (`GET /e/a/:token` on the api) that is SEPARATE from the digest's. Needs `FRONTEND_URL` + `BACKEND_URL` on the worker; without them the job logs a refusal on every fire and sends nothing. |
+## Scheduled jobs — declared but not registered
+
+A descriptor can exist in `packages/business/jobs/src/scheduled-jobs/`
+without being listed in `SCHEDULED_JOB_DESCRIPTORS`, and then the worker
+never registers it: **the jobs below do not run.** They are listed here
+because the file is in the tree and a reader who finds it deserves to know
+which half is missing — not because they are live. The table above is the
+list of live jobs.
+
+**There are none right now.** The table below is empty, and that is the
+correct steady state — a descriptor belongs here only for as long as its
+processor is unwritten. `payment-due-reminder` was the last one; it moved to
+the live table above when `PaymentDueReminderProcessor` landed in the same
+commit that registered it (SC-226).
+
+The heading stays even when empty, because `scripts/check-docs.ts` reads both
+tables and fails if either is missing — and a page that silently loses the
+distinction is how a job that never runs gets read as one that does.
+
+| Name | Frequency when registered | Blocked on | Purpose |
+|---|---|---|---|
 
 ## User-initiated jobs
 
@@ -55,6 +87,7 @@ per-user job ID so the user can see "in flight" status in the SPA.
 | `refresh-account-balance` | User triggers a manual sync | Force-refresh one account's balances + transactions. |
 | `manual-holdings-create` | User creates a manual holding | Insert under the manual institution; seed observation. |
 | `portfolio-history-backfill` | After import / manual edit | Rebuild `portfolio_value_daily` for the affected date range for one user. |
+| `currency-rate-refresh` | A read path needed a currency pair storage could not answer | Fetch the pair off the request. The upstream call sits behind a two-per-sixty-seconds limiter whose acquire *sleeps*, so on a read path the third uncovered currency waited ~26 s; here nobody waits. The figure renders without the pair and says so, and the next read has it (SC-222). |
 | `transaction-import` | (Reserved) | One-off transaction-only import flow. |
 | `user-data-delete` | User requests account / data deletion | Delete (or export, depending on the flag) all user data per GDPR-style flow. |
 

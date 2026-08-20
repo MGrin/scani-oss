@@ -1,0 +1,22 @@
+-- SC-450. The one activation step that leaves no row behind.
+--
+-- Five of the six steps in the activation funnel are already recorded by the
+-- product doing its job: `users.created_at` is the signup, `holdings.created_at`
+-- the first position, `user_integration_credentials` / `user_wallets` the first
+-- connection, `user_sessions.created_at` every return. Export is the exception.
+-- `exports.everything` is a read and `exports.renderPdf` typesets a payload the
+-- client already had — neither writes anything, so "did anyone ever get a file
+-- out of this product" is unanswerable from the database as it stands.
+--
+-- One nullable timestamp rather than an events table. The funnel needs exactly
+-- one fact per user here — the FIRST time, not the history — and a table that
+-- stored every export would be a second, drifting definition of the other five
+-- steps' timestamps the moment someone added a row to it for signup. The write
+-- is `WHERE first_export_at IS NULL`, so it happens once per account and never
+-- again.
+--
+-- Deliberately NOT backfilled. No prior export left a trace anywhere — not in
+-- `documents`, not in `user_jobs`, not in a log we keep — so any value written
+-- here for an existing user would be invented. NULL means "we do not know",
+-- which for the 15 accounts that predate this migration is the true answer.
+ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "first_export_at" timestamp with time zone;

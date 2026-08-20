@@ -64,6 +64,15 @@ const envSchema = z.object({
     ? z.string().min(32, { message: 'BETTER_AUTH_SECRET must be at least 32 chars in production' })
     : z.string().optional(),
 
+  // Web Push (VAPID_SUBJECT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY) is owned by
+  // @scani/push's own env schema. Unlike every other package secret it is
+  // OPTIONAL in production too: the api shipped without these long before push
+  // existed, so making them required would take the api down on the deploy
+  // that introduced a feature nobody had enabled. Absence is surfaced instead
+  // of enforced — `push.publicKey` answers null and `push.subscribe` refuses.
+  // The worker needs the SAME values, or a subscription taken here can never
+  // be sent to there.
+
   // Email config (FASTMAIL_API_TOKEN, SMTP_URL, SMTP_FROM) is owned by
   // @scani/email's own env schema; the api only sees it indirectly via
   // EmailFacade in @scani/cloud-client (which falls through to a

@@ -4,6 +4,7 @@ import {
   moneyDecimals,
   roundToDecimals,
 } from '@scani/shared';
+import { uiT } from '../../../i18n';
 import { type ExportCell, exportText } from './cell';
 
 /**
@@ -230,7 +231,11 @@ function expandField(header: string, cells: readonly ExportCell[]): ResolvedColu
 
   const columns: ResolvedColumn[] = [
     {
-      header: single ? `${header} (${single}${converted ? ', converted' : ''})` : header,
+      header: single
+        ? converted
+          ? uiT('ui.export.workbook.currencyConverted', { header, currency: single })
+          : uiT('ui.export.workbook.currency', { header, currency: single })
+        : header,
       numeric: true,
       values: cells.map(toScalar),
     },
@@ -238,7 +243,7 @@ function expandField(header: string, cells: readonly ExportCell[]): ResolvedColu
 
   if (!single) {
     columns.push({
-      header: `${header} currency`,
+      header: uiT('ui.export.workbook.currencyColumn', { header }),
       numeric: false,
       values: cells.map((cell) =>
         cell.kind === 'money' ? { kind: 'text', value: cell.currency } : BLANK
@@ -249,7 +254,7 @@ function expandField(header: string, cells: readonly ExportCell[]): ResolvedColu
   const baseCurrency = money.find((cell) => cell.base)?.base?.currency;
   if (baseCurrency) {
     columns.push({
-      header: `${header} (${baseCurrency}, converted)`,
+      header: uiT('ui.export.workbook.currencyConverted', { header, currency: baseCurrency }),
       numeric: true,
       values: cells.map((cell) =>
         cell.kind === 'money' && cell.base
@@ -352,14 +357,18 @@ export interface ProvenanceLine {
 }
 
 export function provenanceLines(provenance: ExportProvenance): ProvenanceLine[] {
+  // Resolved against the KIT's instance, never a caller's — every key below is
+  // `ui.*`, which lives only in this package's bundle (SC-316). See the note on
+  // `toExportBlob` for what the parameter these used to take put in a file.
+  const t = uiT;
   const lines: ProvenanceLine[] = [
-    { label: 'Exported from', value: 'Scani' },
-    { label: 'Subject', value: provenance.subject },
-    { label: 'Scope', value: provenance.scope },
-    { label: 'Generated', value: provenance.generatedAt.toISOString() },
+    { label: t('ui.export.provenance.exportedFrom'), value: 'Scani' },
+    { label: t('ui.export.provenance.subject'), value: provenance.subject },
+    { label: t('ui.export.provenance.scope'), value: provenance.scope },
+    { label: t('ui.export.provenance.generated'), value: provenance.generatedAt.toISOString() },
   ];
   if (provenance.rowCount !== undefined) {
-    lines.push({ label: 'Rows', value: String(provenance.rowCount) });
+    lines.push({ label: t('ui.export.provenance.rows'), value: String(provenance.rowCount) });
   }
   lines.push(...provenance.details);
   if (provenance.amountsWithheld) {
@@ -367,8 +376,8 @@ export function provenanceLines(provenance: ExportProvenance): ProvenanceLine[] 
     // file needs to know a person removed the figures, not wonder whether the
     // export broke halfway.
     lines.push({
-      label: 'Amounts',
-      value: 'Withheld — every value, gain/loss and converted column was removed on purpose',
+      label: t('ui.export.provenance.amounts'),
+      value: t('ui.export.provenance.withheld'),
     });
   }
   return lines;
@@ -377,14 +386,17 @@ export function provenanceLines(provenance: ExportProvenance): ProvenanceLine[] 
 /** The About sheet, as a sheet: two labelled columns, so it is legible as a
  *  table rather than as a stray pair of unlabelled strings. */
 export function provenanceSheet(provenance: ExportProvenance): ExportSheet {
+  const t = uiT;
   const rows: [string, string][] = provenanceLines(provenance).map((line): [string, string] => [
     line.label,
     line.value,
   ]);
 
   return {
-    name: 'About',
-    headers: ['Field', 'Value'],
+    name: t('ui.export.provenance.aboutSheet'),
+    // The scanner does not read array literals, so these two were never
+    // flagged — they are column headers in the file a person opens.
+    headers: [t('ui.export.provenance.field'), t('ui.export.provenance.value')],
     rows: rows.map(([label, value]) => [
       { kind: 'text', value: label } as ExportValue,
       toScalar(exportText(value)),

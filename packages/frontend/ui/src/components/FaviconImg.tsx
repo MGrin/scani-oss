@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { uiT } from '../i18n';
 import { cn } from '../lib/cn';
 
 interface FaviconImgProps {
@@ -36,6 +37,11 @@ export function FaviconImg({ src, name, className, fallbackClassName }: FaviconI
   }
 
   return (
-    <img src={src} alt={`${name} logo`} className={className} onError={() => setErrored(true)} />
+    <img
+      src={src}
+      alt={uiT('ui.brand.logoAlt', { name })}
+      className={className}
+      onError={() => setErrored(true)}
+    />
   );
 }
