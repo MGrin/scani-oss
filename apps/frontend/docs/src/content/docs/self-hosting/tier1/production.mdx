@@ -31,7 +31,16 @@ is at [http://localhost:8026](http://localhost:8026).
 
 Knobs, all optional: `SCANI_IMAGE_TAG` (pin a release), `SCANI_PORT`,
 `SCANI_MAIL_PORT`, `SCANI_REF`, and `SCANI_SKIP_UP=1` to write `.env` and stop
-before anything boots.
+before anything boots. `SCANI_RESET=1` deletes this project's data volumes
+first — see
+[Troubleshooting](/self-hosting/tier1/troubleshooting/#a-failed-install-cannot-be-re-run).
+
+Re-running the script is the recovery from a failed install: it reuses the
+`.env` it finds rather than generating new secrets, so a second run converges
+on the first one's. What it will **not** do is generate fresh secrets over a
+database that already exists — if the volumes are there and the `.env` is not,
+it stops and says so instead of leaving you with `password authentication
+failed for user "scani"`.
 
 <Aside type="caution" title="Do not assemble .env by hand">
   The older instructions here said to copy `.env.example` and fill in eight
