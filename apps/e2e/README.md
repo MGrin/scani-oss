@@ -7,6 +7,38 @@ Quick start:
   bun run test:e2e:install   # one-time Playwright browser download
   cd ../.. && bun test:e2e   # boots stack (if needed), runs suite, tears down
 
+## The stack a run owns — and the one it must not touch
+
+`scripts/run.ts` names its compose project explicitly, and the name is this
+checkout's: `scani_<label>_<digest>_e2e`, derived in `scripts/lib/worktree.ts`
+from the checkout path, next to the names its dev stack and its database carry
+(SC-491, SC-493). It publishes on the host ports that checkout owns — the
+documented ones in a primary checkout, offset in a linked worktree — and passes
+them, and the URLs they imply, down to `wait-for-stack.ts`,
+`playwright.config.ts` and the fixtures.
+
+This is not tidiness. Compose names an unnamed project after the directory
+leaf, which is `scani` in **every** bb worktree and in the primary checkout, so
+a run used to compose against whichever stack was already up — and it tears its
+own stack down with `down -v`. `-v` removes volumes: pointed at a project the
+run did not create, it does not restart somebody's Postgres, it deletes their
+database.
+
+Two consequences worth knowing:
+
+- The e2e project is deliberately **not** the dev-stack project of the same
+  checkout, so the `down -v` at the end of a run can only ever remove volumes
+  that run created. A dev stack and a Mode B e2e run cannot both be up in one
+  checkout — they publish the same ports, and that collision is loud.
+- `COMPOSE_PROJECT_NAME`, any `*_HOST_PORT`, `PLAYWRIGHT_BASE_URL`,
+  `API_BASE_URL`, `DATA_PROVIDER_URL` and `MAILPIT_URL` already in the
+  environment win. CI sets a project name for the whole job; an operator
+  driving several stacks by hand has a reason.
+
+Mode A ("reusing an already-running stack") is decided by probing this
+checkout's api port, so a stack another worktree happens to be running on the
+documented ports is no longer mistaken for this one's.
+
 ## Viewports
 
 `fixtures/devices.ts` is the single viewport matrix, consumed by both
@@ -108,7 +140,11 @@ throwaway workaround instead (two temporary Vite entry points, one reverse
 proxy). It works. This is the recipe.
 
 ```bash
-# 1. Infrastructure. Already running is fine — these are shared across worktrees.
+# 1. Infrastructure. NOT shared across checkouts (SC-491): a bare `docker
+#    compose up` takes its project name from the directory leaf — `scani`
+#    everywhere — so it adopts whatever stack is already running under that
+#    name. Start this checkout's own stack the way the root README documents,
+#    and read the ports it prints rather than assuming the ones below.
 docker compose up -d postgres redis mailpit minio
 
 # 2. Env. `.env` is not committed; sync-env.ts writes it from .env.example
