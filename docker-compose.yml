@@ -1,8 +1,12 @@
 # Local development stack for Scani — fully self-contained.
 #
 # Quick start:
-#   cp .env.example .env
 #   bun run dev:stack          # or: docker compose --profile full up -d --build
+#
+# No `cp .env.example .env` step — scripts/sync-env.ts writes the root .env
+# when there is none, and never rewrites one that exists. It runs both from
+# `dev:stack` and from the `env-sync` service below, so a bare
+# `docker compose up` bootstraps itself too.
 #
 # No production dependencies: Postgres, Redis, SMTP (Mailpit), and S3-compatible
 # object storage (MinIO) all run in containers.

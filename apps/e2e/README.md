@@ -111,8 +111,8 @@ proxy). It works. This is the recipe.
 # 1. Infrastructure. Already running is fine — these are shared across worktrees.
 docker compose up -d postgres redis mailpit minio
 
-# 2. Env. There is no committed .env; nothing tells you to create one.
-cp .env.example .env
+# 2. Env. `.env` is not committed; sync-env.ts writes it from .env.example
+#    on a fresh checkout and leaves an existing one alone.
 bun scripts/sync-env.ts
 bun run db:migrate
 
