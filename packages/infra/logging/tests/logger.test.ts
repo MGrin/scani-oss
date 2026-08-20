@@ -5,6 +5,7 @@ import {
   generateRequestId,
   logConfig,
   logger,
+  renderError,
   sanitizeUrl,
 } from '../src/index';
 
@@ -131,5 +132,34 @@ describe('logConfig', () => {
     expect(typeof logConfig.pretty).toBe('boolean');
     expect(typeof logConfig.timestamp).toBe('boolean');
     expect(typeof logConfig.logSqlQueries).toBe('boolean');
+  });
+});
+
+describe('renderError', () => {
+  test('a string error renders as itself, not undefined:undefined', () => {
+    // Most call sites pass a string. The renderer used to assume
+    // `{ name, message }` and printed `❌undefined:undefined` for all of
+    // them — the reason a thing failed erased from the format an operator
+    // reads off `docker compose logs` (SC-490).
+    expect(renderError('blockchain.info: HTTP 429 for 1A1zP1e')).toBe(
+      'blockchain.info: HTTP 429 for 1A1zP1e'
+    );
+  });
+
+  test('an Error renders name:message', () => {
+    expect(renderError(new TypeError('bad shape'))).toBe('TypeError:bad shape');
+  });
+
+  test("pino's serialized { type, message } renders type:message", () => {
+    expect(renderError({ type: 'Error', message: 'upstream 503' })).toBe('Error:upstream 503');
+  });
+
+  test('a bare message object renders the message', () => {
+    expect(renderError({ message: 'no name here' })).toBe('no name here');
+  });
+
+  test('anything else still carries its value', () => {
+    expect(renderError({ code: 429 })).toBe('{"code":429}');
+    expect(renderError(null)).toBe('null');
   });
 });

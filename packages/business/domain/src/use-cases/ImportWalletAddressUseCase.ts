@@ -16,6 +16,7 @@ import { Container, Service } from 'typedi';
 import { makeProviderContext } from '../lib/provider-context';
 import { InstitutionBlockchainMappingRepository } from '../repositories/InstitutionBlockchainMappingRepository';
 import {
+  type ChainProbeFailure,
   type DiscoveredAccountInfo,
   IntegrationCredentialsService,
   IntegrationImportService,
@@ -144,7 +145,8 @@ export class ImportWalletAddressUseCase {
     if (!user) throw new Error('User not found');
 
     await safeStatus(onStatus, 'Detecting blockchain networks…');
-    const detectedInstitutionIds = await this.resolveDetectedInstitutionIds(input, userId);
+    const { institutionIds: detectedInstitutionIds, failures: probeFailures } =
+      await this.resolveDetectedInstitutionIds(input, userId);
     const userWallet =
       detectedInstitutionIds.length > 0
         ? await this.upsertUserWallet(input, userId, detectedInstitutionIds)
@@ -164,7 +166,15 @@ export class ImportWalletAddressUseCase {
       .limit(1);
     if (!cryptoTokenType) throw new Error('Token type "crypto" not found');
 
-    const errors: ImportWalletResult['errors'] = [];
+    // A chain that could not be probed is reported, not dropped. Without
+    // this an upstream 429 produced `chains: [], errors: []` — the same
+    // payload a genuinely empty wallet produces, and the same payload a
+    // regression in detection would produce (SC-490).
+    const errors: ImportWalletResult['errors'] = probeFailures.map((f) => ({
+      chainId: f.institutionCode,
+      chainName: f.chainName,
+      error: `Chain could not be checked: ${f.error}`,
+    }));
     const prepared = await this.fetchChainData(
       input,
       userId,
@@ -363,7 +373,7 @@ export class ImportWalletAddressUseCase {
   private async resolveDetectedInstitutionIds(
     input: ImportWalletInput,
     userId: string
-  ): Promise<string[]> {
+  ): Promise<{ institutionIds: string[]; failures: ChainProbeFailure[] }> {
     if (input.detectedInstitutionIds && input.detectedInstitutionIds.length > 0) {
       logger.info(
         {
@@ -373,19 +383,22 @@ export class ImportWalletAddressUseCase {
         },
         'Using pre-detected institution IDs (skipping redundant detection)'
       );
-      return input.detectedInstitutionIds;
+      return { institutionIds: input.detectedInstitutionIds, failures: [] };
     }
 
-    const detected = await this.walletDiscovery.detectWalletInstitutions(input.address);
+    const { institutionIds, failures } = await this.walletDiscovery.detectWalletInstitutions(
+      input.address
+    );
     logger.info(
       {
         userId,
-        detectedInstitutionsCount: detected.length,
-        institutionIds: detected,
+        detectedInstitutionsCount: institutionIds.length,
+        institutionIds,
+        failedChains: failures.map((f) => f.institutionCode),
       },
       'Wallet chain detection completed'
     );
-    return detected;
+    return { institutionIds, failures };
   }
 
   private async upsertUserWallet(

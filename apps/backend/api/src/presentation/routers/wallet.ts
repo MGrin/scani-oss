@@ -297,7 +297,9 @@ export const walletRouter = router({
       const discovery = Container.get(WalletDiscoveryService);
       const mappingRepository = Container.get(InstitutionBlockchainMappingRepository);
 
-      const detectedInstitutionCodes = await discovery.detectWalletChains(input.address);
+      const { detected: detectedInstitutionCodes, failures } = await discovery.detectWalletChains(
+        input.address
+      );
 
       // Translate institutionCodes back to chain detail rows for the UI.
       // The chain catalog still lives in WalletDiscoveryService for
@@ -334,9 +336,25 @@ export const walletRouter = router({
         chainsDetected: detectedChainDetails,
         totalChains: detectedChainDetails.length,
         institutionIds,
+        /** Chains whose probe could not be completed — see below. */
+        unreachableChains: failures.map((f) => ({ chain: f.chainName, error: f.error })),
       };
 
       if (result.totalChains === 0) {
+        // "We asked every chain and none had activity" and "we could not
+        // ask" are different answers and used to be the same message.
+        // The first is the user's address being wrong; the second is ours
+        // (an upstream throttle, a missing key) and retrying helps (SC-490).
+        if (failures.length > 0) {
+          // TIMEOUT, not INTERNAL_SERVER_ERROR: an upstream throttle is
+          // retryable and is not a bug on this side, and tRPC has no
+          // SERVICE_UNAVAILABLE code. A 500 here would page us for
+          // somebody else's rate limiter.
+          throw new TRPCError({
+            code: 'TIMEOUT',
+            message: `Could not check ${failures.map((f) => f.chainName).join(', ')} right now (${failures[0]?.error}). No activity was found on the chains that did answer — try again in a few minutes.`,
+          });
+        }
         throw new TRPCError({
           code: 'NOT_FOUND',
           message:

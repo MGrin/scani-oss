@@ -16,6 +16,7 @@ import { flushSentry, initSentry, captureException as sentryCapture } from '@sca
 import { buildProviderRegistry } from '@scani/providers/core/boot';
 import { aiOpenAIFactory } from '@scani/providers/providers/ai-openai';
 import { bitcoinFactory } from '@scani/providers/providers/bitcoin';
+import { chainStubFactory } from '@scani/providers/providers/chain-stub';
 import { coingeckoFactory } from '@scani/providers/providers/coingecko';
 import { defillamaFactory } from '@scani/providers/providers/defillama';
 import { etherscanFactory } from '@scani/providers/providers/etherscan';
@@ -515,6 +516,13 @@ void (async () => {
           // Chain providers — public-endpoint balance + address-validator
           // dispatch. ENV vars (ETHERSCAN_API_KEY, HELIUS_API_KEY,
           // TRON_API_URL, TON_API_URL) are read inside each factory.
+          // STUB_CHAIN_DATA=1 registers a fixture chain provider FIRST so
+          // wallet-import detection + balance fetch resolve locally instead
+          // of calling blockchain.info / Etherscan / a Solana RPC. The env
+          // schemas refuse STUB_CHAIN_DATA=1 in production, so a misconfigured
+          // prod deploy crashes at boot rather than serving fixture balances
+          // (SC-490).
+          ...(process.env.STUB_CHAIN_DATA === '1' ? [chainStubFactory] : []),
           etherscanFactory,
           bitcoinFactory,
           solanaFactory,
