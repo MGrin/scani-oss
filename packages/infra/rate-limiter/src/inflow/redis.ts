@@ -1,5 +1,6 @@
 import type { Redis } from 'ioredis';
 import { InMemoryBuckets } from './buckets';
+import { reportInflowDegraded } from './degraded';
 import { InflowRateLimiter, type InflowRateLimiterOptions } from './inflow-rate-limiter';
 
 export interface RedisInflowRateLimiterOptions extends InflowRateLimiterOptions {
@@ -12,6 +13,9 @@ export interface RedisInflowRateLimiterOptions extends InflowRateLimiterOptions 
 }
 
 const DEFAULT_TIMEOUT_MS = 250;
+
+/** Floor between two degraded reports from one limiter. */
+const REPORT_INTERVAL_MS = 10_000;
 
 /**
  * Redis-backed inflow limiter. Bucket key is
@@ -52,6 +56,9 @@ export class RedisInflowRateLimiter extends InflowRateLimiter {
   private readonly timeoutMs: number;
   /** Only touched while Redis is unreachable. */
   private readonly fallback = new InMemoryBuckets();
+  /** Fallbacks served since the last report, and when that report went out. */
+  private degradedSinceReport = 0;
+  private lastReportAtMs = 0;
 
   constructor(redis: Redis, opts: RedisInflowRateLimiterOptions) {
     super(opts);
@@ -66,13 +73,35 @@ export class RedisInflowRateLimiter extends InflowRateLimiter {
   ): Promise<number> {
     try {
       return await this.withTimeout(this.incrementInRedis(identity, windowStart, tokens));
-    } catch {
+    } catch (err) {
       // Both shapes of the same outage land here: a hung command that timed
       // out, and a rejection from a connection that does bound its retries.
       // Neither is the caller's problem and neither may reach the route as a
       // 500 — a request that never asked for Redis must not fail on it.
+      this.noteDegraded(err);
       return this.fallback.increment(identity, windowStart, this.windowSec, tokens);
     }
+  }
+
+  /**
+   * An outage degrades every request, so reporting each one would bury the
+   * signal in its own volume. Report the first immediately — latency matters
+   * more than tidiness when the limit has just stopped being shared — then at
+   * most once per `REPORT_INTERVAL_MS`, carrying how many were suppressed.
+   */
+  private noteDegraded(error: unknown): void {
+    this.degradedSinceReport += 1;
+    const nowMs = Date.now();
+    if (nowMs - this.lastReportAtMs < REPORT_INTERVAL_MS) return;
+    this.lastReportAtMs = nowMs;
+    const count = this.degradedSinceReport;
+    this.degradedSinceReport = 0;
+    reportInflowDegraded({
+      namespace: this.namespace,
+      timeoutMs: this.timeoutMs,
+      error,
+      count,
+    });
   }
 
   private async incrementInRedis(

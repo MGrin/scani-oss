@@ -3,36 +3,35 @@ import { mailpit } from './mailpit';
 
 const API_BASE_URL = process.env.API_BASE_URL ?? 'http://localhost:3011';
 
-// The API guards its auth endpoints with a per-IP rate limiter. Under
-// the E2E suite's parallel workers, bursts of OTP sign-ins briefly trip
-// it (HTTP 429) even though the run as a whole is well under any sane
-// budget. The 429 body advertises a full-window `retryAfterSec` (tens of
-// minutes) that's far too long to honour in a test — but the burst
-// itself clears within seconds, so we retry on our own short backoff.
-const MAX_AUTH_ATTEMPTS = 6;
-
-async function postAuthWithRetry(
+async function postAuth(
   page: Page,
   url: string,
   data: unknown,
-  label: string
+  label: string,
+  identity: string
 ): Promise<APIResponse> {
-  let lastStatus = 0;
-  let lastBody = '';
-  for (let attempt = 0; attempt < MAX_AUTH_ATTEMPTS; attempt++) {
-    const res = await page.request.post(url, {
-      data,
-      headers: { 'content-type': 'application/json', origin: 'http://localhost:5173' },
-    });
-    if (res.ok()) return res;
-    lastStatus = res.status();
-    lastBody = await res.text();
-    // Only the per-IP auth limiter is worth retrying; anything else is a
-    // real failure we should surface immediately.
-    if (lastStatus !== 429) break;
-    await page.waitForTimeout(Math.min(1000 * 2 ** attempt, 8000));
+  const res = await page.request.post(url, {
+    data,
+    headers: {
+      'content-type': 'application/json',
+      origin: 'http://localhost:5173',
+      // Each simulated user signs in from a client of its own. The api's
+      // signup limiter counts `send-verification-otp` *and* `sign-in` against
+      // one 6-per-hour budget per client IP, so without this a spec that signs
+      // in three times would spend its whole budget on itself, and a spec that
+      // signs in once would still be sharing with every sibling worker.
+      //
+      // This deliberately does NOT retry a 429. The suite used to, on its own
+      // backoff, which turned "the isolation broke" into "the run was 8s
+      // slower" — the failure this whole change exists to make visible
+      // (SC-489).
+      'x-real-ip': identity,
+    },
+  });
+  if (!res.ok()) {
+    throw new Error(`${label} failed: ${res.status()} ${await res.text()}`);
   }
-  throw new Error(`${label} failed: ${lastStatus} ${lastBody}`);
+  return res;
 }
 
 export interface SignedInContext {
@@ -70,22 +69,25 @@ export async function signIn({
   const discriminator = testInfo?.testId ?? label;
   if (!discriminator) throw new Error('signIn requires either `testInfo` or `label`');
   const email = `e2e-${discriminator}-${Date.now()}@example.com`;
+  const identity = `e2e-auth-${email}`;
 
-  await postAuthWithRetry(
+  await postAuth(
     page,
     `${API_BASE_URL}/api/auth/email-otp/send-verification-otp`,
     { email, type: 'sign-in' },
-    'OTP request'
+    'OTP request',
+    identity
   );
 
   const message = await mailpit.waitForMessageTo(email);
   const otp = mailpit.extractOtpFromSubject(message.Subject);
 
-  const signInRes = await postAuthWithRetry(
+  const signInRes = await postAuth(
     page,
     `${API_BASE_URL}/api/auth/sign-in/email-otp`,
     { email, otp },
-    'OTP sign-in'
+    'OTP sign-in',
+    identity
   );
   const signInBody = (await signInRes.json()) as { user?: { id?: string } };
   const userId = signInBody.user?.id;

@@ -1,13 +1,8 @@
-import { expect, test } from '@playwright/test';
 import { signIn } from '../../fixtures/auth';
-import { resetAuthRateLimit } from '../../fixtures/redis';
+import { expect, test } from '../../fixtures/test';
 import { createAccount, gotoAccountPeek } from '../../fixtures/ui';
 
 test.describe('accounts: add manual account', () => {
-  test.beforeEach(async () => {
-    await resetAuthRateLimit();
-  });
-
   test('user can create an account and view its detail page', async ({ page }, testInfo) => {
     await signIn({ page, testInfo });
 

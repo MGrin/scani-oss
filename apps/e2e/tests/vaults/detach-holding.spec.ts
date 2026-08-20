@@ -1,6 +1,5 @@
-import { expect, test } from '@playwright/test';
 import { signIn } from '../../fixtures/auth';
-import { resetAuthRateLimit } from '../../fixtures/redis';
+import { expect, test } from '../../fixtures/test';
 import { createAccount, createHolding } from '../../fixtures/ui';
 
 const API_BASE_URL = process.env.API_BASE_URL ?? 'http://localhost:3011';
@@ -29,10 +28,6 @@ interface HoldingWithDetails {
 }
 
 test.describe('vaults: detach a holding', () => {
-  test.beforeEach(async () => {
-    await resetAuthRateLimit();
-  });
-
   test('detaching a holding empties the vault but the holding itself survives', async ({
     page,
   }, testInfo) => {
