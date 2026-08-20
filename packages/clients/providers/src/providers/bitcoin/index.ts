@@ -86,6 +86,19 @@ const TX_PAGE_SIZE = 50;
  */
 const BLOCK_TIME_SKEW_MS = 2 * 60 * 60 * 1000;
 
+/**
+ * Structural check for the three canonical Bitcoin address formats —
+ * P2PKH (`1…`), P2SH (`3…`), Bech32 (`bc1…`). Pure and offline; the
+ * chain-stub provider reuses it so a stubbed boot answers address
+ * shape exactly as the live one does.
+ */
+export function isBitcoinAddress(address: string): boolean {
+  if (/^1[a-km-zA-HJ-NP-Z1-9]{25,34}$/.test(address)) return true;
+  if (/^3[a-km-zA-HJ-NP-Z1-9]{25,34}$/.test(address)) return true;
+  if (/^bc1[a-z0-9]{39,59}$/.test(address)) return true;
+  return false;
+}
+
 export class BitcoinProvider
   implements BalanceProvider, TransactionsProvider, AddressValidatorProvider
 {
@@ -127,16 +140,18 @@ export class BitcoinProvider
    * claims one institution code.
    */
   isValidAddress(address: string, _institutionCode?: string): boolean {
-    if (/^1[a-km-zA-HJ-NP-Z1-9]{25,34}$/.test(address)) return true;
-    if (/^3[a-km-zA-HJ-NP-Z1-9]{25,34}$/.test(address)) return true;
-    if (/^bc1[a-z0-9]{39,59}$/.test(address)) return true;
-    return false;
+    return isBitcoinAddress(address);
   }
 
   /**
    * Lightweight existence probe for `WalletDiscoveryService.detectWalletChains`.
    * `n_tx > 0` from blockchain.info's `/rawaddr` covers both incoming
    * and outgoing. Cheap (one HTTP call), shares the bitcoin rate limiter.
+   *
+   * Throws when the probe could not be completed. blockchain.info answers
+   * a burst with a 429 that lasts 40+ minutes (SC-364), and swallowing it
+   * reported the wallet as having no Bitcoin history — indistinguishable
+   * from a real regression (SC-490).
    */
   async hasActivity(
     address: string,
@@ -144,19 +159,13 @@ export class BitcoinProvider
     _ctx: ProviderContext
   ): Promise<boolean> {
     if (!this.isValidAddress(address)) return false;
-    try {
-      const url = `https://blockchain.info/rawaddr/${address}?limit=0`;
-      const response = await this.limiter.execute(async () => fetchWithTimeout(url));
-      if (!response.ok) return false;
-      const data = (await response.json()) as { n_tx?: number };
-      return typeof data.n_tx === 'number' && data.n_tx > 0;
-    } catch (err) {
-      this.logger.debug(
-        { address: `${address.substring(0, 10)}...`, error: err },
-        'Bitcoin hasActivity probe failed; treating as no activity'
-      );
-      return false;
+    const url = `https://blockchain.info/rawaddr/${address}?limit=0`;
+    const response = await this.limiter.execute(async () => fetchWithTimeout(url));
+    if (!response.ok) {
+      throw new Error(`blockchain.info: HTTP ${response.status} for ${address}`);
     }
+    const data = (await response.json()) as { n_tx?: number };
+    return typeof data.n_tx === 'number' && data.n_tx > 0;
   }
 
   async fetchBalances(

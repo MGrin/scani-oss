@@ -91,6 +91,15 @@ interface TronPaginatedResponse<T> {
   success?: boolean;
 }
 
+/**
+ * Structural Tron address check. Pure and offline; the chain-stub
+ * provider reuses it so a stubbed boot answers address shape exactly
+ * as the live one does.
+ */
+export function isTronAddress(address: string): boolean {
+  return /^T[1-9A-HJ-NP-Za-km-z]{33}$/.test(address);
+}
+
 export class TronProvider
   implements BalanceProvider, TransactionsProvider, AddressValidatorProvider
 {
@@ -124,7 +133,7 @@ export class TronProvider
   }
 
   isValidAddress(address: string, _institutionCode?: string): boolean {
-    return /^T[1-9A-HJ-NP-Za-km-z]{33}$/.test(address);
+    return isTronAddress(address);
   }
 
   /**
@@ -139,19 +148,16 @@ export class TronProvider
     _ctx: ProviderContext
   ): Promise<boolean> {
     if (!this.isValidAddress(address)) return false;
-    try {
-      const url = `${this.apiUrl}/v1/accounts/${encodeURIComponent(address)}`;
-      const response = await this.callJson(url);
-      if (!response) return false;
-      const data = response as { data?: unknown[]; success?: boolean };
-      return Array.isArray(data.data) && data.data.length > 0;
-    } catch (err) {
-      this.logger.debug(
-        { address: `${address.substring(0, 10)}...`, error: err },
-        'Tron hasActivity probe failed; treating as no activity'
-      );
-      return false;
+    const url = `${this.apiUrl}/v1/accounts/${encodeURIComponent(address)}`;
+    const response = await this.callJson(url);
+    if (!response) {
+      throw new Error(`trongrid: /v1/accounts request failed for ${address}`);
     }
+    const data = response as { data?: unknown[]; success?: boolean };
+    if (!Array.isArray(data.data)) {
+      throw new Error('trongrid: /v1/accounts returned no data array');
+    }
+    return data.data.length > 0;
   }
 
   async fetchBalances(

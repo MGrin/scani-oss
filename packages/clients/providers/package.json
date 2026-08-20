@@ -52,7 +52,8 @@
     "./core/utils/symbol-splitter": "./src/core/utils/symbol-splitter.ts",
     "./core/utils/fiat-codes": "./src/core/utils/fiat-codes.ts",
     "./providers/ai-openai": "./src/providers/ai-openai/index.ts",
-    "./providers/ai-stub": "./src/providers/ai-stub/index.ts"
+    "./providers/ai-stub": "./src/providers/ai-stub/index.ts",
+    "./providers/chain-stub": "./src/providers/chain-stub/index.ts"
   },
   "scripts": {
     "lint": "biome check .",
