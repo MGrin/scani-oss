@@ -2,9 +2,8 @@ import { randomUUID } from 'node:crypto';
 import { readFileSync, statSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { expect, test } from '@playwright/test';
 import { signIn } from '../../fixtures/auth';
-import { resetAuthRateLimit } from '../../fixtures/redis';
+import { expect, test } from '../../fixtures/test';
 import { createAccount, waitForJob } from '../../fixtures/ui';
 
 // Playwright runs specs in ESM mode; `__dirname` isn't defined there.
@@ -43,10 +42,6 @@ interface TransactionsListResponse {
  * the full request → worker → DB chain works against a real stack.
  */
 test.describe('imports: CSV file import', () => {
-  test.beforeEach(async () => {
-    await resetAuthRateLimit();
-  });
-
   test('upload tiny CSV → worker ingests 3 transactions into the account', async ({
     page,
   }, testInfo) => {

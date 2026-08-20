@@ -1,12 +1,9 @@
-import { expect, test } from '@playwright/test';
 import { signIn } from '../../fixtures/auth';
-import { resetAuthRateLimit } from '../../fixtures/redis';
+import { expect, test } from '../../fixtures/test';
 
 const API_BASE_URL = process.env.API_BASE_URL ?? 'http://localhost:3011';
 
 test.describe('auth: OTP sign-in', () => {
-  test.beforeEach(resetAuthRateLimit);
-
   test('end-to-end OTP flow lands the user on the dashboard', async ({ page }, testInfo) => {
     const { email, userId, page: signedInPage } = await signIn({ page, testInfo });
 
