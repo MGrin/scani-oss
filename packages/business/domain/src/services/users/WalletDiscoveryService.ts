@@ -5,7 +5,10 @@
  *
  *   - `detectWalletChains(address)` — probe every registered chain
  *      provider's `hasActivity` in parallel; return the institution
- *      codes the address has activity on.
+ *      codes the address has activity on AND the probes that could not
+ *      be completed. Those two are different answers: a chain that said
+ *      "no history" and a chain that never answered used to collapse
+ *      into the same empty list (SC-490).
  *   - `detectWalletInstitutions(address)` — same but resolves to
  *      Scani `institutionId`s via `institution_blockchain_mappings`.
  *      Used by `ImportWalletAddressUseCase`.
@@ -23,6 +26,34 @@ import type { ProviderContext } from '@scani/providers/core/types';
 import { eq } from 'drizzle-orm';
 import { Container, Service } from 'typedi';
 import { InstitutionBlockchainMappingRepository } from '../../repositories/InstitutionBlockchainMappingRepository';
+
+/**
+ * One chain whose activity probe could not be completed — an upstream
+ * 429, a timeout, an error body. Distinct from "the chain answered and
+ * the address has no history there", which produces no entry at all.
+ */
+export interface ChainProbeFailure {
+  /** Static institution code the probe was for (`bitcoin`, `ethereum`…). */
+  institutionCode: string;
+  /** Human-readable chain name, or the code when the catalog has no row. */
+  chainName: string;
+  /** The upstream failure, already stringified. */
+  error: string;
+}
+
+/** What `detectWalletChains` answers: what was found, and what could not be asked. */
+export interface WalletChainDetection {
+  /** Institution codes the address has activity on. */
+  detected: string[];
+  /** Chains whose probe failed. Empty on a clean run. */
+  failures: ChainProbeFailure[];
+}
+
+/** `detectWalletInstitutions`, resolved to Scani institution UUIDs. */
+export interface WalletInstitutionDetection {
+  institutionIds: string[];
+  failures: ChainProbeFailure[];
+}
 
 /**
  * Public chain-config row. Wallet-import + UI consumers consume this
@@ -450,7 +481,7 @@ export class WalletDiscoveryService {
    * institution codes the address has activity on. Order is
    * registration order (priority).
    */
-  async detectWalletChains(address: string): Promise<string[]> {
+  async detectWalletChains(address: string): Promise<WalletChainDetection> {
     const validators = this.registry.getAllAddressValidators();
     const startTime = Date.now();
 
@@ -478,39 +509,68 @@ export class WalletDiscoveryService {
       })).filter((c) => c.institutionCode),
     ];
 
-    const checks = candidates.map(async ({ institutionCode }) => {
-      const validator = this.registry.getAddressValidator(institutionCode);
-      if (!validator) return null;
-      if (!validator.isValidAddress(address, institutionCode)) return null;
-      try {
-        const ok = await validator.hasActivity(address, institutionCode, ctx);
-        return ok ? institutionCode : null;
-      } catch (err) {
-        this.logger.debug(
-          {
-            institutionCode,
-            address: `${address.substring(0, 10)}...`,
-            error: err instanceof Error ? err.message : String(err),
-          },
-          'hasActivity threw; treating as no activity'
-        );
-        return null;
+    const checks = candidates.map(
+      async ({
+        institutionCode,
+      }): Promise<{ code: string | null; failure: ChainProbeFailure | null }> => {
+        const validator = this.registry.getAddressValidator(institutionCode);
+        if (!validator) return { code: null, failure: null };
+        if (!validator.isValidAddress(address, institutionCode))
+          return { code: null, failure: null };
+        try {
+          const ok = await validator.hasActivity(address, institutionCode, ctx);
+          return { code: ok ? institutionCode : null, failure: null };
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          // WARN, not debug. The default level is info, so the previous
+          // debug line meant an upstream ban left no trace anywhere and
+          // the wallet simply looked empty (SC-490).
+          this.logger.warn(
+            {
+              institutionCode,
+              address: `${address.substring(0, 10)}...`,
+              error: message,
+            },
+            'Chain activity probe failed; this chain was NOT checked'
+          );
+          return {
+            code: null,
+            failure: {
+              institutionCode,
+              chainName: this.chainNameForInstitutionCode(institutionCode),
+              error: message,
+            },
+          };
+        }
       }
-    });
+    );
 
     const results = await Promise.all(checks);
-    const detected = results.filter((c): c is string => c !== null);
+    const detected = results.map((r) => r.code).filter((c): c is string => c !== null);
+    const failures = results
+      .map((r) => r.failure)
+      .filter((f): f is ChainProbeFailure => f !== null);
 
     this.logger.info(
       {
         address: `${address.substring(0, 10)}...`,
         detected,
+        failed: failures.map((f) => f.institutionCode),
         totalDuration: `${Date.now() - startTime}ms`,
       },
-      `Wallet chain detection completed (found on ${detected.length} chains)`
+      `Wallet chain detection completed (found on ${detected.length} chains, ` +
+        `${failures.length} could not be checked)`
     );
 
-    return detected;
+    return { detected, failures };
+  }
+
+  /** Catalog name for an institution code; the code itself when unmapped. */
+  private chainNameForInstitutionCode(institutionCode: string): string {
+    const chainId = INSTITUTION_CODE_TO_CHAIN_ID[institutionCode];
+    if (!chainId) return institutionCode;
+    const chain = this.getAllSupportedChains().find((c) => String(c.chainId) === chainId);
+    return chain?.name ?? institutionCode;
   }
 
   /**
@@ -523,16 +583,16 @@ export class WalletDiscoveryService {
    * codes map back to their EIP-155 chainId; non-EVM uses the
    * negative-int convention.
    */
-  async detectWalletInstitutions(address: string): Promise<string[]> {
-    const institutionCodes = await this.detectWalletChains(address);
+  async detectWalletInstitutions(address: string): Promise<WalletInstitutionDetection> {
+    const { detected, failures } = await this.detectWalletChains(address);
     const institutionIds: string[] = [];
-    for (const code of institutionCodes) {
+    for (const code of detected) {
       const chainIdStr = INSTITUTION_CODE_TO_CHAIN_ID[code];
       if (!chainIdStr) continue;
       const mapping = await this.mappingRepo.findByChainId(chainIdStr);
       if (mapping?.isActive) institutionIds.push(mapping.institutionId);
     }
-    return institutionIds;
+    return { institutionIds, failures };
   }
 
   private makeContext(): ProviderContext {

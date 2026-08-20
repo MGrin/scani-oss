@@ -253,4 +253,10 @@ export {
 export { UserService } from './users/UserService';
 export { UserWalletService } from './users/UserWalletService';
 export { VaultService } from './users/VaultService';
-export { type SupportedChain, WalletDiscoveryService } from './users/WalletDiscoveryService';
+export {
+  type ChainProbeFailure,
+  type SupportedChain,
+  type WalletChainDetection,
+  WalletDiscoveryService,
+  type WalletInstitutionDetection,
+} from './users/WalletDiscoveryService';

@@ -118,6 +118,14 @@ const envSchema = z.object({
   STUB_AI: isNodeEnvProduction()
     ? z.literal(undefined).optional()
     : z.union([z.literal('1'), z.literal('')]).optional(),
+
+  // Test-only: when "1", chain activity probes and balance fetches
+  // resolve from a local fixture instead of blockchain.info / Etherscan /
+  // a Solana RPC. Refused in production — fixture balances shown to a
+  // user would be worse than an outage, because they look like data.
+  STUB_CHAIN_DATA: isNodeEnvProduction()
+    ? z.literal(undefined).optional()
+    : z.union([z.literal('1'), z.literal('')]).optional(),
 });
 
 export type DataProviderEnv = z.infer<typeof envSchema>;
