@@ -182,8 +182,9 @@ export function nodeEnvRefusal(value: string | undefined): string | null {
     'NODE_ENV changes what the code under test does — @scani/logging alone\n' +
     'switches its default level on it — so a suite run under another value\n' +
     'fails assertions that have nothing to do with your change (SC-399).\n\n' +
-    'The usual cause is a root `.env` (the quick start says `cp .env.example\n' +
-    '.env`, and that file sets NODE_ENV=development). Bun loads it into any\n' +
+    'The usual cause is a root `.env` — every checkout has one now, written\n' +
+    'from `.env.example` by scripts/sync-env.ts, and that file sets\n' +
+    'NODE_ENV=development (SC-474). Bun loads it into any\n' +
     'program it starts, including the gate wrapper, which then passes it down\n' +
     "as a real variable and suppresses `bun test`'s own NODE_ENV=test default.\n\n" +
     'Run the suite the way CI does:\n' +
