@@ -28,7 +28,6 @@ You need [Bun](https://bun.sh) ≥ 1.3 and Docker.
 ```sh
 git clone git@github.com:MGrin/scani-oss.git
 cd scani-oss
-cp .env.example .env
 bun install
 bun run dev:stack      # the full local stack
 open http://localhost:5173
