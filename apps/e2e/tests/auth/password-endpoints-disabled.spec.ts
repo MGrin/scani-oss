@@ -1,11 +1,8 @@
-import { expect, test } from '@playwright/test';
-import { resetAuthRateLimit } from '../../fixtures/redis';
+import { expect, test } from '../../fixtures/test';
 
 const API_BASE_URL = process.env.API_BASE_URL ?? 'http://localhost:3011';
 
 test.describe('auth: password endpoints disabled', () => {
-  test.beforeEach(resetAuthRateLimit);
-
   test('POST /api/auth/sign-up/email returns EMAIL_PASSWORD_SIGN_UP_DISABLED', async ({
     request,
   }) => {

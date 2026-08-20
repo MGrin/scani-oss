@@ -180,6 +180,19 @@ interface TokenSearchHit {
   source: 'database' | 'external';
 }
 
+/**
+ * Poll interval, and why it backs off rather than staying at 250ms.
+ *
+ * The api admits 300 requests a minute per client, and since SC-489 that
+ * budget belongs to one test rather than to a whole Playwright project. A flat
+ * 250ms poll spends 240 of those 300 a minute on `jobs.status` alone — fine
+ * for the seconds a job usually takes, and self-inflicted starvation for a
+ * fixture waiting out a 120s job budget. Backing off to a second keeps a fast
+ * job fast (first three polls inside 1.75s) and a slow one cheap.
+ */
+const POLL_MIN_MS = 250;
+const POLL_MAX_MS = 1_000;
+
 interface JobStatusResponse<R = unknown> {
   state: 'queued' | 'active' | 'progress' | 'completed' | 'failed' | 'not_found';
   returnvalue?: R | null;
@@ -213,6 +226,7 @@ export async function waitForJob<R = unknown>(
 ): Promise<JobStatusResponse<R>> {
   const timeoutMs = opts.timeoutMs ?? 30_000;
   const deadline = Date.now() + timeoutMs;
+  let intervalMs = POLL_MIN_MS;
   while (Date.now() < deadline) {
     const statusInput = encodeURIComponent(JSON.stringify({ jobId }));
     const res = await page.request.get(`${API_BASE_URL}/trpc/jobs.status?input=${statusInput}`);
@@ -225,7 +239,8 @@ export async function waitForJob<R = unknown>(
     if (data.state === 'not_found') {
       throw new Error(`Job ${jobId} not found (worker down? wrong queue?)`);
     }
-    await new Promise((r) => setTimeout(r, 250));
+    await new Promise((r) => setTimeout(r, intervalMs));
+    intervalMs = Math.min(intervalMs * 2, POLL_MAX_MS);
   }
   throw new Error(`Job ${jobId} did not reach terminal state within ${timeoutMs}ms`);
 }

@@ -1,6 +1,5 @@
-import { expect, test } from '@playwright/test';
 import { signIn } from '../../fixtures/auth';
-import { resetAuthRateLimit } from '../../fixtures/redis';
+import { expect, test } from '../../fixtures/test';
 import { createAccount, createHolding } from '../../fixtures/ui';
 
 const API_BASE_URL = process.env.API_BASE_URL ?? 'http://localhost:3011';
@@ -15,10 +14,6 @@ interface HoldingsListResponse {
 }
 
 test.describe('portfolio: view after creating holdings', () => {
-  test.beforeEach(async () => {
-    await resetAuthRateLimit();
-  });
-
   test('newly added holdings show up in the holdings list and dashboard', async ({
     page,
   }, testInfo) => {
