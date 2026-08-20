@@ -759,6 +759,9 @@ app
       checks,
     };
   })
+  // SC-489 control run: this comment is the entire diff. It exists to make
+  // `detect-changes` set code=true so the E2E job runs against main's api,
+  // with SC-480's schema-drift check absent. Delete this branch after.
   // Deep health: everything the three user flows depend on. Returns 200 iff
   // DB + Redis + R2 + AI are all reachable; 503 with a per-check breakdown
   // otherwise. Used by the deploy-time smoke test to catch silent breakage
