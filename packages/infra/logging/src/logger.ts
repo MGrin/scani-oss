@@ -65,6 +65,29 @@ export function sanitizeUrl(url: string): string {
   }
 }
 
+/**
+ * Render whatever a caller put in the `error` field. Strings, `Error`s and
+ * pino's serialized `{ type, message }` all reach here; anything else is
+ * JSON so the line still carries the value rather than `[object Object]`.
+ *
+ * Exported for its test — the pretty transport is a closure inside
+ * `createHumanReadableLogger`, so this is the only reachable seam.
+ */
+export function renderError(raw: unknown): string {
+  if (typeof raw === 'string') return raw;
+  if (raw instanceof Error) return `${raw.name}:${raw.message}`;
+  if (typeof raw === 'object' && raw !== null) {
+    const e = raw as { name?: unknown; type?: unknown; message?: unknown };
+    const name = typeof e.name === 'string' ? e.name : typeof e.type === 'string' ? e.type : null;
+    if (typeof e.message === 'string') return name ? `${name}:${e.message}` : e.message;
+  }
+  try {
+    return JSON.stringify(raw) ?? String(raw);
+  } catch {
+    return String(raw);
+  }
+}
+
 const createHumanReadableLogger = () => {
   const colors = {
     trace: '\x1b[90m',
@@ -172,8 +195,12 @@ const createHumanReadableLogger = () => {
           }
 
           if (logObj.error) {
-            const error = logObj.error as { name: string; message: string };
-            context.push(`❌${error.name}:${error.message}`);
+            // `error` is a string at most call sites and an Error at some.
+            // Assuming the object shape printed `❌undefined:undefined` over
+            // every string one — the pretty renderer erasing the reason a
+            // thing failed, in the format an operator reads off `docker
+            // compose logs` (SC-490).
+            context.push(`❌${renderError(logObj.error)}`);
           }
 
           if (logObj.messageType) {
