@@ -40,15 +40,22 @@ on what its siblings had already spent, which is why the failing set was
 different every run and why six CI runs across two branches could not agree on a
 cause (SC-489).
 
-Every test now carries an `x-real-ip` of its own, so each gets the whole budget
-alone. Three rules keep that true; `tests/lib/rate-limit-isolation.spec.ts`
-enforces the first two:
+Every test now carries a User-Agent of its own — the project's, with an
+identity appended as a product token — so each gets the whole budget alone. It
+rides on the UA rather than a header of its own for a reason: the SPA's calls to
+the api are cross-origin, so a custom request header turns every one of them
+into a preflight the api's `allowedHeaders` does not permit, and the app stops
+being able to fetch its own session. That is not theoretical; it is what the
+first attempt at this did.
+
+Three rules keep it true; `tests/lib/rate-limit-isolation.spec.ts` enforces the
+first two:
 
 1. Import `test` and `expect` from `../../fixtures/test`, never from
    `@playwright/test`. That import is what attaches the identity.
 2. A context built by hand — `browser.newContext()` — needs
-   `isolatedContextOptions(testInfo)`. The `context` fixture's options do not
-   reach it.
+   `isolatedContextOptions(testInfo)`, spread *after* any device descriptor.
+   The `context` fixture's options do not reach it.
 3. Nothing retries a 429 and nothing flushes another test's budget. This makes
    the limiters *isolated*, not lenient: every cap is still enforced exactly as
    configured, and `tests/auth/auth-rate-limit.spec.ts` asserts one of them
