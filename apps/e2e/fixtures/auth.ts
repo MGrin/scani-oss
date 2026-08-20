@@ -3,30 +3,23 @@ import { mailpit } from './mailpit';
 
 const API_BASE_URL = process.env.API_BASE_URL ?? 'http://localhost:3011';
 
+// The api counts `send-verification-otp` and `sign-in` against one
+// 6-per-hour budget per client, and each test is its own client since SC-489
+// (see `fixtures/test.ts`) — so one sign-in spends 2 of a budget nobody else
+// can touch.
+//
+// This deliberately does NOT retry a 429, which the suite used to do on its own
+// backoff. That turned "the isolation broke" into "the run was 8s slower",
+// which is the failure the isolation exists to make visible.
 async function postAuth(
   page: Page,
   url: string,
   data: unknown,
-  label: string,
-  identity: string
+  label: string
 ): Promise<APIResponse> {
   const res = await page.request.post(url, {
     data,
-    headers: {
-      'content-type': 'application/json',
-      origin: 'http://localhost:5173',
-      // Each simulated user signs in from a client of its own. The api's
-      // signup limiter counts `send-verification-otp` *and* `sign-in` against
-      // one 6-per-hour budget per client IP, so without this a spec that signs
-      // in three times would spend its whole budget on itself, and a spec that
-      // signs in once would still be sharing with every sibling worker.
-      //
-      // This deliberately does NOT retry a 429. The suite used to, on its own
-      // backoff, which turned "the isolation broke" into "the run was 8s
-      // slower" — the failure this whole change exists to make visible
-      // (SC-489).
-      'x-real-ip': identity,
-    },
+    headers: { 'content-type': 'application/json', origin: 'http://localhost:5173' },
   });
   if (!res.ok()) {
     throw new Error(`${label} failed: ${res.status()} ${await res.text()}`);
@@ -69,14 +62,12 @@ export async function signIn({
   const discriminator = testInfo?.testId ?? label;
   if (!discriminator) throw new Error('signIn requires either `testInfo` or `label`');
   const email = `e2e-${discriminator}-${Date.now()}@example.com`;
-  const identity = `e2e-auth-${email}`;
 
   await postAuth(
     page,
     `${API_BASE_URL}/api/auth/email-otp/send-verification-otp`,
     { email, type: 'sign-in' },
-    'OTP request',
-    identity
+    'OTP request'
   );
 
   const message = await mailpit.waitForMessageTo(email);
@@ -86,8 +77,7 @@ export async function signIn({
     page,
     `${API_BASE_URL}/api/auth/sign-in/email-otp`,
     { email, otp },
-    'OTP sign-in',
-    identity
+    'OTP sign-in'
   );
   const signInBody = (await signInRes.json()) as { user?: { id?: string } };
   const userId = signInBody.user?.id;
