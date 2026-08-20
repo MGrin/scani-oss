@@ -35,7 +35,8 @@ function tree(spec: FakeSpec, name = 'root', into: Record<string, FakeNode> = {}
   into[name] = node;
   for (const [childName, childSpec] of Object.entries(spec.children ?? {})) {
     tree(childSpec, childName, into);
-    into[childName].parentElement = node;
+    const child = into[childName];
+    if (child) child.parentElement = node;
   }
   return into;
 }
@@ -51,7 +52,19 @@ const shell = tree({
     chart: { is: ['[data-no-pull-to-refresh]'], children: { chartPoint: {} } },
   },
 });
-const scroller = shell.root;
+/**
+ * Named lookup that THROWS on a miss. `noUncheckedIndexedAccess` types every
+ * read off the tree as `FakeNode | undefined`, and the honest resolution is not
+ * a `!`: a typo in a node name would otherwise pass `undefined` straight into
+ * the function under test and read as a passing assertion about nothing.
+ */
+function at(name: string): FakeNode {
+  const node = shell[name];
+  if (!node) throw new Error(`no such node in the fake tree: ${name}`);
+  return node;
+}
+
+const scroller = at('root');
 
 /** The chrome, which lives beside the scroller rather than inside it. */
 const chrome = tree({
@@ -63,7 +76,7 @@ const chrome = tree({
 
 describe('canArmPullToRefresh', () => {
   test('arms on the page scroller’s own content', () => {
-    expect(canArmPullToRefresh(shell.rowLabel, scroller)).toEqual({ armed: true });
+    expect(canArmPullToRefresh(at('rowLabel'), scroller)).toEqual({ armed: true });
   });
 
   test('arms when the touch is the scroller itself', () => {
@@ -75,28 +88,28 @@ describe('canArmPullToRefresh', () => {
   });
 
   test('refuses inside a horizontally scrollable region', () => {
-    expect(canArmPullToRefresh(shell.segment, scroller)).toEqual({
+    expect(canArmPullToRefresh(at('segment'), scroller)).toEqual({
       armed: false,
       reason: 'nested-scroll',
     });
   });
 
   test('refuses inside a ScrollArea viewport', () => {
-    expect(canArmPullToRefresh(shell.scrollAreaRow, scroller)).toEqual({
+    expect(canArmPullToRefresh(at('scrollAreaRow'), scroller)).toEqual({
       armed: false,
       reason: 'nested-scroll',
     });
   });
 
   test('refuses inside a table', () => {
-    expect(canArmPullToRefresh(shell.cell, scroller)).toEqual({
+    expect(canArmPullToRefresh(at('cell'), scroller)).toEqual({
       armed: false,
       reason: 'nested-scroll',
     });
   });
 
   test('refuses anything that opted out', () => {
-    expect(canArmPullToRefresh(shell.chartPoint, scroller)).toEqual({
+    expect(canArmPullToRefresh(at('chartPoint'), scroller)).toEqual({
       armed: false,
       reason: 'nested-scroll',
     });
@@ -131,7 +144,7 @@ describe('canArmPullToRefresh', () => {
   test('does not judge the scroller by its own overflow class', () => {
     // The scroller in both shells is `.overflow-y-auto`. If the walk included
     // it, pull-to-refresh could never arm anywhere.
-    expect(scroller.matches(NESTED_SCROLL_SELECTOR)).toBe(true);
-    expect(canArmPullToRefresh(shell.row, scroller).armed).toBe(true);
+    expect(scroller?.matches(NESTED_SCROLL_SELECTOR)).toBe(true);
+    expect(canArmPullToRefresh(at('row'), scroller).armed).toBe(true);
   });
 });

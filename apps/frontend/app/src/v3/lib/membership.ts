@@ -16,6 +16,8 @@
  * therefore no Save button to lose off the edge of a phone.
  */
 
+import type { TFunction } from 'i18next';
+
 export type MemberKind = 'holding' | 'account';
 
 export interface MemberEntry {
@@ -26,6 +28,16 @@ export interface MemberEntry {
   /** The identity line under it: token name and institution, or the account's
    *  holding count. Never a figure — that is the value zone's job. */
   sublabel: string;
+  /**
+   * Set on a holding the list shows but the group's total does not count.
+   *
+   * The list keeps inactive positions — a closed one is still in the group and
+   * still removable — while `GroupValuationService` values active holdings
+   * only. Carried on the entry rather than looked up again at render time so
+   * the row that is uncounted and the sentence that says how many there are
+   * read the same field (SC-388).
+   */
+  inactive?: boolean;
 }
 
 /** Holdings before accounts, then alphabetical. Two kinds in one list need a
@@ -42,26 +54,41 @@ export function memberMatches(entry: MemberEntry, query: string): boolean {
 }
 
 /**
- * "1 holding", "2 holdings", "0 holdings" — the one place the plural rule for
- * a membership count is written.
+ * "3 holdings · 1 account" — the same sentence the list row shows, so a group's
+ * page and its row in the list cannot describe the same record differently.
  *
- * The groups list kept its own copy of the sentence and read "1 holdings"
- * until SC-88, because the count reached it as the string `"1"` and `"1" === 1`
- * is false. The wire delivers a number now; sharing the sentence is what stops
- * a third copy from drifting again.
+ * The plural rule used to live in a `countLabel(count, noun)` helper here that
+ * took the English noun and appended an `s` (SC-368). One place for the rule was
+ * the right instinct — the groups list kept its own copy and read "1 holdings"
+ * until SC-88 — but the rule it centralised was ENGLISH's, and the noun arrived
+ * as a bare word no translation could reach. `en.json` is the one place now, and
+ * `_one`/`_other` is a rule each language states for itself.
  */
-export function countLabel(count: number, noun: string): string {
-  return `${count} ${noun}${count === 1 ? '' : 's'}`;
+export function memberCountLine(members: readonly MemberEntry[], t: TFunction): string {
+  return [
+    t('v3.membership.count.holding', { count: countOfKind(members, 'holding') }),
+    t('v3.membership.count.account', { count: countOfKind(members, 'account') }),
+  ].join(' · ');
 }
 
 /**
- * "3 holdings · 1 account" — the same sentence the list row shows, so a group's
- * page and its row in the list cannot describe the same record differently.
+ * How many members of one kind — the only arithmetic this surface does over
+ * the two.
+ *
+ * Adding them was the defect SC-388 was reported for: a group of 36 holdings
+ * and 10 accounts titled its list "In this group (46)" directly above 36 rows,
+ * and 46 is a count of MEMBERS in a unit nothing else on the screen uses. Ten
+ * of those accounts also bring the holdings already among the 36, so the sum
+ * is not even a count of positions. Every number on that page is per kind now,
+ * and there is nowhere left for the two to be added.
  */
-export function memberCountLine(members: readonly MemberEntry[]): string {
-  const holdings = members.filter((m) => m.kind === 'holding').length;
-  const accounts = members.filter((m) => m.kind === 'account').length;
-  return [countLabel(holdings, 'holding'), countLabel(accounts, 'account')].join(' · ');
+export function countOfKind(members: readonly MemberEntry[], kind: MemberKind): number {
+  return members.filter((entry) => entry.kind === kind).length;
+}
+
+/** Members the list shows and the group's total leaves out (SC-388). */
+export function inactiveMemberCount(members: readonly MemberEntry[]): number {
+  return members.filter((entry) => entry.kind === 'holding' && entry.inactive).length;
 }
 
 /** Everything not already a member, in the same order the member list uses. */

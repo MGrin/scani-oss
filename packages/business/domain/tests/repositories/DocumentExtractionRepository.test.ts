@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import * as schema from '@scani/db/schema';
 import { eq } from 'drizzle-orm';
 import { DocumentExtractionRepository } from '../../src/repositories/DocumentExtractionRepository';
+import { restoreContainerAfterAll } from '../../test/helpers/container';
 import { withTestDb } from '../../test/helpers/db';
 import {
   makeDocument,
@@ -10,6 +11,10 @@ import {
   makeVendor,
 } from '../../test/helpers/factories';
 import { makePayment, makePaymentOccurrence } from '../../test/helpers/factories-extra';
+
+// Container stubs are process-global; put back whatever this file changes
+// so no later test file resolves them (SC-448).
+restoreContainerAfterAll();
 
 // DocumentExtractionRepository backs the "one row per invoice FOUND IN a
 // file" side of the documents layer — a single PDF can hold several,

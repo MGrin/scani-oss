@@ -4,7 +4,6 @@ import { eq } from 'drizzle-orm';
 import { Container, Service } from 'typedi';
 import { TokenRepository } from '../../repositories/TokenRepository';
 import { BaseService } from '../BaseService';
-import { ScamTokenDetectionService } from '../tokens/ScamTokenDetectionService';
 import { PricingService } from './PricingService';
 
 const DEFAULT_BUDGET_MS = 15_000;
@@ -12,11 +11,6 @@ const DEFAULT_BUDGET_MS = 15_000;
 export interface WarmTokenPricesInput {
   userId: string;
   tokenIds: string[];
-  // Wallet imports flip this on so newly-priced tokens get re-scored —
-  // creation-time `hasPriceData=false` inflates the scam probability and
-  // legitimate tokens (ETH/USDC/…) drop out of the scam filter once a
-  // real price lands.
-  rescanScamScores?: boolean;
   budgetMs?: number;
 }
 
@@ -24,7 +18,6 @@ export interface WarmTokenPricesInput {
 export class PriceWarmupService extends BaseService {
   private readonly tokenRepository = Container.get(TokenRepository);
   private readonly pricingService = Container.get(PricingService);
-  private readonly scamDetectionService = Container.get(ScamTokenDetectionService);
 
   constructor() {
     super('PriceWarmupService');
@@ -88,36 +81,18 @@ export class PriceWarmupService extends BaseService {
       'Token price warm-up completed'
     );
 
-    if (input.rescanScamScores) {
-      const tokensToReScore = tokens.filter((t) => {
-        const price = prices.get(t.id);
-        return price && price !== '0';
-      });
-
-      if (tokensToReScore.length > 0) {
-        let reScored = 0;
-        for (const token of tokensToReScore) {
-          const newScore = this.scamDetectionService.calculateScamProbability(
-            token.symbol,
-            token.name,
-            token.createdAt,
-            true
-          );
-          if (newScore !== token.isScamProbability) {
-            await this.tokenRepository.update(token.id, {
-              isScamProbability: newScore,
-            });
-            reScored++;
-          }
-        }
-        if (reScored > 0) {
-          this.logger.info(
-            { reScored, total: tokensToReScore.length },
-            'Re-evaluated scam scores after pricing — lowered false positives'
-          );
-        }
-      }
-    }
+    // The `rescanScamScores` block that stood here is GONE (SC-207), and with
+    // it the option that requested it.
+    //
+    // It re-scored every priced token with `hasPriceData: true` and persisted
+    // the lower number. Wallet import asked for it on both of its paths and
+    // the wallet-balance sync on a third, so this ran on effectively every
+    // wallet the product touches — a scam score that fell whenever our
+    // pricing coverage rose, across the whole token table.
+    //
+    // The score no longer takes a coverage argument, so re-running it here
+    // could only recompute the number the token already has. This is not a
+    // behaviour that moved; it is one that had no honest version.
 
     return prices;
   }

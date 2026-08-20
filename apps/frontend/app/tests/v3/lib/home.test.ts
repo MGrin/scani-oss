@@ -1,5 +1,8 @@
+import '../../i18n-preload';
+
 import { describe, expect, test } from 'bun:test';
 import { ALLOCATION_OTHER_KEY } from '@scani/ui/v3/lib/chart';
+import i18n from 'i18next';
 import {
   ALLOCATION_DIMENSION_KEYS,
   ALLOCATION_DIMENSIONS,
@@ -39,6 +42,9 @@ import {
   unreviewedTransfersNote,
   vaultRows,
 } from '../../../src/v3/lib/home';
+
+/** The real `t`, so these assertions pin the English `en.json` produces. */
+const t = i18n.t.bind(i18n);
 
 /** A day the rollup priced every holding on. */
 function covered(date: string, totalValue: string): NetWorthPoint {
@@ -281,17 +287,17 @@ describe('formatDueIn', () => {
     ['2026-09-02', 'in 3 weeks'],
     ['2026-11-10', 'in 3 months'],
   ])('%s reads as %s', (dueDate, expected) => {
-    expect(formatDueIn(dueDate, '2026-08-12')).toBe(expected);
+    expect(formatDueIn(dueDate, '2026-08-12', t)).toBe(expected);
   });
 
   test('an overdue row that slipped through still reads as due now', () => {
-    expect(formatDueIn('2026-08-01', '2026-08-12')).toBe('Today');
+    expect(formatDueIn('2026-08-01', '2026-08-12', t)).toBe('Today');
   });
 
   test('the difference is taken in UTC, not in the local zone', () => {
     // Both ends parse as midnight UTC, so the answer cannot change with the
     // machine's timezone — which is what `payments.upcoming` compares on.
-    expect(formatDueIn('2026-08-14', '2026-08-12')).toBe('in 2 days');
+    expect(formatDueIn('2026-08-14', '2026-08-12', t)).toBe('in 2 days');
   });
 });
 
@@ -630,7 +636,7 @@ describe('groupRows', () => {
   });
 
   test('value comes from the groups aggregate, biggest first', () => {
-    const rows = groupRows(GROUPS, [valued('g2', '9000', 3), valued('g1', '40000', 6)]);
+    const rows = groupRows(GROUPS, [valued('g2', '9000', 3), valued('g1', '40000', 6)], t);
     expect(rows.map((row) => [row.id, row.value])).toEqual([
       ['g1', 40000],
       ['g2', 9000],
@@ -639,7 +645,7 @@ describe('groupRows', () => {
   });
 
   test('a group the aggregate has no row for keeps its counts and no figure', () => {
-    expect(groupRows(GROUPS, [])[0]?.value).toBeNull();
+    expect(groupRows(GROUPS, [], t)[0]?.value).toBeNull();
   });
 
   /**
@@ -648,16 +654,20 @@ describe('groupRows', () => {
    * it by its whole value.
    */
   test('an empty group reads zero; one we could not price reads as no figure', () => {
-    const rows = groupRows(GROUPS, [
-      valued('g3', '0', 0),
-      { groupId: 'g1', value: '0', holdingsCounted: 0, unpricedSymbols: ['AAPL'] },
-    ]);
+    const rows = groupRows(
+      GROUPS,
+      [
+        valued('g3', '0', 0),
+        { groupId: 'g1', value: '0', holdingsCounted: 0, unpricedSymbols: ['AAPL'] },
+      ],
+      t
+    );
     expect(rows.find((row) => row.id === 'g3')?.value).toBe(0);
     expect(rows.find((row) => row.id === 'g1')?.value).toBeNull();
   });
 
   test('counts read as words, and a group with none says so', () => {
-    const rows = groupRows(GROUPS, []);
+    const rows = groupRows(GROUPS, [], t);
     expect(rows.map((row) => row.sublabel)).toEqual([
       '6 holdings',
       '1 holding · 2 accounts',
@@ -675,7 +685,8 @@ describe('groupRows', () => {
   test('a group of one pluralises as singular and drops the empty half', () => {
     const rows = groupRows(
       [{ id: 'g', name: 'Solo', color: null, holdingsCount: 1, accountsCount: 0 }],
-      []
+      [],
+      t
     );
     expect(rows[0]?.sublabel).toBe('1 holding');
   });
@@ -716,7 +727,13 @@ describe('home metrics', () => {
 
 describe('period options', () => {
   test("v2's five windows are all offered", () => {
-    expect(HOME_PERIODS.map((period) => period.label)).toEqual(['1W', '1M', '3M', '6M', '1Y']);
+    expect(HOME_PERIODS.map((period) => t(period.labelKey))).toEqual([
+      '1W',
+      '1M',
+      '3M',
+      '6M',
+      '1Y',
+    ]);
   });
 
   test('a month stays the default, so the screen opens where it did', () => {
@@ -802,7 +819,7 @@ describe('qualityHeadline', () => {
       { includeBasis: false }
     );
     expect(quality).not.toBeNull();
-    const text = qualityHeadline(quality as FigureQuality);
+    const text = qualityHeadline(quality as FigureQuality, t);
     expect(text).toContain('93%');
     // And the counts behind it, because 28 of 30 is checkable against the
     // holdings list and 93% is not.
@@ -828,11 +845,11 @@ describe('qualityHeadline', () => {
       },
       { includeBasis: false }
     );
-    expect(qualityHeadline(quality as FigureQuality)).toBe(
+    expect(qualityHeadline(quality as FigureQuality, t)).toBe(
       'All 12 holdings priced · 2 unpriceable'
     );
     // …and it is not also said below, which would be the same fact twice.
-    expect(qualityOmissions(quality as FigureQuality)).toEqual([]);
+    expect(qualityOmissions(quality as FigureQuality, t)).toEqual([]);
   });
 
   test('a full house is stated as one rather than as 100%', () => {
@@ -846,7 +863,7 @@ describe('qualityHeadline', () => {
       },
       { includeBasis: false }
     );
-    expect(qualityHeadline(quality as FigureQuality)).toBe('All 12 holdings priced');
+    expect(qualityHeadline(quality as FigureQuality, t)).toBe('All 12 holdings priced');
   });
 });
 
@@ -864,21 +881,21 @@ describe('qualityOmissions', () => {
   });
 
   test('an account with nothing to report gets no list', () => {
-    expect(qualityOmissions(quality({}))).toEqual([]);
+    expect(qualityOmissions(quality({}), t)).toEqual([]);
   });
 
   test('"unpriceable", never "unpriced" — we did not fail to fetch a price', () => {
     // The word survives; only its home moved (SC-176). It is the headline's
     // now, because it is the only one of the four about the denominator.
-    expect(qualityHeadline(quality({ unpriceable: 4 }))).toContain('4 unpriceable');
-    expect(qualityOmissions(quality({ unpriceable: 4 }))).toEqual([]);
+    expect(qualityHeadline(quality({ unpriceable: 4 }), t)).toContain('4 unpriceable');
+    expect(qualityOmissions(quality({ unpriceable: 4 }), t)).toEqual([]);
   });
 
   test('a stale quote is its own axis, not a worse grade of coverage', () => {
     // 100% priced and still built on old numbers — the case that makes this a
     // separate clause rather than a lower percentage (SC-151).
-    expect(qualityOmissions(quality({ stalePriced: 2 }))).toEqual(['2 stale quotes']);
-    expect(qualityOmissions(quality({ stalePriced: 1 }))).toEqual(['1 stale quote']);
+    expect(qualityOmissions(quality({ stalePriced: 2 }), t)).toEqual(['2 stale quotes']);
+    expect(qualityOmissions(quality({ stalePriced: 1 }), t)).toEqual(['1 stale quote']);
   });
 
   test('an unknown cost basis says which way the gain errs', () => {
@@ -886,11 +903,11 @@ describe('qualityOmissions', () => {
     // this is the clause that was NOT allowed to lose its tail: a count tells a
     // reader how much is uncertain, and only these four words tell them which
     // direction the figure is wrong in.
-    expect(qualityOmissions(quality({ basisUnknown: 3 }))[0]).toContain('upper bound');
+    expect(qualityOmissions(quality({ basisUnknown: 3 }), t)[0]).toContain('upper bound');
   });
 
   test('both at once are two facts, in the order they were asked', () => {
-    expect(qualityOmissions(quality({ stalePriced: 2, basisUnknown: 3 }))).toEqual([
+    expect(qualityOmissions(quality({ stalePriced: 2, basisUnknown: 3 }), t)).toEqual([
       '2 stale quotes',
       '3 no cost basis (gain is an upper bound)',
     ]);
@@ -918,9 +935,9 @@ describe('qualityOmissions', () => {
       transfersUnreviewed: 3,
     });
     const lines = [
-      qualityHeadline(worst),
-      qualityOmissions(worst).join(' · '),
-      unreviewedTransfersNote(worst) ?? '',
+      qualityHeadline(worst, t),
+      qualityOmissions(worst, t).join(' · '),
+      unreviewedTransfersNote(worst, t) ?? '',
     ];
     expect(lines).toHaveLength(3);
     for (const line of lines) expect(line.length).toBeLessThanOrEqual(57);
@@ -952,7 +969,7 @@ describe('unreviewedTransfersNote', () => {
   });
 
   test('an empty queue says nothing', () => {
-    expect(unreviewedTransfersNote(quality({}))).toBeNull();
+    expect(unreviewedTransfersNote(quality({}), t)).toBeNull();
   });
 
   test('states the exclusion as a fact, because it is one', () => {
@@ -960,12 +977,12 @@ describe('unreviewedTransfersNote', () => {
     // each excluded row was a sale is not, and hedging the part we know to
     // avoid asserting the part we do not makes the sentence false the other
     // way.
-    const line = unreviewedTransfersNote(quality({ transfersUnreviewed: 3 }));
+    const line = unreviewedTransfersNote(quality({ transfersUnreviewed: 3 }), t);
     expect(line).toBe('Realized PnL excludes 3 unconfirmed transfers');
   });
 
   test('one transfer is a transfer', () => {
-    expect(unreviewedTransfersNote(quality({ transfersUnreviewed: 1 }))).toBe(
+    expect(unreviewedTransfersNote(quality({ transfersUnreviewed: 1 }), t)).toBe(
       'Realized PnL excludes 1 unconfirmed transfer'
     );
   });
@@ -980,7 +997,7 @@ describe('unreviewedTransfersNote', () => {
    */
   test('it fits one 390px line, because the whole sentence is the link', () => {
     expect(
-      (unreviewedTransfersNote(quality({ transfersUnreviewed: 999 })) ?? '').length
+      (unreviewedTransfersNote(quality({ transfersUnreviewed: 999 }), t) ?? '').length
     ).toBeLessThanOrEqual(56);
   });
 
@@ -988,7 +1005,7 @@ describe('unreviewedTransfersNote', () => {
     // The two lists are rendered as different things — prose and a link — so a
     // count leaking into the other one would be both a wrong sentence and an
     // unreachable tap target.
-    expect(qualityOmissions(quality({ transfersUnreviewed: 3 }))).toEqual([]);
+    expect(qualityOmissions(quality({ transfersUnreviewed: 3 }), t)).toEqual([]);
   });
 
   test('it is carried only for the metric it qualifies', () => {
@@ -1023,7 +1040,7 @@ describe('unreviewedTransfersNote', () => {
     };
     const q = summariseQuality(netWorthPoint, { includeBasis: true });
     expect(q?.transfersUnreviewed).toBe(0);
-    expect(unreviewedTransfersNote(q as FigureQuality)).toBeNull();
+    expect(unreviewedTransfersNote(q as FigureQuality, t)).toBeNull();
   });
 });
 

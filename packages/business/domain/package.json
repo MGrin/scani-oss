@@ -18,15 +18,17 @@
   "scripts": {
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
-    "type-check": "tsgo --noEmit"
+    "type-check": "tsgo --noEmit -p tsconfig.test.json"
   },
   "dependencies": {
     "@firecrawl/pdf-inspector": "^1.13.0",
     "@scani/cloud-client": "workspace:*",
     "@scani/db": "workspace:*",
+    "@scani/email": "workspace:*",
     "@scani/file-import": "workspace:*",
     "@scani/logging": "workspace:*",
     "@scani/providers": "workspace:*",
+    "@scani/push": "workspace:*",
     "@scani/queue": "workspace:*",
     "@scani/rate-limiter": "workspace:*",
     "@scani/realtime": "workspace:*",

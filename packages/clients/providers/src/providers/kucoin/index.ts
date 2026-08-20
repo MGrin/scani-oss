@@ -14,15 +14,17 @@ import type {
   CredentialValidator,
   TransactionsProvider,
 } from '../../core/capabilities';
-import { ProviderError } from '../../core/errors';
+import { credentialRejection, ProviderError } from '../../core/errors';
 import type {
   DecryptedCredentials,
   HoldingSnapshot,
   ProviderContext,
   TransactionEvent,
+  TransactionFetchContext,
   WithUserCreds,
 } from '../../core/types';
 import { tokenTypeForCexAsset } from '../../core/utils/fiat-codes';
+import { PageCapWatch } from '../../core/utils/page-cap';
 import { mapKucoinBizType } from './biz-types';
 import { kucoinManifest } from './manifest';
 
@@ -225,15 +227,11 @@ export class KucoinProvider
     return institutionCode === KUCOIN_INSTITUTION_CODE;
   }
 
-  async fetchTransactions(
-    ctx: WithUserCreds<ProviderContext> & {
-      institutionCode: string;
-      since?: Date;
-      until?: Date;
-    }
-  ): Promise<TransactionEvent[]> {
+  async fetchTransactions(ctx: TransactionFetchContext): Promise<TransactionEvent[]> {
     const creds = await this.resolveApiCreds(ctx);
     if (!creds?.passphrase) return [];
+
+    const capped = new PageCapWatch();
 
     const startAt = ctx.since?.getTime();
     const endAt = ctx.until?.getTime();
@@ -252,7 +250,8 @@ export class KucoinProvider
       creds,
       LEDGER_PAGE_SIZE,
       startAt,
-      endAt
+      endAt,
+      capped
     )) {
       push(ledgerItemToEvent(item));
     }
@@ -262,7 +261,8 @@ export class KucoinProvider
       creds,
       HIST_PAGE_SIZE,
       startAt,
-      endAt
+      endAt,
+      capped
     )) {
       push(histDepositToEvent(item));
     }
@@ -272,11 +272,13 @@ export class KucoinProvider
       creds,
       HIST_PAGE_SIZE,
       startAt,
-      endAt
+      endAt,
+      capped
     )) {
       push(histWithdrawalToEvent(item));
     }
 
+    capped.retract(ctx, this.providerKey);
     return events;
   }
 
@@ -285,9 +287,12 @@ export class KucoinProvider
     creds: ApiKeyCreds,
     pageSize: number,
     startAt: number | undefined,
-    endAt: number | undefined
+    endAt: number | undefined,
+    capped: PageCapWatch
   ): AsyncGenerator<T> {
     let currentPage = 1;
+    let rows = 0;
+    let truncated = false;
     while (currentPage <= MAX_PAGES) {
       const params = new URLSearchParams({
         pageSize: String(pageSize),
@@ -309,13 +314,18 @@ export class KucoinProvider
       }
 
       const items = data.data?.items ?? [];
+      rows += items.length;
       for (const item of items) yield item;
 
       const totalPage = data.data?.totalPage ?? 0;
       if (currentPage >= totalPage) break;
       if (items.length < pageSize) break;
+      // KuCoin says how many pages exist, so the cap is reached with the
+      // remainder known: the next iteration would exceed MAX_PAGES.
+      if (currentPage === MAX_PAGES) truncated = true;
       currentPage += 1;
     }
+    if (truncated) capped.note({ walk: `the ${path} feed`, pages: MAX_PAGES, rows });
   }
 
   async validateCredentials(
@@ -341,10 +351,7 @@ export class KucoinProvider
       }
       return { valid: true };
     } catch (err) {
-      if (err instanceof ProviderError && err.kind === 'auth-failed') {
-        return { valid: false, message: err.message };
-      }
-      return { valid: false, message: err instanceof Error ? err.message : String(err) };
+      return credentialRejection(err);
     }
   }
 }

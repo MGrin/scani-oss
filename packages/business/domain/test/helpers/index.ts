@@ -4,6 +4,7 @@
 // wrapper without copy-pasting them. Intentionally narrow: only the
 // helpers that are stable and useful across packages.
 
+export { restoreContainerAfterAll } from './container';
 export { withTestDb } from './db';
 export { makeInstitution, makeInstitutionType, makeUser } from './factories';
 export { makeAccount, makeHolding, makeToken } from './factories-extra';

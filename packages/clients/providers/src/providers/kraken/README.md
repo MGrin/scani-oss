@@ -68,6 +68,24 @@ on auth-shaped errors instead of throwing.
   per call and a `count` claiming total ledger entries; iterate
   via `ofs` (offset). The base's `BaseCexProvider` consumes the
   generator until it stops yielding.
+- **An automatic earn reallocation is not a movement** (SC-362).
+  Kraken states one internal reallocation as two ledger entries
+  sharing a `refid`, equal and opposite at the identical instant,
+  both `subtype: autoallocation` — the subtype belongs to the
+  operation, so both directions carry it. **The two legs do NOT
+  share an asset code**: the spot side is `XETH` / `XXBT` and the
+  earn side is `XETH.F` / `XXBT.F`, in all 22 pairs production
+  holds. They are one asset only after `normalizeKrakenAsset`, so
+  the cancellation has to be keyed on the normalized symbol —
+  keying it on Kraken's raw code gave every leg a bucket of its own
+  and the suppression never fired once (SC-362). It moves the asset
+  between the spot and earn sides of ONE Kraken account, which scani
+  does not model (a Kraken account is one holding per token), so
+  neither entry reaches the ledger. The suppression is the refid's arithmetic, not
+  the subtype alone: a refid that fails to cancel, or that charged a
+  fee, is emitted entry by entry with its own ledger id. Nothing is
+  netted and no `external_id` is synthesized, so the key every Kraken
+  row deduped on before still holds.
 - **Sign convention is wrong out of the box**. Kraken's `amount`
   field is positive for both buys and sells; the `BaseCexProvider`'s
   `enforceSign(kind)` corrects it. Fee is always positive in the

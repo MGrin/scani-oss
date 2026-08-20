@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'bun:test';
-import { mergeQueries, type QueryLike, SETTLED_QUERY_STATE } from '@scani/ui/v3/lib/query-state';
+import {
+  loadingOnly,
+  mergeQueries,
+  type QueryLike,
+  SETTLED_QUERY_STATE,
+} from '@scani/ui/v3/lib/query-state';
 
 function query(overrides: Partial<QueryLike> = {}): QueryLike & { refetched: () => number } {
   let calls = 0;
@@ -55,6 +60,68 @@ describe('mergeQueries', () => {
     expect(state.isLoading).toBe(false);
     expect(state.isError).toBe(false);
     expect(state.error).toBeNull();
+  });
+});
+
+/**
+ * SC-244. `more` is the difference between "you have none" and "we only looked
+ * at the first 25", and it is derived here rather than declared by each surface
+ * so a page that swaps a query for an infinite one cannot forget to say so.
+ */
+describe('mergeQueries — a page of a larger set', () => {
+  function infinite(overrides: Partial<QueryLike> = {}) {
+    let fetched = 0;
+    return {
+      ...query({
+        hasNextPage: true,
+        isFetchingNextPage: false,
+        fetchNextPage: () => {
+          fetched += 1;
+        },
+        ...overrides,
+      }),
+      fetchedNext: () => fetched,
+    };
+  }
+
+  test('a plain query is the whole set, positively', () => {
+    expect(mergeQueries(query(), query()).more).toBeNull();
+  });
+
+  test('an infinite query with another page names the way to widen it', () => {
+    const page = infinite();
+    const state = mergeQueries(page);
+    expect(state.more).not.toBeNull();
+    state.more?.fetch();
+    expect(page.fetchedNext()).toBe(1);
+  });
+
+  test('an infinite query on its last page is the whole set', () => {
+    expect(mergeQueries(infinite({ hasNextPage: false })).more).toBeNull();
+  });
+
+  /**
+   * The negative that matters, and the reason `isPaginated` tests
+   * `fetchNextPage` rather than `hasNextPage === undefined`: a paginated result
+   * whose flag we failed to read would otherwise be reported as complete —
+   * which is the class this whole ticket is about, one layer up.
+   */
+  test('a paginated query is recognised even when its flag is not yet known', () => {
+    const state = mergeQueries(infinite({ hasNextPage: undefined }));
+    // Not more (nothing says there IS another page), but not mistaken for a
+    // plain query either: the moment `hasNextPage` resolves true, it reports.
+    expect(state.more).toBeNull();
+    expect(mergeQueries(infinite({ hasNextPage: true })).more).not.toBeNull();
+  });
+
+  test('fetching the next page is visible to the surface', () => {
+    const state = mergeQueries(infinite({ isFetchingNextPage: true }));
+    expect(state.more?.isFetching).toBe(true);
+  });
+
+  test('a settled or loading-only state claims the whole set', () => {
+    expect(SETTLED_QUERY_STATE.more).toBeNull();
+    expect(loadingOnly(true).more).toBeNull();
   });
 });
 

@@ -35,7 +35,7 @@ function queueFetch(handler: (url: string) => FakeResponse): {
       status: r.status ?? 200,
       headers: { 'content-type': 'application/json' },
     });
-  }) as typeof fetch;
+  }) as unknown as typeof fetch;
   return { restore: () => (globalThis.fetch = original), calls };
 }
 
@@ -164,7 +164,8 @@ describe('BitgetProvider', () => {
   test('validateCredentials maps 401 to invalid', async () => {
     const p = new BitgetProvider(passthroughLimiter());
     const originalFetch = globalThis.fetch;
-    globalThis.fetch = (async () => new Response('Unauthorized', { status: 401 })) as typeof fetch;
+    globalThis.fetch = (async () =>
+      new Response('Unauthorized', { status: 401 })) as unknown as typeof fetch;
     try {
       const r = await p.validateCredentials(
         { apiKey: 'k', apiSecret: 's', passphrase: 'p' },

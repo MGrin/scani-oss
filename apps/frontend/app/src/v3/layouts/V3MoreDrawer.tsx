@@ -11,7 +11,6 @@ import { LogOut } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import { cn } from '@/lib/utils';
-import { UiVersionSwitch } from '../components/UiVersionSwitch';
 import { navIcon } from '../lib/nav-icons';
 import { V3_DRAWER_PRIMARY, V3_DRAWER_SECONDARY, V3_ROUTES } from '../lib/routes';
 
@@ -64,7 +63,7 @@ export function V3MoreDrawer({
         <BottomDrawerHeader>
           <BottomDrawerTitle>{t('nav.more')}</BottomDrawerTitle>
           <BottomDrawerDescription className="sr-only">
-            Everything that does not fit in the tab bar. Drag the handle up for the full list.
+            {t('v3.shell.moreDrawer.description')}
           </BottomDrawerDescription>
         </BottomDrawerHeader>
 
@@ -130,7 +129,6 @@ export function V3MoreDrawer({
             style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + var(--space-4))' }}
           >
             <ThemeToggle variant="row" side="top" align="start" className="px-3 py-2 text-label" />
-            <UiVersionSwitch variant="row" className="px-3 py-2 text-label" />
             <button
               type="button"
               onClick={() => {

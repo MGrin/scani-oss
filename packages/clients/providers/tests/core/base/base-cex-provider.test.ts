@@ -1,9 +1,18 @@
 import { describe, expect, test } from 'bun:test';
 import type { NewToken } from '@scani/db/schema';
-import { BaseCexProvider, type CexNormalizedEvent } from '../../../src/core/base/base-cex-provider';
+import {
+  BaseCexProvider,
+  type CexNormalizedEvent,
+  type CexWalkVerdict,
+} from '../../../src/core/base/base-cex-provider';
 import type { Capability } from '../../../src/core/capabilities';
 import { createMockSelfCredContext } from '../../../src/core/testing';
-import type { ProviderContext, TransactionEvent, WithUserCreds } from '../../../src/core/types';
+import type {
+  ProviderContext,
+  TransactionEvent,
+  TransactionFetchContext,
+  WithUserCreds,
+} from '../../../src/core/types';
 
 // Minimal subclass: stubbable history generator + identity map. Lets the
 // base's pagination + sign-enforcement + counter/fee inference run as
@@ -15,7 +24,13 @@ class TestCexProvider extends BaseCexProvider {
   constructor(
     private readonly events: readonly CexNormalizedEvent[],
     private readonly identityMap: Record<string, Partial<NewToken> | null>,
-    private readonly terminalCompleteFlag: boolean = true
+    /**
+     * `null` models a subclass that forgets to return a verdict. Not
+     * `undefined`: an explicit `undefined` argument takes the default,
+     * which would silently turn that test into a second copy of the
+     * complete-history one.
+     */
+    private readonly verdict: CexWalkVerdict | null = { hasCompleteTxHistory: true }
   ) {
     super();
   }
@@ -26,15 +41,17 @@ class TestCexProvider extends BaseCexProvider {
 
   protected async *fetchHistoryPaginated(
     _ctx: WithUserCreds<ProviderContext> & { institutionCode: string }
-  ): AsyncGenerator<CexNormalizedEvent, { hasCompleteTxHistory: boolean }, void> {
+  ): AsyncGenerator<CexNormalizedEvent, CexWalkVerdict, void> {
     for (const e of this.events) yield e;
-    return { hasCompleteTxHistory: this.terminalCompleteFlag };
+    // `as` rather than a non-null assertion: the point of the `undefined`
+    // case is a subclass whose runtime value does not match its signature,
+    // which is precisely what a JavaScript generator with a bare `return`
+    // produces.
+    return this.verdict as unknown as CexWalkVerdict;
   }
 
   // Public hook so tests don't have to bracket-access protected method.
-  async runFetchTransactions(
-    ctx: WithUserCreds<ProviderContext> & { institutionCode: string }
-  ): Promise<TransactionEvent[]> {
+  async runFetchTransactions(ctx: TransactionFetchContext): Promise<TransactionEvent[]> {
     return this.fetchTransactionsViaPagination(ctx);
   }
 }
@@ -49,6 +66,98 @@ function ctx() {
     institutionId: 'inst',
   }) as WithUserCreds<ProviderContext> & { institutionCode: string };
 }
+
+/** A context that records every retraction, the way `TransactionRouter` does. */
+function recordingCtx(): TransactionFetchContext & { retractions: string[] } {
+  const retractions: string[] = [];
+  return {
+    ...ctx(),
+    institutionCode: 'kraken',
+    retractions,
+    retractHistoryClaim: (reason: string) => {
+      retractions.push(reason);
+    },
+  };
+}
+
+/**
+ * The walk's verdict reaches the caller (SC-395).
+ *
+ * Every CEX paginator's terminal value was discarded by the drain loop —
+ * `if (step.done) break` never looked at `step.value` — so Kraken could
+ * measure that its ledger contradicted itself and the coverage row went on
+ * claiming a complete history anyway. These assert the channel, and the
+ * `true` case is the negative control: a guard that fires on every walk
+ * would retract every claim and be indistinguishable from deleting the
+ * flag.
+ */
+describe('BaseCexProvider — the paginator retracts through the caller', () => {
+  const event: CexNormalizedEvent = {
+    kind: 'buy',
+    assetCode: 'BTC',
+    quantity: '1',
+    occurredAt: new Date('2024-01-01'),
+    externalId: 'buy-1',
+  };
+
+  test('a false verdict retracts, carrying the paginator own reason', async () => {
+    const provider = new TestCexProvider(
+      [event],
+      { BTC },
+      {
+        hasCompleteTxHistory: false,
+        reason: 'test-cex: the ledger contradicts itself over 492 entries',
+      }
+    );
+    const c = recordingCtx();
+
+    const events = await provider.runFetchTransactions(c);
+
+    expect(events).toHaveLength(1);
+    expect(c.retractions).toEqual(['test-cex: the ledger contradicts itself over 492 entries']);
+  });
+
+  test('a true verdict retracts nothing', async () => {
+    const provider = new TestCexProvider([event], { BTC }, { hasCompleteTxHistory: true });
+    const c = recordingCtx();
+
+    await provider.runFetchTransactions(c);
+
+    expect(c.retractions).toEqual([]);
+  });
+
+  test('a paginator that returns no verdict at all retracts, and says it was absent', async () => {
+    const provider = new TestCexProvider([event], { BTC }, null);
+    const c = recordingCtx();
+
+    await provider.runFetchTransactions(c);
+
+    expect(c.retractions).toHaveLength(1);
+    expect(c.retractions[0]).toContain('did not confirm');
+  });
+
+  test("a false verdict with no reason still retracts, under the base's own words", async () => {
+    const provider = new TestCexProvider([event], { BTC }, { hasCompleteTxHistory: false });
+    const c = recordingCtx();
+
+    await provider.runFetchTransactions(c);
+
+    expect(c.retractions).toHaveLength(1);
+    expect(c.retractions[0]).toContain('test-cex');
+  });
+
+  // A provider is not required to be handed a sink — provider tests and the
+  // cloud fetcher build their own contexts — so a partial walk against a
+  // context without one must not throw. Without the `?.` this is a crash on
+  // the exact path that already knows something is wrong.
+  test('a partial walk against a context with no sink does not throw', async () => {
+    const provider = new TestCexProvider([event], { BTC }, { hasCompleteTxHistory: false });
+
+    const events = await provider.runFetchTransactions({ ...ctx(), institutionCode: 'kraken' });
+
+    expect(events).toHaveLength(1);
+  });
+});
 
 describe('BaseCexProvider — sign enforcement', () => {
   test('sell with positive raw quantity flips to negative', async () => {

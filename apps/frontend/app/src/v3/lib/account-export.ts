@@ -8,7 +8,9 @@ import {
 } from '@scani/ui/v3/lib/export/cell';
 import type { ExportWorkbook } from '@scani/ui/v3/lib/export/format';
 import { buildSheet, type ExportField } from '@scani/ui/v3/lib/export/workbook';
+import type { TFunction } from 'i18next';
 import type { RouterOutputs } from '@/lib/trpc';
+import { formatIntervalUnits } from './paymentTotals';
 
 /**
  * The whole-account payload, laid out as a workbook.
@@ -24,139 +26,197 @@ import type { RouterOutputs } from '@/lib/trpc';
  * One sheet per set, in the order a person would read them: who and what they
  * own, then what happened, then the money that recurs, then the organising
  * layers, then the history. `About` last, because it is a caption.
+ *
+ * Every table below is a FUNCTION of `t` rather than a module constant
+ * (SC-201). A column header is a string a person reads in a spreadsheet, so it
+ * belongs in `en.json` like any other — but `ExportField.header` is consumed
+ * as a resolved string by `buildSheet` in `@scani/ui`, and giving it a
+ * `headerKey` would push i18n into a package with no `t` and other consumers.
+ * Taking `t` here keeps the tables declarative and the shared primitive
+ * unchanged.
+ *
+ * The seven history columns share their keys with `HistoryExport`'s CSV, which
+ * is not tidiness: the two files get laid side by side, both claim the same
+ * columns in the same order, and SC-98 is what happened when they drifted in
+ * English alone. One key each is the only version of that promise a translator
+ * cannot break.
  */
 
 export type AccountExport = RouterOutputs['exports']['everything'];
 
 type Row<K extends keyof AccountExport> = AccountExport[K] extends readonly (infer T)[] ? T : never;
 
-const accounts: ExportField<Row<'accounts'>>[] = [
-  { header: 'Account', value: (row) => exportText(row.name) },
-  { header: 'Institution', value: (row) => exportText(row.institutionName) },
-  { header: 'Type', value: (row) => exportText(row.type) },
-  { header: 'Description', value: (row) => exportText(row.description) },
-  { header: 'Hidden', value: (row) => exportText(row.isHidden ? 'yes' : 'no') },
-  { header: 'Active', value: (row) => exportText(row.isActive ? 'yes' : 'no') },
-  { header: 'Added', value: (row) => exportDateTime(row.createdAt) },
-  { header: 'Id', value: (row) => exportText(row.id) },
+/** "yes" / "no" as a cell. Its own key pair rather than a boolean rendered
+ *  inline: a spreadsheet column of them is read as data, and a language whose
+ *  affirmative is not three letters needs to say so once. */
+/**
+ * "2 months", not "2 month".
+ *
+ * The cell used to be one key, `{{count}} {{unit}}`, with `unit` interpolated
+ * straight from the wire — so every account export downloaded to date reads
+ * "2 month" in the only language we ship (SC-235). The per-unit plural shape
+ * that replaced it is shared with the Money tab's cadence line now (SC-320),
+ * which had the same defect; only the key namespace differs, because a cell
+ * reads "2 months" and a cadence reads "Every 2 months".
+ */
+export function formatInterval(t: TFunction, unit: string, count: number): string {
+  return formatIntervalUnits(t, 'v3.export.value', unit, count);
+}
+
+const yesNo = (t: TFunction, value: boolean) =>
+  exportText(value ? t('v3.export.value.yes') : t('v3.export.value.no'));
+
+const accounts = (t: TFunction): ExportField<Row<'accounts'>>[] => [
+  { header: t('v3.export.column.account'), value: (row) => exportText(row.name) },
+  { header: t('v3.export.column.institution'), value: (row) => exportText(row.institutionName) },
+  { header: t('v3.export.column.accountType'), value: (row) => exportText(row.type) },
+  { header: t('v3.export.column.description'), value: (row) => exportText(row.description) },
+  { header: t('v3.export.column.hidden'), value: (row) => yesNo(t, row.isHidden) },
+  { header: t('v3.export.column.active'), value: (row) => yesNo(t, row.isActive) },
+  { header: t('v3.export.column.added'), value: (row) => exportDateTime(row.createdAt) },
+  { header: t('v3.export.column.id'), value: (row) => exportText(row.id) },
 ];
 
-const holdings: ExportField<Row<'holdings'>>[] = [
-  { header: 'Symbol', value: (row) => exportText(row.symbol) },
-  { header: 'Token', value: (row) => exportText(row.tokenName) },
-  { header: 'Account', value: (row) => exportText(row.accountName) },
-  { header: 'Institution', value: (row) => exportText(row.institutionName) },
+const holdings = (t: TFunction): ExportField<Row<'holdings'>>[] => [
+  { header: t('v3.export.column.symbol'), value: (row) => exportText(row.symbol) },
+  { header: t('v3.export.column.token'), value: (row) => exportText(row.tokenName) },
+  { header: t('v3.export.column.account'), value: (row) => exportText(row.accountName) },
+  { header: t('v3.export.column.institution'), value: (row) => exportText(row.institutionName) },
   // No `decimals`: a balance's precision is a property of the balance, and
   // rounding one to fit a column is how a token quantity becomes wrong.
-  { header: 'Balance', value: (row) => exportNumber(row.balance) },
-  { header: 'Source', value: (row) => exportText(row.source) },
-  { header: 'Hidden', value: (row) => exportText(row.isHidden ? 'yes' : 'no') },
-  { header: 'Active', value: (row) => exportText(row.isActive ? 'yes' : 'no') },
-  { header: 'Last updated', value: (row) => exportDateTime(row.lastUpdated) },
-  { header: 'Id', value: (row) => exportText(row.id) },
+  { header: t('v3.export.column.balance'), value: (row) => exportNumber(row.balance) },
+  { header: t('v3.export.column.source'), value: (row) => exportText(row.source) },
+  { header: t('v3.export.column.hidden'), value: (row) => yesNo(t, row.isHidden) },
+  { header: t('v3.export.column.active'), value: (row) => yesNo(t, row.isActive) },
+  { header: t('v3.export.column.lastUpdated'), value: (row) => exportDateTime(row.lastUpdated) },
+  { header: t('v3.export.column.id'), value: (row) => exportText(row.id) },
 ];
 
-const transactions: ExportField<Row<'transactions'>>[] = [
-  { header: 'Occurred', value: (row) => exportDateTime(row.occurredAt) },
-  { header: 'Symbol', value: (row) => exportText(row.symbol) },
-  { header: 'Account', value: (row) => exportText(row.accountName) },
-  { header: 'Kind', value: (row) => exportText(row.kind) },
+const transactions = (t: TFunction): ExportField<Row<'transactions'>>[] => [
+  { header: t('v3.export.column.occurred'), value: (row) => exportDateTime(row.occurredAt) },
+  { header: t('v3.export.column.symbol'), value: (row) => exportText(row.symbol) },
+  { header: t('v3.export.column.account'), value: (row) => exportText(row.accountName) },
+  { header: t('v3.export.column.transactionKind'), value: (row) => exportText(row.kind) },
   // Signed, as stored: a ledger where an outflow is positive is a ledger that
   // does not add up.
-  { header: 'Quantity', value: (row) => exportNumber(row.quantity) },
-  { header: 'Price (native)', value: (row) => exportNumber(row.priceNative) },
-  { header: 'Counter quantity', value: (row) => exportNumber(row.counterQuantity) },
-  { header: 'Fee', value: (row) => exportNumber(row.feeQuantity) },
-  { header: 'Counterparty', value: (row) => exportText(row.counterparty) },
-  { header: 'Description', value: (row) => exportText(row.description) },
-  { header: 'Source', value: (row) => exportText(row.source) },
-  { header: 'External id', value: (row) => exportText(row.externalId) },
-];
-
-const vendors: ExportField<Row<'vendors'>>[] = [
-  { header: 'Vendor', value: (row) => exportText(row.displayName) },
-  { header: 'Category', value: (row) => exportText(row.category) },
-  { header: 'Website', value: (row) => exportText(row.website) },
-  { header: 'Added', value: (row) => exportDateTime(row.createdAt) },
-];
-
-const payments: ExportField<Row<'payments'>>[] = [
-  { header: 'Vendor', value: (row) => exportText(row.vendorName) },
-  { header: 'Direction', value: (row) => exportText(row.direction) },
-  { header: 'Kind', value: (row) => exportText(row.kind) },
-  { header: 'Amount', value: (row) => exportMoney(row.expectedAmount, row.currency) },
+  { header: t('v3.export.column.quantity'), value: (row) => exportNumber(row.quantity) },
+  { header: t('v3.export.column.priceNative'), value: (row) => exportNumber(row.priceNative) },
   {
-    header: 'Every',
-    value: (row) => exportText(`${row.intervalCount} ${row.intervalUnit}`),
+    header: t('v3.export.column.counterQuantity'),
+    value: (row) => exportNumber(row.counterQuantity),
   },
-  { header: 'Starting', value: (row) => exportDate(row.anchorDate) },
-  { header: 'Ending', value: (row) => exportDate(row.endDate) },
-  { header: 'Status', value: (row) => exportText(row.status) },
-  { header: 'Origin', value: (row) => exportText(row.origin) },
-  { header: 'Notes', value: (row) => exportText(row.notes) },
+  { header: t('v3.export.column.fee'), value: (row) => exportNumber(row.feeQuantity) },
+  { header: t('v3.export.column.counterparty'), value: (row) => exportText(row.counterparty) },
+  { header: t('v3.export.column.description'), value: (row) => exportText(row.description) },
+  { header: t('v3.export.column.source'), value: (row) => exportText(row.source) },
+  { header: t('v3.export.column.externalId'), value: (row) => exportText(row.externalId) },
 ];
 
-const occurrences: ExportField<Row<'paymentOccurrences'>>[] = [
-  { header: 'Vendor', value: (row) => exportText(row.vendor) },
-  { header: 'Due', value: (row) => exportDate(row.dueDate) },
-  { header: 'Status', value: (row) => exportText(row.status) },
-  { header: 'Expected', value: (row) => exportNumber(row.expectedAmount) },
-  { header: 'Actual', value: (row) => exportNumber(row.actualAmount) },
+const vendors = (t: TFunction): ExportField<Row<'vendors'>>[] => [
+  { header: t('v3.export.column.vendor'), value: (row) => exportText(row.displayName) },
+  { header: t('v3.export.column.category'), value: (row) => exportText(row.category) },
+  { header: t('v3.export.column.website'), value: (row) => exportText(row.website) },
+  { header: t('v3.export.column.added'), value: (row) => exportDateTime(row.createdAt) },
 ];
 
-const groups: ExportField<Row<'groups'>>[] = [
-  { header: 'Group', value: (row) => exportText(row.name) },
-  { header: 'Description', value: (row) => exportText(row.description) },
-  { header: 'Active', value: (row) => exportText(row.isActive ? 'yes' : 'no') },
+const payments = (t: TFunction): ExportField<Row<'payments'>>[] => [
+  { header: t('v3.export.column.vendor'), value: (row) => exportText(row.vendorName) },
+  { header: t('v3.export.column.direction'), value: (row) => exportText(row.direction) },
+  { header: t('v3.export.column.paymentKind'), value: (row) => exportText(row.kind) },
+  {
+    header: t('v3.export.column.amount'),
+    value: (row) => exportMoney(row.expectedAmount, row.currency),
+  },
+  {
+    header: t('v3.export.column.every'),
+    value: (row) => exportText(formatInterval(t, row.intervalUnit, row.intervalCount)),
+  },
+  { header: t('v3.export.column.starting'), value: (row) => exportDate(row.anchorDate) },
+  { header: t('v3.export.column.ending'), value: (row) => exportDate(row.endDate) },
+  { header: t('v3.export.column.status'), value: (row) => exportText(row.status) },
+  { header: t('v3.export.column.origin'), value: (row) => exportText(row.origin) },
+  { header: t('v3.export.column.notes'), value: (row) => exportText(row.notes) },
 ];
 
-const groupMembers: ExportField<Row<'groupMembers'>>[] = [
-  { header: 'Group', value: (row) => exportText(row.group) },
-  { header: 'Member kind', value: (row) => exportText(row.memberKind) },
-  { header: 'Member', value: (row) => exportText(row.member) },
+const occurrences = (t: TFunction): ExportField<Row<'paymentOccurrences'>>[] => [
+  { header: t('v3.export.column.vendor'), value: (row) => exportText(row.vendor) },
+  { header: t('v3.export.column.due'), value: (row) => exportDate(row.dueDate) },
+  { header: t('v3.export.column.status'), value: (row) => exportText(row.status) },
+  { header: t('v3.export.column.expected'), value: (row) => exportNumber(row.expectedAmount) },
+  { header: t('v3.export.column.actual'), value: (row) => exportNumber(row.actualAmount) },
 ];
 
-const vaults: ExportField<Row<'vaults'>>[] = [
-  { header: 'Vault', value: (row) => exportText(row.name) },
-  { header: 'Description', value: (row) => exportText(row.description) },
-  { header: 'Saved', value: (row) => exportMoney(row.currentAmount, row.currency) },
-  { header: 'Target', value: (row) => exportMoney(row.targetAmount, row.currency) },
-  { header: 'Active', value: (row) => exportText(row.isActive ? 'yes' : 'no') },
+const groups = (t: TFunction): ExportField<Row<'groups'>>[] => [
+  { header: t('v3.export.column.group'), value: (row) => exportText(row.name) },
+  { header: t('v3.export.column.description'), value: (row) => exportText(row.description) },
+  { header: t('v3.export.column.active'), value: (row) => yesNo(t, row.isActive) },
 ];
 
-const vaultHoldings: ExportField<Row<'vaultHoldings'>>[] = [
-  { header: 'Vault', value: (row) => exportText(row.vault) },
-  { header: 'Holding', value: (row) => exportText(row.holding) },
-  { header: 'Share', value: (row) => exportNumber(row.percentage, 2) },
+const groupMembers = (t: TFunction): ExportField<Row<'groupMembers'>>[] => [
+  { header: t('v3.export.column.group'), value: (row) => exportText(row.group) },
+  { header: t('v3.export.column.memberKind'), value: (row) => exportText(row.memberKind) },
+  { header: t('v3.export.column.member'), value: (row) => exportText(row.member) },
 ];
 
-const documents: ExportField<Row<'documents'>>[] = [
-  { header: 'File', value: (row) => exportText(row.filename) },
-  { header: 'Kind', value: (row) => exportText(row.purpose) },
-  { header: 'Type', value: (row) => exportText(row.mimeType) },
+const vaults = (t: TFunction): ExportField<Row<'vaults'>>[] => [
+  { header: t('v3.export.column.vault'), value: (row) => exportText(row.name) },
+  { header: t('v3.export.column.description'), value: (row) => exportText(row.description) },
+  {
+    header: t('v3.export.column.saved'),
+    value: (row) => exportMoney(row.currentAmount, row.currency),
+  },
+  {
+    header: t('v3.export.column.target'),
+    value: (row) => exportMoney(row.targetAmount, row.currency),
+  },
+  { header: t('v3.export.column.active'), value: (row) => yesNo(t, row.isActive) },
+];
+
+const vaultHoldings = (t: TFunction): ExportField<Row<'vaultHoldings'>>[] => [
+  { header: t('v3.export.column.vault'), value: (row) => exportText(row.vault) },
+  { header: t('v3.export.column.holding'), value: (row) => exportText(row.holding) },
+  // `share` and not a reused "percentage": this column is a proportion OF a
+  // vault, and the word that carries that is not the word for a percentage
+  // sign in every language.
+  { header: t('v3.export.column.share'), value: (row) => exportNumber(row.percentage, 2) },
+];
+
+const documents = (t: TFunction): ExportField<Row<'documents'>>[] => [
+  { header: t('v3.export.column.file'), value: (row) => exportText(row.filename) },
+  { header: t('v3.export.column.documentKind'), value: (row) => exportText(row.purpose) },
+  { header: t('v3.export.column.mimeType'), value: (row) => exportText(row.mimeType) },
   // A file size is a tally, not a holding — it survives "Hide amounts".
-  { header: 'Bytes', value: (row) => exportCount(row.byteSize) },
-  { header: 'Source', value: (row) => exportText(row.sourceKind) },
-  { header: 'Classification', value: (row) => exportText(row.classification) },
-  { header: 'Uploaded', value: (row) => exportDateTime(row.createdAt) },
+  { header: t('v3.export.column.bytes'), value: (row) => exportCount(row.byteSize) },
+  { header: t('v3.export.column.source'), value: (row) => exportText(row.sourceKind) },
+  {
+    header: t('v3.export.column.classification'),
+    value: (row) => exportText(row.classification),
+  },
+  { header: t('v3.export.column.uploaded'), value: (row) => exportDateTime(row.createdAt) },
 ];
 
 /** See `HistoryExport.dayTotal` — the rollup's 28-digit sums are division
  *  artifacts, and a workbook column of them arrives as unsummable text. The
  *  rounding that prevents that is `buildSheet`'s now, applied to every figure
  *  that declares a precision (SC-172); this column only has to declare one. */
-const history: ExportField<Row<'netWorthDaily'>>[] = [
-  { header: 'Date', value: (row) => exportDate(row.date) },
-  { header: 'Net worth', value: (row) => exportNumber(row.totalValue, 2) },
-  { header: 'Coverage', value: (row) => exportText(row.coverageQuality) },
-  { header: 'Holdings priced', value: (row) => exportCount(row.holdingsWithKnownValue) },
-  { header: 'Holdings total', value: (row) => exportCount(row.holdingsTotal) },
-  // Same column, same order, same header as the home chart's CSV — the
-  // two files get laid side by side, and SC-98 was exactly what happens
-  // when they drift.
-  { header: 'Holdings unpriceable', value: (row) => exportCount(row.holdingsUnpriceable) },
+const history = (t: TFunction): ExportField<Row<'netWorthDaily'>>[] => [
+  { header: t('v3.export.column.date'), value: (row) => exportDate(row.date) },
+  { header: t('v3.export.column.netWorth'), value: (row) => exportNumber(row.totalValue, 2) },
+  { header: t('v3.export.column.coverage'), value: (row) => exportText(row.coverageQuality) },
   {
-    header: 'Holdings priced from a stale quote',
+    header: t('v3.export.column.holdingsPriced'),
+    value: (row) => exportCount(row.holdingsWithKnownValue),
+  },
+  { header: t('v3.export.column.holdingsTotal'), value: (row) => exportCount(row.holdingsTotal) },
+  // Same column, same order, same KEY as the home chart's CSV — the two files
+  // get laid side by side, and SC-98 was exactly what happens when they
+  // drift. Sharing the key is what makes that promise survive translation.
+  {
+    header: t('v3.export.column.holdingsUnpriceable'),
+    value: (row) => exportCount(row.holdingsUnpriceable),
+  },
+  {
+    header: t('v3.export.column.holdingsStalePriced'),
     value: (row) => exportCount(row.holdingsStalePriced),
   },
 ];
@@ -164,6 +224,7 @@ const history: ExportField<Row<'netWorthDaily'>>[] = [
 export function accountExportSheets(
   data: AccountExport,
   generatedAt: Date,
+  t: TFunction,
   options: { hideAmounts?: boolean } = {}
 ): ExportWorkbook {
   const { hideAmounts } = options;
@@ -172,33 +233,44 @@ export function accountExportSheets(
 
   return {
     sheets: [
-      sheet('Accounts', accounts, data.accounts),
-      sheet('Holdings', holdings, data.holdings),
-      sheet('Transactions', transactions, data.transactions),
-      sheet('Vendors', vendors, data.vendors),
-      sheet('Payments', payments, data.payments),
-      sheet('Payment occurrences', occurrences, data.paymentOccurrences),
-      sheet('Groups', groups, data.groups),
-      sheet('Group members', groupMembers, data.groupMembers),
-      sheet('Vaults', vaults, data.vaults),
-      sheet('Vault holdings', vaultHoldings, data.vaultHoldings),
-      sheet('Documents', documents, data.documents),
-      sheet('Net worth history', history, data.netWorthDaily),
+      sheet(t('v3.export.sheet.accounts'), accounts(t), data.accounts),
+      sheet(t('v3.export.sheet.holdings'), holdings(t), data.holdings),
+      sheet(t('v3.export.sheet.transactions'), transactions(t), data.transactions),
+      sheet(t('v3.export.sheet.vendors'), vendors(t), data.vendors),
+      sheet(t('v3.export.sheet.payments'), payments(t), data.payments),
+      sheet(t('v3.export.sheet.occurrences'), occurrences(t), data.paymentOccurrences),
+      sheet(t('v3.export.sheet.groups'), groups(t), data.groups),
+      sheet(t('v3.export.sheet.groupMembers'), groupMembers(t), data.groupMembers),
+      sheet(t('v3.export.sheet.vaults'), vaults(t), data.vaults),
+      sheet(t('v3.export.sheet.vaultHoldings'), vaultHoldings(t), data.vaultHoldings),
+      sheet(t('v3.export.sheet.documents'), documents(t), data.documents),
+      sheet(t('v3.export.sheet.history'), history(t), data.netWorthDaily),
     ],
     provenance: {
-      subject: 'Whole account',
-      scope: `${data.holdings.length} holdings, ${data.transactions.length} transactions, ${data.netWorthDaily.length} days of history`,
+      subject: t('v3.export.provenance.subject'),
+      // Three counts in one sentence, so three pluralised clause keys and a
+      // frame — i18next pluralises on ONE count, and these three vary
+      // independently (SC-201). The frame also owns the punctuation, which is
+      // where a language that does not separate list items with commas gets
+      // to say so.
+      scope: t('v3.export.provenance.scope', {
+        holdings: t('v3.export.provenance.scopeHoldings', { count: data.holdings.length }),
+        transactions: t('v3.export.provenance.scopeTransactions', {
+          count: data.transactions.length,
+        }),
+        history: t('v3.export.provenance.scopeHistory', { count: data.netWorthDaily.length }),
+      }),
       generatedAt,
       amountsWithheld: hideAmounts,
       details: [
-        { label: 'Account', value: data.profile.email },
+        { label: t('v3.export.provenance.accountLabel'), value: data.profile.email },
         // Stated in the file itself, not only in the interface that produced
         // it: someone opening this backup in two years has the workbook and
         // nothing else, and an omission they cannot see is one they will
         // assume is not there.
         {
-          label: 'Not included',
-          value: 'Exchange and brokerage credentials, sessions, uploaded file contents',
+          label: t('v3.export.provenance.notIncludedLabel'),
+          value: t('v3.export.provenance.notIncludedValue'),
         },
       ],
     },

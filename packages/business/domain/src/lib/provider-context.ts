@@ -13,6 +13,8 @@ const SYNTHETIC_BASE_CURRENCY: ProviderContext['baseCurrency'] = {
   iconUrl: null,
   providerMetadata: {},
   isScamProbability: 0,
+  scamScoreVersion: null,
+  scamScoreSource: 'heuristic',
   isActive: true,
   marketSegment: null,
   lookalikeOf: null,

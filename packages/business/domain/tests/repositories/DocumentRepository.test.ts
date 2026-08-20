@@ -1,7 +1,12 @@
 import { describe, expect, test } from 'bun:test';
 import { DocumentRepository } from '../../src/repositories/DocumentRepository';
+import { restoreContainerAfterAll } from '../../test/helpers/container';
 import { withTestDb } from '../../test/helpers/db';
 import { makeDocument, makeDocumentExtraction, makeUser } from '../../test/helpers/factories';
+
+// Container stubs are process-global; put back whatever this file changes
+// so no later test file resolves them (SC-448).
+restoreContainerAfterAll();
 
 // DocumentRepository backs the "one row per uploaded FILE" side of the
 // documents layer. The `(user_id, content_hash)` unique is the dedup
@@ -240,6 +245,121 @@ describe('DocumentRepository', () => {
         expect(rest).toHaveLength(2);
         expect(rest[0]?.document.id).toBe(tiedSibling as string);
         expect(rest[1]?.document.originalFilename).toBe('older.pdf');
+      });
+    });
+
+    /**
+     * SC-244. The Files surface searched the page it had fetched and reported
+     * "No files match" about it in the words it uses for an account with none.
+     */
+    describe('search', () => {
+      test('reaches a file the caller has not paged to yet', async () => {
+        await withTestDb(async (tx) => {
+          const user = await makeUser(tx);
+          for (let i = 0; i < 4; i++) {
+            await makeDocument(tx, {
+              userId: user.id,
+              originalFilename: `noise-${i}.pdf`,
+              createdAt: at(`2026-02-0${i + 1}T00:00:00Z`),
+            });
+          }
+          await makeDocument(tx, {
+            userId: user.id,
+            originalFilename: 'hetzner-october.pdf',
+            createdAt: at('2026-01-01T00:00:00Z'),
+          });
+
+          const page = await repo().listByUser({ userId: user.id, limit: 2 }, tx);
+          expect(page.map((r) => r.document.originalFilename)).not.toContain('hetzner-october.pdf');
+
+          const found = await repo().listByUser(
+            { userId: user.id, limit: 2, search: 'hetzner' },
+            tx
+          );
+          expect(found).toHaveLength(1);
+          expect(found[0]?.document.originalFilename).toBe('hetzner-october.pdf');
+        });
+      });
+
+      test('matches a fragment of the filename, in any case', async () => {
+        await withTestDb(async (tx) => {
+          const user = await makeUser(tx);
+          await makeDocument(tx, { userId: user.id, originalFilename: 'Acme-October.pdf' });
+
+          expect(
+            await repo().listByUser({ userId: user.id, limit: 10, search: 'acme' }, tx)
+          ).toHaveLength(1);
+          expect(
+            await repo().listByUser({ userId: user.id, limit: 10, search: 'kraken' }, tx)
+          ).toHaveLength(0);
+        });
+      });
+
+      /**
+       * The KIND half of the search, and why it arrives as resolved purposes
+       * rather than as text: `file-import` is displayed as "Import", so no
+       * transformation of the stored value reproduces what the reader typed.
+       */
+      test('the caller resolves kinds by label and this read trusts them', async () => {
+        await withTestDb(async (tx) => {
+          const user = await makeUser(tx);
+          await makeDocument(tx, {
+            userId: user.id,
+            purpose: 'file-import',
+            originalFilename: 'kraken-2026.csv',
+          });
+          await makeDocument(tx, {
+            userId: user.id,
+            purpose: 'invoice',
+            originalFilename: 'acme.pdf',
+          });
+
+          const byKind = await repo().listByUser(
+            { userId: user.id, limit: 10, search: 'import', matchPurposes: ['file-import'] },
+            tx
+          );
+          expect(byKind).toHaveLength(1);
+          expect(byKind[0]?.document.originalFilename).toBe('kraken-2026.csv');
+        });
+      });
+
+      /** Unescaped, `%` is the pattern that matches every row — so a reader who
+       *  typed one would be handed their whole list back as a result. */
+      test('a wildcard the reader typed is a character, not a wildcard', async () => {
+        await withTestDb(async (tx) => {
+          const user = await makeUser(tx);
+          await makeDocument(tx, { userId: user.id, originalFilename: 'plain.pdf' });
+
+          expect(
+            await repo().listByUser({ userId: user.id, limit: 10, search: '%' }, tx)
+          ).toHaveLength(0);
+          expect(
+            await repo().listByUser({ userId: user.id, limit: 10, search: '_' }, tx)
+          ).toHaveLength(0);
+        });
+      });
+
+      test('a blank term is not a search', async () => {
+        await withTestDb(async (tx) => {
+          const user = await makeUser(tx);
+          await makeDocument(tx, { userId: user.id, originalFilename: 'plain.pdf' });
+
+          expect(
+            await repo().listByUser({ userId: user.id, limit: 10, search: '  ' }, tx)
+          ).toHaveLength(1);
+        });
+      });
+
+      test('never reaches another user’s files', async () => {
+        await withTestDb(async (tx) => {
+          const owner = await makeUser(tx);
+          const stranger = await makeUser(tx);
+          await makeDocument(tx, { userId: owner.id, originalFilename: 'hetzner.pdf' });
+
+          expect(
+            await repo().listByUser({ userId: stranger.id, limit: 10, search: 'hetzner' }, tx)
+          ).toHaveLength(0);
+        });
       });
     });
   });

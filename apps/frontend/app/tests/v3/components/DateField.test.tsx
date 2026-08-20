@@ -1,3 +1,5 @@
+import '../../i18n-preload';
+
 import { describe, expect, test } from 'bun:test';
 import { join } from 'node:path';
 import { formatDate } from '@scani/shared';

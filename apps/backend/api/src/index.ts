@@ -14,6 +14,7 @@ import { getNodeEnv, isNodeEnvProduction } from '@scani/config';
 import { createComponentLogger, createTimer, logger, sanitizeUrl } from '@scani/logging';
 import { flushSentry, initSentry, captureException as sentryCapture } from '@scani/logging/sentry';
 import { setSharedRedis } from '@scani/rate-limiter';
+import { LANGUAGE_HEADER } from '@scani/shared';
 
 // Sentry is the first thing we wire up so any subsequent boot-time failure
 // reaches the error tracker instead of being lost to stdout.
@@ -50,12 +51,17 @@ const dataProviderReachable = await (async () => {
 
 // CRITICAL: Initialize container BEFORE importing any routers
 // This must happen before any module that calls Container.get()
-import { QueueClient } from '@scani/queue';
+import { assertQueueBindings, QueueClient } from '@scani/queue';
 import {
   createSessionRevokeLimiter,
   createSignupLimiter,
   createStandardLimiter,
   createStrictLimiter,
+  observeRedisReachability,
+  pingWithin,
+  type StrandReport,
+  startRedisStrandWatchdog,
+  strandedRedisError,
 } from '@scani/rate-limiter';
 import { RedisRealtimeUpdatesService, WebSocketRealtimeUpdatesService } from '@scani/realtime';
 import { StorageService } from '@scani/storage';
@@ -107,8 +113,10 @@ import { googleSheetsFactory } from '@scani/providers-google-sheets';
 import { createBetterAuth } from './auth/better-auth';
 import { buildCorsOrigins, buildTrustedOrigins } from './config/browser-origins';
 import { initializeContainer } from './config/container';
+import { isLivenessProbe } from './lib/liveness';
 import { registerAdminDataRoutes } from './presentation/http/admin-data';
 import { registerAdminJobsRoutes } from './presentation/http/admin-jobs';
+import { registerUnsubscribeRoutes } from './presentation/http/unsubscribe';
 import {
   createContext,
   setBetterAuthForContext,
@@ -209,7 +217,73 @@ logger.info(
 // limiter (fairness across horizontally-scaled instances), and the WS
 // pub/sub (real-time fan-out across instances).
 const redisConnection = new Redis(env.REDIS_URL, { maxRetriesPerRequest: null });
+// SC-225. Without an `error` listener ioredis falls through to
+// `console.error('[ioredis] Unhandled error event:')` (Redis.js:532) — that
+// branch runs ONLY when nobody is listening, so the two-second spam in
+// production was ioredis reporting exactly this absence. Listening silences it
+// and, more usefully, turns it into state `/health/deep` can report: how long,
+// how many attempts, and whether the failure is name resolution (which does
+// not self-heal) or connection (which does).
+/**
+ * How long `/health/deep` waits for a Redis PING before calling it unreachable.
+ *
+ * Sized against ioredis's own retry cadence rather than against a latency
+ * budget: the default `retryStrategy` tops out at one attempt every 2000ms, so
+ * a ping unanswered for a full retry interval is not waiting on a slow Redis,
+ * it is waiting on one that is not there. Healthy production latency here is
+ * 1ms (SC-294).
+ */
+const REDIS_PING_TIMEOUT_MS = 2_000;
+
+const redisReachability = observeRedisReachability(redisConnection, logger, 'redis');
+// SC-327. The tracker above only records the strand; this is what makes
+// somebody find out about it. Nothing was watching outside a deploy, so an OOM
+// restart or a Fly host migration of scani-worker — which is where Redis lives
+// — took the api down for ~20 minutes on 2026-08-16 while `/health` answered
+// 200 throughout, because `/health` is shallow BY DESIGN (fly.toml gates
+// traffic on it). This machine watches its own connection instead of relying
+// on anything fetching the load-balanced hostname, which would see one machine
+// of the pair at random.
+startRedisStrandWatchdog({
+  reachability: redisReachability,
+  redis: redisConnection,
+  pingTimeoutMs: REDIS_PING_TIMEOUT_MS,
+  onStranded: (report: StrandReport) => {
+    const err = strandedRedisError(report);
+    logger.error(
+      {
+        unreachableForMs: report.unreachableForMs,
+        consecutiveErrors: report.consecutiveErrors,
+        nameResolutionFailure: report.nameResolutionFailure,
+        lastError: report.lastError,
+        pingError: report.pingError,
+      },
+      err.message
+    );
+    sentryCapture(err, {
+      component: 'backend',
+      redis_name_resolution_failure: String(report.nameResolutionFailure),
+    });
+  },
+});
 Container.get(QueueClient).configure({ connection: redisConnection });
+// SC-298. Without a registered enqueue mirror every job this api accepts runs
+// with no `user_jobs` row and nothing is logged at any level. The mirror
+// registers as a decorator side-effect of `import '@scani/jobs'`, so the
+// invariant rested entirely on that import and the CRITICAL comment beside it.
+// This is the executable statement of the requirement.
+//
+// **Measured, so the comment does not overclaim**: deleting the bare
+// `import '@scani/jobs'` above does NOT trip this — the routers import named
+// symbols from the same module, so it loads regardless, and the api boots
+// logging `Queue bindings verified`. What this catches is the registration
+// genuinely being absent, not one import line being removed. The bare import
+// stays because it is the only thing ordering registration ahead of a future
+// module-level resolve; this is a second, different guard, not a replacement.
+//
+// Only what this process needs — the api enqueues; it runs no scheduled
+// processors, so the lock and heartbeat writer are the worker's to require.
+assertQueueBindings(['enqueue-mirror']);
 // Make the Redis-backed rate limiter the default for every `new
 // RateLimiter(..., { namespace })` in the process. Without this call,
 // limiters fall back to per-process in-memory and N backend replicas
@@ -320,6 +394,26 @@ const app = new Elysia()
     }
   })
   .onBeforeHandle(async ({ request, set }) => {
+    // The liveness probe carries NO dependency, including through middleware
+    // (SC-225). `fly.toml` gates traffic on `/health`, and on 2026-08-15 this
+    // very limiter held it: `tryConsume` awaits INCRBY on the shared ioredis
+    // connection, the worker deploy replaced the machine Redis lives in, and
+    // `maxRetriesPerRequest: null` means a queued command is never rejected.
+    // The check did not get a 503, it got nothing — both machines went
+    // critical and the app left the load balancer for 14 minutes, over a
+    // dependency a static handler never touches.
+    //
+    // The limiter is now bounded and degrades on its own, so this is defence
+    // in depth rather than the fix. It is still worth having: "can this
+    // process serve" must be answerable by this process alone. The three
+    // probes stay distinct — `/health/deep` and `/readyz` are the ones that
+    // SHOULD fail when Redis is unreachable, and they still do.
+    //
+    // The cost is that `/health` is unmetered. It is a static handler with no
+    // I/O, and Fly's own per-machine concurrency ceiling (soft 80 / hard 120)
+    // still applies, so the exposure is a cheap 200 rather than an
+    // amplification.
+    if (isLivenessProbe(request)) return;
     const res = await globalLimiter.tryConsume(request);
     if ('ok' in res && res.ok) return;
     set.status = 429;
@@ -439,7 +533,11 @@ const app = new Elysia()
       // In dev this also allows loopback on any port — see browser-origins.ts.
       origin: buildCorsOrigins(env.FRONTEND_URL, browserOriginOptions),
       credentials: true,
-      allowedHeaders: ['Authorization', 'Content-Type'],
+      // `LANGUAGE_HEADER` is what the auth client puts the reader's interface
+      // language on (SC-412). A custom header makes the sign-in POST
+      // preflighted, so omitting it here does not degrade the letter to
+      // English — it fails the request outright.
+      allowedHeaders: ['Authorization', 'Content-Type', LANGUAGE_HEADER],
     })
   )
   .onAfterHandle(({ set }) => {
@@ -470,6 +568,8 @@ const app = new Elysia()
 
 registerAdminJobsRoutes(app, redisConnection);
 registerAdminDataRoutes(app, redisConnection);
+// One-click, no-login digest opt-out (SC-460). Public by design.
+registerUnsubscribeRoutes(app);
 
 app
   .get('/', () => ({ status: 'ok', service: 'api' }))
@@ -588,11 +688,18 @@ app
       };
     }
   })
-  // Readiness probe — used by the load balancer (and docker-compose
-  // healthchecks) to decide when a fresh machine should start receiving
-  // traffic. Pings DB + Redis and checks that the schema has been
+  // Readiness probe — `docker-compose.prod.yml`'s healthcheck for the api
+  // container. Pings DB + Redis and checks that the schema has been
   // migrated. No upstream calls, p99 < 100ms in the happy path.
-  // `/health` (above) doubles as the liveness probe (process alive).
+  //
+  // NOT used by Fly's load balancer, despite what this comment claimed until
+  // SC-225. `apps/backend/api/fly.toml` configures exactly one check and it is
+  // `GET /health` — the static handler above. The distinction is the whole
+  // ticket: a probe that fails when Redis is unreachable is correct here and
+  // catastrophic there, and believing the LB already gated on a dependency
+  // probe is what makes the outage look impossible. `tests/lib/liveness.test.ts`
+  // reads the toml so this cannot drift again.
+  //
   // `/health/deep` is for deploy-time smoke tests, not for traffic routing.
   //
   // The schema check is what makes this fail-loud when the operator
@@ -667,16 +774,64 @@ app
       checks.db = { ok: false, error: err instanceof Error ? err.message : String(err) };
     }
 
+    const tRedis = performance.now();
     try {
-      const t0 = performance.now();
-      const reply = await redisConnection.ping();
+      // BOUNDED, and that bound is the whole point (SC-294).
+      //
+      // ioredis queues a command issued while the connection is down and
+      // resolves it whenever the connection comes back — which, for a machine
+      // whose Redis host does not resolve, is never. So this `await` used to
+      // hang until Fly's proxy gave up at ~31s and returned a 502 with no
+      // body at all.
+      //
+      // That is why `redisReachability` — the field added directly below,
+      // whose entire job is to say WHICH kind of unreachable this is — had
+      // never once been read during an occurrence. The deploy smoke fetches
+      // its diagnostic body with `curl --max-time 10`, so it got an empty
+      // string and reported `exit=28`. The endpoint carrying the diagnosis
+      // could not deliver it during the exact failure it describes.
+      //
+      // Two seconds is chosen against ioredis's own retry cadence: the
+      // default `retryStrategy` tops out at one attempt every 2000ms, so a
+      // ping that has not been answered within one full retry interval is not
+      // waiting on a slow Redis, it is waiting on one that is not there.
+      // Healthy production latency on this check is 1ms.
+      const reply = await pingWithin(redisConnection, REDIS_PING_TIMEOUT_MS);
       checks.redis = {
         ok: reply === 'PONG',
-        latencyMs: Math.round(performance.now() - t0),
+        latencyMs: Math.round(performance.now() - tRedis),
         ...(reply !== 'PONG' ? { error: `unexpected reply ${reply}` } : {}),
       };
     } catch (err) {
-      checks.redis = { ok: false, error: err instanceof Error ? err.message : String(err) };
+      checks.redis = {
+        ok: false,
+        latencyMs: Math.round(performance.now() - tRedis),
+        error: err instanceof Error ? err.message : String(err),
+      };
+    }
+
+    // SC-225. `ping()` above answers "can I reach Redis right now"; this
+    // answers "how long have I not been able to, and is it the kind that
+    // recovers". One machine sat on an unresolvable name for three hours
+    // while the probe simply said `ok: false`, which reads the same as a
+    // worker deploy in progress. `nameResolutionFailure` is the difference:
+    // ioredis re-resolves every ~2s forever and will keep getting the same
+    // answer, so that one needs the machine replaced rather than waiting.
+    //
+    // Gated on the ping deliberately. ioredis emits `error` for things that do
+    // NOT close the socket, and those are never followed by a `ready` to clear
+    // the tracker — so a latched tracker on its own would 503 this endpoint
+    // forever against a perfectly healthy Redis. The ping is the authority on
+    // "can I reach it now"; the tracker only ever explains "for how long, and
+    // is it the kind that recovers".
+    const reachability = redisReachability.current();
+    if (reachability.state === 'unreachable' && checks.redis?.ok !== true) {
+      checks.redisReachability = {
+        ok: false,
+        error: reachability.nameResolutionFailure
+          ? `host does not resolve from this machine for ${reachability.unreachableForMs}ms (${reachability.consecutiveErrors} attempts) — will not self-heal`
+          : `unreachable for ${reachability.unreachableForMs}ms (${reachability.consecutiveErrors} attempts): ${reachability.lastError}`,
+      };
     }
 
     try {

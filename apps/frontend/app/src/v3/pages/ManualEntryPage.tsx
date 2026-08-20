@@ -1,10 +1,13 @@
+import { HOLDING_LABEL_MAX_LENGTH } from '@scani/shared';
 import { Button } from '@scani/ui/ui/button';
+import { Input } from '@scani/ui/ui/input';
 import { AmountInput } from '@scani/ui/v3/components/AmountInput';
 import { Block } from '@scani/ui/v3/components/Block';
 import { PageLayout } from '@scani/ui/v3/components/PageLayout';
 import { describeQueryError } from '@scani/ui/v3/lib/errors';
 import { Plus, Trash2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { trpc } from '@/lib/trpc';
 import { AccountTargetFields } from '../components/capture/AccountTargetFields';
@@ -15,6 +18,7 @@ import { Field, FieldRow, FieldSet } from '../components/form/Field';
 import { useAccountTarget } from '../hooks/useAccountTarget';
 import {
   buildHoldingsBatchInput,
+  contestedHoldingTokenIds,
   describeManualEntryBlockers,
   emptyHolding,
   type HoldingDraft,
@@ -48,6 +52,7 @@ import { jobDetailPath } from '../lib/routes';
  * borrowed here.
  */
 export function ManualEntryPage() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const target = useAccountTarget();
 
@@ -68,13 +73,15 @@ export function ManualEntryPage() {
     // The job's own page is where "did it work" is answered.
     onSuccess: ({ jobId }) => navigate(jobDetailPath(jobId)),
     onError: (err) => {
-      const copy = describeQueryError(err, 'these holdings');
+      const copy = describeQueryError(err, t('v3.capture.page.manual.subject'));
       setError(`${copy.title}. ${copy.detail}`);
     },
   });
 
   const isSaving = createMutation.isPending;
   const draft = { ...target.draft, holdings };
+
+  const contestedTokens = contestedHoldingTokenIds(holdings);
 
   const patchHolding = (uid: string, next: Partial<HoldingDraft>) =>
     setHoldings((current) =>
@@ -93,8 +100,8 @@ export function ManualEntryPage() {
   return (
     <PageLayout>
       <CaptureHeader
-        title="Add holdings by hand"
-        description="Say where they are held and what is in them. We price each one after you save."
+        title={t('v3.capture.page.manual.title')}
+        description={t('v3.capture.page.manual.description')}
       />
 
       <Block>
@@ -102,14 +109,17 @@ export function ManualEntryPage() {
       </Block>
 
       <Block>
-        <FieldSet title="What">
+        <FieldSet title={t('v3.capture.page.manual.fieldset')}>
           <div className="flex flex-col divide-y divide-border">
             {holdings.map((holding, index) => (
               <FieldRow key={holding.uid} className="py-3 first:pt-0">
-                <Field label="Token" htmlFor={`manual-token-${holding.uid}`}>
+                <Field
+                  label={t('v3.capture.page.manual.token')}
+                  htmlFor={`manual-token-${holding.uid}`}
+                >
                   <TokenField
                     inputId={`manual-token-${holding.uid}`}
-                    ariaLabel={`token for holding ${index + 1}`}
+                    ariaLabel={t('v3.capture.page.manual.tokenFor', { index: index + 1 })}
                     value={
                       holding.tokenId ? { id: holding.tokenId, label: holding.tokenLabel } : null
                     }
@@ -121,7 +131,10 @@ export function ManualEntryPage() {
                   />
                 </Field>
 
-                <Field label="Amount" htmlFor={`manual-balance-${holding.uid}`}>
+                <Field
+                  label={t('v3.capture.page.manual.amount')}
+                  htmlFor={`manual-balance-${holding.uid}`}
+                >
                   <div className="flex gap-2">
                     <AmountInput
                       id={`manual-balance-${holding.uid}`}
@@ -138,7 +151,7 @@ export function ManualEntryPage() {
                         variant="ghost"
                         size="icon"
                         className="shrink-0 text-muted-foreground"
-                        aria-label={`Remove holding ${index + 1}`}
+                        aria-label={t('v3.capture.page.manual.removeHolding', { index: index + 1 })}
                         disabled={isSaving}
                         onClick={() =>
                           setHoldings((current) => current.filter((row) => row.uid !== holding.uid))
@@ -149,6 +162,27 @@ export function ManualEntryPage() {
                     ) : null}
                   </div>
                 </Field>
+
+                {/* Only on rows whose token this form names more than once —
+                    a bank screen with several pots of one currency. Every
+                    other entry is untouched, so this is not a field everyone
+                    learns to scroll past (SC-63, SC-73). */}
+                {contestedTokens.has(holding.tokenId) ? (
+                  <Field
+                    label={t('v3.capture.page.manual.potName')}
+                    htmlFor={`manual-label-${holding.uid}`}
+                    hint={t('v3.capture.page.manual.potNameHint')}
+                  >
+                    <Input
+                      id={`manual-label-${holding.uid}`}
+                      value={holding.label}
+                      maxLength={HOLDING_LABEL_MAX_LENGTH}
+                      onChange={(event) => patchHolding(holding.uid, { label: event.target.value })}
+                      placeholder={t('v3.capture.page.manual.potNamePlaceholder')}
+                      disabled={isSaving}
+                    />
+                  </Field>
+                ) : null}
               </FieldRow>
             ))}
           </div>
@@ -162,14 +196,14 @@ export function ManualEntryPage() {
             }
           >
             <Plus className="mr-1.5 size-4" aria-hidden="true" />
-            Add another
+            {t('v3.capture.page.manual.addAnother')}
           </Button>
         </FieldSet>
       </Block>
 
       <CaptureSubmit
-        label="Save holdings"
-        blockers={describeManualEntryBlockers(draft)}
+        label={t('v3.capture.page.manual.save')}
+        blockers={describeManualEntryBlockers(t, draft)}
         onSubmit={handleSubmit}
         stage={isSaving ? 'enqueue' : null}
         busyLabel="the save"

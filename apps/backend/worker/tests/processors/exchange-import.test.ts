@@ -1,10 +1,15 @@
 import { describe, expect, it, mock } from 'bun:test';
 import { IntegrationCredentialsService } from '@scani/domain/services';
+import { restoreContainerAfterAll } from '@scani/domain/test-helpers';
 import { Container } from 'typedi';
 import {
   __test_markCredentialFailed,
   __test_isUnrecoverableExchangeError as classify,
 } from '../../src/processors/exchange-import';
+
+// Container stubs are process-global; put back whatever this file changes
+// so no later test file resolves them (SC-448).
+restoreContainerAfterAll();
 
 describe('isUnrecoverableExchangeError', () => {
   it('classifies IBKR Flex bad-token codes', () => {
@@ -13,25 +18,39 @@ describe('isUnrecoverableExchangeError', () => {
     expect(classify(new Error('IBKR Flex Query error (code 1018): Too many requests'))).toBe(true);
   });
 
-  it('classifies IBKR Flex retry-exhausted transients as unrecoverable', () => {
-    // 1001 surviving the provider's in-job poll budget means the Flex
-    // Query template is structurally too heavy or IBKR's queue is stuck —
-    // BullMQ-level retries would just re-issue SendRequest and worsen
-    // the upstream backlog. Surface as terminal so the user can adjust
-    // the query scope.
+  it('leaves IBKR poll exhaustion alone so the descriptor budget can retry it', () => {
+    // Reversed in SC-443. The rationale on record was that surviving the
+    // provider's ~5-minute poll means the Flex template is structurally too
+    // heavy or IBKR's queue is stuck, so a BullMQ retry only re-issues
+    // SendRequest and deepens the backlog — terminal, so the user narrows the
+    // query. Two things undo it.
+    //
+    // The cause is asserted, not observed: nothing here can tell "the template
+    // is too heavy" from "IBKR was slow once", and production has never
+    // produced an instance to weigh — measured 2026-08-19, no `user_jobs` row
+    // in three months carries any IBKR Flex code and the single live IBKR
+    // credential has `sync_failure_count = 0`. And the user was told "this
+    // failed for a reason another attempt will not fix. Check the details
+    // below, correct them, and start it again" about a report that was merely
+    // slow, which names no detail they could correct.
+    //
+    // So the speculative cost is a deeper backlog and the certain cost is a
+    // false instruction. `RETRY_EXTERNAL` bounds the downside at 3 attempts,
+    // and a genuine lockout still lands on 1025's own 24h window.
+    expect(
+      classify(new Error('IBKR report still generating after 24 retries (last: code 1001: busy)'))
+    ).toBe(false);
     expect(
       classify(
-        new Error(
-          'IBKR import failed: IBKR Flex Query error (code 1001): Statement could not be generated at this time. Please try again shortly.'
-        )
+        new Error('IBKR SendRequest still transient after 6 retries (last: code 1019: queued)')
       )
-    ).toBe(true);
-    expect(classify(new Error('IBKR report still generating after 24 retries (last: 1001)'))).toBe(
-      true
-    );
+    ).toBe(false);
+    // 1001/1019 no longer reach `classifyFlexError` at all — the poll loops
+    // own them end to end — so the raw-code form cannot occur either.
     expect(
-      classify(new Error('IBKR SendRequest still transient after 6 retries (last: 1001)'))
-    ).toBe(true);
+      classify(new Error('IBKR Flex Query error (code 1001): Statement could not be generated'))
+    ).toBe(false);
+    expect(classify(new Error('IBKR Flex Query error (code 1019): In progress'))).toBe(false);
   });
 
   it('classifies generic HTTP 401/403 across providers', () => {

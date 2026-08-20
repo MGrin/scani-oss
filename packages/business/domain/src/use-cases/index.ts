@@ -34,7 +34,10 @@ export {
   type BulkAssignHoldingGroupsResult,
   BulkAssignHoldingGroupsUseCase,
 } from './BulkAssignHoldingGroupsUseCase';
-export { CreateHoldingsWithDependenciesUseCase } from './CreateHoldingsWithDependenciesUseCase';
+export {
+  CreateHoldingsWithDependenciesUseCase,
+  DuplicateHoldingTokenError,
+} from './CreateHoldingsWithDependenciesUseCase';
 // Payments Use Cases
 export {
   AnchorOccurrenceMissingError,
@@ -96,6 +99,30 @@ export {
   RollupPortfolioValueDailyUseCase,
   type RollupSummary,
 } from './RollupPortfolioValueDailyUseCase';
+export {
+  INTEGRATION_STALE_RULE,
+  type IntegrationAlertOptions,
+  type IntegrationAlertSummary,
+  SendIntegrationAlertsUseCase,
+} from './SendIntegrationAlertsUseCase';
+export {
+  type PaymentDueReminderSummary,
+  REMINDER_COOLDOWN_MS,
+  REMINDER_TARGET_PATH,
+  SendPaymentDueRemindersUseCase,
+} from './SendPaymentDueRemindersUseCase';
+export {
+  SendTestNotificationUseCase,
+  type TestNotificationDevice,
+  type TestNotificationOutcome,
+  type TestNotificationReport,
+} from './SendTestNotificationUseCase';
+export {
+  DIGEST_COOLDOWN_MS,
+  SendWeeklyDigestsUseCase,
+  type WeeklyDigestOptions,
+  type WeeklyDigestSummary,
+} from './SendWeeklyDigestsUseCase';
 // Cron Job Use Cases
 export {
   type SyncExchangeBalancesResult,

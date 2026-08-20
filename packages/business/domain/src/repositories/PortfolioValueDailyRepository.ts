@@ -43,6 +43,12 @@ export interface IncludedHoldingScopeRow {
   holdingsTotal: number;
   holdingsUnpriceable: number;
   holdingsStalePriced: number;
+  /** SC-249. NULL on rows written before the rollup carried provenance. */
+  holdingsStaleAnchored?: number | null;
+  /** SC-249. NULL when none were backward-anchored, or the row predates it. */
+  oldestAnchorAt?: Date | null;
+  /** SC-317. NULL on rows written before the rollup counted this cause. */
+  holdingsBeforeRecords?: number | null;
   holdingsBasisUnknown: number;
   transfersUnreviewed: number;
 }
@@ -102,13 +108,22 @@ export class PortfolioValueDailyRepository {
   // chart total reconciles with the dashboard headline (which applies
   // the same contract via `isIncludedInTotal`). The three holding /
   // token WHERE conditions below MUST mirror that predicate.
+  //
+  // `holdingIds` narrows the same query to a subset — a group, a vault, one
+  // account (SC-457). It is a NARROWING of the inclusion contract and never a
+  // way around it: the three WHERE conditions below still apply, so a scope
+  // naming a hidden holding gets the same answer as one that does not name it.
+  // An empty array is a scope with nothing in it and returns nothing;
+  // `undefined` is "no scope filter" and returns everything.
   async findIncludedHoldingScopeRange(
     userId: string,
     baseCurrencyId: string,
     from: Date,
     to: Date,
-    transaction?: DatabaseTransaction
+    transaction?: DatabaseTransaction,
+    holdingIds?: readonly string[]
   ): Promise<IncludedHoldingScopeRow[]> {
+    if (holdingIds !== undefined && holdingIds.length === 0) return [];
     try {
       const db = this.getDb(transaction);
       const fromStr = from.toISOString().slice(0, 10);
@@ -126,6 +141,9 @@ export class PortfolioValueDailyRepository {
           holdingsTotal: schema.portfolioValueDaily.holdingsTotal,
           holdingsUnpriceable: schema.portfolioValueDaily.holdingsUnpriceable,
           holdingsStalePriced: schema.portfolioValueDaily.holdingsStalePriced,
+          holdingsStaleAnchored: schema.portfolioValueDaily.holdingsStaleAnchored,
+          oldestAnchorAt: schema.portfolioValueDaily.oldestAnchorAt,
+          holdingsBeforeRecords: schema.portfolioValueDaily.holdingsBeforeRecords,
           holdingsBasisUnknown: schema.portfolioValueDaily.holdingsBasisUnknown,
           transfersUnreviewed: schema.portfolioValueDaily.transfersUnreviewed,
         })
@@ -141,7 +159,8 @@ export class PortfolioValueDailyRepository {
             lte(schema.portfolioValueDaily.snapshotDate, toStr),
             eq(schema.holdings.isHidden, false),
             eq(schema.holdings.isActive, true),
-            lt(schema.tokens.isScamProbability, SCAM_PROBABILITY_THRESHOLD)
+            lt(schema.tokens.isScamProbability, SCAM_PROBABILITY_THRESHOLD),
+            ...(holdingIds ? [inArray(schema.portfolioValueDaily.scopeId, [...holdingIds])] : [])
           )
         )
         .orderBy(asc(schema.portfolioValueDaily.snapshotDate));
@@ -327,6 +346,9 @@ export class PortfolioValueDailyRepository {
             holdingsTotal: sql`EXCLUDED.holdings_total`,
             holdingsUnpriceable: sql`EXCLUDED.holdings_unpriceable`,
             holdingsStalePriced: sql`EXCLUDED.holdings_stale_priced`,
+            holdingsStaleAnchored: sql`EXCLUDED.holdings_stale_anchored`,
+            oldestAnchorAt: sql`EXCLUDED.oldest_anchor_at`,
+            holdingsBeforeRecords: sql`EXCLUDED.holdings_before_records`,
             holdingsBasisUnknown: sql`EXCLUDED.holdings_basis_unknown`,
             transfersUnreviewed: sql`EXCLUDED.transfers_unreviewed`,
             // Without these, re-running the rollup for an already-cached
@@ -380,6 +402,9 @@ export class PortfolioValueDailyRepository {
             holdingsTotal: sql`EXCLUDED.holdings_total`,
             holdingsUnpriceable: sql`EXCLUDED.holdings_unpriceable`,
             holdingsStalePriced: sql`EXCLUDED.holdings_stale_priced`,
+            holdingsStaleAnchored: sql`EXCLUDED.holdings_stale_anchored`,
+            oldestAnchorAt: sql`EXCLUDED.oldest_anchor_at`,
+            holdingsBeforeRecords: sql`EXCLUDED.holdings_before_records`,
             holdingsBasisUnknown: sql`EXCLUDED.holdings_basis_unknown`,
             transfersUnreviewed: sql`EXCLUDED.transfers_unreviewed`,
             // Without these, re-running the rollup for an already-cached

@@ -7,6 +7,11 @@ import { Container } from 'typedi';
 import { DocumentRepository } from '../../../src/repositories/DocumentRepository';
 import { DocumentDownloadService } from '../../../src/services/documents/DocumentDownloadService';
 import { DocumentRetentionService } from '../../../src/services/documents/DocumentRetentionService';
+import { restoreContainerAfterAll } from '../../../test/helpers/container';
+
+// Container stubs are process-global; put back whatever this file changes
+// so no later test file resolves them (SC-448).
+restoreContainerAfterAll();
 
 const DOC_ID = '11111111-1111-4111-8111-111111111111';
 const USER = '22222222-2222-4222-8222-222222222222';

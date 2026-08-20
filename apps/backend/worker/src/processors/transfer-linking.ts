@@ -20,6 +20,11 @@ export class TransferLinkingProcessor extends ScheduledJobProcessor {
       const users = await db.select({ id: schema.users.id }).from(schema.users);
       let totalLinked = 0;
       let totalAmbiguous = 0;
+      // Counted separately because it is a different claim about the money:
+      // a bridge is one asset arriving on another chain, and until SC-336 the
+      // pass could not see one at all. A run whose `bridged` count moves is
+      // the run that stopped booking a disposal that never happened.
+      let totalBridged = 0;
       // Bounded fan-out: linking is per-user independent, so batch it
       // instead of serializing every user behind the previous one.
       const USER_CONCURRENCY = 25;
@@ -31,6 +36,7 @@ export class TransferLinkingProcessor extends ScheduledJobProcessor {
               const s = await useCase.execute({ userId: u.id });
               totalLinked += s.linked;
               totalAmbiguous += s.ambiguous;
+              totalBridged += s.bridged;
             } catch (error) {
               logger.warn(
                 { userId: u.id, error: error instanceof Error ? error.message : error },
@@ -44,6 +50,7 @@ export class TransferLinkingProcessor extends ScheduledJobProcessor {
         {
           users: users.length,
           linked: totalLinked,
+          bridged: totalBridged,
           ambiguous: totalAmbiguous,
           totalMs: Date.now() - start,
         },

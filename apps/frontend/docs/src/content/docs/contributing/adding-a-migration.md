@@ -5,59 +5,59 @@ sidebar:
   order: 7
 ---
 
-Schema changes happen through **Drizzle migrations** in
-`packages/infra/db/src/migrations/`. The flow is mostly handled by
-Drizzle Kit; the points where it isn't are documented here.
+Schema changes happen through SQL files in
+`packages/infra/db/src/migrations/`. A migration is **one file and
+nothing else** — no index to pick, no registry to edit.
 
 ## The flow
 
-1. **Edit the schema** in `packages/infra/db/src/schema/<file>.ts`.
-   Drizzle introspects this when generating migrations.
-
-2. **Generate the migration:**
+1. **Create the file:**
    ```sh
-   bun run --cwd packages/infra/db drizzle-kit generate
+   bun run db:new "what it does"
    ```
-   This writes a new `NNNN_<name>.sql` file under
-   `packages/infra/db/src/migrations/` and updates
-   `meta/_journal.json`.
+   That writes `packages/infra/db/src/migrations/<UTC
+   stamp>_<slug>.sql` — for example
+   `20260817143012_holding_label.sql` — and prints the path.
 
-3. **Inspect the generated SQL.** Drizzle Kit handles most cases
-   well, but:
-   - **Expression indexes over jsonb paths** can't be generated.
-     Write them in raw SQL within the same migration file.
-   - **`COALESCE`-based unique constraints** (e.g. the tokens
-     3-tuple) can't be expressed in Drizzle's builder; write them
-     in raw SQL.
-   - **Data backfills** (rewriting existing rows after a column
-     type change) belong in the migration explicitly — Drizzle
-     doesn't generate them.
+2. **Write the SQL.** If the change is a plain schema edit, mirror
+   it in `packages/infra/db/src/schema/<file>.ts` so the ORM model
+   and the database agree. Separate statements with
+   `--> statement-breakpoint` if any of them must not share a
+   prepared batch.
 
-4. **Add the migration to `meta/_journal.json`** if you wrote a
-   custom SQL file by hand rather than generating one. The
-   migration runner reads the journal, not the directory listing,
-   so unjournaled files are silently skipped.
-
-5. **Run it locally** against the dev Postgres:
+3. **Run it locally** against the dev Postgres:
    ```sh
    docker compose --profile migrate run --rm migrate
    ```
    Or, if you're running apps on the host:
    ```sh
-   bun run packages/infra/db/src/migrate.ts
+   bun run db:migrate
    ```
 
-6. **Update tests.** Repository tests that use `withTestDb` pick
+4. **Update tests.** Repository tests that use `withTestDb` pick
    up the new schema automatically. If you added a column / table,
    add tests covering it.
 
-7. **Verify the round-trip.** A common foot-gun: Drizzle Kit
-   regenerates a "no-op" migration if the schema and DB diverge
-   subtly. Make sure
-   ```sh
-   bun run --cwd packages/infra/db drizzle-kit check
-   ```
-   passes after your migration applies cleanly.
+## Why the filename is a timestamp
+
+Migrations used to be numbered `0001`, `0002`, … and registered in
+`meta/_journal.json`. Both were **shared, contended resources**, and
+four migrations collided in a single day because of it: a branch
+reads the highest number when it starts, `main` moves while it
+works, and by the time the pull request opens the number is stale.
+Checking again does not help — the correct answer depends on which
+of the open branches merges first, which has not happened yet.
+
+A timestamp is not a claim about what else exists, so nothing can
+invalidate it. Two people adding a migration each add exactly one
+file; the merge is clean in either order. `meta/_journal.json` is
+generated on demand (`bun run db:journal`) for Drizzle Kit and is
+not tracked in git.
+
+`0000`–`0050` keep their four-digit names permanently: they are
+applied in production, and renaming an applied migration is worse
+than the problem this fixed. A new file in that range is rejected
+by the build.
 
 ## Conventions
 
@@ -70,10 +70,9 @@ Drizzle Kit; the points where it isn't are documented here.
   raw-SQL migration; Drizzle Kit doesn't generate `CONCURRENTLY`.
 - **Migrations are forward-only.** There's no `down` step. Roll
   back by `pg_restore` from a pre-migration backup.
-- **Naming.** Drizzle picks names automatically; if you write a
-  custom migration, prefix with the next sequential number and a
-  descriptive snake-case suffix:
-  `0061_add_market_segment_to_tokens.sql`.
+- **Naming.** `bun run db:new "<what it does>"` picks it. Don't
+  hand-write a filename — the slug is lower-snake-case and the
+  prefix is a UTC timestamp, and the build rejects anything else.
 
 ## What the migration runner does
 
@@ -83,9 +82,28 @@ Drizzle Kit; the points where it isn't are documented here.
 - Auto-detects SSL mode (`sslmode=disable` for localhost,
   `require` for remote).
 - Opens a single Postgres connection (`max: 1`).
-- Runs each unapplied migration from `meta/_journal.json` in
-  order. Records each in `__drizzle_migrations`.
+- Reads the migrations **folder**, in filename order, and applies
+  every file whose name is not already recorded in
+  `drizzle.__scani_migrations`. One row per migration — so
+  "already applied" is a fact about that migration, never about
+  the newest one.
+- Takes a Postgres advisory lock first, so two overlapping deploys
+  queue rather than race.
+- Refuses, rather than guessing, when the tree and the database
+  disagree: an applied migration whose file was edited, and an
+  applied migration whose file is gone, are both hard stops that
+  name the migration.
 - Exits 0 on success, 1 on error.
+
+On first run against a database migrated before this change, it
+adopts the rows already in `drizzle.__drizzle_migrations` and
+reports any migration whose file has since been edited. If that
+table is unavailable (a restored dump), name the last applied
+migration explicitly:
+
+```sh
+bun run db:migrate -- --assume-applied-through 0050_sc357_rekey_solana_to_net_per_token
+```
 
 ## Common patterns
 
@@ -132,8 +150,6 @@ CREATE INDEX idx_tokens_etherscan_contract
   WHERE provider_metadata->'etherscan'->>'contractAddress' IS NOT NULL;
 ```
 
-Register the file in `meta/_journal.json`.
-
 ### Backfilling data
 
 For a non-trivial backfill (more than a few thousand rows), prefer
@@ -148,10 +164,13 @@ UPDATE holdings SET created_source = 'manual' WHERE source = 'manual';
 
 ## What not to do
 
-- **Don't edit a migration after it's merged.** Once applied
-  anywhere, the hash is recorded. Editing it makes the migrate
-  runner believe the file is unapplied (different hash), which
-  re-runs and likely fails. Add a *new* migration instead.
+- **Don't edit a migration after it's merged.** The runner records
+  the hash of every migration it applies and **refuses to run** if
+  a file has changed since — because the edit would change nothing
+  on any database that already has it, which is the silent version
+  of the same problem. Add a *new* migration instead.
+- **Don't rename or delete an applied migration.** Same refusal,
+  from the other direction: the database is the record of what ran.
 - **Don't drop and recreate a table to "fix" a migration.** All
   data in that table is lost.
 - **Don't introduce a `down` migration.** Drizzle's runner

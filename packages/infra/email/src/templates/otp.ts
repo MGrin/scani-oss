@@ -1,41 +1,35 @@
+import { fill, type OtpStringKey, resolveEmailStrings } from '../i18n';
 import type { EmailBrand, EmailContent, OtpType } from '../types';
 import { escapeHtml, layout } from './layout';
+
+/** `OtpType` is the wire spelling; the bundle keys read as identifiers. */
+const STRING_KEY: Record<OtpType, OtpStringKey> = {
+  'sign-in': 'signIn',
+  'email-verification': 'emailVerification',
+  'forget-password': 'forgetPassword',
+  'change-email': 'changeEmail',
+};
 
 export function renderOtpEmail({
   brand,
   code,
   type,
+  language,
 }: {
   brand: EmailBrand;
   code: string;
   type: OtpType;
+  language?: string | null;
 }): EmailContent {
-  const headline =
-    type === 'email-verification'
-      ? 'Verify your email'
-      : type === 'forget-password'
-        ? 'Reset your password'
-        : type === 'change-email'
-          ? 'Confirm your new email'
-          : 'Your sign-in code';
-  const purpose =
-    type === 'email-verification'
-      ? `Enter this code to verify your email on ${brand.appName}.`
-      : type === 'forget-password'
-        ? `Enter this code to continue resetting your password on ${brand.appName}.`
-        : type === 'change-email'
-          ? `Enter this code to confirm your new email on ${brand.appName}.`
-          : `Enter this code in ${brand.appName} to finish signing in.`;
-  const subject = `${code} — ${headline.toLowerCase()} · ${brand.appName}`;
-  const text = [
-    `${headline}`,
-    ``,
-    purpose,
-    ``,
-    `Code: ${code}`,
-    ``,
-    `This code works once and expires in 5 minutes. If you didn't request it, ignore this email.`,
-  ].join('\n');
+  const s = resolveEmailStrings(language);
+  const key = STRING_KEY[type];
+  const vars = { app: brand.appName, code };
+  const headline = s.otp.headline[key];
+  const purpose = fill(s.otp.purpose[key], vars);
+  const subject = `${code} — ${s.otp.subjectPurpose[key]} · ${brand.appName}`;
+  const text = [headline, ``, purpose, ``, fill(s.otp.codeLabel, vars), ``, s.otp.expiryText].join(
+    '\n'
+  );
 
   const safeCode = escapeHtml(code);
 
@@ -48,7 +42,7 @@ export function renderOtpEmail({
       ${escapeHtml(headline)}
     </h1>
     <p style="margin:0 0 24px 0;font-size:15px;line-height:22px;color:${brand.textMuted};">
-      ${escapeHtml(purpose)} It works once and expires in 5 minutes.
+      ${escapeHtml(purpose)} ${escapeHtml(s.otp.expiryHtml)}
     </p>
     <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin:0 0 20px 0;">
       <tr>
@@ -58,7 +52,7 @@ export function renderOtpEmail({
       </tr>
     </table>
     <p style="margin:0;font-size:13px;line-height:20px;color:${brand.textMuted};">
-      Tap the code to select it, then paste it into ${escapeHtml(brand.appName)} on the device you started from.
+      ${escapeHtml(fill(s.otp.tapCode, vars))}
     </p>
   `;
 
@@ -67,7 +61,11 @@ export function renderOtpEmail({
     text,
     html: layout({
       brand,
-      preheader: `${code} is your ${brand.appName} ${type === 'sign-in' ? 'sign-in' : 'verification'} code (expires in 5 min).`,
+      strings: s,
+      preheader: fill(
+        type === 'sign-in' ? s.otp.preheaderSignIn : s.otp.preheaderVerification,
+        vars
+      ),
       content,
     }),
   };

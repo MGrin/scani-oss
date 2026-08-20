@@ -78,6 +78,58 @@ export type WithUserCreds<C extends ProviderContext> = C & {
 };
 
 /**
+ * The context a `TransactionsProvider.fetchTransactions` call receives.
+ *
+ * `retractHistoryClaim` is the channel this type exists for (SC-395).
+ * Completeness is CLAIMED by `TransactionRouter` — it knows whether the
+ * caller asked for the whole ledger and whether the provider declares a
+ * look-back horizon — and until now that claim was the only voice. A
+ * provider that walked the account and came back knowing it had not
+ * reached the end had nowhere to say so: `fetchTransactions` returns
+ * `TransactionEvent[]`, and Kraken's paginator computed the verdict into a
+ * generator return value the base class dropped on the floor.
+ *
+ * It is deliberately RETRACTION-ONLY. There is no counterpart that claims
+ * completeness, because a provider cannot know what the caller asked for —
+ * an incremental `since` run reaches the end of its window every time and
+ * would otherwise report a whole ledger. The router claims; the provider
+ * can only take the claim away, and `reason` is what the run tells the
+ * user in its warnings.
+ *
+ * Optional because the router is not the only caller — provider tests and
+ * the cloud fetcher build their own contexts — and because a provider that
+ * has nothing to retract must not have to care.
+ */
+export type TransactionFetchContext = WithUserCreds<ProviderContext> & {
+  institutionCode: string;
+  since?: Date;
+  until?: Date;
+  retractHistoryClaim?: (reason: string) => void;
+  noteWarning?: (reason: string) => void;
+};
+
+/**
+ * `noteWarning` is the same voice with none of the authority (SC-428).
+ *
+ * `retractHistoryClaim` is retraction-only BY CONSTRUCTION, and everything it
+ * receives is evidence that the ledger is short — it moves
+ * `has_complete_tx_history`, which SC-149 made load-bearing for cost basis. So
+ * a provider that wants to tell the reader something which is NOT evidence
+ * about the ledger has to say it somewhere else, or say nothing.
+ *
+ * Saying nothing is what bitstamp did. Its `/crypto-transactions/` walk exists
+ * to hang an on-chain txid on deposit and withdraw events the ledger walk has
+ * already produced, and it has a 200-page cap of its own; exhausting it drops
+ * the annotation from some events and drops no rows. SC-426 deliberately left
+ * that alone rather than retract on it — a downgraded cost basis over a
+ * missing hash would be a worse defect than the missing hash. But then nothing
+ * told anyone it had happened.
+ *
+ * The reader sees these in the same `warnings` list as a retraction; the
+ * difference is what the run then WROTE, and only one of the two changes that.
+ */
+
+/**
  * Single price datapoint. Stored verbatim in `token_prices` by the
  * orchestrator; `source` is `${providerKey}_${variant}` so audit /
  * de-conflict logic can attribute rows to the provider that produced
@@ -107,7 +159,35 @@ export interface HoldingSnapshot {
   tokenIdentity: Partial<NewToken>;
   /** Decimal.js string. */
   balance: string;
+  /**
+   * When the SOURCE says this balance was true — not when we asked it.
+   *
+   * For a live-balance API the two are the same instant and `new Date()` is
+   * the honest answer. For a reporting interface they are not: IBKR's Flex
+   * activity statement is generated after the close, so a statement fetched
+   * at 15:10Z can carry positions as of the previous business day, and every
+   * row in it says so in its own `reportDate` attribute (SC-384).
+   *
+   * A provider that is handed an as-of date MUST pass it through rather than
+   * stamp the clock over it. Substituting our clock is what made a correct
+   * IBKR sync read as a wrong number: the balance was right for the day it
+   * described, and the screen said it described now.
+   */
   capturedAt: Date;
+  /**
+   * Why `capturedAt` trails the fetch — one sentence, in the reader's words,
+   * set only by a provider whose lag is STRUCTURAL rather than incidental.
+   *
+   * `ctx.noteWarning`'s voice (SC-428) on the balance side: it explains and
+   * it retracts nothing. A date alone tells a reader their data is old
+   * without telling them it is also correct and expected, which is the half
+   * that stops them concluding the integration is broken.
+   *
+   * Absent on every provider that answers with live balances — there is
+   * nothing to explain, and a note on all of them would teach the eye to
+   * skip the place the real one appears.
+   */
+  asOfNote?: string;
   /**
    * Token type code — `'crypto'` (default), `'fiat'`, `'stock'`. The
    * orchestrator uses this to pick the correct `tokenTypes` row when
@@ -187,5 +267,14 @@ export interface TransactionEvent {
       `quoteIdentity` = EUR). Stored as-is so cost basis stays
       currency-correct without round-tripping through USD. */
   priceNative?: { value: string; quoteIdentity: Partial<NewToken>; tokenType?: string };
+  /**
+   * Provider-native key shared by the legs of one swap — an on-chain
+   * `<chainId>:<txHash>`, an exchange conversion id. It is NOT the
+   * `holding_transactions.swap_group_id` uuid: the orchestrator mints
+   * that, and only for a key whose legs all survive holding resolution.
+   * A provider says "these belong together"; whether they both made it
+   * into the ledger is not a question a provider can answer (SC-332).
+   */
+  swapGroupKey?: string;
   rawPayload?: unknown;
 }

@@ -1,20 +1,25 @@
 import { Monitor, Moon, Sun } from 'lucide-react';
 import { useState } from 'react';
 import { type Theme, useTheme } from '../contexts/ThemeContext';
+import { uiT } from '../i18n';
 import { cn } from '../lib/cn';
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
 
 interface ThemeOption {
   value: Theme;
-  label: string;
+  labelKey: string;
   Icon: typeof Sun;
 }
 
-const SYSTEM_OPTION: ThemeOption = { value: 'system', label: 'System', Icon: Monitor };
+const SYSTEM_OPTION: ThemeOption = {
+  value: 'system',
+  labelKey: 'ui.theme.system',
+  Icon: Monitor,
+};
 const OPTIONS: readonly ThemeOption[] = [
   SYSTEM_OPTION,
-  { value: 'light', label: 'Light', Icon: Sun },
-  { value: 'dark', label: 'Dark', Icon: Moon },
+  { value: 'light', labelKey: 'ui.theme.light', Icon: Sun },
+  { value: 'dark', labelKey: 'ui.theme.dark', Icon: Moon },
 ];
 
 export interface ThemeToggleProps {
@@ -42,7 +47,7 @@ export function ThemeToggle({
 
   const TriggerIcon = theme === 'system' ? Monitor : resolvedTheme === 'dark' ? Moon : Sun;
   const currentOption = OPTIONS.find((o) => o.value === theme) ?? SYSTEM_OPTION;
-  const triggerLabel = `Theme: ${currentOption.label}`;
+  const triggerLabel = uiT('ui.theme.trigger', { theme: uiT(currentOption.labelKey) });
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -63,7 +68,7 @@ export function ThemeToggle({
           />
           {variant === 'row' && !hideLabel && (
             <>
-              <span className="truncate">Theme</span>
+              <span className="truncate">{uiT('ui.theme.label')}</span>
               {/* Full-opacity `--muted-foreground`, not `/70`. The token
                   clears 4.5:1 on its own; taking 70% of it drops the current
                   theme's name to 3.4:1 in light, which is §2.6's "the opacity
@@ -74,7 +79,7 @@ export function ThemeToggle({
                   v3's caption floor (SC-71 6.1). It is the *answer* to the
                   label beside it, so it has no business being smaller. */}
               <span className="ml-auto text-[13px] text-muted-foreground">
-                {currentOption.label}
+                {uiT(currentOption.labelKey)}
               </span>
             </>
           )}
@@ -86,8 +91,8 @@ export function ThemeToggle({
         className="w-44 p-1"
         onCloseAutoFocus={(e) => e.preventDefault()}
       >
-        <div role="listbox" aria-label="Theme" className="flex flex-col">
-          {OPTIONS.map(({ value, label, Icon }) => {
+        <div role="listbox" aria-label={uiT('ui.theme.label')} className="flex flex-col">
+          {OPTIONS.map(({ value, labelKey, Icon }) => {
             const selected = theme === value;
             return (
               <button
@@ -107,7 +112,7 @@ export function ThemeToggle({
                 )}
               >
                 <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
-                <span>{label}</span>
+                <span>{uiT(labelKey)}</span>
                 {selected && (
                   <span aria-hidden="true" className="ml-auto text-xs">
                     ✓

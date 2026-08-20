@@ -11,9 +11,11 @@
     "./styles/v3-fonts.css": "./src/styles/v3-fonts.css",
     "./styles/v3-tokens.css": "./src/styles/v3-tokens.css",
     "./styles/v3-tokens-root.css": "./src/styles/v3-tokens-root.css",
+    "./i18n": "./src/i18n/index.ts",
     "./lib/cn": "./src/lib/cn.ts",
     "./lib/lazy-chunk": "./src/lib/lazy-chunk.ts",
     "./lib/snap-points": "./src/lib/snap-points.ts",
+    "./lib/user-facing-error": "./src/lib/user-facing-error.ts",
     "./lib/portal-container": "./src/lib/portal-container.tsx",
     "./lib/pull-to-refresh": "./src/lib/pull-to-refresh.ts",
     "./lib/pwa-utils": "./src/lib/pwa-utils.ts",
@@ -27,7 +29,6 @@
     "./components/InstallInstructionsSheet": "./src/components/InstallInstructionsSheet.tsx",
     "./components/UpdateBanner": "./src/components/UpdateBanner.tsx",
     "./components/MagicCodeInput": "./src/components/MagicCodeInput.tsx",
-    "./components/EmptyState": "./src/components/EmptyState.tsx",
     "./components/ConfirmDialog": "./src/components/ConfirmDialog.tsx",
     "./components/FaviconImg": "./src/components/FaviconImg.tsx",
     "./components/PullToRefresh": "./src/components/PullToRefresh.tsx",
@@ -119,7 +120,7 @@
     "lint": "biome check .",
     "tokens:root": "bun scripts/build-root-tokens.ts",
     "lint:fix": "biome check --write .",
-    "type-check": "tsgo --noEmit"
+    "type-check": "tsgo --noEmit -p tsconfig.test.json"
   },
   "peerDependencies": {
     "@tanstack/react-query": "^4.44.0",
@@ -153,7 +154,9 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
+    "i18next": "^26.2.0",
     "lucide-react": "^0.577.0",
+    "react-i18next": "^17.0.8",
     "tailwind-merge": "^3.5.0",
     "write-excel-file": "^4.1.1"
   },

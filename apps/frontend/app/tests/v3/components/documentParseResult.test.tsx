@@ -1,3 +1,5 @@
+import '../../i18n-preload';
+
 import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { StaticRouter } from 'react-router-dom/server';
@@ -143,6 +145,7 @@ describe('resolveV3ReviewRenderer', () => {
         {resolveV3ReviewRenderer('document-parse').render({
           result: SUMMARY,
           jobId: 'job-1',
+          reviewOutcome: null,
           actionTakenAt: null,
         })}
       </StaticRouter>

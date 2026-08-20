@@ -2,6 +2,7 @@ import { isPWA, logPWAInfo } from '@scani/ui/lib/pwa-utils';
 import { useQueryClient } from '@tanstack/react-query';
 import type React from 'react';
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { authClient } from '@/lib/auth-client';
 import {
   AUTH_CALL_TIMEOUT_MS,
@@ -101,6 +102,7 @@ function toAuthUser(user: {
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const { t } = useTranslation();
   const [user, setUser] = useState<AuthUser | null>(null);
   const [session, setSession] = useState<AuthSession | null>(null);
   const [status, setStatus] = useState<AuthStatus>('loading');
@@ -166,18 +168,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (!isOnline()) {
       // Asking a dead network to send an email wastes the whole deadline
       // before saying the one thing the reader already needs to hear.
-      return { error: authFailureMessage('offline'), kind: 'offline' };
+      return { error: authFailureMessage(t, 'offline'), kind: 'offline' };
     }
     try {
       const { error } = await withDeadline(run(), AUTH_CALL_TIMEOUT_MS);
       if (error) {
         const kind = classifyAuthFailure(error, isOnline());
-        return { error: authFailureMessage(kind, error.message), kind };
+        return { error: authFailureMessage(t, kind, error.message), kind };
       }
       return {};
     } catch (error) {
       const kind = classifyAuthFailure(error, isOnline());
-      return { error: authFailureMessage(kind), kind };
+      return { error: authFailureMessage(t, kind), kind };
     }
   };
 
@@ -227,6 +229,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const resetPassword = async (_email: string) => {
     // Magic-link flow: there's no password to reset. Surface gracefully.
+    // Not user-facing: nothing in the app calls this, and better-auth's magic
+    // link is the only way in. Left as a developer-addressed string on purpose.
     return { error: 'Password reset is not used; sign in with a magic link instead' };
   };
 

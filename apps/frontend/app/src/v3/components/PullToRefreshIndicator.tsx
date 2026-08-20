@@ -1,4 +1,5 @@
 import { RefreshCw } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/utils';
 import type { PullPhase } from '../hooks/usePullToRefresh';
 
@@ -38,6 +39,7 @@ const CHIP_OFFSET = 44;
  * makes when it becomes a static fill.
  */
 export function PullToRefreshIndicator({ phase, distance, progress }: PullToRefreshIndicatorProps) {
+  const { t } = useTranslation();
   const visible = phase !== 'idle';
   const armed = phase === 'ready' || phase === 'refreshing';
   const following = phase === 'pulling' || phase === 'ready';
@@ -79,7 +81,7 @@ export function PullToRefreshIndicator({ phase, distance, progress }: PullToRefr
       {/* Announced separately from the chip, which is decorative: a screen
           reader user gets no gesture feedback from a rotating arrow. */}
       <span aria-live="polite" className="sr-only" role="status">
-        {phase === 'refreshing' ? 'Refreshing' : ''}
+        {phase === 'refreshing' ? t('v3.common.pullToRefresh.refreshing') : ''}
       </span>
     </>
   );

@@ -6,8 +6,8 @@ import { DeltaPill } from '@scani/ui/v3/components/charts/DeltaPill';
 import { StatTile } from '@scani/ui/v3/components/charts/StatTile';
 import { Numeric } from '@scani/ui/v3/components/Numeric';
 import { useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { trpc } from '@/lib/trpc';
-import { todayDateString } from '@/v2/lib/paymentTotals';
 import { useViewPreference } from '../../hooks/useViewPreference';
 import {
   DEFAULT_HOME_PERIOD,
@@ -27,6 +27,7 @@ import {
   resolvePeriodDelta,
   summariseQuality,
 } from '../../lib/home';
+import { todayDateString } from '../../lib/paymentTotals';
 import { VIEW_PREFERENCE_KEYS } from '../../lib/view-preference';
 import { CoverageNote } from './CoverageNote';
 import { HistoryExport } from './HistoryExport';
@@ -65,11 +66,12 @@ import { formatChartDate, PortfolioChart } from './PortfolioChart';
  * state once instead of reading a decorative box.
  */
 function DeltaPending() {
+  const { t } = useTranslation();
   return (
     <>
       <Skeleton aria-hidden="true" className="h-5 w-44" />
       <span className="sr-only" role="status">
-        Working out the change for this period
+        {t('v3.home.hero.changePending')}
       </span>
     </>
   );
@@ -78,11 +80,12 @@ function DeltaPending() {
 /** The delta line's degraded twin: what failed, and the one control that can
  *  do something about it. */
 function ChartLoadFailure({ onRetry }: { onRetry: () => void }) {
+  const { t } = useTranslation();
   return (
     <span className="flex flex-wrap items-center gap-2">
-      <span className="text-caption text-loss">Couldn't load the change for this period</span>
+      <span className="text-caption text-loss">{t('v3.home.hero.changeUnavailable')}</span>
       <Button variant="outline" size="sm" onClick={onRetry}>
-        Retry
+        {t('v3.home.hero.retry')}
       </Button>
     </span>
   );
@@ -95,6 +98,7 @@ interface HeroBlockProps {
 }
 
 export function HeroBlock({ total, currency }: HeroBlockProps) {
+  const { t } = useTranslation();
   // Both survive a reload (V3-48). The period was the arguable one: it seeds the
   // series fetch, so remembering 1Y changes what loads on first paint. It is
   // persisted anyway — the reader who works in years re-picks it on every visit
@@ -173,7 +177,7 @@ export function HeroBlock({ total, currency }: HeroBlockProps) {
       {isPnl ? (
         <StatTile
           emphasis="hero"
-          label={`Profit and loss · ${period.suffix}`}
+          label={t('v3.home.hero.pnlOverPeriod', { period: t(period.suffixKey) })}
           value={
             <Numeric value={pnlLatest?.total ?? null} currency={currency} delta indicator="sign" />
           }
@@ -184,7 +188,7 @@ export function HeroBlock({ total, currency }: HeroBlockProps) {
               // net worth, and reading it off a stacked area is estimation.
               <span className="flex flex-wrap items-center gap-x-4 gap-y-1">
                 <span className="text-caption text-muted-foreground">
-                  Realized{' '}
+                  {t('v3.home.hero.realized')}{' '}
                   <Numeric
                     value={pnlLatest.realized}
                     currency={currency}
@@ -194,7 +198,7 @@ export function HeroBlock({ total, currency }: HeroBlockProps) {
                   />
                 </span>
                 <span className="text-caption text-muted-foreground">
-                  Unrealized{' '}
+                  {t('v3.home.hero.unrealized')}{' '}
                   <Numeric
                     value={pnlLatest.unrealized}
                     currency={currency}
@@ -210,7 +214,7 @@ export function HeroBlock({ total, currency }: HeroBlockProps) {
               <ChartLoadFailure onRetry={() => void pnlSeries.refetch()} />
             ) : (
               <span className="text-caption text-muted-foreground">
-                PnL is not computed for this period yet
+                {t('v3.home.hero.pnlNotComputed')}
               </span>
             )
           }
@@ -218,7 +222,7 @@ export function HeroBlock({ total, currency }: HeroBlockProps) {
       ) : (
         <StatTile
           emphasis="hero"
-          label="Net worth"
+          label={t('v3.home.metric.netWorth')}
           value={<NetWorthTape value={total} currency={currency} />}
           delta={
             deltaState === 'delta' && delta ? (
@@ -239,7 +243,9 @@ export function HeroBlock({ total, currency }: HeroBlockProps) {
                     className="text-caption text-muted-foreground"
                   />
                 )}
-                <span className="text-caption text-muted-foreground">vs {period.suffix}</span>
+                <span className="text-caption text-muted-foreground">
+                  {t('v3.home.hero.vsPeriod', { period: t(period.suffixKey) })}
+                </span>
               </span>
             ) : deltaState === 'loading' ? (
               <DeltaPending />
@@ -247,7 +253,7 @@ export function HeroBlock({ total, currency }: HeroBlockProps) {
               <ChartLoadFailure onRetry={() => void series.refetch()} />
             ) : (
               <span className="text-caption text-muted-foreground">
-                No history for this period yet
+                {t('v3.home.hero.noHistory')}
               </span>
             )
           }
@@ -273,12 +279,12 @@ export function HeroBlock({ total, currency }: HeroBlockProps) {
         <Segmented
           value={metric}
           onValueChange={setMetric}
-          aria-label="Choose what to plot"
+          aria-label={t('v3.home.hero.choosePlot')}
           className="min-w-0 flex-1"
         >
           {HOME_METRICS.map((option) => (
             <SegmentedItem key={option.key} value={option.key}>
-              {option.label}
+              {t(option.labelKey)}
             </SegmentedItem>
           ))}
         </Segmented>
@@ -294,9 +300,7 @@ export function HeroBlock({ total, currency }: HeroBlockProps) {
           role="alert"
           className="flex h-[200px] w-full items-center justify-center rounded-lg border border-dashed border-border-strong px-4 text-center"
         >
-          <p className="text-body text-muted-foreground">
-            The chart could not be loaded. Your figures above are the last ones we had.
-          </p>
+          <p className="text-body text-muted-foreground">{t('v3.home.hero.chartFailed')}</p>
         </div>
       ) : (
         <PortfolioChart
@@ -305,7 +309,10 @@ export function HeroBlock({ total, currency }: HeroBlockProps) {
           pnl={pnl}
           currency={currency}
           granularity={granularity}
-          label={`${isPnl ? 'Profit and loss' : 'Net worth'} over the last ${period.suffix}`}
+          label={t('v3.home.hero.chartLabel', {
+            metric: isPnl ? t('v3.home.metric.pnlFull') : t('v3.home.metric.netWorth'),
+            period: t(period.suffixKey),
+          })}
         />
       )}
 
@@ -316,17 +323,22 @@ export function HeroBlock({ total, currency }: HeroBlockProps) {
           explained per holding. */}
       {measuredThrough && !loading && !failed ? (
         <p className="text-caption text-muted-foreground">
-          No measurement since {formatChartDate(measuredThrough, 'daily')} — the last point is
-          today's live total, not a rolled-up day.
+          {t('v3.home.hero.noMeasurementSince', {
+            date: formatChartDate(measuredThrough, 'daily'),
+          })}
         </p>
       ) : null}
 
       {/* The period governs the headline, the delta and the chart together,
           which is what keeps them from ever describing different windows. */}
-      <Segmented value={periodKey} onValueChange={setPeriodKey} aria-label="Change the period">
+      <Segmented
+        value={periodKey}
+        onValueChange={setPeriodKey}
+        aria-label={t('v3.home.hero.changePeriod')}
+      >
         {HOME_PERIODS.map((option) => (
           <SegmentedItem key={option.key} value={option.key}>
-            {option.label}
+            {t(option.labelKey)}
           </SegmentedItem>
         ))}
       </Segmented>

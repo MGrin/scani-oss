@@ -1,3 +1,5 @@
+import '../../i18n-preload';
+
 import { describe, expect, test } from 'bun:test';
 import { composeTape, rollFrom, type TapeCell, tapeCells } from '../../../src/v3/lib/tape';
 

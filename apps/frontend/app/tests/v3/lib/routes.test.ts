@@ -1,4 +1,6 @@
 import { describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import en from '@/i18n/locales/en.json';
 import {
   documentDetailPath,
@@ -14,7 +16,7 @@ import {
   V3_TAB_ITEMS,
   vendorPaymentsPath,
 } from '@/v3/lib/routes';
-import { counterpartPath, uiVersionForPath, V3_BASE } from '@/v3/lib/ui-version';
+import { LEGACY_V2_BASE, LEGACY_V3_BASE, V3_BASE } from '@/v3/lib/ui-version';
 
 /** Every navigable destination. The tab bar's capture slot is deliberately
  *  absent: it has no path, because it opens a sheet rather than going
@@ -95,27 +97,21 @@ describe('the More drawer', () => {
 });
 
 describe('the route table', () => {
-  // v3 owns the root since V3-19, so what makes a destination v3's is that it
-  // is *not* under v2's prefix — the mirror of what this asserted before.
-  test('every destination lives outside the classic prefix', () => {
+  // v3 owns the root since V3-19, and both prefixes the app has ever answered
+  // on are retired: `/v3` from the rebuild, `/v2` from the interface SC-423
+  // deleted. A destination under either is a link into a redirect at best.
+  test('every destination lives outside the retired prefixes', () => {
     for (const item of ALL_ITEMS) {
       expect(item.path.startsWith('/')).toBe(true);
-      expect(uiVersionForPath(item.path)).toBe('v3');
+      for (const retired of [LEGACY_V2_BASE, LEGACY_V3_BASE]) {
+        expect(item.path === retired || item.path.startsWith(`${retired}/`)).toBe(false);
+      }
     }
   });
 
   test('every label key resolves in the locale bundle', () => {
     for (const item of ALL_ITEMS) expect(translation(item.labelKey)).toBeString();
     for (const section of V3_SIDEBAR_SECTIONS) expect(translation(section.titleKey)).toBeString();
-  });
-
-  test('every path mirrors a v2 path, so the switch back is a prefix add', () => {
-    for (const item of ALL_ITEMS) {
-      const v2Path = counterpartPath(item.path, 'v2');
-      expect(uiVersionForPath(v2Path)).toBe('v2');
-      // And it comes back unchanged, which is what "mirror" means.
-      expect(counterpartPath(v2Path, 'v3')).toBe(item.path);
-    }
   });
 
   test('V3_NAV_PATHS is the deduplicated union of every surface', () => {
@@ -220,16 +216,24 @@ describe('the Files routes (V3-43)', () => {
   });
 
   /**
-   * The trap this ticket exists downstream of. `V3_ROUTE_PATTERNS` matches
-   * `:id` against any single segment, so the moment v3 owns
-   * `/v3/documents/:documentId` it also owns `/v3/documents/upload` — and a
-   * `/documents/upload` left borrowed from v2 would cross the switch into a
-   * document whose id is the word "upload". Porting the upload screen is what
-   * makes both of these true at once.
+   * The upload screen shares its segment with the document detail route, so
+   * `documents/:documentId` would claim the word "upload" as an id. React
+   * Router ranks static over dynamic and resolves it correctly either way, but
+   * that ranking was never the only thing enforcing it: the version switch
+   * read a pattern table whose matcher had no such rule, and a
+   * `/documents/upload` reached through it became a document called "upload".
+   *
+   * That table went with the interface it served (SC-423), so what is left to
+   * assert is the registration order itself — which is what the comment beside
+   * those two routes in `V3App` says it is documenting.
    */
-  test('the upload screen is a v3 route rather than an id below Files', () => {
-    expect(counterpartPath('/documents/upload', 'v3')).toBe(V3_CAPTURE_ROUTES.invoiceUpload);
-    expect(counterpartPath('/documents/abc', 'v3')).toBe(documentDetailPath('abc'));
+  test('the upload screen is registered before the id below Files', () => {
+    const source = readFileSync(join(import.meta.dir, '../../../src/v3/V3App.tsx'), 'utf8');
+    const upload = source.indexOf('V3_CAPTURE_ROUTES.invoiceUpload');
+    const detail = source.indexOf('/:documentId');
+    expect(upload).toBeGreaterThan(-1);
+    expect(detail).toBeGreaterThan(-1);
+    expect(upload).toBeLessThan(detail);
   });
 
   test('Files lights on its own screens, including the upload and a document', () => {

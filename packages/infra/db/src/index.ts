@@ -20,6 +20,7 @@ export {
   getConnectionStats,
   getDb,
   getTypedDb,
+  isReadOnlySession,
 } from './connection';
 export {
   endConnectionTracking,
@@ -31,6 +32,20 @@ export {
   startConnectionTracking,
 } from './connection-monitor';
 export { type UpsertJobHeartbeatInput, upsertJobHeartbeat } from './job-heartbeat-writer';
-export * from './schema';
+export {
+  assertNoConflictingOptionsParam,
+  assertSessionReadOnly,
+  isDryRunRepairScript,
+  READ_ONLY_ENV_VAR,
+  READ_ONLY_STARTUP_OPTION,
+  REPAIR_WRITE_FLAG,
+  type ReadOnlyIntentInput,
+  resolveReadOnlyIntent,
+} from './read-only';
+// `./schema/index`, not `./schema` — a file named `schema.ts` would shadow the
+// directory, and a stale one silently did until SC-278. Tables missing from
+// `@scani/db` while present in `@scani/db/schema` is that shadow, not a
+// resolver quirk; no table needs a hand-written re-export here.
+export * from './schema/index';
 export { awaitSchemaReady, type SchemaReadyOptions } from './schema-ready';
 export * from './transaction';

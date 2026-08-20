@@ -209,24 +209,30 @@ exists` or similar.
 expects. Typical after rolling back to an older image without
 rolling Postgres back too.
 
-**Fix.** Either roll Postgres back from your backup, or look at the
-Drizzle `__drizzle_migrations` table to identify what's been
-applied:
+**Fix.** Either roll Postgres back from your backup, or look at
+`drizzle.__scani_migrations` to see what's been applied — one row
+per migration, named by its filename:
 
 ```sh
 docker compose exec postgres psql -U scani scani \
-  -c "select * from __drizzle_migrations order by created_at desc limit 10"
+  -c "select tag, applied_at from drizzle.__scani_migrations order by tag desc limit 10"
 ```
 
-If you intentionally want to ignore a migration that's already
-been applied, mark it as applied:
+If the effects are already present and nothing is recorded — a
+database restored from a dump — name the last migration the dump
+contains and the runner adopts everything up to it without running
+any of them:
 
-```sql
-INSERT INTO __drizzle_migrations (hash, created_at)
-VALUES ('<hash-from-meta/_journal.json>', extract(epoch from now()) * 1000);
+```sh
+docker compose --profile migrate run --rm migrate \
+  /app/migrate --allow-remote postgres \
+  --assume-applied-through <filename without .sql>
 ```
 
-Be careful — this is a foot-gun.
+Be careful: that asserts something the runner cannot verify. Don't
+hand-write rows into `drizzle.__scani_migrations` instead — the
+`sha256` column is what detects an applied migration being edited,
+and a made-up value turns the next deploy into a refusal.
 
 ## MinIO bucket is empty after `down -v`
 

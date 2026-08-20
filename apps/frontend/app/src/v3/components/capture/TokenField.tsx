@@ -1,6 +1,7 @@
 import { useDebouncedValue } from '@scani/ui/hooks/useDebouncedValue';
 import { showError } from '@scani/ui/ui/use-toast';
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { type RouterOutputs, trpc } from '@/lib/trpc';
 import { RecordPicker } from '../form/RecordPicker';
 
@@ -36,9 +37,18 @@ function optionId(item: SearchItem): string {
     : `${item.provider ?? 'external'}:${item.symbol}`;
 }
 
+/** The chosen token's parts, for callers that render the symbol and the name
+ *  in separate slots rather than as the one joined label. Splitting the label
+ *  back apart on its separator is the alternative, and a token whose name
+ *  contains an em dash breaks it. */
+export interface TokenSelectionDetails {
+  symbol: string;
+  name: string;
+}
+
 interface TokenFieldProps {
   value: { id: string; label: string } | null;
-  onSelect: (tokenId: string, label: string) => void;
+  onSelect: (tokenId: string, label: string, details: TokenSelectionDetails) => void;
   onClear: () => void;
   disabled?: boolean;
   inputId: string;
@@ -53,6 +63,7 @@ export function TokenField({
   inputId,
   ariaLabel,
 }: TokenFieldProps) {
+  const { t } = useTranslation();
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
   const [materializing, setMaterializing] = useState(false);
@@ -76,7 +87,7 @@ export function TokenField({
     if (!item) return;
 
     if (item.source === 'database' && item.id) {
-      onSelect(item.id, label);
+      onSelect(item.id, label, { symbol: item.symbol, name: item.name });
       setQuery('');
       setOpen(false);
       return;
@@ -86,7 +97,7 @@ export function TokenField({
     if (item.provider === 'defillama') {
       // A DeFiLlama result is a pool, not a token: it has no symbol we can
       // create from without a contract address the search never returns.
-      showError('DeFiLlama results need a contract address, so they cannot be added from here.');
+      showError(t('v3.capture.token.defillamaUnsupported'));
       return;
     }
 
@@ -97,11 +108,19 @@ export function TokenField({
         metadata: item.metadata,
         provider: item.provider,
       });
-      onSelect(created.id, `${created.symbol} — ${created.name}`);
+      onSelect(created.id, `${created.symbol} — ${created.name}`, {
+        symbol: created.symbol,
+        name: created.name,
+      });
       setQuery('');
       setOpen(false);
     } catch (error) {
-      showError(error instanceof Error ? error.message : 'Adding that token');
+      // The error itself, with the action as context (SC-311). The previous
+      // shape reduced to a string either way, and `showError` discarded every
+      // string — so a server rejection and the fallback both rendered as
+      // "Unknown error", and `addFailed` ("Adding that token") was never a
+      // message anyway. It is a context noun phrase, which is the second slot.
+      showError(error, t('v3.capture.token.addFailed'));
     } finally {
       setMaterializing(false);
     }
@@ -124,11 +143,9 @@ export function TokenField({
       onOpenChange={setOpen}
       options={options}
       isLoading={(search.isFetching && results.length === 0) || materializing}
-      placeholder="BTC, AAPL, EUR…"
+      placeholder={t('v3.capture.token.searchPlaceholder')}
       emptyLabel={
-        debounced.length > 0
-          ? 'Nothing by that name, here or at our pricing providers.'
-          : 'Type a symbol or a name.'
+        debounced.length > 0 ? t('v3.capture.token.noResults') : t('v3.capture.token.prompt')
       }
       disabled={disabled}
     />

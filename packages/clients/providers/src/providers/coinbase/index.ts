@@ -14,16 +14,18 @@ import type {
   CredentialValidator,
   TransactionsProvider,
 } from '../../core/capabilities';
-import { ProviderError } from '../../core/errors';
+import { credentialRejection } from '../../core/errors';
 import type {
   DecryptedCredentials,
   HoldingSnapshot,
   ProviderContext,
   TransactionEvent,
+  TransactionFetchContext,
   WithUserCreds,
 } from '../../core/types';
 import { enforceSign } from '../../core/utils/enforce-tx-sign';
 import { tokenTypeForCexAsset } from '../../core/utils/fiat-codes';
+import { PageCapWatch } from '../../core/utils/page-cap';
 import { coinbaseManifest } from './manifest';
 
 export { coinbaseManifest } from './manifest';
@@ -106,7 +108,9 @@ export class CoinbaseProvider
     const creds = await this.resolveApiCreds(ctx);
     if (!creds) return [];
 
-    const accounts = await this.fetchAllAccounts(creds);
+    // `null`: a balance snapshot makes no claim about history, so a short
+    // account list has no completeness claim to retract here.
+    const accounts = await this.fetchAllAccounts(creds, null);
 
     // Coinbase exposes one account per currency; multiple wallets of
     // the same currency are returned as separate rows. Sum them.
@@ -135,20 +139,15 @@ export class CoinbaseProvider
     return c === COINBASE_INSTITUTION_CODE;
   }
 
-  async fetchTransactions(
-    ctx: WithUserCreds<ProviderContext> & {
-      institutionCode: string;
-      since?: Date;
-      until?: Date;
-    }
-  ): Promise<TransactionEvent[]> {
+  async fetchTransactions(ctx: TransactionFetchContext): Promise<TransactionEvent[]> {
     const creds = await this.resolveApiCreds(ctx);
     if (!creds) return [];
 
-    const accounts = await this.fetchAllAccounts(creds);
+    const capped = new PageCapWatch();
+    const accounts = await this.fetchAllAccounts(creds, capped);
     const events: TransactionEvent[] = [];
     for (const account of accounts) {
-      for await (const tx of this.iterateTransactions(creds, account.id)) {
+      for await (const tx of this.iterateTransactions(creds, account.id, capped)) {
         const event = this.mapTransaction(tx, account);
         if (!event) continue;
         if (ctx.since && event.occurredAt < ctx.since) continue;
@@ -156,6 +155,7 @@ export class CoinbaseProvider
         events.push(event);
       }
     }
+    capped.retract(ctx, this.providerKey);
     return events;
   }
 
@@ -176,14 +176,14 @@ export class CoinbaseProvider
       );
       return { valid: true };
     } catch (err) {
-      if (err instanceof ProviderError && err.kind === 'auth-failed') {
-        return { valid: false, message: err.message };
-      }
-      return { valid: false, message: err instanceof Error ? err.message : String(err) };
+      return credentialRejection(err);
     }
   }
 
-  private async fetchAllAccounts(creds: ApiKeyCreds): Promise<CoinbaseAccount[]> {
+  private async fetchAllAccounts(
+    creds: ApiKeyCreds,
+    capped: PageCapWatch | null
+  ): Promise<CoinbaseAccount[]> {
     const all: CoinbaseAccount[] = [];
     let nextUri: string | null = `/v2/accounts?limit=${ACCOUNTS_PAGE_LIMIT}`;
     let pages = 0;
@@ -199,15 +199,23 @@ export class CoinbaseProvider
       nextUri = data.pagination?.next_uri ?? null;
       pages += 1;
     }
+    // A `next_uri` still in hand means the loop exited on the cap, not on the
+    // end of the list — whole accounts, and therefore whole ledgers, are
+    // missing rather than merely truncated.
+    if (nextUri) {
+      capped?.note({ walk: 'the account list', pages: MAX_ACCOUNT_PAGES, rows: all.length });
+    }
     return all;
   }
 
   private async *iterateTransactions(
     creds: ApiKeyCreds,
-    accountId: string
+    accountId: string,
+    capped: PageCapWatch
   ): AsyncGenerator<CoinbaseTransaction> {
     let nextUri: string | null = `/v2/accounts/${accountId}/transactions?limit=${TX_PAGE_LIMIT}`;
     let pages = 0;
+    let rows = 0;
 
     while (nextUri && pages < MAX_TX_PAGES_PER_ACCOUNT) {
       const [path, query] = this.splitPathQuery(nextUri);
@@ -216,10 +224,18 @@ export class CoinbaseProvider
         creds
       );
       if (data.data) {
+        rows += data.data.length;
         for (const tx of data.data) yield tx;
       }
       nextUri = data.pagination?.next_uri ?? null;
       pages += 1;
+    }
+    if (nextUri) {
+      capped.note({
+        walk: `transactions for account ${accountId}`,
+        pages: MAX_TX_PAGES_PER_ACCOUNT,
+        rows,
+      });
     }
   }
 

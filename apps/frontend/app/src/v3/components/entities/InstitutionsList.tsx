@@ -5,6 +5,7 @@ import type { V3DataViewConfig } from '@scani/ui/v3/lib/data-view';
 import { exportCount, exportMoney } from '@scani/ui/v3/lib/export/cell';
 import type { V3QueryState } from '@scani/ui/v3/lib/query-state';
 import { Building2, PieChart } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import {
   compareInstitutions,
@@ -35,10 +36,11 @@ interface InstitutionsListProps {
 }
 
 export function InstitutionsList({ institutions, currency, types, query }: InstitutionsListProps) {
+  const { t } = useTranslation();
   const openCapture = useOpenCapture();
   const typeById = new Map((types ?? []).map((type) => [type.id, type.name]));
   const typeName = (institution: InstitutionRow) =>
-    typeById.get(institution.typeId) ?? 'Unknown type';
+    typeById.get(institution.typeId) ?? t('v3.entities.institution.unknownType');
 
   const accountCount = (institution: InstitutionRow) => institution.summary?.accountCount ?? 0;
 
@@ -53,8 +55,8 @@ export function InstitutionsList({ institutions, currency, types, query }: Insti
   const config: V3DataViewConfig<InstitutionRow> = {
     pageKey: 'institutions',
     data: institutions,
-    noun: 'institutions',
-    searchPlaceholder: 'Search institutions',
+    nounKey: 'ui.dataView.noun.institutions',
+    searchPlaceholderKey: 'ui.dataView.institutions.config.searchInstitutions',
     searchFn: (institution, query) =>
       institution.name.toLowerCase().includes(query) ||
       (institution.description ?? '').toLowerCase().includes(query),
@@ -63,26 +65,26 @@ export function InstitutionsList({ institutions, currency, types, query }: Insti
         ? [
             {
               key: 'type',
-              label: 'Type',
+              labelKey: 'ui.dataView.institutions.filter.type',
               options: typeOptions,
               fn: (institution: InstitutionRow, value) => institution.typeId === value,
             },
           ]
         : [],
     sortDefs: [
-      { key: 'value', label: 'Value' },
-      { key: 'name', label: 'Name' },
-      { key: 'accounts', label: 'Accounts' },
+      { key: 'value', labelKey: 'ui.dataView.institutions.sort.value' },
+      { key: 'name', labelKey: 'ui.dataView.institutions.sort.name' },
+      { key: 'accounts', labelKey: 'ui.dataView.institutions.sort.accounts' },
     ],
     sortFn: compareInstitutions,
     defaultSort: { field: 'value', direction: 'desc' },
-    groupByDefs: [{ key: 'type', label: 'Type', fn: typeName }],
+    groupByDefs: [{ key: 'type', labelKey: 'ui.dataView.institutions.group.type', fn: typeName }],
     summary: (items) => (
       <EntityValueSummary
         value={institutionsValue(items)}
         currency={currency}
         allocation={namedAllocation(items, institutionValue)}
-        allocationLabel="Value by institution"
+        allocationLabel={t('v3.entities.institution.valueByInstitution')}
       />
     ),
     renderRow: (institution) => ({
@@ -90,13 +92,13 @@ export function InstitutionsList({ institutions, currency, types, query }: Insti
         <InstitutionMark name={institution.name} website={institution.website} size="size-5" />
       ),
       label: institution.name,
-      sublabel: `${accountCount(institution)} ${accountCount(institution) === 1 ? 'account' : 'accounts'}`,
+      sublabel: t('v3.entities.institution.sublabel', { count: accountCount(institution) }),
       value: <Numeric value={institutionValue(institution)} currency={currency} />,
     }),
     columns: [
       {
         key: 'name',
-        header: 'Institution',
+        headerKey: 'ui.dataView.institutions.col.institution',
         sortable: true,
         width: 'w-[40%]',
         render: (institution) => (
@@ -108,12 +110,12 @@ export function InstitutionsList({ institutions, currency, types, query }: Insti
       },
       {
         key: 'type',
-        header: 'Type',
+        headerKey: 'ui.dataView.institutions.col.type',
         render: (institution) => <span className="truncate">{typeName(institution)}</span>,
       },
       {
         key: 'accounts',
-        header: 'Accounts',
+        headerKey: 'ui.dataView.institutions.col.accounts',
         sortable: true,
         numeric: true,
         width: 'w-28',
@@ -124,7 +126,7 @@ export function InstitutionsList({ institutions, currency, types, query }: Insti
       },
       {
         key: 'value',
-        header: 'Value',
+        headerKey: 'ui.dataView.institutions.col.value',
         sortable: true,
         numeric: true,
         render: (institution) => (
@@ -136,11 +138,10 @@ export function InstitutionsList({ institutions, currency, types, query }: Insti
     ],
     empty: {
       icon: Building2,
-      title: 'No institutions yet',
-      description:
-        'An institution appears here the first time an import or an integration brings an account in from it.',
+      titleKey: 'ui.dataView.institutions.empty.noInstitutionsYet',
+      descriptionKey: 'ui.dataView.institutions.empty.anInstitutionAppearsHereTheFirst',
       // The capture sheet rather than a link — see `AccountsList`.
-      action: <Button onClick={openCapture}>Connect one</Button>,
+      action: <Button onClick={openCapture}>{t('v3.entities.institution.connectOne')}</Button>,
     },
     peek: {
       basePath: V3_ROUTES.institutions,
@@ -153,13 +154,16 @@ export function InstitutionsList({ institutions, currency, types, query }: Insti
         value: <Numeric value={institutionValue(institution)} currency={currency} />,
         primary: [
           {
-            label: 'Accounts',
+            label: t('v3.entities.institution.accounts'),
             value: <Numeric value={accountCount(institution)} format="plain" decimals={0} />,
           },
-          { label: 'Type', value: typeName(institution) },
-          { label: 'Website', value: institution.website ?? 'None on file' },
+          { label: t('v3.entities.institution.type'), value: typeName(institution) },
+          {
+            label: t('v3.entities.institution.website'),
+            value: institution.website ?? t('v3.entities.institution.noWebsite'),
+          },
           ...(institution.description
-            ? [{ label: 'Description', value: institution.description }]
+            ? [{ label: t('v3.entities.institution.description'), value: institution.description }]
             : []),
         ],
         actions: (
@@ -167,12 +171,12 @@ export function InstitutionsList({ institutions, currency, types, query }: Insti
             <Button asChild variant="outline" size="sm">
               <Link to={`${V3_ROUTES.holdings}?institution=${encodeURIComponent(institution.id)}`}>
                 <PieChart className="mr-2 size-4" aria-hidden="true" />
-                View holdings
+                {t('v3.entities.institution.viewHoldings')}
               </Link>
             </Button>
             <Button asChild variant="outline" size="sm">
               <Link to={`${V3_ROUTES.accounts}?institution=${encodeURIComponent(institution.id)}`}>
-                View accounts
+                {t('v3.entities.institution.viewAccounts')}
               </Link>
             </Button>
           </>

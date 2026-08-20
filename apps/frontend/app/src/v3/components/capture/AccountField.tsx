@@ -3,6 +3,7 @@ import { Input } from '@scani/ui/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@scani/ui/ui/select';
 import { ArrowLeft } from 'lucide-react';
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { trpc } from '@/lib/trpc';
 import type { NewAccountDraft, PickMode } from '../../lib/manual-entry';
 import { Field } from '../form/Field';
@@ -48,6 +49,7 @@ export function AccountField({
   onDraftChange,
   disabled,
 }: AccountFieldProps) {
+  const { t } = useTranslation();
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
 
@@ -70,13 +72,9 @@ export function AccountField({
   if (mode === 'existing') {
     return (
       <Field
-        label="Account"
+        label={t('v3.capture.account.label')}
         htmlFor="manual-account"
-        hint={
-          institutionIsNew
-            ? 'A brand-new institution has no accounts yet — add the first one.'
-            : undefined
-        }
+        hint={institutionIsNew ? t('v3.capture.account.newInstitutionHint') : undefined}
       >
         <RecordPicker
           inputId="manual-account"
@@ -97,9 +95,11 @@ export function AccountField({
           onOpenChange={setOpen}
           options={options}
           isLoading={accounts.isLoading}
-          placeholder="Search your accounts…"
-          emptyLabel="No account by that name here."
-          createLabel={(text) => (text ? `Add “${text}”` : 'Add a new account')}
+          placeholder={t('v3.capture.account.searchPlaceholder')}
+          emptyLabel={t('v3.capture.account.noResults')}
+          createLabel={(text) =>
+            text ? t('v3.capture.account.addNamed', { name: text }) : t('v3.capture.account.addNew')
+          }
           onCreate={(text) => {
             onDraftChange({ name: text });
             onModeChange('new');
@@ -124,28 +124,28 @@ export function AccountField({
         }}
       >
         <ArrowLeft className="mr-1 h-4 w-4" aria-hidden="true" />
-        Pick an existing account
+        {t('v3.capture.account.pickExisting')}
       </Button>
 
-      <Field label="Name" htmlFor="manual-account-name">
+      <Field label={t('v3.capture.account.name')} htmlFor="manual-account-name">
         <Input
           id="manual-account-name"
           value={draft.name}
           onChange={(event) => onDraftChange({ name: event.target.value })}
-          placeholder="Current account, ISA, Trading…"
+          placeholder={t('v3.capture.account.namePlaceholder')}
           className="text-body"
           disabled={disabled}
         />
       </Field>
 
-      <Field label="Type">
+      <Field label={t('v3.capture.account.type')}>
         <Select
           value={draft.typeId}
           onValueChange={(typeId) => onDraftChange({ typeId })}
           disabled={disabled}
         >
-          <SelectTrigger className="text-body" aria-label="Account type">
-            <SelectValue placeholder="Savings, brokerage, crypto…" />
+          <SelectTrigger className="text-body" aria-label={t('v3.capture.account.typeLabel')}>
+            <SelectValue placeholder={t('v3.capture.account.typePlaceholder')} />
           </SelectTrigger>
           <SelectContent>
             {(types.data ?? []).map((type) => (

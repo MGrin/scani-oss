@@ -1,6 +1,17 @@
+import '../../../i18n-preload';
+
 import { describe, expect, test } from 'bun:test';
-import { HISTORY_SCOPES } from '../../../../src/v3/components/home/HistoryExport';
+import i18n from 'i18next';
+import { historyScopes } from '../../../../src/v3/components/home/HistoryExport';
 import { HOME_PERIODS } from '../../../../src/v3/lib/home';
+
+/**
+ * The scope table is a function of `t` now (SC-201) — `HOME_PERIODS` carries
+ * i18n keys, and a module constant has no way to resolve one. Building it with
+ * the real `t` keeps every assertion below about the rendered English.
+ */
+const t = i18n.t.bind(i18n);
+const HISTORY_SCOPES = historyScopes(t);
 
 /**
  * SC-97 — the export must not quietly widen the window on screen.
@@ -23,7 +34,7 @@ describe('net-worth export scopes', () => {
       const scope = HISTORY_SCOPES.find((option) => option.key === period.key);
       // The reported defect in one line: 1M on screen, 90 days in the file.
       expect(`${period.key}:${scope?.days}`).toBe(`${period.key}:${period.days}`);
-      expect(scope?.label).toContain(period.label);
+      expect(scope?.label).toContain(t(period.labelKey));
     }
   });
 

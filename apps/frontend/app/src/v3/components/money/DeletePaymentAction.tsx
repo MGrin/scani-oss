@@ -2,6 +2,7 @@ import { showError, showSuccess } from '@scani/ui/ui/use-toast';
 import { ConfirmAction } from '@scani/ui/v3/components/ConfirmAction';
 import { usePeekRoute } from '@scani/ui/v3/hooks/usePeekRoute';
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { trpc } from '@/lib/trpc';
 import { useEndPayment } from '../../hooks/useEndPayment';
 import { paymentDeleteConsequence, paymentDeleteCounts } from '../../lib/money';
@@ -56,6 +57,7 @@ interface DeletePaymentActionProps {
 }
 
 export function DeletePaymentAction({ paymentId, vendorName, status }: DeletePaymentActionProps) {
+  const { t } = useTranslation();
   const utils = trpc.useUtils();
   const [open, setOpen] = useState(false);
   // The sheet has to leave with the record. Left open it would resolve its id
@@ -69,14 +71,14 @@ export function DeletePaymentAction({ paymentId, vendorName, status }: DeletePay
   const deleteMutation = trpc.payments.delete.useMutation({
     onSuccess: () => {
       setOpen(false);
-      showSuccess('Payment deleted');
+      showSuccess(t('v3.money.deletePayment.deleted'));
       void utils.payments.invalidate();
       // The vendor list's per-vendor counts and its settled figures both read
       // this payment; leaving them cached shows a deleted bill's money.
       void utils.vendors.invalidate();
       peekRoute.close();
     },
-    onError: (error) => showError(error, 'Deleting payment'),
+    onError: (error) => showError(error, t('v3.money.pending.deletingPayment')),
   });
 
   const ending = useEndPayment(() => setOpen(false));
@@ -87,8 +89,12 @@ export function DeletePaymentAction({ paymentId, vendorName, status }: DeletePay
 
   return (
     <ConfirmAction
-      label="Delete"
-      confirmLabel={endInstead ? 'End this payment' : 'Delete this payment'}
+      label={t('v3.money.deletePayment.trigger')}
+      confirmLabel={
+        endInstead
+          ? t('v3.money.deletePayment.confirmEnd')
+          : t('v3.money.deletePayment.confirmDelete')
+      }
       destructive
       triggerClassName="text-destructive"
       open={open}
@@ -100,7 +106,7 @@ export function DeletePaymentAction({ paymentId, vendorName, status }: DeletePay
       canConfirm={counts !== null}
       dismissOnly={refused && !endInstead}
       isPending={deleteMutation.isPending || ending.isPending}
-      consequence={paymentDeleteConsequence(vendorName, counts, refused && !endInstead)}
+      consequence={paymentDeleteConsequence(vendorName, counts, t, refused && !endInstead)}
       onConfirm={() => (endInstead ? ending.end(paymentId) : deleteMutation.mutate({ paymentId }))}
     />
   );

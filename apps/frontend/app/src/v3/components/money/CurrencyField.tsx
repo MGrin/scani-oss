@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { type RouterOutputs, trpc } from '@/lib/trpc';
 import { Field } from '../form/Field';
 import { RecordPicker } from '../form/RecordPicker';
@@ -57,6 +58,7 @@ interface CurrencyFieldProps {
 }
 
 export function CurrencyField({ value, onSelect, onClear, disabled }: CurrencyFieldProps) {
+  const { t } = useTranslation();
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
   const tokens = trpc.tokens.getAll.useQuery();
@@ -68,9 +70,13 @@ export function CurrencyField({ value, onSelect, onClear, disabled }: CurrencyFi
   }));
 
   return (
-    <Field label="Currency" htmlFor="payment-currency">
+    <Field label={t('v3.money.currencyField.label')} htmlFor="payment-currency">
       <RecordPicker
         inputId="payment-currency"
+        // NOT extracted: `RecordPicker` renders `Change ${ariaLabel}`, so this
+        // is a noun fragment inside a frame the caller cannot see. Same class
+        // as `noun` was before SC-257, and the same fix — a key plus a frame
+        // key on the picker. SC-235.
         ariaLabel="currency"
         value={value}
         onSelect={onSelect}
@@ -85,8 +91,8 @@ export function CurrencyField({ value, onSelect, onClear, disabled }: CurrencyFi
         onOpenChange={setOpen}
         options={options}
         isLoading={tokens.isLoading}
-        placeholder="USD, EUR, BTC…"
-        emptyLabel="Nothing in your token list matches that."
+        placeholder={t('v3.money.currencyField.searchPlaceholder')}
+        emptyLabel={t('v3.money.currencyField.empty')}
         disabled={disabled}
       />
     </Field>

@@ -22,9 +22,7 @@ describe('AccountService', () => {
           {
             // missing institutionId + typeId
             name: 'x',
-          } as Parameters<typeof service>[0] extends never
-            ? never
-            : Parameters<AccountService['createAccount']>[0],
+          } as Parameters<AccountService['createAccount']>[0],
           user.id,
           tx
         )

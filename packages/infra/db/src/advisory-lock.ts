@@ -1,3 +1,4 @@
+import { advisoryLockKey } from './advisory-lock-key';
 import { client } from './connection';
 
 /**
@@ -17,27 +18,11 @@ import { client } from './connection';
  * path as belt-and-braces.
  */
 
-function hashKey(key: string): bigint {
-  // FNV-1a 64-bit, then squeezed into the signed-int64 range Postgres
-  // accepts. Deterministic, fast, no crypto needed (these are coordination
-  // hashes, not security tokens).
-  const FNV_OFFSET = 0xcbf29ce484222325n;
-  const FNV_PRIME = 0x100000001b3n;
-  const MASK_64 = (1n << 64n) - 1n;
-  let hash = FNV_OFFSET;
-  for (let i = 0; i < key.length; i++) {
-    hash ^= BigInt(key.charCodeAt(i));
-    hash = (hash * FNV_PRIME) & MASK_64;
-  }
-  const SIGNED_MAX = (1n << 63n) - 1n;
-  return hash > SIGNED_MAX ? hash - (1n << 64n) : hash;
-}
-
 export async function withAdvisoryLock<T>(
   key: string,
   fn: () => Promise<T>
 ): Promise<{ ran: true; result: T } | { ran: false }> {
-  const lockKey = hashKey(key).toString();
+  const lockKey = advisoryLockKey(key).toString();
   const reserved = await client.reserve();
 
   try {

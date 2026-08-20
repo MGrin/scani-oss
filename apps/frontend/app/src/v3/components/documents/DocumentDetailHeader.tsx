@@ -6,9 +6,10 @@ import { showError, showSuccess } from '@scani/ui/ui/use-toast';
 import { Block } from '@scani/ui/v3/components/Block';
 import { Download, Loader2, RefreshCw, Trash2 } from 'lucide-react';
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { trpc } from '@/lib/trpc';
-import { useDocumentDownload } from '@/v2/hooks/useDocuments';
+import { useDocumentDownload } from '@/v3/hooks/useDocumentDownload';
 import { documentIcon, documentPurposeLabel } from '../../lib/documents';
 import { jobDetailPath, V3_ROUTES } from '../../lib/routes';
 
@@ -28,9 +29,9 @@ import { jobDetailPath, V3_ROUTES } from '../../lib/routes';
  * disabled, above a sentence already explaining the file was gone; a greyed
  * button is still the page offering what it has just said it cannot do.
  *
- * `useDocumentDownload` is v2's, unchanged: it presigns on the click rather
- * than on render because the URL expires, which is a property of the endpoint
- * rather than of either interface.
+ * `useDocumentDownload` presigns on the click rather than on render because
+ * the URL expires, which is a property of the endpoint rather than of either
+ * interface.
  */
 
 export interface DocumentDetailFile {
@@ -56,6 +57,7 @@ interface DocumentDetailHeaderProps {
 }
 
 export function DocumentDetailHeader({ file, extractionCount }: DocumentDetailHeaderProps) {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const utils = trpc.useUtils();
   const { download, pendingId } = useDocumentDownload();
@@ -75,19 +77,19 @@ export function DocumentDetailHeader({ file, extractionCount }: DocumentDetailHe
       // reloaded, which reads as the button having done nothing.
       navigate(jobDetailPath(jobId));
     },
-    onError: (error) => showError(error, 'Re-parsing the document'),
+    onError: (error) => showError(error, t('v3.documents.detail.reparsing')),
     onSettled: settle,
   });
 
   const remove = trpc.documents.delete.useMutation({
     onSuccess: () => {
       setConfirmDelete(false);
-      showSuccess('File deleted — you can upload it again');
+      showSuccess(t('v3.documents.detail.deleted'));
       // Navigate first: this page's own `documents.get` is the one query the
       // invalidation would refetch into a 404.
       navigate(V3_ROUTES.files, { replace: true });
     },
-    onError: (error) => showError(error, 'Deleting the file'),
+    onError: (error) => showError(error, t('v3.documents.detail.deleting')),
     onSettled: settle,
   });
 
@@ -117,26 +119,25 @@ export function DocumentDetailHeader({ file, extractionCount }: DocumentDetailHe
             (SC-69 3.4). They differing is often the interesting part. */}
         {file.classification ? (
           <Badge variant="outline" className="shrink-0">
-            {`Read as ${file.classification}`}
+            {t('v3.documents.detail.readAs', { classification: file.classification })}
           </Badge>
         ) : null}
       </div>
 
       <dl className="flex flex-wrap gap-x-4 gap-y-1 text-caption text-muted-foreground">
-        <span>{`Uploaded ${formatDateTime(file.createdAt)}`}</span>
-        <span>{`Arrived by ${file.sourceKind}`}</span>
+        <span>{t('v3.documents.detail.uploadedAt', { when: formatDateTime(file.createdAt) })}</span>
+        <span>{t('v3.documents.detail.arrivedBy', { source: file.sourceKind })}</span>
         {/* Suppressed at zero: the body below already says "No invoices were
             found in this file" in a sentence, and a count of nothing directly
             above it is the same claim made twice and less clearly. */}
         {isInvoice && extractionCount > 0 ? (
-          <span>{`${extractionCount} invoice${extractionCount === 1 ? '' : 's'} extracted`}</span>
+          <span>{t('v3.documents.detail.extractedCount', { count: extractionCount })}</span>
         ) : null}
       </dl>
 
       {file.downloadable ? null : (
         <p className="rounded-md border border-border-strong bg-surface-hover p-2 text-caption">
-          The stored copy of this file is gone, so it cannot be downloaded or read again. Deleting
-          this record frees the file to be uploaded fresh.
+          {t('v3.documents.detail.copyGone')}
         </p>
       )}
 
@@ -159,7 +160,7 @@ export function DocumentDetailHeader({ file, extractionCount }: DocumentDetailHe
             ) : (
               <Download className="mr-2 size-4" aria-hidden="true" />
             )}
-            Download
+            {t('v3.documents.detail.download')}
           </Button>
         ) : null}
 
@@ -171,7 +172,9 @@ export function DocumentDetailHeader({ file, extractionCount }: DocumentDetailHe
             onClick={() => setConfirmReparse(true)}
           >
             <RefreshCw className="mr-2 size-4" aria-hidden="true" />
-            {reparse.isPending ? 'Re-parsing…' : 'Re-parse'}
+            {reparse.isPending
+              ? t('v3.documents.detail.reparsePending')
+              : t('v3.documents.detail.reparseCommit')}
           </Button>
         ) : null}
 
@@ -183,16 +186,18 @@ export function DocumentDetailHeader({ file, extractionCount }: DocumentDetailHe
           onClick={() => setConfirmDelete(true)}
         >
           <Trash2 className="mr-2 size-4" aria-hidden="true" />
-          {remove.isPending ? 'Deleting…' : 'Delete'}
+          {remove.isPending
+            ? t('v3.documents.detail.deletePending')
+            : t('v3.documents.detail.deleteCommit')}
         </Button>
       </div>
 
       <ConfirmDialog
         open={confirmReparse}
         onOpenChange={setConfirmReparse}
-        title="Read this file again"
-        description="Runs the current extractor over the file and replaces every invoice that has not already been turned into a payment — those are kept. This costs an AI call."
-        confirmLabel="Re-parse"
+        title={t('v3.documents.detail.reparseTrigger')}
+        description={t('v3.documents.detail.reparseConsequence')}
+        confirmLabel={t('v3.documents.detail.reparseCommit')}
         isPending={reparse.isPending}
         onConfirm={() => reparse.mutate({ documentId: file.id })}
       />
@@ -200,9 +205,9 @@ export function DocumentDetailHeader({ file, extractionCount }: DocumentDetailHe
       <ConfirmDialog
         open={confirmDelete}
         onOpenChange={setConfirmDelete}
-        title="Delete this file"
-        description="Removes the record, every invoice extracted from it, and the stored copy. Uploading the same file again will then read it fresh instead of being skipped as a duplicate. An invoice already turned into a payment blocks the delete — detach that payment first. This cannot be undone."
-        confirmLabel="Delete"
+        title={t('v3.documents.detail.deleteTrigger')}
+        description={t('v3.documents.detail.deleteConsequence')}
+        confirmLabel={t('v3.documents.detail.deleteCommit')}
         variant="destructive"
         isPending={remove.isPending}
         onConfirm={() => remove.mutate({ documentId: file.id })}

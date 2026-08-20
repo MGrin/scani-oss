@@ -2,9 +2,11 @@ import { createComponentLogger, logger } from '@scani/logging';
 import { OutflowRateLimiterRegistry } from '@scani/rate-limiter';
 import Decimal from 'decimal.js';
 import { Container, Service } from 'typedi';
+import { TokenTypeRepository } from '../../repositories/EnumRepositories';
 import { TokenPriceRepository } from '../../repositories/TokenPriceRepository';
 import { TokenRepository } from '../../repositories/TokenRepository';
 import { PriceGraphService } from './PriceGraphService';
+import { PRICE_HUBS } from './price-hubs';
 import { EXCHANGERATE_LIMIT } from './upstream-rate-limits';
 
 const currencyLogger = createComponentLogger('pricing:currency');
@@ -16,14 +18,32 @@ const currencyLogger = createComponentLogger('pricing:currency');
 const EXCHANGERATE_BASE_URL = 'https://api.exchangerate-api.com/v4/latest';
 const EXCHANGERATE_FETCH_TIMEOUT_MS = 8000;
 
-// Hub symbols used when no direct (or inverse direct) edge exists for a
-// pair — e.g. EUR→GBP routed through USD as `(EUR→USD) · (USD→GBP)`.
-// USD first because every forex-backfill edge is anchored on USD; EUR
-// second because it's the second-most-common base; USDT included so
-// crypto-quoted tokens (priced in USDT on CEXes) can hop to fiat bases.
-// Hub order matters only for tie-breaking — PriceGraphService picks the
-// first hub whose two legs both resolve.
-const FIAT_HUB_SYMBOLS = ['USD', 'EUR', 'USDT'] as const;
+// Currencies warmed from one upstream response at api boot. All fiat, so
+// they resolve unambiguously by (symbol, fiat type) — unlike `PRICE_HUBS`,
+// which deliberately contains a crypto stablecoin.
+const PREWARM_FIAT_SYMBOLS = ['USD', 'EUR', 'GBP', 'CHF', 'JPY', 'CAD', 'AUD'] as const;
+
+/**
+ * The identity of one side of a conversion: which `tokens` row, and what to
+ * call it upstream.
+ *
+ * A symbol alone cannot address a currency here. `tokens` is unique on
+ * `(symbol, type_id, COALESCE(market_segment,''))`, so eight symbols in
+ * production have more than one legitimate row — `SOS` has both a fiat
+ * currency and a memecoin, and `USDT` and `USDC` have several crypto rows
+ * apiece. Resolving one by symbol is a guess, and since `findBySymbol`
+ * tie-breaks on `desc(createdAt)` it is a guess that reliably prefers the
+ * newest row: a memecoin minted last month beats the fiat currency of the
+ * same ticker every time (SC-223).
+ *
+ * `Token` satisfies this structurally, so every caller that already holds
+ * one passes it unchanged. That is the point — the ids were always in hand
+ * and were being discarded one frame before the converter needed them.
+ */
+export interface CurrencyRef {
+  id: string;
+  symbol: string;
+}
 
 /**
  * Fiat currency conversion with an in-memory rate cache, a DB-backed
@@ -53,6 +73,7 @@ export class CurrencyConverter {
   private readonly exchangeRateLimiter = this.limiterRegistry.get(EXCHANGERATE_LIMIT);
 
   private readonly tokenRepository = Container.get(TokenRepository);
+  private readonly tokenTypeRepository = Container.get(TokenTypeRepository);
   private readonly tokenPriceRepository = Container.get(TokenPriceRepository);
   private readonly priceGraphService = Container.get(PriceGraphService);
 
@@ -75,12 +96,12 @@ export class CurrencyConverter {
    */
   async convert(
     price: string,
-    fromCurrency: string,
-    toCurrency: string,
+    fromCurrency: CurrencyRef,
+    toCurrency: CurrencyRef,
     timestamp: Date,
     cacheOnly = false
   ): Promise<string | null> {
-    if (fromCurrency === toCurrency || price === '0') {
+    if (fromCurrency.id === toCurrency.id || price === '0') {
       return price;
     }
 
@@ -94,14 +115,17 @@ export class CurrencyConverter {
           originalPrice: price,
           rate,
           convertedPrice: converted.toString(),
-          fromCurrency,
-          toCurrency,
+          fromCurrency: fromCurrency.symbol,
+          toCurrency: toCurrency.symbol,
         },
         'Price converted'
       );
       return converted.toString();
     } catch (error) {
-      logger.error({ error, price, fromCurrency, toCurrency }, 'Price conversion failed');
+      logger.error(
+        { error, price, fromCurrency: fromCurrency.symbol, toCurrency: toCurrency.symbol },
+        'Price conversion failed'
+      );
       return null;
     }
   }
@@ -112,8 +136,8 @@ export class CurrencyConverter {
    * contract as `convert()` — see its doc-comment).
    */
   async getRate(
-    fromCurrency: string,
-    toCurrency: string,
+    fromCurrency: CurrencyRef,
+    toCurrency: CurrencyRef,
     timestamp: Date,
     cacheOnly = false
   ): Promise<string | null> {
@@ -132,23 +156,28 @@ export class CurrencyConverter {
    * without a second rate path alongside the one every valuation uses.
    */
   async getRateDetail(
-    fromCurrency: string,
-    toCurrency: string,
+    fromCurrency: CurrencyRef,
+    toCurrency: CurrencyRef,
     timestamp: Date,
     cacheOnly = false
   ): Promise<{ rate: string; asOf: Date } | null> {
-    if (fromCurrency === toCurrency) return { rate: '1', asOf: timestamp };
+    if (fromCurrency.id === toCurrency.id) return { rate: '1', asOf: timestamp };
 
     const cacheKey = this.cacheKey(fromCurrency, toCurrency);
-    const cached = this.currencyRateCache.get(cacheKey);
     const now = Date.now();
 
+    // A cached entry is only usable here if the RATE it holds is inside the
+    // valuation tolerance, not merely inside the cache TTL. `getStoredRateDetail`
+    // populates the same map with deliberately older rates (SC-222), and a
+    // valuation that read one of those would skip the upstream refresh it is
+    // entitled to — the two paths share a cache, not a freshness policy.
+    const cached = this.readCache(cacheKey, now, this.DB_RATE_MAX_AGE_MS);
     if (cached) {
-      if (cached.expiresAt > now) {
-        logger.debug({ fromCurrency, toCurrency }, 'Using cached currency conversion rate');
-        return { rate: cached.rate, asOf: new Date(cached.asOf) };
-      }
-      this.currencyRateCache.delete(cacheKey);
+      logger.debug(
+        { fromCurrency: fromCurrency.symbol, toCurrency: toCurrency.symbol },
+        'Using cached currency conversion rate'
+      );
+      return cached;
     }
 
     const dbRate = await this.fetchRateFromDatabase(fromCurrency, toCurrency, timestamp);
@@ -163,14 +192,14 @@ export class CurrencyConverter {
 
     if (cacheOnly) {
       logger.debug(
-        { fromCurrency, toCurrency },
+        { fromCurrency: fromCurrency.symbol, toCurrency: toCurrency.symbol },
         'No cached conversion rate available in cache-only mode'
       );
       return null;
     }
 
     try {
-      const url = `${EXCHANGERATE_BASE_URL}/${fromCurrency}`;
+      const url = `${EXCHANGERATE_BASE_URL}/${fromCurrency.symbol}`;
       const response = await this.exchangeRateFetch(url);
 
       if (!response.ok) {
@@ -180,15 +209,17 @@ export class CurrencyConverter {
       }
 
       const data = (await response.json()) as { rates: Record<string, number> };
-      if (!data.rates?.[toCurrency]) {
-        throw new Error(`No conversion rate available from ${fromCurrency} to ${toCurrency}`);
+      const rate = data.rates?.[toCurrency.symbol];
+      if (!rate) {
+        throw new Error(
+          `No conversion rate available from ${fromCurrency.symbol} to ${toCurrency.symbol}`
+        );
       }
 
-      const rate = data.rates[toCurrency];
       const rateString = rate.toString();
 
       logger.debug(
-        { fromCurrency, toCurrency, rate, apiUrl: url },
+        { fromCurrency: fromCurrency.symbol, toCurrency: toCurrency.symbol, rate, apiUrl: url },
         'Currency conversion rate fetched from external API'
       );
 
@@ -199,37 +230,100 @@ export class CurrencyConverter {
       });
 
       try {
-        const fromToken = await this.tokenRepository.findBySymbol(fromCurrency);
-        const toToken = await this.tokenRepository.findBySymbol(toCurrency);
+        await this.tokenPriceRepository.bulkUpsert([
+          {
+            tokenId: fromCurrency.id,
+            baseTokenId: toCurrency.id,
+            price: rateString,
+            timestamp: new Date(),
+            source: 'exchangerate-api',
+          },
+        ]);
 
-        if (fromToken && toToken) {
-          await this.tokenPriceRepository.bulkUpsert([
-            {
-              tokenId: fromToken.id,
-              baseTokenId: toToken.id,
-              price: rateString,
-              timestamp: new Date(),
-              source: 'exchangerate-api',
-            },
-          ]);
-
-          currencyLogger.debug(
-            { fromCurrency, toCurrency, rate: rateString },
-            'Stored conversion rate in database'
-          );
-        }
+        currencyLogger.debug(
+          { fromCurrency: fromCurrency.symbol, toCurrency: toCurrency.symbol, rate: rateString },
+          'Stored conversion rate in database'
+        );
       } catch (dbError) {
         currencyLogger.warn(
-          { dbError, fromCurrency, toCurrency },
+          { dbError, fromCurrency: fromCurrency.symbol, toCurrency: toCurrency.symbol },
           'Failed to store conversion rate in database'
         );
       }
 
       return { rate: rateString, asOf: new Date(now) };
     } catch (error) {
-      logger.warn({ fromCurrency, toCurrency, error }, 'Failed to get currency conversion rate');
+      logger.warn(
+        { fromCurrency: fromCurrency.symbol, toCurrency: toCurrency.symbol, error },
+        'Failed to get currency conversion rate'
+      );
       return null;
     }
+  }
+
+  /**
+   * The rate a **user-facing read** is allowed to use: whatever we already
+   * have, however old, and never an upstream call (SC-222).
+   *
+   * Two rules, and both are about the person waiting:
+   *
+   * 1. **It never fetches.** `exchangeRateFetch` goes through an outflow
+   *    limiter of 2 requests per 60 seconds whose `execute` *sleeps* until a
+   *    slot frees. That is correct for a nightly job and catastrophic on a
+   ***REMOVED***
+   ***REMOVED***
+   *    worker's job; this returns what is known now and the caller enqueues.
+   * 2. **It has no maximum age.** A rate from 30 hours ago is a far better
+   *    answer than no rate: the wire carries `asOf`, and every surface that
+   *    prints a converted figure already dates a stale one rather than
+   *    presenting it as current. Refusing it — which `getRateDetail` does at
+   *    24 h, correctly, because it can go and get a better one — would put
+   *    "rates unavailable" under a total every night between the moment the
+   *    day's rows age out and the moment forex-backfill writes new ones.
+   */
+  async getStoredRateDetail(
+    fromCurrency: CurrencyRef,
+    toCurrency: CurrencyRef,
+    timestamp: Date
+  ): Promise<{ rate: string; asOf: Date } | null> {
+    if (fromCurrency.id === toCurrency.id) return { rate: '1', asOf: timestamp };
+
+    const cacheKey = this.cacheKey(fromCurrency, toCurrency);
+    const now = Date.now();
+
+    const cached = this.readCache(cacheKey, now, null);
+    if (cached) return cached;
+
+    const dbRate = await this.fetchRateFromDatabase(fromCurrency, toCurrency, timestamp, null);
+    if (!dbRate) return null;
+
+    this.currencyRateCache.set(cacheKey, {
+      rate: dbRate.rate,
+      expiresAt: now + this.CURRENCY_CONVERSION_TTL_MS,
+      asOf: dbRate.asOf.getTime(),
+    });
+    return dbRate;
+  }
+
+  /**
+   * A cached rate, if there is one and it is fresh enough for the caller.
+   * `maxRateAgeMs === null` means any age will do. An entry past its TTL is
+   * dropped either way — that is the cache's own bookkeeping, separate from
+   * whether the rate inside it is too old to use.
+   */
+  private readCache(
+    cacheKey: string,
+    now: number,
+    maxRateAgeMs: number | null
+  ): { rate: string; asOf: Date } | null {
+    const cached = this.currencyRateCache.get(cacheKey);
+    if (!cached) return null;
+    if (cached.expiresAt <= now) {
+      this.currencyRateCache.delete(cacheKey);
+      return null;
+    }
+    if (maxRateAgeMs !== null && now - cached.asOf > maxRateAgeMs) return null;
+    return { rate: cached.rate, asOf: new Date(cached.asOf) };
   }
 
   /**
@@ -248,13 +342,13 @@ export class CurrencyConverter {
    * display in source currency, etc.).
    */
   async prewarmRates(
-    pairs: Array<{ from: string; to: string }>,
+    pairs: Array<{ from: CurrencyRef; to: CurrencyRef }>,
     timestamp: Date
   ): Promise<Set<string>> {
     const unresolved = new Set<string>();
-    const unique = new Map<string, { from: string; to: string }>();
+    const unique = new Map<string, { from: CurrencyRef; to: CurrencyRef }>();
     for (const p of pairs) {
-      if (p.from === p.to) continue;
+      if (p.from.id === p.to.id) continue;
       unique.set(this.cacheKey(p.from, p.to), p);
     }
     await Promise.all(
@@ -269,11 +363,19 @@ export class CurrencyConverter {
   }
 
   async preWarm(): Promise<void> {
-    const commonCurrencies = ['USD', 'EUR', 'GBP', 'CHF', 'JPY', 'CAD', 'AUD'];
-
-    currencyLogger.info({ currencies: commonCurrencies }, 'Pre-warming currency conversion cache');
+    currencyLogger.info(
+      { currencies: PREWARM_FIAT_SYMBOLS },
+      'Pre-warming currency conversion cache'
+    );
 
     try {
+      const fiat = await this.resolvePrewarmFiatTokens();
+      const usd = fiat.get('USD');
+      if (!usd) {
+        currencyLogger.warn('No USD fiat token; skipping currency-conversion pre-warm');
+        return;
+      }
+
       const url = `${EXCHANGERATE_BASE_URL}/USD`;
       const response = await this.exchangeRateFetch(url);
 
@@ -281,17 +383,17 @@ export class CurrencyConverter {
         const data = (await response.json()) as { rates: Record<string, number> };
         const now = Date.now();
 
-        for (const toCurrency of commonCurrencies) {
-          if (toCurrency === 'USD') continue;
+        for (const [symbol, token] of fiat) {
+          if (token.id === usd.id) continue;
 
-          const rate = data.rates?.[toCurrency];
+          const rate = data.rates?.[symbol];
           if (rate) {
-            this.currencyRateCache.set(this.cacheKey('USD', toCurrency), {
+            this.currencyRateCache.set(this.cacheKey(usd, token), {
               rate: rate.toString(),
               expiresAt: now + this.CURRENCY_CONVERSION_TTL_MS,
               asOf: now,
             });
-            this.currencyRateCache.set(this.cacheKey(toCurrency, 'USD'), {
+            this.currencyRateCache.set(this.cacheKey(token, usd), {
               rate: (1 / rate).toString(),
               expiresAt: now + this.CURRENCY_CONVERSION_TTL_MS,
               asOf: now,
@@ -312,12 +414,25 @@ export class CurrencyConverter {
     }
   }
 
+  private async resolvePrewarmFiatTokens(): Promise<Map<string, CurrencyRef>> {
+    const fiatType = await this.tokenTypeRepository.findByCode('fiat');
+    if (!fiatType) return new Map();
+
+    const tokens = await this.tokenRepository.findBySymbolTypePairs(
+      PREWARM_FIAT_SYMBOLS.map((symbol) => ({ symbol, typeId: fiatType.id }))
+    );
+    return new Map(tokens.map((token) => [token.symbol, token]));
+  }
+
   getCacheSize(): number {
     return this.currencyRateCache.size;
   }
 
-  private cacheKey(fromCurrency: string, toCurrency: string): string {
-    return `${fromCurrency.toUpperCase()}->${toCurrency.toUpperCase()}`;
+  // Keyed on token ids, not symbols: two `tokens` rows sharing a ticker are
+  // different currencies with different price rows, and a symbol-keyed entry
+  // would serve one of them the other's rate (SC-223).
+  private cacheKey(fromCurrency: CurrencyRef, toCurrency: CurrencyRef): string {
+    return `${fromCurrency.id}->${toCurrency.id}`;
   }
 
   private exchangeRateFetch(url: string): Promise<Response> {
@@ -348,43 +463,47 @@ export class CurrencyConverter {
    *      than USD/USDT.
    *
    * Returns `null` when no path exists OR the binding leg of the path
-   * is older than 24 h relative to `timestamp` — stale enough that
-   * we'd rather fall through to the live API than serve it.
+   * is older than `maxAgeMs` relative to `timestamp` — stale enough that
+   * we'd rather fall through to the live API than serve it. `null` for
+   * `maxAgeMs` disables that check entirely, for the one caller that
+   * cannot fall through to anything: a user read (SC-222).
+   *
+   * It resolves nothing. The two token ids arrive from the caller, which
+   * held them already; the pair of `findBySymbol` calls that used to stand
+   * here were the whole of SC-223 — an `SOS` conversion addressed the
+   * newest `SOS` row, which is a memecoin, and read its price rows.
    */
   private async fetchRateFromDatabase(
-    fromCurrencySymbol: string,
-    toCurrencySymbol: string,
-    timestamp: Date
+    fromCurrency: CurrencyRef,
+    toCurrency: CurrencyRef,
+    timestamp: Date,
+    maxAgeMs: number | null = this.DB_RATE_MAX_AGE_MS
   ): Promise<{ rate: string; asOf: Date } | null> {
     try {
-      const fromToken = await this.tokenRepository.findBySymbol(fromCurrencySymbol);
-      const toToken = await this.tokenRepository.findBySymbol(toCurrencySymbol);
-
-      if (!fromToken || !toToken) return null;
-      if (fromToken.id === toToken.id) return { rate: '1', asOf: timestamp };
+      if (fromCurrency.id === toCurrency.id) return { rate: '1', asOf: timestamp };
 
       const conversion = await this.priceGraphService.convert(
         new Decimal(1),
-        fromToken.id,
-        toToken.id,
+        fromCurrency.id,
+        toCurrency.id,
         timestamp,
         {
           // forex-backfill writes `granularity: 'daily'` rows; preferring
           // daily here lets PriceGraphService pick the cron-fresh edge
           // over any intraday noise from on-demand caching.
           preferGranularity: 'daily',
-          hubSymbols: [...FIAT_HUB_SYMBOLS],
+          hubs: PRICE_HUBS,
         }
       );
 
       if (!conversion) return null;
 
       const priceAge = timestamp.getTime() - conversion.effectiveAt.getTime();
-      if (priceAge > this.DB_RATE_MAX_AGE_MS) {
+      if (maxAgeMs !== null && priceAge > maxAgeMs) {
         currencyLogger.debug(
           {
-            fromCurrency: fromCurrencySymbol,
-            toCurrency: toCurrencySymbol,
+            fromCurrency: fromCurrency.symbol,
+            toCurrency: toCurrency.symbol,
             priceAge: priceAge / (60 * 60 * 1000),
             path: conversion.path,
           },
@@ -396,8 +515,8 @@ export class CurrencyConverter {
       const rateString = conversion.rate.toString();
       currencyLogger.debug(
         {
-          fromCurrency: fromCurrencySymbol,
-          toCurrency: toCurrencySymbol,
+          fromCurrency: fromCurrency.symbol,
+          toCurrency: toCurrency.symbol,
           rate: rateString,
           path: conversion.path,
           effectiveAt: conversion.effectiveAt,
@@ -408,7 +527,7 @@ export class CurrencyConverter {
       return { rate: rateString, asOf: conversion.effectiveAt };
     } catch (error) {
       currencyLogger.warn(
-        { error, fromCurrencySymbol, toCurrencySymbol },
+        { error, fromCurrency: fromCurrency.symbol, toCurrency: toCurrency.symbol },
         'Failed to get conversion rate from price graph'
       );
       return null;

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { PortfolioValueDailyRepository } from '@scani/domain/repositories';
+import { restoreContainerAfterAll } from '@scani/domain/test-helpers';
 import { Container } from 'typedi';
 import {
   aggregateIncludedHoldingRows,
@@ -8,6 +9,10 @@ import {
   unmeasuredDates,
   userNetWorthDaily,
 } from '../../src/lib/net-worth-series';
+
+// Container stubs are process-global; put back whatever this file changes
+// so no later test file resolves them (SC-448).
+restoreContainerAfterAll();
 
 /**
  * SC-98 — the two net-worth exports must not be able to disagree again.

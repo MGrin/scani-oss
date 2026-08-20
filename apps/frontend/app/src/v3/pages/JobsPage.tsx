@@ -1,6 +1,7 @@
 import { PageHeader, PageLayout } from '@scani/ui/v3/components/PageLayout';
 import { loadingOnly } from '@scani/ui/v3/lib/query-state';
-import { useUserJobs } from '@/v2/hooks/useUserJobs';
+import { useTranslation } from 'react-i18next';
+import { useUserJobs } from '@/v3/hooks/useUserJobs';
 import { JobsList } from '../components/jobs/JobsList';
 
 /**
@@ -13,11 +14,12 @@ import { JobsList } from '../components/jobs/JobsList';
  * than two that drift.
  */
 export function JobsPage() {
+  const { t } = useTranslation();
   const { jobs, isLoading } = useUserJobs();
 
   return (
     <PageLayout measure="wide">
-      <PageHeader title="Jobs" />
+      <PageHeader title={t('v3.jobs.page.title')} />
       <JobsList jobs={jobs} query={loadingOnly(isLoading)} />
     </PageLayout>
   );

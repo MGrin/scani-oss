@@ -1,6 +1,6 @@
 process.env.DATABASE_URL = process.env.DATABASE_URL || 'postgresql://dummy:dummy@localhost/dummy';
 
-import { afterAll, describe, expect, test } from 'bun:test';
+import { describe, expect, test } from 'bun:test';
 import type { Token } from '@scani/db/schema';
 import type { HistoricalPriceProvider } from '@scani/providers/core/capabilities';
 import { ProviderRegistry } from '@scani/providers/core/registry';
@@ -12,17 +12,11 @@ import {
   filterProvidersByTokenType,
   HistoricalPriceBackfillService,
 } from '../../../src/services/pricing/HistoricalPriceBackfillService';
+import { restoreContainerAfterAll } from '../../../test/helpers/container';
 
-// Stubs leak across files because typedi's Container is process-global.
-// After this suite, restore real @Service() instances so a later
-// repo/service test that ran in the same `bun test` invocation can
-// resolve the real DB-backed implementation.
-afterAll(() => {
-  Container.set(TokenRepository, new TokenRepository());
-  Container.set(TokenPriceRepository, new TokenPriceRepository());
-  Container.set(ProviderRegistry, new ProviderRegistry());
-  Container.set(HistoricalPriceBackfillService, new HistoricalPriceBackfillService());
-});
+// Container stubs are process-global; put back whatever this file changes
+// so no later test file resolves them (SC-448).
+restoreContainerAfterAll();
 
 function makeToken(id: string, symbol = id): Token {
   return {
@@ -32,8 +26,13 @@ function makeToken(id: string, symbol = id): Token {
     typeId: 'crypto',
     decimals: 18,
     iconUrl: null,
+    lastPricingAttemptAt: null,
+    lookalikeOf: null,
+    unpriceableUntil: null,
     providerMetadata: {},
     isScamProbability: 0,
+    scamScoreVersion: null,
+    scamScoreSource: 'heuristic',
     isActive: true,
     marketSegment: null,
     createdAt: new Date(0),
@@ -234,6 +233,130 @@ describe('HistoricalPriceBackfillService.backfillOne', () => {
     expect(r.status).toBe('inserted');
     expect(r.providerUsed).toBe('fallback');
     expect(captured).toHaveLength(1);
+  });
+});
+
+/**
+ * SC-171. `backfillTokenRange` returning `[]` for both "the provider
+ * answered, with nothing" and "the provider never answered" is what let
+ * a malformed request reach `markUnpriceable` and take ETH, BTC and 118
+ * other production tokens out of the backfill for a week at a time.
+ * `attemptFailed` is the distinction, and these tests hold it.
+ */
+describe('HistoricalPriceBackfillService.backfillTokenRange', () => {
+  const days = [new Date('2021-09-06T00:00:00Z'), new Date('2021-09-07T00:00:00Z')];
+
+  function rangePricer(
+    providerKey: string,
+    range: () => Promise<PriceQuote[]>
+  ): HistoricalPriceProvider {
+    return {
+      providerKey,
+      capabilities: ['historical-price'],
+      canPrice: () => true,
+      fetchCurrentPrice: async () => null,
+      fetchHistoricalPrice: async () => null,
+      fetchHistoricalRange: range,
+    };
+  }
+
+  test('a provider that THROWS reports attemptFailed, not a verdict on the token', async () => {
+    const tokens = new Map([
+      ['btc', makeToken('btc', 'BTC')],
+      ['usd', makeToken('usd', 'USD')],
+    ]);
+    const { service } = makeService({
+      tokens,
+      pricers: [
+        rangePricer('defillama', async () => {
+          throw new Error('defillama HTTP 400 — exceeds the maximum of 500');
+        }),
+      ],
+    });
+    const result = await service.backfillTokenRange('btc', 'usd', days);
+    expect(result.attemptFailed).toBe(true);
+    expect(result.inserted).toBe(0);
+    expect(result.providerMissing).toBe(days.length);
+  });
+
+  test('a provider that answers cleanly with nothing does NOT set attemptFailed', async () => {
+    const tokens = new Map([
+      ['btc', makeToken('btc', 'BTC')],
+      ['usd', makeToken('usd', 'USD')],
+    ]);
+    const { service } = makeService({
+      tokens,
+      pricers: [rangePricer('defillama', async () => [])],
+    });
+    const result = await service.backfillTokenRange('btc', 'usd', days);
+    expect(result.attemptFailed).toBe(false);
+    expect(result.inserted).toBe(0);
+  });
+
+  test('one provider throwing taints the run even when a later one answers empty', async () => {
+    const tokens = new Map([
+      ['btc', makeToken('btc', 'BTC')],
+      ['usd', makeToken('usd', 'USD')],
+    ]);
+    const { service } = makeService({
+      tokens,
+      pricers: [
+        rangePricer('defillama', async () => {
+          throw new Error('defillama HTTP 400');
+        }),
+        rangePricer('coingecko', async () => []),
+      ],
+    });
+    const result = await service.backfillTokenRange('btc', 'usd', days);
+    expect(result.attemptFailed).toBe(true);
+  });
+
+  test('a rejected per-day fetch also sets attemptFailed', async () => {
+    const tokens = new Map([
+      ['btc', makeToken('btc', 'BTC')],
+      ['usd', makeToken('usd', 'USD')],
+    ]);
+    const { service } = makeService({
+      tokens,
+      pricers: [
+        {
+          providerKey: 'per-day',
+          capabilities: ['historical-price'],
+          canPrice: () => true,
+          fetchCurrentPrice: async () => null,
+          fetchHistoricalPrice: async () => {
+            throw new Error('upstream exploded');
+          },
+        } as HistoricalPriceProvider,
+      ],
+    });
+    const result = await service.backfillTokenRange('btc', 'usd', days);
+    expect(result.attemptFailed).toBe(true);
+  });
+
+  test('a successful range still reports attemptFailed false', async () => {
+    const tokens = new Map([
+      ['btc', makeToken('btc', 'BTC')],
+      ['usd', makeToken('usd', 'USD')],
+    ]);
+    const { service, captured } = makeService({
+      tokens,
+      pricers: [
+        rangePricer('defillama', async () =>
+          days.map((d) => ({
+            tokenId: 'btc',
+            baseTokenId: 'usd',
+            price: '100',
+            timestamp: d,
+            source: 'defillama_historical',
+          }))
+        ),
+      ],
+    });
+    const result = await service.backfillTokenRange('btc', 'usd', days);
+    expect(result.attemptFailed).toBe(false);
+    expect(result.inserted).toBe(days.length);
+    expect(captured).toHaveLength(days.length);
   });
 });
 

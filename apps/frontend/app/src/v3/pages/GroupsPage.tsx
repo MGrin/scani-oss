@@ -6,9 +6,10 @@ import { PageHeader, PageLayout } from '@scani/ui/v3/components/PageLayout';
 import { mergeQueries } from '@scani/ui/v3/lib/query-state';
 import { Plus } from 'lucide-react';
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { trpc } from '@/lib/trpc';
-import { insertCreatedGroup } from '@/v2/hooks/optimisticUpdates';
+import { insertCreatedGroup } from '@/v3/hooks/optimisticUpdates';
 import { Field } from '../components/form/Field';
 import { GROUP_COLORS, GroupColorChoice } from '../components/groups/GroupColorChoice';
 import { GroupsList } from '../components/groups/GroupsList';
@@ -29,6 +30,7 @@ import { groupDetailPath } from '../lib/routes';
  * in a row are not ten red ones.
  */
 export function GroupsPage() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const utils = trpc.useUtils();
   const groupsQuery = trpc.groups.getAllWithCounts.useQuery();
@@ -48,10 +50,10 @@ export function GroupsPage() {
     onSuccess: (group) => {
       insertCreatedGroup(utils, group);
       setCreating(false);
-      showSuccess(`Group “${group.name}” created`);
+      showSuccess(t('v3.groups.page.created', { name: group.name }));
       navigate(groupDetailPath(group.id));
     },
-    onError: (error) => showError(error, 'Creating the group'),
+    onError: (error) => showError(error, t('v3.groups.page.creating')),
     onSettled: () => void utils.groups.getAllWithCounts.invalidate(),
   });
 
@@ -60,24 +62,24 @@ export function GroupsPage() {
   return (
     <PageLayout measure="wide">
       <PageHeader
-        title="Groups"
+        title={t('v3.groups.page.title')}
         action={
           <Button onClick={openCreate} disabled={creating}>
             <Plus className="mr-1.5 size-4" aria-hidden="true" />
-            New group
+            {t('v3.groups.page.newGroup')}
           </Button>
         }
       />
 
       {creating ? (
         <Block className="flex flex-col gap-3 p-4">
-          <Field label="Name" htmlFor="new-group-name">
+          <Field label={t('v3.groups.page.name')} htmlFor="new-group-name">
             <Input
               id="new-group-name"
               autoFocus
               value={name}
               onChange={(event) => setName(event.target.value)}
-              placeholder="Retirement, taxable, the joint one…"
+              placeholder={t('v3.groups.page.namePlaceholder')}
               disabled={createGroup.isPending}
               onKeyDown={(event) => {
                 if (event.key === 'Enter' && canCreate) {
@@ -87,7 +89,7 @@ export function GroupsPage() {
               }}
             />
           </Field>
-          <Field label="Colour">
+          <Field label={t('v3.groups.page.colour')}>
             <GroupColorChoice value={color} onChange={setColor} disabled={createGroup.isPending} />
           </Field>
           <div className="flex items-center gap-2">
@@ -100,17 +102,17 @@ export function GroupsPage() {
               disabled={createGroup.isPending}
               onClick={() => setCreating(false)}
             >
-              Cancel
+              {t('v3.groups.page.cancel')}
             </Button>
             <Button
               size="sm"
               disabled={!canCreate}
               onClick={() => createGroup.mutate({ name: name.trim(), color, description: null })}
             >
-              Create group
+              {t('v3.groups.page.createGroup')}
             </Button>
             {name.trim().length === 0 ? (
-              <p className="text-caption text-muted-foreground">To continue: name the group.</p>
+              <p className="text-caption text-muted-foreground">{t('v3.groups.page.needName')}</p>
             ) : null}
           </div>
         </Block>

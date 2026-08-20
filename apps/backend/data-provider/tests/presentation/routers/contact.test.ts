@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { type EmailMessage, EmailService, LocalEmailService } from '@scani/email';
 import { Container } from 'typedi';
+import { restoreContainerAfterAll } from '../../../../../../packages/business/domain/test/helpers/container';
 import { contactRouter } from '../../../src/presentation/routers/contact';
 import { buildUnauthedContext } from '../../helpers/test-context';
 
@@ -23,6 +24,8 @@ class FakeEmailService extends EmailService {
     this.sent.push(message);
   }
 }
+
+restoreContainerAfterAll();
 
 let fake: FakeEmailService;
 

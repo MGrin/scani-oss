@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { addUiLocale } from '@scani/ui/i18n';
 import { DataViewSkeleton } from '@scani/ui/v3/components/data-view/DataViewSkeleton';
 import { DataViewGroupHeading, V3DataView } from '@scani/ui/v3/components/data-view/V3DataView';
 import { Numeric } from '@scani/ui/v3/components/Numeric';
@@ -7,6 +8,49 @@ import { SETTLED_QUERY_STATE, type V3QueryState } from '@scani/ui/v3/lib/query-s
 import { Wallet } from 'lucide-react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { StaticRouter } from 'react-router-dom/server';
+
+// The fixtures' own labels, registered the way a host registers its own
+// (SC-262). The assertions below are unchanged English — that is what shows
+// the extraction moved no copy.
+addUiLocale('en', {
+  ui: {
+    dataView: {
+      test: {
+        account: 'Account',
+        all69Holdings: 'All 69 holdings',
+        connectAnExchangeAndYour: 'Connect an exchange and your positions appear here.',
+        everythingWeHave: 'Everything we have',
+        group: 'Group',
+        holding: 'Holding',
+        institution: 'Institution',
+        noHoldingsYet: 'No holdings yet',
+        none: 'None',
+        symbol: 'Symbol',
+        these12Holdings: 'These 12 holdings',
+        this1mWindow: 'This 1M window',
+        this1wWindow: 'This 1W window',
+        this3mWindow: 'This 3M window',
+        type: 'Type',
+        value: 'Value',
+        vault: 'vault',
+      },
+    },
+  },
+});
+
+// A host registering its list nouns — what the two apps do at boot (SC-257).
+addUiLocale('en', {
+  ui: {
+    dataView: {
+      noun: {
+        holdings_one: 'holding',
+        holdings_other: 'holdings',
+        holdings_counted_one: '{{count}} holding',
+        holdings_counted_other: '{{count}} holdings',
+      },
+    },
+  },
+});
 
 /** What `describeQueryError` reads as an ordinary server failure. */
 const SERVER_ERROR = { data: { httpStatus: 500 }, message: 'INTERNAL_SERVER_ERROR' };
@@ -37,18 +81,24 @@ const HOLDINGS: Holding[] = [
 function config(overrides: Partial<V3DataViewConfig<Holding>> = {}): V3DataViewConfig<Holding> {
   return {
     pageKey: 'test-holdings',
-    noun: 'holdings',
+    nounKey: 'ui.dataView.noun.holdings',
     data: HOLDINGS,
     searchFn: (item, query) => item.symbol.toLowerCase().includes(query),
-    sortDefs: [{ key: 'value', label: 'Value' }],
+    sortDefs: [{ key: 'value', labelKey: 'ui.dataView.test.value' }],
     sortFn: (a, b, _field, direction) =>
       direction === 'asc' ? a.value - b.value : b.value - a.value,
     defaultSort: { field: 'value', direction: 'desc' },
-    groupByDefs: [{ key: 'institution', label: 'Institution', fn: (i: Holding) => i.institution }],
+    groupByDefs: [
+      {
+        key: 'institution',
+        labelKey: 'ui.dataView.test.institution',
+        fn: (i: Holding) => i.institution,
+      },
+    ],
     filterDefs: [
       {
         key: 'institution',
-        label: 'Institution',
+        labelKey: 'ui.dataView.test.institution',
         options: [{ value: 'Kraken', label: 'Kraken' }],
         fn: (i: Holding, v: string) => i.institution === v,
       },
@@ -60,13 +110,18 @@ function config(overrides: Partial<V3DataViewConfig<Holding>> = {}): V3DataViewC
       delta: <Numeric value={item.change} format="percent" delta />,
     }),
     columns: [
-      { key: 'symbol', header: 'Holding', render: (i) => i.symbol },
-      { key: 'value', header: 'Value', numeric: true, render: (i) => String(i.value) },
+      { key: 'symbol', headerKey: 'ui.dataView.test.holding', render: (i) => i.symbol },
+      {
+        key: 'value',
+        headerKey: 'ui.dataView.test.value',
+        numeric: true,
+        render: (i) => String(i.value),
+      },
     ],
     empty: {
       icon: Wallet,
-      title: 'No holdings yet',
-      description: 'Connect an exchange and your positions appear here.',
+      titleKey: 'ui.dataView.test.noHoldingsYet',
+      descriptionKey: 'ui.dataView.test.connectAnExchangeAndYour',
       action: <button type="button">Connect an exchange</button>,
     },
     ...overrides,
@@ -210,6 +265,70 @@ describe('V3DataView — empty is not filtered-empty', () => {
     const html = render({ defaultFilters: { institution: 'Kraken' } });
     expect(html).toInclude('flex-wrap');
     expect(html).not.toInclude('overflow-x-auto');
+  });
+});
+
+/**
+ * SC-244 — the third empty screen.
+ *
+ * The defect: a surface fed by `useInfiniteQuery` narrowed the page it held and
+ * reported the result in the words it uses for a reader who owns nothing. The
+ * distinguishing fact rides in on `query.more`, so every assertion below is
+ * about the SAME data with and without it.
+ */
+describe('V3DataView — narrowing a page is not searching a set', () => {
+  const MORE = { fetch: () => {}, isFetching: false };
+  const partial = (query: Partial<V3QueryState> = {}) => ({ more: MORE, ...query });
+
+  test('a filter that matched nothing on this page does not claim the set is empty', () => {
+    const html = render({ data: HOLDINGS, defaultFilters: { institution: 'Nowhere' } }, partial());
+    expect(html).toInclude('No matches in what is loaded');
+    expect(html).toInclude('Search and filters only see the 3 holdings loaded so far');
+    // The sentence the same code renders when the narrowing DID see everything.
+    expect(html).not.toInclude('No holdings match those filters');
+  });
+
+  test('the way out of that screen is loading more, not clearing the filter', () => {
+    const html = render({ data: HOLDINGS, defaultFilters: { institution: 'Nowhere' } }, partial());
+    expect(html).toInclude('Load more');
+    // Still offered — it is just no longer the only thing on offer.
+    expect(html).toInclude('Clear search and filters');
+  });
+
+  test('the same filter over a complete set keeps the settled words and no Load more', () => {
+    const html = render({ data: HOLDINGS, defaultFilters: { institution: 'Nowhere' } });
+    expect(html).toInclude('No holdings match those filters');
+    expect(html).not.toInclude('No matches in what is loaded');
+    expect(html).not.toInclude('Load more');
+  });
+
+  test('the count line stops presenting the page as the total', () => {
+    expect(render({}, partial())).toInclude('3 holdings loaded so far');
+    expect(render({})).not.toInclude('loaded so far');
+  });
+
+  test('a narrowed count line says which set it narrowed', () => {
+    const html = render({ defaultFilters: { institution: 'Kraken' } }, partial());
+    expect(html).toInclude('1 of 3 holdings loaded so far');
+  });
+
+  test('Load more sits under the rows, not inside them', () => {
+    const html = render({}, partial());
+    expect(html).toInclude('Load more');
+    expect(html.indexOf('Load more')).toBeGreaterThan(html.indexOf('BTC'));
+  });
+
+  /**
+   * A local filter over a page is still about the page, even on a surface whose
+   * SEARCH is the server's. The two narrowings have different reach and the
+   * empty screen follows the one that actually ran.
+   */
+  test('a remote-search surface still says so about its local filter', () => {
+    const html = render(
+      { data: HOLDINGS, defaultFilters: { institution: 'Nowhere' }, onSearch: () => {} },
+      partial()
+    );
+    expect(html).toInclude('No matches in what is loaded');
   });
 });
 

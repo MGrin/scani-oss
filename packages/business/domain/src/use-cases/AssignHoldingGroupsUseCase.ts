@@ -27,9 +27,11 @@ export class AssignHoldingGroupsUseCase {
       }
     }
 
-    // REPLACE semantics: diff against current state so the underlying
-    // ops still go through the diff-based repo methods (which recompute
-    // `accountGroups` for the parent account).
+    // REPLACE semantics against EFFECTIVE membership: `findGroupsByHoldingId`
+    // resolves the account's standing rule too, so dropping a group the holding
+    // only has through its account is a real removal here — it becomes the
+    // per-holding veto rather than a delete of a row that was never there
+    // (SC-386).
     const currentGroups = await this.groupRepository.findGroupsByHoldingId(input.holdingId);
     const currentIds = new Set(currentGroups.map((g) => g.id));
     const desired = new Set(input.groupIds);
@@ -41,14 +43,6 @@ export class AssignHoldingGroupsUseCase {
     }
     if (toRemove.length > 0) {
       await this.groupRepository.bulkRemoveHoldingGroups([input.holdingId], toRemove);
-    }
-    if (toAdd.length > 0 || toRemove.length > 0) {
-      const parentIds = await this.groupRepository.findParentAccountIdsForHoldings([
-        input.holdingId,
-      ]);
-      if (parentIds.length > 0) {
-        await this.groupRepository.recomputeAccountGroups(parentIds);
-      }
     }
     return { success: true };
   }

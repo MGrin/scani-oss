@@ -165,6 +165,7 @@ export class HoldingQueryService extends BaseService {
 
         const result: HoldingWithDetails = {
           id: holding.id,
+          label: holding.label,
           token: {
             id: token.id,
             symbol: token.symbol,
@@ -173,6 +174,7 @@ export class HoldingQueryService extends BaseService {
             typeCode: token.typeCode,
             iconUrl: token.iconUrl,
             isScamProbability: token.isScamProbability ?? 0,
+            lookalikeOf: token.lookalikeOf ?? null,
           },
           amount: new Decimal(holding.balance).toDecimalPlaces(8).toNumber(),
           value: currentValue,

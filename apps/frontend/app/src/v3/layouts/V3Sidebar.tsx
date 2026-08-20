@@ -4,7 +4,6 @@ import { Plus, Settings } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import { cn } from '@/lib/utils';
-import { UiVersionSwitch } from '../components/UiVersionSwitch';
 import { navIcon } from '../lib/nav-icons';
 import { V3_ROUTES, V3_SIDEBAR_SECTIONS } from '../lib/routes';
 
@@ -57,7 +56,10 @@ export function V3Sidebar({ activePath, actionRequiredCount = 0, onCapturePress 
         </Button>
       </div>
 
-      <nav aria-label="Sidebar" className="min-h-0 flex-1 space-y-5 overflow-y-auto px-2 py-2">
+      <nav
+        aria-label={t('v3.shell.sidebar.landmark')}
+        className="min-h-0 flex-1 space-y-5 overflow-y-auto px-2 py-2"
+      >
         {V3_SIDEBAR_SECTIONS.map((section) => (
           <div key={section.titleKey}>
             <p className="mb-1 px-3 text-caption uppercase tracking-wider text-muted-foreground">
@@ -112,7 +114,6 @@ export function V3Sidebar({ activePath, actionRequiredCount = 0, onCapturePress 
           <span>{t('nav.settings')}</span>
         </Link>
         <ThemeToggle variant="row" side="top" align="start" className="px-3 py-2 text-label" />
-        <UiVersionSwitch variant="row" className="px-3 py-2 text-label" />
       </div>
     </aside>
   );

@@ -152,7 +152,7 @@ describe.each(MODES)('%s mode', (_mode, tokens) => {
       ).toBeGreaterThanOrEqual(1.05);
     });
 
-    test.each(TEXT_TOKENS)('%s clears 4.5:1 against every surface', (token) => {
+    test.each([...TEXT_TOKENS])('%s clears 4.5:1 against every surface', (token) => {
       for (const surface of SURFACES) {
         expect(
           contrastRatio(theme[token] as string, theme[surface] as string)
@@ -231,9 +231,9 @@ describe.each(MODES)('%s mode', (_mode, tokens) => {
     /** Past this, `<AllocationBar>` folds to `--chart-other`. */
     const UNRESERVED_SLOTS = [1, 2, 3, 4, 5, 6] as const;
 
-    test.each(
-      SLOTS
-    )('--chart-%i keeps one hue across themes, so a series survives a theme flip', (slot) => {
+    test.each([
+      ...SLOTS,
+    ])('--chart-%i keeps one hue across themes, so a series survives a theme flip', (slot) => {
       // The v2 bug this ramp exists to fix: globals.css gives the same slot
       // unrelated hues per theme, so flipping the theme reassigns which colour
       // means "crypto". Saturation and lightness are re-solved per theme; the

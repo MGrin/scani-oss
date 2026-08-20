@@ -4,6 +4,9 @@
 
 import { ProviderRegistry } from '@scani/providers/core/registry';
 import { Container } from 'typedi';
+// This workspace cannot depend on @scani/domain (it sits below it), so the
+// shared helper is reached the same way the shared test preload is: by path.
+import { snapshotContainer } from '../../../../../packages/business/domain/test/helpers/container';
 import { OSS_KEY_ID } from '../../src/auth/api-key';
 import type { DataProviderContext } from '../../src/presentation/trpc';
 import { createUsageContext } from '../../src/usage/middleware';
@@ -48,23 +51,11 @@ export function installFreshRegistry(): {
   registry: ProviderRegistry;
   restore: () => void;
 } {
-  const previous = (() => {
-    try {
-      return Container.get(ProviderRegistry);
-    } catch {
-      return null;
-    }
-  })();
+  // Snapshot rather than re-`set` the previous instance: a restore written as
+  // `Container.set(id, real)` is itself a write that outlives the file, which
+  // is indistinguishable from the leak it was meant to undo (SC-448).
+  const restore = snapshotContainer();
   const registry = new ProviderRegistry();
   Container.set(ProviderRegistry, registry);
-  return {
-    registry,
-    restore: () => {
-      if (previous) {
-        Container.set(ProviderRegistry, previous);
-      } else {
-        Container.set(ProviderRegistry, new ProviderRegistry());
-      }
-    },
-  };
+  return { registry, restore };
 }

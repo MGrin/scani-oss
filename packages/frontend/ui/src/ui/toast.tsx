@@ -2,7 +2,7 @@ import * as ToastPrimitives from '@radix-ui/react-toast';
 import { cva, type VariantProps } from 'class-variance-authority';
 import { X } from 'lucide-react';
 import * as React from 'react';
-
+import { useUiTranslation } from '../i18n';
 import { cn } from '../lib/cn';
 
 const ToastProvider = ToastPrimitives.Provider;
@@ -76,26 +76,29 @@ ToastAction.displayName = ToastPrimitives.Action.displayName;
 const ToastClose = React.forwardRef<
   React.ElementRef<typeof ToastPrimitives.Close>,
   React.ComponentPropsWithoutRef<typeof ToastPrimitives.Close>
->(({ className, ...props }, ref) => (
-  <ToastPrimitives.Close
-    ref={ref}
-    className={cn(
-      // Always visible with a touch-sized (36px) hit area. The previous
-      // `opacity-0` + `group-hover:opacity-100` left the X invisible on
-      // touch devices, so a stuck toast could not be dismissed by hand.
-      'absolute right-2 top-2 flex h-9 w-9 items-center justify-center rounded-md text-foreground/60 opacity-70 transition-opacity hover:text-foreground hover:opacity-100 focus:opacity-100 focus:outline-none focus:ring-2 group-[.destructive]:text-red-300 group-[.destructive]:hover:text-red-50 group-[.destructive]:focus:ring-red-400 group-[.destructive]:focus:ring-offset-red-600',
-      className
-    )}
-    toast-close=""
-    {...props}
-  >
-    <X className="h-4 w-4" aria-hidden="true" />
-    {/* The glyph is the whole button, so without this the control reaches a
+>(({ className, ...props }, ref) => {
+  const { t } = useUiTranslation();
+  return (
+    <ToastPrimitives.Close
+      ref={ref}
+      className={cn(
+        // Always visible with a touch-sized (36px) hit area. The previous
+        // `opacity-0` + `group-hover:opacity-100` left the X invisible on
+        // touch devices, so a stuck toast could not be dismissed by hand.
+        'absolute right-2 top-2 flex h-9 w-9 items-center justify-center rounded-md text-foreground/60 opacity-70 transition-opacity hover:text-foreground hover:opacity-100 focus:opacity-100 focus:outline-none focus:ring-2 group-[.destructive]:text-red-300 group-[.destructive]:hover:text-red-50 group-[.destructive]:focus:ring-red-400 group-[.destructive]:focus:ring-offset-red-600',
+        className
+      )}
+      toast-close=""
+      {...props}
+    >
+      <X className="h-4 w-4" aria-hidden="true" />
+      {/* The glyph is the whole button, so without this the control reaches a
         screen reader with no accessible name at all (SC-64). `sr-only` rather
         than `aria-label` so a caller can still override it with one. */}
-    <span className="sr-only">Dismiss</span>
-  </ToastPrimitives.Close>
-));
+      <span className="sr-only">{t('ui.toast.dismiss')}</span>
+    </ToastPrimitives.Close>
+  );
+});
 ToastClose.displayName = ToastPrimitives.Close.displayName;
 
 const ToastTitle = React.forwardRef<

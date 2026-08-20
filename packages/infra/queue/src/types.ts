@@ -51,7 +51,8 @@ export interface WalletImportJob extends UserJobBase {
    * Pre-detected institution IDs from the frontend's `wallet.detectChains`
    * step. When present, the worker skips `IntegrationManager.detectWalletChains`
    * (which has been returning 0 in some envs) and uses these directly. See
-   * `ImportWalletAddressUseCase.executeWithIntegrations`.
+   * `ImportWalletAddressUseCase.resolveDetectedInstitutionIds`, reached from
+   * `prepareReview`.
    */
   detectedInstitutionIds?: string[];
 }

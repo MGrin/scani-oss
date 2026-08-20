@@ -49,7 +49,10 @@ export const holdingGroups = pgTable(
   })
 );
 
-// Junction: many-to-many between accounts and groups.
+// Junction: many-to-many between accounts and groups. A standing rule, not a
+// cache — the account is in the group, and so is every holding it holds now or
+// receives later (SC-386). `holdingGroupExclusions` is how a single holding
+// opts out of one without the account leaving it.
 export const accountGroups = pgTable(
   'account_groups',
   {
@@ -69,6 +72,30 @@ export const accountGroups = pgTable(
   })
 );
 
+// The one negative assertion in the model: this holding is NOT in this group,
+// even though its account is. Overrides both positive paths, so membership is
+// `(holdingGroups ∪ inherited from accountGroups) − holdingGroupExclusions`.
+//
+// A row here only means anything while the holding's account is in the group;
+// adding or removing the account clears them for that account (SC-386).
+export const holdingGroupExclusions = pgTable(
+  'holding_group_exclusions',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    holdingId: uuid('holding_id')
+      .notNull()
+      .references(() => holdings.id, { onDelete: 'cascade' }),
+    groupId: uuid('group_id')
+      .notNull()
+      .references(() => groups.id, { onDelete: 'cascade' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    uniqueHoldingGroupExclusion: unique().on(table.holdingId, table.groupId),
+    groupIdIdx: index('idx_holding_group_exclusions_group_id').on(table.groupId),
+  })
+);
+
 export const groupsRelations = relations(groups, ({ one, many }) => ({
   user: one(users, {
     fields: [groups.userId],
@@ -76,6 +103,7 @@ export const groupsRelations = relations(groups, ({ one, many }) => ({
   }),
   holdingGroups: many(holdingGroups),
   accountGroups: many(accountGroups),
+  holdingGroupExclusions: many(holdingGroupExclusions),
 }));
 
 export const holdingGroupsRelations = relations(holdingGroups, ({ one }) => ({
@@ -100,9 +128,22 @@ export const accountGroupsRelations = relations(accountGroups, ({ one }) => ({
   }),
 }));
 
+export const holdingGroupExclusionsRelations = relations(holdingGroupExclusions, ({ one }) => ({
+  holding: one(holdings, {
+    fields: [holdingGroupExclusions.holdingId],
+    references: [holdings.id],
+  }),
+  group: one(groups, {
+    fields: [holdingGroupExclusions.groupId],
+    references: [groups.id],
+  }),
+}));
+
 export type Group = typeof groups.$inferSelect;
 export type NewGroup = typeof groups.$inferInsert;
 export type HoldingGroup = typeof holdingGroups.$inferSelect;
 export type NewHoldingGroup = typeof holdingGroups.$inferInsert;
 export type AccountGroup = typeof accountGroups.$inferSelect;
 export type NewAccountGroup = typeof accountGroups.$inferInsert;
+export type HoldingGroupExclusion = typeof holdingGroupExclusions.$inferSelect;
+export type NewHoldingGroupExclusion = typeof holdingGroupExclusions.$inferInsert;

@@ -46,11 +46,52 @@ interface BalanceAtTimeResult {
   anchor: 'holdings' | 'observation-after' | 'observation-before' | null;
   anchorAt: Date | null;
   txApplied: number;
+  beforeRecords: boolean;
 }
 ```
 
 `anchor` is reported back so callers can fold confidence into the
 displayed `coverageQuality` rather than blindly trust every point.
+
+## The lower bound
+
+Every anchor above walks the ledger between `at` and the anchor's
+timestamp. Below a holding's **earliest evidence** that range covers
+the *entire* ledger, so all three reduce to the same expression:
+
+```
+current balance − sum(every transaction we know about)
+```
+
+That is zero only if the ledger is complete. As the clamp section
+below explains, imported histories frequently are not — so what the
+expression actually returns is the *unexplained opening balance*, and
+without a bound it is reported for every date before the ledger
+***REMOVED***
+***REMOVED***
+withdrawal, attributed to all of time.
+
+Earliest evidence is the **oldest** of three timestamps:
+
+1. the holding's first transaction (`occurredAt`),
+2. its first balance observation (`observedAt`),
+3. `holdings.created_at` — the moment the row itself appeared.
+
+Oldest, not newest, so an imported wallet whose transactions reach
+back years is still answered from its first transaction rather than
+from the day Scani happened to learn of it. And it is resolved **once,
+above the anchor ladder**, because anchor 1 is tried first: bounding
+only the `holdings` anchor would leave every holding carrying
+observations answering exactly as before.
+
+Below that point `balance` is still returned. Propagating a balance
+backward is what the history chart is built on, and withholding the
+number would empty the chart for anyone who onboarded this week. What
+changes is the claim attached to it: `beforeRecords: true` travels
+with the figure, and
+[the rollup](/concepts/rollup/) downgrades the day's
+`coverage_quality` from `full` to `partial` rather than asserting full
+confidence about a period nothing in our data describes.
 
 ## The non-negative clamp
 

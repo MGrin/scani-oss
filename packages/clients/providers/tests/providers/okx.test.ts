@@ -62,7 +62,7 @@ describe('OkxProvider', () => {
           ],
         }),
         { status: 200 }
-      )) as typeof fetch;
+      )) as unknown as typeof fetch;
     try {
       const out = await p.fetchBalances(ctx as never);
       expect(out).toHaveLength(1);
@@ -86,7 +86,9 @@ describe('OkxProvider', () => {
     const p = new OkxProvider(passthroughLimiter());
     const originalFetch = globalThis.fetch;
     globalThis.fetch = (async () =>
-      new Response(JSON.stringify({ code: '0', msg: '' }), { status: 200 })) as typeof fetch;
+      new Response(JSON.stringify({ code: '0', msg: '' }), {
+        status: 200,
+      })) as unknown as typeof fetch;
     try {
       const r = await p.validateCredentials(
         { apiKey: 'k', apiSecret: 's', passphrase: 'p' },
@@ -104,7 +106,7 @@ describe('OkxProvider', () => {
     globalThis.fetch = (async () =>
       new Response(JSON.stringify({ code: '50111', msg: 'Invalid OK-ACCESS-KEY' }), {
         status: 200,
-      })) as typeof fetch;
+      })) as unknown as typeof fetch;
     try {
       const r = await p.validateCredentials(
         { apiKey: 'k', apiSecret: 's', passphrase: 'p' },
@@ -126,7 +128,7 @@ describe('OkxProvider', () => {
     globalThis.fetch = (async (_url: string, init?: { headers?: Record<string, string> }) => {
       capturedHeaders = (init?.headers ?? {}) as Record<string, string>;
       return new Response(JSON.stringify({ code: '0', msg: '', data: [] }), { status: 200 });
-    }) as typeof fetch;
+    }) as unknown as typeof fetch;
     try {
       await p.fetchBalances(ctx as never);
       expect(capturedHeaders['x-simulated-trading']).toBe('1');
@@ -142,7 +144,7 @@ describe('OkxProvider', () => {
     globalThis.fetch = (async (_url: string, init?: { headers?: Record<string, string> }) => {
       capturedHeaders = (init?.headers ?? {}) as Record<string, string>;
       return new Response(JSON.stringify({ code: '0', msg: '', data: [] }), { status: 200 });
-    }) as typeof fetch;
+    }) as unknown as typeof fetch;
     try {
       await p.fetchBalances(ctx as never);
       expect(capturedHeaders['x-simulated-trading']).toBeUndefined();
@@ -250,7 +252,7 @@ describe('OkxProvider.fetchTransactions', () => {
         );
       }
       throw new Error(`Unexpected URL: ${url}`);
-    }) as typeof fetch;
+    }) as unknown as typeof fetch;
 
     try {
       const out = await p.fetchTransactions(ctx as never);
@@ -309,7 +311,7 @@ describe('OkxProvider.fetchTransactions', () => {
         return new Response(JSON.stringify({ code: '0', msg: '', data: [] }), { status: 200 });
       }
       throw new Error(`Unexpected URL: ${url}`);
-    }) as typeof fetch;
+    }) as unknown as typeof fetch;
     try {
       const monthAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
       await p.fetchTransactions({ ...ctx, since: monthAgo } as never);
@@ -333,7 +335,7 @@ describe('OkxProvider.fetchTransactions', () => {
         callCounts.bills += 1;
       }
       return new Response(JSON.stringify({ code: '0', msg: '', data: [] }), { status: 200 });
-    }) as typeof fetch;
+    }) as unknown as typeof fetch;
     try {
       const dayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
       await p.fetchTransactions({ ...ctx, since: dayAgo } as never);

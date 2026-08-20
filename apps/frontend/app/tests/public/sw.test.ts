@@ -316,3 +316,52 @@ describe('non-GET requests', () => {
     ).toBe(undefined);
   });
 });
+
+/**
+ * SC-203. Every institution favicon vanished in the installed PWA, and nothing
+ * in the app had changed — Google's favicon endpoint started answering 301.
+ *
+ * `fetch()` follows that redirect, so the Response carries `redirected: true`,
+ * and a Response with that flag is rejected when handed to `respondWith`.
+ * `respondSafely` turned the rejection into `Response.error()`, the <img> saw a
+ * network failure, and the letter-tile fallback drew instead. Uniform across
+ * every institution, and only with a service worker active.
+ *
+ * The handler's own closing comment already said cross-origin requests should
+ * be left to the browser. The `destination` branch simply caught them first.
+ */
+describe('cross-origin subresources', () => {
+  test('a third-party favicon is left to the browser, redirect and all', () => {
+    expect(
+      sw.dispatchFetch(
+        makeRequest('https://www.google.com/s2/favicons?domain=revolut.com&sz=64', {
+          destination: 'image',
+        })
+      )
+    ).toBe(undefined);
+  });
+
+  test('a third-party font or script is left alone too', () => {
+    for (const destination of ['font', 'script', 'style']) {
+      expect(sw.dispatchFetch(makeRequest('https://cdn.example.com/thing', { destination }))).toBe(
+        undefined
+      );
+    }
+  });
+
+  /**
+   * The guard sits after the api branch on purpose: `api.scani.xyz` is
+   * cross-origin from `app.scani.xyz`, and its caching is deliberate. A guard
+   * placed one branch earlier would silently disable it.
+   */
+  test('the api is still handled, being cross-origin itself', () => {
+    expect(sw.dispatchFetch(makeRequest('https://api.scani.xyz/trpc/holdings.list'))).toBeDefined();
+  });
+
+  test('same-origin images are still cached', async () => {
+    const response = await (sw.dispatchFetch(
+      makeRequest('https://app.scani.xyz/icons/apple-touch-icon.png', { destination: 'image' })
+    ) as Promise<Response>);
+    expect(response).toBeDefined();
+  });
+});

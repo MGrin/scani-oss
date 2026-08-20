@@ -28,13 +28,13 @@ describe('loadCloudClientConfig — SCANI_CLOUD_URL schema', () => {
   });
 
   afterEach(() => {
-    process.env.NODE_ENV = originalNodeEnv;
+    (process.env as Record<string, string | undefined>).NODE_ENV = originalNodeEnv;
     resetCloudClientConfig();
   });
 
   describe('in production', () => {
     beforeEach(() => {
-      process.env.NODE_ENV = 'production';
+      (process.env as Record<string, string | undefined>).NODE_ENV = 'production';
     });
 
     test('https:// public hostname is accepted', () => {
@@ -105,7 +105,7 @@ describe('loadCloudClientConfig — SCANI_CLOUD_URL schema', () => {
 
   describe('in development', () => {
     beforeEach(() => {
-      process.env.NODE_ENV = 'development';
+      (process.env as Record<string, string | undefined>).NODE_ENV = 'development';
     });
 
     test('SCANI_CLOUD_URL can be unset', () => {
@@ -141,7 +141,7 @@ describe('loadCloudClientConfig — SCANI_CLOUD_URL schema', () => {
   // public-hostname rejection still fires.
   test('runtime NODE_ENV (bracket access) still rejects http://public hostname', () => {
     // biome-ignore lint/complexity/useLiteralKeys: same bracket-notation form a compiled binary uses
-    process.env['NODE_ENV'] = 'production';
+    (process.env as Record<string, string | undefined>)['NODE_ENV'] = 'production';
     resetCloudClientConfig();
     expect(() =>
       loadCloudClientConfig({

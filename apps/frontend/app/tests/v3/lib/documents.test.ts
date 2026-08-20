@@ -1,17 +1,22 @@
+import '../../i18n-preload';
+
 import { describe, expect, test } from 'bun:test';
+import i18n from 'i18next';
 import {
   compareDocuments,
   type DocumentRow,
   documentIcon,
   documentPurposeLabel,
   documentPurposeOptions,
+  documentPurposesMatching,
   documentTotals,
   extractionConfidence,
   extractionOutcome,
   extractionOutcomeOptions,
   extractionSummary,
-  matchesDocumentSearch,
 } from '../../../src/v3/lib/documents';
+
+const t = i18n.t.bind(i18n);
 
 function file(overrides: Partial<DocumentRow> = {}): DocumentRow {
   return {
@@ -45,10 +50,10 @@ describe('extractionOutcome', () => {
   });
 
   test('the row says the count with its noun, and pluralises it', () => {
-    expect(extractionSummary(file({ extractionCount: 1 }))).toBe('1 invoice');
-    expect(extractionSummary(file({ extractionCount: 4 }))).toBe('4 invoices');
-    expect(extractionSummary(file({ extractionCount: 0 }))).toBe('Nothing found');
-    expect(extractionSummary(file({ purpose: 'screenshot', extractionCount: 0 }))).toBe('—');
+    expect(extractionSummary(t, file({ extractionCount: 1 }))).toBe('1 invoice');
+    expect(extractionSummary(t, file({ extractionCount: 4 }))).toBe('4 invoices');
+    expect(extractionSummary(t, file({ extractionCount: 0 }))).toBe('Nothing found');
+    expect(extractionSummary(t, file({ purpose: 'screenshot', extractionCount: 0 }))).toBe('—');
   });
 });
 
@@ -78,7 +83,7 @@ describe('filter options', () => {
   });
 
   test('outcomes are offered in urgency order, not first-seen order', () => {
-    const options = extractionOutcomeOptions([
+    const options = extractionOutcomeOptions(t, [
       file({ purpose: 'screenshot', extractionCount: 0 }),
       file({ id: 'd2', extractionCount: 0 }),
       file({ id: 'd3', extractionCount: 3 }),
@@ -149,10 +154,21 @@ describe('extractionConfidence', () => {
 });
 
 describe('search and sort', () => {
-  test('search matches the filename and the kind, both already lower-cased', () => {
-    expect(matchesDocumentSearch(file(), 'acme')).toBe(true);
-    expect(matchesDocumentSearch(file(), 'invoice')).toBe(true);
-    expect(matchesDocumentSearch(file(), 'kraken')).toBe(false);
+  /**
+   * The half of the search the server cannot do (SC-244). The filename half
+   * moved to `documents.list`; the KIND half stays here because the labels are
+   * this app's copy, and the third case is why no server-side transformation
+   * of the enum value could have stood in for it.
+   */
+  test('a term matches a kind by its LABEL, which is not its stored value', () => {
+    expect(documentPurposesMatching('invoice')).toEqual(['invoice']);
+    expect(documentPurposesMatching('SCREEN')).toEqual(['screenshot']);
+    // Displayed as "Import". A server matching the value would answer
+    // `file-import` here and miss it for "import"; this answers both correctly.
+    expect(documentPurposesMatching('import')).toEqual(['file-import']);
+    expect(documentPurposesMatching('file')).toEqual([]);
+    expect(documentPurposesMatching('kraken')).toEqual([]);
+    expect(documentPurposesMatching('  ')).toEqual([]);
   });
 
   test('every sort field the surface offers actually orders', () => {

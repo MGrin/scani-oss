@@ -1,9 +1,23 @@
+import '../../i18n-preload';
+
 import { describe, expect, test } from 'bun:test';
-import type { HoldingWithDetails } from '@scani/shared';
+import {
+  formatDayMonth,
+  type HoldingWithDetails,
+  monthName,
+  monthNameInDate,
+  resetFormatLocale,
+  setFormatLocale,
+  weekdayName,
+} from '@scani/shared';
+import i18n from 'i18next';
+import shellRu from '../../../src/i18n/locales/ru.json';
+import v3Ru from '../../../src/v3/i18n/locales/ru.json';
 import {
   amountDecimals,
   compareHoldings,
   countsTowardTotal,
+  daysInMonth,
   describeSource,
   entityOptions,
   excludedFromTotal,
@@ -19,6 +33,10 @@ import {
   supportsApy,
   tokenTypeOptions,
 } from '../../../src/v3/lib/holdings';
+
+// The real catalogue, not a fake `t`: it proves the keys exist as well as
+// that they are used, which a stub would not.
+const t = i18n.t.bind(i18n);
 
 /**
  * The decisions the holdings surface makes about a holding, none of which needs
@@ -299,14 +317,68 @@ describe('describeSource', () => {
 
 describe('payoutScheduleLabel', () => {
   test('names each cadence without repeating the label above it', () => {
-    expect(payoutScheduleLabel('daily', null, null, null)).toBe('Daily');
-    expect(payoutScheduleLabel('weekly', 3, null, null)).toBe('Weekly on Wednesday');
-    expect(payoutScheduleLabel('monthly', null, 15, null)).toBe('Monthly on day 15');
-    expect(payoutScheduleLabel('yearly', null, 5, 4)).toBe('Yearly on April 5');
+    expect(payoutScheduleLabel(t, 'daily', null, null, null)).toBe('Daily');
+    expect(payoutScheduleLabel(t, 'weekly', 3, null, null)).toBe('Weekly on Wednesday');
+    expect(payoutScheduleLabel(t, 'monthly', null, 15, null)).toBe('Monthly on day 15');
+    // `5 April`, not `April 5`: the date is `Intl`'s now, and English here is
+    // en-GB, which is the order every other date in this app is printed in
+    // (SC-413). An en-US reader gets `April 5` off the same string.
+    expect(payoutScheduleLabel(t, 'yearly', null, 5, 4)).toBe('Yearly on 5 April');
+  });
+
+  test('the DAY comes from the locale, the SENTENCE from the catalogue (SC-300)', () => {
+    // The literals above are correct today and would also pass over the
+    // hand-rolled DAY_NAMES table this replaced — under `en-GB` "from Intl"
+    // and "reads Wednesday" are the same observation. This is the assertion
+    // that separates them: the name must be whatever `weekdayName` returns,
+    // and the sentence around it must be the catalogue's.
+    expect(payoutScheduleLabel(t, 'weekly', 3, null, null)).toBe(
+      t('v3.holdings.payout.weekly', { day: weekdayName(3) })
+    );
+    expect(payoutScheduleLabel(t, 'yearly', null, 5, 4)).toBe(
+      t('v3.holdings.payout.yearly', { date: formatDayMonth(5, 4) })
+    );
+  });
+
+  test('a null day or month still renders a real name, not an empty slot', () => {
+    // `?? 0` and `?? 1` were in the original and are load-bearing: the old
+    // table's index 0 for months was an EMPTY STRING, so a null month there
+    // would have rendered "Yearly on  5" with a double space.
+    expect(payoutScheduleLabel(t, 'weekly', null, null, null)).toBe('Weekly on Sunday');
+    expect(payoutScheduleLabel(t, 'yearly', null, null, null)).toBe('Yearly on 1 January');
   });
 
   test('falls back to the raw frequency rather than inventing one', () => {
-    expect(payoutScheduleLabel('fortnightly', null, null, null)).toBe('fortnightly');
+    expect(payoutScheduleLabel(t, 'fortnightly', null, null, null)).toBe('fortnightly');
+  });
+
+  test('never names a day that month does not have (SC-320)', () => {
+    // `UpsertHoldingApyConfigDto` bounds the day at 31 without knowing the
+    // month, so 31 February is a row the API accepts and the calendar refuses.
+    // The job pays it on the 28th — `Math.min(day, daysInMonth)` — and saying
+    // "Yearly on February 31" is a sentence about a date that never arrives.
+    expect(payoutScheduleLabel(t, 'yearly', null, 31, 2, 2026)).toBe(
+      'Yearly on the last day of February'
+    );
+    expect(payoutScheduleLabel(t, 'yearly', null, 31, 4, 2026)).toBe(
+      'Yearly on the last day of April'
+    );
+    // A real date still names itself, in the month it is real in.
+    expect(payoutScheduleLabel(t, 'yearly', null, 31, 1, 2026)).toBe('Yearly on 31 January');
+    // And the leap year is why the year is a parameter: 29 February is a date
+    // in 2028 and is not one in 2026.
+    expect(payoutScheduleLabel(t, 'yearly', null, 29, 2, 2026)).toBe(
+      'Yearly on the last day of February'
+    );
+    expect(payoutScheduleLabel(t, 'yearly', null, 29, 2, 2028)).toBe('Yearly on 29 February');
+  });
+
+  test('daysInMonth is the job’s, including the leap year', () => {
+    expect(daysInMonth(2026, 1)).toBe(31);
+    expect(daysInMonth(2026, 2)).toBe(28);
+    expect(daysInMonth(2028, 2)).toBe(29);
+    expect(daysInMonth(2026, 4)).toBe(30);
+    expect(daysInMonth(2026, 12)).toBe(31);
   });
 });
 
@@ -369,5 +441,55 @@ describe('option builders', () => {
     expect(entityOptions([], [{ id: 'i1', name: 'Kraken' }])).toEqual([
       { value: 'i1', label: 'Kraken' },
     ]);
+  });
+});
+
+/**
+ * The same sentence in a language that inflects its months (SC-413).
+ *
+ * English cannot catch this and neither can French or German: `Intl` returns
+ * one month name for both contexts in all three. Russian returns «февраль»
+ * standing alone and «февраля» inside a date, so a template that interpolated
+ * a stand-alone month rendered «Ежегодно, 15 февраль» — a form no Russian
+ * writes. The fix is at the formatter rather than in `ru.json`, because no
+ * value in a catalogue can inflect a noun that arrives already wrong.
+ *
+ * `ru` is loaded here rather than in `i18n-preload` on purpose: the preload
+ * mirrors what the app boots with, and the app boots with one language.
+ */
+describe('the yearly sentence in a language with cases', () => {
+  i18n.addResourceBundle('ru', 'translation', { ...shellRu, ...v3Ru }, true, true);
+  const ru = i18n.getFixedT('ru');
+
+  function inRussian<T>(body: () => T): T {
+    setFormatLocale('ru');
+    try {
+      return body();
+    } finally {
+      resetFormatLocale();
+    }
+  }
+
+  test('a yearly payout names the month in the genitive', () => {
+    expect(inRussian(() => payoutScheduleLabel(ru, 'yearly', null, 15, 2))).toBe(
+      'Ежегодно, 15 февраля'
+    );
+    expect(inRussian(() => payoutScheduleLabel(ru, 'yearly', null, 1, 5))).toBe('Ежегодно, 1 мая');
+  });
+
+  test('the impossible-date sentence keeps its month in the genitive too', () => {
+    // Slice 4's rule survives the change: 31 February is still "the last day",
+    // and the month in that phrase is inflected the same way.
+    expect(inRussian(() => payoutScheduleLabel(ru, 'yearly', null, 31, 2, 2026))).toBe(
+      'Ежегодно, в последний день февраля'
+    );
+  });
+
+  test('the month a picker offers stays in the nominative', () => {
+    // `monthNameInDate` is for a month standing in a phrase. The list of
+    // months in the form is the other context, and «февраль» is right there —
+    // one helper for both would break whichever it was not written for.
+    expect(inRussian(() => monthNameInDate(2))).toBe('февраля');
+    expect(inRussian(() => monthName(2))).toBe('февраль');
   });
 });

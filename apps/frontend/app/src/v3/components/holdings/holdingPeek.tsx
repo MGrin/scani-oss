@@ -1,10 +1,11 @@
-import { formatDate, formatRelative, type HoldingWithDetails } from '@scani/shared';
+import { formatDate, type HoldingWithDetails } from '@scani/shared';
 import { FaviconImg } from '@scani/ui/components/FaviconImg';
 import { Badge } from '@scani/ui/ui/badge';
 import { Button } from '@scani/ui/ui/button';
 import { DeltaPill } from '@scani/ui/v3/components/charts/DeltaPill';
 import { Numeric } from '@scani/ui/v3/components/Numeric';
 import type { PeekFact, PeekSection, PeekSpec } from '@scani/ui/v3/lib/peek';
+import type { TFunction } from 'i18next';
 import { Pencil, RefreshCw, Wallet } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { getFaviconUrl } from '@/lib/icons';
@@ -18,6 +19,7 @@ import {
   payoutScheduleLabel,
   supportsApy,
 } from '../../lib/holdings';
+import { formatRelative } from '../../lib/relative-time';
 import { groupDetailPath } from '../../lib/routes';
 import { HoldingAmountFact } from './HoldingAmountFact';
 import { HoldingDeleteAction } from './HoldingDeleteAction';
@@ -51,6 +53,10 @@ import { RealizedLedger } from './RealizedLedger';
 export interface HoldingPeekContext {
   /** The user's base currency, as a symbol or ISO code. */
   currency: string;
+  /** Carried on the context rather than passed to each builder below: the
+   *  peek is assembled by six free functions, and threading `t` through all of
+   *  them one parameter at a time is how one gets missed (SC-201). */
+  t: TFunction;
   onSetAmount: (holding: HoldingWithDetails, balance: string) => void;
   onToggleActive: (holding: HoldingWithDetails) => void;
   /** True while an activate/deactivate write is in flight. */
@@ -75,10 +81,12 @@ function PriceFact({
   holding,
   currency,
   onEditPrice,
+  t,
 }: {
   holding: HoldingWithDetails;
   currency: string;
   onEditPrice: (holding: HoldingWithDetails) => void;
+  t: TFunction;
 }) {
   return (
     <span className="flex flex-col items-end gap-0.5">
@@ -88,7 +96,7 @@ function PriceFact({
           <button
             type="button"
             onClick={() => onEditPrice(holding)}
-            aria-label={`Edit the price of ${holding.token.symbol}`}
+            aria-label={t('v3.holdings.peek.editPriceOf', { symbol: holding.token.symbol })}
             className="-my-1 rounded-md p-1 text-muted-foreground transition-colors duration-fast ease-emphasized hover:bg-surface-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             <Pencil className="size-4" aria-hidden="true" />
@@ -100,7 +108,7 @@ function PriceFact({
         // is one of the contrast failures §2.6 names, and a price's age is the
         // thing that decides whether to trust the figure above it.
         <span className="text-caption text-muted-foreground">
-          {formatRelative(holding.price.timestamp)}
+          {formatRelative(t, holding.price.timestamp)}
           {holding.price.source ? ` · ${holding.price.source}` : ''}
         </span>
       ) : null}
@@ -110,16 +118,17 @@ function PriceFact({
 
 function apySection(holding: HoldingWithDetails, ctx: HoldingPeekContext): PeekSection {
   const config = holding.apyConfig;
+  const { t } = ctx;
 
   if (!config) {
     return {
-      title: 'Interest',
+      title: t('v3.holdings.peek.interest'),
       facts: [
         {
-          label: 'APY',
+          label: t('v3.holdings.peek.apy'),
           value: (
             <Button variant="outline" size="sm" onClick={() => ctx.onConfigureApy(holding)}>
-              Configure
+              {t('v3.holdings.peek.configure')}
             </Button>
           ),
         },
@@ -129,12 +138,12 @@ function apySection(holding: HoldingWithDetails, ctx: HoldingPeekContext): PeekS
 
   const facts: PeekFact[] = [
     {
-      label: 'APY',
+      label: t('v3.holdings.peek.apy'),
       value: (
         <span className="flex items-center gap-2">
           <Numeric value={config.annualRatePct} format="percent" decimals={2} />
           <Button variant="ghost" size="sm" onClick={() => ctx.onConfigureApy(holding)}>
-            Edit
+            {t('v3.holdings.peek.apyEdit')}
           </Button>
           <Button
             variant="ghost"
@@ -142,14 +151,15 @@ function apySection(holding: HoldingWithDetails, ctx: HoldingPeekContext): PeekS
             className="text-destructive hover:text-destructive"
             onClick={() => ctx.onRemoveApy(holding)}
           >
-            Remove
+            {t('v3.holdings.peek.apyRemove')}
           </Button>
         </span>
       ),
     },
     {
-      label: 'Payout',
+      label: t('v3.holdings.peek.payout'),
       value: payoutScheduleLabel(
+        t,
         config.payoutFrequency,
         config.payoutDayOfWeek,
         config.payoutDayOfMonth,
@@ -159,33 +169,40 @@ function apySection(holding: HoldingWithDetails, ctx: HoldingPeekContext): PeekS
   ];
 
   if (config.lastPayoutAt) {
-    facts.push({ label: 'Last payout', value: formatRelative(config.lastPayoutAt) });
+    facts.push({
+      label: t('v3.holdings.peek.lastPayout'),
+      value: formatRelative(t, config.lastPayoutAt),
+    });
   }
 
-  return { title: 'Interest', facts };
+  return { title: t('v3.holdings.peek.interest'), facts };
 }
 
 export function holdingPeekSpec(holding: HoldingWithDetails, ctx: HoldingPeekContext): PeekSpec {
+  const { t } = ctx;
   const gainLoss = holdingGainLoss(holding);
   const priceBusy = ctx.refreshingPriceId === holding.id;
   const balanceBusy = ctx.refreshingBalanceId === holding.id;
 
   const record: PeekFact[] = [
     {
-      label: 'Status',
+      label: t('v3.holdings.peek.status'),
       // A readout, not a control — see `HoldingStatusAction`, which is the
       // control and lives in the action row above. `outline` rather than the
       // filled `default`: a solid primary-purple pill in a column of plain
       // facts is the button this used to pretend to be.
       value: (
         <Badge variant={holding.isActive ? 'outline' : 'secondary'}>
-          {holding.isActive ? 'Active' : 'Inactive'}
+          {holding.isActive ? t('v3.holdings.peek.active') : t('v3.holdings.peek.inactive')}
         </Badge>
       ),
     },
-    { label: 'Last updated', value: formatRelative(holding.lastUpdated) },
-    { label: 'Source', value: holding.source ? describeSource(holding.source) : '—' },
-    { label: 'Added', value: formatDate(holding.createdAt) },
+    { label: t('v3.holdings.peek.lastUpdated'), value: formatRelative(t, holding.lastUpdated) },
+    {
+      label: t('v3.holdings.peek.source'),
+      value: holding.source ? describeSource(holding.source) : '—',
+    },
+    { label: t('v3.holdings.peek.added'), value: formatDate(holding.createdAt) },
   ];
 
   if (holding.unpriceable) {
@@ -194,9 +211,8 @@ export function holdingPeekSpec(holding: HoldingWithDetails, ctx: HoldingPeekCon
     // (SC-154). Placed above `History` because it explains the value the
     // reader came here about, not a caveat on a chart.
     record.push({
-      label: 'Price',
-      value:
-        'No source has ever quoted this token, and we have stopped asking for now. It is left out of your net worth rather than counted as zero.',
+      label: t('v3.holdings.peek.price'),
+      value: t('v3.holdings.peek.unpriceableNote'),
     });
   }
 
@@ -205,10 +221,10 @@ export function holdingPeekSpec(holding: HoldingWithDetails, ctx: HoldingPeekCon
     // no way to show at all. It qualifies every historical figure for this
     // holding, so it belongs where those figures are read.
     record.push({
-      label: 'History',
-      value:
-        holding.dataIntegrity.note ??
-        'Incomplete — inflows from before the first imported transaction are missing, so values before that date are clamped.',
+      label: t('v3.holdings.peek.history'),
+      // The server's own note wins when it sends one — it knows which holding
+      // this is. The fallback is ours and is the only half that translates.
+      value: holding.dataIntegrity.note ?? t('v3.holdings.peek.incompleteHistory'),
     });
   }
 
@@ -216,14 +232,14 @@ export function holdingPeekSpec(holding: HoldingWithDetails, ctx: HoldingPeekCon
 
   if (gainLoss) {
     sections.push({
-      title: 'Performance',
+      title: t('v3.holdings.peek.performance'),
       facts: [
         {
-          label: 'Cost basis',
+          label: t('v3.holdings.peek.costBasis'),
           value: <Numeric value={holding.costBasis} currency={ctx.currency} />,
         },
         {
-          label: 'Gain / loss',
+          label: t('v3.holdings.peek.gainLoss'),
           value: (
             <Numeric
               value={gainLoss.percent}
@@ -238,7 +254,7 @@ export function holdingPeekSpec(holding: HoldingWithDetails, ctx: HoldingPeekCon
     });
   }
 
-  sections.push({ title: 'Record', facts: record });
+  sections.push({ title: t('v3.holdings.peek.record'), facts: record });
 
   // Always shown, including when the answer is "none" (SC-70). "Which groups
   // is this in?" is a question a reader asks *of the holding*, and a section
@@ -247,10 +263,10 @@ export function holdingPeekSpec(holding: HoldingWithDetails, ctx: HoldingPeekCon
   // is where membership is edited — the other direction of the same question,
   // and the reason the badges stopped being inert text.
   sections.push({
-    title: 'Groups',
+    title: t('v3.holdings.peek.groups'),
     facts: [
       {
-        label: 'In',
+        label: t('v3.holdings.peek.in'),
         value:
           holding.groups.length > 0 ? (
             <span className="flex flex-wrap justify-end gap-1.5">
@@ -269,7 +285,7 @@ export function holdingPeekSpec(holding: HoldingWithDetails, ctx: HoldingPeekCon
               ))}
             </span>
           ) : (
-            <span className="text-muted-foreground">No groups</span>
+            <span className="text-muted-foreground">{t('v3.holdings.peek.noGroups')}</span>
           ),
       },
     ],
@@ -326,7 +342,7 @@ export function holdingPeekSpec(holding: HoldingWithDetails, ctx: HoldingPeekCon
               `animate-spin` is exactly the thing §2.4 says every animation
               must be kept out of until it is. */}
           <RefreshCw className="mr-2 size-4" aria-hidden="true" />
-          {priceBusy ? 'Refreshing…' : 'Refresh price'}
+          {priceBusy ? t('v3.holdings.peek.refreshing') : t('v3.holdings.peek.refreshPrice')}
         </Button>
         {isSynced(holding) ? (
           <Button
@@ -335,7 +351,7 @@ export function holdingPeekSpec(holding: HoldingWithDetails, ctx: HoldingPeekCon
             disabled={balanceBusy}
           >
             <Wallet className="mr-2 size-4" aria-hidden="true" />
-            {balanceBusy ? 'Syncing…' : 'Sync balance'}
+            {balanceBusy ? t('v3.holdings.peek.syncing') : t('v3.holdings.peek.syncBalance')}
           </Button>
         ) : null}
         <HoldingStatusAction
@@ -354,7 +370,7 @@ export function holdingPeekSpec(holding: HoldingWithDetails, ctx: HoldingPeekCon
     ),
     primary: [
       {
-        label: 'Amount',
+        label: t('v3.holdings.peek.amount'),
         value: (
           <HoldingAmountFact
             amount={holding.amount}
@@ -363,13 +379,22 @@ export function holdingPeekSpec(holding: HoldingWithDetails, ctx: HoldingPeekCon
         ),
       },
       {
-        label: 'Price',
+        label: t('v3.holdings.peek.price'),
         value: (
-          <PriceFact holding={holding} currency={ctx.currency} onEditPrice={ctx.onEditPrice} />
+          <PriceFact
+            holding={holding}
+            currency={ctx.currency}
+            onEditPrice={ctx.onEditPrice}
+            t={t}
+          />
         ),
       },
-      { label: 'Account', value: holding.account.name },
-      { label: 'Type', value: holding.token.type || holding.token.typeCode },
+      { label: t('v3.holdings.peek.account'), value: holding.account.name },
+      // Only on the holdings that carry one, which is the small set where an
+      // account holds several rows for one token (SC-330). A "Pot: —" row on
+      // every other holding would be a field that says nothing.
+      ...(holding.label ? [{ label: t('v3.holdings.peek.pot'), value: holding.label }] : []),
+      { label: t('v3.holdings.peek.type'), value: holding.token.type || holding.token.typeCode },
     ],
     // The `content` slot rather than a section, because a ledger of disposals
     // each with its own lots under it is not a run of label/value pairs — the

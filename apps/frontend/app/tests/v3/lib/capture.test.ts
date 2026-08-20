@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { CAPTURE_GROUPS, CAPTURE_ROUTES, captureContextQuery, captureHref } from '@/v3/lib/capture';
-import { V3_CAPTURE_ROUTES } from '@/v3/lib/routes';
-import { counterpartPath, uiVersionForPath } from '@/v3/lib/ui-version';
+import { V3_CAPTURE_ROUTES, V3_PAYMENT_ROUTES } from '@/v3/lib/routes';
 
 describe('the capture catalogue', () => {
   test('groups by what the person has, not by which subsystem takes it', () => {
@@ -40,35 +41,40 @@ describe('the capture catalogue', () => {
 describe('the debt V3-14 took on', () => {
   /**
    * What V3-44 paid off, asserted as the property rather than as a list. Four
-   * of the seven rows pointed at v2 screens through `V2_BORROWED_PATHS`; the
-   * flag, the borrow list and the gate that needed them are all gone, and the
-   * only way that can regress is a new row added with a classic-UI path.
+   * of the seven rows pointed at classic-UI screens through
+   * `V2_BORROWED_PATHS`; the flag, the borrow list and the gate that needed
+   * them went with the tree they served (SC-423).
+   *
+   * The property they stood in for was always "this row leads somewhere that
+   * exists", and it was checked by round-tripping the path through the
+   * two-generation crossing — a proxy, because that crossing fell back to Home
+   * for a path v3 had not built. With one interface it can be asked directly:
+   * every row's path is a value of `V3_CAPTURE_ROUTES`, and every one of those
+   * is registered by `V3App`. A row pointing anywhere else now reaches the
+   * not-found screen, which is legible but is still not where the capture
+   * sheet should send anybody.
    */
-  test('every row addresses v3, not the classic UI', () => {
+  const V3_APP = readFileSync(join(import.meta.dir, '../../../src/v3/V3App.tsx'), 'utf8');
+
+  test('every row leads to a capture route', () => {
+    const known = new Set<string>([...Object.values(V3_CAPTURE_ROUTES), V3_PAYMENT_ROUTES.create]);
     for (const route of CAPTURE_ROUTES) {
-      expect({ id: route.id, version: uiVersionForPath(route.path) }).toEqual({
+      expect({ id: route.id, known: known.has(route.path.split('?')[0] as string) }).toEqual({
         id: route.id,
-        version: 'v3',
+        known: true,
       });
     }
   });
 
-  /**
-   * Stronger than the above, and the assertion that actually replaces the
-   * borrow check: since v3 took the root (V3-19), *any* path without the `/v2`
-   * prefix reads as v3 — including one v3 never built, which resolves to the
-   * catch-all and is handed straight back to the classic UI. Round-tripping
-   * through `counterpartPath` is what proves the screen exists, because the
-   * crossing to v3 falls back to Home for a path v3 has not built.
-   */
-  test('and every one of them is a v3 screen that exists', () => {
-    for (const route of CAPTURE_ROUTES) {
-      const path = route.path.split('?')[0] as string;
-      expect({ id: route.id, path: counterpartPath(counterpartPath(path, 'v2'), 'v3') }).toEqual({
-        id: route.id,
-        path,
+  test('and every capture route is one V3App registers', () => {
+    for (const key of Object.keys(V3_CAPTURE_ROUTES)) {
+      expect({ key, registered: V3_APP.includes(`V3_CAPTURE_ROUTES.${key}`) }).toEqual({
+        key,
+        registered: true,
       });
     }
+    // The scan is only worth having if it can fail.
+    expect(V3_APP.includes('V3_CAPTURE_ROUTES.notARoute')).toBe(false);
   });
 });
 

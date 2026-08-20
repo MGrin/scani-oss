@@ -66,6 +66,15 @@ export const UpdateHoldingDto = z.object({
 
 export type HoldingWithDetails = {
   id: string;
+  /**
+   * What the user calls this pot, when their account holds several rows for
+   * one token (SC-330). Null on every ordinary holding, and on every synced
+   * one — an importer addresses a position by `external_id` and has no name
+   * to give it. Present on the wire because four rows reading `RUB · Tinkoff`
+   * are four rows the user cannot tell apart, which is how the second upload
+   * of that screen proposed the wrong balance for the wrong pot.
+   */
+  label?: string | null;
   token: {
     id: string;
     symbol: string;
@@ -75,6 +84,20 @@ export type HoldingWithDetails = {
     iconUrl?: string | null;
     /** 0..1. `>= SCAM_PROBABILITY_THRESHOLD` → rendered with the scam badge. */
     isScamProbability: number;
+    /**
+     * The ASCII symbol this token's symbol DRAWS but is not — `UЅDС`
+     * (Cyrillic Ѕ and С) carries `USDC`. Null means the symbol is plain
+     * ASCII and reads as itself.
+     *
+     * On the wire because the row is otherwise indistinguishable from the
+     * real one, which is the entire harm (SC-197). A non-null value here
+     * is a fact about the CHARACTERS, established once at creation and
+     * never re-scored — unlike `isScamProbability`, which moves with our
+     * own pricing coverage (SC-207). Do not conflate the two: a token can
+     * be a lookalike with a low scam score, and most unpriced tokens are
+     * not lookalikes at all.
+     */
+    lookalikeOf?: string | null;
   };
   amount: number;
   // `null` when the holding's token has no resolvable price in the

@@ -7,21 +7,23 @@ import { BLANK_CELL, exportConvertedMoney, exportCount } from '@scani/ui/v3/lib/
 import type { V3QueryState } from '@scani/ui/v3/lib/query-state';
 import { Store } from 'lucide-react';
 import { useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import type { BaseCurrencyRates } from '@/hooks/useBaseCurrencyRates';
 import type { RouterOutputs } from '@/lib/trpc';
 import {
-  COMMITMENT_LABEL,
+  commitmentLabel,
   comparableBaseAmount,
-  INCOME_COMMITMENT_LABEL,
   INFLOW,
+  incomeCommitmentLabel,
   isIncomeVendor,
   monthlyCommitmentByVendor,
   noSettledSpend,
-  PAID_ALL_TIME_LABEL,
-  PER_MONTH_LABEL,
+  PER_MONTH_LABEL_KEY,
+  paidAllTimeLabel,
   paidWindowLabel,
-  RECEIVED_ALL_TIME_LABEL,
+  perMonthLabel,
+  receivedAllTimeLabel,
   receivedWindowLabel,
   settledByVendor,
   settlementsByVendor,
@@ -31,8 +33,8 @@ import {
   vendorDirectionKinds,
   vendorKindLabel,
 } from '@/lib/vendorSpend';
-import { convertTotalsToBase } from '@/v2/lib/paymentTotals';
 import { countByVendorId } from '../../lib/money';
+import { convertTotalsToBase } from '../../lib/paymentTotals';
 import { V3_ROUTES, vendorPaymentsPath } from '../../lib/routes';
 import { BaseEquivalent } from '../BaseEquivalent';
 import { ConvertedFigure } from '../ConvertedFigure';
@@ -99,6 +101,7 @@ export function VendorList({
   creating,
   onCreatingChange,
 }: VendorListProps) {
+  const { t } = useTranslation();
   const paymentCountByVendorId = useMemo(() => countByVendorId(payments), [payments]);
   const commitmentByVendorId = useMemo(() => monthlyCommitmentByVendor(payments), [payments]);
   const incomeByVendorId = useMemo(() => monthlyCommitmentByVendor(payments, INFLOW), [payments]);
@@ -163,26 +166,28 @@ export function VendorList({
     );
   };
 
-  const countLabel = (vendor: VendorRow) => {
-    const count = countFor(vendor);
-    return `${count} payment${count === 1 ? '' : 's'}`;
-  };
+  const countLabel = (vendor: VendorRow) =>
+    t('v3.money.vendorList.paymentCount', { count: countFor(vendor) });
 
   const sublabelFor = (vendor: VendorRow) =>
-    [vendor.category ?? 'Uncategorised', vendorKindLabel(kindFor(vendor)), countLabel(vendor)]
+    [
+      vendor.category ?? t('v3.money.vendorList.uncategorised'),
+      vendorKindLabel(t, kindFor(vendor)),
+      countLabel(vendor),
+    ]
       .filter(Boolean)
       .join(' · ');
 
   const config: V3DataViewConfig<VendorRow> = {
     pageKey: 'vendors',
-    noun: 'vendors',
-    searchPlaceholder: 'Search vendors',
+    nounKey: 'ui.dataView.noun.vendors',
+    searchPlaceholderKey: 'ui.dataView.vendors.config.searchVendors',
     data: vendors,
     searchFn: (vendor, query) => vendor.displayName.toLowerCase().includes(query),
     sortDefs: [
-      { key: 'name', label: 'Name' },
-      { key: 'spend', label: PER_MONTH_LABEL },
-      { key: 'payments', label: 'Payments' },
+      { key: 'name', labelKey: 'ui.dataView.vendors.sort.name' },
+      { key: 'spend', labelKey: PER_MONTH_LABEL_KEY },
+      { key: 'payments', labelKey: 'ui.dataView.vendors.sort.payments' },
     ],
     sortFn: (a, b, field, direction) => {
       const mult = direction === 'asc' ? 1 : -1;
@@ -200,16 +205,17 @@ export function VendorList({
     groupByDefs: [
       {
         key: 'category',
-        label: 'Category',
-        fn: (vendor: VendorRow) => vendor.category ?? 'Uncategorised',
+        labelKey: 'ui.dataView.vendors.group.category',
+        fn: (vendor: VendorRow) => vendor.category ?? t('v3.money.vendorList.uncategorised'),
       },
       // Offered because the column mixes two directions: a reader who wants
       // only the bills, or only the income, can have them as their own
       // headed bands without either figure being netted into the other.
       {
         key: 'direction',
-        label: 'Bills / income',
-        fn: (vendor: VendorRow) => vendorKindLabel(kindFor(vendor)) ?? 'Bills',
+        labelKey: 'ui.dataView.vendors.group.billsIncome',
+        fn: (vendor: VendorRow) =>
+          vendorKindLabel(t, kindFor(vendor)) ?? t('v3.money.vendorList.billsGroup'),
       },
     ],
     defaultSort: { field: 'name', direction: 'asc' },
@@ -236,7 +242,7 @@ export function VendorList({
       // VoiceOver the same count differ by which way the money moves.
       ariaLabel: rowName([
         vendor.displayName,
-        vendorKindLabel(kindFor(vendor)),
+        vendorKindLabel(t, kindFor(vendor)),
         countLabel(vendor),
       ]),
     }),
@@ -244,20 +250,30 @@ export function VendorList({
     // summary above carries labelled totals, so a bare money column under it
     // belongs to none of them until it is named (SC-69 3.3). Direction-neutral
     // since SC-78 §5 — the rows below it are not all bills.
-    valueHeader: PER_MONTH_LABEL,
+    valueHeaderKey: PER_MONTH_LABEL_KEY,
     columns: [
-      { key: 'name', header: 'Vendor', sortable: true, render: (vendor) => vendor.displayName },
-      { key: 'category', header: 'Category', render: (vendor) => vendor.category ?? '—' },
+      {
+        key: 'name',
+        headerKey: 'ui.dataView.vendors.col.vendor',
+        sortable: true,
+        render: (vendor) => vendor.displayName,
+      },
+      {
+        key: 'category',
+        headerKey: 'ui.dataView.vendors.col.category',
+        render: (vendor) => vendor.category ?? '—',
+      },
       {
         key: 'direction',
-        header: 'Kind',
-        render: (vendor) => vendorKindLabel(kindFor(vendor)) ?? 'Bill',
+        headerKey: 'ui.dataView.vendors.col.kind',
+        render: (vendor) =>
+          vendorKindLabel(t, kindFor(vendor)) ?? t('v3.money.vendorList.billKind'),
       },
       {
         key: 'spend',
         // The period is in the header rather than in a tooltip: a money column
         // whose period has to be hovered for is a column of unlabelled figures.
-        header: PER_MONTH_LABEL,
+        headerKey: PER_MONTH_LABEL_KEY,
         sortable: true,
         numeric: true,
         width: 'w-40',
@@ -280,7 +296,7 @@ export function VendorList({
       },
       {
         key: 'payments',
-        header: 'Payments',
+        headerKey: 'ui.dataView.vendors.col.payments',
         sortable: true,
         numeric: true,
         width: 'w-28',
@@ -290,10 +306,11 @@ export function VendorList({
     ],
     empty: {
       icon: Store,
-      title: 'No vendors yet',
-      description:
-        'A vendor is created for you the first time you point a payment at one. You can also add one here.',
-      action: <Button onClick={() => onCreatingChange(true)}>New vendor</Button>,
+      titleKey: 'ui.dataView.vendors.empty.noVendorsYet',
+      descriptionKey: 'ui.dataView.vendors.empty.aVendorIsCreatedForYou',
+      action: (
+        <Button onClick={() => onCreatingChange(true)}>{t('v3.money.vendorPeek.newVendor')}</Button>
+      ),
     },
     peek: {
       basePath: V3_ROUTES.vendors,
@@ -302,7 +319,7 @@ export function VendorList({
         const income = isIncomeVendor(kind);
         const settled = income ? receivedFor(vendor) : settledFor(vendor);
         const recent = (income ? recentIncomeByVendorId : recentByVendorId).get(vendor.id) ?? [];
-        const unpriced = unpricedNote(settled.unpricedCount);
+        const unpriced = unpricedNote(t, settled.unpricedCount);
         const alsoIncome = kind === 'both';
         const incomeSettled = receivedFor(vendor);
         const incomeRecent = recentIncomeByVendorId.get(vendor.id) ?? [];
@@ -346,7 +363,7 @@ export function VendorList({
               {countFor(vendor) > 0 ? (
                 <Button variant="outline" asChild>
                   <Link to={vendorPaymentsPath(vendor.id)}>
-                    {countFor(vendor) === 1 ? 'See payment' : 'See payments'}
+                    {t('v3.money.vendorPeek.seePayments', { count: countFor(vendor) })}
                   </Link>
                 </Button>
               ) : null}
@@ -371,18 +388,18 @@ export function VendorList({
           primary:
             kind === 'unclassified'
               ? [
-                  { label: PER_MONTH_LABEL, value: '—' },
-                  { label: 'Payments', value: countFor(vendor) },
+                  { label: perMonthLabel(t), value: '—' },
+                  { label: t('v3.money.vendorPeek.payments'), value: countFor(vendor) },
                 ]
               : [
                   {
-                    label: income ? INCOME_COMMITMENT_LABEL : COMMITMENT_LABEL,
+                    label: income ? incomeCommitmentLabel(t) : commitmentLabel(t),
                     value: rowFigure(vendor),
                   },
                   {
                     label: income
-                      ? receivedWindowLabel(windowMonths)
-                      : paidWindowLabel(windowMonths),
+                      ? receivedWindowLabel(t, windowMonths)
+                      : paidWindowLabel(t, windowMonths),
                     value: (
                       <ConvertedFigure
                         totals={settled.inWindow}
@@ -393,7 +410,7 @@ export function VendorList({
                     ),
                   },
                   {
-                    label: income ? RECEIVED_ALL_TIME_LABEL : PAID_ALL_TIME_LABEL,
+                    label: income ? receivedAllTimeLabel(t) : paidAllTimeLabel(t),
                     value: (
                       <ConvertedFigure
                         totals={settled.allTime}
@@ -403,7 +420,7 @@ export function VendorList({
                       />
                     ),
                   },
-                  { label: 'Payments', value: countFor(vendor) },
+                  { label: t('v3.money.vendorPeek.payments'), value: countFor(vendor) },
                 ],
           sections: [
             // A vendor in both directions gets its income in a section of its
@@ -411,14 +428,14 @@ export function VendorList({
             ...(alsoIncome
               ? [
                   {
-                    title: 'Income from this vendor',
+                    title: t('v3.money.vendorPeek.incomeFromThisVendor'),
                     facts: [
                       {
-                        label: INCOME_COMMITMENT_LABEL,
+                        label: incomeCommitmentLabel(t),
                         value: figure(incomeFor(vendor), true),
                       },
                       {
-                        label: receivedWindowLabel(windowMonths),
+                        label: receivedWindowLabel(t, windowMonths),
                         value: (
                           <ConvertedFigure
                             totals={incomeSettled.inWindow}
@@ -436,25 +453,31 @@ export function VendorList({
             ...(recent.length > 0
               ? [
                   {
-                    title: income ? 'Recent income' : 'Recent payments',
+                    title: income
+                      ? t('v3.money.vendorPeek.recentIncome')
+                      : t('v3.money.vendorPeek.recentPayments'),
                     facts: settlementFacts(recent),
                   },
                 ]
               : []),
             {
-              title: 'Details',
+              title: t('v3.money.vendorPeek.details'),
               facts: [
-                { label: 'Website', value: vendor.website ?? 'None on file' },
+                {
+                  label: t('v3.money.vendorPeek.website'),
+                  value: vendor.website ?? t('v3.money.vendorPeek.noWebsite'),
+                },
                 ...(kind === 'unclassified'
                   ? [
                       {
-                        label: 'Direction',
-                        value:
-                          'This vendor’s payments do not say whether the money goes out or comes in, so no monthly figure is shown.',
+                        label: t('v3.money.vendorPeek.direction'),
+                        value: t('v3.money.vendorPeek.unclassified'),
                       },
                     ]
                   : []),
-                ...(unpriced ? [{ label: 'Not counted', value: unpriced }] : []),
+                ...(unpriced
+                  ? [{ label: t('v3.money.vendorPeek.notCounted'), value: unpriced }]
+                  : []),
               ],
             },
           ],

@@ -82,13 +82,13 @@ Without linking, a sequence like:
 3. Sell 1 BTC on a DEX three months later at $50,000.
 
 …shows up as two disconnected legs: a closed Binance lot (cost basis
-$40k, fully realised) and a "free" 1 BTC at the DEX (zero cost
-basis, full $50k realised gain on sale). Total realised gain looks
+$40k, fully realized) and a "free" 1 BTC at the DEX (zero cost
+basis, full $50k realized gain on sale). Total realized gain looks
 like $50k, double-counted.
 
 **With linking**, the cross-venue transfer is recognised: cost basis
 flows through. The lot opened at Binance is the same lot closed at
-the DEX. Realised gain is $10k, computed once.
+the DEX. Realized gain is $10k, computed once.
 
 This isn't tax advice — it's just the correct economic view. Tax
 treatment varies by jurisdiction and is out of scope.
@@ -122,7 +122,7 @@ Once `transferGroupId` is set on both rows:
   through to the inflow destination.
 - The dashboard hides the inflow's "balance grew from nowhere"
   surprise.
-- The historical [rollup](/concepts/rollup/) computes realised PnL
+- The historical [rollup](/concepts/rollup/) computes realized PnL
   against the upstream lot, not against zero.
 
 ## See also

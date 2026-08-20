@@ -1,5 +1,6 @@
 import { Check, Loader2 } from 'lucide-react';
 import { type ReactNode, useEffect, useState } from 'react';
+import { useUiTranslation } from '../../../i18n';
 import { cn } from '../../../lib/cn';
 import {
   BottomDrawer,
@@ -52,9 +53,17 @@ import {
 
 const EXPORT_SNAP_POINTS = [0.7, 1] as const;
 
-const SEPARATORS: { value: CsvSeparator; label: string; detail: string }[] = [
-  { value: ',', label: 'Comma', detail: 'a,b,c — the usual choice' },
-  { value: ';', label: 'Semicolon', detail: 'a;b;c — for a spreadsheet set to a European locale' },
+const SEPARATORS: { value: CsvSeparator; labelKey: string; detailKey: string }[] = [
+  {
+    value: ',',
+    labelKey: 'ui.dataView.export.separatorComma',
+    detailKey: 'ui.dataView.export.separatorCommaDetail',
+  },
+  {
+    value: ';',
+    labelKey: 'ui.dataView.export.separatorSemicolon',
+    detailKey: 'ui.dataView.export.separatorSemicolonDetail',
+  },
 ];
 
 function OptionRow({
@@ -210,11 +219,12 @@ export interface ExportSheetProps {
 /** The header. Exported for `RefineHeader`'s reason: the sheet itself is a
  *  Radix portal and renders nothing under `renderToStaticMarkup`. */
 export function ExportHeader({ subject }: { subject: string }) {
+  const { t } = useUiTranslation();
   return (
     <div className="flex flex-col gap-0.5">
-      <SheetTitle className="text-title">Export</SheetTitle>
+      <SheetTitle className="text-title">{t('ui.dataView.export.title')}</SheetTitle>
       <SheetDescription className="text-caption">
-        {`Download your ${subject} as a file you own.`}
+        {t('ui.dataView.export.subjectDescription', { subject })}
       </SheetDescription>
     </div>
   );
@@ -243,11 +253,12 @@ export function ExportSections({
   hideAmounts: boolean;
   onHideAmountsChange: (hide: boolean) => void;
 }) {
+  const { t } = useUiTranslation();
   const only = scopes.length === 1 ? scopes[0] : null;
 
   return (
     <>
-      <Group title="What to export">
+      <Group title={t('ui.dataView.export.whatToExport')}>
         {only ? (
           <p className="px-3 text-body text-muted-foreground">
             {only.detail ? `${only.label} — ${only.detail}` : only.label}
@@ -266,7 +277,7 @@ export function ExportSections({
       </Group>
 
       {formats.length > 1 ? (
-        <Group title="Format">
+        <Group title={t('ui.dataView.export.format')}>
           {formats.map((option) => (
             <OptionRow
               key={option}
@@ -280,7 +291,7 @@ export function ExportSections({
       ) : null}
 
       {format === 'csv' && formats.includes('csv') ? (
-        <Group title="Separator">
+        <Group title={t('ui.dataView.export.separator')}>
           {/* Offered rather than guessed at silently, because getting it wrong
               is invisible until Excel opens the file as a single column. The
               default comes from this browser's own number formatting — see
@@ -289,8 +300,8 @@ export function ExportSections({
           {SEPARATORS.map((option) => (
             <OptionRow
               key={option.value}
-              label={option.label}
-              detail={option.detail}
+              label={t(option.labelKey)}
+              detail={t(option.detailKey)}
               active={separator === option.value}
               onSelect={() => onSeparatorChange(option.value)}
             />
@@ -298,7 +309,7 @@ export function ExportSections({
         </Group>
       ) : null}
 
-      <Group title="Privacy">
+      <Group title={t('ui.dataView.export.privacy')}>
         {/* Last, and off by default. It is the only control here that changes
             what the file *contains* rather than how it is written, so it sits
             apart from format and separator — and a reader who never looks at
@@ -306,8 +317,8 @@ export function ExportSections({
             wrong in. */}
         <ToggleRow
           id="export-hide-amounts"
-          label="Hide amounts"
-          detail="Removes every value, gain/loss and converted column. The file says they were withheld."
+          label={t('ui.dataView.export.hideAmounts')}
+          detail={t('ui.dataView.export.hideAmountsDetail')}
           checked={hideAmounts}
           onChange={onHideAmountsChange}
         />
@@ -340,6 +351,7 @@ export function ExportSheet({
   formats = availableExportFormats(),
   onExport,
 }: ExportSheetProps) {
+  const { t } = useUiTranslation();
   const isDesktop = useIsDesktop();
 
   const first = initialScope(scopes, defaultScope);
@@ -418,13 +430,13 @@ export function ExportSheet({
       style={{ paddingBottom: 'calc(0.75rem + env(safe-area-inset-bottom, 0px))' }}
     >
       <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={running}>
-        Cancel
+        {t('ui.dataView.export.cancel')}
       </Button>
       <Button className="flex-1" onClick={run} disabled={running || disabled?.(scope) === true}>
         {running ? (
           <>
             <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
-            Preparing…
+            {t('ui.dataView.export.preparing')}
           </>
         ) : (
           actionLabel(scope)
@@ -453,9 +465,9 @@ export function ExportSheet({
     <BottomDrawer open={open} onOpenChange={onOpenChange}>
       <BottomDrawerContent
         snapPoints={EXPORT_SNAP_POINTS}
-        expandLabel="Show every option"
-        collapseLabel="Show fewer options"
-        closeLabel="Close export"
+        expandLabel={t('ui.dataView.export.expand')}
+        collapseLabel={t('ui.dataView.export.collapse')}
+        closeLabel={t('ui.dataView.export.close')}
         style={{ backgroundColor: 'hsl(var(--surface-2))' }}
       >
         <BottomDrawerHeader className="border-b border-border pb-3">{header}</BottomDrawerHeader>

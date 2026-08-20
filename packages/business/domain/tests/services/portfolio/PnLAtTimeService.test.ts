@@ -1,6 +1,6 @@
 process.env.DATABASE_URL = process.env.DATABASE_URL || 'postgresql://dummy:dummy@localhost/dummy';
 
-import { afterAll, describe, expect, test } from 'bun:test';
+import { describe, expect, test } from 'bun:test';
 import type { HoldingTransaction } from '@scani/db/schema';
 import Decimal from 'decimal.js';
 import { Container } from 'typedi';
@@ -13,14 +13,11 @@ import {
   type CostBasisAtTime,
   CostBasisService,
 } from '../../../src/services/pricing/CostBasisService';
+import { restoreContainerAfterAll } from '../../../test/helpers/container';
 
-afterAll(() => {
-  Container.set(HoldingTransactionRepository, new HoldingTransactionRepository());
-  Container.set(HoldingCoverageRepository, new HoldingCoverageRepository());
-  Container.set(CostBasisService, new CostBasisService());
-  Container.set(PortfolioValuationAtTimeService, new PortfolioValuationAtTimeService());
-  Container.set(PnLAtTimeService, new PnLAtTimeService());
-});
+// Container stubs are process-global; put back whatever this file changes
+// so no later test file resolves them (SC-448).
+restoreContainerAfterAll();
 
 const USD = 'token-USD';
 
@@ -30,6 +27,7 @@ interface ValuationHolding {
   valueInBase: Decimal | null;
   unpriceable?: boolean;
   priceStale?: boolean;
+  balanceBeforeRecords?: boolean;
 }
 
 function makeValuationStub(holdings: ValuationHolding[]): PortfolioValuationAtTimeService {
@@ -48,6 +46,7 @@ function makeValuationStub(holdings: ValuationHolding[]): PortfolioValuationAtTi
       holdingsTotal: holdings.length,
       holdingsUnpriceable: holdings.filter((h) => h.unpriceable).length,
       holdingsStalePriced: holdings.filter((h) => h.priceStale).length,
+      holdingsBeforeRecords: holdings.filter((h) => h.balanceBeforeRecords).length,
       perHolding: holdings.map((h) => ({
         holdingId: h.holdingId,
         accountId: 'acc',
@@ -59,6 +58,7 @@ function makeValuationStub(holdings: ValuationHolding[]): PortfolioValuationAtTi
         priceEffectiveAt: new Date(),
         unpriceable: h.unpriceable ?? false,
         priceStale: h.priceStale ?? false,
+        balanceBeforeRecords: h.balanceBeforeRecords ?? false,
       })),
     }),
   } as unknown as PortfolioValuationAtTimeService;
@@ -314,6 +314,35 @@ describe('PnLAtTimeService.getPnL — quality counts', () => {
     expect(result.holdingsStalePriced).toBe(1);
     expect(result.perHolding.find((p) => p.holdingId === 'h1')?.priceStale).toBe(true);
     expect(result.perHolding.find((p) => p.holdingId === 'h2')?.priceStale).toBe(false);
+  });
+
+  // SC-252, and the reason it is asserted at THIS layer rather than only at
+  // the valuation pass: this mirror is where SC-249's anchor provenance was
+  // lost. `unpriceable` and `priceStale` were each carried across when the
+  // defect they describe was found, and nobody came back for the anchor —
+  // so the valuation pass computed a signal the rollup above it never saw.
+  test('before-records balances are re-exposed from the valuation pass', async () => {
+    const valuation = makeValuationStub([
+      {
+        holdingId: 'h-awx',
+        tokenId: 'usd',
+        valueInBase: new Decimal(586.94),
+        balanceBeforeRecords: true,
+      },
+      { holdingId: 'h2', tokenId: 'eth', valueInBase: new Decimal(500) },
+    ]);
+    const costBasis = {
+      walkComponent: async () => new Map(),
+      getCostBasis: async () => costResult({ hasTransactions: true, costBasis: new Decimal(100) }),
+    } as unknown as CostBasisService;
+    const result = await makeService(valuation, costBasis).getPnL('u', new Date(), USD, {
+      caches: EMPTY_CACHES,
+      coverageByHolding: new Map(),
+    });
+
+    expect(result.holdingsBeforeRecords).toBe(1);
+    expect(result.perHolding.find((p) => p.holdingId === 'h-awx')?.balanceBeforeRecords).toBe(true);
+    expect(result.perHolding.find((p) => p.holdingId === 'h2')?.balanceBeforeRecords).toBe(false);
   });
 });
 

@@ -14,6 +14,7 @@ import {
   PortfolioValuationService,
   sumPortfolioValuesByAccount,
 } from '../portfolio/PortfolioValuationService';
+import { IntegrationCredentialsService } from '../users/IntegrationCredentialsService';
 import { UserWalletService } from '../users/UserWalletService';
 
 @Service()
@@ -24,6 +25,7 @@ export class AccountService extends BaseService {
   private readonly institutionRepository = Container.get(InstitutionRepository);
   private readonly groupRepository = Container.get(GroupRepository);
   private readonly userWalletService = Container.get(UserWalletService);
+  private readonly integrationCredentialsService = Container.get(IntegrationCredentialsService);
   private readonly userRepository = Container.get(UserRepository);
   private readonly portfolioValuationService = Container.get(PortfolioValuationService);
 
@@ -245,9 +247,65 @@ export class AccountService extends BaseService {
 
       const deleted = await this.accountRepository.delete(accountId);
       this.logInfo('Account deleted', { accountId, deleted });
+
+      if (deleted && !userWalletId && existing.institutionId) {
+        await this.disconnectCredentialIfLastAccount(existing.userId, existing.institutionId);
+      }
+
       return deleted;
     } catch (error) {
       throw this.handleError(error, 'deleteAccount');
+    }
+  }
+
+  /**
+   * Disconnect a credentialed integration once its last account is gone.
+   *
+   * The wallet branch above already does the equivalent for wallets, and for
+   * the mirror-image reason. There the danger is the sync REHYDRATING the
+   * accounts a user just deleted, so the wallet row goes. Here it is the
+   * opposite: the scheduled sync returns before it ever reads a credential
+   * with no accounts, and account creation lives only in the user-initiated
+   * import — so a credential left behind is unreachable, permanently, and
+   * nothing says so. That is how one production Binance link sat unserviced
+   * from 2026-06-22 to 2026-08-16 (SC-248).
+   *
+   * Soft delete, not hard: the encrypted payload survives, and re-importing
+   * the integration flips `isActive` back on the same row.
+   *
+   * Failure is logged and swallowed. Deleting the account is what the user
+   * asked for; bookkeeping must not fail it — and an orphan that survives
+   * this is now reported by `findStaleSyncTargets` rather than being silent.
+   */
+  private async disconnectCredentialIfLastAccount(
+    userId: string,
+    institutionId: string
+  ): Promise<void> {
+    try {
+      const remaining = await this.accountRepository.countActiveByUserAndInstitution(
+        userId,
+        institutionId
+      );
+      if (remaining > 0) return;
+
+      const credential = await this.integrationCredentialsService.getCredentials(
+        userId,
+        institutionId
+      );
+      if (!credential) return;
+
+      await this.integrationCredentialsService.deleteCredentials(userId, institutionId);
+      this.logInfo('Disconnected integration credential after last account removal', {
+        userId,
+        institutionId,
+        credentialId: credential.id,
+      });
+    } catch (error) {
+      this.logWarning('Failed to disconnect credential after account deletion (non-critical)', {
+        userId,
+        institutionId,
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
   }
 

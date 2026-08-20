@@ -13,16 +13,13 @@ import { useDelayedLoading } from '@scani/ui/v3/hooks/useDelayedLoading';
 import { usePeekRoute } from '@scani/ui/v3/hooks/usePeekRoute';
 import type { PeekSpec } from '@scani/ui/v3/lib/peek';
 import type { V3QueryState } from '@scani/ui/v3/lib/query-state';
+import type { TFunction } from 'i18next';
 import { ArrowUpRight, CalendarClock } from 'lucide-react';
 import { useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import type { BaseCurrencyRates } from '@/hooks/useBaseCurrencyRates';
 import type { RouterOutputs } from '@/lib/trpc';
-import {
-  asPaymentIntervalUnit,
-  formatPaymentInterval,
-  todayDateString,
-} from '@/v2/lib/paymentTotals';
 import {
   directionLabel,
   formatOverdueBy,
@@ -30,12 +27,12 @@ import {
   INCOME_HORIZON_DAYS,
   isIncome,
   occurrenceTotals,
-  overdueTotalLabel,
   PAYMENTS_HORIZON_DAYS,
   splitByDirection,
   splitByDueness,
   withinDays,
 } from '../../lib/money';
+import { formatPaymentInterval, todayDateString } from '../../lib/paymentTotals';
 import { V3_PAYMENT_ROUTES, V3_ROUTES } from '../../lib/routes';
 import { BaseEquivalent } from '../BaseEquivalent';
 import { ConvertedTotal } from '../ConvertedTotal';
@@ -85,8 +82,12 @@ interface UpcomingFeedProps {
   query: V3QueryState;
 }
 
-function vendorFor(occurrence: UpcomingOccurrence, names: Map<string, string>): string {
-  return names.get(occurrence.payment.vendorId) ?? 'Unknown vendor';
+function vendorFor(
+  t: TFunction,
+  occurrence: UpcomingOccurrence,
+  names: Map<string, string>
+): string {
+  return names.get(occurrence.payment.vendorId) ?? t('v3.common.unknownVendor');
 }
 
 export function UpcomingFeed({
@@ -97,6 +98,7 @@ export function UpcomingFeed({
   rates,
   query,
 }: UpcomingFeedProps) {
+  const { t } = useTranslation();
   const peekRoute = usePeekRoute(V3_ROUTES.money);
   const loadingPhase = useDelayedLoading(query.isLoading);
   const today = todayDateString();
@@ -113,7 +115,7 @@ export function UpcomingFeed({
     };
   }, [occurrences, today]);
 
-  const groups = useMemo(() => groupUpcoming(bills, today), [bills, today]);
+  const groups = useMemo(() => groupUpcoming(t, bills, today), [bills, today, t]);
 
   // Second split, same reason as the first: a figure may only describe the set
   // it names. The feed lists overdue and upcoming under separate headings and
@@ -134,15 +136,20 @@ export function UpcomingFeed({
 
   const spec: PeekSpec | null = peeked
     ? {
-        title: vendorFor(peeked, vendorNameById),
+        title: vendorFor(t, peeked, vendorNameById),
         // An income row is peeked from the block below, so the sheet has to
         // hold the same distinction the two blocks do: a bill is due, income is
         // expected, and a payer who is late is not the reader being overdue.
         subtitle: isIncome(peeked)
-          ? `Expected ${formatDate(peeked.dueDate)}${peeked.dueDate < today ? ' · not received yet' : ''}`
+          ? // Three whole sentences rather than one with a clause appended:
+            // "· not received yet" is a fragment glued to the end in English
+            // and would have to move in a language that fronts it.
+            peeked.dueDate < today
+            ? t('v3.money.peek.expectedOnLate', { date: formatDate(peeked.dueDate) })
+            : t('v3.money.peek.expectedOn', { date: formatDate(peeked.dueDate) })
           : peeked.dueDate < today
-            ? formatOverdueBy(peeked.dueDate, today)
-            : `Due ${formatDate(peeked.dueDate)}`,
+            ? formatOverdueBy(peeked.dueDate, today, t)
+            : t('v3.money.peek.dueOn', { date: formatDate(peeked.dueDate) }),
         value: (
           <Numeric
             value={peeked.expectedAmount ?? peeked.actualAmount}
@@ -164,17 +171,23 @@ export function UpcomingFeed({
                 for a form; the primary stays with settling, which is what the
                 sheet is for. */}
             <Button variant="outline" asChild>
-              <Link to={V3_PAYMENT_ROUTES.edit(peeked.payment.id)}>Edit payment</Link>
+              <Link to={V3_PAYMENT_ROUTES.edit(peeked.payment.id)}>
+                {t('v3.money.peek.editPayment')}
+              </Link>
             </Button>
           </>
         ),
         primary: [
-          { label: 'Due', value: formatDate(peeked.dueDate) },
-          { label: 'Direction', value: directionLabel(peeked.payment.direction) },
+          { label: t('v3.money.peek.due'), value: formatDate(peeked.dueDate) },
           {
-            label: 'Repeats',
+            label: t('v3.money.field.direction'),
+            value: directionLabel(peeked.payment.direction, t),
+          },
+          {
+            label: t('v3.money.peek.repeats'),
             value: formatPaymentInterval(
-              asPaymentIntervalUnit(peeked.payment.intervalUnit),
+              t,
+              peeked.payment.intervalUnit,
               peeked.payment.intervalCount
             ),
           },
@@ -182,12 +195,20 @@ export function UpcomingFeed({
             // "Amount is", not "Amount" — the figure above the facts is the
             // amount, and a second row headed the same thing reads as a
             // contradiction rather than as the fixed/variable distinction.
-            label: 'Amount is',
-            value: peeked.payment.kind === 'variable' ? 'Varies' : 'Fixed',
+            label: t('v3.money.peek.amountIs'),
+            value:
+              peeked.payment.kind === 'variable'
+                ? t('v3.money.peek.varies')
+                : t('v3.money.peek.fixed'),
           },
         ],
         sections: peeked.payment.notes
-          ? [{ title: 'Notes', facts: [{ label: 'Note', value: peeked.payment.notes }] }]
+          ? [
+              {
+                title: t('v3.money.peek.notes'),
+                facts: [{ label: t('v3.money.peek.note'), value: peeked.payment.notes }],
+              },
+            ]
           : undefined,
       }
     : null;
@@ -208,7 +229,13 @@ export function UpcomingFeed({
   // — a failed background refetch behind a feed already on screen leaves the
   // feed standing rather than replacing it with a panel.
   if (query.isError && occurrences.length === 0) {
-    return <QueryError error={query.error} subject="upcoming payments" onRetry={query.retry} />;
+    return (
+      <QueryError
+        error={query.error}
+        subject={t('v3.money.upcoming.label')}
+        onRetry={query.retry}
+      />
+    );
   }
 
   if (query.isLoading) {
@@ -220,7 +247,7 @@ export function UpcomingFeed({
         <LoadingRamp
           phase={loadingPhase}
           skeleton={<DataViewSkeleton />}
-          label="upcoming payments"
+          label={t('v3.money.upcoming.label')}
           onRetry={query.retry}
         />
         {sheet}
@@ -238,22 +265,23 @@ export function UpcomingFeed({
         <DataViewEmpty
           empty={{
             icon: CalendarClock,
-            title:
+            titleKey:
               paymentCount > 0
-                ? `Nothing due in the next ${INCOME_HORIZON_DAYS} days`
-                : 'No recurring payments yet',
-            description:
+                ? 'ui.dataView.upcoming.empty.nothingDue'
+                : 'ui.dataView.upcoming.empty.noPayments',
+            values: { count: INCOME_HORIZON_DAYS },
+            descriptionKey:
               paymentCount > 0
-                ? 'Your standing payments fall due outside this window.'
-                : 'Add a bill or recurring income and its next dates show up here.',
+                ? 'ui.dataView.upcoming.empty.outsideWindow'
+                : 'ui.dataView.upcoming.empty.addOne',
             action:
               paymentCount > 0 ? (
                 <Button variant="outline" asChild>
-                  <Link to={V3_ROUTES.recurring}>See recurring payments</Link>
+                  <Link to={V3_ROUTES.recurring}>{t('v3.money.upcoming.seeRecurring')}</Link>
                 </Button>
               ) : (
                 <Button asChild>
-                  <Link to={V3_PAYMENT_ROUTES.create}>Add a payment</Link>
+                  <Link to={V3_PAYMENT_ROUTES.create}>{t('v3.money.upcoming.addPayment')}</Link>
                 </Button>
               ),
           }}
@@ -271,7 +299,7 @@ export function UpcomingFeed({
           // screen differ in how certain they are, and that is the distinction
           // the words have to carry. The window is named on both, because they
           // are not the same window and nothing should invite adding them.
-          label={`Bills committed, next ${PAYMENTS_HORIZON_DAYS} days`}
+          label={t('v3.money.upcoming.billsCommitted', { count: PAYMENTS_HORIZON_DAYS })}
           totals={committed}
           tokenSymbolById={tokenSymbolById}
           rates={rates}
@@ -287,7 +315,7 @@ export function UpcomingFeed({
           <div className="flex flex-col gap-2 border-t border-border pt-3">
             <ConvertedTotal
               emphasis="default"
-              label={overdueTotalLabel(overdue.length)}
+              label={t('v3.money.upcoming.overdueTotal', { count: overdue.length })}
               totals={pastDue}
               tokenSymbolById={tokenSymbolById}
               rates={rates}
@@ -298,7 +326,7 @@ export function UpcomingFeed({
 
       {ahead.length === 0 ? (
         <p className="px-4 text-body text-muted-foreground">
-          Nothing due in the next {PAYMENTS_HORIZON_DAYS} days.
+          {t('v3.money.upcoming.noneAhead', { count: PAYMENTS_HORIZON_DAYS })}
         </p>
       ) : null}
 
@@ -309,7 +337,7 @@ export function UpcomingFeed({
           </div>
           <DataRowList>
             {group.items.map((occurrence) => {
-              const vendorName = vendorFor(occurrence, vendorNameById);
+              const vendorName = vendorFor(t, occurrence, vendorNameById);
               return (
                 <DataRow
                   key={occurrence.id}
@@ -321,7 +349,9 @@ export function UpcomingFeed({
                   // a date group's heading already said it. Nothing says "Bill"
                   // any more either — every row in this feed is one, and the
                   // figure above says so.
-                  sublabel={group.overdue ? formatOverdueBy(occurrence.dueDate, today) : undefined}
+                  sublabel={
+                    group.overdue ? formatOverdueBy(occurrence.dueDate, today, t) : undefined
+                  }
                   value={
                     <Numeric
                       value={occurrence.expectedAmount ?? occurrence.actualAmount}
@@ -336,7 +366,10 @@ export function UpcomingFeed({
                     />
                   }
                   onClick={() => peekRoute.open(occurrence.id)}
-                  aria-label={`${vendorName}, due ${formatDate(occurrence.dueDate)}`}
+                  aria-label={t('v3.money.upcoming.row', {
+                    vendor: vendorName,
+                    date: formatDate(occurrence.dueDate),
+                  })}
                 />
               );
             })}

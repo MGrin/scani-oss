@@ -115,6 +115,8 @@ jobs:
               - 'packages/clients/providers/**'
             providers-google-sheets:
               - 'packages/clients/providers-google-sheets/**'
+            push:
+              - 'packages/infra/push/**'
             queue:
               - 'packages/infra/queue/**'
             rate-limiter:

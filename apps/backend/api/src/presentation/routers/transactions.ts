@@ -13,7 +13,10 @@
 
 import { db } from '@scani/db/connection';
 import * as schema from '@scani/db/schema';
-import { HoldingTransactionRepository } from '@scani/domain/repositories';
+import {
+  HoldingCoverageRepository,
+  HoldingTransactionRepository,
+} from '@scani/domain/repositories';
 import { HoldingService } from '@scani/domain/services';
 import { TRPCError } from '@trpc/server';
 import { and, eq } from 'drizzle-orm';
@@ -116,7 +119,9 @@ export const transactionsRouter = router({
     // holdingId in the string makes the value self-describing in logs.
     const externalId = `manual:${input.occurredAt.toISOString()}:${input.kind}:${input.quantity}:${holding.id}`;
 
-    const [created] = await repo.bulkUpsert([
+    const {
+      rows: [created],
+    } = await repo.bulkUpsert([
       {
         userId: dbUser.id,
         holdingId: holding.id,
@@ -145,7 +150,10 @@ export const transactionsRouter = router({
     // source='user-entered'. Ingester-sourced rows are immutable from
     // the UI — their dedup key is what keeps them consistent.
     const row = await db
-      .select({ id: schema.holdingTransactions.id })
+      .select({
+        id: schema.holdingTransactions.id,
+        holdingId: schema.holdingTransactions.holdingId,
+      })
       .from(schema.holdingTransactions)
       .where(
         and(
@@ -159,6 +167,9 @@ export const transactionsRouter = router({
       throw new TRPCError({ code: 'NOT_FOUND', message: 'Transaction not found or not deletable' });
     }
     await db.delete(schema.holdingTransactions).where(eq(schema.holdingTransactions.id, input.id));
+    // Deleting the row that WAS the holding's earliest is how a wrong
+    // first_tx_at outlives the transaction it came from (SC-307).
+    await Container.get(HoldingCoverageRepository).syncTxBoundsFromLedger([row[0].holdingId]);
     return { deleted: true };
   }),
 });

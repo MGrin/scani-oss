@@ -1,6 +1,7 @@
 import { Input } from '@scani/ui/ui/input';
 import { Check } from 'lucide-react';
 import { useId, useState } from 'react';
+import { Trans, useTranslation } from 'react-i18next';
 import { cn } from '@/lib/utils';
 import { filterMergeCandidates, type MergeCandidate } from '../../lib/money';
 
@@ -54,6 +55,7 @@ export function DuplicateVendorPicker({
   onChange,
   disabled,
 }: DuplicateVendorPickerProps) {
+  const { t } = useTranslation();
   const [query, setQuery] = useState('');
   const searchId = useId();
   const listId = useId();
@@ -68,8 +70,8 @@ export function DuplicateVendorPicker({
           id={searchId}
           value={query}
           onChange={(event) => setQuery(event.target.value)}
-          placeholder="Search vendors"
-          aria-label="Search for the duplicate vendor"
+          placeholder={t('v3.money.duplicatePicker.searchPlaceholder')}
+          aria-label={t('v3.money.duplicatePicker.searchLabel')}
           aria-controls={listId}
           disabled={disabled}
           className="text-body"
@@ -85,11 +87,22 @@ export function DuplicateVendorPicker({
         {/* Sticky, not merely above: the whole defect was a picker that hid
             what the reader was merging into. */}
         <p className="sticky top-0 z-10 border-b border-border bg-surface-hover px-3 py-2 text-caption text-muted-foreground">
-          Pick the duplicate to delete. It is folded into{' '}
-          <span className="font-medium text-foreground">{survivorName}</span>, which is kept.
+          {/* `<Trans>` rather than `t()`: the survivor's name is a rendered
+              node inside the sentence. Splitting it into two keys either side
+              of the span fixes the word order in English and breaks it
+              everywhere else. */}
+          <Trans
+            i18nKey="v3.money.duplicatePicker.intro"
+            values={{ vendor: survivorName }}
+            components={{ survivor: <span className="font-medium text-foreground" /> }}
+          />
         </p>
 
-        <div id={listId} role="radiogroup" aria-label={`Duplicate to fold into ${survivorName}`}>
+        <div
+          id={listId}
+          role="radiogroup"
+          aria-label={t('v3.money.duplicatePicker.optionLabel', { vendor: survivorName })}
+        >
           {matches.map((candidate) => {
             const selected = candidate.id === value;
             return (
@@ -118,7 +131,7 @@ export function DuplicateVendorPicker({
 
           {matches.length === 0 ? (
             <p className="px-3 py-3 text-body text-muted-foreground">
-              No other vendor matches “{query.trim()}”.
+              {t('v3.money.duplicatePicker.noMatch', { query: query.trim() })}
             </p>
           ) : null}
         </div>

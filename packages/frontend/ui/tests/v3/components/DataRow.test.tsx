@@ -52,6 +52,64 @@ describe('DataRow — the three zones', () => {
   });
 });
 
+/**
+ * SC-200. Reported from a phone: every data-quality row whose label ran past
+ * the viewport lost its ending, and the ending is where the meaning is —
+ * "Shown positions with no recent pri…", "An import that did not reach back
+ * bef…". A clipped name is still recognisable and `TruncatedText` hands the
+ * rest back on hover; a clipped sentence is neither, and on a phone there is
+ * no hover at all.
+ */
+describe('DataRow — wrapIdentity', () => {
+  test('the identity zone wraps instead of clipping', () => {
+    const html = renderRow(
+      <DataRow wrapIdentity label="Shown positions with no recent price" value="3" />
+    );
+    expect(html).not.toInclude('truncate');
+    expect(html).toInclude('text-pretty');
+  });
+
+  test('both identity lines wrap, not just the label', () => {
+    // The hint is the half that carried the duplicate-token chips, where a
+    // Cyrillic lookalike of USDC would be (SC-197).
+    const html = renderRow(
+      <DataRow
+        wrapIdentity
+        label="Duplicate token rows"
+        sublabel="DOG×3, USDC×3, WETH×3"
+        value="11"
+      />
+    );
+    expect(html).not.toInclude('truncate');
+    expect(html.match(/text-pretty/g)).toHaveLength(2);
+  });
+
+  test('the value zone still never gives way — the row contract is unchanged', () => {
+    const html = renderRow(
+      <DataRow wrapIdentity label="Negative synthesised opening balance" value="$18,204,550.55" />
+    );
+    expect(html).toInclude('whitespace-nowrap');
+  });
+
+  test('the figure sits at the top of a wrapped identity, not floating in its middle', () => {
+    const html = renderRow(
+      <DataRow wrapIdentity label="A sentence long enough to wrap" value="7" />
+    );
+    expect(html).toInclude('self-start');
+  });
+
+  test('opt-in: clipping stays the default, because it is right for a list of names', () => {
+    // The regression that would matter most — holdings, vendors and accounts
+    // all rely on the identity column giving way by width.
+    const html = renderRow(
+      <DataRow label="Orbital Systems Ltd" sublabel="JPMorgan Chase" value="$1" />
+    );
+    expect(html.match(/truncate/g)).toHaveLength(2);
+    expect(html).not.toInclude('text-pretty');
+    expect(html).not.toInclude('self-start');
+  });
+});
+
 describe('DataRow — the grid', () => {
   // An `auto` leading track that renders empty still pays the gap between it
   // and the identity, which is 12px of dead space on every row of a list that

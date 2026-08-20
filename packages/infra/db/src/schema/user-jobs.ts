@@ -69,6 +69,13 @@ export const userJobs = pgTable(
     // authority on the values; kept as `text` because it is a display
     // discriminator, not something a query filters on.
     failureReason: text('failure_reason'),
+    /**
+     * Set when the user cleared a failed job out of their list. The row is
+     * KEPT — dismissal is a refusal, not an absence, and deleting it made
+     * "I never uploaded that" and "I uploaded it and it failed" the same
+     * observation (SC-292). Listing queries hide it; nothing destroys it.
+     */
+    dismissedAt: timestamp('dismissed_at', { withTimezone: true }),
   },
   (table) => ({
     userCreatedIdx: index('idx_user_jobs_user_created').on(table.userId, table.createdAt),

@@ -68,7 +68,10 @@ describe('<Numeric> publishes the run it prints', () => {
   test.each([
     ['a plain magnitude', <Numeric key="a" value={1234.56} currency="USD" />],
     ['a long weak-currency total', <Numeric key="b" value={142742530.04} currency="IDR" />],
-    ['a delta, whose arrow and thin space are cells too', <Numeric key="c" value={-12.5} delta />],
+    [
+      'a delta, whose arrow and thin space are cells too',
+      <Numeric key="c" value={-12.5} format="plain" delta />,
+    ],
     ['a percentage', <Numeric key="d" value={12.5} format="percent" />],
   ])('%s', (_name, element) => {
     const markup = renderToStaticMarkup(element);

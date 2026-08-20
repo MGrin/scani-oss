@@ -17,6 +17,7 @@ Located in `apps/backend/api/src/presentation/routers/`.
 |---|---|
 | `users` | Profile, settings, display currency, magic-link / OTP flows. |
 | `sessions` | Session read / revoke. |
+| `push` | Web Push subscriptions, one per browser per device: the VAPID public key, subscribe, unsubscribe, and a status that reports whether the SERVER has keys at all — so the client can say "this deployment cannot notify you" rather than showing a toggle that silently does nothing. |
 | `accounts` | List, create, update, hide accounts. |
 | `account-types` | Catalogue of account types. |
 | `institutions` | List institutions. Create the synthetic *manual* institution. |

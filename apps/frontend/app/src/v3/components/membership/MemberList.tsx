@@ -1,7 +1,9 @@
+import { Badge } from '@scani/ui/ui/badge';
 import { Button } from '@scani/ui/ui/button';
 import { DataRow, DataRowList } from '@scani/ui/v3/components/DataRow';
 import { X } from 'lucide-react';
-import type { MemberEntry } from '../../lib/membership';
+import { useTranslation } from 'react-i18next';
+import { countOfKind, type MemberEntry } from '../../lib/membership';
 
 /**
  * What is in the record right now, each row carrying its own way out.
@@ -19,13 +21,23 @@ import type { MemberEntry } from '../../lib/membership';
  * directly below. A confirmation here would cost two taps on the app's most
  * routine edit to protect against an action that undoes itself.
  *
- * **The two kinds are not peers, and the list says so.** A holding's
- * membership is the primitive — it is a `holding_groups` row. An account's is
- * a cache the backend rebuilds with the rule *every visible holding in this
- * account is in the group*, so an account row appears on its own the moment
- * its last holding goes in, and removing it takes every one of its holdings
- * out. Listing the two in one undifferentiated run is what would make that
- * read as a bug; two titled runs plus the note below make it a rule.
+ * **The two kinds are not peers, and the list says so.** An account row is a
+ * STANDING RULE (SC-386): the account is in the group, and so is everything it
+ * holds now or receives later. A holding row is one position. So the two are
+ * not the same claim at different sizes — removing the account ends the rule
+ * and takes all of it out, while removing a holding that is only in by that
+ * rule leaves the rule standing and takes that one position out of it. That
+ * second action is what makes the rule usable in a wallet receiving airdrops
+ * continuously, and it is one tap on the row where the junk is visible.
+ * Listing the two in one undifferentiated run would hide the difference; two
+ * titled runs plus the note below make it a rule.
+ *
+ * **Each run carries its own count, and nothing carries their sum** (SC-388).
+ * The section above this used to be titled "In this group (46)" over a group of
+ * 36 holdings and 10 accounts — a number in a unit no other figure on the page
+ * uses, printed directly above 36 rows, and not a count of positions either
+ * since each of those accounts brings holdings already among the 36. A count
+ * belongs to one kind of thing, so it is written on the run of that thing.
  */
 
 interface MemberListProps {
@@ -48,6 +60,7 @@ function Run({
   onRemove,
   removeLabel,
 }: MemberListProps & { title: string; note?: string; entries: readonly MemberEntry[] }) {
+  const { t } = useTranslation();
   if (entries.length === 0) return null;
   return (
     <>
@@ -61,7 +74,23 @@ function Run({
           return (
             <DataRow
               key={entryKey(entry)}
-              label={entry.label}
+              label={
+                entry.inactive ? (
+                  <span className="flex min-w-0 items-center gap-2">
+                    <span className="truncate">{entry.label}</span>
+                    {/* The row the group's total does not count, marked where
+                     *  the reader meets it. The sentence beside the figure says
+                     *  how many there are; without this there is no way to tell
+                     *  WHICH, and the holdings list badges the same position in
+                     *  the same words. */}
+                    <Badge variant="secondary" className="shrink-0">
+                      {t('v3.holdings.peek.inactive')}
+                    </Badge>
+                  </span>
+                ) : (
+                  entry.label
+                )
+              }
               sublabel={entry.sublabel}
               value={
                 <Button
@@ -72,7 +101,9 @@ function Run({
                   aria-label={removeLabel(entry)}
                 >
                   <X className="size-4" aria-hidden="true" />
-                  <span className="ml-1.5">{pending ? 'Removing' : 'Remove'}</span>
+                  <span className="ml-1.5">
+                    {pending ? t('v3.membership.removePending') : t('v3.membership.removeAction')}
+                  </span>
                 </Button>
               }
             />
@@ -84,18 +115,19 @@ function Run({
 }
 
 export function MemberList(props: MemberListProps) {
+  const { t } = useTranslation();
   const { members } = props;
   return (
     <>
       <Run
         {...props}
-        title="Holdings"
+        title={t('v3.membership.holdings', { count: countOfKind(members, 'holding') })}
         entries={members.filter((entry) => entry.kind === 'holding')}
       />
       <Run
         {...props}
-        title="Whole accounts"
-        note="Listed once every holding in the account is in the group. Removing one takes all of them out."
+        title={t('v3.membership.wholeAccounts', { count: countOfKind(members, 'account') })}
+        note={t('v3.membership.wholeAccountsNote')}
         entries={members.filter((entry) => entry.kind === 'account')}
       />
     </>

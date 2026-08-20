@@ -10,6 +10,9 @@ export const JOB_NAMES = {
   exchangeBalances: 'exchange-balances',
   exchangeTransactions: 'exchange-transactions',
   apyPayouts: 'apy-payouts',
+  paymentDueReminder: 'payment-due-reminder',
+  weeklyDigest: 'weekly-digest',
+  alertSweep: 'alert-sweep',
   reconcilePendingCredentials: 'reconcile-pending-credentials',
   reconcileOrphanedUserJobs: 'reconcile-orphaned-user-jobs',
   historicalPriceBackfill: 'historical-price-backfill',
@@ -31,9 +34,12 @@ export const JOB_NAMES = {
   userDataDelete: 'user-data-delete',
   transactionImport: 'transaction-import',
   hideClosedHoldings: 'hide-closed-holdings',
+  currencyRateRefresh: 'currency-rate-refresh',
   dlqDepthProbe: 'dlq-depth-probe',
+  rescoreScamTokens: 'rescore-scam-tokens',
   jobHeartbeatProbe: 'job-heartbeat-probe',
   staleSyncProbe: 'stale-sync-probe',
+  splitHoldingProbe: 'split-holding-probe',
 } as const;
 
 export type JobName = (typeof JOB_NAMES)[keyof typeof JOB_NAMES];

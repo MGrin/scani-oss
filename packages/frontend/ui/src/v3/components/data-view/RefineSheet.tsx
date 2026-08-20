@@ -1,5 +1,6 @@
 import { ArrowDown, ArrowUp, Check } from 'lucide-react';
 import type { ReactNode } from 'react';
+import { useUiTranslation } from '../../../i18n';
 import { cn } from '../../../lib/cn';
 import {
   Accordion,
@@ -15,9 +16,14 @@ import {
 } from '../../../ui/bottom-drawer';
 import { Button } from '../../../ui/button';
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '../../../ui/sheet';
-import type { FilterDef, GroupByDef, SortDef } from '../../hooks/useDataView';
 import { useIsDesktop } from '../../hooks/useMediaQuery';
-import { countLabel } from '../../lib/data-view';
+import {
+  countLabel,
+  filterOptionLabel,
+  type V3FilterDef,
+  type V3GroupByDef,
+  type V3SortDef,
+} from '../../lib/data-view';
 
 /**
  * Filter, sort and group, in one bottom sheet.
@@ -117,17 +123,16 @@ function Group({ title, children }: { title: string; children: ReactNode }) {
 interface RefineSheetProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  noun: string;
-  nounSingular?: string;
+  nounKey: string;
   filters: Record<string, string>;
-  filterDefs?: FilterDef[];
+  filterDefs?: V3FilterDef[];
   onSetFilter: (key: string, value: string) => void;
   sortField: string;
   sortDirection: 'asc' | 'desc';
-  sortDefs?: SortDef[];
+  sortDefs?: V3SortDef[];
   onSetSort: (field: string) => void;
   groupBy: string;
-  groupByDefs?: GroupByDef[];
+  groupByDefs?: V3GroupByDef[];
   onSetGroupBy: (value: string) => void;
   hasActiveFilters: boolean;
   onClearFilters: () => void;
@@ -142,19 +147,21 @@ interface RefineSheetProps {
  * that has to be readable at the drawer's rest height.
  */
 export function RefineHeader({
-  noun,
-  nounSingular,
+  nounKey,
   filteredCount,
-}: Pick<RefineSheetProps, 'noun' | 'nounSingular' | 'filteredCount'>) {
+}: Pick<RefineSheetProps, 'nounKey' | 'filteredCount'>) {
+  const { t } = useUiTranslation();
   return (
     <div className="flex flex-col gap-0.5">
-      <SheetTitle className="text-title">Refine</SheetTitle>
+      <SheetTitle className="text-title">{t('ui.dataView.refine.title')}</SheetTitle>
       {/* One sentence, both facts, and no contradiction between them: the count
           is what the list will show, and it moves as the controls are touched.
           `aria-live` because that movement is the only confirmation there is,
           and a screen-reader user gets no glance at the number. */}
       <SheetDescription className="text-caption" aria-live="polite">
-        {`${countLabel(filteredCount, noun, nounSingular)} · changes apply as you make them`}
+        {t('ui.dataView.refine.liveCount', {
+          counted: countLabel(nounKey, filteredCount),
+        })}
       </SheetDescription>
     </div>
   );
@@ -189,6 +196,7 @@ export function RefineSections({
   | 'groupByDefs'
   | 'onSetGroupBy'
 >) {
+  const { t } = useUiTranslation();
   const activeFilterKeys = Object.entries(filters)
     .filter(([, value]) => value)
     .map(([key]) => key);
@@ -196,7 +204,7 @@ export function RefineSections({
   return (
     <>
       {filterDefs && filterDefs.length > 0 && (
-        <Group title="Filter">
+        <Group title={t('ui.dataView.refine.filter')}>
           {/* Open exactly the filters that are doing something. A wall of
               expanded option lists is the same failure as the toolbar
               strip, one axis rotated — and collapsed, every axis the list can
@@ -205,25 +213,26 @@ export function RefineSections({
           <Accordion type="multiple" defaultValue={activeFilterKeys} className="px-3">
             {filterDefs.map((def) => {
               const value = filters[def.key] ?? '';
-              const activeLabel = def.options.find((o) => o.value === value)?.label;
+              const active = def.options.find((o) => o.value === value);
+              const activeLabel = active ? filterOptionLabel(active) : undefined;
               return (
                 <AccordionItem key={def.key} value={def.key} className="last:border-b-0">
                   <AccordionTrigger>
-                    <span className="truncate">{def.label}</span>
+                    <span className="truncate">{t(def.labelKey)}</span>
                     <span className="ml-auto shrink-0 truncate text-caption text-muted-foreground">
-                      {activeLabel ?? 'Any'}
+                      {activeLabel ?? t('ui.dataView.refine.any')}
                     </span>
                   </AccordionTrigger>
                   <AccordionContent className="flex flex-col gap-1 pb-3">
                     <OptionRow
-                      label="Any"
+                      label={t('ui.dataView.refine.any')}
                       active={!value}
                       onSelect={() => onSetFilter(def.key, '')}
                     />
                     {def.options.map((option) => (
                       <OptionRow
                         key={option.value}
-                        label={option.label}
+                        label={filterOptionLabel(option)}
                         active={option.value === value}
                         onSelect={() =>
                           onSetFilter(def.key, option.value === value ? '' : option.value)
@@ -239,11 +248,11 @@ export function RefineSections({
       )}
 
       {sortDefs && sortDefs.length > 0 && (
-        <Group title="Sort by">
+        <Group title={t('ui.dataView.refine.sortBy')}>
           {sortDefs.map((def) => (
             <OptionRow
               key={def.key}
-              label={def.label}
+              label={t(def.labelKey)}
               active={def.key === sortField}
               // Selecting the active field flips the direction, which is
               // `setSort`'s existing contract — so one control does both
@@ -255,12 +264,12 @@ export function RefineSections({
                     {sortDirection === 'asc' ? (
                       <>
                         <ArrowUp className="h-3.5 w-3.5" aria-hidden="true" />
-                        Low to high
+                        {t('ui.dataView.refine.lowToHigh')}
                       </>
                     ) : (
                       <>
                         <ArrowDown className="h-3.5 w-3.5" aria-hidden="true" />
-                        High to low
+                        {t('ui.dataView.refine.highToLow')}
                       </>
                     )}
                   </span>
@@ -272,12 +281,16 @@ export function RefineSections({
       )}
 
       {groupByDefs && groupByDefs.length > 0 && (
-        <Group title="Group by">
-          <OptionRow label="No grouping" active={!groupBy} onSelect={() => onSetGroupBy('')} />
+        <Group title={t('ui.dataView.refine.groupBy')}>
+          <OptionRow
+            label={t('ui.dataView.refine.noGrouping')}
+            active={!groupBy}
+            onSelect={() => onSetGroupBy('')}
+          />
           {groupByDefs.map((def) => (
             <OptionRow
               key={def.key}
-              label={def.label}
+              label={t(def.labelKey)}
               active={def.key === groupBy}
               onSelect={() => onSetGroupBy(def.key === groupBy ? '' : def.key)}
             />
@@ -296,28 +309,28 @@ export function RefineFooter({
   onClearFilters,
   onOpenChange,
 }: Pick<RefineSheetProps, 'hasActiveFilters' | 'onClearFilters' | 'onOpenChange'>) {
+  const { t } = useUiTranslation();
   return (
     <div
       className="flex shrink-0 gap-2 border-t border-border px-4 py-3"
       style={{ paddingBottom: 'calc(0.75rem + env(safe-area-inset-bottom, 0px))' }}
     >
       <Button variant="ghost" onClick={onClearFilters} disabled={!hasActiveFilters}>
-        Clear all
+        {t('ui.dataView.refine.clearAll')}
       </Button>
       <Button className="flex-1" onClick={() => onOpenChange(false)}>
-        Done
+        {t('ui.dataView.refine.done')}
       </Button>
     </div>
   );
 }
 
 export function RefineSheet(props: RefineSheetProps) {
-  const { open, onOpenChange, noun, nounSingular, filteredCount } = props;
+  const { open, onOpenChange, nounKey, filteredCount } = props;
+  const { t } = useUiTranslation();
   const isDesktop = useIsDesktop();
 
-  const header = (
-    <RefineHeader noun={noun} nounSingular={nounSingular} filteredCount={filteredCount} />
-  );
+  const header = <RefineHeader nounKey={nounKey} filteredCount={filteredCount} />;
   const sections = <RefineSections {...props} />;
   const footer = <RefineFooter {...props} />;
 
@@ -348,9 +361,9 @@ export function RefineSheet(props: RefineSheetProps) {
     <BottomDrawer open={open} onOpenChange={onOpenChange}>
       <BottomDrawerContent
         snapPoints={REFINE_SNAP_POINTS}
-        expandLabel="Show every option"
-        collapseLabel="Show fewer options"
-        closeLabel="Close refine"
+        expandLabel={t('ui.dataView.refine.expand')}
+        collapseLabel={t('ui.dataView.refine.collapse')}
+        closeLabel={t('ui.dataView.refine.close')}
         style={{ backgroundColor: 'hsl(var(--surface-2))' }}
       >
         <BottomDrawerHeader className="border-b border-border pb-3">{header}</BottomDrawerHeader>
