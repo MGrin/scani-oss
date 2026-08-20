@@ -21,6 +21,11 @@
 #   MinIO           : S3 9000 (MINIO_API_HOST_PORT) / console 9001 (MINIO_CONSOLE_HOST_PORT)
 #                     (default creds: minioadmin/minioadmin)
 #
+# Every browser-reachable URL a service is given below is interpolated from
+# these same variables, so an override moves the port and the URL that names
+# it together. Writing one out as a literal is the SC-495 bug, and
+# `scripts/tests/compose-urls-follow-ports.test.ts` fails the build on it.
+#
 # To run two scani checkouts in parallel without port conflicts, set each
 # override variable in the second worktree's `.env` (or use the
 # `docker-compose.override.yml.example` template). See
@@ -328,7 +333,9 @@ services:
       data-provider:
         condition: service_started
     # Root .env flows through; the `environment:` block overrides keys that
-    # need container-network URLs (DATABASE_URL, REDIS_URL, S3_ENDPOINT).
+    # need container-network URLs (DATABASE_URL, REDIS_URL, S3_ENDPOINT) and
+    # the browser-reachable ones, which .env answers with the host-side
+    # `bun dev` ports rather than the ones this stack publishes.
     env_file:
       - path: ./.env
         required: false
@@ -337,6 +344,12 @@ services:
       SERVICE_NAME: worker
       DATABASE_URL: postgres://scani:scani@postgres:5432/scani?sslmode=disable
       REDIS_URL: redis://redis:6379
+      # Browser-reachable URLs. The worker mints both into email — the app
+      # link in the weekly digest and the one-click unsubscribe — so without
+      # these it inherits .env's `BACKEND_URL=http://localhost:3001`, the
+      # api's *container* port, which no host browser can reach.
+      FRONTEND_URL: "http://localhost:${FRONTEND_HOST_PORT:-5173}"
+      BACKEND_URL: "http://localhost:${API_HOST_PORT:-3011}"
       # Must match the api's ENCRYPTION_KEY so integration credentials
       # persisted by the api can be decrypted at job-run time.
       ENCRYPTION_KEY: 0123456789abcdef0123456789abcdef
