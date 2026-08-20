@@ -2,9 +2,8 @@ import { randomUUID } from 'node:crypto';
 import { readFileSync, statSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { expect, test } from '@playwright/test';
 import { signIn } from '../../fixtures/auth';
-import { resetAuthRateLimit } from '../../fixtures/redis';
+import { expect, test } from '../../fixtures/test';
 import { createAccount, waitForJob } from '../../fixtures/ui';
 
 // Playwright runs specs in ESM mode; `__dirname` isn't defined there.
@@ -55,10 +54,6 @@ interface ScreenshotParseReturn {
  * worker contract.
  */
 test.describe('imports: screenshot parse (STUB_AI)', () => {
-  test.beforeEach(async () => {
-    await resetAuthRateLimit();
-  });
-
   test('upload PNG → STUB_AI returns fixed BTC/ETH/USD holdings → picker payload', async ({
     page,
   }, testInfo) => {
