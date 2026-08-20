@@ -1,15 +1,10 @@
-import { expect, test } from '@playwright/test';
 import { signIn } from '../../fixtures/auth';
-import { resetAuthRateLimit } from '../../fixtures/redis';
+import { expect, test } from '../../fixtures/test';
 import { createAccount } from '../../fixtures/ui';
 
 const API_BASE_URL = process.env.API_BASE_URL ?? 'http://localhost:3011';
 
 test.describe('accounts: delete', () => {
-  test.beforeEach(async () => {
-    await resetAuthRateLimit();
-  });
-
   test('user can delete an account; it disappears from the list', async ({ page }, testInfo) => {
     await signIn({ page, testInfo });
     const created = await createAccount(page, {

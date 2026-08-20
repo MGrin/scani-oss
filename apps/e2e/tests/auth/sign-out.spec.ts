@@ -1,12 +1,9 @@
-import { expect, test } from '@playwright/test';
 import { signIn } from '../../fixtures/auth';
-import { resetAuthRateLimit } from '../../fixtures/redis';
+import { expect, test } from '../../fixtures/test';
 
 const API_BASE_URL = process.env.API_BASE_URL ?? 'http://localhost:3011';
 
 test.describe('auth: sign-out', () => {
-  test.beforeEach(resetAuthRateLimit);
-
   test('signed-in user can sign out and is no longer authenticated', async ({ page }, testInfo) => {
     await signIn({ page, testInfo });
 

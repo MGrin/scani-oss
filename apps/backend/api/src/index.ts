@@ -60,6 +60,7 @@ import {
   observeRedisReachability,
   pingWithin,
   type StrandReport,
+  setInflowDegradedHandler,
   startRedisStrandWatchdog,
   strandedRedisError,
 } from '@scani/rate-limiter';
@@ -328,6 +329,25 @@ interface RequestWithTracking extends Request {
   _timer?: { end: () => number };
   _requestId?: string;
 }
+
+// A limiter that cannot reach Redis counts in this process instead (SC-225).
+// That is the right trade — the alternative held `/health` on Redis and cost 14
+// minutes of downtime — but until SC-489 it happened in total silence, and the
+// silence is the problem: the shared bucket is the only reason two machines
+// honour one limit, so every fallback quietly multiplies the configured cap and
+// restarts the count. `observeRedisReachability` above cannot see it, because
+// the case that matters is a *connected* Redis answering too slowly.
+setInflowDegradedHandler(({ namespace, timeoutMs, error, count }) => {
+  logger.warn(
+    {
+      namespace,
+      timeoutMs,
+      degradedRequests: count,
+      reason: error instanceof Error ? error.message : String(error),
+    },
+    '⚠️ Rate limiter counting in-process — Redis did not answer in time'
+  );
+});
 
 // Rate limiters. Bucket state lives in Redis so horizontally-scaled
 // backend instances share fairness.
