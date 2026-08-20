@@ -93,8 +93,37 @@ const FORWARDED = process.argv.slice(2).filter((arg) => !OWN_FLAGS.has(arg));
  * `mailpit` is named explicitly because nothing depends on it: the api sends
  * mail *outward* to SMTP, so compose has no edge to follow, but every sign-in
  * in the suite reads its OTP back out of the mailbox.
+ *
+ * The api service is missing from this list on purpose — see
+ * `API_SERVICE_ALIASES`, which is the one name the two repos spell
+ * differently.
  */
-const STACK_SERVICES = ['data-provider', 'backend', 'worker', 'frontend', 'mailpit'];
+const STACK_SERVICES = ['data-provider', 'worker', 'frontend', 'mailpit'];
+
+/**
+ * WHY THE API SERVICE IS ASKED FOR AND NOT NAMED (SC-496).
+ *
+ * `docker-compose.yml` is `merge=ours` in both repos: each keeps its own copy,
+ * and the api service is deliberately spelled differently — `api` here,
+ * `backend` in the private tree. That is the same public-audience scrub that
+ * gives the two trees different `SERVICE_NAME` values, declared in
+ * `scripts/oss-eligibility.ts` (`serviceNameScrub`), so it is not drift to
+ * flatten.
+ *
+ * This file, however, is shared verbatim, so a literal here can only ever be
+ * right in one of the two repos — and the literal that stood here was the
+ * private spelling. `bun run test:e2e` had never once started a stack in this
+ * repo: it printed `no such service: backend` from the day the runner was
+ * written. CI never saw it, because CI stands the stack up itself and passes
+ * no service list at all.
+ *
+ * So the compose file is asked rather than assumed, which is the rule
+ * `oss-eligibility.ts` states for this whole family: shared code must not
+ * read a `merge=ours` file's content. `docker compose config --services` is
+ * compose answering for its own file, in either repo, without this one
+ * knowing which it is standing in.
+ */
+const API_SERVICE_ALIASES = ['api', 'backend'];
 
 /** The `depends_on` gates above — they run to completion, so `up` reports only
  *  their exit code and their own output is where a boot failure explains itself. */
@@ -119,17 +148,53 @@ function run(cmd: string, args: string[], env: Record<string, string> = {}): num
 }
 
 /**
- * The only path to `docker compose` in this file. `--project-name` is passed
- * on the command line as well as through the environment so the project this
- * run touches is visible in the process list and in a CI log, not only in a
+ * The only argv this file ever hands to docker. `--project-name` is passed on
+ * the command line as well as through the environment so the project this run
+ * touches is visible in the process list and in a CI log, not only in a
  * variable — `scripts/tests/e2e-compose-project.test.ts` fails the build if a
- * second, unnamed call ever appears.
+ * compose call that does not come from here ever appears.
  */
+function composeArgv(args: string[]): string[] {
+  return ['compose', '--project-name', PROJECT, '--profile', 'full', ...args];
+}
+
 function compose(args: string[], env: Record<string, string> = {}): number {
-  return run('docker', ['compose', '--project-name', PROJECT, '--profile', 'full', ...args], {
-    ...COMPOSE_ENV,
-    ...env,
+  return run('docker', composeArgv(args), { ...COMPOSE_ENV, ...env });
+}
+
+/**
+ * The same call with stdout captured, for the one question this run asks
+ * compose rather than tells it. A failure prints compose's own stderr and
+ * returns nothing: the caller then exits naming what it was looking for, so a
+ * docker that is not running cannot read as "this repo declares no api".
+ */
+function composeCapture(args: string[]): string {
+  const result = spawnSync('docker', composeArgv(args), {
+    cwd: REPO_ROOT,
+    encoding: 'utf8',
+    env: { ...process.env, ...COMPOSE_ENV },
   });
+  if (result.status !== 0) {
+    process.stderr.write(result.stderr ?? '');
+    return '';
+  }
+  return result.stdout;
+}
+
+/** Which of `API_SERVICE_ALIASES` this repo's compose file actually declares. */
+function apiService(): string {
+  const declared = composeCapture(['config', '--services'])
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const match = API_SERVICE_ALIASES.find((name) => declared.includes(name));
+  if (!match) {
+    console.error(
+      `No api service in docker-compose.yml. Looked for ${API_SERVICE_ALIASES.join(' or ')}; compose declares: ${declared.join(', ') || '(nothing — the command above failed)'}`
+    );
+    process.exit(1);
+  }
+  return match;
 }
 
 // `docker compose up` reports only `service "x" didn't complete successfully:
@@ -177,7 +242,7 @@ async function main() {
     // intentional: progress marker for CI logs, and the one place a person can
     // read which stack this run is about to create and later delete
     console.log(`Starting docker-compose stack (Mode B) — project ${PROJECT}, api ${API_BASE_URL}`);
-    const upStatus = compose(['up', '-d', '--build', ...STACK_SERVICES], {
+    const upStatus = compose(['up', '-d', '--build', apiService(), ...STACK_SERVICES], {
       STUB_AI: '1',
       STUB_CHAIN_DATA: '1',
     });
