@@ -4,3 +4,4 @@ node_modules/
 shots/
 .shots-session.json
 .visual-session.json
+.visual-empty-session.json
