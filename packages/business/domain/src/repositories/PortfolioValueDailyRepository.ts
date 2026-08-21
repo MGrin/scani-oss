@@ -49,6 +49,8 @@ export interface IncludedHoldingScopeRow {
   oldestAnchorAt?: Date | null;
   /** SC-317. NULL on rows written before the rollup counted this cause. */
   holdingsBeforeRecords?: number | null;
+  /** SC-475. NULL on rows written before the rollup counted this cause. */
+  holdingsInterpolated?: number | null;
   holdingsBasisUnknown: number;
   transfersUnreviewed: number;
 }
@@ -144,6 +146,7 @@ export class PortfolioValueDailyRepository {
           holdingsStaleAnchored: schema.portfolioValueDaily.holdingsStaleAnchored,
           oldestAnchorAt: schema.portfolioValueDaily.oldestAnchorAt,
           holdingsBeforeRecords: schema.portfolioValueDaily.holdingsBeforeRecords,
+          holdingsInterpolated: schema.portfolioValueDaily.holdingsInterpolated,
           holdingsBasisUnknown: schema.portfolioValueDaily.holdingsBasisUnknown,
           transfersUnreviewed: schema.portfolioValueDaily.transfersUnreviewed,
         })
@@ -349,6 +352,7 @@ export class PortfolioValueDailyRepository {
             holdingsStaleAnchored: sql`EXCLUDED.holdings_stale_anchored`,
             oldestAnchorAt: sql`EXCLUDED.oldest_anchor_at`,
             holdingsBeforeRecords: sql`EXCLUDED.holdings_before_records`,
+            holdingsInterpolated: sql`EXCLUDED.holdings_interpolated`,
             holdingsBasisUnknown: sql`EXCLUDED.holdings_basis_unknown`,
             transfersUnreviewed: sql`EXCLUDED.transfers_unreviewed`,
             // Without these, re-running the rollup for an already-cached
@@ -405,6 +409,7 @@ export class PortfolioValueDailyRepository {
             holdingsStaleAnchored: sql`EXCLUDED.holdings_stale_anchored`,
             oldestAnchorAt: sql`EXCLUDED.oldest_anchor_at`,
             holdingsBeforeRecords: sql`EXCLUDED.holdings_before_records`,
+            holdingsInterpolated: sql`EXCLUDED.holdings_interpolated`,
             holdingsBasisUnknown: sql`EXCLUDED.holdings_basis_unknown`,
             transfersUnreviewed: sql`EXCLUDED.transfers_unreviewed`,
             // Without these, re-running the rollup for an already-cached

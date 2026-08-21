@@ -1,0 +1,36 @@
+-- SC-475 fault B / SC-481. Which of a day's holdings had part of their
+-- balance DRAWN rather than measured.
+--
+-- `BalanceAtTimeService` anchors on the nearest balance observation at or
+-- after the date it is asked about and walks the transactions back from
+-- there. Where two consecutive observations differ by more than the
+-- transactions between them explain, the whole difference used to land on
+-- the single day the anchor rolled over from one observation to the next.
+-- Production held exactly that: an Edge Capital USD holding with two
+-- observations 71 days apart and no transaction between them fell 19,575.27
+-- on 2026-05-17, and the chained daily return read a 22% loss on cash. Ten
+-- weeks of drift on one day.
+--
+-- That drift is now spread linearly across the gap. It is an improvement and
+-- it is also partly INVENTED — a straight line between two measurements,
+-- drawn because no record says what the shape really was. This column is how
+-- a reader tells the two apart afterwards. Nothing surfaces it yet; a number
+-- nobody can later distinguish from a measured one is a trap for whoever
+-- reads it in six months, and the moment to write it down is the moment the
+-- interpolation starts, not the moment someone needs it.
+--
+-- It deliberately does NOT feed `coverage_quality`, unlike every count added
+-- before it. Interpolating is strictly better than the cliff it replaces, and
+-- downgrading every day of every sparsely-observed holding would saturate a
+-- bucket already saturated — `daysNotFullyCovered` reads 367 of 367 on a real
+-- account, which is the failure SC-475 §7 records about the one coverage
+-- signal the returns engine surfaces.
+--
+-- NULLABLE, like `holdings_stale_anchored` (0037) and
+-- `holdings_before_records` (SC-317) and unlike the four counts before them:
+-- NULL means NOT RECORDED, 0 means counted and none. No backfill — the rows
+-- written before this existed were computed by the cliff, not by the
+-- interpolation, and a 0 there would claim otherwise. They are corrected by
+-- re-running the rollup, which writes a real count.
+ALTER TABLE "portfolio_value_daily"
+  ADD COLUMN "holdings_interpolated" integer;
