@@ -1,4 +1,5 @@
 import type { Redis } from 'ioredis';
+import { withRedisTimeout } from '../redis-timeout';
 import { InMemoryBuckets } from './buckets';
 import { reportInflowDegraded } from './degraded';
 import { InflowRateLimiter, type InflowRateLimiterOptions } from './inflow-rate-limiter';
@@ -118,18 +119,14 @@ export class RedisInflowRateLimiter extends InflowRateLimiter {
     return count;
   }
 
+  // Timer cleanup matters here in particular: this runs on every admitted
+  // request, so a leaked timeout per call would accumulate one per request
+  // for the whole `timeoutMs`. `withRedisTimeout` owns that.
   private withTimeout<T>(work: Promise<T>): Promise<T> {
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const expiry = new Promise<never>((_, reject) => {
-      timer = setTimeout(
-        () => reject(new Error(`rate-limiter: Redis did not answer in ${this.timeoutMs}ms`)),
-        this.timeoutMs
-      );
-    });
-    // `finally` clears the timer on the happy path too, or every admitted
-    // request would hold a pending timeout for `timeoutMs`.
-    return Promise.race([work, expiry]).finally(() => {
-      if (timer) clearTimeout(timer);
-    }) as Promise<T>;
+    return withRedisTimeout(
+      work,
+      this.timeoutMs,
+      () => new Error(`rate-limiter: Redis did not answer in ${this.timeoutMs}ms`)
+    );
   }
 }

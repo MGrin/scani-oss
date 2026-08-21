@@ -783,7 +783,14 @@ app
 
     const redisStart = performance.now();
     try {
-      const reply = await redisConnection.ping();
+      // Bounded, for the reason `/health/deep` is (SC-294) and measured again
+      // under SC-522: with the Redis container stopped, this endpoint returned
+      // NOTHING at 30s — `curl` gave up first — while `GET /health` answered
+      // 200 in 1.4ms beside it. `docker-compose.prod.yml` gates the api
+      // container's healthcheck on this path, so a readiness probe that hangs
+      // instead of reporting 503 is the failure it exists to catch, wearing
+      // the costume of a slow start.
+      const reply = await pingWithin(redisConnection, REDIS_PING_TIMEOUT_MS);
       checks.redis = {
         ok: reply === 'PONG',
         latencyMs: Math.round(performance.now() - redisStart),
