@@ -1,6 +1,20 @@
 import { createComponentLogger } from '@scani/logging';
-import { type Job, Queue, UnrecoverableError, Worker } from 'bullmq';
-import type { Redis } from 'ioredis';
+import {
+  createPostgresBackend,
+  type Job,
+  type PostgresQueueBackend,
+  Queue,
+  UnrecoverableError,
+  Worker,
+} from 'bullmq';
+
+// `Queue` and `Worker` are generic over the backend and DEFAULT to
+// `RedisQueueBackend`. Passing `createPostgresBackend` produces the Postgres
+// variant, which is not assignable to that default — so the backend has to be
+// named once here rather than inferred at each site.
+type PgQueue = Queue<any, any, string, any, any, string, PostgresQueueBackend>;
+type PgWorker = Worker<any, any, string, PostgresQueueBackend>;
+
 import { Container, Service } from 'typedi';
 import { DEFAULT_DLQ_NAME, DEFAULT_QUEUE_NAME } from '../core/default-names';
 import { isScheduledJobDescriptor } from '../core/job-descriptor';
@@ -12,7 +26,10 @@ import type { UserJobProcessor } from './user-job-processor';
 const log = createComponentLogger('queue:worker-client');
 
 export interface WorkerClientConfig {
-  connection: Redis;
+  /** Postgres connection string — the same DATABASE_URL the app already uses. */
+  connection: string;
+  /** Schema holding BullMQ's tables. Defaults to `bullmq`. */
+  schema?: string;
   queueName?: string;
   dlqName?: string;
   /** Total in-flight job slots across the worker. */
@@ -44,8 +61,8 @@ export type TerminalFailureHook = (job: Job, err: Error) => void;
 // the dispatch closure.
 @Service()
 export class WorkerClient {
-  private worker: Worker | null = null;
-  private dlq: Queue | null = null;
+  private worker: PgWorker | null = null;
+  private dlq: PgQueue | null = null;
   private config: WorkerClientConfig | null = null;
   private readonly processors = new Map<string, (job: Job) => Promise<unknown>>();
   // Names of processors that came from a ScheduledJobDescriptor. Used
@@ -60,7 +77,13 @@ export class WorkerClient {
       throw new Error('WorkerClient already configured — call close() before reconfiguring');
     }
     this.config = config;
-    this.dlq = new Queue(config.dlqName ?? DEFAULT_DLQ_NAME, { connection: config.connection });
+    this.dlq = new Queue(
+      config.dlqName ?? DEFAULT_DLQ_NAME,
+      {
+        connection: { connectionString: config.connection, schema: config.schema ?? 'bullmq' },
+      } as never,
+      createPostgresBackend
+    );
     this.cronSemaphore =
       typeof config.cronConcurrency === 'number' && config.cronConcurrency > 0
         ? new Semaphore(config.cronConcurrency)
@@ -91,7 +114,7 @@ export class WorkerClient {
     this.terminalFailureHooks.push(hook);
   }
 
-  async start(): Promise<Worker> {
+  async start(): Promise<PgWorker> {
     if (!this.config) {
       throw new Error('WorkerClient not configured — call configure() at boot');
     }
@@ -127,13 +150,18 @@ export class WorkerClient {
         }
       },
       {
-        connection: cfg.connection.duplicate(),
+        connection: { connectionString: cfg.connection, schema: cfg.schema ?? 'bullmq' },
         concurrency: cfg.concurrency ?? 1,
-        // drainDelay 5s keeps idle pickup snappy for user-initiated
-        // jobs without burning Upstash polls; bump for cost-sensitive
-        // deploys with no user-facing jobs.
+        // drainDelay is now largely decorative and it is worth knowing why.
+        // BullMQ caps the blocking wait at `maximumBlockTimeout = 10` seconds
+        // (src/classes/worker.ts:49) whenever ANY delayed job exists, and a
+        // repeatable schedule IS a delayed job — we have eleven. So the idle
+        // worker wakes every 10s regardless of what is set here, which is what
+        // keeps the Postgres compute from ever reaching its suspend timeout.
+        // Upstream: taskforcesh/bullmq#4601.
         drainDelay: cfg.drainDelay ?? 5,
-      }
+      } as never,
+      createPostgresBackend
     );
 
     this.worker.on('failed', async (job, err) => {

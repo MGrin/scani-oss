@@ -52,9 +52,9 @@ import { googleSheetsFactory } from '@scani/providers-google-sheets';
 import {
   assertQueueBindings,
   JobScheduler,
+  PostgresResourceLock,
   QueueClient,
   RedisLifecyclePublisher,
-  RedisResourceLock,
   WorkerClient,
 } from '@scani/queue';
 import {
@@ -301,7 +301,12 @@ async function main(): Promise<void> {
   const publisher = connection.duplicate();
   Container.get(RedisRealtimeUpdatesService).configure(publisher);
   Container.get(RedisLifecyclePublisher).configure(publisher);
-  Container.get(RedisResourceLock).configure(publisher);
+  // SC-518: the per-resource lock moved to Postgres. NOT a pg_advisory_lock,
+  // despite cron-lock.ts nearby using one — an advisory lock is held until the
+  // session releases it or the connection dies, while this lock needs a TTL. A
+  // worker that HANGS keeps a healthy connection, so it would hold an advisory
+  // lock forever, and holding-price-update skips when locked. See the class.
+  Container.get(PostgresResourceLock).configure(env.DATABASE_URL);
 
   // Make the Redis-backed rate limiter the default for every limiter
   // constructed downstream. Without this, N workers each get their own
@@ -310,7 +315,7 @@ async function main(): Promise<void> {
 
   // Producer side: QueueClient lets processors chain-enqueue follow-up
   // jobs (e.g., wallet-import → transaction-import per account).
-  Container.get(QueueClient).configure({ connection });
+  Container.get(QueueClient).configure({ connection: env.DATABASE_URL });
   // SC-298. All four, because this process uses all four: it consumes user
   // jobs (lifecycle mirror), runs the scheduled processors (advisory lock and
   // heartbeat writer) and chain-enqueues follow-on work (enqueue mirror).
@@ -333,7 +338,7 @@ async function main(): Promise<void> {
   const cronConcurrency =
     env.WORKER_CONCURRENCY_CRON ?? Math.max(1, Math.ceil(env.WORKER_CONCURRENCY / 2));
   workerClient.configure({
-    connection,
+    connection: env.DATABASE_URL,
     concurrency: env.WORKER_CONCURRENCY,
     cronConcurrency: cronConcurrency > 0 ? cronConcurrency : undefined,
     drainDelay: 5,

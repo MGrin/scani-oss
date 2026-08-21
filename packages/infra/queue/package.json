@@ -17,6 +17,7 @@
     "@scani/logging": "workspace:*",
     "bullmq": "^6.2.0",
     "ioredis": "^5.10.1",
+    "pg": "^8",
     "typedi": "^0.10.0",
     "zod": "^3.25.76"
   },
