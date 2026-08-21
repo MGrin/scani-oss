@@ -50,6 +50,12 @@ export interface PnLAtTimePerHolding {
    * row and no reader ever sees.
    */
   balanceBeforeRecords: boolean;
+  /**
+   * Mirrors PortfolioValueAtTimePerHolding.balanceInterpolated — see
+   * SC-475 fault B. Carried for the same reason the field above it is: the
+   * rollup builds every scope row from THIS shape.
+   */
+  balanceInterpolated: boolean;
   /** How much of this holding's cost we know — see CostBasisQuality (SC-149). */
   basisQuality: CostBasisQuality;
   /** Outflows out of this holding still waiting on an answer — see SC-160. */
@@ -80,6 +86,8 @@ export interface PnLAtTimeResult {
   oldestAnchorAt: Date | null;
   /** Re-exposed from the valuation pass — see its doc (SC-252). */
   holdingsBeforeRecords: number;
+  /** Mirrors PortfolioValueAtTimeResult.holdingsInterpolated — SC-475. */
+  holdingsInterpolated: number;
   /**
    * Of `holdingsTotal`, how many carry a cost basis we do not actually
    * know: no cost-relevant transaction at all, a provider that reported
@@ -278,6 +286,7 @@ export class PnLAtTimeService {
         anchorSource: ph.anchorSource,
         anchorAt: ph.anchorAt,
         balanceBeforeRecords: ph.balanceBeforeRecords,
+        balanceInterpolated: ph.balanceInterpolated,
         basisQuality,
         transfersUnreviewed,
       });
@@ -301,6 +310,7 @@ export class PnLAtTimeService {
       holdingsStaleAnchored: valuation.holdingsStaleAnchored,
       oldestAnchorAt: valuation.oldestAnchorAt,
       holdingsBeforeRecords: valuation.holdingsBeforeRecords,
+      holdingsInterpolated: valuation.holdingsInterpolated,
       holdingsBasisUnknown: basisUnknownCount,
       transfersUnreviewed: unreviewedCount,
       perHolding,

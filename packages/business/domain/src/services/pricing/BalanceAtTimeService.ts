@@ -33,6 +33,14 @@ export interface BalanceAtTimeResult {
   // hold no record of rather than a reconstruction across one we do.
   // Callers must not present it as a measurement (SC-252).
   beforeRecords: boolean;
+  // `at` sits strictly between two observations whose difference the ledger
+  // does not explain, and part of that unexplained drift has been spread
+  // across the gap to reach this number (SC-475 fault B). The balance is
+  // therefore partly INVENTED: it is a straight line drawn between two
+  // measurements, not a reconstruction from events. False whenever the walk
+  // needed no interpolation, which includes every densely-observed holding
+  // and every date at or before the first observation.
+  interpolated: boolean;
 }
 
 // Reconstructs a holding's balance at an arbitrary past time by walking
@@ -81,13 +89,15 @@ export class BalanceAtTimeService {
     if (after) {
       const txs = await this.findTxsInRange(holdingId, at, after.observedAt, caches);
       const sumInRange = txs.reduce((acc, t) => acc.add(new Decimal(t.quantity)), new Decimal(0));
-      const balance = clampNonNegative(new Decimal(after.balance).sub(sumInRange));
+      const walked = new Decimal(after.balance).sub(sumInRange);
+      const spread = await this.driftAhead(holdingId, at, after, caches);
       return {
-        balance,
+        balance: clampNonNegative(walked.sub(spread.share)),
         anchor: 'observation-after',
         anchorAt: after.observedAt,
         txApplied: txs.length,
         beforeRecords,
+        interpolated: spread.interpolated,
       };
     }
 
@@ -103,6 +113,9 @@ export class BalanceAtTimeService {
         anchorAt: holding.lastUpdated,
         txApplied: txs.length,
         beforeRecords,
+        // No later observation exists to interpolate towards — this walks
+        // back from current state, which is a measurement at its own end.
+        interpolated: false,
       };
     }
 
@@ -118,13 +131,74 @@ export class BalanceAtTimeService {
         anchorAt: before.observedAt,
         txApplied: txs.length,
         beforeRecords,
+        // Only reachable when no holding row exists either, so there is
+        // nothing on the far side of `at` to draw a line to.
+        interpolated: false,
       };
     }
 
     // No anchor of any kind reachable — honest "unknown". `beforeRecords`
     // is false rather than true: there is no balance to qualify, and the
     // claim being made is "we do not know", not "we are projecting".
-    return { balance: null, anchor: null, anchorAt: null, txApplied: 0, beforeRecords: false };
+    return {
+      balance: null,
+      anchor: null,
+      anchorAt: null,
+      txApplied: 0,
+      beforeRecords: false,
+      interpolated: false,
+    };
+  }
+
+  // How much of the gap's UNEXPLAINED drift still lies ahead of `at`.
+  //
+  // Anchor 1 walks back from the next observation through the transactions
+  // in `(at, after]`. Where those transactions fully explain the difference
+  // between two consecutive observations, that walk is exact and this
+  // returns zero — which is every densely-observed holding, so the common
+  // path is unchanged.
+  //
+  // Where they do not, the whole difference lands on the single day the
+  ***REMOVED***
+  ***REMOVED***
+  ***REMOVED***
+  ***REMOVED***
+  //
+  // So the drift is spread linearly across the gap instead. This is
+  // INVENTED data — a straight line between two measurements, drawn because
+  // no record says what the shape really was — and the second return value
+  // says so, all the way through to `portfolio_value_daily`.
+  //
+  // At `at = before.observedAt` the share is the whole drift, so the result
+  // is exactly `before.balance`; at `at = after.observedAt` it is zero, so
+  // the result is exactly `after.balance`. Both measurements are reproduced
+  // unchanged — only the space between them moves.
+  private async driftAhead(
+    holdingId: string,
+    at: Date,
+    after: HoldingBalanceObservation,
+    caches: BalanceAtTimeCaches
+  ): Promise<{ share: Decimal; interpolated: boolean }> {
+    const before = await this.findObservationAtOrBefore(holdingId, at, caches);
+    // No earlier observation, or `at` sits exactly on one: nothing to
+    // interpolate between, and a zero-length span would divide by zero.
+    if (!before || before.observedAt.getTime() >= after.observedAt.getTime()) {
+      return { share: new Decimal(0), interpolated: false };
+    }
+
+    const bridge = await this.findTxsInRange(
+      holdingId,
+      before.observedAt,
+      after.observedAt,
+      caches
+    );
+    const explained = bridge.reduce((acc, t) => acc.add(new Decimal(t.quantity)), new Decimal(0));
+    const drift = new Decimal(after.balance).sub(new Decimal(before.balance)).sub(explained);
+    if (drift.isZero()) return { share: new Decimal(0), interpolated: false };
+
+    const span = after.observedAt.getTime() - before.observedAt.getTime();
+    const ahead = after.observedAt.getTime() - at.getTime();
+    return { share: drift.mul(ahead).div(span), interpolated: true };
   }
 
   // The earliest instant this holding has any evidence for: the first
@@ -142,22 +216,43 @@ export class BalanceAtTimeService {
   // OLDEST of the three, not the newest, so an imported wallet whose
   // transactions reach back years is still answered from its first
   // transaction rather than from the day we happened to learn of it.
-  private async earliestEvidenceAt(
+  //
+  // Public because `OpeningBalanceReconciliationService` stamps its synthetic
+  // opening one millisecond before this instant, and a second copy of the
+  // rule would be free to disagree with this one (SC-481).
+  //
+  // `excludeReconciliationOpening` is what that caller passes and nothing
+  // else should: the reconciler's own output is a transaction, so counting it
+  // as evidence would make each run place the next opening 1ms earlier than
+  // the last, forever. Every other caller wants the opening included — after
+  // SC-481 it is the oldest row on the holding, which is precisely what makes
+  // `beforeRecords` true for the dates before it.
+  async earliestEvidenceAt(
     holdingId: string,
     holding: Holding | null,
-    caches: BalanceAtTimeCaches
+    caches: BalanceAtTimeCaches = {},
+    options: { excludeReconciliationOpening?: boolean } = {}
   ): Promise<Date | null> {
     const candidates: Date[] = [];
     if (holding) candidates.push(holding.createdAt);
 
     // Both bulk prefetches order by their time column ASC, so on the
     // rollup's hot path the earliest row is `[0]` and this costs nothing.
-    const cachedTxs = caches.transactions?.get(holdingId);
+    // The cache is bypassed when openings must be excluded: it holds every
+    // row including them, and filtering it here would put a second copy of
+    // the exclusion rule in the hot path. The reconciler passes no caches.
+    const cachedTxs = options.excludeReconciliationOpening
+      ? undefined
+      : caches.transactions?.get(holdingId);
     if (cachedTxs) {
       const first = cachedTxs[0];
       if (first) candidates.push(first.occurredAt);
     } else {
-      const { first } = await this.transactionRepository.findExtremesForHolding(holdingId);
+      const { first } = await this.transactionRepository.findExtremesForHolding(
+        holdingId,
+        undefined,
+        options.excludeReconciliationOpening ? { excludeReconciliationOpening: true } : undefined
+      );
       if (first) candidates.push(first);
     }
 
