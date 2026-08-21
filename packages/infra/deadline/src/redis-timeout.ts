@@ -1,6 +1,22 @@
 /**
  * A bound on a single Redis command (SC-225 / SC-254 / SC-294 / SC-522).
  *
+ * ## Why this lives in a package of its own (SC-523)
+ *
+ * It was written inside `@scani/rate-limiter`, because that is where the
+ * first three call sites were. `@scani/queue` then needed the same bound on
+ * `queue.add`, and the obvious move — `queue` depends on `rate-limiter` — is
+ * backwards: enqueue does not need rate limiting, it needs a deadline on an
+ * unreachable dependency. **A second consumer wanting this is the signal that
+ * it was in the wrong place**, not that the first package should be depended
+ * upon. So it moved somewhere neutral, with no dependencies of its own, and
+ * both packages import it from here.
+ *
+ * The exported names still say *Redis* while the package says *deadline*, and
+ * that is deliberate: the symbols describe the transport these call sites use
+ * today, the package describes the guarantee. The rename belongs with the
+ * migration that changes the transport (see below), not with the move.
+ *
  * ## Why every await on the shared connection needs one
  *
  * The api, worker and data-provider all build their shared client with

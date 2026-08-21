@@ -13,6 +13,7 @@
     "type-check": "tsgo --noEmit -p tsconfig.test.json"
   },
   "dependencies": {
+    "@scani/deadline": "workspace:*",
     "typedi": "^0.10.0"
   },
   "devDependencies": {
