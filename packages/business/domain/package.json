@@ -25,6 +25,7 @@
   "dependencies": {
     "@firecrawl/pdf-inspector": "^1.13.0",
     "@scani/cloud-client": "workspace:*",
+    "@scani/config": "workspace:*",
     "@scani/db": "workspace:*",
     "@scani/email": "workspace:*",
     "@scani/file-import": "workspace:*",
