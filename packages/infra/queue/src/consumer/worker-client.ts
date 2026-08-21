@@ -305,13 +305,13 @@ export class WorkerClient {
     this.config = null;
   }
 
-  // Total DLQ entries (waiting / paused; failed jobs land in 'waiting'
+  // Total DLQ entries (waiting / delayed / active; failed jobs land in 'waiting'
   // since the DLQ has no consumer). Used by the DLQ-depth probe to
   // surface backlogs that would otherwise silently accumulate until
   // someone notices in the admin UI.
   async getDlqDepth(): Promise<number> {
     if (!this.dlq) return 0;
-    const counts = await this.dlq.getJobCounts('waiting', 'paused', 'delayed', 'active');
+    const counts = await this.dlq.getJobCounts('waiting', 'delayed', 'active');
     return Object.values(counts).reduce((sum, n) => sum + (typeof n === 'number' ? n : 0), 0);
   }
 }
