@@ -932,7 +932,12 @@ export class CostBasisService {
       if (INFLOW_BUY_KINDS.has(tx.kind) || INFLOW_OTHER_KINDS.has(tx.kind)) {
         const tgid = tx.transferGroupId;
         const buffered = tgid ? pending.get(tgid) : undefined;
-        if (tgid && buffered && (tx.kind === 'transfer_in' || tx.kind === 'deposit')) {
+        if (
+          tgid &&
+          buffered &&
+          (tx.kind === 'transfer_in' || tx.kind === 'deposit') &&
+          carriesAcross(heldTokenByHolding, buffered, heldTokenId)
+        ) {
           // Paired transfer_in: inherit the buffered lots (cost +
           // acquisition date intact), re-homed to this holding. The
           // matched outflow accumulators get discarded — the lots are
@@ -940,16 +945,7 @@ export class CostBasisService {
           // double-book PnL on them.
           pending.delete(tgid);
           pendingRealization.delete(tgid);
-          for (const lot of buffered) {
-            lots.push({
-              qty: lot.qty,
-              cost: lot.cost,
-              date: lot.date,
-              holdingId,
-              stale: lot.stale,
-              unpriced: lot.unpriced,
-            });
-          }
+          for (const lot of rehome(buffered, qtyAbs, holdingId)) lots.push(lot);
           continue;
         }
         const cost = await acquisitionValue(tx);
@@ -1262,6 +1258,96 @@ const SOLE_HOLDING = '';
  * payload will not parse. That row is not `retained`; nobody said it was
  * retained. It needs an answer, and `unreviewed` is the outcome that says so.
  */
+/**
+ * May the lots buffered by a linked outflow carry into this arrival, or is the
+ * pair a CONVERSION wearing a transfer's clothes (SC-506)?
+ *
+ * A lot's `cost` is denominated in base currency and its `qty` is denominated
+ * in the asset — so carrying a lot from one asset to another is not a units
+ * conversion problem that a scale factor could fix, it is a category error.
+ * The destination's pool would be measured in the source's units: on the
+ * SC-465 demo seed, a GBP current account receiving eighteen EUR->GBP
+ * conversions ends the window holding 45,444.82 lot units against a balance of
+ * 11,380.08, at 0.844 per unit instead of 1.000, and every ordinary bill paid
+ * out of it thereafter books the 15.6% difference as a realized gain — 24,351.47
+ * of it, with no sale anywhere in the ledger. The same arithmetic runs the
+ * other way into a USD brokerage cash pool, which underflows to zero and then
+ * reports a 0.00 cost basis against a five-figure balance.
+ *
+ * So: refuse, and let the arrival open a lot at its own market value while the
+ * departure falls to the end-of-walk pass, which already has a considered rule
+ * for a linked outflow whose partner it cannot use.
+ *
+ * The refusal is PROOF-BASED, not precautionary. When either side's token is
+ * unknown to the caller the pair carries as it always did — an unknown is not
+ * evidence of a boundary, and a walk that stopped carrying on a missing map
+ * entry would break every same-token transfer to protect against a case it
+ * cannot see.
+ */
+function carriesAcross(
+  heldTokenByHolding: ReadonlyMap<string, string>,
+  buffered: ReadonlyArray<ComponentLot>,
+  arrivalTokenId: string | null
+): boolean {
+  if (arrivalTokenId === null) return true;
+  for (const lot of buffered) {
+    const sourceTokenId = heldTokenByHolding.get(lot.holdingId);
+    if (sourceTokenId !== undefined && sourceTokenId !== arrivalTokenId) return false;
+  }
+  return true;
+}
+
+/**
+ * The buffered lots, re-homed to the arrival and scaled to THE UNITS THAT
+ * ACTUALLY ARRIVED (SC-506).
+ *
+ * A network fee makes the two legs of an honest same-token transfer differ:
+ ***REMOVED***
+ * quantity, so the destination's pool permanently over-reported by the fee —
+ ***REMOVED***
+ ***REMOVED***
+ ***REMOVED***
+ * in this function.
+ *
+ * `cost` is deliberately NOT scaled down with the quantity. The fee is an
+ * incidental cost of the transfer, not a disposal of the units it consumed, so
+ * the whole cost carries onto the units that survive it and the component's
+ * total cost basis is conserved across the move — which is the invariant this
+ * entire walk exists to hold.
+ *
+ * The last lot absorbs the rounding residual, for the reason `drawPooled`
+ * states: a pool left a hair short of what a later disposal asks for emits a
+ * shortfall row priced as pure gain.
+ */
+function rehome(
+  buffered: ReadonlyArray<ComponentLot>,
+  arrivedQty: Decimal,
+  holdingId: string
+): ComponentLot[] {
+  const sent = buffered.reduce((sum, lot) => sum.add(lot.qty), new Decimal(0));
+  const out: ComponentLot[] = [];
+  let placed = new Decimal(0);
+  for (let i = 0; i < buffered.length; i++) {
+    const lot = buffered[i] as ComponentLot;
+    const last = i === buffered.length - 1;
+    const qty = sent.lte(0)
+      ? lot.qty
+      : last
+        ? arrivedQty.minus(placed)
+        : lot.qty.mul(arrivedQty).div(sent);
+    placed = placed.add(qty);
+    out.push({
+      qty,
+      cost: lot.cost,
+      date: lot.date,
+      holdingId,
+      stale: lot.stale,
+      unpriced: lot.unpriced,
+    });
+  }
+  return out;
+}
+
 function skippedOutcome(tx: HoldingTransaction): DisposalOutcome {
   if (tx.transferGroupId !== null) return 'awaiting_pair';
   if (tx.transferReview === TRANSFER_REVIEW_SPLIT) return 'unreviewed';
