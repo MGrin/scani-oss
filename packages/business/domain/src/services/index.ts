@@ -92,6 +92,13 @@ export {
   type IntegrationImportTarget,
 } from './holdings/IntegrationImportService';
 export {
+  MANUAL_EDIT_CORRECTION_SOURCE,
+  MANUAL_EDIT_FLOW_SOURCE,
+  type ManualBalanceEditInput,
+  type ManualBalanceEditResult,
+  ManualBalanceEditService,
+} from './holdings/ManualBalanceEditService';
+export {
   OpeningBalanceReconciliationService,
   type ReconciliationResult,
 } from './holdings/OpeningBalanceReconciliationService';

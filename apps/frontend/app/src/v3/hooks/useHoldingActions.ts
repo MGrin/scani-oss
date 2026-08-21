@@ -1,3 +1,4 @@
+import type { ManualEditCause } from '@scani/shared';
 import { showError, showSuccess } from '@scani/ui/ui/use-toast';
 import { useTranslation } from 'react-i18next';
 import { invalidatePortfolioQueries } from '@/hooks/invalidatePortfolioQueries';
@@ -99,8 +100,22 @@ export function useHoldingActions() {
       deleteMutation.mutate({ id }, { onSuccess: options?.onSuccess }),
     bulkDeleteHoldings: (ids: string[], options?: { onSuccess?: () => void }) =>
       bulkDeleteMutation.mutate({ ids }, { onSuccess: options?.onSuccess }),
-    updateHolding: (id: string, data: { balance?: string; isActive?: boolean }) =>
-      updateMutation.mutate({ id, data }),
+    /**
+     * `editCause` / `editOccurredAt` say what a balance change MEANT (SC-510).
+     * Omitted for an `isActive` toggle and for a holding whose price we fetch
+     * — the server derives the cause there. Required for the ambiguous set;
+     * `HoldingsPage` asks through `HoldingEditCauseDialog` and the API refuses
+     * rather than guessing if it arrives without one.
+     */
+    updateHolding: (
+      id: string,
+      data: {
+        balance?: string;
+        isActive?: boolean;
+        editCause?: ManualEditCause;
+        editOccurredAt?: string;
+      }
+    ) => updateMutation.mutate({ id, data }),
     refreshPrice: (id: string) =>
       refreshPriceMutation.mutate({ id, requestId: crypto.randomUUID() }),
     refreshBalance: (holdingId: string) =>
