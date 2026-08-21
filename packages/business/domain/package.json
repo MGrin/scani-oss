@@ -6,6 +6,7 @@
   "description": "Domain layer: services, repositories, use cases. Sits on top of @scani/db + the adapter packages (@scani/queue, @scani/providers, @scani/storage, @scani/email, @scani/realtime).",
   "exports": {
     ".": "./src/index.ts",
+    "./demo": "./src/demo/index.ts",
     "./lib/*": "./src/lib/*.ts",
     "./repositories": "./src/repositories/index.ts",
     "./repositories/*": "./src/repositories/*.ts",
@@ -18,7 +19,8 @@
   "scripts": {
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
-    "type-check": "tsgo --noEmit -p tsconfig.test.json"
+    "type-check": "tsgo --noEmit -p tsconfig.test.json",
+    "seed:demo": "bun src/demo/cli.ts"
   },
   "dependencies": {
     "@firecrawl/pdf-inspector": "^1.13.0",
