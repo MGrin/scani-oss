@@ -1,4 +1,4 @@
-import { withRedisTimeout } from './redis-timeout';
+import { withRedisTimeout } from '@scani/deadline';
 
 /**
  * A Redis PING that is allowed to take a bounded amount of time (SC-294).

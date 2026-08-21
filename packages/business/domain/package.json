@@ -27,6 +27,7 @@
     "@scani/cloud-client": "workspace:*",
     "@scani/config": "workspace:*",
     "@scani/db": "workspace:*",
+    "@scani/deadline": "workspace:*",
     "@scani/email": "workspace:*",
     "@scani/file-import": "workspace:*",
     "@scani/logging": "workspace:*",

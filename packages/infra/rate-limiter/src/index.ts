@@ -65,7 +65,6 @@ export {
   startRedisStrandWatchdog,
   strandedRedisError,
 } from './redis-strand-watchdog';
-export { RedisCommandTimeoutError, withRedisTimeout } from './redis-timeout';
 // Resilience primitives — sit in this package alongside rate-limiting
 // because both are upstream-boundary protections. Limiters cap call
 // rate; circuit breakers stop calling when the upstream is clearly
