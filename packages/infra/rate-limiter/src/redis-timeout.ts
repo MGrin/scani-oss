@@ -18,6 +18,23 @@
  * nothing rejects. Every such site needs a bound before it has any error
  * handling at all, and the bound cannot go on the client.
  *
+ * ## This is about an unreachable DEPENDENCY, not about Redis
+ *
+ * The `maxRetriesPerRequest` detail above explains why the hang is *silent*
+ * here; it is not why the bound is needed. A request path that awaits a remote
+ * store with no deadline hangs whenever that store is unreachable, and every
+ * store can be unreachable — Postgres holds a query behind a saturated pool or
+ * a failed-over primary exactly as readily as ioredis holds a command behind a
+ * dead socket. The defect this exists to stop is "a health check answers 200
+ * over a request that will never return", and nothing in that sentence names a
+ * product.
+ *
+ * So: **if the store behind these call sites is ever replaced, the bound stays
+ * and gets renamed — it does not get deleted with the client.** Written down
+ * because a migration in flight (SC-518, moving the limiters to Postgres)
+ * touches these exact files, and a reader who takes this for Redis-specific
+ * scaffolding would remove the only thing keeping the failure loud.
+ *
  * ## The timed-out command is NOT cancelled
  *
  * ioredis has no such API. It stays in the offline queue and lands whenever
