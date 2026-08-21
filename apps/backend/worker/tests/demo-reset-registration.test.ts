@@ -39,13 +39,36 @@ describe('the demo reset is wired even though the registry cannot see it', () =>
     // `upsertAll` reconciles: passing the short list is what REMOVES whatever a
     // previous boot armed. Appending to the full list instead would leave the
     // hourly pricing job running against the seeded series.
-    const decision = SOURCE.match(
-      /const schedules = isDemoModeRequested\(process\.env\)\s*\?\s*\[([^\]]*)\]\s*:\s*(\w+);/
-    );
+    //
+    // The condition is matched as `<anything> ? [...] : <name>` rather than by
+    // pinning the exact expression. SC-467 hoisted the call into a `demoMode`
+    // const so first-boot seeding could read it too, and the old regex — which
+    // spelled out `isDemoModeRequested(process.env)` — went red over a rename
+    // that changed nothing this test is about. A guard that fires on a
+    // refactor it does not care about is a guard people learn to edit past.
+    const decision = SOURCE.match(/const schedules = [^;]*\?\s*\[([^\]]*)\]\s*:\s*(\w+);/);
     expect(decision).not.toBeNull();
     expect(decision?.[1]?.trim()).toBe('DEMO_RESET_SCHEDULE');
     expect(decision?.[2]).toBe('SCHEDULED_JOB_DESCRIPTORS');
     expect(SOURCE).toContain('upsertAll(schedules)');
+    // What the loosened regex gives up, asserted separately: the condition has
+    // to be demo mode and not some other boolean that happens to be in scope.
+    expect(SOURCE).toContain('isDemoModeRequested(process.env)');
+  });
+
+  test('an empty demo database is seeded at boot, before anything is armed', () => {
+    // SC-467. The published images carry no seeder CLI and there is no
+    // checkout inside a container, so the worker is the only process that can
+    // fill a fresh demo database — and until it does, the api reads `users`,
+    // finds it empty and exits. Without this the demo is down until 06:00 UTC.
+    //
+    // Order matters as much as presence: seeding after `upsertAll` would arm
+    // the schedule against a database that has nothing in it.
+    const seedAt = SOURCE.indexOf('ensureDemoDatasetSeeded()');
+    const armAt = SOURCE.indexOf('upsertAll(schedules)');
+    expect(seedAt).toBeGreaterThan(-1);
+    expect(armAt).toBeGreaterThan(-1);
+    expect(seedAt).toBeLessThan(armAt);
   });
 
   test('the two lists are disjoint, so the swap cannot be a no-op', () => {
