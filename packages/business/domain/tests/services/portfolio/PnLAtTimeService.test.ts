@@ -239,6 +239,56 @@ describe('PnLAtTimeService.getPnL — unpriceable holdings', () => {
     expect(dust?.costBasis.toString()).toBe('400');
     expect(dust?.unrealizedPnl).toBeNull(); // no value, so no gain claimed
   });
+
+  test('a holding with no value but no `unpriceable` flag is excluded too', async () => {
+    // SC-505. `unpriceable` means "never had a price row AND is inside a
+    // cooldown", which is one of several reasons a value comes back null.
+    // A USD cash balance held by a GBP-base user has thousands of price
+    // rows and still resolves to nothing, because `forex-backfill` quotes
+    // every edge against USD and so never writes USD itself as the priced
+    // token. Gated on the flag alone, its whole cost basis stayed in a
+    // total its value never reached — drawn as a -100% loss on a cash
+    // balance that had not moved.
+    const valuation = makeValuationStub([
+      { holdingId: 'real', tokenId: 't1', valueInBase: new Decimal(1000) },
+      { holdingId: 'usd-cash', tokenId: 't-usd', valueInBase: null, unpriceable: false },
+    ]);
+    const costBasis = {
+      getCostBasis: async (holdingId: string) =>
+        holdingId === 'real'
+          ? costResult({ hasTransactions: true, costBasis: new Decimal(700) })
+          : costResult({
+              hasTransactions: true,
+              costBasis: new Decimal(9576),
+              realizedPnl: new Decimal(12),
+            }),
+      walkComponent: async () => {
+        throw new Error('walkComponent should not run — no transfers');
+      },
+    } as unknown as CostBasisService;
+    const svc = makeService(valuation, costBasis);
+
+    const r = await svc.getPnL('u', new Date(), USD, {
+      caches: {
+        transactions: new Map([
+          ['real', []],
+          ['usd-cash', []],
+        ]),
+      },
+    });
+
+    expect(r.totalCostBasis.toString()).toBe('700'); // not 10276
+    expect(r.totalRealizedPnl.toString()).toBe('0'); // not 12
+    expect(r.totalUnrealizedPnl.toString()).toBe('300'); // not -9276
+    // The narrow flag is untouched: this holding is not "unpriceable dust",
+    // it is one we could not value today, and the coverage counts already
+    // say so through `holdingsWithKnownValue`.
+    expect(r.holdingsUnpriceable).toBe(0);
+
+    const cash = r.perHolding.find((p) => p.holdingId === 'usd-cash');
+    expect(cash?.costBasis.toString()).toBe('9576'); // row keeps its own basis
+    expect(cash?.unrealizedPnl).toBeNull(); // and claims no loss against it
+  });
 });
 
 /**

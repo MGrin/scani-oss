@@ -1,6 +1,7 @@
 import type { Token } from '@scani/db/schema';
 import { createComponentLogger, logger } from '@scani/logging';
 import { Container, Service } from 'typedi';
+import { TokenTypeRepository } from '../../repositories/EnumRepositories';
 import { TokenPriceRepository } from '../../repositories/TokenPriceRepository';
 import { TokenRepository } from '../../repositories/TokenRepository';
 import { CurrencyConverter } from './CurrencyConverter';
@@ -8,12 +9,20 @@ import { PricingProviderRouter } from './PricingProviderRouter';
 
 const pricingLogger = createComponentLogger('pricing');
 
-interface CachedPrice {
+export interface CachedPrice {
   price: string;
   timestamp: Date;
   source: string;
   baseTokenId: string;
 }
+
+/**
+ * `source` stamped on a fiat price the price graph derived rather than
+ * `token_prices` holding it outright. Exported because it is the string a
+ * reader sees under a converted figure, and two surfaces already special-case
+ * price provenance by prefix.
+ */
+export const PRICE_GRAPH_FIAT_SOURCE = 'price-graph';
 
 /**
  * Top-level pricing orchestrator. Resolves cache hits, deduplicates
@@ -30,6 +39,7 @@ export class PricingService {
   private readonly ongoingRequests = new Map<string, Promise<Map<string, string>>>();
 
   private readonly tokenRepository = Container.get(TokenRepository);
+  private readonly tokenTypeRepository = Container.get(TokenTypeRepository);
   private readonly tokenPriceRepository = Container.get(TokenPriceRepository);
   private readonly providerRouter = Container.get(PricingProviderRouter);
   private readonly currencyConverter = Container.get(CurrencyConverter);
@@ -556,6 +566,32 @@ export class PricingService {
       }
     }
 
+    // A fiat token's price in the user's base currency IS an exchange rate,
+    // and `token_prices` is not where that rate lives for every currency.
+    // `forex-backfill` quotes every edge against the hub — `GBP -> USD`,
+    // `EUR -> USD` — so USD is never itself the priced token, and a USD cash
+    // balance is unpriceable for anyone whose base is not USD (SC-505).
+    //
+    // The graph already answers this: it inverts the `GBP -> USD` row and
+    // returns `USD -> GBP`. Ask it, rather than having forex-backfill write
+    // rows for a fact that is derivable from the rows it already writes —
+    // n² pairs of stored data that can disagree with each other.
+    //
+    // Placed ahead of the stale and sibling fallbacks deliberately. Both of
+    // those would fire for a fiat token too, and both are worse answers: in
+    // production the only `token_id = USD` row is a three-month-old
+    // `USD -> IDR` quote, which the stale path would convert twice and
+    // present as today's rate.
+    for (const [tokenId, rate] of (
+      await this.resolveFiatRatesToBase(
+        tokensToProcess.filter((t) => !cachedPrices.has(t.id)),
+        baseCurrencyToken,
+        timestamp
+      )
+    ).entries()) {
+      cachedPrices.set(tokenId, rate);
+    }
+
     const tokensNeedingFallback = tokensToProcess.filter((t) => !cachedPrices.has(t.id));
     const fallbackPrices = new Map<string, CachedPrice>();
 
@@ -925,6 +961,65 @@ export class PricingService {
     }
 
     return cachedPrice.price;
+  }
+
+  /**
+   * The exchange rate to `baseCurrencyToken` for each token in `tokens` that
+   * is a fiat currency, expressed as a price of one unit — which is what a
+   * cash holding is valued by.
+   *
+   * Non-fiat tokens are skipped: a crypto or equity price is a market quote
+   * that has to come from a provider, not something the FX graph can derive.
+   * A fiat pair the graph cannot route is absent from the map, on the same
+   * "absent means unpriceable, never zero" contract as everything else here.
+   *
+   * `getStoredRateDetail` rather than `getRate`: this serves a user read, so
+   * it must never make the caller wait on the exchangerate-api limiter, and a
+   * rate from yesterday dated honestly beats no rate at all (SC-222).
+   */
+  async resolveFiatRatesToBase(
+    tokens: readonly Token[],
+    baseCurrencyToken: Token,
+    timestamp: Date
+  ): Promise<Map<string, CachedPrice>> {
+    const resolved = new Map<string, CachedPrice>();
+    if (tokens.length === 0) return resolved;
+
+    const fiatType = await this.tokenTypeRepository.findByCode('fiat');
+    if (!fiatType) return resolved;
+
+    const fiat = tokens.filter((t) => t.typeId === fiatType.id && t.id !== baseCurrencyToken.id);
+    if (fiat.length === 0) return resolved;
+
+    const rates = await Promise.all(
+      fiat.map(async (token) => {
+        const detail = await this.currencyConverter.getStoredRateDetail(
+          token,
+          baseCurrencyToken,
+          timestamp
+        );
+        return { token, detail };
+      })
+    );
+
+    for (const { token, detail } of rates) {
+      if (!detail) continue;
+      resolved.set(token.id, {
+        price: detail.rate,
+        timestamp: detail.asOf,
+        source: PRICE_GRAPH_FIAT_SOURCE,
+        baseTokenId: baseCurrencyToken.id,
+      });
+    }
+
+    if (resolved.size > 0) {
+      pricingLogger.debug(
+        { count: resolved.size, baseCurrency: baseCurrencyToken.symbol },
+        'Resolved fiat holdings through the price graph'
+      );
+    }
+
+    return resolved;
   }
 
   private async getBatchCachedPrices(
