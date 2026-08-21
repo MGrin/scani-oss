@@ -188,3 +188,24 @@ function redactUrlForLog(url: string): string {
   // RFC 3986 cannot contain '/' or '@' anyway.
   return url.replace(/\/\/[^:/@]{1,256}:[^@/]{1,256}@/, '//<redacted>@');
 }
+
+export const DEMO_MODE_ENV_VAR = 'SCANI_DEMO_MODE';
+
+/**
+ * Demo mode is off unless the value is exactly `'1'`.
+ *
+ * Deliberately not `Boolean(value)` and not a truthy-string list: a demo flag
+ * that answers yes to `false`, `no` or `off` is a flag whose safe state
+ * depends on how carefully someone typed. `'1'` is also what `STUB_AI` and
+ * `STUB_CHAIN_DATA` already use in this repo.
+ *
+ * It lives HERE rather than beside the guards it belongs to
+ * (`@scani/domain`'s `src/demo/mode.ts`, which re-exports it) because
+ * `@scani/cloud-client` needs the same predicate and `@scani/domain` depends
+ * on `@scani/cloud-client` — importing the other way round is a cycle. A
+ * second copy of `=== '1'` would be the alternative, and the exactness is the
+ * whole security property, so there is only ever one of it.
+ */
+export function isDemoModeRequested(env: Record<string, string | undefined>): boolean {
+  return env[DEMO_MODE_ENV_VAR] === '1';
+}

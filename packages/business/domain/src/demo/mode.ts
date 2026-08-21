@@ -29,25 +29,21 @@
  * and assert that one passes.
  */
 
+import { DEMO_MODE_ENV_VAR, isDemoModeRequested } from '@scani/config';
 import type { DatabaseTransaction } from '@scani/db';
 import { db } from '@scani/db/connection';
 import * as schema from '@scani/db/schema';
 import { demoUuid } from './deterministic';
 import { DEMO_USER_EMAIL, DEMO_USER_NAME } from './persona';
 
-export const DEMO_MODE_ENV_VAR = 'SCANI_DEMO_MODE';
-
-/**
- * Off unless the value is exactly `'1'`.
- *
- * Deliberately not `Boolean(value)` and not a truthy-string list: a demo flag
- * that answers yes to `false`, `no` or `off` is a flag whose safe state
- * depends on how carefully someone typed. `'1'` is also what `STUB_AI` and
- * `STUB_CHAIN_DATA` already use in this repo.
- */
-export function isDemoModeRequested(env: Record<string, string | undefined>): boolean {
-  return env[DEMO_MODE_ENV_VAR] === '1';
-}
+// Layer 1 itself lives in `@scani/config`, and is re-exported here so this
+// file still reads as the one place the three layers are described.
+// `@scani/cloud-client` needs the same predicate — a demo has no
+// data-provider, so `SCANI_CLOUD_URL` is legitimately unset there while
+// production requires it — and `@scani/domain` depends on
+// `@scani/cloud-client`, so the import can only go one way. A second copy of
+// `=== '1'` was the alternative, and the exactness is the security property.
+export { DEMO_MODE_ENV_VAR, isDemoModeRequested };
 
 /** The persona's identity, derived rather than read — see `assertDemoOnlyUsers`. */
 export interface DemoIdentity {
