@@ -1,9 +1,13 @@
 import 'reflect-metadata';
 // CRITICAL: Validate env vars BEFORE importing anything that reads them.
 // loadEnv() will process.exit(1) with a clear error list on misconfiguration.
+import { loadDemoConfig } from './config/demo';
 import { loadEnv } from './config/env';
 
 const env = loadEnv();
+// Read before anything mounts a route: whether this process is the read-only
+// demo changes what it mounts, not just what it answers (SC-466).
+const demoConfig = loadDemoConfig();
 
 import { cors } from '@elysiajs/cors';
 import { trpc } from '@elysiajs/trpc';
@@ -11,6 +15,7 @@ import { loadCloudClientConfig } from '@scani/cloud-client';
 import { DataProviderHealthMonitor } from '@scani/cloud-client/health-monitor';
 import { probeDataProvider } from '@scani/cloud-client/health-probe';
 import { getNodeEnv, isNodeEnvProduction } from '@scani/config';
+import { assertDemoOnlyDatabase } from '@scani/domain/demo';
 import { createComponentLogger, createTimer, logger, sanitizeUrl } from '@scani/logging';
 import { flushSentry, initSentry, captureException as sentryCapture } from '@scani/logging/sentry';
 import { setSharedRedis } from '@scani/rate-limiter';
@@ -596,10 +601,23 @@ const app = new Elysia()
     })
   );
 
-registerAdminJobsRoutes(app, redisConnection);
-registerAdminDataRoutes(app, redisConnection);
-// One-click, no-login digest opt-out (SC-460). Public by design.
-registerUnsubscribeRoutes(app);
+// Every route below writes, and none of them goes through tRPC — so the
+// read-only middleware in `presentation/trpc.ts` cannot see them (SC-466).
+// A demo instance does not mount them at all: an unmounted route 404s, which
+// is a stronger statement than a handler that decides to refuse, and it means
+// the demo's HMAC secrets and unsubscribe tokens have no surface to be wrong
+// about.
+if (!demoConfig.enabled) {
+  registerAdminJobsRoutes(app, redisConnection);
+  registerAdminDataRoutes(app, redisConnection);
+  // One-click, no-login digest opt-out (SC-460). Public by design.
+  registerUnsubscribeRoutes(app);
+} else {
+  logger.warn(
+    {},
+    '🎭 Demo mode — admin, jobs and unsubscribe routes are not mounted; every tRPC mutation is refused'
+  );
+}
 
 app
   .get('/', () => ({ status: 'ok', service: 'api' }))
@@ -608,6 +626,19 @@ app
   // Elysia has already consumed the original request body stream, so we
   // rebuild the Request from the parsed body before handing it off.
   .all('/api/auth/*', async ({ request, body, headers, set }) => {
+    // A demo instance has no accounts to sign into and must not grow any: a
+    // sign-up here would put a second user in the database, which is exactly
+    // what `assertDemoOnlyDatabase` refuses to boot against — so the next
+    // restart would fail rather than the signup. Refused whole, including
+    // get-session: the frontend learns its posture from `demo.status` and
+    // never asks Better-Auth anything (SC-466).
+    if (demoConfig.enabled) {
+      set.status = 403;
+      return {
+        error: 'Forbidden',
+        message: 'This is a read-only demo — it has no accounts and no sign-in.',
+      };
+    }
     // Enumeration / brute-force defense. Better-Auth's signup +
     // sign-in responses distinguish "exists" from "new" / "wrong
     // password" by status code, so an attacker can probe a list of
@@ -1053,6 +1084,28 @@ app
   });
 
 wsLogger.info({ port: PORT, host: HOST }, '🔌 WebSocket endpoint configured');
+
+// The layer that makes SCANI_DEMO_MODE impossible to set in production, as
+// opposed to merely inadvisable (SC-466).
+//
+// Demo mode hands every anonymous request a session, so the only question that
+// matters is whose data is behind it. This one is asked of the database rather
+// than of configuration, because configuration is the thing that was wrong.
+// Production holds real accounts; the flag set there does not open a demo, it
+// stops the process here, before the port is open and before a single request
+// is served. `assertDemoOnlyUsers` states why an EMPTY database refuses too.
+if (demoConfig.enabled) {
+  try {
+    await assertDemoOnlyDatabase();
+    logger.warn(
+      { signupUrl: demoConfig.signupUrl },
+      '🎭 Demo mode ENABLED — anonymous read-only access to the demo persona, every write refused'
+    );
+  } catch (error) {
+    console.error(`\n❌ ${error instanceof Error ? error.message : String(error)}\n`);
+    process.exit(1);
+  }
+}
 
 const server = app.listen(PORT, () => {
   logger.info(

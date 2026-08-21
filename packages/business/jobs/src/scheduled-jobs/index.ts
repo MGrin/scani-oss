@@ -2,6 +2,7 @@ export { ALERT_SWEEP_SCHEDULE } from './alert-sweep';
 export { APY_PAYOUTS_SCHEDULE } from './apy-payouts';
 export { BACKFILL_COUNTERPARTY_SCHEDULE } from './backfill-counterparty';
 export { BACKFILL_TOKEN_IDENTITY_SCHEDULE } from './backfill-token-identity';
+export { DEMO_RESET_SCHEDULE } from './demo-reset';
 export { DLQ_DEPTH_PROBE_SCHEDULE } from './dlq-depth-probe';
 export { EXCHANGE_BALANCES_SCHEDULE } from './exchange-balances';
 export { EXCHANGE_TRANSACTIONS_SCHEDULE } from './exchange-transactions';

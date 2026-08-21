@@ -148,7 +148,35 @@ function checkApiRouters(): void {
 // Source of truth: each descriptor in
 // `packages/business/jobs/src/scheduled-jobs/<name>.ts` declares
 // `name: JOB_NAMES.X` and `cron: '…'`.
-// Doc target: the `## Scheduled jobs` table in `reference/jobs.md`.
+// Doc target: `reference/jobs.md`, which has TWO tables — the jobs the worker
+// actually registers, and the descriptors that exist without being listed in
+// `SCHEDULED_JOB_DESCRIPTORS`. Which table a job belongs in is derived here,
+// not trusted: a descriptor in the wrong one reads as a job that runs when it
+// does not, or the reverse.
+
+const SCHEDULED_JOBS_DOC = 'apps/frontend/docs/src/content/docs/reference/jobs.md';
+const LIVE_HEADING = 'Scheduled jobs';
+const UNREGISTERED_HEADING = 'Scheduled jobs — declared but not registered';
+
+// Exact-heading section slice. A `startsWith` split would match the
+// unregistered heading with the live one's prefix and silently merge them.
+function docSection(doc: string, heading: string): string | null {
+  const lines = doc.split('\n');
+  const start = lines.findIndex((l) => l.trim() === `## ${heading}`);
+  if (start === -1) return null;
+  const rest = lines.slice(start + 1);
+  const end = rest.findIndex((l) => l.startsWith('## '));
+  return (end === -1 ? rest : rest.slice(0, end)).join('\n');
+}
+
+// name → frequency cell, for every `| \`name\` | frequency | …` row.
+function scheduleTableRows(section: string): Map<string, string> {
+  const rows = new Map<string, string>();
+  for (const m of section.matchAll(/^\|\s*`([a-zA-Z][a-zA-Z0-9-]*)`\s*\|\s*([^|]+?)\s*\|/gm)) {
+    rows.set(m[1] as string, m[2] as string);
+  }
+  return rows;
+}
 
 function checkScheduledJobs(): void {
   const NAME = 'scheduled-jobs';
@@ -157,37 +185,81 @@ function checkScheduledJobs(): void {
     (f) => f.endsWith('.ts') && f !== 'index.ts'
   );
 
-  // Map filename (== job kebab name) → cron string.
+  // The registry the worker boots from, read as the literal list of exported
+  // const names inside `SCHEDULED_JOB_DESCRIPTORS = [ … ] as const`. A
+  // commented-out entry is therefore correctly read as NOT registered.
+  const index = read(`${dir}/index.ts`);
+  const registryBlock = index.split('SCHEDULED_JOB_DESCRIPTORS = [')[1]?.split('] as const')[0];
+  if (registryBlock === undefined) {
+    fail(NAME, `could not locate SCHEDULED_JOB_DESCRIPTORS in ${dir}/index.ts`);
+    return;
+  }
+  const registered = new Set(
+    Array.from(registryBlock.matchAll(/^\s*([A-Z][A-Z0-9_]*_SCHEDULE)\s*,/gm)).map((m) => m[1])
+  );
+
   const actual = new Map<string, string>();
+  const isRegistered = new Map<string, boolean>();
   for (const file of files) {
+    const name = file.replace(/\.ts$/, '');
     const src = read(`${dir}/${file}`);
     const cronMatch = src.match(/cron:\s*['"`]([^'"`]+)['"`]/);
+    const constMatch = src.match(/export const ([A-Z][A-Z0-9_]*_SCHEDULE)/);
     if (!cronMatch) {
       fail(NAME, `could not parse cron from ${dir}/${file}`);
       continue;
     }
-    actual.set(file.replace(/\.ts$/, ''), cronMatch[1]);
+    if (!constMatch) {
+      fail(NAME, `could not parse the exported \`*_SCHEDULE\` const from ${dir}/${file}`);
+      continue;
+    }
+    actual.set(name, cronMatch[1] as string);
+    isRegistered.set(name, registered.has(constMatch[1] as string));
   }
 
-  // Walk the `## Scheduled jobs` table for name + frequency cells.
-  const doc = read('apps/frontend/docs/src/content/docs/reference/jobs.md');
-  const section = doc.split(/^## Scheduled jobs/m)[1]?.split(/^## /m)[0] ?? '';
-  const documented = new Map<string, string>();
-  for (const row of section.matchAll(/^\|\s*`([a-zA-Z][a-zA-Z0-9-]*)`\s*\|\s*([^|]+?)\s*\|/gm)) {
-    documented.set(row[1], row[2]);
+  const doc = read(SCHEDULED_JOBS_DOC);
+  const liveSection = docSection(doc, LIVE_HEADING);
+  const unregisteredSection = docSection(doc, UNREGISTERED_HEADING);
+  if (liveSection === null) {
+    fail(NAME, `reference/jobs.md has no \`## ${LIVE_HEADING}\` section`);
+    return;
   }
+  if (unregisteredSection === null) {
+    fail(NAME, `reference/jobs.md has no \`## ${UNREGISTERED_HEADING}\` section`);
+    return;
+  }
+  const live = scheduleTableRows(liveSection);
+  const unregisteredRows = scheduleTableRows(unregisteredSection);
 
   for (const [name, cron] of actual) {
-    if (!documented.has(name)) {
+    const shouldBeLive = isRegistered.get(name) === true;
+    const table = shouldBeLive ? live : unregisteredRows;
+    const wrongTable = shouldBeLive ? unregisteredRows : live;
+    const rightHeading = shouldBeLive ? LIVE_HEADING : UNREGISTERED_HEADING;
+
+    if (!table.has(name)) {
       fail(
         NAME,
-        `reference/jobs.md is missing scheduled job \`${name}\` (cron \`${cron}\`). Source: ${dir}/${name}.ts`
+        wrongTable.has(name)
+          ? `reference/jobs.md has \`${name}\` in the wrong table. Move it to \`## ${rightHeading}\`.`
+          : `reference/jobs.md is missing scheduled job \`${name}\` (cron \`${cron}\`) from \`## ${rightHeading}\`. Source: ${dir}/${name}.ts`
       );
       continue;
     }
+
+    // Present in the right table is not enough — it must be ABSENT from the
+    // other one. A row in both reads as live to anyone who stops at the first
+    // table, which is the exact claim the split exists to prevent.
+    if (wrongTable.has(name)) {
+      fail(
+        NAME,
+        `reference/jobs.md lists \`${name}\` in BOTH job tables. It belongs only under \`## ${rightHeading}\`.`
+      );
+    }
+
     // Soft check: if the doc cell mentions a cron string verbatim, it must match.
-    const cell = documented.get(name) ?? '';
-    const docCron = cell.match(/`([0-9*/, ]+)`/)?.[1];
+    const cell = table.get(name) ?? '';
+    const docCron = cell.match(/`([-0-9*/, ]+)`/)?.[1];
     if (docCron && docCron !== cron) {
       fail(
         NAME,
@@ -195,7 +267,8 @@ function checkScheduledJobs(): void {
       );
     }
   }
-  for (const name of documented.keys()) {
+
+  for (const name of [...live.keys(), ...unregisteredRows.keys()]) {
     if (!actual.has(name)) {
       fail(
         NAME,

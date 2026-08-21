@@ -15,6 +15,7 @@ src/
     ├── backfill-counterparty.ts        (scheduled, nightly 05:30 UTC)
     ├── backfill-token-identity.ts      (scheduled, weekly Sun 02:00 UTC)
     ├── currency-rate-refresh.ts        (user-initiated)
+    ├── demo-reset.ts                   (scheduled, daily 06:00 UTC — ARMED ONLY when SCANI_DEMO_MODE=1, and then it is the only schedule this worker registers)
     ├── dlq-depth-probe.ts              (scheduled, every 15 minutes)
     ├── document-parse.ts               (user-initiated)
     ├── exchange-balances.ts            (scheduled, hourly)

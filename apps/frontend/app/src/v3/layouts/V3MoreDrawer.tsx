@@ -10,6 +10,7 @@ import {
 import { LogOut } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
+import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
 import { navIcon } from '../lib/nav-icons';
 import { V3_DRAWER_PRIMARY, V3_DRAWER_SECONDARY, V3_ROUTES } from '../lib/routes';
@@ -50,6 +51,7 @@ export function V3MoreDrawer({
   onSignOut,
 }: V3MoreDrawerProps) {
   const { t } = useTranslation();
+  const { isDemo } = useAuth();
   const close = () => onOpenChange(false);
 
   return (
@@ -137,8 +139,11 @@ export function V3MoreDrawer({
               }}
               className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-label text-loss focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
+              {/* Nobody is signed in on the demo, so the row that says "sign
+                  out" is both wrong and the only exit a visitor is offered
+                  (SC-466). `signOut` sends them to real signup there. */}
               <LogOut className="h-5 w-5 shrink-0" aria-hidden="true" />
-              <span>{t('nav.signOut')}</span>
+              <span>{isDemo ? t('v3.shell.demo.signUp') : t('nav.signOut')}</span>
             </button>
           </div>
         </BottomDrawerBody>
