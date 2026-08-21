@@ -146,6 +146,7 @@ runs the browser tests against it, and tears it down).
 - `packages/infra/rate-limiter` — Resilience primitives for upstream calls: rate limiting (Redis-backed in prod, in-memory fallback in tests), per-provider circuit breakers, retry-with-backoff.
 - `packages/infra/config` — Env-validation primitives (`requiredInProd`, `httpsUrlInProduction`, …) consumed by every app's startup schema.
 - `packages/infra/http-fetch` — Bounded HTTP fetcher for Open Graph metadata + similar fixed-budget pulls. SSRF-guarded, size-capped, timeout-bounded. Pure functions; no DI.
+- `packages/infra/deadline` — A bound on one `await` of a remote dependency (`withRedisTimeout`), plus the error it rejects with. Zero dependencies on purpose: `queue`, `rate-limiter` and `domain` all take it, and none of them may take each other.
 
 **`packages/clients/`** — outbound network adapters. Same dependency direction (business → clients → external world).
 - `packages/clients/providers` — **Unified 3rd-party integration package**: pricing, balances, transactions, AI inference, token-identity. Capability-based interfaces, one directory per provider (CoinGecko, DeFiLlama, Kraken, Binance, IBKR, Wise, OpenAI, Google Sheets, …). Single source of truth for every external service.

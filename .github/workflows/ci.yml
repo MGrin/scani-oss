@@ -97,6 +97,8 @@ jobs:
               - 'packages/infra/config/**'
             db:
               - 'packages/infra/db/**'
+            deadline:
+              - 'packages/infra/deadline/**'
             domain:
               - 'packages/business/domain/**'
             email:
