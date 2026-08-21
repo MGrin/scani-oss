@@ -15,7 +15,7 @@ import '@scani/domain/services';
 // the framework's tokens BEFORE WorkerClient.start resolves them.
 import '@scani/jobs';
 import { awaitSchemaReady, db } from '@scani/db';
-import { isDemoModeRequested } from '@scani/domain/demo';
+import { ensureDemoDatasetSeeded, isDemoModeRequested } from '@scani/domain/demo';
 import { DEMO_RESET_SCHEDULE, SCHEDULED_JOB_DESCRIPTORS } from '@scani/jobs';
 import { createComponentLogger } from '@scani/logging';
 import { flushSentry, initSentry, captureException as sentryCapture } from '@scani/logging/sentry';
@@ -378,9 +378,19 @@ async function main(): Promise<void> {
   // nightly rollup recomputes `portfolio_value_daily` over transactions nobody
   // made. `upsertAll` reconciles rather than merges, so passing the short list
   // also removes whatever a previous boot armed.
-  const schedules = isDemoModeRequested(process.env)
-    ? [DEMO_RESET_SCHEDULE]
-    : SCHEDULED_JOB_DESCRIPTORS;
+  const demoMode = isDemoModeRequested(process.env);
+
+  // A demo deployment runs the published images and has no checkout to seed
+  // from, so the worker fills an empty demo database before it arms anything
+  // (SC-467). Without this the api — which refuses to boot against a database
+  // that has not been shown to be a demo — crash-loops until 06:00 UTC, and a
+  // freshly deployed demo.scani.xyz serves nothing for up to a day. A no-op
+  // when the persona is already there; the daily reset owns re-anchoring.
+  if (demoMode) {
+    await ensureDemoDatasetSeeded();
+  }
+
+  const schedules = demoMode ? [DEMO_RESET_SCHEDULE] : SCHEDULED_JOB_DESCRIPTORS;
   await Container.get(JobScheduler).upsertAll(schedules);
 
   await workerClient.start();

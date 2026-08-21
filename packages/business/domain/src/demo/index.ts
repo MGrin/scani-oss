@@ -8,8 +8,16 @@ export {
   type DemoTransactionRow,
 } from './dataset';
 export {
+  type DemoBootstrapResult,
+  ensureDemoDatasetSeeded,
+  isDemoPersonaPresent,
+  todayAnchor,
+} from './bootstrap';
+export {
   assertDemoOnlyDatabase,
   assertDemoOnlyUsers,
+  assertNoForeignUsers,
+  assertNoForeignUsersInDatabase,
   DEMO_MODE_ENV_VAR,
   type DemoIdentity,
   DemoModeRefused,
