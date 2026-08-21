@@ -1,3 +1,5 @@
+import { withRedisTimeout } from './redis-timeout';
+
 /**
  * A Redis PING that is allowed to take a bounded amount of time (SC-294).
  *
@@ -32,26 +34,9 @@ export class RedisPingTimeoutError extends Error {
 /**
  * Resolves with the PING reply, or rejects with `RedisPingTimeoutError`.
  *
- * The timer is `unref`'d so a pending ping cannot hold the process open, and
- * cleared on the winning path so a burst of health checks does not accumulate
- * timers. The losing promise is left with a no-op catch rather than unhandled:
- * ioredis will settle it eventually, and an unhandled rejection arriving
- * minutes later — attributed to nothing — is its own debugging problem.
+ * Timer cleanup, `unref` and the no-op catch on the losing promise all live in
+ * `withRedisTimeout` — see there for why each is load-bearing.
  */
 export async function pingWithin(redis: PingableRedis, timeoutMs: number): Promise<string> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const ping = redis.ping();
-  ping.catch(() => undefined);
-
-  try {
-    return await Promise.race([
-      ping,
-      new Promise<never>((_, reject) => {
-        timer = setTimeout(() => reject(new RedisPingTimeoutError(timeoutMs)), timeoutMs);
-        timer.unref?.();
-      }),
-    ]);
-  } finally {
-    if (timer) clearTimeout(timer);
-  }
+  return withRedisTimeout(redis.ping(), timeoutMs, () => new RedisPingTimeoutError(timeoutMs));
 }
