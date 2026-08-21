@@ -122,3 +122,79 @@ describe('BullMqEnqueueService — mirror integration', () => {
     ).resolves.toBe('test-job_u1_res-9_r1');
   });
 });
+
+describe('BullMqEnqueueService — an unreachable queue store (SC-523)', () => {
+  // A `queue.add` that neither resolves nor rejects is what an unreachable
+  // Redis actually produces: the shared client is `maxRetriesPerRequest: null`
+  // (BullMQ requires it) and ioredis only flushes its offline queue when that
+  // option is a number, so the command sits there. Measured through this class
+  // against a real stopped container: HUNG 10003ms.
+  function setupHangingQueue() {
+    const fakeQueue = { add: mock(() => new Promise<void>(() => {})) };
+    Container.set(QueueClient, { get: () => fakeQueue } as never);
+    return fakeQueue;
+  }
+
+  test('THE DEFECT: add rejects instead of hanging when queue.add never settles', async () => {
+    setupHangingQueue();
+    const svc = new BullMqEnqueueService();
+    const started = Date.now();
+    await expect(
+      svc.add(TEST_DESCRIPTOR, { userId: 'u1', requestId: 'r1', resourceId: 'res-9' })
+    ).rejects.toThrow('redis enqueue timed out after 2000ms');
+    // The bound is the point, so assert it bounded something: a pass that took
+    // the suite's 30s timeout would be the defect, not the fix.
+    expect(Date.now() - started).toBeLessThan(10_000);
+  });
+
+  test('fails CLOSED: the mirror row is marked failed, so no job is silently lost', async () => {
+    setupHangingQueue();
+    const onEnqueueFailed = mock<
+      (jobId: string, err: Error, meta: Omit<EnqueuedJobMeta, 'payloadSummary'>) => Promise<void>
+    >(async () => {});
+    Container.set(ENQUEUE_MIRROR, { onEnqueued: async () => {}, onEnqueueFailed });
+    const svc = new BullMqEnqueueService();
+    await expect(
+      svc.add(TEST_DESCRIPTOR, { userId: 'u1', requestId: 'r1', resourceId: 'res-9' })
+    ).rejects.toBeInstanceOf(Error);
+    expect(onEnqueueFailed).toHaveBeenCalledTimes(1);
+    expect(onEnqueueFailed.mock.calls[0]?.[0]).toBe('test-job_u1_res-9_r1');
+    expect(onEnqueueFailed.mock.calls[0]?.[1].message).toContain('timed out');
+  });
+
+  // ---------------------------------------------------------------------
+  // The two below look deletable — they assert the ordinary thing still
+  // happens — and they are the reason this fix is not worse than the bug.
+  //
+  // A timeout is a discriminator, and the benign case that shares its signal
+  // is a store that is ALIVE and merely SLOW: a loaded box, a Fly host under
+  // pressure, a Lua script behind a big pipeline. A bound that fires there
+  // turns every import into a false "we couldn't start that" during exactly
+  // the load spike the queue exists to absorb — strictly worse than the
+  // spinner it replaced, and it would still pass every "it no longer hangs"
+  // test above. Argue with that reason before deleting the assertion.
+  // ---------------------------------------------------------------------
+  test('CONTROL: a healthy queue still enqueues, bound or no bound', async () => {
+    setupQueue();
+    const svc = new BullMqEnqueueService();
+    await expect(
+      svc.add(TEST_DESCRIPTOR, { userId: 'u1', requestId: 'r1', resourceId: 'res-9' })
+    ).resolves.toBe('test-job_u1_res-9_r1');
+  });
+
+  test('CONTROL: a slow-but-alive queue.add is still an enqueue, not a failure', async () => {
+    const fakeQueue = {
+      add: mock(async () => {
+        await Bun.sleep(300);
+      }),
+    };
+    Container.set(QueueClient, { get: () => fakeQueue } as never);
+    const onEnqueueFailed = mock(async () => {});
+    Container.set(ENQUEUE_MIRROR, { onEnqueued: async () => {}, onEnqueueFailed });
+    const svc = new BullMqEnqueueService();
+    await expect(
+      svc.add(TEST_DESCRIPTOR, { userId: 'u1', requestId: 'r1', resourceId: 'res-9' })
+    ).resolves.toBe('test-job_u1_res-9_r1');
+    expect(onEnqueueFailed).not.toHaveBeenCalled();
+  });
+});

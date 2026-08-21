@@ -73,6 +73,9 @@
     "packages/infra/config": {
       "project": ["src/**/*.ts"]
     },
+    "packages/infra/deadline": {
+      "project": ["src/**/*.ts"]
+    },
     "packages/infra/db": {
       "project": ["src/**/*.ts"]
     },

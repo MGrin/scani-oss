@@ -1,5 +1,5 @@
+import { withRedisTimeout } from '@scani/deadline';
 import type { Redis } from 'ioredis';
-import { withRedisTimeout } from '../redis-timeout';
 import { InMemoryBuckets } from './buckets';
 import { reportInflowDegraded } from './degraded';
 import { InflowRateLimiter, type InflowRateLimiterOptions } from './inflow-rate-limiter';
