@@ -43,7 +43,17 @@ export function lazyRoute(chunk: string, load: () => Promise<ComponentType>): Co
       <ChunkErrorBoundary chunk={chunk} onError={(error) => void reportClientError({ error })}>
         <Suspense
           fallback={
-            <div className="flex min-h-screen items-center justify-center">
+            // `data-route-pending` is the only signal that this route is still
+            // a network request. The shell is never split (see above), so
+            // `[data-ui="v3"]` is on screen from the first paint and says
+            // nothing about whether the route under it has arrived — which is
+            // how the visual gate photographed this spinner and filed it as
+            // the home screen's baseline (SC-473). Anything waiting for a
+            // routed screen waits for this attribute to go away.
+            <div
+              data-route-pending={chunk}
+              className="flex min-h-screen items-center justify-center"
+            >
               <LoadingSpinner />
             </div>
           }
