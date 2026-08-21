@@ -74,7 +74,7 @@ export {
   type EmailStream,
   UserRepository,
 } from './UserRepository';
-export { UserWalletRepository } from './UserWalletRepository';
+export { type StaleWalletTarget, UserWalletRepository } from './UserWalletRepository';
 export { VaultRepository } from './VaultRepository';
 export {
   type VendorDeleteImpact,

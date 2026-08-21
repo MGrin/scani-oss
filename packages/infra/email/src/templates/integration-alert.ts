@@ -63,12 +63,18 @@ export function renderIntegrationAlertEmail({
     ? `${integrations[0]?.name} is not syncing`
     : `${integrations.length} connections are not syncing`;
 
+  // "are not syncing", not "have stopped syncing": the list below may mix both
+  // reasons, and a connection that has never once delivered did not stop. Since
+  // SC-470 it can mix SOURCES too, so a run pairing a dead exchange with a
+  // wallet that never synced is ordinary rather than exceptional.
+  const listIntro = `${integrations.length} of your connections are not syncing:`;
+
   const textLines = [
     `Hi ${greeting},`,
     ``,
     one
       ? `${integrations[0]?.name} ${REASON_TEXT[integrations[0]?.reason ?? 'stopped']}.`
-      : `${integrations.length} of your connections have stopped syncing:`,
+      : listIntro,
   ];
   if (!one) {
     for (const item of integrations) {
