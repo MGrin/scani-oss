@@ -1,4 +1,5 @@
 import type { Redis } from 'ioredis';
+import { withRedisTimeout } from '../redis-timeout';
 import { OutflowRateLimiter } from './outflow-rate-limiter';
 
 // Lua-scripted sliding window on a Redis sorted set.
@@ -149,20 +150,15 @@ export class RedisOutflowRateLimiter extends OutflowRateLimiter {
     return typeof raw === 'number' ? raw : Number.parseInt(String(raw), 10);
   }
 
+  // Timer cleanup matters here in particular: `waitForSlot` calls this in a
+  // loop, so a leaked timer per attempt would accumulate one per acquisition
+  // for the whole window. `withRedisTimeout` owns that.
   private withTimeout<T>(work: Promise<T>): Promise<T> {
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const expiry = new Promise<never>((_, reject) => {
-      timer = setTimeout(
-        () => reject(new Error(`rate-limiter: Redis did not answer in ${this.timeoutMs}ms`)),
-        this.timeoutMs
-      );
-    });
-    // `finally` clears the timer on the happy path too — `waitForSlot` calls
-    // this in a loop, so a leaked timer per attempt would accumulate one per
-    // acquisition for the whole window.
-    return Promise.race([work, expiry]).finally(() => {
-      if (timer) clearTimeout(timer);
-    }) as Promise<T>;
+    return withRedisTimeout(
+      work,
+      this.timeoutMs,
+      () => new Error(`rate-limiter: Redis did not answer in ${this.timeoutMs}ms`)
+    );
   }
 
   private redisKey(subKey?: string): string {
