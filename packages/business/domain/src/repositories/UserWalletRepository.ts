@@ -116,7 +116,13 @@ export class UserWalletRepository extends BaseRepository<UserWallet, NewUserWall
         uw.label as wallet_label, uw.wallet_address, i.name as institution_name,
         (a.metadata->>'lastSync')::timestamptz as last_sync
       from accounts a
-      join user_wallets uw on uw.id::text = a.metadata->>'userWalletId'
+      join user_wallets uw
+        on uw.id::text = a.metadata->>'userWalletId'
+       -- The letter is addressed to a.user_id and NAMES uw.label. Without
+       -- this, one mis-set userWalletId puts another account's wallet label
+       -- in someone's inbox — a tenant boundary an alert may not cross on
+       -- the strength of a metadata field.
+       and uw.user_id = a.user_id
       join institutions i on i.id = a.institution_id
       where a.is_active
         and not a.is_hidden
