@@ -845,6 +845,23 @@
         "bulkDeletingContext": "Deleting holdings",
         "updated": "Holding updated",
         "updatingContext": "Updating holding"
+      },
+      "editCause": {
+        "title": "What did that change mean?",
+        "description": "The balance of {{holding}} moved. Scani cannot tell money moving from a figure being fixed from a balance growing, and each one is treated differently.",
+        "option": {
+          "flow": "Money moved",
+          "correction": "Fixing a figure",
+          "growth": "It grew"
+        },
+        "explain": {
+          "flow": "You added or withdrew money. It counts as a contribution, not as a gain.",
+          "correction": "The previous figure was wrong. Scani restates the history it covered instead of recording anything happening now.",
+          "growth": "Interest, a payout or a revaluation. This is the return, and it is the only way Scani can see it on a balance you keep by hand."
+        },
+        "dateLabel": "When did the money move?",
+        "cancel": "Cancel",
+        "save": "Save"
       }
     },
     "export": {

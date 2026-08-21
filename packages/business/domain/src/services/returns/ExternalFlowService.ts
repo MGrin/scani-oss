@@ -10,7 +10,14 @@ import type { PriceLookup } from '../pricing/PriceLookup';
 import type { WeightedHolding } from './ReturnsScopeResolver';
 
 /**
- * One movement of money across a scope's boundary, in base currency.
+ * One movement of money across a scope's boundary, in base currency — plus,
+ * since SC-510, the `restatement` rows that are not movements at all.
+ *
+ * A `correction` is carried here because the value series moved and TWR has to
+ * subtract that movement from the closing value or it reads as a gain. It is
+ * NOT a cashflow, and `toCashflows` in `ReturnsService` drops it by role.
+ * `kind` travels on every row, so a consumer that needs the distinction asks
+ * `flowRoleOf` rather than being handed a second, differently-computed flag.
  *
  * Kept as a ROW rather than reduced straight to a daily number, and that is a
  * decision about SC-458 (splitting asset return from FX return) rather than
@@ -152,6 +159,11 @@ export class ExternalFlowService {
     let staleValuedCount = 0;
 
     for (const tx of transactions) {
+      // `return` rows are the portfolio earning or spending its own value and
+      // never crossed a boundary. `restatement` rows did not cross one either,
+      // but they DID move the reconstructed value series — see the note on
+      // `ExternalFlow` — so they stay in and are dropped later, by role, only
+      // where they would become a cashflow.
       if (flowRoleOf(tx.kind) === 'return') continue;
       const weight = weights.get(tx.holdingId);
       if (!weight) continue;
