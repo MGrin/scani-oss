@@ -292,6 +292,22 @@ That claim was measured rather than assumed, on an aarch64 host against
    seed**, so what the baselines describe is the seed's content and not one
    database's rows.
 
+**`VISUAL_FRESH=1` costs a third of the hour's auth budget, every time.** It
+signs in *two* users — the seeded session and the empty one — against an api
+that rate-limits auth to **6 per IP per hour**, so three fresh runs in an hour
+is the whole allowance. Past it, `globalSetup` dies before a single screen is
+photographed:
+
+```
+Error: OTP request failed: 429 {"error":"Too Many Requests", …,"retryAfterSec":378}
+  at fixtures/auth.ts:25
+```
+
+That is a **budget, not an auth bug**, and it is worth knowing which because the
+run it kills produced zero captures and zero comparisons. A fresh-seed
+verification that ends this way has not passed and has not failed — it has not
+happened, and the other runs in the batch say nothing about it.
+
 SC-473 re-ran steps 1 and 2 for the three home screens it added, on a different
 host and a different stack: generated once, then asserted twice from containers
 started fresh each time, byte-identical both times.
@@ -362,8 +378,8 @@ The running-import variant of that panel is deliberately **not** covered: it is 
 job in flight, and a screen that changes when the job lands is not something a
 byte-exact baseline can hold still.
 
-Two smaller determinism decisions, both of which came out of the first
-generation run rather than out of a guess:
+Three smaller determinism decisions, each of which came out of a run rather
+than out of a guess:
 
 - **The clock is pinned** (`page.clock.setFixedTime`). `/payments/recurring/new`
   defaults its "First due" field to today and wrote today's date into its first
@@ -372,6 +388,93 @@ generation run rather than out of a guess:
   displayed, so its figure is a function of whatever FX rate the stack last
   fetched. `fixtures/visual-setup.ts` seeds USD for that reason, and it is a
   different portfolio — and a different session file — from the `shots` one.
+- **The page is sealed off the public internet** (`fixtures/visual-network.ts`).
+  See below; this one was not a decision until a baseline had already been
+  flaking on it for weeks.
+
+### Nothing off this machine — `fixtures/visual-network.ts`
+
+Every request to a host that is not loopback is intercepted. The institution
+mark is served from bytes in that file; anything else is aborted **and
+recorded**, and a screen that recorded one fails naming every URL it reached.
+
+The reason is worth keeping, because for as long as it lasted it looked like
+noise. `getFaviconUrl` (`apps/frontend/app/src/lib/icons.ts`) points every
+institution mark at `https://www.google.com/s2/favicons?domain=<host>&sz=64`,
+fetched over the public internet *while the screenshot is being taken*. That
+URL 301s to a **rotating** `t{0..3}.gstatic.com` shard — five consecutive runs
+went t3, t1, t2, t3, t1 — so a mark has to complete DNS and TLS to one host, a
+redirect, DNS and TLS to another, and the image, all inside the settle window.
+
+Six runs of an unchanged tree gave **one fail and five passes**. Forcing the two
+failure states deliberately, with `page.route` on the external URL only, says
+which one it was:
+
+| forced state | pixels different |
+|---|---|
+| fetch aborted → `FaviconImg` letter tile | 537, 537 |
+| fetch delayed past the capture | 591 |
+| **natural failing run, no probe** | **591** |
+
+So the mark's track photographed **empty**, not as a letter tile — and those two
+are distinguishable, which matters because "the icon broke" covers both and they
+have different fixes.
+
+**`toHaveScreenshot`'s retry manufactures confidence here rather than removing
+it.** It retries until two captures agree, and two consecutive captures of a
+mark that has not arrived agree perfectly. It logged `captured a stable
+screenshot` over the empty track and then reported a pixel count. That is
+SC-473's spinner exactly: a stable wrong answer reading identically to a stable
+right one.
+
+**`--update` was the wrong answer**, and it is the reflex a red run produces. It
+cannot remove the difference; it records whichever side of the coin that run
+landed on. A stale baseline fails consistently and gets fixed. A flaky one fails
+sometimes, gets re-run past, and takes the gate's credibility with it.
+
+**Raising the pixel threshold was the other wrong answer.** The tolerance would
+have to cover a mark that is absent, and a tolerance that wide is blind on every
+screen to buy determinism on one.
+
+Three things the seal deliberately does:
+
+- **It covers the whole off-host surface, not that one URL.** A gate that pins
+  the one external asset it currently knows about is non-deterministic again the
+  day somebody adds a second, silently. An unpinned off-host request is now a red
+  run that names it — all of them, not the first, because a page that reaches two
+  hosts and gets fixed for one is the same defect with a smaller number.
+- **It matches on the hostname, not on the word `favicon`.** A pattern like
+  `/favicon/i` also matches the app's own module URL under the dev server,
+  `http://localhost:<port>/@fs/…/components/FaviconImg.tsx`, so a route keyed on
+  the word intercepts the component instead of its image and the shell never
+  mounts. Measured while building this.
+- **It checks the substitution worked.** A screen declaring `institutionMark` in
+  `visual/screens.ts` must show a decoded `<img>` at the pinned URL. That looks
+  redundant beside a passing screenshot, and it is exactly what an interception
+  fulfilling with an empty body, a 404 or a zero-byte PNG would slip past:
+  `FaviconImg` catches the `onerror`, swaps in its letter tile, every screen still
+  renders and the gate goes green having deleted the thing it was asked to hold
+  still. **537 is what that looks like** — a passing-shaped fix that tests less
+  than before.
+
+The pinned mark is a flat magenta square rather than a copy of a real favicon.
+A baseline could never assert what a bank's logo looks like — those pixels were
+never ours — so what it holds is that a decoded image of the right size occupies
+the row's leading track, and the colour is chosen so a reviewer cannot mistake
+it for product design.
+
+**This does not change what the app does for a real user.** The SPA still fetches
+those icons from Google on every row, which is SC-208's subject — filed, and
+still open in fact if not in status.
+
+One thing this endpoint does that is *not* the cause here, recorded because it
+is true and misleading: it is not byte-stable either. Ten requests for
+`?domain=chase.com&sz=64` over ten seconds returned a 1568-byte JPEG seven times
+and a 625-byte palettised PNG three times, and a browser-shaped `Accept` header
+changes nothing. At 20 CSS pixels those two renderings differ in 293 of 400
+pixels. But the seeded institution is `www.jpmorganchase.com`, whose bytes did
+not move across thirty observations — so that is a real hazard of the dependency
+and not what turned these baselines red.
 
 ### Tall viewports rather than `fullPage`
 
