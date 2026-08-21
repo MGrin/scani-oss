@@ -242,7 +242,164 @@ sign-ins to 6 per IP per hour, so re-authenticating on every run would lock the
 harness out after a handful of invocations. `--fresh` when you want a clean
 account.
 
-Baselines are deliberately *not* part of this: macOS-rendered PNGs will never
-match `ubuntu-latest`. If this grows into `toHaveScreenshot` regression
-testing, baselines must be generated in CI only, inside the Playwright Docker
-image, and updated one branch at a time.
+No baselines here: this harness renders on whatever machine runs it, and a
+macOS-rendered PNG is not comparable to anything. Pixel assertions are the next
+section's job.
+
+## Visual regression — `bun run visual`
+
+Eight committed baselines, asserted pixel-for-pixel. Where `shots` is a loop
+for a person, this is a gate: it fails a run when a screen changed and nobody
+said it should.
+
+```bash
+bun dev:stack                 # repo root — same prerequisite as `shots`
+cd apps/e2e
+bun run visual                # assert against the committed baselines
+bun run visual -- --update    # regenerate them (see the discipline below)
+bun run visual -- --screen=holdings-phone
+```
+
+| Flag | Effect |
+|---|---|
+| `--update` | Regenerate baselines instead of asserting against them |
+| `--screen=` | Run one screen; the names are in `visual/screens.ts` |
+| `--keep-server` | Leave the browser container up after the run |
+
+### Every pixel is rendered in a container, and that is the whole design
+
+The ticket (SC-24) said baselines had to be generated *in CI*, inside the
+Playwright Docker image, because macOS and `ubuntu-latest` do not rasterise the
+same text. The reasoning was right and the mechanism is gone — GitHub Actions is
+billing-blocked account-wide (SC-128, SC-414). But the requirement was never CI.
+It was **a deterministic Linux renderer**, and that is a container, which runs
+here today.
+
+So `scripts/visual.ts` starts `playwright run-server` inside
+`mcr.microsoft.com/playwright:v<version>-noble`, points the runner at it over
+`connectOptions`, and tears it down. There is deliberately **no host fallback**:
+`fixtures/visual-setup.ts` throws when `PW_VISUAL_WS` is unset, because a
+baseline rendered by whatever Chromium is on a laptop is exactly the artefact
+this replaces.
+
+That claim was measured rather than assumed, on an aarch64 host against
+`v1.60.0-noble`, in three steps:
+
+1. One screen, four captures, **two separate containers** — four PNGs with a
+   single sha256 between them. Identical, not "within tolerance".
+2. All five baselines re-asserted from a fresh container at `maxDiffPixels: 0`.
+3. All five re-asserted again after `VISUAL_FRESH=1` — a **new user and a new
+   seed**, so what the baselines describe is the seed's content and not one
+   database's rows.
+
+SC-473 re-ran steps 1 and 2 for the three home screens it added, on a different
+host and a different stack: generated once, then asserted twice from containers
+started fresh each time, byte-identical both times.
+
+That is why `toHaveScreenshot` runs at zero tolerance rather than at a guessed
+threshold, and it is worth re-running rather than trusting if you change the
+image tag or the host's architecture.
+
+The other half of the claim was checked too: an injected defect is caught. A
+4px change to the default button height went red on both desktop baselines with
+a legible diff, and swapping the destructive alert's colour to a `warning` that
+does not exist in the preset — the exact defect this is aimed at — went red on
+both kitchen-sink baselines while the other three stayed green.
+
+Three things that are not obvious:
+
+- **The image tag is derived from the installed `playwright-core`**, not from
+  the range in `package.json`. Playwright refuses to connect across a version
+  mismatch, and a tag written by hand is a tag that goes stale on the next bump.
+- **The host's `node_modules/playwright` is mounted into the container** rather
+  than installed there. Same package by construction, and a run needs no npm
+  registry. It also means the visual gate needs no `playwright install` on the
+  host — the browsers it uses are the image's.
+- **The browser reaches the stack through the client, not through Docker.**
+  `exposeNetwork: '<loopback>'` tunnels the container's `localhost` requests back
+  to this machine, which is the only arrangement where the address the browser
+  uses is the `localhost:<port>` this checkout publishes the app on — what the
+  SPA is built against and what its session cookie is scoped to. A compose
+  network would need neither of those to be true, and both are.
+- **The port is this checkout's, not the documented default.** `scripts/visual.ts`
+  derives it through `scripts/lib/worktree.ts`, the same way `scripts/run.ts`
+  does (SC-491, SC-495). Without that, a run from a linked worktree did not fail
+  to find a stack — it found the primary checkout's, signed in against it and
+  seeded a portfolio into somebody else's database.
+
+### Which screens, and why those
+
+`visual/screens.ts` is the list, and every entry carries the defect class it is
+there to catch. The set is small on purpose: a screenshot per route is not the
+goal. These are the classes it is aimed at, all four of which reached `main` and
+were found by a person looking at a browser rather than by the suite — an
+invisible callout (`warning` is not a colour in the preset), a 40px control on a
+44px row, two Cancel buttons 80px apart, a heading over a contradicting count.
+
+The rule for exclusion matters as much. **A screen whose content is not a
+function of the seed does not belong here.** An untrusted baseline gets
+`--update`d away, which is worse than no baseline, because it also costs the
+review the diff.
+
+Home was excluded under that rule until SC-473, on the reasoning that its hero
+is a net-worth chart whose x-axis is dated from the seeded account's own age, so
+its baseline would go red every day by itself. That was wrong, and the correction
+is worth knowing before excluding anything else on a similar argument: the axis
+is dated from the **client's** clock, which the spec has pinned since the first
+generation run. `homePeriodRange` windows the series off `new Date()`,
+`setFixedTime` makes that one instant, and the request therefore asks for the
+same thirty days on every run. Home now holds three of the eight baselines.
+
+The third of those, `home-empty-phone`, is photographed as a **second signed-in
+user with nothing in it**. Home picks its onboarding panel over its portfolio on
+`counts.holdings === 0`, so the state a new account is greeted with is
+unreachable from the seeded session — and emptying that session to reach it
+would delete what the other baselines are pictures of. `fixtures/visual-setup.ts`
+writes both storage states; a screen names the one it wants with
+`session: 'empty'`, and the spec groups the tests by session because
+`storageState` is fixture configuration and cannot be chosen inside a test body.
+The running-import variant of that panel is deliberately **not** covered: it is a
+job in flight, and a screen that changes when the job lands is not something a
+byte-exact baseline can hold still.
+
+Two smaller determinism decisions, both of which came out of the first
+generation run rather than out of a guess:
+
+- **The clock is pinned** (`page.clock.setFixedTime`). `/payments/recurring/new`
+  defaults its "First due" field to today and wrote today's date into its first
+  baseline.
+- **The seed is base-currency-only.** A EUR holding has to be converted to be
+  displayed, so its figure is a function of whatever FX rate the stack last
+  fetched. `fixtures/visual-setup.ts` seeds USD for that reason, and it is a
+  different portfolio — and a different session file — from the `shots` one.
+
+### Tall viewports rather than `fullPage`
+
+The v3 shell is a `100vh` column whose `<main>` is the scroller, so the document
+never overflows and Playwright's `fullPage` option captures exactly the viewport
+and nothing more. Growing the viewport is the only way to photograph what is
+below the fold. It also has the better diff: a fixed-size image compares pixel
+for pixel, where a content-sized one fails as an unreadable size mismatch the
+first time a row is added.
+
+### Baselines are migrations
+
+One branch at a time, reviewed as the image diff in that branch's PR.
+`--update` is the answer to a red run only **after** somebody has looked at what
+went red. Regenerating the set to make a build green deletes the only record of
+what changed — and since nothing else in this repo looks at these screens, that
+record is the entire product of the gate.
+
+`apps/frontend/app/tests/v3/visual-baselines.test.ts` holds the part that needs
+no Docker, and it runs in `bun run test`: a screen with no baseline, a baseline
+with no screen, and a baseline rendered at the wrong viewport width all fail
+there. That is the same tie `a11y-coverage.test.ts` keeps between the
+accessibility gate and `fixtures/v3-routes.ts`.
+
+### Widening it
+
+The cheapest place is `/kitchen-sink`. It renders every `@scani/ui` primitive
+against the v3 tokens in both themes at once with no network data behind any of
+it, and both of its baselines are already in the set — so a specimen added to
+the gallery is covered by the next `--update` for free, on a screen that cannot
+drift.

@@ -32,8 +32,9 @@
  *    `playwright.visual.config.ts`) tunnels the container's requests for
  *    `localhost` back out to this machine. That is not only simpler than a
  *    compose network — it is the only arrangement where the address the
- *    browser uses is `http://localhost:5173`, which is what the SPA is built
- *    against and what its session cookie is scoped to.
+ *    browser uses is the `localhost:<port>` this checkout publishes the app
+ *    on, which is what the SPA is built against and what its session cookie
+ *    is scoped to.
  * 3. **The container's published port is chosen by Docker, and its name
  *    carries a digest of this checkout's path.** Both so two worktrees can
  *    run the gate at the same time — the same reason `scripts/dev-db.ts`
@@ -49,9 +50,29 @@ import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { basename, dirname, resolve } from 'node:path';
+import { isPrimaryCheckout, stackPorts } from '../../../scripts/lib/worktree';
 
 const E2E_ROOT = resolve(import.meta.dir, '..');
 const REPO_ROOT = resolve(E2E_ROOT, '../..');
+
+/**
+ * Where this checkout's stack is, the same way `scripts/run.ts` resolves it
+ * (SC-491, SC-495).
+ *
+ * The fixtures default to `localhost:5173` and `localhost:3011`, which are the
+ * PRIMARY checkout's published ports — so from a linked worktree this harness
+ * did not fail to find a stack, it found *somebody else's*, signed in against
+ * it and seeded a portfolio into the database they were working in. Deriving
+ * the ports here is what makes "the stack this run talks to is the one this
+ * worktree started" true rather than incidental.
+ */
+const PORTS = stackPorts(REPO_ROOT, isPrimaryCheckout(REPO_ROOT));
+const STACK_ENV: Record<string, string> = {
+  PLAYWRIGHT_BASE_URL:
+    process.env.PLAYWRIGHT_BASE_URL ?? `http://localhost:${PORTS.FRONTEND_HOST_PORT}`,
+  API_BASE_URL: process.env.API_BASE_URL ?? `http://localhost:${PORTS.API_HOST_PORT}`,
+  MAILPIT_URL: process.env.MAILPIT_URL ?? `http://localhost:${PORTS.MAILPIT_UI_HOST_PORT}`,
+};
 
 const USAGE = `bun run visual [options]
 
@@ -191,8 +212,9 @@ const { ws, stop } = startServer(image, name);
 let status = 1;
 try {
   await waitForServer(ws);
-  // intentional: names the renderer every baseline in this run was produced by
-  console.log(`Rendering in ${image} (${name})`);
+  // intentional: names the renderer every baseline in this run was produced by,
+  // and the stack it is pointed at — see PORTS above for why that is not noise
+  console.log(`Rendering in ${image} (${name}) against ${STACK_ENV.PLAYWRIGHT_BASE_URL}`);
 
   status =
     spawnSync(
@@ -204,7 +226,7 @@ try {
         ...(update ? ['--update-snapshots'] : []),
         ...(screen ? ['--grep', screen] : []),
       ],
-      { stdio: 'inherit', cwd: E2E_ROOT, env: { ...process.env, PW_VISUAL_WS: ws } }
+      { stdio: 'inherit', cwd: E2E_ROOT, env: { ...process.env, ...STACK_ENV, PW_VISUAL_WS: ws } }
     ).status ?? 1;
 
   if (update && status === 0) {
