@@ -58,11 +58,17 @@ because the file is in the tree and a reader who finds it deserves to know
 which half is missing — not because they are live. The table above is the
 list of live jobs.
 
-**There are none right now.** The table below is empty, and that is the
-correct steady state — a descriptor belongs here only for as long as its
-processor is unwritten. `payment-due-reminder` was the last one; it moved to
-the live table above when `PaymentDueReminderProcessor` landed in the same
-commit that registered it (SC-226).
+A descriptor belongs here only for as long as its processor is unwritten —
+`payment-due-reminder` was one, and moved to the live table above when
+`PaymentDueReminderProcessor` landed in the same commit that registered it
+(SC-226).
+
+**`demo-reset` is the one entry that is deliberately permanent**, and it is
+the exception to the paragraph above: its processor exists and is registered,
+but the worker arms the schedule only when `SCANI_DEMO_MODE=1` — and in that
+case it arms *nothing else*, because every other job here damages the seeded
+demo dataset. So on the deployment you are reading about it does not run, and
+on a demo instance it is the only job that does.
 
 The heading stays even when empty, because `scripts/check-docs.ts` reads both
 tables and fails if either is missing — and a page that silently loses the
@@ -70,6 +76,7 @@ distinction is how a job that never runs gets read as one that does.
 
 | Name | Frequency when registered | Blocked on | Purpose |
 |---|---|---|---|
+| `demo-reset` | `0 6 * * *` | Nothing — armed by `SCANI_DEMO_MODE=1`, never by the registry | Rebuilds the demo dataset from its seed, re-anchored to today. The re-anchoring is the point: the committed anchor is dated 2027 so the visual gate stays byte-stable, and against a browser clock it prints a 30-day gain that never happened over an empty bill list (SC-466). |
 
 ## User-initiated jobs
 

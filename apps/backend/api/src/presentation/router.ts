@@ -5,6 +5,7 @@ import { accountsRouter } from './routers/accounts';
 import { batchOperationsRouter } from './routers/batch-operations';
 import { clientErrorsRouter } from './routers/client-errors';
 import { dashboardRouter } from './routers/dashboard';
+import { demoRouter } from './routers/demo';
 import { documentsRouter } from './routers/documents';
 import { exportsRouter } from './routers/exports';
 import { fileImportRouter } from './routers/file-import';
@@ -33,6 +34,10 @@ import { publicProcedure, router } from './trpc';
 const tokensRouter = createTokensRouter(db, schema);
 
 export const appRouter = router({
+  // Demo posture (public) — whether this deployment is the read-only demo.
+  // Answered before the app asks for a session, so it must not need one.
+  demo: demoRouter,
+
   // User management (protected)
   users: usersRouter,
 

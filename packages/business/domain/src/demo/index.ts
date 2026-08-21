@@ -8,6 +8,16 @@ export {
   type DemoTransactionRow,
 } from './dataset';
 export {
+  assertDemoOnlyDatabase,
+  assertDemoOnlyUsers,
+  DEMO_MODE_ENV_VAR,
+  type DemoIdentity,
+  DemoModeRefused,
+  demoIdentity,
+  foreignUserEmails,
+  isDemoModeRequested,
+} from './mode';
+export {
   DEMO_ANCHOR_DATE,
   DEMO_BASE_CURRENCY,
   DEMO_COST_BASIS_METHOD,

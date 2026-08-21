@@ -1,3 +1,4 @@
+import { demoIdentity } from '@scani/domain/demo';
 import {
   createComponentLogger,
   createTimer,
@@ -10,6 +11,7 @@ import type { InflowRateLimiter } from '@scani/rate-limiter';
 import { initTRPC, TRPCError } from '@trpc/server';
 import type { FetchCreateContextFnOptions } from '@trpc/server/adapters/fetch';
 import type { BetterAuthInstance } from '../auth/better-auth';
+import { isDemoMode } from '../config/demo';
 import { type AuthContext, createAuthContext } from './middleware/auth';
 
 const trpcLogger = createComponentLogger('trpc');
@@ -94,14 +96,29 @@ export const createContext = async (opts?: FetchCreateContextFnOptions): Promise
       'Session-revoke limiter not initialized — setSessionRevokeLimiterForContext must be called at boot'
     );
   }
-  const authContext = opts?.req
-    ? await createAuthContext({ req: opts.req, betterAuth: betterAuthRef })
-    : {
-        userId: null,
-        email: null,
-        isAuthenticated: false,
+  // Demo mode does not resolve a session, and that is the point (SC-466 #1).
+  // The dataset's scheduled reset deletes the demo user and rewrites it, which
+  // cascades away every `user_sessions` row hanging off it — so a demo built on
+  // a real session logs its visitor out on every reset, which is what SC-465
+  // measured. There is no cookie here to invalidate: the identity is derived
+  // from constants (`demoIdentity()` returns the same uuid the seeder writes),
+  // so a reset is invisible to whoever is looking at the demo when it fires.
+  const demoUser = isDemoMode() ? demoIdentity() : null;
+  const authContext = demoUser
+    ? {
+        userId: demoUser.id,
+        email: demoUser.email,
+        isAuthenticated: true,
         dbUser: null,
-      };
+      }
+    : opts?.req
+      ? await createAuthContext({ req: opts.req, betterAuth: betterAuthRef })
+      : {
+          userId: null,
+          email: null,
+          isAuthenticated: false,
+          dbUser: null,
+        };
 
   return {
     requestId,
@@ -266,28 +283,54 @@ const safeStringify = (value: unknown): string => {
   }
 };
 
+/**
+ * Demo mode is read-only, and this is where that is true (SC-466).
+ *
+ * Enforced on `type`, not on a list of procedure names: every mutation the
+ * app has and every mutation it grows is covered the day it is written, and
+ * nobody has to remember to add it here. It sits above the auth middleware so
+ * a refused write says FORBIDDEN — "this deployment will not do that" — rather
+ * than UNAUTHORIZED, which would be a lie in a session that is authenticated.
+ *
+ * The UI is deliberately NOT disabled to match. A greyed-out button is a
+ * statement about the client; this is a statement about the server, and it is
+ * the only one that survives someone opening a console.
+ */
+const demoReadOnly = t.middleware(async ({ type, path, next }) => {
+  if (isDemoMode() && type === 'mutation') {
+    throw new TRPCError({
+      code: 'FORBIDDEN',
+      message: `This is a read-only demo — '${path}' and every other write is refused by the server.`,
+    });
+  }
+  return next();
+});
+
 // Enhanced procedure with logging
 // NOTE: Request cache is shared across all procedures via HTTP-level wrapper in index.ts
-export const publicProcedure = t.procedure.use(loggingMiddleware);
+export const publicProcedure = t.procedure.use(loggingMiddleware).use(demoReadOnly);
 
 // Protected procedure that requires authentication
 // Note: dbUser is NOT checked here - it will be fetched lazily by requireAuth when needed
-export const protectedProcedure = t.procedure.use(loggingMiddleware).use(async ({ ctx, next }) => {
-  if (!ctx.isAuthenticated || !ctx.userId) {
-    throw new TRPCError({
-      code: 'UNAUTHORIZED',
-      message: 'Authentication required',
+export const protectedProcedure = t.procedure
+  .use(loggingMiddleware)
+  .use(demoReadOnly)
+  .use(async ({ ctx, next }) => {
+    if (!ctx.isAuthenticated || !ctx.userId) {
+      throw new TRPCError({
+        code: 'UNAUTHORIZED',
+        message: 'Authentication required',
+      });
+    }
+    return next({
+      ctx: {
+        ...ctx,
+        userId: ctx.userId,
+        email: ctx.email,
+        dbUser: ctx.dbUser,
+      },
     });
-  }
-  return next({
-    ctx: {
-      ...ctx,
-      userId: ctx.userId,
-      email: ctx.email,
-      dbUser: ctx.dbUser,
-    },
   });
-});
 
 // Create router
 export const router = t.router;

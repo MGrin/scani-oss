@@ -42,11 +42,17 @@ Located in `apps/backend/api/src/presentation/routers/`.
 | `jobs` | HMAC-gated operator endpoints: retry, remove, DLQ replay. |
 | `batch-operations` | Batched mutations the SPA uses for bulk edits. |
 | `client-errors` | Endpoint the SPA posts unhandled-error reports to. |
+| `demo` | Public and session-free. `status` answers whether this deployment is the read-only demo (`SCANI_DEMO_MODE=1`), and on the demo returns the persona's identity and the signup URL. The SPA asks this before it asks for a session, so it must not need one. |
 | `exports` | `renderPdf` typesets a workbook the client already assembled — it reads no holdings of its own, so a statement cannot drift from the CSV beside it; the account name comes from the session, never the input. `everything` returns the whole account for the "export everything" file. |
 
-Auth: every router except the user-facing magic-link entry points
-requires a Better-Auth session cookie. The `jobs` router additionally
-requires an HMAC signature using `JOBS_HMAC_SECRET`.
+Auth: every router except the user-facing magic-link entry points and
+`demo` requires a Better-Auth session cookie. The `jobs` router
+additionally requires an HMAC signature using `JOBS_HMAC_SECRET`.
+
+On a demo deployment (`SCANI_DEMO_MODE=1`) every **mutation** in every
+router above is refused with `FORBIDDEN` before its resolver runs, and
+the identity behind every query is the demo persona rather than a
+session. See [Environment variables](/reference/environment/).
 
 ## data-provider (apps/backend/data-provider)
 
