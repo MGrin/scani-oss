@@ -8,7 +8,9 @@ import {
   type ClaimedAlert,
   InstitutionRepository,
   type StaleSyncTarget,
+  type StaleWalletTarget,
   UserRepository,
+  UserWalletRepository,
 } from '../repositories';
 
 const logger = createComponentLogger('use-case:integration-alerts');
@@ -35,6 +37,8 @@ export interface IntegrationAlertOptions {
 export interface IntegrationAlertSummary {
   /** Broken integrations found, across every account, eligible or not. */
   stale: number;
+  /** Of those, the ones that are on-chain wallets rather than credentialed (SC-470). */
+  staleWallets: number;
   /** Accounts holding at least one of them. */
   affectedUsers: number;
   /** Of those, the ones that may be mailed — verified, not opted out. */
@@ -53,6 +57,7 @@ export interface IntegrationAlertSummary {
 function emptySummary(): IntegrationAlertSummary {
   return {
     stale: 0,
+    staleWallets: 0,
     affectedUsers: 0,
     eligibleUsers: 0,
     claimed: 0,
@@ -61,6 +66,23 @@ function emptySummary(): IntegrationAlertSummary {
     resolved: 0,
     unconfigured: false,
   };
+}
+
+/**
+ * One broken connection, flattened out of whichever probe found it.
+ *
+ * The two probes disagree about almost everything — what row is authoritative,
+ * what "never synced" means, whether a credential is even involved — and none
+ * of that survives to this point. What the rest of the sweep needs is a user, a
+ * stable key to dedupe on, and a line of text; anything else here would make
+ * the claim/send/resolve path grow a branch per source.
+ */
+interface AlertTarget {
+  userId: string;
+  /** Written into `alert_deliveries.dedupe_key`. Stable across runs, per fault. */
+  dedupeKey: string;
+  name: string;
+  reason: StaleIntegrationItem['reason'];
 }
 
 /**
@@ -91,6 +113,7 @@ function emptySummary(): IntegrationAlertSummary {
 @Service()
 export class SendIntegrationAlertsUseCase {
   private readonly institutions = Container.get(InstitutionRepository);
+  private readonly wallets = Container.get(UserWalletRepository);
   private readonly users = Container.get(UserRepository);
   private readonly deliveries = Container.get(AlertDeliveryRepository);
   private readonly email = Container.get(EmailFacade);
@@ -114,11 +137,21 @@ export class SendIntegrationAlertsUseCase {
     }
 
     const cutoff = new Date(now.getTime() - options.staleAfterHours * 60 * 60 * 1000);
-    const stale = await this.institutions.findStaleSyncTargets(cutoff);
-    summary.stale = stale.length;
+    // Both probes, one rule, one letter. A dead exchange and a dead wallet in
+    // the same night is one thing that happened to the reader — splitting them
+    // into two rules would mail them twice within the same second and would
+    // also break `resolve` below, which takes the CURRENT truth for a whole
+    // rule and deletes everything absent from it (SC-470).
+    const [credentialed, staleWallets] = await Promise.all([
+      this.institutions.findStaleSyncTargets(cutoff),
+      this.wallets.findStaleWalletTargets(cutoff),
+    ]);
+    const targets = [...credentialed.map(fromCredential), ...staleWallets.map(fromWallet)];
+    summary.stale = targets.length;
+    summary.staleWallets = staleWallets.length;
 
-    const byUser = new Map<string, StaleSyncTarget[]>();
-    for (const target of stale) {
+    const byUser = new Map<string, AlertTarget[]>();
+    for (const target of targets) {
       const bucket = byUser.get(target.userId);
       if (bucket) bucket.push(target);
       else byUser.set(target.userId, [target]);
@@ -157,7 +190,7 @@ export class SendIntegrationAlertsUseCase {
     // and stay silent.
     summary.resolved = await this.deliveries.resolve(
       INTEGRATION_STALE_RULE,
-      stale.map((t) => ({ userId: t.userId, dedupeKey: t.credentialId }))
+      targets.map((t) => ({ userId: t.userId, dedupeKey: t.dedupeKey }))
     );
 
     return summary;
@@ -165,13 +198,13 @@ export class SendIntegrationAlertsUseCase {
 
   private async alertOne(
     recipient: AlertRecipient,
-    targets: StaleSyncTarget[],
+    targets: AlertTarget[],
     options: IntegrationAlertOptions,
     now: Date
   ): Promise<{ claimed: number; sent: number; failed: number }> {
     const claimed = await this.deliveries.claim(
       INTEGRATION_STALE_RULE,
-      targets.map((t) => ({ userId: recipient.id, dedupeKey: t.credentialId })),
+      targets.map((t) => ({ userId: recipient.id, dedupeKey: t.dedupeKey })),
       now
     );
     if (claimed.length === 0) return { claimed: 0, sent: 0, failed: 0 };
@@ -205,6 +238,33 @@ export class SendIntegrationAlertsUseCase {
   }
 }
 
+function fromCredential(target: StaleSyncTarget): AlertTarget {
+  return {
+    userId: target.userId,
+    dedupeKey: target.credentialId,
+    name: target.institutionName,
+    reason: target.kind === 'orphaned-credential' ? 'never-synced' : 'stopped',
+  };
+}
+
+/**
+ * A wallet is named by the user's own label AND its chain, because neither
+ * alone identifies it: the label is shared by every chain the address is
+ * active on, and the chain is shared by every wallet they hold on it. The
+ * credentialed side has no such problem — one Kraken is one Kraken.
+ */
+function fromWallet(target: StaleWalletTarget): AlertTarget {
+  return {
+    userId: target.userId,
+    dedupeKey: target.accountId,
+    name: `${target.walletLabel} (${target.institutionName})`,
+    // 'never-synced' only when the account has genuinely never produced a
+    // successful sync. Anything else worked once and then stopped, which is
+    // the whole reason a cold wallet's silence is unreadable to its owner.
+    reason: target.lastSync === null ? 'never-synced' : 'stopped',
+  };
+}
+
 /**
  * The letter lists what this run CLAIMED, not everything currently broken.
  *
@@ -212,17 +272,11 @@ export class SendIntegrationAlertsUseCase {
  * `targets`; repeating it is how a reader learns the alert is a status page
  * rather than news.
  */
-function describe(claimed: ClaimedAlert[], targets: StaleSyncTarget[]): StaleIntegrationItem[] {
-  const byCredential = new Map(targets.map((t) => [t.credentialId, t]));
+function describe(claimed: ClaimedAlert[], targets: AlertTarget[]): StaleIntegrationItem[] {
+  const byKey = new Map(targets.map((t) => [t.dedupeKey, t]));
   return claimed.flatMap((c) => {
-    const target = byCredential.get(c.dedupeKey);
+    const target = byKey.get(c.dedupeKey);
     if (!target) return [];
-    return [
-      {
-        name: target.institutionName,
-        reason:
-          target.kind === 'orphaned-credential' ? ('never-synced' as const) : ('stopped' as const),
-      },
-    ];
+    return [{ name: target.name, reason: target.reason }];
   });
 }
