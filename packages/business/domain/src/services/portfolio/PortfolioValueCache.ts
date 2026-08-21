@@ -33,6 +33,10 @@ const SCAN_COUNT = 100;
  * production Redis sits on Fly's 6PN and answers in ~1ms, so this is ~250x the
  * happy path and engages on an outage, never on load.
  *
+ * The bound is not Redis-specific and does not leave with Redis: whatever
+ * backs this cache, a request path awaiting it with no deadline hangs when it
+ * is unreachable. See `withRedisTimeout`.
+ *
  * A tight bound is cheaper here than anywhere else in the codebase, because
  * the penalty for a spurious timeout is **exactly a cache miss** — the one
  * outcome this class is built to handle, and one it already takes every time
