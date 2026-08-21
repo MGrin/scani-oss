@@ -1,6 +1,6 @@
 import type { DatabaseTransaction } from '@scani/db';
 import type { Holding, User } from '@scani/db/schema';
-import type { HoldingWithDetails } from '@scani/shared';
+import { type HoldingWithDetails, isManualEditCause } from '@scani/shared';
 import Decimal from 'decimal.js';
 import { Container, Service } from 'typedi';
 import { SCAM_PROBABILITY_THRESHOLD } from '../../lib/constants';
@@ -204,6 +204,14 @@ export class HoldingQueryService extends BaseService {
           isActive: holding.isActive,
           isHidden: holding.isHidden,
           source: holding.source,
+          // The last answer this holding's owner gave to "what did that edit
+          // mean" (SC-510), so the edit control can pre-select it. Null until
+          // somebody has answered, and the client must ask when it is null and
+          // the token type is ambiguous — the same predicate the API refuses
+          // on, so the two cannot disagree about which holdings need asking.
+          manualEditCause: isManualEditCause(holding.manualEditCause)
+            ? holding.manualEditCause
+            : null,
         };
 
         if (apyConfig) {

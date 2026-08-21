@@ -52,6 +52,16 @@ export const holdings = pgTable(
     label: text('label'),
     isHidden: boolean('is_hidden').notNull().default(false),
     isActive: boolean('is_active').notNull().default(true),
+    // What the owner last said a manual balance edit on THIS holding meant —
+    // 'flow' | 'correction' | 'growth' (SC-510). The remembered default for
+    // the next edit, so the second month of a monthly savings update is one
+    // tap rather than the same three-way question again.
+    //
+    // NULL means never asked, and the API treats it that way: an ambiguous
+    // holding with no answer and no remembered cause is refused rather than
+    // guessed at. `manualEditNeedsCause` in @scani/shared is which holdings
+    // that applies to and why.
+    manualEditCause: text('manual_edit_cause'),
     lastUpdated: timestamp('last_updated', { withTimezone: true }).notNull().defaultNow(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -128,7 +138,7 @@ export const holdingTransactions = pgTable(
       .notNull()
       .references(() => tokens.id, { onDelete: 'restrict' }),
     // buy|sell|deposit|withdraw|transfer_in|transfer_out|swap_in|swap_out|
-    // fee|reward|interest|airdrop|opening_balance|unknown
+    // fee|reward|interest|airdrop|opening_balance|correction|unknown
     kind: text('kind').notNull(),
     // Signed Decimal.js string. Negative for outflows (sell, withdraw, fee).
     quantity: text('quantity').notNull(),
@@ -443,4 +453,11 @@ export type HoldingTransactionKind =
   | 'interest'
   | 'airdrop'
   | 'opening_balance'
+  // A restatement, not an event: the previously recorded balance was wrong
+  // (SC-510). Written only by `ManualBalanceEditService`, dated at the moment
+  // the superseded figure entered the record rather than at the edit, and
+  // classified `restatement` by `flowRoleOf` — subtracted from the value
+  // series like a flow so it is not read as a gain, and kept out of the
+  // investor's cashflows so it is not read as money paid in.
+  | 'correction'
   | 'unknown';

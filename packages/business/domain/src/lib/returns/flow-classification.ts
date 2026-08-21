@@ -49,6 +49,26 @@
  * pocket, not to skill. The error then runs toward understating the return,
  * which is the direction a performance figure should fail in — SC-149 is the
  * record of what happens when an unknown quietly becomes a gain.
+ *
+ * ## `correction` is NEITHER, and that is why there is a third role (SC-510)
+ *
+ * A `correction` row says the previously recorded balance was WRONG. Nothing
+ * moved and nothing was earned — the record is being restated. Both of the
+ * roles above are wrong for it, in different ways:
+ *
+ * * as `return`, a typo fixed upward prints as a gain;
+ * * as `external`, it prints as money the owner paid in, which inflates every
+ *   contribution total and every XIRR the ledger feeds.
+ *
+ * The second is the subtler one and it is why "just call it a flow" does not
+ * work. TWR happens to survive it — subtracting the restatement from the
+ * closing value gives that sub-period a return of zero, which is right — but
+ * XIRR does not: it books a cash payment that no one made, at a date, and
+ * discounts everything else against it.
+ *
+ * So `restatement` is subtracted from the value series like a flow, and
+ * excluded from the investor's cashflows entirely. It is a correction to the
+ * MEASUREMENT, not an event in the portfolio.
  */
 
 /** What a ledger row's value movement means for a return figure. */
@@ -56,9 +76,29 @@ export type FlowRole =
   /** Crossed the boundary — a contribution or a withdrawal. Not return. */
   | 'external'
   /** Produced or consumed by the portfolio itself. This IS the return. */
-  | 'return';
+  | 'return'
+  /**
+   * The record was wrong and is being restated. Nothing moved and nothing was
+   * earned, so it is neither the return nor a cashflow — see the note above.
+   */
+  | 'restatement';
 
 const RETURN_KINDS: ReadonlySet<string> = new Set(['reward', 'interest', 'airdrop', 'fee']);
+
+/**
+ * Restatements. One member today: `correction`, written only by
+ * `ManualBalanceEditService` when the owner says a balance edit was fixing a
+ * figure rather than recording money moving.
+ *
+ * An ALLOWLIST, unlike `flowRoleOf`'s denylist below, and for the same
+ * reasoning read the other way round. The denylist is safe for `external`
+ * because an unrecognised kind understates the return, which is the direction
+ * a performance figure should fail in. Falling into `restatement` by accident
+ * would remove a row from BOTH the return and the cashflows — value that
+ * simply vanishes from every figure — so nothing may land here without being
+ * named.
+ */
+const RESTATEMENT_KINDS: ReadonlySet<string> = new Set(['correction']);
 
 /**
  * Everything not named as performance is a contribution.
@@ -71,5 +111,6 @@ const RETURN_KINDS: ReadonlySet<string> = new Set(['reward', 'interest', 'airdro
  * which understates rather than inflates.
  */
 export function flowRoleOf(kind: string): FlowRole {
+  if (RESTATEMENT_KINDS.has(kind)) return 'restatement';
   return RETURN_KINDS.has(kind) ? 'return' : 'external';
 }

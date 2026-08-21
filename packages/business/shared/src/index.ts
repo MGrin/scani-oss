@@ -20,6 +20,12 @@ export {
   normalizeCounterparty,
   txHashFromPayload,
 } from './lib/block-explorer';
+export {
+  isManualEditCause,
+  MANUAL_EDIT_CAUSES,
+  type ManualEditCause,
+  manualEditNeedsCause,
+} from './lib/manual-balance-edit';
 export * from './token-validatiion';
 export * from './usage/outcomes';
 export { safeExternalUrl } from './utils/safe-external-url';

@@ -1,0 +1,16 @@
+-- 20260821120510 — sc510 holdings manual edit cause
+--
+-- Remembers what the owner last said a manual balance edit on this holding
+-- MEANT: 'flow' | 'correction' | 'growth' (SC-510).
+--
+-- NULL on every existing row and that is load-bearing, not laziness. NULL
+-- means "never asked", and the API refuses to synthesize anything for an
+-- ambiguous holding until somebody has answered. Backfilling a default would
+-- silently classify every fiat and private-company holding in the product,
+-- and a wrong classification here renders as a plausible return figure rather
+-- than as an error.
+--
+-- No CHECK constraint: `holding_transactions.kind` is deliberately open for
+-- the same reason, and a fourth cause should not need a migration. The zod
+-- enum on the wire is where the vocabulary is enforced.
+ALTER TABLE holdings ADD COLUMN manual_edit_cause TEXT;
