@@ -282,7 +282,7 @@ startRedisStrandWatchdog({
     });
   },
 });
-Container.get(QueueClient).configure({ connection: redisConnection });
+Container.get(QueueClient).configure({ connection: env.DATABASE_URL });
 // SC-298. Without a registered enqueue mirror every job this api accepts runs
 // with no `user_jobs` row and nothing is logged at any level. The mirror
 // registers as a decorator side-effect of `import '@scani/jobs'`, so the
