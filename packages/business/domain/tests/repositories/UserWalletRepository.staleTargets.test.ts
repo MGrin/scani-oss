@@ -229,4 +229,24 @@ describe('UserWalletRepository.findStaleWalletTargets (SC-470)', () => {
       expect(targets.map((t) => t.accountId)).toContain(good.id);
     });
   });
+
+  test('never joins an account to another user’s wallet', async () => {
+    // The letter is addressed to the ACCOUNT's owner and names the WALLET's
+    // label. One mis-set userWalletId would otherwise put a stranger's label
+    // in someone's inbox.
+    await withTestDb(async (tx) => {
+      const owner = await makeUser(tx);
+      const stranger = await makeUser(tx);
+      const eth = await chain(tx, 'Ethereum');
+      const strangersWallet = await makeWallet(tx, { userId: stranger.id, label: 'Not yours' });
+      const account = await makeAccount(tx, {
+        userId: owner.id,
+        institutionId: eth.id,
+        metadata: { userWalletId: strangersWallet.id, lastSync: DEAD },
+      });
+
+      const targets = await repo().findStaleWalletTargets(CUTOFF, tx);
+      expect(targets.map((t) => t.accountId)).not.toContain(account.id);
+    });
+  });
 });
