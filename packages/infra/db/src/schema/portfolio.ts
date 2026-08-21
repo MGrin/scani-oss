@@ -126,6 +126,26 @@ export const portfolioValueDaily = pgTable(
     // `NOT NULL DEFAULT 0` route the four counts above took: NULL means NOT
     // RECORDED, `0` means counted and none. See the block comment above them.
     holdingsBeforeRecords: integer('holdings_before_records'),
+    // Of `holdings_with_known_value`, how many had part of their balance
+    // INTERPOLATED across a gap between two observations the ledger does not
+    // explain (SC-475 fault B). Before that fix the whole unexplained
+    // difference landed on the single day the anchor rolled over from one
+    // observation to the next — production put 19,575.27 of drift on one day
+    // and a chained daily return read it as a 22% loss on cash.
+    //
+    // The number on such a row is therefore partly DRAWN rather than
+    // measured: a straight line between two observations. Nothing surfaces
+    // this yet, and it is recorded anyway — a value nobody can later tell
+    // apart from a measured one is a trap for whoever reads it next.
+    //
+    // Deliberately does NOT feed `coverage_quality`, unlike the counts above
+    // it. Interpolating is strictly better than the cliff it replaces, and
+    // downgrading every day of every sparsely-observed holding would saturate
+    // a bucket that is already saturated.
+    //
+    // NULLABLE, like the two columns above and unlike the four before them:
+    // NULL means NOT RECORDED, 0 means counted and none.
+    holdingsInterpolated: integer('holdings_interpolated'),
     // Of `holdings_total`, how many carry a cost basis we do not know:
     // no cost-relevant transaction, a provider that reported its history
     // truncated, a leg priced beyond the staleness cap, or an inflow

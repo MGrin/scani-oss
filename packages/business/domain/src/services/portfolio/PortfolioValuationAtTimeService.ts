@@ -59,6 +59,13 @@ export interface PortfolioValueAtTimePerHolding {
    * a measurement, and this says so.
    */
   balanceBeforeRecords: boolean;
+  /**
+   * Part of `balance` was interpolated across a gap between two balance
+   * observations that the ledger does not explain (SC-475 fault B). The
+   * number is a straight line drawn between two measurements rather than a
+   * reconstruction from events, and this says so.
+   */
+  balanceInterpolated: boolean;
 }
 
 export interface PortfolioValueAtTimeResult {
@@ -125,6 +132,21 @@ export interface PortfolioValueAtTimeResult {
    * being 'full'.
    */
   holdingsBeforeRecords: number;
+  /**
+   * Of `holdingsWithKnownValue`, how many had part of their balance
+   * interpolated across an unexplained gap between two observations
+   * (SC-475 fault B).
+   *
+   * Deliberately does NOT feed `coverageQuality`. Interpolating is an
+   * improvement on the cliff it replaces — the alternative put ten weeks of
+   * drift on one day — and downgrading every day of every sparsely-observed
+   * holding would saturate a bucket that is already saturated
+   * (`daysNotFullyCovered` reads 367 of 367 on a real account). The count is
+   * here so that a number partly drawn rather than measured can be told
+   * apart later; nothing surfaces it yet, and that is the point of writing
+   * it down now rather than when someone needs it.
+   */
+  holdingsInterpolated: number;
   perHolding: PortfolioValueAtTimePerHolding[];
 }
 
@@ -226,6 +248,7 @@ export class PortfolioValuationAtTimeService {
     let oldestAnchorAt: Date | null = null;
     let stalePricedCount = 0;
     let beforeRecordsCount = 0;
+    let interpolatedCount = 0;
 
     for (const h of holdings) {
       const result = await this.balanceAtTimeService.getBalance(h.id, at, opts.caches);
@@ -251,6 +274,7 @@ export class PortfolioValuationAtTimeService {
           unpriceable: tokenUnpriceable,
           priceStale: false,
           balanceBeforeRecords: result.beforeRecords,
+          balanceInterpolated: result.interpolated,
         });
         continue;
       }
@@ -270,6 +294,7 @@ export class PortfolioValuationAtTimeService {
         // a non-zero one: it is `current balance - sum(all known txs)`
         // landing on zero, not an observation of an empty position.
         if (result.beforeRecords) beforeRecordsCount += 1;
+        if (result.interpolated) interpolatedCount += 1;
         perHolding.push({
           holdingId: h.id,
           accountId: h.accountId,
@@ -289,6 +314,7 @@ export class PortfolioValuationAtTimeService {
           unpriceable: false,
           priceStale: false,
           balanceBeforeRecords: result.beforeRecords,
+          balanceInterpolated: result.interpolated,
         });
         continue;
       }
@@ -336,6 +362,7 @@ export class PortfolioValuationAtTimeService {
           unpriceable: tokenUnpriceable,
           priceStale: false,
           balanceBeforeRecords: result.beforeRecords,
+          balanceInterpolated: result.interpolated,
         });
         continue;
       }
@@ -343,6 +370,7 @@ export class PortfolioValuationAtTimeService {
       total = total.add(priced.amount);
       knownCount += 1;
       if (result.beforeRecords) beforeRecordsCount += 1;
+      if (result.interpolated) interpolatedCount += 1;
       if (result.anchor === 'observation-before') {
         staleAnchoredCount += 1;
         if (result.anchorAt && (!oldestAnchorAt || result.anchorAt < oldestAnchorAt)) {
@@ -366,6 +394,7 @@ export class PortfolioValuationAtTimeService {
         unpriceable: false,
         priceStale: priced.stale,
         balanceBeforeRecords: result.beforeRecords,
+        balanceInterpolated: result.interpolated,
       });
     }
 
@@ -412,6 +441,7 @@ export class PortfolioValuationAtTimeService {
       holdingsStaleAnchored: staleAnchoredCount,
       oldestAnchorAt,
       holdingsBeforeRecords: beforeRecordsCount,
+      holdingsInterpolated: interpolatedCount,
       perHolding,
     };
   }
