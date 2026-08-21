@@ -10,6 +10,12 @@ import { Container, Service } from 'typedi';
 export class UserJobLifecycleMirror implements LifecycleMirror {
   private readonly repo = Container.get(UserJobRepository);
 
+  // Replaces BullMQ v6's removed `Job#discard()`. See the note on
+  // `LifecycleMirror.isCancelled`.
+  async isCancelled(jobId: string): Promise<boolean> {
+    return this.repo.isCancelled(jobId);
+  }
+
   async onLifecycle(event: LifecycleEvent): Promise<void> {
     switch (event.type) {
       case 'active':
