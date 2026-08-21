@@ -4,8 +4,14 @@ import {
   GroupRepository,
   HoldingApyConfigRepository,
   HoldingRepository,
+  TokenRepository,
 } from '@scani/domain/repositories';
-import { HoldingQueryService, HoldingService, RealizedLedgerService } from '@scani/domain/services';
+import {
+  HoldingQueryService,
+  HoldingService,
+  ManualBalanceEditService,
+  RealizedLedgerService,
+} from '@scani/domain/services';
 import {
   BulkAssignHoldingGroupsUseCase,
   DeleteHoldingUseCase,
@@ -16,6 +22,7 @@ import { BullMqEnqueueService } from '@scani/queue';
 import { emitBulkEntityChanges, emitEntityChange } from '@scani/realtime';
 import {
   Decimal,
+  type ManualEditCause,
   parseCostBasisMethod,
   type RealizedLedger,
   UpdateHoldingDto,
@@ -144,9 +151,18 @@ export const holdingsRouter = router({
     .mutation(async ({ input, ctx }) => {
       const { dbUser } = await requireAuth(ctx);
       return withIdempotency(dbUser.id, input.idempotencyKey, async () => {
+        const editCause = await resolveEditCause(input.id, dbUser.id, input.data);
+
         const updatedHolding = await Container.get(UpdateHoldingUseCase).execute(
           input.id,
-          input.data,
+          {
+            balance: input.data.balance,
+            isActive: input.data.isActive,
+            ...(editCause ? { editCause } : {}),
+            ...(input.data.editOccurredAt
+              ? { editOccurredAt: new Date(input.data.editOccurredAt) }
+              : {}),
+          },
           dbUser.id
         );
 
@@ -458,3 +474,54 @@ export const holdingsRouter = router({
       return result;
     }),
 });
+
+/**
+ * What this balance edit meant, or a refusal (SC-510).
+ *
+ * `null` when the edit does not move a balance — an `isActive` toggle has no
+ * cause and must not write a ledger row. Otherwise `ManualBalanceEditService`
+ * decides from what the user said, the token type, and this holding's
+ * remembered answer, and a holding it cannot answer for raises `BAD_REQUEST`.
+ *
+ * ## The refusal is the feature, and it is the thing to resist "fixing"
+ *
+ * Defaulting here would be easy and would look harmless: almost every edit
+ * really is a flow. But this is a blindness state — we do not know what the
+ * delta meant — and a blindness state that quietly resolves to the likely
+ * answer is at its most persuasive exactly when it is wrong. Treat a monthly
+ * savings top-up as a flow and it is right; treat the interest credit that
+ * looks identical as a flow and that account returns 0% forever, printed as a
+ * plausible number nobody questions.
+ *
+ * So it is loud instead. The SPA never sees this error, because it shows the
+ * three-way control for the same set of holdings this predicate names; a
+ * client that does not is told to ask rather than answered for.
+ */
+async function resolveEditCause(
+  holdingId: string,
+  userId: string,
+  data: { balance?: string; editCause?: ManualEditCause }
+): Promise<ManualEditCause | null> {
+  if (data.balance === undefined) return null;
+
+  const holding = await Container.get(HoldingRepository).findById(holdingId);
+  if (!holding || holding.userId !== userId) {
+    throw new TRPCError({ code: 'NOT_FOUND', message: 'Holding not found' });
+  }
+
+  const token = await Container.get(TokenRepository).findWithType(holding.tokenId);
+  const cause = Container.get(ManualBalanceEditService).resolveCause({
+    tokenTypeCode: token?.typeCode ?? null,
+    requested: data.editCause,
+    remembered: holding.manualEditCause,
+  });
+
+  if (!cause) {
+    throw new TRPCError({
+      code: 'BAD_REQUEST',
+      message:
+        "This holding's balance carries its own performance — a change to it could be money added or withdrawn, a correction to the previous figure, or growth. Send `editCause` so it is not guessed at.",
+    });
+  }
+  return cause;
+}

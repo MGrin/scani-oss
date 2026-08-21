@@ -1,5 +1,6 @@
 import Decimal from 'decimal.js';
 import { Container, Service } from 'typedi';
+import { flowRoleOf } from '../../lib/returns/flow-classification';
 import {
   type AttributionPoint,
   attributeCurrencyEffect,
@@ -554,6 +555,14 @@ function selectWindowPoints(
  * Flows use their own `occurredAt`, not the day they were bucketed onto. TWR
  * needs the bucket because it chains per measured day; XIRR discounts each
  * flow individually and can use the real instant, so it does.
+ *
+ * ## Restatements are not cashflows (SC-510)
+ *
+ * `flows` carries `restatement` rows because TWR must subtract them from the
+ * closing value — otherwise a corrected typo reads as a gain. XIRR must NOT
+ * see them: nobody paid that money in, and booking a payment that never
+ * happened discounts every real flow against it. `flowRoleOf` is the one
+ * place that decides which is which.
  */
 function toCashflows(
   first: SeriesPoint,
@@ -567,6 +576,7 @@ function toCashflows(
   ];
   for (const flow of flows) {
     if (excluded.has(flow.transactionId)) continue;
+    if (flowRoleOf(flow.kind) === 'restatement') continue;
     const amount = new Decimal(flow.baseAmount);
     if (amount.isZero()) continue;
     cashflows.push({ at: flow.occurredAt, amount: -amount.toNumber() });
