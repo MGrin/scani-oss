@@ -584,6 +584,112 @@ describe('RollupPortfolioValueDailyUseCase', () => {
     expect(holdingRow?.coverageQuality).toBe('unknown');
   });
 
+  test('a holding we could not value is excluded even without the unpriceable flag', async () => {
+    // SC-505. `unpriceable` is the narrow "never had a price row AND is in a
+    // cooldown" flag. A USD cash balance held by a GBP-base user fails none
+    // of that and still resolves to no value, because `forex-backfill`
+    // quotes every edge against USD and so never writes USD as the priced
+    // token. Gated on the flag alone its £9,576 basis stayed in a total its
+    // value never reached, and the row was persisted at exactly -100%.
+    const f = fixture!;
+    const accountId = (
+      await db
+        .select({ id: schema.accounts.id })
+        .from(schema.accounts)
+        .where(eq(schema.accounts.userId, f.userIds[0]!))
+        .limit(1)
+    )[0]!.id;
+
+    nextValuation = () => ({
+      totalValueInBase: new Decimal(1000),
+      totalCostBasis: new Decimal(700),
+      totalRealizedPnl: new Decimal(0),
+      totalUnrealizedPnl: new Decimal(300),
+      totalPnl: new Decimal(300),
+      coverageQuality: 'estimated' as const,
+      holdingsWithKnownValue: 1,
+      holdingsTotal: 2,
+      holdingsUnpriceable: 0,
+      holdingsStalePriced: 0,
+      holdingsBasisUnknown: 0,
+      transfersUnreviewed: 0,
+      perHolding: [
+        {
+          holdingId: 'priced',
+          accountId,
+          tokenId: f.assetTokenId,
+          value: new Decimal(1000),
+          costBasis: new Decimal(700),
+          realizedPnl: new Decimal(0),
+          unrealizedPnl: new Decimal(300),
+          unpriceable: false,
+          priceStale: false,
+          anchorSource: null,
+          anchorAt: null,
+          balanceBeforeRecords: false,
+          balanceInterpolated: false,
+          basisQuality: 'known' as const,
+          transfersUnreviewed: 0,
+        },
+        {
+          holdingId: f.holdingId,
+          accountId,
+          tokenId: f.assetTokenId,
+          value: null,
+          costBasis: new Decimal(9576),
+          realizedPnl: new Decimal(12),
+          unrealizedPnl: null,
+          unpriceable: false,
+          priceStale: false,
+          anchorSource: null,
+          anchorAt: null,
+          balanceBeforeRecords: false,
+          balanceInterpolated: false,
+          basisQuality: 'known' as const,
+          transfersUnreviewed: 0,
+        },
+      ],
+    });
+
+    await Container.get(RollupPortfolioValueDailyUseCase).execute({
+      userId: f.userIds[0]!,
+      lookbackDays: 1,
+    });
+
+    const repo = Container.get(PortfolioValueDailyRepository);
+    const from = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
+    const to = new Date(Date.now() + 24 * 60 * 60 * 1000);
+
+    const [accountRow] = await repo.findRange(
+      f.userIds[0]!,
+      f.baseCurrencyId,
+      from,
+      to,
+      undefined,
+      { kind: 'account', id: accountId }
+    );
+    expect(accountRow?.costBasis).toBe('700'); // not 10276
+    expect(accountRow?.realizedPnl).toBe('0'); // not 12
+    expect(accountRow?.unrealizedPnl).toBe('300'); // not -9276
+    // Not reclassified as dust — we know nothing new about the token, only
+    // that today's value is missing, and the coverage counts say that.
+    expect(accountRow?.holdingsUnpriceable).toBe(0);
+    expect(accountRow?.holdingsWithKnownValue).toBe(1);
+    expect(accountRow?.holdingsTotal).toBe(2);
+
+    const [holdingRow] = await repo.findRange(
+      f.userIds[0]!,
+      f.baseCurrencyId,
+      from,
+      to,
+      undefined,
+      { kind: 'holding', id: f.holdingId }
+    );
+    expect(holdingRow?.costBasis).toBe('0');
+    expect(holdingRow?.unrealizedPnl).toBe('0'); // never -9576
+    expect(holdingRow?.coverageQuality).toBe('unknown');
+  });
+
   test('uses today + earlier days; today snapshot uses the runStart timestamp directly', async () => {
     const f = fixture!;
     await Container.get(RollupPortfolioValueDailyUseCase).execute({ lookbackDays: 2 });

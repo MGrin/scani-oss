@@ -12,6 +12,7 @@ import {
   getOrComputeFromCache,
 } from '../../lib/request-cache';
 import { TokenPriceRepository } from '../../repositories/TokenPriceRepository';
+import { TokenRepository } from '../../repositories/TokenRepository';
 import { PricingService } from '../pricing/PricingService';
 import { UserService } from '../users/UserService';
 import { PortfolioValueCache } from './PortfolioValueCache';
@@ -81,6 +82,7 @@ export class PortfolioValuationService {
   private readonly pricingService = Container.get(PricingService);
   private readonly userService = Container.get(UserService);
   private readonly tokenPriceRepository = Container.get(TokenPriceRepository);
+  private readonly tokenRepository = Container.get(TokenRepository);
   private readonly portfolioValueCache = Container.get(PortfolioValueCache);
 
   /**
@@ -246,9 +248,11 @@ export class PortfolioValuationService {
     // from, and `currentPrice` is already expressed in the user's base
     // currency, so nothing needs converting a second time here.
     const tokenIds = Array.from(new Set(holdings.map((h) => h.tokenId)));
-    const priceMetadata = await this.tokenPriceRepository.findLatestPricesForTokens(
-      tokenIds,
-      baseCurrency.id
+    // Narrowed to the two fields anyone downstream reads, so the third pass
+    // below can seed a rate the graph derived — which has a timestamp and a
+    // provenance but is not a `token_prices` row and never will be.
+    const priceMetadata = new Map<string, { timestamp: Date; source: string | null }>(
+      await this.tokenPriceRepository.findLatestPricesForTokens(tokenIds, baseCurrency.id)
     );
     const tokensWithoutMetadata = tokenIds.filter((id) => !priceMetadata.has(id));
     if (tokensWithoutMetadata.length > 0) {
@@ -258,6 +262,30 @@ export class PortfolioValuationService {
       );
       for (const [tokenId, price] of anyBase.entries()) {
         priceMetadata.set(tokenId, price);
+      }
+    }
+
+    // Third pass, and the same argument as the second: a fiat holding priced
+    // off the FX graph has no `token_prices` row of its own to date it (that
+    // is the whole of SC-505), so both lookups above miss and the holding
+    // arrives with a value and no price beside it. The rate came from
+    // somewhere and has a timestamp; say so rather than leaving the column
+    // blank under a confident figure.
+    const fiatWithoutMetadata = holdings
+      .filter((h) => !priceMetadata.has(h.tokenId))
+      .map((h) => h.token)
+      .filter((token, index, self) => self.findIndex((t) => t.id === token.id) === index);
+    if (fiatWithoutMetadata.length > 0) {
+      const baseToken = await this.tokenRepository.findById(baseCurrency.id);
+      if (baseToken) {
+        const fiatRates = await this.pricingService.resolveFiatRatesToBase(
+          fiatWithoutMetadata,
+          baseToken,
+          now
+        );
+        for (const [tokenId, rate] of fiatRates.entries()) {
+          priceMetadata.set(tokenId, { timestamp: rate.timestamp, source: rate.source });
+        }
       }
     }
 
