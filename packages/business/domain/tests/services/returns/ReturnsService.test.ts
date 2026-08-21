@@ -406,6 +406,55 @@ describe('ReturnsService — the scenarios that decide whether the number is rig
     expect(result?.xirr).toEqual({ status: 'not-converged', reason: 'no-root-in-domain' });
   });
 
+  /**
+   * A restatement is neither a gain nor a contribution (SC-510).
+   *
+   * A holding worth 1,000 that is recorded as 1,200 a year later because the
+   * owner fixed a 200 typo. Nothing was earned and nothing was paid in.
+   *
+   * The two assertions pull in opposite directions on purpose, and that is
+   * exactly why calling a correction "just a flow" does not work. TWR needs
+   * the row SUBTRACTED from the closing value or the typo prints as a 20%
+   * gain. XIRR needs it ABSENT: a cashflow there is a payment nobody made,
+   * and every real flow gets discounted against it. Only a third role
+   * satisfies both.
+   *
+   * The window is a year so both numbers are exact rather than a
+   * one-day rate at the edge of what a float can hold.
+   */
+  test('scenario: a corrected figure is neither performance nor a contribution', async () => {
+    const service = install({
+      holdings: ONE_HOLDING,
+      days: [
+        { date: '2025-03-10', holdingId: 'h1', value: '1000' },
+        { date: '2026-03-10', holdingId: 'h1', value: '1200' },
+      ],
+      txs: [
+        {
+          id: 'tx-1',
+          holdingId: 'h1',
+          kind: 'correction',
+          quantity: '2',
+          priceNative: '100',
+          occurredAt: '2025-09-10T00:00:00.000Z',
+        },
+      ],
+    });
+
+    const result = ok(await service.compute(request()));
+
+    // Subtracted from the close like a flow: (1200 - 200) / 1000 - 1 = 0.
+    // Booked as performance instead, this reads +20%.
+    expect(Number(result?.twr?.cumulative)).toBeCloseTo(0, 12);
+
+    // And absent from the cashflows, which leaves the opening 1,000 and the
+    // closing 1,200 exactly one year apart: 20%. Booked as an external flow
+    // instead, XIRR would see a second 200 paid in halfway through and return
+    // a materially lower rate off money nobody put in.
+    if (result?.xirr.status !== 'ok') throw new Error('expected a rate');
+    expect(result.xirr.rate).toBeCloseTo(0.2, 6);
+  });
+
   test('scenario: XIRR over a year of contributions matches the NPV definition', async () => {
     const service = install({
       holdings: ONE_HOLDING,

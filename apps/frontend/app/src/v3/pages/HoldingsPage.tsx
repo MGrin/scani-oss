@@ -1,4 +1,4 @@
-import type { HoldingWithDetails } from '@scani/shared';
+import { type HoldingWithDetails, manualEditNeedsCause } from '@scani/shared';
 import { ConfirmDialog } from '@scani/ui/components/ConfirmDialog';
 import { showError, showSuccess } from '@scani/ui/ui/use-toast';
 import { V3DataView } from '@scani/ui/v3/components/data-view/V3DataView';
@@ -13,6 +13,7 @@ import { useHoldingActions } from '@/v3/hooks/useHoldingActions';
 import { useOpenCapture } from '../components/capture/CaptureSheetContext';
 import { AssignGroupsSheet } from '../components/groups/AssignGroupsSheet';
 import { ApyConfigSheet } from '../components/holdings/ApyConfigSheet';
+import { HoldingEditCauseDialog } from '../components/holdings/HoldingEditCauseDialog';
 import { holdingsDataViewConfig } from '../components/holdings/holdingsConfig';
 import { EditCustomTokenPriceSheet } from '../components/tokens/EditCustomTokenPriceSheet';
 import { useHoldingRefresh } from '../hooks/useHoldingRefresh';
@@ -109,6 +110,18 @@ export function HoldingsPage() {
   const [apyTarget, setApyTarget] = useState<HoldingWithDetails | null>(null);
   const [apyRemoveTarget, setApyRemoveTarget] = useState<HoldingWithDetails | null>(null);
   const [priceTarget, setPriceTarget] = useState<HoldingWithDetails | null>(null);
+  /**
+   * The edit waiting on "what did that mean?" (SC-510).
+   *
+   * Held here rather than inside `HoldingAmountFact` because the answer needs
+   * a dialog and the fact lives inside the peek drawer — a Radix dialog
+   * mounted in that drawer is torn down by the drawer's own dismiss, which is
+   * the same reason interest and manual-price are mounted at this level.
+   */
+  const [causeTarget, setCauseTarget] = useState<{
+    holding: HoldingWithDetails;
+    balance: string;
+  } | null>(null);
   const [assignTarget, setAssignTarget] = useState<{ ids: string[]; clear: () => void } | null>(
     null
   );
@@ -150,7 +163,16 @@ export function HoldingsPage() {
     peek: {
       currency,
       t,
-      onSetAmount: (holding, balance) => actions.updateHolding(holding.id, { balance }),
+      // A quantity edit on a holding we fetch a price for is unambiguously a
+      // flow — performance arrives through that price — so it writes straight
+      // through and the server derives the cause. Everything else has to be
+      // asked, because the same delta could be money moved, a corrected figure
+      // or growth, and two of those three readings produce a wrong number that
+      // looks entirely plausible (SC-510).
+      onSetAmount: (holding, balance) =>
+        manualEditNeedsCause(holding.token.typeCode)
+          ? setCauseTarget({ holding, balance })
+          : actions.updateHolding(holding.id, { balance }),
       onToggleActive: (holding) =>
         actions.updateHolding(holding.id, { isActive: !holding.isActive }),
       isTogglingActive: actions.isUpdating,
@@ -211,6 +233,29 @@ export function HoldingsPage() {
             if (!open) setApyTarget(null);
           }}
           holding={apyTarget}
+        />
+      ) : null}
+
+      {causeTarget ? (
+        <HoldingEditCauseDialog
+          // Keyed for the reason `ApyConfigSheet` is: the dialog seeds its
+          // answer and its date once, at mount, from the holding it was
+          // opened for.
+          key={causeTarget.holding.id}
+          open
+          onOpenChange={(open) => {
+            if (!open) setCauseTarget(null);
+          }}
+          holdingLabel={causeTarget.holding.label ?? causeTarget.holding.token.symbol}
+          defaultCause={causeTarget.holding.manualEditCause ?? null}
+          onConfirm={(editCause, editOccurredAt) => {
+            actions.updateHolding(causeTarget.holding.id, {
+              balance: causeTarget.balance,
+              editCause,
+              ...(editOccurredAt ? { editOccurredAt } : {}),
+            });
+            setCauseTarget(null);
+          }}
         />
       ) : null}
 

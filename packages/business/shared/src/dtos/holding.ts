@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { Decimal, isValidDecimalString } from '../decimal';
+import { MANUAL_EDIT_CAUSES, type ManualEditCause } from '../lib/manual-balance-edit';
 
 export type Holding = {
   id: string;
@@ -62,6 +63,33 @@ export const UpdateHoldingDto = z.object({
     )
     .optional(),
   isActive: z.boolean().optional(),
+  /**
+   * What the balance edit MEANT (SC-510). Required when the holding's token
+   * type is ambiguous (`manualEditNeedsCause`) and no per-holding default has
+   * been remembered; ignored when `balance` is absent.
+   *
+   * Optional on the wire rather than required because most edits do not carry
+   * one — an unambiguous holding's cause is derived server-side and an
+   * `isActive` toggle has none. The server refuses the one combination it
+   * cannot answer for itself rather than guessing.
+   */
+  editCause: z.enum(MANUAL_EDIT_CAUSES).optional(),
+  /**
+   * WHEN the flow happened, ISO-8601. Pre-filled with today by the client and
+   * editable, because the user knows when they moved the money and the system
+   * never will.
+   *
+   * Dating everything at the edit instant was explicitly rejected: it
+   * concentrates months of flow onto one date and distorts time-weighted
+   * return around it — the failure `e1fa63e5` removed ("stop one day absorbing
+   * ten weeks"). Spreading the delta across the gap was rejected too; it
+   * invents a schedule that never happened.
+   *
+   * Only read for `editCause: 'flow'`. A correction is dated by the server at
+   * the moment the superseded figure entered the record, and growth writes no
+   * ledger row at all.
+   */
+  editOccurredAt: z.string().datetime({ offset: true }).optional(),
 });
 
 export type HoldingWithDetails = {
@@ -186,6 +214,18 @@ export type HoldingWithDetails = {
    * payload too.
    */
   unpriceable?: boolean;
+  /**
+   * The last answer this holding's owner gave to "what did that edit mean"
+   * (SC-510), or null if they have never been asked. The client pre-selects
+   * it so the second month of a monthly savings update is one tap.
+   *
+   * A remembered DEFAULT, never a silent one: it is only ever written by a
+   * user answering the question, so a holding that has never been answered
+   * for stays null and the client must ask. That is the whole difference
+   * between this and a system-chosen default, which is wrong for at least one
+   * of the three causes permanently and renders as a plausible number.
+   */
+  manualEditCause?: ManualEditCause | null;
 };
 
 export type HoldingsWithSummary = {
