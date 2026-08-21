@@ -1,4 +1,5 @@
 import { type Decimal, formatDate } from '@scani/shared';
+import { stripTrailingSlash } from '@scani/ui/v3/lib/path';
 import type { TFunction } from 'i18next';
 import { sumAmountsByCurrency } from './paymentTotals';
 import { V3_ROUTES } from './routes';
@@ -39,10 +40,6 @@ export const MONEY_SEGMENTS: readonly MoneySegmentDef[] = [
 
 /** The default view. Bills have deadlines; the standing list does not. */
 export const DEFAULT_MONEY_SEGMENT: MoneySegment = 'upcoming';
-
-function stripTrailingSlash(pathname: string): string {
-  return pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname;
-}
 
 function covers(base: string, path: string): boolean {
   return path === base || path.startsWith(`${base}/`);
