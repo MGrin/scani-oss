@@ -2,17 +2,21 @@ import { LANGUAGE_HEADER } from '@scani/shared';
 import { emailOTPClient, magicLinkClient } from 'better-auth/client/plugins';
 import { createAuthClient } from 'better-auth/react';
 import i18n from '@/i18n';
+import { apiBaseUrl } from '@/lib/api-base-url';
 import { fetchWithDeadline } from '@/lib/auth-network';
 
 /**
  * Better-Auth client. `baseURL` points at the backend's /api/auth/* mount.
  * In dev, VITE_API_URL=http://localhost:3001; in production,
  * https://api.scani.xyz.
+ *
+ * Resolved through `apiBaseUrl()` rather than read raw, because the published
+ * `scani/frontend-app` image is built with `VITE_API_URL=/api` so one artefact
+ * can serve any hostname — and `createAuthClient` throws
+ * `BetterAuthError: Invalid base URL: /api` on a relative value, at MODULE
+ * scope, which white-screened every self-host install (SC-467).
  */
-const baseURL = import.meta.env.VITE_API_URL;
-if (!baseURL) {
-  throw new Error('VITE_API_URL is required');
-}
+const baseURL = apiBaseUrl();
 
 export const authClient = createAuthClient({
   baseURL,
