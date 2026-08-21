@@ -168,8 +168,15 @@ services:
     # loopback, and `postgres` here is a compose service name, not localhost.
     # Naming it in the file rather than widening the gate to every single-label
     # hostname keeps the database this rewrites visible at the call site.
-    command:
-      ["bun", "run", "packages/infra/db/src/migrate.ts", "--allow-remote", "postgres"]
+    # SC-518: `db:migrate` rather than `packages/infra/db/src/migrate.ts`
+    # directly. The root script now applies TWO schemas — the application's via
+    # Drizzle, and BullMQ's queue schema via `scripts/migrate.ts` — and calling
+    # the Drizzle entrypoint straight past it creates the app tables and none of
+    # the queue's, so every enqueue fails with "schema is not initialized".
+    #
+    # Args are forwarded to the Drizzle step, so `--allow-remote postgres` still
+    # reaches the target gate it was written for.
+    command: ["bun", "run", "db:migrate", "--allow-remote", "postgres"]
     restart: "no"
 
   # Data-provider owns every outbound third-party API call (pricing, AI,
