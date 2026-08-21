@@ -362,6 +362,7 @@ export class HoldingRepository extends BaseRepository<Holding, NewHolding> {
           holdingIsActive: schema.holdings.isActive,
           holdingExternalId: schema.holdings.externalId,
           holdingLabel: schema.holdings.label,
+          holdingManualEditCause: schema.holdings.manualEditCause,
           holdingLastUpdated: schema.holdings.lastUpdated,
           holdingCreatedAt: schema.holdings.createdAt,
           // Token data with type
@@ -406,6 +407,7 @@ export class HoldingRepository extends BaseRepository<Holding, NewHolding> {
           isHidden: r.holdingIsHidden,
           isActive: r.holdingIsActive,
           externalId: r.holdingExternalId,
+          manualEditCause: r.holdingManualEditCause,
           lastUpdated: r.holdingLastUpdated,
           createdAt: r.holdingCreatedAt,
         },

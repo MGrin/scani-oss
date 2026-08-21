@@ -2,9 +2,11 @@ import type { DatabaseTransaction } from '@scani/db';
 import * as schema from '@scani/db/schema';
 import { withTransaction } from '@scani/db/transaction';
 import { createComponentLogger } from '@scani/logging';
+import type { ManualEditCause } from '@scani/shared';
 import { and, eq } from 'drizzle-orm';
 import Container, { Service } from 'typedi';
 import { HoldingService, VaultService } from '../services';
+import { ManualBalanceEditService } from '../services/holdings/ManualBalanceEditService';
 
 const logger = createComponentLogger('use-case:update-holding');
 
@@ -12,6 +14,18 @@ export interface UpdateHoldingInput {
   balance?: string;
   lastUpdated?: Date;
   isActive?: boolean;
+  /**
+   * What the balance edit MEANT (SC-510). Resolved by the caller — derived
+   * for a holding whose token type carries its own price channel, answered by
+   * the user otherwise. Absent means "do not synthesize", which is what an
+   * `isActive` toggle and every pre-SC-510 caller are.
+   */
+  editCause?: ManualEditCause;
+  /**
+   * When a `flow` actually happened, per the user. Ignored for the other two
+   * causes and defaulted to the edit instant when omitted.
+   */
+  editOccurredAt?: Date;
 }
 
 /**
@@ -47,6 +61,7 @@ export interface UpdateHoldingInput {
 export class UpdateHoldingUseCase {
   private readonly vaultService = Container.get(VaultService);
   private readonly holdingService = Container.get(HoldingService);
+  private readonly manualBalanceEditService = Container.get(ManualBalanceEditService);
 
   async execute(
     holdingId: string,
@@ -57,9 +72,28 @@ export class UpdateHoldingUseCase {
     logger.debug({ userId, holdingId, data }, 'Updating holding');
 
     const run = async (tx: DatabaseTransaction) => {
+      const { editCause, editOccurredAt, ...columns } = data;
+      const editedAt = new Date();
+
+      // Read BEFORE the update, in the same transaction, because the delta a
+      // synthesized transaction has to explain is `new - previous` and the
+      // previous value is gone the moment the UPDATE lands. Scoped by userId
+      // like the update itself, so a mismatched owner reads nothing rather
+      // than leaking a balance.
+      const [previous] = await tx
+        .select({ balance: schema.holdings.balance, lastUpdated: schema.holdings.lastUpdated })
+        .from(schema.holdings)
+        .where(and(eq(schema.holdings.id, holdingId), eq(schema.holdings.userId, userId)))
+        .limit(1);
+
       const updateData = {
-        ...data,
-        lastUpdated: data.lastUpdated || new Date(),
+        ...columns,
+        lastUpdated: data.lastUpdated || editedAt,
+        // Remember the answer as this holding's default for next time, and
+        // only when a human could have given one. A derived cause on a priced
+        // holding is re-derived every time and would only put a misleading
+        // pre-selection on a control the user never sees.
+        ...(editCause ? { manualEditCause: editCause } : {}),
       };
 
       const [result] = await tx
@@ -70,6 +104,25 @@ export class UpdateHoldingUseCase {
 
       if (!result) {
         throw new Error('Holding not found');
+      }
+
+      // Before the observation below, not after: a `correction` is dated at
+      // the moment the figure it supersedes entered the record, and that is
+      // the LAST observation before this edit. Appending this edit's own
+      // observation first would make the correction supersede itself and
+      // restate an interval one millisecond long.
+      if (data.balance !== undefined && editCause && previous) {
+        await this.manualBalanceEditService.record(
+          {
+            holding: result,
+            previousBalance: previous.balance,
+            newBalance: result.balance,
+            cause: editCause,
+            occurredAt: editOccurredAt ?? editedAt,
+            editedAt,
+          },
+          tx
+        );
       }
 
       // In the same transaction as the write it describes, and only when
