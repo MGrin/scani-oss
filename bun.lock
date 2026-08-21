@@ -187,6 +187,7 @@
         "@scani/cloud-client": "workspace:*",
         "@scani/config": "workspace:*",
         "@scani/db": "workspace:*",
+        "@scani/deadline": "workspace:*",
         "@scani/email": "workspace:*",
         "@scani/file-import": "workspace:*",
         "@scani/logging": "workspace:*",
@@ -391,6 +392,13 @@
         "typescript": "^5",
       },
     },
+    "packages/infra/deadline": {
+      "name": "@scani/deadline",
+      "version": "1.0.0",
+      "devDependencies": {
+        "typescript": "^5",
+      },
+    },
     "packages/infra/email": {
       "name": "@scani/email",
       "version": "1.0.0",
@@ -443,6 +451,7 @@
       "name": "@scani/queue",
       "version": "1.0.0",
       "dependencies": {
+        "@scani/deadline": "workspace:*",
         "@scani/logging": "workspace:*",
         "bullmq": "^6.2.0",
         "ioredis": "^5.10.1",
@@ -457,6 +466,7 @@
       "name": "@scani/rate-limiter",
       "version": "1.0.0",
       "dependencies": {
+        "@scani/deadline": "workspace:*",
         "typedi": "^0.10.0",
       },
       "devDependencies": {
@@ -1174,6 +1184,8 @@
     "@scani/data-provider": ["@scani/data-provider@workspace:apps/backend/data-provider"],
 
     "@scani/db": ["@scani/db@workspace:packages/infra/db"],
+
+    "@scani/deadline": ["@scani/deadline@workspace:packages/infra/deadline"],
 
     "@scani/docs": ["@scani/docs@workspace:apps/frontend/docs"],
 
