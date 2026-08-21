@@ -313,3 +313,44 @@ describe('parseCsvStatement — fee columns (SC-136)', () => {
     expect(tx?.fee).toBeUndefined();
   });
 });
+
+// SC-483. `parseNumber`'s European-format probe was `/\d+\.\d{3},\d{2}$/`:
+// unanchored, so the engine restarted `\d+` at every digit and the whole match
+// went quadratic in the cell's length. An uploaded CSV is library input by any
+// reading, so a 200 KB cell of digits was ~15 s of blocked event loop.
+// `\d+` -> `\d` accepts exactly the same strings — the extra digits only ever
+// moved where the match STARTED — and is linear.
+describe('number parsing is linear in the cell length (SC-483)', () => {
+  const amountCsv = (cell: string) =>
+    `Date,Description,Amount,Currency\n2026-06-01,X,"${cell}",USD`;
+  const amountOf = (cell: string) => parseCsvStatement(amountCsv(cell)).transactions[0]?.amount;
+
+  // The accepted/rejected set the rewrite must not move.
+  const cases: [string, number | undefined][] = [
+    ['1.234,56', 1234.56],
+    ['12.345.678,90', 12345678.9],
+    ['999.999,99', 999999.99],
+    ['1,234', 1234],
+    ['12,896.83', 12896.83],
+    ['-1,234,567.89', -1234567.89],
+    ['1234,56', 1234.56],
+    ['1.234', 1.234],
+    ['99', 99],
+    ['-4.50', -4.5],
+    ['1.234,5', undefined],
+    ['1.2345,67', undefined],
+  ];
+  for (const [cell, expected] of cases) {
+    it(`parses ${cell || '<empty>'} as ${expected}`, () => {
+      expect(amountOf(cell)).toBe(expected as number);
+    });
+  }
+
+  it('a cell of 80k digits parses in well under a second', () => {
+    const started = performance.now();
+    expect(amountOf('0'.repeat(80_000))).toBe(0);
+    const elapsed = performance.now() - started;
+    // Quadratic, this input took ~2.4 s; linear it is under a millisecond.
+    expect(elapsed).toBeLessThan(250);
+  });
+});
