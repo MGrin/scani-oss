@@ -4,6 +4,7 @@ import { Container } from 'typedi';
 import { AlertDeliveryRepository } from '../../src/repositories/AlertDeliveryRepository';
 import { InstitutionRepository } from '../../src/repositories/InstitutionRepository';
 import { UserRepository } from '../../src/repositories/UserRepository';
+import { UserWalletRepository } from '../../src/repositories/UserWalletRepository';
 import {
   INTEGRATION_STALE_RULE,
   SendIntegrationAlertsUseCase,
@@ -28,6 +29,17 @@ const target = (over: Record<string, unknown> = {}) => ({
   ...over,
 });
 
+const walletTarget = (over: Record<string, unknown> = {}) => ({
+  accountId: 'acct-1',
+  userId: 'user-1',
+  userWalletId: 'uw-1',
+  walletLabel: 'Ledger',
+  walletAddress: '0xabc0000000000000000000000000000000000001',
+  institutionName: 'Ethereum',
+  lastSync: new Date('2026-06-01T00:00:00.000Z'),
+  ...over,
+});
+
 const recipient = (over: Record<string, unknown> = {}) => ({
   id: 'user-1',
   email: 'alice@example.com',
@@ -43,11 +55,13 @@ interface Harness {
   released: string[];
   resolvedWith: Array<{ userId: string; dedupeKey: string }> | null;
   cutoff: Date | null;
+  walletCutoff: Date | null;
   recipientQuery: string[] | null;
 }
 
 function makeUseCase(opts: {
   targets?: Array<ReturnType<typeof target>>;
+  wallets?: Array<ReturnType<typeof walletTarget>>;
   recipients?: Array<ReturnType<typeof recipient>>;
   /** Keys the ledger says are already delivered — claim refuses these. */
   alreadyOpen?: string[];
@@ -62,6 +76,7 @@ function makeUseCase(opts: {
     released: [],
     resolvedWith: null,
     cutoff: null,
+    walletCutoff: null,
     recipientQuery: null,
   };
   const open = new Set(opts.alreadyOpen ?? []);
@@ -70,6 +85,12 @@ function makeUseCase(opts: {
     findStaleSyncTargets: async (cutoff: Date) => {
       harness.cutoff = cutoff;
       return opts.targets ?? [];
+    },
+  });
+  Container.set(UserWalletRepository, {
+    findStaleWalletTargets: async (cutoff: Date) => {
+      harness.walletCutoff = cutoff;
+      return opts.wallets ?? [];
     },
   });
   Container.set(UserRepository, {
@@ -293,5 +314,99 @@ describe('SendIntegrationAlertsUseCase (SC-459)', () => {
   test('the rule string is the one written into the ledger', async () => {
     // Renaming it orphans every open alert and re-notifies the whole userbase.
     expect(INTEGRATION_STALE_RULE).toBe('integration-stale');
+  });
+});
+
+describe('SendIntegrationAlertsUseCase — wallets (SC-470)', () => {
+  test('a wallet whose sync died reaches its owner, named by label AND chain', async () => {
+    const { useCase, harness } = makeUseCase({
+      wallets: [walletTarget()],
+      recipients: [recipient()],
+    });
+
+    const summary = await useCase.execute(OPTIONS, NOW);
+
+    expect(summary.stale).toBe(1);
+    expect(summary.staleWallets).toBe(1);
+    expect(summary.sent).toBe(1);
+    // Neither half identifies it alone: one label covers every chain the
+    // address is active on, one chain covers every wallet held on it.
+    expect(harness.sent[0]?.text).toContain('Ledger (Ethereum)');
+  });
+
+  test('the wallet probe gets the same cutoff as the credentialed one', async () => {
+    const { useCase, harness } = makeUseCase({});
+    await useCase.execute({ ...OPTIONS, staleAfterHours: 24 }, NOW);
+    expect(harness.walletCutoff?.toISOString()).toBe('2026-08-18T09:00:00.000Z');
+    expect(harness.walletCutoff?.toISOString()).toBe(harness.cutoff?.toISOString());
+  });
+
+  test('a dead exchange and a dead wallet are ONE letter, not two', async () => {
+    // The failure this rules out is a user hearing from us twice in the same
+    // second about one night's breakage — the shape that gets a sender
+    // filtered, and the reason wallets did not get their own rule.
+    const { useCase, harness } = makeUseCase({
+      targets: [target()],
+      wallets: [walletTarget()],
+      recipients: [recipient()],
+    });
+
+    const summary = await useCase.execute(OPTIONS, NOW);
+
+    expect(summary.sent).toBe(1);
+    expect(summary.claimed).toBe(2);
+    expect(harness.sent).toHaveLength(1);
+    expect(harness.sent[0]?.text).toContain('Kraken');
+    expect(harness.sent[0]?.text).toContain('Ledger (Ethereum)');
+  });
+
+  test('a wallet dedupes on its ACCOUNT, so two chains of one address alert separately', async () => {
+    const { useCase, harness } = makeUseCase({
+      wallets: [walletTarget(), walletTarget({ accountId: 'acct-2', institutionName: 'Polygon' })],
+      recipients: [recipient()],
+    });
+
+    await useCase.execute(OPTIONS, NOW);
+
+    expect(harness.claimed.map((c) => c.dedupeKey)).toEqual(['acct-1', 'acct-2']);
+  });
+
+  test('a wallet already alerted about is not alerted about again', async () => {
+    const { useCase, harness } = makeUseCase({
+      wallets: [walletTarget()],
+      recipients: [recipient()],
+      alreadyOpen: ['acct-1'],
+    });
+
+    const summary = await useCase.execute(OPTIONS, NOW);
+
+    expect(summary.claimed).toBe(0);
+    expect(harness.sent).toEqual([]);
+  });
+
+  test('resolution covers wallet keys too, so a recovered wallet can alert again', async () => {
+    const { useCase, harness } = makeUseCase({
+      targets: [target()],
+      wallets: [walletTarget()],
+      recipients: [recipient()],
+    });
+
+    await useCase.execute(OPTIONS, NOW);
+
+    expect(harness.resolvedWith).toEqual([
+      { userId: 'user-1', dedupeKey: 'cred-1' },
+      { userId: 'user-1', dedupeKey: 'acct-1' },
+    ]);
+  });
+
+  test('a wallet account that never synced at all reads as never-synced', async () => {
+    const { useCase, harness } = makeUseCase({
+      wallets: [walletTarget({ lastSync: null })],
+      recipients: [recipient()],
+    });
+
+    await useCase.execute(OPTIONS, NOW);
+
+    expect(harness.sent[0]?.text).toContain('nothing has ever come through');
   });
 });
