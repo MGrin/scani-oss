@@ -248,14 +248,23 @@ export class PnLAtTimeService {
       const costBasis = costUnknown && ph.valueInBase !== null ? ph.valueInBase : rawCostBasis;
       const realizedPnl = costUnknown ? new Decimal(0) : rawRealized;
       // A holding kept out of the value side stays out of the cost side.
-      // In practice airdrop dust costs nothing — an inflow with no price
-      // reference books a zero-cost lot — so today this changes no
-      // number. It closes the case where it would: any unpriceable
-      // holding that *did* acquire a cost basis (a manual price, an
-      // imported trade) would otherwise contribute cost to a total its
-      // value never reaches, and the chart would show the whole cost as
-      // an unrealized loss the user never took.
-      if (!ph.unpriceable) {
+      //
+      // The gate is "we could not value it", not `ph.unpriceable` — which is
+      // the far narrower "never had a price row AND is inside a cooldown"
+      // flag, and is only one of the reasons a value comes back null. A
+      // token can have thousands of price rows and still be unvaluable in
+      // *this* user's base currency: that is SC-505, where a USD cash
+      // balance held by a GBP-base user resolves to nothing. Gated on
+      // `unpriceable` alone, such a holding kept its cost basis in a total
+      // its value never reached, and the chart drew the entire basis as an
+      // unrealized loss the user never took — measured at exactly -100% on
+      // a holding whose prices were removed.
+      //
+      // For genuinely unpriceable dust the two predicates agree and no
+      // number moves: an inflow with no price reference books a zero-cost
+      // lot, so there was never any cost to keep out.
+      const valueUnknown = ph.valueInBase === null;
+      if (!valueUnknown) {
         totalCost = totalCost.add(costBasis);
         totalRealized = totalRealized.add(realizedPnl);
       }
@@ -265,14 +274,14 @@ export class PnLAtTimeService {
       // failure — the exact shape of the bug SC-146 closed on the value
       // side. Only holdings that contribute a number can qualify it.
       const basisQuality = cost?.basisQuality ?? 'unknown';
-      if (!ph.unpriceable && basisQuality !== 'known') basisUnknownCount += 1;
+      if (!valueUnknown && basisQuality !== 'known') basisUnknownCount += 1;
       // Same gate, same argument (SC-160). An unpriceable holding's realized
       // PnL never entered `totalRealized`, so an unanswered exit out of it
       // cannot be understating a figure it does not contribute to — counting
       // it would put a caveat on the chart that no answer in the queue could
       // ever remove.
       const transfersUnreviewed = cost?.transfersUnreviewed ?? 0;
-      if (!ph.unpriceable) unreviewedCount += transfersUnreviewed;
+      if (!valueUnknown) unreviewedCount += transfersUnreviewed;
       perHolding.push({
         holdingId: ph.holdingId,
         accountId: ph.accountId,
