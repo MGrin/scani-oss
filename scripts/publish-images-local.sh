@@ -233,11 +233,75 @@ if [ "$PUSH" = "1" ]; then
     || die "cannot read ${NAMESPACE}/api from Docker Hub. Run \`docker login\` with a token that has write on ${NAMESPACE}/*."
 fi
 
+# ── the frontend boots at all ─────────────────────────────────────────────
+#
+# `scani/frontend-app:0.13.0` — the tag `scripts/self-host.sh` pulls by
+# default — rendered NOTHING. `#root` stayed empty for every self-hoster from
+# the day the images were first published. The cause was a module-scope throw:
+# the image is built with `VITE_API_URL=/api` (below) so that one artefact
+# serves any hostname, and two things in the boot chain required an absolute
+# URL. `main.tsx` never ran (SC-509).
+#
+# EVERY gate this project has passed over it. `bun run test` does not build the
+# bundle, `docs:check` does not build the bundle, and the visual gate renders a
+# DEV build with an absolute `VITE_API_URL` — which is precisely the
+# configuration that hid it. The only thing that could ever have seen it is
+# loading the real artefact in a real browser, so that is what this does, here,
+# before anything is pushed.
+#
+# It costs one extra single-arch build. Nearly every layer is shared with the
+# multi-arch build below, so on a warm cache it is seconds — and it is the
+# difference between shipping a blank page to strangers and not.
+smoke_frontend_boots() {
+  local tag="${NAMESPACE}/frontend-app:boot-check"
+  local name="scani-frontend-boot-check"
+  local port="${BOOT_CHECK_PORT:-8099}"
+
+  command -v bun >/dev/null 2>&1 || die "bun is needed for the frontend boot check."
+
+  log "building ${NAMESPACE}/frontend-app for the boot check (single-arch, not pushed)"
+  docker buildx build \
+    --builder "$BUILDER" \
+    --file "$(dockerfile_for frontend-app)" \
+    --build-arg VITE_API_URL=/api \
+    --tag "$tag" \
+    --provenance=false \
+    --load \
+    . </dev/null
+
+  docker rm -f "$name" >/dev/null 2>&1 || true
+  # A dead-end upstream on purpose. nginx refuses to start if `proxy_pass`
+  # names a host it cannot resolve, and there is no api here — this check is
+  # about whether the BUNDLE boots, not about whether the stack works.
+  docker run -d --rm --name "$name" -p "${port}:80" \
+    -e API_UPSTREAM=http://127.0.0.1:9 "$tag" >/dev/null \
+    || die "could not start the frontend image for the boot check."
+
+  local code=0
+  for _ in $(seq 1 20); do
+    [ "$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:${port}/" || true)" = "200" ] && break
+    sleep 1
+  done
+
+  bun apps/e2e/scripts/check-spa-boots.ts "http://localhost:${port}/" || code=$?
+  docker rm -f "$name" >/dev/null 2>&1 || true
+
+  [ "$code" -eq 0 ] || die "the frontend-app image renders nothing. NOT publishing. See SC-509."
+  ok "the frontend-app bundle mounts"
+}
+
 if ! docker buildx inspect "$BUILDER" >/dev/null 2>&1; then
   log "creating buildx builder '$BUILDER' (container driver — the default one cannot do multi-arch)"
   docker buildx create --name "$BUILDER" --driver docker-container --bootstrap >/dev/null
 fi
 ok "builder $BUILDER"
+
+# Before the loop, so a bundle that renders nothing is never pushed.
+for image in "${IMAGES[@]}"; do
+  if [ "$image" = "frontend-app" ] && [ "$DRY_RUN" != "1" ]; then
+    smoke_frontend_boots
+  fi
+done
 
 for image in "${IMAGES[@]}"; do
   dockerfile="$(dockerfile_for "$image")"

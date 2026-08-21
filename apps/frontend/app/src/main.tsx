@@ -27,11 +27,17 @@ import './index.css';
 // Fail loudly if the build pipeline forgot to stage VITE_API_URL — better
 // a clear error surface in /var/log than a silently broken bundle hitting
 // localhost:3001 forever.
+//
+// `allowSameOriginPath` because the published `scani/frontend-app` image is
+// built with `VITE_API_URL=/api`: one artefact, any hostname, nginx inside the
+// container proxying to `API_UPSTREAM`. Without it this call threw here, at
+// module scope, and every published build was a blank page (SC-467).
 assertFrontendEnv([
   {
     name: 'VITE_API_URL',
     value: import.meta.env.VITE_API_URL,
     required: true,
+    allowSameOriginPath: true,
   },
 ]);
 
