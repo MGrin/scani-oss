@@ -31,6 +31,22 @@ export interface FrontendEnvSpec {
    * production and `['http:', 'https:']` everywhere else.
    */
   allowedProtocols?: readonly string[];
+  /**
+   * Accept a root-relative path (`/api`) as well as an absolute URL.
+   *
+   * The published `scani/frontend-app` image is built with
+   * `VITE_API_URL=/api` so that ONE artefact serves any hostname — nginx
+   * inside it proxies `/api/` to `API_UPSTREAM` and the browser never learns
+   * the backend's address. Without this flag that value fails `new URL(raw)`
+   * and this function throws during module evaluation of `main.tsx`, which is
+   * a blank page with no error boundary above it and no network request to
+   * look at (SC-467, measured against the published 0.13.0 image).
+   *
+   * Off by default, and deliberately per-spec: `VITE_SENTRY_DSN` has no
+   * same-origin meaning, and accepting `/whatever` for it would turn a
+   * misconfiguration into a silent no-op.
+   */
+  allowSameOriginPath?: boolean;
 }
 
 export interface AssertFrontendEnvOptions {
@@ -68,11 +84,20 @@ export function assertFrontendEnv(
       continue;
     }
 
+    // A root-relative path is same-origin by construction, so there is no
+    // protocol to check and nothing the protocol rule below could say about
+    // it: it inherits the page's, which is https wherever that matters.
+    if (spec.allowSameOriginPath && raw.startsWith('/') && !raw.startsWith('//')) {
+      continue;
+    }
+
     let parsed: URL;
     try {
       parsed = new URL(raw);
     } catch {
-      errors.push(`${spec.name} must be a valid URL (got ${truncate(raw)})`);
+      errors.push(
+        `${spec.name} must be a valid URL${spec.allowSameOriginPath ? ' or a root-relative path' : ''} (got ${truncate(raw)})`
+      );
       continue;
     }
 

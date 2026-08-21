@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { invalidatePortfolioQueries } from '@/hooks/invalidatePortfolioQueries';
+import { apiBaseUrl } from '@/lib/api-base-url';
 import { trpc } from '@/lib/trpc';
 
 /**
@@ -318,7 +319,12 @@ export function RealtimeProvider({ children }: RealtimeProviderProps) {
         return;
       }
 
-      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+      // Resolved, not read raw: the published image is built with
+      // `VITE_API_URL=/api`, and `new WebSocket('/api/')` throws SyntaxError
+      // because a relative URL resolves to an http: scheme. That throw is
+      // caught below, so realtime just never connects on a self-hosted or
+      // demo instance and nothing says why (SC-467).
+      const apiUrl = apiBaseUrl();
       // http:// → ws://, https:// → wss://
       const wsUrl = `${apiUrl.replace(/^http/, 'ws')}/`;
 
