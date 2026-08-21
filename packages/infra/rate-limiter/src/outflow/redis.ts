@@ -1,5 +1,5 @@
+import { withRedisTimeout } from '@scani/deadline';
 import type { Redis } from 'ioredis';
-import { withRedisTimeout } from '../redis-timeout';
 import { OutflowRateLimiter } from './outflow-rate-limiter';
 
 // Lua-scripted sliding window on a Redis sorted set.

@@ -1,5 +1,6 @@
+import { RedisCommandTimeoutError, withRedisTimeout } from '@scani/deadline';
 import { createComponentLogger } from '@scani/logging';
-import { getSharedRedis, RedisCommandTimeoutError, withRedisTimeout } from '@scani/rate-limiter';
+import { getSharedRedis } from '@scani/rate-limiter';
 import { Service } from 'typedi';
 import type { PortfolioValueResult } from './PortfolioValuationService';
 
