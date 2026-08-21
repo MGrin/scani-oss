@@ -255,6 +255,7 @@ export class RollupPortfolioValueDailyUseCase {
                 holdingsStaleAnchored: userResult.holdingsStaleAnchored,
                 oldestAnchorAt: userResult.oldestAnchorAt,
                 holdingsBeforeRecords: userResult.holdingsBeforeRecords,
+                holdingsInterpolated: userResult.holdingsInterpolated,
                 holdingsBasisUnknown: userResult.holdingsBasisUnknown,
                 transfersUnreviewed: userResult.transfersUnreviewed,
                 costBasis: userResult.totalCostBasis.toString(),
@@ -380,6 +381,8 @@ export class RollupPortfolioValueDailyUseCase {
     // balance projected below its holding's first evidence is a fact about
     // the scopes containing that holding and about no others.
     let beforeRecordsCount = 0;
+    // Re-derived per scope for the same reason the two counts above are.
+    let interpolatedCount = 0;
     let oldestAnchorAt: Date | null = null;
     let basisUnknownCount = 0;
     let transfersUnreviewed = 0;
@@ -395,6 +398,7 @@ export class RollupPortfolioValueDailyUseCase {
           }
         }
         if (ph.balanceBeforeRecords) beforeRecordsCount++;
+        if (ph.balanceInterpolated) interpolatedCount++;
       }
       if (ph.unpriceable) {
         unpriceableCount++;
@@ -462,6 +466,10 @@ export class RollupPortfolioValueDailyUseCase {
       // since SC-252 and reached no column, so the row said 'partial' with
       // every count at zero — confidence reduced, cause unstated.
       holdingsBeforeRecords: beforeRecordsCount,
+      // Recorded and not consulted, unlike every count beside it: it does not
+      // move `coverageQuality` (SC-475). See the note on
+      // `PortfolioValueAtTimeResult.holdingsInterpolated`.
+      holdingsInterpolated: interpolatedCount,
       holdingsBasisUnknown: basisUnknownCount,
       transfersUnreviewed,
       costBasis: totalCost.toString(),

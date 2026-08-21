@@ -323,3 +323,114 @@ describe('BalanceAtTimeService.getBalance — the lower bound (SC-252)', () => {
     expect(r.beforeRecords).toBe(false);
   });
 });
+
+// ---------------------------------------------------------------------
+// SC-475 fault B — interpolation across an unexplained observation gap.
+// ---------------------------------------------------------------------
+
+describe('BalanceAtTimeService.getBalance — interpolation across sparse observations', () => {
+  test('THE DEFECT: ten weeks of unexplained drift used to land on one day', async () => {
+    ***REMOVED***
+    ***REMOVED***
+    ***REMOVED***
+    ***REMOVED***
+    ***REMOVED***
+    ***REMOVED***
+    const first = new Date('2026-05-17T15:07:54.662Z');
+    const second = new Date('2026-07-27T23:47:01.714Z');
+    const svc = makeService(
+      [
+        ***REMOVED***
+        ***REMOVED***
+      ],
+      []
+    );
+
+    const dayAfter = await svc.getBalance(HOLD, new Date('2026-05-17T23:59:59.999Z'));
+    ***REMOVED***
+    // the first day. It is now a few hours' worth.
+    ***REMOVED***
+    expect(dayAfter.interpolated).toBe(true);
+
+    // Halfway across the gap is halfway down.
+    const midpoint = new Date((first.getTime() + second.getTime()) / 2);
+    expect(Number((await svc.getBalance(HOLD, midpoint)).balance?.toString())).toBeCloseTo(
+      (41749.85 + 22174.58) / 2,
+      6
+    );
+  });
+
+  test('both measurements are reproduced exactly — only the space between them moves', async () => {
+    const first = new Date('2026-05-17T15:07:54.662Z');
+    const second = new Date('2026-07-27T23:47:01.714Z');
+    const svc = makeService(
+      [
+        ***REMOVED***
+        ***REMOVED***
+      ],
+      []
+    );
+
+    const atFirst = await svc.getBalance(HOLD, first);
+    ***REMOVED***
+    // `at` sits ON an observation, so there is nothing to draw a line across.
+    expect(atFirst.interpolated).toBe(false);
+
+    const atSecond = await svc.getBalance(HOLD, second);
+    ***REMOVED***
+    expect(atSecond.interpolated).toBe(false);
+  });
+
+  test('a gap the transactions DO explain is untouched, and not flagged', async () => {
+    // The common path, and the reason this is safe to turn on for everyone:
+    // where the ledger accounts for the difference between two observations
+    // there is no drift to spread, so the walk-back answer is returned
+    // unchanged and `interpolated` stays false.
+    const first = new Date('2026-01-01T00:00:00Z');
+    const second = new Date('2026-03-01T00:00:00Z');
+    const svc = makeService(
+      [
+        { holdingId: HOLD, balance: '100', observedAt: first },
+        { holdingId: HOLD, balance: '150', observedAt: second },
+      ],
+      [{ holdingId: HOLD, quantity: '50', occurredAt: new Date('2026-02-01T00:00:00Z') }]
+    );
+
+    const before = await svc.getBalance(HOLD, new Date('2026-01-15T00:00:00Z'));
+    expect(before.balance?.toString()).toBe('100');
+    expect(before.interpolated).toBe(false);
+
+    const after = await svc.getBalance(HOLD, new Date('2026-02-15T00:00:00Z'));
+    expect(after.balance?.toString()).toBe('150');
+    expect(after.interpolated).toBe(false);
+  });
+
+  test('drift and a transaction in the same gap: only the drift is spread', async () => {
+    const first = new Date('2026-01-01T00:00:00Z');
+    const second = new Date('2026-01-11T00:00:00Z');
+    const svc = makeService(
+      [
+        { holdingId: HOLD, balance: '100', observedAt: first },
+        { holdingId: HOLD, balance: '160', observedAt: second },
+      ],
+      // 50 of the 60 is explained; 10 is drift.
+      [{ holdingId: HOLD, quantity: '50', occurredAt: new Date('2026-01-09T00:00:00Z') }]
+    );
+
+    // Day 5 of 10: half the drift has accrued, the transaction has not landed.
+    const midpoint = await svc.getBalance(HOLD, new Date('2026-01-06T00:00:00Z'));
+    expect(Number(midpoint.balance?.toString())).toBeCloseTo(105, 9);
+    expect(midpoint.interpolated).toBe(true);
+  });
+
+  test('before the first observation nothing is interpolated', async () => {
+    // There is no earlier measurement to draw a line from, so the walk-back
+    // from the first observation stands — which is what makes the opening
+    // balance visible at all.
+    const first = new Date('2026-05-17T15:07:54.662Z');
+    ***REMOVED***
+    const r = await svc.getBalance(HOLD, new Date('2026-01-01T00:00:00Z'));
+    ***REMOVED***
+    expect(r.interpolated).toBe(false);
+  });
+});
