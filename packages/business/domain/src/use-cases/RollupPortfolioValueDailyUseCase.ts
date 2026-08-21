@@ -400,10 +400,15 @@ export class RollupPortfolioValueDailyUseCase {
         if (ph.balanceBeforeRecords) beforeRecordsCount++;
         if (ph.balanceInterpolated) interpolatedCount++;
       }
-      if (ph.unpriceable) {
-        unpriceableCount++;
-        continue; // out of the value side, out of the cost side
-      }
+      if (ph.unpriceable) unpriceableCount++;
+      // Out of the value side, out of the cost side — gated on whether we
+      // could value it, not on `unpriceable`, which is the narrow "never had
+      // a price row AND is in a cooldown" flag and misses every other reason
+      // a value is null. Mirrors `PnLAtTimeService`, where the argument is
+      // written out in full; the short version is that a holding whose cost
+      // basis stays in a total its value never reaches is drawn as a total
+      // loss the user never took (SC-505, reproduced at exactly -100%).
+      if (ph.value === null) continue;
       if (ph.basisQuality !== 'known') basisUnknownCount++;
       // Written here and not only on the user-scope row above: the home
       // chart, the PnL series and both exports are built from these
