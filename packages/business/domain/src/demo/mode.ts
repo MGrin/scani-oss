@@ -125,3 +125,38 @@ export async function assertDemoOnlyDatabase(executor: DatabaseTransaction = db)
   const rows = await executor.select({ email: schema.users.email }).from(schema.users);
   assertDemoOnlyUsers(rows.map((row) => row.email));
 }
+
+/**
+ * `assertDemoOnlyUsers` without the empty-database refusal (SC-467).
+ *
+ * The two guards ask different questions and both answers are correct for
+ * their caller. `assertDemoOnlyUsers` asks *"has this database been shown to
+ * be a demo"*, because its caller is about to hand every anonymous visitor a
+ * session — and emptiness proves nothing there. This one asks *"is there
+ * anybody here I would destroy"*, because its caller is the first-boot seeder,
+ * whose whole job is to fill a database that has nothing in it. Calling the
+ * stricter guard from the seeder would refuse the only case the seeder exists
+ * for, and a fresh demo deployment would never come up.
+ *
+ * Both refuse a foreign account, which is the case that matters: the seeder
+ * deletes the demo user and lets the cascade run, and pointing it at a
+ * database holding real people is the one failure with no undo.
+ */
+export function assertNoForeignUsers(emails: readonly (string | null)[]): void {
+  const foreign = foreignUserEmails(emails);
+  if (foreign.length === 0) return;
+  throw new DemoModeRefused(
+    `Refusing to seed the demo dataset: the database holds ${foreign.length} account(s) that are ` +
+      `not the demo persona (${foreign.slice(0, 3).join(', ')}${foreign.length > 3 ? ', …' : ''}). ` +
+      'Seeding deletes the demo user and everything cascading off them, so it may only run ' +
+      'against a database dedicated to the demo.'
+  );
+}
+
+/** `assertNoForeignUsers` against the connected database. */
+export async function assertNoForeignUsersInDatabase(
+  executor: DatabaseTransaction = db
+): Promise<void> {
+  const rows = await executor.select({ email: schema.users.email }).from(schema.users);
+  assertNoForeignUsers(rows.map((row) => row.email));
+}
