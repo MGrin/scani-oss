@@ -104,6 +104,7 @@
     "./v3/lib/figure": "./src/v3/lib/figure.ts",
     "./v3/lib/loading": "./src/v3/lib/loading.ts",
     "./v3/lib/numeric": "./src/v3/lib/numeric.ts",
+    "./v3/lib/path": "./src/v3/lib/path.ts",
     "./v3/lib/peek": "./src/v3/lib/peek.ts",
     "./v3/lib/query-state": "./src/v3/lib/query-state.ts",
     "./v3/lib/sheet": "./src/v3/lib/sheet.ts",

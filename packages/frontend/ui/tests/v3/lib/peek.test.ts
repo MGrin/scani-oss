@@ -91,3 +91,29 @@ describe('resolvePeekClose', () => {
     });
   });
 });
+
+// SC-483. `stripTrailingSlash` used `.replace(/\/+$/, '')`, which backtracks
+// quadratically on a run of slashes: the engine retries the `\/+` from every
+// slash and each attempt walks to the end before `$` rejects it. The pathname
+// comes straight from the address bar, so any link can hand it one.
+describe('parsePeekId is linear in the pathname length (SC-483)', () => {
+  test('trailing slashes are still stripped, however many', () => {
+    expect(parsePeekId('/holdings/h1/', '/holdings')).toBe('h1');
+    expect(parsePeekId('/holdings/h1///', '/holdings')).toBe('h1');
+    expect(parsePeekId('/holdings/h1', '/holdings///')).toBe('h1');
+    expect(parsePeekId('//', '/holdings')).toBeNull();
+    expect(parsePeekId('/holdings//h1', '/holdings')).toBeNull();
+  });
+
+  // The trailing `x` is load-bearing: it is what makes `$` reject, so the
+  // engine retries `\/+` from every one of the 80k slashes. End the path in a
+  // slash instead and the greedy first attempt succeeds, hiding the blowup.
+  test('80k slashes resolve in well under a second', () => {
+    const path = `/holdings/${'/'.repeat(80_000)}x`;
+    const started = performance.now();
+    expect(parsePeekId(path, '/holdings')).toBeNull();
+    const elapsed = performance.now() - started;
+    // Quadratic, this input took ~2.2 s; linear it is under a millisecond.
+    expect(elapsed).toBeLessThan(250);
+  });
+});

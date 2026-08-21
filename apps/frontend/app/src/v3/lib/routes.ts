@@ -1,3 +1,4 @@
+import { stripTrailingSlash } from '@scani/ui/v3/lib/path';
 import { type DataQualityKind, HOLDINGS_QUALITY_PARAM } from './dataQuality';
 import { V3_BASE } from './ui-version';
 
@@ -357,7 +358,7 @@ function covers(navPath: string, pathname: string): boolean {
 
 function normalize(pathname: string): string {
   if (pathname.length > 1 && pathname.endsWith('/')) {
-    return pathname.replace(/\/+$/, '') || '/';
+    return stripTrailingSlash(pathname) || '/';
   }
   return pathname;
 }
