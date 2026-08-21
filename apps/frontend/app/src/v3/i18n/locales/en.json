@@ -1,6 +1,10 @@
 {
   "v3": {
     "shell": {
+      "demo": {
+        "banner": "Demo — sample data for a fictional person. Read-only, and it resets every day.",
+        "signUp": "Create your own account"
+      },
       "tabBar": {
         "landmark": "Primary",
         "moreWithReview_one": "More — {{count}} item needs review",

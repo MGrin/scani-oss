@@ -10,6 +10,7 @@ import { cn } from '@/lib/utils';
 import { useReviewFeed } from '@/v3/hooks/useReviewFeed';
 import { CaptureSheet } from '../components/capture/CaptureSheet';
 import { CaptureSheetProvider } from '../components/capture/CaptureSheetContext';
+import { DemoBanner } from '../components/DemoBanner';
 import { PullToRefreshIndicator } from '../components/PullToRefreshIndicator';
 import { V3TokenScope } from '../components/V3TokenScope';
 import { usePullToRefresh } from '../hooks/usePullToRefresh';
@@ -69,7 +70,11 @@ export function V3Shell() {
   return (
     <V3TokenScope
       rootRef={shellRef}
-      className="flex h-dvh overflow-hidden bg-background text-foreground"
+      // A column, so the demo label can span the sidebar as well as the
+      // content — it is a statement about the deployment, not about the page.
+      // `DemoBanner` renders null everywhere else, so this is one empty flex
+      // child on every other deployment and nothing moves (SC-466).
+      className="flex h-dvh flex-col overflow-hidden bg-background text-foreground"
       // `InstallPromptBanner` and `UpdateBanner` are `fixed top-0` and are
       // mounted above the router, so they cover whatever the current shell
       // puts at the top of the screen. They already publish their height for
@@ -77,101 +82,107 @@ export function V3Shell() {
       // keeps the header visible instead of hidden behind a banner.
       style={{ paddingTop: 'var(--scani-banner-offset, 0px)' }}
     >
-      <V3Sidebar
-        activePath={activePath}
-        actionRequiredCount={actionRequiredCount}
-        onCapturePress={openCapture}
-      />
+      <DemoBanner />
 
-      <div className="flex min-w-0 flex-1 flex-col">
-        <header
-          className="flex shrink-0 items-center gap-2 border-b border-border px-4 lg:hidden"
-          style={{
-            paddingTop: 'env(safe-area-inset-top)',
-            minHeight: 'calc(3.5rem + env(safe-area-inset-top))',
-          }}
-        >
-          {/* The "v3" chip that sat here is gone (V3-19) — see `V3Sidebar`. */}
-          <span className="text-title">Scani</span>
-          <div className="ml-auto flex items-center gap-1">
-            <ThemeToggle variant="icon" side="bottom" align="end" />
-          </div>
-        </header>
+      <div className="flex min-h-0 flex-1 overflow-hidden">
+        <V3Sidebar
+          activePath={activePath}
+          actionRequiredCount={actionRequiredCount}
+          onCapturePress={openCapture}
+        />
 
-        {/* The pull indicator is positioned against this wrapper rather than
-            against `<main>` itself: `<main>` is the route-transition region,
-            and anything inside it is captured in the snapshot and cross-fades
-            with the page. It is also the scroller, so a child of it would
-            scroll away mid-refresh. `overflow-hidden` is what lets the chip
-            start off the top edge instead of over the header. */}
-        <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-          <PullToRefreshIndicator
-            distance={pull.distance}
-            phase={pull.phase}
-            progress={pull.progress}
-          />
-
-          {/* `data-v3-route-region` is the only element in v3 carrying a
-              `view-transition-name` (styles/v3-motion.css). Naming the content
-              region is what holds the tab bar, the sidebar and this header
-              still while the page under them changes — an unnamed document
-              cross-fades the chrome with an identical copy of itself. */}
-          {/* `relative` is load-bearing, and the reason is not obvious.
-
-              Tailwind's `sr-only` is `position: absolute`. An absolutely
-              positioned element is laid out against its nearest *positioned*
-              ancestor, and is clipped by that ancestor's overflow — not by an
-              unpositioned one. With nothing positioned between a screen-reader
-              label and the document, every `sr-only` span in a long list
-              resolved against the initial containing block, escaped this
-              element's `overflow-y: auto`, and extended the *document*.
-              Measured on production at 1200×874 with 69 holdings:
-              `documentElement.scrollHeight` 4250 against a `body` of 874, so
-              the whole shell — sidebar included — scrolled away and left the
-              bare `<body>` showing under it. Positioning this element makes it
-              the containing block, so those spans are clipped here and the
-              document stops growing.
-
-              `overscroll-none` is the other half: it stops a rubber-band at
-              either end of this scroller from chaining to the document, where
-              `<body>` is painted by `globals.css` from *v2's* `--background`
-              (measured `rgb(10,10,10)` against this tree's `rgb(13,14,17)`)
-              and reads as a seam. It is also what makes the pull unambiguous:
-              a gesture this shell has claimed must not also move the page
-              behind it. */}
-          <main
-            className={cn(
-              'relative min-h-0 flex-1 overflow-y-auto overscroll-none',
-              'ease-emphasized duration-base',
-              // Easing the page while the finger is on it would be lag; easing
-              // it on release is the settle.
-              pull.phase === 'pulling' || pull.phase === 'ready' ? '' : 'transition-transform'
-            )}
-            data-scrollable="true"
-            data-v3-route-region="true"
-            ref={scrollerRef}
-            // The page follows the finger. A chip that descends over a still
-            // page reads as a badge stuck to the content — on the home screen
-            // it lands on the net-worth figure. Moving the page is what makes
-            // the gap the chip lives in, and is what every phone list does.
-            //
-            // `undefined` at rest, not `translateY(0)`: a transform that is
-            // always present makes this element the containing block for any
-            // `position: fixed` descendant, which would silently anchor a
-            // future fixed bar inside a page to the scroller instead of the
-            // viewport. It only exists while the gesture does.
-            style={pull.distance > 0 ? { transform: `translateY(${pull.distance}px)` } : undefined}
+        <div className="flex min-w-0 flex-1 flex-col">
+          <header
+            className="flex shrink-0 items-center gap-2 border-b border-border px-4 lg:hidden"
+            style={{
+              paddingTop: 'env(safe-area-inset-top)',
+              minHeight: 'calc(3.5rem + env(safe-area-inset-top))',
+            }}
           >
-            {/* The opener reaches the outlet so an empty screen can carry the
-                capture sheet as its call to action — which is the place it is
-                worth the most. */}
-            <CaptureSheetProvider value={openCapture}>
-              <Outlet />
-            </CaptureSheetProvider>
-            {/* The tab bar is fixed to the viewport so it cannot drift with
-                dvh shifts; this reserves the height it covers. */}
-            <div aria-hidden="true" className="lg:hidden" style={{ height: V3_TAB_BAR_SPACER }} />
-          </main>
+            {/* The "v3" chip that sat here is gone (V3-19) — see `V3Sidebar`. */}
+            <span className="text-title">Scani</span>
+            <div className="ml-auto flex items-center gap-1">
+              <ThemeToggle variant="icon" side="bottom" align="end" />
+            </div>
+          </header>
+
+          {/* The pull indicator is positioned against this wrapper rather than
+              against `<main>` itself: `<main>` is the route-transition region,
+              and anything inside it is captured in the snapshot and cross-fades
+              with the page. It is also the scroller, so a child of it would
+              scroll away mid-refresh. `overflow-hidden` is what lets the chip
+              start off the top edge instead of over the header. */}
+          <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+            <PullToRefreshIndicator
+              distance={pull.distance}
+              phase={pull.phase}
+              progress={pull.progress}
+            />
+
+            {/* `data-v3-route-region` is the only element in v3 carrying a
+                `view-transition-name` (styles/v3-motion.css). Naming the content
+                region is what holds the tab bar, the sidebar and this header
+                still while the page under them changes — an unnamed document
+                cross-fades the chrome with an identical copy of itself. */}
+            {/* `relative` is load-bearing, and the reason is not obvious.
+
+                Tailwind's `sr-only` is `position: absolute`. An absolutely
+                positioned element is laid out against its nearest *positioned*
+                ancestor, and is clipped by that ancestor's overflow — not by an
+                unpositioned one. With nothing positioned between a screen-reader
+                label and the document, every `sr-only` span in a long list
+                resolved against the initial containing block, escaped this
+                element's `overflow-y: auto`, and extended the *document*.
+                Measured on production at 1200×874 with 69 holdings:
+                `documentElement.scrollHeight` 4250 against a `body` of 874, so
+                the whole shell — sidebar included — scrolled away and left the
+                bare `<body>` showing under it. Positioning this element makes it
+                the containing block, so those spans are clipped here and the
+                document stops growing.
+
+                `overscroll-none` is the other half: it stops a rubber-band at
+                either end of this scroller from chaining to the document, where
+                `<body>` is painted by `globals.css` from *v2's* `--background`
+                (measured `rgb(10,10,10)` against this tree's `rgb(13,14,17)`)
+                and reads as a seam. It is also what makes the pull unambiguous:
+                a gesture this shell has claimed must not also move the page
+                behind it. */}
+            <main
+              className={cn(
+                'relative min-h-0 flex-1 overflow-y-auto overscroll-none',
+                'ease-emphasized duration-base',
+                // Easing the page while the finger is on it would be lag; easing
+                // it on release is the settle.
+                pull.phase === 'pulling' || pull.phase === 'ready' ? '' : 'transition-transform'
+              )}
+              data-scrollable="true"
+              data-v3-route-region="true"
+              ref={scrollerRef}
+              // The page follows the finger. A chip that descends over a still
+              // page reads as a badge stuck to the content — on the home screen
+              // it lands on the net-worth figure. Moving the page is what makes
+              // the gap the chip lives in, and is what every phone list does.
+              //
+              // `undefined` at rest, not `translateY(0)`: a transform that is
+              // always present makes this element the containing block for any
+              // `position: fixed` descendant, which would silently anchor a
+              // future fixed bar inside a page to the scroller instead of the
+              // viewport. It only exists while the gesture does.
+              style={
+                pull.distance > 0 ? { transform: `translateY(${pull.distance}px)` } : undefined
+              }
+            >
+              {/* The opener reaches the outlet so an empty screen can carry the
+                  capture sheet as its call to action — which is the place it is
+                  worth the most. */}
+              <CaptureSheetProvider value={openCapture}>
+                <Outlet />
+              </CaptureSheetProvider>
+              {/* The tab bar is fixed to the viewport so it cannot drift with
+                  dvh shifts; this reserves the height it covers. */}
+              <div aria-hidden="true" className="lg:hidden" style={{ height: V3_TAB_BAR_SPACER }} />
+            </main>
+          </div>
         </div>
       </div>
 

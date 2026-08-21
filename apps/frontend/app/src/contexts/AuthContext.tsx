@@ -18,6 +18,7 @@ import {
   readCachedUser,
   writeCachedUser,
 } from '@/lib/session-cache';
+import { trpc } from '@/lib/trpc';
 
 /**
  * Auth context wired to Better-Auth. Exposes the same surface the rest of
@@ -70,6 +71,10 @@ export interface AuthAttemptResult {
 
 interface AuthContextType {
   user: AuthUser | null;
+  /** This deployment is the read-only demo (SC-466). Nobody signed in. */
+  isDemo: boolean;
+  /** Where a demo visitor goes to get a real account. Null off the demo. */
+  signupUrl: string | null;
   session: AuthSession | null;
   loading: boolean;
   status: AuthStatus;
@@ -103,6 +108,22 @@ function toAuthUser(user: {
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const { t } = useTranslation();
+  /**
+   * Whether this deployment is the demo, asked of the server rather than baked
+   * into the bundle (SC-466).
+   *
+   * One artefact serves both `app.scani.xyz` and `demo.scani.xyz`, so there is
+   * no build that could be handed to the wrong host with the flag already on —
+   * which is the failure mode the ticket is written against. The API answers
+   * this from configuration alone, so it is a constant-time reply with no
+   * database behind it, and it is cached for the life of the tab.
+   */
+  const demo = trpc.demo.status.useQuery(undefined, {
+    staleTime: Number.POSITIVE_INFINITY,
+    retry: 1,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+  });
   const [user, setUser] = useState<AuthUser | null>(null);
   const [session, setSession] = useState<AuthSession | null>(null);
   const [status, setStatus] = useState<AuthStatus>('loading');
@@ -110,7 +131,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const queryClient = useQueryClient();
   const mounted = useRef(true);
 
+  const demoEnabled = demo.data?.enabled === true;
+  const demoRef = useRef(false);
+  demoRef.current = demoEnabled;
+
   const resolveSession = useCallback(async () => {
+    // The demo has no session to resolve and `/api/auth/*` refuses outright on
+    // that deployment, so asking would spend a deadline to learn nothing.
+    if (demoRef.current) return;
     try {
       const res = await withDeadline(authClient.getSession(), AUTH_CALL_TIMEOUT_MS);
       if (!mounted.current) return;
@@ -209,6 +237,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const handleSignOut = async () => {
+    // Nothing is signed in on the demo, so "sign out" is the wrong verb and
+    // clearing local state would only blank a screen the visitor came to look
+    // at. The one useful destination is a real account (SC-466).
+    if (demoEnabled) {
+      const target = demo.data?.enabled ? demo.data.signupUrl : null;
+      if (target) window.location.assign(target);
+      return;
+    }
     try {
       await withDeadline(authClient.signOut(), AUTH_CALL_TIMEOUT_MS);
     } catch (error) {
@@ -234,11 +270,36 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return { error: 'Password reset is not used; sign in with a magic link instead' };
   };
 
+  /**
+   * A demo visitor IS the demo persona, and the app is told so here rather
+   * than at the auth gate — `ProtectedRoute` and every consumer of `useAuth`
+   * keep one rule and cannot disagree about it.
+   *
+   * `status` is held at `loading` while the demo probe is still out, but only
+   * when the session probe's answer was "no" or "could not ask". A valid
+   * session answers immediately and is never delayed by this, so a real user
+   * on `app.scani.xyz` pays nothing for the demo existing. Without the hold, a
+   * demo visitor gets a frame of `/auth` or of the offline screen before the
+   * probe lands — the app deciding it is signed out, on a deployment where
+   * being signed out is not a state that exists.
+   */
+  const demoUser: AuthUser | null =
+    demo.data?.enabled === true
+      ? { id: demo.data.user.id, email: demo.data.user.email, name: demo.data.user.name }
+      : null;
+  const effectiveStatus: AuthStatus = demoUser
+    ? 'authenticated'
+    : demo.isLoading && status !== 'authenticated'
+      ? 'loading'
+      : status;
+
   const value = {
-    user,
+    user: demoUser ?? user,
+    isDemo: demoUser !== null,
+    signupUrl: demo.data?.enabled === true ? demo.data.signupUrl : null,
     session,
-    loading: status === 'loading',
-    status,
+    loading: effectiveStatus === 'loading',
+    status: effectiveStatus,
     lastKnownUser,
     retrySession: resolveSession,
     authenticate,
