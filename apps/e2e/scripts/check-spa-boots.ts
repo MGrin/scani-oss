@@ -40,7 +40,11 @@ if (!url) {
   process.exit(2);
 }
 
-const TIMEOUT_MS = Number(process.env.SPA_BOOT_TIMEOUT_MS ?? 20_000);
+// Not configurable. A generous fixed ceiling is the whole budget: the failure
+// this catches is a bundle that never mounts at all, not one that mounts
+// slowly, so a knob here would only ever be turned up until the check stopped
+// failing.
+const TIMEOUT_MS = 20_000;
 
 const browser = await chromium.launch();
 const page = await browser.newPage();
