@@ -1,8 +1,8 @@
-import { Outlet, Route, BrowserRouter as Router, Routes } from 'react-router-dom';
+import { Navigate, Outlet, Route, BrowserRouter as Router, Routes } from 'react-router-dom';
 import { InstallPromptHost } from '@/components/InstallPromptHost';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { TimezoneReporter } from '@/components/TimezoneReporter';
-import { AuthProvider } from '@/contexts/AuthContext';
+import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 import { BaseCurrencyProvider } from '@/contexts/BaseCurrencyContext';
 import { FormatLocaleProvider } from '@/contexts/FormatLocaleContext';
 import { RealtimeProvider } from '@/contexts/RealtimeContext';
@@ -28,6 +28,19 @@ import { LegacyV2PathRedirect, LegacyV3PathRedirect } from '@/v3/components/Lega
  */
 const V3App = lazyRoute('interface', () => import('@/v3/V3App').then((m) => m.V3App));
 
+/**
+ * The sign-in screen, except where signing in is not a thing that exists.
+ *
+ * The demo deployment refuses `/api/auth/*` outright, so this form could only
+ * ever fail there — and a visitor who reaches `/auth` from a bookmark, a shared
+ * link or the PWA's start URL would be looking at a dead end instead of the
+ * portfolio they were sent to see (SC-466).
+ */
+function AuthScreen() {
+  const { isDemo } = useAuth();
+  return isDemo ? <Navigate to="/" replace /> : <Auth />;
+}
+
 function App() {
   // Both are document-level corrections to what iOS does around its software
   // keyboard, and both bugs were reported against the installed PWA in v2 as
@@ -52,9 +65,9 @@ function App() {
         >
           <Routes>
             {/* Public auth routes */}
-            <Route path="/auth" element={<Auth />} />
-            <Route path="/signin" element={<Auth />} />
-            <Route path="/signup" element={<Auth />} />
+            <Route path="/auth" element={<AuthScreen />} />
+            <Route path="/signin" element={<AuthScreen />} />
+            <Route path="/signup" element={<AuthScreen />} />
             <Route path="/auth/callback" element={<AuthCallback />} />
 
             {/* Everything authenticated hangs off one pathless layout route so

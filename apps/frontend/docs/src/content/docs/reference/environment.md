@@ -202,6 +202,19 @@ environment wins, because a person driving several stacks has a reason.
 | `SCANI_STACK_TAG` | compose files that pin the tag of a built image | One image tag per checkout, so the tree that built last does not decide which source every other stack runs. |
 | `<SERVICE>_HOST_PORT` | `docker-compose.yml` | One host port per published service (`POSTGRES_HOST_PORT`, `API_HOST_PORT`, `FRONTEND_HOST_PORT`, …). The primary checkout keeps the documented defaults; a linked worktree is offset by a multiple of 100. |
 
+## Demo mode
+
+Read by the api and the worker of a **demo deployment** only
+(`demo.scani.xyz`). On any other deployment both are unset and nothing
+in this section applies. See
+[the demo-mode feature notes](https://github.com/MGrin/scani/blob/main/docs/features/2026-08-21_demo-mode.md)
+for the reasoning.
+
+| Variable | Read by | What it does |
+|---|---|---|
+| `SCANI_DEMO_MODE` | api, worker | When **exactly `1`**, the api serves one fictional portfolio to anonymous visitors with no session, refuses every tRPC mutation with `FORBIDDEN`, and does not mount `/api/auth/*`, the admin routes or the unsubscribe route at all. The worker arms the `demo-reset` schedule and **nothing else**. Any other value — `true`, `yes`, `0`, blank — is off. The flag alone grants nothing: the api reads every email in `users` at boot and **exits** unless the only account there is the demo persona, so setting this against a production database takes the process down instead of opening a demo. |
+| `SCANI_DEMO_SIGNUP_URL` | api | Absolute URL the demo's "create your own account" link points at. Defaults to `https://app.scani.xyz`. |
+
 ## Testing-only
 
 These vars are read **only** by the e2e test runner under `apps/e2e/`
