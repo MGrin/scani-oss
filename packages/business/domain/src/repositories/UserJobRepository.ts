@@ -228,6 +228,25 @@ export class UserJobRepository {
   }
 
   /**
+   * Was this job cancelled by its owner? Keyed on `failure_reason` rather than
+   * `state`, because `markCancelled` writes `state='failed'` and so does an
+   * ordinary failure — only `failure_reason = 'cancelled'` distinguishes a
+   * deliberate stop from a job that simply failed and is due a retry.
+   *
+   * Read by `UserJobProcessor` before each attempt. See the note on
+   * `LifecycleMirror.isCancelled` for why this replaced `Job#discard()`.
+   */
+  async isCancelled(jobId: string, transaction?: DatabaseTransaction): Promise<boolean> {
+    const db = this.getDb(transaction);
+    const rows = await db
+      .select({ failureReason: schema.userJobs.failureReason })
+      .from(schema.userJobs)
+      .where(and(eq(schema.userJobs.jobId, jobId), eq(schema.userJobs.failureReason, 'cancelled')))
+      .limit(1);
+    return rows.length > 0;
+  }
+
+  /**
    * User-initiated cancellation. Locks the row into state='failed' with
    * a sentinel error message. Returns true on success, false when the
    * job is already in a terminal state (so the API can return a clear
