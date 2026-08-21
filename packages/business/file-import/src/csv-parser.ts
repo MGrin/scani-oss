@@ -275,7 +275,11 @@ function parseNumber(value: string | undefined): number | null {
   let normalized = cleaned.replace(/[^\d.,-]/g, '');
 
   // Handle European format (1.234,56 → 1234.56)
-  if (/\d+\.\d{3},\d{2}$/.test(normalized)) {
+  // One digit, not `\d+`: since the pattern is unanchored, a run of digits
+  // before the dot only ever changed where the match STARTED, never whether it
+  // matched — while making the whole thing quadratic on a long digit run in an
+  // uploaded cell (js/polynomial-redos, SC-483).
+  if (/\d\.\d{3},\d{2}$/.test(normalized)) {
     normalized = normalized.replace(/\./g, '').replace(',', '.');
   }
   // Handle US/UK thousands format (1,234 or 12,896.83 or 1,234,567.89)
