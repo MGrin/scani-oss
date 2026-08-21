@@ -74,7 +74,9 @@ export async function isDemoPersonaPresent(
  * the persona. Calling the api's guard would refuse exactly the case this
  * exists for, and the demo would never come up at all.
  */
-export async function ensureDemoDatasetSeeded(now: Date = new Date()): Promise<DemoBootstrapResult> {
+export async function ensureDemoDatasetSeeded(
+  now: Date = new Date()
+): Promise<DemoBootstrapResult> {
   if (await isDemoPersonaPresent()) {
     logger.info({}, '🎭 Demo dataset already present — not reseeding at boot');
     return { seeded: false };
