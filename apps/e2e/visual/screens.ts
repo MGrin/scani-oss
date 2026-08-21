@@ -98,6 +98,21 @@ export interface VisualScreen {
    * baseline.
    */
   height?: number;
+  /**
+   * This screen draws at least one institution mark, so its baseline holds an
+   * image the app fetches from a third party at render time (SC-524).
+   *
+   * `fixtures/visual-network.ts` serves those bytes instead of the internet,
+   * and this flag is what makes the spec check the substitution *worked*
+   * rather than merely happened. Without it the fix has a silent success
+   * mode: an interception that fulfils with nothing, or a 404, makes
+   * `FaviconImg` fall back to its letter tile — every screen still renders,
+   * `--update` still produces a baseline, and the gate goes green having
+   * removed the thing it was asked to hold still. So a screen declaring this
+   * must show a decoded `<img>` at the pinned URL, and a run where none
+   * appears fails rather than passing quietly.
+   */
+  institutionMark?: true;
   /** Why a break on this screen would cost something. */
   why: string;
 }
@@ -171,6 +186,7 @@ export const VISUAL_SCREENS: readonly VisualScreen[] = [
     name: 'holdings-phone',
     route: '/holdings',
     viewport: 'phone',
+    institutionMark: true,
     why:
       'The densest list v3 has, inside the phone shell. Row height, the truncation of a long ' +
       'identity against a long figure, and the numeric column alignment are all decided here ' +
@@ -180,6 +196,7 @@ export const VISUAL_SCREENS: readonly VisualScreen[] = [
     name: 'holdings-desktop',
     route: '/holdings',
     viewport: 'desktop',
+    institutionMark: true,
     why:
       'The same list in the other shell. Above 1024px v3 is a sidebar rather than a tab bar ' +
       'and a drawer, so every phone shot in this list is blind to it.',

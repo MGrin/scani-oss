@@ -1,4 +1,5 @@
 import { expect, type Page, test } from '@playwright/test';
+import { type PinnedNetwork, pinExternalNetwork } from '../fixtures/visual-network';
 import { VISUAL_EMPTY_SESSION_FILE, VISUAL_SESSION_FILE } from '../fixtures/visual-setup';
 import { VISUAL_SCREENS, type VisualScreen, type VisualSession } from './screens';
 
@@ -183,20 +184,20 @@ async function settle(page: Page, loads: DocumentLoads): Promise<void> {
  * ever seen. That is not a hypothetical: it is SC-473, and this assertion is
  * the only thing between the harness and doing it again.
  */
-async function assertPhotographedOnce(
-  page: Page,
-  loads: DocumentLoads,
-  name: string,
-  /** The capture's own failure, kept as the `cause` so its pixel count is
-   *  still in the report — it is a true statement about the wrong page. */
-  captured: unknown,
-  /** Under `--update`, `toHaveScreenshot` has already written the PNG by the
-   *  time this runs. Nothing here can un-write it, so the message has to say
-   *  so — a red run whose baseline is silently now a spinner is the SC-473
-   *  failure with an extra step. */
-  wroteBaseline: boolean
-): Promise<void> {
-  const fail = (message: string): never => {
+type Fail = (message: string) => never;
+
+/**
+ * How a post-capture check reports, given what the capture did.
+ *
+ * @param captured the capture's own failure, kept as the `cause` so its pixel
+ *   count is still in the report — it is a true statement about the wrong page.
+ * @param wroteBaseline under `--update`, `toHaveScreenshot` has already written
+ *   the PNG by the time these checks run. Nothing here can un-write it, so the
+ *   message has to say so — a red run whose baseline is silently now a spinner
+ *   is the SC-473 failure with an extra step.
+ */
+function failWith(name: string, captured: unknown, wroteBaseline: boolean): Fail {
+  return (message: string): never => {
     throw new Error(
       wroteBaseline
         ? `${message}\n\n--update has ALREADY overwritten visual/__screenshots__/${name}.png ` +
@@ -205,7 +206,74 @@ async function assertPhotographedOnce(
       { cause: captured }
     );
   };
+}
 
+/**
+ * That the picture was drawn from bytes this repository controls (SC-524).
+ *
+ * Two halves, and the second is the one a future reader will want to delete.
+ *
+ * **Nothing escaped.** `pinExternalNetwork` aborts every off-host request it
+ * was not told to serve, so an `escaped` entry is a byte source the gate
+ * cannot reproduce — a diff that will appear one day for a reason nobody can
+ * attribute. Reported as the URL rather than as a pixel count, because the
+ * pixel count is what made SC-524 take a session to diagnose.
+ *
+ * **The pinned bytes actually reached the DOM.** A screen that declares
+ * `institutionMark` must show at least one `<img>` at the pinned URL, decoded.
+ * This looks redundant — the run just fulfilled those requests, and the
+ * screenshot passed — and it is exactly what a stub that fulfils with an empty
+ * body, a 404 or a zero-byte PNG would still let through: `FaviconImg` catches
+ * the `onerror`, swaps in its letter tile, and the gate goes green having
+ * deleted the thing it was asked to hold still. `--update` would then write
+ * that letter tile into the baseline and every run afterwards would agree with
+ * it. The check that a fix did not quietly remove its own subject is not
+ * redundant with the fix.
+ */
+async function assertPinnedBytes(
+  page: Page,
+  network: PinnedNetwork,
+  screen: VisualScreen,
+  fail: Fail
+): Promise<void> {
+  if (network.escaped.length > 0) {
+    fail(
+      `${screen.name}: ${network.escaped.length} request(s) left this machine and were blocked: ` +
+        `${network.escaped.join(', ')}. A baseline drawn from bytes we do not serve is not a ` +
+        'baseline — see fixtures/visual-network.ts, which either pins the asset or is why this ' +
+        'is red.'
+    );
+  }
+  if (!screen.institutionMark) return;
+
+  const marks = await page.evaluate(() =>
+    [...document.images]
+      .filter((img) => img.src.includes('/s2/favicons'))
+      .map((img) => img.naturalWidth)
+  );
+  if (marks.length === 0) {
+    fail(
+      `${screen.name}: declares institutionMark and drew none — no <img> at the pinned URL is ` +
+        `in the DOM (${network.icons} pinned request(s) were served). Either the mark fell back ` +
+        "to FaviconImg's letter tile, or this screen no longer shows one and the declaration " +
+        'in screens.ts is stale. Both change what the baseline is a picture of.'
+    );
+  }
+  if (marks.some((width) => width === 0)) {
+    fail(
+      `${screen.name}: an institution mark is in the DOM but decoded to nothing ` +
+        `(naturalWidth ${marks.join(', ')}). The pinned bytes are not a readable image, so the ` +
+        'row renders a gap where the baseline holds a mark.'
+    );
+  }
+}
+
+async function assertPhotographedOnce(
+  page: Page,
+  loads: DocumentLoads,
+  name: string,
+  fail: Fail
+): Promise<void> {
   if (loads.count > 1) {
     fail(
       `${name}: the SPA reloaded under the capture — ${loads.count} document loads at ` +
@@ -239,6 +307,9 @@ function declare(screen: VisualScreen): void {
     }
     await page.clock.setFixedTime(FIXED_NOW);
 
+    // Before `goto`: a route added after a navigation has started does not
+    // apply to the requests that navigation already made.
+    const network = await pinExternalNetwork(page);
     const loads = trackDocumentLoads(page);
     await page.goto(screen.route);
     await settle(page, loads);
@@ -253,15 +324,15 @@ function declare(screen: VisualScreen): void {
     } catch (error) {
       captured = error;
     }
-    await assertPhotographedOnce(
-      page,
-      loads,
+    const fail = failWith(
       screen.name,
       captured,
       // `'missing'` is the default and only writes a baseline that is absent;
       // `'all'` and `'changed'` are what `--update` sets, and both overwrite.
       testInfo.config.updateSnapshots === 'all' || testInfo.config.updateSnapshots === 'changed'
     );
+    await assertPhotographedOnce(page, loads, screen.name, fail);
+    await assertPinnedBytes(page, network, screen, fail);
     if (captured) throw captured;
   });
 }
