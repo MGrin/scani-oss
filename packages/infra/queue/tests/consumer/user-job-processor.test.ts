@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { UnrecoverableError } from 'bullmq';
 import { Container } from 'typedi';
 import { z } from 'zod';
 // This workspace cannot depend on @scani/domain (it sits below it), so the
@@ -238,5 +239,90 @@ describe('UserJobProcessor — orchestration', () => {
     await expect(
       proc.process(makeJob({ userId: 'u1', requestId: 'r1', value: 'v' }))
     ).resolves.toEqual({ handled: 'ok' });
+  });
+});
+
+// BullMQ v6 removed `Job#discard()`, which was the ONLY way the cancel route
+// could stop an already-active job from retrying. These tests are the
+// replacement's evidence. They matter more than they look: user jobs really do
+// retry (`transaction-import` has `attempts: 4`), so a gate that silently
+// stopped working would let a cancelled import re-run its side effects up to
+// four more times, and nothing would go red.
+describe('UserJobProcessor — cancellation gate (replaces v6-removed Job#discard)', () => {
+  function mirrorWith(isCancelled?: (jobId: string) => Promise<boolean>) {
+    Container.set(LIFECYCLE_MIRROR, {
+      onLifecycle: async (event: LifecycleEvent) => {
+        mirrorEvents.push(event);
+      },
+      ...(isCancelled ? { isCancelled } : {}),
+    });
+  }
+
+  test('a cancelled job does not run its handler, and refuses retries', async () => {
+    mirrorWith(async () => true);
+    let ran = 0;
+    const proc = new StubProcessor(async () => {
+      ran++;
+      return { handled: 'ok' };
+    });
+    const err = await proc
+      .process(makeJob({ userId: 'u1', requestId: 'r1', value: 'v' }, 'job-cancelled'))
+      .then(() => null)
+      .catch((e: unknown) => e);
+
+    expect(ran).toBe(0);
+    // UnrecoverableError is the whole point — a plain Error would be retried,
+    // which is the exact behaviour `discard()` existed to prevent.
+    expect(err).toBeInstanceOf(UnrecoverableError);
+    expect((err as Error).message).toMatch(/cancelled by its owner/);
+  });
+
+  // THE TEST A FUTURE READER WILL WANT TO DELETE, because it asserts that
+  // nothing happens. Keep it. A gate that only ever fires is indistinguishable
+  // from one that is broken open, and this is the only assertion that would
+  // catch `isCancelled` accidentally returning true for every job — which
+  // would silently stop the entire queue while every test above still passed.
+  test('a job that was NOT cancelled runs normally', async () => {
+    const asked: string[] = [];
+    mirrorWith(async (jobId) => {
+      asked.push(jobId);
+      return false;
+    });
+    let ran = 0;
+    const proc = new StubProcessor(async () => {
+      ran++;
+      return { handled: 'ok' };
+    });
+    const result = await proc.process(
+      makeJob({ userId: 'u1', requestId: 'r1', value: 'v' }, 'job-live')
+    );
+    expect(ran).toBe(1);
+    expect(result).toEqual({ handled: 'ok' });
+    expect(asked).toEqual(['job-live']);
+    expect(mirrorEvents.map((e) => e.type)).toEqual(['active', 'completed']);
+  });
+
+  test('a cancelled job is never marked active (no phantom progress for a stopped job)', async () => {
+    mirrorWith(async () => true);
+    const proc = new StubProcessor(async () => ({ handled: 'ok' }));
+    await proc
+      .process(makeJob({ userId: 'u1', requestId: 'r1', value: 'v' }, 'job-cancelled-2'))
+      .catch(() => undefined);
+    expect(mirrorEvents).toHaveLength(0);
+    expect(publisherCalls).toHaveLength(0);
+  });
+
+  // A Tier-1 / OSS deployment has no durable job table, so its mirror does not
+  // implement the optional method. It must keep working exactly as before
+  // rather than refusing every job.
+  test('a mirror without isCancelled still runs the job', async () => {
+    mirrorWith(undefined);
+    let ran = 0;
+    const proc = new StubProcessor(async () => {
+      ran++;
+      return { handled: 'ok' };
+    });
+    await proc.process(makeJob({ userId: 'u1', requestId: 'r1', value: 'v' }, 'job-nomethod'));
+    expect(ran).toBe(1);
   });
 });

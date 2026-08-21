@@ -1,5 +1,5 @@
 import { createComponentLogger } from '@scani/logging';
-import type { Job } from 'bullmq';
+import { type Job, UnrecoverableError } from 'bullmq';
 import { Container } from 'typedi';
 import type { UserJobDescriptor } from '../core/job-descriptor';
 import {
@@ -42,6 +42,22 @@ export abstract class UserJobProcessor<TPayload extends UserJobBase, TResult = u
     }
     const data = parseResult.data;
     const jobId = String(job.id);
+
+    // Cancellation gate. BullMQ v6 removed `Job#discard()`, which is what the
+    // cancel route used to stop an ACTIVE job from retrying — an active job
+    // cannot be removed from the queue, so `remove()` throws and `discard()`
+    // was the only lever. User jobs retry for real (`transaction-import` has
+    // `attempts: 4`), so losing it would mean a cancelled import runs again,
+    // side effects and all, after the user asked it to stop.
+    //
+    // Asking the durable mirror is stronger than `discard()` was: it aborts
+    // this attempt too, not just the retries. `UnrecoverableError` is what
+    // tells BullMQ not to schedule another one.
+    const cancelMirror = this.tryGetMirror();
+    if (await cancelMirror?.isCancelled?.(jobId)) {
+      log.info({ jobId, name: this.descriptor.name }, '🛑 Job cancelled by owner — not running');
+      throw new UnrecoverableError(`Job ${jobId} was cancelled by its owner`);
+    }
     const attemptsAllowed = (job.opts.attempts as number | undefined) ?? 1;
     const attemptsMade = job.attemptsMade + 1;
 
