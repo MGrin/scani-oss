@@ -1,34 +1,56 @@
 import { createComponentLogger } from '@scani/logging';
-import { Queue } from 'bullmq';
-import type { Redis } from 'ioredis';
+import { createPostgresBackend, type PostgresQueueBackend, Queue } from 'bullmq';
+
+// See the note in worker-client.ts: the backend is a type parameter and the
+// default is Redis, so the Postgres variant must be named.
+type PgQueue = Queue<any, any, string, any, any, string, PostgresQueueBackend>;
+
 import { Service } from 'typedi';
 import { DEFAULT_QUEUE_NAME } from '../core/default-names';
 
 const log = createComponentLogger('queue:client');
 
 export interface QueueClientConfig {
-  connection: Redis;
+  /** Postgres connection string — the same DATABASE_URL the app already uses. */
+  connection: string;
   queueName?: string;
+  /**
+   * Schema holding BullMQ's tables. Defaults to `bullmq`, which keeps them out
+   * of the application's own namespace. Must match what `runQueueMigrations`
+   * created, or unqualified queries resolve to nothing.
+   */
+  schema?: string;
 }
+
+export const DEFAULT_QUEUE_SCHEMA = 'bullmq';
 
 // Wraps a single BullMQ Queue. Both api (producer side, enqueueing
 // user-initiated jobs) and worker (consumer side, chain-enqueueing
 // follow-up jobs + registering repeatable schedules) inject this.
 @Service()
 export class QueueClient {
-  private queue: Queue | null = null;
+  private queue: PgQueue | null = null;
 
-  configure(config: QueueClientConfig): Queue {
+  configure(config: QueueClientConfig): PgQueue {
     if (this.queue) {
       throw new Error('QueueClient already configured — call close() first to reconfigure');
     }
     const name = config.queueName ?? DEFAULT_QUEUE_NAME;
-    this.queue = new Queue(name, { connection: config.connection });
-    log.info({ queue: name }, '📮 QueueClient configured');
+    this.queue = new Queue(
+      name,
+      {
+        connection: {
+          connectionString: config.connection,
+          schema: config.schema ?? DEFAULT_QUEUE_SCHEMA,
+        },
+      } as never,
+      createPostgresBackend
+    );
+    log.info({ queue: name, backend: 'postgres' }, '📮 QueueClient configured');
     return this.queue;
   }
 
-  get(): Queue {
+  get(): PgQueue {
     if (!this.queue) {
       throw new Error('QueueClient not configured — call configure() at boot');
     }
