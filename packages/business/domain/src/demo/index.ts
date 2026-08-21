@@ -1,3 +1,9 @@
+export {
+  type DemoBootstrapResult,
+  ensureDemoDatasetSeeded,
+  isDemoPersonaPresent,
+  todayAnchor,
+} from './bootstrap';
 export { DEMO_PRICE_SOURCE, DemoDatasetSeeder, type DemoSeedSummary } from './DemoDatasetSeeder';
 export {
   type BuildDemoDatasetOptions,
@@ -7,12 +13,6 @@ export {
   type DemoScopeKind,
   type DemoTransactionRow,
 } from './dataset';
-export {
-  type DemoBootstrapResult,
-  ensureDemoDatasetSeeded,
-  isDemoPersonaPresent,
-  todayAnchor,
-} from './bootstrap';
 export {
   assertDemoOnlyDatabase,
   assertDemoOnlyUsers,
