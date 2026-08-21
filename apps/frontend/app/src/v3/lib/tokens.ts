@@ -1,3 +1,4 @@
+import { stripTrailingSlash } from '@scani/ui/v3/lib/path';
 import type { TFunction } from 'i18next';
 import { V3_ROUTES } from './routes';
 
@@ -33,10 +34,6 @@ export const TOKEN_SEGMENTS: readonly TokenSegmentDef[] = [
 ];
 
 export const DEFAULT_TOKEN_SEGMENT: TokenSegment = 'custom';
-
-function stripTrailingSlash(pathname: string): string {
-  return pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname;
-}
 
 export function resolveTokenSegment(pathname: string): TokenSegment {
   const path = stripTrailingSlash(pathname);

@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { stripTrailingSlash } from './path';
 
 /**
  * The peek sheet's content shape, and the URL arithmetic that makes it linkable.
@@ -95,10 +96,6 @@ export interface PeekConfig<T> {
  * entry is poppable.
  */
 export const PEEK_STATE_KEY = 'v3PeekFrom';
-
-function stripTrailingSlash(pathname: string): string {
-  return pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname;
-}
 
 /**
  * The record id a URL is peeking at, or null.
