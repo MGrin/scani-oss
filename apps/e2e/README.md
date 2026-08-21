@@ -396,6 +396,42 @@ with no screen, and a baseline rendered at the wrong viewport width all fail
 there. That is the same tie `a11y-coverage.test.ts` keeps between the
 accessibility gate and `fixtures/v3-routes.ts`.
 
+### Do not write to the app's sources while the gate runs (SC-499)
+
+**A `bun lint:fix`, a `git checkout`, a rebase or an editor save under
+`apps/frontend/app` or `packages/frontend/ui` reloads every screen mid-capture**,
+and until this was found nothing said so.
+
+The gate renders against the `frontend` container, which is `vite` in dev mode
+with the repo bind-mounted. Vite's dev server broadcasts a `full-reload` to
+every open page when a file in the app's module graph changes on disk, and
+Vite's client answers it by calling `location.reload()` **with no console
+output at all**. What comes back is the eagerly-loaded shell and a centred
+spinner, `toHaveScreenshot` retries, gets the same spinner twice, logs
+"captured a stable screenshot" and reports a pixel count.
+
+That is the dangerous half: a stable wrong answer reads exactly like a stable
+right one. On `--update` it writes the spinner into the baseline and every run
+afterwards agrees with it — green, forever, on a screen nobody has ever seen.
+It already happened once, to `home-phone` (SC-473).
+
+Reproduced on demand: appending one comment line to `apps/frontend/app/src/main.tsx`
+every three seconds during a run took `kitchen-sink-desktop` through **ten**
+document loads and produced exactly that — a photograph of a spinner, reported
+as "2260538 pixels (ratio 0.33) are different".
+
+Two things the ticket suspected and neither is it. The **service worker** cannot
+be: `main.tsx` registers it under `import.meta.env.PROD`, so a dev-server run
+never installs one — and the reload it would trigger is guarded by
+`wasDocumentControlledAtLoad()` (SC-130). Nor is it Vite's **dependency
+optimiser**: wiping `node_modules/.vite` in the container and restarting the dev
+server still gave 8/8 with exactly one document load per screen and no
+re-optimisation in the server log.
+
+`v3-screens.spec.ts` now counts document loads and fails, naming this, when a
+screen was photographed across more than one — on a passing capture as well as a
+failing one, because the passing case is the one that lies.
+
 ### Widening it
 
 The cheapest place is `/kitchen-sink`. It renders every `@scani/ui` primitive
