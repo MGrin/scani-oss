@@ -15,7 +15,7 @@
   },
   "dependencies": {
     "@scani/logging": "workspace:*",
-    "bullmq": "^5.74.1",
+    "bullmq": "^6.2.0",
     "ioredis": "^5.10.1",
     "typedi": "^0.10.0",
     "zod": "^3.25.76"

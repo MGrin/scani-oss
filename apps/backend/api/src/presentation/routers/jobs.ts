@@ -288,11 +288,19 @@ export const jobsRouter = router({
    * - Queued/delayed jobs: `job.remove()` pulls them from the waiting
    *   set so the worker never picks them up.
    * - Active jobs: `job.remove()` errors with "cannot remove job in
-   *   active state". We fall back to `job.discard()` which prevents any
-   *   further retries — the current attempt finishes whatever in-flight
-   *   work it had, but the lifecycle write at the end of that attempt
-   *   is a no-op because `markCompleted` / `markFailed` are now gated to
-   *   skip already-terminal rows.
+   *   active state". BullMQ v6 removed `Job#discard()`, which used to be the
+   *   fallback, and offers nothing to replace it — there is no longer any way
+   *   to stop retries from outside the worker. So the stop now happens on the
+   *   worker side instead: `markCancelled` above stamps
+   *   `failure_reason = 'cancelled'`, and `UserJobProcessor` checks that
+   *   before every attempt and throws `UnrecoverableError`.
+   *
+   *   That is strictly stronger than `discard()` was. `discard()` only
+   *   prevented *further* retries and let the current attempt run to
+   *   completion; the mirror check aborts the current attempt as well, so a
+   *   cancelled `transaction-import` (`attempts: 4`) stops at the next
+   *   processor entry rather than after up to four more runs of its side
+   *   effects.
    *
    * Side effects already written by the running processor (DB rows it
    * inserted, R2 uploads it triggered) are not rolled back; cancellation
@@ -326,12 +334,11 @@ export const jobsRouter = router({
         try {
           await job.remove();
         } catch {
-          try {
-            await job.discard();
-          } catch {
-            // Discard on an already-completed/failed job is harmless;
-            // swallow so the user-visible cancel succeeds either way.
-          }
+          // Active — cannot be removed, and v6 has no `discard()`. The
+          // cancellation is already durable (`markCancelled` above); the
+          // worker enforces it on its next processor entry. Swallowing here
+          // keeps the user-visible cancel succeeding either way, exactly as
+          // before.
         }
       }
 
