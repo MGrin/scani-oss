@@ -15,7 +15,8 @@ import '@scani/domain/services';
 // the framework's tokens BEFORE WorkerClient.start resolves them.
 import '@scani/jobs';
 import { awaitSchemaReady, db } from '@scani/db';
-import { SCHEDULED_JOB_DESCRIPTORS } from '@scani/jobs';
+import { isDemoModeRequested } from '@scani/domain/demo';
+import { DEMO_RESET_SCHEDULE, SCHEDULED_JOB_DESCRIPTORS } from '@scani/jobs';
 import { createComponentLogger } from '@scani/logging';
 import { flushSentry, initSentry, captureException as sentryCapture } from '@scani/logging/sentry';
 import { buildProviderRegistry } from '@scani/providers/core/boot';
@@ -98,6 +99,7 @@ import { ApyPayoutsProcessor } from './processors/apy-payouts';
 import { BackfillCounterpartyProcessor } from './processors/backfill-counterparty';
 import { BackfillTokenIdentityProcessor } from './processors/backfill-token-identity';
 import { CurrencyRateRefreshProcessor } from './processors/currency-rate-refresh';
+import { DemoResetProcessor } from './processors/demo-reset';
 import { DlqDepthProbeProcessor } from './processors/dlq-depth-probe';
 import { DocumentParseProcessor } from './processors/document-parse';
 import { ExchangeBalancesProcessor } from './processors/exchange-balances';
@@ -161,6 +163,9 @@ function resolveProcessors() {
     Container.get(PaymentDueReminderProcessor),
     Container.get(WeeklyDigestProcessor),
     Container.get(AlertSweepProcessor),
+    // Armed only when SCANI_DEMO_MODE=1; registered unconditionally so a demo
+    // instance never boots with the schedule and no processor behind it.
+    Container.get(DemoResetProcessor),
     // User-initiated (payload via UserJobDescriptor schema).
     Container.get(ScreenshotParseProcessor),
     Container.get(DocumentParseProcessor),
@@ -365,7 +370,18 @@ async function main(): Promise<void> {
 
   // Reconcile repeatable schedules (upsert wanted, remove orphans).
   // Without orphan removal, deleted descriptors keep firing forever.
-  await Container.get(JobScheduler).upsertAll(SCHEDULED_JOB_DESCRIPTORS);
+  //
+  // A demo instance runs the reset and NOTHING ELSE (SC-466). Every other
+  // schedule actively damages the seeded dataset — hourly pricing overwrites
+  // the seeded `token_prices` series with real quotes, the balance syncs reach
+  // for chains and exchanges behind accounts that were invented, and the
+  // nightly rollup recomputes `portfolio_value_daily` over transactions nobody
+  // made. `upsertAll` reconciles rather than merges, so passing the short list
+  // also removes whatever a previous boot armed.
+  const schedules = isDemoModeRequested(process.env)
+    ? [DEMO_RESET_SCHEDULE]
+    : SCHEDULED_JOB_DESCRIPTORS;
+  await Container.get(JobScheduler).upsertAll(schedules);
 
   await workerClient.start();
 
