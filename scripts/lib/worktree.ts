@@ -117,9 +117,11 @@ export const OFFSET_SLOTS = 20;
  * everywhere would trade one worktree's problem for everyone's. Linked
  * worktrees, which is what a bb environment is, get a slot of their own.
  *
- * Two worktrees can still draw the same slot (20 of them); that collides
- * loudly on a port bind, and the override below is the answer. Adoption — the
- * failure that cost something — is prevented by the project name regardless.
+ * Two worktrees can still draw the same slot (20 of them). `resolveStackPorts`
+ * below is the escape hatch, and until SC-500 it did not exist: this comment
+ * promised an override that nothing read, so `POSTGRES_HOST_PORT=… bun
+ * dev:stack` was silently discarded. Adoption — the failure that cost
+ * something — is prevented by the project name regardless.
  */
 export function portOffset(worktreePath: string, isPrimary: boolean): number {
   if (isPrimary) return 0;
@@ -156,6 +158,57 @@ export function stackPorts(
 ): Record<string, number> {
   const offset = portOffset(worktreePath, isPrimary);
   return Object.fromEntries(STACK_SERVICES.map((s) => [s.env, s.base + offset]));
+}
+
+/**
+ * A host port an operator asked for by hand, validated (SC-500).
+ *
+ * Only the variables `STACK_SERVICES` names are read, so an unrelated
+ * `PORT` in the environment cannot move a service.
+ *
+ * An unparseable value THROWS rather than falling back to the derivation.
+ * Falling back is the whole defect this function exists to close: the
+ * override was ignored silently for as long as it was documented, and an
+ * override that is ignored points a gate at a stack the operator believes
+ * they moved away from. A refusal that names the variable is recoverable in
+ * one step; a silent fallback is the failure being fixed, wearing a new
+ * costume.
+ */
+export function stackPortOverrides(
+  env: Record<string, string | undefined> = process.env
+): Record<string, number> {
+  const overrides: Record<string, number> = {};
+  for (const service of STACK_SERVICES) {
+    const raw = env[service.env]?.trim();
+    if (raw === undefined || raw === '') continue;
+    const port = Number(raw);
+    if (!Number.isInteger(port) || port < 1 || port > 65535) {
+      throw new Error(
+        `${service.env}=${raw} is not a TCP port (1-65535). Unset it or give it a number; ` +
+          'it will not be silently replaced by the derived port.'
+      );
+    }
+    overrides[service.env] = port;
+  }
+  return overrides;
+}
+
+/**
+ * The ports this checkout should actually use: derived, with anything the
+ * environment sets winning (SC-500).
+ *
+ * Every consumer of `stackPorts` reads through this instead, so one override
+ * moves the stack, the gate, the per-worktree database and both e2e harnesses
+ * together. An override that moved only some of them would be worse than none
+ * — it would relocate the containers and leave the gate pointed at whatever
+ * took their place.
+ */
+export function resolveStackPorts(
+  worktreePath: string,
+  isPrimary = isPrimaryCheckout(worktreePath),
+  env: Record<string, string | undefined> = process.env
+): Record<string, number> {
+  return { ...stackPorts(worktreePath, isPrimary), ...stackPortOverrides(env) };
 }
 
 /**
