@@ -5,15 +5,25 @@ import { z } from 'zod';
 // env vars and provider factories read them via `deps.env.<KEY>` from
 // the boot factory's pass-through.
 //
-// Every field is OPTIONAL: providers are conditionally active. A backend
-// running in cloud mode (SCANI_CLOUD_URL set) reaches every upstream
-// service via the data-provider, so the per-provider keys are only
-// required on the data-provider's host.
+// Every field is OPTIONAL: providers are conditionally active, and a
+// factory without its key registers a degraded provider rather than
+// refusing to boot.
+//
+// This comment used to say the keys were "only required on the
+// data-provider's host" because a backend with SCANI_CLOUD_URL set
+// reaches every upstream through it. That is false and it is the
+// footgun SC-521/SC-536 chased through three .env.example files and
+// SC-581 through the docs site: the api, the worker AND the
+// data-provider all boot `buildProviderRegistry({ mode: 'direct' })`,
+// so each calls these upstreams itself. SCANI_CLOUD_URL moves object
+// storage, email, OG metadata and token search — nothing else.
 //
 // The schema's job is documentation + a single point of validation —
 // it's not a gate. Apps that need a specific key set should call
 // `loadProvidersConfig()` and check the returned value, the same way
-// they'd check any other optional config field.
+// they'd check any other optional config field. Boot-time visibility
+// into what actually resolved is `ProviderCredentialReport` in
+// ./credential-report.ts, not this schema.
 const envSchema = z.object({
   // Pricing
   COINGECKO_API_KEY: z.string().optional(),

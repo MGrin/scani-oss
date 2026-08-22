@@ -56,7 +56,7 @@ ownership rule.
 
 | Variable | Owner | What it does |
 |---|---|---|
-| `SCANI_CLOUD_URL` | app (api, worker) | Where outbound third-party calls go. Tier 1: `http://data-provider:8082`. Tier 2/3: hosted endpoint. |
+| `SCANI_CLOUD_URL` | app (api, worker) | Where object storage, email, OG-metadata fetching and token search go. Tier 1: `http://data-provider:8082`. Tier 2/3: hosted endpoint. Pricing, AI and chain calls do **not** travel here — see the provider-keys table below. |
 | `SCANI_CLOUD_API_KEY` | app (api, worker) | Bearer presented to the data-provider. |
 | `DATA_PROVIDER_API_KEY` | app (data-provider) | Bearer the data-provider validates against. |
 | `CLOUD_MANAGEMENT_ENABLED` | app (data-provider) | Tier 2/3 only. Enables cloud-management surface. |
@@ -118,21 +118,29 @@ a self-host deployment can skip it entirely.
 | `LOG_WEBSOCKET_MESSAGES` | package | Log WebSocket frames. Default on. |
 | `SERVICE_NAME` | app | Set automatically by compose (`api`, `worker`, `data-provider`). |
 | `SERVICE_VERSION` | app | Set automatically by the build; surfaces in log records. |
-| `AI_DEFAULT_PROVIDER` | app (worker) | Optional. Which AI provider the worker picks first for screenshot parse / token-identity (`openai`, `perplexity`, `deepseek`). Defaults to `openai`. |
+| `AI_DEFAULT_PROVIDER` | app (worker) | Optional. Which AI provider the worker picks first. Defaults to `openai`, which is also the only AI provider any backend service registers. |
 
-## Provider keys (read by the data-provider)
+## Provider keys (read by the api and worker)
 
-In Tier 1 these live on your data-provider; in Tier 2/3 on the
-hosted data-provider.
+**These are required on every tier**, including Tier 2/3. All three
+backend services boot `buildProviderRegistry({ mode: 'direct' })` and
+call these upstreams themselves; `mode` is a string literal that no
+environment variable can change. Pointing `SCANI_CLOUD_URL` at a
+hosted data-provider does not move them.
+
+Missing keys degrade silently rather than failing at boot. Check what
+your stack resolved with the `provider credentials:` boot line —
+[How to tell what's
+enabled](/self-hosting/tier1/optional-keys/#how-to-tell-whats-enabled).
 
 | Variable | Provider | Unlocks |
 |---|---|---|
 | `COINGECKO_API_KEY` | CoinGecko | Paid-tier crypto prices. |
 | `FINNHUB_API_KEY` | Finnhub | Public-equity prices. |
-| `OPENAI_API_KEY` | OpenAI | Screenshot parsing. |
-| `OPENAI_VISION_MODEL` | OpenAI | Model selection. Default `gpt-5.6-luna`. |
-| `PERPLEXITY_API_KEY` | Perplexity | Token-identity enrichment. Optional. |
-| `DEEPSEEK_API_KEY` | DeepSeek | Token-identity enrichment. Optional. |
+| `OPENAI_API_KEY` | OpenAI | Screenshot and document parsing. Unset → throws on every call. |
+| `OPENAI_VISION_MODEL` | OpenAI | Declared in the providers env schema and **read by nothing**. The model is the constant `gpt-5.6-luna`. |
+| `PERPLEXITY_API_KEY` | Perplexity | Read by `aiPerplexityFactory`, which **no backend service registers**. No effect today. |
+| `DEEPSEEK_API_KEY` | DeepSeek | Read by `aiDeepseekFactory`, which **no backend service registers**. No effect today. |
 | `ETHERSCAN_API_KEY` | Etherscan V2 | All EVM wallet balances + transactions. |
 | `HELIUS_API_KEY` | Helius | Solana balances + transactions. |
 | `BINANCE_OAUTH_CLIENT_ID` | Binance | OAuth flow. |

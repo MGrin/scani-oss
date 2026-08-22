@@ -1,23 +1,26 @@
-<!-- description: Scani 3rd-party tRPC gateway: pricing, AI, on-chain, mail. github.com/MGrin/scani-oss -->
+<!-- description: Scani tRPC gateway: object storage, mail, OG, token search. github.com/MGrin/scani-oss -->
 
 # scani/data-provider
 
-Centralized outbound-call tRPC service for **[Scani](https://github.com/MGrin/scani-oss)** —
+The shared-service tRPC gateway for **[Scani](https://github.com/MGrin/scani-oss)** —
 the self-hostable, open-source portfolio tracker for crypto and traditional
 assets.
 
-All credentialed 3rd-party calls fan out from here:
-
-- **Pricing** — CoinGecko, Finnhub, DeFiLlama, ExchangeRate-API, Yahoo Finance, Google Sheets
-- **On-chain** — Etherscan V2 (Ethereum + every EVM chain it supports), Helius (Solana)
-- **AI** — OpenAI (screenshot parsing), Perplexity, DeepSeek
-- **Mail** — Fastmail JMAP, or any SMTP server
-
 [`scani/api`](https://hub.docker.com/r/scani/api) and
 [`scani/worker`](https://hub.docker.com/r/scani/worker) call this service over
-tRPC rather than hitting upstream APIs directly — this is the seam between
-self-hosting tiers: in Tier 1 it runs on `localhost:8082`, in Tier 2/3 it's a
-hosted endpoint.
+tRPC for four capabilities — this is the seam between self-hosting tiers: in
+Tier 1 it runs on `localhost:8082`, in Tier 2/3 it's a hosted endpoint.
+
+- **Object storage** — presigned upload/download, read/write/copy/delete
+- **Mail** — Fastmail JMAP, or any SMTP server
+- **Open Graph** — SSRF-hardened metadata fetch for institution logos
+- **Token search** — symbol → identity lookup across the pricing providers
+
+It also serves `pricing.*`, `ai.*` and `chains.*` routers (CoinGecko, Finnhub,
+DeFiLlama, Yahoo Finance, Etherscan V2, Helius, OpenAI), which a caller may use
+directly. The api and worker do **not**: they boot the provider registry in
+`direct` mode and reach those upstreams themselves, so their own provider API
+keys are required on every tier.
 
 ## Tags
 
