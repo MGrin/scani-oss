@@ -73,7 +73,7 @@ export function ManualEntryPage() {
     // The job's own page is where "did it work" is answered.
     onSuccess: ({ jobId }) => navigate(jobDetailPath(jobId)),
     onError: (err) => {
-      const copy = describeQueryError(err, t('v3.capture.page.manual.subject'));
+      const copy = describeQueryError(err, t('v3.capture.page.manual.subject'), 'create');
       setError(`${copy.title}. ${copy.detail}`);
     },
   });
