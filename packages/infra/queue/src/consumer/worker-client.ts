@@ -18,6 +18,7 @@ type PgWorker = Worker<any, any, string, PostgresQueueBackend>;
 import { Container, Service } from 'typedi';
 import { DEFAULT_DLQ_NAME, DEFAULT_QUEUE_NAME } from '../core/default-names';
 import { isScheduledJobDescriptor } from '../core/job-descriptor';
+import { userFacingMessage } from '../core/user-facing';
 import { LIFECYCLE_MIRROR, type LifecycleMirror } from './lifecycle-mirror';
 import type { ScheduledJobProcessor } from './scheduled-job-processor';
 import { Semaphore } from './semaphore';
@@ -286,6 +287,12 @@ export class WorkerClient {
         userId,
         jobName: job.name,
         error: err instanceof Error ? err.message : String(err),
+        // BullMQ hands the `failed` listener the error object the processor
+        // threw, in-process, so the `userFacing` brand is still readable here
+        // (SC-551). It has to be read again rather than reused from the
+        // processor's own catch: a payload that fails validation throws before
+        // any other lifecycle event exists, and this is the only write it gets.
+        userFacingError: userFacingMessage(err),
         attemptsMade: job.attemptsMade,
         attemptsAllowed: (job.opts.attempts as number | undefined) ?? 1,
         reason: unrecoverable ? 'unrecoverable' : 'retries_exhausted',

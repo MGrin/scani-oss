@@ -122,7 +122,7 @@ export class UserJobRepository {
   async markFailed(
     jobId: string,
     error: string,
-    meta: { attemptsMade: number; attemptsAllowed: number },
+    meta: { attemptsMade: number; attemptsAllowed: number; userFacingError?: string | null },
     transaction?: DatabaseTransaction
   ): Promise<void> {
     const db = this.getDb(transaction);
@@ -131,6 +131,10 @@ export class UserJobRepository {
       .set({
         state: 'failed',
         error: error.slice(0, 4000), // keep row small; full error lives in worker logs / Sentry
+        // Written on every attempt, including back to null: a retry that fails
+        // for a different, unmarked reason must not leave the previous
+        // attempt's vouched-for sentence standing over it (SC-551).
+        userFacingError: meta.userFacingError?.slice(0, 4000) ?? null,
         attemptsMade: meta.attemptsMade,
         attemptsAllowed: meta.attemptsAllowed,
         finishedAt: new Date(),
@@ -170,6 +174,7 @@ export class UserJobRepository {
     meta: {
       reason: string;
       error: string;
+      userFacingError?: string | null;
       attemptsMade: number;
       attemptsAllowed: number;
     },
@@ -184,6 +189,12 @@ export class UserJobRepository {
         deadAt: now,
         failureReason: meta.reason,
         error: sql`COALESCE(${schema.userJobs.error}, ${meta.error.slice(0, 4000)})`,
+        // Same `COALESCE` rule as `error` directly above, and for the same
+        // reason: the per-attempt write is the more specific one, so a terminal
+        // event must not overwrite a sentence the last attempt already vouched
+        // for. It still fills the gap for a job that died before any attempt
+        // wrote a row — a payload that fails validation gets only this write.
+        userFacingError: sql`COALESCE(${schema.userJobs.userFacingError}, ${meta.userFacingError?.slice(0, 4000) ?? null})`,
         attemptsMade: meta.attemptsMade,
         attemptsAllowed: meta.attemptsAllowed,
         finishedAt: sql`COALESCE(${schema.userJobs.finishedAt}, ${now.toISOString()}::timestamptz)`,

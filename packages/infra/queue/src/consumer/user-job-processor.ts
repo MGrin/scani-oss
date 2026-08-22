@@ -9,6 +9,7 @@ import {
   WIRE_RESULT_MAX_BYTES,
 } from '../core/result-truncator';
 import type { JobEventPayload, LifecycleEvent, ProcessorContext, UserJobBase } from '../core/types';
+import { userFacingMessage } from '../core/user-facing';
 import { RedisLifecyclePublisher } from '../lifecycle/redis-lifecycle-publisher';
 import { LIFECYCLE_MIRROR, type LifecycleMirror } from './lifecycle-mirror';
 
@@ -154,18 +155,32 @@ export abstract class UserJobProcessor<TPayload extends UserJobBase, TResult = u
       return result;
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
+      // Two audiences, two values, and the split is the whole point (SC-551).
+      //
+      // `fire` carries the RAW message to the durable row. That is not an
+      // oversight to tidy up later: `user_jobs.error` is rendered by the admin
+      // user-jobs page, and BullMQ keeps its own `failed_reason` for the queue
+      // and DLQ pages. Redacting here would fix the product surface by blinding
+      // the people whose job is to read these.
+      //
+      // `publish` goes over Redis pub/sub to that one user's browser. No
+      // operator ever reads a WS frame, so it carries only what a processor
+      // marked `userFacing(...)`. Unmarked, the client shows the translated
+      // failure category (`jobFailureSentence`, SC-424) and no internal text.
+      const ownerMessage = userFacingMessage(err);
       await this.fire({
         type: 'failed',
         jobId,
         userId: data.userId,
         jobName: this.descriptor.name,
         error: errorMessage,
+        userFacingError: ownerMessage,
         attemptsMade,
         attemptsAllowed,
       });
       await this.publish(data.userId, jobId, {
         state: 'failed',
-        error: errorMessage,
+        error: ownerMessage ?? undefined,
         attemptsMade,
         attemptsAllowed,
       });

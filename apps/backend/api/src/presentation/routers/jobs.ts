@@ -125,7 +125,12 @@ export const jobsRouter = router({
         progress:
           liveProgress !== null && liveProgress > row.progress ? liveProgress : row.progress,
         returnvalue: row.result,
-        failedReason: row.error,
+        // `row.userFacingError`, never `row.error` (SC-551). This procedure
+        // answers the job's OWNER, and `error` is whatever the processor threw
+        // — a `DrizzleQueryError` puts a full `select … from "holdings"` in it.
+        // The raw column is untouched and still reaches the admin user-jobs
+        // page, which is the surface that needs it.
+        failedReason: row.userFacingError,
         attemptsMade: row.attemptsMade,
         attemptsAllowed: row.attemptsAllowed,
         timestamp: row.createdAt.getTime(),
@@ -160,7 +165,12 @@ export const jobsRouter = router({
     )
     .query(async ({ ctx, input }) => {
       const repo = Container.get(UserJobRepository);
-      return repo.findMine(ctx.userId, input ?? {});
+      const rows = await repo.findMine(ctx.userId, input ?? {});
+      // Same swap as `getMine`, and it matters even though no list component
+      // renders the field: the raw text would still be in the JSON this
+      // browser receives (SC-551). "Nothing displays it" is a claim about
+      // today's components, not about what was disclosed.
+      return rows.map(({ error: _raw, ...rest }) => rest);
     }),
 
   /**
@@ -181,7 +191,14 @@ export const jobsRouter = router({
       const repo = Container.get(UserJobRepository);
       const row = await repo.findOneMine(ctx.userId, input.jobId);
       if (!row) throw new TRPCError({ code: 'NOT_FOUND', message: 'Job not found' });
-      return { ...row, retry: await describeRetryAvailability(row) };
+      // The spread would otherwise put the raw `error` on the wire, and
+      // `JobDetailHeader` renders it as mono text on the owner's own
+      // /jobs/<id> page — which is where the leaked SQL was actually seen
+      // (SC-551). `userFacingError` is destructured out and re-emitted under
+      // the name the client already reads, so only a vouched-for sentence
+      // survives and nothing downstream had to learn a new field.
+      const { error: _raw, ...rest } = row;
+      return { ...rest, retry: await describeRetryAvailability(row) };
     }),
 
   /**
