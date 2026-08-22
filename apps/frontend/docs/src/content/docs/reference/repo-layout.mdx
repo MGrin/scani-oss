@@ -74,12 +74,18 @@ cron-lock helper is in `apps/backend/worker/src/lib/cron-lock.ts`.
 
 ### `apps/backend/data-provider`
 
-tRPC service that centralises every outbound third-party call
-(CoinGecko, Finnhub, DeFiLlama, OpenAI, Etherscan, Helius, …) and
-the email transport. The api and worker call it over tRPC rather
-than hitting upstream APIs directly. **This is the seam between
-[tiers](/self-hosting/tier-model/)** — in Tier 1 it's a sidecar
-on `localhost:8082`; in Tier 2/3 it's a hosted endpoint.
+tRPC service fronting the Scani-owned third-party calls that a
+hosted deployment can serve on your behalf: object storage, the
+email transport, Open Graph metadata and token search. **This is
+the seam between [tiers](/self-hosting/tier-model/)** — in Tier 1
+it's a sidecar on `localhost:8082`; in Tier 2/3 it's a hosted
+endpoint.
+
+It also exposes `pricing.*`, `ai.*` and `chains.*` routers, but the
+api and worker do not call them: all three services boot the
+provider registry in `direct` mode and reach CoinGecko, Finnhub,
+DeFiLlama, OpenAI, Etherscan and Helius themselves, with keys from
+their own environment.
 
 Routers live in `apps/backend/data-provider/src/presentation/`.
 
