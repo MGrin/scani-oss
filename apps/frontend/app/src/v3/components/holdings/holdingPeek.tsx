@@ -8,7 +8,7 @@ import type { PeekFact, PeekSection, PeekSpec } from '@scani/ui/v3/lib/peek';
 import type { TFunction } from 'i18next';
 import { Pencil, RefreshCw, Wallet } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { getFaviconUrl } from '@/lib/icons';
+import { institutionIconUrl } from '@/lib/icons';
 import {
   amountDecimals,
   describeSource,
@@ -298,7 +298,7 @@ export function holdingPeekSpec(holding: HoldingWithDetails, ctx: HoldingPeekCon
     subtitle: `${holding.token.name} · ${holding.institution.name}`,
     leading: (
       <FaviconImg
-        src={getFaviconUrl(holding.institution.website)}
+        src={institutionIconUrl(holding.institution)}
         name={holding.institution.name}
         className="size-6 rounded-sm object-contain"
       />

@@ -1,5 +1,5 @@
 import { FaviconImg } from '@scani/ui/components/FaviconImg';
-import { getFaviconUrl } from '@/lib/icons';
+import { institutionIconUrl } from '@/lib/icons';
 import { cn } from '@/lib/utils';
 
 /**
@@ -16,15 +16,16 @@ import { cn } from '@/lib/utils';
 
 interface InstitutionMarkProps {
   name: string;
-  website?: string | null;
+  /** The catalog row. The icon URL is keyed on its id — see `institutionIconUrl`. */
+  institution?: { id: string; website?: string | null } | null;
   /** A Tailwind size utility — `size-5` on a row, `size-4` in a table cell. */
   size: string;
 }
 
-export function InstitutionMark({ name, website, size }: InstitutionMarkProps) {
+export function InstitutionMark({ name, institution, size }: InstitutionMarkProps) {
   return (
     <FaviconImg
-      src={getFaviconUrl(website)}
+      src={institutionIconUrl(institution)}
       name={name}
       className={cn(size, 'shrink-0 rounded-sm object-contain')}
       fallbackClassName={cn(

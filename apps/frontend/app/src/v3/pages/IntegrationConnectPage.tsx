@@ -197,7 +197,7 @@ function ConnectForm({ integration }: { integration: Integration }) {
       <Block>
         <FieldSet title={t('v3.capture.integration.credentials')}>
           <div className="flex items-center gap-2 pb-1">
-            <InstitutionMark name={institution.name} website={institution.website} size="size-5" />
+            <InstitutionMark name={institution.name} institution={institution} size="size-5" />
             <span className="text-label">{institution.name}</span>
           </div>
 

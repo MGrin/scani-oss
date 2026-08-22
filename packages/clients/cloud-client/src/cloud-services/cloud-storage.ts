@@ -44,6 +44,31 @@ export class CloudStorage {
     }
   }
 
+  async readObject(key: string): Promise<{ bytes: Uint8Array; contentType: string } | null> {
+    try {
+      const result = await this.client.storage.readObject.mutate({ key });
+      if (!result.found) return null;
+      return {
+        bytes: new Uint8Array(Buffer.from(result.base64, 'base64')),
+        contentType: result.contentType,
+      };
+    } catch (err) {
+      throw CloudError.wrap(err);
+    }
+  }
+
+  async write(key: string, bytes: Uint8Array, contentType: string): Promise<void> {
+    try {
+      await this.client.storage.writeObject.mutate({
+        key,
+        base64: Buffer.from(bytes).toString('base64'),
+        contentType,
+      });
+    } catch (err) {
+      throw CloudError.wrap(err);
+    }
+  }
+
   async copy(fromKey: string, toKey: string, contentType?: string): Promise<void> {
     try {
       await this.client.storage.copyObject.mutate({ fromKey, toKey, contentType });
