@@ -222,6 +222,7 @@ runs the browser tests against it, and tears it down).
 - `packages/infra/rate-limiter` — Resilience primitives for upstream calls: rate limiting (Redis-backed in prod, in-memory fallback in tests), per-provider circuit breakers, retry-with-backoff.
 - `packages/infra/config` — Env-validation primitives (`requiredInProd`, `httpsUrlInProduction`, …) consumed by every app's startup schema.
 - `packages/infra/http-fetch` — Bounded HTTP fetcher for Open Graph metadata + similar fixed-budget pulls. SSRF-guarded, size-capped, timeout-bounded. Pure functions; no DI.
+- `packages/infra/push` — Web Push transport: VAPID config + an encrypted send that reports a gone subscription (`isSubscriptionGone`) and a VAPID-key mismatch as distinct outcomes rather than errors, so a caller prunes the subscription instead of retrying it.
 - `packages/infra/deadline` — A bound on one `await` of a remote dependency (`withRedisTimeout`), plus the error it rejects with. Zero dependencies on purpose: `queue`, `rate-limiter` and `domain` all take it, and none of them may take each other.
 
 **`packages/clients/`** — outbound network adapters. Same dependency direction (business → clients → external world).
