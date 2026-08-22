@@ -4,7 +4,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { ArrowLeft, Globe, Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { getFaviconUrl } from '@/lib/icons';
+import { institutionIconUrl } from '@/lib/icons';
 import { trpc } from '@/lib/trpc';
 import type { NewInstitutionDraft, PickMode } from '../../lib/manual-entry';
 import { normalizeWebsite } from '../../lib/manual-entry';
@@ -58,7 +58,7 @@ export function InstitutionField({
   const options = (term ? items.filter((i) => i.name.toLowerCase().includes(term)) : items)
     .slice(0, 20)
     .map((institution) => {
-      const favicon = getFaviconUrl(institution.website);
+      const favicon = institutionIconUrl(institution);
       return {
         id: institution.id,
         label: institution.name,

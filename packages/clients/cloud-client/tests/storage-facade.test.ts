@@ -13,11 +13,17 @@ import { resetCloudClient, setCloudClient } from '../src/runtime';
 restoreContainerAfterAll();
 
 interface CloudCall {
-  op: 'presignUpload' | 'presignDownload' | 'readTempBlob' | 'deleteTempBlob';
+  op:
+    | 'presignUpload'
+    | 'presignDownload'
+    | 'readTempBlob'
+    | 'deleteTempBlob'
+    | 'readObject'
+    | 'writeObject';
   args: unknown;
 }
 
-function stubCloudClient(opts: { deleteThrows?: Error } = {}): {
+function stubCloudClient(opts: { deleteThrows?: Error; objectMissing?: boolean } = {}): {
   client: CloudClient;
   calls: CloudCall[];
 } {
@@ -47,6 +53,23 @@ function stubCloudClient(opts: { deleteThrows?: Error } = {}): {
           return { base64: Buffer.from('cloud-bytes').toString('base64'), byteLength: 11 };
         },
       },
+      readObject: {
+        mutate: async (args: unknown) => {
+          calls.push({ op: 'readObject', args });
+          if (opts.objectMissing) return { found: false, base64: '', contentType: '' };
+          return {
+            found: true,
+            base64: Buffer.from('cloud-icon').toString('base64'),
+            contentType: 'image/png',
+          };
+        },
+      },
+      writeObject: {
+        mutate: async (args: unknown) => {
+          calls.push({ op: 'writeObject', args });
+          return { ok: true };
+        },
+      },
       deleteTempBlob: {
         mutate: async (args: unknown) => {
           calls.push({ op: 'deleteTempBlob', args });
@@ -60,7 +83,7 @@ function stubCloudClient(opts: { deleteThrows?: Error } = {}): {
 }
 
 interface LocalCall {
-  op: 'presignUpload' | 'presignDownload' | 'read' | 'delete';
+  op: 'presignUpload' | 'presignDownload' | 'read' | 'delete' | 'readObject' | 'write';
   args: unknown;
 }
 
@@ -89,6 +112,17 @@ class StubStorageService extends StorageService {
 
   override async delete(key: string): Promise<void> {
     this.calls.push({ op: 'delete', args: { key } });
+  }
+
+  override async readObject(
+    key: string
+  ): Promise<{ bytes: Uint8Array; contentType: string } | null> {
+    this.calls.push({ op: 'readObject', args: { key } });
+    return { bytes: new Uint8Array([1, 2, 3]), contentType: 'image/gif' };
+  }
+
+  override async write(key: string, bytes: Uint8Array, contentType: string): Promise<void> {
+    this.calls.push({ op: 'write', args: { key, byteLength: bytes.byteLength, contentType } });
   }
 }
 
@@ -150,6 +184,25 @@ describe('StorageFacade — local mode (no cloud client)', () => {
     const facade = new StorageFacade();
     await facade.delete('temp/foo/abc.png');
     expect(stubLocal.calls[0]).toEqual({ op: 'delete', args: { key: 'temp/foo/abc.png' } });
+  });
+
+  test('readObject routes to the local StorageService, with the type', async () => {
+    const facade = new StorageFacade();
+    const out = await facade.readObject('institution-icons/abc');
+    expect(out?.contentType).toBe('image/gif');
+    expect(stubLocal.calls[0]).toEqual({
+      op: 'readObject',
+      args: { key: 'institution-icons/abc' },
+    });
+  });
+
+  test('write routes to the local StorageService', async () => {
+    const facade = new StorageFacade();
+    await facade.write('institution-icons/abc', new Uint8Array([9, 9]), 'image/png');
+    expect(stubLocal.calls[0]).toEqual({
+      op: 'write',
+      args: { key: 'institution-icons/abc', byteLength: 2, contentType: 'image/png' },
+    });
   });
 });
 
@@ -231,6 +284,50 @@ describe('StorageFacade — cloud mode (cloud client set)', () => {
 
     const facade = new StorageFacade();
     await expect(facade.delete('key')).rejects.toThrow(/500/);
+  });
+
+  test('readObject routes to the cloud client and decodes the base64 (SC-208)', async () => {
+    // The api reaches R2 through the data-provider in production, so this is
+    // the path institution icons actually take — the local branch above is
+    // the OSS / dev one.
+    const { client, calls } = stubCloudClient();
+    setCloudClient(client);
+
+    const facade = new StorageFacade();
+    const out = await facade.readObject('institution-icons/abc');
+    expect(out?.contentType).toBe('image/png');
+    expect(Buffer.from(out?.bytes ?? new Uint8Array()).toString('utf-8')).toBe('cloud-icon');
+    expect(calls[0]).toEqual({ op: 'readObject', args: { key: 'institution-icons/abc' } });
+    expect(stubLocal.calls).toHaveLength(0);
+  });
+
+  test('a missing object is null, NOT a throw and NOT empty bytes', async () => {
+    // Both wrong answers are load-bearing. A throw would make an ordinary
+    // first-ever request look like an outage; zero-length bytes would be
+    // served as a 200 that decodes to nothing, and the caller would cache
+    // that for a day.
+    const { client } = stubCloudClient({ objectMissing: true });
+    setCloudClient(client);
+
+    const facade = new StorageFacade();
+    await expect(facade.readObject('institution-icons/nope')).resolves.toBeNull();
+  });
+
+  test('write routes to the cloud client as base64', async () => {
+    const { client, calls } = stubCloudClient();
+    setCloudClient(client);
+
+    const facade = new StorageFacade();
+    await facade.write('institution-icons/abc', new Uint8Array([0x89, 0x50]), 'image/png');
+    expect(calls[0]).toEqual({
+      op: 'writeObject',
+      args: {
+        key: 'institution-icons/abc',
+        base64: Buffer.from([0x89, 0x50]).toString('base64'),
+        contentType: 'image/png',
+      },
+    });
+    expect(stubLocal.calls).toHaveLength(0);
   });
 });
 

@@ -47,6 +47,55 @@ export class BoundedFetchError extends Error {
 const MAX_BYTES = 512 * 1024;
 const TIMEOUT_MS = 4000;
 
+/**
+ * The bound on the WHOLE call, and it is not redundant with `TIMEOUT_MS`.
+ *
+ * `TIMEOUT_MS` arms an `AbortController` and an `AbortSignal` only reaches a
+ * fetch that has STARTED. `assertHostIsPublic` runs first and calls
+ * `dns.lookup`, which takes no signal and has no deadline of its own — so the
+ * one step that runs before every budget is the one step nothing bounds.
+ *
+ * Measured through this function on 2026-08-22 (SC-208): `www.robinhood.com`
+ * and `www.bitstamp.net` each took **60 seconds** on `DNS lookup failed`, not
+ * the 4 seconds this file advertises.
+ *
+ * It matters most on the path that was here first. `og.ts` and
+ * `institutions.ts` call this with a URL THE USER PASTED, behind a cap of
+ * three concurrent fetches — so three hosts with a black-holed resolver hold
+ * every OG slot for a minute, and the per-user limiter allows twenty a minute.
+ *
+ * 6s is `TIMEOUT_MS` plus headroom for a healthy lookup.
+ */
+const TOTAL_BUDGET_MS = 6_000;
+
+/**
+ * Reject with a `BoundedFetchError` if `work` has not settled in `ms`.
+ *
+ * A race, not a cancellation — the abandoned lookup finishes on its own and is
+ * collected. That is the honest bound available here: `dns.lookup` takes no
+ * signal, so the alternative is not "cancel it" but "stop waiting for it".
+ *
+ * Exported and shared with `site-icon.ts` on the same reasoning
+ * `no-second-fetcher.test.ts` encodes: a bound that exists twice is one that
+ * will be right in one place and stale in the other.
+ */
+export async function withBudget<T>(work: Promise<T>, ms: number, label: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      work,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new BoundedFetchError(`${label} exceeded ${ms}ms`, 'timeout')),
+          ms
+        );
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 // Host suffixes we never want to hit from the backend — either our own
 // internal Fly service names (SSRF self-recursion) or well-known cloud
 // metadata endpoints reached by hostname.
@@ -194,7 +243,14 @@ export async function followRedirectsSafely(
   throw new BoundedFetchError(`More than ${MAX_REDIRECTS} redirects`, 'network');
 }
 
-export async function fetchHtmlBounded(rawUrl: string): Promise<FetchHtmlBoundedResult> {
+export async function fetchHtmlBounded(
+  rawUrl: string,
+  opts: { budgetMs?: number } = {}
+): Promise<FetchHtmlBoundedResult> {
+  return withBudget(runFetchHtmlBounded(rawUrl), opts.budgetMs ?? TOTAL_BUDGET_MS, 'html fetch');
+}
+
+async function runFetchHtmlBounded(rawUrl: string): Promise<FetchHtmlBoundedResult> {
   let parsed: URL;
   try {
     parsed = new URL(rawUrl);

@@ -47,6 +47,20 @@ describe('there is exactly one bounded fetcher', () => {
     expect(offenders).toEqual([]);
   });
 
+  test('nor the icon fetcher SC-208 added beside it', async () => {
+    // The favicon proxy needed a SECOND bounded fetch — images rather than
+    // HTML — and a second bounded fetch is precisely the shape that produced
+    // the three copies above. It lives in this package for that reason, and
+    // this assertion is what keeps it here.
+    const offenders: string[] = [];
+    for (const rel of await sourceFiles()) {
+      if (rel.startsWith(PACKAGE_DIR)) continue;
+      const src = await Bun.file(REPO_ROOT + rel).text();
+      if (/export\s+(async\s+)?function\s+fetchImageBounded\b/.test(src)) offenders.push(rel);
+    }
+    expect(offenders).toEqual([]);
+  });
+
   test('nor the SSRF guard itself', async () => {
     // `assertHostIsPublic` is the security-bearing half. A second definition
     // is the thing that goes stale.
@@ -56,6 +70,12 @@ describe('there is exactly one bounded fetcher', () => {
       const src = await Bun.file(REPO_ROOT + rel).text();
       if (/function\s+assertHostIsPublic\b/.test(src)) offenders.push(rel);
       if (/function\s+followRedirectsSafely\b/.test(src)) offenders.push(rel);
+      // `withBudget` joined this list in SC-208. It is a BOUND, and a bound
+      // that exists twice drifts exactly like a guard that exists twice: the
+      // icon path and the HTML path would end up with different ideas of how
+      // long a stuck DNS lookup may take, and only one of them would be
+      // reviewed when the number next changes.
+      if (/function\s+withBudget\b/.test(src)) offenders.push(rel);
     }
     expect(offenders).toEqual([]);
   });
@@ -99,6 +119,18 @@ describe('the guarded one does not follow redirects blindly', () => {
     const code = src.replace(/\/\*\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
     expect(code).not.toContain("redirect: 'follow'");
     expect(code).toContain("redirect: 'manual'");
+  });
+
+  test('and neither does the icon fetcher — it reuses the same hop walk', async () => {
+    // Same reasoning as the assertion above, for the second fetcher. The
+    // site-icon tests inject their own `fetch`, so they cannot observe the
+    // real redirect mode either: `fetchImageBounded` calling `fetch` directly
+    // with `redirect: 'follow'` would leave every one of them green.
+    const src = await Bun.file(`${REPO_ROOT}${PACKAGE_DIR}src/site-icon.ts`).text();
+    const code = src.replace(/\/\*\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+    expect(code).not.toContain("redirect: 'follow'");
+    expect(code).toContain('followRedirectsSafely(');
+    expect(code).toContain('assertHostIsPublic(');
   });
 
   test('and its host guard is called from the hop walk, not only at the entry point', async () => {
