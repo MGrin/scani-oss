@@ -1,5 +1,6 @@
 import type { DocumentExtraction, UserJob } from '@scani/db/schema';
 import {
+  BALANCE_GAP_REVIEW_KIND,
   DEAD_JOB_REVIEW_KIND,
   DOCUMENT_EXTRACTION_REVIEW_KIND,
   isJobAwaitingFailureDecision,
@@ -10,6 +11,7 @@ import {
 import Container, { Service } from 'typedi';
 import { DocumentExtractionRepository } from '../repositories/DocumentExtractionRepository';
 import { UserJobRepository } from '../repositories/UserJobRepository';
+import { BalanceGapService } from './holdings/BalanceGapService';
 import { describePendingReview } from './reviewDetail';
 import { TransferReviewService } from './TransferReviewService';
 
@@ -33,6 +35,7 @@ export class ReviewFeedService {
   private readonly userJobs = Container.get(UserJobRepository);
   private readonly documentExtractions = Container.get(DocumentExtractionRepository);
   private readonly transferReviews = Container.get(TransferReviewService);
+  private readonly balanceGaps = Container.get(BalanceGapService);
 
   async listPending(userId: string): Promise<ReviewItem[]> {
     const items = [
@@ -40,6 +43,7 @@ export class ReviewFeedService {
       ...(await this.fromDeadJobs(userId)),
       ...(await this.fromExtractions(userId)),
       ...(await this.fromTransfers(userId)),
+      ...(await this.fromBalanceGaps(userId)),
     ];
     return items.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
   }
@@ -157,6 +161,34 @@ export class ReviewFeedService {
         detail: { code: 'unpairedTransfers' as const, transfers: count },
         createdAt: latestCreatedAt,
         href: '/review/transfers',
+      },
+    ];
+  }
+
+  /**
+   * Unexplained balance changes (SC-501) — **one row for the whole queue**,
+   * for the same reason the transfer collector aggregates: the queue is
+   * unbounded, every item points at the same page, and a feed that is thirty
+   * balance rows and three imports has stopped being a list of what needs
+   * you.
+   *
+   * `createdAt` is the newest gap's closing observation, so a change observed
+   * this morning floats this to the top the way a fresh import does. The gap
+   * itself may be months old — the interval it closes can be seventy-one days
+   * wide — and that age belongs on the page, where there is room to say it
+   * per row.
+   */
+  private async fromBalanceGaps(userId: string): Promise<ReviewItem[]> {
+    const { count, latestAt } = await this.balanceGaps.pendingSummary(userId);
+    if (count === 0 || !latestAt) return [];
+    return [
+      {
+        id: 'balance-gap:pending',
+        kind: BALANCE_GAP_REVIEW_KIND,
+        label: { code: 'balanceChangesToExplain' as const },
+        detail: { code: 'unexplainedBalanceChanges' as const, changes: count },
+        createdAt: latestAt,
+        href: '/review/balances',
       },
     ];
   }
