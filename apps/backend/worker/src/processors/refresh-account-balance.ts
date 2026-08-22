@@ -2,7 +2,7 @@ import { PortfolioValueCache } from '@scani/domain/services';
 import { RefreshAccountBalanceUseCase } from '@scani/domain/use-cases';
 import { REFRESH_ACCOUNT_BALANCE, type RefreshAccountBalanceJob } from '@scani/jobs';
 import { createComponentLogger } from '@scani/logging';
-import { type ProcessorContext, RedisResourceLock, UserJobProcessor } from '@scani/queue';
+import { PostgresResourceLock, type ProcessorContext, UserJobProcessor } from '@scani/queue';
 import { emitEntityChange } from '@scani/realtime';
 import { Container, Service } from 'typedi';
 
@@ -16,7 +16,7 @@ const REFRESH_LOCK_TTL_MS = 5 * 60 * 1000;
 
 // Per-account balance refresh, queued by the user clicking "Refresh
 // balance" on a holding row. The shape mirrors HoldingPriceUpdate's:
-// per-resource Redis lock to coalesce duplicate clicks, run the use
+// per-resource lock to coalesce duplicate clicks, run the use
 // case, emit a `holding.update` event so the WS pipe reloads the UI.
 @Service()
 export class RefreshAccountBalanceProcessor extends UserJobProcessor<
@@ -24,7 +24,7 @@ export class RefreshAccountBalanceProcessor extends UserJobProcessor<
   unknown
 > {
   readonly descriptor = REFRESH_ACCOUNT_BALANCE;
-  private readonly resourceLock = Container.get(RedisResourceLock);
+  private readonly resourceLock = Container.get(PostgresResourceLock);
 
   protected async handle(data: RefreshAccountBalanceJob, _ctx: ProcessorContext): Promise<unknown> {
     const lockKey = `lock:refresh-balance:${data.accountId}`;
