@@ -1,4 +1,4 @@
-import { withRedisTimeout } from '@scani/deadline';
+import { withDeadline } from '@scani/deadline';
 import type { Redis } from 'ioredis';
 import { InMemoryBuckets } from './buckets';
 import { reportInflowDegraded } from './degraded';
@@ -121,9 +121,9 @@ export class RedisInflowRateLimiter extends InflowRateLimiter {
 
   // Timer cleanup matters here in particular: this runs on every admitted
   // request, so a leaked timeout per call would accumulate one per request
-  // for the whole `timeoutMs`. `withRedisTimeout` owns that.
+  // for the whole `timeoutMs`. `withDeadline` owns that.
   private withTimeout<T>(work: Promise<T>): Promise<T> {
-    return withRedisTimeout(
+    return withDeadline(
       work,
       this.timeoutMs,
       () => new Error(`rate-limiter: Redis did not answer in ${this.timeoutMs}ms`)

@@ -1,4 +1,4 @@
-import { RedisCommandTimeoutError, withRedisTimeout } from '@scani/deadline';
+import { StoreCommandTimeoutError, withDeadline } from '@scani/deadline';
 import { createComponentLogger } from '@scani/logging';
 import type { JobsOptions } from 'bullmq';
 import { Container, Service } from 'typedi';
@@ -12,46 +12,70 @@ const logger = createComponentLogger('queue:enqueue');
 
 /**
  * How long `queue.add` may wait for the queue's store before this enqueue is
- * reported as failed (SC-523).
+ * reported as failed (SC-523, re-sized for Postgres by SC-578).
  *
- * **Without a bound the `catch` below never runs.** The shared client is built
- * `{ maxRetriesPerRequest: null }` — BullMQ requires it — and ioredis 5.10.1
- * only flushes its offline queue `if (typeof maxRetriesPerRequest ===
- * "number")`, so an `add` issued while the connection is down is never
- * rejected. Measured 2026-08-21 through this exact class, against a real Redis
- * container stopped mid-flight: `HUNG 10003ms` against a 10s budget, where the
- * same call answers in ~2ms warm. Every api mutation that starts an import
- * runs through here, so that hang is the user's spinner never resolving.
+ * **Without a bound the `catch` below never runs.** The store is Postgres
+ * since SC-518, and BullMQ's Postgres backend runs `add_job` on a `pg.Pool`
+ * built from a connection string alone — which leaves three separate waits
+ * unbounded. `connectionTimeoutMillis` is unset, so a caller queuing for one
+ * of the pool's ten slots gets no timer (`pg-pool/index.js:206`); no
+ * `statement_timeout` is set on that pool, so the insert waits out whatever
+ * holds the row lock; and a black-holed socket waits on the OS. Measured
+ * 2026-08-22 through this exact class against `bullmq.job` held under `ACCESS
+ * EXCLUSIVE`: still unsettled at 30s, resolving at 30684ms only because the
+ * lock was released. Every api mutation that starts an import runs through
+ * here, so that is the user's spinner never resolving.
  *
  * **Fail closed, not degrade** — the opposite of `PortfolioValueCache`
  * (SC-522), and for the reason `packages/infra/rate-limiter` already writes
  * down. Its inflow limiter degrades because the cost of guessing wrong is
  * self-inflicted and bounded; its outflow limiter refuses (SC-254) because the
- * damage is external and cannot be undone by Redis coming back. An enqueue is
- * the outflow shape: a job silently not enqueued is work the user believes is
- * happening and which will never run, and no later event corrects that
+ * damage is external and cannot be undone by the store coming back. An enqueue
+ * is the outflow shape: a job silently not enqueued is work the user believes
+ * is happening and which will never run, and no later event corrects that
  * belief. So the bound rejects, `onEnqueueFailed` marks the mirror row, and
  * the caller gets an error it can show.
  *
- * **2000ms, sized against ioredis's retry cadence rather than a latency
- * budget** — the same reasoning and the same constant as the api's
- * `REDIS_PING_TIMEOUT_MS` (`apps/backend/api/src/index.ts`): the default
- * `retryStrategy` tops out at one attempt every 2000ms, so a command
- * unanswered for a full retry interval is not waiting on a slow store, it is
- * waiting on one that is not there. It is deliberately 8x the 250ms the
- * limiters and the value cache use, because a spurious fire costs a user a
- * false failure here rather than a cache miss.
+ * **10_000ms, sized against how long establishing a Postgres connection may
+ * legitimately take — because on this backend that is most of what the bound
+ * is timing.** The 2000ms it replaces was argued from ioredis's
+ * `retryStrategy` topping out at one attempt every 2000ms, so a command
+ * unanswered for a full retry interval was waiting on a store that was not
+ * there. Nothing in that sentence survives the move to `pg`, and the number it
+ * produced does not either: unlike the shared ioredis client, which connects
+ * once at boot and leaves the bound timing a single warm round trip, BullMQ's
+ * pool is built lazily and `pg-pool` expires an idle client after 10s
+ * (`index.js:98`) — so on this traffic a connect, and on production a Neon
+ * compute wake, land *inside* the bounded window. Measured 2026-08-22 against
+ * a local container, no TLS and no wake: warm `add` p50 76ms / p99 1238ms
+ * (n=200), first `add` in a fresh process 296–1266ms with a 3287ms outlier,
+ * and an `add` after the pool's idle client expired 602ms / 1428ms. Production
+ * adds TLS, the Fly-to-Neon round trip, and a ~1.1s cold start on a compute
+ * that suspends after 300s and wakes ~72 times a day. 2000ms is not a
+ * conservative bound on that path; it is roughly the path's own cost, and it
+ * would fire on a healthy store. 10s is what this repo already budgets for
+ * establishing a Postgres connection before calling it dead
+ * (`connect_timeout: 10`, `packages/infra/db/src/connection.ts`).
  *
- * That asymmetry is worth stating plainly, because the obvious mitigation does
- * not hold: the timed-out `add` is **not cancelled** (ioredis has no such
- * API — see `withRedisTimeout`), so it may land after we have already reported
- * failure, and the deterministic `jobId` does **not** dedupe the user's retry —
- * every `requestId` is a fresh `crypto.randomUUID()` minted at click time in
- * `apps/frontend/app`, so a retry computes a *different* id. A false fire can
- * therefore cost a duplicate job, not merely a wasted retry. Hence a bound that
- * only an absent store can trip.
+ * **Raising it does not weaken it, and that asymmetry is the whole argument.**
+ * Every failure this catches is unbounded — a lock wait, a pool-slot wait, a
+ * dead socket — so there is no failure that takes between 2s and 10s and gets
+ * missed by the larger number. What the larger number costs is spinner
+ * seconds against a store that is genuinely gone. What the smaller one costs
+ * is a false failure on the ordinary cold path, and a false fire here is worse
+ * than a wasted retry: the timed-out `add` is **not cancelled** (see
+ * `withDeadline`), so it lands anyway, and the deterministic `jobId` does
+ * **not** dedupe the user's retry — every `requestId` is a fresh
+ * `crypto.randomUUID()` minted at click time in `apps/frontend/app`, so a
+ * retry computes a *different* id. A false fire costs a duplicate job. Hence a
+ * bound only an absent store can trip.
+ *
+ * **This is not the time a user waits for the error.** `mutations.retry` is
+ * `failureCount < 1` in `packages/frontend/ui/src/lib/create-trpc-react.tsx`,
+ * so a failing enqueue is attempted twice and the error surfaces at roughly
+ * twice this bound. That is the retry working as configured (SC-578).
  */
-const ENQUEUE_TIMEOUT_MS = 2_000;
+const ENQUEUE_TIMEOUT_MS = 10_000;
 
 @Service()
 export class BullMqEnqueueService extends EnqueueService {
@@ -82,10 +106,10 @@ export class BullMqEnqueueService extends EnqueueService {
     }
 
     try {
-      await withRedisTimeout(
+      await withDeadline(
         this.queueClient.get().add(descriptor.name, data, opts),
         ENQUEUE_TIMEOUT_MS,
-        () => new RedisCommandTimeoutError('enqueue', ENQUEUE_TIMEOUT_MS)
+        () => new StoreCommandTimeoutError('postgres', 'enqueue', ENQUEUE_TIMEOUT_MS)
       );
       logger.info(
         { jobId, jobName: descriptor.name, userId: data.userId, attemptsAllowed },
