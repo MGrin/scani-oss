@@ -237,7 +237,7 @@ curl -s "http://localhost:8026/api/v1/message/$ID" \
 ```
 
 Verify with `fetch('http://localhost:3001/api/auth/get-session', {credentials:'include'})`
-in `browser_eval` — it should return your email.
+in the browser's devtools console — it should return your email.
 
 ### The traps, in the order they bite
 
@@ -256,8 +256,8 @@ in `browser_eval` — it should return your email.
   browse on the same one, or the session cookie set by the magic-link callback
   is not sent back.
 - **Vite's cold start is ~15s** (5s boot plus first-request dep optimisation),
-  which is longer than `browser_open`'s 20s navigation budget on a slow machine.
-  Warm it with `curl` once before pointing the browser at it.
+  which on a slow machine can outlast a browser automation tool's default
+  navigation timeout. Warm it with `curl` once before pointing the browser at it.
 - **Ports collide across worktrees.** `lsof -nP -iTCP:5173 -sTCP:LISTEN` before
   trusting a screenshot; `--strictPort` so Vite fails loudly instead of quietly
   taking 5174.
