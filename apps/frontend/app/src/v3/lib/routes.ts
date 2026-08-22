@@ -179,6 +179,16 @@ export function documentDetailPath(documentId: string): string {
 export const TRANSFER_REVIEW_PATH = `${V3_ROUTES.review}/transfers`;
 
 /**
+ * The unexplained-balance-change queue (SC-501) — the second surface under
+ * Review, and outside `V3_ROUTES` for the same reason as the first: somewhere
+ * a review item sends you, never somewhere you browse to.
+ *
+ * `balances` is a segment, so it registers before any dynamic sibling for the
+ * same reason `transfers` does.
+ */
+export const BALANCE_GAP_REVIEW_PATH = `${V3_ROUTES.review}/balances`;
+
+/**
  * The answers already given (SC-181) — the route back.
  *
  * A separate page rather than a filter on the queue, because the queue's value

@@ -14,6 +14,20 @@ export * from './format/date';
 export * from './format/locale';
 export * from './format/precision';
 export {
+  BALANCE_GAP_ANSWERS,
+  BALANCE_GAP_DATE_PROMPT_MIN_SPAN_MS,
+  BALANCE_GAP_MIN_BASE_VALUE,
+  BALANCE_GAP_REVERSAL_REQUIRES_EXACT_NEGATION,
+  BALANCE_GAP_REVIEW_KIND,
+  BALANCE_GAP_SUPPRESSIONS,
+  BALANCE_GAP_UNKNOWN,
+  type BalanceGapAnswer,
+  type BalanceGapSuppression,
+  type BalanceGapSuppressionCounts,
+  isBalanceGapAnswer,
+  isLedgerWritingAnswer,
+} from './lib/balance-gap';
+export {
   counterpartyFromPayload,
   type ExplorerLinks,
   explorerLinks,
