@@ -1,5 +1,14 @@
 import { describe, expect, test } from 'bun:test';
-import { resolveStackPorts, STACK_SERVICES, stackPortOverrides, stackPorts } from '../lib/worktree';
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import {
+  isPrimaryCheckout,
+  resolveStackPorts,
+  STACK_SERVICES,
+  stackPortOverrides,
+  stackPorts,
+} from '../lib/worktree';
 
 /**
  * SC-500. `portOffset` hands a linked worktree one of 20 slots, and its own
@@ -77,5 +86,70 @@ describe('an override in the environment wins over the derived port', () => {
     for (const bad of ['abc', '0', '-1', '65536', '5433.5']) {
       expect(() => stackPortOverrides({ POSTGRES_HOST_PORT: bad })).toThrow('POSTGRES_HOST_PORT');
     }
+  });
+});
+
+/**
+ * SC-563. `isPrimaryCheckout` decides the port offset for every stack, gate
+ * and e2e run, and it answered `true` — "this IS the primary checkout", which
+ * means offset 0, which means the documented ports — for THREE different
+ * failures that one condition could not tell apart:
+ *
+ *   real directory, not a repository   git exits 128
+ *   git not installed                  spawn fails, ENOENT, no exit status
+ *   the directory does not exist       spawn fails, ENOENT, no exit status
+ *
+ * The first two are a decision, argued in that function's own comments: there
+ * is nothing to be a second copy of, so the documented ports are right, and a
+ * contributor who unpacks a source tarball meets this on their first command.
+ * The third is not. A path that does not exist describes nothing, and both
+ * answers are wrong for it.
+ *
+ * What it cost: `scripts/tests/dev-stack.test.ts` named a bb worktree that had
+ * since been reaped, so `bun run test` was red on `main` for everyone with
+ * `Expected "5673" Received "5173"` — a message about a PORT, which reads as a
+ * derivation regression and sent people into this file looking for one.
+ */
+describe('isPrimaryCheckout separates "not a repository" from "not a directory"', () => {
+  test('a path that does not exist throws, and names itself', () => {
+    const parent = mkdtempSync(join(tmpdir(), 'scani-primary-check-'));
+    const absent = join(parent, 'no-such-checkout');
+    try {
+      // Non-vacuous: if this ever existed the assertion below would be
+      // asserting the wrong thing entirely.
+      expect(existsSync(absent)).toBe(false);
+      expect(() => isPrimaryCheckout(absent)).toThrow(absent);
+    } finally {
+      rmSync(parent, { recursive: true, force: true });
+    }
+  });
+
+  /**
+   * THE TEST A FUTURE READER WILL WANT TO DELETE, and the reason is a good
+   * one: "a probe that could not run should not answer" is a clean principle,
+   * and this test is the only thing standing between it and the codebase.
+   *
+   * Argue with the reason, not the assertion. Generalising the throw to every
+   * failed probe would refuse a directory that is simply not a git repository
+   * — an unpacked source tarball, a self-host copy, a machine without git —
+   * which is exactly the case the function's docblock defends and the first
+   * thing a new contributor does. That would be a worse bug than the one being
+   * fixed, shipped as a principle.
+   */
+  test('a real directory that is not a repository is primary, not an error', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'scani-not-a-repo-'));
+    try {
+      expect(isPrimaryCheckout(dir)).toBe(true);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('a real checkout is answered rather than refused', () => {
+    // The other direction: a guard that fired on everything would pass both
+    // tests above and break every caller. This repo is either the primary
+    // checkout or a linked worktree, and both are legitimate answers.
+    const here = join(import.meta.dir, '..', '..');
+    expect(typeof isPrimaryCheckout(here)).toBe('boolean');
   });
 });
