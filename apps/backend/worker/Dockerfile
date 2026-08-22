@@ -40,6 +40,26 @@ COPY packages ./packages
 
 RUN cd apps/backend/worker && bun run build
 
+# SC-518. BullMQ v6's Postgres backend loads every SQL command with
+# `readFileSync` at RUNTIME (`sql-loader.ts` joins `__dirname` with
+# `commands/`), and `bun build --compile` bundles JavaScript but NOT data
+# files. So the compiled binary looks for these on disk and the runtime image
+# has no `node_modules`. Without them every enqueue returns 500 — the image
+# builds and passes every check, and fails on first use.
+#
+# THIS ASSERTION IS A CONDITION, NOT A NICETY. It is the only thing standing
+# between a bullmq patch release relocating these files and a green image that
+# 500s in production: `COPY` does not fail when it matches an empty directory,
+# so without this the breakage is silent. Assert on a FILE THE LOADER ACTUALLY
+# READS, not on the directory — a directory can exist and be empty.
+#
+# Remove it only when bullmq inlines its SQL — upstream taskforcesh/bullmq#4603
+# (see also
+# taskforcesh/bullmq#4601).
+RUN test -s node_modules/bullmq/dist/esm/postgres/commands/add_job.sql \
+    && test -s node_modules/bullmq/dist/esm/postgres/migrations/0001_schema.sql \
+    || (echo "SC-518: bullmq Postgres SQL assets missing — the compiled binary cannot enqueue" && exit 1)
+
 FROM debian:bookworm-slim AS runtime
 WORKDIR /app
 
@@ -56,6 +76,10 @@ RUN apt-get update \
 RUN useradd --create-home --shell /usr/sbin/nologin --uid 1001 app
 
 COPY --from=build --chown=app:app /app/apps/backend/worker/dist/server /app/server
+
+# SC-518: the SQL the compiled binary reads at runtime. Path must match the
+# build-time `__dirname` baked into the binary, which is /app/node_modules/...
+COPY --from=build --chown=app:app /app/node_modules/bullmq/dist/esm/postgres /app/node_modules/bullmq/dist/esm/postgres
 COPY --chown=app:app apps/backend/worker/docker-entrypoint.sh /app/docker-entrypoint.sh
 RUN chmod +x /app/docker-entrypoint.sh
 
