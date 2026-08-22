@@ -306,7 +306,6 @@ export class ImportWalletAddressUseCase {
       zeroStaleHoldings: false,
       cryptoTokenTypeId: args.cryptoTokenTypeId,
       tokenTypeMap: { crypto: args.cryptoTokenTypeId },
-      defaultDecimals: () => 18,
       resolveTokenTypeId: (_snapshot, fallbackCryptoTypeId) => fallbackCryptoTypeId,
       transactionName: 'importWallet',
       transactionTimeoutMs: 120_000,

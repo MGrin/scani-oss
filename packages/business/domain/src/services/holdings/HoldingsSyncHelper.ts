@@ -29,7 +29,6 @@ export interface ProcessSnapshotsForAccountInput {
   staleStrategy: StaleStrategy;
   dedupStrategy: DedupStrategy;
   sourceTag: string;
-  defaultDecimals: number;
   // Wallet sync preserves user-hidden state across counts; exchange sync
   // counts every mutation regardless. Set true for wallet-style behaviour.
   respectHiddenForCounts: boolean;
@@ -86,7 +85,6 @@ export class HoldingsSyncHelper extends BaseService {
       staleStrategy,
       dedupStrategy,
       sourceTag,
-      defaultDecimals,
       respectHiddenForCounts,
       updateOnly,
       skipUnchangedUpdates,
@@ -175,7 +173,6 @@ export class HoldingsSyncHelper extends BaseService {
         const { token } = await this.tokenService.findOrCreateTokenFromIntegration(
           tokenMapping,
           resolvedTokenTypeId,
-          defaultDecimals,
           tx
         );
 
