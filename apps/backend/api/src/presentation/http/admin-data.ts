@@ -22,7 +22,7 @@ const PERIOD_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
 const PROVIDER_RE = /^[a-z0-9-]{1,32}$/;
 const NOTE_MAX_CHARS = 256;
 
-export interface SpendOverridePayload {
+interface SpendOverridePayload {
   provider: string;
   period: string;
   amountUsd: number;

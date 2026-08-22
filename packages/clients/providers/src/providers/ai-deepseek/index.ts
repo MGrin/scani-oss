@@ -16,7 +16,7 @@
 import type { ProviderFactory } from '../../core/boot';
 import { ChatCompletionsProvider } from '../_chat-completions';
 
-export class DeepSeekProvider extends ChatCompletionsProvider {
+class DeepSeekProvider extends ChatCompletionsProvider {
   constructor(apiKey: string) {
     super({
       providerKey: 'ai-deepseek',

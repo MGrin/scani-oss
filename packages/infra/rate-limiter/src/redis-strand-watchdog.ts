@@ -140,7 +140,7 @@ export interface StrandReport {
 const DEFAULT_REMEDY = 'run scripts/recycle-redis-consumers.sh';
 
 /** The slice of the reachability observer this needs. */
-export interface ReachabilitySource {
+interface ReachabilitySource {
   current(now?: Date): RedisReachability;
 }
 

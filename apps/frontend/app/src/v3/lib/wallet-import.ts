@@ -29,7 +29,7 @@ function asRecord(value: unknown): Record<string, unknown> {
 }
 
 /** A number field, tolerating the array form older results used. */
-export function asCount(value: unknown): number {
+function asCount(value: unknown): number {
   if (typeof value === 'number' && Number.isFinite(value)) return value;
   return Array.isArray(value) ? value.length : 0;
 }

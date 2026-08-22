@@ -68,7 +68,7 @@ import {
 // The shape the seeder consumes
 // ===========================================================================
 
-export interface DemoTokenRow {
+interface DemoTokenRow {
   readonly symbol: string;
   readonly name: string;
   readonly typeCode: 'crypto' | 'stock';
@@ -76,14 +76,14 @@ export interface DemoTokenRow {
   readonly marketSegment: string | null;
 }
 
-export interface DemoPriceRow {
+interface DemoPriceRow {
   readonly symbol: string;
   readonly baseSymbol: string;
   readonly at: Date;
   readonly price: string;
 }
 
-export interface DemoAccountRow {
+interface DemoAccountRow {
   readonly id: string;
   readonly key: string;
   readonly institution: string;
@@ -94,7 +94,7 @@ export interface DemoAccountRow {
   readonly createdAt: Date;
 }
 
-export interface DemoHoldingRow {
+interface DemoHoldingRow {
   readonly id: string;
   readonly key: string;
   readonly accountKey: string;
@@ -130,7 +130,7 @@ export interface DemoTransactionRow {
   readonly description: string | null;
 }
 
-export interface DemoObservationRow {
+interface DemoObservationRow {
   readonly id: string;
   readonly holdingKey: string;
   readonly balance: string;
@@ -156,7 +156,7 @@ export interface DemoRollupRow {
   readonly computedAt: Date;
 }
 
-export interface DemoVendorRow {
+interface DemoVendorRow {
   readonly id: string;
   readonly key: string;
   readonly displayName: string;
@@ -166,7 +166,7 @@ export interface DemoVendorRow {
   readonly aliases: readonly string[];
 }
 
-export interface DemoPaymentRow {
+interface DemoPaymentRow {
   readonly id: string;
   readonly key: string;
   readonly vendorKey: string;
@@ -182,7 +182,7 @@ export interface DemoPaymentRow {
   readonly createdAt: Date;
 }
 
-export interface DemoOccurrenceRow {
+interface DemoOccurrenceRow {
   readonly id: string;
   readonly paymentKey: string;
   readonly dueDate: string;
@@ -193,7 +193,7 @@ export interface DemoOccurrenceRow {
   readonly transactionId: string | null;
 }
 
-export interface DemoDocumentRow {
+interface DemoDocumentRow {
   readonly id: string;
   readonly purpose: string;
   readonly r2Key: string;
@@ -207,7 +207,7 @@ export interface DemoDocumentRow {
   readonly createdAt: Date;
 }
 
-export interface DemoExtractionRow {
+interface DemoExtractionRow {
   readonly id: string;
   readonly documentId: string;
   readonly ordinal: number;
@@ -226,7 +226,7 @@ export interface DemoExtractionRow {
   readonly createdAt: Date;
 }
 
-export interface DemoGroupRow {
+interface DemoGroupRow {
   readonly id: string;
   readonly key: string;
   readonly name: string;
@@ -237,7 +237,7 @@ export interface DemoGroupRow {
   readonly accountKeys: readonly string[];
 }
 
-export interface DemoVaultRow {
+interface DemoVaultRow {
   readonly id: string;
   readonly key: string;
   readonly name: string;
@@ -249,14 +249,14 @@ export interface DemoVaultRow {
   readonly allocations: ReadonlyArray<{ holdingKey: string; percentage: number }>;
 }
 
-export interface DemoWalletRow {
+interface DemoWalletRow {
   readonly id: string;
   readonly walletAddress: string;
   readonly institution: string;
   readonly label: string;
 }
 
-export interface DemoApyRow {
+interface DemoApyRow {
   readonly holdingKey: string;
   readonly annualRatePct: string;
   readonly payoutFrequency: string;

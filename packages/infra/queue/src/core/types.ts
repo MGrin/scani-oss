@@ -84,7 +84,7 @@ export type LifecycleEvent =
  * Downstream vocabulary (`@scani/shared`) has more reasons than these two;
  * these are the only two the queue itself can observe.
  */
-export type JobDeathReason = 'retries_exhausted' | 'unrecoverable';
+type JobDeathReason = 'retries_exhausted' | 'unrecoverable';
 
 export interface EnqueuedJobMeta {
   jobId: string;

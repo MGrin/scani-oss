@@ -13,12 +13,12 @@
  *  steps, which the original `useVisualViewportPin` measured at under 30px.
  *  Its 50px threshold is kept verbatim — the fault being fixed here is which
  *  height the difference is taken from, not how much of one counts. */
-export const KEYBOARD_OBSCURING_MIN_PX = 50;
+const KEYBOARD_OBSCURING_MIN_PX = 50;
 
 /** Breathing room between a focused field and the top of the keyboard. Less
  *  than this and the field is technically visible while reading as flush
  *  against the keyboard. */
-export const FIELD_VISIBILITY_MARGIN_PX = 16;
+const FIELD_VISIBILITY_MARGIN_PX = 16;
 
 export interface ViewportMetrics {
   /** `document.documentElement.clientHeight` — the *layout* viewport. This is

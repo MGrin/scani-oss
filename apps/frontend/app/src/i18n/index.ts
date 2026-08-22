@@ -40,7 +40,7 @@ availableLanguages.sort((a, b) => a.name.localeCompare(b.name));
 
 export const AVAILABLE_LANGUAGES: ReadonlyArray<AvailableLanguage> = availableLanguages;
 
-export const LANGUAGE_STORAGE_KEY = 'scani.language';
+const LANGUAGE_STORAGE_KEY = 'scani.language';
 
 void i18n
   .use(LanguageDetector)

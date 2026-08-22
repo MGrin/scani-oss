@@ -39,7 +39,7 @@ export interface PortHolder {
 }
 
 /** The field order `dockerPs` asks for, and the order `parsePortHolders` reads. */
-export const DOCKER_PS_FORMAT =
+const DOCKER_PS_FORMAT =
   '{{.Names}}\t{{.Label "com.docker.compose.project"}}\t' +
   '{{.Label "com.docker.compose.project.working_dir"}}\t{{.Ports}}';
 
@@ -120,7 +120,7 @@ export function describeHolder(holder: PortHolder, port: number): string {
  * an exceptional one — which is exactly why the callers print what they could
  * not determine instead of pretending.
  */
-export function dockerPs(): string | null {
+function dockerPs(): string | null {
   const probe = spawnSync('docker', ['ps', '--no-trunc', '--format', DOCKER_PS_FORMAT], {
     encoding: 'utf8',
     timeout: 10_000,
