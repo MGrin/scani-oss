@@ -171,8 +171,10 @@ for the full migration playbook.
 **Symptom.** Jobs accepted by the api never run. BullMQ dashboard
 shows nothing.
 
-**Cause.** Worker process not running, or `REDIS_URL` mismatch
-between api and worker.
+**Cause.** Worker process not running, or `DATABASE_URL` mismatch
+between api and worker — the queue lives in the `bullmq` schema of
+that database, so pointing the two at different databases means the
+api enqueues where the worker is not looking.
 
 **Fix.**
 
@@ -181,12 +183,16 @@ docker compose -f docker-compose.prod.yml ps worker
 docker compose -f docker-compose.prod.yml logs worker | tail -50
 ```
 
-Confirm `REDIS_URL` is identical:
+Confirm `DATABASE_URL` is identical:
 
 ```sh
-docker compose -f docker-compose.prod.yml exec api env | grep REDIS_URL
-docker compose -f docker-compose.prod.yml exec worker env | grep REDIS_URL
+docker compose -f docker-compose.prod.yml exec api env | grep DATABASE_URL
+docker compose -f docker-compose.prod.yml exec worker env | grep DATABASE_URL
 ```
+
+If the worker logs `schema "bullmq" is not initialized`, the queue
+schema was never applied — run the `migrate` image (see
+[Apply migrations](/self-hosting/tier1/production/#apply-migrations)).
 
 ## "PRECONDITION_FAILED: <FOO>_API_KEY is not configured"
 
