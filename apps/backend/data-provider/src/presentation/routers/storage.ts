@@ -25,6 +25,11 @@ const presignedUploadOut = z.object({
 });
 const storage = (): StorageService => Container.get(StorageService);
 
+// 256KB of payload, expressed in base64 characters (4 chars per 3 bytes).
+// Enforced on the wire so an oversized body is refused by zod before it is
+// decoded into a Buffer, rather than after.
+const WRITE_OBJECT_MAX_BASE64_CHARS = Math.ceil((256 * 1024 * 4) / 3);
+
 export const storageRouter = router({
   presignUpload: bearerProcedure
     .meta({
@@ -133,6 +138,104 @@ export const storageRouter = router({
         log.warn(
           { key: input.key, error: err instanceof Error ? err.message : String(err) },
           'readTempBlob failed'
+        );
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }),
+
+  // Read an object AND the content type it was stored with (SC-208).
+  //
+  // `readTempBlob` cannot answer this: it returns bytes alone, and an
+  // institution icon has to be re-served over HTTP, which needs its type.
+  // Recording the type in the key's extension instead would mean the reader
+  // has to know the extension before it can ask — which is the thing it is
+  // asking for.
+  //
+  // A miss is `{ found: false }`, not a throw. The caller's next move is to
+  // resolve the icon from the institution's website, and an absent object is
+  // the ordinary first-ever request rather than an error.
+  readObject: bearerProcedure
+    .meta({
+      openapi: {
+        method: 'POST',
+        path: '/trpc/storage.readObject',
+        tags: ['storage'],
+        summary: 'Read an object as base64 together with its stored content type',
+        protect: true,
+      },
+    })
+    .input(z.object({ key: z.string() }))
+    .output(
+      z.object({
+        found: z.boolean(),
+        base64: z.string(),
+        contentType: z.string(),
+      })
+    )
+    .mutation(async ({ input }) => {
+      try {
+        const object = await storage().readObject(input.key);
+        if (!object) return { found: false, base64: '', contentType: '' };
+        return {
+          found: true,
+          base64: Buffer.from(object.bytes).toString('base64'),
+          contentType: object.contentType,
+        };
+      } catch (err) {
+        log.warn(
+          { key: input.key, error: err instanceof Error ? err.message : String(err) },
+          'readObject failed'
+        );
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }),
+
+  // Store bytes the CALLER produced, under a key the caller chose (SC-208).
+  //
+  // Every other write path here hands out a presigned URL so the bytes go
+  // browser-to-R2 and never touch a Scani process. This one exists because
+  // the institution icon is fetched by the api from a third-party site, so
+  // the bytes are already in a Scani process and the key is server-chosen —
+  // `presignUpload` would force them into `temp/<prefix>/<uuid>`, a jail for
+  // user uploads that a permanent object does not belong in.
+  //
+  // Capped at 256KB. That is twice the icon cap in `@scani/http-fetch`, and
+  // the point of the cap is that this is not a general file-upload endpoint:
+  // if a caller ever needs one, it should have to change this line and say
+  // why.
+  writeObject: bearerProcedure
+    .meta({
+      openapi: {
+        method: 'POST',
+        path: '/trpc/storage.writeObject',
+        tags: ['storage'],
+        summary: 'Write caller-supplied bytes to a caller-chosen key',
+        protect: true,
+      },
+    })
+    .input(
+      z.object({
+        key: z.string(),
+        base64: z.string().max(WRITE_OBJECT_MAX_BASE64_CHARS),
+        contentType: z.string(),
+      })
+    )
+    .output(okOutput)
+    .mutation(async ({ input }) => {
+      try {
+        const bytes = Buffer.from(input.base64, 'base64');
+        await storage().write(input.key, bytes, input.contentType);
+        return { ok: true };
+      } catch (err) {
+        log.warn(
+          { key: input.key, error: err instanceof Error ? err.message : String(err) },
+          'writeObject failed'
         );
         throw new TRPCError({
           code: 'INTERNAL_SERVER_ERROR',

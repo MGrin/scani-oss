@@ -10,20 +10,32 @@ import {
   TrendingUp,
   Wallet,
 } from 'lucide-react';
+import { apiBaseUrl } from './api-base-url';
 
 /**
- * Get favicon URL from a website URL
- * Uses Google's favicon service as a fallback
+ * Where an institution's mark comes from (SC-208).
+ *
+ * This used to be `www.google.com/s2/favicons?domain=<host>`, which made every
+ * row of the holdings table a third-party request to google.com from a finance
+ * app: exactly the shape content blockers exist to stop, unreachable from
+ * China, and an undocumented endpoint that had already changed under us once
+ * (the 301 behind SC-203). The api now resolves and serves these itself.
+ *
+ * **Keyed on the institution id, not its website.** The server takes the
+ * website from the row rather than from the caller, so this URL cannot be used
+ * to make the backend fetch an arbitrary address.
+ *
+ * `website` is still read, and only to decide whether to ask at all: an
+ * institution with no site has no icon, and skipping the request means the
+ * letter tile is drawn immediately instead of after a round trip. A row that
+ * has a website but no resolvable icon gets a 404 and the same letter tile,
+ * one request later.
  */
-export function getFaviconUrl(websiteUrl: string | null | undefined): string | null {
-  if (!websiteUrl) return null;
-
-  try {
-    const url = new URL(websiteUrl.startsWith('http') ? websiteUrl : `https://${websiteUrl}`);
-    return `https://www.google.com/s2/favicons?domain=${url.hostname}&sz=64`;
-  } catch {
-    return null;
-  }
+export function institutionIconUrl(
+  institution: { id: string; website?: string | null } | null | undefined
+): string | null {
+  if (!institution?.website) return null;
+  return `${apiBaseUrl()}/institution-icons/${encodeURIComponent(institution.id)}`;
 }
 
 /**

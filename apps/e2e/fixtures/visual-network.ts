@@ -78,6 +78,29 @@ import type { Page } from '@playwright/test';
  * never mounts. Measured while building this.
  */
 
+/**
+ * SC-208 MOVED THE URL, AND THAT IS WHY THE PIN IS STILL HERE.
+ *
+ * The mark now comes from our own api — `GET /institution-icons/<id>`, which
+ * resolves the institution's icon server-side and caches it in R2. So the
+ * request the browser makes is to LOOPBACK under this gate, and the paragraphs
+ * above describe a dependency the product no longer has.
+ *
+ * The dependency the *gate* has did not go away, it moved one process across.
+ * An unpinned run would have the api reach `jpmorganchase.com` while the
+ * screenshot was being taken: the same network, the same settle window, the
+ * same intermittent empty track — and now with a cold-versus-warm R2 cache
+ * deciding whether it is fast or slow, which is worse than what SC-524 fixed
+ * rather than better.
+ *
+ * So `isInstitutionMark` matches on the PATH and the route predicate has to
+ * take loopback traffic too. That is the one thing to understand before
+ * editing this file: the seal is `not loopback` **or** `is an institution
+ * mark`, and dropping the second half puts the gate back on the public
+ * internet through a hop that does not appear in `escaped`, because nothing
+ * outside loopback was ever requested. It would look exactly like a clean run.
+ */
+
 /** Hosts served by `exposeNetwork: '<loopback>'` — this checkout's own stack. */
 const LOOPBACK = new Set(['localhost', '127.0.0.1', '::1', '[::1]']);
 
@@ -106,9 +129,27 @@ const PINNED_ICON = Buffer.from(
   'base64'
 );
 
-/** The `<img src>` an institution mark asks for — see `getFaviconUrl`. */
+/**
+ * The `<img src>` an institution mark asks for — see `institutionIconUrl` in
+ * `apps/frontend/app/src/lib/icons.ts`.
+ *
+ * Matched on the PATH with no host condition, because SC-208 put this route on
+ * our own api: in this gate that is loopback, in production it is
+ * `api.scani.xyz`, and in the published image it is same-origin behind nginx.
+ * A host condition would be right for exactly one of those three.
+ *
+ * The path is specific enough to be safe on loopback — it is one route, and it
+ * is the only one under this prefix — and the drift-reporting property SC-524
+ * wanted survives: point `institutionIconUrl` somewhere else and these
+ * requests stop matching. Off-host they land in `escaped` and go red by name;
+ * on-loopback they simply stop being pinned, which is why
+ * `assertPinnedBytes` also insists a screen declaring `institutionMark`
+ * actually drew one.
+ */
+export const INSTITUTION_ICON_PATH = '/institution-icons/';
+
 function isInstitutionMark(url: URL): boolean {
-  return url.hostname === 'www.google.com' && url.pathname.startsWith('/s2/favicons');
+  return url.pathname.startsWith(INSTITUTION_ICON_PATH);
 }
 
 export interface PinnedNetwork {
@@ -129,7 +170,10 @@ export interface PinnedNetwork {
 export async function pinExternalNetwork(page: Page): Promise<PinnedNetwork> {
   const record: PinnedNetwork = { icons: 0, escaped: [] };
   await page.route(
-    (url) => !LOOPBACK.has(url.hostname),
+    // Not `!LOOPBACK.has(...)` alone: since SC-208 the institution mark IS a
+    // loopback request, and letting it through means the api fetches the real
+    // internet mid-capture with nothing recorded in `escaped`.
+    (url) => !LOOPBACK.has(url.hostname) || isInstitutionMark(url),
     async (route, request) => {
       const url = new URL(request.url());
       if (isInstitutionMark(url)) {
