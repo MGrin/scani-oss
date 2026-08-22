@@ -41,7 +41,7 @@
     "ci:gen:check": "bun scripts/generate-ci-filters.ts --check",
     "docs:check": "bun scripts/check-docs.ts",
     "docs:check:soft": "bun scripts/check-docs.ts --soft",
-    "db:migrate": "cd packages/infra/db && bun db:migrate",
+    "db:migrate": "bun scripts/migrate.ts",
     "deps:lint": "syncpack lint",
     "deps:fix": "syncpack fix",
     "deps:unused": "knip --dependencies",

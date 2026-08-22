@@ -28,8 +28,9 @@ const getQueue = () => Container.get(QueueClient).get();
 // /admin/jobs/redis-read, each with the key at argv[1]. The queue +
 // rate-limiter Redis moved off Upstash onto the worker-embedded Redis
 // (6PN-only), so the admin app — on Cloudflare Pages, outside the Fly
-// private network — inspects queue state (`bull:*`) and rate-limiter
-// windows (`rl:*`) through this proxy instead of Upstash REST.
+// private network — inspects rate-limiter windows (`rl:*`) through this
+// proxy instead of Upstash REST. Queue state used to come through here too
+// (`bull:*`); since SC-518 it is read straight from Postgres.
 const REDIS_READ_COMMANDS = new Set([
   'LLEN',
   'LRANGE',
@@ -39,7 +40,19 @@ const REDIS_READ_COMMANDS = new Set([
   'ZSCORE',
   'HGETALL',
 ]);
-const REDIS_READ_KEY_PREFIXES = ['bull:', 'rl:'];
+// SC-518 narrowed this from ['bull:', 'rl:'] to ['rl:'].
+//
+// Queue state moved to Postgres, and the admin reads it there directly through
+// the same `getSql()` it already uses for every other stats module — so the
+// `bull:` prefix no longer needs to be reachable through a shared-HMAC
+// endpoint. What remains is the rate limiter's `rl:*` windows, which are still
+// on Redis (6PN-only, so unreachable from Cloudflare Pages) and still need the
+// proxy.
+//
+// The whitelist below is NOT dead and must not be deleted: it is still the
+// entire boundary for those reads. It is removable only when the rate limiter
+// moves too, at which point the whole endpoint goes.
+const REDIS_READ_KEY_PREFIXES = ['rl:'];
 const REDIS_READ_MAX_COMMANDS = 256;
 
 export type RedisReadValidation =
