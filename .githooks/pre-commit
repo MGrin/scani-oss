@@ -36,6 +36,32 @@ staged_files() {
   git diff --cached --name-only --diff-filter=ACMR "$@"
 }
 
+# -------- 0. Nothing private may ride an scani-oss-bound commit --------
+#
+# SC-569. Checking out a public-mirror branch inside a private worktree deletes
+# the per-app `.gitignore` files, because they are tracked private files — so
+# local build output whose only ignore rule lived there stops being ignored and
+# a `git add -A` a second later takes files that were untrackable a moment
+# before. Measured: nine of them, several carrying deployment identity. The
+# paths are in the private commit rather than here, for the same reason the
+# guard exists.
+#
+# First, and before the expensive checks, so a refusal is immediate.
+#
+# It is a REFUSAL on any non-zero status, including the script's exit 9, which
+# means it could not tell whether this branch is bound for the mirror. "Could
+# not tell" costs one `git fetch upstream`; treating it as a pass is how a
+# guard becomes decoration in the one state where it cannot see.
+if [ -f scripts/check-oss-bound-paths.ts ]; then
+  if ! bun scripts/check-oss-bound-paths.ts; then
+    fail "staged paths that cannot travel to MGrin/scani-oss"
+  fi
+else
+  # Says so rather than passing quietly: on a branch predating SC-569 the
+  # check genuinely does not exist, and a silent skip reads like a clean run.
+  note "scripts/check-oss-bound-paths.ts is not in this tree; OSS-boundary check NOT run"
+fi
+
 # -------- 1. Biome lint (staged files only, fast) --------
 
 biome_relevant=$(staged_files -- '*.ts' '*.tsx' '*.js' '*.jsx' '*.json' '*.jsonc' || true)
