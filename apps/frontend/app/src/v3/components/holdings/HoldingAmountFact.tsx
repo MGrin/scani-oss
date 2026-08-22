@@ -23,7 +23,8 @@ import { LookalikeBadge } from './LookalikeBadge';
  */
 
 interface HoldingAmountFactProps {
-  amount: number;
+  /** The exact balance, as a decimal string (SC-567). */
+  amount: string;
   /**
    * What the count counts (SC-559).
    *
@@ -65,9 +66,11 @@ export function HoldingAmountFact({ amount, symbol, lookalikeOf, onSave }: Holdi
         <button
           type="button"
           onClick={() => {
-            const opening = String(amount);
-            setSeed(opening);
-            setDraft(opening);
+            // `amount` itself, no `String(...)`. It was a number, and
+            // `String(4.013e-10)` is `"4.013e-10"` — an exponent seeded into
+            // a field whose parser does not read one (SC-567).
+            setSeed(amount);
+            setDraft(amount);
           }}
           aria-label={t('v3.holdings.amountFact.edit')}
           className="-my-1 rounded-md p-1 text-muted-foreground transition-colors duration-fast ease-emphasized hover:bg-surface-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"

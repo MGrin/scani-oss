@@ -76,7 +76,7 @@ function holding(overrides: Partial<HoldingWithDetails> = {}): HoldingWithDetail
       typeCode: 'crypto',
       isScamProbability: 0,
     },
-    amount: 0.2841,
+    amount: '0.2841',
     value: 18_204.55,
     costBasis: 12_000,
     account: {

@@ -1,4 +1,5 @@
 import {
+  Decimal,
   formatDayMonth,
   type HoldingWithDetails,
   monthNameInDate,
@@ -96,7 +97,7 @@ export function isSynced(holding: Pick<HoldingWithDetails, 'source'>): boolean {
  * rendered `0`, which is a claim that the position is empty rather than that it
  * is small.
  */
-export function amountDecimals(amount: number): number {
+export function amountDecimals(amount: Decimal.Value): number {
   return quantityDecimals(amount);
 }
 
@@ -139,7 +140,14 @@ export function compareHoldings(
     case 'symbol':
       return a.token.symbol.localeCompare(b.token.symbol) * factor;
     case 'amount':
-      return (a.amount - b.amount) * factor;
+      // `Decimal.cmp`, not a subtraction. `amount` is a decimal STRING now
+      // (SC-567) and `'1e-18' - '4e-10'` would coerce through a double —
+      // which is the representation this field stopped using precisely
+      // because it cannot hold every balance. Subtraction also overflows to
+      // `Infinity` on two large balances and returns `NaN` on anything
+      // unparseable, and a comparator returning `NaN` sorts unpredictably
+      // rather than failing.
+      return new Decimal(a.amount).cmp(new Decimal(b.amount)) * factor;
     case 'price':
       return compareNullable(holdingPrice(a), holdingPrice(b), factor);
     case 'pnl':
