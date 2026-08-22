@@ -71,6 +71,24 @@ bun test --preload ./packages/business/domain/test-preload.ts packages/ --timeou
 # running it here saves the round trip.
 bun scripts/sync-dockerhub-readme.ts --check
 
+# Docs match source, and every `.mdx` page under
+# `apps/frontend/docs/src/content/` compiles. Fast (~0.4s), no services. CI
+# runs this too, but running it here turns an MDX syntax error into a named
+# file and line instead of a red `Build site` job after the fact — and MDX is
+# stricter than Markdown in ways that do not look like mistakes. A Markdown
+# autolink, `<http://localhost:8080>`, is correct in a `.md` page and is read
+# as a JSX tag in an `.mdx` one.
+bun run docs:check
+
+# When you touched apps/frontend/docs. `docs:check` above compiles the pages;
+# the build additionally validates frontmatter against the content schema,
+# resolves component imports and link targets, and asserts on the rendered
+# tables. ~6s for 60 pages, no services.
+#
+# Note the flag order. `bun --cwd DIR run build` prints bun's help and exits 0,
+# so the wrong form is a documented step that silently does nothing.
+bun --cwd apps/frontend/docs build
+
 # When dependencies changed
 bun run deps:lint    # syncpack — version alignment
 bun run deps:unused  # knip — unused exports/files/dependencies
