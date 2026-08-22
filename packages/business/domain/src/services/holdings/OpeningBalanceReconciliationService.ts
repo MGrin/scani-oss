@@ -438,8 +438,31 @@ export class OpeningBalanceReconciliationService {
 
   // Run reconciliation for every holding of a user. Used after ingesters
   // run, or nightly.
+  //
+  // `includeHidden` is TRUE because reconciliation is not a claim the reader
+  // sees — it makes the transaction ledger explain the balance, and a hidden
+  // holding's ledger is no less obliged to. Hiding governs what is displayed;
+  // nothing downstream of here reads a hidden holding's opening row or its
+  // coverage note anyway, because the rollup, the valuation service, the
+  // returns value series and the data-quality report each exclude hidden
+  // holdings on their own account.
+  //
+  // Passing the default was never a decision about reconciliation: it is
+  // `findByUser`'s dashboard-shaped default, inherited. The two per-holding
+  // callers — `TransactionImportCoordinator` and `BackfillStatementFeesUseCase`
+  // — reconcile whatever holdings an import touched and have never filtered on
+  // it, so the user-wide path was the one out of three that disagreed. That is
+  // what SC-502 is: an earlier run left an opening row on a hidden holding
+  // through one of those paths, and this enumeration could not reach it to
+  // repair it. A repair path that cannot reach what it wrote is the defect,
+  // independently of whether any such row exists right now.
+  //
+  // Note this does NOT reach a holding whose token is over the scam threshold:
+  // `findByUser` filters those with no parameter to opt out. Deliberate —
+  // widening that is a separate decision about holdings the user can still
+  // un-flag, and there is no evidence anything needs it.
   async reconcileUser(userId: string): Promise<ReconciliationResult[]> {
-    const holdings = await this.holdingRepository.findByUser(userId);
+    const holdings = await this.holdingRepository.findByUser(userId, undefined, true);
     const results: ReconciliationResult[] = [];
     // Each holding reconciles independently — batch with bounded fan-out
     // rather than serializing every holding behind the previous one.
