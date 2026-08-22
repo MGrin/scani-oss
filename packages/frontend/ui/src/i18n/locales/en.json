@@ -43,6 +43,7 @@
         "selectAll": "Select all",
         "selectRow": "Select {{name}}",
         "sortBy": "Sort by {{header}}",
+        "rowActions": "Details",
         "rowCount_one": "{{count}} row",
         "rowCount_other": "{{count}} rows"
       },

@@ -320,6 +320,26 @@ export interface V3DataViewConfig<T>
    */
   rowHref?: (item: T) => string;
   /**
+   * Moves the peek off the row and onto a control of its own (SC-560).
+   *
+   * The default is right for a surface whose record IS the destination: the
+   * row opens the sheet and there is nothing else it could mean. Accounts is
+   * the surface where it was wrong. An account row's record is five facts;
+   * what a reader almost always wants from it is that account's HOLDINGS, and
+   * putting the sheet on the row made the common answer two taps deep behind
+   * the rare one.
+   *
+   * Declaring this inverts the two: the row does whatever `onRowClick` /
+   * `rowHref` say, and this narrow control beside it opens the peek. It is not
+   * a way to give a row two equal meanings — the sheet's facts have to be the
+   * *rarer* of the two, or the row is two rows pretending to be one.
+   *
+   * Requires `onRowClick`, since a row that no longer opens the peek must lead
+   * somewhere. `labelKey` names the control for a screen reader and is
+   * interpolated with `{{name}}`, the row's own name.
+   */
+  peekTrigger?: { icon: LucideIcon; labelKey: UiTranslationKey };
+  /**
    * The bar over a non-empty selection.
    *
    * `deselect` is the third argument rather than a second `clearSelection`

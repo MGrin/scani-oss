@@ -189,7 +189,8 @@
           "value": "Value"
         },
         "config": {
-          "search": "Search"
+          "search": "Search",
+          "details": "Details for {{name}}"
         },
         "empty": {
           "anAccountIsCreatedForYou": "An account is created for you when you connect an integration or import a statement.",
