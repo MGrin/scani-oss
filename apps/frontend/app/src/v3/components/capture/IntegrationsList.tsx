@@ -69,7 +69,7 @@ export function IntegrationsList({
       leading: (
         <InstitutionMark
           name={integration.institution.name}
-          website={integration.institution.website}
+          institution={integration.institution}
           size="size-5"
         />
       ),
@@ -89,7 +89,7 @@ export function IntegrationsList({
           <span className="flex min-w-0 items-center gap-2">
             <InstitutionMark
               name={integration.institution.name}
-              website={integration.institution.website}
+              institution={integration.institution}
               size="size-5"
             />
             <span className="truncate">{integration.institution.name}</span>

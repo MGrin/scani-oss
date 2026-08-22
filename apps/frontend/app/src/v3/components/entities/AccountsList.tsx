@@ -217,7 +217,7 @@ export function AccountsList({
         leading: (
           <InstitutionMark
             name={institutionName(account)}
-            website={institutionById.get(account.institutionId)?.website}
+            institution={institutionById.get(account.institutionId)}
             size="size-5"
           />
         ),
@@ -271,7 +271,7 @@ export function AccountsList({
           <span className="flex min-w-0 items-center gap-2">
             <InstitutionMark
               name={institutionName(account)}
-              website={institutionById.get(account.institutionId)?.website}
+              institution={institutionById.get(account.institutionId)}
               size="size-4"
             />
             <span className="truncate">{institutionName(account)}</span>
@@ -333,7 +333,7 @@ export function AccountsList({
           leading: (
             <InstitutionMark
               name={institutionName(account)}
-              website={institutionById.get(account.institutionId)?.website}
+              institution={institutionById.get(account.institutionId)}
               size="size-8"
             />
           ),

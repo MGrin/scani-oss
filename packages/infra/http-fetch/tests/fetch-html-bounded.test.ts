@@ -133,3 +133,35 @@ describe('fetchHtmlBounded — SSRF guards', () => {
     });
   });
 });
+
+describe('fetchHtmlBounded — the total budget covers the DNS step (SC-208)', () => {
+  test('the budget rejects even when the step that hangs is the DNS lookup', () => {
+    // NOT redundant with TIMEOUT_MS, and this is the case a future reader will
+    // try to delete as duplicative. TIMEOUT_MS arms an AbortController, and an
+    // AbortSignal only reaches a fetch that has STARTED. `assertHostIsPublic`
+    // runs first and calls `dns.lookup`, which takes no signal — so the one
+    // step that runs before every budget was the one step nothing bounded.
+    //
+    // Measured through this function on 2026-08-22: www.robinhood.com and
+    // www.bitstamp.net each took SIXTY SECONDS on `DNS lookup failed`, not the
+    // 4s this file advertises. `og.ts` and `institutions.ts` call it with a URL
+    // the USER pasted, behind a cap of three concurrent fetches.
+    //
+    // A 1ms budget makes the assertion deterministic without a network: it
+    // wins whatever the fetch underneath does.
+    return expect(fetchHtmlBounded('http://93.184.216.34/', { budgetMs: 1 })).rejects.toMatchObject(
+      { reason: 'timeout' }
+    );
+  });
+
+  test('AND IT DOES NOT SWALLOW A CALL THAT ACTUALLY COMPLETED', async () => {
+    // The control. A `withBudget` that rejected immediately would leave the
+    // case above green and every other case in this file green too, because
+    // they all assert on `reason` and a rejection is a rejection. This one
+    // fails a refusal FAST for a different reason, under a budget it cannot
+    // reach — so the reported reason has to be the real one.
+    await expect(fetchHtmlBounded('http://127.0.0.1/', { budgetMs: 5_000 })).rejects.toMatchObject({
+      reason: 'blocked-host',
+    });
+  });
+});

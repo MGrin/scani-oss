@@ -38,10 +38,9 @@ function successSchema(operation: Operation): Record<string, unknown> | undefine
 
 describe('OpenAPI document', () => {
   test('exposes every operation the routers annotate', () => {
-    // 24. The private tree counts 25: it registers a `waitlist` router that
-    // this repo does not, and `presentation/router.ts` is pinned to private's
-    // version on every sync, so the extra operation never arrives here.
-    expect(everyOperation().length).toBe(24);
+    // 26 since SC-208 added `storage.readObject` and `storage.writeObject`
+    // (24 since SC-167 added `storage.objectExists`). One fewer than private: no waitlist router.
+    expect(everyOperation().length).toBe(26);
   });
 
   test('no operation publishes an empty response schema', () => {
