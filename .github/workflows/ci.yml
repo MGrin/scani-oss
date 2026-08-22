@@ -166,17 +166,21 @@ jobs:
       - name: Type check
         run: bun run type-check
 
+  # Also gated on `code`, not just `deps`: knip's unused-FILE check is the only
+  # thing that sees a module nothing imports, and the change that creates one —
+  # or that should have deleted one — is a source change with no manifest in it.
+  # Gated on `deps` alone this job never ran on the change that mattered.
   validate-deps:
-    name: Deps sync & knip
+    name: Deps sync & dead code (knip)
     needs: detect-changes
-    if: ${{ needs.detect-changes.outputs.deps == 'true' }}
+    if: ${{ needs.detect-changes.outputs.deps == 'true' || needs.detect-changes.outputs.code == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
       - uses: ./.github/actions/setup-bun
       - name: Dependency versions in sync
         run: bun run deps:lint
-      - name: Unused code & dependencies (knip)
+      - name: Unused files & dependencies (knip)
         run: bun run deps:unused
       - name: CI filter list in sync with workspaces
         run: bun run ci:gen:check

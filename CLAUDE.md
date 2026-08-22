@@ -32,8 +32,10 @@ place or rejected at review.
   migrated to the mirrored `tests/` layout when the surrounding code is touched.
 - **`knip` for unused-code, `syncpack` for cross-workspace dep hygiene.**
   Both are wired into CI; both must pass before merge. Run
-  `bun run deps:unused` and `bun run deps:lint` locally before pushing
-  dependency-touching changes.
+  `bun run deps:lint` before pushing dependency-touching changes, and
+  `bun run deps:unused` before pushing **any** change that adds, deletes
+  or stops importing a module — it is the only check here that sees a file
+  nothing imports.
 - **No `@ts-ignore` / `@ts-expect-error` / `biome-ignore` without a
   one-line justification comment** explaining why the rule has to be
   suppressed at that exact site. If you can't articulate the reason,
@@ -82,6 +84,17 @@ bun scripts/sync-dockerhub-readme.ts --check
 # as a JSX tag in an `.mdx` one.
 bun run docs:check
 
+# COMMIT a deletion before running the two checks above — staging it is not
+# enough, and `docs:check` passing is what makes that look settled.
+# `check-docs.ts` reads `git ls-files`, which honours the index, so a staged
+# deletion is already invisible to it. But
+# `scripts/tests/check-docs-compiles-mdx.test.ts` runs the same script against
+# a scratch index built from `read-tree HEAD`, where your deletion has not
+# happened — so the file reads as tracked and missing and the run dies with
+# `[checkEnvVarCoverage] crashed: ENOENT`, naming a path you correctly
+# deleted. Measured on seven staged deletions: `docs:check` green, that test
+# 4 pass / 2 fail, and committing is the whole fix.
+
 # When you touched apps/frontend/docs. `docs:check` above compiles the pages;
 # the build additionally validates frontmatter against the content schema,
 # resolves component imports and link targets, and asserts on the rendered
@@ -91,9 +104,16 @@ bun run docs:check
 # so the wrong form is a documented step that silently does nothing.
 bun --cwd apps/frontend/docs build
 
+# Unused files and dependencies. Run this whenever you added, deleted or
+# stopped importing a module — NOT only when a manifest changed. This was
+# `knip --dependencies`, which reports dependency issues and no unused FILES
+# at all, so a module nothing imports could sit here indefinitely: seven did,
+# totalling 983 lines, one of them a 323-line copy of a live module. Exit 1
+# names each unused file. Unused EXPORTS stay off in `knip.json` on purpose.
+bun run deps:unused
+
 # When dependencies changed
 bun run deps:lint    # syncpack — version alignment
-bun run deps:unused  # knip — unused exports/files/dependencies
 ```
 
 ## Pushing & Pull Requests
@@ -400,13 +420,23 @@ Reference implementations: `packages/infra/email/src/config.ts`,
   exempt and tracks Bun's release cadence via `latest`. Config:
   `.syncpackrc.json`.
 - **`bun run deps:fix`** — syncpack auto-fix.
-- **`bun run deps:unused`** — knip: surfaces unused exports / files /
-  dependencies. Test files (`**/*.test.ts`) are excluded from the scan.
-  Config: `knip.json`.
+- **`bun run deps:unused`** — `knip --dependencies --include files`:
+  unused **files** plus unused / unlisted / unresolved dependencies. Unused
+  **exports and types** are `off` in `knip.json` on purpose — 79 and 70 of
+  them respectively on the tree that shipped this, which is a triage rather
+  than a gate. Test files (`**/*.test.ts`) are excluded from the scan.
+  `scripts/*.ts` and `apps/e2e/scripts/*.ts` are declared as entry points
+  because they are invoked by hand or by a shell script and knip cannot infer
+  either; without that the run reports them all as unused, including
+  `sync-dockerhub-readme.ts`, which the before-pushing list above runs.
+  `scripts/lib/` and `scripts/tests/` are deliberately NOT entry points, so a
+  dead helper under them is still reportable. Config: `knip.json`.
 - **`bun run deps:outdated` / `bun run deps:update:minor`** — version drift
   checks and minor-bump updates.
 - CI runs `deps:lint` and `deps:unused` whenever lockfile/config files
-  change. Both must pass.
+  **or any source file** change. Both must pass. The source half matters:
+  gated on manifests alone, the unused-file check never ran on the kind of
+  change that creates or should have removed a dead module.
 
 ## Infrastructure
 
@@ -432,8 +462,8 @@ Workflows in `.github/workflows/`:
 
 - `ci.yml` — path-filtered jobs:
   - `validate-code` — Biome lint + parallel `tsgo --noEmit` across all workspaces.
-  - `validate-deps` — `syncpack lint` + `knip --dependencies` (only when
-    lockfile/config files changed).
+  - `validate-deps` — `syncpack lint` + `knip --dependencies --include files`
+    + `ci:gen:check` (when lockfile/config files **or** source files changed).
   - `test` — Postgres 16 service container; runs `bun run db:migrate`
     then `bun test --preload ./packages/business/domain/test-preload.ts $PATHS --timeout 30000`.
   - `secret-scan` — grep-based secret detection (always runs).
