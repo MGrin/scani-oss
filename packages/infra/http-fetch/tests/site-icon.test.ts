@@ -326,3 +326,45 @@ describe('fetchSiteIcon — resolve, then fetch', () => {
     });
   });
 });
+
+describe('the total budget — the bound that covers DNS', () => {
+  test('a step that never settles rejects at the budget instead of hanging', async () => {
+    // NOT a duplicate of the per-fetch timeout, and this is the case a future
+    // reader will try to delete as one. `assertHostIsPublic` calls `dns.lookup`,
+    // which takes no AbortSignal, and `fetchHtmlBounded` arms its own 4s
+    // controller only AFTER that call returns — so the first step of every
+    // resolve is the one step no other timeout can reach.
+    //
+    // Measured on 20 real seeded institutions (2026-08-22): two of them —
+    // www.robinhood.com and www.bitstamp.net — sat on a failing DNS lookup for
+    // 60 SECONDS each. The api holds at most three resolves at once, so three
+    // of those stop every institution mark in the product while a browser waits
+    // on an open connection.
+    const t0 = performance.now();
+    await expect(
+      fetchSiteIcon('http://93.184.216.34/', {
+        budgetMs: 60,
+        fetchHtml: () => new Promise(() => undefined),
+      })
+    ).rejects.toMatchObject({ reason: 'timeout' });
+    // Bounded above too: a budget that fired at the right time but only because
+    // everything is slow would pass a one-sided assertion.
+    expect(performance.now() - t0).toBeLessThan(2_000);
+  });
+
+  test('AND IT DOES NOT FIRE ON A HEALTHY RESOLVE', async () => {
+    // The control. A budget that always trips is indistinguishable from a
+    // broken resolver, and every other case in this file would still be green
+    // if `withBudget` rejected immediately — they assert on the reason, and a
+    // rejection is a rejection.
+    const { fetch } = serving({
+      'http://93.184.216.34/favicon.ico': () => imageResponse(PNG_BYTES),
+    });
+    const icon = await fetchSiteIcon('http://93.184.216.34/', {
+      budgetMs: 5_000,
+      fetchImpl: fetch,
+      fetchHtml: async () => ({ html: '<head></head>', finalUrl: 'http://93.184.216.34/' }),
+    });
+    expect(icon.contentType).toBe('image/png');
+  });
+});

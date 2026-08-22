@@ -53,6 +53,50 @@ const ICON_PHASE_TIMEOUT_MS = 3_000;
  */
 const MAX_CANDIDATES = 2;
 
+/**
+ * The bound on the WHOLE resolve, and it is not redundant with the two above.
+ *
+ * Measured against 20 real seeded institutions on 2026-08-22: 16 resolved, and
+ * two of the four misses took **60 seconds each** — `www.robinhood.com` and
+ * `www.bitstamp.net`, both on `DNS lookup failed`. Neither timeout above can
+ * cap that. `assertHostIsPublic` calls `dns.lookup` with no deadline of its
+ * own, `fetchHtmlBounded` arms its 4s `AbortController` *after* that call
+ * returns, and an `AbortSignal` only reaches a fetch that has started. So the
+ * one step that runs before every budget is the one step nothing bounds.
+ *
+ * It matters more than a slow icon: the api holds at most three of these at a
+ * time, so three hung lookups stop every institution mark in the product, and
+ * a browser sits on an open connection for a minute waiting on an `<img>`.
+ *
+ * 8s is above the slowest success observed (3.2s) with headroom, and far below
+ * the 60s a stuck resolver costs.
+ */
+const TOTAL_BUDGET_MS = 8_000;
+
+/**
+ * Reject with a `BoundedFetchError` if `work` has not settled in `ms`.
+ *
+ * A race, not a cancellation — the abandoned lookup finishes on its own and is
+ * collected. That is the honest bound available here: `dns.lookup` takes no
+ * signal, so the alternative is not "cancel it" but "wait for it".
+ */
+async function withBudget<T>(work: Promise<T>, ms: number, label: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      work,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new BoundedFetchError(`${label} exceeded ${ms}ms`, 'timeout')),
+          ms
+        );
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 export interface SiteIcon {
   bytes: Uint8Array;
   /** Derived from the bytes by `sniffImageType`, never from a response header. */
@@ -66,6 +110,8 @@ export interface FetchSiteIconDeps {
   fetchImpl?: FetchLike;
   /** Injectable so candidate selection can be tested without an HTML server. */
   fetchHtml?: (url: string) => Promise<{ html: string; finalUrl: string }>;
+  /** Injectable so the budget can be asserted in milliseconds rather than seconds. */
+  budgetMs?: number;
 }
 
 const PNG = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
@@ -292,6 +338,14 @@ export async function fetchSiteIcon(
   websiteUrl: string,
   deps: FetchSiteIconDeps = {}
 ): Promise<SiteIcon> {
+  return withBudget(
+    resolveSiteIcon(websiteUrl, deps),
+    deps.budgetMs ?? TOTAL_BUDGET_MS,
+    'icon resolve'
+  );
+}
+
+async function resolveSiteIcon(websiteUrl: string, deps: FetchSiteIconDeps): Promise<SiteIcon> {
   const fetchImpl = deps.fetchImpl ?? fetch;
   const fetchHtml = deps.fetchHtml ?? (async (url: string) => fetchHtmlBounded(url));
 
