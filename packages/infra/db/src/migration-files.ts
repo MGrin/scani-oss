@@ -28,8 +28,8 @@ import path from 'node:path';
  * A 14-digit prefix sorts after every 4-digit one on the first character, so
  * the two schemes coexist without a special case in the ordering.
  */
-export const LEGACY_TAG = /^(\d{4})_[a-z0-9]+(?:_[a-z0-9]+)*$/;
-export const STAMPED_TAG = /^(\d{14})_[a-z0-9]+(?:_[a-z0-9]+)*$/;
+const LEGACY_TAG = /^(\d{4})_[a-z0-9]+(?:_[a-z0-9]+)*$/;
+const STAMPED_TAG = /^(\d{14})_[a-z0-9]+(?:_[a-z0-9]+)*$/;
 
 /**
  * The legacy space is closed. It is not "0050 is the highest so far" — it is
@@ -44,12 +44,12 @@ export const STAMPED_TAG = /^(\d{14})_[a-z0-9]+(?:_[a-z0-9]+)*$/;
  */
 export const HIGHEST_LEGACY_INDEX = 50;
 
-export interface LegacyTag {
+interface LegacyTag {
   kind: 'legacy';
   index: number;
 }
 
-export interface StampedTag {
+interface StampedTag {
   kind: 'stamped';
   stamp: string;
   at: Date;

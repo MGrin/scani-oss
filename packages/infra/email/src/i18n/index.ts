@@ -16,7 +16,7 @@ export { fill } from './strings';
 export const EMAIL_STRINGS: Readonly<Record<string, EmailStrings>> = { en, ru };
 
 /** What a language we cannot write in falls back to — stated, not implied. */
-export const EMAIL_FALLBACK_LANGUAGE = 'en';
+const EMAIL_FALLBACK_LANGUAGE = 'en';
 
 /**
  * The whole letter in one language, or the whole letter in English (SC-412).

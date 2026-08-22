@@ -94,7 +94,7 @@ function quote(identifier: string, what: string): string {
   return `"${identifier}"`;
 }
 
-export function splitStatements(sql: string): string[] {
+function splitStatements(sql: string): string[] {
   return sql
     .split(BREAKPOINT)
     .map((chunk) => chunk.trim())

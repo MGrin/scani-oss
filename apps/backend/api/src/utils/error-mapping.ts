@@ -14,7 +14,7 @@ import { ExpiredCredentialsError } from '@scani/domain/services';
 import { ProviderError } from '@scani/providers/core/errors';
 import { TRPCError } from '@trpc/server';
 
-export type TRPCErrorCode = ConstructorParameters<typeof TRPCError>[0]['code'];
+type TRPCErrorCode = ConstructorParameters<typeof TRPCError>[0]['code'];
 
 export interface ToTRPCErrorContext {
   /** Final fallback when no specific branch matches. */
