@@ -295,6 +295,27 @@ export const holdingBalanceObservations = pgTable(
     observedAt: timestamp('observed_at', { withTimezone: true }).notNull(),
     source: text('source').notNull(),
     sourceMetadata: jsonb('source_metadata').notNull().default('{}'),
+    // The owner's answer to "we think money moved here — tell us" for the
+    // interval this observation CLOSES (SC-501). A gap is a pair of
+    // consecutive observations whose difference the ledger does not explain,
+    // and the pair is determined by its later row — so the answer lives here
+    // and there is no second record to keep in step with the observations
+    // that define the question.
+    //
+    // `BALANCE_GAP_ANSWERS` in @scani/shared is the vocabulary: the three
+    // `MANUAL_EDIT_CAUSES` verbatim, plus `unknown`. Only a human writes it,
+    // exactly as with `transfer_review` above, so NOT NULL means a person
+    // decided and no importer or nightly job may overrule them.
+    //
+    // Writing NULL back is deliberately still possible — see the migration.
+    // An answer that can only be given once is how a guess becomes permanent.
+    gapReview: text('gap_review'),
+    gapReviewedAt: timestamp('gap_reviewed_at', { withTimezone: true }),
+    // WHO answered, when it was not the owner in the queue — the same
+    // `AnswerSource` vocabulary and the same reasoning as
+    // `transfer_review_source`. NULL reads as `gap_reviewed_at IS NOT NULL ?
+    // 'user' : 'unattributed'`, so nothing is backfilled.
+    gapReviewSource: text('gap_review_source'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => ({
@@ -306,6 +327,14 @@ export const holdingBalanceObservations = pgTable(
     userObservedIdx: index('idx_holding_obs_user_observed').on(
       table.userId,
       table.observedAt.desc()
+    ),
+    // The balance-gap queue's own read: one user's observations in the order
+    // the drift window partitions and sorts by, with `balance` carried so the
+    // walk is index-only (SC-501).
+    userHoldingObservedIdx: index('idx_holding_obs_user_holding_observed').on(
+      table.userId,
+      table.holdingId,
+      table.observedAt
     ),
   })
 );
