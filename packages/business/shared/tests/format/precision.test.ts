@@ -1,5 +1,6 @@
 import { describe, expect, it, test } from 'bun:test';
 import {
+  balanceDecimals,
   isDustQuantity,
   moneyDecimals,
   quantityDecimals,
@@ -168,5 +169,45 @@ describe('isDustQuantity', () => {
     expect(isDustQuantity('0.000000005')).toBe(false);
     expect(isDustQuantity('0.0000000049')).toBe(true);
     expect(isDustQuantity('0.000000004')).toBe(true);
+  });
+});
+
+describe('balanceDecimals', () => {
+  test('a fiat balance is money', () => {
+    // SC-576. `232.330106461 USD` under a delta of `−10,673.74` is one
+    // movement of one balance described at two precisions.
+    expect(balanceDecimals('232.330106461', 'fiat')).toBe(2);
+    expect(balanceDecimals('10906.066301185', 'fiat')).toBe(2);
+  });
+
+  test('a crypto or stock balance is a count', () => {
+    // Money-rounding a count is the failure that has no tell: `0.05` is a
+    // plausible reading of `0.05421` and the reader cannot know it is short.
+    expect(balanceDecimals('0.05421', 'crypto')).toBe(5);
+    expect(balanceDecimals('12.5', 'stock')).toBe(1);
+  });
+
+  test('an unknown token type falls to the count rule, not the money rule', () => {
+    // The default is load-bearing and is the reason the money set is named
+    // positively rather than the count set. A type an admin adds to
+    // `token_types` tomorrow gets no migration and no thought here, and of the
+    // two ways to be wrong about it only the money rule loses digits silently.
+    //
+    // A future reader will be tempted to invert this — "surely a new type is
+    // more likely to behave like the common case" — so the argument, not just
+    // the assertion: `fiat` is the ONLY type whose quantity is an amount of
+    // money (`lib/manual-balance-edit.ts` makes that case at length), and a
+    // set of one is not the common case.
+    expect(balanceDecimals('0.05421', 'some-type-invented-later')).toBe(5);
+    expect(balanceDecimals('0.05421', null)).toBe(5);
+    expect(balanceDecimals('0.05421', undefined)).toBe(5);
+  });
+
+  test('NEITHER branch can render a non-zero balance as zero', () => {
+    // The SC-567 property, and the reason choosing between the two rules here
+    // is safe at all. Both extend past their own precision rather than vanish,
+    // so a dust balance survives whichever branch it takes.
+    expect(balanceDecimals('0.000000004218', 'fiat')).toBeGreaterThan(2);
+    expect(balanceDecimals('0.000000004218', 'crypto')).toBeGreaterThan(8);
   });
 });

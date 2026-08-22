@@ -30,6 +30,7 @@ function candidate(over: Partial<BalanceGapCandidate> = {}): BalanceGapCandidate
     holdingId: over.holdingId ?? 'holding-1',
     tokenId: over.tokenId ?? 'token-1',
     tokenSymbol: over.tokenSymbol ?? 'USD',
+    tokenTypeCode: over.tokenTypeCode ?? 'fiat',
     accountName: over.accountName ?? 'Revolut Savings',
     from: over.from ?? new Date(to.getTime() - DAY),
     to,
