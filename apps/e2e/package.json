@@ -17,6 +17,7 @@
   "devDependencies": {
     "@axe-core/playwright": "^4.13.0",
     "@playwright/test": "^1.60.0",
-    "@types/bun": "latest"
+    "@types/bun": "latest",
+    "drizzle-orm": "^0.45.2"
   }
 }
