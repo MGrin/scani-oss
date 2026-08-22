@@ -19,6 +19,20 @@ version heading stays there permanently, above every future release. This
 comment is deliberately in that position; explanatory prose should not be.
 -->
 
+## [0.18.0](https://github.com/MGrin/scani-oss/compare/v0.17.1...v0.18.0) (2026-08-22)
+
+
+### Features
+
+* **tokens:** give decimals a named authority, and NULL where none answered (SC-544) ([7614771](https://github.com/MGrin/scani-oss/commit/761477143324f3e2ddbadcb80f82c13d925fac93))
+
+
+### Bug Fixes
+
+* **docs:** stop the docs site linking to a repository readers cannot open (SC-589) ([ae3bcb3](https://github.com/MGrin/scani-oss/commit/ae3bcb30bee80a52fa7254b6e217f3e2c749a92e))
+* **providers:** delete OPENAI_VISION_MODEL rather than wire it up (SC-588) ([00e686c](https://github.com/MGrin/scani-oss/commit/00e686cabf73972d1752cbe813a31e5881504bfe))
+* **queue:** name Postgres in the enqueue timeout and re-size the bound (SC-578) ([fc5cee2](https://github.com/MGrin/scani-oss/commit/fc5cee21eb7ae5752a426035c4e43c25840dc711))
+
 ## [0.17.1](https://github.com/MGrin/scani-oss/compare/v0.17.0...v0.17.1) (2026-08-22)
 
 
