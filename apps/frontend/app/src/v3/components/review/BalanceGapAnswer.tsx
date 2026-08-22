@@ -86,7 +86,16 @@ export function BalanceGapAnswer({ gap, onAnswered }: BalanceGapAnswerProps) {
 
   return (
     <div className="flex flex-col gap-3">
+      {/* A COLUMN, and not because four is one too many for this width
+          (SC-576). These four labels are sentences, they are translated, and a
+          row divides the width by the option count — so at 393px the control
+          rendered `Money movFigure was wrongIt grew  I don't know`, one
+          unreadable run in which nothing could be told apart or aimed at. A
+          horizontal fit tuned to English would be one translation away from
+          the same defect, so the axis changes rather than the numbers. See the
+          note on `Segmented`. */}
       <Segmented
+        orientation="vertical"
         value={answer ?? ''}
         onValueChange={(next) => setAnswer(next as Answer)}
         aria-label={t('v3.review.balances.answerLabel')}
