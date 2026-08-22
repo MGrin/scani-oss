@@ -124,7 +124,8 @@ idempotent re-scans.
 
 - **Wire-contract names are immutable**: renaming a `JOB_NAMES.*`
   string is a coordinated rolling-deploy migration. The string is in
-  Redis state from past enqueues + the user_jobs table.
+  the queue's own tables from past enqueues (the `bullmq` schema) + the
+  user_jobs table.
 - **`computeJobId` strategies are immutable for the same reason**:
   changing the strategy means deployed BullMQ has a different jobId
   for the same logical work, breaking dedup until both sides redeploy.

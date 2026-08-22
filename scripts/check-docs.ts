@@ -882,6 +882,143 @@ function checkMdxCompiles(): void {
 }
 
 // =============================================================================
+// Check 12 — no doc attributes the job queue to the wrong store
+// =============================================================================
+//
+// SC-546. Every other check in this file asks about COVERAGE: does each router,
+// job, provider and env var appear somewhere in the docs. None of them can see
+// a sentence that names the right thing and says something false about it. So
+// when SC-518 moved BullMQ from Redis to its Postgres backend, twenty
+// sentences across the docs site, three READMEs, `CLAUDE.md` and
+// `docs/ARCHITECTURE.md` went false at once and `docs:check` passed 10/10 over
+// all of them — `checkGlossaryTerms` was satisfied that the word "BullMQ" was
+// present.
+//
+// Prose correctness is not mechanically checkable in general and this does not
+// try. It checks ONE pair of facts, in the SC-543 shape: which backend factory
+// the queue clients actually construct with, and whether any prose still binds
+// the queue to the other store. Red only when those two disagree.
+//
+// THE RULE IS DELIBERATELY CRUDE — co-occurrence on a single line, not a list
+// of known-bad phrases. A phrase list was the obvious design and it is the
+// wrong one: of the twenty real sentences, only three said "Redis-backed". The
+// rest said "BullMQ on Redis", "enqueues into Redis", "Your Redis.",
+// "Powers BullMQ", "BullMQ requires Redis", "(worker Redis)" — a list would
+// have caught the ones somebody remembered to add and missed the next
+// spelling, which is the failure it exists to prevent. Measured against
+// `origin/main` before the fix: this rule flags 20 of 20.
+//
+// The cost is that a line deliberately CONTRASTING the two stores trips it.
+// That is a real sentence to want — "Postgres for the queue, Redis for
+// rate-limiter buckets" is exactly what a confused reader needs — so there is
+// an opt-out: put `queue-store-ok` in a comment on that line
+// (`<!-- queue-store-ok: why -->` in .md, `{/* queue-store-ok: why */}` in
+// .mdx). It is greppable, so the exemptions stay countable.
+//
+// Historical records are not scanned. `docs/postmortems/`, `docs/technical/`,
+// `docs/archive/`, `docs/features/` and `docs/implementation/` describe what
+// was true when they were written and `docs/README.md` says never to rewrite
+// them to match current infra.
+
+function checkQueueBackendClaims(): void {
+  const NAME = 'queue-store-claims';
+
+  // ---- Fact 1: which backend do the queue clients actually construct with?
+  //
+  // Both files name the factory in their `bullmq` import and pass it as the
+  // backend argument. Reading the import is enough to tell them apart and does
+  // not depend on how the call is formatted.
+  const CLIENTS = [
+    'packages/infra/queue/src/producer/queue-client.ts',
+    'packages/infra/queue/src/consumer/worker-client.ts',
+  ];
+  const backends = new Set<string>();
+  for (const file of CLIENTS) {
+    const imports = read(file).match(/import\s*\{([\s\S]*?)\}\s*from\s*'bullmq'/)?.[1] ?? '';
+    for (const m of imports.matchAll(/create(\w+)Backend/g)) backends.add(m[1].toLowerCase());
+  }
+
+  // BLIND STATE — its own message, and never a pass.
+  //
+  // The tempting reading is "no factory imported means BullMQ's default, which
+  // is Redis". That is a plausibility heuristic, and it is at its most
+  // persuasive exactly when it is wrong: the same thing is true of a queue
+  // client that was restructured, moved, or renamed. A check that cannot find
+  // the fact it keys on has not verified anything, so it says so and exits
+  // non-zero rather than silently comparing prose against a guess.
+  //
+  // This is the case a future maintainer will want to soften into a pass, and
+  // the argument will be that it is annoying. Fixing it is two lines: teach the
+  // regex where the factory moved to.
+  if (backends.size === 0) {
+    fail(
+      NAME,
+      `could not tell which BullMQ backend ${CLIENTS.join(' and ')} construct with — ` +
+        'no `create<X>Backend` in their `bullmq` imports. This check verified NOTHING; ' +
+        'it is not reporting that the docs are fine. Point the pattern in check-docs.ts ' +
+        'at wherever the backend factory moved to.'
+    );
+    return;
+  }
+  if (backends.size > 1) {
+    fail(
+      NAME,
+      `the producer and the consumer construct DIFFERENT BullMQ backends (${[...backends].join(', ')}). ` +
+        'That is a bug in the queue, not in the docs — the api would enqueue somewhere the worker is not reading.'
+    );
+    return;
+  }
+  const live = [...backends][0];
+
+  // ---- Fact 2: does any prose still bind the queue to the other store?
+  const OTHER: Record<string, RegExp> = {
+    postgres: /\bredis\b/i,
+    redis: /\bpostgres(?:ql)?\b/i,
+  };
+  const wrongStore = OTHER[live];
+  if (!wrongStore) {
+    fail(
+      NAME,
+      `the queue clients construct a '${live}' backend, which this check has never been taught ` +
+        'to look for wrong claims about. Add its counterpart store to OTHER in check-docs.ts.'
+    );
+    return;
+  }
+
+  // Names the QUEUE specifically. Not the bare word "queue", which appears in
+  // rate-limiter and pub/sub prose that has every right to mention Redis.
+  const NAMES_THE_QUEUE = /\bBullMQ\b|\b(?:job|async|dead-letter)[- ]queue\b|\benqueue/i;
+  // A line that says the queue is NOT on the other store is the fix, not the bug.
+  const NEGATED = /\b(?:not|never|no longer|rather than|instead of|used to)\b/i;
+  const EXEMPT = /queue-store-ok/;
+
+  const HISTORICAL = /^docs\/(?:postmortems|technical|archive|features|implementation)\//;
+  const scanned = TRACKED.filter((f) => /\.mdx?$/.test(f) && !HISTORICAL.test(f));
+
+  const hits: string[] = [];
+  for (const file of scanned) {
+    read(file)
+      .split('\n')
+      .forEach((line, i) => {
+        if (!NAMES_THE_QUEUE.test(line) || !wrongStore.test(line)) return;
+        if (NEGATED.test(line) || EXEMPT.test(line)) return;
+        hits.push(`${file}:${i + 1}: ${line.trim()}`);
+      });
+  }
+
+  if (hits.length > 0) {
+    fail(
+      NAME,
+      `the queue runs on the ${live} backend (${CLIENTS[0]} constructs with create${live[0].toUpperCase()}${live.slice(1)}Backend), ` +
+        `but ${hits.length} line(s) of prose still name the queue and the other store together:\n` +
+        hits.map((h) => `      ${h}`).join('\n') +
+        '\n      Fix the sentence, or if it deliberately contrasts the two stores, ' +
+        'put `queue-store-ok` in a comment on that line.'
+    );
+  }
+}
+
+// =============================================================================
 // Runner
 // =============================================================================
 
@@ -897,6 +1034,7 @@ const CHECKS: Array<() => void> = [
   checkRealizedSpelling,
   checkMarkdownPlacement,
   checkMdxCompiles,
+  checkQueueBackendClaims,
 ];
 
 for (const check of CHECKS) {
