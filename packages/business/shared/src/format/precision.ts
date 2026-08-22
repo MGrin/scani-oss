@@ -121,6 +121,49 @@ export function quantityDecimals(value: Decimal.Value | null | undefined): numbe
 }
 
 /**
+ * The token types whose BALANCE IS AN AMOUNT OF MONEY rather than a count of
+ * things — today, exactly `fiat`.
+ *
+ * Named positively, and the direction is the safety property, the same way
+ * `UNAMBIGUOUS_TOKEN_TYPE_CODES` in `lib/manual-balance-edit.ts` is (which is
+ * also where the "the quantity IS the money" argument is made at length). A
+ * type an admin adds to `token_types` tomorrow therefore falls to
+ * `quantityDecimals`, and that is the cheaper way to be wrong: too many
+ * decimals on a currency is ugly and honest, while money-rounding a COUNT
+ * turns `0.05421 BTC` into `0.05` — a wrong number the reader cannot detect.
+ */
+const MONEY_TOKEN_TYPE_CODES: ReadonlySet<string> = new Set(['fiat']);
+
+/**
+ * The decimals to show a HOLDING BALANCE at, chosen from what the holding is.
+ *
+ * SC-576 — the balance-review card rendered `10,906.06630119 → 232.33010646
+ * USD` directly under a delta of `−10,673.74`, three figures describing one
+ * movement of one USD balance at two different precisions. A reader seeing
+ * that concludes one of them is lying, and they are right to.
+ *
+ * Neither existing rule is the answer on its own, and neither is wrong:
+ * `quantityDecimals` is correct for a coin or share count and is what SC-567
+ * shipped so a dust balance never reaches the reader as `0`;
+ * `moneyDecimals` is correct for currency, where two decimals is a fact about
+ * money rather than a default. The missing piece was that nothing asked which
+ * kind of thing the balance was. This asks.
+ *
+ * **It cannot render a non-zero balance as `0` either way**, which is the
+ * property SC-567 took three commits to establish: both rules extend past
+ * their own precision rather than vanish, so choosing between them here
+ * cannot reopen it.
+ */
+export function balanceDecimals(
+  value: Decimal.Value | null | undefined,
+  tokenTypeCode: string | null | undefined
+): number {
+  return tokenTypeCode && MONEY_TOKEN_TYPE_CODES.has(tokenTypeCode)
+    ? moneyDecimals(value)
+    : quantityDecimals(value);
+}
+
+/**
  * The smallest quantity a balance column shows in full — `0.00000001`, the
  * `QUANTITY_DECIMALS` cap written out.
  *
