@@ -44,7 +44,7 @@
     "db:migrate": "bun scripts/migrate.ts",
     "deps:lint": "syncpack lint",
     "deps:fix": "syncpack fix",
-    "deps:unused": "knip --dependencies",
+    "deps:unused": "knip --dependencies --include files",
     "deps:outdated": "syncpack update --check",
     "deps:update:minor": "syncpack update --target minor",
     "dockerhub:readmes:check": "bun scripts/sync-dockerhub-readme.ts --check",
