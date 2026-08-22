@@ -1,6 +1,11 @@
 import { db } from '@scani/db/connection';
 import * as schema from '@scani/db/schema';
-import { mergeIdentityDeltas, type TokenMetadata } from '@scani/db/schema';
+import {
+  attributeDecimals,
+  mergeIdentityDeltas,
+  protocolNativeDecimals,
+  type TokenMetadata,
+} from '@scani/db/schema';
 import { BACKFILL_TOKEN_IDENTITY_SCHEDULE } from '@scani/jobs';
 import { createComponentLogger } from '@scani/logging';
 import { ProviderRegistry } from '@scani/providers/core/registry';
@@ -38,6 +43,7 @@ export class BackfillTokenIdentityProcessor extends ScheduledJobProcessor {
     let totalSkipped = 0;
     let totalFailed = 0;
     let totalRefused = 0;
+    let totalDecimalsFilled = 0;
 
     // Each token enriches independently — process tokens in bounded
     // batches instead of strictly one after another.
@@ -83,18 +89,48 @@ export class BackfillTokenIdentityProcessor extends ScheduledJobProcessor {
         totalRefused += 1;
       }
 
-      if (!merge.changed) {
+      const merged = merge.merged as TokenMetadata;
+
+      // A protocol constant for a row that has no scale yet (SC-544). This is
+      // the only decimals this sweep may write: an L1 native's smallest unit is
+      // published rather than deployed, so it needs no network call and cannot
+      // be wrong in a way a re-run would fix. Anything with a contract already
+      // got its answer from the chain at insert, and `resolveDecimals` puts the
+      // caller's value first so an entry added here can never overwrite one.
+      //
+      // Computed against the MERGED metadata, not the existing one: the whole
+      // point of the sweep is that a row may have just gained the CoinGecko id
+      // this lookup is keyed on.
+      const constant = token.decimals === null ? protocolNativeDecimals(merged) : null;
+
+      if (!merge.changed && constant === null) {
         totalSkipped += 1;
         return;
       }
-      const merged = merge.merged as TokenMetadata;
 
       try {
         await db
           .update(schema.tokens)
-          .set({ providerMetadata: merged, updatedAt: new Date() })
+          .set({
+            providerMetadata: merged,
+            ...(constant === null ? {} : attributeDecimals(constant.decimals, 'protocol')),
+            updatedAt: new Date(),
+          })
           .where(eq(schema.tokens.id, token.id));
         totalUpdated += 1;
+        if (constant !== null) {
+          totalDecimalsFilled += 1;
+          logger.info(
+            {
+              tokenId: token.id,
+              symbol: token.symbol,
+              decimals: constant.decimals,
+              unit: constant.unit,
+              citation: constant.citation,
+            },
+            'Filled decimals from a protocol constant'
+          );
+        }
       } catch (err) {
         logger.warn(
           { tokenId: token.id, err: err instanceof Error ? err.message : String(err) },
@@ -115,6 +151,7 @@ export class BackfillTokenIdentityProcessor extends ScheduledJobProcessor {
         updated: totalUpdated,
         skipped: totalSkipped,
         refused: totalRefused,
+        decimalsFilled: totalDecimalsFilled,
         failed: totalFailed,
         totalMs: Date.now() - start,
       },

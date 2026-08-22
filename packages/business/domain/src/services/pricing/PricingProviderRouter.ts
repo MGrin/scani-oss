@@ -167,7 +167,11 @@ export class PricingProviderRouter {
           symbol: tokenData.symbol,
           name: tokenData.name,
           typeId: 'temp',
-          decimals: 18,
+          // Never persisted — this row exists to satisfy the provider
+          // context while a routing decision is validated. No authority
+          // answered for it, so it says so rather than guessing 18 (SC-544).
+          decimals: null,
+          decimalsSource: null,
           iconUrl: null,
           marketSegment: null,
           providerMetadata: tokenData.metadata,
