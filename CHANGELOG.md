@@ -19,6 +19,49 @@ version heading stays there permanently, above every future release. This
 comment is deliberately in that position; explanatory prose should not be.
 -->
 
+## [0.15.0](https://github.com/MGrin/scani-oss/compare/v0.14.1...v0.15.0) (2026-08-22)
+
+
+### Features
+
+* **docs:** derive docs:check lists from git, and add three checks (SC-170) ([b90e3a8](https://github.com/MGrin/scani-oss/commit/b90e3a8db29aaf12e69d9650329e2a74ce425de5))
+* **holdings:** manual balance edits become transactions, not performance (SC-510) ([16d92bd](https://github.com/MGrin/scani-oss/commit/16d92bd8792403afedc5df4ca630f337ff4f4113))
+* **icons:** proxy institution favicons instead of calling Google (SC-208) ([f64b376](https://github.com/MGrin/scani-oss/commit/f64b3764cc0e2f6e023f4360101a693e2133f253))
+* **providers:** say at boot which providers came up without a key (SC-536) ([079d8d2](https://github.com/MGrin/scani-oss/commit/079d8d272c75e83050e91fa1cf65f199fc4e1f6f))
+* **queue:** move BullMQ from Redis to the Postgres backend (SC-518) ([1c117c4](https://github.com/MGrin/scani-oss/commit/1c117c4ac8e9aafc8828bceca229166aeadfb873))
+* **queue:** upgrade BullMQ 5.77.3 -&gt; 6.2.0, still on Redis (SC-518) ([7a33953](https://github.com/MGrin/scani-oss/commit/7a3395304ed4857bd8d87326695142707eb281fd))
+* **review:** ask what an unexplained balance change was (SC-501) ([a50b3be](https://github.com/MGrin/scani-oss/commit/a50b3befa1f0c7abf51f55026b1fa6c50f445a1b))
+
+
+### Bug Fixes
+
+* **compose:** route migrate through db:migrate so the queue schema is created ([3b11e33](https://github.com/MGrin/scani-oss/commit/3b11e333511a9b247379b6eb9e2e21a15146ea1d))
+* **deps:** deps:unused can see an unused file ([8c28d67](https://github.com/MGrin/scani-oss/commit/8c28d67fc9cf3b7331ce94c8ed75108b5bba36b8))
+* **docker:** drop the bullmq SQL copy from data-provider — it has no queue ([25b7bb9](https://github.com/MGrin/scani-oss/commit/25b7bb911d1fda49e386cba5c7e328db7b803174))
+* **docker:** reconcile docker-readmes against the published image set ([b9cdff4](https://github.com/MGrin/scani-oss/commit/b9cdff4802247d5395020b0d87386b66c73daa96))
+* **docker:** ship BullMQ's Postgres SQL beside the compiled binary (SC-518) ([c29dc75](https://github.com/MGrin/scani-oss/commit/c29dc753a838de057ede46e80602f98308c5ce74))
+* **docs:** a generated changelog entry is a quotation, not a claim (SC-556) ([ae39605](https://github.com/MGrin/scani-oss/commit/ae39605b956b6a516f46f668bc37ef0f2e83e260))
+* **docs:** compile every .mdx page in docs:check ([9cc8960](https://github.com/MGrin/scani-oss/commit/9cc8960514f31610ff1ffe36929a953e7a9660fb))
+* **docs:** keep the migrate description inside Docker Hub's 100-char cap ([ac1b64d](https://github.com/MGrin/scani-oss/commit/ac1b64d21f4bc5a83c54619960fa5bbb0fce8b16))
+* **e2e:** a spec path handed to test:e2e is a path, not a project (SC-533) ([4bd8e4d](https://github.com/MGrin/scani-oss/commit/4bd8e4d2cf7e79474ce3cab43c739b9a9a78a978))
+* **e2e:** let waitForJob outlive the test budget so its message can be printed (SC-498) ([28fd19a](https://github.com/MGrin/scani-oss/commit/28fd19a7025e5f7f678ee9790913f8b74127dd21))
+* **http-fetch:** the DNS step was outside every timeout, on the OG path too (SC-208) ([fbe0ac0](https://github.com/MGrin/scani-oss/commit/fbe0ac0f0a7dcef0ad02ad9785dd6a0ac5250f91))
+* **icons:** an unresolvable API base must be a letter tile, not a thrown render (SC-208) ([de95ea1](https://github.com/MGrin/scani-oss/commit/de95ea12cf24e92155390f8777ab033813d81834))
+* **icons:** bound the whole icon resolve, not just its fetches (SC-208) ([39d3cbe](https://github.com/MGrin/scani-oss/commit/39d3cbe5dfbfe00dfc109d575cddb8bd9801298f))
+* **jobs:** the owner sees only what somebody wrote for them (SC-551) ([b439a69](https://github.com/MGrin/scani-oss/commit/b439a691991c435bda91bc47b36ec2c8691c56dc))
+* **migrate-image:** apply the queue schema, not just Drizzle (SC-535) ([7d16f67](https://github.com/MGrin/scani-oss/commit/7d16f6766d6a92f021839e364362ca7162c5fb8a))
+* **queue:** bound queue.add so a dead Redis fails the enqueue instead of hanging (SC-523) ([3f0414d](https://github.com/MGrin/scani-oss/commit/3f0414dba918eb161aaed6819746953558cf6652))
+* **queue:** make the queue-schema migration concurrency-safe (SC-518) ([4cbb419](https://github.com/MGrin/scani-oss/commit/4cbb419431dfa26e1b44f46990886390e08d05c1))
+* **release:** bound the commit walk, or 0.15.0 comes out as 0.4.0 (SC-540) ([f7d2011](https://github.com/MGrin/scani-oss/commit/f7d20112790e4bc84dd4e3bce2823cd98c3378dd))
+* **review:** three defects the browser found, that no check could (SC-501) ([8ffec73](https://github.com/MGrin/scani-oss/commit/8ffec7328714c7cbcefbe26cab3a84861cea72bd))
+* **ui:** the mark comment points at a directory this repo does not have (SC-538) ([dc24713](https://github.com/MGrin/scani-oss/commit/dc24713f9fa27a57bdba07321b0738ef1d69fb2a))
+* **v3:** name the unit on a holding's amount, and lead an account row to its holdings (SC-559, SC-560) ([d97ce8b](https://github.com/MGrin/scani-oss/commit/d97ce8b3ffce855f27bac7a4e9f9b1fb691050a7))
+* **v3:** show the sentence somebody wrote, not "Unknown error" (SC-551) ([8c6f113](https://github.com/MGrin/scani-oss/commit/8c6f113be5e16aea2b846759b111dffdde22fa92))
+* **visual:** match the mark on every deployment the comment claims (SC-208) ([4c5bbae](https://github.com/MGrin/scani-oss/commit/4c5bbaef4d090d3570823c031a80c7212ce4061f))
+* **worker:** use the lock boot configures in both processors (SC-550) ([535b10e](https://github.com/MGrin/scani-oss/commit/535b10eba9dabe5e1cd3b23ae2c85442eb951940))
+* **worktree:** a path that does not exist is not a checkout (SC-563) ([21e786f](https://github.com/MGrin/scani-oss/commit/21e786f42911260862eab6d9d2987cf9c24f7505))
+* **worktree:** honour a &lt;SERVICE&gt;_HOST_PORT the environment already set (SC-500) ([ee29f66](https://github.com/MGrin/scani-oss/commit/ee29f66b9ad77863380b142d210bc3862b1c322d))
+
 ## [0.14.1](https://github.com/MGrin/scani-oss/commit/9ddd39960cd6ef2df3f61e983a0a20ef78dfa12c) (2026-08-21)
 
 Published to Docker Hub by hand from `scripts/publish-images-local.sh`, built from
