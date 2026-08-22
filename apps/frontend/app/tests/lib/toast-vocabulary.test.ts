@@ -210,13 +210,25 @@ describe('a message nobody wrote for a reader never reaches one', () => {
    * (SC-311's whole argument, and why `rejectionReason` gates on the envelope
    * rather than on how the text reads).
    *
-   * When SC-551's second half lands, `user_jobs` carries a separate column
-   * holding only what a processor branded `userFacing(...)`. That value is
-   * vouched for and may be shown — but it arrives under a different name, so
-   * this rule does not need relaxing to allow it.
+   * `user_jobs` now carries a separate column holding only what a processor
+   * branded `userFacing(...)`, and the hook surfaces it as `userFacingError`.
+   * That value IS vouched for and is shown — under its own name, so this rule
+   * never had to be relaxed to allow it. The name is the point: a field called
+   * `error` that holds "the sentence for the reader" is the naming that caused
+   * this ticket, and the test below is what keeps it from coming back.
    */
   test('no showError is handed a useJobStatus error, wrapped or bare', async () => {
     const { jobError } = await scan();
     expect(jobError).toEqual([]);
+  });
+
+  test('useJobStatus exposes no field called `error` for anyone to reach for', async () => {
+    // The rule above can only fire on a field that exists, so on its own it
+    // would be satisfied forever by the rename rather than by the discipline.
+    // This is the assertion with something to bite on: re-add `error` to the
+    // hook and the raw throw has a plausible-looking home again.
+    const hook = stripComments(await Bun.file(resolve(SRC, 'v3/hooks/useJobStatus.ts')).text());
+    expect(hook).toContain('userFacingError: string | null;');
+    expect(hook).not.toMatch(/^\s*error: string \| null;$/m);
   });
 });

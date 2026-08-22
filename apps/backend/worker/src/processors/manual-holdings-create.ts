@@ -20,6 +20,7 @@ import {
   type ProcessorContext,
   UnrecoverableError,
   UserJobProcessor,
+  userFacing,
 } from '@scani/queue';
 import { emitEntityChange } from '@scani/realtime';
 import { eq, inArray } from 'drizzle-orm';
@@ -133,8 +134,10 @@ export class ManualHoldingsCreateProcessor extends UserJobProcessor<
       // on, and burying real worker failures under it is how SCANI-WORKER
       // noise starts.
       if (error instanceof DuplicateHoldingTokenError) {
-        throw new UnrecoverableError(
-          describeDuplicateHoldingTokens(await this.labelTokens(error.tokenIds))
+        throw userFacing(
+          new UnrecoverableError(
+            describeDuplicateHoldingTokens(await this.labelTokens(error.tokenIds))
+          )
         );
       }
       throw error;

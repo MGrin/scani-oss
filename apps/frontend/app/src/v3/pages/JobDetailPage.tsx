@@ -76,7 +76,7 @@ export function JobDetailPage() {
           startedAt: job.startedAt,
           finishedAt: job.finishedAt,
           actionTakenAt: job.actionTakenAt,
-          error: job.error,
+          userFacingError: job.userFacingError,
           deadAt: job.deadAt,
           failureReason: job.failureReason,
           retry: job.retry,

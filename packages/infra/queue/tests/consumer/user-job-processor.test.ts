@@ -10,6 +10,7 @@ import { UserJobProcessor } from '../../src/consumer/user-job-processor';
 import type { UserJobDescriptor } from '../../src/core/job-descriptor';
 import { DURABLE_RESULT_MAX_BYTES, readTruncationNotice } from '../../src/core/result-truncator';
 import type { LifecycleEvent, ProcessorContext, UserJobBase } from '../../src/core/types';
+import { userFacing } from '../../src/core/user-facing';
 import { RedisLifecyclePublisher } from '../../src/lifecycle/redis-lifecycle-publisher';
 
 // Container stubs are process-global; put back whatever this file changes
@@ -324,5 +325,78 @@ describe('UserJobProcessor — cancellation gate (replaces v6-removed Job#discar
     });
     await proc.process(makeJob({ userId: 'u1', requestId: 'r1', value: 'v' }, 'job-nomethod'));
     expect(ran).toBe(1);
+  });
+});
+
+/**
+ * Who gets which words (SC-551).
+ *
+ * The catch has two consumers and they need different values, so the test that
+ * matters asserts BOTH sides of every case. Checking only that the owner is
+ * protected would pass a change that redacted the operator's copy too — which
+ * is the fix this design exists to avoid, and the one that leaves no trace: the
+ * product surface looks fixed and the admin page quietly goes blank.
+ */
+describe('UserJobProcessor — which words reach whom on failure', () => {
+  function lastFailed(): { error: string; userFacingError: string | null } {
+    const event = mirrorEvents.find((e) => e.type === 'failed');
+    if (!event || event.type !== 'failed') throw new Error('no failed event was fired');
+    return { error: event.error, userFacingError: event.userFacingError };
+  }
+
+  function publishedError(): string | undefined {
+    const call = publisherCalls.find((c) => (c.payload as { state?: string }).state === 'failed');
+    return (call?.payload as { error?: string } | undefined)?.error;
+  }
+
+  const RAW_SQL =
+    'Failed query: select "id", "user_id", "account_id", "balance" from "holdings" where "holdings"."id" = $1 limit $2';
+
+  test('an unmarked throw reaches the operator verbatim and the owner not at all', async () => {
+    const proc = new StubProcessor(async () => {
+      throw new Error(RAW_SQL);
+    });
+    await expect(
+      proc.process(makeJob({ userId: 'u1', requestId: 'r1', value: 'v' }))
+    ).rejects.toThrow();
+
+    // The operator keeps everything. `user_jobs.error` is rendered by the
+    // admin user-jobs page and BullMQ keeps its own copy for the DLQ.
+    expect(lastFailed().error).toBe(RAW_SQL);
+    // The owner gets nothing — not a truncated version, not a generic
+    // sentence chosen here. `null` means "the client shows its own translated
+    // category", which is a decision the client is allowed to make and this
+    // layer is not.
+    expect(lastFailed().userFacingError).toBeNull();
+    // And nothing goes out over the socket. Asserting the WS frame separately
+    // is the point: the leak is the bytes arriving in the browser, whether or
+    // not any component happens to render them today.
+    expect(publishedError()).toBeUndefined();
+  });
+
+  test('a marked throw reaches both, and they are the same sentence', async () => {
+    const COPY = 'The original file is no longer stored. Delete it and upload it again.';
+    const proc = new StubProcessor(async () => {
+      throw userFacing(new UnrecoverableError(COPY));
+    });
+    await expect(
+      proc.process(makeJob({ userId: 'u1', requestId: 'r1', value: 'v' }))
+    ).rejects.toThrow();
+
+    expect(lastFailed().error).toBe(COPY);
+    expect(lastFailed().userFacingError).toBe(COPY);
+    expect(publishedError()).toBe(COPY);
+  });
+
+  test('marking does not change what the queue does about retries', async () => {
+    // The brand answers "who may read this", never "should this run again".
+    // If it ever starts affecting terminality, a processor marking a message
+    // for kindness would silently change its retry budget.
+    const proc = new StubProcessor(async () => {
+      throw userFacing(new UnrecoverableError('Your API key was rejected.'));
+    });
+    await expect(
+      proc.process(makeJob({ userId: 'u1', requestId: 'r1', value: 'v' }))
+    ).rejects.toBeInstanceOf(UnrecoverableError);
   });
 });

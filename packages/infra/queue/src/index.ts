@@ -52,6 +52,7 @@ export type {
   ProcessorContext,
   UserJobBase,
 } from './core/types';
+export { userFacing, userFacingMessage } from './core/user-facing';
 export { LifecyclePublisher } from './lifecycle/lifecycle-publisher';
 export { RedisLifecyclePublisher } from './lifecycle/redis-lifecycle-publisher';
 export { PostgresResourceLock } from './locks/postgres-resource-lock';
