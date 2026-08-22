@@ -25,6 +25,12 @@
  *      `cloud` substitutes `CloudProviderClient`-backed proxies for
  *      every capability the cloud routes expose.
  *
+ *   6. **`ProviderCredentialReport`.** Every factory with a keyless
+ *      branch reports whether it resolved its platform credential, and
+ *      boot emits ONE summary line naming the keyed set and the degraded
+ *      set. Replaces the scattered per-factory `console.warn`s, which
+ *      two of the seven degrading providers did not have at all (SC-536).
+ *
  * The factory takes a `providers` array of `ProviderFactory`
  * functions rather than hard-coding the import list — boot.ts stays
  * mode-agnostic and the apps' composition roots assemble the right
@@ -32,13 +38,17 @@
  * data-provider gets everything).
  */
 
+import { createComponentLogger } from '@scani/logging';
 import { setSharedRedis } from '@scani/rate-limiter';
 import type { Redis as IoRedis } from 'ioredis';
 import { Container } from 'typedi';
 import type { CloudProviderClient } from './cloud/cloud-client';
 import { CredentialPool, type CredentialsResolver } from './credential-pool';
+import { ProviderCredentialReport, type ProviderCredentialStatus } from './credential-report';
 import { RateLimiterRegistry } from './rate-limiter-registry';
 import { ProviderRegistry } from './registry';
+
+const logger = createComponentLogger('providers:boot');
 
 export interface BootMode {
   mode: 'direct' | 'cloud';
@@ -58,6 +68,17 @@ export interface ProviderFactoryDeps {
   rateLimiterRegistry: RateLimiterRegistry;
   credentialPool: CredentialPool;
   cloudClient: CloudProviderClient | null;
+  /**
+   * Declare whether this factory resolved its platform credential.
+   * A factory with a keyless branch MUST call this on BOTH paths — the
+   * keyed report is what makes the boot summary a line that always prints
+   * and changes content, rather than a warning nobody has ever seen.
+   *
+   * Not for user-credentialed providers (the CEXes, brokerages, Google
+   * Sheets): their credentials are per-tenant and resolved at job time
+   * through `CredentialPool`, so there is nothing to report at boot.
+   */
+  reportCredentialStatus: (status: ProviderCredentialStatus) => void;
 }
 
 export type ProviderFactory = (deps: ProviderFactoryDeps) => Promise<object | readonly object[]>;
@@ -98,6 +119,7 @@ export interface BuiltProviderRegistry {
   registry: ProviderRegistry;
   rateLimiterRegistry: RateLimiterRegistry;
   credentialPool: CredentialPool;
+  credentialReport: ProviderCredentialReport;
 }
 
 export async function buildProviderRegistry(
@@ -128,6 +150,11 @@ export async function buildProviderRegistry(
   const rateLimiterRegistry = Container.get(RateLimiterRegistry);
   const credentialPool = Container.get(CredentialPool);
   const registry = Container.get(ProviderRegistry);
+  const credentialReport = Container.get(ProviderCredentialReport);
+  // Singleton, and the test suite boots the registry many times in one
+  // process — without this the second boot reports the first boot's
+  // providers alongside its own.
+  credentialReport.reset();
 
   if (opts.credentialsResolver) {
     credentialPool.setCredentialsResolver(opts.credentialsResolver);
@@ -140,6 +167,7 @@ export async function buildProviderRegistry(
     rateLimiterRegistry,
     credentialPool,
     cloudClient: opts.cloudClient ?? null,
+    reportCredentialStatus: (status) => credentialReport.record(status),
   };
 
   for (const factory of opts.providers) {
@@ -150,5 +178,16 @@ export async function buildProviderRegistry(
     }
   }
 
-  return { registry, rateLimiterRegistry, credentialPool };
+  // ALWAYS logged, healthy or not (SC-536). `warn` when something is
+  // degraded so it sorts with the other things an operator should act on;
+  // `info` otherwise, which every deployment runs at by default.
+  const summary = credentialReport.summary();
+  const degraded = credentialReport.degraded();
+  if (degraded.length > 0) {
+    logger.warn({ degraded: degraded.map((s) => s.envVar), mode: opts.mode }, `⚠️  ${summary}`);
+  } else {
+    logger.info({ mode: opts.mode }, `✅ ${summary}`);
+  }
+
+  return { registry, rateLimiterRegistry, credentialPool, credentialReport };
 }

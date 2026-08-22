@@ -549,12 +549,12 @@ export const solanaFactory: ProviderFactory = async (deps) => {
   const rpcUrl = heliusKey
     ? `https://mainnet.helius-rpc.com/?api-key=${heliusKey}`
     : 'https://api.mainnet-beta.solana.com';
-  if (!heliusKey) {
-    // eslint-disable-next-line no-console
-    console.warn(
-      'SolanaProvider: HELIUS_API_KEY not set; using public RPC which throttles aggressively'
-    );
-  }
+  deps.reportCredentialStatus({
+    provider: 'solana',
+    envVar: 'HELIUS_API_KEY',
+    keyed: Boolean(heliusKey),
+    degradedBehaviour: 'falls back to the public Solana RPC, which throttles aggressively',
+  });
 
   // Helius free tier: ~100 req/s; public RPC: <50 req/min sustained.
   // Conservative 30 req/s default; ops can tune.
