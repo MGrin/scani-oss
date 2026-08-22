@@ -1,0 +1,65 @@
+name: Release notes
+
+# SC-573. release-please walks `main` in COMMITTER-DATE order and breaks the
+# walk at the previous release's sha, so a branch cut before a release PR
+# merged and merged after it sits behind the stop point and is never read. Its
+# commits are on `main`, unreachable from the tag, and absent from the release
+# notes — with no error, no warning and a green CI.
+#
+# Measured on 0.16.0: four releasable commits on `main`, two listed. A data-loss
+# fix and a security fix were missing, and it was found by a `grep` run out of
+# curiosity about something else (SC-572).
+#
+# This job differences the release PR's own CHANGELOG.md against
+# `git log <previous tag>..<the commit the notes were generated from>`. The two
+# sides are derived independently, which is the only reason a shortfall is
+# visible at all. `scripts/check-release-notes.ts` carries the measurement, the
+# blindness states, and the second cause it deliberately only reports.
+#
+# NOT A REQUIRED CHECK. `main-protection` requires `CI Success` alone, so this
+# is red-and-visible on the release PR rather than blocking, exactly like
+# `pr-title.yml`. Adding `Release notes cover every releasable commit` to that
+# ruleset's required contexts is a repository-settings change and would make it
+# blocking; scani-oss is not under Terraform (SC-565), so it is a manual one.
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, reopened, synchronize]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-notes-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Release notes cover every releasable commit
+    # release-please generates this branch name, and the same-repository
+    # condition is what stops a fork naming a branch `release-please--anything`
+    # to get its head sha checked out here.
+    if: >-
+      startsWith(github.event.pull_request.head.ref, 'release-please--') &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+        with:
+          # The PR head, not the merge commit: the check reads the release
+          # commit's single parent to find exactly what release-please
+          # generated these notes from, and a merge commit has two.
+          ref: ${{ github.event.pull_request.head.sha }}
+          # The whole history and every tag. A shallow checkout cannot reach
+          # the previous release tag, and "no previous tag" reads exactly like
+          # a repository that has never released — which is why the script
+          # exits 3 there rather than passing.
+          fetch-depth: 0
+          fetch-tags: true
+      - uses: ./.github/actions/setup-bun
+        with:
+          # The check imports nothing but git.
+          install: "false"
+      - name: Every releasable commit has a release note
+        run: bun scripts/check-release-notes.ts
