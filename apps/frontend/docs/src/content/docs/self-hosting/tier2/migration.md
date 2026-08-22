@@ -15,8 +15,10 @@ data migration, no downtime if you do it right.
 - You have a recent Postgres backup (this should be true regardless;
   see [Backup & restore](/self-hosting/tier1/backup-restore/)).
 - You've noted which provider keys you currently have set
-  (`COINGECKO_API_KEY`, `OPENAI_API_KEY`, etc.) — you'll keep them
-  in your `.env` for now, ready to fall back to.
+  (`COINGECKO_API_KEY`, `OPENAI_API_KEY`, etc.). **These stay.** They
+  are read by your api and worker on every tier, not by the
+  data-provider — see
+  [You still need your provider API keys](/self-hosting/tier2/overview/#you-still-need-your-provider-api-keys).
 
 ## The migration
 
@@ -48,8 +50,19 @@ data migration, no downtime if you do it right.
    docker compose -f docker-compose.prod.yml logs -f api worker
    ```
 
-   The api logs its tier on boot. Confirm `tier=tier2` and
-   `cloudUrl=https://...`.
+   The api and worker each log a `scaniCloudUrl` field on boot —
+   there is no `tier` field. Confirm it reads your hosted endpoint
+   and not `(local fallback)`:
+
+   ```sh
+   docker compose -f docker-compose.prod.yml logs api worker \
+     | grep -E '"scaniCloudUrl"'
+   ```
+
+   While you are in the logs, check the provider-credentials line too
+   (see [Do not remove your provider API
+   keys](#do-not-remove-your-provider-api-keys)) — it should read the
+   same before and after the migration.
 
 5. **Verify with a synthetic call:**
    - Open the SPA, navigate to the dashboard, check that prices are
@@ -85,28 +98,69 @@ back:
 
 3. `docker compose -f docker-compose.prod.yml up -d`.
 
-This is why you keep your provider keys (`COINGECKO_API_KEY`,
-`OPENAI_API_KEY`, …) in `.env` for the first few weeks of Tier 2 —
-rollback is instant if you keep the local fallback warm.
+Your provider keys never left, so pricing, AI and chain syncs are
+unaffected by the round trip in either direction — they were never
+routed through the data-provider at all.
+
+Email, OG-metadata fetching and token search fall straight back to
+their local implementations as soon as `SCANI_CLOUD_URL` points at
+your own container again.
+
+:::caution[Object storage does not roll back]
+Uploads made while you were on Tier 2 live in the **operator's**
+bucket. Pointing `SCANI_CLOUD_URL` back at your own container points
+`StorageFacade` back at your `S3_*` bucket, where those objects are
+not. Screenshots and imported statement files from the Tier-2 period
+will fail to load until you copy them across. The extracted holdings
+and transactions are unaffected — those are rows in your Postgres.
+:::
 
 ## After the migration settles
 
 Once you're confident in the hosted endpoint:
 
-- Remove the provider keys from your `.env` (they're unused on
-  your side in Tier 2; leaving them is harmless but messy).
 - Permanently remove the `data-provider` service block from your
   compose file.
-- Consider lowering `WORKER_CONCURRENCY` if your sync workload was
-  bottlenecked by the local data-provider's rate-limiter (the
-  hosted endpoint will have its own limits, often higher).
+- Remove `DATA_PROVIDER_API_KEY` and the `S3_*` block from your
+  `.env` — the first was only ever the bearer your own container
+  validated, and object storage is now the operator's bucket.
 
-## Email moves too
+### Do not remove your provider API keys
 
-If you previously had `SMTP_URL` or `FASTMAIL_API_TOKEN` set
-locally, those are now provided by the hosted data-provider. You
-can remove them from your `.env`. Magic-link emails will be sent
-through the operator's transport.
+:::danger
+`COINGECKO_API_KEY`, `FINNHUB_API_KEY`, `ETHERSCAN_API_KEY`,
+`HELIUS_API_KEY` and `OPENAI_API_KEY` are read by **your api and
+worker**, on every tier. Pointing `SCANI_CLOUD_URL` at a hosted
+data-provider does not move pricing, AI or chain calls off your
+machine — all three backend services boot the provider registry in
+`direct` mode and call those upstreams themselves.
+
+Deleting them does not fail at boot. Your stack comes up green and
+then quietly serves bad data: Finnhub returns null for every equity
+price, CoinGecko drops to the public rate-limited tier, Etherscan
+goes out unauthenticated, Helius falls back to the throttled public
+Solana RPC, and OpenAI throws on every screenshot parse.
+
+Confirm what your stack actually resolved with
+`docker compose -f docker-compose.prod.yml logs api worker | grep 'provider credentials:'` —
+[the full check is on the overview page](/self-hosting/tier2/overview/#how-to-check-rather-than-guess).
+:::
+
+## What actually moves
+
+Four things, and only four — they are the only adapters
+`packages/clients/cloud-client/src/` has:
+
+| Moves to the hosted data-provider | Stays on your api + worker |
+|---|---|
+| Object storage (screenshots, file imports) | Pricing (CoinGecko, DeFiLlama, Frankfurter, Finnhub) |
+| Email transport (Fastmail JMAP / SMTP) | AI inference (OpenAI) |
+| Open Graph metadata (institution logos) | Chain calls (Etherscan, Helius, Bitcoin, Tron, TON) |
+| Token search (symbol → identity) | Every user-credentialed exchange and brokerage integration |
+
+So `SMTP_URL`, `FASTMAIL_API_TOKEN` and `S3_*` can come out of your
+`.env` — magic-link emails go through the operator's transport and
+uploads land in their bucket. The provider API keys cannot.
 
 ## See also
 
