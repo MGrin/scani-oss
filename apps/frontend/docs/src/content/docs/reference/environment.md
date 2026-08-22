@@ -138,7 +138,6 @@ enabled](/self-hosting/tier1/optional-keys/#how-to-tell-whats-enabled).
 | `COINGECKO_API_KEY` | CoinGecko | Paid-tier crypto prices. |
 | `FINNHUB_API_KEY` | Finnhub | Public-equity prices. |
 | `OPENAI_API_KEY` | OpenAI | Screenshot and document parsing. Unset → throws on every call. |
-| `OPENAI_VISION_MODEL` | OpenAI | Declared in the providers env schema and **read by nothing**. The model is the constant `gpt-5.6-luna`. |
 | `PERPLEXITY_API_KEY` | Perplexity | Read by `aiPerplexityFactory`, which **no backend service registers**. No effect today. |
 | `DEEPSEEK_API_KEY` | DeepSeek | Read by `aiDeepseekFactory`, which **no backend service registers**. No effect today. |
 | `ETHERSCAN_API_KEY` | Etherscan V2 | All EVM wallet balances + transactions. |
