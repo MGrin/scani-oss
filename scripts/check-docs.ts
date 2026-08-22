@@ -992,6 +992,46 @@ function checkQueueBackendClaims(): void {
   const NEGATED = /\b(?:not|never|no longer|rather than|instead of|used to)\b/i;
   const EXEMPT = /queue-store-ok/;
 
+  // CHANGELOG.md is GENERATED, and each entry QUOTES a commit subject verbatim.
+  // The remedy this check prescribes — "fix the sentence" — cannot be applied to
+  // a quotation without falsifying the record, and the record is the point: a
+  // changelog accumulates lines naming superseded technology forever. That is
+  // its function, not a defect in it.
+  //
+  // The measured pair, both TRUE and both required to name Redis, which blocked
+  // the 0.15.0 tag:
+  //
+  //   * **queue:** move BullMQ from Redis to the Postgres backend (SC-518)
+  //   * **queue:** upgrade BullMQ 5.77.3 -> 6.2.0, still on Redis (SC-518)
+  //
+  // One says the queue moved OFF Redis; the other says an earlier version bump
+  // had not moved it yet. Neither claims anything about the current system.
+  //
+  // This is the same principle as HISTORICAL below, which already exempts
+  // `docs/postmortems/` and friends because they describe what was true when
+  // they were written.
+  //
+  // SCOPED TO GENERATED ENTRIES, NOT TO THE FILE, and the narrowness is
+  // load-bearing rather than fastidious: CHANGELOG.md also carries prose
+  // somebody CHOSE and can still edit. Its header block explains the heading
+  // shape at length, and it says in as many words that the 0.13.0, 0.14.0 and
+  // 0.14.1 sections are hand-written. A sentence someone wrote claiming the
+  // queue runs on the other store is exactly what this rule is for, and it is
+  // no less wrong for sitting in this file. Exempting the whole path would stop
+  // covering all of it, silently, and nothing would ever say so.
+  //
+  // `queue-store-ok` is deliberately NOT the answer here: a generated file
+  // cannot carry a hand-written comment, so the marker would have to be
+  // re-added to every release by whoever cuts it, and forgotten once.
+  // Matched on the basename, because the property is about the file being a
+  // generated changelog and not about where it sits. It also makes this
+  // testable: upstream HAS a root `CHANGELOG.md` and this tree does not, so a
+  // fixture keyed on the exact root path can only be constructed in the repo
+  // where the rule matters least.
+  const IS_A_CHANGELOG = /(?:^|\/)CHANGELOG\.md$/;
+  const GENERATED_CHANGELOG_ENTRY =
+    /^\s*[*-] .*\(\[[0-9a-f]{7,}\]\([^)]*\/commit\/[0-9a-f]{7,}\)\)/;
+
   const HISTORICAL = /^docs\/(?:postmortems|technical|archive|features|implementation)\//;
   const scanned = TRACKED.filter((f) => /\.mdx?$/.test(f) && !HISTORICAL.test(f));
 
@@ -1002,6 +1042,7 @@ function checkQueueBackendClaims(): void {
       .forEach((line, i) => {
         if (!NAMES_THE_QUEUE.test(line) || !wrongStore.test(line)) return;
         if (NEGATED.test(line) || EXEMPT.test(line)) return;
+        if (IS_A_CHANGELOG.test(file) && GENERATED_CHANGELOG_ENTRY.test(line)) return;
         hits.push(`${file}:${i + 1}: ${line.trim()}`);
       });
   }
