@@ -14,6 +14,7 @@
     "./core/config": "./src/core/config.ts",
     "./core/counterparty": "./src/core/counterparty.ts",
     "./core/credential-pool": "./src/core/credential-pool.ts",
+    "./core/credential-report": "./src/core/credential-report.ts",
     "./core/errors": "./src/core/errors.ts",
     "./core/boot": "./src/core/boot.ts",
     "./core/testing": "./src/core/testing.ts",

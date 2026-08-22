@@ -34,9 +34,11 @@ export class DeepSeekProvider extends ChatCompletionsProvider {
 
 export const aiDeepseekFactory: ProviderFactory = async (deps) => {
   const apiKey = deps.env.DEEPSEEK_API_KEY ?? '';
-  if (!apiKey) {
-    // eslint-disable-next-line no-console
-    console.warn('DeepSeekProvider: DEEPSEEK_API_KEY not set; provider will throw on every call');
-  }
+  deps.reportCredentialStatus({
+    provider: 'deepseek',
+    envVar: 'DEEPSEEK_API_KEY',
+    keyed: apiKey !== '',
+    degradedBehaviour: 'throws on every call',
+  });
   return new DeepSeekProvider(apiKey);
 };

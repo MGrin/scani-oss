@@ -620,6 +620,15 @@ export const coingeckoFactory: ProviderFactory = async (deps) => {
     registeredFrom: 'providers/coingecko',
     description: 'CoinGecko: 25 req / 60s',
   });
+  // No warn lived here before SC-536: an unkeyed CoinGecko silently
+  // resolves `baseUrl()` to the free host and omits the `x-cg-pro-api-key`
+  // header, so the drop to the public tier left no trace anywhere.
+  deps.reportCredentialStatus({
+    provider: 'coingecko',
+    envVar: 'COINGECKO_API_KEY',
+    keyed: Boolean(deps.env.COINGECKO_API_KEY),
+    degradedBehaviour: 'drops to the public rate-limited tier instead of the Pro host',
+  });
   return new CoinGeckoProvider(registered, {
     apiKey: deps.env.COINGECKO_API_KEY,
   });
