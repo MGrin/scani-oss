@@ -130,7 +130,7 @@ export function FileImportPage() {
 
       navigate(jobDetailPath(jobId));
     } catch (err) {
-      const copy = describeQueryError(err, t('v3.capture.page.fileImport.subject'));
+      const copy = describeQueryError(err, t('v3.capture.page.fileImport.subject'), 'save');
       setError(`${copy.title}. ${copy.detail}`);
       setStage(null);
     }
