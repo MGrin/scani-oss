@@ -91,6 +91,7 @@ import {
   startConnectionTracking,
 } from '@scani/db';
 import { buildProviderRegistry } from '@scani/providers/core/boot';
+import { ProviderCredentialReport } from '@scani/providers/core/credential-report';
 import { aiOpenAIFactory } from '@scani/providers/providers/ai-openai';
 import { aiStubFactory } from '@scani/providers/providers/ai-stub';
 import { airwallexFactory } from '@scani/providers/providers/airwallex';
@@ -983,10 +984,24 @@ app
 
     const allOk = Object.values(checks).every((c) => c.ok);
     if (!allOk) set.status = 503;
+    // SC-536. Reported, never gated. All three backend apps boot the
+    // provider registry in `direct` mode, so a missing platform key
+    // degrades THIS app — silently: Finnhub returns null for every equity
+    // price, CoinGecko drops to the public tier, Etherscan goes
+    // unauthenticated, OpenAI throws on every parse. Nothing fails at boot,
+    // so an operator who followed the docs sees a green service and finds
+    // out weeks later, from the data.
+    //
+    // It is NOT one of `checks` above, and that is deliberate: `checks`
+    // decides the 200/503, and an unkeyed provider is a configuration
+    // choice rather than an outage. Folding it in would 503 every dev and
+    // self-host deployment that has not bought a CoinGecko Pro plan, and an
+    // endpoint that is always red is one nobody reads.
     return {
       status: allOk ? 'ok' : 'degraded',
       timestamp: new Date().toISOString(),
       checks,
+      providerCredentials: Container.get(ProviderCredentialReport).healthPayload(),
     };
   })
   .ws('/', {
