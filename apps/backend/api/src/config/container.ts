@@ -1,6 +1,5 @@
 import 'reflect-metadata';
 import { createComponentLogger } from '@scani/logging';
-import { Container } from 'typedi';
 
 // Import all repositories to ensure they're registered with TypeDI
 // This loads all @Service() decorated classes from the core package
@@ -39,20 +38,3 @@ export function initializeContainer(): void {
     '✅ DI Container initialized with all services and repositories from @scani/domain'
   );
 }
-
-/**
- * Get the global DI container instance
- */
-export function getContainer(): typeof Container {
-  return Container;
-}
-
-/**
- * Reset the container (useful for testing)
- */
-export function resetContainer(): void {
-  Container.reset();
-  containerLogger.debug({}, 'Container has been reset');
-}
-
-export { Container };

@@ -127,7 +127,7 @@ function dayTotal(value: string): string {
 
 /** Exported so the columns are checkable without a browser, a router or a
  *  server — the file's shape is the deliverable here, not the button. */
-export function historyFields(currency: string, t: TFunction): ExportField<HistoryPoint>[] {
+function historyFields(currency: string, t: TFunction): ExportField<HistoryPoint>[] {
   return [
     { header: t('v3.export.column.date'), value: (point) => exportDate(point.date) },
     {

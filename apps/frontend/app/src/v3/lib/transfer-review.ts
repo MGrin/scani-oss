@@ -358,7 +358,7 @@ export interface SplitDraftRow {
 }
 
 /** The rows that are actually part of the answer. */
-export function filledRows(rows: readonly SplitDraftRow[]): SplitDraftRow[] {
+function filledRows(rows: readonly SplitDraftRow[]): SplitDraftRow[] {
   return rows.filter((row) => row.amount.trim() !== '');
 }
 

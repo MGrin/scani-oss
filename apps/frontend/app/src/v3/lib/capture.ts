@@ -20,7 +20,7 @@ import { V3_CAPTURE_ROUTES, V3_PAYMENT_ROUTES } from './routes';
  * sheet printed under them — are gone with the borrowings themselves.
  */
 
-export type CaptureGroupKey = 'upload' | 'connect' | 'manual';
+type CaptureGroupKey = 'upload' | 'connect' | 'manual';
 
 /**
  * Which of the two things `/import` was opened for.
@@ -30,7 +30,7 @@ export type CaptureGroupKey = 'upload' | 'connect' | 'manual';
  * either landed on a page headed "Upload a file", naming neither (SC-71 5.4).
  * The destination reads this and says back what was chosen.
  */
-export type FileImportKind = 'screenshot' | 'statement';
+type FileImportKind = 'screenshot' | 'statement';
 
 export const FILE_IMPORT_KIND_PARAM = 'kind';
 

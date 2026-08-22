@@ -119,7 +119,7 @@ export function holdingMatches(holding: HoldingWithDetails, query: string): bool
   return haystack.some((field) => field.toLowerCase().includes(needle));
 }
 
-export type HoldingSortField = 'value' | 'symbol' | 'amount' | 'price' | 'pnl';
+type HoldingSortField = 'value' | 'symbol' | 'amount' | 'price' | 'pnl';
 
 /** Unknown last, whichever way the column is pointing. */
 function compareNullable(a: number | null, b: number | null, factor: number): number {

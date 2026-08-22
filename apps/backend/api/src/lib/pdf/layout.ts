@@ -30,7 +30,7 @@ export interface Geometry {
   landscape: boolean;
 }
 
-export function geometry(landscape: boolean): Geometry {
+function geometry(landscape: boolean): Geometry {
   const width = landscape ? A4_LONG : A4_SHORT;
   return {
     width,
@@ -51,7 +51,7 @@ export const HEADER_HEIGHT = 26;
 export const GROUP_HEADING_HEIGHT = 32;
 /** The totals summary: a rule, the figures, and the space that sets it apart
  *  from the last row. */
-export const TOTALS_HEIGHT = 40;
+const TOTALS_HEIGHT = 40;
 /** The gap between one column's text and the next column's. */
 export const GUTTER = 12;
 
@@ -141,7 +141,7 @@ export function headerText(header: string): string {
 
 /** How wide each column would like to be: its header, its widest cell, and its
  *  total, each measured in the style it is actually drawn in. */
-export function columnDemands(sheet: ExportSheetDtoType, measure: Measure): number[] {
+function columnDemands(sheet: ExportSheetDtoType, measure: Measure): number[] {
   const totals = totalsRow(sheet);
   return sheet.headers.map((header, index) => {
     const style = sheet.numericColumns[index] === true ? TYPE.rowFigure : TYPE.rowText;
@@ -378,7 +378,7 @@ export function totalsRow(sheet: ExportSheetDtoType): (string | null)[] {
   });
 }
 
-export function hasTotals(totals: readonly (string | null)[]): boolean {
+function hasTotals(totals: readonly (string | null)[]): boolean {
   return totals.some((total) => total !== null);
 }
 

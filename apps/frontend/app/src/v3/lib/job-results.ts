@@ -41,7 +41,7 @@ export function capList(items: readonly string[], cap: number): CappedList {
 }
 
 /** Provider-reported failures, one line each, whatever shape they arrived in. */
-export function readErrorLines(value: unknown): string[] {
+function readErrorLines(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return value.map((entry) => {
     if (typeof entry === 'string') return entry;
@@ -80,7 +80,7 @@ export function readExchangeImport(result: unknown): ExchangeImportView {
 
 // ── file-import ─────────────────────────────────────────────────────────────
 
-export interface FileImportHolding {
+interface FileImportHolding {
   holdingId: string;
   symbol: string;
   name: string;
@@ -165,7 +165,7 @@ export function readFileImport(result: unknown): FileImportView | null {
 
 // ── manual-holdings-create ──────────────────────────────────────────────────
 
-export interface ManualHoldingRow {
+interface ManualHoldingRow {
   id: string;
   symbol: string;
   name: string;
