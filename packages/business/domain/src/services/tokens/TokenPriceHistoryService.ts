@@ -94,7 +94,7 @@ export class TokenPriceHistoryService extends BaseService {
             symbol,
             name: data.name,
             typeId: tokenType.id,
-            decimals: data.decimals ?? 2,
+            decimals: data.decimals ?? null,
             iconUrl: data.iconUrl ?? null,
             providerMetadata,
             isActive: true,
