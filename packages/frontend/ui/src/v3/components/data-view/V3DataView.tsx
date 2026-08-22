@@ -141,6 +141,7 @@ export function V3DataView<T>({ config, getId, query = SETTLED_QUERY_STATE }: V3
     columns,
     empty,
     peek,
+    peekTrigger,
     onRowClick,
     rowHref,
     renderBulkActions,
@@ -188,7 +189,11 @@ export function V3DataView<T>({ config, getId, query = SETTLED_QUERY_STATE }: V3
       ? null
       : (config.data.find((item) => getId(item) === peekRoute.id) ?? null);
 
-  const openRecord = peek ? (item: T) => peekRoute.open(getId(item)) : onRowClick;
+  // The row opens the peek — unless the surface has moved the peek onto a
+  // control of its own (SC-560), in which case the row leads wherever
+  // `onRowClick` says and `openPeek` below is what opens the sheet.
+  const openPeek = peek ? (item: T) => peekRoute.open(getId(item)) : undefined;
+  const openRecord = peekTrigger ? onRowClick : (openPeek ?? onRowClick);
 
   // `?sheet=refine:<pageKey>` rather than component state (SC-67), for the
   // reason the peek is a URL: the back gesture has to close the sheet, not
@@ -406,6 +411,44 @@ export function V3DataView<T>({ config, getId, query = SETTLED_QUERY_STATE }: V3
     return spec.ariaLabel ?? nodeText(spec.label).replace(/\s+/g, ' ').trim();
   };
 
+  /**
+   * The peek's own control, once it is no longer the row's meaning.
+   *
+   * A `<button>` calling the same `peekRoute.open` the row used to call,
+   * rather than a `<Link>` to `peekPath`: `open` is what captures the trigger
+   * for `useReturnFocus` and what stamps `peekOpenState`, so a link would
+   * leave the sheet closing by REPLACE — landing the reader on the list with
+   * their history entry spent — and take the focus return with it.
+   */
+  const renderPeekTrigger =
+    peekTrigger && openPeek
+      ? (item: T) => {
+          const Icon = peekTrigger.icon;
+          return (
+            <button
+              type="button"
+              onClick={(event) => {
+                // The row behind this control is itself clickable on both
+                // surfaces — a `<td>` inside a clickable `<tr>` on desktop, a
+                // sibling of the row's own `<button>` on the phone list, where
+                // it does not bubble. Stopping it here covers the desktop case
+                // without either surface having to know about the other.
+                event.stopPropagation();
+                openPeek(item);
+              }}
+              aria-label={t(peekTrigger.labelKey, { name: nameOf(item) })}
+              className={cn(
+                'flex size-11 shrink-0 items-center justify-center rounded-md text-muted-foreground',
+                'transition-colors duration-fast ease-emphasized hover:bg-surface-hover hover:text-foreground',
+                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring'
+              )}
+            >
+              <Icon className="size-4" aria-hidden="true" />
+            </button>
+          );
+        }
+      : undefined;
+
   const content = isDesktop ? (
     <DataViewTable
       groups={groups}
@@ -413,8 +456,11 @@ export function V3DataView<T>({ config, getId, query = SETTLED_QUERY_STATE }: V3
       getId={getId}
       rowLabel={nameOf}
       // A peek list has no page to open in a second tab, so its rows stay
-      // buttons — see `rowHref` on the config.
-      rowHref={peek ? undefined : rowHref}
+      // buttons — see `rowHref` on the config. A surface that moved its peek
+      // off the row (`peekTrigger`) is not one of those: its rows lead to a
+      // real URL again.
+      rowHref={peek && !peekTrigger ? undefined : rowHref}
+      renderRowAction={renderPeekTrigger}
       selectable={selectable}
       selectedIds={dv.selectedIds}
       onToggleSelect={dv.toggleSelect}
@@ -442,6 +488,7 @@ export function V3DataView<T>({ config, getId, query = SETTLED_QUERY_STATE }: V3
           getId={getId}
           renderRow={renderRow}
           onRowClick={openRecord}
+          renderTrailing={rowsSelecting ? undefined : renderPeekTrigger}
           selecting={rowsSelecting}
           selectedIds={dv.selectedIds}
           onToggleSelect={dv.toggleSelect}

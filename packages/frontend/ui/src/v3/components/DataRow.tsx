@@ -78,6 +78,24 @@ interface DataRowProps {
    *  toggle button there, and without this the only cue that it is on is the
    *  16px box drawn in `leading`, which is `aria-hidden`. */
   'aria-pressed'?: boolean;
+  /**
+   * A second control, beside the row's own rather than inside it (SC-560).
+   *
+   * The row is a single `<button>` or `<a>`, so nothing tappable can be nested
+   * in it — that is HTML, not a policy. This renders as the control's SIBLING
+   * inside the `<li>`, which is the only place a second target can legally go.
+   *
+   * Used where a record has two destinations of genuinely different weight:
+   * the accounts row leads to that account's holdings, which is what a reader
+   * wants nine times in ten, and this opens the account's own record, which is
+   * the tenth. It is deliberately narrow and deliberately not the row — a
+   * second target the width of the first is two rows pretending to be one.
+   *
+   * Never rendered while selecting: there the row means "toggle me" and a
+   * mis-tap that navigated out of a half-made selection is exactly what
+   * `DataViewRows` explains the selection idiom to avoid.
+   */
+  trailing?: ReactNode;
   className?: string;
 }
 
@@ -138,6 +156,7 @@ export function DataRow({
   onClick,
   'aria-label': ariaLabel,
   'aria-pressed': ariaPressed,
+  trailing,
   className,
 }: DataRowProps) {
   // Two literal templates rather than one with a collapsing `auto` column: an
@@ -189,39 +208,59 @@ export function DataRow({
     </>
   );
 
+  // `min-w-0` on the control so it still gives up width to the trailing
+  // control rather than overflowing the row — the same reason the identity
+  // zone carries it. Without `trailing` this is one child and the wrapper is
+  // inert, which is why it costs the rows that do not use it nothing.
+  const row = (control: ReactNode) =>
+    trailing ? (
+      <span className="flex items-stretch">
+        <span className="min-w-0 flex-1">{control}</span>
+        {/* `pr-2` rather than the row's own `px-4`: the control has its own
+            padding and a second full gutter would push it off a 393px row. */}
+        <span className="flex shrink-0 items-center pr-2">{trailing}</span>
+      </span>
+    ) : (
+      control
+    );
+
   if (href) {
     return (
       <li className={className}>
-        <Link
-          to={href}
-          state={linkState}
-          {...FIGURE_LINE}
-          aria-label={ariaLabel}
-          className={cn(ZONES, columns, CONTROL)}
-        >
-          {zones}
-        </Link>
+        {row(
+          <Link
+            to={href}
+            state={linkState}
+            {...FIGURE_LINE}
+            aria-label={ariaLabel}
+            className={cn(ZONES, columns, CONTROL)}
+          >
+            {zones}
+          </Link>
+        )}
       </li>
     );
   }
 
   return (
     <li className={className}>
-      {onClick ? (
-        <button
-          type="button"
-          {...FIGURE_LINE}
-          onClick={onClick}
-          aria-label={ariaLabel}
-          aria-pressed={ariaPressed}
-          className={cn(ZONES, columns, CONTROL)}
-        >
-          {zones}
-        </button>
-      ) : (
-        <div {...FIGURE_LINE} className={cn(ZONES, columns)}>
-          {zones}
-        </div>
+      {row(
+        onClick ? (
+          <button
+            type="button"
+            {...FIGURE_LINE}
+            onClick={onClick}
+            aria-label={ariaLabel}
+            aria-pressed={ariaPressed}
+            className={cn(ZONES, columns, CONTROL)}
+          >
+            {zones}
+          </button>
+        ) : (
+          <div {...FIGURE_LINE} className={cn(ZONES, columns)}>
+            {zones}
+          </div>
+        )
       )}
     </li>
   );
