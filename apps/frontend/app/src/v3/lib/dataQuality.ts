@@ -56,7 +56,7 @@ export const HOLDINGS_QUALITY_PARAM = 'quality';
  * for a different reader, and forcing one string to serve both would give the
  * chip a full sentence and the row a two-word fragment.
  */
-export const DATA_QUALITY_OPTION_KEYS: Record<DataQualityKind, UiTranslationKey> = {
+const DATA_QUALITY_OPTION_KEYS: Record<DataQualityKind, UiTranslationKey> = {
   duplicateSymbol: 'ui.dataView.holdings.qualityOption.duplicateSymbol',
   lookalike: 'ui.dataView.holdings.qualityOption.lookalike',
   zeroBalance: 'ui.dataView.holdings.qualityOption.zeroBalance',
@@ -70,10 +70,6 @@ export const DATA_QUALITY_OPTION_KEYS: Record<DataQualityKind, UiTranslationKey>
  *  because an older API reports none, and a kind with no ids is a kind the
  *  list cannot offer. */
 export type DataQualitySets = Partial<Record<DataQualityKind, readonly string[]>>;
-
-export function isDataQualityKind(value: string): value is DataQualityKind {
-  return (DATA_QUALITY_KINDS as readonly string[]).includes(value);
-}
 
 /**
  * The kinds this reader's data actually has, as `{ value, labelKey }` pairs.

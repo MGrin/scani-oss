@@ -46,9 +46,54 @@ describe('deps:unused can see an unused file', () => {
   test('`files` is not switched off in knip.json rules', () => {
     // `rules` beats the command line: with `"files": "off"` here, the
     // `--include files` above resolves to nothing and the run is green because
-    // it looked at nothing. `exports` and `types` ARE off, deliberately — 79
-    // unused exports and 70 unused types are a triage, not this check.
+    // it looked at nothing.
     expect(knip.rules?.files ?? 'error').not.toBe('off');
+  });
+
+  test('`exports` and `types` are not switched back off (SC-558)', () => {
+    // These were `"off"` until SC-558 triaged the 133 findings they produced
+    // (71 exports + 62 types, re-measured on 8cf07a95e). None was a false
+    // positive: none had a test-only consumer, none was reachable through a
+    // workspace `exports` subpath, and every workspace here is
+    // `private: true`, so "public API somebody outside might import" is an
+    // empty category in this repo. 103 were live code carrying a redundant
+    // `export` keyword; the rest were dead, including two whole modules that
+    // duplicated a live twin (`utils/circuit-breaker.ts` against
+    // `@scani/rate-limiter`, `utils/financial.ts` against `src/decimal.ts`) —
+    // the SC-527 shape, kept alive only by their own tests.
+    //
+    // The pressure to switch these back is a red run on a symbol somebody
+    // believes is public. That belief is checkable and was checked: switch it
+    // back only after showing an importer knip cannot see, not because a
+    // finding is inconvenient.
+    expect(knip.rules?.exports ?? 'error').not.toBe('off');
+    expect(knip.rules?.types ?? 'error').not.toBe('off');
+  });
+
+  test('the script asks knip for exports and types, not just files', () => {
+    // Switching the rules on is only half of it, and the half that looks
+    // sufficient. `--include` is a FILTER: `--include files` with
+    // `"exports": "error"` reports no exports at all, and the run is green
+    // having looked at nothing — the same vacuous pass the `files` rule above
+    // guards against, reached from the opposite direction. Measured on
+    // SC-558: `knip --dependencies --include files,exports,types` names an
+    // injected unused export; drop `,exports,types` and it does not.
+    const script = manifest.scripts['deps:unused'];
+    expect(script).toContain('exports');
+    expect(script).toContain('types');
+  });
+
+  test('nsExports / nsTypes / enumMembers stay documented, not silently absent', () => {
+    // SC-558 left these three `off`. They report 0 on this tree, but a rule
+    // enabled against an already-clean tree has never been seen to work, and
+    // the probe written for them SHORT-CIRCUITED: an unused namespace is
+    // reported by `exports` at the top level, so the member rules never ran.
+    // Enabling them needs a namespace that is genuinely consumed with one
+    // member that is not — build that probe first, then flip these and delete
+    // this test. Do not flip them because the config looks half-finished.
+    expect(knip.rules?.nsExports).toBe('off');
+    expect(knip.rules?.nsTypes).toBe('off');
+    expect(knip.rules?.enumMembers).toBe('off');
   });
 
   test('the root entry stays top-level, so scripts/lib stays covered', () => {
