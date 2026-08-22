@@ -75,6 +75,8 @@ export const reviewLabelSchema = z.discriminatedUnion('code', [
   z.object({ code: z.literal('jobFailed'), jobName: z.string().min(1) }),
   z.object({ code: z.literal('invoiceExtracted') }),
   z.object({ code: z.literal('transfersToConfirm') }),
+  /** Unexplained balance changes waiting to be explained (SC-501). */
+  z.object({ code: z.literal('balanceChangesToExplain') }),
 ]);
 
 export type ReviewLabel = z.infer<typeof reviewLabelSchema>;
@@ -135,6 +137,15 @@ export const reviewDetailSchema = z.discriminatedUnion('code', [
   z.object({
     code: z.literal('unpairedTransfers'),
     transfers: z.number().int().nonnegative(),
+  }),
+  /**
+   * Balance changes the ledger cannot explain (SC-501). A count, like the
+   * transfers row above and for the same reason — the queue is unbounded and
+   * every item points at the same page.
+   */
+  z.object({
+    code: z.literal('unexplainedBalanceChanges'),
+    changes: z.number().int().nonnegative(),
   }),
   z.object({ code: z.literal('jobFailure'), facts: reviewJobFailureFactsSchema }),
 ]);

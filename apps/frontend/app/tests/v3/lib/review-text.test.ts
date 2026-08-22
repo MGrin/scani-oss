@@ -62,6 +62,7 @@ describe('reviewTitle', () => {
   test('the producers with one fixed name keep it', () => {
     expect(reviewTitle(v3, { code: 'invoiceExtracted' })).toBe('Invoice extracted');
     expect(reviewTitle(v3, { code: 'transfersToConfirm' })).toBe('Transfers to confirm');
+    expect(reviewTitle(v3, { code: 'balanceChangesToExplain' })).toBe('Balance changes to explain');
   });
 });
 
@@ -142,6 +143,18 @@ describe('reviewDetailText — the other producers', () => {
     expect(detail((t) => reviewDetailText(t, { code: 'unpairedTransfers', transfers: 1 }))).toBe(
       '1 transfer out with no matching deposit'
     );
+  });
+
+  test('the balance-gap queue counts what is waiting, singular and plural', () => {
+    // Asserted through the shipped `en.json`, so a key that does not exist
+    // fails here rather than rendering its own name on the home screen —
+    // which is the only way a missing translation surfaces in this codebase.
+    expect(
+      detail((t) => reviewDetailText(t, { code: 'unexplainedBalanceChanges', changes: 37 }))
+    ).toBe('37 balance changes we cannot explain');
+    expect(
+      detail((t) => reviewDetailText(t, { code: 'unexplainedBalanceChanges', changes: 1 }))
+    ).toBe('1 balance change we cannot explain');
   });
 
   /**

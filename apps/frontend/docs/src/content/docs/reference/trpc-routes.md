@@ -39,6 +39,7 @@ Located in `apps/backend/api/src/presentation/routers/`.
 | `documents` | Upload an invoice, read its parse status, confirm or reject the extraction. |
 | `review` | Read-model over everything awaiting the user — pending job results plus pending document extractions. |
 | `transfer-review` | Outflows the `transfer-linking` matcher could not pair: `listPending`, `resolve` (`paired` with a deposit / `left_control` / `untracked`), `reopen`. |
+| `balance-gaps` | Balance changes no transaction explains: `listPending` (with the count of what was suppressed and why), `answer` (`flow` writes a deposit / withdrawal at a date inside the interval, `correction` a restatement, `growth` and `unknown` write nothing). |
 | `jobs` | HMAC-gated operator endpoints: retry, remove, DLQ replay. |
 | `batch-operations` | Batched mutations the SPA uses for bulk edits. |
 | `client-errors` | Endpoint the SPA posts unhandled-error reports to. |
