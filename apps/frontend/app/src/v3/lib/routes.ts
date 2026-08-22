@@ -146,6 +146,20 @@ export function groupDetailPath(groupId: string): string {
 }
 
 /**
+ * The holdings list narrowed to one account — what an account row leads to
+ * since SC-560, and what its peek's first action has always been.
+ *
+ * `?account=` is v2's own parameter name, not a v3 spelling: every existing
+ * link into "the holdings in this account" has to keep meaning that across the
+ * version switch, which is the same reason `holdingFiltersFromParams` reads
+ * v2's names. It lives here rather than inside `AccountsList` because two
+ * places now build it and the spelling is the contract.
+ */
+export function accountHoldingsPath(accountId: string): string {
+  return `${V3_ROUTES.holdings}?account=${encodeURIComponent(accountId)}`;
+}
+
+/**
  * A document keeps a page too (V3-43), and for the same reason as a job: what
  * you open it for is the *extraction result* — one titled record per invoice
  * found, each carrying six facts and an Approve that navigates to a prefilled
