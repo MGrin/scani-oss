@@ -101,7 +101,7 @@ export interface SiteIcon {
   bytes: Uint8Array;
   /** Derived from the bytes by `sniffImageType`, never from a response header. */
   contentType: string;
-  /** Where the bytes actually came from, after redirects. Logged, not served. */
+  /** The host that actually answered, after redirects. Logged by the caller, never served. */
   sourceUrl: string;
 }
 

@@ -185,6 +185,19 @@ async function resolveAndStoreIcon(
   inFlight += 1;
   try {
     const icon = await fetchSiteIcon(website);
+    // `sourceUrl` rather than `website`: an icon is routinely served from a
+    // different host than the site that declared it (github.com's comes from
+    // github.githubassets.com), and when one of these looks wrong the host
+    // that actually answered is the thing worth knowing.
+    log.debug(
+      {
+        institutionId,
+        sourceUrl: icon.sourceUrl,
+        contentType: icon.contentType,
+        bytes: icon.bytes.byteLength,
+      },
+      'icon resolved'
+    );
     const stored: CachedIcon = { bytes: icon.bytes, contentType: icon.contentType };
     try {
       await Container.get(StorageFacade).write(
