@@ -135,6 +135,59 @@ const API_SERVICE_ALIASES = ['api', 'backend'];
  *  their exit code and their own output is where a boot failure explains itself. */
 const ONE_SHOT_SERVICES = ['migrate', 'deps', 'env-sync', 'minio-init'];
 
+/**
+ * The spec path a caller's own `--project <name>` is about to swallow, or
+ * `null` (SC-533).
+ *
+ * Playwright declares `--project <project-name...>` as VARIADIC, so in the
+ * space-separated form it keeps consuming argv until it meets something
+ * beginning with `-`. A trailing spec path is therefore read as one more
+ * PROJECT NAME, and the run is not the run that was asked for:
+ *
+ *   playwright test --project chromium --project webkit tests/holdings/x.spec.ts
+ *   -> Project(s) "tests/holdings/x.spec.ts" not found. Available projects: ...
+ *
+ * MEASURED 2026-08-22 on @playwright/test 1.60.0, and it is worth recording
+ * that the ticket's headline is not quite what happens: playwright validates
+ * project names, so a swallowed SPEC PATH errors rather than silently running
+ * the wrong set. What it does not do is say the word "path" — it blames a
+ * project that the caller never typed, minutes after this file has built and
+ * booted a whole compose stack, and a caller who does not know the flag is
+ * variadic has nothing to work back from. A swallowed token that DOES name a
+ * real project (`--project chromium tests/… iphone`) has no error at all.
+ *
+ * The projects this file emits itself use `--project=<name>`, which ends the
+ * variadic at the `=` and lets a trailing path through as the positional
+ * filter it is. This function covers the half that cannot be fixed that way:
+ * a caller who wrote the space form in their own argv, which is forwarded
+ * verbatim.
+ *
+ * The discriminator is "looks like a path" — a `/` or a `.ts` suffix — and not
+ * "is not a known project", because this file does not know playwright's
+ * project list and asking for it would put a second process in front of every
+ * run. The benign case that shares the shape is a caller naming several
+ * projects (`--project chromium webkit`): viewport names in `fixtures/
+ * devices.ts` carry neither a slash nor an extension, so they do not trip it.
+ *
+ * `--` ends option parsing outright, so anything after it is already safe and
+ * scanning stops there.
+ */
+export function projectFlagEatsPath(args: readonly string[]): string | null {
+  for (let i = 0; i < args.length; i += 1) {
+    if (args[i] === '--') return null;
+    if (args[i] !== '--project') continue;
+    // args[i + 1] is the flag's own value and is legitimate whatever it looks
+    // like. Everything after it that does not start with `-` is still being
+    // eaten by the variadic.
+    for (let j = i + 2; j < args.length; j += 1) {
+      const arg = args[j] ?? '';
+      if (arg === '--' || arg.startsWith('-')) break;
+      if (arg.includes('/') || arg.endsWith('.ts')) return arg;
+    }
+  }
+  return null;
+}
+
 async function probeStack(): Promise<boolean> {
   try {
     const res = await fetch(`${API_BASE_URL}/health`, { signal: AbortSignal.timeout(2_000) });
@@ -241,6 +294,25 @@ function ensureEnvFile() {
 }
 
 async function main() {
+  // Before the stack, not after it. Playwright meets this same argv at the far
+  // end of a compose build, a boot and a health wait, and refuses there with a
+  // sentence about a project nobody named (SC-533).
+  const eaten = projectFlagEatsPath(FORWARDED);
+  if (eaten) {
+    console.error(
+      `Refusing to run: "${eaten}" would be read as a PROJECT NAME, not a spec path.\n` +
+        "  Playwright's --project is variadic, so the space-separated form keeps\n" +
+        '  eating argv until it meets a flag. Write it with an equals sign, which\n' +
+        '  ends the variadic:\n' +
+        `    bun run test:e2e --project=<name> ${eaten}\n` +
+        '  Passing no --project at all also works — this runner then adds the\n' +
+        `  desktop pair in the same form: ${DEFAULT_SPEC_PROJECTS.map((p) => `--project=${p}`).join(' ')}`
+    );
+    // 2 rather than 1: this is a refusal to start, not a suite that ran and
+    // failed, and the stack has not been touched.
+    process.exit(2);
+  }
+
   const stackWasUp = await probeStack();
 
   if (!stackWasUp) {
@@ -281,10 +353,12 @@ async function main() {
   // tree from the desktop one — gets exactly what it asked for; everyone else
   // gets the desktop pair. Any other forwarded argument (a spec path, a
   // `--grep`) is passed straight through.
+  //
+  // `--project=<name>`, never `--project <name>` — see `projectFlagEatsPath`.
   const callerChoseProjects = FORWARDED.some((arg) => arg.startsWith('--project'));
   const projectArgs = callerChoseProjects
     ? []
-    : DEFAULT_SPEC_PROJECTS.flatMap((project) => ['--project', project]);
+    : DEFAULT_SPEC_PROJECTS.map((project) => `--project=${project}`);
   const playwrightArgs = UI_MODE
     ? ['playwright', 'test', '--ui', ...projectArgs, ...FORWARDED]
     : ['playwright', 'test', ...projectArgs, ...FORWARDED];
@@ -309,4 +383,8 @@ async function main() {
   process.exit(testStatus);
 }
 
-main();
+// Only when this file is the ENTRYPOINT. `scripts/tests/e2e-project-flag.test.ts`
+// imports `projectFlagEatsPath`, and without the guard that import boots a
+// compose stack and calls `process.exit` — the same trap `scripts/gate-db.ts`
+// documents at the bottom of itself.
+if (import.meta.main) await main();
