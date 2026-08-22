@@ -32,6 +32,7 @@ import {
   holdingPeekSpec,
   holdingRowDelta,
 } from './holdingPeek';
+import { LookalikeBadge } from './LookalikeBadge';
 
 /**
  * What the holdings list *is* — separated from the page, which is the queries,
@@ -145,54 +146,6 @@ function UnpriceableBadge({ t }: { t: TFunction }) {
   return (
     <Badge variant="secondary" className="shrink-0" title={t('v3.holdings.badge.noPriceTitle')}>
       {t('v3.holdings.badge.noPrice')}
-    </Badge>
-  );
-}
-
-/**
- * The symbol this row DRAWS, next to the symbol it is.
- *
- * `UЅDС` (Cyrillic Ѕ and С) and `USDC` are the same picture. Nine rows in
- * production are built that way, and until this badge existed the mark sat
- * in `tokens.lookalike_of` where nothing read it — the database knew and
- * the user could not (SC-219).
- *
- * The badge says what it imitates rather than warning, because a warning
- * does not survive the comparison the reader is actually making. "Suspicious"
- * on a row captioned `UЅDС`, beside a row captioned `USDC`, leaves them still
- * looking alike; "Displays as USDC" is the only form that makes the two rows
- * different to look at, which is the whole job.
- *
- * Deliberately NOT the scam style, and deliberately distinct from `No price`.
- * They are three different facts and they co-occur constantly — a lookalike is
- * usually also unpriced. A reader who learns to read them as one thing learns
- * the wrong lesson, and the one that means "these characters are not what they
- * look like" is the one that never changes (SC-207, SC-218).
- */
-function LookalikeBadge({
-  symbol,
-  impersonates,
-  t,
-}: {
-  symbol: string;
-  impersonates: string;
-  t: TFunction;
-}) {
-  return (
-    <Badge
-      variant="secondary"
-      className="shrink-0"
-      title={t('v3.holdings.badge.lookalikeTitle', { impersonates })}
-    >
-      {/* `symbol` is offered and English does not spend the badge width on it
-          (SC-235). "Displays as USDC" is a clause with no subject: the ROW is
-          the subject, supplied by the badge sitting beside the symbol, and a
-          translator reading `en.json` cannot see that a subject exists — let
-          alone whether their language may leave it out. Passing it makes the
-          subject available to whoever needs to state it, without English
-          paying for a word it does not need at 390px, where this badge already
-          competes with two others for the row. */}
-      {t('v3.holdings.badge.lookalike', { symbol, impersonates })}
     </Badge>
   );
 }
@@ -351,7 +304,49 @@ export function holdingsDataViewConfig({
       sublabel: item.label
         ? `${item.token.name} · ${item.label} · ${item.account.name}`
         : `${item.token.name} · ${item.account.name}`,
-      value: <Numeric value={item.value} currency={currency} />,
+      // Two figures, deliberately unequal (SC-559). The base-currency value
+      // is the headline and keeps the row's `text-label`; the unit count sits
+      // under it in caption ink, carrying the SYMBOL it counts — a bare
+      // `0.00000142` answers nothing, and the symbol is what makes it a
+      // quantity rather than a number. No lookalike badge here: the row's
+      // identity zone already carries one against the symbol it qualifies,
+      // and two on one row read as two different claims.
+      value: (
+        <span className="flex min-w-0 flex-col items-end">
+          <Numeric value={item.value} currency={currency} />
+          <span className="flex min-w-0 items-baseline gap-1 text-caption text-muted-foreground">
+            {holdingAmount(item)}
+            {/* The unit, and the ONE thing in this zone allowed to give way.
+                Measured at 393px before it was bounded: `GRAPHICS PROCESSING
+                UNITS` is a real 25-character symbol in this portfolio, and
+                spelling it out here took the value zone to 198px against 87px
+                of identity — an unreadable account name on every row of that
+                token, in the zone whose whole job is saying which row this is.
+
+                Truncating it costs nothing, which is what makes it the right
+                thing to cut rather than the convenient one: the row's identity
+                zone carries the SAME symbol in full, at row weight, with its
+                lookalike badge, one line to the left. This is an annotation on
+                the figure, not the figure — the figure never truncates, and
+                does not here.
+
+                THE FIGURE'S OWN WORST CASE IS NOT VISIBLE YET, and whoever
+                lands SC-567 will be the first to see it. `HoldingQueryService`
+                rounds `amount` to 8 dp on the wire, so a dust balance arrives
+                as `0` and every measurement above was taken on a short figure.
+                Measured with the wire rewritten in flight to what SC-567 will
+                send, at 393px: `0.000000000000000001 CHF` puts the value zone
+                at 182px against 103px of identity, and `0.0000000004013 GBP`
+                at 144 against 141. Nothing overflows — `main.scrollWidth`
+                stays 393 — so the cost is identity truncation on rows whose
+                money is `$0.00`, not a sideways page. That may still be the
+                wrong trade for a summary row, and it is SC-567's call to make
+                with the figure in front of it: this rule was chosen without
+                being able to see it. */}
+            <span className="max-w-[6ch] truncate">{item.token.symbol}</span>
+          </span>
+        </span>
+      ),
       delta: holdingRowDelta(item),
       // Account and value included (SC-71 7.2): two rows for the same token in
       // two accounts are told apart on screen by exactly those two things, and

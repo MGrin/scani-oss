@@ -39,6 +39,9 @@ interface DataViewTableProps<T> {
    * is no URL to hand the browser, and a button is the right element.
    */
   rowHref?: (item: T) => string;
+  /** The row's second control, in a column of its own at the far edge, when the
+   *  surface has moved its peek off the row (SC-560). */
+  renderRowAction?: (item: T) => ReactNode;
   selectable: boolean;
   selectedIds: Set<string>;
   onToggleSelect: (id: string) => void;
@@ -144,6 +147,7 @@ export function DataViewTable<T>({
   getId,
   rowLabel,
   rowHref,
+  renderRowAction,
   selectable,
   selectedIds,
   onToggleSelect,
@@ -216,6 +220,14 @@ export function DataViewTable<T>({
               )}
             </th>
           ))}
+          {/* Named for a screen reader and blank on screen: the controls under
+              it say what they do, and a heading over a column of icon buttons
+              is a word the eye has to skip on every table. */}
+          {renderRowAction ? (
+            <th scope="col" className="w-12 px-3 py-2">
+              <span className="sr-only">{t('ui.dataView.table.rowActions')}</span>
+            </th>
+          ) : null}
         </tr>
       </thead>
       {groups.map((group) => (
@@ -224,7 +236,7 @@ export function DataViewTable<T>({
             <tr>
               <th
                 scope="colgroup"
-                colSpan={columns.length + (selectable ? 1 : 0)}
+                colSpan={columns.length + (selectable ? 1 : 0) + (renderRowAction ? 1 : 0)}
                 className="border-b border-border px-3 pb-1 pt-5 text-left text-caption font-medium uppercase tracking-wide text-muted-foreground"
               >
                 {/* Beside the label, never pushed to the far edge — see
@@ -371,6 +383,14 @@ export function DataViewTable<T>({
                     </BodyCell>
                   );
                 })}
+                {/* The control inside stops its own click reaching the row —
+                    see `renderPeekTrigger` in `V3DataView`. Done there rather
+                    than with a wrapper here because a `<span onClick>` is a
+                    static element with a handler, which is the shape a
+                    keyboard cannot reach and the linter is right to refuse. */}
+                {renderRowAction ? (
+                  <td className="px-3 align-middle">{renderRowAction(item)}</td>
+                ) : null}
               </tr>
             );
           })}

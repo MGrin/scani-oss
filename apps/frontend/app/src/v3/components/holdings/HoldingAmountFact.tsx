@@ -5,6 +5,7 @@ import { Pencil } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { amountDecimals } from '../../lib/holdings';
+import { LookalikeBadge } from './LookalikeBadge';
 
 /**
  * The unit count, editable in place.
@@ -23,19 +24,41 @@ import { amountDecimals } from '../../lib/holdings';
 
 interface HoldingAmountFactProps {
   amount: number;
+  /**
+   * What the count counts (SC-559).
+   *
+   * The fact rendered a bare number and named its unit nowhere — the reader
+   * recovered "which token is this" from the sheet's title or not at all, and
+   * mgrin reported that from production. The symbol is not a decoration on the
+   * figure; without it the figure is not a quantity.
+   */
+  symbol: string;
+  /**
+   * The symbol this one draws, when it draws somebody else's.
+   *
+   * Printing the symbol here is the thing `holdingsConfig` warns about: a bare
+   * `UЅDС` beside a number is indistinguishable from `USDC` and carries no
+   * warning of its own. The list badges the symbol in the row's identity zone;
+   * this sheet had no badge anywhere, so the unit brings its own.
+   */
+  lookalikeOf?: string | null;
   /** Applied optimistically by `optimisticPatchHolding`, so the row and this
    *  fact both move before the server answers. */
   onSave: (balance: string) => void;
 }
 
-export function HoldingAmountFact({ amount, onSave }: HoldingAmountFactProps) {
+export function HoldingAmountFact({ amount, symbol, lookalikeOf, onSave }: HoldingAmountFactProps) {
   const { t } = useTranslation();
   const [draft, setDraft] = useState<string | null>(null);
 
   if (draft === null) {
     return (
-      <span className="flex items-center justify-end gap-2">
-        <Numeric value={amount} format="plain" decimals={amountDecimals(amount)} />
+      <span className="flex min-w-0 items-center justify-end gap-2">
+        <span className="flex min-w-0 items-baseline gap-1.5">
+          <Numeric value={amount} format="plain" decimals={amountDecimals(amount)} />
+          <span className="truncate">{symbol}</span>
+        </span>
+        {lookalikeOf ? <LookalikeBadge symbol={symbol} impersonates={lookalikeOf} t={t} /> : null}
         <button
           type="button"
           onClick={() => setDraft(String(amount))}
