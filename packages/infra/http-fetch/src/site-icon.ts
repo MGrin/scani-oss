@@ -245,10 +245,68 @@ const LINK_TAG = /<link\b[^>]*>/gi;
 const ATTR = (name: string) =>
   new RegExp(`\\b${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s"'>]+))`, 'i');
 
+/**
+ * Longest attribute value the link parser will look at.
+ *
+ * This markup is fetched from a host derived from `institutions.website`, so
+ * it is attacker-controlled: whoever controls the page controls every byte
+ * that reaches the parsing below. `fetchHtmlBounded` caps the BODY at 512KB,
+ * which bounds nothing about how much of it lands in one attribute.
+ *
+ * 2048 is longer than any real `href` and enormously longer than any real
+ * `sizes`. REJECTED rather than truncated: half an href is a different URL,
+ * and silently following it would be worse than not following one.
+ */
+const MAX_ATTR_VALUE = 2048;
+
 function attr(tag: string, name: string): string | null {
   const m = ATTR(name).exec(tag);
   if (!m) return null;
-  return (m[1] ?? m[2] ?? m[3] ?? '').trim();
+  const value = (m[1] ?? m[2] ?? m[3] ?? '').trim();
+  return value.length > MAX_ATTR_VALUE ? null : value;
+}
+
+/** Most `sizes` entries we will look at, and the longest one. `"16x16"` is 5. */
+const MAX_SIZE_TOKENS = 8;
+const MAX_SIZE_TOKEN = 16;
+
+/**
+ * The largest width a `sizes` attribute declares, or 0.
+ *
+ * **This replaced a quadratic regex and the shape is the point** (CodeQL,
+ * oss#144). It used to be `[...sizes.matchAll(/(\d+)\s*x\s*(\d+)/g)]`. That
+ * pattern is UNANCHORED, so on a run of digits containing no `x` the engine
+ * matches `\d+` to the end, fails, and restarts one character later — O(n^2)
+ * over input a third party chooses.
+ *
+ * Measured on 2026-08-22, and it is not marginal: 10k chars 72.6ms, 20k
+ * 405.5ms, 40k 1534.1ms, 80k 7513.3ms. n doubles, time quadruples. At the
+ * 512KB body cap one attribute reaches ~500k characters, which extrapolates
+ * to roughly five minutes of BLOCKED EVENT LOOP from a single fetch — worse
+ * than the DNS bug this PR also fixes, because it burns the loop rather than a
+ * socket, so it stalls the process for every user rather than one request.
+ *
+ * The fix is not a cleverer pattern. Split on whitespace first, cap how many
+ * tokens and how long each may be, then match each token ANCHORED — one
+ * attempt per token, no restart, no ambiguous repetition left to backtrack
+ * over. Same reading afterwards: `` `sizes` `` is a space-separated list of
+ * `WIDTHxHEIGHT` per the HTML spec, so `16 x 16` was never valid and the old
+ * pattern's tolerance of it bought nothing.
+ */
+function largestDeclaredSize(sizes: string): number {
+  let largest = 0;
+  let seen = 0;
+  for (const token of sizes.split(/\s+/)) {
+    if (token.length === 0) continue;
+    seen += 1;
+    if (seen > MAX_SIZE_TOKENS) break;
+    if (token.length > MAX_SIZE_TOKEN) continue;
+    const m = /^(\d+)x(\d+)$/.exec(token);
+    if (!m) continue;
+    const width = Number(m[1]);
+    if (Number.isFinite(width) && width > largest) largest = width;
+  }
+  return largest;
 }
 
 /**
@@ -280,13 +338,12 @@ export function extractIconHrefs(html: string): string[] {
     const href = attr(tag, 'href');
     if (!href) continue;
     const sizes = (attr(tag, 'sizes') ?? '').toLowerCase();
-    const dims = [...sizes.matchAll(/(\d+)\s*x\s*(\d+)/g)].map((m) => Number(m[1]));
     found.push({
       // `split`/`join` rather than `replaceAll`: this package is type-checked
       // as part of the frontend workspaces too, and their lib target predates
       // it.
       href: href.split('&amp;').join('&'),
-      size: dims.length > 0 ? Math.max(...dims) : 0,
+      size: largestDeclaredSize(sizes),
       apple: rel.includes('apple-touch-icon'),
     });
   }
