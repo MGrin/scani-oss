@@ -1,5 +1,60 @@
 # Changelog
 
+<!--
+The heading SHAPE in this file is functional, not cosmetic.
+
+release-please inserts each new release directly under this `# Changelog`
+heading, immediately above the first heading that matches a version pattern
+(`## [0.12.0]…`). Measured on this repo: commit b06ffc2, `chore(main): release
+0.12.0`, whose CHANGELOG hunk is `@@ -1,5 +1,40 @@`.
+
+The 0.13.0, 0.14.0 and 0.14.1 sections below are hand-written — those versions
+were published without a git tag — and they are given version-shaped headings so
+that a future release is inserted ABOVE them, in the right chronological place.
+Retitle them to prose and the next release gets tucked underneath them instead.
+
+For the same reason each of those sections repeats its own explanation rather
+than sharing a preamble: anything written between `# Changelog` and the first
+version heading stays there permanently, above every future release. This
+comment is deliberately in that position; explanatory prose should not be.
+-->
+
+## [0.14.1](https://github.com/MGrin/scani-oss/commit/9ddd39960cd6ef2df3f61e983a0a20ef78dfa12c) (2026-08-21)
+
+Published to Docker Hub by hand from `scripts/publish-images-local.sh`, built from
+[`9ddd399`](https://github.com/MGrin/scani-oss/commit/9ddd39960cd6ef2df3f61e983a0a20ef78dfa12c).
+There is no `v0.14.1` git tag and release-please did not cut this release, so it has no
+generated entry above.
+
+Because the last tag in this repository is `v0.12.0`, the next generated section will
+cover every commit since `v0.12.0` — including the ones already published as 0.13.0,
+0.14.0 and this release. Use the three commits named in these three sections as the
+boundaries when attributing a change to the image tag it actually shipped in.
+
+Every published image records its own source commit, so this mapping is checkable rather
+than asserted:
+
+```
+docker buildx imagetools inspect scani/frontend-app:0.14.1 --format '{{json .Image}}'
+```
+
+## [0.14.0](https://github.com/MGrin/scani-oss/commit/9c96e4cad5d1741d53288656151a3f972750dabd) (2026-08-21)
+
+Published to Docker Hub by hand from `scripts/publish-images-local.sh`, built from
+[`9c96e4c`](https://github.com/MGrin/scani-oss/commit/9c96e4cad5d1741d53288656151a3f972750dabd).
+No `v0.14.0` git tag, no generated entry.
+
+## [0.13.0](https://github.com/MGrin/scani-oss/commit/83d628d991e7043da5de374bea1a848e27f139bc) (2026-08-20)
+
+Published to Docker Hub by hand from `scripts/publish-images-local.sh`, built from
+[`83d628d`](https://github.com/MGrin/scani-oss/commit/83d628d991e7043da5de374bea1a848e27f139bc).
+No `v0.13.0` git tag, no generated entry.
+
+These three releases were published while GitHub Actions was billing-blocked and the
+tag-driven `docker-publish.yml` could not run. They are recorded here rather than tagged
+retroactively: a `v0.13.0` tag today would fire `docker-publish.yml`, rebuild 0.13.0 from
+a different commit under a tag people have already pulled, and move `:latest` backwards.
+
 ## [0.12.0](https://github.com/MGrin/scani-oss/compare/v0.11.0...v0.12.0) (2026-08-12)
 
 
