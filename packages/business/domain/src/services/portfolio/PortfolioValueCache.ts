@@ -1,4 +1,4 @@
-import { RedisCommandTimeoutError, withRedisTimeout } from '@scani/deadline';
+import { StoreCommandTimeoutError, withDeadline } from '@scani/deadline';
 import { createComponentLogger } from '@scani/logging';
 import { getSharedRedis } from '@scani/rate-limiter';
 import { Service } from 'typedi';
@@ -36,7 +36,7 @@ const SCAN_COUNT = 100;
  *
  * The bound is not Redis-specific and does not leave with Redis: whatever
  * backs this cache, a request path awaiting it with no deadline hangs when it
- * is unreachable. See `withRedisTimeout`.
+ * is unreachable. See `withDeadline`.
  *
  * A tight bound is cheaper here than anywhere else in the codebase, because
  * the penalty for a spurious timeout is **exactly a cache miss** — the one
@@ -70,10 +70,10 @@ export class PortfolioValueCache {
     if (!redis) return factory();
 
     try {
-      const cached = await withRedisTimeout(
+      const cached = await withDeadline(
         redis.get(key),
         REDIS_TIMEOUT_MS,
-        () => new RedisCommandTimeoutError('GET', REDIS_TIMEOUT_MS)
+        () => new StoreCommandTimeoutError('redis', 'GET', REDIS_TIMEOUT_MS)
       );
       if (cached) return reviveDates(JSON.parse(cached) as PortfolioValueResult);
     } catch (error) {
@@ -108,17 +108,17 @@ export class PortfolioValueCache {
     try {
       let cursor = '0';
       do {
-        const [next, keys] = await withRedisTimeout(
+        const [next, keys] = await withDeadline(
           redis.scan(cursor, 'MATCH', `pv:v1:${userId}:*`, 'COUNT', SCAN_COUNT),
           REDIS_TIMEOUT_MS,
-          () => new RedisCommandTimeoutError('SCAN', REDIS_TIMEOUT_MS)
+          () => new StoreCommandTimeoutError('redis', 'SCAN', REDIS_TIMEOUT_MS)
         );
         cursor = next;
         if (keys.length > 0) {
-          await withRedisTimeout(
+          await withDeadline(
             redis.unlink(...keys),
             REDIS_TIMEOUT_MS,
-            () => new RedisCommandTimeoutError('UNLINK', REDIS_TIMEOUT_MS)
+            () => new StoreCommandTimeoutError('redis', 'UNLINK', REDIS_TIMEOUT_MS)
           );
         }
       } while (cursor !== '0');
