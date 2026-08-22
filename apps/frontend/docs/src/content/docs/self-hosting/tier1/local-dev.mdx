@@ -26,7 +26,7 @@ init (one-shot, exit cleanly)
   env-sync        — materialises per-app .env files from root .env
   deps            — bun install on the shared workspace volume
   minio-init      — creates the dev bucket
-  migrate         — runs Drizzle migrations against postgres
+  migrate         — applies the application and queue schemas to postgres
 
 services (profile: full)
   data-provider   :8082
