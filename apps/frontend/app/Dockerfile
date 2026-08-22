@@ -50,8 +50,24 @@ FROM nginx:${NGINX_VERSION} AS runtime
 # Override at run-time with `-e API_UPSTREAM=https://your-api.example.com`.
 ENV API_UPSTREAM=http://api:3001
 
+# `connect-src` for the Content-Security-Policy nginx sends. `'self'` is
+# correct out of the box: the bundle above is built with
+# `VITE_API_URL=/api`, so the browser only ever calls its own origin and
+# nginx proxies onward. An operator serving the SPA and the API from
+# different origins widens it deliberately, e.g.
+# `-e CSP_CONNECT_SRC="'self' https://api.example.com wss://api.example.com"`.
+# It must stay defined — envsubst only substitutes variables that exist,
+# so an unset value would leave the literal placeholder in the header.
+ENV CSP_CONNECT_SRC="'self'"
+
 # Static assets from the Vite build.
 COPY --from=build /app/apps/frontend/app/dist /usr/share/nginx/html
+
+# `public/_headers` is the Cloudflare Pages / Netlify source for the same
+# policy `nginx-security-headers.inc.template` applies here. nginx does not
+# read that format, so leaving it in the web root publishes a config file
+# describing rules this deployment does not get from it (SC-561).
+RUN rm -f /usr/share/nginx/html/_headers
 
 # The nginx:alpine official image runs every file under
 # `/etc/nginx/templates/` through `envsubst` at container start (see
@@ -60,6 +76,13 @@ COPY --from=build /app/apps/frontend/app/dist /usr/share/nginx/html
 # `/etc/nginx/conf.d/default.conf` with `${API_UPSTREAM}` expanded — no
 # custom entrypoint needed.
 COPY apps/frontend/app/nginx.conf.template /etc/nginx/templates/default.conf.template
+
+# The security-header set, `include`d by every location in the site config
+# that declares an `add_header`. It lands at
+# `/etc/nginx/conf.d/security-headers.inc` — the `.inc` suffix keeps it out
+# of nginx.conf's own `include /etc/nginx/conf.d/*.conf`, so it is only
+# pulled in where the site config asks for it.
+COPY apps/frontend/app/nginx-security-headers.inc.template /etc/nginx/templates/security-headers.inc.template
 
 EXPOSE 80
 
