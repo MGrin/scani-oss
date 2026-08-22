@@ -7,7 +7,7 @@ export type Token = {
   isActive: boolean;
 
   typeId: string;
-  decimals: number;
+  decimals: number | null;
   iconUrl: string | null;
   providerMetadata: string;
 };
@@ -21,7 +21,15 @@ export const CreateTokenDto = z.object({
   name: z.string().min(1).max(100).optional(),
   typeId: z.string().uuid().optional(), // For existing type ID
   typeCode: z.string().optional(), // For type code lookup
-  decimals: z.number().int().min(0).max(18).default(2),
+  /**
+   * Absent means NULL, never 2. A caller who supplied no decimals has said
+   * nothing, and `.default(2)` turned that silence into a claim — the same
+   * expression as the `typeCode === 'crypto' ? 18 : 2` this ticket deleted,
+   * wearing a zod default instead of a ternary (SC-544). A value that IS
+   * supplied is recorded with authority `user`, who is the only authority a
+   * custom token can have.
+   */
+  decimals: z.number().int().min(0).max(18).optional(),
   iconUrl: z.string().url().optional(),
   isActive: z.boolean().default(true),
 
@@ -78,7 +86,15 @@ export const CreateCustomTokenDto = z.object({
     .transform((val) => val.toUpperCase()),
   priceDescription: z.string().max(500).optional(),
   description: z.string().max(2000).optional(),
-  decimals: z.number().int().min(0).max(18).default(2),
+  /**
+   * Absent means NULL, never 2. A caller who supplied no decimals has said
+   * nothing, and `.default(2)` turned that silence into a claim — the same
+   * expression as the `typeCode === 'crypto' ? 18 : 2` this ticket deleted,
+   * wearing a zod default instead of a ternary (SC-544). A value that IS
+   * supplied is recorded with authority `user`, who is the only authority a
+   * custom token can have.
+   */
+  decimals: z.number().int().min(0).max(18).optional(),
   iconUrl: z.string().url().optional(),
 });
 

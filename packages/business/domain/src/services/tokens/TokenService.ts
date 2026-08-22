@@ -1,4 +1,5 @@
 import type { Token, TokenMetadata, TokenType } from '@scani/db/schema';
+import { attributeDecimals } from '@scani/db/schema';
 import type { DatabaseTransaction } from '@scani/db/transaction';
 import type { CreateTokenInput } from '@scani/shared';
 import { Container, Service } from 'typedi';
@@ -97,7 +98,7 @@ export class TokenService extends BaseService {
           symbol,
           name: data.name || symbol,
           typeId: tokenType.id,
-          decimals: data.decimals || 2,
+          ...attributeDecimals(data.decimals, 'user'),
           iconUrl: data.iconUrl || null,
           providerMetadata: providerMetadata as TokenMetadata,
           isActive: data.isActive ?? true,
@@ -218,7 +219,7 @@ export class TokenService extends BaseService {
       symbol,
       name: data.name || symbol,
       typeId: tokenType.id,
-      decimals: data.decimals || 2,
+      ...attributeDecimals(data.decimals, 'user'),
       iconUrl: data.iconUrl || null,
       providerMetadata: providerMetadata as TokenMetadata,
       isActive: data.isActive ?? true,
@@ -277,7 +278,7 @@ export class TokenService extends BaseService {
         symbol: string;
         name: string;
         typeId: string;
-        decimals?: number;
+        decimals?: number | null;
         iconUrl?: string | null;
         // Structural exchange segment supplied by the provider (IBKR
         // maps listingExchange → 'US' / 'TO' / 'L'). Must reach
@@ -293,7 +294,6 @@ export class TokenService extends BaseService {
       confidence: number;
     },
     tokenTypeId: string,
-    defaultDecimals = 18,
     transaction?: DatabaseTransaction
   ): Promise<{ token: Token; wasCreated: boolean }> {
     try {
@@ -318,7 +318,7 @@ export class TokenService extends BaseService {
           symbol: tokenMapping.token.symbol.toUpperCase(),
           name: tokenMapping.token.name,
           typeId: tokenTypeId,
-          decimals: tokenMapping.token.decimals ?? defaultDecimals,
+          decimals: tokenMapping.token.decimals ?? null,
           iconUrl: tokenMapping.token.iconUrl ?? null,
           marketSegment: tokenMapping.token.marketSegment ?? undefined,
           providerMetadata: incomingMetadata,
@@ -346,7 +346,7 @@ export class TokenService extends BaseService {
         symbol: string;
         name: string;
         typeId: string;
-        decimals?: number;
+        decimals?: number | null;
         iconUrl?: string | null;
         providerMetadata?: string | TokenMetadata;
       };
@@ -354,7 +354,6 @@ export class TokenService extends BaseService {
       confidence: number;
     },
     cryptoTokenTypeId: string,
-    defaultDecimals = 18,
     transaction?: DatabaseTransaction
   ): Promise<{ token: Token; wasCreated: boolean }> {
     try {
@@ -370,12 +369,7 @@ export class TokenService extends BaseService {
         );
       }
 
-      return this.findOrCreateTokenFromIntegration(
-        tokenMapping,
-        cryptoTokenTypeId,
-        defaultDecimals,
-        transaction
-      );
+      return this.findOrCreateTokenFromIntegration(tokenMapping, cryptoTokenTypeId, transaction);
     } catch (error) {
       throw this.handleError(error, 'findOrCreateTokenFromIntegrationMapping');
     }
@@ -482,7 +476,11 @@ export class TokenService extends BaseService {
             symbol: token.symbol,
             name: token.metadata.name as string,
             typeId: tokenType.id,
-            decimals: typeCode === 'crypto' ? 18 : 2,
+            // No authority answered. A search result carries a name and a
+            // ticker, never a scale, and `crypto ? 18 : 2` is what put 18 on
+            // fourteen equities (SC-544).
+            decimals: null,
+            decimalsSource: null,
             iconUrl: null,
             providerMetadata,
             isActive: true,
@@ -627,7 +625,8 @@ export class TokenService extends BaseService {
         symbol,
         name: metadata.name as string,
         typeId: tokenType.id,
-        decimals: mappedTypeCode === 'crypto' ? 18 : 2,
+        decimals: null,
+        decimalsSource: null,
         iconUrl: null,
         providerMetadata: providerMetadataObj,
         isActive: true,
