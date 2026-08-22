@@ -280,6 +280,10 @@ services:
       # Default reaches the `api` container by service name on the
       # compose network.
       API_UPSTREAM: ${API_UPSTREAM:-http://api:3001}
+      # `connect-src` for the CSP nginx sends. `'self'` covers the proxy
+      # above. Widen it only if the browser calls the api on a different
+      # origin — see self-hosting → TLS & reverse proxy.
+      CSP_CONNECT_SRC: "${CSP_CONNECT_SRC:-'self'}"
     ports:
       # Front the SPA on port 8080 of the host. Put your TLS-terminating
       # reverse proxy in front of this.

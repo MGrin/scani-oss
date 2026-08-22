@@ -1,6 +1,6 @@
 # nginx site config for the frontend SPA. Run through envsubst at
-# container boot — `${API_UPSTREAM}` is expanded from the env var of
-# the same name.
+# container boot — `${API_UPSTREAM}` and `${CSP_CONNECT_SRC}` are
+# expanded from the env vars of the same name.
 
 server {
     listen       80 default_server;
@@ -10,37 +10,71 @@ server {
     root   /usr/share/nginx/html;
     index  index.html;
 
-    # Don't index the SPA — only the SSR landing page would. Self-hosters
-    # who want indexing should layer their own front-of-stack.
-    add_header X-Robots-Tag "noindex, nofollow" always;
-
     # Disable nginx's "Server: nginx/x.y.z" header — small information
     # leak that adds nothing for the operator.
     server_tokens off;
 
+    # The security headers live in one included file and are repeated into
+    # every location below that declares an `add_header` of its own.
+    #
+    # That repetition is not redundancy. nginx's `add_header` inheritance
+    # is REPLACE, not merge: the moment a location declares any header,
+    # it drops every header inherited from its parent — silently, with a
+    # config that still passes `nginx -t`. Before SC-561 this file set
+    # `X-Robots-Tag` here at server level and nowhere else, and it reached
+    # `/version.json` and no HTML response at all, because `location /`'s
+    # children each set their own `Cache-Control`. The one header whose
+    # job is "do not index the SPA" was absent from exactly the responses
+    # a crawler indexes.
+    #
+    # `tests/public/security-headers.test.ts` fails the build if a
+    # location grows an `add_header` without the include beside it.
+    include /etc/nginx/conf.d/security-headers.inc;
+
     # SPA history routing — any path that doesn't match a real file
     # falls back to index.html so React Router takes over.
     location / {
+        include /etc/nginx/conf.d/security-headers.inc;
         try_files $uri $uri/ /index.html;
 
         # Aggressive caching for hashed assets, none for index.html so
         # deploys are picked up on the next page load.
         location ~* \.(?:js|css|woff2?|ttf|eot|otf|svg|png|jpg|jpeg|gif|ico|webp|avif)$ {
+            include /etc/nginx/conf.d/security-headers.inc;
             expires 1y;
             add_header Cache-Control "public, immutable";
             try_files $uri =404;
         }
 
         location = /index.html {
+            include /etc/nginx/conf.d/security-headers.inc;
             add_header Cache-Control "no-cache, no-store, must-revalidate";
             expires 0;
         }
     }
 
+    # `_headers` is the Cloudflare Pages / Netlify source for the same
+    # policy this server config applies. nginx never reads it, so serving
+    # it would publish a config file describing rules this deployment does
+    # not get from it. The Dockerfile deletes it from the image; this is
+    # the belt for anyone mounting a `dist/` built elsewhere.
+    location = /_headers {
+        include /etc/nginx/conf.d/security-headers.inc;
+        return 404;
+    }
+
     # Reverse-proxy /api/* to the backend service. The trailing slash on
     # both sides strips /api before forwarding (so the api itself sees
     # the un-prefixed path it knows about).
+    #
+    # Deliberately NOT carrying the security-header include: the api sets
+    # its own CSP, X-Frame-Options and X-Content-Type-Options
+    # (`apps/backend/api/src/index.ts`), and a second Content-Security-Policy
+    # on the same response is intersected by the browser rather than
+    # replaced. `X-Robots-Tag` is repeated by hand so proxied responses
+    # keep the one header the api does not set.
     location /api/ {
+        add_header X-Robots-Tag "noindex, nofollow" always;
         proxy_pass         ${API_UPSTREAM}/;
         proxy_http_version 1.1;
         proxy_set_header   Host              $host;
@@ -58,7 +92,9 @@ server {
     }
 
     # WebSocket endpoint on the api — Elysia upgrades over the same port.
+    # Same reasoning as /api/ above.
     location /ws {
+        add_header X-Robots-Tag "noindex, nofollow" always;
         proxy_pass         ${API_UPSTREAM};
         proxy_http_version 1.1;
         proxy_set_header   Upgrade           $http_upgrade;
@@ -71,6 +107,7 @@ server {
     # Container-level health probe — returns the SPA index so any HTTP
     # client (including the Dockerfile's HEALTHCHECK) gets a 200.
     location = /healthz {
+        include /etc/nginx/conf.d/security-headers.inc;
         access_log off;
         return 200 "ok\n";
         add_header Content-Type text/plain;
