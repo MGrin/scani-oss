@@ -37,7 +37,7 @@ const CHART_AFFECTING_JOB_NAMES = new Set([
 // orphaned by a prior session) and shouldn't poison the dashboard.
 const RECENT_FAILURE_MS = 30 * 60 * 1000;
 
-export type UserJobRow = RouterOutputs['jobs']['listMine'][number];
+type UserJobRow = RouterOutputs['jobs']['listMine'][number];
 
 export interface UseUserJobsResult {
   jobs: UserJobRow[];

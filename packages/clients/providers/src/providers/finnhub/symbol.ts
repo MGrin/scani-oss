@@ -38,7 +38,7 @@ export function normalizeForFinnhubSymbol(raw: string): string {
  * US share-class suffixes (`BRK.A`, `BF.B`) are intentionally
  * absent so they stay routed to Finnhub.
  */
-export const NON_US_EXCHANGE_SUFFIX_MAP: Record<string, { exchange: string; currency: string }> = {
+const NON_US_EXCHANGE_SUFFIX_MAP: Record<string, { exchange: string; currency: string }> = {
   // Canada
   TO: { exchange: 'TSX', currency: 'CAD' },
   V: { exchange: 'TSXV', currency: 'CAD' },

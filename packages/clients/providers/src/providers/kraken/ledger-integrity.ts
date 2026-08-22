@@ -39,7 +39,7 @@ export interface KrakenLedgerRow {
 }
 
 /** An entry Kraken's own running balance proves we never received. */
-export interface BalanceChainBreak {
+interface BalanceChainBreak {
   /** Kraken's raw asset code — `XETH` and `XETH.F` are separate balances. */
   asset: string;
   /** The entry at which the chain stopped adding up. */
@@ -52,7 +52,7 @@ export interface BalanceChainBreak {
 }
 
 /** A two-legged operation that reached us with one leg. */
-export interface UnpairedOperation {
+interface UnpairedOperation {
   refid: string;
   ledgerId: string;
   type: string;

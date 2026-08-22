@@ -8,7 +8,7 @@ const log = createComponentLogger('auth.screenshot-bot');
 // Single allow-listed account whose curated demo data backs the landing
 // screenshots. Hardcoded — this endpoint exists only to authenticate
 // the GH Actions screenshot workflow as exactly this user.
-export const SCREENSHOT_BOT_ALLOWED_EMAIL = 'mr6r1n+olesya@gmail.com';
+const SCREENSHOT_BOT_ALLOWED_EMAIL = 'mr6r1n+olesya@gmail.com';
 
 // Screenshot-bot sessions are minted by the GH Actions landing-shot
 // workflow and consumed within a single short-lived capture run. The

@@ -56,7 +56,7 @@
 /** The two shells v3 has. `V3Shell` switches at the `lg:` breakpoint (1024px):
  *  below it a tab bar plus a drawer, above it a sidebar. A shot of one has not
  *  looked at the other, so both are covered. */
-export type VisualViewport = 'desktop' | 'phone';
+type VisualViewport = 'desktop' | 'phone';
 
 /**
  * Which signed-in user a screen is photographed as (SC-473).

@@ -1,6 +1,6 @@
 import { type RouterOutputs, trpc } from '@/lib/trpc';
 
-export type ReviewFeedItem = RouterOutputs['review']['listPending'][number];
+type ReviewFeedItem = RouterOutputs['review']['listPending'][number];
 
 export interface UseReviewFeedResult {
   items: ReviewFeedItem[];
