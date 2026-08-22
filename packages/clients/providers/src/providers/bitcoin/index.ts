@@ -15,7 +15,6 @@
  * address as the credential payload — there's no API key).
  */
 
-import type { NewToken } from '@scani/db/schema';
 import { type CustomLogger, createComponentLogger } from '@scani/logging';
 import { createOutflowLimiter, type OutflowRateLimiter } from '@scani/rate-limiter';
 import Decimal from 'decimal.js';
@@ -29,6 +28,7 @@ import type {
 import type {
   HoldingSnapshot,
   ProviderContext,
+  TokenIdentity,
   TransactionEvent,
   WithUserCreds,
 } from '../../core/types';
@@ -192,7 +192,7 @@ export class BitcoinProvider
     const balanceBTC = balanceSatoshis.div(SATOSHIS_PER_BTC);
     if (balanceBTC.isZero()) return [];
 
-    const tokenIdentity: Partial<NewToken> = {
+    const tokenIdentity: TokenIdentity = {
       symbol: 'BTC',
       name: 'Bitcoin',
       decimals: BTC_DECIMALS,
@@ -287,7 +287,7 @@ export class BitcoinProvider
     const netSatoshis = inflow.minus(outflow);
     if (netSatoshis.isZero()) return null;
     const netBtc = netSatoshis.div(SATOSHIS_PER_BTC);
-    const tokenIdentity: Partial<NewToken> = {
+    const tokenIdentity: TokenIdentity = {
       symbol: 'BTC',
       name: 'Bitcoin',
       decimals: BTC_DECIMALS,

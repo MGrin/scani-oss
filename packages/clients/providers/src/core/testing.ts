@@ -2,7 +2,7 @@
 // pieces (createMockContext, makeMockToken, assertImplementsCapability,
 // replayHttp) cover the patterns that recur across every provider test.
 
-import type { NewToken, Token } from '@scani/db/schema';
+import type { Token } from '@scani/db/schema';
 import type {
   AccountDiscoveryProvider,
   AddressValidatorProvider,
@@ -26,7 +26,7 @@ import {
   isTokenIdentityProvider,
   isTransactionsProvider,
 } from './capabilities';
-import type { DecryptedCredentials, ProviderContext, WithUserCreds } from './types';
+import type { DecryptedCredentials, ProviderContext, TokenIdentity, WithUserCreds } from './types';
 
 /**
  * Build a minimal but type-correct `ProviderContext` for tests.
@@ -113,7 +113,6 @@ export function makeMockToken(over: Partial<Token> = {}): Token {
     symbol: 'BTC',
     name: 'Bitcoin',
     typeId: '00000000-0000-4000-8000-type0000crypto',
-    decimals: 8,
     marketSegment: null,
     iconUrl: null,
     providerMetadata: {},
@@ -131,9 +130,9 @@ export function makeMockToken(over: Partial<Token> = {}): Token {
 }
 
 /**
- * Build a synthetic `Partial<NewToken>` for identity-flow tests.
+ * Build a synthetic `TokenIdentity` for identity-flow tests.
  */
-export function makeMockTokenIdentity(over: Partial<NewToken> = {}): Partial<NewToken> {
+export function makeMockTokenIdentity(over: TokenIdentity = {}): TokenIdentity {
   return {
     symbol: 'BTC',
     name: 'Bitcoin',

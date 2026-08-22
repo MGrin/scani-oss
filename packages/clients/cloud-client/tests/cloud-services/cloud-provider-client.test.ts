@@ -68,7 +68,6 @@ const BTC: Token = {
   symbol: 'BTC',
   name: 'Bitcoin',
   typeId: 'crypto',
-  decimals: 8,
   iconUrl: null,
   lastPricingAttemptAt: null,
   lookalikeOf: null,

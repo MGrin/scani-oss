@@ -13,7 +13,7 @@
  * `packages/integrations/src/ingesters/EvmTransactionIngester.ts`,
  * which carried domain-layer concerns (resolving holding/token via
  * callbacks). That coupling is gone — this base emits
- * `Partial<NewToken>` identity hints with chain id + contract address
+ * `TokenIdentity` identity hints with chain id + contract address
  * that flow through the federated identity layer upstream.
  *
  * Pagination strategy:
@@ -60,7 +60,6 @@
  *     ones written with no truncation check behind them.
  */
 
-import type { NewToken } from '@scani/db/schema';
 import { type CustomLogger, createComponentLogger } from '@scani/logging';
 import Decimal from 'decimal.js';
 import type { Capability, ProviderBase } from '../capabilities';
@@ -68,6 +67,7 @@ import type {
   HoldingSnapshot,
   PriceQuote,
   ProviderContext,
+  TokenIdentity,
   TransactionEvent,
   TransactionFetchContext,
   WithUserCreds,
@@ -714,7 +714,7 @@ export abstract class BaseEvmProvider implements ProviderBase {
     if (valueAdj.isZero()) return null;
     const quantity = isInflow ? valueAdj.toString() : valueAdj.neg().toString();
 
-    const identity: Partial<NewToken> = {
+    const identity: TokenIdentity = {
       symbol: row.tokenSymbol.toUpperCase(),
       name: row.tokenName,
       decimals,
@@ -745,7 +745,7 @@ export abstract class BaseEvmProvider implements ProviderBase {
    * identity flow merges this with whatever other providers know
    * (CoinGecko's id, DeFiLlama's coin) when the row is created.
    */
-  protected nativeIdentity(chain: EvmChainConfig): Partial<NewToken> {
+  protected nativeIdentity(chain: EvmChainConfig): TokenIdentity {
     return {
       symbol: chain.nativeSymbol,
       name: chain.nativeName,

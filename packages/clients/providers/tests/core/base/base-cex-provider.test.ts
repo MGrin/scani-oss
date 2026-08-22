@@ -1,5 +1,4 @@
 import { describe, expect, test } from 'bun:test';
-import type { NewToken } from '@scani/db/schema';
 import {
   BaseCexProvider,
   type CexNormalizedEvent,
@@ -9,6 +8,7 @@ import type { Capability } from '../../../src/core/capabilities';
 import { createMockSelfCredContext } from '../../../src/core/testing';
 import type {
   ProviderContext,
+  TokenIdentity,
   TransactionEvent,
   TransactionFetchContext,
   WithUserCreds,
@@ -23,7 +23,7 @@ class TestCexProvider extends BaseCexProvider {
 
   constructor(
     private readonly events: readonly CexNormalizedEvent[],
-    private readonly identityMap: Record<string, Partial<NewToken> | null>,
+    private readonly identityMap: Record<string, TokenIdentity | null>,
     /**
      * `null` models a subclass that forgets to return a verdict. Not
      * `undefined`: an explicit `undefined` argument takes the default,
@@ -35,7 +35,7 @@ class TestCexProvider extends BaseCexProvider {
     super();
   }
 
-  protected mapAssetIdentity(assetCode: string): Partial<NewToken> | null {
+  protected mapAssetIdentity(assetCode: string): TokenIdentity | null {
     return this.identityMap[assetCode] ?? null;
   }
 
@@ -56,9 +56,9 @@ class TestCexProvider extends BaseCexProvider {
   }
 }
 
-const BTC: Partial<NewToken> = { symbol: 'BTC', name: 'Bitcoin', decimals: 8 };
-const USDT: Partial<NewToken> = { symbol: 'USDT', name: 'Tether', decimals: 6 };
-const USD: Partial<NewToken> = { symbol: 'USD', name: 'US Dollar', decimals: 2 };
+const BTC: TokenIdentity = { symbol: 'BTC', name: 'Bitcoin', decimals: 8 };
+const USDT: TokenIdentity = { symbol: 'USDT', name: 'Tether', decimals: 6 };
+const USD: TokenIdentity = { symbol: 'USD', name: 'US Dollar', decimals: 2 };
 
 function ctx() {
   return createMockSelfCredContext({

@@ -96,7 +96,6 @@ const SYNTHETIC_USD_TOKEN: Token = {
   symbol: 'USD',
   name: 'United States Dollar',
   typeId: 'fiat',
-  decimals: 2,
   iconUrl: null,
   providerMetadata: {},
   isScamProbability: 0,

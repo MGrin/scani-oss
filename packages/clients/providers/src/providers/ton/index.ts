@@ -15,7 +15,6 @@
  *    testnet (`kQ...`/`0Q...`) base64url plus raw (`0:<64 hex>`).
  */
 
-import type { NewToken } from '@scani/db/schema';
 import { type CustomLogger, createComponentLogger } from '@scani/logging';
 import { createOutflowLimiter, type OutflowRateLimiter } from '@scani/rate-limiter';
 import Decimal from 'decimal.js';
@@ -29,6 +28,7 @@ import type {
 import type {
   HoldingSnapshot,
   ProviderContext,
+  TokenIdentity,
   TransactionEvent,
   WithUserCreds,
 } from '../../core/types';
@@ -38,7 +38,7 @@ const TON_INSTITUTION_CODE = 'ton';
 const NANOTONS_PER_TON = 1_000_000_000;
 const TX_PAGE_LIMIT = 100;
 
-const TON_NATIVE_IDENTITY: Partial<NewToken> = {
+const TON_NATIVE_IDENTITY: TokenIdentity = {
   symbol: 'TON',
   name: 'Toncoin',
   decimals: 9,

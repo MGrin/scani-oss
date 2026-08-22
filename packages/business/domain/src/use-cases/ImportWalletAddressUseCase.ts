@@ -199,8 +199,6 @@ export class ImportWalletAddressUseCase {
         tokenIdentity: {
           symbol: s.tokenIdentity.symbol ?? undefined,
           name: s.tokenIdentity.name ?? undefined,
-          decimals:
-            typeof s.tokenIdentity.decimals === 'number' ? s.tokenIdentity.decimals : undefined,
           iconUrl: s.tokenIdentity.iconUrl ?? null,
           providerMetadata: s.tokenIdentity.providerMetadata ?? undefined,
         },
@@ -270,7 +268,6 @@ export class ImportWalletAddressUseCase {
           tokenIdentity: {
             symbol: s.tokenIdentity.symbol,
             name: s.tokenIdentity.name,
-            decimals: s.tokenIdentity.decimals,
             iconUrl: s.tokenIdentity.iconUrl ?? null,
             providerMetadata: s.tokenIdentity.providerMetadata,
           },
@@ -306,7 +303,6 @@ export class ImportWalletAddressUseCase {
       zeroStaleHoldings: false,
       cryptoTokenTypeId: args.cryptoTokenTypeId,
       tokenTypeMap: { crypto: args.cryptoTokenTypeId },
-      defaultDecimals: () => 18,
       resolveTokenTypeId: (_snapshot, fallbackCryptoTypeId) => fallbackCryptoTypeId,
       transactionName: 'importWallet',
       transactionTimeoutMs: 120_000,

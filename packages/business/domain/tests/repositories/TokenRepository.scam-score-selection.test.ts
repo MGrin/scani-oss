@@ -67,7 +67,6 @@ async function insertToken(
   const [row] = await tx
     .insert(schema.tokens)
     .values({
-      decimals: 8,
       isScamProbability: 0,
       marketSegment: `sc286-${crypto.randomUUID()}`,
       ...values,

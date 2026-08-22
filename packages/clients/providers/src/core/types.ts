@@ -147,16 +147,27 @@ export interface PriceQuote {
 }
 
 /**
- * One position observed at a point in time. `tokenIdentity` is a
- * partial NewToken that the orchestrator passes through
- * `TokenService.findOrCreateByIdentity` to materialize a real `Token`
- * row before persisting the holding.
+ * What a provider knows about an asset before the app holds a `Token`
+ * row for it. Mostly a partial NewToken, which the orchestrator passes
+ * through `TokenService.findOrCreateByIdentity` to materialize a real
+ * row.
+ *
+ * `decimals` is the exception and is declared here rather than inherited:
+ * it is the chain's answer for this asset, it scales this provider's own
+ * quantities, and it is deliberately not a `tokens` column. Storing it
+ * there made a per-asset fact look like a per-row one and every importer
+ * kept scaling by what its source handed it anyway (SC-406).
+ */
+export type TokenIdentity = Partial<NewToken> & { decimals?: number };
+
+/**
+ * One position observed at a point in time.
  */
 export interface HoldingSnapshot {
   /** Provider-native asset id ('BTC', 'XXBT', 'ETH', etc.) — feeds
       the dedup constraint on holdings.externalId. */
   externalId: string;
-  tokenIdentity: Partial<NewToken>;
+  tokenIdentity: TokenIdentity;
   /** Decimal.js string. */
   balance: string;
   /**
@@ -253,11 +264,11 @@ export interface TransactionEvent {
       row when it has to find-or-create the underlying `Token`.
       Mixed-asset providers (IBKR equity vs cash, Kraken USD vs BTC)
       MUST set this; pure-crypto providers can omit it. */
-  primary: { tokenIdentity: Partial<NewToken>; quantity: string; tokenType?: string };
+  primary: { tokenIdentity: TokenIdentity; quantity: string; tokenType?: string };
   /** Other side of a trade or swap. Optional. */
-  counter?: { tokenIdentity: Partial<NewToken>; quantity: string; tokenType?: string };
+  counter?: { tokenIdentity: TokenIdentity; quantity: string; tokenType?: string };
   /** Fee leg, in its own native token (often distinct from primary). */
-  fee?: { tokenIdentity: Partial<NewToken>; quantity: string; tokenType?: string };
+  fee?: { tokenIdentity: TokenIdentity; quantity: string; tokenType?: string };
   /** Normalised payee/payer, when the source knows one. */
   counterparty?: string;
   /** Free-text statement line, when the source provides one. */

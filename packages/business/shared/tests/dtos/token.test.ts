@@ -15,10 +15,9 @@ describe('CreateTokenDto', () => {
     expect(result.data.symbol).toBe('BTC');
   });
 
-  test('applies defaults: decimals=2, isActive=true', () => {
+  test('applies defaults: isActive=true', () => {
     const result = CreateTokenDto.safeParse({ symbol: 'BTC' });
     if (!result.success) throw new Error('expected success');
-    expect(result.data.decimals).toBe(2);
     expect(result.data.isActive).toBe(true);
   });
 
@@ -46,11 +45,6 @@ describe('CreateTokenDto', () => {
 
   test('rejects symbol over 20 chars', () => {
     expect(CreateTokenDto.safeParse({ symbol: 'A'.repeat(21) }).success).toBe(false);
-  });
-
-  test('rejects decimals out of range (0..18)', () => {
-    expect(CreateTokenDto.safeParse({ symbol: 'BTC', decimals: -1 }).success).toBe(false);
-    expect(CreateTokenDto.safeParse({ symbol: 'BTC', decimals: 19 }).success).toBe(false);
   });
 
   test('rejects non-positive manualPrice', () => {

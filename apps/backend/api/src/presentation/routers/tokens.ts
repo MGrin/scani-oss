@@ -75,7 +75,6 @@ export function createTokensRouter(db: DbType, schemaObj: typeof schema) {
           typeId: schemaObj.tokens.typeId,
           type: schemaObj.tokenTypes.code,
           typeName: schemaObj.tokenTypes.name,
-          decimals: schemaObj.tokens.decimals,
           iconUrl: schemaObj.tokens.iconUrl,
           isActive: schemaObj.tokens.isActive,
           createdAt: schemaObj.tokens.createdAt,
@@ -186,7 +185,6 @@ export function createTokensRouter(db: DbType, schemaObj: typeof schema) {
             typeId: schemaObj.tokens.typeId,
             type: schemaObj.tokenTypes.code,
             typeName: schemaObj.tokenTypes.name,
-            decimals: schemaObj.tokens.decimals,
             iconUrl: schemaObj.tokens.iconUrl,
             isActive: schemaObj.tokens.isActive,
             source: sql<'database'>`'database'`.as('source'),
@@ -212,7 +210,6 @@ export function createTokensRouter(db: DbType, schemaObj: typeof schema) {
           typeId?: string;
           type?: string | null;
           typeName?: string | null;
-          decimals?: number;
           iconUrl?: string | null;
           isActive?: boolean;
           source: 'database' | 'external';
@@ -282,7 +279,6 @@ export function createTokensRouter(db: DbType, schemaObj: typeof schema) {
                 symbol: item.symbol,
                 name: item.name,
                 type: mapProviderTypeToDbType(item.type),
-                decimals: item.type === 'Crypto' ? 18 : 2,
                 source: 'external' as const,
                 provider,
                 metadata: {
@@ -524,7 +520,6 @@ export function createTokensRouter(db: DbType, schemaObj: typeof schema) {
             .transform((val) => val.toUpperCase()),
           priceDescription: z.string().max(500).optional(),
           description: z.string().max(2000).optional(),
-          decimals: z.number().int().min(0).max(18).default(2),
           iconUrl: z.string().url().optional(),
         })
       )
@@ -541,7 +536,6 @@ export function createTokensRouter(db: DbType, schemaObj: typeof schema) {
               baseCurrencyCode: input.baseCurrencyCode,
               priceDescription: input.priceDescription,
               description: input.description,
-              decimals: input.decimals,
               iconUrl: input.iconUrl ?? null,
             },
             dbUser.id
@@ -673,7 +667,6 @@ export function createTokensRouter(db: DbType, schemaObj: typeof schema) {
           symbol: schemaObj.tokens.symbol,
           name: schemaObj.tokens.name,
           typeId: schemaObj.tokens.typeId,
-          decimals: schemaObj.tokens.decimals,
           iconUrl: schemaObj.tokens.iconUrl,
           isActive: schemaObj.tokens.isActive,
           createdAt: schemaObj.tokens.createdAt,

@@ -51,7 +51,6 @@
  * the public path is selected so ops sees it once per process.
  */
 
-import type { NewToken } from '@scani/db/schema';
 import { type CustomLogger, createComponentLogger } from '@scani/logging';
 import { createOutflowLimiter, type OutflowRateLimiter } from '@scani/rate-limiter';
 import Decimal from 'decimal.js';
@@ -65,6 +64,7 @@ import type {
 import type {
   HoldingSnapshot,
   ProviderContext,
+  TokenIdentity,
   TransactionEvent,
   WithUserCreds,
 } from '../../core/types';
@@ -423,7 +423,7 @@ export class SolanaProvider
   private toTransactionEvents(
     tx: HeliusEnhancedTx,
     wallet: string,
-    mintMap: Map<string, Partial<NewToken>>
+    mintMap: Map<string, TokenIdentity>
   ): TransactionEvent[] {
     const occurredAt = new Date(tx.timestamp * 1000);
     const net = new Map<string, Decimal>();
@@ -468,7 +468,7 @@ function mintKey(mint: string): string {
   return mint === WSOL_MINT ? NATIVE_KEY : mint;
 }
 
-function solIdentity(): Partial<NewToken> {
+function solIdentity(): TokenIdentity {
   return {
     symbol: 'SOL',
     name: 'Solana',
@@ -477,7 +477,7 @@ function solIdentity(): Partial<NewToken> {
   };
 }
 
-// Build a Partial<NewToken> for an SPL mint. Jupiter's metadata is
+// Build a TokenIdentity for an SPL mint. Jupiter's metadata is
 // preferred when present; the mint-prefix fallback only fires when
 // Jupiter has no record of the mint (brand-new launches, scam tokens
 // outside the verified set, or a Jupiter outage during the sync).
@@ -485,7 +485,7 @@ function splIdentity(
   mint: string,
   decimals: number,
   jup: { symbol: string; name: string; decimals: number; isVerified: boolean } | null
-): Partial<NewToken> {
+): TokenIdentity {
   if (jup) {
     return {
       symbol: jup.symbol,
@@ -512,9 +512,7 @@ function splIdentity(
 // touching the same mint are free. Scans `accountData` because that is
 // what the projection reads — WSOL is skipped, since it is emitted
 // under the native SOL identity and never looked up as a mint.
-async function collectMintIdentities(
-  txs: HeliusEnhancedTx[]
-): Promise<Map<string, Partial<NewToken>>> {
+async function collectMintIdentities(txs: HeliusEnhancedTx[]): Promise<Map<string, TokenIdentity>> {
   const mints = new Map<string, number>();
   for (const tx of txs) {
     for (const account of tx.accountData ?? []) {
@@ -533,10 +531,7 @@ async function collectMintIdentities(
   return new Map(entries);
 }
 
-function lookupMintIdentity(
-  mintMap: Map<string, Partial<NewToken>>,
-  mint: string
-): Partial<NewToken> {
+function lookupMintIdentity(mintMap: Map<string, TokenIdentity>, mint: string): TokenIdentity {
   const cached = mintMap.get(mint);
   if (cached) return cached;
   // Fallback when the mint wasn't pre-resolved (defensive — should not

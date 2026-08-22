@@ -15,7 +15,6 @@
  *  - `address-validator`: starts with `T`, 34 chars, base58 alphabet.
  */
 
-import type { NewToken } from '@scani/db/schema';
 import { type CustomLogger, createComponentLogger } from '@scani/logging';
 import { createOutflowLimiter, type OutflowRateLimiter } from '@scani/rate-limiter';
 import Decimal from 'decimal.js';
@@ -29,6 +28,7 @@ import type {
 import type {
   HoldingSnapshot,
   ProviderContext,
+  TokenIdentity,
   TransactionEvent,
   WithUserCreds,
 } from '../../core/types';
@@ -240,7 +240,7 @@ export class TronProvider
     for (const t of data.data) {
       if (t.tokenType !== 'trc20') continue;
       const balance = new Decimal(t.balance).div(new Decimal(10).pow(t.tokenDecimal)).toString();
-      const identity: Partial<NewToken> = {
+      const identity: TokenIdentity = {
         symbol: t.tokenAbbr.toUpperCase(),
         name: t.tokenName,
         decimals: t.tokenDecimal,
@@ -330,7 +330,7 @@ export class TronProvider
     if (qty.isZero()) return null;
     const signed = direction === 'in' ? qty : qty.neg();
 
-    const tokenIdentity: Partial<NewToken> = {
+    const tokenIdentity: TokenIdentity = {
       symbol: 'TRX',
       name: 'Tron',
       decimals: 6,
@@ -361,7 +361,7 @@ export class TronProvider
     if (qty.isZero()) return null;
     const signed = direction === 'in' ? qty : qty.neg();
 
-    const tokenIdentity: Partial<NewToken> = {
+    const tokenIdentity: TokenIdentity = {
       symbol: (info.symbol ?? '').toUpperCase(),
       name: info.name,
       decimals: info.decimals,

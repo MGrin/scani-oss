@@ -27,7 +27,6 @@
  * balances to a user.
  */
 
-import type { NewToken } from '@scani/db/schema';
 import { type CustomLogger, createComponentLogger } from '@scani/logging';
 import type { ProviderFactory } from '../../core/boot';
 import type {
@@ -39,6 +38,7 @@ import type {
 import type {
   HoldingSnapshot,
   ProviderContext,
+  TokenIdentity,
   TransactionEvent,
   WithUserCreds,
 } from '../../core/types';
@@ -156,7 +156,7 @@ export class ChainStubProvider
       return [];
     }
 
-    const tokenIdentity: Partial<NewToken> = {
+    const tokenIdentity: TokenIdentity = {
       symbol: chain.native.symbol,
       name: chain.native.name,
       decimals: chain.native.decimals,

@@ -30,7 +30,6 @@ const tokenSchema = z.object({
   symbol: z.string(),
   name: z.string(),
   typeId: z.string(),
-  decimals: z.number(),
   iconUrl: z.string().nullable(),
   providerMetadata: z.unknown(),
   isScamProbability: z.number(),

@@ -7,7 +7,6 @@ export type Token = {
   isActive: boolean;
 
   typeId: string;
-  decimals: number;
   iconUrl: string | null;
   providerMetadata: string;
 };
@@ -21,7 +20,6 @@ export const CreateTokenDto = z.object({
   name: z.string().min(1).max(100).optional(),
   typeId: z.string().uuid().optional(), // For existing type ID
   typeCode: z.string().optional(), // For type code lookup
-  decimals: z.number().int().min(0).max(18).default(2),
   iconUrl: z.string().url().optional(),
   isActive: z.boolean().default(true),
 
@@ -78,7 +76,6 @@ export const CreateCustomTokenDto = z.object({
     .transform((val) => val.toUpperCase()),
   priceDescription: z.string().max(500).optional(),
   description: z.string().max(2000).optional(),
-  decimals: z.number().int().min(0).max(18).default(2),
   iconUrl: z.string().url().optional(),
 });
 

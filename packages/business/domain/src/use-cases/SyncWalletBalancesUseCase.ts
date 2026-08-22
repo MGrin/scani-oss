@@ -482,7 +482,6 @@ export class SyncWalletBalancesUseCase {
               staleStrategy: 'preserve',
               dedupStrategy: 'externalId',
               sourceTag: WALLET_BALANCE_SYNC_SOURCE,
-              defaultDecimals: 18,
               respectHiddenForCounts: true,
               skipUnchangedUpdates: false,
               // Auto-discover newly-received tokens. Snapshots for tokens
@@ -659,7 +658,6 @@ const SYNTHETIC_BASE_CURRENCY: ProviderContext['baseCurrency'] = {
   symbol: 'USD',
   name: 'United States Dollar',
   typeId: 'fiat',
-  decimals: 2,
   iconUrl: null,
   providerMetadata: {},
   isScamProbability: 0,
