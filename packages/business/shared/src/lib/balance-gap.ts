@@ -117,7 +117,12 @@ export function isLedgerWritingAnswer(answer: BalanceGapAnswer): answer is Manua
  *
  * ## Why 250
  *
- * Measured on production 2026-08-22 across every user, priced:
+ * Measured on production 2026-08-22 **across every user**, priced. That is
+ * the whole product and not one queue: `BalanceGapService.listPending` is
+ * scoped to a `userId`, so no reader will ever see these totals on a page.
+ ***REMOVED***
+ ***REMOVED***
+ * the threshold having stopped working.
  *
  * | floor | gaps | share of the money |
  * |---|---|---|

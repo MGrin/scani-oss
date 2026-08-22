@@ -15,6 +15,10 @@ export interface BalanceGapCandidate {
   holdingId: string;
   tokenId: string;
   tokenSymbol: string;
+  /** `token_types.code` — `fiat`, `crypto`, `stock`, … The card needs it to
+   *  know whether this balance is an amount of money or a count of things
+   *  (SC-576); `balanceDecimals` owns the rule. */
+  tokenTypeCode: string;
   accountName: string | null;
   from: Date;
   to: Date;
@@ -35,6 +39,7 @@ interface RawGapCandidate {
   holding_id: string;
   token_id: string;
   token_symbol: string;
+  token_type_code: string;
   account_name: string | null;
   observed_at: string;
   previous_observed_at: string;
@@ -294,10 +299,12 @@ export class HoldingBalanceObservationRepository extends BaseRepository<
           bridge.tx_count              AS tx_count,
           holdings.token_id            AS token_id,
           tokens.symbol                AS token_symbol,
+          token_types.code             AS token_type_code,
           accounts.name                AS account_name
         FROM paired
         JOIN holdings ON holdings.id = paired.holding_id
         JOIN tokens   ON tokens.id   = holdings.token_id
+        JOIN token_types ON token_types.id = tokens.type_id
         LEFT JOIN accounts ON accounts.id = holdings.account_id
         LEFT JOIN LATERAL (
           SELECT
@@ -319,6 +326,7 @@ export class HoldingBalanceObservationRepository extends BaseRepository<
         holdingId: row.holding_id,
         tokenId: row.token_id,
         tokenSymbol: row.token_symbol,
+        tokenTypeCode: row.token_type_code,
         accountName: row.account_name,
         from: new Date(row.previous_observed_at),
         to: new Date(row.observed_at),

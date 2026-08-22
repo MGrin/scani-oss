@@ -1,7 +1,8 @@
 import type { BalanceGapList as BalanceGapListDto } from '@scani/shared';
+import { balanceDecimals } from '@scani/shared';
 import { Block } from '@scani/ui/v3/components/Block';
 import { Numeric } from '@scani/ui/v3/components/Numeric';
-import { useTranslation } from 'react-i18next';
+import { Trans, useTranslation } from 'react-i18next';
 import { trpc } from '@/lib/trpc';
 import { BalanceGapAnswer } from './BalanceGapAnswer';
 
@@ -16,13 +17,23 @@ import { BalanceGapAnswer } from './BalanceGapAnswer';
  *
  * ## The line that says what was left out
  *
- * `examined` and `suppressed` are printed, not logged. A queue of 37 drawn
- * from 258 candidates is trustworthy in a way that a queue of 37 drawn from
+ ***REMOVED***
+ ***REMOVED***
  ***REMOVED***
  * is a query that silently misses rows, which is indistinguishable from a
  * suppression rule doing its job unless the counts are on screen. The reader
  * is also the only person who knows whether the thing that was suppressed
  * mattered.
+ *
+ * **These counts are PER USER, and mistaking that for the product-wide figure
+ * cost a ticket (SC-576).** The threshold note in `@scani/shared` records
+ ***REMOVED***
+ ***REMOVED***
+ ***REMOVED***
+ ***REMOVED***
+ ***REMOVED***
+ ***REMOVED***
+ * number you are comparing against was drawn from.
  */
 
 interface BalanceGapListProps {
@@ -48,20 +59,37 @@ export function BalanceGapList({ data, isLoading }: BalanceGapListProps) {
   if (!data) return null;
 
   const suppressedTotal = Object.values(data.suppressed).reduce((sum, n) => sum + n, 0);
+  // `listPending` partitions every examined interval into exactly one of three
+  // outcomes — shown, suppressed under a counted reason, or already answered —
+  // and only the first two cross the wire. So this subtraction is exact, and
+  // printing it is what keeps the line's arithmetic closed: `examined` counts
+  // an answered `growth` or `unknown` (neither writes a ledger row, so the
+  // interval still drifts and still arrives) while no suppression counter
+  // does. Production reads 0 today because nobody has answered one yet, which
+  // is exactly why the shortfall would have appeared later and looked like the
+  // missed-rows bug the counts exist to rule out.
+  const answered = Math.max(0, data.examined - data.items.length - suppressedTotal);
 
   return (
     <div className="flex flex-col gap-4">
-      <p className="text-label text-muted-foreground">
-        {t('v3.review.balances.examined', {
-          shown: data.items.length,
-          examined: data.examined,
-          suppressed: suppressedTotal,
-        })}
-      </p>
-
-      {data.items.length === 0 ? (
+      {/* Says what the list IS before what it is not (SC-576). The line led
+          with "Showing 33 of 258 changes. 225 were left out", which puts the
+          largest number in the sentence on the material the reader cannot see
+          and reads as an admission — the counts are here to make the queue
+          checkable, not to apologise for it. The provenance stays, one
+          sentence down and in that order. */}
+      {data.items.length > 0 ? (
+        <p className="text-body">{t('v3.review.balances.queue', { count: data.items.length })}</p>
+      ) : (
         <p className="text-body">{t('v3.review.balances.empty')}</p>
-      ) : null}
+      )}
+
+      <p className="text-label text-muted-foreground">
+        {t(
+          answered > 0 ? 'v3.review.balances.examinedWithAnswered' : 'v3.review.balances.examined',
+          { examined: data.examined, suppressed: suppressedTotal, answered }
+        )}
+      </p>
 
       {data.items.map((gap) => (
         <Block key={gap.observationId} className="flex flex-col gap-3 p-4">
@@ -84,16 +112,68 @@ export function BalanceGapList({ data, isLoading }: BalanceGapListProps) {
             </div>
             {/* Signed and toned: money arriving and money leaving are
                 different questions and the reader should not have to read the
-                two balances to tell which one they are being asked. */}
-            <Numeric value={gap.drift} format="plain" delta decimals={2} className="text-figure" />
+                two balances to tell which one they are being asked.
+
+                Same `balanceDecimals` as the two readings below, and the
+                agreement is the point — a delta of `−10,673.74` over a pair
+                reading `232.33010646` is one movement described at two
+                precisions, and a reader concludes one of them is lying.
+
+                This is the one place the card overrides `<Numeric>`'s "a
+                delta keeps its fixed two" rule, so the tension is worth
+                naming: that rule exists so a change of `-0.004` is not
+                reported as a loss with a red arrow, and it is stated for the
+                DEFAULT of a currency delta. Here the caller chooses per token
+                — and holding a crypto delta to two decimals is how `0.00021
+                BTC` renders `−0.00`, which is the same claim-of-zero SC-567
+                spent three commits removing. `moneyDecimals` still answers 2
+                for every ordinary fiat figure, so nothing about the USD case
+                moves. */}
+            <Numeric
+              value={gap.drift}
+              format="plain"
+              delta
+              decimals={balanceDecimals(gap.drift, gap.tokenTypeCode)}
+              className="text-figure"
+            />
           </div>
 
+          {/* `<Trans>` rather than `t()`, because the two readings are RENDERED
+              FIGURES inside the sentence and not text (SC-576, same reasoning
+              as `ConvertedTotal`). Interpolating them made the card print
+              `10906.066301185 → 232.330106461 USD` beside a delta the same
+              card had already formatted to `−10,673.74`.
+
+              `balanceDecimals` and not one rule for every holding. The first
+              fix used `quantityDecimals` throughout and printed
+              `232.33010646 USD` under a delta of `−10,673.74` — correct for a
+              coin count and wrong for currency, and three figures describing
+              one movement at two precisions read as one of them lying. The
+              rule now asks what the holding IS; `@scani/shared` owns it,
+              because a second copy would be free to disagree. Neither branch
+              can render a non-zero balance as `0`, which is what keeps SC-567
+              closed at the render site as well as on the wire. */}
           <p className="text-label text-muted-foreground">
-            {t('v3.review.balances.balances', {
-              previous: gap.previousBalance,
-              current: gap.balance,
-              symbol: gap.tokenSymbol,
-            })}
+            <Trans
+              i18nKey="v3.review.balances.balances"
+              values={{ symbol: gap.tokenSymbol }}
+              components={{
+                previous: (
+                  <Numeric
+                    value={gap.previousBalance}
+                    format="plain"
+                    decimals={balanceDecimals(gap.previousBalance, gap.tokenTypeCode)}
+                  />
+                ),
+                current: (
+                  <Numeric
+                    value={gap.balance}
+                    format="plain"
+                    decimals={balanceDecimals(gap.balance, gap.tokenTypeCode)}
+                  />
+                ),
+              }}
+            />
             {gap.transactionsApplied > 0
               ? ` ${t('v3.review.balances.partlyExplained', { count: gap.transactionsApplied })}`
               : ''}
