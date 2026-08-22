@@ -40,7 +40,7 @@ function holding(id: string, overrides: Partial<HoldingWithDetails> = {}): Holdi
       isScamProbability: 0,
       lookalikeOf: null,
     },
-    amount: 1000,
+    amount: '1000',
     value: 1000,
     costBasis: 1000,
     account: {
@@ -139,8 +139,8 @@ describe('the holdings list can be narrowed by data quality', () => {
     // thousand-unit one it DID name stays in. Either assertion failing means
     // somebody replaced the id lookup with a local predicate, and the panel's
     // number and this list are now two answers to one question.
-    const notNamed = holding('h1', { amount: 0 });
-    const named = holding('h2', { amount: 1000 });
+    const notNamed = holding('h1', { amount: '0' });
+    const named = holding('h2', { amount: '1000' });
     const def = qualityDef({ zeroBalance: ['h2'] });
     expect(def.fn?.(notNamed, 'zeroBalance')).toBe(false);
     expect(def.fn?.(named, 'zeroBalance')).toBe(true);

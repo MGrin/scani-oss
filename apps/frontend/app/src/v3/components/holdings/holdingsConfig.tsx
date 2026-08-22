@@ -315,7 +315,7 @@ export function holdingsDataViewConfig({
         <span className="flex min-w-0 flex-col items-end">
           <Numeric value={item.value} currency={currency} />
           <span className="flex min-w-0 items-baseline gap-1 text-caption text-muted-foreground">
-            {holdingAmount(item)}
+            {holdingAmount(item, t)}
             {/* The unit, and the ONE thing in this zone allowed to give way.
                 Measured at 393px before it was bounded: `GRAPHICS PROCESSING
                 UNITS` is a real 25-character symbol in this portfolio, and
@@ -330,19 +330,21 @@ export function holdingsDataViewConfig({
                 the figure, not the figure — the figure never truncates, and
                 does not here.
 
-                THE FIGURE'S OWN WORST CASE IS NOT VISIBLE YET, and whoever
-                lands SC-567 will be the first to see it. `HoldingQueryService`
-                rounds `amount` to 8 dp on the wire, so a dust balance arrives
-                as `0` and every measurement above was taken on a short figure.
-                Measured with the wire rewritten in flight to what SC-567 will
-                send, at 393px: `0.000000000000000001 CHF` puts the value zone
-                at 182px against 103px of identity, and `0.0000000004013 GBP`
-                at 144 against 141. Nothing overflows — `main.scrollWidth`
-                stays 393 — so the cost is identity truncation on rows whose
-                money is `$0.00`, not a sideways page. That may still be the
-                wrong trade for a summary row, and it is SC-567's call to make
-                with the figure in front of it: this rule was chosen without
-                being able to see it. */}
+                THE FIGURE'S WORST CASE IS ANSWERED, and not by relaxing the
+                rule above. It used to be invisible: `HoldingQueryService`
+                rounded `amount` to 8 dp, so a dust balance arrived as `0` and
+                every measurement here was taken on a short figure. Measured
+                with the real wire at 393px, `0.000000000000000001 CHF` puts
+                the value zone at 182px against 103px of identity and clips the
+                account name — nothing overflows, `main.scrollWidth` stays 393,
+                but the identity zone loses the thing it exists to say.
+
+                So a balance too small for the column renders `< 0.00000001`
+                here (`holdingAmount`, SC-567). That is a THRESHOLD, not a
+                truncation — complete and true, where a cut-off figure would be
+                ambiguous — so the figure still never gives way, and the symbol
+                is still the only thing in this zone that does. The peek and
+                the export carry the exact digits; this row is scanned. */}
             <span className="max-w-[6ch] truncate">{item.token.symbol}</span>
           </span>
         </span>
@@ -443,7 +445,7 @@ export function holdingsDataViewConfig({
         headerKey: 'ui.dataView.holdings.col.amount',
         sortable: true,
         numeric: true,
-        render: (item) => holdingAmount(item),
+        render: (item) => holdingAmount(item, t),
         // The raw unit count, not the rounded display figure: a balance is the
         // one column where the digits the row hides are the ones an accountant
         // wants.

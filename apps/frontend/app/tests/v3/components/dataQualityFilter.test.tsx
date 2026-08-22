@@ -40,7 +40,7 @@ function holding(id: string, symbol: string): HoldingWithDetails {
       isScamProbability: 0,
       lookalikeOf: null,
     },
-    amount: 1,
+    amount: '1',
     value: 1,
     costBasis: 1,
     account: {

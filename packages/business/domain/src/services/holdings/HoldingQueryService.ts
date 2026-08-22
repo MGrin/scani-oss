@@ -176,7 +176,21 @@ export class HoldingQueryService extends BaseService {
             isScamProbability: token.isScamProbability ?? 0,
             lookalikeOf: token.lookalikeOf ?? null,
           },
-          amount: new Decimal(holding.balance).toDecimalPlaces(8).toNumber(),
+          // The balance, whole. `toFixed()` rather than the column verbatim so
+          // whatever the row holds is normalised to one canonical decimal
+          // string with no exponent — `1e-18` in a cell is text to some
+          // readers and a number to none (`@scani/shared/format/precision`).
+          //
+          // It used to be `.toDecimalPlaces(8).toNumber()`, and both halves
+          // lost something. The 8 turned every balance below `1e-8` into `0`,
+          // which is not a rounding of a small position but a different claim
+          // — that it is empty — repeated by the list, the peek, the CSV and
+          // the phone row, and written back to the database by the balance
+          // editor. `toNumber()` lost the other end quietly: a double holds
+          // ~15-17 significant digits, so `123456789012345.12345678` came
+          // across as `123456789012345.12` with nothing said. A string has
+          // neither end (SC-567).
+          amount: new Decimal(holding.balance).toFixed(),
           value: currentValue,
           costBasis: costBasis,
           price: priceInfo,
