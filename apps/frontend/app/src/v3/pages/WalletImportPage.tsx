@@ -54,7 +54,7 @@ export function WalletImportPage() {
   const importAddress = trpc.wallet.importAddress.useMutation({
     onSuccess: ({ jobId }) => navigate(jobDetailPath(jobId)),
     onError: (err) => {
-      const copy = describeQueryError(err, t('v3.capture.page.wallet.subject'));
+      const copy = describeQueryError(err, t('v3.capture.page.wallet.subject'), 'create');
       setError(`${copy.title}. ${copy.detail}`);
       setStage(null);
     },

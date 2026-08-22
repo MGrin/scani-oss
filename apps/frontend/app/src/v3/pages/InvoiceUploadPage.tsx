@@ -72,7 +72,7 @@ export function InvoiceUploadPage() {
 
       navigate(jobDetailPath(jobId));
     } catch (err) {
-      const copy = describeQueryError(err, t('v3.documents.parse.thisInvoice'));
+      const copy = describeQueryError(err, t('v3.documents.parse.thisInvoice'), 'save');
       setError(`${copy.title}. ${copy.detail}`);
       setStage(null);
     }
