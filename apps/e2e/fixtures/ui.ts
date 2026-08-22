@@ -1,4 +1,11 @@
-import type { Page } from '@playwright/test';
+// `test` here is only ever used for `test.info()`, which reads the runner's
+// current TestInfo and is the same object whichever `test` you ask. The suite's
+// own `fixtures/test` is deliberately NOT used: this module is reachable from
+// `visual-setup` and `shots-setup`, which Playwright loads as `globalSetup`,
+// and importing it there would run `base.extend()` in a module graph that has
+// no test runner around it yet. Nothing here makes a request, so the
+// rate-limit identity `fixtures/test` exists to attach is not in play.
+import { type Page, type TestInfo, test } from '@playwright/test';
 
 const API_BASE_URL = process.env.API_BASE_URL ?? 'http://localhost:3011';
 const ORIGIN = 'http://localhost:5173';
@@ -165,11 +172,11 @@ interface CreateHoldingOptions {
   /** Decimal-string balance, e.g. "1000". */
   quantity: string;
   /**
-   * How long to wait for the worker. The 30s default is comfortable for a
-   * spec that seeds one holding into an idle queue; a fixture that seeds a
-   * whole portfolio behind the nightly rollup chain needs longer, and a
-   * timeout there means the surface under test renders its empty state and
-   * the assertion passes for the wrong reason.
+   * How long to wait for the worker. The `DEFAULT_JOB_TIMEOUT_MS` default is
+   * comfortable for a spec that seeds one holding into an idle queue; a
+   * fixture that seeds a whole portfolio behind the nightly rollup chain needs
+   * longer, and a timeout there means the surface under test renders its empty
+   * state and the assertion passes for the wrong reason.
    */
   jobTimeoutMs?: number;
 }
@@ -193,10 +200,145 @@ interface TokenSearchHit {
 const POLL_MIN_MS = 250;
 const POLL_MAX_MS = 1_000;
 
+/**
+ * How long a job wait is allowed to take before the fixture gives up.
+ *
+ * 30s was the previous value and it was never the operative one: it equalled
+ * Playwright's default per-test budget, which starts earlier, so the test died
+ * first every time — see `reserveJobWaitBudget`. 60s is the first number here a
+ * job has actually been given, and it is sized for the contended laptop this
+ * suite runs on locally rather than for the CI runner, where the same suite
+ * finishes in about five minutes (SC-498).
+ */
+const DEFAULT_JOB_TIMEOUT_MS = 60_000;
+
+/**
+ * How far inside the test's budget the fixture's own deadline sits.
+ *
+ * It only has to cover the assertions that run after the wait returns. Small on
+ * purpose: this is slack, not a second timeout.
+ */
+const TEST_BUDGET_MARGIN_MS = 5_000;
+
+/**
+ * A single `jobs.status` poll's own budget.
+ *
+ * Without one, a poll that hangs has no deadline of its own and simply spends
+ * the budget reserved below — which reproduces the unnamed failure one level
+ * down, as `apiRequestContext.get: Test timeout of Nms exceeded` pointing at a
+ * line of this file rather than at the api that stopped answering.
+ * `jobs.status` is a single indexed read; ten seconds is already pathological.
+ */
+const POLL_REQUEST_TIMEOUT_MS = 10_000;
+
 interface JobStatusResponse<R = unknown> {
   state: 'queued' | 'active' | 'progress' | 'completed' | 'failed' | 'not_found';
   returnvalue?: R | null;
   failedReason?: string | null;
+}
+
+/** A job state, or `none` when no poll ever returned one. */
+export type ObservedJobState = JobStatusResponse['state'] | 'none';
+
+/**
+ * Buy this wait its own room inside the test's budget, so that a job which does
+ * not finish is reported by THIS fixture and not by Playwright.
+ *
+ * WHY IT EXISTS (SC-498). `playwright.config.ts` sets no `timeout`, so a test
+ * gets Playwright's 30s default — and the wait below used to default to 30s as
+ * well, while starting some seconds into the test. The fixture's deadline was
+ * therefore unreachable: Playwright's fired first, at whichever `await` the
+ * fixture happened to be sitting on, and reported `Test timeout of 30000ms
+ * exceeded` against a line of test plumbing. A red run then read as a product
+ * failure, and two threads spent their time establishing that it was not one.
+ *
+ * The same arithmetic silently voided every caller who had already diagnosed
+ * this and asked for longer: 45s in `imports/csv-import`, 60s in
+ * `imports/screenshot-parse`, 90s in `wallet-import/import-flow`, 120s in
+ * `a11y/v3-accessibility`. None of those numbers could be reached. They are
+ * real for the first time.
+ *
+ * Playwright's timeout slot is `deadline = start + (timeout - elapsed)`, so
+ * raising `timeout` raises the remaining budget by exactly as much, at once.
+ * Adding rather than assigning is what makes it safe to call twice in one
+ * test: two waits reserve two budgets.
+ *
+ * It reserves unconditionally — including when the job goes on to finish in two
+ * seconds, and when the test's budget already looks generous. Both temptations
+ * to skip it are unavailable rather than merely unattractive: how long the job
+ * will take is the thing being measured, and `elapsed` is not exposed to a
+ * fixture, so "already big enough" is not a question this code can ask. And a
+ * budget can only be extended BEFORE its deadline passes; there is no second
+ * chance to name the cause after Playwright has already named the wrong one.
+ *
+ * It does nothing when no test is running, which is not a fallback and not a
+ * guess. `createHolding` below is also called from `fixtures/visual-setup.ts`
+ * and `fixtures/shots-setup.ts`, both of which are `globalSetup` — they run
+ * before any test exists, and there is no per-test budget there to be beaten
+ * to the deadline by. `test.info()` throws in exactly one circumstance, which
+ * is that one: playwright's implementation is `const info = currentTestInfo();
+ * if (!info) throw new Error('test.info() can only be called while test is
+ * running')`, and it raises nothing else. So the catch has a single meaning
+ * rather than a plausible one.
+ */
+function reserveJobWaitBudget(waitMs: number): void {
+  let info: TestInfo;
+  try {
+    info = test.info();
+  } catch {
+    return;
+  }
+  // 0 means this test opted out of timing out; there is nothing to reserve from.
+  if (info.timeout === 0) return;
+  info.setTimeout(info.timeout + waitMs + TEST_BUDGET_MARGIN_MS);
+}
+
+/**
+ * What a timed-out wait says, and why it reports the last observed state
+ * instead of a conclusion.
+ *
+ * The distinction a reader needs is "the worker did not finish" versus "the
+ * product is broken", and the job's last state is the only thing here that
+ * carries it. Still `queued` at the deadline means nothing ever picked the job
+ * up, so the code under test never ran and no assertion in the spec was ever
+ * reached. `active` or `progress` means a worker took it and neither finished
+ * nor failed it.
+ *
+ * The `active` branch deliberately draws no conclusion. A contended box and a
+ * processor stuck in a loop produce exactly the same state, so a message that
+ * told the reader to dismiss it would be how a real regression gets absorbed
+ * into a known flake — strictly worse than the flake it tidied away.
+ */
+export function jobWaitTimeoutMessage(opts: {
+  jobId: string;
+  timeoutMs: number;
+  polls: number;
+  lastState: ObservedJobState;
+  pickedUpAfterMs: number | null;
+}): string {
+  const { jobId, timeoutMs, polls, lastState, pickedUpAfterMs } = opts;
+  const head =
+    `waitForJob(${jobId}) gave up after ${(timeoutMs / 1000).toFixed(0)}s ` +
+    `and ${polls} poll(s) of trpc/jobs.status.`;
+  if (lastState === 'queued') {
+    return (
+      `${head} The job never left the queue: no worker picked it up. ` +
+      'The code under test never ran, so nothing here is an assertion about the ' +
+      'product — look at the worker.'
+    );
+  }
+  if (lastState === 'active' || lastState === 'progress') {
+    const pickedUp =
+      pickedUpAfterMs === null
+        ? ''
+        : ` A worker took it after ${(pickedUpAfterMs / 1000).toFixed(1)}s.`;
+    return (
+      `${head}${pickedUp} Last observed state was "${lastState}": the job neither ` +
+      "finished nor failed. The worker's own log is the only thing that says " +
+      'whether it was slow or stuck.'
+    );
+  }
+  return `${head} Last observed state was "${lastState}".`;
 }
 
 interface ManualHoldingsReturn {
@@ -218,23 +360,37 @@ interface ManualHoldingsReturn {
  * directly; specs that care about the job's `returnvalue` (e.g.
  * screenshot-parse picker payload) should pass `R` explicitly to type
  * the return.
+ *
+ * Extends the running test's timeout to cover its own wait, so the deadline
+ * that fires is this one and the message that appears names the worker rather
+ * than a line number — see `reserveJobWaitBudget`.
  */
 export async function waitForJob<R = unknown>(
   page: Page,
   jobId: string,
   opts: { timeoutMs?: number } = {}
 ): Promise<JobStatusResponse<R>> {
-  const timeoutMs = opts.timeoutMs ?? 30_000;
-  const deadline = Date.now() + timeoutMs;
+  const timeoutMs = opts.timeoutMs ?? DEFAULT_JOB_TIMEOUT_MS;
+  reserveJobWaitBudget(timeoutMs);
+  const start = Date.now();
+  const deadline = start + timeoutMs;
   let intervalMs = POLL_MIN_MS;
+  let polls = 0;
+  let lastState: ObservedJobState = 'none';
+  let pickedUpAfterMs: number | null = null;
   while (Date.now() < deadline) {
     const statusInput = encodeURIComponent(JSON.stringify({ jobId }));
-    const res = await page.request.get(`${API_BASE_URL}/trpc/jobs.status?input=${statusInput}`);
+    const res = await page.request.get(`${API_BASE_URL}/trpc/jobs.status?input=${statusInput}`, {
+      timeout: POLL_REQUEST_TIMEOUT_MS,
+    });
+    polls += 1;
     if (!res.ok()) {
       throw new Error(`trpc.jobs.status failed: ${res.status()} ${await res.text()}`);
     }
     const body = (await res.json()) as { result: { data: JobStatusResponse<R> } };
     const data = body.result.data;
+    lastState = data.state;
+    if (data.state !== 'queued' && pickedUpAfterMs === null) pickedUpAfterMs = Date.now() - start;
     if (data.state === 'completed' || data.state === 'failed') return data;
     if (data.state === 'not_found') {
       throw new Error(`Job ${jobId} not found (worker down? wrong queue?)`);
@@ -242,7 +398,7 @@ export async function waitForJob<R = unknown>(
     await new Promise((r) => setTimeout(r, intervalMs));
     intervalMs = Math.min(intervalMs * 2, POLL_MAX_MS);
   }
-  throw new Error(`Job ${jobId} did not reach terminal state within ${timeoutMs}ms`);
+  throw new Error(jobWaitTimeoutMessage({ jobId, timeoutMs, polls, lastState, pickedUpAfterMs }));
 }
 
 /**
