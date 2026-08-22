@@ -129,6 +129,56 @@ describe('extractIconHrefs — which declared icon to try first', () => {
   test('a page that declares nothing yields nothing rather than throwing', () => {
     expect(extractIconHrefs('<head><title>hi</title></head>')).toEqual([]);
   });
+
+  test('THE ReDoS: a pathological `sizes` cannot make this quadratic', () => {
+    // Found by CodeQL on oss#144, in the PR that fixes a DoS. This markup comes
+    // from a host derived from `institutions.website`, so whoever controls the
+    // page controls every byte reaching the parser.
+    //
+    // The old pattern was `[...sizes.matchAll(/(\d+)\s*x\s*(\d+)/g)]` —
+    // UNANCHORED, so on a digit run containing no `x` the engine matches to the
+    // end, fails, and restarts one character later. Measured before the fix:
+    // 10k chars 72.6ms, 20k 405.5ms, 40k 1534.1ms, 80k 7513.3ms. n doubles,
+    // time quadruples. At the 512KB body cap that extrapolates to minutes of
+    // blocked EVENT LOOP from one fetch — worse than a held socket, because it
+    // stalls the process for every user.
+    //
+    // ASSERTED ON TIME, not on the one string CodeQL happened to report. A test
+    // pinning '0'.repeat(n) to a specific output would pass against any fix
+    // that special-cases zeros and leaves the class intact.
+    const html = `<head><link rel="icon" href="/a.png" sizes="${'0'.repeat(80_000)}"></head>`;
+    const t0 = performance.now();
+    expect(extractIconHrefs(html)).toEqual(['/a.png']);
+    const elapsed = performance.now() - t0;
+    // The pre-fix implementation took 7513ms on exactly this input. 250ms is
+    // ~30x headroom for a loaded machine and ~1/30th of the defect.
+    //
+    // WHICH LAYER CATCHES THIS ONE, because the two are not interchangeable:
+    // the 2048-char attribute CAP does. `attr` refuses the value outright, so
+    // the parser never sees it. The anchored `^(\d+)x(\d+)$` is the second
+    // layer and closes the class BELOW the cap, where no input is long enough
+    // to time. Saying that here so nobody reads this as proof the rewrite alone
+    // is sufficient, and removes the cap on that belief.
+    expect(elapsed).toBeLessThan(250);
+  });
+
+  test('AND THE CONTROL: real `sizes` values still rank largest-first', () => {
+    // A `largestDeclaredSize` that returned 0 for everything would pass the
+    // timing test above and every other case in this file that does not depend
+    // on size ordering. This is the one that would fail.
+    const html = `<head>
+      <link rel="icon" href="/small.png" sizes="16x16">
+      <link rel="icon" href="/big.png" sizes="32x32 180x180">
+    </head>`;
+    expect(extractIconHrefs(html)).toEqual(['/big.png', '/small.png']);
+  });
+
+  test('an absurdly long href is refused rather than truncated', () => {
+    // Half an href is a different URL, and following it would be worse than
+    // following none.
+    const html = `<head><link rel="icon" href="/${'a'.repeat(4000)}.png"></head>`;
+    expect(extractIconHrefs(html)).toEqual([]);
+  });
 });
 
 describe('fetchImageBounded — the guards', () => {
