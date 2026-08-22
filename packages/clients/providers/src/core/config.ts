@@ -34,8 +34,16 @@ const envSchema = z.object({
   HELIUS_API_KEY: z.string().optional(),
 
   // AI inference
+  //
+  // There is deliberately no OPENAI_VISION_MODEL. The model id is one of
+  // five coupled fields in ChatCompletionsConfig, and the other four are
+  // measurements of gpt-5.6-luna specifically: `tokenLimitParam`,
+  // `supportsTemperature`, `supportsPdfFileInput` and the `pricing` table
+  // in providers/ai-openai/index.ts. Overriding the id alone points those
+  // four at a model nobody measured them against, and the value the old
+  // docs suggested — gpt-4o — is the exact model that was dropped for
+  // rejecting PDFs with `invalid_image_format` (SC-588).
   OPENAI_API_KEY: z.string().optional(),
-  OPENAI_VISION_MODEL: z.string().optional(),
 
   // Google Sheets (data-provider only)
   GOOGLE_SHEETS_ID: z.string().optional(),
