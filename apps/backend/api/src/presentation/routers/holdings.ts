@@ -15,6 +15,7 @@ import {
 import {
   BulkAssignHoldingGroupsUseCase,
   DeleteHoldingUseCase,
+  HoldingLabelTakenError,
   UpdateHoldingUseCase,
 } from '@scani/domain/use-cases';
 import { HOLDING_PRICE_UPDATE, REFRESH_ACCOUNT_BALANCE } from '@scani/jobs';
@@ -153,18 +154,36 @@ export const holdingsRouter = router({
       return withIdempotency(dbUser.id, input.idempotencyKey, async () => {
         const editCause = await resolveEditCause(input.id, dbUser.id, input.data);
 
-        const updatedHolding = await Container.get(UpdateHoldingUseCase).execute(
-          input.id,
-          {
-            balance: input.data.balance,
-            isActive: input.data.isActive,
-            ...(editCause ? { editCause } : {}),
-            ...(input.data.editOccurredAt
-              ? { editOccurredAt: new Date(input.data.editOccurredAt) }
-              : {}),
-          },
-          dbUser.id
-        );
+        // `label` is forwarded only when the client sent the key at all.
+        // `null` clears the name and `undefined` leaves it alone, and a
+        // balance edit sends neither — spreading it unconditionally would
+        // make every balance edit an un-naming (SC-564).
+        const updatedHolding = await Container.get(UpdateHoldingUseCase)
+          .execute(
+            input.id,
+            {
+              balance: input.data.balance,
+              isActive: input.data.isActive,
+              ...('label' in input.data ? { label: input.data.label } : {}),
+              ...(editCause ? { editCause } : {}),
+              ...(input.data.editOccurredAt
+                ? { editOccurredAt: new Date(input.data.editOccurredAt) }
+                : {}),
+            },
+            dbUser.id
+          )
+          .catch((error) => {
+            // A refusal the reader can act on, not a 500. They are looking at
+            // the sheet for the row they just tried to name, and the other row
+            // wearing that name is one they can see.
+            if (error instanceof HoldingLabelTakenError) {
+              throw new TRPCError({
+                code: 'CONFLICT',
+                message: `Another holding for this token in this account is already called "${error.label}". Pot names have to tell the rows apart.`,
+              });
+            }
+            throw error;
+          });
 
         emitEntityChange({
           entityType: 'holding',

@@ -88,6 +88,7 @@ function configFor(holdings: HoldingWithDetails[]) {
       refreshingPriceId: null,
       refreshingBalanceId: null,
       onEditPrice: () => undefined,
+      onSetLabel: () => undefined,
       onConfigureApy: () => undefined,
       onRemoveApy: () => undefined,
       onDelete: () => undefined,

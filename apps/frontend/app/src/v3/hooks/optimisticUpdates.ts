@@ -75,7 +75,7 @@ export function removeHoldingsById(
 export function patchHoldingById(
   data: HoldingsWithSummary,
   id: string,
-  patch: { amount?: string; isActive?: boolean }
+  patch: { amount?: string; isActive?: boolean; label?: string | null }
 ): HoldingsWithSummary {
   const holdings = data.holdings.map((h) => (h.id === id ? mergeDefined(h, patch) : h));
   return { holdings, summary: recountHoldingsSummary(holdings) };
@@ -119,7 +119,7 @@ export async function optimisticRemoveHoldings(
 export async function optimisticPatchHolding(
   utils: TrpcUtils,
   id: string,
-  patch: { amount?: string; isActive?: boolean }
+  patch: { amount?: string; isActive?: boolean; label?: string | null }
 ): Promise<OptimisticSnapshot> {
   await utils.holdings.getWithDetails.cancel();
   const prev = utils.holdings.getWithDetails.getData();
