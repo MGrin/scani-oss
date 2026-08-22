@@ -1,6 +1,6 @@
 ---
 title: Pointing api + worker at a hosted endpoint
-description: The two env vars that switch the api and worker from a local data-provider to a hosted one.
+description: The two env vars that switch the api and worker from a local data-provider to a hosted one — and the keys that stay put when you do.
 sidebar:
   order: 2
 ---
@@ -25,19 +25,35 @@ endpoint the operator gives you one.
 
 ## Working `.env` snippet
 
-A minimal Tier 2 `.env` adds these vars and removes everything that
-belonged to the local data-provider (provider keys, SMTP creds, the
-Fastmail token, `DATA_PROVIDER_API_KEY`):
+A minimal Tier 2 `.env` adds these two vars and drops the ones that
+belonged specifically to running your own data-provider container —
+`DATA_PROVIDER_API_KEY`, the SMTP creds, the Fastmail token and
+`S3_*`:
 
 ```ini
 NODE_ENV=production
 SCANI_CLOUD_URL=https://api.cloud.scani.xyz
 SCANI_CLOUD_API_KEY=scani_sk_…   # from cloud.scani.xyz
 
+# KEEP these. They are read by the api and worker on EVERY tier —
+# see /self-hosting/tier2/overview/#you-still-need-your-provider-api-keys
+COINGECKO_API_KEY=…
+FINNHUB_API_KEY=…
+ETHERSCAN_API_KEY=…
+HELIUS_API_KEY=…
+OPENAI_API_KEY=…
+
 # Plus everything Tier 1 already required: DATABASE_URL, REDIS_URL,
 # FRONTEND_URL, BACKEND_URL, ENCRYPTION_KEY, BETTER_AUTH_SECRET,
-# JOBS_HMAC_SECRET, S3_*. See /self-hosting/tier1/required-env/.
+# JOBS_HMAC_SECRET. See /self-hosting/tier1/required-env/.
 ```
+
+The provider keys are the ones people get wrong. `SCANI_CLOUD_URL`
+moves object storage, email, OG-metadata fetching and token search to
+the hosted data-provider. Pricing, AI and chain calls are still made
+by your api and worker, which boot the provider registry in `direct`
+mode on every tier — so removing those keys degrades your stack
+silently.
 
 Smoke-test the endpoint is reachable before bringing the stack up:
 
@@ -59,8 +75,11 @@ side). You don't need `DATA_PROVIDER_API_KEY` on your side in Tier
 | `SCANI_CLOUD_URL` | `http://data-provider:8082` | `https://...` (operator-provided). |
 | `SCANI_CLOUD_API_KEY` | Matches `DATA_PROVIDER_API_KEY` you set yourself. | Issued by operator. |
 | `DATA_PROVIDER_API_KEY` | Set on your data-provider. | Not used on your side. |
-| Provider keys (`COINGECKO_API_KEY`, `OPENAI_API_KEY`, …) | On your data-provider. | On operator's data-provider. |
+| Provider keys (`COINGECKO_API_KEY`, `OPENAI_API_KEY`, …) | **On your api + worker.** | **On your api + worker — unchanged.** |
 | `SMTP_URL` / `FASTMAIL_API_TOKEN` | On your data-provider. | On operator's data-provider. |
+| `S3_*` | On your data-provider. | On operator's data-provider. |
+| Pricing / AI / chain calls | Made by your api + worker. | Made by your api + worker — unchanged. |
+| Object storage, email, OG metadata, token search | Served by your data-provider. | Served by operator's data-provider. |
 
 ## Updated compose file
 

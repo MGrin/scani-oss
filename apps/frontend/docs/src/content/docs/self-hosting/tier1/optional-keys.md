@@ -1,19 +1,28 @@
 ---
 title: Optional integration keys
-description: Provider API keys that unlock specific functionality. Missing keys cause the corresponding tRPC routes to return PRECONDITION_FAILED — the rest of the app keeps working.
+description: Provider API keys that unlock specific functionality. Read by the api and worker on every tier. Most degrade silently rather than failing, so check the boot line.
 sidebar:
   order: 4
 ---
 
-Scani's integrations are **independently unlockable**. A missing
-key causes the corresponding tRPC route to return
-`PRECONDITION_FAILED` at call-time; nothing else breaks. You can
-enable integrations one at a time as you obtain keys.
+Scani's integrations are **independently unlockable**. You can
+enable them one at a time as you obtain keys; nothing else breaks
+while a key is missing.
 
-All of these are read by the [data-provider](/decisions/three-tier-model/),
-not by the api or worker. In Tier 1, that's the data-provider on
-your compose network; in Tier 2/3, the hosted data-provider has its
-own copies and the user-side `.env` doesn't need them.
+These are read by the **api and the worker**, on every tier. All
+three backend services boot the provider registry in `direct` mode
+and call these upstreams themselves, so pointing `SCANI_CLOUD_URL` at
+a hosted data-provider does **not** move them — see
+[Tier 2: you still need your provider API
+keys](/self-hosting/tier2/overview/#you-still-need-your-provider-api-keys).
+
+:::caution[Most of these degrade silently]
+Only the OpenAI path fails loudly. CoinGecko, Finnhub, Etherscan and
+Helius each have a keyless branch that keeps working at reduced
+capability, so a stack with none of them set comes up green on every
+health check and then serves worse data. [How to tell what's
+enabled](#how-to-tell-whats-enabled) is the check.
+:::
 
 ## Pricing
 
@@ -29,10 +38,17 @@ which requires no key.
 
 | Variable | Provider | What it unlocks |
 |---|---|---|
-| `OPENAI_API_KEY` | [OpenAI](https://platform.openai.com/) | Screenshot import via Vision. Without a key, screenshot upload is disabled. |
-| `OPENAI_VISION_MODEL` | OpenAI | Which model to use. Default `gpt-4o`. |
-| `PERPLEXITY_API_KEY` | [Perplexity](https://www.perplexity.ai/) | Token-identity backfill enrichment. Optional — backfill works without it via other providers. |
-| `DEEPSEEK_API_KEY` | [DeepSeek](https://www.deepseek.com/) | Token-identity backfill enrichment. Optional. |
+| `OPENAI_API_KEY` | [OpenAI](https://platform.openai.com/) | Screenshot and document parsing via Vision. Without a key the provider throws on every call, so the parse job fails — the upload itself still succeeds. |
+
+`PERPLEXITY_API_KEY` and `DEEPSEEK_API_KEY` are read by provider
+implementations that **no backend service registers**
+(`aiPerplexityFactory` and `aiDeepseekFactory` are exported and never
+passed to `buildProviderRegistry`). Setting them has no effect today.
+
+The vision model is not configurable: `gpt-5.6-luna` is a constant in
+`packages/clients/providers/src/providers/ai-openai/index.ts`.
+`OPENAI_VISION_MODEL` is declared in the providers env schema and
+read by nothing.
 
 ## On-chain
 
@@ -85,16 +101,49 @@ Ignored in Tier 1 single-tenant mode.
 
 ## How to tell what's enabled
 
-Each tRPC route that depends on a provider returns
-`PRECONDITION_FAILED` with a message naming the missing env var:
+**Don't wait for an error — most of these never produce one.** The
+provider registry emits one summary line at boot in every backend
+service, whether or not anything is degraded:
+
+```sh
+docker compose -f docker-compose.prod.yml logs api worker \
+  | grep 'provider credentials:'
+```
+
+Production logs are JSON (`LOG_PRETTY` is forced off when
+`NODE_ENV=production`), so the line arrives as a `msg` field:
+
+```
+{… "mode":"direct","msg":"✅ provider credentials: 5/5 keyed · keyed: coingecko, etherscan, finnhub, openai, solana · degraded: none"}
+
+{… "degraded":["COINGECKO_API_KEY","OPENAI_API_KEY"],"mode":"direct","msg":"⚠️  provider credentials: 3/5 keyed · keyed: etherscan, finnhub, solana · degraded: coingecko [COINGECKO_API_KEY unset → drops to the public rate-limited tier instead of the Pro host]; openai [OPENAI_API_KEY unset → throws on every call, so screenshot and document parsing fail]"}
+```
+
+The degraded line also carries a `degraded` array of just the unset
+variable names, which is the cheaper thing to alert on.
+
+The healthy line prints too, so a provider quietly dropping out of the
+keyed set shows up as a change rather than as silence.
+
+The api serves the same record over HTTP:
+
+```sh
+docker compose -f docker-compose.prod.yml exec api \
+  curl -fsS http://localhost:3001/health/deep | jq .providerCredentials
+```
+
+An unkeyed provider deliberately does **not** turn `/health/deep` red
+— it is a configuration choice, not an outage. The worker has no HTTP
+health endpoint; its boot line is the only signal.
+
+Routes that genuinely refuse rather than degrade return
+`PRECONDITION_FAILED` naming the variable, and the SPA renders those
+as a soft empty-state rather than a crash:
 
 ```json
 { "error": { "code": "PRECONDITION_FAILED",
              "message": "OPENAI_API_KEY is not configured" } }
 ```
-
-The SPA renders these as a soft empty-state in the UI rather than a
-crash.
 
 ## See also
 
