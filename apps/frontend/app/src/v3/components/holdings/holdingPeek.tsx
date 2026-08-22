@@ -374,6 +374,8 @@ export function holdingPeekSpec(holding: HoldingWithDetails, ctx: HoldingPeekCon
         value: (
           <HoldingAmountFact
             amount={holding.amount}
+            symbol={holding.token.symbol}
+            lookalikeOf={holding.token.lookalikeOf}
             onSave={(balance) => ctx.onSetAmount(holding, balance)}
           />
         ),

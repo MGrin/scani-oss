@@ -1,4 +1,5 @@
 import { Check } from 'lucide-react';
+import type { ReactNode } from 'react';
 import type { RowSpec } from '../../lib/data-view';
 import { DataRow, DataRowList } from '../DataRow';
 
@@ -36,6 +37,9 @@ interface DataViewRowsProps<T> {
   getId: (item: T) => string;
   renderRow: (item: T) => RowSpec;
   onRowClick?: (item: T) => void;
+  /** The row's second control, when the surface has moved its peek off the row
+   *  (SC-560). Not called while selecting — see `DataRow`'s `trailing`. */
+  renderTrailing?: (item: T) => ReactNode;
   /** When true every row toggles selection instead of opening the record, and
    *  the leading slot is the checkbox. */
   selecting: boolean;
@@ -64,6 +68,7 @@ export function DataViewRows<T>({
   getId,
   renderRow,
   onRowClick,
+  renderTrailing,
   selecting,
   selectedIds,
   onToggleSelect,
@@ -102,6 +107,7 @@ export function DataViewRows<T>({
             delta={spec.delta}
             onClick={onRowClick ? () => onRowClick(item) : undefined}
             aria-label={spec.ariaLabel}
+            trailing={renderTrailing?.(item)}
           />
         );
       })}

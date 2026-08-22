@@ -6,9 +6,9 @@ import { Numeric } from '@scani/ui/v3/components/Numeric';
 import { nameList, type V3DataViewConfig } from '@scani/ui/v3/lib/data-view';
 import { exportCount, exportMoney, exportText } from '@scani/ui/v3/lib/export/cell';
 import type { V3QueryState } from '@scani/ui/v3/lib/query-state';
-import { PieChart, Tags, Wallet } from 'lucide-react';
+import { Info, PieChart, Tags, Wallet } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import {
   type AccountRow,
   accountLastSync,
@@ -20,7 +20,7 @@ import {
   namedAllocation,
 } from '../../lib/accounts';
 import { formatRelative } from '../../lib/relative-time';
-import { V3_ROUTES } from '../../lib/routes';
+import { accountHoldingsPath, V3_ROUTES } from '../../lib/routes';
 import { useOpenCapture } from '../capture/CaptureSheetContext';
 import { EntityValueSummary } from './EntityValueSummary';
 import { InstitutionMark } from './InstitutionMark';
@@ -104,6 +104,7 @@ export function AccountsList({
   isBulkDeleting,
 }: AccountsListProps) {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const openCapture = useOpenCapture();
   const institutionById = nameById(institutions);
   const typeById = nameById(accountTypes);
@@ -323,6 +324,27 @@ export function AccountsList({
       // so an empty screen can offer it without costing the reader their place.
       action: <Button onClick={openCapture}>{t('v3.entities.account.addFirst')}</Button>,
     },
+    /**
+     * Where an account row leads now (SC-560).
+     *
+     * It was already the peek's first action; what changed is that it is the
+     * ROW. "Show me what is in this account" is what a reader means by tapping
+     * an account nine times in ten, and it used to cost them two taps behind
+     * the one time in ten they wanted the account's own record.
+     */
+    onRowClick: (account) => navigate(accountHoldingsPath(account.id)),
+    rowHref: (account) => accountHoldingsPath(account.id),
+    /**
+     * The account's own record, one control over rather than on the row
+     * (SC-560).
+     *
+     * The five facts below are not what a reader is after when they tap an
+     * account, and the sheet was standing between them and the answer. They
+     * are still worth reaching — `balancesAsOf` in particular is stated
+     * nowhere else in the product — so the sheet keeps its URL, its content
+     * and its actions, and loses only its claim on the row.
+     */
+    peekTrigger: { icon: Info, labelKey: 'ui.dataView.accounts.config.details' },
     peek: {
       basePath: V3_ROUTES.accounts,
       render: (account) => {
@@ -364,9 +386,14 @@ export function AccountsList({
                   : 'None',
             },
           ],
+          // The row is this link now (SC-560), so the sheet keeps it only for
+          // the reader who arrived at the sheet directly — a shared
+          // `/accounts/<id>`, or the back gesture landing on one. Removing it
+          // would leave that reader with no way into the account's holdings
+          // at all.
           actions: (
             <Button asChild variant="outline" size="sm">
-              <Link to={`${V3_ROUTES.holdings}?account=${encodeURIComponent(account.id)}`}>
+              <Link to={accountHoldingsPath(account.id)}>
                 <PieChart className="mr-2 size-4" aria-hidden="true" />
                 {t('v3.entities.account.viewHoldings')}
               </Link>
