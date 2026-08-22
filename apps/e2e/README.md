@@ -60,6 +60,29 @@ at a phone on demand:
 cd apps/e2e && bunx playwright test --project=iphone tests/holdings
 ```
 
+### `--project=name`, never `--project name` (SC-533)
+
+Playwright declares `--project` as **variadic**, so the space-separated form
+keeps consuming argv until it meets a flag — and a trailing spec path is read
+as one more project *name*:
+
+```bash
+playwright test --project chromium tests/holdings/add-manual-holding.spec.ts
+# Error: Project(s) "tests/holdings/add-manual-holding.spec.ts" not found.
+```
+
+The `=` ends the variadic, so the path arrives as the positional filter it is.
+`scripts/run.ts` emits its own defaults that way, which is what makes this work:
+
+```bash
+bun run test:e2e tests/holdings/add-manual-holding.spec.ts
+```
+
+Pass `--project` in the space form yourself with a path after it and the runner
+**refuses before booting the stack**, naming `--project=`. Playwright would
+otherwise say the same thing at the far end of a compose build and a health
+wait, about a project you never typed.
+
 ## Rate-limit isolation — why specs import `test` from `fixtures/test`
 
 The api rate-limits inbound requests per client IP. Nothing sits in front of the
