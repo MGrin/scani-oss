@@ -58,7 +58,15 @@ describe('the e2e runner can only ever compose against its own project', () => {
 });
 
 describe('the e2e stack is not the stack somebody is developing against', () => {
-  const WORKTREE = '/Users/mgrin/.bb/worktrees/env_armtptz6ca/scani';
+  /**
+   * Synthetic on purpose (SC-566). `composeProjectName` and `e2eProjectName`
+   * hash the path string and never touch disk, so naming a real checkout here
+   * published one machine's directory layout to the public mirror and bought
+   * no coverage for it. The shape is what matters — a leaf of `scani` under a
+   * meaningful parent, which is what `worktreeIdentity` reads.
+   */
+  const WORKTREE = '/fixture/worktrees/env_fixture01/scani';
+  const PRIMARY = '/fixture/checkouts/primary/scani';
 
   test('its project differs from the dev stack of the same checkout', () => {
     // Same project would put `down -v` on the dev volumes the moment the
@@ -68,16 +76,11 @@ describe('the e2e stack is not the stack somebody is developing against', () => 
   });
 
   test('two checkouts still get different e2e projects', () => {
-    const other = '/Users/mgrin/Projects/mgrin/scani';
-    expect(e2eProjectName(WORKTREE)).not.toBe(e2eProjectName(other));
+    expect(e2eProjectName(WORKTREE)).not.toBe(e2eProjectName(PRIMARY));
   });
 
   test('the name is legal for compose', () => {
-    for (const path of [
-      WORKTREE,
-      '/Users/mgrin/Projects/mgrin/scani',
-      '/tmp/Weird Name (2)/scani',
-    ]) {
+    for (const path of [WORKTREE, PRIMARY, '/tmp/Weird Name (2)/scani']) {
       expect(e2eProjectName(path)).toMatch(/^[a-z0-9][a-z0-9_-]*$/);
     }
   });
