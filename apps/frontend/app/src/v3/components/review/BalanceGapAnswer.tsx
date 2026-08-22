@@ -8,7 +8,8 @@ import { useToast } from '@scani/ui/ui/use-toast';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { trpc } from '@/lib/trpc';
-import { DateField, localDateFromIso } from '../form/DateField';
+import { balanceGapOccurredAt } from '../../lib/balance-gaps';
+import { DateField } from '../form/DateField';
 
 /**
  * "What was this?" — the same question `HoldingEditCauseDialog` asks about a
@@ -71,11 +72,11 @@ export function BalanceGapAnswer({ gap, onAnswered }: BalanceGapAnswerProps) {
 
   const submit = () => {
     if (!answer) return;
-    // `localDateFromIso` rather than `new Date(value)`: the second is UTC
-    // midnight, which every zone west of Greenwich renders as the previous
-    // day — and a flow's date is the whole point of this answer.
-    const occurredAt = answer === 'flow' ? localDateFromIso(date) : null;
-    if (answer === 'flow' && !occurredAt) return;
+    // `balanceGapOccurredAt` owns the rule and carries why it exists: a date
+    // that was never asked for must not be sent, because the untouched default
+    // is a local-midnight instant that can sit hours outside the interval.
+    const occurredAt = balanceGapOccurredAt(answer, gap, date);
+    if (answer === 'flow' && gap.datePrompted && !occurredAt) return;
     mutation.mutate({
       observationId: gap.observationId,
       answer,
@@ -99,7 +100,14 @@ export function BalanceGapAnswer({ gap, onAnswered }: BalanceGapAnswerProps) {
 
       {answer ? (
         <p className="text-label text-muted-foreground">
-          {t(`v3.review.balances.explain.${answer}`)}
+          {/* A short interval is answered `flow` without ever being asked for a
+              date, so the ordinary copy — "on the date you give" — would
+              describe a field that is not on screen. */}
+          {t(
+            answer === 'flow' && !gap.datePrompted
+              ? 'v3.review.balances.explain.flowNoDate'
+              : `v3.review.balances.explain.${answer}`
+          )}
         </p>
       ) : null}
 
