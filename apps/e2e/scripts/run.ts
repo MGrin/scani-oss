@@ -6,7 +6,7 @@ import { resolve } from 'node:path';
 import {
   e2eProjectName,
   isPrimaryCheckout,
-  stackPorts,
+  resolveStackPorts,
   worktreeSuffix,
 } from '../../../scripts/lib/worktree';
 import { DEFAULT_SPEC_PROJECTS } from '../fixtures/devices';
@@ -44,11 +44,17 @@ const PROJECT = process.env.COMPOSE_PROJECT_NAME || e2eProjectName(REPO_ROOT);
  * defaults, a linked worktree is offset. Without this the project name alone
  * would make the collision loud instead of silent: this run would try to
  * publish 5433 while the main checkout's Postgres holds it.
+ *
+ * The `process.env[name] ?? …` this file used to spell out inline is now
+ * `resolveStackPorts` (SC-500), so every consumer of these ports reads one
+ * override rule. This file had it and `dev:stack`, `gate-db` and the visual
+ * gate did not, which is how an override could move the e2e run and leave the
+ * gate pointed at another worktree's Postgres.
  */
 const PORTS: Record<string, string> = Object.fromEntries(
-  Object.entries(stackPorts(REPO_ROOT, isPrimaryCheckout(REPO_ROOT))).map(([name, port]) => [
+  Object.entries(resolveStackPorts(REPO_ROOT, isPrimaryCheckout(REPO_ROOT))).map(([name, port]) => [
     name,
-    process.env[name] ?? String(port),
+    String(port),
   ])
 );
 

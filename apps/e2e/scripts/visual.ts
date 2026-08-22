@@ -50,7 +50,7 @@ import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { basename, dirname, resolve } from 'node:path';
-import { isPrimaryCheckout, stackPorts } from '../../../scripts/lib/worktree';
+import { isPrimaryCheckout, resolveStackPorts } from '../../../scripts/lib/worktree';
 
 const E2E_ROOT = resolve(import.meta.dir, '..');
 const REPO_ROOT = resolve(E2E_ROOT, '../..');
@@ -59,6 +59,11 @@ const REPO_ROOT = resolve(E2E_ROOT, '../..');
  * Where this checkout's stack is, the same way `scripts/run.ts` resolves it
  * (SC-491, SC-495).
  *
+ * `resolveStackPorts` rather than `stackPorts`, so a `<SERVICE>_HOST_PORT` the
+ * operator set to escape a slot collision moves this harness with the stack
+ * (SC-500). An override honoured by `dev:stack` alone would leave this gate
+ * photographing whatever took the old port.
+ *
  * The fixtures default to `localhost:5173` and `localhost:3011`, which are the
  * PRIMARY checkout's published ports — so from a linked worktree this harness
  * did not fail to find a stack, it found *somebody else's*, signed in against
@@ -66,7 +71,7 @@ const REPO_ROOT = resolve(E2E_ROOT, '../..');
  * the ports here is what makes "the stack this run talks to is the one this
  * worktree started" true rather than incidental.
  */
-const PORTS = stackPorts(REPO_ROOT, isPrimaryCheckout(REPO_ROOT));
+const PORTS = resolveStackPorts(REPO_ROOT, isPrimaryCheckout(REPO_ROOT));
 const STACK_ENV: Record<string, string> = {
   PLAYWRIGHT_BASE_URL:
     process.env.PLAYWRIGHT_BASE_URL ?? `http://localhost:${PORTS.FRONTEND_HOST_PORT}`,
