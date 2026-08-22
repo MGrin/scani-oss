@@ -130,15 +130,44 @@ key widens the walk past a matched release SHA.
 **The trigger is routine.** It fires whenever a release PR merges while another
 pull request is open, which is most of the time.
 
-### Check the release PR against the commit log
+### CI checks the release PR against the commit log
+
+`.github/workflows/release-notes.yml` runs `scripts/check-release-notes.ts` on
+every release PR. It differences two independently derived sides — the bullets
+in the release PR's own `CHANGELOG.md`, and
+`git log <previous tag>..<the commit the notes were generated from>` — and
+fails naming every releasable commit that has no entry. Run it by hand against
+any release commit:
 
 ```sh
-git fetch --tags
-git log v0.15.0..main --format='%h %s' --no-merges | grep -E ' (feat|fix)(\(|!|:)'
+bun scripts/check-release-notes.ts --head <release commit>
 ```
 
-Every line that comes back should have a bullet in the release PR. Anything
-that does not is one of the two failures above.
+It has three verdicts, and the third is the one that matters:
+
+```
+check-release-notes: PASS   · exit 0 · 7 releasable commits …, 0 missing
+check-release-notes: FAILED · exit 1 · 2 of 4 releasable commits … have no entry
+check-release-notes: BLIND  · exit 3 · NO COMPARISON MADE — <why>
+```
+
+**Blind is not a pass.** No previous tag, no release commit at the head, a
+changelog whose top section is some other version, or a window in which it
+finds no releasable commit at all — each means the check could not look, and
+each exits 3 rather than reporting clean. A release PR release-please has only
+just opened is *not* blind: it has releasable commits and no bullets, which is
+a shortfall of N and fails.
+
+It catches the second failure above — the chronological walk — mechanically. It
+does **not** fail on the first: a plain-sentence commit subject is *listed* as a
+notice and never fails the run, because from the log alone it cannot be told
+apart from work that a sibling commit already covers, which is exactly the
+0.16.0 case (`483e269c` unparseable, the same fix listed under `050fbc63`).
+Keep commit subjects conventional; nothing downstream can recover one that is
+not.
+
+The check is not in the `main-protection` ruleset's required contexts, so a red
+run is visible on the release PR rather than blocking it.
 
 ### Recovering a commit that is already merged
 
