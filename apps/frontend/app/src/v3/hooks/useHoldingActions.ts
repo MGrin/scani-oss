@@ -66,7 +66,10 @@ export function useHoldingActions() {
   const updateMutation = trpc.holdings.update.useMutation({
     onMutate: ({ id, data }) =>
       optimisticPatchHolding(utils, id, {
-        amount: data.balance !== undefined ? Number(data.balance) : undefined,
+        // The balance verbatim, not `Number(...)`: the optimistic row has to
+        // hold what the server will send back, and that is a decimal string
+        // (SC-567). Coercing here reintroduced the double one render early.
+        amount: data.balance,
         isActive: data.isActive,
       }),
     onSuccess: () => {

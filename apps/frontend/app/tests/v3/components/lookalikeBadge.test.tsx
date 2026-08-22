@@ -37,7 +37,7 @@ function holding(overrides: Partial<HoldingWithDetails> = {}): HoldingWithDetail
       isScamProbability: 0,
       lookalikeOf: null,
     },
-    amount: 1000,
+    amount: '1000',
     value: 1000,
     costBasis: 1000,
     account: {
