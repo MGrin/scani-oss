@@ -21,7 +21,15 @@ export interface UseJobStatusResult {
   progress: number | null;
   statusMessage: string | null;
   result: unknown;
-  error: string | null;
+  /**
+   * The failure in words somebody wrote for this user, or null (SC-551).
+   *
+   * Named for what it IS, not for the field it came from. It used to be
+   * `error` and carry whatever the processor threw — a `DrizzleQueryError`
+   * put a full `select … from "holdings"` in it. A name that says `error`
+   * invites a renderer to show it, which is exactly what happened.
+   */
+  userFacingError: string | null;
   attemptsMade: number | null;
   attemptsAllowed: number | null;
 }
@@ -38,7 +46,7 @@ export function useJobStatus(jobId: string | null): UseJobStatusResult {
     progress: null,
     statusMessage: null,
     result: null,
-    error: null,
+    userFacingError: null,
     attemptsMade: null,
     attemptsAllowed: null,
   });
@@ -52,7 +60,7 @@ export function useJobStatus(jobId: string | null): UseJobStatusResult {
         progress: null,
         statusMessage: null,
         result: null,
-        error: null,
+        userFacingError: null,
         attemptsMade: null,
         attemptsAllowed: null,
       });
@@ -84,7 +92,7 @@ export function useJobStatus(jobId: string | null): UseJobStatusResult {
           // JobHeader only renders it for in-flight states).
           statusMessage: event.statusMessage ?? prev.statusMessage,
           result: event.result ?? prev.result,
-          error: event.error ?? null,
+          userFacingError: event.error ?? null,
           attemptsMade: event.attemptsMade ?? prev.attemptsMade,
           attemptsAllowed: event.attemptsAllowed ?? prev.attemptsAllowed,
         };
@@ -133,7 +141,7 @@ export function useJobStatus(jobId: string | null): UseJobStatusResult {
             // brief WS drops while the job is still active.
             statusMessage: prev.statusMessage,
             result: status.returnvalue ?? null,
-            error: status.failedReason ?? null,
+            userFacingError: status.failedReason ?? null,
             attemptsMade: status.attemptsMade ?? null,
             attemptsAllowed: status.attemptsAllowed ?? null,
           };

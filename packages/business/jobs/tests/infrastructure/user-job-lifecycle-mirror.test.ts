@@ -50,6 +50,7 @@ describe('UserJobLifecycleMirror', () => {
       ...base,
       type: 'failed',
       error: 'upstream 502',
+      userFacingError: null,
       attemptsMade: 1,
       attemptsAllowed: 3,
     } satisfies LifecycleEvent);
@@ -63,6 +64,7 @@ describe('UserJobLifecycleMirror', () => {
       ...base,
       type: 'dead',
       error: 'upstream 502',
+      userFacingError: null,
       attemptsMade: 3,
       attemptsAllowed: 3,
       reason: 'retries_exhausted',
@@ -88,6 +90,7 @@ describe('UserJobLifecycleMirror', () => {
       ...base,
       type: 'dead',
       error: 'bad credentials',
+      userFacingError: null,
       attemptsMade: 1,
       attemptsAllowed: 3,
       reason: 'unrecoverable',

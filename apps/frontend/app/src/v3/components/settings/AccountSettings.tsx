@@ -65,28 +65,27 @@ export function AccountSettings() {
       utils.invalidate();
       navigate(V3_BASE);
     } else if (status.state === 'failed') {
-      // The translated sentence, and only ever that. Two things are
-      // deliberate here and both look like omissions (SC-551).
-      //
       // A `string`, not `new Error(string)`. `showError` renders
-      // `userFacingMessage`, for which a plain `Error` passes none of the
-      // three doors — so wrapping this discarded it and every failed delete
-      // toasted "Unknown error" instead of the sentence written right here.
+      // `userFacingMessage`, for which a plain `Error` passes none of the three
+      // doors — so wrapping this discarded it and every failed delete toasted
+      // "Unknown error" instead of the sentence written right here (SC-551).
       //
-      // `status.error` is dropped rather than preferred. It is whatever the
-      // processor threw, verbatim: a `DrizzleQueryError` puts a full
-      // `select "id", "user_id", … from "holdings"` in it. Restoring
-      // `status.error ?? …` reads as an improvement and is the leak — as a
-      // bare string it is door 2 and renders as typed. It may come back only
-      // once the wire carries a value a processor branded `userFacing(...)`,
-      // which will arrive under its own name.
-      showError(t('v3.settings.account.deleteFailed'), t('v3.settings.pending.deletingData'));
+      // `status.userFacingError`, and never `status.error`, which no longer
+      // exists on this hook for that reason. The field is whatever a processor
+      // marked `userFacing(...)`; the raw throw stays on `user_jobs.error` for
+      // the admin surfaces and never crosses to a browser. A field named
+      // `error` holding "the sentence for the reader" is the naming that
+      // caused this, so the name says which one it is.
+      showError(
+        status.userFacingError ?? t('v3.settings.account.deleteFailed'),
+        t('v3.settings.pending.deletingData')
+      );
       setJobId(null);
     }
     // `t` is a dependency: the effect fires a toast, and without it the
     // message keeps the language the effect was created in. A delete runs for
     // a while, which is exactly long enough for someone to change it.
-  }, [jobId, status.state, navigate, utils, t]);
+  }, [jobId, status.state, status.userFacingError, navigate, utils, t]);
 
   const deleting = deleteAll.isPending || jobId !== null;
 
