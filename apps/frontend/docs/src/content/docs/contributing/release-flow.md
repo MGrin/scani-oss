@@ -46,6 +46,45 @@ minor bumps so the version number stays in the `0.x` series.
 When the release PR merges, release-please pushes a git tag
 (`v0.7.2`) which triggers the docker-publish workflow.
 
+## PR titles are not changelog entries
+
+Write pull-request titles as **plain sentences**. Keep the conventional prefix
+on the **commits**, which is where release-please is meant to read it.
+
+```
+not   fix(redis): bound every Redis await on the api request path (SC-522)
+but   Bound every Redis await on the api request path (SC-522)
+```
+
+Conventional-commit format is a contract about commits. A PR title is a human
+label on a unit of review. Overloading one string with both jobs is what caused
+this rule to be needed.
+
+release-please walks the *full ancestry* of `main` rather than its first-parent
+line — measured over the 0.15.0 window, 70 commits against 27 — so a merge
+commit and every branch commit it landed are all read. GitHub writes the PR
+title into the merge commit's message under all three title/message
+combinations it permits, so a conventional title is read a second time and
+attributed to the merge commit's sha. Every entry in the 0.15.0 release PR was
+listed twice that way.
+
+There is no release-please option for this — none of the config keys it reads
+governs merge-commit reading — and no GitHub setting avoids it either:
+`merge_commit_message: BLANK` is rejected with
+`invalid_merge_commit_setting_combo` unless the title is also `PR_TITLE`, which
+moves the title into the merge commit's subject rather than removing it.
+
+So the rule is enforced in CI. `.github/workflows/pr-title.yml` runs
+`scripts/check-pr-title.ts` on every title edit as well as on push, because a
+title changed after CI goes green is the one the merge commit takes. That
+script carries the measurement and, more usefully, the titles it *deliberately*
+allows — `SC-522: …` and `feat!: …` both parse as conventional commits on their
+own and neither can produce a duplicate, so tightening the check to a
+conventional-commit parser would reject correct titles.
+
+release-please's own release PR is exempt: its `chore(main): release X.Y.Z`
+title is meant to reach the merge commit.
+
 ## Image publish
 
 `.github/workflows/docker-publish.yml` builds four images on:
