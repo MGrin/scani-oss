@@ -52,3 +52,30 @@ docker-compose.override.yml
 # interrupted. One reached a branch once (SC-94); a 61 MB blob in git history is
 # permanent and everyone pays to clone it forever.
 *.bun-build
+
+# Build output that lives beside the app or module producing it, and
+# infrastructure working state (SC-569, SC-577).
+#
+# These belong here rather than in a per-directory `.gitignore` because a
+# per-directory one is a TRACKED FILE: any checkout that does not include that
+# directory deletes the rule while the artefacts stay on disk, and output that
+# was ignored a moment ago becomes an ordinary untracked file the next
+# `git add -A` will take. Measured once at eleven files, one of them Terraform
+# state.
+#
+# GLOBS, never paths. A list of directories would be an inventory of what some
+# other checkout of this tree contains, which is its own disclosure; `**/.next/`
+# names nothing and covers every app that ever adds one.
+**/.next/
+**/.vercel/
+**/.turbo/
+**/.wrangler/
+**/next-env.d.ts.bak
+**/public/version.json
+
+# Terraform working state. `*.tfstate` carries resource identifiers and, for
+# several providers, credentials in plaintext.
+**/.terraform/
+**/*.tfstate
+**/*.tfstate.backup
+**/tfplan
