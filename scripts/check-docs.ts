@@ -45,6 +45,7 @@
 
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
+import { compileSync } from '@mdx-js/mdx';
 
 const REPO_ROOT = path.resolve(import.meta.dir, '..');
 const ARGS = new Set(process.argv.slice(2));
@@ -803,6 +804,84 @@ function checkMarkdownPlacement(): void {
 }
 
 // =============================================================================
+// Check 11 — every .mdx page compiles
+// =============================================================================
+//
+// Nothing else a developer runs compiles MDX (SC-469). The checks above read
+// Markdown as text, `bun run test` does not build the site, and the only
+// compiler behind `apps/frontend/docs/src/content/**/*.mdx` is the Starlight
+// build in the OSS deploy workflow. Actions is billing-blocked on the private
+// repo, so an MDX syntax error there lands on `main` and is found by the docs
+// deploy, after merge.
+//
+// SC-453 is the measured instance: two Markdown autolinks,
+//
+//   Scani is on <http://localhost:8080>; your sign-in code is at ...
+//
+// which MDX reads as a JSX tag and rejects on the `//`. The local gate was
+// fully green over them — type-check, lint, 6833 tests, all of `docs:check`.
+//
+// This runs the REAL MDX compiler rather than a pattern for that one instance,
+// because a check that catches only the failure you have already seen reads as
+// covering the class. Measured on the tree that fixed SC-453: 18 files, 114ms,
+// and red on the autolink, on an unescaped `{`, and on an unclosed JSX tag.
+//
+// It is a fast pre-filter, not the whole instrument. The build additionally
+// validates frontmatter against the content schema, resolves component imports
+// and link targets, and runs `check-tables.ts` — none of which a bare compile
+// sees. `bun --cwd apps/frontend/docs build` remains the complete answer, and
+// CLAUDE.md says so. (Note the flag order: `bun --cwd DIR run build` prints
+// bun's help and exits 0.)
+//
+// `@mdx-js/mdx` is pinned at the root rather than taken transitively from
+// Starlight, so this check compiles with a version the repo names. `^3.1.1` is
+// the range `@astrojs/mdx` itself declares — `grep '"@mdx-js/mdx"' bun.lock`
+// shows both, and one resolved copy serves them — so the check and the build
+// compile with the same parser. If that ever stops being true, the build is
+// the authority.
+
+const DOCS_CONTENT = 'apps/frontend/docs/src/content';
+
+function checkMdxCompiles(): void {
+  const NAME = 'mdx-syntax';
+  const pages = trackedUnder([DOCS_CONTENT], ['.mdx']);
+
+  // A blindness state, and it keeps its own failure on purpose. Finding no
+  // `.mdx` under the content root means this check compiled nothing, and
+  // "nothing to look at" must never be reported as "nothing wrong" — that is
+  // the state a future reader will be tempted to soften into a pass, because
+  // an empty result set here is almost always benign. Argue with this comment
+  // rather than with the assertion: the docs site has had `.mdx` pages since
+  // it existed, so zero means the content moved and this check silently
+  // stopped running, which is precisely the SC-469 hole reopening.
+  if (pages.length === 0) {
+    fail(
+      NAME,
+      `no .mdx pages found under ${DOCS_CONTENT}/, so nothing was compiled. ` +
+        'If the docs content moved, point this check at its new root; if the site is ' +
+        'gone, delete this check deliberately rather than leaving it passing over nothing.'
+    );
+    return;
+  }
+
+  for (const page of pages) {
+    try {
+      compileSync(read(page));
+    } catch (err) {
+      // A VFileMessage carries `reason` and a place; a thrown Error carries
+      // neither. Take whichever is there — the file name is the part that
+      // matters, and it is ours either way.
+      const m = err as { reason?: string; line?: number; column?: number; message?: string };
+      const where = m.line ? `:${m.line}${m.column ? `:${m.column}` : ''}` : '';
+      fail(
+        NAME,
+        `${page}${where} does not compile as MDX: ${m.reason ?? m.message ?? String(err)}`
+      );
+    }
+  }
+}
+
+// =============================================================================
 // Runner
 // =============================================================================
 
@@ -817,6 +896,7 @@ const CHECKS: Array<() => void> = [
   checkGlossaryTerms,
   checkRealizedSpelling,
   checkMarkdownPlacement,
+  checkMdxCompiles,
 ];
 
 for (const check of CHECKS) {
