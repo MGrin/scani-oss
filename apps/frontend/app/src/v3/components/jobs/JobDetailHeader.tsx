@@ -246,7 +246,11 @@ export function JobDetailHeader({ job }: { job: JobDetailHeaderJob }) {
               page needs first is whether anything is still going to happen,
               and the error text answers a different question — one they
               usually cannot act on. */}
-          {failure ? <p className="text-body">{jobFailureSentence(t, failure)}</p> : null}
+          {failure ? (
+            <p className="text-body">
+              {jobFailureSentence(t, failure, { detailShown: Boolean(job.userFacingError) })}
+            </p>
+          ) : null}
           {job.userFacingError ? (
             // Only ever a sentence a processor marked `userFacing(...)` — the
             // provider's own rejection, or copy written for whoever started

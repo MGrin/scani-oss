@@ -88,11 +88,40 @@ export function jobFailureLabel(
   return t(`v3.jobs.failure.${description.code}.label`);
 }
 
+/**
+ * `detailShown` says whether the caller is about to render
+ * `job.userFacingError` beneath this sentence. Only `unrecoverable` reads it,
+ * and it defaults to `false` on purpose — a surface that does not render the
+ * detail block must not be able to produce a sentence pointing at it, so
+ * naming the detail is opt-in the same way the detail itself is (SC-551's
+ * `userFacing`, one layer out).
+ *
+ * The default used to be the only wording, and it read "Check the details
+ * below, correct them, and start it again" — while `JobDetailHeader` gates
+ * that block on `job.userFacingError`, which is `null` for any throw nobody
+ * marked. Two such throws exist in the worker today
+ * (`exchange-import.ts:243`, `wallet-import.ts:40`), and both rendered an
+ * instruction to read something that was not on the page (SC-554). The review
+ * feed's dead-job line (`review-text.ts`) never had a detail block at all.
+ *
+ * This stays meaningful after those two throws are marked, or after the last
+ * unmarked throw in the codebase disappears: `userFacingError` is nullable for
+ * every job at the schema level, and the review feed renders this sentence
+ * with no detail block regardless of what any processor does. The `false`
+ * branch is reachable from a caller, not from a processor's choice.
+ */
 export function jobFailureSentence(
   t: JobFailureTranslate,
-  description: JobFailureDescription
+  description: JobFailureDescription,
+  options: { detailShown?: boolean } = {}
 ): string {
   switch (description.code) {
+    case 'unrecoverable':
+      return t(
+        options.detailShown
+          ? 'v3.jobs.failure.unrecoverable.sentenceWithDetail'
+          : 'v3.jobs.failure.unrecoverable.sentence'
+      );
     case 'retrying':
       return t('v3.jobs.failure.retrying.sentence', {
         made: description.attemptsMade,
