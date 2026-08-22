@@ -29,6 +29,7 @@ import { formatRelative } from '../../lib/relative-time';
 import { groupDetailPath } from '../../lib/routes';
 import { HoldingAmountFact } from './HoldingAmountFact';
 import { HoldingDeleteAction } from './HoldingDeleteAction';
+import { HoldingLabelFact } from './HoldingLabelFact';
 import { HoldingStatusAction } from './HoldingStatusAction';
 import { HoldingTrend } from './HoldingTrend';
 import { RealizedLedger } from './RealizedLedger';
@@ -73,6 +74,23 @@ export interface HoldingPeekContext {
   refreshingPriceId: string | null;
   refreshingBalanceId: string | null;
   onEditPrice: (holding: HoldingWithDetails) => void;
+  /**
+   * Rename the pot. `null` clears the name (SC-564).
+   *
+   * The server refuses a name a sibling row already wears, so this can fail
+   * after the sheet is gone — the page reports it as a toast.
+   */
+  onSetLabel: (holding: HoldingWithDetails, label: string | null) => void;
+  /**
+   * The holdings that share an (account, token) with at least one other row —
+   * the only ones a name has any work to do on.
+   *
+   * Precomputed by the page from the whole list rather than derived here: the
+   * peek is handed ONE holding and cannot see its siblings, and a fact that
+   * silently never renders because the data to decide it was not passed is the
+   * failure this feature is a fix for.
+   */
+  contestedHoldingIds?: ReadonlySet<string>;
   onConfigureApy: (holding: HoldingWithDetails) => void;
   onRemoveApy: (holding: HoldingWithDetails) => void;
   /** The write itself. `HoldingDeleteAction` owns the confirmation, so by the
@@ -398,10 +416,29 @@ export function holdingPeekSpec(holding: HoldingWithDetails, ctx: HoldingPeekCon
         ),
       },
       { label: t('v3.holdings.peek.account'), value: holding.account.name },
-      // Only on the holdings that carry one, which is the small set where an
-      // account holds several rows for one token (SC-330). A "Pot: —" row on
-      // every other holding would be a field that says nothing.
-      ...(holding.label ? [{ label: t('v3.holdings.peek.pot'), value: holding.label }] : []),
+      // Only where there is something to tell apart: a row that carries a name
+      // already, or one sharing its (account, token) with a sibling. On every
+      // other holding a "Pot" row would be a field that says nothing, which is
+      // the same test `ManualEntryPage` and `ReviewHoldingsCard` apply through
+      // `contestedTokens` (SC-330).
+      //
+      // Editable rather than a readout, because until SC-564 nothing could set
+      // one after creation — which is precisely why the rows this was built for
+      // never had a name to render.
+      ...(holding.label || ctx.contestedHoldingIds?.has(holding.id)
+        ? [
+            {
+              label: t('v3.holdings.peek.pot'),
+              value: (
+                <HoldingLabelFact
+                  label={holding.label ?? null}
+                  symbol={holding.token.symbol}
+                  onSave={(label) => ctx.onSetLabel(holding, label)}
+                />
+              ),
+            },
+          ]
+        : []),
       { label: t('v3.holdings.peek.type'), value: holding.token.type || holding.token.typeCode },
     ],
     // The `content` slot rather than a section, because a ledger of disposals
