@@ -26,6 +26,7 @@ const fakeToken: Token = {
   name: 'Ethereum',
   typeId: 'crypto',
   decimals: 18,
+  decimalsSource: 'chain',
   iconUrl: null,
   lastPricingAttemptAt: null,
   lookalikeOf: null,
@@ -47,6 +48,7 @@ const fakeBase: Token = {
   name: 'US Dollar',
   typeId: 'fiat',
   decimals: 2,
+  decimalsSource: 'chain',
 };
 
 const okQuote = {
