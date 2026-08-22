@@ -127,7 +127,16 @@ export type HoldingWithDetails = {
      */
     lookalikeOf?: string | null;
   };
-  amount: number;
+  /**
+   * The unit count, as a decimal string — the same reason `balance` above is
+   * one, and `price.value` and `totalValue` below.
+   *
+   * It was a `number` rounded to 8 decimals, which lost both ends: every
+   * balance under `1e-8` arrived as `0` — a claim that the position is EMPTY
+   * rather than small — and a double silently dropped the low digits of a
+   * large one. Neither loss was visible to the reader (SC-567).
+   */
+  amount: string;
   // `null` when the holding's token has no resolvable price in the
   // user's base currency. UI renders "—" rather than $0 so the
   // missing-data state is visible.

@@ -42,7 +42,7 @@ function holding(overrides: Partial<HoldingWithDetails> = {}): HoldingWithDetail
       isScamProbability: 0,
       lookalikeOf: null,
     },
-    amount: 1,
+    amount: '1',
     value: 1,
     costBasis: 1,
     account: { id: 'a1', name: 'Airwallex', type: 'Bank', typeCode: 'bank', institutionId: 'i1' },

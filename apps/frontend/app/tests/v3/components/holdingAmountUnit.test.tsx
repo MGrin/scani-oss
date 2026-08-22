@@ -44,7 +44,7 @@ function holding(overrides: Partial<HoldingWithDetails> = {}): HoldingWithDetail
       isScamProbability: 0,
       lookalikeOf: null,
     },
-    amount: 0.2841,
+    amount: '0.2841',
     value: 18_204.55,
     costBasis: 12_000,
     account: {
@@ -132,6 +132,12 @@ describe('the list row', () => {
    * truncated figure is a different number — and the symbol is, because the
    * identity zone carries it in full, at row weight, with its badge, one line
    * to the left. Delete this and the row silently regains an unbounded child.
+   *
+   * SC-567 DID NOT RELAX THIS, though it looks at first like it did. A dust
+   * balance renders `< 0.00000001` on this row rather than eighteen decimals —
+   * but that is a THRESHOLD, not a truncation: it is a complete and true
+   * statement, where a cut-off figure would be an ambiguous one. The rule
+   * stands; see the dust tests below.
    */
   test('the symbol may ellipsize; the figure beside it may not', () => {
     const markup = render(configFor([holding()]).renderRow(holding()).value);
@@ -194,5 +200,66 @@ describe('the peek sheet', () => {
 
   test('an ordinary symbol carries no badge at all', () => {
     expect(amountFact(holding())).not.toContain('Displays as');
+  });
+});
+
+/**
+ * SC-567 — what a balance too small for the column says on a SCANNING surface.
+ *
+ * Three candidates and only one holds:
+ *
+ *   `0`                      what it said. Not a rounding of a small position
+ *                            but a different claim — that it is empty — and
+ *                            mgrin reported it against a position he holds.
+ *   `0.000000000000000001`   true, and at 393px it takes 182px of value
+ *                            against 103px of identity, clipping the account
+ *                            name on the row whose job is saying which row
+ *                            this is.
+ *   `< 0.00000001`           bounded, and cannot be read as empty.
+ *
+ * The peek and the export are inspection surfaces and carry the exact figure.
+ * That split is the whole ruling, so both halves are asserted here.
+ */
+describe('a balance too small for the column', () => {
+  const DUST = '0.0000000004013';
+
+  test('the list row says it is below the threshold, never that it is zero', () => {
+    const item = holding({ amount: DUST });
+    const markup = render(configFor([item]).renderRow(item).value);
+
+    expect(markup).toContain('0.00000001');
+    // The claim that was being made, and the one thing this row may not say.
+    // Asserted on the rendered quantity rather than on the whole row, which
+    // legitimately contains a `0` inside the money figure.
+    expect(markup).not.toMatch(/>0</);
+  });
+
+  test('the row does not spell out eighteen decimals', () => {
+    const item = holding({ amount: '0.000000000000000001' });
+    const markup = render(configFor([item]).renderRow(item).value);
+    expect(markup).not.toContain('0.000000000000000001');
+    expect(markup).toContain('0.00000001');
+  });
+
+  test('the peek carries the exact figure, because it is read rather than scanned', () => {
+    const item = holding({ amount: DUST });
+    expect(amountFact(item)).toContain(DUST);
+  });
+
+  test('a balance the column CAN show is untouched', () => {
+    // The negative control. Without it, a threshold applied to everything
+    // would pass both assertions above.
+    const item = holding({ amount: '143.59019742' });
+    const markup = render(configFor([item]).renderRow(item).value);
+    expect(markup).toContain('143.59019742');
+    expect(markup).not.toContain('0.00000001');
+  });
+
+  test('a genuinely empty position still says zero', () => {
+    // The other side of the same control: `isDustQuantity` answers false for
+    // zero on purpose, because a position that IS empty is entitled to say so.
+    const item = holding({ amount: '0' });
+    const markup = render(configFor([item]).renderRow(item).value);
+    expect(markup).not.toContain('0.00000001');
   });
 });

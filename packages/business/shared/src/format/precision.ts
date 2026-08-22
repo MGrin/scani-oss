@@ -121,6 +121,47 @@ export function quantityDecimals(value: Decimal.Value | null | undefined): numbe
 }
 
 /**
+ * The smallest quantity a balance column shows in full — `0.00000001`, the
+ * `QUANTITY_DECIMALS` cap written out.
+ *
+ * A string, not a number, for the same reason `roundToDecimals` returns one:
+ * `1e-8` is the exponent form and nothing that renders a quantity wants it.
+ */
+export const SMALLEST_SHOWN_QUANTITY = '0.00000001';
+
+/**
+ * Whether a quantity is real but too small for a column that stops at
+ * `QUANTITY_DECIMALS` — the case a SCANNING surface renders as
+ * `< 0.00000001` rather than in full (SC-567).
+ *
+ * `quantityDecimals` above answers the other question: it EXTENDS past the cap
+ * so an inspection surface can show such a balance exactly. Both are right and
+ * they are for different surfaces. A list row is scanned, and 18 decimals in
+ * the value zone squeezes the identity zone to the point where the account
+ * name clips — measured at 393px, 182px of value against 103px of identity.
+ * The peek and the export are inspected, and there the exact figure is the
+ * whole point.
+ *
+ * WHAT MAY NOT HAPPEN ON EITHER IS `0`. That is not a rounding of a small
+ * position, it is a different claim — that the position is empty — and it was
+ * being made on four surfaces at once, including a CSV an accountant reads
+ * (SC-567). `< 0.00000001` cannot be read as empty, which is what makes it an
+ * acceptable answer for a row and a truncation would not be: a truncated
+ * number is ambiguous, and an ellipsis on digits reads as broken.
+ *
+ * NOT REUSABLE FOR MONEY, deliberately. `moneyDecimals` faces the same choice
+ * and this file already rejected a `<0.01` marker there, because a statement's
+ * reader multiplies the unit price by the quantity and checks it against the
+ * total on the same row — a threshold cannot be multiplied out. A holdings row
+ * carries no price to multiply against, so that objection does not transfer.
+ */
+export function isDustQuantity(value: Decimal.Value | null | undefined): boolean {
+  const decimal = parse(value);
+  if (decimal === null) return false;
+  return vanishesAt(decimal.abs(), QUANTITY_DECIMALS);
+}
+
+/**
  * A figure rounded to a fixed number of decimals, as a decimal string.
  *
  * `Decimal.toFixed`, so it rounds where the rest of the app rounds (HALF_UP,
