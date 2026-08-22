@@ -64,7 +64,8 @@ their own — the contract is identical.
 | Sessions, users, vaults, groups | Your Postgres. |
 | Encrypted integration credentials (exchange keys, brokerage tokens) | Your Postgres, AES-256-GCM-encrypted with your `ENCRYPTION_KEY`. |
 | Uploaded screenshots / file imports | Your S3 bucket. |
-| BullMQ job state, sync schedules | Your Redis. |
+| BullMQ job state, sync schedules | Your Postgres, in the `bullmq` schema. |
+| Rate-limiter buckets, realtime pub/sub | Your Redis. |
 | Logs | Your stdout / log aggregator. |
 
 The hosted data-provider sees **only** the requests api/worker
