@@ -23,14 +23,20 @@ import * as schema from '@scani/db/schema';
 import { and, asc, eq } from 'drizzle-orm';
 import { Container } from 'typedi';
 import { flowRoleOf } from '../../src/lib/returns/flow-classification';
-import { UpdateHoldingUseCase } from '../../src/use-cases/UpdateHoldingUseCase';
+import {
+  HoldingLabelTakenError,
+  UpdateHoldingUseCase,
+} from '../../src/use-cases/UpdateHoldingUseCase';
 import { withTestDb } from '../../test/helpers/db';
 import { makeInstitution, makeUser } from '../../test/helpers/factories';
 import { makeAccount, makeHolding, makeToken } from '../../test/helpers/factories-extra';
 
 const useCase = () => Container.get(UpdateHoldingUseCase);
 
-async function scaffold(tx: Parameters<Parameters<typeof withTestDb>[0]>[0]) {
+async function scaffold(
+  tx: Parameters<Parameters<typeof withTestDb>[0]>[0],
+  holdingOverrides: { lastUpdated?: Date } = {}
+) {
   const user = await makeUser(tx);
   const institution = await makeInstitution(tx);
   const account = await makeAccount(tx, { userId: user.id, institutionId: institution.id });
@@ -41,9 +47,22 @@ async function scaffold(tx: Parameters<Parameters<typeof withTestDb>[0]>[0]) {
     tokenId: token.id,
     balance: '100',
     source: 'manual',
+    ...holdingOverrides,
   });
   return { user, account, token, holding };
 }
+
+/**
+ * A `lastUpdated` far from both clocks in play.
+ *
+ * The default comes from Postgres `now()`, and the value an edit writes comes
+ * from `new Date()` on the host. Those are two different clocks — the compose
+ * container's and this machine's — so asserting that one is later than the
+ * other by a few milliseconds tests the skew between them, not the code. It
+ * passed, then failed three runs in a row on an unrelated change, which is the
+ * only reason it was noticed. Seeded months back, no plausible skew reaches it.
+ */
+const SEEDED_LAST_UPDATED = new Date('2026-01-01T00:00:00.000Z');
 
 function ledgerFor(tx: Parameters<Parameters<typeof withTestDb>[0]>[0], holdingId: string) {
   return tx
@@ -272,6 +291,282 @@ describe('UpdateHoldingUseCase', () => {
       // `balance - sum(txs)` is exactly what it was before the edit.
       expect(sum).toBe(5000);
       expect(ledger.every((row) => row.source !== 'reconciliation-opening')).toBe(true);
+    });
+  });
+});
+
+/**
+ * SC-564 — naming a pot that already exists.
+ *
+ * `holdings.label` shipped with SC-330 and production still held 100 rows with
+ * a NULL one, because the only writes were at CREATION time and the four RUB
+ * rows the feature was designed for predate the column. These assert the write
+ * path that was missing and, more importantly, the three things it must NOT do
+ * on the way.
+ *
+ * **The negative tests are the point.** A rename that also synthesized a flow,
+ * appended an observation or bumped `lastUpdated` would still store the name —
+ * so a test asserting only "the label is now Savings" passes against every one
+ * of those bugs. That is the same trap as the observation tests above.
+ */
+describe('UpdateHoldingUseCase — pot names (SC-564)', () => {
+  test('a name can be set on a holding that already exists', async () => {
+    await withTestDb(async (tx) => {
+      const { user, holding } = await scaffold(tx);
+
+      const result = await useCase().execute(holding.id, { label: 'Savings' }, user.id, tx);
+
+      expect(result.label).toBe('Savings');
+    });
+  });
+
+  test('the name is stored trimmed, so it keys the way it displays', async () => {
+    // `holdingPositionKey` trims and lowercases. A stored "  Savings  " would
+    // key as `savings` and render with its padding, which is one name that
+    // looks like two.
+    await withTestDb(async (tx) => {
+      const { user, holding } = await scaffold(tx);
+
+      const result = await useCase().execute(holding.id, { label: '  Savings  ' }, user.id, tx);
+
+      expect(result.label).toBe('Savings');
+    });
+  });
+
+  test('a blank name clears it rather than storing an empty string', async () => {
+    await withTestDb(async (tx) => {
+      const { user, holding } = await scaffold(tx);
+      await useCase().execute(holding.id, { label: 'Savings' }, user.id, tx);
+
+      const result = await useCase().execute(holding.id, { label: '   ' }, user.id, tx);
+
+      // Not `''`: the position key normalises both to the same thing, and two
+      // spellings of "no name" in the column is a distinction nothing reads.
+      expect(result.label).toBeNull();
+    });
+  });
+
+  test('a rename writes NO transaction — naming a pot is not money moving', async () => {
+    // The load-bearing one. `ManualBalanceEditService.record` synthesizes a
+    // deposit for a `flow`, and a rename that reached it would book money that
+    // never moved onto the exact rows this feature exists to disambiguate.
+    // `editCause` is passed deliberately: the API cannot send one for a
+    // label-only edit, so this asserts the use case refuses on its own rather
+    // than relying on the router never asking.
+    await withTestDb(async (tx) => {
+      const { user, holding } = await scaffold(tx);
+
+      await useCase().execute(holding.id, { label: 'Savings', editCause: 'flow' }, user.id, tx);
+
+      expect(await ledgerFor(tx, holding.id)).toEqual([]);
+    });
+  });
+
+  test('a rename appends NO balance observation', async () => {
+    // `BalanceAtTimeService` anchors a past-date balance on the nearest
+    // observation and reports full confidence when it finds one. An
+    // observation written at a rename would be a confident claim that the
+    // balance was re-checked at a moment nobody looked at it.
+    await withTestDb(async (tx) => {
+      const { user, holding } = await scaffold(tx);
+
+      await useCase().execute(holding.id, { label: 'Savings' }, user.id, tx);
+
+      expect((await observationsFor(tx, holding.id)).length).toBe(0);
+    });
+  });
+
+  test('a rename does not bump lastUpdated', async () => {
+    // `lastUpdated` answers "when did this balance last move" — the sync path
+    // skips writing it when a poll returns an unchanged balance. Bumping it on
+    // a rename puts a fresh timestamp under a figure nobody re-checked.
+    await withTestDb(async (tx) => {
+      const { user, holding } = await scaffold(tx, { lastUpdated: SEEDED_LAST_UPDATED });
+
+      const result = await useCase().execute(holding.id, { label: 'Savings' }, user.id, tx);
+
+      expect(result.lastUpdated.toISOString()).toBe(SEEDED_LAST_UPDATED.toISOString());
+    });
+  });
+
+  test('a balance edit still bumps lastUpdated', async () => {
+    // The control for the test above. Without it, an implementation that never
+    // wrote `lastUpdated` at all would pass, and the freshness signal the whole
+    // holdings list reads would be dead rather than accurate.
+    await withTestDb(async (tx) => {
+      const { user, holding } = await scaffold(tx, { lastUpdated: SEEDED_LAST_UPDATED });
+
+      const result = await useCase().execute(holding.id, { balance: '150' }, user.id, tx);
+
+      expect(result.lastUpdated.getTime()).toBeGreaterThan(SEEDED_LAST_UPDATED.getTime());
+    });
+  });
+
+  test('a balance edit does not touch the name', async () => {
+    // The client sends no `label` key on a balance edit. If the use case read
+    // `undefined` as "clear it", every balance edit would silently un-name the
+    // pot — and the reader would find out weeks later, looking at four rows
+    // that had become indistinguishable again.
+    await withTestDb(async (tx) => {
+      const { user, holding } = await scaffold(tx);
+      await useCase().execute(holding.id, { label: 'Savings' }, user.id, tx);
+
+      const result = await useCase().execute(holding.id, { balance: '150' }, user.id, tx);
+
+      expect(result.label).toBe('Savings');
+    });
+  });
+});
+
+/**
+ * The refusal, and the two things it deliberately allows.
+ *
+ * The rule is `collidingHoldingTokens` in `@scani/shared` — the same function
+ * the review screen and the create use case refuse on. What is asserted here is
+ * that this path reaches it and reaches it with the right population.
+ */
+describe('UpdateHoldingUseCase — a name has to tell the rows apart (SC-564)', () => {
+  async function twoRubRows(tx: Parameters<Parameters<typeof withTestDb>[0]>[0]) {
+    const user = await makeUser(tx);
+    const institution = await makeInstitution(tx);
+    const account = await makeAccount(tx, { userId: user.id, institutionId: institution.id });
+    const token = await makeToken(tx);
+    const first = await makeHolding(tx, {
+      userId: user.id,
+      accountId: account.id,
+      tokenId: token.id,
+      balance: '89354.60',
+      source: 'manual',
+    });
+    const second = await makeHolding(tx, {
+      userId: user.id,
+      accountId: account.id,
+      tokenId: token.id,
+      balance: '5675.47',
+      source: 'manual',
+    });
+    return { user, account, token, first, second };
+  }
+
+  test('a name another row in the account already wears is refused', async () => {
+    await withTestDb(async (tx) => {
+      const { user, first, second } = await twoRubRows(tx);
+      await useCase().execute(first.id, { label: 'Savings' }, user.id, tx);
+
+      await expect(useCase().execute(second.id, { label: 'Savings' }, user.id, tx)).rejects.toThrow(
+        HoldingLabelTakenError
+      );
+    });
+  });
+
+  test('the refusal is case- and space-insensitive, like the key', async () => {
+    // `holdingPositionKey` lowercases and trims. Refusing "Savings" while
+    // accepting " savings " would put two rows on screen that read as the same
+    // pot to a human and as two keys to the code — the worst of both.
+    await withTestDb(async (tx) => {
+      const { user, first, second } = await twoRubRows(tx);
+      await useCase().execute(first.id, { label: 'Savings' }, user.id, tx);
+
+      await expect(
+        useCase().execute(second.id, { label: '  sAvInGs ' }, user.id, tx)
+      ).rejects.toThrow(HoldingLabelTakenError);
+    });
+  });
+
+  test('renaming a row to the name it already has is not a collision with itself', async () => {
+    // The sibling set has to exclude the row being renamed. Without that, every
+    // re-save of an unchanged name is refused, and the control the user is
+    // looking at appears broken on the second press.
+    await withTestDb(async (tx) => {
+      const { user, first } = await twoRubRows(tx);
+      await useCase().execute(first.id, { label: 'Savings' }, user.id, tx);
+
+      const result = await useCase().execute(first.id, { label: 'Savings' }, user.id, tx);
+
+      expect(result.label).toBe('Savings');
+    });
+  });
+
+  test('a different name on the sibling is accepted — four pots is the point', async () => {
+    // The control that proves the guard is not simply refusing every rename in
+    // a contested group. If this ever goes red the feature is inert: the four
+    // Tinkoff rows could never be told apart, which is the whole ticket.
+    await withTestDb(async (tx) => {
+      const { user, first, second } = await twoRubRows(tx);
+      await useCase().execute(first.id, { label: 'Current' }, user.id, tx);
+
+      const result = await useCase().execute(second.id, { label: 'Savings' }, user.id, tx);
+
+      expect(result.label).toBe('Savings');
+    });
+  });
+
+  test('clearing a name is allowed even while a sibling is unnamed', async () => {
+    // Deliberate, and the reason is in `refuseIfLabelTaken`: an empty name
+    // returns the row to the unnamed population it came from, which is an
+    // ambiguity that already exists rather than a new one. Guarding it would
+    // key every unnamed row to the same position and leave a user who named
+    // one pot unable to ever un-name it — stuck in a state their own edit
+    // created. Someone will read this refusal as a hole and try to close it;
+    // this test is what they have to argue with.
+    await withTestDb(async (tx) => {
+      const { user, first } = await twoRubRows(tx);
+      await useCase().execute(first.id, { label: 'Savings' }, user.id, tx);
+
+      const result = await useCase().execute(first.id, { label: null }, user.id, tx);
+
+      expect(result.label).toBeNull();
+    });
+  });
+
+  test('a synced sibling does not block the name — that pair is two positions', async () => {
+    // `findUnsyncedByAccountAndTokens` is the population, matching the create
+    // path: an importer owns its own row and overwrites it every sync, so a
+    // hand-named pot beside a synced row is two positions rather than one
+    // duplicated. Production has exactly this at Airwallex — a manual USD pot
+    // with its own APY schedule beside the synced USD balance.
+    await withTestDb(async (tx) => {
+      const { user, account, token, first } = await twoRubRows(tx);
+      await makeHolding(tx, {
+        userId: user.id,
+        accountId: account.id,
+        tokenId: token.id,
+        balance: '601.50',
+        source: 'import_airwallex',
+        externalId: 'USD',
+        label: 'Savings',
+      });
+
+      const result = await useCase().execute(first.id, { label: 'Savings' }, user.id, tx);
+
+      expect(result.label).toBe('Savings');
+    });
+  });
+
+  test("another account's row with the same name does not block it", async () => {
+    // The key is (account, token). Six of the nine "duplicate" groups SC-564
+    // was filed about were different USERS' accounts that shared a name, and a
+    // guard keyed on anything wider than the account id would refuse a rename
+    // because of a row the user cannot even see.
+    await withTestDb(async (tx) => {
+      const { user, token, first } = await twoRubRows(tx);
+      const otherInstitution = await makeInstitution(tx);
+      const otherAccount = await makeAccount(tx, {
+        userId: user.id,
+        institutionId: otherInstitution.id,
+      });
+      await makeHolding(tx, {
+        userId: user.id,
+        accountId: otherAccount.id,
+        tokenId: token.id,
+        balance: '10',
+        source: 'manual',
+        label: 'Savings',
+      });
+
+      const result = await useCase().execute(first.id, { label: 'Savings' }, user.id, tx);
+
+      expect(result.label).toBe('Savings');
     });
   });
 });

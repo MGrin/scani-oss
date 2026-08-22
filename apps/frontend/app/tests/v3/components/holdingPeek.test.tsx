@@ -48,6 +48,7 @@ const CONTEXT: HoldingPeekContext = {
   refreshingPriceId: null,
   refreshingBalanceId: null,
   onEditPrice: () => undefined,
+  onSetLabel: () => undefined,
   onConfigureApy: () => undefined,
   onRemoveApy: () => undefined,
   onDelete: () => undefined,
@@ -297,5 +298,62 @@ describe('holdingRowDelta', () => {
 
   test('is nothing at all when there is no basis for it', () => {
     expect(holdingRowDelta(holding({ costBasis: null }))).toBeUndefined();
+  });
+});
+
+/**
+ * SC-564 — the pot name, and when it is worth asking for.
+ *
+ * The fact itself is SC-330's. What is new is that it appears on rows that
+ * have no name YET, and that it is editable: until this, `label` could only be
+ * set when the holding was created, so the rows the fact was designed for —
+ * four RUB rows in one Tinkoff account — could never acquire one and it never
+ * rendered in production at all.
+ */
+describe('the pot name', () => {
+  const primaryLabels = (item: HoldingWithDetails, ctx: HoldingPeekContext = CONTEXT) =>
+    holdingPeekSpec(item, ctx).primary.map((fact) => fact.label);
+
+  test('is offered on a row that shares its account and token with a sibling', () => {
+    // The reader is looking at one of several identical-looking rows. This is
+    // the case the whole ticket is about, and before SC-564 it was the one
+    // case that got no field.
+    const contested = { ...CONTEXT, contestedHoldingIds: new Set(['h1']) };
+    expect(primaryLabels(holding(), contested)).toEqual([
+      'Amount',
+      'Price',
+      'Account',
+      'Pot',
+      'Type',
+    ]);
+  });
+
+  test('is offered on a row that already carries one, contested or not', () => {
+    expect(primaryLabels(holding({ label: 'Savings' }))).toContain('Pot');
+  });
+
+  test('is NOT offered on an unnamed row that is the only one for its token', () => {
+    // The control, and the reason the fact is conditional at all: a "Pot" row
+    // on every holding is a field that says nothing, and this assertion is
+    // what stops the condition being quietly widened to `true`. If it ever
+    // goes red, four of the five facts above the fold on every ordinary
+    // holding are now paying for a question nobody has.
+    expect(primaryLabels(holding())).not.toContain('Pot');
+    expect(primaryLabels(holding())).toEqual(['Amount', 'Price', 'Account', 'Type']);
+  });
+
+  test('renders the name it carries, and an invitation when it has none', () => {
+    const named = holdingPeekSpec(holding({ label: 'Savings' }), CONTEXT).primary.find(
+      (fact) => fact.label === 'Pot'
+    );
+    expect(renderNode(named?.value)).toContain('Savings');
+
+    const contested = { ...CONTEXT, contestedHoldingIds: new Set(['h1']) };
+    const unnamed = holdingPeekSpec(holding(), contested).primary.find(
+      (fact) => fact.label === 'Pot'
+    );
+    // Not an em-dash. A row that says "Pot: —" tells the reader nothing about
+    // what the control beside it would do.
+    expect(renderNode(unnamed?.value)).toContain('Not named');
   });
 });

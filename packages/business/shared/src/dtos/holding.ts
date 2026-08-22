@@ -2,6 +2,18 @@ import { z } from 'zod';
 import { Decimal, isValidDecimalString } from '../decimal';
 import { MANUAL_EDIT_CAUSES, type ManualEditCause } from '../lib/manual-balance-edit';
 
+/**
+ * A pot name is a label on a row in a list, not a description. Long enough for
+ * "Wedding gift" and "Deposit 12 months", short enough that the holdings list
+ * still reads as a list.
+ *
+ * Lives here rather than in `batch.ts` because both the create payload and the
+ * update payload bound a label by it, and `batch.ts` already depends on this
+ * file. Every consumer imports it from the `@scani/shared` barrel, so which of
+ * the two files holds it is invisible from outside.
+ */
+export const HOLDING_LABEL_MAX_LENGTH = 40;
+
 export type Holding = {
   id: string;
   createdAt: Date;
@@ -63,6 +75,23 @@ export const UpdateHoldingDto = z.object({
     )
     .optional(),
   isActive: z.boolean().optional(),
+  /**
+   * What the user calls this pot (SC-330), settable on a holding that already
+   * exists (SC-564).
+   *
+   * The column, the render and the create-time write all shipped with SC-330;
+   ***REMOVED***
+   ***REMOVED***
+   ***REMOVED***
+   ***REMOVED***
+   *
+   * `null` clears the name. `undefined` leaves it alone — the distinction
+   * matters because most updates here are balance edits that must not touch
+   * it. Trimmed at the boundary so the position key and the stored value
+   * agree on what " Savings " is, exactly as `CreateHoldingsWithDependenciesDto`
+   * does.
+   */
+  label: z.string().trim().max(HOLDING_LABEL_MAX_LENGTH).nullable().optional(),
   /**
    * What the balance edit MEANT (SC-510). Required when the holding's token
    * type is ambiguous (`manualEditNeedsCause`) and no per-holding default has

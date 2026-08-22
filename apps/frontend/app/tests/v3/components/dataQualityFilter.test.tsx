@@ -85,6 +85,7 @@ function renderList(search: string, qualitySets: DataQualitySets | undefined): s
       refreshingPriceId: null,
       refreshingBalanceId: null,
       onEditPrice: () => undefined,
+      onSetLabel: () => undefined,
       onConfigureApy: () => undefined,
       onRemoveApy: () => undefined,
       onDelete: () => undefined,

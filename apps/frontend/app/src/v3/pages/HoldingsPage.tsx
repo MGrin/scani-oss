@@ -142,6 +142,32 @@ export function HoldingsPage() {
   // later change is the user's own filtering rather than the link's.
   const defaultFilters = useMemo(() => holdingFiltersFromParams(searchParams), [searchParams]);
 
+  /**
+   * The holdings a pot name has work to do on: those sharing an
+   * (account, token) with at least one sibling.
+   *
+   * Computed here because only the page holds the whole list — the peek is
+   * handed one holding and cannot see the others. Keyed on `account.id` and
+   * `token.id` rather than on the account NAME or the token SYMBOL: two users'
+   * accounts can share a name and two different tokens can share a symbol, and
+   * grouping on either turned two real groups into nine on production
+   * (SC-564).
+   */
+  const contestedHoldingIds = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const holding of holdings) {
+      const key = `${holding.account.id}\u0000${holding.token.id}`;
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    return new Set(
+      holdings
+        .filter(
+          (holding) => (counts.get(`${holding.account.id}\u0000${holding.token.id}`) ?? 0) > 1
+        )
+        .map((holding) => holding.id)
+    );
+  }, [holdings]);
+
   const openCapture = useOpenCapture();
 
   const config = holdingsDataViewConfig({
@@ -181,6 +207,10 @@ export function HoldingsPage() {
       refreshingPriceId: refresh.refreshingPriceId,
       refreshingBalanceId: refresh.refreshingBalanceId,
       onEditPrice: setPriceTarget,
+      // Straight through — a rename carries no `editCause` question, because
+      // it makes no claim about the balance (SC-564).
+      onSetLabel: (holding, label) => actions.updateHolding(holding.id, { label }),
+      contestedHoldingIds,
       onConfigureApy: setApyTarget,
       onRemoveApy: setApyRemoveTarget,
       // The confirmation is `HoldingDeleteAction`'s, inline in the peek's own
