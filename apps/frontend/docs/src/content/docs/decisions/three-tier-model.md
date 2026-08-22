@@ -18,8 +18,25 @@ Scani ships **one** set of binaries (`api`, `worker`, `data-provider`,
 
 Two environment variables switch tiers:
 
-- `SCANI_CLOUD_URL` — where to send outbound third-party calls.
+- `SCANI_CLOUD_URL` — where to send object storage, email,
+  OG-metadata and token-search calls.
 - `SCANI_CLOUD_API_KEY` — the bearer the api + worker present.
+
+:::caution[The seam is narrower than this decision anticipated]
+The design below assumes *every* third-party call crosses the
+data-provider seam. As implemented, four do — object storage, email,
+Open Graph metadata and token search. Pricing, AI and chain calls do
+not: all three backend services boot
+`buildProviderRegistry({ mode: 'direct' })` and reach CoinGecko,
+DeFiLlama, Frankfurter, Finnhub, Etherscan, Helius and OpenAI
+themselves, on every tier.
+
+A `mode: 'cloud'` registry that would close the gap exists in
+`packages/clients/providers/src/core/cloud/` and is constructed by no
+app. Until it is adopted, **provider API keys are required on the api
+and worker whatever tier you run** — see
+[Tier 2 overview](/self-hosting/tier2/overview/#you-still-need-your-provider-api-keys).
+:::
 
 ## The alternative we rejected
 
@@ -43,11 +60,11 @@ api + worker call?". No fork required.
 **User credentials must stay on the user's side.** Exchange API keys,
 brokerage tokens, screenshot blobs — these are sensitive. They live
 on the `api`, which the user controls (Tier 1) or which their
-operator runs (Tier 2). The `data-provider` only sees the queries
-that don't carry user secrets (current BTC price, fetched today's
-ETH/USD candle). The tier seam is *also* the credential boundary:
-nothing on the user side gets sent to a hosted `data-provider` that
-the user didn't already plan to publish.
+operator runs (Tier 2). The `data-provider` only sees requests that
+don't carry user secrets: an object-storage read or write, a rendered
+email, a URL to fetch OG metadata for, a symbol to search. The tier
+seam is *also* the credential boundary — no decrypted integration
+credential ever crosses it.
 
 ## What the three tiers look like
 
@@ -57,7 +74,8 @@ the user didn't already plan to publish.
 | `worker` runs… | On your hardware. | On your hardware. | Hosted. |
 | `data-provider` runs… | On your hardware. | Hosted endpoint. | Hosted endpoint. |
 | User integration creds (exchange keys, brokerage tokens) | On your `api`. | On your `api`. | Hosted. |
-| Provider keys (CoinGecko, OpenAI, Etherscan) | You set them on your `data-provider`. | Operator sets them on the hosted `data-provider`. | Operator sets them on the hosted `data-provider`. |
+| Provider keys (CoinGecko, OpenAI, Etherscan) | You set them, read by your api + worker. | You set them, read by your api + worker. | Operator sets them. |
+| Object storage, email, OG metadata, token search | Your `data-provider`. | Hosted `data-provider`. | Hosted `data-provider`. |
 | What's reachable from the public internet | Just `frontend-app`. | Just `frontend-app`. | All hosted. |
 
 ## What this design unlocks
@@ -67,14 +85,16 @@ the user didn't already plan to publish.
 - **The Tier-1→Tier-2 migration is a config change.** Re-point
   `SCANI_CLOUD_URL` at the hosted endpoint; provide the issued
   `SCANI_CLOUD_API_KEY`; restart api + worker. Your data stays on
-  your side; only the upstream provider calls fan out from
-  someone else.
-- **Provider keys are centralised when you want them centralised.**
-  A small operator running 50 users doesn't need each user to bring
-  their own OpenAI key.
-- **Air-gapped Tier 1 is real.** Without `SCANI_CLOUD_URL` pointing
-  at any hosted service, the local `data-provider` is the *only*
-  outbound call. The OSS distribution sends no telemetry.
+  your side.
+- **Provider keys are centralised for the calls that cross the
+  seam.** A small operator running 50 users provides one bucket and
+  one mail transport for all of them. The intent was for pricing and
+  AI keys to work the same way; the caution above is why they do not
+  yet.
+- **Tier 1 keeps every credential on one host.** No hosted service is
+  involved at all, and the OSS distribution sends no telemetry. Note
+  this is not an air gap: pricing, chain and AI calls still go out to
+  the upstreams whose keys you set, from your own api and worker.
 
 ## What the design costs
 
