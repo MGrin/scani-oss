@@ -39,7 +39,27 @@ export const userJobs = pgTable(
     state: userJobStateEnum('state').notNull().default('queued'),
     progress: real('progress').notNull().default(0),
     result: jsonb('result'),
+    /**
+     * Whatever the processor threw, verbatim. An OPERATOR field: the admin
+     * user-jobs page renders it, and someone diagnosing a failure needs the
+     * stack-shaped truth. Never served to the job's owner — a
+     * `DrizzleQueryError` puts a full `select … from "holdings"` in here, and
+     * for three days it went to a user's own screen (SC-551).
+     */
     error: text('error'),
+    /**
+     * The same failure in words somebody wrote FOR the owner, or null.
+     *
+     * Separate column rather than a sanitising read, because provenance
+     * cannot be recovered from a string once it is one: an internal assertion
+     * can read as a perfectly tidy sentence, so any text-shape gate passes the
+     * cases it exists to catch (the SC-311 argument). The processor marks the
+     * throw with `userFacing(...)` and only a marked message lands here.
+     *
+     * Null is the common and correct case — the owner is then shown the
+     * translated failure category (`jobFailureSentence`, SC-424) instead.
+     */
+    userFacingError: text('user_facing_error'),
     attemptsMade: integer('attempts_made').notNull().default(0),
     attemptsAllowed: integer('attempts_allowed').notNull().default(1),
     payloadSummary: jsonb('payload_summary').notNull().default({}),

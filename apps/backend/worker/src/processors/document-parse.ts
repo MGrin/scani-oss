@@ -3,7 +3,12 @@ import type { Document } from '@scani/db/schema';
 import { DocumentIngestionService, DocumentRetentionService } from '@scani/domain/services';
 import { DOCUMENT_PARSE, type DocumentParseJob } from '@scani/jobs';
 import { createComponentLogger } from '@scani/logging';
-import { type ProcessorContext, UnrecoverableError, UserJobProcessor } from '@scani/queue';
+import {
+  type ProcessorContext,
+  UnrecoverableError,
+  UserJobProcessor,
+  userFacing,
+} from '@scani/queue';
 import { Container, Service } from 'typedi';
 
 const logger = createComponentLogger('processor:document-parse');
@@ -171,10 +176,15 @@ export class DocumentParseProcessor extends UserJobProcessor<
       // retained prefix was classified, so a missing temp object rethrew
       // `CloudError: The specified key does not exist.`, burned a second
       // doomed attempt, and paged us about a file that simply is not there.
-      throw new UnrecoverableError(
-        retention.isRetained(r2Key)
-          ? 'The original file is no longer stored. Delete this document and upload it again.'
-          : 'The uploaded file is no longer available. Please upload it again.'
+      // `userFacing`: both sentences are written for the person who uploaded
+      // the file and tell them what to do next. Unmarked, the owner would be
+      // shown only the translated failure category (SC-551).
+      throw userFacing(
+        new UnrecoverableError(
+          retention.isRetained(r2Key)
+            ? 'The original file is no longer stored. Delete this document and upload it again.'
+            : 'The uploaded file is no longer available. Please upload it again.'
+        )
       );
     }
   }
