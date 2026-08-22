@@ -132,7 +132,7 @@ export function completedHoldings(holdings: readonly HoldingDraft[]): HoldingDra
  * enough to send — and threading a translator into a pure input builder to get
  * a `.length` would make copy a dependency of data.
  */
-export function accountTargetBlockerKeys(draft: AccountTargetDraft): string[] {
+function accountTargetBlockerKeys(draft: AccountTargetDraft): string[] {
   const blockers: string[] = [];
 
   if (draft.institutionMode === 'existing') {
@@ -184,7 +184,7 @@ export function repeatedHoldingTokenIds(holdings: readonly HoldingDraft[]): stri
  * What is still missing, in the order the form asks for it, phrased as the
  * thing to do. Empty means submittable.
  */
-export function manualEntryBlockerKeys(draft: ManualEntryDraft): string[] {
+function manualEntryBlockerKeys(draft: ManualEntryDraft): string[] {
   const blockers = accountTargetBlockerKeys(draft);
   if (completedHoldings(draft.holdings).length === 0) {
     blockers.push('v3.capture.blocker.addHolding');

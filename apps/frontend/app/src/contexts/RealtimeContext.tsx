@@ -57,7 +57,7 @@ import { trpc } from '@/lib/trpc';
  * - Cleans up the socket, reconnect timer, and ping timer on unmount.
  */
 
-export type JobLifecycleState = 'queued' | 'active' | 'progress' | 'completed' | 'failed';
+type JobLifecycleState = 'queued' | 'active' | 'progress' | 'completed' | 'failed';
 
 export interface JobEvent {
   state: JobLifecycleState;

@@ -26,7 +26,7 @@ import { cn } from '@/lib/utils';
  * (V3-25), so padding is what actually makes a row reachable with a thumb.
  */
 
-export interface PickerOption {
+interface PickerOption {
   id: string;
   label: string;
   /** Secondary text on the right of the row — a token's name, a category. */

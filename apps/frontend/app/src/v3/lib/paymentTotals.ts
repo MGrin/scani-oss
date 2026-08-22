@@ -25,7 +25,7 @@ const OCCURRENCES_PER_YEAR: Record<PaymentIntervalUnit, number> = {
   year: 1,
 };
 
-export const isPaymentIntervalUnit = (value: string): value is PaymentIntervalUnit =>
+const isPaymentIntervalUnit = (value: string): value is PaymentIntervalUnit =>
   (PAYMENT_INTERVAL_UNITS as readonly string[]).includes(value);
 
 /**
@@ -209,7 +209,7 @@ export interface BaseCurrencyRate {
  * so anything older than this reaching the UI means upstream is down and
  * the reader deserves to know.
  */
-export const RATE_STALE_AFTER_MS = 24 * 60 * 60 * 1000;
+const RATE_STALE_AFTER_MS = 24 * 60 * 60 * 1000;
 
 export interface UnconvertedPart {
   currencyTokenId: string;
