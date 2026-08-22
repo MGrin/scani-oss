@@ -1063,6 +1063,143 @@ function checkQueueBackendClaims(): void {
 // Runner
 // =============================================================================
 
+// =============================================================================
+// Check 13 — CLAUDE.md's package inventory vs the workspaces on disk
+// =============================================================================
+//
+// CLAUDE.md is the file every session loads as binding instruction, and its
+// package list is what a reader consults to decide where a new file belongs. A
+// package missing from that list is not merely undocumented, it is invisible —
+// so the logic that belonged in it gets rebuilt somewhere else, or a helper is
+// duplicated into the wrong workspace because the right one could not be seen.
+//
+// SC-528: this list was six packages short here and one short in the mirror,
+// under a heading claiming fifteen. Both copies were correct when written.
+// Every workspace added since went into the tree and not into the list, and
+// nothing anywhere disagreed — which is the whole argument for deriving it.
+//
+// Source of truth: a workspace is a tracked `packages/<category>/<name>/
+// package.json`. Doc target: every `- `packages/<category>/<name>`` bullet in
+// CLAUDE.md, wherever in the file it sits.
+//
+// The heading's parenthesised count is VERIFIED IF PRESENT and not required.
+// Both repos dropped it, because a number is the part that rots silently while
+// a missing bullet at least fails by omission. This check is deliberately not
+// written as a ban: banning a count is a rule about style, verifying one is a
+// rule about truth, and truth is what this file is for. Re-adding a count is
+// therefore safe rather than forbidden.
+
+function checkPackageInventory(): void {
+  const NAME = 'package-inventory';
+
+  const actual = new Set<string>();
+  for (const tracked of TRACKED) {
+    const m = /^(packages\/[^/]+\/[^/]+)\/package\.json$/.exec(tracked);
+    if (m?.[1]) actual.add(m[1]);
+  }
+
+  // BLIND STATE — its own message, and never a pass.
+  //
+  // Zero workspaces means the tracked file list did not resolve the way this
+  // check expects, not that the monorepo has no packages. Comparing an empty
+  // set against the doc would report every documented package as stale, which
+  // reads as a documentation problem and is not one.
+  if (actual.size === 0) {
+    fail(
+      NAME,
+      'found no packages/*/*/package.json among the tracked files. That is not a ' +
+        'documentation finding — this check could not see the workspaces it exists to ' +
+        'compare against, so it is reporting that it did not run.'
+    );
+    return;
+  }
+
+  const doc = read('CLAUDE.md');
+
+  const documented = new Set<string>();
+  for (const m of doc.matchAll(/^- `(packages\/[^/`]+\/[^/`]+)`/gm)) {
+    if (m[1]) documented.add(m[1]);
+  }
+
+  // BLIND STATE — same reasoning in the other direction. No bullets at all
+  // means the list was renamed or reformatted out from under this pattern, and
+  // every package would be reported missing.
+  if (documented.size === 0) {
+    fail(
+      NAME,
+      'CLAUDE.md has no `- `packages/<category>/<name>`` bullets. The inventory was ' +
+        'renamed or reformatted; this check cannot read it and is reporting that, not ' +
+        `that all ${actual.size} packages are undocumented.`
+    );
+    return;
+  }
+
+  const missing = [...actual].filter((p) => !documented.has(p)).sort();
+  if (missing.length > 0) {
+    fail(
+      NAME,
+      `CLAUDE.md's package list omits ${missing.length} workspace(s): ${missing.join(', ')}. ` +
+        'Give each one a line describing its role and what may depend on it — read its ' +
+        'entry points first; the name is not the role.'
+    );
+  }
+
+  const stale = [...documented].filter((p) => !actual.has(p)).sort();
+  if (stale.length > 0) {
+    fail(
+      NAME,
+      `CLAUDE.md's package list names ${stale.length} workspace(s) that no longer exist: ` +
+        `${stale.join(', ')}.`
+    );
+  }
+
+  // A bullet filed under the wrong category heading is worse than a missing
+  // one: the four headings each state a dependency direction, so a misfiled
+  // bullet asserts a rule about that package which is not the rule it lives
+  // under.
+  const misfiled: string[] = [];
+  let section: string | null = null;
+  for (const line of doc.split('\n')) {
+    const heading = /^\*\*`packages\/([^/`]+)\/`\*\*/.exec(line);
+    if (heading?.[1]) {
+      section = heading[1];
+      continue;
+    }
+    if (/^#{2,}\s/.test(line)) section = null;
+    const bullet = /^- `packages\/([^/`]+)\/([^/`]+)`/.exec(line);
+    if (bullet && section && bullet[1] !== section) {
+      misfiled.push(`packages/${bullet[1]}/${bullet[2]} under **\`packages/${section}/\`**`);
+    }
+  }
+  if (misfiled.length > 0) {
+    fail(
+      NAME,
+      `CLAUDE.md files ${misfiled.length} package bullet(s) under the wrong category heading: ${misfiled.join('; ')}.`
+    );
+  }
+
+  // Verified if present; see the header note on why this is not a ban.
+  const heading = /^\*\*Packages(?: \((\d+)\))?:\*\*/m.exec(doc);
+  if (!heading) {
+    fail(
+      NAME,
+      'CLAUDE.md has no `**Packages:**` heading over the package list. The bullets were ' +
+        'found, so this is the heading having moved or been renamed rather than the ' +
+        'inventory being absent.'
+    );
+    return;
+  }
+  const claimed = heading[1];
+  if (claimed !== undefined && Number(claimed) !== actual.size) {
+    fail(
+      NAME,
+      `CLAUDE.md's heading claims ${claimed} packages; the tree has ${actual.size}. The ` +
+        'count is optional and both repos dropped it — a missing bullet fails by ' +
+        'omission, a stale number does not — so deleting it is a valid fix.'
+    );
+  }
+}
+
 const CHECKS: Array<() => void> = [
   checkDataProviderRouters,
   checkApiRouters,
@@ -1076,6 +1213,7 @@ const CHECKS: Array<() => void> = [
   checkMarkdownPlacement,
   checkMdxCompiles,
   checkQueueBackendClaims,
+  checkPackageInventory,
 ];
 
 for (const check of CHECKS) {
