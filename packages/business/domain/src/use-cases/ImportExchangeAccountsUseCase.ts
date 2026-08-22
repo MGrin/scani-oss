@@ -224,7 +224,6 @@ export class ImportExchangeAccountsUseCase {
       skipZeroBalances: true,
       cryptoTokenTypeId: cryptoTokenType.id,
       tokenTypeMap,
-      defaultDecimals: (_snapshot, tokenType) => (tokenType === 'fiat' ? 2 : 8),
       resolveTokenTypeId: (snapshot, fallbackCryptoTypeId) =>
         resolveSnapshotTokenType(snapshot, tokenTypeMap, fallbackCryptoTypeId),
       transactionName: 'importExchangeAccounts',

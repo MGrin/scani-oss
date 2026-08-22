@@ -214,7 +214,6 @@ export class ImportIbkrAccountsUseCase {
       skipZeroBalances: false,
       cryptoTokenTypeId: stockTokenType.id,
       tokenTypeMap,
-      defaultDecimals: () => 2,
       // IBKR Flex Query returns equity positions AND per-currency cash
       // balances in the same statement. Cash legs are tagged
       // `tokenType: 'fiat'` by the provider so they resolve to the

@@ -21,6 +21,7 @@ export * from './institutions';
 export * from './job-heartbeats';
 export * from './payments';
 export * from './portfolio';
+export * from './protocol-native-decimals';
 export * from './push';
 export * from './token-identity-authority';
 export * from './tokens';

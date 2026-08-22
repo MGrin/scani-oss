@@ -355,6 +355,7 @@ const SYNTHETIC_USD_TOKEN: Token = {
   name: 'United States Dollar',
   typeId: 'fiat',
   decimals: 2,
+  decimalsSource: 'iso4217',
   iconUrl: null,
   providerMetadata: {},
   isScamProbability: 0,

@@ -52,6 +52,60 @@ export interface TokenMetadata {
   [key: string]: unknown;
 }
 
+/**
+ * Where a `tokens.decimals` came from. Two authorities and no third (SC-544).
+ *
+ * `chain` — the asset's own chain answered: `decimals()` on the authoritative
+ * EVM contract, the mint's `getTokenSupply`, or the chain's native decimals.
+ * Which identity on a multi-namespace row is allowed to answer is
+ * `identityAuthority()` in `./token-identity-authority`, not a rule
+ * restated here.
+ *
+ * `iso4217` — a currency's minor unit, which is defined rather than observed.
+ *
+ * `protocol` — an L1 native asset whose smallest unit is fixed by its own
+ * protocol and deployed in no contract: ADA's lovelace, DOT's Planck, XRP's
+ * drop. The same KIND of authority as `iso4217` rather than a weaker one, and
+ * only for the entries in `PROTOCOL_NATIVE_DECIMALS`, each of which carries the
+ * command that establishes it.
+ *
+ * `user` — a custom token its owner created. There is no chain and no standard
+ * for one, so its owner is the only authority there can be; refusing their
+ * value would leave the one asset class where the answer is knowable
+ * permanently NULL.
+ *
+ * Anything else writes NULL, and an absent answer is never a default. Every
+ * wrong row in production came from a writer that had no source and supplied a
+ * number anyway — `typeCode === 'crypto' ? 18 : 2` and a zod `.default(2)` are
+ * the same expression in different clothes, and both are gone (SC-544).
+ */
+export type DecimalsSource = 'chain' | 'iso4217' | 'protocol' | 'user';
+
+/** A decimals and the authority that produced it, or neither. */
+export interface DecimalsAttribution {
+  readonly decimals: number | null;
+  readonly decimalsSource: DecimalsSource | null;
+}
+
+/**
+ * Pair a decimals with its authority, dropping both when the authority did not
+ * actually answer.
+ *
+ * Callers pass this rather than setting the two columns separately, so a value
+ * cannot be written without saying where it came from — which is the only
+ * structural difference between this column and the one that produced SC-544.
+ * An `undefined` from an upstream that had no opinion becomes NULL here rather
+ * than a default, and a non-integer or negative answer is not an answer.
+ */
+export function attributeDecimals(
+  decimals: number | null | undefined,
+  source: DecimalsSource
+): DecimalsAttribution {
+  return typeof decimals === 'number' && Number.isInteger(decimals) && decimals >= 0
+    ? { decimals, decimalsSource: source }
+    : { decimals: null, decimalsSource: null };
+}
+
 // Dynamic enum table for token types — 'fiat', 'crypto', 'public-stock',
 // 'private-company', 'other'. Admin-extensible without a migration.
 export const tokenTypes = pgTable('token_types', {
@@ -80,7 +134,38 @@ export const tokens = pgTable(
     typeId: uuid('type_id')
       .notNull()
       .references(() => tokenTypes.id, { onDelete: 'restrict' }),
-    decimals: real('decimals').notNull().default(2),
+    /**
+     * The exponent that turns this asset's smallest indivisible unit into one
+     * whole unit — the `decimals` in `raw / 10^decimals`. A property of the
+     * ASSET, and deliberately NOT a display precision: how many decimals to
+     * SHOW is asked of the figure, in `@scani/shared`'s `precision.ts`, which
+     * exists because a fixed precision constant caused SC-172/174/177/179.
+     * Nothing here may feed a rendering path (SC-544).
+     *
+     * NULL means no authority answered, and that is a first-class state rather
+     * than a gap. It was `real notNull default 2` until SC-544, and the default
+     * is what made a guess indistinguishable from a fact: 20 of 251 production
+     * rows carried a number no source had ever produced. `integer` because it
+     * is a count of digits — `decimals()` returns a uint8.
+     *
+     * NULL is the CORRECT answer for an equity, not a cautious one: an equity
+     * has no on-chain integer, so the field does not apply to the asset class.
+     * A `2` there would encode a broker display convention into a field that
+     * means on-chain scaling, and IBKR reports fractional shares anyway.
+     */
+    decimals: integer('decimals'),
+    /**
+     * Which authority produced `decimals`, so a value we derived is
+     * distinguishable from one we inherited. NULL alongside a non-null
+     * `decimals` means a legacy row nobody has re-derived.
+     *
+     * There is no `coingecko` here on purpose. Its `decimal_place` is keyed
+     * per DEPLOYMENT rather than per asset — measured 2026-08-22, `starknet`
+     * answers 18/18/9 across ethereum/starknet/solana, and `cardano`,
+     * `polkadot`, `ripple` and `bitcoin` answer nothing at all — so an
+     * aggregator cannot be an authority for a single-valued column.
+     */
+    decimalsSource: text('decimals_source').$type<DecimalsSource>(),
     /**
      * Structural property of the security itself, NOT a provider-specific
      * field. Examples: 'US' (NYSE/NASDAQ), 'L' (LSE), 'TO' (Toronto). NULL
