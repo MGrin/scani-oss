@@ -18,7 +18,8 @@ interface HoldingsListResponse {
     data: {
       holdings: Array<{
         id: string;
-        amount: number;
+        /** A decimal STRING on the wire, not a number — see SC-567. */
+        amount: string;
         token: { symbol: string };
         manualEditCause?: string | null;
       }>;
@@ -57,7 +58,12 @@ test.describe('holdings: update', () => {
     const body = (await listRes.json()) as HoldingsListResponse;
     const updated = body.result.data.holdings.find((h) => h.id === holding.id);
     expect(updated).toBeTruthy();
-    expect(updated?.amount).toBe(1500);
+    // `'1500'`, not `1500`. `amount` crosses the wire as a decimal string so
+    // that a balance below 1e-8 is not rounded to `0` and a large one does not
+    // lose its low digits to a double (SC-567). This assertion is the reason
+    // the e2e suite exists separately from the unit gate: `bun run test` does
+    // not run `apps/e2e`, so nothing local could see the wire's actual shape.
+    expect(updated?.amount).toBe('1500');
     // And the answer is remembered, so the next edit of this pot is one tap.
     expect(updated?.manualEditCause).toBe('flow');
   });
@@ -99,7 +105,7 @@ test.describe('holdings: update', () => {
       `${API_BASE_URL}/trpc/holdings.getWithDetails?input=%7B%7D`
     );
     const body = (await listRes.json()) as HoldingsListResponse;
-    expect(body.result.data.holdings.find((h) => h.id === holding.id)?.amount).toBe(1000);
+    expect(body.result.data.holdings.find((h) => h.id === holding.id)?.amount).toBe('1000');
   });
 
   /**
