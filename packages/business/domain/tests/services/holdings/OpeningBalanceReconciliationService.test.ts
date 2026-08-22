@@ -46,6 +46,7 @@ function makeService(opts: {
     tokenId: string;
     balance: string;
     createdAt?: Date;
+    isHidden?: boolean;
   } | null;
   txSumAllTime: string;
   firstTxAt?: Date;
@@ -72,9 +73,15 @@ function makeService(opts: {
   const holdingRow = opts.holding
     ? { createdAt: opts.firstTxAt ?? new Date('2100-01-01T00:00:00Z'), ...opts.holding }
     : null;
+  // Mirrors the real `HoldingRepository.findByUser` on the one axis these
+  // tests turn on: hidden holdings come back only when the caller asks for
+  // them. A stub that returned the holding unconditionally would let the
+  // `reconcileUser` tests below pass against the enumeration SC-502 is about,
+  // which is the whole thing they exist to catch.
   Container.set(HoldingRepository, {
     findById: async () => (holdingRow as never) ?? null,
-    findByUser: async () => [] as never,
+    findByUser: async (_userId: string, _tx?: unknown, includeHidden = false) =>
+      (holdingRow && (includeHidden || !holdingRow.isHidden) ? [holdingRow] : []) as never,
   } as unknown as HoldingRepository);
 
   const observations = opts.observations ?? [];
@@ -441,5 +448,78 @@ describe('OpeningBalanceReconciliationService.reconcileHolding', () => {
     const r = await service.reconcileHolding('h1', { epsilon: new Decimal('1e-6') });
     expect(r?.openingBalanceSynthesized).toBe(false);
     expect(capturedTxs).toHaveLength(0);
+  });
+});
+
+describe('OpeningBalanceReconciliationService.reconcileUser', () => {
+  /**
+   * SC-502. The user-wide enumeration used to inherit `findByUser`'s default,
+   * which hides hidden holdings because that default was written for the
+   * dashboard. So a hidden holding could receive an opening row through
+   * `TransactionImportCoordinator` — which reconciles whatever an import
+   * touched and has never filtered on `isHidden` — and then never be revisited
+   * to have it corrected.
+   *
+   * This assertion stays meaningful after any later change to what the
+   * reconciler DECIDES, because it turns on reach rather than on outcome: it
+   * asserts a result came back for a hidden holding at all. The branch that
+   * result came from is pinned by the test below it.
+   */
+  test('reaches a HIDDEN holding — the repair path can reach what it wrote (SC-502)', async () => {
+    const { service } = makeService({
+      holding: {
+        id: 'h1',
+        userId: 'u1',
+        accountId: 'a1',
+        tokenId: 't1',
+        balance: '10',
+        isHidden: true,
+      },
+      txSumAllTime: '4',
+      firstTxAt: new Date('2024-03-15T12:00:00Z'),
+    });
+
+    const results = await service.reconcileUser('u1');
+
+    expect(results).toHaveLength(1);
+    expect(results[0]?.holdingId).toBe('h1');
+  });
+
+  test('…and REPAIRS it: a negative gap on a hidden holding deletes the stale row', async () => {
+    const { service, capturedTxs, capturedReconciliations, deletes } = makeService({
+      holding: {
+        id: 'h1',
+        userId: 'u1',
+        accountId: 'a1',
+        tokenId: 't1',
+        balance: '0',
+        isHidden: true,
+      },
+      // The production shape: one +4474 deposit against a balance of 0, so the
+      // gap is negative and no opening row may stand (SC-199).
+      txSumAllTime: '4474',
+      firstTxAt: new Date('2026-07-14T15:31:54Z'),
+    });
+
+    const results = await service.reconcileUser('u1');
+
+    expect(results[0]?.openingBalanceSynthesized).toBe(false);
+    expect(capturedTxs).toHaveLength(0);
+    expect(deletes()).toBe(1);
+    expect(capturedReconciliations[0]?.openingBalanceQuantity).toBe('-4474');
+    expect(capturedReconciliations[0]?.reconciliationNotes).toContain('Missing inflows');
+  });
+
+  test('a visible holding is still reconciled — the widen did not narrow anything', async () => {
+    const { service } = makeService({
+      holding: { id: 'h1', userId: 'u1', accountId: 'a1', tokenId: 't1', balance: '10' },
+      txSumAllTime: '4',
+      firstTxAt: new Date('2024-03-15T12:00:00Z'),
+    });
+
+    const results = await service.reconcileUser('u1');
+
+    expect(results).toHaveLength(1);
+    expect(results[0]?.openingBalanceSynthesized).toBe(true);
   });
 });
