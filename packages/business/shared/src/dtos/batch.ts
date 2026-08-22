@@ -1,15 +1,8 @@
 import z from 'zod';
 import { Decimal, isValidDecimalString } from '../decimal';
 import { CreateAccountDto } from './account';
-import type { Holding } from './holding';
+import { HOLDING_LABEL_MAX_LENGTH, type Holding } from './holding';
 import { CreateInstitutionDto } from './institution';
-
-/**
- * A pot name is a label on a row in a list, not a description. Long enough for
- * "Wedding gift" and "Deposit 12 months", short enough that the holdings list
- * still reads as a list.
- */
-export const HOLDING_LABEL_MAX_LENGTH = 40;
 
 /**
  * What identifies a hand-entered position inside one account.
