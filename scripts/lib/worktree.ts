@@ -22,6 +22,7 @@
 
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
+import { existsSync } from 'node:fs';
 import { basename, dirname, resolve } from 'node:path';
 
 export interface WorktreeIdentity {
@@ -132,11 +133,31 @@ export function portOffset(worktreePath: string, isPrimary: boolean): number {
 /**
  * `true` when this path is the repository's main working tree. A linked
  * worktree's `--git-dir` sits under the main one's `--git-common-dir`; they are
- * the same directory only in the primary checkout. A path that is not a git
- * repository at all (an unpacked tarball, a self-host copy) counts as primary,
- * because then there is nothing to be a second copy of.
+ * the same directory only in the primary checkout.
+ *
+ * The reasons for each answer live ON the branches below rather than here.
+ * That is the fix for SC-563: this docblock argued for exactly one of the ways
+ * the probe can fail, the code tested all of them with one condition, and the
+ * two were indistinguishable to anyone reading either.
  */
 export function isPrimaryCheckout(worktreePath: string): boolean {
+  // A path that does not exist is not an unpacked tarball and not a checkout —
+  // it describes nothing, and neither answer this function can give is right
+  // for it. Every caller passes a root derived from `import.meta`, so in a
+  // running program this cannot fire; a caller that CAN reach it is passing a
+  // literal, which is what SC-563 was.
+  //
+  // It has to be checked before the probe rather than read off it, because
+  // `spawnSync` reports a missing `cwd` and a missing `git` binary with the
+  // same `ENOENT` and no exit status — and those two want opposite answers.
+  if (!existsSync(worktreePath)) {
+    throw new Error(
+      `isPrimaryCheckout: ${worktreePath} does not exist, so it is neither the ` +
+        'primary checkout nor a linked worktree. Pass a path that is on disk — ' +
+        'every caller in this repo derives one from `import.meta`.'
+    );
+  }
+
   const probe = spawnSync(
     'git',
     ['rev-parse', '--path-format=absolute', '--git-dir', '--git-common-dir'],
@@ -145,9 +166,21 @@ export function isPrimaryCheckout(worktreePath: string): boolean {
       encoding: 'utf8',
     }
   );
+
+  // The directory is real and git could not answer about it: it is not a
+  // repository (an unpacked tarball, a self-host copy), or git is not
+  // installed. Both count as PRIMARY, because then there is nothing to be a
+  // second copy of and the documented ports are the right ones. A contributor
+  // who downloads a source tarball meets this on their first command, so it
+  // must not become a refusal.
   if (probe.status !== 0) return true;
+
+  // git answered but not with two paths. Same reasoning as above: unusable
+  // output about a real directory tells us nothing that would make this a
+  // second copy of something.
   const [gitDir, commonDir] = probe.stdout.trim().split('\n');
   if (!gitDir || !commonDir) return true;
+
   return resolve(gitDir) === resolve(commonDir);
 }
 
