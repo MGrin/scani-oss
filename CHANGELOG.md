@@ -19,6 +19,20 @@ version heading stays there permanently, above every future release. This
 comment is deliberately in that position; explanatory prose should not be.
 -->
 
+## [0.17.0](https://github.com/MGrin/scani-oss/compare/v0.16.0...v0.17.0) (2026-08-22)
+
+
+### Features
+
+* **oss:** refuse a mirror-bound commit carrying private-only paths (SC-569) ([e28d6cc](https://github.com/MGrin/scani-oss/commit/e28d6ccaab75725726445ae1689c28cc11be7215))
+
+
+### Bug Fixes
+
+* **oss:** move orphanable ignore rules to the root as globs (SC-577) ([95f5fce](https://github.com/MGrin/scani-oss/commit/95f5fceeb6e0896a283b385ca966a501562bdfe7))
+* **oss:** replace machine-specific paths in two test fixtures (SC-566) ([ba10ab9](https://github.com/MGrin/scani-oss/commit/ba10ab9d239d93f6df16034f9d08d7523ac6cddb))
+* **v3:** make the balance-review card readable on a phone (SC-576) ([7c79fc0](https://github.com/MGrin/scani-oss/commit/7c79fc06dad9d3a86dbd87327d28351a1d086a3e))
+
 ## [0.16.0](https://github.com/MGrin/scani-oss/compare/v0.15.0...v0.16.0) (2026-08-22)
 
 
