@@ -4,7 +4,7 @@ import { PortfolioValueCache } from '@scani/domain/services';
 import { UpdateHoldingPriceUseCase } from '@scani/domain/use-cases';
 import { HOLDING_PRICE_UPDATE, type HoldingPriceUpdateJob } from '@scani/jobs';
 import { createComponentLogger } from '@scani/logging';
-import { type ProcessorContext, RedisResourceLock, UserJobProcessor } from '@scani/queue';
+import { PostgresResourceLock, type ProcessorContext, UserJobProcessor } from '@scani/queue';
 import { emitEntityChange } from '@scani/realtime';
 import { eq } from 'drizzle-orm';
 import { Container, Service } from 'typedi';
@@ -26,7 +26,7 @@ const PRICE_LOCK_TTL_MS = 30_000;
 @Service()
 export class HoldingPriceUpdateProcessor extends UserJobProcessor<HoldingPriceUpdateJob, unknown> {
   readonly descriptor = HOLDING_PRICE_UPDATE;
-  private readonly resourceLock = Container.get(RedisResourceLock);
+  private readonly resourceLock = Container.get(PostgresResourceLock);
 
   protected async handle(data: HoldingPriceUpdateJob, _ctx: ProcessorContext): Promise<unknown> {
     const lockKey = `lock:holding-price:${data.holdingId}`;
