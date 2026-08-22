@@ -401,7 +401,15 @@ export function holdingsDataViewConfig({
               )}
               {item.unpriceable ? <UnpriceableBadge t={t} /> : null}
             </span>
-            <span className="truncate text-caption text-muted-foreground">{item.token.name}</span>
+            {/* The pot's name joins the token name on the caption line, the
+                same `·` join the card view's `sublabel` uses above. The two
+                surfaces render the same list and a name that appears on one
+                and not the other is worse than no name: the desktop table is
+                where four rows reading `RUB / Russian Ruble / Tinkoff` sit
+                closest together (SC-564). */}
+            <span className="truncate text-caption text-muted-foreground">
+              {item.label ? `${item.token.name} · ${item.label}` : item.token.name}
+            </span>
           </span>
         ),
         // The symbol, declared rather than recovered: the cell's own text is
