@@ -35,15 +35,17 @@ export function MaintenanceSettings() {
       setJobId(null);
       void utils.portfolio.invalidate();
     } else if (status.state === 'failed') {
+      // A string, and `status.error` deliberately discarded — see the note in
+      // `AccountSettings` for why restoring either shape breaks it (SC-551).
       showError(
-        new Error(status.error ?? t('v3.settings.maintenance.rebuildFailed')),
+        t('v3.settings.maintenance.rebuildFailed'),
         t('v3.settings.pending.rebuildingHistory')
       );
       setJobId(null);
     }
     // Same as `AccountSettings`: the toast is fired from the effect, so `t`
     // has to be a dependency or the message is stale.
-  }, [jobId, status.state, status.error, utils, t]);
+  }, [jobId, status.state, utils, t]);
 
   const running = recompute.isPending || jobId !== null;
 
