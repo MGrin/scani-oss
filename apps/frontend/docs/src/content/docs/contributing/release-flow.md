@@ -85,6 +85,81 @@ conventional-commit parser would reject correct titles.
 release-please's own release PR is exempt: its `chore(main): release X.Y.Z`
 title is meant to reach the merge commit.
 
+## Two ways a fix goes missing from the notes
+
+Both were measured on the 0.16.0 release PR (SC-572), which listed two changes
+out of four. Neither failure produces an error anywhere: release-please emits a
+release PR, CI is green, and the missing fix is simply absent.
+
+### A plain sentence in a *commit* subject
+
+The rule above is about pull-request titles. It does not extend to commit
+subjects, and applying it there is what removed a security fix from 0.16.0:
+
+```
+not   The self-hosted SPA sends no security headers at all (SC-561)
+but   fix(self-host): serve the nine security headers the nginx image never sent (SC-561)
+```
+
+release-please logs `commit could not be parsed` at debug level and carries on.
+Nothing in CI reads that log. A commit subject is the one string here that
+**must** be conventional; a PR title is the one that must not be.
+
+### A commit committed before the last release but merged after it
+
+release-please reads `main` through GitHub's GraphQL `history` connection,
+which is ordered by **committer date descending**, and it stops walking at the
+SHA of the last release. The walk is chronological, not topological — so a
+branch cut before a release PR merged and merged after it sits *behind* the
+stop SHA and is never reached.
+
+Measured on 0.16.0:
+
+| walk position | commit | committed |
+|---|---|---|
+| 8 | `5a006ab` — merge of #170 | 08:39:00Z |
+| **9** | **`fc5847ba` — v0.15.0, the walk stops here** | **08:26:51Z** |
+| 15 | `56b8628` — `fix(holdings): …` (SC-567) | 08:12:49Z |
+| 16 | `d499666` — `fix(holdings): …` (SC-567) | 08:12:49Z |
+
+Those two are ordinary `fix:` commits, on `main`, not reachable from the tag —
+and release-please collected 8 commits and stopped. It is not a configuration
+mistake: `bootstrap-sha` self-disables once a real tag exists, and no config
+key widens the walk past a matched release SHA.
+
+**The trigger is routine.** It fires whenever a release PR merges while another
+pull request is open, which is most of the time.
+
+### Check the release PR against the commit log
+
+```sh
+git fetch --tags
+git log v0.15.0..main --format='%h %s' --no-merges | grep -E ' (feat|fix)(\(|!|:)'
+```
+
+Every line that comes back should have a bullet in the release PR. Anything
+that does not is one of the two failures above.
+
+### Recovering a commit that is already merged
+
+Put a `BEGIN_COMMIT_OVERRIDE` / `END_COMMIT_OVERRIDE` block in the body of the
+merged pull request whose *merge commit* is still inside the walk.
+release-please replaces that commit's message with the block's contents on
+every run, so the correction survives regeneration — unlike an edit to
+`CHANGELOG.md`, which release-please force-pushes over (SC-556).
+
+The part that is easy to get wrong: the override applies to **every** commit
+associated with that pull request, not only its merge commit. Measured on
+SC-561, whose merge commit and branch commit were both inside the walk — one
+override produced the same entry twice, which is the duplication SC-556 exists
+to prevent. Where more than one of a PR's commits is in the walk, land the
+entry as an empty commit instead, the same idiom as
+[when you don't want a release](#when-you-dont-want-a-release):
+
+```sh
+git commit -s --allow-empty -m "fix(scope): what the change did (SC-000)"
+```
+
 ## Image publish
 
 `.github/workflows/docker-publish.yml` builds four images on:
@@ -139,6 +214,9 @@ CI rejects PRs with unsigned commits.
 
 ## What to do when release-please opens a release PR
 
+- **Check it against the commit log first.** A releasable commit can be
+  missing from the notes with nothing anywhere reporting it — see
+  [two ways a fix goes missing](#two-ways-a-fix-goes-missing-from-the-notes).
 - **Don't merge it immediately.** Wait until CI is green and you've
   read the auto-generated changelog. The changelog is what users
   read when they upgrade — fix awkward wording before merging.
