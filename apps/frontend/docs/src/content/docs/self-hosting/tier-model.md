@@ -25,9 +25,15 @@ The full design rationale is in
 
 | Pick Tier 1 if… | Pick Tier 2 if… | Pick Tier 3 if… |
 |---|---|---|
-| You want full control of every byte. | You want to skip managing provider API keys (CoinGecko, OpenAI, Etherscan). | You want zero operational burden. |
-| You don't want any traffic leaving your network. | You're fine sending price/AI/RPC queries to a hosted provider. | You're fine outsourcing the whole stack. |
+| You want full control of every byte. | You'd rather not run an S3 bucket and a mail transport. | You want zero operational burden. |
+| You don't want any traffic leaving your network. | You're fine with an operator holding your uploads and sending your mail. | You're fine outsourcing the whole stack. |
 | You enjoy ops work, or your environment requires it. | You're an operator running Scani for a small group of users. | You're a single user who wants the easy mode. |
+
+Tier 2 is **not** a way to skip managing provider API keys.
+`COINGECKO_API_KEY`, `FINNHUB_API_KEY`, `ETHERSCAN_API_KEY`,
+`HELIUS_API_KEY` and `OPENAI_API_KEY` are read by your api and worker
+on every tier — see
+[What changes](#what-changes).
 
 ## The two env vars
 
@@ -68,8 +74,10 @@ cloud-management surface (gated behind `CLOUD_MANAGEMENT_ENABLED=true`).
 
 | Concern | Tier 1 | Tier 2 / 3 |
 |---|---|---|
-| Outbound calls to CoinGecko / OpenAI / Etherscan / Helius / DeFiLlama / Finnhub / SMTP | Made by **your** data-provider. | Made by the **hosted** data-provider. |
-| Provider API keys (CoinGecko, OpenAI, Etherscan, …) | You set them in your `.env`. | Operator sets them on their data-provider. |
+| Object storage, email, OG-metadata fetching, token search | Served by **your** data-provider. | Served by the **hosted** data-provider. |
+| Outbound calls to CoinGecko / DeFiLlama / Frankfurter / Finnhub / OpenAI / Etherscan / Helius | Made by **your api and worker**. | Made by **your api and worker** — unchanged. |
+| Provider API keys (CoinGecko, OpenAI, Etherscan, …) | You set them in your `.env`. | **You set them in your `.env` — unchanged.** |
+| `S3_*`, `SMTP_URL` / `FASTMAIL_API_TOKEN` | You set them on your data-provider. | Operator sets them on theirs. |
 | Public-internet attack surface | `frontend-app` only (api/worker/data-provider are internal). | `frontend-app` only on your side. Hosted data-provider has its own. |
 | `SCANI_CLOUD_API_KEY` rotation | You rotate it; you also bump `DATA_PROVIDER_API_KEY` to match. | Operator rotates and ships you the new value. |
 
@@ -82,7 +90,7 @@ cloud-management surface (gated behind `CLOUD_MANAGEMENT_ENABLED=true`).
 - [Tier 1 — Required environment variables](/self-hosting/tier1/required-env/)
   — the must-set list.
 - [Tier 2 — Overview](/self-hosting/tier2/overview/) — what a hosted
-  data-provider gives you.
+  data-provider does and does not take off your hands.
 - [Tier 3 — Fully managed](/self-hosting/tier3/) — the pointer page.
 
 ## See also
