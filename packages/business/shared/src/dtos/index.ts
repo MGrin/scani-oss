@@ -1,4 +1,5 @@
 export * from './account';
+export * from './balance-gap';
 export * from './batch';
 export * from './common';
 export * from './cost-basis';

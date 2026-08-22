@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import Container from 'typedi';
 import { DocumentExtractionRepository } from '../../src/repositories/DocumentExtractionRepository';
 import { UserJobRepository } from '../../src/repositories/UserJobRepository';
+import { BalanceGapService } from '../../src/services/holdings/BalanceGapService';
 import { ReviewFeedService } from '../../src/services/ReviewFeedService';
 import { TransferReviewService } from '../../src/services/TransferReviewService';
 import { restoreContainerAfterAll } from '../../test/helpers/container';
@@ -40,6 +41,13 @@ function makeService(jobs: unknown[], deadJobs: unknown[] = []): ReviewFeedServi
   Container.set(TransferReviewService, {
     pendingSummary: async () => ({ count: 0, latestCreatedAt: null }),
   } as unknown as TransferReviewService);
+  // The balance-gap collector (SC-501) is on the same feed. These suites are
+  // about the other producers, so it answers empty — stubbed rather than left
+  // to resolve, because a class-field dep that reaches a real repository here
+  // fails against the database instead of failing as a missing stub.
+  Container.set(BalanceGapService, {
+    pendingSummary: async () => ({ count: 0, latestAt: null }),
+  } as unknown as BalanceGapService);
   const instance = new ReviewFeedService();
   Container.set(ReviewFeedService, instance);
   return instance;

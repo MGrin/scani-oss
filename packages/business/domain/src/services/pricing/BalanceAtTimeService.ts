@@ -1,6 +1,7 @@
 import type { Holding, HoldingBalanceObservation, HoldingTransaction } from '@scani/db/schema';
 import Decimal from 'decimal.js';
 import { Container, Service } from 'typedi';
+import { unexplainedDrift } from '../../lib/balances/unexplained-drift';
 import { HoldingBalanceObservationRepository } from '../../repositories/HoldingBalanceObservationRepository';
 import { HoldingRepository } from '../../repositories/HoldingRepository';
 import { HoldingTransactionRepository } from '../../repositories/HoldingTransactionRepository';
@@ -192,8 +193,15 @@ export class BalanceAtTimeService {
       after.observedAt,
       caches
     );
-    const explained = bridge.reduce((acc, t) => acc.add(new Decimal(t.quantity)), new Decimal(0));
-    const drift = new Decimal(after.balance).sub(new Decimal(before.balance)).sub(explained);
+    // The one implementation of this arithmetic — see `unexplainedDrift`.
+    // `BalanceGapService` asks the owner about the same quantity this line
+    // spreads, and a second copy here would let the queue and the ramp
+    // disagree about what is unexplained (SC-501).
+    const drift = unexplainedDrift(
+      before.balance,
+      after.balance,
+      bridge.map((t) => t.quantity)
+    );
     if (drift.isZero()) return { share: new Decimal(0), interpolated: false };
 
     const span = after.observedAt.getTime() - before.observedAt.getTime();

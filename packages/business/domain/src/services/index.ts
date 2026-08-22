@@ -57,6 +57,11 @@ export {
   type RecordUploadedFileInput,
   UploadedFileService,
 } from './documents/UploadedFileService';
+export {
+  type BalanceGapAnswerRefusal,
+  type BalanceGapListing,
+  BalanceGapService,
+} from './holdings/BalanceGapService';
 // holdings/
 export {
   type BalanceSyncSource,

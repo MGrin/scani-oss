@@ -1094,7 +1094,8 @@
       "page": {
         "title": "Review",
         "transfersTitle": "Transfers to confirm",
-        "answered": "Answered"
+        "answered": "Answered",
+        "balancesTitle": "Balance changes to explain"
       },
       "item": {
         "jobFailed": "{{job}} failed",
@@ -1116,7 +1117,10 @@
         "nothingFound": "nothing found",
         "labelled": "{{label}} · {{body}}",
         "unpairedTransfers_one": "{{count}} transfer out with no matching deposit",
-        "unpairedTransfers_other": "{{count}} transfers out with no matching deposit"
+        "unpairedTransfers_other": "{{count}} transfers out with no matching deposit",
+        "balanceChangesToExplain": "Balance changes to explain",
+        "unexplainedBalanceChanges_one": "{{count}} balance change we cannot explain",
+        "unexplainedBalanceChanges_other": "{{count}} balance changes we cannot explain"
       },
       "kind": {
         "withdrawal": "Withdrawal",
@@ -1431,6 +1435,34 @@
         },
         "withdrawAnswers_one": "Also take back the {{count}} answer it gave",
         "withdrawAnswers_other": "Also take back the {{count}} answers it gave"
+      },
+      "balances": {
+        "intro": "Something moved this balance and no transaction says what. Tell us what happened and it stops counting as performance.",
+        "loading": "Looking for balance changes we cannot explain…",
+        "empty": "Nothing to explain — every balance change is accounted for.",
+        "examined": "Showing {{shown}} of {{examined}} changes. {{suppressed}} were left out: too small, too recent to have imported yet, already explained, or reversed by the next reading.",
+        "subject": "{{account}} · {{symbol}}",
+        "between": "Between {{from}} and {{to}}",
+        "balances": "{{previous}} → {{current}} {{symbol}}.",
+        "partlyExplained_one": "{{count}} transaction already explains part of it.",
+        "partlyExplained_other": "{{count}} transactions already explain part of it.",
+        "answerLabel": "What was this change?",
+        "dateLabel": "When did the money move?",
+        "record": "Record",
+        "answerFailed": "Could not record that",
+        "answerFailedBody": "Nothing was saved. Try again.",
+        "option": {
+          "flow": "Money moved",
+          "correction": "Figure was wrong",
+          "growth": "It grew",
+          "unknown": "I don't know"
+        },
+        "explain": {
+          "flow": "Recorded as a deposit or withdrawal on the date you give, so it is not counted as a gain or a loss.",
+          "correction": "Recorded as a restatement, dated back to when the wrong figure entered the record. Neither a gain nor money paid in.",
+          "growth": "Nothing is written. Growth on a balance like this IS the return, and it is already counted as one.",
+          "unknown": "Nothing is written and you will not be asked about this one again. It stays counted as performance, which is the honest answer when nobody knows."
+        }
       }
     },
     "form": {

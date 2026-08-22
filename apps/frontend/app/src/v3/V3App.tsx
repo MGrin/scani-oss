@@ -10,6 +10,7 @@ import { useViewTransitionLocation } from './hooks/useViewTransitionLocation';
 import { V3Shell } from './layouts/V3Shell';
 import { useInstallPdfExport } from './lib/pdf-export';
 import {
+  BALANCE_GAP_REVIEW_PATH,
   TRANSFER_ANSWERED_PATH,
   TRANSFER_REVIEW_PATH,
   TRANSFER_RULES_PATH,
@@ -19,6 +20,7 @@ import {
 import { V3_BASE } from './lib/ui-version';
 import { AccountsPage } from './pages/AccountsPage';
 import { AnsweredTransfersPage } from './pages/AnsweredTransfersPage';
+import { BalanceGapsReviewPage } from './pages/BalanceGapsReviewPage';
 import { DocumentDetailPage } from './pages/DocumentDetailPage';
 import { FileImportPage } from './pages/FileImportPage';
 import { FilesPage } from './pages/FilesPage';
@@ -203,6 +205,10 @@ export function V3App() {
               path={`${relative(TRANSFER_REVIEW_PATH)}/:peekId?`}
               element={<TransfersReviewPage />}
             />
+            {/* `balances` is a segment under Review, like `transfers` (SC-501),
+                and registered before the feed's own route for the same
+                reason. */}
+            <Route path={relative(BALANCE_GAP_REVIEW_PATH)} element={<BalanceGapsReviewPage />} />
             <Route path={relative(V3_ROUTES.review)} element={<ReviewPage />} />
             <Route path={relative(V3_ROUTES.jobs)} element={<JobsPage />} />
             <Route path={`${relative(V3_ROUTES.jobs)}/:jobId`} element={<JobDetailPage />} />
