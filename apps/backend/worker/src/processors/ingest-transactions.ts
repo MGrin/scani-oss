@@ -15,6 +15,7 @@ import {
   type ProcessorContext,
   UnrecoverableError,
   UserJobProcessor,
+  userFacing,
 } from '@scani/queue';
 import { emitEntityChange } from '@scani/realtime';
 import { Container, Service } from 'typedi';
@@ -99,10 +100,10 @@ export class IngestTransactionsProcessor extends UserJobProcessor<TransactionImp
       // UnrecoverableError so the job skips the retry budget and shows
       // up in /jobs as failed with the original message.
       if (error instanceof TransactionImportUnrecoverableError) {
-        throw new UnrecoverableError(error.message);
+        throw userFacing(new UnrecoverableError(error.message));
       }
       const terminal = describeTerminalProviderFailure(error);
-      if (terminal) throw new UnrecoverableError(terminal);
+      if (terminal) throw userFacing(new UnrecoverableError(terminal));
       throw error;
     }
 

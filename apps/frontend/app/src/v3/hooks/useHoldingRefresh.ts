@@ -79,11 +79,14 @@ export function useHoldingRefresh(actions: ReturnType<typeof useHoldingActions>)
       setPriceJob(null);
       void invalidatePortfolioQueries(utils);
     } else if (priceStatus.state === 'failed') {
-      // `priceStatus.error` discarded, not preferred — see `AccountSettings`.
-      showError(t('v3.holdings.refresh.priceFailed'), t('v3.holdings.refresh.price'));
+      // `userFacingError`, never the raw throw — see `AccountSettings` (SC-551).
+      showError(
+        priceStatus.userFacingError ?? t('v3.holdings.refresh.priceFailed'),
+        t('v3.holdings.refresh.price')
+      );
       setPriceJob(null);
     }
-  }, [priceJob, priceStatus.state, priceStatus.result, utils, t]);
+  }, [priceJob, priceStatus.state, priceStatus.result, priceStatus.userFacingError, utils, t]);
 
   useEffect(() => {
     if (!balanceJob) return;
@@ -113,11 +116,21 @@ export function useHoldingRefresh(actions: ReturnType<typeof useHoldingActions>)
       setBalanceJob(null);
       void invalidatePortfolioQueries(utils);
     } else if (balanceStatus.state === 'failed') {
-      // `balanceStatus.error` discarded, not preferred — see `AccountSettings`.
-      showError(t('v3.holdings.refresh.balanceFailed'), t('v3.holdings.refresh.balance'));
+      // `userFacingError`, never the raw throw — see `AccountSettings` (SC-551).
+      showError(
+        balanceStatus.userFacingError ?? t('v3.holdings.refresh.balanceFailed'),
+        t('v3.holdings.refresh.balance')
+      );
       setBalanceJob(null);
     }
-  }, [balanceJob, balanceStatus.state, balanceStatus.result, utils, t]);
+  }, [
+    balanceJob,
+    balanceStatus.state,
+    balanceStatus.result,
+    balanceStatus.userFacingError,
+    utils,
+    t,
+  ]);
 
   return {
     refreshPrice: (holding) => {

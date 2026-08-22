@@ -44,7 +44,7 @@ export interface JobDetailHeaderJob {
   startedAt: string | Date | null;
   finishedAt: string | Date | null;
   actionTakenAt: string | Date | null;
-  error: string | null;
+  userFacingError: string | null;
   /** Set once the queue has given up (SC-153). */
   deadAt?: string | Date | null;
   failureReason?: string | null;
@@ -247,12 +247,19 @@ export function JobDetailHeader({ job }: { job: JobDetailHeaderJob }) {
               and the error text answers a different question — one they
               usually cannot act on. */}
           {failure ? <p className="text-body">{jobFailureSentence(t, failure)}</p> : null}
-          {job.error ? (
-            // `whitespace-pre-wrap` and the mono face: this is a stack trace or
-            // an upstream API's message, and reflowing it destroys the only
-            // thing that makes it useful when it gets pasted into an issue.
+          {job.userFacingError ? (
+            // Only ever a sentence a processor marked `userFacing(...)` — the
+            // provider's own rejection, or copy written for whoever started
+            // this job (SC-551). It used to be `job.error`, the raw throw, and
+            // the comment here claimed it was "a stack trace or an upstream
+            // API's message" worth pasting into an issue. It was also a
+            // `DrizzleQueryError`'s full `select … from "holdings"`, rendered
+            // to the person whose job it was.
+            //
+            // `whitespace-pre-wrap` and the mono face stay: an upstream
+            // rejection code is still something people copy verbatim.
             <p className="whitespace-pre-wrap rounded-md border border-border-strong bg-surface-hover p-2 font-mono text-caption">
-              {job.error}
+              {job.userFacingError}
             </p>
           ) : null}
           {/* Not merely disabled: a greyed-out Retry still reads as "this is
