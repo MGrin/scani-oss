@@ -213,8 +213,8 @@ shipped as a separate PR you can read end-to-end before deciding.
 │                   CoinGecko, Finnhub, DeFiLlama, OpenAI,               │
 │                   Etherscan, Helius, Google Sheets, …)                 │
 │                                                                        │
-│  Postgres ◀─── api + worker + data-provider (Drizzle)                  │
-│  Redis    ◀─── api (BullMQ producer) + worker (BullMQ consumer)        │
+│  Postgres ◀─── api + worker + data-provider (Drizzle; BullMQ queue)    │
+│  Redis    ◀─── rate-limiter buckets + realtime fan-out                 │
 │  S3       ◀─── worker (screenshot uploads, file imports)               │
 └────────────────────────────────────────────────────────────────────────┘
 ```
@@ -236,10 +236,12 @@ Three deployable Bun services + one SPA:
 - **`apps/frontend/app`** — React + Vite SPA. tRPC client end-to-end
   type-safe with the api.
 
-State splits as you'd expect: Postgres for everything durable (users,
-holdings, transactions, balances, audit log), Redis for BullMQ + the
-per-provider rate-limiter buckets + realtime fan-out, an S3-compatible
-store for binary uploads.
+State splits as you'd expect. Postgres holds everything durable — users,
+holdings, transactions, balances, audit log, and the BullMQ job queue in
+its own `bullmq` schema.
+Redis holds the per-provider rate-limiter buckets and realtime fan-out,
+none of which has to survive a restart. An S3-compatible store holds
+binary uploads.
 
 ## Tech stack
 
@@ -248,7 +250,7 @@ store for binary uploads.
 - **Lint + format**: [Biome](https://biomejs.dev) (no ESLint, no Prettier)
 - **HTTP**: [Elysia](https://elysiajs.com) + [tRPC](https://trpc.io)
 - **Database**: PostgreSQL via [Drizzle ORM](https://orm.drizzle.team)
-- **Async jobs**: [BullMQ](https://docs.bullmq.io) on Redis, with Postgres advisory locks for cron idempotency
+- **Async jobs**: [BullMQ](https://docs.bullmq.io) on its Postgres backend, with Postgres advisory locks for cron idempotency
 - **Auth**: [Better-Auth](https://better-auth.com) (sessions in Postgres)
 - **Storage**: S3-compatible via [`@aws-sdk/client-s3`](https://github.com/aws/aws-sdk-js-v3)
 - **Email**: Fastmail JMAP API or any SMTP server
