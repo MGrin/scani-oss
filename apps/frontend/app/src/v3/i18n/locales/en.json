@@ -690,6 +690,13 @@
         "amount": "Amount",
         "save": "Save"
       },
+      "labelFact": {
+        "unnamed": "Not named",
+        "edit": "Name this {{symbol}} position",
+        "name": "Pot name",
+        "placeholder": "Savings, Deposit, Wedding gift…",
+        "save": "Save"
+      },
       "deleteAction": {
         "trigger": "Delete",
         "commit": "Delete {{symbol}}",
