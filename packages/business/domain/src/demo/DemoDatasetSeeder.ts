@@ -472,7 +472,7 @@ export class DemoDatasetSeeder {
   }
 
   private async ensureToken(
-    token: { symbol: string; name: string; decimals: number; marketSegment: string | null },
+    token: { symbol: string; name: string; marketSegment: string | null },
     typeId: string
   ): Promise<string> {
     const [existing] = await db
@@ -492,7 +492,6 @@ export class DemoDatasetSeeder {
         symbol: token.symbol,
         name: token.name,
         typeId,
-        decimals: token.decimals,
         marketSegment: token.marketSegment,
       })
       .returning({ id: schema.tokens.id });

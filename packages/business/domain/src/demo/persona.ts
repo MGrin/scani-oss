@@ -69,7 +69,6 @@ export interface AssetSpec {
   readonly symbol: string;
   readonly name: string;
   readonly typeCode: 'crypto' | 'stock';
-  readonly decimals: number;
   /** `'US'` for the US-listed equities; null for crypto. */
   readonly marketSegment: string | null;
   /** Price in USD on the first day of the window. */
@@ -94,7 +93,6 @@ export const DEMO_ASSETS: readonly AssetSpec[] = [
     symbol: 'VOO',
     name: 'Vanguard S&P 500 ETF',
     typeCode: 'stock',
-    decimals: 4,
     marketSegment: 'US',
     startPrice: 402.15,
     totalDrift: 0.21,
@@ -105,7 +103,6 @@ export const DEMO_ASSETS: readonly AssetSpec[] = [
     symbol: 'AAPL',
     name: 'Apple Inc.',
     typeCode: 'stock',
-    decimals: 4,
     marketSegment: 'US',
     startPrice: 178.4,
     totalDrift: 0.27,
@@ -116,7 +113,6 @@ export const DEMO_ASSETS: readonly AssetSpec[] = [
     symbol: 'MSFT',
     name: 'Microsoft Corporation',
     typeCode: 'stock',
-    decimals: 4,
     marketSegment: 'US',
     startPrice: 339.8,
     totalDrift: 0.31,
@@ -127,7 +123,6 @@ export const DEMO_ASSETS: readonly AssetSpec[] = [
     symbol: 'NVDA',
     name: 'NVIDIA Corporation',
     typeCode: 'stock',
-    decimals: 4,
     marketSegment: 'US',
     startPrice: 46.2,
     totalDrift: 1.45,
@@ -138,7 +133,6 @@ export const DEMO_ASSETS: readonly AssetSpec[] = [
     symbol: 'BTC',
     name: 'Bitcoin',
     typeCode: 'crypto',
-    decimals: 8,
     marketSegment: null,
     startPrice: 27_480,
     totalDrift: 1.18,
@@ -149,7 +143,6 @@ export const DEMO_ASSETS: readonly AssetSpec[] = [
     symbol: 'ETH',
     name: 'Ethereum',
     typeCode: 'crypto',
-    decimals: 8,
     marketSegment: null,
     startPrice: 1682,
     totalDrift: 0.62,
@@ -160,7 +153,6 @@ export const DEMO_ASSETS: readonly AssetSpec[] = [
     symbol: 'SOL',
     name: 'Solana',
     typeCode: 'crypto',
-    decimals: 6,
     marketSegment: null,
     startPrice: 21.4,
     totalDrift: 2.35,
@@ -171,7 +163,6 @@ export const DEMO_ASSETS: readonly AssetSpec[] = [
     symbol: 'USDC',
     name: 'USD Coin',
     typeCode: 'crypto',
-    decimals: 6,
     marketSegment: null,
     startPrice: 1,
     totalDrift: 0,

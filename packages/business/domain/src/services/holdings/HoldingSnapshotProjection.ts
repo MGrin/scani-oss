@@ -4,11 +4,11 @@
  * `IntegrationHolding[]` shape the wallet/exchange import + sync use
  * cases consume.
  *
- * The wider `HoldingSnapshot` carries `tokenIdentity: Partial<NewToken>`
- * with provider-namespaced metadata. The `IntegrationHolding` shape is
+ * The wider `HoldingSnapshot` carries a `tokenIdentity` with
+ * provider-namespaced metadata. The `IntegrationHolding` shape is
  * what the use cases pass downstream to `findOrCreateTokenFromIntegrationMapping`
  * and the holding write path: a flat
- * `{symbol, name, balance, decimals, externalTokenId, contractAddress?, iconUrl?}`
+ * `{symbol, name, balance, externalTokenId, contractAddress?, iconUrl?}`
  * row. This file owns the small extraction logic that picks the right
  * external id (CoinGecko id vs Kraken asset vs Binance symbol vs IBKR
  * symbol) and surfaces the EVM contract address when present.
@@ -22,7 +22,6 @@ export interface TokenMappingResult {
     symbol: string;
     name: string;
     typeId: string;
-    decimals?: number;
     iconUrl?: string | null;
     // Structural exchange segment ('US' / 'TO' / 'L' / …). Dropping it
     // here let the IBKR balance import resolve stocks to a NULL-segment
@@ -39,7 +38,6 @@ export interface IntegrationHolding {
   symbol: string;
   name: string;
   balance: string;
-  decimals: number;
   tokenType?: string;
   externalTokenId?: string;
   contractAddress?: string;
@@ -137,14 +135,12 @@ export function projectSnapshotsToHoldings(
     const ti = s.tokenIdentity;
     const symbol = (ti.symbol ?? s.externalId ?? '').toString();
     const name = (ti.name ?? symbol).toString();
-    const decimals = typeof ti.decimals === 'number' ? ti.decimals : 18;
     const contractAddress = extractContractAddress(ti.providerMetadata);
     const externalTokenId = extractExternalTokenId(ti.providerMetadata, s.externalId);
     const out: IntegrationHolding = {
       symbol,
       name,
       balance: s.balance,
-      decimals,
       externalTokenId,
     };
     if (contractAddress) out.contractAddress = contractAddress;
@@ -178,13 +174,11 @@ export function projectSnapshotToTokenMapping(snapshot: HoldingSnapshot): TokenM
   const ti = snapshot.tokenIdentity;
   const symbol = (ti.symbol ?? snapshot.externalId ?? '').toString();
   const name = (ti.name ?? symbol).toString();
-  const decimals = typeof ti.decimals === 'number' ? ti.decimals : 18;
   return {
     token: {
       symbol,
       name,
       typeId: '', // service layer fills in (crypto type for blockchain holdings)
-      decimals,
       iconUrl: typeof ti.iconUrl === 'string' ? ti.iconUrl : null,
       marketSegment: ti.marketSegment ?? null,
       providerMetadata:

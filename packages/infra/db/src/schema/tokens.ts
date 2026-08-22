@@ -80,7 +80,6 @@ export const tokens = pgTable(
     typeId: uuid('type_id')
       .notNull()
       .references(() => tokenTypes.id, { onDelete: 'restrict' }),
-    decimals: real('decimals').notNull().default(2),
     /**
      * Structural property of the security itself, NOT a provider-specific
      * field. Examples: 'US' (NYSE/NASDAQ), 'L' (LSE), 'TO' (Toronto). NULL

@@ -22,10 +22,6 @@
  * and because it is the only place every caller can reach: `@scani/providers`
  * depends on `@scani/db` and not the other way round.
  *
- * The same rule, on the decimals question, is `decimalsAuthority()` in
- * `scripts/lib/sc396-token-decimals.ts`, which now delegates here so there is
- * one implementation rather than two vocabularies for one idea.
- *
  * WHAT THIS CANNOT REACH: a SQL migration. SC-408 named the writer that put
  * those two contracts on those two rows in the first place — migration
  * `0007_merge_chain_spread_crypto`, which merged a chain-spread duplicate into

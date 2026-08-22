@@ -110,7 +110,6 @@ export function CreateCustomTokenSheet({ open, onOpenChange }: CreateCustomToken
       baseCurrencyCode: currencySymbol,
       priceDescription: priceReason.trim() || undefined,
       description: description.trim() || undefined,
-      decimals: 2,
     });
   };
 

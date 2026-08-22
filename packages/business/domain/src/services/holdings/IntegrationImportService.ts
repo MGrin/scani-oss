@@ -62,9 +62,6 @@ export interface IntegrationImportOptions {
   // Wallet imports preserve user-deleted holdings; exchange/IBKR zero
   // any holding that the upstream API stops returning.
   zeroStaleHoldings: boolean;
-  // Per-source default decimals (wallet=18 for EVM tokens, IBKR=2,
-  // exchange picks 2 for fiat else 8).
-  defaultDecimals: (snapshot: HoldingSnapshot, tokenType: string | undefined) => number;
   // Per-source token-type resolution (wallet forces crypto; exchange
   // accepts crypto/fiat/stock; IBKR enforces fiat-or-stock).
   resolveTokenTypeId: (snapshot: HoldingSnapshot, fallbackCryptoTypeId: string) => string;
@@ -232,7 +229,6 @@ export class IntegrationImportService extends BaseService {
 
         let tokenMapping = projectSnapshotToTokenMapping(snapshot);
         const tokenTypeId = options.resolveTokenTypeId(snapshot, options.cryptoTokenTypeId);
-        const decimals = options.defaultDecimals(snapshot, holding.tokenType);
 
         if (options.postProcessTokenMapping) {
           tokenMapping = await options.postProcessTokenMapping(
@@ -247,7 +243,6 @@ export class IntegrationImportService extends BaseService {
         const { token, wasCreated } = await this.tokenService.findOrCreateTokenFromIntegration(
           tokenMapping,
           tokenTypeId,
-          decimals,
           tx
         );
         tokenIdSet.add(token.id);

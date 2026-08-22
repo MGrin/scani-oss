@@ -72,7 +72,6 @@ export interface DemoTokenRow {
   readonly symbol: string;
   readonly name: string;
   readonly typeCode: 'crypto' | 'stock';
-  readonly decimals: number;
   readonly marketSegment: string | null;
 }
 
@@ -1589,7 +1588,6 @@ export function buildDemoDataset(options: BuildDemoDatasetOptions = {}): DemoDat
     symbol: asset.symbol,
     name: asset.name,
     typeCode: asset.typeCode,
-    decimals: asset.decimals,
     marketSegment: asset.marketSegment,
   }));
 

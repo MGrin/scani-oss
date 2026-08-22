@@ -22,7 +22,7 @@
  *  - `packages/integrations/src/ingesters/EvmTransactionIngester.ts`
  */
 
-import type { NewToken, TokenMetadata } from '@scani/db/schema';
+import type { TokenMetadata } from '@scani/db/schema';
 import type { OutflowRateLimiter } from '@scani/rate-limiter';
 import { createOutflowLimiter, withRetry } from '@scani/rate-limiter';
 import Decimal from 'decimal.js';
@@ -44,6 +44,7 @@ import type {
 import type {
   HoldingSnapshot,
   ProviderContext,
+  TokenIdentity,
   TransactionEvent,
   WithUserCreds,
 } from '../../core/types';
@@ -417,7 +418,7 @@ export class EtherscanProvider
       const raw = new Decimal(balanceData.result);
       if (raw.isZero()) return null;
       const balance = raw.div(new Decimal(10).pow(info.decimals));
-      const tokenIdentity: Partial<NewToken> = {
+      const tokenIdentity: TokenIdentity = {
         symbol: info.symbol.toUpperCase(),
         name: info.name,
         decimals: info.decimals,

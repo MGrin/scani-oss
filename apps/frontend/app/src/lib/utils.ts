@@ -28,7 +28,6 @@ export function createCurrencyToken(t: TFunction, currencySymbol: string): Token
     id: `currency-${currencySymbol}`,
     symbol: currencySymbol,
     name: currencyDisplayName(t, currencySymbol),
-    decimals: 2,
     iconUrl: null,
     isActive: true,
     typeId: '',

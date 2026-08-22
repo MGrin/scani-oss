@@ -9,7 +9,6 @@ const SYNTHETIC_BASE_CURRENCY: ProviderContext['baseCurrency'] = {
   symbol: 'USD',
   name: 'United States Dollar',
   typeId: 'fiat',
-  decimals: 2,
   iconUrl: null,
   providerMetadata: {},
   isScamProbability: 0,

@@ -167,7 +167,6 @@ export class PricingProviderRouter {
           symbol: tokenData.symbol,
           name: tokenData.name,
           typeId: 'temp',
-          decimals: 18,
           iconUrl: null,
           marketSegment: null,
           providerMetadata: tokenData.metadata,

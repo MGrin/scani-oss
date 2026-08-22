@@ -405,7 +405,6 @@ export class TokenIdentityService extends BaseService {
         symbol,
         name: name ?? symbol,
         typeId: effectiveTypeId,
-        decimals: partial.decimals ?? 18,
         marketSegment,
         iconUrl: partial.iconUrl ?? null,
         providerMetadata: enrichedMetadata,

@@ -208,7 +208,6 @@ export class TokenRepository extends BaseRepository<Token, NewToken> {
         symbol: schema.tokens.symbol,
         name: schema.tokens.name,
         typeId: schema.tokens.typeId,
-        decimals: schema.tokens.decimals,
         iconUrl: schema.tokens.iconUrl,
         providerMetadata: schema.tokens.providerMetadata,
         isActive: schema.tokens.isActive,
@@ -268,7 +267,6 @@ export class TokenRepository extends BaseRepository<Token, NewToken> {
         symbol: schema.tokens.symbol,
         name: schema.tokens.name,
         typeId: schema.tokens.typeId,
-        decimals: schema.tokens.decimals,
         // Part of `Token`, and this projection asserted it was present while
         // omitting it — every reader got `undefined` where the type said
         // `string | null`. SC-458 is the first caller that needs it: an
