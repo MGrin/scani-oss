@@ -18,7 +18,7 @@ import { TRPCError } from '@trpc/server';
 import type { GlobalCostBreaker } from './global-cost-breaker';
 import type { UsageEvent, UsageSink } from './sink';
 
-export interface UsageAnnotation {
+interface UsageAnnotation {
   provider?: string;
   tokensIn?: number;
   tokensOut?: number;

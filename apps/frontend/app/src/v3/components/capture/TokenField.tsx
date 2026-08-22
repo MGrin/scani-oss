@@ -41,7 +41,7 @@ function optionId(item: SearchItem): string {
  *  in separate slots rather than as the one joined label. Splitting the label
  *  back apart on its separator is the alternative, and a token whose name
  *  contains an em dash breaks it. */
-export interface TokenSelectionDetails {
+interface TokenSelectionDetails {
   symbol: string;
   name: string;
 }

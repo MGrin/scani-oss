@@ -150,7 +150,7 @@ export interface CoveragePoint {
  * against it claimed the user had lost everything and got it back. A day where
  * the holdings existed and were each worth 0 is a real zero and stays.
  */
-export function hasKnownCoverage(point: CoveragePoint): boolean {
+function hasKnownCoverage(point: CoveragePoint): boolean {
   return point.holdingsWithKnownValue > 0;
 }
 
