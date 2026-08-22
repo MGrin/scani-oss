@@ -1,5 +1,9 @@
 import { expect, type Page, test } from '@playwright/test';
-import { type PinnedNetwork, pinExternalNetwork } from '../fixtures/visual-network';
+import {
+  INSTITUTION_ICON_PATH,
+  type PinnedNetwork,
+  pinExternalNetwork,
+} from '../fixtures/visual-network';
 import { VISUAL_EMPTY_SESSION_FILE, VISUAL_SESSION_FILE } from '../fixtures/visual-setup';
 import { VISUAL_SCREENS, type VisualScreen, type VisualSession } from './screens';
 
@@ -246,10 +250,13 @@ async function assertPinnedBytes(
   }
   if (!screen.institutionMark) return;
 
-  const marks = await page.evaluate(() =>
-    [...document.images]
-      .filter((img) => img.src.includes('/s2/favicons'))
-      .map((img) => img.naturalWidth)
+  // The prefix is passed in rather than written out here: it is the same
+  // constant the route predicate matches on, so the two cannot drift into a
+  // state where the gate pins one URL and then looks for another (SC-208).
+  const marks = await page.evaluate(
+    (path) =>
+      [...document.images].filter((img) => img.src.includes(path)).map((img) => img.naturalWidth),
+    INSTITUTION_ICON_PATH
   );
   if (marks.length === 0) {
     fail(

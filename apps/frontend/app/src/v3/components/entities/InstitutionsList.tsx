@@ -88,9 +88,7 @@ export function InstitutionsList({ institutions, currency, types, query }: Insti
       />
     ),
     renderRow: (institution) => ({
-      leading: (
-        <InstitutionMark name={institution.name} website={institution.website} size="size-5" />
-      ),
+      leading: <InstitutionMark name={institution.name} institution={institution} size="size-5" />,
       label: institution.name,
       sublabel: t('v3.entities.institution.sublabel', { count: accountCount(institution) }),
       value: <Numeric value={institutionValue(institution)} currency={currency} />,
@@ -103,7 +101,7 @@ export function InstitutionsList({ institutions, currency, types, query }: Insti
         width: 'w-[40%]',
         render: (institution) => (
           <span className="flex min-w-0 items-center gap-2">
-            <InstitutionMark name={institution.name} website={institution.website} size="size-4" />
+            <InstitutionMark name={institution.name} institution={institution} size="size-4" />
             <span className="truncate text-label">{institution.name}</span>
           </span>
         ),
@@ -149,7 +147,7 @@ export function InstitutionsList({ institutions, currency, types, query }: Insti
         title: institution.name,
         subtitle: typeName(institution),
         leading: (
-          <InstitutionMark name={institution.name} website={institution.website} size="size-8" />
+          <InstitutionMark name={institution.name} institution={institution} size="size-8" />
         ),
         value: <Numeric value={institutionValue(institution)} currency={currency} />,
         primary: [
