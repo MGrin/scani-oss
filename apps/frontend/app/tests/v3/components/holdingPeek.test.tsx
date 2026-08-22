@@ -86,7 +86,7 @@ function holding(overrides: Partial<HoldingWithDetails> = {}): HoldingWithDetail
       typeCode: 'crypto',
       isScamProbability: 0,
     },
-    amount: 0.2841,
+    amount: '0.2841',
     value: 18_204.55,
     costBasis: 12_000,
     price: { value: '64072.18', timestamp: '2026-08-12T09:00:00.000Z', source: 'coingecko' },

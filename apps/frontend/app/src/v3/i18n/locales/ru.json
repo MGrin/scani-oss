@@ -1180,7 +1180,8 @@
         "dateLabel": "Когда деньги были перемещены?",
         "cancel": "Отмена",
         "save": "Сохранить"
-      }
+      },
+      "amountBelow": "< {{amount}}"
     },
     "tokens": {
       "custom": {

@@ -4,7 +4,7 @@ import { Numeric } from '@scani/ui/v3/components/Numeric';
 import { Pencil } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { amountDecimals } from '../../lib/holdings';
+import { amountDecimals, BALANCE_EDIT_SCALE, balanceEditWrites } from '../../lib/holdings';
 import { LookalikeBadge } from './LookalikeBadge';
 
 /**
@@ -23,7 +23,8 @@ import { LookalikeBadge } from './LookalikeBadge';
  */
 
 interface HoldingAmountFactProps {
-  amount: number;
+  /** The exact balance, as a decimal string (SC-567). */
+  amount: string;
   /**
    * What the count counts (SC-559).
    *
@@ -50,6 +51,9 @@ interface HoldingAmountFactProps {
 export function HoldingAmountFact({ amount, symbol, lookalikeOf, onSave }: HoldingAmountFactProps) {
   const { t } = useTranslation();
   const [draft, setDraft] = useState<string | null>(null);
+  // What the editor opened on. Kept so `commit` can tell "the reader changed
+  // this" from "the reader looked at it" — see `balanceEditWrites` (SC-567).
+  const [seed, setSeed] = useState('');
 
   if (draft === null) {
     return (
@@ -61,7 +65,13 @@ export function HoldingAmountFact({ amount, symbol, lookalikeOf, onSave }: Holdi
         {lookalikeOf ? <LookalikeBadge symbol={symbol} impersonates={lookalikeOf} t={t} /> : null}
         <button
           type="button"
-          onClick={() => setDraft(String(amount))}
+          onClick={() => {
+            // `amount` itself, no `String(...)`. It was a number, and
+            // `String(4.013e-10)` is `"4.013e-10"` — an exponent seeded into
+            // a field whose parser does not read one (SC-567).
+            setSeed(amount);
+            setDraft(amount);
+          }}
           aria-label={t('v3.holdings.amountFact.edit')}
           className="-my-1 rounded-md p-1 text-muted-foreground transition-colors duration-fast ease-emphasized hover:bg-surface-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
@@ -72,8 +82,7 @@ export function HoldingAmountFact({ amount, symbol, lookalikeOf, onSave }: Holdi
   }
 
   const commit = () => {
-    const next = draft.trim();
-    if (next) onSave(next);
+    if (balanceEditWrites(seed, draft)) onSave(draft.trim());
     setDraft(null);
   };
 
@@ -83,7 +92,8 @@ export function HoldingAmountFact({ amount, symbol, lookalikeOf, onSave }: Holdi
         value={draft}
         onValueChange={setDraft}
         className="h-9 w-32 text-right text-body"
-        decimalScale={8}
+        // Not the display cap: see `BALANCE_EDIT_SCALE` (SC-567).
+        decimalScale={BALANCE_EDIT_SCALE}
         aria-label={t('v3.holdings.amountFact.amount')}
         autoFocus
         onKeyDown={(event) => {

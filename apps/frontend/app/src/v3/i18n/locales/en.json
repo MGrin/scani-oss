@@ -862,7 +862,8 @@
         "dateLabel": "When did the money move?",
         "cancel": "Cancel",
         "save": "Save"
-      }
+      },
+      "amountBelow": "< {{amount}}"
     },
     "export": {
       "sheet": {

@@ -183,7 +183,7 @@ export function apyDraftFromConfig(config?: {
  * the same one — which is the whole reason the frequency field is there.
  */
 export function nextPayoutAmount(
-  balance: number,
+  balance: Decimal.Value,
   ratePct: number,
   frequency: PayoutFrequencyCode
 ): number {
@@ -252,7 +252,7 @@ export function apyDayNote(t: TFunction, draft: ApyDraft, year: number): string 
 export function apyPreviewSentence(
   t: TFunction,
   draft: ApyDraft,
-  holding: { amount: number; symbol: string },
+  holding: { amount: Decimal.Value; symbol: string },
   year: number = new Date().getUTCFullYear()
 ): string | null {
   const rate = parseRatePct(draft.rate);

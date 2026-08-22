@@ -20,7 +20,7 @@ function makeHolding(overrides: Partial<HoldingWithDetails> = {}): HoldingWithDe
       iconUrl: null,
       isScamProbability: 0,
     },
-    amount: 1,
+    amount: '1',
     value: 100,
     costBasis: 80,
     account: { id: 'a1', name: 'Acc', type: 'wallet', typeCode: 'wallet', institutionId: 'i1' },
@@ -85,12 +85,12 @@ describe('removeHoldingsById', () => {
 describe('patchHoldingById', () => {
   test('patches amount and leaves other holdings untouched', () => {
     const data = makeData([
-      makeHolding({ id: 'a', amount: 1 }),
-      makeHolding({ id: 'b', amount: 2 }),
+      makeHolding({ id: 'a', amount: '1' }),
+      makeHolding({ id: 'b', amount: '2' }),
     ]);
-    const next = patchHoldingById(data, 'a', { amount: 5 });
-    expect(next.holdings.find((h) => h.id === 'a')?.amount).toBe(5);
-    expect(next.holdings.find((h) => h.id === 'b')?.amount).toBe(2);
+    const next = patchHoldingById(data, 'a', { amount: '5' });
+    expect(next.holdings.find((h) => h.id === 'a')?.amount).toBe('5');
+    expect(next.holdings.find((h) => h.id === 'b')?.amount).toBe('2');
   });
 
   test('toggling isActive updates the active count', () => {
@@ -104,10 +104,10 @@ describe('patchHoldingById', () => {
   });
 
   test('an undefined patch field does not wipe the existing value', () => {
-    const data = makeData([makeHolding({ id: 'a', amount: 7, isActive: true })]);
+    const data = makeData([makeHolding({ id: 'a', amount: '7', isActive: true })]);
     const next = patchHoldingById(data, 'a', { amount: undefined, isActive: false });
     const row = next.holdings[0];
-    expect(row?.amount).toBe(7);
+    expect(row?.amount).toBe('7');
     expect(row?.isActive).toBe(false);
   });
 });
