@@ -270,7 +270,7 @@ function serializeToken(t: Token): {
   symbol: string;
   name: string;
   typeId: string;
-  decimals: number;
+  decimals: number | null;
   iconUrl: string | null;
   providerMetadata: unknown;
   isScamProbability: number;

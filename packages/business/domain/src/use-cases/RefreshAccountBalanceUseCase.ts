@@ -206,7 +206,6 @@ export class RefreshAccountBalanceUseCase {
         // dedup + 8 decimals.
         dedupStrategy: isWallet ? 'externalId' : 'tokenId',
         sourceTag: isWallet ? WALLET_BALANCE_SYNC_SOURCE : EXCHANGE_BALANCE_SYNC_SOURCE,
-        defaultDecimals: isWallet ? 18 : 8,
         respectHiddenForCounts: isWallet,
         skipUnchangedUpdates: false,
         // Wallet refresh refuses to auto-create holdings: chain
@@ -367,6 +366,7 @@ const SYNTHETIC_BASE_CURRENCY: ProviderContext['baseCurrency'] = {
   name: 'United States Dollar',
   typeId: 'fiat',
   decimals: 2,
+  decimalsSource: 'iso4217',
   iconUrl: null,
   providerMetadata: {},
   isScamProbability: 0,

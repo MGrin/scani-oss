@@ -22,7 +22,7 @@ export interface TokenMappingResult {
     symbol: string;
     name: string;
     typeId: string;
-    decimals?: number;
+    decimals?: number | null;
     iconUrl?: string | null;
     // Structural exchange segment ('US' / 'TO' / 'L' / …). Dropping it
     // here let the IBKR balance import resolve stocks to a NULL-segment
@@ -39,7 +39,9 @@ export interface IntegrationHolding {
   symbol: string;
   name: string;
   balance: string;
-  decimals: number;
+  /** NULL when the provider gave no scale — a CEX balance response has
+   *  none. Never a fallback (SC-544). */
+  decimals: number | null;
   tokenType?: string;
   externalTokenId?: string;
   contractAddress?: string;
@@ -137,7 +139,9 @@ export function projectSnapshotsToHoldings(
     const ti = s.tokenIdentity;
     const symbol = (ti.symbol ?? s.externalId ?? '').toString();
     const name = (ti.name ?? symbol).toString();
-    const decimals = typeof ti.decimals === 'number' ? ti.decimals : 18;
+    // Absent means the provider had no scale to give — a CEX balance
+    // response carries none. NULL says so; 18 said 'Ether' (SC-544).
+    const decimals = typeof ti.decimals === 'number' ? ti.decimals : null;
     const contractAddress = extractContractAddress(ti.providerMetadata);
     const externalTokenId = extractExternalTokenId(ti.providerMetadata, s.externalId);
     const out: IntegrationHolding = {
@@ -178,7 +182,9 @@ export function projectSnapshotToTokenMapping(snapshot: HoldingSnapshot): TokenM
   const ti = snapshot.tokenIdentity;
   const symbol = (ti.symbol ?? snapshot.externalId ?? '').toString();
   const name = (ti.name ?? symbol).toString();
-  const decimals = typeof ti.decimals === 'number' ? ti.decimals : 18;
+  // Absent means the provider had no scale to give — a CEX balance
+  // response carries none. NULL says so; 18 said 'Ether' (SC-544).
+  const decimals = typeof ti.decimals === 'number' ? ti.decimals : null;
   return {
     token: {
       symbol,

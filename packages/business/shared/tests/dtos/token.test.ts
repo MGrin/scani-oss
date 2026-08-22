@@ -15,11 +15,30 @@ describe('CreateTokenDto', () => {
     expect(result.data.symbol).toBe('BTC');
   });
 
-  test('applies defaults: decimals=2, isActive=true', () => {
+  /**
+   * DELETED, not retargeted: this asserted `decimals` defaults to 2, and that
+   * capability was removed rather than moved. SC-544 — a caller who supplied no
+   * decimals has said nothing, and `.default(2)` turned that silence into a
+   * claim. It is `typeCode === 'crypto' ? 18 : 2` wearing a zod default, and it
+   * put a number on 20 production rows that no source ever produced.
+   *
+   * Re-adding a default here has to delete this comment first.
+   */
+  test('leaves decimals absent rather than defaulting it, and still defaults isActive', () => {
     const result = CreateTokenDto.safeParse({ symbol: 'BTC' });
     if (!result.success) throw new Error('expected success');
-    expect(result.data.decimals).toBe(2);
+    expect(result.data.decimals).toBeUndefined();
     expect(result.data.isActive).toBe(true);
+  });
+
+  test('still accepts a decimals the caller does supply', () => {
+    // The user IS the authority for a token they created: there is no chain and
+    // no standard for a custom asset, so refusing their value would leave the
+    // one class where the answer is knowable permanently NULL. It is recorded
+    // with authority `user`.
+    const result = CreateTokenDto.safeParse({ symbol: 'BTC', decimals: 8 });
+    if (!result.success) throw new Error('expected success');
+    expect(result.data.decimals).toBe(8);
   });
 
   test('accepts all optional fields including provider metadata', () => {
