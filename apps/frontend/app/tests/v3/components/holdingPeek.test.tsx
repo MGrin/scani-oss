@@ -48,6 +48,7 @@ const CONTEXT: HoldingPeekContext = {
   refreshingPriceId: null,
   refreshingBalanceId: null,
   onEditPrice: () => undefined,
+  onSetLabel: () => undefined,
   onConfigureApy: () => undefined,
   onRemoveApy: () => undefined,
   onDelete: () => undefined,

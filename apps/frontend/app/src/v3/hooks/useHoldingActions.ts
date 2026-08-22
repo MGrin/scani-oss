@@ -71,6 +71,10 @@ export function useHoldingActions() {
         // (SC-567). Coercing here reintroduced the double one render early.
         amount: data.balance,
         isActive: data.isActive,
+        // `null` is a real value here — it clears the pot name — and
+        // `mergeDefined` preserves it while skipping `undefined`, so a
+        // balance edit that sends no `label` leaves the name alone.
+        label: data.label,
       }),
     onSuccess: () => {
       showSuccess(t('v3.holdings.toast.updated'));
@@ -115,6 +119,8 @@ export function useHoldingActions() {
       data: {
         balance?: string;
         isActive?: boolean;
+        /** The pot's name (SC-564). `null` clears it; omitted leaves it. */
+        label?: string | null;
         editCause?: ManualEditCause;
         editOccurredAt?: string;
       }

@@ -137,7 +137,11 @@ export {
   SyncWalletBalancesUseCase,
 } from './SyncWalletBalancesUseCase';
 export { UpdateHoldingPriceUseCase } from './UpdateHoldingPriceUseCase';
-export { type UpdateHoldingInput, UpdateHoldingUseCase } from './UpdateHoldingUseCase';
+export {
+  HoldingLabelTakenError,
+  type UpdateHoldingInput,
+  UpdateHoldingUseCase,
+} from './UpdateHoldingUseCase';
 export {
   type UpdateTokenPricesResult,
   UpdateTokenPricesUseCase,
