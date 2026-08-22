@@ -1,5 +1,11 @@
-import { describe, expect, it } from 'bun:test';
-import { moneyDecimals, quantityDecimals, roundToDecimals } from '../../src/format/precision';
+import { describe, expect, it, test } from 'bun:test';
+import {
+  isDustQuantity,
+  moneyDecimals,
+  quantityDecimals,
+  roundToDecimals,
+  SMALLEST_SHOWN_QUANTITY,
+} from '../../src/format/precision';
 
 describe('moneyDecimals', () => {
   it('gives an ordinary amount two decimals', () => {
@@ -91,5 +97,76 @@ describe('roundToDecimals', () => {
 
   it('leaves a figure it cannot parse exactly as it found it', () => {
     expect(roundToDecimals('n/a', 2)).toBe('n/a');
+  });
+});
+
+/**
+ * SC-567 — the predicate a SCANNING surface asks before it renders a quantity.
+ *
+ * `quantityDecimals` above extends past the cap so an INSPECTION surface can
+ * show a dust balance exactly. That is right for the peek and for a CSV, and
+ * wrong for a list row, where eighteen decimals in the value zone squeeze the
+ * identity zone until the account name clips. This says which case you are in.
+ *
+ * The one answer neither surface may give is `0`, which is not a rounding of a
+ * small position but a claim that it is empty.
+ */
+describe('isDustQuantity', () => {
+  test('a real balance under the display cap is dust', () => {
+    expect(isDustQuantity('0.0000000004013')).toBe(true);
+    expect(isDustQuantity('0.000000000000000001')).toBe(true);
+    // Exactly at the boundary of what 8 decimals can show, from below.
+    expect(isDustQuantity('0.000000004')).toBe(true);
+  });
+
+  test('a balance the cap can show is not dust, including the smallest of them', () => {
+    expect(isDustQuantity(SMALLEST_SHOWN_QUANTITY)).toBe(false);
+    expect(isDustQuantity('0.00000002')).toBe(false);
+    expect(isDustQuantity('143.59019742')).toBe(false);
+    expect(isDustQuantity('12500')).toBe(false);
+  });
+
+  test('zero is not dust — it is zero, and it may be rendered as zero', () => {
+    // The distinction the whole ticket rests on. A position that IS empty is
+    // entitled to say so; one that is merely small is not.
+    expect(isDustQuantity('0')).toBe(false);
+    expect(isDustQuantity(0)).toBe(false);
+  });
+
+  test('nothing at all is not dust', () => {
+    expect(isDustQuantity(null)).toBe(false);
+    expect(isDustQuantity(undefined)).toBe(false);
+    expect(isDustQuantity('')).toBe(false);
+    expect(isDustQuantity('not a number')).toBe(false);
+  });
+
+  test('a negative dust balance is dust', () => {
+    // `holdings.balance` is non-negative by schema, but this rule is about
+    // magnitude and answering on the sign would be an accident waiting.
+    expect(isDustQuantity('-0.0000000004013')).toBe(true);
+  });
+
+  test('the threshold is the cap written out, with no exponent', () => {
+    // It reaches a spreadsheet cell through the export path, where `1e-8` is
+    // text to some readers and a number to none.
+    expect(SMALLEST_SHOWN_QUANTITY).toBe('0.00000001');
+    expect(SMALLEST_SHOWN_QUANTITY).not.toContain('e');
+    expect(isDustQuantity(SMALLEST_SHOWN_QUANTITY)).toBe(false);
+  });
+
+  test('the boundary is where the figure ROUNDS to zero, not where it falls below the cap', () => {
+    // Non-obvious and worth pinning: `vanishesAt` asks whether
+    // `toDecimalPlaces(8)` leaves nothing, and that rounds HALF-UP. So the
+    // edge sits at 5e-9, not at the cap itself — `0.000000009` displays as
+    // `0.00000001`, which is a true statement about a real balance and needs
+    // no threshold. Only a figure that would render as `0` gets one.
+    //
+    // Written down because the obvious reading of "too small for the column"
+    // is `< 1e-8`, and a future simplification to that would start putting
+    // `< 0.00000001` over balances the column can show exactly.
+    expect(isDustQuantity('0.000000009')).toBe(false);
+    expect(isDustQuantity('0.000000005')).toBe(false);
+    expect(isDustQuantity('0.0000000049')).toBe(true);
+    expect(isDustQuantity('0.000000004')).toBe(true);
   });
 });

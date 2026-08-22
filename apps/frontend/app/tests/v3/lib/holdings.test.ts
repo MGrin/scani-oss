@@ -59,7 +59,7 @@ function holding(overrides: Partial<HoldingWithDetails> = {}): HoldingWithDetail
       typeCode: 'crypto',
       isScamProbability: 0,
     },
-    amount: 0.2841,
+    amount: '0.2841',
     value: 18_204.55,
     costBasis: 12_000,
     price: { value: '64072.18', timestamp: '2026-08-12T09:00:00.000Z', source: 'coingecko' },
@@ -182,7 +182,7 @@ describe('compareHoldings', () => {
     const eth = holding({ token: { ...holding().token, symbol: 'ETH' } });
     expect(compareHoldings(holding(), eth, 'symbol', 'asc')).toBeLessThan(0);
     expect(
-      compareHoldings(holding({ amount: 1 }), holding({ amount: 2 }), 'amount', 'asc')
+      compareHoldings(holding({ amount: '1' }), holding({ amount: '2' }), 'amount', 'asc')
     ).toBeLessThan(0);
     expect(
       compareHoldings(
@@ -598,5 +598,45 @@ describe('BALANCE_EDIT_SCALE', () => {
     });
     expect(parsed.value).toBe('0.00000000');
     expect(parsed.text).toBe('0.0000000004013');
+  });
+});
+
+/**
+ * SC-567 — sorting and precision now that `amount` is a decimal string.
+ */
+describe('amount as a decimal string', () => {
+  test('sorts two dust balances against each other, not both as zero', () => {
+    // Before SC-567 both arrived as `0` and this comparison returned 0 — the
+    // list put them in whatever order it received them and looked deliberate.
+    const smaller = holding({ amount: '0.000000000000000001' });
+    const larger = holding({ amount: '0.0000000004013' });
+    expect(compareHoldings(smaller, larger, 'amount', 'asc')).toBeLessThan(0);
+    expect(compareHoldings(smaller, larger, 'amount', 'desc')).toBeGreaterThan(0);
+  });
+
+  test('sorts balances a double cannot tell apart', () => {
+    // 17 significant digits differing in the last one. Subtraction through a
+    // double gives exactly 0 here, so the old comparator called them equal.
+    const a = holding({ amount: '123456789012345.12345678' });
+    const b = holding({ amount: '123456789012345.12345679' });
+    expect(compareHoldings(a, b, 'amount', 'asc')).toBeLessThan(0);
+    // Non-vacuous: this is what the old implementation was working with.
+    expect(Number('123456789012345.12345678') - Number('123456789012345.12345679')).toBe(0);
+  });
+
+  test('sorts an ordinary pair the way it always did', () => {
+    expect(
+      compareHoldings(holding({ amount: '1' }), holding({ amount: '2' }), 'amount', 'asc')
+    ).toBeLessThan(0);
+    expect(
+      compareHoldings(holding({ amount: '12500' }), holding({ amount: '143.59' }), 'amount', 'asc')
+    ).toBeGreaterThan(0);
+  });
+
+  test('amountDecimals reads the decimals off the string, not off a double', () => {
+    expect(amountDecimals('0.0000000004013')).toBe(13);
+    expect(amountDecimals('0.000000000000000001')).toBe(18);
+    expect(amountDecimals('143.59019742')).toBe(8);
+    expect(amountDecimals('12500')).toBe(0);
   });
 });

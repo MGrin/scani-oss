@@ -1,9 +1,15 @@
-import { formatDate, type HoldingWithDetails } from '@scani/shared';
+import {
+  formatDate,
+  type HoldingWithDetails,
+  isDustQuantity,
+  SMALLEST_SHOWN_QUANTITY,
+} from '@scani/shared';
 import { FaviconImg } from '@scani/ui/components/FaviconImg';
 import { Badge } from '@scani/ui/ui/badge';
 import { Button } from '@scani/ui/ui/button';
 import { DeltaPill } from '@scani/ui/v3/components/charts/DeltaPill';
 import { Numeric } from '@scani/ui/v3/components/Numeric';
+import { resolveNumeric } from '@scani/ui/v3/lib/numeric';
 import type { PeekFact, PeekSection, PeekSpec } from '@scani/ui/v3/lib/peek';
 import type { TFunction } from 'i18next';
 import { Pencil, RefreshCw, Wallet } from 'lucide-react';
@@ -423,8 +429,38 @@ export function holdingRowDelta(holding: HoldingWithDetails) {
   return <Numeric value={gainLoss.percent} format="percent" decimals={1} delta indicator="sign" />;
 }
 
-/** The unit count, at the precision the number actually carries. */
-export function holdingAmount(holding: HoldingWithDetails, className?: string) {
+/**
+ * The unit count for a SCANNING surface — the phone row and the desktop
+ * table's amount column.
+ *
+ * A balance too small for the column says `< 0.00000001` rather than spelling
+ * itself out (SC-567). Three things were on the table and only this one holds:
+ *
+ *   `0`                  the bug. Not a rounding of a small position but a
+ *                        different claim — that it is empty.
+ *   `0.000000000000000001`  true, and eighteen decimals in the value zone
+ *                        squeezes the identity zone until the account name
+ *                        clips: 182px against 103px at 393px wide.
+ *   `< 0.00000001`       bounded, and cannot be read as empty.
+ *
+ * Not a truncation and not an ellipsis: a truncated number is ambiguous about
+ * which digits went, and an ellipsis on digits reads as broken rather than as
+ * brief. The threshold says exactly what it knows.
+ *
+ * The peek and the export do NOT use this. They are inspection surfaces and
+ * carry the exact figure — which is the whole reason `quantityDecimals`
+ * extends past the cap.
+ */
+export function holdingAmount(holding: HoldingWithDetails, t: TFunction, className?: string) {
+  if (isDustQuantity(holding.amount)) {
+    return (
+      <span className={className}>
+        {t('v3.holdings.amountBelow', {
+          amount: resolveNumeric(SMALLEST_SHOWN_QUANTITY, { format: 'plain', decimals: 8 }).text,
+        })}
+      </span>
+    );
+  }
   return (
     <Numeric
       value={holding.amount}
