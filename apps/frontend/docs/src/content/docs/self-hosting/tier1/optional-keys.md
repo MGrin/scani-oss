@@ -45,10 +45,13 @@ implementations that **no backend service registers**
 (`aiPerplexityFactory` and `aiDeepseekFactory` are exported and never
 passed to `buildProviderRegistry`). Setting them has no effect today.
 
-The vision model is not configurable: `gpt-5.6-luna` is a constant in
-`packages/clients/providers/src/providers/ai-openai/index.ts`.
-`OPENAI_VISION_MODEL` is declared in the providers env schema and
-read by nothing.
+The model is not configurable: `gpt-5.6-luna` is a constant in
+`packages/clients/providers/src/providers/ai-openai/index.ts`, used for
+both text and vision. It is pinned rather than merely undocumented —
+the token-limit parameter name, the temperature handling, whether a PDF
+may be sent as a `file` part, and the per-token pricing used for cost
+attribution were all measured against that model, so changing the id
+alone would leave four other settings wrong.
 
 ## On-chain
 

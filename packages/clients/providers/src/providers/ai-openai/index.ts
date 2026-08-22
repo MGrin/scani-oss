@@ -12,6 +12,20 @@
  * with a live call — the previous pair was chosen from an assumption
  * about PDF support that turned out to be false in production.
  *
+ * The model id is PINNED, not configurable, and SC-588 removed the
+ * `OPENAI_VISION_MODEL` env var that six documents described as an
+ * override without anything ever reading it. Four of the fields below
+ * are measurements of this model rather than preferences —
+ * `tokenLimitParam`, `supportsTemperature`, `supportsPdfFileInput` and
+ * `OPENAI_PRICING` — so a knob that swapped only the id would leave all
+ * four asserting things about a model they were never checked against.
+ * Concretely, the value those documents named as the default (`gpt-4o`)
+ * is the model this one replaced *because* it rejected PDFs, and
+ * `supportsPdfFileInput: true` would keep sending them to it rather than
+ * declining locally so the AIRouter can fall through. Re-adding the
+ * override means moving all five together — a per-model config record,
+ * not a string.
+ *
  * Pre-refactor source:
  * `packages/ai-providers/src/openai-provider.ts`. The shared
  * `ChatCompletionsProvider` base owns the prompt construction +
