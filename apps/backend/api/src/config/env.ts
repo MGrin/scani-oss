@@ -82,9 +82,17 @@ const envSchema = z.object({
   // OPENAI_VISION_MODEL,
   // COINGECKO_API_KEY, FINNHUB_API_KEY, ETHERSCAN_API_KEY, HELIUS_API_KEY,
   // GOOGLE_SHEETS_ID, GOOGLE_SERVICE_ACCOUNT_KEY) are owned by
-  // @scani/providers' env schema. They're only required on the host that
-  // actually boots in `direct` mode — typically the data-provider in
-  // production, or the api itself in OSS dev when SCANI_CLOUD_URL is unset.
+  // @scani/providers' env schema. They are required HERE, in every
+  // deployment: the api boots `buildProviderRegistry({ mode: 'direct' })`
+  // unconditionally (see src/index.ts) and calls these upstreams itself.
+  //
+  // This comment used to say they were "only required on the host that
+  // actually boots in direct mode — typically the data-provider". That was
+  // false and it was a footgun (SC-521): every backend app boots direct
+  // mode, and none of these keys has a data-provider fallback. Setting
+  // them only on the data-provider degrades the api SILENTLY — Finnhub
+  // returns null for every call, Etherscan goes unauthenticated, CoinGecko
+  // drops to the public tier, and OpenAI throws on every call.
 
   // Object storage (S3_*) is owned by @scani/storage's own env schema; the
   // api only sees it when SCANI_CLOUD_URL is unset and the storage-facade

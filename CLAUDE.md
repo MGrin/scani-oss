@@ -110,12 +110,40 @@ plus the cross-cutting `apps/e2e` Playwright suite.
   backfill, orphan reconcilers) live in
   `packages/infra/queue/src/queue-names.ts:REPEATABLE_SCHEDULES`; the worker
   registers them with BullMQ at boot. There is no separate cron app.
-- `apps/backend/data-provider` — tRPC service that centralizes outbound
-  third-party calls (CoinGecko, Finnhub, DeFiLlama, ExchangeRate-API,
-  Google Sheets, OpenAI, Perplexity, DeepSeek). All credentialed upstream
-  calls flow through this service; api and worker call it over tRPC rather
-  than hitting upstream APIs directly. The same binary serves all three
-  deployment tiers.
+- `apps/backend/data-provider` — tRPC service fronting a *subset* of
+  outbound third-party calls: **object storage (R2), email (JMAP / SMTP),
+  OG-metadata fetching, and token search**. The same binary serves all
+  three deployment tiers.
+
+  **It is not the sole egress, and the api and worker DO call upstream
+  pricing and AI APIs directly.** All three backend apps boot
+  `buildProviderRegistry({ mode: 'direct' })` — `api/src/index.ts`,
+  `worker/src/index.ts`, `data-provider/src/index.ts` — so CoinGecko,
+  DeFiLlama, Frankfurter, Finnhub, Yahoo Finance, Etherscan, the chain
+  RPCs and OpenAI are constructed and called in each process. Google
+  Sheets is registered in the api and worker only — *not* here.
+
+  **Credentialed calls in particular do NOT flow through this service.**
+  The user-credentialed CEX/broker/fiat providers stay in the api and
+  worker deliberately, so decrypted per-tenant credentials never cross
+  into a shared multi-tenant service.
+
+  A `mode: 'cloud'` exists (`packages/clients/providers/src/core/cloud/`
+  plus `CloudProviderClientBridge` in `@scani/cloud-client`) that would
+  make the sole-egress claim true for pricing/AI/token-identity. **No app
+  uses it**, and nothing constructs the bridge outside tests, so this
+  service's `ai.*` and `pricing.*` routers have no live caller. Do not
+  reason about egress as though it were wired up.
+
+  What makes upstream budgets coherent across those processes is **Redis,
+  not topology**: `buildProviderRegistry` calls `setSharedRedis`, and
+  `OutflowRateLimiterRegistry` keys every limiter `rl:<namespace>` with no
+  per-service discriminator, so one window is shared by every process. An
+  in-process limiter would multiply every agreed cap by the process count.
+
+  **Set every provider API key on the api and worker too**, not only here —
+  see `.env.example`. Missing keys degrade silently rather than failing at
+  boot.
 
 **Frontend apps (`apps/frontend/`):**
 - `apps/frontend/app` — Main React + Vite SPA (code under `src/v2/`).
