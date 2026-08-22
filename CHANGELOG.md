@@ -19,6 +19,14 @@ version heading stays there permanently, above every future release. This
 comment is deliberately in that position; explanatory prose should not be.
 -->
 
+## [0.17.1](https://github.com/MGrin/scani-oss/compare/v0.17.0...v0.17.1) (2026-08-22)
+
+
+### Bug Fixes
+
+* **dev:** give each checkout its own stack, not the one next door (SC-497) ([83bb1dc](https://github.com/MGrin/scani-oss/commit/83bb1dcdc837ea74cec6415759dabde00c54ede4))
+* **v3:** name the verb when a capture form's submit fails (SC-529) ([216245b](https://github.com/MGrin/scani-oss/commit/216245b3c341222ae9120dc819c82440c7664529))
+
 ## [0.17.0](https://github.com/MGrin/scani-oss/compare/v0.16.0...v0.17.0) (2026-08-22)
 
 
