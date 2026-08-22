@@ -19,6 +19,23 @@ version heading stays there permanently, above every future release. This
 comment is deliberately in that position; explanatory prose should not be.
 -->
 
+## [0.16.0](https://github.com/MGrin/scani-oss/compare/v0.15.0...v0.16.0) (2026-08-22)
+
+
+### Features
+
+* **holdings:** let a pot be named after it exists (SC-564) ([ea4f2b5](https://github.com/MGrin/scani-oss/commit/ea4f2b5f8beea86c582516446c1e6f93456d307d))
+
+
+### Bug Fixes
+
+* **holdings:** reconcile hidden holdings in the user-wide pass (SC-502) ([42066e0](https://github.com/MGrin/scani-oss/commit/42066e08ca654853dbed477d994156f5bf20a582))
+* **holdings:** send the balance whole, and say "&lt; 0.00000001" not "0" (SC-567) ([5a006ab](https://github.com/MGrin/scani-oss/commit/5a006abd19776d91fe4a12475810a8d64c5eddad))
+* **holdings:** show the pot name in the desktop table too (SC-564) ([d21d588](https://github.com/MGrin/scani-oss/commit/d21d588979d2e0ba5382688c316578952b38575a))
+* **holdings:** stop the balance editor destroying a dust balance (SC-567) ([5a006ab](https://github.com/MGrin/scani-oss/commit/5a006abd19776d91fe4a12475810a8d64c5eddad))
+* **jobs:** stop telling a reader to check details that are not on the page (SC-554) ([5841793](https://github.com/MGrin/scani-oss/commit/5841793dacccfc2f6103499ecf265ce61f909e61))
+* **self-host:** serve the nine security headers the nginx image never sent (SC-561) ([050fbc6](https://github.com/MGrin/scani-oss/commit/050fbc6304a5edec1660cd046877977783fe9010))
+
 ## [0.15.0](https://github.com/MGrin/scani-oss/compare/v0.14.1...v0.15.0) (2026-08-22)
 
 
