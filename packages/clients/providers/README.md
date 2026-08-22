@@ -82,12 +82,48 @@ institutionCode='kraken'" runtime surprise.
   implements that interface by translating to tRPC calls against
   `apps/backend/data-provider`.
 
-  **Status**: cloud-mode boot is *constructible* today (factories +
-  bridge exist) but the data-provider only exposes the AI tRPC routes
-  (`ai.parseScreenshot` / `parseDocumentText` / `completeText`).
-  Pricing, balances, transactions, and token-identity routes still
-  need to be added; the bridge throws `not-supported` for those
-  methods until they are. See "Follow-ups" below.
+  **Status: UNADOPTED. No app boots cloud mode** (SC-521). All three
+  backend apps pass `mode: 'direct'` as a string literal — `api`,
+  `worker` and `data-provider` alike — and `mode` is a required
+  parameter that `buildProviderRegistry` never derives from `env`, so
+  no environment variable or Fly secret can switch it on.
+  `CloudProviderClientBridge` is constructed nowhere outside tests, so
+  the data-provider's `ai.*` and `pricing.*` routers have no live
+  caller either.
+
+  Two consequences worth stating plainly:
+
+  - **This directory is dead code** by the repo's own guidelines, and
+    `knip` cannot see it — `rules.exports` is `off` and `./core/cloud`
+    is a declared package export. It survives because nothing looks,
+    not because something decided it should.
+  - **Do not reason about egress as though it were wired up.** The api
+    and worker call CoinGecko, DeFiLlama, Frankfurter, Finnhub, Yahoo
+    Finance, Etherscan, the chain RPCs and OpenAI themselves.
+
+  Whether to adopt it or delete it is an open decision, not an
+  oversight. Adopting it would not make the data-provider sole egress
+  either: the 15 user-credentialed CEX/broker/fiat providers must stay
+  in the api and worker so decrypted per-tenant credentials never
+  cross into a shared multi-tenant service, and the bridge refuses
+  `fetchBalances` / `fetchTransactions` by design for that reason.
+
+  What keeps upstream budgets coherent across the four processes is
+  **Redis, not topology**: `buildProviderRegistry` calls
+  `setSharedRedis`, and `OutflowRateLimiterRegistry` keys every limiter
+  `rl:<namespace>` with no per-service discriminator. Moving a limiter
+  in-process would multiply every agreed cap by the process count.
+
+  Route coverage, checked 2026-08-22: `pricing.*`, `ai.*` and
+  `tokens.enrichIdentity` all exist on the data-provider and are
+  implemented by the bridge. The only two methods that throw
+  `not-supported` are `fetchBalances` and `fetchTransactions` — and
+  those are intentional, per the tenant-boundary reason above, not a
+  gap waiting to be filled. (An earlier version of this section said
+  pricing and token-identity were still missing; they were added since.
+  Falsifier: `grep -c 'notSupported(' \
+  ../cloud-client/src/cloud-services/cloud-provider-client.ts` — expect
+  3, two call sites plus the definition.) See "Follow-ups" below.
 
 ## Boot
 
@@ -110,7 +146,8 @@ await buildProviderRegistry({
 });
 ```
 
-Cloud-mode wiring (when the data-provider routes are ready):
+Cloud-mode wiring, for reference only — **no app does this** (SC-521).
+The routes are ready; the adoption never happened:
 
 ```ts
 import { buildProviderRegistry } from '@scani/providers/core/boot';
