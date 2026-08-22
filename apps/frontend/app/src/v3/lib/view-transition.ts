@@ -42,7 +42,7 @@ export function supportsViewTransitions(doc: ViewTransitionDocument | undefined)
   return typeof doc?.startViewTransition === 'function';
 }
 
-export function prefersReducedMotion(): boolean {
+function prefersReducedMotion(): boolean {
   if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false;
   return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 }

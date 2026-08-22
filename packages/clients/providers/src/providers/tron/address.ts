@@ -19,7 +19,7 @@ for (let i = 0; i < BASE58_ALPHABET.length; i++) {
   BASE58_MAP[BASE58_ALPHABET[i] as string] = i;
 }
 
-export function base58Decode(input: string): Uint8Array {
+function base58Decode(input: string): Uint8Array {
   if (input.length === 0) return new Uint8Array(0);
   let zeros = 0;
   while (zeros < input.length && input[zeros] === '1') zeros++;
@@ -50,7 +50,7 @@ export function base58Decode(input: string): Uint8Array {
   return out;
 }
 
-export function bytesToHex(bytes: Uint8Array): string {
+function bytesToHex(bytes: Uint8Array): string {
   let out = '';
   for (const b of bytes) out += b.toString(16).padStart(2, '0');
   return out;

@@ -23,11 +23,7 @@ const IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'webp'] as const;
 const STATEMENT_EXTENSIONS = ['csv', 'tsv', 'ofx', 'qfx', 'qif'] as const;
 
 /** Everything `/v3/import` takes, in the order the accept attribute lists it. */
-export const IMPORT_EXTENSIONS: readonly string[] = [
-  ...IMAGE_EXTENSIONS,
-  'pdf',
-  ...STATEMENT_EXTENSIONS,
-];
+const IMPORT_EXTENSIONS: readonly string[] = [...IMAGE_EXTENSIONS, 'pdf', ...STATEMENT_EXTENSIONS];
 
 export const IMPORT_ACCEPT = IMPORT_EXTENSIONS.map((ext) => `.${ext}`).join(',');
 
@@ -47,7 +43,7 @@ export interface ImportFilePlan {
   format?: 'csv' | 'ofx' | 'qif';
 }
 
-export function fileExtension(filename: string): string {
+function fileExtension(filename: string): string {
   const dot = filename.lastIndexOf('.');
   return dot === -1 ? '' : filename.slice(dot + 1).toLowerCase();
 }
@@ -250,7 +246,7 @@ const WALLET_ADDRESS_SHAPES: readonly WalletAddressShape[] = [
 /** Every shape at once, for the case where nothing was even aimed at. */
 const EVERY_ADDRESS_SHAPE_KEY = 'v3.capture.wallet.everyShape';
 
-export type WalletAddressVerdict =
+type WalletAddressVerdict =
   | { status: 'empty' }
   | { status: 'valid' }
   /** Aimed at a chain we know, but not a complete address on it. */
@@ -258,7 +254,7 @@ export type WalletAddressVerdict =
   | { status: 'unrecognised'; problem: string };
 
 /** The status alone, with no sentence attached — what the builders ask for. */
-export function walletAddressStatus(address: string): WalletAddressVerdict['status'] {
+function walletAddressStatus(address: string): WalletAddressVerdict['status'] {
   const value = address.trim();
   if (!value) return 'empty';
   if (WALLET_ADDRESS_SHAPES.some((shape) => shape.valid.test(value))) return 'valid';
@@ -267,7 +263,7 @@ export function walletAddressStatus(address: string): WalletAddressVerdict['stat
     : 'unrecognised';
 }
 
-export function classifyWalletAddress(t: TFunction, address: string): WalletAddressVerdict {
+function classifyWalletAddress(t: TFunction, address: string): WalletAddressVerdict {
   const value = address.trim();
   if (!value) return { status: 'empty' };
   if (WALLET_ADDRESS_SHAPES.some((shape) => shape.valid.test(value))) return { status: 'valid' };
@@ -305,7 +301,7 @@ export function describeWalletAddressProblem(t: TFunction, address: string): str
 }
 
 /** The short version, under the button. The field carries the detail. */
-export function walletImportBlockerKeys(draft: WalletImportDraft): string[] {
+function walletImportBlockerKeys(draft: WalletImportDraft): string[] {
   switch (walletAddressStatus(draft.address)) {
     case 'empty':
       return ['v3.capture.blocker.walletEmpty'];
@@ -393,7 +389,7 @@ const CATEGORY_LABEL_KEYS: Record<string, string> = {
   broker: 'v3.capture.category.broker',
 };
 
-export const INTEGRATION_CATEGORY_FALLBACK_KEY = 'v3.capture.category.other';
+const INTEGRATION_CATEGORY_FALLBACK_KEY = 'v3.capture.category.other';
 
 export function integrationCategoryLabel(
   t: TFunction,

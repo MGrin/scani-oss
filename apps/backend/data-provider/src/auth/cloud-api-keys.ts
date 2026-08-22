@@ -16,7 +16,7 @@ import { logger } from '@scani/logging';
 import { eq, sql } from 'drizzle-orm';
 import type { CloudDb } from '../db/connection';
 
-export interface VerifiedCloudKey {
+interface VerifiedCloudKey {
   apiKeyId: string;
   tenantId: string;
   ownerUserId: string;
