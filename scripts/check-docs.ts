@@ -1200,6 +1200,87 @@ function checkPackageInventory(): void {
   }
 }
 
+// =============================================================================
+// Check 14 — the published docs site links only to the public repository
+// =============================================================================
+//
+// SC-589. Everything under `apps/frontend/docs/` is built into the site a
+// stranger reads, so a link in it is a promise made in public. One page linked
+// a design note in the closed repository this mirror is published from: a 404
+// for every reader, and it printed that repository's name on a public page
+// beside a real hostname.
+//
+// Nothing else could have seen it. A dead link compiles as MDX; the drift scan
+// looks for private CONTENT markers and a repository URL is not one; the line
+// was byte-identical in both repositories, so a cross-repo diff had nothing to
+// compare.
+//
+// THE RULE IS POSITIVE, and that is load-bearing rather than a style choice.
+// The obvious spelling is a denylist of the closed repository's slug — which
+// would have to write that slug into a file that ships here. Stated generally,
+// because it is worth more than this one check: A GUARD AGAINST A DISCLOSURE,
+// WRITTEN AS A DENYLIST, IS THE DISCLOSURE. The denied string has to be
+// committed somewhere in order to be denied, and a guard is not exempt from
+// what it guards.
+//
+// So this asserts the ALLOWED repository instead: every
+// `github.com/MGrin/<repo>` link under the docs app must name `scani-oss`. It
+// catches a link to the closed repository without naming it, and it catches a
+// link to any other repository too — which a denylist of one slug never would.
+//
+// If you are here to simplify this to a denylist, that paragraph is the reason
+// not to, and it is not specific to repository names: the same trade appears
+// wherever a check names the bad value rather than the good one.
+//
+// Matching a WHOLE path segment is what makes the comparison safe. The slug
+// this is really guarding against is a strict prefix of the allowed one, so a
+// substring test reports every correct link as a violation; a positive and a
+// negative control for exactly that live in
+// `scripts/tests/docs-site-repo-links.test.ts`.
+
+const DOCS_APP = 'apps/frontend/docs';
+const DOCS_SITE_REPO = 'scani-oss';
+
+function checkDocsSiteRepoLinks(): void {
+  const NAME = 'docs-site-repo-links';
+  const files = TRACKED.filter((f) => f.startsWith(`${DOCS_APP}/`));
+
+  // A blindness state, and it keeps its own failure for the same reason
+  // `mdx-syntax` does. No tracked files under the docs app means this check
+  // read nothing, and "nothing to look at" must never print as "nothing
+  // wrong". Argue with this comment rather than with the assertion: the
+  // tempting softening is that an empty result here is almost always benign,
+  // which is true right up to the day the site is relocated and this check
+  // goes quietly vacuous over its new home.
+  if (files.length === 0) {
+    fail(
+      NAME,
+      `no tracked files under ${DOCS_APP}/, so no link was checked. If the docs site ` +
+        'moved, point this check at its new root; if it is gone, delete this check ' +
+        'deliberately rather than leaving it passing over nothing.'
+    );
+    return;
+  }
+
+  const LINK = /github\.com\/MGrin\/([A-Za-z0-9._-]+)/g;
+
+  for (const file of files) {
+    const body = read(file);
+    for (const match of body.matchAll(LINK)) {
+      const slug = match[1].replace(/\.git$/, '');
+      if (slug === DOCS_SITE_REPO) continue;
+      const line = body.slice(0, match.index).split('\n').length;
+      fail(
+        NAME,
+        `${file}:${line} links to MGrin/${slug}. The published docs site may only link to ` +
+          `MGrin/${DOCS_SITE_REPO} — any other repository is a 404 for a reader who is not ` +
+          'us, and naming a closed one here publishes it. Link the public equivalent, or ' +
+          'say inline what the target said.'
+      );
+    }
+  }
+}
+
 const CHECKS: Array<() => void> = [
   checkDataProviderRouters,
   checkApiRouters,
@@ -1214,6 +1295,7 @@ const CHECKS: Array<() => void> = [
   checkMdxCompiles,
   checkQueueBackendClaims,
   checkPackageInventory,
+  checkDocsSiteRepoLinks,
 ];
 
 for (const check of CHECKS) {

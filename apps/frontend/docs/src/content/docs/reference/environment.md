@@ -214,9 +214,28 @@ environment wins, because a person driving several stacks has a reason.
 
 Read by the api and the worker of a **demo deployment** only
 (`demo.scani.xyz`). On any other deployment both are unset and nothing
-in this section applies. See
-[the demo-mode feature notes](https://github.com/MGrin/scani/blob/main/docs/features/2026-08-21_demo-mode.md)
-for the reasoning.
+in this section applies.
+
+A demo flag a production deployment could set is a data-exposure bug
+rather than a feature toggle, so three independent things have to hold
+before an anonymous visitor is served anything, and the flag is the
+weakest of them. The **flag** must be exactly `1`. The **database** must
+hold the demo persona and nothing else — the api reads every email in
+`users` at boot and exits otherwise, which is what makes the flag
+impossible to set against a real deployment rather than merely
+inadvisable. An empty database is refused too: nothing about an empty
+database proves it is a demo, and an unmigrated database, an empty
+replica and a typo'd `DATABASE_URL` all look exactly like one. The
+**identity** the api synthesizes is only ever the demo persona — no
+header, cookie or input selects another — so a process that got past the
+first two resolves to a user that does not exist and every user-scoped
+read returns nothing.
+
+The worker arms one schedule, `demo-reset`, and removes whatever a
+previous boot armed. Every other schedule is wrong for a demo and two
+are destructive: the hourly pricing job would overwrite the seeded price
+series and take the dataset's determinism with it, and the nightly
+rollup would recompute portfolio values over transactions nobody made.
 
 | Variable | Read by | What it does |
 |---|---|---|
