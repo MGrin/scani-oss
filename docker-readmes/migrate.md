@@ -1,4 +1,4 @@
-<!-- description: Scani schema migrator. One-shot image that applies the application and queue schemas. github.com/MGrin/scani-oss -->
+<!-- description: Scani schema migrator. Applies the app and queue schemas. github.com/MGrin/scani-oss -->
 
 # scani/migrate
 
