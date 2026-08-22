@@ -46,8 +46,10 @@ place or rejected at review.
   feature is removed, delete the code. Don't leave commented blocks,
   `// TODO: implement`, or "kept for backwards compatibility" shims when
   nothing actually needs them.
-- **Async work goes through BullMQ on Redis, consumed by `apps/backend/worker`.**
-  The api enqueues; it doesn't process long-running work inline.
+- **Async work goes through BullMQ on Postgres, consumed by `apps/backend/worker`.**
+  The api enqueues; it doesn't process long-running work inline. Job state lives
+  in the `bullmq` schema of the same database as the application schema;
+  `bun run db:migrate` applies both.
 
 ## Before Pushing
 
@@ -440,7 +442,9 @@ Workflows in `.github/workflows/`:
 
 ## Async Queue System (BullMQ)
 
-Single Redis-backed queue (`scani-jobs`) plus a dead-letter queue (`scani-dlq`).
+Single Postgres-backed queue (`scani-jobs`) plus a dead-letter queue
+(`scani-dlq`), on BullMQ's Postgres backend — the `bullmq` schema of
+`DATABASE_URL`, not Redis.
 The api enqueues; `apps/backend/worker` consumes everything. Job names +
 repeatable schedules are defined in `packages/infra/queue/src/queue-names.ts` —
 the worker registers the schedules with BullMQ at boot via
