@@ -26,10 +26,13 @@ Published to Docker Hub by hand from `scripts/publish-images-local.sh`, built fr
 There is no `v0.14.1` git tag and release-please did not cut this release, so it has no
 generated entry above.
 
-Because the last tag in this repository is `v0.12.0`, the next generated section will
-cover every commit since `v0.12.0` — including the ones already published as 0.13.0,
-0.14.0 and this release. Use the three commits named in these three sections as the
-boundaries when attributing a change to the image tag it actually shipped in.
+`release-please-config.json` carries `bootstrap-sha: 9ddd39960cd6…` — this release's build
+commit — so the next generated section covers only commits *after* it, and does not
+re-list what these three sections already record. Without that, release-please finds no
+release matching the manifest version, drops its stopping point, and walks the entire
+history (measured: 393 commits, and it picked up a `Release-As: 0.4.0` footer from
+2026-05-25). The setting only binds while no tag matches the manifest, so it stops having
+any effect once `v0.15.0` exists.
 
 Every published image records its own source commit, so this mapping is checkable rather
 than asserted:
