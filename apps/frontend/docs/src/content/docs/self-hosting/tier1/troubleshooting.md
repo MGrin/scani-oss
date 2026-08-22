@@ -51,38 +51,51 @@ password nobody has any more.
 
 ## Running two scani checkouts in parallel
 
-**Symptom.** `bun run dev:stack` in a second worktree fails with
+`bun run dev:stack` already gives each checkout a stack of its own. It
+derives a compose project name and one host port per service from the
+checkout's own path, so the containers, volumes and images of one
+checkout are never another's, and `bun run dev:stack:down` can only
+tear down the stack it started. The repository's main working tree
+keeps the documented ports above; a linked `git worktree` gets a slot
+of its own. `bun scripts/dev-stack.ts env` prints the variables yours
+will use, and `dev:stack` prints where the stack is reachable once it
+is up.
+
+**Symptom.** `bun run dev:stack` in a second checkout still fails with
 `Bind for 0.0.0.0:5433 failed: port is already allocated` (or one of
-the other default host ports — 6380, 3011, 5173, 8082, 1026, 8026,
-9000, 9001).
+the other host ports).
 
-**Cause.** Both compose stacks bind the same host ports.
+**Cause.** There are twenty offset slots, so two checkouts can draw the
+same one. This is the loud half of the problem, and the only half left.
 
-**Fix.** Every host-port mapping in `docker-compose.yml` is gated
-behind a `*_HOST_PORT` env var with the default as fallback. Set the
-overrides in the secondary worktree's root `.env` (a `+1000` offset
-keeps the numbers easy to remember):
+**Fix.** Move *your* stack with a `*_HOST_PORT` override:
 
-```ini
-# Distinct compose project name so named volumes / networks don't collide
-COMPOSE_PROJECT_NAME=scani-secondary
-
-POSTGRES_HOST_PORT=6433
-REDIS_HOST_PORT=7380
-API_HOST_PORT=4011
-FRONTEND_HOST_PORT=6173
-DATA_PROVIDER_HOST_PORT=9082
-MAILPIT_SMTP_HOST_PORT=2026
-MAILPIT_UI_HOST_PORT=9026
-MINIO_API_HOST_PORT=10000
-MINIO_CONSOLE_HOST_PORT=10001
+```sh
+POSTGRES_HOST_PORT=7333 bun run dev:stack
 ```
 
-Then `bun run dev:stack` from each worktree independently. See
+Do not stop the other checkout's containers instead. That frees the
+port and leaves anything pointed at that stack with nothing to reach —
+a twenty-minute diagnosis in place of a one-line fix. The override
+moves the published port and every URL that names it together, and a
+value that is not a TCP port is refused rather than quietly replaced by
+the derived one.
+
+Put it in that checkout's root `.env` to make it stick. See
 [`docker-compose.override.yml.example`](https://github.com/MGrin/scani-oss/blob/main/docker-compose.override.yml.example)
-for the same recipe and an override template for harder
-customizations (extra services, volume mounts, init SQL) that env vars
-can't express.
+for an override template for harder customizations (extra services,
+volume mounts, init SQL) that env vars can't express.
+
+**A bare `docker compose up` does none of this.** With no project name
+compose falls back to the directory's, which is the same in every
+checkout — so a second `up` does not conflict with the first, it
+**adopts and recreates its containers**, including a Postgres somebody
+is using. If you must drive compose by hand, export the variables
+first:
+
+```sh
+export $(bun scripts/dev-stack.ts env | xargs)
+```
 
 ## `docker compose up` fails with a container-name conflict
 
