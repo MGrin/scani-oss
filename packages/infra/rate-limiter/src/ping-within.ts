@@ -1,4 +1,4 @@
-import { withRedisTimeout } from '@scani/deadline';
+import { withDeadline } from '@scani/deadline';
 
 /**
  * A Redis PING that is allowed to take a bounded amount of time (SC-294).
@@ -35,8 +35,8 @@ export class RedisPingTimeoutError extends Error {
  * Resolves with the PING reply, or rejects with `RedisPingTimeoutError`.
  *
  * Timer cleanup, `unref` and the no-op catch on the losing promise all live in
- * `withRedisTimeout` — see there for why each is load-bearing.
+ * `withDeadline` — see there for why each is load-bearing.
  */
 export async function pingWithin(redis: PingableRedis, timeoutMs: number): Promise<string> {
-  return withRedisTimeout(redis.ping(), timeoutMs, () => new RedisPingTimeoutError(timeoutMs));
+  return withDeadline(redis.ping(), timeoutMs, () => new RedisPingTimeoutError(timeoutMs));
 }
