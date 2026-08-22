@@ -1,0 +1,54 @@
+name: PR title
+
+# SC-556. GitHub writes the pull-request title into the merge commit's message
+# under every title/message combination it permits, and release-please walks
+# the FULL ancestry of `main` — so when the title is itself a conventional
+# commit, the same change is listed in CHANGELOG.md twice: once under the
+# branch commit, once under the merge commit. Every entry in the 0.15.0 release
+# PR arrived that way.
+#
+# No release-please config key governs this and no repository setting avoids
+# it, so the rule is enforced here. `scripts/check-pr-title.ts` carries the
+# measurement and the cases it deliberately allows.
+
+on:
+  pull_request:
+    branches: [main]
+    # `edited` is the one that matters. The default trigger set is
+    # [opened, synchronize, reopened], and a title edited after CI goes green
+    # is exactly how a conventional title reaches `main` — the merge commit
+    # takes the edited title, not the one that was checked.
+    types: [opened, edited, reopened, synchronize]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-title-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Title is not a changelog entry
+    runs-on: ubuntu-latest
+    steps:
+      # Checks out the PR's own head, so a PR that changes the rule is checked
+      # by the rule it proposes. The trade-off is that a fork could weaken its
+      # own check in the same PR; that is visible in the diff, and the cost of
+      # a miss is one duplicated changelog line rather than anything that
+      # touches a secret — this job has none and a read-only token.
+      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+      - uses: ./.github/actions/setup-bun
+        with:
+          # The check imports nothing. Installing 1400 packages to run a regex
+          # on every title edit is the wrong trade.
+          install: "false"
+      - name: Title is not a changelog entry
+        # Passed as environment, never interpolated into the shell. A PR title
+        # is attacker-controlled on a public repository, and `${{ … }}` inside
+        # `run:` is substituted before bash parses the line.
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          PR_SAME_REPO: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
+        run: bun scripts/check-pr-title.ts
