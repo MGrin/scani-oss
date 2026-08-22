@@ -506,6 +506,15 @@ export const etherscanFactory: ProviderFactory = async (deps) => {
     registeredFrom: 'providers/etherscan',
     description: 'Etherscan V2: 5 req / 1s',
   });
+  // No warn lived here before SC-536: an unkeyed Etherscan simply omits
+  // the `apikey` param and calls go out unauthenticated, so an operator
+  // reading every log line still could not learn this had happened.
+  deps.reportCredentialStatus({
+    provider: 'etherscan',
+    envVar: 'ETHERSCAN_API_KEY',
+    keyed: Boolean(deps.env.ETHERSCAN_API_KEY),
+    degradedBehaviour: 'calls go out unauthenticated, sharing the anonymous free-tier budget',
+  });
   return new EtherscanProvider(ETHERSCAN_CHAINS, registered, deps.env.ETHERSCAN_API_KEY);
 };
 
