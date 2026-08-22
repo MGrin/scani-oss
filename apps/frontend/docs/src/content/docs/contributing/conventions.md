@@ -59,9 +59,12 @@ PRs trip over.
 
 ## Async work
 
-- **Async work goes through BullMQ on Redis**, consumed by
+- **Async work goes through BullMQ on Postgres**, consumed by
   `apps/backend/worker`. The api enqueues; it doesn't process
-  long-running work inline.
+  long-running work inline. `QueueClient` and `WorkerClient` take a
+  Postgres connection string and construct with
+  `createPostgresBackend`; the `bullmq` schema is applied by
+  `bun run db:migrate`, never on connect.
 - **Scheduled jobs use the advisory-lock wrapper** so overlapping
   fires of the same job name no-op. See
   [Adding a scheduled job](/contributing/adding-a-job/).

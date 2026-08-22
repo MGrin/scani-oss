@@ -119,7 +119,7 @@ another orchestrator:
 | `migrate` (profile-gated) | `scani/migrate:${SCANI_IMAGE_TAG:-latest}` | (none) | One-shot; exits after applying migrations. |
 | `data-provider` | `scani/data-provider:${SCANI_IMAGE_TAG:-latest}` | (internal) | `api`, `worker`. |
 | `api` | `scani/api:${SCANI_IMAGE_TAG:-latest}` | (internal) | `frontend-app` via nginx reverse proxy. |
-| `worker` | `scani/worker:${SCANI_IMAGE_TAG:-latest}` | (none) | n/a — consumes from Redis. |
+| `worker` | `scani/worker:${SCANI_IMAGE_TAG:-latest}` | (none) | n/a — consumes the queue from Postgres. |
 | `frontend-app` | `scani/frontend-app:${SCANI_IMAGE_TAG:-latest}` | host `${FRONTEND_PORT:-8080}` | **Public internet** (behind your TLS proxy). |
 
 Only `frontend-app` needs to be reachable from the public internet.

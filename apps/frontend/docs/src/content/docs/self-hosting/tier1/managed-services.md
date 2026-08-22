@@ -97,12 +97,20 @@ modes (api's `/readyz` returns 503, worker restart-loops).
 Any **Redis 7+** instance. Cluster mode is supported via standard
 node-redis behaviour.
 
+Redis is required, but **the job queue is not on it** — BullMQ runs
+on the Postgres backend, so job state lives in the `bullmq` schema
+of the database above. What Redis carries is realtime SSE pub/sub,
+job-lifecycle events pushed to the UI, the api's request rate
+limiter, the shared upstream-provider rate limiter, the
+portfolio-value cache and the admin HMAC replay-nonce store. All of
+it is ephemeral and regenerates.
+
 | Provider | Notes |
 |---|---|
 | [Upstash](https://upstash.com/) | TLS endpoint. `rediss://` URL. |
 | [Redis Cloud](https://redis.com/) | TLS endpoint. |
 | AWS ElastiCache | In-VPC. Standard `redis://` URL. |
-| Self-hosted | Anything Redis 7+ with AOF persistence. |
+| Self-hosted | Anything Redis 7+. Persistence is optional — see below. |
 
 ```ini
 REDIS_URL=rediss://default:pass@host:6379
@@ -111,10 +119,12 @@ REDIS_URL=rediss://default:pass@host:6379
 Then comment out `redis` in `docker-compose.prod.yml`.
 
 <aside>
-  BullMQ requires Redis with **AOF persistence enabled**. The
-  in-compose Redis runs with `--appendonly yes`; managed providers
-  vary — verify with your provider before relying on it for
-  delayed jobs to survive a restart.
+  **You no longer need durable Redis for jobs.** BullMQ used to
+  require AOF persistence so delayed and in-flight jobs survived a
+  restart; on the Postgres backend that durability comes from your
+  database instead. Nothing in Redis is worth keeping across a
+  restart now. The in-compose Redis still runs with
+  `--appendonly yes`, which is harmless.
 </aside>
 
 ## S3-compatible storage

@@ -6,8 +6,9 @@ tRPC + Elysia HTTP server for **[Scani](https://github.com/MGrin/scani-oss)** â€
 self-hostable, open-source portfolio tracker for crypto and traditional assets.
 
 Owns per-user credentialed integrations (exchange API keys, brokerage tokens) so
-user credentials never cross the tenant boundary. Enqueues async work onto Redis
-(BullMQ) for [`scani/worker`](https://hub.docker.com/r/scani/worker) to consume.
+user credentials never cross the tenant boundary. Enqueues async work onto
+Postgres (BullMQ's Postgres backend) for
+[`scani/worker`](https://hub.docker.com/r/scani/worker) to consume.
 
 ## Tags
 
