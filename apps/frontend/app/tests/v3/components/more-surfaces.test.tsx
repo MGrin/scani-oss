@@ -236,6 +236,47 @@ describe('AccountsList', () => {
     const html = render(accountsList([]));
     expect(html).toContain('No accounts yet');
   });
+
+  /**
+   * SC-560. The row used to open the account's peek, and the thing a reader
+   * almost always wants from an account — what is IN it — was a button inside
+   * that sheet. Two taps for the common answer, one for the rare one.
+   *
+   * Asserted as the SPLIT: the row's own control and the details control are
+   * two separate elements with two separate names. The row's DESTINATION is
+   * not observable in this markup — `DataViewRows` renders a `<button>` and
+   * keeps the target in a closure, the way every navigating v3 phone list
+   * does — so that half is verified in a browser, not here.
+   */
+  test("the account's own record moves off the row onto a control of its own", () => {
+    const html = render(accountsList());
+
+    // The details control exists, per row, named for the row it belongs to.
+    // Its accessible name is what has to keep meaning "this account's own
+    // record"; the icon is the part a redesign is free to change.
+    expect(html).toContain('aria-label="Details for Kraken Spot, Kraken"');
+    expect(html).toContain('aria-label="Details for Old Ledger, Kraken, Sync overdue"');
+
+    // And it is genuinely a SECOND control, not the row renamed: the row's own
+    // button is still there under its own name. A single control carrying both
+    // meanings is the state this ticket is undoing.
+    expect(html).toContain('aria-label="Kraken Spot, Kraken"');
+  });
+
+  /**
+   * The half that makes the swap safe rather than a deletion. The account's
+   * record states things nothing else in the product does — `balancesAsOf`
+   * above all, whose entire point is being conditionally absent (SC-384) — so
+   * a row that merely stopped opening it would have stranded them.
+   *
+   * A count, because "there is a button somewhere" is satisfied by one button
+   * on one row, and the failure this guards against is the control appearing
+   * only where a row happens to render it.
+   */
+  test('every account row keeps that control, not just the first', () => {
+    const html = render(accountsList());
+    expect(html.split('aria-label="Details for').length - 1).toBe(ACCOUNTS.length);
+  });
 });
 
 describe('InstitutionsList', () => {

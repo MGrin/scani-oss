@@ -251,7 +251,8 @@
           "value": "Стоимость"
         },
         "config": {
-          "search": "Поиск"
+          "search": "Поиск",
+          "details": "Подробности: {{name}}"
         },
         "empty": {
           "anAccountIsCreatedForYou": "Счёт создаётся сам, когда вы подключаете интеграцию или загружаете выписку.",
@@ -741,7 +742,8 @@
         "rowCount_one": "{{count}} строка",
         "rowCount_few": "{{count}} строки",
         "rowCount_many": "{{count}} строк",
-        "rowCount_other": "{{count}} строки"
+        "rowCount_other": "{{count}} строки",
+        "rowActions": "Подробности"
       },
       "empty": {
         "clearSearchAndFilters": "Сбросить поиск и фильтры",

@@ -221,8 +221,16 @@ describe('a v3 key is a whole thing a translator can move', () => {
    * a language that needs the subject named can.
    */
   test('the lookalike badge offers its subject', () => {
+    // Two files since SC-559, and the split is the point rather than an
+    // accident: the BADGE moved to a module of its own because the peek
+    // sheet prints the symbol too — as the unit on the amount — and
+    // `holdingsConfig` imports `holdingPeek`, so the badge could not travel
+    // in the direction the second caller needed. The SPOKEN form did not
+    // move: it is part of the row's `ariaLabel`, which only the list builds.
+    const badge = readFileSync(resolve(V3_SRC, 'components/holdings/LookalikeBadge.tsx'), 'utf8');
+    expect(badge).toMatch(/t\('v3\.holdings\.badge\.lookalike', \{ symbol, impersonates \}\)/);
+
     const config = readFileSync(resolve(V3_SRC, 'components/holdings/holdingsConfig.tsx'), 'utf8');
-    expect(config).toMatch(/t\('v3\.holdings\.badge\.lookalike', \{ symbol, impersonates \}\)/);
     expect(config).toMatch(/'v3\.holdings\.badge\.lookalikeSpoken',\s*\{\s*symbol:/);
   });
 });
