@@ -426,16 +426,19 @@ function pickClosestBar(bars: CandleBar[], targetSec: number): CandleBar | null 
 
 export const finnhubFactory: ProviderFactory = async (deps) => {
   const apiKey = deps.env.FINNHUB_API_KEY ?? '';
-  if (!apiKey) {
-    // Boot-time soft warn; the provider stays registered but every
-    // call short-circuits in `fetchCurrentPrice` because the URL
-    // has an empty token. This avoids a hard crash in dev where the
-    // key isn't configured yet.
-    // eslint-disable-next-line no-console
-    console.warn(
-      'FinnhubProvider: FINNHUB_API_KEY not set; provider will return null for every call'
-    );
-  }
+  // The provider stays registered but every call short-circuits in
+  // `fetchCurrentPrice` because the URL has an empty token. That avoids a
+  // hard crash in dev where the key isn't configured yet — and is the
+  // worst of the seven to leave unreported, because a null is
+  // indistinguishable from "no price known for this symbol", so the
+  // failure reads as a data-coverage gap rather than a missing key.
+  deps.reportCredentialStatus({
+    provider: 'finnhub',
+    envVar: 'FINNHUB_API_KEY',
+    keyed: apiKey !== '',
+    degradedBehaviour:
+      'returns null for every equity price, indistinguishable from no price being known',
+  });
   // Free tier: 60 req/min — we cap at 50 for safety.
   const limiter = createOutflowLimiter({
     maxRequests: 50,
