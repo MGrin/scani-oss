@@ -58,7 +58,7 @@ tRPC over Elysia. Owns per-user credentialed integrations
 (exchange API keys, brokerage tokens). The api decrypts and uses
 those credentials on its own machine; they never leave the tenant
 boundary. Acts as the BullMQ producer — every user action that
-needs async work enqueues into Redis from here.
+needs async work enqueues into Postgres from here.
 
 Routes live in `apps/backend/api/src/presentation/routers/`.
 

@@ -854,9 +854,11 @@ idempotent. See
 [Why BullMQ + Postgres advisory locks](/decisions/bullmq-advisory-locks/).
 
 ### BullMQ
-The Redis-backed job-queue library Scani uses. *In Scani:* every
-async job runs through it. The api is the producer; the worker is
-the consumer.
+The job-queue library Scani uses, on its **Postgres** backend.
+*In Scani:* every async job runs through it. Job state lives in a
+`bullmq` schema inside the same database as everything else — not
+in Redis. The api is the producer; the worker is the consumer. See
+[Redis](#redis) for what Redis is still for.
 
 ### Coverage
 **Scani term of art.** Per-holding metadata about transaction and
@@ -900,6 +902,15 @@ to anchor manual holdings. See
 
 ### Inclusion rule
 See [holding-inclusion rule](#holding-inclusion-rule).
+
+### Redis
+Required, and **not** where the job queue lives. Since the queue
+moved to Postgres, Redis carries only ephemeral state: realtime
+SSE pub/sub, job-lifecycle events pushed to the UI, the api's
+request rate limiter, the shared upstream-provider rate limiter,
+the portfolio-value cache, and the admin HMAC replay-nonce store.
+Losing it costs live updates and rate-limit windows, never a job.
+The api still refuses readiness without it — `/readyz` pings it.
 
 ### Rollup
 **Scani term of art.** The daily portfolio-value cache,

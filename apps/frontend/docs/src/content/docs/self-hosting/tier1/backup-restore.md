@@ -1,6 +1,6 @@
 ---
 title: Backup & restore
-description: Postgres is the source of truth. Redis can be regenerated. S3 holds uploads. Back up accordingly.
+description: Postgres is the source of truth — the application schema and the job queue both. S3 holds uploads. Nothing else needs backing up.
 sidebar:
   order: 7
 ---
@@ -10,7 +10,8 @@ sidebar:
 | Data | Where | Critical to back up? |
 |---|---|---|
 | Holdings, transactions, observations, prices, vaults, groups, accounts, users, sessions, encrypted integration creds | Postgres | **Yes. The whole truth lives here.** |
-| BullMQ job state, scheduled-job state, rate-limiter buckets, realtime pub/sub | Redis | Optional. Loss means in-flight jobs are lost; everything else regenerates. |
+| BullMQ job state, scheduled-job state | Postgres, in the `bullmq` schema | **Covered by the Postgres backup below** — `pg_dump` of the database takes every schema, so you get it whether or not you meant to. |
+| Rate-limiter buckets, realtime pub/sub, job-lifecycle events, portfolio-value cache, admin HMAC nonces | Redis | No. All of it regenerates from "now". |
 | Screenshot uploads, CSV imports, file-import payloads | S3 / MinIO | If your retention model needs them. The application can run without them; only the audit trail / re-parse flow is impacted. |
 | Code, schema, env config | Git + your secret store | **Yes.** |
 
@@ -64,25 +65,20 @@ breaks every sync until each user re-enters their keys.
 
 ## Redis
 
-You can usually skip backing Redis up. What lives there:
+**Skip it.** Nothing in Redis needs to survive a restart:
 
-- BullMQ in-flight jobs (lost jobs are retried by ingester schedules
-  the next time they fire).
 - Rate-limiter counters (regenerate from "now").
 - Realtime pub/sub topics (ephemeral by definition).
+- Job-lifecycle events already delivered to the UI.
+- The portfolio-value cache (recomputed on the next read).
+- Admin HMAC replay nonces (expire on their own TTL).
 
-If you do want to preserve in-flight jobs across a server move:
-
-```sh
-# Trigger an AOF rewrite, then copy the file
-docker compose -f docker-compose.prod.yml exec redis \
-  redis-cli BGREWRITEAOF
-
-docker cp $(docker compose -f docker-compose.prod.yml ps -q redis):/data/appendonly.aof \
-  ./redis-aof-$(date +%F).aof
-```
-
-Restore by mounting the file into a fresh Redis container's `/data`.
+Job state is **not** in this list. BullMQ runs on the Postgres
+backend, so in-flight, delayed and repeatable jobs live in the
+`bullmq` schema of your database and are captured by the Postgres
+backup above. Copying a Redis AOF file preserves no jobs — if you
+are following an older runbook that told you to, it is copying
+nothing that matters.
 
 ## S3 / MinIO
 
@@ -115,7 +111,8 @@ docker run --rm --network scani_default \
    `BETTER_AUTH_SECRET`, `LOG_ID_PEPPER`.
 4. Restore Postgres from the most recent dump or PITR snapshot.
 5. (Optional) Restore S3 from your backup bucket.
-6. Skip Redis — let it rebuild from active jobs and schedules.
+6. Skip Redis — it holds nothing durable. Job state came back with
+   the Postgres restore in step 4.
 7. Boot the compose stack.
 8. Sign in. Verify a sync runs (each user's encrypted creds decrypt
    successfully).
