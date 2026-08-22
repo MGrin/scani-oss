@@ -43,6 +43,7 @@ async function registerFresh(factory: ProviderFactory): Promise<ProviderRegistry
     rateLimiterRegistry: new RateLimiterRegistry(),
     credentialPool: new CredentialPool(),
     cloudClient: null,
+    reportCredentialStatus: () => {},
   };
   const result = await factory(deps);
   for (const instance of Array.isArray(result) ? result : [result]) {

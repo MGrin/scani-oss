@@ -31,11 +31,11 @@ export class PerplexityProvider extends ChatCompletionsProvider {
 
 export const aiPerplexityFactory: ProviderFactory = async (deps) => {
   const apiKey = deps.env.PERPLEXITY_API_KEY ?? '';
-  if (!apiKey) {
-    // eslint-disable-next-line no-console
-    console.warn(
-      'PerplexityProvider: PERPLEXITY_API_KEY not set; provider will throw on every call'
-    );
-  }
+  deps.reportCredentialStatus({
+    provider: 'perplexity',
+    envVar: 'PERPLEXITY_API_KEY',
+    keyed: apiKey !== '',
+    degradedBehaviour: 'throws on every call',
+  });
   return new PerplexityProvider(apiKey);
 };

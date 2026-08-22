@@ -56,9 +56,11 @@ export class OpenAIProvider extends ChatCompletionsProvider {
 
 export const aiOpenAIFactory: ProviderFactory = async (deps) => {
   const apiKey = deps.env.OPENAI_API_KEY ?? '';
-  if (!apiKey) {
-    // eslint-disable-next-line no-console
-    console.warn('OpenAIProvider: OPENAI_API_KEY not set; provider will throw on every call');
-  }
+  deps.reportCredentialStatus({
+    provider: 'openai',
+    envVar: 'OPENAI_API_KEY',
+    keyed: apiKey !== '',
+    degradedBehaviour: 'throws on every call, so screenshot and document parsing fail',
+  });
   return new OpenAIProvider(apiKey);
 };

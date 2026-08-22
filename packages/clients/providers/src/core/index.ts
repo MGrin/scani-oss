@@ -8,6 +8,7 @@ export * from './capabilities';
 export * from './config';
 export * from './counterparty';
 export * from './credential-pool';
+export * from './credential-report';
 export * from './errors';
 export * from './integration-manifest';
 export * from './rate-limiter-registry';
