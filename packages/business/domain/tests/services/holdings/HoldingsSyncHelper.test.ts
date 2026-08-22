@@ -88,7 +88,6 @@ const BASE_INPUT = {
   staleStrategy: 'zero' as const,
   dedupStrategy: 'tokenId' as const,
   sourceTag: 'sync_exchange_balances',
-  defaultDecimals: 8,
   respectHiddenForCounts: false,
   skipUnchangedUpdates: true,
   updateOnly: false,

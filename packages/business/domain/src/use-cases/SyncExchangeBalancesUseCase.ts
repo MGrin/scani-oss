@@ -470,7 +470,6 @@ export class SyncExchangeBalancesUseCase {
                 staleStrategy: 'zero',
                 dedupStrategy: 'tokenId',
                 sourceTag: EXCHANGE_BALANCE_SYNC_SOURCE,
-                defaultDecimals: 8,
                 respectHiddenForCounts: false,
                 skipUnchangedUpdates: true,
                 // Exchange sync auto-creates new tokens (a deposit on
@@ -604,6 +603,7 @@ const SYNTHETIC_BASE_CURRENCY: ProviderContext['baseCurrency'] = {
   name: 'United States Dollar',
   typeId: 'fiat',
   decimals: 2,
+  decimalsSource: 'iso4217',
   iconUrl: null,
   providerMetadata: {},
   isScamProbability: 0,
