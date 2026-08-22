@@ -149,7 +149,12 @@ const PINNED_ICON = Buffer.from(
 export const INSTITUTION_ICON_PATH = '/institution-icons/';
 
 function isInstitutionMark(url: URL): boolean {
-  return url.pathname.startsWith(INSTITUTION_ICON_PATH);
+  // `includes`, not `startsWith`, and the docstring above is why. The published
+  // image builds with `VITE_API_URL=/api` and nginx reverse-proxies, so there
+  // the mark is requested at `/api/institution-icons/<id>`. `startsWith` covers
+  // two of the three deployments the comment claims and quietly misses the
+  // third — a docstring writing a cheque the predicate does not honour.
+  return url.pathname.includes(INSTITUTION_ICON_PATH);
 }
 
 export interface PinnedNetwork {
