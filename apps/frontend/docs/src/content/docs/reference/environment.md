@@ -182,7 +182,7 @@ All exposed by `apps/backend/api` (and surfaced via nginx as
 | `/readyz` | Readiness. 200 only if **DB + Redis + schema** are all healthy. Returns 503 (with a per-check breakdown) if migrations haven't been applied. | k8s readiness probe; load-balancer upstream check; `docker-compose.prod.yml` api healthcheck. |
 | `/health/db` | DB ping + pool stats. | Operator debugging. |
 | `/health/ws` | WebSocket stats. | Operator debugging. |
-| `/health/deep` | DB + Redis + R2 + AI. | Deploy-time smoke test. NOT for traffic routing — slow. |
+| `/health/deep` | DB + schema-drift + Redis + R2 + AI. 200 `ok` / 503 `degraded` with a per-check breakdown. Also reports `providerCredentials` — which platform provider keys are absent — which is **reported, never gated**, so it cannot 503 a deployment that simply has not bought a key. | Deploy-time smoke test. NOT for traffic routing — slow. |
 
 The `data-provider` exposes `/health` (process liveness) on its bind
 port. The prod `frontend-app` image exposes `/healthz` (nginx alive),
@@ -231,7 +231,6 @@ production deployment — operators can ignore this section.
 | `PLAYWRIGHT_BASE_URL` | Playwright config | Base URL Playwright treats as the SPA origin. Defaults to `http://localhost:5173`. |
 | `MAILPIT_URL` | e2e (magic-link helper) | Mailpit HTTP API used to read auth emails during sign-in. Default `http://localhost:8026`. |
 | `POSTGRES_CONTAINER` | e2e (db reset helper) | Compose service name of the Postgres container the e2e suite execs into. Default `postgres`. |
-| `REDIS_CONTAINER` | e2e (queue reset helper) | Compose service name of the Redis container the e2e suite execs into. Default `redis`. |
 | `KEEP_STACK_ON_FAILURE` | `apps/e2e/scripts/run.ts` | When `1`, leaves the docker-compose stack running after a failed e2e run so the operator can poke at it. |
 | `DATA_PROVIDER_URL` | `apps/e2e/scripts/wait-for-stack.ts` | Health endpoint the e2e runner polls before starting. Default `http://localhost:8082`. |
 | `SHOT_FRESH` | `apps/e2e/fixtures/shots-setup.ts` | When `1`, ignores the stored browser session and signs in again before capturing screenshots. |

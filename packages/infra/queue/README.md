@@ -1,6 +1,6 @@
 # @scani/queue
 
-Async-coordination framework on top of BullMQ + Redis. Pure
+Async-coordination framework on top of BullMQ's Postgres backend. Pure
 infrastructure — no business knowledge of which jobs scani runs.
 
 The framework gives consumers:
@@ -148,8 +148,8 @@ That's it — no edits to `@scani/queue`.
 ## Why abstracts + concretes (not just concrete classes)
 
 Tests stub the abstracts; the concrete impls are wired against BullMQ
-+ Redis. Without the abstract layer, every test file would carry a
-mock `bullmq` shim. The abstract+concrete split also documents the
+on Postgres (plus Redis for the lifecycle publisher). Without the
+abstract layer, every test file would carry a mock `bullmq` shim. The abstract+concrete split also documents the
 extension surface — anything users would plug their own impl into
 (JobLock, LifecycleMirror, EnqueueMirror) lives behind an interface.
 
@@ -178,8 +178,9 @@ extension surface — anything users would plug their own impl into
 ## Configuration
 
 Both `QueueClient` and `WorkerClient` are explicitly configured at
-boot rather than reading env. The framework has no opinion about Redis
-endpoints or queue names — apps own that wiring.
+boot rather than reading env. The framework has no opinion about
+connection strings, the `bullmq` schema name or queue names — apps
+own that wiring.
 
 ## Why DLQ stays in the framework
 
