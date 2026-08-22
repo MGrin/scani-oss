@@ -70,6 +70,12 @@ describe('there is exactly one bounded fetcher', () => {
       const src = await Bun.file(REPO_ROOT + rel).text();
       if (/function\s+assertHostIsPublic\b/.test(src)) offenders.push(rel);
       if (/function\s+followRedirectsSafely\b/.test(src)) offenders.push(rel);
+      // `withBudget` joined this list in SC-208. It is a BOUND, and a bound
+      // that exists twice drifts exactly like a guard that exists twice: the
+      // icon path and the HTML path would end up with different ideas of how
+      // long a stuck DNS lookup may take, and only one of them would be
+      // reviewed when the number next changes.
+      if (/function\s+withBudget\b/.test(src)) offenders.push(rel);
     }
     expect(offenders).toEqual([]);
   });
