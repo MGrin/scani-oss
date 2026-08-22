@@ -63,6 +63,14 @@ bun lint:fix
 # Tests
 bun test --preload ./packages/business/domain/test-preload.ts packages/ --timeout 30000
 
+# Docker Hub descriptions match the images. Fast (0.13s), no services. It
+# validates every `docker-readmes/*.md` against the 100-char cap Docker Hub
+# enforces on a short description, and reconciles the directory against the
+# image set in `scripts/lib/docker-images.ts` — an image with no README, or a
+# README with no image, exits 1 and names it. CI runs this exact command;
+# running it here saves the round trip.
+bun scripts/sync-dockerhub-readme.ts --check
+
 # When dependencies changed
 bun run deps:lint    # syncpack — version alignment
 bun run deps:unused  # knip — unused exports/files/dependencies
