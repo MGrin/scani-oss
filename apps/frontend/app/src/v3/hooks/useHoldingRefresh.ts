@@ -70,19 +70,20 @@ export function useHoldingRefresh(actions: ReturnType<typeof useHoldingActions>)
         priceStatus.result as PriceRefreshReport | null,
         priceJob.symbol
       );
-      if (outcome.kind === 'no-price')
-        showError(new Error(outcome.message), t('v3.holdings.refresh.price'));
+      // `outcome.message` is already `t(...)` output from `describePriceRefresh`.
+      // Wrapping it in an `Error` discarded it and toasted "Unknown error"
+      // (SC-551) — and no `t(` is visible here, which is why the guard keys on
+      // the wrapper rather than on what is inside it.
+      if (outcome.kind === 'no-price') showError(outcome.message, t('v3.holdings.refresh.price'));
       else showSuccess(outcome.message);
       setPriceJob(null);
       void invalidatePortfolioQueries(utils);
     } else if (priceStatus.state === 'failed') {
-      showError(
-        new Error(priceStatus.error ?? t('v3.holdings.refresh.priceFailed')),
-        t('v3.holdings.refresh.price')
-      );
+      // `priceStatus.error` discarded, not preferred — see `AccountSettings`.
+      showError(t('v3.holdings.refresh.priceFailed'), t('v3.holdings.refresh.price'));
       setPriceJob(null);
     }
-  }, [priceJob, priceStatus.state, priceStatus.result, priceStatus.error, utils, t]);
+  }, [priceJob, priceStatus.state, priceStatus.result, utils, t]);
 
   useEffect(() => {
     if (!balanceJob) return;
@@ -101,7 +102,7 @@ export function useHoldingRefresh(actions: ReturnType<typeof useHoldingActions>)
 
       if (symbol && missing.includes(symbol) && !synced.includes(symbol)) {
         showError(
-          new Error(t('v3.holdings.refresh.partial', { symbol, count: synced.length })),
+          t('v3.holdings.refresh.partial', { symbol, count: synced.length }),
           t('v3.holdings.refresh.partialTitle')
         );
       } else if (symbol && synced.includes(symbol)) {
@@ -112,13 +113,11 @@ export function useHoldingRefresh(actions: ReturnType<typeof useHoldingActions>)
       setBalanceJob(null);
       void invalidatePortfolioQueries(utils);
     } else if (balanceStatus.state === 'failed') {
-      showError(
-        new Error(balanceStatus.error ?? t('v3.holdings.refresh.balanceFailed')),
-        t('v3.holdings.refresh.balance')
-      );
+      // `balanceStatus.error` discarded, not preferred — see `AccountSettings`.
+      showError(t('v3.holdings.refresh.balanceFailed'), t('v3.holdings.refresh.balance'));
       setBalanceJob(null);
     }
-  }, [balanceJob, balanceStatus.state, balanceStatus.result, balanceStatus.error, utils, t]);
+  }, [balanceJob, balanceStatus.state, balanceStatus.result, utils, t]);
 
   return {
     refreshPrice: (holding) => {

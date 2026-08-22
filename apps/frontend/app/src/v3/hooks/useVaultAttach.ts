@@ -55,8 +55,11 @@ export function useVaultAttach(vaultId: string, attachedHoldingIds: ReadonlySet<
       const available = Math.max(0, Math.min(100, 100 - claimed));
 
       if (available === 0) {
+        // A string, not `new Error(string)`: a plain `Error` passes none of
+        // `userFacingMessage`'s three doors, so wrapping this rendered
+        // "Unknown error" instead of the sentence (SC-551).
         showError(
-          new Error(t('v3.vaults.attach.fullyClaimed', { label: entry.label })),
+          t('v3.vaults.attach.fullyClaimed', { label: entry.label }),
           t('v3.vaults.attach.attaching')
         );
         return;
