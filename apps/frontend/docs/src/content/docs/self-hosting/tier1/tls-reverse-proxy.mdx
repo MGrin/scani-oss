@@ -138,6 +138,27 @@ If you point your external reverse proxy directly at the `api`
 container (split-origin), you don't need this — the frontend-app
 container becomes a static-file server only.
 
+nginx also sends the Content-Security-Policy. Its `connect-src` is
+`'self'` by default, which is what you want while the browser reaches
+the api through the container's own `/api` proxy.
+
+<Aside type="caution" title="Split-origin needs CSP_CONNECT_SRC">
+  If the browser calls the api on a **different origin**, `'self'` does
+  not cover it and every XHR and WebSocket is blocked by the browser —
+  visible only as a CSP violation in the devtools console, not as a
+  network error. List your api origin explicitly:
+
+  ```ini
+  # In docker-compose.prod.yml, the frontend-app service:
+  environment:
+    CSP_CONNECT_SRC: "'self' https://api.example.com wss://api.example.com"
+  ```
+
+  Widen this one directive rather than removing the header — the rest of
+  the policy is what stops an injected script exfiltrating to an origin
+  of its choosing.
+</Aside>
+
 ## WebSockets
 
 The api exposes a WebSocket endpoint at `/ws` (realtime SSE / pub-sub

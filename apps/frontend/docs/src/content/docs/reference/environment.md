@@ -153,6 +153,7 @@ hosted data-provider.
 | `VITE_API_URL` | app (frontend) | URL the SPA calls for `/api`. Bun-bundled image bakes `/api`. |
 | `API_UPSTREAM` | app (frontend-app nginx) | Inside the prod `frontend-app` image, nginx reverse-proxies `/api/*` → `${API_UPSTREAM}`. Default `http://api:3001` (compose network). Override when running `frontend-app` outside compose. |
 | `FRONTEND_PORT` | docker-compose.prod.yml | Host port for the `frontend-app` container. Default 8080. |
+| `CSP_CONNECT_SRC` | app (frontend-app nginx) | `connect-src` for the Content-Security-Policy nginx sends. Default `'self'`, which is correct when the SPA reaches the API through the container's own `/api` proxy. Set it when you serve the SPA and the API from different origins, e.g. `'self' https://api.example.com wss://api.example.com` — the browser blocks XHR/WebSocket to any origin not listed. Leave the other CSP directives alone; they are fixed in the image. |
 
 ## API port shape across deployment layers
 
