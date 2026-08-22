@@ -235,6 +235,16 @@ services:
       # origin so manual testing of the cloud-management surface from
       # the running frontend container at :5173 works out of the box.
       CLOUD_FRONTEND_ORIGIN: "http://localhost:${FRONTEND_HOST_PORT:-5173}"
+      # Cost controls, set explicitly rather than left to the schema
+      # default so the boot line names them and a self-hoster can see where
+      # the number goes (SC-582). `0` = DISABLED, which is the right default
+      # for a single-tenant stack with no external callers — but it is the
+      # SAME disabled state a multi-tenant deployment would be in, so the
+      # data-provider says which it is on every boot and on `/health/deep`.
+      # Put a number here to exercise either path locally: a low
+      # CLOUD_QUOTA_HOURLY_DEFAULT makes the 403 easy to reproduce.
+      CLOUD_QUOTA_HOURLY_DEFAULT: "${CLOUD_QUOTA_HOURLY_DEFAULT:-0}"
+      GLOBAL_HOURLY_USD_CAP: "${GLOBAL_HOURLY_USD_CAP:-0}"
       # Fastmail is intentionally disabled in dev so magic-link / OTP /
       # verification emails land in Mailpit (SMTP_URL below). A root .env
       # or shell FASTMAIL_API_TOKEN is overridden to an empty string here —
