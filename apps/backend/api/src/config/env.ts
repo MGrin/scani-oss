@@ -79,7 +79,6 @@ const envSchema = z.object({
   // LocalEmailService when SCANI_CLOUD_URL is unset).
 
   // Per-provider keys (OPENAI_API_KEY,
-  // OPENAI_VISION_MODEL,
   // COINGECKO_API_KEY, FINNHUB_API_KEY, ETHERSCAN_API_KEY, HELIUS_API_KEY,
   // GOOGLE_SHEETS_ID, GOOGLE_SERVICE_ACCOUNT_KEY) are owned by
   // @scani/providers' env schema. They are required HERE, in every
