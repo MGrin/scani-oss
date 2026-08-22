@@ -2340,7 +2340,8 @@
         },
         "unrecoverable": {
           "label": "Failed — won't retry",
-          "sentence": "This failed for a reason another attempt will not fix. Check the details below, correct them, and start it again."
+          "sentence": "This failed for a reason another attempt will not fix, and nothing was recorded that we can show you. Re-running it unchanged will fail the same way.",
+          "sentenceWithDetail": "This failed for a reason another attempt will not fix. Check the details below, correct them, and start it again."
         },
         "exhausted": {
           "label": "Failed — won't retry",
