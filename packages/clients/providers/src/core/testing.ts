@@ -114,6 +114,7 @@ export function makeMockToken(over: Partial<Token> = {}): Token {
     name: 'Bitcoin',
     typeId: '00000000-0000-4000-8000-type0000crypto',
     decimals: 8,
+    decimalsSource: 'chain',
     marketSegment: null,
     iconUrl: null,
     providerMetadata: {},

@@ -97,6 +97,7 @@ const SYNTHETIC_USD_TOKEN: Token = {
   name: 'United States Dollar',
   typeId: 'fiat',
   decimals: 2,
+  decimalsSource: 'iso4217',
   iconUrl: null,
   providerMetadata: {},
   isScamProbability: 0,
@@ -431,6 +432,11 @@ export const chainsRouter = router({
             symbol: ti.symbol ?? '',
             name: ti.name ?? ti.symbol ?? '',
             balance: s.balance,
+            // NOT `tokens.decimals` — a passthrough of the chain's own answer
+            // for one balance, which BaseEvmProvider and the Solana provider
+            // always set. The 18 is unreachable rather than a guess, and this
+            // is a published OpenAPI field, so SC-544 deliberately left the
+            // wire contract non-nullable here.
             decimals: typeof ti.decimals === 'number' ? ti.decimals : 18,
             isNative: !contractAddress,
             tokenAddress: contractAddress ?? undefined,

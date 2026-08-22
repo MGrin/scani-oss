@@ -26,6 +26,7 @@ function makeBaseCurrency(): Token {
     name: 'US Dollar',
     typeId: 'fiat-type-id',
     decimals: 2,
+    decimalsSource: 'chain',
     iconUrl: null,
     lastPricingAttemptAt: null,
     lookalikeOf: null,

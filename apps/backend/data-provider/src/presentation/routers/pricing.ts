@@ -30,7 +30,9 @@ const tokenSchema = z.object({
   symbol: z.string(),
   name: z.string(),
   typeId: z.string(),
-  decimals: z.number(),
+  // Nullable since SC-544: a token whose scale no authority could name
+  // says so rather than carrying a default that reads as a fact.
+  decimals: z.number().nullable(),
   iconUrl: z.string().nullable(),
   providerMetadata: z.unknown(),
   isScamProbability: z.number(),
