@@ -33,7 +33,10 @@ import { makeAccount, makeHolding, makeToken } from '../../test/helpers/factorie
 
 const useCase = () => Container.get(UpdateHoldingUseCase);
 
-async function scaffold(tx: Parameters<Parameters<typeof withTestDb>[0]>[0]) {
+async function scaffold(
+  tx: Parameters<Parameters<typeof withTestDb>[0]>[0],
+  holdingOverrides: { lastUpdated?: Date } = {}
+) {
   const user = await makeUser(tx);
   const institution = await makeInstitution(tx);
   const account = await makeAccount(tx, { userId: user.id, institutionId: institution.id });
@@ -44,9 +47,22 @@ async function scaffold(tx: Parameters<Parameters<typeof withTestDb>[0]>[0]) {
     tokenId: token.id,
     balance: '100',
     source: 'manual',
+    ...holdingOverrides,
   });
   return { user, account, token, holding };
 }
+
+/**
+ * A `lastUpdated` far from both clocks in play.
+ *
+ * The default comes from Postgres `now()`, and the value an edit writes comes
+ * from `new Date()` on the host. Those are two different clocks — the compose
+ * container's and this machine's — so asserting that one is later than the
+ * other by a few milliseconds tests the skew between them, not the code. It
+ * passed, then failed three runs in a row on an unrelated change, which is the
+ * only reason it was noticed. Seeded months back, no plausible skew reaches it.
+ */
+const SEEDED_LAST_UPDATED = new Date('2026-01-01T00:00:00.000Z');
 
 function ledgerFor(tx: Parameters<Parameters<typeof withTestDb>[0]>[0], holdingId: string) {
   return tx
@@ -365,11 +381,11 @@ describe('UpdateHoldingUseCase — pot names (SC-564)', () => {
     // skips writing it when a poll returns an unchanged balance. Bumping it on
     // a rename puts a fresh timestamp under a figure nobody re-checked.
     await withTestDb(async (tx) => {
-      const { user, holding } = await scaffold(tx);
+      const { user, holding } = await scaffold(tx, { lastUpdated: SEEDED_LAST_UPDATED });
 
       const result = await useCase().execute(holding.id, { label: 'Savings' }, user.id, tx);
 
-      expect(result.lastUpdated.toISOString()).toBe(holding.lastUpdated.toISOString());
+      expect(result.lastUpdated.toISOString()).toBe(SEEDED_LAST_UPDATED.toISOString());
     });
   });
 
@@ -378,11 +394,11 @@ describe('UpdateHoldingUseCase — pot names (SC-564)', () => {
     // wrote `lastUpdated` at all would pass, and the freshness signal the whole
     // holdings list reads would be dead rather than accurate.
     await withTestDb(async (tx) => {
-      const { user, holding } = await scaffold(tx);
+      const { user, holding } = await scaffold(tx, { lastUpdated: SEEDED_LAST_UPDATED });
 
       const result = await useCase().execute(holding.id, { balance: '150' }, user.id, tx);
 
-      expect(result.lastUpdated.getTime()).toBeGreaterThan(holding.lastUpdated.getTime());
+      expect(result.lastUpdated.getTime()).toBeGreaterThan(SEEDED_LAST_UPDATED.getTime());
     });
   });
 
