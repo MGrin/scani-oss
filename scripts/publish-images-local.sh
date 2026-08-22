@@ -13,12 +13,9 @@
 # at `action_required` since 2026-08-15. A self-hoster running `:latest` gets
 # whatever main looked like a fortnight ago, and nothing says so.
 #
-#   IMAGE                Dockerfile
-#   scani/api            apps/backend/api/Dockerfile
-#   scani/worker         apps/backend/worker/Dockerfile
-#   scani/data-provider  apps/backend/data-provider/Dockerfile
-#   scani/frontend-app   apps/frontend/app/Dockerfile
-#   scani/migrate        packages/infra/db/Dockerfile.migrate
+# Which images, and the Dockerfile each is built from, are declared once in
+# `scripts/lib/docker-images.ts` and read from there — see below. This comment
+# deliberately does not restate the list.
 #
 # Tagging matches the workflow's `docker/metadata-action` output for a
 # `v1.2.3` tag push: `1.2.3`, `1.2`, `1`, and `latest`. Pass the version
@@ -70,18 +67,35 @@ ok()   { printf '\033[32m✓\033[0m %s\n' "$*"; }
 die()  { printf '\033[31m✗\033[0m %s\n' "$*" >&2; exit 1; }
 warn() { printf '\033[33m!\033[0m %s\n' "$*" >&2; }
 
+# The image set and its Dockerfiles are declared once, in
+# `scripts/lib/docker-images.ts`, and read from there (SC-534). They used to be
+# a `case` and an array here, a second copy of what the README sync and the
+# publish workflow each also stated — and a set stated four times is a set
+# nothing can disagree with, which is how five images came to have one README.
+#
+# Read once, at startup, and fail closed: no `bun`, no manifest, or a manifest
+# naming nothing all stop the script here. A publish derived from an empty list
+# would build nothing, push nothing and exit 0.
+IMAGE_MANIFEST="$REPO_ROOT/scripts/lib/docker-images.ts"
+IMAGE_TSV="$(bun "$IMAGE_MANIFEST")" \
+  || die "could not read the image manifest at $IMAGE_MANIFEST (bun must be on PATH)"
+[ -n "$IMAGE_TSV" ] || die "the image manifest at $IMAGE_MANIFEST names no images"
+
 dockerfile_for() {
-  case "$1" in
-    api)           echo 'apps/backend/api/Dockerfile' ;;
-    worker)        echo 'apps/backend/worker/Dockerfile' ;;
-    data-provider) echo 'apps/backend/data-provider/Dockerfile' ;;
-    frontend-app)  echo 'apps/frontend/app/Dockerfile' ;;
-    migrate)       echo 'packages/infra/db/Dockerfile.migrate' ;;
-    *)             return 1 ;;
-  esac
+  local wanted="$1" manifest_image manifest_dockerfile
+  while IFS=$'\t' read -r manifest_image manifest_dockerfile; do
+    if [ "$manifest_image" = "$wanted" ]; then
+      echo "$manifest_dockerfile"
+      return 0
+    fi
+  done <<< "$IMAGE_TSV"
+  return 1
 }
 
-ALL_IMAGES=(api worker data-provider frontend-app migrate)
+ALL_IMAGES=()
+while IFS=$'\t' read -r manifest_image _; do
+  ALL_IMAGES+=("$manifest_image")
+done <<< "$IMAGE_TSV"
 
 VERSION="${1:-}"
 [ -n "$VERSION" ] || die "usage: scripts/publish-images-local.sh <version> [image ...]   e.g. 0.13.0"
