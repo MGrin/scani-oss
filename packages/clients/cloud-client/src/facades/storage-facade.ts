@@ -40,6 +40,18 @@ export class StorageFacade {
     return this.local().read(key);
   }
 
+  readObject(key: string): Promise<{ bytes: Uint8Array; contentType: string } | null> {
+    const cloud = this.cloud();
+    if (cloud) return cloud.readObject(key);
+    return this.local().readObject(key);
+  }
+
+  write(key: string, bytes: Uint8Array, contentType: string): Promise<void> {
+    const cloud = this.cloud();
+    if (cloud) return cloud.write(key, bytes, contentType);
+    return this.local().write(key, bytes, contentType);
+  }
+
   copy(fromKey: string, toKey: string, contentType?: string): Promise<void> {
     const cloud = this.cloud();
     if (cloud) return cloud.copy(fromKey, toKey, contentType);

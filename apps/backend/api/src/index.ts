@@ -125,6 +125,7 @@ import { initializeContainer } from './config/container';
 import { isLivenessProbe } from './lib/liveness';
 import { registerAdminDataRoutes } from './presentation/http/admin-data';
 import { registerAdminJobsRoutes } from './presentation/http/admin-jobs';
+import { registerInstitutionIconRoutes } from './presentation/http/institution-icons';
 import { registerUnsubscribeRoutes } from './presentation/http/unsubscribe';
 import {
   createContext,
@@ -618,6 +619,13 @@ if (!demoConfig.enabled) {
     '🎭 Demo mode — admin, jobs and unsubscribe routes are not mounted; every tRPC mutation is refused'
   );
 }
+
+// Mounted in demo mode too, unlike the block above. It is a READ from the
+// caller's side — a public institution's own brand mark, keyed on a catalog
+// primary key — and the demo is the one instance whose whole job is to look
+// like the product. Its only write is an icon cached into the shared bucket,
+// which is the same object every other instance would have written (SC-208).
+registerInstitutionIconRoutes(app);
 
 app
   .get('/', () => ({ status: 'ok', service: 'api' }))

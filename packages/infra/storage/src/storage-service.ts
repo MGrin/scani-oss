@@ -171,6 +171,54 @@ export class StorageService {
   }
 
   /**
+   * Store bytes under a key we chose server-side.
+   *
+   * The upload path everything else uses is `presignUpload`, where the browser
+   * does the PUT. This one is for objects the server itself produces — the
+   * institution icons of SC-208 — and it takes a whole key rather than the
+   * (prefix, extension) pair, so it gets `assertSafeKey` for the same reason
+   * `copy` does.
+   */
+  async write(key: string, bytes: Uint8Array, contentType: string): Promise<void> {
+    assertSafeKey(key, 'write key');
+    await this.serverClient().file(key).write(bytes, { type: contentType });
+  }
+
+  /**
+   * The bytes AND the content type they were written with, or `null` when the
+   * object is not there.
+   *
+   * `read` cannot answer this: `arrayBuffer()` discards the response headers,
+   * and re-serving an object needs the type it was stored with. A signed GET
+   * through `fetch` — the same shape `exists` uses, and for the same reason:
+   * the HTTP status is the answer, and Bun's `S3File` collapses it.
+   *
+   * 403 and 404 are both "not there". A production R2 token is object-scoped
+   * with no `s3:ListBucket`, and S3 answers a miss with 403 for those, so a
+   * check that only accepted 404 would report an absent icon as an outage on
+   * the one deployment that matters.
+   */
+  async readObject(key: string): Promise<{ bytes: Uint8Array; contentType: string } | null> {
+    assertSafeKey(key, 'read key');
+    const url = this.serverClient().file(key).presign({
+      method: 'GET',
+      expiresIn: EXISTS_PRESIGN_TTL_SECONDS,
+    });
+    const res = await this.fetcher(url, {
+      method: 'GET',
+      signal: AbortSignal.timeout(EXISTS_TIMEOUT_MS),
+    });
+    if (res.status === 403 || res.status === 404) return null;
+    if (!res.ok) {
+      throw new Error(`StorageService.readObject: unexpected status ${res.status} for ${key}`);
+    }
+    return {
+      bytes: new Uint8Array(await res.arrayBuffer()),
+      contentType: res.headers.get('content-type') ?? 'application/octet-stream',
+    };
+  }
+
+  /**
    * Duplicate an object under a second key, leaving the source in place.
    *
    * Bun's `S3Client` exposes no server-side CopyObject, so this streams the

@@ -100,7 +100,7 @@ function InstitutionIcon({
   institution: HoldingWithDetails['institution'];
   size: string;
 }) {
-  return <InstitutionMark name={institution.name} website={institution.website} size={size} />;
+  return <InstitutionMark name={institution.name} institution={institution} size={size} />;
 }
 
 /**
