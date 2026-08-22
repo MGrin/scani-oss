@@ -58,7 +58,7 @@ cloud-management surface (gated behind `CLOUD_MANAGEMENT_ENABLED=true`).
 - **The schema.** Same Postgres tables, same indexes, same
   migrations. Applied explicitly by you on every Tier 1 deploy
   ([Apply migrations](/self-hosting/tier1/production/#apply-migrations));
-  the same Drizzle `scani/migrate` image works against a managed
+  the same `scani/migrate` image works against a managed
   Postgres too.
 - **The wire contract.** tRPC routes, payload shapes, return types
   are identical across tiers.
