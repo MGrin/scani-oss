@@ -167,6 +167,7 @@ export class BalanceGapService {
         observationId: candidate.observationId,
         holdingId: candidate.holdingId,
         tokenSymbol: candidate.tokenSymbol,
+        tokenTypeCode: candidate.tokenTypeCode,
         accountName: candidate.accountName,
         from: candidate.from.toISOString(),
         to: candidate.to.toISOString(),

@@ -35,6 +35,13 @@ export const balanceGapSchema = z.object({
   holdingId: z.string().uuid(),
   /** For the row's subject line — the client names it, this does not. */
   tokenSymbol: z.string().min(1),
+  /**
+   * `token_types.code`. On the wire because the CARD decides the precision of
+   * the two balances it prints, and it cannot without knowing whether this
+   * balance is an amount of money or a count of things (SC-576). See
+   * `balanceDecimals`.
+   */
+  tokenTypeCode: z.string().min(1),
   accountName: z.string().min(1).nullable(),
   /**
    * The interval, as ISO strings.
