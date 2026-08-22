@@ -34,7 +34,7 @@ import { jobDetailPath, V3_ROUTES } from '../../lib/routes';
  * interface.
  */
 
-export interface DocumentDetailFile {
+interface DocumentDetailFile {
   id: string;
   purpose: string;
   originalFilename: string;

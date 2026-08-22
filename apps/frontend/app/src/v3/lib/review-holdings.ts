@@ -59,7 +59,7 @@ export function toReviewRows(holdings: readonly ReviewHoldingInput[]): ReviewRow
  * duplicate position is the one that writes something wrong, a missing amount
  * is the one that writes less than the reader is looking at.
  */
-export type ReviewBlocker = 'duplicatePosition' | 'missingAmount' | 'nothingToImport';
+type ReviewBlocker = 'duplicatePosition' | 'missingAmount' | 'nothingToImport';
 
 export interface ReviewState {
   active: ReviewRow[];
@@ -187,7 +187,7 @@ export function buildBatchPayload(
  * enriched field and omits that one, which silently disables both halves of the
  * duplicate-position guard downstream (SC-303, SC-330).
  */
-export type ParsedFileKind = 'image' | 'pdf' | 'mixed';
+type ParsedFileKind = 'image' | 'pdf' | 'mixed';
 
 export interface ScreenshotParseSummary {
   accountId: string | null;

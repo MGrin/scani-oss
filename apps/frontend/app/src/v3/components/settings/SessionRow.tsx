@@ -27,7 +27,7 @@ import { summariseUserAgent } from '../../lib/settings';
  * spending red here is what stops it meaning anything on `Delete`.
  */
 
-export interface SessionRowSession {
+interface SessionRowSession {
   id: string;
   token: string;
   userAgent: string | null;

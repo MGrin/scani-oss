@@ -116,8 +116,8 @@
     "./apps/frontend/app/tests/i18n-preload.ts"
   ],
   "rules": {
-    "exports": "off",
-    "types": "off",
+    "exports": "error",
+    "types": "error",
     "nsExports": "off",
     "nsTypes": "off",
     "enumMembers": "off"

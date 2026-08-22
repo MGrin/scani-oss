@@ -74,7 +74,7 @@ export function canToggle(availability: PushAvailability): boolean {
  * What one endpoint answered a test send (SC-322), mirroring the api's own
  * vocabulary in `SendTestNotificationUseCase`.
  */
-export type PushTestStatus = 'sent' | 'gone' | 'vapid-mismatch' | 'failed';
+type PushTestStatus = 'sent' | 'gone' | 'vapid-mismatch' | 'failed';
 
 /** The part of a reported device this module needs to decide what to say. */
 export interface PushTestDevice {
