@@ -1,5 +1,24 @@
 # Changelog
 
+<!--
+The heading SHAPE in this file is functional, not cosmetic.
+
+release-please inserts each new release directly under this `# Changelog`
+heading, immediately above the first heading that matches a version pattern
+(`## [0.12.0]…`). Measured on this repo: commit b06ffc2, `chore(main): release
+0.12.0`, whose CHANGELOG hunk is `@@ -1,5 +1,40 @@`.
+
+The 0.13.0, 0.14.0 and 0.14.1 sections below are hand-written — those versions
+were published without a git tag — and they are given version-shaped headings so
+that a future release is inserted ABOVE them, in the right chronological place.
+Retitle them to prose and the next release gets tucked underneath them instead.
+
+For the same reason each of those sections repeats its own explanation rather
+than sharing a preamble: anything written between `# Changelog` and the first
+version heading stays there permanently, above every future release. This
+comment is deliberately in that position; explanatory prose should not be.
+-->
+
 ## [0.14.1](https://github.com/MGrin/scani-oss/commit/9ddd39960cd6ef2df3f61e983a0a20ef78dfa12c) (2026-08-21)
 
 Published to Docker Hub by hand from `scripts/publish-images-local.sh`, built from
