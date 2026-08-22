@@ -25,6 +25,7 @@ function makeToken(id: string, symbol = id): Token {
     name: symbol,
     typeId: 'crypto',
     decimals: 18,
+    decimalsSource: 'chain',
     iconUrl: null,
     lastPricingAttemptAt: null,
     lookalikeOf: null,

@@ -1,6 +1,7 @@
 import {
   mergeIdentityDeltas,
   type NewToken,
+  resolveDecimals,
   type Token,
   type TokenMetadata,
 } from '@scani/db/schema';
@@ -405,7 +406,13 @@ export class TokenIdentityService extends BaseService {
         symbol,
         name: name ?? symbol,
         typeId: effectiveTypeId,
-        decimals: partial.decimals ?? 18,
+        // `partial` reaches here from provider token-identity, where a
+        // decimals IS the chain's own answer — BaseEvmProvider reads
+        // `tokenDecimal` off each transfer, Solana reads the mint. A
+        // caller holding a different authority names it explicitly, and a
+        // caller holding none falls through to the protocol constant or
+        // to NULL rather than to 18 (SC-544).
+        ...resolveDecimals(partial.decimals, partial.decimalsSource, enrichedMetadata),
         marketSegment,
         iconUrl: partial.iconUrl ?? null,
         providerMetadata: enrichedMetadata,

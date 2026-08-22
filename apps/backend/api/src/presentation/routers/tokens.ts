@@ -212,7 +212,7 @@ export function createTokensRouter(db: DbType, schemaObj: typeof schema) {
           typeId?: string;
           type?: string | null;
           typeName?: string | null;
-          decimals?: number;
+          decimals?: number | null;
           iconUrl?: string | null;
           isActive?: boolean;
           source: 'database' | 'external';
