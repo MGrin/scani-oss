@@ -30,7 +30,21 @@ import {
  * one would not run in the mirror.
  */
 describe('an override in the environment wins over the derived port', () => {
-  const WORKTREE = '/Users/mgrin/.bb/worktrees/env_v6j457ukyh/scani';
+  /**
+   * Synthetic on purpose (SC-566). Everything under test here hashes the path
+   * string and never touches disk, so a fixture naming a real checkout bought
+   * nothing and cost twice: it published one machine's directory layout to the
+   * public mirror, and it named a bb worktree that was later reaped, which is
+   * the shape SC-563 spent a red `main` diagnosing.
+   *
+   * One constraint on whatever path replaces this one: its derived
+   * POSTGRES_HOST_PORT must not equal the override literal below, or the
+   * assertion that the override CHANGED something is comparing a value to
+   * itself. One of the twenty offset slots lands on it, and the test goes red
+   * rather than quiet when it does.
+   */
+  const WORKTREE = '/fixture/worktrees/env_fixture01/scani';
+  const PRIMARY = '/fixture/checkouts/primary/scani';
 
   test('a set <SERVICE>_HOST_PORT replaces the derived one', () => {
     const derived = stackPorts(WORKTREE, false).POSTGRES_HOST_PORT;
@@ -47,9 +61,7 @@ describe('an override in the environment wins over the derived port', () => {
   test('nothing set is exactly the derivation, for the primary and for a worktree', () => {
     // The path every CI run takes. It has to stay byte-for-byte what it was.
     expect(resolveStackPorts(WORKTREE, false, {})).toEqual(stackPorts(WORKTREE, false));
-    expect(resolveStackPorts('/Users/mgrin/Projects/mgrin/scani', true, {})).toEqual(
-      stackPorts('/Users/mgrin/Projects/mgrin/scani', true)
-    );
+    expect(resolveStackPorts(PRIMARY, true, {})).toEqual(stackPorts(PRIMARY, true));
   });
 
   test('every service the stack publishes can be overridden, not just Postgres', () => {
