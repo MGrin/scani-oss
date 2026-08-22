@@ -1,6 +1,6 @@
 ---
 title: What stays on your side
-description: User integration credentials (exchange API keys, brokerage tokens, screenshots) never leave the api. The tier seam is the credential boundary.
+description: User integration credentials never leave the api, and your provider API keys never leave your api and worker either. What the hosted data-provider does and does not see.
 sidebar:
   order: 3
 ---
@@ -8,9 +8,14 @@ sidebar:
 ## The principle
 
 The data-provider seam is **also** the credential boundary. In Tier
-2, sensitive user data stays on your api; only the third-party
-queries that need a provider key are forwarded to the hosted
-data-provider.
+2, sensitive user data stays on your api; four narrow capabilities —
+object storage, email, OG-metadata fetching and token search — are
+served by the hosted data-provider.
+
+Everything else, including every call that needs a provider API key,
+is made by your own api and worker. Those keys stay in your `.env`;
+see [You still need your provider API
+keys](/self-hosting/tier2/overview/#you-still-need-your-provider-api-keys).
 
 ## What never leaves your side
 
@@ -20,23 +25,42 @@ data-provider.
 | User integration credentials (Binance API key, IBKR Flex token, Wise token, …) | Your Postgres, AES-256-GCM-encrypted with your `ENCRYPTION_KEY`. | No. |
 | Holdings, transactions, observations, prices, portfolio rollup | Your Postgres. | No. |
 | Vaults, groups, APY configs | Your Postgres. | No. |
-| Uploaded screenshots / file imports | Your S3 bucket. | The **image** is sent to the data-provider for parsing; the user identity behind it is not. |
+
+**Uploaded screenshots and statement files are the one exception to
+this page's title.** Object storage is one of the four capabilities
+Tier 2 moves, so those bytes live in the **operator's** bucket, not
+yours. What the file *yielded* — the extracted holdings and
+transactions — is rows in your Postgres and stays there. On Tier 1
+the bucket is yours too and nothing about a file leaves.
 
 ## What the data-provider does see
 
-Per outbound call:
+Only the four capabilities it serves:
 
-- **The query itself.** `"get current BTC/USD price"`, `"fetch
-  Etherscan transactions for 0xabc..."`, `"parse this screenshot
-  image"`.
-- **No session, no user ID**, except as opaque correlation IDs the
-  data-provider uses for its own rate-limiting and logging.
-- **No exchange API keys.** When the api's exchange-sync code runs,
-  it decrypts the user's stored API key on **your** machine, makes
-  the call to (e.g.) Binance through the data-provider acting as a
-  rate-limited proxy, but the call itself carries the user's key
-  in headers — those headers never enter the data-provider's
-  storage; they pass through to upstream and are dropped.
+- **Object storage.** Presigned upload/download URLs and direct
+  read/write/copy/delete. In Tier 2 the operator's bucket holds the
+  durable copy of every uploaded screenshot and statement file.
+- **Email.** The rendered message — recipient, subject, body — for
+  every magic-link, OTP and verification mail your api sends.
+- **Open Graph metadata.** The URLs your api fetches institution
+  logos and titles from.
+- **Token search.** The symbols users type when adding a holding.
+
+Each carries **no session and no user ID**, except as opaque
+correlation IDs the data-provider uses for its own rate-limiting and
+logging.
+
+## What the data-provider does not see
+
+- **Pricing, AI and chain queries.** Your api and worker call
+  CoinGecko, DeFiLlama, Frankfurter, Finnhub, Etherscan, Helius and
+  OpenAI **directly**, with your keys, on every tier. The hosted
+  data-provider is not in that path and cannot observe it.
+- **Exchange and brokerage traffic.** Binance, Kraken, Bybit, OKX,
+  Coinbase, IBKR, Wise and the rest are user-credentialed providers
+  registered only in your api and worker. Your api decrypts the
+  user's stored key on **your** machine and calls the venue itself —
+  nothing about that request reaches the data-provider.
 
 The implementation lives in `apps/backend/data-provider/src/presentation/`
 — every router strips request/response payloads to the minimum
@@ -47,15 +71,17 @@ needed to serve the upstream call.
 Tier 2 means trusting an operator to run a data-provider. That trust
 is bounded to:
 
-- They keep their provider keys safe and funded.
+- They hold your object storage — every uploaded screenshot and
+  imported statement file.
+- They can read the emails your api sends.
 - They don't log query payloads beyond what they need to operate.
 - They keep the service available.
 
 The trust does **not** extend to "they can read every Binance trade
-you make" — the only way they'd see that is by reading the rotating
-Binance API request payloads as they pass through, which is a
-detectable abuse (TLS interception or modified data-provider code)
-not a feature.
+you make", and not because payloads are stripped: exchange calls are
+made by your api and never reach them at all. The same is true of
+every pricing, AI and chain call — those are made with **your**
+provider keys, from **your** machine.
 
 ## Encryption of integration creds
 
@@ -75,20 +101,24 @@ the operational implications.
 
 ## Screenshots
 
-Screenshot parsing is the one place where user-uploaded *content*
-crosses to the data-provider — the screenshot image itself is sent
-to OpenAI Vision via the data-provider as a transparent proxy.
+A screenshot import touches two external parties, and they are
+different ones:
 
-Operational notes:
+1. **The operator's bucket.** The upload is presigned by, and lands
+   in, the hosted data-provider's object storage. The operator holds
+   the durable copy.
+2. **OpenAI, directly from your worker.** The worker reads the image
+   back out of storage and calls OpenAI Vision itself, with **your**
+   `OPENAI_API_KEY`. The data-provider is not in this hop and never
+   sees the parse request.
 
-- The image bytes are passed through; the data-provider does not
-  store them. (Your S3 bucket holds the durable copy.)
-- The user identity is not attached; the data-provider only sees
-  "parse this image" with an opaque request ID.
-- If you don't want any screenshots leaving your machine, don't
-  configure `OPENAI_API_KEY` (operator-side) or unset the
-  screenshot-parse capability. The user-facing import flow
-  degrades gracefully (`PRECONDITION_FAILED`).
+If you don't want screenshots leaving your machine, the lever is on
+**your** side, not the operator's: unset `OPENAI_API_KEY` in your own
+`.env`. The screenshot-parse job then fails on every attempt (the
+OpenAI provider throws without a key) rather than degrading quietly.
+Note that this stops the *parsing*, not the *upload* — the image is
+already in the operator's bucket by then. Tier 1, where the bucket is
+yours too, is the configuration where nothing leaves.
 
 ## See also
 
