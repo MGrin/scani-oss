@@ -1,15 +1,18 @@
 # syntax=docker/dockerfile:1.7-labs
 #
-# Tiny single-purpose image for applying Drizzle migrations against a
-# running Postgres. Self-hosters run it as a one-shot before bringing the
+# Tiny single-purpose image for applying migrations against a running
+# Postgres — BOTH the application schema (Drizzle) and BullMQ's queue
+# schema (SC-535). Self-hosters run it as a one-shot before bringing the
 # app stack up (or as an opt-in `--profile migrate` service in
 # docker-compose.prod.yml).
 #
 # Build pattern matches api / worker / data-provider: bun build --compile
 # produces a single self-contained binary in the build stage; the runtime
-# stage is debian:bookworm-slim + ca-certs + the binary + the migrations
-# SQL folder. No node_modules, no bun runtime, no `packages/` tree at
-# runtime — image lands well under 100 MB instead of the prior ~500 MB.
+# stage is debian:bookworm-slim + ca-certs + the binary + the two SQL
+# folders the binary reads at runtime. No bun runtime and no `packages/`
+# tree at runtime — image lands well under 100 MB instead of the prior
+# ~500 MB. The only thing under `node_modules/` at runtime is bullmq's
+# migration SQL, which its loader insists on reading from that exact path.
 #
 # Migrations live OUTSIDE the api/worker/data-provider runtime images by
 # design — the OSS distribution treats schema changes as an operator
@@ -41,9 +44,16 @@ WORKDIR /app
 COPY package.json bun.lock ./
 COPY --parents apps/*/package.json apps/*/*/package.json packages/*/*/package.json ./
 
-# Filter to @scani/db's dep graph only — drops everything reachable
-# through other workspaces (the bulk of the monorepo).
-RUN bun install --frozen-lockfile --filter @scani/db --linker=hoisted
+# Filter to the dep graphs of the two workspaces the entrypoint imports —
+# drops everything reachable only through other workspaces (the bulk of the
+# monorepo).
+#
+# SC-535: `@scani/queue` is here because the migrator applies BullMQ's queue
+# schema as well as the application one. Dropping it is what made the shipped
+# image the one caller that never created the `bullmq` schema, so a
+# self-hoster's first enqueue returned 500.
+RUN bun install --frozen-lockfile \
+    --filter @scani/db --filter @scani/queue --linker=hoisted
 
 # ---------- build ----------
 FROM oven/bun:${BUN_VERSION} AS build
@@ -56,12 +66,44 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY package.json bun.lock tsconfig.json ./
 COPY packages ./packages
+COPY scripts/migrate.ts ./scripts/migrate.ts
 
-RUN bun build packages/infra/db/src/migrate.ts \
+# SC-535. The entrypoint is `scripts/migrate.ts`, the SAME one `bun run
+# db:migrate` runs — not `@scani/db`'s Drizzle migrator. That migrator applies
+# the application schema alone, so compiling it here made this image the only
+# migrator in the repo that never created BullMQ's `bullmq` schema. It is also
+# the only migrator a self-hoster ever runs.
+RUN bun build scripts/migrate.ts \
     --compile \
     --target=bun \
     --minify \
     --outfile=dist/migrate
+
+# SC-535, and SC-518 before it in the api and worker images. BullMQ v6's
+# Postgres migrator loads its schema SQL with `readFileSync` at RUNTIME
+# (`sql-loader.ts` joins `__dirname` with `migrations/`), and `bun build
+# --compile` bundles JavaScript but NOT data files. So the compiled binary
+# looks for these on disk, at a path under `node_modules/` that this runtime
+# image would otherwise not have at all.
+#
+# THIS ASSERTION IS A CONDITION, NOT A NICETY. It is the only thing standing
+# between a bullmq patch release relocating these files and a green image that
+# fails on first use: `COPY` does not fail when it matches an empty directory,
+# so without this the breakage is silent — the same silent shape as the bug it
+# fixes. Assert on the FILES THE MIGRATOR ACTUALLY READS, not on the directory
+# — a directory can exist and be empty. These two are exactly the `load()`
+# entries in bullmq's `postgres/migrations/index.js`.
+#
+# Unlike the api and worker images this one does NOT need `commands/`: those
+# are the runtime queries, and this binary only migrates. Adding a third
+# command file to the assertion would make it fail for something this image
+# does not use.
+#
+# Remove it only when bullmq inlines its SQL — upstream taskforcesh/bullmq#4603
+# (see also taskforcesh/bullmq#4601).
+RUN test -s node_modules/bullmq/dist/esm/postgres/migrations/0001_schema.sql \
+    && test -s node_modules/bullmq/dist/esm/postgres/migrations/0002_functions.sql \
+    || (echo "SC-535: bullmq Postgres migration SQL missing — the compiled binary cannot create the queue schema" && exit 1)
 
 # ---------- runtime ----------
 FROM debian:bookworm-slim AS runtime
@@ -85,5 +127,13 @@ USER app
 # inside the compiled binary, matching the `/app/migrations` path below.
 COPY --from=build --chown=app:app /app/dist/migrate /app/migrate
 COPY --chown=app:app packages/infra/db/src/migrations /app/migrations
+
+# SC-535: BullMQ's own schema SQL, read at runtime by the compiled binary. The
+# path must match the build-time `__dirname` baked into the binary, which is
+# /app/node_modules/bullmq/dist/esm/postgres — not /app. The build stage
+# asserts these exist before we get here.
+COPY --from=build --chown=app:app \
+    /app/node_modules/bullmq/dist/esm/postgres/migrations \
+    /app/node_modules/bullmq/dist/esm/postgres/migrations
 
 CMD ["/app/migrate"]
