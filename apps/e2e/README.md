@@ -94,6 +94,46 @@ first two:
    fires — coverage the suite did not have while it was quietly retrying past
    them.
 
+## Job waits — why `waitForJob` extends the test's timeout
+
+Every spec that enqueues a worker job waits on it through `waitForJob` in
+`fixtures/ui.ts`, which polls `trpc/jobs.status` until the job is `completed`
+or `failed`. Two deadlines are in play, and until SC-498 the wrong one always
+won.
+
+`playwright.config.ts` sets no `timeout`, so a test gets Playwright's 30s
+default. `waitForJob` also defaulted to 30s — and it starts some seconds into
+the test, so its deadline could never be reached. Playwright's fired first, at
+whichever `await` the fixture happened to be sitting on, and reported `Test
+timeout of 30000ms exceeded` against a line of `fixtures/ui.ts`. That message
+names test plumbing, so on a contended laptop a red run read as a product
+failure while the only thing that had happened was a worker not finishing in
+time. Two threads spent their time establishing that.
+
+The same arithmetic silently voided every caller who had already diagnosed it
+and asked for longer — 45s in `imports/csv-import`, 60s in
+`imports/screenshot-parse`, 90s in `wallet-import/import-flow`, 120s in
+`a11y/v3-accessibility`. Not one of those numbers could be reached.
+
+So `waitForJob` now reserves its own budget out of the test's, by raising
+`testInfo.timeout` by the wait plus a margin before it starts polling. The
+fixture's deadline is therefore always the one that fires, whatever a caller
+asks for, and the message it prints names the last state the job was actually
+observed in:
+
+- **`queued`** at the deadline — nothing picked the job up. No product code
+  ran, so nothing in the spec's assertions was ever reached; look at the
+  worker.
+- **`active` / `progress`** — a worker took it and neither finished nor failed
+  it. The message stops there on purpose. A contended box and a processor stuck
+  in a loop are the same state from here, and a message that told you to
+  dismiss it is how a real regression gets absorbed into a known flake.
+
+`tests/lib/job-wait-budget.spec.ts` enforces both halves: that the fixture
+outlives the budget it was given, and that the `active` message draws no
+conclusion. Neither test needs a browser or a job — they stub the one call
+`waitForJob` makes.
+
 ## Accessibility gate — `tests/a11y`
 
 The §2.6 floor of the v3 research brief, enforced on every v3 surface. Runs in
