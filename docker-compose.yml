@@ -26,18 +26,27 @@
 # it together. Writing one out as a literal is the SC-495 bug, and
 # `scripts/tests/compose-urls-follow-ports.test.ts` fails the build on it.
 #
-# To run two scani checkouts in parallel without port conflicts, set each
-# override variable in the second worktree's `.env` (or use the
-# `docker-compose.override.yml.example` template). See
+# ONE STACK PER CHECKOUT (SC-497). `bun run dev:stack` passes an explicit
+# COMPOSE_PROJECT_NAME plus one host port per service, both derived from the
+# checkout's path in `scripts/lib/worktree.ts`, so two checkouts share neither
+# containers nor ports; `bun scripts/dev-stack.ts env` prints them if you want
+# to drive `docker compose` by hand. Export COMPOSE_PROJECT_NAME yourself and
+# that wins, which is how CI pins a name its fixtures can reach. A bare
+# `docker compose up` does NOT: with no project name compose falls back to
+# this directory's, which is the same in every checkout, so a second one
+# adopts and recreates the first's containers rather than failing. Override a
+# single port with its variable below, or use the
+# `docker-compose.override.yml.example` template. See
 # `apps/frontend/docs/src/content/docs/self-hosting/tier1/troubleshooting.md`
 # for the "Running two scani checkouts in parallel" recipe.
 #
 # Ports are not the whole of that, though: the three services built from this
 # repo tag their image `${SCANI_STACK_TAG:-dev}`. Left at the default, two
 # checkouts building at once share `:dev` and whichever built last decides what
-# the other one runs — a stale binary under a green build. `bun run test:e2e`
-# sets the tag per checkout (`apps/e2e/scripts/run.ts`, SC-493/SC-496); a bare
-# `docker compose up` still gets plain `:dev`, unchanged.
+# the other one runs — a stale binary under a green build. `bun run dev:stack`
+# and `bun run test:e2e` both set the tag per checkout
+# (`apps/e2e/scripts/run.ts`, SC-493/SC-496); a bare `docker compose up` still
+# gets plain `:dev`, unchanged.
 
 services:
   postgres:
