@@ -106,6 +106,35 @@ describe('v3 coarse-pointer tap floor', () => {
     expect(under44).toEqual([36, 36]);
     expect(CSS.replace(/\s+/g, ' ')).toInclude(':is( button,');
   });
+
+  /**
+   * This is the test a future reader will want to delete, so the reason is
+   * here rather than in the assertion.
+   *
+   * Everything above establishes that the token layer out-specifies these
+   * literals, which makes them look like dead code — and `min-h-tap` was
+   * deleted from `src/v3` on exactly that reasoning (V3-25). The difference
+   * is scope. `apps/frontend/admin` imports this component and imports only
+   * `styles/globals.css`; it never loads `v3-tokens.css` or its `:root`
+   * variant, so nothing there zeroes `min-height` and these literals ARE the
+   * floor. Measured on the production bundle 2026-08-22: inside the token
+   * scope a fine pointer gives 40 / 36 / 44 / 40×40 for
+   * default / sm / lg / icon; outside it, 44 / 36 / 44 / 44×44.
+   *
+   * Deleting them would leave admin's default and icon buttons at 40px and
+   * break nothing that any check in this repo can see: the classes are inert
+   * on every surface the e2e suite walks, so the axe gate would stay green
+   * over the regression. Hence a source assertion.
+   */
+  test('the 44px literals survive for consumers with no token layer', () => {
+    // Comments stripped: the block above this variant map explains the same
+    // classes by name, and a test that a comment can satisfy asserts nothing.
+    const sizes = BUTTON.slice(BUTTON.indexOf('size: {'), BUTTON.indexOf('defaultVariants'))
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/\/\/.*$/gm, '');
+    expect(sizes).toInclude('min-h-[44px]');
+    expect(sizes).toInclude('min-w-[44px]');
+  });
 });
 
 /**

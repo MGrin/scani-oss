@@ -17,11 +17,43 @@ const buttonVariants = cva(
         link: 'text-primary underline-offset-4 hover:underline',
       },
       size: {
-        // WCAG AA: 44px minimum touch target on mobile, can be smaller on desktop
+        /* These `min-h-[…]` literals are NOT what holds the 44px touch floor
+         * up, and reading them as if they were has now produced three wrong
+         * conclusions: SC-63 dropped `size="sm"` from three surfaces to escape
+         * a floor that was never being defeated, V3-25 assumed a `min-h-*`
+         * utility could force 44px onto a desktop control, and SC-472 was
+         * filed as "every default Button is 40px, not the 44px it claims".
+         *
+         * Inside `[data-ui='v3']` — every surface `apps/frontend/app` serves,
+         * and via `v3-tokens-root.css` `cloud` and `landing` too — they are
+         * inert. `v3-tokens.css` zeroes `min-height`/`min-width` on
+         * `[data-ui='v3'] :is(button, …)` and re-spends `var(--tap-target)`
+         * behind `@media (pointer: coarse)`. Tailwind's `@layer` directive is
+         * not a cascade layer, so both flatten into the same unlayered output
+         * and specificity decides — the token layer's selector carries more
+         * than one class-level component, a utility carries exactly one.
+         *
+         * So a mouse gets desktop density and a finger gets the house rule.
+         * Measured on the production bundle (2026-08-22, all four sizes, real
+         * emitted CSS): inside v3 a coarse pointer gives 44×44 for
+         * default/sm/lg/icon alike, and a fine pointer gives 40 / 36 / 44 /
+         * 40×40. A 40px default Button under a mouse is the design, not a
+         * regression — measuring `min-height` at a desktop viewport reads 0px
+         * whether the coarse branch works or not, which is how SC-472 came to
+         * be filed against working code.
+         *
+         * They stay because outside the token layer they are live:
+         * `apps/frontend/admin` imports this component and only
+         * `styles/globals.css`, so there the literals are the floor.
+         *
+         * `packages/frontend/ui/tests/styles/tap-target-floor.test.ts` pins
+         * the specificity holding this up, including for the `:root` variant;
+         * `apps/e2e/tests/a11y/v3-accessibility.spec.ts` measures the rendered
+         * box on a phone, which is the only viewport that can see it. */
         default: 'h-10 px-4 py-2 min-h-[44px]',
         sm: 'h-9 rounded-md px-3 min-h-[36px] md:min-h-[36px]', // Keep small on desktop
         lg: 'h-11 rounded-md px-8 min-h-[44px]',
-        icon: 'h-10 w-10 min-h-[44px] min-w-[44px]', // 44px minimum for touch targets
+        icon: 'h-10 w-10 min-h-[44px] min-w-[44px]',
       },
     },
     defaultVariants: {
