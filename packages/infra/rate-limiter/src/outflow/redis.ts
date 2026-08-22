@@ -1,4 +1,4 @@
-import { withRedisTimeout } from '@scani/deadline';
+import { withDeadline } from '@scani/deadline';
 import type { Redis } from 'ioredis';
 import { OutflowRateLimiter } from './outflow-rate-limiter';
 
@@ -152,9 +152,9 @@ export class RedisOutflowRateLimiter extends OutflowRateLimiter {
 
   // Timer cleanup matters here in particular: `waitForSlot` calls this in a
   // loop, so a leaked timer per attempt would accumulate one per acquisition
-  // for the whole window. `withRedisTimeout` owns that.
+  // for the whole window. `withDeadline` owns that.
   private withTimeout<T>(work: Promise<T>): Promise<T> {
-    return withRedisTimeout(
+    return withDeadline(
       work,
       this.timeoutMs,
       () => new Error(`rate-limiter: Redis did not answer in ${this.timeoutMs}ms`)

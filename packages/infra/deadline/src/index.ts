@@ -1,1 +1,1 @@
-export { RedisCommandTimeoutError, withRedisTimeout } from './redis-timeout';
+export { StoreCommandTimeoutError, withDeadline } from './deadline';
