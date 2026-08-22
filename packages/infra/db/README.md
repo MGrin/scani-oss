@@ -7,7 +7,10 @@ Database infrastructure layer. Owns:
 - `connection-monitor.ts` — per-request pool tracking surfaced on the admin /services dashboard
 - `transaction.ts` — typed transaction helper
 - `base-repository.ts` — abstract `BaseRepository<TEntity>` that every domain repository extends
-- `migrate.ts` — production migration runner (used by `bun run db:migrate`)
+- `migrate.ts` — the application-schema migration runner. `bun run db:migrate`
+  reaches it through `scripts/migrate.ts`, which also applies BullMQ's queue
+  schema; this package must not depend on `bullmq`, so it only knows about
+  Drizzle
 - `migration-runner.ts` / `migration-files.ts` — what "applied" means and what a migration may be called
 - `migrations/` — one SQL file per migration; the folder is the manifest
 
@@ -103,8 +106,10 @@ workspaces.
 4. **Create the migration**: `bun run db:new "add my things"`. That
    writes `src/migrations/<UTC stamp>_add_my_things.sql` and prints the
    path; write the SQL there.
-5. **Run the migration locally**: `bun --cwd packages/infra/db run db:migrate`
-   (against the docker-compose Postgres on `localhost:5433`).
+5. **Run the migration locally**: `bun run db:migrate` from the repo root
+   (against the docker-compose Postgres on `localhost:5433`). Use the root
+   script, not this package's — that one applies the application schema
+   alone and leaves the queue schema behind.
 
 ## Public API surface
 

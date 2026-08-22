@@ -6,6 +6,12 @@
  *
  * Unlike drizzle-kit migrate which uses its own pg connection pool,
  * this script uses our optimized postgres.js connection settings.
+ *
+ * SC-535. The body is exported as `runDrizzleMigrations` and returns an exit
+ * code rather than calling `process.exit`, so `scripts/migrate.ts` can run the
+ * application schema and BullMQ's queue schema in ONE process. That matters
+ * because `scripts/migrate.ts` is what `Dockerfile.migrate` compiles, and a
+ * compiled binary has no `bun` to spawn.
  */
 
 import { existsSync } from 'node:fs';
@@ -18,14 +24,14 @@ import { applyMigrations, parseAssumeAppliedThrough } from './migration-runner';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-// Load .env from monorepo root (packages/core/src/database -> root)
-const monorepoRoot = resolve(__dirname, '../../../../');
-const envPath = join(monorepoRoot, '.env');
+async function loadRootEnv(): Promise<void> {
+  // Load .env from monorepo root (packages/infra/db/src -> root)
+  const monorepoRoot = resolve(__dirname, '../../../../');
+  const envPath = join(monorepoRoot, '.env');
+  if (!existsSync(envPath)) return;
 
-if (existsSync(envPath)) {
   // Bun has built-in .env loading, but we need to load from a specific path
-  const envFile = Bun.file(envPath);
-  const envContent = await envFile.text();
+  const envContent = await Bun.file(envPath).text();
 
   // Parse and set environment variables (only if not already set)
   for (const line of envContent.split('\n')) {
@@ -41,19 +47,25 @@ if (existsSync(envPath)) {
   console.log(`📁 Loaded environment from ${envPath}`);
 }
 
-async function runMigrations() {
+/**
+ * Apply the Drizzle (application) schema. Returns the process exit code the
+ * caller should use: 0 on success, non-zero on refusal or failure.
+ */
+export async function runDrizzleMigrations(): Promise<number> {
+  await loadRootEnv();
+
   const DATABASE_URL = process.env.DATABASE_URL;
 
   if (!DATABASE_URL) {
     console.error('❌ DATABASE_URL environment variable is required');
-    process.exit(1);
+    return 1;
   }
 
   const target = describeTarget(DATABASE_URL);
   if (!target) {
     console.error('❌ DATABASE_URL is not a parseable connection URL');
     console.error('   Refusing to migrate a target that cannot be identified.');
-    process.exit(1);
+    return 1;
   }
 
   console.log(`🎯 Target: ${formatTarget(target)}`);
@@ -61,7 +73,7 @@ async function runMigrations() {
   const decision = decideTarget(target, process.argv);
   if (!decision.allowed) {
     console.error(refusalMessage(target, decision.requested));
-    process.exit(1);
+    return 1;
   }
   if (decision.reason === 'named') {
     console.log(`🔓 Non-local target named on the command line (--allow-remote ${target.host})`);
@@ -131,9 +143,8 @@ async function runMigrations() {
         `${result.alreadyApplied.length} already present`
     );
 
-    // Close the connection
     await migrationClient.end();
-    process.exit(0);
+    return 0;
   } catch (error) {
     console.error('❌ Migration failed:', error);
 
@@ -144,9 +155,13 @@ async function runMigrations() {
       console.error('Failed to close connection:', closeError);
     }
 
-    process.exit(1);
+    return 1;
   }
 }
 
-// Run migrations
-runMigrations();
+// `bun packages/infra/db/src/migrate.ts` (the package's own `db:migrate`)
+// applies the application schema alone. `bun run db:migrate` at the repo root
+// goes through `scripts/migrate.ts`, which also applies the queue schema.
+if (import.meta.main) {
+  process.exit(await runDrizzleMigrations());
+}
