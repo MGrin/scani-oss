@@ -50,6 +50,3 @@ export const authClient = createAuthClient({
   },
   plugins: [magicLinkClient(), emailOTPClient()],
 });
-
-// Re-exports so the rest of the app can import React hooks ergonomically.
-export const { signIn, signOut, signUp, useSession } = authClient;

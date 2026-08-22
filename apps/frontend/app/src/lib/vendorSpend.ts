@@ -33,7 +33,7 @@ import {
 
 /** The two directions money moves. Written down once so no surface decides
  *  for itself what the free-text `direction` column is allowed to say. */
-export const OUTFLOW = 'outflow';
+const OUTFLOW = 'outflow';
 export const INFLOW = 'inflow';
 
 /**

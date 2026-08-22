@@ -179,7 +179,7 @@ interface BucketDef {
 }
 
 /** Ordered by urgency, which is the order the group headings appear in. */
-export const JOB_BUCKETS: readonly BucketDef[] = [
+const JOB_BUCKETS: readonly BucketDef[] = [
   { key: 'review', labelKey: 'v3.jobs.bucket.review' },
   { key: 'running', labelKey: 'v3.jobs.bucket.running' },
   { key: 'failed', labelKey: 'v3.jobs.bucket.failed' },

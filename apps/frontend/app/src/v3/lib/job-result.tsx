@@ -31,7 +31,7 @@ import { WalletImportResult } from '../components/jobs/WalletImportResult';
  * whose renderer has not been written land on the fallback.
  */
 
-export interface ReviewRendererProps {
+interface ReviewRendererProps {
   result: unknown;
   jobId: string;
   actionTakenAt: Date | string | null;

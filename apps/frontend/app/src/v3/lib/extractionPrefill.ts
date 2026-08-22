@@ -8,7 +8,7 @@
  * anything is written.
  */
 
-export type BillingPeriod = 'week' | 'month' | 'quarter' | 'year';
+type BillingPeriod = 'week' | 'month' | 'quarter' | 'year';
 export type InvoicePaymentStatus = 'paid' | 'unpaid';
 
 /**

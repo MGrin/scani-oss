@@ -4,7 +4,7 @@ import { Pool } from 'pg';
 
 const log = createComponentLogger('queue:migrate');
 
-export const DEFAULT_QUEUE_SCHEMA = 'bullmq';
+const DEFAULT_QUEUE_SCHEMA = 'bullmq';
 
 /**
  * Create or upgrade BullMQ's Postgres schema.
