@@ -6,7 +6,7 @@
   "prerelease": false,
   "include-v-in-tag": true,
   "include-component-in-tag": false,
-  "bootstrap-sha": "9ddd39960cd6ef2df3f61e983a0a20ef78dfa12c",
+  "bootstrap-sha": "dd17ad15482804feba0d57036abd5e5a1ac7aca4",
   "packages": {
     ".": {
       "package-name": "scani",
