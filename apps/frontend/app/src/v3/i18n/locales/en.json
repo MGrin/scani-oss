@@ -1440,7 +1440,7 @@
         "intro": "Something moved this balance and no transaction says what. Tell us what happened and it stops counting as performance.",
         "loading": "Looking for balance changes we cannot explain…",
         "empty": "Nothing to explain — every balance change is accounted for.",
-        "examined": "Showing {{shown}} of {{examined}} changes. {{suppressed}} were left out: too small, too recent to have imported yet, already explained, or reversed by the next reading.",
+        "examined": "Showing {{shown}} of {{examined}} changes. {{suppressed}} were left out: too small, a balance you set yourself, reversed by the next reading, or nothing could price them.",
         "subject": "{{account}} · {{symbol}}",
         "between": "Between {{from}} and {{to}}",
         "balances": "{{previous}} → {{current}} {{symbol}}.",
@@ -1461,7 +1461,8 @@
           "flow": "Recorded as a deposit or withdrawal on the date you give, so it is not counted as a gain or a loss.",
           "correction": "Recorded as a restatement, dated back to when the wrong figure entered the record. Neither a gain nor money paid in.",
           "growth": "Nothing is written. Growth on a balance like this IS the return, and it is already counted as one.",
-          "unknown": "Nothing is written and you will not be asked about this one again. It stays counted as performance, which is the honest answer when nobody knows."
+          "unknown": "Nothing is written and you will not be asked about this one again. It stays counted as performance, which is the honest answer when nobody knows.",
+          "flowNoDate": "Recorded as a deposit or withdrawal, dated between the two readings — we know when it happened more precisely than a date could say."
         }
       }
     },
