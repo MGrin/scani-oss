@@ -42,14 +42,22 @@ Then comment out the `postgres` service in `docker-compose.prod.yml`:
 
 Apply migrations explicitly before each deploy. The
 [`scani/migrate`](https://hub.docker.com/r/scani/migrate) image is a
-pre-built one-shot that wraps the Drizzle runner — no workspace
-clone, no Bun install on your side.
+pre-built one-shot that applies both the application schema (Drizzle)
+and the job-queue schema (BullMQ) — no workspace clone, no Bun install
+on your side.
 
 ```sh
 docker run --rm \
   -e DATABASE_URL="$DATABASE_URL" \
-  scani/migrate:${SCANI_IMAGE_TAG:-latest}
+  scani/migrate:${SCANI_IMAGE_TAG:-latest} \
+  /app/migrate --allow-remote your-postgres-host.example.com
 ```
+
+`--allow-remote <host>` is **required** here and the host has to match
+the one in `DATABASE_URL` — a managed database is never on loopback, so
+without it the container refuses and exits `1` having changed nothing.
+That guard is what stops a stale connection string rewriting the wrong
+database.
 
 For a Kubernetes deploy, wrap it in a `Job` that runs before the api
 `Deployment` rolls out:
@@ -66,6 +74,7 @@ spec:
       containers:
         - name: migrate
           image: scani/migrate:{{ .Values.image.tag }}
+          args: ["/app/migrate", "--allow-remote", "your-postgres-host.example.com"]
           env:
             - name: DATABASE_URL
               valueFrom: { secretKeyRef: { name: scani, key: DATABASE_URL } }
