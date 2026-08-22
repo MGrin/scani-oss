@@ -220,7 +220,6 @@ providers are conditionally active). Apps that depend on
 | `ETHERSCAN_API_KEY`           | Etherscan multichain          |
 | `HELIUS_API_KEY`              | Solana (Helius RPC)           |
 | `OPENAI_API_KEY`              | OpenAI                        |
-| `OPENAI_VISION_MODEL`         | OpenAI vision model override  |
 | `GOOGLE_SHEETS_ID`            | GoogleSheetsProvider          |
 | `GOOGLE_SERVICE_ACCOUNT_KEY`  | GoogleSheetsProvider          |
 

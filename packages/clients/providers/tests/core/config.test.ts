@@ -20,7 +20,6 @@ describe('loadProvidersConfig', () => {
       COINGECKO_API_KEY: 'cg-x',
       FINNHUB_API_KEY: 'fh-y',
       OPENAI_API_KEY: 'sk-z',
-      OPENAI_VISION_MODEL: 'gpt-4o',
       ETHERSCAN_API_KEY: 'es-w',
       HELIUS_API_KEY: 'he-v',
       GOOGLE_SHEETS_ID: 'sheet-id',
@@ -29,7 +28,6 @@ describe('loadProvidersConfig', () => {
     expect(cfg.COINGECKO_API_KEY).toBe('cg-x');
     expect(cfg.FINNHUB_API_KEY).toBe('fh-y');
     expect(cfg.OPENAI_API_KEY).toBe('sk-z');
-    expect(cfg.OPENAI_VISION_MODEL).toBe('gpt-4o');
     expect(cfg.GOOGLE_SHEETS_ID).toBe('sheet-id');
   });
 
