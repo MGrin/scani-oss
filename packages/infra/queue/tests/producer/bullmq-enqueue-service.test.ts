@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { StoreCommandTimeoutError } from '@scani/deadline';
 import { Container } from 'typedi';
 import { z } from 'zod';
 // This workspace cannot depend on @scani/domain (it sits below it), so the
@@ -102,7 +103,7 @@ describe('BullMqEnqueueService — mirror integration', () => {
   });
 
   test('calls onEnqueueFailed when queue.add throws', async () => {
-    setupQueue(new Error('redis down'));
+    setupQueue(new Error('queue store down'));
     const onEnqueueFailed = mock<
       (jobId: string, err: Error, meta: Omit<EnqueuedJobMeta, 'payloadSummary'>) => Promise<void>
     >(async () => {});
@@ -110,7 +111,7 @@ describe('BullMqEnqueueService — mirror integration', () => {
     const svc = new BullMqEnqueueService();
     await expect(
       svc.add(TEST_DESCRIPTOR, { userId: 'u1', requestId: 'r1', resourceId: 'res-9' })
-    ).rejects.toThrow('redis down');
+    ).rejects.toThrow('queue store down');
     expect(onEnqueueFailed).toHaveBeenCalledTimes(1);
   });
 
@@ -125,10 +126,12 @@ describe('BullMqEnqueueService — mirror integration', () => {
 
 describe('BullMqEnqueueService — an unreachable queue store (SC-523)', () => {
   // A `queue.add` that neither resolves nor rejects is what an unreachable
-  // Redis actually produces: the shared client is `maxRetriesPerRequest: null`
-  // (BullMQ requires it) and ioredis only flushes its offline queue when that
-  // option is a number, so the command sits there. Measured through this class
-  // against a real stopped container: HUNG 10003ms.
+  // queue store actually produces. Since SC-518 that store is Postgres, and
+  // BullMQ's Postgres backend leaves three waits unbounded: no
+  // `connectionTimeoutMillis` on the pool, no `statement_timeout` on it, and
+  // an OS-length wait on a black-holed socket. Measured 2026-08-22 through
+  // this class against `bullmq.job` held under `ACCESS EXCLUSIVE`: still
+  // unsettled at 30s, resolving at 30684ms when the lock was released.
   function setupHangingQueue() {
     const fakeQueue = { add: mock(() => new Promise<void>(() => {})) };
     Container.set(QueueClient, { get: () => fakeQueue } as never);
@@ -141,14 +144,26 @@ describe('BullMqEnqueueService — an unreachable queue store (SC-523)', () => {
     const started = Date.now();
     await expect(
       svc.add(TEST_DESCRIPTOR, { userId: 'u1', requestId: 'r1', resourceId: 'res-9' })
-    ).rejects.toThrow('redis enqueue timed out after 2000ms');
+      // The exact string, because it is what an operator reads during an
+      // incident and the store it names is what they go and look at. It said
+      // `redis` for a `pg` query between SC-518 and SC-578 (SC-578).
+    ).rejects.toThrow('postgres enqueue timed out after 10000ms');
     // The bound is the point, so assert it bounded something: a pass that took
-    // the suite's 30s timeout would be the defect, not the fix.
-    expect(Date.now() - started).toBeLessThan(10_000);
+    // the suite's 30s timeout would be the defect, not the fix. The ceiling is
+    // above ENQUEUE_TIMEOUT_MS (10s) rather than equal to it — this asserts
+    // that a bound fired, not what its value is, and pinning it to the
+    // constant would make the test fail on a slow box for no defect.
+    expect(Date.now() - started).toBeLessThan(20_000);
   });
 
+  // Uses a queue that REJECTS rather than one that hangs, so it does not pay
+  // the real ENQUEUE_TIMEOUT_MS a second time — what it asserts is the
+  // fail-closed wiring downstream of a rejection, not that the bound fires.
+  // That the bound itself fires, and with which message, is the test above;
+  // deleting that one leaves this path covered only from the rejection
+  // onwards.
   test('fails CLOSED: the mirror row is marked failed, so no job is silently lost', async () => {
-    setupHangingQueue();
+    setupQueue(new StoreCommandTimeoutError('postgres', 'enqueue', 10_000));
     const onEnqueueFailed = mock<
       (jobId: string, err: Error, meta: Omit<EnqueuedJobMeta, 'payloadSummary'>) => Promise<void>
     >(async () => {});
