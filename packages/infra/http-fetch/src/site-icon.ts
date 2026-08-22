@@ -31,6 +31,7 @@ import {
   type FetchLike,
   fetchHtmlBounded,
   followRedirectsSafely,
+  withBudget,
 } from './fetch-html-bounded';
 
 /**
@@ -40,10 +41,7 @@ import {
 const MAX_ICON_BYTES = 128 * 1024;
 
 /**
- * The budget for the image phase, shared across every candidate. The HTML
- * phase has its own 4s inside `fetchHtmlBounded`, so a cold resolve is bounded
- * at roughly 7s end to end — paid once per institution for every user, because
- * the result is stored.
+ * The budget for the image phase, shared across every candidate.
  */
 const ICON_PHASE_TIMEOUT_MS = 3_000;
 
@@ -70,32 +68,14 @@ const MAX_CANDIDATES = 2;
  *
  * 8s is above the slowest success observed (3.2s) with headroom, and far below
  * the 60s a stuck resolver costs.
+ *
+ * The inner budgets can sum HIGHER than this (6s of HTML plus 3s of images) and
+ * that is deliberate: those are per-step allowances, this is the ceiling. A
+ * site that spends its whole HTML budget gets whatever is left; one that would
+ * spend more than all of it gets a letter tile, which is the right answer for
+ * something that slow.
  */
 const TOTAL_BUDGET_MS = 8_000;
-
-/**
- * Reject with a `BoundedFetchError` if `work` has not settled in `ms`.
- *
- * A race, not a cancellation — the abandoned lookup finishes on its own and is
- * collected. That is the honest bound available here: `dns.lookup` takes no
- * signal, so the alternative is not "cancel it" but "wait for it".
- */
-async function withBudget<T>(work: Promise<T>, ms: number, label: string): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  try {
-    return await Promise.race([
-      work,
-      new Promise<never>((_, reject) => {
-        timer = setTimeout(
-          () => reject(new BoundedFetchError(`${label} exceeded ${ms}ms`, 'timeout')),
-          ms
-        );
-      }),
-    ]);
-  } finally {
-    if (timer) clearTimeout(timer);
-  }
-}
 
 export interface SiteIcon {
   bytes: Uint8Array;
