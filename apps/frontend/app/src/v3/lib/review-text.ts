@@ -68,6 +68,8 @@ export function reviewTitle(texts: ReviewTexts, label: ReviewLabel): string {
       return texts.t('v3.review.item.invoiceExtracted');
     case 'transfersToConfirm':
       return texts.t('v3.review.item.transfersToConfirm');
+    case 'balanceChangesToExplain':
+      return texts.t('v3.review.item.balanceChangesToExplain');
   }
 }
 
@@ -108,6 +110,8 @@ export function reviewDetailText(
     }
     case 'vendor':
       return detail.name;
+    case 'unexplainedBalanceChanges':
+      return texts.t('v3.review.item.unexplainedBalanceChanges', { count: detail.changes });
     case 'unpairedTransfers':
       return texts.t('v3.review.item.unpairedTransfers', { count: detail.transfers });
     case 'jobFailure': {

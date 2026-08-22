@@ -2,6 +2,7 @@ import { db } from '@scani/db/connection';
 import * as schema from '@scani/db/schema';
 import { accountTypesRouter } from './routers/account-types';
 import { accountsRouter } from './routers/accounts';
+import { balanceGapsRouter } from './routers/balance-gaps';
 import { batchOperationsRouter } from './routers/batch-operations';
 import { clientErrorsRouter } from './routers/client-errors';
 import { dashboardRouter } from './routers/dashboard';
@@ -104,6 +105,7 @@ export const appRouter = router({
 
   // Unpaired transfers awaiting a human decision (SC-150). Separate from
   // `review` because this one writes.
+  balanceGaps: balanceGapsRouter,
   transferReview: transferReviewRouter,
 
   storage: storageRouter,
