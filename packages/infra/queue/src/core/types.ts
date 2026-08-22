@@ -44,7 +44,11 @@ export type LifecycleEvent =
       jobId: string;
       userId: string;
       jobName: string;
+      /** Verbatim. Three admin surfaces read it; never shown to the owner. */
       error: string;
+      /** The same failure in words written for the owner, or null if nobody
+       *  wrote any — see `userFacing` in `./user-facing` (SC-551). */
+      userFacingError: string | null;
       attemptsMade: number;
       attemptsAllowed: number;
     }
@@ -67,6 +71,7 @@ export type LifecycleEvent =
       userId: string;
       jobName: string;
       error: string;
+      userFacingError: string | null;
       attemptsMade: number;
       attemptsAllowed: number;
       reason: JobDeathReason;

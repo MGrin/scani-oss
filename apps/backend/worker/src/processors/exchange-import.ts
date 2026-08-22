@@ -19,6 +19,7 @@ import {
   type ProcessorContext,
   UnrecoverableError,
   UserJobProcessor,
+  userFacing,
 } from '@scani/queue';
 import { emitEntityChange } from '@scani/realtime';
 import { Container, Service } from 'typedi';
@@ -136,7 +137,11 @@ export class ExchangeImportProcessor extends UserJobProcessor<ExchangeImportJob,
         // the job goes to `failed` immediately instead of re-running.
         const msg = error instanceof Error ? error.message : String(error);
         await markCredentialFailed(data.userId, data.institutionId, msg);
-        throw new UnrecoverableError(msg);
+        // The provider's own rejection — "Kraken rejected request: EAPI:Invalid
+        // key". It is the only place the reader can learn WHICH thing they got
+        // wrong, which is the whole finding of SC-140, so it is marked
+        // `userFacing` rather than collapsed into "the import failed".
+        throw userFacing(new UnrecoverableError(msg));
       }
       throw error;
     }

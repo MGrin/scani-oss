@@ -31,6 +31,7 @@ export class UserJobLifecycleMirror implements LifecycleMirror {
         await this.repo.markFailed(event.jobId, event.error, {
           attemptsMade: event.attemptsMade,
           attemptsAllowed: event.attemptsAllowed,
+          userFacingError: event.userFacingError,
         });
         return;
       // The queue has stopped trying (SC-153). `failed` above fires on every
@@ -42,6 +43,7 @@ export class UserJobLifecycleMirror implements LifecycleMirror {
         await this.repo.markDead(event.jobId, {
           reason: event.reason,
           error: event.error,
+          userFacingError: event.userFacingError,
           attemptsMade: event.attemptsMade,
           attemptsAllowed: event.attemptsAllowed,
         });
