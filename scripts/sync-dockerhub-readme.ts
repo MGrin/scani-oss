@@ -23,9 +23,14 @@
 // The GitHub Action `.github/workflows/sync-dockerhub-readmes.yml` runs
 // this on every push to `main` that touches `docker-readmes/**`.
 //
+// The image set comes from `scripts/lib/docker-images.ts`, and a README with
+// no image or an image with no README is a non-zero exit naming the offender
+// (SC-534) — not a smaller count in a line that reads fine either way.
+//
 
 import { readdirSync, readFileSync } from 'node:fs';
 import { basename, resolve } from 'node:path';
+import { DOCKER_IMAGES, diffAgainstManifest } from './lib/docker-images';
 
 const NAMESPACE = 'scani';
 const README_DIR = resolve(import.meta.dir, '..', 'docker-readmes');
@@ -66,11 +71,45 @@ function parseReadme(path: string): ReadmeFile {
   return { image, path, description, fullDescription };
 }
 
+/**
+ * Every file in `docker-readmes/` must be an image, and every image must have
+ * a file. SC-534: without this the work list was whatever the directory
+ * happened to hold, so a missing README came out as a smaller count and exit
+ * 0 rather than as an error.
+ *
+ * This runs on the WHOLE directory even under `--only`, and that is
+ * deliberate: `--only` narrows what gets pushed, not what is true about the
+ * tree. Softening it so a single-image sync can proceed over a gap would
+ * restore the defect for the one invocation most likely to be reached for
+ * while something is already broken.
+ */
+function assertEveryImageHasAReadme(readmes: readonly ReadmeFile[]): void {
+  const { missing, unexpected } = diffAgainstManifest(readmes.map((r) => r.image));
+  if (missing.length === 0 && unexpected.length === 0) return;
+  const dockerfileFor = new Map(DOCKER_IMAGES.map((i) => [i.image, i.dockerfile]));
+  throw new Error(
+    [
+      `docker-readmes/ does not match the ${DOCKER_IMAGES.length} image(s) declared in scripts/lib/docker-images.ts:`,
+      ...missing.map(
+        (image) =>
+          `  scani/${image} has no README — create docker-readmes/${image}.md ` +
+          `(built from ${dockerfileFor.get(image) ?? 'an undeclared Dockerfile'})`
+      ),
+      ...unexpected.map(
+        (image) =>
+          `  docker-readmes/${image}.md has no image — add ${image} to ` +
+          `scripts/lib/docker-images.ts, or delete the file`
+      ),
+    ].join('\n')
+  );
+}
+
 function loadReadmes(only: string | null): ReadmeFile[] {
   const files = readdirSync(README_DIR)
     .filter((f) => f.endsWith('.md'))
     .sort();
   const parsed = files.map((f) => parseReadme(resolve(README_DIR, f)));
+  assertEveryImageHasAReadme(parsed);
   if (only) {
     const match = parsed.find((p) => p.image === only);
     if (!match) {
@@ -135,7 +174,14 @@ async function main(): Promise<void> {
   const only = onlyIdx >= 0 ? (args[onlyIdx + 1] ?? null) : null;
 
   const readmes = loadReadmes(only);
-  console.log(`Loaded ${readmes.length} README(s) from docker-readmes/`);
+  // Not `Loaded N README(s)`. That line was true at every N and told a reader
+  // nothing about whether N was all of them (SC-534) — so it names the set it
+  // reconciled against, and syncing a subset says so.
+  console.log(
+    `docker-readmes/ covers all ${DOCKER_IMAGES.length} published image(s): ` +
+      `${DOCKER_IMAGES.map((i) => i.image).join(', ')}`
+  );
+  if (only) console.log(`--only ${only}: syncing 1 of them.`);
   for (const r of readmes) {
     console.log(
       `  scani/${r.image.padEnd(14)} desc=${r.description.length}c body=${r.fullDescription.length}c`
