@@ -87,7 +87,7 @@ A four-service Bun monorepo plus a database:
 |---|---|
 | `apps/backend/api` | tRPC + Elysia HTTP server. Owns per-user credentialed integrations (exchange keys, brokerage tokens) so user creds never leave the tenant boundary. Acts as the BullMQ producer. |
 | `apps/backend/worker` | BullMQ consumer. Every scheduled job (pricing, balance syncs, historical backfill, transfer linking) and every user-initiated job (screenshot parse, import, delete) runs here. |
-| `apps/backend/data-provider` | tRPC service that centralises every outbound third-party call (CoinGecko, OpenAI, Etherscan, …). The api and worker call it over tRPC rather than talking to upstream APIs directly. The seam between Tier 1 and Tier 2/3 lives here. |
+| `apps/backend/data-provider` | tRPC service fronting object storage, the email transport, Open Graph metadata and token search. The seam between Tier 1 and Tier 2/3 lives here. Pricing, AI and chain calls are made by the api and worker directly, on every tier. |
 | `apps/frontend/app` | React + Vite SPA. End-to-end type-safe with the api via tRPC. |
 | Postgres + Redis + S3 | Postgres for everything durable, including the BullMQ job queue (`bullmq` schema). Redis for rate-limiter buckets and realtime fan-out — nothing that has to survive a restart. S3 (or compatible) for binary uploads. <!-- queue-store-ok: the point of the row is the contrast --> |
 

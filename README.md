@@ -94,14 +94,24 @@ feature flags, no code-level switches.
 | Tier | Data-provider runs on | Use case |
 |------|----------------------|----------|
 | **1 — Fully self-hosted** | The same machine as the rest of the stack (`bun run dev:stack`) | You run everything; ideal for personal use or operators who want full control |
-| **2 — Semi-managed** | A hosted data-provider you point at | You run the api + worker + frontend; a hosted endpoint provides centralized 3rd-party access (CoinGecko, OpenAI, Etherscan, …) without you managing the keys |
+| **2 — Semi-managed** | A hosted data-provider you point at | You run the api + worker + frontend; a hosted endpoint provides object storage, email, OG metadata and token search. **You still set your own provider API keys** — see below |
 | **3 — Fully managed** | A fully hosted deployment | Someone else runs the whole stack for you |
 
 The flow between them is just two env vars:
 
-- `SCANI_CLOUD_URL` — where to send outbound 3rd-party requests
-  (`http://data-provider:8082` for Tier 1; a hosted endpoint for Tier 2/3)
+- `SCANI_CLOUD_URL` — where to send object storage, email, OG-metadata
+  and token-search requests (`http://data-provider:8082` for Tier 1; a
+  hosted endpoint for Tier 2/3)
 - `SCANI_CLOUD_API_KEY` — the bearer token the api + worker present
+
+Those four are the whole list — they are the only adapters
+`packages/clients/cloud-client/src/` has. **Pricing, AI and chain calls
+do not travel.** The api, the worker and the data-provider each boot
+`buildProviderRegistry({ mode: 'direct' })` and call CoinGecko,
+DeFiLlama, Frankfurter, Finnhub, Etherscan, Helius and OpenAI
+themselves, so the provider API keys below are read by **your api and
+worker on every tier**. Moving to Tier 2 does not remove the need for
+them.
 
 ### Environment variables
 
@@ -119,9 +129,10 @@ must-set ones for any real deployment:
 | `S3_*` | Object storage (any S3-compatible store; MinIO locally, R2 / S3 / B2 / … in prod) |
 | `SCANI_CLOUD_URL` / `SCANI_CLOUD_API_KEY` | Where the data-provider lives + bearer to reach it |
 
-Optional integration keys (each one unlocks specific functionality —
-the corresponding tRPC router returns a `PRECONDITION_FAILED` error
-at call-time if unset):
+Optional integration keys, read by the api and the worker on every
+tier. Most **degrade silently** rather than refusing — a stack missing
+them comes up green on every health check and then serves worse data,
+so check the boot line rather than waiting for an error:
 
 - `COINGECKO_API_KEY`, `FINNHUB_API_KEY` — pricing
 - `OPENAI_API_KEY` — screenshot parsing
@@ -129,6 +140,30 @@ at call-time if unset):
 - `HELIUS_API_KEY` — Solana balances
 - `BINANCE_OAUTH_CLIENT_ID` / `_SECRET` / `_REDIRECT_URI` — Binance exchange connection
 - `FASTMAIL_API_TOKEN` — magic-link email delivery (or use `SMTP_URL` for any SMTP server)
+
+Every provider that has a keyless branch reports at boot, and the
+registry logs one summary line whether or not anything is degraded:
+
+```sh
+docker compose -f docker-compose.prod.yml logs api worker \
+  | grep 'provider credentials:'
+```
+
+Production logs are JSON (`LOG_PRETTY` is forced off when
+`NODE_ENV=production`), so the line arrives as a `msg` field:
+
+```
+{… "mode":"direct","msg":"✅ provider credentials: 5/5 keyed · keyed: coingecko, etherscan, finnhub, openai, solana · degraded: none"}
+
+{… "degraded":["COINGECKO_API_KEY","OPENAI_API_KEY"],"mode":"direct","msg":"⚠️  provider credentials: 3/5 keyed · keyed: etherscan, finnhub, solana · degraded: coingecko [COINGECKO_API_KEY unset → drops to the public rate-limited tier instead of the Pro host]; openai [OPENAI_API_KEY unset → throws on every call, so screenshot and document parsing fail]"}
+```
+
+The degraded line also carries a `degraded` array of just the unset
+variable names, which is the cheaper thing to alert on.
+
+The api serves the same record at `/health/deep` under
+`providerCredentials`. An unkeyed provider deliberately does not turn
+that endpoint red — it is a configuration choice, not an outage.
 
 ### Production
 
@@ -209,9 +244,12 @@ shipped as a separate PR you can read end-to-end before deciding.
 │                               │ over tRPC                              │
 │                               ▼                                        │
 │                       data-provider                                    │
-│                  (centralized 3rd-party calls:                         │
-│                   CoinGecko, Finnhub, DeFiLlama, OpenAI,               │
-│                   Etherscan, Helius, Google Sheets, …)                 │
+│                  (object storage, email, OG metadata,                  │
+│                   token search)                                        │
+│                                                                        │
+│  api + worker ──HTTPS──▶  CoinGecko, Finnhub, DeFiLlama, Frankfurter,  │
+│                           OpenAI, Etherscan, Helius, Google Sheets     │
+│                           (direct, with their own keys, every tier)    │
 │                                                                        │
 │  Postgres ◀─── api + worker + data-provider (Drizzle; BullMQ queue)    │
 │  Redis    ◀─── rate-limiter buckets + realtime fan-out                 │
@@ -228,11 +266,13 @@ Three deployable Bun services + one SPA:
   job (pricing refresh, balance syncs, historical backfills, transfer
   linking) and every user-initiated job (screenshot parse, import,
   delete) in one binary.
-- **`apps/backend/data-provider`** — tRPC service that centralizes
-  outbound 3rd-party calls. The api and worker call it over tRPC rather
-  than reaching for upstream APIs directly. This is the seam between
-  the tiers: in Tier 1 it's on `localhost:8082`, in Tier 2/3 it's a
-  hosted endpoint.
+- **`apps/backend/data-provider`** — tRPC service the api and worker
+  call for object storage, the email transport, Open Graph metadata and
+  token search. This is the seam between the tiers: in Tier 1 it's on
+  `localhost:8082`, in Tier 2/3 it's a hosted endpoint. It also exposes
+  `pricing.*`, `ai.*` and `chains.*` routers, which the api and worker
+  do **not** use — those calls are made directly, from their own
+  environment's keys.
 - **`apps/frontend/app`** — React + Vite SPA. tRPC client end-to-end
   type-safe with the api.
 

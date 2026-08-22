@@ -2,10 +2,10 @@
 
 The one process that talks to the outside world.
 
-The api and worker never call a third-party API directly; they hit this
-service over tRPC with `Authorization: Bearer <SCANI_CLOUD_API_KEY>`.
-That lets the same api+worker binaries run across all three deployment
-tiers:
+The api and worker reach four capabilities through this service over tRPC
+with `Authorization: Bearer <SCANI_CLOUD_API_KEY>` — object storage, email,
+Open Graph metadata and token search. That lets the same api+worker binaries
+run across all three deployment tiers:
 
 | Tier | Data-provider runs on | `SCANI_CLOUD_URL` | `SCANI_CLOUD_API_KEY` |
 |------|----------------------|-------------------|-----------------------|
@@ -29,10 +29,21 @@ never leave the tenant boundary.
 | Object storage | `storage.*` | S3-compatible storage (presign + read + delete) |
 | Open Graph | `og.fetchMetadata` | SSRF-hardened HTML fetch + `open-graph-scraper` |
 
-Every router has a matching `Cloud*` adapter in
+`storage.*`, `email.send`, `og.fetchMetadata` and `tokens.search` each have a
+matching `Cloud*` adapter in
 [`packages/clients/cloud-client`](../../../packages/clients/cloud-client/) so the
 domain services in `packages/business/domain` can swap the real implementation
 for a cloud-backed one without code-site churn.
+
+**`pricing.*`, `ai.*` and `chains.*` have no live caller.** The api and worker
+boot `buildProviderRegistry({ mode: 'direct' })` — as does this service — so
+each calls CoinGecko, Finnhub, DeFiLlama, OpenAI, Etherscan and Helius itself.
+The `CloudProviderClientBridge` that would route them here is constructed
+nowhere outside tests. The practical consequence: **provider API keys are
+required on the api and worker on every tier**, not only here, and a missing
+one degrades silently rather than failing at boot. `buildProviderRegistry`
+logs one `provider credentials:` summary line per service at boot, and
+`/health/deep` reports the same record under `providerCredentials`.
 
 ## Boot
 
