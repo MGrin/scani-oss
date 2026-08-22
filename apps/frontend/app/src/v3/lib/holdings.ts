@@ -400,3 +400,64 @@ export function entityOptions(
     .map(([value, label]) => ({ value, label }))
     .sort((a, b) => a.label.localeCompare(b.label));
 }
+
+/**
+ * The decimal scale the in-place balance editor parses at (SC-567).
+ *
+ * 18, and the eight it replaces was destroying balances. `parseAmountInput`
+ * truncates the VALUE at this scale while leaving the TEXT alone — deliberately,
+ * so a half-typed figure survives its own keystroke (SC-75). At a scale of 8
+ * that rule turns a real dust balance into `0.00000000` while the field on
+ * screen still reads `0.0000000004013`: the display and the value disagree, and
+ * the display is the reassuring one.
+ *
+ * 18 is the `minE` this project's `Decimal` is configured with and the precision
+ * `holdings.balance` actually stores (a `text` column, "Store as string for
+ * Decimal.js precision"), so nothing a balance can hold is truncated here. It is
+ * NOT `QUANTITY_DECIMALS`: that constant answers how many decimals to SHOW, and
+ * a display cap has no business deciding what a reader is allowed to type.
+ */
+export const BALANCE_EDIT_SCALE = 18;
+
+/**
+ * Whether an in-place balance edit carries a change worth writing.
+ *
+ * SC-567, and this is the guard that makes a data-loss path UNREACHABLE rather
+ * than merely unlikely.
+ *
+ * `HoldingAmountFact` seeds its editor from the balance it is displaying and
+ * saves whatever the field holds. Both halves were separately reasonable and
+ * together they destroyed data: the wire rounded any balance below `1e-8` to
+ * `0`, so the editor opened on `"0"` for a real position, and the save guard
+ * was `if (next)` — which `"0"` passes, being a non-empty string. Opening the
+ * peek on a dust holding, tapping the pencil to LOOK at the figure and tapping
+ * save wrote `0` over a balance nobody meant to touch, with no keystroke in
+ * between.
+ *
+ * WHY THAT LINE SURVIVED SOMEBODY EDITING SIX LINES ABOVE IT, which is the
+ * transferable part: `if (next)` READS as "is this a valid amount" and only IS
+ * "did they type anything". The line does exactly what it says; what it says
+ * is not what the reader needs. So going and checking it finds a correct line
+ * and moves on. Same family as `CREATE SCHEMA IF NOT EXISTS` reading as a
+ * guard when it is a convenience — the most durable shape of wrong on this
+ * codebase, because every reader who verifies it comes away reassured.
+ *
+ * WHY THIS STILL MATTERS ONCE THE WIRE IS FIXED, which is the change already
+ * in flight beside it: after that, the seed is the exact balance and saving it
+ * back is harmless. The guard is not here because the seed is currently wrong
+ * — it is here so that the destructive route is closed BY CONSTRUCTION, by the
+ * absence of an edit rather than by the seed happening to be faithful. A future
+ * change that reintroduces a lossy seed re-creates the display bug and cannot
+ * re-create the data loss. That is the difference between a fix and a fix that
+ * stays fixed.
+ *
+ * Compared as TEXT, not as numbers. `0.50` and `0.5` are the same balance, and
+ * a reader who retyped one as the other did touch the field — writing it is
+ * correct and costs nothing. The case this exists for is the one where nothing
+ * was typed at all, and there the two strings are identical.
+ */
+export function balanceEditWrites(seed: string, draft: string): boolean {
+  const next = draft.trim();
+  if (next === '') return false;
+  return next !== seed.trim();
+}

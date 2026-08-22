@@ -10,11 +10,14 @@ import {
   setFormatLocale,
   weekdayName,
 } from '@scani/shared';
+import { parseAmountInput } from '@scani/ui/v3/lib/amount-input';
 import i18n from 'i18next';
 import shellRu from '../../../src/i18n/locales/ru.json';
 import v3Ru from '../../../src/v3/i18n/locales/ru.json';
 import {
   amountDecimals,
+  BALANCE_EDIT_SCALE,
+  balanceEditWrites,
   compareHoldings,
   countsTowardTotal,
   daysInMonth,
@@ -491,5 +494,109 @@ describe('the yearly sentence in a language with cases', () => {
     // one helper for both would break whichever it was not written for.
     expect(inRussian(() => monthNameInDate(2))).toBe('февраля');
     expect(inRussian(() => monthName(2))).toBe('февраль');
+  });
+});
+
+/**
+ * SC-567 — the guard on the balance editor's save.
+ *
+ * The bug it closes was two reasonable halves meeting. `HoldingAmountFact`
+ * seeds its editor from the balance it is showing, and the wire rounded any
+ * balance below `1e-8` to `0` — so for a real dust position the editor opened
+ * on `"0"`. Its save guard was `if (next)`, and `"0"` passes that: it is a
+ * non-empty string. Tapping the pencil to look at the figure and tapping save
+ * wrote `0` over the balance, with no keystroke in between.
+ *
+ * THE FIXTURES ARE THE PRODUCTION VALUES, not round ones. Every existing test
+ * of this area uses `balance: '10'`, which is why the rounding this guard
+ * protects against had never once been executed in a test — a fixture that
+ * needs no formatting cannot test a formatter, and a balance that survives
+ * rounding cannot test a rounder.
+ */
+describe('balanceEditWrites', () => {
+  test('an untouched editor does not write, even when the seed reads as zero', () => {
+    // THE CASE THE GUARD EXISTS FOR. Before SC-567 this returned true and the
+    // real balance was replaced by 0.
+    expect(balanceEditWrites('0', '0')).toBe(false);
+  });
+
+  test('an untouched editor does not write when the seed is the real dust figure', () => {
+    // The same tap AFTER the wire is fixed. Still no write, and that is the
+    // point: the route is closed by the absence of an edit, not by the seed
+    // being faithful.
+    expect(balanceEditWrites('0.0000000004013', '0.0000000004013')).toBe(false);
+    expect(balanceEditWrites('0.000000000000000001', '0.000000000000000001')).toBe(false);
+  });
+
+  test('a cleared field does not write', () => {
+    // Emptying the box is not a request to set the balance to nothing; it is
+    // an abandoned edit. Writing `''` would fail validation server-side, and
+    // writing `0` would be inventing an intention.
+    expect(balanceEditWrites('143.59019742', '')).toBe(false);
+    expect(balanceEditWrites('143.59019742', '   ')).toBe(false);
+  });
+
+  test('a real edit writes, including one that only adds precision', () => {
+    expect(balanceEditWrites('0', '12500')).toBe(true);
+    expect(balanceEditWrites('143.59019742', '143.59019743')).toBe(true);
+    // The edit this whole ticket is about: correcting a wrongly-zeroed balance
+    // back to what it should be.
+    expect(balanceEditWrites('0', '0.0000000004013')).toBe(true);
+  });
+
+  test('surrounding whitespace is not an edit', () => {
+    expect(balanceEditWrites('12500', ' 12500 ')).toBe(false);
+  });
+
+  /**
+   * THE TEST A FUTURE READER WILL WANT TO DELETE, and the argument for
+   * deleting it is good: comparing balances as text means `0.50` and `0.5`
+   * read as different, so this writes where a numeric comparison would not.
+   *
+   * Argue with the reason, not the assertion. A reader who retyped `0.50` as
+   * `0.5` DID touch the field, and writing an identical balance costs nothing
+   * and loses nothing. The case this guard exists for is the one where nothing
+   * was typed at all, and there the two strings are identical by construction.
+   * A numeric comparison would additionally have to decide what `new
+   * Decimal('')` means and what to do when the draft does not parse — two more
+   * ways to be wrong, on the save path of a field that destroys data when it
+   * is wrong.
+   */
+  test('a differently-written but equal balance still writes', () => {
+    expect(balanceEditWrites('0.5', '0.50')).toBe(true);
+  });
+});
+
+/**
+ * SC-567 — the OTHER half of the same data loss, one layer down.
+ *
+ * The editor's save guard stops an untouched field writing. This stops a
+ * touched one writing the wrong thing: `parseAmountInput` truncates the value
+ * at the field's `decimalScale` and deliberately leaves the on-screen text
+ * alone (SC-75), so at a scale of 8 the field reads `0.0000000004013` while
+ * the value it would save is `0.00000000`. The screen and the value disagree
+ * and the screen is the one that reassures.
+ */
+describe('BALANCE_EDIT_SCALE', () => {
+  test('the balance editor parses a dust balance without truncating it', () => {
+    for (const balance of ['0.0000000004013', '0.000000000000000001', '143.59019742', '12500']) {
+      const parsed = parseAmountInput(balance, {
+        decimalScale: BALANCE_EDIT_SCALE,
+        allowNegative: false,
+      });
+      expect(`${balance} -> ${parsed.value}`).toBe(`${balance} -> ${balance}`);
+    }
+  });
+
+  test('the display cap would have truncated them, which is why it is not used here', () => {
+    // The negative control, and it is what makes the test above mean
+    // something: without it, a scale of 8 and a scale of 18 are
+    // indistinguishable on any balance anybody normally holds.
+    const parsed = parseAmountInput('0.0000000004013', {
+      decimalScale: 8,
+      allowNegative: false,
+    });
+    expect(parsed.value).toBe('0.00000000');
+    expect(parsed.text).toBe('0.0000000004013');
   });
 });
