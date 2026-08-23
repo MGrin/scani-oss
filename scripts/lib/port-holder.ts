@@ -112,21 +112,122 @@ export function describeHolder(holder: PortHolder, port: number): string {
 }
 
 /**
- * `docker ps` output, or `null` when docker could not answer.
+ * What a `docker ps` attempt actually did, as opposed to whether it worked
+ * (SC-591).
  *
- * Never throws and never blocks for long: the callers are gates and start-up
- * paths, whose job is to run rather than to require a working docker CLI. A
- * sandbox that denies the docker socket makes `null` the ordinary reading, not
- * an exceptional one — which is exactly why the callers print what they could
- * not determine instead of pretending.
+ * The three failures used to collapse into one `null`, which made an ABSENT
+ * daemon and a SLOW one the same fact. They are not the same fact and the
+ * difference is used three times over — see `dockerPs` below for the retry,
+ * and the callers for what they print.
+ *
+ * Measured on a 10-core Mac, 2026-08-23, unpiped:
+ *
+ *   outcome          ms    status   signal    error.code
+ *   ok             1324         0     null    —
+ *   absent          135         1     null    —          "failed to connect to the docker API…"
+ *   sandbox denied  270         1     null    —          "permission denied while trying to connect…"
+ *   timed out         9      null  SIGTERM    ETIMEDOUT  (measured with a 1ms cap)
+ *
+ * `absent` and `sandbox denied` share a signature and that is correct: both
+ * are settled facts about the environment that a longer wait cannot change.
+ * Only `timedOut` describes a question that was never asked.
  */
-function dockerPs(): string | null {
-  const probe = spawnSync('docker', ['ps', '--no-trunc', '--format', DOCKER_PS_FORMAT], {
-    encoding: 'utf8',
-    timeout: 10_000,
-  });
-  if (probe.status !== 0 || typeof probe.stdout !== 'string') return null;
-  return probe.stdout;
+export type DockerProbe =
+  | { kind: 'ok'; output: string }
+  | { kind: 'timedOut' }
+  | { kind: 'unavailable'; reason: string };
+
+/**
+ * Classify one attempt. Pure, so the tests drive every branch from a fixture
+ * rather than from whatever the daemon is doing on the day — which is the
+ * whole reason SC-591 took a second reporter to establish.
+ */
+export function classifyDockerProbe(probe: {
+  status: number | null;
+  stdout?: string | null;
+  stderr?: string | null;
+  error?: { code?: string } | undefined;
+}): DockerProbe {
+  // The timeout is reported on `error`, never on `status` — a killed child has
+  // a null status, so testing the status first would classify it as a plain
+  // failure and lose the one case worth retrying.
+  if (probe.error?.code === 'ETIMEDOUT') return { kind: 'timedOut' };
+  if (probe.status !== 0 || typeof probe.stdout !== 'string') {
+    const reason = (probe.stderr ?? '').trim().split('\n')[0] ?? '';
+    return { kind: 'unavailable', reason: reason === '' ? 'docker exited non-zero' : reason };
+  }
+  return { kind: 'ok', output: probe.stdout };
+}
+
+/**
+ * The first attempt's budget. Kept where it was, because it is what makes the
+ * common case fast: an answering daemon returned in 1.3s and a denied socket
+ * in 270ms, so nothing healthy is anywhere near it.
+ */
+export const FIRST_ATTEMPT_MS = 10_000;
+
+/**
+ * The retry's budget, paid ONLY on a timeout.
+ *
+ * WHY A RETRY AND NOT A HIGHER CAP, which is the fix this looks like it wants.
+ * The defect is not that 10s is too small a number. It is that ONE SAMPLE IS
+ * NOT A MEASUREMENT — the same shape as a spawn gate reading a single
+ * 1-minute load average and firing on a dip. Raising the cap keeps one sample
+ * and just moves the straddle point further out.
+ *
+ * The two halves are evidenced separately and are worth keeping apart:
+ *
+ *   RETRYING addresses the straddle, and that is a second reporter's
+ *   measurement, not an inference. Their gate hit exit 8 on this call at load
+ *   62; the same
+ *   `docker ps` then succeeded BY HAND seconds later at the same load, and
+ *   their re-run got past ownership at load 43. A call that fails and then
+ *   succeeds under unchanged conditions was never describing the conditions.
+ *
+ *   THE LARGER BUDGET addresses a genuinely slow answer, and that is measured
+ *   here: 12.6s at load 38 and 23.8s at load 36, against 5.7s at load 25. A
+ *   second 10s attempt would straddle 23.8s exactly as the first one did.
+ *
+ * So: sample twice, and give the second sample room for the slowest answer
+ * anyone has actually recorded. Neither half is sufficient alone.
+ *
+ * Bounded rather than unbounded because a hung daemon must not hang a gate:
+ * worst case 40s, spent only when docker is genuinely slow, and never on the
+ * absent or denied cases — those are classified out before the retry.
+ */
+export const RETRY_MS = 30_000;
+
+/**
+ * Sample twice, and ONLY when the first sample timed out.
+ *
+ * Injectable so the policy is provable from a fixture: a retry nobody has
+ * watched fire is a retry that may not, and the test that matters most here is
+ * the one asserting it does NOT fire — see `port-holder.test.ts`.
+ *
+ * THE RESTRAINT IS LOAD-BEARING, not tidiness. A denied socket is the ordinary
+ * case for every agent on this machine and arrives in 270ms; retrying it would
+ * put the whole 30s budget on every sandboxed run to re-learn a fact that
+ * cannot change. An absent daemon is the same — the operator's next move is
+ * `open -a OrbStack`, and no amount of waiting gets them there sooner. So the
+ * cheap, common failures stay cheap and only the answerable one is paid for.
+ *
+ * Never throws and never blocks unboundedly: the callers are gates and
+ * start-up paths whose job is to run.
+ */
+export function probeWithRetry(attempt: (timeoutMs: number) => DockerProbe): DockerProbe {
+  const first = attempt(FIRST_ATTEMPT_MS);
+  return first.kind === 'timedOut' ? attempt(RETRY_MS) : first;
+}
+
+function dockerPs(): DockerProbe {
+  return probeWithRetry((timeout) =>
+    classifyDockerProbe(
+      spawnSync('docker', ['ps', '--no-trunc', '--format', DOCKER_PS_FORMAT], {
+        encoding: 'utf8',
+        timeout,
+      })
+    )
+  );
 }
 
 export interface PortOwnership {
@@ -134,12 +235,56 @@ export interface PortOwnership {
   determined: boolean;
   holders: PortHolder[];
   foreign: PortHolder | null;
+  /**
+   * Why docker could not be asked, when `determined` is `false` (SC-591).
+   *
+   * `undetermined` is not one situation and a caller that prints it as one
+   * gives half its readers a remedy for someone else's problem. A `timedOut`
+   * reader is told to wait or re-run; an `unavailable` reader is told what
+   * docker actually said, which is usually a socket path and a verb they can
+   * act on. `null` when docker answered.
+   */
+  blind: DockerProbe | null;
 }
 
-/** Who holds `port`, judged against `worktreePath`. */
+/**
+ * Who holds `port`, judged against `worktreePath`.
+ *
+ * A blind result is still a RESULT: `determined: false` with `blind` naming
+ * which of the two blindnesses it was. Nothing here decides anything on the
+ * strength of not knowing — that is each caller's call, and `gate-db` and
+ * `db:dev` deliberately make it differently (SC-590).
+ */
 export function portOwnership(port: number, worktreePath: string): PortOwnership {
-  const output = dockerPs();
-  if (output === null) return { determined: false, holders: [], foreign: null };
-  const holders = parsePortHolders(output, port);
-  return { determined: true, holders, foreign: foreignHolder(holders, worktreePath) };
+  const probe = dockerPs();
+  if (probe.kind !== 'ok') {
+    return { determined: false, holders: [], foreign: null, blind: probe };
+  }
+  const holders = parsePortHolders(probe.output, port);
+  return {
+    determined: true,
+    holders,
+    foreign: foreignHolder(holders, worktreePath),
+    blind: null,
+  };
+}
+
+/**
+ * One sentence for a blind probe, matched to which blindness it was (SC-591).
+ *
+ * Deliberately says what the reader's NEXT ACTION differs on, because that is
+ * the only reason this distinction is worth carrying: a timeout is a question
+ * that can still be answered, and everything else is a settled fact about the
+ * environment that no amount of waiting will change.
+ */
+export function describeBlindProbe(probe: DockerProbe): string {
+  if (probe.kind === 'timedOut') {
+    return (
+      `docker ps did not answer within ${FIRST_ATTEMPT_MS / 1000}s, nor within ` +
+      `${RETRY_MS / 1000}s on a retry — the box is loaded enough that the question ` +
+      'could not be asked, not that it has no answer'
+    );
+  }
+  if (probe.kind === 'unavailable') return `docker could not be asked: ${probe.reason}`;
+  return 'docker answered';
 }
