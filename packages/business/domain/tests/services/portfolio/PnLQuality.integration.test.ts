@@ -64,20 +64,66 @@ const SPECS: HoldingSpec[] = [
   { key: 'complete-fresh', historyComplete: true, priceAgeDays: 0 },
 ];
 
+/**
+ * The fixture is built and torn down by hand rather than through
+ * `withTestDb`, and that is deliberate rather than an oversight (SC-594).
+ *
+ * `withTestDb` hands the body a transaction and rolls it back. Every other
+ * caller of it is a repository or service test that passes that transaction
+ * *in*, so the code under test reads the uncommitted rows. This file's whole
+ * purpose is the opposite — it calls `PnLAtTimeService.getPnL` with nothing
+ * stubbed, and neither it nor the services beneath it
+ * (`PortfolioValuationAtTimeService`, `BalanceAtTimeService`,
+ * `PriceGraphService`, `CostBasisService`) accepts a transaction: they all
+ * read through the connection pool. Rows written inside a rolled-back
+ * transaction are invisible to that pool, so the service would value an
+ * empty portfolio and every assertion below would be measuring nothing.
+ *
+ * Measured 2026-08-23 with a throwaway probe on this branch: inside one
+ * `withTestDb` callback the transaction saw 1 holding and `getPnL` saw 0.
+ * Converting this file before threading a transaction through those services
+ * is therefore not a speed-up, it is a silent loss of coverage.
+ *
+ * What the conversion was wanted for was the round-trip cost, and that is
+ * dealt with here directly: statements are batched, and issued in parallel
+ * wherever nothing in the group depends on the result. Setup and teardown
+ * cost 13 round trips per test rather than 35. The cost is pure latency —
+ * 4 tests x 35 sequential statements is what made this the first file in the
+ * suite to blow its deadline whenever the machine is busy.
+ */
 async function setupFixture(): Promise<Fixture> {
   const suffix = randomUUID().slice(0, 6);
-  const [tokenType] = await db
-    .insert(schema.tokenTypes)
-    .values({ code: `pnlq-${suffix}`, name: 'PnLQ Token Type' })
-    .returning();
-  const [baseCurrency] = await db
-    .insert(schema.tokens)
-    .values({
-      symbol: `PQB${suffix.toUpperCase()}`,
-      name: 'PnLQ Base',
-      typeId: tokenType!.id,
-    })
-    .returning();
+
+  const [[tokenType], [institutionType], [accountType]] = await Promise.all([
+    db
+      .insert(schema.tokenTypes)
+      .values({ code: `pnlq-${suffix}`, name: 'PnLQ Token Type' })
+      .returning(),
+    db
+      .insert(schema.institutionTypes)
+      .values({ code: `pnlq-i-${suffix}`, name: 'PnLQ Institution Type' })
+      .returning(),
+    db
+      .insert(schema.accountTypes)
+      .values({ code: `pnlq-a-${suffix}`, name: 'PnLQ Account Type' })
+      .returning(),
+  ]);
+
+  const [[baseCurrency], [institution]] = await Promise.all([
+    db
+      .insert(schema.tokens)
+      .values({
+        symbol: `PQB${suffix.toUpperCase()}`,
+        name: 'PnLQ Base',
+        typeId: tokenType!.id,
+      })
+      .returning(),
+    db
+      .insert(schema.institutions)
+      .values({ name: 'PnLQ Institution', typeId: institutionType!.id })
+      .returning(),
+  ]);
+
   const [user] = await db
     .insert(schema.users)
     .values({
@@ -86,18 +132,7 @@ async function setupFixture(): Promise<Fixture> {
       baseCurrencyId: baseCurrency!.id,
     })
     .returning();
-  const [institutionType] = await db
-    .insert(schema.institutionTypes)
-    .values({ code: `pnlq-i-${suffix}`, name: 'PnLQ Institution Type' })
-    .returning();
-  const [institution] = await db
-    .insert(schema.institutions)
-    .values({ name: 'PnLQ Institution', typeId: institutionType!.id })
-    .returning();
-  const [accountType] = await db
-    .insert(schema.accountTypes)
-    .values({ code: `pnlq-a-${suffix}`, name: 'PnLQ Account Type' })
-    .returning();
+
   const [account] = await db
     .insert(schema.accounts)
     .values({
@@ -109,63 +144,83 @@ async function setupFixture(): Promise<Fixture> {
     .returning();
 
   const now = Date.now();
-  const tokenIds: string[] = [];
-  const holdings: Record<string, string> = {};
 
-  for (const spec of SPECS) {
-    const [token] = await db
-      .insert(schema.tokens)
-      .values({
-        symbol: `PQ${spec.key.slice(0, 2).toUpperCase()}${randomUUID().toUpperCase()}`,
+  // One statement for all four tokens, keyed back by symbol rather than by
+  // the order RETURNING happens to emit — SQL does not promise that order.
+  const symbolFor = new Map(
+    SPECS.map((spec) => [
+      spec.key,
+      `PQ${spec.key.slice(0, 2).toUpperCase()}${randomUUID().toUpperCase()}`,
+    ])
+  );
+  const tokenRows = await db
+    .insert(schema.tokens)
+    .values(
+      SPECS.map((spec) => ({
+        symbol: symbolFor.get(spec.key)!,
         name: `PnLQ ${spec.key}`,
         typeId: tokenType!.id,
-      })
-      .returning();
-    tokenIds.push(token!.id);
+      }))
+    )
+    .returning();
+  const tokenBySymbol = new Map(tokenRows.map((t) => [t.symbol, t]));
+  const tokenFor = (key: string) => tokenBySymbol.get(symbolFor.get(key)!)!;
 
-    const [holding] = await db
-      .insert(schema.holdings)
-      .values({
+  const holdingRows = await db
+    .insert(schema.holdings)
+    .values(
+      SPECS.map((spec) => ({
         userId: user!.id,
         accountId: account!.id,
-        tokenId: token!.id,
+        tokenId: tokenFor(spec.key).id,
         balance: '10',
-      })
-      .returning();
-    holdings[spec.key] = holding!.id;
+      }))
+    )
+    .returning();
+  const holdingByToken = new Map(holdingRows.map((h) => [h.tokenId, h]));
+  const holdingFor = (key: string) => holdingByToken.get(tokenFor(key).id)!;
 
-    // One acquisition, priced in the base currency so the walk needs no FX —
-    // every holding therefore has an identical, fully-known cost basis of 500.
-    // Any difference in the output is the *grade*, never the arithmetic.
-    await db.insert(schema.holdingTransactions).values({
-      userId: user!.id,
-      holdingId: holding!.id,
-      tokenId: token!.id,
-      kind: 'buy',
-      quantity: '10',
-      priceNative: '50',
-      priceNativeTokenId: baseCurrency!.id,
-      occurredAt: new Date(now - 200 * DAY_MS),
-      externalId: `pnlq-${spec.key}-${suffix}`,
-      source: 'test',
-    });
-
+  await Promise.all([
+    // One acquisition each, priced in the base currency so the walk needs no
+    // FX — every holding therefore has an identical, fully-known cost basis
+    // of 500. Any difference in the output is the *grade*, never the
+    // arithmetic.
+    db.insert(schema.holdingTransactions).values(
+      SPECS.map((spec) => ({
+        userId: user!.id,
+        holdingId: holdingFor(spec.key).id,
+        tokenId: tokenFor(spec.key).id,
+        kind: 'buy',
+        quantity: '10',
+        priceNative: '50',
+        priceNativeTokenId: baseCurrency!.id,
+        occurredAt: new Date(now - 200 * DAY_MS),
+        externalId: `pnlq-${spec.key}-${suffix}`,
+        source: 'test',
+      }))
+    ),
     // The flag every provider writes honestly. `false` is what Kraken reports
     // once its ledger endpoint pages out at 20,000 rows.
-    await db.insert(schema.holdingCoverage).values({
-      holdingId: holding!.id,
-      hasCompleteTxHistory: spec.historyComplete,
-    });
+    db.insert(schema.holdingCoverage).values(
+      SPECS.map((spec) => ({
+        holdingId: holdingFor(spec.key).id,
+        hasCompleteTxHistory: spec.historyComplete,
+      }))
+    ),
+    db.insert(schema.tokenPrices).values(
+      SPECS.map((spec) => ({
+        tokenId: tokenFor(spec.key).id,
+        baseTokenId: baseCurrency!.id,
+        price: '60',
+        timestamp: new Date(now - spec.priceAgeDays * DAY_MS),
+        granularity: 'daily' as const,
+        source: 'test',
+      }))
+    ),
+  ]);
 
-    await db.insert(schema.tokenPrices).values({
-      tokenId: token!.id,
-      baseTokenId: baseCurrency!.id,
-      price: '60',
-      timestamp: new Date(now - spec.priceAgeDays * DAY_MS),
-      granularity: 'daily',
-      source: 'test',
-    });
-  }
+  const holdings: Record<string, string> = {};
+  for (const spec of SPECS) holdings[spec.key] = holdingFor(spec.key).id;
 
   return {
     userId: user!.id,
@@ -174,12 +229,15 @@ async function setupFixture(): Promise<Fixture> {
     institutionTypeId: institutionType!.id,
     institutionId: institution!.id,
     accountTypeId: accountType!.id,
-    tokenIds,
+    tokenIds: SPECS.map((spec) => tokenFor(spec.key).id),
     holdings,
   };
 }
 
 async function cleanupFixture(f: Fixture): Promise<void> {
+  // Serial only where a foreign key forces it: deleting the user cascades its
+  // accounts, holdings, transactions and coverage rows, and that is what
+  // frees the tokens and the two type tables below.
   await db
     .delete(schema.portfolioValueDaily)
     .where(eq(schema.portfolioValueDaily.userId, f.userId));
@@ -190,12 +248,14 @@ async function cleanupFixture(f: Fixture): Promise<void> {
   await db
     .delete(schema.tokens)
     .where(inArray(schema.tokens.id, [...f.tokenIds, f.baseCurrencyId]));
-  await db.delete(schema.institutions).where(eq(schema.institutions.id, f.institutionId));
-  await db.delete(schema.accountTypes).where(eq(schema.accountTypes.id, f.accountTypeId));
-  await db
-    .delete(schema.institutionTypes)
-    .where(eq(schema.institutionTypes.id, f.institutionTypeId));
-  await db.delete(schema.tokenTypes).where(eq(schema.tokenTypes.id, f.tokenTypeId));
+  await Promise.all([
+    db.delete(schema.institutions).where(eq(schema.institutions.id, f.institutionId)),
+    db.delete(schema.accountTypes).where(eq(schema.accountTypes.id, f.accountTypeId)),
+  ]);
+  await Promise.all([
+    db.delete(schema.institutionTypes).where(eq(schema.institutionTypes.id, f.institutionTypeId)),
+    db.delete(schema.tokenTypes).where(eq(schema.tokenTypes.id, f.tokenTypeId)),
+  ]);
 }
 
 beforeEach(async () => {
