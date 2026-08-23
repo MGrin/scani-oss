@@ -62,6 +62,8 @@ ownership rule.
 | `CLOUD_MANAGEMENT_ENABLED` | app (data-provider) | Tier 2/3 only. Enables cloud-management surface. |
 | `BETTER_AUTH_URL` | app (data-provider) | Public URL of the data-provider for cloud-management cookies. |
 | `CLOUD_FRONTEND_ORIGIN` | app (data-provider) | CORS origin for cloud-management console. |
+| `CLOUD_QUOTA_HOURLY_DEFAULT` | app (data-provider) | Requests allowed per API key per rolling hour. Enforced per key (the limiter is keyed by apiKeyId); the value is one global default — `cloud_api_keys.quota_monthly_requests` is not read on the request path. **`0` or absent = no quota**, so every key gets an unbounded budget on *your* provider accounts. |
+| `GLOBAL_HOURLY_USD_CAP` | app (data-provider) | Cumulative upstream USD per hour across all tenants. Trips a circuit breaker; further requests get 503 until the next hour-bucket. Decimals allowed. **`0` or absent = no cap.** |
 | `VITE_DATA_PROVIDER_URL` | cloud + landing (frontend) | Where those SPAs send tRPC calls. Baked at build time. Empty is legal and means same-origin, which is how dev works through the Vite proxy. |
 | `DATA_PROVIDER_PROXY_TARGET` | cloud (vite dev server) | What that dev proxy forwards to. Default `http://localhost:8082`. Dev only — the production build never reads it. |
 
@@ -190,7 +192,7 @@ All exposed by `apps/backend/api` (and surfaced via nginx as
 | `/readyz` | Readiness. 200 only if **DB + Redis + schema** are all healthy. Returns 503 (with a per-check breakdown) if migrations haven't been applied. | k8s readiness probe; load-balancer upstream check; `docker-compose.prod.yml` api healthcheck. |
 | `/health/db` | DB ping + pool stats. | Operator debugging. |
 | `/health/ws` | WebSocket stats. | Operator debugging. |
-| `/health/deep` | DB + schema-drift + Redis + R2 + AI. 200 `ok` / 503 `degraded` with a per-check breakdown. Also reports `providerCredentials` — which platform provider keys are absent — which is **reported, never gated**, so it cannot 503 a deployment that simply has not bought a key. | Deploy-time smoke test. NOT for traffic routing — slow. |
+| `/health/deep` | DB + schema-drift + Redis + R2 + AI. 200 `ok` / 503 `degraded` with a per-check breakdown. Also reports `providerCredentials` — which platform provider keys are absent — and `costControls` — which of the two spend bounds are enforcing, distinguishing a bound set to `0` (`off`) from one that was never set (`unset`). Both are **reported, never gated**, so neither can 503 a deployment that simply has not bought a key or has no external callers to bound. | Deploy-time smoke test. NOT for traffic routing — slow. |
 
 The `data-provider` exposes `/health` (process liveness) on its bind
 port. The prod `frontend-app` image exposes `/healthz` (nginx alive),
