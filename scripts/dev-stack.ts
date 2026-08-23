@@ -24,7 +24,12 @@
 
 import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
-import { describeHolder, portOwnership } from './lib/port-holder';
+import {
+  type DockerProbe,
+  describeBlindProbe,
+  describeHolder,
+  portOwnership,
+} from './lib/port-holder';
 import {
   composeProjectName,
   devDatabaseName,
@@ -166,6 +171,7 @@ async function run(command: string[], env: Record<string, string>): Promise<numb
 export function explainPortConflicts(env: Record<string, string>): string {
   const lines: string[] = [];
   let asked = false;
+  let blind: DockerProbe | null = null;
 
   // Only what this compose file publishes: a port no service binds cannot be
   // the reason an `up` failed, and naming its holder would send somebody after
@@ -174,13 +180,21 @@ export function explainPortConflicts(env: Record<string, string>): string {
     const port = Number(env[service.env]);
     if (!Number.isInteger(port)) continue;
     const ownership = portOwnership(port, REPO_ROOT);
-    if (!ownership.determined) break;
+    if (!ownership.determined) {
+      blind = ownership.blind;
+      break;
+    }
     asked = true;
     if (ownership.foreign) lines.push(`  ${describeHolder(ownership.foreign, port)}`);
   }
 
   if (!asked) {
-    return 'dev-stack: could not ask docker who holds these ports, so the bind failure above is all there is\n';
+    // Naming WHICH blindness, because the reader's next move differs (SC-591):
+    // a timeout can be re-run, a denied or absent socket cannot be waited out.
+    return (
+      'dev-stack: could not ask docker who holds these ports, so the bind failure above is all there is\n' +
+      (blind === null ? '' : `dev-stack: ${describeBlindProbe(blind)}\n`)
+    );
   }
   if (lines.length === 0) return '';
 
