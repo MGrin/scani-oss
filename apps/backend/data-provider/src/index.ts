@@ -56,6 +56,7 @@ import {
   installQuotaLimiter,
   installUsageSink,
 } from './presentation/trpc';
+import { describeCostControls } from './usage/cost-controls-report';
 import { GlobalCostBreaker } from './usage/global-cost-breaker';
 import { NoopUsageSink, PostgresUsageSink, type UsageSink } from './usage/sink';
 
@@ -147,6 +148,15 @@ const bootState: DataProviderBootState = {
   cloudDb: null,
   betterAuth: null,
 };
+
+// Derived once from env so the boot line and `/health/deep` cannot
+// disagree about which bounds are enforcing (SC-582). Both are pure
+// functions of the parsed env, which is frozen for the process lifetime.
+const costControls = describeCostControls({
+  quotaHourlyDefault: env.CLOUD_QUOTA_HOURLY_DEFAULT,
+  globalHourlyUsdCap: env.GLOBAL_HOURLY_USD_CAP,
+  cloudManagementEnabled: env.CLOUD_MANAGEMENT_ENABLED,
+});
 
 // Pre-install no-op deps so any request that races boot completion
 // finds a sensible default (rather than NPE-ing on a null sink).
@@ -463,11 +473,24 @@ const app = new Elysia()
     // choice rather than an outage. Folding it in would 503 every dev and
     // self-host deployment that has not bought a CoinGecko Pro plan, and an
     // endpoint that is always red is one nobody reads.
+    //
+    // SC-582 adds `costControls` on that same contract, for the same
+    // reason: a bound that is off is a configuration state, not an
+    // outage. It answers the question no other surface can — an absent
+    // variable and one set to 0 are the same disabled state reached two
+    // different ways, and neither leaves a trace anywhere else.
     return {
       status: ok ? 'ok' : 'degraded',
       timestamp: new Date().toISOString(),
       checks,
       providerCredentials: Container.get(ProviderCredentialReport).healthPayload(),
+      costControls: {
+        enforcing: costControls.controls.filter((c) => c.enforcing).map((c) => c.envVar),
+        notEnforcing: costControls.controls
+          .filter((c) => !c.enforcing)
+          .map((c) => ({ envVar: c.envVar, state: c.state, unbounded: c.unboundedWhenOff })),
+        exposed: costControls.exposed,
+      },
     };
   })
   // Probe of the R2 bucket the data-provider holds credentials for.
@@ -582,41 +605,51 @@ void (async () => {
       }
       installUsageSink(usageSink);
 
-      // Per-API-key hourly quota. Disabled when CLOUD_QUOTA_HOURLY_DEFAULT
-      // is 0 / unset (OSS / dev). The limiter is keyed by apiKeyId so
+      // Per-API-key hourly quota. Not installed when CLOUD_QUOTA_HOURLY_DEFAULT
+      // is 0 or absent (OSS / dev). The limiter is keyed by apiKeyId so
       // each of a tenant's keys carries an independent budget;
       // future per-tier overrides can swap in a multi-tier registry
       // without changing the middleware contract.
-      if (env.CLOUD_QUOTA_HOURLY_DEFAULT > 0) {
+      const hourlyQuota = env.CLOUD_QUOTA_HOURLY_DEFAULT;
+      if (hourlyQuota !== null && hourlyQuota > 0) {
         installQuotaLimiter(
           createOutflowLimiter({
-            maxRequests: env.CLOUD_QUOTA_HOURLY_DEFAULT,
+            maxRequests: hourlyQuota,
             windowMs: 60 * 60 * 1000,
             redis: redisConnection,
             namespace: 'quota:hourly',
           })
         );
-        logger.info(
-          { hourlyDefault: env.CLOUD_QUOTA_HOURLY_DEFAULT },
-          'quota: per-API-key hourly budget enabled'
-        );
       }
 
-      // Org-wide hourly cost breaker. Disabled when GLOBAL_HOURLY_USD_CAP
-      // is 0 / unset. Tracks cumulative `upstreamCostUsd` across ALL
+      // Org-wide hourly cost breaker. Not installed when GLOBAL_HOURLY_USD_CAP
+      // is 0 or absent. Tracks cumulative `upstreamCostUsd` across ALL
       // tenants in Redis; tripped state rejects new requests with 503
       // until the next hour-bucket starts. Catches runaway loops that
       // bypass the per-API-key quota.
-      if (env.GLOBAL_HOURLY_USD_CAP > 0) {
+      const hourlyUsdCap = env.GLOBAL_HOURLY_USD_CAP;
+      if (hourlyUsdCap !== null && hourlyUsdCap > 0) {
         installGlobalCostBreaker(
           new GlobalCostBreaker(redisConnection, {
-            hourlyUsdCap: env.GLOBAL_HOURLY_USD_CAP,
+            hourlyUsdCap,
           })
         );
-        logger.info(
-          { hourlyUsdCap: env.GLOBAL_HOURLY_USD_CAP },
-          'cost-breaker: global hourly USD cap enabled'
-        );
+      }
+
+      // ONE line, on every boot, whichever way the two guards above went
+      // (SC-582). Until this existed, an enforcing control logged and a
+      // non-enforcing one logged nothing — so a data-provider serving
+      // external keys with no ceiling at all was byte-for-byte
+      // indistinguishable in its logs from one that was fully bounded.
+      //
+      // `warn` only when cloud management is on, because that is the
+      // difference between an unbounded control and a reachable one: an
+      // OSS single-tenant deployment has no external caller to bound, and
+      // a warning it can never clear is a warning it learns to skip.
+      if (costControls.exposed) {
+        logger.warn({ costControls: costControls.controls }, costControls.summary);
+      } else {
+        logger.info({ costControls: costControls.controls }, costControls.summary);
       }
 
       bootState.ready = true;

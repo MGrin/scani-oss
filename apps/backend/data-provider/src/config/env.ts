@@ -63,31 +63,39 @@ const envSchema = z.object({
     .transform((v) => v === 'true' || v === '1'),
 
   // Default per-API-key request budget over a 1-hour rolling window.
-  // 0 (or unset) = quota disabled — OSS / dev boots unmetered. The
-  // bearer middleware reads the running counter from Redis and rejects
-  // with `FORBIDDEN { code: 'quota_exceeded' }` when the budget is gone.
-  // Per-tier / per-key overrides are a future improvement; this is the
-  // single global ceiling so a runaway tenant can't burn unbounded
-  // upstream cost.
+  // The bearer middleware reads the running counter from Redis and
+  // rejects with `FORBIDDEN { code: 'quota_exceeded' }` when the budget
+  // is gone. Enforcement is per key — the limiter is keyed by apiKeyId,
+  // so every key carries its own budget — but the VALUE is one global
+  // default; per-tier / per-key overrides are a future improvement.
+  //
+  // `null` means the variable was absent. `0` means somebody set it to
+  // zero. Both disable the quota and the two are NOT the same fact
+  // (SC-582): an absent bound is a deployment nobody has decided about,
+  // an explicit `0` is a decision. Collapsing them with `.default('0')`
+  // is what made a deliberately-off control indistinguishable from an
+  // overlooked one, and the boot line reports which of the two it is.
   CLOUD_QUOTA_HOURLY_DEFAULT: z
     .string()
     .optional()
-    .default('0')
-    .transform((v) => Number.parseInt(v, 10))
-    .refine((n) => Number.isFinite(n) && n >= 0, {
+    .transform((v) => (v === undefined || v === '' ? null : Number.parseInt(v, 10)))
+    .refine((n) => n === null || (Number.isFinite(n) && n >= 0), {
       message: 'CLOUD_QUOTA_HOURLY_DEFAULT must be a non-negative integer',
     }),
 
   // Org-wide hourly cap on cumulative `upstreamCostUsd` across all
   // tenants. Trips the GlobalCostBreaker when exceeded; subsequent
   // requests get 503 until the next hour-bucket. Decimal supported
-  // for cents-level granularity. 0 / unset disables the breaker.
+  // for cents-level granularity.
+  //
+  // Same `null` vs `0` distinction as above. It matters most here: a
+  // deployment may decide against a dollar cap deliberately, and that
+  // must not read as an oversight to whoever inherits the config.
   GLOBAL_HOURLY_USD_CAP: z
     .string()
     .optional()
-    .default('0')
-    .transform((v) => Number.parseFloat(v))
-    .refine((n) => Number.isFinite(n) && n >= 0, {
+    .transform((v) => (v === undefined || v === '' ? null : Number.parseFloat(v)))
+    .refine((n) => n === null || (Number.isFinite(n) && n >= 0), {
       message: 'GLOBAL_HOURLY_USD_CAP must be a non-negative number',
     }),
 
