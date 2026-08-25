@@ -25,6 +25,7 @@ export const V3_A11Y_ROUTES: readonly string[] = [
   '/institutions',
   '/vaults',
   '/groups',
+  '/entities',
   '/tokens',
   '/jobs',
   '/documents',

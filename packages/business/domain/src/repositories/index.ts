@@ -22,6 +22,7 @@ export {
   DocumentRepository,
   type ListDocumentsOptions,
 } from './DocumentRepository';
+export { EntityRepository } from './EntityRepository';
 export {
   AccountTypeRepository,
   InstitutionTypeRepository,
