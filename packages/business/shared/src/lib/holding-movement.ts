@@ -54,21 +54,23 @@ export function isHoldingMovementDirection(value: unknown): value is HoldingMove
  *
  * ## Why `internal` is refused HERE and nowhere else
  *
- * `internal` means "it went to that holding of mine, and nothing imported the
- * arrival" — so `TransferReviewService.resolve` WRITES the arrival row. That
- * is right for the queue, where the outflow is historical and the destination
- * was already observed by whatever produced its balance.
- *
- * It is wrong for a movement being recorded now. `writeInflow` inserts the
- * arrival and never moves an EXISTING destination holding's balance — it sets
- * one only on a holding it creates, because `holdings.balance` is an anchor
- * rather than a sum. Somebody saying "move 2000 from A to B" expects B to rise
- * by 2000, and routed through `internal` the source would fall, the
- * destination would not rise, both rows would exist and nothing would error.
+ * Because this direction cannot SAY it. `internal` means "it went to that
+ * holding of mine", and the answer is only complete with a
+ * `TransferDestinationRef` naming which — a field the `outflow` shape does not
+ * carry and deliberately does not, since the `transfer` DIRECTION below is
+ * where a destination account belongs. An `internal` accepted here would be an
+ * answer with nowhere to point.
  *
  * So the third thing a person can say about an outflow — *it went to another
- * account I hold* — is the `transfer` DIRECTION here, which writes both legs
- * and links them. Same answer, expressed where it can be true.
+ * account I hold* — is the `transfer` direction, which writes both legs and
+ * links them. Same answer, expressed where it can be true.
+ *
+ * **This used to be justified by `writeInflow` never moving an existing
+ * destination's balance, and that reason is gone (SC-614).** The manual path
+ * no longer routes an `internal` answer through `writeInflow` at all:
+ * `UpdateHoldingUseCase.moveDeclaredTransfer` writes both legs and moves both
+ * anchors, exactly as a `transfer` here does. The refusal survives its own
+ * reason because the structural one above was always the stronger of the two.
  *
  * ## Why no default, on any token type
  *

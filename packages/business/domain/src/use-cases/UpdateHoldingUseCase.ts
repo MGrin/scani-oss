@@ -6,13 +6,20 @@ import {
   collidingHoldingTokens,
   type ManualEditCause,
   type ManualOutflowAnswer,
+  type TransferDestinationRef,
 } from '@scani/shared';
+import Decimal from 'decimal.js';
 import { and, eq } from 'drizzle-orm';
 import Container, { Service } from 'typedi';
 import { HoldingRepository } from '../repositories/HoldingRepository';
 import { HoldingService, VaultService } from '../services';
-import { ManualBalanceEditService } from '../services/holdings/ManualBalanceEditService';
+import { DeclaredTransferService } from '../services/holdings/DeclaredTransferService';
+import {
+  ManualBalanceEditService,
+  manualEditFlowLeg,
+} from '../services/holdings/ManualBalanceEditService';
 import { TransferReviewService } from '../services/TransferReviewService';
+import { LinkTransferPairsUseCase } from './LinkTransferPairsUseCase';
 
 const logger = createComponentLogger('use-case:update-holding');
 
@@ -139,6 +146,8 @@ export class UpdateHoldingUseCase {
   private readonly holdingRepository = Container.get(HoldingRepository);
   private readonly manualBalanceEditService = Container.get(ManualBalanceEditService);
   private readonly transferReviews = Container.get(TransferReviewService);
+  private readonly declaredTransfers = Container.get(DeclaredTransferService);
+  private readonly linkTransferPairs = Container.get(LinkTransferPairsUseCase);
 
   /**
    * Refuse a rename that would make two rows in one account read identically.
@@ -187,6 +196,88 @@ export class UpdateHoldingUseCase {
     if (taken.size > 0) {
       throw new HoldingLabelTakenError(label, holdingId);
     }
+  }
+
+  /**
+   * The arrival leg of a transfer the OWNER declared (SC-614).
+   *
+   * ## Why it goes back through `execute`
+   *
+   * Because every reason `RecordHoldingMovementUseCase` gives for doing the
+   * same thing holds here: `ManualBalanceEditService` decides the arrival
+   * row's kind, source, dedup key and date, `flowRoleOf` nets it out of
+   * return, and the ownership-scoped update, the balance observation and the
+   * vault recalculation come along for free. A second writer with its own
+   * `UPDATE holdings SET balance` would have re-created SC-245 — five holdings
+   * and 29,746.55 of drift missing from the observation trail — on this path.
+   *
+   * The recursion terminates in one step: this leg carries no `editOutflow`,
+   * so nothing here runs again for it.
+   *
+   * ## Why the balance is stated rather than added to
+   *
+   * `holdings.balance` is an ANCHOR, not a sum, so inserting a dated ledger
+   * row does not move today's figure. Each leg has to state the balance it
+   * leaves behind, and both legs of a transfer must do it, or the destination
+   * reads short by exactly the amount that arrived — which was the defect.
+   *
+   * ## Why `linkDeclaredPair` and not the matcher
+   *
+   * `LinkTransferPairsUseCase.execute` exists to guess at pairs nobody stated,
+   * and its ±1% / ±30-minute tolerances would let a coincidental third row win
+   * a pair we were told about. `linkDeclaredPair` writes the shared group id
+   * for two rows this transaction just created, and stamps the outflow
+   * `paired` in the same method — `paired` rather than `internal` because both
+   * legs exist, and `internal` is the answer that means "nothing imported the
+   * arrival, write it for me".
+   */
+  private async moveDeclaredTransfer(
+    source: { id: string; tokenId: string },
+    destination: TransferDestinationRef,
+    quantity: Decimal,
+    when: { occurredAt: Date; editedAt: Date },
+    userId: string,
+    tx: DatabaseTransaction
+  ): Promise<void> {
+    const arrived = await this.declaredTransfers.destinationHolding(
+      destination,
+      source,
+      userId,
+      tx
+    );
+    // Same sentence the queue gives for the same fact, so the two surfaces do
+    // not describe one missing destination two ways.
+    if (!arrived) throw new ManualOutflowAnswerRefused('destination_gone');
+    // Both legs on one holding is not a transfer. Refused here rather than
+    // left to `linkDeclaredPair`, which would find one row where it demands
+    // two and roll the edit back with a message about half-made pairings.
+    if (arrived.id === source.id) {
+      throw new ManualOutflowAnswerRefused('a transfer cannot arrive in the holding it left');
+    }
+
+    await this.execute(
+      arrived.id,
+      {
+        balance: new Decimal(arrived.balance).add(quantity).toString(),
+        editCause: 'flow',
+        // The date the WITHDRAWAL was stamped with, not the edit instant: two
+        // legs of one movement dated apart would leave each of them explaining
+        // an interval the other one opened.
+        editOccurredAt: when.occurredAt,
+        editedAt: when.editedAt,
+      },
+      userId,
+      tx
+    );
+
+    await this.linkTransferPairs.linkDeclaredPair(
+      {
+        outflow: manualEditFlowLeg(source.id, when.editedAt),
+        inflow: manualEditFlowLeg(arrived.id, when.editedAt),
+        userId,
+      },
+      tx
+    );
   }
 
   async execute(
@@ -310,36 +401,47 @@ export class UpdateHoldingUseCase {
             `this edit wrote ${written?.kind ?? 'no'} row, and a destination describes a withdrawal`
           );
         }
-        // An `internal` answer may only OPEN a destination, never name one
-        // that already exists (SC-614).
+        // An `internal` answer is written HERE and not by
+        // `TransferReviewService.resolve`, and that split is the whole of
+        // SC-614 (mgrin, 2026-08-25).
         //
-        // `writeInflow` given a `holdingId` inserts the arrival row and leaves
-        // that holding's `balance` untouched. In the queue that is correct —
-        // the destination's balance was observed by its own sync and moving
-        // the anchor would double-count. Here the user is the only source of
-        // truth for both sides and only one side has moved, so the money
-        // silently goes missing: the source drops, the destination does not,
-        // and an arrival row sits against a figure that never changed.
+        // `resolve` settles it through `writeInflow`, which inserts the
+        // arrival row and leaves an existing destination's `balance` alone.
+        // That is correct in the queue — the outflow came from an import and
+        // whatever produced the destination's balance already observed the
+        // arrival, so moving the anchor would count the money twice — and
+        // wrong here, where the owner is the only source of truth for both
+        // sides and only one of them has moved. One function cannot mean both
+        // things, and an intent flag was rejected for the same reason: every
+        // future caller would have to reason correctly about which behaviour
+        // it wanted, and getting it wrong is silent in both directions.
         //
-        // Refused on the server as well as filtered out of
-        // `listDestinationsForHolding`, because a guarantee that lives only in
-        // the client is not one. The queue's own path is untouched and still
-        // accepts both.
-        if (editOutflow.decision === 'internal' && editOutflow.destination?.holdingId) {
-          throw new ManualOutflowAnswerRefused(
-            'that account already tracks this token, and recording the arrival there would not move its balance'
+        // So the queue keeps `writeInflow` untouched and this path writes both
+        // legs, which is what `RecordHoldingMovementUseCase` has always done.
+        // The other two answers a balance edit can give — `left_control` and
+        // `untracked` — write no arrival at all and still go through `resolve`,
+        // where the queue's own refusals live (SC-350).
+        if (editOutflow.decision === 'internal' && editOutflow.destination) {
+          await this.moveDeclaredTransfer(
+            { id: holdingId, tokenId: result.tokenId },
+            editOutflow.destination,
+            written.delta.abs(),
+            { occurredAt: written.occurredAt ?? editedAt, editedAt },
+            userId,
+            tx
           );
+        } else {
+          const settled = await this.transferReviews.resolve(
+            userId,
+            written.transactionId,
+            editOutflow.decision,
+            {
+              ...(editOutflow.destination ? { destination: editOutflow.destination } : {}),
+              transaction: tx,
+            }
+          );
+          if (!settled.ok) throw new ManualOutflowAnswerRefused(settled.reason);
         }
-        const settled = await this.transferReviews.resolve(
-          userId,
-          written.transactionId,
-          editOutflow.decision,
-          {
-            ...(editOutflow.destination ? { destination: editOutflow.destination } : {}),
-            transaction: tx,
-          }
-        );
-        if (!settled.ok) throw new ManualOutflowAnswerRefused(settled.reason);
       }
 
       // In the same transaction as the write it describes, and only when
