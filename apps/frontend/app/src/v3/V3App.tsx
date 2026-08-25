@@ -103,7 +103,7 @@ export function V3App() {
                 different position in the route tree. */}
             <Route path={`${relative(V3_ROUTES.holdings)}/:peekId?`} element={<HoldingsPage />} />
 
-            {/* Money (V3-13) — one surface, three views, four routes.
+            {/* Money (V3-13, extended by SC-461) — one surface, four views.
 
                 The form's two paths are registered before the peek so React
                 Router's static-over-dynamic ranking cannot be the only thing
@@ -117,6 +117,9 @@ export function V3App() {
               element={<PaymentFormPage />}
             />
             <Route path={`${relative(V3_ROUTES.recurring)}/:peekId?`} element={<MoneyPage />} />
+            {/* Before the peek route, same reason as the form's two paths:
+                `forecast` must not be reachable as an occurrence id. */}
+            <Route path={relative(V3_ROUTES.forecast)} element={<MoneyPage />} />
             <Route path={`${relative(V3_ROUTES.money)}/:peekId?`} element={<MoneyPage />} />
             <Route path={`${relative(V3_ROUTES.vendors)}/:peekId?`} element={<MoneyPage />} />
 
