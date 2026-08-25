@@ -2461,6 +2461,27 @@
         "account_one": "{{count}} account",
         "account_other": "{{count}} accounts"
       }
+    },
+    "ownership": {
+      "title": "Entities",
+      "description": "Keep your own money and your company's apart. Net worth is still one number.",
+      "newEntity": "New entity",
+      "name": "Name",
+      "namePlaceholder": "e.g. My Company Ltd",
+      "create": "Create",
+      "cancel": "Cancel",
+      "created": "{{name}} created",
+      "creating": "creating the entity",
+      "assigning": "moving the account",
+      "loading": "Working out what each set of books is worth…",
+      "empty": "No values yet.",
+      "unassigned": "Unassigned",
+      "combined": "Combined",
+      "holdingsCounted_one": "{{count}} holding",
+      "holdingsCounted_other": "{{count}} holdings",
+      "unpriced": "{{symbols}} could not be priced today",
+      "accountsHeading": "Which entity each account belongs to",
+      "accountEntityLabel": "Entity for {{name}}"
     }
   }
 }

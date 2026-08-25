@@ -14,6 +14,7 @@ export * from './admin-spend-overrides';
 export * from './alerts';
 export * from './cloud';
 export * from './documents';
+export * from './entities';
 export * from './groups';
 export * from './holding-exclusions';
 export * from './holdings';
