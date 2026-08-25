@@ -22,6 +22,7 @@ import { describe, expect, test } from 'bun:test';
 import * as schema from '@scani/db/schema';
 import { and, asc, eq } from 'drizzle-orm';
 import { Container } from 'typedi';
+import { unexplainedDrift } from '../../src/lib/balances/unexplained-drift';
 import { flowRoleOf } from '../../src/lib/returns/flow-classification';
 import { pendingPredicate } from '../../src/lib/transfer-review-queue';
 import { HoldingBalanceObservationRepository } from '../../src/repositories/HoldingBalanceObservationRepository';
@@ -611,15 +612,25 @@ describe('UpdateHoldingUseCase — one edit, one question (SC-606)', () => {
     return tx.select().from(schema.holdingTransactions).where(pendingPredicate(userId));
   }
 
+  const HOUR = 60 * 60 * 1000;
+
   /**
-   * A cash holding with the observation the daily APY payout leaves behind.
+   * A cash holding with the observations the daily APY payout leaves behind.
    *
    * `sync-capture` because that is what `HoldingService.recordBalanceObservation`
    * writes whatever the caller — which is why `BalanceGapService`'s
    * `owner-stated` suppression has never fired on the manual path, however
    * confidently its docblock says SC-510 already asked.
+   *
+   * Three of them, a day apart, because `ApplyApyPayoutsUseCase` runs daily
+   * and that is what mgrin's Revolut Savings row actually looks like. A
+   * freshly created holding has ONE, and with one there is no interval before
+   * the latest for a mis-dated flow to fall into — so the whole of SC-612 is
+   * invisible on a test fixture that omits the chain. `previousAgeHours` is
+   * the age of the most recent one, and it is the only variable in the control
+   * below.
    */
-  async function cashHoldingObservedToday(tx: Tx) {
+  async function cashHoldingObservedToday(tx: Tx, previousAgeHours = 12) {
     const user = await makeUser(tx);
     const institution = await makeInstitution(tx);
     const account = await makeAccount(tx, { userId: user.id, institutionId: institution.id });
@@ -635,17 +646,19 @@ describe('UpdateHoldingUseCase — one edit, one question (SC-606)', () => {
       balance: '4000',
       source: 'manual',
     });
-    await Container.get(HoldingBalanceObservationRepository).append(
-      {
-        userId: user.id,
-        holdingId: holding.id,
-        balance: '4000',
-        observedAt: new Date(Date.now() - 12 * 60 * 60 * 1000),
-        source: 'sync-capture',
-        sourceMetadata: {},
-      },
-      tx
-    );
+    for (const ageHours of [previousAgeHours + 48, previousAgeHours + 24, previousAgeHours]) {
+      await Container.get(HoldingBalanceObservationRepository).append(
+        {
+          userId: user.id,
+          holdingId: holding.id,
+          balance: '4000',
+          observedAt: new Date(Date.now() - ageHours * HOUR),
+          source: 'sync-capture',
+          sourceMetadata: {},
+        },
+        tx
+      );
+    }
     return { user, institution, account, token, holding };
   }
 
@@ -685,7 +698,13 @@ describe('UpdateHoldingUseCase — one edit, one question (SC-606)', () => {
       const candidates = await Container.get(
         HoldingBalanceObservationRepository
       ).findGapCandidatesForUser(user.id, tx);
-      const gap = candidates.find((row) => row.holdingId === holding.id);
+      // The interval this edit CLOSES, picked by its closing balance rather
+      // than by "the first candidate on this holding". With the daily
+      // observation chain the fixture now carries there is more than one, and
+      // the back-dated flow below manufactures another (SC-612) — so `find`
+      // returned a different row from the one this test is about, and would
+      // have reported that row's `null` as this one's.
+      const gap = candidates.find((row) => row.holdingId === holding.id && row.balance === '2000');
 
       // Must-be-FOUND: the interval really is an unexplained gap. Without this
       // the assertion below would pass on a fixture that never made one, which
@@ -794,6 +813,125 @@ describe('UpdateHoldingUseCase — one edit, one question (SC-606)', () => {
       const pending = await pendingOutflows(tx, user.id);
       expect(pending).toHaveLength(1);
       expect(pending[0]?.kind).toBe('withdraw');
+    });
+  });
+
+  /**
+   * The residual SC-606 left behind, and the number a person actually sees
+   * (SC-612).
+   *
+   * SC-606 stamps `gap_review` on the edit's OWN observation, so the interval
+   * the edit closes leaves the queue however the flow is dated. What it cannot
+   * do is put the flow in that interval: `HoldingEditCauseDialog` sent local
+   * midnight of the current day, and on a UTC+12 box that instant is the
+   * previous UTC day — earlier than the observation the daily APY payout wrote
+   * this morning. The row then lands in the interval BEFORE the one it
+   * explains, whose balance never moved, and manufactures a second question
+   * there while the first sits stamped as answered.
+   *
+   * ## The control, which is the whole measurement
+   *
+   * Only the previous observation's AGE changes between the two runs below.
+   * The flow's date, the balances, the cause and the fixture are identical.
+   *
+   * | previous observation | unanswered gaps after one edit |
+   * |---|---|
+   * | 12h ago | 1 |
+   * | 72h ago | 0 |
+   *
+   * Measured 2026-08-25 against this worktree's Postgres. It is the same
+   * control the ticket records from the dev stack as 3 → 2 prompts, one
+   * balance-gap fewer, counted after SC-606 removed the other two.
+   *
+   * ## Why the date is an offset and not the date field's own default
+   *
+   * `bun test` runs in UTC and the app runs in the host's zone, so the very
+   * expression under repair produced `2026-08-24T12:00Z` on the dev stack and
+   * `2026-08-25T00:00Z` here on the same day — under UTC at 08:23 the
+   * "back-dated" instant was LATER than the 12h-old observation and the defect
+   * did not reproduce at all. A test written on the default asserts where it
+   * ran. `-18h` states the relationship the default has east of Greenwich:
+   * before the previous observation, after the one before that.
+   */
+  describe('where the flow is stamped (SC-612)', () => {
+    /** `listPending`'s own first gates, on rows this transaction can see. */
+    async function unansweredGaps(tx: Tx, userId: string) {
+      const candidates = await Container.get(
+        HoldingBalanceObservationRepository
+      ).findGapCandidatesForUser(userId, tx);
+      return candidates.filter(
+        (row) =>
+          !unexplainedDrift(row.previousBalance, row.balance, [row.explained]).isZero() &&
+          row.gapReview === null &&
+          row.source === 'sync-capture'
+      );
+    }
+
+    for (const [previousAgeHours, expected] of [
+      [12, 1],
+      [72, 0],
+    ] as const) {
+      test(`a flow dated 18h back leaves ${expected} question with the previous observation ${previousAgeHours}h old`, async () => {
+        await withTestDb(async (tx) => {
+          const { user, holding } = await cashHoldingObservedToday(tx, previousAgeHours);
+
+          await useCase().execute(
+            holding.id,
+            {
+              balance: '2000',
+              editCause: 'flow',
+              editOccurredAt: new Date(Date.now() - 18 * HOUR),
+            },
+            user.id,
+            tx
+          );
+
+          expect(await unansweredGaps(tx, user.id)).toHaveLength(expected);
+        });
+      });
+    }
+
+    test('the same edit dated at the edit instant leaves none', async () => {
+      // The fix, from the server's side: the client now sends the instant for
+      // an untouched date field, and the flow lands inside the interval whose
+      // two observations are the evidence it happened.
+      await withTestDb(async (tx) => {
+        const { user, holding } = await cashHoldingObservedToday(tx, 12);
+
+        await useCase().execute(
+          holding.id,
+          { balance: '2000', editCause: 'flow', editOccurredAt: new Date() },
+          user.id,
+          tx
+        );
+
+        expect(await unansweredGaps(tx, user.id)).toHaveLength(0);
+      });
+    });
+
+    test('a flow the owner deliberately dated three weeks ago is NOT dragged forward', async () => {
+      // The must-be-ABSENT control for the fix, and the thing the ticket says
+      // not to do: `BalanceGapService.answer` clamps into the interval because
+      // it is answering about a PAST one, and clamping here would rewrite a
+      // date somebody meant. The extra question is the correct outcome — the
+      // money really did leave three weeks ago, and the interval it left
+      // behind really is unexplained.
+      await withTestDb(async (tx) => {
+        const { user, holding } = await cashHoldingObservedToday(tx, 12);
+        const threeWeeksAgo = new Date(Date.now() - 21 * 24 * HOUR);
+
+        await useCase().execute(
+          holding.id,
+          { balance: '2000', editCause: 'flow', editOccurredAt: threeWeeksAgo },
+          user.id,
+          tx
+        );
+
+        const ledger = await ledgerFor(tx, holding.id);
+        const withdrawal = ledger.find((row) => row.kind === 'withdraw');
+        expect(withdrawal).toBeDefined();
+        expect(withdrawal?.occurredAt.getTime()).toBe(threeWeeksAgo.getTime());
+      });
     });
   });
 
