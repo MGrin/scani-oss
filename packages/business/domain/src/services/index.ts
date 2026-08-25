@@ -97,6 +97,7 @@ export {
   IntegrationImportService,
   type IntegrationImportTarget,
 } from './holdings/IntegrationImportService';
+export { type LiquidAssets, LiquidAssetsService } from './holdings/LiquidAssetsService';
 export {
   MANUAL_EDIT_CORRECTION_SOURCE,
   MANUAL_EDIT_FLOW_SOURCE,
@@ -111,6 +112,17 @@ export {
 } from './holdings/OpeningBalanceReconciliationService';
 // payments/
 export {
+  buildForecast,
+  type Forecast,
+  type ForecastDirection,
+  type ForecastMovement,
+  type ForecastOccurrenceRow,
+  type ForecastPayment,
+  type ForecastPaymentInput,
+  monthKey,
+  type UnprojectablePayment,
+} from './payments/forecast';
+export {
   type MatchCandidate,
   type MatchOccurrenceOptions,
   type MatchResult,
@@ -119,6 +131,11 @@ export {
   type OccurrenceToMatch,
   type PaymentMatchDirection,
 } from './payments/matchOccurrences';
+export {
+  FORECAST_HORIZON_MONTHS,
+  type PaymentForecast,
+  PaymentForecastService,
+} from './payments/PaymentForecastService';
 export {
   type DueOccurrence,
   localDate,

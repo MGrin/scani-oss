@@ -1,7 +1,7 @@
 import { BaseRepository, type DatabaseTransaction } from '@scani/db';
 import type { NewPaymentOccurrence, PaymentOccurrence } from '@scani/db/schema';
 import * as schema from '@scani/db/schema';
-import { and, asc, eq, gte, lt, lte, sql } from 'drizzle-orm';
+import { and, asc, eq, gte, inArray, lt, lte, sql } from 'drizzle-orm';
 import { Service } from 'typedi';
 // Type-only, so nothing links the repository to the service at runtime. The
 // alternative is a second declaration of the same five fields, and the shape
@@ -126,6 +126,36 @@ export class PaymentOccurrenceRepository extends BaseRepository<
         .orderBy(asc(schema.paymentOccurrences.dueDate));
     } catch (error) {
       this.logger.error({ paymentId, error }, 'Failed to find occurrences by payment');
+      throw error;
+    }
+  }
+
+  /**
+   * Every occurrence of several payments at once.
+   *
+   * `findByPaymentId` in a `Promise.all` is what `payments.upcoming` does, and
+   * it is one round trip per payment. The forecast needs the WHOLE table for
+   * every active payment — it has to find each one's materialised edge, which
+   * no date filter can be applied before — so on a book of thirty payments
+   * that shape is thirty queries for one figure.
+   */
+  async findByPaymentIds(
+    paymentIds: readonly string[],
+    transaction?: DatabaseTransaction
+  ): Promise<PaymentOccurrence[]> {
+    if (paymentIds.length === 0) return [];
+    try {
+      const database = this.getDb(transaction);
+      return await database
+        .select()
+        .from(schema.paymentOccurrences)
+        .where(inArray(schema.paymentOccurrences.paymentId, [...paymentIds]))
+        .orderBy(asc(schema.paymentOccurrences.dueDate));
+    } catch (error) {
+      this.logger.error(
+        { count: paymentIds.length, error },
+        'Failed to find occurrences by payments'
+      );
       throw error;
     }
   }
