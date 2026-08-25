@@ -16,6 +16,7 @@ describe('validateBearerToken — dev/OSS mode (no env, no DB)', () => {
       tenantId: 'dev',
       ownerUserId: null,
       tier: 'oss',
+      internal: true,
     });
   });
 
