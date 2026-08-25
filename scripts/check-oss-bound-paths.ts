@@ -198,8 +198,32 @@ export function classifyBranch(facts: BranchFacts): Boundness {
   return { kind: 'private', why: 'HEAD does not descend from `upstream/main`' };
 }
 
+/**
+ * Which of the two hazards a refused path is.
+ *
+ * This is a FIELD rather than a substring of `why`, and that is the whole
+ * repair (SC-639). `OSS_ALLOW_NEW_FILES` now makes a security decision on this
+ * value, and a decision keyed on prose changes what the guard admits the next
+ * time somebody rewords a sentence — silently, with no test failing, because
+ * the sentence would still read correctly to a human.
+ */
+export type ViolationKind =
+  /**
+   * Tracked in `origin/main` and absent upstream: private source the checkout
+   * should have removed. This is the SC-569 hazard the guard exists for, and
+   * no flag admits it.
+   */
+  | 'private-only'
+  /**
+   * Absent from both repos: build residue whose ignore rule the checkout
+   * deleted, or a genuinely new shared file. The one legitimate case, and the
+   * only thing `OSS_ALLOW_NEW_FILES=1` admits.
+   */
+  | 'new-file';
+
 export interface Violation {
   readonly path: string;
+  readonly kind: ViolationKind;
   /** Why this path is refused, in the words a person needs to act on it. */
   readonly why: string;
 }
@@ -224,15 +248,81 @@ export function refusedPaths(staged: readonly string[], facts: PathFacts): Viola
   const out: Violation[] = [];
   for (const path of staged) {
     if (facts.existsUpstream(path)) continue;
+    const privateOnly = facts.trackedPrivately(path);
     out.push({
       path,
-      why: facts.trackedPrivately(path)
+      kind: privateOnly ? 'private-only' : 'new-file',
+      why: privateOnly
         ? 'tracked in origin/main and absent from upstream/main — private-only source'
         : 'absent from both repos — build residue, or a new file you meant to add',
     });
   }
   return out;
 }
+
+/** What the new-files allowance did to a set of violations. */
+export interface Allowance {
+  /** Violations that still refuse the commit. */
+  readonly refused: readonly Violation[];
+  /**
+   * Violations the flag admitted. Non-empty ONLY when the flag actually let
+   * something through, which is what lets the caller tell a deliberate bypass
+   * apart from a flag that was set and changed nothing.
+   */
+  readonly admitted: readonly Violation[];
+}
+
+/**
+ * Apply `OSS_ALLOW_NEW_FILES` to a set of violations.
+ *
+ * SC-639. The flag used to be read before `main()` ran at all, so neither
+ * `classifyBranch` nor `refusedPaths` executed and it silenced BOTH violation
+ * kinds — including private-only source, the hazard the guard exists for. It
+ * was named for the benign kind and disabled the dangerous one in the same
+ * keystroke, printing `SKIPPED · exit 0`.
+ *
+ * That mattered more than a misnaming, because the refusal message is the only
+ * place the flag is advertised anywhere: the guard named a total bypass, called
+ * it a narrow escape, and did so at the moment somebody was blocked by a
+ * correct refusal. Two careful people set it in one session on the honest
+ * belief it was scoped.
+ *
+ * It is scoped now, so the sentence the refusal prints is true as written.
+ * `private-only` is never admissible — there is no flag for it and adding one
+ * would rebuild the defect under a longer name.
+ */
+export function applyNewFileAllowance(
+  violations: readonly Violation[],
+  allowNewFiles: boolean
+): Allowance {
+  if (!allowNewFiles) return { refused: violations, admitted: [] };
+  return {
+    refused: violations.filter((v) => v.kind === 'private-only'),
+    admitted: violations.filter((v) => v.kind === 'new-file'),
+  };
+}
+
+/**
+ * The verdict word each outcome prints.
+ *
+ * Exported and pinned because three of the five share `exit 0`, so the WORD is
+ * the only thing distinguishing them (SC-639). `SKIPPED` used to be printed
+ * both for a deliberate bypass and for a branch the guard does not apply to,
+ * with only trailing prose telling them apart — and nothing reads trailing
+ * prose. A bypass must not be able to wear a legitimate skip's costume.
+ */
+export const VERDICT = {
+  /** Checked, and everything staged can travel. */
+  pass: 'PASS',
+  /** Checked, and the new-files allowance admitted something. A bypass, on the record. */
+  allowed: 'ALLOWED',
+  /** Not applicable: this branch is not bound for the mirror. */
+  skipped: 'SKIPPED',
+  /** Checked, and something staged cannot travel. */
+  refused: 'REFUSED',
+  /** Could not tell which repo the branch is for. */
+  unknown: 'UNKNOWN',
+} as const;
 
 export const EXIT_OK = 0;
 export const EXIT_REFUSED = 1;
@@ -317,15 +407,15 @@ function collectBranchFacts(): BranchFacts {
   };
 }
 
-function main(): number {
+function main(allowNewFiles: boolean): number {
   const boundness = classifyBranch(collectBranchFacts());
 
   if (boundness.kind === 'unknown') {
-    console.error(`oss-bound-paths: UNKNOWN · exit ${EXIT_UNKNOWN} · ${boundness.why}`);
+    console.error(`oss-bound-paths: ${VERDICT.unknown} · exit ${EXIT_UNKNOWN} · ${boundness.why}`);
     return EXIT_UNKNOWN;
   }
   if (boundness.kind === 'private') {
-    console.log(`oss-bound-paths: SKIPPED · exit ${EXIT_OK} · ${boundness.why}`);
+    console.log(`oss-bound-paths: ${VERDICT.skipped} · exit ${EXIT_OK} · ${boundness.why}`);
     return EXIT_OK;
   }
 
@@ -336,29 +426,62 @@ function main(): number {
     trackedPrivately: (p) => git(['cat-file', '-e', `origin/main:${p}`]).ok,
   });
 
-  if (violations.length === 0) {
+  const { refused, admitted } = applyNewFileAllowance(violations, allowNewFiles);
+
+  if (refused.length > 0) {
+    for (const v of refused) console.error(`  ${v.path}\n      ${v.why}`);
+    console.error(
+      `oss-bound-paths: ${VERDICT.refused} · exit ${EXIT_REFUSED} · ${refused.length} of ${paths.length} staged path(s) are not in upstream/main`
+    );
+    // The remedy depends on WHICH kind refused, and naming the flag in front
+    // of private-only source is what recruited two people into bypassing this
+    // guard (SC-639). When the flag cannot help, the message must say so
+    // rather than leave the reader to discover it by trying.
+    if (refused.some((v) => v.kind === 'private-only')) {
+      console.error(
+        '  The paths above are private source, and OSS_ALLOW_NEW_FILES=1 does NOT\n' +
+          '  admit them — it is scoped to files absent from both repos. `git restore\n' +
+          '  --staged` them; if one genuinely belongs upstream, land it there first.\n' +
+          '  See SC-569.'
+      );
+    } else {
+      console.error(
+        '  This branch is bound for MGrin/scani-oss. If these are genuinely new\n' +
+          '  shared files, re-run with OSS_ALLOW_NEW_FILES=1 — it admits only files\n' +
+          '  absent from both repos, never private source. If they are build residue\n' +
+          '  left by the checkout, `git restore --staged` them — see SC-569.'
+      );
+    }
+    return EXIT_REFUSED;
+  }
+
+  // A bypass gets its own verdict WORD, not a shared one with a trailing
+  // explanation (SC-639). `SKIPPED · exit 0` was printed both for a deliberate
+  // bypass and for a branch the guard does not apply to, and only the trailing
+  // text told them apart — which nothing reads. Each admitted path is listed,
+  // so what the flag let through is on the record rather than merely counted.
+  if (admitted.length > 0) {
+    for (const v of admitted) console.log(`  admitted: ${v.path}`);
     console.log(
-      `oss-bound-paths: PASS · exit ${EXIT_OK} · ${paths.length} staged path(s), 0 absent from upstream/main`
+      `oss-bound-paths: ${VERDICT.allowed} · exit ${EXIT_OK} · OSS_ALLOW_NEW_FILES=1 admitted ${admitted.length} new shared file(s) of ${paths.length} staged; 0 private-only`
     );
     return EXIT_OK;
   }
 
-  for (const v of violations) console.error(`  ${v.path}\n      ${v.why}`);
-  console.error(
-    `oss-bound-paths: REFUSED · exit ${EXIT_REFUSED} · ${violations.length} of ${paths.length} staged path(s) are not in upstream/main`
+  // Reached with the flag set but nothing to admit, too. That case says so
+  // rather than reporting a skip: setting the flag on a branch with no new
+  // files used to turn a real PASS into `SKIPPED · exit 0`, which bought
+  // nothing and looked like the check had not run.
+  console.log(
+    `oss-bound-paths: ${VERDICT.pass} · exit ${EXIT_OK} · ${paths.length} staged path(s), 0 absent from upstream/main` +
+      (allowNewFiles ? ' · OSS_ALLOW_NEW_FILES=1 was set and admitted nothing' : '')
   );
-  console.error(
-    '  This branch is bound for MGrin/scani-oss. If these are genuinely new shared\n' +
-      '  files, re-run with OSS_ALLOW_NEW_FILES=1. If they are build residue left by\n' +
-      '  the checkout, `git restore --staged` them — see SC-569.'
-  );
-  return EXIT_REFUSED;
+  return EXIT_OK;
 }
 
 if (import.meta.main) {
-  if (process.env.OSS_ALLOW_NEW_FILES === '1') {
-    console.log(`oss-bound-paths: SKIPPED · exit ${EXIT_OK} · OSS_ALLOW_NEW_FILES=1 was set`);
-    process.exit(EXIT_OK);
-  }
-  process.exit(main());
+  // Read here and passed in, never consulted deeper: the flag has to reach
+  // `main()` for `classifyBranch` and `refusedPaths` to run at all. Reading it
+  // in this block and returning early is the SC-639 defect itself.
+  process.exit(main(process.env.OSS_ALLOW_NEW_FILES === '1'));
 }
