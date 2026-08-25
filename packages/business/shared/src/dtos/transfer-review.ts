@@ -180,6 +180,70 @@ export const transferDestinationRefSchema = z.object({
 export type TransferDestinationRef = z.infer<typeof transferDestinationRefSchema>;
 
 /**
+ * Where a manual balance EDIT says the money went, asked in the same breath as
+ * what the edit meant (SC-606).
+ *
+ * ## Not a new question — the queue's question, moved earlier
+ *
+ * Measured on a dev stack 2026-08-25: one edit of a manual USD savings holding
+ * from 4,000 to 2,000 produced **three** prompts — the cause dialog, then a
+ * transfer-review item for the `withdraw` that answer wrote, then a
+ * balance-gap item for the interval that row was dated outside of. Answering
+ * was what created the next question. The queue is right for a row that
+ * arrived from an import, where nobody has been asked; it is wrong on the
+ * manual path, where the person is present and has just spoken.
+ *
+ * ## Why three of the four, and why the exclusion is structural
+ *
+ * `paired` is missing because it means "this is the same money as that
+ * inflow" and needs an inflow row to point at. At edit time no candidate
+ * search has run and there is nothing to show, so offering it would be
+ * offering an answer that cannot be given. Somebody whose arrival was
+ * imported separately still reaches `paired` through the queue, where the
+ * candidates exist.
+ *
+ * Asked only for a NEGATIVE delta. `answerIsOwedFor` is `withdraw` and
+ * `transfer_out`, so a deposit has no second prompt to pre-empt and asking
+ * about one would ADD the question this exists to remove.
+ *
+ * Declared as a subset of `TRANSFER_REVIEW_DECISIONS` rather than as its own
+ * four strings, and it lives beside them for the reason the file already
+ * gives about `ANSWERABLE_OUTFLOW_KINDS`: a second vocabulary that happens to
+ * agree today is free to disagree tomorrow, and the disagreement would render
+ * as a queue asking about a row somebody has already settled.
+ */
+export const MANUAL_OUTFLOW_DESTINATIONS = [
+  'internal',
+  'left_control',
+  'untracked',
+] as const satisfies readonly TransferReviewDecision[];
+
+export type ManualOutflowDestination = (typeof MANUAL_OUTFLOW_DESTINATIONS)[number];
+
+export const manualOutflowDestinationSchema = z.enum(MANUAL_OUTFLOW_DESTINATIONS);
+
+/**
+ * The whole of what a manual outflow edit can say about its destination.
+ *
+ * `internal` carries a destination and the other two do not, checked here
+ * rather than at the writer: `TransferReviewService.resolve` THROWS on an
+ * `internal` with no destination, and a throw out of a balance edit would
+ * leave the user with a 500 over a form they filled in correctly except for a
+ * field the client failed to send.
+ */
+export const manualOutflowAnswerSchema = z
+  .object({
+    decision: manualOutflowDestinationSchema,
+    destination: transferDestinationRefSchema.optional(),
+  })
+  .refine((value) => value.decision !== 'internal' || value.destination !== undefined, {
+    message: 'An "internal" destination answer must name the holding the money went to',
+    path: ['destination'],
+  });
+
+export type ManualOutflowAnswer = z.infer<typeof manualOutflowAnswerSchema>;
+
+/**
  * A destination as the picker shows it.
  *
  * `source` and `balance` are on the row because they are how a person tells
