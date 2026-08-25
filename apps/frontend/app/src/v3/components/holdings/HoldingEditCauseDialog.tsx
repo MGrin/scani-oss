@@ -22,7 +22,7 @@ import { Segmented, SegmentedItem } from '@scani/ui/ui/segmented';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { trpc } from '@/lib/trpc';
-import { DateField } from '../form/DateField';
+import { DateField, dateFieldInstant, todayIso } from '../form/DateField';
 import { TransferDestinationPicker } from '../review/TransferDestinationPicker';
 
 /**
@@ -90,6 +90,15 @@ import { TransferDestinationPicker } from '../review/TransferDestinationPicker';
  * concentrates months of movement onto one day and distorts time-weighted
  * return around it, which is the failure `e1fa63e5` removed.
  *
+ * **An untouched field still means NOW, not the start of the day** (SC-612).
+ * That is not a retreat from the paragraph above — a day the user picked is
+ * still stamped at their midnight — it is what the default was always
+ * approximating. `dateFieldInstant` owns the rule and carries the
+ * measurement; the short version is that local midnight is the previous UTC
+ * day east of Greenwich, which lands the flow before the observation the daily
+ * APY payout wrote this morning and therefore outside the very interval it was
+ * written to explain.
+ *
  * Shown only for `flow`. A correction is dated by the server at the moment the
  * superseded figure entered the record — asking would invite the answer
  * "today", which is where the mistake was noticed, not where it was made — and
@@ -123,11 +132,23 @@ interface HoldingEditCauseDialogProps {
   ) => void;
 }
 
-function todayIso(): string {
-  const now = new Date();
-  const month = String(now.getMonth() + 1).padStart(2, '0');
-  const day = String(now.getDate()).padStart(2, '0');
-  return `${now.getFullYear()}-${month}-${day}`;
+/**
+ * The instant to send with the edit, or `undefined` for "the server dates
+ * this one".
+ *
+ * Exported and tested rather than written inline, for the reason
+ * `balanceGapOccurredAt` is: it is the piece of this dialog a type cannot
+ * check and a rendered snapshot cannot see, and it shipped wrong. The date
+ * rule itself lives in `dateFieldInstant` — one rule, shared with
+ * `RecordMovementSheet`, so the two surfaces cannot date the same movement
+ * differently (SC-612).
+ */
+export function holdingEditOccurredAt(cause: ManualEditCause, date: string): string | undefined {
+  // Only a flow carries a date at all. A correction is dated by the server at
+  // the moment the superseded figure entered the record, and growth writes no
+  // dated row.
+  if (cause !== 'flow') return undefined;
+  return dateFieldInstant(date);
 }
 
 export function HoldingEditCauseDialog({
@@ -259,9 +280,7 @@ export function HoldingEditCauseDialog({
             onClick={() =>
               onConfirm(
                 cause,
-                // Local midnight of the chosen day, sent as an instant. Only a
-                // flow carries one; the server dates the other two itself.
-                cause === 'flow' ? new Date(`${date}T00:00:00`).toISOString() : undefined,
+                holdingEditOccurredAt(cause, date),
                 asksDestination && destination
                   ? {
                       decision: destination,
