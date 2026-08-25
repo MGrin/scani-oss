@@ -1,4 +1,13 @@
-import { MANUAL_EDIT_CAUSES, type ManualEditCause } from '@scani/shared';
+import type {
+  ManualOutflowAnswer,
+  ManualOutflowDestination,
+  TransferDestination,
+} from '@scani/shared';
+import {
+  MANUAL_EDIT_CAUSES,
+  MANUAL_OUTFLOW_DESTINATIONS,
+  type ManualEditCause,
+} from '@scani/shared';
 import { Button } from '@scani/ui/ui/button';
 import {
   Dialog,
@@ -12,11 +21,14 @@ import { Label } from '@scani/ui/ui/label';
 import { Segmented, SegmentedItem } from '@scani/ui/ui/segmented';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { trpc } from '@/lib/trpc';
 import { DateField } from '../form/DateField';
+import { TransferDestinationPicker } from '../review/TransferDestinationPicker';
 
 /**
- * "What did that change mean?" — asked once, per edit, on the holdings whose
- * balance is the only channel their performance can arrive through (SC-510).
+ * "What did that change mean, and where did the money go?" — asked once, per
+ * edit, on the holdings whose balance is the only channel their performance
+ * can arrive through (SC-510, SC-606).
  *
  * ## Why a question rather than a default
  *
@@ -33,6 +45,32 @@ import { DateField } from '../form/DateField';
  * shares becoming 15 is a purchase and the server derives that itself.
  * `manualEditNeedsCause` is the one definition of which set is which, shared
  * with the API so the two cannot disagree.
+ *
+ * ## Why the destination is asked HERE and not afterwards (SC-606)
+ *
+ * Answering `flow` on a falling balance writes a `withdraw`, and an unanswered
+ * outflow is by definition an item in the transfer-review queue — so the act
+ * of explaining the change was what produced the next question, addressed to
+ * the person who had just explained it. Measured on a dev stack 2026-08-25,
+ * one 4,000 → 2,000 edit on a manual USD savings holding produced three
+ * prompts: this dialog, a transfer-review item, and a balance-gap item.
+ *
+ * The queue is right for a row that arrived from an IMPORT, where nobody has
+ * been asked. It is wrong here, where the person is present and is the source
+ * of the fact. So this asks the queue's own question, in the queue's own
+ * vocabulary, at the moment they are already answering — one dialog, one
+ * submit, one transaction on the server.
+ *
+ * `paired` is not offered, and the omission is structural rather than a
+ * simplification: it means "this is the same money as that inflow" and needs
+ * an inflow row to point at, which no candidate search has produced at edit
+ * time. Somebody whose arrival was imported separately still reaches it
+ * through the queue, where the candidates exist.
+ *
+ * Nothing is pre-selected. `TransferDestinationPicker`'s docblock has the
+ * argument in full, and it applies with more force here: this answer WRITES a
+ * transaction, so a guess wearing a checkmark the reader did not put there
+ * would put money in an account it never reached.
  *
  * ## The date
  *
@@ -53,9 +91,26 @@ interface HoldingEditCauseDialogProps {
   onOpenChange: (open: boolean) => void;
   /** Symbol or label of the holding being edited, for the question's subject. */
   holdingLabel: string;
+  /** The holding the destination list is built from — it carries the token and
+   *  is the one account the money cannot have moved to. */
+  holdingId: string;
+  tokenSymbol: string;
+  /**
+   * Does this edit take the balance DOWN?
+   *
+   * The destination question is owed for an outflow and nothing else: an
+   * inflow is never in the transfer-review queue (`answerIsOwedFor` is
+   * `withdraw` and `transfer_out`), so asking about a deposit would ADD the
+   * prompt this dialog exists to remove.
+   */
+  isOutflow: boolean;
   /** The last answer given for this holding, pre-selected. */
   defaultCause?: ManualEditCause | null;
-  onConfirm: (cause: ManualEditCause, occurredAt: string | undefined) => void;
+  onConfirm: (
+    cause: ManualEditCause,
+    occurredAt: string | undefined,
+    outflow: ManualOutflowAnswer | undefined
+  ) => void;
 }
 
 function todayIso(): string {
@@ -69,6 +124,9 @@ export function HoldingEditCauseDialog({
   open,
   onOpenChange,
   holdingLabel,
+  holdingId,
+  tokenSymbol,
+  isOutflow,
   defaultCause,
   onConfirm,
 }: HoldingEditCauseDialogProps) {
@@ -79,6 +137,31 @@ export function HoldingEditCauseDialog({
   // a second holding cannot inherit the first one's answer.
   const [cause, setCause] = useState<ManualEditCause>(defaultCause ?? 'flow');
   const [date, setDate] = useState(todayIso);
+  const [destination, setDestination] = useState<ManualOutflowDestination | null>(null);
+  const [holdingDestination, setHoldingDestination] = useState<TransferDestination | null>(null);
+
+  const asksDestination = cause === 'flow' && isOutflow;
+
+  // Fetched only once the one answer that can use it is open, exactly as
+  // `TransferDecision` does: the common path is a withdrawal that left the
+  // portfolio, and it should not pay for an account list nobody opens.
+  const destinations = trpc.transferReview.listDestinationsForHolding.useQuery(
+    { holdingId },
+    { enabled: asksDestination && destination === 'internal' }
+  );
+
+  // The ONLY state the form refuses is `internal` with no holding picked —
+  // the one combination `TransferReviewService.resolve` throws on rather than
+  // refuses, which would surface as a 500 over a form filled in correctly
+  // except for a field the client failed to send.
+  //
+  // Leaving the destination unanswered is deliberately NOT refused. Somebody
+  // editing a balance came to correct a number, and blocking that on a
+  // question about where money went is a worse failure than an extra item in
+  // a queue that exists for exactly this — they may not know, and "I don't
+  // know" is already representable here the way it is in the queue: by not
+  // answering. The row then goes to transfer review as it always did.
+  const incomplete = asksDestination && destination === 'internal' && !holdingDestination;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -115,6 +198,41 @@ export function HoldingEditCauseDialog({
               <DateField id="holding-edit-cause-date" value={date} onChange={setDate} />
             </div>
           ) : null}
+
+          {asksDestination ? (
+            <div className="flex flex-col gap-2">
+              <Label>{t('v3.holdings.editCause.destinationLabel')}</Label>
+              <Segmented
+                value={destination ?? ''}
+                onValueChange={(next) => {
+                  setDestination(next as ManualOutflowDestination);
+                  if (next !== 'internal') setHoldingDestination(null);
+                }}
+                aria-label={t('v3.holdings.editCause.destinationLabel')}
+              >
+                {MANUAL_OUTFLOW_DESTINATIONS.map((option) => (
+                  <SegmentedItem key={option} value={option}>
+                    {t(`v3.holdings.editCause.destination.${option}`)}
+                  </SegmentedItem>
+                ))}
+              </Segmented>
+              {destination ? (
+                <p className="text-label text-muted-foreground">
+                  {t(`v3.holdings.editCause.destinationExplain.${destination}`)}
+                </p>
+              ) : null}
+              {destination === 'internal' ? (
+                <TransferDestinationPicker
+                  destinations={destinations.data ?? []}
+                  tokenSymbol={tokenSymbol}
+                  groupName={`holding-edit-destination-${holdingId}`}
+                  selected={holdingDestination}
+                  onSelect={setHoldingDestination}
+                  isLoading={destinations.isLoading}
+                />
+              ) : null}
+            </div>
+          ) : null}
         </div>
 
         <DialogFooter>
@@ -122,12 +240,26 @@ export function HoldingEditCauseDialog({
             {t('v3.holdings.editCause.cancel')}
           </Button>
           <Button
+            disabled={incomplete}
             onClick={() =>
               onConfirm(
                 cause,
                 // Local midnight of the chosen day, sent as an instant. Only a
                 // flow carries one; the server dates the other two itself.
-                cause === 'flow' ? new Date(`${date}T00:00:00`).toISOString() : undefined
+                cause === 'flow' ? new Date(`${date}T00:00:00`).toISOString() : undefined,
+                asksDestination && destination
+                  ? {
+                      decision: destination,
+                      ...(destination === 'internal' && holdingDestination
+                        ? {
+                            destination: {
+                              accountId: holdingDestination.accountId,
+                              holdingId: holdingDestination.holdingId,
+                            },
+                          }
+                        : {}),
+                    }
+                  : undefined
               )
             }
           >
