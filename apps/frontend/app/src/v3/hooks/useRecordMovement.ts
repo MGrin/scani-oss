@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { invalidatePortfolioQueries } from '@/hooks/invalidatePortfolioQueries';
 import { trpc } from '@/lib/trpc';
-import type { MovementSubmission } from '../components/holdings/RecordMovementSheet';
+import type { MovementSubmission } from '../lib/movement-form';
 
 /**
  * The wire payload, or `null` when the form did not actually answer.
