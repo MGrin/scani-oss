@@ -37,7 +37,7 @@ function daysInMonth(year: number, month: number): number {
  * Compute all payout dates between startDate (exclusive) and endDate (inclusive)
  * based on the configured frequency and schedule.
  */
-export function computeDuePayoutDates(
+function computeDuePayoutDates(
   startDate: Date,
   endDate: Date,
   frequency: string,

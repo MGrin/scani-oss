@@ -52,7 +52,7 @@ export interface TestNotificationReport {
  * notifications arriving at once is its own reason to revoke the permission.
  * The reminder uses the same mechanism for the same reason.
  */
-export const TEST_NOTIFICATION_TAG = 'push-test';
+const TEST_NOTIFICATION_TAG = 'push-test';
 
 /**
  * Answer "did that actually reach my phone", without the VAPID private key
