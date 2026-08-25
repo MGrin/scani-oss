@@ -3,6 +3,7 @@ process.env.DATABASE_URL = process.env.DATABASE_URL || 'postgresql://dummy:dummy
 import { describe, expect, test } from 'bun:test';
 import Decimal from 'decimal.js';
 import { Container } from 'typedi';
+import { flowRoleOf } from '../../../src/lib/returns/flow-classification';
 import { HoldingBalanceObservationRepository } from '../../../src/repositories/HoldingBalanceObservationRepository';
 import { HoldingCoverageRepository } from '../../../src/repositories/HoldingCoverageRepository';
 import { HoldingRepository } from '../../../src/repositories/HoldingRepository';
@@ -435,6 +436,123 @@ describe('OpeningBalanceReconciliationService.reconcileHolding', () => {
     expect(capturedTxs).toHaveLength(2);
     expect(capturedTxs[0]?.occurredAt.getTime()).toBe(capturedTxs[1]?.occurredAt.getTime());
     expect(capturedTxs[0]?.quantity).toBe(capturedTxs[1]?.quantity);
+  });
+
+  test('THE DEFECT (SC-613): a tx dated BEFORE the first observation is not double-counted', async () => {
+    // Measured end-to-end on 2026-08-25 through `UpdateHoldingUseCase`, on a
+    // manual USD holding created at 4,000 and edited to 2,000 answered
+    // `flow`. The numbers below are that run's, not invented ones.
+    //
+    // The client pre-fills today's date and a date-only value becomes LOCAL
+    // midnight, so the synthesized `withdraw` is stamped BEFORE the
+    // observation that captured the pre-edit 4,000. The walk back from that
+    // observation then subtracts a withdrawal the anchor never included, and
+    // counts the same 2,000 twice: once inside the 4,000, once in the walk.
+    //
+    // Same edit stamped at the edit instant instead — after the observation —
+    // wrote 4,000 and was correct, which is what identifies the ordering as
+    // the cause rather than a straddle over a committing transaction.
+    const withdrawAt = new Date('2026-08-24T12:00:00Z');
+    const { service, capturedTxs } = makeService({
+      holding: { id: 'h1', userId: 'u1', accountId: 'a1', tokenId: 't1', balance: '2000' },
+      txSumAllTime: '-2000',
+      firstTxAt: withdrawAt,
+      observations: [
+        { observedAt: new Date('2026-08-25T08:22:42.861Z'), balance: '4000' },
+        { observedAt: new Date('2026-08-25T08:22:42.883Z'), balance: '2000' },
+      ],
+      txsBeforeFirstObs: [
+        { occurredAt: withdrawAt, quantity: '-2000', source: 'user-balance-edit' },
+      ],
+    });
+
+    const r = await service.reconcileHolding('h1');
+
+    // The invariant, on the number itself: the synthesized opening plus every
+    // real transaction has to come to the balance the holding actually holds.
+    // A test that only asserted an opening row EXISTS passes against 6,000.
+    expect(capturedTxs).toHaveLength(1);
+    expect(capturedTxs[0]?.quantity).toBe('4000');
+    expect(new Decimal(capturedTxs[0]?.quantity ?? '0').add(new Decimal('-2000')).toString()).toBe(
+      '2000'
+    );
+
+    // A negative residual is not a fact either — it is the ledger claiming to
+    // explain MORE balance than exists.
+    expect(r?.unexplainedResidual.toNumber()).toBe(0);
+  });
+
+  test('…and the returns denominator moves with it: contributions are 4000, not 6000', async () => {
+    // `opening_balance` is an external contribution in
+    // `lib/returns/flow-classification`, so an opening 2,000 too high inflates
+    // every contribution total the performance figures divide by — measured
+    // 6,000 against a true 4,000 on the run above, which understates the
+    // return. This is the number a person reads, one step downstream of the
+    // row.
+    const withdrawAt = new Date('2026-08-24T12:00:00Z');
+    const { service, capturedTxs } = makeService({
+      holding: { id: 'h1', userId: 'u1', accountId: 'a1', tokenId: 't1', balance: '2000' },
+      txSumAllTime: '-2000',
+      firstTxAt: withdrawAt,
+      observations: [
+        { observedAt: new Date('2026-08-25T08:22:42.861Z'), balance: '4000' },
+        { observedAt: new Date('2026-08-25T08:22:42.883Z'), balance: '2000' },
+      ],
+      txsBeforeFirstObs: [
+        { occurredAt: withdrawAt, quantity: '-2000', source: 'user-balance-edit' },
+      ],
+    });
+    await service.reconcileHolding('h1');
+
+    const ledger = [
+      ...capturedTxs.map((t) => ({ kind: t.kind, quantity: t.quantity })),
+      { kind: 'withdraw', quantity: '-2000' },
+    ];
+    const contributions = ledger
+      .filter((t) => flowRoleOf(t.kind) === 'external' && new Decimal(t.quantity).gt(0))
+      .reduce((acc, t) => acc.add(new Decimal(t.quantity)), new Decimal(0));
+    expect(contributions.toString()).toBe('4000');
+  });
+
+  test('SC-613, second reproduction: a holding created through the app', async () => {
+    // The other worker's holding, made by `batchOperations.createHoldingsBatch`
+    // rather than by hand: balance 500, real transactions summing -3,500, and
+    // an opening of 5,000 written against a computed 4,000 — over by exactly
+    // the one transaction dated at or before its first observation.
+    const firstTxAt = new Date('2026-08-20T09:00:00Z');
+    const { service, capturedTxs } = makeService({
+      holding: { id: 'h2', userId: 'u1', accountId: 'a1', tokenId: 't1', balance: '500' },
+      txSumAllTime: '-3500',
+      firstTxAt,
+      observations: [{ observedAt: new Date('2026-08-21T09:00:00Z'), balance: '4000' }],
+      txsBeforeFirstObs: [{ occurredAt: firstTxAt, quantity: '-1000', source: 'exchange' }],
+    });
+
+    await service.reconcileHolding('h2');
+
+    expect(capturedTxs[0]?.quantity).toBe('4000');
+    expect(new Decimal(capturedTxs[0]?.quantity ?? '0').add(new Decimal('-3500')).toString()).toBe(
+      '500'
+    );
+  });
+
+  test('the SC-481 walk still LOWERS an opening — the bound only ever caps it', async () => {
+    // The case the walk exists for, unchanged: the ledger explains the first
+    // observation, and money arrived untracked afterwards. `computedOpening`
+    // is 20,037.16 and the observation says 10,671.32 was there — the walk
+    // must still win, or SC-481 comes back.
+    const firstTxAt = new Date('2026-01-10T00:00:00Z');
+    const { service, capturedTxs } = makeService({
+      holding: { id: 'h3', userId: 'u1', accountId: 'a1', tokenId: 't1', balance: '20037.16' },
+      txSumAllTime: '0',
+      firstTxAt,
+      observations: [{ observedAt: new Date('2026-01-10T12:00:00Z'), balance: '10671.32' }],
+    });
+
+    const r = await service.reconcileHolding('h3');
+
+    expect(capturedTxs[0]?.quantity).toBe('10671.32');
+    expect(r?.unexplainedResidual.toString()).toBe('9365.84');
   });
 
   test('respects an explicit epsilon — small diffs treated as rounding', async () => {
