@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { sweepFixtureCorpses } from '../lib/test-fixture-corpses';
+import { replayStrandedMutations, withMutatedSources } from '../lib/test-source-mutations';
 
 /**
  * SC-589. The published docs site linked a design note in the closed
@@ -75,6 +76,17 @@ function writeTrackedFixture(body: string): void {
 const swept = sweepFixtureCorpses(REPO_ROOT);
 if (swept.length > 0) console.log(`swept ${swept.length} stale fixture(s): ${swept.join(', ')}`);
 
+/**
+ * SC-601. The last test here rewrites `scripts/check-docs.ts` — TRACKED SOURCE
+ * — and restores it in a `finally` that `SIGKILL` skips just as thoroughly. The
+ * corpse is a legitimate filename with wrong contents, which no glob can find,
+ * so the sweep above structurally cannot cover it and this one replays a
+ * journal instead. Same reason it sits at module scope: a killed run repairs
+ * its predecessor.
+ */
+const restored = replayStrandedMutations(REPO_ROOT);
+if (restored.length > 0) console.log(`restored ${restored.length} file(s): ${restored.join(', ')}`);
+
 afterEach(() => {
   git('rm', '--cached', '--quiet', '--force', FIXTURE_REL);
   rmSync(FIXTURE, { force: true });
@@ -142,21 +154,27 @@ describe('docs:check refuses a docs-site link to any repository but the public o
   test('an empty docs app FAILS — it is never read as "no bad links"', () => {
     const script = path.join(REPO_ROOT, 'scripts/check-docs.ts');
     const original = readFileSync(script, 'utf8');
-    try {
-      writeFileSync(
-        script,
-        original.replace(
-          "const DOCS_APP = 'apps/frontend/docs';",
-          "const DOCS_APP = 'apps/frontend/docs-moved-away';"
-        )
-      );
+    const moved = original.replace(
+      "const DOCS_APP = 'apps/frontend/docs';",
+      "const DOCS_APP = 'apps/frontend/docs-moved-away';"
+    );
 
-      const { exitCode, output } = runCheck();
-      expect(output).toContain('docs-site-repo-links');
-      expect(output).toContain('no link was checked');
-      expect(exitCode).toBe(1);
-    } finally {
-      writeFileSync(script, original);
-    }
+    // Control: the substitution matched. Without it, a renamed constant would
+    // leave the file untouched and this test would assert against a green run.
+    expect(moved).not.toBe(original);
+
+    // SC-601. `withMutatedSources` journals the original bytes before writing,
+    // so a `kill -9` between here and the restore is repaired by the replay at
+    // the top of this file rather than committed by the next `git add -A`.
+    const { exitCode, output } = withMutatedSources(REPO_ROOT, { [script]: moved }, runCheck);
+
+    expect(output).toContain('docs-site-repo-links');
+    expect(output).toContain('no link was checked');
+    expect(exitCode).toBe(1);
+
+    // Restoration is asserted, not assumed: a stranded mutation here turns
+    // every later file in this single-process run red with no connection to
+    // what it names.
+    expect(readFileSync(script, 'utf8')).toBe(original);
   });
 });

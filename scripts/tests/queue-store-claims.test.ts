@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { sweepFixtureCorpses } from '../lib/test-fixture-corpses';
+import { replayStrandedMutations, withMutatedSources } from '../lib/test-source-mutations';
 
 /**
  * SC-546. `docs:check`'s other ten checks all ask about COVERAGE — does each
@@ -67,6 +68,17 @@ function removeFixture(): void {
 const swept = sweepFixtureCorpses(REPO_ROOT);
 if (swept.length > 0) console.log(`swept ${swept.length} stale fixture(s): ${swept.join(', ')}`);
 
+/**
+ * SC-601. The last test here rewrites the two queue clients — TRACKED SOURCE —
+ * and restores them in a `finally` that `SIGKILL` skips just as thoroughly. The
+ * corpse is a legitimate filename with wrong contents, which no glob can find,
+ * so the sweep above structurally cannot cover it and this one replays a
+ * journal instead. Same reason it sits at module scope: a killed run repairs
+ * its predecessor.
+ */
+const restored = replayStrandedMutations(REPO_ROOT);
+if (restored.length > 0) console.log(`restored ${restored.length} file(s): ${restored.join(', ')}`);
+
 afterEach(removeFixture);
 
 describe('docs:check catches prose that puts the job queue on the wrong store', () => {
@@ -124,18 +136,23 @@ describe('docs:check catches prose that puts the job queue on the wrong store', 
    */
   test('an undetectable backend FAILS — it is never read as "the docs are fine"', () => {
     const originals = CLIENTS.map((f) => readFileSync(f, 'utf8'));
-    try {
-      for (const [i, f] of CLIENTS.entries()) {
-        writeFileSync(f, originals[i].replaceAll('createPostgresBackend', 'makeBackend'));
-      }
+    const renamed = Object.fromEntries(
+      CLIENTS.map((f, i) => [f, originals[i].replaceAll('createPostgresBackend', 'makeBackend')])
+    );
 
-      const { exitCode, output } = runCheck();
-      expect(output).toContain('queue-store-claims');
-      expect(output).toContain('verified NOTHING');
-      expect(exitCode).toBe(1);
-    } finally {
-      for (const [i, f] of CLIENTS.entries()) writeFileSync(f, originals[i]);
-    }
+    // Control: the rename matched in both files. Without it, a moved factory
+    // would leave them untouched and this test would assert against a green
+    // run it never caused.
+    for (const [i, f] of CLIENTS.entries()) expect(renamed[f]).not.toBe(originals[i]);
+
+    // SC-601. `withMutatedSources` journals the original bytes before writing,
+    // so a `kill -9` between here and the restore is repaired by the replay at
+    // the top of this file rather than committed by the next `git add -A`.
+    const { exitCode, output } = withMutatedSources(REPO_ROOT, renamed, runCheck);
+
+    expect(output).toContain('queue-store-claims');
+    expect(output).toContain('verified NOTHING');
+    expect(exitCode).toBe(1);
 
     // Restoration is asserted, not assumed: a test that leaves a tracked source
     // file mutated turns every later file in this single-process run into a
