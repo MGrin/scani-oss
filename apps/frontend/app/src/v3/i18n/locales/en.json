@@ -873,7 +873,6 @@
           "left_control": "It left my portfolio",
           "untracked": "An account Scani can't see"
         },
-        "destinationScope": "Accounts that don't track this currency yet. Moving into one you already track needs the amounts on both sides, which a single balance edit cannot give.",
         "destinationExplain": {
           "internal": "It moved to another holding you track. Pick where, and Scani links the two sides so the cost basis carries across instead of being realized here and reopened there.",
           "left_control": "Spent, gifted, or sold somewhere Scani cannot see. This realizes a gain or a loss on the amount that left.",

@@ -21,6 +21,34 @@ const logger = createComponentLogger('service:ManualBalanceEditService');
 export const MANUAL_EDIT_FLOW_SOURCE = 'user-balance-edit';
 export const MANUAL_EDIT_CORRECTION_SOURCE = 'user-balance-correction';
 
+/** The dedup key every row this service writes is addressed by. */
+function manualEditExternalId(editedAt: Date): string {
+  return `manual-edit:${editedAt.toISOString()}`;
+}
+
+/**
+ * The natural key of the flow row a manual balance edit wrote.
+ *
+ * Exported because two callers have to find these rows AFTER writing them:
+ * `RecordHoldingMovementUseCase` and `UpdateHoldingUseCase` both link a
+ * declared transfer's two legs by this key, and `LinkTransferPairsUseCase`
+ * addresses each leg by `(holding, source, external_id)`.
+ *
+ * One assembly, here, for the reason `ManualBalanceEditResult.transactionId`
+ * already gives: a second assembly elsewhere is a key free to drift from this
+ * one, and a caller stamping an answer onto no row at all reports success.
+ */
+export function manualEditFlowLeg(
+  holdingId: string,
+  editedAt: Date
+): { holdingId: string; source: string; externalId: string } {
+  return {
+    holdingId,
+    source: MANUAL_EDIT_FLOW_SOURCE,
+    externalId: manualEditExternalId(editedAt),
+  };
+}
+
 export interface ManualBalanceEditInput {
   holding: Pick<Holding, 'id' | 'userId' | 'tokenId' | 'lastUpdated'>;
   /** The balance BEFORE the edit. */
@@ -221,7 +249,7 @@ export class ManualBalanceEditService {
           // deposits can share a date; the edit instant is what makes a
           // retried mutation collapse onto its own row and two real edits
           // stay two rows.
-          externalId: `manual-edit:${editedAt.toISOString()}`,
+          externalId: manualEditExternalId(editedAt),
           sourceMetadata: {
             cause,
             previousBalance: input.previousBalance,

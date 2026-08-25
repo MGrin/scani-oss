@@ -964,7 +964,9 @@ describe('UpdateHoldingUseCase — one edit, one question (SC-606)', () => {
         .from(schema.holdings)
         .where(and(eq(schema.holdings.accountId, other.id), eq(schema.holdings.tokenId, token.id)));
 
-      expect(withdrawal?.transferReview).toBe('internal');
+      // `paired`, not `internal`: this path writes both legs itself now, and
+      // `internal` is the answer meaning "nothing imported the arrival".
+      expect(withdrawal?.transferReview).toBe('paired');
 
       // The money is REALLY THERE. This is the assertion SC-614 turned on:
       // the whole defect was an arrival row against a balance that never
@@ -984,14 +986,18 @@ describe('UpdateHoldingUseCase — one edit, one question (SC-606)', () => {
     });
   });
 
-  test('an internal destination naming an EXISTING holding is refused (SC-614)', async () => {
-    // The defect this exists for: `writeInflow` given a `holdingId` inserts
-    // the arrival row and leaves that holding's balance alone. Correct in the
-    // queue, where the destination's balance was observed by its own sync;
-    // wrong here, where the user is the only source of truth for both sides
-    // and only one side has moved. Unrefused, the source drops 2,000, the
-    // destination stays at 10, and net worth falls with an arrival row
-    // sitting against a figure that never changed.
+  test('an internal destination that ALREADY holds the token has its balance moved (SC-614)', async () => {
+    // The repair. Two callers needed opposite behaviour out of one function:
+    // the queue must NOT move the destination's anchor — the outflow is
+    // historical and its own sync already observed the arrival, so moving it
+    // double-counts — and this path must, because the user is the only source
+    // of truth for both sides and only one of them has moved.
+    //
+    // So this path no longer calls `writeInflow` at all. It writes the arrival
+    // leg the way `RecordHoldingMovementUseCase` does, through this same use
+    // case, and both anchors move. `TransferReviewService`'s own
+    // `writes the arrival, shares the group id, and moves no balance` is the
+    // must-be-ABSENT half of this pair and asserts the queue still does not.
     await withTestDb(async (tx) => {
       const { user, institution, token, holding } = await cashHoldingObservedToday(tx);
       const other = await makeAccount(tx, { userId: user.id, institutionId: institution.id });
@@ -999,9 +1005,63 @@ describe('UpdateHoldingUseCase — one edit, one question (SC-606)', () => {
         userId: user.id,
         accountId: other.id,
         tokenId: token.id,
-        balance: '10',
+        balance: '500',
         source: 'manual',
       });
+
+      await useCase().execute(
+        holding.id,
+        {
+          balance: '2000',
+          editCause: 'flow',
+          editOccurredAt: backdatedBeforeLastObservation(),
+          editOutflow: {
+            decision: 'internal',
+            destination: { accountId: other.id, holdingId: destination.id },
+          },
+        },
+        user.id,
+        tx
+      );
+
+      const [arrived] = await tx
+        .select()
+        .from(schema.holdings)
+        .where(eq(schema.holdings.id, destination.id));
+      const [left] = await tx
+        .select()
+        .from(schema.holdings)
+        .where(eq(schema.holdings.id, holding.id));
+
+      // THE assertion, and the only one here that failed against the bug.
+      // 500 + 2,000. An arrival row existing and a group id being shared were
+      // both true for as long as the defect lived.
+      expect(arrived?.balance).toBe('2500');
+      expect(left?.balance).toBe('2000');
+
+      const withdrawal = (await ledgerFor(tx, holding.id)).find((row) => row.kind === 'withdraw');
+      const arrival = (await ledgerFor(tx, destination.id)).find((row) => row.kind === 'deposit');
+      expect(arrival?.quantity).toBe('2000');
+
+      // A declared pair, not a discovery. `paired` rather than `internal`
+      // because both legs exist — this path wrote them — and `internal` is
+      // the answer that means "nothing imported the arrival, write it for me".
+      expect(withdrawal?.transferReview).toBe('paired');
+      expect(withdrawal?.transferGroupId).not.toBeNull();
+      expect(arrival?.transferGroupId).toBe(withdrawal?.transferGroupId ?? null);
+
+      expect(await pendingOutflows(tx, user.id)).toHaveLength(0);
+    });
+  });
+
+  test('an internal destination naming the holding the money LEFT is refused', async () => {
+    // Both legs on one holding is not a transfer, it is a no-op that would
+    // park the lots in a group with itself — and `linkDeclaredPair` would see
+    // one row where it demands two and roll the whole edit back with a message
+    // about half-made pairings. Refused here, in the vocabulary the caller
+    // can render.
+    await withTestDb(async (tx) => {
+      const { user, account, holding } = await cashHoldingObservedToday(tx);
 
       await expect(
         useCase().execute(
@@ -1012,7 +1072,7 @@ describe('UpdateHoldingUseCase — one edit, one question (SC-606)', () => {
             editOccurredAt: backdatedBeforeLastObservation(),
             editOutflow: {
               decision: 'internal',
-              destination: { accountId: other.id, holdingId: destination.id },
+              destination: { accountId: account.id, holdingId: holding.id },
             },
           },
           user.id,
@@ -1022,15 +1082,17 @@ describe('UpdateHoldingUseCase — one edit, one question (SC-606)', () => {
     });
   });
 
-  test('the manual destination list offers only accounts that hold none of this token', async () => {
-    // The other half of the same guarantee, and it has both axes. The server
-    // refuses the bad shape; this stops it being offered at all, so a reader
-    // cannot pick something that will then be rejected.
+  test('the manual destination list offers an account that already holds the token (SC-614)', async () => {
+    // Widened with the repair above, and only with it. While `writeInflow`
+    // was the writer this list was scoped to accounts tracking none of the
+    // token, because the other branch silently left the destination short.
+    // Now that both anchors move, an existing holding is a destination a
+    // person can pick — and it is the commoner one.
     await withTestDb(async (tx) => {
       const { user, institution, token, holding } = await cashHoldingObservedToday(tx);
       const empty = await makeAccount(tx, { userId: user.id, institutionId: institution.id });
       const occupied = await makeAccount(tx, { userId: user.id, institutionId: institution.id });
-      await makeHolding(tx, {
+      const sibling = await makeHolding(tx, {
         userId: user.id,
         accountId: occupied.id,
         tokenId: token.id,
@@ -1043,14 +1105,19 @@ describe('UpdateHoldingUseCase — one edit, one question (SC-606)', () => {
         holding.id,
         tx
       );
-      const accountIds = offered.map((row) => row.accountId);
 
-      // must-be-FOUND: the account with no position IS offered, so an empty
-      // result would not pass this by default.
-      expect(accountIds).toContain(empty.id);
-      // must-be-ABSENT: the one that already holds the token is not.
-      expect(accountIds).not.toContain(occupied.id);
-      expect(offered.every((row) => row.holdingId === null)).toBe(true);
+      // Both shapes, and each is a control on the other: an account with no
+      // position offered as "open one", and the existing holding offered by
+      // its own id.
+      expect(offered).toContainEqual(
+        expect.objectContaining({ accountId: empty.id, holdingId: null })
+      );
+      expect(offered).toContainEqual(
+        expect.objectContaining({ accountId: occupied.id, holdingId: sibling.id })
+      );
+      // must-be-ABSENT: the holding the money is leaving is never a
+      // destination, on either list.
+      expect(offered.map((row) => row.holdingId)).not.toContain(holding.id);
     });
   });
 

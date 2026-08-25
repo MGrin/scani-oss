@@ -68,6 +68,7 @@ export {
   EXCHANGE_BALANCE_SYNC_SOURCE,
   WALLET_BALANCE_SYNC_SOURCE,
 } from './holdings/balance-sync-sources';
+export { DeclaredTransferService } from './holdings/DeclaredTransferService';
 export {
   type EnrichedParsedHolding,
   type EnrichHoldingsInput,
@@ -102,6 +103,7 @@ export {
   type ManualBalanceEditInput,
   type ManualBalanceEditResult,
   ManualBalanceEditService,
+  manualEditFlowLeg,
 } from './holdings/ManualBalanceEditService';
 export {
   OpeningBalanceReconciliationService,
