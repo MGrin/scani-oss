@@ -40,16 +40,21 @@ describe('v3 accessibility-gate coverage', () => {
   });
 
   /**
-   * The two routed screens that are not nav destinations. Both are forms —
-   * the surfaces where a missing label or an undersized control costs the
-   * most — so neither may be skipped just because nothing links to it from
-   * the tab bar.
+   * The routed screens that are not nav destinations. All are forms — the
+   * surfaces where a missing label or an undersized control costs the most —
+   * so none may be skipped just because nothing links to it from the tab bar.
+   *
+   * `recordMovement` was not one of them until SC-619: the route rendered a
+   * dialog, so an axe pass on it would have walked an empty page and reported
+   * a clean sweep of nothing.
    */
   test('the routed forms outside the nav tree are walked too', async () => {
     const covered = await coveredRoutes();
-    const missing = [V3_PAYMENT_ROUTES.create, V3_CAPTURE_ROUTES.manualEntry].filter(
-      (path) => !covered.has(path)
-    );
+    const missing = [
+      V3_PAYMENT_ROUTES.create,
+      V3_CAPTURE_ROUTES.manualEntry,
+      V3_CAPTURE_ROUTES.recordMovement,
+    ].filter((path) => !covered.has(path));
     expect(missing).toEqual([]);
   });
 });
