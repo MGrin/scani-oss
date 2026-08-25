@@ -53,6 +53,13 @@ docker-compose.override.yml
 # permanent and everyone pays to clone it forever.
 *.bun-build
 
+# Two tests under `scripts/tests/` rewrite tracked source in place and journal
+# the original bytes here first, so a killed run is repaired by the next one
+# (SC-601). Ignored because the repair for one committable artefact must not
+# introduce another; `scripts/check-staged-test-fixtures.ts` refuses a commit
+# while one exists.
+scripts/.source-mutation-journal-*.json
+
 # Build output that lives beside the app or module producing it, and
 # infrastructure working state (SC-569, SC-577).
 #
