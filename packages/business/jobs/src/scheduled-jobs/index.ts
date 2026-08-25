@@ -14,6 +14,7 @@ export {
   JOB_HEARTBEAT_PROBE_SCHEDULE,
 } from './job-heartbeat-probe';
 export { PAYMENT_DUE_REMINDER_SCHEDULE } from './payment-due-reminder';
+export { PAYMENT_HORIZON_ROLL_SCHEDULE } from './payment-horizon-roll';
 export { PORTFOLIO_VALUE_ROLLUP_SCHEDULE } from './portfolio-value-rollup';
 export { PRICING_SCHEDULE } from './pricing';
 export { RECONCILE_ORPHANED_USER_JOBS_SCHEDULE } from './reconcile-orphaned-user-jobs';
@@ -41,6 +42,7 @@ import { HIDE_CLOSED_HOLDINGS_SCHEDULE } from './hide-closed-holdings';
 import { HISTORICAL_PRICE_BACKFILL_SCHEDULE } from './historical-price-backfill';
 import { JOB_HEARTBEAT_PROBE_SCHEDULE } from './job-heartbeat-probe';
 import { PAYMENT_DUE_REMINDER_SCHEDULE } from './payment-due-reminder';
+import { PAYMENT_HORIZON_ROLL_SCHEDULE } from './payment-horizon-roll';
 import { PORTFOLIO_VALUE_ROLLUP_SCHEDULE } from './portfolio-value-rollup';
 import { PRICING_SCHEDULE } from './pricing';
 import { RECONCILE_ORPHANED_USER_JOBS_SCHEDULE } from './reconcile-orphaned-user-jobs';
@@ -63,8 +65,13 @@ export const SCHEDULED_JOB_DESCRIPTORS = [
   // A schedule with no processor does not fail the build, a test, or boot —
   // it fails once per tick, in production, into the DLQ.
   PAYMENT_DUE_REMINDER_SCHEDULE,
-  // Registered in the SAME commit as `WeeklyDigestProcessor`, for the reason
-  // stated one line above (SC-460).
+  // Registered in the SAME commit as `PaymentHorizonRollProcessor` (SC-622),
+  // for the reason given on `PAYMENT_DUE_REMINDER_SCHEDULE`.
+  PAYMENT_HORIZON_ROLL_SCHEDULE,
+  // Registered in the SAME commit as `WeeklyDigestProcessor` (SC-460), for the
+  // reason given on `PAYMENT_DUE_REMINDER_SCHEDULE`. That reason was written
+  // as "one line above" and this list is built to have entries inserted into
+  // it, so the next insertion made it name the wrong entry (SC-622).
   WEEKLY_DIGEST_SCHEDULE,
   // And in the SAME commit as `AlertSweepProcessor` (SC-459).
   ALERT_SWEEP_SCHEDULE,
