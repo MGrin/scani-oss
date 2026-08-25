@@ -234,14 +234,23 @@ export class OpeningBalanceReconciliationService {
     // was free to return more than the balance can hold.
     //
     // The walk assumes the first observation already reflects every transaction
-    // dated at or before it. A manual balance edit breaks that: the client
-    // pre-fills today's date, a date-only value becomes LOCAL midnight, and the
-    // synthesized `withdraw` is therefore stamped BEFORE the observation that
-    // captured the pre-edit figure. The walk then subtracts a withdrawal the
-    // anchor never included and counts the same money twice — measured
-    // 2026-08-25 through `UpdateHoldingUseCase` on a manual USD holding edited
-    // 4,000 to 2,000: opening 6,000 against a computed 4,000, and 4,000 with
-    // the identical edit stamped at the edit instant instead.
+    // dated at or before it. A BACK-DATED flow breaks that: the user is telling
+    // us today about money that moved before the observation which captured the
+    // pre-edit figure, so the walk subtracts a withdrawal the anchor never
+    // included and counts the same money twice. Measured 2026-08-25 through
+    // `UpdateHoldingUseCase` on a manual USD holding edited 4,000 to 2,000 —
+    // opening 6,000 against a computed 4,000, and 4,000 from the identical edit
+    // stamped at the edit instant instead. One variable, the timestamp.
+    //
+    // SC-612 removed the commonest way to get there by accident — an untouched
+    // date field means now rather than local midnight — and deliberately did
+    // NOT clamp, because somebody who says "three weeks ago" means it. So this
+    // is not dead code behind that fix: every genuine back-date still reaches
+    // it, and a date is not the only route. The general condition is wider than
+    // any of them — the walk overshoots whenever the ledger anchored at the
+    // first observation predicts MORE than the holding currently holds, which
+    // an unrecorded outflow after that observation does too (SC-613's second
+    // reproduction, on a holding built by `createHoldingsBatch`).
     //
     // Two observations, one transaction and today's balance can genuinely
     // disagree — the user is telling us something about the past we did not
