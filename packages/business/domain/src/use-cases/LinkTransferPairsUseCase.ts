@@ -93,6 +93,9 @@ const legColumns = {
   >`case when ${schema.tokens.lookalikeOf} is null then ${schema.tokens.providerMetadata}->'coingecko'->>'id' end`,
   walletId: sql<string | null>`${schema.accounts.metadata}->>'userWalletId'`,
   chainKey: sql<string | null>`${schema.accounts.metadata}->>'chainId'`,
+  // The ownership boundary (SC-463). A column, not a join — this query
+  // already joins `accounts` for the two above it.
+  entityId: schema.accounts.entityId,
 } as const;
 
 type LegRow = {
@@ -104,6 +107,7 @@ type LegRow = {
   canonicalAssetKey: string | null;
   walletId: string | null;
   chainKey: string | null;
+  entityId: string | null;
 };
 
 function toLeg(row: LegRow): TransferLeg {
@@ -114,6 +118,7 @@ function toLeg(row: LegRow): TransferLeg {
     canonicalAssetKey: row.canonicalAssetKey,
     walletId: row.walletId,
     chainKey: row.chainKey,
+    entityId: row.entityId,
     occurredAt: row.occurredAt,
     quantityAbs: new Decimal(row.quantity).abs(),
   };
