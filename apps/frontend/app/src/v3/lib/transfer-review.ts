@@ -640,7 +640,20 @@ export function reopenConsequence(t: TFunction, item: AnsweredTransferReview): s
   if (item.declared) return t('v3.review.transfer.reopen.declared');
   const internal =
     item.decision === 'internal' || (item.split?.some((p) => p.decision === 'internal') ?? false);
-  if (internal) return t('v3.review.transfer.reopen.internal');
+  // A destination this answer had to CREATE is removed with it, so the
+  // ordinary sentence — "no balance changes either way" — is false of it: an
+  // account loses a position it did not have before the answer (SC-631). The
+  // copy describes the RULE rather than predicting the outcome ("unless
+  // something else has been recorded against it since"), so it cannot drift
+  // from `holdingIsUntouched` the way a second implementation of the
+  // predicate would.
+  if (internal) {
+    return t(
+      item.createdDestination
+        ? 'v3.review.transfer.reopen.internalCreated'
+        : 'v3.review.transfer.reopen.internal'
+    );
+  }
   if (item.decision === 'left_control') return t('v3.review.transfer.reopen.leftControl');
   return t('v3.review.transfer.reopen.default');
 }

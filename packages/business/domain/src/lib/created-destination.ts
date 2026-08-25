@@ -1,0 +1,97 @@
+/**
+ * Did this answer have to CREATE the holding it deposited into? (SC-631)
+ *
+ * ## The bug this exists for
+ *
+ * Answering an outflow `internal` at an account that tracks no position in the
+ * token makes `writeInflow` create a holding, opened at the amount that moved
+ * when nobody syncs that account (`openingOf`). Reopening deletes the arrival
+ * row — correctly, SC-187 — and used to leave the holding standing: an account
+ * showing 250 of a token it held none of, no ledger row explaining it, and the
+ * answer that put it there withdrawn. `HoldingsSyncHelper` skips `manual`
+ * rows, so no sync may ever correct that figure, and being invisible to the
+ * sync the row is not found either — the next pass creates a SECOND holding
+ * for the same account and token.
+ *
+ * ## Why the marker is a value on the arrival row and not a column on the
+ * holding
+ *
+ * The fact has exactly the lifetime of the answer. It is written by the one
+ * writer that can know it, read by the one reader that needs it, and deleted
+ * with the row it describes — so it cannot go stale, be re-answered into a
+ * lie, or outlive the holding it is about. A column on `holdings` would
+ * survive all three.
+ *
+ * ## Why `false` is written explicitly, and why that is the whole point
+ *
+ * `writeInflow` records the marker on EVERY branch — `true` where it created
+ * the destination, `false` where it reused one that already existed. Nothing
+ * is left to absence.
+ *
+ * That is what makes the three states distinguishable, and it is the
+ * difference between this fix and a fix-shaped one. A reader looking at a
+ * nullable field can tell "no" from "yes"; it cannot tell "no" from "nobody
+ * ever wrote this". Here it can:
+ *
+ * - `created`    — this answer opened the destination. Undo it.
+ * - `reused`     — the destination already existed and this answer never moved
+ *                  its balance. Positively asserted, not inferred.
+ * - `unrecorded` — the key is absent or is not a boolean. Nobody said either
+ *                  way, which is what every arrival row written before SC-631
+ *                  looks like. **Take no action**: deleting a holding on an
+ *                  absent marker is a guess about somebody's money, and the
+ *                  status quo for those rows is the bug, not a loss.
+ *
+ * The failure mode of the marker never being written is therefore a visible,
+ * safe no-op rather than a silent one — the same thing `arrival` could not
+ * offer when production held zero `user_confirmed` rows and nobody could tell
+ * whether the writers had never run or the value had not survived.
+ *
+ * Falsifier, one query, no code:
+ *
+ *     select source_metadata->>'createdDestinationHolding' as marker, count(*)
+ *       from holding_transactions
+ *      where source = 'transfer-review'
+ *      group by 1;
+ *
+ * Rows written since SC-631 read `true` or `false`. A `null` bucket is either
+ * a pre-SC-631 row or a writer that stopped setting it, and `created_at`
+ * separates those two in the same query.
+ */
+
+/** The one place the key is spelled. `source_metadata` is schemaless jsonb, so
+ *  a typo at either end is invisible — the writer and the reader below share
+ *  this constant rather than each carrying a string literal. Not exported:
+ *  nothing outside this module should be reading the key, only the two
+ *  functions that understand what its absence means. */
+const CREATED_DESTINATION_KEY = 'createdDestinationHolding';
+
+export type CreatedDestination = 'created' | 'reused' | 'unrecorded';
+
+/** The `source_metadata` an arrival row carries. `createdDestination` is
+ *  required, so a create path that forgets it does not compile — there is no
+ *  default anywhere that would let the omission read as a valid answer. */
+export function arrivalMetadata(opts: {
+  outflowTransactionId: string;
+  createdDestination: boolean;
+}): Record<string, unknown> {
+  return {
+    outflowTransactionId: opts.outflowTransactionId,
+    [CREATED_DESTINATION_KEY]: opts.createdDestination,
+  };
+}
+
+/**
+ * What this arrival row says about its destination.
+ *
+ * Anything that is not literally `true` or `false` reads as `unrecorded` —
+ * a string `"true"`, a number, a null. The reader acts on a boolean or it
+ * does not act.
+ */
+export function readCreatedDestination(sourceMetadata: unknown): CreatedDestination {
+  if (typeof sourceMetadata !== 'object' || sourceMetadata === null) return 'unrecorded';
+  const value = (sourceMetadata as Record<string, unknown>)[CREATED_DESTINATION_KEY];
+  if (value === true) return 'created';
+  if (value === false) return 'reused';
+  return 'unrecorded';
+}

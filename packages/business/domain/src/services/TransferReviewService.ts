@@ -39,7 +39,9 @@ import {
 import Decimal from 'decimal.js';
 import { and, desc, eq, gte, inArray, isNotNull, isNull, lte, ne, or, sql } from 'drizzle-orm';
 import Container, { Service } from 'typedi';
+import { arrivalMetadata, readCreatedDestination } from '../lib/created-destination';
 import { type DeclaredPairLegFacts, declaredPairLegs } from '../lib/declared-transfer';
+import { holdingIsUntouched } from '../lib/holding-untouched';
 import { ilikePattern } from '../lib/text-search';
 import {
   CANDIDATE_QTY_EPSILON,
@@ -1162,6 +1164,10 @@ export class TransferReviewService {
       userId,
       page.map(({ tx }) => tx.transferGroupId)
     );
+    const createdDestinations = await this.createdDestinationAnswers(
+      userId,
+      page.map(({ tx }) => tx.id)
+    );
 
     return {
       items: page.map(({ tx, tokenSymbol, accountName, institutionName, ruleNote }) => {
@@ -1182,6 +1188,7 @@ export class TransferReviewService {
           answerSource: answerSourceOf(tx),
           ruleNote,
           declared: tx.transferGroupId !== null && declaredGroups.has(tx.transferGroupId),
+          createdDestination: createdDestinations.has(tx.id),
         } satisfies AnsweredTransferReview;
       }),
       nextCursor: hasMore && last ? encodeAnsweredCursor(new Date(last.sortKey), last.tx.id) : null,
@@ -1379,6 +1386,58 @@ export class TransferReviewService {
       if (declaredPairLegs(legs)) declared.add(groupId);
     }
     return declared;
+  }
+
+  /**
+   * Which of these answered outflows had to CREATE the holding they deposited
+   * into (SC-631).
+   *
+   * Batched over a page for the same reason `declaredTransferGroups` is: the
+   * reader on the answered list is finding a row they already decided, and
+   * per-row round trips there buy nothing.
+   *
+   * It returns what the MARKER says and nothing more. Whether the holding will
+   * actually be removed is `holdingIsUntouched`'s question, asked inside the
+   * writing transaction — and this deliberately does not ask it, because the
+   * copy it feeds describes the rule ("unless something else has been recorded
+   * against it since") rather than predicting the outcome. A projection that
+   * predicted would be a second implementation of the delete condition, which
+   * is exactly how a confirmation comes to describe a write that does
+   * something else.
+   *
+   * `unrecorded` is absent from the result, alongside `reused`. Both mean "do
+   * not promise a removal": one because there is nothing to remove, the other
+   * because nobody wrote down which it was.
+   */
+  async createdDestinationAnswers(
+    userId: string,
+    transactionIds: readonly string[],
+    transaction?: DatabaseTransaction
+  ): Promise<Set<string>> {
+    const ids = [...new Set(transactionIds)];
+    if (ids.length === 0) return new Set();
+
+    const rows = await (transaction ?? db)
+      .select({
+        externalId: schema.holdingTransactions.externalId,
+        sourceMetadata: schema.holdingTransactions.sourceMetadata,
+      })
+      .from(schema.holdingTransactions)
+      .where(
+        and(
+          eq(schema.holdingTransactions.userId, userId),
+          eq(schema.holdingTransactions.source, TRANSFER_REVIEW_CREATED_SOURCE),
+          inArray(schema.holdingTransactions.externalId, ids)
+        )
+      );
+
+    const created = new Set<string>();
+    for (const row of rows) {
+      if (row.externalId && readCreatedDestination(row.sourceMetadata) === 'created') {
+        created.add(row.externalId);
+      }
+    }
+    return created;
   }
 
   /** Every leg of one transfer group, in the shape `declaredPairLegs` reads. */
@@ -1883,12 +1942,42 @@ export class TransferReviewService {
           eq(schema.holdingTransactions.externalId, transactionId)
         )
       )
-      .returning({ holdingId: schema.holdingTransactions.holdingId });
-    if (removed.length > 0) {
-      await Container.get(HoldingCoverageRepository).syncTxBoundsFromLedger(
-        removed.map((r) => r.holdingId),
-        tx
-      );
+      .returning({
+        holdingId: schema.holdingTransactions.holdingId,
+        sourceMetadata: schema.holdingTransactions.sourceMetadata,
+      });
+
+    // **The holding the answer had to create goes with it** (SC-631).
+    //
+    // Deleting the arrival alone left an account showing an amount of a token
+    // it held none of before the answer, with nothing in the ledger to explain
+    // it and the answer withdrawn — and `HoldingsSyncHelper` skips `manual`
+    // rows, so no sync was ever allowed to correct the figure.
+    //
+    // Two facts have to line up before anything is deleted, and they come from
+    // different places on purpose. The MARKER says this answer opened the row
+    // — `reused` and `unrecorded` both stop here, the second because absence
+    // is not a denial and a delete on it would be a guess. `holdingIsUntouched`
+    // then says nothing else was ever recorded against it, which is a question
+    // about six tables and not just the ledger: a `growth` balance edit leaves
+    // an observation and no transaction at all.
+    //
+    // The arrival is already gone by this point, so it does not count itself.
+    const survivors: string[] = [];
+    for (const row of removed) {
+      if (
+        readCreatedDestination(row.sourceMetadata) === 'created' &&
+        (await holdingIsUntouched(tx, userId, row.holdingId))
+      ) {
+        await tx
+          .delete(schema.holdings)
+          .where(and(eq(schema.holdings.id, row.holdingId), eq(schema.holdings.userId, userId)));
+        continue;
+      }
+      survivors.push(row.holdingId);
+    }
+    if (survivors.length > 0) {
+      await Container.get(HoldingCoverageRepository).syncTxBoundsFromLedger(survivors, tx);
     }
 
     await tx
@@ -2471,6 +2560,11 @@ async function writeInflow(
   if (!account) return false;
 
   let holdingId = destination.holdingId;
+  // Recorded on the arrival row below, on EVERY branch. See
+  // `created-destination.ts`: `false` is written as deliberately as `true`,
+  // because a reopen has to tell "this answer did not create it" from "nobody
+  // said", and only one of those may delete a holding (SC-631).
+  let createdDestination = false;
   if (holdingId) {
     const [holding] = await tx
       .select({ id: schema.holdings.id })
@@ -2527,6 +2621,7 @@ async function writeInflow(
         .returning({ id: schema.holdings.id });
       if (!created) return false;
       holdingId = created.id;
+      createdDestination = true;
     }
   }
 
@@ -2544,7 +2639,7 @@ async function writeInflow(
       transferGroupId: groupId,
       counterparty: outflow.counterparty,
       description: 'Arrival you recorded when reviewing the transfer it came from',
-      sourceMetadata: { outflowTransactionId: outflow.id },
+      sourceMetadata: arrivalMetadata({ outflowTransactionId: outflow.id, createdDestination }),
     })
     // Re-answering after a reopen deletes the previous row first, so a
     // conflict here means two writers for one question. The later one wins on
@@ -2555,6 +2650,11 @@ async function writeInflow(
         schema.holdingTransactions.source,
         schema.holdingTransactions.externalId,
       ],
+      // `source_metadata` is deliberately NOT in this set. On a conflict the
+      // destination necessarily exists NOW, so recomputing the marker here
+      // would write `false` over the `true` left by the write that created
+      // it, and the undo would then strand the holding this answer opened.
+      // The FIRST write is the one that describes what the answer did.
       set: {
         quantity: quantity.toString(),
         occurredAt: outflow.occurredAt,
