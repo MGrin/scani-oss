@@ -62,9 +62,30 @@ else
   note "scripts/check-oss-bound-paths.ts is not in this tree; OSS-boundary check NOT run"
 fi
 
-# -------- 0b. Nothing internal may ride inside a file that legitimately travels --------
+# -------- 0b. No test fixture may ride a commit --------
 #
-# SC-598. The check above answers ROUTING — which files may go — and says
+# SC-596. Two tests under scripts/tests/ write a fixture INSIDE the repo and
+# record it with `git add -N`, because check-docs.ts only reads files git tracks
+# (SC-430). Their `afterEach` removes it — and does not run when the process is
+# killed, so a killed test run leaves the fixture in the INDEX, where the next
+# `git add -A` takes it. One of them sits in the docs content root, so the site
+# would build it as a page.
+#
+# The tests sweep stale fixtures at their own start, which repairs a corpse on
+# the next run even if that run is killed too. This closes the window in
+# between, which is where the damage happens: the contributor whose test run was
+# killed commits before running another one.
+if [ -f scripts/check-staged-test-fixtures.ts ]; then
+  if ! bun scripts/check-staged-test-fixtures.ts; then
+    fail "a scripts/tests fixture is staged — a killed run left it behind (SC-596)"
+  fi
+else
+  note "scripts/check-staged-test-fixtures.ts is not in this tree; fixture check NOT run"
+fi
+
+# -------- 0c. Nothing internal may ride inside a file that legitimately travels --------
+#
+# SC-598. `check-oss-bound-paths.ts` above answers ROUTING — which files may go — and
 # nothing about what is inside one that may. The hazard that leaves is an
 # oss-eligible file, correctly pushed, whose COMMENTS carry an internal board
 # key, an agent session id, an internal host or a machine-local path. That is
@@ -72,8 +93,8 @@ fi
 # ids, and the only thing between it and the public repo was somebody checking
 # precedent by hand.
 #
-# It cannot be keyed on the classifier for the same two reasons the check
-# above cannot be, and one more of its own: the classifier is private-only, so
+# It cannot be keyed on the classifier for the same two reasons that check
+# cannot be, and one more of its own: the classifier is private-only, so
 # from a mirror-bound checkout it does not run at all. This one has no private
 # imports and answers in both repositories — including in scani-oss itself,
 # where there is no `upstream` remote and every commit is public by definition.
