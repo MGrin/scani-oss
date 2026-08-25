@@ -1,5 +1,6 @@
 import { db } from '@scani/db/connection';
 import * as schema from '@scani/db/schema';
+import { answerSourceOf } from '@scani/shared';
 import Decimal from 'decimal.js';
 import { eq, sql } from 'drizzle-orm';
 import Container, { Service } from 'typedi';
@@ -164,6 +165,20 @@ export class RepairMatchedOutflowsUseCase {
         arrival: null,
         blockedReason: why,
       });
+
+      // A person decided this. Overruling a stamped answer is a different act
+      // needing a different mandate — the same refusal `RepairSwapLegAnswers`
+      // and `RepairProtocolDepositOutflows` already make, stated here so the
+      // rule is a property of every repair rather than of the two written
+      // after SC-350. `answerSourceOf` rather than a local reading of the two
+      // columns, so this refusal and the queue's own attribution cannot drift
+      // (SC-606).
+      if (answerSourceOf(row.tx) === 'user') {
+        plans.push(
+          blocked('answered by a person — this repair does not overrule a stamped answer')
+        );
+        continue;
+      }
 
       if (candidates.length > 1) {
         plans.push(
