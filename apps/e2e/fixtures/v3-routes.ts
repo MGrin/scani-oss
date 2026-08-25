@@ -7,10 +7,11 @@
  * and fails when a route in `V3_NAV_PATHS` is missing from it. A new v3
  * surface therefore cannot be shipped past the gate by forgetting to add it.
  *
- * The two entries that are not nav destinations are here because they are the
- * two richest DOM surfaces v3 has: the primitive gallery renders every
- * component in both themes at once, and the payment form is the only screen
- * with a twelve-field form on it.
+ * The entries that are not nav destinations are here because they are the
+ * richest DOM surfaces v3 has: the primitive gallery renders every component
+ * in both themes at once, and the payment form is the only screen with a
+ * twelve-field form on it. `/record-movement` joined them in SC-619, when it
+ * stopped being a dialog over an empty page and became a form of its own.
  */
 export const V3_A11Y_ROUTES: readonly string[] = [
   '/',
@@ -29,5 +30,6 @@ export const V3_A11Y_ROUTES: readonly string[] = [
   '/documents',
   '/settings',
   '/manual-entry',
+  '/record-movement',
   '/kitchen-sink',
 ];
