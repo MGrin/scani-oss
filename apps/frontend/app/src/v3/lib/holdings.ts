@@ -97,6 +97,43 @@ export function isSynced(holding: Pick<HoldingWithDetails, 'source'>): boolean {
  * rendered `0`, which is a claim that the position is empty rather than that it
  * is small.
  */
+/**
+ * Is this balance below zero — a figure NOTHING the user can type produces
+ * (SC-632)?
+ *
+ * ## Why the sign is enough, and no marker column is needed
+ *
+ * `CreateHoldingDto` and `UpdateHoldingDto` both refuse a negative balance
+ * (`greaterThanOrEqualTo(0)`), and `UpdateHoldingDto` gates the
+ * `holdings.update` mutation — so no request a person can make writes one.
+ * `RecordHoldingMovementUseCase` separately refuses an outflow larger than the
+ * balance. A negative therefore came from a domain path writing through the
+ * use case rather than the wire, and the sign says so BY CONSTRUCTION. That is
+ * what lets this be a rule about the number instead of a provenance column
+ * somebody has to remember to set.
+ *
+ * The path that produces one today is SC-618's undo: it restores an anchor as
+ * `balance - quantity`, the exact inverse of the declaration, against TODAY's
+ * figure — so a sync or an edit that restated the balance in between can carry
+ * it under. Leaving that visible is deliberate (mgrin, 2026-08-26): clamping
+ * silently loses money the user has, and refusing traps somebody inside a
+ * transfer they cannot withdraw. Visible, however, was never meant to mean
+ * unexplained — a bare negative reads as the app having lost their money.
+ *
+ * `lessThan(0)` rather than `isNegative()`: decimal.js calls `-0` negative and
+ * it is not a deficit, so a holding that reached exactly zero by a signed route
+ * would otherwise carry the explanation of a problem it does not have.
+ */
+export function balanceIsBelowZero(amount: Decimal.Value): boolean {
+  try {
+    return new Decimal(amount).lessThan(0);
+  } catch {
+    // A balance that will not parse is a different defect with a different
+    // sentence, and claiming this one about it would be a guess.
+    return false;
+  }
+}
+
 export function amountDecimals(amount: Decimal.Value): number {
   return quantityDecimals(amount);
 }
