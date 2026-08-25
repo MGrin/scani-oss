@@ -73,11 +73,11 @@ describe('PaymentService', () => {
           expectedAmount: '12.99',
         });
 
-        const first = await service().materialise(user.id, payment.id, tx);
+        const first = await service().materialise(payment, tx);
         expect(first.length).toBeGreaterThan(0);
 
         const afterFirst = await occurrences().findByPaymentId(payment.id, tx);
-        await service().materialise(user.id, payment.id, tx);
+        await service().materialise(payment, tx);
         const afterSecond = await occurrences().findByPaymentId(payment.id, tx);
 
         expect(afterSecond.length).toBe(afterFirst.length);
@@ -96,7 +96,7 @@ describe('PaymentService', () => {
           intervalCount: 1,
         });
 
-        await service().materialise(user.id, payment.id, tx);
+        await service().materialise(payment, tx);
 
         const rows = await occurrences().findByPaymentId(payment.id, tx);
         expect(rows.length).toBeGreaterThan(0);
@@ -122,7 +122,7 @@ describe('PaymentService', () => {
           intervalCount: 1,
         });
 
-        const created = await service().materialise(user.id, payment.id, tx);
+        const created = await service().materialise(payment, tx);
 
         const rows = await occurrences().findByPaymentId(payment.id, tx);
         const dueDates = rows.map((r) => r.dueDate);
@@ -147,12 +147,12 @@ describe('PaymentService', () => {
           intervalCount: 1,
         });
 
-        await service().materialise(user.id, payment.id, tx);
+        await service().materialise(payment, tx);
         const afterFirst = await occurrences().findByPaymentId(payment.id, tx);
 
         // Simulates the scheduled re-run mentioned in the spec — same
         // payment, later call, no change to its shape.
-        await service().materialise(user.id, payment.id, tx);
+        await service().materialise(payment, tx);
         const afterSecond = await occurrences().findByPaymentId(payment.id, tx);
 
         expect(afterSecond.length).toBe(afterFirst.length);
@@ -174,7 +174,7 @@ describe('PaymentService', () => {
           expectedAmount: '12.99',
         });
 
-        await service().materialise(user.id, payment.id, tx);
+        await service().materialise(payment, tx);
         const rows = await occurrences().findByPaymentId(payment.id, tx);
         const someHistoricalRow = rows[3];
         if (!someHistoricalRow) throw new Error('expected a historical occurrence to settle');
@@ -188,7 +188,7 @@ describe('PaymentService', () => {
         );
         expect(settled?.status).toBe('matched');
 
-        await service().materialise(user.id, payment.id, tx);
+        await service().materialise(payment, tx);
 
         const reloaded = await occurrences().findByPaymentId(payment.id, tx);
         const stillSettled = reloaded.find((r) => r.id === someHistoricalRow.id);
@@ -211,7 +211,7 @@ describe('PaymentService', () => {
           intervalCount: 1,
           expectedAmount: '12.99',
         });
-        await service().materialise(user.id, payment.id, tx);
+        await service().materialise(payment, tx);
 
         // Historical rows predating this payment's own anchorDate (set
         // to today above), so materialise itself would never produce
@@ -258,7 +258,7 @@ describe('PaymentService', () => {
           anchorDate: todayUtcString(),
           expectedAmount: '12.99',
         });
-        await service().materialise(user.id, payment.id, tx);
+        await service().materialise(payment, tx);
         const before = await occurrences().findByPaymentId(payment.id, tx);
 
         await service().update(user.id, payment.id, { notes: 'unrelated change' }, tx);
@@ -286,7 +286,7 @@ describe('PaymentService', () => {
         intervalCount: 1,
         expectedAmount: '12.99',
       });
-      await service().materialise(user.id, payment.id, tx);
+      await service().materialise(payment, tx);
 
       const document = await makeDocument(tx, { userId: user.id });
       const extraction = await makeDocumentExtraction(tx, { documentId: document.id });
@@ -418,7 +418,7 @@ describe('PaymentService', () => {
           intervalCount: 1,
           expectedAmount: '99.00',
         });
-        await service().materialise(user.id, payment.id, tx);
+        await service().materialise(payment, tx);
 
         const target = await occurrences().findByPaymentIdAndDueDate(
           payment.id,
@@ -464,7 +464,7 @@ describe('PaymentService', () => {
         intervalCount: 1,
         expectedAmount: '12.99',
       });
-      await service().materialise(userId, payment.id, tx);
+      await service().materialise(payment, tx);
       return payment;
     }
 
@@ -593,19 +593,6 @@ describe('PaymentService', () => {
   });
 
   describe('ownership', () => {
-    test('materialise throws for a payment belonging to another user and writes nothing', async () => {
-      await withTestDb(async (tx) => {
-        const owner = await makeUser(tx);
-        const intruder = await makeUser(tx);
-        const payment = await makePayment(tx, { userId: owner.id, anchorDate: todayUtcString() });
-
-        await expect(service().materialise(intruder.id, payment.id, tx)).rejects.toThrow();
-
-        const rows = await occurrences().findByPaymentId(payment.id, tx);
-        expect(rows).toEqual([]);
-      });
-    });
-
     test('update throws for a payment belonging to another user and leaves it unchanged', async () => {
       await withTestDb(async (tx) => {
         const owner = await makeUser(tx);
@@ -671,13 +658,16 @@ describe('PaymentService', () => {
       await withTestDb(async (tx) => {
         const user = await makeUser(tx);
         const payment = await makePayment(tx, { userId: user.id, anchorDate: todayUtcString() });
-        await service().materialise(user.id, payment.id, tx);
+        await service().materialise(payment, tx);
         const before = await occurrences().findByPaymentId(payment.id, tx);
 
         const paused = await service().pause(user.id, payment.id, tx);
         expect(paused.status).toBe('paused');
 
-        await service().materialise(user.id, payment.id, tx);
+        // The PAUSED row, not the object `makePayment` returned — the
+        // pause is a fact about the row, and re-materialising a stale
+        // active copy would assert nothing about a paused payment.
+        await service().materialise(paused, tx);
         const after = await occurrences().findByPaymentId(payment.id, tx);
         expect(after.length).toBe(before.length);
       });
@@ -712,7 +702,7 @@ describe('PaymentService', () => {
         intervalCount: 1,
         anchorDate: pastDateString(28),
       });
-      await service().materialise(user.id, payment.id, tx);
+      await service().materialise(payment, tx);
       await service().pause(user.id, payment.id, tx);
       // Backdate the pause: `pause` stamps "now", and these tests need a
       // window that already spans due dates.
@@ -734,7 +724,7 @@ describe('PaymentService', () => {
           intervalCount: 1,
           anchorDate: anchor,
         });
-        await service().materialise(user.id, payment.id, tx);
+        await service().materialise(payment, tx);
         const beforePause = (await occurrences().findByPaymentId(payment.id, tx)).map(
           (o) => o.dueDate
         );
@@ -824,7 +814,7 @@ describe('PaymentService', () => {
           intervalCount: 1,
           anchorDate: pastDateString(28),
         });
-        await service().materialise(user.id, payment.id, tx);
+        await service().materialise(payment, tx);
         const before = await occurrences().findByPaymentId(payment.id, tx);
 
         await service().pause(user.id, payment.id, tx);
@@ -846,7 +836,7 @@ describe('PaymentService', () => {
           intervalCount: 1,
           anchorDate: pastDateString(28),
         });
-        await service().materialise(user.id, payment.id, tx);
+        await service().materialise(payment, tx);
         const before = await occurrences().findByPaymentId(payment.id, tx);
 
         const resumed = await service().resume(user.id, payment.id, tx);
@@ -880,7 +870,7 @@ describe('PaymentService', () => {
           intervalCount: 1,
           anchorDate: pastDateString(28),
         });
-        await service().materialise(user.id, payment.id, tx);
+        await service().materialise(payment, tx);
         // The legacy shape: paused, with no recorded pause start.
         await payments().update(payment.id, { status: 'paused', pausedAt: null }, tx);
 
@@ -1044,7 +1034,7 @@ describe('PaymentService', () => {
           intervalUnit: 'month',
           intervalCount: 1,
         });
-        await service().materialise(user.id, payment.id, tx);
+        await service().materialise(payment, tx);
         const beforeCount = (await occurrences().findByPaymentId(payment.id, tx)).length;
         expect(beforeCount).toBeGreaterThan(1);
 
@@ -1074,7 +1064,7 @@ describe('PaymentService', () => {
           intervalCount: 1,
           anchorDate: oldAnchor,
         });
-        await service().materialise(user.id, payment.id, tx);
+        await service().materialise(payment, tx);
 
         const beforeEdit = await occurrences().findByPaymentId(payment.id, tx);
         const pastBefore = beforeEdit.filter((o) => o.dueDate < todayUtcString());
@@ -1110,7 +1100,7 @@ describe('PaymentService', () => {
           intervalCount: 1,
           anchorDate: pastDateString(60),
         });
-        await service().materialise(user.id, payment.id, tx);
+        await service().materialise(payment, tx);
         expect((await occurrences().findByPaymentId(payment.id, tx)).length).toBeGreaterThan(0);
 
         const impact = await service().delete(user.id, payment.id, tx);
