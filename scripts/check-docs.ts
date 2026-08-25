@@ -132,9 +132,9 @@ function checkDataProviderRouters(): void {
     return;
   }
   const actual = new Set<string>();
-  for (const line of composition[1].split('\n')) {
+  for (const line of composition[1]!.split('\n')) {
     const m = line.match(/^\s*([a-zA-Z][a-zA-Z0-9-]*)\s*[:,]/);
-    if (m) actual.add(m[1]);
+    if (m) actual.add(m[1]!);
   }
   if (actual.size === 0) {
     fail(NAME, 'parsed zero router names from router.ts — regex broken?');
@@ -146,7 +146,7 @@ function checkDataProviderRouters(): void {
   const section = doc.split(/^## data-provider/m)[1] ?? '';
   const documented = new Set<string>();
   for (const m of section.matchAll(/^\|\s*`([a-zA-Z][a-zA-Z0-9-]*)`\s*\|/gm)) {
-    documented.add(m[1]);
+    documented.add(m[1]!);
   }
 
   const missingFromDocs = [...actual].filter((n) => !documented.has(n));
@@ -182,7 +182,7 @@ function checkApiRouters(): void {
   const section = doc.split(/^## api/m)[1]?.split(/^## /m)[0] ?? '';
   const documented = new Set<string>();
   for (const m of section.matchAll(/^\|\s*`([a-zA-Z][a-zA-Z0-9-]*)`\s*\|/gm)) {
-    documented.add(m[1]);
+    documented.add(m[1]!);
   }
 
   const missingFromDocs = [...actual].filter((n) => !documented.has(n));
@@ -247,7 +247,7 @@ function docSection(doc: string, heading: string): string | null {
 function tableRows(section: string): Map<string, string> {
   const rows = new Map<string, string>();
   for (const m of section.matchAll(/^\|\s*`([a-zA-Z][a-zA-Z0-9-]*)`\s*\|\s*([^|]+?)\s*\|/gm)) {
-    rows.set(m[1], m[2]);
+    rows.set(m[1]!, m[2]!);
   }
   return rows;
 }
@@ -285,7 +285,7 @@ function checkScheduledJobs(): void {
       fail(NAME, `could not parse the exported \`*_SCHEDULE\` const from ${dir}/${file}`);
       continue;
     }
-    cron.set(name, cronMatch[1]);
+    cron.set(name, cronMatch[1]!);
     isRegistered.set(name, registered.has(constMatch[1]));
   }
 
@@ -386,7 +386,7 @@ function checkUserJobs(): void {
   const section = doc.split(/^## User-initiated jobs/m)[1]?.split(/^## /m)[0] ?? '';
   const documented = new Set<string>();
   for (const m of section.matchAll(/^\|\s*`([a-zA-Z][a-zA-Z0-9-]*)`\s*\|/gm)) {
-    documented.add(m[1]);
+    documented.add(m[1]!);
   }
 
   for (const name of actual) {
@@ -428,7 +428,7 @@ function checkWorkerProcessors(): void {
   }
   const documented = new Set<string>();
   for (const m of block[0].matchAll(/[├└]──\s*([a-zA-Z][a-zA-Z0-9-]*)\.ts/g)) {
-    documented.add(m[1]);
+    documented.add(m[1]!);
   }
   if (documented.size === 0) {
     warn(NAME, 'parsed zero processor names from worker README — list format may have changed');
@@ -514,10 +514,10 @@ function checkEnvVarCoverage(): void {
   for (const file of sources) {
     const src = read(file);
     for (const m of src.matchAll(/\bprocess\.env\.([A-Z][A-Z0-9_]+)/g)) {
-      referenced.add(m[1]);
+      referenced.add(m[1]!);
     }
     for (const m of src.matchAll(/import\.meta\.env\.([A-Z][A-Z0-9_]+)/g)) {
-      referenced.add(m[1]);
+      referenced.add(m[1]!);
     }
   }
 
@@ -527,13 +527,13 @@ function checkEnvVarCoverage(): void {
     if (!existsSync(path.join(REPO_ROOT, file))) continue;
     const src = read(file);
     for (const m of src.matchAll(/^[#\s]*([A-Z][A-Z0-9_]+)\s*=/gm)) {
-      documented.add(m[1]);
+      documented.add(m[1]!);
     }
   }
   // Also pull any `\`VAR\`` mentions from reference/environment.md.
   const envRef = read('apps/frontend/docs/src/content/docs/reference/environment.md');
   for (const m of envRef.matchAll(/`([A-Z][A-Z0-9_]+)`/g)) {
-    documented.add(m[1]);
+    documented.add(m[1]!);
   }
 
   // Vars we intentionally don't track (test-runner, build-tool, OS,
@@ -935,7 +935,7 @@ function checkQueueBackendClaims(): void {
   const backends = new Set<string>();
   for (const file of CLIENTS) {
     const imports = read(file).match(/import\s*\{([\s\S]*?)\}\s*from\s*'bullmq'/)?.[1] ?? '';
-    for (const m of imports.matchAll(/create(\w+)Backend/g)) backends.add(m[1].toLowerCase());
+    for (const m of imports.matchAll(/create(\w+)Backend/g)) backends.add(m[1]!.toLowerCase());
   }
 
   // BLIND STATE — its own message, and never a pass.
@@ -968,7 +968,8 @@ function checkQueueBackendClaims(): void {
     );
     return;
   }
-  const live = [...backends][0];
+  // Both guards above `fail` and return, so the set holds exactly one.
+  const live = [...backends][0]!;
 
   // ---- Fact 2: does any prose still bind the queue to the other store?
   const OTHER: Record<string, RegExp> = {
@@ -1050,7 +1051,7 @@ function checkQueueBackendClaims(): void {
   if (hits.length > 0) {
     fail(
       NAME,
-      `the queue runs on the ${live} backend (${CLIENTS[0]} constructs with create${live[0].toUpperCase()}${live.slice(1)}Backend), ` +
+      `the queue runs on the ${live} backend (${CLIENTS[0]!} constructs with create${live[0]!.toUpperCase()}${live.slice(1)}Backend), ` +
         `but ${hits.length} line(s) of prose still name the queue and the other store together:\n` +
         hits.map((h) => `      ${h}`).join('\n') +
         '\n      Fix the sentence, or if it deliberately contrasts the two stores, ' +
@@ -1267,7 +1268,7 @@ function checkDocsSiteRepoLinks(): void {
   for (const file of files) {
     const body = read(file);
     for (const match of body.matchAll(LINK)) {
-      const slug = match[1].replace(/\.git$/, '');
+      const slug = match[1]!.replace(/\.git$/, '');
       if (slug === DOCS_SITE_REPO) continue;
       const line = body.slice(0, match.index).split('\n').length;
       fail(

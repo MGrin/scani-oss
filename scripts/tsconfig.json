@@ -1,0 +1,19 @@
+{
+  // Everything in `scripts/` — INCLUDING `tests/`, which the root config
+  // excludes globally. That is not an oversight to inherit: the defect this
+  // config exists to close (SC-636) was a required field added to a shared
+  // type with construction sites left behind, and some of those sites were in
+  // `scripts/tests/`. A config that skipped tests would have compiled that
+  // clean, which is the state we are leaving.
+  //
+  // Nothing about the compiler's strictness is relaxed here. This extends the
+  // root config as-is — same `strict`, same `noUncheckedIndexedAccess` — and
+  // carries no `exclude` for source files. If a file in here cannot be made to
+  // type-check, it gets a ticket, not an entry.
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true
+  },
+  "include": ["**/*.ts"],
+  "exclude": ["node_modules"]
+}
