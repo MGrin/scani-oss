@@ -620,9 +620,15 @@ export function answeredSummary(t: TFunction, item: AnsweredTransferReview): str
 /**
  * What withdrawing an answer does — the sentence over the Reopen confirm.
  *
- * Three cases, because reopening does three different things and only one of
+ * Four cases, because reopening does four different things and only one of
  * them is "nothing settles until you answer again":
  *
+ * - **`declared`** — the transfer the owner RECORDED. Reopening it does not
+ *   return anything to the queue, it UNDOES the movement: both balances go
+ *   back and both entries are deleted (SC-618). It is checked FIRST because
+ *   its `decision` is `paired`, so every other branch here would describe it
+ *   as something it is not — and `default`, the branch it used to land in,
+ *   promised that nothing changes, over an action that moves two balances.
  * - `left_control` takes a booked gain off the realized total.
  * - `internal` **deletes the deposit the answer wrote** (SC-187). That is a
  *   transaction disappearing from another account, and a reader who is not
@@ -631,6 +637,7 @@ export function answeredSummary(t: TFunction, item: AnsweredTransferReview): str
  * - anything else settles nothing and unsettles nothing.
  */
 export function reopenConsequence(t: TFunction, item: AnsweredTransferReview): string {
+  if (item.declared) return t('v3.review.transfer.reopen.declared');
   const internal =
     item.decision === 'internal' || (item.split?.some((p) => p.decision === 'internal') ?? false);
   if (internal) return t('v3.review.transfer.reopen.internal');

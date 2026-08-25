@@ -27,6 +27,7 @@ import {
   MalformedCursorError,
   TransferReviewService,
 } from '../../src/services/TransferReviewService';
+import { RecordHoldingMovementUseCase } from '../../src/use-cases/RecordHoldingMovementUseCase';
 import { restoreContainerAfterAll } from '../../test/helpers/container';
 
 // Container stubs are process-global; put back whatever this file changes
@@ -3414,5 +3415,216 @@ describe('TransferReviewService — the entity boundary', () => {
     // Both unassigned — the state every existing portfolio is in today.
     await putAccountInEntity(f.outAccountId, null);
     expect((await service().listPending(f.userId))[0]?.candidates).toHaveLength(1);
+  });
+});
+
+/**
+ * Reopening a transfer the OWNER declared (SC-618).
+ *
+ * ## Why these assert balances and not the link
+ *
+ * The defect is invisible to every assertion about rows. Measured before the
+ * fix: declaring 2000 out of a holding at 4000 into one at 500 left them at
+ * 2000 and 2500, `reopen` returned `true`, both legs survived with
+ * `transfer_group_id` NULL — and the two balances did not move. A test
+ * asserting "the pair is unlinked" passes against that, because unlinking is
+ * the one thing the bug did correctly.
+ *
+ * So the assertion is the number a person would see on the dashboard: 500
+ * again, and 4000 again. Money that has moved with nothing saying why is the
+ * whole of what was wrong.
+ *
+ * ## Two paths, opposite requirements — and both controls are here
+ *
+ * `writeInflow` (the queue) deliberately does NOT move an existing
+ * destination's balance: the arrival was already observed by whatever imported
+ * it, and moving it would double-count. `UpdateHoldingUseCase.moveDeclaredTransfer`
+ * (declared) DOES move both anchors, because the owner is the only source of
+ * truth for both sides. Undoing one must not undo the other, so:
+ *
+ * - a **must-be-ABSENT** control: a queue answer whose two legs are BOTH
+ *   hand-entered balance edits, made at different instants, is NOT a declared
+ *   pair and reopening it must move no balance. This is the case a
+ *   discriminator reading `source = 'user-balance-edit'` alone gets wrong.
+ * - a **must-be-FOUND** control: the declared pair itself, which must be
+ *   undone.
+ */
+describe('TransferReviewService — reopening a transfer the OWNER declared (SC-618)', () => {
+  async function setBalance(holdingId: string, balance: string): Promise<void> {
+    await db.update(schema.holdings).set({ balance }).where(eq(schema.holdings.id, holdingId));
+  }
+
+  async function balance(holdingId: string): Promise<string | undefined> {
+    const [row] = await db
+      .select({ balance: schema.holdings.balance })
+      .from(schema.holdings)
+      .where(eq(schema.holdings.id, holdingId));
+    return row?.balance;
+  }
+
+  async function ledgerRows(f: Fixture) {
+    return await db
+      .select()
+      .from(schema.holdingTransactions)
+      .where(eq(schema.holdingTransactions.userId, f.userId));
+  }
+
+  async function observationCount(holdingId: string): Promise<number> {
+    const rows = await db
+      .select({ id: schema.holdingBalanceObservations.id })
+      .from(schema.holdingBalanceObservations)
+      .where(eq(schema.holdingBalanceObservations.holdingId, holdingId));
+    return rows.length;
+  }
+
+  /** "I moved `amount` from the source holding to the destination holding." */
+  async function declare(
+    f: Fixture,
+    amount: string
+  ): Promise<{ outflowId: string; inflowId: string }> {
+    await new RecordHoldingMovementUseCase().execute(
+      {
+        holdingId: f.outHoldingId,
+        direction: 'transfer',
+        amount,
+        occurredAt: anchor().toISOString(),
+        destinationAccountId: f.inAccountId,
+        destinationHoldingId: f.inHoldingId,
+      },
+      f.userId
+    );
+    const rows = await ledgerRows(f);
+    const outflowId = rows.find((r) => r.holdingId === f.outHoldingId)?.id;
+    const inflowId = rows.find((r) => r.holdingId === f.inHoldingId)?.id;
+    if (!outflowId || !inflowId) throw new Error('declared transfer did not write two legs');
+    return { outflowId, inflowId };
+  }
+
+  test('the destination goes back to what it was, and so does the source', async () => {
+    const f = fixture!;
+    await setBalance(f.outHoldingId, '4000');
+    await setBalance(f.inHoldingId, '500');
+
+    const { outflowId } = await declare(f, '2000');
+    // The declaration itself, on the number a person would see.
+    expect(await balance(f.outHoldingId)).toBe('2000');
+    expect(await balance(f.inHoldingId)).toBe('2500');
+
+    expect(await service().reopen(f.userId, outflowId)).toBe(true);
+
+    // The whole of the defect. Before the fix both of these read 2000 and
+    // 2500 — the money stayed moved and the link that explained it was gone.
+    expect(await balance(f.outHoldingId)).toBe('4000');
+    expect(await balance(f.inHoldingId)).toBe('500');
+  });
+
+  test('both legs are gone — no ungrouped deposit is left to open a fresh lot', async () => {
+    const f = fixture!;
+    await setBalance(f.outHoldingId, '4000');
+    await setBalance(f.inHoldingId, '500');
+    const { outflowId } = await declare(f, '2000');
+    expect(await ledgerRows(f)).toHaveLength(2);
+
+    await service().reopen(f.userId, outflowId);
+
+    // Leaving the deposit behind ungrouped is what invents the gain:
+    // `CostBasisService.walkComponent` inherits buffered lots only across a
+    // shared `transfer_group_id`, so an orphaned arrival opens a fresh lot at
+    // market. Deleting it is the point, not tidiness.
+    expect(await ledgerRows(f)).toHaveLength(0);
+    // And the withdrawal does not come back as a question, because there is
+    // no withdrawal any more.
+    expect((await service().pendingSummary(f.userId)).count).toBe(0);
+  });
+
+  test('a restored anchor is observed, so history is not reconstructed from a gap', async () => {
+    const f = fixture!;
+    await setBalance(f.outHoldingId, '4000');
+    await setBalance(f.inHoldingId, '500');
+    const { outflowId } = await declare(f, '2000');
+    const before = {
+      out: await observationCount(f.outHoldingId),
+      in: await observationCount(f.inHoldingId),
+    };
+
+    await service().reopen(f.userId, outflowId);
+
+    // SC-245: a balance mutation with no observation does not degrade
+    // `BalanceAtTimeService`, it makes it confidently wrong on every date
+    // after the gap.
+    expect(await observationCount(f.outHoldingId)).toBe(before.out + 1);
+    expect(await observationCount(f.inHoldingId)).toBe(before.in + 1);
+  });
+
+  test('the QUEUE path is untouched — reopening an internal answer moves no balance', async () => {
+    const f = fixture!;
+    await setBalance(f.inHoldingId, '500');
+    const outId = await insertOutflow(f, { at: anchor(), quantity: '-2000', externalId: 'd-1' });
+    await service().resolve(f.userId, outId, 'internal', {
+      destination: { accountId: f.inAccountId, holdingId: f.inHoldingId },
+    });
+    // `writeInflow` wrote the arrival row and left the anchor alone, because
+    // whatever imported that balance already observed the money landing.
+    expect(await balance(f.inHoldingId)).toBe('500');
+
+    expect(await service().reopen(f.userId, outId)).toBe(true);
+
+    expect(await balance(f.inHoldingId)).toBe('500');
+    expect(await balance(f.outHoldingId)).toBe('0');
+    // The outflow is a question again, which is what reopen means here.
+    expect((await service().pendingSummary(f.userId)).count).toBe(1);
+  });
+
+  test('two hand-entered edits the QUEUE paired are not a declared pair', async () => {
+    const f = fixture!;
+    await setBalance(f.outHoldingId, '4000');
+    await setBalance(f.inHoldingId, '500');
+
+    // Two separate balance edits, two different edit instants, later joined by
+    // the queue. Both legs carry `source = 'user-balance-edit'`, which is why
+    // a discriminator reading the source alone would undo them — and undoing
+    // them would move two balances the user set by hand and never asked to
+    // have moved.
+    const [outflow] = await db
+      .insert(schema.holdingTransactions)
+      .values({
+        userId: f.userId,
+        holdingId: f.outHoldingId,
+        tokenId: f.tokenId,
+        kind: 'withdraw',
+        quantity: '-2000',
+        occurredAt: anchor(),
+        source: 'user-balance-edit',
+        externalId: 'manual-edit:2026-08-01T10:00:00.000Z',
+      })
+      .returning();
+    const [inflow] = await db
+      .insert(schema.holdingTransactions)
+      .values({
+        userId: f.userId,
+        holdingId: f.inHoldingId,
+        tokenId: f.tokenId,
+        kind: 'deposit',
+        quantity: '2000',
+        occurredAt: anchor(),
+        source: 'user-balance-edit',
+        externalId: 'manual-edit:2026-08-02T11:30:00.000Z',
+      })
+      .returning();
+    if (!outflow || !inflow) throw new Error('leg insert failed');
+
+    expect(
+      await service().resolve(f.userId, outflow.id, 'paired', { matchTransactionId: inflow.id })
+    ).toEqual({ ok: true });
+
+    expect(await service().reopen(f.userId, outflow.id)).toBe(true);
+
+    // Nothing moved, and both rows survive: the user entered each of these
+    // balances themselves, and reopening the pairing is a statement about the
+    // LINK, not about either balance.
+    expect(await balance(f.outHoldingId)).toBe('4000');
+    expect(await balance(f.inHoldingId)).toBe('500');
+    expect(await ledgerRows(f)).toHaveLength(2);
+    expect((await service().pendingSummary(f.userId)).count).toBe(1);
   });
 });
