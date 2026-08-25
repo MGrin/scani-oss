@@ -91,6 +91,12 @@ export {
   ReconcilePaymentsUseCase,
 } from './ReconcilePaymentsUseCase';
 export {
+  MovementExceedsBalanceError,
+  MovementHoldingNotFoundError,
+  MovementSameHoldingError,
+  RecordHoldingMovementUseCase,
+} from './RecordHoldingMovementUseCase';
+export {
   type RefreshAccountBalanceInput,
   type RefreshAccountBalanceResult,
   RefreshAccountBalanceUseCase,

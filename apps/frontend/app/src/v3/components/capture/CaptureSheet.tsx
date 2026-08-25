@@ -9,6 +9,7 @@ import {
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@scani/ui/ui/sheet';
 import { useIsDesktop } from '@scani/ui/v3/hooks/useMediaQuery';
 import {
+  ArrowLeftRight,
   ChevronRight,
   FileText,
   FileUp,
@@ -50,6 +51,7 @@ import {
  */
 
 const ICONS: Record<string, LucideIcon> = {
+  ArrowLeftRight,
   FileText,
   FileUp,
   Image,

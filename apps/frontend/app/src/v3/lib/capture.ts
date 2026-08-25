@@ -111,6 +111,14 @@ const ROUTES: readonly CaptureRoute[] = [
     acceptsContext: true,
   },
   {
+    id: 'movement',
+    group: 'manual',
+    titleKey: 'v3.capture.route.movement.title',
+    descriptionKey: 'v3.capture.route.movement.description',
+    icon: 'ArrowLeftRight',
+    path: V3_CAPTURE_ROUTES.recordMovement,
+  },
+  {
     id: 'payment',
     group: 'manual',
     titleKey: 'v3.capture.route.payment.title',
