@@ -111,6 +111,7 @@ export class RepairMatchedOutflowsUseCase {
         >`case when ${schema.tokens.lookalikeOf} is null then ${schema.tokens.providerMetadata}->'coingecko'->>'id' end`,
         walletId: sql<string | null>`${schema.accounts.metadata}->>'userWalletId'`,
         chainKey: sql<string | null>`${schema.accounts.metadata}->>'chainId'`,
+        entityId: schema.accounts.entityId,
       })
       .from(schema.holdingTransactions)
       .innerJoin(schema.tokens, eq(schema.tokens.id, schema.holdingTransactions.tokenId))
@@ -274,6 +275,7 @@ function toLeg(row: {
   canonicalAssetKey: string | null;
   walletId: string | null;
   chainKey: string | null;
+  entityId: string | null;
 }): TransferLeg {
   return {
     transactionId: row.tx.id,
@@ -282,6 +284,7 @@ function toLeg(row: {
     canonicalAssetKey: row.canonicalAssetKey,
     walletId: row.walletId,
     chainKey: row.chainKey,
+    entityId: row.entityId,
     occurredAt: row.tx.occurredAt,
     quantityAbs: new Decimal(row.tx.quantity).abs(),
   };
