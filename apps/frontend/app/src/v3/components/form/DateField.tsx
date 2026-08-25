@@ -63,6 +63,48 @@ export function localDateFromIso(value: string): Date | null {
   return rolled ? null : date;
 }
 
+/** Today, in the `YYYY-MM-DD` shape the field holds. */
+export function todayIso(): string {
+  const now = new Date();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${now.getFullYear()}-${month}-${day}`;
+}
+
+/**
+ * The instant a date field's value means: **today means now, another day
+ * means that day's local midnight** (SC-612).
+ *
+ * ## Why today is not midnight
+ *
+ * A field pre-filled with today and left alone is not a claim about the start
+ * of the day — it is the absence of a claim, and the truth it approximates is
+ * "now". Sending midnight instead back-dates by however much of the day has
+ * passed, and east of UTC that instant is the PREVIOUS UTC day. Measured on a
+ * dev stack 2026-08-25 on a UTC+12 box: an edit made at 18:44 local sent
+ * `2026-08-24T12:00:00Z`, eighteen hours and forty-four minutes early.
+ *
+ * That is not a cosmetic date. A flow's instant decides which
+ * `(previous observation, this observation]` interval it belongs to, and a
+ * holding whose APY payout writes an observation every morning always has one
+ * from earlier today — so the back-dated row lands in the interval BEFORE the
+ * one it was written to explain. Measured in
+ * `UpdateHoldingUseCase.test.ts`: with the previous observation 12h old the
+ * mis-dated flow manufactures a second balance-gap prompt, and with it 72h old
+ * — nothing else changed — that prompt disappears.
+ *
+ * ## Why a deliberately chosen day is still midnight
+ *
+ * Somebody who picks the 14th means their 14th, and no better instant exists.
+ * `localDateFromIso` is what keeps that from drifting a day west of Greenwich.
+ * Nothing here clamps: a person who genuinely says "three weeks ago" gets
+ * three weeks ago.
+ */
+export function dateFieldInstant(value: string): string {
+  if (value === todayIso()) return new Date().toISOString();
+  return (localDateFromIso(value) ?? new Date()).toISOString();
+}
+
 export function DateField({
   id,
   value,
