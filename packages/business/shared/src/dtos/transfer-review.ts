@@ -610,6 +610,21 @@ export const answeredTransferReviewSchema = z.object({
    * row it answered is still owed an explanation.
    */
   ruleNote: z.string().nullable(),
+  /**
+   * This row is a transfer the OWNER declared, so reopening it UNDOES the
+   * movement rather than returning it to the queue (SC-618).
+   *
+   * On the wire because the confirmation is written before the action, and
+   * without it the reader is told the wrong thing about their own money:
+   * `reopenConsequence` maps `paired` to "settles nothing and unsettles
+   * nothing", which is true of a pairing the queue made and false of one the
+   * owner declared — that one moved both anchors, and withdrawing it moves
+   * them back.
+   *
+   * It cannot be derived from `decision`, which is `paired` for both shapes.
+   * See `declaredPairLegs` for what actually separates them.
+   */
+  declared: z.boolean(),
 });
 
 export type AnsweredTransferReview = z.infer<typeof answeredTransferReviewSchema>;
