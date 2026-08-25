@@ -848,24 +848,64 @@ export class TransferReviewService {
    */
   async listDestinationsForHolding(
     userId: string,
-    holdingId: string
+    holdingId: string,
+    /**
+     * Read inside a transaction the caller owns, so the filter below is
+     * assertable rather than merely written (SC-614). The queue's
+     * `listDestinations` has no such parameter and needs none — nothing about
+     * it is a guarantee, whereas this list is half of one.
+     */
+    transaction?: DatabaseTransaction
   ): Promise<TransferDestination[]> {
-    const [holding] = await db
+    const database = transaction ?? db;
+    const [holding] = await database
       .select({ tokenId: schema.holdings.tokenId })
       .from(schema.holdings)
       .where(and(eq(schema.holdings.id, holdingId), eq(schema.holdings.userId, userId)))
       .limit(1);
     if (!holding) return [];
 
-    return this.destinationsFor(userId, holding.tokenId, holdingId);
+    // Only accounts that track NO position in this token yet (SC-614).
+    //
+    // `writeInflow` has two branches and they differ in a way that matters
+    // here: given a `holdingId` it inserts the arrival row and leaves
+    // `holdings.balance` alone, and given `null` it CREATES the holding at the
+    // moved amount. The first is right in the queue, where the outflow came
+    // from an import and the destination's balance was observed independently
+    // by its own sync — moving the anchor there would double-count. It is
+    // wrong on the manual path, where the user is the only source of truth for
+    // both sides and only one side has moved: answer "it went to my Current
+    // account" about a holding that already exists and that account stays at
+    // its old figure, with a matching arrival row against it and net worth
+    // down by the amount.
+    //
+    // So this surface offers only the branch that is correct for it. The
+    // filter is here rather than in the client because the guarantee must not
+    // depend on what the client sends — `UpdateHoldingUseCase` refuses a
+    // populated `holdingId` for the same reason, and the two together are what
+    // make the bad write unreachable rather than merely unoffered.
+    //
+    // `listDestinations` above is UNCHANGED and still offers both: the queue
+    // needs the existing-holding branch and is correct with it. Moving an
+    // existing destination's balance is the eventual repair and it belongs to
+    // whoever reconciles those two callers, not here.
+    const destinations = await this.destinationsFor(
+      userId,
+      holding.tokenId,
+      holdingId,
+      transaction
+    );
+    return destinations.filter((destination) => destination.holdingId === null);
   }
 
   private async destinationsFor(
     userId: string,
     tokenId: string,
-    excludeHoldingId: string
+    excludeHoldingId: string,
+    transaction?: DatabaseTransaction
   ): Promise<TransferDestination[]> {
-    const accounts = await db
+    const database = transaction ?? db;
+    const accounts = await database
       .select({
         accountId: schema.accounts.id,
         accountName: schema.accounts.name,
@@ -875,7 +915,7 @@ export class TransferReviewService {
       .leftJoin(schema.institutions, eq(schema.institutions.id, schema.accounts.institutionId))
       .where(eq(schema.accounts.userId, userId));
 
-    const holdings = await db
+    const holdings = await database
       .select({
         holdingId: schema.holdings.id,
         accountId: schema.holdings.accountId,
