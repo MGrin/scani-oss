@@ -58,7 +58,7 @@ function leafOf(pattern: string): string {
 }
 
 describe('the root .gitignore carries every rule a deleted directory would orphan', () => {
-  test.each(MUST_BE_AT_THE_ROOT)('%s is at the root', (pattern) => {
+  test.each([...MUST_BE_AT_THE_ROOT])('%s is at the root', (pattern) => {
     expect(IGNORES).toContain(pattern);
   });
 

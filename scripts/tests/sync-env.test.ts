@@ -52,7 +52,7 @@ describe('renderRootEnv', () => {
     // pseudonymize IDs the way production does.
     const pepper = parseEnv(renderRootEnv(readFileSync(REAL_EXAMPLE, 'utf8'))).LOG_ID_PEPPER;
     expect(pepper).toBeDefined();
-    expect(pepper.length).toBeGreaterThanOrEqual(16);
+    expect(pepper?.length ?? 0).toBeGreaterThanOrEqual(16);
   });
 
   test('the real .env.example keeps every key it declares', () => {
@@ -73,7 +73,9 @@ describe('bootstrapRootEnv', () => {
     expect(bootstrapRootEnv(envPath, examplePath)).toBe(true);
     expect(existsSync(envPath)).toBe(true);
     expect(statSync(envPath).mode & 0o777).toBe(0o600);
-    expect(parseEnv(readFileSync(envPath, 'utf8')).LOG_ID_PEPPER.length).toBeGreaterThanOrEqual(16);
+    expect(
+      parseEnv(readFileSync(envPath, 'utf8')).LOG_ID_PEPPER?.length ?? 0
+    ).toBeGreaterThanOrEqual(16);
   });
 
   test('never rewrites an existing .env', () => {
