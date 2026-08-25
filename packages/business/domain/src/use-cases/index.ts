@@ -102,6 +102,10 @@ export {
   RefreshAccountBalanceUseCase,
 } from './RefreshAccountBalanceUseCase';
 export {
+  type RollPaymentHorizonsSummary,
+  RollPaymentHorizonsUseCase,
+} from './RollPaymentHorizonsUseCase';
+export {
   RollupPortfolioValueDailyUseCase,
   type RollupSummary,
 } from './RollupPortfolioValueDailyUseCase';
