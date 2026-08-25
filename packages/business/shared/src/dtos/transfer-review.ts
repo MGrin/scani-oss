@@ -625,6 +625,28 @@ export const answeredTransferReviewSchema = z.object({
    * See `declaredPairLegs` for what actually separates them.
    */
   declared: z.boolean(),
+  /**
+   * This answer had to CREATE the holding it deposited into, so reopening it
+   * removes that holding as well as the arrival (SC-631).
+   *
+   * On the wire for the same reason as `declared`: the confirmation is written
+   * before the action, and `reopenConsequence` otherwise promises "no balance
+   * changes either way" over a reopen that takes a position off an account.
+   * That sentence is true of a destination that already existed and has never
+   * been true of one this answer opened.
+   *
+   * It cannot be derived from anything else the row carries. `decision` is
+   * `internal` for both shapes and `holdingId` is the SOURCE's holding, not
+   * the destination's. The fact lives on the arrival row's `source_metadata`
+   * — see `created-destination.ts` for why there and not on the holding.
+   *
+   * FALSE and ABSENT are different, and this boolean is the false one: an
+   * arrival row written before SC-631 records nothing either way, and reads
+   * here as `false` because the copy it selects is the one that promises
+   * least. The reader is never told a holding will be removed when the
+   * service would decline to remove it.
+   */
+  createdDestination: z.boolean(),
 });
 
 export type AnsweredTransferReview = z.infer<typeof answeredTransferReviewSchema>;

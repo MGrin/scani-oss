@@ -1756,6 +1756,172 @@ describe('TransferReviewService — who owns the balance of a holding it had to 
   });
 });
 
+/**
+ * SC-631. Reopening an `internal` answer deletes the arrival it wrote and used
+ * to leave the HOLDING that answer created standing — at the amount that
+ * moved, with nothing in the ledger explaining it and no sync allowed to
+ * correct it (`HoldingsSyncHelper` skips `manual` rows).
+ *
+ * Every test here asserts the state of the HOLDING after a reopen, because
+ * that is the number a person sees. "The arrival row is gone" was already
+ * asserted and is true of the bug.
+ */
+describe('TransferReviewService — reopening an answer that had to create its destination', () => {
+  async function holdingsIn(f: Fixture, accountId: string) {
+    return db
+      .select()
+      .from(schema.holdings)
+      .where(
+        and(
+          eq(schema.holdings.userId, f.userId),
+          eq(schema.holdings.accountId, accountId),
+          eq(schema.holdings.tokenId, f.tokenId)
+        )
+      );
+  }
+
+  /** Answer `internal` into the empty, non-sync-owned account — the shape
+   *  SC-187 was built for and the one that opens at the moved amount. */
+  async function answerIntoEmptyAccount(
+    f: Fixture,
+    opts: { quantity: string; externalId: string }
+  ): Promise<{ outId: string; holdingId: string }> {
+    const outId = await insertOutflow(f, {
+      at: anchor(),
+      quantity: `-${opts.quantity}`,
+      externalId: opts.externalId,
+    });
+    expect(
+      await service().resolve(f.userId, outId, 'internal', {
+        destination: { accountId: f.emptyAccountId, holdingId: null },
+      })
+    ).toEqual({ ok: true });
+    const created = await holdingsIn(f, f.emptyAccountId);
+    expect(created).toHaveLength(1);
+    expect(created[0]?.balance).toBe(opts.quantity);
+    expect(created[0]?.source).toBe('manual');
+    return { outId, holdingId: created[0]?.id ?? '' };
+  }
+
+  test('the created holding goes with the answer', async () => {
+    const f = fixture!;
+    const { outId } = await answerIntoEmptyAccount(f, { quantity: '250', externalId: 's631-1' });
+
+    expect(await service().reopen(f.userId, outId)).toBe(true);
+
+    // THE NUMBER A PERSON SEES. Before this fix the account went on showing
+    // 250 of a token it held none of before the answer, with zero ledger rows
+    // to explain it and the answer that put it there withdrawn.
+    expect(await holdingsIn(f, f.emptyAccountId)).toEqual([]);
+  });
+
+  test('a destination that already existed is left alone', async () => {
+    const f = fixture!;
+    // MUST-BE-ABSENT. `writeInflow` never moved this row's balance, so it is
+    // not this reopen's to remove. A fix that deleted on "the arrival was
+    // here" rather than on "this answer created it" fails exactly here.
+    const [before] = await db
+      .select()
+      .from(schema.holdings)
+      .where(eq(schema.holdings.id, f.inHoldingId));
+    const outId = await insertOutflow(f, { at: anchor(), quantity: '-40', externalId: 's631-2' });
+    expect(
+      await service().resolve(f.userId, outId, 'internal', {
+        destination: { accountId: f.inAccountId, holdingId: f.inHoldingId },
+      })
+    ).toEqual({ ok: true });
+
+    expect(await service().reopen(f.userId, outId)).toBe(true);
+
+    const after = await db
+      .select()
+      .from(schema.holdings)
+      .where(eq(schema.holdings.id, f.inHoldingId));
+    expect(after).toHaveLength(1);
+    expect(after[0]?.balance).toBe(before?.balance ?? '');
+  });
+
+  test('a created holding the owner has since edited is left alone', async () => {
+    const f = fixture!;
+    const { outId, holdingId } = await answerIntoEmptyAccount(f, {
+      quantity: '250',
+      externalId: 's631-3',
+    });
+    // A `growth` edit writes an OBSERVATION and no ledger row at all
+    // (`ManualBalanceEditService` returns before the transaction insert), so
+    // "nothing in the ledger" is not enough to call the row untouched.
+    // Deleting here would discard a figure the owner typed.
+    await db.insert(schema.holdingBalanceObservations).values({
+      userId: f.userId,
+      holdingId,
+      balance: '312',
+      observedAt: new Date(),
+      source: 'user-balance-edit',
+    });
+
+    expect(await service().reopen(f.userId, outId)).toBe(true);
+
+    const after = await holdingsIn(f, f.emptyAccountId);
+    expect(after).toHaveLength(1);
+    expect(after[0]?.id).toBe(holdingId);
+  });
+
+  test('a created holding that has acquired other ledger rows is left alone', async () => {
+    const f = fixture!;
+    const { outId, holdingId } = await answerIntoEmptyAccount(f, {
+      quantity: '250',
+      externalId: 's631-4',
+    });
+    await db.insert(schema.holdingTransactions).values({
+      userId: f.userId,
+      holdingId,
+      tokenId: f.tokenId,
+      kind: 'deposit',
+      quantity: '10',
+      occurredAt: new Date(),
+      source: 'kraken-api',
+      externalId: 's631-4-later',
+    });
+
+    expect(await service().reopen(f.userId, outId)).toBe(true);
+
+    const after = await holdingsIn(f, f.emptyAccountId);
+    expect(after).toHaveLength(1);
+    expect(after[0]?.id).toBe(holdingId);
+  });
+
+  test('an arrival carrying no marker at all is left alone', async () => {
+    const f = fixture!;
+    const { outId, holdingId } = await answerIntoEmptyAccount(f, {
+      quantity: '250',
+      externalId: 's631-5',
+    });
+    // The row a PRE-SC-631 writer left behind: an arrival whose metadata says
+    // nothing either way. Absence is not `false` — it means nobody recorded
+    // whether this answer created the destination, and deleting a holding on
+    // that is a guess about somebody's money. This is the test that separates
+    // the fix from a fix-shaped thing: strip the marker's writer and the four
+    // tests above go red, but THIS one stays green either way, which is what
+    // makes "the marker was never wired up" a state the reader can be in
+    // rather than a silent no-op.
+    await db
+      .update(schema.holdingTransactions)
+      .set({ sourceMetadata: { outflowTransactionId: outId } })
+      .where(
+        and(
+          eq(schema.holdingTransactions.source, 'transfer-review'),
+          eq(schema.holdingTransactions.externalId, outId)
+        )
+      );
+
+    expect(await service().reopen(f.userId, outId)).toBe(true);
+
+    const after = await holdingsIn(f, f.emptyAccountId);
+    expect(after).toHaveLength(1);
+    expect(after[0]?.id).toBe(holdingId);
+  });
+});
+
 describe('TransferReviewService — where a transfer can go', () => {
   test('lists every holding of the token except the one it left', async () => {
     const f = fixture!;

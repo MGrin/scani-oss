@@ -587,6 +587,7 @@ describe('answeredSummary', () => {
     answerSource: 'unattributed',
     ruleNote: null,
     declared: false,
+    createdDestination: false,
     ...over,
   });
 
@@ -730,6 +731,7 @@ describe('reopenConsequence — a transfer the owner declared', () => {
     answerSource: 'user',
     ruleNote: null,
     declared: false,
+    createdDestination: false,
     ...over,
   });
 
@@ -749,6 +751,59 @@ describe('reopenConsequence — a transfer the owner declared', () => {
 
   test('declared wins over an internal answer, which would delete a deposit it never wrote', () => {
     const sentence = reopenConsequence(t, answeredRow({ declared: true, decision: 'internal' }));
+    expect(sentence).toContain('balances back');
+  });
+});
+
+/**
+ * SC-631. An `internal` answer that had to CREATE its destination removes that
+ * holding on reopen, and the ordinary sentence — "no balance changes either
+ * way" — is false of it: an account loses a position it did not have before
+ * the answer.
+ */
+describe('reopenConsequence — an internal answer that created its destination', () => {
+  const answeredRow = (over: Partial<AnsweredTransferReview>): AnsweredTransferReview => ({
+    transactionId: 'tx-out',
+    holdingId: 'h-out',
+    tokenSymbol: 'USDT',
+    accountName: 'Savings',
+    institutionName: 'Revolut',
+    kind: 'withdraw',
+    quantity: '250',
+    occurredAt: '2026-08-10T09:00:00.000Z',
+    counterparty: null,
+    decision: 'internal',
+    split: null,
+    reviewedAt: '2026-08-11T09:00:00.000Z',
+    answerSource: 'user',
+    ruleNote: null,
+    declared: false,
+    createdDestination: false,
+    ...over,
+  });
+
+  test('says the holding goes too, and stops promising no balance changes', () => {
+    const sentence = reopenConsequence(t, answeredRow({ createdDestination: true }));
+    expect(sentence).toContain('created the holding');
+    expect(sentence).not.toContain('no balance changes either way');
+  });
+
+  test('a destination that already existed keeps the old sentence', () => {
+    // MUST-BE-ABSENT, on the same `decision: 'internal'` — so this is what
+    // shows the branch reads `createdDestination` rather than the answer.
+    const sentence = reopenConsequence(t, answeredRow({ createdDestination: false }));
+    expect(sentence).toContain('no balance changes either way');
+    expect(sentence).not.toContain('created the holding');
+  });
+
+  test('declared still wins, even when this answer created a holding', () => {
+    // `reopen` undoes a declared pair and returns before `clearAnswer` runs at
+    // all, so the created-destination sentence would describe a delete that
+    // never happens.
+    const sentence = reopenConsequence(
+      t,
+      answeredRow({ declared: true, createdDestination: true })
+    );
     expect(sentence).toContain('balances back');
   });
 });
