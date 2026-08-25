@@ -1,0 +1,50 @@
+name: PR body
+
+# SC-638. A pull-request body is executable input to release-please, not
+# documentation. `preprocessCommitMessage` splits it on the commit-message
+# override marker and uses what follows as the commit message for EVERY commit
+# of the pull request, because `mergeCommitIterator` attaches the body to all
+# of them. A marker mentioned in prose, with no closing marker, therefore
+# replaces every message with the paragraph that happens to follow it.
+#
+# Measured on #219: three commits — two branch commits and the merge, one of
+# them an ordinary `fix(oss): …` — all parsed to nothing, release-please logged
+# `PR #211 remained the same`, and the workflow reported success having
+# regenerated nothing. Twice more on re-run.
+#
+# `scripts/check-pr-body.ts` carries the measurement and the case it
+# deliberately allows: a real, closed, conventional override, which is the
+# recovery `check-release-notes.ts` prescribes.
+
+on:
+  pull_request:
+    branches: [main]
+    # `edited` is the one that matters, for the same reason as pr-title.yml: a
+    # body edited after CI goes green is read by release-please at merge time,
+    # and the version that was checked is not the version that runs.
+    types: [opened, edited, reopened, synchronize]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-body-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Body carries no broken commit-message override
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+      - uses: ./.github/actions/setup-bun
+        with:
+          # The check imports nothing but a regex from a sibling script.
+          install: "false"
+      - name: Body carries no broken commit-message override
+        # Passed as environment, never interpolated into the shell. A pull
+        # request body is attacker-controlled on a public repository, and
+        # `${{ … }}` inside `run:` is substituted before bash parses the line.
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: bun scripts/check-pr-body.ts
