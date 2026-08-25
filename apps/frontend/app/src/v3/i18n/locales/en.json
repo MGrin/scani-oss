@@ -873,6 +873,7 @@
           "left_control": "It left my portfolio",
           "untracked": "An account Scani can't see"
         },
+        "destinationScope": "Accounts that don't track this currency yet. Moving into one you already track needs the amounts on both sides, which a single balance edit cannot give.",
         "destinationExplain": {
           "internal": "It moved to another holding you track. Pick where, and Scani links the two sides so the cost basis carries across instead of being realized here and reopened there.",
           "left_control": "Spent, gifted, or sold somewhere Scani cannot see. This realizes a gain or a loss on the amount that left.",
@@ -885,8 +886,8 @@
       "movement": {
         "title": "Record a movement",
         "description": "Say what you did and Scani works out the balance — instead of the other way round.",
-        "holdingLabel": "Which holding",
-        "holdingPlaceholder": "Pick an account",
+        "holdingLabel": "Which holding moved",
+        "holdingPlaceholder": "Search institutions, accounts and holdings",
         "direction": {
           "inflow": "Money in",
           "outflow": "Money out",
@@ -916,7 +917,17 @@
         "save": "Record it",
         "saving": "Recording…",
         "recorded": "Movement recorded",
-        "peekAction": "Record a movement"
+        "peekAction": "Record a movement",
+        "holdingNoResults": "No holding matches that.",
+        "holdingAria": "holding",
+        "directionLabel": "What happened",
+        "whatFieldset": "The movement",
+        "busyLabel": "the recording",
+        "blocker": {
+          "holding": "pick the holding that moved",
+          "amount": "enter how much moved",
+          "where": "say where the money went"
+        }
       }
     },
     "export": {
