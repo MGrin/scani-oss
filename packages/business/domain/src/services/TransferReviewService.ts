@@ -39,6 +39,7 @@ import {
 import Decimal from 'decimal.js';
 import { and, desc, eq, gte, inArray, isNotNull, isNull, lte, ne, or, sql } from 'drizzle-orm';
 import Container, { Service } from 'typedi';
+import { type DeclaredPairLegFacts, declaredPairLegs } from '../lib/declared-transfer';
 import { ilikePattern } from '../lib/text-search';
 import {
   CANDIDATE_QTY_EPSILON,
@@ -64,6 +65,14 @@ import {
 } from '../lib/transfer-unlink';
 import { upstreamEventKey } from '../lib/upstream-event';
 import { HoldingCoverageRepository } from '../repositories/HoldingCoverageRepository';
+// A service reaching for a use case, which nothing else in this layer does.
+// The alternative was a second writer of `holdings.balance` for the undo in
+// `undoDeclaredTransfer`, and SC-245 is what that costs. Resolved at the CALL
+// SITE rather than in a class field on purpose: `UpdateHoldingUseCase` holds
+// `Container.get(TransferReviewService)` in a field of its own, and two
+// class-field `Container.get`s pointing at each other recurse forever, since
+// typedi caches an instance only after its constructor returns.
+import { UpdateHoldingUseCase } from '../use-cases/UpdateHoldingUseCase';
 import {
   BalanceSyncOwnershipService,
   type SyncOwnableAccount,
@@ -1146,6 +1155,14 @@ export class TransferReviewService {
     const page = hasMore ? rows.slice(0, limit) : rows;
     const last = page.at(-1);
 
+    // One query for the page, not one per row. See `declaredTransferGroups`:
+    // the confirmation over Reopen is written BEFORE the action, and for a
+    // declared pair the action is an undo rather than a return to the queue.
+    const declaredGroups = await this.declaredTransferGroups(
+      userId,
+      page.map(({ tx }) => tx.transferGroupId)
+    );
+
     return {
       items: page.map(({ tx, tokenSymbol, accountName, institutionName, ruleNote }) => {
         const split = transferReviewSplitSchema.safeParse(tx.transferReviewSplit);
@@ -1164,6 +1181,7 @@ export class TransferReviewService {
           reviewedAt: tx.transferReviewedAt?.toISOString() ?? null,
           answerSource: answerSourceOf(tx),
           ruleNote,
+          declared: tx.transferGroupId !== null && declaredGroups.has(tx.transferGroupId),
         } satisfies AnsweredTransferReview;
       }),
       nextCursor: hasMore && last ? encodeAnsweredCursor(new Date(last.sortKey), last.tx.id) : null,
@@ -1232,6 +1250,23 @@ export class TransferReviewService {
    * id, so a row whose group id was cleared by some other path is still
    * reachable. Nothing else can match: no other writer uses that source, and
    * the external id is this transaction's own id.
+   *
+   * **A transfer the OWNER DECLARED is UNDONE here instead** (SC-618, mgrin
+   * 2026-08-26), and the difference is not cosmetic. Everything above assumes
+   * the answer moved no balance, which is true of every queue answer — see
+   * `writeInflow`. A declared transfer moved BOTH anchors, so clearing the
+   * answer and unlinking the pair left the source down, the destination up,
+   * and nothing saying why: money that has moved with no explanation, plus an
+   * ungrouped arrival that `CostBasisService.walkComponent` opens a fresh lot
+   * at market for — the invented gain this whole feature exists to prevent.
+   *
+   * So for that one shape, and only that one, this restores both anchors and
+   * deletes both legs. The row then leaves the answered list rather than
+   * returning to the queue, which is the honest outcome: the withdrawal was
+   * not observed by an importer that we are now unsure about, it was a
+   * sentence the owner typed, and withdrawing the sentence removes it. See
+   * `declaredPairLegs` for why the test is the shared `external_id` and not
+   * the source.
    */
   async reopen(userId: string, transactionId: string): Promise<boolean> {
     return db.transaction(async (tx) => {
@@ -1246,6 +1281,14 @@ export class TransferReviewService {
         )
         .limit(1);
       if (!row?.transferReview) return false;
+
+      if (row.transferGroupId) {
+        const declared = declaredPairLegs(await this.groupLegs(tx, userId, row.transferGroupId));
+        if (declared) {
+          await this.undoDeclaredTransfer(tx, userId, declared);
+          return true;
+        }
+      }
 
       // **The per-row undo of a rule's answer, and the reason it is durable**
       // (SC-380). Withdrawing an answer the reader gave themselves leaves the
@@ -1281,6 +1324,167 @@ export class TransferReviewService {
 
       return true;
     });
+  }
+
+  /**
+   * Which of these transfer groups are transfers the OWNER DECLARED (SC-618).
+   *
+   * Batched over a set of group ids rather than asked one row at a time,
+   * because `listAnswered` pays no per-row round trips on purpose — the
+   * reader there is finding a row they already decided, not making a
+   * judgement. One query for a page keeps that true.
+   *
+   * Public because three callers need the SAME answer and a second
+   * implementation of the rule is how a projection comes to describe a write
+   * that does something else: `listAnswered` (so the confirmation names the
+   * right consequence), `reopen` itself, and
+   * `scripts/reopen-transfer-answers.ts`, whose whole design principle is that
+   * its preview asks the write path's own gate.
+   */
+  async declaredTransferGroups(
+    userId: string,
+    groupIds: readonly (string | null)[],
+    transaction?: DatabaseTransaction
+  ): Promise<Set<string>> {
+    const ids = [...new Set(groupIds.filter((id): id is string => id !== null))];
+    if (ids.length === 0) return new Set();
+
+    const rows = await (transaction ?? db)
+      .select({
+        transferGroupId: schema.holdingTransactions.transferGroupId,
+        id: schema.holdingTransactions.id,
+        holdingId: schema.holdingTransactions.holdingId,
+        quantity: schema.holdingTransactions.quantity,
+        source: schema.holdingTransactions.source,
+        externalId: schema.holdingTransactions.externalId,
+      })
+      .from(schema.holdingTransactions)
+      .where(
+        and(
+          eq(schema.holdingTransactions.userId, userId),
+          inArray(schema.holdingTransactions.transferGroupId, ids)
+        )
+      );
+
+    const byGroup = new Map<string, DeclaredPairLegFacts[]>();
+    for (const row of rows) {
+      if (!row.transferGroupId) continue;
+      const legs = byGroup.get(row.transferGroupId);
+      if (legs) legs.push(row);
+      else byGroup.set(row.transferGroupId, [row]);
+    }
+
+    const declared = new Set<string>();
+    for (const [groupId, legs] of byGroup) {
+      if (declaredPairLegs(legs)) declared.add(groupId);
+    }
+    return declared;
+  }
+
+  /** Every leg of one transfer group, in the shape `declaredPairLegs` reads. */
+  private async groupLegs(
+    tx: DatabaseTransaction,
+    userId: string,
+    transferGroupId: string
+  ): Promise<DeclaredPairLegFacts[]> {
+    return await tx
+      .select({
+        id: schema.holdingTransactions.id,
+        holdingId: schema.holdingTransactions.holdingId,
+        quantity: schema.holdingTransactions.quantity,
+        source: schema.holdingTransactions.source,
+        externalId: schema.holdingTransactions.externalId,
+      })
+      .from(schema.holdingTransactions)
+      .where(
+        and(
+          eq(schema.holdingTransactions.userId, userId),
+          eq(schema.holdingTransactions.transferGroupId, transferGroupId)
+        )
+      );
+  }
+
+  /**
+   * Put both anchors back and delete both legs of a declared transfer
+   * (SC-618).
+   *
+   * ## Why the balances go through `UpdateHoldingUseCase`
+   *
+   * Because a second writer with its own `UPDATE holdings SET balance` is
+   * exactly what SC-245 was: every manual balance edit ever made was missing
+   * from `holding_balance_observations`, and a missing observation does not
+   * degrade `BalanceAtTimeService`, it makes it CONFIDENTLY WRONG on every
+   * date after the gap. Routing through `execute` gets the ownership-scoped
+   * update, the observation and the vault recalculation, all of which this
+   * needs and none of which it should own.
+   *
+   * `editCause` is deliberately omitted, and that is the whole reason this can
+   * reuse that path: `ManualBalanceEditService.record` is called only when a
+   * cause is present, so the anchor moves and NO ledger row is synthesized.
+   * Writing one would be the opposite of an undo — it would leave a reversing
+   * `deposit` and `withdraw` behind, which is a shape mgrin considered and did
+   * not choose.
+   *
+   * ## `balance - quantity`, and why there is no clamp
+   *
+   * `quantity` is signed, so this is the exact inverse of what the declaration
+   * did: the withdrawal's `-2000` adds 2000 back to the source, the arrival's
+   * `+2000` takes 2000 off the destination. It reads TODAY's anchor rather
+   * than the balance at declaration time, which is correct — if a sync or
+   * another edit has restated the figure since, the restatement stands and
+   * only this transfer's own contribution is removed.
+   *
+   * That can leave a destination negative if something else took the money out
+   * first. Left visible rather than clamped or refused: clamping silently
+   * loses the difference, refusing traps the owner with a transfer they cannot
+   * withdraw, and a visibly wrong figure is one they can correct. Undo being
+   * the exact inverse of do is worth more here than a rule that makes them
+   * differ.
+   *
+   * The DELETE is scoped by `userId` as well as by id — the ids came from a
+   * `userId`-scoped read, so this is belt and braces on the one statement here
+   * that destroys rows.
+   */
+  private async undoDeclaredTransfer(
+    tx: DatabaseTransaction,
+    userId: string,
+    legs: readonly [DeclaredPairLegFacts, DeclaredPairLegFacts]
+  ): Promise<void> {
+    const updateHolding = Container.get(UpdateHoldingUseCase);
+
+    for (const leg of legs) {
+      const [holding] = await tx
+        .select({ balance: schema.holdings.balance })
+        .from(schema.holdings)
+        .where(and(eq(schema.holdings.id, leg.holdingId), eq(schema.holdings.userId, userId)))
+        .limit(1);
+      if (!holding) throw new Error(`Declared transfer leg ${leg.id} has no holding to restore`);
+
+      await updateHolding.execute(
+        leg.holdingId,
+        { balance: new Decimal(holding.balance).sub(leg.quantity).toString() },
+        userId,
+        tx
+      );
+    }
+
+    await tx.delete(schema.holdingTransactions).where(
+      and(
+        eq(schema.holdingTransactions.userId, userId),
+        inArray(
+          schema.holdingTransactions.id,
+          legs.map((leg) => leg.id)
+        )
+      )
+    );
+
+    // The rows that defined this holding's covered interval are gone, so the
+    // bound has to be restated — the same step `clearAnswer` takes after
+    // deleting an `internal` answer's arrival.
+    await Container.get(HoldingCoverageRepository).syncTxBoundsFromLedger(
+      legs.map((leg) => leg.holdingId),
+      tx
+    );
   }
 
   /**
