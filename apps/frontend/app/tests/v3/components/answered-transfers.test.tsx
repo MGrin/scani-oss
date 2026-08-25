@@ -41,6 +41,7 @@ const answered = (over: Partial<AnsweredTransferReview>): AnsweredTransferReview
   answerSource: 'unattributed',
   ruleNote: null,
   declared: false,
+  createdDestination: false,
   ...over,
 });
 
