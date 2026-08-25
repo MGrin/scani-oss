@@ -1,3 +1,4 @@
+import type { Dirent } from 'node:fs';
 import { readdir, readlink, rm, stat } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 
@@ -22,7 +23,7 @@ const MAX_DEPTH = 2;
 async function holdsStoreSymlink(dir: string, depth = 0): Promise<boolean> {
   if (depth > MAX_DEPTH) return false;
 
-  let entries: Awaited<ReturnType<typeof readdir>>;
+  let entries: Dirent[];
   try {
     entries = await readdir(dir, { withFileTypes: true });
   } catch {
