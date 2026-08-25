@@ -4,7 +4,7 @@ import { TRPCError } from '@trpc/server';
 import { Container } from 'typedi';
 import { z } from 'zod';
 import { okOutput } from '../schemas';
-import { bearerProcedure, router } from '../trpc';
+import { internalProcedure, router } from '../trpc';
 
 // Outbound transactional email only — the backend's Better-Auth setup
 // talks to this via cloud-client's EmailFacade when SCANI_CLOUD_URL is
@@ -21,7 +21,7 @@ const sendInput = z.object({
 });
 
 export const emailRouter = router({
-  send: bearerProcedure
+  send: internalProcedure
     .meta({
       openapi: {
         method: 'POST',

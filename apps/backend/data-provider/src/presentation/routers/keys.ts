@@ -33,7 +33,21 @@ function requireDb(): CloudDb {
   return cloudDbRef;
 }
 
-const tierSchema = z.enum(['free', 'starter', 'pro', 'enterprise', 'internal']);
+/**
+ * The plan a self-service key is minted at, and the only one.
+ *
+ * `tier` used to be a caller-supplied input, so a signed-up user could
+ * mint themselves an `internal` key and get HTTP 200 for it (SC-585).
+ * That made the tier column worthless as an authority: `internalProcedure`
+ * gates `storage.*` and `email.send` on `cloud_api_keys.tier === 'internal'`,
+ * and a lock whose key is handed to the caller is not a lock.
+ *
+ * Every other tier — `starter`, `pro`, `enterprise`, `internal` — is now
+ * reachable only by writing the row directly. That is deliberate: two of
+ * them are billing decisions that no endpoint should make on a caller's
+ * say-so, and the fourth is an authorization grant.
+ */
+const SELF_SERVICE_TIER = 'free';
 
 export const keysRouter = router({
   list: cookieProcedure.query(async ({ ctx }) => {
@@ -58,11 +72,17 @@ export const keysRouter = router({
 
   create: cookieProcedure
     .input(
-      z.object({
-        name: z.string().min(1).max(80),
-        tier: tierSchema.default('free'),
-        quotaMonthlyRequests: z.number().int().positive().nullable().optional(),
-      })
+      // `.strict()`, so a caller that still sends `tier` is REFUSED with a
+      // 400 naming the key rather than silently minted at `free` with a
+      // 200. Zod strips unknown keys by default, and a success code over
+      // an ignored authorization request is the shape that leaves both
+      // sides believing something different happened.
+      z
+        .object({
+          name: z.string().min(1).max(80),
+          quotaMonthlyRequests: z.number().int().positive().nullable().optional(),
+        })
+        .strict()
     )
     .mutation(async ({ ctx, input }) => {
       const db = requireDb();
@@ -77,7 +97,7 @@ export const keysRouter = router({
           name: input.name,
           keyPrefix,
           hashedKey,
-          tier: input.tier,
+          tier: SELF_SERVICE_TIER,
           quotaMonthlyRequests: input.quotaMonthlyRequests ?? null,
         })
         .returning();
