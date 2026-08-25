@@ -146,7 +146,9 @@ export function classifyDockerProbe(probe: {
   status: number | null;
   stdout?: string | null;
   stderr?: string | null;
-  error?: { code?: string } | undefined;
+  // `spawnSync` reports the timeout on an `Error` carrying a `code`, so the
+  // shape has to admit a real Error as well as a test fixture.
+  error?: (Error & { code?: string }) | { code?: string; message?: string } | undefined;
 }): DockerProbe {
   // The timeout is reported on `error`, never on `status` — a killed child has
   // a null status, so testing the status first would classify it as a plain
