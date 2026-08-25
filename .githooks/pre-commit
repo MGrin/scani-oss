@@ -66,10 +66,10 @@ fi
 #
 # SC-598. The check above answers ROUTING — which files may go — and says
 # nothing about what is inside one that may. The hazard that leaves is an
-# oss-eligible file, correctly pushed, whose COMMENTS carry a bb board key, a
-# bb thread id, an internal host or a machine-local path. That is not
-# hypothetical: a mirror-bound draft carried a board key and two thread ids,
-# and the only thing between it and the public repo was somebody checking
+# oss-eligible file, correctly pushed, whose COMMENTS carry an internal board
+# key, an agent session id, an internal host or a machine-local path. That is
+# not hypothetical: a mirror-bound draft carried a board key and two session
+# ids, and the only thing between it and the public repo was somebody checking
 # precedent by hand.
 #
 # It cannot be keyed on the classifier for the same two reasons the check
