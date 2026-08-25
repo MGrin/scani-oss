@@ -367,6 +367,15 @@ function ReopenAction({ item }: { item: AnsweredTransferReview }) {
         utils.review.listPending.invalidate(),
       ]);
       setOpen(false);
+      // A transfer the owner declared is UNDONE rather than reopened, so both
+      // halves of the success have to differ (SC-618): saying "back in the
+      // queue" would be false, and sending them to a queue this row will never
+      // appear in is the dead end that navigation exists to avoid, reached
+      // from the other side.
+      if (item.declared) {
+        toast({ title: t('v3.review.answered.toast.undone') });
+        return;
+      }
       toast({ title: t('v3.review.answered.toast.reopened') });
       // Straight to the queue rather than back to a list this row has just
       // left. The reader reopened it in order to answer it differently, and
@@ -386,8 +395,16 @@ function ReopenAction({ item }: { item: AnsweredTransferReview }) {
 
   return (
     <ConfirmAction
-      label={t('v3.review.answered.reopen.trigger')}
-      confirmLabel={t('v3.review.answered.reopen.commit')}
+      label={t(
+        item.declared
+          ? 'v3.review.answered.reopen.declaredTrigger'
+          : 'v3.review.answered.reopen.trigger'
+      )}
+      confirmLabel={t(
+        item.declared
+          ? 'v3.review.answered.reopen.declaredCommit'
+          : 'v3.review.answered.reopen.commit'
+      )}
       consequence={reopenConsequence(t, item)}
       isPending={reopen.isPending}
       open={open}

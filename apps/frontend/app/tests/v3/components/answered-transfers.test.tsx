@@ -40,6 +40,7 @@ const answered = (over: Partial<AnsweredTransferReview>): AnsweredTransferReview
   reviewedAt: null,
   answerSource: 'unattributed',
   ruleNote: null,
+  declared: false,
   ...over,
 });
 
