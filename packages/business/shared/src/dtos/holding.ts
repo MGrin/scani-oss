@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { Decimal, isValidDecimalString } from '../decimal';
 import { MANUAL_EDIT_CAUSES, type ManualEditCause } from '../lib/manual-balance-edit';
+import { manualOutflowAnswerSchema } from './transfer-review';
 
 /**
  * A pot name is a label on a row in a list, not a description. Long enough for
@@ -119,6 +120,21 @@ export const UpdateHoldingDto = z.object({
    * ledger row at all.
    */
   editOccurredAt: z.string().datetime({ offset: true }).optional(),
+  /**
+   * Where the money WENT, for a `flow` that takes the balance DOWN (SC-606).
+   *
+   * The transfer-review queue's own question, answered at the moment the user
+   * is already being asked what the edit meant, so that answering does not
+   * manufacture the next question. `MANUAL_OUTFLOW_DESTINATIONS` carries the
+   * reasoning and why `paired` is not among the choices.
+   *
+   * Optional, and its absence is not a defect: a positive delta is owed no
+   * answer, a `correction` or `growth` writes no outflow to answer about, and
+   * a client that sends nothing leaves the row in the queue exactly as it
+   * behaved before this shipped. The server does not infer one — a guess here
+   * is a disposal booked or not booked on nobody's authority.
+   */
+  editOutflow: manualOutflowAnswerSchema.optional(),
 });
 
 export type HoldingWithDetails = {

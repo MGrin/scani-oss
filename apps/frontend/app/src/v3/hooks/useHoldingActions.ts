@@ -1,4 +1,4 @@
-import type { ManualEditCause } from '@scani/shared';
+import type { ManualEditCause, ManualOutflowAnswer } from '@scani/shared';
 import { showError, showSuccess } from '@scani/ui/ui/use-toast';
 import { useTranslation } from 'react-i18next';
 import { invalidatePortfolioQueries } from '@/hooks/invalidatePortfolioQueries';
@@ -123,6 +123,8 @@ export function useHoldingActions() {
         label?: string | null;
         editCause?: ManualEditCause;
         editOccurredAt?: string;
+        /** Where an outflow went, answered in the same dialog (SC-606). */
+        editOutflow?: ManualOutflowAnswer;
       }
     ) => updateMutation.mutate({ id, data }),
     refreshPrice: (id: string) =>

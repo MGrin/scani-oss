@@ -314,6 +314,25 @@ export const transferReviewRouter = router({
     ),
 
   /**
+   * The same list, addressed by HOLDING, for the balance-edit dialog (SC-606).
+   *
+   * It lives on this router rather than on `holdings` because what it returns
+   * is a transfer-review destination — same shape, same picker, same rules
+   * about which accounts appear — and the answer it feeds is written to
+   * `transfer_review`. Filing it under holdings would put half of one
+   * question's vocabulary in each of two routers.
+   *
+   * Asked before any outflow exists, which is the whole point: the edit and
+   * its answer are one transaction, so there is no transaction id to address
+   * yet.
+   */
+  listDestinationsForHolding: protectedProcedure
+    .input(z.object({ holdingId: z.string().uuid() }))
+    .query(async ({ ctx, input }) =>
+      Container.get(TransferReviewService).listDestinationsForHolding(ctx.userId, input.holdingId)
+    ),
+
+  /**
    * A NOT_FOUND here covers "not yours", "not an outflow" and "already
    * answered" alike. The last is the common one — two tabs on the same queue
    * — and it is not a failure: the question really is gone. The client

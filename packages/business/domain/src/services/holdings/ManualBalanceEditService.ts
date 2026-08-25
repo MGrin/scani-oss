@@ -46,6 +46,16 @@ export interface ManualBalanceEditResult {
   delta: Decimal;
   /** The kind written, or null when nothing was written. */
   kind: 'deposit' | 'withdraw' | 'correction' | null;
+  /**
+   * The row this wrote, so the caller can settle what it MEANS in the same
+   * transaction (SC-606).
+   *
+   * Returned rather than re-found by the caller on `(holding, source,
+   * externalId)`: the dedup key is assembled here and a second assembly of it
+   * elsewhere is a key that can drift from this one, which would leave the
+   * caller stamping an answer onto nothing and reporting success.
+   */
+  transactionId: string | null;
   occurredAt: Date | null;
   /** Why nothing was written, when `kind` is null. */
   skipped: 'no-delta' | 'growth-needs-no-row' | null;
@@ -167,11 +177,25 @@ export class ManualBalanceEditService {
     // two cannot drift: a diff this service calls rounding must be one the
     // reconciler also declines to synthesize an opening for.
     if (delta.abs().lte(DEFAULT_OPENING_EPSILON)) {
-      return { cause, delta, kind: null, occurredAt: null, skipped: 'no-delta' };
+      return {
+        cause,
+        delta,
+        kind: null,
+        occurredAt: null,
+        transactionId: null,
+        skipped: 'no-delta',
+      };
     }
 
     if (cause === 'growth') {
-      return { cause, delta, kind: null, occurredAt: null, skipped: 'growth-needs-no-row' };
+      return {
+        cause,
+        delta,
+        kind: null,
+        occurredAt: null,
+        transactionId: null,
+        skipped: 'growth-needs-no-row',
+      };
     }
 
     const occurredAt =
@@ -182,7 +206,7 @@ export class ManualBalanceEditService {
     const kind =
       cause === 'correction' ? 'correction' : delta.isPositive() ? 'deposit' : 'withdraw';
 
-    await this.transactionRepository.bulkUpsert(
+    const written = await this.transactionRepository.bulkUpsert(
       [
         {
           userId: holding.userId,
@@ -224,7 +248,14 @@ export class ManualBalanceEditService {
       'Synthesized transaction for manual balance edit'
     );
 
-    return { cause, delta, kind, occurredAt, skipped: null };
+    return {
+      cause,
+      delta,
+      kind,
+      occurredAt,
+      transactionId: written.rows[0]?.id ?? null,
+      skipped: null,
+    };
   }
 
   /**

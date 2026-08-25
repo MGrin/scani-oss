@@ -715,6 +715,21 @@ export class TransferReviewService {
       matchTransactionId?: string;
       destination?: TransferDestinationRef;
       answerSource?: AnswerAttribution;
+      /**
+       * Settle the answer inside a transaction the CALLER owns (SC-606).
+       *
+       * The manual-edit path writes the outflow and its answer in one unit of
+       * work, and it has to: without this the row would be visible, unanswered
+       * and in the queue between two commits, which is a smaller version of
+       * the cascade this is here to remove. It also makes the failure honest —
+       * a destination that has gone rolls the edit back rather than leaving a
+       * withdrawal nobody asked for.
+       *
+       * A caller passing its own transaction owns the rollback. Everything
+       * else gets the `db.transaction` below unchanged, which is why this is
+       * an option and not a required parameter.
+       */
+      transaction?: DatabaseTransaction;
     } = {}
   ): Promise<TransferResolveResult> {
     if (decision === 'paired' && !opts.matchTransactionId) {
@@ -724,7 +739,7 @@ export class TransferReviewService {
       throw new Error('resolve: an "internal" decision requires a destination');
     }
 
-    return db.transaction(async (tx) => {
+    const run = async (tx: DatabaseTransaction) => {
       const [outflow] = await tx
         .select()
         .from(schema.holdingTransactions)
@@ -770,7 +785,9 @@ export class TransferReviewService {
         .where(eq(schema.holdingTransactions.id, outflow.id));
 
       return { ok: true } as const;
-    });
+    };
+
+    return opts.transaction ? run(opts.transaction) : db.transaction(run);
   }
 
   /**
@@ -808,6 +825,46 @@ export class TransferReviewService {
       .limit(1);
     if (!outflow) return [];
 
+    return this.destinationsFor(userId, outflow.tokenId, outflow.holdingId);
+  }
+
+  /**
+   * The same list, for a balance edit that has not written its outflow yet
+   * (SC-606).
+   *
+   * `listDestinations` above reads a TRANSACTION for two facts — which token
+   * moved and which holding it left — and at edit time neither has a row yet:
+   * the whole point is to answer before the outflow exists, so the answer can
+   * be written with it in one transaction. The holding carries both facts
+   * directly.
+   *
+   * Deliberately the same body rather than a second query shaped like it. The
+   * picker's contract is subtle — every account appears, an account with no
+   * position in the token appears once with a null `holdingId` meaning "create
+   * one", and two same-token holdings in one account appear separately because
+   * the balance and the source are the only things telling them apart. A
+   * second implementation would be free to lose any of that, and it would lose
+   * it silently: the reader sees a shorter list, not an error.
+   */
+  async listDestinationsForHolding(
+    userId: string,
+    holdingId: string
+  ): Promise<TransferDestination[]> {
+    const [holding] = await db
+      .select({ tokenId: schema.holdings.tokenId })
+      .from(schema.holdings)
+      .where(and(eq(schema.holdings.id, holdingId), eq(schema.holdings.userId, userId)))
+      .limit(1);
+    if (!holding) return [];
+
+    return this.destinationsFor(userId, holding.tokenId, holdingId);
+  }
+
+  private async destinationsFor(
+    userId: string,
+    tokenId: string,
+    excludeHoldingId: string
+  ): Promise<TransferDestination[]> {
     const accounts = await db
       .select({
         accountId: schema.accounts.id,
@@ -829,8 +886,8 @@ export class TransferReviewService {
       .where(
         and(
           eq(schema.holdings.userId, userId),
-          eq(schema.holdings.tokenId, outflow.tokenId),
-          ne(schema.holdings.id, outflow.holdingId)
+          eq(schema.holdings.tokenId, tokenId),
+          ne(schema.holdings.id, excludeHoldingId)
         )
       );
 

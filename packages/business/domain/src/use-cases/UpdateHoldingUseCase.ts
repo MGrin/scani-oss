@@ -2,12 +2,17 @@ import type { DatabaseTransaction } from '@scani/db';
 import * as schema from '@scani/db/schema';
 import { withTransaction } from '@scani/db/transaction';
 import { createComponentLogger } from '@scani/logging';
-import { collidingHoldingTokens, type ManualEditCause } from '@scani/shared';
+import {
+  collidingHoldingTokens,
+  type ManualEditCause,
+  type ManualOutflowAnswer,
+} from '@scani/shared';
 import { and, eq } from 'drizzle-orm';
 import Container, { Service } from 'typedi';
 import { HoldingRepository } from '../repositories/HoldingRepository';
 import { HoldingService, VaultService } from '../services';
 import { ManualBalanceEditService } from '../services/holdings/ManualBalanceEditService';
+import { TransferReviewService } from '../services/TransferReviewService';
 
 const logger = createComponentLogger('use-case:update-holding');
 
@@ -27,6 +32,22 @@ export class HoldingLabelTakenError extends Error {
   ) {
     super(`Another holding for this token in the same account is already called "${label}"`);
     this.name = 'HoldingLabelTakenError';
+  }
+}
+
+/**
+ * The destination a balance edit named could not be answered onto (SC-606).
+ *
+ * Raised rather than swallowed, and it rolls the whole edit back. The
+ * alternative — commit the balance and drop the answer — leaves a `withdraw`
+ * sitting in the transfer-review queue, which is precisely the second prompt
+ * this ticket exists to remove, arriving on the one path where the user did
+ * everything right.
+ */
+export class ManualOutflowAnswerRefused extends Error {
+  constructor(readonly reason: string) {
+    super(`The destination for this balance change could not be recorded: ${reason}`);
+    this.name = 'ManualOutflowAnswerRefused';
   }
 }
 
@@ -67,11 +88,19 @@ export interface UpdateHoldingInput {
    * address the row afterwards by its natural key, and two legs written under
    * one instant collapse onto their own rows when a submission is retried.
    *
-   * `RecordHoldingMovementUseCase` is the only caller that supplies one, and
-   * it needs both properties: it stamps the owner's answer onto the `withdraw`
-   * it just wrote, and it links a declared transfer's two legs.
+   * `RecordHoldingMovementUseCase` is the only caller that supplies one: it
+   * links a declared transfer's two legs afterwards, and addresses them by the
+   * key this instant produces.
    */
   editedAt?: Date;
+  /**
+   * Where the money went, for a `flow` that takes the balance DOWN (SC-606).
+   *
+   * Settled in the same transaction as the `withdraw` it describes, so the row
+   * is never visible unanswered. Absent means "leave it for the queue", which
+   * is what every caller written before this did.
+   */
+  editOutflow?: ManualOutflowAnswer;
 }
 
 /**
@@ -109,6 +138,7 @@ export class UpdateHoldingUseCase {
   private readonly holdingService = Container.get(HoldingService);
   private readonly holdingRepository = Container.get(HoldingRepository);
   private readonly manualBalanceEditService = Container.get(ManualBalanceEditService);
+  private readonly transferReviews = Container.get(TransferReviewService);
 
   /**
    * Refuse a rename that would make two rows in one account read identically.
@@ -172,6 +202,7 @@ export class UpdateHoldingUseCase {
         editCause,
         editOccurredAt,
         editedAt: requestedEditedAt,
+        editOutflow,
         label: requestedLabel,
         ...columns
       } = data;
@@ -244,18 +275,51 @@ export class UpdateHoldingUseCase {
       // the LAST observation before this edit. Appending this edit's own
       // observation first would make the correction supersede itself and
       // restate an interval one millisecond long.
-      if (data.balance !== undefined && editCause && previous) {
-        await this.manualBalanceEditService.record(
+      const written =
+        data.balance !== undefined && editCause && previous
+          ? await this.manualBalanceEditService.record(
+              {
+                holding: result,
+                previousBalance: previous.balance,
+                newBalance: result.balance,
+                cause: editCause,
+                occurredAt: editOccurredAt ?? editedAt,
+                editedAt,
+              },
+              tx
+            )
+          : null;
+
+      // Where it went, settled onto the row that was just written and in the
+      // same transaction (SC-606).
+      //
+      // Answering the queue's question here is the whole point: without it the
+      // `withdraw` this edit synthesized is an unanswered outflow, so the act
+      // of explaining the balance change is what puts the next question in
+      // front of the person who just explained it.
+      //
+      // Guarded on the KIND rather than on the caller's word: `record`
+      // synthesizes a `withdraw` only for a negative `flow`, and a destination
+      // arriving beside a `correction`, a `growth` or a deposit has no outflow
+      // to describe. Refusing loudly rather than ignoring it, because a client
+      // that sends one has a bug and silently dropping the field would leave
+      // the user believing they answered.
+      if (editOutflow) {
+        if (written?.kind !== 'withdraw' || written.transactionId === null) {
+          throw new ManualOutflowAnswerRefused(
+            `this edit wrote ${written?.kind ?? 'no'} row, and a destination describes a withdrawal`
+          );
+        }
+        const settled = await this.transferReviews.resolve(
+          userId,
+          written.transactionId,
+          editOutflow.decision,
           {
-            holding: result,
-            previousBalance: previous.balance,
-            newBalance: result.balance,
-            cause: editCause,
-            occurredAt: editOccurredAt ?? editedAt,
-            editedAt,
-          },
-          tx
+            ...(editOutflow.destination ? { destination: editOutflow.destination } : {}),
+            transaction: tx,
+          }
         );
+        if (!settled.ok) throw new ManualOutflowAnswerRefused(settled.reason);
       }
 
       // In the same transaction as the write it describes, and only when
@@ -263,9 +327,35 @@ export class UpdateHoldingUseCase {
       // observation. `result` is the row the update returned, so this costs
       // no extra read.
       if (data.balance !== undefined) {
-        await this.holdingService.recordBalanceObservation(result, tx, {
-          origin: 'updateHolding',
-        });
+        await this.holdingService.recordBalanceObservation(
+          result,
+          tx,
+          { origin: 'updateHolding' },
+          // The person said what this change was, so the interval closing on
+          // this observation is answered and the balance-gap queue must not
+          // ask again (SC-606).
+          //
+          // This is NOT what `BalanceGapService`'s `owner-stated` suppression
+          // does, and the difference is why the third prompt existed. That one
+          // tests `source !== 'sync-capture'`, and every observation this
+          // service writes — a manual edit's included — carries
+          // `sync-capture`, so it has never fired on this path however
+          // confidently its docblock says SC-510 already asked.
+          //
+          // What actually left the gap open was the DATE. A `flow` is stamped
+          // at the day the user gave; the client pre-fills today, a date-only
+          // value becomes LOCAL midnight, and in any zone east of UTC that
+          // instant is yesterday — so the row lands outside `(previous
+          // observation, this one]` and stops explaining the very interval it
+          // was written for. Measured 2026-08-25 on a UTC+12 box: an
+          // observation 12h old gave three prompts, one 72h old gave two, with
+          // nothing else changed.
+          //
+          // Stamping the cause rather than suppressing the row keeps the
+          // answer readable: the observation says a person called this a flow,
+          // in the vocabulary the queue itself writes.
+          editCause ? { answer: editCause, at: editedAt } : undefined
+        );
       }
 
       logger.info(
