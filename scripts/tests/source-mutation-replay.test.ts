@@ -106,6 +106,21 @@ describe('a killed run leaves a journal, and the next run replays it', () => {
     expect(readFileSync(file, 'utf8')).toBe(uncommitted);
   });
 
+  test('a file the killed run had DELETED is restored, not skipped', () => {
+    // The journal is the pre-mutation state, so "not there" is a difference
+    // from it like any other. This pins the branch that reads ENOENT as a
+    // missing file rather than as nothing to do.
+    const { root, file, rel } = scratchRepo('the original\n');
+    const journal = path.join(root, 'scripts/.source-mutation-journal-888.json');
+    mkdirSync(path.dirname(journal), { recursive: true });
+    writeFileSync(journal, JSON.stringify({ pid: 888, files: { [rel]: 'the original\n' } }));
+    rmSync(file, { force: true });
+    expect(existsSync(file)).toBe(false);
+
+    expect(replayStrandedMutations(root)).toEqual([rel]);
+    expect(readFileSync(file, 'utf8')).toBe('the original\n');
+  });
+
   test('MUST-BE-ABSENT CONTROL — a clean tree restores nothing and is not rewritten', () => {
     const { root, file } = scratchRepo();
     const before = readFileSync(file, 'utf8');
