@@ -71,14 +71,14 @@ import { asc, desc, sql } from 'drizzle-orm';
  * portfolio without a paired inflow (a burn, say) would belong in its outflow
  * branches and have no reason to be here.
  */
-export const LEDGER_OUTFLOW_KINDS: ReadonlySet<string> = new Set([
+const LEDGER_OUTFLOW_KINDS: ReadonlySet<string> = new Set([
   'sell',
   'swap_out',
   'withdraw',
   'transfer_out',
 ]);
 
-export function outflowRank(kind: string): number {
+function outflowRank(kind: string): number {
   return LEDGER_OUTFLOW_KINDS.has(kind) ? 0 : 1;
 }
 
