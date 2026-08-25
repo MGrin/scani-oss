@@ -22,7 +22,7 @@ export interface CachedPrice {
  * reader sees under a converted figure, and two surfaces already special-case
  * price provenance by prefix.
  */
-export const PRICE_GRAPH_FIAT_SOURCE = 'price-graph';
+const PRICE_GRAPH_FIAT_SOURCE = 'price-graph';
 
 /**
  * Top-level pricing orchestrator. Resolves cache hits, deduplicates

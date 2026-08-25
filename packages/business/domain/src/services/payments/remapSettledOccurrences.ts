@@ -22,7 +22,7 @@ export interface RemappableOccurrence {
   status: string;
 }
 
-export interface OccurrenceMove {
+interface OccurrenceMove {
   occurrenceId: string;
   fromDueDate: string;
   toDueDate: string;
