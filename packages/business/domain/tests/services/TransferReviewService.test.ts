@@ -3316,3 +3316,103 @@ describe('TransferReviewService — bulk apply (SC-382)', () => {
     expect((await service().bulkPreview(f.userId, [id], null)).refusals).toEqual([]);
   });
 });
+
+/**
+ * The ownership boundary, at the surface that OFFERS a pairing (SC-463).
+ *
+ * This block is the reason the guard went into `candidatePairClass` rather
+ * than into `LinkTransferPairsUseCase`. A linker-only guard passes every test
+ * about the linker and leaves this surface recommending the same wrong pairing
+ * with an accept action beside it — and a pairing a reader completes carries
+ * `answerSource: 'user'`, which every downstream consumer trusts MORE than a
+ * machine match. Stopping the machine while leaving the machine's
+ * recommendation standing launders the error through approval.
+ *
+ * Money crossing between the owner's books and their company's is a real event
+ * on both sets — a director's loan, a dividend, a salary — so it must be
+ * classified, not paired.
+ */
+describe('TransferReviewService — the entity boundary', () => {
+  async function makeEntity(userId: string, name: string): Promise<string> {
+    const [row] = await db
+      .insert(schema.entities)
+      .values({ userId, name: `${name}-${randomUUID().slice(0, 6)}` })
+      .returning();
+    if (!row) throw new Error('entity insert failed');
+    return row.id;
+  }
+
+  async function putAccountInEntity(accountId: string, entityId: string | null): Promise<void> {
+    await db.update(schema.accounts).set({ entityId }).where(eq(schema.accounts.id, accountId));
+  }
+
+  /**
+   * The must-be-FOUND control, run first and deliberately not folded into the
+   * refusal test. It establishes that this fixture produces a candidate at all
+   * — without it, a predicate that refused everything would make the assertion
+   * below pass while proving nothing.
+   */
+  test('still offers a candidate when both accounts are in the SAME entity', async () => {
+    const f = fixture!;
+    const at = anchor();
+    const personal = await makeEntity(f.userId, 'personal');
+    await putAccountInEntity(f.outAccountId, personal);
+    await putAccountInEntity(f.inAccountId, personal);
+
+    await insertOutflow(f, { at, externalId: 'ent-ctl-1' });
+    await insertInflow(f, {
+      at: new Date(at.getTime() + 5 * 60_000),
+      quantity: '0.999',
+      externalId: 'ent-ctl-in-1',
+    });
+
+    const [item] = await service().listPending(f.userId);
+    expect(item?.candidates).toHaveLength(1);
+  });
+
+  test('offers NO candidate across the boundary — the queue cannot recommend what the matcher refuses', async () => {
+    const f = fixture!;
+    const at = anchor();
+    await putAccountInEntity(f.outAccountId, await makeEntity(f.userId, 'personal'));
+    await putAccountInEntity(f.inAccountId, await makeEntity(f.userId, 'company'));
+
+    await insertOutflow(f, { at, externalId: 'ent-1' });
+    await insertInflow(f, {
+      at: new Date(at.getTime() + 5 * 60_000),
+      quantity: '0.999',
+      externalId: 'ent-in-1',
+    });
+
+    const [item] = await service().listPending(f.userId);
+    // The outflow is still a QUESTION — it stays in the queue for its owner to
+    // classify. What it must not have is a recommended answer.
+    expect(item).toBeDefined();
+    expect(item?.candidates).toEqual([]);
+  });
+
+  /**
+   * An account nobody has classified is outside every boundary, so a movement
+   * between it and an assigned one crosses one. The second assertion is the
+   * one that matters most: null matches null, so nothing changes for a
+   * portfolio whose owner has drawn no boundary — which is every portfolio
+   * until they draw one.
+   */
+  test('assigned-to-unassigned is refused; unassigned-to-unassigned is untouched', async () => {
+    const f = fixture!;
+    const at = anchor();
+    await putAccountInEntity(f.outAccountId, await makeEntity(f.userId, 'company'));
+    await putAccountInEntity(f.inAccountId, null);
+
+    await insertOutflow(f, { at, externalId: 'ent-2' });
+    await insertInflow(f, {
+      at: new Date(at.getTime() + 5 * 60_000),
+      quantity: '0.999',
+      externalId: 'ent-in-2',
+    });
+    expect((await service().listPending(f.userId))[0]?.candidates).toEqual([]);
+
+    // Both unassigned — the state every existing portfolio is in today.
+    await putAccountInEntity(f.outAccountId, null);
+    expect((await service().listPending(f.userId))[0]?.candidates).toHaveLength(1);
+  });
+});

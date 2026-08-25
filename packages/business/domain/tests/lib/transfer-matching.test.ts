@@ -22,6 +22,7 @@ function leg(over: Partial<TransferLeg> = {}): TransferLeg {
     canonicalAssetKey: 'usd-coin',
     walletId: 'wallet-1',
     chainKey: '1',
+    entityId: null,
     occurredAt: T0,
     quantityAbs: new Decimal('100'),
     ...over,
@@ -102,5 +103,58 @@ describe('candidatePairClass', () => {
     // looked at, so the condition this file already tested applied to bridges
     // alone — and every same-holding group in production is a same_token pair.
     expect(candidatePairClass(leg(), leg({ transactionId: 'tx-2' }))).toBeNull();
+  });
+});
+
+/**
+ * The ownership boundary (SC-463).
+ *
+ * Money crossing between the owner's books and their limited company's is a
+ * real event on both — a director's loan, a dividend, a salary. Pairing it
+ * carries the lot basis across intact and realizes nothing, which is the wrong
+ * answer on both sides at once.
+ *
+ * **Every refusal here is paired with a must-be-found control** — the same two
+ * legs differing only in entity, expected to pair. Without it a predicate that
+ * refused everything would pass this whole block, which is the one way a guard
+ * can look strongest exactly when it has stopped discriminating.
+ */
+describe('candidatePairClass — the entity boundary', () => {
+  const PERSONAL = 'entity-personal';
+  const COMPANY = 'entity-company';
+
+  test('refuses a same-token movement across the boundary', () => {
+    const out = leg({ entityId: PERSONAL });
+    const inflow = leg({ transactionId: 'tx-2', holdingId: 'holding-b', entityId: COMPANY });
+
+    expect(candidatePairClass(out, inflow)).toBeNull();
+    // Control: the identical pair inside ONE set of books still pairs.
+    expect(candidatePairClass(out, { ...inflow, entityId: PERSONAL })).toBe('same_token');
+  });
+
+  test('refuses a bridge across the boundary', () => {
+    const out = leg({ entityId: PERSONAL });
+    const inflow = arrival({ entityId: COMPANY });
+
+    expect(candidatePairClass(out, inflow)).toBeNull();
+    expect(candidatePairClass(out, { ...inflow, entityId: PERSONAL })).toBe('bridged_asset');
+  });
+
+  /**
+   * The direction that would otherwise leak. An account nobody has classified
+   * is not "wherever the other leg is" — it is outside every boundary, and a
+   * movement between the two crosses one.
+   */
+  test('refuses assigned-to-unassigned in both directions', () => {
+    const assigned = leg({ entityId: COMPANY });
+    const unassigned = leg({ transactionId: 'tx-2', holdingId: 'holding-b', entityId: null });
+
+    expect(candidatePairClass(assigned, unassigned)).toBeNull();
+    expect(candidatePairClass({ ...unassigned, transactionId: 'tx-3' }, assigned)).toBeNull();
+    // Control, and the one that matters most: null matches null, so nothing
+    // changes for a portfolio whose owner has drawn no boundary — which is
+    // every portfolio until they draw one. If this went red the feature would
+    // be silently unpairing every existing user's transfers.
+    expect(candidatePairClass(leg(), unassigned)).toBe('same_token');
   });
 });

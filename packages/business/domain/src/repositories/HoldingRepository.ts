@@ -15,6 +15,9 @@ export interface HoldingWithFullDetails {
     id: string;
     name: string;
     institutionId: string;
+    /** The ownership boundary this account sits in, or null for unassigned
+     *  (SC-463). Null is a real state, not a missing one. */
+    entityId: string | null;
     typeCode: string;
     typeName: string;
   };
@@ -373,6 +376,11 @@ export class HoldingRepository extends BaseRepository<Holding, NewHolding> {
           accountId: schema.accounts.id,
           accountName: schema.accounts.name,
           accountInstitutionId: schema.accounts.institutionId,
+          // The ownership boundary (SC-463). Carried on the holdings fetch
+          // every valuation already makes, so the per-entity cut costs no
+          // second query and cannot resolve membership differently from the
+          // list it labels — the mistake SC-385 was about.
+          accountEntityId: schema.accounts.entityId,
           accountTypeCode: schema.accountTypes.code,
           accountTypeName: schema.accountTypes.name,
           // Institution data with type
@@ -420,6 +428,7 @@ export class HoldingRepository extends BaseRepository<Holding, NewHolding> {
           id: r.accountId,
           name: r.accountName,
           institutionId: r.accountInstitutionId,
+          entityId: r.accountEntityId,
           typeCode: r.accountTypeCode,
           typeName: r.accountTypeName,
         },
