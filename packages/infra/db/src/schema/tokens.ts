@@ -208,7 +208,7 @@ export const tokens = pgTable(
      * that separation is the point. A homoglyph scores 1.00 when we hold
      * no price for it and 0.70 once we do — the 0.30 difference is
      * "no pricing data available", a fact about OUR coverage that the
-     * token has no part in. `WarmTokenPricesForImportUseCase` then
+     * token has no part in. `PriceWarmupService` then
      * re-scores priced tokens downward, so a row quarantined at 1.00
      * later reads as ordinary. This column is written once from the
      * characters themselves and nothing re-scores it (SC-197).

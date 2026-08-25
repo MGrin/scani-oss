@@ -49,13 +49,6 @@ export interface PricingProvider {
   fetchPrices(tokens: RoutedToken[], context: PricingExecutionContext): Promise<PricingResult[]>;
 }
 
-export type ConvertPriceFn = (
-  price: string,
-  fromCurrency: string,
-  toCurrency: string,
-  timestamp: Date
-) => Promise<string>;
-
 export type PricingProviderKey =
   | 'exchangeRate'
   | 'coinGecko'

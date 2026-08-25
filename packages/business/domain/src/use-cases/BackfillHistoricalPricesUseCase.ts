@@ -69,7 +69,7 @@ function toDate(value: Date | string | null): Date | null {
 }
 
 /** One token's intended request window, for `planOnly` runs. */
-export interface BackfillPlanEntry {
+interface BackfillPlanEntry {
   tokenId: string;
   /** Days with no price row — what the range fetch is actually for. */
   missingDays: number;
