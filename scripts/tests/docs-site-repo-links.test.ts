@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+import { sweepFixtureCorpses } from '../lib/test-fixture-corpses';
 
 /**
  * SC-589. The published docs site linked a design note in the closed
@@ -61,6 +62,18 @@ function writeTrackedFixture(body: string): void {
     .trim();
   expect(tracked).toBe(FIXTURE_REL);
 }
+
+/**
+ * SC-596. `afterEach` below does not run when the process is killed, and the
+ * pid in the fixture name means no later run ever removes a predecessor's
+ * corpse — it stays in the INDEX, inside a directory the docs site deploys,
+ * waiting for a `git add -A`. So the repair is a sweep of the PATTERN at
+ * module scope, before anything here is written: this run repairs its
+ * predecessors even if it is itself killed, which a `process.on('exit')`
+ * handler cannot do because `SIGKILL` skips it.
+ */
+const swept = sweepFixtureCorpses(REPO_ROOT);
+if (swept.length > 0) console.log(`swept ${swept.length} stale fixture(s): ${swept.join(', ')}`);
 
 afterEach(() => {
   git('rm', '--cached', '--quiet', '--force', FIXTURE_REL);
