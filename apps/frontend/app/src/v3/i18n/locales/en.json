@@ -870,7 +870,43 @@
         "cancel": "Cancel",
         "save": "Save"
       },
-      "amountBelow": "< {{amount}}"
+      "amountBelow": "< {{amount}}",
+      "movement": {
+        "title": "Record a movement",
+        "description": "Say what you did and Scani works out the balance — instead of the other way round.",
+        "holdingLabel": "Which holding",
+        "holdingPlaceholder": "Pick an account",
+        "direction": {
+          "inflow": "Money in",
+          "outflow": "Money out",
+          "transfer": "Transfer"
+        },
+        "amountLabel": "How much moved",
+        "currentBalance": "Currently {{amount}} {{symbol}}",
+        "dateLabel": "When did the money move?",
+        "whereLabel": "Where did it go?",
+        "where": {
+          "left_control": {
+            "title": "Spent, sold or given away",
+            "detail": "It left your portfolio, so any gain on it is realized."
+          },
+          "untracked": {
+            "title": "Moved somewhere Scani cannot see",
+            "detail": "Still your money — a cold wallet, an account with no connection. Nothing is realized."
+          },
+          "transfer": {
+            "title": "Transferred to another account I hold",
+            "detail": "Scani records both sides and links them, so nothing is asked about it later."
+          }
+        },
+        "destinationTitle": "Where it went",
+        "noteLabel": "Note (optional)",
+        "cancel": "Cancel",
+        "save": "Record it",
+        "saving": "Recording…",
+        "recorded": "Movement recorded",
+        "peekAction": "Record a movement"
+      }
     },
     "export": {
       "sheet": {
@@ -1540,6 +1576,10 @@
         "payment": {
           "title": "A bill that repeats",
           "description": "Matched to transactions as they arrive."
+        },
+        "movement": {
+          "title": "Record a movement",
+          "description": "Money in, money out, or a transfer between your accounts."
         }
       },
       "fileImport": {
