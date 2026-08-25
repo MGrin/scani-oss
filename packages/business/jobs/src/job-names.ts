@@ -11,6 +11,7 @@ export const JOB_NAMES = {
   exchangeTransactions: 'exchange-transactions',
   apyPayouts: 'apy-payouts',
   paymentDueReminder: 'payment-due-reminder',
+  paymentHorizonRoll: 'payment-horizon-roll',
   weeklyDigest: 'weekly-digest',
   alertSweep: 'alert-sweep',
   reconcilePendingCredentials: 'reconcile-pending-credentials',

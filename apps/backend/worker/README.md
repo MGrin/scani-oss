@@ -30,6 +30,7 @@ src/
     ├── job-heartbeat-probe.ts          (scheduled, every 15 minutes)
     ├── manual-holdings-create.ts       (user-initiated)
     ├── payment-due-reminder.ts         (scheduled, hourly — selects users at local 17:00)
+    ├── payment-horizon-roll.ts         (scheduled, nightly 04:45 UTC)
     ├── portfolio-history-backfill.ts   (user-initiated)
     ├── portfolio-value-rollup.ts       (scheduled, nightly 04:00 UTC)
     ├── pricing.ts                      (scheduled, hourly)
