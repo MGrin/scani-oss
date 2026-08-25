@@ -3,6 +3,7 @@ import {
   earnsAReleaseNote,
   extractVersionSection,
   findShortfall,
+  normaliseDescription,
   parseBulletDescriptions,
   parseSubject,
   RELEASE_NOTE_TYPES,
@@ -174,9 +175,59 @@ describe('the comparison itself', () => {
   test('strips the bullet marker, the bolded scope and every trailing link', () => {
     expect(
       parseBulletDescriptions(
-        '* **queue:** move BullMQ to Postgres (SC-518) ([#12](https://x/pull/12)) ([1c117c4](https://x/commit/1c117c4))'
+        '* **queue:** move BullMQ to Postgres ([#12](https://x/pull/12)) ([1c117c4](https://x/commit/1c117c4))'
       )
-    ).toEqual(['move bullmq to postgres (sc-518)']);
+    ).toEqual(['move bullmq to postgres']);
+  });
+
+  /**
+   * SC-621. The recovery for a missing entry is a hand-written bullet behind a
+   * `BEGIN_COMMIT_OVERRIDE`, and the natural thing to write is this repo's
+   * ticket suffix — which the commit subject may not carry. Measured on the
+   * 0.18.0 repair: the bullet was plainly there, in a release PR of 20, and
+   * this check went on reporting `1 of 20 ... have no entry`.
+   */
+  describe('a ticket suffix on one side only', () => {
+    const commit = releasable([['aaaaaaaaa', 'fix(holdings): an untouched date field means now']]);
+
+    // Through `parseBulletDescriptions`, because that is where a bullet comes
+    // from in the run that reported the false shortfall.
+    const bullets = (line: string) => parseBulletDescriptions(`* **holdings:** ${line}`);
+
+    test('a bullet the check could not see before is matched now', () => {
+      expect(
+        findShortfall(commit, bullets('an untouched date field means now (SC-612)'))
+      ).toHaveLength(0);
+    });
+
+    // The other direction: the commit carries it and the bullet does not.
+    test('and the same when the suffix is on the commit instead', () => {
+      const suffixed = releasable([
+        ['aaaaaaaaa', 'fix(holdings): an untouched date field means now (SC-612)'],
+      ]);
+      expect(findShortfall(suffixed, ['an untouched date field means now'])).toHaveLength(0);
+    });
+
+    test('both suffixes, in either order, on either side', () => {
+      expect(normaliseDescription('a thing (SC-612) (#207)')).toBe('a thing');
+      expect(normaliseDescription('a thing (#207) (SC-612)')).toBe('a thing');
+    });
+
+    // Must-be-ABSENT: stripping a trailing suffix must not eat a mid-sentence
+    // reference, nor make two genuinely different entries look alike.
+    test('a reference that is not a trailing suffix survives', () => {
+      expect(normaliseDescription('reopen the (SC-612) answers for a holding')).toBe(
+        'reopen the (sc-612) answers for a holding'
+      );
+      expect(normaliseDescription('a thing (SC-612)')).not.toBe(
+        normaliseDescription('another thing (SC-612)')
+      );
+    });
+
+    // The shortfall it must STILL report — the strip is not a way to pass.
+    test('a genuinely missing entry is still missing', () => {
+      expect(findShortfall(commit, bullets('something else entirely (SC-612)'))).toHaveLength(1);
+    });
   });
 });
 
