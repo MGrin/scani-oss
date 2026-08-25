@@ -1,5 +1,6 @@
 import { z } from 'zod';
-import { OUTFLOW_DESTINATIONS } from '../lib/holding-movement';
+import { movementOutflowRefusesInternal } from '../lib/holding-movement';
+import { manualOutflowDestinationSchema } from './transfer-review';
 
 /**
  * The wire shape of "record what I did" (SC-607).
@@ -66,11 +67,20 @@ export const RecordHoldingMovementDto = z.discriminatedUnion('direction', [
     ...movementBase,
     direction: z.literal('outflow'),
     /**
-     * Where it went. Required, with no default on any token type — see
-     * `OUTFLOW_DESTINATIONS` for why guessing either value is a
-     * tax-realizing decision made on the owner's behalf.
+     * Where it went. Required, with no default on any token type.
+     *
+     * `manualOutflowDestinationSchema` verbatim (SC-606) rather than a second
+     * enum of the same strings, minus `internal` — which is not a narrowing of
+     * the vocabulary but a statement about which DIRECTION can express it
+     * truthfully here. See `movementOutflowRefusesInternal`.
      */
-    destination: z.enum(OUTFLOW_DESTINATIONS),
+    destination: manualOutflowDestinationSchema.refine(
+      (value) => !movementOutflowRefusesInternal(value),
+      {
+        message:
+          'Money moved to another account you hold is the `transfer` direction — it writes both legs, where `internal` would leave the destination balance untouched',
+      }
+    ),
   }),
   z.object({
     ...movementBase,

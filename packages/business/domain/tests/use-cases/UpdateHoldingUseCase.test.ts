@@ -23,8 +23,11 @@ import * as schema from '@scani/db/schema';
 import { and, asc, eq } from 'drizzle-orm';
 import { Container } from 'typedi';
 import { flowRoleOf } from '../../src/lib/returns/flow-classification';
+import { pendingPredicate } from '../../src/lib/transfer-review-queue';
+import { HoldingBalanceObservationRepository } from '../../src/repositories/HoldingBalanceObservationRepository';
 import {
   HoldingLabelTakenError,
+  ManualOutflowAnswerRefused,
   UpdateHoldingUseCase,
 } from '../../src/use-cases/UpdateHoldingUseCase';
 import { withTestDb } from '../../test/helpers/db';
@@ -567,6 +570,296 @@ describe('UpdateHoldingUseCase — a name has to tell the rows apart (SC-564)', 
       const result = await useCase().execute(first.id, { label: 'Savings' }, user.id, tx);
 
       expect(result.label).toBe('Savings');
+    });
+  });
+});
+
+/**
+ * One manual edit, one question (SC-606).
+ *
+ * ## What was measured before any of this was written
+ *
+ * On a dev stack, 2026-08-25, on a UTC+12 box: a manual USD savings holding
+ * edited 4,000 → 2,000, answered `flow`, date field left at its default.
+ * `ReviewFeedService.listPending` then held **two** items — a transfer-review
+ * and a balance-gap — on top of the dialog itself. Three prompts from one
+ * edit, which is what was reported. With the prior observation aged from 12h
+ * to 72h and nothing else changed, the balance-gap item disappeared and the
+ * count fell to two: the third prompt is the DATE interaction, not a property
+ * of manual editing. Answered in full, the same edit now leaves zero.
+ *
+ * ## Why these assert PREDICATES rather than call the queues
+ *
+ * `BalanceGapService.listPending` and `TransferReviewService.pendingSummary`
+ * read the global `db`, and everything here lives in a transaction that is
+ * rolled back — so calling them would count zero whatever the code did, which
+ * is a test that passes against the bug. `pendingPredicate` is the queue's OWN
+ * gate and `findGapCandidatesForUser` takes a transaction, so both can be
+ * asked about rows this test can see.
+ *
+ * Each carries its must-be-FOUND control in the same test: the gap candidate
+ * has to still EXIST and be answered, and the withdrawal has to have been
+ * WRITTEN and be out of the queue. Asserting only "not in the queue" would
+ * pass just as well against a fixture that never produced one.
+ */
+describe('UpdateHoldingUseCase — one edit, one question (SC-606)', () => {
+  type Tx = Parameters<Parameters<typeof withTestDb>[0]>[0];
+
+  /** The queue's own gate, so this cannot drift from what the page shows. */
+  function pendingOutflows(tx: Tx, userId: string) {
+    return tx.select().from(schema.holdingTransactions).where(pendingPredicate(userId));
+  }
+
+  /**
+   * A cash holding with the observation the daily APY payout leaves behind.
+   *
+   * `sync-capture` because that is what `HoldingService.recordBalanceObservation`
+   * writes whatever the caller — which is why `BalanceGapService`'s
+   * `owner-stated` suppression has never fired on the manual path, however
+   * confidently its docblock says SC-510 already asked.
+   */
+  async function cashHoldingObservedToday(tx: Tx) {
+    const user = await makeUser(tx);
+    const institution = await makeInstitution(tx);
+    const account = await makeAccount(tx, { userId: user.id, institutionId: institution.id });
+    const [fiat] = await tx
+      .insert(schema.tokenTypes)
+      .values({ code: `fiat-${crypto.randomUUID().slice(0, 8)}`, name: 'Fiat' })
+      .returning();
+    const token = await makeToken(tx, { typeId: fiat?.id });
+    const holding = await makeHolding(tx, {
+      userId: user.id,
+      accountId: account.id,
+      tokenId: token.id,
+      balance: '4000',
+      source: 'manual',
+    });
+    await Container.get(HoldingBalanceObservationRepository).append(
+      {
+        userId: user.id,
+        holdingId: holding.id,
+        balance: '4000',
+        observedAt: new Date(Date.now() - 12 * 60 * 60 * 1000),
+        source: 'sync-capture',
+        sourceMetadata: {},
+      },
+      tx
+    );
+    return { user, institution, account, token, holding };
+  }
+
+  /**
+   * A flow dated BEFORE the holding's previous observation, which is the
+   * condition that leaves the interval unexplained.
+   *
+   * Stated as an explicit instant rather than reproduced through the date
+   * field's local-midnight default, and the difference is not cosmetic: `bun
+   * test` runs in UTC while the app runs in the host's zone — measured
+   * 2026-08-25, the same expression gave `2026-08-24T12:00Z` under the dev
+   * stack and `2026-08-25T00:00Z` under the suite. A test written on the
+   * default would assert the runner's timezone and pass or fail on where it
+   * ran.
+   *
+   * The route a real user takes to this state IS that default: a date field
+   * collects a day, a day becomes local midnight, and in any zone east of UTC
+   * that instant is yesterday — earlier than an observation the daily APY
+   * payout wrote this morning. `BALANCE_GAP_DATE_PROMPT_MIN_SPAN_MS` carries
+   * the same measurement from the other side of the same problem.
+   */
+  function backdatedBeforeLastObservation(): Date {
+    return new Date(Date.now() - 48 * 60 * 60 * 1000);
+  }
+
+  test('the edit answers its own observation, so the balance-gap queue does not ask again', async () => {
+    await withTestDb(async (tx) => {
+      const { user, holding } = await cashHoldingObservedToday(tx);
+
+      await useCase().execute(
+        holding.id,
+        { balance: '2000', editCause: 'flow', editOccurredAt: backdatedBeforeLastObservation() },
+        user.id,
+        tx
+      );
+
+      const candidates = await Container.get(
+        HoldingBalanceObservationRepository
+      ).findGapCandidatesForUser(user.id, tx);
+      const gap = candidates.find((row) => row.holdingId === holding.id);
+
+      // Must-be-FOUND: the interval really is an unexplained gap. Without this
+      // the assertion below would pass on a fixture that never made one, which
+      // is the whole failure this suite was written against in SC-245.
+      expect(gap).toBeDefined();
+      expect(gap?.source).toBe('sync-capture');
+
+      // …and it is answered, in the vocabulary the queue itself writes, so
+      // `listPending` skips it at `candidate.gapReview !== null`.
+      expect(gap?.gapReview).toBe('flow');
+    });
+  });
+
+  test('a correction and a growth answer their observation too', async () => {
+    // The stamp is the CAUSE, not the string 'flow'. An implementation that
+    // hard-coded one value would leave the other two edits asking again, and
+    // `growth` writes no ledger row at all — so nothing else on that path
+    // could ever explain its interval.
+    for (const cause of ['correction', 'growth'] as const) {
+      await withTestDb(async (tx) => {
+        const { user, holding } = await cashHoldingObservedToday(tx);
+
+        await useCase().execute(holding.id, { balance: '2000', editCause: cause }, user.id, tx);
+
+        const [observation] = await tx
+          .select()
+          .from(schema.holdingBalanceObservations)
+          .where(
+            and(
+              eq(schema.holdingBalanceObservations.holdingId, holding.id),
+              eq(schema.holdingBalanceObservations.gapReviewSource, 'user')
+            )
+          );
+        expect(observation?.gapReview).toBe(cause);
+      });
+    }
+  });
+
+  test('an edit with no cause leaves its observation unanswered', async () => {
+    // The must-be-ABSENT control. A priced holding's edit is derived rather
+    // than stated, and a sync's observation is nobody's answer — stamping
+    // either would hide a real gap behind a claim no person made.
+    await withTestDb(async (tx) => {
+      const { user, holding } = await cashHoldingObservedToday(tx);
+
+      await useCase().execute(holding.id, { balance: '2000' }, user.id, tx);
+
+      const rows = await tx
+        .select()
+        .from(schema.holdingBalanceObservations)
+        .where(eq(schema.holdingBalanceObservations.holdingId, holding.id));
+      const written = rows.find((row) => row.balance === '2000');
+      expect(written?.gapReview).toBeNull();
+      expect(written?.gapReviewSource).toBeNull();
+    });
+  });
+
+  test('a destination given with the edit settles the withdrawal it wrote', async () => {
+    await withTestDb(async (tx) => {
+      const { user, holding } = await cashHoldingObservedToday(tx);
+
+      await useCase().execute(
+        holding.id,
+        {
+          balance: '2000',
+          editCause: 'flow',
+          editOccurredAt: backdatedBeforeLastObservation(),
+          editOutflow: { decision: 'left_control' },
+        },
+        user.id,
+        tx
+      );
+
+      const ledger = await ledgerFor(tx, holding.id);
+      const withdrawal = ledger.find((row) => row.kind === 'withdraw');
+
+      // Must-be-FOUND: the outflow was written. "Not in the queue" is worth
+      // nothing if the row this is about does not exist.
+      expect(withdrawal).toBeDefined();
+      expect(withdrawal?.quantity).toBe('-2000');
+
+      expect(withdrawal?.transferReview).toBe('left_control');
+      // `answerSourceOf` reads this as `user`, which is what every repair and
+      // the rule engine gate on.
+      expect(withdrawal?.transferReviewSource).toBe('user');
+
+      expect(await pendingOutflows(tx, user.id)).toHaveLength(0);
+    });
+  });
+
+  test('without a destination the withdrawal stays in the queue, exactly as before', async () => {
+    // The must-be-ABSENT control for the whole feature, and the compatibility
+    // claim: a client that sends nothing behaves as every pre-SC-606 one did.
+    // Nothing here infers a destination — a guess would book a disposal, or
+    // decline to, on nobody's authority.
+    await withTestDb(async (tx) => {
+      const { user, holding } = await cashHoldingObservedToday(tx);
+
+      await useCase().execute(
+        holding.id,
+        { balance: '2000', editCause: 'flow', editOccurredAt: backdatedBeforeLastObservation() },
+        user.id,
+        tx
+      );
+
+      const pending = await pendingOutflows(tx, user.id);
+      expect(pending).toHaveLength(1);
+      expect(pending[0]?.kind).toBe('withdraw');
+    });
+  });
+
+  test('an internal destination links the pair there and then', async () => {
+    await withTestDb(async (tx) => {
+      const { user, institution, token, holding } = await cashHoldingObservedToday(tx);
+      const other = await makeAccount(tx, { userId: user.id, institutionId: institution.id });
+      const destination = await makeHolding(tx, {
+        userId: user.id,
+        accountId: other.id,
+        tokenId: token.id,
+        balance: '10',
+        source: 'manual',
+      });
+
+      await useCase().execute(
+        holding.id,
+        {
+          balance: '2000',
+          editCause: 'flow',
+          editOccurredAt: backdatedBeforeLastObservation(),
+          editOutflow: {
+            decision: 'internal',
+            destination: { accountId: other.id, holdingId: destination.id },
+          },
+        },
+        user.id,
+        tx
+      );
+
+      const withdrawal = (await ledgerFor(tx, holding.id)).find((row) => row.kind === 'withdraw');
+      const arrival = (await ledgerFor(tx, destination.id))[0];
+
+      expect(withdrawal?.transferReview).toBe('internal');
+      expect(arrival).toBeDefined();
+      // The link itself. Without a shared group id `CostBasisService` retires
+      // the lots here and reopens them there at market, which is the invented
+      // gain the whole transfer-review feature exists to stop.
+      expect(withdrawal?.transferGroupId).not.toBeNull();
+      expect(arrival?.transferGroupId).toBe(withdrawal?.transferGroupId ?? null);
+
+      expect(await pendingOutflows(tx, user.id)).toHaveLength(0);
+    });
+  });
+
+  test('a destination beside an edit that writes no withdrawal is refused', async () => {
+    // A deposit, a `correction` and a `growth` have no outflow for a
+    // destination to describe. Refusing loudly rather than dropping the field:
+    // a client that sends one has a bug, and silently ignoring it would leave
+    // the person believing they had answered.
+    //
+    // NOT asserted here: that the refusal rolls the edit back. It does —
+    // `execute` wraps `run` in `withTransaction` — but this suite injects its
+    // own transaction precisely so it can roll back, so the injected path
+    // hands the rollback to the caller and there is nothing for the test to
+    // observe. Said rather than implied.
+    await withTestDb(async (tx) => {
+      const { user, holding } = await cashHoldingObservedToday(tx);
+
+      await expect(
+        useCase().execute(
+          holding.id,
+          { balance: '9000', editCause: 'flow', editOutflow: { decision: 'left_control' } },
+          user.id,
+          tx
+        )
+      ).rejects.toBeInstanceOf(ManualOutflowAnswerRefused);
     });
   });
 });

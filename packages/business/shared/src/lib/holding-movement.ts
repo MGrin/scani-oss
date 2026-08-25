@@ -1,4 +1,4 @@
-import { TRANSFER_REVIEW_DECISIONS } from '../dtos/transfer-review';
+import type { ManualOutflowDestination } from '../dtos/transfer-review';
 
 /**
  * What the owner DID, said in their own terms (SC-607).
@@ -44,53 +44,50 @@ export function isHoldingMovementDirection(value: unknown): value is HoldingMove
  * Where an outflow went — asked IN the form, for every holding, with no
  * default (mgrin, 2026-08-25).
  *
- * ## Why there is no default, on any token type
+ * ## There is no vocabulary here on purpose
  *
- * A bare outflow still has to say what it was, or the row sits unanswered in
- * the transfer-review queue and this feature has moved a prompt rather than
- * removed one. Only two `TRANSFER_REVIEW_DECISIONS` members can apply, and
- * choosing between them is a tax-realizing decision:
+ * The answers are `MANUAL_OUTFLOW_DESTINATIONS` (SC-606), used verbatim. A
+ * second list that happened to agree today would be free to disagree
+ * tomorrow, and the disagreement would render as a queue asking about a row
+ * this feature had already settled — which is that list's own stated reason
+ * for existing beside `TRANSFER_REVIEW_DECISIONS` rather than apart from it.
  *
- * - `left_control` — it left the portfolio. `CostBasisService` realizes it at
- *   market. Guess this on crypto moved to a cold wallet and a taxable
- *   disposal is booked that never happened.
- * - `untracked` — still the owner's money somewhere Scani cannot see. Nothing
- *   is realized. Guess this on a genuine sale and a real gain silently
- *   disappears.
+ * ## Why `internal` is refused HERE and nowhere else
  *
- * Neither error announces itself; both render as a plausible figure, and
- * neither would fail a test. So neither is safe to infer, and the question is
- * asked of everyone.
+ * `internal` means "it went to that holding of mine, and nothing imported the
+ * arrival" — so `TransferReviewService.resolve` WRITES the arrival row. That
+ * is right for the queue, where the outflow is historical and the destination
+ * was already observed by whatever produced its balance.
+ *
+ * It is wrong for a movement being recorded now. `writeInflow` inserts the
+ * arrival and never moves an EXISTING destination holding's balance — it sets
+ * one only on a holding it creates, because `holdings.balance` is an anchor
+ * rather than a sum. Somebody saying "move 2000 from A to B" expects B to rise
+ * by 2000, and routed through `internal` the source would fall, the
+ * destination would not rise, both rows would exist and nothing would error.
+ *
+ * So the third thing a person can say about an outflow — *it went to another
+ * account I hold* — is the `transfer` DIRECTION here, which writes both legs
+ * and links them. Same answer, expressed where it can be true.
+ *
+ * ## Why no default, on any token type
+ *
+ * Only `left_control` (realizes at market) and `untracked` (realizes nothing)
+ * remain, and choosing between them is a tax-realizing decision. Guess
+ * `left_control` on crypto moved to a cold wallet and a disposal is booked
+ * that never happened; guess `untracked` on a genuine sale and a real gain
+ * disappears. Neither error announces itself, both render as a plausible
+ * figure, and neither would fail a test.
  *
  * **Asking here is not the prompt this ticket removes.** The defect was being
  * interrogated AFTERWARDS to recover a fact the owner already held. This is
- * the same fact, stated once, in the form that records it — one submit, no
- * follow-up. The review-prompt count stays zero.
+ * the same fact, stated once, in the form that records it.
  *
- * A per-token-type exemption for fiat was considered and rejected: it is true
- * that cash realizes nothing either way, which makes the choice free on
- * exactly the holding this was reported from — and that is precisely why it
- * would have looked cosmetic while being load-bearing on the crypto and stock
- * holdings that are most of this product.
+ * A fiat exemption was considered and rejected: cash realizes nothing either
+ * way, which makes the choice free on exactly the holding this was reported
+ * from and load-bearing on the crypto and stock holdings that are most of
+ * this product.
  */
-export const OUTFLOW_DESTINATIONS = ['left_control', 'untracked'] as const;
-
-export type OutflowDestination = (typeof OUTFLOW_DESTINATIONS)[number];
-
-export function isOutflowDestination(value: unknown): value is OutflowDestination {
-  return typeof value === 'string' && (OUTFLOW_DESTINATIONS as readonly string[]).includes(value);
-}
-
-/**
- * Both members are `TRANSFER_REVIEW_DECISIONS`, verbatim rather than a
- * parallel vocabulary that happens to agree today.
- *
- * The value written here IS the queue's answer — it is what makes the row
- * answered rather than pending — so a second spelling of `left_control` would
- * be a row that reads as answered to this feature and as unanswered to the
- * queue. Asserted rather than commented because the two lists are edited by
- * different tickets.
- */
-export function outflowDestinationIsReviewDecision(value: OutflowDestination): boolean {
-  return (TRANSFER_REVIEW_DECISIONS as readonly string[]).includes(value);
+export function movementOutflowRefusesInternal(decision: ManualOutflowDestination): boolean {
+  return decision === 'internal';
 }
