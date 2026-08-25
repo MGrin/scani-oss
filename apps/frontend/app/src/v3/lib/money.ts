@@ -22,7 +22,7 @@ import { V3_ROUTES } from './routes';
  * own anyway (V3-11).
  */
 
-export type MoneySegment = 'upcoming' | 'recurring' | 'vendors';
+export type MoneySegment = 'upcoming' | 'recurring' | 'forecast' | 'vendors';
 
 export interface MoneySegmentDef {
   key: MoneySegment;
@@ -35,6 +35,7 @@ export interface MoneySegmentDef {
 export const MONEY_SEGMENTS: readonly MoneySegmentDef[] = [
   { key: 'upcoming', labelKey: 'v3.money.segments.upcoming', path: V3_ROUTES.money },
   { key: 'recurring', labelKey: 'v3.money.segments.recurring', path: V3_ROUTES.recurring },
+  { key: 'forecast', labelKey: 'v3.money.segments.forecast', path: V3_ROUTES.forecast },
   { key: 'vendors', labelKey: 'v3.money.segments.vendors', path: V3_ROUTES.vendors },
 ];
 
@@ -59,6 +60,11 @@ export function resolveMoneySegment(pathname: string): MoneySegment {
   const path = stripTrailingSlash(pathname);
   if (covers(V3_ROUTES.vendors, path)) return 'vendors';
   if (covers(V3_ROUTES.recurring, path)) return 'recurring';
+  // `forecast` joins `recurring` as a reserved word in the occurrence-id space
+  // (SC-461), and for the same reason: claimed before the fall-through, so
+  // `/v3/payments/forecast` is a view rather than a peek at an occurrence
+  // called "forecast". Occurrence ids are uuids, so nothing can collide.
+  if (covers(V3_ROUTES.forecast, path)) return 'forecast';
   return DEFAULT_MONEY_SEGMENT;
 }
 
