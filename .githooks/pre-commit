@@ -62,6 +62,32 @@ else
   note "scripts/check-oss-bound-paths.ts is not in this tree; OSS-boundary check NOT run"
 fi
 
+# -------- 0b. Nothing internal may ride inside a file that legitimately travels --------
+#
+# SC-598. The check above answers ROUTING — which files may go — and says
+# nothing about what is inside one that may. The hazard that leaves is an
+# oss-eligible file, correctly pushed, whose COMMENTS carry a bb board key, a
+# bb thread id, an internal host or a machine-local path. That is not
+# hypothetical: a mirror-bound draft carried a board key and two thread ids,
+# and the only thing between it and the public repo was somebody checking
+# precedent by hand.
+#
+# It cannot be keyed on the classifier for the same two reasons the check
+# above cannot be, and one more of its own: the classifier is private-only, so
+# from a mirror-bound checkout it does not run at all. This one has no private
+# imports and answers in both repositories — including in scani-oss itself,
+# where there is no `upstream` remote and every commit is public by definition.
+#
+# A REFUSAL on any non-zero status, exit 9 included, on the same reasoning:
+# "could not tell which repo this is for" is not a pass.
+if [ -f scripts/check-oss-internal-refs.ts ]; then
+  if ! bun scripts/check-oss-internal-refs.ts; then
+    fail "staged content carries references that cannot travel to MGrin/scani-oss"
+  fi
+else
+  note "scripts/check-oss-internal-refs.ts is not in this tree; internal-reference check NOT run"
+fi
+
 # -------- 1. Biome lint (staged files only, fast) --------
 
 biome_relevant=$(staged_files -- '*.ts' '*.tsx' '*.js' '*.jsx' '*.json' '*.jsonc' || true)
