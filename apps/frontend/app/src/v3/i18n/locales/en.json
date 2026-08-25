@@ -867,6 +867,17 @@
           "growth": "Interest, a payout or a revaluation. This is the return, and it is the only way Scani can see it on a balance you keep by hand."
         },
         "dateLabel": "When did the money move?",
+        "destinationLabel": "Where did it go?",
+        "destination": {
+          "internal": "Another account here",
+          "left_control": "It left my portfolio",
+          "untracked": "An account Scani can't see"
+        },
+        "destinationExplain": {
+          "internal": "It moved to another holding you track. Pick where, and Scani links the two sides so the cost basis carries across instead of being realized here and reopened there.",
+          "left_control": "Spent, gifted, or sold somewhere Scani cannot see. This realizes a gain or a loss on the amount that left.",
+          "untracked": "Still your money, in a wallet or an account Scani has no access to. Nothing is realized."
+        },
         "cancel": "Cancel",
         "save": "Save"
       },

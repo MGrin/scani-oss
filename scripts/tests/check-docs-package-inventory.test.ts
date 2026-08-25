@@ -1,6 +1,7 @@
-import { afterEach, describe, expect, test } from 'bun:test';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
+import { replayStrandedMutations, withMutatedSources } from '../lib/test-source-mutations';
 
 /**
  * SC-528. CLAUDE.md's package list ran six workspaces short here and one short
@@ -10,35 +11,43 @@ import path from 'node:path';
  * `docs:check` now derives it. These tests exist so that check has been SEEN to
  * fail — a guard nobody has watched go red is a guard nobody knows is wired up.
  *
- * They mutate the real CLAUDE.md and restore it in a `finally` around a single
- * synchronous spawn, so there is no window in which another test could observe
- * the mutated file. `afterEach` restores again in case an assertion throws
- * between the write and the run.
+ * They mutate the real CLAUDE.md and restore it around a single synchronous
+ * spawn, so there is no window in which another test could observe the mutated
+ * file.
+ *
+ * SC-601. That restore is a `finally`, and `SIGKILL` skips it — leaving a
+ * TRACKED file rewritten on disk, where `git add -A` commits a CLAUDE.md nobody
+ * wrote. It is the site SC-596's name-pattern sweep can least reach: the
+ * mutations here DELETE and REFORMAT bullets, so there is no sentinel string to
+ * find and nothing to reverse. `withMutatedSources` journals the original bytes
+ * first and the replay below puts them back at the start of the next run —
+ * before ORIGINAL is read, so a corpse cannot become the baseline every
+ * assertion in this file trusts.
  */
 
 const REPO_ROOT = path.resolve(import.meta.dir, '../..');
 const CLAUDE_MD = path.join(REPO_ROOT, 'CLAUDE.md');
-const ORIGINAL = readFileSync(CLAUDE_MD, 'utf8');
 
-afterEach(() => {
-  writeFileSync(CLAUDE_MD, ORIGINAL);
-});
+const restored = replayStrandedMutations(REPO_ROOT);
+if (restored.length > 0) console.log(`restored ${restored.length} file(s): ${restored.join(', ')}`);
+
+const ORIGINAL = readFileSync(CLAUDE_MD, 'utf8');
 
 function runCheck(): { exitCode: number; output: string } {
   const run = Bun.spawnSync(['bun', 'scripts/check-docs.ts'], { cwd: REPO_ROOT });
   return { exitCode: run.exitCode, output: `${run.stdout.toString()}${run.stderr.toString()}` };
 }
 
-// Mutate, run, restore. The restore is in `finally` and not deferred to
-// `afterEach` because the mutated file must not survive the one call that reads
-// it, whatever the assertions below do.
+// Mutate, run, restore — around the single spawn that reads the file, so the
+// mutated CLAUDE.md cannot survive it whatever the assertions below do.
 function withDoc(doc: string): { exitCode: number; output: string } {
-  writeFileSync(CLAUDE_MD, doc);
-  try {
-    return runCheck();
-  } finally {
-    writeFileSync(CLAUDE_MD, ORIGINAL);
-  }
+  // Control: the caller's substitution matched. A doc identical to ORIGINAL
+  // would run the check against the committed tree and assert nothing.
+  expect(doc).not.toBe(ORIGINAL);
+
+  const result = withMutatedSources(REPO_ROOT, { [CLAUDE_MD]: doc }, runCheck);
+  expect(readFileSync(CLAUDE_MD, 'utf8')).toBe(ORIGINAL);
+  return result;
 }
 
 // A bullet that is certainly present, so a test removing it is removing

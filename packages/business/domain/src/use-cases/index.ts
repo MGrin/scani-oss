@@ -145,6 +145,7 @@ export {
 export { UpdateHoldingPriceUseCase } from './UpdateHoldingPriceUseCase';
 export {
   HoldingLabelTakenError,
+  ManualOutflowAnswerRefused,
   type UpdateHoldingInput,
   UpdateHoldingUseCase,
 } from './UpdateHoldingUseCase';

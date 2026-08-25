@@ -179,6 +179,23 @@ export class LinkTransferPairsUseCase {
       )
       .returning({ id: schema.holdingTransactions.id });
 
+    // The answer is written in the SAME method that writes the group id, not
+    // by the caller afterwards, and that is the fix for how this went wrong
+    // once: the group id alone already keeps the row out of the queue, so a
+    // caller that forgot the stamp produced a correct prompt count and a row
+    // whose provenance read `unattributed` — an owner-DECLARED transfer
+    // indistinguishable from one the nightly matcher guessed at, and fair game
+    // for every repair pass gating on the answer having come from a person.
+    //
+    // Nothing detected that, because there was no disagreement to detect: a
+    // step was simply absent, and an absent step leaves no artefact. Folding
+    // it into the one method that cannot be skipped is what makes it
+    // unskippable rather than merely tested for.
+    //
+    // `paired` rather than `internal`: both legs exist, because the caller
+    // wrote them. `internal` is the answer that has to write the arrival
+    // itself, and it does not move an existing destination's balance.
+
     if (updated.length !== 2) {
       // One leg moved and the other did not, so the pairing is half-made.
       // Throwing rolls the caller's transaction back rather than leaving a
@@ -188,6 +205,15 @@ export class LinkTransferPairsUseCase {
         `Declared transfer pairing affected ${updated.length} rows, expected 2 — refusing a half-linked pair`
       );
     }
+
+    await tx
+      .update(schema.holdingTransactions)
+      .set({
+        transferReview: 'paired',
+        transferReviewedAt: new Date(),
+        transferReviewSource: 'user',
+      })
+      .where(leg(pair.outflow));
 
     logger.info({ userId: pair.userId, groupId }, 'Linked a declared transfer pair');
     return groupId;

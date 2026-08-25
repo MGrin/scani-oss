@@ -2,7 +2,11 @@ import type { DatabaseTransaction } from '@scani/db';
 import * as schema from '@scani/db/schema';
 import { withTransaction } from '@scani/db/transaction';
 import { createComponentLogger } from '@scani/logging';
-import type { RecordHoldingMovementInput, RecordHoldingMovementResult } from '@scani/shared';
+import type {
+  ManualOutflowAnswer,
+  RecordHoldingMovementInput,
+  RecordHoldingMovementResult,
+} from '@scani/shared';
 import Decimal from 'decimal.js';
 import { and, eq } from 'drizzle-orm';
 import Container, { Service } from 'typedi';
@@ -76,10 +80,15 @@ export class MovementExceedsBalanceError extends Error {
  *
  * A `withdraw` with no `transfer_review` is the transfer-review queue's
  * definition of a pending row (`pendingPredicate`), so recording one without
- * an answer would move a prompt rather than remove one. The owner is asked in
- * the form — see `OUTFLOW_DESTINATIONS` for why no value is safe to infer —
- * and the answer is stamped with `transfer_review_source: 'user'`, which is
- * the marker SC-606 owns and this consumes rather than reinvents.
+ * an answer would move a prompt rather than remove one.
+ *
+ * The answer travels as `editOutflow` through `UpdateHoldingUseCase`, which is
+ * SC-606's path and settles it via `TransferReviewService.resolve` in the same
+ * transaction. That is deliberate rather than incidental: `resolve` is where
+ * the queue's own refusals live — a `left_control` naming a destination in the
+ * owner's own wallets is refused there (SC-350), and a raw UPDATE on
+ * `transfer_review` would write exactly the answer the queue exists to
+ * prevent, while looking identical in the database.
  *
  * ## Why a transfer does not go through the matcher's heuristic
  *
@@ -131,26 +140,22 @@ export class RecordHoldingMovementUseCase {
         throw new MovementExceedsBalanceError(source.balance, input.amount);
       }
 
-      const after = await this.applyFlow(source, amount.neg(), occurredAt, editedAt, userId, tx);
+      const after = await this.applyFlow(
+        source,
+        amount.neg(),
+        occurredAt,
+        editedAt,
+        userId,
+        tx,
+        input.direction === 'outflow' ? { decision: input.destination } : undefined
+      );
 
-      if (input.direction === 'outflow') {
-        await this.answerOutflow(source.id, editedAt, input.destination, userId, tx);
-        return this.result(after, null, null);
-      }
+      if (input.direction === 'outflow') return this.result(after, null, null);
 
       const destination = await this.destinationHolding(input, source, userId, tx);
       if (destination.id === source.id) throw new MovementSameHoldingError(source.id);
 
       const arrived = await this.applyFlow(destination, amount, occurredAt, editedAt, userId, tx);
-
-      // Stamped as well as grouped, and the group id alone would already keep
-      // this out of the queue. What the stamp adds is PROVENANCE: without it
-      // `answerSourceOf` reads the row as `unattributed`, so a transfer the
-      // owner declared is indistinguishable from one the nightly matcher
-      // guessed at — and the realized ledger renders a sentence about who
-      // answered. `paired` rather than `internal` because both legs exist;
-      // `internal` is for the answer that has to WRITE the arrival.
-      await this.answerOutflow(source.id, editedAt, 'paired', userId, tx);
 
       const transferGroupId = await this.linkTransferPairs.linkDeclaredPair(
         {
@@ -194,7 +199,8 @@ export class RecordHoldingMovementUseCase {
     occurredAt: Date,
     editedAt: Date,
     userId: string,
-    tx: DatabaseTransaction
+    tx: DatabaseTransaction,
+    editOutflow?: ManualOutflowAnswer
   ): Promise<typeof schema.holdings.$inferSelect> {
     return await this.updateHolding.execute(
       holding.id,
@@ -203,48 +209,11 @@ export class RecordHoldingMovementUseCase {
         editCause: 'flow',
         editOccurredAt: occurredAt,
         editedAt,
+        ...(editOutflow ? { editOutflow } : {}),
       },
       userId,
       tx
     );
-  }
-
-  /**
-   * Stamp the owner's answer onto the `withdraw` this movement just wrote.
-   *
-   * Found by its natural key rather than by an id threaded back out of
-   * `UpdateHoldingUseCase`: `(holding_id, source, external_id)` is the unique
-   * constraint the row was written under, so this addresses exactly the row
-   * and needs no change to a return type five other callers depend on.
-   *
-   * `transfer_review_source: 'user'` because the owner did answer — they
-   * answered it in the form, before the row existed. That is the whole shape
-   * of this feature, and `answerSourceOf` reads it identically to an answer
-   * given in the queue.
-   */
-  private async answerOutflow(
-    holdingId: string,
-    editedAt: Date,
-    destination: string,
-    userId: string,
-    tx: DatabaseTransaction
-  ): Promise<void> {
-    const key = this.legKey(holdingId, editedAt);
-    await tx
-      .update(schema.holdingTransactions)
-      .set({
-        transferReview: destination,
-        transferReviewedAt: editedAt,
-        transferReviewSource: 'user',
-      })
-      .where(
-        and(
-          eq(schema.holdingTransactions.userId, userId),
-          eq(schema.holdingTransactions.holdingId, key.holdingId),
-          eq(schema.holdingTransactions.source, key.source),
-          eq(schema.holdingTransactions.externalId, key.externalId)
-        )
-      );
   }
 
   /**
