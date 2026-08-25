@@ -414,6 +414,7 @@ export class RepairBridgedOutflowsUseCase {
         >`case when ${schema.tokens.lookalikeOf} is null then ${schema.tokens.providerMetadata}->'coingecko'->>'id' end`,
         walletId: sql<string | null>`${schema.accounts.metadata}->>'userWalletId'`,
         chainKey: sql<string | null>`${schema.accounts.metadata}->>'chainId'`,
+        entityId: schema.accounts.entityId,
         destination: sql<string | null>`${schema.holdingTransactions.rawPayload}->>'to'`,
       })
       .from(schema.holdingTransactions)
@@ -463,6 +464,7 @@ interface LegRow {
   canonicalAssetKey: string | null;
   walletId: string | null;
   chainKey: string | null;
+  entityId: string | null;
   destination: string | null;
 }
 
@@ -474,6 +476,7 @@ function toLeg(row: LegRow): TransferLeg {
     canonicalAssetKey: row.canonicalAssetKey,
     walletId: row.walletId,
     chainKey: row.chainKey,
+    entityId: row.entityId,
     occurredAt: row.tx.occurredAt,
     quantityAbs: new Decimal(row.tx.quantity).abs(),
   };

@@ -150,6 +150,12 @@ export {
 export { AssetAllocationService } from './portfolio/AssetAllocationService';
 export { DashboardService } from './portfolio/DashboardService';
 export {
+  type EntityValuationResult,
+  EntityValuationService,
+  type EntityValue,
+  UNASSIGNED_ENTITY,
+} from './portfolio/EntityValuationService';
+export {
   type GroupValuationResult,
   GroupValuationService,
   type GroupValue,

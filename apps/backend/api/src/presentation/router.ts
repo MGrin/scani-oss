@@ -8,6 +8,7 @@ import { clientErrorsRouter } from './routers/client-errors';
 import { dashboardRouter } from './routers/dashboard';
 import { demoRouter } from './routers/demo';
 import { documentsRouter } from './routers/documents';
+import { entitiesRouter } from './routers/entities';
 import { exportsRouter } from './routers/exports';
 import { fileImportRouter } from './routers/file-import';
 import { groupsRouter } from './routers/groups';
@@ -65,6 +66,7 @@ export const appRouter = router({
   institutions: institutionsRouter,
   accounts: accountsRouter,
   holdings: holdingsRouter,
+  entities: entitiesRouter,
   groups: groupsRouter,
 
   // Vaults (protected) - Savings goals with attached holdings

@@ -9,6 +9,9 @@ export type Account = {
   metadata?: unknown;
   userId: string;
   institutionId: string;
+  /** Which set of books this account belongs to, or null for unassigned
+   *  (SC-463). Null is a real state, not a missing one. */
+  entityId?: string | null;
 };
 
 export const CreateAccountDto = z.object({

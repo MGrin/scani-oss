@@ -4,6 +4,7 @@ export * from './batch';
 export * from './common';
 export * from './cost-basis';
 export * from './dashboard';
+export * from './entity';
 export * from './export-document';
 export * from './group';
 export * from './holding';
