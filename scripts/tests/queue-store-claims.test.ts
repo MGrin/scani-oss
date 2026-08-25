@@ -137,13 +137,13 @@ describe('docs:check catches prose that puts the job queue on the wrong store', 
   test('an undetectable backend FAILS — it is never read as "the docs are fine"', () => {
     const originals = CLIENTS.map((f) => readFileSync(f, 'utf8'));
     const renamed = Object.fromEntries(
-      CLIENTS.map((f, i) => [f, originals[i].replaceAll('createPostgresBackend', 'makeBackend')])
+      CLIENTS.map((f, i) => [f, originals[i]!.replaceAll('createPostgresBackend', 'makeBackend')])
     );
 
     // Control: the rename matched in both files. Without it, a moved factory
     // would leave them untouched and this test would assert against a green
     // run it never caused.
-    for (const [i, f] of CLIENTS.entries()) expect(renamed[f]).not.toBe(originals[i]);
+    for (const [i, f] of CLIENTS.entries()) expect(renamed[f]).not.toBe(originals[i]!);
 
     // SC-601. `withMutatedSources` journals the original bytes before writing,
     // so a `kill -9` between here and the restore is repaired by the replay at
@@ -157,7 +157,7 @@ describe('docs:check catches prose that puts the job queue on the wrong store', 
     // Restoration is asserted, not assumed: a test that leaves a tracked source
     // file mutated turns every later file in this single-process run into a
     // failure with no connection to what it names.
-    for (const [i, f] of CLIENTS.entries()) expect(readFileSync(f, 'utf8')).toBe(originals[i]);
-    expect(existsSync(CLIENTS[0])).toBe(true);
+    for (const [i, f] of CLIENTS.entries()) expect(readFileSync(f, 'utf8')).toBe(originals[i]!);
+    expect(existsSync(CLIENTS[0]!)).toBe(true);
   });
 });
