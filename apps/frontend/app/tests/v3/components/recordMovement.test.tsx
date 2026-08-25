@@ -1,7 +1,7 @@
 import '../../i18n-preload';
 
 import { describe, expect, test } from 'bun:test';
-import { OUTFLOW_DESTINATIONS } from '@scani/shared';
+import { MANUAL_OUTFLOW_DESTINATIONS, movementOutflowRefusesInternal } from '@scani/shared';
 import i18n from 'i18next';
 import { movementInstant } from '../../../src/v3/components/holdings/RecordMovementSheet';
 
@@ -58,13 +58,20 @@ describe('the outflow question', () => {
    * the transfer-review queue reads as pending — the prompt count going back
    * to one with nothing failing.
    */
-  test('every destination is a transfer-review decision', () => {
-    expect([...OUTFLOW_DESTINATIONS]).toEqual(['left_control', 'untracked']);
+  test('the offered answers are SC-606’s vocabulary minus `internal`', () => {
+    // Not a hardcoded pair: derived from the shared list the queue answers
+    // with, so adding a decision there shows up here rather than silently
+    // going unoffered. `internal` is excluded because it cannot move an
+    // existing destination's balance — that is the `transfer` direction.
+    const offered = MANUAL_OUTFLOW_DESTINATIONS.filter((d) => !movementOutflowRefusesInternal(d));
+    expect([...offered]).toEqual(['left_control', 'untracked']);
+    expect(MANUAL_OUTFLOW_DESTINATIONS).toContain('internal');
   });
 
   /** Each option says what happens to the money, in the owner's terms. */
   test('each option carries a title and a consequence', () => {
-    for (const option of [...OUTFLOW_DESTINATIONS, 'transfer']) {
+    const offered = MANUAL_OUTFLOW_DESTINATIONS.filter((d) => !movementOutflowRefusesInternal(d));
+    for (const option of [...offered, 'transfer']) {
       const title = t(`v3.holdings.movement.where.${option}.title`);
       const detail = t(`v3.holdings.movement.where.${option}.detail`);
       expect(title).not.toBe(`v3.holdings.movement.where.${option}.title`);
