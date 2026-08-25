@@ -18,6 +18,7 @@ import {
   amountDecimals,
   BALANCE_EDIT_SCALE,
   balanceEditWrites,
+  balanceIsBelowZero,
   compareHoldings,
   countsTowardTotal,
   daysInMonth,
@@ -638,5 +639,31 @@ describe('amount as a decimal string', () => {
     expect(amountDecimals('0.000000000000000001')).toBe(18);
     expect(amountDecimals('143.59019742')).toBe(8);
     expect(amountDecimals('12500')).toBe(0);
+  });
+});
+
+/**
+ * SC-632. The rule is about the SIGN, and it is a claim about provenance:
+ * a negative balance cannot have been entered, because both holding DTOs
+ * refuse one and `UpdateHoldingDto` gates the mutation. That is what lets the
+ * explanation hang off the number instead of a marker column.
+ */
+describe('balanceIsBelowZero', () => {
+  test('a deficit is below zero', () => {
+    expect(balanceIsBelowZero('-1900')).toBe(true);
+    expect(balanceIsBelowZero('-0.00000001')).toBe(true);
+  });
+
+  test('zero is not, and neither is negative zero', () => {
+    // decimal.js reports `-0` as negative. It is not a deficit, and a holding
+    // that reached exactly zero by a signed route must not be told it is one.
+    expect(balanceIsBelowZero('0')).toBe(false);
+    expect(balanceIsBelowZero('-0')).toBe(false);
+    expect(balanceIsBelowZero('0.0000000004013')).toBe(false);
+  });
+
+  test('an unparseable balance is a different defect and claims nothing', () => {
+    expect(balanceIsBelowZero('not a number')).toBe(false);
+    expect(balanceIsBelowZero('')).toBe(false);
   });
 });
