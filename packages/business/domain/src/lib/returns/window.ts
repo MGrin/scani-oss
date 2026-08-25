@@ -12,7 +12,7 @@
  * `ReturnsService`.
  */
 
-export type ReturnWindowKind = 'ytd' | '1y' | 'all' | 'custom';
+type ReturnWindowKind = 'ytd' | '1y' | 'all' | 'custom';
 
 export type ReturnWindowRequest =
   | { kind: 'ytd' | '1y' | 'all' }
@@ -28,11 +28,11 @@ export interface ResolvedReturnWindow {
 
 const YEAR_MS = 365 * 24 * 60 * 60 * 1000;
 
-export function startOfUtcDay(at: Date): Date {
+function startOfUtcDay(at: Date): Date {
   return new Date(`${at.toISOString().slice(0, 10)}T00:00:00.000Z`);
 }
 
-export function endOfUtcDay(at: Date): Date {
+function endOfUtcDay(at: Date): Date {
   return new Date(`${at.toISOString().slice(0, 10)}T23:59:59.999Z`);
 }
 
