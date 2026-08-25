@@ -23,7 +23,7 @@ import { useTranslation } from 'react-i18next';
 import { useAccountTarget } from '../../hooks/useAccountTarget';
 import { buildEnsureAccountInput } from '../../lib/manual-entry';
 import { AccountTargetFields } from '../capture/AccountTargetFields';
-import { DateField } from '../form/DateField';
+import { DateField, dateFieldInstant, todayIso } from '../form/DateField';
 
 /**
  * "I withdrew 2000" — the movement, recorded as itself (SC-607).
@@ -62,6 +62,11 @@ import { DateField } from '../form/DateField';
  * exists to remove. Measured by SC-606 on this repo: three prompts with a
  * same-day prior observation against two with a 72-hour-old one. Only a
  * deliberately chosen other day becomes that day's midnight.
+ *
+ * The rule itself is `dateFieldInstant`, shared with `HoldingEditCauseDialog`
+ * since SC-612 — which is the same defect on the other surface, found after
+ * this one was fixed here. Two forms asking for a date must not date the same
+ * movement differently.
  */
 
 export interface MovementHolding {
@@ -112,20 +117,6 @@ const OUTFLOW_OPTIONS = [
   ...MANUAL_OUTFLOW_DESTINATIONS.filter((option) => !movementOutflowRefusesInternal(option)),
   'transfer' as const,
 ];
-
-function todayIso(): string {
-  const now = new Date();
-  const month = String(now.getMonth() + 1).padStart(2, '0');
-  const day = String(now.getDate()).padStart(2, '0');
-  return `${now.getFullYear()}-${month}-${day}`;
-}
-
-/** See the note on the date above: today means now, another day means midnight. */
-export function movementInstant(date: string): string {
-  return date === todayIso()
-    ? new Date().toISOString()
-    : new Date(`${date}T00:00:00`).toISOString();
-}
 
 function holdingName(holding: MovementHolding): string {
   return `${holding.account.name} · ${holding.label || holding.token.symbol}`;
@@ -183,7 +174,7 @@ export function RecordMovementSheet({
       holdingId: selected.id,
       direction,
       amount: amount.trim(),
-      occurredAt: movementInstant(date),
+      occurredAt: dateFieldInstant(date),
       note: note.trim() || undefined,
       destination:
         direction === 'outflow' && destination !== null && destination !== 'transfer'
