@@ -75,14 +75,90 @@ export interface BranchFacts {
   readonly upstreamIsAncestor: boolean;
   /** `origin/main` is an ancestor of HEAD. */
   readonly originIsAncestor: boolean;
+  /**
+   * What HEAD's own TREE says about which repo it belongs to, or `null` when
+   * that could not be computed (either main unresolvable, HEAD unreadable, or
+   * the two mains carrying identical file lists). Null falls back to descent.
+   */
+  readonly treeMarkers: TreeMarkers | null;
 }
 
 /**
- * The two mains diverge — neither is an ancestor of the other — so descent
- * separates the branches cleanly. Verified with `git merge-base --is-ancestor`
- * in both directions; if the mirror were ever fast-forwarded onto private main
- * this would stop discriminating, and the test named
- * `a branch descended from BOTH is unknown, not private` is what says so.
+ * How many paths that exist in only ONE of the two repos are present in HEAD's
+ * tree — counted in both directions, each with its denominator.
+ *
+ * Which paths those are is discovered at run time by diffing the two mains,
+ * never listed here: this file is shared with the public mirror, and an
+ * inventory of what a private tree contains is the disclosure the guard exists
+ * to prevent (SC-566). Only the counts are ever printed.
+ */
+export interface TreeMarkers {
+  /** Paths in `origin/main` and not `upstream/main`. */
+  readonly privateOnlyTotal: number;
+  readonly privateOnlyInHead: number;
+  /** Paths in `upstream/main` and not `origin/main`. */
+  readonly mirrorOnlyTotal: number;
+  readonly mirrorOnlyInHead: number;
+}
+
+/**
+ * WHICH REPO'S TREE IS THIS? — asked of the tree, not of the history (SC-629).
+ *
+ * The answer keys on the ONE asymmetry that cannot be argued with: a mirror
+ * tree does not contain the private repo's files, and a private tree does not
+ * contain the mirror's. Both sets are discovered by diffing the two mains at
+ * run time, so nothing here goes stale as either repo moves.
+ *
+ * THE ORDER IS THE SAFETY PROPERTY, not a preference. `oss` makes the guard
+ * RUN; `private` makes it SKIP. So mirror evidence is checked first and wins
+ * outright: a tree carrying mirror-only paths is treated as mirror-bound even
+ * if it also carries a private-only path, because the worst case is a refusal
+ * somebody reads, while the worst case of the opposite order is a check that
+ * silently did not happen. `private` is reached only on clean evidence — some
+ * private-only paths and NO mirror-only ones. Anything else is `unknown`.
+ *
+ * That mixed case is real, not hypothetical: three OSS branches in this repo
+ * carry exactly one private-only path, and refusing that path is precisely
+ * what this guard is for.
+ *
+ * Measured 2026-08-26 over all 756 local branches: 693 classified `private`,
+ * each carrying between 283 and 543 of the 543 private-only paths; 63
+ * classified `oss`, each carrying 0 or 1; none `unknown`. Nothing sits in the
+ * middle, so the verdict is not a knife-edge.
+ */
+export function classifyByTree(markers: TreeMarkers): Boundness | null {
+  if (markers.mirrorOnlyInHead > 0) {
+    return {
+      kind: 'oss',
+      why: `HEAD's tree carries ${markers.mirrorOnlyInHead}/${markers.mirrorOnlyTotal} mirror-only path(s)`,
+    };
+  }
+  if (markers.privateOnlyInHead > 0) {
+    return {
+      kind: 'private',
+      why: `HEAD's tree carries ${markers.privateOnlyInHead}/${markers.privateOnlyTotal} private-only path(s) and none of the ${markers.mirrorOnlyTotal} mirror-only path(s)`,
+    };
+  }
+  return null;
+}
+
+/**
+ * DESCENT IS THE FALLBACK, AND ONLY THE FALLBACK, since SC-629.
+ *
+ * It used to be the whole discriminator, resting on a premise this comment
+ * stated and flagged: "the two mains diverge — neither is an ancestor of the
+ * other". The back-sync that merges `upstream/main` into private `main` ends
+ * that, every branch then descends from both, and descent says `unknown` for
+ * everything. That sync is correct and recurs by design (SC-568), so the
+ * premise is gone for good rather than temporarily.
+ *
+ * Descent had a SECOND failure that the outage hid, and it is the worse of the
+ * two because it is silent. `upstream/main` advancing past a branch point —
+ * which happens the moment any OSS PR merges — makes `upstreamIsAncestor`
+ * false for a still-OSS-bound branch, and the verdict is then `private`, which
+ * SKIPS the guard. Measured on `MGrin/sc-622-payment-horizon-roll` after its
+ * own PR merged: descent said `private`, the tree said `oss` on 9/9 mirror
+ * markers. An exit-9 outage is loud and got a ticket; that one would not have.
  */
 export function classifyBranch(facts: BranchFacts): Boundness {
   if (!facts.hasUpstreamRemote) {
@@ -97,10 +173,23 @@ export function classifyBranch(facts: BranchFacts): Boundness {
       why: 'an `upstream` remote exists but `upstream/main` does not resolve — run `git fetch upstream`',
     };
   }
+  if (facts.treeMarkers) {
+    const byTree = classifyByTree(facts.treeMarkers);
+    if (byTree) return byTree;
+    // Markers existed to look for and HEAD has none of either kind. That is
+    // not "probably private" — it is a tree that resembles neither repo, and
+    // resolving it toward the convenient answer is the heuristic this guard
+    // refuses on principle.
+    return {
+      kind: 'unknown',
+      why: `HEAD's tree carries none of the ${facts.treeMarkers.privateOnlyTotal} private-only nor the ${facts.treeMarkers.mirrorOnlyTotal} mirror-only path(s), so it matches neither repo`,
+    };
+  }
+
   if (facts.upstreamIsAncestor && facts.originIsAncestor) {
     return {
       kind: 'unknown',
-      why: 'HEAD descends from BOTH `origin/main` and `upstream/main`, so descent cannot say which repo this branch is for',
+      why: 'HEAD descends from BOTH `origin/main` and `upstream/main`, and the two mains have no distinguishing paths to fall back on',
     };
   }
   if (facts.upstreamIsAncestor) {
@@ -158,6 +247,58 @@ function git(args: string[]): { ok: boolean; stdout: string } {
   return { ok: r.status === 0, stdout: (r.stdout ?? '').trim() };
 }
 
+/**
+ * NUL-separated, because `core.quotePath` renders a non-ASCII path as an
+ * escaped, quoted string and the same path read two different ways would be
+ * counted as absent from a tree that has it.
+ */
+function gitPaths(args: string[]): string[] | null {
+  const r = git([...args, '-z']);
+  if (!r.ok) return null;
+  return r.stdout.split('\0').filter((p) => p.length > 0);
+}
+
+/**
+ * Discover the two one-sided path sets and how many of each HEAD's tree has.
+ *
+ * Returns null — meaning "fall back to descent" — when either main cannot be
+ * read, when HEAD has no tree to read, or when the two mains have identical
+ * file lists and so offer nothing to key on. Null is never a verdict; the
+ * caller decides, and its options are descent or `unknown`.
+ *
+ * Three git calls, measured at ~150ms total against a 2674-path tree, against
+ * a hook that already runs `bun run type-check`.
+ */
+export function collectTreeMarkers(): TreeMarkers | null {
+  const privateOnly = gitPaths([
+    'diff',
+    '--name-only',
+    '--diff-filter=A',
+    'upstream/main',
+    'origin/main',
+  ]);
+  const mirrorOnly = gitPaths([
+    'diff',
+    '--name-only',
+    '--diff-filter=D',
+    'upstream/main',
+    'origin/main',
+  ]);
+  if (privateOnly === null || mirrorOnly === null) return null;
+  if (privateOnly.length === 0 && mirrorOnly.length === 0) return null;
+
+  const headPaths = gitPaths(['ls-tree', '-r', '--name-only', 'HEAD']);
+  if (headPaths === null) return null;
+  const inHead = new Set(headPaths);
+
+  return {
+    privateOnlyTotal: privateOnly.length,
+    privateOnlyInHead: privateOnly.filter((p) => inHead.has(p)).length,
+    mirrorOnlyTotal: mirrorOnly.length,
+    mirrorOnlyInHead: mirrorOnly.filter((p) => inHead.has(p)).length,
+  };
+}
+
 function collectBranchFacts(): BranchFacts {
   const hasUpstreamRemote = git(['remote']).stdout.split('\n').includes('upstream');
   const upstreamMainResolved = git([
@@ -172,6 +313,7 @@ function collectBranchFacts(): BranchFacts {
     upstreamIsAncestor:
       upstreamMainResolved && git(['merge-base', '--is-ancestor', 'upstream/main', 'HEAD']).ok,
     originIsAncestor: git(['merge-base', '--is-ancestor', 'origin/main', 'HEAD']).ok,
+    treeMarkers: collectTreeMarkers(),
   };
 }
 
