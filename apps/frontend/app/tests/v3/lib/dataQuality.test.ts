@@ -81,6 +81,7 @@ function configFor(
       t,
       currency: '$',
       onSetAmount: () => undefined,
+      onRecordMovement: () => undefined,
       onToggleActive: () => undefined,
       onRefreshPrice: () => undefined,
       onRefreshBalance: () => undefined,
