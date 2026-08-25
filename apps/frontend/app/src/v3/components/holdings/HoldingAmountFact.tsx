@@ -4,7 +4,12 @@ import { Numeric } from '@scani/ui/v3/components/Numeric';
 import { Pencil } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { amountDecimals, BALANCE_EDIT_SCALE, balanceEditWrites } from '../../lib/holdings';
+import {
+  amountDecimals,
+  BALANCE_EDIT_SCALE,
+  balanceEditWrites,
+  balanceIsBelowZero,
+} from '../../lib/holdings';
 import { LookalikeBadge } from './LookalikeBadge';
 
 /**
@@ -57,26 +62,40 @@ export function HoldingAmountFact({ amount, symbol, lookalikeOf, onSave }: Holdi
 
   if (draft === null) {
     return (
-      <span className="flex min-w-0 items-center justify-end gap-2">
-        <span className="flex min-w-0 items-baseline gap-1.5">
-          <Numeric value={amount} format="plain" decimals={amountDecimals(amount)} />
-          <span className="truncate">{symbol}</span>
+      <span className="flex min-w-0 flex-col items-end gap-0.5">
+        <span className="flex min-w-0 items-center justify-end gap-2">
+          <span className="flex min-w-0 items-baseline gap-1.5">
+            <Numeric value={amount} format="plain" decimals={amountDecimals(amount)} />
+            <span className="truncate">{symbol}</span>
+          </span>
+          {lookalikeOf ? <LookalikeBadge symbol={symbol} impersonates={lookalikeOf} t={t} /> : null}
+          <button
+            type="button"
+            onClick={() => {
+              // `amount` itself, no `String(...)`. It was a number, and
+              // `String(4.013e-10)` is `"4.013e-10"` — an exponent seeded into
+              // a field whose parser does not read one (SC-567).
+              setSeed(amount);
+              setDraft(amount);
+            }}
+            aria-label={t('v3.holdings.amountFact.edit')}
+            className="-my-1 rounded-md p-1 text-muted-foreground transition-colors duration-fast ease-emphasized hover:bg-surface-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <Pencil className="size-4" aria-hidden="true" />
+          </button>
         </span>
-        {lookalikeOf ? <LookalikeBadge symbol={symbol} impersonates={lookalikeOf} t={t} /> : null}
-        <button
-          type="button"
-          onClick={() => {
-            // `amount` itself, no `String(...)`. It was a number, and
-            // `String(4.013e-10)` is `"4.013e-10"` — an exponent seeded into
-            // a field whose parser does not read one (SC-567).
-            setSeed(amount);
-            setDraft(amount);
-          }}
-          aria-label={t('v3.holdings.amountFact.edit')}
-          className="-my-1 rounded-md p-1 text-muted-foreground transition-colors duration-fast ease-emphasized hover:bg-surface-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          <Pencil className="size-4" aria-hidden="true" />
-        </button>
+        {/* Stacked under the figure, the way a price's age is, and for the
+            same stated reason: the caption is what decides whether to trust
+            the number above it. A negative balance is unreachable through
+            any request a person can make (see `balanceIsBelowZero`), so left
+            bare it reads as the app having lost their money rather than as a
+            figure they are free to correct — and the control that corrects it
+            is the pencil immediately above (SC-632). */}
+        {balanceIsBelowZero(amount) ? (
+          <span className="text-caption text-muted-foreground text-right">
+            {t('v3.holdings.amountFact.belowZero')}
+          </span>
+        ) : null}
       </span>
     );
   }
