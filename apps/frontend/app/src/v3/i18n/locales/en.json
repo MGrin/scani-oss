@@ -1417,6 +1417,7 @@
         },
         "reopen": {
           "internal": "The deposit this recorded on the other account is deleted with it — otherwise your next answer would count that money twice. The transfer rejoins the queue, and no balance changes either way.",
+          "internalCreated": "That account tracked none of this token before you answered, so Scani created the holding as well as the deposit. Both are removed — unless something else has been recorded against that holding since, in which case it stays. The transfer rejoins the queue, and no other balance changes.",
           "leftControl": "The gain this booked comes off your realized total until you answer it again, and the transfer rejoins the queue.",
           "default": "The transfer rejoins the queue, and nothing about it is settled until you answer it again.",
           "declared": "This is a transfer you recorded yourself, so undoing it moves both balances back to what they were before it — the account it left goes back up, the account it arrived in goes back down — and removes both entries. It does not rejoin the queue: there is no question left to answer."
