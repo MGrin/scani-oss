@@ -27,6 +27,7 @@ Located in `apps/backend/api/src/presentation/routers/`.
 | `transactions` | Read the ledger. Filter by date range, kind, account, holding, transfer group. |
 | `vaults` | CRUD on vaults, attach/detach holdings with percentage splits. |
 | `groups` | CRUD on groups, attach holdings + accounts. |
+| `entities` | CRUD on ownership boundaries, assign accounts, per-entity totals plus the combined view. |
 | `portfolio` | Dashboard headline + chart series (reads `portfolio_value_daily`). |
 | `dashboard` | Aggregate dashboard data — composes calls to `portfolio` + per-scope rollups. |
 | `integrations` | Connect / disconnect provider integrations (Binance OAuth, exchange API keys, brokerage tokens, wallets). Owns encrypt/decrypt of credentials. |
