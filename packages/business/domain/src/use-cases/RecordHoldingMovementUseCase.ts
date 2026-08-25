@@ -10,9 +10,8 @@ import type {
 import Decimal from 'decimal.js';
 import { and, eq } from 'drizzle-orm';
 import Container, { Service } from 'typedi';
-import { HoldingRepository } from '../repositories/HoldingRepository';
-import { BalanceSyncOwnershipService } from '../services/accounts/BalanceSyncOwnershipService';
-import { MANUAL_EDIT_FLOW_SOURCE } from '../services/holdings/ManualBalanceEditService';
+import { DeclaredTransferService } from '../services/holdings/DeclaredTransferService';
+import { manualEditFlowLeg } from '../services/holdings/ManualBalanceEditService';
 import { LinkTransferPairsUseCase } from './LinkTransferPairsUseCase';
 import { UpdateHoldingUseCase } from './UpdateHoldingUseCase';
 
@@ -101,10 +100,9 @@ export class MovementExceedsBalanceError extends Error {
  */
 @Service()
 export class RecordHoldingMovementUseCase {
-  private readonly holdingRepository = Container.get(HoldingRepository);
   private readonly updateHolding = Container.get(UpdateHoldingUseCase);
   private readonly linkTransferPairs = Container.get(LinkTransferPairsUseCase);
-  private readonly syncOwnership = Container.get(BalanceSyncOwnershipService);
+  private readonly declaredTransfers = Container.get(DeclaredTransferService);
 
   /**
    * `transaction` is accepted for the same reason `UpdateHoldingUseCase`
@@ -159,8 +157,8 @@ export class RecordHoldingMovementUseCase {
 
       const transferGroupId = await this.linkTransferPairs.linkDeclaredPair(
         {
-          outflow: this.legKey(source.id, editedAt),
-          inflow: this.legKey(destination.id, editedAt),
+          outflow: manualEditFlowLeg(source.id, editedAt),
+          inflow: manualEditFlowLeg(destination.id, editedAt),
           userId,
         },
         tx
@@ -217,20 +215,20 @@ export class RecordHoldingMovementUseCase {
   }
 
   /**
-   * The destination holding, found or created.
+   * The destination holding, found or created — resolved by
+   * `DeclaredTransferService`, which is the one place a DECLARED transfer's
+   * arrival is located (SC-614).
    *
-   * Created at zero and then moved by the ordinary flow above, rather than
-   * opened at the amount — one code path for "the account already held some"
-   * and "it did not", so the arrival is a ledger row in both cases and
-   * reconstruction before the transfer date reads zero rather than reading the
-   * arrival twice.
+   * Shared with `UpdateHoldingUseCase`, whose `internal` answer is the same
+   * act reached from the balance editor. Both must open a created row the same
+   * way — at zero under `BalanceSyncOwnershipService`'s source rather than
+   * `manual` at the amount (SC-356) — and both must refuse a destination that
+   * has gone. Two implementations of that would be free to disagree, and the
+   * disagreement renders as money arriving in a holding no sync may ever
+   * correct.
    *
-   * The `source` a created row opens under is `BalanceSyncOwnershipService`'s
-   * answer and not a constant (SC-356). A row opened `manual` inside a
-   * sync-owned account is one `HoldingsSyncHelper` may never correct, and the
-   * next sync then creates a SECOND holding for the same (account, token) —
-   * the split shape where per-holding dedup lets one upstream event land
-   * twice.
+   * `null` becomes this use case's own error rather than the balance editor's,
+   * naming whichever of the two ids the request actually gave.
    */
   private async destinationHolding(
     input: Extract<RecordHoldingMovementInput, { direction: 'transfer' }>,
@@ -238,53 +236,21 @@ export class RecordHoldingMovementUseCase {
     userId: string,
     tx: DatabaseTransaction
   ): Promise<{ id: string; balance: string }> {
-    if (input.destinationHoldingId) {
-      const chosen = await this.ownedHolding(input.destinationHoldingId, userId, tx);
-      if (!chosen) throw new MovementHoldingNotFoundError(input.destinationHoldingId);
-      return chosen;
-    }
-
-    const existing = await this.holdingRepository.findByAccountAndToken(
-      input.destinationAccountId,
-      source.tokenId,
+    const destination = await this.declaredTransfers.destinationHolding(
+      {
+        accountId: input.destinationAccountId,
+        holdingId: input.destinationHoldingId ?? null,
+      },
+      source,
       userId,
-      source.id,
       tx
     );
-    if (existing) return existing;
-
-    const [account] = await tx
-      .select({
-        id: schema.accounts.id,
-        userId: schema.accounts.userId,
-        institutionId: schema.accounts.institutionId,
-        metadata: schema.accounts.metadata,
-        isActive: schema.accounts.isActive,
-      })
-      .from(schema.accounts)
-      .where(
-        and(eq(schema.accounts.id, input.destinationAccountId), eq(schema.accounts.userId, userId))
-      )
-      .limit(1);
-    if (!account) throw new MovementHoldingNotFoundError(input.destinationAccountId);
-
-    const syncSource = await this.syncOwnership.resolveSyncSource(account, tx);
-    const [created] = await tx
-      .insert(schema.holdings)
-      .values({
-        userId,
-        accountId: account.id,
-        tokenId: source.tokenId,
-        balance: '0',
-        source: syncSource ?? 'manual',
-        // The owner named this account as where their money went. That is
-        // exactly what `user_confirmed` claims, and it is true on either
-        // branch above — only who owns the balance differs.
-        arrival: 'user_confirmed',
-      })
-      .returning();
-    if (!created) throw new MovementHoldingNotFoundError(input.destinationAccountId);
-    return created;
+    if (!destination) {
+      throw new MovementHoldingNotFoundError(
+        input.destinationHoldingId ?? input.destinationAccountId
+      );
+    }
+    return destination;
   }
 
   /**
@@ -312,18 +278,6 @@ export class RecordHoldingMovementUseCase {
       )
       .limit(1);
     return row ?? null;
-  }
-
-  /** The natural key `ManualBalanceEditService` wrote this leg under. */
-  private legKey(
-    holdingId: string,
-    editedAt: Date
-  ): { holdingId: string; source: string; externalId: string } {
-    return {
-      holdingId,
-      source: MANUAL_EDIT_FLOW_SOURCE,
-      externalId: `manual-edit:${editedAt.toISOString()}`,
-    };
   }
 
   private result(
