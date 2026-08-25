@@ -8,6 +8,7 @@ import { useTranslation } from 'react-i18next';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useBaseCurrencyRates } from '@/hooks/useBaseCurrencyRates';
 import { trpc } from '@/lib/trpc';
+import { ForecastView } from '../components/money/ForecastView';
 import { RecurringList } from '../components/money/RecurringList';
 import { UpcomingFeed } from '../components/money/UpcomingFeed';
 import { VendorList } from '../components/money/VendorList';
@@ -21,7 +22,7 @@ import {
 import { V3_PAYMENT_ROUTES } from '../lib/routes';
 
 /**
- * The Money tab — §2.1's fourth slot, and three views of one question.
+ * The Money tab — §2.1's fourth slot, and four views of one question.
  *
  * **Upcoming leads** because a bill has a deadline and a standing list does
  * not. v2 opened the same section on a due-date feed too, but reached the other
@@ -33,7 +34,11 @@ import { V3_PAYMENT_ROUTES } from '../lib/routes';
  * sidebar already point at `/v3/payments/recurring` and `/v3/vendors`, and each
  * view's peek sheet needs a URL of its own underneath it anyway.
  *
- * All five queries are issued on every segment. They are small, already shared
+ * SC-461 added the fourth, Forecast, which reads the same book FORWARD. It
+ * sits after Recurring because it is derived from it: the standing
+ * commitments are the input, the projection is what they come to.
+ *
+ * All six queries are issued on every segment. They are small, already shared
  * with the home screen's own upcoming block, and react-query dedupes them — so
  * moving between segments is instant rather than a fresh skeleton each time,
  * which is the whole reason to make this one surface instead of three pages.
@@ -54,6 +59,12 @@ export function MoneyPage() {
   const vendors = trpc.vendors.list.useQuery();
   const tokens = trpc.tokens.getAll.useQuery();
   const vendorSpend = trpc.vendors.spend.useQuery();
+  // One payload for twelve months, sliced client-side by the horizon control —
+  // see `PaymentForecastService` for why the window is not an input. `enabled`
+  // is deliberately absent: the query is small and the home screen's runway
+  // line shares this exact cache entry, so by the time the reader reaches this
+  // segment it is usually already answered.
+  const forecast = trpc.payments.forecast.useQuery();
 
   // One state per view, collapsed from the queries that view actually reads.
   // Before V3-16 each of these was an `||` chain over `isLoading` and the
@@ -62,6 +73,7 @@ export function MoneyPage() {
   const upcomingState = mergeQueries(upcoming, vendors, tokens);
   const recurringState = mergeQueries(payments, vendors, tokens);
   const vendorsState = mergeQueries(vendors, payments, tokens, vendorSpend);
+  const forecastState = mergeQueries(forecast, tokens);
 
   const vendorNameById = new Map(
     (vendors.data ?? []).map((vendor) => [vendor.id, vendor.displayName])
@@ -76,6 +88,11 @@ export function MoneyPage() {
     // Settled history can name a currency no *active* payment does any more —
     // an ended GBP subscription still has to convert in the paid totals.
     ...(vendorSpend.data?.totals ?? []).map((total) => total.currencyTokenId),
+    // A projected movement can name a currency no upcoming occurrence does —
+    // a payment materialised past the 90-day window, or one expanded from the
+    // rule alone — and a currency missing from this list converts through no
+    // rate at all.
+    ...(forecast.data?.movements ?? []).map((movement) => movement.currencyTokenId),
   ]);
 
   const changeSegment = (next: string) => {
@@ -84,7 +101,7 @@ export function MoneyPage() {
   };
 
   return (
-    // `wide`, because two of the three views render a table above `lg` and a
+    // `wide`, because two of the four views render a table above `lg` and a
     // five-column table inside a phone-width column is the horizontal scroll v3
     // exists to delete. On a phone the measure never binds.
     <PageLayout measure="wide">
@@ -137,6 +154,17 @@ export function MoneyPage() {
           tokenSymbolById={tokenSymbolById}
           rates={rates}
           query={recurringState}
+        />
+      ) : null}
+
+      {segment === 'forecast' ? (
+        <ForecastView
+          forecast={forecast.data ?? null}
+          tokenSymbolById={tokenSymbolById}
+          rates={rates}
+          query={forecastState}
+          paymentCount={(payments.data ?? []).length}
+          tokens={tokens.data ?? []}
         />
       ) : null}
 
