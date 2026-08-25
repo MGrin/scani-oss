@@ -16,6 +16,7 @@ import {
   BulkAssignHoldingGroupsUseCase,
   DeleteHoldingUseCase,
   HoldingLabelTakenError,
+  ManualOutflowAnswerRefused,
   UpdateHoldingUseCase,
 } from '@scani/domain/use-cases';
 import { HOLDING_PRICE_UPDATE, REFRESH_ACCOUNT_BALANCE } from '@scani/jobs';
@@ -169,6 +170,11 @@ export const holdingsRouter = router({
               ...(input.data.editOccurredAt
                 ? { editOccurredAt: new Date(input.data.editOccurredAt) }
                 : {}),
+              // Where the money went, when the client asked and answered in
+              // one dialog (SC-606). Forwarded only when present: absent
+              // leaves the synthesized outflow in the transfer-review queue,
+              // which is every pre-SC-606 client's behaviour unchanged.
+              ...(input.data.editOutflow ? { editOutflow: input.data.editOutflow } : {}),
             },
             dbUser.id
           )
@@ -176,6 +182,13 @@ export const holdingsRouter = router({
             // A refusal the reader can act on, not a 500. They are looking at
             // the sheet for the row they just tried to name, and the other row
             // wearing that name is one they can see.
+            // The destination went away between the picker and the submit,
+            // or a client sent one beside an edit that writes no withdrawal.
+            // Both are things the reader can act on, and the edit was rolled
+            // back — so this is a refusal, not a 500 over a lost balance.
+            if (error instanceof ManualOutflowAnswerRefused) {
+              throw new TRPCError({ code: 'BAD_REQUEST', message: error.message });
+            }
             if (error instanceof HoldingLabelTakenError) {
               throw new TRPCError({
                 code: 'CONFLICT',

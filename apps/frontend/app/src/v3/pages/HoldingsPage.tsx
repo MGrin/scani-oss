@@ -1,4 +1,4 @@
-import { type HoldingWithDetails, manualEditNeedsCause } from '@scani/shared';
+import { Decimal, type HoldingWithDetails, manualEditNeedsCause } from '@scani/shared';
 import { ConfirmDialog } from '@scani/ui/components/ConfirmDialog';
 import { showError, showSuccess } from '@scani/ui/ui/use-toast';
 import { V3DataView } from '@scani/ui/v3/components/data-view/V3DataView';
@@ -277,12 +277,20 @@ export function HoldingsPage() {
             if (!open) setCauseTarget(null);
           }}
           holdingLabel={causeTarget.holding.label ?? causeTarget.holding.token.symbol}
+          holdingId={causeTarget.holding.id}
+          tokenSymbol={causeTarget.holding.token.symbol}
+          // Compared as decimals rather than as numbers: a balance is a
+          // decimal string precisely because it does not survive a float, and
+          // the sign of the difference is what decides whether a destination
+          // is owed (SC-606).
+          isOutflow={new Decimal(causeTarget.balance).lt(causeTarget.holding.amount)}
           defaultCause={causeTarget.holding.manualEditCause ?? null}
-          onConfirm={(editCause, editOccurredAt) => {
+          onConfirm={(editCause, editOccurredAt, editOutflow) => {
             actions.updateHolding(causeTarget.holding.id, {
               balance: causeTarget.balance,
               editCause,
               ...(editOccurredAt ? { editOccurredAt } : {}),
+              ...(editOutflow ? { editOutflow } : {}),
             });
             setCauseTarget(null);
           }}
