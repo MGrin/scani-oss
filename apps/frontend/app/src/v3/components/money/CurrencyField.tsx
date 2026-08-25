@@ -50,29 +50,51 @@ export function rankCurrencyMatches(tokens: readonly TokenRow[], query: string):
     .slice(0, MAX_RESULTS);
 }
 
-interface CurrencyFieldProps {
+interface CurrencyPickerProps {
   value: { id: string; label: string } | null;
   onSelect: (tokenId: string, label: string) => void;
   onClear: () => void;
+  /** The currencies to rank, handed in rather than fetched — see below. */
+  tokens: readonly TokenRow[];
+  isLoading?: boolean;
+  /** Unique per surface: two of these on one page would share a label. */
+  inputId?: string;
   disabled?: boolean;
 }
 
-export function CurrencyField({ value, onSelect, onClear, disabled }: CurrencyFieldProps) {
+/**
+ * The field without the query.
+ *
+ * v3's view components stay free of tRPC so they remain renderable — and
+ * therefore assertable — on their own; `MoneyPage`'s own comment says so about
+ * its three view components. The Forecast view (SC-461) needs a currency slot
+ * on a surface built to that rule, so the query moves out to the one caller
+ * that does not already hold the token list, and everything else — the
+ * ranking, the picker, the labels — is shared rather than copied.
+ */
+export function CurrencyPicker({
+  value,
+  onSelect,
+  onClear,
+  tokens,
+  isLoading = false,
+  inputId = 'payment-currency',
+  disabled,
+}: CurrencyPickerProps) {
   const { t } = useTranslation();
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
-  const tokens = trpc.tokens.getAll.useQuery();
 
-  const options = rankCurrencyMatches(tokens.data ?? [], query).map((token) => ({
+  const options = rankCurrencyMatches(tokens, query).map((token) => ({
     id: token.id,
     label: tokenLabel(token),
     hint: token.type === 'fiat' ? undefined : (token.typeName ?? undefined),
   }));
 
   return (
-    <Field label={t('v3.money.currencyField.label')} htmlFor="payment-currency">
+    <Field label={t('v3.money.currencyField.label')} htmlFor={inputId}>
       <RecordPicker
-        inputId="payment-currency"
+        inputId={inputId}
         // NOT extracted: `RecordPicker` renders `Change ${ariaLabel}`, so this
         // is a noun fragment inside a frame the caller cannot see. Same class
         // as `noun` was before SC-257, and the same fix — a key plus a frame
@@ -90,11 +112,25 @@ export function CurrencyField({ value, onSelect, onClear, disabled }: CurrencyFi
         open={open}
         onOpenChange={setOpen}
         options={options}
-        isLoading={tokens.isLoading}
+        isLoading={isLoading}
         placeholder={t('v3.money.currencyField.searchPlaceholder')}
         emptyLabel={t('v3.money.currencyField.empty')}
         disabled={disabled}
       />
     </Field>
   );
+}
+
+interface CurrencyFieldProps {
+  value: { id: string; label: string } | null;
+  onSelect: (tokenId: string, label: string) => void;
+  onClear: () => void;
+  disabled?: boolean;
+}
+
+/** `<CurrencyPicker>` with the token query attached — what the payment form
+ *  uses, since it holds no token list of its own. */
+export function CurrencyField(props: CurrencyFieldProps) {
+  const tokens = trpc.tokens.getAll.useQuery();
+  return <CurrencyPicker {...props} tokens={tokens.data ?? []} isLoading={tokens.isLoading} />;
 }

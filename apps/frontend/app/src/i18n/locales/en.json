@@ -657,6 +657,14 @@
           "outsideWindow": "Your standing payments fall due outside this window.",
           "addOne": "Add a bill or recurring income and its next dates show up here."
         }
+      },
+      "forecast": {
+        "empty": {
+          "nothingToProject": "Nothing to project",
+          "noPayments": "No recurring payments yet",
+          "allPausedOrUnpriced": "Every payment on record is paused, ended, or has no amount to project.",
+          "addOne": "Add a bill or recurring income and a forecast appears here."
+        }
       }
     }
   },

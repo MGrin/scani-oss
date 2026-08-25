@@ -21,6 +21,7 @@ import { todayDateString } from '../../lib/paymentTotals';
 import { V3_ROUTES } from '../../lib/routes';
 import { BaseEquivalent } from '../BaseEquivalent';
 import { ConvertedFigure } from '../ConvertedFigure';
+import { RunwayLine } from './RunwayLine';
 
 /**
  * What is due — V3-09's fifth block, moved out of `HomePage` unchanged so every
@@ -181,6 +182,11 @@ export function UpcomingBlock({ currency }: UpcomingBlockProps) {
           </span>
         </div>
       ) : null}
+
+      {/* Last, and below both measured foot-lines: the two above are sums of
+          dated instances, this is a claim about the future. Its own rule is
+          dashed for that reason — see `RunwayLine` (SC-461). */}
+      <RunwayLine />
     </Block>
   );
 }

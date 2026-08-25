@@ -5,6 +5,7 @@ import { Numeric } from '@scani/ui/v3/components/Numeric';
 import { Trans, useTranslation } from 'react-i18next';
 import type { BaseCurrencyRates } from '@/hooks/useBaseCurrencyRates';
 import { convertTotalsToBase, type UnconvertedPart } from '../lib/paymentTotals';
+import { ProjectedTile } from './money/ProjectedTile';
 
 /**
  * One figure, in the reader's own currency, from a total that spans several.
@@ -57,6 +58,17 @@ interface ConvertedTotalProps {
    *  only such total today. A bill total is deliberately unsigned: "−€480" for
    *  what you owe would be a claim about a balance, not about a bill. */
   delta?: boolean;
+  /**
+   * The figure is a claim about the FUTURE, so it renders through
+   * `<ProjectedTile>` instead of `<StatTile>` (SC-461).
+   *
+   * The conversion, the captions underneath and every disclosure they carry
+   * are unchanged and deliberately so: a forecast spanning currencies needs
+   * the rate story told more than a measured total does, not less, and there
+   * is exactly one path that tells it (V3-52). What changes is only how the
+   * figure presents itself.
+   */
+  projected?: boolean;
 }
 
 export function ConvertedTotal({
@@ -66,6 +78,7 @@ export function ConvertedTotal({
   rates,
   emphasis = 'hero',
   delta = false,
+  projected = false,
 }: ConvertedTotalProps) {
   const { t } = useTranslation();
   const total = convertTotalsToBase(totals, rates);
@@ -79,8 +92,9 @@ export function ConvertedTotal({
     // secondary query filling one slot of a surface the reader is already
     // looking at, which is the same shape as `HeroBlock`'s pending delta, and
     // the ramp's 300ms of nothing exists to stop a whole screen flashing.
+    const Tile = projected ? ProjectedTile : StatTile;
     return (
-      <StatTile
+      <Tile
         emphasis={emphasis}
         label={label}
         value={
@@ -107,9 +121,11 @@ export function ConvertedTotal({
   // nothing. "$0.00" would be the most confident wrong answer on the screen.
   const nothingKnown = totals.size > 0 && total.unknown.length === totals.size;
 
+  const Tile = projected ? ProjectedTile : StatTile;
+
   return (
     <>
-      <StatTile
+      <Tile
         emphasis={emphasis}
         label={label}
         // A zero still has to be denominated, and the reader's own currency is
