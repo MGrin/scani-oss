@@ -850,10 +850,10 @@ export class TransferReviewService {
     userId: string,
     holdingId: string,
     /**
-     * Read inside a transaction the caller owns, so the filter below is
-     * assertable rather than merely written (SC-614). The queue's
-     * `listDestinations` has no such parameter and needs none — nothing about
-     * it is a guarantee, whereas this list is half of one.
+     * Read inside a transaction the caller owns, so what this offers is
+     * assertable under the rollback-per-test helper rather than only against a
+     * live database (SC-614). The queue's `listDestinations` has no such
+     * parameter because nothing has yet needed to assert it under one.
      */
     transaction?: DatabaseTransaction
   ): Promise<TransferDestination[]> {
@@ -865,37 +865,23 @@ export class TransferReviewService {
       .limit(1);
     if (!holding) return [];
 
-    // Only accounts that track NO position in this token yet (SC-614).
+    // Every destination, both shapes — as the queue's list has always offered
+    // (SC-614).
     //
-    // `writeInflow` has two branches and they differ in a way that matters
-    // here: given a `holdingId` it inserts the arrival row and leaves
-    // `holdings.balance` alone, and given `null` it CREATES the holding at the
-    // moved amount. The first is right in the queue, where the outflow came
-    // from an import and the destination's balance was observed independently
-    // by its own sync — moving the anchor there would double-count. It is
-    // wrong on the manual path, where the user is the only source of truth for
-    // both sides and only one side has moved: answer "it went to my Current
-    // account" about a holding that already exists and that account stays at
-    // its old figure, with a matching arrival row against it and net worth
-    // down by the amount.
+    // It was scoped to accounts tracking NO position in this token while the
+    // SC-614 mitigation stood, and the scope was right for as long as
+    // `writeInflow` was the writer behind it: given a `holdingId` that
+    // function inserts the arrival row and leaves `holdings.balance` alone,
+    // which is correct in the queue and silently loses the money here. The
+    // repair split the callers rather than the offer —
+    // `UpdateHoldingUseCase.moveDeclaredTransfer` now writes both legs and
+    // moves both anchors, so an existing holding is a destination a person can
+    // pick, and it is the commoner one.
     //
-    // So this surface offers only the branch that is correct for it. The
-    // filter is here rather than in the client because the guarantee must not
-    // depend on what the client sends — `UpdateHoldingUseCase` refuses a
-    // populated `holdingId` for the same reason, and the two together are what
-    // make the bad write unreachable rather than merely unoffered.
-    //
-    // `listDestinations` above is UNCHANGED and still offers both: the queue
-    // needs the existing-holding branch and is correct with it. Moving an
-    // existing destination's balance is the eventual repair and it belongs to
-    // whoever reconciles those two callers, not here.
-    const destinations = await this.destinationsFor(
-      userId,
-      holding.tokenId,
-      holdingId,
-      transaction
-    );
-    return destinations.filter((destination) => destination.holdingId === null);
+    // Do not narrow this again without also removing that writer: a list this
+    // surface cannot express is a reader hunting for an account that is
+    // deliberately absent.
+    return this.destinationsFor(userId, holding.tokenId, holdingId, transaction);
   }
 
   private async destinationsFor(
