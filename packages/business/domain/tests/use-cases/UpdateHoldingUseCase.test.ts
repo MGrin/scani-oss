@@ -25,6 +25,7 @@ import { Container } from 'typedi';
 import { flowRoleOf } from '../../src/lib/returns/flow-classification';
 import { pendingPredicate } from '../../src/lib/transfer-review-queue';
 import { HoldingBalanceObservationRepository } from '../../src/repositories/HoldingBalanceObservationRepository';
+import { TransferReviewService } from '../../src/services/TransferReviewService';
 import {
   HoldingLabelTakenError,
   ManualOutflowAnswerRefused,
@@ -796,7 +797,63 @@ describe('UpdateHoldingUseCase — one edit, one question (SC-606)', () => {
     });
   });
 
-  test('an internal destination links the pair there and then', async () => {
+  test('an internal destination opens the holding and links the pair there and then', async () => {
+    await withTestDb(async (tx) => {
+      const { user, institution, token, holding } = await cashHoldingObservedToday(tx);
+      const other = await makeAccount(tx, { userId: user.id, institutionId: institution.id });
+
+      await useCase().execute(
+        holding.id,
+        {
+          balance: '2000',
+          editCause: 'flow',
+          editOccurredAt: backdatedBeforeLastObservation(),
+          // `holdingId: null` — the account tracks no position in this token
+          // yet, so answering OPENS one. It is the only `internal` shape this
+          // path accepts; see the refusal below.
+          editOutflow: {
+            decision: 'internal',
+            destination: { accountId: other.id, holdingId: null },
+          },
+        },
+        user.id,
+        tx
+      );
+
+      const withdrawal = (await ledgerFor(tx, holding.id)).find((row) => row.kind === 'withdraw');
+      const [opened] = await tx
+        .select()
+        .from(schema.holdings)
+        .where(and(eq(schema.holdings.accountId, other.id), eq(schema.holdings.tokenId, token.id)));
+
+      expect(withdrawal?.transferReview).toBe('internal');
+
+      // The money is REALLY THERE. This is the assertion SC-614 turned on:
+      // the whole defect was an arrival row against a balance that never
+      // moved, and a test that checked only for the row would have passed on
+      // it.
+      expect(opened).toBeDefined();
+      expect(opened?.balance).toBe('2000');
+
+      const arrival = (await ledgerFor(tx, opened?.id ?? ''))[0];
+      // The link itself. Without a shared group id `CostBasisService` retires
+      // the lots here and reopens them there at market, which is the invented
+      // gain the whole transfer-review feature exists to stop.
+      expect(withdrawal?.transferGroupId).not.toBeNull();
+      expect(arrival?.transferGroupId).toBe(withdrawal?.transferGroupId ?? null);
+
+      expect(await pendingOutflows(tx, user.id)).toHaveLength(0);
+    });
+  });
+
+  test('an internal destination naming an EXISTING holding is refused (SC-614)', async () => {
+    // The defect this exists for: `writeInflow` given a `holdingId` inserts
+    // the arrival row and leaves that holding's balance alone. Correct in the
+    // queue, where the destination's balance was observed by its own sync;
+    // wrong here, where the user is the only source of truth for both sides
+    // and only one side has moved. Unrefused, the source drops 2,000, the
+    // destination stays at 10, and net worth falls with an arrival row
+    // sitting against a figure that never changed.
     await withTestDb(async (tx) => {
       const { user, institution, token, holding } = await cashHoldingObservedToday(tx);
       const other = await makeAccount(tx, { userId: user.id, institutionId: institution.id });
@@ -808,33 +865,54 @@ describe('UpdateHoldingUseCase — one edit, one question (SC-606)', () => {
         source: 'manual',
       });
 
-      await useCase().execute(
-        holding.id,
-        {
-          balance: '2000',
-          editCause: 'flow',
-          editOccurredAt: backdatedBeforeLastObservation(),
-          editOutflow: {
-            decision: 'internal',
-            destination: { accountId: other.id, holdingId: destination.id },
+      await expect(
+        useCase().execute(
+          holding.id,
+          {
+            balance: '2000',
+            editCause: 'flow',
+            editOccurredAt: backdatedBeforeLastObservation(),
+            editOutflow: {
+              decision: 'internal',
+              destination: { accountId: other.id, holdingId: destination.id },
+            },
           },
-        },
+          user.id,
+          tx
+        )
+      ).rejects.toBeInstanceOf(ManualOutflowAnswerRefused);
+    });
+  });
+
+  test('the manual destination list offers only accounts that hold none of this token', async () => {
+    // The other half of the same guarantee, and it has both axes. The server
+    // refuses the bad shape; this stops it being offered at all, so a reader
+    // cannot pick something that will then be rejected.
+    await withTestDb(async (tx) => {
+      const { user, institution, token, holding } = await cashHoldingObservedToday(tx);
+      const empty = await makeAccount(tx, { userId: user.id, institutionId: institution.id });
+      const occupied = await makeAccount(tx, { userId: user.id, institutionId: institution.id });
+      await makeHolding(tx, {
+        userId: user.id,
+        accountId: occupied.id,
+        tokenId: token.id,
+        balance: '10',
+        source: 'manual',
+      });
+
+      const offered = await Container.get(TransferReviewService).listDestinationsForHolding(
         user.id,
+        holding.id,
         tx
       );
+      const accountIds = offered.map((row) => row.accountId);
 
-      const withdrawal = (await ledgerFor(tx, holding.id)).find((row) => row.kind === 'withdraw');
-      const arrival = (await ledgerFor(tx, destination.id))[0];
-
-      expect(withdrawal?.transferReview).toBe('internal');
-      expect(arrival).toBeDefined();
-      // The link itself. Without a shared group id `CostBasisService` retires
-      // the lots here and reopens them there at market, which is the invented
-      // gain the whole transfer-review feature exists to stop.
-      expect(withdrawal?.transferGroupId).not.toBeNull();
-      expect(arrival?.transferGroupId).toBe(withdrawal?.transferGroupId ?? null);
-
-      expect(await pendingOutflows(tx, user.id)).toHaveLength(0);
+      // must-be-FOUND: the account with no position IS offered, so an empty
+      // result would not pass this by default.
+      expect(accountIds).toContain(empty.id);
+      // must-be-ABSENT: the one that already holds the token is not.
+      expect(accountIds).not.toContain(occupied.id);
+      expect(offered.every((row) => row.holdingId === null)).toBe(true);
     });
   });
 
