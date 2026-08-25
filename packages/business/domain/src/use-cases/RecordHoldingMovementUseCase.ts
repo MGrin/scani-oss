@@ -143,6 +143,15 @@ export class RecordHoldingMovementUseCase {
 
       const arrived = await this.applyFlow(destination, amount, occurredAt, editedAt, userId, tx);
 
+      // Stamped as well as grouped, and the group id alone would already keep
+      // this out of the queue. What the stamp adds is PROVENANCE: without it
+      // `answerSourceOf` reads the row as `unattributed`, so a transfer the
+      // owner declared is indistinguishable from one the nightly matcher
+      // guessed at — and the realized ledger renders a sentence about who
+      // answered. `paired` rather than `internal` because both legs exist;
+      // `internal` is for the answer that has to WRITE the arrival.
+      await this.answerOutflow(source.id, editedAt, 'paired', userId, tx);
+
       const transferGroupId = await this.linkTransferPairs.linkDeclaredPair(
         {
           outflow: this.legKey(source.id, editedAt),
