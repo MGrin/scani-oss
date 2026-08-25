@@ -5,9 +5,15 @@ import type { BranchFacts } from '../check-oss-bound-paths';
 import {
   EXIT_OK,
   EXIT_REFUSED,
+  EXIT_SELF_TEST_FAILED,
   EXIT_UNKNOWN,
+  findAdvisoryRefs,
   findInternalRefs,
+  RULE_COUNT,
+  type Rule,
   scanScope,
+  selfTest,
+  verifyRules,
 } from '../check-oss-internal-refs';
 
 /**
@@ -16,7 +22,7 @@ import {
  * dies with `Module not found`: unrunnable at the one moment it exists to run.
  * The hazard it therefore never covered is an oss-eligible file, legitimately
  * pushed, whose COMMENTS carry internal references. A real draft carried a bb
- * board key and two bb thread ids into a mirror-bound branch and was caught by
+ * board key and two agent session ids into a mirror-bound branch, caught by
  * one person checking precedent by hand.
  *
  * EVERY FIXTURE BELOW IS INTERPOLATED RATHER THAN WRITTEN OUT, and that is
@@ -106,20 +112,20 @@ describe('scanScope — which checkouts must have their staged content read', ()
 });
 
 describe('findInternalRefs — what must not travel', () => {
-  test('a bb thread id is refused and named', () => {
+  test('an agent session id is refused and named', () => {
     const refs = findInternalRefs(`// ${'thr_'}k3n8x2qw9d saw this fail under load`);
     expect(refs).toHaveLength(1);
-    expect(refs[0]?.rule).toBe('bb thread id');
+    expect(refs[0]?.rule).toBe('agent session id');
     expect(refs[0]?.line).toBe(1);
   });
 
-  test('a bb board key is refused', () => {
+  test('an internal board key is refused', () => {
     const refs = findInternalRefs(`// see ${'MX'}-269 for why the load gate reads two averages`);
     expect(refs).toHaveLength(1);
-    expect(refs[0]?.rule).toBe('bb board key');
+    expect(refs[0]?.rule).toBe('internal board key');
   });
 
-  test('every bb board project prefix is covered', () => {
+  test('every internal board project prefix is covered', () => {
     for (const prefix of ['MX', 'AB', 'BC', 'MO', 'HA']) {
       expect(findInternalRefs(`ref ${prefix}-12 here`)).toHaveLength(1);
     }
@@ -137,7 +143,7 @@ describe('findInternalRefs — what must not travel', () => {
     expect(findInternalRefs('fix(gate): name the database (SC-500)')).toHaveLength(0);
   });
 
-  test('a bb board prefix that is part of a longer word is not a board key', () => {
+  test('a board prefix inside a longer word is not a board key', () => {
     expect(findInternalRefs('the token 0xABC-0x3 in a fixture')).toHaveLength(0);
     expect(findInternalRefs('MAX-12 and TMO-3 are not board keys')).toHaveLength(0);
   });
@@ -165,7 +171,7 @@ describe('findInternalRefs — what must not travel', () => {
     }
   });
 
-  test('a bb worktree path is refused', () => {
+  test('an agent worktree path is refused', () => {
     expect(findInternalRefs(`cd ~/.${'bb'}/worktrees/env_x/scani`)).toHaveLength(1);
     expect(findInternalRefs(`$HOME/.${'bb'}/plugins/browser`)).toHaveLength(1);
   });
@@ -199,22 +205,26 @@ describe('findInternalRefs — what must not travel', () => {
     ).toHaveLength(0);
   });
 
-  test('a PostHog project key is refused', () => {
-    const refs = findInternalRefs(`POSTHOG_KEY=${'phc_'}${'a'.repeat(24)}`);
+  test('an analytics project key is refused', () => {
+    const refs = findInternalRefs(`ANALYTICS_KEY=${'phc_'}${'a'.repeat(24)}`);
     expect(refs).toHaveLength(1);
-    expect(refs[0]?.rule).toBe('PostHog project key');
+    expect(refs[0]?.rule).toBe('analytics project key');
   });
 
   /**
    * The decision, recorded where it can go red rather than in a PR comment.
    * Naming a monitoring vendor is not the leak; our coordinates within it are.
-   * PostHog additionally needs no word-level rule here — it lives in
-   * `packages/infra/analytics`, which is private-only, and a path guard
-   * already refuses that.
+   *
+   * The other vendor deliberately goes unnamed anywhere in this file. The
+   * private-side marker list in `scripts/oss-eligibility.ts` already treats
+   * that name as private content, so writing it here — in a file that is
+   * published — would make this test the contamination it is about. Its key
+   * prefix is enough to key a rule on, and the analytics package it belongs to
+   * is private-only, so the path guard covers the rest.
    */
   test('naming a monitoring vendor is not itself a leak', () => {
     expect(findInternalRefs('import * as Sentry from "@sentry/node";')).toHaveLength(0);
-    expect(findInternalRefs('// PostHog capture happens server-side')).toHaveLength(0);
+    expect(findInternalRefs('Sentry.captureException(err);')).toHaveLength(0);
   });
 
   test('several references in one file are all reported, with their lines', () => {
@@ -247,5 +257,92 @@ test("the check's own sources carry no internal reference", () => {
   ]) {
     const source = readFileSync(path.resolve(import.meta.dir, '../..', rel), 'utf8');
     expect(findInternalRefs(source).map((r) => `${rel}:${r.line} ${r.rule}`)).toEqual([]);
+    expect(findAdvisoryRefs(source).map((r) => `${rel}:${r.line} ${r.rule}`)).toEqual([]);
   }
+});
+
+/**
+ * THE FIFTH CLASS, raised in review. Names for the
+ * agent tooling this repo is worked on with: no secret, no host, no id — a
+ * reader of the mirror is confused rather than a boundary is crossed. It gets
+ * its own tier and exit 0 on purpose. One exit code for both is how the weak
+ * rule eventually gets the strong ones waived along with it.
+ */
+describe('findAdvisoryRefs — agent-tooling jargon, reported and never refused', () => {
+  test('a harness tool name is an advisory', () => {
+    const refs = findAdvisoryRefs(`then call Task${'Stop'} on it`);
+    expect(refs).toHaveLength(1);
+    expect(refs[0]?.rule).toBe('agent-harness tool name');
+  });
+
+  test('an agent-tooling command is an advisory', () => {
+    expect(findAdvisoryRefs(`run bb ${'thread'} list`)).toHaveLength(1);
+    expect(findAdvisoryRefs(`run bb ${'tasks'} list`)).toHaveLength(1);
+    expect(findAdvisoryRefs(`pipe to bus-${'send'}`)).toHaveLength(1);
+  });
+
+  /**
+   * THE MEASURED FALSE-POSITIVE CONTROL, and the reason this tier is keyed on
+   * tool names rather than on concepts. Against the mirror: `harness` reads 30
+   * files and `orchestrator` 36 — ordinary vocabulary spread across e2e, the
+   * domain tests, the rate limiter and the UI package, not one cluster anybody
+   * could carve out. A rule on either is 30-odd false positives on day one.
+   * `subagent` reads 0 today and is still absent here: an English compound
+   * with an honest meaning is one product decision away from being legitimate.
+   */
+  test('the English words that describe these concepts are clean', () => {
+    for (const word of ['harness', 'orchestrator', 'subagent', 'worker', 'thread pool']) {
+      expect(findAdvisoryRefs(`the ${word} does the work`)).toHaveLength(0);
+    }
+  });
+
+  /** Separable, so the weak tier can never be the reason a refusal is waived. */
+  test('an advisory is never also a refusal', () => {
+    const jargon = `call Task${'Stop'}, then run bb ${'memory'} search`;
+    expect(findAdvisoryRefs(jargon).length).toBeGreaterThan(0);
+    expect(findInternalRefs(jargon)).toHaveLength(0);
+  });
+});
+
+/**
+ * THE MUST-BE-FOUND CONTROL AT THE LEVEL OF THE WHOLE INSTRUMENT
+ * Every term on both lists reads zero in the mirror today,
+ * so a green run and a probe that has silently stopped matching produce
+ * identical output — the must-be-ABSENT axis alone, which is the exact failure
+ * this guard exists to prevent, sitting inside the guard. Each rule therefore
+ * carries a string it must match and one it must not, checked before anything
+ * is scanned, and the rule count is printed beside the violation count.
+ */
+describe('selfTest — the guard demonstrating it still works', () => {
+  test('every shipped rule matches its probe and rejects its anti-probe', () => {
+    expect(selfTest()).toEqual([]);
+    expect(RULE_COUNT).toBe(10);
+  });
+
+  test('a rule that stopped matching is caught', () => {
+    const dead: Rule = {
+      name: 'dead rule',
+      pattern: /this-will-never-appear/,
+      why: 'n/a',
+      probe: 'the probe it is supposed to match',
+      antiProbe: 'something else',
+    };
+    expect(verifyRules([dead])).toEqual(['dead rule: stopped matching its own probe']);
+  });
+
+  test('a rule that started over-matching is caught', () => {
+    const greedy: Rule = {
+      name: 'greedy rule',
+      pattern: /./,
+      why: 'n/a',
+      probe: 'x',
+      antiProbe: 'y',
+    };
+    expect(verifyRules([greedy])).toEqual(['greedy rule: now matches its anti-probe']);
+  });
+
+  test('the self-test failure has its own exit code, and it is not OK', () => {
+    expect(EXIT_SELF_TEST_FAILED).not.toBe(EXIT_OK);
+    expect(new Set([EXIT_OK, EXIT_REFUSED, EXIT_UNKNOWN, EXIT_SELF_TEST_FAILED]).size).toBe(4);
+  });
 });
