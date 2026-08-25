@@ -310,6 +310,26 @@ export class UpdateHoldingUseCase {
             `this edit wrote ${written?.kind ?? 'no'} row, and a destination describes a withdrawal`
           );
         }
+        // An `internal` answer may only OPEN a destination, never name one
+        // that already exists (SC-614).
+        //
+        // `writeInflow` given a `holdingId` inserts the arrival row and leaves
+        // that holding's `balance` untouched. In the queue that is correct —
+        // the destination's balance was observed by its own sync and moving
+        // the anchor would double-count. Here the user is the only source of
+        // truth for both sides and only one side has moved, so the money
+        // silently goes missing: the source drops, the destination does not,
+        // and an arrival row sits against a figure that never changed.
+        //
+        // Refused on the server as well as filtered out of
+        // `listDestinationsForHolding`, because a guarantee that lives only in
+        // the client is not one. The queue's own path is untouched and still
+        // accepts both.
+        if (editOutflow.decision === 'internal' && editOutflow.destination?.holdingId) {
+          throw new ManualOutflowAnswerRefused(
+            'that account already tracks this token, and recording the arrival there would not move its balance'
+          );
+        }
         const settled = await this.transferReviews.resolve(
           userId,
           written.transactionId,
