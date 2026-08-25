@@ -55,7 +55,7 @@ function parseReadme(path: string): ReadmeFile {
         `The HTML comment becomes Docker Hub's short description.`
     );
   }
-  const description = match[1];
+  const description = match[1]!;
   if (description.length > DESCRIPTION_LIMIT) {
     throw new Error(
       `${path}: description is ${description.length} chars, Docker Hub caps at ${DESCRIPTION_LIMIT}. ` +
