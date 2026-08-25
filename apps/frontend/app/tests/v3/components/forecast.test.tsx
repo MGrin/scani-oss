@@ -255,6 +255,29 @@ describe('the cashflow forecast, as it is rendered', () => {
     expect(html).toInclude('border-dashed');
   });
 
+  test('both empty states render sentences, not i18n keys', () => {
+    // `DataViewEmpty` takes KEYS, and a wrong namespace renders the key itself
+    // — `ui.dataView.forecast.empty.noPayments` in 13px grey, on the screen of
+    // somebody who has just arrived. These two keys live in the SHELL locale
+    // file rather than the v3 one (that is where `ui.dataView.*` lives), which
+    // is exactly the kind of split a reader gets wrong once.
+    const bare = render([], '0');
+    expect(bare).not.toInclude('ui.dataView.forecast');
+    expect(bare).toInclude('No recurring payments yet');
+
+    // Payments exist but none of them can be projected — a different sentence,
+    // because "you have none" and "yours cannot be projected" are different
+    // facts and only one of them is the reader's to fix.
+    const allPaused = BOOK.map((entry) => ({
+      ...entry,
+      payment: { ...entry.payment, status: 'paused' },
+    }));
+    const stalled = render(allPaused, '10000');
+    expect(stalled).not.toInclude('ui.dataView.forecast');
+    expect(stalled).toInclude('Nothing to project');
+    expect(stalled).toInclude('paused, ended, or has no amount');
+  });
+
   test('nothing is rendered as a figure while the rates are still coming', () => {
     // SC-210 one surface further out: the burn would be missing its sterling
     // half, so the balance is too high and the runway too long.
