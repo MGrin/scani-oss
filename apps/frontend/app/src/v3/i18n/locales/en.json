@@ -210,6 +210,9 @@
         "pending": "Exporting your net-worth history",
         "trigger": "Export net-worth history",
         "action": "Export history"
+      },
+      "runway": {
+        "label": "Money lasts"
       }
     },
     "money": {
@@ -228,7 +231,8 @@
       "segments": {
         "upcoming": "Upcoming",
         "recurring": "Recurring",
-        "vendors": "Vendors"
+        "vendors": "Vendors",
+        "forecast": "Forecast"
       },
       "overdue": {
         "unknown": "Overdue",
@@ -542,6 +546,54 @@
         "setAnchorDate": "set an anchor date",
         "chooseCadence": "choose how often this repeats",
         "setRepeatCount": "set a valid repeat count"
+      },
+      "forecast": {
+        "projectedMark": "Projected",
+        "label": "cashflow forecast",
+        "working": "Working it out…",
+        "runwayLabel": "Runway",
+        "runsOutIn": "Runs out in {{month}}",
+        "lastsBeyond_one": "Lasts beyond {{count}} month",
+        "lastsBeyond_other": "Lasts beyond {{count}} months",
+        "netPerMonth": "The book nets <value></value> a month.",
+        "basis_one": "Counting <value></value> across {{count}} holding.",
+        "basis_other": "Counting <value></value> across {{count}} holdings.",
+        "basisIlliquid_one": "<value></value> in {{count}} property or private position is left out as illiquid.",
+        "basisIlliquid_other": "<value></value> across {{count}} property and private positions is left out as illiquid.",
+        "basisUnpriceable_one": "{{count}} holding has no price and is not counted.",
+        "basisUnpriceable_other": "{{count}} holdings have no price and are not counted.",
+        "horizonSwitcher": "Forecast window",
+        "horizonOption_one": "{{count}} month",
+        "horizonOption_other": "{{count}} months",
+        "balanceAt": "Balance at {{month}}",
+        "chartLabel_one": "Projected balance over the next {{count}} month",
+        "chartLabel_other": "Projected balance over the next {{count}} months",
+        "goingOut_one": "Going out, next {{count}} month",
+        "goingOut_other": "Going out, next {{count}} months",
+        "comingIn_one": "Coming in, next {{count}} month",
+        "comingIn_other": "Coming in, next {{count}} months",
+        "notCounted": "Not in this projection",
+        "unprojectable_one": "{{count}} variable payment has no estimate, so nothing was projected for it.",
+        "unprojectable_other": "{{count}} variable payments have no estimate, so nothing was projected for them.",
+        "overdueExcluded_one": "{{count}} bill is already overdue and is not in the series.",
+        "overdueExcluded_other": "{{count}} bills are already overdue and are not in the series.",
+        "seeRecurring": "See recurring payments",
+        "addPayment": "Add a payment",
+        "affordTitle": "Can I afford it?",
+        "affordAmount": "Amount",
+        "affordWhen": "When",
+        "affordAsk": "Check it",
+        "affordClear": "Clear",
+        "affordLowest": "Lowest the balance gets",
+        "affordLowestIn": "In {{month}}",
+        "affordLowestNow": "Today, before anything moves",
+        "affordStaysPositive": "The balance stays above zero for the whole window.",
+        "affordGoesNegative": "The balance goes below zero at that point.",
+        "affordCostsMonths_one": "It costs {{count}} month of runway.",
+        "affordCostsMonths_other": "It costs {{count}} months of runway.",
+        "affordRunwayAfter": "After it, the money runs out in {{month}}.",
+        "affordRunwayStillBeyond_one": "Runway still runs beyond {{count}} month.",
+        "affordRunwayStillBeyond_other": "Runway still runs beyond {{count}} months."
       }
     },
     "groups": {

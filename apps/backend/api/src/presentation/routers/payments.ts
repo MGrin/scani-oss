@@ -23,7 +23,12 @@
 import type { Payment, PaymentOccurrence } from '@scani/db/schema';
 import { withTransaction } from '@scani/db/transaction';
 import { PaymentOccurrenceRepository, PaymentRepository } from '@scani/domain/repositories';
-import { PaymentHasSettledOccurrencesError, PaymentService } from '@scani/domain/services';
+import {
+  LiquidAssetsService,
+  PaymentForecastService,
+  PaymentHasSettledOccurrencesError,
+  PaymentService,
+} from '@scani/domain/services';
 import {
   AnchorOccurrenceMissingError,
   CreatePaymentFromExtractionUseCase,
@@ -33,6 +38,7 @@ import {
 import { TRPCError } from '@trpc/server';
 import { Container } from 'typedi';
 import { z } from 'zod';
+import { requireAuth } from '../middleware/auth';
 import { protectedProcedure, router } from '../trpc';
 
 const PAYMENT_DIRECTION = z.enum(['outflow', 'inflow']);
@@ -303,6 +309,41 @@ export const paymentsRouter = router({
           };
         });
     }),
+
+  /**
+   * Cashflow forecast and runway (SC-461).
+   *
+   * Takes no window. The server always answers for twelve months and the
+   * reader's 3 / 6 / 12 choice slices the same payload client-side — see
+   * `PaymentForecastService` for why the runway must not change because
+   * somebody tapped a different tab.
+   *
+   * Amounts come back UNCONVERTED, one movement per due date in the currency
+   * that will actually move, and the base-currency figure is made in the UI
+   * through `convertTotalsToBase` / `<ConvertedTotal>`. That is deliberate:
+   * V3-52 left exactly one conversion path on the client, and it is the one
+   * that also prints what could not be converted and how stale the rates
+   * were. A forecast converted here would arrive as a number with none of
+   * that attached — on the one surface whose whole job is admitting what it
+   * does not know.
+   *
+   * `liquid` is the exception and is already in base currency, because a
+   * holding's value has been valued server-side by `PortfolioValuationService`
+   * everywhere else in the app and re-deriving it here would be the second
+   * rate path this avoids.
+   */
+  forecast: protectedProcedure.query(async ({ ctx }) => {
+    const { dbUser } = await requireAuth(ctx);
+    const [forecast, liquid] = await Promise.all([
+      Container.get(PaymentForecastService).forecast(ctx.userId),
+      Container.get(LiquidAssetsService).getLiquidAssets(
+        ctx.userId,
+        dbUser.baseCurrencyId ?? undefined,
+        ctx.requestCache
+      ),
+    ]);
+    return { ...forecast, liquid };
+  }),
 
   settleOccurrence: protectedProcedure
     .input(
