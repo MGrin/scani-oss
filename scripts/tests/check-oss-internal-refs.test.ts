@@ -39,6 +39,7 @@ const OSS_BOUND: BranchFacts = {
   upstreamMainResolved: true,
   upstreamIsAncestor: true,
   originIsAncestor: false,
+  treeMarkers: null,
 };
 
 const PRIVATE_BRANCH: BranchFacts = {
@@ -46,6 +47,7 @@ const PRIVATE_BRANCH: BranchFacts = {
   upstreamMainResolved: true,
   upstreamIsAncestor: false,
   originIsAncestor: true,
+  treeMarkers: null,
 };
 
 const NO_UPSTREAM_REMOTE: BranchFacts = {
@@ -53,6 +55,7 @@ const NO_UPSTREAM_REMOTE: BranchFacts = {
   upstreamMainResolved: false,
   upstreamIsAncestor: false,
   originIsAncestor: true,
+  treeMarkers: null,
 };
 
 const UNFETCHED: BranchFacts = {
@@ -60,6 +63,7 @@ const UNFETCHED: BranchFacts = {
   upstreamMainResolved: false,
   upstreamIsAncestor: false,
   originIsAncestor: true,
+  treeMarkers: null,
 };
 
 describe('scanScope — which checkouts must have their staged content read', () => {
