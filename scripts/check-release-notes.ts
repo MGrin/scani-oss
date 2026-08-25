@@ -44,6 +44,20 @@
  * cause belongs at the moment it is still fixable — on the ordinary pull
  * request — and is a contributor-facing policy decision, not this file's.
  *
+ * A SHORTFALL DOES NOT NAME ITS OWN CAUSE (SC-621). This file used to tell
+ * whoever hit it that the chronological walk above was "the usual cause". That
+ * was measured FALSE on the next real instance: `19e7300fb`'s committer date
+ * is 2026-08-25 08:36Z, well after `v0.17.1`'s 2026-08-22 15:07Z, so it was
+ * never behind the stop sha. Feeding the whole `git log` corpus to
+ * release-please's own parser dropped it anyway — the message did not parse.
+ *
+ * So there are two independent causes and the shortfall looks identical under
+ * both; the failure message now names both and gives the one-step
+ * discriminator (the committer date against the tag's) rather than asserting
+ * one. A confident wrong cause is worse than none: it sends the reader to
+ * `BEGIN_COMMIT_OVERRIDE` when the fix was a bracket, and the override has a
+ * placement trap of its own — see the message.
+ *
  * BLINDNESS IS NOT A PASS. Every way this check can fail to look — no release
  * commit at the head, no previous tag, a changelog whose top section is not
  * the version being released, or a window in which it finds NO releasable
@@ -130,13 +144,33 @@ export function decodeEntities(text: string): string {
  * The trailing ` (#123)` is release-please's pull-request reference, which it
  * strips from the description and re-renders as a link, so it is stripped from
  * both sides.
+ *
+ * ` (SC-612)` is stripped too, from both sides, and that one is a repair
+ * (SC-621). Recovering a missing entry means writing the bullet by hand
+ * through a `BEGIN_COMMIT_OVERRIDE`, and the natural thing to write is this
+ * repo's usual ticket suffix — which the commit subject may not carry.
+ * Measured on the 0.18.0 repair: 20 bullets in the release PR, the entry
+ * plainly there, and this check still reporting `1 of 20 ... have no entry`.
+ * A visible entry the guard cannot see is worse than an obvious absence,
+ * because the changelog is what a reader believes.
+ *
+ * Stripping cannot hide a real shortfall: it only makes two descriptions match
+ * that differ by a ticket reference, and a bullet that says the same thing
+ * about the same ticket IS the entry. The cost is two commits in one window
+ * whose descriptions differ only by their SC number — the same trade already
+ * accepted for the scope, one paragraph up.
  */
+const SUFFIXES_STRIPPED_FROM_BOTH_SIDES = /\s*\((?:#\d+|SC-\d+)\)\s*$/i;
+
 export function normaliseDescription(text: string): string {
-  return decodeEntities(text)
-    .replace(/\s*\(#\d+\)\s*$/, '')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .toLowerCase();
+  let out = decodeEntities(text);
+  // A loop, not one replace: both suffixes can be present, in either order.
+  let previous: string;
+  do {
+    previous = out;
+    out = out.replace(SUFFIXES_STRIPPED_FROM_BOTH_SIDES, '');
+  } while (out !== previous);
+  return out.replace(/\s+/g, ' ').trim().toLowerCase();
 }
 
 /** The section for `version`, or null when the top section is some other version. */
@@ -317,10 +351,42 @@ if (import.meta.main) {
         missing.map(({ sha, subject }) => `    ${sha}  ${subject}`).join('\n') +
         `\n\nThese are on main and not in ${previousTag}, so merging this release ships ` +
         `them with no line in CHANGELOG.md and no line in the GitHub release.\n\n` +
-        `The usual cause is release-please's chronological walk: it stops at ` +
-        `${previousTag}'s sha, so a branch cut before the last release PR and merged ` +
-        `after it sits behind the stop point and is never read (SC-572). Recover with a ` +
-        `BEGIN_COMMIT_OVERRIDE on the merge commit, then re-run.`
+        `TWO CAUSES PRODUCE AN IDENTICAL SHORTFALL. This message used to assert the ` +
+        `first\nas "the usual cause"; on the next real instance it was the second ` +
+        `(SC-621).\n\n` +
+        `  1. THE WALK NEVER REACHED IT. release-please stops at ${previousTag}'s sha and ` +
+        `walks\n     in committer-date order, so a branch cut before the last release PR ` +
+        `and merged\n     after it sits behind the stop point (SC-572).\n\n` +
+        `  2. THE MESSAGE DOES NOT PARSE. The parser reads the WHOLE message, not the ` +
+        `subject:\n     one unbalanced bracket anywhere in the body throws, and ` +
+        `parseConventionalCommits\n     logs it at DEBUG level and returns ZERO commits ` +
+        `for that sha. Measured on\n     19e7300fb (SC-612) — a "(" on line 9, under a ` +
+        `perfectly formed subject.\n\n` +
+        `Tell them apart in one step. Cause 1 needs a committer date EARLIER than the ` +
+        `tag's:\n\n` +
+        `    git show -s --format='%cI %h %s' ${previousTag} ` +
+        `${missing.map(({ sha }) => sha).join(' ')}\n\n` +
+        `RECOVERY, and the placement matters. Put ` +
+        `BEGIN_COMMIT_OVERRIDE / END_COMMIT_OVERRIDE\ncarrying the conventional message ` +
+        `you wanted in the BODY of a pull request that is\nSQUASH-merged. The rule is ONE ` +
+        `commit on main for that pull request:\npreprocessCommitMessage reads the override ` +
+        `out of the pull request BODY, and the\nwalk attaches that body to EVERY commit of ` +
+        `the same PR — so behind a merge commit\nthe merge and each branch commit produce ` +
+        `the entry, which is the duplication\ncheck-pr-title.ts exists to prevent. Measured ` +
+        `against 17.11.2:\n\n` +
+        `    override on a merge-commit PR    21 bullets, the entry listed twice\n` +
+        `    override on a squash-merged PR   20 bullets, the entry listed once\n\n` +
+        `The override REPLACES the commit's own message, so the squash SUBJECT does not\n` +
+        `matter here — measured: a multi-commit squash whose subject was the unparseable\n` +
+        `PR title still yielded exactly one entry, the overridden one. That holds only\n` +
+        `WITH an override. A pull request you are NOT overriding must not be squashed\n` +
+        `unless its branch is a single conventional commit, because\n` +
+        `squash_merge_commit_title is COMMIT_OR_PR_TITLE and check-pr-title.ts has forced\n` +
+        `that title to be unparseable — cause 2 again, from the other direction.\n\n` +
+        `Write the override's subject to match the commit's byte for byte. Only a ` +
+        `trailing\n(#123) or (SC-nnn) is stripped before comparison; anything else you ` +
+        `append leaves a\nbullet that is VISIBLE in CHANGELOG.md and invisible to this ` +
+        `check, and it goes on\nreporting a shortfall against an entry that is there.`
     );
     process.exit(1);
   }
