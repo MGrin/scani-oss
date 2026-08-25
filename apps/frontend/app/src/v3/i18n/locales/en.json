@@ -1277,11 +1277,14 @@
         },
         "reopen": {
           "trigger": "Change this answer",
-          "commit": "Put it back in the queue"
+          "commit": "Put it back in the queue",
+          "declaredTrigger": "Undo this transfer",
+          "declaredCommit": "Undo it and put the balances back"
         },
         "toast": {
           "reopened": "Back in the queue — answer it again there",
-          "reopenFailed": "That transfer could not be reopened"
+          "reopenFailed": "That transfer could not be reopened",
+          "undone": "Transfer undone — both balances are back where they were"
         },
         "attribution": {
           "user": "You said",
@@ -1414,7 +1417,8 @@
         "reopen": {
           "internal": "The deposit this recorded on the other account is deleted with it — otherwise your next answer would count that money twice. The transfer rejoins the queue, and no balance changes either way.",
           "leftControl": "The gain this booked comes off your realized total until you answer it again, and the transfer rejoins the queue.",
-          "default": "The transfer rejoins the queue, and nothing about it is settled until you answer it again."
+          "default": "The transfer rejoins the queue, and nothing about it is settled until you answer it again.",
+          "declared": "This is a transfer you recorded yourself, so undoing it moves both balances back to what they were before it — the account it left goes back up, the account it arrived in goes back down — and removes both entries. It does not rejoin the queue: there is no question left to answer."
         },
         "gap": {
           "sameMinute": "same minute",
