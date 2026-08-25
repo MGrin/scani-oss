@@ -58,7 +58,7 @@
 
 import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
-import { type BranchFacts, classifyBranch } from './check-oss-bound-paths';
+import { type BranchFacts, classifyBranch, collectTreeMarkers } from './check-oss-bound-paths';
 
 /**
  * A pattern is written with escaped separators and non-capturing alternations
@@ -327,6 +327,7 @@ function collectBranchFacts(): BranchFacts {
     upstreamIsAncestor:
       upstreamMainResolved && git(['merge-base', '--is-ancestor', 'upstream/main', 'HEAD']).ok,
     originIsAncestor: git(['merge-base', '--is-ancestor', 'origin/main', 'HEAD']).ok,
+    treeMarkers: collectTreeMarkers(),
   };
 }
 
