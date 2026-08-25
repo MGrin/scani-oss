@@ -16,6 +16,7 @@ export const V3_ROUTES = {
   holdings: '/holdings',
   money: '/payments',
   recurring: '/payments/recurring',
+  forecast: '/payments/forecast',
   accounts: '/accounts',
   institutions: '/institutions',
   review: '/review',
