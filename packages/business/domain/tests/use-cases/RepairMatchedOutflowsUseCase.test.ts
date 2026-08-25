@@ -138,7 +138,21 @@ async function cleanupFixture(f: Fixture): Promise<void> {
 /** A departure carrying the answer that books a disposal, and no timestamp. */
 async function insertDeparture(
   f: Fixture,
-  opts: { quantity?: string; review?: string | null; kind?: string } = {}
+  opts: {
+    quantity?: string;
+    review?: string | null;
+    kind?: string;
+    /**
+     * Stamp the answer as a PERSON's (SC-606).
+     *
+     * Off by default, and that default is the population this repair was
+     * written for: the 560 `left_control` rows from the 2026-08-14 raw UPDATE
+     * carry no source and no timestamp, so `answerSourceOf` reads them
+     * `unattributed`. Every other test in this file relies on that, which is
+     * why this is an opt-in rather than a change to the fixture.
+     */
+    attributed?: boolean;
+  } = {}
 ): Promise<string> {
   const [row] = await db
     .insert(schema.holdingTransactions)
@@ -156,6 +170,7 @@ async function insertDeparture(
         : opts.review === null
           ? {}
           : { transferReview: opts.review }),
+      ...(opts.attributed ? { transferReviewSource: 'user', transferReviewedAt: new Date() } : {}),
     })
     .returning();
   if (!row) throw new Error('departure insert failed');
@@ -295,6 +310,21 @@ describe('RepairMatchedOutflowsUseCase — deriving the decision', () => {
     // SC-347: a pair resolving to one holding describes a move from a position
     // to itself, and 17 production groups of exactly that shape had to be undone.
     expect(await useCase().plansFor(f.userId)).toHaveLength(0);
+  });
+
+  test('blocks rather than overrules an answer a person stamped', async () => {
+    const f = fixture!;
+    const departure = await insertDeparture(f, { attributed: true });
+    await insertArrival(f);
+
+    // The control that makes this mean anything: the IDENTICAL fixture with
+    // the answer unattributed derives `paired` — the test above. So the only
+    // thing changed is who said it.
+    const plans = await useCase().plansFor(f.userId);
+    expect(plans).toHaveLength(1);
+    expect(plans[0]?.transactionId).toBe(departure);
+    expect(plans[0]?.action).toBe('blocked');
+    expect(plans[0]?.blockedReason).toContain('answered by a person');
   });
 
   test('ignores a row that does not carry the answer booking a disposal', async () => {
