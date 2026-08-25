@@ -16,7 +16,7 @@ import {
 } from './HoldingSnapshotProjection';
 
 export type DedupStrategy = 'externalId' | 'tokenId';
-export type StaleStrategy = 'preserve' | 'zero';
+type StaleStrategy = 'preserve' | 'zero';
 
 export interface ProcessSnapshotsForAccountInput {
   account: Pick<Account, 'id' | 'userId'>;

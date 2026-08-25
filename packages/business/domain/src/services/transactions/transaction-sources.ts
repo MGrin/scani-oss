@@ -43,9 +43,7 @@ export const CEX_SOURCE_TO_INSTITUTION: Record<string, string> = {
 };
 
 /** Exchange/broker transaction-import source tags. */
-export const EXCHANGE_SOURCES: ReadonlySet<string> = new Set(
-  Object.keys(CEX_SOURCE_TO_INSTITUTION)
-);
+const EXCHANGE_SOURCES: ReadonlySet<string> = new Set(Object.keys(CEX_SOURCE_TO_INSTITUTION));
 
 /**
  * True when the source is an on-chain wallet import (EVM, Solana, …) —

@@ -16,7 +16,7 @@ import {
  * `matchKey`, i.e. the same name wearing a different legal form; `similar` is a
  * trigram score at or above `VENDOR_MATCH_AUTO_THRESHOLD`.
  */
-export type VendorMatchTier = 'exact' | 'canonical' | 'similar';
+type VendorMatchTier = 'exact' | 'canonical' | 'similar';
 
 export interface VendorMatch {
   vendor: Vendor;
