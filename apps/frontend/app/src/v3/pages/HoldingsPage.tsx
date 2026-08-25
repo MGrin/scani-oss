@@ -320,7 +320,6 @@ export function HoldingsPage() {
             if (!open) setMovementTarget(null);
           }}
           holding={movementTarget}
-          holdings={holdings}
           isSaving={movement.isSaving}
           onSubmit={movement.submit}
         />
