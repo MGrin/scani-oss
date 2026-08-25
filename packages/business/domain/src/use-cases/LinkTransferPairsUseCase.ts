@@ -48,11 +48,12 @@
  * twelve bridges into the queue with no arrival to pair them to.
  */
 
+import type { DatabaseTransaction } from '@scani/db';
 import { db } from '@scani/db/connection';
 import * as schema from '@scani/db/schema';
 import { createComponentLogger } from '@scani/logging';
 import Decimal from 'decimal.js';
-import { and, eq, gte, inArray, isNull, sql } from 'drizzle-orm';
+import { and, eq, gte, inArray, isNull, or, sql } from 'drizzle-orm';
 import { Service } from 'typedi';
 import {
   candidatePairClass,
@@ -120,6 +121,78 @@ function toLeg(row: LegRow): TransferLeg {
 
 @Service()
 export class LinkTransferPairsUseCase {
+  /**
+   * Link two legs the OWNER declared, rather than two this pass guessed at
+   * (SC-607).
+   *
+   * ## Why a declared pair does not go through `execute`
+   *
+   * Everything below this method exists to decide whether two rows nobody
+   * connected are the same money: a ±1% quantity window, a ±30-minute time
+   * window, a refusal when more than one candidate fits. Those tolerances are
+   * evidence-weighing, and there is no evidence to weigh here — the pair was
+   * stated, and both rows were written by the statement.
+   *
+   * Re-deriving it would be strictly worse than useless. A second movement of
+   * the same size within half an hour makes the declared pair *ambiguous*, and
+   * `execute` correctly declines an ambiguous pair — so the transfer the owner
+   * just recorded would arrive unlinked, in the review queue, asking them the
+   * question they had already answered. That is the exact outcome SC-607
+   * exists to prevent, reached by way of the code meant to prevent it.
+   *
+   * ## What it still refuses
+   *
+   * `transfer_group_id IS NULL` is re-asserted on the UPDATE, and both rows
+   * must move or neither does — the same guard `execute` uses, for the same
+   * reason: a concurrent writer must not have a pairing silently overwritten.
+   * A declared pair is certain about WHICH rows; it is not thereby entitled to
+   * clobber a group id that arrived first.
+   *
+   * Returns the group id both legs now share, or `null` when either row was
+   * already spoken for.
+   */
+  async linkDeclaredPair(
+    pair: {
+      outflow: { holdingId: string; source: string; externalId: string };
+      inflow: { holdingId: string; source: string; externalId: string };
+      userId: string;
+    },
+    tx: DatabaseTransaction
+  ): Promise<string | null> {
+    const groupId = crypto.randomUUID();
+    const leg = (key: { holdingId: string; source: string; externalId: string }) =>
+      and(
+        eq(schema.holdingTransactions.userId, pair.userId),
+        eq(schema.holdingTransactions.holdingId, key.holdingId),
+        eq(schema.holdingTransactions.source, key.source),
+        eq(schema.holdingTransactions.externalId, key.externalId)
+      );
+
+    const updated = await tx
+      .update(schema.holdingTransactions)
+      .set({ transferGroupId: groupId, updatedAt: sql`now()` })
+      .where(
+        and(
+          or(leg(pair.outflow), leg(pair.inflow)),
+          isNull(schema.holdingTransactions.transferGroupId)
+        )
+      )
+      .returning({ id: schema.holdingTransactions.id });
+
+    if (updated.length !== 2) {
+      // One leg moved and the other did not, so the pairing is half-made.
+      // Throwing rolls the caller's transaction back rather than leaving a
+      // transfer whose money left one holding and arrived in another with
+      // nothing recording that they are the same money.
+      throw new Error(
+        `Declared transfer pairing affected ${updated.length} rows, expected 2 — refusing a half-linked pair`
+      );
+    }
+
+    logger.info({ userId: pair.userId, groupId }, 'Linked a declared transfer pair');
+    return groupId;
+  }
+
   async execute(
     opts: { userId: string; sinceDays?: number } = { userId: '' }
   ): Promise<LinkTransferPairsSummary> {

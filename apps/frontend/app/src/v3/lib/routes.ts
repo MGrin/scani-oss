@@ -94,6 +94,8 @@ export function holdingsQualityPath(kind: DataQualityKind): string {
  */
 export const V3_CAPTURE_ROUTES = {
   manualEntry: '/manual-entry',
+  /** "I withdrew 2000" — the movement, not the balance it leaves (SC-607). */
+  recordMovement: '/record-movement',
   fileImport: '/import',
   walletImport: '/wallet-import',
   integrations: '/integrations',

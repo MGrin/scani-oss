@@ -12,7 +12,7 @@ import { Numeric } from '@scani/ui/v3/components/Numeric';
 import { resolveNumeric } from '@scani/ui/v3/lib/numeric';
 import type { PeekFact, PeekSection, PeekSpec } from '@scani/ui/v3/lib/peek';
 import type { TFunction } from 'i18next';
-import { Pencil, RefreshCw, Wallet } from 'lucide-react';
+import { ArrowLeftRight, Pencil, RefreshCw, Wallet } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { institutionIconUrl } from '@/lib/icons';
 import {
@@ -65,6 +65,15 @@ export interface HoldingPeekContext {
    *  them one parameter at a time is how one gets missed (SC-201). */
   t: TFunction;
   onSetAmount: (holding: HoldingWithDetails, balance: string) => void;
+  /**
+   * Record what actually happened, rather than the balance it leaves (SC-607).
+   *
+   * Beside `onSetAmount`, not instead of it. Setting the amount is right when
+   * reconciling against a statement that only gives a closing figure; this is
+   * right when the owner knows the movement — which is most of the time, and
+   * is the case that used to be the long way round.
+   */
+  onRecordMovement: (holding: HoldingWithDetails) => void;
   onToggleActive: (holding: HoldingWithDetails) => void;
   /** True while an activate/deactivate write is in flight. */
   isTogglingActive?: boolean;
@@ -360,6 +369,10 @@ export function holdingPeekSpec(holding: HoldingWithDetails, ctx: HoldingPeekCon
     // `tests/v3/token-hygiene.test.ts` for the guard that pins the floor.
     actions: (
       <>
+        <Button onClick={() => ctx.onRecordMovement(holding)}>
+          <ArrowLeftRight className="mr-2 size-4" aria-hidden="true" />
+          {t('v3.holdings.movement.peekAction')}
+        </Button>
         <Button variant="outline" onClick={() => ctx.onRefreshPrice(holding)} disabled={priceBusy}>
           {/* Disabled plus a changed label rather than a spinning icon: the
               motion policy (V3-16) has not landed, and an unguarded
