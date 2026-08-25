@@ -23,6 +23,7 @@ export const V3_ROUTES = {
   vaults: '/vaults',
   settings: '/settings',
   groups: '/groups',
+  entities: '/entities',
   tokens: '/tokens',
   vendors: '/vendors',
   jobs: '/jobs',
@@ -312,6 +313,7 @@ export const V3_DRAWER_SECONDARY: readonly V3NavItem[] = [
   { labelKey: 'nav.recurringPayments', icon: 'Repeat', path: V3_ROUTES.recurring },
   { labelKey: 'nav.vendors', icon: 'Store', path: V3_ROUTES.vendors },
   { labelKey: 'nav.groups', icon: 'Tags', path: V3_ROUTES.groups },
+  { labelKey: 'nav.entities', icon: 'Scale', path: V3_ROUTES.entities },
   { labelKey: 'nav.tokens', icon: 'Coins', path: V3_ROUTES.tokens },
   { labelKey: 'nav.jobs', icon: 'ListChecks', path: V3_ROUTES.jobs },
 ];
