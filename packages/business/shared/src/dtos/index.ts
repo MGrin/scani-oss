@@ -8,6 +8,7 @@ export * from './export-document';
 export * from './group';
 export * from './holding';
 export * from './holding-arrival';
+export * from './holding-movement';
 export * from './holdingApy';
 export * from './institution';
 export * from './job-failure';

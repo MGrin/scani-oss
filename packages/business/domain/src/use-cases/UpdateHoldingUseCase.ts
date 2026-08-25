@@ -80,6 +80,20 @@ export interface UpdateHoldingInput {
    */
   editOccurredAt?: Date;
   /**
+   * The instant of the EDIT, as opposed to of the money moving (SC-607).
+   *
+   * Defaulted to now, which is what every caller before this wanted. It is
+   * settable because `ManualBalanceEditService` builds the synthesized row's
+   * dedup key from it — `manual-edit:<iso>` — so a caller that supplies it can
+   * address the row afterwards by its natural key, and two legs written under
+   * one instant collapse onto their own rows when a submission is retried.
+   *
+   * `RecordHoldingMovementUseCase` is the only caller that supplies one: it
+   * links a declared transfer's two legs afterwards, and addresses them by the
+   * key this instant produces.
+   */
+  editedAt?: Date;
+  /**
    * Where the money went, for a `flow` that takes the balance DOWN (SC-606).
    *
    * Settled in the same transaction as the `withdraw` it describes, so the row
@@ -184,8 +198,15 @@ export class UpdateHoldingUseCase {
     logger.debug({ userId, holdingId, data }, 'Updating holding');
 
     const run = async (tx: DatabaseTransaction) => {
-      const { editCause, editOccurredAt, editOutflow, label: requestedLabel, ...columns } = data;
-      const editedAt = new Date();
+      const {
+        editCause,
+        editOccurredAt,
+        editedAt: requestedEditedAt,
+        editOutflow,
+        label: requestedLabel,
+        ...columns
+      } = data;
+      const editedAt = requestedEditedAt ?? new Date();
 
       // Read BEFORE the update, in the same transaction, because the delta a
       // synthesized transaction has to explain is `new - previous` and the

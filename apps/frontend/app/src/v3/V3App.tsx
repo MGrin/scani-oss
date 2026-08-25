@@ -38,6 +38,7 @@ import { ManualEntryPage } from './pages/ManualEntryPage';
 import { MoneyPage } from './pages/MoneyPage';
 import { NotFoundPage } from './pages/NotFoundPage';
 import { PaymentFormPage } from './pages/PaymentFormPage';
+import { RecordMovementPage } from './pages/RecordMovementPage';
 import { ReviewPage } from './pages/ReviewPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { TokensPage } from './pages/TokensPage';
@@ -128,6 +129,10 @@ export function V3App() {
                 same reason Money registers its form first — a provider key must
                 not be reachable as anything but a provider key. */}
             <Route path={relative(V3_CAPTURE_ROUTES.manualEntry)} element={<ManualEntryPage />} />
+            <Route
+              path={relative(V3_CAPTURE_ROUTES.recordMovement)}
+              element={<RecordMovementPage />}
+            />
             <Route path={relative(V3_CAPTURE_ROUTES.fileImport)} element={<FileImportPage />} />
             <Route path={relative(V3_CAPTURE_ROUTES.walletImport)} element={<WalletImportPage />} />
             <Route
