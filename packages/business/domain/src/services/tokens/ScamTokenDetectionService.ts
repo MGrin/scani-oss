@@ -200,7 +200,7 @@ export class ScamTokenDetectionService extends BaseService {
 
     // Check 6 — REMOVED (SC-207). It awarded 0.3 for "No pricing data
     // available", which measures our coverage rather than the token, and it
-    // was written back: `WarmTokenPricesForImportUseCase` re-scored priced
+    // was written back: `PriceWarmupService` re-scored priced
     // tokens and persisted the lower number, so a token's scam score fell
     // when our pricing improved. Every token was created at ≥0.3 and drifted
     // to its true score later, which made the number un-comparable across

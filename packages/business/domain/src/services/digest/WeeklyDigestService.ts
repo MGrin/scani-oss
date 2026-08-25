@@ -25,7 +25,7 @@ const MAX_BILLS_LISTED = 3;
 /** Movers shown. Three fits a phone without scrolling. */
 const MAX_MOVERS = 3;
 
-export type Direction = 'up' | 'down' | 'flat';
+type Direction = 'up' | 'down' | 'flat';
 
 export interface DigestChange {
   /** Signed, already formatted in the base currency. */

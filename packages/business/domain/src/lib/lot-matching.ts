@@ -212,7 +212,7 @@ export interface PlanDisposal {
 }
 
 /** Units of one acquisition claimed by one disposal, outside the pool. */
-export interface ForwardMatch {
+interface ForwardMatch {
   acquisitionTxId: string;
   qty: Decimal;
 }
