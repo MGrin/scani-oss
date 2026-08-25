@@ -74,7 +74,7 @@ export function parseAllowedKeys(src: string): string[] {
   const keys = new Set<string>();
   for (const rawLine of src.split('\n')) {
     const match = rawLine.match(ENV_KEY_RE);
-    if (match) keys.add(match[1]);
+    if (match) keys.add(match[1]!);
   }
   return [...keys];
 }
@@ -120,11 +120,11 @@ export function renderRootEnv(exampleSrc: string, secret: () => string = generat
   const out: string[] = [];
   for (const line of lines) {
     const match = line.match(/^([A-Z][A-Z0-9_]*)=\s*$/);
-    if (!match || !GENERATED_KEYS.has(match[1])) {
+    if (!match || !GENERATED_KEYS.has(match[1]!)) {
       out.push(line);
       continue;
     }
-    const note = GENERATED_NOTE[match[1]];
+    const note = GENERATED_NOTE[match[1]!];
     if (note) out.push(note);
     out.push(`${match[1]}=${secret()}`);
   }
