@@ -76,6 +76,7 @@ function configFor(holdings: HoldingWithDetails[]) {
       t,
       currency: '$',
       onSetAmount: () => undefined,
+      onRecordMovement: () => undefined,
       onToggleActive: () => undefined,
       onRefreshPrice: () => undefined,
       onRefreshBalance: () => undefined,

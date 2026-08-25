@@ -35,6 +35,12 @@ export {
   txHashFromPayload,
 } from './lib/block-explorer';
 export {
+  HOLDING_MOVEMENT_DIRECTIONS,
+  type HoldingMovementDirection,
+  isHoldingMovementDirection,
+  movementOutflowRefusesInternal,
+} from './lib/holding-movement';
+export {
   isManualEditCause,
   MANUAL_EDIT_CAUSES,
   type ManualEditCause,
