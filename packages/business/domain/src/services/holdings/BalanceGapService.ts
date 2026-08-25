@@ -34,9 +34,25 @@ export type BalanceGapAnswerRefusal = 'gone' | 'already-answered' | 'no-longer-a
  *
  * Every other value in `holding_balance_observations.source` — `manual`,
  * `manual-edit-backfill`, `statement-close`, `screenshot` — describes a
- * balance a PERSON put there, and SC-510 already asked what that edit meant
- * at the moment it was made. Asking again is asking somebody to explain their
- * own sentence back to us.
+ * balance a PERSON put there, and asking again is asking somebody to explain
+ * their own sentence back to us.
+ *
+ * **This does NOT cover a live manual balance edit, and the claim that it did
+ * was the whole of SC-606's third prompt.** `HoldingService.recordBalanceObservation`
+ * writes `sync-capture` whatever the caller, `UpdateHoldingUseCase` included —
+ * so an edit made through the app has always landed on the `sync-capture` side
+ * of this test, and this suppression has never once fired for one. The
+ * sentence that used to sit here said SC-510 had already asked, which was true
+ * about the QUESTION and false about the row, and it made a prompt nobody
+ * could account for look impossible.
+ *
+ * What covers a live edit instead is `gap_review`, stamped into that
+ * observation's own insert with the cause the user gave — so the interval
+ * leaves at `candidate.gapReview !== null` below, which is "answered" rather
+ * than "suppressed", which is what it is. The values named above are still
+ * suppressed here and still need to be: `manual-edit-backfill` is SC-510's
+ * historical backfill and `statement-close` is a figure read off a statement,
+ * and neither carries an answer to stamp.
  *
  * Measured on production 2026-08-22: 6 of 379 drifting intervals close on a
  * non-sync observation, and one of them is the single largest gap by value in

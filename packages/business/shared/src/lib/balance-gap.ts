@@ -218,9 +218,15 @@ export const BALANCE_GAP_SUPPRESSIONS = [
   /** Below `BALANCE_GAP_MIN_BASE_VALUE` once priced. */
   'below-threshold',
   /**
-   * Closing observation is not a `sync-capture` — the owner wrote it. A
-   * manual balance edit is already an answer, and SC-510 asked its own
-   * question at the moment it was made.
+   * Closing observation is not a `sync-capture` — the owner wrote it, through
+   * a statement close or SC-510's historical backfill.
+   *
+   * **A live manual balance edit is NOT in this set** and never has been:
+   * `HoldingService.recordBalanceObservation` stamps `sync-capture` whatever
+   * the caller. An edit made in the app is answered instead, by the
+   * `gap_review` its own insert carries (SC-606) — a different mechanism, and
+   * the wording here claiming otherwise is what made SC-606's third prompt
+   * look impossible.
    */
   'owner-stated',
   /**
