@@ -242,6 +242,15 @@ describe('a declared transfer', () => {
       // A paired outflow is out of the queue on the group id alone — the
       // reason a transfer needs no `transfer_review` answer from the owner.
       expect(await reviewPrompts(tx, user.id)).toBe(0);
+
+      // The stamp is PROVENANCE rather than queue control, which is exactly
+      // why it needs its own assertion: the prompt count above is already 0
+      // without it, so nothing else in this file would notice it going away.
+      // Without it `answerSourceOf` reads a transfer the owner declared as
+      // `unattributed` — indistinguishable from one the nightly matcher
+      // guessed at.
+      expect(out?.transferReview).toBe('paired');
+      expect(out?.transferReviewSource).toBe('user');
     });
   });
 
