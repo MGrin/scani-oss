@@ -19,6 +19,40 @@ version heading stays there permanently, above every future release. This
 comment is deliberately in that position; explanatory prose should not be.
 -->
 
+## [0.18.0](https://github.com/MGrin/scani-oss/compare/v0.17.1...v0.18.0) (2026-08-25)
+
+
+### Features
+
+* **data-provider:** tell an explicitly-disabled cost control apart from an unset one (SC-582) ([#196](https://github.com/MGrin/scani-oss/issues/196)) ([a766740](https://github.com/MGrin/scani-oss/commit/a766740323081054dbd79a042c86f7626fdc09b5))
+* **holdings:** record an inflow, outflow or transfer (SC-607) ([a6ee3cd](https://github.com/MGrin/scani-oss/commit/a6ee3cd16d3997ded5565cb943a6c61057720cdd))
+* **oss:** add an advisory tier and make the guard prove it still works (SC-598) ([8b4da36](https://github.com/MGrin/scani-oss/commit/8b4da3639b6961eab858f8eae03abdd206c9f577))
+* **oss:** refuse internal references in content bound for the public mirror (SC-598) ([7315db9](https://github.com/MGrin/scani-oss/commit/7315db9be6113c9276ae7976cfbf750959689042))
+* **tokens:** give decimals a named authority, and NULL where none answered (SC-544) ([7614771](https://github.com/MGrin/scani-oss/commit/761477143324f3e2ddbadcb80f82c13d925fac93))
+
+
+### Bug Fixes
+
+* **cloud-api:** scope storage and email to internal keys ([c30588c](https://github.com/MGrin/scani-oss/commit/c30588cf511ffd49364701392fe3d61edec100d8))
+* **docs:** stop the docs site linking to a repository readers cannot open (SC-589) ([ae3bcb3](https://github.com/MGrin/scani-oss/commit/ae3bcb30bee80a52fa7254b6e217f3e2c749a92e))
+* **holdings:** a balance edit may only open a destination, not name one ([990be97](https://github.com/MGrin/scani-oss/commit/990be970a8fd6654317110a72823a4f14f5cb41d))
+* **holdings:** an untouched date field means now, not the start of the day ([#207](https://github.com/MGrin/scani-oss/issues/207)) ([ab213bc](https://github.com/MGrin/scani-oss/commit/ab213bc347acc849f7c00e3910852a908dab5c28))
+* **holdings:** cap the synthesized opening at the balance it must explain (SC-613) ([0397b73](https://github.com/MGrin/scani-oss/commit/0397b73d101e806dbcfba219bb9093027ada2482))
+* **holdings:** one manual balance edit asks one question ([01b966a](https://github.com/MGrin/scani-oss/commit/01b966afaac311f6111be8a16e44b785a871bc74))
+* **holdings:** stamp a declared transfer's outflow, not just group it (SC-607) ([15a415f](https://github.com/MGrin/scani-oss/commit/15a415f84e929c0465c79bf97d04aff03feeaef8))
+* **hooks:** invoke the staged-fixture guard the pre-commit hook already ships (SC-605) ([3b73e3f](https://github.com/MGrin/scani-oss/commit/3b73e3f53ae8db4a9259d9f8fb10cb22a33a5721))
+* **port-holder:** sample docker twice, and only when it timed out (SC-591) ([#197](https://github.com/MGrin/scani-oss/issues/197)) ([376ba0a](https://github.com/MGrin/scani-oss/commit/376ba0a536340c650b87e51d411cebf2a9eb652a))
+* **providers:** delete OPENAI_VISION_MODEL rather than wire it up (SC-588) ([00e686c](https://github.com/MGrin/scani-oss/commit/00e686cabf73972d1752cbe813a31e5881504bfe))
+* **queue:** name Postgres in the enqueue timeout and re-size the bound (SC-578) ([fc5cee2](https://github.com/MGrin/scani-oss/commit/fc5cee21eb7ae5752a426035c4e43c25840dc711))
+* **tests:** journal tracked-source mutations so a killed run repairs itself (SC-601) ([4c504fd](https://github.com/MGrin/scani-oss/commit/4c504fd80576158908922f6cd5130b008236056d))
+* **tests:** read the journal's target through ENOENT, not existsSync (SC-601) ([7e9d534](https://github.com/MGrin/scani-oss/commit/7e9d5341043f653487bdc9bb8787e0ef44d19ff2))
+* **tests:** sweep a killed run's staged fixture before writing a new one (SC-596) ([05cfb70](https://github.com/MGrin/scani-oss/commit/05cfb704266210bed0e08299918f88d28639d84e))
+
+
+### Performance Improvements
+
+* **tests:** cut PnLQuality fixture from 35 round trips per test to 13 (SC-594) ([#198](https://github.com/MGrin/scani-oss/issues/198)) ([ab213bc](https://github.com/MGrin/scani-oss/commit/ab213bc347acc849f7c00e3910852a908dab5c28))
+
 ## [0.17.1](https://github.com/MGrin/scani-oss/compare/v0.17.0...v0.17.1) (2026-08-22)
 
 
