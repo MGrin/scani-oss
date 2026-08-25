@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  applyNewFileAllowance,
   type BranchFacts,
   classifyBranch,
   classifyByTree,
@@ -8,6 +9,8 @@ import {
   EXIT_UNKNOWN,
   refusedPaths,
   type TreeMarkers,
+  VERDICT,
+  type Violation,
 } from '../check-oss-bound-paths';
 
 /**
@@ -269,5 +272,114 @@ describe('the three outcomes have three distinct exit codes', () => {
     // transcript must mean "checked and clean", never "could not tell".
     expect(new Set([EXIT_OK, EXIT_REFUSED, EXIT_UNKNOWN]).size).toBe(3);
     expect(EXIT_UNKNOWN).not.toBe(EXIT_OK);
+  });
+});
+
+/**
+ * SC-639. `OSS_ALLOW_NEW_FILES=1` was read in the `import.meta.main` block
+ * before `main()` ran, so neither `classifyBranch` nor `refusedPaths` executed
+ * and the flag silenced BOTH violation kinds — including private-only source,
+ * the hazard the whole file exists for. It printed `SKIPPED · exit 0`.
+ *
+ * These tests are the reason the kind is a typed field rather than a substring
+ * of `why`. A suppression decision keyed on prose changes what the guard
+ * admits the next time somebody rewords a message, with nothing failing.
+ */
+describe('the new-files allowance is scoped to new files (SC-639)', () => {
+  const privateOnly: Violation = {
+    path: 'private-app/src/middleware.ts',
+    kind: 'private-only',
+    why: 'tracked in origin/main and absent from upstream/main — private-only source',
+  };
+  const newFile: Violation = {
+    path: 'packages/shared/src/brand-new.ts',
+    kind: 'new-file',
+    why: 'absent from both repos — build residue, or a new file you meant to add',
+  };
+
+  test('THE REGRESSION: private-only source is refused even with the flag set', () => {
+    // The one assertion this ticket exists for. Before SC-639 this returned a
+    // clean skip and the commit went through.
+    const { refused, admitted } = applyNewFileAllowance([privateOnly], true);
+    expect(refused).toEqual([privateOnly]);
+    expect(admitted).toEqual([]);
+  });
+
+  test('a genuinely new shared file is admitted with the flag set', () => {
+    // The escape people legitimately need. Removing it would push them back to
+    // `--no-verify`, which disables every hook rather than one check.
+    const { refused, admitted } = applyNewFileAllowance([newFile], true);
+    expect(refused).toEqual([]);
+    expect(admitted).toEqual([newFile]);
+  });
+
+  test('the same new file is refused with the flag unset', () => {
+    const { refused, admitted } = applyNewFileAllowance([newFile], false);
+    expect(refused).toEqual([newFile]);
+    expect(admitted).toEqual([]);
+  });
+
+  test('the flag admits nothing at all when it is unset', () => {
+    const { refused, admitted } = applyNewFileAllowance([privateOnly, newFile], false);
+    expect(refused).toHaveLength(2);
+    expect(admitted).toEqual([]);
+  });
+
+  test('a MIXED commit admits the new files and still refuses the private ones', () => {
+    // The failure shape from the report: eleven paths staged, three of them
+    // genuinely new. The old flag admitted all eleven because it never looked.
+    const { refused, admitted } = applyNewFileAllowance([newFile, privateOnly, newFile], true);
+    expect(refused).toEqual([privateOnly]);
+    expect(admitted).toHaveLength(2);
+  });
+
+  test('the decision reads `kind`, not the wording of `why`', () => {
+    // Reword both messages to something the substring tests would not match —
+    // the suppression must be unchanged, because a security decision may not
+    // depend on prose somebody is free to edit.
+    const reworded: Violation[] = [
+      { ...privateOnly, why: 'nope' },
+      { ...newFile, why: 'nope' },
+    ];
+    const { refused, admitted } = applyNewFileAllowance(reworded, true);
+    expect(refused.map((v) => v.kind)).toEqual(['private-only']);
+    expect(admitted.map((v) => v.kind)).toEqual(['new-file']);
+  });
+
+  test('refusedPaths labels the kind as a field, and it agrees with the prose', () => {
+    const [source] = refusedPaths(['private-app/src/middleware.ts'], {
+      existsUpstream: () => false,
+      trackedPrivately: () => true,
+    });
+    const [fresh] = refusedPaths(['packages/shared/src/brand-new.ts'], {
+      existsUpstream: () => false,
+      trackedPrivately: () => false,
+    });
+    expect(source?.kind).toBe('private-only');
+    expect(fresh?.kind).toBe('new-file');
+    // Both carriers must still agree, so the human text cannot drift away from
+    // the value the guard acts on without this failing.
+    expect(source?.why).toContain('private-only source');
+    expect(fresh?.why).toContain('residue');
+  });
+
+  test('nothing staged admits nothing and refuses nothing', () => {
+    expect(applyNewFileAllowance([], true)).toEqual({ refused: [], admitted: [] });
+  });
+});
+
+describe("a bypass cannot wear a legitimate skip's costume (SC-639)", () => {
+  test('all five verdict words are distinct', () => {
+    const words = Object.values(VERDICT);
+    expect(new Set(words).size).toBe(words.length);
+  });
+
+  test('the bypass and the not-applicable verdicts differ by WORD, not by exit code', () => {
+    // PASS, ALLOWED and SKIPPED all exit 0, so the exit code cannot separate
+    // them and the word is doing the whole job. `SKIPPED · exit 0` was printed
+    // for both a deliberate bypass and a branch the guard does not apply to,
+    // distinguished only by trailing prose that nothing reads.
+    expect(VERDICT.allowed).not.toBe(VERDICT.skipped);
+    expect(VERDICT.allowed).not.toBe(VERDICT.pass);
   });
 });
