@@ -15,8 +15,10 @@ import { AssignGroupsSheet } from '../components/groups/AssignGroupsSheet';
 import { ApyConfigSheet } from '../components/holdings/ApyConfigSheet';
 import { HoldingEditCauseDialog } from '../components/holdings/HoldingEditCauseDialog';
 import { holdingsDataViewConfig } from '../components/holdings/holdingsConfig';
+import { RecordMovementSheet } from '../components/holdings/RecordMovementSheet';
 import { EditCustomTokenPriceSheet } from '../components/tokens/EditCustomTokenPriceSheet';
 import { useHoldingRefresh } from '../hooks/useHoldingRefresh';
+import { useRecordMovement } from '../hooks/useRecordMovement';
 import { HOLDINGS_QUALITY_PARAM } from '../lib/dataQuality';
 import { holdingFiltersFromParams } from '../lib/holdings';
 import { V3_ROUTES } from '../lib/routes';
@@ -125,6 +127,14 @@ export function HoldingsPage() {
   const [assignTarget, setAssignTarget] = useState<{ ids: string[]; clear: () => void } | null>(
     null
   );
+  /**
+   * The holding a movement is being recorded against (SC-607).
+   *
+   * Mounted here rather than inside the peek for the same reason the cause
+   * dialog is: a Radix dialog opened from inside the drawer is torn down by
+   * the drawer's own dismiss.
+   */
+  const [movementTarget, setMovementTarget] = useState<HoldingWithDetails | null>(null);
 
   const removeApyMutation = trpc.holdings.deleteApyConfig.useMutation({
     onSuccess: () => {
@@ -169,6 +179,7 @@ export function HoldingsPage() {
   }, [holdings]);
 
   const openCapture = useOpenCapture();
+  const movement = useRecordMovement(() => setMovementTarget(null));
 
   const config = holdingsDataViewConfig({
     holdings,
@@ -207,6 +218,7 @@ export function HoldingsPage() {
       refreshingPriceId: refresh.refreshingPriceId,
       refreshingBalanceId: refresh.refreshingBalanceId,
       onEditPrice: setPriceTarget,
+      onRecordMovement: setMovementTarget,
       // Straight through — a rename carries no `editCause` question, because
       // it makes no claim about the balance (SC-564).
       onSetLabel: (holding, label) => actions.updateHolding(holding.id, { label }),
@@ -294,6 +306,23 @@ export function HoldingsPage() {
             });
             setCauseTarget(null);
           }}
+        />
+      ) : null}
+
+      {movementTarget ? (
+        <RecordMovementSheet
+          // Keyed like the cause dialog: the sheet seeds its amount, date and
+          // answer once at mount, so a second holding must not inherit the
+          // first one's half-filled form.
+          key={movementTarget.id}
+          open
+          onOpenChange={(open) => {
+            if (!open) setMovementTarget(null);
+          }}
+          holding={movementTarget}
+          holdings={holdings}
+          isSaving={movement.isSaving}
+          onSubmit={movement.submit}
         />
       ) : null}
 
