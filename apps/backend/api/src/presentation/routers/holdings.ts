@@ -17,6 +17,10 @@ import {
   DeleteHoldingUseCase,
   HoldingLabelTakenError,
   ManualOutflowAnswerRefused,
+  MovementExceedsBalanceError,
+  MovementHoldingNotFoundError,
+  MovementSameHoldingError,
+  RecordHoldingMovementUseCase,
   UpdateHoldingUseCase,
 } from '@scani/domain/use-cases';
 import { HOLDING_PRICE_UPDATE, REFRESH_ACCOUNT_BALANCE } from '@scani/jobs';
@@ -27,6 +31,7 @@ import {
   type ManualEditCause,
   parseCostBasisMethod,
   type RealizedLedger,
+  RecordHoldingMovementDto,
   UpdateHoldingDto,
   UpsertHoldingApyConfigDto,
 } from '@scani/shared';
@@ -211,6 +216,78 @@ export const holdingsRouter = router({
 
         void enqueuePortfolioRollup(dbUser.id);
         return updatedHolding;
+      });
+    }),
+
+  /**
+   * "I withdrew 2000" — the movement, not the balance it leaves (SC-607).
+   *
+   * Beside `update` rather than replacing it. Editing the amount directly
+   * stays, because it is the right verb when reconciling against a statement
+   * where the closing figure is the only thing known; this is the right verb
+   * when the owner knows what they DID. The first became the correction path,
+   * not the only path.
+   *
+   * `idempotencyKey` matters more here than on `update`: an `update` replayed
+   * with the same balance is idempotent by nature, while a movement replayed
+   * moves the money twice. The use case is keyed defensively as well — both
+   * legs collapse onto their own dedup rows — but the balance ANCHOR would
+   * still be advanced twice, so the key is the real guard and the client sends
+   * one per submission.
+   */
+  recordMovement: protectedProcedure
+    .input(
+      z.object({
+        movement: RecordHoldingMovementDto,
+        idempotencyKey: z.string().min(1).max(128).optional(),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      const { dbUser } = await requireAuth(ctx);
+      return withIdempotency(dbUser.id, input.idempotencyKey, async () => {
+        const result = await Container.get(RecordHoldingMovementUseCase)
+          .execute(input.movement, dbUser.id)
+          .catch((error) => {
+            // Each of these is something the owner can act on from the sheet
+            // they are looking at, so each is a refusal with a sentence rather
+            // than a 500 with a stack trace.
+            if (error instanceof MovementHoldingNotFoundError) {
+              throw new TRPCError({ code: 'NOT_FOUND', message: 'Holding not found' });
+            }
+            if (error instanceof MovementExceedsBalanceError) {
+              throw new TRPCError({
+                code: 'BAD_REQUEST',
+                message: `This holding holds ${error.balance}, so ${error.amount} cannot leave it.`,
+              });
+            }
+            if (error instanceof MovementSameHoldingError) {
+              throw new TRPCError({
+                code: 'BAD_REQUEST',
+                message: 'A transfer has to go to a different holding.',
+              });
+            }
+            throw error;
+          });
+
+        emitEntityChange({
+          entityType: 'holding',
+          operationType: 'update',
+          entityId: result.holdingId,
+          userId: dbUser.id,
+          data: {},
+        });
+        if (result.destinationHoldingId) {
+          emitEntityChange({
+            entityType: 'holding',
+            operationType: 'update',
+            entityId: result.destinationHoldingId,
+            userId: dbUser.id,
+            data: {},
+          });
+        }
+
+        void enqueuePortfolioRollup(dbUser.id);
+        return result;
       });
     }),
 
