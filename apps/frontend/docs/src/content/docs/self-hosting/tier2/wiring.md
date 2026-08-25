@@ -23,6 +23,27 @@ Mint one for `api.cloud.scani.xyz` at
 [cloud.scani.xyz](https://cloud.scani.xyz); on a self-operated
 endpoint the operator gives you one.
 
+:::caution[A minted Cloud API key does not reach storage or email]
+Object storage and email on a hosted data-provider are internal facades
+over that operator's own bucket and mail account, not a product surface:
+object keys carry no tenant prefix, so a key that can read one object can
+read every deployment's. They answer `403 FORBIDDEN` to any bearer that is
+not the operator's own (SC-585).
+
+A key minted through the cloud console is therefore **not** enough for
+Tier 2 storage and email. Two ways forward, and the operator picks:
+
+- Keep your own `S3_*` and `SMTP_*`, and use the hosted data-provider for
+  pricing, AI, chain reads, OG metadata and token search.
+- Have the operator grant your key explicitly, by setting its
+  `cloud_api_keys.tier` to `internal`. No endpoint can do this — it is a
+  direct write, deliberately — and it should only be done for a key that
+  is trusted with **every object in that bucket**.
+
+`scani_sk_…` keys minted at [cloud.scani.xyz](https://cloud.scani.xyz)
+are not granted, and Scani does not grant them.
+:::
+
 ## Working `.env` snippet
 
 A minimal Tier 2 `.env` adds these two vars and drops the ones that

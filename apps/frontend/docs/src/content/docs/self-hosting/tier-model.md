@@ -56,6 +56,14 @@ same string as `SCANI_CLOUD_API_KEY`. In Tier 2+, the hosted
 data-provider mints per-user / per-deployment keys via its
 cloud-management surface (gated behind `CLOUD_MANAGEMENT_ENABLED=true`).
 
+A minted key reaches pricing, AI, chain reads, OG metadata and token
+search. It does **not** reach object storage or email: those are internal
+facades over the operator's own bucket and mail account, and a minted key
+gets `403 FORBIDDEN` (SC-585). See
+[Tier 2 wiring](/self-hosting/tier2/wiring/) for the two ways to handle
+that — the row above claiming Tier 2 means not running an S3 bucket holds
+only where the operator has granted your key.
+
 ## What does NOT change between tiers
 
 - **User integration credentials** (exchange API keys, brokerage
