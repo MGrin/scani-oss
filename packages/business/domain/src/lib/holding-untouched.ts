@@ -51,7 +51,16 @@ export const HOLDING_INTENT_TABLES = [
 
 /** Derived from the ledger and rebuilt on demand, so it records nothing that
  *  a delete could lose. See the docblock — this is the exclusion the FK test
- *  checks against, not an omission. */
+ *  checks against, not an omission.
+ *
+ *  `holding_balance_observations` is deliberately NOT here, and the reason is
+ *  worth knowing before anybody moves it: `writeInflow` records no observation
+ *  when it creates a destination, so today an observation on such a row can
+ *  only have come from a person. That is a live SC-245 residual — the service
+ *  path DOES record one on create — and repairing it would make every holding
+ *  this predicate is about carry one from birth, at which point it answers
+ *  "touched" for all of them and deletes nothing. The repair needs the
+ *  creation observation marked as derived first. */
 export const HOLDING_DERIVED_TABLES = ['holding_coverage'] as const;
 
 /**
