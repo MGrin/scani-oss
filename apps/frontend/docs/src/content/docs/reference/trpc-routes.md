@@ -66,8 +66,8 @@ Composed in `apps/backend/data-provider/src/presentation/router.ts`.
 | `chains` | Bearer | Blockchain balance + transaction reads (Etherscan V2 across EVM chains, Helius for Solana, Bitcoin RPC, Tron, TON, ENS). |
 | `ai` | Bearer | Screenshot parsing (OpenAI Vision). Optionally Perplexity / DeepSeek for token-identity assistance. |
 | `tokens` | Bearer | Identity-related calls used by `TokenIdentityService` (CoinGecko slug lookup, Etherscan contract lookup, …). |
-| `email` | Bearer | `email.send` — used by the api to send magic-link / OTP / verification emails. |
-| `storage` | Bearer | Presigned URL minting + the rare server-side read path. The only service that holds S3/R2 credentials; api + worker request presigned URLs from here so creds never leave the data-provider. |
+| `email` | Bearer — **internal only** | `email.send` — used by the api to send magic-link / OTP / verification emails. A customer's Cloud API key gets `403 FORBIDDEN`: this is a facade for Scani's own services, not a product endpoint (SC-585). |
+| `storage` | Bearer — **internal only** | Presigned URL minting + the rare server-side read path. The only service that holds S3/R2 credentials; api + worker request presigned URLs from here so creds never leave the data-provider. A customer's Cloud API key gets `403 FORBIDDEN` — the bucket is shared and object keys are unprefixed, so reaching these at all is reaching every tenant's objects (SC-585). |
 | `og` | Bearer | Open Graph metadata fetch (used by the SPA's link previews). |
 | `contact` | Public | Landing-page contact form: validates a submission, emails support, sends a receipt. Per-IP rate-limited. No bearer (called from the public marketing site). |
 | `keys` | Cookie | Cloud-management surface (`CLOUD_MANAGEMENT_ENABLED=true`): mint, list, revoke cloud API keys scoped to the authenticated cloud user. |

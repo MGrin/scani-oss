@@ -4,7 +4,7 @@ import { TRPCError } from '@trpc/server';
 import { Container } from 'typedi';
 import { z } from 'zod';
 import { okOutput } from '../schemas';
-import { bearerProcedure, router } from '../trpc';
+import { internalProcedure, router } from '../trpc';
 
 // Storage router — the only container with R2/MinIO credentials. For Tier
 // 2/3 deployments this wraps Scani's managed bucket; for Tier 1 OSS a user
@@ -31,7 +31,7 @@ const storage = (): StorageService => Container.get(StorageService);
 const WRITE_OBJECT_MAX_BASE64_CHARS = Math.ceil((256 * 1024 * 4) / 3);
 
 export const storageRouter = router({
-  presignUpload: bearerProcedure
+  presignUpload: internalProcedure
     .meta({
       openapi: {
         method: 'POST',
@@ -62,7 +62,7 @@ export const storageRouter = router({
       }
     }),
 
-  presignDownload: bearerProcedure
+  presignDownload: internalProcedure
     .meta({
       openapi: {
         method: 'GET',
@@ -85,7 +85,7 @@ export const storageRouter = router({
       }
     }),
 
-  objectExists: bearerProcedure
+  objectExists: internalProcedure
     .meta({
       openapi: {
         method: 'POST',
@@ -118,7 +118,7 @@ export const storageRouter = router({
   // Streams the blob back as base64 — tRPC-over-HTTP doesn't do binary
   // transport, and at temp-blob sizes the ~33% bloat isn't worth a
   // parallel binary endpoint.
-  readTempBlob: bearerProcedure
+  readTempBlob: internalProcedure
     .meta({
       openapi: {
         method: 'POST',
@@ -157,7 +157,7 @@ export const storageRouter = router({
   // A miss is `{ found: false }`, not a throw. The caller's next move is to
   // resolve the icon from the institution's website, and an absent object is
   // the ordinary first-ever request rather than an error.
-  readObject: bearerProcedure
+  readObject: internalProcedure
     .meta({
       openapi: {
         method: 'POST',
@@ -209,7 +209,7 @@ export const storageRouter = router({
   // the point of the cap is that this is not a general file-upload endpoint:
   // if a caller ever needs one, it should have to change this line and say
   // why.
-  writeObject: bearerProcedure
+  writeObject: internalProcedure
     .meta({
       openapi: {
         method: 'POST',
@@ -248,7 +248,7 @@ export const storageRouter = router({
   // endpoint — would drag the whole file through the caller's process and
   // back as base64 for no gain; the bytes never need to leave this
   // container.
-  copyObject: bearerProcedure
+  copyObject: internalProcedure
     .meta({
       openapi: {
         method: 'POST',
@@ -286,7 +286,7 @@ export const storageRouter = router({
       }
     }),
 
-  deleteTempBlob: bearerProcedure
+  deleteTempBlob: internalProcedure
     .meta({
       openapi: {
         method: 'POST',

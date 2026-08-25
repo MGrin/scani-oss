@@ -193,6 +193,45 @@ export const bearerProcedure = t.procedure.use(usageMiddleware).use(({ ctx, next
 });
 
 /**
+ * Bearer procedure restricted to Scani's OWN credentials.
+ *
+ * Guards the nine internal facades — the eight `storage.*` procedures and
+ * `email.send` — which exist only because the api and the worker call them
+ * through `@scani/cloud-client`'s `StorageFacade` / `EmailFacade` whenever
+ * `SCANI_CLOUD_URL` is set (SC-208). They were never a product surface;
+ * they were reachable by any customer key because there is exactly one
+ * bearer surface and nothing on it asked WHO was calling.
+ *
+ * SC-585: a key minted by an anonymous cloud signup read another tenant's
+ * object, overwrote one, deleted one it had never written, obtained a
+ * presigned URL usable outside the API with no auth at all, and sent mail
+ * from `security@scani.xyz` on Scani's own Fastmail identity. Every one of
+ * those was verified by its effect, not by a 200.
+ *
+ * FORBIDDEN rather than UNAUTHORIZED: the key is genuine and the caller
+ * has nothing to fix by re-authenticating. A 401 here would send a
+ * customer to rotate a key that was never the problem (the SC-106
+ * reasoning, applied to authorization instead of authentication).
+ *
+ * This refuses cross-tenant reach; it does not make it impossible. Keys
+ * remain unprefixed and the bucket remains shared, so an internal caller
+ * still names any object it likes. Per-tenant namespacing is the
+ * structurally stronger answer and was deliberately deferred (mgrin,
+ * 2026-08-25) — revisit it when a real Cloud API customer exists.
+ */
+export const internalProcedure = bearerProcedure.use(({ ctx, next }) => {
+  if (!ctx.auth.internal) {
+    throw new TRPCError({
+      code: 'FORBIDDEN',
+      message:
+        'This procedure is internal to Scani and is not part of the Cloud API. ' +
+        'See https://cloud.scani.xyz for what a Cloud API key can call.',
+    });
+  }
+  return next({ ctx });
+});
+
+/**
  * Cookie-session procedure for cloud-frontend routes (keys.*, usage.*).
  * Requires a Better-Auth session. Intentionally NOT wrapped in
  * `usageMiddleware`: dashboard browsing (listing keys, viewing usage)
