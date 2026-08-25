@@ -22,6 +22,7 @@ import { AccountsPage } from './pages/AccountsPage';
 import { AnsweredTransfersPage } from './pages/AnsweredTransfersPage';
 import { BalanceGapsReviewPage } from './pages/BalanceGapsReviewPage';
 import { DocumentDetailPage } from './pages/DocumentDetailPage';
+import { EntitiesPage } from './pages/EntitiesPage';
 import { FileImportPage } from './pages/FileImportPage';
 import { FilesPage } from './pages/FilesPage';
 import { GroupDetailPage } from './pages/GroupDetailPage';
@@ -225,6 +226,7 @@ export function V3App() {
             <Route path={relative(V3_ROUTES.vaults)} element={<VaultsPage />} />
             <Route path={`${relative(V3_ROUTES.vaults)}/:id`} element={<VaultDetailPage />} />
             <Route path={relative(V3_ROUTES.groups)} element={<GroupsPage />} />
+            <Route path={relative(V3_ROUTES.entities)} element={<EntitiesPage />} />
             <Route path={`${relative(V3_ROUTES.groups)}/:id`} element={<GroupDetailPage />} />
             <Route
               path={`${relative(V3_ROUTES.tokens)}/hidden/:peekId?`}
