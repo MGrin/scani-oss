@@ -21,10 +21,16 @@ import {
 } from './recurrence';
 import { planSettledRemap } from './remapSettledOccurrences';
 
-// How far past "now" `materialise` fills the FORWARD edge of the window
-// on every call. Only the forward edge is rolling — see
-// `materialiseSchedule` for why the back edge is fixed at the payment's
-// own `anchorDate` instead of also rolling with "now".
+// How far past "now" `materialise` fills the FORWARD edge of the window.
+// Only the forward edge is rolling — see `materialiseSchedule` for why
+// the back edge is fixed at the payment's own `anchorDate` instead of
+// also rolling with "now".
+//
+// "Rolling" is a property of the CALLER, not of this constant. Every
+// other materialising path here runs as a side effect of a write, so an
+// untouched payment's edge stayed where its last write left it and the
+// window shrank by a month every month (SC-622). The nightly
+// `RollPaymentHorizonsUseCase` is what makes the word true.
 const MATERIALISATION_HORIZON_MONTHS = 12;
 
 // Fields that change WHICH due dates a recurrence rule produces. Editing
@@ -452,12 +458,26 @@ export class PaymentService {
     return impact;
   }
 
+  /**
+   * Fill this payment's occurrences forward to the horizon.
+   *
+   * Public because the forward edge does not advance by itself. Every
+   * other materialising path — `create`, an amount change in `update`,
+   * `resume` — runs as a side effect of a WRITE, so a payment nobody
+   * touches keeps the edge its last write gave it while "now" moves
+   * underneath it. `RollPaymentHorizonsUseCase` calls this nightly for
+   * exactly that reason (SC-622); `materialiseSchedule` explains why
+   * re-running it costs nothing.
+   *
+   * Takes the row, not an id, and checks no ownership: the caller is a
+   * cross-user sweep that has already loaded the row and has no
+   * requester whose claim to it could be checked. Anything reached from
+   * a router must resolve the payment through `requireOwned` first.
+   */
   async materialise(
-    userId: string,
-    paymentId: string,
+    payment: Payment,
     transaction?: DatabaseTransaction
   ): Promise<PaymentOccurrence[]> {
-    const payment = await this.requireOwned(userId, paymentId, transaction);
     return this.materialiseSchedule(payment, transaction);
   }
 
@@ -607,7 +627,16 @@ export class PaymentService {
     );
   }
 
-  private materialisationHorizonEnd(): Date {
+  /**
+   * The date the forward edge should reach today.
+   *
+   * Public so the sweep that rolls the edge selects payments against the
+   * same bound this fills them to. Two copies of "12 months" — one in the
+   * query that decides a payment is behind, one in the generator that
+   * catches it up — is a pair that can disagree, and the disagreement
+   * would show up as a sweep that either never finishes or never runs.
+   */
+  materialisationHorizonEnd(): Date {
     return addUtcMonths(startOfUtcToday(), MATERIALISATION_HORIZON_MONTHS);
   }
 
