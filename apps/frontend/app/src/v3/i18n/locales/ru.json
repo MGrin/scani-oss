@@ -2774,6 +2774,29 @@
           "flowNoDate": "Запишем как пополнение или вывод с датой между двумя замерами — мы знаем момент точнее, чем можно указать датой."
         }
       }
+    },
+    "ownership": {
+      "title": "Субъекты",
+      "description": "Держите свои деньги и деньги компании раздельно. Итог по-прежнему один.",
+      "newEntity": "Новый субъект",
+      "name": "Название",
+      "namePlaceholder": "например, ООО «Моя компания»",
+      "create": "Создать",
+      "cancel": "Отмена",
+      "created": "{{name}} создан",
+      "creating": "создании субъекта",
+      "assigning": "переносе счёта",
+      "loading": "Считаем, сколько стоит каждый набор книг…",
+      "empty": "Значений пока нет.",
+      "unassigned": "Без субъекта",
+      "combined": "Вместе",
+      "holdingsCounted_one": "{{count}} позиция",
+      "holdingsCounted_few": "{{count}} позиции",
+      "holdingsCounted_many": "{{count}} позиций",
+      "holdingsCounted_other": "{{count}} позиции",
+      "unpriced": "{{symbols}} сегодня не удалось оценить",
+      "accountsHeading": "К какому субъекту относится каждый счёт",
+      "accountEntityLabel": "Субъект для «{{name}}»"
     }
   }
 }

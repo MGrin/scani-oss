@@ -208,12 +208,18 @@ const transferLegFacts = {
   >`case when ${schema.tokens.lookalikeOf} is null then ${schema.tokens.providerMetadata}->'coingecko'->>'id' end`,
   walletId: sql<string | null>`${schema.accounts.metadata}->>'userWalletId'`,
   chainKey: sql<string | null>`${schema.accounts.metadata}->>'chainId'`,
+  // The ownership boundary (SC-463). It belongs in this shared projection
+  // rather than at one call site precisely because the projection is shared:
+  // the queue must not OFFER a pairing the matcher is refusing, or the reader
+  // completes it by hand and the refusal has bought nothing.
+  entityId: schema.accounts.entityId,
 } as const;
 
 type TransferLegFacts = {
   canonicalAssetKey: string | null;
   walletId: string | null;
   chainKey: string | null;
+  entityId: string | null;
 };
 
 function toTransferLeg(
@@ -228,6 +234,7 @@ function toTransferLeg(
     canonicalAssetKey: row.canonicalAssetKey,
     walletId: row.walletId,
     chainKey: row.chainKey,
+    entityId: row.entityId,
     occurredAt: row.tx.occurredAt,
     quantityAbs: new Decimal(row.tx.quantity).abs(),
   };

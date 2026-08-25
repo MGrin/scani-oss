@@ -10,6 +10,7 @@ import {
   unique,
   uuid,
 } from 'drizzle-orm/pg-core';
+import { entities } from './entities';
 import { accountGroups } from './groups';
 import { holdings } from './holdings';
 import { institutions } from './institutions';
@@ -45,6 +46,15 @@ export const accounts = pgTable(
       .notNull()
       .references(() => accountTypes.id, { onDelete: 'restrict' }),
     description: text('description'),
+    // Which set of books this account belongs to (SC-463). NULL is a real
+    // state, not a missing one: "not assigned to any entity". It is rendered
+    // as its own bucket everywhere the per-entity totals are, so
+    // `sum(entities) + unassigned === combined` holds exactly and no account
+    // can be absorbed into a boundary nobody put it in.
+    //
+    // `set null` on delete, not `cascade`: deleting an entity must not delete
+    // the accounts inside it, and must not take their holdings with it.
+    entityId: uuid('entity_id').references(() => entities.id, { onDelete: 'set null' }),
     metadata: jsonb('metadata').notNull().default('{}'), // Store wallet addresses and chain-specific data
     isHidden: boolean('is_hidden').notNull().default(false), // Hidden accounts excluded from UI but still synced
     isActive: boolean('is_active').notNull().default(true),
@@ -59,6 +69,7 @@ export const accounts = pgTable(
       table.userId,
       table.institutionId
     ),
+    userEntityIdx: index('idx_accounts_user_entity').on(table.userId, table.entityId),
   })
 );
 
@@ -78,6 +89,10 @@ export const accountsRelations = relations(accounts, ({ one, many }) => ({
   type: one(accountTypes, {
     fields: [accounts.typeId],
     references: [accountTypes.id],
+  }),
+  entity: one(entities, {
+    fields: [accounts.entityId],
+    references: [entities.id],
   }),
   holdings: many(holdings),
   accountGroups: many(accountGroups),

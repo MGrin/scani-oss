@@ -82,6 +82,13 @@ export interface TransferLeg {
   readonly walletId: string | null;
   /** The chain that account lives on. Null for exchange accounts. */
   readonly chainKey: string | null;
+  /**
+   * The ownership boundary this leg's account sits in, or null for unassigned
+   * (SC-463). Unlike `canonicalAssetKey`, null DOES match null here, and that
+   * is deliberate: two unassigned accounts are on the same side of a boundary
+   * nobody has drawn, so this condition is a no-op until somebody draws one.
+   */
+  readonly entityId: string | null;
   readonly occurredAt: Date;
   readonly quantityAbs: Decimal;
 }
@@ -108,9 +115,9 @@ export type CandidatePairClass = 'same_token' | 'bridged_asset';
  * portfolio, so nothing is realized. Ingest cannot see it — the two legs are
  * in different runs on different chains — so this is the matcher's shape, and
  * the question it has to answer is "same asset, two chains?" without letting
- * anything counterfeit that shape. Five conditions, each closing one way to
- * counterfeit it — condition 4 applying to every pair and the other four to a
- * bridge, which the two paragraphs after the list account for:
+ * anything counterfeit that shape. Six conditions, each closing one way to
+ * counterfeit it — conditions 4 and 6 applying to every pair and the other
+ * four to a bridge, which the three paragraphs after the list account for:
  *
  * 1. **The asset is named by an outside authority, never by its symbol.**
  *    `coingecko.id`, the same key `TokenRepository.findPricingSiblings` uses
@@ -132,6 +139,31 @@ export type CandidatePairClass = 'same_token' | 'bridged_asset';
  *    carries yet.
  * 4. **Two holdings.** A pair that resolves to one holding describes a move
  *    from a position to itself, which is not a thing that happens (SC-347).
+ * 6. **Both legs are in the same set of books.** An entity is an ownership
+ *    boundary over accounts — the owner's own money and their limited
+ *    company's (SC-463) — and money crossing it is a real event on both sets
+ *    of books: a director's loan, a dividend, a salary. Pairing carries the
+ *    lot basis across intact and realizes nothing, which is the wrong answer
+ *    on both sides at once. So a cross-entity movement is never a candidate,
+ *    and the outflow stays unpaired and unanswered, which is precisely what
+ *    puts it in the review queue (`pendingPredicate`) for its owner to
+ *    classify.
+ *
+ *    **It is in this function rather than in the matcher because the matcher
+ *    is not the only thing that pairs.** `TransferReviewService` judges
+ *    candidates through here too — its `transferLegFacts` comment calls
+ *    itself "a projection three queries here share" — so a guard in
+ *    `LinkTransferPairsUseCase` alone would stop the automatic pairing and
+ *    leave the queue RECOMMENDING the same one with an Accept button. The
+ *    carry would happen anyway and arrive wearing a reader's provenance,
+ *    which every downstream consumer trusts more than a machine match.
+ *    `RepairBridgedOutflowsUseCase` is the third caller and is gated by the
+ *    same predicate; there it degrades to that use case's own first-class
+ *    `blocked` outcome, so a cross-entity bridge is reported as unrepairable
+ *    rather than silently skipped.
+ *
+ *    Null matches null, so this changes nothing for a portfolio whose owner
+ *    has drawn no boundary — which is every portfolio until they do.
  * 5. **The arrival does not precede the departure.** Physics, not tolerance,
  *    so it belongs here and not in a window. Measured on production: the
  *    ±30min window symmetric around the departure offers 2 pairs whose
@@ -162,6 +194,11 @@ export function candidatePairClass(
 ): CandidatePairClass | null {
   if (out.transactionId === inflow.transactionId) return null;
   if (out.holdingId === inflow.holdingId) return null;
+  // Above the `same_token` return on purpose: that branch exits early, so a
+  // boundary check below it would guard bridges only — and the common
+  // cross-entity movement (moving cash from the company to yourself) is the
+  // same token, not a bridge.
+  if (out.entityId !== inflow.entityId) return null;
   if (out.tokenId === inflow.tokenId) return 'same_token';
   if (out.canonicalAssetKey === null || out.canonicalAssetKey !== inflow.canonicalAssetKey) {
     return null;
