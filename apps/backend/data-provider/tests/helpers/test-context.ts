@@ -20,12 +20,35 @@ export function buildAuthedContext(
       tenantId: 'test',
       ownerUserId: null,
       tier: 'oss',
+      internal: true,
     },
     authFailure: null,
     cloudUser: null,
     requestId: 'test-request',
     usage: createUsageContext(),
     clientIp: null,
+    ...overrides,
+  };
+}
+
+/**
+ * A CUSTOMER's bearer context — a `cloud_api_keys` row on a plan a signup
+ * can actually reach. `internal: false` is the whole point: this is the
+ * caller SC-585 found reading, overwriting and deleting other tenants'
+ * objects, and `internalProcedure` must refuse it.
+ */
+export function buildCustomerContext(
+  overrides: Partial<DataProviderContext> = {}
+): DataProviderContext {
+  return {
+    ...buildAuthedContext(),
+    auth: {
+      apiKeyId: '00000000-0000-4000-8000-00000000cafe',
+      tenantId: 'customer-tenant',
+      ownerUserId: '00000000-0000-4000-8000-00000000beef',
+      tier: 'managed',
+      internal: false,
+    },
     ...overrides,
   };
 }

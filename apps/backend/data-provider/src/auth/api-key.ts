@@ -26,6 +26,21 @@ export interface ApiKeyContext {
   tenantId: string;
   ownerUserId: string | null;
   tier: 'oss' | 'managed';
+  /**
+   * Whether this credential belongs to Scani itself rather than to a
+   * customer. `internalProcedure` gates the nine internal facades
+   * (`storage.*`, `email.send`) on it — see SC-585, where a free-tier
+   * customer key read, overwrote and deleted objects it never wrote and
+   * sent mail as `security@scani.xyz`.
+   *
+   * Deliberately a separate field rather than a reading of `tier`, which
+   * means two different things a line apart: `ApiKeyContext.tier` is the
+   * auth MODE (`oss` = env token, `managed` = DB row), while
+   * `cloud_api_keys.tier` is the billing plan (`free` … `internal`). A
+   * check written as "the tier is internal" is ambiguous between them,
+   * and only one of the two answers the question.
+   */
+  internal: boolean;
 }
 
 export const OSS_KEY_ID = 'oss-shared-key';
@@ -74,7 +89,13 @@ export async function validateBearerToken(opts: ValidateBearerOptions): Promise<
   if (!expectedToken && !cloudDb) {
     // Dev-mode boot: no env key, no DB. Accept everything so local
     // docker-compose "just works". Prod's env schema enforces min length.
-    return { apiKeyId: OSS_KEY_ID, tenantId: 'dev', ownerUserId: null, tier: 'oss' };
+    return {
+      apiKeyId: OSS_KEY_ID,
+      tenantId: 'dev',
+      ownerUserId: null,
+      tier: 'oss',
+      internal: true,
+    };
   }
 
   if (!authHeader?.toLowerCase().startsWith('bearer ')) {
@@ -101,7 +122,13 @@ export async function validateBearerToken(opts: ValidateBearerOptions): Promise<
         expiresAt: expectedTokenExpiresAt?.toISOString() ?? null,
       },
     });
-    return { apiKeyId: OSS_KEY_ID, tenantId: 'oss', ownerUserId: null, tier: 'oss' };
+    return {
+      apiKeyId: OSS_KEY_ID,
+      tenantId: 'oss',
+      ownerUserId: null,
+      tier: 'oss',
+      internal: true,
+    };
   }
 
   // Tier 2/3 DB lookup.
@@ -114,6 +141,11 @@ export async function validateBearerToken(opts: ValidateBearerOptions): Promise<
           tenantId: lookup.key.tenantId,
           ownerUserId: lookup.key.ownerUserId,
           tier: 'managed',
+          // A DB key is internal only when its billing plan says so, and
+          // no caller can choose that plan: `keys.create` does not accept
+          // `tier` (SC-585). Reaching `internal` takes a direct write to
+          // `cloud_api_keys`, which is ops, not a signup.
+          internal: lookup.key.tier === 'internal',
         };
       case 'revoked':
         throw new TRPCError({
