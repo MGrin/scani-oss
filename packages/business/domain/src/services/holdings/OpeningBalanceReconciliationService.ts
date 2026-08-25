@@ -227,7 +227,34 @@ export class OpeningBalanceReconciliationService {
     // between them. On an imported brokerage history — where the observation
     // is months of trades later — that walk returns the same number as before,
     // which is why the ten correctly-behaving production rows do not move.
-    const openingQuantity = await this.observedBalanceAt(holdingId, openingAt, computedOpening);
+    const observed = await this.observedBalanceAt(holdingId, openingAt, computedOpening);
+
+    // `computedOpening` is the BOUND, as the comment on `ReconciliationResult`
+    // has said since SC-481 — and until SC-613 nothing enforced it, so the walk
+    // was free to return more than the balance can hold.
+    //
+    // The walk assumes the first observation already reflects every transaction
+    // dated at or before it. A manual balance edit breaks that: the client
+    // pre-fills today's date, a date-only value becomes LOCAL midnight, and the
+    // synthesized `withdraw` is therefore stamped BEFORE the observation that
+    // captured the pre-edit figure. The walk then subtracts a withdrawal the
+    // anchor never included and counts the same money twice — measured
+    // 2026-08-25 through `UpdateHoldingUseCase` on a manual USD holding edited
+    // 4,000 to 2,000: opening 6,000 against a computed 4,000, and 4,000 with
+    // the identical edit stamped at the edit instant instead.
+    //
+    // Two observations, one transaction and today's balance can genuinely
+    // disagree — the user is telling us something about the past we did not
+    // know when we recorded it — so the walk cannot be made to agree with the
+    // ledger. What is NOT negotiable is that the ledger must not over-explain
+    // the balance: `opening + sum(real txs)` claimed 4,000 against a holding of
+    // 2,000, and `unexplainedResidual` went negative, which under its own
+    // definition is not a quantity that can exist.
+    //
+    // Capping at the bound leaves the SC-481 case untouched — that walk returns
+    // LESS than the computed opening, which is the whole point of it — and
+    // makes the ledger close exactly where it previously overshot.
+    const openingQuantity = Decimal.min(observed, computedOpening);
     const unexplainedResidual = computedOpening.sub(openingQuantity);
 
     return {
