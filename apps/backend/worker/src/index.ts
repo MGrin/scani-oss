@@ -114,6 +114,7 @@ import { IngestTransactionsProcessor } from './processors/ingest-transactions';
 import { JobHeartbeatProbeProcessor } from './processors/job-heartbeat-probe';
 import { ManualHoldingsCreateProcessor } from './processors/manual-holdings-create';
 import { PaymentDueReminderProcessor } from './processors/payment-due-reminder';
+import { PaymentHorizonRollProcessor } from './processors/payment-horizon-roll';
 import { PortfolioHistoryBackfillProcessor } from './processors/portfolio-history-backfill';
 import { PortfolioValueRollupProcessor } from './processors/portfolio-value-rollup';
 import { PricingProcessor } from './processors/pricing';
@@ -161,6 +162,7 @@ function resolveProcessors() {
     Container.get(SplitHoldingProbeProcessor),
     Container.get(RescoreScamTokensProcessor),
     Container.get(PaymentDueReminderProcessor),
+    Container.get(PaymentHorizonRollProcessor),
     Container.get(WeeklyDigestProcessor),
     Container.get(AlertSweepProcessor),
     // Armed only when SCANI_DEMO_MODE=1; registered unconditionally so a demo
