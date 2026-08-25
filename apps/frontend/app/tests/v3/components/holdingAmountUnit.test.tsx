@@ -265,3 +265,47 @@ describe('a balance too small for the column', () => {
     expect(markup).not.toContain('0.00000001');
   });
 });
+
+/**
+ * SC-632 — a balance below zero says why, because a bare one reads as theft.
+ *
+ * Nothing a person can send produces a negative balance: `UpdateHoldingDto`
+ * refuses one and gates the `holdings.update` mutation, and
+ * `RecordHoldingMovementUseCase` refuses an outflow larger than the balance.
+ * SC-618's undo can write one anyway — it restores an anchor as
+ * `balance - quantity` against TODAY's figure, so a sync that restated the
+ * balance in between carries it under.
+ *
+ * Leaving that visible is the decision (mgrin, 2026-08-26); clamping loses
+ * money the user has and refusing traps them inside a transfer they cannot
+ * withdraw. Visible was never meant to be unexplained. Nobody infers "a sync
+ * restated this between my declaring and my undoing" — they infer the app lost
+ * their money.
+ */
+describe('a balance below zero', () => {
+  test('says nothing you can enter produces it, and that it is yours to set', () => {
+    const markup = amountFact(holding({ amount: '-1900' }));
+    expect(markup).toContain('nothing you can enter produces this');
+    expect(markup).toContain('Set it to the right figure');
+  });
+
+  test('an ordinary balance says none of it', () => {
+    // The must-be-ABSENT control. Without it the assertions above pass equally
+    // against a caption rendered unconditionally on every holding in the book.
+    expect(amountFact(holding({ amount: '0.2841' }))).not.toContain(
+      'nothing you can enter produces this'
+    );
+  });
+
+  test('exactly zero is not a deficit and carries no explanation', () => {
+    // `-0` is the case this guards: decimal.js calls it negative, and a
+    // holding that reached zero would otherwise carry the explanation of a
+    // problem it does not have.
+    expect(amountFact(holding({ amount: '0' }))).not.toContain(
+      'nothing you can enter produces this'
+    );
+    expect(amountFact(holding({ amount: '-0' }))).not.toContain(
+      'nothing you can enter produces this'
+    );
+  });
+});
