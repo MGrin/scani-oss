@@ -72,6 +72,16 @@ import { TransferDestinationPicker } from '../review/TransferDestinationPicker';
  * transaction, so a guess wearing a checkmark the reader did not put there
  * would put money in an account it never reached.
  *
+ * **The `internal` list holds only accounts that track none of this token yet
+ * (SC-614).** `writeInflow` given an existing `holdingId` inserts the arrival
+ * row and leaves that holding's balance alone — right in the queue, where the
+ * destination's balance was observed by its own sync, and wrong here, where
+ * the user is the only source of truth for both sides and only one has moved.
+ * The omission is `listDestinationsForHolding`'s, and the server refuses the
+ * shape too, so it is not a client-side convention. The copy below says so
+ * rather than leaving a reader hunting for an account that is deliberately
+ * absent.
+ *
  * ## The date
  *
  * Pre-filled with today and editable. The user knows when they moved the
@@ -222,14 +232,19 @@ export function HoldingEditCauseDialog({
                 </p>
               ) : null}
               {destination === 'internal' ? (
-                <TransferDestinationPicker
-                  destinations={destinations.data ?? []}
-                  tokenSymbol={tokenSymbol}
-                  groupName={`holding-edit-destination-${holdingId}`}
-                  selected={holdingDestination}
-                  onSelect={setHoldingDestination}
-                  isLoading={destinations.isLoading}
-                />
+                <>
+                  <p className="text-label text-muted-foreground">
+                    {t('v3.holdings.editCause.destinationScope')}
+                  </p>
+                  <TransferDestinationPicker
+                    destinations={destinations.data ?? []}
+                    tokenSymbol={tokenSymbol}
+                    groupName={`holding-edit-destination-${holdingId}`}
+                    selected={holdingDestination}
+                    onSelect={setHoldingDestination}
+                    isLoading={destinations.isLoading}
+                  />
+                </>
               ) : null}
             </div>
           ) : null}
