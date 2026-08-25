@@ -1807,6 +1807,20 @@ describe('TransferReviewService — reopening an answer that had to create its d
     const f = fixture!;
     const { outId } = await answerIntoEmptyAccount(f, { quantity: '250', externalId: 's631-1' });
 
+    // IF YOU ARE READING THIS BECAUSE THIS TEST WENT RED, IT IS PROBABLY NOT
+    // STALE. `writeInflow` creates its destination with a direct
+    // `tx.insert(schema.holdings)` and records NO balance observation, unlike
+    // `HoldingService.createHoldingWithEvent`, which records one — a live
+    // SC-245 residual. Repairing that by having `writeInflow` record a
+    // creation observation gives every holding it opens one immediately, so
+    // `holdingIsUntouched` answers "touched" for all of them and SC-631 stops
+    // deleting anything. Measured: that change fails exactly here and nowhere
+    // else, which is why this test is the whole warning.
+    //
+    // The repair is still right; it just needs the creation observation to be
+    // distinguishable from one a person caused, the way `holding_coverage` is
+    // excluded for being derived. Deleting this assertion buys a green suite
+    // and puts the money bug back.
     expect(await service().reopen(f.userId, outId)).toBe(true);
 
     // THE NUMBER A PERSON SEES. Before this fix the account went on showing
