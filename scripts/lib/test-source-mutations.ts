@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 /**
@@ -125,6 +125,16 @@ function readJournal(repoRoot: string, rel: string): Journal {
   }
 }
 
+/** The file's content, or `undefined` when it is not there. */
+function readIfPresent(abs: string): string | undefined {
+  try {
+    return readFileSync(abs, 'utf8');
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
+    throw error;
+  }
+}
+
 /**
  * Put back every file a killed run left mutated, and delete the journal.
  * Returns the paths restored, so a caller can say so rather than repairing
@@ -136,12 +146,13 @@ export function replayStrandedMutations(repoRoot: string): string[] {
   for (const rel of strandedMutationJournals(repoRoot)) {
     const journal = readJournal(repoRoot, rel);
     for (const [file, body] of Object.entries(journal.files ?? {})) {
-      const abs = path.join(repoRoot, file);
-      // The journal IS the pre-mutation state, so a missing file is restored
-      // too — the run that removed it was the same one that failed to put it
-      // back.
-      if (!existsSync(abs) || readFileSync(abs, 'utf8') !== body) {
-        writeFileSync(abs, body);
+      // Read and let ENOENT answer the question, rather than asking
+      // `existsSync` first: the journal IS the pre-mutation state, so a missing
+      // file is restored too — the run that removed it was the same one that
+      // failed to put it back — and a check-then-use pair here is a race
+      // CodeQL is right to flag (`js/file-system-race`).
+      if (readIfPresent(path.join(repoRoot, file)) !== body) {
+        writeFileSync(path.join(repoRoot, file), body);
         restored.add(file);
       }
     }
