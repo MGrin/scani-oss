@@ -2,10 +2,12 @@ import { describe, expect, test } from 'bun:test';
 import {
   type BranchFacts,
   classifyBranch,
+  classifyByTree,
   EXIT_OK,
   EXIT_REFUSED,
   EXIT_UNKNOWN,
   refusedPaths,
+  type TreeMarkers,
 } from '../check-oss-bound-paths';
 
 /**
@@ -54,6 +56,21 @@ function facts(over: Partial<BranchFacts> = {}): BranchFacts {
     upstreamMainResolved: true,
     upstreamIsAncestor: false,
     originIsAncestor: true,
+    // Null on purpose: every test below this line is about the DESCENT
+    // fallback, and null is what selects it. The tree discriminator has its
+    // own describe block, with `markers()`.
+    treeMarkers: null,
+    ...over,
+  };
+}
+
+/** A private tree: carries private-only paths, none of the mirror's. */
+function markers(over: Partial<TreeMarkers> = {}): TreeMarkers {
+  return {
+    privateOnlyTotal: 543,
+    privateOnlyInHead: 543,
+    mirrorOnlyTotal: 9,
+    mirrorOnlyInHead: 0,
     ...over,
   };
 }
@@ -101,15 +118,102 @@ describe('classifyBranch decides whether a commit is bound for the mirror', () =
   });
 
   /**
-   * The discriminator is descent, and it works only because the two mains have
-   * diverged — neither is an ancestor of the other. If the mirror were ever
-   * fast-forwarded onto private main, every branch would descend from both and
-   * descent would stop meaning anything. That is a blindness, not a pass.
+   * Descent stopped meaning anything the moment the back-sync merged
+   * `upstream/main` into private `main`: every branch then descends from both
+   * (SC-629, SC-568). With no tree markers to fall back ON, that is still a
+   * blindness rather than a pass — this is the state the outage was, and what
+   * it looks like once the tree can no longer help either.
    */
-  test('a branch descended from BOTH is unknown, not private', () => {
+  test('a branch descended from BOTH, with no tree markers, is unknown', () => {
     const b = classifyBranch(facts({ upstreamIsAncestor: true, originIsAncestor: true }));
     expect(b.kind).toBe('unknown');
     expect(b.why).toContain('BOTH');
+  });
+});
+
+describe('the tree discriminator outranks descent (SC-629)', () => {
+  /**
+   * THE OUTAGE. Every private branch descends from both mains since the
+   * back-sync, so descent alone said `unknown` and the hook refused every
+   * commit in the repository — which taught people `--no-verify`, which
+   * disables every pre-commit check rather than just the two that were blind.
+   */
+  test('a private branch descended from BOTH is private on tree evidence', () => {
+    const b = classifyBranch(
+      facts({ upstreamIsAncestor: true, originIsAncestor: true, treeMarkers: markers() })
+    );
+    expect(b.kind).toBe('private');
+  });
+
+  test('an oss branch descended from BOTH is oss on tree evidence', () => {
+    const b = classifyBranch(
+      facts({
+        upstreamIsAncestor: true,
+        originIsAncestor: true,
+        treeMarkers: markers({ privateOnlyInHead: 0, mirrorOnlyInHead: 9 }),
+      })
+    );
+    expect(b.kind).toBe('oss');
+  });
+
+  /**
+   * THE SILENT FAILURE DESCENT ALSO HAD, and the reason the tree outranks it
+   * rather than merely covering for it. `upstream/main` advances the moment
+   * any OSS PR merges, so a still-OSS-bound branch stops descending from it —
+   * and descent's answer for that is `private`, which SKIPS the guard
+   * entirely. Measured on a real branch after its own PR merged.
+   *
+   * An exit-9 outage is loud and got a ticket within the day. This one would
+   * have gone on being green.
+   */
+  test('an oss branch whose upstream/main has moved past it is NOT called private', () => {
+    const stale = facts({
+      upstreamIsAncestor: false,
+      originIsAncestor: false,
+      treeMarkers: markers({ privateOnlyInHead: 0, mirrorOnlyInHead: 9 }),
+    });
+    expect(classifyBranch({ ...stale, treeMarkers: null }).kind).toBe('private'); // descent alone
+    expect(classifyBranch(stale).kind).toBe('oss'); // with the tree
+  });
+
+  /**
+   * THE ORDERING, and it is a safety property rather than a preference.
+   * `oss` makes the guard RUN and `private` makes it SKIP, so a tree carrying
+   * BOTH kinds of marker resolves toward the verdict whose failure is visible.
+   * Three real OSS branches in this repo carry exactly one private-only path,
+   * and refusing that path is the whole job.
+   */
+  test('a tree carrying both kinds of marker is oss, never private', () => {
+    const b = classifyByTree({
+      privateOnlyTotal: 543,
+      privateOnlyInHead: 1,
+      mirrorOnlyTotal: 9,
+      mirrorOnlyInHead: 9,
+    });
+    expect(b?.kind).toBe('oss');
+  });
+
+  /**
+   * The case a future reader will want to soften, for the same reason as the
+   * unfetched one above: "it has no mirror markers, so it is probably private"
+   * is the plausibility heuristic, and `private` is the verdict that skips.
+   */
+  test('a tree carrying NEITHER kind of marker is unknown, never private', () => {
+    expect(classifyByTree(markers({ privateOnlyInHead: 0, mirrorOnlyInHead: 0 }))).toBeNull();
+    const b = classifyBranch(
+      facts({ treeMarkers: markers({ privateOnlyInHead: 0, mirrorOnlyInHead: 0 }) })
+    );
+    expect(b.kind).toBe('unknown');
+    expect(b.why).toContain('neither');
+  });
+
+  test('null markers fall back to descent rather than deciding', () => {
+    expect(classifyBranch(facts({ treeMarkers: null })).kind).toBe('private');
+    expect(
+      classifyBranch(
+        facts({ treeMarkers: null, upstreamIsAncestor: true, originIsAncestor: false })
+      ).kind
+    ).toBe('oss');
   });
 });
 
