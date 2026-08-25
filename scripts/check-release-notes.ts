@@ -362,6 +362,14 @@ if (import.meta.main) {
         `parseConventionalCommits\n     logs it at DEBUG level and returns ZERO commits ` +
         `for that sha. Measured on\n     19e7300fb (SC-612) — a "(" on line 9, under a ` +
         `perfectly formed subject.\n\n` +
+        `  2b. THE MESSAGE PARSED WAS NOT THE COMMIT'S. An override marker anywhere in a ` +
+        `pull\n      request BODY makes release-please use the text after it as the ` +
+        `message for EVERY\n      commit of that PR. Mentioned in prose, unclosed, it ` +
+        `swallows the rest of the body\n      and drops all of them. Measured on ` +
+        `scani-oss#219: three commits, one an ordinary\n      fix(oss), all parsed to ` +
+        `nothing, and release-please reported success having\n      regenerated nothing ` +
+        `(SC-638). check-pr-body.ts refuses this now; if a shortfall\n      names every ` +
+        `commit of one PR and no others, look at that PR's body first.\n\n` +
         `Tell them apart in one step. Cause 1 needs a committer date EARLIER than the ` +
         `tag's:\n\n` +
         `    git show -s --format='%cI %h %s' ${previousTag} ` +
@@ -383,6 +391,10 @@ if (import.meta.main) {
         `unless its branch is a single conventional commit, because\n` +
         `squash_merge_commit_title is COMMIT_OR_PR_TITLE and check-pr-title.ts has forced\n` +
         `that title to be unparseable — cause 2 again, from the other direction.\n\n` +
+        `Those markers are literal, and that is the trap in 2b: do NOT write either of ` +
+        `them\nin the body of a pull request you are not actually overriding. A lone ` +
+        `opening marker\nreplaces every commit message of that PR. check-pr-body.ts ` +
+        `refuses a malformed one.\n\n` +
         `Write the override's subject to match the commit's byte for byte. Only a ` +
         `trailing\n(#123) or (SC-nnn) is stripped before comparison; anything else you ` +
         `append leaves a\nbullet that is VISIBLE in CHANGELOG.md and invisible to this ` +
