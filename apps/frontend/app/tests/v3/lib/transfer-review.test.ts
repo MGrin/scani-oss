@@ -27,6 +27,7 @@ import {
   pendingLocation,
   pendingTransferMatches,
   remainderFor,
+  reopenConsequence,
   type SplitDraftRow,
   splitConsequence,
   splitIsCommittable,
@@ -585,6 +586,7 @@ describe('answeredSummary', () => {
     reviewedAt: '2026-08-11T09:00:00.000Z',
     answerSource: 'unattributed',
     ruleNote: null,
+    declared: false,
     ...over,
   });
 
@@ -699,5 +701,54 @@ describe('bulkRefusalNotes', () => {
     expect(notes).toHaveLength(2);
     expect(notes.join(' ')).toInclude('2 are already linked');
     expect(notes.join(' ')).toInclude('“paired”');
+  });
+});
+
+/**
+ * The confirm sentence over a declared transfer's Reopen (SC-618).
+ *
+ * The branch is checked FIRST in `reopenConsequence` and this is why: a
+ * declared pair's `decision` is `paired`, so before the fix it fell to
+ * `default` — *"nothing about it is settled until you answer it again"* — over
+ * an action that moves two balances and deletes two entries. The sentence was
+ * not merely thin, it asserted the opposite of what happens.
+ */
+describe('reopenConsequence — a transfer the owner declared', () => {
+  const answeredRow = (over: Partial<AnsweredTransferReview>): AnsweredTransferReview => ({
+    transactionId: 'tx-out',
+    holdingId: 'h-out',
+    tokenSymbol: 'USDT',
+    accountName: 'Spot',
+    institutionName: 'Airwallex',
+    kind: 'withdraw',
+    quantity: '2000',
+    occurredAt: '2026-08-10T09:00:00.000Z',
+    counterparty: null,
+    decision: 'paired',
+    split: null,
+    reviewedAt: '2026-08-11T09:00:00.000Z',
+    answerSource: 'user',
+    ruleNote: null,
+    declared: false,
+    ...over,
+  });
+
+  test('says both balances move back, and that nothing rejoins the queue', () => {
+    const sentence = reopenConsequence(t, answeredRow({ declared: true }));
+    expect(sentence).toContain('balances back');
+    expect(sentence).toContain('does not rejoin the queue');
+  });
+
+  test('a pairing the QUEUE made says the opposite, on the same decision', () => {
+    // Same `decision: 'paired'`, so this is the control that shows the branch
+    // is reading `declared` and not the answer.
+    const sentence = reopenConsequence(t, answeredRow({ declared: false }));
+    expect(sentence).toContain('rejoins the queue');
+    expect(sentence).not.toContain('balances back');
+  });
+
+  test('declared wins over an internal answer, which would delete a deposit it never wrote', () => {
+    const sentence = reopenConsequence(t, answeredRow({ declared: true, decision: 'internal' }));
+    expect(sentence).toContain('balances back');
   });
 });
