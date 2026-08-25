@@ -35,6 +35,7 @@ export const VIEW_PREFERENCE_KEYS = {
   homeAllocationDimension: 'home.allocation-dimension',
   homeMetric: 'home.metric',
   homePeriod: 'home.period',
+  moneyForecastHorizon: 'money.forecast-horizon',
 } as const;
 
 export type ViewPreferenceKey = (typeof VIEW_PREFERENCE_KEYS)[keyof typeof VIEW_PREFERENCE_KEYS];

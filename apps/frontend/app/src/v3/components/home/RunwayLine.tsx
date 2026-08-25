@@ -1,0 +1,75 @@
+import { Decimal } from '@scani/shared';
+import { useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
+import { Link } from 'react-router-dom';
+import { useBaseCurrencyRates } from '@/hooks/useBaseCurrencyRates';
+import { trpc } from '@/lib/trpc';
+import { bucketMovements, monthSequence, project, runway } from '../../lib/forecast';
+import { V3_ROUTES } from '../../lib/routes';
+import { formatProjectionMonth } from '../money/ProjectionChart';
+
+/**
+ * One line at the foot of "What's due": how long the money lasts (SC-461).
+ *
+ * Sited here rather than in a block of its own because mgrin asked for a
+ * runway *sentence* on the home screen, and because it is the same shape as
+ * the income foot-line V3-47 put here — one aggregate over a longer horizon,
+ * under the rows it is derived from, never a row among them.
+ *
+ * Three things keep it from reading as a measured figure, which is the whole
+ * constraint of this ticket on the one screen where the reader is scanning:
+ *
+ * - the rule above it is **dashed**, where the two foot-lines above are solid;
+ * - the word **Projected** is on the line itself;
+ * - the figure is a **month or a window**, never money. There is no
+ *   base-currency number here to be mistaken for a balance.
+ *
+ * It renders nothing at all when there is nothing to project. An account with
+ * no recurring payments would otherwise get "lasts more than 12 months", which
+ * is true, vacuous, and the most reassuring possible way to say "we know
+ * nothing about your outgoings".
+ */
+export function RunwayLine() {
+  const { t } = useTranslation();
+  // The same query and the same cache entry the Money tab's Forecast view
+  // reads, so the two can never answer differently.
+  const forecast = trpc.payments.forecast.useQuery();
+  const rates = useBaseCurrencyRates(
+    (forecast.data?.movements ?? []).map((movement) => movement.currencyTokenId)
+  );
+
+  const answer = useMemo(() => {
+    if (!forecast.data || forecast.data.movements.length === 0) return null;
+    const buckets = bucketMovements(
+      forecast.data.movements,
+      monthSequence(forecast.data.today, forecast.data.horizonMonths)
+    );
+    const projection = project(new Decimal(forecast.data.liquid.amount), buckets, rates);
+    // SC-210: without the rates the burn is missing its foreign half, so the
+    // runway is too long. A line that is wrong in the flattering direction is
+    // worse than no line, and this one has no room for a skeleton.
+    if (projection.pending) return null;
+    return runway(projection);
+  }, [forecast.data, rates]);
+
+  if (!answer) return null;
+
+  return (
+    <Link
+      to={V3_ROUTES.forecast}
+      className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-t border-dashed border-border px-4 py-3 transition-colors hover:bg-surface-hover"
+    >
+      <span className="flex flex-wrap items-center gap-2 text-caption text-muted-foreground">
+        {t('v3.home.runway.label')}
+        <span className="rounded border border-dashed border-muted-foreground/70 px-1.5 text-caption uppercase leading-tight tracking-wide">
+          {t('v3.money.forecast.projectedMark')}
+        </span>
+      </span>
+      <span className="text-label">
+        {answer.kind === 'exhausted'
+          ? t('v3.money.forecast.runsOutIn', { month: formatProjectionMonth(answer.month) })
+          : t('v3.money.forecast.lastsBeyond', { count: answer.beyondMonths })}
+      </span>
+    </Link>
+  );
+}

@@ -46,7 +46,22 @@ describe('resolveMoneySegment', () => {
 
   test('each segment is a place a link can point at', () => {
     expect(resolveMoneySegment('/payments/recurring')).toBe('recurring');
+    expect(resolveMoneySegment('/payments/forecast')).toBe('forecast');
     expect(resolveMoneySegment('/vendors')).toBe('vendors');
+  });
+
+  /**
+   * `forecast` is the second reserved word in the occurrence-id space (SC-461)
+   * and inherits `recurring`'s hazard exactly: claimed after the fall-through
+   * it parses as an occurrence id and the Forecast view is a not-found sheet
+   * over the upcoming feed. It type-checks and lints either way.
+   */
+  test('“forecast” is claimed before the fall-through, not read as an id', () => {
+    expect(resolveMoneySegment('/payments/forecast')).toBe('forecast');
+    expect(resolveMoneySegment('/payments/forecast/')).toBe('forecast');
+    // The control on the other axis: an id that merely CONTAINS the word is
+    // still an id, so the reservation is on the segment and not on a substring.
+    expect(resolveMoneySegment('/payments/forecast-abc-123')).toBe('upcoming');
   });
 
   /**
