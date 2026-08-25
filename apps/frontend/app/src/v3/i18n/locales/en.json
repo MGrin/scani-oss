@@ -740,7 +740,8 @@
       "amountFact": {
         "edit": "Edit amount",
         "amount": "Amount",
-        "save": "Save"
+        "save": "Save",
+        "belowZero": "Below zero — nothing you can enter produces this. It happens when an undone transfer crosses a balance that changed after it. Set it to the right figure."
       },
       "labelFact": {
         "unnamed": "Not named",
