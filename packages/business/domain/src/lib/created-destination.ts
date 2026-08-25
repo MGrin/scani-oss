@@ -60,9 +60,11 @@
  */
 
 /** The one place the key is spelled. `source_metadata` is schemaless jsonb, so
- *  a typo at either end is invisible — writer and reader share this constant
- *  rather than each carrying a string literal. */
-export const CREATED_DESTINATION_KEY = 'createdDestinationHolding';
+ *  a typo at either end is invisible — the writer and the reader below share
+ *  this constant rather than each carrying a string literal. Not exported:
+ *  nothing outside this module should be reading the key, only the two
+ *  functions that understand what its absence means. */
+const CREATED_DESTINATION_KEY = 'createdDestinationHolding';
 
 export type CreatedDestination = 'created' | 'reused' | 'unrecorded';
 
