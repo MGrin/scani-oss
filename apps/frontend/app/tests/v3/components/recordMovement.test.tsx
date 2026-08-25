@@ -3,53 +3,23 @@ import '../../i18n-preload';
 import { describe, expect, test } from 'bun:test';
 import { MANUAL_OUTFLOW_DESTINATIONS, movementOutflowRefusesInternal } from '@scani/shared';
 import i18n from 'i18next';
-import { movementInstant } from '../../../src/v3/components/holdings/RecordMovementSheet';
 
 /**
- * The two rules in the movement sheet that are invisible in the rendered
- * output and would rot silently (SC-607).
+ * The rule in the movement sheet that is invisible in the rendered output and
+ * would rot silently (SC-607).
  *
- * Neither is about layout, which is why neither is asserted through markup: a
- * screenshot of this form looks identical whether the date is sent as an
- * instant or as midnight, and identical whether an unanswered outflow is
- * submittable or not. Both would ship, and both would be found later as a
- * wrong number.
+ * It is not about layout, which is why it is not asserted through markup: a
+ * screenshot of this form looks identical whether an unanswered outflow is
+ * submittable or not. It would ship, and it would be found later as a wrong
+ * number.
+ *
+ * The sheet's OTHER invisible rule — what instant an unchanged date field
+ * sends — moved to `DateField.test.tsx` in SC-612, along with the code. Two
+ * surfaces ask for a date and they must not date the same movement
+ * differently, so there is now one `dateFieldInstant` and one test of it.
  */
 
 const t = i18n.t.bind(i18n);
-
-describe('the date an unchanged form sends', () => {
-  /**
-   * The failure this exists for is timezone-shaped and this machine may not
-   * be in a timezone that shows it — so the assertion is on the RULE (today
-   * is an instant, another day is midnight) rather than on a UTC string that
-   * only goes red east of Greenwich.
-   *
-   * SC-606 measured the consequence: local midnight in UTC+12 is the previous
-   * day in UTC, which lands before an observation recorded earlier the same
-   * day, and a flow dated before the interval it explains leaves that interval
-   * unexplained. Three prompts instead of two.
-   */
-  test('today is sent as the moment of recording, not as midnight', () => {
-    const before = Date.now();
-    const now = new Date();
-    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(
-      now.getDate()
-    ).padStart(2, '0')}`;
-
-    const sent = new Date(movementInstant(today)).getTime();
-
-    expect(sent).toBeGreaterThanOrEqual(before);
-    expect(sent).toBeLessThanOrEqual(Date.now());
-    // The must-be-ABSENT half: it is not this day's midnight.
-    expect(sent).not.toBe(new Date(`${today}T00:00:00`).getTime());
-  });
-
-  test('a deliberately chosen other day is that day’s midnight', () => {
-    // Local midnight, because the owner picking "the 14th" means their 14th.
-    expect(movementInstant('2026-08-14')).toBe(new Date('2026-08-14T00:00:00').toISOString());
-  });
-});
 
 describe('the outflow question', () => {
   /**
