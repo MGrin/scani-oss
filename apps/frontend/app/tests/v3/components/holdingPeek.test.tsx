@@ -42,6 +42,7 @@ const CONTEXT: HoldingPeekContext = {
   t,
   currency: 'USD',
   onSetAmount: () => undefined,
+  onRecordMovement: () => undefined,
   onToggleActive: () => undefined,
   onRefreshPrice: () => undefined,
   onRefreshBalance: () => undefined,
