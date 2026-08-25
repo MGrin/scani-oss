@@ -1,8 +1,9 @@
 import {
   HOLDING_MOVEMENT_DIRECTIONS,
   type HoldingMovementDirection,
-  OUTFLOW_DESTINATIONS,
-  type OutflowDestination,
+  MANUAL_OUTFLOW_DESTINATIONS,
+  type ManualOutflowDestination,
+  movementOutflowRefusesInternal,
 } from '@scani/shared';
 import { Button } from '@scani/ui/ui/button';
 import {
@@ -91,10 +92,26 @@ export interface MovementSubmission {
   amount: string;
   occurredAt: string;
   note?: string;
-  destination?: OutflowDestination;
+  destination?: ManualOutflowDestination;
   /** Resolved by the caller through `ensureAccount`; null when incomplete. */
   ensureAccount?: ReturnType<typeof buildEnsureAccountInput>;
 }
+
+/**
+ * The three things a person can say about money leaving, in the order they
+ * are most often true.
+ *
+ * `internal` is dropped from `MANUAL_OUTFLOW_DESTINATIONS` and replaced by
+ * `transfer`, which is not a rename: `internal` writes the arrival row and
+ * leaves an existing destination's BALANCE untouched, so recording "I moved
+ * 2000 to my other account" through it would leave that account 2000 short
+ * with nothing erroring. `transfer` writes both legs. See
+ * `movementOutflowRefusesInternal`.
+ */
+const OUTFLOW_OPTIONS = [
+  ...MANUAL_OUTFLOW_DESTINATIONS.filter((option) => !movementOutflowRefusesInternal(option)),
+  'transfer' as const,
+];
 
 function todayIso(): string {
   const now = new Date();
@@ -136,7 +153,9 @@ export function RecordMovementSheet({
    * is realized, so a default wearing a checkmark the reader did not put there
    * would book a taxable event on their behalf.
    */
-  const [destination, setDestination] = useState<OutflowDestination | 'transfer' | null>(null);
+  const [destination, setDestination] = useState<ManualOutflowDestination | 'transfer' | null>(
+    null
+  );
 
   const selected = holding ?? holdings.find((row) => row.id === holdingId) ?? null;
   const ensure = buildEnsureAccountInput(accountTarget.draft);
@@ -153,7 +172,7 @@ export function RecordMovementSheet({
    * state, so the segmented control and the question can never disagree about
    * what is being recorded.
    */
-  const chooseDestination = (next: OutflowDestination | 'transfer') => {
+  const chooseDestination = (next: ManualOutflowDestination | 'transfer') => {
     setDestination(next);
     setDirection(next === 'transfer' ? 'transfer' : 'outflow');
   };
@@ -251,7 +270,7 @@ export function RecordMovementSheet({
               <legend className="pb-2 text-label text-muted-foreground">
                 {t('v3.holdings.movement.whereLabel')}
               </legend>
-              {[...OUTFLOW_DESTINATIONS, 'transfer' as const].map((option) => (
+              {OUTFLOW_OPTIONS.map((option) => (
                 <label
                   key={option}
                   className={`flex min-h-11 cursor-pointer items-start gap-3 rounded-lg border p-3 ${

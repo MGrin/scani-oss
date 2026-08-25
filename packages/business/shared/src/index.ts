@@ -38,10 +38,7 @@ export {
   HOLDING_MOVEMENT_DIRECTIONS,
   type HoldingMovementDirection,
   isHoldingMovementDirection,
-  isOutflowDestination,
-  OUTFLOW_DESTINATIONS,
-  type OutflowDestination,
-  outflowDestinationIsReviewDecision,
+  movementOutflowRefusesInternal,
 } from './lib/holding-movement';
 export {
   isManualEditCause,
