@@ -42,6 +42,28 @@ export interface CreateHoldingWithEventInput {
 }
 
 /**
+ * The person said what this balance change was, at the moment they made it
+ * (SC-606).
+ *
+ * Stamped into the observation's OWN insert rather than updated onto it a
+ * moment later, so there is never an instant where the row exists unanswered:
+ * `BalanceGapService.listPending` is computed on read, and a queue read
+ * landing in that window would show a gap the user has already explained.
+ *
+ * The value is a `BalanceGapAnswer` — the same vocabulary the queue writes,
+ * because SC-501 already made `BALANCE_GAP_ANSWERS` `MANUAL_EDIT_CAUSES` plus
+ * `unknown` precisely so the two paths could not drift. `gapReviewSource` is
+ * always `'user'`: nothing else may claim this, since the whole content of the
+ * marker is that a person was present and spoke.
+ */
+export interface BalanceObservationAttestation {
+  /** What they said it was. A `BalanceGapAnswer`, not a free string. */
+  answer: string;
+  /** When they said it. Defaults to the observation's own instant. */
+  at?: Date;
+}
+
+/**
  * Input for updating a holding balance with event tracking
  */
 export interface UpdateHoldingBalanceInput {
@@ -101,17 +123,26 @@ export class HoldingService extends BaseService {
   async recordBalanceObservation(
     holding: { id: string; userId: string; accountId: string; tokenId: string; balance: string },
     transaction?: DatabaseTransaction,
-    meta?: Record<string, unknown>
+    meta?: Record<string, unknown>,
+    attestation?: BalanceObservationAttestation
   ): Promise<void> {
     try {
+      const now = new Date();
       await this.observationRepository.append(
         {
           userId: holding.userId,
           holdingId: holding.id,
           balance: holding.balance,
-          observedAt: new Date(),
+          observedAt: now,
           source: 'sync-capture',
           sourceMetadata: meta ?? {},
+          ...(attestation
+            ? {
+                gapReview: attestation.answer,
+                gapReviewSource: 'user',
+                gapReviewedAt: attestation.at ?? now,
+              }
+            : {}),
         },
         transaction
       );
