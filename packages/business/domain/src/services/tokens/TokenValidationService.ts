@@ -8,7 +8,7 @@ import { Service } from 'typedi';
 // in `@scani/db/schema/tokens` (which models the provider-namespaced
 // jsonb column on the `tokens` row); this is the flat upstream-search
 // result shape returned from CoinGecko / Finnhub probes.
-export interface TokenMetadata {
+interface TokenMetadata {
   symbol: string;
   name: string;
   type: string;
