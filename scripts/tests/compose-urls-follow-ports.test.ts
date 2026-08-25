@@ -59,7 +59,7 @@ interface Reference {
 function loopbackReferences(): Reference[] {
   return SOURCE.split('\n').flatMap((text, index) => {
     if (/^\s*#/.test(text)) return [];
-    const value = text.split(/(?<!["'])\s+#\s/)[0];
+    const value = text.split(/(?<!["'])\s+#\s/)[0]!;
     return [...value.matchAll(/localhost:(\$\{[^}]+\}|\d+)/g)].map((match) => ({
       line: index + 1,
       text: text.trim(),
@@ -88,7 +88,7 @@ describe('a compose URL follows the port it points at (SC-495)', () => {
     for (const ref of references) {
       const variable = ref.token.match(/\$\{([A-Z0-9_]+):-(\d+)\}/);
       expect(variable, `${ref.line}: ${ref.text}`).not.toBeNull();
-      const [, name, fallback] = variable as RegExpMatchArray;
+      const [, name = '', fallback = ''] = variable as RegExpMatchArray;
       // A URL built from a variable no `ports:` line reads moves nothing.
       expect(BASE_PORT.has(name), `${ref.line}: ${name} publishes no port`).toBe(true);
       // The fallback is what CI and the primary checkout actually use, so a
