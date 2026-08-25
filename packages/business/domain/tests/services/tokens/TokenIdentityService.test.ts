@@ -143,7 +143,7 @@ describe('TokenIdentityService — lookalike identities', () => {
    * The reason `lookalike_of` is its own column. A homoglyph scores 1.00
    * while we hold no price for it and 0.70 once we do — the 0.25 is
    * "no pricing data available", a fact about our coverage that the
-   * token has no part in, and `WarmTokenPricesForImportUseCase` re-scores
+   * token has no part in, and `PriceWarmupService` re-scores
    * priced tokens downward. At 0.70 the score admits the row; the
    * characters still say what they say.
    */
