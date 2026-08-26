@@ -1,9 +1,4 @@
-import {
-  committedShareOfObserved,
-  Decimal,
-  observedAffordability,
-  observedRunwayMonths,
-} from '@scani/shared';
+import { Decimal, observedAffordability, observedRunwayMonths } from '@scani/shared';
 import { Button } from '@scani/ui/ui/button';
 import { Segmented, SegmentedItem } from '@scani/ui/ui/segmented';
 import { Block } from '@scani/ui/v3/components/Block';
@@ -24,6 +19,7 @@ import { useViewPreference } from '../../hooks/useViewPreference';
 import {
   affordability,
   bucketMovements,
+  committedShare,
   DEFAULT_FORECAST_HORIZON,
   FORECAST_HORIZONS,
   type ForecastHorizon,
@@ -171,14 +167,13 @@ export function ForecastView({
    * disagree invisibly. See `@scani/shared` `lib/burn.ts` for why committed is
    * a subset of observed and adding them halves the runway.
    */
-  const committedShare = useMemo(() => {
-    if (observedMonths === null || !forecast?.observedBurn) return null;
-    if (runwayProjection.pending || runwayProjection.points.length === 0) return null;
-    const committed = runwayProjection.points
-      .reduce((sum, point) => sum.plus(point.outflow), new Decimal(0))
-      .dividedBy(runwayProjection.points.length);
-    return committedShareOfObserved(committed.toString(), forecast.observedBurn.perMonthMean);
-  }, [observedMonths, forecast?.observedBurn, runwayProjection]);
+  const share = useMemo(
+    () =>
+      observedMonths === null || !forecast?.observedBurn
+        ? null
+        : committedShare(runwayProjection, forecast.observedBurn.perMonthMean),
+    [observedMonths, forecast?.observedBurn, runwayProjection]
+  );
 
   /**
    * The one-off in base currency, through `convertTotalsToBase` — the one
@@ -322,11 +317,7 @@ export function ForecastView({
           note={<RunwayBasis forecast={forecast} baseSymbol={rates.baseSymbol} />}
         />
         {observedMonths !== null && forecast.observedBurn ? (
-          <ObservedBasis
-            burn={forecast.observedBurn}
-            share={committedShare}
-            baseSymbol={rates.baseSymbol}
-          />
+          <ObservedBasis burn={forecast.observedBurn} share={share} baseSymbol={rates.baseSymbol} />
         ) : null}
         {/* Only when the book is the answer, which is now the fallback. A
             window with no date in it has to say what the book is DOING, or
