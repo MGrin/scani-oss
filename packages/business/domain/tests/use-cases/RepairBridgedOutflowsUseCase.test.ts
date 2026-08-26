@@ -269,8 +269,21 @@ describe('RepairBridgedOutflowsUseCase — deriving the decision', () => {
     expect(plans[0]?.arrival?.gapSeconds).toBe(4);
     expect(plans[0]?.arrival?.deltaPct).toBe('-0.0129');
     expect(plans[0]?.blocker).toBeNull();
-    // The reason this row cannot self-correct, carried to the reader.
-    expect(plans[0]?.answerSource).toBe('user');
+    /**
+     * The provenance carried to the reader — and this fixture is the exact
+     * production shape SC-673 is about: a review timestamp with NO source, the
+     * state 27 of mgrin's `left_control` rows are in.
+     *
+     * It asserted `'user'` until SC-673, which is the defect: the departure
+     * fixture sets `transferReviewedAt` and no source, and the decoder read the
+     * date as the reader's own answer. Note `insertSameHoldingPartner` below
+     * DOES set `transferReviewSource: 'user'` — the two fixtures disagreed, and
+     * only the one that named a source was saying what it meant.
+     *
+     * Left as-is rather than given a source, because a DB-backed assertion on
+     * the unsourced shape is coverage this fix otherwise has nowhere.
+     */
+    expect(plans[0]?.answerSource).toBe('unattributed');
   });
 
   test('reports the blocking group instead of dropping the row, when the arrival is claimed', async () => {
