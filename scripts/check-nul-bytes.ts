@@ -186,9 +186,27 @@ export function verdict(result: ScanResult): string {
   );
 }
 
+/**
+ * The repository root, so this check cannot answer about a subtree.
+ *
+ * `git ls-files` is CWD-RELATIVE and says nothing about it. Run from
+ * `apps/backend` this reported `PASS · 207 tracked files scanned · 0 binary
+ * assets skipped` over a 2706-file repository — a clean verdict about 8% of the
+ * tree, which is the vacuous pass this whole check exists to prevent, occurring
+ * inside it. `git diff` is not CWD-relative, which is why the two are easy to
+ * assume alike; the same trap cost SC-662 a silent miss in another guard.
+ */
+export function repoRoot(cwd: string): string {
+  const run = spawnSync('git', ['rev-parse', '--show-toplevel'], { cwd, encoding: 'utf8' });
+  if (run.status !== 0) {
+    throw new Error(`git rev-parse --show-toplevel failed (${run.status}): ${run.stderr?.trim()}`);
+  }
+  return run.stdout.trim();
+}
+
 /** Tracked paths, NUL-delimited so a newline in a filename cannot split one. */
-export function trackedPaths(cwd: string): string[] {
-  const run = spawnSync('git', ['ls-files', '-z'], { cwd, encoding: 'buffer' });
+export function trackedPaths(root: string): string[] {
+  const run = spawnSync('git', ['ls-files', '-z'], { cwd: root, encoding: 'buffer' });
   if (run.status !== 0) {
     throw new Error(
       `git ls-files failed (${run.status}): ${new TextDecoder().decode(run.stderr ?? new Uint8Array())}`
@@ -201,14 +219,15 @@ export function trackedPaths(cwd: string): string[] {
 }
 
 if (import.meta.main) {
-  const cwd = process.cwd();
+  let cwd: string;
   let paths: string[];
   try {
+    cwd = repoRoot(process.cwd());
     paths = trackedPaths(cwd);
   } catch (error) {
     console.error(
       `check-nul-bytes: exit ${COULD_NOT_LOOK} · NO CHECK MADE — could not list tracked ` +
-        `files in ${cwd}:\n  ${error instanceof Error ? error.message : String(error)}\n\n` +
+        `files under ${process.cwd()}:\n  ${error instanceof Error ? error.message : String(error)}\n\n` +
         `This is not a pass.`
     );
     process.exit(COULD_NOT_LOOK);
