@@ -185,7 +185,8 @@ export class RollupPortfolioValueDailyUseCase {
             const priceLookup = await this.priceGraphService.buildPriceLookup(
               userHoldings.map((h) => h.tokenId),
               baseCurrencyId,
-              runStart
+              runStart,
+              undefined
             );
             const holdingIds = userHoldings.map((h) => h.id);
             // Coverage joins the same prefetch: `has_complete_tx_history`
@@ -229,6 +230,7 @@ export class RollupPortfolioValueDailyUseCase {
                 caches,
                 unpriceableTokenIds,
                 coverageByHolding,
+                tx: undefined,
                 // Every row this loop writes is stamped with the rule it was
                 // computed under, in the sense that it was computed under
                 // whatever the account had set at the time (SC-462). Changing

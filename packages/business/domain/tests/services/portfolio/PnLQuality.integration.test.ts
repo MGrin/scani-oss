@@ -26,13 +26,14 @@
 
 process.env.DATABASE_URL = process.env.DATABASE_URL || 'postgresql://dummy:dummy@localhost/dummy';
 
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { describe, expect, test } from 'bun:test';
 import { randomUUID } from 'node:crypto';
-import { db } from '@scani/db/connection';
+import type { DatabaseTransaction } from '@scani/db';
 import * as schema from '@scani/db/schema';
-import { eq, inArray } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { Container } from 'typedi';
 import { PnLAtTimeService } from '../../../src/services/portfolio/PnLAtTimeService';
+import { withTestDb } from '../../../test/helpers/db';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 /** Older than MAX_INTRADAY_PRICE_AGE_MS (7d) and MAX_DAILY_PRICE_AGE_MS (45d). */
@@ -49,8 +50,6 @@ interface Fixture {
   holdings: Record<string, string>;
 }
 
-let fixture: Fixture | null = null;
-
 interface HoldingSpec {
   key: string;
   historyComplete: boolean;
@@ -65,52 +64,50 @@ const SPECS: HoldingSpec[] = [
 ];
 
 /**
- * The fixture is built and torn down by hand rather than through
- * `withTestDb`, and that is deliberate rather than an oversight (SC-594).
+ * Converted to `withTestDb` by SC-600, and the note this replaces is worth
+ * keeping in mind rather than deleting: it said, correctly, that converting
+ * this file was **not** available.
  *
- * `withTestDb` hands the body a transaction and rolls it back. Every other
- * caller of it is a repository or service test that passes that transaction
- * *in*, so the code under test reads the uncommitted rows. This file's whole
- * purpose is the opposite — it calls `PnLAtTimeService.getPnL` with nothing
- * stubbed, and neither it nor the services beneath it
- * (`PortfolioValuationAtTimeService`, `BalanceAtTimeService`,
- * `PriceGraphService`, `CostBasisService`) accepts a transaction: they all
- * read through the connection pool. Rows written inside a rolled-back
- * transaction are invisible to that pool, so the service would value an
- * empty portfolio and every assertion below would be measuring nothing.
+ * `withTestDb` hands the body a transaction and rolls it back. This file's
+ * whole purpose is to call `PnLAtTimeService.getPnL` with nothing stubbed —
+ * and until SC-600 neither it nor `PortfolioValuationAtTimeService`,
+ * `BalanceAtTimeService`, `PriceGraphService` or `CostBasisService` could
+ * accept a transaction. They all read the connection pool, which cannot see
+ * rows written inside one. Measured 2026-08-23: inside one `withTestDb`
+ * callback the transaction saw 1 holding and `getPnL` saw 0.
  *
- * Measured 2026-08-23 with a throwaway probe on this branch: inside one
- * `withTestDb` callback the transaction saw 1 holding and `getPnL` saw 0.
- * Converting this file before threading a transaction through those services
- * is therefore not a speed-up, it is a silent loss of coverage.
+ * That is why the conversion had to wait for the threading rather than being
+ * done alongside it. **The failure is silent** — the service values an empty
+ * portfolio and every assertion below goes on passing against nothing, so a
+ * premature conversion reads as a speed-up and is a total loss of coverage.
+ * The one that catches it is `holdingsTotal` = 4 in the first test: it is an
+ * assertion about the fixture reaching the service at all, and it is the
+ * reason that number is asserted rather than assumed.
  *
- * What the conversion was wanted for was the round-trip cost, and that is
- * dealt with here directly: statements are batched, and issued in parallel
- * wherever nothing in the group depends on the result. Setup and teardown
- * cost 13 round trips per test rather than 35. The cost is pure latency —
- * 4 tests x 35 sequential statements is what made this the first file in the
- * suite to blow its deadline whenever the machine is busy.
+ * The transaction is now passed IN, on every call, so the rows the fixture
+ * writes are the rows the chain reads. Teardown is the rollback, so
+ * `cleanupFixture` and its 13 round trips are gone with it.
  */
-async function setupFixture(): Promise<Fixture> {
+async function setupFixture(tx: DatabaseTransaction): Promise<Fixture> {
   const suffix = randomUUID().slice(0, 6);
 
   const [[tokenType], [institutionType], [accountType]] = await Promise.all([
-    db
+    tx
       .insert(schema.tokenTypes)
       .values({ code: `pnlq-${suffix}`, name: 'PnLQ Token Type' })
       .returning(),
-    db
+    tx
       .insert(schema.institutionTypes)
       .values({ code: `pnlq-i-${suffix}`, name: 'PnLQ Institution Type' })
       .returning(),
-    db
+    tx
       .insert(schema.accountTypes)
       .values({ code: `pnlq-a-${suffix}`, name: 'PnLQ Account Type' })
       .returning(),
   ]);
 
   const [[baseCurrency], [institution]] = await Promise.all([
-    db
+    tx
       .insert(schema.tokens)
       .values({
         symbol: `PQB${suffix.toUpperCase()}`,
@@ -118,13 +115,13 @@ async function setupFixture(): Promise<Fixture> {
         typeId: tokenType!.id,
       })
       .returning(),
-    db
+    tx
       .insert(schema.institutions)
       .values({ name: 'PnLQ Institution', typeId: institutionType!.id })
       .returning(),
   ]);
 
-  const [user] = await db
+  const [user] = await tx
     .insert(schema.users)
     .values({
       email: `pnlq-${randomUUID().slice(0, 8)}@scani.local`,
@@ -133,7 +130,7 @@ async function setupFixture(): Promise<Fixture> {
     })
     .returning();
 
-  const [account] = await db
+  const [account] = await tx
     .insert(schema.accounts)
     .values({
       userId: user!.id,
@@ -153,7 +150,7 @@ async function setupFixture(): Promise<Fixture> {
       `PQ${spec.key.slice(0, 2).toUpperCase()}${randomUUID().toUpperCase()}`,
     ])
   );
-  const tokenRows = await db
+  const tokenRows = await tx
     .insert(schema.tokens)
     .values(
       SPECS.map((spec) => ({
@@ -166,7 +163,7 @@ async function setupFixture(): Promise<Fixture> {
   const tokenBySymbol = new Map(tokenRows.map((t) => [t.symbol, t]));
   const tokenFor = (key: string) => tokenBySymbol.get(symbolFor.get(key)!)!;
 
-  const holdingRows = await db
+  const holdingRows = await tx
     .insert(schema.holdings)
     .values(
       SPECS.map((spec) => ({
@@ -185,7 +182,7 @@ async function setupFixture(): Promise<Fixture> {
     // FX — every holding therefore has an identical, fully-known cost basis
     // of 500. Any difference in the output is the *grade*, never the
     // arithmetic.
-    db.insert(schema.holdingTransactions).values(
+    tx.insert(schema.holdingTransactions).values(
       SPECS.map((spec) => ({
         userId: user!.id,
         holdingId: holdingFor(spec.key).id,
@@ -201,13 +198,13 @@ async function setupFixture(): Promise<Fixture> {
     ),
     // The flag every provider writes honestly. `false` is what Kraken reports
     // once its ledger endpoint pages out at 20,000 rows.
-    db.insert(schema.holdingCoverage).values(
+    tx.insert(schema.holdingCoverage).values(
       SPECS.map((spec) => ({
         holdingId: holdingFor(spec.key).id,
         hasCompleteTxHistory: spec.historyComplete,
       }))
     ),
-    db.insert(schema.tokenPrices).values(
+    tx.insert(schema.tokenPrices).values(
       SPECS.map((spec) => ({
         tokenId: tokenFor(spec.key).id,
         baseTokenId: baseCurrency!.id,
@@ -234,110 +231,87 @@ async function setupFixture(): Promise<Fixture> {
   };
 }
 
-async function cleanupFixture(f: Fixture): Promise<void> {
-  // Serial only where a foreign key forces it: deleting the user cascades its
-  // accounts, holdings, transactions and coverage rows, and that is what
-  // frees the tokens and the two type tables below.
-  await db
-    .delete(schema.portfolioValueDaily)
-    .where(eq(schema.portfolioValueDaily.userId, f.userId));
-  await db.delete(schema.users).where(eq(schema.users.id, f.userId));
-  await db
-    .delete(schema.tokenPrices)
-    .where(inArray(schema.tokenPrices.tokenId, [...f.tokenIds, f.baseCurrencyId]));
-  await db
-    .delete(schema.tokens)
-    .where(inArray(schema.tokens.id, [...f.tokenIds, f.baseCurrencyId]));
-  await Promise.all([
-    db.delete(schema.institutions).where(eq(schema.institutions.id, f.institutionId)),
-    db.delete(schema.accountTypes).where(eq(schema.accountTypes.id, f.accountTypeId)),
-  ]);
-  await Promise.all([
-    db.delete(schema.institutionTypes).where(eq(schema.institutionTypes.id, f.institutionTypeId)),
-    db.delete(schema.tokenTypes).where(eq(schema.tokenTypes.id, f.tokenTypeId)),
-  ]);
-}
-
-beforeEach(async () => {
-  fixture = await setupFixture();
-});
-
-afterEach(async () => {
-  if (fixture) await cleanupFixture(fixture);
-  fixture = null;
-});
-
 describe('PnL quality signals, end to end', () => {
   test('the truncated import and the 96-day-old price both reach the result', async () => {
-    const f = fixture!;
-    const result = await Container.get(PnLAtTimeService).getPnL(
-      f.userId,
-      new Date(),
-      f.baseCurrencyId
-    );
+    await withTestDb(async (tx) => {
+      const f = await setupFixture(tx);
+      const result = await Container.get(PnLAtTimeService).getPnL(
+        f.userId,
+        new Date(),
+        f.baseCurrencyId,
+        { tx }
+      );
 
-    const byKey = (key: string) => result.perHolding.find((ph) => ph.holdingId === f.holdings[key]);
+      const byKey = (key: string) =>
+        result.perHolding.find((ph) => ph.holdingId === f.holdings[key]);
 
-    // The control: complete history, quote from today. Nothing to qualify.
-    expect(byKey('complete-fresh')?.basisQuality).toBe('known');
-    expect(byKey('complete-fresh')?.priceStale).toBe(false);
+      // The control: complete history, quote from today. Nothing to qualify.
+      expect(byKey('complete-fresh')?.basisQuality).toBe('known');
+      expect(byKey('complete-fresh')?.priceStale).toBe(false);
 
-    // `has_complete_tx_history = false`, read for the first time.
-    expect(byKey('truncated-fresh')?.basisQuality).toBe('partial');
-    expect(byKey('truncated-fresh')?.priceStale).toBe(false);
+      // `has_complete_tx_history = false`, read for the first time.
+      expect(byKey('truncated-fresh')?.basisQuality).toBe('partial');
+      expect(byKey('truncated-fresh')?.priceStale).toBe(false);
 
-    // A price 96 days old is still used for the value — and is no longer
-    // indistinguishable from one quoted this morning.
-    expect(byKey('complete-stale')?.priceStale).toBe(true);
-    expect(byKey('truncated-stale')?.priceStale).toBe(true);
+      // A price 96 days old is still used for the value — and is no longer
+      // indistinguishable from one quoted this morning.
+      expect(byKey('complete-stale')?.priceStale).toBe(true);
+      expect(byKey('truncated-stale')?.priceStale).toBe(true);
 
-    expect(result.holdingsStalePriced).toBe(2);
-    expect(result.holdingsBasisUnknown).toBe(2);
-    expect(result.holdingsTotal).toBe(4);
-    expect(result.holdingsWithKnownValue).toBe(4);
+      expect(result.holdingsStalePriced).toBe(2);
+      expect(result.holdingsBasisUnknown).toBe(2);
+      expect(result.holdingsTotal).toBe(4);
+      expect(result.holdingsWithKnownValue).toBe(4);
 
-    // Every holding priced, and the day is still not 'full'.
-    expect(result.coverageQuality).toBe('partial');
+      // Every holding priced, and the day is still not 'full'.
+      expect(result.coverageQuality).toBe('partial');
+    });
   });
 
   test('the figures themselves are unchanged — this is about what is said, not withheld', async () => {
-    const f = fixture!;
-    const result = await Container.get(PnLAtTimeService).getPnL(
-      f.userId,
-      new Date(),
-      f.baseCurrencyId
-    );
+    await withTestDb(async (tx) => {
+      const f = await setupFixture(tx);
+      const result = await Container.get(PnLAtTimeService).getPnL(
+        f.userId,
+        new Date(),
+        f.baseCurrencyId,
+        { tx }
+      );
 
-    // 4 holdings × 10 units × 50 = 2000 of cost; × 60 = 2400 of value.
-    expect(result.totalCostBasis.toString()).toBe('2000');
-    expect(result.totalValueInBase.toString()).toBe('2400');
-    expect(result.totalUnrealizedPnl.toString()).toBe('400');
+      // 4 holdings × 10 units × 50 = 2000 of cost; × 60 = 2400 of value.
+      expect(result.totalCostBasis.toString()).toBe('2000');
+      expect(result.totalValueInBase.toString()).toBe('2400');
+      expect(result.totalUnrealizedPnl.toString()).toBe('400');
 
-    // The whole point: a run with every flag raised produces exactly the
-    // numbers a run with none would. Before this, that identity was the bug —
-    // there was no second channel saying which of the two you were reading.
-    for (const ph of result.perHolding) {
-      expect(ph.costBasis.toString()).toBe('500');
-    }
+      // The whole point: a run with every flag raised produces exactly the
+      // numbers a run with none would. Before this, that identity was the bug —
+      // there was no second channel saying which of the two you were reading.
+      for (const ph of result.perHolding) {
+        expect(ph.costBasis.toString()).toBe('500');
+      }
+    });
   });
 
   test('a holding with no coverage row is not flagged as truncated', async () => {
-    const f = fixture!;
-    ***REMOVED***
-    ***REMOVED***
-    // holdings than the deliberate `false` does and bury the real signal.
-    await db
-      .delete(schema.holdingCoverage)
-      .where(eq(schema.holdingCoverage.holdingId, f.holdings['truncated-fresh']!));
+    await withTestDb(async (tx) => {
+      const f = await setupFixture(tx);
+      ***REMOVED***
+      ***REMOVED***
+      // holdings than the deliberate `false` does and bury the real signal.
+      await tx
+        .delete(schema.holdingCoverage)
+        .where(eq(schema.holdingCoverage.holdingId, f.holdings['truncated-fresh']!));
 
-    const result = await Container.get(PnLAtTimeService).getPnL(
-      f.userId,
-      new Date(),
-      f.baseCurrencyId
-    );
-    const row = result.perHolding.find((ph) => ph.holdingId === f.holdings['truncated-fresh']);
-    expect(row?.basisQuality).toBe('known');
-    expect(result.holdingsBasisUnknown).toBe(1);
+      const result = await Container.get(PnLAtTimeService).getPnL(
+        f.userId,
+        new Date(),
+        f.baseCurrencyId,
+        { tx }
+      );
+      const row = result.perHolding.find((ph) => ph.holdingId === f.holdings['truncated-fresh']);
+      expect(row?.basisQuality).toBe('known');
+      expect(result.holdingsBasisUnknown).toBe(1);
+    });
   });
 
   /**
@@ -354,57 +328,61 @@ describe('PnL quality signals, end to end', () => {
    * two assertions together say the figure and its caveat move as one.
    */
   test('an unanswered withdrawal is counted, and answering it clears the count', async () => {
-    const f = fixture!;
-    const holdingId = f.holdings['complete-fresh']!;
-    const [holding] = await db
-      .select({ tokenId: schema.holdings.tokenId })
-      .from(schema.holdings)
-      .where(eq(schema.holdings.id, holdingId))
-      .limit(1);
+    await withTestDb(async (tx) => {
+      const f = await setupFixture(tx);
+      const holdingId = f.holdings['complete-fresh']!;
+      const [holding] = await tx
+        .select({ tokenId: schema.holdings.tokenId })
+        .from(schema.holdings)
+        .where(eq(schema.holdings.id, holdingId))
+        .limit(1);
 
-    const [withdrawal] = await db
-      .insert(schema.holdingTransactions)
-      .values({
-        userId: f.userId,
-        holdingId,
-        tokenId: holding!.tokenId,
-        kind: 'withdraw',
-        quantity: '-4',
-        priceNative: '60',
-        priceNativeTokenId: f.baseCurrencyId,
-        occurredAt: new Date(Date.now() - DAY_MS),
-        externalId: `pnlq-withdraw-${randomUUID().slice(0, 8)}`,
-        source: 'test',
-      })
-      .returning();
+      const [withdrawal] = await tx
+        .insert(schema.holdingTransactions)
+        .values({
+          userId: f.userId,
+          holdingId,
+          tokenId: holding!.tokenId,
+          kind: 'withdraw',
+          quantity: '-4',
+          priceNative: '60',
+          priceNativeTokenId: f.baseCurrencyId,
+          occurredAt: new Date(Date.now() - DAY_MS),
+          externalId: `pnlq-withdraw-${randomUUID().slice(0, 8)}`,
+          source: 'test',
+        })
+        .returning();
 
-    const unanswered = await Container.get(PnLAtTimeService).getPnL(
-      f.userId,
-      new Date(),
-      f.baseCurrencyId
-    );
-    expect(unanswered.transfersUnreviewed).toBe(1);
-    expect(
-      unanswered.perHolding.find((ph) => ph.holdingId === holdingId)?.transfersUnreviewed
-    ).toBe(1);
-    // SC-150's behaviour, restated here because the caveat only means
-    // something if it is describing a figure that really is short: nothing was
-    // realized on the way out.
-    expect(unanswered.totalRealizedPnl.toString()).toBe('0');
+      const unanswered = await Container.get(PnLAtTimeService).getPnL(
+        f.userId,
+        new Date(),
+        f.baseCurrencyId,
+        { tx }
+      );
+      expect(unanswered.transfersUnreviewed).toBe(1);
+      expect(
+        unanswered.perHolding.find((ph) => ph.holdingId === holdingId)?.transfersUnreviewed
+      ).toBe(1);
+      // SC-150's behaviour, restated here because the caveat only means
+      // something if it is describing a figure that really is short: nothing was
+      // realized on the way out.
+      expect(unanswered.totalRealizedPnl.toString()).toBe('0');
 
-    await db
-      .update(schema.holdingTransactions)
-      .set({ transferReview: 'left_control', transferReviewedAt: new Date() })
-      .where(eq(schema.holdingTransactions.id, withdrawal!.id));
+      await tx
+        .update(schema.holdingTransactions)
+        .set({ transferReview: 'left_control', transferReviewedAt: new Date() })
+        .where(eq(schema.holdingTransactions.id, withdrawal!.id));
 
-    const answered = await Container.get(PnLAtTimeService).getPnL(
-      f.userId,
-      new Date(),
-      f.baseCurrencyId
-    );
-    expect(answered.transfersUnreviewed).toBe(0);
-    // 4 units bought at 50, sold at 60 — the gain the caveat was standing in
-    // for, now booked.
-    expect(answered.totalRealizedPnl.toString()).toBe('40');
+      const answered = await Container.get(PnLAtTimeService).getPnL(
+        f.userId,
+        new Date(),
+        f.baseCurrencyId,
+        { tx }
+      );
+      expect(answered.transfersUnreviewed).toBe(0);
+      // 4 units bought at 50, sold at 60 — the gain the caveat was standing in
+      // for, now booked.
+      expect(answered.totalRealizedPnl.toString()).toBe('40');
+    });
   });
 });

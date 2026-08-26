@@ -1,3 +1,4 @@
+import type { DatabaseTransaction } from '@scani/db';
 import type { CoverageQuality, HoldingCoverage, HoldingTransaction } from '@scani/db/schema';
 import Decimal from 'decimal.js';
 import { Container, Service } from 'typedi';
@@ -165,7 +166,14 @@ export class PnLAtTimeService {
       // (SC-462), from `users.cost_basis_method`. Omitted is `fifo`, which is
       // what every stored figure was computed with.
       costBasisMethod?: CostBasisMethod;
-    } = {}
+      /**
+       * The database transaction every read on this call goes through, or
+       * `undefined` for the pool. REQUIRED — see PriceGraphOptions.tx
+       * (SC-600). Forwarded verbatim to the valuation pass and to every cost
+       * walk below, so one `tx` at this entry point reaches all of them.
+       */
+      tx: DatabaseTransaction | undefined;
+    }
   ): Promise<PnLAtTimeResult> {
     const valuation = await this.valuationService.getPortfolioValue(
       userId,
@@ -183,7 +191,7 @@ export class PnLAtTimeService {
     // transfer-linked components and to cost-walk them together. The
     // rollup hands these in via caches; ad-hoc callers pay one bulk read.
     const txsByHolding: ReadonlyMap<string, ReadonlyArray<HoldingTransaction>> = opts.caches
-      ?.transactions ?? (await this.txRepository.findForHoldingsAll(holdingIds));
+      ?.transactions ?? (await this.txRepository.findForHoldingsAll(holdingIds, opts.tx));
 
     // The flag every provider writes honestly and nothing has ever read
     // (SC-149). Kraken reports `false` when its ledger endpoint pages out
@@ -192,7 +200,8 @@ export class PnLAtTimeService {
     // same cost basis as one that had none — zero — and the disposal's
     // entire proceeds became gain.
     const coverageByHolding =
-      opts.coverageByHolding ?? (await this.coverageRepository.findManyByHoldingIds(holdingIds));
+      opts.coverageByHolding ??
+      (await this.coverageRepository.findManyByHoldingIds(holdingIds, opts.tx));
     const historyByHolding = new Map<string, HistoryCompleteness>(
       holdingIds.map((h) => [h, historyCompletenessOf(coverageByHolding.get(h))])
     );
@@ -205,6 +214,7 @@ export class PnLAtTimeService {
     const costByHolding = new Map<string, CostBasisAtTime>();
     for (const component of components) {
       const result = await this.costBasisService.walkComponent(
+        opts.tx,
         component,
         txsByHolding,
         at,
@@ -225,6 +235,7 @@ export class PnLAtTimeService {
         ...(opts.priceLookup ? { priceLookup: opts.priceLookup } : {}),
         ...(txs ? { txs } : {}),
         ...(opts.costBasisMethod ? { method: opts.costBasisMethod } : {}),
+        tx: opts.tx,
       });
       costByHolding.set(h, cost);
     }

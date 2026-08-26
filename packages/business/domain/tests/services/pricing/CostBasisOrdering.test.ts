@@ -254,7 +254,7 @@ describe('walkLots is order-independent', () => {
     const svc = makeService();
     const results = new Set<string>();
     for (const order of permutations(ledger)) {
-      const r = await svc.walkLots(order, USD, SOL);
+      const r = await svc.walkLots(undefined, order, USD, SOL);
       results.add(`${r.realizedPnl.toFixed(2)}|${r.costBasis.toFixed(2)}|${r.openQty.toFixed(8)}`);
     }
     // The buys enter oldest-first by external_id (100, 200, 300), so the
@@ -346,7 +346,7 @@ describe('walkComponent is order-independent', () => {
         ['h1', h1],
         ['h2', byHolding.get('h2') ?? []],
       ]);
-      const r = await svc.walkComponent(['h1', 'h2'], shuffled, at, USD, held);
+      const r = await svc.walkComponent(undefined, ['h1', 'h2'], shuffled, at, USD, held);
       const h1r = r.get('h1');
       const h2r = r.get('h2');
       results.add(

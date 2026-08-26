@@ -191,6 +191,8 @@ export class OpeningBalanceReconciliationService {
     const earliestEvidence = await this.balanceAtTimeService.earliestEvidenceAt(
       holdingId,
       holding,
+      // The pool, exactly as before — this reconciler is not transactional.
+      undefined,
       {},
       { excludeReconciliationOpening: true }
     );
