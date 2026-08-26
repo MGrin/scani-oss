@@ -86,12 +86,15 @@ describe('SC-657 — committed is a subset of observed, never an addend', () => 
  * differently — which is not tidiness. They DID compute them differently, and
  * reached opposite conclusions about one account at one instant: home said
  * "About 27 months at recent spending" while the forecast page said "Lasts
- * beyond 12 months, the book nets +£8,907.62 a month".
+ * beyond 12 months, the book nets a large positive figure a month".
  */
 describe('SC-661 — one division, shared by both surfaces', () => {
-  /** mgrin's real production figures, 2026-08-26. */
-  const LIQUID = '112703.12';
-  const OBSERVED = '14087.89';
+  // Invented, and deliberately so — see the note at the top of this file.
+  // Chosen to floor to 8 without sitting ON the boundary: 100000 / 12000 =
+  // 8.33, so a small change in either operand does not move the integer and
+  // a failure here means the division changed rather than the fixture drifted.
+  const LIQUID = '100000';
+  const OBSERVED = '12000';
 
   test('it reproduces the figure production renders', () => {
     expect(observedRunwayMonths(LIQUID, OBSERVED)).toBe(8);
@@ -117,7 +120,8 @@ describe('SC-661 — one division, shared by both surfaces', () => {
   /**
    * THE REASON THE PANEL CHANGED MODELS. `affordability()` returns
    * `monthsLost: null` unless BOTH walks run out inside the twelve-month
-   * window, and mgrin's book nets +$10,819.53 a month, so neither ever did —
+   * window, and the book on that account nets a positive figure every month, so
+   * neither ever did —
    * the panel could only answer "affordable", whatever he typed. A control
    * that cannot return a second answer is not a control.
    */
@@ -128,7 +132,7 @@ describe('SC-661 — one division, shared by both surfaces', () => {
     expect(verdict?.monthsAfter).toBe(5);
     expect(verdict?.monthsLost).toBe(3);
     expect(verdict?.affordable).toBe(true);
-    expect(verdict?.remaining.toString()).toBe('82703.12');
+    expect(verdict?.remaining.toString()).toBe('70000');
   });
 
   test('a purchase larger than the balance leaves no runway, not negative months', () => {
