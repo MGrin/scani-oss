@@ -587,7 +587,7 @@ function ObservedBasis({
   burn: NonNullable<ForecastData['observedBurn']>;
   share: Decimal | null;
   baseSymbol: string;
-  answer: ForecastData['observedBurnAnswer'];
+  answer: ForecastData['observedBurnAnswer'] | undefined;
 }) {
   const { t } = useTranslation();
   /**
@@ -857,7 +857,7 @@ function BurnAnswer({
   measured,
   baseSymbol,
 }: {
-  answer: ForecastData['observedBurnAnswer'];
+  answer: ForecastData['observedBurnAnswer'] | undefined;
   measured: string;
   baseSymbol: string;
 }) {
@@ -878,6 +878,30 @@ function BurnAnswer({
       void utils.payments.forecast.invalidate();
     },
   });
+
+  /**
+   * AN API OLDER THAN THIS BUNDLE SENDS NO ANSWER AT ALL, AND THE TWO HALVES
+   * CAN SHIP APART.
+   *
+   * The field is non-optional on the wire, so the honest-looking type is the
+   * non-optional one — and the comment defending that in the test fixture said
+   * a payload omitting it "stays a failure rather than a silently empty
+   * affordance". That reasoning assumed the frontend and the api deploy
+   * together. They are separate deploy targets (Cloudflare Pages and Fly), and
+   * on 2026-08-26 a frontend change reached production on a day when the Fly
+   * chain had not run once, so the assumption is not one this component may
+   * make.
+   *
+   * The failure it preferred is not a missing affordance: `answer.kind` on
+   * `undefined` throws in render, on the page whose whole job is answering
+   * "how long does my money last". Rendering nothing degrades correctly — the
+   * runway does not depend on the answer, only on the override REPLACING the
+   * denominator, and an absent field means there is no override.
+   *
+   * Deliberately NOT `answer ?? { kind: 'none' }`: that would ask the user a
+   * question this server cannot record the answer to.
+   */
+  if (!answer) return null;
 
   /**
    * Positive, not merely numeric. `ObservedBurnAnswerDto` is what ENFORCES
