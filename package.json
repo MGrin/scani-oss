@@ -24,6 +24,7 @@
     "dev:docs": "bun --cwd apps/frontend/docs dev",
     "dev:stack": "bun scripts/dev-stack.ts up",
     "dev:stack:down": "bun scripts/dev-stack.ts down",
+    "dev:stacks": "bun scripts/stacks.ts",
     "env:sync": "bun scripts/sync-env.ts",
     "build": "bun run --filter='*' build",
     "clean": "bun run --filter='*' clean",
