@@ -7,6 +7,8 @@ import {
   downVerdict,
   publishedServices,
   stackEnv,
+  upArgs,
+  upVerdict,
 } from '../dev-stack';
 import {
   composeProjectName,
@@ -452,5 +454,111 @@ describe('`down` finishes, and says so only when it can prove it (SC-663)', () =
     expect(downVerdict(17, [], 'scani_env_x').exit).toBe(17);
     expect(downVerdict(17, null, 'scani_env_x').exit).toBe(17);
     expect(downVerdict(17, ['x-api-1'], 'scani_env_x').exit).toBe(17);
+  });
+});
+
+describe('up waits for the healthchecks that are already declared (SC-669)', () => {
+  const H = (name: string, state: 'healthy' | 'unhealthy' | 'starting' | 'none') => ({
+    name,
+    state,
+  });
+
+  test('the up argv carries --wait', () => {
+    // `up -d` returns once containers have STARTED. Pinned here because the
+    // flag's absence is invisible in a green run — which is how it survived
+    // alongside healthchecks that were already declared.
+    expect(upArgs()).toContain('--wait');
+  });
+
+  test('passthrough is preserved and --wait still present', () => {
+    expect(upArgs(['postgres', 'redis'])).toEqual([
+      'docker',
+      'compose',
+      '--profile',
+      'full',
+      'up',
+      '-d',
+      '--build',
+      '--wait',
+      'postgres',
+      'redis',
+    ]);
+  });
+
+  test('a stack where everything is healthy reports what it VERIFIED', () => {
+    const { message, exit } = upVerdict(
+      0,
+      [H('p-postgres-1', 'healthy'), H('p-redis-1', 'healthy'), H('p-admin-1', 'none')],
+      'scani_env_x'
+    );
+    expect(exit).toBe(0);
+    // `3 running` alone invites the reader to assume all three were checked.
+    expect(message).toContain('3 running, 2 health-verified');
+  });
+
+  test('an unhealthy service refuses and names it', () => {
+    const { message, exit } = upVerdict(
+      0,
+      [H('p-postgres-1', 'healthy'), H('p-backend-1', 'unhealthy')],
+      'scani_env_x'
+    );
+    expect(exit).not.toBe(0);
+    expect(message).toContain('UP UNHEALTHY');
+    expect(message).toContain('p-backend-1 (unhealthy)');
+  });
+
+  test('a service still starting is not verified either', () => {
+    // `--wait` should have blocked, so reaching this is an anomaly. Counting
+    // it as fine is the "could not tell resolved toward fine" move that
+    // `downVerdict` exists to refuse.
+    const { exit } = upVerdict(0, [H('p-backend-1', 'starting')], 'scani_env_x');
+    expect(exit).not.toBe(0);
+  });
+
+  test('docker being unaskable is NOT a clean start', () => {
+    const { message, exit } = upVerdict(0, null, 'scani_env_x');
+    expect(exit).toBe(1);
+    expect(message).toContain('UP UNVERIFIED');
+    expect(message).not.toContain('UP · exit 0');
+  });
+
+  test('a service with no healthcheck is not counted as a failure', () => {
+    // Nine services here declare none. Treating "no healthcheck" as unhealthy
+    // would refuse every healthy stack.
+    const { exit } = upVerdict(0, [H('p-admin-1', 'none'), H('p-worker-1', 'none')], 'scani_env_x');
+    expect(exit).toBe(0);
+  });
+
+  test('the verdict line cannot contradict its own exit code', () => {
+    // Same lesson as `downVerdict`: asserting the exit and the text separately
+    // never catches a message that names the other number.
+    for (const [code, health] of [
+      [0, []],
+      [0, [H('x-postgres-1', 'healthy')]],
+      [0, [H('x-backend-1', 'unhealthy')]],
+      [0, null],
+      [17, []],
+      [17, [H('x-backend-1', 'unhealthy')]],
+      [17, null],
+    ] as ReadonlyArray<[number, ReturnType<typeof H>[] | null]>) {
+      const { message, exit } = upVerdict(code, health, 'scani_env_x');
+      expect(`${code}/${health === null ? 'null' : health.length}: ${message}`).toContain(
+        `exit ${exit}`
+      );
+    }
+  });
+
+  test("compose's own code is shown when it differs, and not when it does not", () => {
+    expect(upVerdict(17, [H('x-backend-1', 'unhealthy')], 'p').message).toContain(
+      'compose exit 17'
+    );
+    expect(upVerdict(0, [H('x-backend-1', 'unhealthy')], 'p').message).not.toContain(
+      'compose exit'
+    );
+  });
+
+  test("a compose failure keeps compose's exit code", () => {
+    expect(upVerdict(17, [], 'scani_env_x').exit).toBe(17);
+    expect(upVerdict(17, null, 'scani_env_x').exit).toBe(17);
   });
 });
