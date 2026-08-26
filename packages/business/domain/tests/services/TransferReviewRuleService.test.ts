@@ -462,14 +462,20 @@ describe('TransferReviewRuleService — listing and undo', () => {
  *
  * mgrin wrote the first real rule minutes after SC-375 deployed and it could
  * fire exactly once, because the string it was keyed on carried the amount:
- * `pay 10578346.01 idr to valeriia parkesova (dividends)`. His sentence was
+ * `pay 9450000.25 idr to amara sitanggang (dividends)`. His sentence was
  * *"the next transfer will have a different amount but I still need it to be
  * applied"*, and that is the whole of what these assert.
  *
- * The descriptions below are production's, verbatim — 14 rows, two recipients,
- * one typo the source data actually contains. They are here rather than
- * invented because the failure was not that normalization was missing; it was
- * that the shape of the real keys was never looked at.
+ * The descriptions below have production's SHAPE — 14 rows, two recipients,
+ * one typo of the kind the source data actually contains — but the second
+ * recipient's name and amounts are INVENTED. They were a real third party's,
+ * and this repository is public.
+ *
+ * The shape is what matters and it is preserved: amounts that vary row to row
+ * (which is why keying on the whole string failed), a two-word name, and a
+ * `(purpose)` suffix. Do not restore real values here — the failure this
+ * guards was never that the data was authentic, it was that the shape of the
+ * keys was never looked at.
  *
  * **What is NOT asserted is as load-bearing as what is.** Nothing here matches
  * a substring, a prefix or a near-miss. The key is a field an attacker can
@@ -478,7 +484,8 @@ describe('TransferReviewRuleService — listing and undo', () => {
  * stay apart.
  */
 describe('TransferReviewRuleService — payment descriptions', () => {
-  /** Every Airwallex outflow in production that names a recipient. */
+  /** One row per outflow shape a payment rail produces when it names a
+   *  recipient. Second recipient's name and amounts invented. */
   const NIKITA = [
     'Pay 2500.00 USD to Nikita Grishin (Dividends)',
     'Pay 300.00 USD to Nikita Grishin (Dividends)',
@@ -488,12 +495,12 @@ describe('TransferReviewRuleService — payment descriptions', () => {
     'Pay 500.00 USD to Nikita Grishin (Dividends)',
     'Pay 500.00 USD to Nikita Grishin (Dividends)',
   ];
-  const VALERIIA = [
-    'Pay 10395764.95 IDR to Valeriia Parkesova (Dividends)',
-    'Pay 10578346.01 IDR to Valeriia Parkesova (Dividends)',
-    'Pay 12453676.82 IDR to Valeriia Parkesova (Dividends)',
-    'Pay 17795377.77 IDR to Valeriia Parkesova (Dividends)',
-    'Pay 8811636.08 IDR to Valeriia Parkesova (Dividends)',
+  const AMARA = [
+    'Pay 11200000.50 IDR to Amara Sitanggang (Dividends)',
+    'Pay 9450000.25 IDR to Amara Sitanggang (Dividends)',
+    'Pay 13100000.75 IDR to Amara Sitanggang (Dividends)',
+    'Pay 15900000.10 IDR to Amara Sitanggang (Dividends)',
+    'Pay 7300000.60 IDR to Amara Sitanggang (Dividends)',
   ];
 
   async function payment(f: Fixture, externalId: string, description: string): Promise<string> {
@@ -503,17 +510,13 @@ describe('TransferReviewRuleService — payment descriptions', () => {
   test('keys on the recipient, so the next payment at another amount matches', async () => {
     const f = fixture!;
     // The row the rule was authored from, and the one before it.
-    const authored = await payment(
-      f,
-      'p-1',
-      'Pay 10578346.01 IDR to Valeriia Parkesova (Dividends)'
-    );
-    await payment(f, 'p-2', 'Pay 8811636.08 IDR to Valeriia Parkesova (Dividends)');
+    const authored = await payment(f, 'p-1', 'Pay 9450000.25 IDR to Amara Sitanggang (Dividends)');
+    await payment(f, 'p-2', 'Pay 7300000.60 IDR to Amara Sitanggang (Dividends)');
 
     const result = await service().create(f.userId, {
       transactionId: authored,
       verdict: 'not_a_disposal',
-      note: 'Valeriia Permata',
+      note: 'Amara Permata',
     });
 
     expect(result.ok).toBe(true);
@@ -521,7 +524,7 @@ describe('TransferReviewRuleService — payment descriptions', () => {
     // The amount and currency are gone; the recipient and the purpose they
     // were paid for are not. `(Dividends)` stays because it is a distinction
     // the user chose — a rule about dividends must not swallow a loan.
-    expect(result.rule.matchCounterparty).toBe('valeriia parkesova (dividends)');
+    expect(result.rule.matchCounterparty).toBe('amara sitanggang (dividends)');
     // Two rows, from one rule, at two different amounts. Under SC-375 this was
     // 1 and would have stayed 1 forever.
     expect(result.rule.affectedCount).toBe(2);
@@ -529,7 +532,7 @@ describe('TransferReviewRuleService — payment descriptions', () => {
 
   test("two rules cover all 12 of production's dividend payments", async () => {
     const f = fixture!;
-    for (const [i, description] of [...NIKITA, ...VALERIIA].entries()) {
+    for (const [i, description] of [...NIKITA, ...AMARA].entries()) {
       await payment(f, `p-all-${i}`, description);
     }
 
@@ -538,19 +541,19 @@ describe('TransferReviewRuleService — payment descriptions', () => {
       verdict: 'ask_me',
       note: 'Nikita, dividends',
     });
-    const valeriia = await service().create(f.userId, {
-      transactionId: await payment(f, 'p-all-v', VALERIIA[0]!),
+    const amara = await service().create(f.userId, {
+      transactionId: await payment(f, 'p-all-v', AMARA[0]!),
       verdict: 'ask_me',
-      note: 'Valeriia, dividends',
+      note: 'Amara, dividends',
     });
 
-    expect(nikita.ok && valeriia.ok).toBe(true);
-    if (!nikita.ok || !valeriia.ok) return;
+    expect(nikita.ok && amara.ok).toBe(true);
+    if (!nikita.ok || !amara.ok) return;
     expect(nikita.rule.matchCounterparty).toBe('nikita grishin (dividends)');
-    expect(valeriia.rule.matchCounterparty).toBe('valeriia parkesova (dividends)');
+    expect(amara.rule.matchCounterparty).toBe('amara sitanggang (dividends)');
     // 7 + 1 authored-from, and 5 + 1 authored-from: every row, from two rules.
     expect(nikita.rule.affectedCount).toBe(NIKITA.length + 1);
-    expect(valeriia.rule.affectedCount).toBe(VALERIIA.length + 1);
+    expect(amara.rule.affectedCount).toBe(AMARA.length + 1);
   });
 
   test("the source data's own typo keys separately, and that is correct", async () => {
