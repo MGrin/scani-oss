@@ -37,6 +37,7 @@
     "./services/tokens/RescoreScamTokensService": "./src/services/tokens/RescoreScamTokensService.ts",
     "./services/transactions/TransactionImportCoordinator": "./src/services/transactions/TransactionImportCoordinator.ts",
     "./services/transactions/transaction-source": "./src/services/transactions/transaction-source.ts",
+    "./services/transactions/transaction-sources": "./src/services/transactions/transaction-sources.ts",
     "./services/users/IntegrationCredentialsService": "./src/services/users/IntegrationCredentialsService.ts",
     "./use-cases/LinkTransferPairsUseCase": "./src/use-cases/LinkTransferPairsUseCase.ts",
     "./use-cases/ParseScreenshotUseCase": "./src/use-cases/ParseScreenshotUseCase.ts",
