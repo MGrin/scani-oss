@@ -1,20 +1,24 @@
 import { describe, expect, test } from 'bun:test';
 
 /**
- * What SC-422 actually promises: a repair script's dry run cannot write, and
+ * What SC-422 actually promises: an operator script's dry run cannot write, and
  * Postgres is the thing refusing — not the script's own care.
  *
  * These run the REAL entry path in a subprocess rather than assembling a
  * client here, because the claim is about `@scani/db/connection`, and a test
- * that builds its own options tests its own options. The fixture is named
- * `repair-*` because the file name is the input.
+ * that builds its own options tests its own options. The fixture lives in a
+ * directory named `scripts/` because since SC-646 the DIRECTORY is the input.
  *
- * Both directions are asserted. A dry run that refuses a write proves nothing
- * on its own — a connection that refused every write always would pass it, and
- * would also have broken every repair anyone ever committed.
+ * All three invocations are asserted, and the two writing ones are not
+ * decoration. A dry run that refuses a write proves nothing on its own — a
+ * connection hard-wired read-only would pass it, and would also break every
+ * repair anyone ever committed. `--apply` has its own case because ten scripts
+ * spell their write flag that way; SC-646 made the connection understand it,
+ * and a change that quietly stopped would leave those ten unable to write with
+ * no test to notice.
  */
 
-const FIXTURE = new URL('./fixtures/repair-read-only-probe.ts', import.meta.url).pathname;
+const FIXTURE = new URL('./fixtures/scripts/read-only-probe.ts', import.meta.url).pathname;
 
 interface Probe {
   isReadOnlySession: boolean;
@@ -42,7 +46,7 @@ async function probe(...args: string[]): Promise<Probe> {
   return JSON.parse(line.slice('SC422_PROBE '.length)) as Probe;
 }
 
-describe('a repair script dry run', () => {
+describe('an operator script dry run', () => {
   test('opens a session Postgres itself refuses writes on, while reads still work', async () => {
     const result = await probe();
 
@@ -62,6 +66,22 @@ describe('the same script with --commit', () => {
   // wiring read-only would pass the test above.
   test('opens a writable session', async () => {
     const result = await probe('--commit');
+
+    expect(result.isReadOnlySession).toBe(false);
+    expect(result.sessionSaysReadOnly).toBe(false);
+    expect(result.readWorks).toBe(true);
+    expect(result.wrote).toBe(true);
+    expect(result.writeErrorCode).toBeUndefined();
+  }, 30000);
+});
+
+describe('the same script with --apply', () => {
+  // The other write spelling, and the one the ten SC-646 scripts use. Asserted
+  // against the live session rather than against the policy function, because
+  // the failure this guards is a script that believes it is committing while
+  // the connection refuses every write it makes.
+  test('opens a writable session too', async () => {
+    const result = await probe('--apply');
 
     expect(result.isReadOnlySession).toBe(false);
     expect(result.sessionSaysReadOnly).toBe(false);
