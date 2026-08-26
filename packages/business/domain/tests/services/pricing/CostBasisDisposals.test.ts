@@ -82,8 +82,14 @@ function tx(p: {
   transferReviewSplit?: unknown;
   /** Defaults to a stamp whenever an answer is present — which is what every
    *  application write path does. Pass `null` for the state that only a raw
-   ***REMOVED*** */
+   ***REMOVED***
+   *
+   *  **It no longer decides provenance** (SC-673). It used to, and the fixture
+   *  set no source at all — so every answered row here was `user` by default,
+   *  from a date. Provenance is `transferReviewSource` and only that. */
   transferReviewedAt?: Date | null;
+  /** WHO answered. Absent means the database does not record it. */
+  transferReviewSource?: string | null;
 }): HoldingTransaction {
   txSeq += 1;
   return {
@@ -113,6 +119,7 @@ function tx(p: {
         : p.transferReview
           ? new Date()
           : null,
+    transferReviewSource: p.transferReviewSource ?? null,
     source: 's',
     sourceMetadata: {},
     rawPayload: null,
@@ -661,7 +668,11 @@ describe('walkLots disposal ledger', () => {
           occurredAt: '2024-01-01',
           priceNative: '100',
         }),
-        // Answered in the queue: stamped, and provably the caller's.
+        // Answered in the queue, and provably the caller's — because the
+        // SOURCE says so. This row carried only a timestamp until SC-673, and
+        // "stamped" was read as "provably the caller's": true of every row when
+        // the fixture was written, and false once rows could be stamped by
+        // something that recorded no source.
         tx({
           holdingId: 'h',
           kind: 'withdraw',
@@ -669,6 +680,7 @@ describe('walkLots disposal ledger', () => {
           occurredAt: '2024-02-01',
           priceNative: '150',
           transferReview: 'left_control',
+          transferReviewSource: 'user',
         }),
         // Answered by something that left no trace of itself.
         tx({
