@@ -1,3 +1,4 @@
+import type { DatabaseTransaction } from '@scani/db';
 import type { CoverageQuality } from '@scani/db/schema';
 import Decimal from 'decimal.js';
 import { Container, Service } from 'typedi';
@@ -187,7 +188,7 @@ export class PortfolioValuationAtTimeService {
   async getPortfolioValue(
     userId: string,
     at: Date,
-    baseCurrencyId?: string,
+    baseCurrencyId: string | undefined,
     opts: {
       priceLookup?: PriceLookup;
       scope?: PortfolioValueScope;
@@ -200,13 +201,22 @@ export class PortfolioValuationAtTimeService {
       // all 30 days — the predicate is about the token's whole history,
       // so it does not vary by `at`. Omit and one query resolves it.
       unpriceableTokenIds?: ReadonlySet<string>;
-    } = {}
+      /**
+       * The database transaction every read on this call goes through, or
+       * `undefined` for the pool. REQUIRED — see PriceGraphOptions.tx
+       * (SC-600). This is the entry point the measurement was taken on:
+       * inside one `withTestDb` callback the transaction saw 1 holding and
+       * this pass saw 0, so every total below was computed over an empty
+       * portfolio and reported as a number.
+       */
+      tx: DatabaseTransaction | undefined;
+    }
   ): Promise<PortfolioValueAtTimeResult> {
     // Resolve display base. Fall back to user's configured base_currency_id
     // when caller didn't specify — mirrors the current dashboard convention.
     let effectiveBaseId = baseCurrencyId;
     if (!effectiveBaseId) {
-      const user = await this.userRepository.findById(userId);
+      const user = await this.userRepository.findById(userId, opts.tx);
       effectiveBaseId = user?.baseCurrencyId ?? undefined;
     }
     if (!effectiveBaseId) {
@@ -218,7 +228,7 @@ export class PortfolioValuationAtTimeService {
     // Pull all of the user's holdings. We value each against `at` regardless
     // of its current visibility flags — the history chart shouldn't change
     // retroactively when a holding is later hidden.
-    const allHoldings = await this.holdingRepository.findByUser(userId);
+    const allHoldings = await this.holdingRepository.findByUser(userId, opts.tx);
 
     // Apply the per-entity scope filter (institution / account /
     // holding). Holdings created after `at` are kept in the pool —
@@ -228,13 +238,14 @@ export class PortfolioValuationAtTimeService {
     // dropped them here to keep the coverage denominator honest, but
     // that produced an empty chart for users whose holdings were all
     // created in the last day or two (the typical onboarding case).
-    const holdings = await this.applyScope(allHoldings, opts.scope, userId);
+    const holdings = await this.applyScope(allHoldings, opts.scope, userId, opts.tx);
 
     const unpriceableTokenIds =
       opts.unpriceableTokenIds ??
       (await this.tokenRepository.findNeverPricedInCooldownTokenIds(
         [...new Set(holdings.map((h) => h.tokenId))],
-        new Date()
+        new Date(),
+        opts.tx
       ));
 
     const perHolding: PortfolioValueAtTimePerHolding[] = [];
@@ -251,7 +262,7 @@ export class PortfolioValuationAtTimeService {
     let interpolatedCount = 0;
 
     for (const h of holdings) {
-      const result = await this.balanceAtTimeService.getBalance(h.id, at, opts.caches);
+      const result = await this.balanceAtTimeService.getBalance(h.id, at, opts.tx, opts.caches);
       // Only ever consulted on a branch that produced no value —
       // a holding we *did* price is priceable by demonstration, and a
       // zero balance is worth zero in any currency. Keeping the flag off
@@ -338,6 +349,7 @@ export class PortfolioValuationAtTimeService {
         {
           ...(isRecent ? {} : { preferGranularity: 'daily' as const }),
           ...(opts.priceLookup ? { priceLookup: opts.priceLookup } : {}),
+          tx: opts.tx,
         }
       );
 
@@ -453,7 +465,8 @@ export class PortfolioValuationAtTimeService {
   private async applyScope<H extends { id: string; accountId: string }>(
     holdings: H[],
     scope: PortfolioValueScope | undefined,
-    userId: string
+    userId: string,
+    tx: DatabaseTransaction | undefined
   ): Promise<H[]> {
     if (!scope || scope.kind === 'user') return holdings;
     if (scope.kind === 'holding') {
@@ -463,7 +476,7 @@ export class PortfolioValuationAtTimeService {
       return holdings.filter((h) => h.accountId === scope.id);
     }
     // institution: resolve member account ids via AccountRepository
-    const accounts = await this.accountRepository.findByUser(userId);
+    const accounts = await this.accountRepository.findByUser(userId, tx);
     const accountIdsForInstitution = new Set(
       accounts.filter((a) => a.institutionId === scope.id).map((a) => a.id)
     );
