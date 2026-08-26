@@ -15,11 +15,11 @@
  * both sides already depend on, and geometry is data, not UI.
  *
  * The estate's rasters — every favicon, `.ico` and PWA icon — are **generated**
- * from `apps/frontend/landing/public/favicon.svg` by `bun run icons:generate`
- * (SC-80). That file is plain SVG on a CDN path with no build step, so it
- * cannot import this one and carries the same numbers by value. Changing the
- * mark means changing both and re-running the generator; there is no third
- * place, and `scani-mark.test.ts` fails if that SVG stops matching.
+ * from a marketing-site SVG that is not part of this repository (SC-80). That
+ * file is plain SVG on a CDN path with no build step, so it cannot import this
+ * one and carries the same numbers by value. Changing the mark therefore means
+ * changing that copy and regenerating the icon set as well; there is no third
+ * place.
  */
 export const SCANI_MARK = {
   /** The square viewport every coordinate below is expressed in. */
