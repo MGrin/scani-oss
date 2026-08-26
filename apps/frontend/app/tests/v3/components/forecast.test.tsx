@@ -704,3 +704,38 @@ describe('SC-661 — answering the measured drain', () => {
     expect(excluded).toBeGreaterThan(provenance);
   });
 });
+
+/**
+ * SC-661 — the bundle can be newer than the api it is talking to.
+ *
+ * `observedBurnAnswer` is non-optional on the wire, and the fixture above
+ * defaults it for exactly that reason. But the frontend and the api are
+ * SEPARATE DEPLOY TARGETS (Cloudflare Pages and Fly), and on 2026-08-26 a
+ * frontend change reached production on a day the Fly chain had not run once.
+ * So a browser holding this bundle can be served a forecast payload with no
+ * answer in it.
+ *
+ * Before the guard that is `answer.kind` on `undefined`, thrown in render, on
+ * the page whose whole job is answering how long the money lasts.
+ */
+describe('SC-661 — a forecast payload from an older api', () => {
+  const withoutAnswer = () => {
+    const { observedBurnAnswer: _dropped, ...rest } = wire(BOOK, '10000');
+    return { forecast: { ...rest, observedBurn: observedBurn() } };
+  };
+
+  test('renders the runway and simply omits the affordance', () => {
+    const html = render(BOOK, '10000', withoutAnswer());
+
+    // The answer this page exists to give is unaffected: an absent field means
+    // no override, and the runway never depended on anything else.
+    expect(html).toInclude('About 8 months at recent spending');
+    // Everything the measurement carries with it still renders, so the absence
+    // below is this guard firing rather than the block failing to mount.
+    expect(html).toInclude('Who classified the money');
+    expect(html).toInclude('Mean of 6 complete months');
+
+    expect(html).not.toInclude('Is this what you spend?');
+    expect(html).not.toInclude("Yes, that's right");
+  });
+});
