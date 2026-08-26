@@ -94,7 +94,26 @@ COPY --from=build --chown=app:app /app/node_modules/bullmq/dist/esm/postgres /ap
 
 EXPOSE 3001
 
+# The probe reads PORT rather than hardcoding it (SC-492).
+#
+# It used to curl 3001 literally. That is correct only while every compose in
+# use happens to set PORT: 3001 — and one of them does not, so this container
+# reported `unhealthy` for months while its own log read
+# `Scani Backend Server started successfully | port=8080`.
+#
+# The failure is silent in the way that matters: `docker ps` says `unhealthy`,
+# which is also what a genuinely broken api says, so the one signal that would
+# report a real fault was already red and unreadable. Fly cannot catch it
+# either — it never executes a Dockerfile HEALTHCHECK, it runs its own
+# `[checks]` against `internal_port`.
+#
+# `${PORT:-3001}` is expanded by the shell at RUN time, not by the builder:
+# HEALTHCHECK takes no build-time substitution and this is shell form. So one
+# image is correct at whatever PORT it is given, and a compose that moves the
+# port can no longer break the probe without saying so. EXPOSE stays literal —
+# it DOES take build-time substitution, is documentation only, and names the
+# default.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
-  CMD curl --fail --silent --show-error http://localhost:3001/readyz > /dev/null || exit 1
+  CMD curl --fail --silent --show-error "http://localhost:${PORT:-3001}/readyz" > /dev/null || exit 1
 
 CMD ["/app/server"]
