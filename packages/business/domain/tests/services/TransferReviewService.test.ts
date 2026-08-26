@@ -2754,8 +2754,8 @@ describe('TransferReviewService — the own-wallet invariant (SC-365)', () => {
  * itself reads — the payload's, not the column's.
  */
 describe('TransferReviewService — address rules', () => {
-  const RULE_ADDRESS = '0x586347C4E1E1C4c1DbC7C48d0f7ED33B0F9B1CEC';
-  const RULE_LOOKALIKE = '0x586347C4E1E1C4c1DbC7C48d0f7ED33B0F9B1CEd';
+  const RULE_ADDRESS = '0x7A3f91B2c4D5e6F708192a3B4c5D6e7F8091A2b3';
+  const RULE_LOOKALIKE = '0x7A3f91B2c4D5e6F708192a3B4c5D6e7F8091A2b4';
 
   async function addRule(
     f: Fixture,
