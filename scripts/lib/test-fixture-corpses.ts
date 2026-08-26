@@ -25,6 +25,21 @@ export const FIXTURE_CORPSE_GLOBS = [
   'scripts/.sc546-fixture-*',
 ] as const;
 
+/**
+ * SC-609. The one name every fixture written INSIDE this repository starts
+ * with, and the only thing `.gitignore`'s matching rule has to know about.
+ *
+ * Not dot-prefixed, deliberately. Two of these fixtures are `.mdx` pages the
+ * docs check compiles and one is a directory that must read as an ordinary
+ * candidate provider; a leading dot is exactly what several tools skip, so a
+ * dotted family would make some fixtures invisible to the checks they exist to
+ * exercise.
+ */
+export const REPO_FIXTURE_PREFIX = 'scani-test-fixture-';
+
+/** The single `.gitignore` line that has to reach {@link REPO_FIXTURE_PREFIX}. */
+export const REPO_FIXTURE_IGNORE_RULE = `**/${REPO_FIXTURE_PREFIX}*`;
+
 function matchers(): Bun.Glob[] {
   // The `/**` twin catches paths BELOW a directory entry; `*` in a glob does
   // not cross a `/`, so without it the queue fixture's `README.md` matches
@@ -82,4 +97,62 @@ export function sweepFixtureCorpses(repoRoot: string): string[] {
   }
 
   return Array.from(removed).sort();
+}
+
+/**
+ * SC-609. The globs above are a NAME LIST, so they are exactly as wide as
+ * their entries and no wider. The ticket that filed this named six fixtures no
+ * pattern covered; observing the tree throughout a run of `scripts/tests/`
+ * found ELEVEN, and the five it missed included four sitting in the deployed
+ * docs content root. A list that was already incomplete when written is the
+ * argument against fixing this with a longer list.
+ *
+ * What closes the COMMIT path instead is git's own ignore machinery: `git add
+ * -A` cannot stage an ignored path, at all, whatever it is called. So every
+ * fixture a test writes inside this repository goes under one reserved family,
+ * `.gitignore` carries one rule for it, and this function refuses a path that
+ * rule does not reach — at the moment of writing, on the first run, rather
+ * than at some later kill.
+ *
+ * It asks GIT whether the path is ignored rather than matching the prefix
+ * itself. Those come apart: matching the prefix asserts the convention was
+ * followed, and the property that actually matters is whether `git add -A`
+ * can take the file. A prefix check would pass with the `.gitignore` rule
+ * deleted.
+ *
+ * THE RESIDUAL, which this does not close and must not be read as closing: a
+ * fixture written to a brand-new path by a test that does not call this
+ * function is invisible here. `fixture-corpse-sweep.test.ts` scans for that
+ * shape as a backstop, and a source scan is itself a pattern.
+ */
+export function assertRepoFixtureIsIgnored(repoRoot: string, rel: string): void {
+  const probe = Bun.spawnSync(['git', 'check-ignore', '-q', '--', rel], { cwd: repoRoot });
+
+  // 0 ignored, 1 not ignored, 128 a real git failure. Treating anything
+  // non-zero as "not ignored" would report a broken git as a fixture bug.
+  if (probe.exitCode === 0) return;
+  if (probe.exitCode !== 1) {
+    throw new Error(
+      `git check-ignore failed (exit ${probe.exitCode}) for ${rel}: ` +
+        `${probe.stderr.toString().trim()}`
+    );
+  }
+
+  // Two different causes reach this line and they need opposite remedies, so
+  // the message discriminates rather than guessing. A path already carrying the
+  // prefix cannot be fixed by renaming it — telling its reader to rename would
+  // send them to edit the one thing that is already right.
+  const carriesPrefix = rel.split('/').some((segment) => segment.startsWith(REPO_FIXTURE_PREFIX));
+
+  throw new Error(
+    `${rel} is a test fixture inside the repository that git would let ` +
+      `\`git add -A\` commit.\n\n` +
+      (carriesPrefix
+        ? `It is named correctly, so the rule that should cover it is missing: ` +
+          `.gitignore has no line matching \`${REPO_FIXTURE_IGNORE_RULE}\`. Put it back.`
+        : `Name it under the reserved family, so the one rule in .gitignore reaches ` +
+          `it:\n\n  ${REPO_FIXTURE_PREFIX}<what-it-is>-\${process.pid}\n\n` +
+          `The prefix is what makes it uncommittable; the pid is what stops two ` +
+          `concurrent runs sharing one path (SC-370).`)
+  );
 }
