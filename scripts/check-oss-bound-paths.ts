@@ -147,10 +147,17 @@ export interface TreeMarkers {
  *
  * TWO EDGES, both stated rather than left to the arithmetic.
  *
- * `mirrorOnlyTotal === 0` is a legitimate steady state, not a defect: that set
- * is only ever "files upstream has that private does not", which a healthy
- * repo drives toward zero. There is then NO mirror evidence to weigh, which is
- * a different thing from mirror evidence that came back empty, and a `why`
+ * `mirrorOnlyTotal === 0` is DEFENSIVE rather than reachable here, and saying
+ * which it is matters. That set is "files upstream has that private does not",
+ * and in this repo it has a floor of 9 that will never close: the release
+ * automation (`release-please.yml`, `release-please-config.json`,
+ * `.release-please-manifest.json`, `CHANGELOG.md`), CodeQL, `docker-publish`,
+ * `deploy-docs` and `sync-dockerhub-readmes` exist only on the mirror by
+ * design. An upstream-first file is therefore 1 of 10, not 1 of 1. A fork or a
+ * differently-arranged mirror has no such floor, so the branch is kept — but
+ * it is a guard against an arrangement this repo does not have, not a state
+ * measured here. There is then NO mirror evidence to weigh, which is a
+ * different thing from mirror evidence that came back empty, and a `why`
  * reading `0/0 mirror-only` would invite the reader to conclude the tree lacks
  * paths that do not exist to lack. It gets its own branch and says so. The
  * verdict is unchanged — a tree carrying private-only paths is `private`, one
@@ -158,10 +165,12 @@ export interface TreeMarkers {
  * state carries 0 of the private-only set and so cannot reach the `private`
  * branch at all.
  *
- * A very small non-zero `mirrorOnlyTotal` — one or two — makes a single
- * upstream-first file most of the mirror's set, and its share can then outrank
- * a 541/546 private one. That resolves to `oss`, a refusal somebody reads,
- * which is the direction this function errs in on purpose. Loud, not silent.
+ * A very small non-zero `mirrorOnlyTotal` — one or two — would make a single
+ * upstream-first file most of the mirror's set, and its share could then
+ * outrank a 541/546 private one. The floor of 9 above puts this repo far from
+ * that, and where it does arise the verdict is `oss`: a refusal somebody
+ * reads, which is the direction this function errs in on purpose. Loud, not
+ * silent.
  *
  * Measured 2026-08-26 over all 756 local branches: 693 classified `private`,
  * each carrying between 283 and 543 of the 543 private-only paths; 63
