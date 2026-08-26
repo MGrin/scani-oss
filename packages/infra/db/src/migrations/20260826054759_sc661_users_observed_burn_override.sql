@@ -143,12 +143,20 @@ ALTER TABLE users
 -- row.
 --
 -- Both may be absent: that is the ordinary account, where the measurement
--- answers unchallenged. Enforced here rather than left to the write path
--- because a second write path is how one of them stops being checked, and
--- because the correct sequence — he overrides, the measurement later moves to
--- something he agrees with, he confirms THAT — requires clearing the other, and
--- a constraint is what makes forgetting to a refusal rather than a silent
--- second answer.
+-- answers unchallenged.
+--
+-- **THE STRONGER HALF OF THE REASON IS THE SEQUENCE, NOT THE CONTRADICTION.**
+-- The real path through this feature is: he overrides, the measurement later
+-- moves to something he agrees with, and he confirms THAT. Every step of it
+-- requires clearing the other pair, and a write path that forgets produces a
+-- row with two authoritative answers — which nothing reads as an error, nothing
+-- logs, and nobody would ever go looking for. A silent second answer is the
+-- worst shape available here, and it is the shape you get by default.
+--
+-- The constraint converts that omission into a REFUSAL at the moment it is
+-- made. That is why it lives in the database rather than in the service: a
+-- second write path is how one of them stops being checked, and this one cannot
+-- be checked by reading the row afterwards.
 ALTER TABLE users
   ADD CONSTRAINT users_observed_burn_one_answer
   CHECK (observed_burn_override IS NULL OR observed_burn_confirmed_value IS NULL);
