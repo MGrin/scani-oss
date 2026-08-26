@@ -15,8 +15,9 @@ import type { Affordability } from '../../../src/v3/lib/forecast';
  * ## Why the model changed rather than being kept alongside
  *
  * `affordability()` walks the committed book and returns `monthsLost: null`
- * unless BOTH walks run out inside twelve months. mgrin's book nets +$10,819.53
- * a month, so neither ever did and the panel could only answer "affordable",
+ * unless BOTH walks run out inside twelve months. The account this was measured
+ * against nets a positive figure every month, so neither ever did and the panel
+ * could only answer "affordable",
  * whatever he typed into it. A control that cannot return a second answer is
  * not a control.
  */
@@ -25,7 +26,7 @@ const verdict = (over: Partial<ObservedAffordability> = {}): ObservedAffordabili
   monthsBefore: 8,
   monthsAfter: 5,
   monthsLost: 3,
-  remaining: new Decimal('82703.12'),
+  remaining: new Decimal('70000'),
   affordable: true,
   ...over,
 });
@@ -50,7 +51,7 @@ describe('SC-661 — affordability answers against observed burn', () => {
 
     expect(html).toInclude('It costs 3 months of runway.');
     expect(html).toInclude('About 5 months at recent spending.');
-    expect(html).toInclude('$82,703.12');
+    expect(html).toInclude('$70,000.00');
   });
 
   /**

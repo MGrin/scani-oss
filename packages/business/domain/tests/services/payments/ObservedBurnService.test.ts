@@ -188,7 +188,7 @@ describe('SC-657 — the statistic', () => {
   /**
    * Mean and median differ MATERIALLY over his real spread, which is why the
    * choice is a product decision and why both travel to the surface. On
-   * 4k/43k-shaped data the median would describe a typical month and let a
+   * 3k/37k-shaped data the median would describe a typical month and let a
    * runway survive on paper past the point the account is empty.
    */
   test('mean and median are both reported and are not the same number', async () => {

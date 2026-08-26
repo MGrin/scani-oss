@@ -51,7 +51,7 @@ export function RunwayLine() {
    * from production use: that book does not describe how he spends money. He
    * moves it to current accounts Scani deliberately does not track and spends
    * from there, so his burn is the rate money LEAVES THE TRACKED PERIMETER —
-   * `left_control` outflows, $4k–$43k a month, nothing like a schedule.
+   * `left_control` outflows, $3k–$37k a month, nothing like a schedule.
    *
    * `committed` is shown beside it as a SHARE, never as an addend:
    * `runwayDenominator` takes one argument and there is no way to hand it the
@@ -106,7 +106,7 @@ export function RunwayLine() {
      * A link again (SC-661). SC-657 removed it because the destination
      * contradicted this line: it read "About 27 months at recent spending"
      * while `ForecastView` projected the committed book and answered "Lasts
-     * beyond 12 months · the book nets +£8,907.62 a month" — the opposite
+     * beyond 12 months · the book nets a large positive figure a month" — the opposite
      * conclusion about the same account at the same instant.
      *
      * The destination now leads with the same figure, from the same
