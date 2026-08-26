@@ -1,9 +1,14 @@
-import { TokenService, UserService } from '@scani/domain/services';
+import {
+  ObservedBurnAnswerCurrencyMismatch,
+  TokenService,
+  UserService,
+} from '@scani/domain/services';
 import { USER_DATA_DELETE } from '@scani/jobs';
 import { createComponentLogger } from '@scani/logging';
 import { BullMqEnqueueService } from '@scani/queue';
 import { emitEntityChange } from '@scani/realtime';
 import { ObservedBurnAnswerDto, ReportTimezoneDto, UpdateUserDto } from '@scani/shared';
+import { TRPCError } from '@trpc/server';
 import { Container } from 'typedi';
 import { z } from 'zod';
 import { strictInput } from '../lib/strict-input';
@@ -91,7 +96,23 @@ export const usersRouter = router({
     .input(strictInput(ObservedBurnAnswerDto))
     .mutation(async ({ input, ctx }) => {
       const { dbUser } = await requireAuth(ctx);
-      const updated = await Container.get(UserService).setObservedBurnAnswer(dbUser.id, input);
+      let updated: Awaited<ReturnType<UserService['setObservedBurnAnswer']>>;
+      try {
+        updated = await Container.get(UserService).setObservedBurnAnswer(dbUser.id, input);
+      } catch (error) {
+        // The client sends the currency because it is what gets STORED, and a
+        // client reading a cached profile can send the one the account has just
+        // left. A 400 telling it to re-read beats a stored answer that decodes
+        // as `currencyChanged` the first time anybody looks at it.
+        if (error instanceof ObservedBurnAnswerCurrencyMismatch) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message:
+              'That figure was given in a currency this account no longer uses. Reload and try again.',
+          });
+        }
+        throw error;
+      }
       emitEntityChange({
         entityType: 'user',
         operationType: 'update',
