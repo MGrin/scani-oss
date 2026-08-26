@@ -86,3 +86,17 @@ scripts/.source-mutation-journal-*.json
 **/*.tfstate
 **/*.tfstate.backup
 **/tfplan
+
+# Every fixture a test under `scripts/tests/` writes INSIDE this repository
+# (SC-609). Those tests must write in place — `check-docs.ts` derives its lists
+# from the tree, so a fixture in TMPDIR exercises nothing — and they remove
+# them in `afterEach`, which `SIGKILL` skips. Eleven such paths were committable
+# when this was added; `git add -A` cannot stage an ignored one, at all, which
+# is why this rule and not a longer sweep list.
+#
+# ONE rule, matched by a reserved name prefix, so the twelfth fixture is covered
+# the moment it is named rather than when somebody remembers to widen a glob.
+# `scripts/lib/test-fixture-corpses.ts` refuses at write time any in-repo
+# fixture this line does not reach — it asks git, so deleting this line turns
+# those tests red rather than turning the guard into a no-op.
+**/scani-test-fixture-*
