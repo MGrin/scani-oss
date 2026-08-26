@@ -73,9 +73,18 @@ describe('ObservedBurnAnswerDto', () => {
         value: '8100',
         currencyTokenId: UUID,
       }).success
-      // `override` has no `value` member, so the extra key is stripped rather
-      // than refused - what matters is that no parse result can carry both,
-      // which the assertion below checks on the OUTPUT rather than the input.
+      // THIS SPEAKS FOR THE DTO ALONE, NOT FOR THE ENDPOINT (SC-682).
+      // Bare, the DTO strips: `override` has no `value` member and zod drops
+      // unknown keys by default, so the parse succeeds. What is pinned here is
+      // that no parse RESULT can carry both, asserted on the output below.
+      //
+      // The api wraps this same DTO in `strictInput`, and there the identical
+      // payload is a 400 rather than a strip. Both layers are correct and they
+      // are correct about different things: this one guarantees the shape the
+      // service receives, the endpoint refuses the caller who sent nonsense.
+      // Said explicitly because this comment described end-to-end behaviour
+      // that changed underneath it while the assertion stayed true — a comment
+      // going false with no test going red.
     ).toBe(true);
     const parsed = ObservedBurnAnswerDto.parse({
       kind: 'override',
