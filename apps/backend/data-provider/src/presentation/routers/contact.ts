@@ -9,7 +9,8 @@
  *   2. a best-effort receipt to the submitter so they have proof in
  *      their inbox; a transient SMTP failure here is logged, not fatal.
  *
- * Abuse defenses mirror `waitlist.join`:
+ * Abuse defenses, the standard pair for an unauthenticated public
+ * endpoint:
  *   1. zod input validation (real-looking email, capped lengths)
  *   2. per-IP rate limiter (5 submissions / hour) via the shared
  *      Redis-backed limiter, with the in-memory fallback in dev/tests
