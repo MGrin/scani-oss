@@ -148,6 +148,9 @@ function observedBurn(over: Record<string, unknown> = {}) {
     perMonthMax: '3000',
     countedTransactions: 14,
     excluded: { unclassified: 2, untracked: 1, internal: 0, unvalued: 0 },
+    // The production shape, scaled to this fixture's 7500 total: user a
+    // minority BY VALUE, no automated rows at all, unattributed the bulk.
+    provenance: { user: '1775', automated: '0', unattributed: '5725' },
     staleValued: 0,
     ...over,
   };
@@ -420,5 +423,84 @@ describe('the cashflow forecast, as it is rendered', () => {
     expect(html).not.toInclude('Lasts beyond');
     expect(html).not.toInclude('€14,734.00');
     expect(html).toInclude('Working it out…');
+  });
+});
+
+/**
+ * SC-661/SC-673. The caption that says WHO classified the money the burn is
+ * made of.
+ */
+describe('SC-661 — provenance of the counted burn', () => {
+  const withBurn = () => ({
+    forecast: { ...wire(BOOK, '10000'), observedBurn: observedBurn() },
+  });
+
+  test('the shares are by VALUE, and the middle class is absent when it is zero', () => {
+    const html = render(BOOK, '10000', withBurn());
+
+    // 1775 / 7500 = 24%, 5725 / 7500 = 76%. Deliberately the production shape:
+    // a count-weighted implementation would report different numbers, and no
+    // count is available to render even by accident.
+    expect(html).toInclude('24% of that value rests on answers you gave');
+    expect(html).toInclude('76% carries no record of who or what decided');
+    expect(html).not.toInclude('decided by a named rule');
+  });
+
+  /**
+   * The middle class is not dead code. It renders empty within the burn
+   * window's `left_control` rows on the one production book we have, and is
+   * NOT empty book-wide — 30 rows there decode as `repair`. This is its
+   * control: given a non-zero automated share it must appear.
+   */
+  test('a named mechanism is named when there is one', () => {
+    const html = render(BOOK, '10000', {
+      forecast: {
+        ...wire(BOOK, '10000'),
+        observedBurn: observedBurn({
+          provenance: { user: '1500', automated: '3000', unattributed: '3000' },
+        }),
+      },
+    });
+
+    expect(html).toInclude('40% was decided by a named rule you can go and read');
+    expect(html).toInclude('20% of that value rests on answers you gave');
+  });
+
+  /**
+   * PLACEMENT IS PART OF THE FIX. The excluded line is a small caveat about 4
+   * EXCLUDED rows; this is a large claim about 76% of the value that IS
+   * COUNTED. Opposite operations — adjacent and in the wrong order, the larger
+   * claim reads as a footnote to the smaller one and a reader who has just been
+   * told some rows were left out stops there.
+   */
+  test('provenance comes BEFORE the excluded-rows sentence', () => {
+    const html = render(BOOK, '10000', withBurn());
+    const provenance = html.indexOf('Who classified the money');
+    const excluded = html.indexOf('outflows are not counted');
+
+    expect(provenance).toBeGreaterThan(-1);
+    expect(excluded).toBeGreaterThan(-1);
+    expect(provenance).toBeLessThan(excluded);
+  });
+
+  /**
+   * A share of nothing is not three zeroes, it is a question with no answer —
+   * the same rule `committedShareOfObserved` follows. A window with no counted
+   * exits says nothing rather than printing confident zeroes.
+   */
+  test('a window with nothing counted says nothing rather than 0%', () => {
+    const html = render(BOOK, '10000', {
+      forecast: {
+        ...wire(BOOK, '10000'),
+        observedBurn: observedBurn({
+          provenance: { user: '0', automated: '0', unattributed: '0' },
+        }),
+      },
+    });
+
+    expect(html).not.toInclude('Who classified the money');
+    // Control: the rest of the basis is still rendered, so the absence above is
+    // this guard firing rather than the whole block failing to render.
+    expect(html).toInclude('Mean of 6 complete months');
   });
 });
