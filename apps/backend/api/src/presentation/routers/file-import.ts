@@ -14,6 +14,7 @@ import { TRPCError } from '@trpc/server';
 import { Container } from 'typedi';
 import { z } from 'zod';
 import { UPLOAD_LIMITS } from '../../config/limits';
+import { strictInput } from '../lib/strict-input';
 import { requireAuth } from '../middleware/auth';
 import { protectedProcedure, router } from '../trpc';
 
@@ -55,29 +56,31 @@ export const fileImportRouter = router({
   /** Parse a bank statement file and return preview of transactions */
   parse: protectedProcedure
     .input(
-      z.object({
-        /** Base64-encoded file content */
-        content: z.string().min(1).max(4_000_000, 'File too large (max ~3MB)'),
-        /** Original filename (used for format detection) */
-        filename: z.string().min(1),
-        /** Bank template name (optional, auto-detected for CSV) */
-        bankTemplate: z.string().optional(),
-        /** Custom CSV column mapping (optional) */
-        customMapping: z
-          .object({
-            date: z.string(),
-            description: z.string(),
-            amount: z.string(),
-            credit: z.string().optional(),
-            debit: z.string().optional(),
-            currency: z.string().optional(),
-            balance: z.string().optional(),
-            dateFormat: z.string().optional(),
-            skipRows: z.number().optional(),
-            delimiter: z.string().optional(),
-          })
-          .optional(),
-      })
+      strictInput(
+        z.object({
+          /** Base64-encoded file content */
+          content: z.string().min(1).max(4_000_000, 'File too large (max ~3MB)'),
+          /** Original filename (used for format detection) */
+          filename: z.string().min(1),
+          /** Bank template name (optional, auto-detected for CSV) */
+          bankTemplate: z.string().optional(),
+          /** Custom CSV column mapping (optional) */
+          customMapping: z
+            .object({
+              date: z.string(),
+              description: z.string(),
+              amount: z.string(),
+              credit: z.string().optional(),
+              debit: z.string().optional(),
+              currency: z.string().optional(),
+              balance: z.string().optional(),
+              dateFormat: z.string().optional(),
+              skipRows: z.number().optional(),
+              delimiter: z.string().optional(),
+            })
+            .optional(),
+        })
+      )
     )
     .mutation(async ({ input, ctx }) => {
       // Per-user budget. Rejects before any decode / parse / AI hit.
@@ -176,19 +179,21 @@ export const fileImportRouter = router({
    */
   parseAndEnrich: protectedProcedure
     .input(
-      z.object({
-        r2Key: z.string().min(1),
-        // The presigned key is a uuid; without the real name the Files
-        // list can only show `a1b2c3.csv`.
-        originalFilename: z.string().min(1).max(512).optional(),
-        fileType: z.enum(['csv', 'ofx', 'qif']).default('csv'),
-        accountId: z.string().min(1, 'accountId is required'),
-        requestId: z.string().uuid(),
-        // Forwarded to the file-import worker as a fallback when the
-        // file has no Currency column. Set by the picker UI on the
-        // failed first-attempt's job-detail page.
-        defaultCurrency: z.string().min(1).max(8).optional(),
-      })
+      strictInput(
+        z.object({
+          r2Key: z.string().min(1),
+          // The presigned key is a uuid; without the real name the Files
+          // list can only show `a1b2c3.csv`.
+          originalFilename: z.string().min(1).max(512).optional(),
+          fileType: z.enum(['csv', 'ofx', 'qif']).default('csv'),
+          accountId: z.string().min(1, 'accountId is required'),
+          requestId: z.string().uuid(),
+          // Forwarded to the file-import worker as a fallback when the
+          // file has no Currency column. Set by the picker UI on the
+          // failed first-attempt's job-detail page.
+          defaultCurrency: z.string().min(1).max(8).optional(),
+        })
+      )
     )
     .mutation(async ({ input, ctx }) => {
       // Enforce that the R2 key belongs to the caller. Without this, a

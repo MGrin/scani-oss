@@ -6,6 +6,7 @@ import { emitEntityChange } from '@scani/realtime';
 import { ObservedBurnAnswerDto, ReportTimezoneDto, UpdateUserDto } from '@scani/shared';
 import { Container } from 'typedi';
 import { z } from 'zod';
+import { strictInput } from '../lib/strict-input';
 import { requireAuth } from '../middleware/auth';
 import { protectedProcedure, router } from '../trpc';
 
@@ -27,25 +28,27 @@ export const usersRouter = router({
   // the currency switch is effectively a "refetch everything that
   // shows money" trigger. Name-only edits do NOT emit (no portfolio
   // impact; refetching dozens of queries on a name typo is wasteful).
-  updateCurrent: protectedProcedure.input(UpdateUserDto).mutation(async ({ input, ctx }) => {
-    const { dbUser } = await requireAuth(ctx);
-    const previousBaseCurrencyId = dbUser.baseCurrencyId;
-    const updated = await Container.get(UserService).updateUser(dbUser.id, input);
-    if (input.baseCurrencyId !== undefined && input.baseCurrencyId !== previousBaseCurrencyId) {
-      emitEntityChange({
-        entityType: 'user',
-        operationType: 'update',
-        entityId: dbUser.id,
-        userId: dbUser.id,
-        metadata: {
-          source: 'base-currency-change',
-          previousBaseCurrencyId,
-          newBaseCurrencyId: updated.baseCurrencyId,
-        },
-      });
-    }
-    return updated;
-  }),
+  updateCurrent: protectedProcedure
+    .input(strictInput(UpdateUserDto))
+    .mutation(async ({ input, ctx }) => {
+      const { dbUser } = await requireAuth(ctx);
+      const previousBaseCurrencyId = dbUser.baseCurrencyId;
+      const updated = await Container.get(UserService).updateUser(dbUser.id, input);
+      if (input.baseCurrencyId !== undefined && input.baseCurrencyId !== previousBaseCurrencyId) {
+        emitEntityChange({
+          entityType: 'user',
+          operationType: 'update',
+          entityId: dbUser.id,
+          userId: dbUser.id,
+          metadata: {
+            source: 'base-currency-change',
+            previousBaseCurrencyId,
+            newBaseCurrencyId: updated.baseCurrencyId,
+          },
+        });
+      }
+      return updated;
+    }),
 
   /**
    * Record the browser's IANA timezone (SC-226).
@@ -58,14 +61,16 @@ export const usersRouter = router({
    * Not folded into `updateCurrent`: that mutation is a profile edit, and a
    * page load is not one.
    */
-  reportTimezone: protectedProcedure.input(ReportTimezoneDto).mutation(async ({ input, ctx }) => {
-    const { dbUser } = await requireAuth(ctx);
-    const result = await Container.get(UserService).reportTimezone(dbUser.id, input.timezone);
-    if (result.changed) {
-      usersLogger.info({ userId: dbUser.id, timezone: input.timezone }, 'Recorded user timezone');
-    }
-    return result;
-  }),
+  reportTimezone: protectedProcedure
+    .input(strictInput(ReportTimezoneDto))
+    .mutation(async ({ input, ctx }) => {
+      const { dbUser } = await requireAuth(ctx);
+      const result = await Container.get(UserService).reportTimezone(dbUser.id, input.timezone);
+      if (result.changed) {
+        usersLogger.info({ userId: dbUser.id, timezone: input.timezone }, 'Recorded user timezone');
+      }
+      return result;
+    }),
 
   /**
    * Override the measured monthly drain, confirm it, or withdraw either
@@ -83,7 +88,7 @@ export const usersRouter = router({
    * ever saw.
    */
   setObservedBurnAnswer: protectedProcedure
-    .input(ObservedBurnAnswerDto)
+    .input(strictInput(ObservedBurnAnswerDto))
     .mutation(async ({ input, ctx }) => {
       const { dbUser } = await requireAuth(ctx);
       const updated = await Container.get(UserService).setObservedBurnAnswer(dbUser.id, input);
@@ -130,7 +135,7 @@ export const usersRouter = router({
    * with hundreds of holdings. `attempts: 1` — destructive, no retry.
    */
   deleteAllData: protectedProcedure
-    .input(z.object({ requestId: z.string().uuid() }))
+    .input(strictInput(z.object({ requestId: z.string().uuid() })))
     .mutation(async ({ input, ctx }) => {
       const { dbUser } = await requireAuth(ctx);
       usersLogger.warn({ userId: dbUser.id }, 'Enqueuing delete-all-data job');
