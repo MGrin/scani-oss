@@ -7,7 +7,12 @@ import { USER_DATA_DELETE } from '@scani/jobs';
 import { createComponentLogger } from '@scani/logging';
 import { BullMqEnqueueService } from '@scani/queue';
 import { emitEntityChange } from '@scani/realtime';
-import { ObservedBurnAnswerDto, ReportTimezoneDto, UpdateUserDto } from '@scani/shared';
+import {
+  CurrentUserDto,
+  ObservedBurnAnswerDto,
+  ReportTimezoneDto,
+  UpdateUserDto,
+} from '@scani/shared';
 import { TRPCError } from '@trpc/server';
 import { Container } from 'typedi';
 import { z } from 'zod';
@@ -18,8 +23,15 @@ import { protectedProcedure, router } from '../trpc';
 const usersLogger = createComponentLogger('router:users');
 
 export const usersRouter = router({
-  // Get current authenticated user
-  getCurrent: protectedProcedure.query(async ({ ctx }) => {
+  /**
+   * The current user as `CurrentUserDto` NAMES them, not as the row holds them
+   * (SC-688). `dbUser` is a whole `users` record, so returning it put
+   * `emailUnsubscribeToken` — a bearer credential — in front of every
+   * signed-in tab. The `.output()` is what stops that, and it stops it at the
+   * SERVER: no client can opt back into a column the schema does not list, and
+   * a bundle built against an older contract cannot either.
+   */
+  getCurrent: protectedProcedure.output(CurrentUserDto).query(async ({ ctx }) => {
     // Use cached user data from auth context instead of querying database
     const { dbUser } = await requireAuth(ctx);
     return dbUser;
@@ -35,6 +47,7 @@ export const usersRouter = router({
   // impact; refetching dozens of queries on a name typo is wasteful).
   updateCurrent: protectedProcedure
     .input(strictInput(UpdateUserDto))
+    .output(CurrentUserDto)
     .mutation(async ({ input, ctx }) => {
       const { dbUser } = await requireAuth(ctx);
       const previousBaseCurrencyId = dbUser.baseCurrencyId;
@@ -94,6 +107,7 @@ export const usersRouter = router({
    */
   setObservedBurnAnswer: protectedProcedure
     .input(strictInput(ObservedBurnAnswerDto))
+    .output(CurrentUserDto)
     .mutation(async ({ input, ctx }) => {
       const { dbUser } = await requireAuth(ctx);
       let updated: Awaited<ReturnType<UserService['setObservedBurnAnswer']>>;
