@@ -12,6 +12,7 @@ import { BalanceGapService } from '@scani/domain/services';
 import { answerBalanceGapSchema } from '@scani/shared';
 import { TRPCError } from '@trpc/server';
 import Container from 'typedi';
+import { strictInput } from '../lib/strict-input';
 import { protectedProcedure, router } from '../trpc';
 
 export const balanceGapsRouter = router({
@@ -39,31 +40,33 @@ export const balanceGapsRouter = router({
    * Collapsing them into one NOT_FOUND would tell somebody their answer was
    * rejected without telling them the ledger had answered it first.
    */
-  answer: protectedProcedure.input(answerBalanceGapSchema).mutation(async ({ ctx, input }) => {
-    const outcome = await Container.get(BalanceGapService).answer(ctx.userId, {
-      observationId: input.observationId,
-      answer: input.answer,
-      ...(input.occurredAt ? { occurredAt: input.occurredAt } : {}),
-    });
+  answer: protectedProcedure
+    .input(strictInput(answerBalanceGapSchema))
+    .mutation(async ({ ctx, input }) => {
+      const outcome = await Container.get(BalanceGapService).answer(ctx.userId, {
+        observationId: input.observationId,
+        answer: input.answer,
+        ...(input.occurredAt ? { occurredAt: input.occurredAt } : {}),
+      });
 
-    if ('refusal' in outcome) {
-      switch (outcome.refusal) {
-        case 'already-answered':
-          throw new TRPCError({
-            code: 'CONFLICT',
-            message: 'That balance change has already been explained',
-          });
-        case 'no-longer-a-gap':
-          throw new TRPCError({
-            code: 'CONFLICT',
-            message:
-              'A transaction has since arrived that explains that change, so there is nothing left to record',
-          });
-        default:
-          throw new TRPCError({ code: 'NOT_FOUND', message: 'That holding is no longer there' });
+      if ('refusal' in outcome) {
+        switch (outcome.refusal) {
+          case 'already-answered':
+            throw new TRPCError({
+              code: 'CONFLICT',
+              message: 'That balance change has already been explained',
+            });
+          case 'no-longer-a-gap':
+            throw new TRPCError({
+              code: 'CONFLICT',
+              message:
+                'A transaction has since arrived that explains that change, so there is nothing left to record',
+            });
+          default:
+            throw new TRPCError({ code: 'NOT_FOUND', message: 'That holding is no longer there' });
+        }
       }
-    }
 
-    return outcome.result;
-  }),
+      return outcome.result;
+    }),
 });

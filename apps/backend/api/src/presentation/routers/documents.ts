@@ -36,6 +36,7 @@ import { BullMqEnqueueService } from '@scani/queue';
 import { TRPCError } from '@trpc/server';
 import { Container } from 'typedi';
 import { z } from 'zod';
+import { strictInput } from '../lib/strict-input';
 import { protectedProcedure, router } from '../trpc';
 
 function assertOwnedDocumentKey(key: string, userId: string): void {
@@ -171,12 +172,14 @@ export const documentsRouter = router({
    */
   enqueueParse: protectedProcedure
     .input(
-      z.object({
-        r2Key: z.string().min(1),
-        mimeType: z.string().min(1),
-        originalFilename: z.string().min(1).max(255),
-        requestId: z.string().uuid(),
-      })
+      strictInput(
+        z.object({
+          r2Key: z.string().min(1),
+          mimeType: z.string().min(1),
+          originalFilename: z.string().min(1).max(255),
+          requestId: z.string().uuid(),
+        })
+      )
     )
     .mutation(async ({ ctx, input }) => {
       assertOwnedDocumentKey(input.r2Key, ctx.userId);
@@ -212,7 +215,7 @@ export const documentsRouter = router({
    * re-parse on the same job page as the original upload.
    */
   reparse: protectedProcedure
-    .input(z.object({ documentId: z.string().uuid() }))
+    .input(strictInput(z.object({ documentId: z.string().uuid() })))
     .mutation(async ({ ctx, input }) => {
       const outcome = await Container.get(DocumentReparseService).prepare(
         input.documentId,
@@ -258,7 +261,7 @@ export const documentsRouter = router({
    * parsed fresh instead of hitting dedup.
    */
   delete: protectedProcedure
-    .input(z.object({ documentId: z.string().uuid() }))
+    .input(strictInput(z.object({ documentId: z.string().uuid() })))
     .mutation(async ({ ctx, input }) => {
       const result = await Container.get(DocumentDeletionService).delete(
         input.documentId,
@@ -287,17 +290,22 @@ export const documentsRouter = router({
    */
   list: protectedProcedure
     .input(
-      z.object({
-        purpose: z.enum(DOCUMENT_PURPOSES).optional(),
-        limit: z.number().int().min(1).max(MAX_LIST_LIMIT).default(25),
-        cursor: z.string().min(1).optional(),
-        /** Filename, matched over every row rather than over the page the
-         *  caller holds (SC-244). */
-        search: z.string().max(200).optional(),
-        /** Purposes whose label matched the same term — the client resolves
-         *  them because the labels are its copy. See `ListDocumentsOptions`. */
-        matchPurposes: z.array(z.enum(DOCUMENT_PURPOSES)).max(DOCUMENT_PURPOSES.length).optional(),
-      })
+      strictInput(
+        z.object({
+          purpose: z.enum(DOCUMENT_PURPOSES).optional(),
+          limit: z.number().int().min(1).max(MAX_LIST_LIMIT).default(25),
+          cursor: z.string().min(1).optional(),
+          /** Filename, matched over every row rather than over the page the
+           *  caller holds (SC-244). */
+          search: z.string().max(200).optional(),
+          /** Purposes whose label matched the same term — the client resolves
+           *  them because the labels are its copy. See `ListDocumentsOptions`. */
+          matchPurposes: z
+            .array(z.enum(DOCUMENT_PURPOSES))
+            .max(DOCUMENT_PURPOSES.length)
+            .optional(),
+        })
+      )
     )
     .query(async ({ ctx, input }) => {
       const rows = await Container.get(DocumentRepository).listByUser({
@@ -330,7 +338,7 @@ export const documentsRouter = router({
    * just nothing left to serve.
    */
   getDownloadUrl: protectedProcedure
-    .input(z.object({ documentId: z.string().uuid() }))
+    .input(strictInput(z.object({ documentId: z.string().uuid() })))
     .query(async ({ ctx, input }) => {
       const result = await Container.get(DocumentDownloadService).presign(
         input.documentId,
@@ -365,7 +373,7 @@ export const documentsRouter = router({
    * review feed (`ReviewFeedService`) links to.
    */
   get: protectedProcedure
-    .input(z.object({ documentId: z.string().uuid() }))
+    .input(strictInput(z.object({ documentId: z.string().uuid() })))
     .query(async ({ ctx, input }) => {
       const document = await Container.get(DocumentRepository).findByIdAndUser(
         input.documentId,
@@ -397,7 +405,7 @@ export const documentsRouter = router({
    * here without touching this endpoint.
    */
   getExtraction: protectedProcedure
-    .input(z.object({ extractionId: z.string().uuid() }))
+    .input(strictInput(z.object({ extractionId: z.string().uuid() })))
     .query(async ({ ctx, input }) => {
       const extraction = await Container.get(DocumentExtractionRepository).findByIdAndUser(
         input.extractionId,
@@ -416,7 +424,7 @@ export const documentsRouter = router({
    * surface as the same NOT_FOUND here.
    */
   acceptExtraction: protectedProcedure
-    .input(z.object({ extractionId: z.string().uuid() }))
+    .input(strictInput(z.object({ extractionId: z.string().uuid() })))
     .mutation(async ({ ctx, input }) => {
       const row = await Container.get(DocumentExtractionRepository).setReviewState(
         input.extractionId,
@@ -428,7 +436,7 @@ export const documentsRouter = router({
     }),
 
   rejectExtraction: protectedProcedure
-    .input(z.object({ extractionId: z.string().uuid() }))
+    .input(strictInput(z.object({ extractionId: z.string().uuid() })))
     .mutation(async ({ ctx, input }) => {
       const row = await Container.get(DocumentExtractionRepository).setReviewState(
         input.extractionId,

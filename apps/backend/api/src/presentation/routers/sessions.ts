@@ -1,5 +1,6 @@
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
+import { strictInput } from '../lib/strict-input';
 import { getBetterAuth, protectedProcedure, router } from '../trpc';
 
 /**
@@ -39,7 +40,7 @@ export const sessionsRouter = router({
   }),
 
   revoke: protectedProcedure
-    .input(z.object({ token: z.string().min(1) }))
+    .input(strictInput(z.object({ token: z.string().min(1) })))
     .mutation(async ({ ctx, input }) => {
       if (!ctx.headers) {
         throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Missing request headers' });

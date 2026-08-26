@@ -17,6 +17,7 @@ import {
 import { Container } from 'typedi';
 import { z } from 'zod';
 import { executeBulkOperation } from '../lib/bulk-operation';
+import { strictInput } from '../lib/strict-input';
 import { requireAuth } from '../middleware/auth';
 import { protectedProcedure, router } from '../trpc';
 
@@ -38,7 +39,7 @@ export const vaultsRouter = router({
   }),
 
   // Get a specific vault by ID with full details
-  getById: protectedProcedure.input(IdInputDto).query(async ({ input, ctx }) => {
+  getById: protectedProcedure.input(strictInput(IdInputDto)).query(async ({ input, ctx }) => {
     const { dbUser } = await requireAuth(ctx);
     const vault = await Container.get(VaultService).getVaultWithProgress(input.id);
     if (!vault || vault.userId !== dbUser.id) {
@@ -49,7 +50,7 @@ export const vaultsRouter = router({
 
   // Get vaults that a specific holding is attached to
   getByHoldingId: protectedProcedure
-    .input(z.object({ holdingId: z.string().uuid() }))
+    .input(strictInput(z.object({ holdingId: z.string().uuid() })))
     .query(async ({ input, ctx }) => {
       const { dbUser } = await requireAuth(ctx);
       const vaultRepository = Container.get(VaultRepository);
@@ -83,7 +84,7 @@ export const vaultsRouter = router({
     }),
 
   // Create a new vault
-  create: protectedProcedure.input(CreateVaultDto).mutation(async ({ input, ctx }) => {
+  create: protectedProcedure.input(strictInput(CreateVaultDto)).mutation(async ({ input, ctx }) => {
     const { dbUser } = await requireAuth(ctx);
     const vaultRepository = Container.get(VaultRepository);
 
@@ -127,10 +128,12 @@ export const vaultsRouter = router({
   // Update an existing vault
   update: protectedProcedure
     .input(
-      z.object({
-        id: z.string().uuid(),
-        data: UpdateVaultDto,
-      })
+      strictInput(
+        z.object({
+          id: z.string().uuid(),
+          data: UpdateVaultDto,
+        })
+      )
     )
     .mutation(async ({ input, ctx }) => {
       const { dbUser } = await requireAuth(ctx);
@@ -164,7 +167,7 @@ export const vaultsRouter = router({
     }),
 
   // Delete a vault
-  delete: protectedProcedure.input(IdInputDto).mutation(async ({ input, ctx }) => {
+  delete: protectedProcedure.input(strictInput(IdInputDto)).mutation(async ({ input, ctx }) => {
     const { dbUser } = await requireAuth(ctx);
 
     const result = await deleteVault(input.id, dbUser.id);
@@ -182,7 +185,7 @@ export const vaultsRouter = router({
 
   // Bulk delete vaults
   bulkDelete: protectedProcedure
-    .input(z.object({ ids: z.array(z.string()).min(1) }))
+    .input(strictInput(z.object({ ids: z.array(z.string()).min(1) })))
     .mutation(async ({ input, ctx }) => {
       const { dbUser } = await requireAuth(ctx);
 
@@ -197,7 +200,7 @@ export const vaultsRouter = router({
 
   // Attach a holding to a vault
   attachHolding: protectedProcedure
-    .input(AttachHoldingToVaultDto)
+    .input(strictInput(AttachHoldingToVaultDto))
     .mutation(async ({ input, ctx }) => {
       const { dbUser } = await requireAuth(ctx);
 
@@ -216,7 +219,7 @@ export const vaultsRouter = router({
 
   // Detach a holding from a vault
   detachHolding: protectedProcedure
-    .input(DetachHoldingFromVaultDto)
+    .input(strictInput(DetachHoldingFromVaultDto))
     .mutation(async ({ input, ctx }) => {
       const { dbUser } = await requireAuth(ctx);
 
@@ -235,7 +238,7 @@ export const vaultsRouter = router({
 
   // Update holding percentage in a vault
   updateHoldingPercentage: protectedProcedure
-    .input(UpdateVaultHoldingDto)
+    .input(strictInput(UpdateVaultHoldingDto))
     .mutation(async ({ input, ctx }) => {
       const { dbUser } = await requireAuth(ctx);
       const vaultRepository = Container.get(VaultRepository);
