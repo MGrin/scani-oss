@@ -119,3 +119,44 @@ export const timezoneSchema = z
 export const ReportTimezoneDto = z.object({ timezone: timezoneSchema });
 
 export type ReportTimezoneInput = z.infer<typeof ReportTimezoneDto>;
+
+/**
+ * What the three `users` handlers that answer with a user — `getCurrent`,
+ * `updateCurrent`, `setObservedBurnAnswer` — may put in a browser payload.
+ * Declared, rather than inherited from whatever the row happens to hold.
+ *
+ * All three returned the whole `users` row until SC-688, so every
+ * signed-in tab received `email_unsubscribe_token`: the bearer credential
+ * every unsubscribe link authenticates on, deliberately kept off `users.id`
+ * precisely because ids travel through responses and logs. Nothing on the
+ * frontend read it. It travelled because the handlers returned a ROW instead
+ * of a SHAPE, which is also why it arrived silently — no caller asked for it
+ * and no reviewer had to approve it.
+ *
+ * The token is today's instance; the absent projection is what would have
+ * produced the next one. So this list is the fix rather than a select is: a
+ * column added to `users` is invisible to the browser until somebody edits
+ * these five lines, and editing them is a diff a reviewer sees. Wired through
+ * `.output()`, so the server refuses to serve a field it does not name — a
+ * client cannot opt out of it and a stale deploy cannot leak past it.
+ *
+ * Every field here has a live reader in `apps/frontend/app`: `name`,
+ * `baseCurrencyId` and `email` in `ProfileSettings`, `timezone` in
+ * `TimezoneReporter`. The six `observedBurn*` columns are deliberately absent:
+ * the forecast surface reads its answer off `payments.forecast`, which shapes
+ * and localises it, and never off the raw row — asking `getCurrent` for those
+ * columns is how the token was found in the first place.
+ *
+ * `costBasisMethod` is deliberately NOT here either, even though
+ * `UpdateUserDto` accepts it — no screen reads it back today, and adding it
+ * here on the argument that it might is how the list stops meaning anything.
+ */
+export const CurrentUserDto = z.object({
+  id: z.string().uuid(),
+  email: z.string(),
+  name: z.string(),
+  timezone: z.string().nullable(),
+  baseCurrencyId: z.string().uuid().nullable(),
+});
+
+export type CurrentUserOutput = z.infer<typeof CurrentUserDto>;
