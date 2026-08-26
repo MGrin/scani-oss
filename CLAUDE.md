@@ -64,8 +64,22 @@ bun run type-check
 # Lint + auto-fix (repo-wide via Biome)
 bun lint:fix
 
-# Tests
-bun test --preload ./packages/business/domain/test-preload.ts packages/ --timeout 30000
+# Tests — always via the script, never a hand-written path list.
+#
+# `package.json` is the only place the paths and preloads live, and CI runs
+# this exact command. The line that used to be here was a copy of it that had
+# drifted to `packages/` alone: measured on this tree, that covers 402 test
+# files and SILENTLY SKIPS 207 — 51 under `apps/backend/`, 128 under
+# `apps/frontend/`, 28 under `scripts/`. Among them is the route-split guard
+# this file tells you protects the build. It also dropped the second preload,
+# `apps/frontend/app/tests/i18n-preload.ts`, which every frontend test needs.
+#
+# A subset that passes reports the same green as the whole suite. That is the
+# entire reason this is a script and not a command you retype.
+#
+# Needs the compose Postgres up and migrated — see **Local Development** below:
+# `docker compose up -d postgres` then `bun run db:migrate`.
+bun run test
 
 # Docker Hub descriptions match the images. Fast (0.13s), no services. It
 # validates every `docker-readmes/*.md` against the 100-char cap Docker Hub
