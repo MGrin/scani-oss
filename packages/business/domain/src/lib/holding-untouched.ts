@@ -37,9 +37,33 @@
 import type { DatabaseTransaction } from '@scani/db';
 import * as schema from '@scani/db/schema';
 import { and, eq, sql } from 'drizzle-orm';
+import { HOLDING_OPEN_OBSERVATION_SOURCE } from '../services/holdings/HoldingService';
 
 /** Every table whose rows are somebody's intent about a holding. Deleting the
  *  holding cascades them away, so a row in any one of them is a refusal. */
+/**
+ * The one observation that is NOT intent (SC-641).
+ *
+ * `holding_balance_observations` stays in the intent list — an observation is
+ * normally the record of somebody saying what a balance was, and losing one is
+ * losing a fact. The row a holding is OPENED with is the exception: it records
+ * nothing beyond the holding's own existence, which is exactly the ground
+ * `holding_coverage` is excluded on, and it is written by the create itself
+ * rather than by anybody's later act.
+ *
+ * This exclusion is what lets SC-641 be fixed without turning SC-631 off. When
+ * `writeInflow` records an opening — which it now does on the branch where the
+ * opening is a claim — every holding this predicate is asked about carries one
+ * from birth. Counting it would make the answer "touched" for all of them and
+ * the reopen would delete nothing, forever, while every test stayed green
+ * except the one that checks the money.
+ *
+ * Excluded by VALUE rather than by the writing method's name on purpose:
+ * `HOLDING_OPEN_OBSERVATION_SOURCE` is a constant both ends share, so a rename
+ * moves both together. Matching a string like `'createHoldingWithEvent'` in
+ * `source_metadata` would let a refactor silently stop matching, and a
+ * silently-stopped exclusion here reads exactly like a working one.
+ */
 export const HOLDING_INTENT_TABLES = [
   'holding_transactions',
   'holding_balance_observations',
@@ -51,16 +75,7 @@ export const HOLDING_INTENT_TABLES = [
 
 /** Derived from the ledger and rebuilt on demand, so it records nothing that
  *  a delete could lose. See the docblock — this is the exclusion the FK test
- *  checks against, not an omission.
- *
- *  `holding_balance_observations` is deliberately NOT here, and the reason is
- *  worth knowing before anybody moves it: `writeInflow` records no observation
- *  when it creates a destination, so today an observation on such a row can
- *  only have come from a person. That is a live SC-245 residual — the service
- *  path DOES record one on create — and repairing it would make every holding
- *  this predicate is about carry one from birth, at which point it answers
- *  "touched" for all of them and deletes nothing. The repair needs the
- *  creation observation marked as derived first. */
+ *  checks against, not an omission. */
 export const HOLDING_DERIVED_TABLES = ['holding_coverage'] as const;
 
 /**
@@ -86,7 +101,9 @@ export async function holdingIsUntouched(
     select exists (
       select 1 from holding_transactions where holding_id = ${holdingId}
       union all
-      select 1 from holding_balance_observations where holding_id = ${holdingId}
+      select 1 from holding_balance_observations
+       where holding_id = ${holdingId}
+         and source <> ${HOLDING_OPEN_OBSERVATION_SOURCE}
       union all
       select 1 from holding_apy_configs where holding_id = ${holdingId}
       union all
