@@ -1,0 +1,40 @@
+# Build context exclusions for the three backend Dockerfiles.
+#
+# `node_modules` is the one that matters. Each Dockerfile's deps stage runs its
+# own filtered `bun install --linker=hoisted` into `/app/node_modules`, and the
+# build stage then does `COPY packages ./packages`. Bun's default linker leaves
+# a `node_modules` directory inside every workspace holding symlinks up into the
+# repo root — so on any machine that has run `bun install`, that COPY drops
+# dangling symlinks into the image which shadow the hoisted tree, and the build
+# fails with `File not found "/app/packages/infra/email/node_modules/zod"`.
+#
+# This never surfaced before because the deploy workflow builds with
+# `flyctl deploy --remote-only` from a checkout that never had `bun install` run
+# on it. The CI accessibility gate boots the same stack on a runner that *has*,
+# which is how it was found (V3-17).
+#
+# Each rule is written twice because a bare `node_modules` matches only the
+# context root — Docker matches patterns against the whole relative path.
+node_modules
+**/node_modules
+
+# Build output. Regenerated inside the image; copying the host's only invites a
+# stale binary, or one built for the wrong platform.
+dist
+**/dist
+.next
+**/.next
+coverage
+**/coverage
+
+# Never belongs in an image. `.env` in particular is mounted at runtime by
+# compose rather than baked in.
+.git
+.env
+.env.*
+!.env.example
+
+# Test and capture artefacts — large, and nothing in an image reads them.
+apps/e2e/shots
+apps/e2e/test-results
+apps/e2e/playwright-report
