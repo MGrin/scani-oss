@@ -486,14 +486,14 @@ describe('TransferReviewRuleService — listing and undo', () => {
 describe('TransferReviewRuleService — payment descriptions', () => {
   /** One row per outflow shape a payment rail produces when it names a
    *  recipient. Second recipient's name and amounts invented. */
-  const NIKITA = [
-    'Pay 2500.00 USD to Nikita Grishin (Dividends)',
-    'Pay 300.00 USD to Nikita Grishin (Dividends)',
-    'Pay 3000.00 USD to Nikita Grishin (Dividends)',
-    'Pay 4000.00 USD to Nikita Grishin (Dividends)',
-    'Pay 4500 USD to Nikita Grishin (Dividends)',
-    'Pay 500.00 USD to Nikita Grishin (Dividends)',
-    'Pay 500.00 USD to Nikita Grishin (Dividends)',
+  const OWNER = [
+    'Pay 2500.00 USD to Teodor Vance (Dividends)',
+    'Pay 300.00 USD to Teodor Vance (Dividends)',
+    'Pay 3000.00 USD to Teodor Vance (Dividends)',
+    'Pay 4000.00 USD to Teodor Vance (Dividends)',
+    'Pay 4500 USD to Teodor Vance (Dividends)',
+    'Pay 500.00 USD to Teodor Vance (Dividends)',
+    'Pay 500.00 USD to Teodor Vance (Dividends)',
   ];
   const AMARA = [
     'Pay 11200000.50 IDR to Amara Sitanggang (Dividends)',
@@ -532,14 +532,14 @@ describe('TransferReviewRuleService — payment descriptions', () => {
 
   ***REMOVED***
     const f = fixture!;
-    for (const [i, description] of [...NIKITA, ...AMARA].entries()) {
+    for (const [i, description] of [...OWNER, ...AMARA].entries()) {
       await payment(f, `p-all-${i}`, description);
     }
 
-    const nikita = await service().create(f.userId, {
-      transactionId: await payment(f, 'p-all-n', NIKITA[0]!),
+    const owner = await service().create(f.userId, {
+      transactionId: await payment(f, 'p-all-n', OWNER[0]!),
       verdict: 'ask_me',
-      note: 'Nikita, dividends',
+      note: 'Teodor, dividends',
     });
     const amara = await service().create(f.userId, {
       transactionId: await payment(f, 'p-all-v', AMARA[0]!),
@@ -547,19 +547,19 @@ describe('TransferReviewRuleService — payment descriptions', () => {
       note: 'Amara, dividends',
     });
 
-    expect(nikita.ok && amara.ok).toBe(true);
-    if (!nikita.ok || !amara.ok) return;
-    expect(nikita.rule.matchCounterparty).toBe('nikita grishin (dividends)');
+    expect(owner.ok && amara.ok).toBe(true);
+    if (!owner.ok || !amara.ok) return;
+    expect(owner.rule.matchCounterparty).toBe('teodor vance (dividends)');
     expect(amara.rule.matchCounterparty).toBe('amara sitanggang (dividends)');
     // 7 + 1 authored-from, and 5 + 1 authored-from: every row, from two rules.
-    expect(nikita.rule.affectedCount).toBe(NIKITA.length + 1);
+    expect(owner.rule.affectedCount).toBe(OWNER.length + 1);
     expect(amara.rule.affectedCount).toBe(AMARA.length + 1);
   });
 
   test("the source data's own typo keys separately, and that is correct", async () => {
     const f = fixture!;
-    await payment(f, 'p-typo-1', 'Pay 2500.00 USD to Nikita Grishin (Dividends)');
-    const typo = await payment(f, 'p-typo-2', 'Pay 1500.00 USD to Nikita Grishin (Dividents)');
+    await payment(f, 'p-typo-1', 'Pay 2500.00 USD to Teodor Vance (Dividends)');
+    const typo = await payment(f, 'p-typo-2', 'Pay 1500.00 USD to Teodor Vance (Dividents)');
 
     const result = await service().create(f.userId, {
       transactionId: typo,
@@ -573,7 +573,7 @@ describe('TransferReviewRuleService — payment descriptions', () => {
     ***REMOVED***
     ***REMOVED***
     ***REMOVED***
-    expect(result.rule.matchCounterparty).toBe('nikita grishin (dividents)');
+    expect(result.rule.matchCounterparty).toBe('teodor vance (dividents)');
     expect(result.rule.affectedCount).toBe(1);
   });
 
@@ -621,13 +621,13 @@ describe('TransferReviewRuleService — payment descriptions', () => {
 
   test('two recipients sharing a prefix stay apart', async () => {
     const f = fixture!;
-    const first = await payment(f, 'p-prefix-1', 'Pay 100.00 USD to Nikita Grishin');
-    await payment(f, 'p-prefix-2', 'Pay 100.00 USD to Nikita Grishina');
+    const first = await payment(f, 'p-prefix-1', 'Pay 100.00 USD to Teodor Vance');
+    await payment(f, 'p-prefix-2', 'Pay 100.00 USD to Teodor Vancea');
 
     const result = await service().create(f.userId, {
       transactionId: first,
       verdict: 'not_a_disposal',
-      note: 'Nikita',
+      note: 'Teodor',
     });
 
     expect(result.ok).toBe(true);
@@ -645,12 +645,12 @@ describe('TransferReviewRuleService — payment descriptions', () => {
     // is applying it once.
     const [row] = await db.execute<{ once: string | null; twice: string | null }>(
       sql`select
-            transfer_counterparty_key('Pay 500.00 USD to Nikita Grishin (Dividends)') as once,
+            transfer_counterparty_key('Pay 500.00 USD to Teodor Vance (Dividends)') as once,
             transfer_counterparty_key(
-              transfer_counterparty_key('Pay 500.00 USD to Nikita Grishin (Dividends)')
+              transfer_counterparty_key('Pay 500.00 USD to Teodor Vance (Dividends)')
             ) as twice`
     );
-    expect(row?.once).toBe('nikita grishin (dividends)');
+    expect(row?.once).toBe('teodor vance (dividends)');
     expect(row?.twice).toBe(row?.once ?? null);
     expect(f.userId).toBeTruthy();
   });
