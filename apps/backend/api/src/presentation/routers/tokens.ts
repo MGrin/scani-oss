@@ -23,6 +23,7 @@ const tokenPriceRepository = Container.get(TokenPriceRepository);
 const CUSTOM_TOKEN_TYPE_CODES = ['private-company', 'other'] as const;
 
 import { SCAM_PROBABILITY_THRESHOLD } from '@scani/domain/lib/constants';
+import { strictInput } from '../lib/strict-input';
 
 // Cache for external provider search results (avoids hammering
 // CoinGecko/Finnhub). LRU + TTL — type-ahead users churn the cache
@@ -117,7 +118,7 @@ export function createTokensRouter(db: DbType, schemaObj: typeof schema) {
      * which is worse than the per-currency list this replaced.
      */
     getBaseCurrencyRates: protectedProcedure
-      .input(z.object({ currencyTokenIds: z.array(z.string().uuid()).max(25) }))
+      .input(strictInput(z.object({ currencyTokenIds: z.array(z.string().uuid()).max(25) })))
       .query(async ({ ctx, input }) => {
         const { dbUser } = await requireAuth(ctx);
         const [base] = dbUser.baseCurrencyId
@@ -165,10 +166,12 @@ export function createTokensRouter(db: DbType, schemaObj: typeof schema) {
     // KEEP
     search: protectedProcedure
       .input(
-        z.object({
-          query: z.string().min(1).max(20),
-          limit: z.number().int().min(1).max(50).default(10),
-        })
+        strictInput(
+          z.object({
+            query: z.string().min(1).max(20),
+            limit: z.number().int().min(1).max(50).default(10),
+          })
+        )
       )
       .query(async ({ input }) => {
         const query = input.query.toUpperCase();
@@ -319,17 +322,19 @@ export function createTokensRouter(db: DbType, schemaObj: typeof schema) {
 
     createManyfromExternal: protectedProcedure
       .input(
-        z.array(
-          z.object({
-            externalId: z.string().min(1),
-            symbol: z
-              .string()
-              .min(1)
-              .max(20)
-              .transform((val) => val.toUpperCase()),
-            metadata: z.record(z.unknown()),
-            provider: z.enum(['finnhub', 'coingecko', 'defillama']),
-          })
+        strictInput(
+          z.array(
+            z.object({
+              externalId: z.string().min(1),
+              symbol: z
+                .string()
+                .min(1)
+                .max(20)
+                .transform((val) => val.toUpperCase()),
+              metadata: z.record(z.unknown()),
+              provider: z.enum(['finnhub', 'coingecko', 'defillama']),
+            })
+          )
         )
       )
       .mutation(async ({ input, ctx }) => {
@@ -362,15 +367,17 @@ export function createTokensRouter(db: DbType, schemaObj: typeof schema) {
     // Create token from external provider metadata (for holding creation)
     createFromExternal: protectedProcedure
       .input(
-        z.object({
-          symbol: z
-            .string()
-            .min(1)
-            .max(20)
-            .transform((val) => val.toUpperCase()),
-          metadata: z.record(z.unknown()),
-          provider: z.enum(['finnhub', 'coingecko']),
-        })
+        strictInput(
+          z.object({
+            symbol: z
+              .string()
+              .min(1)
+              .max(20)
+              .transform((val) => val.toUpperCase()),
+            metadata: z.record(z.unknown()),
+            provider: z.enum(['finnhub', 'coingecko']),
+          })
+        )
       )
       .mutation(async ({ input, ctx }) => {
         const { dbUser } = await requireAuth(ctx);
@@ -413,7 +420,7 @@ export function createTokensRouter(db: DbType, schemaObj: typeof schema) {
      * event.
      */
     markAsScam: protectedProcedure
-      .input(z.object({ tokenId: z.string().uuid() }))
+      .input(strictInput(z.object({ tokenId: z.string().uuid() })))
       .mutation(async ({ input, ctx }) => {
         const { dbUser } = await requireAuth(ctx);
 
@@ -464,7 +471,7 @@ export function createTokensRouter(db: DbType, schemaObj: typeof schema) {
      * ScamActionButton confirmation dialog.
      */
     unmarkAsScam: protectedProcedure
-      .input(z.object({ tokenId: z.string().uuid() }))
+      .input(strictInput(z.object({ tokenId: z.string().uuid() })))
       .mutation(async ({ input, ctx }) => {
         const { dbUser } = await requireAuth(ctx);
 
@@ -508,25 +515,27 @@ export function createTokensRouter(db: DbType, schemaObj: typeof schema) {
      */
     createCustom: protectedProcedure
       .input(
-        z.object({
-          symbol: z
-            .string()
-            .min(1)
-            .max(20)
-            .transform((val) => val.toUpperCase()),
-          name: z.string().min(1).max(200),
-          typeCode: z.enum(CUSTOM_TOKEN_TYPE_CODES),
-          manualPrice: z.number().positive(),
-          baseCurrencyCode: z
-            .string()
-            .min(1)
-            .max(10)
-            .transform((val) => val.toUpperCase()),
-          priceDescription: z.string().max(500).optional(),
-          description: z.string().max(2000).optional(),
-          decimals: z.number().int().min(0).max(18).default(2),
-          iconUrl: z.string().url().optional(),
-        })
+        strictInput(
+          z.object({
+            symbol: z
+              .string()
+              .min(1)
+              .max(20)
+              .transform((val) => val.toUpperCase()),
+            name: z.string().min(1).max(200),
+            typeCode: z.enum(CUSTOM_TOKEN_TYPE_CODES),
+            manualPrice: z.number().positive(),
+            baseCurrencyCode: z
+              .string()
+              .min(1)
+              .max(10)
+              .transform((val) => val.toUpperCase()),
+            priceDescription: z.string().max(500).optional(),
+            description: z.string().max(2000).optional(),
+            decimals: z.number().int().min(0).max(18).default(2),
+            iconUrl: z.string().url().optional(),
+          })
+        )
       )
       .mutation(async ({ input, ctx }) => {
         const { dbUser } = await requireAuth(ctx);
@@ -576,16 +585,18 @@ export function createTokensRouter(db: DbType, schemaObj: typeof schema) {
      */
     updateCustomPrice: protectedProcedure
       .input(
-        z.object({
-          tokenId: z.string().uuid(),
-          newPrice: z.number().positive(),
-          baseCurrencyCode: z
-            .string()
-            .min(1)
-            .max(10)
-            .transform((val) => val.toUpperCase()),
-          reason: z.string().min(1).max(500).optional(),
-        })
+        strictInput(
+          z.object({
+            tokenId: z.string().uuid(),
+            newPrice: z.number().positive(),
+            baseCurrencyCode: z
+              .string()
+              .min(1)
+              .max(10)
+              .transform((val) => val.toUpperCase()),
+            reason: z.string().min(1).max(500).optional(),
+          })
+        )
       )
       .mutation(async ({ input, ctx }) => {
         const { dbUser } = await requireAuth(ctx);
@@ -631,10 +642,12 @@ export function createTokensRouter(db: DbType, schemaObj: typeof schema) {
      */
     getPriceEditHistory: protectedProcedure
       .input(
-        z.object({
-          tokenId: z.string().uuid(),
-          limit: z.number().int().min(1).max(200).default(50),
-        })
+        strictInput(
+          z.object({
+            tokenId: z.string().uuid(),
+            limit: z.number().int().min(1).max(200).default(50),
+          })
+        )
       )
       .query(async ({ input }) => {
         return await tokenPriceHistoryService.getPriceEditHistory(input.tokenId, input.limit);

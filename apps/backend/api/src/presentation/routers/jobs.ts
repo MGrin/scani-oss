@@ -25,6 +25,7 @@ import { reviewOutcomeSchema } from '@scani/shared';
 import { TRPCError } from '@trpc/server';
 import Container from 'typedi';
 import { z } from 'zod';
+import { strictInput } from '../lib/strict-input';
 import { protectedProcedure, router } from '../trpc';
 
 const getQueue = () => Container.get(QueueClient).get();
@@ -102,7 +103,7 @@ async function describeRetryAvailability(row: UserJob): Promise<RetryAvailabilit
 
 export const jobsRouter = router({
   status: protectedProcedure
-    .input(z.object({ jobId: z.string().min(1) }))
+    .input(strictInput(z.object({ jobId: z.string().min(1) })))
     .query(async ({ input, ctx }) => {
       const repo = Container.get(UserJobRepository);
       const row = await repo.findOneMine(ctx.userId, input.jobId);
@@ -155,13 +156,15 @@ export const jobsRouter = router({
    */
   listMine: protectedProcedure
     .input(
-      z
-        .object({
-          state: JOB_STATE_ENUM.optional(),
-          limit: z.number().int().min(1).max(100).default(50),
-          offset: z.number().int().min(0).default(0),
-        })
-        .optional()
+      strictInput(
+        z
+          .object({
+            state: JOB_STATE_ENUM.optional(),
+            limit: z.number().int().min(1).max(100).default(50),
+            offset: z.number().int().min(0).default(0),
+          })
+          .optional()
+      )
     )
     .query(async ({ ctx, input }) => {
       const repo = Container.get(UserJobRepository);
@@ -186,7 +189,7 @@ export const jobsRouter = router({
    * where it would be one lookup per row.
    */
   getMine: protectedProcedure
-    .input(z.object({ jobId: z.string().min(1) }))
+    .input(strictInput(z.object({ jobId: z.string().min(1) })))
     .query(async ({ ctx, input }) => {
       const repo = Container.get(UserJobRepository);
       const row = await repo.findOneMine(ctx.userId, input.jobId);
@@ -216,10 +219,12 @@ export const jobsRouter = router({
    */
   markActionTaken: protectedProcedure
     .input(
-      z.object({
-        jobId: z.string().min(1),
-        outcome: reviewOutcomeSchema.default('imported'),
-      })
+      strictInput(
+        z.object({
+          jobId: z.string().min(1),
+          outcome: reviewOutcomeSchema.default('imported'),
+        })
+      )
     )
     .mutation(async ({ ctx, input }) => {
       const repo = Container.get(UserJobRepository);
@@ -254,7 +259,7 @@ export const jobsRouter = router({
    * re-triggering the originating action manually.
    */
   retry: protectedProcedure
-    .input(z.object({ jobId: z.string().min(1) }))
+    .input(strictInput(z.object({ jobId: z.string().min(1) })))
     .mutation(async ({ ctx, input }) => {
       const repo = Container.get(UserJobRepository);
       const row = await repo.findOneMine(ctx.userId, input.jobId);
@@ -324,7 +329,7 @@ export const jobsRouter = router({
    * stops *further* progress and prevents retry, nothing else.
    */
   cancel: protectedProcedure
-    .input(z.object({ jobId: z.string().min(1) }))
+    .input(strictInput(z.object({ jobId: z.string().min(1) })))
     .mutation(async ({ ctx, input }) => {
       const repo = Container.get(UserJobRepository);
       const row = await repo.findOneMine(ctx.userId, input.jobId);
@@ -378,7 +383,7 @@ export const jobsRouter = router({
    * and the SPA already calls it.
    */
   remove: protectedProcedure
-    .input(z.object({ jobId: z.string().min(1) }))
+    .input(strictInput(z.object({ jobId: z.string().min(1) })))
     .mutation(async ({ ctx, input }) => {
       const repo = Container.get(UserJobRepository);
       const row = await repo.findOneMine(ctx.userId, input.jobId);

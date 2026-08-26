@@ -8,6 +8,7 @@ import {
   UpdateEntityDto,
 } from '@scani/shared';
 import { Container } from 'typedi';
+import { strictInput } from '../lib/strict-input';
 import { requireAuth } from '../middleware/auth';
 import { protectedProcedure, router } from '../trpc';
 
@@ -41,24 +42,28 @@ export const entitiesRouter = router({
     );
   }),
 
-  create: protectedProcedure.input(CreateEntityDto).mutation(async ({ input, ctx }) => {
-    const { dbUser } = await requireAuth(ctx);
-    return await Container.get(EntityRepository).create({
-      userId: dbUser.id,
-      name: input.name,
-      description: input.description ?? null,
-    });
-  }),
+  create: protectedProcedure
+    .input(strictInput(CreateEntityDto))
+    .mutation(async ({ input, ctx }) => {
+      const { dbUser } = await requireAuth(ctx);
+      return await Container.get(EntityRepository).create({
+        userId: dbUser.id,
+        name: input.name,
+        description: input.description ?? null,
+      });
+    }),
 
-  update: protectedProcedure.input(UpdateEntityDto).mutation(async ({ input, ctx }) => {
-    const { dbUser } = await requireAuth(ctx);
-    const repository = Container.get(EntityRepository);
-    const existing = await repository.findByIdForUser(dbUser.id, input.id);
-    if (!existing) throw new Error('Unauthorized access to entity');
+  update: protectedProcedure
+    .input(strictInput(UpdateEntityDto))
+    .mutation(async ({ input, ctx }) => {
+      const { dbUser } = await requireAuth(ctx);
+      const repository = Container.get(EntityRepository);
+      const existing = await repository.findByIdForUser(dbUser.id, input.id);
+      if (!existing) throw new Error('Unauthorized access to entity');
 
-    const { id, ...changes } = input;
-    return await repository.update(id, { ...changes, updatedAt: new Date() });
-  }),
+      const { id, ...changes } = input;
+      return await repository.update(id, { ...changes, updatedAt: new Date() });
+    }),
 
   /**
    * Deleting a boundary does NOT delete what is inside it.
@@ -67,7 +72,7 @@ export const entitiesRouter = router({
    * visible in their own bucket, with their holdings and history intact.
    * Cascading here would destroy real financial records to remove a label.
    */
-  delete: protectedProcedure.input(IdInputDto).mutation(async ({ input, ctx }) => {
+  delete: protectedProcedure.input(strictInput(IdInputDto)).mutation(async ({ input, ctx }) => {
     const { dbUser } = await requireAuth(ctx);
     const repository = Container.get(EntityRepository);
     const existing = await repository.findByIdForUser(dbUser.id, input.id);
@@ -87,7 +92,7 @@ export const entitiesRouter = router({
    * must write nothing.
    */
   assignAccounts: protectedProcedure
-    .input(AssignAccountsToEntityDto)
+    .input(strictInput(AssignAccountsToEntityDto))
     .mutation(async ({ input, ctx }) => {
       const { dbUser } = await requireAuth(ctx);
       const repository = Container.get(EntityRepository);

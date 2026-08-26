@@ -30,6 +30,7 @@ import { eq, inArray } from 'drizzle-orm';
 import { Container } from 'typedi';
 import { z } from 'zod';
 import { toTRPCError } from '../../utils/error-mapping';
+import { strictInput } from '../lib/strict-input';
 import { protectedProcedure, router } from '../trpc';
 
 // Per-user rate budget for `validateKeys`. The global tRPC limiter (60/min)
@@ -196,11 +197,13 @@ export const integrationsRouter = router({
    */
   validateKeys: protectedProcedure
     .input(
-      z.object({
-        providerKey: z.string().min(1, 'providerKey is required'),
-        credentials: z.record(z.string(), z.string()),
-        requestId: z.string().uuid(),
-      })
+      strictInput(
+        z.object({
+          providerKey: z.string().min(1, 'providerKey is required'),
+          credentials: z.record(z.string(), z.string()),
+          requestId: z.string().uuid(),
+        })
+      )
     )
     .mutation(async ({ input, ctx }) => {
       // Per-user budget: reject before doing any expensive work
