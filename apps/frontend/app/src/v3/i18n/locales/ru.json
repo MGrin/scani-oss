@@ -1066,7 +1066,12 @@
         "affordRunwayStillBeyond_one": "Запаса хода всё равно хватит больше чем на {{count}} месяц.",
         "affordRunwayStillBeyond_few": "Запаса хода всё равно хватит больше чем на {{count}} месяца.",
         "affordRunwayStillBeyond_many": "Запаса хода всё равно хватит больше чем на {{count}} месяцев.",
-        "affordRunwayStillBeyond_other": "Запаса хода всё равно хватит больше чем на {{count}} месяца."
+        "affordRunwayStillBeyond_other": "Запаса хода всё равно хватит больше чем на {{count}} месяца.",
+        "observedRunway_one": "Около {{count}} месяца при текущих тратах",
+        "observedRunway_few": "Около {{count}} месяцев при текущих тратах",
+        "observedRunway_many": "Около {{count}} месяцев при текущих тратах",
+        "observedRunway_other": "Около {{count}} месяцев при текущих тратах",
+        "ofWhichCommitted": "из них ~{{percent}}% обязательные"
       }
     },
     "holdings": {
