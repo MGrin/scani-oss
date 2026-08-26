@@ -45,13 +45,19 @@ describe('SC-657 — the home runway divides by observed alone', () => {
     // disagree about the same account at the same instant.
     expect(SOURCE).toContain('observedRunwayMonths(');
     expect(FORECAST_SOURCE).toContain('observedRunwayMonths(');
-    expect(SOURCE).toContain('committedShareOfObserved(');
-    expect(FORECAST_SOURCE).toContain('committedShareOfObserved(');
+    // The PERCENTAGE too. It was duplicated inline on both surfaces in the
+    // first cut of this ticket -- the same shape as the runway drift, caught
+    // by reading the diff rather than by two figures disagreeing in front of
+    // somebody, which is how the runway one was found.
+    expect(SOURCE).toContain('committedShare(');
+    expect(FORECAST_SOURCE).toContain('committedShare(');
 
-    // The shape a re-inlined division would take, on either surface.
+    // The shapes a re-inlined computation would take, on either surface.
     for (const source of [SOURCE, FORECAST_SOURCE]) {
       expect(source).not.toMatch(/dividedBy\(\s*perMonth\s*\)/);
       expect(source).not.toMatch(/perMonthMean[^\n]*dividedBy\(/);
+      expect(source).not.toContain('committedShareOfObserved(');
+      expect(source).not.toMatch(/reduce\([^\n]*point\.outflow/);
     }
   });
 
