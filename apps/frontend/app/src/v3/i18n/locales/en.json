@@ -596,7 +596,18 @@
         "affordRunwayStillBeyond_other": "Runway still runs beyond {{count}} months.",
         "observedRunway_one": "About {{count}} month at recent spending",
         "observedRunway_other": "About {{count}} months at recent spending",
-        "ofWhichCommitted": "~{{percent}}% of that spending is committed"
+        "ofWhichCommitted": "~{{percent}}% of that spending is committed",
+        "committedTitle": "What's committed",
+        "committedNote": "Your recurring book alone — what is scheduled, and when. It does not describe what you spend.",
+        "observedBasis": "Mean of {{count}} complete months, {{from}} to {{to}}: <value></value> a month.",
+        "observedSpread": "Those months ranged <min></min> to <max></max>; the middle month was <median></median>.",
+        "observedNotCounted_one": "{{count}} outflow is not counted — unanswered, or moved somewhere Scani cannot see.",
+        "observedNotCounted_other": "{{count}} outflows are not counted — unanswered, or moved somewhere Scani cannot see.",
+        "affordRemaining": "What's left afterwards",
+        "affordRunwayAfterObserved_one": "About {{count}} month at recent spending.",
+        "affordRunwayAfterObserved_other": "About {{count}} months at recent spending.",
+        "affordCannot": "That is more than the liquid balance.",
+        "affordNoSchedule": "Measured against your average rate, so it cannot tell a purchase now from one later in the year."
       }
     },
     "groups": {
