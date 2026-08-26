@@ -179,9 +179,10 @@ export interface AppliedDrift {
  * is the whole reason it cannot soften. What was wrong is that the remedy it
  * named was one the reader is often not entitled to take. It led with
  * `drop database scani` — a claim about everyone connected to a database
- * several people share — and it predated `bun run db:dev` by one merge, so the
- * recovery that IS unilateral was not in it. It also named only one cause. The
- * instance that produced SC-429 and SC-431 is the OTHER one: the recorded hash
+ * several people share — and it predated the give-the-run-its-own-database
+ * recovery by one merge, so the recovery that IS unilateral was not in it. It
+ * also named only one cause. The instance that produced SC-429 and SC-431 is
+ * the OTHER one: the recorded hash
  * for `20260818021506` appears in no commit on any ref, so nobody edited
  * shipped history — the shared database ran a draft while the file was still
  * being written. "Undo the edit" is advice with no edit to undo.
@@ -229,22 +230,26 @@ export function driftRefusalMessage(
     '',
     '    1. A migration that had already shipped was EDITED in the tree. The edit is',
     '       what to undo: restore the file to what actually ran, and put the change',
-    '       in a new migration (`bun run db:new "<what it does>"`).',
+    '       in a new migration (`cd packages/infra/db && bun run db:new "<what it does>"`).',
     '    2. This database ran a DRAFT — a migration applied while it was still being',
     '       written, then edited before it merged. Nothing is wrong with the tree and',
     '       there is no edit to undo; this database is the stale side, and replacing',
     '       it is the only honest repair.',
     '',
-    '  For (2), replace the database rather than its record of what ran:',
-    '    - the database this worktree owns, which is a decision you can make alone:',
-    '        bun run db:dev -- --reset',
-    '    - a per-run throwaway, which never meets this at all:',
-    '        bun scripts/gate-db.ts -- bun run test',
+    '  For (2), replace the database rather than its record of what ran. Give the run',
+    '  a database of its own, migrated from empty — it never meets this at all:',
+    '',
+    '        docker compose exec -T postgres createdb -U scani scani_test_$$',
+    '        DATABASE_URL=postgres://scani:scani@localhost:5433/scani_test_$$ \\',
+    '          bun run db:migrate && bun run test',
+    '',
+    '  Any empty database reachable from here will do; the two commands above are',
+    '  just the compose route this repo ships.',
     '',
     '  The shared compose database `scani` is a third thing and is NOT yours to',
     '  replace: dropping one several people are connected to is a claim about all of',
-    '  them. Since SC-429 nothing needs it — `bun run db:dev` gives this worktree its',
-    '  own — so the answer there is to stop using it, not to drop it.'
+    '  them. A database of your own costs one `createdb`, so the answer there is to',
+    '  stop using the shared one, not to drop it.'
   );
 
   return lines.join('\n');
