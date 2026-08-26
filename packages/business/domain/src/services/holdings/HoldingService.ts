@@ -39,6 +39,13 @@ export interface CreateHoldingWithEventInput {
   // BalanceAtTimeService) picks the earlier one — anchoring all past-date
   // reconstructions on the bogus 0. File-import is the canonical case.
   skipSyncCapture?: boolean;
+  /**
+   * The `source` for the create-time observation. Defaults to today's
+   * `sync-capture`; `writeInflow` passes `HOLDING_OPEN_OBSERVATION_SOURCE`
+   * because the figure is the row's opening and because SC-631 has to be able
+   * to tell that observation from one a person caused (SC-641).
+   */
+  observationSource?: string;
 }
 
 /**
@@ -76,6 +83,52 @@ export interface UpdateHoldingBalanceInput {
     price?: string;
   };
 }
+
+/**
+ * The `source` of the observation that records a holding's OPENING balance —
+ * the figure the row was created with, as opposed to a balance somebody later
+ * observed it to have (SC-641).
+ *
+ * Its own word rather than `sync-capture` for two reasons, and the second is
+ * load-bearing:
+ *
+ * - No sync captured it. The row was created at that figure; calling it a
+ *   capture is a claim about where the number came from that is not true.
+ * - `holdingIsUntouched` (SC-631) reads an observation on a holding as
+ *   evidence a person touched it, and refuses to delete the row if one
+ *   exists. An opening observation records nothing beyond the holding's own
+ *   existence — the same ground on which `holding_coverage` is excluded — so
+ *   it has to be tellable apart from every other observation, by a value
+ *   nothing else writes.
+ *
+ * Nothing in the repo branches on an observation's `source`; it is carried and
+ * surfaced. Measured 2026-08-26: the only `=== 'manual'` comparison nearby is
+ * on `holdings.source`, not on this column.
+ *
+ * ## Why this is a declared constant and not the value already lying around
+ *
+ * `createHoldingWithEvent` already writes `sourceMetadata.origin =
+ * 'createHoldingWithEvent'`, and excluding on THAT would have been a one-line
+ * diff: no new constant, no signature change, nothing threaded through. It was
+ * rejected, and the reason generalises past this file.
+ *
+ * That option was cheap *because it was incidental*. Nobody chose the string
+ * `'createHoldingWithEvent'` as a contract — it is there because the method
+ * happens to write its own name. Building the exclusion on it would make a
+ * later rename silently stop matching, at which point `holdingIsUntouched`
+ * answers "touched" for every holding it is asked about and SC-631 deletes
+ * nothing, with every test green except the one that checks the money.
+ *
+ * **A value that is load-bearing at two ends has to be DECLARED load-bearing
+ * at both, or the next person to rename something is holding a rule they never
+ * agreed to.** Cheapness that comes from reusing something incidental is a
+ * loan against a promise nobody made.
+ *
+ * So: one exported constant, imported by the writer (`writeInflow`, via
+ * `observationSource`) and by the reader (`holding-untouched.ts`). A rename
+ * moves both ends together and a typo does not compile.
+ */
+export const HOLDING_OPEN_OBSERVATION_SOURCE = 'holding-open';
 
 // HoldingService — all holding *mutations*. Reads live in
 // HoldingQueryService.
@@ -124,7 +177,11 @@ export class HoldingService extends BaseService {
     holding: { id: string; userId: string; accountId: string; tokenId: string; balance: string },
     transaction?: DatabaseTransaction,
     meta?: Record<string, unknown>,
-    attestation?: BalanceObservationAttestation
+    attestation?: BalanceObservationAttestation,
+    /** Defaults to `sync-capture`, which is what every caller before SC-641
+     *  meant. Pass `HOLDING_OPEN_OBSERVATION_SOURCE` when the figure is a
+     *  row's opening rather than a balance somebody observed. */
+    source: string = 'sync-capture'
   ): Promise<void> {
     try {
       const now = new Date();
@@ -134,7 +191,7 @@ export class HoldingService extends BaseService {
           holdingId: holding.id,
           balance: holding.balance,
           observedAt: now,
-          source: 'sync-capture',
+          source,
           sourceMetadata: meta ?? {},
           ...(attestation
             ? {
@@ -254,7 +311,9 @@ export class HoldingService extends BaseService {
             balance: input.balance,
           },
           transaction,
-          { origin: 'createHoldingWithEvent', source: input.source ?? 'manual' }
+          { origin: 'createHoldingWithEvent', source: input.source ?? 'manual' },
+          undefined,
+          input.observationSource
         );
       }
       this.logDebug('Holding created', { holdingId: holding.id });
