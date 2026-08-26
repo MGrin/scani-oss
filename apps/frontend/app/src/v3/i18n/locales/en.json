@@ -607,7 +607,11 @@
         "affordRunwayAfterObserved_one": "About {{count}} month at recent spending.",
         "affordRunwayAfterObserved_other": "About {{count}} months at recent spending.",
         "affordCannot": "That is more than the liquid balance.",
-        "affordNoSchedule": "Measured against your average rate, so it cannot tell a purchase now from one later in the year."
+        "affordNoSchedule": "Measured against your average rate, so it cannot tell a purchase now from one later in the year.",
+        "provenanceTitle": "Who classified the money that IS counted",
+        "provenanceUser": "{{percent}}% of that value rests on answers you gave.",
+        "provenanceAutomated": "{{percent}}% was decided by a named rule you can go and read.",
+        "provenanceUnattributed": "{{percent}}% carries no record of who or what decided."
       }
     },
     "groups": {
