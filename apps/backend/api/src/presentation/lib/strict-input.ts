@@ -69,6 +69,26 @@ function strictify(schema: z.ZodTypeAny): z.ZodTypeAny {
     return z.union(options as [z.ZodTypeAny, z.ZodTypeAny, ...z.ZodTypeAny[]]);
   }
 
+  // A DISCRIMINATED union is a separate zod class, not a `ZodUnion` subclass,
+  // so the branch above does not reach it and `instanceof z.ZodUnion` is
+  // `false` for one. It was the single input in the router this helper walked
+  // straight past (SC-682) — see the note on `isStrictifiable` for why nothing
+  // said so.
+  //
+  // Rebuilt through `z.discriminatedUnion` rather than by mutating options, so
+  // the discriminator map zod builds at construction is derived from the strict
+  // objects rather than left pointing at the permissive ones.
+  if (schema instanceof z.ZodDiscriminatedUnion) {
+    const options = schema._def.options.map((o: z.ZodTypeAny) => strictify(o));
+    return z.discriminatedUnion(
+      schema._def.discriminator,
+      options as unknown as [
+        z.ZodDiscriminatedUnionOption<string>,
+        ...z.ZodDiscriminatedUnionOption<string>[],
+      ]
+    );
+  }
+
   // Everything else — `z.string()`, `z.array()`, `z.void()` — has no unknown
   // keys to reject, so passing it through is the whole correct behaviour
   // rather than a gap. `isStrictifiable` is what tells the two apart.
@@ -81,6 +101,19 @@ function strictify(schema: z.ZodTypeAny): z.ZodTypeAny {
  * `false` is not a failure: a `z.string()` input has no keys. It exists so a
  * test can assert that every OBJECT-shaped input in this app is reached,
  * without that assertion having to re-implement the walk above.
+ *
+ * **`false` IS THE DANGEROUS ANSWER, AND SC-682 IS WHY.** "Has no keys" and
+ * "has keys this walk cannot see" are different facts that arrive here as the
+ * same `false`, and only the first is benign. Every branch below decides the
+ * question by looking for `ZodObject`, an `innerType`, or `ZodUnion`. A
+ * `ZodDiscriminatedUnion` carries `options` and none of those three, so it
+ * decoded as a leaf with nothing to guard — and `users.setObservedBurnAnswer`,
+ * the one discriminated union among the router's 130 inputs, accepted
+ * undeclared keys while all three of this module's tests reported it clean.
+ *
+ * So a shape that is not enumerated here does not fail loudly; it reads as
+ * `z.string()`. When you add a schema kind to `strictify`, add it here in the
+ * same edit, and add the router-level assertion that would have gone red.
  */
 export function isStrictifiable(schema: z.ZodTypeAny): boolean {
   if (schema instanceof z.ZodObject) return true;
@@ -89,6 +122,9 @@ export function isStrictifiable(schema: z.ZodTypeAny): boolean {
     return isStrictifiable(schema.unwrap());
   }
   if (schema instanceof z.ZodUnion) {
+    return schema._def.options.some((o: z.ZodTypeAny) => isStrictifiable(o));
+  }
+  if (schema instanceof z.ZodDiscriminatedUnion) {
     return schema._def.options.some((o: z.ZodTypeAny) => isStrictifiable(o));
   }
   return false;

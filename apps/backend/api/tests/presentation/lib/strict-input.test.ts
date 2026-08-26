@@ -49,7 +49,9 @@ function permissiveObjectUnder(schema: unknown): boolean {
   ) {
     return permissiveObjectUnder(def.innerType);
   }
-  if (def.typeName === 'ZodUnion') return (def.options ?? []).some(permissiveObjectUnder);
+  if (def.typeName === 'ZodUnion' || def.typeName === 'ZodDiscriminatedUnion') {
+    return (def.options ?? []).some(permissiveObjectUnder);
+  }
   return false;
 }
 
@@ -88,13 +90,20 @@ describe('every api procedure refuses parameters it does not declare (SC-675)', 
       const def = defOf(schema);
       const name = def.typeName;
       if (!name || name === 'ZodObject') return;
-      if (name === 'ZodUnion') {
+      if (name === 'ZodUnion' || name === 'ZodDiscriminatedUnion') {
         for (const o of def.options ?? []) walk(o);
         return;
       }
-      if (def.innerType === undefined) return; // a leaf: z.string(), z.array(), …
+      // A leaf is a node with NOTHING under it. Testing only `innerType` made
+      // every `options`-carrying kind a leaf, which is how a discriminated
+      // union — the one shape in the router this file could not strictify —
+      // reached `.input()` classified as `z.string()` (SC-682). A container
+      // kind nobody has taught the helper about must land in `wrappers` and
+      // fail below, not be waved through as having no keys.
+      if (def.innerType === undefined && def.options === undefined) return;
       wrappers.add(name);
-      walk(def.innerType);
+      if (def.innerType !== undefined) walk(def.innerType);
+      for (const o of def.options ?? []) walk(o);
     };
     for (const { schema } of inputs) walk(schema);
     const unhandled = [...wrappers].filter(
@@ -143,6 +152,34 @@ describe('strictInput', () => {
   });
 
   /**
+   * SC-682. A DISCRIMINATED union is not a `ZodUnion` subclass in zod, so the
+   * branch above never reached it and `strictify` returned it untouched.
+   * `users.setObservedBurnAnswer` was the only one among the router's 130
+   * inputs, which is why "all 130 endpoints refuse undeclared parameters" was
+   * true of 129.
+   *
+   * The second assertion is the one that matters as much as the refusal:
+   * narrowing by the discriminator must survive being rebuilt, or this fix
+   * trades a permissive input for a broken one.
+   */
+  test('every branch of a DISCRIMINATED union refuses on its own', () => {
+    const schema = strictInput(
+      z.discriminatedUnion('kind', [
+        z.object({ kind: z.literal('override'), amount: z.string() }),
+        z.object({ kind: z.literal('clear') }),
+      ])
+    );
+    expect(schema.safeParse({ kind: 'override', amount: '1' }).success).toBe(true);
+    expect(schema.safeParse({ kind: 'clear' }).success).toBe(true);
+
+    const stray = schema.safeParse({ kind: 'override', amount: '1', value: '2' });
+    expect(stray.success).toBe(false);
+    expect(stray.success === false && stray.error.issues[0]?.code).toBe('unrecognized_keys');
+
+    expect(schema.safeParse({ kind: 'nonsense' }).success).toBe(false);
+  });
+
+  /**
    * Passing a non-object through is the whole correct behaviour, not a gap —
    * `z.string()` has no keys to reject. `isStrictifiable` is what lets a test
    * tell that apart from a shape the walk failed to reach.
@@ -153,6 +190,16 @@ describe('strictInput', () => {
     expect(isStrictifiable(z.object({}))).toBe(true);
     expect(isStrictifiable(z.object({}).default({}))).toBe(true);
     expect(isStrictifiable(z.union([z.object({}), z.string()]))).toBe(true);
+    // `false` here would mean "no keys to reject", which is what let SC-682
+    // through: the shape has keys and the walk could not see them.
+    expect(
+      isStrictifiable(
+        z.discriminatedUnion('kind', [
+          z.object({ kind: z.literal('a') }),
+          z.object({ kind: z.literal('b') }),
+        ])
+      )
+    ).toBe(true);
   });
 
   test('the declared values a schema already refuses are untouched', () => {
