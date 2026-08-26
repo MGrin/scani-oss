@@ -1,3 +1,4 @@
+import type { DatabaseTransaction } from '@scani/db';
 import type { TokenPriceGranularity } from '@scani/db/schema';
 import { createComponentLogger } from '@scani/logging';
 import Decimal from 'decimal.js';
@@ -40,6 +41,22 @@ export interface PriceGraphOptions {
   // to cover, and falls back to the repository for the rest. Build it with
   // `buildPriceLookup` so the covered set matches what this walks.
   priceLookup?: PriceLookup;
+  /**
+   * The transaction every read on this call must go through, or `undefined`
+   * for the connection pool.
+   *
+   * REQUIRED, and not `tx?:` — that is the whole point (SC-600). A test
+   * running inside `withTestDb` gets a transaction the pool cannot see, so a
+   * call that omits it does not fail: it reads an empty database and returns
+   * `null`, and every assertion downstream goes on passing against nothing.
+   * Measured 2026-08-23: inside one `withTestDb` callback the transaction saw
+   * 1 holding and `PnLAtTimeService.getPnL` saw 0.
+   *
+   * Optional, that failure stays available at every call site nobody thought
+   * about. Required, the compiler names them — and `undefined` remains the
+   * right answer in production, it just has to be written down.
+   */
+  tx: DatabaseTransaction | undefined;
 }
 
 // Conversion token-to-token across time via the price graph implied by
@@ -73,7 +90,7 @@ export class PriceGraphService {
     fromTokenId: string,
     toTokenId: string,
     at: Date,
-    options: PriceGraphOptions = {}
+    options: PriceGraphOptions
   ): Promise<PriceGraphConversion | null> {
     const amt = amount instanceof Decimal ? amount : new Decimal(amount);
     if (fromTokenId === toTokenId) {
@@ -89,13 +106,14 @@ export class PriceGraphService {
     const prefer = options.preferGranularity ?? null;
     const maxDepth = options.maxDepth ?? 2;
     const lookup = options.priceLookup ?? null;
+    const tx = options.tx;
     // Daily-granularity lookups tolerate a wider staleness window than
     // intraday — thin-pair daily closes are legitimately weekly.
     const staleCap = prefer === 'daily' ? MAX_DAILY_PRICE_AGE_MS : MAX_INTRADAY_PRICE_AGE_MS;
     const isStale = (effectiveAt: Date): boolean => at.getTime() - effectiveAt.getTime() > staleCap;
 
     // Depth 1 — direct.
-    const direct = await this.tryDirect(fromTokenId, toTokenId, at, prefer, lookup);
+    const direct = await this.tryDirect(fromTokenId, toTokenId, at, prefer, lookup, tx);
     if (direct) {
       return {
         amount: amt.mul(direct.rate),
@@ -114,12 +132,12 @@ export class PriceGraphService {
     // and a repeated id in the two-hop loop produces degenerate paths
     // (`A → hub → same-hub → B` yielding rate = p × 1/p = 1, which
     // looks valid but is noise).
-    const hubIds = [...new Set(await this.resolveHubTokenIds(options.hubs))];
+    const hubIds = [...new Set(await this.resolveHubTokenIds(tx, options.hubs))];
     for (const hubId of hubIds) {
       if (hubId === fromTokenId || hubId === toTokenId) continue;
-      const legA = await this.tryDirect(fromTokenId, hubId, at, prefer, lookup);
+      const legA = await this.tryDirect(fromTokenId, hubId, at, prefer, lookup, tx);
       if (!legA) continue;
-      const legB = await this.tryDirect(hubId, toTokenId, at, prefer, lookup);
+      const legB = await this.tryDirect(hubId, toTokenId, at, prefer, lookup, tx);
       if (!legB) continue;
       const rate = legA.rate.mul(legB.rate);
       // "Binding" leg is whichever has the older (more stale) timestamp —
@@ -146,15 +164,15 @@ export class PriceGraphService {
     let iterations = 0;
     twoHopOuter: for (const hubA of hubIds) {
       if (hubA === fromTokenId || hubA === toTokenId) continue;
-      const legA = await this.tryDirect(fromTokenId, hubA, at, prefer, lookup);
+      const legA = await this.tryDirect(fromTokenId, hubA, at, prefer, lookup, tx);
       if (!legA) continue;
       for (const hubB of hubIds) {
         if (++iterations > TWO_HOP_ITERATION_CAP) break twoHopOuter;
         if (hubB === hubA) continue;
         if (hubB === fromTokenId || hubB === toTokenId) continue;
-        const legB = await this.tryDirect(hubA, hubB, at, prefer, lookup);
+        const legB = await this.tryDirect(hubA, hubB, at, prefer, lookup, tx);
         if (!legB) continue;
-        const legC = await this.tryDirect(hubB, toTokenId, at, prefer, lookup);
+        const legC = await this.tryDirect(hubB, toTokenId, at, prefer, lookup, tx);
         if (!legC) continue;
         const rate = legA.rate.mul(legB.rate).mul(legC.rate);
         const effectiveAt = [legA.at, legB.at, legC.at].reduce((a, b) => (a < b ? a : b));
@@ -190,9 +208,10 @@ export class PriceGraphService {
   async buildPriceLookup(
     tokenIds: Iterable<string>,
     baseCurrencyId: string,
-    until: Date
+    until: Date,
+    tx: DatabaseTransaction | undefined
   ): Promise<PriceLookup> {
-    const hubIds = await this.resolveHubTokenIds();
+    const hubIds = await this.resolveHubTokenIds(tx);
     const baseAndHubs = new Set<string>([baseCurrencyId, ...hubIds]);
     const pairs: Array<{ tokenId: string; baseTokenId: string }> = [];
     const pushPair = (a: string, b: string): void => {
@@ -208,7 +227,7 @@ export class PriceGraphService {
     for (const a of anchors) {
       for (const b of anchors) pushPair(a, b);
     }
-    const rows = await this.tokenPriceRepository.findManyForPairsUpTo(pairs, until);
+    const rows = await this.tokenPriceRepository.findManyForPairsUpTo(pairs, until, tx);
     return new PriceLookup(rows, pairs);
   }
 
@@ -225,7 +244,8 @@ export class PriceGraphService {
     toTokenId: string,
     at: Date,
     prefer: TokenPriceGranularity | null,
-    lookup: PriceLookup | null
+    lookup: PriceLookup | null,
+    tx: DatabaseTransaction | undefined
   ): Promise<{ rate: Decimal; at: Date } | null> {
     const forward =
       lookup?.covers(fromTokenId, toTokenId) === true
@@ -234,7 +254,8 @@ export class PriceGraphService {
             fromTokenId,
             toTokenId,
             at,
-            prefer
+            prefer,
+            tx
           );
     if (forward) {
       return { rate: new Decimal(forward.price), at: forward.timestamp };
@@ -246,7 +267,8 @@ export class PriceGraphService {
             toTokenId,
             fromTokenId,
             at,
-            prefer
+            prefer,
+            tx
           );
     if (reverse) {
       const rp = new Decimal(reverse.price);
@@ -274,37 +296,53 @@ export class PriceGraphService {
   // guessing the other one takes the entire USDT lane out of service —
   // every one-hop route through it fails and falls through to the next
   // hub, silently.
-  async resolveHubTokenIds(hubs: readonly PriceHub[] = PRICE_HUBS): Promise<string[]> {
+  async resolveHubTokenIds(
+    tx: DatabaseTransaction | undefined,
+    hubs: readonly PriceHub[] = PRICE_HUBS
+  ): Promise<string[]> {
     const ids: string[] = [];
     for (const hub of hubs) {
       const key = priceHubKey(hub);
-      const cached = this.hubIdCache.get(key);
-      if (cached !== undefined) {
-        if (cached) ids.push(cached);
-        continue;
+      // The cache is BYPASSED under a transaction, in both directions, and
+      // that is not caution — either direction is a wrong answer (SC-600).
+      // Reading it would let a `null` resolved against the pool suppress a
+      // hub the transaction has just seeded, taking that whole lane out of
+      // service silently; writing it would leave an id from a rolled-back
+      // transaction answering for every later pool read on this instance.
+      // The cache exists because `convert` is the rollup's hot path, and
+      // that path passes no transaction, so it is untouched.
+      if (tx === undefined) {
+        const cached = this.hubIdCache.get(key);
+        if (cached !== undefined) {
+          if (cached) ids.push(cached);
+          continue;
+        }
       }
-      const id = await this.resolveHub(hub);
-      this.hubIdCache.set(key, id);
+      const id = await this.resolveHub(hub, tx);
+      if (tx === undefined) this.hubIdCache.set(key, id);
       if (id) ids.push(id);
     }
     return ids;
   }
 
-  private async resolveHub(hub: PriceHub): Promise<string | null> {
-    const type = await this.tokenTypeRepository.findByCode(hub.typeCode);
+  private async resolveHub(
+    hub: PriceHub,
+    tx: DatabaseTransaction | undefined
+  ): Promise<string | null> {
+    const type = await this.tokenTypeRepository.findByCode(hub.typeCode, tx);
     if (!type) {
       this.logger.warn({ hub }, 'PriceGraphService: hub token type is not seeded, hub disabled');
       return null;
     }
 
-    const canonical = await this.tokenRepository.findByIdentityTuple(hub.symbol, type.id, null);
+    const canonical = await this.tokenRepository.findByIdentityTuple(hub.symbol, type.id, null, tx);
     if (canonical) return canonical.id;
 
     // No un-segmented row. Every hub is expected to have one, so this is
     // a database we don't recognise rather than a routing decision —
     // fall back to the type-scoped lookup so an existing lane keeps
     // working, but say out loud that the row was picked by a tiebreak.
-    const segmented = await this.tokenRepository.findBySymbolAndType(hub.symbol, type.id);
+    const segmented = await this.tokenRepository.findBySymbolAndType(hub.symbol, type.id, tx);
     if (segmented) {
       this.logger.warn(
         { hub, tokenId: segmented.id, marketSegment: segmented.marketSegment },

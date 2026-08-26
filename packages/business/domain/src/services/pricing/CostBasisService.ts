@@ -1,3 +1,4 @@
+import type { DatabaseTransaction } from '@scani/db';
 import type { HoldingTransaction } from '@scani/db/schema';
 import {
   answerIsOwedFor,
@@ -605,17 +606,26 @@ export class CostBasisService {
       // with, so a caller that has not been taught to ask gets the number it
       // has always got rather than a silently different one.
       method?: CostBasisMethod;
-    } = {}
+      /**
+       * The database transaction every read on this call goes through, or
+       * `undefined` for the pool. REQUIRED — see PriceGraphOptions.tx
+       * (SC-600). A `withTestDb` caller that omits it reads an empty
+       * database and gets a cost basis of zero, which is a number, not an
+       * error.
+       */
+      tx: DatabaseTransaction | undefined;
+    }
   ): Promise<CostBasisAtTime> {
     const [txs, heldTokenId] = await Promise.all([
       opts.txs
         ? Promise.resolve(filterTxsUpTo(opts.txs, at))
-        : this.txRepository.findForHoldingUpTo(holdingId, at),
+        : this.txRepository.findForHoldingUpTo(holdingId, at, opts.tx),
       opts.heldTokenId
         ? Promise.resolve(opts.heldTokenId)
-        : this.holdingRepository.findById(holdingId).then((h) => h?.tokenId ?? null),
+        : this.holdingRepository.findById(holdingId, opts.tx).then((h) => h?.tokenId ?? null),
     ]);
     return this.walkLots(
+      opts.tx,
       txs,
       baseCurrencyId,
       heldTokenId,
@@ -664,6 +674,7 @@ export class CostBasisService {
    * construction* rather than by inspection is for there to be one walk.
    */
   async walkLots(
+    dbTx: DatabaseTransaction | undefined,
     txs: ReadonlyArray<HoldingTransaction>,
     baseCurrencyId: string,
     heldTokenId: string | null,
@@ -681,6 +692,7 @@ export class CostBasisService {
       ? txs
       : txs.map((t) => ({ ...t, holdingId }));
     const walked = await this.walkPool(
+      dbTx,
       [holdingId],
       new Map([[holdingId, rows]]),
       baseCurrencyId,
@@ -722,6 +734,7 @@ export class CostBasisService {
    * for why that is one function now and not two (SC-344).
    */
   async walkComponent(
+    dbTx: DatabaseTransaction | undefined,
     holdingIds: ReadonlyArray<string>,
     txsByHolding: ReadonlyMap<string, ReadonlyArray<HoldingTransaction>>,
     at: Date,
@@ -735,6 +748,7 @@ export class CostBasisService {
     const upTo = new Map<string, ReadonlyArray<HoldingTransaction>>();
     for (const h of holdingIds) upTo.set(h, filterTxsUpTo(txsByHolding.get(h) ?? [], at));
     return this.walkPool(
+      dbTx,
       holdingIds,
       upTo,
       baseCurrencyId,
@@ -756,6 +770,7 @@ export class CostBasisService {
    * sentinel date to defeat a second filter.
    */
   private async walkPool(
+    dbTx: DatabaseTransaction | undefined,
     holdingIds: ReadonlyArray<string>,
     txsByHolding: ReadonlyMap<string, ReadonlyArray<HoldingTransaction>>,
     baseCurrencyId: string,
@@ -877,6 +892,7 @@ export class CostBasisService {
       const hit = acquisitionValues.get(tx.id);
       if (hit !== undefined) return hit;
       const value = await this.txValueInBase(
+        dbTx,
         tx,
         new Decimal(tx.quantity).abs(),
         baseCurrencyId,
@@ -973,6 +989,7 @@ export class CostBasisService {
 
       if (OUTFLOW_SELL_KINDS.has(tx.kind)) {
         const proceeds = await this.txValueInBase(
+          dbTx,
           tx,
           qtyAbs,
           baseCurrencyId,
@@ -1045,6 +1062,7 @@ export class CostBasisService {
             // fabricating a phantom loss.
             const popped = await matchedLots(`${tx.id}#${portion.index}`, holdingId, portion.qty);
             const proceeds = await this.txValueInBase(
+              dbTx,
               tx,
               portion.qty,
               baseCurrencyId,
@@ -1119,6 +1137,7 @@ export class CostBasisService {
           continue;
         }
         const proceeds = await this.txValueInBase(
+          dbTx,
           acc.tx,
           acc.qtyAbs,
           baseCurrencyId,
@@ -1179,6 +1198,7 @@ export class CostBasisService {
    * gap between the return figure and the gain beside it.
    */
   private async txValueInBase(
+    dbTx: DatabaseTransaction | undefined,
     tx: HoldingTransaction,
     qtyAbs: Decimal,
     baseCurrencyId: string,
@@ -1187,6 +1207,7 @@ export class CostBasisService {
   ): Promise<TxValuation | null> {
     return valueTransactionInBase(
       this.priceGraphService,
+      dbTx,
       tx,
       qtyAbs,
       baseCurrencyId,

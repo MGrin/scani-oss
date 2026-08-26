@@ -105,7 +105,7 @@ function tx(p: {
 describe('CostBasisService.walkLots', () => {
   test('empty tx history reports hasTransactions=false', async () => {
     const svc = makeService();
-    const r = await svc.walkLots([], USD, BTC);
+    const r = await svc.walkLots(undefined, [], USD, BTC);
     expect(r.hasTransactions).toBe(false);
     expect(r.costBasis.toString()).toBe('0');
     expect(r.openQty.toString()).toBe('0');
@@ -114,6 +114,7 @@ describe('CostBasisService.walkLots', () => {
   test('buy then partial sell realizes PnL against FIFO cost', async () => {
     const svc = makeService();
     const r = await svc.walkLots(
+      undefined,
       [
         tx({
           holdingId: 'h',
@@ -148,6 +149,7 @@ describe('CostBasisService.walkLots', () => {
     // swap against it is dated 2022-05-10.
     const svc = makeServiceWithSpot(BTC, '130');
     const r = await svc.walkLots(
+      undefined,
       [
         tx({
           holdingId: 'h',
@@ -176,6 +178,7 @@ describe('CostBasisService.walkLots', () => {
   test('a swap_out neither price can reach still books nothing, never a phantom loss', async () => {
     const svc = makeService();
     const r = await svc.walkLots(
+      undefined,
       [
         tx({
           holdingId: 'h',
@@ -201,6 +204,7 @@ describe('CostBasisService.walkLots', () => {
   test('swap_out with priceNative still realizes PnL correctly', async () => {
     const svc = makeService();
     const r = await svc.walkLots(
+      undefined,
       [
         tx({
           holdingId: 'h',
@@ -240,6 +244,7 @@ describe('CostBasisService.walkLots', () => {
   test('an UNANSWERED withdraw pops its lots and books no gain', async () => {
     const svc = makeService();
     const r = await svc.walkLots(
+      undefined,
       [
         tx({
           holdingId: 'h',
@@ -272,6 +277,7 @@ describe('CostBasisService.walkLots', () => {
   test('a withdraw CONFIRMED as leaving the portfolio realizes at FMV', async () => {
     const svc = makeService();
     const r = await svc.walkLots(
+      undefined,
       [
         tx({
           holdingId: 'h',
@@ -306,6 +312,7 @@ describe('CostBasisService.walkLots', () => {
   test('a withdraw answered as moved-but-untracked realizes nothing', async () => {
     const svc = makeService();
     const r = await svc.walkLots(
+      undefined,
       [
         tx({
           holdingId: 'h',
@@ -335,6 +342,7 @@ describe('CostBasisService.walkLots', () => {
   test('transfer_out follows the same rule as withdraw, both ways', async () => {
     const svc = makeService();
     const unanswered = await svc.walkLots(
+      undefined,
       [
         tx({
           holdingId: 'h',
@@ -360,6 +368,7 @@ describe('CostBasisService.walkLots', () => {
     expect(unanswered.openQty.toString()).toBe('0');
 
     const answered = await svc.walkLots(
+      undefined,
       [
         tx({
           holdingId: 'h',
@@ -390,6 +399,7 @@ describe('CostBasisService.walkLots', () => {
   test('stablecoin withdraw (price = 1) realizes ~0 — sanity check', async () => {
     const svc = makeService();
     const r = await svc.walkLots(
+      undefined,
       [
         // 5000 USDT in @ $1 (cost $5000).
         tx({
@@ -421,6 +431,7 @@ describe('CostBasisService.walkLots', () => {
   test('unpriceable withdraw (no priceNative, no held-token route) pops at zero realized', async () => {
     const svc = makeService();
     const r = await svc.walkLots(
+      undefined,
       [
         tx({
           holdingId: 'h',
@@ -458,6 +469,7 @@ describe('CostBasisService.getCostBasis', () => {
           priceNativeTokenId: USD,
         }),
       ],
+      tx: undefined,
     });
     expect(r.hasTransactions).toBe(false);
   });
@@ -514,7 +526,7 @@ describe('CostBasisService.walkComponent', () => {
         ],
       ],
     ]);
-    const r = await svc.walkComponent(['A', 'B'], txsByHolding, FUTURE, USD, heldTokens);
+    const r = await svc.walkComponent(undefined, ['A', 'B'], txsByHolding, FUTURE, USD, heldTokens);
     // Sold 10 @ 150 on B against the ORIGINAL $1000 cost from A's buy →
     // realized 500. A realizes nothing on the transfer_out.
     expect(r.get('B')?.realizedPnl.toString()).toBe('500');
@@ -579,7 +591,7 @@ describe('CostBasisService.walkComponent', () => {
         ],
       ],
     ]);
-    const r = await svc.walkComponent(['A', 'B'], txsByHolding, FUTURE, USD, heldTokens);
+    const r = await svc.walkComponent(undefined, ['A', 'B'], txsByHolding, FUTURE, USD, heldTokens);
     // Neither leg books a gain: A's exit is an open question, and B
     // reopened at FMV and sold at the same FMV. The $500 the old
     // behaviour reported was an artefact of pricing A's exit as a sale.
@@ -614,7 +626,7 @@ describe('CostBasisService.walkComponent', () => {
       ],
       ['B', []],
     ]);
-    const r = await svc.walkComponent(['A', 'B'], txsByHolding, FUTURE, USD, heldTokens);
+    const r = await svc.walkComponent(undefined, ['A', 'B'], txsByHolding, FUTURE, USD, heldTokens);
     expect(r.get('A')?.realizedPnl.toString()).toBe('500');
     expect(r.get('A')?.openQty.toString()).toBe('0');
   });
@@ -643,7 +655,7 @@ describe('CostBasisService.walkComponent', () => {
     ]);
     // Empty heldTokens map → heldTokenId resolves to null inside the
     // walker, disabling the held-token fallback in txValueInBase.
-    const r = await svc.walkComponent(['A'], txsByHolding, FUTURE, USD, new Map());
+    const r = await svc.walkComponent(undefined, ['A'], txsByHolding, FUTURE, USD, new Map());
     expect(r.get('A')?.realizedPnl.toString()).toBe('0');
     expect(r.get('A')?.openQty.toString()).toBe('0');
   });
@@ -677,7 +689,7 @@ describe('CostBasisService.walkComponent', () => {
       ],
       ['B', []],
     ]);
-    const r = await svc.walkComponent(['A', 'B'], txsByHolding, FUTURE, USD, heldTokens);
+    const r = await svc.walkComponent(undefined, ['A', 'B'], txsByHolding, FUTURE, USD, heldTokens);
     // SC-150: a group id with only one leg is no more evidence of a sale
     // than no group id at all — usually it is an import that fetched one
     // side. The lots still leave A; nothing is booked.
@@ -721,7 +733,7 @@ describe('CostBasisService.walkComponent', () => {
         ],
       ],
     ]);
-    const r = await svc.walkComponent(['A', 'B'], txsByHolding, FUTURE, USD, heldTokens);
+    const r = await svc.walkComponent(undefined, ['A', 'B'], txsByHolding, FUTURE, USD, heldTokens);
     // 6 units stay on A (cost 600), 4 moved to B at original cost (400).
     expect(r.get('A')?.costBasis.toString()).toBe('600');
     expect(r.get('A')?.openQty.toString()).toBe('6');
@@ -780,7 +792,7 @@ describe('CostBasisService — basis quality', () => {
 
   test('complete history, priced legs → known', async () => {
     const svc = makeService();
-    const r = await svc.walkLots(boughtOnce, USD, BTC, undefined, 'complete');
+    const r = await svc.walkLots(undefined, boughtOnce, USD, BTC, undefined, 'complete');
     expect(r.basisQuality).toBe('known');
     expect(r.costBasis.toString()).toBe('1000');
   });
@@ -790,14 +802,14 @@ describe('CostBasisService — basis quality', () => {
     ***REMOVED***
     // `partial` would flag more holdings than the deliberate `false` does and
     // bury the signal this ticket is about.
-    const r = await svc.walkLots(boughtOnce, USD, BTC, undefined, 'unrecorded');
+    const r = await svc.walkLots(undefined, boughtOnce, USD, BTC, undefined, 'unrecorded');
     expect(r.basisQuality).toBe('known');
   });
 
   test('a provider that reported truncated history → partial, same number', async () => {
     const svc = makeService();
-    const truncated = await svc.walkLots(boughtOnce, USD, BTC, undefined, 'incomplete');
-    const complete = await svc.walkLots(boughtOnce, USD, BTC, undefined, 'complete');
+    const truncated = await svc.walkLots(undefined, boughtOnce, USD, BTC, undefined, 'incomplete');
+    const complete = await svc.walkLots(undefined, boughtOnce, USD, BTC, undefined, 'complete');
     expect(truncated.basisQuality).toBe('partial');
     // Identical arithmetic — only the grade separates them. This is what
     // Kraken's 20,000-row ledger cap looks like from here.
@@ -806,7 +818,7 @@ describe('CostBasisService — basis quality', () => {
 
   test('empty history → unknown, not a confident zero', async () => {
     const svc = makeService();
-    const r = await svc.walkLots([], USD, BTC, undefined, 'complete');
+    const r = await svc.walkLots(undefined, [], USD, BTC, undefined, 'complete');
     expect(r.basisQuality).toBe('unknown');
     expect(r.costBasis.toString()).toBe('0');
   });
@@ -815,8 +827,22 @@ describe('CostBasisService — basis quality', () => {
     const airdrop = [
       tx({ holdingId: 'A', kind: 'airdrop', quantity: '5', occurredAt: '2025-11-05' }),
     ];
-    const stale = await serviceWithPrices(96).walkLots(airdrop, USD, BTC, undefined, 'complete');
-    const fresh = await serviceWithPrices(1).walkLots(airdrop, USD, BTC, undefined, 'complete');
+    const stale = await serviceWithPrices(96).walkLots(
+      undefined,
+      airdrop,
+      USD,
+      BTC,
+      undefined,
+      'complete'
+    );
+    const fresh = await serviceWithPrices(1).walkLots(
+      undefined,
+      airdrop,
+      USD,
+      BTC,
+      undefined,
+      'complete'
+    );
     expect(stale.basisQuality).toBe('partial');
     expect(fresh.basisQuality).toBe('known');
     // Same figure, and before this the reader had no way to tell them apart.
@@ -827,7 +853,14 @@ describe('CostBasisService — basis quality', () => {
     const airdrop = [
       tx({ holdingId: 'A', kind: 'airdrop', quantity: '5', occurredAt: '2025-11-05' }),
     ];
-    const r = await serviceWithPrices(44).walkLots(airdrop, USD, BTC, undefined, 'complete');
+    const r = await serviceWithPrices(44).walkLots(
+      undefined,
+      airdrop,
+      USD,
+      BTC,
+      undefined,
+      'complete'
+    );
     expect(r.basisQuality).toBe('known');
   });
 
@@ -837,6 +870,7 @@ describe('CostBasisService — basis quality', () => {
     // priceNative — so the lot is booked at zero cost. That zero is the whole
     // of a later disposal's gain, and it must not read as a known basis.
     const r = await svc.walkLots(
+      undefined,
       [tx({ holdingId: 'A', kind: 'airdrop', quantity: '5', occurredAt: '2024-01-01' })],
       USD,
       null,
@@ -884,6 +918,7 @@ describe('CostBasisService — basis quality', () => {
     // history is complete. The lots move; the doubt does not — B's basis is
     // the cost A paid, and A is the holding we could not read in full.
     const r = await svc.walkComponent(
+      undefined,
       ['A', 'B'],
       txsByHolding,
       FUTURE,
@@ -940,6 +975,7 @@ describe('CostBasisService — unreviewed transfers (SC-160)', () => {
   test('an unanswered withdraw is counted, and the gain is still zero', async () => {
     const svc = makeService();
     const r = await svc.walkLots(
+      undefined,
       [
         buy('h'),
         tx({
@@ -969,6 +1005,7 @@ describe('CostBasisService — unreviewed transfers (SC-160)', () => {
     const svc = makeService();
     for (const answer of ['left_control', 'untracked']) {
       const r = await svc.walkLots(
+        undefined,
         [
           buy('h'),
           tx({
@@ -991,6 +1028,7 @@ describe('CostBasisService — unreviewed transfers (SC-160)', () => {
   test('each unanswered outflow counts once, not each holding', async () => {
     const svc = makeService();
     const r = await svc.walkLots(
+      undefined,
       [
         buy('h'),
         tx({ holdingId: 'h', kind: 'withdraw', quantity: '-2', occurredAt: '2024-02-01' }),
@@ -1005,6 +1043,7 @@ describe('CostBasisService — unreviewed transfers (SC-160)', () => {
   test('a sell is not a transfer and is never counted', async () => {
     const svc = makeService();
     const r = await svc.walkLots(
+      undefined,
       [
         buy('h'),
         tx({
@@ -1038,10 +1077,12 @@ describe('CostBasisService — unreviewed transfers (SC-160)', () => {
     const before = await svc.getCostBasis('h', new Date('2024-03-01'), USD, {
       heldTokenId: BTC,
       txs,
+      tx: undefined,
     });
     const after = await svc.getCostBasis('h', new Date('2024-07-01'), USD, {
       heldTokenId: BTC,
       txs,
+      tx: undefined,
     });
     expect(before.transfersUnreviewed).toBe(0);
     expect(after.transfersUnreviewed).toBe(1);
@@ -1087,7 +1128,7 @@ describe('CostBasisService — unreviewed transfers (SC-160)', () => {
         ],
       ],
     ]);
-    const r = await svc.walkComponent(['A', 'B'], txsByHolding, FUTURE, USD, heldTokens);
+    const r = await svc.walkComponent(undefined, ['A', 'B'], txsByHolding, FUTURE, USD, heldTokens);
     // Attributed to the holding it left, so the per-holding rollup rows the
     // home chart sums add up to the user-wide count.
     expect(r.get('A')?.transfersUnreviewed).toBe(1);
@@ -1124,7 +1165,7 @@ describe('CostBasisService — unreviewed transfers (SC-160)', () => {
       ],
       ['B', []],
     ]);
-    const r = await svc.walkComponent(['A', 'B'], txsByHolding, FUTURE, USD, heldTokens);
+    const r = await svc.walkComponent(undefined, ['A', 'B'], txsByHolding, FUTURE, USD, heldTokens);
     expect(r.get('A')?.realizedPnl.toString()).toBe('0');
     expect(r.get('A')?.transfersUnreviewed).toBe(0);
   });
