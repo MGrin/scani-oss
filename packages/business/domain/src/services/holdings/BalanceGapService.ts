@@ -166,7 +166,8 @@ export class BalanceGapService {
             drift.abs(),
             candidate.tokenId,
             baseCurrencyId,
-            candidate.to
+            candidate.to,
+            { tx: undefined }
           )
         : null;
       if (!baseValue) {

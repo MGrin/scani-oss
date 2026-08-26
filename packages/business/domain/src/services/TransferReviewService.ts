@@ -2325,7 +2325,9 @@ export class TransferReviewService {
     baseCurrencyId: string,
     at: Date
   ): Promise<string | null> {
-    const converted = await this.priceGraphService.convert(quantity, tokenId, baseCurrencyId, at);
+    const converted = await this.priceGraphService.convert(quantity, tokenId, baseCurrencyId, at, {
+      tx: undefined,
+    });
     return converted ? converted.amount.toString() : null;
   }
 

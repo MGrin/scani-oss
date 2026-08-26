@@ -102,7 +102,7 @@ describe('PortfolioValuationAtTimeService — unpriceable holdings', () => {
   test('dust leaves the denominator; a fully-priced portfolio reads as full', async () => {
     const svc = makeService(REAL_SHAPE, ['t-spam1', 't-spam2']);
 
-    const r = await svc.getPortfolioValue('u', AT, USD);
+    const r = await svc.getPortfolioValue('u', AT, USD, { tx: undefined });
 
     expect(r.holdingsTotal).toBe(6); // every row is still there
     expect(r.holdingsUnpriceable).toBe(2);
@@ -117,7 +117,7 @@ describe('PortfolioValuationAtTimeService — unpriceable holdings', () => {
     // stays in both the total and the value.
     const svc = makeService(REAL_SHAPE, ['t-spam1', 't-spam2']);
 
-    const r = await svc.getPortfolioValue('u', AT, USD);
+    const r = await svc.getPortfolioValue('u', AT, USD, { tx: undefined });
 
     const usdt = r.perHolding.find((p) => p.holdingId === 'h-usdt');
     expect(usdt?.unpriceable).toBe(false);
@@ -130,7 +130,7 @@ describe('PortfolioValuationAtTimeService — unpriceable holdings', () => {
     // chart must keep saying so rather than quietly excusing it.
     const svc = makeService(REAL_SHAPE, []);
 
-    const r = await svc.getPortfolioValue('u', AT, USD);
+    const r = await svc.getPortfolioValue('u', AT, USD, { tx: undefined });
 
     expect(r.holdingsUnpriceable).toBe(0);
     expect(r.holdingsWithKnownValue).toBe(4);
@@ -140,7 +140,7 @@ describe('PortfolioValuationAtTimeService — unpriceable holdings', () => {
   test('the excluded holdings are still reported, flagged rather than dropped', async () => {
     const svc = makeService(REAL_SHAPE, ['t-spam1', 't-spam2']);
 
-    const r = await svc.getPortfolioValue('u', AT, USD);
+    const r = await svc.getPortfolioValue('u', AT, USD, { tx: undefined });
 
     expect(r.perHolding).toHaveLength(6);
     const flagged = r.perHolding.filter((p) => p.unpriceable).map((p) => p.holdingId);
@@ -158,7 +158,7 @@ describe('PortfolioValuationAtTimeService — unpriceable holdings', () => {
       ['t-spam1', 't-spam2']
     );
 
-    const r = await svc.getPortfolioValue('u', AT, USD);
+    const r = await svc.getPortfolioValue('u', AT, USD, { tx: undefined });
 
     expect(r.holdingsTotal).toBe(2);
     expect(r.holdingsUnpriceable).toBe(2);
@@ -177,7 +177,7 @@ describe('PortfolioValuationAtTimeService — unpriceable holdings', () => {
       ['t-spam1']
     );
 
-    const r = await svc.getPortfolioValue('u', AT, USD);
+    const r = await svc.getPortfolioValue('u', AT, USD, { tx: undefined });
 
     expect(r.holdingsUnpriceable).toBe(0);
     expect(r.holdingsWithKnownValue).toBe(2);
@@ -204,7 +204,7 @@ describe('PortfolioValuationAtTimeService — balances predating our records', (
   test('a pre-existence date is never stamped full', async () => {
     const svc = makeService(AIRWALLEX, []);
 
-    const r = await svc.getPortfolioValue('u', AT, USD);
+    const r = await svc.getPortfolioValue('u', AT, USD, { tx: undefined });
 
     expect(r.coverageQuality).not.toBe('full');
     expect(r.coverageQuality).toBe('partial');
@@ -213,7 +213,7 @@ describe('PortfolioValuationAtTimeService — balances predating our records', (
   test('the value is kept, so the chart keeps its line', async () => {
     const svc = makeService(AIRWALLEX, []);
 
-    const r = await svc.getPortfolioValue('u', AT, USD);
+    const r = await svc.getPortfolioValue('u', AT, USD, { tx: undefined });
 
     expect(r.totalValueInBase.toString()).toBe('586.94');
     expect(r.holdingsWithKnownValue).toBe(1);
@@ -225,7 +225,7 @@ describe('PortfolioValuationAtTimeService — balances predating our records', (
       []
     );
 
-    const r = await svc.getPortfolioValue('u', AT, USD);
+    const r = await svc.getPortfolioValue('u', AT, USD, { tx: undefined });
 
     expect(r.holdingsBeforeRecords).toBe(1);
     expect(r.perHolding.find((p) => p.holdingId === 'h-awx')?.balanceBeforeRecords).toBe(true);
@@ -235,7 +235,7 @@ describe('PortfolioValuationAtTimeService — balances predating our records', (
   test('a portfolio inside its own records still reads full', async () => {
     const svc = makeService([{ holdingId: 'h-btc', tokenId: 't-btc', price: 60000 }], []);
 
-    const r = await svc.getPortfolioValue('u', AT, USD);
+    const r = await svc.getPortfolioValue('u', AT, USD, { tx: undefined });
 
     expect(r.holdingsBeforeRecords).toBe(0);
     expect(r.coverageQuality).toBe('full');

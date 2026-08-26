@@ -1,3 +1,4 @@
+import type { DatabaseTransaction } from '@scani/db';
 import type { HoldingTransaction } from '@scani/db/schema';
 import type { ValuationBasisDto } from '@scani/shared';
 import Decimal from 'decimal.js';
@@ -44,8 +45,17 @@ export type ValuableTransaction = Pick<
   'priceNative' | 'priceNativeTokenId' | 'occurredAt'
 >;
 
+/**
+ * `dbTx` is the database transaction every read here must go through, or
+ * `undefined` for the pool — REQUIRED, so a caller cannot omit it and get a
+ * silent pool read (SC-600). It is named `dbTx` rather than `tx` throughout
+ * this file and `CostBasisService` because `tx` already means a LEDGER ROW in
+ * both, and one identifier meaning two things one line apart is how a
+ * shadowing bug gets written by somebody reading carefully.
+ */
 export async function valueTransactionInBase(
   priceGraphService: PriceGraphService,
+  dbTx: DatabaseTransaction | undefined,
   tx: ValuableTransaction,
   qtyAbs: Decimal,
   baseCurrencyId: string,
@@ -53,8 +63,8 @@ export async function valueTransactionInBase(
   priceLookup?: PriceLookup
 ): Promise<TxValuation | null> {
   const convertOpts = priceLookup
-    ? ({ preferGranularity: 'daily', priceLookup } as const)
-    : ({ preferGranularity: 'daily' } as const);
+    ? ({ preferGranularity: 'daily', priceLookup, tx: dbTx } as const)
+    : ({ preferGranularity: 'daily', tx: dbTx } as const);
 
   if (tx.priceNative && tx.priceNativeTokenId) {
     const native = new Decimal(tx.priceNative).mul(qtyAbs);
