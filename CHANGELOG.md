@@ -19,6 +19,21 @@ version heading stays there permanently, above every future release. This
 comment is deliberately in that position; explanatory prose should not be.
 -->
 
+## [0.20.0](https://github.com/MGrin/scani-oss/compare/v0.19.0...v0.20.0) (2026-08-26)
+
+
+### Features
+
+* **db:** the user may override or confirm the measured monthly drain ([4fe6fd6](https://github.com/MGrin/scani-oss/commit/4fe6fd6fba4b8a4d061c900c5fd0f7cb7813dafa))
+
+
+### Bug Fixes
+
+* name the statistic, and print the median beside it ([0789bc0](https://github.com/MGrin/scani-oss/commit/0789bc0074080c9a2918f83a385962ecf1c0f3e9))
+* **release:** say that one override block may carry several messages ([0789bc0](https://github.com/MGrin/scani-oss/commit/0789bc0074080c9a2918f83a385962ecf1c0f3e9))
+* **review:** decode who answered from the source column, never the timestamp ([bf6ce3a](https://github.com/MGrin/scani-oss/commit/bf6ce3ab93783dd2c50fb65881fd53c5aec156f5))
+* the forecast page answers from observed burn, like the home line ([0789bc0](https://github.com/MGrin/scani-oss/commit/0789bc0074080c9a2918f83a385962ecf1c0f3e9))
+
 ## [0.19.0](https://github.com/MGrin/scani-oss/compare/v0.18.0...v0.19.0) (2026-08-26)
 
 
