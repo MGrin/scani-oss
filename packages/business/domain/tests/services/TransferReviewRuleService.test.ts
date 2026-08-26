@@ -44,10 +44,12 @@ interface Fixture {
 
 let fixture: Fixture | null = null;
 
-/** A real address, and one that differs from it in a single character — the
- *  shape address poisoning actually plants. */
-const ADDRESS = '0x586347C4E1E1C4c1DbC7C48d0f7ED33B0F9B1CEC';
-const LOOKALIKE = '0x586347C4E1E1C4c1DbC7C48d0f7ED33B0F9B1CEd';
+/** Two addresses differing in a single character — the shape address
+ *  poisoning actually plants. Invented; the single-character difference is the
+ *  fixture's whole point, so a replacement that broke it would make every test
+ *  below assert nothing. */
+const ADDRESS = '0x7A3f91B2c4D5e6F708192a3B4c5D6e7F8091A2b3';
+const LOOKALIKE = '0x7A3f91B2c4D5e6F708192a3B4c5D6e7F8091A2b4';
 
 function anchor(): Date {
   return new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
@@ -500,7 +502,7 @@ describe('TransferReviewRuleService — payment descriptions', () => {
 
   test('keys on the recipient, so the next payment at another amount matches', async () => {
     const f = fixture!;
-    // The row mgrin's real rule was authored from, and the one before it.
+    // The row the rule was authored from, and the one before it.
     const authored = await payment(
       f,
       'p-1',
