@@ -560,11 +560,40 @@ function ObservedBasis({
   baseSymbol: string;
 }) {
   const { t } = useTranslation();
-  // `internal` is deliberately not in this sum. A `paired` or `internal`
-  // answer names a destination INSIDE the perimeter, so the money did not
-  // leave and its absence from the burn is the correct answer rather than a
-  // gap. The other three are outflows the figure could not account for, which
-  // is a different claim and the only one worth printing.
+  /**
+   * THREE TERMS, AND THEY ARE NOT IN HERE FOR THE SAME REASON.
+   *
+   * `internal` is deliberately NOT in this sum. A `paired` or `internal`
+   * answer names a destination INSIDE the perimeter, so the money
+   * demonstrably did not leave; its absence from the burn is the answer, not
+   * a gap. Counting it would invite a reader to see those transactions as
+   * missing burn when they are the opposite.
+   *
+   * `unclassified` and `unvalued` are gaps plainly: nobody answered, or it
+   * left and could not be priced. Both are treated as zero in the mean, so
+   * the runway is too long by whatever they were — the flattering direction,
+   * which is why the count is printed rather than folded away.
+   *
+   * `untracked` is in the total for a DIFFERENT reason, and it is the one
+   * that can go wrong silently. By the vocabulary it is not a gap at all —
+   * it means the money is still his, in an account Scani cannot see, so coin
+   * to a cold wallet is wealth changing address rather than spending, and
+   * `ObservedBurnService` excludes it on exactly that reading.
+   *
+   * But that reading is an ASSUMPTION. mgrin describes his spending
+   * destination as "current accounts, not tracked by scani" — word for word
+   * the other vocabulary term. If his answers start landing on `untracked`,
+   * burn falls, the runway lengthens, and nothing goes red. `untracked`
+   * rising while the total falls is the only place it would ever show, so
+   * counting it here is what puts that assumption on a screen instead of
+   * leaving it in a service header. It is 0 today, which is the empirical
+   * case for the current reading and precisely why nobody would notice it
+   * moving.
+   *
+   * If this total is ever itemised: `internal` is excluded because the money
+   * stayed, `untracked` because we BELIEVE it stayed. Different claims,
+   * different confidence.
+   */
   const notCounted = burn.excluded.unclassified + burn.excluded.untracked + burn.excluded.unvalued;
 
   return (
