@@ -35,9 +35,7 @@ function strayFixture(rel: string): string {
 const STRAY_PROVIDER = strayFixture(
   `packages/clients/providers/src/providers/scani-test-fixture-sc430-${process.pid}`
 );
-const STRAY_BUILD = strayFixture(
-  `apps/frontend/app/scani-test-fixture-sc430-out-${process.pid}`
-);
+const STRAY_BUILD = strayFixture(`apps/frontend/app/scani-test-fixture-sc430-out-${process.pid}`);
 const PHANTOM_VAR = `SC430_PHANTOM_${process.pid}`;
 const STRAY_DOC = strayFixture(
   `packages/business/domain/src/scani-test-fixture-sc444-notes-${process.pid}`
