@@ -23,6 +23,7 @@ import { emitEntityChange } from '@scani/realtime';
 import { TRPCError } from '@trpc/server';
 import { Container } from 'typedi';
 import { z } from 'zod';
+import { strictInput } from '../lib/strict-input';
 import { requireAuth } from '../middleware/auth';
 import { protectedProcedure, router } from '../trpc';
 
@@ -58,22 +59,29 @@ export const walletRouter = router({
    * pricing all happen on the worker — this path used to take 5–15s
    * inline.
    */
-  importAddress: protectedProcedure.input(ImportWalletSchema).mutation(async ({ input, ctx }) => {
-    const { dbUser } = await requireAuth(ctx);
-    logger.info(
-      { userId: dbUser.id, address: input.address, chain: input.chain, requestId: input.requestId },
-      'Enqueuing wallet import job'
-    );
-    const jobId = await Container.get(BullMqEnqueueService).add(WALLET_IMPORT, {
-      userId: dbUser.id,
-      requestId: input.requestId,
-      chain: input.chain,
-      address: input.address,
-      label: input.displayName,
-      detectedInstitutionIds: input.detectedInstitutionIds,
-    });
-    return { jobId };
-  }),
+  importAddress: protectedProcedure
+    .input(strictInput(ImportWalletSchema))
+    .mutation(async ({ input, ctx }) => {
+      const { dbUser } = await requireAuth(ctx);
+      logger.info(
+        {
+          userId: dbUser.id,
+          address: input.address,
+          chain: input.chain,
+          requestId: input.requestId,
+        },
+        'Enqueuing wallet import job'
+      );
+      const jobId = await Container.get(BullMqEnqueueService).add(WALLET_IMPORT, {
+        userId: dbUser.id,
+        requestId: input.requestId,
+        chain: input.chain,
+        address: input.address,
+        label: input.displayName,
+        detectedInstitutionIds: input.detectedInstitutionIds,
+      });
+      return { jobId };
+    }),
 
   /**
    * Confirm-and-import the user-approved subset of a wallet review.
@@ -89,22 +97,24 @@ export const walletRouter = router({
    */
   confirmHoldings: protectedProcedure
     .input(
-      z.object({
-        pickerJobId: z.string().min(1),
-        // Each entry identifies a snapshot from the picker payload by
-        // (institutionId, externalId). externalId is whatever the
-        // balance provider emitted (chain:contract for EVM ERC-20s,
-        // 'native' for the chain native asset, mint address for SPL
-        // tokens, etc.) — same shape used for in-memory dedup.
-        kept: z
-          .array(
-            z.object({
-              institutionId: z.string().min(1),
-              externalId: z.string().min(1),
-            })
-          )
-          .min(1, 'Pick at least one holding to keep'),
-      })
+      strictInput(
+        z.object({
+          pickerJobId: z.string().min(1),
+          // Each entry identifies a snapshot from the picker payload by
+          // (institutionId, externalId). externalId is whatever the
+          // balance provider emitted (chain:contract for EVM ERC-20s,
+          // 'native' for the chain native asset, mint address for SPL
+          // tokens, etc.) — same shape used for in-memory dedup.
+          kept: z
+            .array(
+              z.object({
+                institutionId: z.string().min(1),
+                externalId: z.string().min(1),
+              })
+            )
+            .min(1, 'Pick at least one holding to keep'),
+        })
+      )
     )
     .mutation(async ({ ctx, input }) => {
       const { dbUser } = await requireAuth(ctx);
@@ -286,12 +296,14 @@ export const walletRouter = router({
    */
   detectChains: protectedProcedure
     .input(
-      z.object({
-        address: z
-          .string()
-          .min(1, 'Wallet address is required')
-          .max(200, 'Wallet address is too long'),
-      })
+      strictInput(
+        z.object({
+          address: z
+            .string()
+            .min(1, 'Wallet address is required')
+            .max(200, 'Wallet address is too long'),
+        })
+      )
     )
     .mutation(async ({ input }) => {
       const discovery = Container.get(WalletDiscoveryService);

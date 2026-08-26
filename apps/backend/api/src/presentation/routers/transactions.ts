@@ -23,6 +23,7 @@ import { TRPCError } from '@trpc/server';
 import { and, eq } from 'drizzle-orm';
 import { Container } from 'typedi';
 import { z } from 'zod';
+import { strictInput } from '../lib/strict-input';
 import { requireAuth } from '../middleware/auth';
 import { protectedProcedure, router } from '../trpc';
 
@@ -66,7 +67,7 @@ const CreateInput = z.object({
 const DeleteInput = z.object({ id: z.string().uuid() });
 
 export const transactionsRouter = router({
-  list: protectedProcedure.input(ListInput).query(async ({ ctx, input }) => {
+  list: protectedProcedure.input(strictInput(ListInput)).query(async ({ ctx, input }) => {
     const { dbUser } = await requireAuth(ctx);
     const repo = Container.get(HoldingTransactionRepository);
     const rows = await repo.findByRange({
@@ -84,7 +85,7 @@ export const transactionsRouter = router({
     return { transactions: rows };
   }),
 
-  create: protectedProcedure.input(CreateInput).mutation(async ({ ctx, input }) => {
+  create: protectedProcedure.input(strictInput(CreateInput)).mutation(async ({ ctx, input }) => {
     const { dbUser } = await requireAuth(ctx);
 
     // Ownership check: the account must belong to the authenticated user.
@@ -145,7 +146,7 @@ export const transactionsRouter = router({
     return { transaction: created };
   }),
 
-  delete: protectedProcedure.input(DeleteInput).mutation(async ({ ctx, input }) => {
+  delete: protectedProcedure.input(strictInput(DeleteInput)).mutation(async ({ ctx, input }) => {
     const { dbUser } = await requireAuth(ctx);
     // Ownership: only delete rows that belong to this user AND carry
     // source='user-entered'. Ingester-sourced rows are immutable from

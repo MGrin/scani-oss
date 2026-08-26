@@ -30,6 +30,7 @@ import {
 import { TRPCError } from '@trpc/server';
 import Container from 'typedi';
 import { z } from 'zod';
+import { strictInput } from '../lib/strict-input';
 import { protectedProcedure, router } from '../trpc';
 
 const resolveInput = z
@@ -233,21 +234,23 @@ const rulesRouter = router({
    * consent to anything.
    */
   markPreview: protectedProcedure
-    .input(z.object({ transactionId: z.string().uuid() }))
+    .input(strictInput(z.object({ transactionId: z.string().uuid() })))
     .query(async ({ ctx, input }) =>
       Container.get(TransferReviewRuleService).markPreview(ctx.userId, input.transactionId)
     ),
 
   create: protectedProcedure
     .input(
-      z.object({
-        transactionId: z.string().uuid(),
-        verdict: transferReviewRuleVerdictSchema,
-        /** Required, and required for a reason: a 42-character hex string is
-         *  not something a person recognises, and the note is what the reader
-         *  will actually be reading three years from now. */
-        note: transferReviewRuleNoteSchema,
-      })
+      strictInput(
+        z.object({
+          transactionId: z.string().uuid(),
+          verdict: transferReviewRuleVerdictSchema,
+          /** Required, and required for a reason: a 42-character hex string is
+           *  not something a person recognises, and the note is what the reader
+           *  will actually be reading three years from now. */
+          note: transferReviewRuleNoteSchema,
+        })
+      )
     )
     .mutation(async ({ ctx, input }) => {
       const result = await Container.get(TransferReviewRuleService).create(ctx.userId, {
@@ -277,7 +280,11 @@ const rulesRouter = router({
    * the second should reopen months of settled answers.
    */
   revoke: protectedProcedure
-    .input(z.object({ ruleId: z.string().uuid(), withdrawAnswers: z.boolean().default(false) }))
+    .input(
+      strictInput(
+        z.object({ ruleId: z.string().uuid(), withdrawAnswers: z.boolean().default(false) })
+      )
+    )
     .mutation(async ({ ctx, input }) => {
       const result = await Container.get(TransferReviewRuleService).revoke(
         ctx.userId,
@@ -308,7 +315,7 @@ export const transferReviewRouter = router({
    * queue of hundreds would be the candidate search's cost a second time.
    */
   listDestinations: protectedProcedure
-    .input(z.object({ transactionId: z.string().uuid() }))
+    .input(strictInput(z.object({ transactionId: z.string().uuid() })))
     .query(async ({ ctx, input }) =>
       Container.get(TransferReviewService).listDestinations(ctx.userId, input.transactionId)
     ),
@@ -327,7 +334,7 @@ export const transferReviewRouter = router({
    * yet.
    */
   listDestinationsForHolding: protectedProcedure
-    .input(z.object({ holdingId: z.string().uuid() }))
+    .input(strictInput(z.object({ holdingId: z.string().uuid() })))
     .query(async ({ ctx, input }) =>
       Container.get(TransferReviewService).listDestinationsForHolding(ctx.userId, input.holdingId)
     ),
@@ -338,7 +345,7 @@ export const transferReviewRouter = router({
    * — and it is not a failure: the question really is gone. The client
    * refetches on error, so the row simply disappears.
    */
-  resolve: protectedProcedure.input(resolveInput).mutation(async ({ ctx, input }) => {
+  resolve: protectedProcedure.input(strictInput(resolveInput)).mutation(async ({ ctx, input }) => {
     const result = await Container.get(TransferReviewService).resolve(
       ctx.userId,
       input.transactionId,
@@ -370,10 +377,12 @@ export const transferReviewRouter = router({
    */
   resolveSplit: protectedProcedure
     .input(
-      z.object({
-        transactionId: z.string().uuid(),
-        split: transferReviewSplitSchema,
-      })
+      strictInput(
+        z.object({
+          transactionId: z.string().uuid(),
+          split: transferReviewSplitSchema,
+        })
+      )
     )
     .mutation(async ({ ctx, input }) => {
       const result = await Container.get(TransferReviewService).resolveSplit(
@@ -394,15 +403,17 @@ export const transferReviewRouter = router({
    */
   listAnswered: protectedProcedure
     .input(
-      z
-        .object({
-          limit: z.number().int().min(1).max(100).default(25),
-          cursor: z.string().min(1).optional(),
-          /** Token, account, institution or counterparty — matched over every
-           *  answered row rather than the page the caller holds (SC-244). */
-          search: z.string().max(200).optional(),
-        })
-        .default({})
+      strictInput(
+        z
+          .object({
+            limit: z.number().int().min(1).max(100).default(25),
+            cursor: z.string().min(1).optional(),
+            /** Token, account, institution or counterparty — matched over every
+             *  answered row rather than the page the caller holds (SC-244). */
+            search: z.string().max(200).optional(),
+          })
+          .default({})
+      )
     )
     .query(async ({ ctx, input }) => {
       try {
@@ -426,11 +437,13 @@ export const transferReviewRouter = router({
    */
   bulkPreview: protectedProcedure
     .input(
-      z.object({
-        transactionIds: z.array(z.string().uuid()).min(1).max(MAX_BULK_TRANSFER_ROWS),
-        /** `null` previews the undo — putting the rows back in the queue. */
-        decision: bulkTransferDecisionSchema.nullable(),
-      })
+      strictInput(
+        z.object({
+          transactionIds: z.array(z.string().uuid()).min(1).max(MAX_BULK_TRANSFER_ROWS),
+          /** `null` previews the undo — putting the rows back in the queue. */
+          decision: bulkTransferDecisionSchema.nullable(),
+        })
+      )
     )
     .query(async ({ ctx, input }) =>
       Container.get(TransferReviewService).bulkPreview(
@@ -450,7 +463,7 @@ export const transferReviewRouter = router({
    * is how one of them stops stamping attribution.
    */
   bulkResolve: protectedProcedure
-    .input(z.object({ entries: bulkTransferEntriesSchema }))
+    .input(strictInput(z.object({ entries: bulkTransferEntriesSchema })))
     .mutation(async ({ ctx, input }) => {
       const result = await Container.get(TransferReviewService).bulkResolve(
         ctx.userId,
@@ -463,7 +476,7 @@ export const transferReviewRouter = router({
   rules: rulesRouter,
 
   reopen: protectedProcedure
-    .input(z.object({ transactionId: z.string().uuid() }))
+    .input(strictInput(z.object({ transactionId: z.string().uuid() })))
     .mutation(async ({ ctx, input }) => {
       const ok = await Container.get(TransferReviewService).reopen(ctx.userId, input.transactionId);
       if (!ok) {

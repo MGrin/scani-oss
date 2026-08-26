@@ -4,6 +4,7 @@ import { createComponentLogger } from '@scani/logging';
 import { PushSender } from '@scani/push';
 import { Container } from 'typedi';
 import { z } from 'zod';
+import { strictInput } from '../lib/strict-input';
 import { protectedProcedure, router } from '../trpc';
 
 const pushLogger = createComponentLogger('router:push');
@@ -53,7 +54,11 @@ export const pushRouter = router({
   }),
 
   subscribe: protectedProcedure
-    .input(z.object({ subscription: SubscriptionDto, userAgent: z.string().max(512).optional() }))
+    .input(
+      strictInput(
+        z.object({ subscription: SubscriptionDto, userAgent: z.string().max(512).optional() })
+      )
+    )
     .mutation(async ({ ctx, input }) => {
       if (!Container.get(PushSender).isConfigured()) {
         // Storing it would be the quiet failure: the browser's permission
@@ -85,7 +90,7 @@ export const pushRouter = router({
    * subscribed against a server that has no record of it.
    */
   unsubscribe: protectedProcedure
-    .input(z.object({ endpoint: z.string().max(2048) }))
+    .input(strictInput(z.object({ endpoint: z.string().max(2048) })))
     .mutation(async ({ ctx, input }) => {
       const removed = await Container.get(PushSubscriptionRepository).deleteByEndpoint(
         ctx.userId,
