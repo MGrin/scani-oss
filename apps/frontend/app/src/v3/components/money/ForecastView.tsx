@@ -379,7 +379,7 @@ export function ForecastView({
           DEMOTED, and the heading is the whole of it (SC-661). This block used
           to be the runway's evidence; it is now a separate, narrower claim —
           what the recurring book has scheduled, and when. It is still worth a
-          screen: an observed $43k month says nothing about how much of it
+          screen: an observed $37k month says nothing about how much of it
           could be STOPPED, and the book is the only thing that does. What it
           may no longer do is answer "how long does the money last". */}
       {forecast.movements.length === 0 ? null : (
@@ -550,14 +550,15 @@ function RunwayBasis({ forecast, baseSymbol }: { forecast: ForecastData; baseSym
  *
  * ## Why the MEDIAN is printed beside the mean
  *
- * Measured on mgrin's real book 2026-08-26: mean $13,984.20 against median
- * $7,504.95, min $3,999.52, max $43,563.15. **The mean is 1.86x the median**,
+ ***REMOVED***
+ ***REMOVED***
+ ***REMOVED***
  ***REMOVED***
  ***REMOVED***
  * exceptional months.
  *
  * SC-657 chose the mean deliberately and correctly: total ÷ months IS the rate
- * the balance actually drained at, and a $43k month is real money that really
+ ***REMOVED***
  ***REMOVED***
  * empty. But a figure that far from the typical month has to say so, or the
  * line alarms the reader about a distribution while sounding like a trend.
@@ -566,7 +567,7 @@ function RunwayBasis({ forecast, baseSymbol }: { forecast: ForecastData; baseSym
  * "Averaged over" — and the middle month is printed next to the range. Neither
  * surface said which statistic it used before this.
  *
- * Every one of these is here because a single number over $4k-$43k months,
+ * Every one of these is here because a single number over $3k-$37k months,
  * presented alone, is more confident than the data. The spread says so; the
  * excluded count says how many outflows the figure did not see; the committed
  * share says how much of the spending is contractual rather than
