@@ -23,6 +23,7 @@
     "dev:data-provider": "bun --cwd apps/backend/data-provider dev",
     "dev:docs": "bun --cwd apps/frontend/docs dev",
     "dev:stack": "bun scripts/dev-stack.ts up",
+    "dev:stack:infra": "bun scripts/dev-stack.ts up --infra-only",
     "dev:stack:down": "bun scripts/dev-stack.ts down",
     "dev:stacks": "bun scripts/stacks.ts",
     "env:sync": "bun scripts/sync-env.ts",

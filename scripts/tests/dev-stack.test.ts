@@ -3,8 +3,10 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import {
   composeInterpolates,
+  defaultProfileInterpolations,
   downArgs,
   downVerdict,
+  parseMode,
   publishedServices,
   stackEnv,
   upArgs,
@@ -560,5 +562,93 @@ describe('up waits for the healthchecks that are already declared (SC-669)', () 
   test("a compose failure keeps compose's exit code", () => {
     expect(upVerdict(17, [], 'scani_env_x').exit).toBe(17);
     expect(upVerdict(17, null, 'scani_env_x').exit).toBe(17);
+  });
+});
+
+describe('--infra-only starts what a gate uses and nothing else (SC-706)', () => {
+  const H = (name: string, state: 'healthy' | 'unhealthy' | 'starting' | 'none') => ({
+    name,
+    state,
+  });
+
+  test('the infra argv omits --profile full, which IS the whole mechanism', () => {
+    // Every service a gate does not need declares `profiles: ["full"]`; the
+    // four it does need declare no profile at all. So the infra set is the
+    // compose file's own default rather than a list kept beside it.
+    expect(upArgs([], 'infra')).not.toContain('full');
+    expect(upArgs([], 'full')).toContain('full');
+  });
+
+  test('infra still waits for healthchecks', () => {
+    // The flag whose absence is invisible in a green run (SC-669). A new mode
+    // is exactly where it would get dropped.
+    expect(upArgs([], 'infra')).toContain('--wait');
+  });
+
+  test('the default mode is unchanged, so no caller starts less than before', () => {
+    expect(upArgs(['postgres'])).toEqual(upArgs(['postgres'], 'full'));
+  });
+
+  test('--infra-only is consumed, never handed to compose', () => {
+    // `docker compose up` rejects an unknown flag, so forwarding it would turn
+    // the feature into a usage error rather than a smaller stack.
+    const { mode, rest } = parseMode(['--infra-only', '--pull', 'always']);
+    expect(mode).toBe('infra');
+    expect(rest).toEqual(['--pull', 'always']);
+    expect(upArgs(rest, mode)).not.toContain('--infra-only');
+  });
+
+  test('without the flag the mode is full and argv is untouched', () => {
+    const { mode, rest } = parseMode(['postgres']);
+    expect(mode).toBe('full');
+    expect(rest).toEqual(['postgres']);
+  });
+
+  test('the derivation FINDS the infra services — an empty set would be silent', () => {
+    // The must-be-FOUND control. A broken parse returns an empty set, which
+    // makes `publishedServices('infra')` empty, which makes `up` print no
+    // reachable services at all — tidy, wrong, and indistinguishable from a
+    // stack with nothing published.
+    const infra = defaultProfileInterpolations();
+    expect(infra.has('POSTGRES_HOST_PORT')).toBe(true);
+    expect(infra.has('REDIS_HOST_PORT')).toBe(true);
+    expect(publishedServices('infra').length).toBeGreaterThan(0);
+  });
+
+  test('the derivation EXCLUDES services behind the full profile', () => {
+    // The must-be-ABSENT half. `publishedServices` feeds the "reachable at"
+    // list, so a service named here is a claim that something is listening on
+    // that port — false for anything infra-only did not start.
+    const infra = defaultProfileInterpolations();
+    const full = composeInterpolates();
+    const behindFull = [...full].filter((v) => v.endsWith('HOST_PORT') && !infra.has(v));
+    // Both trees have at least one app service published; which ones differ
+    // (upstream has `api`, the private tree has `backend` and three more
+    // frontends), so this asserts the SHAPE rather than a service list.
+    expect(behindFull.length).toBeGreaterThan(0);
+    for (const v of behindFull) expect(infra.has(v)).toBe(false);
+  });
+
+  test('infra is a strict subset of full', () => {
+    const infra = publishedServices('infra').map((s) => s.label);
+    const full = publishedServices('full').map((s) => s.label);
+    expect(infra.length).toBeLessThan(full.length);
+    for (const label of infra) expect(full).toContain(label);
+  });
+
+  test('the verdict says which half it brought up, on BOTH modes', () => {
+    // `7 running` under infra-only is a healthy stack and is identical to what
+    // a broken `full` stack prints. Naming `full` when it is full is what stops
+    // the word's ABSENCE being read as a claim (SC-500's lesson).
+    expect(upVerdict(0, [H('p-postgres-1', 'healthy')], 'proj', 'infra').message).toContain(
+      'infra-only'
+    );
+    expect(upVerdict(0, [H('p-postgres-1', 'healthy')], 'proj', 'full').message).toContain('full');
+  });
+
+  test('a refusal names the mode too', () => {
+    // A stack that could not be verified is the case a reader most needs the
+    // provenance for, so the clause must not be success-only.
+    expect(upVerdict(0, null, 'proj', 'infra').message).toContain('infra-only');
   });
 });
