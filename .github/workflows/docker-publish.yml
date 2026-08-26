@@ -26,7 +26,7 @@ name: Docker publish
 # Actions):
 #   - DOCKERHUB_USERNAME — typically `scani` (the org account)
 #   - DOCKERHUB_TOKEN    — a Docker Hub access token with read/write
-#                          on the four `scani/*` repos
+#                          on the five `scani/*` repos
 #
 # Image visibility: Docker Hub repos default to public on the free tier
 # when created via push — no extra config required.
