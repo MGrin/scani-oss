@@ -130,6 +130,29 @@ const BOOK: ForecastPaymentInput[] = [
   },
 ];
 
+/**
+ * An `observedBurn` payload, SC-661. €1,250 a month against €10,000 liquid is
+ * eight months — deliberately DIFFERENT from anything the book produces, so an
+ * assertion on "8 months" cannot be satisfied by the committed walk.
+ */
+function observedBurn(over: Record<string, unknown> = {}) {
+  return {
+    windowMonths: 6,
+    fromMonth: '2025-09',
+    toMonth: '2026-02',
+    perMonth: [],
+    total: '7500',
+    perMonthMean: '1250',
+    perMonthMedian: '1100',
+    perMonthMin: '400',
+    perMonthMax: '3000',
+    countedTransactions: 14,
+    excluded: { unclassified: 2, untracked: 1, internal: 0, unvalued: 0 },
+    staleValued: 0,
+    ...over,
+  };
+}
+
 function wire(book: ForecastPaymentInput[], liquidAmount: string) {
   const forecast = buildForecast(book, TODAY, HORIZON_END);
   return {
@@ -165,6 +188,107 @@ function render(book: ForecastPaymentInput[], liquidAmount: string, over = {}) {
     </StaticRouter>
   );
 }
+
+/**
+ * SC-661. The page's HERO is the observed figure, and it is the same figure
+ * the home line renders.
+ *
+ * The two surfaces used to answer this question separately and reached
+ ***REMOVED***
+ ***REMOVED***
+ * nets +£8,907.62 a month". The book is not a second opinion — on the real
+ * account it records the income and almost none of the spending, so projected
+ * forward it says the money grows forever.
+ */
+describe('SC-661 — the forecast page leads with observed burn', () => {
+  test('the hero is the observed runway, not the book walked forward', () => {
+    // €10,000 ÷ €1,250 a month = 8. The BOOK on this fixture nets +€789 a
+    // month and never runs out, so "Lasts beyond 12 months" is what the old
+    // hero printed — asserting its ABSENCE is what makes this test about the
+    // swap rather than about a string appearing somewhere on a long page.
+    const html = render(BOOK, '10000', {
+      forecast: { ...wire(BOOK, '10000'), observedBurn: observedBurn() },
+    });
+
+    expect(html).toInclude('About 8 months at recent spending');
+    expect(html).not.toInclude('Lasts beyond 12 months');
+    expect(html).not.toInclude('The book nets');
+  });
+
+  test('the committed book keeps its own block, under a name that is not runway', () => {
+    const html = render(BOOK, '10000', {
+      forecast: { ...wire(BOOK, '10000'), observedBurn: observedBurn() },
+    });
+
+    // Demoted, not deleted: an observed month says nothing about how much of
+    // it could be STOPPED, and the book is the only thing that does.
+    // Asserted on the note rather than the heading because React escapes the
+    // apostrophe in "What's committed" to `&#x27;`, and a test that matches
+    // the source spelling fails on markup that is perfectly correct.
+    expect(html).toInclude('Your recurring book alone');
+    expect(html).toInclude('€14,734.00');
+  });
+
+  test('the figure carries its spread and what it could not count', () => {
+    const html = render(BOOK, '10000', {
+      forecast: { ...wire(BOOK, '10000'), observedBurn: observedBurn() },
+    });
+
+    expect(html).toInclude('€400.00');
+    expect(html).toInclude('€3,000.00');
+    // 2 unclassified + 1 untracked + 0 unvalued. Treated as zero in the mean,
+    // so the runway is too long by however much they were — the flattering
+    // direction, which is why the count is printed rather than folded away.
+    expect(html).toInclude('3 outflows are not counted');
+  });
+
+  /**
+   * `committedShareOfObserved` can exceed 1 and `burn.ts` forbids clamping it:
+   * a book committing more per month than actually left the perimeter is a
+   * real state — the book is stale, or the month was funded from cash already
+   * outside — and clamping to 100% would hide exactly the divergence that
+   * showing two figures exists to reveal.
+   *
+   * This fixture is that case: €1,551 a month committed against a €1,250
+   * observed mean.
+   */
+  test('a committed share above 100% is printed, not clamped', () => {
+    const html = render(BOOK, '10000', {
+      forecast: { ...wire(BOOK, '10000'), observedBurn: observedBurn() },
+    });
+
+    expect(html).toInclude('~124% of that spending is committed');
+    expect(html).not.toInclude('~100% of that spending is committed');
+  });
+
+  /**
+   * The fourth SC-661 finding. `RunwayLine`'s observed path has no `movements`
+   * guard, so an account with perimeter exits and no recurring payments got a
+   * runway on the home screen and "no payments recorded" on the page it linked
+   * to — the two screens disagreeing about whether the feature exists, which
+   * is worse than disagreeing about a figure.
+   */
+  test('an empty book with observed burn is answered, not sent to the empty state', () => {
+    const html = render([], '10000', {
+      forecast: { ...wire([], '10000'), observedBurn: observedBurn() },
+      paymentCount: 0,
+    });
+
+    expect(html).toInclude('About 8 months at recent spending');
+    expect(html).not.toInclude('Add a payment');
+    // And the committed block is gone rather than rendering a flat chart and
+    // two zeroes under a heading that promises a schedule.
+    expect(html).not.toInclude('Your recurring book alone');
+  });
+
+  test('an empty book with NO observed burn still gets the empty state', () => {
+    // The control for the test above: the relaxation is conditional, not a
+    // removal, so a genuinely empty account must still be told so.
+    const html = render([], '10000', { paymentCount: 0 });
+
+    expect(html).not.toInclude('at recent spending');
+  });
+});
 
 describe('the cashflow forecast, as it is rendered', () => {
   test('a paused payment does not move the projected balance', () => {
