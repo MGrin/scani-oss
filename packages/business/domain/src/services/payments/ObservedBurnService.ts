@@ -41,6 +41,25 @@ import { monthKey } from './forecast';
  * here, counted in `excluded`, and shown on the surface rather than left for
  * a reader to infer from a number.
  *
+ * ### It is a VOCABULARY ASSUMPTION, and it can go wrong silently
+ *
+ * Note the tension with the paragraph above: mgrin describes his spending
+ * destination as "current accounts, **not tracked by scani**". By the
+ * vocabulary's own definition that is an untracked account — so the same
+ * real-world move could reasonably be answered either way, and which one he
+ * clicks may be habit rather than semantics.
+ *
+ * Today the assumption holds empirically: 303 `left_control` rows against 5
+ * `untracked`, and the `left_control` months match the magnitudes he
+ * described. So this is not currently costing anything.
+ *
+ * **The hazard is that the failure has no signal.** If answers start landing
+ * on `untracked`, burn falls, the runway lengthens, and nothing goes red —
+ * the number does not become wrong loudly, it quietly stops counting a
+ * category. `excluded.untracked` rising while `total` falls is the only place
+ * it is visible, which is the reason that count is returned rather than
+ * dropped.
+ *
  * ## Complete calendar months only
  *
  * The current month is excluded because it is partial. Averaging a month that
