@@ -1,6 +1,8 @@
 import '../../i18n-preload';
 
 import { describe, expect, test } from 'bun:test';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { httpBatchLink } from '@trpc/client';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { StaticRouter } from 'react-router-dom/server';
 import {
@@ -8,6 +10,7 @@ import {
   type ForecastPaymentInput,
 } from '../../../../../../packages/business/domain/src/services/payments/forecast';
 import type { BaseCurrencyRates } from '../../../src/hooks/useBaseCurrencyRates';
+import { trpc } from '../../../src/lib/trpc';
 import { ForecastView } from '../../../src/v3/components/money/ForecastView';
 
 /**
@@ -170,25 +173,46 @@ function wire(book: ForecastPaymentInput[], liquidAmount: string) {
       illiquid: { count: 1, amount: '250000' },
       unpriceable: { count: 0 },
     },
+    // Non-optional on the wire (SC-661): the router always sends a state, and
+    // `none` is the state of an account that has said nothing. Defaulted here
+    // rather than made optional in the component, so a payload that really did
+    // omit it stays a failure rather than a silently empty affordance.
+    observedBurnAnswer: { kind: 'none' as const },
   };
 }
 
+/**
+ * The affordance added in SC-661 mutates, so the subtree now reaches for tRPC.
+ * No request is made in a static render — the provider exists so the hooks can
+ * resolve a context, which is what the rest of this file is about rather than
+ * the network.
+ */
 function render(book: ForecastPaymentInput[], liquidAmount: string, over = {}) {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  const trpcClient = trpc.createClient({
+    links: [httpBatchLink({ url: 'http://localhost/trpc' })],
+  });
   return renderToStaticMarkup(
-    <StaticRouter location="/payments/forecast">
-      <ForecastView
-        // biome-ignore lint/suspicious/noExplicitAny: the wire type is inferred
-        // from the tRPC router, which a component test cannot reach; the shape
-        // is built from the real `buildForecast` output above.
-        forecast={wire(book, liquidAmount) as any}
-        tokenSymbolById={SYMBOLS}
-        rates={rates()}
-        query={READY}
-        paymentCount={book.length}
-        tokens={[]}
-        {...over}
-      />
-    </StaticRouter>
+    <trpc.Provider client={trpcClient} queryClient={queryClient}>
+      <QueryClientProvider client={queryClient}>
+        <StaticRouter location="/payments/forecast">
+          <ForecastView
+            // biome-ignore lint/suspicious/noExplicitAny: the wire type is inferred
+            // from the tRPC router, which a component test cannot reach; the shape
+            // is built from the real `buildForecast` output above.
+            forecast={wire(book, liquidAmount) as any}
+            tokenSymbolById={SYMBOLS}
+            rates={rates()}
+            query={READY}
+            paymentCount={book.length}
+            tokens={[]}
+            {...over}
+          />
+        </StaticRouter>
+      </QueryClientProvider>
+    </trpc.Provider>
   );
 }
 
@@ -548,5 +572,135 @@ describe('SC-661 — provenance of the counted burn', () => {
     // Control: the rest of the basis is still rendered, so the absence above is
     // this guard firing rather than the whole block failing to render.
     expect(html).toInclude('Mean of 6 complete months');
+  });
+});
+
+/**
+ * SC-661 — the confirm/override affordance.
+ *
+ * SC-673 and the provenance caption explain WHY the measured drain feels alien
+ * to the person reading it; only this does something about it. An override is
+ * the one number in the whole chain the user authored, which is exactly what
+ * 76% of the current inputs by value are not.
+ */
+describe('SC-661 — answering the measured drain', () => {
+  // An ISO STRING, matching the wire: `payments.ts` converts `timestamptz` at
+  // the boundary because there is no superjson transformer on this router, so a
+  // fixture holding a `Date` would be testing a shape the client never sees.
+  const AT = '2026-08-20T00:00:00.000Z';
+  const withAnswer = (answer: unknown) => ({
+    forecast: { ...wire(BOOK, '10000'), observedBurn: observedBurn(), observedBurnAnswer: answer },
+  });
+
+  test('an account that has said nothing is ASKED, and offered both answers', () => {
+    const html = render(BOOK, '10000', withAnswer({ kind: 'none' }));
+
+    expect(html).toInclude('Is this what you spend?');
+    expect(html).toInclude('Yes, that&#x27;s right');
+    expect(html).toInclude('Use my own figure');
+  });
+
+  /**
+   * THE ASSERTION THE WHOLE FEATURE IS. €10,000 liquid against a measured
+   * €1,250 a month is 8 months; against his own €2,500 it is 4. A headline that
+   * kept dividing by the measurement would have taken his correction and
+   * displayed it as a caption while ignoring it — which is worse than not
+   * offering the override, because it looks like it worked.
+   */
+  test('an override REPLACES the runway denominator, not just the caption', () => {
+    const measured = render(BOOK, '10000', withAnswer({ kind: 'none' }));
+    expect(measured).toInclude('About 8 months at recent spending');
+
+    const overridden = render(
+      BOOK,
+      '10000',
+      withAnswer({ kind: 'override', amount: '2500', at: AT })
+    );
+    expect(overridden).toInclude('About 4 months at recent spending');
+    expect(overridden).not.toInclude('About 8 months at recent spending');
+  });
+
+  /**
+   * Both figures are named. An override that hid what it replaced would leave
+   * him unable to see the disagreement he is expressing — and the measured
+   * figure is the evidence for the provenance caption directly above it.
+   */
+  test('an override names his figure AND the measurement it replaced', () => {
+    const html = render(BOOK, '10000', withAnswer({ kind: 'override', amount: '2500', at: AT }));
+
+    expect(html).toInclude('Using your figure of');
+    expect(html).toInclude('€2,500.00');
+    expect(html).toInclude('€1,250.00');
+    expect(html).toInclude('Go back to the measured figure');
+    // It is not still asking a question he has answered.
+    expect(html).not.toInclude('Is this what you spend?');
+  });
+
+  test('a confirmation that still holds says so, and stops asking', () => {
+    const html = render(
+      BOOK,
+      '10000',
+      withAnswer({ kind: 'confirmed', value: '1250', at: AT, matches: true })
+    );
+
+    expect(html).toInclude('You confirmed this on');
+    expect(html).not.toInclude('Is this what you spend?');
+    // A confirmation AGREES with the measurement rather than replacing it, so
+    // the runway is unchanged.
+    expect(html).toInclude('About 8 months at recent spending');
+  });
+
+  /**
+   * THE STATE `users.observed_burn_confirmed_value` EXISTS FOR.
+   *
+   * Read against a bare timestamp this row still says he agreed. Read against
+   * the value he agreed WITH, it says he agreed to something else — so the
+   * surface stops claiming agreement, names both numbers, and asks again.
+   */
+  test('a confirmation the measurement has left names both figures and asks again', () => {
+    const html = render(
+      BOOK,
+      '10000',
+      withAnswer({ kind: 'confirmed', value: '800', at: AT, matches: false })
+    );
+
+    expect(html).toInclude('You confirmed');
+    expect(html).toInclude('€800.00');
+    expect(html).toInclude('€1,250.00');
+    expect(html).toInclude('Yes, that&#x27;s right');
+    expect(html).not.toInclude('You confirmed this on');
+  });
+
+  /**
+   * The answer stores its own currency so a base-currency change cannot
+   * reinterpret 6,300 EUR as 6,300 USD. Reporting `none` would DELETE his
+   * answer from the screen with no event to notice it by; this says what
+   * happened and asks again.
+   */
+  test('an answer in a currency the account has left says so rather than vanishing', () => {
+    const html = render(BOOK, '10000', withAnswer({ kind: 'currencyChanged', at: AT }));
+
+    expect(html).toInclude('was given in a different currency');
+    expect(html).toInclude('Yes, that&#x27;s right');
+    // Not silently treated as an override: the runway is the measured one.
+    expect(html).toInclude('About 8 months at recent spending');
+  });
+
+  /**
+   * ORDER IS THE ARGUMENT. His complaint was that he does not recognise the
+   * figure; everything above the ask is why. Asking first would be asking him
+   * to judge a number before being told what it is made of, which is how it
+   * came to read as alien in the first place.
+   */
+  test('the ask comes AFTER the basis, the provenance and the exclusions', () => {
+    const html = render(BOOK, '10000', withAnswer({ kind: 'none' }));
+    const provenance = html.indexOf('Who classified the money');
+    const excluded = html.indexOf('outflows are not counted');
+    const ask = html.indexOf('Is this what you spend?');
+
+    expect(provenance).toBeGreaterThan(-1);
+    expect(excluded).toBeGreaterThan(-1);
+    expect(ask).toBeGreaterThan(excluded);
+    expect(excluded).toBeGreaterThan(provenance);
   });
 });
