@@ -223,7 +223,7 @@ function render(book: ForecastPaymentInput[], liquidAmount: string, over = {}) {
  * The two surfaces used to answer this question separately and reached
  * OPPOSITE conclusions on one account at one instant: home read "About 27
  * months at recent spending", the page read "Lasts beyond 12 months, the book
- * nets +£8,907.62 a month". The book is not a second opinion — on the real
+ * nets a large positive figure a month". The book is not a second opinion — on the real
  * account it records the income and almost none of the spending, so projected
  * forward it says the money grows forever.
  */

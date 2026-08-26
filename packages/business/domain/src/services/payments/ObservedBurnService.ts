@@ -22,7 +22,7 @@ import { monthKey } from './forecast';
  *
  * So from Scani's side his burn is not a schedule. It is **the rate at which
  * money leaves the tracked perimeter**, and that signal already exists: 303
- * reviewed outflows over five years, running $4k–$43k a month and nothing
+ * reviewed outflows over five years, running $3k–$37k a month and nothing
  * like a recurrence.
  *
  * ## `left_control` only, and `untracked` deliberately NOT
@@ -70,10 +70,10 @@ import { monthKey } from './forecast';
  *
  * ## The mean, not the median, and why it is on the surface
  *
- * Six of his months span $4k–$43k, so the two differ materially and the
+ * Six months span $3k–$37k, so the two differ materially and the
  * choice is visible in the figure on screen. The mean is the only one that
  * makes `liquid ÷ burn` mean what it says: total ÷ months IS the rate the
- * balance actually drained at, and a $43k month is real money that really
+ * balance actually drained at, and a $37k month is real money that really
  * left. The median answers a different question — what a typical month looks
  * like — and a runway built on it survives on paper past the point the
  * account is empty.
