@@ -593,7 +593,10 @@
         "affordCostsMonths_other": "It costs {{count}} months of runway.",
         "affordRunwayAfter": "After it, the money runs out in {{month}}.",
         "affordRunwayStillBeyond_one": "Runway still runs beyond {{count}} month.",
-        "affordRunwayStillBeyond_other": "Runway still runs beyond {{count}} months."
+        "affordRunwayStillBeyond_other": "Runway still runs beyond {{count}} months.",
+        "observedRunway_one": "About {{count}} month at recent spending",
+        "observedRunway_other": "About {{count}} months at recent spending",
+        "ofWhichCommitted": "~{{percent}}% of that spending is committed"
       }
     },
     "groups": {
