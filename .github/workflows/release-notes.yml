@@ -41,6 +41,41 @@ name: Release notes
 # under Terraform (SC-565), so it is a manual one.
 
 on:
+  # SC-653. THIS IS NOT A REVERT OF SC-640, AND THE DIFFERENCE IS THE WHOLE
+  # POINT. `pull_request` used to be how the check REACHED THE RELEASE PR, and
+  # it never did — those runs are `action_required` and never start. It is now
+  # how the check reports on an ORDINARY pr, where runs are not approval-gated
+  # and do start. A release branch is refused on this path, below, so it can
+  # never post a verdict about a release PR it did not examine.
+  #
+  # Why it must report at all: a required status check that no ordinary PR can
+  # receive is not strict, it is IMPASSABLE. Adding this context to
+  # `main-protection` on 2026-08-26 deadlocked the repository — the required
+  # contexts then spanned two mutually exclusive populations, an ordinary PR
+  # could never get this one and the release PR could never get the other two,
+  # and all four open PRs blocked (SC-647, SC-653).
+  #
+  # `pull_request_target`, NOT `pull_request`, AND THE REASON IS A FORK.
+  # On a pull request FROM A FORK, `pull_request` hands the job a READ-ONLY
+  # `GITHUB_TOKEN`, so `createCommitStatus` answers 403, the job fails, and
+  # the context never appears on the head. Requiring it would then block every
+  # fork contribution — on a repository whose CONTRIBUTING.md tells people to
+  # fork. That is the SC-647 defect exactly, one population over: a required
+  # check an entire population structurally cannot receive.
+  #
+  # `pull_request_target` runs in the BASE repository's context and does have
+  # a write token. It is dangerous in general because it pairs write
+  # credentials with a contributor's code — and it is safe HERE only because
+  # this path never checks out or executes that code. The one checkout step
+  # is reachable solely at `mode: check`, which this trigger cannot produce:
+  # an ordinary branch resolves to `reported` and a release branch to
+  # `silent`. That step additionally refuses this event outright, and
+  # `release-notes-workflow.test.ts` fails if either guard is removed.
+  #
+  # SO: DO NOT ADD A CHECKOUT, A BUILD, OR ANY STEP THAT RUNS REPOSITORY CODE
+  # TO THIS PATH. It would execute a stranger's branch with a write token.
+  pull_request_target:
+    types: [opened, reopened, synchronize]
   workflow_run:
     workflows: ["Release Please"]
     # `completed`, not `completed && success`. The failure this exists for is a
@@ -62,8 +97,12 @@ permissions:
   pull-requests: read
   statuses: write
 
+# Keyed per pull request rather than globally: a single `release-notes` group
+# made every PR's run queue behind every other PR's, and on this repo runs on a
+# release branch sit unapproved for a long time. `github.ref` is distinct per
+# PR and constant across a `workflow_run`, so the release chain keeps one slot.
 concurrency:
-  group: release-notes
+  group: release-notes-${{ github.event.pull_request.number || 'release-chain' }}
   cancel-in-progress: false
 
 jobs:
@@ -76,6 +115,27 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
+            // An ordinary pull request: nothing to compare, and saying so IS
+            // the job. `mode: reported` posts a passing status so the context
+            // always exists on the head, which is what makes it safe to
+            // require. A RELEASE branch arriving here is refused rather than
+            // passed — that run is `action_required` and will not start, and
+            // if it ever did, a blanket success about the one population this
+            // check exists for is the worst thing it could say.
+            if (context.eventName === 'pull_request_target') {
+              const ref = context.payload.pull_request.head.ref;
+              const sha = context.payload.pull_request.head.sha;
+              if (ref.startsWith('release-please--')) {
+                core.info(`${ref} is a release branch; the workflow_run chain owns it. Posting nothing.`);
+                core.setOutput('mode', 'silent');
+                return;
+              }
+              core.info(`${ref} is not a release branch — nothing to cover. Reporting on ${sha}.`);
+              core.setOutput('sha', sha);
+              core.setOutput('mode', 'reported');
+              return;
+            }
+
             const dispatched = (context.payload.inputs && context.payload.inputs.head || '').trim();
             if (dispatched) {
               // Expanded, not used as typed. `actions/checkout` and the statuses
@@ -96,7 +156,7 @@ jobs:
               }
               core.info(`dispatched: ${dispatched} resolves to ${resolved}`);
               core.setOutput('sha', resolved);
-              core.setOutput('found', 'yes');
+              core.setOutput('mode', 'check');
               return;
             }
             const open = await github.rest.pulls.list({
@@ -113,7 +173,7 @@ jobs:
             core.info(`open pull requests: ${open.data.length}; release pull requests: ${release.length}`);
             if (release.length === 0) {
               core.info('no open release pull request — nothing to check.');
-              core.setOutput('found', 'no');
+              core.setOutput('mode', 'silent');
               return;
             }
             if (release.length > 1) {
@@ -122,9 +182,14 @@ jobs:
             }
             core.info(`checking ${release[0].html_url} at ${release[0].head.sha}`);
             core.setOutput('sha', release[0].head.sha);
-            core.setOutput('found', 'yes');
+            core.setOutput('mode', 'check');
 
-      - if: steps.target.outputs.found == 'yes'
+      # The second guard on the fork path, deliberately redundant with
+      # `mode == 'check'` being unreachable from that trigger. Redundant
+      # because the cost of the two disagreeing is executing a contributor's
+      # branch with a write token, and a guard that depends on a script above
+      # it staying correct is not the guard you want for that.
+      - if: steps.target.outputs.mode == 'check' && github.event_name != 'pull_request_target'
         uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
         with:
           # The release commit itself, whose single parent is exactly what
@@ -137,14 +202,14 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
 
-      - if: steps.target.outputs.found == 'yes'
+      - if: steps.target.outputs.mode == 'check' && github.event_name != 'pull_request_target'
         uses: ./.github/actions/setup-bun
         with:
           # The check imports nothing but git.
           install: "false"
 
       - id: check
-        if: steps.target.outputs.found == 'yes'
+        if: steps.target.outputs.mode == 'check' && github.event_name != 'pull_request_target'
         name: Every releasable commit has a release note
         # Not `set -e`: the exit code IS the result, and it has to survive to
         # the status step. Reading `$?` unpiped rather than grepping the text.
@@ -166,11 +231,24 @@ jobs:
       # visible verdict. A workflow_run job is not a check on the pull request,
       # so without this the result lives somewhere nobody looks — which is the
       # bug this file exists to close, one level up.
-      - if: always() && steps.target.outputs.found == 'yes'
-        name: Report the verdict onto the release commit
+      - if: always() && steps.target.outputs.mode != 'silent'
+        name: Report the verdict onto the head commit
         uses: actions/github-script@v7
         with:
           script: |
+            const mode = '${{ steps.target.outputs.mode }}';
+            if (mode === 'reported') {
+              await github.rest.repos.createCommitStatus({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                sha: '${{ steps.target.outputs.sha }}',
+                state: 'success',
+                context: 'Release notes cover every releasable commit',
+                description: 'Not a release pull request — no release notes to cover',
+                target_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+              });
+              return;
+            }
             const rc = '${{ steps.check.outputs.rc }}';
             const state = rc === '0' ? 'success' : 'failure';
             // An EMPTY rc is the check step never having run — a step above it
