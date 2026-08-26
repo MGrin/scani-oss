@@ -146,6 +146,113 @@ function reachableAt(env: Record<string, string>): string {
  * overwrote the one the environment asked for, so a documented override was
  * discarded without a word.
  */
+/**
+ * The argv for `down`, with `--remove-orphans` (SC-663).
+ *
+ * Compose only stops containers whose service is defined in the compose file
+ * it is reading NOW. `COMPOSE_PROJECT_NAME` is derived from the worktree PATH
+ * (SC-491) while the service SET comes from the BRANCH, and the two compose
+ * files do not agree: private has `admin`, `backend`, `cloud-frontend` and
+ * `landing`; upstream has `api`. So a stack started on one branch and torn
+ * down after switching leaves between one and four containers running, and
+ * compose reports success over every one of them.
+ *
+ * The port bind on the next `up` is the loud symptom. The quiet one is a
+ * teardown that says it finished — and this is the command the docs name as
+ * the only way to stop a stack.
+ *
+ * The blast radius is exactly this worktree's own project: the name is
+ * per-worktree, the e2e runner uses a `_e2e` suffix so its containers are
+ * never in it, and no workflow calls `down` at all.
+ *
+ * Exported so a test can assert the flag is present. Its absence is invisible
+ * in a green run, which is how it survived.
+ */
+export function downArgs(passthrough: readonly string[] = []): string[] {
+  return ['docker', 'compose', '--profile', 'full', 'down', '--remove-orphans', ...passthrough];
+}
+
+export interface DownVerdict {
+  readonly message: string;
+  readonly exit: number;
+}
+
+/**
+ * What `down` is allowed to claim, given what is still running (SC-663).
+ *
+ * `remaining` is `null` when docker could not be asked. That is NOT the same
+ * as zero and is never resolved toward it: a teardown that cannot prove it
+ * finished must not print a bare success, which is the whole defect this
+ * function exists to close. It should be unreachable in practice — compose
+ * just talked to the same daemon — so reaching it is an anomaly worth failing
+ * on rather than a routine degraded mode.
+ *
+ * THE NUMBER IN THE MESSAGE IS THE ONE THIS PROCESS EXITS WITH. The first
+ * version printed compose's code there, so a real run read
+ * `DOWN INCOMPLETE · exit 0 · 1 container(s) still in ...` — the number beside
+ * the word contradicting the word, on a command that does exit 1. Compose's
+ * own code is still shown when it differs, labelled, because a compose failure
+ * and an incomplete teardown are different problems. Found by running it
+ * rather than by the tests, which asserted the exit and the text separately
+ * and never that they agree; `the verdict line cannot contradict its own exit
+ * code` now does.
+ */
+export function downVerdict(
+  code: number,
+  remaining: readonly string[] | null,
+  project: string
+): DownVerdict {
+  const compose = code === 0 ? '' : ` · compose exit ${code}`;
+  if (remaining === null) {
+    const exit = code === 0 ? 1 : code;
+    return {
+      message: `dev-stack: DOWN UNVERIFIED · exit ${exit}${compose} · docker could not be asked what remains in ${project} — this is not a clean teardown`,
+      exit,
+    };
+  }
+  if (remaining.length > 0) {
+    const exit = code === 0 ? 1 : code;
+    return {
+      message:
+        `dev-stack: DOWN INCOMPLETE · exit ${exit}${compose} · ${remaining.length} container(s) still in ${project}:\n` +
+        remaining.map((name) => `  ${name}`).join('\n'),
+      exit,
+    };
+  }
+  return {
+    message: `dev-stack: DOWN · exit ${code} · 0 containers remain in ${project}`,
+    exit: code,
+  };
+}
+
+/**
+ * Every container compose still labels as this project's, running or not.
+ *
+ * `-a` rather than running-only: a stopped leftover holds its name and fails
+ * the next `up` with a name conflict, which is the same class of problem.
+ * Returns `null` when docker could not be asked — see `downVerdict`.
+ */
+async function remainingContainers(env: Record<string, string>): Promise<string[] | null> {
+  const proc = Bun.spawn(
+    [
+      'docker',
+      'ps',
+      '-a',
+      '--format',
+      '{{.Names}}',
+      '--filter',
+      `label=com.docker.compose.project=${env.COMPOSE_PROJECT_NAME}`,
+    ],
+    { cwd: REPO_ROOT, env: { ...process.env, ...env }, stdio: ['ignore', 'pipe', 'pipe'] }
+  );
+  const out = await new Response(proc.stdout).text();
+  if ((await proc.exited) !== 0) return null;
+  return out
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+}
+
 async function run(command: string[], env: Record<string, string>): Promise<number> {
   const proc = Bun.spawn(command, {
     cwd: REPO_ROOT,
@@ -240,8 +347,12 @@ async function main(): Promise<never> {
   );
 
   if (subcommand === 'down') {
-    const code = await run(['docker', 'compose', '--profile', 'full', 'down', ...passthrough], env);
-    process.exit(code);
+    // `stackEnv` always sets it; the index signature does not say so.
+    const project = env.COMPOSE_PROJECT_NAME ?? composeProjectName(REPO_ROOT);
+    const code = await run(downArgs(passthrough), env);
+    const verdict = downVerdict(code, await remainingContainers(env), project);
+    process.stderr.write(`${verdict.message}\n`);
+    process.exit(verdict.exit);
   }
 
   // Bootstraps the root .env when there is none, and never rewrites one that
