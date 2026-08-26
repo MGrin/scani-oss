@@ -879,7 +879,21 @@ function BurnAnswer({
     },
   });
 
-  const draftIsUsable = /^\d+(\.\d+)?$/.test(draft.trim());
+  /**
+   * Positive, not merely numeric. `ObservedBurnAnswerDto` is what ENFORCES
+   * this — a disabled button is not a guard — and it already gives the reason:
+   * a zero drain makes the runway infinite, which is the most flattering
+   * possible way to be wrong on the one screen the owner scans.
+   *
+   * Mirrored here so the refusal is a greyed-out button rather than a 400 the
+   * user reads as "that did not save", and there is a SECOND consequence worth
+   * recording: `observedRunwayMonths` returns `null` for a zero denominator,
+   * and the whole `ObservedBasis` block — this affordance included — renders
+   * only when that value is non-null. A stored zero would therefore hide the
+   * control that withdraws it.
+   */
+  const trimmed = draft.trim();
+  const draftIsUsable = /^\d+(\.\d+)?$/.test(trimmed) && new Decimal(trimmed || '0').greaterThan(0);
   const busy = save.isPending || currencyTokenId === null;
 
   const confirmMeasured = () =>
@@ -887,7 +901,7 @@ function BurnAnswer({
   const submitOverride = () =>
     currencyTokenId &&
     draftIsUsable &&
-    save.mutate({ kind: 'override', amount: draft.trim(), currencyTokenId });
+    save.mutate({ kind: 'override', amount: trimmed, currencyTokenId });
   const revert = () => save.mutate({ kind: 'clear' });
 
   const askButtons = (
