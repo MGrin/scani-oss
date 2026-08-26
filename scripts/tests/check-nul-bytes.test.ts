@@ -255,6 +255,33 @@ describe('the guard fires on a real repository (must-be-FOUND)', () => {
   });
 });
 
+describe('the answer does not depend on where you stood when you asked', () => {
+  test('a subdirectory gets the whole tree, not the subtree it happens to be in', () => {
+    // `git ls-files` is CWD-RELATIVE and says nothing about it. Before this was
+    // fixed, running from `apps/backend` printed `PASS · 207 tracked files
+    // scanned` over a 2706-file repository — a clean verdict about 8% of the
+    // tree. That is the vacuous pass this check exists to prevent, occurring
+    // inside the check. `git diff` is NOT cwd-relative, which is what makes the
+    // two easy to assume alike (SC-662 hit the same trap in another guard).
+    const repo = makeRepo({
+      'src/bad.ts': bytesWithNulAt(4),
+      'sub/dir/keep.ts': 'export const K = 1;\n',
+    });
+
+    const fromRoot = runGuard(repo);
+    const fromSubdir = runGuard(join(repo, 'sub/dir'));
+
+    // The precondition: the subdirectory must not contain the offending file,
+    // or a cwd-blind check would find it anyway and this test would pass for
+    // the wrong reason.
+    expect(fromSubdir.out).toContain('src/bad.ts');
+    expect(fromSubdir.status).toBe(fromRoot.status);
+
+    const scanned = (out: string): string => /(\d+) tracked files scanned/.exec(out)?.[1] ?? '';
+    expect(scanned(fromSubdir.out)).toBe(scanned(fromRoot.out));
+  });
+});
+
 describe('this repository is clean, over a denominator that proves it looked', () => {
   test('no tracked source file carries a literal NUL', () => {
     const run = runGuard(REPO_ROOT);
