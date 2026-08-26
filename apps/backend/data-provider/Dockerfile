@@ -60,7 +60,11 @@ COPY --from=build --chown=app:app /app/apps/backend/data-provider/dist/server /a
 
 EXPOSE 8082
 
+# Reads PORT for the same reason the api's does (SC-492). This one agrees with
+# every compose today, which is exactly what let the api's disagreement
+# survive: a hardcoded probe port is not wrong until some compose moves the
+# port, and from then on it is wrong silently.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
-  CMD curl --fail --silent --show-error http://localhost:8082/health > /dev/null || exit 1
+  CMD curl --fail --silent --show-error "http://localhost:${PORT:-8082}/health" > /dev/null || exit 1
 
 CMD ["/app/server"]
