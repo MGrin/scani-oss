@@ -119,6 +119,7 @@ interface Walked {
 async function walkUk(txs: HoldingTransaction[]): Promise<Walked> {
   const ledger: DisposalLotMatch[] = [];
   const result = await makeService().walkLots(
+    undefined,
     txs,
     GBP,
     null,
@@ -137,7 +138,15 @@ async function walkUk(txs: HoldingTransaction[]): Promise<Walked> {
 
 async function walkFifo(txs: HoldingTransaction[]): Promise<Walked> {
   const ledger: DisposalLotMatch[] = [];
-  const result = await makeService().walkLots(txs, GBP, null, undefined, 'complete', ledger);
+  const result = await makeService().walkLots(
+    undefined,
+    txs,
+    GBP,
+    null,
+    undefined,
+    'complete',
+    ledger
+  );
   return {
     realizedPnl: result.realizedPnl,
     openQty: result.openQty,
@@ -458,6 +467,7 @@ describe('The default is untouched', () => {
     ];
     const implicit = await walkFifo(txs.map((t) => ({ ...t })));
     const explicit = await makeService().walkLots(
+      undefined,
       txs.map((t) => ({ ...t })),
       GBP,
       null,
@@ -532,6 +542,7 @@ describe("A transfer between the reader's own accounts is not an acquisition", (
     ]);
     const ledger: DisposalLotMatch[] = [];
     const walked = await makeService().walkComponent(
+      undefined,
       [HOLDING, 'h2'],
       byHolding,
       new Date('2023-12-31T00:00:00Z'),

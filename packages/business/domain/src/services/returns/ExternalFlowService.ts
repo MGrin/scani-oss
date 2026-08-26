@@ -152,7 +152,12 @@ export class ExternalFlowService {
       if (tx.tokenId) tokenIds.add(tx.tokenId);
       if (tx.priceNativeTokenId) tokenIds.add(tx.priceNativeTokenId);
     }
-    const priceLookup = await this.priceGraphService.buildPriceLookup(tokenIds, baseCurrencyId, to);
+    const priceLookup = await this.priceGraphService.buildPriceLookup(
+      tokenIds,
+      baseCurrencyId,
+      to,
+      undefined
+    );
 
     const flows: ExternalFlow[] = [];
     let unvaluedCount = 0;
@@ -218,6 +223,7 @@ export class ExternalFlowService {
     const heldTokenId = heldTokenByHolding.get(tx.holdingId) ?? tx.tokenId ?? null;
     return valueTransactionInBase(
       this.priceGraphService,
+      undefined,
       tx,
       qtyAbs,
       baseCurrencyId,

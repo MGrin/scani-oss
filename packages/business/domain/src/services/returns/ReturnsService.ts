@@ -417,7 +417,8 @@ export class ReturnsService {
     const priceLookup = await this.priceGraphService.buildPriceLookup(
       currencyTokenIds,
       baseCurrencyId,
-      until
+      until,
+      undefined
     );
 
     for (const currencyTokenId of currencyTokenIds) {
@@ -432,7 +433,7 @@ export class ReturnsService {
           ***REMOVED***
           // the handful of intraday rows are mid-morning quotes that would
           // disagree with the close the value series was built from.
-          { preferGranularity: 'daily', priceLookup }
+          { preferGranularity: 'daily', priceLookup, tx: undefined }
         );
         // A pair with no rate stays `null` all the way to the attribution,
         // which drops the sub-period rather than reading the gap as a
