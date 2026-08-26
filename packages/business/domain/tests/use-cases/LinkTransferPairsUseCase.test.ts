@@ -21,6 +21,7 @@ import { db } from '@scani/db/connection';
 import * as schema from '@scani/db/schema';
 import { eq } from 'drizzle-orm';
 import { Container } from 'typedi';
+import { TransferReviewService } from '../../src/services/TransferReviewService';
 import { LinkTransferPairsUseCase } from '../../src/use-cases/LinkTransferPairsUseCase';
 
 interface Fixture {
@@ -832,5 +833,152 @@ describe('LinkTransferPairsUseCase — bridged assets', () => {
     expect(summary.linked).toBe(0);
     expect(summary.ambiguous).toBe(1);
     expect((await groupIdsFor(b.userId)).every((g) => g === null)).toBe(true);
+  });
+});
+
+/**
+ * SC-611. `transfer_review` is outflow-only, so an INFLOW has nowhere to
+ * record that a person authored it — and the matcher's inflow candidate query
+ * gated on `transfer_group_id IS NULL` **alone**, with no equivalent of the
+ * outflow query's `transfer_review IS NULL`. A deposit somebody typed could
+ * therefore be claimed as the arrival leg of an unrelated unanswered outflow,
+ * and `CostBasisService` would carry lots across a movement that never
+ * happened.
+ *
+ * ## The rule is about AUTHORITY, not about whether two rows could be a pair
+ *
+ * It lives in this use case's query rather than in `candidatePairClass`, and
+ * that is deliberate — the opposite call from SC-347, for a reason SC-347 does
+ * not cover. `candidatePairClass` answers *"are these two rows a plausible
+ * pair?"*, a fact about the rows, and every caller must agree on it. This asks
+ * *"may the nightly job decide this on its own?"*, which is a question about
+ * authority and has a different answer for a person than for a cron.
+ *
+ * So the review queue goes on OFFERING a hand-entered deposit as an arrival —
+ * a reader who picks one is telling us something true, and the last test here
+ * is what stops somebody enforcing this "consistently" and removing that.
+ *
+ ***REMOVED***
+ ***REMOVED***
+ ***REMOVED***
+ ***REMOVED***
+ *
+ * ## THE "STILL CLAIMS AN ORDINARY DEPOSIT" TEST BELOW IS CORROBORATION, NOT
+ * THE GUARD
+ *
+ * Measured, not assumed: widening this predicate to exclude every inflow
+ * source fails SIX tests, and FIVE of them are older than this describe block
+ * —
+ *
+ *   - `links a single matching withdraw/deposit pair within window + epsilon`
+ *   - `flags ambiguous pairs when more than one viable deposit matches`
+ *   - `still pairs across two holdings when the amounts and times match`
+ *   - bridged assets: `links a bridge: one asset, two chains, one wallet`
+ *   - bridged assets: `declines rather than choose between a same-token
+ *     arrival and a bridged one`
+ *
+ * Those five are what actually stop an over-broad predicate from fixing this
+ * hole by turning the matcher off. The test here agrees with them; it does not
+ * hold the line on its own.
+ *
+ * **If you are deleting or reworking those five, this note is addressed to
+ * you.** A reader who sees only the describe block below would conclude the
+ * axis is still guarded, when it would in fact be down to one test that was
+ * never more than corroboration. Keep coverage of "an ordinary imported
+ * deposit still links" somewhere, whatever else changes.
+ */
+describe('LinkTransferPairsUseCase — a row a person authored is not the matcher’s to claim', () => {
+  async function outflowAndInflow(
+    f: Fixture,
+    opts: { inflowSource: string; externalId: string }
+  ): Promise<void> {
+    const at = recentTransferTimestamp();
+    await db.insert(schema.holdingTransactions).values([
+      {
+        userId: f.userId,
+        holdingId: f.withdrawHoldingId,
+        tokenId: f.tokenId,
+        kind: 'withdraw',
+        quantity: '-1.0',
+        occurredAt: at,
+        source: 'kraken-api',
+        externalId: `${opts.externalId}-out`,
+      },
+      {
+        userId: f.userId,
+        holdingId: f.depositHoldingId,
+        tokenId: f.tokenId,
+        kind: 'deposit',
+        // Same ~0.5% drift and 5-minute gap the canonical linking test uses,
+        // so the ONLY difference between this and a pair that links is the
+        // inflow's source.
+        quantity: '0.995',
+        occurredAt: new Date(at.getTime() + 5 * 60 * 1000),
+        source: opts.inflowSource,
+        externalId: `${opts.externalId}-in`,
+      },
+    ]);
+  }
+
+  async function groupIds(f: Fixture): Promise<Array<string | null>> {
+    const rows = await db
+      .select({ groupId: schema.holdingTransactions.transferGroupId })
+      .from(schema.holdingTransactions)
+      .where(eq(schema.holdingTransactions.userId, f.userId));
+    return rows.map((r) => r.groupId);
+  }
+
+  test('a balance edit the owner made is not claimed', async () => {
+    const f = fixture!;
+    await outflowAndInflow(f, { inflowSource: 'user-balance-edit', externalId: 's611-a' });
+
+    const summary = await Container.get(LinkTransferPairsUseCase).execute({ userId: f.userId });
+    expect(summary.linked).toBe(0);
+    expect(summary.ambiguous).toBe(0);
+    expect((await groupIds(f)).every((g) => g === null)).toBe(true);
+  });
+
+  test('a transaction the owner typed is not claimed', async () => {
+    const f = fixture!;
+    await outflowAndInflow(f, { inflowSource: 'user-entered', externalId: 's611-b' });
+
+    const summary = await Container.get(LinkTransferPairsUseCase).execute({ userId: f.userId });
+    expect(summary.linked).toBe(0);
+    expect((await groupIds(f)).every((g) => g === null)).toBe(true);
+  });
+
+  test('AN ORDINARY IMPORTED DEPOSIT IS STILL CLAIMED — the feature is not broken', async () => {
+    const f = fixture!;
+    ***REMOVED***
+    ***REMOVED***
+    ***REMOVED***
+    await outflowAndInflow(f, { inflowSource: 'etherscan', externalId: 's611-c' });
+
+    const summary = await Container.get(LinkTransferPairsUseCase).execute({ userId: f.userId });
+    expect(summary.linked).toBe(1);
+    const ids = await groupIds(f);
+    expect(ids).toHaveLength(2);
+    expect(new Set(ids).size).toBe(1);
+    expect(ids[0]).not.toBeNull();
+  });
+
+  test('the review queue still OFFERS a hand-entered deposit as an arrival', async () => {
+    const f = fixture!;
+    await outflowAndInflow(f, { inflowSource: 'user-entered', externalId: 's611-d' });
+
+    // THE SCOPE CONTROL. The rule is about the matcher's authority, not about
+    // whether the two rows could be a pair — so a person working the queue
+    // must still be offered this arrival, and picking it is them telling us
+    // something the matcher could not know. Moving the predicate into
+    // `candidatePairClass` "for consistency" would make this go red, which is
+    // the whole reason it lives in the use case's own query.
+    //
+    // `listPending` rather than `reopenPreview`: that one returns [] unless
+    // the row is already ANSWERED, so asserting on it here would have passed
+    // for a reason having nothing to do with the change.
+    const pending = await new TransferReviewService().listPending(f.userId);
+    expect(pending).toHaveLength(1);
+    expect(pending[0]?.candidates.map((c) => c.quantity)).toEqual(['0.995']);
+    expect(pending[0]?.candidates[0]?.withinStrictTolerance).toBe(true);
   });
 });
