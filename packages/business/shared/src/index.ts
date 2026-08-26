@@ -34,7 +34,13 @@ export {
   normalizeCounterparty,
   txHashFromPayload,
 } from './lib/block-explorer';
-export { committedShareOfObserved, runwayDenominator } from './lib/burn';
+export {
+  committedShareOfObserved,
+  type ObservedAffordability,
+  observedAffordability,
+  observedRunwayMonths,
+  runwayDenominator,
+} from './lib/burn';
 export {
   HOLDING_MOVEMENT_DIRECTIONS,
   type HoldingMovementDirection,

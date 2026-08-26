@@ -1,10 +1,16 @@
-import { committedShareOfObserved, Decimal, runwayDenominator } from '@scani/shared';
+import { Decimal, observedRunwayMonths } from '@scani/shared';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import { useBaseCurrencyRates } from '@/hooks/useBaseCurrencyRates';
 import { trpc } from '@/lib/trpc';
-import { bucketMovements, monthSequence, project, runway } from '../../lib/forecast';
+import {
+  bucketMovements,
+  committedShare,
+  monthSequence,
+  project,
+  runway,
+} from '../../lib/forecast';
 import { V3_ROUTES } from '../../lib/routes';
 import { formatProjectionMonth } from '../money/ProjectionChart';
 
@@ -56,12 +62,14 @@ export function RunwayLine() {
   const observedAnswer = useMemo(() => {
     const burn = forecast.data?.observedBurn;
     if (!forecast.data || !burn) return null;
-    const perMonth = runwayDenominator(burn.perMonthMean);
-    // Nothing left the perimeter across the whole window. `liquid ÷ 0` is not
-    // "forever", it is "this window cannot answer" — fall through to the book.
-    if (perMonth.lessThanOrEqualTo(0)) return null;
-    const months = new Decimal(forecast.data.liquid.amount).dividedBy(perMonth);
-    return { months: months.floor().toNumber(), burn };
+    // Nothing left the perimeter across the whole window is "this window
+    // cannot answer", not "forever" — `observedRunwayMonths` returns null and
+    // this falls through to the book. The division lives in `@scani/shared`
+    // because the forecast page answers the same question and the two must not
+    // do their own arithmetic (SC-661).
+    const months = observedRunwayMonths(forecast.data.liquid.amount, burn.perMonthMean);
+    if (months === null) return null;
+    return { months, burn };
   }, [forecast.data]);
 
   const answer = useMemo(() => {
@@ -83,37 +91,35 @@ export function RunwayLine() {
    * through the SAME currency conversion the runway did. A second conversion
    * path would let the two numbers on this line disagree invisibly.
    */
-  const committedShare = useMemo(() => {
+  const share = useMemo(() => {
     if (!observedAnswer || !forecast.data) return null;
     const buckets = bucketMovements(
       forecast.data.movements,
       monthSequence(forecast.data.today, forecast.data.horizonMonths)
     );
     const projection = project(new Decimal(forecast.data.liquid.amount), buckets, rates);
-    if (projection.pending || projection.points.length === 0) return null;
-    const committed = projection.points
-      .reduce((sum, point) => sum.plus(point.outflow), new Decimal(0))
-      .dividedBy(projection.points.length);
-    return committedShareOfObserved(committed.toString(), observedAnswer.burn.perMonthMean);
+    return committedShare(projection, observedAnswer.burn.perMonthMean);
   }, [observedAnswer, forecast.data, rates]);
 
   if (observedAnswer) {
     /**
-     * Deliberately NOT a link, and that is the whole of SC-657's second
-     * finding. This line answers from OBSERVED burn; `ForecastView` still
-     * projects the committed recurring book and was not changed. On the demo
-     * persona the two do not merely differ, they conclude the OPPOSITE: this
-     * line reads "About 27 months at recent spending" and the forecast page
-     * reads "Lasts beyond 12 months · the book nets +£8,***REMOVED*** a month".
+     * A link again (SC-661). SC-657 removed it because the destination
+     * contradicted this line: it read "About 27 months at recent spending"
+     * while `ForecastView` projected the committed book and answered "Lasts
+     * beyond 12 months · the book nets +£8,***REMOVED*** a month" — the opposite
+     * conclusion about the same account at the same instant.
      *
-     * A link asserts that the destination elaborates the thing you tapped.
-     * Pointing one at a page that contradicts it is worse than having no link,
-     * so it is removed until the two surfaces are reconciled — the follow-up
-     * ticket owns that, and restores the link with it. Forecast is still
-     * reachable from the Payments nav; only the false equivalence is gone.
+     * The destination now leads with the same figure, from the same
+     * `observedRunwayMonths` call, so the link asserts what a link is supposed
+     * to assert: that the page elaborates the thing you tapped. It is not
+     * restored because a missing affordance looked untidy — the removal was
+     * correct for as long as it was true.
      */
     return (
-      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-t border-dashed border-border px-4 py-3">
+      <Link
+        to={V3_ROUTES.forecast}
+        className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-t border-dashed border-border px-4 py-3 transition-colors hover:bg-surface-hover"
+      >
         <span className="flex flex-wrap items-center gap-2 text-caption text-muted-foreground">
           {t('v3.home.runway.label')}
           <span className="rounded border border-dashed border-muted-foreground/70 px-1.5 text-caption uppercase leading-tight tracking-wide">
@@ -122,15 +128,15 @@ export function RunwayLine() {
         </span>
         <span className="flex flex-wrap items-center gap-2 text-label">
           {t('v3.money.forecast.observedRunway', { count: observedAnswer.months })}
-          {committedShare ? (
+          {share ? (
             <span className="text-caption text-muted-foreground">
               {t('v3.money.forecast.ofWhichCommitted', {
-                percent: committedShare.times(100).toFixed(0),
+                percent: share.times(100).toFixed(0),
               })}
             </span>
           ) : null}
         </span>
-      </div>
+      </Link>
     );
   }
 
