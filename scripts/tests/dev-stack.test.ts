@@ -1,7 +1,13 @@
 import { describe, expect, test } from 'bun:test';
 import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { composeInterpolates, publishedServices, stackEnv } from '../dev-stack';
+import {
+  composeInterpolates,
+  downArgs,
+  downVerdict,
+  publishedServices,
+  stackEnv,
+} from '../dev-stack';
 import {
   composeProjectName,
   devDatabaseName,
@@ -349,5 +355,102 @@ describe('every consumer of the published ports reads the same override', () => 
       expect(`${source}: ${text.includes('stackPorts(')}`).toBe(`${source}: false`);
       expect(`${source}: ${text.includes('resolveStackPorts(')}`).toBe(`${source}: true`);
     }
+  });
+});
+
+describe('`down` finishes, and says so only when it can prove it (SC-663)', () => {
+  /**
+   * Compose stops containers whose service is in the compose file it is
+   * reading NOW. The project name comes from the worktree PATH (SC-491), the
+   * service SET from the BRANCH, and the two files disagree — measured
+   * 2026-08-26 with `docker compose --profile full config --services`:
+   *
+   *   private only:  admin  backend  cloud-frontend  landing
+   *   upstream only: api
+   *
+   * So switching branches between `up` and `down` orphans one container going
+   * upstream -> private, and FOUR going private -> upstream. Compose skips
+   * every one and reports success.
+   */
+  test('the flag that makes `down` mean what its name says is present', () => {
+    expect(downArgs()).toContain('--remove-orphans');
+  });
+
+  test('a passthrough argument survives it', () => {
+    // `dev:stack:down -- --volumes` is documented in three places.
+    expect(downArgs(['--volumes'])).toEqual([
+      'docker',
+      'compose',
+      '--profile',
+      'full',
+      'down',
+      '--remove-orphans',
+      '--volumes',
+    ]);
+  });
+
+  test('a clean teardown names the count it verified, not just success', () => {
+    const { message, exit } = downVerdict(0, [], 'scani_env_x');
+    expect(exit).toBe(0);
+    // The count is IN the verdict line, so reading the verdict is reading the
+    // evidence — the same reason gate-db prints the database it reached.
+    expect(message).toContain('0 containers remain in scani_env_x');
+  });
+
+  test('a container left behind is a failure, and is named', () => {
+    const { message, exit } = downVerdict(0, ['scani_env_x-api-1'], 'scani_env_x');
+    expect(exit).not.toBe(0);
+    expect(message).toContain('DOWN INCOMPLETE');
+    expect(message).toContain('scani_env_x-api-1');
+  });
+
+  test('all four orphans of a private -> upstream switch are counted', () => {
+    const left = ['x-admin-1', 'x-backend-1', 'x-cloud-frontend-1', 'x-landing-1'];
+    const { message, exit } = downVerdict(0, left, 'scani_env_x');
+    expect(exit).not.toBe(0);
+    expect(message).toContain('4 container(s)');
+    for (const name of left) expect(message).toContain(name);
+  });
+
+  test('not being able to ask docker is never resolved toward zero', () => {
+    // `null` is "could not ask", and the whole defect was a teardown claiming
+    // success over containers it never looked at. Absence of evidence.
+    const { message, exit } = downVerdict(0, null, 'scani_env_x');
+    expect(exit).not.toBe(0);
+    expect(message).toContain('UNVERIFIED');
+    expect(message).not.toContain('0 containers remain');
+  });
+
+  test('the verdict line cannot contradict its own exit code', () => {
+    // The first version printed COMPOSE's code in the message, so a real run
+    // read `DOWN INCOMPLETE · exit 0 · 1 container(s) still in ...` on a
+    // command that exits 1. The tests asserted the exit and the text
+    // separately and never that they agree, so only running it caught it.
+    for (const [code, remaining] of [
+      [0, []],
+      [0, ['x-admin-1']],
+      [0, null],
+      [17, []],
+      [17, ['x-admin-1']],
+      [17, null],
+    ] as ReadonlyArray<[number, string[] | null]>) {
+      const { message, exit } = downVerdict(code, remaining, 'scani_env_x');
+      expect(`${code}/${remaining === null ? 'null' : remaining.length}: ${message}`).toContain(
+        `exit ${exit}`
+      );
+    }
+  });
+
+  test("compose's own exit is still shown when it differs from ours", () => {
+    // Two different problems: compose failing, and a teardown that did not
+    // finish. Collapsing them into one number loses which one happened.
+    expect(downVerdict(17, ['x-admin-1'], 'p').message).toContain('compose exit 17');
+    expect(downVerdict(0, ['x-admin-1'], 'p').message).not.toContain('compose exit');
+  });
+
+  test("compose's own failure is propagated, not replaced by ours", () => {
+    expect(downVerdict(17, [], 'scani_env_x').exit).toBe(17);
+    expect(downVerdict(17, null, 'scani_env_x').exit).toBe(17);
+    expect(downVerdict(17, ['x-api-1'], 'scani_env_x').exit).toBe(17);
   });
 });
