@@ -19,10 +19,13 @@ import { db } from '@scani/db/connection';
 import * as schema from '@scani/db/schema';
 import { counterpartyFromPayload, normalizeCounterparty, undoEntriesFor } from '@scani/shared';
 import { and, eq, inArray } from 'drizzle-orm';
+import { Container } from 'typedi';
 
 import { counterpartyKeySql, pendingPredicate } from '../../src/lib/transfer-review-queue';
 import { sameHoldingRepairPlan, unlinkPairRefusal } from '../../src/lib/transfer-unlink';
 import { upstreamEventKey } from '../../src/lib/upstream-event';
+import { HoldingBalanceObservationRepository } from '../../src/repositories/HoldingBalanceObservationRepository';
+import { HOLDING_OPEN_OBSERVATION_SOURCE } from '../../src/services/holdings/HoldingService';
 import {
   MalformedCursorError,
   TransferReviewService,
@@ -3806,5 +3809,138 @@ describe('TransferReviewService — reopening a transfer the OWNER declared (SC-
     expect(await balance(f.inHoldingId)).toBe('500');
     expect(await ledgerRows(f)).toHaveLength(2);
     expect((await service().pendingSummary(f.userId)).count).toBe(1);
+  });
+});
+
+/**
+ * SC-641. `writeInflow` opened its destination with a direct
+ * `tx.insert(schema.holdings)` and recorded no balance observation, while
+ * `HoldingService.createHoldingWithEvent` — the path every other creator uses
+ * — records one. SC-245's shape in a path SC-245 never reached, and
+ * `HoldingService`'s own docblock predicted it: *"nothing stops the next
+ * caller writing `holdings` directly."*
+ *
+ * The two branches are treated DIFFERENTLY on purpose, and the last test here
+ * is why rather than a comment claiming it.
+ */
+describe('TransferReviewService — the opening observation of a holding it created', () => {
+  async function observationsOn(holdingId: string) {
+    return db
+      .select()
+      .from(schema.holdingBalanceObservations)
+      .where(eq(schema.holdingBalanceObservations.holdingId, holdingId));
+  }
+
+  async function createdHoldingIn(f: Fixture, accountId: string) {
+    const [row] = await db
+      .select()
+      .from(schema.holdings)
+      .where(
+        and(
+          eq(schema.holdings.userId, f.userId),
+          eq(schema.holdings.accountId, accountId),
+          eq(schema.holdings.tokenId, f.tokenId)
+        )
+      );
+    return row;
+  }
+
+  test('a destination nobody syncs is opened WITH an observation of the opening', async () => {
+    const f = fixture!;
+    const outId = await insertOutflow(f, { at: anchor(), quantity: '-250', externalId: 's641-1' });
+    expect(
+      await service().resolve(f.userId, outId, 'internal', {
+        destination: { accountId: f.emptyAccountId, holdingId: null },
+      })
+    ).toEqual({ ok: true });
+
+    const holding = await createdHoldingIn(f, f.emptyAccountId);
+    expect(holding?.balance).toBe('250');
+
+    // The whole of SC-641: 250 appeared and nothing recorded that it had.
+    const obs = await observationsOn(holding?.id ?? '');
+    expect(obs).toHaveLength(1);
+    expect(obs[0]?.balance).toBe('250');
+  });
+
+  test('the opening observation is marked as an opening, not as a capture', async () => {
+    const f = fixture!;
+    const outId = await insertOutflow(f, { at: anchor(), quantity: '-250', externalId: 's641-2' });
+    await service().resolve(f.userId, outId, 'internal', {
+      destination: { accountId: f.emptyAccountId, holdingId: null },
+    });
+
+    const holding = await createdHoldingIn(f, f.emptyAccountId);
+    const obs = await observationsOn(holding?.id ?? '');
+    // Load-bearing, not cosmetic. `holdingIsUntouched` (SC-631) reads an
+    // observation as evidence a person touched the row, and excludes THIS
+    // source on the ground that it records nothing beyond the holding's own
+    // existence. Change the string here and SC-631 stops deleting anything.
+    expect(obs[0]?.source).toBe(HOLDING_OPEN_OBSERVATION_SOURCE);
+    // And it is not the vocabulary a sync uses, because no sync captured it.
+    expect(obs[0]?.source).not.toBe('sync-capture');
+  });
+
+  test('a SYNC-OWNED destination is opened with NO observation', async () => {
+    const f = fixture!;
+    const outId = await insertOutflow(f, { at: anchor(), quantity: '-1000', externalId: 's641-3' });
+    expect(
+      await service().resolve(f.userId, outId, 'internal', {
+        destination: { accountId: f.walletSyncedAccountId, holdingId: null },
+      })
+    ).toEqual({ ok: true });
+
+    const holding = await createdHoldingIn(f, f.walletSyncedAccountId);
+    expect(holding?.balance).toBe('0');
+    // Deliberate asymmetry. The next test is the reason.
+    expect(await observationsOn(holding?.id ?? '')).toEqual([]);
+  });
+
+  test('opening a sync-owned row with an observation would invent a gap the ledger cannot explain', async () => {
+    const f = fixture!;
+    const outId = await insertOutflow(f, { at: anchor(), quantity: '-1000', externalId: 's641-4' });
+    await service().resolve(f.userId, outId, 'internal', {
+      destination: { accountId: f.walletSyncedAccountId, holdingId: null },
+    });
+    const holding = await createdHoldingIn(f, f.walletSyncedAccountId);
+    const holdingId = holding?.id ?? '';
+
+    // The sync's first pass, an hour later, reporting the arrival.
+    await db.insert(schema.holdingBalanceObservations).values({
+      userId: f.userId,
+      holdingId,
+      balance: '1000',
+      observedAt: new Date(Date.now() + 60 * 60 * 1000),
+      source: 'sync-capture',
+    });
+
+    // No gap: `findGapCandidatesForUser` needs a PAIR, and the sync
+    // observation is the first one on this holding.
+    const clean = await Container.get(HoldingBalanceObservationRepository).findGapCandidatesForUser(
+      f.userId
+    );
+    expect(clean.filter((c) => c.holdingId === holdingId)).toEqual([]);
+
+    // Now write the opening observation this path deliberately does NOT write,
+    // and the pair appears. `bridge` sums transactions with
+    // `occurred_at > previous_observed_at`, and the arrival is dated at the
+    // TRANSFER's time — before the opening — so it falls outside the interval
+    // and explains nothing. The owner would be asked to account for 1000 that
+    // the ledger already accounts for.
+    await db.insert(schema.holdingBalanceObservations).values({
+      userId: f.userId,
+      holdingId,
+      balance: '0',
+      observedAt: new Date(Date.now() - 60 * 1000),
+      source: HOLDING_OPEN_OBSERVATION_SOURCE,
+    });
+    const invented = await Container.get(
+      HoldingBalanceObservationRepository
+    ).findGapCandidatesForUser(f.userId);
+    const mine = invented.filter((c) => c.holdingId === holdingId);
+    expect(mine).toHaveLength(1);
+    expect(mine[0]?.explained).toBe('0');
+    expect(mine[0]?.balance).toBe('1000');
+    expect(mine[0]?.previousBalance).toBe('0');
   });
 });

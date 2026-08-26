@@ -79,6 +79,7 @@ import {
   BalanceSyncOwnershipService,
   type SyncOwnableAccount,
 } from './accounts/BalanceSyncOwnershipService';
+import { HOLDING_OPEN_OBSERVATION_SOURCE, HoldingService } from './holdings/HoldingService';
 import { PriceGraphService } from './pricing/PriceGraphService';
 
 /**
@@ -2605,9 +2606,14 @@ async function writeInflow(
       holdingId = existing.id;
     } else {
       const opening = await openingOf(tx, account, quantity);
-      const [created] = await tx
-        .insert(schema.holdings)
-        .values({
+      // **Through the service, not a direct insert** (SC-641). This was the
+      // last caller in the tree writing `holdings` itself, and it is the one
+      // `HoldingService`'s docblock warned about — *"nothing stops the next
+      // caller writing `holdings` directly"*. Going the long way is what
+      // gets the opening on the record instead of a balance appearing with
+      // nothing saying it had.
+      const created = await Container.get(HoldingService).createHoldingWithEvent(
+        {
           userId,
           accountId: destination.accountId,
           tokenId: outflow.tokenId,
@@ -2617,8 +2623,20 @@ async function writeInflow(
           // of what `user_confirmed` claims, and it is true of the row on
           // either branch — only the balance's owner differs.
           arrival: 'user_confirmed',
-        })
-        .returning({ id: schema.holdings.id });
+          // **The two branches are asymmetric on purpose.** On a sync-owned
+          // account the row opens at ZERO and the sync writes the real figure
+          // on its next pass. An opening observation of 0 would pair with that
+          // first sync observation into a gap the ledger cannot explain: the
+          // arrival is dated at the TRANSFER's time, before the opening, and
+          // `findGapCandidatesForUser` bridges only transactions occurring
+          // INSIDE the interval. The owner would be asked to account for money
+          // the ledger already accounts for. Where nobody syncs, the opening
+          // IS a claim about the balance and belongs on the record.
+          skipSyncCapture: opening.balance === '0',
+          observationSource: HOLDING_OPEN_OBSERVATION_SOURCE,
+        },
+        tx
+      );
       if (!created) return false;
       holdingId = created.id;
       createdDestination = true;
