@@ -19,6 +19,20 @@ version heading stays there permanently, above every future release. This
 comment is deliberately in that position; explanatory prose should not be.
 -->
 
+## [0.22.0](https://github.com/MGrin/scani-oss/compare/v0.21.0...v0.22.0) (2026-08-26)
+
+
+### Features
+
+* report compose stacks that have no checkout behind them ([#267](https://github.com/MGrin/scani-oss/issues/267)) ([d4399a6](https://github.com/MGrin/scani-oss/commit/d4399a6f1a3d699329fa0bac7a54850ee9f70909))
+
+
+### Bug Fixes
+
+* **scripts:** make the NUL guard answer about the repo, not the cwd ([193b56f](https://github.com/MGrin/scani-oss/commit/193b56f1470cbd306da02d7cf10e49b47edee4ca))
+* **scripts:** refuse a literal NUL byte in a tracked source file ([cf29a1e](https://github.com/MGrin/scani-oss/commit/cf29a1e5d904733ca0d03827778573618a6b890d))
+* **tests:** make in-repo test fixtures uncommittable ([1942376](https://github.com/MGrin/scani-oss/commit/19423765309d72ec34a3ca2bbcc43be72a7db438))
+
 ## [0.21.0](https://github.com/MGrin/scani-oss/compare/v0.20.0...v0.21.0) (2026-08-26)
 
 
