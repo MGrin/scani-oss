@@ -1076,8 +1076,8 @@ export const pendingTransferReviewSchema = z.object({
    * A separate field from `counterparty` because after normalization they are
    * different strings, and the reader has to be shown the one that will
    * actually do the work. `counterparty` is what this transfer says —
-   * `Pay 500.00 USD to Example Recipient (Dividends)` — and it belongs on the row
-   * because it names the payment. The key is `nikita grishin (dividends)`, and
+   * `Pay 500.00 USD to Teodor Vance (Dividends)` — and it belongs on the row
+   * because it names the payment. The key is `teodor vance (dividends)`, and
    * it is what "make a rule about this" means: the next payment, at the next
    * amount, to the same person.
    *
