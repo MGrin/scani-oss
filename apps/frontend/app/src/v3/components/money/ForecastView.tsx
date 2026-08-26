@@ -520,6 +520,24 @@ function RunwayBasis({ forecast, baseSymbol }: { forecast: ForecastData; baseSym
  * The denominators under the observed figure — what the mean was taken over,
  * what it hid, and what it could not count.
  *
+ * ## Why the MEDIAN is printed beside the mean
+ *
+ * Measured on mgrin's real book 2026-08-26: mean $13,984.20 against median
+ * $7,504.95, min $3,999.52, max $43,563.15. **The mean is 1.86x the median**,
+ * so the choice of statistic is not a rounding difference — it is "about 8
+ * months" against "about 15 months" on the same balance, driven by one or two
+ * exceptional months.
+ *
+ * SC-657 chose the mean deliberately and correctly: total ÷ months IS the rate
+ * the balance actually drained at, and a $43k month is real money that really
+ * left. A median-based runway survives on paper past the point the account is
+ * empty. But a figure that far from the typical month has to say so, or the
+ * line alarms the reader about a distribution while sounding like a trend.
+ *
+ * So the label names the statistic — "Mean of 6 complete months" rather than
+ * "Averaged over" — and the middle month is printed next to the range. Neither
+ * surface said which statistic it used before this.
+ *
  * Every one of these is here because a single number over $4k-$43k months,
  * presented alone, is more confident than the data. The spread says so; the
  * excluded count says how many outflows the figure did not see; the committed
@@ -567,6 +585,7 @@ function ObservedBasis({
             components={{
               min: <Numeric value={burn.perMonthMin} currency={baseSymbol} />,
               max: <Numeric value={burn.perMonthMax} currency={baseSymbol} />,
+              median: <Numeric value={burn.perMonthMedian} currency={baseSymbol} />,
             }}
           />
         </p>
