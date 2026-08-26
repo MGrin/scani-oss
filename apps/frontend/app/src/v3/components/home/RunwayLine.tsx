@@ -1,10 +1,16 @@
-import { committedShareOfObserved, Decimal, observedRunwayMonths } from '@scani/shared';
+import { Decimal, observedRunwayMonths } from '@scani/shared';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import { useBaseCurrencyRates } from '@/hooks/useBaseCurrencyRates';
 import { trpc } from '@/lib/trpc';
-import { bucketMovements, monthSequence, project, runway } from '../../lib/forecast';
+import {
+  bucketMovements,
+  committedShare,
+  monthSequence,
+  project,
+  runway,
+} from '../../lib/forecast';
 import { V3_ROUTES } from '../../lib/routes';
 import { formatProjectionMonth } from '../money/ProjectionChart';
 
@@ -85,18 +91,14 @@ export function RunwayLine() {
    * through the SAME currency conversion the runway did. A second conversion
    * path would let the two numbers on this line disagree invisibly.
    */
-  const committedShare = useMemo(() => {
+  const share = useMemo(() => {
     if (!observedAnswer || !forecast.data) return null;
     const buckets = bucketMovements(
       forecast.data.movements,
       monthSequence(forecast.data.today, forecast.data.horizonMonths)
     );
     const projection = project(new Decimal(forecast.data.liquid.amount), buckets, rates);
-    if (projection.pending || projection.points.length === 0) return null;
-    const committed = projection.points
-      .reduce((sum, point) => sum.plus(point.outflow), new Decimal(0))
-      .dividedBy(projection.points.length);
-    return committedShareOfObserved(committed.toString(), observedAnswer.burn.perMonthMean);
+    return committedShare(projection, observedAnswer.burn.perMonthMean);
   }, [observedAnswer, forecast.data, rates]);
 
   if (observedAnswer) {
@@ -126,10 +128,10 @@ export function RunwayLine() {
         </span>
         <span className="flex flex-wrap items-center gap-2 text-label">
           {t('v3.money.forecast.observedRunway', { count: observedAnswer.months })}
-          {committedShare ? (
+          {share ? (
             <span className="text-caption text-muted-foreground">
               {t('v3.money.forecast.ofWhichCommitted', {
-                percent: committedShare.times(100).toFixed(0),
+                percent: share.times(100).toFixed(0),
               })}
             </span>
           ) : null}
