@@ -387,6 +387,17 @@ describe('the prose that states the image set agrees with the manifest', () => {
     expect(diff.wrongCounts).toEqual([]);
   });
 
+  test('the workspace package `@scani/db` is not read as an image', () => {
+    // Not hypothetical: `docker-compose.prod.yml` names `@scani/db` in a
+    // comment beside five real image references. `\b` matches after the `@`,
+    // so without the lookbehind this reports an unexpected image called `db`
+    // and reds on a file that is correct.
+    const diff = diffProseAgainstManifest(`${TABLE}\n# see \`@scani/db\` for the schema`);
+
+    expect(diff.unexpected).toEqual([]);
+    expect(diff.read.images).toBe(DOCKER_IMAGES.length);
+  });
+
   test('prose naming nothing is not a pass', () => {
     // The vacuity case, asserted on the helper rather than only on the caller.
     const diff = diffProseAgainstManifest('This document mentions no images at all.');
