@@ -69,7 +69,7 @@ describe('SC-657 — the home runway divides by observed alone', () => {
    * committed recurring book, and the two surfaces reached OPPOSITE
    * conclusions -- measured 2026-08-26, this line read "About 27 months at
    * recent spending" while the page read "Lasts beyond 12 months, the book
-   * nets +£8,***REMOVED*** a month". A link asserts the destination elaborates what
+   * nets a large positive figure a month". A link asserts the destination elaborates what
    * you tapped, so it was removed.
    *
    * ## Inverted and widened rather than deleted
@@ -160,11 +160,11 @@ describe('SC-657 — the home runway divides by observed alone', () => {
     // that no longer divides. The property is unchanged and now covers both
     // surfaces at once.
     expect(runwayDenominator('0').isZero()).toBe(true);
-    expect(observedRunwayMonths('***REMOVED***', '0')).toBeNull();
-    expect(observedRunwayMonths('***REMOVED***', '-5')).toBeNull();
+    expect(observedRunwayMonths('100000', '0')).toBeNull();
+    expect(observedRunwayMonths('100000', '-5')).toBeNull();
     // Control: a real burn still answers, so the nulls above are the guard
     // firing and not the helper refusing everything.
-    expect(observedRunwayMonths('***REMOVED***', '***REMOVED***')).toBe(8);
+    expect(observedRunwayMonths('100000', '12000')).toBe(8);
 
     // And both callers must branch on that null rather than render it.
     expect(SOURCE).toContain('if (months === null) return null;');
