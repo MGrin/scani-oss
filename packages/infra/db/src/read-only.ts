@@ -58,20 +58,56 @@ export interface ReadOnlyIntentInput {
 }
 
 /**
- * Whether the entry point is a repair script running as a dry run.
+ * Every spelling this repo uses for "write this time".
+ *
+ * `REPAIR_WRITE_FLAG` is the one a NEW script should use and the only one
+ * `beginRepair` reads. `--apply` is here because ten scripts predate the
+ * harness and spell it that way; the connection has to know both, or those ten
+ * parse themselves as a dry run while it opens read-write — which is the exact
+ * failure `REPAIR_WRITE_FLAG`'s own comment above warns about, and was the
+ * live state of this repo until SC-646.
+ */
+export const WRITE_FLAGS: readonly string[] = [REPAIR_WRITE_FLAG, '--apply'];
+
+/**
+ * Whether the entry point is an operator script — a one-off tool a human runs
+ * by hand, rather than a service, a test, or library code.
+ *
+ * DECIDED BY THE DIRECTORY, NOT THE FILE NAME (SC-646). This used to require
+ * the name to match `repair-*`, so a destructive script called anything else
+ * got a writable connection whatever its intent — ten of them did, and one was
+ * a `--apply` repair for transactions on the wrong holding. A population
+ * defined by a naming convention is an honour system; SC-644 removed the same
+ * defect from the test that was supposed to report it.
+ *
+ * A directory is not behaviour either, and it is not claimed to be: it is the
+ * SCOPE, and the flag below is the INTENT. What makes it safe is the direction
+ * it fails in — a new file dropped in `scripts/` is covered automatically and
+ * gets read-only until it says otherwise, so forgetting produces a loud refusal
+ * at the first write rather than a silent hole.
  *
  * `.test.ts` is excluded because `bun test <file>` puts the TEST FILE in
- * `argv[1]`, and `scripts/tests/repair-*.test.ts` exists — without this, one
- * test file's name would open the whole suite's connection read-only and fail
- * every test that writes.
+ * `argv[1]`; without it one test file's path would open the whole suite's
+ * connection read-only and fail every test that writes.
+ *
+ * NOTE the deliberate breadth: ANY directory named `scripts` matches, not just
+ * the repo root's. `apps/e2e/scripts/` and four others exist and none of them
+ * opens a database connection today (measured 2026-08-26). If one ever does it
+ * will come up read-only and say so, which is the correct way round.
  */
-export function isDryRunRepairScript(argv: readonly string[]): boolean {
+export function isOperatorScript(argv: readonly string[]): boolean {
   const entry = argv[1];
   if (!entry) return false;
-  const name = entry.split(/[\\/]/).pop() ?? '';
+  const segments = entry.split(/[\\/]/);
+  const name = segments.pop() ?? '';
+  if (!/\.tsx?$/.test(name)) return false;
   if (/\.test\.tsx?$/.test(name)) return false;
-  if (!/^repair-.+\.tsx?$/.test(name)) return false;
-  return !argv.includes(REPAIR_WRITE_FLAG);
+  return segments.pop() === 'scripts';
+}
+
+/** An operator script invoked without asking to write. */
+export function isDryRunOperatorScript(argv: readonly string[]): boolean {
+  return isOperatorScript(argv) && !argv.some((arg) => WRITE_FLAGS.includes(arg));
 }
 
 /**
@@ -93,7 +129,7 @@ export function resolveReadOnlyIntent({ argv, env }: ReadOnlyIntentInput): boole
         'must not be guessed as read-write.'
     );
   }
-  return isDryRunRepairScript(argv);
+  return isDryRunOperatorScript(argv);
 }
 
 /**
