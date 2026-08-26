@@ -398,7 +398,20 @@ if (import.meta.main) {
         `Write the override's subject to match the commit's byte for byte. Only a ` +
         `trailing\n(#123) or (SC-nnn) is stripped before comparison; anything else you ` +
         `append leaves a\nbullet that is VISIBLE in CHANGELOG.md and invisible to this ` +
-        `check, and it goes on\nreporting a shortfall against an entry that is there.`
+        `check, and it goes on\nreporting a shortfall against an entry that is there.\n\n` +
+        `ONE OVERRIDE BLOCK CAN CARRY SEVERAL MESSAGES, which is what you need whenever ` +
+        `a\nsingle pull request is short more than one entry — the common case, since a ` +
+        `walk\nthat stopped early missed every commit of that branch, not one of them. ` +
+        `Separate\nthem with a BLANK LINE inside the one block; do not open a second ` +
+        `block, and do not\nraise a pull request per missing commit.\n\n` +
+        `Measured against release-please 17.11.2's own parseConventionalCommits, with a ` +
+        `\none-message control so the result is a measurement rather than a hopeful ` +
+        `reading:\n\n` +
+        `    two conventional messages, blank-line separated   ->  2 parsed\n` +
+        `    one message (control)                             ->  1 parsed\n\n` +
+        `This paragraph exists because the advice above it reads as singular — "the ` +
+        `message\nyou wanted" — and a reader holding two missing shas has no way to tell ` +
+        `whether the\nmechanism is one-per-block without testing it (SC-676).`
     );
     process.exit(1);
   }
