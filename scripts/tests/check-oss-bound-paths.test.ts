@@ -346,10 +346,12 @@ describe('the tree discriminator weighs shares, not presence (SC-659)', () => {
   });
 
   /**
-   * THE ZERO DENOMINATOR, which is a legitimate steady state rather than a
-   * defect: the mirror-only set is only ever "files upstream has that private
-   * does not", and a healthy repo drives it toward zero. Left to the
-   * arithmetic this lands on the right verdict for the wrong stated reason —
+   * THE ZERO DENOMINATOR, which is DEFENSIVE rather than a state this repo
+   * reaches: the mirror-only set has a floor of 9 here — the release
+   * automation, CodeQL and the publish workflows exist only on the mirror by
+   * design — so it cannot empty. A fork or a differently-arranged mirror has
+   * no such floor, which is why the branch exists. Left to the arithmetic it
+   * lands on the right verdict for the wrong stated reason —
    * a `why` reading `0/0 mirror-only` tells the reader the tree LACKS paths
    * that do not exist to lack.
    */
