@@ -234,8 +234,17 @@ describe('SC-661 — the forecast page leads with observed burn', () => {
       forecast: { ...wire(BOOK, '10000'), observedBurn: observedBurn() },
     });
 
+    // The window, the statistic BY NAME, the range, and the middle month.
+    //
+    ***REMOVED***
+    ***REMOVED***
+    ***REMOVED***
+    // from a typical month has to say which one it is, or it alarms the reader
+    // about a distribution while sounding like a trend.
+    expect(html).toInclude('Mean of 6 complete months, 2025-09 to 2026-02');
     expect(html).toInclude('€400.00');
     expect(html).toInclude('€3,000.00');
+    expect(html).toInclude('€1,100.00');
     // 2 unclassified + 1 untracked + 0 unvalued. Treated as zero in the mean,
     // so the runway is too long by however much they were — the flattering
     // direction, which is why the count is printed rather than folded away.
