@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { assertRepoFixtureIsIgnored } from '../lib/test-fixture-corpses';
 
 /**
  * SC-556. `queue-store-claims` blocked the 0.15.0 release. It fired on two
@@ -37,7 +39,10 @@ import path from 'node:path';
  */
 
 const REPO_ROOT = path.resolve(import.meta.dir, '../..');
-const SCRATCH_INDEX = path.join(REPO_ROOT, `.scratch-sc556-index-${process.pid}`);
+// OUTSIDE the repository (SC-609). `GIT_INDEX_FILE` takes any path, so this
+// never needed to be in the tree — and while it was, a killed run left an
+// ordinary untracked file at the root for `git add -A` to commit.
+const SCRATCH_INDEX = path.join(tmpdir(), `scani-sc556-index-${process.pid}`);
 
 /**
  * NOT the root `CHANGELOG.md`. Upstream has a real one and this tree has none,
@@ -49,7 +54,10 @@ const SCRATCH_INDEX = path.join(REPO_ROOT, `.scratch-sc556-index-${process.pid}`
  * The exemption is keyed on the basename, so a changelog in a scratch directory
  * exercises exactly the same branch.
  */
-const FIXTURE_DIR = `docs/sc556-changelog-fixture-${process.pid}`;
+// The DIRECTORY carries the reserved prefix, not the file: the exemption under
+// test is keyed on the basename `CHANGELOG.md`, so that name has to survive.
+// One `.gitignore` rule on the directory covers everything inside it (SC-609).
+const FIXTURE_DIR = `docs/scani-test-fixture-sc556-changelog-${process.pid}`;
 const CHANGELOG_FIXTURE = `${FIXTURE_DIR}/CHANGELOG.md`;
 const FIXTURES: string[] = [];
 
@@ -65,6 +73,7 @@ const ENTRY_LINK =
  * file is a test that damages the checkout it is run in.
  */
 function fixture(rel: string, body: string): string {
+  assertRepoFixtureIsIgnored(REPO_ROOT, rel);
   const abs = path.join(REPO_ROOT, rel);
   mkdirSync(path.dirname(abs), { recursive: true });
   if (existsSync(abs)) {
@@ -83,7 +92,17 @@ function queueCheckFires(staged: string[]): boolean {
   const git = (args: string[]) => Bun.spawnSync(['git', ...args], { cwd: REPO_ROOT, env });
   rmSync(SCRATCH_INDEX, { force: true });
   git(['read-tree', 'HEAD']);
-  git(['add', '--', ...staged]);
+  // `-f` because every fixture is deliberately gitignored (SC-609), and `git
+  // add` refuses an ignored path without it. Checked rather than discarded: an
+  // unstaged fixture leaves the check with nothing to look at, and every
+  // assertion below that expects silence would pass for that reason instead.
+  const add = git(['add', '-f', '--', ...staged]);
+  if (add.exitCode !== 0) {
+    throw new Error(
+      `staging the fixture into the scratch index failed (exit ${add.exitCode}): ` +
+        `${add.stderr.toString().trim()}`
+    );
+  }
   const run = Bun.spawnSync(['bun', 'scripts/check-docs.ts'], { cwd: REPO_ROOT, env });
   return `${run.stdout.toString()}${run.stderr.toString()}`.includes('queue-store-claims');
 }
@@ -110,7 +129,9 @@ describe('queue-store-claims and the changelog', () => {
    */
   test('the rule still fires on the same line outside the changelog', () => {
     const f = fixture(
-      'docs/sc556-queue-store-fixture.md',
+      // Carries the pid as well as the prefix. It did not, so two concurrent
+      // runs raced for one path and `fixture()`'s clobber guard threw (SC-370).
+      `docs/scani-test-fixture-sc556-queue-store-${process.pid}.md`,
       `* **queue:** move BullMQ from Redis to the Postgres backend ${ENTRY_LINK}`
     );
     expect(queueCheckFires([f])).toBe(true);
