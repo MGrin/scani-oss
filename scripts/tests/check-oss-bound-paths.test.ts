@@ -437,8 +437,16 @@ describe('an upstream-first window on real repositories (SC-659)', () => {
     const priv = join(root, 'priv.git');
     const seed = join(root, 'seed');
     const clone = join(root, 'work');
-    git(root, 'init', '--quiet', '--bare', up);
-    git(root, 'init', '--quiet', '--bare', priv);
+    // `--initial-branch`, on the BARE repos too. Without it these inherit the
+    // machine's `init.defaultBranch`, so their HEAD points at `master` on a
+    // default git and at `main` on one configured like this repo. When it is
+    // `master`, `git clone` warns `remote HEAD refers to nonexistent ref`,
+    // checks out NOTHING, and leaves HEAD unborn — `ls-tree HEAD` then fails
+    // and the scratch subdirectories do not exist. Green here and red on CI,
+    // which is exactly the configuration dependence SC-662 removed from the
+    // code under test (SC-662, found on scani-oss#242).
+    git(root, 'init', '--quiet', '--bare', '--initial-branch=main', up);
+    git(root, 'init', '--quiet', '--bare', '--initial-branch=main', priv);
     git(root, 'init', '--quiet', '--initial-branch=main', seed);
     identify(seed);
     for (let i = 0; i < 8; i += 1) writeFileSync(join(seed, `shared${i}.ts`), `shared ${i}\n`);
@@ -575,8 +583,16 @@ describe('a cross-repo rename does not hide both markers (SC-662)', () => {
     const priv = join(root, 'priv.git');
     const seed = join(root, 'seed');
     const clone = join(root, 'work');
-    git(root, 'init', '--quiet', '--bare', up);
-    git(root, 'init', '--quiet', '--bare', priv);
+    // `--initial-branch`, on the BARE repos too. Without it these inherit the
+    // machine's `init.defaultBranch`, so their HEAD points at `master` on a
+    // default git and at `main` on one configured like this repo. When it is
+    // `master`, `git clone` warns `remote HEAD refers to nonexistent ref`,
+    // checks out NOTHING, and leaves HEAD unborn — `ls-tree HEAD` then fails
+    // and the scratch subdirectories do not exist. Green here and red on CI,
+    // which is exactly the configuration dependence SC-662 removed from the
+    // code under test (SC-662, found on scani-oss#242).
+    git(root, 'init', '--quiet', '--bare', '--initial-branch=main', up);
+    git(root, 'init', '--quiet', '--bare', '--initial-branch=main', priv);
     git(root, 'init', '--quiet', '--initial-branch=main', seed);
     git(seed, 'config', 'user.email', 'test@example.com');
     git(seed, 'config', 'user.name', 'test');
@@ -612,7 +628,10 @@ describe('a cross-repo rename does not hide both markers (SC-662)', () => {
     const script = join(import.meta.dir, '..', 'check-oss-bound-paths.ts');
     const run = Bun.spawnSync(
       [
-        'bun',
+        // The running interpreter, not the name: `bun` is only on PATH if the
+        // caller's environment puts it there, and a test should not depend on
+        // that.
+        process.execPath,
         '-e',
         `import { collectTreeMarkers } from ${JSON.stringify(script)};
 ` + `console.log(JSON.stringify(collectTreeMarkers()));`,
