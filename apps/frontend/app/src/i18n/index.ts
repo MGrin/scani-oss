@@ -75,6 +75,28 @@ void i18n
  * set of files somewhere else is a second set nobody remembers to translate.
  * A locale with no `ui` section simply keeps the package's bundled English,
  * which is the same partial-translation fallback the app already relies on.
+ *
+ * ## `ru.json` HAS MORE KEYS THAN `en.json`, AND THAT IS THIS FUNCTION WORKING
+ *
+ * Measured 2026-08-26: `locales/en.json` 406 keys, `locales/ru.json` 660. Of
+ * the 254 difference, 64 are Russian plural forms (`_few` / `_many`, categories
+ * English does not have) and **190 are `ui.*` keys with no `en` counterpart in
+ * this directory** — `ui.dataView.*`, `ui.amountInput.*`, `ui.brand.*`.
+ *
+ * That asymmetry is required, not drift. English reaches `@scani/ui` from the
+ * package's own statically-imported `locales/en.json`, so the app never needs
+ * to carry it; every OTHER language reaches it only through the `addUiLocale`
+ * call below. Delete the `ui.*` block from `ru.json` to "restore parity" and
+ * every shared component silently renders English for Russian users — no error,
+ * no missing key, just the fallback doing its job over a translation that is no
+ * longer being handed across.
+ *
+ * Stated here because the count is what a reader meets first and it reads as
+ * rot. One did, on this file, and got as far as drafting a cleanup ticket
+ * before reading `addUiLocale` — two true facts (the package ships `en` only;
+ * `ru` has 190 `ui.*` keys `en` lacks) joined by an invented mechanism that
+ * happened to fit. The join is above; it is the only thing that distinguishes
+ * the two readings, and nothing about the key counts points at it.
  */
 function syncUiLocale(language: string | undefined): void {
   // `i18n.language` is unset until the detector has run, and this module is
