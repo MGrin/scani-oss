@@ -1,4 +1,4 @@
-import { Decimal } from '@scani/shared';
+import { committedShareOfObserved, Decimal } from '@scani/shared';
 import { type ConversionContext, convertTotalsToBase, type UnconvertedPart } from './paymentTotals';
 
 /**
@@ -250,6 +250,30 @@ export function runway(projection: Projection): Runway {
     beyondMonths: months,
     netPerMonth: months > 0 ? net.dividedBy(months) : new Decimal(0),
   };
+}
+
+/**
+ * The book's monthly outflow as a share of observed burn (SC-661).
+ *
+ * Both surfaces that show the runway also show this percentage, and until this
+ * function existed both computed it inline from their own projection. That is
+ * the same duplication that let the RUNWAY drift until the two screens reached
+ * opposite conclusions — caught here by reading the diff rather than by the two
+ * figures disagreeing in front of somebody, which is how the first one was
+ * found.
+ *
+ * `null` when the projection is not ready or observed is zero: a share of
+ * nothing is a question with no answer, not 0%.
+ */
+export function committedShare(
+  projection: Projection,
+  observedPerMonthMean: string
+): Decimal | null {
+  if (projection.pending || projection.points.length === 0) return null;
+  const committed = projection.points
+    .reduce((sum, point) => sum.plus(point.outflow), new Decimal(0))
+    .dividedBy(projection.points.length);
+  return committedShareOfObserved(committed.toString(), observedPerMonthMean);
 }
 
 export interface Affordability {
