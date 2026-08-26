@@ -624,9 +624,109 @@ function ObservedBasis({
           {t('v3.money.forecast.ofWhichCommitted', { percent: share.times(100).toFixed(0) })}
         </p>
       ) : null}
+      {/* PROVENANCE SITS ABOVE THE EXCLUDED SENTENCE, and the placement is part
+          of the fix rather than a layout preference (SC-661, mgrin).
+
+          The excluded line is a small honest caveat about 4 EXCLUDED rows. This
+          is a large claim about 76% of the value that IS COUNTED. They are
+          OPPOSITE OPERATIONS, and adjacent they read as two versions of one
+          caveat — a reader who has just been told some rows were left out takes
+          the next qualifier as more of the same and stops. Arriving second, the
+          larger claim would be dressed as a footnote to the smaller one. */}
+      <BurnProvenance burn={burn} />
       {notCounted > 0 ? (
         <p className="text-caption text-muted-foreground">
           {t('v3.money.forecast.observedNotCounted', { count: notCounted })}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * Who classified the money the burn is MADE OF (SC-661/SC-673).
+ *
+ * ## By value, never by count, and that is a measurement not a style
+ *
+ * The figure above is money and months derived from money, so a count-weighted
+ * share describes a different quantity than the number it qualifies. Measured
+ ***REMOVED***
+ ***REMOVED***
+ ***REMOVED***
+ ***REMOVED***
+ * source.
+ *
+ * The count is the flattering reading, and `ObservedBurnService` returns no
+ * counts at all so it cannot be rendered here by accident. This feature has
+ * erred flattering at every layer examined — the committed book, the decoder,
+ * and a declared estimate would have too. The caption that exists to stop that
+ * must not do it as well.
+ *
+ * ## THE MIDDLE CLASS RENDERS EMPTY ON THE ONE BOOK WE HAVE, AND IS NOT DEAD
+ *
+ * Read this before deleting the branch. Within the burn window's
+ * `left_control` rows the split is 34 user / **0 automated** / 45
+ * unattributed, so this line never appears for that account. **It is not empty
+ * book-wide: 30 rows across his book decode as `repair`.** Narrow claim, and
+ * the narrowness is the point — an earlier draft of this comment said "never
+ * renders on his data", which was false and would have survived, because
+ * nothing about it invites doubt.
+ *
+ * The class earns its place through an ASYMMETRY in that data. The
+ * transfer-linking repair job DOES stamp itself — all 5 internal/paired rows
+ * carry `repair` — so whatever answered the unstamped rows was **not** that
+ * job. The benign reading, that a known mechanism did it and forgot to stamp,
+ * is ruled out by the known mechanism stamping. Collapsing `automated` into
+ * `unattributed` would erase the difference between "a rule you can go and
+ * read decided this" and "no code path we know of decided this", which is the
+ * same error as collapsing `internal` into `untracked` on the excluded side:
+ * one is a fact, the other is the absence of one.
+ *
+ * ## What is deliberately NOT claimed
+ *
+ * Nothing here says what wrote the unattributed rows. The data cannot say, and
+ * the honest claim is the narrow one: nobody recorded who decided.
+ *
+ * The value is the burn's own quantity proxy rather than
+ ***REMOVED***
+ * these outflows are essentially all dollar-denominated. Stated because the
+ * percentages are printed to the whole number and that difference cannot move
+ * one.
+ */
+function BurnProvenance({ burn }: { burn: NonNullable<ForecastData['observedBurn']> }) {
+  const { t } = useTranslation();
+
+  const total = new Decimal(burn.provenance.user)
+    .plus(burn.provenance.automated)
+    .plus(burn.provenance.unattributed);
+  // A share of nothing is not 0%, it is a question with no answer — the same
+  // rule `committedShareOfObserved` follows. A window with no counted exits
+  // says nothing rather than reporting three confident zeroes.
+  if (total.lessThanOrEqualTo(0)) return null;
+
+  const pct = (amount: string): string =>
+    new Decimal(amount).dividedBy(total).times(100).toFixed(0);
+
+  return (
+    <div className="flex flex-col gap-1 border-t border-dashed border-border pt-2">
+      <p className="text-caption font-medium text-foreground">
+        {t('v3.money.forecast.provenanceTitle')}
+      </p>
+      {new Decimal(burn.provenance.user).greaterThan(0) ? (
+        <p className="text-caption text-muted-foreground">
+          {t('v3.money.forecast.provenanceUser', { percent: pct(burn.provenance.user) })}
+        </p>
+      ) : null}
+      {new Decimal(burn.provenance.automated).greaterThan(0) ? (
+        <p className="text-caption text-muted-foreground">
+          {t('v3.money.forecast.provenanceAutomated', { percent: pct(burn.provenance.automated) })}
+        </p>
+      ) : null}
+      {new Decimal(burn.provenance.unattributed).greaterThan(0) ? (
+        <p className="text-caption text-muted-foreground">
+          {t('v3.money.forecast.provenanceUnattributed', {
+            percent: pct(burn.provenance.unattributed),
+          })}
         </p>
       ) : null}
     </div>
