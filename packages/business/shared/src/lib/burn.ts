@@ -27,7 +27,7 @@ import { Decimal } from '../decimal';
  * ## What `committed` is genuinely for
  *
  * Not a second denominator — a floor on the discretionary question. An
- * observed $43k month says nothing about how much of it he could STOP. The
+ * observed $37k month says nothing about how much of it he could STOP. The
  * recurring book does. That is a real second fact, and it is why showing two
  * is right even though they overlap.
  */
@@ -113,8 +113,9 @@ export interface ObservedAffordability {
  * ## What it buys, which is why the trade was made
  *
  * `affordability()` returns `monthsLost: null` unless BOTH walks run out
- * inside the twelve-month window. On mgrin's real book the committed
- * projection nets +$10,819.53 a month, so neither walk ever runs out and the
+ * inside the twelve-month window. On the account this was measured against, the
+ * committed projection nets a positive figure every month, so neither walk
+ * ever runs out and the
  * panel could only ever answer "affordable" — whatever he typed into it. A
  * control that cannot return a second answer is not a control.
  *
