@@ -1,7 +1,7 @@
 import { db } from '@scani/db/connection';
 import type { User } from '@scani/db/schema';
 import * as schema from '@scani/db/schema';
-import type { UpdateUserInput } from '@scani/shared';
+import type { ObservedBurnAnswerInput, UpdateUserInput } from '@scani/shared';
 import { eq } from 'drizzle-orm';
 import { Container, Service } from 'typedi';
 import { UserRepository } from '../../repositories/UserRepository';
@@ -62,6 +62,70 @@ export class UserService extends BaseService {
       return { changed: true };
     } catch (error) {
       throw this.handleError(error, 'reportTimezone');
+    }
+  }
+
+  /**
+   * Record what the user says about the MEASURED monthly drain (SC-661):
+   * override it, confirm it, or withdraw whichever they said before.
+   *
+   * ## Why one method and not three
+   *
+   * The three are mutually exclusive and the database enforces it
+   * (`users_observed_burn_one_answer`). Split across three verbs, every one of
+   * them would have to remember to clear the other pair, and forgetting is a
+   * row with two authoritative answers — which is this ticket's own defect
+   * moved into one row. Here the patch is total by construction: all six
+   * columns are written on every call, so there is no path that leaves a stale
+   * half behind.
+   *
+   * ## Why `confirm` stores the value
+   *
+   * Not for the record. It is the amount that must STILL MATCH for the
+   * confirmation to mean anything — the drain is recomputed whenever the window
+   * moves, and a confirmation kept as a bare timestamp goes on reading as
+   * agreement after the figure it agreed with has changed. That is the same
+   * defect SC-673 is fixing one layer up, where `answerSourceOf` infers who
+   * answered from a timestamp.
+   *
+   * The timestamp is re-stamped even when nothing changed: it records when the
+   * user last stood behind the answer, not when the answer last differed.
+   */
+  async setObservedBurnAnswer(userId: string, input: ObservedBurnAnswerInput): Promise<User> {
+    try {
+      const existingUser = await this.userRepository.findById(userId);
+      this.assertExists(existingUser, `User with ID ${userId} not found`);
+
+      const cleared = {
+        observedBurnOverride: null,
+        observedBurnOverrideCurrencyId: null,
+        observedBurnOverrideAt: null,
+        observedBurnConfirmedValue: null,
+        observedBurnConfirmedCurrencyId: null,
+        observedBurnConfirmedAt: null,
+      };
+      const patch =
+        input.kind === 'override'
+          ? {
+              ...cleared,
+              observedBurnOverride: input.amount,
+              observedBurnOverrideCurrencyId: input.currencyTokenId,
+              observedBurnOverrideAt: new Date(),
+            }
+          : input.kind === 'confirm'
+            ? {
+                ...cleared,
+                observedBurnConfirmedValue: input.value,
+                observedBurnConfirmedCurrencyId: input.currencyTokenId,
+                observedBurnConfirmedAt: new Date(),
+              }
+            : cleared;
+
+      const updated = await this.userRepository.update(userId, patch);
+      this.assertExists(updated, 'Failed to record the observed-burn answer');
+      return updated;
+    } catch (error) {
+      throw this.handleError(error, 'setObservedBurnAnswer');
     }
   }
 
