@@ -22,9 +22,9 @@
  * account-wide (SC-128) the local suite is the only signal a PR gets and
  * serialising the machine would mean never gating two branches at once.
  *
- * `scripts/gate-db.ts` already gives each run its own `scani_gate_<pid>`
- * database, so two gates never contend and this guard never fires for them.
- * It fires for the bare `bun run test` path, which is the one that shares.
+ * A run given a database of its own never contends, so this guard never fires
+ * for one. It fires for the bare `bun run test` path, which is the one that
+ * shares whatever DATABASE_URL already points at.
  *
  * A session-level advisory lock rather than a row or a lock file: it is
  * atomic against a simultaneous start, it is scoped to the DATABASE (so a
@@ -76,8 +76,12 @@ export function busyMessage(url: string, holder: SuiteHolder | null): string {
     "to a run: whole-table counts see the neighbour's committed rows, and the\n" +
     "portfolio rollup takes advisory locks on the neighbour's fixture users\n" +
     '(SC-370, SC-372). A failure would be yours or theirs with no way to tell.\n\n' +
-    'Give this run its own database — two gates can then run at once:\n' +
-    '  bun scripts/gate-db.ts -- bun run test\n\n' +
+    'Give this run its own database — two runs can then go at once. Any empty\n' +
+    'database this run can reach will do; the lines below are the compose route\n' +
+    'this repo ships:\n' +
+    '  docker compose exec -T postgres createdb -U scani scani_test_$$\n' +
+    '  DATABASE_URL=postgres://scani:scani@localhost:5433/scani_test_$$ \\\n' +
+    '    bun run db:migrate && bun run test\n\n' +
     'To share the database deliberately: SCANI_ALLOW_SHARED_TEST_DB=1\n'
   );
 }
@@ -143,11 +147,11 @@ export async function acquireSuiteLock(
  * WHY THIS EXISTS (SC-399). `bun test` sets `NODE_ENV=test` itself, but only
  * when nothing already set it — and a WRAPPER can set it without meaning to.
  * Bun auto-loads a root `.env` into every program it starts, `.env.example`
- * (the file the quick start says to copy) sets `NODE_ENV=development`, and
- * `scripts/gate-db.ts` is a plain `bun` program. So the gate loads
- * `development` into its own environment, spawns `bun run test` with it
- * inherited as a real variable, and the runner's own default never applies.
- * The whole suite then runs in DEVELOPMENT mode.
+ * (the file the quick start says to copy) sets `NODE_ENV=development`. Any
+ * wrapper that is itself a `bun` program therefore loads `development` into
+ * its own environment, spawns `bun run test` with it inherited as a real
+ * variable, and the runner's own default never applies. The whole suite then
+ * runs in DEVELOPMENT mode.
  *
  * That is not cosmetic. `@scani/logging` picks its default level off the same
  * variable, so `loadLoggingConfig({}).level` is `debug` under development and
@@ -158,9 +162,9 @@ export async function acquireSuiteLock(
  * Two traps in verifying it, both of which report green:
  *   - `bun test <that file>` is unwrapped, so the runner's default applies.
  *   - a bare `bun run test` is too: measured 2026-08-19, `bun run` does not
- *     promote a `.env` value over the runner's default. Only the extra `bun`
- *     process in front — the gate — does. Verifying without the gate cannot
- *     see this bug, and the gate is the command everyone is told to run.
+ *     promote a `.env` value over the runner's default. Only an extra `bun`
+ *     process in front does, so verifying without such a wrapper cannot see
+ *     this bug at all.
  *
  * `.github/workflows/ci.yml` sets `NODE_ENV: test` for the test job, so `test`
  * is what the suite is specified to run under; the root `test` script now
@@ -185,9 +189,10 @@ export function nodeEnvRefusal(value: string | undefined): string | null {
     'The usual cause is a root `.env` — every checkout has one now, written\n' +
     'from `.env.example` by scripts/sync-env.ts, and that file sets\n' +
     'NODE_ENV=development (SC-474). Bun loads it into any\n' +
-    'program it starts, including the gate wrapper, which then passes it down\n' +
-    "as a real variable and suppresses `bun test`'s own NODE_ENV=test default.\n\n" +
-    'Run the suite the way CI does:\n' +
-    '  bun scripts/gate-db.ts -- bun run test\n'
+    'program it starts, including any wrapper that is itself a `bun` program,\n' +
+    'which then passes it down as a real variable and suppresses\n' +
+    "`bun test`'s own NODE_ENV=test default.\n\n" +
+    'Run the suite the way CI does — the root `test` script pins the value:\n' +
+    '  bun run test\n'
   );
 }
