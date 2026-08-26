@@ -78,8 +78,24 @@ jobs:
           script: |
             const dispatched = (context.payload.inputs && context.payload.inputs.head || '').trim();
             if (dispatched) {
-              core.info(`dispatched: checking ${dispatched}`);
-              core.setOutput('sha', dispatched);
+              // Expanded, not used as typed. `actions/checkout` and the statuses
+              // API both refuse an abbreviated sha — checkout dies and
+              // createCommitStatus answers 422 `Sha must be a valid hex object
+              // ID`. Measured on the first control run of this file, dispatched
+              // at `6e86a6b81`. Resolving through the API also accepts a tag or
+              // a branch name, which a hex-length check would have rejected.
+              let resolved;
+              try {
+                const commit = await github.rest.repos.getCommit({
+                  owner: context.repo.owner, repo: context.repo.repo, ref: dispatched,
+                });
+                resolved = commit.data.sha;
+              } catch (error) {
+                core.setFailed(`dispatched head \`${dispatched}\` does not resolve to a commit in this repository: ${error.message}`);
+                return;
+              }
+              core.info(`dispatched: ${dispatched} resolves to ${resolved}`);
+              core.setOutput('sha', resolved);
               core.setOutput('found', 'yes');
               return;
             }
@@ -157,11 +173,20 @@ jobs:
           script: |
             const rc = '${{ steps.check.outputs.rc }}';
             const state = rc === '0' ? 'success' : 'failure';
+            // An EMPTY rc is the check step never having run — a step above it
+            // failed, or the job was cancelled. It is not a shortfall, and
+            // saying it is sends the reader hunting for a missing changelog
+            // entry that does not exist. Measured: the first control run of
+            // this file reported `A releasable commit has no entry` for a run
+            // whose checkout had died, which is this workflow's own bug
+            // reproduced inside it.
             const description = rc === '0'
               ? 'Every releasable commit has a release note'
-              : rc === '3'
-                ? 'BLIND — no comparison was made; this is not a pass'
-                : 'A releasable commit has no entry in the release notes';
+              : rc === ''
+                ? 'BLIND — the check never ran; this is not a pass'
+                : rc === '3'
+                  ? 'BLIND — no comparison was made; this is not a pass'
+                  : 'A releasable commit has no entry in the release notes';
             await github.rest.repos.createCommitStatus({
               owner: context.repo.owner,
               repo: context.repo.repo,
