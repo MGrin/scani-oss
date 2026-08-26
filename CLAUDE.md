@@ -546,13 +546,42 @@ bun dev:stack          # runs scripts/sync-env.ts, then `docker compose --profil
 bun dev:stack:down     # stops and removes compose containers (volumes preserved)
 ```
 
-Infra only (run `bun dev` for apps on the host against containerized services):
+Infra only — Postgres, Redis, MinIO and Mailpit and nothing else. This is
+the right stack for **running the test suite**, and for `bun dev` against
+containerized services:
 
 ```bash
-docker compose up -d postgres redis mailpit minio
+bun dev:stack:infra    # sync-env, then `docker compose up -d --build --wait`
 bun install
 bun dev                # api + frontend/app concurrently; other apps via bun dev:worker / dev:data-provider
 ```
+
+`bun run test` reaches those four and never touches a vite dev server, the
+api or the worker — so a gate run on the full stack idles the rest hot for
+its whole duration. Measured during a live gate, the three largest consumers
+on a 10-core box were the frontend dev servers this mode omits (SC-706).
+
+**Do not reach for `docker compose up -d postgres redis mailpit minio`,
+which is what this section used to say.** It is not merely undocumented, it
+is worse than the waste it saves, and it fails in two ways that are not
+alike:
+
+- **Silent, and it reaches outside your worktree.** It exports nothing, so
+  compose takes the project name from the directory leaf — `scani` in every
+  linked worktree — and a second `up` does not conflict with the first, it
+  **adopts and recreates** the primary checkout's containers (SC-491).
+- **Loud and safe.** It publishes `${POSTGRES_HOST_PORT:-5433}`, while
+  `gate-db` derives its own port from a sha256 over this worktree's absolute
+  path. The gate then finds nothing there and refuses with exit 3, NO TESTS
+  RAN.
+
+Only the second one tells you. `bun dev:stack:infra` makes both impossible
+because it is the one place the project name and every derived port are
+computed together — the same code path `bun dev:stack` uses. If you must run
+compose by hand, `export $(bun scripts/dev-stack.ts env | xargs)` first.
+
+`bun dev:stack:down` tears down either mode; it does not need to know which
+one you started.
 
 ### Mail in dev
 
