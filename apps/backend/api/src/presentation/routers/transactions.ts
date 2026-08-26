@@ -13,6 +13,7 @@
 
 import { db } from '@scani/db/connection';
 import * as schema from '@scani/db/schema';
+import { USER_ENTERED_SOURCE } from '@scani/domain/lib/transfer-matching';
 import {
   HoldingCoverageRepository,
   HoldingTransactionRepository,
@@ -136,7 +137,7 @@ export const transactionsRouter = router({
         feeTokenId: input.feeTokenId ?? null,
         occurredAt: input.occurredAt,
         externalId,
-        source: 'user-entered',
+        source: USER_ENTERED_SOURCE,
         sourceMetadata: input.note ? { note: input.note } : {},
       },
     ]);
@@ -159,7 +160,7 @@ export const transactionsRouter = router({
         and(
           eq(schema.holdingTransactions.id, input.id),
           eq(schema.holdingTransactions.userId, dbUser.id),
-          eq(schema.holdingTransactions.source, 'user-entered')
+          eq(schema.holdingTransactions.source, USER_ENTERED_SOURCE)
         )
       )
       .limit(1);
