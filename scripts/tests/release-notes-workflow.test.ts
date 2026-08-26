@@ -97,6 +97,32 @@ describe('the verdict reaches the release pull request', () => {
   });
 });
 
+describe('an unmeasured run does not wear a measured verdict', () => {
+  /**
+   * The check step is skipped when a step above it fails, and its `rc` output
+   * is then the empty string. Reporting that as `A releasable commit has no
+   * entry in the release notes` is this workflow's own defect reproduced
+   * inside it — a verdict about a comparison that never happened, sending the
+   * reader to hunt a missing changelog entry that does not exist. Measured on
+   * the first control run: checkout died and the status said exactly that.
+   *
+   * It stays RED either way. What is pinned here is that it says which.
+   */
+  test('an empty rc is reported as BLIND, not as a shortfall', async () => {
+    const chained = await read('.github/workflows/release-notes.yml');
+    expect(chained).toMatch(/rc === ''\s*\n?\s*\?\s*'BLIND[^']*'/);
+  });
+
+  test('exit 3 is reported as BLIND, not as a pass', async () => {
+    const chained = await read('.github/workflows/release-notes.yml');
+    expect(chained).toMatch(/rc === '3'/);
+    expect(chained).toContain('BLIND');
+    // Must-be-ABSENT: blind mapping to a green state is the failure this whole
+    // file is about, one level up.
+    expect(chained).not.toMatch(/rc === '3'[\s\S]{0,80}?'success'/);
+  });
+});
+
 describe('the control that keeps it demonstrable', () => {
   /**
    * A guard nobody has seen refuse is one nobody has seen work. The dispatch
@@ -109,6 +135,22 @@ describe('the control that keeps it demonstrable', () => {
     expect(chained).toContain('workflow_dispatch:');
     expect(chained).toContain('inputs:');
     expect(chained).toMatch(/head:\s*\n\s*description:/);
+  });
+
+  /**
+   * BOTH OF THESE WERE FOUND BY RUNNING THE CONTROL, not by review, and the
+   * first control run failed on them.
+   *
+   * `actions/checkout` and the statuses API both refuse an abbreviated sha:
+   * checkout dies, and `createCommitStatus` answers 422 `Sha must be a valid
+   * hex object ID`. `6e86a6b81` — the obvious thing to paste, and what the
+   * comment in the workflow suggests — is nine characters.
+   */
+  test('a dispatched head is resolved to a full sha rather than used as typed', async () => {
+    const chained = await read('.github/workflows/release-notes.yml');
+    expect(chained).toContain('github.rest.repos.getCommit(');
+    // Must-be-ABSENT: the raw input reaching setOutput('sha') is the bug.
+    expect(chained).not.toMatch(/setOutput\('sha',\s*dispatched\)/);
   });
 
   // The denominator: "no open release pull request" must not read like a pass
