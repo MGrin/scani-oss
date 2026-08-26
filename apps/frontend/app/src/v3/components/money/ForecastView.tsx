@@ -704,8 +704,61 @@ function BurnProvenance({ burn }: { burn: NonNullable<ForecastData['observedBurn
   // says nothing rather than reporting three confident zeroes.
   if (total.lessThanOrEqualTo(0)) return null;
 
-  const pct = (amount: string): string =>
-    new Decimal(amount).dividedBy(total).times(100).toFixed(0);
+  /**
+   * THE GUARD IS ON THE AMOUNT AND THE SENTENCE PRINTS A PERCENT, WHICH ARE
+   * DIFFERENT QUANTITIES (SC-661, found by reading the DEPLOYED chunk rather
+   * than the source).
+   *
+   * Every class below renders when its amount is `> 0`. Rounded to whole
+   * percent, an amount that is positive but under half a percent of the total
+   * printed "0% of that value rests on answers you gave." — a measurement
+   * asserting zero, which is strictly worse than the silence the guard was
+   * written to produce. Absent says nothing; `0%` says something false.
+   *
+   * `<1` rather than raising the guard, because suppressing a small class
+   * asserts it contributed NOTHING, which is the same false claim in the other
+   * direction. Absent stays reserved for a class that is genuinely empty.
+   *
+   * It could not appear on the book this shipped against: `automated` is
+   * exactly 0 there, so it takes the null branch. The case that separates
+   * "renders when the amount is > 0" from "renders when the PRINTED figure is
+   * > 0" needs a value both positive and tiny, and that book has none — which
+   * is why this survived to production and why the test below constructs one.
+   *
+   * THE ARGUMENT IS ALREADY IN THIS REPO AND SHIPPED. `format/precision.ts`
+   * (SC-567) on dust quantities: "WHAT MAY NOT HAPPEN ON EITHER IS `0`. That
+   * is not a rounding of a small position, it is a different claim — that the
+   * position is empty". Its `vanishesAt(absolute, decimals)` is this predicate
+   * with one argument different; kept local rather than exported, because
+   * exporting a predicate to serve one caller is how a shared module accretes.
+   *
+   * THE OBVIOUS OBJECTION IS ON THE RECORD THERE, AND IT DOES NOT REACH HERE.
+   * That same file REFUSES a `<0.01` marker for money, because a statement's
+   * reader multiplies unit price by quantity and checks it against the row
+   * total, and a threshold cannot be multiplied out. Nobody multiplies these
+   * three percentages by anything — they are captions, not factors in any
+   * arithmetic on this screen.
+   *
+   * Triggered on the printed string rather than a numeric threshold. Today
+   * `lessThan(0.5)` would agree with it exactly: `decimal.ts:12` sets
+   * `rounding: ROUND_HALF_UP` project-wide, so there is no live boundary bug
+   * and this is not fixing one. It is written this way so it cannot drift from
+   * a global someone changes later — comparing the output to `'0'` is what
+   * would have printed, rather than a second model of it.
+   *
+   * KNOWN CEILING, deliberately not fixed: three independently rounded shares
+   * can print 99 or 101. They are three separate sentences that never claim to
+   * total 100, and largest-remainder apportionment to make captions add up
+   * costs more than the artefact. `<1` also carries its own approximation on
+   * its face, so the reader most likely to add them up is already told not to
+   * expect exactness. Revisit if the shares are ever itemised into one line
+   * that does claim it.
+   */
+  const pct = (amount: string): string => {
+    const share = new Decimal(amount).dividedBy(total).times(100);
+    const printed = share.toFixed(0);
+    return printed === '0' && share.greaterThan(0) ? '<1' : printed;
+  };
 
   return (
     <div className="flex flex-col gap-1 border-t border-dashed border-border pt-2">
