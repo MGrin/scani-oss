@@ -23,7 +23,7 @@ import {
  *
  * Every test works inside its own schema, so the suite can run against the
  * same database as everything else — including the already-migrated scratch
- * database `scripts/gate-db.ts` hands it.
+ * database a per-run gate hands it.
  */
 const DATABASE_URL = process.env.DATABASE_URL;
 
@@ -366,8 +366,8 @@ describe('driftRefusalMessage', () => {
 
   test('names a remedy that replaces the database rather than its record', () => {
     const message = driftRefusalMessage(drift, []);
-    expect(message).toContain('bun scripts/gate-db.ts');
-    expect(message).toContain('bun run db:new');
+    expect(message).toContain('bun run db:migrate && bun run test');
+    expect(message).toContain('cd packages/infra/db && bun run db:new');
     // Never suggest editing what the database recorded — that is the thing
     // this check measures, and the workaround it has to displace.
     expect(message).not.toContain('__scani_migrations');
@@ -375,7 +375,7 @@ describe('driftRefusalMessage', () => {
 
   test('leads with the recovery the reader can take alone (SC-431)', () => {
     const message = driftRefusalMessage(drift, []);
-    expect(message).toContain('bun run db:dev -- --reset');
+    expect(message).toContain('createdb -U scani');
     // The shared compose database is named so the reader knows which one they
     // are on, but dropping it is never offered as a command to run: it is a
     // claim about everyone connected to it, and since SC-429 nothing needs it.

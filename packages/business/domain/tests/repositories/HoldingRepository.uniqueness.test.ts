@@ -13,7 +13,7 @@ import { makeAccount, makeHolding, makeToken } from '../../test/helpers/factorie
 // unique index over a populated table succeeds exactly when no existing row
 // violates it, so "can these rows be inserted under the index" and "would
 // CREATE UNIQUE INDEX have survived this population" are the same predicate.
-// `bun scripts/gate-db.ts` migrates from empty and never exercises either.
+// A test database migrated from empty never exercises either.
 //
 // The shapes below are transcribed from production on 2026-08-17, because the
 // two shapes the constraint has to tell apart both look like duplicates from
