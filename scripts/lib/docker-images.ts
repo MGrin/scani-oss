@@ -103,8 +103,13 @@ const NUMBER_WORDS = [
   'ten',
 ] as const;
 
-/** `scani/api`, never `scani/*` or `scani/${{ matrix.image }}`. */
-const IMAGE_MENTION = /\bscani\/([a-z0-9][a-z0-9-]*)/g;
+/**
+ * `scani/api`, never `scani/*`, `scani/${{ matrix.image }}` — and never the
+ * WORKSPACE package `@scani/db`, which is not an image and shares every other
+ * character. `docker-compose.prod.yml` mentions one in a comment beside five
+ * real image references, so this is a live shape rather than a hypothetical.
+ */
+const IMAGE_MENTION = /(?<!@)\bscani\/([a-z0-9][a-z0-9-]*)/g;
 
 const COUNT_CLAIM = new RegExp(
   `\\b(${NUMBER_WORDS.join('|')})\\b\\s+(?:\`?scani[/*\`]*\`?\\s+|Scani\\s+)?(?:images?|repos?)\\b`,
