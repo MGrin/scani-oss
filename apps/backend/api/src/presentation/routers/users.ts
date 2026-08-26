@@ -3,7 +3,7 @@ import { USER_DATA_DELETE } from '@scani/jobs';
 import { createComponentLogger } from '@scani/logging';
 import { BullMqEnqueueService } from '@scani/queue';
 import { emitEntityChange } from '@scani/realtime';
-import { ReportTimezoneDto, UpdateUserDto } from '@scani/shared';
+import { ObservedBurnAnswerDto, ReportTimezoneDto, UpdateUserDto } from '@scani/shared';
 import { Container } from 'typedi';
 import { z } from 'zod';
 import { requireAuth } from '../middleware/auth';
@@ -66,6 +66,36 @@ export const usersRouter = router({
     }
     return result;
   }),
+
+  /**
+   * Override the measured monthly drain, confirm it, or withdraw either
+   * (SC-661).
+   *
+   * Emits `user:update` for the same reason a base-currency change does: this
+   * governs the runway on Home and the affordability answer in Money, so every
+   * open tab is showing a stale conclusion the instant it lands. Unlike
+   * `reportTimezone` this is one deliberate act by a person, not a report fired
+   * on every page load, so the cost of the broadcast is not a concern.
+   *
+   * `confirm` echoes back the figure the surface DISPLAYED rather than letting
+   * the server re-derive it. The user agreed with what they were shown, and the
+   * server recomputing at write time could store agreement with a number nobody
+   * ever saw.
+   */
+  setObservedBurnAnswer: protectedProcedure
+    .input(ObservedBurnAnswerDto)
+    .mutation(async ({ input, ctx }) => {
+      const { dbUser } = await requireAuth(ctx);
+      const updated = await Container.get(UserService).setObservedBurnAnswer(dbUser.id, input);
+      emitEntityChange({
+        entityType: 'user',
+        operationType: 'update',
+        entityId: dbUser.id,
+        userId: dbUser.id,
+        metadata: { source: 'observed-burn-answer', kind: input.kind },
+      });
+      return updated;
+    }),
 
   // Get supported fiat currencies (tokens) for base currency selection
   getSupportedCurrencies: protectedProcedure.query(async () => {
