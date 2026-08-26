@@ -1,6 +1,6 @@
 import { db } from '@scani/db/connection';
 import * as schema from '@scani/db/schema';
-import { answerSourceOf } from '@scani/shared';
+import { mayBeUserAnswer, unstampedAnswerRefusal } from '@scani/shared';
 import Decimal from 'decimal.js';
 import { eq } from 'drizzle-orm';
 import Container, { Service } from 'typedi';
@@ -221,8 +221,8 @@ function verdict(
   // different mandate. `answerSourceOf` rather than a local reading of the two
   // columns, so this refusal and the queue's own attribution can never drift
   // apart (SC-350).
-  if (answerSourceOf(tx) === 'user') {
-    return blocked('answered by a person — this repair does not overrule a stamped answer');
+  if (mayBeUserAnswer(tx)) {
+    return blocked(unstampedAnswerRefusal(tx, 'overrule'));
   }
   if (tx.transferGroupId !== null) {
     return blocked(`already carries transfer_group_id ${tx.transferGroupId}`);

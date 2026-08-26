@@ -9,11 +9,14 @@ import {
   bulkTransferEntriesSchema,
   isBulkEligibleAnswer,
   MAX_TRANSFER_REVIEW_PORTIONS,
+  mayBeUserAnswer,
+  RULE_ANSWER_SOURCE,
   splitSumMatches,
   splitTotal,
   TRANSFER_REVIEW_SPLIT,
   transferReviewSplitSchema,
   undoEntriesFor,
+  unstampedAnswerRefusal,
 } from '../../src/dtos/transfer-review';
 
 /**
@@ -201,35 +204,59 @@ describe('transferReviewSplitSchema — moving to a holding Scani tracks', () =>
  * about who decided.
  */
 describe('answerSourceOf', () => {
-  test('a stamped row with no source is `user` — the whole existing corpus', () => {
-    // The column is NULL on every row that predates it, and adding it must not
-    // change one row's provenance.
-    expect(answerSourceOf({ transferReviewSource: null, transferReviewedAt: new Date() })).toBe(
-      'user'
-    );
+  /**
+   * THE TEST THAT USED TO LIVE HERE PINNED THE BUG, AND ITS REASONING WAS SOUND
+   * (SC-673).
+   *
+   * It read *"a stamped row with no source is `user` — the whole existing
+   * corpus"*, justified as: *"the column is NULL on every row that predates it,
+   * and adding it must not change one row's provenance."* On the day it was
+   * written that was right and about 99.8% accurate — 560 of 561 answered rows
+   * carried no timestamp (SC-324), and every write path set both columns
+   * together, so *stamped* and *a person answered* picked out the same rows.
+   *
+   * Rows then acquired timestamps without sources and the predicate inverted,
+   * silently, because nothing in it was ever a statement about authorship.
+   * Measured on production 2026-08-26: 79.6% of observed burn by value read as
+   * `user`; 23.7% carried a user stamp.
+   *
+   * Which is why the tests below assert a PROPERTY rather than a corpus. A test
+   * written against the shape of today's data is a test that expires when the
+   * data moves, and gives no sign that it has.
+   */
+  test('a stamped row with no source is NOT the user — the timestamp says when, never who', () => {
+    expect(answerSourceOf({ transferReviewSource: null })).toBe('unattributed');
   });
 
   test('an unstamped row with no source is `unattributed`', () => {
     // The 560-row raw UPDATE of 2026-08-14. Not `import` and not `machine`:
     // the database does not say who, and that is the whole claim.
-    expect(answerSourceOf({ transferReviewSource: null, transferReviewedAt: null })).toBe(
-      'unattributed'
-    );
+    expect(answerSourceOf({ transferReviewSource: null })).toBe('unattributed');
   });
 
-  test('`repair` wins over the timestamp that would otherwise read as `user`', () => {
-    // The correction is stamped — WHEN it happened is not in dispute — so
-    // deriving from the timestamp alone would forge the user's answer, which is
-    // the exact failure this value exists to prevent.
-    expect(answerSourceOf({ transferReviewSource: 'repair', transferReviewedAt: new Date() })).toBe(
-      'repair'
-    );
+  test('`repair` and `rule` are reported as themselves', () => {
+    expect(answerSourceOf({ transferReviewSource: 'repair' })).toBe('repair');
+    expect(answerSourceOf({ transferReviewSource: RULE_ANSWER_SOURCE })).toBe('rule');
   });
 
-  test('an explicit `user` source agrees with the timestamp fallback', () => {
-    expect(answerSourceOf({ transferReviewSource: 'user', transferReviewedAt: new Date() })).toBe(
-      'user'
-    );
+  test('`user` requires the source column to say so', () => {
+    expect(answerSourceOf({ transferReviewSource: 'user' })).toBe('user');
+  });
+
+  /**
+   * THE DURABLE ONE. Every test above is about a value; this is about what the
+   * function is allowed to look at, and it cannot expire with the data.
+   *
+   * The signature carries only `transferReviewSource`, so the timestamp is not
+   * merely unread — it is out of scope, and restoring the old fallback would
+   * have to widen the parameter first. This asserts the consequence anyway, in
+   * case someone widens it: an unrecognised source is `unattributed` whatever
+   * else is true of the row.
+   */
+  test('no source value outside the known set is ever promoted to an attribution', () => {
+    for (const source of ['', 'import', 'migration', 'USER', 'User', 'sc-380', 'bulk']) {
+      expect(answerSourceOf({ transferReviewSource: source })).toBe('unattributed');
+    }
   });
 
   test('nothing can assert `unattributed` — it is a conclusion, not a claim', () => {
@@ -237,6 +264,93 @@ describe('answerSourceOf', () => {
     for (const attribution of ANSWER_ATTRIBUTIONS) {
       expect(ANSWER_SOURCES).toContain(attribution);
     }
+  });
+});
+
+/**
+ * The conservative reading, for writers (SC-673).
+ *
+ * `answerSourceOf` and the three repair guards shared one predicate, and they
+ * want opposite things from the same uncertainty: a display must not CLAIM the
+ * user answered when it cannot tell, and a writer must not OVERRULE a person,
+ * so it has to refuse in exactly that case.
+ *
+ * Making the display honest without this would have handed the repairs a
+ * licence they never had — the stamped-but-unsourced rows would move from
+ * `user` (refuse) to `unattributed` (act), and a repair would begin rewriting
+ * rows that may well be a person's answer with the stamp lost. That is worse
+ * than mislabelling them, because a rewrite is not recoverable.
+ *
+ * So the refusal set here is asserted to be IDENTICAL to the one in force
+ * before SC-673, on all four shapes.
+ */
+describe("mayBeUserAnswer — the writers' predicate is unchanged by SC-673", () => {
+  const STAMPED = new Date('2026-08-17T00:00:00Z');
+
+  test('a stamped user answer is refused', () => {
+    expect(mayBeUserAnswer({ transferReviewSource: 'user', transferReviewedAt: STAMPED })).toBe(
+      true
+    );
+  });
+
+  test('a review timestamp with no source is refused — it MAY be a person', () => {
+    // SC-324 is explicit that this is not a claim nobody decided. The display
+    // says the database cannot tell; the writer treats that as a reason to stop.
+    expect(mayBeUserAnswer({ transferReviewSource: null, transferReviewedAt: STAMPED })).toBe(true);
+  });
+
+  test('no source and no timestamp is NOT refused — these are what the repairs exist for', () => {
+    // SC-324's 560 rows. Refusing here would silently narrow every repair to
+    // nothing, which is the failure mode opposite to the one SC-673 fixes.
+    expect(mayBeUserAnswer({ transferReviewSource: null, transferReviewedAt: null })).toBe(false);
+  });
+
+  test('a machine-attributed answer is not refused, stamped or not', () => {
+    expect(mayBeUserAnswer({ transferReviewSource: 'repair', transferReviewedAt: STAMPED })).toBe(
+      false
+    );
+    expect(
+      mayBeUserAnswer({ transferReviewSource: RULE_ANSWER_SOURCE, transferReviewedAt: STAMPED })
+    ).toBe(false);
+  });
+
+  /**
+   * The two functions disagree on exactly one shape, and that disagreement is
+   * the entire point of there being two. If they ever agree everywhere, one of
+   * them has been rewritten in terms of the other and the guard is gone.
+   */
+  test('display and writer disagree on precisely the stamped-unsourced row', () => {
+    const shapes = [
+      { transferReviewSource: 'user', transferReviewedAt: STAMPED },
+      { transferReviewSource: null, transferReviewedAt: STAMPED },
+      { transferReviewSource: null, transferReviewedAt: null },
+      { transferReviewSource: 'repair', transferReviewedAt: STAMPED },
+    ];
+    const disagreements = shapes.filter(
+      (row) => (answerSourceOf(row) === 'user') !== mayBeUserAnswer(row)
+    );
+    expect(disagreements).toEqual([{ transferReviewSource: null, transferReviewedAt: STAMPED }]);
+  });
+});
+
+describe('unstampedAnswerRefusal names which evidence it has', () => {
+  test("a stamped answer is refused as a person's", () => {
+    expect(
+      unstampedAnswerRefusal(
+        { transferReviewSource: 'user', transferReviewedAt: new Date() },
+        'overrule'
+      )
+    ).toContain('answered by a person');
+  });
+
+  test('an unsourced one says so, rather than claiming a person answered', () => {
+    const message = unstampedAnswerRefusal(
+      { transferReviewSource: null, transferReviewedAt: new Date() },
+      'withdraw'
+    );
+    expect(message).toContain('no source');
+    expect(message).toContain('withdraw');
+    expect(message).not.toContain('answered by a person');
   });
 });
 

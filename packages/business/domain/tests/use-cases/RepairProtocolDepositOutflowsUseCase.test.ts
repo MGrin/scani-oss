@@ -298,13 +298,30 @@ describe('RepairProtocolDepositOutflowsUseCase — deriving the decision', () =>
 });
 
 describe('RepairProtocolDepositOutflowsUseCase — the refusals', () => {
-  test('BLOCKS a row a person answered, identified by its timestamp', async () => {
+  /**
+   * STILL BLOCKED, FOR AN HONEST REASON NOW (SC-673).
+   *
+   * This test was titled *"BLOCKS a row a person answered, identified by its
+   * timestamp"* — and the row's timestamp is the only evidence there is. It was
+   * a fair reading when written, because every write path stamped both columns
+   * and 560 of 561 answered rows had no timestamp at all (SC-324), so *stamped*
+   * and *a person answered* were the same set. Rows later acquired timestamps
+   * without sources and the two came apart.
+   *
+   * **The refusal must not change.** A row that may be a person's answer is one
+   * a repair must leave alone, and the fix to the DISPLAY had to not become a
+   * licence for the WRITER — see `mayBeUserAnswer`. What changes is only the
+   * sentence: the repair no longer tells the reader a person answered when what
+   * it has is a date.
+   */
+  test('BLOCKS a row with a review timestamp and no source, saying which it has', async () => {
     const f = fixture!;
     await insertWrap(f, { reviewedAt: new Date('2026-08-17T08:31:00Z') });
 
     const plans = await useCase().plansFor(f.userId);
     expect(plans[0]?.action).toBe('blocked');
-    expect(plans[0]?.blockedReason).toContain('answered by a person');
+    expect(plans[0]?.blockedReason).toContain('no source');
+    expect(plans[0]?.blockedReason).not.toContain('answered by a person');
   });
 
   test('BLOCKS a row a person answered, identified by its source', async () => {

@@ -391,11 +391,26 @@ export function splitTotal(split: readonly TransferReviewSplitPortion[]): Decima
 /**
  * Where an answer came from (SC-241).
  *
- * `user` is a positive claim and is provable: `transfer_reviewed_at` is written
- * in exactly two places, both inside `TransferReviewService`, both behind an
- * authenticated session, and the column arrived in the same commit as the queue
- * itself — so a stamped row was answered by the caller, in the queue, on that
- * date. There has never been a version that answered without stamping.
+ * `user` is a positive claim and is provable — **from
+ * `transfer_review_source`, and from nothing else** (SC-673).
+ *
+ * This paragraph used to prove it from the TIMESTAMP: *"`transfer_reviewed_at`
+ * is written in exactly two places, both inside `TransferReviewService`, both
+ * behind an authenticated session … so a stamped row was answered by the
+ * caller, in the queue, on that date."* Every clause of that is still true of
+ * the application, and the conclusion is still false, because it needs one more
+ * premise that was never stated: **that the application is the only writer.**
+ *
+ * It is not. SC-324 measured 560 answered rows written by something outside it
+ * — a hand-run UPDATE, or a version that no longer exists — and rows later
+ * acquired timestamps with no source the same way. Measured on production
+ * 2026-08-26: 79.6% of observed burn by value decoded as `user`; 23.7% carried
+ * a user stamp.
+ *
+ * The lesson is narrower than "the comment was wrong", because it was not. An
+ * argument about what the CODE does cannot establish what is in the DATABASE
+ * while anything else can write to it, and the gap does not announce itself —
+ * the inference stays sound and quietly stops being true.
  *
  * `unattributed` is the contrapositive and nothing more: **no stamp means the
  * answer was not given through the queue.** It does not say who gave it, and
@@ -518,21 +533,104 @@ export const ANSWER_ATTRIBUTIONS = ['user', 'repair'] as const;
 export type AnswerAttribution = (typeof ANSWER_ATTRIBUTIONS)[number];
 
 /**
- * `answerSource` from the two columns that carry it.
+ * `answerSource` from the ONE column that carries it (SC-673).
  *
  * One function because three readers need the same answer — the answered list,
  * the realized ledger, and any repair that has to check its own work — and
  * three copies of a fallback chain is how the middle value gets forgotten in
  * one of them.
+ *
+ * ## Why the timestamp is not a parameter
+ *
+ * It used to be, and the last line read
+ * `row.transferReviewedAt === null ? 'unattributed' : 'user'` — so a row with a
+ * review timestamp and no source was reported as **the user's own answer**, on
+ * no evidence but a date.
+ *
+ * That was ~99.8% accurate on the day it shipped, and the test pinning it said
+ * so: *"the column is NULL on every row that predates it, and adding it must
+ * not change one row's provenance."* At the time 560 of 561 answered rows had
+ * no timestamp (SC-324), and every write path in the application set both
+ * columns together — so *has a timestamp* and *a person answered* were the same
+ * predicate about the same rows.
+ *
+ * Then rows acquired timestamps without sources, and the predicate inverted
+ * with nothing to announce it. Measured on production 2026-08-26, over the 79
+ * `left_control` rows feeding observed burn: **79.6% of the value read as
+ * `user` and 23.7% carried a user stamp.** The 56% difference was this line,
+ * guessing, in the user's favour. The timestamps cluster on three dates, which
+ * is the signature of bulk writes rather than of a person answering.
+ *
+ * So the timestamp is gone from the signature rather than merely unread. A
+ * narrower parameter is what makes the invariant survive the next author: it
+ * cannot be consulted here, whatever tomorrow's data looks like, because it is
+ * not in scope. Callers that need to know WHEN a row was answered already hold
+ * `transferReviewedAt` and can read it directly — it is a fact about time and
+ * was never a fact about authorship.
+ *
+ * **This does not decide whether a person answered those rows** — SC-324 is
+ * explicit that it is not a claim that nobody did. It reports that the database
+ * does not say, which is the only thing the database supports. Where a caller
+ * must be conservative about that uncertainty rather than merely honest about
+ * it, use `mayBeUserAnswer`.
  */
-export function answerSourceOf(row: {
-  transferReviewSource: string | null;
-  transferReviewedAt: Date | null;
-}): AnswerSource {
+export function answerSourceOf(row: { transferReviewSource: string | null }): AnswerSource {
   if (row.transferReviewSource === RULE_ANSWER_SOURCE) return 'rule';
   if (row.transferReviewSource === 'repair') return 'repair';
   if (row.transferReviewSource === 'user') return 'user';
-  return row.transferReviewedAt === null ? 'unattributed' : 'user';
+  return 'unattributed';
+}
+
+/**
+ * Could a person have answered this row? The conservative reading, for writers.
+ *
+ * ## Why this is a second function and not the first one reused
+ *
+ * `answerSourceOf` and the repair guards shared one predicate — every guard
+ * read `answerSourceOf(tx) === 'user'` — and the two want opposite things from
+ * the same uncertainty. A DISPLAY must not claim the user answered when it
+ * cannot tell. A WRITER must not overrule a person, so it must refuse in
+ * exactly the case the display refuses to assert.
+ *
+ * Sharing one predicate meant the display's fallback silently doubled as the
+ * writers' safety margin. Making the display honest without this would have
+ * handed three repairs a licence they never had: the 27 stamped-but-unsourced
+ * rows would move from `user` (refuse) to `unattributed` (act), and a repair
+ * would start rewriting rows that may well be a person's answer with the stamp
+ * lost — which is worse than mislabelling them, because it is unrecoverable.
+ *
+ * So the refusal set is **identical to the one in force before SC-673**, and
+ * this function exists to keep it that way while the label above it changes.
+ * It is deliberately not `answerSourceOf(row) !== 'repair' && !== 'rule'` —
+ * that would also refuse the unstamped rows the repairs were written for
+ * (SC-324's 560), silently narrowing what they can fix.
+ */
+export function mayBeUserAnswer(row: {
+  transferReviewSource: string | null;
+  transferReviewedAt: Date | null;
+}): boolean {
+  if (answerSourceOf(row) === 'user') return true;
+  // Unattributed AND stamped: something answered at a known moment and left no
+  // name. Not evidence a person did — and not evidence one did not.
+  return row.transferReviewSource === null && row.transferReviewedAt !== null;
+}
+
+/**
+ * Why a repair is refusing, in the caller's own verb.
+ *
+ * Beside the predicate rather than in each repair, because the message states
+ * the predicate: three copies would let one of them keep saying "a person
+ * answered" about a row where that is exactly what nobody can establish. The
+ * refusal is the same in both cases; only the evidence behind it differs, and
+ * the reader deciding whether to override needs to know which one they have.
+ */
+export function unstampedAnswerRefusal(
+  row: { transferReviewSource: string | null; transferReviewedAt: Date | null },
+  verb: 'overrule' | 'withdraw'
+): string {
+  return answerSourceOf(row) === 'user'
+    ? `answered by a person — this repair does not ${verb} a stamped answer`
+    : `carries a review timestamp with no source, so it may be a person's answer — this repair does not ${verb} one`;
 }
 
 /**
