@@ -508,6 +508,43 @@ jobs:
 
           echo "✅ No hardcoded secrets detected"
 
+      # SC-658. THE GREP ABOVE PASSES `-I`, WHICH MEANS "SKIP BINARY FILES", AND A
+      # SINGLE NUL BYTE MAKES A FILE BINARY. So a NUL-bearing file is not scanned
+      # for secrets at all, and the skip is SILENT — indistinguishable from a
+      # clean result. Measured on GNU grep 3.11: with `-I`, rc=1 and no output;
+      # without it, grep reports `binary file matches`, which is enough for the
+      # `if` above to fire.
+      #
+      # A NUL reaches a source file by accident more easily than it sounds: a
+      # sentinel constant meant to hold a space held one, and biome, tsgo, the
+      # test suite, the docs checks and the pre-commit hook were all green over
+      # it. Only git objected, printing `Bin 0 -> 6170 bytes` for a `.ts` file.
+      #
+      # THE `-I` IS NOT THE BUG AND MUST NOT BE REMOVED. Dropping it makes this
+      # job read every tracked image looking for key shapes, and a scan that
+      # false-positives is a scan people learn to ignore. `-I` is correct GIVEN an
+      # invariant nothing was enforcing: source files are text. This step enforces
+      # the invariant instead.
+      #
+      # WHY A GATE AND NOT A "scanned N, skipped M" LINE. A count embedded in a
+      # line whose headline number is the one you care about is a number nobody
+      # reads. Riding it on a green secret-scan result would build the blind spot
+      # deliberately. So: silent when there is nothing to say, and the JOB'S OWN
+      # STATUS when there is.
+      #
+      # THE ONE GAP, AND WHAT OPENS IT: the guard reads TRACKED files, and this
+      # job is `checkout` then `grep` with no install and no build, so the tree at
+      # scan time IS the tracked set and the two are identical. ADD A BUILD OR
+      # INSTALL STEP ABOVE THE GREP AND THAT STOPS BEING TRUE — a generated,
+      # untracked, NUL-bearing file would be skipped by the grep and invisible to
+      # this guard. If you are adding such a step, that is the thing to fix.
+      - uses: ./.github/actions/setup-bun
+        with:
+          # The guard imports nothing but node builtins.
+          install: "false"
+      - name: No tracked source file is invisible to the scan above
+        run: bun scripts/check-nul-bytes.ts
+
   # Single required status check named in the `main-protection` ruleset.
   # Always runs (so docs-only PRs don't trip "skipped == failed" gating)
   # and fails only when an upstream job actually failed or was cancelled.
