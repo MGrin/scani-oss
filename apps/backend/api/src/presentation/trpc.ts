@@ -12,6 +12,7 @@ import { initTRPC, TRPCError } from '@trpc/server';
 import type { FetchCreateContextFnOptions } from '@trpc/server/adapters/fetch';
 import type { BetterAuthInstance } from '../auth/better-auth';
 import { isDemoMode } from '../config/demo';
+import { unrecognizedKeysFrom } from './lib/strict-input';
 import { type AuthContext, createAuthContext } from './middleware/auth';
 
 const trpcLogger = createComponentLogger('trpc');
@@ -165,6 +166,51 @@ const t = initTRPC.context<Context>().create({
 // using runWithRequestCacheAsync() wrapper around the tRPC handler.
 // This ensures ALL procedures in a batched request share the same cache.
 
+/**
+ * Surface an unknown-parameter refusal, which nothing else here would (SC-675).
+ *
+ * WHERE IT HAD TO GO, AND WHY THE OBVIOUS PLACE IS WRONG. tRPC v10 middlewares
+ * do not THROW a failed `next()` — they return `{ ok: false, error }`. So the
+ * `catch` block below, which is where this was written first and where every
+ * instinct puts it, is a place an input-parse failure never reaches. It was
+ * caught by checking that the log line actually appeared after a live refusal
+ * rather than by reading the code, which is the only way this kind of miss is
+ * ever caught: a hook that never fires and an event that never happens produce
+ * the same silence.
+ *
+ * An `unrecognized_keys` refusal is a `BAD_REQUEST` and `isExpectedClientError`
+ * skips every 4xx before Sentry — correctly, so ordinary client faults do not
+ * drown real server errors. This one does not belong in that class: it says a
+ * caller believes it is sending a parameter we do not accept, which is our own
+ * client with a bug or a stale bundle mid-deploy. Before `strictInput` those
+ * requests returned 200 with the key discarded and nobody could have seen them
+ * at all; landing the refusal without landing this would move the silence
+ * rather than remove it.
+ */
+function reportUnrecognizedKeys(
+  error: unknown,
+  meta: { path: string; type: string; ctx: Context }
+): void {
+  const keys = unrecognizedKeysFrom(error);
+  if (!keys) return;
+  trpcLogger.warn(
+    {
+      event: 'trpc.input.unrecognized_keys',
+      requestId: meta.ctx.requestId,
+      route: meta.path,
+      keys,
+    },
+    `🚫 Unknown parameter(s) refused on ${meta.path}: ${keys.join(', ')}`
+  );
+  captureException(error, {
+    route: meta.path,
+    type: meta.type,
+    requestId: meta.ctx.requestId,
+    unrecognizedKeys: keys.join(','),
+    ...(meta.ctx.userId ? { userId: meta.ctx.userId } : {}),
+  });
+}
+
 // Logging middleware for all procedures
 const loggingMiddleware = t.middleware(async ({ ctx, path, type, input, next }) => {
   const timer = createTimer();
@@ -220,6 +266,7 @@ const loggingMiddleware = t.middleware(async ({ ctx, path, type, input, next }) 
         },
         `⚠️ Procedure completed with error: ${path}`
       );
+      reportUnrecognizedKeys(result.error, { path, type, ctx });
     }
 
     return result;

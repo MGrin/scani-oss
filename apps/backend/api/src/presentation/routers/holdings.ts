@@ -41,6 +41,7 @@ import { z } from 'zod';
 import { withIdempotency } from '../../lib/idempotency';
 import { executeBulkOperation } from '../lib/bulk-operation';
 import { enqueuePortfolioRollup } from '../lib/portfolio-rollup';
+import { strictInput } from '../lib/strict-input';
 import { requireAuth } from '../middleware/auth';
 import { protectedProcedure, router } from '../trpc';
 
@@ -72,7 +73,7 @@ export const holdingsRouter = router({
    * `docs/technical/2026-08-14_why-no-tax-statement.md`.
    */
   realizedLedger: protectedProcedure
-    .input(z.object({ holdingId: z.string().uuid() }))
+    .input(strictInput(z.object({ holdingId: z.string().uuid() })))
     .query(async ({ ctx, input }): Promise<RealizedLedger> => {
       const { dbUser } = await requireAuth(ctx);
       // Ownership guard — without it the endpoint is an IDOR, and this one
@@ -142,18 +143,20 @@ export const holdingsRouter = router({
 
   update: protectedProcedure
     .input(
-      z.object({
-        id: z.string().uuid(),
-        data: UpdateHoldingDto,
-        // Optional client-supplied key. If the same (userId, key)
-        // arrives within the 5-min cache window — e.g. a network
-        // retry or double-click — the cached response is returned
-        // and the underlying mutation runs only once. Frontend
-        // opts in by passing `crypto.randomUUID()` per submission;
-        // omitting the key is equivalent to the previous behaviour
-        // (no de-dup).
-        idempotencyKey: z.string().min(1).max(128).optional(),
-      })
+      strictInput(
+        z.object({
+          id: z.string().uuid(),
+          data: UpdateHoldingDto,
+          // Optional client-supplied key. If the same (userId, key)
+          // arrives within the 5-min cache window — e.g. a network
+          // retry or double-click — the cached response is returned
+          // and the underlying mutation runs only once. Frontend
+          // opts in by passing `crypto.randomUUID()` per submission;
+          // omitting the key is equivalent to the previous behaviour
+          // (no de-dup).
+          idempotencyKey: z.string().min(1).max(128).optional(),
+        })
+      )
     )
     .mutation(async ({ input, ctx }) => {
       const { dbUser } = await requireAuth(ctx);
@@ -237,10 +240,12 @@ export const holdingsRouter = router({
    */
   recordMovement: protectedProcedure
     .input(
-      z.object({
-        movement: RecordHoldingMovementDto,
-        idempotencyKey: z.string().min(1).max(128).optional(),
-      })
+      strictInput(
+        z.object({
+          movement: RecordHoldingMovementDto,
+          idempotencyKey: z.string().min(1).max(128).optional(),
+        })
+      )
     )
     .mutation(async ({ input, ctx }) => {
       const { dbUser } = await requireAuth(ctx);
@@ -293,7 +298,7 @@ export const holdingsRouter = router({
 
   // Delete holding (with cascading to transactions)
   delete: protectedProcedure
-    .input(z.object({ id: z.string().uuid() }))
+    .input(strictInput(z.object({ id: z.string().uuid() })))
     .mutation(async ({ input, ctx }) => {
       const { dbUser } = await requireAuth(ctx);
 
@@ -321,7 +326,7 @@ export const holdingsRouter = router({
     }),
 
   bulkDelete: protectedProcedure
-    .input(z.object({ ids: z.array(z.string()).min(1) }))
+    .input(strictInput(z.object({ ids: z.array(z.string()).min(1) })))
     .mutation(async ({ input, ctx }) => {
       const { dbUser } = await requireAuth(ctx);
       const useCase = Container.get(DeleteHoldingUseCase);
@@ -342,7 +347,7 @@ export const holdingsRouter = router({
 
   // Restore a hidden holding (unmark as hidden)
   restore: protectedProcedure
-    .input(z.object({ id: z.string().uuid() }))
+    .input(strictInput(z.object({ id: z.string().uuid() })))
     .mutation(async ({ input, ctx }) => {
       const { dbUser } = await requireAuth(ctx);
 
@@ -379,10 +384,12 @@ export const holdingsRouter = router({
    */
   updatePrice: protectedProcedure
     .input(
-      z.object({
-        id: z.string().uuid(),
-        requestId: z.string().uuid(),
-      })
+      strictInput(
+        z.object({
+          id: z.string().uuid(),
+          requestId: z.string().uuid(),
+        })
+      )
     )
     .mutation(async ({ input, ctx }) => {
       const { dbUser } = await requireAuth(ctx);
@@ -408,10 +415,12 @@ export const holdingsRouter = router({
   // so a flurry of clicks collapses to one in-flight refresh.
   refreshBalance: protectedProcedure
     .input(
-      z.object({
-        holdingId: z.string().uuid(),
-        requestId: z.string().uuid(),
-      })
+      strictInput(
+        z.object({
+          holdingId: z.string().uuid(),
+          requestId: z.string().uuid(),
+        })
+      )
     )
     .mutation(async ({ input, ctx }) => {
       const { dbUser } = await requireAuth(ctx);
@@ -438,20 +447,22 @@ export const holdingsRouter = router({
 
   bulkAssignGroups: protectedProcedure
     .input(
-      z.object({
-        // 500 is well above any realistic UI selection — the bulk-edit
-        // grid maxes around the visible viewport — but bounded so a
-        // hostile or buggy client can't request a multi-thousand-row
-        // database operation in a single round-trip.
-        holdingIds: z.array(z.string()).min(1).max(500),
-        // The dialog computes an explicit diff between the pre-checked
-        // common-groups state and the user's save selection, then sends
-        // add/remove sets. Preferable to REPLACE semantics because
-        // REPLACE would clobber any per-holding groups that weren't in
-        // the pre-checked set.
-        addedGroupIds: z.array(z.string()).max(50).default([]),
-        removedGroupIds: z.array(z.string()).max(50).default([]),
-      })
+      strictInput(
+        z.object({
+          // 500 is well above any realistic UI selection — the bulk-edit
+          // grid maxes around the visible viewport — but bounded so a
+          // hostile or buggy client can't request a multi-thousand-row
+          // database operation in a single round-trip.
+          holdingIds: z.array(z.string()).min(1).max(500),
+          // The dialog computes an explicit diff between the pre-checked
+          // common-groups state and the user's save selection, then sends
+          // add/remove sets. Preferable to REPLACE semantics because
+          // REPLACE would clobber any per-holding groups that weren't in
+          // the pre-checked set.
+          addedGroupIds: z.array(z.string()).max(50).default([]),
+          removedGroupIds: z.array(z.string()).max(50).default([]),
+        })
+      )
     )
     .mutation(async ({ input, ctx }) => {
       const { dbUser } = await requireAuth(ctx);
@@ -478,7 +489,7 @@ export const holdingsRouter = router({
     // defined (empty set), and the frontend can transiently pass []
     // while the dialog is mounting or mid-transition. Returning []
     // is cheaper and friendlier than a 400.
-    .input(z.object({ holdingIds: z.array(z.string()).max(500) }))
+    .input(strictInput(z.object({ holdingIds: z.array(z.string()).max(500) })))
     .query(async ({ input, ctx }) => {
       const { dbUser } = await requireAuth(ctx);
 
@@ -513,7 +524,7 @@ export const holdingsRouter = router({
 
   // APY Config endpoints
   getApyConfig: protectedProcedure
-    .input(z.object({ holdingId: z.string().uuid() }))
+    .input(strictInput(z.object({ holdingId: z.string().uuid() })))
     .query(async ({ input, ctx }) => {
       const { dbUser } = await requireAuth(ctx);
       const holdingRepository = Container.get(HoldingRepository);
@@ -524,7 +535,7 @@ export const holdingsRouter = router({
     }),
 
   upsertApyConfig: protectedProcedure
-    .input(UpsertHoldingApyConfigDto)
+    .input(strictInput(UpsertHoldingApyConfigDto))
     .mutation(async ({ input, ctx }) => {
       const { dbUser } = await requireAuth(ctx);
 
@@ -563,7 +574,7 @@ export const holdingsRouter = router({
     }),
 
   deleteApyConfig: protectedProcedure
-    .input(z.object({ holdingId: z.string().uuid() }))
+    .input(strictInput(z.object({ holdingId: z.string().uuid() })))
     .mutation(async ({ input, ctx }) => {
       const { dbUser } = await requireAuth(ctx);
 

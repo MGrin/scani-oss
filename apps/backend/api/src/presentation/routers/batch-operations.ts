@@ -6,6 +6,7 @@ import { emitEntityChange } from '@scani/realtime';
 import { CreateAccountDto, CreateInstitutionDto, HOLDING_LABEL_MAX_LENGTH } from '@scani/shared';
 import Container from 'typedi';
 import { z } from 'zod';
+import { strictInput } from '../lib/strict-input';
 import { requireAuth } from '../middleware/auth';
 import { protectedProcedure, router } from '../trpc';
 
@@ -56,7 +57,7 @@ export const batchOperationsRouter = router({
    * without re-running the work.
    */
   createHoldingsBatch: protectedProcedure
-    .input(CreateHoldingsBatchInputSchema)
+    .input(strictInput(CreateHoldingsBatchInputSchema))
     .mutation(async ({ input, ctx }): Promise<{ jobId: string }> => {
       const { dbUser } = await requireAuth(ctx);
       if (!dbUser.baseCurrencyId) {
@@ -85,16 +86,18 @@ export const batchOperationsRouter = router({
    */
   ensureAccount: protectedProcedure
     .input(
-      z
-        .object({
-          accountId: z.string().uuid().optional(),
-          institution: CreateInstitutionDto.optional(),
-          account: CreateAccountDto.optional(),
-        })
-        .refine(
-          (v) => Boolean(v.accountId || v.account),
-          'Either accountId or account must be provided'
-        )
+      strictInput(
+        z
+          .object({
+            accountId: z.string().uuid().optional(),
+            institution: CreateInstitutionDto.optional(),
+            account: CreateAccountDto.optional(),
+          })
+          .refine(
+            (v) => Boolean(v.accountId || v.account),
+            'Either accountId or account must be provided'
+          )
+      )
     )
     .mutation(async ({ input, ctx }) => {
       const { dbUser } = await requireAuth(ctx);

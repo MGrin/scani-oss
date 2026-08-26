@@ -1,6 +1,7 @@
 import { createComponentLogger } from '@scani/logging';
 import { z } from 'zod';
 import { CLIENT_ERROR_LIMITS } from '../../config/limits';
+import { strictInput } from '../lib/strict-input';
 import { publicProcedure, router } from '../trpc';
 
 const logger = createComponentLogger('router:client-errors');
@@ -31,7 +32,7 @@ const reportInput = z.object({
 });
 
 export const clientErrorsRouter = router({
-  report: publicProcedure.input(reportInput).mutation(async ({ ctx, input }) => {
+  report: publicProcedure.input(strictInput(reportInput)).mutation(async ({ ctx, input }) => {
     logger.error(
       {
         userId: ctx.userId ?? null,
