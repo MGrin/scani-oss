@@ -132,12 +132,15 @@ export {
   type PaymentMatchDirection,
 } from './payments/matchOccurrences';
 export {
+  CONFIRMATION_TOLERANCE,
   completeMonthWindow,
   OBSERVED_BURN_WINDOW_MONTHS,
   type ObservedBurn,
+  type ObservedBurnAnswer,
   type ObservedBurnExcluded,
   type ObservedBurnMonth,
   ObservedBurnService,
+  observedBurnAnswerOf,
 } from './payments/ObservedBurnService';
 export {
   FORECAST_HORIZON_MONTHS,
@@ -295,7 +298,7 @@ export {
   ExpiredCredentialsError,
   IntegrationCredentialsService,
 } from './users/IntegrationCredentialsService';
-export { UserService } from './users/UserService';
+export { ObservedBurnAnswerCurrencyMismatch, UserService } from './users/UserService';
 export { UserWalletService } from './users/UserWalletService';
 export { VaultService } from './users/VaultService';
 export {

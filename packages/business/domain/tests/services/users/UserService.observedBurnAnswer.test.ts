@@ -3,7 +3,10 @@ import type { User } from '@scani/db/schema';
 import type { ObservedBurnAnswerInput } from '@scani/shared';
 import { Container } from 'typedi';
 import { UserRepository } from '../../../src/repositories/UserRepository';
-import { UserService } from '../../../src/services/users/UserService';
+import {
+  ObservedBurnAnswerCurrencyMismatch,
+  UserService,
+} from '../../../src/services/users/UserService';
 import { restoreContainerAfterAll } from '../../../test/helpers/container';
 
 restoreContainerAfterAll();
@@ -27,10 +30,13 @@ restoreContainerAfterAll();
 
 const TOKEN = '11111111-2222-3333-4444-555555555555';
 
-function makeService(): { service: UserService; patches: Partial<User>[] } {
+function makeService(baseCurrencyId: string | null = TOKEN): {
+  service: UserService;
+  patches: Partial<User>[];
+} {
   const patches: Partial<User>[] = [];
   const stub = {
-    findById: async () => ({ id: 'user-1' }) as User,
+    findById: async () => ({ id: 'user-1', baseCurrencyId }) as User,
     update: async (_id: string, data: Partial<User>) => {
       patches.push(data);
       return { id: 'user-1', ...data } as User;
@@ -111,6 +117,42 @@ describe('SC-661 — UserService.setObservedBurnAnswer', () => {
       const patch = await patchFor(input);
       expect(Object.keys(patch)).toHaveLength(6);
     }
+  });
+
+  /**
+   * THE CURRENCY IS CHECKED, NOT TRUSTED, AND NOT CORRECTED.
+   *
+   * The client sends it because it is what gets stored, and a client reading a
+   * cached profile can send the currency the account has just left. Stamping
+   * the server's own value over the disagreement would record the user as
+   * having agreed to a figure in a unit they were never shown — the same defect
+   * the currency column exists to prevent, one layer up. So it refuses, and
+   * NOTHING is written.
+   */
+  test('an answer in another currency is refused, and writes nothing', async () => {
+    const { service, patches } = makeService('the-accounts-actual-currency');
+
+    await expect(
+      service.setObservedBurnAnswer('user-1', {
+        kind: 'override',
+        amount: '6300',
+        currencyTokenId: TOKEN,
+      })
+    ).rejects.toBeInstanceOf(ObservedBurnAnswerCurrencyMismatch);
+
+    expect(patches).toHaveLength(0);
+  });
+
+  /**
+   * `clear` carries no currency to disagree about, and must stay reachable on
+   * an account whose base currency HAS changed — that is precisely the account
+   * holding an answer it can no longer display. A check that refused it would
+   * strand the withdrawal behind the state it exists to withdraw.
+   */
+  test('clearing is never refused on a currency mismatch', async () => {
+    const { service, patches } = makeService('some-other-currency');
+    await service.setObservedBurnAnswer('user-1', { kind: 'clear' });
+    expect(patches).toHaveLength(1);
   });
 
   /**
