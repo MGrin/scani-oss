@@ -29,6 +29,36 @@ describe('SC-657 — the home runway divides by observed alone', () => {
   });
 
   /**
+   * SC-657 / SC-661. The observed branch must NOT link to the forecast page.
+   *
+   * `ForecastView` still projects the committed recurring book, and on the
+   * demo persona the two surfaces reach OPPOSITE conclusions -- measured
+   * 2026-08-26: this line rendered "About 27 months at recent spending" while
+   * the forecast page rendered "Lasts beyond 12 months · the book nets
+   * +£8,907.62 a month". A link asserts the destination elaborates what you
+   * tapped; pointing one at a page that contradicts it is worse than no link.
+   *
+   * This is pinned rather than commented because restoring the link is a
+   * one-word edit that looks like an obvious improvement -- a missing
+   * navigation affordance reads as an oversight, and nothing about the diff
+   * would reveal that the destination disagrees. SC-661 reconciles the two
+   * surfaces and deletes this test along with the restriction.
+   */
+  test('the observed branch does not link to the still-committed forecast page', () => {
+    const start = SOURCE.indexOf('if (observedAnswer) {');
+    const end = SOURCE.indexOf('if (!answer) return null;');
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+
+    const observedBranch = SOURCE.slice(start, end);
+    // The control: the committed FALLBACK below still links, so a source file
+    // that simply stopped mentioning the route would pass this vacuously.
+    expect(SOURCE.slice(end)).toContain('V3_ROUTES.forecast');
+    expect(observedBranch).not.toContain('V3_ROUTES.forecast');
+    expect(observedBranch).not.toContain('<Link');
+  });
+
+  /**
    * The specific shapes that would reintroduce the bug. Not a general ban on
    * `+` — that would fire on unrelated arithmetic and get deleted.
    */

@@ -1071,7 +1071,7 @@
         "observedRunway_few": "Около {{count}} месяцев при текущих тратах",
         "observedRunway_many": "Около {{count}} месяцев при текущих тратах",
         "observedRunway_other": "Около {{count}} месяцев при текущих тратах",
-        "ofWhichCommitted": "из них ~{{percent}}% обязательные"
+        "ofWhichCommitted": "~{{percent}}% этих трат — обязательные платежи"
       }
     },
     "holdings": {
