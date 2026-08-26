@@ -253,6 +253,148 @@ async function remainingContainers(env: Record<string, string>): Promise<string[
     .filter((line) => line.length > 0);
 }
 
+/**
+ * `up` waits for the healthchecks that are already declared (SC-669).
+ *
+ * `docker compose up -d <service>` returns once the containers have STARTED.
+ * It does not wait for healthchecks, and `depends_on: condition:
+ * service_healthy` only governs services pulled in AS DEPENDENCIES — so naming
+ * a service explicitly opts out of the very healthcheck declared for it.
+ *
+ * This is `down`'s defect with the sign flipped, in the same file:
+ *
+ *   down  reported success over work it did NOT do          (SC-663)
+ *   up    reported success over work not yet FINISHED       (this)
+ *
+ * Both are true statements about compose having returned, and neither is the
+ * statement the caller needs. Every worker here runs a gate straight after an
+ * `up`, so a stack that reports ready before Postgres accepts connections
+ * turns a SETUP failure into a wall of red tests attributed to the caller's
+ * own change.
+ *
+ * `--wait` does NOT hang on a service that can never report healthy — measured
+ * 2026-08-26 against the nine here that declare no healthcheck (worker, the
+ * four `oven/bun` frontends, and the four one-shots): compose returned and
+ * reported them Started. Only a service whose healthcheck FAILS holds it.
+ *
+ * Exported so a test can assert the flag is present. Its absence is invisible
+ * in a green run, which is how it survived alongside healthchecks that were
+ * already there.
+ */
+export function upArgs(passthrough: readonly string[] = []): string[] {
+  return [
+    'docker',
+    'compose',
+    '--profile',
+    'full',
+    'up',
+    '-d',
+    '--build',
+    '--wait',
+    ...passthrough,
+  ];
+}
+
+export interface ServiceHealth {
+  readonly name: string;
+  /** `none` is a container with no healthcheck — started, never verified. */
+  readonly state: 'healthy' | 'unhealthy' | 'starting' | 'none';
+}
+
+export interface UpVerdict {
+  readonly message: string;
+  readonly exit: number;
+}
+
+/**
+ * What `up` is allowed to claim, given what is actually running (SC-669).
+ *
+ * `health` is `null` when docker could not be asked, and that is never
+ * resolved toward "fine" — the same rule `downVerdict` follows, for the same
+ * reason: a start that cannot prove it finished must not print a bare success.
+ *
+ * THE VERDICT COUNTS WHAT IT VERIFIED, NOT WHAT IT STARTED. `12 running, 4
+ * health-verified` is a checkable claim; `12 running` invites the reader to
+ * assume the other eight were checked and passed. Most services here declare
+ * no healthcheck at all, so the gap is the normal case rather than an alarm —
+ * printing it is how the reader knows which services `--wait` actually stood
+ * behind.
+ */
+export function upVerdict(
+  code: number,
+  health: readonly ServiceHealth[] | null,
+  project: string
+): UpVerdict {
+  const compose = code === 0 ? '' : ` · compose exit ${code}`;
+  if (health === null) {
+    const exit = code === 0 ? 1 : code;
+    return {
+      message: `dev-stack: UP UNVERIFIED · exit ${exit}${compose} · docker could not be asked what is running in ${project} — this is not a stack you should gate against`,
+      exit,
+    };
+  }
+  const bad = health.filter((h) => h.state === 'unhealthy' || h.state === 'starting');
+  if (bad.length > 0) {
+    const exit = code === 0 ? 1 : code;
+    return {
+      message:
+        `dev-stack: UP UNHEALTHY · exit ${exit}${compose} · ${bad.length} of ${health.length} service(s) in ${project} did not become healthy:\n` +
+        bad.map((h) => `  ${h.name} (${h.state})`).join('\n'),
+      exit,
+    };
+  }
+  const verified = health.filter((h) => h.state === 'healthy').length;
+  return {
+    message: `dev-stack: UP · exit ${code} · ${health.length} running, ${verified} health-verified in ${project}`,
+    exit: code,
+  };
+}
+
+/**
+ * The health of every container compose currently runs for this project.
+ *
+ * Running-only, and that is the deliberate difference from
+ * `remainingContainers`. `down` uses `-a` because a stopped leftover holds its
+ * name and fails the next `up`; here an exited container is `env-sync`,
+ * `deps`, `migrate` or `minio-init` having finished, which is success. Listing
+ * them would report four permanent failures on every healthy stack.
+ *
+ * Returns `null` when docker could not be asked — see `upVerdict`.
+ */
+async function containerHealth(env: Record<string, string>): Promise<ServiceHealth[] | null> {
+  const proc = Bun.spawn(
+    [
+      'docker',
+      'ps',
+      '--format',
+      '{{.Names}}\t{{.State}}\t{{.Status}}',
+      '--filter',
+      `label=com.docker.compose.project=${env.COMPOSE_PROJECT_NAME}`,
+    ],
+    { cwd: REPO_ROOT, env: { ...process.env, ...env }, stdio: ['ignore', 'pipe', 'pipe'] }
+  );
+  const out = await new Response(proc.stdout).text();
+  if ((await proc.exited) !== 0) return null;
+  return out
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .map((line) => {
+      const [name = '', , status = ''] = line.split('\t');
+      // `Status` carries the health in parentheses when a healthcheck exists:
+      // `Up 3 minutes (healthy)`. No parenthetical means no healthcheck, which
+      // is started-but-unverified rather than a failure.
+      const state: ServiceHealth['state'] = /\(healthy\)/.test(status)
+        ? 'healthy'
+        : /\(unhealthy\)/.test(status)
+          ? 'unhealthy'
+          : /\(health: starting\)/.test(status)
+            ? 'starting'
+            : 'none';
+      return { name, state };
+    });
+}
+
 async function run(command: string[], env: Record<string, string>): Promise<number> {
   const proc = Bun.spawn(command, {
     cwd: REPO_ROOT,
@@ -361,14 +503,13 @@ async function main(): Promise<never> {
   const synced = await run(['bun', 'scripts/sync-env.ts'], env);
   if (synced !== 0) process.exit(synced);
 
-  const code = await run(
-    ['docker', 'compose', '--profile', 'full', 'up', '-d', '--build', ...passthrough],
-    env
-  );
-  if (code !== 0) {
-    process.stderr.write(explainPortConflicts(env));
-    process.exit(code);
-  }
+  const code = await run(upArgs(passthrough), env);
+  if (code !== 0) process.stderr.write(explainPortConflicts(env));
+
+  const project = env.COMPOSE_PROJECT_NAME ?? composeProjectName(REPO_ROOT);
+  const verdict = upVerdict(code, await containerHealth(env), project);
+  process.stderr.write(`${verdict.message}\n`);
+  if (verdict.exit !== 0) process.exit(verdict.exit);
 
   process.stderr.write(`dev-stack: this worktree's stack is at\n${reachableAt(env)}\n`);
   process.exit(0);
