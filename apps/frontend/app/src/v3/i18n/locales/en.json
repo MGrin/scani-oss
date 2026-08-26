@@ -596,7 +596,7 @@
         "affordRunwayStillBeyond_other": "Runway still runs beyond {{count}} months.",
         "observedRunway_one": "About {{count}} month at recent spending",
         "observedRunway_other": "About {{count}} months at recent spending",
-        "ofWhichCommitted": "of which ~{{percent}}% committed"
+        "ofWhichCommitted": "~{{percent}}% of that spending is committed"
       }
     },
     "groups": {
