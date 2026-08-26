@@ -1090,7 +1090,19 @@
         "provenanceTitle": "Кто классифицировал деньги, которые УЧТЕНЫ",
         "provenanceUser": "{{percent}}% этой суммы опирается на ваши ответы.",
         "provenanceAutomated": "{{percent}}% определено правилом, которое можно открыть и прочитать.",
-        "provenanceUnattributed": "{{percent}}% не содержит записи о том, кто или что это решил."
+        "provenanceUnattributed": "{{percent}}% не содержит записи о том, кто или что это решил.",
+        "answerTitle": "Это столько вы тратите?",
+        "answerConfirm": "Да, всё верно",
+        "answerOverride": "Указать свою сумму",
+        "answerCancel": "Отмена",
+        "answerSave": "Сохранить",
+        "answerAmountLabel": "Сколько вы на самом деле тратите в месяц",
+        "answerConfirmed": "Вы подтвердили это {{date}}.",
+        "answerConfirmedMoved": "Вы подтвердили <was/> {{date}}. Сейчас это <now/>.",
+        "answerOverrideActive": "Используется ваша сумма <amount/> в месяц, указана {{date}}. Измерено: <measured/>.",
+        "answerRevert": "Вернуться к измеренной сумме",
+        "answerCurrencyChanged": "Ваш ответ от {{date}} был дан в другой валюте, поэтому он больше не применяется.",
+        "answerFailed": "Не удалось сохранить."
       }
     },
     "holdings": {

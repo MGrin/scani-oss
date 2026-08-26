@@ -611,7 +611,19 @@
         "provenanceTitle": "Who classified the money that IS counted",
         "provenanceUser": "{{percent}}% of that value rests on answers you gave.",
         "provenanceAutomated": "{{percent}}% was decided by a named rule you can go and read.",
-        "provenanceUnattributed": "{{percent}}% carries no record of who or what decided."
+        "provenanceUnattributed": "{{percent}}% carries no record of who or what decided.",
+        "answerTitle": "Is this what you spend?",
+        "answerConfirm": "Yes, that's right",
+        "answerOverride": "Use my own figure",
+        "answerCancel": "Cancel",
+        "answerSave": "Save",
+        "answerAmountLabel": "What you actually spend a month",
+        "answerConfirmed": "You confirmed this on {{date}}.",
+        "answerConfirmedMoved": "You confirmed <was/> on {{date}}. It is now <now/>.",
+        "answerOverrideActive": "Using your figure of <amount/> a month, set on {{date}}. Measured: <measured/>.",
+        "answerRevert": "Go back to the measured figure",
+        "answerCurrencyChanged": "Your answer from {{date}} was given in a different currency, so it no longer applies.",
+        "answerFailed": "That did not save."
       }
     },
     "groups": {
