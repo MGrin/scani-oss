@@ -40,8 +40,8 @@ import { TRANSFER_RULES_PATH } from '../../lib/routes';
  * character.
  *
  * **Two strings, and both are shown.** SC-381: what this transfer says is
- * `Pay 500.00 USD to Nikita Grishin (Dividends)` and what the rule is keyed on
- * is `nikita grishin (dividends)`, because the amount is per-payment and a
+ * `Pay 500.00 USD to Teodor Vance (Dividends)` and what the rule is keyed on
+ * is `teodor vance (dividends)`, because the amount is per-payment and a
  * rule carrying it fires once and never again. Showing only the first would
  * make the confirmation above a confirmation of the wrong string — the reader
  * would be agreeing to a rule about this payment while writing one about the
