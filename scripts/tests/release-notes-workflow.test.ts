@@ -43,13 +43,103 @@ describe('the chain fires at all', () => {
     expect(named?.[1]).toBe(upstreamName?.[1]?.trim());
   });
 
-  // Must-be-ABSENT: the trigger this replaced. Left in place it would keep
-  // producing `action_required` runs on the release PR, which read as
-  // completed and make the check look present when it is not.
-  test('it no longer triggers on pull_request', async () => {
+  /**
+   * SC-653. THE `pull_request` TRIGGER IS BACK, AND IT IS NOT THE ONE SC-640
+   * REMOVED. That one was how the check tried to reach the RELEASE PR, and it
+   * never did — those runs are `action_required` and never start. This one is
+   * how the check reports on an ORDINARY PR, which is not approval-gated.
+   *
+   * It has to report there at all because a required status check no ordinary
+   * PR can receive is not strict, it is impassable: adding this context to
+   * `main-protection` deadlocked the repository and blocked all four open PRs
+   * (SC-647).
+   *
+   * The dangerous shape is a `pull_request` run posting a blanket success
+   * about a RELEASE PR — a pass on the one population the check exists for,
+   * from a run that examined nothing. That path refuses instead, and this is
+   * the must-be-ABSENT axis for it.
+   */
+  test('the pull_request_target path refuses a release branch instead of passing it', async () => {
     const chained = await read('.github/workflows/release-notes.yml');
-    expect(chained).not.toContain('pull_request:');
+    expect(chained).toContain('pull_request_target:');
     expect(chained).toContain('workflow_run:');
+    expect(chained).toMatch(/ref\.startsWith\('release-please--'\)/);
+    // The refusal sets `silent`, never `reported`. If these two ever swap, an
+    // unexamined release PR gets a green required check.
+    const refusal =
+      /startsWith\('release-please--'\)\)\s*\{[\s\S]{0,400}?setOutput\('mode',\s*'([a-z]+)'\)/.exec(
+        chained
+      );
+    expect(refusal?.[1]).toBe('silent');
+  });
+
+  test('an ordinary pull request gets a passing status, so the context always exists', async () => {
+    const chained = await read('.github/workflows/release-notes.yml');
+    expect(chained).toMatch(/mode === 'reported'/);
+    expect(chained).toContain("state: 'success'");
+    expect(chained).toContain('Not a release pull request');
+    // Same context string as the real verdict — a required check matches on
+    // this exact text, so a second wording would satisfy nothing.
+    expect(
+      chained.match(/context: 'Release notes cover every releasable commit'/g)?.length
+    ).toBeGreaterThanOrEqual(2);
+  });
+
+  /**
+   * SC-653. `pull_request_target` PAIRS A WRITE TOKEN WITH A CONTRIBUTOR'S
+   * BRANCH, and this file uses it because `pull_request` gives a FORK PR a
+   * read-only token — `createCommitStatus` would 403, the context would never
+   * appear, and requiring it would block every fork contribution on a repo
+   * whose CONTRIBUTING.md tells people to fork.
+   *
+   * It is safe here only while nothing on that path checks out or executes
+   * repository code. THAT is what this pins, and it is deliberately broader
+   * than the guards that exist today: the failure mode is somebody adding a
+   * step months from now for an unrelated reason, who will not be thinking
+   * about token scope. This test is the only thing that will be.
+   *
+   * `actions/github-script` is exempt on purpose — its script is the inline
+   * one from the workflow file on the BASE branch, never the contributor's.
+   * A `run:` block, a `uses: actions/checkout`, or a local `uses: ./…`
+   * composite are not exempt: all three can reach a checked-out tree.
+   */
+  test('no step that checks out or runs code is reachable from pull_request_target', async () => {
+    const chained = await read('.github/workflows/release-notes.yml');
+    const stepsBlock = chained.slice(chained.indexOf('    steps:'));
+    const steps = stepsBlock.split(/\n(?= {6}- )/).filter((c) => c.trim().startsWith('- '));
+
+    // Denominator, and the must-be-FOUND control: a split that silently
+    // stopped matching would report a clean workflow forever.
+    expect(steps.length).toBeGreaterThanOrEqual(4);
+
+    const GUARD = "github.event_name != 'pull_request_target'";
+    const unguarded = steps.filter((step) => {
+      const executesRepoCode =
+        /^\s*(- )?uses:\s*actions\/checkout/m.test(step) ||
+        /^\s*(- )?uses:\s*\.\//m.test(step) ||
+        /^\s*run:\s*\|/m.test(step);
+      if (!executesRepoCode) return false;
+      return !step.includes(GUARD);
+    });
+
+    expect(unguarded.map((s) => s.split('\n')[0]?.trim())).toEqual([]);
+  });
+
+  test('the fork rationale is written where someone adding a step will read it', async () => {
+    const chained = await read('.github/workflows/release-notes.yml');
+    // The test refuses; the comment explains. Whoever trips the first needs
+    // the second, and a bare assertion failure teaches nothing about tokens.
+    expect(chained).toContain('pull_request_target');
+    expect(chained).not.toMatch(/^\s*pull_request:/m);
+    expect(chained).toMatch(/READ-ONLY|read-only/);
+    expect(chained).toMatch(/DO NOT ADD A CHECKOUT/);
+  });
+
+  // A single global group made every PR queue behind every other, and runs on
+  // a release branch sit unapproved for a long time.
+  test('the concurrency group is per pull request, not global', async () => {
+    const chained = await read('.github/workflows/release-notes.yml');
+    expect(chained).toMatch(/group: release-notes-\$\{\{ github\.event\.pull_request\.number/);
   });
 
   /**
