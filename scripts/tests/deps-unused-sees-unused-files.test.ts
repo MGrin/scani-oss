@@ -97,7 +97,7 @@ describe('deps:unused can see an unused file', () => {
   });
 
   test('the root entry stays top-level, so scripts/lib stays covered', () => {
-    // `scripts/*.ts` are hand-run operator entrypoints (`bun scripts/x.ts`) that
+    // `scripts/*.ts` are hand-run operator entrypoints, invoked by path, that
     // no module imports, so knip cannot infer them and reported all 32 as
     // unused — including `sync-dockerhub-readme.ts`, which CLAUDE.md's own
     // before-pushing list runs. Declaring them is correcting the instrument.
