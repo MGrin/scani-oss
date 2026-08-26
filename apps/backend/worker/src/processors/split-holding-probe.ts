@@ -33,7 +33,9 @@ export class SplitHoldingProbeProcessor extends ScheduledJobProcessor {
     const err = new Error(
       `${duplicates.length} upstream event(s) recorded on more than one holding across ` +
         `${positions.size} (account, token) position(s): ${named}${suffix}. ` +
-        'Run `bun scripts/repoint-ingested-transactions.ts --delete-duplicates` to inspect.'
+        'Each is one upstream event on two holdings, so both holdings derive a ' +
+        'balance from it and one side has to be repointed or removed. The log ' +
+        'line beside this carries every affected (account, token, event) triple.'
     );
 
     logger.error(
