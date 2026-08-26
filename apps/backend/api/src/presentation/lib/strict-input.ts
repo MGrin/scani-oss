@@ -33,47 +33,121 @@ import { z } from 'zod';
  * that out-of-range VALUES already refuse — `limit: 5000` is a zod `too_big`
  * on both endpoints, measured live — so nothing here needs to add a clamp or
  * remove one. Unknown KEYS were the only gap.
+ *
+ * `.strict()` IS NOT RECURSIVE, AND THAT IS THE HALF SC-675 SHIPPED WITHOUT
+ * (SC-687). It marks the object you call it on and nothing beneath it. So the
+ * first version of this helper made `holdings.update`'s envelope strict while
+ * `input.data` — the object holding every parameter the endpoint actually
+ * takes — went on stripping silently. Measured on `df4384d5a`: 50 permissive
+ * objects across 20 endpoints, of which 42 were nested. The headline "every
+ * api procedure refuses parameters it does not declare" was true of the
+ * envelope and false of the payload, on exactly the endpoints where the
+ * payload is the whole request. `strictify` now descends into object shapes.
  */
 export function strictInput<T extends z.ZodTypeAny>(schema: T): T {
   return strictify(schema) as T;
 }
 
 /**
- * The wrapper kinds this understands, named so the list is checkable.
+ * Kinds with no keys anywhere beneath them. THE LIST THAT DOES NOT GROW.
  *
- * A helper that silently no-ops on a shape it does not recognise is a fragment
- * vouching for a passage: the call site reads as protected and is not, and
- * nothing distinguishes it from one that is (SC-671). So the kinds are
- * enumerated here and `strict-input.test.ts` asserts that every schema kind
- * actually reaching `.input()` in this app is one of them — an unhandled
- * wrapper fails the gate rather than passing quietly.
+ * SC-682 taught this module that a walk which recognises CONTAINERS by name
+ * treats an unlisted container as a leaf and reports it clean. The fix at the
+ * time was to recognise containers by their child FIELD name instead —
+ * `innerType` or `options` — which is the same predicate wearing different
+ * clothes, and it left `ZodEffects` (child under `schema`) and `ZodArray`
+ * (child under `type`) reading as leaves. Seven `.refine()`d inputs and one
+ * array of objects went straight through (SC-687).
+ *
+ * So the enumeration is inverted: this names the LEAVES, and anything not on
+ * it is treated as a container that `strictify` must know how to descend.
+ * Leaf kinds are a closed, small, stable set — zod is not going to add a new
+ * primitive — whereas container kinds are open-ended. An unrecognised kind
+ * throws rather than passing quietly, so a schema shape nobody has taught this
+ * module about fails when the router is CONSTRUCTED, which is at boot and in
+ * every test run, rather than becoming a permissive endpoint nothing reports.
  */
-export const HANDLED_WRAPPERS = ['ZodDefault', 'ZodOptional', 'ZodNullable'] as const;
+const LEAF_KINDS: ReadonlySet<string> = new Set([
+  'ZodString',
+  'ZodNumber',
+  'ZodBigInt',
+  'ZodBoolean',
+  'ZodDate',
+  'ZodSymbol',
+  'ZodUndefined',
+  'ZodNull',
+  'ZodVoid',
+  'ZodAny',
+  'ZodUnknown',
+  'ZodNever',
+  'ZodNaN',
+  'ZodLiteral',
+  'ZodEnum',
+  'ZodNativeEnum',
+]);
+
+/** Kept exported so the router-level guard can assert this list is honest. */
+export const STRICT_INPUT_LEAF_KINDS = LEAF_KINDS;
+
+/** Raised when an input carries a shape this module has not been taught. */
+export class UnknownSchemaKindError extends Error {
+  constructor(readonly kind: string) {
+    super(
+      `strictInput: unhandled zod kind "${kind}". It is neither a known leaf ` +
+        'nor a container this module can descend. Add it to strictify() (and ' +
+        'to LEAF_KINDS if it genuinely has no keys beneath it) — do not let it ' +
+        'through, because an unhandled container reaches .input() permissive ' +
+        'while every guard reports clean (SC-682, SC-687).'
+    );
+    this.name = 'UnknownSchemaKindError';
+  }
+}
+
+function kindOf(schema: z.ZodTypeAny): string {
+  return String((schema as unknown as { _def: { typeName?: unknown } })._def?.typeName);
+}
 
 function strictify(schema: z.ZodTypeAny): z.ZodTypeAny {
-  if (schema instanceof z.ZodObject) return schema.strict();
-
-  // A default/optional/nullable wrapper hides the object one level down.
-  // `listAnswered` is `z.object({...}).default({})`, so this is not an edge
-  // case — it is the endpoint the ticket was filed on.
-  if (schema instanceof z.ZodDefault) {
-    const inner = strictify(schema._def.innerType);
-    return inner.default(schema._def.defaultValue());
+  if (schema instanceof z.ZodObject) {
+    const shape = schema._def.shape() as Record<string, z.ZodTypeAny>;
+    const next: Record<string, z.ZodTypeAny> = {};
+    for (const [key, value] of Object.entries(shape)) next[key] = strictify(value);
+    // `.strict()` unconditionally, INCLUDING over a `.catchall()`. An earlier
+    // draft exempted catchall objects, reasoning that a catchall declares
+    // unknown keys are expected and that forcing strict would refuse input the
+    // author allowed. Measured on zod 3.25.76: a catchall takes precedence
+    // over `unknownKeys` at parse time, so `.strict()` sets the flag and
+    // changes no behaviour at all — `{a:1, x:'ok'}` is still accepted and
+    // `{a:1, x:99}` is still refused. The exemption was a branch that could
+    // not be observed, over a case no input in this router has.
+    return new z.ZodObject({ ...schema._def, shape: () => next }).strict();
   }
-  if (schema instanceof z.ZodOptional) return strictify(schema.unwrap()).optional();
-  if (schema instanceof z.ZodNullable) return strictify(schema.unwrap()).nullable();
+
+  // A default/optional/nullable wrapper hides its subject one level down.
+  // `listAnswered` is `z.object({...}).default({})`, so this is not an edge
+  // case — it is the endpoint SC-675 was filed on. Rebuilt through the
+  // constructor rather than through `.default()` / `.optional()` so nothing
+  // else in the def (description, error map, the default THUNK) is dropped.
+  if (schema instanceof z.ZodDefault) {
+    return new z.ZodDefault({ ...schema._def, innerType: strictify(schema._def.innerType) });
+  }
+  if (schema instanceof z.ZodOptional) {
+    return new z.ZodOptional({ ...schema._def, innerType: strictify(schema._def.innerType) });
+  }
+  if (schema instanceof z.ZodNullable) {
+    return new z.ZodNullable({ ...schema._def, innerType: strictify(schema._def.innerType) });
+  }
 
   // Unions carry several objects and each has to refuse on its own.
   if (schema instanceof z.ZodUnion) {
     const options = schema._def.options.map((o: z.ZodTypeAny) => strictify(o));
-    return z.union(options as [z.ZodTypeAny, z.ZodTypeAny, ...z.ZodTypeAny[]]);
+    return new z.ZodUnion({ ...schema._def, options });
   }
 
   // A DISCRIMINATED union is a separate zod class, not a `ZodUnion` subclass,
   // so the branch above does not reach it and `instanceof z.ZodUnion` is
-  // `false` for one. It was the single input in the router this helper walked
-  // straight past (SC-682) — see the note on `isStrictifiable` for why nothing
-  // said so.
+  // `false` for one. It was the single input in the router the first version
+  // of this helper walked straight past (SC-682).
   //
   // Rebuilt through `z.discriminatedUnion` rather than by mutating options, so
   // the discriminator map zod builds at construction is derived from the strict
@@ -89,10 +163,69 @@ function strictify(schema: z.ZodTypeAny): z.ZodTypeAny {
     );
   }
 
-  // Everything else — `z.string()`, `z.array()`, `z.void()` — has no unknown
-  // keys to reject, so passing it through is the whole correct behaviour
-  // rather than a gap. `isStrictifiable` is what tells the two apart.
-  return schema;
+  // `.refine()` and `.transform()` both produce a ZodEffects whose subject is
+  // under `schema`, not `innerType` — which is why the SC-682 walk called it a
+  // leaf. Seven of the router's inputs are refined objects (SC-687).
+  if (schema instanceof z.ZodEffects) {
+    return new z.ZodEffects({ ...schema._def, schema: strictify(schema._def.schema) });
+  }
+
+  // An array of objects: the ELEMENTS are where the undeclared key lands.
+  if (schema instanceof z.ZodArray) {
+    return new z.ZodArray({ ...schema._def, type: strictify(schema._def.type) });
+  }
+
+  if (schema instanceof z.ZodRecord) {
+    return new z.ZodRecord({ ...schema._def, valueType: strictify(schema._def.valueType) });
+  }
+
+  if (schema instanceof z.ZodTuple) {
+    const items = schema._def.items.map((o: z.ZodTypeAny) => strictify(o));
+    return new z.ZodTuple({ ...schema._def, items });
+  }
+
+  if (schema instanceof z.ZodLazy) {
+    const getter = schema._def.getter;
+    return new z.ZodLazy({ ...schema._def, getter: () => strictify(getter()) });
+  }
+
+  if (schema instanceof z.ZodPipeline) {
+    return new z.ZodPipeline({
+      ...schema._def,
+      in: strictify(schema._def.in),
+      out: strictify(schema._def.out),
+    });
+  }
+
+  if (schema instanceof z.ZodIntersection) {
+    return new z.ZodIntersection({
+      ...schema._def,
+      left: strictify(schema._def.left),
+      right: strictify(schema._def.right),
+    });
+  }
+
+  if (schema instanceof z.ZodBranded) {
+    return new z.ZodBranded({ ...schema._def, type: strictify(schema._def.type) });
+  }
+
+  if (schema instanceof z.ZodReadonly) {
+    return new z.ZodReadonly({ ...schema._def, innerType: strictify(schema._def.innerType) });
+  }
+
+  if (schema instanceof z.ZodCatch) {
+    return new z.ZodCatch({ ...schema._def, innerType: strictify(schema._def.innerType) });
+  }
+
+  if (schema instanceof z.ZodPromise) {
+    return new z.ZodPromise({ ...schema._def, type: strictify(schema._def.type) });
+  }
+
+  const kind = kindOf(schema);
+  if (LEAF_KINDS.has(kind)) return schema;
+
+  // NOT a silent pass-through. See LEAF_KINDS.
+  throw new UnknownSchemaKindError(kind);
 }
 
 /**
@@ -102,32 +235,19 @@ function strictify(schema: z.ZodTypeAny): z.ZodTypeAny {
  * test can assert that every OBJECT-shaped input in this app is reached,
  * without that assertion having to re-implement the walk above.
  *
- * **`false` IS THE DANGEROUS ANSWER, AND SC-682 IS WHY.** "Has no keys" and
- * "has keys this walk cannot see" are different facts that arrive here as the
- * same `false`, and only the first is benign. Every branch below decides the
- * question by looking for `ZodObject`, an `innerType`, or `ZodUnion`. A
- * `ZodDiscriminatedUnion` carries `options` and none of those three, so it
- * decoded as a leaf with nothing to guard — and `users.setObservedBurnAnswer`,
- * the one discriminated union among the router's 130 inputs, accepted
- * undeclared keys while all three of this module's tests reported it clean.
+ * **`false` USED TO BE THE DANGEROUS ANSWER, AND SC-682 IS WHY.** "Has no
+ * keys" and "has keys this walk cannot see" were different facts arriving here
+ * as the same `false`, and only the first is benign. Every branch decided the
+ * question by looking for `ZodObject`, an `innerType`, or `ZodUnion`, so a
+ * `ZodDiscriminatedUnion` decoded as a leaf with nothing to guard — and
+ * `users.setObservedBurnAnswer` accepted undeclared keys while all three of
+ * this module's tests reported it clean.
  *
- * So a shape that is not enumerated here does not fail loudly; it reads as
- * `z.string()`. When you add a schema kind to `strictify`, add it here in the
- * same edit, and add the router-level assertion that would have gone red.
+ * It is answered by `strictify` itself now, so the two facts cannot diverge:
+ * an unknown kind throws there rather than being reported `false` here.
  */
 export function isStrictifiable(schema: z.ZodTypeAny): boolean {
-  if (schema instanceof z.ZodObject) return true;
-  if (schema instanceof z.ZodDefault) return isStrictifiable(schema._def.innerType);
-  if (schema instanceof z.ZodOptional || schema instanceof z.ZodNullable) {
-    return isStrictifiable(schema.unwrap());
-  }
-  if (schema instanceof z.ZodUnion) {
-    return schema._def.options.some((o: z.ZodTypeAny) => isStrictifiable(o));
-  }
-  if (schema instanceof z.ZodDiscriminatedUnion) {
-    return schema._def.options.some((o: z.ZodTypeAny) => isStrictifiable(o));
-  }
-  return false;
+  return !LEAF_KINDS.has(kindOf(schema));
 }
 
 /**
