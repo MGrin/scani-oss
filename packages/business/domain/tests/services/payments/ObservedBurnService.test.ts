@@ -35,6 +35,7 @@ interface Row {
   occurredAt: Date;
   kind: string;
   transferReview: string | null;
+  transferReviewSource?: string | null;
   priceNative?: string | null;
   priceNativeTokenId?: string | null;
 }
@@ -47,6 +48,7 @@ function row(over: Partial<Row> & { occurredAt: Date }): Row {
     quantity: '-1000',
     kind: 'transfer_out',
     transferReview: 'left_control',
+    transferReviewSource: null,
     priceNative: null,
     priceNativeTokenId: null,
     ...over,
@@ -255,5 +257,110 @@ describe('SC-657 — the statistic', () => {
     expect(burn.perMonth).toHaveLength(6);
     expect(burn.fromMonth).toBe('2026-02');
     expect(burn.toMonth).toBe('2026-07');
+  });
+});
+
+/**
+ * SC-661/SC-673. WHO answered the rows the burn is made of, by VALUE.
+ *
+ * ## Why value and never count
+ *
+ * The figure this qualifies is money, and months derived from money, so a
+ * count-weighted share describes a different quantity than the number it sits
+ * under. Measured on the production book, window 2026-02..2026-07: 34 of 79
+ * rows carry a user stamp, so by COUNT 57% is not the user's; by VALUE it is
+ * 76.3%. Nearly twenty points, and the count is the flattering one — the
+ * unattributed rows are the big ones.
+ *
+ * The service returns no counts at all rather than returning them with a
+ * comment asking nobody to use them. This feature has erred flattering at
+ * every layer examined; the caption that exists to stop that must not.
+ */
+describe('SC-661 — provenance of the counted rows, by value', () => {
+  const march = new Date(Date.UTC(2026, 2, 15));
+  const asOf = new Date(Date.UTC(2026, 3, 2));
+
+  test('each class accumulates the VALUE it answered for, not the row count', async () => {
+    // Deliberately lopsided: one big user row against three small ones split
+    // across the other classes. A count-weighted implementation would report
+    // the user as the minority; by value they are the clear majority, and the
+    // assertion below can only pass on the value reading.
+    const service = makeService([
+      row({ occurredAt: march, quantity: '-9000', transferReviewSource: 'user' }),
+      row({ id: 'r2', occurredAt: march, quantity: '-100', transferReviewSource: 'rule' }),
+      row({ id: 'r3', occurredAt: march, quantity: '-200', transferReviewSource: 'repair' }),
+      row({ id: 'r4', occurredAt: march, quantity: '-700', transferReviewSource: null }),
+    ]);
+
+    const burn = await service.observed('u1', BASE, asOf);
+
+    expect(burn.provenance.user).toBe('9000');
+    // `rule` and `repair` collapse: both are a named mechanism a reader can go
+    // and inspect. Only the third class is a reason to distrust the figure.
+    expect(burn.provenance.automated).toBe('300');
+    expect(burn.provenance.unattributed).toBe('700');
+    // 3 of 4 rows are not the user's — 75% by count — while by value they are
+    // 10%. The control for the whole design decision.
+    expect(burn.countedTransactions).toBe(4);
+  });
+
+  /**
+   * The three parts are accumulated from the SAME valuation the month buckets
+   * use, so they cannot drift from the figure they describe. A caption whose
+   * parts do not sum to the number above it is worse than no caption.
+   */
+  test('the three parts sum to the total exactly', async () => {
+    const service = makeService([
+      row({ occurredAt: march, quantity: '-1234.56', transferReviewSource: 'user' }),
+      row({ id: 'r2', occurredAt: march, quantity: '-765.44', transferReviewSource: null }),
+      row({ id: 'r3', occurredAt: march, quantity: '-1000', transferReviewSource: 'repair' }),
+    ]);
+
+    const burn = await service.observed('u1', BASE, asOf);
+    const parts = new Decimal(burn.provenance.user)
+      .plus(burn.provenance.automated)
+      .plus(burn.provenance.unattributed);
+
+    expect(parts.toString()).toBe(new Decimal(burn.total).toString());
+    expect(burn.total).toBe('3000');
+  });
+
+  /**
+   * A row that was EXCLUDED from the burn must not appear in the provenance of
+   * what was included — they are opposite operations. An unvalued row is the
+   * sharp case: it reaches the counting loop and is dropped there, so an
+   * accumulation placed before the valuation would count it.
+   */
+  test('excluded and unvalued rows are absent from the split', async () => {
+    const service = makeService(
+      [
+        row({ occurredAt: march, quantity: '-1000', transferReviewSource: 'user' }),
+        row({
+          id: 'r2',
+          occurredAt: march,
+          transferReview: 'untracked',
+          transferReviewSource: 'user',
+        }),
+        row({ id: 'r3', occurredAt: march, transferReview: null, transferReviewSource: null }),
+        row({ id: 'r4', occurredAt: march, tokenId: 'nope', transferReviewSource: 'user' }),
+      ],
+      { unvaluable: new Set(['nope']) }
+    );
+
+    const burn = await service.observed('u1', BASE, asOf);
+
+    expect(burn.provenance.user).toBe('1000');
+    expect(burn.provenance.unattributed).toBe('0');
+    expect(burn.countedTransactions).toBe(1);
+    expect(burn.excluded.untracked).toBe(1);
+    expect(burn.excluded.unclassified).toBe(1);
+    expect(burn.excluded.unvalued).toBe(1);
+  });
+
+  test('an account with no exits reports zeroes rather than absent parts', async () => {
+    const service = makeService([]);
+    const burn = await service.observed('u1', BASE, asOf);
+
+    expect(burn.provenance).toEqual({ user: '0', automated: '0', unattributed: '0' });
   });
 });

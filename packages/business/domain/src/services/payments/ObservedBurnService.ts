@@ -1,4 +1,4 @@
-import { ANSWERABLE_OUTFLOW_KINDS } from '@scani/shared';
+import { ANSWERABLE_OUTFLOW_KINDS, answerSourceOf } from '@scani/shared';
 import Decimal from 'decimal.js';
 import { Container, Service } from 'typedi';
 import { valueTransactionInBase } from '../../lib/tx-valuation';
@@ -111,6 +111,55 @@ export interface ObservedBurnExcluded {
   unvalued: number;
 }
 
+/**
+ * WHO ANSWERED THE ROWS THIS FIGURE IS MADE OF, by VALUE (SC-661/SC-673).
+ *
+ * ## Why value and never count
+ *
+ * The figure this qualifies is a value — base-currency money, and months
+ * derived from money — so a count-weighted share describes a different
+ * quantity than the number it sits under. Measured on the production book,
+ * window 2026-02..2026-07: **34 of 79 rows carry a user stamp, so by COUNT
+ * 57% is not the user's; by VALUE it is 76.3%.** Nearly twenty points, and
+ * the unattributed rows are the big ones — the single largest transaction,
+ * 16,236, is 19.5% of the window on its own and has no source.
+ *
+ * The count is the flattering one, so it is not returned at all rather than
+ * returned with a comment asking nobody to use it. This feature has erred
+ * flattering at every layer examined — the committed book, the decoder, and a
+ * declared estimate would have too. The caption that exists to stop that must
+ * not do it as well.
+ *
+ * ## Three classes, and the middle one is not decoration
+ *
+ * `rule` and `repair` are collapsed into `automated` because they are the same
+ * claim to a reader: a named mechanism decided this, and you can go and read
+ * it. `unattributed` is a different claim — a decision with no author at all.
+ * Collapsing those two would be the same error as collapsing `internal` into
+ * `untracked` on the excluded side: one is a fact, the other is the absence of
+ * one.
+ *
+ * The distinction is load-bearing because of an ASYMMETRY on the production
+ * book: the transfer-linking repair job DOES stamp itself — all 5
+ * internal/paired rows carry `repair` — so whatever answered the unstamped
+ * rows was not that job. The benign reading, that a known job did it and
+ * forgot to stamp, is ruled out by the known job stamping.
+ *
+ * ## The value is the same proxy the burn itself uses
+ *
+ * Accumulated from the same `valueTransactionInBase` result the month buckets
+ * are built from, so the three parts sum to `total` exactly and cannot drift
+ * from the figure they describe.
+ */
+interface ObservedBurnProvenance {
+  /** Base currency. The user answered these. */
+  user: string;
+  /** A named mechanism answered — `rule` or `repair`. Inspectable, arguable. */
+  automated: string;
+  /** Nobody recorded who or what decided. */
+  unattributed: string;
+}
+
 export interface ObservedBurn {
   windowMonths: number;
   /** `YYYY-MM`, first complete month in the window. */
@@ -128,6 +177,8 @@ export interface ObservedBurn {
   /** Rows counted toward `total`. */
   countedTransactions: number;
   excluded: ObservedBurnExcluded;
+  /** Who answered the counted rows, by value. Sums to `total`. */
+  provenance: ObservedBurnProvenance;
   /** Counted, but valued from a quote old enough to say so (SC-151). */
   staleValued: number;
 }
@@ -192,6 +243,7 @@ export class ObservedBurnService extends BaseService {
       perMonthMax: '0',
       countedTransactions: 0,
       excluded: { unclassified: 0, untracked: 0, internal: 0, unvalued: 0 },
+      provenance: { user: '0', automated: '0', unattributed: '0' },
       staleValued: 0,
     });
 
@@ -250,6 +302,14 @@ export class ObservedBurnService extends BaseService {
     );
 
     const byMonth = new Map<string, Decimal>(months.map((month) => [month, new Decimal(0)]));
+    // Accumulated from the SAME valuation the month buckets use, so the three
+    // parts sum to `total` exactly and cannot drift from the figure they
+    // describe.
+    const provenance = {
+      user: new Decimal(0),
+      automated: new Decimal(0),
+      unattributed: new Decimal(0),
+    };
     let counted = 0;
     let staleValued = 0;
 
@@ -279,6 +339,12 @@ export class ObservedBurnService extends BaseService {
       // `windowMonths` and the mean divide by the wrong number.
       if (!running) continue;
       byMonth.set(key, running.plus(valuation.amount));
+      // After the bucket, not before: a row that fell outside the window is not
+      // in `total`, so counting its provenance would break the sum.
+      const source = answerSourceOf(tx);
+      const bucket =
+        source === 'user' ? 'user' : source === 'unattributed' ? 'unattributed' : 'automated';
+      provenance[bucket] = provenance[bucket].plus(valuation.amount);
       counted += 1;
     }
 
@@ -304,6 +370,11 @@ export class ObservedBurnService extends BaseService {
       perMonthMax: amounts.reduce((a, b) => (a.greaterThan(b) ? a : b)).toString(),
       countedTransactions: counted,
       excluded,
+      provenance: {
+        user: provenance.user.toString(),
+        automated: provenance.automated.toString(),
+        unattributed: provenance.unattributed.toString(),
+      },
       staleValued,
     };
   }
