@@ -14,52 +14,160 @@ name: Release notes
 # `git log <previous tag>..<the commit the notes were generated from>`. The two
 # sides are derived independently, which is the only reason a shortfall is
 # visible at all. `scripts/check-release-notes.ts` carries the measurement, the
-# blindness states, and the second cause it deliberately only reports.
+# blindness states, and the causes it deliberately only reports.
+#
+# SC-640. THIS RAN ON `pull_request` UNTIL 2026-08-26, AND HAD NEVER EXECUTED
+# ONCE. release-please pushes the release branch with the default GITHUB_TOKEN,
+# and every workflow run on a branch pushed that way landed in
+# `conclusion: action_required` — created, never approved, never started.
+# `gh pr checks` on the release PR reported no checks at all, and
+# `action_required` reads as `status: completed`, so a run list showed three
+# finished runs and hid the whole defect (the same shape as SC-488).
+#
+# It was not broken. Run by hand against the release commit as it stood while
+# SC-638 was dropping entries, it exits 1 and names the missing commit exactly.
+# It was simply never allowed to start.
+#
+# `workflow_run` is the remedy mgrin chose over a personal access token and over
+# loosening the repository's approval setting: it executes in the DEFAULT
+# BRANCH's context and is not approval-gated, so it closes the hole without
+# adding a credential to rotate and without weakening a control on a public
+# repository. The cost is that the result is not automatically a check on the
+# pull request, so this posts a commit status itself.
 #
 # NOT A REQUIRED CHECK. `main-protection` requires `CI Success` alone, so this
-# is red-and-visible on the release PR rather than blocking, exactly like
-# `pr-title.yml`. Adding `Release notes cover every releasable commit` to that
-# ruleset's required contexts is a repository-settings change and would make it
-# blocking; scani-oss is not under Terraform (SC-565), so it is a manual one.
+# is red-and-visible on the release PR rather than blocking. Adding it to that
+# ruleset's required contexts is a repository-settings change; scani-oss is not
+# under Terraform (SC-565), so it is a manual one.
 
 on:
-  pull_request:
-    branches: [main]
-    types: [opened, reopened, synchronize]
+  workflow_run:
+    workflows: ["Release Please"]
+    # `completed`, not `completed && success`. The failure this exists for is a
+    # release-please run that SUCCEEDS and regenerates nothing (SC-638), so
+    # gating on its conclusion would skip the exact case.
+    types: [completed]
+  # The must-be-FOUND control, kept permanently runnable. Point it at a release
+  # commit known to be short and watch it go red — `6e86a6b81` is the one from
+  # SC-638, and a guard nobody has seen refuse is one nobody has seen work.
+  workflow_dispatch:
+    inputs:
+      head:
+        description: "Release commit sha to check instead of the open release PR's head"
+        required: false
+        type: string
 
 permissions:
   contents: read
+  pull-requests: read
+  statuses: write
 
 concurrency:
-  group: release-notes-${{ github.ref }}
-  cancel-in-progress: true
+  group: release-notes
+  cancel-in-progress: false
 
 jobs:
   check:
     name: Release notes cover every releasable commit
-    # release-please generates this branch name, and the same-repository
-    # condition is what stops a fork naming a branch `release-please--anything`
-    # to get its head sha checked out here.
-    if: >-
-      startsWith(github.event.pull_request.head.ref, 'release-please--') &&
-      github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+      - id: target
+        name: Find the release commit to check
+        uses: actions/github-script@v7
         with:
-          # The PR head, not the merge commit: the check reads the release
-          # commit's single parent to find exactly what release-please
-          # generated these notes from, and a merge commit has two.
-          ref: ${{ github.event.pull_request.head.sha }}
+          script: |
+            const dispatched = (context.payload.inputs && context.payload.inputs.head || '').trim();
+            if (dispatched) {
+              core.info(`dispatched: checking ${dispatched}`);
+              core.setOutput('sha', dispatched);
+              core.setOutput('found', 'yes');
+              return;
+            }
+            const open = await github.rest.pulls.list({
+              owner: context.repo.owner, repo: context.repo.repo,
+              state: 'open', per_page: 100,
+            });
+            // The same-repository condition is what stops a fork naming a
+            // branch `release-please--anything` to get its head checked out.
+            const release = open.data.filter((pr) =>
+              pr.head.ref.startsWith('release-please--') &&
+              pr.head.repo && pr.head.repo.full_name === `${context.repo.owner}/${context.repo.repo}`);
+            // The denominator, so "nothing to check" cannot read like a pass
+            // that examined something.
+            core.info(`open pull requests: ${open.data.length}; release pull requests: ${release.length}`);
+            if (release.length === 0) {
+              core.info('no open release pull request — nothing to check.');
+              core.setOutput('found', 'no');
+              return;
+            }
+            if (release.length > 1) {
+              core.setFailed(`${release.length} open release pull requests; this job does not know which to check.`);
+              return;
+            }
+            core.info(`checking ${release[0].html_url} at ${release[0].head.sha}`);
+            core.setOutput('sha', release[0].head.sha);
+            core.setOutput('found', 'yes');
+
+      - if: steps.target.outputs.found == 'yes'
+        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+        with:
+          # The release commit itself, whose single parent is exactly what
+          # release-please generated these notes from.
+          ref: ${{ steps.target.outputs.sha }}
           # The whole history and every tag. A shallow checkout cannot reach
           # the previous release tag, and "no previous tag" reads exactly like
           # a repository that has never released — which is why the script
           # exits 3 there rather than passing.
           fetch-depth: 0
           fetch-tags: true
-      - uses: ./.github/actions/setup-bun
+
+      - if: steps.target.outputs.found == 'yes'
+        uses: ./.github/actions/setup-bun
         with:
           # The check imports nothing but git.
           install: "false"
-      - name: Every releasable commit has a release note
-        run: bun scripts/check-release-notes.ts
+
+      - id: check
+        if: steps.target.outputs.found == 'yes'
+        name: Every releasable commit has a release note
+        # Not `set -e`: the exit code IS the result, and it has to survive to
+        # the status step. Reading `$?` unpiped rather than grepping the text.
+        run: |
+          set +e
+          bun scripts/check-release-notes.ts --head "$TARGET_SHA" 2>&1 | tee out.txt
+          rc=${PIPESTATUS[0]}
+          echo "rc=$rc" >> "$GITHUB_OUTPUT"
+          {
+            echo '```'
+            head -c 60000 out.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit "$rc"
+        env:
+          TARGET_SHA: ${{ steps.target.outputs.sha }}
+
+      # `always()`, because the whole point is that the release PR carries a
+      # visible verdict. A workflow_run job is not a check on the pull request,
+      # so without this the result lives somewhere nobody looks — which is the
+      # bug this file exists to close, one level up.
+      - if: always() && steps.target.outputs.found == 'yes'
+        name: Report the verdict onto the release commit
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const rc = '${{ steps.check.outputs.rc }}';
+            const state = rc === '0' ? 'success' : 'failure';
+            const description = rc === '0'
+              ? 'Every releasable commit has a release note'
+              : rc === '3'
+                ? 'BLIND — no comparison was made; this is not a pass'
+                : 'A releasable commit has no entry in the release notes';
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: '${{ steps.target.outputs.sha }}',
+              state,
+              context: 'Release notes cover every releasable commit',
+              description: description.slice(0, 140),
+              target_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+            });
