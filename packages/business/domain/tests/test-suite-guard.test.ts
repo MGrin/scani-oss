@@ -66,13 +66,13 @@ describe('busyMessage', () => {
     });
     expect(message).toContain('"scani"');
     expect(message).toContain('pid 4242');
-    expect(message).toContain('bun scripts/gate-db.ts -- bun run test');
+    expect(message).toContain('bun run db:migrate && bun run test');
     expect(message).toContain('SCANI_ALLOW_SHARED_TEST_DB=1');
   });
 
   test('still tells the reader what to do when the holder vanished mid-lookup', () => {
     const message = busyMessage('postgres://scani:scani@localhost:5433/scani', null);
-    expect(message).toContain('bun scripts/gate-db.ts -- bun run test');
+    expect(message).toContain('bun run db:migrate && bun run test');
   });
 });
 
@@ -95,7 +95,11 @@ describe('nodeEnvRefusal', () => {
     expect(message).toContain('NODE_ENV=test');
     expect(message).toContain('"development"');
     expect(message).toContain('.env');
-    expect(message).toContain('bun scripts/gate-db.ts -- bun run test');
+    // The leading newline+indent is load-bearing. The wrapper invocation this
+    // replaced ENDED with "bun run test", so a bare toContain here passes
+    // against the very message this test exists to reject — measured, it was
+    // the one pin of the six that could not go red (SC-651).
+    expect(message).toContain('\n  bun run test\n');
   });
 
   test('refuses an unset NODE_ENV rather than reading it as the default', () => {

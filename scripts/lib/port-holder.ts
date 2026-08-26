@@ -254,8 +254,8 @@ export interface PortOwnership {
  *
  * A blind result is still a RESULT: `determined: false` with `blind` naming
  * which of the two blindnesses it was. Nothing here decides anything on the
- * strength of not knowing — that is each caller's call, and `gate-db` and
- * `db:dev` deliberately make it differently (SC-590).
+ * strength of not knowing — that is each caller's call, and the callers
+ * deliberately make it differently (SC-590).
  */
 export function portOwnership(port: number, worktreePath: string): PortOwnership {
   const probe = dockerPs();
