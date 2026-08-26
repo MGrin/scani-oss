@@ -11,9 +11,10 @@ interface ScaniLogoProps {
 //
 // The geometry is `SCANI_MARK` in `@scani/shared`, which is also what the PDF
 // statement draws (SC-94) — the api cannot import this package, so the numbers
-// live somewhere both can reach. The marketing site's `favicon.svg` still
-// carries them by value, because it is a static file with no build step;
-// change one and you must change it too, then re-run `bun run icons:generate`.
+// live somewhere both can reach. The marketing site's favicon still carries
+// them by value, because it is a static file with no build step; it is not
+// part of this repository, so changing the geometry here means changing that
+// copy and regenerating the icon set separately.
 export function ScaniLogo({ className }: ScaniLogoProps) {
   const { size, frame, strokeWidth, bars } = SCANI_MARK;
   return (
