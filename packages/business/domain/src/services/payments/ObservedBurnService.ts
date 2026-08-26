@@ -184,6 +184,102 @@ export interface ObservedBurn {
 }
 
 /**
+ * How far the measured drain may move before a confirmation stops meaning
+ * anything (SC-661).
+ *
+ * The drain is recomputed every time the window moves, so a confirmation kept
+ * as a bare timestamp goes on reading as agreement after the figure it agreed
+ * with has changed — which is why `users.observed_burn_confirmed_value` stores
+ * WHAT MUST STILL MATCH rather than a souvenir of what he saw.
+ *
+ * Exact equality is the wrong rule and would make the feature useless: one new
+ * transaction moves a six-month mean by cents, so a confirmation would expire
+ * within hours of being given and the surface would spend its life asking
+ * again. A band is required, and the size of it is a judgement rather than a
+ * measurement — 5% of 8,100 is ±405, which moves an 8.0-month runway to 7.6.
+ * That is inside the noise of a monthly figure and outside the range where
+ * "you confirmed this" becomes a claim about a number he never saw.
+ *
+ * Named and alone on this line because it is the one value here somebody will
+ * want to argue with.
+ */
+export const CONFIRMATION_TOLERANCE = new Decimal('0.05');
+
+/**
+ * What the user has said about the measured drain, if anything (SC-661).
+ *
+ * FOUR STATES AND NOT THREE. `currencyChanged` is not defensive padding: the
+ * answer stores its own currency precisely so a later base-currency change
+ ***REMOVED***
+ * happen when that occurs. Treating it as `none` would DELETE his answer from
+ * the screen with no event to notice it by; treating it as live would show a
+ * figure in the wrong unit. Saying the answer no longer applies is the only
+ * option that is true.
+ */
+export type ObservedBurnAnswer =
+  | { kind: 'none' }
+  | { kind: 'override'; amount: string; at: Date }
+  /**
+   * `matches` is the whole reason the value is stored. `false` is not an error
+   * state — it is the surface's instruction to stop saying he agreed, name both
+   * figures, and ask again.
+   */
+  | { kind: 'confirmed'; value: string; at: Date; matches: boolean }
+  | { kind: 'currencyChanged'; at: Date };
+
+/**
+ * Pure on purpose: no container, no repository, no clock. The judgement it
+ * makes is the one thing in this feature a reader will want to check by hand.
+ */
+export function observedBurnAnswerOf(
+  user: {
+    observedBurnOverride: string | null;
+    observedBurnOverrideCurrencyId: string | null;
+    observedBurnOverrideAt: Date | null;
+    observedBurnConfirmedValue: string | null;
+    observedBurnConfirmedCurrencyId: string | null;
+    observedBurnConfirmedAt: Date | null;
+  },
+  baseCurrencyId: string | null,
+  measuredPerMonthMean: string | null
+): ObservedBurnAnswer {
+  if (user.observedBurnOverride !== null && user.observedBurnOverrideAt !== null) {
+    if (user.observedBurnOverrideCurrencyId !== baseCurrencyId) {
+      return { kind: 'currencyChanged', at: user.observedBurnOverrideAt };
+    }
+    return {
+      kind: 'override',
+      amount: user.observedBurnOverride,
+      at: user.observedBurnOverrideAt,
+    };
+  }
+
+  if (user.observedBurnConfirmedValue !== null && user.observedBurnConfirmedAt !== null) {
+    if (user.observedBurnConfirmedCurrencyId !== baseCurrencyId) {
+      return { kind: 'currencyChanged', at: user.observedBurnConfirmedAt };
+    }
+    return {
+      kind: 'confirmed',
+      value: user.observedBurnConfirmedValue,
+      at: user.observedBurnConfirmedAt,
+      matches: confirmationStillHolds(user.observedBurnConfirmedValue, measuredPerMonthMean),
+    };
+  }
+
+  return { kind: 'none' };
+}
+
+function confirmationStillHolds(confirmed: string, measured: string | null): boolean {
+  if (measured === null) return false;
+  const was = new Decimal(confirmed);
+  const now = new Decimal(measured);
+  // A confirmed zero has no proportion to be within. Only another zero agrees
+  // with it, and dividing by it would answer the question with NaN.
+  if (was.isZero()) return now.isZero();
+  return now.minus(was).abs().dividedBy(was.abs()).lessThanOrEqualTo(CONFIRMATION_TOLERANCE);
+}
+
+/**
  * `forecast.ts` already owns what month a thing falls in, taking `YYYY-MM-DD`.
  * Reused rather than reimplemented for a `Date`: two month conventions in one
  * feature is how a movement lands in a bucket the other half does not have.
