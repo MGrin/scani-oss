@@ -36,6 +36,48 @@ export const users = pgTable('users', {
   // realized figure ever shown was computed FIFO, so a default that changed
   // the rule would move all of them silently.
   costBasisMethod: text('cost_basis_method').notNull().default('fifo'),
+  // The user's correction to the MEASURED monthly drain (SC-661). An override
+  // is not a declaration, and the difference is that an override has something
+  // to disagree with — the runway is still computed from observed perimeter
+  // outflows, and this replaces that figure only where the user has said it is
+  // wrong. Named for what it corrects so nobody reads it as a self-reported
+  // spend: a declared-figure headline was built and rejected, because people
+  // asked what they spend give typical recurring spend and omit exceptional
+  // items (~2x overstatement on the one production book, in the flattering
+  // direction).
+  //
+  // All three move together, enforced by `users_observed_burn_override_complete`:
+  // an amount with no currency cannot be converted, and an override with no date
+  // is the one thing here that goes stale while standing still.
+  observedBurnOverride: text('observed_burn_override'),
+  observedBurnOverrideCurrencyId: uuid('observed_burn_override_currency_id').references(
+    () => tokens.id,
+    { onDelete: 'restrict' }
+  ),
+  observedBurnOverrideAt: timestamp('observed_burn_override_at', { withTimezone: true }),
+  // The other thing the user may do to the drain: AGREE with it (SC-661).
+  //
+  // `observedBurnConfirmedValue` is not the amount he confirmed kept for the
+  // record — it is **the amount that must still match for the confirmation to
+  // mean anything**. The drain is recomputed every time the window moves, so a
+  // confirmation of 8.1 read against a bare timestamp still says he agreed when
+  // the figure is 11.4. That is a claim about the present made out of a record
+  // of the past, and it is the same defect SC-673 is fixing one layer up:
+  // `answerSourceOf` infers WHO answered from a timestamp.
+  //
+  // An override stores no such pairing because it REPLACES the figure rather
+  // than agreeing with it. Only agreement can be invalidated by the thing it
+  // agreed with moving.
+  //
+  // `users_observed_burn_one_answer` forbids holding both: agreeing and
+  // replacing are contradictory answers to one question, and a row carrying
+  // both is this ticket's own defect moved from two screens into one row.
+  observedBurnConfirmedValue: text('observed_burn_confirmed_value'),
+  observedBurnConfirmedCurrencyId: uuid('observed_burn_confirmed_currency_id').references(
+    () => tokens.id,
+    { onDelete: 'restrict' }
+  ),
+  observedBurnConfirmedAt: timestamp('observed_burn_confirmed_at', { withTimezone: true }),
   // First time this account got a file out of the product — an
   // "export everything" or a rendered statement (SC-450). Written once,
   // `WHERE first_export_at IS NULL`, and never updated after. It is the only

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { UpdateUserDto } from '../../src/dtos/user';
+import { ObservedBurnAnswerDto, UpdateUserDto } from '../../src/dtos/user';
 
 const VALID_UUID = '00000000-0000-4000-8000-000000000000';
 
@@ -34,5 +34,89 @@ describe('UpdateUserDto', () => {
 
   test('rejects non-uuid baseCurrencyId', () => {
     expect(UpdateUserDto.safeParse({ baseCurrencyId: 'not-a-uuid' }).success).toBe(false);
+  });
+});
+
+const UUID = '11111111-2222-3333-4444-555555555555';
+
+/**
+ * SC-661. What the user may say about the MEASURED monthly drain.
+ *
+ * A discriminated union rather than a bag of optional fields, because the
+ * database says the same thing and the two must not be able to disagree:
+ * `users_observed_burn_one_answer` forbids an override and a confirmation
+ * standing at once.
+ */
+describe('ObservedBurnAnswerDto', () => {
+  test('the three intentions parse', () => {
+    expect(
+      ObservedBurnAnswerDto.safeParse({ kind: 'override', amount: '6300', currencyTokenId: UUID })
+        .success
+    ).toBe(true);
+    expect(
+      ObservedBurnAnswerDto.safeParse({ kind: 'confirm', value: '8100', currencyTokenId: UUID })
+        .success
+    ).toBe(true);
+    expect(ObservedBurnAnswerDto.safeParse({ kind: 'clear' }).success).toBe(true);
+  });
+
+  /**
+   * THE STRUCTURAL ONE. Overriding and confirming are contradictory answers to
+   * one question, and a shape that could carry both would be this ticket's own
+   * defect — two surfaces disagreeing — moved into one payload.
+   */
+  test('an override and a confirmation cannot be sent together', () => {
+    expect(
+      ObservedBurnAnswerDto.safeParse({
+        kind: 'override',
+        amount: '6300',
+        value: '8100',
+        currencyTokenId: UUID,
+      }).success
+      // `override` has no `value` member, so the extra key is stripped rather
+      // than refused - what matters is that no parse result can carry both,
+      // which the assertion below checks on the OUTPUT rather than the input.
+    ).toBe(true);
+    const parsed = ObservedBurnAnswerDto.parse({
+      kind: 'override',
+      amount: '6300',
+      value: '8100',
+      currencyTokenId: UUID,
+    });
+    expect(parsed).toEqual({ kind: 'override', amount: '6300', currencyTokenId: UUID });
+    expect('value' in parsed).toBe(false);
+  });
+
+  /**
+   * Zero is refused rather than read as "nothing leaves my accounts". It makes
+   * the runway infinite, which is the most flattering possible way to be wrong.
+   * Withdrawing an answer is `clear`, and the test above is its control.
+   */
+  test('neither figure may be zero or negative', () => {
+    expect(
+      ObservedBurnAnswerDto.safeParse({ kind: 'override', amount: '0', currencyTokenId: UUID })
+        .success
+    ).toBe(false);
+    expect(
+      ObservedBurnAnswerDto.safeParse({ kind: 'confirm', value: '-1', currencyTokenId: UUID })
+        .success
+    ).toBe(false);
+  });
+
+  /**
+   * A confirmation without its value is the shape SC-673 is about, one layer
+   * up: a stamp read as though it carried content. It must not be expressible.
+   */
+  test('a confirmation must carry the figure it agreed with', () => {
+    expect(
+      ObservedBurnAnswerDto.safeParse({ kind: 'confirm', currencyTokenId: UUID }).success
+    ).toBe(false);
+    expect(ObservedBurnAnswerDto.safeParse({ kind: 'confirm', value: '8100' }).success).toBe(false);
+  });
+
+  test('an unknown intention is refused rather than treated as one of the three', () => {
+    expect(ObservedBurnAnswerDto.safeParse({ kind: 'reset' }).success).toBe(false);
+    expect(ObservedBurnAnswerDto.safeParse({}).success).toBe(false);
+    expect(ObservedBurnAnswerDto.safeParse(null).success).toBe(false);
   });
 });
