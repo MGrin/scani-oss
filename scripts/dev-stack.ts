@@ -30,6 +30,7 @@ import {
   describeHolder,
   portOwnership,
 } from './lib/port-holder';
+import { censusFromMachine, orphanClause } from './lib/stack-census';
 import {
   composeProjectName,
   devDatabaseName,
@@ -494,6 +495,12 @@ async function main(): Promise<never> {
     const code = await run(downArgs(passthrough), env);
     const verdict = downVerdict(code, await remainingContainers(env), project);
     process.stderr.write(`${verdict.message}\n`);
+    // SC-530. Here rather than on `up` because this is where a person is
+    // already reading about stacks and has just finished with one. The cheap
+    // probe (~0.13s, no sizes) because `down` runs at the end of every gate;
+    // `dev:stacks` pays the 4s for sizes. Silent unless there is an orphan.
+    const clause = orphanClause(censusFromMachine(REPO_ROOT, false).projects, project);
+    if (clause !== null) process.stderr.write(`${clause}\n`);
     process.exit(verdict.exit);
   }
 
