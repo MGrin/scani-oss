@@ -54,7 +54,10 @@ export type DisposalOutcomeDto = (typeof DISPOSAL_OUTCOMES)[number];
  * surface that shows the money. It is deliberately the same two words plus a
  * third, rather than a nullable `AnswerSource`:
  *
- * - `user`         — `transfer_reviewed_at` is set. Provable.
+ * - `user`         — `transfer_review_source` says `user`. Provable.
+ *   It said "`transfer_reviewed_at` is set" until SC-673, which was a fact
+ *   about WHEN standing in for a fact about WHO: 56% of observed burn by value
+ *   was decoded as the user's own answer on the strength of a date.
  * - `unattributed` — an answer is on the row and nothing records who gave it.
  *   Claims only the contrapositive; see `ANSWER_SOURCES` for why `import` and
  *   `machine` were rejected.
