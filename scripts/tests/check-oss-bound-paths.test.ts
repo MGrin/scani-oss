@@ -1,4 +1,7 @@
-import { describe, expect, test } from 'bun:test';
+import { afterAll, describe, expect, test } from 'bun:test';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
   applyNewFileAllowance,
   type BranchFacts,
@@ -217,6 +220,311 @@ describe('the tree discriminator outranks descent (SC-629)', () => {
         facts({ treeMarkers: null, upstreamIsAncestor: true, originIsAncestor: false })
       ).kind
     ).toBe('oss');
+  });
+});
+
+/**
+ * SC-659. The predicate above this block used to be a PRESENCE test, and the
+ * evidence against it was already written in `classifyByTree`'s own docblock:
+ * `private` branches carry 0.52-1.00 of the private-only set, `oss` ones carry
+ * 0.00-0.02, and nothing sits between. Presence keeps only the sign of that
+ * separation, so one mirror-only path outranked 541 private-only ones.
+ *
+ * Every case below is expressed as two SHARES rather than two counts, because
+ * that is the thing the fix reads. The must-be-FOUND case is the first one —
+ * it is the only one that was broken, and a suite that omits it would have
+ * gone green on every day this bug existed.
+ */
+describe('the tree discriminator weighs shares, not presence (SC-659)', () => {
+  /**
+   * MUST-BE-FOUND. The upstream-first window, measured on `main` 2026-08-26:
+   * a shared file is landed on `upstream/main` first, so until the private
+   * half is committed it is mirror-only BY CONSTRUCTION. The private branch
+   * carrying it scored `oss` under presence and the guard refused
+   * `scripts/oss-eligibility.ts` — a private-only source file — on a tree that
+   * was 541/546 private.
+   */
+  test('a private branch inside an upstream-first window is private, not oss', () => {
+    const b = classifyByTree({
+      privateOnlyTotal: 546,
+      privateOnlyInHead: 541,
+      mirrorOnlyTotal: 10,
+      mirrorOnlyInHead: 1,
+    });
+    expect(b?.kind).toBe('private');
+    // The `why` has to survive being read. It said "and none of the 10
+    // mirror-only path(s)" while the tree carried one, which is a false
+    // statement in the one message a refused author would have gone on.
+    expect(b?.why).toContain('1/10');
+    expect(b?.why).toContain('541/546');
+    expect(b?.why).not.toContain('none of');
+  });
+
+  /**
+   * MUST-BE-ABSENT, and the axis that stops the fix from being "reverse the
+   * order". Three real OSS branches in this repo carry exactly one private-only
+   * path; refusing that path is the whole job. A share comparison keeps them
+   * `oss` because 9/9 is not 1/543 — the two mixed cases are two orders of
+   * magnitude apart, not adjacent.
+   */
+  test('an oss branch carrying one private-only path is still oss', () => {
+    const b = classifyByTree({
+      privateOnlyTotal: 543,
+      privateOnlyInHead: 1,
+      mirrorOnlyTotal: 9,
+      mirrorOnlyInHead: 9,
+    });
+    expect(b?.kind).toBe('oss');
+  });
+
+  /** A genuine mirror checkout: the whole mirror set, none of the private one. */
+  test('a mirror tree is oss', () => {
+    expect(
+      classifyByTree({
+        privateOnlyTotal: 546,
+        privateOnlyInHead: 0,
+        mirrorOnlyTotal: 10,
+        mirrorOnlyInHead: 10,
+      })?.kind
+    ).toBe('oss');
+  });
+
+  /**
+   * THE ORDER IS THE SAFETY PROPERTY AND THE FIX KEEPS IT. `oss` makes the
+   * guard RUN and `private` makes it SKIP, so an exact tie resolves toward the
+   * verdict whose failure is a refusal somebody reads. A future reader
+   * tightening `>=` to `>` would be trading a visible failure for a silent one.
+   */
+  test('an exact tie resolves to oss, because a refusal beats a silent skip', () => {
+    expect(
+      classifyByTree({
+        privateOnlyTotal: 10,
+        privateOnlyInHead: 5,
+        mirrorOnlyTotal: 10,
+        mirrorOnlyInHead: 5,
+      })?.kind
+    ).toBe('oss');
+  });
+
+  /**
+   * The whole population, as one table, so the boundary is visible rather than
+   * asserted case by case. The two rows that matter sit next to each other:
+   * identical `mirrorOnlyInHead`, opposite verdicts — which is precisely what
+   * a presence test cannot express.
+   */
+  test.each([
+    ['a mirror checkout', 0, 546, 10, 10, 'oss'],
+    ['an oss branch with one private-only path', 1, 543, 9, 9, 'oss'],
+    ['an upstream-first private branch', 541, 546, 1, 10, 'private'],
+    ['an ordinary private branch', 543, 543, 0, 9, 'private'],
+  ] as const)('%s', (_name, pIn, pTotal, mIn, mTotal, expected) => {
+    expect(
+      classifyByTree({
+        privateOnlyTotal: pTotal,
+        privateOnlyInHead: pIn,
+        mirrorOnlyTotal: mTotal,
+        mirrorOnlyInHead: mIn,
+      })?.kind
+    ).toBe(expected);
+  });
+
+  /**
+   * `unknown` MUST NEVER BECOME PERMISSION. A tree matching neither repo is
+   * still not resolved toward the convenient answer, and the share comparison
+   * does not create a new route to `private` for it: 0/546 against 0/10 is two
+   * empty shares, not a private one.
+   */
+  test('a tree carrying neither kind of marker is still undecided', () => {
+    expect(
+      classifyByTree({
+        privateOnlyTotal: 546,
+        privateOnlyInHead: 0,
+        mirrorOnlyTotal: 10,
+        mirrorOnlyInHead: 0,
+      })
+    ).toBeNull();
+  });
+
+  /**
+   * THE ZERO DENOMINATOR, which is a legitimate steady state rather than a
+   * defect: the mirror-only set is only ever "files upstream has that private
+   * does not", and a healthy repo drives it toward zero. Left to the
+   * arithmetic this lands on the right verdict for the wrong stated reason —
+   * a `why` reading `0/0 mirror-only` tells the reader the tree LACKS paths
+   * that do not exist to lack.
+   */
+  test('no mirror-only paths in existence is said out loud, not implied', () => {
+    const b = classifyByTree({
+      privateOnlyTotal: 546,
+      privateOnlyInHead: 546,
+      mirrorOnlyTotal: 0,
+      mirrorOnlyInHead: 0,
+    });
+    expect(b?.kind).toBe('private');
+    expect(b?.why).toContain('no mirror-only paths in existence');
+    expect(b?.why).not.toContain('0/0');
+  });
+
+  test('no mirror-only paths and no private-only ones is still undecided', () => {
+    expect(
+      classifyByTree({
+        privateOnlyTotal: 546,
+        privateOnlyInHead: 0,
+        mirrorOnlyTotal: 0,
+        mirrorOnlyInHead: 0,
+      })
+    ).toBeNull();
+  });
+});
+
+/**
+ * SC-659. THE CONTROL, END TO END, AND IT IS NOT THE SAME TEST AS THE TABLE
+ * ABOVE. Those hand the classifier a `TreeMarkers` literal, so they prove the
+ * predicate and nothing about the thing that FILLS it. This builds two real
+ * git repositories, opens a real upstream-first window between them, and runs
+ * the real entrypoint as a subprocess — `collectTreeMarkers`, `classifyBranch`
+ * and the refusal path together, on a tree git actually produced.
+ *
+ * A SUBPROCESS on purpose. `collectTreeMarkers` shells out to git in
+ * `process.cwd()`, and `bun test` runs all 5xx files in ONE process, so a test
+ * that chdir'd to a scratch directory would be changing global state every
+ * later file reads — the same class of leak `restoreContainerAfterAll` exists
+ * for. Spawning with `cwd` set touches nothing.
+ *
+ ***REMOVED***
+ * match is the SHAPE — a private tree carrying the whole private-only set and
+ ***REMOVED***
+ * docblock and in the table above.
+ */
+describe('an upstream-first window on real repositories (SC-659)', () => {
+  const root = mkdtempSync(join(tmpdir(), 'oss-bound-'));
+  afterAll(() => rmSync(root, { recursive: true, force: true }));
+
+  const guard = join(import.meta.dir, '..', 'check-oss-bound-paths.ts');
+
+  function git(cwd: string, ...args: string[]): void {
+    const run = Bun.spawnSync(['git', ...args], {
+      cwd,
+      // The scratch repos sit under $TMPDIR, which on a developer's machine can
+      // be inside no repository at all or inside somebody else's. Ceiling them
+      // so a mistake here can never reach the checkout running the test. HOME
+      // is deliberately NOT overridden: git then cannot reach xcrun's cache on
+      // macOS and every call prints an errno over the real result.
+      env: { ...process.env, GIT_CEILING_DIRECTORIES: root },
+      stderr: 'pipe',
+      stdout: 'pipe',
+    });
+    if (run.exitCode !== 0) {
+      throw new Error(`git ${args.join(' ')} failed: ${new TextDecoder().decode(run.stderr)}`);
+    }
+  }
+
+  function identify(cwd: string): void {
+    git(cwd, 'config', 'user.email', 'test@example.com');
+    git(cwd, 'config', 'user.name', 'test');
+  }
+
+  const PRIVATE_ONLY = 20;
+  const MIRROR_ONLY = 5;
+
+  // Built once: three branches off one pair of repositories, which is also the
+  // cheapest way to be sure the three verdicts differ because the TREES differ
+  // and not because anything else does.
+  const work = (() => {
+    const up = join(root, 'up.git');
+    const priv = join(root, 'priv.git');
+    const seed = join(root, 'seed');
+    const clone = join(root, 'work');
+    git(root, 'init', '--quiet', '--bare', up);
+    git(root, 'init', '--quiet', '--bare', priv);
+    git(root, 'init', '--quiet', '--initial-branch=main', seed);
+    identify(seed);
+    for (let i = 0; i < 8; i += 1) writeFileSync(join(seed, `shared${i}.ts`), `shared ${i}\n`);
+    for (let i = 0; i < MIRROR_ONLY; i += 1)
+      writeFileSync(join(seed, `mirror${i}.yml`), `m ${i}\n`);
+    git(seed, 'add', '-A');
+    git(seed, 'commit', '--quiet', '-m', 'the mirror');
+    git(seed, 'push', '--quiet', up, 'main');
+    git(seed, 'rm', '--quiet', ...Array.from({ length: MIRROR_ONLY }, (_, i) => `mirror${i}.yml`));
+    for (let i = 0; i < PRIVATE_ONLY; i += 1)
+      writeFileSync(join(seed, `private${i}.ts`), `p ${i}\n`);
+    git(seed, 'add', '-A');
+    git(seed, 'commit', '--quiet', '-m', 'the private repo');
+    git(seed, 'push', '--quiet', priv, 'main');
+    // Cloned and fetched, never `update-ref`: a remote-tracking ref written by
+    // hand is a confident wrong answer to every later question about it.
+    git(root, 'clone', '--quiet', priv, clone);
+    identify(clone);
+    git(clone, 'remote', 'add', 'upstream', up);
+    git(clone, 'fetch', '--quiet', 'upstream');
+    return clone;
+  })();
+
+  function runGuard(branch: string, stage: string): { code: number; out: string } {
+    git(work, 'checkout', '--quiet', branch);
+    git(work, 'add', stage);
+    const run = Bun.spawnSync(['bun', guard], {
+      cwd: work,
+      env: { ...process.env, GIT_CEILING_DIRECTORIES: root },
+      stdout: 'pipe',
+      stderr: 'pipe',
+    });
+    // `--hard`, not a bare reset: the run leaves an edited tracked file, and
+    // unstaging it is not enough for the next `checkout` to succeed.
+    git(work, 'reset', '--quiet', '--hard');
+    return {
+      code: run.exitCode,
+      out: new TextDecoder().decode(run.stdout) + new TextDecoder().decode(run.stderr),
+    };
+  }
+
+  /**
+   * MUST-BE-FOUND. `mirror0.yml` was landed on `upstream/main` first; this is
+   * the private half committed after, which is what every shared change in
+   * this repository looks like for the hours between the two. Under the
+   * presence test this branch classified `oss` and the guard refused a
+   * private-only source file on a tree that was 20/20 private.
+   */
+  test('the private half of an upstream-first change does not trigger the guard', () => {
+    git(work, 'checkout', '--quiet', '-b', 'private-half', '--no-track', 'origin/main');
+    const from = Bun.spawnSync(['git', 'show', 'upstream/main:mirror0.yml'], { cwd: work });
+    writeFileSync(join(work, 'mirror0.yml'), from.stdout);
+    git(work, 'add', 'mirror0.yml');
+    git(work, 'commit', '--quiet', '-m', 'the private half of an upstream-first change');
+
+    writeFileSync(join(work, 'private7.ts'), 'edited\n');
+    const { code, out } = runGuard('private-half', 'private7.ts');
+    expect(out).toContain(VERDICT.skipped);
+    expect(code).toBe(EXIT_OK);
+    // The denominators, so a pass cannot be read as the window never opening.
+    expect(out).toContain(`1/${MIRROR_ONLY} mirror-only`);
+    expect(out).toContain(`${PRIVATE_ONLY}/${PRIVATE_ONLY} private-only`);
+  });
+
+  /**
+   * MUST-BE-ABSENT, on the same pair of repositories. If the fix had been
+   * "reverse the order" or "any private-only path means private", this is the
+   * case that would have gone quiet — and it is the case the guard exists for.
+   */
+  test('an oss branch staging a private-only path is still refused', () => {
+    git(work, 'checkout', '--quiet', '-b', 'oss-side', '--no-track', 'upstream/main');
+    const from = Bun.spawnSync(['git', 'show', 'origin/main:private1.ts'], { cwd: work });
+    writeFileSync(join(work, 'private1.ts'), from.stdout);
+
+    const { code, out } = runGuard('oss-side', 'private1.ts');
+    expect(out).toContain(VERDICT.refused);
+    expect(code).toBe(EXIT_REFUSED);
+    expect(out).toContain('private1.ts');
+  });
+
+  /** The third population, so neither verdict above is the only one reachable. */
+  test('a private branch with no window open is still skipped', () => {
+    git(work, 'checkout', '--quiet', '-b', 'no-window', '--no-track', 'origin/main');
+    writeFileSync(join(work, 'private7.ts'), 'edited again\n');
+    const { code, out } = runGuard('no-window', 'private7.ts');
+    expect(out).toContain(VERDICT.skipped);
+    expect(code).toBe(EXIT_OK);
+    expect(out).toContain(`0/${MIRROR_ONLY} mirror-only`);
   });
 });
 
