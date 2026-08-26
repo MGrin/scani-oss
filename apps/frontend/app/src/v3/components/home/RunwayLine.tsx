@@ -98,11 +98,22 @@ export function RunwayLine() {
   }, [observedAnswer, forecast.data, rates]);
 
   if (observedAnswer) {
+    /**
+     * Deliberately NOT a link, and that is the whole of SC-657's second
+     * finding. This line answers from OBSERVED burn; `ForecastView` still
+     * projects the committed recurring book and was not changed. On the demo
+     * persona the two do not merely differ, they conclude the OPPOSITE: this
+     * line reads "About 27 months at recent spending" and the forecast page
+     * reads "Lasts beyond 12 months · the book nets +£8,***REMOVED*** a month".
+     *
+     * A link asserts that the destination elaborates the thing you tapped.
+     * Pointing one at a page that contradicts it is worse than having no link,
+     * so it is removed until the two surfaces are reconciled — the follow-up
+     * ticket owns that, and restores the link with it. Forecast is still
+     * reachable from the Payments nav; only the false equivalence is gone.
+     */
     return (
-      <Link
-        to={V3_ROUTES.forecast}
-        className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-t border-dashed border-border px-4 py-3 transition-colors hover:bg-surface-hover"
-      >
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-t border-dashed border-border px-4 py-3">
         <span className="flex flex-wrap items-center gap-2 text-caption text-muted-foreground">
           {t('v3.home.runway.label')}
           <span className="rounded border border-dashed border-muted-foreground/70 px-1.5 text-caption uppercase leading-tight tracking-wide">
@@ -119,7 +130,7 @@ export function RunwayLine() {
             </span>
           ) : null}
         </span>
-      </Link>
+      </div>
     );
   }
 
