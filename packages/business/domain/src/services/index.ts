@@ -132,6 +132,14 @@ export {
   type PaymentMatchDirection,
 } from './payments/matchOccurrences';
 export {
+  completeMonthWindow,
+  OBSERVED_BURN_WINDOW_MONTHS,
+  type ObservedBurn,
+  type ObservedBurnExcluded,
+  type ObservedBurnMonth,
+  ObservedBurnService,
+} from './payments/ObservedBurnService';
+export {
   FORECAST_HORIZON_MONTHS,
   type PaymentForecast,
   PaymentForecastService,
