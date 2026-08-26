@@ -19,6 +19,31 @@ version heading stays there permanently, above every future release. This
 comment is deliberately in that position; explanatory prose should not be.
 -->
 
+## [0.21.0](https://github.com/MGrin/scani-oss/compare/v0.20.0...v0.21.0) (2026-08-26)
+
+
+### Features
+
+* **app:** let the user confirm or override the measured drain ([fa63441](https://github.com/MGrin/scani-oss/commit/fa63441afdc0ea07ff3c70037b218326e724cdd5))
+* **money:** say who classified the money the burn is made of ([51879b3](https://github.com/MGrin/scani-oss/commit/51879b3406bf2d9f997f9be15fd61e41cb86e301))
+
+
+### Bug Fixes
+
+* **api:** make input strictness reach nested and refined schemas ([2c688e8](https://github.com/MGrin/scani-oss/commit/2c688e8f3f1ae94d80aaeae6585bb2b217afdc4d))
+* **api:** project the current user instead of returning the row ([bc2bf5c](https://github.com/MGrin/scani-oss/commit/bc2bf5cd017c4ffcce644b5a98339bb8f14afb53))
+* **api:** refuse input parameters no schema declares (SC-675) ([e3655d8](https://github.com/MGrin/scani-oss/commit/e3655d87f50b2b1a8d852543535e49acac41aaa5))
+* **api:** refuse undeclared parameters on a discriminated-union input ([c40f83b](https://github.com/MGrin/scani-oss/commit/c40f83b3d8ecddbe335b7b46c78c25126eb6221b))
+* **app:** a burn-provenance share under half a percent printed 0% ([d999e15](https://github.com/MGrin/scani-oss/commit/d999e1542fc8692433f1817f7bc1a523cbc127d7))
+* **app:** grey out a zero override instead of letting it 400 ([5a85c84](https://github.com/MGrin/scani-oss/commit/5a85c84378cb7083dfb2b29d9ff530191012b7f4))
+* **app:** render no affordance rather than throwing on an older api ([70708fc](https://github.com/MGrin/scani-oss/commit/70708fc60613ef42e8740e1e8feef71ec606889a))
+* **dev-stack:** wait for healthchecks on up, and say what was verified ([caecf03](https://github.com/MGrin/scani-oss/commit/caecf034cc18fab438b69582d3ac84a7e73f59ba))
+* **docker:** read PORT in the backend healthchecks instead of hardcoding it ([7799c84](https://github.com/MGrin/scani-oss/commit/7799c8485e20a622e89cb2a18fda1eb45170cb22))
+* invent the owner's name in the payment-description fixtures ([3fb35bd](https://github.com/MGrin/scani-oss/commit/3fb35bdfedfc670c3779e2bf80ef37f3f0191d9c))
+* invent the second payee in the payment-description fixtures ([80aa62b](https://github.com/MGrin/scani-oss/commit/80aa62b475aeafff6a51cbb51fa052bf1f7ebe8a))
+* use an invented address pair in the transfer-rule fixtures ([e1f9b5e](https://github.com/MGrin/scani-oss/commit/e1f9b5ef4aae13a68306842242e2296a49a5464d))
+* use invented fixtures for the observed-burn figures ([17f2339](https://github.com/MGrin/scani-oss/commit/17f233995f48eff9ef200662760cb201aa91acff))
+
 ## [0.20.0](https://github.com/MGrin/scani-oss/compare/v0.19.0...v0.20.0) (2026-08-26)
 
 
