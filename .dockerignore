@@ -1,4 +1,15 @@
-# Build context exclusions for the three backend Dockerfiles.
+# Build context exclusions for all five Dockerfiles.
+#
+# THIS IS THE ONLY ONE DOCKER READS. A `.dockerignore` is read from the build
+# CONTEXT ROOT, and `docker-publish.yml` builds every image with `context: .`.
+# The only per-Dockerfile form BuildKit honours is `<dockerfile>.dockerignore`
+# — `apps/backend/api/Dockerfile.dockerignore`, not `apps/backend/api/
+# .dockerignore`. Three files of the latter name existed until SC-650, each
+# carrying a correct `**/.env` rule that Docker never read: measured against
+# the real `apps/backend/api/Dockerfile`, `/app/apps/backend/api/.env` was in
+# the build stage regardless. They were deleted rather than renamed, because
+# renaming them would change what three production images build from and that
+# is a separate decision (SC-655).
 #
 # `node_modules` is the one that matters. Each Dockerfile's deps stage runs its
 # own filtered `bun install --linker=hoisted` into `/app/node_modules`, and the
@@ -29,10 +40,34 @@ coverage
 
 # Never belongs in an image. `.env` in particular is mounted at runtime by
 # compose rather than baked in.
+#
+# The `**/` twin is load-bearing here and its absence was a real leak (SC-650).
+# `scripts/sync-env.ts` writes a per-app `.env`, mode 600, into every app
+# directory; a bare `.env` matches the context root only, so all seven reached
+# the build context of every image. Measured against the real
+# `apps/backend/api/Dockerfile`: `/app/apps/backend/api/.env` was present in the
+# build stage while the root `.env` was correctly absent — the control that
+# makes the gap readable rather than looking like a broken ignore file.
+#
+# The negations come last: `**/.env.*` matches `.env.example` too, and Docker
+# applies the last matching rule.
 .git
+**/.git
 .env
+**/.env
 .env.*
+**/.env.*
 !.env.example
+!**/.env.example
+
+# Editor, tool and OS droppings. Nothing in an image reads them, and a log can
+# carry anything the process it came from was holding. Carried over from the
+# three per-app `.dockerignore` files deleted in SC-650, which listed them and
+# were never read by Docker — see the note at the top of this file.
+**/.turbo
+**/.cache
+**/*.log
+**/.DS_Store
 
 # Test and capture artefacts — large, and nothing in an image reads them.
 apps/e2e/shots
