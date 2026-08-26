@@ -467,6 +467,52 @@ describe('SC-661 — provenance of the counted burn', () => {
   });
 
   /**
+   * THE GUARD IS ON THE AMOUNT AND THE SENTENCE PRINTS A PERCENT.
+   *
+   * A class whose amount is positive but under half a percent of the total
+   * passed `greaterThan(0)` and printed "0% of that value rests on answers you
+   * gave." — a measurement asserting zero, which is worse than the silence the
+   * guard exists to produce. Absent says nothing; `0%` says something false.
+   *
+   * IT COULD NOT APPEAR ON THE BOOK THIS SHIPPED AGAINST, which is why it
+   * reached production: `automated` is exactly 0 there, so it takes the null
+   * branch. Separating "renders when the amount is > 0" from "renders when the
+   * PRINTED figure is > 0" needs a value both positive and tiny, and only a
+   * fixture has one.
+   *
+   * The negative assertion is the one that would have been red. The positive
+   * one alone would pass on an implementation that suppressed the class
+   * entirely — and suppressing it asserts the class contributed NOTHING, the
+   * same false claim in the other direction.
+   */
+  test('a positive share too small to round to 1% prints <1%, never 0%', () => {
+    const html = render(BOOK, '10000', {
+      forecast: {
+        ...wire(BOOK, '10000'),
+        // 10 / 7500 = 0.133%, which `toFixed(0)` renders as "0".
+        observedBurn: observedBurn({
+          provenance: { user: '7480', automated: '10', unattributed: '10' },
+        }),
+      },
+    });
+
+    // `&lt;` because this is serialized HTML — the DOM text is `<1%`. Asserted
+    // in the escaped form rather than stripped, so the NEXT line can be the
+    // one that matters: the marker travels through i18next interpolation AND
+    // React, and a double escape would put the literal characters `&lt;1%` on
+    // the user's screen. `&amp;lt;` is what that looks like here.
+    expect(html).toInclude('&lt;1% was decided by a named rule you can go and read');
+    expect(html).toInclude('&lt;1% carries no record of who or what decided');
+    expect(html).not.toInclude('&amp;lt;');
+
+    expect(html).not.toInclude('>0% was decided by a named rule');
+    expect(html).not.toInclude('>0% carries no record of who or what decided');
+    // Control: the class that DOES round is untouched, so the assertions above
+    // are the `<1` branch firing rather than the block failing to render.
+    expect(html).toInclude('100% of that value rests on answers you gave');
+  });
+
+  /**
    * PLACEMENT IS PART OF THE FIX. The excluded line is a small caveat about 4
    * EXCLUDED rows; this is a large claim about 76% of the value that IS
    * COUNTED. Opposite operations — adjacent and in the wrong order, the larger
