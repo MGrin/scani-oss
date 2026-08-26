@@ -1,4 +1,4 @@
-import { Decimal } from '@scani/shared';
+import { committedShareOfObserved, Decimal } from '@scani/shared';
 import { type ConversionContext, convertTotalsToBase, type UnconvertedPart } from './paymentTotals';
 
 /**
@@ -193,12 +193,28 @@ export function project(
 /**
  * How long the liquid balance lasts.
  *
- * Two answers and no third, because there is no honest third. Either the walk
- * reaches zero inside the window — a date, from dated movements — or it does
- * not, and the answer is "longer than this window", never a number obtained by
- * dividing by an average. An average monthly burn extrapolated past the last
- * month anybody has data for is arithmetic dressed as a forecast, and the one
- * reader of this screen is looking at his own money.
+ * Two answers and no third, because THIS function has no honest third. Either
+ * the walk reaches zero inside the window — a date, from dated movements — or
+ * it does not, and the answer is "longer than this window". It will never
+ * divide the book's own average and call the quotient a date.
+ *
+ * ## That is a rule about the BOOK, not about averages (SC-661)
+ *
+ * This doc used to end "an average monthly burn extrapolated past the last
+ * month anybody has data for is arithmetic dressed as a forecast", full stop —
+ * and `observedRunwayMonths` in `@scani/shared` now does exactly that, on the
+ * surface directly above this one. Left as written, the rule reads as a
+ * standing ban that a future reader would correctly apply to delete the
+ * observed runway.
+ *
+ * The distinction it was actually protecting: extrapolating the RECURRING
+ * BOOK past its window invents obligations nobody entered, because the book is
+ * a finite list of dated commitments and running out of them is not evidence
+ * of anything. Observed burn is a measured RATE — six complete months of money
+ * that really left — and a rate is the one thing it is legitimate to divide
+ * into a balance. It is also reported with its spread and its excluded counts
+ * beside it, which is what keeps the single figure from being more confident
+ * than the data.
  *
  * `netPerMonth` accompanies the second answer so the sentence can say what the
  * book is doing — `+€1,200 a month`, `−€300 a month` — without implying a date.
@@ -234,6 +250,30 @@ export function runway(projection: Projection): Runway {
     beyondMonths: months,
     netPerMonth: months > 0 ? net.dividedBy(months) : new Decimal(0),
   };
+}
+
+/**
+ * The book's monthly outflow as a share of observed burn (SC-661).
+ *
+ * Both surfaces that show the runway also show this percentage, and until this
+ * function existed both computed it inline from their own projection. That is
+ * the same duplication that let the RUNWAY drift until the two screens reached
+ * opposite conclusions — caught here by reading the diff rather than by the two
+ * figures disagreeing in front of somebody, which is how the first one was
+ * found.
+ *
+ * `null` when the projection is not ready or observed is zero: a share of
+ * nothing is a question with no answer, not 0%.
+ */
+export function committedShare(
+  projection: Projection,
+  observedPerMonthMean: string
+): Decimal | null {
+  if (projection.pending || projection.points.length === 0) return null;
+  const committed = projection.points
+    .reduce((sum, point) => sum.plus(point.outflow), new Decimal(0))
+    .dividedBy(projection.points.length);
+  return committedShareOfObserved(committed.toString(), observedPerMonthMean);
 }
 
 export interface Affordability {

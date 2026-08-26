@@ -1,3 +1,4 @@
+import type { ObservedAffordability } from '@scani/shared';
 import { Button } from '@scani/ui/ui/button';
 import { AmountInput } from '@scani/ui/v3/components/AmountInput';
 import { Block } from '@scani/ui/v3/components/Block';
@@ -49,6 +50,14 @@ interface AffordabilityPanelProps {
   oneOff: OneOffOutflow | null;
   onChange: (next: OneOffOutflow | null) => void;
   verdict: Affordability | null;
+  /**
+   * The answer that ships (SC-661, mgrin). When present it REPLACES `verdict`
+   * rather than sitting beside it — two answers to "can I afford it" on one
+   * panel is the contradiction this ticket exists to remove, one screen further
+   * in. `verdict` remains for the account that has a recurring book and no
+   * perimeter exits, where the walk is the only answer there is.
+   */
+  observedVerdict: ObservedAffordability | null;
   baseSymbol: string;
   /** Currencies to pick from, handed down rather than fetched — this surface
    *  stays free of tRPC so it can be rendered and asserted on its own. */
@@ -62,6 +71,7 @@ export function AffordabilityPanel({
   oneOff,
   onChange,
   verdict,
+  observedVerdict,
   baseSymbol,
   tokens,
   disabled = false,
@@ -122,8 +132,68 @@ export function AffordabilityPanel({
         ) : null}
       </div>
 
-      {verdict ? <AffordabilityAnswer verdict={verdict} baseSymbol={baseSymbol} /> : null}
+      {observedVerdict ? (
+        <ObservedAffordabilityAnswer verdict={observedVerdict} baseSymbol={baseSymbol} />
+      ) : verdict ? (
+        <AffordabilityAnswer verdict={verdict} baseSymbol={baseSymbol} />
+      ) : null}
     </Block>
+  );
+}
+
+/**
+ * The answer against observed burn (SC-661).
+ *
+ * ## What it cannot say, stated because it used to
+ *
+ * There is no month here. The committed walk put the one-off in a dated bucket
+ * and could name the month the balance dips, because the book carries dates.
+ * Observed burn is a mean over six complete months and has no schedule, so a
+ * purchase today and the same purchase in October cost exactly the same. That
+ * is a real thing given up and the surface says so rather than letting the
+ * reader assume the date field still means something to the answer.
+ *
+ * ## What it can say, which it could not before
+ *
+ * A cost in months, always. The walk returned `monthsLost: null` unless BOTH
+ * projections ran out inside twelve months, and on a book that nets +$10.8k a
+ * month neither ever did — so the panel answered "affordable" to everything.
+ */
+function ObservedAffordabilityAnswer({
+  verdict,
+  baseSymbol,
+}: {
+  verdict: ObservedAffordability;
+  baseSymbol: string;
+}) {
+  const { t } = useTranslation();
+
+  return (
+    <div className="flex flex-col gap-2 border-t border-dashed border-border pt-4">
+      <ProjectedTile
+        label={t('v3.money.forecast.affordRemaining')}
+        value={<Numeric value={verdict.remaining.toString()} currency={baseSymbol} />}
+        note={t('v3.money.forecast.affordRunwayAfterObserved', { count: verdict.monthsAfter })}
+      />
+
+      {verdict.affordable ? null : (
+        <p className="text-caption text-muted-foreground">{t('v3.money.forecast.affordCannot')}</p>
+      )}
+
+      {verdict.monthsLost > 0 ? (
+        <p className="text-caption text-muted-foreground">
+          {t('v3.money.forecast.affordCostsMonths', { count: verdict.monthsLost })}
+        </p>
+      ) : null}
+
+      {/* The date field above is still collected — it is part of the form's
+          shape and a reader fills it in — but it does not reach this answer.
+          Saying so is cheaper than a reader concluding the timing was
+          considered. */}
+      <p className="text-caption text-muted-foreground">
+        {t('v3.money.forecast.affordNoSchedule')}
+      </p>
+    </div>
   );
 }
 
