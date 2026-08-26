@@ -72,6 +72,13 @@ export const users = pgTable('users', {
   // `users_observed_burn_one_answer` forbids holding both: agreeing and
   // replacing are contradictory answers to one question, and a row carrying
   // both is this ticket's own defect moved from two screens into one row.
+  //
+  // The stronger half is the SEQUENCE. The real path is: override, the
+  // measurement later moves to something he agrees with, confirm THAT — and
+  // every step requires clearing the other pair. A write that forgets leaves a
+  // silent second answer, which nothing reads as an error and nobody goes
+  // looking for. The constraint makes forgetting a refusal at the moment it
+  // happens, which is the only moment it is visible.
   observedBurnConfirmedValue: text('observed_burn_confirmed_value'),
   observedBurnConfirmedCurrencyId: uuid('observed_burn_confirmed_currency_id').references(
     () => tokens.id,
