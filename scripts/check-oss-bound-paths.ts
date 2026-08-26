@@ -109,34 +109,99 @@ export interface TreeMarkers {
  * contain the mirror's. Both sets are discovered by diffing the two mains at
  * run time, so nothing here goes stale as either repo moves.
  *
- * THE ORDER IS THE SAFETY PROPERTY, not a preference. `oss` makes the guard
- * RUN; `private` makes it SKIP. So mirror evidence is checked first and wins
- * outright: a tree carrying mirror-only paths is treated as mirror-bound even
- * if it also carries a private-only path, because the worst case is a refusal
- * somebody reads, while the worst case of the opposite order is a check that
- * silently did not happen. `private` is reached only on clean evidence — some
- * private-only paths and NO mirror-only ones. Anything else is `unknown`.
+ * IT IS A SHARE, NOT A PRESENCE (SC-659). Each side scores as the fraction of
+ * its own marker set that HEAD carries, and the larger share wins.
  *
- * That mixed case is real, not hypothetical: three OSS branches in this repo
- * carry exactly one private-only path, and refusing that path is precisely
- * what this guard is for.
+ * THE NUMBERS FOR THAT WERE ALREADY IN THIS COMMENT. The paragraph below has
+ * read `693 classified private, each carrying between 283 and 543 of the 543
+ * private-only paths; 63 classified oss, each carrying 0 or 1` since SC-629 —
+ * a clean bimodal separation, 0.52-1.00 against 0.00-0.02, empty in the
+ * middle — and the predicate underneath it tested `> 0`, which discards the
+ * separation and keeps only the sign. Somebody looked, wrote the measurement
+ * down, and then wrote a check that could not use it; every reader since has
+ * read the evidence and the bug together without the first reading as a fix
+ * for the second. Recorded in these words on purpose: the next person to
+ * arrive must not assume the gap was unknown and go measure it again.
+ *
+ * WHAT PRESENCE COSTS. An UPSTREAM-FIRST change is one file landed on
+ * `upstream/main` first and the private half committed after. Between those
+ * two moments the shared file is mirror-only BY CONSTRUCTION — in
+ * `upstream/main`, not yet in `origin/main` — so the private branch carrying
+ * it has exactly one mirror-only path. Presence read that as `oss`, ran the
+ * guard, and refused every private-only source file on a branch that was
+ * 541/546 private. Measured on `main` 2026-08-26: 1 of 10 mirror-only against
+ * 541 of 546 private-only. Not a close call at any denominator.
+ *
+ * THE ORDER IS STILL THE SAFETY PROPERTY, and it is kept exactly. `oss` makes
+ * the guard RUN; `private` makes it SKIP. Mirror evidence is still tested
+ * first and still wins a TIE — hence `>=` — because the worst case of a wrong
+ * `oss` is a refusal somebody reads, while the worst case of a wrong `private`
+ * is a check that silently did not happen. Only the QUESTION changed: "does
+ * HEAD carry any?" became "does HEAD carry more of one set than the other?".
+ * Reversing the order was considered for SC-659 and rejected on this ground.
+ *
+ * The mixed case is real, not hypothetical, and MUST still refuse: three OSS
+ * branches in this repo carry exactly one private-only path, and refusing that
+ * path is precisely what this guard is for. They score 9/9 mirror against
+ * 1/543 private, so they are nowhere near the boundary either.
+ *
+ * TWO EDGES, both stated rather than left to the arithmetic.
+ *
+ * `mirrorOnlyTotal === 0` is a legitimate steady state, not a defect: that set
+ * is only ever "files upstream has that private does not", which a healthy
+ * repo drives toward zero. There is then NO mirror evidence to weigh, which is
+ * a different thing from mirror evidence that came back empty, and a `why`
+ * reading `0/0 mirror-only` would invite the reader to conclude the tree lacks
+ * paths that do not exist to lack. It gets its own branch and says so. The
+ * verdict is unchanged — a tree carrying private-only paths is `private`, one
+ * carrying neither is still `unknown` — because a mirror checkout in that
+ * state carries 0 of the private-only set and so cannot reach the `private`
+ * branch at all.
+ *
+ * A very small non-zero `mirrorOnlyTotal` — one or two — makes a single
+ * upstream-first file most of the mirror's set, and its share can then outrank
+ * a 541/546 private one. That resolves to `oss`, a refusal somebody reads,
+ * which is the direction this function errs in on purpose. Loud, not silent.
  *
  * Measured 2026-08-26 over all 756 local branches: 693 classified `private`,
  * each carrying between 283 and 543 of the 543 private-only paths; 63
  * classified `oss`, each carrying 0 or 1; none `unknown`. Nothing sits in the
  * middle, so the verdict is not a knife-edge.
  */
+function share(inHead: number, total: number): number {
+  return total === 0 ? 0 : inHead / total;
+}
+
 export function classifyByTree(markers: TreeMarkers): Boundness | null {
-  if (markers.mirrorOnlyInHead > 0) {
+  const counts =
+    `${markers.mirrorOnlyInHead}/${markers.mirrorOnlyTotal} mirror-only ` +
+    `and ${markers.privateOnlyInHead}/${markers.privateOnlyTotal} private-only path(s)`;
+
+  if (markers.mirrorOnlyTotal === 0) {
+    if (markers.privateOnlyInHead === 0) return null;
+    return {
+      kind: 'private',
+      why:
+        `HEAD's tree carries ${markers.privateOnlyInHead}/${markers.privateOnlyTotal} ` +
+        `private-only path(s), and there are no mirror-only paths in existence to weigh ` +
+        `against them`,
+    };
+  }
+
+  if (
+    markers.mirrorOnlyInHead > 0 &&
+    share(markers.mirrorOnlyInHead, markers.mirrorOnlyTotal) >=
+      share(markers.privateOnlyInHead, markers.privateOnlyTotal)
+  ) {
     return {
       kind: 'oss',
-      why: `HEAD's tree carries ${markers.mirrorOnlyInHead}/${markers.mirrorOnlyTotal} mirror-only path(s)`,
+      why: `HEAD's tree carries ${counts} — the mirror's share is not the smaller of the two`,
     };
   }
   if (markers.privateOnlyInHead > 0) {
     return {
       kind: 'private',
-      why: `HEAD's tree carries ${markers.privateOnlyInHead}/${markers.privateOnlyTotal} private-only path(s) and none of the ${markers.mirrorOnlyTotal} mirror-only path(s)`,
+      why: `HEAD's tree carries ${counts} — the private repo's share is the larger`,
     };
   }
   return null;
