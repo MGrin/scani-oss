@@ -25,7 +25,9 @@ import { withTransaction } from '@scani/db/transaction';
 import { PaymentOccurrenceRepository, PaymentRepository } from '@scani/domain/repositories';
 import {
   LiquidAssetsService,
+  type ObservedBurnAnswer,
   ObservedBurnService,
+  observedBurnAnswerOf,
   PaymentForecastService,
   PaymentHasSettledOccurrencesError,
   PaymentService,
@@ -121,6 +123,21 @@ function startOfUtcToday(): Date {
 function horizonDateString(days: number): string {
   const today = startOfUtcToday();
   return new Date(today.getTime() + days * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+}
+
+/**
+ * `at` crosses as an ISO string, per this file's wire convention for
+ * `timestamptz` (SC-661).
+ *
+ * Not a formatting preference. There is no superjson transformer on this
+ * router, so a `Date` left in the payload arrives at the client as a string
+ * while `RouterOutputs` still types it `Date` — a type that disagrees with the
+ * value at runtime, on a field a surface formats. The domain function keeps
+ * returning `Date` because that is what it means; the conversion belongs at the
+ * wire, once.
+ */
+function wireAnswer(answer: ObservedBurnAnswer) {
+  return answer.kind === 'none' ? answer : { ...answer, at: answer.at.toISOString() };
 }
 
 export const paymentsRouter = router({
@@ -358,7 +375,21 @@ export const paymentsRouter = router({
         ? Container.get(ObservedBurnService).observed(ctx.userId, dbUser.baseCurrencyId)
         : Promise.resolve(null),
     ]);
-    return { ...forecast, liquid, observedBurn };
+    return {
+      ...forecast,
+      liquid,
+      observedBurn,
+      // SC-661. What the user has SAID about the measured drain, sent as a
+      // state rather than as six columns for the client to interpret. Whether a
+      // confirmation still holds is a domain judgement with a tolerance in it
+      // (`CONFIRMATION_TOLERANCE`), and a surface that re-derived it would be
+      // the second place that rule lives.
+      //
+      // No extra query: the columns are already on `dbUser`.
+      observedBurnAnswer: wireAnswer(
+        observedBurnAnswerOf(dbUser, dbUser.baseCurrencyId, observedBurn?.perMonthMean ?? null)
+      ),
+    };
   }),
 
   settleOccurrence: protectedProcedure

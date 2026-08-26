@@ -1,5 +1,6 @@
-import { Decimal, observedAffordability, observedRunwayMonths } from '@scani/shared';
+import { Decimal, formatDate, observedAffordability, observedRunwayMonths } from '@scani/shared';
 import { Button } from '@scani/ui/ui/button';
+import { Input } from '@scani/ui/ui/input';
 import { Segmented, SegmentedItem } from '@scani/ui/ui/segmented';
 import { Block } from '@scani/ui/v3/components/Block';
 import { DataViewEmpty } from '@scani/ui/v3/components/data-view/DataViewEmpty';
@@ -14,7 +15,7 @@ import { useMemo, useState } from 'react';
 import { Trans, useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import type { BaseCurrencyRates } from '@/hooks/useBaseCurrencyRates';
-import type { RouterOutputs } from '@/lib/trpc';
+import { type RouterOutputs, trpc } from '@/lib/trpc';
 import { useViewPreference } from '../../hooks/useViewPreference';
 import {
   affordability,
@@ -152,12 +153,34 @@ export function ForecastView({
    * `null` means the window contained no perimeter exits, and the committed
    * walk below is then the only answer there is.
    */
+  /**
+   * WHAT THE RUNWAY IS ACTUALLY DIVIDED BY (SC-661).
+   *
+   * The measured drain unless the user has OVERRIDDEN it, in which case his
+   * figure is the answer — that is the whole point of the override, and a
+   * headline that went on dividing by the measurement would have taken his
+   * correction and ignored it.
+   *
+   * Derived ONCE and used by every consumer below. Two notions of "what you
+   * spend a month" on one screen — a runway from his figure beside a committed
+   * share of the measured one — is this ticket's own defect, two surfaces
+   * disagreeing, rebuilt inside a single component.
+   *
+   * A `confirmed` answer does NOT change it: agreeing with the measurement is
+   * not replacing it. Neither does `currencyChanged`, which is an answer that
+   * no longer applies rather than a different figure.
+   */
+  const effectiveBurn =
+    forecast?.observedBurnAnswer?.kind === 'override'
+      ? forecast.observedBurnAnswer.amount
+      : (forecast?.observedBurn?.perMonthMean ?? null);
+
   const observedMonths = useMemo(
     () =>
-      forecast?.observedBurn
-        ? observedRunwayMonths(forecast.liquid.amount, forecast.observedBurn.perMonthMean)
+      forecast?.observedBurn && effectiveBurn !== null
+        ? observedRunwayMonths(forecast.liquid.amount, effectiveBurn)
         : null,
-    [forecast?.liquid.amount, forecast?.observedBurn]
+    [forecast?.liquid.amount, forecast?.observedBurn, effectiveBurn]
   );
 
   /**
@@ -169,10 +192,10 @@ export function ForecastView({
    */
   const share = useMemo(
     () =>
-      observedMonths === null || !forecast?.observedBurn
+      observedMonths === null || !forecast?.observedBurn || effectiveBurn === null
         ? null
-        : committedShare(runwayProjection, forecast.observedBurn.perMonthMean),
-    [observedMonths, forecast?.observedBurn, runwayProjection]
+        : committedShare(runwayProjection, effectiveBurn),
+    [observedMonths, forecast?.observedBurn, runwayProjection, effectiveBurn]
   );
 
   /**
@@ -317,7 +340,12 @@ export function ForecastView({
           note={<RunwayBasis forecast={forecast} baseSymbol={rates.baseSymbol} />}
         />
         {observedMonths !== null && forecast.observedBurn ? (
-          <ObservedBasis burn={forecast.observedBurn} share={share} baseSymbol={rates.baseSymbol} />
+          <ObservedBasis
+            burn={forecast.observedBurn}
+            share={share}
+            baseSymbol={rates.baseSymbol}
+            answer={forecast.observedBurnAnswer}
+          />
         ) : null}
         {/* Only when the book is the answer, which is now the fallback. A
             window with no date in it has to say what the book is DOING, or
@@ -554,10 +582,12 @@ function ObservedBasis({
   burn,
   share,
   baseSymbol,
+  answer,
 }: {
   burn: NonNullable<ForecastData['observedBurn']>;
   share: Decimal | null;
   baseSymbol: string;
+  answer: ForecastData['observedBurnAnswer'];
 }) {
   const { t } = useTranslation();
   /**
@@ -639,6 +669,14 @@ function ObservedBasis({
           {t('v3.money.forecast.observedNotCounted', { count: notCounted })}
         </p>
       ) : null}
+      {/* THE ASK COMES LAST, AND THAT ORDER IS THE ARGUMENT (SC-661).
+
+          His complaint was that he does not recognise the figure. Everything
+          above is why — what window it covers, what it excludes, and that 76%
+          of it rests on answers nobody recorded making. Asking first would be
+          asking him to judge a number before being told any of that, which is
+          how the measured drain got read as an alien one in the first place. */}
+      <BurnAnswer answer={answer} measured={burn.perMonthMean} baseSymbol={baseSymbol} />
     </div>
   );
 }
@@ -781,6 +819,191 @@ function BurnProvenance({ burn }: { burn: NonNullable<ForecastData['observedBurn
             percent: pct(burn.provenance.unattributed),
           })}
         </p>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * THE ONE INPUT IN THIS CHAIN THAT IS GENUINELY HIS (SC-661).
+ *
+ * SC-673 and the provenance caption above explain WHY the figure feels alien —
+ * 76% of it by value rests on answers carrying no record of who decided. Only
+ * this does anything about it: an override is the one number on the screen the
+ * user authored. mgrin's objection was not "tell me why I do not recognise
+ * this", it was that he does not recognise it.
+ *
+ * ## Why the measured figure is still the default, and a declared one was built
+ * ## and thrown away
+ *
+ * The first build of this made a DECLARED monthly spend the headline. It was
+ * rejected on a measurement: asked what they spend a month, people give typical
+ * RECURRING spend and omit exceptional items. On the one production book that
+ * is ~6,300, yielding a 17.8-month runway against an actual drain of 8.1 — a
+ * ~2x overstatement, in the flattering direction, which is the exact failure
+ * SC-657 exists to avoid. So the measurement leads and the user corrects it.
+ * An override has something to disagree with; a declaration has nothing.
+ *
+ * ## Four states, and the third is the one that needed a column
+ *
+ * `confirmed` with `matches: false` is why `users.observed_burn_confirmed_value`
+ * stores a number at all. The drain is recomputed whenever the window moves, so
+ * a confirmation read against a bare timestamp goes on claiming agreement after
+ * the figure it agreed with has changed. Here that state stops claiming it and
+ * names both numbers.
+ */
+function BurnAnswer({
+  answer,
+  measured,
+  baseSymbol,
+}: {
+  answer: ForecastData['observedBurnAnswer'];
+  measured: string;
+  baseSymbol: string;
+}) {
+  const { t } = useTranslation();
+  const utils = trpc.useUtils();
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState('');
+
+  // Already in cache app-wide; this is a read of the token ID that gets STORED
+  // beside the amount, not a second source of truth for the symbol shown.
+  const baseCurrency = trpc.users.getBaseCurrency.useQuery();
+  const currencyTokenId = baseCurrency.data?.id ?? null;
+
+  const save = trpc.users.setObservedBurnAnswer.useMutation({
+    onSuccess: () => {
+      setEditing(false);
+      setDraft('');
+      void utils.payments.forecast.invalidate();
+    },
+  });
+
+  const draftIsUsable = /^\d+(\.\d+)?$/.test(draft.trim());
+  const busy = save.isPending || currencyTokenId === null;
+
+  const confirmMeasured = () =>
+    currencyTokenId && save.mutate({ kind: 'confirm', value: measured, currencyTokenId });
+  const submitOverride = () =>
+    currencyTokenId &&
+    draftIsUsable &&
+    save.mutate({ kind: 'override', amount: draft.trim(), currencyTokenId });
+  const revert = () => save.mutate({ kind: 'clear' });
+
+  const askButtons = (
+    <div className="flex flex-wrap gap-2">
+      <Button size="sm" variant="secondary" onClick={confirmMeasured} disabled={busy}>
+        {t('v3.money.forecast.answerConfirm')}
+      </Button>
+      <Button size="sm" variant="ghost" onClick={() => setEditing(true)} disabled={busy}>
+        {t('v3.money.forecast.answerOverride')}
+      </Button>
+    </div>
+  );
+
+  if (editing) {
+    return (
+      <div className="flex flex-col gap-2 border-t border-dashed border-border pt-2">
+        <label className="text-caption text-muted-foreground" htmlFor="observed-burn-override">
+          {t('v3.money.forecast.answerAmountLabel')}
+        </label>
+        <Input
+          id="observed-burn-override"
+          inputMode="decimal"
+          autoComplete="off"
+          placeholder="0.00"
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+        />
+        <div className="flex flex-wrap gap-2">
+          <Button size="sm" onClick={submitOverride} disabled={busy || !draftIsUsable}>
+            {t('v3.money.forecast.answerSave')}
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => {
+              setEditing(false);
+              setDraft('');
+            }}
+          >
+            {t('v3.money.forecast.answerCancel')}
+          </Button>
+        </div>
+        {save.isError ? (
+          <p className="text-caption text-destructive">{t('v3.money.forecast.answerFailed')}</p>
+        ) : null}
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-2 border-t border-dashed border-border pt-2">
+      {answer.kind === 'override' ? (
+        <>
+          <p className="text-caption text-muted-foreground">
+            <Trans
+              i18nKey="v3.money.forecast.answerOverrideActive"
+              values={{ date: formatDate(answer.at) }}
+              components={{
+                amount: <Numeric value={answer.amount} currency={baseSymbol} />,
+                measured: <Numeric value={measured} currency={baseSymbol} />,
+              }}
+            />
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" variant="ghost" onClick={revert} disabled={busy}>
+              {t('v3.money.forecast.answerRevert')}
+            </Button>
+          </div>
+        </>
+      ) : null}
+
+      {answer.kind === 'confirmed' && answer.matches ? (
+        <p className="text-caption text-muted-foreground">
+          {t('v3.money.forecast.answerConfirmed', { date: formatDate(answer.at) })}
+        </p>
+      ) : null}
+
+      {/* The measurement has left the figure he agreed with. Both numbers are
+          named, because "you confirmed this" would now be a claim about a
+          number he never saw — the defect the stored value exists to catch. */}
+      {answer.kind === 'confirmed' && !answer.matches ? (
+        <>
+          <p className="text-caption text-muted-foreground">
+            <Trans
+              i18nKey="v3.money.forecast.answerConfirmedMoved"
+              values={{ date: formatDate(answer.at) }}
+              components={{
+                was: <Numeric value={answer.value} currency={baseSymbol} />,
+                now: <Numeric value={measured} currency={baseSymbol} />,
+              }}
+            />
+          </p>
+          {askButtons}
+        </>
+      ) : null}
+
+      {answer.kind === 'currencyChanged' ? (
+        <>
+          <p className="text-caption text-muted-foreground">
+            {t('v3.money.forecast.answerCurrencyChanged', { date: formatDate(answer.at) })}
+          </p>
+          {askButtons}
+        </>
+      ) : null}
+
+      {answer.kind === 'none' ? (
+        <>
+          <p className="text-caption font-medium text-foreground">
+            {t('v3.money.forecast.answerTitle')}
+          </p>
+          {askButtons}
+        </>
+      ) : null}
+
+      {save.isError ? (
+        <p className="text-caption text-destructive">{t('v3.money.forecast.answerFailed')}</p>
       ) : null}
     </div>
   );
