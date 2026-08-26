@@ -19,6 +19,51 @@ version heading stays there permanently, above every future release. This
 comment is deliberately in that position; explanatory prose should not be.
 -->
 
+## [0.19.0](https://github.com/MGrin/scani-oss/compare/v0.18.0...v0.19.0) (2026-08-26)
+
+
+### Features
+
+* **domain:** the valuation chain takes a database transaction ([04b604c](https://github.com/MGrin/scani-oss/commit/04b604ca0b3d894d2ea081caceb7029cb939360d))
+* **entities:** separate personal and company assets with an ownership boundary ([28d437a](https://github.com/MGrin/scani-oss/commit/28d437acebe4bc0964804e2361dfe0e38993ce77))
+* **money:** cashflow forecast and runway from recurring payments ([3f0031d](https://github.com/MGrin/scani-oss/commit/3f0031deda804a3ecfca19af3d2a4dd08a5eed29))
+* **oss:** port the three shared guards the mirror was missing ([91f1624](https://github.com/MGrin/scani-oss/commit/91f1624da8ca7ab3f9ea2078a70ae9215b024b87))
+* **payments:** measure burn as money leaving the tracked perimeter ([fc0bdb0](https://github.com/MGrin/scani-oss/commit/fc0bdb0d6e91322d54889049951144a42f2403da))
+
+
+### Bug Fixes
+
+* **app:** make record-movement a page with a searched holding field ([3554b91](https://github.com/MGrin/scani-oss/commit/3554b914639035b7b4a6632ccbb25502e6f73164))
+* **db:** decide read-only from the entry point's directory, not its name ([35b00dd](https://github.com/MGrin/scani-oss/commit/35b00dd0e22e1f419cb50a7312ca82a25e72ee1c))
+* **dev-stack:** `down` removes orphans, and says what it verified ([616989f](https://github.com/MGrin/scani-oss/commit/616989fa9e0a964508b9179e2adfdc4b65df7e8e))
+* **docker:** keep every per-app .env out of the build context ([4bdfcb9](https://github.com/MGrin/scani-oss/commit/4bdfcb97530b30753acc774fd38e702203c80971))
+* **domain:** export the transaction-sources subpath the file already is ([2ce02ad](https://github.com/MGrin/scani-oss/commit/2ce02ad52993e22a291fb6b82da414bdc21fcb95))
+* **holdings:** a balance below zero says why, instead of reading as theft ([7b339db](https://github.com/MGrin/scani-oss/commit/7b339db04590e267f72f823adf891e6a8d9d6bb5))
+* **holdings:** an internal answer records the opening of the holding it creates ([9a20a2e](https://github.com/MGrin/scani-oss/commit/9a20a2ec4d60501efcdb995a41c07f4bdb9458cc))
+* **holdings:** move both anchors when the owner declares a transfer ([#210](https://github.com/MGrin/scani-oss/issues/210)) ([92266e5](https://github.com/MGrin/scani-oss/commit/92266e5b0c7412928affc4c2f97a49bdf2ce1945))
+* **http-fetch:** a quadratic regex on attacker-controlled markup — shipped in v0.15.0 (SC-208) ([6b08be4](https://github.com/MGrin/scani-oss/commit/6b08be435beeb0242e87acf7a5ec0c98ac4612c9))
+* **i18n:** drop the orphan destinationScope key from the v3 locales ([5f4810a](https://github.com/MGrin/scani-oss/commit/5f4810af31cb02db1adcc3a0720f61e8df4b0db7))
+* **knip:** deps:unused could not see 188 of 197 domain source files ([4a938ba](https://github.com/MGrin/scani-oss/commit/4a938ba6e9aab1d4693073a341403f1ceed1f799))
+* **oss-guard:** count boundary markers by set difference, not by diff ([b799e82](https://github.com/MGrin/scani-oss/commit/b799e82e5a46ca6989d38b144617a11eb64177b0))
+* **oss-guard:** decide boundness from the tree, not from descent ([7f53e9a](https://github.com/MGrin/scani-oss/commit/7f53e9a156a485693b8e965c8231c9c70c92ef63))
+* **oss-guard:** weigh marker shares, not marker presence ([3cb1221](https://github.com/MGrin/scani-oss/commit/3cb1221a8455c06679559cb481e48424c46a3f9a))
+* **oss:** a prescribed command has to resolve in this repo ([8993664](https://github.com/MGrin/scani-oss/commit/8993664b2133f0c8457404f19f17454e80422d6d))
+* **oss:** name both causes of a missing release entry, and a recovery that does not duplicate (SC-621) ([fcb684e](https://github.com/MGrin/scani-oss/commit/fcb684e934ae1a5fce6f60f09c5c60736a9318f8))
+* **oss:** refuse a pull-request body that would replace every commit message (SC-638) ([fbf42c4](https://github.com/MGrin/scani-oss/commit/fbf42c45a1e15a13b8c0c24f641aaf96d47d83bf))
+* **oss:** restore the favicon wording a port adaptation depends on ([6349359](https://github.com/MGrin/scani-oss/commit/6349359689aadbbc01298630be569ab2f3535639))
+* **oss:** scope OSS_ALLOW_NEW_FILES to new files (SC-639) ([b9b853f](https://github.com/MGrin/scani-oss/commit/b9b853fae76b097ff46d235985ecb2cba9e523e3))
+* **oss:** the refusal messages name a command this repo ships ([62bb575](https://github.com/MGrin/scani-oss/commit/62bb5754e525e351caf24c84f59da79c0193b0b7))
+* **payments:** make the runway line's committed share readable, and stop it linking to a page that contradicts it ([ee8c1ac](https://github.com/MGrin/scani-oss/commit/ee8c1aca74aee18d40a42c683406cb690bb53e8b))
+* **payments:** roll the materialisation horizon on a schedule ([ec15c57](https://github.com/MGrin/scani-oss/commit/ec15c57c684fdced20805c7aa0e5f9ac8af610f8))
+* **release-notes:** a fork PR gets a read-only token, so report via pull_request_target ([1ac79bc](https://github.com/MGrin/scani-oss/commit/1ac79bccbb8d0314c6a8097d37fc780671a4c45f))
+* **release-notes:** report on an ordinary pull request so the check can be required ([1ac79bc](https://github.com/MGrin/scani-oss/commit/1ac79bccbb8d0314c6a8097d37fc780671a4c45f))
+* **release-notes:** the dispatch control found two defects in its own workflow ([5eac264](https://github.com/MGrin/scani-oss/commit/5eac2645d3641d914916856dee13a8e9bad32573))
+* **returns:** stop the opening anchor inventing a contribution, and stop one day absorbing ten weeks — shipped in v0.15.0 ([6b08be4](https://github.com/MGrin/scani-oss/commit/6b08be435beeb0242e87acf7a5ec0c98ac4612c9))
+* **transfers:** reopening a declared transfer puts both balances back ([f5a30c0](https://github.com/MGrin/scani-oss/commit/f5a30c0a87aac3134739dbcd259dacfcbaf09c26))
+* **transfers:** reopening an internal answer removes the holding it created ([612cfaf](https://github.com/MGrin/scani-oss/commit/612cfafad7b58bac1e2141872e960280156a7e02))
+* **transfers:** the nightly matcher may not claim a row a person authored ([d16dc35](https://github.com/MGrin/scani-oss/commit/d16dc3585f7eacdb68ff1cd37ddbe7be6df286ab))
+* **type-check:** compile scripts/, which no workspace covered ([1e9659c](https://github.com/MGrin/scani-oss/commit/1e9659cc82c3f1644a01ffa0cd00d4017f00b080))
+
 ## [0.18.0](https://github.com/MGrin/scani-oss/compare/v0.17.1...v0.18.0) (2026-08-25)
 
 
