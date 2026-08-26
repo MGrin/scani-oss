@@ -149,7 +149,7 @@ const HOLD = 'hold-1';
 describe('BalanceAtTimeService.getBalance', () => {
   test('returns null when no data exists anywhere', async () => {
     const svc = makeService([], []);
-    const r = await svc.getBalance(HOLD, new Date('2024-01-01T00:00:00Z'));
+    const r = await svc.getBalance(HOLD, new Date('2024-01-01T00:00:00Z'), undefined);
     expect(r.balance).toBeNull();
     expect(r.anchor).toBeNull();
     expect(r.anchorAt).toBeNull();
@@ -169,7 +169,7 @@ describe('BalanceAtTimeService.getBalance', () => {
         { holdingId: HOLD, quantity: '1', occurredAt: new Date('2024-05-15T00:00:00Z') },
       ]
     );
-    const r = await svc.getBalance(HOLD, new Date('2024-03-01T00:00:00Z'));
+    const r = await svc.getBalance(HOLD, new Date('2024-03-01T00:00:00Z'), undefined);
     expect(r.balance?.toString()).toBe('7');
     expect(r.anchor).toBe('observation-after');
     expect(r.txApplied).toBe(3);
@@ -195,7 +195,7 @@ describe('BalanceAtTimeService.getBalance', () => {
         createdAt: new Date('2024-06-01T00:00:00Z'),
       }
     );
-    const r = await svc.getBalance(HOLD, new Date('2024-07-01T00:00:00Z'));
+    const r = await svc.getBalance(HOLD, new Date('2024-07-01T00:00:00Z'), undefined);
     expect(r.balance?.toString()).toBe('17');
     expect(r.anchor).toBe('holdings');
     expect(r.txApplied).toBe(2);
@@ -209,7 +209,7 @@ describe('BalanceAtTimeService.getBalance', () => {
       [{ holdingId: HOLD, balance: '2', observedAt: new Date('2023-01-01T00:00:00Z') }],
       [{ holdingId: HOLD, quantity: '4', occurredAt: new Date('2023-03-01T00:00:00Z') }]
     );
-    const r = await svc.getBalance(HOLD, new Date('2023-06-01T00:00:00Z'));
+    const r = await svc.getBalance(HOLD, new Date('2023-06-01T00:00:00Z'), undefined);
     expect(r.balance?.toString()).toBe('6');
     expect(r.anchor).toBe('observation-before');
     expect(r.txApplied).toBe(1);
@@ -220,7 +220,7 @@ describe('BalanceAtTimeService.getBalance', () => {
       [{ holdingId: HOLD, balance: '42', observedAt: new Date('2024-01-01T00:00:00Z') }],
       []
     );
-    const r = await svc.getBalance(HOLD, new Date('2024-01-01T00:00:00Z'));
+    const r = await svc.getBalance(HOLD, new Date('2024-01-01T00:00:00Z'), undefined);
     expect(r.balance?.toString()).toBe('42');
     expect(r.anchor).toBe('observation-after');
     expect(r.txApplied).toBe(0);
@@ -234,7 +234,7 @@ describe('BalanceAtTimeService.getBalance', () => {
       [{ holdingId: HOLD, balance: '10', observedAt: new Date('2024-06-01T00:00:00Z') }],
       [{ holdingId: HOLD, quantity: '99', occurredAt: new Date('2024-04-01T00:00:00Z') }]
     );
-    const r = await svc.getBalance(HOLD, new Date('2024-05-01T00:00:00Z'));
+    const r = await svc.getBalance(HOLD, new Date('2024-05-01T00:00:00Z'), undefined);
     expect(r.balance?.toString()).toBe('10');
     expect(r.txApplied).toBe(0);
   });
@@ -273,7 +273,7 @@ describe('BalanceAtTimeService.getBalance — the lower bound (SC-252)', () => {
 
   test('flags a pre-existence date as before-records via the holdings anchor', async () => {
     const svc = makeService([], [SC252.withdraw], SC252.holding);
-    const r = await svc.getBalance(HOLD, SC252.phantomDate);
+    const r = await svc.getBalance(HOLD, SC252.phantomDate, undefined);
     // The value is deliberately unchanged — this bounds confidence, not the number.
     expect(r.balance?.toString()).toBe('586.94');
     expect(r.anchor).toBe('holdings');
@@ -291,7 +291,7 @@ describe('BalanceAtTimeService.getBalance — the lower bound (SC-252)', () => {
       [SC252.withdraw],
       SC252.holding
     );
-    const r = await svc.getBalance(HOLD, SC252.phantomDate);
+    const r = await svc.getBalance(HOLD, SC252.phantomDate, undefined);
     expect(r.balance?.toString()).toBe('586.94');
     expect(r.anchor).toBe('observation-after');
     expect(r.beforeRecords).toBe(true);
@@ -299,7 +299,7 @@ describe('BalanceAtTimeService.getBalance — the lower bound (SC-252)', () => {
 
   test('a date at the earliest evidence is not before-records', async () => {
     const svc = makeService([], [SC252.withdraw], SC252.holding);
-    const r = await svc.getBalance(HOLD, SC252.holding.createdAt);
+    const r = await svc.getBalance(HOLD, SC252.holding.createdAt, undefined);
     expect(r.beforeRecords).toBe(false);
   });
 
@@ -312,13 +312,13 @@ describe('BalanceAtTimeService.getBalance — the lower bound (SC-252)', () => {
       [{ holdingId: HOLD, quantity: '5', occurredAt: new Date('2021-03-01T00:00:00Z') }],
       SC252.holding
     );
-    const r = await svc.getBalance(HOLD, new Date('2022-01-01T00:00:00Z'));
+    const r = await svc.getBalance(HOLD, new Date('2022-01-01T00:00:00Z'), undefined);
     expect(r.beforeRecords).toBe(false);
   });
 
   test('no evidence of any kind stays an honest unknown', async () => {
     const svc = makeService([], []);
-    const r = await svc.getBalance(HOLD, SC252.phantomDate);
+    const r = await svc.getBalance(HOLD, SC252.phantomDate, undefined);
     expect(r.balance).toBeNull();
     expect(r.beforeRecords).toBe(false);
   });
@@ -346,7 +346,7 @@ describe('BalanceAtTimeService.getBalance — interpolation across sparse observ
       []
     );
 
-    const dayAfter = await svc.getBalance(HOLD, new Date('2026-05-17T23:59:59.999Z'));
+    const dayAfter = await svc.getBalance(HOLD, new Date('2026-05-17T23:59:59.999Z'), undefined);
     // Under the cliff this read 22174.58 — the whole 71 days of drift on
     // the first day. It is now a few hours' worth.
     expect(Number(dayAfter.balance?.toString())).toBeGreaterThan(41600);
@@ -354,10 +354,9 @@ describe('BalanceAtTimeService.getBalance — interpolation across sparse observ
 
     // Halfway across the gap is halfway down.
     const midpoint = new Date((first.getTime() + second.getTime()) / 2);
-    expect(Number((await svc.getBalance(HOLD, midpoint)).balance?.toString())).toBeCloseTo(
-      (41749.85 + 22174.58) / 2,
-      6
-    );
+    expect(
+      Number((await svc.getBalance(HOLD, midpoint, undefined)).balance?.toString())
+    ).toBeCloseTo((41749.85 + 22174.58) / 2, 6);
   });
 
   test('both measurements are reproduced exactly — only the space between them moves', async () => {
@@ -371,12 +370,12 @@ describe('BalanceAtTimeService.getBalance — interpolation across sparse observ
       []
     );
 
-    const atFirst = await svc.getBalance(HOLD, first);
+    const atFirst = await svc.getBalance(HOLD, first, undefined);
     expect(atFirst.balance?.toString()).toBe('41749.85');
     // `at` sits ON an observation, so there is nothing to draw a line across.
     expect(atFirst.interpolated).toBe(false);
 
-    const atSecond = await svc.getBalance(HOLD, second);
+    const atSecond = await svc.getBalance(HOLD, second, undefined);
     expect(atSecond.balance?.toString()).toBe('22174.58');
     expect(atSecond.interpolated).toBe(false);
   });
@@ -396,11 +395,11 @@ describe('BalanceAtTimeService.getBalance — interpolation across sparse observ
       [{ holdingId: HOLD, quantity: '50', occurredAt: new Date('2026-02-01T00:00:00Z') }]
     );
 
-    const before = await svc.getBalance(HOLD, new Date('2026-01-15T00:00:00Z'));
+    const before = await svc.getBalance(HOLD, new Date('2026-01-15T00:00:00Z'), undefined);
     expect(before.balance?.toString()).toBe('100');
     expect(before.interpolated).toBe(false);
 
-    const after = await svc.getBalance(HOLD, new Date('2026-02-15T00:00:00Z'));
+    const after = await svc.getBalance(HOLD, new Date('2026-02-15T00:00:00Z'), undefined);
     expect(after.balance?.toString()).toBe('150');
     expect(after.interpolated).toBe(false);
   });
@@ -418,7 +417,7 @@ describe('BalanceAtTimeService.getBalance — interpolation across sparse observ
     );
 
     // Day 5 of 10: half the drift has accrued, the transaction has not landed.
-    const midpoint = await svc.getBalance(HOLD, new Date('2026-01-06T00:00:00Z'));
+    const midpoint = await svc.getBalance(HOLD, new Date('2026-01-06T00:00:00Z'), undefined);
     expect(Number(midpoint.balance?.toString())).toBeCloseTo(105, 9);
     expect(midpoint.interpolated).toBe(true);
   });
@@ -429,7 +428,7 @@ describe('BalanceAtTimeService.getBalance — interpolation across sparse observ
     // balance visible at all.
     const first = new Date('2026-05-17T15:07:54.662Z');
     const svc = makeService([{ holdingId: HOLD, balance: '41749.85', observedAt: first }], []);
-    const r = await svc.getBalance(HOLD, new Date('2026-01-01T00:00:00Z'));
+    const r = await svc.getBalance(HOLD, new Date('2026-01-01T00:00:00Z'), undefined);
     expect(r.balance?.toString()).toBe('41749.85');
     expect(r.interpolated).toBe(false);
   });

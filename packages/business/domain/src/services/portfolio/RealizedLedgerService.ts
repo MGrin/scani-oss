@@ -164,9 +164,11 @@ export class RealizedLedgerService {
         txs: txsByHolding.get(only) ?? ([] as ReadonlyArray<HoldingTransaction>),
         collect: ledger,
         ...(method ? { method } : {}),
+        tx: undefined,
       });
     } else {
       await this.costBasisService.walkComponent(
+        undefined,
         ids,
         txsByHolding,
         at,

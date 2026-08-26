@@ -493,6 +493,7 @@ export class CurrencyConverter {
           // over any intraday noise from on-demand caching.
           preferGranularity: 'daily',
           hubs: PRICE_HUBS,
+          tx: undefined,
         }
       );
 
