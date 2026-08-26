@@ -142,6 +142,7 @@ describe('walkLots disposal ledger', () => {
     const svc = makeService();
     const ledger: DisposalLotMatch[] = [];
     const r = await svc.walkLots(
+      undefined,
       [
         tx({
           holdingId: 'h',
@@ -202,6 +203,7 @@ describe('walkLots disposal ledger', () => {
     const svc = makeService();
     const ledger: DisposalLotMatch[] = [];
     const r = await svc.walkLots(
+      undefined,
       [
         tx({
           holdingId: 'h',
@@ -252,6 +254,7 @@ describe('walkLots disposal ledger', () => {
     const svc = makeServiceWithSpot(BTC, '130');
     const ledger: DisposalLotMatch[] = [];
     const r = await svc.walkLots(
+      undefined,
       [
         tx({
           holdingId: 'h',
@@ -296,6 +299,7 @@ describe('walkLots disposal ledger', () => {
     const svc = makeServiceWithSpot(BTC, '130');
     const ledger: DisposalLotMatch[] = [];
     const r = await svc.walkLots(
+      undefined,
       [
         tx({
           holdingId: 'h',
@@ -341,6 +345,7 @@ describe('walkLots disposal ledger', () => {
     const svc = makeServiceWithSpot(BTC, '130');
     const ledger: DisposalLotMatch[] = [];
     await svc.walkLots(
+      undefined,
       [
         tx({
           holdingId: 'h',
@@ -374,6 +379,7 @@ describe('walkLots disposal ledger', () => {
     const svc = makeService();
     const ledger: DisposalLotMatch[] = [];
     await svc.walkLots(
+      undefined,
       [
         tx({
           holdingId: 'h',
@@ -406,6 +412,7 @@ describe('walkLots disposal ledger', () => {
     const svc = makeServiceWithSpot(BTC, '130');
     const ledger: DisposalLotMatch[] = [];
     await svc.walkLots(
+      undefined,
       [
         tx({
           holdingId: 'h',
@@ -445,6 +452,7 @@ describe('walkLots disposal ledger', () => {
     const svc = makeService();
     const ledger: DisposalLotMatch[] = [];
     const r = await svc.walkLots(
+      undefined,
       [
         tx({
           holdingId: 'h',
@@ -479,6 +487,7 @@ describe('walkLots disposal ledger', () => {
     const svc = makeService();
     const ledger: DisposalLotMatch[] = [];
     const r = await svc.walkLots(
+      undefined,
       [
         tx({
           holdingId: 'h',
@@ -520,6 +529,7 @@ describe('walkLots disposal ledger', () => {
     const svc = makeService();
     const ledger: DisposalLotMatch[] = [];
     const r = await svc.walkLots(
+      undefined,
       [
         tx({
           holdingId: 'h',
@@ -560,6 +570,7 @@ describe('walkLots disposal ledger', () => {
     const svc = makeService();
     const ledger: DisposalLotMatch[] = [];
     const r = await svc.walkLots(
+      undefined,
       [
         tx({
           holdingId: 'h',
@@ -595,6 +606,7 @@ describe('walkLots disposal ledger', () => {
     const svc = makeService();
     const ledger: DisposalLotMatch[] = [];
     const r = await svc.walkLots(
+      undefined,
       [
         tx({
           holdingId: 'h',
@@ -640,6 +652,7 @@ describe('walkLots disposal ledger', () => {
     const svc = makeService();
     const ledger: DisposalLotMatch[] = [];
     await svc.walkLots(
+      undefined,
       [
         tx({
           holdingId: 'h',
@@ -697,6 +710,7 @@ describe('walkLots disposal ledger', () => {
     const ledger: DisposalLotMatch[] = [];
     const history: HistoryCompleteness = 'incomplete';
     const r = await svc.walkLots(
+      undefined,
       [
         tx({
           holdingId: 'h',
@@ -736,6 +750,7 @@ describe('walkLots disposal ledger', () => {
     const svc = makeServiceWithSpot(BTC, '50');
     const ledger: DisposalLotMatch[] = [];
     const r = await svc.walkLots(
+      undefined,
       [
         tx({ holdingId: 'h', kind: 'swap_in', quantity: '10', occurredAt: '2024-01-01' }),
         tx({
@@ -771,6 +786,7 @@ describe('walkLots disposal ledger', () => {
     // stub is never asked. Nothing values this inflow, so the lot opens at
     // zero cost — and the grade is what says the zero was a choice.
     const r = await svc.walkLots(
+      undefined,
       [
         tx({ holdingId: 'h', kind: 'swap_in', quantity: '10', occurredAt: '2024-01-01' }),
         tx({
@@ -834,6 +850,7 @@ describe('walkComponent disposal ledger', () => {
     ];
 
     const result = await svc.walkComponent(
+      undefined,
       ['kraken', 'ledger'],
       componentInputs(txs),
       new Date('2026-01-01'),
@@ -910,6 +927,7 @@ describe('walkComponent disposal ledger', () => {
     ];
 
     const result = await svc.walkComponent(
+      undefined,
       ['kraken', 'ledger'],
       componentInputs(txs),
       new Date('2026-01-01'),
@@ -996,6 +1014,7 @@ describe('walkComponent disposal ledger', () => {
     ];
 
     const result = await svc.walkComponent(
+      undefined,
       ['kraken', 'ledger'],
       componentInputs(txs),
       new Date('2026-01-01'),
@@ -1076,6 +1095,7 @@ describe('walkComponent disposal ledger', () => {
     ];
 
     const result = await svc.walkComponent(
+      undefined,
       ['a', 'b'],
       componentInputs(txs),
       new Date('2026-01-01'),
@@ -1143,6 +1163,7 @@ describe('walkComponent disposal ledger', () => {
     ];
 
     const result = await svc.walkComponent(
+      undefined,
       ['kraken', 'ledger'],
       componentInputs(txs),
       new Date('2026-01-01'),
@@ -1205,6 +1226,7 @@ describe('a divided answer', () => {
     const svc = makeService();
     const ledger: DisposalLotMatch[] = [];
     const r = await svc.walkLots(
+      undefined,
       [
         tx({
           holdingId: 'h',
@@ -1275,9 +1297,14 @@ describe('a divided answer', () => {
       }),
     ];
 
-    const whole = await makeService().walkLots(history('left_control'), USD, BTC);
-    const none = await makeService().walkLots(history('untracked'), USD, BTC);
-    const split = await makeService().walkLots(history('split', SPLIT_3500_500), USD, BTC);
+    const whole = await makeService().walkLots(undefined, history('left_control'), USD, BTC);
+    const none = await makeService().walkLots(undefined, history('untracked'), USD, BTC);
+    const split = await makeService().walkLots(
+      undefined,
+      history('split', SPLIT_3500_500),
+      USD,
+      BTC
+    );
 
     expect(whole.realizedPnl.toString()).toBe('4000');
     expect(none.realizedPnl.toString()).toBe('0');
@@ -1289,6 +1316,7 @@ describe('a divided answer', () => {
     const svc = makeService();
     const ledger: DisposalLotMatch[] = [];
     const r = await svc.walkLots(
+      undefined,
       [
         tx({
           holdingId: 'h',
@@ -1382,6 +1410,7 @@ describe('a divided answer', () => {
     ];
 
     const out = await svc.walkComponent(
+      undefined,
       ['src', 'dst'],
       componentInputs(txs),
       new Date('2025-06-01'),
@@ -1442,6 +1471,7 @@ describe('a divided answer', () => {
     ];
 
     const out = await svc.walkComponent(
+      undefined,
       ['src'],
       componentInputs(txs),
       new Date('2025-06-01'),
@@ -1465,6 +1495,7 @@ describe('a divided answer', () => {
     const svc = makeService();
     const ledger: DisposalLotMatch[] = [];
     const r = await svc.walkLots(
+      undefined,
       [
         tx({
           holdingId: 'h',
@@ -1502,6 +1533,7 @@ describe('a divided answer', () => {
     const svc = makeService();
     const ledger: DisposalLotMatch[] = [];
     const r = await svc.walkLots(
+      undefined,
       [
         tx({
           holdingId: 'h',
@@ -1536,6 +1568,7 @@ describe('a divided answer', () => {
     const svc = makeService();
     const ledger: DisposalLotMatch[] = [];
     const r = await svc.walkLots(
+      undefined,
       [
         tx({
           holdingId: 'h',
@@ -1620,6 +1653,7 @@ describe('a share moved to a holding Scani tracks', () => {
     ];
 
     const out = await svc.walkComponent(
+      undefined,
       ['src', 'dst'],
       componentInputs(txs),
       new Date('2025-06-01'),
@@ -1680,6 +1714,7 @@ describe('a share moved to a holding Scani tracks', () => {
     ];
 
     const out = await svc.walkComponent(
+      undefined,
       ['airwallex-manual', 'airwallex-imported'],
       componentInputs(txs),
       new Date('2025-06-01'),
@@ -1726,6 +1761,7 @@ describe('a share moved to a holding Scani tracks', () => {
     ];
 
     const out = await svc.walkComponent(
+      undefined,
       ['src'],
       componentInputs(txs),
       new Date('2025-06-01'),

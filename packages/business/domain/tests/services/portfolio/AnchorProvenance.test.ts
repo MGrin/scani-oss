@@ -103,7 +103,7 @@ describe('anchor provenance reaches the result', () => {
       { holdingId: 'h-old', tokenId: 't2', anchor: 'observation-before', anchorAt: DAYS_BACK },
     ]);
 
-    const r = await svc.getPortfolioValue('u', AT, USD);
+    const r = await svc.getPortfolioValue('u', AT, USD, { tx: undefined });
 
     expect(r.holdingsStaleAnchored).toBe(2);
     expect(r.oldestAnchorAt?.toISOString()).toBe(DAYS_BACK.toISOString());
@@ -119,7 +119,7 @@ describe('anchor provenance reaches the result', () => {
       { holdingId: 'h-bef', tokenId: 't3', anchor: 'observation-before', anchorAt: DAYS_BACK },
     ]);
 
-    const r = await svc.getPortfolioValue('u', AT, USD);
+    const r = await svc.getPortfolioValue('u', AT, USD, { tx: undefined });
 
     expect(r.holdingsStaleAnchored).toBe(1);
     expect(r.oldestAnchorAt?.toISOString()).toBe(DAYS_BACK.toISOString());
@@ -133,7 +133,7 @@ describe('anchor provenance reaches the result', () => {
       { holdingId: 'h-cur', tokenId: 't1', anchor: 'holdings', anchorAt: AT },
     ]);
 
-    const r = await svc.getPortfolioValue('u', AT, USD);
+    const r = await svc.getPortfolioValue('u', AT, USD, { tx: undefined });
 
     expect(r.holdingsStaleAnchored).toBe(0);
     expect(r.oldestAnchorAt).toBeNull();
@@ -150,7 +150,7 @@ describe('anchor provenance reaches the result', () => {
       { holdingId: 'h-anch', tokenId: 't2', anchor: 'observation-before', anchorAt: DAYS_BACK },
     ]);
 
-    const r = await svc.getPortfolioValue('u', AT, USD);
+    const r = await svc.getPortfolioValue('u', AT, USD, { tx: undefined });
 
     expect(r.coverageQuality).toBe('partial');
     expect(r.holdingsStalePriced).toBe(1);
@@ -170,7 +170,7 @@ describe('anchor provenance reaches the result', () => {
       { holdingId: 'h-old', tokenId: 't2', anchor: 'observation-before', anchorAt: DAYS_BACK },
     ]);
 
-    const r = await svc.getPortfolioValue('u', AT, USD);
+    const r = await svc.getPortfolioValue('u', AT, USD, { tx: undefined });
 
     const recent = r.perHolding.find((p) => p.holdingId === 'h-recent');
     const old = r.perHolding.find((p) => p.holdingId === 'h-old');

@@ -1,3 +1,4 @@
+import type { DatabaseTransaction } from '@scani/db';
 import type { Holding, HoldingBalanceObservation, HoldingTransaction } from '@scani/db/schema';
 import Decimal from 'decimal.js';
 import { Container, Service } from 'typedi';
@@ -75,23 +76,24 @@ export class BalanceAtTimeService {
   async getBalance(
     holdingId: string,
     at: Date,
+    tx: DatabaseTransaction | undefined,
     caches: BalanceAtTimeCaches = {}
   ): Promise<BalanceAtTimeResult> {
     // Resolved ONCE, above the anchor ladder, because every anchor has the
     // same lower-bound defect and anchor 1 reaches it first. Bounding the
     // holdings anchor alone would leave any holding carrying observations
     // answering exactly as before (SC-252).
-    const holding = await this.findHolding(holdingId, caches);
-    const earliest = await this.earliestEvidenceAt(holdingId, holding, caches);
+    const holding = await this.findHolding(holdingId, caches, tx);
+    const earliest = await this.earliestEvidenceAt(holdingId, holding, tx, caches);
     const beforeRecords = earliest !== null && at.getTime() < earliest.getTime();
 
     // Try anchor 1: nearest observation at or after `at`.
-    const after = await this.findObservationAtOrAfter(holdingId, at, caches);
+    const after = await this.findObservationAtOrAfter(holdingId, at, caches, tx);
     if (after) {
-      const txs = await this.findTxsInRange(holdingId, at, after.observedAt, caches);
+      const txs = await this.findTxsInRange(holdingId, at, after.observedAt, caches, tx);
       const sumInRange = txs.reduce((acc, t) => acc.add(new Decimal(t.quantity)), new Decimal(0));
       const walked = new Decimal(after.balance).sub(sumInRange);
-      const spread = await this.driftAhead(holdingId, at, after, caches);
+      const spread = await this.driftAhead(holdingId, at, after, caches, tx);
       return {
         balance: clampNonNegative(walked.sub(spread.share)),
         anchor: 'observation-after',
@@ -105,7 +107,7 @@ export class BalanceAtTimeService {
     // Try anchor 2: current holdings.balance. The holding row IS the
     // anchor here — fetched by PK directly, not via (account, token) lookup.
     if (holding) {
-      const txs = await this.findTxsInRange(holdingId, at, holding.lastUpdated, caches);
+      const txs = await this.findTxsInRange(holdingId, at, holding.lastUpdated, caches, tx);
       const sumInRange = txs.reduce((acc, t) => acc.add(new Decimal(t.quantity)), new Decimal(0));
       const balance = clampNonNegative(new Decimal(holding.balance).sub(sumInRange));
       return {
@@ -121,9 +123,9 @@ export class BalanceAtTimeService {
     }
 
     // Try anchor 3: latest observation before `at` — walk forward.
-    const before = await this.findObservationAtOrBefore(holdingId, at, caches);
+    const before = await this.findObservationAtOrBefore(holdingId, at, caches, tx);
     if (before) {
-      const txs = await this.findTxsInRange(holdingId, before.observedAt, at, caches);
+      const txs = await this.findTxsInRange(holdingId, before.observedAt, at, caches, tx);
       const sumInRange = txs.reduce((acc, t) => acc.add(new Decimal(t.quantity)), new Decimal(0));
       const balance = clampNonNegative(new Decimal(before.balance).add(sumInRange));
       return {
@@ -178,9 +180,10 @@ export class BalanceAtTimeService {
     holdingId: string,
     at: Date,
     after: HoldingBalanceObservation,
-    caches: BalanceAtTimeCaches
+    caches: BalanceAtTimeCaches,
+    tx: DatabaseTransaction | undefined
   ): Promise<{ share: Decimal; interpolated: boolean }> {
-    const before = await this.findObservationAtOrBefore(holdingId, at, caches);
+    const before = await this.findObservationAtOrBefore(holdingId, at, caches, tx);
     // No earlier observation, or `at` sits exactly on one: nothing to
     // interpolate between, and a zero-length span would divide by zero.
     if (!before || before.observedAt.getTime() >= after.observedAt.getTime()) {
@@ -191,7 +194,8 @@ export class BalanceAtTimeService {
       holdingId,
       before.observedAt,
       after.observedAt,
-      caches
+      caches,
+      tx
     );
     // The one implementation of this arithmetic — see `unexplainedDrift`.
     // `BalanceGapService` asks the owner about the same quantity this line
@@ -238,6 +242,7 @@ export class BalanceAtTimeService {
   async earliestEvidenceAt(
     holdingId: string,
     holding: Holding | null,
+    tx: DatabaseTransaction | undefined,
     caches: BalanceAtTimeCaches = {},
     options: { excludeReconciliationOpening?: boolean } = {}
   ): Promise<Date | null> {
@@ -258,7 +263,7 @@ export class BalanceAtTimeService {
     } else {
       const { first } = await this.transactionRepository.findExtremesForHolding(
         holdingId,
-        undefined,
+        tx,
         options.excludeReconciliationOpening ? { excludeReconciliationOpening: true } : undefined
       );
       if (first) candidates.push(first);
@@ -269,7 +274,7 @@ export class BalanceAtTimeService {
       const first = cachedObs[0];
       if (first) candidates.push(first.observedAt);
     } else {
-      const { first } = await this.observationRepository.findExtremesForHolding(holdingId);
+      const { first } = await this.observationRepository.findExtremesForHolding(holdingId, tx);
       if (first) candidates.push(first);
     }
 
@@ -283,7 +288,8 @@ export class BalanceAtTimeService {
   private async findObservationAtOrAfter(
     holdingId: string,
     at: Date,
-    caches: BalanceAtTimeCaches
+    caches: BalanceAtTimeCaches,
+    tx: DatabaseTransaction | undefined
   ): Promise<HoldingBalanceObservation | null> {
     const cached = caches.observations?.get(holdingId);
     if (cached) {
@@ -295,13 +301,14 @@ export class BalanceAtTimeService {
       }
       return null;
     }
-    return this.observationRepository.findLatestAtOrAfter(holdingId, at);
+    return this.observationRepository.findLatestAtOrAfter(holdingId, at, tx);
   }
 
   private async findObservationAtOrBefore(
     holdingId: string,
     at: Date,
-    caches: BalanceAtTimeCaches
+    caches: BalanceAtTimeCaches,
+    tx: DatabaseTransaction | undefined
   ): Promise<HoldingBalanceObservation | null> {
     const cached = caches.observations?.get(holdingId);
     if (cached) {
@@ -313,23 +320,25 @@ export class BalanceAtTimeService {
       }
       return best;
     }
-    return this.observationRepository.findLatestAtOrBefore(holdingId, at);
+    return this.observationRepository.findLatestAtOrBefore(holdingId, at, tx);
   }
 
   private async findHolding(
     holdingId: string,
-    caches: BalanceAtTimeCaches
+    caches: BalanceAtTimeCaches,
+    tx: DatabaseTransaction | undefined
   ): Promise<Holding | null> {
     const cached = caches.holdings?.get(holdingId);
     if (cached) return cached;
-    return this.holdingRepository.findById(holdingId);
+    return this.holdingRepository.findById(holdingId, tx);
   }
 
   private async findTxsInRange(
     holdingId: string,
     from: Date,
     to: Date,
-    caches: BalanceAtTimeCaches
+    caches: BalanceAtTimeCaches,
+    tx: DatabaseTransaction | undefined
   ): Promise<HoldingTransaction[]> {
     const cached = caches.transactions?.get(holdingId);
     if (cached) {
@@ -343,6 +352,6 @@ export class BalanceAtTimeService {
         return ts > lo && ts <= hi;
       });
     }
-    return this.transactionRepository.findForHoldingInRange(holdingId, from, to);
+    return this.transactionRepository.findForHoldingInRange(holdingId, from, to, tx);
   }
 }

@@ -247,9 +247,10 @@ async function bothWalks(txs: ReadonlyArray<HoldingTransaction>): Promise<{
 }> {
   const svc = makeService();
   const ledgerA: DisposalLotMatch[] = [];
-  const a = await svc.walkLots(txs, USD, SOL, undefined, 'complete', ledgerA);
+  const a = await svc.walkLots(undefined, txs, USD, SOL, undefined, 'complete', ledgerA);
   const ledgerB: DisposalLotMatch[] = [];
   const walked = await svc.walkComponent(
+    undefined,
     [HOLDING],
     new Map([[HOLDING, txs]]),
     FUTURE,
