@@ -147,16 +147,27 @@ export interface TreeMarkers {
  *
  * TWO EDGES, both stated rather than left to the arithmetic.
  *
- * `mirrorOnlyTotal === 0` is DEFENSIVE rather than reachable here, and saying
- * which it is matters. That set is "files upstream has that private does not",
- * and in this repo it has a floor of 9 that will never close: the release
+ * `mirrorOnlyTotal === 0` is DEFENSIVE rather than reachable here, and the
+ * claim is about WHAT `collectTreeMarkers` COUNTS, not about what the tree
+ * contains. The distinction is not pedantry — it is the correction SC-662 was
+ * filed for. Nine paths exist only on the mirror by design: the release
  * automation (`release-please.yml`, `release-please-config.json`,
  * `.release-please-manifest.json`, `CHANGELOG.md`), CodeQL, `docker-publish`,
- * `deploy-docs` and `sync-dockerhub-readmes` exist only on the mirror by
- * design. An upstream-first file is therefore 1 of 10, not 1 of 1. A fork or a
- * differently-arranged mirror has no such floor, so the branch is kept — but
- * it is a guard against an arrangement this repo does not have, not a state
- * measured here. There is then NO mirror evidence to weigh, which is a
+ * `deploy-docs` and `sync-dockerhub-readmes`. Since SC-662 the counting sees
+ * all nine, so they are a floor and an upstream-first file is 1 of 10, not
+ * 1 of 1.
+ *
+ * Before SC-662 that same sentence was true of the CONTENTS and false of the
+ * COUNT: `collectTreeMarkers` used `git diff`, and rename detection could pair
+ * any one of those nine with a private-only path and drop both, so the floor
+ * was not a floor. Right conclusion, wrong warrant — which survives until the
+ * warrant is load-bearing for a different question, and then fails without
+ * warning. Stated at length because a corrected number over an uncorrected
+ * warrant is how the next reader inherits the same mistake.
+ *
+ * A fork or a differently-arranged mirror has no such floor, so the branch is
+ * kept — but it guards an arrangement this repo does not have rather than a
+ * state measured here. There is then NO mirror evidence to weigh, which is a
  * different thing from mirror evidence that came back empty, and a `why`
  * reading `0/0 mirror-only` would invite the reader to conclude the tree lacks
  * paths that do not exist to lack. It gets its own branch and says so. The
@@ -167,8 +178,8 @@ export interface TreeMarkers {
  *
  * A very small non-zero `mirrorOnlyTotal` — one or two — would make a single
  * upstream-first file most of the mirror's set, and its share could then
- * outrank a 541/546 private one. The floor of 9 above puts this repo far from
- * that, and where it does arise the verdict is `oss`: a refusal somebody
+ * outrank a 541/546 private one. The counted floor of 9 puts this repo far
+ * from that, and where it does arise the verdict is `oss`: a refusal somebody
  * reads, which is the direction this function errs in on purpose. Loud, not
  * silent.
  *
@@ -430,28 +441,55 @@ function gitPaths(args: string[]): string[] | null {
  * file lists and so offer nothing to key on. Null is never a verdict; the
  * caller decides, and its options are descent or `unknown`.
  *
- * Three git calls, measured at ~150ms total against a 2674-path tree, against
+ * SET DIFFERENCE OVER TWO TREES, NOT A DIFF (SC-662). "Which paths exist on
+ * one side only" is a question about membership, and `git diff` answers a
+ * richer question that does not reduce to it: with rename detection on — which
+ * is the DEFAULT — git pairs a path that exists only upstream with one that
+ * exists only privately and emits a single `R` entry, and `--diff-filter=A`
+ * and `--diff-filter=D` both skip it. BOTH markers then disappear at once, in
+ * silence.
+ *
+ * Measured 2026-08-26 on a live pair at 65% similarity —
+ * `packages/infra/db/tests/fixtures/scripts/read-only-probe.ts` upstream
+ * against `.../fixtures/repair-read-only-probe.ts` privately:
+ *
+ *     mirror-only    9 by diff    10 by set difference
+ *     private-only 543 by diff   544 by set difference
+ *
+ * The bug surfaced as two tools disagreeing about one file: `oss-drift --scan`
+ * called it `absent-privately` while this function did not count it at all.
+ * `oss-drift` builds `git ls-tree` blob maps, so it was never exposed to
+ * rename detection — and this now asks the question the same way it does,
+ * which makes the two agree BY CONSTRUCTION rather than by both happening to
+ * be configured alike. `--no-renames` would have fixed the count and left the
+ * agreement resting on a flag; `diff.renames` is user-configurable and
+ * `copies` would have made it worse.
+ *
+ * `--full-tree`, because `git ls-tree` is CWD-RELATIVE and `git diff` is not.
+ * Run from `scripts/`, the old `ls-tree -r --name-only HEAD` returned 177
+ * paths against 2680 — so every private-only path would have read as absent
+ * from HEAD. Git runs hooks from the top level, which is why this never fired;
+ * a hand-run from a subdirectory is all it needed.
+ *
+ * Three git calls, measured at ~150ms total against a 2680-path tree, against
  * a hook that already runs `bun run type-check`.
  */
+function treePaths(ref: string): string[] | null {
+  return gitPaths(['ls-tree', '-r', '--full-tree', '--name-only', ref]);
+}
+
 export function collectTreeMarkers(): TreeMarkers | null {
-  const privateOnly = gitPaths([
-    'diff',
-    '--name-only',
-    '--diff-filter=A',
-    'upstream/main',
-    'origin/main',
-  ]);
-  const mirrorOnly = gitPaths([
-    'diff',
-    '--name-only',
-    '--diff-filter=D',
-    'upstream/main',
-    'origin/main',
-  ]);
-  if (privateOnly === null || mirrorOnly === null) return null;
+  const upstreamPaths = treePaths('upstream/main');
+  const originPaths = treePaths('origin/main');
+  if (upstreamPaths === null || originPaths === null) return null;
+
+  const inUpstream = new Set(upstreamPaths);
+  const inOrigin = new Set(originPaths);
+  const privateOnly = originPaths.filter((p) => !inUpstream.has(p));
+  const mirrorOnly = upstreamPaths.filter((p) => !inOrigin.has(p));
   if (privateOnly.length === 0 && mirrorOnly.length === 0) return null;
 
-  const headPaths = gitPaths(['ls-tree', '-r', '--name-only', 'HEAD']);
+  const headPaths = treePaths('HEAD');
   if (headPaths === null) return null;
   const inHead = new Set(headPaths);
 
