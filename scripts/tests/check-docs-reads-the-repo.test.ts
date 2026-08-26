@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+import { assertRepoFixtureIsIgnored } from '../lib/test-fixture-corpses';
 
 /**
  * SC-430. `docs:check` derived its lists by reading the working DIRECTORY, so
@@ -21,11 +22,24 @@ import path from 'node:path';
 const REPO_ROOT = path.resolve(import.meta.dir, '../..');
 const PROVIDERS = path.join(REPO_ROOT, 'packages/clients/providers/src/providers');
 
-// Per-process, because a neighbour's `rm -rf` mid-run is its own bug (SC-370).
-const STRAY_PROVIDER = path.join(PROVIDERS, `.scratch-sc430-${process.pid}`);
-const STRAY_BUILD = path.join(REPO_ROOT, `apps/frontend/app/.out-sc430-${process.pid}`);
+// Per-process, because a neighbour's `rm -rf` mid-run is its own bug (SC-370),
+// and under the reserved prefix, because these three sit in the working tree
+// with nothing ignoring them otherwise — a killed run leaves them where
+// `git add -A` takes them (SC-609). The assertion runs at module load, so a
+// path renamed out of the family fails before any test does.
+function strayFixture(rel: string): string {
+  assertRepoFixtureIsIgnored(REPO_ROOT, rel);
+  return path.join(REPO_ROOT, rel);
+}
+
+const STRAY_PROVIDER = strayFixture(
+  `packages/clients/providers/src/providers/scani-test-fixture-sc430-${process.pid}`
+);
+const STRAY_BUILD = strayFixture(`apps/frontend/app/scani-test-fixture-sc430-out-${process.pid}`);
 const PHANTOM_VAR = `SC430_PHANTOM_${process.pid}`;
-const STRAY_DOC = path.join(REPO_ROOT, `packages/business/domain/src/.notes-sc444-${process.pid}`);
+const STRAY_DOC = strayFixture(
+  `packages/business/domain/src/scani-test-fixture-sc444-notes-${process.pid}`
+);
 
 function cleanup(): void {
   rmSync(STRAY_PROVIDER, { recursive: true, force: true });

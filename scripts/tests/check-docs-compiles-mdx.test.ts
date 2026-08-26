@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { assertRepoFixtureIsIgnored } from '../lib/test-fixture-corpses';
 
 /**
  * SC-469. Nothing a developer runs compiled MDX. `docs:check` read Markdown as
@@ -20,21 +22,28 @@ import path from 'node:path';
  */
 
 const REPO_ROOT = path.resolve(import.meta.dir, '../..');
-const CONTENT = path.join(REPO_ROOT, 'apps/frontend/docs/src/content/docs');
-
 // Every fixture is staged into a THROWAWAY git index rather than the real one.
 // `check-docs.ts` derives its file list from `git ls-files` (SC-430), so a
 // fixture has to be tracked to be seen — and staging it for real would leave a
 // half-finished test run with somebody's index holding files they never added.
 // `GIT_INDEX_FILE` gives `git` a scratch index for the duration and touches
 // nothing in the checkout.
-const SCRATCH_INDEX = path.join(REPO_ROOT, `.scratch-sc469-index-${process.pid}`);
+//
+// OUTSIDE the repository (SC-609). `GIT_INDEX_FILE` takes any path, so this
+// one never needed to be in the tree at all — and while it was, a killed run
+// left an ordinary untracked file at the root for `git add -A` to commit. The
+// pid keeps two concurrent runs off each other's index (SC-370).
+const SCRATCH_INDEX = path.join(tmpdir(), `scani-sc469-index-${process.pid}`);
 
 // Per-process, because a neighbour's cleanup mid-run is its own bug (SC-370).
 const FIXTURES: string[] = [];
 
+// The name carries the reserved prefix so one `.gitignore` rule keeps it out of
+// `git add -A` (SC-609): these four sit in the DEPLOYED docs content root, where
+// a stranded one is both committable and built by the site as a page.
 function fixture(relDir: string, name: string, body: string): string {
-  const rel = `apps/frontend/docs/src/content/docs/${relDir}${name}`;
+  const rel = `apps/frontend/docs/src/content/docs/${relDir}scani-test-fixture-${name}`;
+  assertRepoFixtureIsIgnored(REPO_ROOT, rel);
   const abs = path.join(REPO_ROOT, rel);
   writeFileSync(abs, body);
   FIXTURES.push(abs);
@@ -47,7 +56,19 @@ function runCheck(staged: string[] = [], unstage: string[] = []): { code: number
   const git = (args: string[]) => Bun.spawnSync(['git', ...args], { cwd: REPO_ROOT, env });
   rmSync(SCRATCH_INDEX, { force: true });
   git(['read-tree', 'HEAD']);
-  if (staged.length > 0) git(['add', '--', ...staged]);
+  // `-f` because every fixture is deliberately gitignored (SC-609), and `git
+  // add` refuses an ignored path without it. The status is checked rather than
+  // discarded: an unstaged fixture makes `check-docs` green, which reads as the
+  // page compiling rather than as the page never having been looked at.
+  if (staged.length > 0) {
+    const add = git(['add', '-f', '--', ...staged]);
+    if (add.exitCode !== 0) {
+      throw new Error(
+        `staging the fixture into the scratch index failed (exit ${add.exitCode}): ` +
+          `${add.stderr.toString().trim()}`
+      );
+    }
+  }
   if (unstage.length > 0) git(['rm', '--cached', '-q', '--', ...unstage]);
   const run = Bun.spawnSync(['bun', 'scripts/check-docs.ts'], { cwd: REPO_ROOT, env });
   return { code: run.exitCode, out: `${run.stdout.toString()}${run.stderr.toString()}` };
