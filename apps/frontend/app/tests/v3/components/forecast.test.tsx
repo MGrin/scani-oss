@@ -223,7 +223,7 @@ function render(book: ForecastPaymentInput[], liquidAmount: string, over = {}) {
  * The two surfaces used to answer this question separately and reached
  ***REMOVED***
  ***REMOVED***
- * nets +£8,***REMOVED*** a month". The book is not a second opinion — on the real
+ ***REMOVED***
  * account it records the income and almost none of the spending, so projected
  * forward it says the money grows forever.
  */

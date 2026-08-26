@@ -22,7 +22,7 @@ import { monthKey } from './forecast';
  *
  * So from Scani's side his burn is not a schedule. It is **the rate at which
  * money leaves the tracked perimeter**, and that signal already exists: 303
- * reviewed outflows over five years, running $4k–$43k a month and nothing
+ * reviewed outflows over five years, running $3k–$37k a month and nothing
  * like a recurrence.
  *
  * ## `left_control` only, and `untracked` deliberately NOT
@@ -70,10 +70,10 @@ import { monthKey } from './forecast';
  *
  * ## The mean, not the median, and why it is on the surface
  *
- * Six of his months span $4k–$43k, so the two differ materially and the
  ***REMOVED***
  ***REMOVED***
- * balance actually drained at, and a $43k month is real money that really
+ ***REMOVED***
+ ***REMOVED***
  ***REMOVED***
  * like — and a runway built on it survives on paper past the point the
  * account is empty.
