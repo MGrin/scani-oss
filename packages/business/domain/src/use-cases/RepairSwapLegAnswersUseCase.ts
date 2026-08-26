@@ -1,6 +1,6 @@
 import { db } from '@scani/db/connection';
 import * as schema from '@scani/db/schema';
-import { answerSourceOf } from '@scani/shared';
+import { mayBeUserAnswer, unstampedAnswerRefusal } from '@scani/shared';
 import { and, eq, isNotNull, notInArray } from 'drizzle-orm';
 import Container, { Service } from 'typedi';
 import { OUTFLOW_KINDS } from '../lib/transfer-matching';
@@ -146,8 +146,8 @@ function verdict(
   // rather than a mandate to act for them. `answerSourceOf` rather than a local
   // reading of the two columns, so this refusal and the queue's own attribution
   // can never drift apart (SC-350).
-  if (answerSourceOf(tx) === 'user') {
-    return blocked('answered by a person — this repair does not withdraw a stamped answer');
+  if (mayBeUserAnswer(tx)) {
+    return blocked(unstampedAnswerRefusal(tx, 'withdraw'));
   }
   // Lots carry across a group id, so an answer beside one is doing work.
   // `reopen` is the operation that unwinds that, and it is a different one.
