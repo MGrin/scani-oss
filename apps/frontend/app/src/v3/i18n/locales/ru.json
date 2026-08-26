@@ -1075,7 +1075,7 @@
         "committedTitle": "Запланировано",
         "committedNote": "Только регулярные платежи — что запланировано и когда. Это не описывает ваши траты.",
         "observedBasis": "Среднее за {{count}} полных месяцев, {{from}} — {{to}}: <value></value> в месяц.",
-        "observedSpread": "Разброс по месяцам: от <min></min> до <max></max>.",
+        "observedSpread": "Разброс по месяцам: от <min></min> до <max></max>; медианный месяц — <median></median>.",
         "observedNotCounted_one": "{{count}} списание не учтено — без ответа или ушло туда, куда Scani не видит.",
         "observedNotCounted_few": "{{count}} списания не учтены — без ответа или ушли туда, куда Scani не видит.",
         "observedNotCounted_many": "{{count}} списаний не учтено — без ответа или ушли туда, куда Scani не видит.",
