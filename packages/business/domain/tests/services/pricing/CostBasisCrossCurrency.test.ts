@@ -141,6 +141,7 @@ describe('cross-currency paired transfers (SC-506)', () => {
     ];
 
     const out = await svc.walkComponent(
+      undefined,
       ['eur', 'gbp'],
       byHolding(txs),
       new Date('2026-01-01'),
@@ -201,6 +202,7 @@ describe('cross-currency paired transfers (SC-506)', () => {
     ];
 
     const out = await svc.walkComponent(
+      undefined,
       ['eur', 'gbp'],
       byHolding(txs),
       new Date('2026-01-01'),
@@ -253,6 +255,7 @@ describe('cross-currency paired transfers (SC-506)', () => {
     // lot. Quantity is the whole of what this asserts, and it is the half of
     ***REMOVED***
     const out = await svc.walkComponent(
+      undefined,
       ['kraken', 'ledger'],
       byHolding(txs),
       new Date('2026-01-01'),
@@ -302,6 +305,7 @@ describe('cross-currency paired transfers (SC-506)', () => {
     ];
 
     const out = await svc.walkComponent(
+      undefined,
       ['a', 'b'],
       byHolding(txs),
       new Date('2026-01-01'),
@@ -374,6 +378,7 @@ describe('cross-currency paired transfers (SC-506)', () => {
     ];
 
     const out = await svc.walkComponent(
+      undefined,
       ['a', 'b'],
       byHolding(txs),
       new Date('2026-01-01'),

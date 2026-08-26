@@ -133,6 +133,7 @@ describe('PnLAtTimeService.getPnL — cost-unknown substitution', () => {
           ['notx', []],
         ]),
       },
+      tx: undefined,
     });
 
     const notx = r.perHolding.find((p) => p.holdingId === 'notx');
@@ -159,7 +160,13 @@ describe('PnLAtTimeService.getPnL — transfer routing', () => {
       getCostBasis: async () => {
         throw new Error('getCostBasis should not run — both holdings are transfer-linked');
       },
-      walkComponent: async (holdingIds: ReadonlyArray<string>) => {
+      // `_dbTx` is the transaction SC-600 made walkComponent's first
+      // parameter. This stub is cast `as unknown as CostBasisService`, so the
+      // compiler never checked it against the real signature — without the
+      // placeholder, `holdingIds` silently binds to the transaction and the
+      // assertion below reads `undefined`. That is the whole reason the gate
+      // is not redundant with a clean type-check here.
+      walkComponent: async (_dbTx: unknown, holdingIds: ReadonlyArray<string>) => {
         walkComponentCalls += 1;
         expect([...holdingIds].sort()).toEqual(['X', 'Y']);
         return new Map<string, CostBasisAtTime>([
@@ -184,6 +191,7 @@ describe('PnLAtTimeService.getPnL — transfer routing', () => {
           ['Y', [linkTx('g1')]],
         ]),
       },
+      tx: undefined,
     });
 
     expect(walkComponentCalls).toBe(1);
@@ -225,6 +233,7 @@ describe('PnLAtTimeService.getPnL — unpriceable holdings', () => {
           ['dust', []],
         ]),
       },
+      tx: undefined,
     });
 
     expect(r.totalCostBasis.toString()).toBe('700'); // not 1100
@@ -275,6 +284,7 @@ describe('PnLAtTimeService.getPnL — unpriceable holdings', () => {
           ['usd-cash', []],
         ]),
       },
+      tx: undefined,
     });
 
     expect(r.totalCostBasis.toString()).toBe('700'); // not 10276
@@ -316,6 +326,7 @@ describe('PnLAtTimeService.getPnL — quality counts', () => {
     const result = await makeService(valuation, costBasis).getPnL('u', new Date(), USD, {
       caches: EMPTY_CACHES,
       coverageByHolding: new Map(),
+      tx: undefined,
     });
 
     expect(result.holdingsBasisUnknown).toBe(1);
@@ -338,6 +349,7 @@ describe('PnLAtTimeService.getPnL — quality counts', () => {
     const result = await makeService(valuation, costBasis).getPnL('u', new Date(), USD, {
       caches: EMPTY_CACHES,
       coverageByHolding: new Map(),
+      tx: undefined,
     });
 
     // Airdrop spam is already outside both totals (SC-146). Reporting its
@@ -359,6 +371,7 @@ describe('PnLAtTimeService.getPnL — quality counts', () => {
     const result = await makeService(valuation, costBasis).getPnL('u', new Date(), USD, {
       caches: EMPTY_CACHES,
       coverageByHolding: new Map(),
+      tx: undefined,
     });
 
     expect(result.holdingsStalePriced).toBe(1);
@@ -388,6 +401,7 @@ describe('PnLAtTimeService.getPnL — quality counts', () => {
     const result = await makeService(valuation, costBasis).getPnL('u', new Date(), USD, {
       caches: EMPTY_CACHES,
       coverageByHolding: new Map(),
+      tx: undefined,
     });
 
     expect(result.holdingsBeforeRecords).toBe(1);
@@ -428,7 +442,7 @@ describe('PnLAtTimeService.getPnL — unreviewed transfers (SC-160)', () => {
     } as unknown as CostBasisService;
     const svc = makeService(valuation, costBasis);
 
-    const r = await svc.getPnL('u', new Date(), USD, { caches: EMPTY_CACHES });
+    const r = await svc.getPnL('u', new Date(), USD, { caches: EMPTY_CACHES, tx: undefined });
     expect(r.transfersUnreviewed).toBe(3);
     expect(r.perHolding.find((p) => p.holdingId === 'a')?.transfersUnreviewed).toBe(2);
     expect(r.perHolding.find((p) => p.holdingId === 'b')?.transfersUnreviewed).toBe(1);
@@ -445,7 +459,7 @@ describe('PnLAtTimeService.getPnL — unreviewed transfers (SC-160)', () => {
     } as unknown as CostBasisService;
     const svc = makeService(valuation, costBasis);
 
-    const r = await svc.getPnL('u', new Date(), USD, { caches: EMPTY_CACHES });
+    const r = await svc.getPnL('u', new Date(), USD, { caches: EMPTY_CACHES, tx: undefined });
     // 5 from `real`; `dust` contributes nothing to the total it would caveat.
     expect(r.transfersUnreviewed).toBe(5);
     // Still reported on the holding itself — the rollup's per-scope writer
