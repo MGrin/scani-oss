@@ -104,6 +104,29 @@ export interface UpdateHoldingBalanceInput {
  * Nothing in the repo branches on an observation's `source`; it is carried and
  * surfaced. Measured 2026-08-26: the only `=== 'manual'` comparison nearby is
  * on `holdings.source`, not on this column.
+ *
+ * ## Why this is a declared constant and not the value already lying around
+ *
+ * `createHoldingWithEvent` already writes `sourceMetadata.origin =
+ * 'createHoldingWithEvent'`, and excluding on THAT would have been a one-line
+ * diff: no new constant, no signature change, nothing threaded through. It was
+ * rejected, and the reason generalises past this file.
+ *
+ * That option was cheap *because it was incidental*. Nobody chose the string
+ * `'createHoldingWithEvent'` as a contract — it is there because the method
+ * happens to write its own name. Building the exclusion on it would make a
+ * later rename silently stop matching, at which point `holdingIsUntouched`
+ * answers "touched" for every holding it is asked about and SC-631 deletes
+ * nothing, with every test green except the one that checks the money.
+ *
+ * **A value that is load-bearing at two ends has to be DECLARED load-bearing
+ * at both, or the next person to rename something is holding a rule they never
+ * agreed to.** Cheapness that comes from reusing something incidental is a
+ * loan against a promise nobody made.
+ *
+ * So: one exported constant, imported by the writer (`writeInflow`, via
+ * `observationSource`) and by the reader (`holding-untouched.ts`). A rename
+ * moves both ends together and a typo does not compile.
  */
 export const HOLDING_OPEN_OBSERVATION_SOURCE = 'holding-open';
 
