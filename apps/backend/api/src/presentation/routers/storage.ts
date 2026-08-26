@@ -24,6 +24,7 @@ import { TRPCError } from '@trpc/server';
 import { Container } from 'typedi';
 import { z } from 'zod';
 import { UPLOAD_LIMITS } from '../../config/limits';
+import { strictInput } from '../lib/strict-input';
 import { protectedProcedure, router } from '../trpc';
 
 const MAX_SIZE_BYTES = UPLOAD_LIMITS.PRESIGN_UPLOAD_BYTES;
@@ -77,12 +78,14 @@ const ALLOWED_EXTENSIONS: Record<'screenshot' | 'file-import' | 'document', read
 export const storageRouter = router({
   getUploadUrl: protectedProcedure
     .input(
-      z.object({
-        purpose: z.enum(['screenshot', 'file-import', 'document']),
-        contentType: z.string().min(1).max(200),
-        filename: z.string().min(1).max(200),
-        sizeBytes: z.number().int().positive().max(MAX_SIZE_BYTES),
-      })
+      strictInput(
+        z.object({
+          purpose: z.enum(['screenshot', 'file-import', 'document']),
+          contentType: z.string().min(1).max(200),
+          filename: z.string().min(1).max(200),
+          sizeBytes: z.number().int().positive().max(MAX_SIZE_BYTES),
+        })
+      )
     )
     .mutation(async ({ input, ctx }) => {
       const normalisedContentType = input.contentType.toLowerCase().split(';')[0]?.trim() ?? '';

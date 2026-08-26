@@ -36,6 +36,7 @@ import {
   userNetWorthDaily,
 } from '../../lib/net-worth-series';
 import { withoutPeriodSeries } from '../../lib/returns-response';
+import { strictInput } from '../lib/strict-input';
 import { requireAuth } from '../middleware/auth';
 import { protectedProcedure, router } from '../trpc';
 
@@ -287,7 +288,7 @@ const ReturnsInput = z.object({
 export const portfolioRouter = router({
   // The performance surface. Reads the same rollup rows the chart above
   // plots, so a return can never disagree with the curve it is printed under.
-  getReturns: protectedProcedure.input(ReturnsInput).query(async ({ ctx, input }) => {
+  getReturns: protectedProcedure.input(strictInput(ReturnsInput)).query(async ({ ctx, input }) => {
     const { dbUser } = await requireAuth(ctx);
 
     if (input.window.kind === 'custom') {
@@ -325,213 +326,233 @@ export const portfolioRouter = router({
     return { returns, baseCurrencyId: outcome.returns.baseCurrencyId };
   }),
 
-  getNetWorthSeries: protectedProcedure.input(NetWorthSeriesInput).query(async ({ ctx, input }) => {
-    const { dbUser } = await requireAuth(ctx);
-    const baseId = input.baseCurrencyId ?? dbUser.baseCurrencyId ?? null;
-    if (!baseId) {
-      // No configured base → can't render a chart meaningfully.
-      // Return empty series so the UI shows a clear "set a base currency" CTA.
-      return {
-        series: [],
-        baseCurrencyId: null,
-        granularity: 'daily' as Granularity,
-        unmeasuredDates: [] as string[],
-      };
-    }
-    const dailyRepo = Container.get(PortfolioValueDailyRepository);
+  getNetWorthSeries: protectedProcedure
+    .input(strictInput(NetWorthSeriesInput))
+    .query(async ({ ctx, input }) => {
+      const { dbUser } = await requireAuth(ctx);
+      const baseId = input.baseCurrencyId ?? dbUser.baseCurrencyId ?? null;
+      if (!baseId) {
+        // No configured base → can't render a chart meaningfully.
+        // Return empty series so the UI shows a clear "set a base currency" CTA.
+        return {
+          series: [],
+          baseCurrencyId: null,
+          granularity: 'daily' as Granularity,
+          unmeasuredDates: [] as string[],
+        };
+      }
+      const dailyRepo = Container.get(PortfolioValueDailyRepository);
 
-    // Granularity is now an axis-label hint only (Mar 8 vs Mar 2026);
-    // data resolution is always daily and downsampled by LTTB so
-    // intra-period spikes survive. Old behaviour bucketed bucket-end
-    // dates (one Sunday per week, last day per month) which silently
-    // hid mid-week deposits/withdrawals.
-    const granularity: Granularity =
-      input.granularity === 'auto' ? pickGranularity(input.from, input.to) : input.granularity;
+      // Granularity is now an axis-label hint only (Mar 8 vs Mar 2026);
+      // data resolution is always daily and downsampled by LTTB so
+      // intra-period spikes survive. Old behaviour bucketed bucket-end
+      // dates (one Sunday per week, last day per month) which silently
+      // hid mid-week deposits/withdrawals.
+      const granularity: Granularity =
+        input.granularity === 'auto' ? pickGranularity(input.from, input.to) : input.granularity;
 
-    // Per-entity scope ownership guard. The detail-page charts
-    // pass scope: { kind: 'institution' | 'account' | 'holding', id }
-    // and the handler validates that entity belongs to the calling
-    // user before reading the scoped rollup. Absent scope = user-wide.
-    if (input.scope) {
-      await assertScopeOwnership(dbUser.id, input.scope);
-    }
+      // Per-entity scope ownership guard. The detail-page charts
+      // pass scope: { kind: 'institution' | 'account' | 'holding', id }
+      // and the handler validates that entity belongs to the calling
+      // user before reading the scoped rollup. Absent scope = user-wide.
+      if (input.scope) {
+        await assertScopeOwnership(dbUser.id, input.scope);
+      }
 
-    // Pure cache read — no live-fallback (see prior commit history;
-    // live valuation OOM-killed the backend under chart click-spam).
-    //
-    // User-wide series sums the inclusion-filtered per-holding rollup
-    // rows (hidden / inactive / scam holdings dropped) so the chart's
-    // latest point reconciles with the dashboard headline. Scoped
-    // detail-page series read the pre-aggregated per-entity row.
-    const daily: AggregatedDailyPoint[] = input.scope
-      ? (
-          await dailyRepo.findRange(dbUser.id, baseId, input.from, input.to, undefined, input.scope)
-        ).map(toAggregatedDaily)
-      : // One definition of user-wide net worth, shared with the account export
-        // — see `lib/net-worth-series.ts` for why (SC-98).
-        await userNetWorthDaily(dbUser.id, baseId, input.from, input.to);
+      // Pure cache read — no live-fallback (see prior commit history;
+      // live valuation OOM-killed the backend under chart click-spam).
+      //
+      // User-wide series sums the inclusion-filtered per-holding rollup
+      // rows (hidden / inactive / scam holdings dropped) so the chart's
+      // latest point reconciles with the dashboard headline. Scoped
+      // detail-page series read the pre-aggregated per-entity row.
+      const daily: AggregatedDailyPoint[] = input.scope
+        ? (
+            await dailyRepo.findRange(
+              dbUser.id,
+              baseId,
+              input.from,
+              input.to,
+              undefined,
+              input.scope
+            )
+          ).map(toAggregatedDaily)
+        : // One definition of user-wide net worth, shared with the account export
+          // — see `lib/net-worth-series.ts` for why (SC-98).
+          await userNetWorthDaily(dbUser.id, baseId, input.from, input.to);
 
-    // LTTB on the daily points. For ranges <= 200 days the threshold
-    // is a no-op and we ship every daily row; for longer ranges the
-    // algorithm picks the points that preserve the silhouette of the
-    // curve (peaks + dips) so a spike on a single day doesn't get
-    // averaged out by a weekly bucket.
-    const points: LttbPoint<AggregatedDailyPoint>[] = daily.map((row) => ({
-      x: new Date(row.snapshotDate).getTime(),
-      y: Number(row.totalValue),
-      raw: row,
-    }));
-    const sampled =
-      input.resolution === 'full' ? points : lttbDownsample(points, LTTB_TARGET_POINTS);
+      // LTTB on the daily points. For ranges <= 200 days the threshold
+      // is a no-op and we ship every daily row; for longer ranges the
+      // algorithm picks the points that preserve the silhouette of the
+      // curve (peaks + dips) so a spike on a single day doesn't get
+      // averaged out by a weekly bucket.
+      const points: LttbPoint<AggregatedDailyPoint>[] = daily.map((row) => ({
+        x: new Date(row.snapshotDate).getTime(),
+        y: Number(row.totalValue),
+        raw: row,
+      }));
+      const sampled =
+        input.resolution === 'full' ? points : lttbDownsample(points, LTTB_TARGET_POINTS);
 
-    // Same row shape as the account workbook writes — see `NetWorthHistoryRow`.
-    const series: NetWorthHistoryRow[] = sampled.map((p) => toNetWorthHistoryRow(p.raw));
+      // Same row shape as the account workbook writes — see `NetWorthHistoryRow`.
+      const series: NetWorthHistoryRow[] = sampled.map((p) => toNetWorthHistoryRow(p.raw));
 
-    // What the series does NOT contain, said out loud (SC-115). A chart on a
-    // category axis cannot tell a dropped day from a day that never was, and
-    // the difference is whether the line it draws to the right edge is a
-    // measurement or an interpolation. Never past today: a window that runs to
-    // the end of the week is not missing Thursday.
-    const today = new Date().toISOString().slice(0, 10);
-    const requestedThrough = input.to.toISOString().slice(0, 10);
-    const gaps = unmeasuredDates(
-      daily.filter(hasKnownCoverage).map((row) => row.snapshotDate),
-      requestedThrough < today ? requestedThrough : today
-    );
+      // What the series does NOT contain, said out loud (SC-115). A chart on a
+      // category axis cannot tell a dropped day from a day that never was, and
+      // the difference is whether the line it draws to the right edge is a
+      // measurement or an interpolation. Never past today: a window that runs to
+      // the end of the week is not missing Thursday.
+      const today = new Date().toISOString().slice(0, 10);
+      const requestedThrough = input.to.toISOString().slice(0, 10);
+      const gaps = unmeasuredDates(
+        daily.filter(hasKnownCoverage).map((row) => row.snapshotDate),
+        requestedThrough < today ? requestedThrough : today
+      );
 
-    return { series, baseCurrencyId: baseId, granularity, unmeasuredDates: gaps };
-  }),
+      return { series, baseCurrencyId: baseId, granularity, unmeasuredDates: gaps };
+    }),
 
   // PnL series: same shape as getNetWorthSeries plus cost_basis +
   // realized + unrealized columns. Reads the PnL columns added in
   // migration 0002 and populated by RollupPortfolioValueDailyUseCase
   // (which now calls PnLAtTimeService for each (scope, day) tuple).
-  getPnLSeries: protectedProcedure.input(NetWorthSeriesInput).query(async ({ ctx, input }) => {
-    const { dbUser } = await requireAuth(ctx);
-    const baseId = input.baseCurrencyId ?? dbUser.baseCurrencyId ?? null;
-    if (!baseId) {
-      return { series: [], baseCurrencyId: null, granularity: 'daily' as Granularity };
-    }
-    const dailyRepo = Container.get(PortfolioValueDailyRepository);
-    if (input.scope) {
-      await assertScopeOwnership(dbUser.id, input.scope);
-    }
-    const granularity: Granularity =
-      input.granularity === 'auto' ? pickGranularity(input.from, input.to) : input.granularity;
+  getPnLSeries: protectedProcedure
+    .input(strictInput(NetWorthSeriesInput))
+    .query(async ({ ctx, input }) => {
+      const { dbUser } = await requireAuth(ctx);
+      const baseId = input.baseCurrencyId ?? dbUser.baseCurrencyId ?? null;
+      if (!baseId) {
+        return { series: [], baseCurrencyId: null, granularity: 'daily' as Granularity };
+      }
+      const dailyRepo = Container.get(PortfolioValueDailyRepository);
+      if (input.scope) {
+        await assertScopeOwnership(dbUser.id, input.scope);
+      }
+      const granularity: Granularity =
+        input.granularity === 'auto' ? pickGranularity(input.from, input.to) : input.granularity;
 
-    // Same source split as getNetWorthSeries: user-wide sums the
-    // inclusion-filtered per-holding rows; scoped reads the
-    // pre-aggregated per-entity row.
-    const daily: AggregatedDailyPoint[] = input.scope
-      ? (
-          await dailyRepo.findRange(dbUser.id, baseId, input.from, input.to, undefined, input.scope)
-        ).map(toAggregatedDaily)
-      : aggregateIncludedHoldingRows(
-          await dailyRepo.findIncludedHoldingScopeRange(dbUser.id, baseId, input.from, input.to)
-        );
-    type PnLPoint = {
-      date: string;
-      totalValue: string;
-      costBasis: string | null;
-      realizedPnl: string | null;
-      unrealizedPnl: string | null;
-      totalPnl: string | null;
-      coverageQuality: string;
-      holdingsWithKnownValue: number;
-      holdingsTotal: number;
-      holdingsUnpriceable: number;
-      /** See `AggregatedDailyPoint` — SC-151 and SC-149. A PnL figure whose
-       *  cost side is partly unknown, or whose value side leans on prices
-       *  older than the freshness window, is wrong in one direction only:
-       *  upward. The counts are what let the chart say so. */
-      holdingsStalePriced: number;
-      holdingsBasisUnknown: number;
-      /** The one that runs the other way (SC-160): outflows whose lots left
-       *  with no gain booked because nobody has answered them, so this
-       *  figure is short by whatever the real disposals among them were
-       *  worth. Actionable, unlike the three above it — the review queue
-       *  holds exactly these rows. */
-      transfersUnreviewed: number;
-    };
-    const points: LttbPoint<AggregatedDailyPoint>[] = daily.map((row) => ({
-      x: new Date(row.snapshotDate).getTime(),
-      // Downsample on totalPnl when present, falling back to total
-      // value (unpopulated rows from before the rollup re-runs).
-      // Keeps the LTTB silhouette meaningful for either chart.
-      y:
-        row.realizedPnl != null && row.unrealizedPnl != null
-          ? Number(row.realizedPnl) + Number(row.unrealizedPnl)
-          : Number(row.totalValue),
-      raw: row,
-    }));
-    const sampled = lttbDownsample(points, LTTB_TARGET_POINTS);
-    const series: PnLPoint[] = sampled.map((p) => {
-      const realized = p.raw.realizedPnl;
-      const unrealized = p.raw.unrealizedPnl;
-      const totalPnl =
-        realized != null && unrealized != null
-          ? new Decimal(realized).add(new Decimal(unrealized)).toString()
-          : null;
-      return {
-        date: String(p.raw.snapshotDate).slice(0, 10),
-        totalValue: p.raw.totalValue,
-        costBasis: p.raw.costBasis ?? null,
-        realizedPnl: realized ?? null,
-        unrealizedPnl: unrealized ?? null,
-        totalPnl,
-        coverageQuality: p.raw.coverageQuality,
-        holdingsWithKnownValue: p.raw.holdingsWithKnownValue,
-        holdingsTotal: p.raw.holdingsTotal,
-        holdingsUnpriceable: p.raw.holdingsUnpriceable,
-        holdingsStalePriced: p.raw.holdingsStalePriced,
-        holdingsBasisUnknown: p.raw.holdingsBasisUnknown,
-        transfersUnreviewed: p.raw.transfersUnreviewed,
+      // Same source split as getNetWorthSeries: user-wide sums the
+      // inclusion-filtered per-holding rows; scoped reads the
+      // pre-aggregated per-entity row.
+      const daily: AggregatedDailyPoint[] = input.scope
+        ? (
+            await dailyRepo.findRange(
+              dbUser.id,
+              baseId,
+              input.from,
+              input.to,
+              undefined,
+              input.scope
+            )
+          ).map(toAggregatedDaily)
+        : aggregateIncludedHoldingRows(
+            await dailyRepo.findIncludedHoldingScopeRange(dbUser.id, baseId, input.from, input.to)
+          );
+      type PnLPoint = {
+        date: string;
+        totalValue: string;
+        costBasis: string | null;
+        realizedPnl: string | null;
+        unrealizedPnl: string | null;
+        totalPnl: string | null;
+        coverageQuality: string;
+        holdingsWithKnownValue: number;
+        holdingsTotal: number;
+        holdingsUnpriceable: number;
+        /** See `AggregatedDailyPoint` — SC-151 and SC-149. A PnL figure whose
+         *  cost side is partly unknown, or whose value side leans on prices
+         *  older than the freshness window, is wrong in one direction only:
+         *  upward. The counts are what let the chart say so. */
+        holdingsStalePriced: number;
+        holdingsBasisUnknown: number;
+        /** The one that runs the other way (SC-160): outflows whose lots left
+         *  with no gain booked because nobody has answered them, so this
+         *  figure is short by whatever the real disposals among them were
+         *  worth. Actionable, unlike the three above it — the review queue
+         *  holds exactly these rows. */
+        transfersUnreviewed: number;
       };
-    });
-    return { series, baseCurrencyId: baseId, granularity };
-  }),
+      const points: LttbPoint<AggregatedDailyPoint>[] = daily.map((row) => ({
+        x: new Date(row.snapshotDate).getTime(),
+        // Downsample on totalPnl when present, falling back to total
+        // value (unpopulated rows from before the rollup re-runs).
+        // Keeps the LTTB silhouette meaningful for either chart.
+        y:
+          row.realizedPnl != null && row.unrealizedPnl != null
+            ? Number(row.realizedPnl) + Number(row.unrealizedPnl)
+            : Number(row.totalValue),
+        raw: row,
+      }));
+      const sampled = lttbDownsample(points, LTTB_TARGET_POINTS);
+      const series: PnLPoint[] = sampled.map((p) => {
+        const realized = p.raw.realizedPnl;
+        const unrealized = p.raw.unrealizedPnl;
+        const totalPnl =
+          realized != null && unrealized != null
+            ? new Decimal(realized).add(new Decimal(unrealized)).toString()
+            : null;
+        return {
+          date: String(p.raw.snapshotDate).slice(0, 10),
+          totalValue: p.raw.totalValue,
+          costBasis: p.raw.costBasis ?? null,
+          realizedPnl: realized ?? null,
+          unrealizedPnl: unrealized ?? null,
+          totalPnl,
+          coverageQuality: p.raw.coverageQuality,
+          holdingsWithKnownValue: p.raw.holdingsWithKnownValue,
+          holdingsTotal: p.raw.holdingsTotal,
+          holdingsUnpriceable: p.raw.holdingsUnpriceable,
+          holdingsStalePriced: p.raw.holdingsStalePriced,
+          holdingsBasisUnknown: p.raw.holdingsBasisUnknown,
+          transfersUnreviewed: p.raw.transfersUnreviewed,
+        };
+      });
+      return { series, baseCurrencyId: baseId, granularity };
+    }),
 
   // Phase-3 surface: per-holding balance-over-time. Kept in the router
   // from the start so the frontend can code against a stable endpoint
   // shape as Phase 3 lands cost basis + sparkline.
-  getHoldingHistory: protectedProcedure.input(HoldingHistoryInput).query(async ({ ctx, input }) => {
-    const { dbUser } = await requireAuth(ctx);
-    // Ownership guard — verify the holding belongs to the caller so the
-    // endpoint can't become an IDOR.
-    const holdingRow = await db
-      .select({ id: schema.holdings.id })
-      .from(schema.holdings)
-      .where(and(eq(schema.holdings.id, input.holdingId), eq(schema.holdings.userId, dbUser.id)))
-      .limit(1);
-    if (!holdingRow[0]) {
-      throw new TRPCError({ code: 'NOT_FOUND', message: 'Holding not found' });
-    }
-    const baseId = dbUser.baseCurrencyId ?? null;
-    if (!baseId) {
-      return { holdingId: input.holdingId, series: [] as Array<{ date: string; value: number }> };
-    }
-    // Per-day value series for the holding — reads the
-    // `scope_kind='holding'` rollup rows the rollup already produces.
-    const rows = await Container.get(PortfolioValueDailyRepository).findRange(
-      dbUser.id,
-      baseId,
-      input.from,
-      input.to,
-      undefined,
-      { kind: 'holding', id: input.holdingId }
-    );
-    const points: LttbPoint<(typeof rows)[number]>[] = rows.map((row) => ({
-      x: new Date(String(row.snapshotDate)).getTime(),
-      y: Number(row.totalValue),
-      raw: row,
-    }));
-    const sampled = lttbDownsample(points, LTTB_TARGET_POINTS);
-    const series = sampled.map((p) => ({
-      date: String(p.raw.snapshotDate).slice(0, 10),
-      value: Number(p.raw.totalValue),
-    }));
-    return { holdingId: input.holdingId, series };
-  }),
+  getHoldingHistory: protectedProcedure
+    .input(strictInput(HoldingHistoryInput))
+    .query(async ({ ctx, input }) => {
+      const { dbUser } = await requireAuth(ctx);
+      // Ownership guard — verify the holding belongs to the caller so the
+      // endpoint can't become an IDOR.
+      const holdingRow = await db
+        .select({ id: schema.holdings.id })
+        .from(schema.holdings)
+        .where(and(eq(schema.holdings.id, input.holdingId), eq(schema.holdings.userId, dbUser.id)))
+        .limit(1);
+      if (!holdingRow[0]) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Holding not found' });
+      }
+      const baseId = dbUser.baseCurrencyId ?? null;
+      if (!baseId) {
+        return { holdingId: input.holdingId, series: [] as Array<{ date: string; value: number }> };
+      }
+      // Per-day value series for the holding — reads the
+      // `scope_kind='holding'` rollup rows the rollup already produces.
+      const rows = await Container.get(PortfolioValueDailyRepository).findRange(
+        dbUser.id,
+        baseId,
+        input.from,
+        input.to,
+        undefined,
+        { kind: 'holding', id: input.holdingId }
+      );
+      const points: LttbPoint<(typeof rows)[number]>[] = rows.map((row) => ({
+        x: new Date(String(row.snapshotDate)).getTime(),
+        y: Number(row.totalValue),
+        raw: row,
+      }));
+      const sampled = lttbDownsample(points, LTTB_TARGET_POINTS);
+      const series = sampled.map((p) => ({
+        date: String(p.raw.snapshotDate).slice(0, 10),
+        value: Number(p.raw.totalValue),
+      }));
+      return { holdingId: input.holdingId, series };
+    }),
 
   // Manual trigger for the portfolio-history-backfill job — same job
   // the nightly cron runs, but on demand. Wired up to a "Recompute

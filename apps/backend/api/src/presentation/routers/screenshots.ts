@@ -5,6 +5,7 @@ import { BullMqEnqueueService } from '@scani/queue';
 import { TRPCError } from '@trpc/server';
 import { Container } from 'typedi';
 import { z } from 'zod';
+import { strictInput } from '../lib/strict-input';
 import { protectedProcedure, router } from '../trpc';
 
 const screenshotsLogger = createComponentLogger('router:screenshots');
@@ -43,19 +44,21 @@ export const screenshotsRouter = router({
    */
   parseScreenshots: protectedProcedure
     .input(
-      z.object({
-        r2Keys: z.array(z.string().min(1)).min(1, 'At least one file is required').max(10),
-        // Parallel to r2Keys. The presigned key is a uuid, so without
-        // this the Files list can only show `a1b2c3.png`.
-        originalFilenames: z.array(z.string().min(1).max(512)).max(10).optional(),
-        provider: z.literal('openai').optional(),
-        accountType: z.string().optional(),
-        expectedCurrency: z.string().optional(),
-        context: z.string().optional(),
-        minConfidence: z.number().min(0).max(1).default(0.5),
-        accountId: z.string().optional(),
-        requestId: z.string().uuid(),
-      })
+      strictInput(
+        z.object({
+          r2Keys: z.array(z.string().min(1)).min(1, 'At least one file is required').max(10),
+          // Parallel to r2Keys. The presigned key is a uuid, so without
+          // this the Files list can only show `a1b2c3.png`.
+          originalFilenames: z.array(z.string().min(1).max(512)).max(10).optional(),
+          provider: z.literal('openai').optional(),
+          accountType: z.string().optional(),
+          expectedCurrency: z.string().optional(),
+          context: z.string().optional(),
+          minConfidence: z.number().min(0).max(1).default(0.5),
+          accountId: z.string().optional(),
+          requestId: z.string().uuid(),
+        })
+      )
     )
     .mutation(async ({ input, ctx }) => {
       for (const key of input.r2Keys) {
