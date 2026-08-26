@@ -47,9 +47,9 @@ const PROJECT = process.env.COMPOSE_PROJECT_NAME || e2eProjectName(REPO_ROOT);
  *
  * The `process.env[name] ?? …` this file used to spell out inline is now
  * `resolveStackPorts` (SC-500), so every consumer of these ports reads one
- * override rule. This file had it and `dev:stack`, `gate-db` and the visual
- * gate did not, which is how an override could move the e2e run and leave the
- * gate pointed at another worktree's Postgres.
+ * override rule. This file had it and `dev:stack` and the visual gate did
+ * not, which is how an override could move the e2e run and leave a gate
+ * pointed at another worktree's Postgres.
  */
 const PORTS: Record<string, string> = Object.fromEntries(
   Object.entries(resolveStackPorts(REPO_ROOT, isPrimaryCheckout(REPO_ROOT))).map(([name, port]) => [
@@ -385,6 +385,5 @@ async function main() {
 
 // Only when this file is the ENTRYPOINT. `scripts/tests/e2e-project-flag.test.ts`
 // imports `projectFlagEatsPath`, and without the guard that import boots a
-// compose stack and calls `process.exit` — the same trap `scripts/gate-db.ts`
-// documents at the bottom of itself.
+// compose stack and calls `process.exit`.
 if (import.meta.main) await main();
