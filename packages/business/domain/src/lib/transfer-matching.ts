@@ -4,6 +4,7 @@ import {
   TRANSFER_QTY_EPSILON,
 } from '@scani/shared';
 import Decimal from 'decimal.js';
+import { MANUAL_EDIT_FLOW_SOURCE } from '../services/holdings/ManualBalanceEditService';
 
 /**
  * The transfer matcher's rules, in one place.
@@ -22,6 +23,63 @@ import Decimal from 'decimal.js';
  *  how a row ended up on no queue and yet stamped "nobody answered" (SC-402). */
 export const OUTFLOW_KINDS = ANSWERABLE_OUTFLOW_KINDS;
 export const INFLOW_KINDS = ['deposit', 'transfer_in'] as const;
+
+/**
+ * The `source` a row carries when a PERSON authored it rather than an
+ * importer (SC-611).
+ *
+ * Declared here, and imported by both the writer and the readers, rather than
+ * repeated as a literal. It was already load-bearing as a literal in two
+ * places inside the API router — the insert and the mutability gate that keeps
+ * ingester-sourced rows immutable — and SC-611 makes it load-bearing in a
+ * third, a long way from either.
+ */
+export const USER_ENTERED_SOURCE = 'user-entered';
+
+/**
+ * Inflow sources the nightly matcher may NOT claim on its own (SC-611).
+ *
+ * ## The hole
+ *
+ * `transfer_review` is outflow-only, so an inflow has nowhere to record that a
+ * person had a view about it. The matcher's outflow query has always refused
+ * an answered row — *"already answered is not a candidate, whatever they
+ * answered"* — and its inflow query gated on `transfer_group_id IS NULL`
+ * alone, because there was no column for it to read. So a deposit somebody
+ * typed could be claimed as the arrival leg of an unrelated outflow, and
+ * `CostBasisService` would carry lots across a movement that never happened.
+ *
+ * ## Why the source is the right marker and not a new column
+ *
+ * These two values are true **by construction of a person having authored the
+ * row**: no importer writes either. `user-entered` is set only by the API's
+ * transaction router, `user-balance-edit` only by `ManualBalanceEditService`
+ * on `cause: 'flow'`. And it is a DECLARED contract rather than an incidental
+ * value — the router already gates row mutability on it, in code that predates
+ * this — so nothing here is a rule somebody could rename their way out of
+ * without noticing.
+ *
+ * A `cause: 'correction'` edit needs no entry: it writes `kind = 'correction'`,
+ * which is not in `INFLOW_KINDS`, so the matcher already cannot see it.
+ *
+ * ## Why this is NOT in `candidatePairClass`
+ *
+ * That predicate answers *"are these two rows a plausible pair?"* — a fact
+ * about the rows, which every caller must agree on, and SC-347 moved the
+ * same-holding guard into it for exactly that reason. This asks *"may the
+ * nightly job decide it on its own?"*, which is a question about AUTHORITY and
+ * has a different answer for a person than for a cron. The review queue still
+ * offers a hand-entered deposit as an arrival, and a reader who picks one is
+ * telling us something the matcher could not know.
+ *
+ * Measured on production 2026-08-26 before the fix: 17 of 670 inflows are
+ * person-authored and 0 groups had ever been damaged, against a control of 29
+ * matcher-made groups. Prevention, with no repair owed.
+ */
+export const PERSON_AUTHORED_INFLOW_SOURCES = [
+  USER_ENTERED_SOURCE,
+  MANUAL_EDIT_FLOW_SOURCE,
+] as const;
 
 /** CEX queues delay; chain finality is minutes. Re-exported from
  *  `@scani/shared` so the review surface's explanation of the rule and the
