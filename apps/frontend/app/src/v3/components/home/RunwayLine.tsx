@@ -1,4 +1,4 @@
-import { Decimal } from '@scani/shared';
+import { committedShareOfObserved, Decimal, runwayDenominator } from '@scani/shared';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
@@ -38,6 +38,32 @@ export function RunwayLine() {
     (forecast.data?.movements ?? []).map((movement) => movement.currencyTokenId)
   );
 
+  /**
+   * The observed answer, and it is the one that ships (SC-657).
+   *
+   ***REMOVED***
+   ***REMOVED***
+   ***REMOVED***
+   ***REMOVED***
+   * `left_control` outflows, $4k–$43k a month, nothing like a schedule.
+   *
+   * `committed` is shown beside it as a SHARE, never as an addend:
+   * `runwayDenominator` takes one argument and there is no way to hand it the
+   * sum. The two are not siblings — his recurring payments are paid out of the
+   * untracked accounts, so that money already left the perimeter when he moved
+   * it, and it is inside `observed` already. See `@scani/shared` `lib/burn.ts`.
+   */
+  const observedAnswer = useMemo(() => {
+    const burn = forecast.data?.observedBurn;
+    if (!forecast.data || !burn) return null;
+    const perMonth = runwayDenominator(burn.perMonthMean);
+    // Nothing left the perimeter across the whole window. `liquid ÷ 0` is not
+    // "forever", it is "this window cannot answer" — fall through to the book.
+    if (perMonth.lessThanOrEqualTo(0)) return null;
+    const months = new Decimal(forecast.data.liquid.amount).dividedBy(perMonth);
+    return { months: months.floor().toNumber(), burn };
+  }, [forecast.data]);
+
   const answer = useMemo(() => {
     if (!forecast.data || forecast.data.movements.length === 0) return null;
     const buckets = bucketMovements(
@@ -51,6 +77,62 @@ export function RunwayLine() {
     if (projection.pending) return null;
     return runway(projection);
   }, [forecast.data, rates]);
+
+  /**
+   * The book's own monthly outflow, taken from the projection so it comes
+   * through the SAME currency conversion the runway did. A second conversion
+   * path would let the two numbers on this line disagree invisibly.
+   */
+  const committedShare = useMemo(() => {
+    if (!observedAnswer || !forecast.data) return null;
+    const buckets = bucketMovements(
+      forecast.data.movements,
+      monthSequence(forecast.data.today, forecast.data.horizonMonths)
+    );
+    const projection = project(new Decimal(forecast.data.liquid.amount), buckets, rates);
+    if (projection.pending || projection.points.length === 0) return null;
+    const committed = projection.points
+      .reduce((sum, point) => sum.plus(point.outflow), new Decimal(0))
+      .dividedBy(projection.points.length);
+    return committedShareOfObserved(committed.toString(), observedAnswer.burn.perMonthMean);
+  }, [observedAnswer, forecast.data, rates]);
+
+  if (observedAnswer) {
+    /**
+     * Deliberately NOT a link, and that is the whole of SC-657's second
+     * finding. This line answers from OBSERVED burn; `ForecastView` still
+     * projects the committed recurring book and was not changed. On the demo
+     * persona the two do not merely differ, they conclude the OPPOSITE: this
+     * line reads "About 27 months at recent spending" and the forecast page
+     * reads "Lasts beyond 12 months · the book nets +£8,***REMOVED*** a month".
+     *
+     * A link asserts that the destination elaborates the thing you tapped.
+     * Pointing one at a page that contradicts it is worse than having no link,
+     * so it is removed until the two surfaces are reconciled — the follow-up
+     * ticket owns that, and restores the link with it. Forecast is still
+     * reachable from the Payments nav; only the false equivalence is gone.
+     */
+    return (
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-t border-dashed border-border px-4 py-3">
+        <span className="flex flex-wrap items-center gap-2 text-caption text-muted-foreground">
+          {t('v3.home.runway.label')}
+          <span className="rounded border border-dashed border-muted-foreground/70 px-1.5 text-caption uppercase leading-tight tracking-wide">
+            {t('v3.money.forecast.projectedMark')}
+          </span>
+        </span>
+        <span className="flex flex-wrap items-center gap-2 text-label">
+          {t('v3.money.forecast.observedRunway', { count: observedAnswer.months })}
+          {committedShare ? (
+            <span className="text-caption text-muted-foreground">
+              {t('v3.money.forecast.ofWhichCommitted', {
+                percent: committedShare.times(100).toFixed(0),
+              })}
+            </span>
+          ) : null}
+        </span>
+      </div>
+    );
+  }
 
   if (!answer) return null;
 

@@ -25,6 +25,7 @@ import { withTransaction } from '@scani/db/transaction';
 import { PaymentOccurrenceRepository, PaymentRepository } from '@scani/domain/repositories';
 import {
   LiquidAssetsService,
+  ObservedBurnService,
   PaymentForecastService,
   PaymentHasSettledOccurrencesError,
   PaymentService,
@@ -334,15 +335,25 @@ export const paymentsRouter = router({
    */
   forecast: protectedProcedure.query(async ({ ctx }) => {
     const { dbUser } = await requireAuth(ctx);
-    const [forecast, liquid] = await Promise.all([
+    const [forecast, liquid, observedBurn] = await Promise.all([
       Container.get(PaymentForecastService).forecast(ctx.userId),
       Container.get(LiquidAssetsService).getLiquidAssets(
         ctx.userId,
         dbUser.baseCurrencyId ?? undefined,
         ctx.requestCache
       ),
+      // SC-657. Burn measured as the rate money leaves the tracked perimeter,
+      // alongside — never summed with — the recurring book. See
+      // `services/payments/burn.ts` for why the two are not additive.
+      //
+      // `null` without a base currency rather than a figure in mixed tokens:
+      // the exits run USD/USDC/USDT/SOL/ETH, and summing raw quantity across
+      // those is meaningless. A surface with nothing to say says nothing.
+      dbUser.baseCurrencyId
+        ? Container.get(ObservedBurnService).observed(ctx.userId, dbUser.baseCurrencyId)
+        : Promise.resolve(null),
     ]);
-    return { ...forecast, liquid };
+    return { ...forecast, liquid, observedBurn };
   }),
 
   settleOccurrence: protectedProcedure
