@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from 'bun:test';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -437,8 +437,16 @@ describe('an upstream-first window on real repositories (SC-659)', () => {
     const priv = join(root, 'priv.git');
     const seed = join(root, 'seed');
     const clone = join(root, 'work');
-    git(root, 'init', '--quiet', '--bare', up);
-    git(root, 'init', '--quiet', '--bare', priv);
+    // `--initial-branch`, on the BARE repos too. Without it these inherit the
+    // machine's `init.defaultBranch`, so their HEAD points at `master` on a
+    // default git and at `main` on one configured like this repo. When it is
+    // `master`, `git clone` warns `remote HEAD refers to nonexistent ref`,
+    // checks out NOTHING, and leaves HEAD unborn — `ls-tree HEAD` then fails
+    // and the scratch subdirectories do not exist. Green here and red on CI,
+    // which is exactly the configuration dependence SC-662 removed from the
+    // code under test (SC-662, found on scani-oss#242).
+    git(root, 'init', '--quiet', '--bare', '--initial-branch=main', up);
+    git(root, 'init', '--quiet', '--bare', '--initial-branch=main', priv);
     git(root, 'init', '--quiet', '--initial-branch=main', seed);
     identify(seed);
     for (let i = 0; i < 8; i += 1) writeFileSync(join(seed, `shared${i}.ts`), `shared ${i}\n`);
@@ -527,6 +535,180 @@ describe('an upstream-first window on real repositories (SC-659)', () => {
     expect(out).toContain(VERDICT.skipped);
     expect(code).toBe(EXIT_OK);
     expect(out).toContain(`0/${MIRROR_ONLY} mirror-only`);
+  });
+});
+
+/**
+ * SC-662. `collectTreeMarkers` asked a MEMBERSHIP question with `git diff`,
+ * and `git diff` answers a richer one. With rename detection on — the DEFAULT
+ * — git pairs a path that exists only upstream with one that exists only
+ * privately, emits a single `R` entry, and `--diff-filter=A` and
+ * `--diff-filter=D` both skip it. Both markers vanish at once, silently.
+ *
+ * Found because two tools disagreed about one file: `oss-drift --scan` called
+ * `packages/infra/db/tests/fixtures/scripts/read-only-probe.ts`
+ * `absent-privately` while `collectTreeMarkers` did not count it at all. The
+ * live pair measured 9/543 by diff against 10/544 by set difference.
+ *
+ * The fix is a set difference over two `ls-tree` listings — the same way
+ * `oss-drift` has always asked — so the two agree BY CONSTRUCTION rather than
+ * by both being configured alike. `--no-renames` would have fixed the number
+ * and left the agreement resting on a flag that `diff.renames` can change.
+ */
+describe('a cross-repo rename does not hide both markers (SC-662)', () => {
+  const root = mkdtempSync(join(tmpdir(), 'oss-rename-'));
+  afterAll(() => rmSync(root, { recursive: true, force: true }));
+
+  function git(cwd: string, ...args: string[]): string {
+    const run = Bun.spawnSync(['git', ...args], {
+      cwd,
+      env: { ...process.env, GIT_CEILING_DIRECTORIES: root },
+      stdout: 'pipe',
+      stderr: 'pipe',
+    });
+    if (run.exitCode !== 0) {
+      throw new Error(`git ${args.join(' ')}: ${new TextDecoder().decode(run.stderr)}`);
+    }
+    return new TextDecoder().decode(run.stdout);
+  }
+
+  // Similar enough that git's default 50% threshold pairs them, which is the
+  // whole precondition — the live pair that exposed this scored 65%.
+  const COMMON = Array.from({ length: 20 }, (_, i) => `export const line${i} = ${i};`).join('\n');
+  const UPSTREAM_PROBE = `${COMMON}\nexport const onlyUpstream = true;\n`;
+  const PRIVATE_PROBE = `${COMMON}\nexport const onlyPrivate = true;\n`;
+
+  const work = (() => {
+    const up = join(root, 'up.git');
+    const priv = join(root, 'priv.git');
+    const seed = join(root, 'seed');
+    const clone = join(root, 'work');
+    // `--initial-branch`, on the BARE repos too. Without it these inherit the
+    // machine's `init.defaultBranch`, so their HEAD points at `master` on a
+    // default git and at `main` on one configured like this repo. When it is
+    // `master`, `git clone` warns `remote HEAD refers to nonexistent ref`,
+    // checks out NOTHING, and leaves HEAD unborn — `ls-tree HEAD` then fails
+    // and the scratch subdirectories do not exist. Green here and red on CI,
+    // which is exactly the configuration dependence SC-662 removed from the
+    // code under test (SC-662, found on scani-oss#242).
+    git(root, 'init', '--quiet', '--bare', '--initial-branch=main', up);
+    git(root, 'init', '--quiet', '--bare', '--initial-branch=main', priv);
+    git(root, 'init', '--quiet', '--initial-branch=main', seed);
+    git(seed, 'config', 'user.email', 'test@example.com');
+    git(seed, 'config', 'user.name', 'test');
+    writeFileSync(join(seed, 'shared.ts'), 'export const shared = 1;\n');
+    // The must-be-ABSENT control, committed to BOTH sides at the same path: a
+    // rename that happened identically in each repo is in both trees and
+    // belongs in neither marker set.
+    writeFileSync(join(seed, 'renamed-in-both.ts'), 'export const both = 1;\n');
+    mkdirSync(join(seed, 'fixtures', 'scripts'), { recursive: true });
+    writeFileSync(join(seed, 'fixtures', 'scripts', 'probe.ts'), UPSTREAM_PROBE);
+    git(seed, 'add', '-A');
+    git(seed, 'commit', '--quiet', '-m', 'the mirror');
+    git(seed, 'push', '--quiet', up, 'main');
+
+    git(seed, 'rm', '--quiet', 'fixtures/scripts/probe.ts');
+    // `git rm` prunes the emptied parent, so `fixtures/` is gone by now.
+    mkdirSync(join(seed, 'fixtures'), { recursive: true });
+    writeFileSync(join(seed, 'fixtures', 'repair-probe.ts'), PRIVATE_PROBE);
+    writeFileSync(join(seed, 'private-only.ts'), 'export const p = 1;\n');
+    git(seed, 'add', '-A');
+    git(seed, 'commit', '--quiet', '-m', 'the private repo');
+    git(seed, 'push', '--quiet', priv, 'main');
+
+    git(root, 'clone', '--quiet', priv, clone);
+    git(clone, 'config', 'user.email', 'test@example.com');
+    git(clone, 'config', 'user.name', 'test');
+    git(clone, 'remote', 'add', 'upstream', up);
+    git(clone, 'fetch', '--quiet', 'upstream');
+    return clone;
+  })();
+
+  function markersIn(cwd: string): TreeMarkers | null {
+    const script = join(import.meta.dir, '..', 'check-oss-bound-paths.ts');
+    const run = Bun.spawnSync(
+      [
+        // The running interpreter, not the name: `bun` is only on PATH if the
+        // caller's environment puts it there, and a test should not depend on
+        // that.
+        process.execPath,
+        '-e',
+        `import { collectTreeMarkers } from ${JSON.stringify(script)};
+` + `console.log(JSON.stringify(collectTreeMarkers()));`,
+      ],
+      {
+        cwd,
+        env: { ...process.env, GIT_CEILING_DIRECTORIES: root },
+        stdout: 'pipe',
+        stderr: 'pipe',
+      }
+    );
+    if (run.exitCode !== 0) {
+      throw new Error(`markers: ${new TextDecoder().decode(run.stderr)}`);
+    }
+    return JSON.parse(new TextDecoder().decode(run.stdout));
+  }
+
+  /**
+   * The precondition, asserted rather than assumed. If git ever stopped
+   * pairing these two the test below would pass for the wrong reason, and a
+   * must-be-FOUND control that can go vacuous is not a control.
+   */
+  test('git really does pair the two paths as a rename', () => {
+    const status = git(work, 'diff', '--name-status', 'upstream/main', 'origin/main');
+    expect(status).toContain('fixtures/scripts/probe.ts');
+    expect(status).toContain('fixtures/repair-probe.ts');
+    expect(status).toMatch(/^R\d+\t/m);
+  });
+
+  /** MUST-BE-FOUND: the paired paths are counted on both sides. */
+  test('both halves of a cross-repo rename are counted', () => {
+    const m = markersIn(work);
+    expect(m).not.toBeNull();
+    // upstream-only: probe.ts. private-only: repair-probe.ts and private-only.ts.
+    expect(m?.mirrorOnlyTotal).toBe(1);
+    expect(m?.privateOnlyTotal).toBe(2);
+
+    // And the diff-based question, run side by side, gives the wrong answer —
+    // so the difference is demonstrated here rather than remembered.
+    const byDiff = git(
+      work,
+      'diff',
+      '--name-only',
+      '--diff-filter=D',
+      'upstream/main',
+      'origin/main'
+    );
+    expect(byDiff.trim()).toBe('');
+  });
+
+  /**
+   * MUST-BE-ABSENT. A set difference is only correct if it stays quiet about
+   * paths present on both sides — including one that got there by a rename
+   * performed in each repo independently.
+   */
+  test('a path present in both trees is in neither marker set', () => {
+    const upstream = git(work, 'ls-tree', '-r', '--full-tree', '--name-only', 'upstream/main');
+    const origin = git(work, 'ls-tree', '-r', '--full-tree', '--name-only', 'origin/main');
+    expect(upstream).toContain('renamed-in-both.ts');
+    expect(origin).toContain('renamed-in-both.ts');
+    const m = markersIn(work);
+    // 1 mirror-only and 2 private-only above account for every one-sided path,
+    // so `renamed-in-both.ts` and `shared.ts` are in neither set.
+    expect((m?.mirrorOnlyTotal ?? 0) + (m?.privateOnlyTotal ?? 0)).toBe(3);
+  });
+
+  /**
+   * `git ls-tree` is CWD-RELATIVE and `git diff` is not, so swapping one for
+   * the other introduces a bug unless `--full-tree` comes with it. Measured in
+   * the real checkout: `ls-tree -r --name-only HEAD` run from `scripts/`
+   * returned 177 paths against 2680. Git runs hooks from the top level, which
+   * is the only reason this was never seen.
+   */
+  test('the answer does not depend on which directory it runs from', () => {
+    const fromRoot = markersIn(work);
+    const fromSubdir = markersIn(join(work, 'fixtures'));
+    expect(fromSubdir).toEqual(fromRoot);
   });
 });
 
