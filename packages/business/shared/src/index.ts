@@ -34,6 +34,7 @@ export {
   normalizeCounterparty,
   txHashFromPayload,
 } from './lib/block-explorer';
+export { committedShareOfObserved, runwayDenominator } from './lib/burn';
 export {
   HOLDING_MOVEMENT_DIRECTIONS,
   type HoldingMovementDirection,
