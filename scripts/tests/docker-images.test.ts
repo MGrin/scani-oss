@@ -10,7 +10,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { DOCKER_IMAGES, diffAgainstManifest } from '../lib/docker-images';
+import { DOCKER_IMAGES, diffAgainstManifest, diffProseAgainstManifest } from '../lib/docker-images';
 
 /**
  * SC-534. `scripts/sync-dockerhub-readme.ts` built its work list with
@@ -42,6 +42,7 @@ const PUBLISH_SCRIPT = path.join(REPO_ROOT, 'scripts', 'publish-images-local.sh'
 const README_DIR = path.join(REPO_ROOT, 'docker-readmes');
 const PUBLISH_WORKFLOW = path.join(REPO_ROOT, '.github', 'workflows', 'docker-publish.yml');
 const PRIVATE_MARKER = path.join(REPO_ROOT, '.private-repo');
+const PUBLISHING_DOC = path.join(REPO_ROOT, 'docs', 'PUBLISHING.md');
 
 interface Image {
   readonly image: string;
@@ -268,5 +269,128 @@ describe('the published image set has one source', () => {
     // every comparison below vacuous. It fails closed instead.
     expect(matrix.length).toBeGreaterThan(0);
     expect(matrix).toEqual(DOCKER_IMAGES.map((i) => ({ ...i })));
+  });
+});
+
+/**
+ * SC-545. The matrix is pinned; the PROSE that states the same set was not.
+ * There are two copies and they live in different repositories —
+ * `docs/PUBLISHING.md` is private-only, `docker-publish.yml` is upstream-only —
+ * so no check can read both, and one that reads whichever it finds reports
+ * clean on the repo that lacks its target.
+ *
+ * The answer is the one the matrix test above already uses: branch on
+ * `.private-repo` and make a POSITIVE assertion on BOTH sides, so an absent
+ * file is a fact each tree asserts rather than a check that quietly skipped.
+ */
+describe('the prose that states the image set agrees with the manifest', () => {
+  function assertProseAgrees(file: string, label: string): void {
+    const diff = diffProseAgainstManifest(readFileSync(file, 'utf8'));
+
+    // FAIL CLOSED FIRST. A scrape that stops matching returns an empty list,
+    // and an empty list agrees with every manifest — `missing: [], unexpected:
+    // []` is exactly what a check reading nothing reports. This is the
+    // denominator, asserted rather than printed beside a headline.
+    //
+    // `> 0` and not `=== DOCKER_IMAGES.length`: an exact count fires FIRST on a
+    // prose copy naming a sixth image and reports `read 5 -> 6`, which is true
+    // and does not name the offender. A PARTIAL scrape is caught by `missing`
+    // below, with the images it failed to find listed.
+    expect({ label, namedAnyImage: diff.read.images > 0 }).toEqual({ label, namedAnyImage: true });
+
+    expect({
+      label,
+      missing: diff.missing,
+      unexpected: diff.unexpected,
+      missingDockerfiles: diff.missingDockerfiles,
+      wrongCounts: diff.wrongCounts,
+    }).toEqual({
+      label,
+      missing: [],
+      unexpected: [],
+      missingDockerfiles: [],
+      wrongCounts: [],
+    });
+  }
+
+  test('this tree states it in the one file this tree has', () => {
+    if (existsSync(PRIVATE_MARKER)) {
+      // Positive on both halves: the doc is here, and the workflow is not.
+      expect(existsSync(PUBLISHING_DOC)).toBe(true);
+      expect(existsSync(PUBLISH_WORKFLOW)).toBe(false);
+      assertProseAgrees(PUBLISHING_DOC, 'docs/PUBLISHING.md');
+      return;
+    }
+
+    expect(existsSync(PUBLISH_WORKFLOW)).toBe(true);
+    expect(existsSync(PUBLISHING_DOC)).toBe(false);
+    assertProseAgrees(PUBLISH_WORKFLOW, '.github/workflows/docker-publish.yml');
+  });
+
+  /**
+   * THE CONTROLS. Every assertion above is a must-be-ABSENT — it passes when
+   * nothing is found, which is also what a broken scrape does. These are the
+   * must-be-FOUND half: the same function, over prose bent in each direction
+   * the real thing can bend.
+   */
+  const TABLE = [
+    'Five images are published under the `scani/` namespace:',
+    ...DOCKER_IMAGES.map((i) => `| \`scani/${i.image}\` | \`${i.dockerfile}\` |`),
+  ].join('\n');
+
+  test('CONTROL — the unbent table passes, so the refusals below mean something', () => {
+    const diff = diffProseAgainstManifest(TABLE);
+    expect(diff.read.images).toBe(DOCKER_IMAGES.length);
+    expect(diff).toMatchObject({ missing: [], unexpected: [], wrongCounts: [] });
+  });
+
+  test('a sixth image the manifest does not declare is reported', () => {
+    const diff = diffProseAgainstManifest(`${TABLE}\n| \`scani/ghost\` | \`x/Dockerfile\` |`);
+    expect(diff.unexpected).toEqual(['ghost']);
+  });
+
+  test('an image dropped from the prose is reported, and so is its Dockerfile', () => {
+    const dropped = DOCKER_IMAGES[0];
+    if (!dropped) throw new Error('fixture: the manifest declares no images');
+    const diff = diffProseAgainstManifest(
+      TABLE.split('\n')
+        .filter((line) => !line.includes(`scani/${dropped.image}\``))
+        .join('\n')
+    );
+
+    expect(diff.missing).toEqual([dropped.image]);
+    expect(diff.missingDockerfiles).toEqual([dropped.dockerfile]);
+  });
+
+  test('a count word disagreeing with the manifest is reported, quoted as written', () => {
+    const diff = diffProseAgainstManifest(TABLE.replace('Five images', 'Four images'));
+    expect(diff.wrongCounts).toEqual(['Four images']);
+  });
+
+  test('the drift this was written for: "the four `scani/*` repos" over five images', () => {
+    // Verbatim from `docker-publish.yml`, which said this while its own matrix
+    // published five. Not hypothetical — the check found it on the real file.
+    const diff = diffProseAgainstManifest(
+      `${TABLE}\n# a token with read/write on the four \`scani/*\` repos`
+    );
+    expect(diff.wrongCounts).toEqual(['four `scani/*` repos']);
+  });
+
+  test('prose whose numbers are NOT about this set is left alone', () => {
+    // The reason the count rule is narrow. Every number here is correct and
+    // none is a claim about the image set; a proximity rule reds on all of
+    // them, and a check whose failures are all expected stops being read.
+    const diff = diffProseAgainstManifest(
+      `${TABLE}\nfour missing files came out as one line, and six of six runs were held;\n` +
+        'four Docker Hub descriptions sat stale, and a reader expecting nineteen sees one.'
+    );
+    expect(diff.wrongCounts).toEqual([]);
+  });
+
+  test('prose naming nothing is not a pass', () => {
+    // The vacuity case, asserted on the helper rather than only on the caller.
+    const diff = diffProseAgainstManifest('This document mentions no images at all.');
+    expect(diff.read.images).toBe(0);
+    expect(diff.missing).toEqual(DOCKER_IMAGES.map((i) => i.image));
   });
 });
