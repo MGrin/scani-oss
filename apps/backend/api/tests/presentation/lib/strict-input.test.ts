@@ -373,6 +373,34 @@ describe('strictInput', () => {
   });
 
   /**
+   * THE SAME PROPERTY, ON A CONTAINER A DEVELOPER CAN ACTUALLY WRITE.
+   *
+   * The test above fabricates a `typeName`, which proves the default branch
+   * but not that the branch is reachable from real zod. `z.set`, `z.map` and
+   * `z.function` are genuine zod containers this module deliberately does not
+   * descend — each can hold an object, so returning one untouched would be
+   * precisely the SC-682 / SC-687 hole again. Nothing stops somebody writing
+   * `.input(z.set(z.object({...})))` tomorrow.
+   *
+   * The controls are the other half: a container this module DOES descend
+   * must not throw, or the inversion has been over-applied and the throw is
+   * refusing valid schemas rather than unknown ones.
+   */
+  test('a REAL unhandled zod container throws, while handled ones and leaves do not', () => {
+    const obj = z.object({ a: z.string() });
+
+    expect(() => strictInput(z.set(obj))).toThrow(UnknownSchemaKindError);
+    expect(() => strictInput(z.map(z.string(), obj))).toThrow(UnknownSchemaKindError);
+    expect(() => strictInput(z.function())).toThrow(UnknownSchemaKindError);
+
+    expect(() => strictInput(z.tuple([obj]))).not.toThrow();
+    expect(() => strictInput(z.intersection(obj, obj))).not.toThrow();
+    expect(() => strictInput(z.promise(obj))).not.toThrow();
+    expect(() => strictInput(z.lazy(() => obj))).not.toThrow();
+    expect(() => strictInput(z.string())).not.toThrow();
+  });
+
+  /**
    * Passing a leaf through is the whole correct behaviour, not a gap —
    * `z.string()` has no keys to reject.
    */
