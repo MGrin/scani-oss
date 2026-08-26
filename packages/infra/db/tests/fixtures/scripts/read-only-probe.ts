@@ -1,8 +1,13 @@
 #!/usr/bin/env bun
-// Fixture for `read-only-session.test.ts`. Named `repair-*` on purpose: the
-// policy in `@scani/db/read-only` keys off the entry point's file name, so
-// this file IS the input under test. Run it with `--commit` and the same
-// process opens read-write.
+// Fixture for `read-only-session.test.ts`. It lives in a directory named
+// `scripts/` on purpose: the policy in `@scani/db/read-only` keys off the entry
+// point's DIRECTORY, so this file IS the input under test. Run it with
+// `--commit` and the same process opens read-write.
+//
+// It sat beside its siblings under `fixtures/` and was named `repair-*` until
+// SC-646, when the policy stopped reading the file name. The move is not
+// cosmetic: left where it was, this fixture would have been outside the policy
+// and the integration test below it would have proved nothing.
 //
 // It goes through `@scani/db/connection` rather than building a client of its
 // own, because a test that assembles its own options proves something about

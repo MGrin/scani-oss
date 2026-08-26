@@ -35,7 +35,8 @@ export { type UpsertJobHeartbeatInput, upsertJobHeartbeat } from './job-heartbea
 export {
   assertNoConflictingOptionsParam,
   assertSessionReadOnly,
-  isDryRunRepairScript,
+  isDryRunOperatorScript,
+  isOperatorScript,
   READ_ONLY_ENV_VAR,
   READ_ONLY_STARTUP_OPTION,
   REPAIR_WRITE_FLAG,
