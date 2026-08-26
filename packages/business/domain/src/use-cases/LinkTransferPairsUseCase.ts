@@ -53,13 +53,14 @@ import { db } from '@scani/db/connection';
 import * as schema from '@scani/db/schema';
 import { createComponentLogger } from '@scani/logging';
 import Decimal from 'decimal.js';
-import { and, eq, gte, inArray, isNull, or, sql } from 'drizzle-orm';
+import { and, eq, gte, inArray, isNull, notInArray, or, sql } from 'drizzle-orm';
 import { Service } from 'typedi';
 import {
   candidatePairClass,
   INFLOW_KINDS,
   MATCH_WINDOW_MS,
   OUTFLOW_KINDS,
+  PERSON_AUTHORED_INFLOW_SOURCES,
   QTY_MATCH_EPSILON,
   type TransferLeg,
 } from '../lib/transfer-matching';
@@ -270,7 +271,21 @@ export class LinkTransferPairsUseCase {
             eq(schema.holdingTransactions.userId, opts.userId),
             inArray(schema.holdingTransactions.kind, [...INFLOW_KINDS]),
             gte(schema.holdingTransactions.occurredAt, since),
-            isNull(schema.holdingTransactions.transferGroupId)
+            isNull(schema.holdingTransactions.transferGroupId),
+            // The inflow side's answer to the outflow query's
+            // `isNull(transferReview)` above (SC-611). `transfer_review` is
+            // outflow-only, so a deposit a person typed had nowhere to record
+            // that they had a view about it, and this job could claim it as
+            // the arrival leg of an unrelated withdrawal — lots carried across
+            // a movement that never happened.
+            //
+            // The source is the marker because it is true by construction of a
+            // person having authored the row. See
+            // `PERSON_AUTHORED_INFLOW_SOURCES` for why it is not in
+            // `candidatePairClass`: this is about whether the NIGHTLY JOB may
+            // decide alone, not about whether the two rows could be a pair, and
+            // the queue goes on offering these to a reader.
+            notInArray(schema.holdingTransactions.source, [...PERSON_AUTHORED_INFLOW_SOURCES])
           )
         )
         .then((rows) => {
