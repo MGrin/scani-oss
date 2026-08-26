@@ -35,6 +35,7 @@ import {
 import { TRPCError } from '@trpc/server';
 import { Container } from 'typedi';
 import { z } from 'zod';
+import { strictInput } from '../lib/strict-input';
 import { protectedProcedure, router } from '../trpc';
 
 function serializeVendor(vendor: Vendor) {
@@ -85,7 +86,7 @@ export const vendorsRouter = router({
    * caller can't use this to probe for another user's vendor ids.
    */
   get: protectedProcedure
-    .input(z.object({ vendorId: z.string().uuid() }))
+    .input(strictInput(z.object({ vendorId: z.string().uuid() })))
     .query(async ({ ctx, input }) => {
       const vendor = await Container.get(VendorRepository).findById(input.vendorId);
       if (!vendor || vendor.userId !== ctx.userId) {
@@ -101,7 +102,7 @@ export const vendorsRouter = router({
    * so everything below it has to be a question somebody is actually asked.
    */
   similar: protectedProcedure
-    .input(z.object({ name: z.string().trim().min(1).max(200) }))
+    .input(strictInput(z.object({ name: z.string().trim().min(1).max(200) })))
     .query(async ({ ctx, input }) => {
       const candidates = await Container.get(VendorRepository).findCandidates(
         ctx.userId,
@@ -155,11 +156,13 @@ export const vendorsRouter = router({
    */
   create: protectedProcedure
     .input(
-      z.object({
-        displayName: z.string().trim().min(1).max(200),
-        category: z.string().trim().max(100).nullable().optional(),
-        website: z.string().trim().max(500).nullable().optional(),
-      })
+      strictInput(
+        z.object({
+          displayName: z.string().trim().min(1).max(200),
+          category: z.string().trim().max(100).nullable().optional(),
+          website: z.string().trim().max(500).nullable().optional(),
+        })
+      )
     )
     .mutation(async ({ ctx, input }) => {
       const vendorRepository = Container.get(VendorRepository);
@@ -183,12 +186,14 @@ export const vendorsRouter = router({
    */
   update: protectedProcedure
     .input(
-      z.object({
-        vendorId: z.string().uuid(),
-        displayName: z.string().trim().min(1).max(200).optional(),
-        category: z.string().trim().max(100).nullable().optional(),
-        website: z.string().trim().max(500).nullable().optional(),
-      })
+      strictInput(
+        z.object({
+          vendorId: z.string().uuid(),
+          displayName: z.string().trim().min(1).max(200).optional(),
+          category: z.string().trim().max(100).nullable().optional(),
+          website: z.string().trim().max(500).nullable().optional(),
+        })
+      )
     )
     .mutation(async ({ ctx, input }) => {
       const { vendorId, ...patch } = input;
@@ -219,7 +224,7 @@ export const vendorsRouter = router({
    * of `list`.
    */
   deletePreview: protectedProcedure
-    .input(z.object({ vendorId: z.string().uuid() }))
+    .input(strictInput(z.object({ vendorId: z.string().uuid() })))
     .query(async ({ ctx, input }) => {
       try {
         return await Container.get(VendorRepository).deleteImpact(ctx.userId, input.vendorId);
@@ -240,7 +245,7 @@ export const vendorsRouter = router({
    * instead, because a refusal the reader cannot act on is a dead end.
    */
   delete: protectedProcedure
-    .input(z.object({ vendorId: z.string().uuid() }))
+    .input(strictInput(z.object({ vendorId: z.string().uuid() })))
     .mutation(async ({ ctx, input }) => {
       try {
         // Transactional for the reason `deleteForUser` documents: the count
@@ -267,11 +272,13 @@ export const vendorsRouter = router({
 
   addAlias: protectedProcedure
     .input(
-      z.object({
-        vendorId: z.string().uuid(),
-        rawName: z.string().trim().min(1).max(255),
-        source: z.string().trim().max(100).optional(),
-      })
+      strictInput(
+        z.object({
+          vendorId: z.string().uuid(),
+          rawName: z.string().trim().min(1).max(255),
+          source: z.string().trim().max(100).optional(),
+        })
+      )
     )
     .mutation(async ({ ctx, input }) => {
       const vendorRepository = Container.get(VendorRepository);
@@ -295,10 +302,12 @@ export const vendorsRouter = router({
    */
   mergePreview: protectedProcedure
     .input(
-      z.object({
-        intoId: z.string().uuid(),
-        fromId: z.string().uuid(),
-      })
+      strictInput(
+        z.object({
+          intoId: z.string().uuid(),
+          fromId: z.string().uuid(),
+        })
+      )
     )
     .query(async ({ ctx, input }) => {
       if (input.intoId === input.fromId) {
@@ -323,10 +332,12 @@ export const vendorsRouter = router({
 
   merge: protectedProcedure
     .input(
-      z.object({
-        intoId: z.string().uuid(),
-        fromId: z.string().uuid(),
-      })
+      strictInput(
+        z.object({
+          intoId: z.string().uuid(),
+          fromId: z.string().uuid(),
+        })
+      )
     )
     .mutation(async ({ ctx, input }) => {
       if (input.intoId === input.fromId) {

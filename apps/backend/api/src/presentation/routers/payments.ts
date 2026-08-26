@@ -39,6 +39,7 @@ import {
 import { TRPCError } from '@trpc/server';
 import { Container } from 'typedi';
 import { z } from 'zod';
+import { strictInput } from '../lib/strict-input';
 import { requireAuth } from '../middleware/auth';
 import { protectedProcedure, router } from '../trpc';
 
@@ -129,7 +130,7 @@ export const paymentsRouter = router({
   }),
 
   get: protectedProcedure
-    .input(z.object({ paymentId: z.string().uuid() }))
+    .input(strictInput(z.object({ paymentId: z.string().uuid() })))
     .query(async ({ ctx, input }) => {
       const payment = await Container.get(PaymentRepository).findByIdAndUser(
         input.paymentId,
@@ -151,10 +152,12 @@ export const paymentsRouter = router({
       };
     }),
 
-  create: protectedProcedure.input(CreatePaymentInputSchema).mutation(async ({ ctx, input }) => {
-    const payment = await Container.get(PaymentService).create(ctx.userId, input);
-    return serializePayment(payment);
-  }),
+  create: protectedProcedure
+    .input(strictInput(CreatePaymentInputSchema))
+    .mutation(async ({ ctx, input }) => {
+      const payment = await Container.get(PaymentService).create(ctx.userId, input);
+      return serializePayment(payment);
+    }),
 
   /**
    * Approve a parsed invoice INTO a recurring payment — the write side of
@@ -173,7 +176,7 @@ export const paymentsRouter = router({
    * NOT_FOUND here.
    */
   createFromExtraction: protectedProcedure
-    .input(CreatePaymentFromExtractionInputSchema)
+    .input(strictInput(CreatePaymentFromExtractionInputSchema))
     .mutation(async ({ ctx, input }) => {
       try {
         const payment = await withTransaction(
@@ -192,14 +195,16 @@ export const paymentsRouter = router({
       }
     }),
 
-  update: protectedProcedure.input(UpdatePaymentInputSchema).mutation(async ({ ctx, input }) => {
-    const { paymentId, ...patch } = input;
-    const updated = await Container.get(PaymentService).update(ctx.userId, paymentId, patch);
-    return serializePayment(updated);
-  }),
+  update: protectedProcedure
+    .input(strictInput(UpdatePaymentInputSchema))
+    .mutation(async ({ ctx, input }) => {
+      const { paymentId, ...patch } = input;
+      const updated = await Container.get(PaymentService).update(ctx.userId, paymentId, patch);
+      return serializePayment(updated);
+    }),
 
   pause: protectedProcedure
-    .input(z.object({ paymentId: z.string().uuid() }))
+    .input(strictInput(z.object({ paymentId: z.string().uuid() })))
     .mutation(async ({ ctx, input }) => {
       const updated = await Container.get(PaymentService).pause(ctx.userId, input.paymentId);
       return serializePayment(updated);
@@ -213,14 +218,14 @@ export const paymentsRouter = router({
    * refused, since reviving it is a different operation.
    */
   resume: protectedProcedure
-    .input(z.object({ paymentId: z.string().uuid() }))
+    .input(strictInput(z.object({ paymentId: z.string().uuid() })))
     .mutation(async ({ ctx, input }) => {
       const updated = await Container.get(PaymentService).resume(ctx.userId, input.paymentId);
       return serializePayment(updated);
     }),
 
   end: protectedProcedure
-    .input(z.object({ paymentId: z.string().uuid(), endDate: DATE_STRING.optional() }))
+    .input(strictInput(z.object({ paymentId: z.string().uuid(), endDate: DATE_STRING.optional() })))
     .mutation(async ({ ctx, input }) => {
       const updated = await Container.get(PaymentService).end(
         ctx.userId,
@@ -245,7 +250,7 @@ export const paymentsRouter = router({
    * meet the same rows.
    */
   delete: protectedProcedure
-    .input(z.object({ paymentId: z.string().uuid() }))
+    .input(strictInput(z.object({ paymentId: z.string().uuid() })))
     .mutation(async ({ ctx, input }) => {
       try {
         return await withTransaction(
@@ -277,7 +282,7 @@ export const paymentsRouter = router({
    * ever enters this path.
    */
   upcoming: protectedProcedure
-    .input(z.object({ days: z.number().int().min(0).max(365).default(30) }))
+    .input(strictInput(z.object({ days: z.number().int().min(0).max(365).default(30) })))
     .query(async ({ ctx, input }) => {
       const paymentRepository = Container.get(PaymentRepository);
       const occurrenceRepository = Container.get(PaymentOccurrenceRepository);
@@ -358,12 +363,14 @@ export const paymentsRouter = router({
 
   settleOccurrence: protectedProcedure
     .input(
-      z.object({
-        occurrenceId: z.string().uuid(),
-        status: OCCURRENCE_SETTLE_STATUS,
-        actualAmount: z.string().nullable().optional(),
-        matchedTransactionId: z.string().uuid().nullable().optional(),
-      })
+      strictInput(
+        z.object({
+          occurrenceId: z.string().uuid(),
+          status: OCCURRENCE_SETTLE_STATUS,
+          actualAmount: z.string().nullable().optional(),
+          matchedTransactionId: z.string().uuid().nullable().optional(),
+        })
+      )
     )
     .mutation(async ({ ctx, input }) => {
       const { occurrenceId, ...settleInput } = input;
