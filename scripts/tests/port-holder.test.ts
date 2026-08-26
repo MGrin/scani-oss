@@ -200,7 +200,7 @@ describe('describeHolder says whether the holder still has a worktree', () => {
  *   first   `docker ps` 12.6s at load 38, 23.8s at load 36 (5.7s at load 25),
  *           and `spawnSync` returning ETIMEDOUT while `docker ps` in the same
  *           shell listed the holder.
- *   second  `gate-db: FAILED · exit 8 … :7333` at load 62 — then the same
+ *   second  a gate run FAILED with `exit 8 … :7333` at load 62 — then the same
  *           `docker ps` succeeded BY HAND seconds later at the same load, and
  *           the re-run got past ownership at load 43.
  *
