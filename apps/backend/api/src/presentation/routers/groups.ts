@@ -14,6 +14,7 @@ import {
 import { Container } from 'typedi';
 import { z } from 'zod';
 import { executeBulkOperation } from '../lib/bulk-operation';
+import { strictInput } from '../lib/strict-input';
 import { requireAuth } from '../middleware/auth';
 import { protectedProcedure, router } from '../trpc';
 
@@ -66,7 +67,7 @@ export const groupsRouter = router({
   }),
 
   // Get a specific group by ID
-  getById: protectedProcedure.input(IdInputDto).query(async ({ input, ctx }) => {
+  getById: protectedProcedure.input(strictInput(IdInputDto)).query(async ({ input, ctx }) => {
     const { dbUser } = await requireAuth(ctx);
     const group = await Container.get(GroupRepository).findById(input.id);
     if (group && group.userId !== dbUser.id) {
@@ -76,7 +77,7 @@ export const groupsRouter = router({
   }),
 
   // Create a new group
-  create: protectedProcedure.input(CreateGroupDto).mutation(async ({ input, ctx }) => {
+  create: protectedProcedure.input(strictInput(CreateGroupDto)).mutation(async ({ input, ctx }) => {
     const { dbUser } = await requireAuth(ctx);
     const groupRepository = Container.get(GroupRepository);
 
@@ -118,10 +119,12 @@ export const groupsRouter = router({
   // Update an existing group
   update: protectedProcedure
     .input(
-      z.object({
-        id: z.string().uuid(),
-        data: UpdateGroupDto,
-      })
+      strictInput(
+        z.object({
+          id: z.string().uuid(),
+          data: UpdateGroupDto,
+        })
+      )
     )
     .mutation(async ({ input, ctx }) => {
       const { dbUser } = await requireAuth(ctx);
@@ -144,7 +147,7 @@ export const groupsRouter = router({
     }),
 
   // Delete a group
-  delete: protectedProcedure.input(IdInputDto).mutation(async ({ input, ctx }) => {
+  delete: protectedProcedure.input(strictInput(IdInputDto)).mutation(async ({ input, ctx }) => {
     const { dbUser } = await requireAuth(ctx);
 
     const result = await deleteGroup(input.id, dbUser.id);
@@ -162,7 +165,7 @@ export const groupsRouter = router({
 
   // Bulk delete groups
   bulkDelete: protectedProcedure
-    .input(z.object({ ids: z.array(z.string()).min(1) }))
+    .input(strictInput(z.object({ ids: z.array(z.string()).min(1) })))
     .mutation(async ({ input, ctx }) => {
       const { dbUser } = await requireAuth(ctx);
 
@@ -178,7 +181,7 @@ export const groupsRouter = router({
 
   // Assign groups to a holding
   assignHoldingGroups: protectedProcedure
-    .input(AssignHoldingGroupsDto)
+    .input(strictInput(AssignHoldingGroupsDto))
     .mutation(async ({ input, ctx }) => {
       const { dbUser } = await requireAuth(ctx);
 
@@ -199,7 +202,7 @@ export const groupsRouter = router({
 
   // Assign groups to an account
   assignAccountGroups: protectedProcedure
-    .input(AssignAccountGroupsDto)
+    .input(strictInput(AssignAccountGroupsDto))
     .mutation(async ({ input, ctx }) => {
       const { dbUser } = await requireAuth(ctx);
 
@@ -219,26 +222,30 @@ export const groupsRouter = router({
     }),
 
   // Get groups assigned to a holding
-  getHoldingGroups: protectedProcedure.input(IdInputDto).query(async ({ input, ctx }) => {
-    const { dbUser } = await requireAuth(ctx);
-    const groupRepository = Container.get(GroupRepository);
-    const holdingRepository = Container.get(HoldingRepository);
-    const holding = await holdingRepository.findByIdVisible(input.id);
-    if (!holding || holding.userId !== dbUser.id) {
-      throw new Error('Unauthorized access to holding');
-    }
-    return await groupRepository.findGroupsByHoldingId(input.id);
-  }),
+  getHoldingGroups: protectedProcedure
+    .input(strictInput(IdInputDto))
+    .query(async ({ input, ctx }) => {
+      const { dbUser } = await requireAuth(ctx);
+      const groupRepository = Container.get(GroupRepository);
+      const holdingRepository = Container.get(HoldingRepository);
+      const holding = await holdingRepository.findByIdVisible(input.id);
+      if (!holding || holding.userId !== dbUser.id) {
+        throw new Error('Unauthorized access to holding');
+      }
+      return await groupRepository.findGroupsByHoldingId(input.id);
+    }),
 
   // Get groups assigned to an account
-  getAccountGroups: protectedProcedure.input(IdInputDto).query(async ({ input, ctx }) => {
-    const { dbUser } = await requireAuth(ctx);
-    const groupRepository = Container.get(GroupRepository);
-    const accountRepository = Container.get(AccountRepository);
-    const account = await accountRepository.findById(input.id);
-    if (!account || account.userId !== dbUser.id) {
-      throw new Error('Unauthorized access to account');
-    }
-    return await groupRepository.findGroupsByAccountId(input.id);
-  }),
+  getAccountGroups: protectedProcedure
+    .input(strictInput(IdInputDto))
+    .query(async ({ input, ctx }) => {
+      const { dbUser } = await requireAuth(ctx);
+      const groupRepository = Container.get(GroupRepository);
+      const accountRepository = Container.get(AccountRepository);
+      const account = await accountRepository.findById(input.id);
+      if (!account || account.userId !== dbUser.id) {
+        throw new Error('Unauthorized access to account');
+      }
+      return await groupRepository.findGroupsByAccountId(input.id);
+    }),
 });

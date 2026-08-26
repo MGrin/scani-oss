@@ -7,6 +7,7 @@ import { Container } from 'typedi';
 import { toNetWorthHistoryRow, userNetWorthDaily } from '../../lib/net-worth-series';
 import { accountLabel } from '../../lib/pdf/layout';
 import { renderStatement } from '../../lib/pdf/statement';
+import { strictInput } from '../lib/strict-input';
 import { requireAuth } from '../middleware/auth';
 import { protectedProcedure, router } from '../trpc';
 
@@ -73,15 +74,17 @@ export const exportsRouter = router({
    * statement is tens of kilobytes, so the 33% overhead costs less than a
    * second transport with its own auth path would.
    */
-  renderPdf: protectedProcedure.input(RenderPdfInput).mutation(async ({ ctx, input }) => {
-    const { dbUser } = await requireAuth(ctx);
-    const pdf = await renderStatement({
-      ...input,
-      account: accountLabel(dbUser.name, dbUser.email),
-    });
-    await Container.get(UserRepository).markFirstExport(dbUser.id);
-    return { base64: pdf.toString('base64') };
-  }),
+  renderPdf: protectedProcedure
+    .input(strictInput(RenderPdfInput))
+    .mutation(async ({ ctx, input }) => {
+      const { dbUser } = await requireAuth(ctx);
+      const pdf = await renderStatement({
+        ...input,
+        account: accountLabel(dbUser.name, dbUser.email),
+      });
+      await Container.get(UserRepository).markFirstExport(dbUser.id);
+      return { base64: pdf.toString('base64') };
+    }),
 
   everything: protectedProcedure.query(async ({ ctx }) => {
     const { dbUser } = await requireAuth(ctx);
