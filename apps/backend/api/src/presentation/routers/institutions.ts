@@ -7,6 +7,7 @@ import { createComponentLogger } from '@scani/logging';
 import ogs from 'open-graph-scraper';
 import { Container } from 'typedi';
 import { z } from 'zod';
+import { strictInput } from '../lib/strict-input';
 import { requireAuth } from '../middleware/auth';
 import { protectedProcedure, router } from '../trpc';
 
@@ -197,7 +198,7 @@ export const institutionsRouter = router({
   }),
 
   getByIdWithSummary: protectedProcedure
-    .input(z.object({ id: z.string() }))
+    .input(strictInput(z.object({ id: z.string() })))
     .query(async ({ input, ctx }) => {
       const { dbUser } = await requireAuth(ctx);
       return await Container.get(InstitutionService).getInstitutionByIdWithSummary(
@@ -206,9 +207,11 @@ export const institutionsRouter = router({
       );
     }),
 
-  getById: protectedProcedure.input(z.object({ id: z.string() })).query(async ({ input }) => {
-    return await Container.get(InstitutionRepository).findById(input.id);
-  }),
+  getById: protectedProcedure
+    .input(strictInput(z.object({ id: z.string() })))
+    .query(async ({ input }) => {
+      return await Container.get(InstitutionRepository).findById(input.id);
+    }),
 
   // Fetch Open Graph metadata for a user-supplied website URL.
   //
@@ -227,7 +230,7 @@ export const institutionsRouter = router({
   //     from being able to blow past the cache with unique URLs.
   //   - Positive results cached for 1h, empty/failed for 5 min.
   getOpenGraphMetadata: protectedProcedure
-    .input(z.object({ url: z.string().url() }))
+    .input(strictInput(z.object({ url: z.string().url() })))
     .query(async ({ input, ctx }) => {
       const cached = getOGFromCache(input.url);
       if (cached) return cached;
