@@ -168,7 +168,7 @@ function makePriceGraphService(
 describe('PriceGraphService.convert', () => {
   test('identity when from == to', async () => {
     const svc = makePriceGraphService(makeTokenPriceStub([]), makeTokenStub(HUB_ROWS));
-    const r = await svc.convert('7.5', 'same', 'same', new Date());
+    const r = await svc.convert('7.5', 'same', 'same', new Date(), { tx: undefined });
     expect(r?.amount.toString()).toBe('7.5');
     expect(r?.rate.toString()).toBe('1');
     expect(r?.path).toBe('identity');
@@ -187,7 +187,7 @@ describe('PriceGraphService.convert', () => {
       ]),
       makeTokenStub(HUB_ROWS)
     );
-    const r = await svc.convert(new Decimal('2'), 'BTC', 'USD', at);
+    const r = await svc.convert(new Decimal('2'), 'BTC', 'USD', at, { tx: undefined });
     expect(r?.amount.toString()).toBe('130000');
     expect(r?.path).toBe('direct');
     expect(r?.effectiveAt.toISOString()).toBe('2024-05-30T00:00:00.000Z');
@@ -207,7 +207,7 @@ describe('PriceGraphService.convert', () => {
       ]),
       makeTokenStub(HUB_ROWS)
     );
-    const r = await svc.convert(new Decimal('1'), 'BTC', 'USD', at);
+    const r = await svc.convert(new Decimal('1'), 'BTC', 'USD', at, { tx: undefined });
     // 1 / 0.0000153846 ≈ 65000.195…
     expect(r?.amount.toNumber()).toBeCloseTo(65000, 0);
     expect(r?.path).toBe('direct');
@@ -233,7 +233,7 @@ describe('PriceGraphService.convert', () => {
       ]),
       makeTokenStub(HUB_ROWS)
     );
-    const r = await svc.convert('1', 'BTC', 'EUR', at);
+    const r = await svc.convert('1', 'BTC', 'EUR', at, { tx: undefined });
     expect(r?.amount.toNumber()).toBeCloseTo(59800, 1);
     expect(r?.path).toBe('one-hop-token-USD');
     // effectiveAt is the older of the two legs — the weakest link.
@@ -254,13 +254,16 @@ describe('PriceGraphService.convert', () => {
     );
     const r = await svc.convert('1', 'BTC', 'EUR', new Date('2024-06-01T00:00:00Z'), {
       maxDepth: 1,
+      tx: undefined,
     });
     expect(r).toBeNull();
   });
 
   test('returns null when no edge whatsoever', async () => {
     const svc = makePriceGraphService(makeTokenPriceStub([]), makeTokenStub(HUB_ROWS));
-    const r = await svc.convert('1', 'BTC', 'EUR', new Date('2024-06-01T00:00:00Z'));
+    const r = await svc.convert('1', 'BTC', 'EUR', new Date('2024-06-01T00:00:00Z'), {
+      tx: undefined,
+    });
     expect(r).toBeNull();
   });
 
@@ -276,7 +279,9 @@ describe('PriceGraphService.convert', () => {
       ]),
       makeTokenStub(HUB_ROWS)
     );
-    const r = await svc.convert('1', 'BTC', 'USD', new Date('2024-06-01T00:00:00Z'));
+    const r = await svc.convert('1', 'BTC', 'USD', new Date('2024-06-01T00:00:00Z'), {
+      tx: undefined,
+    });
     expect(r).toBeNull();
   });
 });
@@ -294,26 +299,29 @@ describe('PriceGraphService.convert — staleness', () => {
 
   test('identity conversion is never stale', async () => {
     const svc = makePriceGraphService(makeTokenPriceStub([]), makeTokenStub(HUB_ROWS));
-    const r = await svc.convert('1', 'same', 'same', AT);
+    const r = await svc.convert('1', 'same', 'same', AT, { tx: undefined });
     expect(r?.stale).toBe(false);
   });
 
   test('a fresh price (within the intraday cap) is not stale', async () => {
     const svc = makePriceGraphService(makeTokenPriceStub([btcUsd(FRESH)]), makeTokenStub(HUB_ROWS));
-    const r = await svc.convert('1', 'BTC', 'USD', AT);
+    const r = await svc.convert('1', 'BTC', 'USD', AT, { tx: undefined });
     expect(r?.stale).toBe(false);
   });
 
   test('a price past the 7-day intraday cap is flagged stale', async () => {
     const svc = makePriceGraphService(makeTokenPriceStub([btcUsd(MID)]), makeTokenStub(HUB_ROWS));
-    const r = await svc.convert('1', 'BTC', 'USD', AT);
+    const r = await svc.convert('1', 'BTC', 'USD', AT, { tx: undefined });
     expect(r?.amount.toString()).toBe('65000');
     expect(r?.stale).toBe(true);
   });
 
   test('the wider 45-day daily cap tolerates a mid-age daily price', async () => {
     const svc = makePriceGraphService(makeTokenPriceStub([btcUsd(MID)]), makeTokenStub(HUB_ROWS));
-    const r = await svc.convert('1', 'BTC', 'USD', AT, { preferGranularity: 'daily' });
+    const r = await svc.convert('1', 'BTC', 'USD', AT, {
+      preferGranularity: 'daily',
+      tx: undefined,
+    });
     expect(r?.stale).toBe(false);
   });
 
@@ -322,7 +330,10 @@ describe('PriceGraphService.convert — staleness', () => {
       makeTokenPriceStub([btcUsd(ANCIENT)]),
       makeTokenStub(HUB_ROWS)
     );
-    const r = await svc.convert('1', 'BTC', 'USD', AT, { preferGranularity: 'daily' });
+    const r = await svc.convert('1', 'BTC', 'USD', AT, {
+      preferGranularity: 'daily',
+      tx: undefined,
+    });
     expect(r?.stale).toBe(true);
   });
 
@@ -334,7 +345,7 @@ describe('PriceGraphService.convert — staleness', () => {
       ]),
       makeTokenStub(HUB_ROWS)
     );
-    const r = await svc.convert('1', 'BTC', 'EUR', AT);
+    const r = await svc.convert('1', 'BTC', 'EUR', AT, { tx: undefined });
     expect(r?.path).toBe('one-hop-token-USD');
     expect(r?.stale).toBe(true);
   });
@@ -372,12 +383,16 @@ describe('PriceGraphService hub resolution', () => {
 
   test('the USDT hub is the canonical row, not the newest row with that symbol', async () => {
     const svc = makePriceGraphService(makeTokenPriceStub([]), makeTokenStub(USDT_ROWS));
-    expect(await svc.resolveHubTokenIds()).toEqual([HUB_IDS.USD, HUB_IDS.USDT, HUB_IDS.EUR]);
+    expect(await svc.resolveHubTokenIds(undefined)).toEqual([
+      HUB_IDS.USD,
+      HUB_IDS.USDT,
+      HUB_IDS.EUR,
+    ]);
   });
 
   test('a one-hop route through USDT survives a newer, edgeless USDT row', async () => {
     const svc = makePriceGraphService(makeTokenPriceStub(USDT_LEGS), makeTokenStub(USDT_ROWS));
-    const r = await svc.convert('10', 'ARB', 'THB', AT);
+    const r = await svc.convert('10', 'ARB', 'THB', AT, { tx: undefined });
     // Resolving USDT to `token-USDT-base-chain` finds neither leg and
     // returns null here — a dead lane reported as an unpriceable pair.
     expect(r?.path).toBe(`one-hop-${HUB_IDS.USDT}`);
@@ -403,7 +418,11 @@ describe('PriceGraphService hub resolution', () => {
       },
     ];
     const svc = makePriceGraphService(makeTokenPriceStub([]), makeTokenStub(rows));
-    expect(await svc.resolveHubTokenIds()).toEqual([HUB_IDS.USD, HUB_IDS.USDT, HUB_IDS.EUR]);
+    expect(await svc.resolveHubTokenIds(undefined)).toEqual([
+      HUB_IDS.USD,
+      HUB_IDS.USDT,
+      HUB_IDS.EUR,
+    ]);
   });
 
   test('the USDT hub is crypto — a fiat-scoped lookup would drop it', async () => {
@@ -414,7 +433,7 @@ describe('PriceGraphService hub resolution', () => {
     const tok = makeTokenStub(HUB_ROWS);
     expect(await tok.findBySymbolAndType('USDT', 'fiat')).toBeNull();
     const svc = makePriceGraphService(makeTokenPriceStub([]), tok);
-    expect(await svc.resolveHubTokenIds()).toContain(HUB_IDS.USDT);
+    expect(await svc.resolveHubTokenIds(undefined)).toContain(HUB_IDS.USDT);
   });
 
   test('an absent hub drops out of the list without taking the others with it', async () => {
@@ -422,7 +441,7 @@ describe('PriceGraphService hub resolution', () => {
       makeTokenPriceStub([]),
       makeTokenStub(HUB_ROWS.filter((r) => r.symbol !== 'USDT'))
     );
-    expect(await svc.resolveHubTokenIds()).toEqual([HUB_IDS.USD, HUB_IDS.EUR]);
+    expect(await svc.resolveHubTokenIds(undefined)).toEqual([HUB_IDS.USD, HUB_IDS.EUR]);
   });
 
   test('a database with no canonical row falls back rather than losing the lane', async () => {
@@ -436,7 +455,7 @@ describe('PriceGraphService hub resolution', () => {
       },
     ];
     const svc = makePriceGraphService(makeTokenPriceStub([]), makeTokenStub(rows));
-    expect(await svc.resolveHubTokenIds()).toEqual([
+    expect(await svc.resolveHubTokenIds(undefined)).toEqual([
       HUB_IDS.USD,
       'token-USDT-only-segmented',
       HUB_IDS.EUR,
@@ -461,16 +480,16 @@ describe('PriceGraphService hub resolution', () => {
     } as unknown as TokenRepository;
 
     const svc = makePriceGraphService(makeTokenPriceStub([]), counting);
-    await svc.resolveHubTokenIds();
+    await svc.resolveHubTokenIds(undefined);
     const afterFirst = lookups;
-    await svc.resolveHubTokenIds();
-    await svc.resolveHubTokenIds();
+    await svc.resolveHubTokenIds(undefined);
+    await svc.resolveHubTokenIds(undefined);
     expect(afterFirst).toBeGreaterThan(0);
     expect(lookups).toBe(afterFirst);
   });
 });
 
-describe('PriceGraphService.buildPriceLookup (SC-471)', () => {
+describe('PriceGraphService.buildPriceLookup (SC-471, undefined)', () => {
   const AT = new Date('2026-02-01T00:00:00Z');
   const EDGES: Edge[] = [
     {
@@ -523,15 +542,17 @@ describe('PriceGraphService.buildPriceLookup (SC-471)', () => {
     const direct = makePriceGraphService(makeTokenPriceStub(EDGES), makeTokenStub(HUB_ROWS));
     const expected = await direct.convert('2', 'token-BTC', HUB_IDS.USD, AT, {
       preferGranularity: 'daily',
+      tx: undefined,
     });
 
     const { repo, counts } = makeCountingStub(EDGES);
     const svc = makePriceGraphService(repo, makeTokenStub(HUB_ROWS));
-    const priceLookup = await svc.buildPriceLookup(['token-BTC'], HUB_IDS.USD, AT);
+    const priceLookup = await svc.buildPriceLookup(['token-BTC'], HUB_IDS.USD, AT, undefined);
     const before = counts.perCall;
     const actual = await svc.convert('2', 'token-BTC', HUB_IDS.USD, AT, {
       preferGranularity: 'daily',
       priceLookup,
+      tx: undefined,
     });
 
     expect(actual?.amount.toString()).toBe(expected?.amount.toString());
@@ -545,12 +566,13 @@ describe('PriceGraphService.buildPriceLookup (SC-471)', () => {
   test('many conversions, one query', async () => {
     const { repo, counts } = makeCountingStub(EDGES);
     const svc = makePriceGraphService(repo, makeTokenStub(HUB_ROWS));
-    const priceLookup = await svc.buildPriceLookup(['token-BTC'], HUB_IDS.USD, AT);
+    const priceLookup = await svc.buildPriceLookup(['token-BTC'], HUB_IDS.USD, AT, undefined);
     const after = counts.perCall;
     for (let i = 0; i < 25; i += 1) {
       await svc.convert('1', 'token-BTC', HUB_IDS.USD, AT, {
         preferGranularity: 'daily',
         priceLookup,
+        tx: undefined,
       });
     }
     expect(counts.prefetch).toBe(1);
@@ -566,12 +588,13 @@ describe('PriceGraphService.buildPriceLookup (SC-471)', () => {
     const svc = makePriceGraphService(repo, makeTokenStub(HUB_ROWS));
     // Built for BTC only. XRP is a real priced token that this prefetch was
     // never asked about — a caller that under-enumerated its tokens.
-    const priceLookup = await svc.buildPriceLookup(['token-BTC'], HUB_IDS.USD, AT);
+    const priceLookup = await svc.buildPriceLookup(['token-BTC'], HUB_IDS.USD, AT, undefined);
     const before = counts.perCall;
 
     const converted = await svc.convert('10', 'token-XRP', HUB_IDS.USD, AT, {
       preferGranularity: 'daily',
       priceLookup,
+      tx: undefined,
     });
 
     expect(converted?.amount.toString()).toBe('30');
@@ -585,13 +608,14 @@ describe('PriceGraphService.buildPriceLookup (SC-471)', () => {
     const { repo, counts } = makeCountingStub(EDGES);
     const svc = makePriceGraphService(repo, makeTokenStub(HUB_ROWS));
     const early = new Date('2025-01-01T00:00:00Z');
-    const priceLookup = await svc.buildPriceLookup(['token-BTC'], HUB_IDS.USD, early);
+    const priceLookup = await svc.buildPriceLookup(['token-BTC'], HUB_IDS.USD, early, undefined);
     const before = counts.perCall;
 
     const converted = await svc.convert('2', 'token-BTC', HUB_IDS.USD, early, {
       preferGranularity: 'daily',
       priceLookup,
       maxDepth: 1,
+      tx: undefined,
     });
 
     expect(converted).toBeNull();
