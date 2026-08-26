@@ -193,12 +193,28 @@ export function project(
 /**
  * How long the liquid balance lasts.
  *
- * Two answers and no third, because there is no honest third. Either the walk
- * reaches zero inside the window — a date, from dated movements — or it does
- * not, and the answer is "longer than this window", never a number obtained by
- * dividing by an average. An average monthly burn extrapolated past the last
- * month anybody has data for is arithmetic dressed as a forecast, and the one
- * reader of this screen is looking at his own money.
+ * Two answers and no third, because THIS function has no honest third. Either
+ * the walk reaches zero inside the window — a date, from dated movements — or
+ * it does not, and the answer is "longer than this window". It will never
+ * divide the book's own average and call the quotient a date.
+ *
+ * ## That is a rule about the BOOK, not about averages (SC-661)
+ *
+ * This doc used to end "an average monthly burn extrapolated past the last
+ * month anybody has data for is arithmetic dressed as a forecast", full stop —
+ * and `observedRunwayMonths` in `@scani/shared` now does exactly that, on the
+ * surface directly above this one. Left as written, the rule reads as a
+ * standing ban that a future reader would correctly apply to delete the
+ * observed runway.
+ *
+ * The distinction it was actually protecting: extrapolating the RECURRING
+ * BOOK past its window invents obligations nobody entered, because the book is
+ * a finite list of dated commitments and running out of them is not evidence
+ * of anything. Observed burn is a measured RATE — six complete months of money
+ * that really left — and a rate is the one thing it is legitimate to divide
+ * into a balance. It is also reported with its spread and its excluded counts
+ * beside it, which is what keeps the single figure from being more confident
+ * than the data.
  *
  * `netPerMonth` accompanies the second answer so the sentence can say what the
  * book is doing — `+€1,200 a month`, `−€300 a month` — without implying a date.
