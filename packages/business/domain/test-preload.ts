@@ -64,8 +64,8 @@ import { installContainerLeakGuard } from './test/helpers/container';
 // One suite per database, or none. Two `bun run test` runs both land here on
 // the shared compose database, and 3 of 4 processes failed when that was
 // measured (SC-372) — on the rollup sweep and on a whole-table count, neither
-// of which says whose run broke it. `scripts/gate-db.ts` gives a run its own
-// `scani_gate_<pid>`, so gates never contend and never see this.
+// of which says whose run broke it. A run pointed at a database of its own
+// never contends and never sees this.
 if (process.env.SCANI_ALLOW_SHARED_TEST_DB !== '1') {
   const outcome = await acquireSuiteLock(dbUrl);
   if (outcome.kind === 'busy') {
