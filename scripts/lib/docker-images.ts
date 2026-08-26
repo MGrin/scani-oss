@@ -74,3 +74,82 @@ if (import.meta.main) {
     console.log(`${image}\t${dockerfile}`);
   }
 }
+
+/**
+ * SC-545. Two PROSE copies of this set are hand-maintained and were checked by
+ * nothing: `docs/PUBLISHING.md`'s table and the header comment above
+ * `.github/workflows/docker-publish.yml`'s matrix. The matrix itself is pinned;
+ * the comment describing it was not, and had already drifted — it said the
+ * publish token needs write on "the four `scani/*` repos" over five images.
+ *
+ * Deliberately NARROW on counts. Both files carry historical narrative whose
+ * numbers are correct and have nothing to do with this set — "four missing
+ * files", "four Docker Hub descriptions", "six of six runs", "one green check".
+ * A proximity rule reads those as claims and reds on prose that is right, and a
+ * check whose every failure is expected stops being read. So a number word
+ * counts only when it directly qualifies an image-set noun.
+ */
+const NUMBER_WORDS = [
+  'zero',
+  'one',
+  'two',
+  'three',
+  'four',
+  'five',
+  'six',
+  'seven',
+  'eight',
+  'nine',
+  'ten',
+] as const;
+
+/**
+ * `scani/api`, never `scani/*`, `scani/${{ matrix.image }}` — and never the
+ * WORKSPACE package `@scani/db`, which is not an image and shares every other
+ * character. `docker-compose.prod.yml` mentions one in a comment beside five
+ * real image references, so this is a live shape rather than a hypothetical.
+ */
+const IMAGE_MENTION = /(?<!@)\bscani\/([a-z0-9][a-z0-9-]*)/g;
+
+const COUNT_CLAIM = new RegExp(
+  `\\b(${NUMBER_WORDS.join('|')})\\b\\s+(?:\`?scani[/*\`]*\`?\\s+|Scani\\s+)?(?:images?|repos?)\\b`,
+  'gi'
+);
+
+export interface ProseDiff extends ManifestDiff {
+  /** Declared dockerfiles the prose never names. */
+  readonly missingDockerfiles: readonly string[];
+  /** Count claims disagreeing with the manifest, quoted as written. */
+  readonly wrongCounts: readonly string[];
+  /** What the scan actually SAW, so a caller can refuse to pass on nothing. */
+  readonly read: { readonly images: number; readonly counts: number };
+}
+
+/**
+ * Compare a prose statement of the image set — a markdown table, a comment
+ * block — against this manifest.
+ *
+ * `read.images` is the vacuity guard and the reason it is returned rather than
+ * asserted here: a scrape that stops matching returns an empty list, and an
+ * empty list agrees with everything. The caller decides, and says so.
+ */
+export function diffProseAgainstManifest(text: string): ProseDiff {
+  const named = Array.from(text.matchAll(IMAGE_MENTION)).flatMap((m) => m[1] ?? []);
+  // YAML comment markers and line breaks must not hide a claim spanning them.
+  const flattened = text.replace(/^[ \t]*#[ \t]?/gm, '').replace(/\s+/g, ' ');
+  const claims = Array.from(flattened.matchAll(COUNT_CLAIM)).map((m) => m[0]);
+
+  const expected = DOCKER_IMAGES.length;
+  const wordFor = NUMBER_WORDS[expected] ?? String(expected);
+
+  return {
+    ...diffAgainstManifest(named),
+    missingDockerfiles: DOCKER_IMAGES.filter((i) => !text.includes(i.dockerfile)).map(
+      (i) => i.dockerfile
+    ),
+    wrongCounts: claims.filter(
+      (claim) => (claim.match(/^\S+/)?.[0] ?? '').toLowerCase() !== wordFor
+    ),
+    read: { images: named.length, counts: claims.length },
+  };
+}
