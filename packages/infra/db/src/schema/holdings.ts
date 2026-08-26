@@ -182,12 +182,19 @@ export const holdingTransactions = pgTable(
     // ones `LinkTransferPairsUseCase` could not pair on its own — see
     // TRANSFER_REVIEW_DECISIONS in @scani/shared for the three values.
     //
-    // Only outflow rows ever carry it, and only a human writes it: the
-    // matcher may set `transfer_group_id` but never this column, so
-    // `transfer_review IS NOT NULL` means a person decided. That asymmetry is
-    // the point — it is what lets the matcher skip a row it would otherwise
-    // re-examine every night, and what stops a later heuristic run from
-    // quietly overruling an answer someone gave.
+    // Only outflow rows ever carry it, and the matcher may set
+    // `transfer_group_id` but never this column. That asymmetry is the point —
+    // it is what lets the matcher skip a row it would otherwise re-examine
+    // every night, and what stops a later heuristic run from quietly
+    // overruling an answer someone gave.
+    //
+    // THIS COMMENT USED TO END "so `transfer_review IS NOT NULL` means a person
+    // decided", AND THAT IS FALSE (SC-324, corrected here by SC-673). It was
+    // measured false for 560 of 561 answered rows, written by something outside
+    // the application — a hand-run UPDATE, or a code version that no longer
+    // exists. Standing rules write it too now (SC-380). **Who decided is
+    // `transfer_review_source`, and only that.** Never infer authorship from
+    // this column's presence, and never from the timestamp beside it.
     transferReview: text('transfer_review'),
     transferReviewedAt: timestamp('transfer_reviewed_at', { withTimezone: true }),
     // WHO decided, when the answer did not come from the person whose row it is
@@ -199,9 +206,27 @@ export const holdingTransactions = pgTable(
     ***REMOVED***
     ***REMOVED***
     //
-    // NULL is the whole of the existing corpus and keeps its exact meaning:
-    // read it as `transfer_reviewed_at IS NOT NULL ? 'user' : 'unattributed'`.
-    // So nothing is backfilled and no row's provenance changes by adding this.
+    // NULL is the whole of the pre-SC-350 corpus and means the database does
+    // not record who. Nothing is backfilled.
+    //
+    // THE LINE THAT WAS HERE PRESCRIBED THE DEFECT (SC-673). It read: *"read it
+    // as `transfer_reviewed_at IS NOT NULL ? 'user' : 'unattributed'`"*, and
+    ***REMOVED***
+    ***REMOVED***
+    ***REMOVED***
+    //
+    // Rows then acquired timestamps without sources and it inverted, silently.
+    ***REMOVED***
+    ***REMOVED***
+    ***REMOVED***
+    // made it true, and a schema comment is the worst place for that, because
+    // it is where the NEXT reader goes for the vocabulary.
+    //
+    // Decode with `answerSourceOf` in @scani/shared, which takes this column
+    // and not the timestamp. A row with a timestamp and no source is
+    // `unattributed`: something answered it at a known moment and left no name.
+    // That is not evidence a person did — and, per SC-324, not evidence one did
+    // not, which is why writers use `mayBeUserAnswer` and refuse to touch it.
     transferReviewSource: text('transfer_review_source'),
     // WHICH standing rule answered it, when `transfer_review_source` is
     // `'rule'` (SC-380). A database CHECK ties the two together in both
