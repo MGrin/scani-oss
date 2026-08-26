@@ -1,6 +1,7 @@
 import { AssetAllocationService, DashboardService } from '@scani/domain/services';
 import { GetAssetAllocationInputDto } from '@scani/shared';
 import { Container } from 'typedi';
+import { strictInput } from '../lib/strict-input';
 import { requireAuth } from '../middleware/auth';
 import { protectedProcedure, router } from '../trpc';
 
@@ -23,7 +24,7 @@ export const dashboardRouter = router({
    * Dimensions: token, token_type, account, account_type, institution, institution_type
    */
   getAssetAllocation: protectedProcedure
-    .input(GetAssetAllocationInputDto)
+    .input(strictInput(GetAssetAllocationInputDto))
     .query(async ({ ctx, input }) => {
       const { dbUser } = await requireAuth(ctx);
       const result = await Container.get(AssetAllocationService).execute(

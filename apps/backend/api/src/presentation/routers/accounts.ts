@@ -9,6 +9,7 @@ import { Container } from 'typedi';
 import { z } from 'zod';
 import { executeBulkOperation } from '../lib/bulk-operation';
 import { enqueuePortfolioRollup } from '../lib/portfolio-rollup';
+import { strictInput } from '../lib/strict-input';
 import { requireAuth } from '../middleware/auth';
 import { protectedProcedure, router } from '../trpc';
 
@@ -23,22 +24,26 @@ export const accountsRouter = router({
     return await Container.get(AccountService).getAccountsByUserIdWithSummary(dbUser.id);
   }),
 
-  getByIdWithSummary: protectedProcedure.input(IdInputDto).query(async ({ input, ctx }) => {
-    const { dbUser } = await requireAuth(ctx);
-    return await Container.get(AccountService).getAccountByIdWithSummary(dbUser.id, input.id);
-  }),
+  getByIdWithSummary: protectedProcedure
+    .input(strictInput(IdInputDto))
+    .query(async ({ input, ctx }) => {
+      const { dbUser } = await requireAuth(ctx);
+      return await Container.get(AccountService).getAccountByIdWithSummary(dbUser.id, input.id);
+    }),
 
-  getById: protectedProcedure.input(IdInputDto).query(async ({ input, ctx }) => {
+  getById: protectedProcedure.input(strictInput(IdInputDto)).query(async ({ input, ctx }) => {
     const { dbUser } = await requireAuth(ctx);
     return await Container.get(AccountService).getAccountById(dbUser.id, input.id);
   }),
 
   getHoldings: protectedProcedure
     .input(
-      z.object({
-        id: z.string().uuid(),
-        includeHidden: z.boolean().optional().default(false),
-      })
+      strictInput(
+        z.object({
+          id: z.string().uuid(),
+          includeHidden: z.boolean().optional().default(false),
+        })
+      )
     )
     .query(async ({ input, ctx }) => {
       const { dbUser } = await requireAuth(ctx);
@@ -51,10 +56,12 @@ export const accountsRouter = router({
 
   update: protectedProcedure
     .input(
-      z.object({
-        id: z.string().uuid(),
-        data: UpdateAccountDto,
-      })
+      strictInput(
+        z.object({
+          id: z.string().uuid(),
+          data: UpdateAccountDto,
+        })
+      )
     )
     .mutation(async ({ input, ctx }) => {
       const { dbUser } = await requireAuth(ctx);
@@ -83,7 +90,7 @@ export const accountsRouter = router({
   // refresh of the same account. Manual accounts have no credentials, so
   // the use-case throws and the job surfaces the error on the job page.
   refreshBalances: protectedProcedure
-    .input(z.object({ accountId: z.string().uuid(), requestId: z.string().uuid() }))
+    .input(strictInput(z.object({ accountId: z.string().uuid(), requestId: z.string().uuid() })))
     .mutation(async ({ input, ctx }) => {
       const { dbUser } = await requireAuth(ctx);
       // Throws on not-found / not-owned — scopes the refresh to the caller.
@@ -96,7 +103,7 @@ export const accountsRouter = router({
       return { jobId };
     }),
 
-  delete: protectedProcedure.input(IdInputDto).mutation(async ({ input, ctx }) => {
+  delete: protectedProcedure.input(strictInput(IdInputDto)).mutation(async ({ input, ctx }) => {
     const { dbUser } = await requireAuth(ctx);
 
     const deleted = await Container.get(AccountService).deleteAccount(input.id, dbUser.id);
@@ -121,7 +128,7 @@ export const accountsRouter = router({
   }),
 
   bulkDelete: protectedProcedure
-    .input(z.object({ ids: z.array(z.string()).min(1) }))
+    .input(strictInput(z.object({ ids: z.array(z.string()).min(1) })))
     .mutation(async ({ input, ctx }) => {
       const { dbUser } = await requireAuth(ctx);
       const accountService = Container.get(AccountService);
@@ -140,20 +147,22 @@ export const accountsRouter = router({
 
   bulkAssignGroups: protectedProcedure
     .input(
-      z.object({
-        // Bounded so a buggy or hostile client can't request a
-        // multi-thousand-row mutation in one round-trip.
-        accountIds: z.array(z.string()).min(1).max(200),
-        // Diff-based like `holdings.bulkAssignGroups` — see that
-        // procedure for the rationale. An account in a group is a
-        // STANDING RULE (SC-386): everything it holds now and receives
-        // later is in the group, until a single holding is vetoed out
-        // of it. Adding writes `account_groups` alone; removing also
-        // drops the holdings' own rows, so "not in this group" is
-        // total.
-        addedGroupIds: z.array(z.string()).max(50).default([]),
-        removedGroupIds: z.array(z.string()).max(50).default([]),
-      })
+      strictInput(
+        z.object({
+          // Bounded so a buggy or hostile client can't request a
+          // multi-thousand-row mutation in one round-trip.
+          accountIds: z.array(z.string()).min(1).max(200),
+          // Diff-based like `holdings.bulkAssignGroups` — see that
+          // procedure for the rationale. An account in a group is a
+          // STANDING RULE (SC-386): everything it holds now and receives
+          // later is in the group, until a single holding is vetoed out
+          // of it. Adding writes `account_groups` alone; removing also
+          // drops the holdings' own rows, so "not in this group" is
+          // total.
+          addedGroupIds: z.array(z.string()).max(50).default([]),
+          removedGroupIds: z.array(z.string()).max(50).default([]),
+        })
+      )
     )
     .mutation(async ({ input, ctx }) => {
       const { dbUser } = await requireAuth(ctx);
@@ -180,7 +189,7 @@ export const accountsRouter = router({
     // defined (empty set), and the frontend can transiently pass []
     // while the dialog is mounting or mid-transition. Returning []
     // is cheaper and friendlier than a 400.
-    .input(z.object({ accountIds: z.array(z.string()).max(200) }))
+    .input(strictInput(z.object({ accountIds: z.array(z.string()).max(200) })))
     .query(async ({ input, ctx }) => {
       const { dbUser } = await requireAuth(ctx);
 
