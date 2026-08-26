@@ -862,6 +862,30 @@ describe('LinkTransferPairsUseCase — bridged assets', () => {
  * inflows are person-authored, 0 were at risk, and 0 groups had ever been
  * damaged — against a control of 29 matcher-made groups, so the zero is a
  * measurement. Prevention, with no repair owed.
+ *
+ * ## THE "STILL CLAIMS AN ORDINARY DEPOSIT" TEST BELOW IS CORROBORATION, NOT
+ * THE GUARD
+ *
+ * Measured, not assumed: widening this predicate to exclude every inflow
+ * source fails SIX tests, and FIVE of them are older than this describe block
+ * —
+ *
+ *   - `links a single matching withdraw/deposit pair within window + epsilon`
+ *   - `flags ambiguous pairs when more than one viable deposit matches`
+ *   - `still pairs across two holdings when the amounts and times match`
+ *   - bridged assets: `links a bridge: one asset, two chains, one wallet`
+ *   - bridged assets: `declines rather than choose between a same-token
+ *     arrival and a bridged one`
+ *
+ * Those five are what actually stop an over-broad predicate from fixing this
+ * hole by turning the matcher off. The test here agrees with them; it does not
+ * hold the line on its own.
+ *
+ * **If you are deleting or reworking those five, this note is addressed to
+ * you.** A reader who sees only the describe block below would conclude the
+ * axis is still guarded, when it would in fact be down to one test that was
+ * never more than corroboration. Keep coverage of "an ordinary imported
+ * deposit still links" somewhere, whatever else changes.
  */
 describe('LinkTransferPairsUseCase — a row a person authored is not the matcher’s to claim', () => {
   async function outflowAndInflow(
