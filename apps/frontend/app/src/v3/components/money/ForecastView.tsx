@@ -1,4 +1,4 @@
-import { Decimal } from '@scani/shared';
+import { Decimal, observedAffordability, observedRunwayMonths } from '@scani/shared';
 import { Button } from '@scani/ui/ui/button';
 import { Segmented, SegmentedItem } from '@scani/ui/ui/segmented';
 import { Block } from '@scani/ui/v3/components/Block';
@@ -19,6 +19,7 @@ import { useViewPreference } from '../../hooks/useViewPreference';
 import {
   affordability,
   bucketMovements,
+  committedShare,
   DEFAULT_FORECAST_HORIZON,
   FORECAST_HORIZONS,
   type ForecastHorizon,
@@ -29,6 +30,7 @@ import {
   windowTotals,
   withOneOff,
 } from '../../lib/forecast';
+import { convertTotalsToBase } from '../../lib/paymentTotals';
 import { V3_PAYMENT_ROUTES, V3_ROUTES } from '../../lib/routes';
 import { VIEW_PREFERENCE_KEYS } from '../../lib/view-preference';
 import { ConvertedTotal } from '../ConvertedTotal';
@@ -137,6 +139,70 @@ export function ForecastView({
 
   const answer = useMemo(() => runway(runwayProjection), [runwayProjection]);
 
+  /**
+   * The answer this page now leads with (SC-661).
+   *
+   * It divides the liquid balance by the rate money actually leaves the
+   * tracked perimeter, through the SAME `@scani/shared` helper the home line
+   * uses — which is the point rather than tidiness. This page and that line
+   * reached OPPOSITE conclusions about the same account at the same instant
+   * because each did its own arithmetic; one function is what stops that
+   * happening again.
+   *
+   * `null` means the window contained no perimeter exits, and the committed
+   * walk below is then the only answer there is.
+   */
+  const observedMonths = useMemo(
+    () =>
+      forecast?.observedBurn
+        ? observedRunwayMonths(forecast.liquid.amount, forecast.observedBurn.perMonthMean)
+        : null,
+    [forecast?.liquid.amount, forecast?.observedBurn]
+  );
+
+  /**
+   * The book's own monthly outflow as a SHARE of observed, never an addend.
+   * Taken from the projection so it comes through the same currency
+   * conversion — a second path would let the two figures on one screen
+   * disagree invisibly. See `@scani/shared` `lib/burn.ts` for why committed is
+   * a subset of observed and adding them halves the runway.
+   */
+  const share = useMemo(
+    () =>
+      observedMonths === null || !forecast?.observedBurn
+        ? null
+        : committedShare(runwayProjection, forecast.observedBurn.perMonthMean),
+    [observedMonths, forecast?.observedBurn, runwayProjection]
+  );
+
+  /**
+   * The one-off in base currency, through `convertTotalsToBase` — the one
+   * conversion path this tab uses everywhere else.
+   */
+  const oneOffInBase = useMemo(() => {
+    if (!oneOff) return null;
+    const converted = convertTotalsToBase(
+      new Map([[oneOff.currencyTokenId, new Decimal(oneOff.amount)]]),
+      rates
+    );
+    // No rate for that currency yet: an unconverted one-off would be silently
+    // treated as zero and the purchase would cost nothing.
+    if (converted.unconverted.length > 0 || converted.unknown.length > 0) return null;
+    return converted.amount;
+  }, [oneOff, rates]);
+
+  const observedVerdict = useMemo(
+    () =>
+      forecast?.observedBurn && oneOffInBase
+        ? observedAffordability(
+            forecast.liquid.amount,
+            forecast.observedBurn.perMonthMean,
+            oneOffInBase.toString()
+          )
+        : null,
+    [forecast?.liquid.amount, forecast?.observedBurn, oneOffInBase]
+  );
+
   const withPurchase = useMemo(
     () => (oneOff ? project(opening, withOneOff(runwayBuckets, oneOff), rates) : null),
     [oneOff, opening, runwayBuckets, rates]
@@ -167,10 +233,19 @@ export function ForecastView({
     );
   }
 
-  // A projection over no movements is a flat line at the current balance — a
-  // chart that says nothing, drawn with great confidence. The empty state says
-  // the same thing in a sentence and offers the way out of it.
-  if (!forecast || forecast.movements.length === 0) {
+  /**
+   * A projection over no movements is a flat line at the current balance — a
+   * chart that says nothing, drawn with great confidence. The empty state says
+   * the same thing in a sentence and offers the way out of it.
+   *
+   * `observedMonths === null` is load-bearing and was the SC-661 bug: this
+   * used to bail on `movements.length === 0` alone, while the home line's
+   * observed path has no movements guard at all. An account with perimeter
+   * exits and no recurring payments therefore got a runway on the home screen
+   * and "no payments recorded — add one" here, so the two screens disagreed
+   * about whether the feature existed. That is worse than a number mismatch.
+   */
+  if (!forecast || (forecast.movements.length === 0 && observedMonths === null)) {
     return (
       <DataViewEmpty
         empty={{
@@ -209,12 +284,31 @@ export function ForecastView({
           Upcoming, Recurring, Vendors — are solid, so the border alone
           separates what is observed from what is claimed, before a word is
           read. */}
+      {/* THE HERO IS OBSERVED (SC-661, mgrin). It answers the same question as
+          the home line, in the same words, through the same helper.
+
+          The committed book is not a second opinion here — on the real account
+          it records ~$11,235/mo in and ~$784/mo out, because the income is a
+          recurring payment and the spending happens outside the tracked
+          perimeter. Projected forward that book says the money grows forever.
+          It is not a different question honestly answered; it is a projection
+          missing its largest term, erring in the flattering direction by
+          construction. So it does not get to be the runway. */}
       <Block className="flex flex-col gap-3 border-dashed p-4">
+        {/* Note the order against `pending`. The observed figure answers even
+            while the rates are still coming, and that is correct rather than a
+            slip: `perMonthMean` and `liquid.amount` both arrive from the
+            server already in base currency, so it has no foreign half to be
+            missing. SC-210's rule — a burn without rates is too small and the
+            runway too long — is about the committed walk below, which is why
+            that one still shows "working it out". */}
         <ProjectedTile
           emphasis="hero"
           label={t('v3.money.forecast.runwayLabel')}
           value={
-            pending ? (
+            observedMonths !== null ? (
+              t('v3.money.forecast.observedRunway', { count: observedMonths })
+            ) : pending ? (
               <span className="text-muted-foreground">{t('v3.money.forecast.working')}</span>
             ) : (
               <RunwayFigure answer={answer} />
@@ -222,12 +316,14 @@ export function ForecastView({
           }
           note={<RunwayBasis forecast={forecast} baseSymbol={rates.baseSymbol} />}
         />
-        {/* A window with no date in it has to say what the book is DOING, or
+        {observedMonths !== null && forecast.observedBurn ? (
+          <ObservedBasis burn={forecast.observedBurn} share={share} baseSymbol={rates.baseSymbol} />
+        ) : null}
+        {/* Only when the book is the answer, which is now the fallback. A
+            window with no date in it has to say what the book is DOING, or
             "more than 12 months" is indistinguishable between a book that
-            gains €1,200 a month and one that loses €10. Never extrapolated
-            into a date — see `runway()` for why there is no honest third
-            answer. */}
-        {!pending && answer.kind === 'lasts' ? (
+            gains €1,200 a month and one that loses €10. */}
+        {observedMonths === null && !pending && answer.kind === 'lasts' ? (
           <p className="text-caption text-muted-foreground">
             <Trans
               i18nKey="v3.money.forecast.netPerMonth"
@@ -246,51 +342,70 @@ export function ForecastView({
         ) : null}
       </Block>
 
-      <Block className="flex flex-col gap-4 border-dashed p-4">
-        <div className="flex flex-col gap-3">
-          <Segmented
-            value={horizon}
-            onValueChange={setHorizon}
-            aria-label={t('v3.money.forecast.horizonSwitcher')}
-          >
-            {FORECAST_HORIZONS.map((option) => (
-              <SegmentedItem key={option} value={`${option}`}>
-                {t('v3.money.forecast.horizonOption', { count: option })}
-              </SegmentedItem>
-            ))}
-          </Segmented>
+      {/* Hidden entirely when there is nothing scheduled, which is now
+          reachable: the page renders on observed burn alone, and this block
+          would otherwise promise "what is scheduled, and when" above a flat
+          chart and two zeroes. An empty answer under a confident heading is
+          the shape this whole ticket is about.
 
-          <ProjectedTile
-            label={t('v3.money.forecast.balanceAt', {
-              month: formatProjectionMonth(
-                chartProjection.points.at(-1)?.month ?? forecast.today.slice(0, 7)
-              ),
-            })}
-            value={
-              pending ? (
-                <span className="text-muted-foreground">{t('v3.money.forecast.working')}</span>
-              ) : (
-                <Numeric
-                  value={(chartProjection.points.at(-1)?.balance ?? opening).toString()}
-                  currency={rates.baseSymbol}
-                />
-              )
-            }
-          />
-        </div>
+          DEMOTED, and the heading is the whole of it (SC-661). This block used
+          to be the runway's evidence; it is now a separate, narrower claim —
+          what the recurring book has scheduled, and when. It is still worth a
+          screen: an observed $43k month says nothing about how much of it
+          could be STOPPED, and the book is the only thing that does. What it
+          may no longer do is answer "how long does the money last". */}
+      {forecast.movements.length === 0 ? null : (
+        <Block className="flex flex-col gap-4 border-dashed p-4">
+          <div className="flex flex-col gap-1">
+            <p className="text-label">{t('v3.money.forecast.committedTitle')}</p>
+            <p className="text-caption text-muted-foreground">
+              {t('v3.money.forecast.committedNote')}
+            </p>
+          </div>
+          <div className="flex flex-col gap-3">
+            <Segmented
+              value={horizon}
+              onValueChange={setHorizon}
+              aria-label={t('v3.money.forecast.horizonSwitcher')}
+            >
+              {FORECAST_HORIZONS.map((option) => (
+                <SegmentedItem key={option} value={`${option}`}>
+                  {t('v3.money.forecast.horizonOption', { count: option })}
+                </SegmentedItem>
+              ))}
+            </Segmented>
 
-        {pending ? (
-          <DataViewSkeleton />
-        ) : (
-          <ProjectionChart
-            points={chartProjection.points}
-            opening={opening.toString()}
-            currency={rates.baseSymbol}
-            label={t('v3.money.forecast.chartLabel', { count: months })}
-          />
-        )}
+            <ProjectedTile
+              label={t('v3.money.forecast.balanceAt', {
+                month: formatProjectionMonth(
+                  chartProjection.points.at(-1)?.month ?? forecast.today.slice(0, 7)
+                ),
+              })}
+              value={
+                pending ? (
+                  <span className="text-muted-foreground">{t('v3.money.forecast.working')}</span>
+                ) : (
+                  <Numeric
+                    value={(chartProjection.points.at(-1)?.balance ?? opening).toString()}
+                    currency={rates.baseSymbol}
+                  />
+                )
+              }
+            />
+          </div>
 
-        {/* The two sides of the window, each its own figure and never netted
+          {pending ? (
+            <DataViewSkeleton />
+          ) : (
+            <ProjectionChart
+              points={chartProjection.points}
+              opening={opening.toString()}
+              currency={rates.baseSymbol}
+              label={t('v3.money.forecast.chartLabel', { count: months })}
+            />
+          )}
+
+          {/* The two sides of the window, each its own figure and never netted
             into one — V3-47's rule, which is about bills against income and
             holds here for the same reason: an obligation and a client's
             intention are not equally certain. The running balance above DOES
@@ -298,35 +413,37 @@ export function ForecastView({
             arithmetic on a projection that is already labelled as one, while a
             single "you are €400 up" figure would present the average of two
             different certainties as a fact. */}
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div className="flex flex-col gap-2">
-            <ConvertedTotal
-              projected
-              emphasis="default"
-              label={t('v3.money.forecast.goingOut', { count: months })}
-              totals={totals.outflow}
-              tokenSymbolById={tokenSymbolById}
-              rates={rates}
-            />
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="flex flex-col gap-2">
+              <ConvertedTotal
+                projected
+                emphasis="default"
+                label={t('v3.money.forecast.goingOut', { count: months })}
+                totals={totals.outflow}
+                tokenSymbolById={tokenSymbolById}
+                rates={rates}
+              />
+            </div>
+            <div className="flex flex-col gap-2">
+              <ConvertedTotal
+                projected
+                delta
+                emphasis="default"
+                label={t('v3.money.forecast.comingIn', { count: months })}
+                totals={totals.inflow}
+                tokenSymbolById={tokenSymbolById}
+                rates={rates}
+              />
+            </div>
           </div>
-          <div className="flex flex-col gap-2">
-            <ConvertedTotal
-              projected
-              delta
-              emphasis="default"
-              label={t('v3.money.forecast.comingIn', { count: months })}
-              totals={totals.inflow}
-              tokenSymbolById={tokenSymbolById}
-              rates={rates}
-            />
-          </div>
-        </div>
-      </Block>
+        </Block>
+      )}
 
       <AffordabilityPanel
         oneOff={oneOff}
         onChange={setOneOff}
         verdict={verdict}
+        observedVerdict={observedVerdict}
         baseSymbol={rates.baseSymbol}
         tokens={tokens}
         disabled={pending}
@@ -396,6 +513,123 @@ function RunwayBasis({ forecast, baseSymbol }: { forecast: ForecastData; baseSym
         </>
       ) : null}
     </>
+  );
+}
+
+/**
+ * The denominators under the observed figure — what the mean was taken over,
+ * what it hid, and what it could not count.
+ *
+ * ## Why the MEDIAN is printed beside the mean
+ *
+ * Measured on mgrin's real book 2026-08-26: mean $13,984.20 against median
+ * $7,504.95, min $3,999.52, max $43,563.15. **The mean is 1.86x the median**,
+ * so the choice of statistic is not a rounding difference — it is "about 8
+ * months" against "about 15 months" on the same balance, driven by one or two
+ * exceptional months.
+ *
+ * SC-657 chose the mean deliberately and correctly: total ÷ months IS the rate
+ * the balance actually drained at, and a $43k month is real money that really
+ * left. A median-based runway survives on paper past the point the account is
+ * empty. But a figure that far from the typical month has to say so, or the
+ * line alarms the reader about a distribution while sounding like a trend.
+ *
+ * So the label names the statistic — "Mean of 6 complete months" rather than
+ * "Averaged over" — and the middle month is printed next to the range. Neither
+ * surface said which statistic it used before this.
+ *
+ * Every one of these is here because a single number over $4k-$43k months,
+ * presented alone, is more confident than the data. The spread says so; the
+ * excluded count says how many outflows the figure did not see; the committed
+ * share says how much of the spending is contractual rather than
+ * discretionary — the one question the recurring book genuinely answers.
+ *
+ * `excluded.unclassified` is the one to watch. Those are outflows nobody has
+ * answered the review question on, and they are treated as zero. If they are
+ * a large share, the burn is understated and the runway is too long — the
+ * flattering direction again, which is why the count is printed rather than
+ * folded away.
+ */
+function ObservedBasis({
+  burn,
+  share,
+  baseSymbol,
+}: {
+  burn: NonNullable<ForecastData['observedBurn']>;
+  share: Decimal | null;
+  baseSymbol: string;
+}) {
+  const { t } = useTranslation();
+  /**
+   * THREE TERMS, AND THEY ARE NOT IN HERE FOR THE SAME REASON.
+   *
+   * `internal` is deliberately NOT in this sum. A `paired` or `internal`
+   * answer names a destination INSIDE the perimeter, so the money
+   * demonstrably did not leave; its absence from the burn is the answer, not
+   * a gap. Counting it would invite a reader to see those transactions as
+   * missing burn when they are the opposite.
+   *
+   * `unclassified` and `unvalued` are gaps plainly: nobody answered, or it
+   * left and could not be priced. Both are treated as zero in the mean, so
+   * the runway is too long by whatever they were — the flattering direction,
+   * which is why the count is printed rather than folded away.
+   *
+   * `untracked` is in the total for a DIFFERENT reason, and it is the one
+   * that can go wrong silently. By the vocabulary it is not a gap at all —
+   * it means the money is still his, in an account Scani cannot see, so coin
+   * to a cold wallet is wealth changing address rather than spending, and
+   * `ObservedBurnService` excludes it on exactly that reading.
+   *
+   * But that reading is an ASSUMPTION. mgrin describes his spending
+   * destination as "current accounts, not tracked by scani" — word for word
+   * the other vocabulary term. If his answers start landing on `untracked`,
+   * burn falls, the runway lengthens, and nothing goes red. `untracked`
+   * rising while the total falls is the only place it would ever show, so
+   * counting it here is what puts that assumption on a screen instead of
+   * leaving it in a service header. It is 0 today, which is the empirical
+   * case for the current reading and precisely why nobody would notice it
+   * moving.
+   *
+   * If this total is ever itemised: `internal` is excluded because the money
+   * stayed, `untracked` because we BELIEVE it stayed. Different claims,
+   * different confidence.
+   */
+  const notCounted = burn.excluded.unclassified + burn.excluded.untracked + burn.excluded.unvalued;
+
+  return (
+    <div className="flex flex-col gap-1">
+      <p className="text-caption text-muted-foreground">
+        <Trans
+          i18nKey="v3.money.forecast.observedBasis"
+          values={{ count: burn.windowMonths, from: burn.fromMonth, to: burn.toMonth }}
+          components={{
+            value: <Numeric value={burn.perMonthMean} currency={baseSymbol} />,
+          }}
+        />
+      </p>
+      {burn.perMonthMin !== burn.perMonthMax ? (
+        <p className="text-caption text-muted-foreground">
+          <Trans
+            i18nKey="v3.money.forecast.observedSpread"
+            components={{
+              min: <Numeric value={burn.perMonthMin} currency={baseSymbol} />,
+              max: <Numeric value={burn.perMonthMax} currency={baseSymbol} />,
+              median: <Numeric value={burn.perMonthMedian} currency={baseSymbol} />,
+            }}
+          />
+        </p>
+      ) : null}
+      {share ? (
+        <p className="text-caption text-muted-foreground">
+          {t('v3.money.forecast.ofWhichCommitted', { percent: share.times(100).toFixed(0) })}
+        </p>
+      ) : null}
+      {notCounted > 0 ? (
+        <p className="text-caption text-muted-foreground">
+          {t('v3.money.forecast.observedNotCounted', { count: notCounted })}
+        </p>
+      ) : null}
+    </div>
   );
 }
 
