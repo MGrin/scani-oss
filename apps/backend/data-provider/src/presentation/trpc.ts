@@ -30,7 +30,7 @@ export interface DataProviderContext {
   requestId: string;
   usage: UsageContext;
   // Best-effort client IP, read from `x-forwarded-for` (Fly's edge sets
-  // this) or `fly-client-ip`. Used by public procedures (waitlist.join)
+  // this) or `fly-client-ip`. Used by unauthenticated public procedures
   // for per-IP rate limiting; never persisted unhashed. Null when no
   // header is present (direct internal calls / tests).
   clientIp: string | null;
@@ -116,8 +116,8 @@ export function buildCreateContext({ env, getCloudDb, getBetterAuth }: BuildCont
     // tail — the leftmost entries are attacker-controllable, so we trust
     // only the rightmost element. Keying off the leftmost entry would
     // let a caller rotate fake prefixes and trivially bypass per-IP
-    // rate limits (e.g. waitlist.join). Matches the rule applied by
-    // @scani/rate-limiter's defaultInflowKey.
+    // rate limits. Matches the rule applied by @scani/rate-limiter's
+    // defaultInflowKey.
     const flyClientIp = req.headers.get('fly-client-ip');
     const xff = req.headers.get('x-forwarded-for');
     const xffTail = xff
