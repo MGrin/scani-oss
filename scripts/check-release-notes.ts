@@ -473,7 +473,7 @@ if (import.meta.main) {
         `commit of one PR and no others, look at that PR's body first.\n\n` +
         `Tell them apart in one step. Cause 1 needs a committer date EARLIER than the ` +
         `tag's:\n\n` +
-        `    git show -s --format='%cI %h %s' ${previousTag} ` +
+        `    TZ=UTC git show -s --date=iso-strict-local --format='%cd %h %s' ${previousTag} ` +
         `${missing.map(({ sha }) => sha).join(' ')}\n\n` +
         `RECOVERY, and the placement matters. Put ` +
         `BEGIN_COMMIT_OVERRIDE / END_COMMIT_OVERRIDE\ncarrying the conventional message ` +
@@ -516,7 +516,7 @@ if (import.meta.main) {
         `that.\n${previousTag}..<head> will mislead you: it lists the OUTSIDE commit too, ` +
         `because the walk\norders by COMMITTER DATE, not by reachability. Compare dates ` +
         `directly, the same way\ncause 1 is told apart above:\n\n` +
-        `    git show -s --format='%cI %h %s' ${previousTag} <every sha of that PR>\n\n` +
+        `    TZ=UTC git show -s --date=iso-strict-local --format='%cd %h %s' ${previousTag} <every sha of that PR>\n\n` +
         `Any dated EARLIER than the tag is outside the walk. TWO OR MORE dated later means ` +
         `an\noverride in that body will duplicate.\n\n` +
         `THE PRICE OF THE RECOVERY, WHICH IS REAL AND SMALL: both bullets attribute to ` +
