@@ -19,6 +19,18 @@ version heading stays there permanently, above every future release. This
 comment is deliberately in that position; explanatory prose should not be.
 -->
 
+## [0.23.1](https://github.com/MGrin/scani-oss/compare/v0.23.0...v0.23.1) (2026-08-27)
+
+
+### Bug Fixes
+
+* **db:** stop telling every reader to run one deployment's script ([ea81ca6](https://github.com/MGrin/scani-oss/commit/ea81ca6fd84506bf9a227e7a1e888fc245f2fdf9))
+* **dev:** declare the dev:api script the docs prescribe ([75e83b8](https://github.com/MGrin/scani-oss/commit/75e83b846919b5e3e5ed8257c0784d0732ec2205))
+* **e2e:** name the docker escape hatch, and document the vars it needs ([08d5613](https://github.com/MGrin/scani-oss/commit/08d5613fa93b7a3fea193116e6b1d220a1b5c104))
+* **e2e:** resolve the stack's database instead of assuming `scani` ([5c8ec6d](https://github.com/MGrin/scani-oss/commit/5c8ec6dbe4d3df346bcc6a1600b527c374eb02ad))
+* give subprocess tests a budget bunfig could never supply ([#288](https://github.com/MGrin/scani-oss/issues/288)) ([d7af10f](https://github.com/MGrin/scani-oss/commit/d7af10f1af15b6885c069f757c96c45ee9f8065e))
+* **guards:** see a prescribed script written without run ([e2ed3d4](https://github.com/MGrin/scani-oss/commit/e2ed3d4bc288c9aa189f1f2c0a59f4762969970b))
+
 ## [0.23.0](https://github.com/MGrin/scani-oss/compare/v0.22.0...v0.23.0) (2026-08-27)
 
 
