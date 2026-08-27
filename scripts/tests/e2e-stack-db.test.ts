@@ -167,9 +167,17 @@ describe('the constants may not come back', () => {
   test('the stripper leaves code intact — control for the four guards below', () => {
     // Without this, a stripper that returned '' would satisfy every
     // not-toContain assertion in this block.
-    expect(FIXTURE).toContain('process.env.POSTGRES_CONTAINER');
-    expect(FIXTURE).toContain('process.env.E2E_DB_NAME');
-    expect(FIXTURE).toContain('docker');
+    //
+    // Matched with a trailing word boundary, and that is the whole assertion.
+    // These were `toContain` until a mutant walked through them: renaming the
+    // fixture's reads to `POSTGRES_CONTAINERX` and `E2E_DB_NAMEX` left this
+    // file at 27 pass / 0 fail, because the new name contains the old one.
+    // Nothing else in the block could have caught it either — the four guards
+    // it controls are all must-be-ABSENT, so a fixture reading a variable that
+    // nothing on earth sets satisfies every one of them.
+    expect(FIXTURE).toMatch(/process\.env\.POSTGRES_CONTAINER\b/);
+    expect(FIXTURE).toMatch(/process\.env\.E2E_DB_NAME\b/);
+    expect(FIXTURE).toMatch(/\bdocker\b/);
   });
 
   test('no hardcoded database name', () => {
@@ -202,40 +210,92 @@ describe('the constants may not come back', () => {
   });
 });
 
-describe('CI runs playwright directly, so CI has to declare the target', () => {
+interface WorkflowStep {
+  readonly name?: string;
+  readonly run?: string;
+  readonly env?: Record<string, string>;
+}
+interface WorkflowJob {
+  readonly env?: Record<string, string>;
+  readonly steps?: readonly WorkflowStep[];
+}
+
+describe('every CI step that runs the suite supplies the database the fixture refuses to guess', () => {
   /**
-   * SC-494's own regression. The `E2E (Playwright)` job runs
-   * `bunx playwright test` WITHOUT going through `apps/e2e/scripts/run.ts`, so
-   * the runner's discovery never executes there and the fixture has nothing to
-   * read. It used to work by accident: the fixture's hardcoded fallbacks were
-   * exactly what that job produces — correct in CI, silently wrong in every
-   * checkout that is not it.
+   * SC-494's own regression, written as a DISJUNCTION rather than as an
+   * assertion about one job — and the difference is the whole point.
    *
-   * Removing the fallbacks turned that accident into four red specs, which is
-   * the right failure and the reason this guard exists rather than a second
-   * default.
+   * `apps/e2e/fixtures/db.ts` has no fallbacks left: it needs
+   * `POSTGRES_CONTAINER` and `E2E_DB_NAME`, and refuses with NO QUERY WAS MADE
+   * when either is absent. Exactly two things can supply them —
+   * `apps/e2e/scripts/run.ts`, which discovers the running stack and exports
+   * both, or the workflow itself where it bypasses that runner and invokes the
+   * binary directly. So what a workflow must satisfy is "every step that runs
+   * the suite does one or the other".
    *
-   * The upstream mirror's CI is the ONLY CI this project has (the private repo
-   * is billing-blocked), and the e2e suite is not part of `bun run test` — so
-   * no local gate can reach this. A source guard is the only check that runs
-   * where the defect lives.
+   * The first version of this guard asserted the second half only, because
+   * that is what the mirror's workflow does. This file is oss-eligible, so the
+   * two copies must be byte-identical — and the private workflow has no such
+   * step at all: it runs `bun run test:e2e:a11y`, which goes through the
+   * runner. Measured on the port: 27 pass, 3 fail, all three of them this
+   * guard, against a workflow that was never wrong. A guard that can only be
+   * true in one of the two trees it is required to be identical in is not a
+   * stricter guard, it is a broken one.
+   *
+   * The mirror's CI is the only CI this project has (the private repo is
+   * billing-blocked), and the e2e suite is not part of `bun run test`, so no
+   * local gate reaches the job itself. A source guard is the only check that
+   * runs where the defect lives.
    */
-  const WORKFLOW = readFileSync(new URL('../../.github/workflows/ci.yml', import.meta.url), 'utf8');
-  const step = WORKFLOW.slice(WORKFLOW.indexOf('- name: Run Playwright suite'));
+  const WORKFLOW = Bun.YAML.parse(
+    readFileSync(new URL('../../.github/workflows/ci.yml', import.meta.url), 'utf8')
+  ) as { readonly jobs?: Record<string, WorkflowJob> };
 
-  test('the playwright step sets both variables the fixture requires', () => {
-    expect(step).toContain('POSTGRES_CONTAINER:');
-    expect(step).toContain('E2E_DB_NAME:');
+  // Read as text: this asserts the runner still SETS them, which is the only
+  // reason delegating to it is safe. `import`ing it would boot the orchestrator.
+  const RUNNER = readFileSync(new URL('../../apps/e2e/scripts/run.ts', import.meta.url), 'utf8');
+
+  const suiteSteps = Object.entries(WORKFLOW.jobs ?? {}).flatMap(([jobId, job]) =>
+    (job.steps ?? [])
+      .filter((step) => typeof step.run === 'string' && /playwright test|test:e2e/.test(step.run))
+      .map((step) => ({ jobId, job, step }))
+  );
+
+  test('the workflow runs the suite at all', () => {
+    // The control, and it is not a formality: every assertion below is
+    // generated from `suiteSteps`, so an empty list means this describe block
+    // reports a clean pass having checked nothing. That is the exact shape
+    // this file exists to refuse.
+    expect(suiteSteps.length).toBeGreaterThan(0);
   });
 
-  test('the container is derived from the project name, not repeated as a literal', () => {
-    // Two copies of `mgrin-e2e-suite` is how the pair drifts apart later.
-    expect(step).toMatch(/POSTGRES_CONTAINER: \$\{\{ env\.COMPOSE_PROJECT_NAME \}\}-postgres-1/);
-  });
+  for (const { jobId, job, step } of suiteSteps) {
+    const run = step.run as string;
+    const viaRunner = /scripts\/run\.ts|test:e2e/.test(run);
 
-  test('the job still sets the project name the derivation reads', () => {
-    // The control: without this, the assertion above passes against a workflow
-    // that interpolates an empty string and produces `-postgres-1`.
-    expect(WORKFLOW).toContain('COMPOSE_PROJECT_NAME: mgrin-e2e-suite');
-  });
+    test(`\`${jobId} > ${step.name ?? run.trim()}\` gets the target from the runner or from its own env`, () => {
+      if (viaRunner) {
+        // Matched as an ASSIGNMENT, not as a substring. `toContain` was the
+        // first attempt and a mutant walked straight through it: renaming the
+        // variable to `E2E_DB_NAMEX` left the guard green, because
+        // `E2E_DB_NAMEX` contains `E2E_DB_NAME`.
+        expect(RUNNER).toMatch(/SERVICE_ENV\.POSTGRES_CONTAINER\s*=/);
+        expect(RUNNER).toMatch(/SERVICE_ENV\.E2E_DB_NAME\s*=/);
+        return;
+      }
+
+      // GitHub's own precedence: a step's env wins over its job's.
+      const env = { ...job.env, ...step.env };
+      expect(Object.keys(env)).toContain('POSTGRES_CONTAINER');
+      expect(Object.keys(env)).toContain('E2E_DB_NAME');
+
+      // Two copies of the project name is how the pair drifts apart later.
+      expect(env.POSTGRES_CONTAINER).toBe('${{ env.COMPOSE_PROJECT_NAME }}-postgres-1');
+
+      // …and a derivation is worth nothing if the name it reads is unset: the
+      // assertion above passes just as happily against a job that interpolates
+      // an empty string and asks docker for `-postgres-1`.
+      expect(job.env?.COMPOSE_PROJECT_NAME ?? '').not.toBe('');
+    });
+  }
 });
