@@ -1,6 +1,7 @@
 import { describe, expect, setDefaultTimeout, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
+import { runCheckDocs } from '../lib/run-check-docs';
 import { replayStrandedMutations, withMutatedSources } from '../lib/test-source-mutations';
 
 /**
@@ -48,8 +49,7 @@ if (restored.length > 0) console.log(`restored ${restored.length} file(s): ${res
 const ORIGINAL = readFileSync(CLAUDE_MD, 'utf8');
 
 function runCheck(): { exitCode: number; output: string } {
-  const run = Bun.spawnSync(['bun', 'scripts/check-docs.ts'], { cwd: REPO_ROOT });
-  return { exitCode: run.exitCode, output: `${run.stdout.toString()}${run.stderr.toString()}` };
+  return runCheckDocs(REPO_ROOT);
 }
 
 // Mutate, run, restore — around the single spawn that reads the file, so the

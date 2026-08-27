@@ -2,6 +2,7 @@ import { afterEach, describe, expect, setDefaultTimeout, test } from 'bun:test';
 import { rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { runCheckDocs } from '../lib/run-check-docs';
 import { assertRepoFixtureIsIgnored } from '../lib/test-fixture-corpses';
 
 /**
@@ -84,8 +85,8 @@ function runCheck(staged: string[] = [], unstage: string[] = []): { code: number
     }
   }
   if (unstage.length > 0) git(['rm', '--cached', '-q', '--', ...unstage]);
-  const run = Bun.spawnSync(['bun', 'scripts/check-docs.ts'], { cwd: REPO_ROOT, env });
-  return { code: run.exitCode, out: `${run.stdout.toString()}${run.stderr.toString()}` };
+  const { exitCode, output } = runCheckDocs(REPO_ROOT, { env });
+  return { code: exitCode, out: output };
 }
 
 afterEach(() => {
