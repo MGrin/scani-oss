@@ -1,8 +1,22 @@
-import { afterEach, describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, setDefaultTimeout, test } from 'bun:test';
 import { rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { assertRepoFixtureIsIgnored } from '../lib/test-fixture-corpses';
+
+/**
+ * SC-694. Every test here spawns `bun scripts/check-docs.ts`, which itself
+ * spawns many `git` calls — so the cost is subprocess startup, which amplifies
+ * under load far harder than CPU work does. At rest the slowest is 536ms; at
+ * load 30 one crossed 5000ms and died, and WHICH one crossed varied per run,
+ * which is what "alternating" in the report was.
+ *
+ * `bun run test` passes `--timeout 30000`, so the gate never saw it. A bare
+ * `bun test <path>` gets 5000ms and `bunfig.toml` cannot raise it — bun drops
+ * a `timeout` key from `[test]` silently. This call is the only budget that
+ * survives both invocations.
+ */
+setDefaultTimeout(30_000);
 
 /**
  * SC-469. Nothing a developer runs compiled MDX. `docs:check` read Markdown as
