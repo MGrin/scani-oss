@@ -470,12 +470,16 @@ describe('an upstream-first window on real repositories (SC-659)', () => {
     return clone;
   })();
 
-  function runGuard(branch: string, stage: string): { code: number; out: string } {
+  function runGuard(
+    branch: string,
+    stage: string,
+    extraEnv: Record<string, string> = {}
+  ): { code: number; out: string } {
     git(work, 'checkout', '--quiet', branch);
     git(work, 'add', stage);
     const run = Bun.spawnSync(['bun', guard], {
       cwd: work,
-      env: { ...process.env, GIT_CEILING_DIRECTORIES: root },
+      env: { ...process.env, GIT_CEILING_DIRECTORIES: root, ...extraEnv },
       stdout: 'pipe',
       stderr: 'pipe',
     });
@@ -525,6 +529,39 @@ describe('an upstream-first window on real repositories (SC-659)', () => {
     expect(out).toContain(VERDICT.refused);
     expect(code).toBe(EXIT_REFUSED);
     expect(out).toContain('private1.ts');
+  });
+
+  /**
+   * SC-743, and the worse half of it. The staged-paths call had the same defect
+   * as the remotes probe — `.stdout` read with no `.ok` check — and it fails in
+   * the opposite direction: a dead `git diff --cached` yields `''`, which reads
+   * as NOTHING IS STAGED and exits 0. Silence that looks like success.
+   *
+   * This is the case above, byte for byte, with only `git diff --cached` made
+   * to fail. Everything else delegates, so the branch is still oss-bound and
+   * `private1.ts` is still staged and still unfit to travel. Without the fix
+   * the guard reports a CLEAN PASS over exactly the file it exists to stop.
+   */
+  test('a dead `git diff --cached` is not an empty staging area', () => {
+    git(work, 'checkout', '--quiet', '-b', 'oss-side-blind', '--no-track', 'upstream/main');
+    const from = Bun.spawnSync(['git', 'show', 'origin/main:private1.ts'], { cwd: work });
+    writeFileSync(join(work, 'private1.ts'), from.stdout);
+
+    const shimDir = mkdtempSync(join(tmpdir(), 'sc743-diff-'));
+    writeFileSync(
+      join(shimDir, 'git'),
+      '#!/bin/sh\nif [ "$1" = "diff" ]; then for a in "$@"; do [ "$a" = "--cached" ] && exit 1; done; fi\nexec /usr/bin/git "$@"\n',
+      { mode: 0o755 }
+    );
+    const { code, out } = runGuard('oss-side-blind', 'private1.ts', {
+      PATH: `${shimDir}:${process.env.PATH}`,
+    });
+    rmSync(shimDir, { recursive: true, force: true });
+
+    expect(code).toBe(EXIT_UNKNOWN);
+    expect(out).toContain('NOTHING WAS CHECKED');
+    // The failure this replaces: exit 0 with no mention of the staged file.
+    expect(code).not.toBe(EXIT_OK);
   });
 
   /**
