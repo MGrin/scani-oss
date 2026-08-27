@@ -19,6 +19,20 @@ version heading stays there permanently, above every future release. This
 comment is deliberately in that position; explanatory prose should not be.
 -->
 
+## [0.25.0](https://github.com/MGrin/scani-oss/compare/v0.24.1...v0.25.0) (2026-08-27)
+
+
+### Features
+
+* **scripts:** census tRPC procedure callers in both call forms ([1570c96](https://github.com/MGrin/scani-oss/commit/1570c96ed1dc3daa18b9e113726af76ecf9206cf))
+
+
+### Bug Fixes
+
+* **api:** let the woff declaration reach any project that compiles fonts.ts ([1182635](https://github.com/MGrin/scani-oss/commit/1182635767ef3595762c95ca3eb5c3db47d72cae))
+* **scripts:** refuse a killed docs:check spawn instead of returning zeros ([be012d9](https://github.com/MGrin/scani-oss/commit/be012d92ae662e1a348847a6dc43c890407f10e4))
+* **scripts:** repoint the budget census at the shared docs:check runner ([79a8376](https://github.com/MGrin/scani-oss/commit/79a8376e6939a807b0b5133c77a38ce69a67abb9))
+
 ## [0.24.1](https://github.com/MGrin/scani-oss/compare/v0.24.0...v0.24.1) (2026-08-27)
 
 
