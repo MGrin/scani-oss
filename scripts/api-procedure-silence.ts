@@ -230,11 +230,15 @@ out.push('      api and a quiet one write the same nothing.');
 out.push('    - an exact total. The recorder buffers and flushes, so counts lose whatever');
 out.push('      was unflushed when a machine went away. Presence and recency are the');
 out.push('      load-bearing facts and neither is affected by a lost partial minute.');
-out.push('    - whether a caller exists OUTSIDE this repository. The second list above is');
-out.push('      split by `api-procedure-callers`, which sees only tracked files in this');
-out.push('      tree — not a dynamic call, not a saved request, not an integration nobody');
+out.push('    - whether a caller exists OUTSIDE this repository. The split above comes');
+out.push('      from `api-procedure-callers`, which sees only tracked files in this tree');
+out.push('      — not a dynamic call, not a saved request, not an integration nobody');
 out.push('      wrote down. That is why the first list is a QUESTION for whoever operates');
 out.push('      this deployment, and never a deletion list (SC-680).');
+out.push('    - how many callers that split missed. While SC-755 is open the census');
+out.push('      excludes every script sitting directly under `scripts/`, which can only');
+out.push('      UNDER-count callers — so the first list above is a CEILING and the second');
+out.push('      is a floor. Close SC-755 before acting on either.');
 out.push('');
 
 console.log(out.join('\n'));
