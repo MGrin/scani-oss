@@ -19,6 +19,19 @@ version heading stays there permanently, above every future release. This
 comment is deliberately in that position; explanatory prose should not be.
 -->
 
+## [0.24.0](https://github.com/MGrin/scani-oss/compare/v0.23.1...v0.24.0) (2026-08-27)
+
+
+### Features
+
+* **scripts:** group the unparseable notice by whether a sibling covers it ([18b18e0](https://github.com/MGrin/scani-oss/commit/18b18e0a43043428e5a403e91d06e7d26f55b52a))
+
+
+### Bug Fixes
+
+* **docs:** say that knip gates exports and types, which it has since SC-558 ([10ddddb](https://github.com/MGrin/scani-oss/commit/10ddddbf52270dd76e9cd7d7c60c591557facb9b))
+* **release:** the duplication caveat holds only if the whole branch is behind ([8c9ed1b](https://github.com/MGrin/scani-oss/commit/8c9ed1b98a85d949f3e4fe16fac9989b64d9d188))
+
 ## [0.23.1](https://github.com/MGrin/scani-oss/compare/v0.23.0...v0.23.1) (2026-08-27)
 
 
