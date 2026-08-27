@@ -180,13 +180,18 @@ const NAMES_IN_MESSAGE = 5;
 
 /**
  * The one line an operator reads at 2am. It must name a column, because
- * "schema drift" alone does not tell anyone which target was omitted — and
- * the recovery is `scripts/deploy-local.sh migrate`, which only helps if the
- * reader knows a migration is what is missing.
+ * "schema drift" alone does not tell anyone which target was omitted, and it
+ * must say that a MIGRATION is what is missing — the recovery is whatever
+ * runs migrations for this deployment, and that only helps if the reader
+ * knows which step was skipped.
+ *
+ * It names no script on purpose (SC-729). The deploy path differs by who is
+ * running this, and a message that prescribes one of them is wrong for
+ * everybody else at the moment they are least able to check.
  */
 export function describeSchemaDrift(report: SchemaDriftReport): string {
   const names = [...report.missingTables, ...report.missingColumns];
   const shown = names.slice(0, NAMES_IN_MESSAGE).join(', ');
   const rest = names.length > NAMES_IN_MESSAGE ? ` (+${names.length - NAMES_IN_MESSAGE} more)` : '';
-  return `database is behind this build: ${shown}${rest} — an unapplied migration; run: scripts/deploy-local.sh migrate`;
+  return `database is behind this build: ${shown}${rest} — an unapplied migration; run this deployment's migrate step against it`;
 }
