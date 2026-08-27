@@ -19,6 +19,13 @@ version heading stays there permanently, above every future release. This
 comment is deliberately in that position; explanatory prose should not be.
 -->
 
+## [0.24.1](https://github.com/MGrin/scani-oss/compare/v0.24.0...v0.24.1) (2026-08-27)
+
+
+### Bug Fixes
+
+* **oss-guards:** stop reading a dead git call as a determinate answer ([40adbc8](https://github.com/MGrin/scani-oss/commit/40adbc83dab9f843a1a999d4416eb90f2bf1f339))
+
 ## [0.24.0](https://github.com/MGrin/scani-oss/compare/v0.23.1...v0.24.0) (2026-08-27)
 
 
