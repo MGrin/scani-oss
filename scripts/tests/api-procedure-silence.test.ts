@@ -102,11 +102,17 @@ describe('the never-fired list is the difference, and it is split but never wide
   });
 
   /**
-   * Both halves non-empty, which is the must-be-FOUND control on the split: a
-   * classifier that put everything in one bucket would satisfy the exhaustive-
-   * and-disjoint arm above perfectly.
+   * The membership itself, not just the shape — because the exhaustive-and-
+   * disjoint arm above is satisfied perfectly by a classifier that puts
+   * everything in one bucket.
+   *
+   * This fixture gives BOTH never-fired procedures to `noCaller`, so the second
+   * half is legitimately empty here. The must-be-FOUND arm for that half is the
+   * NEXT describe, which is the only place `neverFiredWithCaller` is ever seen
+   * non-empty — delete it and a bucket nothing has ever landed in becomes
+   * indistinguishable from one that cannot be reached.
    */
-  test('both halves of the split have a member', () => {
+  test('when neither has a caller, both land in the first half and the second is empty', () => {
     expect(result.neverFiredAndNoCaller).toEqual(['delta.archive', 'gamma.everything']);
     expect(result.neverFiredWithCaller).toEqual([]);
   });
