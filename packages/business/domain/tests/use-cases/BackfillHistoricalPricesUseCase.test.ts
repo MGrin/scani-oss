@@ -51,7 +51,13 @@ let backfillCalls: Array<{ tokenId: string; at: Date; baseTokenId: string }> = [
 // distinction `attemptFailed` exists to carry (SC-171).
 let nextAttemptFailed = false;
 // Per-call result the stubbed service returns. Tests can override.
-let nextResult: (tokenId: string, at: Date, baseTokenId: string) => BackfillOneResult = (
+/**
+ * SC-449. Hoisted out of `nextResult` so `beforeEach` has something to put
+ * back. Nine tests below reassign `nextResult`, and the assignment outlives
+ * the test that made it — the test asserting `summary.inserted === 4` then
+ * runs against a sibling's stub that returns no insert, and reads 0.
+ */
+const DEFAULT_RESULT: (tokenId: string, at: Date, baseTokenId: string) => BackfillOneResult = (
   tokenId,
   at,
   baseTokenId
@@ -63,6 +69,8 @@ let nextResult: (tokenId: string, at: Date, baseTokenId: string) => BackfillOneR
   priceStored: '50000',
   providerUsed: 'stub',
 });
+
+let nextResult = DEFAULT_RESULT;
 
 /**
  * EVERY `execute` BELOW PASSES `userId`, AND IT IS LOAD-BEARING (SC-230).
@@ -195,6 +203,9 @@ beforeEach(async () => {
   fixture = await setupFixture();
   backfillCalls = [];
   nextAttemptFailed = false;
+  // SC-449. The two above were already reset here; this one was missed, and it
+  // is the one that decides what the use case reports as inserted.
+  nextResult = DEFAULT_RESULT;
 
   // A registry with one historical pricer — what a booted process looks
   // like. Without it every test runs in the "nobody was asked" state the
