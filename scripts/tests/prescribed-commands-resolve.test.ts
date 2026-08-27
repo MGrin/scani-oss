@@ -78,8 +78,15 @@ export function unresolvableCommands(
   for (const m of text.matchAll(/\bbun\s+(scripts\/[A-Za-z0-9_./-]+\.ts)/g)) {
     if (!resolvesPath(m[1] as string)) found.push(`bun ${m[1]}`);
   }
-  for (const m of text.matchAll(/\bbun run ([a-z][a-z0-9]*(?::[a-z0-9-]+)+)/g)) {
-    if (!scriptNames.has(m[1] as string)) found.push(`bun run ${m[1]}`);
+  // `run` OPTIONAL, because bun accepts both and our own docs use both.
+  // SC-668: 31 sites across CLAUDE.md, README.md, CONTRIBUTING.md, .env.example
+  // and two PUBLISHED docs pages wrote `bun dev:worker` rather than
+  // `bun run dev:worker`, so the form was correct and only the target was
+  // absent — and this check, matching `bun run` alone, reported clean over
+  // every one of them. The offence is reported as WRITTEN rather than
+  // normalised, so the reader can find the line.
+  for (const m of text.matchAll(/\bbun (?:run )?([a-z][a-z0-9]*(?::[a-z0-9-]+)+)/g)) {
+    if (!scriptNames.has(m[1] as string)) found.push(m[0] as string);
   }
   return found;
 }
@@ -113,15 +120,21 @@ describe('a prescribed command resolves in this repo', () => {
     // could not see it.
     const absentPath = `${'scripts'}/definitely-absent-sc656.ts`;
     const absentName = `${'definitely'}:absent`;
-    const probe = `run \`bun ${absentPath}\` and \`bun run ${absentName}\``;
+    // Both spellings of the script form, because SC-668 is the one where a
+    // check that knew only the `run` spelling read 31 broken sites written in
+    // the bare spelling as clean. Neither spelling is written out here: this
+    // check reads its own source, and a literal example naming an absent
+    // script would be a live offence in a tracked file.
+    const probe = `run \`bun ${absentPath}\`, \`bun run ${absentName}\` and \`bun ${absentName}\``;
     expect(unresolvableCommands(probe, resolvesPath, scriptNames)).toEqual([
       `bun ${absentPath}`,
       `bun run ${absentName}`,
+      `bun ${absentName}`,
     ]);
 
     // These two resolve, so they are safe to spell out — and spelling them
     // out is the point: the anti-probe has to be the real shape.
-    const antiProbe = 'run `bun scripts/migrate.ts`, or `bun run db:migrate`';
+    const antiProbe = 'run `bun scripts/migrate.ts`, `bun run db:migrate`, or `bun db:migrate`';
     expect(unresolvableCommands(antiProbe, resolvesPath, scriptNames)).toEqual([]);
   });
 
