@@ -98,6 +98,24 @@ describe('no test file spawns docs:check without the guard', () => {
   // its own docblock.
   const DIRECT_SPAWN = new RegExp(`spawnSync\\(\\s*\\[\\s*['"]bun['"][^\\]]*check-${'docs'}\\.ts`);
 
+  // ENUMERATED FROM DISK, NOT FROM `git ls-files`, and the reason is a failure
+  // rather than a preference. An index-reading guard cannot see a file that has
+  // been written and not yet committed, so it reports clean over a tree that
+  // does not contain the change being checked — which is how a new router
+  // passed `docs:check` and a full local gate, and was first caught by CI,
+  // where the working tree and HEAD are necessarily the same thing.
+  //
+  // Switching this to the index reads as tidying and would silently install
+  // that hazard, so the sentence above is the one to disbelieve first.
+  //
+  // The cost is that an untracked scratch `*.test.ts` left in this directory
+  // joins the population and can redden this. That is the correct outcome and
+  // not a false positive: a file that runs the checker inline is the thing
+  // being banned whether or not anyone has committed it yet.
+  //
+  // It also means this population takes files nobody's diff mentions — a peer
+  // adding a test here enters it on merge, and no path comparison expresses
+  // that relationship.
   const testFiles = readdirSync(TESTS_DIR).filter((f) => f.endsWith('.test.ts'));
 
   test('CONTROL — the detector matches the shape it bans', () => {
