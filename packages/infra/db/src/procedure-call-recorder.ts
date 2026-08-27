@@ -117,7 +117,16 @@ export function createProcedureCallRecorder(
 export const writeProcedureCallsToDb: ProcedureCallWriter = async (tallies) => {
   await db
     .insert(apiProcedureCalls)
-    .values(tallies)
+    .values(
+      tallies.map((t) => ({
+        procedure: t.procedure,
+        calls: t.calls,
+        // Both timestamps are this flush's. On a first insert they are equal;
+        // afterwards only `lastSeenAt` moves.
+        firstSeenAt: t.lastSeenAt,
+        lastSeenAt: t.lastSeenAt,
+      }))
+    )
     .onConflictDoUpdate({
       target: apiProcedureCalls.procedure,
       set: {
@@ -125,6 +134,9 @@ export const writeProcedureCallsToDb: ProcedureCallWriter = async (tallies) => {
         // makes the total cumulative across every machine and every deploy.
         calls: sql`${apiProcedureCalls.calls} + excluded.calls`,
         lastSeenAt: sql`excluded.last_seen_at`,
+        // firstSeenAt is DELIBERATELY absent from this set. It dates the
+        // record, so advancing it would silently shorten every observation
+        // window that has already been quoted.
       },
     });
 };

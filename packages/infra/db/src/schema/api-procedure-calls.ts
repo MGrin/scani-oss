@@ -16,6 +16,11 @@ import { bigint, pgTable, text, timestamp } from 'drizzle-orm/pg-core';
 export const apiProcedureCalls = pgTable('api_procedure_calls', {
   procedure: text('procedure').primaryKey(),
   calls: bigint('calls', { mode: 'number' }).notNull().default(0),
+  // Set once, on the row's first flush, and never advanced. `min(first_seen_at)`
+  // across the table is what dates the record as a whole — an ABSENT row means
+  // "not called since recording began", and without that date the sentence has
+  // no subject.
+  firstSeenAt: timestamp('first_seen_at', { withTimezone: true }).notNull().defaultNow(),
   lastSeenAt: timestamp('last_seen_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
