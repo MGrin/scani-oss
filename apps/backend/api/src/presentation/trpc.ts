@@ -1,3 +1,4 @@
+import { procedureCallRecorder } from '@scani/db';
 import { demoIdentity } from '@scani/domain/demo';
 import {
   createComponentLogger,
@@ -213,6 +214,17 @@ function reportUnrecognizedKeys(
 
 // Logging middleware for all procedures
 const loggingMiddleware = t.middleware(async ({ ctx, path, type, input, next }) => {
+  // Retained record of which procedures anything still calls (SC-742).
+  //
+  // BEFORE `next()`, not in a `finally` and not in the `catch`. The docblock
+  // above this one records what the `catch` costs: tRPC v10 middlewares do
+  // not throw a failed `next()`, so a hook placed there is born silent and
+  // reads as correct. Counting the INVOCATION rather than the OUTCOME removes
+  // the branch entirely — a refused, thrown and successful call all count,
+  // which is what "is anything calling this" means. Buffered in memory; see
+  // `procedure-call-recorder.ts` for why it never writes on the request path.
+  procedureCallRecorder.record(path);
+
   const timer = createTimer();
   const procedureLogger = trpcLogger.child({
     requestId: ctx.requestId,
