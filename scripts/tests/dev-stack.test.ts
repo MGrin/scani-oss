@@ -4,6 +4,7 @@ import { join, resolve } from 'node:path';
 import {
   composeInterpolates,
   defaultProfileInterpolations,
+  defaultProfileLongRunning,
   downArgs,
   downVerdict,
   parseMode,
@@ -634,6 +635,39 @@ describe('--infra-only starts what a gate uses and nothing else (SC-706)', () =>
     const full = publishedServices('full').map((s) => s.label);
     expect(infra.length).toBeLessThan(full.length);
     for (const label of infra) expect(full).toContain(label);
+  });
+
+  test('infra names only services meant to STAY UP — a one-shot fails --wait', () => {
+    // The bug this caught, measured before the fix:
+    //   container ..-minio-init-1 exited (0)
+    //   dev-stack: UP · exit 1 · 4 running, 4 health-verified · infra-only
+    // exit 1 over a completely healthy stack. `--wait` supervises whatever it
+    // is asked to start and a one-shot exiting 0 is a FAILURE to it. It never
+    // shows in `full` mode because there the one-shots arrive as dependencies
+    // under `condition: service_completed_successfully`, which `--wait`
+    // understands — naming them directly opts out of that, exactly as naming a
+    // service opts out of its healthcheck (SC-669).
+    const longRunning = defaultProfileLongRunning();
+    expect(longRunning.length).toBeGreaterThan(0);
+    for (const name of longRunning) expect(upArgs([], 'infra')).toContain(name);
+  });
+
+  test('the one-shots are excluded from the infra argv', () => {
+    // must-be-ABSENT. `restart: "no"` is the compose file's own marker for
+    // "this exits", so the split is derived rather than listed — and these are
+    // the three names that turned a green stack into exit 1.
+    const argv = upArgs([], 'infra');
+    for (const oneShot of ['minio-init', 'env-sync', 'deps']) {
+      expect(argv).not.toContain(oneShot);
+    }
+  });
+
+  test('full mode names no services at all, so dependencies still govern it', () => {
+    // The `full` path must keep relying on compose's own dependency graph:
+    // naming services there would opt every one of them out of the
+    // `service_completed_successfully` conditions the app services declare.
+    const argv = upArgs([], 'full');
+    for (const name of defaultProfileLongRunning()) expect(argv).not.toContain(name);
   });
 
   test('the verdict says which half it brought up, on BOTH modes', () => {
