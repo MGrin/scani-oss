@@ -44,6 +44,18 @@
  * cause belongs at the moment it is still fixable — on the ordinary pull
  * request — and is a contributor-facing policy decision, not this file's.
  *
+ * SC-735 SHARPENED THAT NOTICE WITHOUT MOVING THE LINE. "Indistinguishable
+ * from the log alone" is too strong: git carries ONE coverage signal, whether
+ * another commit of the same pull request earns an entry, so the notice now
+ * groups by it and puts the likeliest losses first. It is deliberately not a
+ * predicate. The same computation reds on `483e269c` — the case cited three
+ * paragraphs up — because its cover was a different pull request 49 minutes
+ * later, while getting 3 of 3 right on the window that motivated SC-735.
+ * Passing the motivating sample and failing the documented one is what a
+ * guard looks like just before it ships, so the signal is used only to ORDER
+ * a list a human is already reading, where a wrong answer costs a glance
+ * instead of a false red on a correct changelog.
+ *
  * A SHORTFALL DOES NOT NAME ITS OWN CAUSE (SC-621). This file used to tell
  * whoever hit it that the chronological walk above was "the usual cause". That
  * was measured FALSE on the next real instance: `19e7300fb`'s committer date
@@ -116,6 +128,35 @@ export function parseSubject(subject: string): ParsedSubject | null {
 /** A breaking change is released whatever its type — it gets its own section. */
 export function earnsAReleaseNote(parsed: ParsedSubject): boolean {
   return parsed.breaking || (RELEASE_NOTE_TYPES as readonly string[]).includes(parsed.type);
+}
+
+/**
+ * SC-735. The first commit of the same pull request that earns a release note,
+ * or null. That is the one coverage signal the git log actually carries.
+ *
+ * THIS ANSWERS A NARROWER QUESTION THAN IT APPEARS TO, AND THE NOTICE SAYS SO
+ * RATHER THAN THIS FUNCTION PRETENDING OTHERWISE. `true` means the work is
+ * represented in the notes under a sibling. `false` means only that no sibling
+ * in THIS pull request represents it — not that the work is unrepresented.
+ * Measured on `483e269c` ("The self-hosted SPA sends no security headers at
+ * all"), which this file's own header cites as legitimately covered: it has
+ * zero siblings, and its cover `050fbc63 fix(self-host):` is a DIFFERENT pull
+ * request merged 49 minutes later. So a `false` here would have called that
+ * commit uncovered, and it is not.
+ *
+ * That asymmetry is why nothing FAILS on this. A predicate keying on it was
+ * built and measured: it gets 3 of 3 right on the window that motivated the
+ * ticket and reds on `483e269c`, one window over. Passing the motivating
+ * sample and failing the documented case is the shape of a guard that ships
+ * looking ready. Here the same computation only orders a list a human is
+ * already reading, so being wrong costs a glance.
+ */
+export function releasableSibling(siblingSubjects: readonly string[]): string | null {
+  for (const subject of siblingSubjects) {
+    const parsed = parseSubject(subject);
+    if (parsed !== null && earnsAReleaseNote(parsed)) return subject;
+  }
+  return null;
 }
 
 /**
@@ -307,13 +348,13 @@ if (import.meta.main) {
   if (!log.ok) blind(`could not walk ${previousTag}..${base}`);
 
   const releasable: ReleasableCommit[] = [];
-  const unparseable: { sha: string; subject: string }[] = [];
+  const unparseable: { sha: string; fullSha: string; subject: string }[] = [];
   for (const record of log.stdout.split('\x1e')) {
     const [sha, subject] = record.replace(/^\n/, '').split('\x1f');
     if (!sha || subject === undefined) continue;
     const parsed = parseSubject(subject);
     if (!parsed) {
-      unparseable.push({ sha: sha.slice(0, 9), subject });
+      unparseable.push({ sha: sha.slice(0, 9), fullSha: sha, subject });
       continue;
     }
     if (earnsAReleaseNote(parsed)) {
@@ -334,12 +375,72 @@ if (import.meta.main) {
 
   const window = `${previousTag}..${base.slice(0, 9)}`;
   if (unparseable.length > 0) {
+    const siblingSubjects = new Map<string, string[]>();
+    const merges = git([
+      'log',
+      `${previousTag}..${base}`,
+      '--first-parent',
+      '--merges',
+      '--format=%H',
+    ]);
+    for (const merge of merges.stdout.split('\n').filter(Boolean)) {
+      const branch = git(['log', `${merge}^1..${merge}^2`, '--no-merges', '--format=%H%x1f%s%x1e']);
+      const commits = branch.stdout
+        .split('\x1e')
+        .map((record) => record.replace(/^\n/, '').split('\x1f'))
+        .filter((pair): pair is [string, string] => Boolean(pair[0]) && pair[1] !== undefined);
+      for (const [sha] of commits) {
+        siblingSubjects.set(
+          sha,
+          commits.filter(([other]) => other !== sha).map(([, subject]) => subject)
+        );
+      }
+    }
+
+    const graded = unparseable.map((commit) => ({
+      ...commit,
+      covering: releasableSibling(siblingSubjects.get(commit.fullSha) ?? []),
+    }));
+    const orphaned = graded.filter(({ covering }) => covering === null);
+    const covered = graded.filter(({ covering }) => covering !== null);
+    const lines = (group: typeof graded) =>
+      group
+        .map(({ sha, subject, covering }) =>
+          covering === null
+            ? `    ${sha}  ${subject}`
+            : `    ${sha}  ${subject}\n        covered by  ${covering}`
+        )
+        .join('\n');
+
     console.log(
       `check-release-notes: notice · ${unparseable.length} commit(s) in ${window} have a ` +
         `subject release-please cannot parse, so it listed nothing for them. This does ` +
-        `not fail the run — the same work is often listed under a sibling commit — but ` +
-        `it is the second way a fix goes missing (SC-572), so read them:\n` +
-        unparseable.map(({ sha, subject }) => `    ${sha}  ${subject}`).join('\n')
+        `not fail the run — see why below — but it is the second way a fix goes missing ` +
+        `(SC-572), so read them.\n\n` +
+        (merges.ok
+          ? ''
+          : `  THE PULL-REQUEST TOPOLOGY COULD NOT BE READ, so every commit below is ` +
+            `listed as\n  having no sibling. That is this check's blindness, not a ` +
+            `finding about them.\n\n`) +
+        (orphaned.length > 0
+          ? `  NO RELEASABLE SIBLING IN THEIR OWN PULL REQUEST — read these ` +
+            `${orphaned.length} first:\n${lines(orphaned)}\n\n`
+          : '') +
+        (covered.length > 0
+          ? `  COVERED by a releasable sibling of the same pull request, so that work is ` +
+            `in the\n  notes without a bullet of its own:\n${lines(covered)}\n\n`
+          : '') +
+        `"NO RELEASABLE SIBLING" IS A PROMPT TO LOOK, NOT A VERDICT (SC-735). It says ` +
+        `only\nthat no OTHER commit of that same pull request earns an entry. Work is ` +
+        `often covered\nfrom a different pull request entirely — measured on 483e269c, ` +
+        `which this file's\nheader cites as legitimately covered: it has ZERO siblings, ` +
+        `and its cover\n050fbc63 fix(self-host): merged 49 minutes later on another pull ` +
+        `request.\n\nSo this ordering puts the likeliest losses first and proves nothing ` +
+        `about any of\nthem. A predicate keying on it was built and measured: 3 of 3 ` +
+        `right on the window\nthat motivated SC-735, and RED on 483e269c one window ` +
+        `over. Passing the motivating\nsample and failing the documented case is the ` +
+        `shape of a guard that ships looking\nready — so this one orders a list a human ` +
+        `is already reading, where being wrong\ncosts a glance, and nothing fails on it.`
     );
   }
 
