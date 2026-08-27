@@ -103,8 +103,9 @@ export function refusalMessage(target: MigrationTarget, requested: string | null
     '',
     `     bun run db:migrate -- --allow-remote ${target.host}`,
     '',
-    '   Production deploys should go through `scripts/deploy-local.sh migrate`,',
-    '   which resolves the URI from Neon and passes this for you.'
+    '   A deploy sets DATABASE_URL to the environment it is migrating and',
+    '   passes this flag itself. This refusal is for the other case: migrations',
+    '   applied from a working tree, where the target is whatever the shell had.'
   );
   return lines.join('\n');
 }
