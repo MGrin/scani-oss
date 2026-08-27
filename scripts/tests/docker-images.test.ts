@@ -428,7 +428,7 @@ describe('the prose that states the image set agrees with the manifest', () => {
  *
  * Discovery alone cannot be tightened into covering the partial namers, and
  * that is deliberate. Seven tracked files name three or four of the five and
- * are RIGHT to: `infra/terraform/demo.tf` deploys a subset, each
+ * are RIGHT to: the demo deployment brings up a subset, each
  * `docker-readmes/<x>.md` cross-links some siblings, and the dated pages under
  * `docs/implementation/` and `docs/technical/` are historical records that
  * `docs/README.md` forbids rewriting to match current infra.
