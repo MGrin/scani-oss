@@ -51,7 +51,15 @@ interface Fixture {
 
 let fixture: Fixture | null = null;
 let valuationCalls: Array<{ userId: string; at: Date; baseCurrencyId: string }> = [];
-let nextValuation: (
+/**
+ * SC-449. Hoisted out of `nextValuation` so `beforeEach` has something to put
+ * back. Six tests below reassign `nextValuation`; the assignment outlives the
+ * test that made it, and the test asserting the default value then reads
+ * whichever sibling ran last. Measured under `--randomize`: line 386 leaves
+ * 1500 and lines 484/603/731 leave 1000, against an expected 100 — the two
+ * values recorded in SC-449 and in SC-447's re-measurement respectively.
+ */
+const DEFAULT_VALUATION: (
   userId: string,
   at: Date,
   baseCurrencyId: string
@@ -84,6 +92,8 @@ let nextValuation: (
   transfersUnreviewed: 0,
   perHolding: [],
 });
+
+let nextValuation = DEFAULT_VALUATION;
 
 async function setupFixture(): Promise<Fixture> {
   // baseCurrency token (a USD-like fiat).
@@ -205,6 +215,9 @@ async function cleanupFixture(f: Fixture): Promise<void> {
 beforeEach(async () => {
   fixture = await setupFixture();
   valuationCalls = [];
+  // SC-449. The counter above was already reset here; this one was missed, and
+  // it is the one that carries the assertion's expected value.
+  nextValuation = DEFAULT_VALUATION;
 
   // Stub PnLAtTimeService — the rollup calls this directly, and it
   // internally chains to PortfolioValuationAtTimeService + CostBasisService.
