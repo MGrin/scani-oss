@@ -24,6 +24,21 @@ linker = "hoisted"
 # `--preload` explicitly, which is harmless (idempotent).
 preload = ["./packages/business/domain/test-preload.ts"]
 
-# Most repository tests run < 100ms; the safety net is for the few that
-# spin up a transaction + run an end-to-end fixture.
-timeout = 30000
+# DO NOT ADD `timeout` HERE. Bun reads this section and silently DROPS that
+# key, so the line is inert and the comment above it used to promise a safety
+# net that never existed (SC-694). `preload` above is the control: it comes
+# from this same section and does work, which is what rules out "bun ignores
+# this file" and makes the claim about the key specific.
+#
+# Measured 2026-08-27, bun 1.3.14: an 8s test under a bare `bun test <path>`
+# dies at 5000.10ms. `testTimeout`, `test-timeout` and `defaultTimeout` are
+# ignored too, so there is no spelling to reach for.
+#
+# The budget therefore has exactly two working homes, and a file needing more
+# than 5s must use one of them or it is fine in CI and flaky by hand:
+#   - `package.json`'s `test` script, which passes `--timeout 30000` on argv.
+#     That is what `bun run test` and the gate get.
+#   - `setDefaultTimeout(30_000)` from `bun:test`, at the top of the file.
+#     Invocation-independent, so an ad-hoc `bun test <path>` gets it too.
+#
+# `scripts/tests/test-timeout-budget.test.ts` fails if this comes back.
