@@ -213,15 +213,14 @@ function applyResolvedDb(): void {
   const port = Number(PORTS.API_HOST_PORT);
   const resolved = resolveStackDb(port, {
     containersPublishing: (p) =>
-      capture('docker', [
-        'ps',
+      dockerQuery('ps', [
         '--filter',
         `publish=${p}`,
         '--format',
         '{{.Names}}\t{{.Label "com.docker.compose.project"}}',
       ]),
     environmentOf: (name) =>
-      capture('docker', ['inspect', name, '--format', '{{range .Config.Env}}{{println .}}{{end}}']),
+      dockerQuery('inspect', [name, '--format', '{{range .Config.Env}}{{println .}}{{end}}']),
   });
   if ('error' in resolved) {
     SERVICE_ENV.E2E_DB_UNRESOLVED = resolved.error;
@@ -238,8 +237,23 @@ function applyResolvedDb(): void {
   );
 }
 
-function capture(cmd: string, args: string[]): { status: number; stdout: string } {
-  const r = spawnSync(cmd, args, { cwd: REPO_ROOT, encoding: 'utf8' });
+/**
+ * The ONE place this file spawns docker without `composeArgv` (SC-494).
+ *
+ * `composeArgv` exists so no compose call can ever run against an unnamed
+ * project — SC-493, where a teardown with `-v` was aimed at whatever stack was
+ * already up. These two calls are NOT compose calls: `ps` and `inspect` are
+ * read-only, take no project, and are how this file finds out WHICH project a
+ * stack it did not create belongs to. Routing them through `composeArgv` would
+ * be meaningless, and hand-assembling docker argv at each site is the thing the
+ * guard rightly forbids.
+ *
+ * So there is exactly one of them, it is named, and the verb is a separate
+ * parameter — `scripts/tests/e2e-compose-project.test.ts` reads the call sites
+ * and fails on any verb outside the read-only set.
+ */
+function dockerQuery(verb: 'ps' | 'inspect', args: string[]): { status: number; stdout: string } {
+  const r = spawnSync('docker', [verb, ...args], { cwd: REPO_ROOT, encoding: 'utf8' });
   return { status: r.status ?? 1, stdout: r.stdout ?? '' };
 }
 
