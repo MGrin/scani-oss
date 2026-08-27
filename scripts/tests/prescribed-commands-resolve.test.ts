@@ -148,6 +148,10 @@ describe('a prescribed command resolves in this repo', () => {
   });
 
   test('no tracked file prescribes a command this repo cannot run', () => {
+    // In-test, not the sibling that asserts the same thing: an empty `files`
+    // makes `offences` empty too, and this green would survive beside that
+    // red unchanged (SC-733).
+    expect(files.length).toBeGreaterThan(1000);
     const offences: string[] = [];
     for (const f of files) {
       if (EXEMPT(f)) continue;
