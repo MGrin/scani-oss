@@ -1,0 +1,61 @@
+-- 20260827183909 — sc742 api procedure call counter
+--
+-- A RETAINED ANSWER TO "IS ANYTHING STILL CALLING X".
+--
+-- SC-727 asked whether thirteen authenticated api procedures with no in-repo
+-- caller could be deleted. The in-repo half of that question was answered
+-- thoroughly. The other half — does anything OUTSIDE the repo still call them
+-- — could not be answered at all, so the ticket closed on judgement rather
+-- than on evidence. This table is that missing half.
+--
+-- ## Why a counter and not a request log
+--
+-- The question is a NEGATIVE: "has anything called X since May". A negative
+-- needs a COMPLETE record; a sample cannot produce one. That is what rules out
+-- both of the things this deployment already had:
+--
+--   * the platform log buffer holds a fixed, small number of recent lines —
+--     measured at 100 lines spanning 19 minutes on 2026-08-28;
+--   * error-reporting traces run at a 10% sample rate and are then sampled
+--     again into the searchable store.
+--
+-- Both answer "X IS called" cheaply. Neither can answer "X is NOT called",
+-- because for a procedure called once a month, zero observations is the
+-- expected reading whether or not anybody called it. An instrument whose
+-- negative result is uninformative is not a smaller version of the right
+-- instrument — it is a different one.
+--
+-- ## The shape IS the privacy guarantee
+--
+-- Three columns, and there is nowhere to put a user id, an IP address, a
+-- request id or a payload. Not because a policy forbids it — because the table
+-- has no column that could hold one. A per-request event table would answer
+-- the same question and would arrive owing a retention policy, a privacy
+-- review, and a reason to be trusted with all three.
+--
+-- It also bounds the row count by the number of procedures rather than by
+-- traffic: one row per procedure, forever, so nothing ever has to prune it and
+-- no retention job has to exist.
+--
+-- ## What the numbers do and do not mean
+--
+-- `calls` is cumulative across every machine and every deploy, and it is
+-- APPROXIMATE: the writer buffers in memory and flushes periodically, so
+-- anything unflushed when a machine goes away is lost. Presence and recency
+-- are the load-bearing facts and neither is affected by a lost partial minute.
+-- Do not reconcile this against billing or against a request count from
+-- anywhere else; it was not built to survive that comparison.
+--
+-- `last_seen_at` is the column SC-727 needed. An ABSENT ROW and a row with an
+-- old `last_seen_at` mean different things and the difference matters: absent
+-- means "not called since this table started recording", which for a procedure
+-- added later is also "not called ever". Neither means "does not exist".
+CREATE TABLE api_procedure_calls (
+  -- The tRPC procedure path, e.g. `holdings.getWithDetails`. Primary key
+  -- rather than a surrogate id: the name IS the identity here, and a
+  -- surrogate would permit two rows for one procedure, which is the only way
+  -- this table could ever disagree with itself.
+  procedure    text PRIMARY KEY,
+  calls        bigint NOT NULL DEFAULT 0,
+  last_seen_at timestamptz NOT NULL DEFAULT now()
+);
