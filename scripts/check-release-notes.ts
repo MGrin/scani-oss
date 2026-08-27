@@ -384,19 +384,40 @@ if (import.meta.main) {
         `against 17.11.2:\n\n` +
         `    override on a merge-commit PR    21 bullets, the entry listed twice\n` +
         `    override on a squash-merged PR   20 bullets, the entry listed once\n\n` +
-        `THAT CAVEAT CANNOT APPLY TO CAUSE 1, AND THE REASON IS STRUCTURAL RATHER THAN ` +
-        `lucky.\nDuplication needs the merge AND its branch commits both INSIDE the walk. ` +
-        `Cause 1 IS\nthe walk stopping early, which is exactly what puts the branch commits ` +
-        `OUTSIDE it — so\nthe merge is then the only commit of that PR carrying the body, and ` +
-        `the override\nfires precisely once. Measured on 0.23.0, a merge-merged PR with TWO ` +
-        `branch\ncommits, committer dates normalised to UTC because the walk orders by them:\n\n` +
+        `THAT CAVEAT IS CONDITIONAL ON THE WHOLE BRANCH BEING BEHIND THE STOP POINT, AND ` +
+        `THE\nCONDITION IS EASY TO READ PAST. Duplication needs the merge AND its branch ` +
+        `commits\nboth INSIDE the walk. Where cause 1 partitions a pull request cleanly — every ` +
+        `branch\ncommit outside, only the merge inside — the merge is the only commit of that PR ` +
+        `carrying\nthe body and the override fires precisely once. Measured on 0.23.0, a ` +
+        `merge-merged PR\nwith TWO branch commits, committer dates normalised to UTC because ` +
+        `the walk orders by\nthem:\n\n` +
         `    22:51:10Z  4002237  fix(scripts): bind the prose ...       branch\n` +
         `    22:56:40Z  ad5be9e  fix(scripts): do not read @scani/db    branch\n` +
         `    23:04:10Z  7145be6  the v0.22.0 tag — THE WALK STOPS HERE\n` +
         `    23:10:02Z  90eeb01  Merge pull request #272               in the walk\n\n` +
-        `Result: 10 entries, each overridden message listed ONCE. So the caveat above ` +
-        `belongs\nto cause 2, where the branch commits ARE in the walk. Read unconditionally ` +
-        `it argues\nagainst the recovery in the one case the recovery exists for.\n\n` +
+        `Result: 10 entries, each overridden message listed ONCE.\n\n` +
+        `A BRANCH THAT STRADDLES THE STOP POINT GETS BOTH EFFECTS AT ONCE, which is the case ` +
+        `this\nparagraph used to rule out. It is not a rare shape: it is any branch cut before ` +
+        `the\nrelease and finished after it, and that is the SAME condition that produces the ` +
+        `cause-1\nshortfall you are reading this for. Measured on scani-oss#281 against v0.23.0, ` +
+        `same\nnormalisation:\n\n` +
+        `    02:18:29Z  2a7af4b  fix(e2e): resolve the stack's database  branch, OUTSIDE\n` +
+        `    02:32:38Z  7b1839d  the v0.23.0 tag — THE WALK STOPS HERE\n` +
+        `    02:51:44Z  08d5613  fix(e2e): name the docker escape hatch  branch, in the walk\n` +
+        `    02:53:19Z  f0da1e2  Merge upstream/main into the branch     branch, in the walk\n` +
+        `    03:11:15Z  26b209b  Declare the e2e database target in CI   branch, in the walk\n` +
+        `    03:21:08Z  5f8f018  Merge pull request #281                 merge,  in the walk\n\n` +
+        `One commit short of the walk, FOUR commits of the same PR inside it. An override in ` +
+        `that\nbody therefore fires four times per message: measured, two override messages ` +
+        `produced\nEIGHT bullets. So there is no licence to skip the squash here, and the rule ` +
+        `above — ONE\ncommit on main for that pull request — holds without exception. Check the ` +
+        `branch against\nthe stop point first — and ANCESTRY IS THE WRONG INSTRUMENT for ` +
+        `that.\n${previousTag}..<head> will mislead you: it lists the OUTSIDE commit too, ` +
+        `because the walk\norders by COMMITTER DATE, not by reachability. Compare dates ` +
+        `directly, the same way\ncause 1 is told apart above:\n\n` +
+        `    git show -s --format='%cI %h %s' ${previousTag} <every sha of that PR>\n\n` +
+        `Any dated EARLIER than the tag is outside the walk. TWO OR MORE dated later means ` +
+        `an\noverride in that body will duplicate.\n\n` +
         `THE PRICE OF THE RECOVERY, WHICH IS REAL AND SMALL: both bullets attribute to ` +
         `90eeb01,\nthe MERGE sha. A reader following the changelog link lands on a merge ` +
         `rather than on\nthe commit that made the change. Known consequence, not a defect.\n\n` +
@@ -416,8 +437,11 @@ if (import.meta.main) {
         `append leaves a\nbullet that is VISIBLE in CHANGELOG.md and invisible to this ` +
         `check, and it goes on\nreporting a shortfall against an entry that is there.\n\n` +
         `ONE OVERRIDE BLOCK CAN CARRY SEVERAL MESSAGES, which is what you need whenever ` +
-        `a\nsingle pull request is short more than one entry — the common case, since a ` +
-        `walk\nthat stopped early missed every commit of that branch, not one of them. ` +
+        `a\nsingle pull request is short more than one entry — the common case, since a walk ` +
+        `that\nstopped early usually missed the whole branch. Usually, not always: a ` +
+        `branch that\nSTRADDLES the stop point loses only the commits cut before it, and ` +
+        `scani-oss#281 lost\none of five. Count the missing shas rather than assuming ` +
+        `either shape. ` +
         `Separate\nthem with a BLANK LINE inside the one block; do not open a second ` +
         `block, and do not\nraise a pull request per missing commit.\n\n` +
         `Measured against release-please 17.11.2's own parseConventionalCommits, with a ` +
