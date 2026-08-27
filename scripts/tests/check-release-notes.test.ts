@@ -8,6 +8,7 @@ import {
   parseSubject,
   RELEASE_NOTE_TYPES,
   type ReleasableCommit,
+  releasableSibling,
 } from '../check-release-notes';
 
 /**
@@ -308,5 +309,62 @@ describe('reading the changelog', () => {
   test('refuses a top section that is not the version being released', () => {
     expect(extractVersionSection(`# Changelog\n\n${AFTER_REPAIR}`, '0.17.0')).toBeNull();
     expect(extractVersionSection('# Changelog\n\nNo release has been cut.', '0.16.0')).toBeNull();
+  });
+});
+
+/**
+ * SC-735. The subjects below are the real ones from `MGrin/scani-oss`, in the
+ * v0.23.0..v0.23.1 window and in the v0.15.0..v0.16.0 one. They are what the
+ * notice groups on, and the last case is the reason it only GROUPS.
+ */
+describe('grouping the unparseable by sibling coverage', () => {
+  test('names the sibling that covers the work, rather than just answering yes', () => {
+    // 26b209ba7 "Declare the e2e database target in CI" — a branch commit of
+    // #281, merged with a merge commit, so its two siblings are in the window.
+    expect(
+      releasableSibling([
+        "fix(e2e): resolve the stack's database instead of assuming `scani`",
+        'fix(e2e): name the docker escape hatch, and document the vars it needs',
+      ])
+    ).toBe("fix(e2e): resolve the stack's database instead of assuming `scani`");
+  });
+
+  test('a squashed pull request has no siblings by construction', () => {
+    // 8682f5147 and 5c8ec6dbe both landed as one commit each. There is nothing
+    // for the caveat to point at, which is what puts them first in the notice.
+    expect(releasableSibling([])).toBeNull();
+  });
+
+  test('a sibling that parses but earns no entry does not count as cover', () => {
+    expect(
+      releasableSibling(['docs(scripts): say when the duplication caveat cannot apply'])
+    ).toBeNull();
+    expect(releasableSibling(['chore(deps): bump release-please'])).toBeNull();
+    expect(releasableSibling(['Collapse STRAY_BUILD onto one line to satisfy biome'])).toBeNull();
+  });
+
+  test('a releasable sibling is found among ones that are not — the control', () => {
+    expect(
+      releasableSibling([
+        'chore(deps): bump release-please',
+        'Collapse STRAY_BUILD onto one line to satisfy biome',
+        'fix(guards): see a prescribed script written without run',
+      ])
+    ).toBe('fix(guards): see a prescribed script written without run');
+  });
+
+  test('THE LIMIT: a null here is not a claim that the work is uncovered', () => {
+    // `483e269c` is the case this file's header cites as legitimately covered.
+    // It is alone on its pull request, so the signal says null — while its real
+    // cover, `050fbc63`, merged 49 minutes later on a DIFFERENT pull request.
+    // A predicate keying on this would red on a correct changelog; the notice
+    // therefore orders and never judges. If this expectation ever flips, the
+    // notice's stated limit is wrong and its wording has to change with it.
+    expect(releasableSibling([])).toBeNull();
+    expect(
+      releasableSibling([
+        'fix(self-host): serve the nine security headers the nginx image never sent',
+      ])
+    ).not.toBeNull();
   });
 });
