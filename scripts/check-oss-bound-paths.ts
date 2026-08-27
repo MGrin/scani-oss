@@ -74,8 +74,13 @@ export interface BranchFacts {
    * while being right about it (SC-712).
    */
   readonly subject?: string;
-  /** An `upstream` remote is configured at all. */
-  readonly hasUpstreamRemote: boolean;
+  /**
+   * An `upstream` remote is configured at all, or `null` when that could not
+   * be READ — `git remote` failed rather than returning an empty list. Those
+   * are different facts and `boolean` cannot hold both: an empty stdout from a
+   * dead subprocess is byte-identical to a repository with no remotes (SC-743).
+   */
+  readonly hasUpstreamRemote: boolean | null;
   /** `refs/remotes/upstream/main` resolves. */
   readonly upstreamMainResolved: boolean;
   /** `upstream/main` is an ancestor of HEAD (or HEAD is upstream/main). */
@@ -258,10 +263,23 @@ export function classifyByTree(markers: TreeMarkers, subject = 'HEAD'): Boundnes
  */
 export function classifyBranch(facts: BranchFacts): Boundness {
   const subject = facts.subject ?? 'HEAD';
+  if (facts.hasUpstreamRemote === null) {
+    // SC-743. This branch exists because the one below it claims to be
+    // DETERMINATE, and it also absorbed every blind read: the probe took
+    // `git remote`'s stdout without checking its exit status, so a subprocess
+    // that died produced `''` and the guard SKIPPED a branch bound for the
+    // mirror. Measured on a checkout that HAS the remote, by failing only
+    // `git remote`: byte-identical to the real incident.
+    return {
+      kind: 'unknown',
+      why: "could not read this repository's remotes — `git remote` failed, so whether an `upstream` exists is unknown rather than absent",
+    };
+  }
   if (!facts.hasUpstreamRemote) {
     // Determinate, not blind: with no upstream remote there is no scani-oss to
     // be bound for. This is the state of a self-hoster's clone, and of the
-    // scani-oss checkout itself.
+    // scani-oss checkout itself. The claim holds only because the blind case
+    // is taken above it.
     return { kind: 'private', why: 'no `upstream` remote is configured' };
   }
   if (!facts.upstreamMainResolved) {
@@ -527,7 +545,8 @@ export function collectTreeMarkers(ref = 'HEAD'): TreeMarkers | null {
  * `private` every time.
  */
 export function collectBranchFacts(ref = 'HEAD'): BranchFacts {
-  const hasUpstreamRemote = git(['remote']).stdout.split('\n').includes('upstream');
+  const remotes = git(['remote']);
+  const hasUpstreamRemote = remotes.ok ? remotes.stdout.split('\n').includes('upstream') : null;
   const upstreamMainResolved = git([
     'rev-parse',
     '--verify',
@@ -557,8 +576,19 @@ function main(allowNewFiles: boolean): number {
     return EXIT_OK;
   }
 
-  const staged = git(['diff', '--cached', '--name-only', '--diff-filter=ACMR']).stdout;
-  const paths = staged ? staged.split('\n') : [];
+  // SC-743, and the worse of the two: this call had the same defect as the
+  // remotes probe and fails in the opposite direction. A dead `git diff
+  // --cached` yields `''`, which reads as NOTHING IS STAGED — a clean exit 0
+  // over a branch whose staged paths were never examined. The remotes one at
+  // least printed a wrong verdict you could see.
+  const stagedResult = git(['diff', '--cached', '--name-only', '--diff-filter=ACMR']);
+  if (!stagedResult.ok) {
+    console.error(
+      `oss-bound-paths: ${VERDICT.unknown} · exit ${EXIT_UNKNOWN} · could not list the staged paths — \`git diff --cached\` failed, so NOTHING WAS CHECKED. This is not a pass.`
+    );
+    return EXIT_UNKNOWN;
+  }
+  const paths = stagedResult.stdout ? stagedResult.stdout.split('\n') : [];
   const violations = refusedPaths(paths, {
     existsUpstream: (p) => git(['cat-file', '-e', `upstream/main:${p}`]).ok,
     trackedPrivately: (p) => git(['cat-file', '-e', `origin/main:${p}`]).ok,

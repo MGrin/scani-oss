@@ -470,12 +470,16 @@ describe('an upstream-first window on real repositories (SC-659)', () => {
     return clone;
   })();
 
-  function runGuard(branch: string, stage: string): { code: number; out: string } {
+  function runGuard(
+    branch: string,
+    stage: string,
+    extraEnv: Record<string, string> = {}
+  ): { code: number; out: string } {
     git(work, 'checkout', '--quiet', branch);
     git(work, 'add', stage);
     const run = Bun.spawnSync(['bun', guard], {
       cwd: work,
-      env: { ...process.env, GIT_CEILING_DIRECTORIES: root },
+      env: { ...process.env, GIT_CEILING_DIRECTORIES: root, ...extraEnv },
       stdout: 'pipe',
       stderr: 'pipe',
     });
@@ -525,6 +529,39 @@ describe('an upstream-first window on real repositories (SC-659)', () => {
     expect(out).toContain(VERDICT.refused);
     expect(code).toBe(EXIT_REFUSED);
     expect(out).toContain('private1.ts');
+  });
+
+  /**
+   * SC-743, and the worse half of it. The staged-paths call had the same defect
+   * as the remotes probe — `.stdout` read with no `.ok` check — and it fails in
+   * the opposite direction: a dead `git diff --cached` yields `''`, which reads
+   * as NOTHING IS STAGED and exits 0. Silence that looks like success.
+   *
+   * This is the case above, byte for byte, with only `git diff --cached` made
+   * to fail. Everything else delegates, so the branch is still oss-bound and
+   * `private1.ts` is still staged and still unfit to travel. Without the fix
+   * the guard reports a CLEAN PASS over exactly the file it exists to stop.
+   */
+  test('a dead `git diff --cached` is not an empty staging area', () => {
+    git(work, 'checkout', '--quiet', '-b', 'oss-side-blind', '--no-track', 'upstream/main');
+    const from = Bun.spawnSync(['git', 'show', 'origin/main:private1.ts'], { cwd: work });
+    writeFileSync(join(work, 'private1.ts'), from.stdout);
+
+    const shimDir = mkdtempSync(join(tmpdir(), 'sc743-diff-'));
+    writeFileSync(
+      join(shimDir, 'git'),
+      '#!/bin/sh\nif [ "$1" = "diff" ]; then for a in "$@"; do [ "$a" = "--cached" ] && exit 1; done; fi\nexec /usr/bin/git "$@"\n',
+      { mode: 0o755 }
+    );
+    const { code, out } = runGuard('oss-side-blind', 'private1.ts', {
+      PATH: `${shimDir}:${process.env.PATH}`,
+    });
+    rmSync(shimDir, { recursive: true, force: true });
+
+    expect(code).toBe(EXIT_UNKNOWN);
+    expect(out).toContain('NOTHING WAS CHECKED');
+    // The failure this replaces: exit 0 with no mention of the staged file.
+    expect(code).not.toBe(EXIT_OK);
   });
 
   /**
@@ -960,5 +997,69 @@ describe("a bypass cannot wear a legitimate skip's costume (SC-639)", () => {
     // distinguished only by trailing prose that nothing reads.
     expect(VERDICT.allowed).not.toBe(VERDICT.skipped);
     expect(VERDICT.allowed).not.toBe(VERDICT.pass);
+  });
+});
+
+/**
+ * SC-743. The remotes probe read `git remote`'s stdout without checking its
+ * exit status, so a subprocess that DIED produced `''` and the guard emitted
+ * the determinate verdict "no `upstream` remote is configured" — skipping a
+ * branch that was bound for the mirror. It surfaced as a gate failure under
+ * load 26.99 and would not reproduce in isolation, because the cause was
+ * subprocess mortality rather than anything in the tree.
+ *
+ * The behavioural arm below is the confirmation that first reproduced the BUG,
+ * inverted: same shim, now asserting the guard refuses instead of skipping.
+ * It is deliberately not a unit test — the defect lived in the wiring between
+ * the probe and the classifier, and a unit test on either half alone passes.
+ */
+describe('a git call that dies is not a determinate answer (SC-743)', () => {
+  test('an unreadable remote list is unknown, not "no upstream remote"', () => {
+    const b = classifyBranch(facts({ hasUpstreamRemote: null }));
+    expect(b.kind).toBe('unknown');
+    expect(b.why).toContain('git remote` failed');
+  });
+
+  test('CONTROL: a genuinely empty remote list is still determinate', () => {
+    // Without this the test above passes on a classifier that calls EVERYTHING
+    // unknown, which would break a self-hoster's clone and the scani-oss
+    // checkout — both of which legitimately have no upstream.
+    const b = classifyBranch(facts({ hasUpstreamRemote: false }));
+    expect(b.kind).toBe('private');
+    expect(b.why).toContain('no `upstream` remote is configured');
+  });
+
+  test('end to end: `git remote` failing makes the guard refuse to answer', () => {
+    const shimDir = mkdtempSync(join(tmpdir(), 'sc743-shim-'));
+    // Fails ONLY on bare `remote`; everything else delegates, so the repo is
+    // otherwise fully readable and the guard has no other reason to complain.
+    writeFileSync(
+      join(shimDir, 'git'),
+      '#!/bin/sh\nif [ "$1" = "remote" ] && [ $# -eq 1 ]; then exit 1; fi\nexec /usr/bin/git "$@"\n',
+      { mode: 0o755 }
+    );
+    const guard = join(import.meta.dir, '..', 'check-oss-bound-paths.ts');
+    const run = Bun.spawnSync(['bun', guard], {
+      cwd: join(import.meta.dir, '..', '..'),
+      env: { ...process.env, PATH: `${shimDir}:${process.env.PATH}` },
+    });
+    const out = new TextDecoder().decode(run.stdout) + new TextDecoder().decode(run.stderr);
+    rmSync(shimDir, { recursive: true, force: true });
+
+    expect(run.exitCode).toBe(EXIT_UNKNOWN);
+    expect(out).toContain(VERDICT.unknown);
+    // The exact sentence the bug produced. If this ever comes back, the guard
+    // has gone back to reading a dead subprocess as a determinate fact.
+    expect(out).not.toContain('no `upstream` remote is configured');
+  });
+
+  test('CONTROL: without the shim the same invocation does NOT report unknown', () => {
+    // This repo has both remotes, so an `unknown` here would mean the arm above
+    // proves nothing — it would be failing for a reason unrelated to the shim.
+    const guard = join(import.meta.dir, '..', 'check-oss-bound-paths.ts');
+    const run = Bun.spawnSync(['bun', guard], { cwd: join(import.meta.dir, '..', '..') });
+    const out = new TextDecoder().decode(run.stdout) + new TextDecoder().decode(run.stderr);
+    expect(run.exitCode).not.toBe(EXIT_UNKNOWN);
+    expect(out).not.toContain('could not read this repository');
   });
 });
