@@ -33,6 +33,15 @@ export {
 } from './connection-monitor';
 export { type UpsertJobHeartbeatInput, upsertJobHeartbeat } from './job-heartbeat-writer';
 export {
+  createProcedureCallRecorder,
+  DEFAULT_FLUSH_INTERVAL_MS,
+  type ProcedureCallRecorder,
+  type ProcedureCallTally,
+  type ProcedureCallWriter,
+  procedureCallRecorder,
+  writeProcedureCallsToDb,
+} from './procedure-call-recorder';
+export {
   assertNoConflictingOptionsParam,
   assertSessionReadOnly,
   isDryRunOperatorScript,
