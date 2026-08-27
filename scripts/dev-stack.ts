@@ -74,34 +74,41 @@ export function composeInterpolates(): ReadonlySet<string> {
 }
 
 /**
- * The variables interpolated by services in the DEFAULT profile (SC-706) —
- * i.e. the ones `--infra-only` actually starts.
+ * One service block of `docker-compose.yml`, read as text (SC-706).
  *
- * Derived from the compose file rather than declared, for the reason
- * `publishedServices` is: a second list would have to be kept true by
- * somebody, and THE TWO TREES DISAGREE ABOUT THE SERVICE SET. Upstream has
- * `api` where the private tree has `backend`, and the private tree has three
- * frontends upstream does not — so a hardcoded infra list is a list that is
- * already wrong in one of the two repos on the day it is written.
- *
- * A service is infra iff it declares no `profiles:` key, which is the same
- * predicate `--profile full` selects on. `minio-init`, `env-sync` and `deps`
- * are in this half too and belong there: they are the one-shots that prepare
- * the four, and they exit.
- *
- * Read as text, like `composeInterpolates`, because `docker compose config`
- * needs the daemon and this has to answer for `dev-stack.ts env` as well.
+ * `docker compose config` would parse this properly and needs the daemon, which
+ * `dev-stack.ts env` cannot assume — the same constraint `composeInterpolates`
+ * already works under. One reader rather than two, because the two questions
+ * asked of it (which services are in the default profile, and which of those
+ * are meant to stay up) differ only in the predicate.
  */
-export function defaultProfileInterpolations(): ReadonlySet<string> {
+export interface ComposeServiceBlock {
+  readonly name: string;
+  /** No `profiles:` key, so compose starts it without `--profile`. */
+  readonly inDefaultProfile: boolean;
+  /** `restart: "no"` — the compose file's own marker for "this exits". */
+  readonly oneShot: boolean;
+  /** `${VAR}` names interpolated anywhere in the block. */
+  readonly interpolations: readonly string[];
+}
+
+export function composeServiceBlocks(): readonly ComposeServiceBlock[] {
   const source = readFileSync(resolve(REPO_ROOT, 'docker-compose.yml'), 'utf8');
-  const vars = new Set<string>();
+  const blocks: ComposeServiceBlock[] = [];
   let inServices = false;
+  let name: string | null = null;
   let body: string[] = [];
   const flush = () => {
-    const text = body.join('\n');
-    if (body.length > 0 && !/^ {4}profiles:/m.test(text)) {
-      for (const m of text.matchAll(/\$\{([A-Z_][A-Z0-9_]*)/g)) vars.add(m[1] as string);
+    if (name !== null) {
+      const text = body.join('\n');
+      blocks.push({
+        name,
+        inDefaultProfile: !/^ {4}profiles:/m.test(text),
+        oneShot: /^ {4}restart:\s*["']?no["']?\s*$/m.test(text),
+        interpolations: [...text.matchAll(/\$\{([A-Z_][A-Z0-9_]*)/g)].map((m) => m[1] as string),
+      });
     }
+    name = null;
     body = [];
   };
   for (const line of source.split('\n')) {
@@ -115,11 +122,56 @@ export function defaultProfileInterpolations(): ReadonlySet<string> {
       continue;
     }
     if (!inServices) continue;
-    if (/^ {2}[a-zA-Z0-9_-]+:\s*$/.test(line)) flush();
-    else body.push(line);
+    const m = /^ {2}([a-zA-Z0-9_-]+):\s*$/.exec(line);
+    if (m) {
+      flush();
+      name = m[1] as string;
+    } else body.push(line);
   }
   flush();
-  return vars;
+  return blocks;
+}
+
+/**
+ * The variables interpolated by services in the DEFAULT profile — i.e. the
+ * ones `--infra-only` actually starts (SC-706).
+ *
+ * Derived rather than declared, for the reason `publishedServices` is: a
+ * second list would have to be kept true by somebody, and THE TWO TREES
+ * DISAGREE ABOUT THE SERVICE SET. Upstream has `api` where the private tree
+ * has `backend`, and the private tree has frontends upstream does not — so a
+ * hardcoded infra list is already wrong in one of the two repos on the day it
+ * is written.
+ */
+export function defaultProfileInterpolations(): ReadonlySet<string> {
+  return new Set(
+    composeServiceBlocks()
+      .filter((b) => b.inDefaultProfile)
+      .flatMap((b) => b.interpolations)
+  );
+}
+
+/**
+ * The DEFAULT-profile services meant to keep running (SC-706).
+ *
+ * `--wait` supervises whatever it is asked to start, and a one-shot that exits
+ * 0 is a FAILURE to it. That is invisible in `full` mode because there the
+ * one-shots are never asked for directly — they arrive as dependencies under
+ * `condition: service_completed_successfully`, which `--wait` understands. Ask
+ * for them by name, as the default profile does, and compose returns 1 over a
+ * stack that is completely healthy:
+ *
+ *   container ..-minio-init-1 exited (0)
+ *   dev-stack: UP · exit 1 · 4 running, 4 health-verified · infra-only
+ *
+ * This is the trap the `upArgs` docblock names for healthchecks with the sign
+ * flipped: naming a service explicitly opts it out of the dependency machinery
+ * that made its lifecycle legible.
+ */
+export function defaultProfileLongRunning(): readonly string[] {
+  return composeServiceBlocks()
+    .filter((b) => b.inDefaultProfile && !b.oneShot)
+    .map((b) => b.name);
 }
 
 /**
@@ -384,6 +436,12 @@ export function upArgs(passthrough: readonly string[] = [], mode: StackMode = 'f
     '-d',
     '--build',
     '--wait',
+    // Named, so `--wait` supervises only what is meant to stay up. See
+    // `defaultProfileLongRunning`: asking it to wait on a one-shot returns 1
+    // over a healthy stack. The one-shots are omitted rather than started
+    // unwaited — `env-sync` and `deps` prepare the APP containers this mode
+    // does not run, and `sync-env.ts` has already run on the host by here.
+    ...(mode === 'infra' ? defaultProfileLongRunning() : []),
     ...passthrough,
   ];
 }
