@@ -19,6 +19,19 @@ version heading stays there permanently, above every future release. This
 comment is deliberately in that position; explanatory prose should not be.
 -->
 
+## [0.26.0](https://github.com/MGrin/scani-oss/compare/v0.25.0...v0.26.0) (2026-08-27)
+
+
+### Features
+
+* **api:** record which tRPC procedures anything still calls ([600ebac](https://github.com/MGrin/scani-oss/commit/600ebac0874721311a0e3de91a69452986dcc765))
+* **db:** date the procedure-call record with first_seen_at ([c1c18bb](https://github.com/MGrin/scani-oss/commit/c1c18bb95d6eb4b5659539777e0fb81584ac323f))
+
+
+### Bug Fixes
+
+* **scripts:** normalise the release-notes discriminator to UTC ([600ebac](https://github.com/MGrin/scani-oss/commit/600ebac0874721311a0e3de91a69452986dcc765))
+
 ## [0.25.0](https://github.com/MGrin/scani-oss/compare/v0.24.1...v0.25.0) (2026-08-27)
 
 
