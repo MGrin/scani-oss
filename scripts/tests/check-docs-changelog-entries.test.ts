@@ -2,6 +2,7 @@ import { afterEach, describe, expect, setDefaultTimeout, test } from 'bun:test';
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { runCheckDocs } from '../lib/run-check-docs';
 import { assertRepoFixtureIsIgnored } from '../lib/test-fixture-corpses';
 
 /**
@@ -100,7 +101,16 @@ function fixture(rel: string, body: string): string {
   return rel;
 }
 
-/** Does `queue-store-claims` fire with `staged` present in a throwaway index? */
+/**
+ * Does `queue-store-claims` fire with `staged` present in a throwaway index?
+ *
+ * THE WORST OF SC-730'S SIX SITES, because this one discards the exit code
+ * entirely and asks only whether the output mentions the check. A killed
+ * subprocess returns `''`, `''.includes(...)` is `false`, and the two tests
+ * below asserting `toBe(false)` pass GREEN over a check that never ran. The
+ * other five sites at least turned a dead spawn into a red — misdirected, but
+ * loud. `runCheckDocs` refuses the dead spawn before the boolean is computed.
+ */
 function queueCheckFires(staged: string[]): boolean {
   const env = { ...process.env, GIT_INDEX_FILE: SCRATCH_INDEX };
   const git = (args: string[]) => Bun.spawnSync(['git', ...args], { cwd: REPO_ROOT, env });
@@ -117,8 +127,7 @@ function queueCheckFires(staged: string[]): boolean {
         `${add.stderr.toString().trim()}`
     );
   }
-  const run = Bun.spawnSync(['bun', 'scripts/check-docs.ts'], { cwd: REPO_ROOT, env });
-  return `${run.stdout.toString()}${run.stderr.toString()}`.includes('queue-store-claims');
+  return runCheckDocs(REPO_ROOT, { env }).output.includes('queue-store-claims');
 }
 
 afterEach(() => {
