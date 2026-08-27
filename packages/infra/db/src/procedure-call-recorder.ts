@@ -114,8 +114,13 @@ export function createProcedureCallRecorder(
   };
 }
 
-export const writeProcedureCallsToDb: ProcedureCallWriter = async (tallies) => {
-  await db
+/**
+ * The upsert, built but not executed — so a test can read the SQL this
+ * actually generates instead of reading the comment below and agreeing with
+ * it. A comment cannot fail; rendered SQL can.
+ */
+export function buildProcedureCallUpsert(tallies: ProcedureCallTally[]) {
+  return db
     .insert(apiProcedureCalls)
     .values(
       tallies.map((t) => ({
@@ -134,11 +139,25 @@ export const writeProcedureCallsToDb: ProcedureCallWriter = async (tallies) => {
         // makes the total cumulative across every machine and every deploy.
         calls: sql`${apiProcedureCalls.calls} + excluded.calls`,
         lastSeenAt: sql`excluded.last_seen_at`,
-        // firstSeenAt is DELIBERATELY absent from this set. It dates the
-        // record, so advancing it would silently shorten every observation
-        // window that has already been quoted.
+        // firstSeenAt IS DELIBERATELY ABSENT FROM THIS SET. DO NOT ADD IT.
+        //
+        // An upsert that does not set one of its own columns reads as an
+        // oversight, and adding it looks like a one-line completion. It is
+        // not: `first_seen_at` DATES the record, and advancing it silently
+        // shortens every observation window anybody has already quoted —
+        // with no error, no failing row, and a diff nobody would question.
+        // That is this column's own failure mode arriving through the
+        // column itself.
+        //
+        // Pinned by `the upsert never advances first_seen_at` in
+        // `tests/procedure-call-recorder.test.ts`, which reads the rendered
+        // SQL rather than this comment.
       },
     });
+}
+
+export const writeProcedureCallsToDb: ProcedureCallWriter = async (tallies) => {
+  await buildProcedureCallUpsert(tallies);
 };
 
 /**

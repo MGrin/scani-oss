@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  buildProcedureCallUpsert,
   createProcedureCallRecorder,
   type ProcedureCallTally,
 } from '../src/procedure-call-recorder';
@@ -100,6 +101,41 @@ describe('procedure call recorder', () => {
     expect(rec.pending()).toEqual(['a.one']);
     await rec.flush();
     expect(rec.pending()).toEqual([]);
+  });
+
+  /**
+   * `first_seen_at` dates the whole record: an absent row means "not called
+   * since recording began", and `min(first_seen_at)` is the only thing that
+   * says when that was. Advancing it on conflict would silently shorten every
+   * observation window already quoted — no error, no failing row, no diff
+   * anyone would question.
+   *
+   * The hazard is that omitting one column from an upsert's `set` reads as an
+   * oversight, so the damaging edit looks like a one-line completion. A
+   * comment cannot refuse that edit; this reads the SQL drizzle actually
+   * generates.
+   *
+   * Both arms are needed. `not.toContain` alone passes vacuously against an
+   * empty string or a builder that stopped emitting an update clause at all —
+   * which is why the found-arm asserts the columns that MUST be updated.
+   */
+  test('the upsert never advances first_seen_at', () => {
+    const { sql: rendered } = buildProcedureCallUpsert([
+      { procedure: 'a.one', calls: 1, lastSeenAt: new Date('2026-08-28T00:00:00Z') },
+    ]).toSQL();
+
+    const update = rendered.slice(rendered.indexOf('do update set'));
+    expect(update).not.toBe(''); // the population exists before anything is asserted absent
+
+    // must-be-FOUND: the two columns a flush is supposed to move
+    expect(update).toContain('"calls"');
+    expect(update).toContain('"last_seen_at"');
+    // must-be-ABSENT: the column that dates the record
+    expect(update).not.toContain('"first_seen_at"');
+
+    // and it IS written on insert — otherwise "absent from the update" would
+    // be satisfied by a column nothing ever sets.
+    expect(rendered.slice(0, rendered.indexOf('do update set'))).toContain('"first_seen_at"');
   });
 
   test('every tally in one flush carries the same timestamp', async () => {
