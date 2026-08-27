@@ -1,3 +1,16 @@
+/// <reference path="./assets.d.ts" />
+// The `declare module '*.woff'` this file needs reaches a program only if that
+// program INCLUDES `assets.d.ts`. `apps/backend/api/tsconfig.json` does, via
+// `src/**/*` — so the api's own type-check has always been green and the
+// dependency was invisible. Any OTHER project that reaches this file through
+// the import graph does not, and gets 17 x TS2307 naming modules that exist on
+// disk: `scripts/tsconfig.json` includes `scripts/**/*.ts` and nothing else, so
+// the first script to import the api router hit exactly that (SC-728).
+//
+// The reference is here rather than an entry in the other project's `include`
+// because a declaration belongs with the file that cannot compile without it.
+// Put in a config, it fixes one importer and waits for the next one.
+
 import monoCyrillic from '@fontsource/ibm-plex-mono/files/ibm-plex-mono-cyrillic-500-normal.woff' with {
   type: 'file',
 };
