@@ -167,9 +167,17 @@ describe('the constants may not come back', () => {
   test('the stripper leaves code intact — control for the four guards below', () => {
     // Without this, a stripper that returned '' would satisfy every
     // not-toContain assertion in this block.
-    expect(FIXTURE).toContain('process.env.POSTGRES_CONTAINER');
-    expect(FIXTURE).toContain('process.env.E2E_DB_NAME');
-    expect(FIXTURE).toContain('docker');
+    //
+    // Matched with a trailing word boundary, and that is the whole assertion.
+    // These were `toContain` until a mutant walked through them: renaming the
+    // fixture's reads to `POSTGRES_CONTAINERX` and `E2E_DB_NAMEX` left this
+    // file at 27 pass / 0 fail, because the new name contains the old one.
+    // Nothing else in the block could have caught it either — the four guards
+    // it controls are all must-be-ABSENT, so a fixture reading a variable that
+    // nothing on earth sets satisfies every one of them.
+    expect(FIXTURE).toMatch(/process\.env\.POSTGRES_CONTAINER\b/);
+    expect(FIXTURE).toMatch(/process\.env\.E2E_DB_NAME\b/);
+    expect(FIXTURE).toMatch(/\bdocker\b/);
   });
 
   test('no hardcoded database name', () => {
