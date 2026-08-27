@@ -435,11 +435,18 @@ Reference implementations: `packages/infra/email/src/config.ts`,
   exempt and tracks Bun's release cadence via `latest`. Config:
   `.syncpackrc.json`.
 - **`bun run deps:fix`** — syncpack auto-fix.
-- **`bun run deps:unused`** — `knip --dependencies --include files`:
-  unused **files** plus unused / unlisted / unresolved dependencies. Unused
-  **exports and types** are `off` in `knip.json` on purpose — 79 and 70 of
-  them respectively on the tree that shipped this, which is a triage rather
-  than a gate. Test files (`**/*.test.ts`) are excluded from the scan.
+- **`bun run deps:unused`** — `knip --dependencies --include files,exports,types`:
+  unused **files, exports and types** plus unused / unlisted / unresolved
+  dependencies. All three are gated as of SC-558 (`7b8064463`) — this entry
+  said exports and types were `off` until SC-739, describing the tree before
+  it. `knip.json`'s `rules` block carries `"exports": "error"` and
+  `"types": "error"`; what remains `"off"` is the narrower `nsExports`,
+  `nsTypes` and `enumMembers`, so this was a coarse exclusion replaced by a
+  precise one rather than a switch flipped. The counts that used to sit here,
+  "79 and 70", described the pre-SC-558 tree; SC-558's own subject says it
+  triaged 133, and neither is reconciled with the other because there is no
+  basis to prefer either. Test files (`**/*.test.ts`) are excluded from the
+  scan.
   `scripts/*.ts` and `apps/e2e/scripts/*.ts` are declared as entry points
   because they are invoked by hand or by a shell script and knip cannot infer
   either; without that the run reports them all as unused, including
@@ -477,8 +484,11 @@ Workflows in `.github/workflows/`:
 
 - `ci.yml` — path-filtered jobs:
   - `validate-code` — Biome lint + parallel `tsgo --noEmit` across all workspaces.
-  - `validate-deps` — `syncpack lint` + `knip --dependencies --include files`
-    + `ci:gen:check` (when lockfile/config files **or** source files changed).
+  - `validate-deps` — runs `bun run deps:lint`, `bun run deps:unused` and
+    `bun run ci:gen:check` (when lockfile/config files **or** source files
+    changed). It invokes the package scripts rather than inlining their flags,
+    and so does this line as of SC-739: the flags were copied into prose here
+    and drifted at SC-558 without anything noticing.
   - `test` — Postgres 16 service container; runs `bun run db:migrate`
     then `bun test --preload ./packages/business/domain/test-preload.ts $PATHS --timeout 30000`.
   - `secret-scan` — grep-based secret detection (always runs).
