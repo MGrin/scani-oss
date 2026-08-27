@@ -201,3 +201,41 @@ describe('the constants may not come back', () => {
     expect(FIXTURE).toMatch(/psql exited \$\{code\} against \$\{container\}\/\$\{database\}/);
   });
 });
+
+describe('CI runs playwright directly, so CI has to declare the target', () => {
+  /**
+   * SC-494's own regression. The `E2E (Playwright)` job runs
+   * `bunx playwright test` WITHOUT going through `apps/e2e/scripts/run.ts`, so
+   * the runner's discovery never executes there and the fixture has nothing to
+   * read. It used to work by accident: the fixture's hardcoded fallbacks were
+   * exactly what that job produces — correct in CI, silently wrong in every
+   * checkout that is not it.
+   *
+   * Removing the fallbacks turned that accident into four red specs, which is
+   * the right failure and the reason this guard exists rather than a second
+   * default.
+   *
+   * The upstream mirror's CI is the ONLY CI this project has (the private repo
+   * is billing-blocked), and the e2e suite is not part of `bun run test` — so
+   * no local gate can reach this. A source guard is the only check that runs
+   * where the defect lives.
+   */
+  const WORKFLOW = readFileSync(new URL('../../.github/workflows/ci.yml', import.meta.url), 'utf8');
+  const step = WORKFLOW.slice(WORKFLOW.indexOf('- name: Run Playwright suite'));
+
+  test('the playwright step sets both variables the fixture requires', () => {
+    expect(step).toContain('POSTGRES_CONTAINER:');
+    expect(step).toContain('E2E_DB_NAME:');
+  });
+
+  test('the container is derived from the project name, not repeated as a literal', () => {
+    // Two copies of `mgrin-e2e-suite` is how the pair drifts apart later.
+    expect(step).toMatch(/POSTGRES_CONTAINER: \$\{\{ env\.COMPOSE_PROJECT_NAME \}\}-postgres-1/);
+  });
+
+  test('the job still sets the project name the derivation reads', () => {
+    // The control: without this, the assertion above passes against a workflow
+    // that interpolates an empty string and produces `-postgres-1`.
+    expect(WORKFLOW).toContain('COMPOSE_PROJECT_NAME: mgrin-e2e-suite');
+  });
+});
