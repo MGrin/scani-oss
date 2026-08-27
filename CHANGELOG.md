@@ -19,6 +19,26 @@ version heading stays there permanently, above every future release. This
 comment is deliberately in that position; explanatory prose should not be.
 -->
 
+## [0.23.0](https://github.com/MGrin/scani-oss/compare/v0.22.0...v0.23.0) (2026-08-27)
+
+
+### Features
+
+* **dev-stack:** start only what a gate uses, with --infra-only ([4699301](https://github.com/MGrin/scani-oss/commit/4699301770b2a498e65b91f725f72e73647fc0eb))
+* **oss-guards:** let the branch classifier answer about a ref, not just HEAD ([3780923](https://github.com/MGrin/scani-oss/commit/3780923c564432ff4b67121779c12bdcf7374963))
+* **scripts:** say the pr-ready check is not available here ([b0ffceb](https://github.com/MGrin/scani-oss/commit/b0ffceb3ba580b794a47ae0b40a29f047cf70bbe))
+
+
+### Bug Fixes
+
+* **dev-stack:** let --wait supervise only what is meant to stay up ([65d0e00](https://github.com/MGrin/scani-oss/commit/65d0e00de165029b5c05e972535f81e84c2b398c))
+* **hooks:** stop advising a bypass that would commit conflict markers ([8df9ec6](https://github.com/MGrin/scani-oss/commit/8df9ec63a8db5b14fb006af2256a09f124c6f1d5))
+* **scripts:** bind every file that states the published image set ([b7f2fdd](https://github.com/MGrin/scani-oss/commit/b7f2fdd2d3cb0435ccd8494628fcb5d5ff851e59))
+* **scripts:** bind the prose that states the published image set ([90eeb01](https://github.com/MGrin/scani-oss/commit/90eeb0178d63f4ee05c80a5f0fb5b764aaa27529))
+* **scripts:** do not read the workspace package @scani/db as an image ([90eeb01](https://github.com/MGrin/scani-oss/commit/90eeb0178d63f4ee05c80a5f0fb5b764aaa27529))
+* **scripts:** stop the image-set test naming a private infra path ([8885895](https://github.com/MGrin/scani-oss/commit/8885895355f48498189c68997ff106d64f6c4953))
+* **tests:** reset the stub value beforeEach, not just the counters beside it ([c84195d](https://github.com/MGrin/scani-oss/commit/c84195d6999bd7c612097833d54781107a16237e))
+
 ## [0.22.0](https://github.com/MGrin/scani-oss/compare/v0.21.0...v0.22.0) (2026-08-26)
 
 
