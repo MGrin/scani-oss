@@ -10,6 +10,7 @@ import {
   worktreeSuffix,
 } from '../../../scripts/lib/worktree';
 import { DEFAULT_SPEC_PROJECTS } from '../fixtures/devices';
+import { resolveStackDb } from '../lib/stack-db';
 
 const REPO_ROOT = resolve(import.meta.dir, '../../..');
 const E2E_ROOT = resolve(import.meta.dir, '..');
@@ -188,6 +189,74 @@ export function projectFlagEatsPath(args: readonly string[]): string | null {
   return null;
 }
 
+/**
+ * MODE A DOES NOT KNOW WHOSE STACK IT FOUND (SC-494).
+ *
+ * Mode A is chosen by probing `${API_BASE_URL}/health`, which says an api
+ * answered and nothing about which stack it belongs to. `fixtures/db.ts` used
+ * to fill that gap with constants — container `mgrin-e2e-suite-postgres-1`,
+ * database `scani` — and a reused `bun dev:stack` uses
+ * `scani_dev_<label>_<hash>` (SC-429) while `scani` sits there EMPTY, 0
+ * tables. The direct-SQL spec then failed as though OTP storage were broken.
+ *
+ * So ask the api that ANSWERED. Whatever publishes that port is the process
+ * under test, and its own `DATABASE_URL` cannot disagree with it. There is no
+ * fallback: on any failure the REASON travels to the point of use in
+ * `E2E_DB_UNRESOLVED`, and `fixtures/db.ts` refuses with it rather than
+ * querying something plausible.
+ *
+ * This does NOT fail the run. Exactly one spec needs a database; the other
+ * sixty-odd are unaffected by a stack whose Postgres we cannot name, and
+ * refusing all of them would be a worse trade than the bug.
+ */
+function applyResolvedDb(): void {
+  const port = Number(PORTS.API_HOST_PORT);
+  const resolved = resolveStackDb(port, {
+    containersPublishing: (p) =>
+      dockerQuery('ps', [
+        '--filter',
+        `publish=${p}`,
+        '--format',
+        '{{.Names}}\t{{.Label "com.docker.compose.project"}}',
+      ]),
+    environmentOf: (name) =>
+      dockerQuery('inspect', [name, '--format', '{{range .Config.Env}}{{println .}}{{end}}']),
+  });
+  if ('error' in resolved) {
+    SERVICE_ENV.E2E_DB_UNRESOLVED = resolved.error;
+    console.log(`Mode A: could not determine this stack's database — ${resolved.error}`);
+    return;
+  }
+  SERVICE_ENV.POSTGRES_CONTAINER = resolved.container;
+  SERVICE_ENV.E2E_DB_NAME = resolved.database;
+  // intentional: the one line that lets a person check the suite queried the
+  // database they think it did. SC-500 made `gate-db` name the database it
+  // reached for the same reason.
+  console.log(
+    `Mode A: database ${resolved.database} on ${resolved.container} (project ${resolved.project}).`
+  );
+}
+
+/**
+ * The ONE place this file spawns docker without `composeArgv` (SC-494).
+ *
+ * `composeArgv` exists so no compose call can ever run against an unnamed
+ * project — SC-493, where a teardown with `-v` was aimed at whatever stack was
+ * already up. These two calls are NOT compose calls: `ps` and `inspect` are
+ * read-only, take no project, and are how this file finds out WHICH project a
+ * stack it did not create belongs to. Routing them through `composeArgv` would
+ * be meaningless, and hand-assembling docker argv at each site is the thing the
+ * guard rightly forbids.
+ *
+ * So there is exactly one of them, it is named, and the verb is a separate
+ * parameter — `scripts/tests/e2e-compose-project.test.ts` reads the call sites
+ * and fails on any verb outside the read-only set.
+ */
+function dockerQuery(verb: 'ps' | 'inspect', args: string[]): { status: number; stdout: string } {
+  const r = spawnSync('docker', [verb, ...args], { cwd: REPO_ROOT, encoding: 'utf8' });
+  return { status: r.status ?? 1, stdout: r.stdout ?? '' };
+}
+
 async function probeStack(): Promise<boolean> {
   try {
     const res = await fetch(`${API_BASE_URL}/health`, { signal: AbortSignal.timeout(2_000) });
@@ -329,12 +398,16 @@ async function main() {
       dumpOneShotLogs();
       process.exit(upStatus);
     }
-    // The suite's two direct-SQL assertions reach Postgres by container name,
-    // which is `<project>-<service>-1` — knowable only here.
+    // The suite's direct-SQL assertions reach Postgres by container name,
+    // which is `<project>-<service>-1` — knowable only here. This run created
+    // the stack, so it also knows the database: it passes no `SCANI_DEV_DB`,
+    // and compose defaults that to `scani`.
     SERVICE_ENV.POSTGRES_CONTAINER = process.env.POSTGRES_CONTAINER ?? `${PROJECT}-postgres-1`;
+    SERVICE_ENV.E2E_DB_NAME = process.env.SCANI_DEV_DB ?? 'scani';
   } else {
     // intentional: confirm mode selection for CI logs
     console.log(`Reusing already-running stack (Mode A) at ${API_BASE_URL}.`);
+    applyResolvedDb();
   }
 
   const waitScript = resolve(E2E_ROOT, 'scripts/wait-for-stack.ts');
