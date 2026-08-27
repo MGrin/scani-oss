@@ -384,6 +384,22 @@ if (import.meta.main) {
         `against 17.11.2:\n\n` +
         `    override on a merge-commit PR    21 bullets, the entry listed twice\n` +
         `    override on a squash-merged PR   20 bullets, the entry listed once\n\n` +
+        `THAT CAVEAT CANNOT APPLY TO CAUSE 1, AND THE REASON IS STRUCTURAL RATHER THAN ` +
+        `lucky.\nDuplication needs the merge AND its branch commits both INSIDE the walk. ` +
+        `Cause 1 IS\nthe walk stopping early, which is exactly what puts the branch commits ` +
+        `OUTSIDE it — so\nthe merge is then the only commit of that PR carrying the body, and ` +
+        `the override\nfires precisely once. Measured on 0.23.0, a merge-merged PR with TWO ` +
+        `branch\ncommits, committer dates normalised to UTC because the walk orders by them:\n\n` +
+        `    22:51:10Z  4002237  fix(scripts): bind the prose ...       branch\n` +
+        `    22:56:40Z  ad5be9e  fix(scripts): do not read @scani/db    branch\n` +
+        `    23:04:10Z  7145be6  the v0.22.0 tag — THE WALK STOPS HERE\n` +
+        `    23:10:02Z  90eeb01  Merge pull request #272               in the walk\n\n` +
+        `Result: 10 entries, each overridden message listed ONCE. So the caveat above ` +
+        `belongs\nto cause 2, where the branch commits ARE in the walk. Read unconditionally ` +
+        `it argues\nagainst the recovery in the one case the recovery exists for.\n\n` +
+        `THE PRICE OF THE RECOVERY, WHICH IS REAL AND SMALL: both bullets attribute to ` +
+        `90eeb01,\nthe MERGE sha. A reader following the changelog link lands on a merge ` +
+        `rather than on\nthe commit that made the change. Known consequence, not a defect.\n\n` +
         `The override REPLACES the commit's own message, so the squash SUBJECT does not\n` +
         `matter here — measured: a multi-commit squash whose subject was the unparseable\n` +
         `PR title still yielded exactly one entry, the overridden one. That holds only\n` +
