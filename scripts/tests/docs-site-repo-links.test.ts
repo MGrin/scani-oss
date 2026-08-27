@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, setDefaultTimeout, test } from 'bun:test';
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+import { runCheckDocs } from '../lib/run-check-docs';
 import { sweepFixtureCorpses } from '../lib/test-fixture-corpses';
 import { replayStrandedMutations, withMutatedSources } from '../lib/test-source-mutations';
 
@@ -55,8 +56,7 @@ function git(...args: string[]): void {
 }
 
 function runCheck(): { exitCode: number; output: string } {
-  const run = Bun.spawnSync(['bun', 'scripts/check-docs.ts'], { cwd: REPO_ROOT });
-  return { exitCode: run.exitCode, output: `${run.stdout.toString()}${run.stderr.toString()}` };
+  return runCheckDocs(REPO_ROOT);
 }
 
 /**
