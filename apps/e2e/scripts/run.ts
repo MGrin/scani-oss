@@ -104,8 +104,18 @@ const FORWARDED = process.argv.slice(2).filter((arg) => !OWN_FLAGS.has(arg));
  * The api service is missing from this list on purpose — see
  * `API_SERVICE_ALIASES`, which is the one name the two repos spell
  * differently.
+ *
+ * NOT `STACK_SERVICES`, which `scripts/lib/worktree.ts` already exports as a
+ * list of PORT DESCRIPTORS. These are compose SERVICE NAMES. One test now
+ * imports both, and two exports of one name differing only in what they hold
+ * is the label/value hazard SC-724 and SC-740 were each a case of.
+ *
+ * Exported so `scripts/tests/e2e-stack-services.test.ts` can check every name
+ * against what this repo's compose file declares (SC-725). It is a list of
+ * literals about a `merge=ours` file, which is the shape that produced
+ * `no such service: backend` — see `API_SERVICE_ALIASES`.
  */
-const STACK_SERVICES = ['data-provider', 'worker', 'frontend', 'mailpit'];
+export const BOOT_SERVICES = ['data-provider', 'worker', 'frontend', 'mailpit'];
 
 /**
  * WHY THE API SERVICE IS ASKED FOR AND NOT NAMED (SC-496).
@@ -130,11 +140,39 @@ const STACK_SERVICES = ['data-provider', 'worker', 'frontend', 'mailpit'];
  * compose answering for its own file, in either repo, without this one
  * knowing which it is standing in.
  */
-const API_SERVICE_ALIASES = ['api', 'backend'];
+export const API_SERVICE_ALIASES = ['api', 'backend'];
 
 /** The `depends_on` gates above — they run to completion, so `up` reports only
  *  their exit code and their own output is where a boot failure explains itself. */
-const ONE_SHOT_SERVICES = ['migrate', 'deps', 'env-sync', 'minio-init'];
+export const ONE_SHOT_SERVICES = ['migrate', 'deps', 'env-sync', 'minio-init'];
+
+/**
+ * Which of `API_SERVICE_ALIASES` this repo's compose file declares — the pure
+ * half of `apiService()`, split out so it can be run (SC-725).
+ *
+ * SC-496 fixed the api name by ASKING compose instead of assuming it. What it
+ * could not fix is that the asking happens inside a function that spawns
+ * docker and calls `process.exit`, so the resolution itself was reachable by
+ * no test — and `apps/e2e/scripts/run.ts` is run by no CI that executes
+ * (private CI is billing-blocked, upstream CI invokes `bunx playwright test`
+ * directly and says so in its own comment). A resolution bug here therefore
+ * ships silently, which is exactly how the `backend` literal survived from the
+ * day the runner was written.
+ *
+ * Returning the error rather than printing it is the seam: the message is the
+ * half that runs in the reader, and it is asserted rather than eyeballed.
+ */
+export function resolveApiService(
+  declared: readonly string[]
+): { service: string } | { error: string } {
+  const match = API_SERVICE_ALIASES.find((name) => declared.includes(name));
+  if (match) return { service: match };
+  return {
+    error:
+      `No api service in docker-compose.yml. Looked for ${API_SERVICE_ALIASES.join(' or ')}; ` +
+      `compose declares: ${declared.join(', ') || '(nothing — the command above failed)'}`,
+  };
+}
 
 /**
  * The spec path a caller's own `--project <name>` is about to swallow, or
@@ -309,20 +347,18 @@ function composeCapture(args: string[]): string {
   return result.stdout;
 }
 
-/** Which of `API_SERVICE_ALIASES` this repo's compose file actually declares. */
+/** Asks compose what it declares, then hands the answer to `resolveApiService`. */
 function apiService(): string {
   const declared = composeCapture(['config', '--services'])
     .split('\n')
     .map((line) => line.trim())
     .filter(Boolean);
-  const match = API_SERVICE_ALIASES.find((name) => declared.includes(name));
-  if (!match) {
-    console.error(
-      `No api service in docker-compose.yml. Looked for ${API_SERVICE_ALIASES.join(' or ')}; compose declares: ${declared.join(', ') || '(nothing — the command above failed)'}`
-    );
+  const resolved = resolveApiService(declared);
+  if ('error' in resolved) {
+    console.error(resolved.error);
     process.exit(1);
   }
-  return match;
+  return resolved.service;
 }
 
 // `docker compose up` reports only `service "x" didn't complete successfully:
@@ -389,7 +425,7 @@ async function main() {
     // intentional: progress marker for CI logs, and the one place a person can
     // read which stack this run is about to create and later delete
     console.log(`Starting docker-compose stack (Mode B) — project ${PROJECT}, api ${API_BASE_URL}`);
-    const upStatus = compose(['up', '-d', '--build', apiService(), ...STACK_SERVICES], {
+    const upStatus = compose(['up', '-d', '--build', apiService(), ...BOOT_SERVICES], {
       STUB_AI: '1',
       STUB_CHAIN_DATA: '1',
     });
