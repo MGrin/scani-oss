@@ -7,7 +7,7 @@ import {
   logConfig,
   sanitizeUrl,
 } from '@scani/logging';
-import { captureException } from '@scani/logging/sentry';
+import { captureException, withSpan } from '@scani/logging/sentry';
 import type { InflowRateLimiter } from '@scani/rate-limiter';
 import { initTRPC, TRPCError } from '@trpc/server';
 import type { FetchCreateContextFnOptions } from '@trpc/server/adapters/fetch';
@@ -212,6 +212,47 @@ function reportUnrecognizedKeys(
   });
 }
 
+/**
+ * Put every tRPC call on the performance trace (SC-751).
+ *
+ * NOTHING ELSE CREATES A SERVER SPAN ON THIS PROCESS. `@sentry/node`'s default
+ * HTTP instrumentation patches `node:http`; the api is Elysia on `Bun.serve`,
+ * which does not go through it. Before this middleware the only transactions
+ * the project had ever stored were better-auth's five routes — better-auth
+ * ships its own OpenTelemetry spans, so it instrumented itself while every
+ * tRPC procedure, which is essentially the whole product surface, recorded
+ * nothing. `withSpan`'s docblock carries the measurement.
+ *
+ * OUTERMOST, ahead of logging and the demo refusal, for two reasons. A call
+ * refused by `demoReadOnly` or by the auth middleware is still a call somebody
+ * made and still costs latency, so the span has to enclose the refusal rather
+ * than start after it. And `loggingMiddleware` reports exceptions to Sentry
+ * from inside here, which is what gives those events a trace to attach to —
+ * the tie between an api error and its originating request that SC-751 records
+ * as missing.
+ *
+ * NOT `Sentry.trpcMiddleware()`, which exists and does the span part correctly.
+ * It also calls `captureException` on every `{ ok: false }` result, and this
+ * file deliberately does not: `isExpectedClientError` skips the 4xx codes so
+ * ordinary client faults do not drown real server errors. Adopting the
+ * first-party helper would report every UNAUTHORIZED poll of a protected
+ * procedure as a Sentry error and quietly reverse that decision.
+ *
+ * A batched HTTP request holds N procedure calls and therefore produces N
+ * sibling transactions, which is also what the first-party helper does. There
+ * is no parent to nest them under, per the paragraph above.
+ *
+ * Declared as a named function rather than inlined so `trpc-tracing.test.ts`
+ * can assert it is present and outermost in the SHIPPED procedure builders by
+ * identity — a hook that never fires and an event that never happens produce
+ * identical output, and this file already carries two scars from that.
+ */
+export function traceProcedureSpan<T>(opts: { path: string; next: () => Promise<T> }): Promise<T> {
+  return withSpan({ name: `trpc/${opts.path}`, op: 'rpc.server' }, opts.next);
+}
+
+const tracingMiddleware = t.middleware(traceProcedureSpan);
+
 // Logging middleware for all procedures
 const loggingMiddleware = t.middleware(async ({ ctx, path, type, input, next }) => {
   // Retained record of which procedures anything still calls (SC-742).
@@ -367,11 +408,15 @@ const demoReadOnly = t.middleware(async ({ type, path, next }) => {
 
 // Enhanced procedure with logging
 // NOTE: Request cache is shared across all procedures via HTTP-level wrapper in index.ts
-export const publicProcedure = t.procedure.use(loggingMiddleware).use(demoReadOnly);
+export const publicProcedure = t.procedure
+  .use(tracingMiddleware)
+  .use(loggingMiddleware)
+  .use(demoReadOnly);
 
 // Protected procedure that requires authentication
 // Note: dbUser is NOT checked here - it will be fetched lazily by requireAuth when needed
 export const protectedProcedure = t.procedure
+  .use(tracingMiddleware)
   .use(loggingMiddleware)
   .use(demoReadOnly)
   .use(async ({ ctx, next }) => {
