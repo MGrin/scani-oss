@@ -298,11 +298,25 @@ jobs:
       - name: Wait for stack health
         run: bun apps/e2e/scripts/wait-for-stack.ts
 
+      # SC-494. This step runs playwright DIRECTLY rather than through
+      # `apps/e2e/scripts/run.ts`, so the runner's stack-discovery never
+      # happens here and `fixtures/db.ts` has nothing to read. It used to work
+      # by accident: the fixture's hardcoded fallbacks were
+      # `mgrin-e2e-suite-postgres-1` and `scani`, which are exactly what CI
+      # produces — correct here and silently wrong in every checkout that is
+      # not this job.
+      #
+      # So CI declares them, and derives the container from the project name it
+      # already sets rather than repeating the literal. There is no default to
+      # fall back on any more: the fixture refuses and says NO QUERY WAS MADE.
       - name: Run Playwright suite
         run: cd apps/e2e && bunx playwright test
         env:
           CI: "true"
           PLAYWRIGHT_BASE_URL: http://localhost:5173
+          POSTGRES_CONTAINER: ${{ env.COMPOSE_PROJECT_NAME }}-postgres-1
+          # compose's `POSTGRES_DB`, and this repo sets no `SCANI_DEV_DB`.
+          E2E_DB_NAME: scani
           API_BASE_URL: http://localhost:3011
           MAILPIT_URL: http://localhost:8026
           DATABASE_URL: postgres://scani:scani@localhost:5433/scani?sslmode=disable

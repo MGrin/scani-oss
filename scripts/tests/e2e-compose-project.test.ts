@@ -43,7 +43,28 @@ describe('the e2e runner can only ever compose against its own project', () => {
     const dockerSpawns = SOURCE.split('\n').filter((line) => /['"]docker['"]/.test(line));
     expect(dockerSpawns.length).toBeGreaterThan(0);
     for (const line of dockerSpawns) {
-      expect(line).toContain('composeArgv(');
+      // SC-494 added the second exception, `dockerQuery`. It is NOT a compose
+      // call: `ps` and `inspect` are read-only and take no project, and they
+      // are how the runner discovers WHICH project a stack it did not create
+      // belongs to. Routing them through `composeArgv` would be meaningless.
+      // What the guard still forbids is a hand-assembled docker argv at a call
+      // site, so there is exactly one such helper and it is named here.
+      expect(line).toMatch(/composeArgv\(|spawnSync\('docker', \[verb/);
+    }
+  });
+
+  test('the non-compose escape hatch is read-only, and only these two verbs', () => {
+    // Widening the rule above is safe only while the exception cannot mutate
+    // anything. `dockerQuery` takes its verb as a separate parameter precisely
+    // so this can be read without depending on how the argv array is
+    // formatted — a check that breaks when biome rewraps a line is a check
+    // that gets deleted.
+    const verbs = [...SOURCE.matchAll(/dockerQuery\('([a-z]+)'/g)]
+      .map((m) => m[1])
+      .filter((v): v is string => v !== undefined);
+    expect(verbs.length).toBeGreaterThan(0);
+    for (const verb of verbs) {
+      expect(['ps', 'inspect']).toContain(verb);
     }
   });
 
