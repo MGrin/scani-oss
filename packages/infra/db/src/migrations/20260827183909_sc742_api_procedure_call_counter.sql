@@ -55,7 +55,14 @@ CREATE TABLE api_procedure_calls (
   -- rather than a surrogate id: the name IS the identity here, and a
   -- surrogate would permit two rows for one procedure, which is the only way
   -- this table could ever disagree with itself.
-  procedure    text PRIMARY KEY,
-  calls        bigint NOT NULL DEFAULT 0,
-  last_seen_at timestamptz NOT NULL DEFAULT now()
+  procedure     text PRIMARY KEY,
+  calls         bigint NOT NULL DEFAULT 0,
+  -- Set on the row's first flush and never advanced afterwards.
+  -- `min(first_seen_at)` is what DATES the whole record, and the record is
+  -- useless without it: an absent row means "not called since recording
+  -- began", which is a sentence with no subject until you can say when that
+  -- was. The deletion decision needs the never-fired list AND the date it
+  -- starts from.
+  first_seen_at timestamptz NOT NULL DEFAULT now(),
+  last_seen_at  timestamptz NOT NULL DEFAULT now()
 );
