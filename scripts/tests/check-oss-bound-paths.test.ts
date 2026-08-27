@@ -527,6 +527,93 @@ describe('an upstream-first window on real repositories (SC-659)', () => {
     expect(out).toContain('private1.ts');
   });
 
+  /**
+   * SC-712. THE SUBJECT IS THE REF, AND THE REF IS WHAT DECIDES.
+   *
+   * `collectBranchFacts` asked about `HEAD` and only `HEAD`, which is the right
+   * question for a hook — a hook runs on the thing being committed. It is the
+   * WRONG question for `check-oss-derivation.ts`, which is handed a fetched
+   * pull-request head as a CANDIDATE and must never check it out (checking it
+   * out is what removes the guard from the tree). That tool runs from the
+   * private root, so `HEAD` there is always a private working branch and the
+   * answer is always `private` — about a branch nobody asked about.
+   *
+   * WHY THAT IS WORSE THAN A WRONG ANSWER. `private` makes a guard SKIP, and
+   * `check-oss-derivation` exits 0 on a skip, and its caller reads 0 as
+   * `derived` — a pass. So a HEAD-shaped question there would certify every
+   * upstream pull request as correctly derived having compared nothing.
+   *
+   * The pair below is the whole claim: same directory, same second, two
+   * different refs, two different verdicts. Neither test proves anything
+   * alone — if the ref were ignored both would say `private`, and the first
+   * would fail; if the default ever stopped being `HEAD`, the second would.
+   */
+  describe('the subject is the ref, not the checkout (SC-712)', () => {
+    function boundnessIn(cwd: string, ref?: string): { kind: string; why: string } {
+      const script = join(import.meta.dir, '..', 'check-oss-bound-paths.ts');
+      const call =
+        ref === undefined ? 'collectBranchFacts()' : `collectBranchFacts(${JSON.stringify(ref)})`;
+      const run = Bun.spawnSync(
+        [
+          process.execPath,
+          '-e',
+          `import { classifyBranch, collectBranchFacts } from ${JSON.stringify(script)};
+` + `console.log(JSON.stringify(classifyBranch(${call})));`,
+        ],
+        {
+          cwd,
+          env: { ...process.env, GIT_CEILING_DIRECTORIES: root },
+          stdout: 'pipe',
+          stderr: 'pipe',
+        }
+      );
+      if (run.exitCode !== 0) {
+        throw new Error(`boundness: ${new TextDecoder().decode(run.stderr)}`);
+      }
+      return JSON.parse(new TextDecoder().decode(run.stdout));
+    }
+
+    /** MUST-BE-FOUND. A mirror-side ref, asked about from inside a private checkout. */
+    test('a mirror ref classifies oss even though the checkout is private', () => {
+      git(work, 'checkout', '--quiet', 'main');
+      expect(boundnessIn(work, 'upstream/main').kind).toBe('oss');
+    });
+
+    /** The control, same directory. Without it the test above proves only that something returned `oss`. */
+    test('the default is still HEAD, which here is private', () => {
+      git(work, 'checkout', '--quiet', 'main');
+      expect(boundnessIn(work).kind).toBe('private');
+    });
+
+    /**
+     * The verdict is the deliverable — a skip that names the wrong thing is a
+     * skip nobody can check. This is the half a `kind`-only assertion misses.
+     */
+    test('the sentence names the ref it actually examined', () => {
+      git(work, 'checkout', '--quiet', 'main');
+      const why = boundnessIn(work, 'upstream/main').why;
+      expect(why).toContain('upstream/main');
+      expect(why).not.toContain("HEAD's tree");
+    });
+
+    /**
+     * Backwards compatibility, asserted rather than assumed. Every existing
+     * caller passes no subject and every existing sentence says `HEAD`; this
+     * fails if the default is ever quietly changed to something else.
+     */
+    test('a caller that names no subject still gets HEAD in the prose', () => {
+      const b = classifyBranch({
+        hasUpstreamRemote: true,
+        upstreamMainResolved: true,
+        upstreamIsAncestor: true,
+        originIsAncestor: false,
+        treeMarkers: null,
+      });
+      expect(b.kind).toBe('oss');
+      expect(b.why).toContain('HEAD descends from');
+    });
+  });
+
   /** The third population, so neither verdict above is the only one reachable. */
   test('a private branch with no window open is still skipped', () => {
     git(work, 'checkout', '--quiet', '-b', 'no-window', '--no-track', 'origin/main');
