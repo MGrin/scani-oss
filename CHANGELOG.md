@@ -19,6 +19,19 @@ version heading stays there permanently, above every future release. This
 comment is deliberately in that position; explanatory prose should not be.
 -->
 
+## [0.27.0](https://github.com/MGrin/scani-oss/compare/v0.26.0...v0.27.0) (2026-08-27)
+
+
+### Features
+
+* **scripts:** report the api procedures that have never been called ([e2982af](https://github.com/MGrin/scani-oss/commit/e2982af8ce79e0ba5873fee76aa9b6af9e8dde8e))
+
+
+### Bug Fixes
+
+* **api:** put every tRPC call on the Sentry performance trace ([5169144](https://github.com/MGrin/scani-oss/commit/5169144c348f455e9a32ae7c5294e34a7023eb3c))
+* **scripts:** say in the output that the no-caller list is a ceiling ([bf6f5c1](https://github.com/MGrin/scani-oss/commit/bf6f5c17b8a00841acfceabb52d467c98fb8a4e0))
+
 ## [0.26.0](https://github.com/MGrin/scani-oss/compare/v0.25.0...v0.26.0) (2026-08-27)
 
 
