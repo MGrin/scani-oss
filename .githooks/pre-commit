@@ -4,7 +4,9 @@
 # Installed automatically by the `prepare` script in the root package.json
 # (runs `git config core.hooksPath .githooks` on `bun install`).
 #
-# Skip with `git commit --no-verify`.
+# Skip with `git commit --no-verify` — but NOT mid-merge, where it commits
+# conflict markers and clears MERGE_HEAD (SC-715). `fail` below says so at the
+# moment it matters, because a caution in a header nobody opens is not one.
 
 set -eu
 
@@ -17,9 +19,28 @@ GREEN=$'\033[32m'
 YELLOW=$'\033[33m'
 RESET=$'\033[0m'
 
+# A refusal that names a way around itself gets taken (SC-639), so the way it
+# names has to be safe in the state the refusal happened in. Mid-merge it is
+# not: `--no-verify` commits WHATEVER IS STAGED, and mid-merge that routinely
+# means conflict markers. Measured 2026-08-27 (SC-715): following this advice
+# during a conflicted merge produces a real merge commit whose file contains
+# `<<<<<<< HEAD`, after which MERGE_HEAD is gone and git no longer considers a
+# merge to be in progress — so nothing downstream flags it either.
+#
+# MERGE_HEAD is still present when this hook runs, which is what makes the
+# distinction available at all. Measured the same day: a hook-refused merge
+# commit leaves MERGE_HEAD in place, because the commit never happened.
 fail() {
   echo "${RED}✗ pre-commit failed:${RESET} $1" >&2
-  echo "  Fix the issue and re-stage, or bypass with \`git commit --no-verify\`." >&2
+  if [ -e "$(git rev-parse --git-path MERGE_HEAD 2>/dev/null || echo /nonexistent)" ]; then
+    echo "  You are MID-MERGE, so do not reach for \`--no-verify\` here: it would commit" >&2
+    echo "  whatever is staged, conflict markers included, and git would then stop" >&2
+    echo "  considering a merge to be in progress." >&2
+    echo "  Find them:  git diff --cached -U0 | grep -n '^+<<<<<<<'" >&2
+    echo "  Resolve the conflict, re-stage, and commit again — or \`git merge --abort\`." >&2
+  else
+    echo "  Fix the issue and re-stage, or bypass with \`git commit --no-verify\`." >&2
+  fi
   exit 1
 }
 
