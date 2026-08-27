@@ -73,9 +73,117 @@ export function composeInterpolates(): ReadonlySet<string> {
   return new Set([...source.matchAll(/\$\{([A-Z_][A-Z0-9_]*)/g)].map((m) => m[1] as string));
 }
 
-/** The subset of `STACK_SERVICES` this checkout's compose file publishes. */
-export function publishedServices(): readonly StackService[] {
-  const interpolated = composeInterpolates();
+/**
+ * One service block of `docker-compose.yml`, read as text (SC-706).
+ *
+ * `docker compose config` would parse this properly and needs the daemon, which
+ * `dev-stack.ts env` cannot assume — the same constraint `composeInterpolates`
+ * already works under. One reader rather than two, because the two questions
+ * asked of it (which services are in the default profile, and which of those
+ * are meant to stay up) differ only in the predicate.
+ */
+export interface ComposeServiceBlock {
+  readonly name: string;
+  /** No `profiles:` key, so compose starts it without `--profile`. */
+  readonly inDefaultProfile: boolean;
+  /** `restart: "no"` — the compose file's own marker for "this exits". */
+  readonly oneShot: boolean;
+  /** `${VAR}` names interpolated anywhere in the block. */
+  readonly interpolations: readonly string[];
+}
+
+export function composeServiceBlocks(): readonly ComposeServiceBlock[] {
+  const source = readFileSync(resolve(REPO_ROOT, 'docker-compose.yml'), 'utf8');
+  const blocks: ComposeServiceBlock[] = [];
+  let inServices = false;
+  let name: string | null = null;
+  let body: string[] = [];
+  const flush = () => {
+    if (name !== null) {
+      const text = body.join('\n');
+      blocks.push({
+        name,
+        inDefaultProfile: !/^ {4}profiles:/m.test(text),
+        oneShot: /^ {4}restart:\s*["']?no["']?\s*$/m.test(text),
+        interpolations: [...text.matchAll(/\$\{([A-Z_][A-Z0-9_]*)/g)].map((m) => m[1] as string),
+      });
+    }
+    name = null;
+    body = [];
+  };
+  for (const line of source.split('\n')) {
+    if (/^services:\s*$/.test(line)) {
+      inServices = true;
+      continue;
+    }
+    if (/^[a-zA-Z]/.test(line)) {
+      flush();
+      inServices = false;
+      continue;
+    }
+    if (!inServices) continue;
+    const m = /^ {2}([a-zA-Z0-9_-]+):\s*$/.exec(line);
+    if (m) {
+      flush();
+      name = m[1] as string;
+    } else body.push(line);
+  }
+  flush();
+  return blocks;
+}
+
+/**
+ * The variables interpolated by services in the DEFAULT profile — i.e. the
+ * ones `--infra-only` actually starts (SC-706).
+ *
+ * Derived rather than declared, for the reason `publishedServices` is: a
+ * second list would have to be kept true by somebody, and THE TWO TREES
+ * DISAGREE ABOUT THE SERVICE SET. Upstream has `api` where the private tree
+ * has `backend`, and the private tree has frontends upstream does not — so a
+ * hardcoded infra list is already wrong in one of the two repos on the day it
+ * is written.
+ */
+export function defaultProfileInterpolations(): ReadonlySet<string> {
+  return new Set(
+    composeServiceBlocks()
+      .filter((b) => b.inDefaultProfile)
+      .flatMap((b) => b.interpolations)
+  );
+}
+
+/**
+ * The DEFAULT-profile services meant to keep running (SC-706).
+ *
+ * `--wait` supervises whatever it is asked to start, and a one-shot that exits
+ * 0 is a FAILURE to it. That is invisible in `full` mode because there the
+ * one-shots are never asked for directly — they arrive as dependencies under
+ * `condition: service_completed_successfully`, which `--wait` understands. Ask
+ * for them by name, as the default profile does, and compose returns 1 over a
+ * stack that is completely healthy:
+ *
+ *   container ..-minio-init-1 exited (0)
+ *   dev-stack: UP · exit 1 · 4 running, 4 health-verified · infra-only
+ *
+ * This is the trap the `upArgs` docblock names for healthchecks with the sign
+ * flipped: naming a service explicitly opts it out of the dependency machinery
+ * that made its lifecycle legible.
+ */
+export function defaultProfileLongRunning(): readonly string[] {
+  return composeServiceBlocks()
+    .filter((b) => b.inDefaultProfile && !b.oneShot)
+    .map((b) => b.name);
+}
+
+/**
+ * The subset of `STACK_SERVICES` this checkout's compose file publishes.
+ *
+ * Under `infra`, the app services are dropped — otherwise `up` would print
+ * `app  http://localhost:5473` for a container it deliberately did not start,
+ * which is a false claim about where something is reachable rather than a
+ * cosmetic surplus (SC-706).
+ */
+export function publishedServices(mode: StackMode = 'full'): readonly StackService[] {
+  const interpolated = mode === 'infra' ? defaultProfileInterpolations() : composeInterpolates();
   return STACK_SERVICES.filter((service) => interpolated.has(service.env));
 }
 
@@ -127,8 +235,8 @@ export function stackEnv(
   };
 }
 
-function reachableAt(env: Record<string, string>): string {
-  const services = publishedServices();
+function reachableAt(env: Record<string, string>, mode: StackMode = 'full'): string {
+  const services = publishedServices(mode);
   if (services.length === 0) return '';
   const width = Math.max(...services.map((s) => s.label.length));
   return services
@@ -255,6 +363,13 @@ async function remainingContainers(env: Record<string, string>): Promise<string[
 }
 
 /**
+ * Which half of the compose file to start (SC-706). `full` is every service;
+ * `infra` is the four a gate actually uses, plus the one-shots that prepare
+ * them. See `upArgs` for why the distinction is a profile rather than a list.
+ */
+export type StackMode = 'full' | 'infra';
+
+/**
  * `up` waits for the healthchecks that are already declared (SC-669).
  *
  * `docker compose up -d <service>` returns once the containers have STARTED.
@@ -281,17 +396,52 @@ async function remainingContainers(env: Record<string, string>): Promise<string[
  * Exported so a test can assert the flag is present. Its absence is invisible
  * in a green run, which is how it survived alongside healthchecks that were
  * already there.
+ *
+ * `infra` STARTS WHAT A GATE USES AND NOTHING ELSE (SC-706). `bun run test`
+ * reaches Postgres, Redis, MinIO and Mailpit; it never touches a vite dev
+ * server, an api or the worker. Every gate in this fleet nevertheless started
+ * eleven containers, and measured during a live gate the three largest
+ * consumers on a 10-core box were the frontend dev servers this mode omits —
+ * `cloud-frontend` 152%, `frontend` 126%, `admin` 84%.
+ *
+ * The mechanism is one flag, because docker-compose.yml already draws the line
+ * exactly here: the four services a gate needs — and the `env-sync`, `deps`
+ * and `minio-init` one-shots that prepare them — declare no `profiles:` key,
+ * while all seven a gate does not need sit in `full`. So the infra set is not
+ * a list maintained beside the compose file, which would drift from it. It is
+ * the compose file's own default, and `--profile full` is the only difference.
+ *
+ * WHY THIS IS A FLAG ON THIS TOOL RATHER THAN A DOCUMENTED COMPOSE COMMAND.
+ * CLAUDE.md used to answer this with `docker compose up -d postgres redis
+ * mailpit minio`, and that command is worse than the waste it saves. It
+ * exports nothing, so compose takes the project name from the directory leaf
+ * — which is `scani` in EVERY bb worktree — and a second `up` does not
+ * conflict with the first, it ADOPTS and recreates the primary checkout's
+ * containers (SC-491). It also publishes `${POSTGRES_HOST_PORT:-5433}` while
+ * `gate-db` derives its own port from a sha256 over this worktree's absolute
+ * path, so the gate then finds nothing and refuses with exit 3.
+ *
+ * Note the asymmetry, because only one half is survivable: the port mismatch
+ * is LOUD and safe — exit 3, NO TESTS RAN, nothing damaged. The project-name
+ * adoption is SILENT and reaches outside the worktree that ran it. Going
+ * through this tool is what makes both impossible, since it is the one place
+ * the project name and every derived port are computed together.
  */
-export function upArgs(passthrough: readonly string[] = []): string[] {
+export function upArgs(passthrough: readonly string[] = [], mode: StackMode = 'full'): string[] {
   return [
     'docker',
     'compose',
-    '--profile',
-    'full',
+    ...(mode === 'full' ? ['--profile', 'full'] : []),
     'up',
     '-d',
     '--build',
     '--wait',
+    // Named, so `--wait` supervises only what is meant to stay up. See
+    // `defaultProfileLongRunning`: asking it to wait on a one-shot returns 1
+    // over a healthy stack. The one-shots are omitted rather than started
+    // unwaited — `env-sync` and `deps` prepare the APP containers this mode
+    // does not run, and `sync-env.ts` has already run on the host by here.
+    ...(mode === 'infra' ? defaultProfileLongRunning() : []),
     ...passthrough,
   ];
 }
@@ -324,13 +474,20 @@ export interface UpVerdict {
 export function upVerdict(
   code: number,
   health: readonly ServiceHealth[] | null,
-  project: string
+  project: string,
+  mode: StackMode = 'full'
 ): UpVerdict {
   const compose = code === 0 ? '' : ` · compose exit ${code}`;
+  // Named on BOTH modes on purpose (SC-706). A count with no provenance is
+  // what made SC-500's failure invisible, and the same shape is available
+  // here: `7 running` under infra-only is a healthy stack, and identical to
+  // what a broken `full` stack would print. Saying `full` when it is full is
+  // what stops the word's ABSENCE being read as a claim.
+  const started = mode === 'infra' ? ' · infra-only (no app services)' : ' · full';
   if (health === null) {
     const exit = code === 0 ? 1 : code;
     return {
-      message: `dev-stack: UP UNVERIFIED · exit ${exit}${compose} · docker could not be asked what is running in ${project} — this is not a stack you should gate against`,
+      message: `dev-stack: UP UNVERIFIED · exit ${exit}${compose}${started} · docker could not be asked what is running in ${project} — this is not a stack you should gate against`,
       exit,
     };
   }
@@ -339,14 +496,14 @@ export function upVerdict(
     const exit = code === 0 ? 1 : code;
     return {
       message:
-        `dev-stack: UP UNHEALTHY · exit ${exit}${compose} · ${bad.length} of ${health.length} service(s) in ${project} did not become healthy:\n` +
+        `dev-stack: UP UNHEALTHY · exit ${exit}${compose}${started} · ${bad.length} of ${health.length} service(s) in ${project} did not become healthy:\n` +
         bad.map((h) => `  ${h.name} (${h.state})`).join('\n'),
       exit,
     };
   }
   const verified = health.filter((h) => h.state === 'healthy').length;
   return {
-    message: `dev-stack: UP · exit ${code} · ${health.length} running, ${verified} health-verified in ${project}`,
+    message: `dev-stack: UP · exit ${code} · ${health.length} running, ${verified} health-verified in ${project}${started}`,
     exit: code,
   };
 }
@@ -461,8 +618,22 @@ export function explainPortConflicts(env: Record<string, string>): string {
   );
 }
 
+/**
+ * `--infra-only` is OURS, not compose's (SC-706). It has to be removed from
+ * argv before the rest is handed on, because `docker compose up` rejects an
+ * unknown flag — so forwarding it would turn the feature into a usage error.
+ */
+export function parseMode(passthrough: readonly string[]): {
+  mode: StackMode;
+  rest: string[];
+} {
+  const rest = passthrough.filter((a) => a !== '--infra-only');
+  return { mode: rest.length === passthrough.length ? 'full' : 'infra', rest };
+}
+
 async function main(): Promise<never> {
-  const [subcommand, ...passthrough] = process.argv.slice(2);
+  const [subcommand, ...rawPassthrough] = process.argv.slice(2);
+  const { mode, rest: passthrough } = parseMode(rawPassthrough);
   const env = stackEnv(REPO_ROOT);
   const offset = portOffset(REPO_ROOT, isPrimaryCheckout(REPO_ROOT));
 
@@ -473,7 +644,7 @@ async function main(): Promise<never> {
 
   if (subcommand !== 'up' && subcommand !== 'down') {
     process.stderr.write(
-      'dev-stack: usage: bun scripts/dev-stack.ts <up|down|env> [docker compose args]\n'
+      'dev-stack: usage: bun scripts/dev-stack.ts <up|down|env> [--infra-only] [docker compose args]\n'
     );
     process.exit(64);
   }
@@ -484,7 +655,8 @@ async function main(): Promise<never> {
   // would name a database nothing creates — see `composeInterpolates`.
   const database = composeInterpolates().has('SCANI_DEV_DB') ? ` · db ${env.SCANI_DEV_DB}` : '';
   process.stderr.write(
-    `dev-stack: project ${env.COMPOSE_PROJECT_NAME}${database} · ports ` +
+    `dev-stack: project ${env.COMPOSE_PROJECT_NAME}${database}` +
+      `${mode === 'infra' ? ' · infra-only' : ''} · ports ` +
       `${offset === 0 ? 'documented defaults (primary checkout)' : `+${offset}`}` +
       `${overridden.length === 0 ? '' : ` · overridden by the environment: ${overridden.join(', ')}`}\n`
   );
@@ -510,15 +682,15 @@ async function main(): Promise<never> {
   const synced = await run(['bun', 'scripts/sync-env.ts'], env);
   if (synced !== 0) process.exit(synced);
 
-  const code = await run(upArgs(passthrough), env);
+  const code = await run(upArgs(passthrough, mode), env);
   if (code !== 0) process.stderr.write(explainPortConflicts(env));
 
   const project = env.COMPOSE_PROJECT_NAME ?? composeProjectName(REPO_ROOT);
-  const verdict = upVerdict(code, await containerHealth(env), project);
+  const verdict = upVerdict(code, await containerHealth(env), project, mode);
   process.stderr.write(`${verdict.message}\n`);
   if (verdict.exit !== 0) process.exit(verdict.exit);
 
-  process.stderr.write(`dev-stack: this worktree's stack is at\n${reachableAt(env)}\n`);
+  process.stderr.write(`dev-stack: this worktree's stack is at\n${reachableAt(env, mode)}\n`);
   process.exit(0);
 }
 
