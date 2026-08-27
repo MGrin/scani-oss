@@ -88,6 +88,7 @@ import {
   getActiveConnectionsCount,
   getConnectionMonitoringStats,
   getConnectionStats,
+  procedureCallRecorder,
   startConnectionTracking,
 } from '@scani/db';
 import { buildProviderRegistry } from '@scani/providers/core/boot';
@@ -1267,6 +1268,12 @@ const gracefulShutdown = async (signal: string) => {
     } catch (err) {
       logger.error({ err }, 'Error closing BullMQ/Redis during shutdown');
     }
+
+    // Drain buffered procedure tallies. Without this a rolling deploy loses
+    // up to a flush interval of counts on every machine it replaces, which
+    // is exactly when a low-traffic procedure's only call of the day sits in
+    // the buffer. `flush()` swallows its own failures (SC-742).
+    await procedureCallRecorder.flush();
 
     // Flush Sentry before exit so the shutdown-triggering error (if any)
     // makes it to the dashboard. 2s is plenty over Fly's private net.

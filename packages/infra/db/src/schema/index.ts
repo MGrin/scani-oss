@@ -12,6 +12,7 @@ export * from './accounts';
 export * from './admin-audit-log';
 export * from './admin-spend-overrides';
 export * from './alerts';
+export * from './api-procedure-calls';
 export * from './cloud';
 export * from './documents';
 export * from './entities';
