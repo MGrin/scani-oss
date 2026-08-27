@@ -67,6 +67,13 @@ export type Boundness =
   | { readonly kind: 'unknown'; readonly why: string };
 
 export interface BranchFacts {
+  /**
+   * What the facts are ABOUT, for the sentence only — never for a decision.
+   * Defaults to `HEAD`, which is what a hook asks about. A caller that asks
+   * about some other ref must pass it, or the verdict names the wrong thing
+   * while being right about it (SC-712).
+   */
+  readonly subject?: string;
   /** An `upstream` remote is configured at all. */
   readonly hasUpstreamRemote: boolean;
   /** `refs/remotes/upstream/main` resolves. */
@@ -84,8 +91,12 @@ export interface BranchFacts {
 }
 
 /**
- * How many paths that exist in only ONE of the two repos are present in HEAD's
- * tree — counted in both directions, each with its denominator.
+ * How many paths that exist in only ONE of the two repos are present in the
+ * SUBJECT's tree — counted in both directions, each with its denominator.
+ *
+ * The `InHead` field names predate `collectTreeMarkers` taking a ref (SC-712)
+ * and are kept rather than renamed across 37 sites in a guard this load-bearing.
+ * Read them as "in the subject", which is `HEAD` unless a caller named another.
  *
  * Which paths those are is discovered at run time by diffing the two mains,
  * never listed here: this file is shared with the public mirror, and an
@@ -192,7 +203,7 @@ function share(inHead: number, total: number): number {
   return total === 0 ? 0 : inHead / total;
 }
 
-export function classifyByTree(markers: TreeMarkers): Boundness | null {
+export function classifyByTree(markers: TreeMarkers, subject = 'HEAD'): Boundness | null {
   const counts =
     `${markers.mirrorOnlyInHead}/${markers.mirrorOnlyTotal} mirror-only ` +
     `and ${markers.privateOnlyInHead}/${markers.privateOnlyTotal} private-only path(s)`;
@@ -202,7 +213,7 @@ export function classifyByTree(markers: TreeMarkers): Boundness | null {
     return {
       kind: 'private',
       why:
-        `HEAD's tree carries ${markers.privateOnlyInHead}/${markers.privateOnlyTotal} ` +
+        `${subject}'s tree carries ${markers.privateOnlyInHead}/${markers.privateOnlyTotal} ` +
         `private-only path(s), and there are no mirror-only paths in existence to weigh ` +
         `against them`,
     };
@@ -215,13 +226,13 @@ export function classifyByTree(markers: TreeMarkers): Boundness | null {
   ) {
     return {
       kind: 'oss',
-      why: `HEAD's tree carries ${counts} — the mirror's share is not the smaller of the two`,
+      why: `${subject}'s tree carries ${counts} — the mirror's share is not the smaller of the two`,
     };
   }
   if (markers.privateOnlyInHead > 0) {
     return {
       kind: 'private',
-      why: `HEAD's tree carries ${counts} — the private repo's share is the larger`,
+      why: `${subject}'s tree carries ${counts} — the private repo's share is the larger`,
     };
   }
   return null;
@@ -246,6 +257,7 @@ export function classifyByTree(markers: TreeMarkers): Boundness | null {
  * markers. An exit-9 outage is loud and got a ticket; that one would not have.
  */
 export function classifyBranch(facts: BranchFacts): Boundness {
+  const subject = facts.subject ?? 'HEAD';
   if (!facts.hasUpstreamRemote) {
     // Determinate, not blind: with no upstream remote there is no scani-oss to
     // be bound for. This is the state of a self-hoster's clone, and of the
@@ -259,7 +271,7 @@ export function classifyBranch(facts: BranchFacts): Boundness {
     };
   }
   if (facts.treeMarkers) {
-    const byTree = classifyByTree(facts.treeMarkers);
+    const byTree = classifyByTree(facts.treeMarkers, subject);
     if (byTree) return byTree;
     // Markers existed to look for and HEAD has none of either kind. That is
     // not "probably private" — it is a tree that resembles neither repo, and
@@ -267,20 +279,23 @@ export function classifyBranch(facts: BranchFacts): Boundness {
     // refuses on principle.
     return {
       kind: 'unknown',
-      why: `HEAD's tree carries none of the ${facts.treeMarkers.privateOnlyTotal} private-only nor the ${facts.treeMarkers.mirrorOnlyTotal} mirror-only path(s), so it matches neither repo`,
+      why: `${subject}'s tree carries none of the ${facts.treeMarkers.privateOnlyTotal} private-only nor the ${facts.treeMarkers.mirrorOnlyTotal} mirror-only path(s), so it matches neither repo`,
     };
   }
 
   if (facts.upstreamIsAncestor && facts.originIsAncestor) {
     return {
       kind: 'unknown',
-      why: 'HEAD descends from BOTH `origin/main` and `upstream/main`, and the two mains have no distinguishing paths to fall back on',
+      why: `${subject} descends from BOTH \`origin/main\` and \`upstream/main\`, and the two mains have no distinguishing paths to fall back on`,
     };
   }
   if (facts.upstreamIsAncestor) {
-    return { kind: 'oss', why: 'HEAD descends from `upstream/main` and not from `origin/main`' };
+    return {
+      kind: 'oss',
+      why: `${subject} descends from \`upstream/main\` and not from \`origin/main\``,
+    };
   }
-  return { kind: 'private', why: 'HEAD does not descend from `upstream/main`' };
+  return { kind: 'private', why: `${subject} does not descend from \`upstream/main\`` };
 }
 
 /**
@@ -478,7 +493,7 @@ function treePaths(ref: string): string[] | null {
   return gitPaths(['ls-tree', '-r', '--full-tree', '--name-only', ref]);
 }
 
-export function collectTreeMarkers(): TreeMarkers | null {
+export function collectTreeMarkers(ref = 'HEAD'): TreeMarkers | null {
   const upstreamPaths = treePaths('upstream/main');
   const originPaths = treePaths('origin/main');
   if (upstreamPaths === null || originPaths === null) return null;
@@ -489,7 +504,7 @@ export function collectTreeMarkers(): TreeMarkers | null {
   const mirrorOnly = upstreamPaths.filter((p) => !inOrigin.has(p));
   if (privateOnly.length === 0 && mirrorOnly.length === 0) return null;
 
-  const headPaths = treePaths('HEAD');
+  const headPaths = treePaths(ref);
   if (headPaths === null) return null;
   const inHead = new Set(headPaths);
 
@@ -501,7 +516,17 @@ export function collectTreeMarkers(): TreeMarkers | null {
   };
 }
 
-function collectBranchFacts(): BranchFacts {
+/**
+ * The facts about a ref, defaulting to the one a hook cares about.
+ *
+ * EXPORTED FOR A CALLER THAT ASKS ABOUT SOMETHING OTHER THAN `HEAD` (SC-712).
+ * `check-oss-derivation.ts` is handed a CANDIDATE — a fetched pull-request head
+ * that is deliberately never checked out — and must know which repo THAT
+ * belongs to. Asking about `HEAD` there answers about the private working
+ * branch the tool happens to be standing in, which is not the question and is
+ * `private` every time.
+ */
+export function collectBranchFacts(ref = 'HEAD'): BranchFacts {
   const hasUpstreamRemote = git(['remote']).stdout.split('\n').includes('upstream');
   const upstreamMainResolved = git([
     'rev-parse',
@@ -510,12 +535,13 @@ function collectBranchFacts(): BranchFacts {
     'refs/remotes/upstream/main',
   ]).ok;
   return {
+    subject: ref,
     hasUpstreamRemote,
     upstreamMainResolved,
     upstreamIsAncestor:
-      upstreamMainResolved && git(['merge-base', '--is-ancestor', 'upstream/main', 'HEAD']).ok,
-    originIsAncestor: git(['merge-base', '--is-ancestor', 'origin/main', 'HEAD']).ok,
-    treeMarkers: collectTreeMarkers(),
+      upstreamMainResolved && git(['merge-base', '--is-ancestor', 'upstream/main', ref]).ok,
+    originIsAncestor: git(['merge-base', '--is-ancestor', 'origin/main', ref]).ok,
+    treeMarkers: collectTreeMarkers(ref),
   };
 }
 
