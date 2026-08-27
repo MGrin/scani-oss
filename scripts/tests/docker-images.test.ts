@@ -405,3 +405,104 @@ describe('the prose that states the image set agrees with the manifest', () => {
     expect(diff.missing).toEqual(DOCKER_IMAGES.map((i) => i.image));
   });
 });
+
+/**
+ * SC-705. SC-545 bound the two prose copies its ticket named. Enumerating the
+ * tree found SEVEN files stating the whole published set — a name list is
+ * exactly as wide as its entries, and that one was incomplete the day it was
+ * written (the same finding as SC-609, one subject over).
+ *
+ * The assertion here is WEAKER than SC-545's on purpose. These files name the
+ * images and not the build recipes, which is correct: a self-hosting page has
+ * no business listing Dockerfile paths. So this checks the NAME set, and
+ * `docs/PUBLISHING.md` / `docker-publish.yml` additionally carry SC-545's
+ * stricter dockerfile-and-count assertion. Two properties, not two rules —
+ * do not "de-duplicate" them by deleting one.
+ *
+ * WHY AN EXPLICIT LIST AND A SCAN, rather than either alone. Discovery keys on
+ * "names every declared image", so a file that fails to add a SIXTH image drops
+ * out of discovery — and a check that silently stops looking at a file is the
+ * exact failure this family is about. Asserting the discovered set EQUALS the
+ * expected one catches it from both sides: a copy that fell behind goes
+ * missing, and a new copy nobody listed turns up.
+ *
+ * Discovery alone cannot be tightened into covering the partial namers, and
+ * that is deliberate. Seven tracked files name three or four of the five and
+ * are RIGHT to: the demo deployment brings up a subset, each
+ * `docker-readmes/<x>.md` cross-links some siblings, and the dated pages under
+ * `docs/implementation/` and `docs/technical/` are historical records that
+ * `docs/README.md` forbids rewriting to match current infra.
+ */
+describe('every file that states the whole image set agrees with it', () => {
+  /** Present, and stating the whole set, in BOTH trees. */
+  const SHARED = [
+    'apps/frontend/docs/src/content/docs/self-hosting/tier1/production.mdx',
+    'apps/frontend/docs/src/content/docs/self-hosting/tier1/upgrades.md',
+    'docker-compose.prod.yml',
+    'docker-readmes/api.md',
+  ];
+  // `README.md` exists in BOTH trees and states the set only upstream — they
+  // are independently maintained files, not one mirrored file, so this cannot
+  // be expressed as "absent privately".
+  const PRIVATE_ONLY = [
+    'docs/PUBLISHING.md',
+    'docs/SELF_HOST.md',
+    'apps/frontend/landing/src/data/faq.ts',
+  ];
+  const UPSTREAM_ONLY = ['README.md', '.github/workflows/docker-publish.yml'];
+
+  /** Tracked files naming every image the manifest declares. */
+  function filesStatingTheSet(): string[] {
+    const names = DOCKER_IMAGES.map((i) => i.image);
+    const listed = Bun.spawnSync(['git', 'grep', '-lE', `scani/(${names.join('|')})`], {
+      cwd: REPO_ROOT,
+    })
+      .stdout.toString()
+      .split('\n')
+      .filter(Boolean);
+
+    return listed
+      .filter((rel) => {
+        const text = readFileSync(path.join(REPO_ROOT, rel), 'utf8');
+        return names.every((n) => new RegExp(`(?<!@)\\bscani/${n}\\b`).test(text));
+      })
+      .sort();
+  }
+
+  test('the tree carries exactly the copies this tree is expected to carry', () => {
+    const expected = [
+      ...SHARED,
+      ...(existsSync(PRIVATE_MARKER) ? PRIVATE_ONLY : UPSTREAM_ONLY),
+    ].sort();
+
+    // Equality, not containment, and that is the whole design. A copy that
+    // fell behind the manifest stops naming every image and DROPS OUT of the
+    // scan — containment would read that as fine. A new copy nobody listed
+    // turns up as an extra. Both are things somebody has to look at.
+    expect(filesStatingTheSet()).toEqual(expected);
+  });
+
+  test('each of them names the declared images and nothing else', () => {
+    const checked: string[] = [];
+    for (const rel of filesStatingTheSet()) {
+      const diff = diffProseAgainstManifest(readFileSync(path.join(REPO_ROOT, rel), 'utf8'));
+      // Not `missingDockerfiles` — see the block comment. `missing` is empty by
+      // construction here; `unexpected` and `wrongCounts` are what can fire.
+      expect({ rel, unexpected: diff.unexpected, wrongCounts: diff.wrongCounts }).toEqual({
+        rel,
+        unexpected: [],
+        wrongCounts: [],
+      });
+      checked.push(rel);
+    }
+
+    // The denominator, asserted rather than printed beside a headline that is
+    // already trusted (SC-699). An empty loop passes every expectation in it.
+    // Per TREE, because the two carry different exclusive copies. A private
+    // count asserted here passes privately and reds on the mirror — a SHARED
+    // test file lands upstream green and only meets the other tree at the port
+    // (SC-658), so this one is the count for whichever tree is running it.
+    const exclusive = existsSync(PRIVATE_MARKER) ? PRIVATE_ONLY : UPSTREAM_ONLY;
+    expect(checked.length).toBe(SHARED.length + exclusive.length);
+  });
+});
