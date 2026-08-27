@@ -159,7 +159,14 @@ describe('the two working homes for the budget stay wired up', () => {
     // pulls in files that only mention it in a comment or a fixture. `bun` as
     // argv[0] is what separates running the checker from `git check-ignore`
     // on its path, which is cheap and needs no budget.
-    const SPAWNS_CHECK_DOCS = /spawnSync\(\s*\[\s*['"]bun['"][^\]]*check-docs\.ts/;
+    //
+    // SINCE SC-730 THE SPAWN LIVES BEHIND `scripts/lib/run-check-docs.ts`, so a
+    // caller pays the identical subprocess cost with no inline spawn to match.
+    // Keyed on either shape: the census went to ZERO when those six moved to the
+    // helper, and the control below is what caught it rather than the file going
+    // quietly vacuous — the first time this guard has been observed to fire,
+    // which is what makes it known to work rather than merely never red.
+    const SPAWNS_CHECK_DOCS = /spawnSync\(\s*\[\s*['"]bun['"][^\]]*check-docs\.ts|\brunCheckDocs\(/;
 
     const spawners = Array.from(new Bun.Glob('scripts/tests/*.test.ts').scanSync(REPO_ROOT))
       .map((rel) => ({ rel, source: readFileSync(join(REPO_ROOT, rel), 'utf8') }))
