@@ -63,6 +63,7 @@
     "@typescript/native-preview": "7.0.0-dev.20260707.2",
     "concurrently": "^8.2.2",
     "knip": "^6.4.1",
+    "reflect-metadata": "^0.2.2",
     "syncpack": "^14.3.0",
     "typescript": "^5"
   },
