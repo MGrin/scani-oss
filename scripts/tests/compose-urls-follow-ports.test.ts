@@ -78,6 +78,10 @@ describe('a compose URL follows the port it points at (SC-495)', () => {
   });
 
   test('no URL writes a host port as a literal', () => {
+    // In-test, not the sibling above: an empty `references` satisfies this by
+    // having nothing to filter, and the sibling's red does not un-print this
+    // green (SC-733).
+    expect(references.length).toBeGreaterThan(0);
     const literals = references
       .filter((ref) => /localhost:\d+$/.test(ref.token))
       .map((ref) => `docker-compose.yml:${ref.line}  ${ref.text}`);
@@ -85,6 +89,8 @@ describe('a compose URL follows the port it points at (SC-495)', () => {
   });
 
   test('each one interpolates the variable that publishes that port', () => {
+    // Zero iterations assert nothing and read as every reference passing.
+    expect(references.length).toBeGreaterThan(0);
     for (const ref of references) {
       const variable = ref.token.match(/\$\{([A-Z0-9_]+):-(\d+)\}/);
       expect(variable, `${ref.line}: ${ref.text}`).not.toBeNull();
