@@ -29,6 +29,23 @@
  * quarter-hour probes so it can. A periodic flusher would hold the database
  * awake for the life of the process and turn an idle deployment into a
  * billed one. An api with no traffic writes nothing here and lets Neon sleep.
+ *
+ * WHY POSTGRES AND NOT REDIS. Redis is the obvious home for a counter, and it
+ * is the wrong one here for a reason that is about the CONSEQUENCE OF BEING
+ * WRONG rather than about any property of the store. What this produces is a
+ * NEVER-FIRED list, and a never-fired list licenses deletions. A counter that
+ * quietly loses a row turns "called twice in June" into "never called", and
+ * the next reader deletes a procedure something outside this repo still calls.
+ * Redis evicts under `maxmemory` and an eviction leaves nothing behind, so
+ * that corrupted negative is INDISTINGUISHABLE FROM THE TRUE ONE it replaced —
+ * no error, no gap, nothing for a reader to notice. The damage surfaces later
+ * as a 404 in somebody else's integration, with no path back to the cause.
+ *
+ * A row in the Postgres the api already depends on can only vanish if the
+ * database loses it, which is a failure this deployment must already survive
+ * for every other table. The write cost is one buffered upsert a minute per
+ * machine against a connection that is already open, so choosing the durable
+ * store here buys the artefact's entire meaning for approximately nothing.
  */
 
 import { sql } from 'drizzle-orm';
