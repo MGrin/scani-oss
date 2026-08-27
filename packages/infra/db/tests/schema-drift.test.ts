@@ -112,8 +112,11 @@ describe('describeSchemaDrift', () => {
     };
     const message = describeSchemaDrift(report);
     expect(message).toContain(`users.${OMITTED_COLUMN}`);
-    // "schema drift" alone does not tell the reader which target was omitted.
-    expect(message).toContain('scripts/deploy-local.sh migrate');
+    // "schema drift" alone does not tell the reader which target was omitted,
+    // and the line has to say a MIGRATION is what is missing.
+    expect(message).toContain('an unapplied migration');
+    // SC-729: it must not prescribe one deployment's script to every reader.
+    expect(message).not.toContain('deploy-local.sh');
   });
 
   test('summarises rather than printing every name', () => {
