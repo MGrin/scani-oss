@@ -570,6 +570,25 @@ alike:
   compose takes the project name from the directory leaf — `scani` in every
   linked worktree — and a second `up` does not conflict with the first, it
   **adopts and recreates** the primary checkout's containers (SC-491).
+
+  **The primary checkout is not where this is safe, it is where it arms the
+  trap**, so do not read the warning as worktree-only. Observed in practice: a
+  compose project literally named `scani` running for hours, its
+  `working_dir` label pointing at the primary checkout, because someone ran
+  this exact line there. That is the container a linked worktree then adopts —
+  so both halves of the hazard are one instruction executed in two places.
+
+  It is not "unsafe in a worktree, fine at home" either. `bun dev:stack` in the
+  primary checkout derives its own project name and still wants `5433`, so a
+  bare `scani` project makes the supported path fail to bind there too.
+
+  Check for one with the LABEL. `docker compose ls -a --format '{{.Name}}'`
+  omitted the row while the project was demonstrably running, and a template
+  that silently drops a row reads exactly like an absent project:
+
+  ```bash
+  docker ps -a --filter 'label=com.docker.compose.project=scani'
+  ```
 - **Loud and safe.** It publishes `${POSTGRES_HOST_PORT:-5433}`, while
   `gate-db` derives its own port from a sha256 over this worktree's absolute
   path. The gate then finds nothing there and refuses with exit 3, NO TESTS
