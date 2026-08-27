@@ -19,6 +19,7 @@
     "prepare": "git config --local core.hooksPath .githooks || true",
     "postinstall": "bun scripts/prune-stale-linker-artifacts.ts",
     "dev": "concurrently \"cd apps/backend/api && bun dev\" \"cd apps/frontend/app && bun dev\"",
+    "dev:api": "bun --cwd apps/backend/api dev",
     "dev:worker": "bun --cwd apps/backend/worker dev",
     "dev:data-provider": "bun --cwd apps/backend/data-provider dev",
     "dev:docs": "bun --cwd apps/frontend/docs dev",
