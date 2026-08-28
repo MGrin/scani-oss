@@ -56,7 +56,7 @@ function Facts({ facts }: { facts: PeekFact[] }) {
           {/* `break-words`, not `truncate`: a wallet address or a long account
               name is the reason the user opened the sheet, and a detail view
               that hides the detail has no job. */}
-          <dd className="min-w-0 break-words text-right text-body">{fact.value}</dd>
+          <dd className="min-w-0 break-words text-end text-body">{fact.value}</dd>
         </div>
       ))}
     </dl>
@@ -198,7 +198,7 @@ export function PeekSheet({ open, onOpenChange, spec, noun, isLoading }: PeekShe
     return (
       <Sheet open={open} onOpenChange={onOpenChange}>
         <SheetContent
-          side="right"
+          side="end"
           className="w-full gap-0 p-0 sm:max-w-md"
           // Same reasoning as `RefineSheet`: `SheetContent` sets
           // `backgroundColor` inline against an unset `--background`, and an
@@ -207,7 +207,7 @@ export function PeekSheet({ open, onOpenChange, spec, noun, isLoading }: PeekShe
           style={{ backgroundColor: 'hsl(var(--surface-2))' }}
         >
           {/* `pr-12` clears the shell's own close button. */}
-          <div className="shrink-0 border-b border-border px-4 pb-4 pr-12 pt-4">
+          <div className="shrink-0 border-b border-border px-4 pb-4 pe-12 pt-4">
             <PeekHeader spec={resolved} />
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">{body}</div>

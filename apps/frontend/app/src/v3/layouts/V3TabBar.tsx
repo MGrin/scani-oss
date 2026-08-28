@@ -149,7 +149,7 @@ export function V3TabBar({
             // the only carrier of the signal.
             <span
               aria-hidden="true"
-              className="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-interactive ring-2 ring-surface-1"
+              className="absolute -end-1 -top-1 h-2 w-2 rounded-full bg-interactive ring-2 ring-surface-1"
             />
           )}
         </span>

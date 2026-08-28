@@ -301,7 +301,7 @@ export function ReviewHoldingsCard({
                     aria-label={t('v3.jobs.review.row.amountLabel', { symbol: row.symbol })}
                     disabled={isSaving}
                     wrapperClassName="min-w-0 flex-1 lg:w-40 lg:flex-none"
-                    className="text-body text-right"
+                    className="text-body text-end"
                   />
                 ) : null}
                 {typeof row.confidence === 'number' ? (
@@ -367,7 +367,7 @@ export function ReviewHoldingsCard({
         <Button onClick={save} disabled={state.blocker !== null || isSaving} className="w-full">
           {isSaving ? (
             <>
-              <Loader2 className="mr-2 size-4 animate-spin" aria-hidden="true" />
+              <Loader2 className="me-2 size-4 animate-spin" aria-hidden="true" />
               {t('v3.jobs.review.importing')}
             </>
           ) : (

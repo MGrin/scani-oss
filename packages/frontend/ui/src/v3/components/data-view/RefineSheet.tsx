@@ -96,7 +96,7 @@ function OptionRow({
       className={cn(
         // No `min-h-tap`: the sheet opens on desktop too, and the token layer
         // already restores 44px under `pointer: coarse` (see `DataRow.tsx`).
-        'flex w-full items-center gap-3 rounded-md px-3 py-2 text-left',
+        'flex w-full items-center gap-3 rounded-md px-3 py-2 text-start',
         'transition-colors duration-fast ease-emphasized hover:bg-surface-hover',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
         active ? 'text-foreground' : 'text-muted-foreground'
@@ -219,7 +219,7 @@ export function RefineSections({
                 <AccordionItem key={def.key} value={def.key} className="last:border-b-0">
                   <AccordionTrigger>
                     <span className="truncate">{t(def.labelKey)}</span>
-                    <span className="ml-auto shrink-0 truncate text-caption text-muted-foreground">
+                    <span className="ms-auto shrink-0 truncate text-caption text-muted-foreground">
                       {activeLabel ?? t('ui.dataView.refine.any')}
                     </span>
                   </AccordionTrigger>
@@ -338,7 +338,7 @@ export function RefineSheet(props: RefineSheetProps) {
     return (
       <Sheet open={open} onOpenChange={onOpenChange}>
         <SheetContent
-          side="right"
+          side="end"
           className="w-full gap-0 p-0 sm:max-w-md"
           // Not a class: `SheetContent` sets `backgroundColor` inline as a
           // guard against `--background` being unset behind Radix's portal, and
@@ -349,7 +349,7 @@ export function RefineSheet(props: RefineSheetProps) {
         >
           {/* `pr-12` clears the shell's own close button, which on a side panel
               is correctly placed level with the title. */}
-          <div className="shrink-0 border-b border-border px-4 pb-4 pr-12 pt-4">{header}</div>
+          <div className="shrink-0 border-b border-border px-4 pb-4 pe-12 pt-4">{header}</div>
           <div className="min-h-0 flex-1 overflow-y-auto px-1 py-2">{sections}</div>
           {footer}
         </SheetContent>

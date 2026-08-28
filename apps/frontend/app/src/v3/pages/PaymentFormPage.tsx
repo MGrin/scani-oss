@@ -1,3 +1,5 @@
+import { cn } from '@scani/ui/lib/cn';
+import { MIRROR_IN_RTL } from '@scani/ui/lib/direction';
 import { Button } from '@scani/ui/ui/button';
 import { Checkbox } from '@scani/ui/ui/checkbox';
 import { Label } from '@scani/ui/ui/label';
@@ -398,9 +400,9 @@ export function PaymentFormPage() {
   return (
     <PageLayout>
       <div className="flex flex-col gap-2">
-        <Button variant="ghost" size="sm" asChild className="-ml-2 self-start">
+        <Button variant="ghost" size="sm" asChild className="-ms-2 self-start">
           <Link to={isEdit && id ? peekPath(V3_ROUTES.recurring, id) : V3_ROUTES.recurring}>
-            <ArrowLeft className="mr-1 h-4 w-4" aria-hidden="true" />
+            <ArrowLeft className={cn(MIRROR_IN_RTL, 'me-1 h-4 w-4')} aria-hidden="true" />
             {isEdit
               ? t('v3.money.paymentForm.backToPayment')
               : t('v3.money.paymentForm.allRecurring')}
@@ -679,7 +681,7 @@ export function PaymentFormPage() {
         <Button onClick={handleSubmit} disabled={!canSubmit || isSaving} className="w-full">
           {isSaving ? (
             <>
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
+              <Loader2 className="me-2 h-4 w-4 animate-spin" aria-hidden="true" />
               {t('v3.money.paymentForm.saving')}
             </>
           ) : isEdit ? (

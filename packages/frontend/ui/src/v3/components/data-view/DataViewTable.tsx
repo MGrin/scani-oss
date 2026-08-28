@@ -175,7 +175,7 @@ export function DataViewTable<T>({
       <thead>
         <tr className="border-b border-border">
           {selectable && (
-            <th className="w-12 px-3 py-2 text-left align-middle">
+            <th className="w-12 px-3 py-2 text-start align-middle">
               <Checkbox
                 checked={isAllSelected}
                 onCheckedChange={() => (hasSelection ? onClearSelection() : onSelectAll())}
@@ -194,7 +194,7 @@ export function DataViewTable<T>({
               className={cn(
                 'px-3 py-2 align-middle font-medium text-muted-foreground',
                 col.width,
-                col.numeric ? 'text-right' : 'text-left'
+                col.numeric ? 'text-end' : 'text-start'
               )}
             >
               {col.sortable ? (
@@ -237,7 +237,7 @@ export function DataViewTable<T>({
               <th
                 scope="colgroup"
                 colSpan={columns.length + (selectable ? 1 : 0) + (renderRowAction ? 1 : 0)}
-                className="border-b border-border px-3 pb-1 pt-5 text-left text-caption font-medium uppercase tracking-wide text-muted-foreground"
+                className="border-b border-border px-3 pb-1 pt-5 text-start text-caption font-medium uppercase tracking-wide text-muted-foreground"
               >
                 {/* Beside the label, never pushed to the far edge — see
                     `DataViewGroupHeading`, where SC-71 8.2 is explained. A
@@ -363,7 +363,7 @@ export function DataViewTable<T>({
                       className={cn(
                         'px-3 align-middle',
                         col.width,
-                        col.numeric ? 'whitespace-nowrap text-right' : 'truncate'
+                        col.numeric ? 'whitespace-nowrap text-end' : 'truncate'
                       )}
                     >
                       {/* The identity cell carries the link, so the row leads
