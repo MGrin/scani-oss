@@ -248,10 +248,12 @@ const sources = (): Source[] =>
  * Deliberately a local copy rather than an import from
  * `apps/frontend/app/tests/v3/`. This package sits BELOW that app, so reaching
  * up into its test tree inverts the dependency direction the workspace layout
- * exists to enforce. Three other guards here (`layout.test.ts`,
- * `token-hygiene.test.ts`, `cloud/adoption.test.ts`) carry per-line copies
- * that still have the bug SC-760 fixed in the fourth; filed as its own task
- * rather than folded in here.
+ * exists to enforce. Other guards in this repo still carry per-line copies
+ * with the bug SC-760 fixed here; SC-776 names them, dates the reading and
+ * carries the falsifier. Deliberately a POINTER and not a list: a ticket is
+ * allowed to be a snapshot and this docblock is not, and a count asserted in
+ * a comment goes stale the moment one of them is fixed — silently, since
+ * nothing compiles prose.
  */
 function commentSkipper(): (line: string) => boolean {
   let inBlock = false;
