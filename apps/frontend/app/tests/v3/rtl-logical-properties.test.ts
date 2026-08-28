@@ -65,17 +65,47 @@ function sources(): Source[] {
   return out.sort((a, b) => a.name.localeCompare(b.name));
 }
 
-/** Prose about a class name is not a use of it, and several of this ticket's
- *  fixes left a comment behind naming the utility they removed. Same rule, and
- *  the same reason, as `token-hygiene.test.ts`. */
-function isComment(line: string): boolean {
-  const trimmed = line.trimStart();
-  return (
-    trimmed.startsWith('*') ||
-    trimmed.startsWith('//') ||
-    trimmed.startsWith('/*') ||
-    trimmed.startsWith('{/*')
-  );
+/**
+ * Prose about a class name is not a use of it, and several of this ticket's
+ * fixes left a comment behind naming the utility they removed. Same rule, and
+ * the same reason, as `token-hygiene.test.ts`.
+ *
+ * THIS IS STATEFUL, AND THE FIRST CUT WAS NOT — which cost a false red on the
+ * gate. A per-line test catches `//`, ` *` and the OPENING line of a `/*` or
+ * `{/*` block, and misses every CONTINUATION line of a JSX block comment,
+ * because those begin with ordinary prose. The sentence
+ *
+ *     A number is written left-to-right in every locale
+ *
+ * is then read as code, and `left-to` matches the physical-inset pattern.
+ *
+ * That is not a curiosity here. These are the files where somebody explaining
+ * WHY a rule exists has to write the words "left" and "right", so a scanner
+ * that punishes the explanation is worst exactly where the explanation is most
+ * needed. Rewording the one comment would have cleared the red and left the
+ * trap armed for the next person.
+ *
+ * `blockDepth` tracks `/* ... *\/` across lines. A line that both opens and
+ * closes is a comment and does not open a block.
+ */
+function commentSkipper(): (line: string) => boolean {
+  let inBlock = false;
+  return (line: string): boolean => {
+    const trimmed = line.trimStart();
+    if (inBlock) {
+      if (line.includes('*/')) inBlock = false;
+      return true;
+    }
+    const startsComment =
+      trimmed.startsWith('*') ||
+      trimmed.startsWith('//') ||
+      trimmed.startsWith('/*') ||
+      trimmed.startsWith('{/*');
+    if (!startsComment) return false;
+    // Opens a block that this line does not close: everything until `*/` is prose.
+    if (line.includes('/*') && !line.includes('*/')) inBlock = true;
+    return true;
+  };
 }
 
 interface Hit {
@@ -88,6 +118,9 @@ async function scan(pattern: RegExp, files: Source[]): Promise<Hit[]> {
   const hits: Hit[] = [];
   for (const source of files) {
     const text = await Bun.file(source.path).text();
+    // One skipper per FILE: the block state must not leak across files, or an
+    // unterminated comment in one would blind the scanner to the next.
+    const isComment = commentSkipper();
     text.split('\n').forEach((line, index) => {
       if (isComment(line) || !pattern.test(line)) return;
       hits.push({ file: source.name, line: index + 1, text: line.trim() });
@@ -173,6 +206,61 @@ describe('v3 and @scani/ui use logical properties on the inline axis', () => {
     const physical = /(?:^|[\s'"`:[])-?(?:left|right)-(?:\w|\[)/;
     const hits = withoutCentring(await scan(physical, files));
     expect(format(hits)).toEqual([]);
+  });
+});
+
+/**
+ * The scanner's own comment handling, pinned — because widening an exclusion is
+ * the one edit that makes a check quieter, and a quieter check reads exactly
+ * like a passing one.
+ *
+ * These three cases were run by hand as mutations first (a real `ml-2` in code,
+ * a real `left-4` on the line after a block comment, and a comment stuffed with
+ * physical utilities). They are here so they run every time instead of once.
+ */
+describe('the scanner reads code and not prose', () => {
+  const classify = (snippet: string): number[] => {
+    const skip = commentSkipper();
+    const physical =
+      /(?:^|[\s'"`:[])-?(?:left|right)-(?:\w|\[)|(?:^|[\s'"`:[])-?(?:ml|mr|pl|pr)-(?:\w|\[)/;
+    const hits: number[] = [];
+    snippet.split('\n').forEach((line, i) => {
+      if (skip(line) || !physical.test(line)) return;
+      hits.push(i + 1);
+    });
+    return hits;
+  };
+
+  test('a JSX block comment is prose all the way down, not just on line one', () => {
+    // Line 3 is the case that broke the gate: a continuation line begins with an
+    // ordinary word, so a per-line test sees code, and `left-to` matches.
+    const snippet = [
+      '<span>',
+      '  {/* Why this exists:',
+      '      A number is written left-to-right in every locale, and ml-2 is wrong.',
+      '      Nor should left-4 right-4 pr-3 here count. */}',
+      '</span>',
+    ].join('\n');
+    expect(classify(snippet)).toEqual([]);
+  });
+
+  test('and it stops being prose at the closing delimiter', () => {
+    // The must-be-FOUND control on the same axis. An exclusion that ran on past
+    // `*/` would silence the rest of the file and still report zero.
+    const snippet = [
+      '  {/* prose about left-to-right',
+      '      and more prose */}',
+      '  <span className="ml-2" />',
+      '  <span className="left-4" />',
+    ].join('\n');
+    expect(classify(snippet)).toEqual([3, 4]);
+  });
+
+  test('a single-line comment does not open a block', () => {
+    const snippet = ['  /* one-liner about left-to-right */', '  <span className="pr-3" />'].join(
+      '\n'
+    );
+    expect(classify(snippet)).toEqual([2]);
   });
 });
 
