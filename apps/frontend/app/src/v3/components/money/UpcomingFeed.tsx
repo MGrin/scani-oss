@@ -32,10 +32,15 @@ import {
   splitByDueness,
   withinDays,
 } from '../../lib/money';
-import { formatPaymentInterval, todayDateString } from '../../lib/paymentTotals';
+import {
+  formatPaymentInterval,
+  type HistoryEstimate,
+  todayDateString,
+} from '../../lib/paymentTotals';
 import { V3_PAYMENT_ROUTES, V3_ROUTES } from '../../lib/routes';
 import { BaseEquivalent } from '../BaseEquivalent';
 import { ConvertedTotal } from '../ConvertedTotal';
+import { EstimatedFromHistory } from './EstimatedFromHistory';
 import { ExpectedIncome } from './ExpectedIncome';
 import { SettleActions } from './SettleActions';
 
@@ -80,6 +85,17 @@ interface UpcomingFeedProps {
   /** Base-currency conversion for the committed figure and every row under it. */
   rates: BaseCurrencyRates;
   query: V3QueryState;
+  /**
+   * Which payments the projection priced from their own settled history
+   * (SC-625), keyed by payment id — the same map the recurring list, the vendor
+   * list and the projection read, derived once in `MoneyPage`.
+   *
+   * Threaded in rather than derived here for the reason `historyEstimatesByPaymentId`
+   * exists at all: four surfaces state what one payment costs, and they agree
+   * because they read one answer, not because four implementations are kept in
+   * step.
+   */
+  historyEstimates: ReadonlyMap<string, HistoryEstimate>;
 }
 
 function vendorFor(
@@ -90,6 +106,155 @@ function vendorFor(
   return names.get(occurrence.payment.vendorId) ?? t('v3.common.unknownVendor');
 }
 
+/**
+ * The estimate this occurrence's amount slot is standing on, or `null` (SC-798).
+ *
+ * ## Why the feed shows one at all
+ *
+ * An occurrence genuinely has no expected amount until it settles, so the dash
+ * this replaces was occurrence-level honesty rather than a bug. It is still the
+ * wrong answer: a reader who opted this payment into "estimate from what it
+ * last cost" has already answered the question the dash is asking, and three
+ * other surfaces honour that answer. A fourth saying `— No value` beside them
+ * does not read as principled — it reads as broken, and it contradicts a figure
+ * the same reader was shown one tap earlier. The argument for the dash survives
+ * as the MARK, not as the omission, which is why `<EstimatedFromHistory>` is not
+ * optional here.
+ *
+ * ## The precedence, and why `actualAmount` is in it
+ *
+ * `expectedAmount ?? actualAmount ?? estimate` — the same order
+ * `occurrenceTotals` sums in, so the row and the figure above it can never
+ * resolve one occurrence differently. A settled occurrence keeps the amount that
+ * really moved: an estimate is a claim about the PAYMENT, and a measured
+ * settlement beats it every time.
+ */
+function estimateFor(
+  occurrence: UpcomingOccurrence,
+  historyEstimates: ReadonlyMap<string, HistoryEstimate>
+): HistoryEstimate | null {
+  if (occurrence.expectedAmount !== null || occurrence.actualAmount !== null) return null;
+  return historyEstimates.get(occurrence.payment.id) ?? null;
+}
+
+/**
+ * What one occurrence looks like in the sheet.
+ *
+ * Pulled out of the component and exported for the reason `holdingPeekSpec` is:
+ * the sheet mounts through a Radix portal, so `renderToStaticMarkup` renders
+ * NONE of it, and a claim about the peek can only be checked against the spec
+ * as data. That is not a preference — SC-797 is a defect that shipped precisely
+ * because a second render site was invisible to a green suite, and the SC-625
+ * mark is exactly the kind of thing that goes to one site and not the other.
+ */
+export interface UpcomingPeekContext {
+  t: TFunction;
+  occurrence: UpcomingOccurrence;
+  vendorNameById: Map<string, string>;
+  tokenSymbolById: Map<string, string>;
+  historyEstimates: ReadonlyMap<string, HistoryEstimate>;
+  /** `YYYY-MM-DD`, taken from the feed so the sheet and the rows behind it
+   *  cannot disagree about which day it is. */
+  today: string;
+  onSettled: () => void;
+}
+
+export function upcomingPeekSpec({
+  t,
+  occurrence,
+  vendorNameById,
+  tokenSymbolById,
+  historyEstimates,
+  today,
+  onSettled,
+}: UpcomingPeekContext): PeekSpec {
+  // Same substitution as the row, through the same function: a peek opened from
+  // a row showing a figure must not say "No value".
+  const estimate = estimateFor(occurrence, historyEstimates);
+
+  return {
+    title: vendorFor(t, occurrence, vendorNameById),
+    // An income row is peeked from the block below, so the sheet has to
+    // hold the same distinction the two blocks do: a bill is due, income is
+    // expected, and a payer who is late is not the reader being overdue.
+    subtitle: isIncome(occurrence)
+      ? // Three whole sentences rather than one with a clause appended:
+        // "· not received yet" is a fragment glued to the end in English
+        // and would have to move in a language that fronts it.
+        occurrence.dueDate < today
+        ? t('v3.money.peek.expectedOnLate', { date: formatDate(occurrence.dueDate) })
+        : t('v3.money.peek.expectedOn', { date: formatDate(occurrence.dueDate) })
+      : occurrence.dueDate < today
+        ? formatOverdueBy(occurrence.dueDate, today, t)
+        : t('v3.money.peek.dueOn', { date: formatDate(occurrence.dueDate) }),
+    value: (
+      <Numeric
+        value={occurrence.expectedAmount ?? occurrence.actualAmount ?? estimate?.amount ?? null}
+        currency={tokenSymbolById.get(occurrence.payment.currencyTokenId) ?? 'USD'}
+      />
+    ),
+    // `delta` shares the figure's own line and wraps under it, which is the
+    // same slot the row uses — so the mark sits beside the number in both
+    // places. A caveat that scrolls away from the figure it qualifies is not a
+    // caveat.
+    delta: estimate ? <EstimatedFromHistory sourceDueDate={estimate.sourceDueDate} /> : undefined,
+    actions: (
+      <>
+        <SettleActions
+          occurrenceId={occurrence.id}
+          expectedAmount={occurrence.expectedAmount}
+          direction={occurrence.payment.direction === 'inflow' ? 'inflow' : 'outflow'}
+          onSettled={onSettled}
+        />
+        {/* `outline`, matching Skip beside it — as a `ghost` this was bare
+            text next to two drawn buttons, which made the only way to
+            change the payment itself the least button-like thing in the
+            row (SC-69 2.4). It is a real action and it leaves the sheet
+            for a form; the primary stays with settling, which is what the
+            sheet is for. */}
+        <Button variant="outline" asChild>
+          <Link to={V3_PAYMENT_ROUTES.edit(occurrence.payment.id)}>
+            {t('v3.money.peek.editPayment')}
+          </Link>
+        </Button>
+      </>
+    ),
+    primary: [
+      { label: t('v3.money.peek.due'), value: formatDate(occurrence.dueDate) },
+      {
+        label: t('v3.money.field.direction'),
+        value: directionLabel(occurrence.payment.direction, t),
+      },
+      {
+        label: t('v3.money.peek.repeats'),
+        value: formatPaymentInterval(
+          t,
+          occurrence.payment.intervalUnit,
+          occurrence.payment.intervalCount
+        ),
+      },
+      {
+        // "Amount is", not "Amount" — the figure above the facts is the
+        // amount, and a second row headed the same thing reads as a
+        // contradiction rather than as the fixed/variable distinction.
+        label: t('v3.money.peek.amountIs'),
+        value:
+          occurrence.payment.kind === 'variable'
+            ? t('v3.money.peek.varies')
+            : t('v3.money.peek.fixed'),
+      },
+    ],
+    sections: occurrence.payment.notes
+      ? [
+          {
+            title: t('v3.money.peek.notes'),
+            facts: [{ label: t('v3.money.peek.note'), value: occurrence.payment.notes }],
+          },
+        ]
+      : undefined,
+  };
+}
+
 export function UpcomingFeed({
   occurrences,
   paymentCount,
@@ -97,6 +262,7 @@ export function UpcomingFeed({
   tokenSymbolById,
   rates,
   query,
+  historyEstimates,
 }: UpcomingFeedProps) {
   const { t } = useTranslation();
   const peekRoute = usePeekRoute(V3_ROUTES.money);
@@ -135,82 +301,15 @@ export function UpcomingFeed({
   const peeked = occurrences.find((occurrence) => occurrence.id === peekRoute.id) ?? null;
 
   const spec: PeekSpec | null = peeked
-    ? {
-        title: vendorFor(t, peeked, vendorNameById),
-        // An income row is peeked from the block below, so the sheet has to
-        // hold the same distinction the two blocks do: a bill is due, income is
-        // expected, and a payer who is late is not the reader being overdue.
-        subtitle: isIncome(peeked)
-          ? // Three whole sentences rather than one with a clause appended:
-            // "· not received yet" is a fragment glued to the end in English
-            // and would have to move in a language that fronts it.
-            peeked.dueDate < today
-            ? t('v3.money.peek.expectedOnLate', { date: formatDate(peeked.dueDate) })
-            : t('v3.money.peek.expectedOn', { date: formatDate(peeked.dueDate) })
-          : peeked.dueDate < today
-            ? formatOverdueBy(peeked.dueDate, today, t)
-            : t('v3.money.peek.dueOn', { date: formatDate(peeked.dueDate) }),
-        value: (
-          <Numeric
-            value={peeked.expectedAmount ?? peeked.actualAmount}
-            currency={tokenSymbolById.get(peeked.payment.currencyTokenId) ?? 'USD'}
-          />
-        ),
-        actions: (
-          <>
-            <SettleActions
-              occurrenceId={peeked.id}
-              expectedAmount={peeked.expectedAmount}
-              direction={peeked.payment.direction === 'inflow' ? 'inflow' : 'outflow'}
-              onSettled={peekRoute.close}
-            />
-            {/* `outline`, matching Skip beside it — as a `ghost` this was bare
-                text next to two drawn buttons, which made the only way to
-                change the payment itself the least button-like thing in the
-                row (SC-69 2.4). It is a real action and it leaves the sheet
-                for a form; the primary stays with settling, which is what the
-                sheet is for. */}
-            <Button variant="outline" asChild>
-              <Link to={V3_PAYMENT_ROUTES.edit(peeked.payment.id)}>
-                {t('v3.money.peek.editPayment')}
-              </Link>
-            </Button>
-          </>
-        ),
-        primary: [
-          { label: t('v3.money.peek.due'), value: formatDate(peeked.dueDate) },
-          {
-            label: t('v3.money.field.direction'),
-            value: directionLabel(peeked.payment.direction, t),
-          },
-          {
-            label: t('v3.money.peek.repeats'),
-            value: formatPaymentInterval(
-              t,
-              peeked.payment.intervalUnit,
-              peeked.payment.intervalCount
-            ),
-          },
-          {
-            // "Amount is", not "Amount" — the figure above the facts is the
-            // amount, and a second row headed the same thing reads as a
-            // contradiction rather than as the fixed/variable distinction.
-            label: t('v3.money.peek.amountIs'),
-            value:
-              peeked.payment.kind === 'variable'
-                ? t('v3.money.peek.varies')
-                : t('v3.money.peek.fixed'),
-          },
-        ],
-        sections: peeked.payment.notes
-          ? [
-              {
-                title: t('v3.money.peek.notes'),
-                facts: [{ label: t('v3.money.peek.note'), value: peeked.payment.notes }],
-              },
-            ]
-          : undefined,
-      }
+    ? upcomingPeekSpec({
+        t,
+        occurrence: peeked,
+        vendorNameById,
+        tokenSymbolById,
+        historyEstimates,
+        today,
+        onSettled: peekRoute.close,
+      })
     : null;
 
   const sheet = (
@@ -338,6 +437,7 @@ export function UpcomingFeed({
           <DataRowList>
             {group.items.map((occurrence) => {
               const vendorName = vendorFor(t, occurrence, vendorNameById);
+              const estimate = estimateFor(occurrence, historyEstimates);
               return (
                 <DataRow
                   key={occurrence.id}
@@ -354,16 +454,29 @@ export function UpcomingFeed({
                   }
                   value={
                     <Numeric
-                      value={occurrence.expectedAmount ?? occurrence.actualAmount}
+                      value={
+                        occurrence.expectedAmount ?? occurrence.actualAmount ?? estimate?.amount
+                      }
                       currency={tokenSymbolById.get(occurrence.payment.currencyTokenId) ?? 'USD'}
                     />
                   }
+                  // The mark takes the second line, replacing the
+                  // base-currency equivalent — the same trade `<RecurringList>`
+                  // makes, and for the same reason: converting a figure into
+                  // another currency says less about it than saying it is last
+                  // February's. An unconverted estimate is a small loss; an
+                  // estimate indistinguishable from a fixed bill is the one
+                  // thing SC-625 exists to prevent.
                   delta={
-                    <BaseEquivalent
-                      amount={occurrence.expectedAmount ?? occurrence.actualAmount}
-                      currencyTokenId={occurrence.payment.currencyTokenId}
-                      rates={rates}
-                    />
+                    estimate ? (
+                      <EstimatedFromHistory sourceDueDate={estimate.sourceDueDate} />
+                    ) : (
+                      <BaseEquivalent
+                        amount={occurrence.expectedAmount ?? occurrence.actualAmount}
+                        currencyTokenId={occurrence.payment.currencyTokenId}
+                        rates={rates}
+                      />
+                    )
                   }
                   onClick={() => peekRoute.open(occurrence.id)}
                   aria-label={t('v3.money.upcoming.row', {
