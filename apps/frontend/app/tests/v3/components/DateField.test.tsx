@@ -92,9 +92,14 @@ describe('the v3 date field', () => {
     expect(markup).toContain('peer-focus:opacity-0');
   });
 
-  test('left-aligns both layers — iOS centres the native one', () => {
+  // `text-start`, not `text-left` (SC-760). iOS centres the native value and
+  // the overlay does not, so the two layers visibly disagree unless the native
+  // one is pinned — and pinning it to a PHYSICAL edge would disagree again the
+  // moment the document is `dir="rtl"`. The assertion carries `&amp;` because it
+  // matches RENDERED markup, where the arbitrary variant's `&` is escaped.
+  test('aligns both layers to the inline start — iOS centres the native one', () => {
     const markup = render();
-    expect(markup).toContain('[&amp;::-webkit-date-and-time-value]:text-left');
+    expect(markup).toContain('[&amp;::-webkit-date-and-time-value]:text-start');
     expect(markup).not.toContain('text-center');
   });
 
