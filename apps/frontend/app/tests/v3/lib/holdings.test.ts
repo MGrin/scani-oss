@@ -146,20 +146,50 @@ describe('holdingMatches', () => {
 
   test('matches the symbol, the name, the account and the institution', () => {
     for (const query of ['btc', 'bitco', 'spot', 'kraken']) {
-      expect(holdingMatches(item, query)).toBe(true);
+      expect(holdingMatches(t, item, query)).toBe(true);
     }
   });
 
   test('matches a group name, because group is one of the filters', () => {
-    expect(holdingMatches(item, 'long term')).toBe(true);
+    expect(holdingMatches(t, item, 'long term')).toBe(true);
   });
 
   test('does not match something absent', () => {
-    expect(holdingMatches(item, 'solana')).toBe(false);
+    expect(holdingMatches(t, item, 'solana')).toBe(false);
   });
 
   test('an empty query matches everything', () => {
-    expect(holdingMatches(item, '   ')).toBe(true);
+    expect(holdingMatches(t, item, '   ')).toBe(true);
+  });
+
+  /**
+   * SC-419. The row shows a DERIVED name for fiat, so search has to run over
+   * the same string — a list that renders `dólar estadounidense` and matches
+   * only `US Dollar` is a search box that cannot find what it is displaying.
+   */
+  test('a fiat row is searchable by the name it actually shows', () => {
+    const usd = holding({
+      token: {
+        id: 't2',
+        symbol: 'USD',
+        name: 'US Dollar',
+        type: 'Fiat Currency',
+        typeCode: 'fiat',
+        isScamProbability: 0,
+      },
+    });
+    expect(holdingMatches(t, usd, 'US Dollar')).toBe(true);
+    try {
+      setFormatLocale('es');
+      expect(holdingMatches(t, usd, 'estadounidense')).toBe(true);
+      // The must-be-ABSENT arm: the English stored name is NOT what a Spanish
+      // row shows, so it must not be searchable there either.
+      expect(holdingMatches(t, usd, 'US Dollar')).toBe(false);
+      // And a non-fiat name is a proper noun — searchable in every locale.
+      expect(holdingMatches(t, item, 'bitco')).toBe(true);
+    } finally {
+      resetFormatLocale();
+    }
   });
 });
 
