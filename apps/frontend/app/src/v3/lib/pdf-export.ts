@@ -1,4 +1,4 @@
-import { PDF_MAX_ROWS } from '@scani/shared';
+import { formatNumber, PDF_MAX_ROWS } from '@scani/shared';
 import { uiT } from '@scani/ui/i18n';
 import { UserFacingError } from '@scani/ui/lib/user-facing-error';
 import { registerPdfRenderer } from '@scani/ui/v3/lib/export/format';
@@ -45,9 +45,13 @@ export function useInstallPdfExport(): void {
       // will actually make. Said here, in one sentence, before the round trip.
       if (sheet.rows.length > PDF_MAX_ROWS) {
         throw new UserFacingError(
+          // `formatNumber`, never a bare `toLocaleString()` — the
+          // argument-less form takes the RUNTIME's locale, so a refusal
+          // translated into the reader's language quoted its two figures in
+          // the device's (SC-762).
           uiT('ui.export.pdfTooManyRows', {
-            max: PDF_MAX_ROWS.toLocaleString(),
-            rows: sheet.rows.length.toLocaleString(),
+            max: formatNumber(PDF_MAX_ROWS),
+            rows: formatNumber(sheet.rows.length),
           })
         );
       }
