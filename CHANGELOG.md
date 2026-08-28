@@ -19,6 +19,14 @@ version heading stays there permanently, above every future release. This
 comment is deliberately in that position; explanatory prose should not be.
 -->
 
+## [0.28.0](https://github.com/MGrin/scani-oss/compare/v0.27.0...v0.28.0) (2026-08-28)
+
+
+### Features
+
+* **app:** offer closed positions on the wallet review card ([cca9338](https://github.com/MGrin/scani-oss/commit/cca93388709655be481d7eb9f8114176e2e9145a))
+* **providers:** name the positions a wallet traded and no longer holds ([24ba238](https://github.com/MGrin/scani-oss/commit/24ba238a063213280bece6265f5ded0980854942))
+
 ## [0.27.0](https://github.com/MGrin/scani-oss/compare/v0.26.0...v0.27.0) (2026-08-27)
 
 
