@@ -1,0 +1,896 @@
+{
+  "$meta": {
+    "name": "Japanese",
+    "nativeName": "日本語"
+  },
+  "auth": {
+    "signIn": {
+      "title": "ようこそ",
+      "subtitle": "メールアドレスを入力してサインインするか、アカウントを作成してください",
+      "emailLabel": "メールアドレス",
+      "emailPlaceholder": "メールアドレスを入力",
+      "emailRequired": "メールアドレスは必須です",
+      "emailInvalid": "有効なメールアドレスを入力してください",
+      "submit": "メールアドレスで続ける",
+      "offline": "オフラインです。接続が戻り次第、コードをお送りします。",
+      "hintCode": "サインイン用の6桁のコードをお送りします。",
+      "hintLink": "サインイン用の安全なマジックリンクをお送りします。",
+      "newAccount": "Scaniは初めてですか？アカウントは自動的に作成されます。"
+    },
+    "code": {
+      "title": "確認コードを入力",
+      "sentTo": "{{email}} に6桁のコードを送信しました",
+      "differentEmail": "別のメールアドレスを使う"
+    },
+    "linkSent": {
+      "title": "メールをご確認ください",
+      "subtitle": "サインイン用のマジックリンクをお送りしました",
+      "body": "メール内のリンクをクリックするとアカウントにアクセスできます。初めての場合は、アカウントを自動的に作成します。",
+      "resend": "メールを再送する"
+    },
+    "callback": {
+      "signingInTitle": "サインインしています…",
+      "signingInSubtitle": "認証を確認していますので、そのままお待ちください",
+      "signingInBody": "すぐに終わります。",
+      "successTitle": "ようこそ！",
+      "successSubtitle": "サインインが完了しました",
+      "successBody": "ダッシュボードに移動しています…",
+      "errorTitle": "認証エラー",
+      "errorSubtitle": "サインイン中に問題が発生しました",
+      "tryAgain": "再試行",
+      "support": "問題が続く場合は、サポートまでご連絡ください。",
+      "linkFailed": "認証に失敗しました",
+      "unreachable": "サインインを完了するためのサーバーに接続できませんでした。接続を確認して、もう一度リンクを開いてください。",
+      "expired": "サインインリンクの有効期限が切れているか、確認できませんでした。新しいリンクをリクエストしてください。"
+    },
+    "failure": {
+      "offline": "オフラインのため、Scaniに接続できませんでした。接続が戻り次第、自動で再試行します。",
+      "timeout": "Scaniからの応答に時間がかかりすぎました。接続を確認して、もう一度「続ける」をタップしてください。",
+      "unreachable": "Scaniに接続できませんでした。接続を確認して、もう一度「続ける」をタップしてください。",
+      "server": "問題が発生しました。もう一度お試しください。"
+    }
+  },
+  "currency": {
+    "unknownName": "{{symbol}} 通貨"
+  },
+  "vendors": {
+    "paidWindow_other": "支払（直近{{count}}か月）",
+    "receivedWindow_other": "受取（直近{{count}}か月）",
+    "committedPerMonth": "確定分（月あたり）",
+    "expectedPerMonth": "見込み（月あたり）",
+    "paidAllTime": "支払（全期間）",
+    "receivedAllTime": "受取（全期間）",
+    "withUnconverted": "{{base}} ＋ 未換算 {{rest}}",
+    "unpriced_other": "{{count}}件の決済は金額が記録されていないため、この合計には含まれていません。",
+    "kind": {
+      "income": "収入",
+      "both": "支払・収入",
+      "unclassified": "収支の記録なし"
+    }
+  },
+  "nav": {
+    "sections": {
+      "portfolio": "ポートフォリオ",
+      "organization": "整理",
+      "activity": "アクティビティ",
+      "payments": "支払"
+    },
+    "home": "ホーム",
+    "holdings": "保有資産",
+    "accounts": "口座",
+    "institutions": "金融機関",
+    "groups": "グループ",
+    "entities": "名義",
+    "vaults": "貯蓄目標",
+    "tokens": "トークン",
+    "jobs": "処理",
+    "settings": "設定",
+    "signOut": "サインアウト",
+    "more": "その他",
+    "add": "追加",
+    "addData": "データを追加",
+    "addDataButton": "データを追加",
+    "paymentsOverview": "概要",
+    "recurringPayments": "定期支払",
+    "vendors": "取引先",
+    "review": "確認",
+    "files": "ファイル",
+    "payments": "支払",
+    "money": "収支"
+  },
+  "settings": {
+    "title": "設定",
+    "subtitle": "各種設定を管理します",
+    "profile": "プロフィール",
+    "name": "名前",
+    "namePlaceholder": "お名前",
+    "email": "メールアドレス",
+    "preferences": "環境設定",
+    "baseCurrency": "基準通貨",
+    "language": "言語",
+    "languageHint": "翻訳はコミュニティによる提供です。未翻訳の文言は英語で表示されます。",
+    "region": "地域",
+    "regionAuto": "表示言語に合わせる",
+    "regionHint": "日付と数値は {{sample}} の形式で表示されます。",
+    "saving": "保存しています...",
+    "autoSave": "変更は自動的に保存されます",
+    "account": "アカウント",
+    "signOut": "サインアウト"
+  },
+  "ui": {
+    "dataView": {
+      "noun": {
+        "holdings_other": "保有資産",
+        "holdings_counted_other": "{{count}}件の保有資産",
+        "payments_other": "支払",
+        "payments_counted_other": "{{count}}件の支払",
+        "vendors_other": "取引先",
+        "vendors_counted_other": "{{count}}件の取引先",
+        "accounts_other": "口座",
+        "accounts_counted_other": "{{count}}件の口座",
+        "institutions_other": "金融機関",
+        "institutions_counted_other": "{{count}}件の金融機関",
+        "groups_other": "グループ",
+        "groups_counted_other": "{{count}}件のグループ",
+        "vaults_other": "貯蓄目標",
+        "vaults_counted_other": "{{count}}件の貯蓄目標",
+        "jobs_other": "処理",
+        "jobs_counted_other": "{{count}}件の処理",
+        "files_other": "ファイル",
+        "files_counted_other": "{{count}}件のファイル",
+        "integrations_other": "連携",
+        "integrations_counted_other": "{{count}}件の連携",
+        "reviewItems_other": "項目",
+        "reviewItems_counted_other": "{{count}}件の項目",
+        "transfers_other": "送金",
+        "transfers_counted_other": "{{count}}件の送金",
+        "hiddenHoldings_other": "非表示の保有資産",
+        "hiddenHoldings_counted_other": "{{count}}件の非表示の保有資産",
+        "customTokens_other": "カスタムトークン",
+        "customTokens_counted_other": "{{count}}件のカスタムトークン"
+      },
+      "accounts": {
+        "col": {
+          "account": "口座",
+          "holdings": "保有資産",
+          "institution": "金融機関",
+          "lastSynced": "最終同期",
+          "type": "種類",
+          "value": "評価額"
+        },
+        "config": {
+          "search": "検索",
+          "details": "{{name}} の詳細"
+        },
+        "empty": {
+          "anAccountIsCreatedForYou": "連携を接続するか明細を取り込むと、口座が自動的に作成されます。",
+          "noAccountsYet": "口座はまだありません"
+        },
+        "filter": {
+          "contents": "内容",
+          "group": "グループ",
+          "institution": "金融機関",
+          "type": "種類"
+        },
+        "group": {
+          "institution": "金融機関",
+          "type": "種類"
+        },
+        "sort": {
+          "holdings": "保有資産",
+          "name": "名前",
+          "value": "評価額"
+        },
+        "option": {
+          "holdsSomething": "資産あり",
+          "empty": "資産なし"
+        }
+      },
+      "answeredTransfers": {
+        "col": {
+          "answer": "回答",
+          "answered": "回答日時",
+          "from": "送信元",
+          "left": "出た数量",
+          "when": "日時"
+        },
+        "config": {
+          "searchAnsweredTransfers": "回答済みの送金を検索"
+        },
+        "empty": {
+          "answersYouGiveInTheTransfer": "送金キューで回答した内容はここに残るため、後から変更できます。",
+          "noTransfersAnsweredYet": "回答済みの送金はまだありません"
+        },
+        "filter": {
+          "answered": "回答日時"
+        },
+        "sort": {
+          "answered": "回答日時",
+          "asset": "資産",
+          "when": "日時"
+        }
+      },
+      "customTokens": {
+        "col": {
+          "price": "価格",
+          "priceUpdated": "価格の更新",
+          "token": "トークン",
+          "type": "種類"
+        },
+        "config": {
+          "searchCustomTokens": "カスタムトークンを検索"
+        },
+        "empty": {
+          "createOneForAnAssetNo": "価格提供元が扱っていない資産のために作成します。非上場株式や現物資産などです。作成したトークンとその価格は、すべてのScaniユーザーと共有されます。",
+          "noCustomTokensYet": "カスタムトークンはまだありません"
+        },
+        "filter": {
+          "type": "種類"
+        },
+        "group": {
+          "type": "種類"
+        },
+        "sort": {
+          "priceUpdated": "価格の更新",
+          "symbol": "シンボル"
+        }
+      },
+      "files": {
+        "col": {
+          "invoices": "請求書",
+          "kind": "種類",
+          "name": "名前",
+          "size": "サイズ",
+          "uploaded": "アップロード"
+        },
+        "config": {
+          "searchFiles": "ファイルを検索"
+        },
+        "empty": {
+          "invoicesScreenshotsAndStatementFilesYou": "アップロードした請求書・スクリーンショット・明細ファイルは、読み取られた内容とあわせてここに保管されます。",
+          "noFilesYet": "ファイルはまだありません"
+        },
+        "filter": {
+          "invoices": "請求書",
+          "kind": "種類"
+        },
+        "group": {
+          "invoices": "請求書",
+          "kind": "種類"
+        },
+        "sort": {
+          "kind": "種類",
+          "name": "名前",
+          "size": "サイズ",
+          "uploaded": "アップロード"
+        }
+      },
+      "groups": {
+        "col": {
+          "accounts": "口座",
+          "group": "グループ",
+          "holdings": "保有資産",
+          "value": "評価額"
+        },
+        "config": {
+          "searchGroups": "グループを検索",
+          "value": "評価額"
+        },
+        "empty": {
+          "aGroupIsYourOwnLabel": "グループは、保有資産や口座に付ける自分用のラベルです。「老後資金」「課税対象」「共同名義」など。",
+          "noGroupsYet": "グループはまだありません"
+        },
+        "filter": {
+          "members": "メンバー"
+        },
+        "sort": {
+          "accounts": "口座",
+          "holdings": "保有資産",
+          "name": "名前",
+          "value": "評価額"
+        },
+        "option": {
+          "hasMembers": "メンバーあり",
+          "empty": "メンバーなし"
+        }
+      },
+      "hiddenHoldings": {
+        "col": {
+          "account": "口座",
+          "balance": "残高",
+          "reason": "理由",
+          "token": "トークン"
+        },
+        "config": {
+          "searchHidden": "非表示を検索"
+        },
+        "empty": {
+          "everythingYouOwnIsCountedOnYourDashboard": "保有資産はすべてダッシュボードに集計されています。",
+          "nothingIsHidden": "非表示のものはありません"
+        },
+        "filter": {
+          "reason": "理由"
+        },
+        "group": {
+          "institution": "金融機関"
+        },
+        "sort": {
+          "balance": "残高",
+          "symbol": "シンボル"
+        },
+        "option": {
+          "hiddenByYou": "自分で非表示にした",
+          "likelyScam": "詐欺の可能性"
+        }
+      },
+      "holdings": {
+        "col": {
+          "account": "口座",
+          "amount": "数量",
+          "gainLoss": "損益",
+          "holding": "保有資産",
+          "institution": "金融機関",
+          "price": "価格",
+          "value": "評価額"
+        },
+        "config": {
+          "searchHoldings": "保有資産を検索"
+        },
+        "empty": {
+          "description": "取引所を接続する、明細を取り込む、手動で保有資産を追加する。どの方法でもここに表示されます。",
+          "title": "保有資産はまだありません"
+        },
+        "filter": {
+          "account": "口座",
+          "group": "グループ",
+          "institution": "金融機関",
+          "type": "種類",
+          "quality": "データ品質"
+        },
+        "groupBy": {
+          "account": "口座",
+          "institution": "金融機関",
+          "type": "種類"
+        },
+        "sort": {
+          "amount": "数量",
+          "pnl": "損益",
+          "price": "価格",
+          "symbol": "シンボル",
+          "value": "評価額"
+        },
+        "qualityOption": {
+          "duplicateSymbol": "同じシンボルが複数のトークン行にある",
+          "lookalike": "他のシンボルに似せている",
+          "zeroBalance": "残高ゼロ",
+          "noRecentPrice": "最近の価格なし",
+          "noPriceSource": "利用できる価格提供元なし",
+          "negativeOpening": "初期残高がマイナス",
+          "noCoverage": "カバレッジ行なし"
+        }
+      },
+      "institutions": {
+        "col": {
+          "accounts": "口座",
+          "institution": "金融機関",
+          "type": "種類",
+          "value": "評価額"
+        },
+        "config": {
+          "searchInstitutions": "金融機関を検索"
+        },
+        "empty": {
+          "anInstitutionAppearsHereTheFirst": "取り込みや連携によってその金融機関の口座が初めて追加されたとき、ここに表示されます。",
+          "noInstitutionsYet": "金融機関はまだありません"
+        },
+        "filter": {
+          "type": "種類"
+        },
+        "group": {
+          "type": "種類"
+        },
+        "sort": {
+          "accounts": "口座",
+          "name": "名前",
+          "value": "評価額"
+        }
+      },
+      "integrations": {
+        "col": {
+          "kind": "種類",
+          "service": "サービス",
+          "whatItSyncs": "同期する内容"
+        },
+        "config": {
+          "search": "検索"
+        },
+        "empty": {
+          "noServicesToConnect": "接続できるサービスがありません",
+          "scaniShipsItsIntegrationsWithThe": "Scaniの連携はアプリに同梱されています。そのため一覧が空の場合は、接続先が存在しないのではなく、カタログの読み込みに失敗しています。"
+        },
+        "filter": {
+          "kind": "種類"
+        },
+        "group": {
+          "kind": "種類"
+        },
+        "sort": {
+          "name": "名前"
+        }
+      },
+      "jobs": {
+        "col": {
+          "detail": "詳細",
+          "job": "処理",
+          "started": "開始",
+          "status": "状態"
+        },
+        "config": {
+          "searchJobs": "処理を検索"
+        },
+        "empty": {
+          "importsParsesAndPriceRefreshesRun": "取り込み・解析・価格更新はバックグラウンドで実行され、その状況がここに表示されます。",
+          "noBackgroundJobsYet": "バックグラウンド処理はまだありません"
+        },
+        "filter": {
+          "status": "状態"
+        },
+        "group": {
+          "status": "状態"
+        },
+        "sort": {
+          "started": "開始",
+          "status": "状態"
+        }
+      },
+      "kitchenSink": {
+        "col": {
+          "24h": "24時間",
+          "holding": "保有資産",
+          "institution": "金融機関",
+          "price": "価格",
+          "units": "数量",
+          "value": "評価額"
+        },
+        "config": {
+          "searchHoldings": "保有資産を検索"
+        },
+        "empty": {
+          "connectAnExchangeOrImportAStatementAndYourPositionsAppearHere": "取引所を接続するか明細を取り込むと、保有資産がここに表示されます。",
+          "noHoldingsYet": "保有資産はまだありません"
+        },
+        "filter": {
+          "institution": "金融機関",
+          "type": "種類"
+        },
+        "group": {
+          "institution": "金融機関",
+          "type": "種類"
+        },
+        "sort": {
+          "change": "変動",
+          "name": "名前",
+          "value": "評価額"
+        }
+      },
+      "payments": {
+        "col": {
+          "amount": "金額",
+          "cadence": "頻度",
+          "direction": "区分",
+          "status": "状態",
+          "vendor": "取引先"
+        },
+        "config": {
+          "searchByVendor": "取引先で検索"
+        },
+        "empty": {
+          "addABillOrRecurringIncomeAndScaniTracksEveryDateItFallsDue": "支払や定期的な収入を追加すると、Scaniが期日をすべて記録します。",
+          "noRecurringPaymentsYet": "定期支払はまだありません"
+        },
+        "filter": {
+          "direction": "区分",
+          "status": "状態",
+          "vendor": "取引先"
+        },
+        "group": {
+          "direction": "区分",
+          "status": "状態"
+        },
+        "sort": {
+          "amount": "金額",
+          "status": "状態",
+          "vendor": "取引先"
+        },
+        "option": {
+          "active": "有効",
+          "paused": "一時停止中",
+          "ended": "終了",
+          "bill": "支払",
+          "income": "収入"
+        }
+      },
+      "review": {
+        "col": {
+          "amount": "金額",
+          "arrived": "到着",
+          "detail": "詳細",
+          "item": "項目"
+        },
+        "config": {
+          "searchReview": "確認対象を検索"
+        },
+        "empty": {
+          "importsLandHereWhenTheyFinish": "取り込みが完了し、保有資産に反映する前に確認が必要なものがここに表示されます。",
+          "nothingNeedsYourReview": "確認が必要なものはありません"
+        },
+        "filter": {
+          "type": "種類"
+        },
+        "group": {
+          "type": "種類"
+        },
+        "sort": {
+          "arrived": "到着",
+          "item": "項目"
+        }
+      },
+      "transferReview": {
+        "col": {
+          "from": "送信元",
+          "ifItWasASale": "売却だった場合",
+          "left": "出た数量",
+          "when": "日時",
+          "whyItIsHere": "ここにある理由"
+        },
+        "config": {
+          "searchTransfers": "送金を検索"
+        },
+        "empty": {
+          "everyTransferIsAccountedFor": "すべての送金の行き先が判明しています",
+          "moneyMovingBetweenYourOwnAccounts": "自分の口座間の資金移動は自動的に照合されます。自動で判断できなかったものがここに表示されるので、回答してください。"
+        },
+        "sort": {
+          "asset": "資産",
+          "value": "評価額",
+          "when": "日時"
+        }
+      },
+      "vaults": {
+        "col": {
+          "progress": "進捗",
+          "saved": "貯蓄額",
+          "target": "目標額",
+          "vault": "貯蓄目標"
+        },
+        "config": {
+          "searchVaults": "貯蓄目標を検索"
+        },
+        "empty": {
+          "aVaultIsASavingsGoal": "貯蓄目標とは、名前と目標額を決め、そこに充てる保有資産を紐づけるものです。",
+          "noVaultsYet": "貯蓄目標はまだありません"
+        },
+        "filter": {
+          "status": "状態"
+        },
+        "sort": {
+          "name": "名前",
+          "progress": "進捗",
+          "saved": "貯蓄額",
+          "target": "目標額"
+        },
+        "option": {
+          "stillSaving": "貯蓄中",
+          "targetReached": "目標達成"
+        }
+      },
+      "vendors": {
+        "col": {
+          "category": "カテゴリ",
+          "kind": "区分",
+          "payments": "支払",
+          "vendor": "取引先",
+          "perMonth": "月あたり"
+        },
+        "config": {
+          "searchVendors": "取引先を検索"
+        },
+        "empty": {
+          "aVendorIsCreatedForYou": "支払の相手を指定すると、その取引先が自動的に作成されます。ここから手動で追加することもできます。",
+          "noVendorsYet": "取引先はまだありません"
+        },
+        "group": {
+          "billsIncome": "支払／収入",
+          "category": "カテゴリ"
+        },
+        "sort": {
+          "name": "名前",
+          "payments": "支払"
+        }
+      },
+      "upcoming": {
+        "empty": {
+          "nothingDue_other": "今後{{count}}日間に期日の予定はありません",
+          "noPayments": "定期支払はまだありません",
+          "outsideWindow": "登録済みの支払は、この期間の外に期日があります。",
+          "addOne": "支払や定期的な収入を追加すると、次回以降の期日がここに表示されます。"
+        }
+      },
+      "forecast": {
+        "empty": {
+          "nothingToProject": "予測できるものがありません",
+          "noPayments": "定期支払はまだありません",
+          "allPausedOrUnpriced": "登録されている支払はすべて一時停止・終了しているか、予測に使える金額がありません。",
+          "addOne": "支払や定期的な収入を追加すると、予測がここに表示されます。"
+        }
+      },
+      "itemCount_other": "{{count}}件",
+      "nameList": {
+        "all": "{{head}} と {{last}}",
+        "more": "{{head}} ほか{{count}}件"
+      },
+      "toolbar": {
+        "refine": "絞り込み",
+        "refineAria": "フィルター・並び替え・グループ化",
+        "select": "選択",
+        "done": "完了",
+        "export": "エクスポート",
+        "search": "{{noun}}を検索",
+        "filteredOf": "{{counted}}件中{{shown}}件",
+        "loadedSoFar": "これまでに{{counted}}件を読み込み",
+        "filteredOfLoaded": "これまでに読み込んだ{{counted}}件中{{shown}}件",
+        "loadMore": "さらに読み込む",
+        "loadingMore": "読み込んでいます…",
+        "selected": "{{counted}}件を選択中",
+        "removeFilter": "フィルターを解除 {{label}}: {{value}}"
+      },
+      "table": {
+        "clearSelection": "選択を解除",
+        "selectAll": "すべて選択",
+        "selectRow": "{{name}} を選択",
+        "sortBy": "{{header}} で並び替え",
+        "rowActions": "詳細",
+        "rowCount_other": "{{count}}行"
+      },
+      "empty": {
+        "clearSearchAndFilters": "検索とフィルターを解除",
+        "noMatchSearch": "「{{search}}」に一致する{{noun}}はありません",
+        "noMatchFilters": "そのフィルターに一致する{{noun}}はありません",
+        "noMatchLoaded": "読み込み済みの範囲に一致するものはありません",
+        "loadedOnly": "検索とフィルターは、これまでに読み込んだ{{counted}}件だけを対象とします。範囲を広げるにはさらに読み込んでください。",
+        "filteredBy": "{{list}} で絞り込み中。"
+      },
+      "bulk": {
+        "delete": "削除",
+        "deleteCount": "{{counted}}件を削除"
+      },
+      "refine": {
+        "title": "絞り込み",
+        "filter": "フィルター",
+        "sortBy": "並び替え",
+        "groupBy": "グループ化",
+        "any": "指定なし",
+        "noGrouping": "グループ化しない",
+        "lowToHigh": "昇順",
+        "highToLow": "降順",
+        "clearAll": "すべて解除",
+        "done": "完了",
+        "expand": "すべての選択肢を表示",
+        "collapse": "選択肢を減らして表示",
+        "close": "絞り込みを閉じる",
+        "liveCount": "{{counted}}件 · 変更は即座に反映されます"
+      },
+      "export": {
+        "title": "エクスポート",
+        "whatToExport": "エクスポートする範囲",
+        "format": "形式",
+        "separator": "区切り文字",
+        "privacy": "プライバシー",
+        "hideAmounts": "金額を隠す",
+        "hideAmountsDetail": "評価額・損益・換算後の列をすべて削除します。ファイルにはそれらを伏せた旨が記載されます。",
+        "cancel": "キャンセル",
+        "preparing": "準備しています…",
+        "expand": "すべての選択肢を表示",
+        "collapse": "選択肢を減らして表示",
+        "close": "エクスポートを閉じる",
+        "separatorComma": "カンマ",
+        "separatorCommaDetail": "a,b,c — 一般的な選択",
+        "separatorSemicolon": "セミコロン",
+        "separatorSemicolonDetail": "a;b;c — 表計算ソフトがヨーロッパの地域設定の場合",
+        "formatCsv": "CSV (.csv)",
+        "formatCsvDetail": "プレーンテキスト。どこでも開け、どこへでも取り込めます。",
+        "formatXlsx": "Excel (.xlsx)",
+        "formatXlsxDetail": "数値は数値のまま、スクロールしても見出し行は固定されます。",
+        "formatPdf": "PDF (.pdf)",
+        "formatPdfDetail": "会計士・銀行・貸主などに送るための明細書です。",
+        "onScreenNow": "いま画面に表示されているもの",
+        "ignoresFilters": "フィルターと検索を無視します",
+        "nothingTitle": "エクスポートするものがありません",
+        "nothingFiltered": "そのフィルターに一致するものがないため、ファイルに入れる内容がありません。",
+        "nothingAtAll": "まだ何もないため、ファイルに入れる内容がありません。",
+        "action": "{{counted}}件をエクスポート",
+        "scopeThese": "この{{counted}}件",
+        "scopeAllShort": "全{{counted}}件",
+        "scopeAllLoadedShort": "読み込み済みの全{{counted}}件",
+        "scopeAll": "全{{counted}}件",
+        "scopeAllLoaded": "これまでに読み込んだ全{{counted}}件",
+        "scopeFiltered": "絞り込み後 — {{counted}}件中{{shown}}件",
+        "scopeFilteredLoaded": "絞り込み後 — これまでに読み込んだ{{counted}}件中{{shown}}件",
+        "loadedOnly": "これまでに読み込んだ行のみ。残りは取得されていません",
+        "partialSet": "全体ではありません",
+        "partialSetDetail": "画面に読み込まれた{{counted}}件のみをエクスポートしました。",
+        "errorContext": "{{noun}}のエクスポート",
+        "groupedBy": "グループ化",
+        "search": "検索",
+        "sortedBy": "並び替え",
+        "sortedAscending": "{{label}}（昇順）",
+        "sortedDescending": "{{label}}（降順）",
+        "subjectDescription": "{{subject}}を自分のものとして保存できるファイルでダウンロードします。"
+      }
+    },
+    "brand": {
+      "logoAlt": "{{name}} のロゴ"
+    },
+    "toast": {
+      "errorTitle": "問題が発生しました",
+      "successTitle": "完了しました",
+      "unknownError": "不明なエラー",
+      "viewDetails": "詳細を見る",
+      "dismiss": "閉じる",
+      "viewDetailsAlt": "コンソールでエラーの詳細を見る",
+      "detail": "{{context}}: {{message}}"
+    },
+    "export": {
+      "pdfUnavailable": "ここではPDFエクスポートを利用できません",
+      "nothingToExport": "エクスポートするものがありません",
+      "pdfTooManyRows": "PDFに収められるのは最大{{max}}行ですが、これは{{rows}}行あります。CSVまたはExcelでエクスポートするか、範囲を絞ってください。",
+      "xlsxChunk": "Excel書き出し機能",
+      "workbook": {
+        "currency": "{{header}}（{{currency}}）",
+        "currencyConverted": "{{header}}（{{currency}}・換算後）",
+        "currencyColumn": "{{header}}の通貨"
+      },
+      "provenance": {
+        "exportedFrom": "エクスポート元",
+        "subject": "対象",
+        "scope": "範囲",
+        "generated": "作成日時",
+        "rows": "行数",
+        "amounts": "金額",
+        "withheld": "伏せています — 評価額・損益・換算後の列は意図的にすべて削除しました",
+        "aboutSheet": "このファイルについて",
+        "field": "項目",
+        "value": "内容"
+      },
+      "download": {
+        "shared": "共有シートに送りました",
+        "sharedDetail": "{{fileName}} を保存するには「ファイルに保存」を選んでください。",
+        "saved": "エクスポートしました",
+        "savedDetail": "{{fileName}} に{{subject}}"
+      }
+    },
+    "errors": {
+      "offline": {
+        "title": "サーバーに接続できませんでした",
+        "detail": "接続を確認してください。データは変更されていません。"
+      },
+      "session": {
+        "title": "セッションが終了しました",
+        "detail": "{{subject}}を表示するには、もう一度サインインしてください。"
+      },
+      "timeout": {
+        "title": "サーバーの応答に時間がかかりすぎました",
+        "detail": "{{subject}}を{{verb}}するリクエストがタイムアウトしました。データは変更されていません。"
+      },
+      "rateLimit": {
+        "title": "リクエストが多すぎます",
+        "detail": "サーバーから速度を落とすよう求められました。少し待ってから再試行してください。"
+      },
+      "generic": {
+        "title": "{{subject}}を{{verb}}できませんでした",
+        "detail": "サーバーがエラーを返しました。データは変更されていません。"
+      },
+      "rejected": {
+        "detail": "{{reason}}。データは変更されていません。"
+      },
+      "chunk": {
+        "message": "{{chunk}}を読み込めませんでした。接続を確認してもう一度お試しください。このタブを開いたままアプリが更新された場合は、ページを再読み込みすると解決します。",
+        "title": "{{chunk}}を読み込めませんでした",
+        "detail": "アプリの一部をダウンロードできませんでした。多くの場合、接続が切れたか、このタブを開いている間に更新が配信されたことが原因です。",
+        "reload": "ページを再読み込み"
+      },
+      "crash": {
+        "title": "問題が発生しました",
+        "detail": "予期しないエラーが発生しました。データは変更されていません。",
+        "home": "ダッシュボードへ"
+      },
+      "verb": {
+        "load": "読み込み",
+        "create": "作成",
+        "save": "保存",
+        "connect": "接続"
+      },
+      "tryAgain": "再試行",
+      "retry": "再試行"
+    },
+    "magicCode": {
+      "prompt": "メールに記載された6桁のコードを入力してください",
+      "verify": "コードを確認",
+      "resend": "コードを再送",
+      "digit": "{{index}}桁目",
+      "expiry": "コードの有効期限は10分です"
+    },
+    "update": {
+      "updating": "更新しています... お待ちください",
+      "available": "新しいバージョンがあります",
+      "action": "更新",
+      "dismiss": "閉じる"
+    },
+    "dialog": {
+      "close": "閉じる"
+    },
+    "sheet": {
+      "close": "閉じる"
+    },
+    "loading": {
+      "label": "読み込んでいます..."
+    },
+    "numeric": {
+      "noValue": "値なし"
+    },
+    "confirmAction": {
+      "cancel": "キャンセル"
+    },
+    "loadingRamp": {
+      "stalled": "まだサーバーの応答を待っています。データは変更されていません。",
+      "retry": "再試行",
+      "loading": "{{label}}を読み込んでいます"
+    },
+    "peek": {
+      "recordDetail": "レコードの詳細",
+      "loading": "読み込んでいます",
+      "notFound": "見つかりません",
+      "notOnList": "この{{noun}}はこの一覧にありません。削除されたか、リンクが古い可能性があります。",
+      "expand": "詳細をすべて表示",
+      "collapse": "表示を減らす"
+    },
+    "amountInput": {
+      "readAsWhole": "{{amount}} として読み取りました。この欄には整数のみ入力できます。",
+      "readAsDecimal": "{{amount}} として読み取りました。ここではカンマもピリオドも小数点として扱われます。千の位の区切りのつもりだった場合は、その記号を削除してください。"
+    },
+    "theme": {
+      "label": "テーマ",
+      "system": "システム",
+      "light": "ライト",
+      "dark": "ダーク",
+      "trigger": "テーマ: {{theme}}"
+    },
+    "install": {
+      "headline": "{{appName}} をスマートフォンにインストール",
+      "installAction": "インストール",
+      "howAction": "方法は？",
+      "sheetDescription": "ホーム画面にアイコンを追加すると、全画面でアプリのように使えます。",
+      "safariOnly": "iOSでホーム画面にアプリを追加できるのはSafariだけです。このページをSafariで開いてから、以下の手順に進んでください。",
+      "dismissPrompt": "インストールの案内を閉じる",
+      "iosStep1": "Safariのツールバーにある <icon/> 共有ボタンをタップします。",
+      "iosStep2": "共有シートをスクロールし、<icon/> <b>ホーム画面に追加</b> をタップします。",
+      "iosStep3": "<b>追加</b> で確定します。これで {{appName}} をネイティブアプリのようにホーム画面から開けます。",
+      "androidStep1": "ブラウザ右上の <b>⋮</b> メニューをタップします。",
+      "androidStep2": "<b>アプリをインストール</b>（Chrome）または <b>ホーム画面に追加</b>（Firefox / Samsung Internet）を選びます。",
+      "androidStep3": "確定します。これで {{appName}} が、他のインストール済みアプリと同じようにアプリ一覧から起動できます。"
+    }
+  },
+  "offline": {
+    "title": "Scaniに接続できません",
+    "subtitleOnline": "デバイスはオンラインですが、Scaniのサーバーから応答がありませんでした。",
+    "subtitleOffline": "このデバイスは現在ネットワークに接続していません。",
+    "bodySignedIn": "{{email}} でサインインした状態は保たれています。サインアウトはされていません。サーバーが応答するまでデータを読み込めないだけです。",
+    "bodyUnknown": "サーバーが応答するまで、何も読み込めません。",
+    "reassurance": "接続が戻り次第、自動的に再試行します。",
+    "retry": "再試行",
+    "retrying": "再試行しています…",
+    "signInDifferent": "別のメールアドレスでサインイン",
+    "connectionIssue": "接続の問題",
+    "connectionIssueRetrying": "接続の問題 — 再試行しています"
+  }
+}
