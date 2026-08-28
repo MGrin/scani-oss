@@ -110,13 +110,13 @@ export function MoneyPage() {
         action={
           segment === 'vendors' ? (
             <Button variant="outline" onClick={() => setCreatingVendor(true)}>
-              <Plus className="mr-1.5 h-4 w-4" aria-hidden="true" />
+              <Plus className="me-1.5 h-4 w-4" aria-hidden="true" />
               {t('v3.money.page.newVendor')}
             </Button>
           ) : (
             <Button asChild>
               <Link to={V3_PAYMENT_ROUTES.create}>
-                <Plus className="mr-1.5 h-4 w-4" aria-hidden="true" />
+                <Plus className="me-1.5 h-4 w-4" aria-hidden="true" />
                 {t('v3.money.page.addPayment')}
               </Link>
             </Button>

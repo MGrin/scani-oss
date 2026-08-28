@@ -69,7 +69,7 @@ interface RecordPickerProps {
 }
 
 const ROW =
-  'flex w-full items-center gap-2 px-3 py-3 text-left text-body transition-colors duration-fast ease-emphasized hover:bg-surface-hover focus-visible:outline-none focus-visible:bg-surface-hover disabled:opacity-50';
+  'flex w-full items-center gap-2 px-3 py-3 text-start text-body transition-colors duration-fast ease-emphasized hover:bg-surface-hover focus-visible:outline-none focus-visible:bg-surface-hover disabled:opacity-50';
 
 export function RecordPicker({
   value,
@@ -121,7 +121,7 @@ export function RecordPicker({
           onClick={onClear}
           aria-label={t('v3.form.recordPicker.change', { label: ariaLabel })}
         >
-          <X className="mr-1.5 h-4 w-4" aria-hidden="true" />
+          <X className="me-1.5 h-4 w-4" aria-hidden="true" />
           {t('v3.form.recordPicker.changeAction')}
         </Button>
       </div>

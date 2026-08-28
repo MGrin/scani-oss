@@ -83,7 +83,7 @@ function OptionRow({
       onClick={onSelect}
       aria-pressed={active}
       className={cn(
-        'flex w-full items-center gap-3 rounded-md px-3 py-2 text-left',
+        'flex w-full items-center gap-3 rounded-md px-3 py-2 text-start',
         'transition-colors duration-fast ease-emphasized hover:bg-surface-hover',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
         active ? 'text-foreground' : 'text-muted-foreground'
@@ -138,7 +138,7 @@ function ToggleRow({
   onChange: (next: boolean) => void;
 }) {
   return (
-    <div className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-left">
+    <div className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-start">
       <span className="flex min-w-0 flex-1 flex-col">
         <span id={`${id}-label`} className="text-body text-foreground">
           {label}
@@ -435,7 +435,7 @@ export function ExportSheet({
       <Button className="flex-1" onClick={run} disabled={running || disabled?.(scope) === true}>
         {running ? (
           <>
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
+            <Loader2 className="me-2 h-4 w-4 animate-spin" aria-hidden="true" />
             {t('ui.dataView.export.preparing')}
           </>
         ) : (
@@ -449,11 +449,11 @@ export function ExportSheet({
     return (
       <Sheet open={open} onOpenChange={onOpenChange}>
         <SheetContent
-          side="right"
+          side="end"
           className="w-full gap-0 p-0 sm:max-w-md"
           style={{ backgroundColor: 'hsl(var(--surface-2))' }}
         >
-          <div className="shrink-0 border-b border-border px-4 pb-4 pr-12 pt-4">{header}</div>
+          <div className="shrink-0 border-b border-border px-4 pb-4 pe-12 pt-4">{header}</div>
           <div className="min-h-0 flex-1 overflow-y-auto px-1 py-2">{sections}</div>
           {footer}
         </SheetContent>

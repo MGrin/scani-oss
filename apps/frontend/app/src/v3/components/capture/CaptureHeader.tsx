@@ -1,3 +1,5 @@
+import { cn } from '@scani/ui/lib/cn';
+import { MIRROR_IN_RTL } from '@scani/ui/lib/direction';
 import { Button } from '@scani/ui/ui/button';
 import { ArrowLeft } from 'lucide-react';
 import type { ReactNode } from 'react';
@@ -25,9 +27,9 @@ export function CaptureHeader({
 }) {
   return (
     <div className="flex flex-col gap-2">
-      <Button variant="ghost" asChild className="-ml-2 self-start">
+      <Button variant="ghost" asChild className="-ms-2 self-start">
         <Link to={backTo}>
-          <ArrowLeft className="mr-1 size-4" aria-hidden="true" />
+          <ArrowLeft className={cn(MIRROR_IN_RTL, 'me-1 size-4')} aria-hidden="true" />
           {backLabel}
         </Link>
       </Button>

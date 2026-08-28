@@ -135,7 +135,7 @@ export function DateField({
         disabled={disabled}
         className={cn(
           'peer absolute inset-0 h-full w-full appearance-none bg-transparent px-3 text-body opacity-0 outline-none',
-          'focus:opacity-100 [&::-webkit-date-and-time-value]:text-left'
+          'focus:opacity-100 [&::-webkit-date-and-time-value]:text-start'
         )}
       />
       <span

@@ -195,7 +195,7 @@ export function ManualEntryPage() {
               setHoldings((current) => [...current, emptyHolding(crypto.randomUUID())])
             }
           >
-            <Plus className="mr-1.5 size-4" aria-hidden="true" />
+            <Plus className="me-1.5 size-4" aria-hidden="true" />
             {t('v3.capture.page.manual.addAnother')}
           </Button>
         </FieldSet>
