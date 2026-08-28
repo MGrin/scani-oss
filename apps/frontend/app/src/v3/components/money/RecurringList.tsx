@@ -17,12 +17,14 @@ import { directionLabel } from '../../lib/money';
 import {
   asPaymentIntervalUnit,
   formatPaymentInterval,
+  type HistoryEstimate,
   monthlyEquivalent,
 } from '../../lib/paymentTotals';
 import { V3_PAYMENT_ROUTES, V3_ROUTES } from '../../lib/routes';
 import { BaseEquivalent } from '../BaseEquivalent';
 import { DeletePaymentAction } from './DeletePaymentAction';
 import { EndPaymentAction } from './EndPaymentAction';
+import { EstimatedFromHistory } from './EstimatedFromHistory';
 import { PaymentStatusToggle } from './PaymentStatusToggle';
 import { RecurringSummary } from './RecurringSummary';
 
@@ -76,6 +78,16 @@ interface RecurringListProps {
   /** Base-currency conversion for the summary and every row's second line. */
   rates: BaseCurrencyRates;
   query: V3QueryState;
+  /**
+   * From `payments.forecast` (SC-625): which payments the projection priced
+   * from their own settled history, and from when.
+   *
+   * Read rather than recomputed. `payments.list` carries no occurrence data,
+   * so this list could not derive an estimate even if it wanted to — and
+   * taking the projection's answer is what stops the monthly figure here and
+   * the one on the forecast from being two implementations of one rule.
+   */
+  historyEstimates: ReadonlyMap<string, HistoryEstimate>;
 }
 
 export function RecurringList({
@@ -84,11 +96,14 @@ export function RecurringList({
   tokenSymbolById,
   rates,
   query,
+  historyEstimates,
 }: RecurringListProps) {
   const { t } = useTranslation();
   const vendorName = (payment: PaymentRow) =>
     vendorNameById.get(payment.vendorId) ?? t('v3.common.unknownVendor');
   const symbolFor = (payment: PaymentRow) => tokenSymbolById.get(payment.currencyTokenId) ?? 'USD';
+  const amountForSort = (payment: PaymentRow) =>
+    payment.expectedAmount ?? historyEstimates.get(payment.id)?.amount ?? '0';
 
   // Only vendors that actually own a payment, so the Refine sheet never offers
   // a narrowing that empties the list. Sorted by name — the order the reader
@@ -152,12 +167,15 @@ export function RecurringList({
       switch (field) {
         case 'vendor':
           return vendorName(a).localeCompare(vendorName(b)) * mult;
+        // SORT WHAT THE COLUMN SHOWS, NOT WHAT THE ROW DECLARES. An estimated
+        // payment renders a figure in the `amount` cell, so keying the sort on
+        // `expectedAmount` alone would sort it as zero and file it at one end
+        // of a list it visibly does not belong at — the reader sorts by the
+        // column they are looking at, and there is no way to see why the row
+        // moved. `?? '0'` still catches what remains genuinely unestimated,
+        // which is the case the count line beneath the total is about.
         case 'amount':
-          return (
-            (Number.parseFloat(a.expectedAmount ?? '0') -
-              Number.parseFloat(b.expectedAmount ?? '0')) *
-            mult
-          );
+          return (Number.parseFloat(amountForSort(a)) - Number.parseFloat(amountForSort(b))) * mult;
         case 'status':
           return a.status.localeCompare(b.status) * mult;
         default:
@@ -178,20 +196,48 @@ export function RecurringList({
     ],
     defaultSort: { field: 'vendor', direction: 'asc' },
     summary: (items) => (
-      <RecurringSummary payments={items} tokenSymbolById={tokenSymbolById} rates={rates} />
+      <RecurringSummary
+        payments={items}
+        tokenSymbolById={tokenSymbolById}
+        rates={rates}
+        historyEstimates={historyEstimates}
+      />
     ),
-    renderRow: (payment) => ({
-      label: vendorName(payment),
-      sublabel: `${formatPaymentInterval(t, payment.intervalUnit, payment.intervalCount)} · ${directionLabel(payment.direction, t)}${payment.status === 'active' ? '' : ` · ${payment.status}`}`,
-      value: <Numeric value={payment.expectedAmount} currency={symbolFor(payment)} />,
-      delta: (
-        <BaseEquivalent
-          amount={payment.expectedAmount}
-          currencyTokenId={payment.currencyTokenId}
-          rates={rates}
-        />
-      ),
-    }),
+    renderRow: (payment) => {
+      // Where an estimated payment would otherwise look like a fixed bill.
+      // Down this column a variable payment priced from history and a fixed
+      // rent are both a vendor, a cadence and a figure — the whole reason
+      // SC-625 needed a third register rather than just an amount. The mark
+      // takes the second line, replacing the base-currency equivalent, which
+      // is what a bare figure would carry: converting a figure into another
+      // currency says less about it than saying it is last February's.
+      //
+      // THE SAME SUBSTITUTION IS OWED TO THE `amount` COLUMN BELOW, AND THIS
+      // COMMENT USED TO CLAIM THIS WAS THE ONLY PLACE IT WAS NEEDED. It is
+      // the only place on a PHONE. The desktop table renders through
+      // `columns`, not through here, so the claim was false on the wider of
+      // the two layouts and true-looking in every test that rendered both.
+      const estimate = payment.expectedAmount === null ? historyEstimates.get(payment.id) : null;
+      return {
+        label: vendorName(payment),
+        sublabel: `${formatPaymentInterval(t, payment.intervalUnit, payment.intervalCount)} · ${directionLabel(payment.direction, t)}${payment.status === 'active' ? '' : ` · ${payment.status}`}`,
+        value: (
+          <Numeric
+            value={estimate?.amount ?? payment.expectedAmount}
+            currency={symbolFor(payment)}
+          />
+        ),
+        delta: estimate ? (
+          <EstimatedFromHistory sourceDueDate={estimate.sourceDueDate} />
+        ) : (
+          <BaseEquivalent
+            amount={payment.expectedAmount}
+            currencyTokenId={payment.currencyTokenId}
+            rates={rates}
+          />
+        ),
+      };
+    },
     columns: [
       {
         key: 'vendor',
@@ -228,20 +274,39 @@ export function RecurringList({
         // The table's own second line: the row keeps its currency here too, so
         // the column has to carry the equivalent that the phone row puts in its
         // delta zone — otherwise the same figure explains itself on a phone and
-        // not on a desktop.
-        render: (payment) => (
-          <span className="flex flex-col items-end">
-            <Numeric value={payment.expectedAmount} currency={symbolFor(payment)} />
-            <BaseEquivalent
-              amount={payment.expectedAmount}
-              currencyTokenId={payment.currencyTokenId}
-              rates={rates}
-            />
-          </span>
-        ),
-        // Both figures, exactly as the cell shows them — the native amount and
-        // its base-currency equivalent, which `workbook.ts` splits into two
-        // columns and labels the second as converted.
+        // not on a desktop. That applies to the SC-625 mark before it applies
+        // to the conversion: an estimate that announces its provenance on a
+        // phone and renders as a bare figure on a desktop is the failure the
+        // third register exists to prevent, on the layout most readers use.
+        render: (payment) => {
+          const estimate =
+            payment.expectedAmount === null ? historyEstimates.get(payment.id) : null;
+          return (
+            <span className="flex flex-col items-end">
+              <Numeric
+                value={estimate?.amount ?? payment.expectedAmount}
+                currency={symbolFor(payment)}
+              />
+              {estimate ? (
+                <EstimatedFromHistory sourceDueDate={estimate.sourceDueDate} />
+              ) : (
+                <BaseEquivalent
+                  amount={payment.expectedAmount}
+                  currencyTokenId={payment.currencyTokenId}
+                  rates={rates}
+                />
+              )}
+            </span>
+          );
+        },
+        // THE EXPORT DELIBERATELY CARRIES THE DECLARED AMOUNT ONLY, so an
+        // estimated payment exports blank while its cell on screen shows a
+        // figure. That is the one place the two are allowed to disagree.
+        // `exportTotal` sums this column, and a workbook has no dashed
+        // outline and no citation line to carry the third register — so an
+        // estimate written here would be summed into a total as though it
+        // were declared, which is exactly what the mark exists to prevent.
+        // The screen can say "estimated"; a spreadsheet cell cannot.
         exportValue: (payment) =>
           exportMoneyInBase(
             payment.expectedAmount,
@@ -268,9 +333,11 @@ export function RecurringList({
       render: (payment) => {
         const unit = asPaymentIntervalUnit(payment.intervalUnit);
         const symbol = symbolFor(payment);
-        const monthly = payment.expectedAmount
-          ? monthlyEquivalent(payment.expectedAmount, unit, payment.intervalCount)
-          : null;
+        // Same substitution as the row, and it has to be the same one: a peek
+        // opened from a row showing a figure must not say "Varies".
+        const estimate = payment.expectedAmount === null ? historyEstimates.get(payment.id) : null;
+        const amount = payment.expectedAmount ?? estimate?.amount ?? null;
+        const monthly = amount ? monthlyEquivalent(amount, unit, payment.intervalCount) : null;
 
         return {
           title: vendorName(payment),
@@ -286,8 +353,8 @@ export function RecurringList({
           // the two cases it covers are different answers: a variable payment
           // has no amount yet by design, and a fixed one that has none is a
           // record the form should never have written.
-          value: payment.expectedAmount ? (
-            <Numeric value={payment.expectedAmount} currency={symbol} />
+          value: amount ? (
+            <Numeric value={amount} currency={symbol} />
           ) : (
             <span className="text-muted-foreground">
               {payment.kind === 'variable'
@@ -295,6 +362,13 @@ export function RecurringList({
                 : t('v3.money.peek.noAmount')}
             </span>
           ),
+          // `delta` shares the figure's own line and wraps under it — the
+          // same slot the row uses, so the mark sits beside the number in both
+          // places. `<ProjectedTile>`'s rule applies here too: a caveat that
+          // scrolls away from the figure it qualifies is not a caveat.
+          delta: estimate ? (
+            <EstimatedFromHistory sourceDueDate={estimate.sourceDueDate} />
+          ) : undefined,
           actions: (
             <>
               <Button asChild>

@@ -24,6 +24,10 @@ function payment(overrides: Partial<ForecastPayment> = {}): ForecastPayment {
     anchorDate: '2026-01-15',
     status: 'active',
     endDate: null,
+    // SC-625's default, restated in the fixture rather than inherited: every
+    // test in this file that does not name it is asserting the behaviour of a
+    // book where nobody opted in, which is what the option being opt-in means.
+    estimateFromHistory: false,
     ...overrides,
   };
 }
@@ -34,6 +38,17 @@ function scheduledOn(months: readonly string[], expectedAmount: string | null = 
     dueDate: `${month}-15`,
     status: 'scheduled',
     expectedAmount,
+    actualAmount: null,
+  }));
+}
+
+/** Settled rows: `matched` with a recorded actual, the pair SC-625 reads. */
+function settledOn(entries: readonly (readonly [month: string, actualAmount: string])[]) {
+  return entries.map(([month, actualAmount]) => ({
+    dueDate: `${month}-15`,
+    status: 'matched',
+    expectedAmount: null,
+    actualAmount,
   }));
 }
 
@@ -123,9 +138,9 @@ describe('buildForecast — past the materialised edge', () => {
     // inside the materialised window stays skipped instead of coming back as
     // a rule-generated date.
     const rows = [
-      { dueDate: '2026-03-15', status: 'scheduled', expectedAmount: '100' },
-      { dueDate: '2026-04-15', status: 'skipped', expectedAmount: '100' },
-      { dueDate: '2026-05-15', status: 'scheduled', expectedAmount: '100' },
+      { dueDate: '2026-03-15', status: 'scheduled', expectedAmount: '100', actualAmount: null },
+      { dueDate: '2026-04-15', status: 'skipped', expectedAmount: '100', actualAmount: null },
+      { dueDate: '2026-05-15', status: 'scheduled', expectedAmount: '100', actualAmount: null },
     ];
     const forecast = buildForecast([input({}, rows)], TODAY, '2026-06-01');
 
@@ -142,8 +157,8 @@ describe('buildForecast — past the materialised edge', () => {
     // in the month it was paid. The skip case above cannot see this: it has
     // scheduled rows AFTER the skip, so both readings of the edge agree.
     const rows = [
-      { dueDate: '2026-09-15', status: 'scheduled', expectedAmount: '100' },
-      { dueDate: '2026-10-15', status: 'matched', expectedAmount: '100' },
+      { dueDate: '2026-09-15', status: 'scheduled', expectedAmount: '100', actualAmount: null },
+      { dueDate: '2026-10-15', status: 'matched', expectedAmount: '100', actualAmount: null },
     ];
     const forecast = buildForecast([input({}, rows)], TODAY, '2026-11-01');
 
@@ -152,8 +167,8 @@ describe('buildForecast — past the materialised edge', () => {
 
   test('a matched occurrence is money that already moved and is not projected', () => {
     const rows = [
-      { dueDate: '2026-03-15', status: 'matched', expectedAmount: '100' },
-      { dueDate: '2026-04-15', status: 'scheduled', expectedAmount: '100' },
+      { dueDate: '2026-03-15', status: 'matched', expectedAmount: '100', actualAmount: null },
+      { dueDate: '2026-04-15', status: 'scheduled', expectedAmount: '100', actualAmount: null },
     ];
     const forecast = buildForecast([input({}, rows)], TODAY, '2026-05-01');
     expect(forecast.movements.map((movement) => movement.dueDate)).toEqual(['2026-04-15']);
@@ -179,7 +194,9 @@ describe('buildForecast — what it will not guess', () => {
     );
 
     expect(forecast.movements).toEqual([]);
-    expect(forecast.unprojectable).toEqual([{ paymentId: 'variable', direction: 'outflow' }]);
+    expect(forecast.unprojectable).toEqual([
+      { paymentId: 'variable', direction: 'outflow', lastSettled: null },
+    ]);
   });
 
   test('an estimate filled in later prices the part it can and claims nothing about the rest', () => {
@@ -200,16 +217,18 @@ describe('buildForecast — what it will not guess', () => {
   test('a cadence nobody can expand is reported rather than thrown on', () => {
     const forecast = buildForecast([input({ intervalUnit: 'fortnight' }, [])], TODAY, HORIZON);
     expect(forecast.movements).toEqual([]);
-    expect(forecast.unprojectable).toEqual([{ paymentId: 'pay-1', direction: 'outflow' }]);
+    expect(forecast.unprojectable).toEqual([
+      { paymentId: 'pay-1', direction: 'outflow', lastSettled: null },
+    ]);
   });
 });
 
 describe('buildForecast — overdue is not absorbed by the window', () => {
   test('a bill already past due is reported separately, not folded into month one', () => {
     const rows = [
-      { dueDate: '2026-01-15', status: 'scheduled', expectedAmount: '100' },
-      { dueDate: '2026-02-15', status: 'scheduled', expectedAmount: '100' },
-      { dueDate: '2026-03-15', status: 'scheduled', expectedAmount: '100' },
+      { dueDate: '2026-01-15', status: 'scheduled', expectedAmount: '100', actualAmount: null },
+      { dueDate: '2026-02-15', status: 'scheduled', expectedAmount: '100', actualAmount: null },
+      { dueDate: '2026-03-15', status: 'scheduled', expectedAmount: '100', actualAmount: null },
     ];
     const forecast = buildForecast([input({}, rows)], TODAY, '2026-04-01');
 
@@ -223,7 +242,9 @@ describe('buildForecast — overdue is not absorbed by the window', () => {
 
 describe('buildForecast — the amounts a reader would see', () => {
   test("an occurrence's own amount beats the payment's estimate", () => {
-    const rows = [{ dueDate: '2026-03-15', status: 'scheduled', expectedAmount: '175.50' }];
+    const rows = [
+      { dueDate: '2026-03-15', status: 'scheduled', expectedAmount: '175.50', actualAmount: null },
+    ];
     const forecast = buildForecast([input({ expectedAmount: '100' }, rows)], TODAY, '2026-04-01');
     expect(forecast.movements[0]?.amount).toBe('175.50');
   });
@@ -265,5 +286,206 @@ describe('buildForecast — the amounts a reader would see', () => {
       '2026-03-05',
       '2026-03-20',
     ]);
+  });
+});
+
+describe('buildForecast — estimating from settled history (SC-625)', () => {
+  // The book every test below varies from: a variable payment with no
+  // estimate, three settled months behind it, and nothing projected. This is
+  // SC-461's behaviour and it is the DEFAULT, so it is asserted first — if the
+  // option ever stopped being opt-in, this is the test that goes red.
+  const HISTORY = settledOn([
+    ['2025-12', '80.00'],
+    ['2026-01', '92.40'],
+    ['2026-02', '84.20'],
+  ]);
+  const AHEAD = scheduledOn(['2026-03', '2026-04'], null);
+
+  test('history is NOT used unless the payment says so', () => {
+    const forecast = buildForecast(
+      [input({ id: 'power', expectedAmount: null }, [...HISTORY, ...AHEAD])],
+      TODAY,
+      '2026-05-01'
+    );
+
+    expect(forecast.movements).toEqual([]);
+    expect(forecast.estimatedFromHistory).toEqual([]);
+    expect(forecast.unprojectable).toEqual([
+      {
+        paymentId: 'power',
+        direction: 'outflow',
+        // Reported even though the option is OFF: the surface has to know
+        // that turning it on would do something here.
+        lastSettled: { amount: '84.20', dueDate: '2026-02-15' },
+      },
+    ]);
+  });
+
+  test('with the opt-in on, the LAST settled amount prices the payment', () => {
+    const forecast = buildForecast(
+      [
+        input({ id: 'power', expectedAmount: null, estimateFromHistory: true }, [
+          ...HISTORY,
+          ...AHEAD,
+        ]),
+      ],
+      TODAY,
+      '2026-05-01'
+    );
+
+    // 84.20, February's — not 92.40 (the largest), not 85.53 (the mean).
+    // A single settled period is a figure that happened; an average is a new
+    // number nobody has ever paid.
+    expect(forecast.movements.map((movement) => movement.amount)).toEqual(['84.20', '84.20']);
+    expect(forecast.movements.every((movement) => movement.basis === 'history')).toBe(true);
+    expect(forecast.estimatedFromHistory).toEqual([
+      {
+        paymentId: 'power',
+        direction: 'outflow',
+        currencyTokenId: 'eur',
+        amount: '84.20',
+        sourceDueDate: '2026-02-15',
+      },
+    ]);
+  });
+
+  test('THE COUNT STAYS: opted in with nothing settled is still unprojectable', () => {
+    // The opt-in is permission to use history, not a claim that history
+    // exists. A book where every variable payment is opted in and none has
+    // settled must report exactly what it reported before.
+    const forecast = buildForecast(
+      [input({ id: 'new-bill', expectedAmount: null, estimateFromHistory: true }, AHEAD)],
+      TODAY,
+      '2026-05-01'
+    );
+
+    expect(forecast.movements).toEqual([]);
+    expect(forecast.estimatedFromHistory).toEqual([]);
+    expect(forecast.unprojectable).toEqual([
+      // Opted in, nothing settled: still counted, and `lastSettled: null` is
+      // what tells the surface no button can help.
+      { paymentId: 'new-bill', direction: 'outflow', lastSettled: null },
+    ]);
+  });
+
+  test('a skipped row is never the source, however recent, and a matched row with no actual is not either', () => {
+    // Two rows that a laxer rule would take. `skipped` is a decision NOT to
+    // pay — the worst possible basis for projecting the next one — and
+    // `matched` with no recorded actual says a transaction was linked, not
+    // what moved.
+    const poisoned = [
+      ...HISTORY,
+      { dueDate: '2026-02-20', status: 'skipped', expectedAmount: null, actualAmount: '999.00' },
+      { dueDate: '2026-02-25', status: 'matched', expectedAmount: null, actualAmount: null },
+    ];
+    const forecast = buildForecast(
+      [input({ id: 'power', expectedAmount: null, estimateFromHistory: true }, poisoned)],
+      TODAY,
+      '2026-04-01'
+    );
+
+    expect(forecast.estimatedFromHistory[0]?.amount).toBe('84.20');
+
+    // The must-be-FOUND control on the same axis: the SAME two dates, settled
+    // properly, DO win. Without it the assertion above passes on a rule that
+    // ignores late rows entirely rather than on one that reads their status.
+    const settled = [
+      ...HISTORY,
+      { dueDate: '2026-02-25', status: 'matched', expectedAmount: null, actualAmount: '999.00' },
+    ];
+    const control = buildForecast(
+      [input({ id: 'power', expectedAmount: null, estimateFromHistory: true }, settled)],
+      TODAY,
+      '2026-04-01'
+    );
+    expect(control.estimatedFromHistory[0]?.amount).toBe('999.00');
+  });
+
+  test('a declared amount always beats history, and the basis says which was used', () => {
+    // The mixed book the whole `basis` field exists for: March carries an
+    // amount somebody entered, April does not. One payment, two registers.
+    const mixed = [
+      { dueDate: '2026-03-15', status: 'scheduled', expectedAmount: '150.00', actualAmount: null },
+      { dueDate: '2026-04-15', status: 'scheduled', expectedAmount: null, actualAmount: null },
+    ];
+    const forecast = buildForecast(
+      [
+        input({ id: 'power', expectedAmount: null, estimateFromHistory: true }, [
+          ...HISTORY,
+          ...mixed,
+        ]),
+      ],
+      TODAY,
+      '2026-05-01'
+    );
+
+    expect(
+      forecast.movements.map((movement) => [movement.dueDate, movement.amount, movement.basis])
+    ).toEqual([
+      ['2026-03-15', '150.00', 'declared'],
+      ['2026-04-15', '84.20', 'history'],
+    ]);
+    // Reported, because part of this payment's projection rests on history —
+    // and the surface has to be able to say so about the April figure.
+    expect(forecast.estimatedFromHistory.map((entry) => entry.paymentId)).toEqual(['power']);
+  });
+
+  test('a payment fully priced by its own estimate is not reported as estimated, opt-in or not', () => {
+    // The must-be-ABSENT half: the flag is ON and history EXISTS, and nothing
+    // is estimated, because nothing needed to be. A report keyed on the flag
+    // rather than on the substitution would name this payment.
+    const forecast = buildForecast(
+      [input({ id: 'rent', expectedAmount: '1200', estimateFromHistory: true }, HISTORY)],
+      TODAY,
+      '2026-05-01'
+    );
+
+    expect(forecast.movements.every((movement) => movement.basis === 'declared')).toBe(true);
+    expect(forecast.estimatedFromHistory).toEqual([]);
+  });
+
+  test('a quarterly payment takes its last settled QUARTER, unscaled', () => {
+    // "Last month" has no referent here. The last settled period is on the
+    // payment's own cadence, so a quarterly water bill is projected at what a
+    // quarter actually cost — never a third of it, and never three times it.
+    const forecast = buildForecast(
+      [
+        input(
+          {
+            id: 'water',
+            expectedAmount: null,
+            estimateFromHistory: true,
+            intervalUnit: 'quarter',
+            anchorDate: '2025-12-15',
+          },
+          settledOn([['2025-12', '210.00']])
+        ),
+      ],
+      TODAY,
+      '2026-07-01'
+    );
+
+    expect(forecast.movements.map((movement) => [movement.dueDate, movement.amount])).toEqual([
+      ['2026-03-15', '210.00'],
+      ['2026-06-15', '210.00'],
+    ]);
+  });
+
+  test('an overdue movement priced from history is still overdue, not folded into the window', () => {
+    const forecast = buildForecast(
+      [
+        input({ id: 'power', expectedAmount: null, estimateFromHistory: true }, [
+          ...HISTORY,
+          ...scheduledOn(['2026-02'], null),
+        ]),
+      ],
+      TODAY,
+      '2026-04-01'
+    );
+
+    expect(forecast.overdue.map((movement) => [movement.dueDate, movement.basis])).toEqual([
+      ['2026-02-15', 'history'],
+    ]);
+    expect(forecast.movements.every((movement) => movement.dueDate >= TODAY)).toBe(true);
   });
 });
