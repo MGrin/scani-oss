@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { readdirSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
-import { commentSkipper } from '../v3/helpers/source-scan';
+import { commentSkipper } from '../../../../../packages/frontend/ui/tests/helpers/source-scan';
 
 /**
  * Nothing the SPA renders may take its date or number format from the DEVICE

@@ -1,7 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 import { readdirSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
-import { commentSkipper } from './helpers/source-scan';
+import {
+  PHYSICAL_INLINE_RULES,
+  violations,
+} from '../../../../../packages/frontend/ui/tests/helpers/physical-inline-rules';
+import { formatHits, scan } from '../../../../../packages/frontend/ui/tests/helpers/source-scan';
 
 /**
  * The inline axis is decided by the reader's language, not by the author's
@@ -24,6 +28,13 @@ import { commentSkipper } from './helpers/source-scan';
  * It is a text scan for the same reason `token-hygiene.test.ts` is one: the
  * defect is a class name that quietly means "physically left" instead of "the
  * edge the text starts at". Both render. Only one is right in two languages.
+ *
+ * THE SCANNER AND THE RULES LIVE IN `@scani/ui` (SC-773). Three guards on this
+ * axis each carried a copy of both; the copies were identical, and the rule set
+ * was the half nothing protected — a sixth pattern added here silently did not
+ * reach `cloud` and `admin`. Adding a rule now means adding it to
+ * `tests/helpers/physical-inline-rules.ts`, with the worked example that file
+ * requires, and every guard gets it.
  */
 
 /**
@@ -66,48 +77,6 @@ function sources(): Source[] {
   return out.sort((a, b) => a.name.localeCompare(b.name));
 }
 
-interface Hit {
-  file: string;
-  line: number;
-  text: string;
-}
-
-async function scan(pattern: RegExp, files: Source[]): Promise<Hit[]> {
-  const hits: Hit[] = [];
-  for (const source of files) {
-    const text = await Bun.file(source.path).text();
-    // One skipper per FILE: the block state must not leak across files, or an
-    // unterminated comment in one would blind the scanner to the next.
-    const isComment = commentSkipper();
-    text.split('\n').forEach((line, index) => {
-      if (isComment(line) || !pattern.test(line)) return;
-      hits.push({ file: source.name, line: index + 1, text: line.trim() });
-    });
-  }
-  return hits;
-}
-
-const format = (hits: Hit[]): string[] =>
-  hits.map((hit) => `${hit.file}:${hit.line} — ${hit.text}`);
-
-/**
- * Centring is the one honest use of a physical inset on this axis.
- *
- * `left-1/2` paired with `-translate-x-1/2` is symmetric: it names a physical
- * edge and then cancels it, so it renders identically in both directions and
- * has no logical spelling that is any clearer. Tailwind has no `start-1/2`
- * that composes with a logical translate, and inventing one here would be a
- * second way to say the same thing.
- *
- * Listed by FILE AND LINE CONTENT rather than by file alone, so that adding a
- * genuinely wrong `left-4` to one of these files is still caught.
- */
-const CENTRING = /(?:^|\s)(?:-?left-(?:1\/2|\[50%\]))(?=\s|'|"|`)/;
-
-function withoutCentring(hits: Hit[]): Hit[] {
-  return hits.filter((hit) => !CENTRING.test(hit.text));
-}
-
 describe('v3 and @scani/ui use logical properties on the inline axis', () => {
   const files = sources();
 
@@ -137,89 +106,11 @@ describe('v3 and @scani/ui use logical properties on the inline axis', () => {
     expect((await scan(/\bflex\b/, files)).length).toBeGreaterThan(50);
   });
 
-  test('no physical inline margin or padding utilities', async () => {
-    const physical = /(?:^|[\s'"`:[])-?(?:ml|mr|pl|pr)-(?:\w|\[)/;
-    expect(format(await scan(physical, files))).toEqual([]);
-  });
-
-  test('no physical text alignment', async () => {
-    expect(format(await scan(/\btext-(?:left|right)\b/, files))).toEqual([]);
-  });
-
-  test('no physical inline borders or corner radii', async () => {
-    const physical = /(?:^|[\s'"`:[])(?:border-[lr]|rounded-(?:[lr]|tl|tr|bl|br))(?:-|\b)/;
-    expect(format(await scan(physical, files))).toEqual([]);
-  });
-
-  test('no physical float', async () => {
-    expect(format(await scan(/\bfloat-(?:left|right)\b/, files))).toEqual([]);
-  });
-
-  /**
-   * Insets, minus centring. This is the rule most likely to be met by someone
-   * adding a badge or a close button, so the message has to say what to write
-   * instead — `start-`/`end-` — rather than only what is wrong.
-   */
-  test('no physical inline insets except symmetric centring', async () => {
-    const physical = /(?:^|[\s'"`:[])-?(?:left|right)-(?:\w|\[)/;
-    const hits = withoutCentring(await scan(physical, files));
-    expect(format(hits)).toEqual([]);
-  });
-});
-
-/**
- * The scanner's own comment handling, pinned — because widening an exclusion is
- * the one edit that makes a check quieter, and a quieter check reads exactly
- * like a passing one.
- *
- * These three cases were run by hand as mutations first (a real `ml-2` in code,
- * a real `left-4` on the line after a block comment, and a comment stuffed with
- * physical utilities). They are here so they run every time instead of once.
- */
-describe('the scanner reads code and not prose', () => {
-  const classify = (snippet: string): number[] => {
-    const skip = commentSkipper();
-    const physical =
-      /(?:^|[\s'"`:[])-?(?:left|right)-(?:\w|\[)|(?:^|[\s'"`:[])-?(?:ml|mr|pl|pr)-(?:\w|\[)/;
-    const hits: number[] = [];
-    snippet.split('\n').forEach((line, i) => {
-      if (skip(line) || !physical.test(line)) return;
-      hits.push(i + 1);
+  for (const rule of PHYSICAL_INLINE_RULES) {
+    test(rule.title, async () => {
+      expect(formatHits(violations(rule, await scan(rule.pattern, files)))).toEqual([]);
     });
-    return hits;
-  };
-
-  test('a JSX block comment is prose all the way down, not just on line one', () => {
-    // Line 3 is the case that broke the gate: a continuation line begins with an
-    // ordinary word, so a per-line test sees code, and `left-to` matches.
-    const snippet = [
-      '<span>',
-      '  {/* Why this exists:',
-      '      A number is written left-to-right in every locale, and ml-2 is wrong.',
-      '      Nor should left-4 right-4 pr-3 here count. */}',
-      '</span>',
-    ].join('\n');
-    expect(classify(snippet)).toEqual([]);
-  });
-
-  test('and it stops being prose at the closing delimiter', () => {
-    // The must-be-FOUND control on the same axis. An exclusion that ran on past
-    // `*/` would silence the rest of the file and still report zero.
-    const snippet = [
-      '  {/* prose about left-to-right',
-      '      and more prose */}',
-      '  <span className="ml-2" />',
-      '  <span className="left-4" />',
-    ].join('\n');
-    expect(classify(snippet)).toEqual([3, 4]);
-  });
-
-  test('a single-line comment does not open a block', () => {
-    const snippet = ['  /* one-liner about left-to-right */', '  <span className="pr-3" />'].join(
-      '\n'
-    );
-    expect(classify(snippet)).toEqual([2]);
-  });
+  }
 });
 
 /**
