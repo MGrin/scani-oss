@@ -31,15 +31,36 @@ a mistake here fails the build rather than shipping.
    `nav.holdings`, …) untouched. Translate the `$meta.name` and
    `$meta.nativeName` fields so the language picker shows your locale
    correctly (e.g. `"name": "Spanish"`, `"nativeName": "Español"`).
-4. Run the SPA locally (`bun run dev` from the repo root, then open
+4. **Add the design-system strings — copying `en.json` does not give
+   you these.** `@scani/ui` ships the toasts, the error screens, the
+   export and refine sheets and the loading states, and its own
+   `packages/frontend/ui/src/i18n/locales/en.json` *is* the English —
+   which is why the English file here does not carry them and a copy of
+   it cannot either. Every other language reaches the design system by
+   putting those `ui.*` keys in the file **here**, which the app
+   forwards into the package at boot. There are 186 of them; leave them
+   out and the interface reverts to English on every toast and every
+   error, which is where a reader is least able to guess.
+5. **Add the plural forms your language has, which English does not.**
+   English has two categories, `_one` and `_other`. French, Spanish and
+   Portuguese have three; Russian has four; Arabic has six; Chinese,
+   Japanese and Indonesian have one. A key ending `_one` in `en.json`
+   needs one entry per category in yours. Ask the runtime rather than
+   guessing — it is the same source the test checks against:
+
+   ```sh
+   bun -e "console.log(new Intl.PluralRules('fr').resolvedOptions().pluralCategories)"
+   ```
+
+6. Run the SPA locally (`bun run dev` from the repo root, then open
    `http://localhost:5173`) and pick your language from
    **Settings → Preferences → Language**. You can also force a locale
    for one page load with `?lng=<code>` in the URL.
-5. If you are sending a **partial** translation, add your language to
+7. If you are sending a **partial** translation, add your language to
    `src/i18n/incomplete-locales.json` with a one-line reason. See
    "Partial translations are fine" below — this is the one other file
    you may need to touch.
-6. Open a PR. CI will run type-check + lint; the build auto-discovers
+8. Open a PR. CI will run type-check + lint; the build auto-discovers
    every `*.json` in both directories, so nothing else needs changing.
 
 ## What you do not need to translate
