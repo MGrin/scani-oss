@@ -19,6 +19,14 @@ version heading stays there permanently, above every future release. This
 comment is deliberately in that position; explanatory prose should not be.
 -->
 
+## [0.31.0](https://github.com/MGrin/scani-oss/compare/v0.30.0...v0.31.0) (2026-08-28)
+
+
+### Features
+
+* **app:** ship Spanish, complete rather than started ([bd1cd0f](https://github.com/MGrin/scani-oss/commit/bd1cd0fc5588a4ab174eb7a17ceb37a030a9abff))
+* **payments:** offer the last settled amount as an estimate for variable payments ([0329444](https://github.com/MGrin/scani-oss/commit/0329444ab9f6f0020588af2c858f7cfedd2aa57e))
+
 ## [0.30.0](https://github.com/MGrin/scani-oss/compare/v0.29.0...v0.30.0) (2026-08-28)
 
 
