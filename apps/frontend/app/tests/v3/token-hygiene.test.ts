@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { resolve } from 'node:path';
+import { commentSkipper } from '../../../../../packages/frontend/ui/tests/helpers/source-scan';
 import { v3Sources } from './helpers/v3-sources';
 
 /**
@@ -18,21 +19,6 @@ interface Hit {
   text: string;
 }
 
-/** Every rule below is about what a class name *does*, so prose about a class
- * name is not a violation — and each of these fixes left a comment behind
- * naming the class it removed. */
-function isComment(line: string): boolean {
-  const trimmed = line.trimStart();
-  return (
-    trimmed.startsWith('*') ||
-    trimmed.startsWith('//') ||
-    trimmed.startsWith('/*') ||
-    // A JSX comment, which is the only kind available in child position — and
-    // therefore the only kind a fix inside a rendered tree can leave behind.
-    trimmed.startsWith('{/*')
-  );
-}
-
 /** Both v3 roots — the app's and `@scani/ui`'s. A class name that stopped
  *  being scanned the day its component was promoted is the fourth rediscovery
  *  this file exists to prevent. */
@@ -42,6 +28,14 @@ async function scan(pattern: RegExp): Promise<Hit[]> {
   const hits: Hit[] = [];
   for (const source of SOURCES) {
     const text = await Bun.file(source.path).text();
+    // Every rule below is about what a class name *does*, so prose about a
+    // class name is not a violation — and each of these fixes left a comment
+    // behind naming the class it removed. A JSX comment is the only kind
+    // available in child position, and therefore the only kind a fix inside a
+    // rendered tree can leave behind; the shared reader tracks it across lines,
+    // which the per-line version this replaces could not (SC-783). One skipper
+    // per FILE, so block state cannot leak into the next.
+    const isComment = commentSkipper();
     text.split('\n').forEach((line, index) => {
       if (isComment(line) || !pattern.test(line)) return;
       hits.push({ file: source.name, line: index + 1, text: line.trim() });
