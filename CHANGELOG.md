@@ -19,6 +19,21 @@ version heading stays there permanently, above every future release. This
 comment is deliberately in that position; explanatory prose should not be.
 -->
 
+## [0.33.0](https://github.com/MGrin/scani-oss/compare/v0.32.0...v0.33.0) (2026-08-28)
+
+
+### Features
+
+* **app:** ship Japanese on all three surfaces ([b4bd279](https://github.com/MGrin/scani-oss/commit/b4bd27998bc46a75e4a9329607d7a47efbf6d258))
+* **portfolio:** report every disposal in a portfolio over a window ([6e69a53](https://github.com/MGrin/scani-oss/commit/6e69a53258550887c7972b7c21d841a356308138))
+
+
+### Bug Fixes
+
+* **email:** compare every leaf, not the ones over 24 characters ([88321a9](https://github.com/MGrin/scani-oss/commit/88321a96e1589605eaeb3b196f4b3c82797ab1a1))
+* **i18n:** a French Vault is a savings goal, not a strongbox ([c8297ac](https://github.com/MGrin/scani-oss/commit/c8297ac8908baadb89ce7314caf02ea3987d05fc))
+* **money:** show the history estimate on the upcoming feed, marked ([8aae30f](https://github.com/MGrin/scani-oss/commit/8aae30f3603dfa66146a15770e6a212c3bf89c15))
+
 ## [0.32.0](https://github.com/MGrin/scani-oss/compare/v0.31.0...v0.32.0) (2026-08-28)
 
 
