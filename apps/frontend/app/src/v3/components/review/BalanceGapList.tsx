@@ -1,5 +1,5 @@
 import type { BalanceGapList as BalanceGapListDto } from '@scani/shared';
-import { balanceDecimals } from '@scani/shared';
+import { balanceDecimals, formatDate } from '@scani/shared';
 import { Block } from '@scani/ui/v3/components/Block';
 import { Numeric } from '@scani/ui/v3/components/Numeric';
 import { Trans, useTranslation } from 'react-i18next';
@@ -104,9 +104,17 @@ export function BalanceGapList({ data, isLoading }: BalanceGapListProps) {
                   : gap.tokenSymbol}
               </span>
               <span className="text-label text-muted-foreground">
+                {/* `formatDate`, never a bare `toLocaleDateString()`. The
+                    argument-less form takes the RUNTIME's locale, so this
+                    sentence printed `5/17/2026` — American order — beside
+                    figures the same card had already formatted for the chosen
+                    language, and with Russian selected it read `Between
+                    5/17/2026 and 6/27/2026 · 10 906,07`. That is SC-175 inside
+                    one sentence: a translated frame with a device-formatted
+                    date in it (SC-762). */}
                 {t('v3.review.balances.between', {
-                  from: new Date(gap.from).toLocaleDateString(),
-                  to: new Date(gap.to).toLocaleDateString(),
+                  from: formatDate(gap.from),
+                  to: formatDate(gap.to),
                 })}
               </span>
             </div>
