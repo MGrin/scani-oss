@@ -111,7 +111,7 @@ export function TransferSplitEditor({
                   placeholder="0"
                   // 44px tall and right-aligned, so three amounts read as a
                   // column that can be added up by eye.
-                  className="h-11 w-28 text-right"
+                  className="h-11 w-28 text-end"
                   wrapperClassName="shrink-0"
                   aria-label={t('v3.review.split.amountLabel', {
                     outcome: t(DECISION_LABELS[row.decision].triggerKey),

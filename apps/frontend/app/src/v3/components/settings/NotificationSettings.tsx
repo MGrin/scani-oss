@@ -239,11 +239,11 @@ export function NotificationSettings() {
             onClick={() => void onToggle()}
           >
             {busy ? (
-              <Loader2 className="mr-2 size-4 animate-spin" aria-hidden="true" />
+              <Loader2 className="me-2 size-4 animate-spin" aria-hidden="true" />
             ) : availability === 'enabled' ? (
-              <BellOff className="mr-2 size-4" aria-hidden="true" />
+              <BellOff className="me-2 size-4" aria-hidden="true" />
             ) : (
-              <Bell className="mr-2 size-4" aria-hidden="true" />
+              <Bell className="me-2 size-4" aria-hidden="true" />
             )}
             {availability === 'enabled'
               ? t('v3.settings.notifications.disable')
@@ -257,9 +257,9 @@ export function NotificationSettings() {
           {availability === 'enabled' ? (
             <Button variant="ghost" disabled={busy || testing} onClick={() => void onTest()}>
               {testing ? (
-                <Loader2 className="mr-2 size-4 animate-spin" aria-hidden="true" />
+                <Loader2 className="me-2 size-4 animate-spin" aria-hidden="true" />
               ) : (
-                <Send className="mr-2 size-4" aria-hidden="true" />
+                <Send className="me-2 size-4" aria-hidden="true" />
               )}
               {t('v3.settings.notifications.sendTest')}
             </Button>

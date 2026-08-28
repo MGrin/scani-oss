@@ -293,11 +293,11 @@ function Specimens() {
             {CHART_SLOTS.map((slot) => (
               <div
                 key={slot}
-                className="h-6 flex-1 first:rounded-l-sm last:rounded-r-sm"
+                className="h-6 flex-1 first:rounded-s-sm last:rounded-e-sm"
                 style={{ backgroundColor: `hsl(var(--chart-${slot}))` }}
               />
             ))}
-            <div className="h-6 flex-1 rounded-r-sm bg-chart-other" />
+            <div className="h-6 flex-1 rounded-e-sm bg-chart-other" />
           </div>
           <p className="text-caption text-muted-foreground">
             Slots 1–6, then the two reserved for `--interactive` and `--loss`, then the fold.
@@ -525,19 +525,19 @@ function Specimens() {
           <TableHeader>
             <TableRow>
               <TableHead>Asset</TableHead>
-              <TableHead className="text-right">Value</TableHead>
+              <TableHead className="text-end">Value</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             <TableRow>
               <TableCell>BTC</TableCell>
-              <TableCell className="text-right">
+              <TableCell className="text-end">
                 <Numeric value={64_120} currency="USD" />
               </TableCell>
             </TableRow>
             <TableRow>
               <TableCell>ETH</TableCell>
-              <TableCell className="text-right">
+              <TableCell className="text-end">
                 <Numeric value={3180.4} currency="USD" />
               </TableCell>
             </TableRow>

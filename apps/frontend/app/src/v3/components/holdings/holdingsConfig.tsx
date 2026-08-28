@@ -503,7 +503,7 @@ export function holdingsDataViewConfig({
     renderBulkActions: (selectedIds, clearSelection) => (
       <>
         <Button variant="outline" onClick={() => onAssignGroups([...selectedIds], clearSelection)}>
-          <Tags className="mr-2 size-4" aria-hidden="true" />
+          <Tags className="me-2 size-4" aria-hidden="true" />
           {t('v3.holdings.bulk.assignGroups')}
         </Button>
         <BulkDeleteAction

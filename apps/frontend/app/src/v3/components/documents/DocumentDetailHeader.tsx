@@ -156,9 +156,9 @@ export function DocumentDetailHeader({ file, extractionCount }: DocumentDetailHe
             onClick={() => void download(file.id)}
           >
             {pendingId === file.id ? (
-              <Loader2 className="mr-2 size-4 animate-spin" aria-hidden="true" />
+              <Loader2 className="me-2 size-4 animate-spin" aria-hidden="true" />
             ) : (
-              <Download className="mr-2 size-4" aria-hidden="true" />
+              <Download className="me-2 size-4" aria-hidden="true" />
             )}
             {t('v3.documents.detail.download')}
           </Button>
@@ -171,7 +171,7 @@ export function DocumentDetailHeader({ file, extractionCount }: DocumentDetailHe
             disabled={busy}
             onClick={() => setConfirmReparse(true)}
           >
-            <RefreshCw className="mr-2 size-4" aria-hidden="true" />
+            <RefreshCw className="me-2 size-4" aria-hidden="true" />
             {reparse.isPending
               ? t('v3.documents.detail.reparsePending')
               : t('v3.documents.detail.reparseCommit')}
@@ -185,7 +185,7 @@ export function DocumentDetailHeader({ file, extractionCount }: DocumentDetailHe
           disabled={busy}
           onClick={() => setConfirmDelete(true)}
         >
-          <Trash2 className="mr-2 size-4" aria-hidden="true" />
+          <Trash2 className="me-2 size-4" aria-hidden="true" />
           {remove.isPending
             ? t('v3.documents.detail.deletePending')
             : t('v3.documents.detail.deleteCommit')}

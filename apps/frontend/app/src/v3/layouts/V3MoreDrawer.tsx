@@ -90,7 +90,7 @@ export function V3MoreDrawer({
                     <span className="relative inline-flex">
                       <Icon className="h-6 w-6" aria-hidden="true" />
                       {badge > 0 && (
-                        <span className="absolute -right-3 -top-2 inline-flex items-center justify-center rounded-full bg-interactive px-1.5 py-0.5 text-caption font-medium leading-none text-interactive-foreground">
+                        <span className="absolute -end-3 -top-2 inline-flex items-center justify-center rounded-full bg-interactive px-1.5 py-0.5 text-caption font-medium leading-none text-interactive-foreground">
                           {badge}
                         </span>
                       )}

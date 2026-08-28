@@ -53,7 +53,7 @@ export function HoldingDeleteAction({
     <ConfirmAction
       label={
         <>
-          <Trash2 className="mr-2 size-4" aria-hidden="true" />
+          <Trash2 className="me-2 size-4" aria-hidden="true" />
           {t('v3.holdings.deleteAction.trigger')}
         </>
       }
