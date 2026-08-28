@@ -116,6 +116,18 @@ export interface WalletCandidate {
   /** The provider's decimal-adjusted figure, canonical and never formatted. */
   balance: string;
   spam: SpamSignal | null;
+  /**
+   * A position the wallet traded and no longer holds — offered so its buy and
+   * its sell have a holding to land on, which is the only way either of them
+   * reaches the ledger at all (SC-398).
+   *
+   * A row reading `0` with nothing beside it is the wrong sentence: the reader
+   * asks why an empty position is being offered and the card does not say. The
+   * flag comes off the payload rather than being inferred from `balance ===
+   * '0'` — `fetchBalances` keeps only non-zero rows, so the two agree today
+   * and they agree because of a filter in a provider this file cannot see.
+   */
+  exited: boolean;
 }
 
 export interface WalletChainGroup {
@@ -229,6 +241,10 @@ function readChainGroup(value: unknown): WalletChainGroup {
         name,
         balance: typeof snapshot.balance === 'string' ? snapshot.balance : '',
         spam: spamSignal(symbol, name),
+        // Payloads written before SC-398 carry no such key, and a review job
+        // sitting unanswered across the deploy must read as what it was: every
+        // row a current balance.
+        exited: snapshot.exitedPosition === true,
       };
     }),
   };
