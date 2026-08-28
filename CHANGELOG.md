@@ -19,6 +19,13 @@ version heading stays there permanently, above every future release. This
 comment is deliberately in that position; explanatory prose should not be.
 -->
 
+## [0.32.0](https://github.com/MGrin/scani-oss/compare/v0.31.0...v0.32.0) (2026-08-28)
+
+
+### Features
+
+* **app:** ship European Portuguese on all three surfaces ([712ce1f](https://github.com/MGrin/scani-oss/commit/712ce1f6bacaaa33dce7c20f4216f908d654631d))
+
 ## [0.31.0](https://github.com/MGrin/scani-oss/compare/v0.30.0...v0.31.0) (2026-08-28)
 
 
