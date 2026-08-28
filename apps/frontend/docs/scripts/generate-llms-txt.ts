@@ -104,6 +104,14 @@ async function main(): Promise<void> {
     'Self-hostable, open-source portfolio tracker for crypto and traditional assets. Domain model, self-hosting guide, design decisions, and a financial glossary.'
   );
   lines.push('');
+  // Nothing else links to llms-full.txt. It is written beside this file on
+  // every build and served at 200, so a reader that never learns the path
+  // simply does not get the full text — undiscoverable rather than absent,
+  // which is the same shape as the missing robots.txt this shipped with.
+  lines.push(
+    'The full text of every page below, concatenated into one file, is at /llms-full.txt.'
+  );
+  lines.push('');
 
   const grouped = new Map<string, Page[]>();
   for (const p of pages) {
