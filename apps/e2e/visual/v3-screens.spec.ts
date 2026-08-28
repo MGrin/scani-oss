@@ -275,6 +275,57 @@ async function assertPinnedBytes(
   }
 }
 
+/**
+ * Puts the document into the direction the screen declares (SC-760).
+ *
+ * `<html dir>` is written by `applyFormatLocale` from the chosen language, in
+ * a `useMemo` keyed on `[language, region]` — so it is set once at mount and
+ * not touched again while neither changes. That is what makes writing it from
+ * here safe, and it is also exactly the kind of reasoning that is true until
+ * somebody edits the provider. Hence `assertStillInDirection` below: the
+ * assumption is checked against the page rather than trusted.
+ *
+ * Returns immediately for an LTR screen, so the `settle` budget is unchanged
+ * for the eight baselines that predate this.
+ */
+async function applyDirection(page: Page, screen: VisualScreen): Promise<void> {
+  if (!screen.dir) return;
+  await page.evaluate((dir) => {
+    document.documentElement.dir = dir;
+  }, screen.dir);
+  // A direction flip is a full relayout: every logical property resolves to
+  // the other edge and the shell reflows. Reuse the settle budget rather than
+  // inventing a second number.
+  await page.waitForTimeout(SETTLE_MS);
+}
+
+/**
+ * That the picture is a picture of the direction it claims.
+ *
+ * This is the RTL twin of `assertPinnedBytes`, and it exists for the identical
+ * reason. `dir` is set from outside the app, so anything that re-runs
+ * `applyFormatLocale` — a language change, a remount, a future edit that adds
+ * a dependency to that memo — puts it back to `ltr` silently. The capture then
+ * succeeds, `--update` writes an LTR image to `*-rtl.png`, and every run
+ * afterwards agrees with it: a green gate over a mirrored layout nobody has
+ * ever photographed.
+ *
+ * Checked on a PASSING capture too, which is the half that matters. A red
+ * announces itself; this is the failure that would not.
+ */
+async function assertStillInDirection(page: Page, screen: VisualScreen, fail: Fail): Promise<void> {
+  const expected = screen.dir ?? 'ltr';
+  const actual = await page.evaluate(() => document.documentElement.dir || 'ltr');
+  if (actual !== expected) {
+    fail(
+      `${screen.name}: declares dir="${expected}" and the document read "${actual}" when the ` +
+        'capture finished, so this picture is of the other direction. `applyFormatLocale` ' +
+        'writes `<html dir>` from the chosen language; something re-ran it under the capture. ' +
+        'A baseline written from here would be an LTR screen filed under an RTL name (SC-760).'
+    );
+  }
+}
+
 async function assertPhotographedOnce(
   page: Page,
   loads: DocumentLoads,
@@ -320,6 +371,7 @@ function declare(screen: VisualScreen): void {
     const loads = trackDocumentLoads(page);
     await page.goto(screen.route);
     await settle(page, loads);
+    await applyDirection(page, screen);
 
     // The capture's own failure is held rather than thrown, because
     // `assertPhotographedOnce` can explain it: a pixel count over a spinner is
@@ -339,6 +391,7 @@ function declare(screen: VisualScreen): void {
       testInfo.config.updateSnapshots === 'all' || testInfo.config.updateSnapshots === 'changed'
     );
     await assertPhotographedOnce(page, loads, screen.name, fail);
+    await assertStillInDirection(page, screen, fail);
     await assertPinnedBytes(page, network, screen, fail);
     if (captured) throw captured;
   });
