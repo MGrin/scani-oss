@@ -92,7 +92,7 @@ export function GroupChecklist({
             disabled={disabled}
             onClick={() => onToggle(group.id)}
             className={cn(
-              'flex w-full items-center gap-3 rounded-md px-2 py-2.5 text-left transition-colors duration-fast',
+              'flex w-full items-center gap-3 rounded-md px-2 py-2.5 text-start transition-colors duration-fast',
               'hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
               'disabled:pointer-events-none disabled:opacity-50'
             )}
@@ -369,14 +369,14 @@ export function AssignGroupsSheet({
                 </Button>
               </div>
               {newName.trim().length === 0 ? (
-                <p className="text-caption text-muted-foreground lg:text-right">
+                <p className="text-caption text-muted-foreground lg:text-end">
                   {t('v3.groups.page.needName')}
                 </p>
               ) : null}
               {/* The sheet's own failure line is not rendered while this is
                   open, so a failed create has to say so here. */}
               {failure ? (
-                <p role="alert" className="text-caption text-destructive lg:text-right">
+                <p role="alert" className="text-caption text-destructive lg:text-end">
                   {failure}
                 </p>
               ) : null}
@@ -388,7 +388,7 @@ export function AssignGroupsSheet({
             disabled={pending || loading}
             onClick={() => setCreating(true)}
             className={cn(
-              'flex w-full items-center gap-2 border-t border-border px-2 pt-4 pb-2 text-left text-body text-muted-foreground transition-colors duration-fast',
+              'flex w-full items-center gap-2 border-t border-border px-2 pt-4 pb-2 text-start text-body text-muted-foreground transition-colors duration-fast',
               'hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
               'disabled:pointer-events-none disabled:opacity-50'
             )}

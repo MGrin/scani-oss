@@ -481,7 +481,7 @@ export function V3DataView<T>({ config, getId, query = SETTLED_QUERY_STATE }: V3
         {/* Once, over the first run of rows — it names the column, and a
             column does not change meaning between groups. */}
         {valueHeaderKey && index === 0 ? (
-          <p className="px-4 text-right text-caption text-muted-foreground">{t(valueHeaderKey)}</p>
+          <p className="px-4 text-end text-caption text-muted-foreground">{t(valueHeaderKey)}</p>
         ) : null}
         <DataViewRows
           data={group.items}
@@ -526,7 +526,7 @@ export function V3DataView<T>({ config, getId, query = SETTLED_QUERY_STATE }: V3
           <div className="flex items-center gap-2">
             <div className="relative min-w-0 flex-1">
               <Search
-                className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+                className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
                 aria-hidden="true"
               />
               <Input
@@ -543,7 +543,7 @@ export function V3DataView<T>({ config, getId, query = SETTLED_QUERY_STATE }: V3
                 // `text-body` is 16px. The shared Input is `text-sm`, and iOS
                 // zooms the page on focusing anything below 16px — a bug that
                 // reads as "the app jumped" and never gets filed as one.
-                className="pl-9 text-body"
+                className="ps-9 text-body"
               />
             </div>
 

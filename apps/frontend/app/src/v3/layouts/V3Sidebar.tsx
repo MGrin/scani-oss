@@ -35,7 +35,7 @@ export function V3Sidebar({ activePath, actionRequiredCount = 0, onCapturePress 
   const { t } = useTranslation();
 
   return (
-    <aside className="hidden w-64 shrink-0 flex-col border-r border-border bg-surface-1 lg:flex">
+    <aside className="hidden w-64 shrink-0 flex-col border-e border-border bg-surface-1 lg:flex">
       {/* No "v3" chip beside the wordmark since V3-19: this is the interface
           the app serves, and a version badge on the default reads as a beta the
           reader has been opted into. The way out is the switch in the footer. */}
@@ -48,7 +48,7 @@ export function V3Sidebar({ activePath, actionRequiredCount = 0, onCapturePress 
           sidebar that filed it under Portfolio would be claiming otherwise. */}
       <div className="shrink-0 px-2 pb-2">
         <Button className="w-full justify-start" onClick={onCapturePress}>
-          <Plus className="mr-2 h-4 w-4" aria-hidden="true" />
+          <Plus className="me-2 h-4 w-4" aria-hidden="true" />
           {/* `nav.addData`, not v2's `nav.addDataButton`: sentence case is a
               v3 writing rule (§7) and retitling the shared key would rewrite
               v2's own top bar. */}
@@ -86,7 +86,7 @@ export function V3Sidebar({ activePath, actionRequiredCount = 0, onCapturePress 
                       <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
                       <span className="truncate">{t(item.labelKey)}</span>
                       {badge > 0 && (
-                        <span className="ml-auto inline-flex items-center justify-center rounded-full bg-interactive px-1.5 py-0.5 text-caption font-medium leading-none text-interactive-foreground">
+                        <span className="ms-auto inline-flex items-center justify-center rounded-full bg-interactive px-1.5 py-0.5 text-caption font-medium leading-none text-interactive-foreground">
                           {badge}
                         </span>
                       )}

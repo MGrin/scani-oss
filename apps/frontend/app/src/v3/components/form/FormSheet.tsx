@@ -59,13 +59,13 @@ export function FormSheet({ open, onOpenChange, title, description, children }: 
     return (
       <Sheet open={open} onOpenChange={onOpenChange}>
         <SheetContent
-          side="right"
+          side="end"
           className="w-full gap-0 overflow-y-auto sm:max-w-md"
           // `SheetContent` sets `backgroundColor` inline against an unset
           // `--background`, and an inline style beats any utility.
           style={{ backgroundColor: 'hsl(var(--surface-2))' }}
         >
-          <SheetHeader className="pr-8 text-left">
+          <SheetHeader className="pe-8 text-start">
             <SheetTitle className="text-title">{title}</SheetTitle>
             <SheetDescription className="text-caption">{description}</SheetDescription>
           </SheetHeader>
@@ -153,12 +153,12 @@ export function FormActions({
         </Button>
       </div>
       {blockers.length > 0 ? (
-        <p className="text-caption text-muted-foreground lg:text-right">
+        <p className="text-caption text-muted-foreground lg:text-end">
           {t('v3.form.blockers', { blockers: blockers.join(', ') })}
         </p>
       ) : null}
       {error ? (
-        <p role="alert" className="text-caption text-destructive lg:text-right">
+        <p role="alert" className="text-caption text-destructive lg:text-end">
           {error}
         </p>
       ) : null}

@@ -101,7 +101,7 @@ export function V3Shell() {
           >
             {/* The "v3" chip that sat here is gone (V3-19) — see `V3Sidebar`. */}
             <span className="text-title">Scani</span>
-            <div className="ml-auto flex items-center gap-1">
+            <div className="ms-auto flex items-center gap-1">
               <ThemeToggle variant="icon" side="bottom" align="end" />
             </div>
           </header>

@@ -88,7 +88,7 @@ export function FirstRunPanel({ state, onOpenCapture }: FirstRunPanelProps) {
       {state.kind === 'importing' ? (
         <Button asChild>
           <Link to={jobDetailPath(state.jobId)}>
-            <Loader2 aria-hidden="true" className="mr-2 size-4 animate-spin" />
+            <Loader2 aria-hidden="true" className="me-2 size-4 animate-spin" />
             {t('v3.home.empty.importing.action')}
           </Link>
         </Button>

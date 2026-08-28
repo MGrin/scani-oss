@@ -168,7 +168,7 @@ export function InstitutionsList({ institutions, currency, types, query }: Insti
           <>
             <Button asChild variant="outline" size="sm">
               <Link to={`${V3_ROUTES.holdings}?institution=${encodeURIComponent(institution.id)}`}>
-                <PieChart className="mr-2 size-4" aria-hidden="true" />
+                <PieChart className="me-2 size-4" aria-hidden="true" />
                 {t('v3.entities.institution.viewHoldings')}
               </Link>
             </Button>

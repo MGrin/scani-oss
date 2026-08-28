@@ -101,7 +101,7 @@ function Run({
                   aria-label={removeLabel(entry)}
                 >
                   <X className="size-4" aria-hidden="true" />
-                  <span className="ml-1.5">
+                  <span className="ms-1.5">
                     {pending ? t('v3.membership.removePending') : t('v3.membership.removeAction')}
                   </span>
                 </Button>
