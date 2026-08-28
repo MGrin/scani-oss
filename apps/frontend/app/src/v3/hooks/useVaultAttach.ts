@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { invalidateVaultQueries } from '@/hooks/invalidatePortfolioQueries';
 import { trpc } from '@/lib/trpc';
+import { tokenDisplayName } from '@/lib/utils';
 import { compareMembers, type MemberEntry } from '../lib/membership';
 
 /**
@@ -34,10 +35,10 @@ export function useVaultAttach(vaultId: string, attachedHoldingIds: ReadonlySet<
           id: holding.id,
           kind: 'holding' as const,
           label: holding.token.symbol,
-          sublabel: `${holding.token.name} · ${holding.institution.name}`,
+          sublabel: `${tokenDisplayName(t, holding.token)} · ${holding.institution.name}`,
         }))
         .sort(compareMembers),
-    [holdingsQuery.data, attachedHoldingIds]
+    [holdingsQuery.data, attachedHoldingIds, t]
   );
 
   const add = async (entry: MemberEntry) => {
