@@ -1,0 +1,6 @@
+/**
+ * A fixture, not a source file — `.txt` so no scan of the real tree reaches it.
+ * The block below is PROSE naming the defect, and must not be reported: a
+ * bare value.toLocaleDateString() is what SC-762 removed.
+ */
+const rendered = value.toLocaleDateString();
