@@ -1,7 +1,7 @@
 import '../../i18n-preload';
 
 import { describe, expect, test } from 'bun:test';
-import { formatDate } from '@scani/shared';
+import { formatDate, resetFormatLocale, setFormatLocale } from '@scani/shared';
 import { SETTLED_QUERY_STATE } from '@scani/ui/v3/lib/query-state';
 import i18n from 'i18next';
 import { createElement, Fragment, type ReactNode } from 'react';
@@ -34,6 +34,8 @@ import type { HistoryEstimate } from '../../../src/v3/lib/paymentTotals';
  * (`SettleActions`, `PaymentStatusToggle`, `VendorCreateRow`) precisely so the
  * surfaces stay renderable, and therefore assertable, without a client.
  */
+
+const T = i18n.t.bind(i18n);
 
 const TODAY = new Date().toISOString().slice(0, 10);
 
@@ -968,11 +970,14 @@ describe('CurrencyField ranking', () => {
 
   // The whole reason the ranking exists: "USD" must not offer "USDC" first.
   test('an exact symbol match leads', () => {
-    expect(rankCurrencyMatches(asAny(tokens), 'usd').map((t) => t.symbol)).toEqual(['USD', 'USDC']);
+    expect(rankCurrencyMatches(T, asAny(tokens), 'usd').map((c) => c.symbol)).toEqual([
+      'USD',
+      'USDC',
+    ]);
   });
 
   test('fiat leads the rest, because a bill is usually in one', () => {
-    expect(rankCurrencyMatches(asAny(tokens), 'o').map((t) => t.symbol)).toEqual([
+    expect(rankCurrencyMatches(T, asAny(tokens), 'o').map((c) => c.symbol)).toEqual([
       'EUR',
       'USD',
       'BTC',
@@ -981,11 +986,57 @@ describe('CurrencyField ranking', () => {
   });
 
   test('an empty query offers the currencies, not every token in the database', () => {
-    expect(rankCurrencyMatches(asAny(tokens), '').map((t) => t.symbol)).toEqual(['EUR', 'USD']);
+    expect(rankCurrencyMatches(T, asAny(tokens), '').map((c) => c.symbol)).toEqual(['EUR', 'USD']);
   });
 
   test('the label is what a person recognises, not an id', () => {
-    expect(tokenLabel({ symbol: 'EUR', name: 'Euro' })).toBe('EUR — Euro');
+    expect(tokenLabel(T, { symbol: 'EUR', name: 'Euro', type: 'fiat' })).toBe('EUR — Euro');
+  });
+
+  /**
+   * SC-419. A fiat label is DERIVED from the symbol, so the stored English in
+   * `tokens.name` never reaches the picker. The fixture's name is deliberately
+   * wrong — if the map were bypassed, `EUR — Not A Real Name` would come back.
+   */
+  test('a fiat label ignores the stored name and derives from the symbol', () => {
+    expect(tokenLabel(T, { symbol: 'EUR', name: 'Not A Real Name', type: 'fiat' })).toBe(
+      'EUR — Euro'
+    );
+  });
+
+  test('a Spanish reader gets the Spanish currency name, not the English one', () => {
+    try {
+      setFormatLocale('es');
+      const label = tokenLabel(T, { symbol: 'USD', name: 'United States Dollar', type: 'fiat' });
+      expect(label).toBe('USD — dólar estadounidense');
+      expect(label).not.toContain('United States Dollar');
+    } finally {
+      resetFormatLocale();
+    }
+  });
+
+  /** The must-be-ABSENT arm: a non-fiat name is a proper noun and is KEPT. */
+  test('a non-fiat label keeps its stored name', () => {
+    expect(tokenLabel(T, { symbol: 'BTC', name: 'Bitcoin', type: 'crypto' })).toBe('BTC — Bitcoin');
+    expect(tokenLabel(T, { symbol: 'AAPL', name: 'APPLE INC', type: 'stock' })).toBe(
+      'AAPL — APPLE INC'
+    );
+  });
+
+  /** A token with no type code at all keeps its name rather than throwing. */
+  test('no type code degrades to the stored name', () => {
+    expect(tokenLabel(T, { symbol: 'XXX', name: 'Something' })).toBe('XXX — Something');
+  });
+
+  test('the picker searches what the row SHOWS, not the English underneath', () => {
+    try {
+      setFormatLocale('es');
+      // `dólar` appears in no `name` in the fixture; it exists only in the
+      // derived Spanish label. A search over the stored name finds nothing.
+      expect(rankCurrencyMatches(T, asAny(tokens), 'dólar').map((c) => c.symbol)).toEqual(['USD']);
+    } finally {
+      resetFormatLocale();
+    }
   });
 });
 
