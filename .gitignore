@@ -85,6 +85,15 @@ scripts/.source-mutation-journal-*.json
 .tmp-thr_*/
 .context/
 
+# Editor-local state. Machine-specific and never anyone else's business — but
+# the reason it is HERE rather than assumed is that a checkout of this tree may
+# track a file under this directory, and `.gitignore` does not untrack one. So
+# the tracked file stays tracked and versioned exactly as before, while
+# everything else the editor writes beside it stops being stageable. Verified
+# both halves: an already-tracked file survives `git ls-files` unchanged, and a
+# newly created sibling disappears from `git status --untracked-files=all`.
+.vscode/
+
 # Build output that lives beside the app or module producing it, and
 # infrastructure working state (SC-569, SC-577).
 #
