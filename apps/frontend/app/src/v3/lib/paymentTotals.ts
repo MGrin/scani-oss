@@ -147,11 +147,41 @@ export function sumAmountsByCurrency(entries: readonly CurrencyAmount[]): Map<st
   return totals;
 }
 
+/**
+ * A payment's own last settled amount, standing in as its estimate under
+ * SC-625's opt-in — or `null`, which covers every reason there is no
+ * substitute: the option is off, nothing has settled, or this caller has no
+ * forecast payload to read one from.
+ *
+ * It is deliberately NOT recomputed here. The figure and the date come
+ * straight off `payments.forecast`, which is the one place the rule for
+ * "which settlement counts" lives, so the recurring list's monthly figure and
+ * the projection's cannot disagree — they are the same computation, not two
+ * implementations configured to match.
+ */
+export interface HistoryEstimate {
+  amount: string;
+  /** `YYYY-MM-DD` of the settlement, for the surface to cite. */
+  sourceDueDate: string;
+}
+
 export interface MonthlyEquivalentInput {
   expectedAmount: string | null;
   intervalUnit: PaymentIntervalUnit;
   intervalCount: number;
   currencyTokenId: string;
+  /**
+   * Required rather than optional, so that adding SC-625 made the type checker
+   * name every caller of this function instead of leaving the ones nobody
+   * thought of silently on the old behaviour. `null` is a real answer and
+   * several callers give it; not saying is not.
+   */
+  historyEstimate: HistoryEstimate | null;
+}
+
+/** The amount a payment contributes, or `null` when it contributes nothing. */
+function resolvedAmount(payment: MonthlyEquivalentInput): string | null {
+  return payment.expectedAmount ?? payment.historyEstimate?.amount ?? null;
 }
 
 /**
@@ -159,24 +189,43 @@ export interface MonthlyEquivalentInput {
  * currency. This is the cross-payment comparison the annualisation rule
  * exists for: a weekly $20 payment and a quarterly $300 payment can only
  * be added meaningfully once both are annualised and divided back to a
- * common (monthly) basis. Entries with no `expectedAmount` (variable-kind
- * payments with no estimate) are skipped — there's nothing to project.
+ * common (monthly) basis.
+ *
+ * An entry with neither a declared estimate nor a history one is skipped —
+ * there is nothing to project, and inventing a figure is what SC-461 refused.
+ * **What is skipped is counted**, by `unestimatedCount` below: a total with no
+ * denominator beside it reads as complete and is not, which is the whole
+ * reason SC-625 exists rather than a nicety attached to it.
+ *
+ * A declared estimate always wins. History is a substitute for a missing
+ * figure, never a correction to one somebody entered.
  */
 export function sumMonthlyEquivalentByCurrency(
   payments: readonly MonthlyEquivalentInput[]
 ): Map<string, Decimal> {
   const totals = new Map<string, Decimal>();
   for (const payment of payments) {
-    if (payment.expectedAmount === null) continue;
-    const monthly = monthlyEquivalent(
-      payment.expectedAmount,
-      payment.intervalUnit,
-      payment.intervalCount
-    );
+    const amount = resolvedAmount(payment);
+    if (amount === null) continue;
+    const monthly = monthlyEquivalent(amount, payment.intervalUnit, payment.intervalCount);
     const running = totals.get(payment.currencyTokenId) ?? new Decimal(0);
     totals.set(payment.currencyTokenId, running.plus(monthly));
   }
   return totals;
+}
+
+/**
+ * How many of these payments the total above leaves out — the denominator the
+ * figure has never carried.
+ *
+ * A separate function rather than a second field on the sum's return value on
+ * purpose: the sum is consumed by three surfaces that add it to other maps,
+ * and widening its type would make every one of them handle a count they do
+ * not print. The question "what is missing" is asked by the surface that has
+ * room to answer it.
+ */
+export function unestimatedCount(payments: readonly MonthlyEquivalentInput[]): number {
+  return payments.filter((payment) => resolvedAmount(payment) === null).length;
 }
 
 /**
