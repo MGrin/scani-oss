@@ -1,0 +1,57 @@
+-- 20260828114215 — sc625 payments estimate from history opt in
+--
+-- THE DEFAULT IS `false` AND THAT IS THE WHOLE FEATURE, NOT A SAFE STARTING
+-- POINT SOMEBODY WILL LATER FLIP.
+--
+-- SC-461 decided that a variable payment with no estimate is REPORTED and never
+-- guessed at: the forecast prints "N variable payments have no estimate, so
+-- nothing was projected for them" and invents nothing. This column does not
+-- reverse that decision, it gives the reader a way to make a different one for
+-- a payment they know — and the difference between those two things is entirely
+-- in who the default serves. A column defaulting to `true` would project every
+-- variable payment in the book off history the moment it shipped, silently, on
+-- accounts whose owner never asked for it.
+--
+-- ## Why this is on `payments` and not on `users`
+--
+-- The question is per payment. A variable electricity bill that has settled for
+-- eleven months is a payment whose history says something; a variable payment
+-- with two wildly different settlements is one whose history says very little,
+-- and the reader is the only one who can tell those apart. A user-level switch
+-- would apply one answer to both.
+--
+-- "Use it for all of them" is then a BULK WRITE over this column rather than a
+-- second, coarser flag. A user-level setting sitting beside a per-payment one
+-- is two sources of truth for a single question, and the surface that reads
+-- them has to decide which wins — a decision nobody makes explicitly and every
+-- later reader has to reverse-engineer.
+--
+-- ## Why the estimate itself is not stored here
+--
+-- Nothing writes an amount into this table as part of this feature, and that is
+-- deliberate. The estimate is DERIVED, at read time, from the most recent
+-- settled occurrence — `payment_occurrences.actual_amount` where the row
+-- reached `matched`. Storing a copy would make the projection disagree with the
+-- history it claims to come from the moment a settlement is corrected, and the
+-- surface names the source month out loud ("from July's £84.20"), so the two
+-- being the same fact is load-bearing rather than incidental.
+--
+-- It also means this migration adds no backfill: every existing payment keeps
+-- projecting exactly as it did yesterday, and the first change any account sees
+-- is one its owner asked for.
+--
+-- ## `NOT NULL`, and no third state
+--
+-- A nullable boolean here would carry "the user has not decided yet" as
+-- distinct from "the user said no", and nothing on the surface would ever
+-- render that difference — both are "not projected". A state no reader can
+-- distinguish is a state the write paths will eventually disagree about.
+ALTER TABLE payments
+  ADD COLUMN estimate_from_history boolean NOT NULL DEFAULT false;
+
+-- The forecast asks this question of every ACTIVE payment on every load, and
+-- answers it for the whole book at once. `(user_id, status)` is already
+-- indexed, so nothing here is on its own; this column is a filter applied after
+-- that index has narrowed the set, not a way into the table.
+COMMENT ON COLUMN payments.estimate_from_history IS
+  'Opt-in (SC-625): project this payment from its most recently settled occurrence when it has no expected_amount. Never a stored amount — the figure is derived at read time from payment_occurrences.actual_amount.';

@@ -4,6 +4,7 @@ import { describe, expect, test } from 'bun:test';
 import { formatDate } from '@scani/shared';
 import { SETTLED_QUERY_STATE } from '@scani/ui/v3/lib/query-state';
 import i18n from 'i18next';
+import type { ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { StaticRouter } from 'react-router-dom/server';
 import type { BaseCurrencyRates } from '../../../src/hooks/useBaseCurrencyRates';
@@ -17,6 +18,7 @@ import { RecurringList } from '../../../src/v3/components/money/RecurringList';
 import { RecurringSummary } from '../../../src/v3/components/money/RecurringSummary';
 import { UpcomingFeed } from '../../../src/v3/components/money/UpcomingFeed';
 import { VendorList } from '../../../src/v3/components/money/VendorList';
+import type { HistoryEstimate } from '../../../src/v3/lib/paymentTotals';
 
 /**
  * `renderToStaticMarkup` has no `window`, so `useIsDesktop()` resolves false —
@@ -363,6 +365,66 @@ describe('UpcomingFeed', () => {
   });
 });
 
+/**
+ * No history estimate unless a case says otherwise (SC-625). Passed explicitly
+ * rather than defaulted inside the components, so a test is always about a
+ * book whose estimates somebody chose.
+ */
+const NO_HISTORY = new Map<string, HistoryEstimate>();
+
+/**
+ * Render the DESKTOP surface — the table — instead of the phone card list.
+ *
+ * `useMediaQuery` reads `window.matchMedia` in its `useState` initialiser, so
+ * a stub is enough to make `renderToStaticMarkup` take the table branch.
+ *
+ * EVERY OTHER TEST IN THIS FILE RENDERS WITH NO `window` AND THEREFORE ONLY
+ * EVER SEES THE CARD LIST. That is not a gap in the abstract: SC-625 shipped
+ * an `amount` column that rendered a bare dash for an estimated payment, and
+ * the suite was green over it, because `expect(html).toInclude('84.20')` was
+ * satisfied by the card beside it. A column render is invisible here unless
+ * something forces this branch.
+ *
+ * The stub is installed and removed around ONE synchronous render. `bun test`
+ * runs every file in one process, so a `window` left defined would be read by
+ * every later file that branches on `typeof window` — the same class of leak
+ * `restoreContainerAfterAll` exists to prevent for the DI container. The
+ * `finally` is what makes that true even when the render throws.
+ */
+function renderDesktop(node: ReactNode): string {
+  const had = 'window' in globalThis;
+  const previous = (globalThis as { window?: unknown }).window;
+  (globalThis as { window?: unknown }).window = {
+    matchMedia: () => ({
+      matches: true,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    }),
+  };
+  try {
+    return renderToStaticMarkup(node);
+  } finally {
+    if (had) (globalThis as { window?: unknown }).window = previous;
+    else delete (globalThis as { window?: unknown }).window;
+  }
+}
+
+function renderRecurringDesktop(overrides: Record<string, unknown> = {}) {
+  return renderDesktop(
+    <StaticRouter location="/payments/recurring">
+      <RecurringList
+        payments={asAny([PAYMENT, SALARY])}
+        vendorNameById={VENDOR_NAMES}
+        tokenSymbolById={TOKEN_SYMBOLS}
+        rates={RATES}
+        query={SETTLED_QUERY_STATE}
+        historyEstimates={NO_HISTORY}
+        {...overrides}
+      />
+    </StaticRouter>
+  );
+}
+
 function renderRecurring(path = '/payments/recurring', overrides: Record<string, unknown> = {}) {
   return renderToStaticMarkup(
     <StaticRouter location={path}>
@@ -372,6 +434,7 @@ function renderRecurring(path = '/payments/recurring', overrides: Record<string,
         tokenSymbolById={TOKEN_SYMBOLS}
         rates={RATES}
         query={SETTLED_QUERY_STATE}
+        historyEstimates={NO_HISTORY}
         {...overrides}
       />
     </StaticRouter>
@@ -453,9 +516,17 @@ describe('PaymentStatusToggle copy', () => {
   });
 });
 
-function renderCommitment(payments: unknown[]) {
+function renderCommitment(
+  payments: unknown[],
+  historyEstimates: ReadonlyMap<string, HistoryEstimate> = NO_HISTORY
+) {
   return renderToStaticMarkup(
-    <RecurringSummary payments={asAny(payments)} tokenSymbolById={TOKEN_SYMBOLS} rates={RATES} />
+    <RecurringSummary
+      payments={asAny(payments)}
+      tokenSymbolById={TOKEN_SYMBOLS}
+      rates={RATES}
+      historyEstimates={historyEstimates}
+    />
   );
 }
 
@@ -486,6 +557,148 @@ describe('RecurringSummary', () => {
     // The £2,400 is named as the converted part, not the whole (SC-69 3.2).
     expect(html).toInclude('£2,400.00');
     expect(html).toInclude('converted at today’s rates');
+  });
+
+  /**
+   * SC-625 on the surface the ticket names. "Committed each month" has skipped
+   * variable payments with no estimate since it was written, and said nothing
+   * about it — so the count below is not decoration attached to the new
+   * option, it is the denominator this figure never had.
+   */
+  describe('the variable payments it leaves out, and the ones it now includes', () => {
+    const VARIABLE = {
+      ...PAYMENT,
+      id: 'payment-power',
+      kind: 'variable',
+      expectedAmount: null,
+    };
+
+    test('an unestimated variable payment is counted out loud, not silently dropped', () => {
+      const html = renderCommitment([PAYMENT, VARIABLE]);
+
+      // The figure is still the fixed bill alone — nothing is invented.
+      expect(html).toInclude('€42.00');
+      expect(html).toInclude('1 variable payment has no estimate and is not counted');
+      expect(html).not.toInclude('estimated from its last settled amount');
+    });
+
+    test('with a history estimate it is added, and the line says so', () => {
+      const html = renderCommitment(
+        [PAYMENT, VARIABLE],
+        new Map([['payment-power', { amount: '58.00', sourceDueDate: '2026-02-15' }]])
+      );
+
+      // 42 + 58, the same total two declared bills would give — which is
+      // exactly why the sentence beneath it has to distinguish them.
+      expect(html).toInclude('€100.00');
+      expect(html).toInclude('Includes 1 variable payment estimated from its last settled amount');
+      expect(html).not.toInclude('has no estimate and is not counted');
+    });
+
+    test('BOTH lines at once, because they answer different questions', () => {
+      const other = { ...VARIABLE, id: 'payment-water' };
+      const html = renderCommitment(
+        [PAYMENT, VARIABLE, other],
+        new Map([['payment-power', { amount: '58.00', sourceDueDate: '2026-02-15' }]])
+      );
+
+      expect(html).toInclude('Includes 1 variable payment estimated from its last settled amount');
+      expect(html).toInclude('1 variable payment has no estimate and is not counted');
+    });
+
+    test('a history estimate for a payment that is not in this set changes nothing', () => {
+      // The must-be-ABSENT control. The summary sees the FILTERED rows, so an
+      // estimate keyed on a payment the reader has filtered away must not
+      // reach the figure or the sentence — otherwise narrowing to one vendor
+      // would report estimates belonging to another.
+      const html = renderCommitment(
+        [PAYMENT],
+        new Map([['payment-power', { amount: '58.00', sourceDueDate: '2026-02-15' }]])
+      );
+
+      expect(html).toInclude('€42.00');
+      expect(html).not.toInclude('estimated from its last settled amount');
+    });
+  });
+});
+
+describe('RecurringList — an estimated row does not look like a fixed bill (SC-625)', () => {
+  const VARIABLE = {
+    ...PAYMENT,
+    id: 'payment-power',
+    kind: 'variable',
+    expectedAmount: null,
+  };
+
+  test('the row shows the estimated figure AND cites the month it came from', () => {
+    const html = renderRecurring('/payments/recurring', {
+      payments: asAny([VARIABLE]),
+      historyEstimates: new Map([
+        ['payment-power', { amount: '84.20', sourceDueDate: '2026-02-15' }],
+      ]),
+    });
+
+    expect(html).toInclude('84.20');
+    // The mark and the citation — the one thing a fixed bill in this same
+    // column can never carry, because it has nothing to cite.
+    expect(html).toInclude('Estimated');
+    expect(html).toInclude('Feb 2026');
+  });
+
+  test('the control: the same row with no estimate carries neither', () => {
+    const html = renderRecurring('/payments/recurring', {
+      payments: asAny([VARIABLE]),
+      historyEstimates: new Map(),
+    });
+
+    expect(html).not.toInclude('84.20');
+    expect(html).not.toInclude('Feb 2026');
+  });
+
+  test('a FIXED payment is never marked, even if an estimate is somehow keyed to it', () => {
+    // A declared amount always wins, so the mark must not appear beside a
+    // figure somebody actually entered — that would be the surface calling a
+    // declared bill a guess.
+    const html = renderRecurring('/payments/recurring', {
+      payments: asAny([PAYMENT]),
+      historyEstimates: new Map([
+        ['payment-hetzner', { amount: '999.00', sourceDueDate: '2026-02-15' }],
+      ]),
+    });
+
+    expect(html).toInclude('42.00');
+    expect(html).not.toInclude('999.00');
+    expect(html).not.toInclude('Feb 2026');
+  });
+
+  test('the DESKTOP table carries the mark too, not just the phone card', () => {
+    const html = renderRecurringDesktop({
+      payments: asAny([VARIABLE]),
+      historyEstimates: new Map([
+        ['payment-power', { amount: '84.20', sourceDueDate: '2026-02-15' }],
+      ]),
+    });
+
+    // MUST-BE-FOUND CONTROL, and it is the whole reason this test is worth
+    // anything: if the `matchMedia` stub ever stops taking, this renders the
+    // card list and every assertion below passes for the wrong surface —
+    // which is precisely the failure the test exists to catch.
+    expect(html).toInclude('<table');
+
+    expect(html).toInclude('84.20');
+    expect(html).toInclude('Estimated');
+    expect(html).toInclude('Feb 2026');
+  });
+
+  test('the desktop control: no estimate, no figure and no mark in the table', () => {
+    const html = renderRecurringDesktop({
+      payments: asAny([VARIABLE]),
+      historyEstimates: new Map(),
+    });
+
+    expect(html).toInclude('<table');
+    expect(html).not.toInclude('84.20');
+    expect(html).not.toInclude('Feb 2026');
   });
 });
 
@@ -539,6 +752,7 @@ function renderVendors(path = '/vendors', overrides: Record<string, unknown> = {
         tokenSymbolById={TOKEN_SYMBOLS}
         rates={RATES}
         query={SETTLED_QUERY_STATE}
+        historyEstimates={NO_HISTORY}
         creating={false}
         onCreatingChange={() => {}}
         {...overrides}
