@@ -108,8 +108,11 @@ describe('DataViewTable — no horizontal scroll, structurally', () => {
     const identityCell = html.slice(html.indexOf('<tbody'));
     expect(identityCell).toInclude('truncate');
     expect(identityCell).toInclude('whitespace-nowrap');
-    // The figure is right-aligned and nowrap; it is not the zone that gives way.
-    expect(html).toInclude('whitespace-nowrap text-right');
+    // The figure is aligned to the inline END and nowrap; it is not the zone
+    // that gives way. `text-end` rather than `text-right` (SC-760): a numeric
+    // column tracks the reading direction, so under `dir="rtl"` it aligns to
+    // the physical left and the digits still line up.
+    expect(html).toInclude('whitespace-nowrap text-end');
   });
 });
 
