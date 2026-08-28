@@ -87,6 +87,54 @@ describe('reading a wallet-import result', () => {
   });
 });
 
+describe('a closed position on the review card (SC-398)', () => {
+  // MUST-BE-FOUND. A position the wallet traded and exited arrives at balance
+  // `0`, and the card has to be able to say WHY it is there — a bare `0` reads
+  // as an empty row somebody forgot to filter out, which is the opposite of
+  // what it is.
+  test('an exited row is flagged', () => {
+    const view = readWalletImport({
+      needsReview: true,
+      chainsDetected: 1,
+      chains: [
+        {
+          institutionId: 'eth',
+          institutionName: 'Ethereum',
+          snapshots: [
+            { ...snapshot('0xgala', 'GALA', 'Gala', '0'), exitedPosition: true },
+            snapshot('0xusdc', 'USDC', 'USD Coin', '5'),
+          ],
+        },
+      ],
+    });
+    if (view.kind !== 'review') throw new Error('unreachable');
+    expect(view.chains[0]?.candidates.map((c) => [c.symbol, c.exited])).toEqual([
+      ['GALA', true],
+      ['USDC', false],
+    ]);
+  });
+
+  // MUST-BE-ABSENT, and it is the reason the flag is carried rather than read
+  // off `balance === '0'`: a review job enqueued before this shipped has no
+  // such key, and every row in it is a current balance. Inferring from the
+  // balance would relabel any zero row in an old payload.
+  test('a payload written before the flag existed claims nothing', () => {
+    const view = readWalletImport({
+      needsReview: true,
+      chainsDetected: 1,
+      chains: [
+        {
+          institutionId: 'eth',
+          institutionName: 'Ethereum',
+          snapshots: [snapshot('0xdust', 'DUST', 'Dust', '0')],
+        },
+      ],
+    });
+    if (view.kind !== 'review') throw new Error('unreachable');
+    expect(view.chains[0]?.candidates[0]?.exited).toBe(false);
+  });
+});
+
 describe('classifying the fetch', () => {
   test('empty and unreadable never collapse', () => {
     expect(classifyWalletFetch(0, 0)).toBe('empty');
@@ -134,6 +182,7 @@ describe('what the confirm button will write', () => {
           name: 'Ethereum',
           balance: '2',
           spam: null,
+          exited: false,
         },
         {
           key: 'eth:2',
@@ -143,6 +192,7 @@ describe('what the confirm button will write', () => {
           name: 'Claim now',
           balance: '9',
           spam: 'solicitation',
+          exited: false,
         },
       ],
     },
