@@ -1,0 +1,134 @@
+#!/usr/bin/env bash
+# Pre-push hook: nothing private may LEAVE this machine for MGrin/scani-oss.
+#
+# Installed by the same `prepare` script as pre-commit (`git config
+# core.hooksPath .githooks` on `bun install`).
+#
+# WHY THIS EXISTS (SC-813). `check-oss-bound-paths.ts` ran only in pre-commit,
+# and OSS-first ports code by CHERRY-PICK. Measured on git 2.50.1 in a
+# throwaway repo, with a control so the numbers mean something:
+#
+#   4 ordinary commits              -> 4 pre-commit firings   (the control)
+#   cherry-pick, rc=0, commit landed -> 0 firings
+#   rebase, rc=0, 2 commits replayed -> 0 firings
+#
+# So the ONE operation that actually carries code across the repository
+# boundary is the one the check never sees. No CI closes it either: no
+# workflow in the mirror invokes the script, and the private repo's
+# `oss-drift-check.yml` has not run since Actions billing was blocked
+# (SC-128 / SC-433).
+#
+# WHAT THIS IS NOT. It is bypassable with `--no-verify`, and it is absent from
+# a fresh clone until `bun install` sets `core.hooksPath`. It is a seatbelt on
+# the machine that does the porting, not a gate on the repository — a gate
+# would have to live somewhere a contributor cannot switch off, and nothing
+# here should be read as though it does.
+#
+# Skip with `git push --no-verify`.
+
+set -eu
+
+export PATH="$HOME/.bun/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
+
+RED=$'\033[31m'
+GREEN=$'\033[32m'
+YELLOW=$'\033[33m'
+RESET=$'\033[0m'
+
+REMOTE_NAME="${1:-}"
+REMOTE_URL="${2:-}"
+
+fail() {
+  echo "${RED}✗ pre-push failed:${RESET} $1" >&2
+  echo "  Fix it and push again, or bypass with \`git push --no-verify\`." >&2
+  exit 1
+}
+
+note() { echo "${YELLOW}→ $1${RESET}"; }
+ok()   { echo "${GREEN}✓ $1${RESET}"; }
+
+# Is this push aimed at the public mirror? Pre-push knows the DESTINATION and
+# pre-commit structurally cannot — a commit does not know where it is going.
+# That is the whole reason this hook can answer a question the other one
+# cannot, and it is what decides the missing-script case below.
+is_mirror_remote() {
+  case "$REMOTE_URL" in
+    *scani-oss*) return 0 ;;
+    *)           return 1 ;;
+  esac
+}
+
+ZERO='0000000000000000000000000000000000000000'
+
+# Every A/M/R/C path introduced by the commits this push would send.
+#
+# NOT `remote_sha..local_sha`: `remote_sha` is ALL ZEROS for a branch the
+# remote has never seen, which is every branch created for a port. Measured
+# against a local bare remote — the stdin line came back
+# `refs/heads/trunk <sha> refs/heads/trunk 0000…0000`. `rev-list --not
+# --remotes` answers for both cases without branching on the sentinel.
+pushed_paths() {
+  local local_sha="$1"
+  local commits
+  commits=$(git rev-list "$local_sha" --not --remotes="$REMOTE_NAME") || return 1
+  [ -z "$commits" ] && return 0
+  # One diff per commit, unioned — "what these commits introduce", which is
+  # what the check judges. A single range diff would miss a path added and
+  # then removed across the set.
+  echo "$commits" | while IFS= read -r c; do
+    [ -n "$c" ] && git diff-tree --no-commit-id --name-only --diff-filter=ACMR -r "$c"
+  done | sort -u
+}
+
+# stdin is one line per ref: <local_ref> <local_sha> <remote_ref> <remote_sha>
+checked_any=0
+while read -r _local_ref local_sha _remote_ref _remote_sha; do
+  # A deletion. Nothing is leaving, so there is nothing to judge.
+  [ "$local_sha" = "$ZERO" ] && continue
+
+  # Only a push AT the mirror can carry anything to the mirror. Measured
+  # while testing this hook: without this gate, an upstream-derived branch
+  # pushed to `origin` was REFUSED for carrying `scripts/gate-db.ts` — a file
+  # that legitimately belongs on origin. `classifyBranch` decides boundness
+  # from branch ANCESTRY, which cannot distinguish where a push is going, so
+  # the check was answering a question this push does not ask.
+  #
+  # STATED LIMIT, because this is the direction that fails open: the mirror is
+  # recognised by its URL containing `scani-oss`. A mirror reachable under some
+  # other URL would not be matched and this hook would skip it — visibly, via
+  # the note below, but skip it. The note is not a substitute for noticing.
+  if ! is_mirror_remote; then
+    note "remote '${REMOTE_NAME}' (${REMOTE_URL}) is not MGrin/scani-oss; OSS-boundary check NOT run"
+    continue
+  fi
+
+  if [ ! -f scripts/check-oss-bound-paths.ts ]; then
+    # pre-commit NOTES here and that is right for a commit, which is local and
+    # amendable. This is the last gate before the content is public, so the
+    # answer flips — but only when the destination is the mirror. On a private
+    # push nothing crosses a boundary and a refusal would buy nothing.
+    #
+    # Same reasoning the script applies to its own exit 9: "could not tell" is
+    # not a pass.
+    fail "scripts/check-oss-bound-paths.ts is not in this tree and this push is bound for ${REMOTE_URL} — NOTHING WAS CHECKED. This is not a pass."
+  fi
+
+  paths=$(pushed_paths "$local_sha") || fail "could not list the commits being pushed — \`git rev-list\` failed, so NOTHING WAS CHECKED. This is not a pass."
+
+  if [ -z "$paths" ]; then
+    note "no added/modified paths in the commits being pushed to '${REMOTE_NAME}'"
+    continue
+  fi
+
+  checked_any=1
+  # `--ref "$local_sha"`, not HEAD. `git push upstream branchB` while standing
+  # on private branchA would otherwise classify branchA, read `private`, and
+  # SKIP — a silent pass on a mirror-bound push, which is this check's own
+  # subject reproduced inside its caller.
+  if ! printf '%s\n' "$paths" | bun scripts/check-oss-bound-paths.ts --stdin-paths --ref "$local_sha"; then
+    fail "paths in the commits being pushed cannot travel to MGrin/scani-oss"
+  fi
+done
+
+[ "$checked_any" = 1 ] && ok "pre-push passed"
+exit 0
