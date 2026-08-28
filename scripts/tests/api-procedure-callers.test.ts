@@ -157,8 +157,8 @@ describe('nothing counts segments, so neither arity bug is reachable', () => {
 
   /**
    * Zero chains in the tree span a line break today (measured 2026-08-28 over
-   * all 1755 files scanned in the mirror, 2072 privately), so the tree cannot
-   * exercise this and a green from it would
+   * all 1755 files scanned in the mirror and all 2073 privately), so the tree
+   * cannot exercise this and a green from it would
    * otherwise mean nothing. The fixture is what makes that zero a measurement.
    */
   test('a chain wrapped across a line is still found', () => {
