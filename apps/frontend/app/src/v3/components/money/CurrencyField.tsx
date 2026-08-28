@@ -1,6 +1,8 @@
+import type { TFunction } from 'i18next';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { type RouterOutputs, trpc } from '@/lib/trpc';
+import { tokenDisplayName } from '@/lib/utils';
 import { tokenTypeLabel } from '../../lib/tokens';
 import { Field } from '../form/Field';
 import { RecordPicker } from '../form/RecordPicker';
@@ -27,17 +29,32 @@ type TokenRow = RouterOutputs['tokens']['getAll'][number];
 /** Enough to scan, few enough that the list does not become the page. */
 const MAX_RESULTS = 20;
 
-export function tokenLabel(token: Pick<TokenRow, 'symbol' | 'name'>): string {
-  return `${token.symbol} — ${token.name}`;
+/** `tokens.getAll` calls the CODE `type`, so that is what the helper's
+ *  `typeCode` gets — see `tokenDisplayName` on why the name is not `type`. */
+export function tokenLabel(
+  t: TFunction,
+  token: Pick<TokenRow, 'symbol' | 'name'> & { type?: string | null }
+): string {
+  return `${token.symbol} — ${tokenDisplayName(t, { ...token, typeCode: token.type })}`;
 }
 
 /** Exact symbol, then fiat, then the rest — each band alphabetical by symbol. */
-export function rankCurrencyMatches(tokens: readonly TokenRow[], query: string): TokenRow[] {
+export function rankCurrencyMatches(
+  t: TFunction,
+  tokens: readonly TokenRow[],
+  query: string
+): TokenRow[] {
   const term = query.trim().toLowerCase();
   const matches = term
     ? tokens.filter(
         (token) =>
-          token.symbol.toLowerCase().includes(term) || token.name.toLowerCase().includes(term)
+          token.symbol.toLowerCase().includes(term) ||
+          // Match what the row SHOWS. A picker listing `dólar estadounidense`
+          // that only matches `United States Dollar` is a filter that finds
+          // nothing a Spanish reader can see (SC-419).
+          tokenDisplayName(t, { ...token, typeCode: token.type })
+            .toLowerCase()
+            .includes(term)
       )
     : tokens.filter((token) => token.type === 'fiat');
 
@@ -86,9 +103,9 @@ export function CurrencyPicker({
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
 
-  const options = rankCurrencyMatches(tokens, query).map((token) => ({
+  const options = rankCurrencyMatches(t, tokens, query).map((token) => ({
     id: token.id,
-    label: tokenLabel(token),
+    label: tokenLabel(t, token),
     // Fiat carries no hint: the label already reads "EUR — Euro", and
     // "Fiat Currency" under every row of a currency picker is noise.
     hint:

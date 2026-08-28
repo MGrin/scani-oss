@@ -204,7 +204,7 @@ export function PaymentFormPage() {
     setAmount(payment.expectedAmount ?? '');
     setCurrency({
       id: payment.currencyTokenId,
-      label: token ? tokenLabel(token) : payment.currencyTokenId,
+      label: token ? tokenLabel(t, token) : payment.currencyTokenId,
     });
     setIntervalUnit(payment.intervalUnit as IntervalUnit);
     setIntervalCount(String(payment.intervalCount));
@@ -213,7 +213,7 @@ export function PaymentFormPage() {
     setAccountId(payment.accountId ?? NO_ACCOUNT);
     setNotes(payment.notes ?? '');
     setPrefilled(true);
-  }, [isEdit, prefilled, paymentQuery.data, tokens]);
+  }, [isEdit, prefilled, paymentQuery.data, tokens, t]);
 
   // Prefill from a parsed invoice. Only the fields the invoice evidences are
   // touched — direction, kind and repeat count keep the form's own defaults,
@@ -231,9 +231,9 @@ export function PaymentFormPage() {
     setIntervalUnit(prefill.intervalUnit ?? '');
     setMarkAnchorPaid(prefill.markAnchorPaid);
     const token = matchCurrencyToken(tokens, prefill.currencyCode);
-    if (token) setCurrency({ id: token.id, label: tokenLabel(token) });
+    if (token) setCurrency({ id: token.id, label: tokenLabel(t, token) });
     setInvoicePrefilled(true);
-  }, [extraction, invoicePrefilled, tokens]);
+  }, [extraction, invoicePrefilled, tokens, t]);
 
   // Default the currency to the user's base currency. Without this the picker
   // starts empty and `currency` stays null until something is chosen — typing
@@ -254,9 +254,9 @@ export function PaymentFormPage() {
     if (action === 'wait') return;
     currencyDefaultSpent.current = true;
     if (action === 'fill') {
-      setCurrency({ id: baseCurrencyToken.id, label: tokenLabel(baseCurrencyToken) });
+      setCurrency({ id: baseCurrencyToken.id, label: tokenLabel(t, baseCurrencyToken) });
     }
-  }, [isEdit, currency, baseCurrencyResolved, baseCurrencyToken]);
+  }, [isEdit, currency, baseCurrencyResolved, baseCurrencyToken, t]);
 
   const afterWrite = (paymentId: string, message: string) => {
     showSuccess(message);
