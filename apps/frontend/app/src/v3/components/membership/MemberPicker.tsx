@@ -63,7 +63,7 @@ export function MemberPicker({
     <div className="flex flex-col gap-3 p-4">
       <div className="relative">
         <Search
-          className="-translate-y-1/2 absolute top-1/2 left-3 size-4 text-muted-foreground"
+          className="-translate-y-1/2 absolute top-1/2 start-3 size-4 text-muted-foreground"
           aria-hidden="true"
         />
         <Input
@@ -71,7 +71,7 @@ export function MemberPicker({
           onChange={(event) => setQuery(event.target.value)}
           placeholder={t('v3.membership.searchPlaceholder', { noun })}
           aria-label={t('v3.membership.searchLabel', { noun })}
-          className="pl-9"
+          className="ps-9"
         />
       </div>
 
@@ -99,7 +99,7 @@ export function MemberPicker({
                     ) : (
                       <Plus className="size-4" aria-hidden="true" />
                     )}
-                    <span className="ml-1.5">
+                    <span className="ms-1.5">
                       {pending ? t('v3.membership.addPending') : t('v3.membership.addAction')}
                     </span>
                   </Button>

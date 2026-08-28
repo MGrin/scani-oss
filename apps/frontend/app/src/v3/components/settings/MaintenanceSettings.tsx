@@ -62,9 +62,9 @@ export function MaintenanceSettings() {
         onClick={() => recompute.mutate()}
       >
         {running ? (
-          <Loader2 className="mr-2 size-4 animate-spin" aria-hidden="true" />
+          <Loader2 className="me-2 size-4 animate-spin" aria-hidden="true" />
         ) : (
-          <RefreshCw className="mr-2 size-4" aria-hidden="true" />
+          <RefreshCw className="me-2 size-4" aria-hidden="true" />
         )}
         {running ? t('v3.settings.maintenance.rebuilding') : t('v3.settings.maintenance.rebuild')}
       </Button>

@@ -13,6 +13,7 @@
     "./styles/v3-tokens-root.css": "./src/styles/v3-tokens-root.css",
     "./i18n": "./src/i18n/index.ts",
     "./lib/cn": "./src/lib/cn.ts",
+    "./lib/direction": "./src/lib/direction.ts",
     "./lib/lazy-chunk": "./src/lib/lazy-chunk.ts",
     "./lib/snap-points": "./src/lib/snap-points.ts",
     "./lib/user-facing-error": "./src/lib/user-facing-error.ts",

@@ -342,7 +342,7 @@ function WalletReviewPicker({
             >
               {confirm.isPending ? (
                 <>
-                  <Loader2 className="mr-2 size-4 animate-spin" aria-hidden="true" />
+                  <Loader2 className="me-2 size-4 animate-spin" aria-hidden="true" />
                   {t('v3.jobs.wallet.importing')}
                 </>
               ) : (
@@ -638,7 +638,7 @@ function WalletImportedHoldings({
                 >
                   {markActionTaken.isPending ? (
                     <>
-                      <Loader2 className="mr-2 size-4 animate-spin" aria-hidden="true" />
+                      <Loader2 className="me-2 size-4 animate-spin" aria-hidden="true" />
                       {t('v3.jobs.wallet.imported.finishing')}
                     </>
                   ) : (

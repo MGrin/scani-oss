@@ -1,3 +1,4 @@
+import { MIRROR_IN_RTL } from '@scani/ui/lib/direction';
 import { ChevronRight, ClipboardCheck } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
@@ -45,7 +46,10 @@ export function AttentionRow({ count, className }: AttentionRowProps) {
       <span className="min-w-0 flex-1 text-label">
         {t('v3.home.attentionRow.needsReview', { count })}
       </span>
-      <ChevronRight aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
+      <ChevronRight
+        aria-hidden="true"
+        className={cn(MIRROR_IN_RTL, 'size-4 shrink-0 text-muted-foreground')}
+      />
     </Link>
   );
 }

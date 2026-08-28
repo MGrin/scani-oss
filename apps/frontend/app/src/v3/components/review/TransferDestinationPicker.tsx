@@ -85,7 +85,7 @@ export function TransferDestinationPicker({
             // `min-h-11` is the 44px touch target; the whole row is the hit
             // area, which is the part that matters on a phone where a 20px dot
             // beside the text is a mis-tap that changes where money went.
-            className={`flex min-h-11 w-full cursor-pointer items-start gap-3 rounded-lg border p-3 text-left transition-colors focus-within:ring-2 focus-within:ring-ring ${
+            className={`flex min-h-11 w-full cursor-pointer items-start gap-3 rounded-lg border p-3 text-start transition-colors focus-within:ring-2 focus-within:ring-ring ${
               isSelected
                 ? 'border-primary bg-primary/5'
                 : 'border-border bg-surface-1 hover:bg-surface-hover'
