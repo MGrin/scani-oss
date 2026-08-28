@@ -164,7 +164,7 @@ export function NetWorthTape({ value, currency, className }: NetWorthTapeProps) 
                 the symbol on the cap line and the cents on the baseline. The
                 padding is in `em` of the *display* size, since that is the
                 font-size these columns inherit. */}
-              <span className="flex flex-col pr-1" style={{ paddingTop: '0.16em' }}>
+              <span className="flex flex-col pe-1" style={{ paddingTop: '0.16em' }}>
                 <span className="text-caption text-muted-foreground">{parts.symbol}</span>
               </span>
 

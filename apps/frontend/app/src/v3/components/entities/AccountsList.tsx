@@ -394,7 +394,7 @@ export function AccountsList({
           actions: (
             <Button asChild variant="outline" size="sm">
               <Link to={accountHoldingsPath(account.id)}>
-                <PieChart className="mr-2 size-4" aria-hidden="true" />
+                <PieChart className="me-2 size-4" aria-hidden="true" />
                 {t('v3.entities.account.viewHoldings')}
               </Link>
             </Button>
@@ -409,7 +409,7 @@ export function AccountsList({
     renderBulkActions: (selectedIds, clearSelection) => (
       <>
         <Button variant="outline" onClick={() => onAssignGroups([...selectedIds], clearSelection)}>
-          <Tags className="mr-2 size-4" aria-hidden="true" />
+          <Tags className="me-2 size-4" aria-hidden="true" />
           {t('v3.entities.account.assignGroups')}
         </Button>
         <BulkDeleteAction

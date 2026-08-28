@@ -1,3 +1,5 @@
+import { cn } from '@scani/ui/lib/cn';
+import { MIRROR_IN_RTL } from '@scani/ui/lib/direction';
 import { Button } from '@scani/ui/ui/button';
 import { Input } from '@scani/ui/ui/input';
 import { Progress } from '@scani/ui/ui/progress';
@@ -238,7 +240,7 @@ export function VaultDetailPage() {
         ) : (
           <div className="px-4 pt-3 pb-4">
             <Button variant="outline" size="sm" onClick={() => setAttaching(true)}>
-              <Plus className="mr-2 size-4" aria-hidden="true" />
+              <Plus className="me-2 size-4" aria-hidden="true" />
               {t('v3.vaults.detail.attachHolding')}
             </Button>
           </div>
@@ -343,9 +345,9 @@ export function VaultDetailPage() {
 function BackLink() {
   const { t } = useTranslation();
   return (
-    <Button variant="ghost" size="sm" asChild className="-ml-2 self-start">
+    <Button variant="ghost" size="sm" asChild className="-ms-2 self-start">
       <Link to={V3_ROUTES.vaults}>
-        <ArrowLeft className="mr-2 size-4" aria-hidden="true" />
+        <ArrowLeft className={cn(MIRROR_IN_RTL, 'me-2 size-4')} aria-hidden="true" />
         {t('v3.vaults.detail.backToVaults')}
       </Link>
     </Button>

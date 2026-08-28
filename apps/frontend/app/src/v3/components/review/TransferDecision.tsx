@@ -541,7 +541,7 @@ function CandidateRow({
   return (
     <label
       // `min-h-11` is the 44px touch target.
-      className={`flex min-h-11 w-full cursor-pointer items-start gap-3 rounded-lg border p-3 text-left transition-colors focus-within:ring-2 focus-within:ring-ring ${
+      className={`flex min-h-11 w-full cursor-pointer items-start gap-3 rounded-lg border p-3 text-start transition-colors focus-within:ring-2 focus-within:ring-ring ${
         selected
           ? 'border-primary bg-primary/5'
           : 'border-border bg-surface-1 hover:bg-surface-hover'

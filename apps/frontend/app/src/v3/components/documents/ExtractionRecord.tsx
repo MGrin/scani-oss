@@ -1,4 +1,6 @@
 import { formatDate } from '@scani/shared';
+import { cn } from '@scani/ui/lib/cn';
+import { MIRROR_IN_RTL } from '@scani/ui/lib/direction';
 import { Badge } from '@scani/ui/ui/badge';
 import { Button } from '@scani/ui/ui/button';
 import { Block } from '@scani/ui/v3/components/Block';
@@ -144,7 +146,7 @@ export function ExtractionRecord({
           <div className="flex flex-wrap items-center gap-2">
             <Button size="sm" disabled={isRejecting} onClick={onApprove}>
               {t('v3.documents.extraction.approve')}
-              <ArrowRight className="ml-2 size-4" aria-hidden="true" />
+              <ArrowRight className={cn(MIRROR_IN_RTL, 'ms-2 size-4')} aria-hidden="true" />
             </Button>
             {/* Confirmed, unlike `Approve` (SC-73). Approving opens a form
                 that saves nothing until it is submitted, so its tap is

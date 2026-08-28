@@ -370,7 +370,7 @@ export function holdingPeekSpec(holding: HoldingWithDetails, ctx: HoldingPeekCon
     actions: (
       <>
         <Button onClick={() => ctx.onRecordMovement(holding)}>
-          <ArrowLeftRight className="mr-2 size-4" aria-hidden="true" />
+          <ArrowLeftRight className="me-2 size-4" aria-hidden="true" />
           {t('v3.holdings.movement.peekAction')}
         </Button>
         <Button variant="outline" onClick={() => ctx.onRefreshPrice(holding)} disabled={priceBusy}>
@@ -378,7 +378,7 @@ export function holdingPeekSpec(holding: HoldingWithDetails, ctx: HoldingPeekCon
               motion policy (V3-16) has not landed, and an unguarded
               `animate-spin` is exactly the thing §2.4 says every animation
               must be kept out of until it is. */}
-          <RefreshCw className="mr-2 size-4" aria-hidden="true" />
+          <RefreshCw className="me-2 size-4" aria-hidden="true" />
           {priceBusy ? t('v3.holdings.peek.refreshing') : t('v3.holdings.peek.refreshPrice')}
         </Button>
         {isSynced(holding) ? (
@@ -387,7 +387,7 @@ export function holdingPeekSpec(holding: HoldingWithDetails, ctx: HoldingPeekCon
             onClick={() => ctx.onRefreshBalance(holding)}
             disabled={balanceBusy}
           >
-            <Wallet className="mr-2 size-4" aria-hidden="true" />
+            <Wallet className="me-2 size-4" aria-hidden="true" />
             {balanceBusy ? t('v3.holdings.peek.syncing') : t('v3.holdings.peek.syncBalance')}
           </Button>
         ) : null}
