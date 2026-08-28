@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'bun:test';
+import * as fontkit from 'fontkit';
 import { loadTypesetter, UNSUPPORTED_MARK } from '../../../src/lib/pdf/fonts';
 
 /**
@@ -21,6 +22,61 @@ const drawn = (text: string, face: 'sans' | 'bold' | 'mono' = 'sans'): string =>
 
 const faces = (text: string, face: 'sans' | 'bold' | 'mono' = 'sans'): string[] =>
   type.shape(text, face).map((run) => run.font);
+
+/**
+ * The bytes of every face, by the name runs are labelled with. `register` is the
+ * only way in — it hands each face to a document — so a fake document collects
+ * them without the module needing a second accessor that only tests would use.
+ */
+const embedded = ((): Map<string, Buffer> => {
+  const bytes = new Map<string, Buffer>();
+  type.register({
+    registerFont: (name: string, data: Buffer) => bytes.set(name, data),
+  } as unknown as PDFKit.PDFDocument);
+  return bytes;
+})();
+
+/**
+ * Codepoints no bundled face covers — DERIVED, never named (SC-782).
+ *
+ * Three assertions below use "a character nothing covers" as their subject, and
+ * every one of them used to spell that as a CJK or Hangul literal. That was
+ * true when written and is an accident of what was bundled: the moment a Han
+ * face landed, two of those samples became covered and the tests started
+ * asserting the opposite of what their names say. The third, `한국투자증권`,
+ * did NOT — Hangul is not Han, and neither bundled face carries a single
+ * Hangul codepoint (measured 0) — so it survived the change reading as
+ * unaffected, which is the worse failure of the two.
+ *
+ * So the sample is found by asking the typesetter, at the time the test runs.
+ * Han is swept first, because a gap inside an otherwise-covered script is the
+ * sharper subject and keeps these tests' original character; the other ranges
+ * are there so a future face that covered all of Han could not silently empty
+ * this list.
+ *
+ * The search asserts nothing itself. `finds a codepoint no bundled face covers`
+ * is the must-be-FOUND control for it — without that, a sweep that found
+ * nothing and a tree with no defect read identically.
+ */
+const SWEEP: readonly (readonly [number, number])[] = [
+  [0x20000, 0x2a6df], // CJK Extension B — Han, and rare enough to stay out of any frequency subset
+  [0x3400, 0x4dbf], // CJK Extension A
+  [0x4e00, 0x9fff], // CJK Unified Ideographs
+  [0xac00, 0xd7af], // Hangul syllables — not Han, so covered by nothing here today
+  [0x0530, 0x058f], // Armenian, as a non-CJK backstop
+];
+
+function uncovered(count: number): string[] {
+  const found: string[] = [];
+  for (const [from, to] of SWEEP) {
+    for (let point = from; point <= to && found.length < count; point += 1) {
+      const character = String.fromCodePoint(point);
+      if (!type.supports(character)) found.push(character);
+    }
+    if (found.length >= count) break;
+  }
+  return found;
+}
 
 describe('typesetter', () => {
   it('sets plain Latin as a single run', () => {
@@ -52,20 +108,74 @@ describe('typesetter', () => {
     expect(type.shape('Сбербанк', 'sans')).toHaveLength(1);
   });
 
+  it('finds a codepoint no bundled face covers', () => {
+    // The must-be-FOUND control for `uncovered`. The three assertions below are
+    // about what happens to an unrepresentable character, so a sweep that
+    // quietly returned nothing would leave them asserting on empty strings and
+    // passing. If this ever reds, it is interesting: it means every codepoint
+    // swept is covered, and these tests have lost their subject rather than
+    // their correctness.
+    expect(uncovered(6)).toHaveLength(6);
+  });
+
   it('marks what no face covers instead of drawing a box', () => {
-    expect(drawn('三菱UFJ銀行')).toBe(`${UNSUPPORTED_MARK}UFJ${UNSUPPORTED_MARK}`);
-    expect(type.supports('三菱UFJ銀行')).toBe(false);
+    const [first, second] = uncovered(2) as [string, string];
+    const name = `${first}UFJ${second}`;
+    expect(drawn(name)).toBe(`${UNSUPPORTED_MARK}UFJ${UNSUPPORTED_MARK}`);
+    expect(type.supports(name)).toBe(false);
   });
 
   it('collapses a run of unsupported characters to one mark', () => {
     // Six marks is not six times the information of one, and it would set the
     // name three times wider than it is.
-    expect(drawn('한국투자증권')).toBe(UNSUPPORTED_MARK);
+    const run = uncovered(6).join('');
+    expect([...run]).toHaveLength(6);
+    expect(drawn(run)).toBe(UNSUPPORTED_MARK);
   });
 
   it('draws the mark in a face the document already has', () => {
-    expect(faces('三菱')).toEqual(['Sans']);
-    expect(faces('三菱', 'bold')).toEqual(['Bold']);
+    const [sample] = uncovered(1) as [string];
+    expect(faces(sample)).toEqual(['Sans']);
+    expect(faces(sample, 'bold')).toEqual(['Bold']);
+  });
+
+  it('sets Han in a Han face rather than marking it', () => {
+    // The inversion of the three above, and the reason they had to move: Han is
+    // covered as of SC-782, so it is no longer a stand-in for `uncovered`.
+    expect(drawn('三菱UFJ銀行')).toBe('三菱UFJ銀行');
+    expect(type.supports('三菱UFJ銀行')).toBe(true);
+    expect(faces('三菱UFJ銀行')).toEqual(['Han-JP', 'Sans', 'Han-JP']);
+  });
+
+  it('resolves Han to real glyphs in the face it names, not to .notdef', () => {
+    // `supports()` and a non-empty PDF both pass on a tree where the glyphs are
+    // wrong: coverage is a claim about a character set, and what actually gets
+    // drawn is a glyph id. So this asks the embedded bytes — the same bytes
+    // pdfkit is handed — what each Han codepoint resolves to. Glyph 0 is
+    // `.notdef`, which is the empty box this whole module exists to prevent.
+    const runs = type.shape('三菱', 'sans');
+    expect(runs).toHaveLength(1);
+    const bytes = embedded.get(runs[0]?.font as string);
+    expect(bytes).toBeDefined();
+    const face = fontkit.create(bytes as Buffer);
+    expect('characterSet' in face).toBe(true);
+
+    for (const character of '三菱銀行') {
+      const glyph = (face as fontkit.Font).glyphForCodePoint(character.codePointAt(0) as number);
+      expect(glyph.id).toBeGreaterThan(0);
+    }
+  });
+
+  it('control — the glyph probe reads a real face, so a zero would mean something', () => {
+    // Without this, "every Han codepoint resolved" and "the probe read a face
+    // with no glyphs in it" are the same reading. A codepoint the face is known
+    // to cover must resolve, and one it cannot must not.
+    const bytes = embedded.get('Han-JP') as Buffer;
+    const face = fontkit.create(bytes) as fontkit.Font;
+    expect(face.numGlyphs).toBeGreaterThan(1000);
+    expect(face.glyphForCodePoint('三'.codePointAt(0) as number).id).toBeGreaterThan(0);
+    const [missing] = uncovered(1) as [string];
+    expect(face.glyphForCodePoint(missing.codePointAt(0) as number).id).toBe(0);
   });
 
   it('keeps figures in the mono face', () => {
