@@ -5,7 +5,7 @@
   "version": "0.0.0",
   "scripts": {
     "dev": "astro dev",
-    "build": "bun scripts/generate-llms-txt.ts && astro build && bun scripts/check-tables.ts",
+    "build": "bun scripts/generate-llms-txt.ts && astro build && bun scripts/check-tables.ts && bun scripts/check-robots.ts",
     "preview": "astro preview",
     "clean": "rm -rf dist .astro",
     "lint": "biome check .",
