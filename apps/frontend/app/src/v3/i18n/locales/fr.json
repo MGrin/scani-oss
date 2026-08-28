@@ -2314,6 +2314,9 @@
         "estimatedExcluded_one": "Non compris : <amounts></amounts> — {{count}} facture est estimée d’après son dernier règlement, et une estimation n’est pas un engagement.",
         "estimatedExcluded_many": "Non compris : <amounts></amounts> — {{count}} factures sont estimées d’après leurs derniers règlements, et une estimation n’est pas un engagement.",
         "estimatedExcluded_other": "Non compris : <amounts></amounts> — {{count}} factures sont estimées d’après leurs derniers règlements, et une estimation n’est pas un engagement.",
+        "estimatedExcludedOverdue_one": "Non compris : <amounts></amounts> — {{count}} facture en retard est estimée d’après son dernier règlement, et son montant réel reste inconnu.",
+        "estimatedExcludedOverdue_many": "Non compris : <amounts></amounts> — {{count}} factures en retard sont estimées d’après leurs derniers règlements, et leurs montants réels restent inconnus.",
+        "estimatedExcludedOverdue_other": "Non compris : <amounts></amounts> — {{count}} factures en retard sont estimées d’après leurs derniers règlements, et leurs montants réels restent inconnus.",
         "row": "{{vendor}}, échéance le {{date}}",
         "label": "prochains paiements"
       },

@@ -280,6 +280,18 @@ export function UpcomingFeed({
     [ahead, historyEstimates]
   );
 
+  // The same defect on the tile 40px below, and it is in this PR for a reason
+  // about the SCREEN rather than about the file. Shipping one honest figure
+  // beside a dishonest one is worse than shipping neither: the honest one
+  // implies the surface was checked, so a reader who sees the committed figure
+  // name its exclusion will read the tile beside it as having none to name.
+  // The three remaining `occurrenceTotals` surfaces are separate screens seen
+  // at separate moments, and stay on SC-818 with their own wording decisions.
+  const estimatedOverdue = useMemo(
+    () => estimatedTotals(overdue, historyEstimates),
+    [overdue, historyEstimates]
+  );
+
   const peeked = occurrences.find((occurrence) => occurrence.id === peekRoute.id) ?? null;
 
   const spec: PeekSpec | null = peeked
@@ -448,6 +460,33 @@ export function UpcomingFeed({
               tokenSymbolById={tokenSymbolById}
               rates={rates}
             />
+
+            {/* Its OWN sentence, not the committed figure's (SC-201's rule,
+                and the same reason `<ConvertedTotal>` keeps `notIncluded` and
+                `ratesUnavailable` apart). The clause that makes the headline
+                above legible is "an estimate is not a commitment", and this
+                tile does not claim commitment — it claims what is already late.
+                Reusing that key here would put a true sentence under the wrong
+                figure, and a reader with both lines on screen would see two
+                captions differing only in the amount, which reads as a
+                rendering fault rather than as two facts. */}
+            {estimatedOverdue.count > 0 ? (
+              <span className="block text-caption text-muted-foreground">
+                <Trans
+                  i18nKey="v3.money.upcoming.estimatedExcludedOverdue"
+                  count={estimatedOverdue.count}
+                  components={{
+                    amounts: (
+                      <ConvertedFigure
+                        totals={estimatedOverdue.totals}
+                        tokenSymbolById={tokenSymbolById}
+                        rates={rates}
+                      />
+                    ),
+                  }}
+                />
+              </span>
+            ) : null}
           </div>
         ) : null}
       </Block>
