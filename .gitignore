@@ -77,6 +77,10 @@ scripts/.source-mutation-journal-*.json
 # Control: `scani-test-fixture-x.ts` was ignored under both, so that reading is
 # the rule missing rather than the probe broken.
 #
+# It is also what keeps `deps:unused` honest: knip reads `.gitignore` and not
+# `.git/info/exclude`, so this line is what stops a scratch `.ts` under either
+# directory being reported as an unused file (SC-681, SC-685).
+#
 # `scripts/tests/root-gitignore-covers-orphanable-output.test.ts` pins both --
 # by asking git, not by grepping this file, and it asserts that THIS file is
 # what answers. A per-clone `.git/info/exclude` satisfies the verdict and is
