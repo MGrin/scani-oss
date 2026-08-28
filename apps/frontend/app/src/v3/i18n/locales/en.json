@@ -1910,6 +1910,13 @@
         "custom": "Custom",
         "hidden": "Hidden"
       },
+      "type": {
+        "fiat": "Fiat Currency",
+        "crypto": "Cryptocurrency",
+        "stock": "Stock / ETF / Equity / Commodity",
+        "privateCompany": "Private Company",
+        "other": "Other"
+      },
       "hiddenReason": {
         "user": "Hidden by you",
         "scam": "Flagged as a likely scam",
