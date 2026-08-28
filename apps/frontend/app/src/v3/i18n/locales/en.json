@@ -2368,6 +2368,7 @@
           "solicitation": "Looks like an ad",
           "mixedScript": "Mixed alphabets"
         },
+        "exited": "Bought and sold",
         "hiddenSelected_one": "{{count}} ticked row is hidden by the filter",
         "hiddenSelected_other": "{{count}} ticked rows are hidden by the filter",
         "showHidden": "Show them",
