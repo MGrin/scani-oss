@@ -28,6 +28,9 @@
  */
 
 import { describe, expect, test } from 'bun:test';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import {
   census,
   FIXTURE_URLS,
@@ -35,6 +38,7 @@ import {
   findUrlRefs,
   isDefinitionSite,
   resolve,
+  scanPopulation,
 } from '../lib/api-procedure-callers';
 
 /**
@@ -153,7 +157,8 @@ describe('nothing counts segments, so neither arity bug is reachable', () => {
 
   /**
    * Zero chains in the tree span a line break today (measured 2026-08-28 over
-   * 1982 files), so the tree cannot exercise this and a green from it would
+   * all 1755 files scanned in the mirror, 2072 privately), so the tree cannot
+   * exercise this and a green from it would
    * otherwise mean nothing. The fixture is what makes that zero a measurement.
    */
   test('a chain wrapped across a line is still found', () => {
@@ -239,6 +244,83 @@ describe('the census reports the two forms separately', () => {
     const r = census({ apiProcedures: ['x.y'], dataProviderProcedures: [], files: dpFiles });
     expect(r.filesScanned).toBe(0);
     expect(r.noCaller).toEqual(['x.y']);
+  });
+});
+
+/**
+ * SC-755 — the population, which is the half that fails silently.
+ *
+ * The census used to build its file list from six pathspec globs, one per
+ * root, each of the shape `<root>` + `/**` + `/*.ts`. In a git pathspec `**`
+ * between two slashes requires at least one intermediate directory, so the
+ * `scripts` one reached `scripts/lib/x.ts` and never `scripts/x.ts` — 0 of
+ * the files directly under `scripts/`, this census's own CLI among them.
+ *
+ * NOTHING WENT RED, and nothing could have. The remaining globs contributed a
+ * healthy total, the only floor asked about that total, and every count the
+ * census printed was a correct answer about a set that was missing a sixth of
+ * the tree. A wrong predicate gets argued with by the first careful reader; a
+ * wrong population gets ratified by every one of them.
+ *
+ * So the arms below are on the POPULATION, not on the scanners:
+ *
+ *   must-be-FOUND   a file directly under `scripts/` is in it   (RED before the fix)
+ *   control         a file one level deeper still is           (green either way,
+ *                                                               so a fix that
+ *                                                               emptied the list
+ *                                                               cannot pass)
+ *   control         a `.tsx` survives the extension filter
+ *   must-be-ABSENT  a tracked non-TypeScript path is not in it
+ *   must-be-FOUND   a root git cannot read REFUSES rather than returning []
+ *   control         the real root does not refuse
+ */
+describe('the scan population', () => {
+  const repoRoot = new URL('../..', import.meta.url).pathname;
+  const found = scanPopulation(repoRoot);
+  const paths = found.kind === 'population' ? found.paths : [];
+
+  test('control — a population was built at all, so the absences below are not vacuous', () => {
+    expect(found.kind).toBe('population');
+    expect(paths.length).toBeGreaterThan(1000);
+  });
+
+  /**
+   * The bug itself. `scripts/api-procedure-callers.ts` sits directly under
+   * `scripts/`, which is exactly what the old glob could not reach.
+   */
+  test('a file directly under scripts/ is in the population', () => {
+    expect(paths).toContain('scripts/api-procedure-callers.ts');
+  });
+
+  /**
+   * The control for it. This one was always reachable, so it stays green
+   * either side of the fix — which is what stops a "fix" that returns an empty
+   * or a wrong list from satisfying the arm above by accident.
+   */
+  test('control — a file one directory deeper is too', () => {
+    expect(paths).toContain('scripts/lib/api-procedure-callers.ts');
+  });
+
+  test('control — .tsx survives the extension filter', () => {
+    expect(paths.some((p) => p.endsWith('.tsx'))).toBe(true);
+  });
+
+  test('a tracked non-TypeScript path is not in the population', () => {
+    expect(paths).not.toContain('package.json');
+    expect(paths.filter((p) => !p.endsWith('.ts') && !p.endsWith('.tsx'))).toEqual([]);
+  });
+
+  /**
+   * The general remedy, and the reason this ticket is worth more than its own
+   * fix: a file list that comes back empty must REFUSE. An empty array is the
+   * one shape a scanner consumes without complaint, and `PASS · 0 findings`
+   * over nothing is indistinguishable from a clean tree.
+   */
+  test('a root git cannot read refuses rather than returning an empty list', () => {
+    const outside = mkdtempSync(path.join(tmpdir(), 'api-procedure-callers-'));
+    const refused = scanPopulation(outside);
+    expect(refused.kind).toBe('refused');
+    expect(refused.kind === 'refused' ? refused.why : '').toContain('git ls-files exited');
   });
 });
 
