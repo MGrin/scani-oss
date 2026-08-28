@@ -1,5 +1,6 @@
 import { rmSync } from 'node:fs';
 import path from 'node:path';
+import { type GitRun, runGit } from './check-verdict';
 
 /**
  * SC-596. Two tests under `scripts/tests/` write a fixture INSIDE this
@@ -51,9 +52,29 @@ function isCorpse(relPath: string): boolean {
   return matchers().some((m) => m.match(relPath));
 }
 
-function git(repoRoot: string, ...args: string[]): string {
-  return Bun.spawnSync(['git', ...args], { cwd: repoRoot }).stdout.toString();
+function git(repoRoot: string, ...args: string[]): GitRun {
+  return runGit(args, repoRoot);
 }
+
+/**
+ * What one scan of the index found, or the fact that it could not look
+ * (SC-780).
+ *
+ * This returned a bare `string[]`, built entirely from a git call whose status
+ * was never read. A failed `git ls-files` produced `''`, which split to no
+ * paths, which read as **no fixture corpses are staged** — the same value a
+ * clean tree produces, from the guard that stands between a killed test run's
+ * debris and a commit.
+ *
+ * A union rather than a status check, for the SC-775 reason: a helper handing
+ * back a bare `string[]` gives its caller nothing to check, so the defect
+ * regenerates at the next call site. `read` is the denominator — the number of
+ * tracked paths actually examined — because a count of PATTERNS is constant and
+ * says nothing about whether anything was read.
+ */
+export type CorpseScan =
+  | { readonly kind: 'scanned'; readonly corpses: string[]; readonly read: number }
+  | { readonly kind: 'blind'; readonly why: string };
 
 /**
  * Paths a fixture left recorded in the index. Read from `git ls-files` rather
@@ -61,11 +82,12 @@ function git(repoRoot: string, ...args: string[]): string {
  * pattern silently matching nothing is the likeliest way this guard would go
  * quiet, and one full listing costs a single spawn.
  */
-export function stagedFixtureCorpses(repoRoot: string): string[] {
-  return git(repoRoot, 'ls-files', '-z')
-    .split('\0')
-    .filter((p) => p.length > 0 && isCorpse(p))
-    .sort();
+export function stagedFixtureCorpses(repoRoot: string): CorpseScan {
+  const listed = git(repoRoot, 'ls-files', '-z');
+  if (listed.kind === 'failed') return { kind: 'blind', why: listed.why };
+
+  const tracked = listed.stdout.split('\0').filter((p) => p.length > 0);
+  return { kind: 'scanned', corpses: tracked.filter(isCorpse).sort(), read: tracked.length };
 }
 
 function onDiskFixtureCorpses(repoRoot: string): string[] {
@@ -86,9 +108,15 @@ function onDiskFixtureCorpses(repoRoot: string): string[] {
 export function sweepFixtureCorpses(repoRoot: string): string[] {
   const removed = new Set<string>();
 
-  for (const staged of stagedFixtureCorpses(repoRoot)) {
-    git(repoRoot, 'rm', '--cached', '--quiet', '--force', '--', staged);
-    removed.add(staged);
+  const staged = stagedFixtureCorpses(repoRoot);
+  // A sweep that could not read the index still sweeps the DISK below, which is
+  // the half that does not need git. Reporting only what it actually removed is
+  // the point: claiming a clean index it never read is the defect itself.
+  if (staged.kind === 'scanned') {
+    for (const corpse of staged.corpses) {
+      git(repoRoot, 'rm', '--cached', '--quiet', '--force', '--', corpse);
+      removed.add(corpse);
+    }
   }
 
   for (const rel of onDiskFixtureCorpses(repoRoot)) {
