@@ -1,0 +1,19 @@
+// Companion to tsconfig.json — see SC-280. Type-checks src AND tests.
+// `tsconfig.json` stays the editor/build config; this is the one
+// `bun run type-check` uses, because it is a strict superset.
+//
+// `exclude` is spelled out rather than inherited: `extends` REPLACES
+// exclude rather than merging it, so a config without its own takes the
+// root's `**/*.test.ts` and silently drops every test it claims to cover.
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "types": ["bun"],
+    "composite": false,
+    "declaration": false,
+    "declarationMap": false
+  },
+  "include": [".astro/types.d.ts", "scripts/**/*", "tests/**/*"],
+  "exclude": ["node_modules", "dist"]
+}

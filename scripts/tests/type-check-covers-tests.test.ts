@@ -91,6 +91,28 @@ async function workspacesWithTests(): Promise<string[]> {
 
 const read = async (p: string) => parseJsonc(await Bun.file(join(ROOT, p)).text());
 
+const TEST_CONFIG_INVOCATION = 'tsgo --noEmit -p tsconfig.test.json';
+
+/**
+ * Does `bun run type-check` for this workspace actually run the test config?
+ *
+ * Equality was the original rule and it made this arrangement unrepresentable:
+ * `apps/frontend/docs` is an Astro workspace whose type-check is `astro check`,
+ * the only thing that types `.astro` files and the content collections. Adding
+ * a test there forced a choice between dropping that and not testing at all —
+ * so the guard, as written, was a rule against Astro workspaces having tests.
+ *
+ * `&&` is accepted and `||` is not, which is the whole distinction: an
+ * `&&`-chain runs every segment on the success path, so the test config is
+ * still gated by the script that fans out. `||` runs it only when something
+ * else failed, which is a check that usually does not happen — the defect this
+ * file exists for, wearing a shell operator.
+ */
+function runsTheTestConfig(script: string | undefined): boolean {
+  if (!script) return false;
+  return script.split('&&').some((segment) => segment.trim() === TEST_CONFIG_INVOCATION);
+}
+
 describe('type-check actually sees the tests', () => {
   test('every workspace that has tests has a tsconfig.test.json', async () => {
     const missing = (await workspacesWithTests()).filter(
@@ -108,12 +130,29 @@ describe('type-check actually sees the tests', () => {
     const wrong: string[] = [];
     for (const ws of await workspacesWithTests()) {
       const pkg = (await read(join(ws, 'package.json'))) as { scripts?: Record<string, string> };
-      if (pkg.scripts?.['type-check'] !== 'tsgo --noEmit -p tsconfig.test.json') {
+      if (!runsTheTestConfig(pkg.scripts?.['type-check'])) {
         wrong.push(`${ws}: ${pkg.scripts?.['type-check']}`);
       }
     }
 
     expect(wrong).toEqual([]);
+  });
+
+  test('the segment check still rejects the arrangement this ticket exists for', () => {
+    // Paired with the arm above, which passes over the real tree and so can
+    // only ever demonstrate acceptance. This one demonstrates refusal.
+    expect(runsTheTestConfig(TEST_CONFIG_INVOCATION)).toBe(true);
+    expect(runsTheTestConfig(`astro check && ${TEST_CONFIG_INVOCATION}`)).toBe(true);
+
+    // The original defect: the test config is reachable, but not from the
+    // script `bun run type-check` fans out to.
+    expect(runsTheTestConfig('tsgo --noEmit')).toBe(false);
+    expect(runsTheTestConfig('astro check')).toBe(false);
+    expect(runsTheTestConfig(undefined)).toBe(false);
+    // Named in a comment or an argument rather than run.
+    expect(runsTheTestConfig(`echo "${TEST_CONFIG_INVOCATION}"`)).toBe(false);
+    // Conditional on the previous command failing, so it does not always run.
+    expect(runsTheTestConfig(`astro check || ${TEST_CONFIG_INVOCATION}`)).toBe(false);
   });
 
   /**
