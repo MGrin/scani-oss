@@ -4,6 +4,7 @@ import { describe, expect, test } from 'bun:test';
 import { formatDate } from '@scani/shared';
 import { SETTLED_QUERY_STATE } from '@scani/ui/v3/lib/query-state';
 import i18n from 'i18next';
+import { createElement, Fragment, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { StaticRouter } from 'react-router-dom/server';
 import { renderDesktop } from '../../../../../../packages/frontend/ui/tests/helpers/render-desktop';
@@ -16,7 +17,7 @@ import {
 } from '../../../src/v3/components/money/PaymentStatusToggle';
 import { RecurringList } from '../../../src/v3/components/money/RecurringList';
 import { RecurringSummary } from '../../../src/v3/components/money/RecurringSummary';
-import { UpcomingFeed } from '../../../src/v3/components/money/UpcomingFeed';
+import { UpcomingFeed, upcomingPeekSpec } from '../../../src/v3/components/money/UpcomingFeed';
 import { VendorList } from '../../../src/v3/components/money/VendorList';
 import type { HistoryEstimate } from '../../../src/v3/lib/paymentTotals';
 
@@ -142,6 +143,20 @@ const OCCURRENCES = [LATE_BILL, DUE_BILL, SALARY_OCCURRENCE];
 // biome-ignore lint/suspicious/noExplicitAny: test fixtures standing in for tRPC output.
 const asAny = (value: unknown) => value as any;
 
+/** A bare `ReactNode` — a peek's figure or its delta — as markup. `Fragment` via
+ *  `createElement` rather than `<>…</>`, which lints as a useless fragment even
+ *  though `renderToStaticMarkup` will not take a node without one. */
+function renderNode(node: ReactNode): string {
+  return renderToStaticMarkup(createElement(Fragment, null, node));
+}
+
+/**
+ * No history estimate unless a case says otherwise (SC-625). Passed explicitly
+ * rather than defaulted inside the components, so a test is always about a
+ * book whose estimates somebody chose.
+ */
+const NO_HISTORY = new Map<string, HistoryEstimate>();
+
 function renderFeed(path = '/payments', overrides: Record<string, unknown> = {}) {
   return renderToStaticMarkup(
     <StaticRouter location={path}>
@@ -152,6 +167,7 @@ function renderFeed(path = '/payments', overrides: Record<string, unknown> = {})
         tokenSymbolById={TOKEN_SYMBOLS}
         rates={RATES}
         query={SETTLED_QUERY_STATE}
+        historyEstimates={NO_HISTORY}
         {...overrides}
       />
     </StaticRouter>
@@ -366,11 +382,133 @@ describe('UpcomingFeed', () => {
 });
 
 /**
- * No history estimate unless a case says otherwise (SC-625). Passed explicitly
- * rather than defaulted inside the components, so a test is always about a
- * book whose estimates somebody chose.
+ * SC-798. The feed lists OCCURRENCES, so it was left out of SC-625 as a
+ * separate design question — and answered it by rendering `— No value` on the
+ * one surface that says what is due next, beside three surfaces quoting a
+ * figure for the same payment.
+ *
+ * Every case below has an arm in the OPPOSITE direction, because "the estimate
+ * appears" cannot tell a threaded map from a fixture that happened to carry an
+ * amount: the same occurrence with no estimate must still read `No value`.
  */
-const NO_HISTORY = new Map<string, HistoryEstimate>();
+describe('UpcomingFeed — a payment priced from history (SC-798)', () => {
+  /** A variable bill with nothing declared. */
+  const VARIABLE_PAYMENT = {
+    ...PAYMENT,
+    id: 'payment-power',
+    kind: 'variable',
+    expectedAmount: null,
+  };
+
+  /** …and an occurrence of it with nothing settled either: the row the ticket
+   *  is about, inside the thirty-day window so the feed keeps it. */
+  const VARIABLE_BILL = {
+    ...DUE_BILL,
+    id: 'occurrence-power',
+    paymentId: VARIABLE_PAYMENT.id,
+    expectedAmount: null,
+    actualAmount: null,
+    payment: VARIABLE_PAYMENT,
+  };
+
+  const POWER_ESTIMATE: ReadonlyMap<string, HistoryEstimate> = new Map([
+    ['payment-power', { amount: '84.20', sourceDueDate: '2026-02-15' }],
+  ]);
+
+  test('the row shows the estimated figure AND cites the month it came from', () => {
+    const html = renderFeed('/payments', {
+      occurrences: asAny([VARIABLE_BILL]),
+      historyEstimates: POWER_ESTIMATE,
+    });
+
+    expect(html).toInclude('84.20');
+    // The mark and the citation travel together. A bare figure here would make
+    // an estimated occurrence indistinguishable from a fixed bill in the same
+    // feed, which is the one outcome worse than the dash it replaces.
+    expect(html).toInclude('Estimated');
+    expect(html).toInclude('Feb 2026');
+    expect(html).not.toInclude('No value');
+  });
+
+  test('the control: the same row with no estimate still reads No value', () => {
+    const html = renderFeed('/payments', {
+      occurrences: asAny([VARIABLE_BILL]),
+      historyEstimates: NO_HISTORY,
+    });
+
+    expect(html).toInclude('No value');
+    expect(html).not.toInclude('84.20');
+    expect(html).not.toInclude('Estimated');
+    expect(html).not.toInclude('Feb 2026');
+  });
+
+  test('a settled occurrence keeps the amount that really moved', () => {
+    // The estimate is a claim about the PAYMENT; a settlement is a measurement
+    // of this occurrence, and it wins. Pinned because the obvious
+    // simplification — `expectedAmount ?? estimate ?? actualAmount` — is
+    // invisible to every other case here.
+    const html = renderFeed('/payments', {
+      occurrences: asAny([{ ...VARIABLE_BILL, actualAmount: '61.00' }]),
+      historyEstimates: POWER_ESTIMATE,
+    });
+
+    expect(html).toInclude('61.00');
+    expect(html).not.toInclude('84.20');
+    expect(html).not.toInclude('Feb 2026');
+  });
+
+  test('a declared amount is never overwritten by an estimate keyed to it', () => {
+    const html = renderFeed('/payments', {
+      occurrences: asAny([DUE_BILL]),
+      historyEstimates: new Map([
+        ['payment-hetzner', { amount: '84.20', sourceDueDate: '2026-02-15' }],
+      ]),
+    });
+
+    expect(html).toInclude('€99.00');
+    expect(html).not.toInclude('84.20');
+    expect(html).not.toInclude('Feb 2026');
+  });
+
+  /**
+   * The peek is the second render site, and it is the one SC-797 is about: the
+   * sheet mounts through a Radix portal, so `renderToStaticMarkup` renders none
+   * of it and every assertion above passes over a peek that still says `No
+   * value`. `upcomingPeekSpec` is exported so the claim can be checked against
+   * the spec as data — the same move `holdingPeekSpec` makes, for the same
+   * reason.
+   */
+  describe('the peek behind the row', () => {
+    const peekSpec = (historyEstimates: ReadonlyMap<string, HistoryEstimate>) =>
+      upcomingPeekSpec({
+        t: i18n.t.bind(i18n),
+        occurrence: asAny(VARIABLE_BILL),
+        vendorNameById: VENDOR_NAMES,
+        tokenSymbolById: TOKEN_SYMBOLS,
+        historyEstimates,
+        today: TODAY,
+        onSettled: () => undefined,
+      });
+
+    test('carries the same figure and the same mark as the row', () => {
+      const spec = peekSpec(POWER_ESTIMATE);
+
+      expect(renderNode(spec.value)).toInclude('84.20');
+      // `delta` shares the figure's line, so the caveat cannot scroll away from
+      // what it qualifies.
+      const delta = renderNode(spec.delta);
+      expect(delta).toInclude('Estimated');
+      expect(delta).toInclude('Feb 2026');
+    });
+
+    test('the control: with no estimate the sheet has no figure and no mark', () => {
+      const spec = peekSpec(NO_HISTORY);
+
+      expect(renderNode(spec.value)).toInclude('No value');
+      expect(spec.delta).toBeUndefined();
+    });
+  });
+});
 
 /**
  * Render the DESKTOP surface — the table — instead of the phone card list.
