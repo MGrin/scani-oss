@@ -13,7 +13,8 @@ import { ProviderRegistry } from '@scani/providers/core/registry';
 import type { HoldingSnapshot } from '@scani/providers/core/types';
 import { and, eq } from 'drizzle-orm';
 import { Container, Service } from 'typedi';
-import { makeProviderContext } from '../lib/provider-context';
+import { makeProviderContext, type SelfCredentialedProviderContext } from '../lib/provider-context';
+import { HoldingExclusionRepository } from '../repositories/HoldingExclusionRepository';
 import { InstitutionBlockchainMappingRepository } from '../repositories/InstitutionBlockchainMappingRepository';
 import {
   type ChainProbeFailure,
@@ -26,6 +27,7 @@ import {
   WALLET_BALANCE_SYNC_SOURCE,
   WalletDiscoveryService,
 } from '../services';
+import { exitedPositionSnapshots } from './lib/exitedPositions';
 import { safeStatus } from './lib/safeStatus';
 
 const logger = createComponentLogger('use-case:import-wallet');
@@ -53,6 +55,18 @@ export interface WalletReviewChain {
     externalId: string;
     balance: string;
     capturedAt: string;
+    /**
+     * A position the wallet TRADED and no longer holds, offered so its history
+     * has somewhere to land (SC-398). Absent on a current balance.
+     *
+     * Carried rather than derived from `balance === '0'`. That equivalence is
+     * true — `fetchBalances` filters `.gt(0)` — and it is true because of a
+     * line in a provider two packages away, so a reader of this payload cannot
+     * check it and a change there would silently reinterpret every row here.
+     * The picker renders a different sentence for these, and a sentence about
+     * somebody's money should not rest on an invariant nobody can see.
+     */
+    exitedPosition?: boolean;
     tokenIdentity: {
       symbol?: string;
       name?: string;
@@ -113,6 +127,12 @@ interface PreparedChain {
   institutionCode: string;
   chainId: string;
   snapshots: HoldingSnapshot[];
+  /** `externalId`s in `snapshots` that are closed positions rather than
+      current balances (SC-398). Kept beside the list rather than derived from
+      `balance === '0'` at read time: that equivalence holds only because
+      `fetchBalances` filters `.gt(0)` somewhere else entirely, and a reader
+      three layers away cannot see the filter that makes it true. */
+  exitedExternalIds: Set<string>;
   preExistingAccountId?: string;
   accountName: string;
 }
@@ -123,6 +143,7 @@ export class ImportWalletAddressUseCase {
   private readonly userWalletService = Container.get(UserWalletService);
   private readonly integrationCredentialsService = Container.get(IntegrationCredentialsService);
   private readonly mappingRepository = Container.get(InstitutionBlockchainMappingRepository);
+  private readonly holdingExclusionRepository = Container.get(HoldingExclusionRepository);
   private readonly integrationImportService = Container.get(IntegrationImportService);
   private readonly priceWarmupService = Container.get(PriceWarmupService);
 
@@ -196,6 +217,11 @@ export class ImportWalletAddressUseCase {
         externalId: s.externalId,
         balance: s.balance,
         capturedAt: s.capturedAt.toISOString(),
+        // `undefined` rather than `false` so a wallet with no closed positions
+        // serializes byte-identically to before — `JSON.stringify` drops the
+        // key, and this payload is stored on `user_jobs.result` under a size
+        // budget (`result-truncator`).
+        exitedPosition: c.exitedExternalIds.has(s.externalId) ? true : undefined,
         tokenIdentity: {
           symbol: s.tokenIdentity.symbol ?? undefined,
           name: s.tokenIdentity.name ?? undefined,
@@ -521,12 +547,39 @@ export class ImportWalletAddressUseCase {
           onStatus,
           `Fetching balances on ${institution.name} (${chainIndex}/${total})…`
         );
-        const snapshots = await provider.fetchBalances(ctx);
+        const balances = await provider.fetchBalances(ctx);
+
+        // A position the wallet TRADED and no longer holds has no balance, so
+        // the fetch above cannot see it — and the review is the only place a
+        // holding for it can be created, because `TransactionRouter` resolves
+        // wallet sources find-only and drops every leg of a token with no
+        // holding. Buy and sell alike: the whole life of the position is
+        // invisible, with no row anywhere to notice (SC-398).
+        //
+        // A failure here does NOT fail the chain. The balances are the primary
+        // answer and they are in hand; what is lost is the extra offer, and it
+        // is reported rather than swallowed — a silent fallback to
+        // balances-only is exactly the omission this is fixing, and it would
+        // be indistinguishable from a wallet that never traded anything.
+        const exited = await this.offerExitedPositions({
+          registry,
+          institutionCode,
+          institutionId: institution.id,
+          institutionName: institution.name,
+          chainKey,
+          ctx,
+          userId,
+          balances,
+          errors,
+          onStatus,
+        });
+
         chains.push({
           institution,
           institutionCode,
           chainId: mapping.chainId,
-          snapshots,
+          snapshots: [...balances, ...exited],
+          exitedExternalIds: new Set(exited.map((s) => s.externalId)),
           preExistingAccountId: existingAccount?.id,
           accountName,
         });
@@ -546,6 +599,79 @@ export class ImportWalletAddressUseCase {
     }
 
     return chains;
+  }
+
+  /**
+   * The closed positions this chain's provider can account for, ready to sit
+   * beside the current balances on the review card (SC-398).
+   *
+   * Three things this deliberately does NOT do:
+   *
+   *  - **It does not fail the chain.** The balances are the answer the user
+   *    came for and they are already in hand. A provider that cannot walk the
+   *    history costs the extra offer and nothing else.
+   *  - **It does not stay quiet about that.** The message goes into `errors`,
+   *    which is what the card renders and what turns the outcome `partial`.
+   *    Falling back silently to balances-only reproduces the omission the
+   *    ticket is about, and a reader would have no way to tell the two apart.
+   *  - **It does not guess for a chain that cannot answer.** `fetchExitedPositions`
+   *    is optional precisely because "the account holder authorised this" is
+   *    not derivable everywhere; Bitcoin, TON and the exchanges have no such
+   *    signal. An absent implementation is today's behaviour and is not a
+   *    failure, so it says nothing.
+   */
+  private async offerExitedPositions(args: {
+    registry: ProviderRegistry;
+    institutionCode: string;
+    institutionId: string;
+    institutionName: string;
+    chainKey: string;
+    ctx: SelfCredentialedProviderContext;
+    userId: string;
+    balances: readonly HoldingSnapshot[];
+    errors: ImportWalletResult['errors'];
+    onStatus?: (message: string) => void | Promise<void>;
+  }): Promise<HoldingSnapshot[]> {
+    const historyProvider = args.registry.getTransactionsFetcher(args.institutionCode);
+    if (!historyProvider?.fetchExitedPositions) return [];
+
+    const notes: string[] = [];
+    try {
+      await safeStatus(args.onStatus, `Looking for past positions on ${args.institutionName}…`);
+      const exited = await historyProvider.fetchExitedPositions({
+        ...args.ctx,
+        institutionCode: args.institutionCode,
+        noteWarning: (reason) => notes.push(reason),
+      });
+      for (const note of notes) {
+        args.errors.push({
+          chainId: args.chainKey,
+          chainName: args.institutionName,
+          error: note,
+        });
+      }
+      if (exited.length === 0) return [];
+      const excludedKeys = await this.holdingExclusionRepository.findKeysByUser(args.userId);
+      return exitedPositionSnapshots({
+        balances: args.balances,
+        exited,
+        excludedKeys,
+        institutionId: args.institutionId,
+        capturedAt: new Date(),
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.warn(
+        { userId: args.userId, institutionCode: args.institutionCode, error: message },
+        'Could not read past positions for wallet review'
+      );
+      args.errors.push({
+        chainId: args.chainKey,
+        chainName: args.institutionName,
+        error: `Past positions could not be read: ${message}. Only tokens you still hold are listed.`,
+      });
+      return [];
+    }
   }
 
   // Public-RPC marker rows. Uses 'enqueued' import status so the
