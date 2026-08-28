@@ -473,6 +473,174 @@ describe('UpcomingFeed — a payment priced from history (SC-798)', () => {
   });
 
   /**
+   * The headline over that row (SC-807).
+   *
+   * `occurrenceTotals` resolves an estimated occurrence to `'0'`, deliberately:
+   * "Bills committed" and "what is due next" are different claims, and an
+   * estimate is the reader saying we do not know this month's amount. What was
+   * wrong is that the money was then accounted for NOWHERE above the rows —
+   * `€0.00` sat directly over `€84.20 · ESTIMATED · from Feb 2026`, on one
+   * screen, contradicting itself.
+   *
+   * Both arms, because an absent-only assertion cannot tell "fixed" from "the
+   * component did not render": the found arm pins the new line, the absent arm
+   * pins that the bare contradiction is gone.
+   */
+  describe('the committed headline above it', () => {
+    test('names what it leaves out, with the amount and the count', () => {
+      const html = renderFeed('/payments', {
+        occurrences: asAny([VARIABLE_BILL]),
+        historyEstimates: POWER_ESTIMATE,
+      });
+
+      // must-be-FOUND: the exclusion line renders, carries the figure, and
+      // says why it is not in the headline.
+      expect(html).toInclude('Not included');
+      expect(html).toInclude('is estimated from its last settled amount');
+      expect(html).toInclude('an estimate is not a commitment');
+
+      // The contradiction, bounded to the block ABOVE the feed. The headline is
+      // still €0.00 — that is the ruling, not the defect — but €0.00 is no
+      // longer the only figure between the label and the first row, so the
+      // €84.20 is accounted for above the feed as well as inside it.
+      //
+      // Sliced rather than asserted over the whole document: `€84.20` is in the
+      // row too, so `toInclude` on `html` would pass over exactly the markup
+      // this ticket is about.
+      const block = html.slice(0, html.indexOf('Hetzner'));
+      expect(block).toInclude('Bills committed, next 30 days');
+      expect(block).toInclude('€0.00');
+      expect(block).toInclude('€84.20');
+      expect(block).toInclude('Not included');
+    });
+
+    test('the control: with no estimate there is no exclusion line at all', () => {
+      // The asymmetry, pinned. A permanent second line reading €0.00 would
+      // assert a category most books never have, so the line is conditional —
+      // and a conditional that never renders is indistinguishable from one that
+      // cannot, unless the case above proves it does.
+      const html = renderFeed('/payments', {
+        occurrences: asAny([VARIABLE_BILL]),
+        historyEstimates: NO_HISTORY,
+      });
+
+      expect(html).toInclude('Bills committed, next 30 days');
+      expect(html).not.toInclude('Not included');
+      expect(html).not.toInclude('an estimate is not a commitment');
+    });
+
+    test('a declared bill is committed, and says nothing about estimates', () => {
+      // The second control, and the one that would catch the line firing off
+      // the wrong predicate: `DUE_BILL` declares €99.00, so it belongs IN the
+      // figure and nowhere in the exclusion.
+      const html = renderFeed('/payments', {
+        occurrences: asAny([DUE_BILL]),
+        historyEstimates: POWER_ESTIMATE,
+      });
+
+      expect(html).toInclude('€99.00');
+      expect(html).not.toInclude('Not included');
+    });
+
+    /**
+     * The tile 40px below, which has the identical defect and is fixed in the
+     * same change (SC-807, scope widened by mgrin 2026-08-29).
+     *
+     * The unit is the SCREEN, not the function: one honest figure beside a
+     * dishonest one is worse than neither, because the honest one implies the
+     * surface was checked. `occurrenceTotals` is still untouched — the tile
+     * gets the same `estimatedTotals` helper and a sentence of its own.
+     */
+    describe('and the overdue tile beside it', () => {
+      /** The same variable bill, four days late and still unsettled. */
+      const LATE_VARIABLE = {
+        ...VARIABLE_BILL,
+        id: 'occurrence-power-late',
+        dueDate: daysFromToday(-4),
+      };
+
+      test('names what the overdue figure leaves out, in its own words', () => {
+        const html = renderFeed('/payments', {
+          occurrences: asAny([LATE_VARIABLE]),
+          historyEstimates: POWER_ESTIMATE,
+        });
+
+        expect(html).toInclude('Overdue, 1 bill');
+        expect(html).toInclude('1 overdue bill is estimated from its last settled amount');
+        expect(html).toInclude('its real amount is still unknown');
+
+        // Its OWN sentence. The committed figure's closing clause is a claim
+        // about commitment and this tile makes no such claim — reusing it here
+        // would be a true sentence under the wrong figure.
+        expect(html).not.toInclude('an estimate is not a commitment');
+
+        const block = html.slice(0, html.indexOf('Hetzner'));
+        expect(block).toInclude('€0.00');
+        expect(block).toInclude('€84.20');
+      });
+
+      test('the control: an overdue bill with a declared amount excludes nothing', () => {
+        // `LATE_BILL` declares 42.00, so it belongs IN the overdue figure. This
+        // is the case that catches the line firing off the wrong predicate.
+        const html = renderFeed('/payments', {
+          occurrences: asAny([LATE_BILL]),
+          historyEstimates: POWER_ESTIMATE,
+        });
+
+        expect(html).toInclude('Overdue, 1 bill');
+        expect(html).not.toInclude('Not included');
+      });
+
+      test('the two lines are separate claims about separate figures', () => {
+        // Both estimated, one ahead and one late. Each tile names its own
+        // exclusion and neither borrows the other's figure or sentence.
+        const html = renderFeed('/payments', {
+          occurrences: asAny([
+            VARIABLE_BILL,
+            {
+              ...LATE_VARIABLE,
+              paymentId: 'payment-water',
+              payment: { ...VARIABLE_PAYMENT, id: 'payment-water' },
+            },
+          ]),
+          historyEstimates: new Map([
+            ...POWER_ESTIMATE,
+            ['payment-water', { amount: '12.00', sourceDueDate: '2026-01-20' }],
+          ]),
+        });
+
+        expect(html).toInclude('an estimate is not a commitment');
+        expect(html).toInclude('its real amount is still unknown');
+        // The committed line carries 84.20 and the overdue line 12.00 — never
+        // the sum, and never each other's figure.
+        expect(html).not.toInclude('€96.20');
+        expect(html).toInclude('€12.00');
+      });
+    });
+
+    test('the count pluralises over the bills it actually excludes', () => {
+      const second = {
+        ...VARIABLE_BILL,
+        id: 'occurrence-water',
+        paymentId: 'payment-water',
+        payment: { ...VARIABLE_PAYMENT, id: 'payment-water' },
+      };
+      const html = renderFeed('/payments', {
+        occurrences: asAny([VARIABLE_BILL, second]),
+        historyEstimates: new Map([
+          ...POWER_ESTIMATE,
+          ['payment-water', { amount: '15.80', sourceDueDate: '2026-02-20' }],
+        ]),
+      });
+
+      // The sum, not either row's figure — 84.20 + 15.80.
+      expect(html).toInclude('€100.00');
+      expect(html).toInclude('2 bills are estimated');
+      expect(html).not.toInclude('1 bill is estimated');
+    });
+  });
+
+  /**
    * The peek is the second render site, and it is the one SC-797 is about: the
    * sheet mounts through a Radix portal, so `renderToStaticMarkup` renders none
    * of it and every assertion above passes over a peek that still says `No
