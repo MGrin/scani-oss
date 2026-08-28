@@ -60,6 +60,44 @@ docker-compose.override.yml
 # while one exists.
 scripts/.source-mutation-journal-*.json
 
+# Agent scratch. Nothing in this repository creates either of these and no
+# contributor here will meet one, which is exactly what makes them read as
+# debris a tidy-up should remove (SC-758).
+#
+# They are written by agent tooling running in a working copy, and an untracked
+# directory SURVIVES `git checkout`. So a session that starts on one branch and
+# continues on a branch of this tree arrives with the scratch still on disk,
+# under a `.gitignore` that does not name it, and the next `git add -A` takes
+# it. The rule has to live in the copy the checkout carries; being ignored
+# somewhere else is not being ignored.
+#
+# Measured 2026-08-28, one throwaway repo per copy of this file, identical
+# contents, the ignore rules the only variable: `.tmp-thr_abc/notes.md` and
+# `.context/handoff.md` were both STAGEABLE under the copy lacking these lines.
+# Control: `scani-test-fixture-x.ts` was ignored under both, so that reading is
+# the rule missing rather than the probe broken.
+#
+# It is also what keeps `deps:unused` honest: knip reads `.gitignore` and not
+# `.git/info/exclude`, so this line is what stops a scratch `.ts` under either
+# directory being reported as an unused file (SC-681, SC-685).
+#
+# `scripts/tests/root-gitignore-covers-orphanable-output.test.ts` pins both --
+# by asking git, not by grepping this file, and it asserts that THIS file is
+# what answers. A per-clone `.git/info/exclude` satisfies the verdict and is
+# not a mechanism: every worktree of one clone honours it and a fresh clone
+# does not (SC-681, SC-685).
+.tmp-thr_*/
+.context/
+
+# Editor-local state. Machine-specific and never anyone else's business — but
+# the reason it is HERE rather than assumed is that a checkout of this tree may
+# track a file under this directory, and `.gitignore` does not untrack one. So
+# the tracked file stays tracked and versioned exactly as before, while
+# everything else the editor writes beside it stops being stageable. Verified
+# both halves: an already-tracked file survives `git ls-files` unchanged, and a
+# newly created sibling disappears from `git status --untracked-files=all`.
+.vscode/
+
 # Build output that lives beside the app or module producing it, and
 # infrastructure working state (SC-569, SC-577).
 #
