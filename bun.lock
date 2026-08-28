@@ -273,7 +273,6 @@
       "version": "1.0.0",
       "dependencies": {
         "@scani/config": "workspace:*",
-        "@scani/data-provider": "workspace:*",
         "@scani/db": "workspace:*",
         "@scani/email": "workspace:*",
         "@scani/logging": "workspace:*",
@@ -285,6 +284,7 @@
         "zod": "^3.25.76",
       },
       "devDependencies": {
+        "@scani/data-provider": "workspace:*",
         "typescript": "^5",
       },
     },
