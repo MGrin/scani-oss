@@ -16,10 +16,16 @@ import { db } from '@scani/db/connection';
 import * as schema from '@scani/db/schema';
 import { SCAM_PROBABILITY_THRESHOLD } from '@scani/domain/lib/constants';
 import { PortfolioValueDailyRepository, UserJobRepository } from '@scani/domain/repositories';
-import { type ReturnsScope, ReturnsService } from '@scani/domain/services';
+import { PeriodDisposalsService, type ReturnsScope, ReturnsService } from '@scani/domain/services';
 import { HIDE_CLOSED_HOLDINGS_STALE_DAYS } from '@scani/domain/use-cases';
 import { PORTFOLIO_HISTORY_BACKFILL, PORTFOLIO_HISTORY_LOOKBACK_DAYS } from '@scani/jobs';
 import { BullMqEnqueueService } from '@scani/queue';
+import {
+  costBasisMethodSchema,
+  type PeriodDisposals,
+  parseCostBasisMethod,
+  toDisposalLotMatchDto,
+} from '@scani/shared';
 import { TRPCError } from '@trpc/server';
 import Decimal from 'decimal.js';
 import { and, eq, sql } from 'drizzle-orm';
@@ -174,6 +180,35 @@ const NetWorthSeriesInput = z
   })
   .refine((v) => v.to.getTime() >= v.from.getTime(), {
     message: '`to` must be greater than or equal to `from`',
+  })
+  .refine(
+    (v) => (v.to.getTime() - v.from.getTime()) / (24 * 60 * 60 * 1000) <= MAX_NET_WORTH_SPAN_DAYS,
+    { message: `Date span must be ≤ ${MAX_NET_WORTH_SPAN_DAYS} days` }
+  );
+
+/**
+ * A half-open window of disposals, `[from, to)` (SC-90).
+ *
+ * `to` is EXCLUSIVE and strictly greater than `from`, which is the one place
+ * this differs from every other window input in this file. Two reasons, both
+ * about a reading a caller cannot check:
+ *
+ * - Half-open so adjacent windows partition disposals. An inclusive upper
+ *   bound counts a midnight disposal in both, and somebody adding two periods
+ *   together gets a number with no error to notice.
+ * - Strictly greater so `to === from` is a REFUSAL rather than an empty
+ *   result. A zero-width window returns zero rows over a portfolio that may
+ *   have hundreds, and an empty answer to a malformed question is
+ *   indistinguishable from an empty answer to a good one.
+ */
+const DisposalWindowInput = z
+  .object({
+    from: z.coerce.date(),
+    to: z.coerce.date(),
+    costBasisMethod: costBasisMethodSchema.optional(),
+  })
+  .refine((v) => v.to.getTime() > v.from.getTime(), {
+    message: '`to` must be strictly greater than `from` — the window is half-open, [from, to)',
   })
   .refine(
     (v) => (v.to.getTime() - v.from.getTime()) / (24 * 60 * 60 * 1000) <= MAX_NET_WORTH_SPAN_DAYS,
@@ -513,6 +548,78 @@ export const portfolioRouter = router({
   // Phase-3 surface: per-holding balance-over-time. Kept in the router
   // from the start so the frontend can code against a stable endpoint
   // shape as Phase 3 lands cost basis + sparkline.
+  /**
+   * Every disposal across the portfolio in a window of time (SC-90).
+   *
+   * The wider sibling of `holdings.realizedLedger`, which answers the same
+   * question for one holding. It exists because "why did my realized gain move
+   * this year" is not answerable by asking that question once per holding: a
+   * coin bought on an exchange and sold from a wallet belongs to a transfer
+   * component, and `forComponentsOf` is what walks those on one shared lot
+   * ledger rather than resetting the cost at the transfer.
+   *
+   * **Not tax output.** See `docs/technical/2026-08-14_why-no-tax-statement.md`
+   * and the note on the `period-disposals` contract. The window is two instants
+   * on purpose — the route encodes no jurisdiction's idea of a year.
+   *
+   * No ownership guard is needed and none would help: the service takes a
+   * `userId` and sources its holding set from `findIdsForUser`, so the caller
+   * has no way to name a holding at all. Contrast `realizedLedger`, which does
+   * take a holding id and therefore does carry one.
+   */
+  getDisposals: protectedProcedure
+    .input(strictInput(DisposalWindowInput))
+    .query(async ({ ctx, input }): Promise<PeriodDisposals> => {
+      const { dbUser } = await requireAuth(ctx);
+      const baseCurrencyId = dbUser.baseCurrencyId ?? null;
+      const method = parseCostBasisMethod(input.costBasisMethod ?? dbUser.costBasisMethod);
+      const empty = {
+        periodStart: input.from.toISOString(),
+        periodEnd: input.to.toISOString(),
+        costBasisMethod: method,
+        rows: [],
+        rowCount: 0,
+        byOutcome: {
+          realized: 0,
+          unpriced: 0,
+          unreviewed: 0,
+          retained: 0,
+          awaiting_pair: 0,
+        },
+        byBasisQuality: { known: 0, partial: 0, unknown: 0 },
+        totals: { proceeds: '0', costBasis: '0', gain: '0' },
+      };
+      if (!baseCurrencyId) {
+        // Every figure here is denominated in the base currency, so without
+        // one there is no ledger to report — not an empty one. Same refusal
+        // `realizedLedger` makes, and for the same reason.
+        return { ...empty, baseCurrencyId: null };
+      }
+
+      const result = await Container.get(PeriodDisposalsService).forPeriod(
+        dbUser.id,
+        baseCurrencyId,
+        { from: input.from, to: input.to },
+        method
+      );
+
+      return {
+        periodStart: input.from.toISOString(),
+        periodEnd: input.to.toISOString(),
+        baseCurrencyId,
+        costBasisMethod: result.method,
+        rows: result.rows.map(toDisposalLotMatchDto),
+        rowCount: result.rows.length,
+        byOutcome: result.byOutcome,
+        byBasisQuality: result.byBasisQuality,
+        totals: {
+          proceeds: result.totals.proceeds.toString(),
+          costBasis: result.totals.costBasis.toString(),
+          gain: result.totals.gain.toString(),
+        },
+      };
+    }),
+
   getHoldingHistory: protectedProcedure
     .input(strictInput(HoldingHistoryInput))
     .query(async ({ ctx, input }) => {
