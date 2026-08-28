@@ -117,7 +117,9 @@ const IDENT = '[A-Za-z_$][A-Za-z0-9_$]*';
  *
  * `\s*` around the dots is there for a third shape — a chain Biome wraps
  * across a line, which a line-oriented scan cannot see. **Zero of those exist
- * in the tree today** (measured 2026-08-28 over all 1982 scanned files), so
+ * in the tree today** (measured 2026-08-28 over all 1755 files scanned in the
+ * mirror at `f7e923237` and all 2073 in the private tree at `ecd087ddd`, with
+ * a control confirming a deliberately-wrapped chain IS detected as one), so
  * that is a capability with no live instance rather than a fix for an observed
  * bug. It is pinned by a fixture in `scripts/tests/api-procedure-callers.test.ts`
  * precisely because the tree cannot exercise it: a zero from a probe that
@@ -312,6 +314,94 @@ export interface Census {
   unresolvedUrls: ProcedureRef[];
   /** Declared fixtures actually seen, so a stale declaration is visible. */
   fixturesSeen: ProcedureRef[];
+}
+
+/**
+ * The smallest TypeScript population this repo could plausibly have.
+ *
+ * Measured 2026-08-28: 1798 tracked `.ts`/`.tsx` paths in the mirror at
+ * `f7e923237`, 2116 in the private tree at `3ad3412d4`. This file lives in
+ * both, so every count in it names which. A reading below the floor is an
+ * instrument that stopped working, never a repo that shrank, and the
+ * distinction has to be made HERE — downstream, "no procedure is reached by a
+ * URL" and "almost nothing was searched" render identically.
+ */
+const POPULATION_FLOOR = 1000;
+
+/**
+ * The scan population, or a refusal — never an empty list a caller can read as
+ * a result.
+ *
+ * A `kind: 'refused'` cannot be iterated, so a caller that forgets to check it
+ * fails to compile. That is deliberate: the failure this replaces was a silent
+ * empty, and an empty array is precisely the shape a scanner consumes without
+ * complaint.
+ */
+export type ScanPopulation =
+  | { readonly kind: 'population'; readonly paths: string[]; readonly tracked: number }
+  | { readonly kind: 'refused'; readonly why: string };
+
+/**
+ * Every tracked `.ts`/`.tsx` file. NO PATHSPEC, ON PURPOSE (SC-755).
+ *
+ * This used to pass six pathspec globs to `git ls-files`, one per root, each
+ * of the shape `<root>` + `/**` + `/*.ts`. (Written whole, that shape closes
+ * this comment — which is the reason it is spelled in pieces here and not a
+ * flourish to tidy away.) In a git pathspec `**` between two slashes requires
+ * at least one intermediate directory, so the `scripts` one reached
+ * `scripts/lib/x.ts` and never `scripts/x.ts`: **0 of the files directly
+ * under `scripts/`** were ever scanned — 18 of them in the mirror, 67 in the
+ * private tree — this census's own CLI among them.
+ *
+ * NOTHING SAID SO, AND THAT IS THE POINT. The other five globs contributed
+ * 1780 paths in the mirror and 2049 privately, and the only floor asked whether
+ * the TOTAL was healthy — which is exactly what a population missing a sixth of
+ * itself has. A wrong predicate
+ * gives a wrong answer about the right set and gets argued with; a wrong
+ * population gives a correct answer about the wrong set, and correct answers
+ * do not.
+ *
+ * Adding `scripts/*.ts` beside the broken glob would have fixed the instance
+ * and kept the class — the same silence covers `apps/*.ts` the day somebody
+ * writes one. Listing the index and filtering on the extension has no glob
+ * semantics left to get wrong, so the failure is UNREACHABLE rather than
+ * guarded against. Measured 2026-08-28 in both trees: naming the four roots
+ * and taking the whole index produce the identical population either way —
+ * 1798 paths at `f7e923237`, 2116 at `3ad3412d4` — so the roots were buying
+ * nothing even before they started costing something.
+ *
+ * `-z` because git quotes a path containing a newline or a quote by default,
+ * and a quoted path opens no file.
+ */
+export function scanPopulation(repoRoot: string): ScanPopulation {
+  const listed = Bun.spawnSync(['git', 'ls-files', '-z'], { cwd: repoRoot });
+
+  // Three different non-results, three different messages. A failed `git` and
+  // an empty repository are not the same finding, and neither is a repository
+  // whose TypeScript has gone missing — collapsing them into one "nothing
+  // found" is how a broken instrument reads as a clean tree.
+  if (listed.exitCode !== 0) {
+    const said = listed.stderr.toString().trim();
+    return {
+      kind: 'refused',
+      why: `git ls-files exited ${listed.exitCode ?? 'on a signal'} in ${repoRoot}${said === '' ? '' : `: ${said}`}`,
+    };
+  }
+
+  const tracked = listed.stdout.toString().split('\0').filter(Boolean);
+  if (tracked.length === 0) {
+    return { kind: 'refused', why: `git ls-files listed no tracked path at all in ${repoRoot}` };
+  }
+
+  const paths = tracked.filter((p) => p.endsWith('.ts') || p.endsWith('.tsx'));
+  if (paths.length < POPULATION_FLOOR) {
+    return {
+      kind: 'refused',
+      why: `only ${paths.length} TypeScript file(s) among ${tracked.length} tracked path(s) — under the floor of ${POPULATION_FLOOR}`,
+    };
+  }
+
+  return { kind: 'population', paths, tracked: tracked.length };
 }
 
 export function census(input: CensusInput): Census {
