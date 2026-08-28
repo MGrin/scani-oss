@@ -3,6 +3,7 @@ import { showError } from '@scani/ui/ui/use-toast';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { type RouterOutputs, trpc } from '@/lib/trpc';
+import { tokenDisplayName } from '@/lib/utils';
 import { RecordPicker } from '../form/RecordPicker';
 
 /**
@@ -78,7 +79,10 @@ export function TokenField({
   const results = search.data ?? [];
   const options = results.map((item) => ({
     id: optionId(item),
-    label: `${item.symbol} — ${item.name}`,
+    // `item.type` IS the `token_types.code` — `tokens.search` selects
+    // `tokenTypes.code` under that name (SC-824). Its sibling `typeName` is the
+    // human name and is not what `tokenDisplayName` takes.
+    label: `${item.symbol} — ${tokenDisplayName(t, { ...item, typeCode: item.type })}`,
     hint: sourceLabel(item),
   }));
 

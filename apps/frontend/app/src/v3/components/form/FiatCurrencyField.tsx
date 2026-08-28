@@ -1,6 +1,8 @@
+import type { TFunction } from 'i18next';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { type RouterOutputs, trpc } from '@/lib/trpc';
+import { tokenDisplayName } from '@/lib/utils';
 import { RecordPicker } from './RecordPicker';
 
 /**
@@ -22,8 +24,25 @@ import { RecordPicker } from './RecordPicker';
 
 type FiatCurrency = RouterOutputs['users']['getSupportedCurrencies'][number];
 
-export function fiatCurrencyLabel(currency: Pick<FiatCurrency, 'symbol' | 'name'>): string {
-  return `${currency.symbol} — ${currency.name}`;
+/**
+ * SC-824. Every row here is fiat BY CONSTRUCTION — the list is
+ * `users.getSupportedCurrencies`, which is `TokenService.getTokensByType('fiat')`
+ * — so unlike the `getWithDetails` surfaces there is no type to check and no
+ * code to carry: `tokenDisplayName` is called with a literal `'fiat'`.
+ *
+ * `currency.name` is the English prose in `tokens.name`. It is still the
+ * fallback inside `tokenDisplayName` for a symbol CLDR does not know, which is
+ * why the field is read rather than dropped.
+ */
+export function fiatCurrencyLabel(
+  t: TFunction,
+  currency: Pick<FiatCurrency, 'symbol' | 'name'>
+): string {
+  return `${currency.symbol} — ${fiatCurrencyName(t, currency)}`;
+}
+
+function fiatCurrencyName(t: TFunction, currency: Pick<FiatCurrency, 'symbol' | 'name'>): string {
+  return tokenDisplayName(t, { ...currency, typeCode: 'fiat' });
 }
 
 /**
@@ -40,6 +59,7 @@ export function fiatCurrencyLabel(currency: Pick<FiatCurrency, 'symbol' | 'name'
  * would only hide currencies without saying so.
  */
 export function rankFiatCurrencies(
+  t: TFunction,
   currencies: readonly FiatCurrency[],
   query: string
 ): FiatCurrency[] {
@@ -47,7 +67,11 @@ export function rankFiatCurrencies(
   const matches = term
     ? currencies.filter(
         (currency) =>
-          currency.symbol.toLowerCase().includes(term) || currency.name.toLowerCase().includes(term)
+          currency.symbol.toLowerCase().includes(term) ||
+          // The DISPLAYED name, not the stored one: a list that shows
+          // `dólar estadounidense` and matches only `US Dollar` cannot find
+          // what it is showing.
+          fiatCurrencyName(t, currency).toLowerCase().includes(term)
       )
     : [...currencies];
 
@@ -68,7 +92,7 @@ interface FiatCurrencyFieldProps {
    * Show the chosen currency as its symbol alone.
    *
    * For the half-width slot beside an amount, where the full
-   * "USD — United States Dollar" has about 80px to render in and truncates to
+   * "USD — US Dollar" has about 80px to render in and truncates to
    * `USD …` — a field that hides the one part of its value that identifies it.
    * The search rows still carry the name; it is only the settled state that
    * drops it, and by then the reader has just chosen the thing.
@@ -104,7 +128,7 @@ export function FiatCurrencyField({
       ariaLabel={t('v3.form.fiatCurrency.noun')}
       value={
         selected && !changing
-          ? { id: selected.id, label: compact ? selected.symbol : fiatCurrencyLabel(selected) }
+          ? { id: selected.id, label: compact ? selected.symbol : fiatCurrencyLabel(t, selected) }
           : null
       }
       onSelect={(currencyId) => {
@@ -125,10 +149,10 @@ export function FiatCurrencyField({
         // was showing comes back rather than leaving an empty search box.
         if (!next) setChanging(false);
       }}
-      options={rankFiatCurrencies(list, query).map((currency) => ({
+      options={rankFiatCurrencies(t, list, query).map((currency) => ({
         id: currency.id,
         label: currency.symbol,
-        hint: currency.name,
+        hint: fiatCurrencyName(t, currency),
       }))}
       isLoading={currencies.isLoading}
       placeholder={t('v3.form.fiatCurrency.searchPlaceholder')}

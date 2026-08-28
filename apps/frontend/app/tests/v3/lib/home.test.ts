@@ -1,6 +1,7 @@
 import '../../i18n-preload';
 
 import { describe, expect, test } from 'bun:test';
+import { resetFormatLocale, setFormatLocale } from '@scani/shared';
 import { ALLOCATION_OTHER_KEY } from '@scani/ui/v3/lib/chart';
 import i18n from 'i18next';
 import {
@@ -614,26 +615,69 @@ describe('topHoldingRows', () => {
   ];
 
   test('the rank suffix the API adds is stripped so the peek URL resolves', () => {
-    expect(topHoldingRows(HOLDINGS, '100000').map((row) => row.holdingId)).toEqual([
+    expect(topHoldingRows(t, HOLDINGS, '100000').map((row) => row.holdingId)).toEqual([
       '11111111-1111-1111-1111-111111111111',
       '22222222-2222-2222-2222-222222222222',
     ]);
   });
 
   test('share is of the portfolio, and the row keeps its own key', () => {
-    const [first] = topHoldingRows(HOLDINGS, '100000');
+    const [first] = topHoldingRows(t, HOLDINGS, '100000');
     expect(first?.share).toBe(50);
     expect(first?.key).toBe('11111111-1111-1111-1111-111111111111-0');
     expect(first?.sublabel).toBe('Bitcoin · Kraken · Spot');
   });
 
   test('an unknown total is no share rather than a share of nothing', () => {
-    expect(topHoldingRows(HOLDINGS, null)[0]?.share).toBeNull();
-    expect(topHoldingRows(HOLDINGS, '0')[0]?.share).toBeNull();
+    expect(topHoldingRows(t, HOLDINGS, null)[0]?.share).toBeNull();
+    expect(topHoldingRows(t, HOLDINGS, '0')[0]?.share).toBeNull();
   });
 
   test('a holding with no institution still reads as itself', () => {
-    expect(topHoldingRows(HOLDINGS, '100000')[1]?.sublabel).toBe('Ethereum');
+    expect(topHoldingRows(t, HOLDINGS, '100000')[1]?.sublabel).toBe('Ethereum');
+  });
+
+  /**
+   * SC-824. Home read `tokens.name` raw while every other surface rendered the
+   * reader's own currency name, so one holding said "United States Dollar" on
+   * home and "US Dollar" on /holdings. The fixture's stored name is the
+   * English one deliberately — it is what must NOT come back.
+   */
+  test('a fiat row shows the reader currency name, not the stored English one', () => {
+    const fiat = [
+      {
+        id: '33333333-3333-3333-3333-333333333333-0',
+        symbol: 'USD',
+        name: 'United States Dollar',
+        tokenTypeCode: 'fiat',
+        value: '1000',
+        institutionName: 'Example Bank',
+      },
+    ];
+    expect(topHoldingRows(t, fiat, '100000')[0]?.sublabel).toBe('US Dollar · Example Bank');
+    try {
+      setFormatLocale('es');
+      expect(topHoldingRows(t, fiat, '100000')[0]?.sublabel).toBe(
+        'dólar estadounidense · Example Bank'
+      );
+    } finally {
+      resetFormatLocale();
+    }
+  });
+
+  /** The must-be-ABSENT arm: a crypto name is a proper noun and is kept. */
+  test('a non-fiat row keeps its stored name in every locale', () => {
+    try {
+      setFormatLocale('es');
+      expect(topHoldingRows(t, HOLDINGS, '100000')[0]?.sublabel).toBe('Bitcoin · Kraken · Spot');
+    } finally {
+      resetFormatLocale();
+    }
+  });
+
+  /** A row whose type never reached the client degrades to the stored name. */
+  test('no type code degrades to the stored name rather than blanking', () => {
+    expect(topHoldingRows(t, HOLDINGS, '100000')[1]?.sublabel).toBe('Ethereum');
   });
 });
 
