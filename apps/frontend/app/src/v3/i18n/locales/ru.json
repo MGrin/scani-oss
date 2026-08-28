@@ -1905,6 +1905,7 @@
           "solicitation": "Похоже на рекламу",
           "mixedScript": "Смешанные алфавиты"
         },
+        "exited": "Куплен и продан",
         "hiddenSelected_one": "{{count}} отмеченная строка скрыта фильтром",
         "hiddenSelected_few": "{{count}} отмеченные строки скрыты фильтром",
         "hiddenSelected_many": "{{count}} отмеченных строк скрыты фильтром",
