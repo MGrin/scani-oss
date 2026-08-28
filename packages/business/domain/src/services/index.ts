@@ -119,6 +119,7 @@ export {
   type ForecastOccurrenceRow,
   type ForecastPayment,
   type ForecastPaymentInput,
+  type HistoryEstimatedPayment,
   monthKey,
   type UnprojectablePayment,
 } from './payments/forecast';

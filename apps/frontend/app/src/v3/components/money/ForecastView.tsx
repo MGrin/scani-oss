@@ -86,6 +86,15 @@ interface ForecastViewProps {
    *  view stays free of tRPC and can be rendered — and asserted — on its own,
    *  the same rule `MoneyPage`'s other three views follow. */
   tokens: readonly RouterOutputs['tokens']['getAll'][number][];
+  /**
+   * SC-625's opt-in, as a callback for the same reason the tokens arrive as a
+   * prop: this view holds no tRPC. `paymentIds` are named rather than a "all
+   * of them" flag, so the set the reader agreed to is the set that changes —
+   * see the router procedure's own doc.
+   */
+  onEstimateFromHistory?: (paymentIds: string[], enabled: boolean) => void;
+  /** A write is in flight; the two buttons below disable rather than vanish. */
+  estimateFromHistoryPending?: boolean;
 }
 
 export function ForecastView({
@@ -95,6 +104,8 @@ export function ForecastView({
   query,
   paymentCount,
   tokens,
+  onEstimateFromHistory,
+  estimateFromHistoryPending = false,
 }: ForecastViewProps) {
   const { t } = useTranslation();
   const loadingPhase = useDelayedLoading(query.isLoading);
@@ -477,7 +488,17 @@ export function ForecastView({
         disabled={pending}
       />
 
-      <ForecastCaveats forecast={forecast} />
+      <ForecastEstimates
+        forecast={forecast}
+        onEstimateFromHistory={onEstimateFromHistory}
+        pending={estimateFromHistoryPending}
+      />
+
+      <ForecastCaveats
+        forecast={forecast}
+        onEstimateFromHistory={onEstimateFromHistory}
+        pending={estimateFromHistoryPending}
+      />
     </div>
   );
 }
@@ -1056,16 +1077,34 @@ function BurnAnswer({
  * skipped a payment with no estimate, and a projection that does the same
  * silently is a number that reads as complete and is not.
  */
-function ForecastCaveats({ forecast }: { forecast: ForecastData }) {
+interface EstimateActionProps {
+  forecast: ForecastData;
+  onEstimateFromHistory?: (paymentIds: string[], enabled: boolean) => void;
+  pending?: boolean;
+}
+
+function ForecastCaveats({ forecast, onEstimateFromHistory, pending }: EstimateActionProps) {
   const { t } = useTranslation();
   const notes: string[] = [];
 
+  // THE COUNT IS A DENOMINATOR AND IT DOES NOT SHRINK BECAUSE AN OPTION EXISTS
+  // (SC-625). Whatever is still unestimated after the reader has turned the
+  // option on is still counted here, in the same words. What changes is that
+  // the line can now be acted on where acting on it would do something.
   if (forecast.unprojectable.length > 0) {
     notes.push(t('v3.money.forecast.unprojectable', { count: forecast.unprojectable.length }));
   }
   if (forecast.overdue.length > 0) {
     notes.push(t('v3.money.forecast.overdueExcluded', { count: forecast.overdue.length }));
   }
+
+  // Only the ones a settled amount actually exists for. Offering the action
+  // over all of them would have the reader agree to a sentence about N
+  // payments and change fewer — silently, since the count would simply drop by
+  // less than the sentence implied and nothing would say why. A payment with
+  // no settlement behind it stays in the line above with no remedy attached,
+  // which is the honest thing to show for it.
+  const remediable = forecast.unprojectable.filter((entry) => entry.lastSettled !== null);
 
   if (notes.length === 0) return null;
 
@@ -1077,6 +1116,84 @@ function ForecastCaveats({ forecast }: { forecast: ForecastData }) {
           {note}
         </p>
       ))}
+
+      {remediable.length > 0 && onEstimateFromHistory ? (
+        <div className="mt-1.5 flex flex-col items-start gap-2 border-t border-dashed border-border pt-2">
+          <p className="text-caption text-muted-foreground">
+            {t('v3.money.forecast.couldEstimate', { count: remediable.length })}
+          </p>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={pending}
+            onClick={() =>
+              onEstimateFromHistory(
+                remediable.map((entry) => entry.paymentId),
+                true
+              )
+            }
+          >
+            {t('v3.money.forecast.useLastSettled', { count: remediable.length })}
+          </Button>
+        </div>
+      ) : null}
+    </Block>
+  );
+}
+
+/**
+ * What this projection priced on the reader's own say-so (SC-625).
+ *
+ * A SEPARATE block from `<ForecastCaveats>`, and not a line inside it, because
+ * that one is headed "Not in this projection" and these payments ARE in it.
+ * Folding them together would put a true count under a false heading — the
+ * cheapest possible way to lose the distinction the whole ticket is about.
+ *
+ * Two denominators, then, answering two questions: what could not be priced at
+ * all, and what was priced from history. A single "N payments are estimated"
+ * line doing both jobs would let a book with everything guessed read the same
+ * as a book with everything declared.
+ */
+function ForecastEstimates({ forecast, onEstimateFromHistory, pending }: EstimateActionProps) {
+  const { t } = useTranslation();
+  const estimated = forecast.estimatedFromHistory;
+  if (estimated.length === 0) return null;
+
+  return (
+    <Block className="flex flex-col gap-1.5 border-dashed p-4">
+      <p className="text-label">{t('v3.money.forecast.estimatedTitle')}</p>
+      <p className="text-caption text-muted-foreground">
+        {t('v3.money.forecast.estimatedCount', { count: estimated.length })}
+      </p>
+
+      {/* A COUNT here and a CITATION on the recurring list, not both in both
+          places. This view holds no vendor names — it takes a forecast, tokens
+          and rates, and nothing else — so naming the payments here would mean
+          listing uuids, which tells a reader nothing and would need a query
+          this view deliberately does not make. The recurring list already has
+          the name, the figure and the cadence beside each one, so that is
+          where "from Feb 2026" belongs. */}
+      <Button variant="outline" size="sm" asChild className="mt-1 self-start">
+        <Link to={V3_ROUTES.recurring}>{t('v3.money.forecast.seeRecurring')}</Link>
+      </Button>
+
+      {onEstimateFromHistory ? (
+        <div className="mt-1.5 flex items-start border-t border-dashed border-border pt-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={pending}
+            onClick={() =>
+              onEstimateFromHistory(
+                estimated.map((entry) => entry.paymentId),
+                false
+              )
+            }
+          >
+            {t('v3.money.forecast.stopEstimating', { count: estimated.length })}
+          </Button>
+        </div>
+      ) : null}
     </Block>
   );
 }

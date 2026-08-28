@@ -174,6 +174,7 @@ export function PaymentFormPage() {
   const [markAnchorPaid, setMarkAnchorPaid] = useState(true);
   const [direction, setDirection] = useState<Direction>('outflow');
   const [kind, setKind] = useState<PaymentKind>('fixed');
+  const [estimateFromHistory, setEstimateFromHistory] = useState(false);
   const [amount, setAmount] = useState('');
   const [currency, setCurrency] = useState<{ id: string; label: string } | null>(null);
   const [intervalUnit, setIntervalUnit] = useState<IntervalUnitChoice>('month');
@@ -199,6 +200,7 @@ export function PaymentFormPage() {
     setVendorId(payment.vendorId);
     setDirection(payment.direction as Direction);
     setKind(payment.kind as PaymentKind);
+    setEstimateFromHistory(payment.estimateFromHistory);
     setAmount(payment.expectedAmount ?? '');
     setCurrency({
       id: payment.currencyTokenId,
@@ -317,6 +319,13 @@ export function PaymentFormPage() {
       direction,
       kind,
       expectedAmount: amount.trim() ? amount.trim() : null,
+      // Only a variable payment can be estimated from history — a fixed one
+      // has a declared figure that always wins, so a flag left set on a
+      // payment switched back to `fixed` would be state nothing reads and
+      // everything would still have to carry. Cleared here rather than in the
+      // `setKind` handler so it is a property of what is SAVED, which is the
+      // only thing any later reader sees.
+      estimateFromHistory: kind === 'variable' && estimateFromHistory,
       currencyTokenId: currency.id,
       intervalUnit,
       // Safe unguarded: `canSubmit` is false unless the blocker list accepted
@@ -618,6 +627,31 @@ export function PaymentFormPage() {
               />
             </Field>
           </FieldRow>
+
+          {/* Only for a variable payment, and only where it can mean something.
+              A fixed payment's declared amount always wins, so offering the
+              option there would be offering a control that changes nothing —
+              the shape SC-625's own forecast button deliberately avoids by
+              naming only the payments a settlement exists for. */}
+          {kind === 'variable' ? (
+            <div className="flex items-start gap-3 rounded-md border border-border-strong p-3">
+              <Checkbox
+                id="estimate-from-history"
+                checked={estimateFromHistory}
+                onCheckedChange={(checked) => setEstimateFromHistory(checked === true)}
+                disabled={isSaving}
+                className="mt-0.5"
+              />
+              <div className="flex flex-col gap-0.5">
+                <Label htmlFor="estimate-from-history" className="text-label">
+                  {t('v3.money.paymentForm.estimateFromHistory')}
+                </Label>
+                <p className="text-caption text-muted-foreground">
+                  {t('v3.money.paymentForm.estimateFromHistoryHint')}
+                </p>
+              </div>
+            </div>
+          ) : null}
 
           {createsFromInvoice ? (
             <div className="flex items-start gap-3 rounded-md border border-border-strong p-3">
