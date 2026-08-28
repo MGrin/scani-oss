@@ -190,6 +190,12 @@ export {
   type GroupValue,
 } from './portfolio/GroupValuationService';
 export {
+  type DisposalTotals,
+  type DisposalWindow,
+  type PeriodDisposalsResult,
+  PeriodDisposalsService,
+} from './portfolio/PeriodDisposalsService';
+export {
   type PnLAtTimePerHolding,
   type PnLAtTimeResult,
   PnLAtTimeService,
