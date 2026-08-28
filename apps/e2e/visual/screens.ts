@@ -71,6 +71,26 @@ type VisualViewport = 'desktop' | 'phone';
  */
 export type VisualSession = 'seeded' | 'empty';
 
+/**
+ * Which way the document reads (SC-760).
+ *
+ * RTL is a LAYOUT MODE, not a language, which is the whole reason SC-201
+ * sequences it before the Arabic strings: mirroring is what makes those
+ * strings legible as a page rather than word by word. So a screen declaring
+ * `rtl` is photographed with English copy in a mirrored layout, and that is
+ * deliberate rather than a shortcut — the copy being readable is what lets a
+ * reviewer see WHAT moved instead of guessing at an unfamiliar script.
+ *
+ * It is also the only thing available. `<html dir>` follows the chosen
+ * language, `supportedLngs` is computed from the locale directory, and there
+ * is no `ar.json` yet — so no reader can select their way to `dir="rtl"` and
+ * the harness sets the attribute the language would have set. The spec
+ * re-reads it after the capture for that reason: an attribute set from outside
+ * the app is one the app could put back, and an LTR picture filed under an RTL
+ * name is a baseline that agrees with itself forever.
+ */
+type VisualDirection = 'rtl';
+
 export interface VisualScreen {
   /**
    * Baseline file stem. Renaming one orphans its PNG, which is why
@@ -81,6 +101,15 @@ export interface VisualScreen {
   route: string;
   /** Defaults to `seeded`; see `VisualSession`. */
   session?: VisualSession;
+  /**
+   * Photograph this screen with `<html dir="rtl">`; see `VisualDirection`.
+   *
+   * A screen with an RTL variant is declared TWICE — once without this and
+   * once with it — because the pair is the artefact. One picture of a
+   * mirrored layout says nothing about whether it mirrored; two say what
+   * moved.
+   */
+  dir?: VisualDirection;
   viewport: VisualViewport;
   /**
    * Viewport height, in CSS pixels, for screens taller than the device.
@@ -210,5 +239,53 @@ export const VISUAL_SCREENS: readonly VisualScreen[] = [
       'The only twelve-field form in the product, and forms are where duplicated or misplaced ' +
       'actions show up — a second Cancel 80px from the first is a form defect. Label-to-field ' +
       'alignment, control sizing and the disabled-submit affordance are decided here too.',
+  },
+  // --- the RTL pass (SC-760) -------------------------------------------------
+  //
+  // Three screens rather than eight, chosen so that between them they cover
+  // every category the ticket names — nav, tables, charts and the sheet — and
+  // so that a reviewer has a bounded set of image pairs to actually look at.
+  // A mirrored baseline nobody reviews is worth less than none, for the same
+  // reason `screens.ts` keeps the LTR list short.
+  {
+    name: 'kitchen-sink-desktop-rtl',
+    route: '/kitchen-sink',
+    viewport: 'desktop',
+    height: 5500,
+    dir: 'rtl',
+    why:
+      'The highest-value RTL shot in the product, and the reason is the same one that makes it ' +
+      'the highest-value LTR shot: it renders every @scani/ui primitive at once, with no network ' +
+      'data behind any of it. SC-760 converted 166 physical utilities to logical ones across the ' +
+      'design system, and the ones that matter are all here — the alert whose icon is absolutely ' +
+      'positioned against its text, the select whose check indicator sits at the leading edge, ' +
+      'the table whose numeric columns align to the trailing one. A logical utility that is ' +
+      'wrong is not a crash and not a type error; it is a control whose padding is on the ' +
+      'opposite side, which is visible here and nowhere else.',
+  },
+  {
+    name: 'home-phone-rtl',
+    route: '/',
+    viewport: 'phone',
+    height: 1700,
+    dir: 'rtl',
+    why:
+      'The shell, mirrored — the tab bar, the header and the six home blocks, at the width where ' +
+      'the layout has least room to absorb a mistake. It is also the one screen in this list ' +
+      'with a chart in it, and a chart is drawn from coordinates rather than from utilities, so ' +
+      'it is where mirroring is most likely to be INCOMPLETE rather than wrong: the frame and ' +
+      'the axis follow the document, the plotted series does not. The pair is what shows that.',
+  },
+  {
+    name: 'holdings-desktop-rtl',
+    route: '/holdings',
+    viewport: 'desktop',
+    dir: 'rtl',
+    institutionMark: true,
+    why:
+      'The densest table in the product, in the sidebar shell. Two things are decided here and ' +
+      'nowhere else: that the sidebar moves to the trailing edge, and that a numeric column ' +
+      'stays readable when the axis it aligns against reverses. A figure column that follows ' +
+      'the text direction is a table of numbers nobody can scan.',
   },
 ];
