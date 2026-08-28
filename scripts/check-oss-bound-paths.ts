@@ -640,19 +640,27 @@ function main(allowNewFiles: boolean, source: PathSource = { kind: 'staged' }): 
     // of private-only source is what recruited two people into bypassing this
     // guard (SC-639). When the flag cannot help, the message must say so
     // rather than leave the reader to discover it by trying.
+    // The remedy has to be one the reader can RUN, and that differs by source
+    // (SC-813). `git restore --staged` is the fix for an index and is
+    // meaningless advice on a push, where the path is already inside a commit.
+    // Printing it there is the same defect this check exists to prevent, one
+    // level up: a confident instruction that cannot be followed.
+    const remedy =
+      source.kind === 'given'
+        ? '`git rebase -i` the commit that added them out, or drop the path and re-commit'
+        : '`git restore --staged` them';
     if (refused.some((v) => v.kind === 'private-only')) {
       console.error(
-        '  The paths above are private source, and OSS_ALLOW_NEW_FILES=1 does NOT\n' +
-          '  admit them — it is scoped to files absent from both repos. `git restore\n' +
-          '  --staged` them; if one genuinely belongs upstream, land it there first.\n' +
-          '  See SC-569.'
+        `  The paths above are private source, and OSS_ALLOW_NEW_FILES=1 does NOT\n` +
+          `  admit them — it is scoped to files absent from both repos. ${remedy};\n` +
+          `  if one genuinely belongs upstream, land it there first. See SC-569.`
       );
     } else {
       console.error(
-        '  This branch is bound for MGrin/scani-oss. If these are genuinely new\n' +
-          '  shared files, re-run with OSS_ALLOW_NEW_FILES=1 — it admits only files\n' +
-          '  absent from both repos, never private source. If they are build residue\n' +
-          '  left by the checkout, `git restore --staged` them — see SC-569.'
+        `  This branch is bound for MGrin/scani-oss. If these are genuinely new\n` +
+          `  shared files, re-run with OSS_ALLOW_NEW_FILES=1 — it admits only files\n` +
+          `  absent from both repos, never private source. If they are build residue\n` +
+          `  left by the checkout, ${remedy} — see SC-569.`
       );
     }
     return EXIT_REFUSED;
