@@ -295,25 +295,57 @@ describe('BalanceGapList — the date follows the CHOSEN language (SC-762)', () 
    * SC-175 exactly. Only a render shows that, because the string is assembled
    * from a key and two arguments and no one of the three is wrong on its own.
    *
-   * Two arms that must DIFFER. An equality assertion on one language passes on
-   * a card that ignores language entirely — both arms would then print the
-   * runtime's `5/17/2026` and agree with each other.
+   * ## Why this asserts a PROPERTY and not the Russian text
+   *
+   * The first cut pinned the exact rendering and upstream CI failed on it:
+   *
+   *     this machine   Between 17 мая 2026 г. and 27 июня 2026 г.
+   *     CI             Between 17 мая 2026 г. and 27 июн. 2026 г.
+   *
+   * Both are Russian and the fix works in both — **the two CLDR builds disagree
+   * about the abbreviated month.** Pinning the literal tested this machine's ICU
+   * rather than the behaviour, the same class as slice 1's finding that `en-XX`
+   * region coverage differs between Bun and Chromium.
+   *
+   * Note which date exposed it: `17 мая 2026 г.` is IDENTICAL in both builds. A
+   * fixture using only May would have been green on every runtime with the
+   * fragility intact, so the two-date fixture is why this surfaced — and it was
+   * not chosen for that reason.
+   *
+   * The frame stays English on purpose: only `en.json` is preloaded here, so
+   * `t()` returns English while `formatDate` follows the chosen language. That
+   * separation is the point — it isolates FORMATTING from TRANSLATION, and the
+   * defect was formatting.
    */
-  test.each([
-    ['en', '17 May 2026', '27 Jun 2026'],
-    ['ru', '17 мая 2026 г.', '27 июня 2026 г.'],
-  ])('with %s selected the gap reads %s → %s', (language, from, to) => {
-    setFormatLocale(language);
-    const text = textOf(render());
-    expect(text).toContain(from);
-    expect(text).toContain(to);
+  const between = (text: string): string => text.match(/Between .*?(?=↓)/)?.[0] ?? '';
+
+  test('English renders the month-named form the whole card already uses', () => {
+    setFormatLocale('en');
+    // The deliberate English change this ticket ships, and the reason for it:
+    // `5/17/2026` is 5 July or 7 May depending on which line you read it on.
+    expect(between(textOf(render()))).toBe('Between 17 May 2026 and 27 Jun 2026');
+  });
+
+  test('choosing Russian changes the date, and changes it into Russian', () => {
+    setFormatLocale('en');
+    const english = between(textOf(render()));
+    setFormatLocale('ru');
+    const russian = between(textOf(render()));
+
+    // DIFFERS is the property — an equality assertion on one language passes on
+    // a card that ignores language entirely, because both arms then print the
+    // runtime's `5/17/2026` and agree with each other.
+    expect(russian).not.toBe(english);
+    // …and differing is not enough on its own: this says it actually localised.
+    // Day then a Cyrillic month, which matches `мая` and `июн.` alike, so it
+    // holds across CLDR builds that disagree about abbreviation.
+    expect(russian).toMatch(/Between \d+ [а-яё]/i);
   });
 
   test('and never the runtime’s numeric order, whichever language is chosen', () => {
     // The must-be-ABSENT arm, and it is the one that names the defect: `5/17/2026`
     // is what a bare `toLocaleDateString()` printed on this box, on a card whose
-    // every other date reads `17 May 2026`. Month-named is the whole of SC-175 —
-    // `7/5/2026` is 5 July or 7 May depending on which line you read it on.
+    // every other date reads `17 May 2026`.
     for (const language of ['en', 'ru']) {
       setFormatLocale(language);
       expect(textOf(render())).not.toContain('5/17/2026');
