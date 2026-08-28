@@ -1,0 +1,2410 @@
+{
+  "v3": {
+    "shell": {
+      "demo": {
+        "banner": "デモ — 架空の人物のサンプルデータです。読み取り専用で、毎日リセットされます。",
+        "signUp": "自分のアカウントを作成"
+      },
+      "tabBar": {
+        "landmark": "メイン",
+        "moreWithReview_other": "その他 — {{count}}件が確認待ちです"
+      },
+      "sidebar": {
+        "landmark": "サイドバー"
+      },
+      "moreDrawer": {
+        "description": "タブバーに収まらないものすべてです。ハンドルを上に引くと一覧が全部表示されます。"
+      }
+    },
+    "common": {
+      "convertedTotal": {
+        "includes": "本日のレートで換算した <amounts></amounts> を含みます",
+        "includesStale": "{{date}} 時点のレートで換算した <amounts></amounts> を含みます",
+        "notIncluded": "未算入: <amounts></amounts> — {{currencies}} の最近のレートがありません。",
+        "working": "合計を計算しています",
+        "noTotal": "合計なし — 本日のレートを読み込めませんでした",
+        "ratesUnavailable": "未算入: <amounts></amounts> — 本日のレートを読み込めなかったため、この数値は不完全です。"
+      },
+      "convertedFigure": {
+        "moreCurrencies_other": "{{count}}通貨が未換算",
+        "working": "この数値を計算しています",
+        "unavailableSpoken": "<value/> は未換算 — 本日のレートを読み込めませんでした",
+        "unavailableSpokenMany_other": "{{count}}通貨が未換算 — 本日のレートを読み込めませんでした",
+        "unconvertedSpoken": "<value/> は未換算 — 最近のレートがありません",
+        "unconvertedSpokenMany_other": "{{count}}通貨が未換算 — 最近のレートがありません",
+        "unconvertedSeen": "<value/> 未換算"
+      },
+      "baseEquivalent": {
+        "seen": "≈ <value/>",
+        "seenStale": "≈ <value/> · 古いレート",
+        "spoken": "約 <value/>",
+        "spokenStale": "古いレートで約 <value/>"
+      },
+      "pullToRefresh": {
+        "refreshing": "更新しています"
+      },
+      "errorBoundary": {
+        "goHome": "v3のホームへ"
+      },
+      "action": {
+        "seeAll": "すべて見る"
+      },
+      "unknownVendor": "取引先不明",
+      "openRecord": "{{name}} — 開く",
+      "listAnd": "{{first}} と {{second}}",
+      "listSemicolon": "{{first}}、{{second}}",
+      "cannotBeUndone": "この操作は取り消せません。",
+      "relative": {
+        "justNow": "たった今",
+        "minutes_other": "{{count, number}}分前",
+        "hours_other": "{{count, number}}時間前",
+        "days_other": "{{count, number}}日前"
+      }
+    },
+    "notFound": {
+      "title": "このページは存在しません",
+      "body": "指定されたアドレスにあたるものはScaniにありません。リンクが古いか、アドレスに誤りがある可能性があります。",
+      "goHome": "ホームへ"
+    },
+    "home": {
+      "loadingLabel": "ポートフォリオ",
+      "empty": {
+        "title": "まだ何も記録されていません",
+        "body": "残高画面のスクリーンショットが1枚あれば十分です。取引所でも銀行でも証券会社でもかまいません。CSVや明細のエクスポートでも大丈夫で、どこにもログインする必要はありません。",
+        "action": "スクリーンショットやファイルをアップロード",
+        "secondaryAction": "他の方法を選ぶ",
+        "importing": {
+          "title": "取り込みを実行中です",
+          "body": "そこから保有資産を読み取っています。この画面を離れても処理は続き、完了するとこのページに反映されます。",
+          "action": "進捗を見る"
+        }
+      },
+      "disclosure": {
+        "showLess": "表示を減らす",
+        "show": "{{label}}を表示",
+        "theOtherN_other": "残りの{{count}}件",
+        "theNInOther_other": "「その他」の{{count}}件"
+      },
+      "attentionRow": {
+        "needsReview_other": "{{count}}件が確認待ちです"
+      },
+      "topHoldings": {
+        "title": "主な保有資産",
+        "empty": "価格が付いたものはまだありません。"
+      },
+      "tape": {
+        "noValue": "評価額なし"
+      },
+      "groups": {
+        "title": "グループ",
+        "openGroup": "{{name}} — グループを開く",
+        "empty": "空"
+      },
+      "vaults": {
+        "title": "貯蓄目標",
+        "progress": "{{name}}: 目標の{{percent}}%",
+        "ofTarget": "／ <target></target>"
+      },
+      "allocation": {
+        "title": "資産配分",
+        "cutBy": "配分の切り口",
+        "loadingLabel": "資産配分",
+        "empty": "この切り口で価格が付いたものはまだありません。",
+        "barLabel": "{{dimension}}別の資産配分",
+        "dimension": {
+          "tokenType": "種類",
+          "institution": "金融機関",
+          "account": "口座",
+          "group": "グループ"
+        }
+      },
+      "upcoming": {
+        "title": "今後の支払",
+        "empty_other": "今後{{count}}日間に期日の予定はありません。",
+        "addPayment": "支払を追加",
+        "incomeExpected_other": "見込み収入（今後{{count}}日間）"
+      },
+      "metric": {
+        "netWorth": "純資産",
+        "pnl": "損益",
+        "pnlFull": "損益"
+      },
+      "period": {
+        "label7d": "1週",
+        "suffix7d": "7日",
+        "label30d": "1か月",
+        "suffix30d": "30日",
+        "label90d": "3か月",
+        "suffix90d": "90日",
+        "label180d": "6か月",
+        "suffix180d": "6か月",
+        "label365d": "1年",
+        "suffix365d": "1年"
+      },
+      "hero": {
+        "pnlOverPeriod": "損益 · {{period}}",
+        "vsPeriod": "{{period}}比",
+        "chartLabel": "直近{{period}}の{{metric}}",
+        "choosePlot": "表示する指標を選ぶ",
+        "changePeriod": "期間を変更",
+        "chartFailed": "チャートを読み込めませんでした。上の数値は最後に取得できたものです。",
+        "changeUnavailable": "この期間の変動を読み込めませんでした",
+        "changePending": "この期間の変動を計算しています",
+        "pnlNotComputed": "この期間の損益はまだ計算されていません",
+        "noHistory": "この期間の履歴はまだありません",
+        "noMeasurementSince": "{{date}} 以降の計測がありません。最後の点は集計済みの1日ではなく、本日時点のリアルタイムの合計です。",
+        "retry": "再試行",
+        "realized": "実現",
+        "unrealized": "未実現"
+      },
+      "quality": {
+        "allPriced_other": "{{count}}件の保有資産すべてに価格あり",
+        "partlyPriced": "{{percent}}%に価格あり — 価格を付けられる{{priceable}}件のうち{{priced}}件",
+        "withUnpriceable_other": "{{fraction}} · {{count}}件は価格を付けられません",
+        "staleQuotes_other": "{{count}}件は価格が古いままです",
+        "noBasis_other": "{{count}}件は取得原価がありません（利益は上限値です）",
+        "unreviewedTransfers_other": "実現損益は未確定の送金{{count}}件を除いています"
+      },
+      "dueIn": {
+        "today": "本日",
+        "tomorrow": "明日",
+        "days_other": "{{count}}日後",
+        "weeks_other": "{{count}}週間後",
+        "months_other": "{{count}}か月後"
+      },
+      "historyExport": {
+        "scopeWindow": "この{{period}}の期間",
+        "scopeDays_other": "{{count}}日間",
+        "scopeAll": "保存されているすべて",
+        "scopeAllDetail": "最長6年分",
+        "emptyTitle": "エクスポートするものがありません",
+        "emptyBody": "この期間に計測された履歴はまだありません。",
+        "subject": "純資産の推移",
+        "sheetSubject": "純資産の推移",
+        "currency": "通貨",
+        "resolution": "粒度",
+        "oneRowPerDay": "1日1行",
+        "days_other": "{{count}}日間",
+        "pending": "純資産の推移をエクスポートしています",
+        "trigger": "純資産の推移をエクスポート",
+        "action": "推移をエクスポート"
+      },
+      "runway": {
+        "label": "資金の持続"
+      }
+    },
+    "money": {
+      "upcoming": {
+        "overdueTotal_other": "支払期日超過（{{count}}件）",
+        "noneAhead_other": "今後{{count}}日間に期日の予定はありません。",
+        "seeRecurring": "定期支払を見る",
+        "addPayment": "支払を追加",
+        "billsCommitted_other": "確定した支払（今後{{count}}日間）",
+        "row": "{{vendor}}、期日 {{date}}",
+        "label": "今後の支払"
+      },
+      "segments": {
+        "upcoming": "今後の予定",
+        "recurring": "定期",
+        "vendors": "取引先",
+        "forecast": "予測"
+      },
+      "overdue": {
+        "unknown": "期日超過",
+        "today": "本日が期日",
+        "byDays_other": "{{count}}日超過"
+      },
+      "direction": {
+        "income": "収入",
+        "bill": "支払"
+      },
+      "cadence": {
+        "every_week_other": "{{count}}週間ごと",
+        "every_month_other": "{{count}}か月ごと",
+        "every_quarter_other": "{{count}}四半期ごと",
+        "every_year_other": "{{count}}年ごと",
+        "everyUnknown": "{{count}} × {{unit}} ごと"
+      },
+      "endPayment": {
+        "base": "{{vendor}} への支払を {{date}} で終了します。「今後の予定」に表示されなくなり、支払済みとスキップの履歴は残ります。",
+        "checking": "これによって削除される予定日を確認しています…",
+        "noneRemoved": "それ以降に削除される予定日はありません。",
+        "removed_other": "それ以降の予定日{{count}}件が削除されます。この操作は取り消せません — 終了した支払を復活させることはScaniにはできません。",
+        "trigger": "終了",
+        "confirm": "この支払を終了する",
+        "ended": "支払を終了しました",
+        "ending": "支払を終了しています"
+      },
+      "deletePayment": {
+        "checking": "{{vendor}} への支払を削除します。紐づいているものを確認しています…",
+        "blocked_other": "この支払には決済済みの日付が{{count}}件あります。実際にお金が動いた記録です。履歴まで消えてしまうため、削除できません。",
+        "wayOutEnded": "すでに終了しているため、予定は止まっており記録は残ります。",
+        "wayOutEnd": "代わりに「終了」を使ってください。予定が止まり、記録は残ります。",
+        "lead": "{{vendor}} への支払を、最初から存在しなかったものとして削除します。",
+        "clauseScheduled_other": "予定日{{count}}件",
+        "clauseSkipped_other": "スキップした{{count}}件",
+        "discarded_other": "{{clauses}}も一緒に消えます。",
+        "tail": "「今後の予定」、合計、この一覧から消えます。この支払が実際にあったのなら、代わりに「終了」を使ってください。そうすれば記録が残ります。この操作は取り消せません。",
+        "trigger": "削除",
+        "confirmEnd": "この支払を終了する",
+        "confirmDelete": "この支払を削除する",
+        "deleted": "支払を削除しました"
+      },
+      "deleteVendor": {
+        "checking": "「{{vendor}}」を削除します。紐づいているものを確認しています…",
+        "blocked_other": "「{{vendor}}」には支払が{{count}}件紐づいており、削除するとその支払と決済済みの記録もすべて失われます。先にそれらを終了または削除するか、「{{vendor}}」を本来の取引先に統合してください。",
+        "lead": "「{{vendor}}」を削除します。この取引先との支払や受取はありません。",
+        "alsoAliases_other": "この取引先の別名{{count}}件も一緒に消えます",
+        "alsoExtractions_other": "読み取り済みの請求書{{count}}件は記録として残りますが、この取引先との紐づけは失われます",
+        "alsoFrame": "{{clauses}}。",
+        "trigger": "削除",
+        "confirm": "この取引先を削除する",
+        "deleted": "{{vendor}} を削除しました"
+      },
+      "mergeVendor": {
+        "base": "「{{duplicate}}」を削除し、「{{survivor}}」を残します。",
+        "checking": "移動する内容を確認しています…",
+        "nothingMoves": "「{{duplicate}}」には何も紐づいていないため、移動するものはありません。この操作は取り消せません。",
+        "clausePayments_other": "支払{{count}}件",
+        "clauseAliases_other": "別名{{count}}件",
+        "moves_other": "{{clauses}}が「{{survivor}}」に移ります。この操作は取り消せません。",
+        "pickOne": "「{{vendor}}」に統合する重複を選んでください。この記録が残り、選んだほうが削除されます。",
+        "trigger": "重複を統合",
+        "confirmNamed": "{{vendor}} を統合する",
+        "confirm": "統合",
+        "merged": "取引先を統合しました",
+        "noCandidates": "統合できる取引先が他にありません"
+      },
+      "page": {
+        "viewSwitcher": "収支の表示",
+        "title": "収支",
+        "newVendor": "取引先を追加",
+        "addPayment": "支払を追加"
+      },
+      "field": {
+        "direction": "区分"
+      },
+      "paymentForm": {
+        "backToPayment": "支払に戻る",
+        "allRecurring": "すべての定期支払",
+        "titleEdit": "支払を編集",
+        "titleNew": "新しい定期支払",
+        "intro": "支払または定期的な収入です。取引が届くたびに照合されます。",
+        "suggestedFrom": "{{vendor}} の請求書から入力しました。",
+        "suggestedFromNumbered": "{{vendor}} の請求書 #{{number}} から入力しました。",
+        "cadenceCaveat": "請求書1枚では繰り返しの頻度までは分かりません。保存前に予定を確認してください。",
+        "extractionGone": "その請求書はすでに確認待ちではないため、内容を引き継げませんでした。ご自身で入力するか、「確認」から書類を開き直してください。",
+        "missingTitle": "その支払はここにありません",
+        "missingBody": "終了して削除されたか、リンクが古い可能性があります。",
+        "sectionWho": "相手",
+        "sectionWhat": "内容",
+        "sectionWhen": "時期",
+        "sectionOptional": "任意",
+        "directionIn": "入金",
+        "directionOut": "出金",
+        "amountIs": "金額は",
+        "amountIsVariableHint": "実際の金額は、その都度決済するときに入力します。",
+        "amountIsQuestion": "金額は固定ですか？",
+        "kindFixed": "毎回同じ",
+        "kindVariable": "変動する",
+        "amount": "金額",
+        "estimate": "概算",
+        "estimateHint": "任意です。",
+        "repeatsEvery": "繰り返し間隔",
+        "repeatUnit": "繰り返しの単位",
+        "repeatUnitPlaceholder": "頻度は？",
+        "unitWeek": "週",
+        "unitMonth": "か月",
+        "unitQuarter": "四半期",
+        "unitYear": "年",
+        "firstDue": "最初の期日",
+        "anchorFromIssueDate": "請求書に支払期日の記載がないため、発行日を使っています。",
+        "anchorMissing": "請求書に日付が見つかりませんでした。期日を選んでください。",
+        "anchorPlaceholder": "請求書に記載なし",
+        "stopsAfter": "終了日",
+        "stopsAfterHint": "空欄にすると無期限に繰り返します。",
+        "stopsAfterPlaceholder": "なし",
+        "markPaid": "この請求書は支払済み",
+        "markPaidHint": "対象期間を決済済みとして記録するため、次に「今後の予定」に出るのはこの回ではなく次回分になります。",
+        "linkedAccount": "紐づける口座",
+        "noLinkedAccount": "紐づける口座なし",
+        "notes": "メモ",
+        "notesPlaceholder": "この支払について覚えておきたいこと",
+        "saving": "保存しています…",
+        "saveChanges": "変更を保存",
+        "create": "支払を作成",
+        "created": "支払を作成しました",
+        "createdFromInvoice": "請求書から支払を作成しました",
+        "updated": "支払を更新しました",
+        "repeatNoUnit": "請求書1枚では頻度は分かりません。この支払が届く頻度を指定してください。",
+        "repeatWeek_other": "{{count}}週間ごとに、期日の曜日を起算日として繰り返します。",
+        "repeatMonth_other": "{{count}}か月ごとに、期日の日を起算日として繰り返します。",
+        "repeatQuarter_other": "{{count}}四半期ごとに、期日の日を起算日として繰り返します。",
+        "repeatYear_other": "{{count}}年ごとに、期日の日を起算日として繰り返します。",
+        "blockers": "続けるには：{{blockers}}。",
+        "estimateFromHistory": "前回の実績から概算する",
+        "estimateFromHistoryHint": "既定ではオフです。オンにすると、この支払で最後に決済した金額を予測に使い、どの月の実績かも表示します。"
+      },
+      "status": {
+        "pause": "一時停止",
+        "resume": "再開",
+        "pauseConfirm": "この支払を一時停止する",
+        "resumeConfirm": "この支払を再開する",
+        "pauseConsequence": "一時停止中は新しい期日が作られません。その間に到来した分は、期日超過ではなくスキップとして記録されます。",
+        "resumeConsequence": "元の予定をそのまま再開します。日付は以前と同じです。過去の期日はそのまま残ります。",
+        "resumeConsequenceSince": "元の予定をそのまま再開します。日付は以前と同じです。{{date}} 以降に到来した分は、期日超過ではなくスキップとして記録されます。",
+        "paused": "支払を一時停止しました",
+        "resumed": "支払を再開しました"
+      },
+      "settle": {
+        "markReceived": "受取済みにする",
+        "markPaid": "支払済みにする",
+        "markedReceived": "受取済みにしました",
+        "markedPaid": "支払済みにしました",
+        "skipped": "この回をスキップしました",
+        "amountSettled": "決済した金額",
+        "confirm": "確定",
+        "cancel": "キャンセル",
+        "skip": "スキップ"
+      },
+      "vendorSpend": {
+        "notSubtracted": "未払額から差し引かれてはいません。これらは別々の数値です。"
+      },
+      "vendorEdit": {
+        "name": "名前",
+        "category": "カテゴリ",
+        "categoryPlaceholder": "未分類",
+        "website": "ウェブサイト",
+        "websitePlaceholder": "登録なし",
+        "edit": "編集",
+        "cancel": "キャンセル",
+        "save": "取引先を保存"
+      },
+      "vendorCreate": {
+        "placeholder": "取引先名",
+        "label": "取引先名",
+        "cancel": "キャンセル"
+      },
+      "vendorField": {
+        "label": "取引先",
+        "pendingHint": "請求書から読み取りました。まだ存在しない場合は、保存時にこの取引先を作成します。",
+        "searchPlaceholder": "取引先を検索または作成",
+        "empty": "その名前の取引先はまだありません。",
+        "didYouMean": "もしかして",
+        "typeToCreate": "名前を入力すると取引先を作成できます",
+        "sameVendor": "同じ取引先",
+        "similar": "類似",
+        "createNamed": "「{{term}}」を作成",
+        "similarNames_other": "似た名前の取引先がすでにあります:",
+        "use": "{{name}} を使う"
+      },
+      "vendorList": {
+        "uncategorised": "未分類",
+        "billsGroup": "支払",
+        "billKind": "支払",
+        "paymentCount_other": "{{count}}件の支払"
+      },
+      "vendor": {
+        "saved": "{{name}} を保存しました",
+        "created": "{{name}} を作成しました"
+      },
+      "currencyField": {
+        "label": "通貨",
+        "searchPlaceholder": "USD、EUR、BTC…",
+        "empty": "トークン一覧に該当するものがありません。"
+      },
+      "duplicatePicker": {
+        "noMatch": "「{{query}}」に一致する他の取引先はありません。",
+        "searchPlaceholder": "取引先を検索",
+        "searchLabel": "重複した取引先を検索",
+        "optionLabel": "{{vendor}} に統合する重複",
+        "intro": "削除する重複を選んでください。<survivor>{{vendor}}</survivor> に統合され、そちらが残ります。"
+      },
+      "expectedIncome": {
+        "title_other": "見込み収入（今後{{count}}日間）",
+        "unknownPayer": "支払元不明",
+        "row": "{{vendor}}、{{date}} に見込み",
+        "caption_other": "受け取る見込みの金額です。上の{{count}}日間の支払額とは相殺していません。",
+        "expected": "{{date}} に見込み",
+        "expectedLate": "{{date}} に見込み · 未受領"
+      },
+      "peek": {
+        "status": "状態",
+        "monthlyEquivalent": "月額換算",
+        "amountIs": "金額は",
+        "varies": "変動",
+        "fixed": "固定",
+        "notSet": "未設定",
+        "noAmount": "金額なし",
+        "setOnSettling": "決済時に入力",
+        "started": "開始",
+        "schedule": "予定",
+        "repeats": "繰り返し",
+        "anchorDate": "起算日",
+        "ends": "終了",
+        "never": "なし",
+        "pausedSince": "一時停止の開始",
+        "notes": "メモ",
+        "note": "メモ",
+        "edit": "編集",
+        "due": "期日",
+        "editPayment": "支払を編集",
+        "cadenceAndDirection": "{{cadence}} · {{direction}}",
+        "expectedOn": "{{date}} に見込み",
+        "expectedOnLate": "{{date}} に見込み · 未受領",
+        "dueOn": "期日 {{date}}"
+      },
+      "recurringList": {
+        "addPayment": "支払を追加"
+      },
+      "recurringSummary": {
+        "committedEachMonth": "毎月の確定額",
+        "estimatedFromHistory_other": "金額が変動する支払{{count}}件を、最後に決済した金額から概算して含めています。",
+        "notCounted_other": "金額が変動する支払{{count}}件には概算がないため、含めていません。"
+      },
+      "vendorPeek": {
+        "newVendor": "取引先を追加",
+        "seePayments_other": "支払を見る",
+        "payments": "支払",
+        "incomeFromThisVendor": "この取引先からの収入",
+        "recentIncome": "最近の収入",
+        "recentPayments": "最近の支払",
+        "details": "詳細",
+        "website": "ウェブサイト",
+        "noWebsite": "登録なし",
+        "direction": "区分",
+        "unclassified": "この取引先の支払には出金か入金かの記録がないため、月額は表示していません。",
+        "notCounted": "未算入"
+      },
+      "pending": {
+        "creatingVendor": "取引先を作成しています",
+        "creatingPayment": "支払を作成しています",
+        "updatingPayment": "支払を更新しています",
+        "deletingPayment": "支払を削除しています",
+        "deletingVendor": "取引先を削除しています",
+        "savingVendor": "取引先を保存しています",
+        "mergingVendors": "取引先を統合しています",
+        "pausingPayment": "支払を一時停止しています",
+        "resumingPayment": "支払を再開しています",
+        "updatingOccurrence": "支払の回次を更新しています"
+      },
+      "thisPayment": "この支払",
+      "group": {
+        "overdue": "期日超過"
+      },
+      "blocker": {
+        "enterAmount": "金額を入力",
+        "estimateAboveZero": "概算を0より大きくするか、空欄にする",
+        "chooseVendor": "取引先を選択",
+        "pickCurrency": "一覧から通貨を選択",
+        "setAnchorDate": "起算日を設定",
+        "chooseCadence": "繰り返しの頻度を選択",
+        "setRepeatCount": "有効な繰り返し回数を設定"
+      },
+      "forecast": {
+        "projectedMark": "予測",
+        "label": "キャッシュフロー予測",
+        "working": "計算しています…",
+        "runwayLabel": "持続期間",
+        "runsOutIn": "{{month}} に尽きます",
+        "lastsBeyond_other": "{{count}}か月以上もちます",
+        "netPerMonth": "収支は月あたり <value></value> です。",
+        "basis_other": "保有資産{{count}}件、<value></value> を対象としています。",
+        "basisIlliquid_other": "不動産・非公開資産の{{count}}件、<value></value> は流動性がないため除外しています。",
+        "basisUnpriceable_other": "保有資産{{count}}件は価格がないため算入していません。",
+        "horizonSwitcher": "予測期間",
+        "horizonOption_other": "{{count}}か月",
+        "balanceAt": "{{month}} 時点の残高",
+        "chartLabel_other": "今後{{count}}か月の予測残高",
+        "goingOut_other": "支出（今後{{count}}か月）",
+        "comingIn_other": "収入（今後{{count}}か月）",
+        "notCounted": "この予測に含まれないもの",
+        "unprojectable_other": "金額が変動する支払{{count}}件には概算がないため、予測に反映していません。",
+        "overdueExcluded_other": "{{count}}件はすでに期日を超過しており、この推移には含まれていません。",
+        "seeRecurring": "定期支払を見る",
+        "addPayment": "支払を追加",
+        "affordTitle": "これは買えますか？",
+        "affordAmount": "金額",
+        "affordWhen": "時期",
+        "affordAsk": "確認する",
+        "affordClear": "クリア",
+        "affordLowest": "残高の最低点",
+        "affordLowestIn": "{{month}}",
+        "affordLowestNow": "本日、何も動く前",
+        "affordStaysPositive": "この期間を通じて残高はゼロを下回りません。",
+        "affordGoesNegative": "その時点で残高がゼロを下回ります。",
+        "affordCostsMonths_other": "持続期間が{{count}}か月短くなります。",
+        "affordRunwayAfter": "その後、資金は {{month}} に尽きます。",
+        "affordRunwayStillBeyond_other": "それでも{{count}}か月以上もちます。",
+        "observedRunway_other": "最近の支出ペースで約{{count}}か月",
+        "ofWhichCommitted": "その支出の約{{percent}}%は確定分です",
+        "committedTitle": "確定している分",
+        "committedNote": "定期支払の一覧だけを見たものです。何がいつ予定されているかであって、実際の支出額を表すものではありません。",
+        "observedBasis": "{{from}} から {{to}} までの完了した{{count}}か月の平均: 月あたり <value></value>。",
+        "observedSpread": "その各月は <min></min> から <max></max> の幅があり、中央の月は <median></median> でした。",
+        "observedNotCounted_other": "{{count}}件の出金は算入していません。未回答か、Scaniが把握できない先へ動いたものです。",
+        "affordRemaining": "その後に残る額",
+        "affordRunwayAfterObserved_other": "最近の支出ペースで約{{count}}か月です。",
+        "affordCannot": "流動性のある残高を超えています。",
+        "affordNoSchedule": "平均ペースに対する計算のため、今買う場合と年内の後で買う場合を区別できません。",
+        "provenanceTitle": "算入した資金を誰が分類したか",
+        "provenanceUser": "その金額の{{percent}}%は、あなたが答えた内容に基づいています。",
+        "provenanceAutomated": "{{percent}}%は、内容を確認できる名前の付いたルールが判断しました。",
+        "provenanceUnattributed": "{{percent}}%は、誰が何を判断したかの記録がありません。",
+        "answerTitle": "実際の支出はこの額ですか？",
+        "answerConfirm": "はい、その通りです",
+        "answerOverride": "自分の数値を使う",
+        "answerCancel": "キャンセル",
+        "answerSave": "保存",
+        "answerAmountLabel": "実際の月あたりの支出額",
+        "answerConfirmed": "{{date}} に確認済みです。",
+        "answerConfirmedMoved": "{{date}} に <was/> で確認しました。現在は <now/> です。",
+        "answerOverrideActive": "{{date}} に設定した月あたり <amount/> を使用しています。計測値は <measured/> です。",
+        "answerRevert": "計測値に戻す",
+        "answerCurrencyChanged": "{{date}} の回答は別の通貨で入力されたため、現在は適用されません。",
+        "answerFailed": "保存できませんでした。",
+        "estimatedMark": "概算",
+        "estimatedFrom": "{{month}} の実績から",
+        "estimatedFromAmount": "{{month}} の実績から · <value></value>",
+        "estimatedTitle": "実績からの概算",
+        "estimatedCount_other": "金額が変動する支払{{count}}件は、誰かが入力した概算ではなく、最後に決済した金額で計算しています。",
+        "couldEstimate_other": "そのうち{{count}}件は過去に決済があるため、その金額を代わりに使えます。",
+        "useLastSettled_other": "最後に決済した金額を使う",
+        "stopEstimating_other": "概算をやめる"
+      }
+    },
+    "groups": {
+      "coverage": {
+        "empty": "このグループには本日値が付いたものがありません。",
+        "counted_other": "この合計の元になっている保有資産{{count}}件の、本日時点の評価額です。",
+        "countedAll_other": "下に並ぶ保有資産{{count}}件すべてを含みます。",
+        "countedOf_other": "下に並ぶ保有資産{{listed}}件のうち{{count}}件を含みます。"
+      },
+      "accountNote": "ここに口座を入れると、その口座が保有するものと、後から入ってくるものがすべて含まれます。両方から数えられる保有資産も、合計では一度だけ数えます。",
+      "inactiveNote_other": "うち{{count}}件は無効です。グループには残り下にも表示されますが、この合計には含まれません。",
+      "unpriced": {
+        "listAll": "{{head}} と {{last}}",
+        "listMore": "{{head}} ほか{{count}}件",
+        "note_other": "{{named}}は本日価格を付けられなかったため、この合計に含まれていません。"
+      },
+      "createFirst": "最初のグループを作成",
+      "assign": {
+        "title": "グループを割り当て",
+        "description": "ここでチェックしたグループが{{entities}}に適用されます。全員がすでに共有しているわけではないグループは一覧に出ず、そのまま変更されません。",
+        "holdingCount_other": "{{count}}件の保有資産",
+        "accountCount_other": "{{count}}件の口座",
+        "save": "グループを保存",
+        "saving": "保存しています…",
+        "newGroup": "新しいグループ",
+        "loading": "グループを読み込んでいます",
+        "stillLoading": "グループの読み込みを待つ",
+        "firstTitle": "最初のグループを作成",
+        "firstDescription": "グループはまだありません。これを作成して{{entities}}に適用します。",
+        "createAndAssign": "作成して割り当て",
+        "creating": "作成しています…",
+        "needName": "グループ名を入力",
+        "subject": "これらのグループ",
+        "groupSubject": "このグループ",
+        "toast": {
+          "added_other": "{{count}}件のグループに追加しました",
+          "removed_other": "{{count}}件のグループから削除しました",
+          "changed": "グループを更新しました",
+          "createdAndAssigned": "グループ「{{name}}」を作成して割り当てました"
+        }
+      },
+      "colour": {
+        "legend": "色",
+        "swatch": "色 {{color}}"
+      },
+      "detail": {
+        "toast": {
+          "updated": "グループを更新しました",
+          "updating": "グループを更新しています",
+          "deleted": "グループを削除しました",
+          "deleting": "グループを削除しています"
+        },
+        "backToGroups": "グループ",
+        "removeMember": "{{label}} を {{group}} から外す",
+        "notFound": "このグループは一覧にありません。削除されたか、リンクが古い可能性があります。",
+        "value": "評価額",
+        "inThisGroup": "このグループの中身",
+        "noun": "保有資産と口座",
+        "note": "口座ごと追加すると、後から入ってくるものも含めてグループに残ります。個別の保有資産は上の一覧から外してください。",
+        "empty": "このグループにはまだ何もありません。保有資産か口座を追加すると、ここに表示されます。",
+        "addMembers": "保有資産や口座を追加",
+        "details": "詳細",
+        "name": "名前",
+        "description": "説明",
+        "colour": "色",
+        "saveChanges": "変更を保存",
+        "discard": "破棄",
+        "needName": "保存するには：グループ名を入力してください。",
+        "dangerZone": "取り扱い注意",
+        "deleteConsequence": "「{{name}}」がすべての一覧とフィルターから消えます。中の{{members}}は削除されず、このラベルが外れるだけです。",
+        "deleteTrigger": "グループを削除",
+        "deleteCommit": "このグループを削除する"
+      },
+      "page": {
+        "title": "グループ",
+        "created": "グループ「{{name}}」を作成しました",
+        "creating": "グループを作成しています",
+        "name": "名前",
+        "newGroup": "新しいグループ",
+        "createGroup": "グループを作成",
+        "cancel": "キャンセル",
+        "namePlaceholder": "老後資金、課税対象、共同名義…",
+        "colour": "色",
+        "needName": "続けるには：グループ名を入力してください。"
+      }
+    },
+    "realizedLedger": {
+      "answerTransfers": "確認待ちの送金に回答する",
+      "portion": "1件の{{noun}}のうち {{total}} 分の {{index}}",
+      "noun": {
+        "sale": "売却",
+        "swap": "交換",
+        "withdrawal": "出金",
+        "transfer": "送金",
+        "disposal": "譲渡"
+      },
+      "verb": {
+        "sold": "売却しました",
+        "swapped": "交換しました",
+        "withdrew": "出金しました",
+        "transferredOut": "送金しました",
+        "disposed": "譲渡しました"
+      },
+      "outcome": {
+        "unpriced": "価格が見つからなかったため、損益は計上していません。取得原価は表示しています。",
+        "unreviewed": "回答待ちのため、どちらとしても損益は計上していません。",
+        "retained": "自分の管理下から出ていないとの回答があったため、何も実現していません。",
+        "awaitingPair": "この移動の片側しか取り込まれていないため、損益は計上していません。",
+        "realizedUnattributed": "ポートフォリオから出たものとして記録されているため、この損益を計上しました。誰が回答したかの記録はありません。確認キューで回答されたものではありません。",
+        "retainedUnattributed": "自分の管理下から出ていないものとして記録されているため、何も実現していません。誰が回答したかの記録はありません。"
+      },
+      "basis": {
+        "partialNote": "不完全と分かっている履歴、または鮮度の範囲外の価格に基づいています。",
+        "unknownNote": "取得の記録がないため、全額が利益として表示されています。多くの場合、取り込みが十分に過去まで遡れなかったことが原因です。",
+        "partialLabel": "取得原価が一部のみ",
+        "unknownLabel": "取得原価の記録なし"
+      },
+      "held": {
+        "sameDay": "当日",
+        "days_other": "{{count}}日間",
+        "months_other": "{{count}}か月間",
+        "years": "{{years}}年間"
+      },
+      "answer": {
+        "unattributedLabel": "回答の記録なし"
+      },
+      "valuation": {
+        "heldTokenFallback": "出ていったトークンのその日の価格で評価しています。受け取ったほうに価格履歴がないため、この交換が成立したレートを換算できませんでした。",
+        "estimatedLabel": "出ていったトークンから評価"
+      }
+    },
+    "holdings": {
+      "amountFact": {
+        "edit": "数量を編集",
+        "amount": "数量",
+        "save": "保存",
+        "belowZero": "ゼロ未満です。入力してこうなることはありません。取り消した送金が、その後に変わった残高をまたいだときに起こります。正しい数値を設定してください。"
+      },
+      "labelFact": {
+        "unnamed": "名前なし",
+        "edit": "この {{symbol}} の保有資産に名前を付ける",
+        "name": "用途名",
+        "placeholder": "貯蓄、頭金、結婚祝い…",
+        "save": "保存"
+      },
+      "deleteAction": {
+        "trigger": "削除",
+        "commit": "{{symbol}} を削除",
+        "consequence": "{{account}} の {{symbol}} が、そこに記録されたすべての取引とともに削除されます。ポートフォリオの合計から <value/> が減ります。元に戻す方法はなく、履歴を作り直すには取り込みし直すしかありません。記録を残したまま合計から外すには「無効化」を使ってください。"
+      },
+      "trendLabel": "直近{{period}}の {{symbol}} の評価額",
+      "payout": {
+        "daily": "毎日",
+        "weekdays": "平日（月〜金）",
+        "weekly": "毎週{{day}}",
+        "monthly": "毎月{{day}}日",
+        "yearly": "毎年 {{date}}",
+        "yearlyLastDay": "毎年{{month}}の末日"
+      },
+      "peek": {
+        "editPriceOf": "{{symbol}} の価格を編集",
+        "pot": "用途",
+        "interest": "利息",
+        "apy": "年利（APY）",
+        "apyEdit": "編集",
+        "apyRemove": "削除",
+        "configure": "設定",
+        "payout": "支払日",
+        "lastPayout": "前回の支払",
+        "status": "状態",
+        "active": "有効",
+        "inactive": "無効",
+        "lastUpdated": "最終更新",
+        "source": "取得元",
+        "added": "追加日",
+        "price": "価格",
+        "unpriceableNote": "このトークンの価格を提示した提供元は一度もなく、現時点で問い合わせを止めています。ゼロとして数えるのではなく、純資産から除外しています。",
+        "history": "履歴",
+        "incompleteHistory": "不完全です。最初に取り込んだ取引より前の入金が欠けているため、その日付より前の評価額は据え置かれています。",
+        "performance": "パフォーマンス",
+        "costBasis": "取得原価",
+        "gainLoss": "損益",
+        "record": "記録",
+        "groups": "グループ",
+        "in": "所属",
+        "noGroups": "グループなし",
+        "refreshing": "更新しています…",
+        "refreshPrice": "価格を更新",
+        "syncing": "同期しています…",
+        "syncBalance": "残高を同期",
+        "amount": "数量",
+        "account": "口座",
+        "type": "種類"
+      },
+      "badge": {
+        "noPrice": "価格なし",
+        "noPriceTitle": "このトークンの価格を提示した提供元は一度もなく、現時点で問い合わせを止めています。ゼロとして数えるのではなく、純資産から除外しています。",
+        "lookalike": "「{{impersonates}}」に見せかけています",
+        "lookalikeTitle": "このトークンのシンボルは、「{{impersonates}}」ではないのにそう見える文字で書かれています。隠しても何も分からないため、この行と残高はそのまま残しています。ただし、似せている対象のトークンではありません。",
+        "noPriceSpoken": "価格を取得できません",
+        "lookalikeSpoken": "{{impersonates}} に見せかけています",
+        "lookalikeExportCell": "{{symbol}}（{{impersonates}} に見せかけ）"
+      },
+      "empty": {
+        "action": "最初の保有資産を追加"
+      },
+      "bulk": {
+        "assignGroups": "グループを割り当て",
+        "deleteConsequence_other": "{{symbols}} がポートフォリオから削除され、それらに記録されたすべての取引も削除されます。この操作は取り消せません。"
+      },
+      "realized": {
+        "heading": "実現分",
+        "noGain": "損益の計上なし",
+        "lotAcquired": "<qty/> を {{date}} に取得",
+        "lotHeld": "<qty/> を {{date}} に取得 · 保有期間 {{duration}}",
+        "lotNoAcquisition": "<qty/>（取得の記録なし）",
+        "costOf": "取得原価 <value/>"
+      },
+      "apy": {
+        "removed": "利息の設定を削除しました",
+        "removing": "利息の設定を削除しています",
+        "trigger": "利息の設定を削除",
+        "consequence": "この保有資産に利息が付かなくなります。すでに記録された支払は残ります。",
+        "commit": "削除",
+        "createTitle": "利息を設定",
+        "editTitle": "利息を編集",
+        "description": "利息は支払日ごとにこの保有資産の残高に加算され、履歴で確認できる取引として記録されます。",
+        "subject": "利息の設定",
+        "rate": "年率（%）",
+        "ratePlaceholder": "4.5",
+        "frequencyLabel": "支払頻度",
+        "dayOfWeek": "曜日",
+        "month": "月",
+        "dayOfMonth": "日",
+        "dayOfMonthPlaceholder": "1〜31",
+        "needRate": "0より大きく100以下の年率を入力",
+        "needDayOfMonth": "1〜31の日を入力",
+        "shortMonths": "日数の少ない月は末日に支払われます。",
+        "pastMonthEnd": "{{month}}はそれより前に終わるため、末日に支払われます。",
+        "preview": "{{schedule}}。本日の残高では、次回の支払は約 {{amount}} {{symbol}} です。",
+        "editRestarts": "保存すると本日から予定が組み直され、次回の支払は今から最初に該当する日になります。",
+        "saveCreate": "利息の計算を開始",
+        "saveEdit": "保存",
+        "saving": "保存しています…",
+        "frequency": {
+          "daily": "毎日",
+          "weekdays": "平日ごと",
+          "weekly": "毎週",
+          "monthly": "毎月",
+          "yearly": "毎年"
+        }
+      },
+      "page": {
+        "title": "保有資産"
+      },
+      "refresh": {
+        "price": "価格を更新しています",
+        "priceFailed": "価格更新の処理が失敗しました",
+        "balance": "残高を更新しています",
+        "balanceFailed": "更新処理が失敗しました",
+        "partialTitle": "残高の更新 — 一部のみ",
+        "partial_other": "{{symbol}} は提供元から返ってきませんでした。他の{{count}}件の残高は更新されています。1分ほど待って再試行するか、これが続くようならこの口座を取り込み直してください。",
+        "oneBalance": "{{symbol}} の残高を更新しました",
+        "manyBalances_other": "この口座の残高{{count}}件を更新しました",
+        "outcome": {
+          "noPrice": "{{symbol}} の価格を持つ提供元がありませんでした。画面の数値は変わっていません。",
+          "storedWithAge": "{{symbol}} の新しい価格はありません。{{age}} のものを表示しています",
+          "stored": "{{symbol}} の新しい価格はありません。保存済みの価格のままです",
+          "updated": "{{symbol}} の価格を更新しました"
+        }
+      },
+      "summary": {
+        "value": "評価額",
+        "excludes_other": "無効な保有資産{{count}}件（<value/>）を除いています。下には引き続き表示されます。",
+        "allocation": "資産種類別の配分"
+      },
+      "status": {
+        "confirm": "{{symbol}} を{{label}}",
+        "deactivateConsequence": "{{account}} の {{symbol}} がポートフォリオの合計に算入されなくなり、<value/> が減ります。保有資産と履歴は「無効」としてここに残るため、いつでも戻せます。",
+        "activateConsequence": "{{account}} の {{symbol}} が再びポートフォリオの合計に算入され、<value/> が戻ります。",
+        "deactivateAction": "無効化",
+        "activateAction": "有効化"
+      },
+      "toast": {
+        "deleted": "保有資産を削除しました",
+        "deletingContext": "保有資産を削除しています",
+        "bulkDeleted_other": "{{count}}件の保有資産を削除しました",
+        "bulkDeletedWithFailures_other": "{{count}}件の保有資産を削除しました（{{failed}}件は失敗）",
+        "bulkDeletingContext": "保有資産を削除しています",
+        "updated": "保有資産を更新しました",
+        "updatingContext": "保有資産を更新しています"
+      },
+      "editCause": {
+        "title": "その変更は何を意味しますか？",
+        "description": "{{holding}} の残高が動きました。Scaniには、お金が動いたのか、数値を訂正したのか、残高が増えたのかを区別できません。それぞれ扱いが異なります。",
+        "option": {
+          "flow": "お金が動いた",
+          "correction": "数値の訂正",
+          "growth": "増えた"
+        },
+        "explain": {
+          "flow": "入金または出金です。利益ではなく拠出として扱われます。",
+          "correction": "前の数値が誤っていた場合です。Scaniは今何かが起きたと記録するのではなく、その期間の履歴を修正します。",
+          "growth": "利息、配当、または再評価です。これがリターンであり、手入力の残高でScaniがそれを認識できる唯一の方法です。"
+        },
+        "dateLabel": "お金が動いたのはいつですか？",
+        "destinationLabel": "どこへ行きましたか？",
+        "destination": {
+          "internal": "ここにある別の口座",
+          "left_control": "ポートフォリオから出た",
+          "untracked": "Scaniが把握できない口座"
+        },
+        "destinationExplain": {
+          "internal": "記録している別の保有資産へ移りました。移動先を選ぶと、Scaniが両側を紐づけるため、ここで実現して向こうで取得し直す形にはならず、取得原価がそのまま引き継がれます。",
+          "left_control": "使った、贈った、あるいはScaniが把握できない場所で売却した場合です。出ていった分について損益が実現します。",
+          "untracked": "Scaniがアクセスできないウォレットや口座にある、あなた自身の資産です。何も実現しません。"
+        },
+        "cancel": "キャンセル",
+        "save": "保存"
+      },
+      "amountBelow": "< {{amount}}",
+      "movement": {
+        "title": "資金の移動を記録",
+        "description": "何をしたかを入力すれば、Scaniが残高を計算します。その逆ではありません。",
+        "holdingLabel": "動いた保有資産",
+        "holdingPlaceholder": "金融機関・口座・保有資産を検索",
+        "direction": {
+          "inflow": "入金",
+          "outflow": "出金",
+          "transfer": "送金"
+        },
+        "amountLabel": "動いた額",
+        "currentBalance": "現在 {{amount}} {{symbol}}",
+        "dateLabel": "お金が動いたのはいつですか？",
+        "whereLabel": "どこへ行きましたか？",
+        "where": {
+          "left_control": {
+            "title": "使った・売った・譲った",
+            "detail": "ポートフォリオから出たため、その分の損益が実現します。"
+          },
+          "untracked": {
+            "title": "Scaniが把握できない場所へ移した",
+            "detail": "コールドウォレットや未接続の口座など、引き続きあなたの資産です。何も実現しません。"
+          },
+          "transfer": {
+            "title": "自分の別の口座へ送金した",
+            "detail": "Scaniが両側を記録して紐づけるため、後から確認を求められることはありません。"
+          }
+        },
+        "destinationTitle": "移動先",
+        "noteLabel": "メモ（任意）",
+        "cancel": "キャンセル",
+        "save": "記録する",
+        "saving": "記録しています…",
+        "recorded": "移動を記録しました",
+        "peekAction": "資金の移動を記録",
+        "holdingNoResults": "該当する保有資産はありません。",
+        "holdingAria": "保有資産",
+        "directionLabel": "起きたこと",
+        "whatFieldset": "移動の内容",
+        "busyLabel": "記録",
+        "blocker": {
+          "holding": "動いた保有資産を選択",
+          "amount": "動いた額を入力",
+          "where": "資金の行き先を指定"
+        }
+      }
+    },
+    "export": {
+      "sheet": {
+        "accounts": "口座",
+        "holdings": "保有資産",
+        "transactions": "取引",
+        "vendors": "取引先",
+        "payments": "支払",
+        "occurrences": "支払の回次",
+        "groups": "グループ",
+        "groupMembers": "グループの構成",
+        "vaults": "貯蓄目標",
+        "vaultHoldings": "貯蓄目標の保有資産",
+        "documents": "書類",
+        "history": "純資産の推移",
+        "netWorth": "純資産"
+      },
+      "column": {
+        "account": "口座",
+        "institution": "金融機関",
+        "accountType": "種類",
+        "description": "説明",
+        "hidden": "非表示",
+        "active": "有効",
+        "added": "追加日",
+        "id": "ID",
+        "symbol": "シンボル",
+        "token": "トークン",
+        "balance": "残高",
+        "source": "取得元",
+        "lastUpdated": "最終更新",
+        "occurred": "発生日",
+        "transactionKind": "種類",
+        "quantity": "数量",
+        "priceNative": "価格（現地通貨）",
+        "counterQuantity": "相手方数量",
+        "fee": "手数料",
+        "counterparty": "相手方",
+        "externalId": "外部ID",
+        "vendor": "取引先",
+        "category": "カテゴリ",
+        "website": "ウェブサイト",
+        "direction": "区分",
+        "paymentKind": "種類",
+        "amount": "金額",
+        "every": "間隔",
+        "starting": "開始",
+        "ending": "終了",
+        "status": "状態",
+        "origin": "由来",
+        "notes": "メモ",
+        "due": "期日",
+        "expected": "予定額",
+        "actual": "実績額",
+        "group": "グループ",
+        "memberKind": "構成要素の種類",
+        "member": "構成要素",
+        "vault": "貯蓄目標",
+        "saved": "貯蓄額",
+        "target": "目標額",
+        "holding": "保有資産",
+        "share": "割合",
+        "file": "ファイル",
+        "documentKind": "種類",
+        "mimeType": "形式",
+        "bytes": "バイト数",
+        "classification": "分類",
+        "uploaded": "アップロード日",
+        "date": "日付",
+        "netWorth": "純資産",
+        "coverage": "カバレッジ",
+        "holdingsPriced": "価格のある保有資産",
+        "holdingsTotal": "保有資産の総数",
+        "holdingsUnpriceable": "価格を付けられない保有資産",
+        "holdingsStalePriced": "古い価格で評価した保有資産"
+      },
+      "value": {
+        "yes": "はい",
+        "no": "いいえ",
+        "every_week_other": "{{count}}週間",
+        "every_month_other": "{{count}}か月",
+        "every_quarter_other": "{{count}}四半期",
+        "every_year_other": "{{count}}年",
+        "everyUnknown": "{{count}} × {{unit}}"
+      },
+      "provenance": {
+        "subject": "アカウント全体",
+        "scope": "{{holdings}}、{{transactions}}、{{history}}",
+        "scopeHoldings_other": "保有資産{{count}}件",
+        "scopeTransactions_other": "取引{{count}}件",
+        "scopeHistory_other": "履歴{{count}}日分",
+        "accountLabel": "アカウント",
+        "notIncludedLabel": "含まれないもの",
+        "notIncludedValue": "取引所・証券会社の認証情報、セッション、アップロードしたファイルの中身"
+      }
+    },
+    "settings": {
+      "account": {
+        "deleteIntro": "データを削除すると、すべての口座、保有資産、ウォレット、連携の認証情報、グループ、貯蓄目標が削除されます。ログイン自体は空の状態で残ります。",
+        "deleting": "削除しています…",
+        "deleteTrigger": "自分のデータをすべて削除",
+        "deleteConfirm": "すべて削除する",
+        "deleteConsequence": "すべての口座、保有資産、ウォレット、連携の認証情報、グループ、貯蓄目標が削除されます。ログインは中身のない状態で残ります。この操作は取り消せません。",
+        "deleteInFlight": "データを削除しています。",
+        "deleted": "すべてのデータを削除しました",
+        "deleteFailed": "削除に失敗しました"
+      },
+      "export": {
+        "title": "自分のデータ",
+        "subject": "アカウント全体",
+        "workbook": "Excelブック",
+        "workbookDetail": "保有資産・取引・支払・推移を、それぞれ1枚のシートに",
+        "jsonDetail": "APIが返すそのままの形式で、すべての項目を出力",
+        "scopeAll": "このアカウントのすべて",
+        "exportJson": "JSONでエクスポート",
+        "exportWorkbook": "ブックをエクスポート",
+        "json": "JSON",
+        "intro": "このアカウントのすべての記録を1つのファイルにまとめます。保有資産、取引履歴全体、支払、グループ、貯蓄目標、純資産の推移が含まれます。取引所・証券会社の鍵は記録ではなく認証情報のため、含まれません。",
+        "trigger": "すべてエクスポート"
+      },
+      "maintenance": {
+        "title": "ポートフォリオの履歴",
+        "rebuild": "ポートフォリオの履歴を再構築",
+        "rebuilt": "ポートフォリオの履歴を再構築しました",
+        "rebuildFailed": "再構築に失敗しました",
+        "intro": "純資産と損益のチャートの元になる、キャッシュされた日次の評価額を再構築します。毎晩実行される365日分の再計算と同じものです。",
+        "rebuilding": "再構築しています…"
+      },
+      "notifications": {
+        "title": "支払のリマインダー",
+        "intro": "支払期日の前日、17時ごろにこの端末へ通知を1件送ります。件数と合計額をお知らせします。予定のない日には何も送りません。",
+        "ready": "この端末ではリマインダーはオフです。",
+        "enabled": "この端末ではリマインダーはオンです。",
+        "enable": "リマインダーをオンにする",
+        "disable": "リマインダーをオフにする",
+        "denied": "このブラウザがScaniの通知をブロックしています。ブラウザまたはシステムの設定で許可してから、もう一度お試しください。",
+        "iosNeedsInstall": "iPhoneとiPadでは、Scaniをホーム画面に追加してはじめて通知が届きます。共有メニューを開いて「ホーム画面に追加」を選び、そこからオンにしてください。",
+        "unsupported": "このブラウザは通知を受け取れません。",
+        "serverUnconfigured": "このサーバーには通知用の鍵が設定されていないため、まだリマインダーを送れません。",
+        "sendTest": "テスト通知を送る",
+        "testNoDevices": "登録されている端末がないため、送信先がありませんでした。",
+        "testSentHere": "この端末に送信しました。数秒で表示されるはずです。表示されない場合は、端末の設定でScaniの通知が許可されているか確認してください。",
+        "testSentOther": "リマインダーをオンにしている別の端末に送信しました。",
+        "testGoneHere": "この端末の登録は期限切れだったため削除しました。ここでリマインダーをオフにしてからオンに戻すと、新しく登録されます。",
+        "testGoneOther": "別の端末の登録が期限切れだったため削除しました。その端末で改めてリマインダーをオンにしてください。",
+        "testVapidMismatch": "プッシュサービスがこの通知を拒否しました（403）。この端末が登録した鍵と、サーバーが署名に使う鍵が一致していないため、修正されるまでリマインダーは届きません。これは私たちの側の問題です。",
+        "testFailed": "プッシュサービスがこの通知を拒否しました（HTTP {{statusCode}}）。登録自体は有効なままです。",
+        "testFailedNoCode": "プッシュサービスに接続できませんでした。登録自体は有効なままです。"
+      },
+      "profile": {
+        "emailImmutable": "これを変更する機能はまだアプリにありません。",
+        "baseCurrencyHint": "アプリ内のすべての数値がこの通貨に換算されます。"
+      },
+      "sessions": {
+        "title": "端末",
+        "subject": "お使いの端末",
+        "intro": "現在このアカウントでサインインしている場所の一覧です。心当たりのないものは終了してください。",
+        "empty": "有効なセッションはありません。",
+        "revoked": "セッションを終了しました",
+        "signedOutOthers": "他のすべての端末からサインアウトしました",
+        "signOutOthers": "他のすべての端末からサインアウト（{{count}}）",
+        "signOutOthersConfirm_other": "{{count}}台の端末からサインアウトする",
+        "signOutOthersConsequence_other": "この端末以外のすべてがサインアウトされます。心当たりのあるものも含め、{{count}}件のセッションが対象です。各端末では、メールに届く新しいコードで改めてサインインする必要があります。データには影響しません。",
+        "revoke": "終了",
+        "revokeConfirm": "{{device}} をサインアウトする",
+        "revokeConsequence": "{{where}} の {{device}} がサインアウトされ、メールに届く新しいコードで改めてサインインする必要があります。データには影響せず、他の端末はサインアウトされません。",
+        "currentDevice": "これは現在お使いの端末です。サインアウトは下から行ってください",
+        "thisDevice": "{{device}} — この端末",
+        "lastUsed": "{{where}} · 最終利用 {{when}}",
+        "unknownIp": "IP不明"
+      },
+      "device": {
+        "unknown": "不明な端末",
+        "genericBrowser": "ブラウザ",
+        "unknownOs": "OS不明",
+        "browserOnOs": "{{os}} 上の {{browser}}"
+      },
+      "dataQuality": {
+        "title": "データ品質",
+        "flagged": "要確認",
+        "duplicateRows": "他のトークン行とシンボルが重複している表示中の保有資産",
+        "duplicateChip": "{{symbol}}×{{count}}",
+        "duplicateChipLookalike": "{{symbol}}×{{count}}（{{lookalikeOf}} に見せかけ）",
+        "lookalikeRows": "シンボルが他のものに似せている表示中の保有資産",
+        "lookalikeChip": "{{symbol}}（{{lookalikeOf}} に見せかけ）",
+        "holdingsShown": "表示中の保有資産",
+        "holdingsShownHint": "全{{count}}件",
+        "zeroBalanceShown": "残高ゼロのまま表示中の保有資産",
+        "hiddenNextSweep_other": "うち、次回の{{count}}日ごとの整理で非表示になるもの",
+        "noRecentPrice": "最近の価格がない表示中の保有資産",
+        "noPriceSource": "利用できる価格提供元がない表示中の保有資産",
+        "noPriceSourceHint": "{{symbols}} — 市場ではなく当方の設定の問題です",
+        "nothingCanPrice": "どこも価格を付けられない表示中の保有資産",
+        "nothingCanPriceHint": "市場のないエアドロップ済み・上場廃止のトークンです。チャートのカバレッジから除外しています",
+        "negativeOpening": "合成された初期残高がマイナス",
+        "negativeOpeningHint": "最初の取引より前まで遡れなかった取り込みです",
+        "missingCoverage": "カバレッジ行のない保有資産",
+        "intro": "アクセスのたびに数え直しています。「{{flag}}」が付いたものは確認する価値があります。",
+        "rowLink": "{{label}}: {{count}} — 保有資産で表示"
+      },
+      "pending": {
+        "deletingData": "データを削除しています",
+        "exportingAccount": "アカウントをエクスポートしています",
+        "rebuildingHistory": "ポートフォリオの履歴を再構築しています",
+        "savingSettings": "設定を保存しています",
+        "revokingSession": "セッションを終了しています",
+        "signingOutOthers": "他のセッションをサインアウトしています",
+        "togglingNotifications": "通知の設定を変更しています",
+        "sendingTestNotification": "テスト通知を送信しています"
+      }
+    },
+    "feedback": {
+      "stale": {
+        "notice": "Scaniに接続できませんでした。これは最後に取得できた数値であり、本日のものではありません。",
+        "retry": "再試行"
+      }
+    },
+    "review": {
+      "page": {
+        "title": "確認",
+        "transfersTitle": "確認が必要な送金",
+        "answered": "回答済み",
+        "balancesTitle": "説明が必要な残高の変動"
+      },
+      "item": {
+        "jobFailed": "{{job}} が失敗しました",
+        "invoiceExtracted": "請求書を読み取りました",
+        "transfersToConfirm": "確認が必要な送金",
+        "holdings_other": "{{count}}件の保有資産",
+        "holdingsWithSymbols_other": "{{count}}件の保有資産 · {{symbols}}",
+        "symbolsOverflow": "{{symbols}} +{{hidden}}",
+        "needsCurrency_other": "{{count}}件の取引 — 通貨の指定が必要です",
+        "needsCurrencyWithType_other": "{{count}}件の取引 · {{fileType}} — 通貨の指定が必要です",
+        "chains_other": "{{count}}チェーン",
+        "candidatesAcross_other": "{{chains}} にまたがる{{count}}件の候補",
+        "nothingFound": "該当なし",
+        "labelled": "{{label}} · {{body}}",
+        "unpairedTransfers_other": "対応する入金が見つからない送金{{count}}件",
+        "balanceChangesToExplain": "説明が必要な残高の変動",
+        "unexplainedBalanceChanges_other": "説明のつかない残高の変動{{count}}件"
+      },
+      "kind": {
+        "withdrawal": "出金",
+        "transferOut": "送金"
+      },
+      "list": {
+        "valueAwaiting": "<label>回答待ちの金額:</label> <value/>",
+        "valueAwaitingUnpriced_other": "<label>回答待ちの金額:</label> <value/><label>、ほかにその日の価格がないもの{{count}}件</label>",
+        "backToReview": "確認に戻る",
+        "seeAllJobs": "すべての処理を見る",
+        "field": {
+          "when": "日時",
+          "to": "宛先",
+          "description": "説明",
+          "transaction": "取引",
+          "viewOnExplorer": "ブロックエクスプローラーで見る",
+          "toOwnWallet": "あなたが追加したウォレットです。この資金はポートフォリオ内に留まっています"
+        }
+      },
+      "answered": {
+        "title": "回答済みの送金",
+        "backToQueue": "キューに戻る",
+        "field": {
+          "answered": "回答日時",
+          "to": "宛先"
+        },
+        "source": {
+          "unrecorded": "記録なし",
+          "unrecordedLong": "記録なし — この回答はキューで行われたものではありません",
+          "user": "あなたがここで回答",
+          "repair": "Scaniが修正",
+          "repairNote": "Scaniがこの回答を修正しました",
+          "rule": "あなたが作成したルール",
+          "ruleNote": "あなたのルールによる回答: {{note}}",
+          "ruleNoteUnnamed": "この宛先について作成したルールによる回答"
+        },
+        "reopen": {
+          "trigger": "この回答を変更する",
+          "commit": "キューに戻す",
+          "declaredTrigger": "この送金を取り消す",
+          "declaredCommit": "取り消して残高を元に戻す"
+        },
+        "toast": {
+          "reopened": "キューに戻しました。そちらで回答し直してください",
+          "reopenFailed": "その送金をキューに戻せませんでした",
+          "undone": "送金を取り消しました。両方の残高が元に戻っています"
+        },
+        "attribution": {
+          "user": "あなたの回答",
+          "repair": "Scaniによる修正後の内容",
+          "unattributed": "記録されている内容",
+          "rule": "ルールによる回答"
+        }
+      },
+      "split": {
+        "movingTo": "{{location}} へ移動",
+        "wherePrompt": "この分はどこへ行きましたか？",
+        "amountLabel": "{{outcome}} — {{symbol}} の数量",
+        "pickDepositFirst": "先に上の入金を選んでください",
+        "addsUp": "合計が一致しています"
+      },
+      "decision": {
+        "possibleMatches": "候補",
+        "candidatesLegend": "対応する可能性のある入金",
+        "noCandidates": "これと同程度の金額で、1週間以内にScani内のどこかへ着金した {{symbol}} の入金はありません。Scaniが把握できない先へ行った場合は、下でその旨を指定してください。",
+        "whatHappened": "起きたこと",
+        "noLinkTarget": "紐づけられるほど近い入金がありません",
+        "toast": {
+          "paired": "紐づけました。取得原価も一緒に移ります",
+          "internal": "記録しました。入金は移動先に計上されています",
+          "leftControl": "譲渡として記録しました",
+          "untracked": "引き続きあなたの資産として記録しました",
+          "split": "記録しました。各部分がそれぞれの扱いになります",
+          "gone": "その送金はもう確認待ちではありません",
+          "splitRejected": "その分割は受け付けられませんでした"
+        },
+        "ownWalletNotice": "これはあなたが追加したウォレット宛のため、資金は引き続きあなたのものです。対応する入金と紐づけるか、移動先を記録してください。ポートフォリオから出たと選ぶと、売却として計上されます。",
+        "withdrawnNotice": "Scaniはこの送金への以前の回答を取り下げました。その回答は、後に送金ではなかったと判明した紐づけについてのものだったためです。したがって質問が戻っており、ここに指定できる入金がない場合もあります。",
+        "withdrawnRuleNotice": "この送金に対してルールが出した回答をあなたが取り下げたため、ご自身で回答するようここに戻っています。このルールが再びこの送金に回答することはありません。"
+      },
+      "destinationPicker": {
+        "loading": "口座を読み込んでいます…",
+        "legend": "この資金の行き先",
+        "noDestinations": "移動先にできる他の口座がありません。Scaniが把握できない先へ行った場合は、そちらを指定してください。"
+      },
+      "transfer": {
+        "unreviewedBehaviour": "これらが未回答のあいだ、Scaniは損益を計上しません。自分のコインを移すことは売却ではなく、売却だったと決めつけることが、架空の利益がチャートに載る原因になるからです。これらのうち実際にポートフォリオから出たものがあれば、そう指定するまで、その損益は実現損益の合計に含まれません。",
+        "unreviewedNote": "未回答のあいだ、どちらとしても損益は計上されません。",
+        "candidateReason": {
+          "ambiguous": "一致しますが、別の入金も同様に一致します",
+          "quantity": "金額が {{pct}} 異なります",
+          "time": "照合対象の {{window}} の範囲外です",
+          "both": "{{pct}} の差があり、かつ {{window}} の範囲外です"
+        },
+        "hint": {
+          "equallyGood_other": "同程度に一致する候補が{{count}}件",
+          "none": "近い入金は見つかりません",
+          "possible_other": "候補{{count}}件",
+          "ownWallet": "あなたが追加したウォレット宛"
+        },
+        "consequence": {
+          "paired": "{{quantity}} {{symbol}} は、{{location}} へ移っても取得時の金額をそのまま保ちます。ここでは何も実現せず、損益も計上されません。",
+          "pairedPrompt": "この資金が着金した入金を選んでください。",
+          "internalPrompt": "この資金の移動先の保有資産を選んでください。",
+          "leftControlPriced": "{{date}} の時価で譲渡として計上します。取得原価に対して約 {{amount}} の譲渡代金となります。",
+          "leftControlUnpriced": "{{date}} の時価で譲渡として計上します。Scaniにはその日の {{symbol}} の価格がないため、何も計上されません。",
+          "untracked": "引き続きあなたの資産で、Scaniが把握できない場所にあるだけです。譲渡ではないため損益は計上されず、{{symbol}} が集計対象から外れるだけです。"
+        },
+        "decision": {
+          "paired": {
+            "trigger": "同じ資金",
+            "commit": "この2つを紐づける"
+          },
+          "internal": {
+            "trigger": "Scaniが記録している先へ移した",
+            "commit": "移動を記録する"
+          },
+          "leftControl": {
+            "trigger": "ポートフォリオから出た",
+            "commit": "譲渡として計上する"
+          },
+          "untracked": {
+            "trigger": "記録していない先へ移した",
+            "commit": "引き続き自分の資産として記録する"
+          }
+        },
+        "destination": {
+          "willCreate": "ここにはまだ {{symbol}} の記録がないため、保有資産が作成されます"
+        },
+        "internal": {
+          "carry": "{{amount}} {{symbol}} は、{{location}} へ移っても取得時の金額をそのまま保ちます。何も実現せず、損益も計上されません。",
+          "writeNew": "移動先に {{symbol}} の保有資産が新たに作成され、残高 {{amount}} {{symbol}}、{{date}} 付けの入金を持ちます。",
+          "writeExisting": "移動先に {{date}} 付けで {{amount}} {{symbol}} の入金が記録されます。残高は {{balance}} のままです。履歴を記録しても残高は動かないため、そこにこの分が含まれていない場合はご自身で変更してください。",
+          "balanceFallback": "その残高"
+        },
+        "allocation": {
+          "unparseable": "その金額のいずれかが数値ではありません。",
+          "over": "送金額より {{amount}} {{symbol}} 多くなっています。",
+          "under": "あと {{amount}} {{symbol}} 分の内訳が必要です。"
+        },
+        "split": {
+          "trigger": "これは複数の内訳だった",
+          "commit": "この分割を記録する",
+          "note": "1回の出金が同時に複数の意味を持つことがあります。一部は自分の別の保有資産へ移り、一部は本当に出ていった、という場合です。分割すれば、それぞれが個別に扱われます。",
+          "oneLinkOnly": "Scaniが記録している先へ移せる内訳は1つだけです。{{paired}} か {{internal}} のどちらかで、両方は指定できません。取得原価は1つの移動先にしか引き継げず、2つあるとどちらにも引き継げなくなります。",
+          "needTwo": "少なくとも2つに金額を入力してください。合計が {{amount}} {{symbol}} になる必要があります。",
+          "takeRest": "残り {{amount}} {{symbol}} をここに充てる",
+          "transferWas": "送金額は {{amount}} {{symbol}} でした",
+          "clause": {
+            "paired": "{{amount}} は {{location}} へ移っても取得時の金額を保ちます",
+            "pairedFallback": "選んだ入金",
+            "internal": "{{amount}} が {{location}} へ移り、そこに {{amount}} の入金が記録されます",
+            "internalFallback": "{{amount}} が選んだ保有資産へ移ります",
+            "leftControl": "{{amount}} は {{date}} の時価で譲渡として計上されます",
+            "untracked": "{{amount}} は引き続きあなたの資産で、Scaniが把握できない場所にあります"
+          },
+          "summary": "{{clauses}}。損益が計上されるのは譲渡の分だけです。",
+          "balanceNew": "移動先に {{symbol}} の保有資産が新たに作成され、その入金が残高になります。",
+          "balanceUnchanged": "残高は変わりません。"
+        },
+        "answered": {
+          "paired": "入金と紐づけ済み — 何も実現していません",
+          "internal": "記録している保有資産へ移動 — 入金を記録済み",
+          "leftControl": "譲渡として計上",
+          "untracked": "引き続きあなたの資産、記録していない場所",
+          "fallback": "回答済み"
+        },
+        "answeredShort": {
+          "paired": "{{amount}} を紐づけ",
+          "internal": "{{amount}} を移動",
+          "leftControl": "{{amount}} を譲渡",
+          "untracked": "{{amount}} は記録対象外"
+        },
+        "reopen": {
+          "internal": "これによって相手側の口座に記録された入金も一緒に削除されます。そうしないと、次の回答でその資金を二重に数えてしまうためです。送金はキューに戻り、どちらの残高も変わりません。",
+          "internalCreated": "回答前、その口座はこのトークンをまったく記録していなかったため、Scaniは入金だけでなく保有資産も作成しました。その両方が削除されます。ただし、その後にその保有資産へ何か記録されている場合は残ります。送金はキューに戻り、他の残高は変わりません。",
+          "leftControl": "これによって計上された損益は、改めて回答するまで実現損益の合計から外れ、送金はキューに戻ります。",
+          "default": "送金はキューに戻り、改めて回答するまで何も確定しません。",
+          "declared": "これはあなた自身が記録した送金のため、取り消すと両方の残高が送金前の状態に戻ります。出ていった口座は元に戻って増え、着いた口座は元に戻って減り、両方の記録が削除されます。キューには戻りません。答えるべき質問がないためです。"
+        },
+        "gap": {
+          "sameMinute": "同じ分",
+          "later": "{{gap}}後",
+          "earlier": "{{gap}}前",
+          "minutes_other": "{{count}}分",
+          "hours_other": "{{count}}時間",
+          "days_other": "{{count}}日"
+        },
+        "bulk": {
+          "consequence": {
+            "loading": "この操作の影響を計算しています…",
+            "none": "選択した送金のうち、この方法で回答できるものはありません。",
+            "leftControl_other": "{{count}}件の送金を譲渡として計上します。取得原価に対して約 {{amount}} の譲渡代金となります。",
+            "leftControlUnpriced_other": "{{count}}件の送金を譲渡として計上します。Scaniにはいずれもその日の価格がないため、何も計上されません。",
+            "untracked_other": "{{count}}件の送金を、Scaniが把握できない場所にある引き続きあなたの資産として記録します。何も実現しません。",
+            "takesBack_other": "現在譲渡として計上されている{{count}}件から、実現損益が約 {{amount}} 取り消されます。",
+            "takesBackUnpriced_other": "うち{{count}}件は現在譲渡として計上されていますが、Scaniにはいずれも価格がないため、取り消される金額はありません。",
+            "unpriced_other": "さらに{{count}}件はその日の価格がなく何も計上されないため、この数値は下限値です。"
+          },
+          "commit": {
+            "leftControl_other": "{{count}}件を譲渡として計上する",
+            "untracked_other": "{{count}}件を引き続き自分の資産として記録する"
+          },
+          "refusal": {
+            "ownWallet_other": "{{count}}件は、{{address}} をはじめとするあなたが登録したウォレット宛です。ポートフォリオから出ていないため、譲渡として計上できません。",
+            "answered_other": "{{count}}件はすでに「{{answer}}」と回答済みです。変更するには各行から個別にキューへ戻してください。",
+            "linked_other": "{{count}}件はすでに入金と紐づいているため、ここで回答しても何も変わりません。",
+            "gone_other": "{{count}}件はもう回答できる送金ではありません。"
+          },
+          "deselect_other": "その{{count}}件の送金の選択を解除",
+          "overCap": "一度に選択できる送金は{{max}}件までです。",
+          "undo": "元に戻す",
+          "toast": {
+            "leftControl_other": "{{count}}件の送金を譲渡として計上しました",
+            "untracked_other": "{{count}}件の送金を引き続きあなたの資産として記録しました",
+            "undone_other": "{{count}}件の送金を元の状態に戻しました",
+            "refused": "何も変更されませんでした",
+            "undoFailed": "元に戻せませんでした"
+          }
+        }
+      },
+      "rules": {
+        "title": "宛先ルール",
+        "trigger": "この宛先についてルールを作る",
+        "commit": "このルールを作成する",
+        "manage": "宛先ルールを見る",
+        "alreadyRuled": "この宛先のルールはすでにあります",
+        "revoke": "このルールを取り下げる",
+        "revokeCommit": "このルールを取り下げる",
+        "field": {
+          "counterparty": "この送金の宛先",
+          "key": "ルールが照合する条件",
+          "keyHint": "同じ宛先への次の送金も一致するよう、金額は意図的に除いています。",
+          "note": "この宛先は何ですか？",
+          "notePlaceholder": "自分のBybit入金アドレス",
+          "verdict": "ルールの動作"
+        },
+        "verdict": {
+          "askMe": "確認は続け、名前だけ付ける",
+          "notADisposal": "確認しない",
+          "alwaysADisposal": "譲渡として回答する"
+        },
+        "consequence": {
+          "askMe": "{{key}} 宛の送金は、金額にかかわらずこのキューに残り、あなたのメモが付きます。回答も損益の計上も行われず、1件ずつあなたが判断します。",
+          "notADisposal": "{{key}} 宛の送金は、金額にかかわらずこのキューから外れ、代わりに「宛先ルール」に一覧されます。それらには何も書き込まれません。未回答の送金は損益を計上せず、ルールを取り下げればすべてここに戻ります。",
+          "mark_other": "この宛先への送金{{count}}件を、ポートフォリオから出たものとして回答し、{{proceeds}} の譲渡代金を計上します。以降この宛先への送金はすべて、開かずに同じ扱いで回答されます。各件は個別に取り消せ、1件取り消すとその送金についてはルールが二度と適用されません。",
+          "markUnpriced_other": "この宛先への送金{{count}}件を、ポートフォリオから出たものとして回答します。いずれもその日の価格がないため、本日計上されるものはありません。以降この宛先への送金はすべて、開かずに同じ扱いで回答されます。",
+          "markUnpricedTail_other": "うち{{count}}件はその日の価格がなく、何も計上されません。",
+          "markFuture": "現在この宛先で待機しているものはないため、本日回答されるものはありません。以降この宛先への送金はすべて、開かずにポートフォリオから出たものとして回答され、損益が計上されます。"
+        },
+        "revokeConsequence": {
+          "notADisposal_other": "{{count}}件の送金がキューに戻ります。それらには何も書き込まれていないため、取り消すものはありません。",
+          "askMe": "この宛先への送金にあなたのメモが付かなくなります。ルールが回答したことはないため、他は何も変わりません。",
+          "markKeep_other": "この宛先への新しい送金にルールが回答しなくなります。すでに回答済みの{{count}}件はそのまま残り、損益も計上されたままです。それらも取り消すには、上のチェックボックスをオンにしてください。",
+          "markWithdraw_other": "新しい送金にルールが回答しなくなり、ルールが回答した{{count}}件は未回答としてキューに戻ります。それらの損益は計上されなくなります。"
+        },
+        "row": {
+          "hiding_other": "{{count}}件の送金をキューから外しています",
+          "labelling_other": "キュー内の{{count}}件の送金に名前を付けています",
+          "answering_other": "{{count}}件の送金を譲渡として回答しました"
+        },
+        "hidden": {
+          "title": "ルールによってキューから外されている送金",
+          "body": "いずれも回答されていません。キューの外で待機しており、ルールを取り下げると戻ってきます。"
+        },
+        "empty": {
+          "title": "宛先ルールはまだありません",
+          "body": "キューで送金を開き、その行き先を記録してください。同じ宛先への以降の送金には、金額にかかわらずそのメモが付きます。譲渡として指定した宛先は、自動で回答されます。"
+        },
+        "notice": {
+          "label": "この宛先についてのあなたのメモ",
+          "markExempt": "この宛先を譲渡として指定し、そのうえでこの送金についてはその回答を取り下げました。今後この送金が自動で回答されることはありません。"
+        },
+        "toast": {
+          "created": "ルールを保存しました",
+          "refused": "そのルールは保存されませんでした",
+          "revoked": "ルールを取り下げました",
+          "revokeFailed": "そのルールを取り下げられませんでした",
+          "revokedWithdrawn_other": "ルールを取り下げました — {{count}}件の回答がキューに戻りました",
+          "revokedKept_other": "ルールを取り下げました — ルールによる{{count}}件の回答はそのままです"
+        },
+        "refusal": {
+          "ownWallet": "{{key}} はあなた自身のウォレットです。そこへ移った資金はポートフォリオから出ていないため、譲渡として指定できません。"
+        },
+        "withdrawAnswers_other": "ルールによる{{count}}件の回答も取り下げる"
+      },
+      "balances": {
+        "intro": "この残高を動かした何かがあり、それを説明する取引がありません。何が起きたかを教えていただければ、運用成果として数えられなくなります。",
+        "loading": "説明のつかない残高の変動を探しています…",
+        "empty": "説明が必要なものはありません。すべての残高の変動に説明が付いています。",
+        "queue_other": "説明が必要な残高の変動が{{count}}件あります。金額の大きい順です。",
+        "examined": "全体で{{examined}}件を確認し、{{suppressed}}件を除外しました。金額が小さい、あなた自身が設定した残高、次の読み取りで打ち消された、または価格を付けられなかったものです。",
+        "examinedWithAnswered": "全体で{{examined}}件を確認し、{{suppressed}}件を除外しました。金額が小さい、あなた自身が設定した残高、次の読み取りで打ち消された、または価格を付けられなかったものです。さらに{{answered}}件はすでに回答済みです。",
+        "subject": "{{account}} · {{symbol}}",
+        "between": "{{from}} から {{to}} のあいだ",
+        "balances": "<previous/> → <current/> {{symbol}}。",
+        "partlyExplained_other": "うち一部は{{count}}件の取引ですでに説明されています。",
+        "answerLabel": "この変動は何でしたか？",
+        "dateLabel": "お金が動いたのはいつですか？",
+        "record": "記録",
+        "answerFailed": "記録できませんでした",
+        "answerFailedBody": "何も保存されていません。もう一度お試しください。",
+        "option": {
+          "flow": "お金が動いた",
+          "correction": "数値が誤っていた",
+          "growth": "増えた",
+          "unknown": "分からない"
+        },
+        "explain": {
+          "flow": "指定した日付の入金または出金として記録するため、損益としては数えられません。",
+          "correction": "誤った数値が記録に入った時点まで遡って、修正として記録します。損益でも拠出でもありません。",
+          "growth": "何も記録されません。このような残高の増加そのものがリターンであり、すでにそう数えられています。",
+          "unknown": "何も記録されず、この件について再び確認されることもありません。運用成果として数えられたままになります。誰にも分からない場合は、それが正直な答えです。",
+          "flowNoDate": "2回の読み取りのあいだの日付で、入金または出金として記録します。日付で表せるより正確に、いつ起きたかが分かっているためです。"
+        }
+      }
+    },
+    "form": {
+      "dateField": {
+        "clear": "日付をクリア",
+        "placeholder": "日付を選択"
+      },
+      "recordPicker": {
+        "change": "{{label}}を変更",
+        "changeAction": "変更",
+        "searching": "検索しています…"
+      },
+      "fiatCurrency": {
+        "noun": "通貨",
+        "searchPlaceholder": "通貨を検索…",
+        "empty": "その名前の通貨はありません",
+        "label": "通貨"
+      },
+      "cancel": "キャンセル",
+      "blockers": "続けるには：{{blockers}}。",
+      "sheet": {
+        "expand": "フォーム全体を表示",
+        "collapse": "フォームを縮小",
+        "close": "フォームを閉じる"
+      }
+    },
+    "capture": {
+      "form": {
+        "enterField": "{{label}}を入力",
+        "optionalField": "{{label}}（任意）",
+        "pasteField": "{{label}}を貼り付けてください"
+      },
+      "group": {
+        "upload": "アップロード",
+        "connect": "接続",
+        "manual": "手入力"
+      },
+      "route": {
+        "screenshot": {
+          "title": "スクリーンショット",
+          "description": "残高画面から数値を読み取ります。"
+        },
+        "statement": {
+          "title": "明細ファイル",
+          "description": "銀行や証券会社のCSVまたはOFXです。"
+        },
+        "invoice": {
+          "title": "請求書",
+          "description": "PDFまたは写真です。取引先と金額を読み取ります。"
+        },
+        "wallet": {
+          "title": "ウォレットアドレス",
+          "description": "残高をチェーンから1時間ごとに読み取ります。"
+        },
+        "exchange": {
+          "title": "取引所・証券会社のログイン",
+          "description": "読み取り専用のAPIキーです。保存時に暗号化されます。"
+        },
+        "manual": {
+          "title": "数値そのもの",
+          "description": "口座に保有資産を入力します。"
+        },
+        "payment": {
+          "title": "繰り返しの支払",
+          "description": "取引が届くたびに照合します。"
+        },
+        "movement": {
+          "title": "資金の移動を記録",
+          "description": "入金、出金、または自分の口座間の送金です。"
+        }
+      },
+      "fileImport": {
+        "screenshot": {
+          "title": "スクリーンショットをアップロード",
+          "description": "取引所・銀行・証券会社の残高画面です。そこから保有資産を読み取り、保存する前に読み取った内容をお見せします。"
+        },
+        "statement": {
+          "title": "明細ファイルをアップロード",
+          "description": "銀行や証券会社が出力したCSV、TSV、OFX、QIFです。そこから保有資産を読み取り、保存する前に読み取った内容をお見せします。"
+        },
+        "either": {
+          "title": "ファイルをアップロード",
+          "description": "残高のスクリーンショット、銀行の明細、証券会社の出力ファイルです。そこから保有資産を読み取り、保存する前に読み取った内容をお見せします。"
+        },
+        "whereItBelongs": "登録先"
+      },
+      "formats": {
+        "import": "PNG、JPG、WEBP、PDF、CSV、TSV、OFX、QIF",
+        "invoice": "PDF、PNG、JPG、WEBP、HEIC"
+      },
+      "stage": {
+        "account": "口座を準備しています…",
+        "upload": "ファイルを送信しています…",
+        "parse": "解析を開始しています…",
+        "enqueue": "取り込みを開始しています…",
+        "connect": "認証情報を確認しています…"
+      },
+      "file": {
+        "extension": ".{{ext}} ファイル",
+        "noExtension": "拡張子のないファイル",
+        "unsupported": "これは{{named}}です。Scaniが読めるのは {{formats}} です。",
+        "remove": "{{name}} を削除"
+      },
+      "blocker": {
+        "chooseFile": "アップロードするファイルを選択",
+        "chooseInvoice": "アップロードする請求書を選択",
+        "chooseInstitution": "口座のある金融機関を選択",
+        "nameInstitution": "新しい金融機関の名前を入力",
+        "institutionType": "金融機関の種類を選択",
+        "chooseAccount": "口座を選択",
+        "nameAccount": "新しい口座の名前を入力",
+        "accountType": "口座の種類を選択",
+        "addHolding": "トークンと数量の両方がそろった保有資産を追加",
+        "duplicateToken": "同じトークンを指す行にそれぞれ名前を付けるか、統合",
+        "walletEmpty": "ウォレットアドレスを入力",
+        "walletIncomplete": "ウォレットアドレスを最後まで入力",
+        "walletUnrecognised": "ウォレットアドレスを確認"
+      },
+      "category": {
+        "cryptoExchange": "暗号資産取引所",
+        "cryptoWallet": "暗号資産ウォレット",
+        "bank": "銀行",
+        "broker": "証券会社",
+        "other": "その他"
+      },
+      "wallet": {
+        "shape": {
+          "ethereum": "0x に続く16進数40文字、全体で42文字",
+          "bitcoin": "bc1 に続く小文字と数字39〜59文字",
+          "ton": "EQ または UQ に続く46文字、全体で48文字",
+          "tron": "T に続く33文字、全体で34文字",
+          "solana": "0、O、I、l を含まない英数字32〜44文字"
+        },
+        "everyShape": "Ethereumをはじめとする各EVMチェーンは 0x と16進数40文字、Bitcoinは 1、3、bc1 で始まり、Solanaは英数字32〜44文字、Tronは T で始まり、TONは EQ または UQ で始まります。",
+        "incomplete_other": "{{chain}} のアドレスとして不完全です。本来は{{shape}}ですが、これは{{count}}文字です。",
+        "unrecognised": "そのような形式のアドレスを持つチェーンをScaniは扱っていません。{{shapes}}"
+      },
+      "institution": {
+        "lookUpName": "ウェブサイトから名前を取得",
+        "name": "名前",
+        "namePlaceholder": "Revolut",
+        "type": "種類",
+        "typeLabel": "金融機関の種類",
+        "typePlaceholder": "銀行、証券会社、取引所…",
+        "label": "金融機関",
+        "searchPlaceholder": "銀行、証券会社、取引所を検索…",
+        "noResults": "その名前のものはまだありません。",
+        "addUnlisted": "一覧にないものを追加",
+        "addNamed": "「{{name}}」を追加",
+        "website": "ウェブサイト",
+        "websiteHint": "名前とアイコンが自動で入ります。任意です。",
+        "pickExisting": "既存の金融機関を選ぶ"
+      },
+      "token": {
+        "defillamaUnsupported": "DeFiLlamaの検索結果にはコントラクトアドレスが必要なため、ここからは追加できません。",
+        "addFailed": "そのトークンを追加しています",
+        "searchPlaceholder": "BTC、AAPL、EUR…",
+        "noResults": "その名前のものは、こちらにも価格提供元にもありません。",
+        "prompt": "シンボルまたは名前を入力してください。"
+      },
+      "integrations": {
+        "uploadInstead": "代わりに明細をアップロード"
+      },
+      "sheet": {
+        "title": "データを追加",
+        "subtitle": "お手元にあるものを選んでください。あとはそれに沿って進みます。",
+        "trigger": "データを追加する方法をすべて表示",
+        "collapse": "表示を減らす"
+      },
+      "account": {
+        "namePlaceholder": "普通預金、NISA、取引用…",
+        "type": "種類",
+        "typeLabel": "口座の種類",
+        "typePlaceholder": "貯蓄、証券、暗号資産…",
+        "label": "口座",
+        "name": "名前",
+        "newInstitutionHint": "新規に追加した金融機関にはまだ口座がありません。最初の1件を追加してください。",
+        "searchPlaceholder": "自分の口座を検索…",
+        "noResults": "その名前の口座はここにありません。",
+        "addNamed": "「{{name}}」を追加",
+        "addNew": "新しい口座を追加",
+        "pickExisting": "既存の口座を選ぶ"
+      },
+      "page": {
+        "uploadAndRead": "アップロードして読み取る",
+        "fileImport": {
+          "fieldset": "ファイル",
+          "subject": "このファイル",
+          "prompt": "ファイルを選ぶか、ここにドロップしてください"
+        },
+        "invoice": {
+          "title": "請求書をアップロード",
+          "description": "PDFまたはその写真です。取引先、金額、明細行を読み取り、承認または却下できるよう「確認」に載せます。",
+          "fieldset": "請求書",
+          "prompt": "請求書を選ぶか、ここにドロップしてください"
+        },
+        "manual": {
+          "subject": "これらの保有資産",
+          "title": "保有資産を手入力で追加",
+          "description": "どこに預けているか、何が入っているかを入力してください。保存後にそれぞれ価格を付けます。",
+          "fieldset": "内容",
+          "token": "トークン",
+          "amount": "数量",
+          "removeHolding": "保有資産 {{index}} を削除",
+          "save": "保有資産を保存",
+          "tokenFor": "保有資産 {{index}} のトークン",
+          "addAnother": "さらに追加",
+          "potName": "これはどれですか？",
+          "potNameHint": "このトークンを複数の行に入力しています。それぞれに名前を付けていただければ、別々の保有資産として扱います。",
+          "potNamePlaceholder": "貯蓄、頭金、結婚祝い…"
+        },
+        "wallet": {
+          "subject": "このウォレット",
+          "title": "ウォレットアドレスを監視",
+          "description": "どのチェーンのものかを判別し、残高をチェーンから読み取って、1時間ごとに更新します。",
+          "fieldset": "アドレス",
+          "addressLabel": "ウォレットアドレス",
+          "addressHint": "Ethereum、Bitcoin、Solanaをはじめ、対応するチェーンならどれでもかまいません。どれかを指定する必要はありません。",
+          "addressPlaceholder": "0x… または bc1… など",
+          "nameLabel": "名前",
+          "nameHint": "任意です。アドレスではなく、このウォレットの呼び名です。",
+          "namePlaceholder": "コールドウォレット、取引用ウォレット…",
+          "submit": "このウォレットを監視"
+        }
+      },
+      "integration": {
+        "title": "サービスを接続",
+        "subtitle": "読み取り専用のキーを1組。保存時に暗号化されます。",
+        "listSubtitle": "読み取り専用のAPIキーで、保存時に暗号化されます。残高は1時間ごとに同期され、同じサービスに複数の接続を持つこともできます。",
+        "allServices": "すべてのサービス",
+        "thisService": "このサービス",
+        "notFoundTitle": "対応していないサービスです",
+        "notFoundBody": "その名前の連携はScaniにありません。名称が変わったか、リンクが古い可能性があります。",
+        "connectNamed": "{{name}} を接続",
+        "permissions": "Scaniに必要なのは読み取り専用の権限だけです。キーは保存時に暗号化され、当方のワーカーの外に出ることはありません。",
+        "whereToGet": "キーの取得方法",
+        "credentials": "認証情報",
+        "ownDocs": "{{name}} の公式ドキュメント",
+        "unverifiedTitle": "{{name}} のキーを確認できませんでした",
+        "unverifiedDetail": "{{name}} から応答がなかったため、キーが正しいかどうか判断できません。何も保存していません。1分ほど待って再試行してください。"
+      }
+    },
+    "tokens": {
+      "custom": {
+        "nothingRecorded": "記録なし",
+        "unknownSource": "取得元不明",
+        "setManually": "手動で設定",
+        "neverPriced": "価格が付いたことがありません",
+        "newToken": "新しいカスタムトークン",
+        "type": "種類",
+        "pricedIn": "表示通貨",
+        "noPrice": "価格の記録なし",
+        "priceUpdated": "価格の更新",
+        "never": "なし",
+        "priceFrom": "価格の出所",
+        "editPrice": "価格を編集"
+      },
+      "hidden": {
+        "backToHoldings": "保有資産に戻る",
+        "unhide": "再表示",
+        "likelyScam": "詐欺の可能性",
+        "hidden": "非表示",
+        "why": "非表示の理由",
+        "account": "口座",
+        "institution": "金融機関",
+        "scamLikelihood": "詐欺の可能性"
+      },
+      "segment": {
+        "custom": "カスタム",
+        "hidden": "非表示"
+      },
+      "hiddenReason": {
+        "user": "あなたが非表示にしました",
+        "scam": "詐欺の可能性があると判定されました",
+        "both": "詐欺の可能性があると判定され、かつあなたが非表示にしました"
+      },
+      "actions": {
+        "unhiding": "保有資産を再表示しています",
+        "restoring": "トークンを復元しています",
+        "notScam": "詐欺ではない",
+        "clearFlag": "全員に対して詐欺の判定を解除",
+        "clearFlagConsequence": "{{symbol}}（{{name}}）が、あなただけでなくすべてのScaniユーザーに対して詐欺として扱われなくなり、トークン検索と価格取得にアカウント全体で再び現れます。ご自身でコントラクトを確認したうえでのみ実行してください。",
+        "holdingRestored": "{{symbol}} がダッシュボードに戻りました",
+        "tokenRestored": "{{symbol}} をトークン検索に復元しました"
+      },
+      "page": {
+        "title": "トークン",
+        "viewLabel": "トークンの表示",
+        "newCustomToken": "新しいカスタムトークン"
+      },
+      "create": {
+        "title": "カスタムトークンを作成",
+        "description": "価格提供元が扱っていない資産のためのものです。カスタムトークンはここにいる全員と共有され、誰でも価格を変更できます。",
+        "subject": "このトークン",
+        "symbol": "シンボル",
+        "symbolPlaceholder": "ACME",
+        "symbolTaken": "{{symbol}} はすでに存在します。別のシンボルを選ぶか、そのトークンの価格を編集してください。",
+        "name": "名前",
+        "namePlaceholder": "Acme Corp 株式",
+        "type": "種類",
+        "typePrivateCompany": "非公開企業",
+        "typeOther": "その他",
+        "initialPrice": "初期価格",
+        "reasonHint": "その数値の根拠です。後から誰でも読めます。",
+        "notes": "メモ",
+        "notesPlaceholder": "この資産について知っておくべきこと",
+        "notesHint": "任意です。",
+        "needSymbol": "シンボルを入力",
+        "needName": "名前を入力",
+        "submit": "トークンを作成",
+        "submitting": "作成しています…"
+      },
+      "price": {
+        "title": "{{symbol}} の価格",
+        "description": "任意の法定通貨で新しい価格を設定できます。ここにいる誰でも変更でき、変更履歴はすべて下に残ります。",
+        "subject": "この価格",
+        "currently": "現在の価格",
+        "newPrice": "新しい価格",
+        "pricePlaceholder": "1234.56",
+        "reason": "理由",
+        "reasonPlaceholder": "2025年第4四半期の評価",
+        "reasonHint": "任意ですが、この価格を次に見る人に説明できる唯一の手がかりです。",
+        "needPrice": "0より大きい価格を入力",
+        "needCurrency": "通貨を選択",
+        "submit": "価格を保存",
+        "submitting": "保存しています…",
+        "historyTitle": "過去の価格",
+        "historyLoading": "過去の価格を読み込んでいます",
+        "historyEmpty": "価格はまだ一度も変更されていません。",
+        "noReasonGiven": "理由の記載なし",
+        "unknownEditor": "不明"
+      }
+    },
+    "entities": {
+      "value": "評価額",
+      "account": {
+        "unknownInstitution": "金融機関不明",
+        "unknownType": "種類不明",
+        "neverSynced": "なし — この口座は手動で管理されています",
+        "valueByAccount": "口座別の評価額",
+        "byHand": "手動",
+        "lastSyncOverdue": "{{when}} · 遅延",
+        "sublabel_other": "{{institution}} · 保有資産{{count}}件",
+        "syncOverdue": "同期が遅延しています",
+        "viewHoldings": "保有資産を見る",
+        "assignGroups": "グループを割り当て",
+        "pageTitle": "口座",
+        "addFirst": "最初の口座を追加",
+        "holdings": "保有資産",
+        "type": "種類",
+        "lastSynced": "最終同期",
+        "balancesAsOf": "残高の基準日時",
+        "groups": "グループ",
+        "bulkDeleteConsequence_other": "{{names}} が削除され、その中のすべての保有資産と取引履歴も削除されます。この操作は取り消せません。",
+        "toast": {
+          "deleted": "口座を削除しました",
+          "deletingContext": "口座を削除しています",
+          "bulkDeleted_other": "{{count}}件の口座を削除しました",
+          "bulkDeletedWithFailures_other": "{{count}}件の口座を削除しました（{{failed}}件は失敗）",
+          "bulkDeletingContext": "口座を削除しています",
+          "updated": "口座を更新しました",
+          "updatingContext": "口座を更新しています",
+          "syncing": "口座を同期しています。まもなく残高が更新されます",
+          "syncingContext": "口座の同期を開始しています"
+        }
+      },
+      "institution": {
+        "unknownType": "種類不明",
+        "valueByInstitution": "金融機関別の評価額",
+        "sublabel_other": "口座{{count}}件",
+        "viewHoldings": "保有資産を見る",
+        "viewAccounts": "口座を見る",
+        "pageTitle": "金融機関",
+        "connectOne": "接続する",
+        "accounts": "口座",
+        "type": "種類",
+        "website": "ウェブサイト",
+        "noWebsite": "登録なし",
+        "description": "説明"
+      }
+    },
+    "documents": {
+      "fileRemoved": "ファイルを削除しました",
+      "thisFile": "このファイル",
+      "uploadInvoice": "請求書をアップロード",
+      "page": {
+        "title": "ファイル",
+        "uploadInvoice": "請求書をアップロード"
+      },
+      "totals": {
+        "stored": "保存済み",
+        "invoicesFound": "見つかった請求書",
+        "fileMissing_other": "{{count}}件のファイルはもう保存されていません。記録はここにありますが、ファイル本体はありません。"
+      },
+      "extraction": {
+        "state": {
+          "pending": "確認待ち",
+          "accepted": "承認済み",
+          "rejected": "却下済み"
+        },
+        "invoiceNumber": "請求書 {{number}}",
+        "noInvoiceNumber": "請求書番号なし",
+        "issueDate": "発行日",
+        "dueDate": "支払期日",
+        "paymentStatus": "支払状況",
+        "confidence": "確度",
+        "notRecorded": "記録なし",
+        "approve": "承認",
+        "paymentPaid": "支払済み",
+        "paymentUnpaid": "未払い",
+        "paymentNotStated": "記載なし",
+        "reject": "却下",
+        "rejectCommit": "この請求書を却下する",
+        "approveNote": "この請求書の内容を引き継いだ定期支払のフォームを開きます。確定するまで何も保存されません。",
+        "rejectConsequence": "{{vendor}} の請求書が却下済みになり、このファイルからは確認を求められなくなります。支払は作成されません。元に戻すには、ファイルを読み取り直すしかありません。",
+        "rejectConsequenceNumbered": "{{vendor}} の請求書 {{number}} が却下済みになり、このファイルからは確認を求められなくなります。支払は作成されません。元に戻すには、ファイルを読み取り直すしかありません。"
+      },
+      "detail": {
+        "backToFiles": "すべてのファイル",
+        "copyGone": "このファイルの保存されていた複製がなくなっているため、ダウンロードも読み取り直しもできません。この記録を削除すると、同じファイルを改めてアップロードできるようになります。",
+        "reparsing": "書類を読み取り直しています",
+        "deleted": "ファイルを削除しました。改めてアップロードできます",
+        "deleting": "ファイルを削除しています",
+        "reparseTrigger": "このファイルを読み取り直す",
+        "reparseConsequence": "現在の抽出処理をこのファイルに対して実行し、まだ支払に変換されていない請求書をすべて置き換えます。支払に変換済みのものは残ります。これはAIの呼び出しを1回消費します。",
+        "reparseCommit": "読み取り直す",
+        "deleteTrigger": "このファイルを削除",
+        "deleteConsequence": "この記録、そこから抽出したすべての請求書、保存されている複製を削除します。以降、同じファイルをアップロードすると、重複として飛ばされずに改めて読み取られます。すでに支払に変換された請求書があると削除できません。先にその支払との紐づけを外してください。この操作は取り消せません。",
+        "deleteCommit": "削除",
+        "invoiceRejected": "請求書を却下しました",
+        "rejectingInvoice": "請求書を却下しています",
+        "noInvoicesFound": "このファイルから請求書は見つかりませんでした",
+        "noInvoicesBody": "ファイルは読み取れましたが、請求書らしきものはありませんでした。「読み取り直す」を実行すると、現在の抽出処理でもう一度読み取ります。",
+        "download": "ダウンロード",
+        "reparsePending": "読み取り直しています…",
+        "deletePending": "削除しています…",
+        "readAs": "{{classification}} として読み取り",
+        "uploadedAt": "{{when}} にアップロード",
+        "arrivedBy": "{{source}} から受信",
+        "extractedCount_other": "請求書{{count}}件を抽出"
+      },
+      "outcome": {
+        "extracted": "見つかった請求書",
+        "nothingFound": "該当なし",
+        "notRead": "請求書としては読み取っていません"
+      },
+      "invoiceCount_other": "請求書{{count}}件",
+      "parse": {
+        "alreadyRead": "読み取り済み",
+        "alreadyReadNote": "このファイルは以前送信されたものと一致するため、読み取り直していません。AIの課金も発生せず、請求書が重複することもありません。最初に読み取った内容は元のファイルに残っています。",
+        "unrecognised": "この処理は認識できる結果を出さずに終了したため、確認するものがありません。",
+        "noInvoicesNote": "ファイルは読み取れましたが、請求書らしきものはありませんでした。明細や残高のスクリーンショットは「ファイルを取り込む」からお願いします。保有資産を作成するのはそちらです。",
+        "approveNote": "請求書の内容を引き継いだ支払フォームを開きます。確定するまで何も保存されません。請求書1枚では繰り返しの頻度までは分かりません。",
+        "openOriginal": "元のファイルを開く",
+        "noInvoices": "このファイルに請求書はありません",
+        "openFile": "ファイルを開く",
+        "found_other": "請求書{{count}}件が見つかりました",
+        "unknownVendor": "取引先不明",
+        "turnIntoPayment": "これを定期支払にする",
+        "setUpNamed": "{{name}} を設定",
+        "thisInvoice": "この請求書"
+      },
+      "toast": {
+        "downloadingContext": "ファイルをダウンロードしています"
+      }
+    },
+    "vaults": {
+      "targetReached": "目標達成",
+      "list": {
+        "rowSpoken": "{{name}}、目標の{{percent}}%"
+      },
+      "attach": {
+        "attaching": "保有資産を紐づけています",
+        "fullyClaimed": "{{label}} はすでに全額が他の貯蓄目標に充当されています。先にそちらの割合を下げてください。",
+        "attachedWhole": "{{label}} をこの貯蓄目標に充当しました",
+        "attachedPartial": "{{label}} を {{available}}% で紐づけました。残りは他の貯蓄目標に充当されています"
+      },
+      "createFirst": "最初の貯蓄目標を作成",
+      "holding": {
+        "thisHolding": "この保有資産",
+        "unknownToken": "トークン不明",
+        "shareLabel": "この貯蓄目標に充当する {{symbol}} の割合",
+        "cancel": "キャンセル",
+        "saveShare": "割合を保存",
+        "changeShare": "この貯蓄目標に充当する {{symbol}} の割合（{{percent}}%）を変更",
+        "remove": "外す",
+        "removeCommit": "この貯蓄目標から {{symbol}} を外す",
+        "detachConsequence": "{{symbol}} がこの貯蓄目標に充当されなくなり、貯蓄額から <value/> が減ります。保有資産自体、その {{percent}}% の割合、履歴はすべて残るため、改めて紐づけることもできます。"
+      },
+      "detail": {
+        "toast": {
+          "updated": "貯蓄目標を更新しました",
+          "updating": "貯蓄目標を更新しています",
+          "deleted": "貯蓄目標を削除しました",
+          "deleting": "貯蓄目標を削除しています",
+          "holdingRemoved": "貯蓄目標から保有資産を外しました",
+          "removingHolding": "保有資産を外しています",
+          "shareUpdated": "割合を更新しました",
+          "updatingShare": "割合を更新しています"
+        },
+        "deleteConsequence_other": "「{{name}}」とその目標額が消えます。紐づいている保有資産{{count}}件は削除されず、目標に充当されなくなるだけです。",
+        "backToVaults": "貯蓄目標",
+        "notFound": "この貯蓄目標は一覧にありません。削除されたか、リンクが古い可能性があります。",
+        "saved": "貯蓄額",
+        "targetReached": "目標達成 — 目標の{{percent}}%",
+        "stillToGo": "目標 <target/> に対して、あと <remaining/>",
+        "countingToward_other": "この貯蓄目標に充当中（{{count}}件）",
+        "empty": "この貯蓄目標に充当されているものはまだありません。保有資産を紐づけると、目標に反映されはじめます。",
+        "attachHolding": "保有資産を紐づける",
+        "details": "詳細",
+        "name": "名前",
+        "target": "目標額",
+        "targetHint": "{{symbol}} 建て",
+        "colour": "色",
+        "saveChanges": "変更を保存",
+        "discard": "破棄",
+        "needName": "保存するには：貯蓄目標の名前を入力してください。",
+        "needTarget": "保存するには：0より大きい目標額を設定してください。",
+        "dangerZone": "取り扱い注意",
+        "deleteTrigger": "貯蓄目標を削除",
+        "deleteCommit": "この貯蓄目標を削除する"
+      },
+      "page": {
+        "title": "貯蓄目標",
+        "created": "貯蓄目標「{{name}}」を作成しました",
+        "creating": "貯蓄目標を作成しています",
+        "name": "名前",
+        "newVault": "新しい貯蓄目標",
+        "createVault": "貯蓄目標を作成",
+        "cancel": "キャンセル",
+        "namePlaceholder": "住宅の頭金、緊急用資金…",
+        "toContinue": "続けるには：{{missing}}。",
+        "target": "目標額",
+        "currency": "通貨",
+        "colour": "色",
+        "blocker": {
+          "name": "貯蓄目標の名前を入力",
+          "target": "0より大きい目標額を設定",
+          "currency": "通貨を選択"
+        }
+      }
+    },
+    "jobs": {
+      "importSomething": "何か取り込む",
+      "bucket": {
+        "review": "確認が必要",
+        "running": "実行中",
+        "failed": "失敗 — 再試行しません",
+        "completed": "完了"
+      },
+      "kind": {
+        "holdingPriceRefresh": "保有資産の価格更新",
+        "fileFallback": "ファイル",
+        "fileEnriched": "{{type}} · 情報を補完",
+        "deleteAllData": "アカウントデータの全削除"
+      },
+      "fileCount_other": "{{count}}件のファイル",
+      "page": {
+        "title": "処理"
+      },
+      "state": {
+        "queued": "待機中",
+        "active": "実行中",
+        "progress": "実行中",
+        "completed": "完了",
+        "failed": "失敗",
+        "needsReview": "確認が必要",
+        "needsReviewSpoken": "確認が必要です"
+      },
+      "retryUnavailable": {
+        "cancelled": "これはあなたがキャンセルしました。開始した画面からもう一度実行してください。",
+        "neverDelivered": "これはキューに届かなかったため、再実行するものがありません。開始した画面からもう一度実行してください。",
+        "stillRetrying": "次の試行がすでに待機中です。操作は不要です。",
+        "evicted": "この実行は古すぎるため、ここからは再実行できません。必要なデータがキューに残っていません。開始した画面からもう一度実行してください。",
+        "notFailed": "再試行するものはありません。"
+      },
+      "detail": {
+        "backToJobs": "すべての処理",
+        "notFound": "この処理は一覧にありません。削除されたか、リンクが古い可能性があります。",
+        "attempt": "{{allowed}}回中{{attempt}}回目の試行",
+        "cancel": "キャンセル",
+        "cancelPending": "キャンセルしています…",
+        "removed": "処理を削除しました",
+        "retry": "再試行",
+        "retryPending": "キューに入れ直しています…",
+        "dismiss": "閉じる",
+        "dismissPending": "閉じています…",
+        "createdAt": "{{when}} に作成",
+        "startedAt": "{{when}} に開始",
+        "finishedAt": "{{when}} に終了"
+      },
+      "toast": {
+        "requeued": "処理をキューに入れ直しました",
+        "retrying": "処理を再試行しています",
+        "cancelled": "処理をキャンセルしました",
+        "cancelling": "処理をキャンセルしています",
+        "discarded": "解析結果を破棄しました。何も取り込まれていません",
+        "discarding": "解析結果を破棄しています",
+        "dismissed": "閉じました。処理の履歴には残ります",
+        "dismissing": "失敗の表示を閉じています",
+        "removing": "処理を削除しています"
+      },
+      "running": "{{label}} を実行中です",
+      "awaitingYou": "この実行はあなたの操作を待っています。ここからのデータはまだポートフォリオに入っていません。",
+      "discard": {
+        "trigger": "破棄",
+        "commit": "この解析結果を破棄する",
+        "consequence": "この{{label}}が確認を求めなくなり、ここから保有資産は作成されません。ポートフォリオには何も変化しません。元に戻すには、取り込みを実行し直すしかありません。"
+      },
+      "remove": {
+        "trigger": "削除",
+        "commit": "この実行を削除する",
+        "consequence": "この{{label}}の実行と、その上のエラーが削除されます。すでに取り込まれたものは残ります。この操作は取り消せません。"
+      },
+      "label": {
+        "walletImport": "ウォレットの取り込み",
+        "exchangeImport": "取引所の取り込み",
+        "documentParse": "書類の解析",
+        "invoiceParse": "請求書の解析",
+        "fileImport": "ファイルの取り込み",
+        "manualHoldings": "手入力の保有資産",
+        "historyBackfill": "履歴の補完",
+        "priceRefresh": "価格の更新",
+        "accountDeletion": "アカウントの削除",
+        "transactionImport": "取引履歴の取り込み"
+      },
+      "review": {
+        "title": "読み取った保有資産を確認",
+        "subject": "読み取った保有資産",
+        "viewHoldings": "保有資産を見る",
+        "confidence": "確度{{percent}}%",
+        "importing": "取り込んでいます…",
+        "import_other": "{{count}}件の保有資産を取り込む",
+        "willImport_other": "{{count}}行が取り込まれます",
+        "unmatchedNote_other": "{{count}}行はどのトークンにも一致しなかったため、飛ばされます。",
+        "source": {
+          "screenshot": "スクリーンショット",
+          "statement": "明細",
+          "files": "ファイル"
+        },
+        "assetType": {
+          "fiat": "法定通貨",
+          "crypto": "暗号資産",
+          "stock": "株式"
+        },
+        "row": {
+          "new": "新規",
+          "update": "更新",
+          "changeToken": "{{symbol}} に対応づけたトークンを変更",
+          "keepToken": "{{symbol}} のままにする",
+          "searchLabel": "{{symbol}} に別のトークンを探す",
+          "nameLabel": "この {{symbol}} の保有資産の名前",
+          "namePlaceholder": "例: 貯蓄",
+          "amountLabel": "{{symbol}} の数量",
+          "remove": "{{symbol}} を削除",
+          "restore": "{{symbol}} を戻す",
+          "currentLabel": "現在"
+        },
+        "blocker": {
+          "duplicatePosition": "{{symbols}} の各行にそれぞれ名前を付けるか、余分な行を削除",
+          "missingAmount_other": "{{count}}行に数量がありません。各行に入力するか、その行を削除",
+          "nothingToImport": "少なくとも1行をトークンに対応づける"
+        },
+        "imported": {
+          "title": "取り込み済み",
+          "when": "{{when}} に確定",
+          "body": "これらの行は確定してポートフォリオに保存されました。同じ解析結果をもう一度取り込むと重複するため、この画面はロックされています。"
+        },
+        "discarded": {
+          "title": "破棄済み",
+          "when": "{{when}} に破棄",
+          "screenshot": "このスクリーンショットからは何もポートフォリオに書き込まれておらず、確認待ちでもなくなりました。これらの行を取り戻すには、解析し直すしかありません。",
+          "statement": "この明細からは何もポートフォリオに書き込まれておらず、確認待ちでもなくなりました。これらの行を取り戻すには、解析し直すしかありません。",
+          "files": "これらのファイルからは何もポートフォリオに書き込まれておらず、確認待ちでもなくなりました。これらの行を取り戻すには、解析し直すしかありません。",
+          "wallet": "このウォレットからは何もポートフォリオに書き込まれておらず、確認待ちでもなくなりました。これらの行を取り戻すには、取り込みを実行し直すしかありません。"
+        }
+      },
+      "screenshot": {
+        "title": {
+          "image": "スクリーンショットの解析",
+          "pdf": "明細の解析",
+          "mixed": "ファイルの解析"
+        },
+        "filesRead": "読み取ったファイル",
+        "holdingsFound": "見つかった保有資産",
+        "ofTotal": "{{total}} 中 {{done}}",
+        "failedTitle_other": "{{count}}件のファイルを読み取れませんでした",
+        "failedAdvice": {
+          "image": "解像度が低い、または情報量の多いスクリーンショットで起こります。もっと鮮明なものを撮る、残高の一覧部分だけを切り出す、あるいはCSVやOFXの出力ファイルをアップロードしてみてください。",
+          "pdf": "スキャン画像のみのPDFや暗号化されたPDF、レイアウトが特殊な場合に起こります。テキストを含むPDFを使うか、CSVやOFXの出力ファイルをアップロードしてみてください。",
+          "mixed": "もっと鮮明な画像かテキストを含む書類を使うか、CSVやOFXの出力ファイルをアップロードしてみてください。"
+        },
+        "noAccount": {
+          "title": "これらの行の保存先がありません",
+          "body": "この実行では保有資産がどの口座のものか記録されなかったため、保存先がありません。何も取り込まれておらず、失われたものもありません。口座を選んだうえで、ファイルをもう一度アップロードしてください。",
+          "action": "もう一度アップロード"
+        }
+      },
+      "issues": {
+        "more_other": "…ほか{{count}}件"
+      },
+      "wallet": {
+        "subject": "このウォレット",
+        "chainsDetected": "検出したチェーン",
+        "chainsRead": "読み取ったチェーン",
+        "tokensFound": "見つかったトークン",
+        "chainsFailed_other": "{{count}}件のチェーンを読み取れませんでした",
+        "chainsFailedNote": "応答しなかったチェーン上の資産は、ここに表示されている内容に含まれていません。",
+        "outcome": {
+          "found": "検出した保有資産",
+          "partial": "検出した保有資産 — 一部のみ読み取り",
+          "empty": "確認するものはありません",
+          "unreadable": "このウォレットを読み取れませんでした"
+        },
+        "outcomeBody": {
+          "found": "残すものを選んでください。チェックした行だけが保有資産になります。",
+          "partial": "残すものを選んでください。チェックした行だけが保有資産になります。なお、応答しなかったチェーンが少なくとも1つあるため、これはこのアドレスが持つすべてではありません。",
+          "empty": "すべてのチェーンが応答し、残高はないとの結果でした。したがって、確認できる範囲ではこのアドレスは空です。失敗したものはありません。",
+          "unreadable": "どのチェーンからも応答がなかったため、このアドレスが何を持っているか分かりません。これは空のウォレットを読み取った結果ではありません。取り込みをもう一度実行しても問題ありません。"
+        },
+        "hideSpam_other": "スパムの可能性が高いトークン{{count}}件を隠す",
+        "selectAll": "表示中のすべてを選択",
+        "selectNone": "選択を解除",
+        "spam": {
+          "solicitation": "広告のようです",
+          "mixedScript": "複数の文字体系が混在"
+        },
+        "exited": "取得後に売却済み",
+        "hiddenSelected_other": "チェック済みの{{count}}行がフィルターで隠れています",
+        "showHidden": "表示する",
+        "afterConfirm": "保有資産は確定後に作成され、価格が付きます。",
+        "blocker": {
+          "nothingPicked": "少なくとも1行にチェック"
+        },
+        "import_other": "{{count}}件の保有資産を取り込む",
+        "importing": "取り込んでいます…",
+        "toast": {
+          "imported_other": "{{count}}件の保有資産を取り込みました"
+        },
+        "confirmed": {
+          "title": "ウォレットを取り込みました",
+          "when": "{{when}} に確定",
+          "body": "残した行が保有資産として作成されました。ここからこのウォレットをもう一度取り込むと重複するため、この画面はロックされています。"
+        },
+        "unavailable": {
+          "title": "検出した一覧がここにありません",
+          "body": "このウォレットは読み取られましたが、トークンの一覧が処理とともに保存されなかったため、ここから選ぶものがありません。何も取り込まれておらず、失われたものもありません。取り込みをもう一度実行すると一覧が戻ります。"
+        },
+        "importAgain": "このウォレットをもう一度取り込む",
+        "imported": {
+          "title": "取り込んだ保有資産",
+          "holdings": "作成した保有資産",
+          "accounts": "作成した口座",
+          "reviewTitle": "作成された内容を確認",
+          "pruneNote": "不要なものを削除してから、確認を終えてください。それまでこの実行は、対応が必要なものとして一覧に残ります。",
+          "finish": "確認を終える",
+          "finishing": "終了しています…",
+          "finishedWhen": "{{when}} に確認を終えました。これらの保有資産はポートフォリオで有効になっており、「保有資産」から削除することもできます。",
+          "remove": "{{symbol}} を削除",
+          "allGone": "これらの保有資産は一覧に残っていません。削除されたか、フラグが付けられました。",
+          "nothingTitle": "何も取り込まれませんでした"
+        },
+        "empty": {
+          "unreadable": "どのチェーンも読み取れなかったため、何も取り込まれませんでした。これは空のウォレットを読み取った結果ではありません。残高は一度も取得されていません。取り込みをもう一度実行しても問題ありません。",
+          "noChains": "このアドレスについてチェーンを検出できませんでした。このアプリが対応するチェーン上に取引がないか、検出の呼び出しに応答がなかったかのいずれかです。取り込みをもう一度実行しても問題ありません。",
+          "zeroBalances": "検出したすべてのチェーンが応答し、残高はゼロとの結果だったため、取り込むものがありませんでした。失敗したものはありません。"
+        }
+      },
+      "exchange": {
+        "title": "取引所の取り込み",
+        "accountsCreated": "作成した口座",
+        "holdingsImported": "取り込んだ保有資産",
+        "connectedButEmpty": "口座には接続できましたが、提供元から残高が返りませんでした。残高のない口座では通常のことです。後から追加されたものは、次回の1時間ごとの同期で届きます。",
+        "failedTitle_other": "{{count}}件の口座を読み取れませんでした",
+        "failedNote": "そこにある資産は上の数値に含まれていません。取り込みをもう一度実行しても問題ありません。"
+      },
+      "file": {
+        "title": {
+          "imported": "ファイルを取り込みました",
+          "nothing": "何も書き込まれませんでした"
+        },
+        "nothingBody": "ファイルは解析できましたが、利用できる取引・残高・保有資産がありませんでした。アップロードするつもりだった出力ファイルかどうか確認してください。",
+        "format": "形式",
+        "transactions": "取引",
+        "newHoldings": "新しい保有資産",
+        "balanceAnchors": "残高の基準点",
+        "holdingsTitle": "影響のあった保有資産",
+        "row": {
+          "new": "新規",
+          "updated": "更新",
+          "transactions_other": "取引{{count}}件",
+          "statementClose": "明細の締め残高",
+          "noClosingBalance": "締め残高なし"
+        },
+        "warningsTitle_other": "警告{{count}}件",
+        "importAnother": "別のファイルを取り込む",
+        "unreadablePayload": "この実行は読み取れる結果を出さずに終了しました。ポートフォリオには何も変化していません。",
+        "currency": {
+          "title": "この明細の通貨はどれですか？",
+          "body_other": "このファイルから{{count}}件の取引を読み取りましたが、通貨の記載がなく、判別もできませんでした。まだ何も取り込まれていません。",
+          "preview": "{{total}} 中 {{shown}}",
+          "noDescription": "説明なし",
+          "fieldLabel": "明細の通貨",
+          "blocker": "これらの取引の通貨を選択",
+          "apply": "この通貨で取り込む",
+          "applying": "取り込み直しています…",
+          "subject": "このファイル"
+        }
+      },
+      "manual": {
+        "title": "保有資産を保存しました",
+        "saved": "書き込んだ行",
+        "priced": "価格あり",
+        "row": {
+          "new": "新規",
+          "updated": "更新",
+          "noPrice": "まだ価格なし"
+        },
+        "unpricedNote_other": "{{count}}行はまだ価格が付いていません。いずれにせよ保存されています。「保有資産」から更新するか、次回の1時間ごとの価格取得をお待ちください。",
+        "addMore": "さらに追加",
+        "unreadablePayload": "この実行は読み取れる結果を出さずに終了しました。ポートフォリオには何も変化していません。"
+      },
+      "generic": {
+        "title": "結果",
+        "noPayload": "この実行は結果データを出さずに終了しました。対応すべきものはありません。",
+        "nothingToShow": "結果に表示できる項目がありませんでした。生データを下に示します。",
+        "errorsTitle_other": "エラー{{count}}件",
+        "rawResult": "生の結果",
+        "warningsTitle_other": "知っておくべきこと{{count}}件",
+        "warningsNote": "失敗ではありません。実行は完了しています。これらは、到達できなかったものと、その理由、そして書き込まれた内容が少なく見えるかもしれない事情を示しています。"
+      },
+      "failure": {
+        "cancelled": {
+          "label": "キャンセル済み",
+          "sentence": "この処理は完了前にあなたが停止しました。"
+        },
+        "neverDelivered": {
+          "label": "開始されていません",
+          "sentence": "この処理はワーカーに渡されなかったため、一度も実行されておらず、何も変更されていません。開始した画面からもう一度実行してください。"
+        },
+        "unrecoverable": {
+          "label": "失敗 — 再試行しません",
+          "sentence": "再度試しても解消しない理由で失敗し、お見せできる記録も残っていません。そのまま再実行しても同じように失敗します。",
+          "sentenceWithDetail": "再度試しても解消しない理由で失敗しました。下の詳細を確認して修正したうえで、もう一度実行してください。"
+        },
+        "exhausted": {
+          "label": "失敗 — 再試行しません",
+          "sentence_other": "{{count, number}}回試行し、すべて失敗しました。自動で再試行されることはありません。"
+        },
+        "noRetry": {
+          "label": "失敗 — 再試行しません",
+          "sentence": "失敗しました。自動で再試行されることはありません。"
+        },
+        "notQueued": {
+          "label": "失敗",
+          "sentence": "前回の試行が失敗し、次の試行は待機していません。"
+        },
+        "retrying": {
+          "label": "再試行中（{{allowed, number}}回中{{made, number}}回目）",
+          "sentence": "{{allowed, number}}回中{{made, number}}回目の試行が失敗しました。次の試行は自動で始まるため、いまは何もする必要はありません。"
+        },
+        "settling": {
+          "label": "失敗",
+          "sentence": "前回の試行が失敗しました。他に待機中のものがあるか確認しています。"
+        }
+      }
+    },
+    "membership": {
+      "picker": {
+        "done": "完了"
+      },
+      "holdings_other": "保有資産（{{count}}）",
+      "wholeAccounts_other": "口座全体（{{count}}）",
+      "wholeAccountsNote": "口座全体がグループに入っています。現在の保有分と、後から入ってくるものが対象です。外すと、そのすべてがグループから出ます。",
+      "searchPlaceholder": "{{noun}}を検索",
+      "searchLabel": "追加する{{noun}}を検索",
+      "add": "{{label}} を追加",
+      "added": "{{label}} をグループに追加しました",
+      "removed": "{{label}} をグループから外しました",
+      "adding": "グループに追加しています",
+      "removing": "グループから外しています",
+      "addAction": "追加",
+      "addPending": "追加しています",
+      "removeAction": "外す",
+      "removePending": "外しています",
+      "noMatch": "「{{query}}」に一致する、追加できるものはありません。",
+      "allAdded": "お持ちのものはすべてここにあります。追加できる{{noun}}は他にありません。",
+      "allOfCount_other": "保有資産{{count}}件すべて",
+      "count": {
+        "holding_other": "保有資産{{count}}件",
+        "account_other": "口座{{count}}件"
+      }
+    },
+    "ownership": {
+      "title": "名義",
+      "description": "自分の資産と会社の資産を分けて管理します。純資産は引き続き1つの数値です。",
+      "newEntity": "新しい名義",
+      "name": "名前",
+      "namePlaceholder": "例: 株式会社マイカンパニー",
+      "create": "作成",
+      "cancel": "キャンセル",
+      "created": "{{name}} を作成しました",
+      "creating": "名義を作成しています",
+      "assigning": "口座を移しています",
+      "loading": "それぞれの帳簿の金額を計算しています…",
+      "empty": "まだ金額がありません。",
+      "unassigned": "未割り当て",
+      "combined": "合計",
+      "holdingsCounted_other": "保有資産{{count}}件",
+      "unpriced": "{{symbols}} は本日価格を付けられませんでした",
+      "accountsHeading": "各口座がどの名義に属するか",
+      "accountEntityLabel": "{{name}} の名義"
+    }
+  }
+}
