@@ -193,9 +193,9 @@ out.push('      nobody wrote down. That is why the last count is a question.');
 out.push('    - anything uncommitted. The population is every tracked `.ts`/`.tsx`');
 out.push('      path — `git ls-files`, no pathspec — so a call site written and not');
 out.push('      staged is absent and the run is green without it.');
-out.push('    - a caller in any other extension. `.js`, `.mjs` and `.astro` are');
-out.push('      tracked and are not in the population; the reconciliation above is');
-out.push('      what makes that visible rather than something to remember.');
+out.push('    - a caller in any file that is not `.ts` or `.tsx`. Tracked `.js` and');
+out.push('      `.mjs` files exist and are outside the population; the reconciliation');
+out.push('      above is what makes that visible rather than something to remember.');
 out.push('');
 
 console.log(out.join('\n'));
