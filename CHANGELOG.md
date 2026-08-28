@@ -19,6 +19,31 @@ version heading stays there permanently, above every future release. This
 comment is deliberately in that position; explanatory prose should not be.
 -->
 
+## [0.30.0](https://github.com/MGrin/scani-oss/compare/v0.29.0...v0.30.0) (2026-08-28)
+
+
+### Features
+
+* **app:** ship French, complete rather than started ([6ea577a](https://github.com/MGrin/scani-oss/commit/6ea577ad0d6ea31e1415995c713a367b5ae7c7f5))
+* **email:** the French letter, and a leak guard that can see it ([bd66c6c](https://github.com/MGrin/scani-oss/commit/bd66c6c5e33eb8b3990f2777f60faae89d9959a1))
+* **pdf:** bundle Han faces so CJK statements stop rendering [?] ([39a3e6a](https://github.com/MGrin/scani-oss/commit/39a3e6aa9ee9f3479d81d9c8f6246fb49f4af5b4))
+
+
+### Bug Fixes
+
+* **repo:** ignore editor-local state, which a tracked sibling did not cover ([1ad16a9](https://github.com/MGrin/scani-oss/commit/1ad16a9d50a4ec2678d30fc13d17e1273d04dbfe))
+* **repo:** make agent scratch uncommittable in every checkout ([2583402](https://github.com/MGrin/scani-oss/commit/2583402746887e9b4b093516eb1e2c76eb782772))
+* **scripts:** a git that could not run is UNKNOWN, never a clean index ([35fdaa9](https://github.com/MGrin/scani-oss/commit/35fdaa96527548e7ab3307a348d52546ea8c57c0))
+* **scripts:** a git that failed is UNKNOWN, never a clean tree ([00f4ef6](https://github.com/MGrin/scani-oss/commit/00f4ef6bc8c67071ae637790f9da464eebc08933))
+* **scripts:** drop an export this repo has no caller for ([5775f87](https://github.com/MGrin/scani-oss/commit/5775f87de2b10297b1e2636ff095034b8a7fa807))
+* **scripts:** refuse a mutation whose new content changes nothing ([34e3022](https://github.com/MGrin/scani-oss/commit/34e3022417c5ec32a52f0877199e960d987277ae))
+* **scripts:** the census printed a claim about an extension the repo lacks ([c4cedcc](https://github.com/MGrin/scani-oss/commit/c4cedccf0359046fa9a3b5bf8140522dc30167cf))
+* **scripts:** the tRPC census scanned 0 of the files directly under scripts/ ([3435634](https://github.com/MGrin/scani-oss/commit/3435634840fd74c8d659ab2ab4e2b32cdc0a03d0))
+* **tests:** a // line comment cannot open a comment block ([d61357d](https://github.com/MGrin/scani-oss/commit/d61357dba6b52e13c2835724139f8474a5fcad4d))
+* **ui:** mirror the three animations dir cannot mirror ([048671b](https://github.com/MGrin/scani-oss/commit/048671b65978bff4b80943ed4e8837c88c93b35e))
+* **ui:** the rtl cascade guard was checking the wrong pairs ([f812ad4](https://github.com/MGrin/scani-oss/commit/f812ad4a37b360c4d165be06ef78611ad274697f))
+* **v3:** two call sites formatted from the device, not the chosen language ([941cf25](https://github.com/MGrin/scani-oss/commit/941cf25b90d8b01ef082f10c84555f1fca12aee4))
+
 ## [0.29.0](https://github.com/MGrin/scani-oss/compare/v0.28.0...v0.29.0) (2026-08-28)
 
 
