@@ -540,6 +540,82 @@ describe('UpcomingFeed — a payment priced from history (SC-798)', () => {
       expect(html).not.toInclude('Not included');
     });
 
+    /**
+     * The tile 40px below, which has the identical defect and is fixed in the
+     * same change (SC-807, scope widened by mgrin 2026-08-29).
+     *
+     * The unit is the SCREEN, not the function: one honest figure beside a
+     * dishonest one is worse than neither, because the honest one implies the
+     * surface was checked. `occurrenceTotals` is still untouched — the tile
+     * gets the same `estimatedTotals` helper and a sentence of its own.
+     */
+    describe('and the overdue tile beside it', () => {
+      /** The same variable bill, four days late and still unsettled. */
+      const LATE_VARIABLE = {
+        ...VARIABLE_BILL,
+        id: 'occurrence-power-late',
+        dueDate: daysFromToday(-4),
+      };
+
+      test('names what the overdue figure leaves out, in its own words', () => {
+        const html = renderFeed('/payments', {
+          occurrences: asAny([LATE_VARIABLE]),
+          historyEstimates: POWER_ESTIMATE,
+        });
+
+        expect(html).toInclude('Overdue, 1 bill');
+        expect(html).toInclude('1 overdue bill is estimated from its last settled amount');
+        expect(html).toInclude('its real amount is still unknown');
+
+        // Its OWN sentence. The committed figure's closing clause is a claim
+        // about commitment and this tile makes no such claim — reusing it here
+        // would be a true sentence under the wrong figure.
+        expect(html).not.toInclude('an estimate is not a commitment');
+
+        const block = html.slice(0, html.indexOf('Hetzner'));
+        expect(block).toInclude('€0.00');
+        expect(block).toInclude('€84.20');
+      });
+
+      test('the control: an overdue bill with a declared amount excludes nothing', () => {
+        // `LATE_BILL` declares 42.00, so it belongs IN the overdue figure. This
+        // is the case that catches the line firing off the wrong predicate.
+        const html = renderFeed('/payments', {
+          occurrences: asAny([LATE_BILL]),
+          historyEstimates: POWER_ESTIMATE,
+        });
+
+        expect(html).toInclude('Overdue, 1 bill');
+        expect(html).not.toInclude('Not included');
+      });
+
+      test('the two lines are separate claims about separate figures', () => {
+        // Both estimated, one ahead and one late. Each tile names its own
+        // exclusion and neither borrows the other's figure or sentence.
+        const html = renderFeed('/payments', {
+          occurrences: asAny([
+            VARIABLE_BILL,
+            {
+              ...LATE_VARIABLE,
+              paymentId: 'payment-water',
+              payment: { ...VARIABLE_PAYMENT, id: 'payment-water' },
+            },
+          ]),
+          historyEstimates: new Map([
+            ...POWER_ESTIMATE,
+            ['payment-water', { amount: '12.00', sourceDueDate: '2026-01-20' }],
+          ]),
+        });
+
+        expect(html).toInclude('an estimate is not a commitment');
+        expect(html).toInclude('its real amount is still unknown');
+        // The committed line carries 84.20 and the overdue line 12.00 — never
+        // the sum, and never each other's figure.
+        expect(html).not.toInclude('€96.20');
+        expect(html).toInclude('€12.00');
+      });
+    });
+
     test('the count pluralises over the bills it actually excludes', () => {
       const second = {
         ...VARIABLE_BILL,

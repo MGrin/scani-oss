@@ -227,6 +227,8 @@
         "billsCommitted_other": "Bills committed, next {{count}} days",
         "estimatedExcluded_one": "Not included: <amounts></amounts> — {{count}} bill is estimated from its last settled amount, and an estimate is not a commitment.",
         "estimatedExcluded_other": "Not included: <amounts></amounts> — {{count}} bills are estimated from their last settled amounts, and an estimate is not a commitment.",
+        "estimatedExcludedOverdue_one": "Not included: <amounts></amounts> — {{count}} overdue bill is estimated from its last settled amount, and its real amount is still unknown.",
+        "estimatedExcludedOverdue_other": "Not included: <amounts></amounts> — {{count}} overdue bills are estimated from their last settled amounts, and their real amounts are still unknown.",
         "row": "{{vendor}}, due {{date}}",
         "label": "upcoming payments"
       },
