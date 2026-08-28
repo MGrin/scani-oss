@@ -95,16 +95,3 @@ export function runGit(args: readonly string[], cwd: string): GitRun {
 
   return { kind: 'ran', stdout: new TextDecoder().decode(proc.stdout) };
 }
-
-/**
- * For a git command whose NON-ZERO exit is a legitimate answer rather than a
- * failure — `cat-file -e` says "no such object" that way, and `merge-base
- * --is-ancestor` says "no".
- *
- * Its own verb so that asking *did this succeed* and asking *what did this
- * print* cannot be the same call. Collapsing them is what lets a population
- * read borrow a predicate's tolerance for failure.
- */
-export function gitSucceeds(args: readonly string[], cwd: string): boolean {
-  return Bun.spawnSync(['git', ...args], { cwd }).success;
-}
