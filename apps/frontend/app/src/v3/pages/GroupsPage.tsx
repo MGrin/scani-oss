@@ -65,7 +65,7 @@ export function GroupsPage() {
         title={t('v3.groups.page.title')}
         action={
           <Button onClick={openCreate} disabled={creating}>
-            <Plus className="mr-1.5 size-4" aria-hidden="true" />
+            <Plus className="me-1.5 size-4" aria-hidden="true" />
             {t('v3.groups.page.newGroup')}
           </Button>
         }

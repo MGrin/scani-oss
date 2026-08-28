@@ -1,3 +1,5 @@
+import { cn } from '@scani/ui/lib/cn';
+import { MIRROR_IN_RTL } from '@scani/ui/lib/direction';
 import { Button } from '@scani/ui/ui/button';
 import { Skeleton } from '@scani/ui/ui/skeleton';
 import { showError, showSuccess } from '@scani/ui/ui/use-toast';
@@ -118,9 +120,9 @@ export function DocumentDetailPage() {
 function BackLink() {
   const { t } = useTranslation();
   return (
-    <Button variant="ghost" size="sm" asChild className="-ml-2 self-start">
+    <Button variant="ghost" size="sm" asChild className="-ms-2 self-start">
       <Link to={V3_ROUTES.files}>
-        <ArrowLeft className="mr-2 size-4" aria-hidden="true" />
+        <ArrowLeft className={cn(MIRROR_IN_RTL, 'me-2 size-4')} aria-hidden="true" />
         {t('v3.documents.detail.backToFiles')}
       </Link>
     </Button>

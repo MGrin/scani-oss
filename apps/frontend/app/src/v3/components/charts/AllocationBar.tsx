@@ -122,7 +122,7 @@ export function AllocationBar({
                   value={segment.share * 100}
                   format="percent"
                   decimals={0}
-                  className="w-10 text-right text-caption text-muted-foreground"
+                  className="w-10 text-end text-caption text-muted-foreground"
                 />
               </span>
             </>

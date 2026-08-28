@@ -1,3 +1,5 @@
+import { cn } from '@scani/ui/lib/cn';
+import { MIRROR_IN_RTL } from '@scani/ui/lib/direction';
 import { Button } from '@scani/ui/ui/button';
 import { Block, BlockHeader } from '@scani/ui/v3/components/Block';
 import { DataRow, DataRowList } from '@scani/ui/v3/components/DataRow';
@@ -152,7 +154,10 @@ export function DocumentParseResult({ result }: { result: unknown }) {
                       name: extraction.vendorNameRaw || t('v3.documents.parse.thisInvoice'),
                     })}
               </span>
-              <ArrowRight className="ml-2 size-4 shrink-0" aria-hidden="true" />
+              <ArrowRight
+                className={cn(MIRROR_IN_RTL, 'ms-2 size-4 shrink-0')}
+                aria-hidden="true"
+              />
             </Link>
           </Button>
         ))}

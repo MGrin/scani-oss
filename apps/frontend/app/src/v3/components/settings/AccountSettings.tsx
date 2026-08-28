@@ -94,7 +94,7 @@ export function AccountSettings() {
       <div className="flex flex-col gap-2">
         <h2 className="text-label text-muted-foreground">{t('settings.account')}</h2>
         <Button variant="outline" className="self-start" onClick={() => void signOut()}>
-          <LogOut className="mr-2 size-4" aria-hidden="true" />
+          <LogOut className="me-2 size-4" aria-hidden="true" />
           {t('settings.signOut')}
         </Button>
       </div>
@@ -104,7 +104,7 @@ export function AccountSettings() {
         <ConfirmAction
           label={
             <>
-              <Trash2 className="mr-2 size-4" aria-hidden="true" />
+              <Trash2 className="me-2 size-4" aria-hidden="true" />
               {deleting
                 ? t('v3.settings.account.deleting')
                 : t('v3.settings.account.deleteTrigger')}
