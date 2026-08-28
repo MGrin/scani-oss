@@ -28,7 +28,7 @@
 // `Reflect.getMetadata is not a function` — the same reason the test preload
 // loads it before anything else.
 import 'reflect-metadata';
-import { type Census, census, FIXTURE_URLS } from './lib/api-procedure-callers';
+import { type Census, census, FIXTURE_URLS, scanPopulation } from './lib/api-procedure-callers';
 
 /**
  * Both router modules read `DATABASE_URL` at import time and construct a
@@ -72,26 +72,6 @@ function proceduresOf(router: unknown): string[] {
 const apiProcedures = proceduresOf(apiRouter);
 const dataProviderProcedures = proceduresOf(dpRouter);
 
-const listed = await new Response(
-  Bun.spawn(
-    [
-      'git',
-      'ls-files',
-      '--',
-      'apps/**/*.ts',
-      'apps/**/*.tsx',
-      'packages/**/*.ts',
-      'packages/**/*.tsx',
-      'scripts/**/*.ts',
-      'infra/**/*.ts',
-    ],
-    { stdout: 'pipe' }
-  ).stdout
-).text();
-
-const paths = listed.split('\n').filter(Boolean);
-const files = await Promise.all(paths.map(async (p) => [p, await Bun.file(p).text()] as const));
-
 /**
  * A zero on either axis is the one reading this tool must never present as a
  * result: "no procedure is reached by a URL" and "no file was searched" render
@@ -108,18 +88,32 @@ if (dataProviderProcedures.length < 20) {
     `only ${dataProviderProcedures.length} data-provider procedure(s) enumerated — same`
   );
 }
-if (paths.length < 1000) {
-  floorFailures.push(
-    `only ${paths.length} file(s) listed by \`git ls-files\` — the glob matched almost nothing`
-  );
-}
-
 if (floorFailures.length > 0) {
   process.stderr.write(
     `api-procedure-callers: REFUSED · NOTHING MEASURED\n${floorFailures.map((f) => `  - ${f}\n`).join('')}`
   );
   process.exit(2);
 }
+
+/**
+ * The population, and why it takes no pathspec: `scanPopulation` in the lib.
+ * The short version is SC-755 — six globs, one of which silently contributed
+ * zero while the total looked healthy.
+ */
+const repoRoot = new URL('..', import.meta.url).pathname;
+const population = scanPopulation(repoRoot);
+
+if (population.kind === 'refused') {
+  process.stderr.write(
+    `api-procedure-callers: REFUSED · NOTHING MEASURED\n  - ${population.why}\n`
+  );
+  process.exit(2);
+}
+
+const paths = population.paths;
+const files = await Promise.all(
+  paths.map(async (p) => [p, await Bun.file(`${repoRoot}/${p}`).text()] as const)
+);
 
 const result: Census = census({ apiProcedures, dataProviderProcedures, files });
 
@@ -146,6 +140,10 @@ const pad = (n: number) => String(n).padStart(4);
 const out: string[] = [
   '',
   `api-procedure-callers: ${apiProcedureCount} api procedure(s), ${dataProviderProcedureCount} data-provider · ${filesScanned} file(s) scanned`,
+  // The population, reconciled end to end. A verdict word with no count is a
+  // claim about an unnamed set, and this census spent SC-755 reporting one:
+  // the total looked healthy while a sixth of the tree was outside it.
+  `  population: ${population.tracked} tracked → ${paths.length} TypeScript → ${paths.length - filesScanned} definition site(s) skipped → ${filesScanned} scanned`,
   '',
   `  reached by a hand-built /trpc/ URL      ${pad(reachedByUrl.length)}`,
   `    also reached through the typed client ${pad(typedAndUrl)}`,
@@ -192,8 +190,12 @@ out.push('    - a procedure reached dynamically: trpc[router][proc], or a URL wh
 out.push('      procedure segment comes from a variable. Nothing textual reaches those.');
 out.push('    - any caller outside this repository — a saved request, an integration');
 out.push('      nobody wrote down. That is why the last count is a question.');
-out.push('    - anything uncommitted: the population is `git ls-files`, so a call site');
-out.push('      written and not staged is absent and the run is green without it.');
+out.push('    - anything uncommitted. The population is every tracked `.ts`/`.tsx`');
+out.push('      path — `git ls-files`, no pathspec — so a call site written and not');
+out.push('      staged is absent and the run is green without it.');
+out.push('    - a caller in any file that is not `.ts` or `.tsx`. Tracked `.js` and');
+out.push('      `.mjs` files exist and are outside the population; the reconciliation');
+out.push('      above is what makes that visible rather than something to remember.');
 out.push('');
 
 console.log(out.join('\n'));
