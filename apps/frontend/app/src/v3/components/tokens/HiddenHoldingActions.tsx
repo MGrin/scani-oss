@@ -5,6 +5,7 @@ import { Eye } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { trpc } from '@/lib/trpc';
+import { tokenDisplayName } from '@/lib/utils';
 import {
   optimisticRemoveHiddenHolding,
   optimisticSetTokenScam,
@@ -106,7 +107,7 @@ export function HiddenHoldingActions({ holding }: HiddenHoldingActionsProps) {
           isPending={unmarkScam.isPending}
           consequence={t('v3.tokens.actions.clearFlagConsequence', {
             symbol: holding.token.symbol,
-            name: holding.token.name,
+            name: tokenDisplayName(t, holding.token),
           })}
           onConfirm={() => unmarkScam.mutate({ tokenId: holding.token.id })}
         />

@@ -23,6 +23,9 @@ interface HiddenHoldingRow {
     id: string;
     symbol: string;
     name: string;
+    /** `token_types.code`. The client renders a fiat name in the reader's own
+     *  language and needs the code to know which rows those are (SC-824). */
+    typeCode: string;
     iconUrl: string | null;
     isScamProbability: number;
   };
@@ -347,6 +350,11 @@ export class HoldingQueryService extends BaseService {
             id: token.id,
             symbol: token.symbol,
             name: token.name,
+            // The only projection of a token in this file that omitted it, so
+            // /tokens rendered `tokens.name` raw while every other surface
+            // showed the reader's own currency name (SC-824). `name` stays —
+            // it is the fallback for a symbol CLDR does not know.
+            typeCode: token.typeCode,
             iconUrl: token.iconUrl,
             isScamProbability: token.isScamProbability ?? 0,
           },

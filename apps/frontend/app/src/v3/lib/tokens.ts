@@ -50,7 +50,7 @@ export interface HiddenHoldingRow {
   id: string;
   balance: string;
   hiddenReason: 'user_hidden' | 'scam' | 'both';
-  token: { id: string; symbol: string; name: string; isScamProbability: number };
+  token: { id: string; symbol: string; name: string; typeCode: string; isScamProbability: number };
   account: { id: string; name: string };
   institution: { id: string; name: string };
 }
