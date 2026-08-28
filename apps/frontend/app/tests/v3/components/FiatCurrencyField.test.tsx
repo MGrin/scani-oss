@@ -1,6 +1,7 @@
 import '../../i18n-preload';
 
 import { describe, expect, test } from 'bun:test';
+import { resetFormatLocale, setFormatLocale } from '@scani/shared';
 import i18n from 'i18next';
 import {
   fiatCurrencyLabel,
@@ -13,7 +14,9 @@ import {
  * order is the only lever left.
  */
 
-type Currency = Parameters<typeof rankFiatCurrencies>[0][number];
+const t = i18n.t.bind(i18n);
+
+type Currency = Parameters<typeof rankFiatCurrencies>[1][number];
 
 function currency(symbol: string, name: string): Currency {
   return { id: `id-${symbol}`, symbol, name };
@@ -28,7 +31,7 @@ const LIST: Currency[] = [
 ];
 
 const symbols = (query: string): string[] =>
-  rankFiatCurrencies(LIST, query).map((entry) => entry.symbol);
+  rankFiatCurrencies(t, LIST, query).map((entry) => entry.symbol);
 
 describe('rankFiatCurrencies', () => {
   test('no query is every currency, alphabetically', () => {
@@ -61,16 +64,55 @@ describe('rankFiatCurrencies', () => {
 
   test('the list handed in is not reordered under its owner', () => {
     const original = [...LIST];
-    rankFiatCurrencies(LIST, 'c');
+    rankFiatCurrencies(t, LIST, 'c');
     expect(LIST).toEqual(original);
   });
 });
 
 describe('fiatCurrencyLabel', () => {
+  /**
+   * SC-824. Every row this picker shows is fiat BY CONSTRUCTION — the list is
+   * `users.getSupportedCurrencies`, i.e. `getTokensByType('fiat')` — so the
+   * name is derived from the symbol and the stored English never reaches a
+   * reader. The fixture's `name` is the stored one, and it is what must NOT
+   * come back.
+   */
   test('names the currency as well as its code', () => {
-    expect(fiatCurrencyLabel({ symbol: 'USD', name: 'United States Dollar' })).toBe(
-      'USD — United States Dollar'
+    expect(fiatCurrencyLabel(t, { symbol: 'USD', name: 'United States Dollar' })).toBe(
+      'USD — US Dollar'
     );
+  });
+
+  test('a Spanish reader gets the Spanish name', () => {
+    try {
+      setFormatLocale('es');
+      const label = fiatCurrencyLabel(t, { symbol: 'USD', name: 'United States Dollar' });
+      expect(label).toBe('USD — dólar estadounidense');
+      expect(label).not.toContain('United States Dollar');
+    } finally {
+      resetFormatLocale();
+    }
+  });
+
+  /**
+   * The stored name is still the FALLBACK, which is why the field is read
+   * rather than dropped: `XTS` is a reserved code CLDR has no name for.
+   */
+  test('a symbol CLDR does not know falls back rather than blanking', () => {
+    expect(fiatCurrencyLabel(t, { symbol: 'XTS', name: 'Test Currency' })).toContain('XTS');
+  });
+
+  test('the picker searches the name it SHOWS, not the English underneath', () => {
+    try {
+      setFormatLocale('es');
+      // `estadounidense` appears in no stored `name` in LIST — only in the
+      // derived Spanish label. A search over the stored name finds nothing.
+      expect(symbols('estadounidense')).toEqual(['USD']);
+      // And the must-be-ABSENT arm: the stored English is not searchable there.
+      expect(symbols('United States')).toEqual([]);
+    } finally {
+      resetFormatLocale();
+    }
   });
 });
 
@@ -136,7 +178,7 @@ test('the compact field shows the code alone, and the full field still names it'
   const source = await Bun.file(
     new URL('../../../src/v3/components/form/FiatCurrencyField.tsx', import.meta.url)
   ).text();
-  expect(source).toContain('compact ? selected.symbol : fiatCurrencyLabel(selected)');
+  expect(source).toContain('compact ? selected.symbol : fiatCurrencyLabel(t, selected)');
 });
 
 test('both token sheets ask for the compact label, since both sit beside an amount', async () => {

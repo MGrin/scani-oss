@@ -8,6 +8,7 @@ import type { V3QueryState } from '@scani/ui/v3/lib/query-state';
 import { EyeOff, ShieldAlert } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
+import { tokenDisplayName } from '@/lib/utils';
 import { amountDecimals } from '../../lib/holdings';
 import { V3_ROUTES } from '../../lib/routes';
 import {
@@ -76,7 +77,7 @@ export function HiddenHoldingsList({ holdings, query }: HiddenHoldingsListProps)
     searchPlaceholderKey: 'ui.dataView.hiddenHoldings.config.searchHidden',
     searchFn: (holding, query) =>
       holding.token.symbol.toLowerCase().includes(query) ||
-      holding.token.name.toLowerCase().includes(query),
+      tokenDisplayName(t, holding.token).toLowerCase().includes(query),
     filterDefs: [
       {
         key: 'reason',
@@ -114,7 +115,7 @@ export function HiddenHoldingsList({ holdings, query }: HiddenHoldingsListProps)
           <ReasonBadge holding={holding} />
         </span>
       ),
-      sublabel: `${holding.token.name} · ${holding.account.name}`,
+      sublabel: `${tokenDisplayName(t, holding.token)} · ${holding.account.name}`,
       value: <Balance balance={holding.balance} />,
       ariaLabel: `${holding.token.symbol}, ${hiddenReasonLabel(t, holding.hiddenReason)}`,
     }),
@@ -128,7 +129,7 @@ export function HiddenHoldingsList({ holdings, query }: HiddenHoldingsListProps)
           <span className="flex min-w-0 flex-col">
             <span className="truncate text-label">{holding.token.symbol}</span>
             <span className="truncate text-caption text-muted-foreground">
-              {holding.token.name}
+              {tokenDisplayName(t, holding.token)}
             </span>
           </span>
         ),
@@ -172,7 +173,7 @@ export function HiddenHoldingsList({ holdings, query }: HiddenHoldingsListProps)
       basePath: TOKENS_HIDDEN_PATH,
       render: (holding) => ({
         title: holding.token.symbol,
-        subtitle: holding.token.name,
+        subtitle: tokenDisplayName(t, holding.token),
         value: <Balance balance={holding.balance} />,
         primary: [
           { label: t('v3.tokens.hidden.why'), value: hiddenReasonLabel(t, holding.hiddenReason) },

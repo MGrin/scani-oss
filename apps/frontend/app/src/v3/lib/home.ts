@@ -1,6 +1,7 @@
 import { ALLOCATION_OTHER_KEY, type AllocationInput } from '@scani/ui/v3/lib/chart';
 import { toFiniteNumber } from '@scani/ui/v3/lib/numeric';
 import type { TFunction } from 'i18next';
+import { tokenDisplayName } from '@/lib/utils';
 import { compareGroupAmounts, type GroupValue, groupAmount, groupValuesById } from './groups';
 import { V3_ROUTES } from './routes';
 import { tokenTypeLabel } from './tokens';
@@ -772,6 +773,14 @@ export interface TopHoldingItem {
   id: string;
   symbol: string;
   name: string;
+  /**
+   * `dashboard.getOverview` calls it `tokenTypeCode`; it is the `token_types.code`
+   * that `tokenDisplayName` needs to tell a fiat row from the rest. The wire has
+   * always carried it (`DashboardService`) and this interface used to drop it,
+   * which is the whole of SC-824: home rendered the stored English name while
+   * every other surface rendered the reader's own (SC-419).
+   */
+  tokenTypeCode?: string | null;
   value: string;
   institutionName?: string;
   accountName?: string;
@@ -798,6 +807,7 @@ export interface TopHoldingRow {
  * rows with two uuids, so the strip cannot collide.
  */
 export function topHoldingRows(
+  t: TFunction,
   items: readonly TopHoldingItem[],
   totalValue: number | string | null | undefined
 ): TopHoldingRow[] {
@@ -807,12 +817,17 @@ export function topHoldingRows(
     const value = toFiniteNumber(item.value);
     if (value === null) return [];
     const where = [item.institutionName, item.accountName].filter(Boolean).join(' · ');
+    const name = tokenDisplayName(t, {
+      symbol: item.symbol,
+      name: item.name,
+      typeCode: item.tokenTypeCode,
+    });
     return [
       {
         key: item.id,
         holdingId: item.id.replace(/-\d+$/, ''),
         symbol: item.symbol,
-        sublabel: where ? `${item.name} · ${where}` : item.name,
+        sublabel: where ? `${name} · ${where}` : name,
         value,
         share: total === null || total <= 0 ? null : (value / total) * 100,
       },

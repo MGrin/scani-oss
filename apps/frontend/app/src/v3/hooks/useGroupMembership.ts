@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { invalidatePortfolioQueries } from '@/hooks/invalidatePortfolioQueries';
 import { trpc } from '@/lib/trpc';
+import { tokenDisplayName } from '@/lib/utils';
 import { candidatesFor, compareMembers, type MemberEntry } from '../lib/membership';
 
 /**
@@ -43,7 +44,7 @@ export function useGroupMembership(groupId: string) {
       id: holding.id,
       kind: 'holding' as const,
       label: holding.token.symbol,
-      sublabel: `${holding.token.name} · ${holding.institution.name}`,
+      sublabel: `${tokenDisplayName(t, holding.token)} · ${holding.institution.name}`,
       // Carried because the group's total does not count it and the list does
       // show it (SC-388). The flag is the holdings list's own — the row is
       // badged there too — so the two surfaces cannot call the same position
