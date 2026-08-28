@@ -624,6 +624,10 @@
         "billsCommitted_few": "Обязательные расходы, ближайшие {{count}} дня",
         "billsCommitted_many": "Обязательные расходы, ближайшие {{count}} дней",
         "billsCommitted_other": "Обязательные расходы, ближайшие {{count}} дня",
+        "estimatedExcluded_one": "Не включено: <amounts></amounts> — {{count}} платёж оценён по последнему закрытому платежу, а оценка — не обязательство.",
+        "estimatedExcluded_few": "Не включено: <amounts></amounts> — {{count}} платежа оценены по последним закрытым платежам, а оценка — не обязательство.",
+        "estimatedExcluded_many": "Не включено: <amounts></amounts> — {{count}} платежей оценены по последним закрытым платежам, а оценка — не обязательство.",
+        "estimatedExcluded_other": "Не включено: <amounts></amounts> — {{count}} платежа оценены по последним закрытым платежам, а оценка — не обязательство.",
         "row": "{{vendor}}, срок {{date}}",
         "label": "ближайшие платежи"
       },
