@@ -30,6 +30,7 @@ import type { IntegrationManifest } from './integration-manifest';
 import type {
   DecryptedCredentials,
   DiscoveredAccount,
+  ExitedPosition,
   HoldingSnapshot,
   PriceQuote,
   ProviderContext,
@@ -235,6 +236,37 @@ export interface BalanceProvider extends ProviderBase {
 export interface TransactionsProvider extends ProviderBase {
   canFetchTransactions(institutionCode: string): boolean;
   fetchTransactions(ctx: TransactionFetchContext): Promise<TransactionEvent[]>;
+
+  /**
+   * Positions this account TRADED and no longer holds — the other half of
+   * `fetchBalances`, which answers only *what is here now* (SC-398).
+   *
+   * The wallet review builds its offer list from current balances alone, so a
+   * token bought and fully exited before the first import is offered to
+   * nobody, gets no holding, and then has BOTH its legs dropped by
+   * `TransactionRouter`'s find-only resolution. The whole life of the position
+   * is invisible, with no row anywhere to notice it. This is what makes those
+   * positions reviewable.
+   *
+   * TWO CLAIMS, and an implementation owes BOTH:
+   *
+   *  - **Traded**, not received. The account holder's own authorisation has to
+   *    be in the data, structurally rather than by heuristic — on EVM that is
+   *    the `txlist` signature, which the address-poisoning contracts find-only
+   *    exists to keep out cannot forge, and which no name filter can see
+   *    (`evm-traded-tokens.ts`).
+   *  - **No longer held**, MEASURED. The caller anchors a holding at zero on
+   *    this answer, and `holdings.balance` is an anchor rather than a sum, so a
+   *    position wrongly reported here puts a wrong number on somebody's screen.
+   *    Subtracting `fetchBalances`' output is NOT sufficient: the two calls can
+   *    see different populations (Etherscan's balance discovery reads one
+   *    10k-row page and applies a name filter). Read the balance.
+   *
+   * OPTIONAL, and the absence is an answer rather than a stub to fill in. A
+   * chain with no authorisation signal must not guess; a caller meeting an
+   * absent implementation keeps today's behaviour, current balances only.
+   */
+  fetchExitedPositions?(ctx: TransactionFetchContext): Promise<ExitedPosition[]>;
 
   /**
    * How far back this provider can actually see, when the caller asks for

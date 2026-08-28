@@ -201,6 +201,28 @@ export interface HoldingSnapshot {
 }
 
 /**
+ * A position the account TRADED and no longer holds (SC-398).
+ *
+ * Identified exactly the way a `HoldingSnapshot` identifies the same asset, so
+ * the two are comparable: an `externalId` in both is a position still open, one
+ * only here is a position that was closed.
+ *
+ * IT CARRIES NO BALANCE BECAUSE THE BALANCE IS ZERO, MEASURED. The producer
+ * reads it rather than inferring it from the asset's absence from
+ * `fetchBalances` — those two calls can see different populations, and the
+ * caller anchors a holding on this. A field that is always `'0'` would say
+ * less than the type's own name does.
+ */
+export interface ExitedPosition {
+  /** Same key `fetchBalances` emits for the same asset — `'native'`, a
+      contract address, a mint. That is what makes the two comparable. */
+  externalId: string;
+  tokenIdentity: Partial<NewToken>;
+  /** Token type code, as on `HoldingSnapshot`. */
+  tokenType?: string;
+}
+
+/**
  * Sub-account discovered under a single integration credential. Brokers
  * (IBKR Flex Query) and venues (Wise multi-currency, Binance spot vs
  * margin) expose multiple accounts behind one set of credentials; the
