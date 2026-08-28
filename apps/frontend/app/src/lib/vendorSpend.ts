@@ -4,6 +4,7 @@ import {
   asPaymentIntervalUnit,
   type ConversionContext,
   convertTotalsToBase,
+  type HistoryEstimate,
   sumAmountsByCurrency,
   sumMonthlyEquivalentByCurrency,
 } from '@/v3/lib/paymentTotals';
@@ -33,7 +34,10 @@ import {
 
 /** The two directions money moves. Written down once so no surface decides
  *  for itself what the free-text `direction` column is allowed to say. */
-const OUTFLOW = 'outflow';
+// Both exported since SC-625: `monthlyCommitmentByVendor` no longer defaults
+// its direction, so every caller has to name one, and a caller naming it with
+// a bare `'outflow'` literal is a spelling nothing checks.
+export const OUTFLOW = 'outflow';
 export const INFLOW = 'inflow';
 
 /**
@@ -127,6 +131,8 @@ export interface VendorSettlement {
 }
 
 export interface CommitmentInput {
+  /** The payment's own id — the key `historyEstimates` is looked up by. */
+  id: string;
   vendorId: string;
   expectedAmount: string | null;
   intervalUnit: string;
@@ -136,11 +142,27 @@ export interface CommitmentInput {
   status: string;
 }
 
-/** Per-currency monthly commitment, per vendor. Only what is still running
- *  counts: a paused or ended payment commits the user to nothing. */
+/**
+ * Per-currency monthly commitment, per vendor. Only what is still running
+ * counts: a paused or ended payment commits the user to nothing.
+ *
+ * `historyEstimates` is threaded through rather than defaulted away (SC-625).
+ * A vendor's "Committed per month" and the recurring list's "Committed each
+ * month" are the same claim about the same book, sit two segments apart on one
+ * page, and are read against each other — so one of them silently omitting a
+ * payment the other includes is worse than either omitting it.
+ *
+ * Neither trailing argument has a default, and `direction` lost the one it had.
+ * A default on `historyEstimates` would have compiled at every existing call
+ * site and left them on the old behaviour — the exact "present and never
+ * invoked" shape the required-field rule exists to prevent — and leaving
+ * `direction` defaulted while the argument after it is required is not
+ * expressible anyway.
+ */
 export function monthlyCommitmentByVendor(
   payments: readonly CommitmentInput[],
-  direction = 'outflow'
+  direction: string,
+  historyEstimates: ReadonlyMap<string, HistoryEstimate>
 ): Map<string, Map<string, Decimal>> {
   const byVendor = new Map<string, CommitmentInput[]>();
   for (const payment of payments) {
@@ -160,6 +182,7 @@ export function monthlyCommitmentByVendor(
           intervalUnit: asPaymentIntervalUnit(payment.intervalUnit),
           intervalCount: payment.intervalCount,
           currencyTokenId: payment.currencyTokenId,
+          historyEstimate: historyEstimates.get(payment.id) ?? null,
         }))
       )
     );

@@ -9,11 +9,13 @@ import {
   convertAmountToBase,
   convertTotalsToBase,
   formatPaymentInterval,
+  type HistoryEstimate,
   monthlyEquivalent,
   occurrencesPerYear,
   PAYMENT_INTERVAL_UNITS,
   sumAmountsByCurrency,
   sumMonthlyEquivalentByCurrency,
+  unestimatedCount,
 } from '../../../src/v3/lib/paymentTotals';
 
 /**
@@ -145,8 +147,20 @@ describe('sumMonthlyEquivalentByCurrency', () => {
     // per-period-scaled total) — it must sum the annualised-then-divided
     // monthly figures.
     const totals = sumMonthlyEquivalentByCurrency([
-      { expectedAmount: '50', intervalUnit: 'week', intervalCount: 2, currencyTokenId: 'usd' },
-      { expectedAmount: '300', intervalUnit: 'quarter', intervalCount: 1, currencyTokenId: 'usd' },
+      {
+        expectedAmount: '50',
+        intervalUnit: 'week',
+        intervalCount: 2,
+        currencyTokenId: 'usd',
+        historyEstimate: null,
+      },
+      {
+        expectedAmount: '300',
+        intervalUnit: 'quarter',
+        intervalCount: 1,
+        currencyTokenId: 'usd',
+        historyEstimate: null,
+      },
     ]);
 
     const total = totals.get('usd');
@@ -155,9 +169,15 @@ describe('sumMonthlyEquivalentByCurrency', () => {
     expect(total?.equals(new Decimal('200'))).toBe(false);
   });
 
-  test('skips entries with no expectedAmount (variable-kind payments with no estimate)', () => {
+  test('skips entries with no expectedAmount and no history estimate', () => {
     const totals = sumMonthlyEquivalentByCurrency([
-      { expectedAmount: null, intervalUnit: 'month', intervalCount: 1, currencyTokenId: 'usd' },
+      {
+        expectedAmount: null,
+        intervalUnit: 'month',
+        intervalCount: 1,
+        currencyTokenId: 'usd',
+        historyEstimate: null,
+      },
     ]);
 
     expect(totals.size).toBe(0);
@@ -165,8 +185,20 @@ describe('sumMonthlyEquivalentByCurrency', () => {
 
   test('keeps different currencies in separate buckets', () => {
     const totals = sumMonthlyEquivalentByCurrency([
-      { expectedAmount: '120', intervalUnit: 'month', intervalCount: 1, currencyTokenId: 'usd' },
-      { expectedAmount: '60', intervalUnit: 'month', intervalCount: 1, currencyTokenId: 'eur' },
+      {
+        expectedAmount: '120',
+        intervalUnit: 'month',
+        intervalCount: 1,
+        currencyTokenId: 'usd',
+        historyEstimate: null,
+      },
+      {
+        expectedAmount: '60',
+        intervalUnit: 'month',
+        intervalCount: 1,
+        currencyTokenId: 'eur',
+        historyEstimate: null,
+      },
     ]);
 
     expect(totals.get('usd')?.toString()).toBe('120');
@@ -431,5 +463,75 @@ describe('convertAmountToBase', () => {
     };
     expect(convertAmountToBase(null, GBP, context)).toBeNull();
     expect(convertAmountToBase('120', GBP, context)).toBeNull();
+  });
+});
+
+describe('sumMonthlyEquivalentByCurrency — the history estimate (SC-625)', () => {
+  const variable = (historyEstimate: HistoryEstimate | null) => ({
+    expectedAmount: null,
+    intervalUnit: 'month' as const,
+    intervalCount: 1,
+    currencyTokenId: 'usd',
+    historyEstimate,
+  });
+
+  test('a history estimate is counted where a declared one would be', () => {
+    const totals = sumMonthlyEquivalentByCurrency([
+      variable({ amount: '84.20', sourceDueDate: '2026-02-15' }),
+    ]);
+    expect(totals.get('usd')?.toString()).toBe('84.2');
+  });
+
+  test('it annualises like any other amount rather than being taken as monthly', () => {
+    // A QUARTERLY payment estimated at 210 is 70 a month, not 210. The
+    // substitution happens before the cadence maths, not after it — taking the
+    // settled figure as already-monthly is the failure the annualisation rule
+    // at the top of this file exists for, reached by a new route.
+    const totals = sumMonthlyEquivalentByCurrency([
+      {
+        expectedAmount: null,
+        intervalUnit: 'quarter',
+        intervalCount: 1,
+        currencyTokenId: 'usd',
+        historyEstimate: { amount: '210', sourceDueDate: '2025-12-15' },
+      },
+    ]);
+    expect(totals.get('usd')?.toString()).toBe('70');
+  });
+
+  test('a declared estimate beats history, never the other way round', () => {
+    const totals = sumMonthlyEquivalentByCurrency([
+      {
+        expectedAmount: '100',
+        intervalUnit: 'month',
+        intervalCount: 1,
+        currencyTokenId: 'usd',
+        historyEstimate: { amount: '999', sourceDueDate: '2026-02-15' },
+      },
+    ]);
+    expect(totals.get('usd')?.toString()).toBe('100');
+  });
+
+  test('unestimatedCount is the denominator, and it counts only what the sum left out', () => {
+    const payments = [
+      variable(null),
+      variable(null),
+      variable({ amount: '50', sourceDueDate: '2026-02-15' }),
+      {
+        expectedAmount: '10',
+        intervalUnit: 'month' as const,
+        intervalCount: 1,
+        currencyTokenId: 'usd',
+        historyEstimate: null,
+      },
+    ];
+
+    // 50 + 10 in the total, and exactly the two it could not price counted.
+    expect(sumMonthlyEquivalentByCurrency(payments).get('usd')?.toString()).toBe('60');
+    expect(unestimatedCount(payments)).toBe(2);
+
+    // The must-be-ABSENT control: on a book where everything is priced the
+    // count is 0, so a non-zero reading is never just "this function runs".
+    expect(unestimatedCount(payments.slice(2))).toBe(0);
   });
 });

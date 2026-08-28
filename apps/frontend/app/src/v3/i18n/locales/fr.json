@@ -2541,7 +2541,13 @@
         "addPayment": "Ajouter un paiement"
       },
       "recurringSummary": {
-        "committedEachMonth": "Engagé chaque mois"
+        "committedEachMonth": "Engagé chaque mois",
+        "estimatedFromHistory_one": "Comprend {{count}} paiement variable estimé d’après son dernier règlement.",
+        "estimatedFromHistory_many": "Comprend {{count}} paiements variables estimés d’après leurs derniers règlements.",
+        "estimatedFromHistory_other": "Comprend {{count}} paiements variables estimés d’après leurs derniers règlements.",
+        "notCounted_one": "{{count}} paiement variable n’a aucune estimation et n’est pas compté.",
+        "notCounted_many": "{{count}} paiements variables n’ont aucune estimation et ne sont pas comptés.",
+        "notCounted_other": "{{count}} paiements variables n’ont aucune estimation et ne sont pas comptés."
       },
       "vendorPeek": {
         "newVendor": "Nouveau fournisseur",
@@ -2649,7 +2655,9 @@
         "repeatYear_one": "Se répète chaque année, calé sur le jour de l’échéance.",
         "repeatYear_many": "Se répète tous les {{count}} ans, calé sur le jour de l’échéance.",
         "repeatYear_other": "Se répète tous les {{count}} ans, calé sur le jour de l’échéance.",
-        "blockers": "Pour continuer : {{blockers}}."
+        "blockers": "Pour continuer : {{blockers}}.",
+        "estimateFromHistory": "Estimer d’après le dernier montant",
+        "estimateFromHistoryHint": "Désactivé par défaut. Une fois activé, les projections reprennent le montant du dernier règlement de ce paiement, en indiquant de quel mois il vient."
       },
       "forecast": {
         "projectedMark": "Projeté",
@@ -2742,7 +2750,23 @@
         "answerOverrideActive": "Utilise votre chiffre de <amount/> par mois, défini le {{date}}. Mesuré : <measured/>.",
         "answerRevert": "Revenir au chiffre mesuré",
         "answerCurrencyChanged": "Votre réponse du {{date}} a été donnée dans une autre devise : elle ne s’applique donc plus.",
-        "answerFailed": "L’enregistrement a échoué."
+        "answerFailed": "L’enregistrement a échoué.",
+        "estimatedMark": "Estimé",
+        "estimatedFrom": "d’après {{month}}",
+        "estimatedFromAmount": "d’après {{month}} · <value></value>",
+        "estimatedTitle": "Estimé d’après l’historique",
+        "estimatedCount_one": "{{count}} paiement variable est chiffré d’après son dernier règlement, et non d’après une estimation saisie.",
+        "estimatedCount_many": "{{count}} paiements variables sont chiffrés d’après leurs derniers règlements, et non d’après des estimations saisies.",
+        "estimatedCount_other": "{{count}} paiements variables sont chiffrés d’après leurs derniers règlements, et non d’après des estimations saisies.",
+        "couldEstimate_one": "{{count}} de ces paiements variables a déjà été réglé : son dernier montant pourrait servir.",
+        "couldEstimate_many": "{{count}} de ces paiements variables ont déjà été réglés : leurs derniers montants pourraient servir.",
+        "couldEstimate_other": "{{count}} de ces paiements variables ont déjà été réglés : leurs derniers montants pourraient servir.",
+        "useLastSettled_one": "Utiliser son dernier montant réglé",
+        "useLastSettled_many": "Utiliser leurs derniers montants réglés",
+        "useLastSettled_other": "Utiliser leurs derniers montants réglés",
+        "stopEstimating_one": "Ne plus l’estimer",
+        "stopEstimating_many": "Ne plus les estimer",
+        "stopEstimating_other": "Ne plus les estimer"
       }
     }
   }

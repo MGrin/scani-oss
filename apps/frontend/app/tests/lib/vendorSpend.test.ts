@@ -6,11 +6,13 @@ import {
   commitmentLabel,
   comparableBaseAmount,
   formatConvertedFigure,
+  INFLOW,
   incomeCommitmentLabel,
   isIncomeVendor,
   mergeCurrencyTotals,
   monthlyCommitmentByVendor,
   noSettledSpend,
+  OUTFLOW,
   paidAllTimeLabel,
   paidWindowLabel,
   perMonthLabel,
@@ -25,7 +27,7 @@ import {
   vendorDirectionKinds,
   vendorKindLabel,
 } from '@/lib/vendorSpend';
-import type { BaseCurrencyRate } from '@/v3/lib/paymentTotals';
+import type { BaseCurrencyRate, HistoryEstimate } from '@/v3/lib/paymentTotals';
 
 const t = i18n.getFixedT('en');
 const ru = i18n.getFixedT('ru');
@@ -43,7 +45,16 @@ const context = (entries: Array<[string, BaseCurrencyRate | null]>) => ({
   now: NOW,
 });
 
+/**
+ * No payment here is estimated from history — every case in this file is about
+ * declared amounts, and passing the map explicitly is what SC-625 made
+ * unavoidable: the argument has no default, so a test cannot silently be about
+ * a book whose estimates nobody chose.
+ */
+const NO_HISTORY = new Map<string, HistoryEstimate>();
+
 const payment = (overrides: Partial<CommitmentInput> = {}): CommitmentInput => ({
+  id: 'p1',
   vendorId: 'v1',
   expectedAmount: '10',
   intervalUnit: 'month',
@@ -68,33 +79,45 @@ const total = (overrides: Partial<VendorSpendTotal> = {}): VendorSpendTotal => (
 describe('monthlyCommitmentByVendor', () => {
   test('a fortnightly payment annualises before it is divided back to a month', () => {
     // 20 × 26 ÷ 12, not 20 × 2 — the bug the annualisation rule exists for.
-    const commitment = monthlyCommitmentByVendor([
-      payment({ expectedAmount: '20', intervalUnit: 'week', intervalCount: 2 }),
-    ]);
+    const commitment = monthlyCommitmentByVendor(
+      [payment({ expectedAmount: '20', intervalUnit: 'week', intervalCount: 2 })],
+      OUTFLOW,
+      NO_HISTORY
+    );
     expect(commitment.get('v1')?.get(EUR)?.toFixed(2)).toBe('43.33');
   });
 
   test('only what is still running counts as a commitment', () => {
-    const commitment = monthlyCommitmentByVendor([
-      payment({ status: 'active', expectedAmount: '10' }),
-      payment({ status: 'paused', expectedAmount: '99' }),
-      payment({ status: 'ended', expectedAmount: '99' }),
-    ]);
+    const commitment = monthlyCommitmentByVendor(
+      [
+        payment({ status: 'active', expectedAmount: '10' }),
+        payment({ status: 'paused', expectedAmount: '99' }),
+        payment({ status: 'ended', expectedAmount: '99' }),
+      ],
+      OUTFLOW,
+      NO_HISTORY
+    );
     expect(commitment.get('v1')?.get(EUR)?.toString()).toBe('10');
   });
 
   test('income is not spend', () => {
-    const commitment = monthlyCommitmentByVendor([
-      payment({ direction: 'inflow', expectedAmount: '3000' }),
-    ]);
+    const commitment = monthlyCommitmentByVendor(
+      [payment({ direction: 'inflow', expectedAmount: '3000' })],
+      OUTFLOW,
+      NO_HISTORY
+    );
     expect(commitment.get('v1')).toBeUndefined();
   });
 
   test('a vendor billed in two currencies keeps them apart until conversion', () => {
-    const commitment = monthlyCommitmentByVendor([
-      payment({ expectedAmount: '10', currencyTokenId: EUR }),
-      payment({ expectedAmount: '20', currencyTokenId: GBP }),
-    ]);
+    const commitment = monthlyCommitmentByVendor(
+      [
+        payment({ expectedAmount: '10', currencyTokenId: EUR }),
+        payment({ expectedAmount: '20', currencyTokenId: GBP }),
+      ],
+      OUTFLOW,
+      NO_HISTORY
+    );
     expect(commitment.get('v1')?.get(EUR)?.toString()).toBe('10');
     expect(commitment.get('v1')?.get(GBP)?.toString()).toBe('20');
   });
@@ -317,7 +340,8 @@ describe('classifying a vendor by the direction its money moves', () => {
   test('inflow commitments are summed when asked for, so the row has a figure to show', () => {
     const totals = monthlyCommitmentByVendor(
       [payment({ vendorId: 'acme', direction: 'inflow', expectedAmount: '5850' })],
-      'inflow'
+      INFLOW,
+      NO_HISTORY
     );
     expect(totals.get('acme')?.get(EUR)?.toString()).toBe('5850');
   });
