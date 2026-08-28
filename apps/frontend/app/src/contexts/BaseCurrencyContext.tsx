@@ -30,12 +30,19 @@ export function BaseCurrencyProvider({ children }: { children: ReactNode }) {
     return {
       // `createCurrencyToken` synthesises a display-only placeholder
       // (`id: "currency-USD"`) for when the real base currency hasn't
-      // resolved yet. Once it has, carry the actual DB id/name through —
+      // resolved yet. Once it has, carry the actual DB **id** through —
       // callers that need a real `tokens.id` (e.g. defaulting a currency
       // picker) can't submit a synthetic one, since every FK on
       // `currencyTokenId` validates as `z.string().uuid()`.
+      //
+      // The NAME is deliberately not carried across (SC-419). This used to
+      // spread `name: baseCurrency.name` over the CLDR one, so the placeholder
+      // was translated and the real value that replaced it a frame later was
+      // `tokens.name` — an English string in Postgres. The base currency is
+      // always fiat, so the derived name is right for every row and needs no
+      // type check.
       token: baseCurrency
-        ? { ...createCurrencyToken(t, symbol), id: baseCurrency.id, name: baseCurrency.name }
+        ? { ...createCurrencyToken(t, symbol), id: baseCurrency.id }
         : createCurrencyToken(t, symbol),
       symbol,
       isLoading,
