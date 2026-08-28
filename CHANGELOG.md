@@ -19,6 +19,18 @@ version heading stays there permanently, above every future release. This
 comment is deliberately in that position; explanatory prose should not be.
 -->
 
+## [0.29.0](https://github.com/MGrin/scani-oss/compare/v0.28.0...v0.29.0) (2026-08-28)
+
+
+### Features
+
+* **ui:** mirror v3 and the design system under dir="rtl" ([f28ebe2](https://github.com/MGrin/scani-oss/commit/f28ebe2150b77b846d01b91193ed27312b16e5da))
+
+
+### Bug Fixes
+
+* **ui:** mirror the Switch thumb and pin why rtl: wins ([57dd92a](https://github.com/MGrin/scani-oss/commit/57dd92a5535a3cb8f17d218b7412a437c22a8809))
+
 ## [0.28.0](https://github.com/MGrin/scani-oss/compare/v0.27.0...v0.28.0) (2026-08-28)
 
 
