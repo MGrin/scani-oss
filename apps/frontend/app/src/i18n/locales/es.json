@@ -1,0 +1,964 @@
+{
+  "$meta": {
+    "name": "Spanish",
+    "nativeName": "Español"
+  },
+  "auth": {
+    "callback": {
+      "errorSubtitle": "Ha habido un problema al iniciar tu sesión",
+      "errorTitle": "Error de autenticación",
+      "expired": "Tu enlace de inicio de sesión ha caducado o no se ha podido verificar. Solicita uno nuevo.",
+      "linkFailed": "Error de autenticación",
+      "signingInBody": "Esto solo tardará un momento.",
+      "signingInSubtitle": "Espera mientras verificamos tu autenticación",
+      "signingInTitle": "Iniciando tu sesión…",
+      "successBody": "Redirigiéndote a tu panel…",
+      "successSubtitle": "Has iniciado sesión correctamente",
+      "successTitle": "¡Bienvenido!",
+      "support": "Si el problema continúa, ponte en contacto con el servicio de asistencia.",
+      "tryAgain": "Inténtalo de nuevo",
+      "unreachable": "No hemos podido contactar con el servidor para terminar de iniciar tu sesión. Comprueba tu conexión y vuelve a probar el enlace."
+    },
+    "code": {
+      "differentEmail": "Usar otro correo electrónico",
+      "sentTo": "Hemos enviado un código de 6 dígitos a {{email}}",
+      "title": "Introduce el código de verificación"
+    },
+    "failure": {
+      "offline": "No tienes conexión, así que no hemos podido contactar con Scani. Lo intentaremos de nuevo por nuestra cuenta en cuanto vuelvas.",
+      "server": "Algo ha ido mal. Inténtalo de nuevo.",
+      "timeout": "Scani ha tardado demasiado en responder. Comprueba tu conexión y vuelve a pulsar Continuar.",
+      "unreachable": "No hemos podido contactar con Scani. Comprueba tu conexión y vuelve a pulsar Continuar."
+    },
+    "linkSent": {
+      "body": "Haz clic en el enlace de tu correo para acceder a tu cuenta. Si es tu primera vez, crearemos una cuenta automáticamente.",
+      "resend": "Enviar otro correo",
+      "subtitle": "Te hemos enviado un enlace mágico para iniciar sesión",
+      "title": "Revisa tu correo"
+    },
+    "signIn": {
+      "emailInvalid": "Introduce una dirección de correo electrónico válida",
+      "emailLabel": "Correo electrónico",
+      "emailPlaceholder": "Introduce tu dirección de correo electrónico",
+      "emailRequired": "El correo electrónico es obligatorio",
+      "hintCode": "Te enviaremos un código de 6 dígitos para iniciar sesión.",
+      "hintLink": "Te enviaremos un enlace mágico seguro para iniciar sesión.",
+      "newAccount": "¿Eres nuevo en Scani? Tu cuenta se creará automáticamente.",
+      "offline": "No tienes conexión. Enviaremos tu código en cuanto se restablezca.",
+      "submit": "Continuar con el correo",
+      "subtitle": "Introduce tu correo para iniciar sesión o crear una cuenta",
+      "title": "Bienvenido"
+    }
+  },
+  "currency": {
+    "unknownName": "Divisa {{symbol}}"
+  },
+  "nav": {
+    "accounts": "Cuentas",
+    "add": "Añadir",
+    "addData": "Añadir datos",
+    "addDataButton": "Añadir datos",
+    "entities": "Entidades",
+    "files": "Archivos",
+    "groups": "Grupos",
+    "holdings": "Posiciones",
+    "home": "Inicio",
+    "institutions": "Instituciones",
+    "jobs": "Tareas",
+    "money": "Dinero",
+    "more": "Más",
+    "payments": "Pagos",
+    "paymentsOverview": "Resumen",
+    "recurringPayments": "Pagos recurrentes",
+    "review": "Por revisar",
+    "sections": {
+      "activity": "Actividad",
+      "organization": "Organización",
+      "payments": "Pagos",
+      "portfolio": "Cartera"
+    },
+    "settings": "Ajustes",
+    "signOut": "Cerrar sesión",
+    "tokens": "Tokens",
+    "vaults": "Objetivos",
+    "vendors": "Proveedores"
+  },
+  "offline": {
+    "bodySignedIn": "Sigues con la sesión iniciada como {{email}}. No se ha cerrado nada — simplemente no podemos cargar tus datos hasta que el servidor responda.",
+    "bodyUnknown": "No podemos cargar nada hasta que el servidor responda.",
+    "connectionIssue": "Problema de conexión",
+    "connectionIssueRetrying": "Problema de conexión — reintentando",
+    "reassurance": "Esto se reintenta solo en cuanto vuelva la conexión.",
+    "retry": "Inténtalo de nuevo",
+    "retrying": "Reintentando…",
+    "signInDifferent": "Iniciar sesión con otro correo electrónico",
+    "subtitleOffline": "Este dispositivo no tiene conexión ahora mismo.",
+    "subtitleOnline": "Tu dispositivo está en línea, pero el servidor de Scani no ha respondido.",
+    "title": "No se puede contactar con Scani"
+  },
+  "settings": {
+    "account": "Cuenta",
+    "autoSave": "Los cambios se guardarán automáticamente",
+    "baseCurrency": "Divisa de referencia",
+    "email": "Correo electrónico",
+    "language": "Idioma",
+    "languageHint": "Las traducciones las aporta la comunidad. Los textos que falten se mostrarán en inglés.",
+    "name": "Nombre",
+    "namePlaceholder": "Tu nombre",
+    "preferences": "Preferencias",
+    "profile": "Perfil",
+    "region": "Región",
+    "regionAuto": "Seguir el idioma de la interfaz",
+    "regionHint": "Las fechas y los números se muestran así: {{sample}}.",
+    "saving": "Guardando...",
+    "signOut": "Cerrar sesión",
+    "subtitle": "Gestiona tus preferencias",
+    "title": "Ajustes"
+  },
+  "ui": {
+    "amountInput": {
+      "readAsDecimal": "Se lee como {{amount}} — aquí tanto la coma como el punto significan el separador decimal. Borra el separador si querías decir un millar.",
+      "readAsWhole": "Se lee como {{amount}} — este campo solo admite números enteros."
+    },
+    "brand": {
+      "logoAlt": "Logotipo de {{name}}"
+    },
+    "confirmAction": {
+      "cancel": "Cancelar"
+    },
+    "dataView": {
+      "accounts": {
+        "col": {
+          "account": "Cuenta",
+          "holdings": "Posiciones",
+          "institution": "Institución",
+          "lastSynced": "Última sincronización",
+          "type": "Tipo",
+          "value": "Valor"
+        },
+        "config": {
+          "details": "Detalles de {{name}}",
+          "search": "Buscar"
+        },
+        "empty": {
+          "anAccountIsCreatedForYou": "Se crea una cuenta automáticamente cuando conectas una integración o importas un extracto.",
+          "noAccountsYet": "Aún no hay cuentas"
+        },
+        "filter": {
+          "contents": "Contenido",
+          "group": "Grupo",
+          "institution": "Institución",
+          "type": "Tipo"
+        },
+        "group": {
+          "institution": "Institución",
+          "type": "Tipo"
+        },
+        "option": {
+          "empty": "Vacía",
+          "holdsSomething": "Contiene algo"
+        },
+        "sort": {
+          "holdings": "Posiciones",
+          "name": "Nombre",
+          "value": "Valor"
+        }
+      },
+      "answeredTransfers": {
+        "col": {
+          "answer": "Respuesta",
+          "answered": "Respondida",
+          "from": "Desde",
+          "left": "Salida",
+          "when": "Cuándo"
+        },
+        "config": {
+          "searchAnsweredTransfers": "Buscar transferencias respondidas"
+        },
+        "empty": {
+          "answersYouGiveInTheTransfer": "Las respuestas que das en la cola de transferencias llegan aquí, para que puedas volver y cambiar alguna.",
+          "noTransfersAnsweredYet": "Aún no hay transferencias respondidas"
+        },
+        "filter": {
+          "answered": "Respondida"
+        },
+        "sort": {
+          "answered": "Respondida",
+          "asset": "Activo",
+          "when": "Cuándo"
+        }
+      },
+      "bulk": {
+        "delete": "Eliminar",
+        "deleteCount": "Eliminar {{counted}}"
+      },
+      "customTokens": {
+        "col": {
+          "price": "Precio",
+          "priceUpdated": "Precio actualizado",
+          "token": "Token",
+          "type": "Tipo"
+        },
+        "config": {
+          "searchCustomTokens": "Buscar tokens personalizados"
+        },
+        "empty": {
+          "createOneForAnAssetNo": "Crea uno para un activo que ningún proveedor de precios siga — participaciones de una empresa no cotizada, un bien físico. El token y su precio se comparten con todos los usuarios de Scani.",
+          "noCustomTokensYet": "Aún no hay tokens personalizados"
+        },
+        "filter": {
+          "type": "Tipo"
+        },
+        "group": {
+          "type": "Tipo"
+        },
+        "sort": {
+          "priceUpdated": "Precio actualizado",
+          "symbol": "Símbolo"
+        }
+      },
+      "empty": {
+        "clearSearchAndFilters": "Borrar la búsqueda y los filtros",
+        "filteredBy": "Filtrado por {{list}}.",
+        "loadedOnly": "La búsqueda y los filtros solo ven los {{counted}} cargados hasta ahora. Carga más para ampliarlos.",
+        "noMatchFilters": "Ningún elemento de {{noun}} coincide con esos filtros",
+        "noMatchLoaded": "No hay coincidencias en lo cargado",
+        "noMatchSearch": "Ningún resultado para «{{search}}» en {{noun}}"
+      },
+      "export": {
+        "action": "Exportar {{counted}}",
+        "cancel": "Cancelar",
+        "close": "Cerrar la exportación",
+        "collapse": "Mostrar menos opciones",
+        "errorContext": "Exportando {{noun}}",
+        "expand": "Mostrar todas las opciones",
+        "format": "Formato",
+        "formatCsv": "CSV (.csv)",
+        "formatCsvDetail": "Texto plano. Se abre en cualquier sitio, se importa en cualquier cosa.",
+        "formatPdf": "PDF (.pdf)",
+        "formatPdfDetail": "Un extracto para enviar a un asesor, a un banco o a un casero.",
+        "formatXlsx": "Excel (.xlsx)",
+        "formatXlsxDetail": "Los números siguen siendo números y las cabeceras se quedan fijas al desplazarte.",
+        "groupedBy": "Agrupado por",
+        "hideAmounts": "Ocultar los importes",
+        "hideAmountsDetail": "Elimina todas las columnas de valor, de ganancia o pérdida y de conversión. El archivo indica que se han retenido.",
+        "ignoresFilters": "Ignora los filtros y la búsqueda",
+        "loadedOnly": "Solo las filas cargadas hasta ahora — las demás nunca se descargaron",
+        "nothingAtAll": "Aquí todavía no hay nada, así que no hay nada que poner en un archivo.",
+        "nothingFiltered": "Nada coincide con esos filtros, así que no hay nada que poner en un archivo.",
+        "nothingTitle": "Nada que exportar",
+        "onScreenNow": "Lo que hay en pantalla ahora",
+        "partialSet": "No es el conjunto completo",
+        "partialSetDetail": "Solo se han exportado los {{counted}} cargados en pantalla.",
+        "preparing": "Preparando…",
+        "privacy": "Privacidad",
+        "scopeAll": "Los {{counted}}",
+        "scopeAllLoaded": "Los {{counted}} cargados hasta ahora",
+        "scopeAllLoadedShort": "Los {{counted}} cargados",
+        "scopeAllShort": "Los {{counted}}",
+        "scopeFiltered": "Filtrado — {{shown}} de {{counted}}",
+        "scopeFilteredLoaded": "Filtrado — {{shown}} de {{counted}} cargados hasta ahora",
+        "scopeThese": "Estos {{counted}}",
+        "search": "Búsqueda",
+        "separator": "Separador",
+        "separatorComma": "Coma",
+        "separatorCommaDetail": "a,b,c — la opción habitual",
+        "separatorSemicolon": "Punto y coma",
+        "separatorSemicolonDetail": "a;b;c — para una hoja de cálculo configurada en un idioma europeo",
+        "sortedAscending": "{{label}}, de menor a mayor",
+        "sortedBy": "Ordenado por",
+        "sortedDescending": "{{label}}, de mayor a menor",
+        "subjectDescription": "Descarga tus {{subject}} en un archivo que es tuyo.",
+        "title": "Exportar",
+        "whatToExport": "Qué exportar"
+      },
+      "files": {
+        "col": {
+          "invoices": "Facturas",
+          "kind": "Clase",
+          "name": "Nombre",
+          "size": "Tamaño",
+          "uploaded": "Subido"
+        },
+        "config": {
+          "searchFiles": "Buscar archivos"
+        },
+        "empty": {
+          "invoicesScreenshotsAndStatementFilesYou": "Las facturas, capturas de pantalla y archivos de extracto que subes se guardan aquí, junto con lo que se haya leído de ellos.",
+          "noFilesYet": "Aún no hay archivos"
+        },
+        "filter": {
+          "invoices": "Facturas",
+          "kind": "Clase"
+        },
+        "group": {
+          "invoices": "Facturas",
+          "kind": "Clase"
+        },
+        "sort": {
+          "kind": "Clase",
+          "name": "Nombre",
+          "size": "Tamaño",
+          "uploaded": "Subido"
+        }
+      },
+      "forecast": {
+        "empty": {
+          "addOne": "Añade una factura o un ingreso recurrente y aquí aparecerá una previsión.",
+          "allPausedOrUnpriced": "Todos los pagos registrados están en pausa, finalizados o sin importe que proyectar.",
+          "noPayments": "Aún no hay pagos recurrentes",
+          "nothingToProject": "Nada que proyectar"
+        }
+      },
+      "groups": {
+        "col": {
+          "accounts": "Cuentas",
+          "group": "Grupo",
+          "holdings": "Posiciones",
+          "value": "Valor"
+        },
+        "config": {
+          "searchGroups": "Buscar grupos",
+          "value": "Valor"
+        },
+        "empty": {
+          "aGroupIsYourOwnLabel": "Un grupo es tu propia etiqueta sobre posiciones y cuentas — «jubilación», «tributable», «la cuenta conjunta».",
+          "noGroupsYet": "Aún no hay grupos"
+        },
+        "filter": {
+          "members": "Miembros"
+        },
+        "option": {
+          "empty": "Vacío",
+          "hasMembers": "Tiene miembros"
+        },
+        "sort": {
+          "accounts": "Cuentas",
+          "holdings": "Posiciones",
+          "name": "Nombre",
+          "value": "Valor"
+        }
+      },
+      "hiddenHoldings": {
+        "col": {
+          "account": "Cuenta",
+          "balance": "Saldo",
+          "reason": "Motivo",
+          "token": "Token"
+        },
+        "config": {
+          "searchHidden": "Buscar entre lo oculto"
+        },
+        "empty": {
+          "everythingYouOwnIsCountedOnYourDashboard": "Todo lo que posees se cuenta en tu panel.",
+          "nothingIsHidden": "No hay nada oculto"
+        },
+        "filter": {
+          "reason": "Motivo"
+        },
+        "group": {
+          "institution": "Institución"
+        },
+        "option": {
+          "hiddenByYou": "Ocultada por ti",
+          "likelyScam": "Probablemente fraudulenta"
+        },
+        "sort": {
+          "balance": "Saldo",
+          "symbol": "Símbolo"
+        }
+      },
+      "holdings": {
+        "col": {
+          "account": "Cuenta",
+          "amount": "Cantidad",
+          "gainLoss": "Ganancia / pérdida",
+          "holding": "Posición",
+          "institution": "Institución",
+          "price": "Precio",
+          "value": "Valor"
+        },
+        "config": {
+          "searchHoldings": "Buscar posiciones"
+        },
+        "empty": {
+          "description": "Conecta un exchange, importa un extracto o añade una posición a mano — las tres cosas llegan aquí.",
+          "title": "Aún no hay posiciones"
+        },
+        "filter": {
+          "account": "Cuenta",
+          "group": "Grupo",
+          "institution": "Institución",
+          "quality": "Calidad de los datos",
+          "type": "Tipo"
+        },
+        "groupBy": {
+          "account": "Cuenta",
+          "institution": "Institución",
+          "type": "Tipo"
+        },
+        "qualityOption": {
+          "duplicateSymbol": "Símbolo mantenido en más de una línea de token",
+          "lookalike": "El símbolo imita a otro",
+          "negativeOpening": "Saldo de apertura negativo",
+          "noCoverage": "Sin línea de cobertura",
+          "noPriceSource": "Ninguna fuente de precios utilizable",
+          "noRecentPrice": "Ningún precio reciente",
+          "zeroBalance": "Saldo cero"
+        },
+        "sort": {
+          "amount": "Cantidad",
+          "pnl": "Ganancia / pérdida",
+          "price": "Precio",
+          "symbol": "Símbolo",
+          "value": "Valor"
+        }
+      },
+      "institutions": {
+        "col": {
+          "accounts": "Cuentas",
+          "institution": "Institución",
+          "type": "Tipo",
+          "value": "Valor"
+        },
+        "config": {
+          "searchInstitutions": "Buscar instituciones"
+        },
+        "empty": {
+          "anInstitutionAppearsHereTheFirst": "Una institución aparece aquí la primera vez que una importación o una integración trae una cuenta desde ella.",
+          "noInstitutionsYet": "Aún no hay instituciones"
+        },
+        "filter": {
+          "type": "Tipo"
+        },
+        "group": {
+          "type": "Tipo"
+        },
+        "sort": {
+          "accounts": "Cuentas",
+          "name": "Nombre",
+          "value": "Valor"
+        }
+      },
+      "integrations": {
+        "col": {
+          "kind": "Clase",
+          "service": "Servicio",
+          "whatItSyncs": "Qué sincroniza"
+        },
+        "config": {
+          "search": "Buscar"
+        },
+        "empty": {
+          "noServicesToConnect": "No hay servicios que conectar",
+          "scaniShipsItsIntegrationsWithThe": "Scani distribuye sus integraciones con la aplicación, así que una lista vacía significa que el catálogo no se ha podido cargar, no que no haya ninguna disponible."
+        },
+        "filter": {
+          "kind": "Clase"
+        },
+        "group": {
+          "kind": "Clase"
+        },
+        "sort": {
+          "name": "Nombre"
+        }
+      },
+      "itemCount_many": "{{count}} elementos",
+      "itemCount_one": "{{count}} elemento",
+      "itemCount_other": "{{count}} elementos",
+      "jobs": {
+        "col": {
+          "detail": "Detalle",
+          "job": "Tarea",
+          "started": "Iniciada",
+          "status": "Estado"
+        },
+        "config": {
+          "searchJobs": "Buscar tareas"
+        },
+        "empty": {
+          "importsParsesAndPriceRefreshesRun": "Las importaciones, los análisis y las actualizaciones de precios se ejecutan en segundo plano e informan aquí mientras trabajan.",
+          "noBackgroundJobsYet": "Aún no hay tareas en segundo plano"
+        },
+        "filter": {
+          "status": "Estado"
+        },
+        "group": {
+          "status": "Estado"
+        },
+        "sort": {
+          "started": "Iniciada",
+          "status": "Estado"
+        }
+      },
+      "kitchenSink": {
+        "col": {
+          "24h": "24 h",
+          "holding": "Posición",
+          "institution": "Institución",
+          "price": "Precio",
+          "units": "Unidades",
+          "value": "Valor"
+        },
+        "config": {
+          "searchHoldings": "Buscar posiciones"
+        },
+        "empty": {
+          "connectAnExchangeOrImportAStatementAndYourPositionsAppearHere": "Conecta un exchange o importa un extracto y tus posiciones aparecerán aquí.",
+          "noHoldingsYet": "Aún no hay posiciones"
+        },
+        "filter": {
+          "institution": "Institución",
+          "type": "Tipo"
+        },
+        "group": {
+          "institution": "Institución",
+          "type": "Tipo"
+        },
+        "sort": {
+          "change": "Variación",
+          "name": "Nombre",
+          "value": "Valor"
+        }
+      },
+      "nameList": {
+        "all": "{{head}} y {{last}}",
+        "more": "{{head}} y {{count}} más"
+      },
+      "noun": {
+        "accounts_counted_many": "{{count}} cuentas",
+        "accounts_counted_one": "{{count}} cuenta",
+        "accounts_counted_other": "{{count}} cuentas",
+        "accounts_many": "cuentas",
+        "accounts_one": "cuenta",
+        "accounts_other": "cuentas",
+        "customTokens_counted_many": "{{count}} tokens personalizados",
+        "customTokens_counted_one": "{{count}} token personalizado",
+        "customTokens_counted_other": "{{count}} tokens personalizados",
+        "customTokens_many": "tokens personalizados",
+        "customTokens_one": "token personalizado",
+        "customTokens_other": "tokens personalizados",
+        "files_counted_many": "{{count}} archivos",
+        "files_counted_one": "{{count}} archivo",
+        "files_counted_other": "{{count}} archivos",
+        "files_many": "archivos",
+        "files_one": "archivo",
+        "files_other": "archivos",
+        "groups_counted_many": "{{count}} grupos",
+        "groups_counted_one": "{{count}} grupo",
+        "groups_counted_other": "{{count}} grupos",
+        "groups_many": "grupos",
+        "groups_one": "grupo",
+        "groups_other": "grupos",
+        "hiddenHoldings_counted_many": "{{count}} posiciones ocultas",
+        "hiddenHoldings_counted_one": "{{count}} posición oculta",
+        "hiddenHoldings_counted_other": "{{count}} posiciones ocultas",
+        "hiddenHoldings_many": "posiciones ocultas",
+        "hiddenHoldings_one": "posición oculta",
+        "hiddenHoldings_other": "posiciones ocultas",
+        "holdings_counted_many": "{{count}} posiciones",
+        "holdings_counted_one": "{{count}} posición",
+        "holdings_counted_other": "{{count}} posiciones",
+        "holdings_many": "posiciones",
+        "holdings_one": "posición",
+        "holdings_other": "posiciones",
+        "institutions_counted_many": "{{count}} instituciones",
+        "institutions_counted_one": "{{count}} institución",
+        "institutions_counted_other": "{{count}} instituciones",
+        "institutions_many": "instituciones",
+        "institutions_one": "institución",
+        "institutions_other": "instituciones",
+        "integrations_counted_many": "{{count}} integraciones",
+        "integrations_counted_one": "{{count}} integración",
+        "integrations_counted_other": "{{count}} integraciones",
+        "integrations_many": "integraciones",
+        "integrations_one": "integración",
+        "integrations_other": "integraciones",
+        "jobs_counted_many": "{{count}} tareas",
+        "jobs_counted_one": "{{count}} tarea",
+        "jobs_counted_other": "{{count}} tareas",
+        "jobs_many": "tareas",
+        "jobs_one": "tarea",
+        "jobs_other": "tareas",
+        "payments_counted_many": "{{count}} pagos",
+        "payments_counted_one": "{{count}} pago",
+        "payments_counted_other": "{{count}} pagos",
+        "payments_many": "pagos",
+        "payments_one": "pago",
+        "payments_other": "pagos",
+        "reviewItems_counted_many": "{{count}} elementos",
+        "reviewItems_counted_one": "{{count}} elemento",
+        "reviewItems_counted_other": "{{count}} elementos",
+        "reviewItems_many": "elementos",
+        "reviewItems_one": "elemento",
+        "reviewItems_other": "elementos",
+        "transfers_counted_many": "{{count}} transferencias",
+        "transfers_counted_one": "{{count}} transferencia",
+        "transfers_counted_other": "{{count}} transferencias",
+        "transfers_many": "transferencias",
+        "transfers_one": "transferencia",
+        "transfers_other": "transferencias",
+        "vaults_counted_many": "{{count}} objetivos",
+        "vaults_counted_one": "{{count}} objetivo",
+        "vaults_counted_other": "{{count}} objetivos",
+        "vaults_many": "objetivos",
+        "vaults_one": "objetivo",
+        "vaults_other": "objetivos",
+        "vendors_counted_many": "{{count}} proveedores",
+        "vendors_counted_one": "{{count}} proveedor",
+        "vendors_counted_other": "{{count}} proveedores",
+        "vendors_many": "proveedores",
+        "vendors_one": "proveedor",
+        "vendors_other": "proveedores"
+      },
+      "payments": {
+        "col": {
+          "amount": "Importe",
+          "cadence": "Frecuencia",
+          "direction": "Sentido",
+          "status": "Estado",
+          "vendor": "Proveedor"
+        },
+        "config": {
+          "searchByVendor": "Buscar por proveedor"
+        },
+        "empty": {
+          "addABillOrRecurringIncomeAndScaniTracksEveryDateItFallsDue": "Añade una factura o un ingreso recurrente y Scani seguirá cada fecha de vencimiento.",
+          "noRecurringPaymentsYet": "Aún no hay pagos recurrentes"
+        },
+        "filter": {
+          "direction": "Sentido",
+          "status": "Estado",
+          "vendor": "Proveedor"
+        },
+        "group": {
+          "direction": "Sentido",
+          "status": "Estado"
+        },
+        "option": {
+          "active": "Activo",
+          "bill": "Factura",
+          "ended": "Finalizado",
+          "income": "Ingreso",
+          "paused": "En pausa"
+        },
+        "sort": {
+          "amount": "Importe",
+          "status": "Estado",
+          "vendor": "Proveedor"
+        }
+      },
+      "refine": {
+        "any": "Todos",
+        "clearAll": "Borrar todo",
+        "close": "Cerrar el afinado",
+        "collapse": "Mostrar menos opciones",
+        "done": "Listo",
+        "expand": "Mostrar todas las opciones",
+        "filter": "Filtrar",
+        "groupBy": "Agrupar por",
+        "highToLow": "De mayor a menor",
+        "liveCount": "{{counted}} · los cambios se aplican a medida que los haces",
+        "lowToHigh": "De menor a mayor",
+        "noGrouping": "Sin agrupar",
+        "sortBy": "Ordenar por",
+        "title": "Afinar"
+      },
+      "review": {
+        "col": {
+          "amount": "Importe",
+          "arrived": "Llegada",
+          "detail": "Detalle",
+          "item": "Elemento"
+        },
+        "config": {
+          "searchReview": "Buscar entre lo que hay por revisar"
+        },
+        "empty": {
+          "importsLandHereWhenTheyFinish": "Las importaciones llegan aquí cuando terminan y piden una confirmación antes de que sus posiciones cuenten.",
+          "nothingNeedsYourReview": "No hay nada que necesite tu revisión"
+        },
+        "filter": {
+          "type": "Tipo"
+        },
+        "group": {
+          "type": "Tipo"
+        },
+        "sort": {
+          "arrived": "Llegada",
+          "item": "Elemento"
+        }
+      },
+      "table": {
+        "clearSelection": "Borrar la selección",
+        "rowActions": "Detalles",
+        "rowCount_many": "{{count}} filas",
+        "rowCount_one": "{{count}} fila",
+        "rowCount_other": "{{count}} filas",
+        "selectAll": "Seleccionar todo",
+        "selectRow": "Seleccionar {{name}}",
+        "sortBy": "Ordenar por {{header}}"
+      },
+      "toolbar": {
+        "done": "Listo",
+        "export": "Exportar",
+        "filteredOf": "{{shown}} de {{counted}}",
+        "filteredOfLoaded": "{{shown}} de {{counted}} cargados hasta ahora",
+        "loadMore": "Cargar más",
+        "loadedSoFar": "{{counted}} cargados hasta ahora",
+        "loadingMore": "Cargando…",
+        "refine": "Afinar",
+        "refineAria": "Filtrar, ordenar y agrupar",
+        "removeFilter": "Quitar el filtro {{label}}: {{value}}",
+        "search": "Buscar: {{noun}}",
+        "select": "Seleccionar",
+        "selected": "{{counted}} seleccionados"
+      },
+      "transferReview": {
+        "col": {
+          "from": "Desde",
+          "ifItWasASale": "Si fue una venta",
+          "left": "Salida",
+          "when": "Cuándo",
+          "whyItIsHere": "Por qué está aquí"
+        },
+        "config": {
+          "searchTransfers": "Buscar transferencias"
+        },
+        "empty": {
+          "everyTransferIsAccountedFor": "Todas las transferencias están justificadas",
+          "moneyMovingBetweenYourOwnAccounts": "El dinero que se mueve entre tus propias cuentas se casa automáticamente. Todo lo que el emparejador no pueda resolver por sí solo llega aquí para que lo respondas."
+        },
+        "sort": {
+          "asset": "Activo",
+          "value": "Valor",
+          "when": "Cuándo"
+        }
+      },
+      "upcoming": {
+        "empty": {
+          "addOne": "Añade una factura o un ingreso recurrente y sus próximas fechas aparecerán aquí.",
+          "noPayments": "Aún no hay pagos recurrentes",
+          "nothingDue_many": "Nada vence en los próximos {{count}} días",
+          "nothingDue_one": "Nada vence en el próximo {{count}} día",
+          "nothingDue_other": "Nada vence en los próximos {{count}} días",
+          "outsideWindow": "Tus pagos permanentes vencen fuera de este periodo."
+        }
+      },
+      "vaults": {
+        "col": {
+          "progress": "Progreso",
+          "saved": "Ahorrado",
+          "target": "Meta",
+          "vault": "Objetivo"
+        },
+        "config": {
+          "searchVaults": "Buscar objetivos"
+        },
+        "empty": {
+          "aVaultIsASavingsGoal": "Un objetivo es una meta de ahorro: ponle nombre, fija una meta y vincúlale las posiciones que cuentan para ella.",
+          "noVaultsYet": "Aún no hay objetivos"
+        },
+        "filter": {
+          "status": "Estado"
+        },
+        "option": {
+          "stillSaving": "Ahorrando todavía",
+          "targetReached": "Meta alcanzada"
+        },
+        "sort": {
+          "name": "Nombre",
+          "progress": "Progreso",
+          "saved": "Ahorrado",
+          "target": "Meta"
+        }
+      },
+      "vendors": {
+        "col": {
+          "category": "Categoría",
+          "kind": "Clase",
+          "payments": "Pagos",
+          "perMonth": "Al mes",
+          "vendor": "Proveedor"
+        },
+        "config": {
+          "searchVendors": "Buscar proveedores"
+        },
+        "empty": {
+          "aVendorIsCreatedForYou": "Un proveedor se crea automáticamente la primera vez que vinculas un pago a uno. También puedes añadir uno aquí.",
+          "noVendorsYet": "Aún no hay proveedores"
+        },
+        "group": {
+          "billsIncome": "Facturas / ingresos",
+          "category": "Categoría"
+        },
+        "sort": {
+          "name": "Nombre",
+          "payments": "Pagos"
+        }
+      }
+    },
+    "dialog": {
+      "close": "Cerrar"
+    },
+    "errors": {
+      "chunk": {
+        "detail": "Una parte de la aplicación no se ha descargado. Suele ser una conexión que se ha cortado, o una actualización publicada mientras esta pestaña estaba abierta.",
+        "message": "No se ha podido cargar {{chunk}}. Comprueba tu conexión e inténtalo de nuevo — si la aplicación se actualizó mientras esta pestaña estaba abierta, recargar la página lo solucionará.",
+        "reload": "Recargar la página",
+        "title": "No se ha podido cargar {{chunk}}"
+      },
+      "crash": {
+        "detail": "Se ha producido un error inesperado. Tus datos están intactos.",
+        "home": "Ir al panel",
+        "title": "Algo ha ido mal"
+      },
+      "generic": {
+        "detail": "El servidor ha devuelto un error. Tus datos están intactos.",
+        "title": "No se ha podido {{verb}} {{subject}}"
+      },
+      "offline": {
+        "detail": "Comprueba tu conexión. No se ha modificado nada.",
+        "title": "No se ha podido contactar con el servidor"
+      },
+      "rateLimit": {
+        "detail": "El servidor nos ha pedido que reduzcamos el ritmo. Espera un momento y reinténtalo.",
+        "title": "Demasiadas peticiones"
+      },
+      "rejected": {
+        "detail": "{{reason}}. Tus datos están intactos."
+      },
+      "retry": "Reintentar",
+      "session": {
+        "detail": "Vuelve a iniciar sesión para ver {{subject}}.",
+        "title": "Tu sesión ha terminado"
+      },
+      "timeout": {
+        "detail": "La petición para {{verb}} {{subject}} ha expirado. Tus datos están intactos.",
+        "title": "El servidor ha tardado demasiado"
+      },
+      "tryAgain": "Inténtalo de nuevo",
+      "verb": {
+        "connect": "conectar",
+        "create": "crear",
+        "load": "cargar",
+        "save": "guardar"
+      }
+    },
+    "export": {
+      "download": {
+        "saved": "Exportado",
+        "savedDetail": "{{subject}} en {{fileName}}",
+        "shared": "Enviado a tu hoja de compartir",
+        "sharedDetail": "Elige Guardar en Archivos para conservar {{fileName}}."
+      },
+      "nothingToExport": "Nada que exportar",
+      "pdfTooManyRows": "Un PDF admite {{max}} filas como máximo y este tiene {{rows}} — exporta en CSV o Excel, o reduce el intervalo.",
+      "pdfUnavailable": "La exportación a PDF no está disponible aquí",
+      "provenance": {
+        "aboutSheet": "Acerca de",
+        "amounts": "Importes",
+        "exportedFrom": "Exportado desde",
+        "field": "Campo",
+        "generated": "Generado",
+        "rows": "Filas",
+        "scope": "Alcance",
+        "subject": "Asunto",
+        "value": "Valor",
+        "withheld": "Retenidos — todas las columnas de valor, de ganancia o pérdida y de conversión se han eliminado a propósito"
+      },
+      "workbook": {
+        "currency": "{{header}} ({{currency}})",
+        "currencyColumn": "Divisa de {{header}}",
+        "currencyConverted": "{{header}} ({{currency}}, convertido)"
+      },
+      "xlsxChunk": "motor de escritura de Excel"
+    },
+    "install": {
+      "androidStep1": "Pulsa el menú <b>⋮</b> en la esquina superior derecha de tu navegador.",
+      "androidStep2": "Elige <b>Instalar aplicación</b> (Chrome) o <b>Añadir a pantalla de inicio</b> (Firefox / Samsung Internet).",
+      "androidStep3": "Confirma. {{appName}} se abre desde tu cajón de aplicaciones como cualquier otra aplicación instalada.",
+      "dismissPrompt": "Descartar la propuesta de instalación",
+      "headline": "Instala {{appName}} en tu teléfono",
+      "howAction": "¿Cómo?",
+      "installAction": "Instalar",
+      "iosStep1": "Pulsa el botón <icon/> Compartir en la barra de herramientas de Safari.",
+      "iosStep2": "Desplaza la hoja de compartir y pulsa <icon/> <b>Añadir a pantalla de inicio</b>.",
+      "iosStep3": "Confirma con <b>Añadir</b>. {{appName}} se abrirá ahora desde la pantalla de inicio como una aplicación nativa.",
+      "safariOnly": "En iOS, solo Safari permite añadir aplicaciones a la pantalla de inicio. Abre esta página en Safari y sigue los pasos de abajo.",
+      "sheetDescription": "Añade un icono en la pantalla de inicio para acceder a pantalla completa, como en una aplicación."
+    },
+    "loading": {
+      "label": "Cargando..."
+    },
+    "loadingRamp": {
+      "loading": "Cargando {{label}}",
+      "retry": "Inténtalo de nuevo",
+      "stalled": "Seguimos esperando al servidor. No se ha modificado nada."
+    },
+    "magicCode": {
+      "digit": "Dígito {{index}}",
+      "expiry": "El código caduca en 10 minutos",
+      "prompt": "Introduce el código de 6 dígitos que has recibido por correo",
+      "resend": "Reenviar el código",
+      "verify": "Verificar el código"
+    },
+    "numeric": {
+      "noValue": "Sin valor"
+    },
+    "peek": {
+      "collapse": "Mostrar menos",
+      "expand": "Mostrar el detalle completo",
+      "loading": "Cargando",
+      "notFound": "No encontrado",
+      "notOnList": "Este elemento de {{noun}} no está en esta lista. Puede que se haya eliminado, o que el enlace ya no esté actualizado.",
+      "recordDetail": "Detalle del registro"
+    },
+    "sheet": {
+      "close": "Cerrar"
+    },
+    "theme": {
+      "dark": "Oscuro",
+      "label": "Tema",
+      "light": "Claro",
+      "system": "Sistema",
+      "trigger": "Tema: {{theme}}"
+    },
+    "toast": {
+      "detail": "{{context}}: {{message}}",
+      "dismiss": "Descartar",
+      "errorTitle": "Algo ha ido mal",
+      "successTitle": "Hecho",
+      "unknownError": "Error desconocido",
+      "viewDetails": "Ver detalles",
+      "viewDetailsAlt": "Ver el detalle del error en la consola"
+    },
+    "update": {
+      "action": "Actualizar",
+      "available": "Nueva versión disponible",
+      "dismiss": "Descartar",
+      "updating": "Actualizando... espera un momento"
+    }
+  },
+  "vendors": {
+    "committedPerMonth": "Comprometido al mes",
+    "expectedPerMonth": "Previsto al mes",
+    "kind": {
+      "both": "Facturas e ingresos",
+      "income": "Ingresos",
+      "unclassified": "Sentido no registrado"
+    },
+    "paidAllTime": "Pagado, desde el principio",
+    "paidWindow_many": "Pagado, últimos {{count}} meses",
+    "paidWindow_one": "Pagado, último {{count}} mes",
+    "paidWindow_other": "Pagado, últimos {{count}} meses",
+    "receivedAllTime": "Recibido, desde el principio",
+    "receivedWindow_many": "Recibido, últimos {{count}} meses",
+    "receivedWindow_one": "Recibido, último {{count}} mes",
+    "receivedWindow_other": "Recibido, últimos {{count}} meses",
+    "unpriced_many": "{{count}} liquidaciones no tienen importe registrado y no están en este total.",
+    "unpriced_one": "{{count}} liquidación no tiene importe registrado y no está en este total.",
+    "unpriced_other": "{{count}} liquidaciones no tienen importe registrado y no están en este total.",
+    "withUnconverted": "{{base}} + {{rest}} sin convertir"
+  }
+}
