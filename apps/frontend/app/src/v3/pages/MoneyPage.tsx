@@ -86,6 +86,11 @@ export function MoneyPage() {
    * map, computed from the projection's own answer, is what makes them agree
    * by construction rather than by three implementations being kept in step.
    *
+   * SC-798 made it four. The upcoming feed lists OCCURRENCES rather than
+   * payments, so it was left out of SC-625 as a separate design question — and
+   * answered it by rendering `— No value` beside three surfaces quoting a
+   * figure. It reads the same map for the same reason the other three do.
+   *
    * It costs no query. `payments.forecast` is already issued on every segment,
    * for the horizon control's sake, and the home screen's runway line shares
    * the cache entry.
@@ -183,6 +188,7 @@ export function MoneyPage() {
           tokenSymbolById={tokenSymbolById}
           rates={rates}
           query={upcomingState}
+          historyEstimates={historyEstimates}
         />
       ) : null}
 
