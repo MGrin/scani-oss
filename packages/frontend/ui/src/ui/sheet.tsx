@@ -63,9 +63,18 @@ const sheetVariants = cva(
         // The anchor and the border are logical utilities and need no help.
         // The slide is not: `slide-in-from-*` comes from tailwindcss-animate
         // and sets a physical `--tw-enter-translate-x`, so each side carries
-        // an `rtl:` pair that wins on specificity under an RTL document. A
-        // panel that slides in from the edge it is NOT anchored to reads as a
-        // glitch rather than as a mirrored layout.
+        // an `rtl:` pair. A panel that slides in from the edge it is NOT
+        // anchored to reads as a glitch rather than as a mirrored layout.
+        //
+        // That pair wins by SOURCE ORDER, not by specificity. Tailwind 3.4
+        // compiles `rtl:` to `:where([dir="rtl"], [dir="rtl"] *)`, and
+        // `:where()` contributes ZERO specificity by definition — so the two
+        // rules are both (0,2,0) and the later one in the stylesheet is the
+        // one that applies. Tailwind emits `rtl:` after the unprefixed
+        // utility. `tests/rtl-css-cascade.test.ts` builds the CSS and pins
+        // that order; without it this is an assumption rather than a
+        // mechanism, and tailwind-merge does NOT treat the two as conflicting
+        // (measured), so nothing upstream of the cascade resolves it either.
         start:
           'inset-y-0 start-0 h-full w-3/4 border-e sm:max-w-sm data-[state=closed]:slide-out-to-left data-[state=open]:slide-in-from-left rtl:data-[state=closed]:slide-out-to-right rtl:data-[state=open]:slide-in-from-right',
         end: 'inset-y-0 end-0 h-full w-3/4 border-s sm:max-w-sm data-[state=closed]:slide-out-to-right data-[state=open]:slide-in-from-right rtl:data-[state=closed]:slide-out-to-left rtl:data-[state=open]:slide-in-from-left',
