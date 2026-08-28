@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { Decimal } from '../decimal';
 import { ANSWER_SOURCES } from './transfer-review';
 
 /**
@@ -172,3 +173,62 @@ export const realizedLedgerSchema = z.object({
 });
 
 export type RealizedLedger = z.infer<typeof realizedLedgerSchema>;
+
+/**
+ * A `DisposalLotMatch` as the domain produces it — `Decimal` money and `Date`
+ * instants, before the wire flattens both to strings.
+ *
+ * Structural rather than an import of `@scani/domain`: this package is the
+ * frontend-safe contract and may not reach into the domain. The compiler still
+ * enforces the correspondence at every call site, because a domain row is
+ * assignable to this only while the two agree field for field.
+ */
+export interface DisposalLotMatchSource {
+  transactionId: string;
+  holdingId: string;
+  tokenId: string;
+  kind: string;
+  disposedAt: Date;
+  acquiredAt: Date | null;
+  quantity: Decimal;
+  proceeds: Decimal | null;
+  costBasis: Decimal;
+  gain: Decimal | null;
+  holdingDays: number | null;
+  portionIndex: number;
+  portionCount: number;
+  basisQuality: 'known' | 'partial' | 'unknown';
+  outcome: DisposalOutcomeDto;
+  valuationBasis: ValuationBasisDto | null;
+  answerSource: DisposalAnswerSourceDto;
+}
+
+/**
+ * The one place a disposal row crosses to the wire.
+ *
+ * It exists because there is more than one caller now — a holding's ledger and
+ * a period's — and twenty fields hand-copied per caller is a shape that drifts
+ * silently: a field added to `DisposalLotMatch` reaches whichever routers
+ * somebody remembered. Here the compiler reaches all of them.
+ */
+export function toDisposalLotMatchDto(row: DisposalLotMatchSource): DisposalLotMatchDto {
+  return {
+    transactionId: row.transactionId,
+    holdingId: row.holdingId,
+    tokenId: row.tokenId,
+    kind: row.kind,
+    disposedAt: row.disposedAt.toISOString(),
+    acquiredAt: row.acquiredAt?.toISOString() ?? null,
+    quantity: row.quantity.toString(),
+    proceeds: row.proceeds?.toString() ?? null,
+    costBasis: row.costBasis.toString(),
+    gain: row.gain?.toString() ?? null,
+    holdingDays: row.holdingDays,
+    portionIndex: row.portionIndex,
+    portionCount: row.portionCount,
+    basisQuality: row.basisQuality,
+    outcome: row.outcome,
+    valuationBasis: row.valuationBasis,
+    answerSource: row.answerSource,
+  };
+}
