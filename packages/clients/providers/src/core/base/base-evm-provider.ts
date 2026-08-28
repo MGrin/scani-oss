@@ -393,7 +393,7 @@ export abstract class BaseEvmProvider implements ProviderBase {
    *
    * Returns whether the walk stopped SHORT of the tail.
    */
-  private async paginateStream<T extends { blockNumber: string }>(
+  protected async paginateStream<T extends { blockNumber: string }>(
     streamLabel: string,
     chain: EvmChainConfig,
     fetchPage: (startBlock: number) => Promise<EvmPaginationPage<T>>,

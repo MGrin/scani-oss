@@ -15,6 +15,8 @@
  *    tokens filtered before they reach the federated identity flow.
  *  - `transactions`: extends `BaseEvmProvider` for the `(startblock,
  *    endblock)` pagination of `txlist` + `tokentx` + `txlistinternal`.
+ *    Also answers `fetchExitedPositions` — the positions a wallet TRADED and
+ *    no longer holds, which the balance path cannot see at all (SC-398).
  *  - `address-validator`: 0x-prefixed 40-hex.
  *
  * Pre-refactor sources:
@@ -34,6 +36,7 @@ import {
   type EvmPaginationPage,
   type EvmTokenTxRow,
 } from '../../core/base/base-evm-provider';
+import { isTradedPosition } from '../../core/base/evm-traded-tokens';
 import type { ProviderFactory } from '../../core/boot';
 import type {
   AddressValidatorProvider,
@@ -42,9 +45,11 @@ import type {
   TransactionsProvider,
 } from '../../core/capabilities';
 import type {
+  ExitedPosition,
   HoldingSnapshot,
   ProviderContext,
   TransactionEvent,
+  TransactionFetchContext,
   WithUserCreds,
 } from '../../core/types';
 import { fetchWithTimeout } from '../../core/utils/fetch';
@@ -209,6 +214,216 @@ export class EtherscanProvider
     return this.fetchTransactionsByBlockRange(ctx);
   }
 
+  /**
+   * Positions this wallet TRADED and no longer holds (SC-398).
+   *
+   * Three questions, answered in the order that makes the last one cheap:
+   *
+   *  1. **What moved?** `tokentx` for the ERC-20 legs and `txlist` for the
+   *     native ones, walked to the tail through the same `paginateStream` the
+   *     transaction import uses — not the single 10k page
+   *     `fetchErc20Balances` discovers with, because a position closed long
+   *     enough ago to fall off that page is precisely this ticket's subject.
+   *  2. **Did the account holder authorise it?** `txlist.from` is the EOA that
+   *     signed, so `signedHashes` is a fact about authorisation rather than a
+   *     guess about intent. An address-poisoning contract emits a `Transfer`
+   *     out of the victim's own address in a transaction the ATTACKER signed,
+   *     so it cannot appear in that set however it names itself. This is the
+   *     gate that keeps the 330 unsigned arrivals out — see
+   *     `evm-traded-tokens.ts` for the measurement and why no name filter can
+   *     do this job.
+   *  3. **Is it really gone?** One `tokenbalance` call per surviving
+   *     candidate. This is the expensive step and it runs last, on the ~4% of
+   *     tokens that clear the signature gate.
+   *
+   * STEP 3 IS NOT OPTIONAL AND IT IS NOT THE CALLER'S TO SKIP. The caller
+   * anchors a holding at zero on this answer, and `holdings.balance` is an
+   * anchor rather than a sum — a wrong zero is a wrong number on a screen and
+   * a wrong reconstructed history behind it. Inferring "gone" from absence
+   * from `fetchBalances` would be wrong twice over: that call reads ONE
+   * `tokentx` page and drops anything `isLikelySpamToken` matches, so its
+   * population is a subset of this one and the difference is not all exits.
+   *
+   * The name filter is applied here too, for the same reason: a token this
+   * method admits and `fetchBalances` filters out would be offered at zero
+   * while the wallet still held some. Agreeing with it is what keeps the two
+   * lists comparable. A traded token wearing a spam name is therefore still
+   * dropped, exactly as it is today — the frontend's own `spamSignal` flags
+   * what does get through, visibly, which is the right place for a heuristic.
+   *
+   * A failure here THROWS. Falling back to an empty list would be
+   * indistinguishable from a wallet that never traded anything, which is the
+   * silent omission the ticket is about; the caller reports it and says the
+   * review is partial.
+   */
+  async fetchExitedPositions(ctx: TransactionFetchContext): Promise<ExitedPosition[]> {
+    const chain = this.getChainConfig(ctx.institutionCode);
+    const { walletAddress, apiKey } = await this.resolveRequestParams(ctx);
+    if (!this.isValidAddress(walletAddress)) return [];
+    const wallet = walletAddress.toLowerCase();
+    const endBlock = await this.fetchLatestBlock(chain, apiKey);
+
+    const nativeRows: EvmNativeTxRow[] = [];
+    const truncated: string[] = [];
+    if (
+      await this.paginateStream(
+        'native',
+        chain,
+        (start) => this.fetchNativeTxPage(chain, walletAddress, start, endBlock, apiKey),
+        (row) => {
+          nativeRows.push(row);
+        }
+      )
+    ) {
+      truncated.push('txlist');
+    }
+
+    const tokenRows: EvmTokenTxRow[] = [];
+    if (
+      await this.paginateStream(
+        'token',
+        chain,
+        (start) => this.fetchTokenTxPage(chain, walletAddress, start, endBlock, apiKey),
+        (row) => {
+          tokenRows.push(row);
+        }
+      )
+    ) {
+      truncated.push('tokentx');
+    }
+
+    if (truncated.length > 0) {
+      // Not `retractHistoryClaim`: that moves `has_complete_tx_history`, which
+      // is a claim about the LEDGER, and nothing has been written here. This
+      // walk being short means the offer list is short, and the person picking
+      // from it is who needs to know (SC-428's voice, on the review side).
+      ctx.noteWarning?.(
+        `etherscan: pagination stopped early on ${truncated.join(', ')} for chain ${chain.chainId} — positions closed before that point are not offered`
+      );
+    }
+
+    // A FAILED transaction still carries the signature; it just moved nothing.
+    // `normalizeNativeTx` drops those because there is no leg to record, and
+    // that is right there and wrong here: what is being asked is who
+    // authorised the transaction, not what it transferred.
+    const signedHashes = new Set<string>();
+    for (const row of nativeRows) {
+      if (row.from?.toLowerCase() === wallet) signedHashes.add(row.hash);
+    }
+    // "The wallet gave up value of ANY asset in this transaction", which is
+    // what separates a purchase from a claim. Both streams contribute; see
+    // `classifyDrop` for why the token stream's contribution is not itself a
+    // signature (SC-764).
+    const paidHashes = new Set<string>();
+    for (const row of nativeRows) {
+      if (row.from?.toLowerCase() === wallet && new Decimal(row.value || '0').gt(0)) {
+        paidHashes.add(row.hash);
+      }
+    }
+    const nativeMovements: { inflowHashes: string[]; outflowHashes: string[] } = {
+      inflowHashes: [],
+      outflowHashes: [],
+    };
+    for (const row of nativeRows) {
+      if (new Decimal(row.value || '0').isZero()) continue;
+      if (row.to?.toLowerCase() === wallet) nativeMovements.inflowHashes.push(row.hash);
+      if (row.from?.toLowerCase() === wallet) nativeMovements.outflowHashes.push(row.hash);
+    }
+
+    interface Candidate {
+      contract: string;
+      info: { name: string; symbol: string; decimals: number };
+      inflowHashes: string[];
+      outflowHashes: string[];
+    }
+    const byContract = new Map<string, Candidate>();
+    for (const row of tokenRows) {
+      // A zero-value `Transfer` is not a transfer (SC-348) — the same filter
+      // `normalizeTokenTx` applies, so the movements this rule sees are the
+      // movements the ledger would have recorded.
+      if (new Decimal(row.value || '0').isZero()) continue;
+      const contract = row.contractAddress.toLowerCase();
+      if (!contract) continue;
+      let candidate = byContract.get(contract);
+      if (!candidate) {
+        candidate = {
+          contract,
+          info: {
+            name: row.tokenName,
+            symbol: row.tokenSymbol,
+            decimals: Number.parseInt(row.tokenDecimal, 10),
+          },
+          inflowHashes: [],
+          outflowHashes: [],
+        };
+        byContract.set(contract, candidate);
+      }
+      if (row.to.toLowerCase() === wallet) candidate.inflowHashes.push(row.hash);
+      if (row.from.toLowerCase() === wallet) {
+        candidate.outflowHashes.push(row.hash);
+        if (new Decimal(row.value).gt(0)) paidHashes.add(row.hash);
+      }
+    }
+
+    const traded: Array<{ externalId: string; identity: Partial<NewToken>; decimals: number }> = [];
+    for (const candidate of byContract.values()) {
+      if (isLikelySpamToken(candidate.info)) continue;
+      if (
+        !isTradedPosition({
+          inflowHashes: candidate.inflowHashes,
+          outflowHashes: candidate.outflowHashes,
+          signedHashes,
+          paidHashes,
+        })
+      ) {
+        continue;
+      }
+      traded.push({
+        externalId: candidate.contract,
+        decimals: candidate.info.decimals,
+        identity: {
+          symbol: candidate.info.symbol.toUpperCase(),
+          name: candidate.info.name,
+          decimals: candidate.info.decimals,
+          providerMetadata: {
+            etherscan: { chainId: Number(chain.chainId), contractAddress: candidate.contract },
+          } satisfies TokenMetadata,
+        },
+      });
+    }
+
+    const exited: ExitedPosition[] = [];
+
+    // The native asset gets the same treatment and for the same reason: a
+    // wallet that spent all of its ETH has no native snapshot either, so its
+    // native legs are dropped exactly as an exited ERC-20's are.
+    if (
+      isTradedPosition({
+        inflowHashes: nativeMovements.inflowHashes,
+        outflowHashes: nativeMovements.outflowHashes,
+        signedHashes,
+        paidHashes,
+      })
+    ) {
+      const nativeBalance = await this.fetchNativeBalanceRaw(chain, walletAddress, apiKey);
+      if (nativeBalance?.isZero()) {
+        exited.push({ externalId: 'native', tokenIdentity: this.nativeIdentity(chain) });
+      }
+    }
+
+    for (const token of traded) {
+      const raw = await this.fetchTokenBalanceRaw(chain, token.externalId, walletAddress, apiKey);
+      // `null` is "could not read", not "zero". Offering a position as closed
+      // on a balance nobody read is the wrong number this method exists to
+      // avoid, so an unreadable balance drops the candidate.
+      if (raw?.isZero()) {
+        exited.push({ externalId: token.externalId, tokenIdentity: token.identity });
+      }
+    }
+
+    return exited;
+  }
+
   // ============================================================
   // BaseEvmProvider implementation
   // ============================================================
@@ -320,11 +535,20 @@ export class EtherscanProvider
   // Internals — balances
   // ============================================================
 
-  private async fetchNativeBalance(
+  /**
+   * The native balance in wei, or `null` when it could not be read.
+   *
+   * Split out of `fetchNativeBalance` because `fetchExitedPositions` needs the
+   * THIRD state that method collapses: it returns `null` for "zero" and for
+   * "the call failed" alike, which is the right shape for a balance snapshot
+   * — neither produces one — and the wrong shape for a caller about to assert
+   * that a position is closed (SC-398).
+   */
+  private async fetchNativeBalanceRaw(
     chain: EvmChainConfig,
     address: string,
     apiKey: string
-  ): Promise<HoldingSnapshot | null> {
+  ): Promise<Decimal | null> {
     const url = this.buildUrl(chain.chainId, {
       module: 'account',
       action: 'balance',
@@ -334,7 +558,48 @@ export class EtherscanProvider
     });
     const data = await this.callJson<EtherscanResponse<string>>(url);
     if (!data || data.status !== '1') return null;
-    const wei = new Decimal(data.result);
+    return new Decimal(data.result);
+  }
+
+  /**
+   * One ERC-20 balance in its smallest unit, or `null` when it could not be
+   * read. Same three-state reason as `fetchNativeBalanceRaw`.
+   */
+  private async fetchTokenBalanceRaw(
+    chain: EvmChainConfig,
+    contract: string,
+    address: string,
+    apiKey: string
+  ): Promise<Decimal | null> {
+    const url = this.buildUrl(chain.chainId, {
+      module: 'account',
+      action: 'tokenbalance',
+      contractaddress: contract,
+      address,
+      tag: 'latest',
+      apikey: apiKey,
+    });
+    let data: EtherscanResponse<string> | null;
+    try {
+      data = await withRetry(() => this.callJson<EtherscanResponse<string>>(url), {
+        attempts: 3,
+        baseDelayMs: 500,
+        maxDelayMs: 4000,
+      });
+    } catch {
+      return null;
+    }
+    if (!data || data.status !== '1') return null;
+    return new Decimal(data.result);
+  }
+
+  private async fetchNativeBalance(
+    chain: EvmChainConfig,
+    address: string,
+    apiKey: string
+  ): Promise<HoldingSnapshot | null> {
+    const wei = await this.fetchNativeBalanceRaw(chain, address, apiKey);
+    if (!wei) return null;
     const balance = wei.div(new Decimal(10).pow(chain.nativeDecimals));
     if (balance.isZero()) return null;
     return {
@@ -391,31 +656,12 @@ export class EtherscanProvider
     // snapshot — which used to drop the legitimate USDC for users
     // with many ERC-20s in their tokentx history.
     const tasks = [...uniqueTokens.entries()].map(async ([contract, info]) => {
-      const balanceUrl = this.buildUrl(chain.chainId, {
-        module: 'account',
-        action: 'tokenbalance',
-        contractaddress: contract,
-        address,
-        tag: 'latest',
-        apikey: apiKey,
-      });
-      let balanceData: EtherscanResponse<string> | null;
-      try {
-        balanceData = await withRetry(() => this.callJson<EtherscanResponse<string>>(balanceUrl), {
-          attempts: 3,
-          baseDelayMs: 500,
-          maxDelayMs: 4000,
-        });
-      } catch {
-        // Even after retries the balance endpoint is unreachable —
-        // returning null falls through to the legacy contract (skip
-        // this contract this pass; the user's other holdings still
-        // resolve, and the next refresh / cron re-checks).
-        return null;
-      }
-      if (!balanceData || balanceData.status !== '1') return null;
-      const raw = new Decimal(balanceData.result);
-      if (raw.isZero()) return null;
+      // `null` covers both "unreachable even after retries" and "the endpoint
+      // answered but not with a balance". Either way there is no snapshot to
+      // make: the user's other holdings still resolve, and the next refresh /
+      // cron re-checks this one.
+      const raw = await this.fetchTokenBalanceRaw(chain, contract, address, apiKey);
+      if (!raw || raw.isZero()) return null;
       const balance = raw.div(new Decimal(10).pow(info.decimals));
       const tokenIdentity: Partial<NewToken> = {
         symbol: info.symbol.toUpperCase(),
