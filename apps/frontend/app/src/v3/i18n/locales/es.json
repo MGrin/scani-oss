@@ -1,0 +1,2770 @@
+{
+  "v3": {
+    "capture": {
+      "account": {
+        "addNamed": "Añadir «{{name}}»",
+        "addNew": "Añadir una cuenta nueva",
+        "label": "Cuenta",
+        "name": "Nombre",
+        "namePlaceholder": "Cuenta corriente, Plan de pensiones, Trading…",
+        "newInstitutionHint": "Una institución recién creada no tiene todavía ninguna cuenta — añade la primera.",
+        "noResults": "Aquí no hay ninguna cuenta con ese nombre.",
+        "pickExisting": "Elegir una cuenta existente",
+        "searchPlaceholder": "Busca en tus cuentas…",
+        "type": "Tipo",
+        "typeLabel": "Tipo de cuenta",
+        "typePlaceholder": "Ahorro, valores, cripto…"
+      },
+      "blocker": {
+        "accountType": "elige el tipo de la cuenta",
+        "addHolding": "añade una posición con un token y una cantidad",
+        "chooseAccount": "elige una cuenta",
+        "chooseFile": "elige un archivo para subir",
+        "chooseInstitution": "elige dónde está la cuenta",
+        "chooseInvoice": "elige la factura que quieres subir",
+        "duplicateToken": "dale a cada fila que nombre el mismo token su propio nombre, o fusiónalas",
+        "institutionType": "elige el tipo de la institución",
+        "nameAccount": "ponle nombre a la cuenta nueva",
+        "nameInstitution": "ponle nombre a la institución nueva",
+        "walletEmpty": "introduce la dirección del monedero",
+        "walletIncomplete": "completa la dirección del monedero",
+        "walletUnrecognised": "revisa la dirección del monedero"
+      },
+      "category": {
+        "bank": "Banco",
+        "broker": "Bróker",
+        "cryptoExchange": "Exchange de criptomonedas",
+        "cryptoWallet": "Monedero cripto",
+        "other": "Otro"
+      },
+      "file": {
+        "extension": "un .{{ext}}",
+        "noExtension": "ninguna extensión de archivo",
+        "remove": "Quitar {{name}}",
+        "unsupported": "Este es {{named}}. Scani lee {{formats}}."
+      },
+      "fileImport": {
+        "either": {
+          "description": "Una captura de pantalla de un saldo, un extracto bancario o la exportación de un bróker. Extraemos de ahí las posiciones y te enseñamos lo que hemos encontrado antes de guardar nada.",
+          "title": "Subir un archivo"
+        },
+        "screenshot": {
+          "description": "Una pantalla de saldo de un exchange, un banco o un bróker. Extraemos de ahí las posiciones y te enseñamos lo que hemos encontrado antes de guardar nada.",
+          "title": "Subir una captura de pantalla"
+        },
+        "statement": {
+          "description": "Una exportación en CSV, TSV, OFX o QIF de un banco o un bróker. Extraemos de ahí las posiciones y te enseñamos lo que hemos encontrado antes de guardar nada.",
+          "title": "Subir un archivo de extracto"
+        },
+        "whereItBelongs": "Dónde encaja"
+      },
+      "form": {
+        "enterField": "introducir {{label}}",
+        "optionalField": "{{label}} (opcional)",
+        "pasteField": "Pega tu {{label}}"
+      },
+      "formats": {
+        "import": "PNG, JPG, WEBP, PDF, CSV, TSV, OFX o QIF",
+        "invoice": "PDF, PNG, JPG, WEBP o HEIC"
+      },
+      "group": {
+        "connect": "Conectar",
+        "manual": "Escribirlo a mano",
+        "upload": "Subir"
+      },
+      "institution": {
+        "addNamed": "Añadir «{{name}}»",
+        "addUnlisted": "Añadir una que no esté en la lista",
+        "label": "Institución",
+        "lookUpName": "Buscar el nombre a partir del sitio web",
+        "name": "Nombre",
+        "namePlaceholder": "Revolut",
+        "noResults": "Todavía no hay nada con ese nombre.",
+        "pickExisting": "Elegir una institución existente",
+        "searchPlaceholder": "Busca bancos, brókeres, exchanges…",
+        "type": "Tipo",
+        "typeLabel": "Tipo de institución",
+        "typePlaceholder": "Banco, bróker, exchange…",
+        "website": "Sitio web",
+        "websiteHint": "Rellena el nombre y el icono. Opcional."
+      },
+      "integration": {
+        "allServices": "Todos los servicios",
+        "connectNamed": "Conectar {{name}}",
+        "credentials": "Credenciales",
+        "listSubtitle": "Claves de API de solo lectura, cifradas en reposo. Los saldos se sincronizan cada hora, y puedes mantener varias conexiones al mismo servicio.",
+        "notFoundBody": "Scani no tiene ninguna integración con ese nombre. Puede que se haya cambiado de nombre, o que el enlace ya no esté actualizado.",
+        "notFoundTitle": "No es una de las nuestras",
+        "ownDocs": "la documentación de {{name}}",
+        "permissions": "A Scani le bastan los permisos de solo lectura. Las claves se cifran en reposo y nunca salen de nuestros procesos.",
+        "subtitle": "Un solo juego de claves de solo lectura, cifradas en reposo.",
+        "thisService": "este servicio",
+        "title": "Conectar un servicio",
+        "unverifiedDetail": "{{name}} no ha respondido, así que no podemos decir si las claves son correctas. No se ha guardado nada — inténtalo de nuevo dentro de un minuto.",
+        "unverifiedTitle": "No se han podido comprobar tus claves de {{name}}",
+        "whereToGet": "Dónde conseguirlas"
+      },
+      "integrations": {
+        "uploadInstead": "Subir un extracto en su lugar"
+      },
+      "page": {
+        "fileImport": {
+          "fieldset": "El archivo",
+          "prompt": "Elige un archivo, o suelta uno aquí",
+          "subject": "este archivo"
+        },
+        "invoice": {
+          "description": "Un PDF o una foto de uno. Leemos el proveedor, el importe y las líneas, y los ponemos en Por revisar para que los aceptes o los rechaces.",
+          "fieldset": "La factura",
+          "prompt": "Elige una factura, o suelta una aquí",
+          "title": "Subir una factura"
+        },
+        "manual": {
+          "addAnother": "Añadir otra",
+          "amount": "Cantidad",
+          "description": "Indica dónde están y qué contienen. Valoramos cada una después de que guardes.",
+          "fieldset": "Qué",
+          "potName": "¿Cuál es esta?",
+          "potNameHint": "Has nombrado este token en más de una fila. Dale a cada una su propio nombre y las conservaremos como posiciones separadas.",
+          "potNamePlaceholder": "Ahorro, Entrada, Regalo de boda…",
+          "removeHolding": "Quitar la posición {{index}}",
+          "save": "Guardar las posiciones",
+          "subject": "estas posiciones",
+          "title": "Añadir posiciones a mano",
+          "token": "Token",
+          "tokenFor": "token de la posición {{index}}"
+        },
+        "uploadAndRead": "Subirlo y leerlo",
+        "wallet": {
+          "addressHint": "Cualquier cadena admitida — Ethereum, Bitcoin, Solana y las demás. No hace falta que digas cuál.",
+          "addressLabel": "Dirección del monedero",
+          "addressPlaceholder": "0x… o bc1… o …",
+          "description": "Detectamos en qué cadena está, leemos sus saldos directamente de la cadena y los actualizamos cada hora.",
+          "fieldset": "La dirección",
+          "nameHint": "Opcional. Cómo llamas tú a este monedero, en lugar de su dirección.",
+          "nameLabel": "Nombre",
+          "namePlaceholder": "Almacenamiento en frío, Monedero de trading…",
+          "subject": "este monedero",
+          "submit": "Vigilar este monedero",
+          "title": "Vigilar una dirección de monedero"
+        }
+      },
+      "route": {
+        "exchange": {
+          "description": "Claves de API de solo lectura, cifradas en reposo.",
+          "title": "Un acceso a un exchange o un bróker"
+        },
+        "invoice": {
+          "description": "Un PDF o una foto. Leemos el proveedor y el importe.",
+          "title": "Una factura"
+        },
+        "manual": {
+          "description": "Escribe posiciones dentro de una cuenta.",
+          "title": "Las cifras en sí"
+        },
+        "movement": {
+          "description": "Dinero que entra, dinero que sale, o una transferencia entre tus cuentas.",
+          "title": "Registrar un movimiento"
+        },
+        "payment": {
+          "description": "Se casa con las transacciones a medida que llegan.",
+          "title": "Una factura que se repite"
+        },
+        "screenshot": {
+          "description": "Una pantalla de saldo de la que leemos las cifras.",
+          "title": "Una captura de pantalla"
+        },
+        "statement": {
+          "description": "CSV u OFX de un banco o un bróker.",
+          "title": "Un archivo de extracto"
+        },
+        "wallet": {
+          "description": "Saldos leídos de la cadena, cada hora.",
+          "title": "Una dirección de monedero"
+        }
+      },
+      "sheet": {
+        "collapse": "Mostrar menos",
+        "subtitle": "Elige lo que tengas. Todo lo demás se deduce de ahí.",
+        "title": "Añadir datos",
+        "trigger": "Mostrar todas las formas de añadir datos"
+      },
+      "stage": {
+        "account": "Preparando la cuenta…",
+        "connect": "Comprobando las credenciales…",
+        "enqueue": "Iniciando la importación…",
+        "parse": "Iniciando el análisis…",
+        "upload": "Enviando el archivo…"
+      },
+      "token": {
+        "addFailed": "Añadir ese token",
+        "defillamaUnsupported": "Los resultados de DeFiLlama necesitan una dirección de contrato, así que no se pueden añadir desde aquí.",
+        "noResults": "No hay nada con ese nombre, ni aquí ni en nuestros proveedores de precios.",
+        "prompt": "Escribe un símbolo o un nombre.",
+        "searchPlaceholder": "BTC, AAPL, EUR…"
+      },
+      "wallet": {
+        "everyShape": "Ethereum y las demás cadenas EVM son 0x seguido de 40 caracteres hexadecimales; Bitcoin empieza por 1, 3 o bc1; Solana tiene de 32 a 44 letras y dígitos; Tron empieza por T; TON empieza por EQ o UQ.",
+        "incomplete_many": "Esa no es una dirección {{chain}} completa — una dirección es {{shape}}, y esta tiene {{count}} caracteres.",
+        "incomplete_one": "Esa no es una dirección {{chain}} completa — una dirección es {{shape}}, y esta tiene {{count}} carácter.",
+        "incomplete_other": "Esa no es una dirección {{chain}} completa — una dirección es {{shape}}, y esta tiene {{count}} caracteres.",
+        "shape": {
+          "bitcoin": "bc1 seguido de 39 a 59 letras minúsculas y dígitos",
+          "ethereum": "0x seguido de 40 caracteres hexadecimales, 42 en total",
+          "solana": "de 32 a 44 letras y dígitos, sin ningún 0, O, I ni l entre ellos",
+          "ton": "EQ o UQ seguido de 46 caracteres, 48 en total",
+          "tron": "T seguido de 33 caracteres más, 34 en total"
+        },
+        "unrecognised": "Scani no lee ninguna cadena cuyas direcciones se parezcan a eso. {{shapes}}"
+      }
+    },
+    "common": {
+      "action": {
+        "seeAll": "Ver todo"
+      },
+      "baseEquivalent": {
+        "seen": "≈ <value/>",
+        "seenStale": "≈ <value/> · tipo más antiguo",
+        "spoken": "Aproximadamente <value/>",
+        "spokenStale": "Aproximadamente <value/>, a un tipo más antiguo"
+      },
+      "cannotBeUndone": "Esta acción no se puede deshacer.",
+      "convertedFigure": {
+        "moreCurrencies_many": "{{count}} divisas sin convertir",
+        "moreCurrencies_one": "{{count}} divisa sin convertir",
+        "moreCurrencies_other": "{{count}} divisas sin convertir",
+        "unavailableSpoken": "<value/> sin convertir — no se han podido cargar los tipos de hoy",
+        "unavailableSpokenMany_many": "{{count}} divisas sin convertir — no se han podido cargar los tipos de hoy",
+        "unavailableSpokenMany_one": "{{count}} divisa sin convertir — no se han podido cargar los tipos de hoy",
+        "unavailableSpokenMany_other": "{{count}} divisas sin convertir — no se han podido cargar los tipos de hoy",
+        "unconvertedSeen": "<value/> sin convertir",
+        "unconvertedSpoken": "<value/> sin convertir — no hay ningún tipo reciente",
+        "unconvertedSpokenMany_many": "{{count}} divisas sin convertir — no hay ningún tipo reciente",
+        "unconvertedSpokenMany_one": "{{count}} divisa sin convertir — no hay ningún tipo reciente",
+        "unconvertedSpokenMany_other": "{{count}} divisas sin convertir — no hay ningún tipo reciente",
+        "working": "Calculando esta cifra"
+      },
+      "convertedTotal": {
+        "includes": "Incluye <amounts></amounts> convertidos a los tipos de hoy",
+        "includesStale": "Incluye <amounts></amounts> convertidos a los tipos del {{date}}",
+        "noTotal": "Sin total — no se han podido cargar los tipos de hoy",
+        "notIncluded": "No incluido: <amounts></amounts> — no hay ningún tipo reciente para {{currencies}}.",
+        "ratesUnavailable": "No incluido: <amounts></amounts> — no se han podido cargar los tipos de hoy, así que esta cifra está incompleta.",
+        "working": "Calculando el total"
+      },
+      "errorBoundary": {
+        "goHome": "Ir al inicio de v3"
+      },
+      "listAnd": "{{first}} y {{second}}",
+      "listSemicolon": "{{first}}; {{second}}",
+      "openRecord": "{{name}} — abrir",
+      "pullToRefresh": {
+        "refreshing": "Actualizando"
+      },
+      "relative": {
+        "days_many": "hace {{count, number}} d",
+        "days_one": "hace {{count, number}} d",
+        "days_other": "hace {{count, number}} d",
+        "hours_many": "hace {{count, number}} h",
+        "hours_one": "hace {{count, number}} h",
+        "hours_other": "hace {{count, number}} h",
+        "justNow": "ahora mismo",
+        "minutes_many": "hace {{count, number}} min",
+        "minutes_one": "hace {{count, number}} min",
+        "minutes_other": "hace {{count, number}} min"
+      },
+      "unknownVendor": "Proveedor desconocido"
+    },
+    "documents": {
+      "detail": {
+        "arrivedBy": "Llegó por {{source}}",
+        "backToFiles": "Todos los archivos",
+        "copyGone": "La copia almacenada de este archivo ha desaparecido, así que ya no se puede descargar ni volver a leer. Eliminar este registro libera el archivo para volver a subirlo.",
+        "deleteCommit": "Eliminar",
+        "deleteConsequence": "Elimina el registro, todas las facturas extraídas de él y la copia almacenada. Si vuelves a subir el mismo archivo, se leerá de nuevo en lugar de ignorarse como duplicado. Una factura ya convertida en pago bloquea la eliminación — desvincula antes ese pago. Esta acción no se puede deshacer.",
+        "deletePending": "Eliminando…",
+        "deleteTrigger": "Eliminar este archivo",
+        "deleted": "Archivo eliminado — puedes volver a subirlo",
+        "deleting": "Eliminando el archivo",
+        "download": "Descargar",
+        "extractedCount_many": "{{count}} facturas extraídas",
+        "extractedCount_one": "{{count}} factura extraída",
+        "extractedCount_other": "{{count}} facturas extraídas",
+        "invoiceRejected": "Factura rechazada",
+        "noInvoicesBody": "El archivo se ha leído y no ha salido nada con forma de factura. Volver a analizarlo le aplica de nuevo el extractor actual.",
+        "noInvoicesFound": "No se ha encontrado ninguna factura en este archivo",
+        "readAs": "Leído como {{classification}}",
+        "rejectingInvoice": "Rechazando la factura",
+        "reparseCommit": "Volver a analizar",
+        "reparseConsequence": "Aplica el extractor actual al archivo y sustituye todas las facturas que aún no se hayan convertido en un pago — esas se conservan. Esto consume una llamada a la IA.",
+        "reparsePending": "Analizando de nuevo…",
+        "reparseTrigger": "Leer este archivo otra vez",
+        "reparsing": "Analizando de nuevo el documento",
+        "uploadedAt": "Subido {{when}}"
+      },
+      "extraction": {
+        "approve": "Aprobar",
+        "approveNote": "Abre un pago recurrente rellenado a partir de esta factura. No se guarda nada hasta que lo confirmes.",
+        "confidence": "Nivel de confianza",
+        "dueDate": "Fecha de vencimiento",
+        "invoiceNumber": "Factura {{number}}",
+        "issueDate": "Fecha de emisión",
+        "noInvoiceNumber": "Sin número de factura",
+        "notRecorded": "No registrado",
+        "paymentNotStated": "No indicado",
+        "paymentPaid": "Pagada",
+        "paymentStatus": "Estado del pago",
+        "paymentUnpaid": "Sin pagar",
+        "reject": "Rechazar",
+        "rejectCommit": "Rechazar esta factura",
+        "rejectConsequence": "La factura de {{vendor}} se marca como rechazada y este archivo deja de ofrecerla para revisión. No se crea ningún pago. Volver a analizar el archivo es la única forma de recuperarla.",
+        "rejectConsequenceNumbered": "La factura {{number}} de {{vendor}} se marca como rechazada y este archivo deja de ofrecerla para revisión. No se crea ningún pago. Volver a analizar el archivo es la única forma de recuperarla.",
+        "state": {
+          "accepted": "Aceptada",
+          "pending": "Pendiente de revisión",
+          "rejected": "Rechazada"
+        }
+      },
+      "fileRemoved": "archivo eliminado",
+      "invoiceCount_many": "{{count}} facturas",
+      "invoiceCount_one": "{{count}} factura",
+      "invoiceCount_other": "{{count}} facturas",
+      "outcome": {
+        "extracted": "Facturas encontradas",
+        "notRead": "No analizado en busca de facturas",
+        "nothingFound": "No se ha encontrado nada"
+      },
+      "page": {
+        "title": "Archivos",
+        "uploadInvoice": "Subir una factura"
+      },
+      "parse": {
+        "alreadyRead": "Ya se leyó una vez",
+        "alreadyReadNote": "Este archivo coincide con uno que enviaste antes, así que no se ha vuelto a leer — sin un segundo cargo por la IA, y sin facturas duplicadas. Lo que se encontró la primera vez está en el original.",
+        "approveNote": "Abre un formulario de pago rellenado a partir de la factura. No se guarda nada hasta que lo confirmes — una sola factura no puede demostrar con qué frecuencia se repite.",
+        "found_many": "{{count}} facturas encontradas",
+        "found_one": "{{count}} factura encontrada",
+        "found_other": "{{count}} facturas encontradas",
+        "noInvoices": "No hay facturas en este archivo",
+        "noInvoicesNote": "El archivo se ha leído pero nada dentro parecía una factura. Los extractos y las capturas de saldo van por Importar un archivo — esa es la vía que crea posiciones.",
+        "openFile": "Abrir el archivo",
+        "openOriginal": "Abrir el original",
+        "setUpNamed": "Configurar {{name}}",
+        "thisInvoice": "esta factura",
+        "turnIntoPayment": "Convertir esto en un pago recurrente",
+        "unknownVendor": "Proveedor desconocido",
+        "unrecognised": "Esta tarea ha terminado sin un resultado que sepamos interpretar, así que no hay nada que revisar."
+      },
+      "thisFile": "este archivo",
+      "toast": {
+        "downloadingContext": "Descargando el archivo"
+      },
+      "totals": {
+        "fileMissing_many": "{{count}} archivos ya no están almacenados — sus registros están aquí, los archivos en sí no.",
+        "fileMissing_one": "{{count}} archivo ya no está almacenado — su registro está aquí, el archivo en sí no.",
+        "fileMissing_other": "{{count}} archivos ya no están almacenados — sus registros están aquí, los archivos en sí no.",
+        "invoicesFound": "Facturas encontradas",
+        "stored": "Almacenados"
+      },
+      "uploadInvoice": "Subir una factura"
+    },
+    "entities": {
+      "account": {
+        "addFirst": "Añade tu primera cuenta",
+        "assignGroups": "Asignar grupos",
+        "balancesAsOf": "Saldos a fecha de",
+        "bulkDeleteConsequence_many": "{{names}} se eliminan, y todas las posiciones que contienen desaparecen también, junto con su historial de transacciones. Esta acción no se puede deshacer.",
+        "bulkDeleteConsequence_one": "{{names}} se elimina, y todas las posiciones que contiene desaparecen también, junto con su historial de transacciones. Esta acción no se puede deshacer.",
+        "bulkDeleteConsequence_other": "{{names}} se eliminan, y todas las posiciones que contienen desaparecen también, junto con su historial de transacciones. Esta acción no se puede deshacer.",
+        "byHand": "A mano",
+        "groups": "Grupos",
+        "holdings": "Posiciones",
+        "lastSyncOverdue": "{{when}} · con retraso",
+        "lastSynced": "Última sincronización",
+        "neverSynced": "Nunca — esta cuenta se mantiene a mano",
+        "pageTitle": "Cuentas",
+        "sublabel_many": "{{institution}} · {{count}} posiciones",
+        "sublabel_one": "{{institution}} · {{count}} posición",
+        "sublabel_other": "{{institution}} · {{count}} posiciones",
+        "syncOverdue": "Sincronización con retraso",
+        "toast": {
+          "bulkDeletedWithFailures_many": "{{count}} cuentas eliminadas, {{failed}} con error",
+          "bulkDeletedWithFailures_one": "{{count}} cuenta eliminada, {{failed}} con error",
+          "bulkDeletedWithFailures_other": "{{count}} cuentas eliminadas, {{failed}} con error",
+          "bulkDeleted_many": "{{count}} cuentas eliminadas",
+          "bulkDeleted_one": "{{count}} cuenta eliminada",
+          "bulkDeleted_other": "{{count}} cuentas eliminadas",
+          "bulkDeletingContext": "No se han podido eliminar las cuentas",
+          "deleted": "Cuenta eliminada",
+          "deletingContext": "No se ha podido eliminar la cuenta",
+          "syncing": "Sincronizando la cuenta — los saldos se actualizarán en breve",
+          "syncingContext": "No se ha podido iniciar la sincronización de la cuenta",
+          "updated": "Cuenta actualizada",
+          "updatingContext": "No se ha podido actualizar la cuenta"
+        },
+        "type": "Tipo",
+        "unknownInstitution": "Institución desconocida",
+        "unknownType": "Tipo desconocido",
+        "valueByAccount": "Valor por cuenta",
+        "viewHoldings": "Ver las posiciones"
+      },
+      "institution": {
+        "accounts": "Cuentas",
+        "connectOne": "Conectar una",
+        "description": "Descripción",
+        "noWebsite": "Ninguno registrado",
+        "pageTitle": "Instituciones",
+        "sublabel_many": "{{count}} cuentas",
+        "sublabel_one": "{{count}} cuenta",
+        "sublabel_other": "{{count}} cuentas",
+        "type": "Tipo",
+        "unknownType": "Tipo desconocido",
+        "valueByInstitution": "Valor por institución",
+        "viewAccounts": "Ver las cuentas",
+        "viewHoldings": "Ver las posiciones",
+        "website": "Sitio web"
+      },
+      "value": "Valor"
+    },
+    "export": {
+      "column": {
+        "account": "Cuenta",
+        "accountType": "Tipo",
+        "active": "Activo",
+        "actual": "Real",
+        "added": "Añadido",
+        "amount": "Importe",
+        "balance": "Saldo",
+        "bytes": "Bytes",
+        "category": "Categoría",
+        "classification": "Clasificación",
+        "counterQuantity": "Cantidad en contrapartida",
+        "counterparty": "Contraparte",
+        "coverage": "Cobertura",
+        "date": "Fecha",
+        "description": "Descripción",
+        "direction": "Sentido",
+        "documentKind": "Clase",
+        "due": "Vencimiento",
+        "ending": "Hasta el",
+        "every": "Cada",
+        "expected": "Previsto",
+        "externalId": "Id externo",
+        "fee": "Comisión",
+        "file": "Archivo",
+        "group": "Grupo",
+        "hidden": "Oculto",
+        "holding": "Posición",
+        "holdingsPriced": "Posiciones valoradas",
+        "holdingsStalePriced": "Posiciones valoradas con una cotización obsoleta",
+        "holdingsTotal": "Total de posiciones",
+        "holdingsUnpriceable": "Posiciones no valorables",
+        "id": "Id",
+        "institution": "Institución",
+        "lastUpdated": "Última actualización",
+        "member": "Miembro",
+        "memberKind": "Clase de miembro",
+        "mimeType": "Tipo",
+        "netWorth": "Patrimonio neto",
+        "notes": "Notas",
+        "occurred": "Ocurrido",
+        "origin": "Origen",
+        "paymentKind": "Clase",
+        "priceNative": "Precio (divisa de origen)",
+        "quantity": "Cantidad",
+        "saved": "Ahorrado",
+        "share": "Parte",
+        "source": "Fuente",
+        "starting": "Desde el",
+        "status": "Estado",
+        "symbol": "Símbolo",
+        "target": "Meta",
+        "token": "Token",
+        "transactionKind": "Clase",
+        "uploaded": "Subido",
+        "vault": "Objetivo",
+        "vendor": "Proveedor",
+        "website": "Sitio web"
+      },
+      "provenance": {
+        "accountLabel": "Cuenta",
+        "notIncludedLabel": "No incluido",
+        "notIncludedValue": "Credenciales de exchanges y brókeres, sesiones, contenido de los archivos subidos",
+        "scope": "{{holdings}}, {{transactions}}, {{history}}",
+        "scopeHistory_many": "{{count}} días de historial",
+        "scopeHistory_one": "{{count}} día de historial",
+        "scopeHistory_other": "{{count}} días de historial",
+        "scopeHoldings_many": "{{count}} posiciones",
+        "scopeHoldings_one": "{{count}} posición",
+        "scopeHoldings_other": "{{count}} posiciones",
+        "scopeTransactions_many": "{{count}} transacciones",
+        "scopeTransactions_one": "{{count}} transacción",
+        "scopeTransactions_other": "{{count}} transacciones",
+        "subject": "Cuenta entera"
+      },
+      "sheet": {
+        "accounts": "Cuentas",
+        "documents": "Documentos",
+        "groupMembers": "Miembros de los grupos",
+        "groups": "Grupos",
+        "history": "Historial del patrimonio neto",
+        "holdings": "Posiciones",
+        "netWorth": "Patrimonio neto",
+        "occurrences": "Vencimientos de pago",
+        "payments": "Pagos",
+        "transactions": "Transacciones",
+        "vaultHoldings": "Posiciones de los objetivos",
+        "vaults": "Objetivos",
+        "vendors": "Proveedores"
+      },
+      "value": {
+        "everyUnknown": "{{count}} × {{unit}}",
+        "every_month_many": "{{count}} meses",
+        "every_month_one": "{{count}} mes",
+        "every_month_other": "{{count}} meses",
+        "every_quarter_many": "{{count}} trimestres",
+        "every_quarter_one": "{{count}} trimestre",
+        "every_quarter_other": "{{count}} trimestres",
+        "every_week_many": "{{count}} semanas",
+        "every_week_one": "{{count}} semana",
+        "every_week_other": "{{count}} semanas",
+        "every_year_many": "{{count}} años",
+        "every_year_one": "{{count}} año",
+        "every_year_other": "{{count}} años",
+        "no": "no",
+        "yes": "sí"
+      }
+    },
+    "feedback": {
+      "stale": {
+        "notice": "No se ha podido contactar con Scani. Estas son las últimas cifras que teníamos, no las de hoy.",
+        "retry": "Inténtalo de nuevo"
+      }
+    },
+    "form": {
+      "blockers": "Para continuar: {{blockers}}.",
+      "cancel": "Cancelar",
+      "dateField": {
+        "clear": "Borrar la fecha",
+        "placeholder": "Elige una fecha"
+      },
+      "fiatCurrency": {
+        "empty": "No hay ninguna divisa con ese nombre",
+        "label": "Divisa",
+        "noun": "divisa",
+        "searchPlaceholder": "Buscar divisas…"
+      },
+      "recordPicker": {
+        "change": "Cambiar {{label}}",
+        "changeAction": "Cambiar",
+        "searching": "Buscando…"
+      },
+      "sheet": {
+        "close": "Cerrar el formulario",
+        "collapse": "Reducir el formulario",
+        "expand": "Mostrar el formulario completo"
+      }
+    },
+    "groups": {
+      "accountNote": "Una cuenta añadida aquí aporta todo lo que contiene y todo lo que reciba más adelante. Una posición contada por ambas vías se cuenta una sola vez.",
+      "assign": {
+        "accountCount_many": "{{count}} cuentas",
+        "accountCount_one": "{{count}} cuenta",
+        "accountCount_other": "{{count}} cuentas",
+        "createAndAssign": "Crear y asignar",
+        "creating": "Creando…",
+        "description": "Todos los grupos marcados aquí se aplican a {{entities}}. Un grupo que no compartan ya todos ellos no está en la lista, y no se modifica.",
+        "firstDescription": "Aún no tienes ningún grupo. Este se crea y se aplica a {{entities}}.",
+        "firstTitle": "Crea tu primer grupo",
+        "groupSubject": "el grupo",
+        "holdingCount_many": "{{count}} posiciones",
+        "holdingCount_one": "{{count}} posición",
+        "holdingCount_other": "{{count}} posiciones",
+        "loading": "Cargando los grupos",
+        "needName": "ponerle nombre al grupo",
+        "newGroup": "Nuevo grupo",
+        "save": "Guardar los grupos",
+        "saving": "Guardando…",
+        "stillLoading": "esperar a que se carguen los grupos",
+        "subject": "estos grupos",
+        "title": "Asignar grupos",
+        "toast": {
+          "added_many": "Añadido a {{count}} grupos",
+          "added_one": "Añadido a {{count}} grupo",
+          "added_other": "Añadido a {{count}} grupos",
+          "changed": "Grupos actualizados",
+          "createdAndAssigned": "Grupo «{{name}}» creado y asignado",
+          "removed_many": "Quitado de {{count}} grupos",
+          "removed_one": "Quitado de {{count}} grupo",
+          "removed_other": "Quitado de {{count}} grupos"
+        }
+      },
+      "colour": {
+        "legend": "Color",
+        "swatch": "Color {{color}}"
+      },
+      "coverage": {
+        "countedAll_many": "Cubre las {{count}} posiciones listadas abajo.",
+        "countedAll_one": "Cubre la {{count}} posición listada abajo.",
+        "countedAll_other": "Cubre las {{count}} posiciones listadas abajo.",
+        "countedOf_many": "Cubre {{count}} de las {{listed}} posiciones listadas abajo.",
+        "countedOf_one": "Cubre {{count}} de las {{listed}} posiciones listadas abajo.",
+        "countedOf_other": "Cubre {{count}} de las {{listed}} posiciones listadas abajo.",
+        "counted_many": "Lo que valen hoy las {{count}} posiciones detrás de este total.",
+        "counted_one": "Lo que vale hoy la {{count}} posición detrás de este total.",
+        "counted_other": "Lo que valen hoy las {{count}} posiciones detrás de este total.",
+        "empty": "Nada de este grupo tiene valor hoy."
+      },
+      "createFirst": "Crea tu primer grupo",
+      "detail": {
+        "addMembers": "Añadir posiciones o cuentas",
+        "backToGroups": "Grupos",
+        "colour": "Color",
+        "dangerZone": "Zona sensible",
+        "deleteCommit": "Eliminar este grupo",
+        "deleteConsequence": "«{{name}}» desaparece de todas las listas y de todos los filtros. Los {{members}} que contiene no se eliminan — simplemente dejan de llevar esta etiqueta.",
+        "deleteTrigger": "Eliminar el grupo",
+        "description": "Descripción",
+        "details": "Detalles",
+        "discard": "Descartar",
+        "empty": "Este grupo todavía está vacío. Añade una posición o una cuenta y aparecerá aquí.",
+        "inThisGroup": "En este grupo",
+        "name": "Nombre",
+        "needName": "Para guardar: dale un nombre al grupo.",
+        "notFound": "Este grupo no está en tu lista. Puede que se haya eliminado, o que el enlace ya no esté actualizado.",
+        "note": "Añadir una cuenta entera la mantiene en el grupo — incluido lo que reciba más adelante. Quita las posiciones sueltas desde la lista de arriba.",
+        "noun": "posiciones y cuentas",
+        "removeMember": "Quitar {{label}} de {{group}}",
+        "saveChanges": "Guardar los cambios",
+        "toast": {
+          "deleted": "Grupo eliminado",
+          "deleting": "Eliminando el grupo",
+          "updated": "Grupo actualizado",
+          "updating": "Actualizando el grupo"
+        },
+        "value": "Valor"
+      },
+      "inactiveNote_many": "{{count}} de ellas están inactivas: siguen en el grupo y aparecen abajo, pero no entran en este total.",
+      "inactiveNote_one": "{{count}} de ellas está inactiva: sigue en el grupo y aparece abajo, pero no entra en este total.",
+      "inactiveNote_other": "{{count}} de ellas están inactivas: siguen en el grupo y aparecen abajo, pero no entran en este total.",
+      "page": {
+        "cancel": "Cancelar",
+        "colour": "Color",
+        "createGroup": "Crear el grupo",
+        "created": "Grupo «{{name}}» creado",
+        "creating": "Creando el grupo",
+        "name": "Nombre",
+        "namePlaceholder": "Jubilación, tributable, la cuenta conjunta…",
+        "needName": "Para continuar: ponle nombre al grupo.",
+        "newGroup": "Nuevo grupo",
+        "title": "Grupos"
+      },
+      "unpriced": {
+        "listAll": "{{head}} y {{last}}",
+        "listMore": "{{head}} y {{count}} más",
+        "note_many": "Hoy no se ha podido valorar {{named}}, así que no entran en este total.",
+        "note_one": "Hoy no se ha podido valorar {{named}}, así que no entra en este total.",
+        "note_other": "Hoy no se ha podido valorar {{named}}, así que no entran en este total."
+      }
+    },
+    "holdings": {
+      "amountBelow": "< {{amount}}",
+      "amountFact": {
+        "amount": "Cantidad",
+        "belowZero": "Por debajo de cero — nada de lo que puedas introducir produce esto. Ocurre cuando una transferencia deshecha se cruza con un saldo que cambió después de ella. Indica la cifra correcta.",
+        "edit": "Editar la cantidad",
+        "save": "Guardar"
+      },
+      "apy": {
+        "commit": "Eliminar",
+        "consequence": "Los intereses dejarán de devengarse en esta posición. Los pagos ya registrados se conservan.",
+        "createTitle": "Configurar los intereses",
+        "dayOfMonth": "Día del mes",
+        "dayOfMonthPlaceholder": "1–31",
+        "dayOfWeek": "Día de la semana",
+        "description": "Los intereses se añaden al saldo de esta posición en cada fecha de pago, y se registran ahí como una transacción visible en su historial.",
+        "editRestarts": "Guardar reinicia el calendario desde hoy — el próximo pago es la primera fecha que coincida a partir de ahora.",
+        "editTitle": "Editar los intereses",
+        "frequency": {
+          "daily": "Cada día",
+          "monthly": "Cada mes",
+          "weekdays": "Cada día laborable",
+          "weekly": "Cada semana",
+          "yearly": "Cada año"
+        },
+        "frequencyLabel": "Pagados",
+        "month": "Mes",
+        "needDayOfMonth": "introducir un día del mes entre 1 y 31",
+        "needRate": "introducir una tasa anual mayor que 0 y no superior a 100",
+        "pastMonthEnd": "{{month}} termina antes de esa fecha, así que el pago se hace su último día.",
+        "preview": "{{schedule}}. Con el saldo actual, el próximo pago es de unos {{amount}} {{symbol}}.",
+        "rate": "Tasa anual (%)",
+        "ratePlaceholder": "4.5",
+        "removed": "Configuración de intereses eliminada",
+        "removing": "Eliminando la configuración de intereses",
+        "saveCreate": "Empezar a devengar",
+        "saveEdit": "Guardar",
+        "saving": "Guardando…",
+        "shortMonths": "Los meses más cortos pagan su último día.",
+        "subject": "la configuración de intereses",
+        "trigger": "Eliminar la configuración de intereses"
+      },
+      "badge": {
+        "lookalike": "Se muestra como {{impersonates}}",
+        "lookalikeExportCell": "{{symbol}} (se muestra como {{impersonates}})",
+        "lookalikeSpoken": "se muestra como {{impersonates}}",
+        "lookalikeTitle": "El símbolo de este token está escrito con caracteres que dibujan «{{impersonates}}» sin serlo. La línea se conserva, y tu saldo con ella, porque ocultarla no te diría nada — pero no es el token al que se parece.",
+        "noPrice": "Sin precio",
+        "noPriceSpoken": "no hay precio disponible",
+        "noPriceTitle": "Ninguna fuente de precios ha cotizado nunca este token, y de momento hemos dejado de preguntar. Queda fuera de tu patrimonio neto en lugar de contarse como cero."
+      },
+      "bulk": {
+        "assignGroups": "Asignar grupos",
+        "deleteConsequence_many": "{{symbols}} se retiran de tu cartera, y todas las transacciones registradas sobre ellos desaparecen también. Esta acción no se puede deshacer.",
+        "deleteConsequence_one": "{{symbols}} se retira de tu cartera, y todas las transacciones registradas sobre él desaparecen también. Esta acción no se puede deshacer.",
+        "deleteConsequence_other": "{{symbols}} se retiran de tu cartera, y todas las transacciones registradas sobre ellos desaparecen también. Esta acción no se puede deshacer."
+      },
+      "deleteAction": {
+        "commit": "Eliminar {{symbol}}",
+        "consequence": "{{symbol}} en {{account}} se elimina, junto con todas las transacciones registradas sobre él — <value/> sale del total de tu cartera. Nada lo restaura; una nueva importación tendría que reconstruir el historial. Para sacarlo del total conservando el registro, usa Desactivar.",
+        "trigger": "Eliminar"
+      },
+      "editCause": {
+        "cancel": "Cancelar",
+        "dateLabel": "¿Cuándo se movió el dinero?",
+        "description": "El saldo de {{holding}} ha cambiado. Scani no puede distinguir entre dinero que se mueve, una cifra que se corrige y un saldo que crece, y cada caso se trata de forma distinta.",
+        "destination": {
+          "internal": "Otra cuenta de aquí",
+          "left_control": "Salió de mi cartera",
+          "untracked": "Una cuenta que Scani no ve"
+        },
+        "destinationExplain": {
+          "internal": "Se movió a otra posición que sigues. Indica cuál y Scani enlaza los dos lados para que el coste de adquisición se traslade en lugar de realizarse aquí y reabrirse allí.",
+          "left_control": "Gastado, regalado o vendido en algún sitio que Scani no ve. Esto realiza una ganancia o una pérdida sobre el importe que salió.",
+          "untracked": "Sigue siendo tu dinero, en un monedero o una cuenta a la que Scani no tiene acceso. No se realiza nada."
+        },
+        "destinationLabel": "¿Adónde fue?",
+        "explain": {
+          "correction": "La cifra anterior era incorrecta. Scani reexpresa el historial que cubría en lugar de registrar algo que ocurre ahora.",
+          "flow": "Has añadido o retirado dinero. Cuenta como una aportación, no como una ganancia.",
+          "growth": "Intereses, un pago o una revalorización. Es el rendimiento, y es la única forma en que Scani puede verlo en un saldo que llevas a mano."
+        },
+        "option": {
+          "correction": "Corregir una cifra",
+          "flow": "Se movió dinero",
+          "growth": "Ha crecido"
+        },
+        "save": "Guardar",
+        "title": "¿Qué significaba ese cambio?"
+      },
+      "empty": {
+        "action": "Añade tu primera posición"
+      },
+      "labelFact": {
+        "edit": "Ponle nombre a esta posición en {{symbol}}",
+        "name": "Nombre de la partida",
+        "placeholder": "Ahorro, Entrada, Regalo de boda…",
+        "save": "Guardar",
+        "unnamed": "Sin nombre"
+      },
+      "movement": {
+        "amountLabel": "Cuánto se movió",
+        "blocker": {
+          "amount": "introduce cuánto se movió",
+          "holding": "elige la posición que se movió",
+          "where": "di adónde fue el dinero"
+        },
+        "busyLabel": "el registro",
+        "cancel": "Cancelar",
+        "currentBalance": "Actualmente {{amount}} {{symbol}}",
+        "dateLabel": "¿Cuándo se movió el dinero?",
+        "description": "Di lo que has hecho y Scani deduce el saldo — en lugar de al revés.",
+        "destinationTitle": "Adónde fue",
+        "direction": {
+          "inflow": "Dinero que entra",
+          "outflow": "Dinero que sale",
+          "transfer": "Transferencia"
+        },
+        "directionLabel": "Qué ha pasado",
+        "holdingAria": "posición",
+        "holdingLabel": "Qué posición se movió",
+        "holdingNoResults": "Ninguna posición coincide con eso.",
+        "holdingPlaceholder": "Buscar instituciones, cuentas y posiciones",
+        "noteLabel": "Nota (opcional)",
+        "peekAction": "Registrar un movimiento",
+        "recorded": "Movimiento registrado",
+        "save": "Registrarlo",
+        "saving": "Registrando…",
+        "title": "Registrar un movimiento",
+        "whatFieldset": "El movimiento",
+        "where": {
+          "left_control": {
+            "detail": "Salió de tu cartera, así que cualquier ganancia sobre ello se realiza.",
+            "title": "Gastado, vendido o regalado"
+          },
+          "transfer": {
+            "detail": "Scani registra los dos lados y los enlaza, de modo que después no se te preguntará nada al respecto.",
+            "title": "Transferido a otra cuenta que tengo"
+          },
+          "untracked": {
+            "detail": "Sigue siendo tu dinero — un monedero frío, una cuenta sin conexión. No se realiza nada.",
+            "title": "Movido a un sitio que Scani no ve"
+          }
+        },
+        "whereLabel": "¿Adónde fue?"
+      },
+      "page": {
+        "title": "Posiciones"
+      },
+      "payout": {
+        "daily": "Cada día",
+        "monthly": "Cada mes el día {{day}}",
+        "weekdays": "Días laborables (lun.–vie.)",
+        "weekly": "Cada semana el {{day}}",
+        "yearly": "Cada año el {{date}}",
+        "yearlyLastDay": "Cada año el último día de {{month}}"
+      },
+      "peek": {
+        "account": "Cuenta",
+        "active": "Activa",
+        "added": "Añadida",
+        "amount": "Cantidad",
+        "apy": "Rendimiento anual",
+        "apyEdit": "Editar",
+        "apyRemove": "Quitar",
+        "configure": "Configurar",
+        "costBasis": "Coste de adquisición",
+        "editPriceOf": "Editar el precio de {{symbol}}",
+        "gainLoss": "Ganancia / pérdida",
+        "groups": "Grupos",
+        "history": "Historial",
+        "in": "En",
+        "inactive": "Inactiva",
+        "incompleteHistory": "Incompleto — faltan las entradas anteriores a la primera transacción importada, así que los valores previos a esa fecha están acotados.",
+        "interest": "Intereses",
+        "lastPayout": "Último pago",
+        "lastUpdated": "Última actualización",
+        "noGroups": "Sin grupos",
+        "payout": "Pago",
+        "performance": "Rentabilidad",
+        "pot": "Partida",
+        "price": "Precio",
+        "record": "Registro",
+        "refreshPrice": "Actualizar el precio",
+        "refreshing": "Actualizando…",
+        "source": "Fuente",
+        "status": "Estado",
+        "syncBalance": "Sincronizar el saldo",
+        "syncing": "Sincronizando…",
+        "type": "Tipo",
+        "unpriceableNote": "Ninguna fuente ha cotizado nunca este token, y de momento hemos dejado de preguntar. Queda fuera de tu patrimonio neto en lugar de contarse como cero."
+      },
+      "realized": {
+        "costOf": "coste <value/>",
+        "heading": "Realizado",
+        "lotAcquired": "<qty/> adquiridos el {{date}}",
+        "lotHeld": "<qty/> adquiridos el {{date}} · mantenidos {{duration}}",
+        "lotNoAcquisition": "<qty/> sin adquisición registrada",
+        "noGain": "Ninguna ganancia contabilizada"
+      },
+      "refresh": {
+        "balance": "Actualizando el saldo",
+        "balanceFailed": "La tarea de actualización ha fallado",
+        "manyBalances_many": "{{count}} saldos actualizados en esta cuenta",
+        "manyBalances_one": "{{count}} saldo actualizado en esta cuenta",
+        "manyBalances_other": "{{count}} saldos actualizados en esta cuenta",
+        "oneBalance": "Saldo de {{symbol}} actualizado",
+        "outcome": {
+          "noPrice": "Ningún proveedor tenía un precio para {{symbol}}. La cifra en pantalla no ha cambiado.",
+          "stored": "No hay ningún precio nuevo para {{symbol}} — el guardado no ha cambiado",
+          "storedWithAge": "No hay ningún precio nuevo para {{symbol}} — se muestra el del {{age}}",
+          "updated": "Precio de {{symbol}} actualizado"
+        },
+        "partialTitle": "Actualización de saldos — parcial",
+        "partial_many": "El proveedor no ha devuelto {{symbol}} — tus otros {{count}} saldos se han actualizado. Inténtalo de nuevo dentro de un minuto, o reimporta la cuenta si esto se repite.",
+        "partial_one": "El proveedor no ha devuelto {{symbol}} — tu otro {{count}} saldo se ha actualizado. Inténtalo de nuevo dentro de un minuto, o reimporta la cuenta si esto se repite.",
+        "partial_other": "El proveedor no ha devuelto {{symbol}} — tus otros {{count}} saldos se han actualizado. Inténtalo de nuevo dentro de un minuto, o reimporta la cuenta si esto se repite.",
+        "price": "Actualizando el precio",
+        "priceFailed": "La tarea de actualización del precio ha fallado"
+      },
+      "status": {
+        "activateAction": "Activar",
+        "activateConsequence": "{{symbol}} en {{account}} vuelve a contar en el total de tu cartera — <value/> regresa a él.",
+        "confirm": "{{label}} {{symbol}}",
+        "deactivateAction": "Desactivar",
+        "deactivateConsequence": "{{symbol}} en {{account}} deja de contar en el total de tu cartera — <value/> sale de él. La posición y su historial se mantienen, listados aquí como Inactiva, para que puedas volver a activarla."
+      },
+      "summary": {
+        "allocation": "Distribución por tipo de activo",
+        "excludes_many": "Excluye {{count}} posiciones inactivas por valor de <value/>, listadas abajo igualmente.",
+        "excludes_one": "Excluye {{count}} posición inactiva por valor de <value/>, listada abajo igualmente.",
+        "excludes_other": "Excluye {{count}} posiciones inactivas por valor de <value/>, listadas abajo igualmente.",
+        "value": "Valor"
+      },
+      "toast": {
+        "bulkDeletedWithFailures_many": "{{count}} posiciones eliminadas, {{failed}} con error",
+        "bulkDeletedWithFailures_one": "{{count}} posición eliminada, {{failed}} con error",
+        "bulkDeletedWithFailures_other": "{{count}} posiciones eliminadas, {{failed}} con error",
+        "bulkDeleted_many": "{{count}} posiciones eliminadas",
+        "bulkDeleted_one": "{{count}} posición eliminada",
+        "bulkDeleted_other": "{{count}} posiciones eliminadas",
+        "bulkDeletingContext": "Eliminando las posiciones",
+        "deleted": "Posición eliminada",
+        "deletingContext": "Eliminando la posición",
+        "updated": "Posición actualizada",
+        "updatingContext": "Actualizando la posición"
+      },
+      "trendLabel": "Valor de {{symbol}} en {{period}}"
+    },
+    "home": {
+      "allocation": {
+        "barLabel": "Distribución por {{dimension}}",
+        "cutBy": "Desglosar la distribución por",
+        "dimension": {
+          "account": "Cuenta",
+          "group": "Grupo",
+          "institution": "Institución",
+          "tokenType": "Tipo"
+        },
+        "empty": "Todavía no hay nada valorado en este desglose.",
+        "loadingLabel": "tu distribución",
+        "title": "Distribución"
+      },
+      "attentionRow": {
+        "needsReview_many": "{{count}} elementos necesitan tu revisión",
+        "needsReview_one": "{{count}} elemento necesita tu revisión",
+        "needsReview_other": "{{count}} elementos necesitan tu revisión"
+      },
+      "disclosure": {
+        "show": "Mostrar {{label}}",
+        "showLess": "Mostrar menos",
+        "theNInOther_many": "los {{count}} de Otros",
+        "theNInOther_one": "el {{count}} de Otros",
+        "theNInOther_other": "los {{count}} de Otros",
+        "theOtherN_many": "los otros {{count}}",
+        "theOtherN_one": "el otro {{count}}",
+        "theOtherN_other": "los otros {{count}}"
+      },
+      "dueIn": {
+        "days_many": "dentro de {{count}} días",
+        "days_one": "dentro de {{count}} día",
+        "days_other": "dentro de {{count}} días",
+        "months_many": "dentro de {{count}} meses",
+        "months_one": "dentro de {{count}} mes",
+        "months_other": "dentro de {{count}} meses",
+        "today": "Hoy",
+        "tomorrow": "Mañana",
+        "weeks_many": "dentro de {{count}} semanas",
+        "weeks_one": "dentro de {{count}} semana",
+        "weeks_other": "dentro de {{count}} semanas"
+      },
+      "empty": {
+        "action": "Sube una captura de pantalla o un archivo",
+        "body": "Basta con una captura de pantalla de una pantalla de saldo — de un exchange, un banco o un bróker. Un CSV o un extracto exportado también sirve, y no hay que iniciar sesión en nada.",
+        "importing": {
+          "action": "Ver el progreso",
+          "body": "Estamos extrayendo de ahí las posiciones. Puedes salir de esta pantalla — el proceso continúa, y esta página se rellena en cuanto termine.",
+          "title": "Hay una importación en curso"
+        },
+        "secondaryAction": "O elige otra forma de empezar",
+        "title": "Todavía no se sigue nada"
+      },
+      "groups": {
+        "empty": "Vacío",
+        "openGroup": "{{name}} — abrir el grupo",
+        "title": "Grupos"
+      },
+      "hero": {
+        "changePending": "Calculando la variación de este periodo",
+        "changePeriod": "Cambiar el periodo",
+        "changeUnavailable": "No se ha podido cargar la variación de este periodo",
+        "chartFailed": "No se ha podido cargar el gráfico. Las cifras de arriba son las últimas que teníamos.",
+        "chartLabel": "{{metric}} en {{period}}",
+        "choosePlot": "Elige qué representar",
+        "noHistory": "Todavía no hay historial de este periodo",
+        "noMeasurementSince": "Sin mediciones desde el {{date}} — el último punto es el total en directo de hoy, no un día consolidado.",
+        "pnlNotComputed": "Las pérdidas y ganancias aún no están calculadas para este periodo",
+        "pnlOverPeriod": "Pérdidas y ganancias · {{period}}",
+        "realized": "Realizadas",
+        "retry": "Reintentar",
+        "unrealized": "No realizadas",
+        "vsPeriod": "frente a {{period}}"
+      },
+      "historyExport": {
+        "action": "Exportar el historial",
+        "currency": "Divisa",
+        "days_many": "{{count}} días",
+        "days_one": "{{count}} día",
+        "days_other": "{{count}} días",
+        "emptyBody": "Todavía no hay historial medido en ese intervalo.",
+        "emptyTitle": "Nada que exportar",
+        "oneRowPerDay": "Una fila por día",
+        "pending": "Exportando el historial de tu patrimonio neto",
+        "resolution": "Resolución",
+        "scopeAll": "Todo lo que tenemos",
+        "scopeAllDetail": "Hasta seis años",
+        "scopeDays_many": "{{count}} días",
+        "scopeDays_one": "{{count}} día",
+        "scopeDays_other": "{{count}} días",
+        "scopeWindow": "Este intervalo de {{period}}",
+        "sheetSubject": "historial del patrimonio neto",
+        "subject": "Historial del patrimonio neto",
+        "trigger": "Exportar el historial del patrimonio neto"
+      },
+      "loadingLabel": "tu cartera",
+      "metric": {
+        "netWorth": "Patrimonio neto",
+        "pnl": "PyG",
+        "pnlFull": "Pérdidas y ganancias"
+      },
+      "period": {
+        "label180d": "6M",
+        "label30d": "1M",
+        "label365d": "1A",
+        "label7d": "1S",
+        "label90d": "3M",
+        "suffix180d": "6 m",
+        "suffix30d": "30 d",
+        "suffix365d": "1 a",
+        "suffix7d": "7 d",
+        "suffix90d": "90 d"
+      },
+      "quality": {
+        "allPriced_many": "Las {{count}} posiciones están valoradas",
+        "allPriced_one": "La {{count}} posición está valorada",
+        "allPriced_other": "Las {{count}} posiciones están valoradas",
+        "noBasis_many": "{{count}} sin coste de adquisición (la ganancia es una cota superior)",
+        "noBasis_one": "{{count}} sin coste de adquisición (la ganancia es una cota superior)",
+        "noBasis_other": "{{count}} sin coste de adquisición (la ganancia es una cota superior)",
+        "partlyPriced": "{{percent}} % valorado — {{priced}} de {{priceable}} posiciones",
+        "staleQuotes_many": "{{count}} cotizaciones obsoletas",
+        "staleQuotes_one": "{{count}} cotización obsoleta",
+        "staleQuotes_other": "{{count}} cotizaciones obsoletas",
+        "unreviewedTransfers_many": "Las ganancias realizadas excluyen {{count}} transferencias sin confirmar",
+        "unreviewedTransfers_one": "Las ganancias realizadas excluyen {{count}} transferencia sin confirmar",
+        "unreviewedTransfers_other": "Las ganancias realizadas excluyen {{count}} transferencias sin confirmar",
+        "withUnpriceable_many": "{{fraction}} · {{count}} no valorables",
+        "withUnpriceable_one": "{{fraction}} · {{count}} no valorable",
+        "withUnpriceable_other": "{{fraction}} · {{count}} no valorables"
+      },
+      "runway": {
+        "label": "El dinero dura"
+      },
+      "tape": {
+        "noValue": "Sin valor"
+      },
+      "topHoldings": {
+        "empty": "Todavía no hay nada valorado.",
+        "title": "Principales posiciones"
+      },
+      "upcoming": {
+        "addPayment": "Añadir un pago",
+        "empty_many": "Nada vence en los próximos {{count}} días.",
+        "empty_one": "Nada vence en el próximo {{count}} día.",
+        "empty_other": "Nada vence en los próximos {{count}} días.",
+        "incomeExpected_many": "Ingresos previstos, próximos {{count}} días",
+        "incomeExpected_one": "Ingresos previstos, próximo {{count}} día",
+        "incomeExpected_other": "Ingresos previstos, próximos {{count}} días",
+        "title": "Próximas facturas"
+      },
+      "vaults": {
+        "ofTarget": "de <target></target>",
+        "progress": "{{name}}: {{percent}} % de la meta",
+        "title": "Objetivos"
+      }
+    },
+    "jobs": {
+      "awaitingYou": "Esta ejecución está esperándote. Todavía no hay nada de ella en tu cartera.",
+      "bucket": {
+        "completed": "Terminadas",
+        "failed": "Con error — no se reintentará",
+        "review": "Necesitan tu revisión",
+        "running": "En curso"
+      },
+      "detail": {
+        "attempt": "Intento {{attempt}} de {{allowed}}",
+        "backToJobs": "Todas las tareas",
+        "cancel": "Cancelar",
+        "cancelPending": "Cancelando…",
+        "createdAt": "Creada {{when}}",
+        "dismiss": "Descartar",
+        "dismissPending": "Descartando…",
+        "finishedAt": "Terminada {{when}}",
+        "notFound": "Esta tarea no está en tu lista. Puede que se haya eliminado, o que el enlace ya no esté actualizado.",
+        "removed": "Tarea eliminada",
+        "retry": "Reintentar",
+        "retryPending": "Volviendo a poner en cola…",
+        "startedAt": "Iniciada {{when}}"
+      },
+      "discard": {
+        "commit": "Descartar este análisis",
+        "consequence": "Este {{label}} deja de pedir revisión y no se crea ninguna posición a partir de él. Nada cambia en tu cartera. Volver a ejecutar la importación es la única forma de recuperarlo.",
+        "trigger": "Descartar"
+      },
+      "exchange": {
+        "accountsCreated": "Cuentas creadas",
+        "connectedButEmpty": "Las cuentas se han conectado y el proveedor no ha devuelto ningún saldo. Es normal en una cuenta vacía — todo lo que se añada después llegará en la próxima sincronización horaria.",
+        "failedNote": "Todo lo que haya ahí falta en las cifras de arriba. Volver a ejecutar la importación es seguro.",
+        "failedTitle_many": "No se han podido leer {{count}} cuentas",
+        "failedTitle_one": "No se ha podido leer {{count}} cuenta",
+        "failedTitle_other": "No se han podido leer {{count}} cuentas",
+        "holdingsImported": "Posiciones importadas",
+        "title": "Importación desde un exchange"
+      },
+      "failure": {
+        "cancelled": {
+          "label": "Cancelada",
+          "sentence": "Detuviste esta tarea antes de que terminara."
+        },
+        "exhausted": {
+          "label": "Con error — no se reintentará",
+          "sentence_many": "Se ha intentado {{count, number}} veces y ha fallado todas. No se volverá a intentar por su cuenta.",
+          "sentence_one": "Se ha intentado {{count, number}} vez y ha fallado. No se volverá a intentar por su cuenta.",
+          "sentence_other": "Se ha intentado {{count, number}} veces y ha fallado todas. No se volverá a intentar por su cuenta."
+        },
+        "neverDelivered": {
+          "label": "Nunca se inició",
+          "sentence": "Esta tarea nunca se entregó al procesador, así que nunca se ejecutó y no se modificó nada. Vuelve a lanzarla desde donde la empezaste."
+        },
+        "noRetry": {
+          "label": "Con error — no se reintentará",
+          "sentence": "Esto ha fallado y no se volverá a intentar por su cuenta."
+        },
+        "notQueued": {
+          "label": "Con error",
+          "sentence": "El último intento ha fallado, y no hay ningún otro intento en cola para él."
+        },
+        "retrying": {
+          "label": "Reintentando ({{made, number}} de {{allowed, number}})",
+          "sentence": "El intento {{made, number}} de {{allowed, number}} ha fallado. El siguiente empieza automáticamente — de momento no tienes que hacer nada."
+        },
+        "settling": {
+          "label": "Con error",
+          "sentence": "El último intento ha fallado. Comprobando si hay algún otro en cola para él."
+        },
+        "unrecoverable": {
+          "label": "Con error — no se reintentará",
+          "sentence": "Esto ha fallado por un motivo que otro intento no va a corregir, y no se ha registrado nada que podamos enseñarte. Volver a ejecutarlo sin cambios fallará igual.",
+          "sentenceWithDetail": "Esto ha fallado por un motivo que otro intento no va a corregir. Revisa los detalles de abajo, corrígelos y vuelve a lanzarlo."
+        }
+      },
+      "file": {
+        "balanceAnchors": "Referencias de saldo",
+        "currency": {
+          "apply": "Importar con esta divisa",
+          "applying": "Reimportando…",
+          "blocker": "elige la divisa en la que están estas transacciones",
+          "body_many": "Hemos leído {{count}} transacciones de este archivo, pero no nombra ninguna divisa y no se ha podido detectar ninguna. Todavía no se ha importado nada.",
+          "body_one": "Hemos leído {{count}} transacción de este archivo, pero no nombra ninguna divisa y no se ha podido detectar ninguna. Todavía no se ha importado nada.",
+          "body_other": "Hemos leído {{count}} transacciones de este archivo, pero no nombra ninguna divisa y no se ha podido detectar ninguna. Todavía no se ha importado nada.",
+          "fieldLabel": "Divisa del extracto",
+          "noDescription": "Sin descripción",
+          "preview": "{{shown}} de {{total}}",
+          "subject": "este archivo",
+          "title": "¿En qué divisa está este extracto?"
+        },
+        "format": "Formato",
+        "holdingsTitle": "Posiciones afectadas",
+        "importAnother": "Importar otro archivo",
+        "newHoldings": "Posiciones nuevas",
+        "nothingBody": "El archivo se ha analizado, pero no traía ninguna transacción, ningún saldo ni ninguna posición que pudiéramos usar. Comprueba que sea la exportación que querías subir.",
+        "row": {
+          "new": "Nueva",
+          "noClosingBalance": "Sin saldo de cierre",
+          "statementClose": "Cierre del extracto",
+          "transactions_many": "{{count}} transacciones",
+          "transactions_one": "{{count}} transacción",
+          "transactions_other": "{{count}} transacciones",
+          "updated": "Actualizada"
+        },
+        "title": {
+          "imported": "Archivo importado",
+          "nothing": "No se ha escrito nada"
+        },
+        "transactions": "Transacciones",
+        "unreadablePayload": "Esta ejecución ha terminado sin un resultado que sepamos leer. Nada ha cambiado en tu cartera.",
+        "warningsTitle_many": "{{count}} avisos",
+        "warningsTitle_one": "{{count}} aviso",
+        "warningsTitle_other": "{{count}} avisos"
+      },
+      "fileCount_many": "{{count}} archivos",
+      "fileCount_one": "{{count}} archivo",
+      "fileCount_other": "{{count}} archivos",
+      "generic": {
+        "errorsTitle_many": "{{count}} errores",
+        "errorsTitle_one": "{{count}} error",
+        "errorsTitle_other": "{{count}} errores",
+        "noPayload": "Esta ejecución ha terminado sin datos de resultado. No hay nada sobre lo que actuar.",
+        "nothingToShow": "El resultado no traía ningún campo que podamos mostrar. Los datos en bruto están abajo.",
+        "rawResult": "Resultado en bruto",
+        "title": "Resultado",
+        "warningsNote": "No son fallos. La ejecución ha llegado al final — estos puntos dicen qué no ha podido alcanzar, y por qué lo que ha escrito puede parecer incompleto.",
+        "warningsTitle_many": "{{count}} puntos que conviene saber",
+        "warningsTitle_one": "{{count}} punto que conviene saber",
+        "warningsTitle_other": "{{count}} puntos que conviene saber"
+      },
+      "importSomething": "Importar algo",
+      "issues": {
+        "more_many": "…y {{count}} más",
+        "more_one": "…y {{count}} más",
+        "more_other": "…y {{count}} más"
+      },
+      "kind": {
+        "deleteAllData": "Eliminación de todos los datos de la cuenta",
+        "fileEnriched": "{{type}} · enriquecido",
+        "fileFallback": "archivo",
+        "holdingPriceRefresh": "Actualización del precio de una posición"
+      },
+      "label": {
+        "accountDeletion": "Eliminación de la cuenta",
+        "documentParse": "Análisis de documento",
+        "exchangeImport": "Importación desde un exchange",
+        "fileImport": "Importación de archivo",
+        "historyBackfill": "Relleno del historial",
+        "invoiceParse": "Análisis de factura",
+        "manualHoldings": "Posiciones introducidas a mano",
+        "priceRefresh": "Actualización de precios",
+        "transactionImport": "Importación del historial de transacciones",
+        "walletImport": "Importación de monedero"
+      },
+      "manual": {
+        "addMore": "Añadir más",
+        "priced": "Valoradas",
+        "row": {
+          "new": "Nueva",
+          "noPrice": "Todavía sin precio",
+          "updated": "Actualizada"
+        },
+        "saved": "Filas escritas",
+        "title": "Posiciones guardadas",
+        "unpricedNote_many": "{{count}} filas todavía no tienen precio. Se guardan igualmente — actualízalas desde Posiciones, o espera al próximo barrido horario de valoración.",
+        "unpricedNote_one": "{{count}} fila todavía no tiene precio. Se guarda igualmente — actualízala desde Posiciones, o espera al próximo barrido horario de valoración.",
+        "unpricedNote_other": "{{count}} filas todavía no tienen precio. Se guardan igualmente — actualízalas desde Posiciones, o espera al próximo barrido horario de valoración.",
+        "unreadablePayload": "Esta ejecución ha terminado sin un resultado que sepamos leer. Nada ha cambiado en tu cartera."
+      },
+      "page": {
+        "title": "Tareas"
+      },
+      "remove": {
+        "commit": "Eliminar esta ejecución",
+        "consequence": "Esta ejecución de {{label}} y el error que la precede se eliminan. Todo lo que ya se haya importado se mantiene. Esta acción no se puede deshacer.",
+        "trigger": "Eliminar"
+      },
+      "retryUnavailable": {
+        "cancelled": "Cancelaste esta. Vuelve a lanzarla desde donde la empezaste.",
+        "evicted": "Esta ejecución es demasiado antigua para relanzarla desde aquí: la cola ya no conserva lo que necesita. Vuelve a lanzarla desde donde la empezaste.",
+        "neverDelivered": "Esta nunca llegó a la cola, así que no hay nada que relanzar. Vuelve a lanzarla desde donde la empezaste.",
+        "notFailed": "No hay nada que reintentar.",
+        "stillRetrying": "Ya hay otro intento en cola — no hay nada que hacer."
+      },
+      "review": {
+        "assetType": {
+          "crypto": "Cripto",
+          "fiat": "Moneda fiduciaria",
+          "stock": "Acción"
+        },
+        "blocker": {
+          "duplicatePosition": "dale a cada fila bajo {{symbols}} su propio nombre, o quita las que sobren",
+          "missingAmount_many": "{{count}} filas no tienen cantidad — escribe una en cada una, o quítalas",
+          "missingAmount_one": "{{count}} fila no tiene cantidad — escribe una, o quita la fila",
+          "missingAmount_other": "{{count}} filas no tienen cantidad — escribe una en cada una, o quítalas",
+          "nothingToImport": "asocia al menos una fila a un token"
+        },
+        "confidence": "{{percent}} % de confianza",
+        "discarded": {
+          "files": "No se ha escrito nada de estos archivos en tu cartera, y ya no esperan revisión. Volver a analizarlos es la única forma de recuperar estas filas.",
+          "screenshot": "No se ha escrito nada de esta captura de pantalla en tu cartera, y ya no espera revisión. Volver a analizarla es la única forma de recuperar estas filas.",
+          "statement": "No se ha escrito nada de este extracto en tu cartera, y ya no espera revisión. Volver a analizarlo es la única forma de recuperar estas filas.",
+          "title": "Descartada",
+          "wallet": "No se ha escrito nada de este monedero en tu cartera, y ya no espera revisión. Volver a ejecutar la importación es la única forma de recuperar estas filas.",
+          "when": "Descartada el {{when}}"
+        },
+        "import_many": "Importar {{count}} posiciones",
+        "import_one": "Importar {{count}} posición",
+        "import_other": "Importar {{count}} posiciones",
+        "imported": {
+          "body": "Estas filas se confirmaron y se guardaron en tu cartera. Importar el mismo análisis otra vez las duplicaría, así que esto está bloqueado.",
+          "title": "Ya importadas",
+          "when": "Confirmadas el {{when}}"
+        },
+        "importing": "Importando…",
+        "row": {
+          "amountLabel": "Cantidad de {{symbol}}",
+          "changeToken": "Cambiar el token asociado a {{symbol}}",
+          "currentLabel": "Ahora",
+          "keepToken": "Conservar {{symbol}}",
+          "nameLabel": "Nombre de esta posición en {{symbol}}",
+          "namePlaceholder": "p. ej. Ahorro",
+          "new": "Nueva",
+          "remove": "Quitar {{symbol}}",
+          "restore": "Restaurar {{symbol}}",
+          "searchLabel": "Buscar otro token para {{symbol}}",
+          "update": "Actualización"
+        },
+        "source": {
+          "files": "Archivos",
+          "screenshot": "Captura de pantalla",
+          "statement": "Extracto"
+        },
+        "subject": "las posiciones extraídas",
+        "title": "Revisar las posiciones extraídas",
+        "unmatchedNote_many": "{{count}} filas no han coincidido con ningún token y se omitirán.",
+        "unmatchedNote_one": "{{count}} fila no ha coincidido con ningún token y se omitirá.",
+        "unmatchedNote_other": "{{count}} filas no han coincidido con ningún token y se omitirán.",
+        "viewHoldings": "Ver las posiciones",
+        "willImport_many": "Se importarán {{count}} filas",
+        "willImport_one": "Se importará {{count}} fila",
+        "willImport_other": "Se importarán {{count}} filas"
+      },
+      "running": "{{label}} está en curso",
+      "screenshot": {
+        "failedAdvice": {
+          "image": "Esto pasa con capturas de pantalla de baja resolución o muy cargadas. Prueba con una captura más nítida, recorta la parte que lista los saldos, o sube una exportación en CSV u OFX.",
+          "mixed": "Prueba con una captura más nítida o con una copia del documento que contenga texto, o sube una exportación en CSV u OFX.",
+          "pdf": "Esto pasa con PDF escaneados, compuestos solo de imágenes o cifrados, y cuando la maquetación es poco habitual. Prueba con una copia que contenga texto, o sube una exportación en CSV u OFX."
+        },
+        "failedTitle_many": "No se han podido leer {{count}} archivos",
+        "failedTitle_one": "No se ha podido leer {{count}} archivo",
+        "failedTitle_other": "No se han podido leer {{count}} archivos",
+        "filesRead": "Archivos leídos",
+        "holdingsFound": "Posiciones encontradas",
+        "noAccount": {
+          "action": "Subirlo otra vez",
+          "body": "Esta ejecución no registró a qué cuenta pertenecen las posiciones, así que no hay dónde guardarlas. No se ha importado nada y no se ha perdido nada — vuelve a subir el archivo eligiendo una cuenta.",
+          "title": "Estas filas no tienen adónde ir"
+        },
+        "ofTotal": "{{done}} de {{total}}",
+        "title": {
+          "image": "Análisis de captura de pantalla",
+          "mixed": "Análisis de archivo",
+          "pdf": "Análisis de extracto"
+        }
+      },
+      "state": {
+        "active": "Activa",
+        "completed": "Terminada",
+        "failed": "Con error",
+        "needsReview": "Necesita revisión",
+        "needsReviewSpoken": "necesita revisión",
+        "progress": "En curso",
+        "queued": "En cola"
+      },
+      "toast": {
+        "cancelled": "Tarea cancelada",
+        "cancelling": "Cancelando la tarea",
+        "discarded": "Análisis descartado — no se ha importado nada",
+        "discarding": "Descartando el análisis",
+        "dismissed": "Descartada — se mantiene en tu historial de tareas",
+        "dismissing": "Descartando el error",
+        "removing": "Eliminando la tarea",
+        "requeued": "Tarea puesta de nuevo en cola",
+        "retrying": "Reintentando la tarea"
+      },
+      "wallet": {
+        "afterConfirm": "Las posiciones se crean y se valoran después de que confirmes.",
+        "blocker": {
+          "nothingPicked": "marca al menos una fila"
+        },
+        "chainsDetected": "Cadenas detectadas",
+        "chainsFailedNote": "Todo lo que haya en una cadena que no haya respondido falta en lo que se muestra aquí.",
+        "chainsFailed_many": "No se han podido leer {{count}} cadenas",
+        "chainsFailed_one": "No se ha podido leer {{count}} cadena",
+        "chainsFailed_other": "No se han podido leer {{count}} cadenas",
+        "chainsRead": "Cadenas leídas",
+        "confirmed": {
+          "body": "Las filas que has conservado se han creado como posiciones. Volver a importar este monedero desde aquí las duplicaría, así que esto está bloqueado.",
+          "title": "Monedero importado",
+          "when": "Confirmado el {{when}}"
+        },
+        "empty": {
+          "noChains": "No se ha detectado ninguna cadena para esta dirección. O no tiene actividad en ninguna cadena admitida por la aplicación, o las llamadas de detección no han respondido. Volver a ejecutar la importación es seguro.",
+          "unreadable": "No se ha importado nada porque no se ha podido leer ninguna cadena. Esto no es la lectura de un monedero vacío: los saldos nunca llegaron a recuperarse. Volver a ejecutar la importación es seguro.",
+          "zeroBalances": "Todas las cadenas detectadas han respondido e indicado un saldo cero, así que no había nada que importar. No ha fallado nada."
+        },
+        "exited": "Comprado y vendido",
+        "hiddenSelected_many": "El filtro oculta {{count}} filas marcadas",
+        "hiddenSelected_one": "El filtro oculta {{count}} fila marcada",
+        "hiddenSelected_other": "El filtro oculta {{count}} filas marcadas",
+        "hideSpam_many": "Ocultar {{count}} tokens probablemente basura",
+        "hideSpam_one": "Ocultar {{count}} token probablemente basura",
+        "hideSpam_other": "Ocultar {{count}} tokens probablemente basura",
+        "importAgain": "Volver a importar este monedero",
+        "import_many": "Importar {{count}} posiciones",
+        "import_one": "Importar {{count}} posición",
+        "import_other": "Importar {{count}} posiciones",
+        "imported": {
+          "accounts": "Cuentas creadas",
+          "allGone": "Ninguna de estas posiciones sigue en tu lista — se eliminaron o se marcaron.",
+          "finish": "Revisión terminada",
+          "finishedWhen": "Revisión terminada el {{when}}. Estas posiciones están activas en tu cartera y todavía se pueden eliminar desde Posiciones.",
+          "finishing": "Finalizando…",
+          "holdings": "Posiciones creadas",
+          "nothingTitle": "No se ha importado nada",
+          "pruneNote": "Elimina lo que no quieras y luego termina. Hasta que lo hagas, esta ejecución seguirá en tu lista como pendiente de acción.",
+          "remove": "Eliminar {{symbol}}",
+          "reviewTitle": "Revisar lo que se ha creado",
+          "title": "Posiciones importadas"
+        },
+        "importing": "Importando…",
+        "outcome": {
+          "empty": "Nada que revisar",
+          "found": "Posiciones detectadas",
+          "partial": "Posiciones detectadas — lectura parcial",
+          "unreadable": "No se ha podido leer este monedero"
+        },
+        "outcomeBody": {
+          "empty": "Todas las cadenas han respondido y no han indicado ningún saldo, así que esta dirección está vacía por lo que podemos ver. No ha fallado nada.",
+          "found": "Elige cuáles quieres conservar. Solo las filas marcadas se convierten en posiciones.",
+          "partial": "Elige cuáles quieres conservar. Solo las filas marcadas se convierten en posiciones — y al menos una cadena no ha respondido, así que esto no es todo lo que tiene la dirección.",
+          "unreadable": "Ninguna cadena ha respondido, así que no sabemos qué tiene esta dirección. Esto no es la lectura de un monedero vacío — volver a ejecutar la importación es seguro."
+        },
+        "selectAll": "Seleccionar todo lo mostrado",
+        "selectNone": "Borrar la selección",
+        "showHidden": "Mostrarlas",
+        "spam": {
+          "mixedScript": "Alfabetos mezclados",
+          "solicitation": "Parece un anuncio"
+        },
+        "subject": "este monedero",
+        "toast": {
+          "imported_many": "{{count}} posiciones importadas",
+          "imported_one": "{{count}} posición importada",
+          "imported_other": "{{count}} posiciones importadas"
+        },
+        "tokensFound": "Tokens encontrados",
+        "unavailable": {
+          "body": "Este monedero se ha leído, pero la lista de tokens no se guardó con la tarea, así que aquí no hay nada que elegir. No se ha importado nada y no se ha perdido nada — vuelve a ejecutar la importación para recuperar la lista.",
+          "title": "La lista detectada no está aquí"
+        }
+      }
+    },
+    "membership": {
+      "add": "Añadir {{label}}",
+      "addAction": "Añadir",
+      "addPending": "Añadiendo",
+      "added": "{{label}} añadido al grupo",
+      "adding": "Añadiendo al grupo",
+      "allAdded": "Todo lo que tienes ya está aquí — no hay más {{noun}} que añadir.",
+      "allOfCount_many": "Todas ({{count}} posiciones)",
+      "allOfCount_one": "Todas ({{count}} posición)",
+      "allOfCount_other": "Todas ({{count}} posiciones)",
+      "count": {
+        "account_many": "{{count}} cuentas",
+        "account_one": "{{count}} cuenta",
+        "account_other": "{{count}} cuentas",
+        "holding_many": "{{count}} posiciones",
+        "holding_one": "{{count}} posición",
+        "holding_other": "{{count}} posiciones"
+      },
+      "holdings_many": "Posiciones ({{count}})",
+      "holdings_one": "Posiciones ({{count}})",
+      "holdings_other": "Posiciones ({{count}})",
+      "noMatch": "No queda nada por añadir que coincida con «{{query}}».",
+      "picker": {
+        "done": "Listo"
+      },
+      "removeAction": "Quitar",
+      "removePending": "Quitando",
+      "removed": "{{label}} quitado del grupo",
+      "removing": "Quitando del grupo",
+      "searchLabel": "Buscar {{noun}} que añadir",
+      "searchPlaceholder": "Buscar: {{noun}}",
+      "wholeAccountsNote": "La cuenta entera está en el grupo — lo que contiene ahora y todo lo que reciba más adelante. Quitarla saca todo eso.",
+      "wholeAccounts_many": "Cuentas enteras ({{count}})",
+      "wholeAccounts_one": "Cuentas enteras ({{count}})",
+      "wholeAccounts_other": "Cuentas enteras ({{count}})"
+    },
+    "money": {
+      "blocker": {
+        "chooseCadence": "elige con qué frecuencia se repite",
+        "chooseVendor": "elige un proveedor",
+        "enterAmount": "introduce el importe",
+        "estimateAboveZero": "haz que la estimación sea mayor que cero, o bórrala",
+        "pickCurrency": "elige una divisa de la lista",
+        "setAnchorDate": "define una fecha de anclaje",
+        "setRepeatCount": "define un número de repeticiones válido"
+      },
+      "cadence": {
+        "everyUnknown": "Cada {{count}} × {{unit}}",
+        "every_month_many": "Cada {{count}} meses",
+        "every_month_one": "Cada mes",
+        "every_month_other": "Cada {{count}} meses",
+        "every_quarter_many": "Cada {{count}} trimestres",
+        "every_quarter_one": "Cada trimestre",
+        "every_quarter_other": "Cada {{count}} trimestres",
+        "every_week_many": "Cada {{count}} semanas",
+        "every_week_one": "Cada semana",
+        "every_week_other": "Cada {{count}} semanas",
+        "every_year_many": "Cada {{count}} años",
+        "every_year_one": "Cada año",
+        "every_year_other": "Cada {{count}} años"
+      },
+      "currencyField": {
+        "empty": "Nada de tu lista de tokens coincide con eso.",
+        "label": "Divisa",
+        "searchPlaceholder": "USD, EUR, BTC…"
+      },
+      "deletePayment": {
+        "blocked_many": "Este pago tiene {{count}} vencimientos liquidados — dinero que se movió de verdad. No se puede eliminar, porque eso borraría también el historial.",
+        "blocked_one": "Este pago tiene {{count}} vencimiento liquidado — dinero que se movió de verdad. No se puede eliminar, porque eso borraría también el historial.",
+        "blocked_other": "Este pago tiene {{count}} vencimientos liquidados — dinero que se movió de verdad. No se puede eliminar, porque eso borraría también el historial.",
+        "checking": "Elimina el pago de {{vendor}}. Comprobando qué tiene vinculado…",
+        "clauseScheduled_many": "{{count}} vencimientos todavía planificados",
+        "clauseScheduled_one": "{{count}} vencimiento todavía planificado",
+        "clauseScheduled_other": "{{count}} vencimientos todavía planificados",
+        "clauseSkipped_many": "{{count}} vencimientos que omitiste",
+        "clauseSkipped_one": "{{count}} vencimiento que omitiste",
+        "clauseSkipped_other": "{{count}} vencimientos que omitiste",
+        "confirmDelete": "Eliminar este pago",
+        "confirmEnd": "Finalizar este pago",
+        "deleted": "Pago eliminado",
+        "discarded_many": "{{clauses}} desaparecen con él.",
+        "discarded_one": "{{clauses}} desaparece con él.",
+        "discarded_other": "{{clauses}} desaparecen con él.",
+        "lead": "Elimina el pago de {{vendor}} como si nunca hubiera existido.",
+        "tail": "Sale de Próximos, de los totales y de esta lista. Usa Finalizar si esta factura existió de verdad — eso conserva el registro. Esta acción no se puede deshacer.",
+        "trigger": "Eliminar",
+        "wayOutEnd": "Finalízalo en su lugar: el calendario se detiene y el registro se mantiene.",
+        "wayOutEnded": "Ya ha finalizado, así que el calendario está detenido y el registro se mantiene."
+      },
+      "deleteVendor": {
+        "alsoAliases_many": "{{count}} alias con los que se le ha visto desaparecen con él",
+        "alsoAliases_one": "{{count}} alias con el que se le ha visto desaparece con él",
+        "alsoAliases_other": "{{count}} alias con los que se le ha visto desaparecen con él",
+        "alsoExtractions_many": "{{count}} facturas analizadas conservan sus propios registros pero pierden su vínculo con este proveedor",
+        "alsoExtractions_one": "{{count}} factura analizada conserva su propio registro pero pierde su vínculo con este proveedor",
+        "alsoExtractions_other": "{{count}} facturas analizadas conservan sus propios registros pero pierden su vínculo con este proveedor",
+        "alsoFrame": "{{clauses}}.",
+        "blocked_many": "«{{vendor}}» todavía tiene {{count}} pagos que apuntan a él, y eliminarlo se llevaría esos pagos y todo lo liquidado sobre ellos. Finalízalos o elimínalos primero, o fusiona «{{vendor}}» en el proveedor que querías.",
+        "blocked_one": "«{{vendor}}» todavía tiene {{count}} pago que apunta a él, y eliminarlo se llevaría ese pago y todo lo liquidado sobre él. Finalízalo o elimínalo primero, o fusiona «{{vendor}}» en el proveedor que querías.",
+        "blocked_other": "«{{vendor}}» todavía tiene {{count}} pagos que apuntan a él, y eliminarlo se llevaría esos pagos y todo lo liquidado sobre ellos. Finalízalos o elimínalos primero, o fusiona «{{vendor}}» en el proveedor que querías.",
+        "checking": "Elimina «{{vendor}}». Comprobando qué apunta a él…",
+        "confirm": "Eliminar este proveedor",
+        "deleted": "{{vendor}} eliminado",
+        "lead": "Elimina «{{vendor}}». No se le paga nada ni procede nada de él.",
+        "trigger": "Eliminar"
+      },
+      "direction": {
+        "bill": "Factura",
+        "income": "Ingreso"
+      },
+      "duplicatePicker": {
+        "intro": "Elige el duplicado que quieres eliminar. Se funde en <survivor>{{vendor}}</survivor>, que se conserva.",
+        "noMatch": "Ningún otro proveedor coincide con «{{query}}».",
+        "optionLabel": "Duplicado que fundir en {{vendor}}",
+        "searchLabel": "Buscar el proveedor duplicado",
+        "searchPlaceholder": "Buscar proveedores"
+      },
+      "endPayment": {
+        "base": "Finaliza {{vendor}} el {{date}}. Deja de aparecer en Próximos, y su historial de liquidaciones y omisiones se conserva.",
+        "checking": "Comprobando cuántos vencimientos planificados elimina esto…",
+        "confirm": "Finalizar este pago",
+        "ended": "Pago finalizado",
+        "ending": "Finalizando el pago",
+        "noneRemoved": "No hay ningún vencimiento planificado posterior a esa fecha que eliminar.",
+        "removed_many": "Se eliminan {{count}} vencimientos planificados posteriores a esa fecha. Esta acción no se puede deshacer — Scani no sabe reactivar un pago finalizado.",
+        "removed_one": "Se elimina {{count}} vencimiento planificado posterior a esa fecha. Esta acción no se puede deshacer — Scani no sabe reactivar un pago finalizado.",
+        "removed_other": "Se eliminan {{count}} vencimientos planificados posteriores a esa fecha. Esta acción no se puede deshacer — Scani no sabe reactivar un pago finalizado.",
+        "trigger": "Finalizar"
+      },
+      "expectedIncome": {
+        "caption_many": "Lo que esperas recibir. No se descuenta de la cifra de facturas a {{count}} días de arriba.",
+        "caption_one": "Lo que esperas recibir. No se descuenta de la cifra de facturas a {{count}} día de arriba.",
+        "caption_other": "Lo que esperas recibir. No se descuenta de la cifra de facturas a {{count}} días de arriba.",
+        "expected": "Previsto el {{date}}",
+        "expectedLate": "Previsto el {{date}} · todavía sin recibir",
+        "row": "{{vendor}}, previsto el {{date}}",
+        "title_many": "Ingresos previstos, próximos {{count}} días",
+        "title_one": "Ingresos previstos, próximo {{count}} día",
+        "title_other": "Ingresos previstos, próximos {{count}} días",
+        "unknownPayer": "Pagador desconocido"
+      },
+      "field": {
+        "direction": "Sentido"
+      },
+      "forecast": {
+        "addPayment": "Añadir un pago",
+        "affordAmount": "Importe",
+        "affordAsk": "Comprobarlo",
+        "affordCannot": "Eso es más que el saldo líquido.",
+        "affordClear": "Borrar",
+        "affordCostsMonths_many": "Cuesta {{count}} meses de autonomía.",
+        "affordCostsMonths_one": "Cuesta {{count}} mes de autonomía.",
+        "affordCostsMonths_other": "Cuesta {{count}} meses de autonomía.",
+        "affordGoesNegative": "En ese momento el saldo baja de cero.",
+        "affordLowest": "Nivel más bajo al que llega el saldo",
+        "affordLowestIn": "En {{month}}",
+        "affordLowestNow": "Hoy, antes de que se mueva nada",
+        "affordNoSchedule": "Se mide frente a tu ritmo medio, así que no distingue una compra ahora de otra más adelante en el año.",
+        "affordRemaining": "Lo que queda después",
+        "affordRunwayAfter": "Después de eso, el dinero se agota en {{month}}.",
+        "affordRunwayAfterObserved_many": "Unos {{count}} meses al ritmo de gasto reciente.",
+        "affordRunwayAfterObserved_one": "Un {{count}} mes al ritmo de gasto reciente.",
+        "affordRunwayAfterObserved_other": "Unos {{count}} meses al ritmo de gasto reciente.",
+        "affordRunwayStillBeyond_many": "La autonomía sigue superando los {{count}} meses.",
+        "affordRunwayStillBeyond_one": "La autonomía sigue superando el {{count}} mes.",
+        "affordRunwayStillBeyond_other": "La autonomía sigue superando los {{count}} meses.",
+        "affordStaysPositive": "El saldo se mantiene por encima de cero durante toda la ventana.",
+        "affordTitle": "¿Me lo puedo permitir?",
+        "affordWhen": "Cuándo",
+        "answerAmountLabel": "Lo que gastas realmente al mes",
+        "answerCancel": "Cancelar",
+        "answerConfirm": "Sí, es correcto",
+        "answerConfirmed": "Confirmaste esto el {{date}}.",
+        "answerConfirmedMoved": "Confirmaste <was/> el {{date}}. Ahora es <now/>.",
+        "answerCurrencyChanged": "Tu respuesta del {{date}} se dio en otra divisa, así que ya no se aplica.",
+        "answerFailed": "Eso no se ha guardado.",
+        "answerOverride": "Usar mi propia cifra",
+        "answerOverrideActive": "Se usa tu cifra de <amount/> al mes, fijada el {{date}}. Medido: <measured/>.",
+        "answerRevert": "Volver a la cifra medida",
+        "answerSave": "Guardar",
+        "answerTitle": "¿Es esto lo que gastas?",
+        "balanceAt": "Saldo en {{month}}",
+        "basisIlliquid_many": "<value></value> repartidos en {{count}} inmuebles y posiciones no cotizadas quedan fuera por ser ilíquidos.",
+        "basisIlliquid_one": "<value></value> en {{count}} inmueble o posición no cotizada queda fuera por ser ilíquido.",
+        "basisIlliquid_other": "<value></value> repartidos en {{count}} inmuebles y posiciones no cotizadas quedan fuera por ser ilíquidos.",
+        "basisUnpriceable_many": "{{count}} posiciones no tienen precio y no se cuentan.",
+        "basisUnpriceable_one": "{{count}} posición no tiene precio y no se cuenta.",
+        "basisUnpriceable_other": "{{count}} posiciones no tienen precio y no se cuentan.",
+        "basis_many": "Se cuentan <value></value> repartidos en {{count}} posiciones.",
+        "basis_one": "Se cuentan <value></value> en {{count}} posición.",
+        "basis_other": "Se cuentan <value></value> repartidos en {{count}} posiciones.",
+        "chartLabel_many": "Saldo proyectado en los próximos {{count}} meses",
+        "chartLabel_one": "Saldo proyectado en el próximo {{count}} mes",
+        "chartLabel_other": "Saldo proyectado en los próximos {{count}} meses",
+        "comingIn_many": "Entradas, próximos {{count}} meses",
+        "comingIn_one": "Entradas, próximo {{count}} mes",
+        "comingIn_other": "Entradas, próximos {{count}} meses",
+        "committedNote": "Solo tus pagos recurrentes — lo que está planificado, y cuándo. No describe lo que gastas.",
+        "committedTitle": "Lo que está comprometido",
+        "couldEstimate_many": "{{count}} de esos pagos variables ya se han liquidado antes, así que sus últimos importes podrían servir.",
+        "couldEstimate_one": "{{count}} de esos pagos variables ya se ha liquidado antes, así que su último importe podría servir.",
+        "couldEstimate_other": "{{count}} de esos pagos variables ya se han liquidado antes, así que sus últimos importes podrían servir.",
+        "estimatedCount_many": "{{count}} pagos variables se valoran a partir de su último importe liquidado, no de una estimación introducida por nadie.",
+        "estimatedCount_one": "{{count}} pago variable se valora a partir de su último importe liquidado, no de una estimación introducida por nadie.",
+        "estimatedCount_other": "{{count}} pagos variables se valoran a partir de su último importe liquidado, no de una estimación introducida por nadie.",
+        "estimatedFrom": "según {{month}}",
+        "estimatedFromAmount": "según {{month}} · <value></value>",
+        "estimatedMark": "Estimado",
+        "estimatedTitle": "Estimado a partir del historial",
+        "goingOut_many": "Salidas, próximos {{count}} meses",
+        "goingOut_one": "Salidas, próximo {{count}} mes",
+        "goingOut_other": "Salidas, próximos {{count}} meses",
+        "horizonOption_many": "{{count}} meses",
+        "horizonOption_one": "{{count}} mes",
+        "horizonOption_other": "{{count}} meses",
+        "horizonSwitcher": "Ventana de previsión",
+        "label": "previsión de tesorería",
+        "lastsBeyond_many": "Dura más de {{count}} meses",
+        "lastsBeyond_one": "Dura más de {{count}} mes",
+        "lastsBeyond_other": "Dura más de {{count}} meses",
+        "netPerMonth": "Tus pagos recurrentes dejan un neto de <value></value> al mes.",
+        "notCounted": "Fuera de esta proyección",
+        "observedBasis": "Media de {{count}} meses completos, de {{from}} a {{to}}: <value></value> al mes.",
+        "observedNotCounted_many": "{{count}} salidas no se cuentan — sin respuesta, o movidas a algún sitio que Scani no ve.",
+        "observedNotCounted_one": "{{count}} salida no se cuenta — sin respuesta, o movida a algún sitio que Scani no ve.",
+        "observedNotCounted_other": "{{count}} salidas no se cuentan — sin respuesta, o movidas a algún sitio que Scani no ve.",
+        "observedRunway_many": "Unos {{count}} meses al ritmo de gasto reciente",
+        "observedRunway_one": "Un {{count}} mes al ritmo de gasto reciente",
+        "observedRunway_other": "Unos {{count}} meses al ritmo de gasto reciente",
+        "observedSpread": "Esos meses fueron de <min></min> a <max></max>; el mes intermedio fue de <median></median>.",
+        "ofWhichCommitted": "~{{percent}} % de ese gasto está comprometido",
+        "overdueExcluded_many": "{{count}} facturas ya están en retraso y no figuran en la serie.",
+        "overdueExcluded_one": "{{count}} factura ya está en retraso y no figura en la serie.",
+        "overdueExcluded_other": "{{count}} facturas ya están en retraso y no figuran en la serie.",
+        "projectedMark": "Proyectado",
+        "provenanceAutomated": "El {{percent}} % lo decidió una regla con nombre que puedes ir a leer.",
+        "provenanceTitle": "Quién clasificó el dinero que SÍ se cuenta",
+        "provenanceUnattributed": "El {{percent}} % no tiene constancia de quién ni de qué lo decidió.",
+        "provenanceUser": "El {{percent}} % de ese valor se apoya en respuestas que diste tú.",
+        "runsOutIn": "Se agota en {{month}}",
+        "runwayLabel": "Autonomía",
+        "seeRecurring": "Ver los pagos recurrentes",
+        "stopEstimating_many": "Dejar de estimarlos",
+        "stopEstimating_one": "Dejar de estimarlo",
+        "stopEstimating_other": "Dejar de estimarlos",
+        "unprojectable_many": "{{count}} pagos variables no tienen estimación, así que no se ha proyectado nada para ellos.",
+        "unprojectable_one": "{{count}} pago variable no tiene estimación, así que no se ha proyectado nada para él.",
+        "unprojectable_other": "{{count}} pagos variables no tienen estimación, así que no se ha proyectado nada para ellos.",
+        "useLastSettled_many": "Usar sus últimos importes liquidados",
+        "useLastSettled_one": "Usar su último importe liquidado",
+        "useLastSettled_other": "Usar sus últimos importes liquidados",
+        "working": "Calculando…"
+      },
+      "group": {
+        "overdue": "En retraso"
+      },
+      "mergeVendor": {
+        "base": "«{{duplicate}}» se elimina y «{{survivor}}» se conserva.",
+        "checking": "Comprobando qué se traslada…",
+        "clauseAliases_many": "{{count}} alias",
+        "clauseAliases_one": "{{count}} alias",
+        "clauseAliases_other": "{{count}} alias",
+        "clausePayments_many": "{{count}} pagos",
+        "clausePayments_one": "{{count}} pago",
+        "clausePayments_other": "{{count}} pagos",
+        "confirm": "Fusionar",
+        "confirmNamed": "Fusionar {{vendor}} dentro",
+        "merged": "Proveedores fusionados",
+        "moves_many": "{{clauses}} se trasladan a «{{survivor}}». Esta acción no se puede deshacer.",
+        "moves_one": "{{clauses}} se traslada a «{{survivor}}». Esta acción no se puede deshacer.",
+        "moves_other": "{{clauses}} se trasladan a «{{survivor}}». Esta acción no se puede deshacer.",
+        "noCandidates": "No hay ningún otro proveedor que fusionar",
+        "nothingMoves": "Nada apunta a «{{duplicate}}», así que no se traslada nada. Esta acción no se puede deshacer.",
+        "pickOne": "Elige el duplicado que quieres fundir en «{{vendor}}». Este conserva su registro; el que elijas se elimina.",
+        "trigger": "Fusionar un duplicado"
+      },
+      "overdue": {
+        "byDays_many": "{{count}} días de retraso",
+        "byDays_one": "{{count}} día de retraso",
+        "byDays_other": "{{count}} días de retraso",
+        "today": "Vence hoy",
+        "unknown": "En retraso"
+      },
+      "page": {
+        "addPayment": "Añadir pago",
+        "newVendor": "Nuevo proveedor",
+        "title": "Dinero",
+        "viewSwitcher": "Vista de Dinero"
+      },
+      "paymentForm": {
+        "allRecurring": "Todos los pagos recurrentes",
+        "amount": "Importe",
+        "amountIs": "El importe es",
+        "amountIsQuestion": "¿El importe es fijo?",
+        "amountIsVariableHint": "La cifra real se fija cuando liquidas cada vencimiento.",
+        "anchorFromIssueDate": "La factura no indica ninguna fecha de vencimiento — esta es su fecha de emisión.",
+        "anchorMissing": "No se ha encontrado ninguna fecha en la factura. Elige el día del vencimiento.",
+        "anchorPlaceholder": "No está en la factura",
+        "backToPayment": "Volver al pago",
+        "blockers": "Para continuar: {{blockers}}.",
+        "cadenceCaveat": "Una sola factura no puede demostrar con qué frecuencia se repite — revisa el calendario antes de guardar.",
+        "create": "Crear el pago",
+        "created": "Pago creado",
+        "createdFromInvoice": "Pago creado a partir de una factura",
+        "directionIn": "Dinero que entra",
+        "directionOut": "Dinero que sale",
+        "estimate": "Estimación",
+        "estimateFromHistory": "Estimar según lo que costó la última vez",
+        "estimateFromHistoryHint": "Desactivado por defecto. Al activarlo, las previsiones usan el importe que liquidaste por última vez en este pago, e indican de qué mes procede.",
+        "estimateHint": "Opcional.",
+        "extractionGone": "Esa factura ya no está pendiente de revisión, así que no se ha podido rellenar nada. Rellena el formulario tú, o vuelve a abrir el documento desde Por revisar.",
+        "firstDue": "Primer vencimiento",
+        "intro": "Una factura o un ingreso recurrente, que se casa con las transacciones a medida que llegan.",
+        "kindFixed": "El mismo cada vez",
+        "kindVariable": "Variable",
+        "linkedAccount": "Cuenta vinculada",
+        "markPaid": "Esta factura ya está pagada",
+        "markPaidHint": "Marca como liquidado el periodo que cubre, para que el que veas venir sea el siguiente pago y no este.",
+        "missingBody": "Puede que se haya finalizado y eliminado, o que el enlace ya no esté actualizado.",
+        "missingTitle": "Ese pago no está aquí",
+        "noLinkedAccount": "Sin cuenta vinculada",
+        "notes": "Notas",
+        "notesPlaceholder": "Todo lo que convenga recordar sobre este pago",
+        "repeatMonth_many": "Se repite cada {{count}} meses, anclado al día del vencimiento.",
+        "repeatMonth_one": "Se repite cada mes, anclado al día del vencimiento.",
+        "repeatMonth_other": "Se repite cada {{count}} meses, anclado al día del vencimiento.",
+        "repeatNoUnit": "Una sola factura nunca demuestra una frecuencia — indica cada cuánto llega esta factura.",
+        "repeatQuarter_many": "Se repite cada {{count}} trimestres, anclado al día del vencimiento.",
+        "repeatQuarter_one": "Se repite cada trimestre, anclado al día del vencimiento.",
+        "repeatQuarter_other": "Se repite cada {{count}} trimestres, anclado al día del vencimiento.",
+        "repeatUnit": "Unidad de repetición",
+        "repeatUnitPlaceholder": "¿Cada cuánto?",
+        "repeatWeek_many": "Se repite cada {{count}} semanas, anclado al día del vencimiento.",
+        "repeatWeek_one": "Se repite cada semana, anclado al día del vencimiento.",
+        "repeatWeek_other": "Se repite cada {{count}} semanas, anclado al día del vencimiento.",
+        "repeatYear_many": "Se repite cada {{count}} años, anclado al día del vencimiento.",
+        "repeatYear_one": "Se repite cada año, anclado al día del vencimiento.",
+        "repeatYear_other": "Se repite cada {{count}} años, anclado al día del vencimiento.",
+        "repeatsEvery": "Se repite cada",
+        "saveChanges": "Guardar los cambios",
+        "saving": "Guardando…",
+        "sectionOptional": "Opcional",
+        "sectionWhat": "Qué",
+        "sectionWhen": "Cuándo",
+        "sectionWho": "Quién",
+        "stopsAfter": "Se detiene tras",
+        "stopsAfterHint": "Déjalo vacío para que se repita indefinidamente.",
+        "stopsAfterPlaceholder": "Nunca",
+        "suggestedFrom": "Propuesto a partir de una factura de {{vendor}}.",
+        "suggestedFromNumbered": "Propuesto a partir de la factura n.º {{number}} de {{vendor}}.",
+        "titleEdit": "Editar el pago",
+        "titleNew": "Nuevo pago recurrente",
+        "unitMonth": "Mes(es)",
+        "unitQuarter": "Trimestre(s)",
+        "unitWeek": "Semana(s)",
+        "unitYear": "Año(s)",
+        "updated": "Pago actualizado"
+      },
+      "peek": {
+        "amountIs": "El importe es",
+        "anchorDate": "Fecha de anclaje",
+        "cadenceAndDirection": "{{cadence}} · {{direction}}",
+        "due": "Vencimiento",
+        "dueOn": "Vence el {{date}}",
+        "edit": "Editar",
+        "editPayment": "Editar el pago",
+        "ends": "Termina",
+        "expectedOn": "Previsto el {{date}}",
+        "expectedOnLate": "Previsto el {{date}} · todavía sin recibir",
+        "fixed": "Fijo",
+        "monthlyEquivalent": "Equivalente mensual",
+        "never": "Nunca",
+        "noAmount": "Sin importe",
+        "notSet": "Sin definir",
+        "note": "Nota",
+        "notes": "Notas",
+        "pausedSince": "En pausa desde",
+        "repeats": "Se repite",
+        "schedule": "Calendario",
+        "setOnSettling": "Se fija al liquidar",
+        "started": "Empezó",
+        "status": "Estado",
+        "varies": "Variable"
+      },
+      "pending": {
+        "creatingPayment": "Creando el pago",
+        "creatingVendor": "Creando el proveedor",
+        "deletingPayment": "Eliminando el pago",
+        "deletingVendor": "Eliminando el proveedor",
+        "mergingVendors": "Fusionando los proveedores",
+        "pausingPayment": "Poniendo el pago en pausa",
+        "resumingPayment": "Reanudando el pago",
+        "savingVendor": "Guardando el proveedor",
+        "updatingOccurrence": "Actualizando el vencimiento del pago",
+        "updatingPayment": "Actualizando el pago"
+      },
+      "recurringList": {
+        "addPayment": "Añadir un pago"
+      },
+      "recurringSummary": {
+        "committedEachMonth": "Comprometido cada mes",
+        "estimatedFromHistory_many": "Incluye {{count}} pagos variables estimados a partir de sus últimos importes liquidados.",
+        "estimatedFromHistory_one": "Incluye {{count}} pago variable estimado a partir de su último importe liquidado.",
+        "estimatedFromHistory_other": "Incluye {{count}} pagos variables estimados a partir de sus últimos importes liquidados.",
+        "notCounted_many": "{{count}} pagos variables no tienen estimación y no se cuentan.",
+        "notCounted_one": "{{count}} pago variable no tiene estimación y no se cuenta.",
+        "notCounted_other": "{{count}} pagos variables no tienen estimación y no se cuentan."
+      },
+      "segments": {
+        "forecast": "Previsión",
+        "recurring": "Recurrentes",
+        "upcoming": "Próximos",
+        "vendors": "Proveedores"
+      },
+      "settle": {
+        "amountSettled": "Importe liquidado",
+        "cancel": "Cancelar",
+        "confirm": "Confirmar",
+        "markPaid": "Marcar como pagado",
+        "markReceived": "Marcar como recibido",
+        "markedPaid": "Marcado como pagado",
+        "markedReceived": "Marcado como recibido",
+        "skip": "Omitir",
+        "skipped": "Vencimiento omitido"
+      },
+      "status": {
+        "pause": "Poner en pausa",
+        "pauseConfirm": "Poner este pago en pausa",
+        "pauseConsequence": "No hay vencimientos nuevos mientras está en pausa. Todo lo que venza entretanto se registra como omitido, no como en retraso.",
+        "paused": "Pago puesto en pausa",
+        "resume": "Reanudar",
+        "resumeConfirm": "Reanudar este pago",
+        "resumeConsequence": "Retoma el calendario original — las mismas fechas que antes. Los vencimientos pasados se dejan exactamente como están.",
+        "resumeConsequenceSince": "Retoma el calendario original — las mismas fechas que antes. Todo lo que haya vencido desde el {{date}} se registra como omitido, no como en retraso.",
+        "resumed": "Pago reanudado"
+      },
+      "thisPayment": "este pago",
+      "upcoming": {
+        "addPayment": "Añadir un pago",
+        "billsCommitted_many": "Facturas comprometidas, próximos {{count}} días",
+        "billsCommitted_one": "Facturas comprometidas, próximo {{count}} día",
+        "billsCommitted_other": "Facturas comprometidas, próximos {{count}} días",
+        "label": "próximos pagos",
+        "noneAhead_many": "Nada vence en los próximos {{count}} días.",
+        "noneAhead_one": "Nada vence en el próximo {{count}} día.",
+        "noneAhead_other": "Nada vence en los próximos {{count}} días.",
+        "overdueTotal_many": "En retraso, {{count}} facturas",
+        "overdueTotal_one": "En retraso, {{count}} factura",
+        "overdueTotal_other": "En retraso, {{count}} facturas",
+        "row": "{{vendor}}, vence el {{date}}",
+        "seeRecurring": "Ver los pagos recurrentes"
+      },
+      "vendor": {
+        "created": "{{name}} creado",
+        "saved": "{{name}} guardado"
+      },
+      "vendorCreate": {
+        "cancel": "Cancelar",
+        "label": "Nombre del proveedor",
+        "placeholder": "Nombre del proveedor"
+      },
+      "vendorEdit": {
+        "cancel": "Cancelar",
+        "category": "Categoría",
+        "categoryPlaceholder": "Sin categoría",
+        "edit": "Editar",
+        "name": "Nombre",
+        "save": "Guardar el proveedor",
+        "website": "Sitio web",
+        "websitePlaceholder": "Ninguno registrado"
+      },
+      "vendorField": {
+        "createNamed": "Crear «{{term}}»",
+        "didYouMean": "¿Querías decir",
+        "empty": "Todavía no hay ningún proveedor con ese nombre.",
+        "label": "Proveedor",
+        "pendingHint": "Leído de la factura. Crearemos este proveedor al guardar si todavía no existe.",
+        "sameVendor": "El mismo proveedor",
+        "searchPlaceholder": "Busca o crea un proveedor",
+        "similar": "Similar",
+        "similarNames_many": "Ya tienes proveedores con un nombre parecido:",
+        "similarNames_one": "Ya tienes un proveedor con un nombre parecido:",
+        "similarNames_other": "Ya tienes proveedores con un nombre parecido:",
+        "typeToCreate": "Escribe un nombre para crear un proveedor",
+        "use": "Usar {{name}}"
+      },
+      "vendorList": {
+        "billKind": "Factura",
+        "billsGroup": "Facturas",
+        "paymentCount_many": "{{count}} pagos",
+        "paymentCount_one": "{{count}} pago",
+        "paymentCount_other": "{{count}} pagos",
+        "uncategorised": "Sin categoría"
+      },
+      "vendorPeek": {
+        "details": "Detalles",
+        "direction": "Sentido",
+        "incomeFromThisVendor": "Ingresos procedentes de este proveedor",
+        "newVendor": "Nuevo proveedor",
+        "noWebsite": "Ninguno registrado",
+        "notCounted": "No contado",
+        "payments": "Pagos",
+        "recentIncome": "Ingresos recientes",
+        "recentPayments": "Pagos recientes",
+        "seePayments_many": "Ver los pagos",
+        "seePayments_one": "Ver el pago",
+        "seePayments_other": "Ver los pagos",
+        "unclassified": "Los pagos de este proveedor no dicen si el dinero sale o entra, así que no se muestra ninguna cifra mensual.",
+        "website": "Sitio web"
+      },
+      "vendorSpend": {
+        "notSubtracted": "No se descuenta de lo que debes — son dos cifras distintas."
+      }
+    },
+    "notFound": {
+      "body": "No hay nada en Scani en la dirección que has pedido. Puede que el enlace ya no esté actualizado, o que la dirección tenga una errata.",
+      "goHome": "Ir al inicio",
+      "title": "Esta página no existe"
+    },
+    "ownership": {
+      "accountEntityLabel": "Entidad de {{name}}",
+      "accountsHeading": "A qué entidad pertenece cada cuenta",
+      "assigning": "mover la cuenta",
+      "cancel": "Cancelar",
+      "combined": "Total",
+      "create": "Crear",
+      "created": "{{name}} creada",
+      "creating": "crear la entidad",
+      "description": "Mantén separado tu dinero personal del de tu empresa. El patrimonio neto sigue siendo una sola cifra.",
+      "empty": "Aún no hay valores.",
+      "holdingsCounted_many": "{{count}} posiciones",
+      "holdingsCounted_one": "{{count}} posición",
+      "holdingsCounted_other": "{{count}} posiciones",
+      "loading": "Calculando cuánto vale cada juego de libros…",
+      "name": "Nombre",
+      "namePlaceholder": "p. ej. Mi Empresa S.L.",
+      "newEntity": "Nueva entidad",
+      "title": "Entidades",
+      "unassigned": "Sin asignar",
+      "unpriced": "Hoy no se ha podido valorar {{symbols}}"
+    },
+    "realizedLedger": {
+      "answer": {
+        "unattributedLabel": "Respuesta no registrada"
+      },
+      "answerTransfers": "Responder a las transferencias en espera",
+      "basis": {
+        "partialLabel": "Coste de adquisición parcial",
+        "partialNote": "Basado en un historial que sabemos que está incompleto, o en un precio fuera de nuestra ventana de frescura.",
+        "unknownLabel": "Sin coste de adquisición registrado",
+        "unknownNote": "No tenemos constancia de haber adquirido esto, así que el importe íntegro aparece como ganancia. Lo más habitual es una importación que no ha podido remontarse lo suficiente."
+      },
+      "held": {
+        "days_many": "{{count}} días",
+        "days_one": "{{count}} día",
+        "days_other": "{{count}} días",
+        "months_many": "{{count}} meses",
+        "months_one": "{{count}} mes",
+        "months_other": "{{count}} meses",
+        "sameDay": "el mismo día",
+        "years": "{{years}} años"
+      },
+      "noun": {
+        "disposal": "transmisión",
+        "sale": "venta",
+        "swap": "permuta",
+        "transfer": "transferencia",
+        "withdrawal": "retirada"
+      },
+      "outcome": {
+        "awaitingPair": "Solo se ha importado un lado de este movimiento, así que no se ha contabilizado ninguna ganancia.",
+        "realizedUnattributed": "Registrado como salido de tu cartera, así que esta ganancia se ha contabilizado. No hay constancia de que nadie lo respondiera — la respuesta no se dio en la cola de revisión.",
+        "retained": "Indicaste que esto nunca salió de tu control, así que no se ha realizado nada.",
+        "retainedUnattributed": "Registrado como que nunca salió de tu control, así que no se ha realizado nada. No hay constancia de que nadie lo respondiera.",
+        "unpriced": "No se ha encontrado ningún precio para esto, así que no se ha contabilizado ninguna ganancia. El coste se sigue mostrando.",
+        "unreviewed": "A la espera de tu respuesta, así que no se ha contabilizado ninguna ganancia en ningún sentido."
+      },
+      "portion": "Parte {{index}} de {{total}} de una misma {{noun}}",
+      "valuation": {
+        "estimatedLabel": "Valorado a partir del token que salió",
+        "heldTokenFallback": "Valorado a partir del token que salió, a su precio de ese día: lo que entró a cambio no tiene historial de precios, así que no se ha podido convertir el tipo al que se ejecutó esta permuta."
+      },
+      "verb": {
+        "disposed": "Transmitido",
+        "sold": "Vendido",
+        "swapped": "Permutado",
+        "transferredOut": "Transferido al exterior",
+        "withdrew": "Retirado"
+      }
+    },
+    "review": {
+      "answered": {
+        "attribution": {
+          "repair": "Scani lo corrigió a",
+          "rule": "Tu regla respondió",
+          "unattributed": "Registrado como",
+          "user": "Indicaste"
+        },
+        "backToQueue": "Volver a la cola",
+        "field": {
+          "answered": "Respondida",
+          "to": "Hacia"
+        },
+        "reopen": {
+          "commit": "Devolverla a la cola",
+          "declaredCommit": "Deshacerlo y dejar los saldos como estaban",
+          "declaredTrigger": "Deshacer esta transferencia",
+          "trigger": "Cambiar esta respuesta"
+        },
+        "source": {
+          "repair": "Corregida por Scani",
+          "repairNote": "Scani corrigió esta respuesta",
+          "rule": "Por una regla que escribiste",
+          "ruleNote": "Respondida por tu regla: {{note}}",
+          "ruleNoteUnnamed": "Respondida por una regla que escribiste sobre este destino",
+          "unrecorded": "No registrado",
+          "unrecordedLong": "No registrado — esta respuesta no se dio en la cola",
+          "user": "Por ti, aquí"
+        },
+        "title": "Transferencias respondidas",
+        "toast": {
+          "reopenFailed": "No se ha podido reabrir esa transferencia",
+          "reopened": "De vuelta en la cola — respóndela otra vez ahí",
+          "undone": "Transferencia deshecha — los dos saldos han vuelto a como estaban"
+        }
+      },
+      "balances": {
+        "answerFailed": "No se ha podido registrar eso",
+        "answerFailedBody": "No se ha guardado nada. Inténtalo de nuevo.",
+        "answerLabel": "¿Qué fue esta variación?",
+        "balances": "<previous/> → <current/> {{symbol}}.",
+        "between": "Entre el {{from}} y el {{to}}",
+        "dateLabel": "¿Cuándo se movió el dinero?",
+        "empty": "Nada que explicar — todas las variaciones de saldo están justificadas.",
+        "examined": "{{examined}} comprobadas en total; {{suppressed}} se han dejado fuera: demasiado pequeñas, un saldo que fijaste tú, revertido por la siguiente lectura, o nada podía valorarlas.",
+        "examinedWithAnswered": "{{examined}} comprobadas en total; {{suppressed}} se han dejado fuera — demasiado pequeñas, un saldo que fijaste tú, revertido por la siguiente lectura, o nada podía valorarlas — y {{answered}} a las que ya has respondido.",
+        "explain": {
+          "correction": "Registrado como una reexpresión, con fecha del momento en que la cifra errónea entró en el registro. Ni una ganancia ni dinero aportado.",
+          "flow": "Registrado como un ingreso o una retirada en la fecha que indiques, así que no cuenta como una ganancia ni como una pérdida.",
+          "flowNoDate": "Registrado como un ingreso o una retirada, con fecha entre las dos lecturas — sabemos cuándo ocurrió con más precisión de la que una fecha podría dar.",
+          "growth": "No se escribe nada. En un saldo así, el crecimiento ES el rendimiento, y ya se cuenta como tal.",
+          "unknown": "No se escribe nada y no se te volverá a preguntar por esta. Sigue contando como rentabilidad, que es la respuesta honesta cuando nadie lo sabe."
+        },
+        "intro": "Algo ha movido este saldo y ninguna transacción dice qué. Cuéntanos qué pasó y dejará de contar como rentabilidad.",
+        "loading": "Buscando variaciones de saldo que no podamos explicar…",
+        "option": {
+          "correction": "La cifra era incorrecta",
+          "flow": "Se movió dinero",
+          "growth": "Ha crecido",
+          "unknown": "No lo sé"
+        },
+        "partlyExplained_many": "{{count}} transacciones ya explican una parte.",
+        "partlyExplained_one": "{{count}} transacción ya explica una parte.",
+        "partlyExplained_other": "{{count}} transacciones ya explican una parte.",
+        "queue_many": "{{count}} variaciones de saldo por explicar, las mayores primero.",
+        "queue_one": "{{count}} variación de saldo por explicar, la mayor primero.",
+        "queue_other": "{{count}} variaciones de saldo por explicar, las mayores primero.",
+        "record": "Registrar",
+        "subject": "{{account}} · {{symbol}}"
+      },
+      "decision": {
+        "candidatesLegend": "Ingresos que podrían corresponder",
+        "noCandidates": "Ningún ingreso de {{symbol}} llegó a ningún sitio de Scani en la semana de este movimiento, por un importe comparable. Si fue a algún sitio que Scani no ve, dilo abajo.",
+        "noLinkTarget": "No hay ningún ingreso lo bastante cercano al que enlazar esto",
+        "ownWalletNotice": "Esto fue a un monedero que añadiste, así que el dinero sigue siendo tuyo. Enlázalo con el ingreso correspondiente, o registra adónde se movió — elegir que salió de tu cartera lo contabiliza como una venta.",
+        "possibleMatches": "Coincidencias posibles",
+        "toast": {
+          "gone": "Esa transferencia ya no está en espera",
+          "internal": "Registrado — el ingreso ya está en el otro lado",
+          "leftControl": "Registrado como una transmisión",
+          "paired": "Enlazado — el coste de adquisición se mueve con ello",
+          "split": "Registrado — cada parte según sus propias condiciones",
+          "splitRejected": "Ese reparto no se ha aceptado",
+          "untracked": "Registrado como que sigue siendo tuyo"
+        },
+        "whatHappened": "Qué ha pasado",
+        "withdrawnNotice": "Scani ha retirado una respuesta anterior sobre esta transferencia. Se dio a propósito de un emparejamiento que desde entonces hemos demostrado que no era una transferencia en absoluto, así que la pregunta vuelve a plantearse — y puede que aquí no haya ningún ingreso al que señalar.",
+        "withdrawnRuleNotice": "Has retirado la respuesta que tu regla dio a esta transferencia, así que vuelve aquí para que la respondas tú. La regla no volverá a responderla."
+      },
+      "destinationPicker": {
+        "legend": "Adónde fue este dinero",
+        "loading": "Cargando tus cuentas…",
+        "noDestinations": "No tienes ninguna otra cuenta a la que mover esto. Si fue a algún sitio que Scani no ve, dilo en su lugar."
+      },
+      "item": {
+        "balanceChangesToExplain": "Variaciones de saldo por explicar",
+        "candidatesAcross_many": "{{count}} candidatos en {{chains}}",
+        "candidatesAcross_one": "{{count}} candidato en {{chains}}",
+        "candidatesAcross_other": "{{count}} candidatos en {{chains}}",
+        "chains_many": "{{count}} cadenas",
+        "chains_one": "{{count}} cadena",
+        "chains_other": "{{count}} cadenas",
+        "holdingsWithSymbols_many": "{{count}} posiciones · {{symbols}}",
+        "holdingsWithSymbols_one": "{{count}} posición · {{symbols}}",
+        "holdingsWithSymbols_other": "{{count}} posiciones · {{symbols}}",
+        "holdings_many": "{{count}} posiciones",
+        "holdings_one": "{{count}} posición",
+        "holdings_other": "{{count}} posiciones",
+        "invoiceExtracted": "Factura extraída",
+        "jobFailed": "{{job}} ha fallado",
+        "labelled": "{{label}} · {{body}}",
+        "needsCurrencyWithType_many": "{{count}} transacciones · {{fileType}} — falta la divisa",
+        "needsCurrencyWithType_one": "{{count}} transacción · {{fileType}} — falta la divisa",
+        "needsCurrencyWithType_other": "{{count}} transacciones · {{fileType}} — falta la divisa",
+        "needsCurrency_many": "{{count}} transacciones — falta la divisa",
+        "needsCurrency_one": "{{count}} transacción — falta la divisa",
+        "needsCurrency_other": "{{count}} transacciones — falta la divisa",
+        "nothingFound": "no se ha encontrado nada",
+        "symbolsOverflow": "{{symbols}} +{{hidden}}",
+        "transfersToConfirm": "Transferencias por confirmar",
+        "unexplainedBalanceChanges_many": "{{count}} variaciones de saldo que no podemos explicar",
+        "unexplainedBalanceChanges_one": "{{count}} variación de saldo que no podemos explicar",
+        "unexplainedBalanceChanges_other": "{{count}} variaciones de saldo que no podemos explicar",
+        "unpairedTransfers_many": "{{count}} transferencias de salida sin ingreso correspondiente",
+        "unpairedTransfers_one": "{{count}} transferencia de salida sin ingreso correspondiente",
+        "unpairedTransfers_other": "{{count}} transferencias de salida sin ingreso correspondiente"
+      },
+      "kind": {
+        "transferOut": "Transferencia de salida",
+        "withdrawal": "Retirada"
+      },
+      "list": {
+        "backToReview": "Volver a lo que hay por revisar",
+        "field": {
+          "description": "Descripción",
+          "to": "Hacia",
+          "toOwnWallet": "Un monedero que añadiste — este dinero se quedó en tu cartera",
+          "transaction": "Transacción",
+          "viewOnExplorer": "Ver en el explorador de bloques",
+          "when": "Cuándo"
+        },
+        "seeAllJobs": "Ver todas las tareas",
+        "valueAwaiting": "<label>Valor a la espera de respuesta:</label> <value/>",
+        "valueAwaitingUnpriced_many": "<label>Valor a la espera de respuesta:</label> <value/><label>, y {{count}} más sin precio ese día</label>",
+        "valueAwaitingUnpriced_one": "<label>Valor a la espera de respuesta:</label> <value/><label>, y {{count}} más sin precio ese día</label>",
+        "valueAwaitingUnpriced_other": "<label>Valor a la espera de respuesta:</label> <value/><label>, y {{count}} más sin precio ese día</label>"
+      },
+      "page": {
+        "answered": "Respondidas",
+        "balancesTitle": "Variaciones de saldo por explicar",
+        "title": "Por revisar",
+        "transfersTitle": "Transferencias por confirmar"
+      },
+      "rules": {
+        "alreadyRuled": "Ya tienes una regla para este destino",
+        "commit": "Crear esta regla",
+        "consequence": {
+          "askMe": "Todas las transferencias a {{key}}, por cualquier importe, se quedan en esta cola y llevan tu nota. No se responde nada y no se contabiliza ninguna ganancia — sigues decidiendo una a una.",
+          "markFuture": "Ahora mismo no hay nada esperando para este destino, así que hoy no se responde nada. Toda transferencia posterior hacia él se responde como salida de tu cartera, sin abrirla, y contabiliza una ganancia.",
+          "markUnpricedTail_many": "{{count}} de ellas no tienen precio en su fecha y no contabilizan nada.",
+          "markUnpricedTail_one": "{{count}} de ellas no tiene precio en su fecha y no contabiliza nada.",
+          "markUnpricedTail_other": "{{count}} de ellas no tienen precio en su fecha y no contabilizan nada.",
+          "markUnpriced_many": "{{count}} transferencias a este destino se responden como salidas de tu cartera. Ninguna tiene precio en su fecha, así que hoy no se contabiliza nada. Toda transferencia posterior hacia él se responde igual, sin abrirla.",
+          "markUnpriced_one": "{{count}} transferencia a este destino se responde como salida de tu cartera. Ninguna tiene precio en su fecha, así que hoy no se contabiliza nada. Toda transferencia posterior hacia él se responde igual, sin abrirla.",
+          "markUnpriced_other": "{{count}} transferencias a este destino se responden como salidas de tu cartera. Ninguna tiene precio en su fecha, así que hoy no se contabiliza nada. Toda transferencia posterior hacia él se responde igual, sin abrirla.",
+          "mark_many": "Responde por {{count}} transferencias a este destino que salieron de tu cartera, contabilizando {{proceeds}} de valor de transmisión. Toda transferencia posterior hacia él se responde igual, sin abrirla. Cada una sigue siendo reversible por separado, y retirar una hace que la regla deje de cubrir esa transferencia para siempre.",
+          "mark_one": "Responde por {{count}} transferencia a este destino que salió de tu cartera, contabilizando {{proceeds}} de valor de transmisión. Toda transferencia posterior hacia él se responde igual, sin abrirla. Cada una sigue siendo reversible por separado, y retirar una hace que la regla deje de cubrir esa transferencia para siempre.",
+          "mark_other": "Responde por {{count}} transferencias a este destino que salieron de tu cartera, contabilizando {{proceeds}} de valor de transmisión. Toda transferencia posterior hacia él se responde igual, sin abrirla. Cada una sigue siendo reversible por separado, y retirar una hace que la regla deje de cubrir esa transferencia para siempre.",
+          "notADisposal": "Todas las transferencias a {{key}}, por cualquier importe, salen de esta cola y pasan a figurar en Reglas de destino. No se les escribe nada: una transferencia sin respuesta no contabiliza ninguna ganancia, y retirar la regla las trae a todas de vuelta aquí."
+        },
+        "empty": {
+          "body": "Abre una transferencia de la cola y anota adónde fue. Toda transferencia posterior al mismo destino llevará tu nota, sea cual sea el importe — y los destinos que marques se responden por ti.",
+          "title": "Todavía no hay reglas de destino"
+        },
+        "field": {
+          "counterparty": "Esta transferencia fue a",
+          "key": "La regla coincidirá con",
+          "keyHint": "El importe se deja fuera a propósito, para que la próxima transferencia al mismo destino también coincida.",
+          "note": "¿Qué es este destino?",
+          "notePlaceholder": "Mi dirección de depósito de Bybit",
+          "verdict": "Qué debe hacer la regla"
+        },
+        "hidden": {
+          "body": "Ninguna de estas ha recibido respuesta. Están esperando, fuera de la cola; retira la regla para traerlas de vuelta.",
+          "title": "Transferencias que tus reglas están reteniendo"
+        },
+        "manage": "Ver tus reglas de destino",
+        "notice": {
+          "label": "Tu nota sobre este destino",
+          "markExempt": "Marcaste este destino como una transmisión, y retiraste esa respuesta en esta transferencia. No se volverá a responder automáticamente."
+        },
+        "refusal": {
+          "ownWallet": "{{key}} es uno de tus propios monederos. El dinero que se mueve hacia él no ha salido de tu cartera, así que no se puede marcar como una transmisión."
+        },
+        "revoke": "Retirar esta regla",
+        "revokeCommit": "Retirar esta regla",
+        "revokeConsequence": {
+          "askMe": "Las transferencias a este destino dejan de llevar tu nota. La regla nunca les había respondido, así que no cambia nada más.",
+          "markKeep_many": "La regla deja de responder a las nuevas transferencias a este destino. Las {{count}} transferencias a las que ya respondió mantienen su respuesta y siguen contabilizando sus ganancias — marca la casilla de arriba para retirarlas también.",
+          "markKeep_one": "La regla deja de responder a las nuevas transferencias a este destino. La {{count}} transferencia a la que ya respondió mantiene su respuesta y sigue contabilizando su ganancia — marca la casilla de arriba para retirarla también.",
+          "markKeep_other": "La regla deja de responder a las nuevas transferencias a este destino. Las {{count}} transferencias a las que ya respondió mantienen su respuesta y siguen contabilizando sus ganancias — marca la casilla de arriba para retirarlas también.",
+          "markWithdraw_many": "La regla deja de responder a las nuevas transferencias, y las {{count}} transferencias a las que había respondido vuelven a la cola sin respuesta. Sus ganancias dejan de contabilizarse.",
+          "markWithdraw_one": "La regla deja de responder a las nuevas transferencias, y la {{count}} transferencia a la que había respondido vuelve a la cola sin respuesta. Su ganancia deja de contabilizarse.",
+          "markWithdraw_other": "La regla deja de responder a las nuevas transferencias, y las {{count}} transferencias a las que había respondido vuelven a la cola sin respuesta. Sus ganancias dejan de contabilizarse.",
+          "notADisposal_many": "{{count}} transferencias vuelven a la cola. No se les había escrito nada, así que no hay nada que deshacer.",
+          "notADisposal_one": "{{count}} transferencia vuelve a la cola. No se le había escrito nada, así que no hay nada que deshacer.",
+          "notADisposal_other": "{{count}} transferencias vuelven a la cola. No se les había escrito nada, así que no hay nada que deshacer."
+        },
+        "row": {
+          "answering_many": "Ha respondido por {{count}} transferencias que son transmisiones",
+          "answering_one": "Ha respondido por {{count}} transferencia que es una transmisión",
+          "answering_other": "Ha respondido por {{count}} transferencias que son transmisiones",
+          "hiding_many": "Mantiene {{count}} transferencias fuera de la cola",
+          "hiding_one": "Mantiene {{count}} transferencia fuera de la cola",
+          "hiding_other": "Mantiene {{count}} transferencias fuera de la cola",
+          "labelling_many": "Nombra {{count}} transferencias de la cola",
+          "labelling_one": "Nombra {{count}} transferencia de la cola",
+          "labelling_other": "Nombra {{count}} transferencias de la cola"
+        },
+        "title": "Reglas de destino",
+        "toast": {
+          "created": "Regla guardada",
+          "refused": "Esa regla no se ha guardado",
+          "revokeFailed": "Esa regla no se ha retirado",
+          "revoked": "Regla retirada",
+          "revokedKept_many": "Regla retirada — las {{count}} respuestas que dio no cambian",
+          "revokedKept_one": "Regla retirada — la {{count}} respuesta que dio no cambia",
+          "revokedKept_other": "Regla retirada — las {{count}} respuestas que dio no cambian",
+          "revokedWithdrawn_many": "Regla retirada — {{count}} respuestas han vuelto a la cola",
+          "revokedWithdrawn_one": "Regla retirada — {{count}} respuesta ha vuelto a la cola",
+          "revokedWithdrawn_other": "Regla retirada — {{count}} respuestas han vuelto a la cola"
+        },
+        "trigger": "Crear una regla sobre este destino",
+        "verdict": {
+          "alwaysADisposal": "Responder que es una transmisión",
+          "askMe": "Seguir preguntando, pero ponerle nombre",
+          "notADisposal": "Dejar de preguntar por ello"
+        },
+        "withdrawAnswers_many": "Retirar también las {{count}} respuestas que dio",
+        "withdrawAnswers_one": "Retirar también la {{count}} respuesta que dio",
+        "withdrawAnswers_other": "Retirar también las {{count}} respuestas que dio"
+      },
+      "split": {
+        "addsUp": "Las cuentas cuadran",
+        "amountLabel": "{{outcome}} — importe en {{symbol}}",
+        "movingTo": "Hacia {{location}}",
+        "pickDepositFirst": "Elige primero el ingreso de arriba",
+        "wherePrompt": "¿Adónde fue esta parte?"
+      },
+      "transfer": {
+        "allocation": {
+          "over": "Eso es {{amount}} {{symbol}} más que la transferencia.",
+          "under": "Quedan {{amount}} {{symbol}} por asignar.",
+          "unparseable": "Uno de esos importes no es un número."
+        },
+        "answered": {
+          "fallback": "Respondida",
+          "internal": "Movido a una posición que sigues — ingreso registrado",
+          "leftControl": "Contado como una transmisión",
+          "paired": "Enlazado con un ingreso — no se ha realizado nada",
+          "untracked": "Sigue siendo tuyo, en algún sitio sin seguimiento"
+        },
+        "answeredShort": {
+          "internal": "{{amount}} movidos",
+          "leftControl": "{{amount}} transmitidos",
+          "paired": "{{amount}} enlazados",
+          "untracked": "{{amount}} sin seguimiento"
+        },
+        "bulk": {
+          "commit": {
+            "leftControl_many": "Contar {{count}} como transmisiones",
+            "leftControl_one": "Contar {{count}} como una transmisión",
+            "leftControl_other": "Contar {{count}} como transmisiones",
+            "untracked_many": "Registrar {{count}} como que siguen siendo míos",
+            "untracked_one": "Registrar {{count}} como que sigue siendo mío",
+            "untracked_other": "Registrar {{count}} como que siguen siendo míos"
+          },
+          "consequence": {
+            "leftControlUnpriced_many": "Cuenta {{count}} transferencias como transmisiones. Scani no tiene precio para ninguna en su fecha, así que no se contabiliza nada.",
+            "leftControlUnpriced_one": "Cuenta {{count}} transferencia como una transmisión. Scani no tiene precio para ella ese día, así que no se contabiliza nada.",
+            "leftControlUnpriced_other": "Cuenta {{count}} transferencias como transmisiones. Scani no tiene precio para ninguna en su fecha, así que no se contabiliza nada.",
+            "leftControl_many": "Cuenta {{count}} transferencias como transmisiones — unos {{amount}} de valor de transmisión frente a lo que pagaste.",
+            "leftControl_one": "Cuenta {{count}} transferencia como una transmisión — unos {{amount}} de valor de transmisión frente a lo que pagaste.",
+            "leftControl_other": "Cuenta {{count}} transferencias como transmisiones — unos {{amount}} de valor de transmisión frente a lo que pagaste.",
+            "loading": "Calculando lo que esto haría…",
+            "none": "Ninguna de las transferencias seleccionadas puede responderse así.",
+            "takesBackUnpriced_many": "{{count}} de ellas se cuentan ahora como transmisiones, y Scani no tiene precio para ninguna, así que no se retira nada.",
+            "takesBackUnpriced_one": "{{count}} de ellas se cuenta ahora como una transmisión, y Scani no tiene precio para ella, así que no se retira nada.",
+            "takesBackUnpriced_other": "{{count}} de ellas se cuentan ahora como transmisiones, y Scani no tiene precio para ninguna, así que no se retira nada.",
+            "takesBack_many": "Eso retira unos {{amount}} de ganancias realizadas de las {{count}} que ahora se cuentan como transmisiones.",
+            "takesBack_one": "Eso retira unos {{amount}} de ganancias realizadas de la {{count}} que ahora se cuenta como una transmisión.",
+            "takesBack_other": "Eso retira unos {{amount}} de ganancias realizadas de las {{count}} que ahora se cuentan como transmisiones.",
+            "unpriced_many": "{{count}} más no tienen precio en su fecha y no contabilizan nada, así que la cifra es un suelo.",
+            "unpriced_one": "{{count}} más no tiene precio en su fecha y no contabiliza nada, así que la cifra es un suelo.",
+            "unpriced_other": "{{count}} más no tienen precio en su fecha y no contabilizan nada, así que la cifra es un suelo.",
+            "untracked_many": "Registra {{count}} transferencias como que siguen siendo tuyas, en algún sitio que Scani no ve. No se realiza nada.",
+            "untracked_one": "Registra {{count}} transferencia como que sigue siendo tuya, en algún sitio que Scani no ve. No se realiza nada.",
+            "untracked_other": "Registra {{count}} transferencias como que siguen siendo tuyas, en algún sitio que Scani no ve. No se realiza nada."
+          },
+          "deselect_many": "Deseleccionar esas {{count}} transferencias",
+          "deselect_one": "Deseleccionar esa {{count}} transferencia",
+          "deselect_other": "Deseleccionar esas {{count}} transferencias",
+          "overCap": "Selecciona como mucho {{max}} transferencias a la vez.",
+          "refusal": {
+            "answered_many": "{{count}} ya tienen la respuesta «{{answer}}». Reábrelas desde sus propias filas para cambiarlas.",
+            "answered_one": "{{count}} ya tiene la respuesta «{{answer}}». Reábrela desde su propia fila para cambiarla.",
+            "answered_other": "{{count}} ya tienen la respuesta «{{answer}}». Reábrelas desde sus propias filas para cambiarlas.",
+            "gone_many": "{{count}} ya no son transferencias a las que se pueda responder.",
+            "gone_one": "{{count}} ya no es una transferencia a la que se pueda responder.",
+            "gone_other": "{{count}} ya no son transferencias a las que se pueda responder.",
+            "linked_many": "{{count}} ya están enlazadas con ingresos, así que una respuesta aquí no cambiaría nada.",
+            "linked_one": "{{count}} ya está enlazada con un ingreso, así que una respuesta aquí no cambiaría nada.",
+            "linked_other": "{{count}} ya están enlazadas con ingresos, así que una respuesta aquí no cambiaría nada.",
+            "ownWallet_many": "{{count}} fueron a monederos que registraste, empezando por {{address}} — no salieron de tu cartera, así que no se pueden contar como transmisiones.",
+            "ownWallet_one": "{{count}} fue a {{address}}, un monedero que registraste — no salió de tu cartera, así que no se puede contar como una transmisión.",
+            "ownWallet_other": "{{count}} fueron a monederos que registraste, empezando por {{address}} — no salieron de tu cartera, así que no se pueden contar como transmisiones."
+          },
+          "toast": {
+            "leftControl_many": "{{count}} transferencias contadas como transmisiones",
+            "leftControl_one": "{{count}} transferencia contada como una transmisión",
+            "leftControl_other": "{{count}} transferencias contadas como transmisiones",
+            "refused": "No se ha modificado nada",
+            "undoFailed": "No se ha podido deshacer eso",
+            "undone_many": "{{count}} transferencias devueltas a como estaban",
+            "undone_one": "{{count}} transferencia devuelta a como estaba",
+            "undone_other": "{{count}} transferencias devueltas a como estaban",
+            "untracked_many": "{{count}} transferencias registradas como que siguen siendo tuyas",
+            "untracked_one": "{{count}} transferencia registrada como que sigue siendo tuya",
+            "untracked_other": "{{count}} transferencias registradas como que siguen siendo tuyas"
+          },
+          "undo": "Deshacer"
+        },
+        "candidateReason": {
+          "ambiguous": "Coincide — pero otro ingreso también",
+          "both": "{{pct}} de diferencia, y fuera de la ventana de {{window}}",
+          "quantity": "El importe difiere en {{pct}}",
+          "time": "Fuera de la ventana de {{window}} con la que emparejamos"
+        },
+        "consequence": {
+          "internalPrompt": "Elige la posición a la que se movió este dinero.",
+          "leftControlPriced": "Contado como una transmisión el {{date}} a valor de mercado — unos {{amount}} de valor de transmisión frente a lo que pagaste.",
+          "leftControlUnpriced": "Contado como una transmisión el {{date}} a valor de mercado. Scani no tiene precio para {{symbol}} ese día, así que no se contabiliza nada.",
+          "paired": "Los {{quantity}} {{symbol}} conservan lo que pagaste originalmente por ellos al pasar a {{location}}. Aquí no se realiza nada, y no se contabiliza ninguna ganancia.",
+          "pairedPrompt": "Elige el ingreso en el que llegó este dinero.",
+          "untracked": "Sigue siendo tuyo, solo que en algún sitio que Scani no ve. No es una transmisión, así que no se contabiliza ninguna ganancia — los {{symbol}} simplemente dejan de contarse."
+        },
+        "decision": {
+          "internal": {
+            "commit": "Registrar el movimiento",
+            "trigger": "Movido a un sitio que Scani sigue"
+          },
+          "leftControl": {
+            "commit": "Contarlo como una transmisión",
+            "trigger": "Salió de mi cartera"
+          },
+          "paired": {
+            "commit": "Enlazar estos dos",
+            "trigger": "El mismo dinero"
+          },
+          "untracked": {
+            "commit": "Registrarlo como que sigue siendo mío",
+            "trigger": "Movido a un sitio sin seguimiento"
+          }
+        },
+        "destination": {
+          "willCreate": "Aquí todavía no se sigue ningún {{symbol}} — se creará una posición"
+        },
+        "gap": {
+          "days_many": "{{count}} días",
+          "days_one": "{{count}} día",
+          "days_other": "{{count}} días",
+          "earlier": "{{gap}} antes",
+          "hours_many": "{{count}} h",
+          "hours_one": "{{count}} h",
+          "hours_other": "{{count}} h",
+          "later": "{{gap}} después",
+          "minutes_many": "{{count}} min",
+          "minutes_one": "{{count}} min",
+          "minutes_other": "{{count}} min",
+          "sameMinute": "el mismo minuto"
+        },
+        "hint": {
+          "equallyGood_many": "{{count}} coincidencias igual de buenas",
+          "equallyGood_one": "{{count}} coincidencia igual de buena",
+          "equallyGood_other": "{{count}} coincidencias igual de buenas",
+          "none": "No se ha encontrado ningún ingreso cercano",
+          "ownWallet": "Fue a un monedero que añadiste",
+          "possible_many": "{{count}} coincidencias posibles",
+          "possible_one": "{{count}} coincidencia posible",
+          "possible_other": "{{count}} coincidencias posibles"
+        },
+        "internal": {
+          "balanceFallback": "su saldo",
+          "carry": "Los {{amount}} {{symbol}} conservan lo que pagaste originalmente por ellos al pasar a {{location}}. No se realiza nada, y no se contabiliza ninguna ganancia.",
+          "writeExisting": "Ahí se registra un ingreso de {{amount}} {{symbol}} con fecha {{date}}. Su saldo se queda en {{balance}} — registrar historial nunca mueve un saldo, así que si ese saldo no incluye ya este movimiento, cámbialo tú.",
+          "writeNew": "Ahí se crea una posición nueva en {{symbol}} con un saldo de {{amount}} {{symbol}}, que contiene un ingreso con fecha {{date}}."
+        },
+        "reopen": {
+          "declared": "Esta es una transferencia que registraste tú, así que deshacerla devuelve los dos saldos a como estaban antes — la cuenta de la que salió vuelve a subir, la cuenta a la que llegó vuelve a bajar — y elimina los dos apuntes. No vuelve a la cola: ya no queda ninguna pregunta que responder.",
+          "default": "La transferencia vuelve a la cola, y nada sobre ella queda resuelto hasta que la respondas de nuevo.",
+          "internal": "El ingreso que esto registró en la otra cuenta se elimina con ella — si no, tu próxima respuesta contaría ese dinero dos veces. La transferencia vuelve a la cola, y ningún saldo cambia en ningún sentido.",
+          "internalCreated": "Esa cuenta no seguía nada de este token antes de tu respuesta, así que Scani creó la posición además del ingreso. Se eliminan las dos — salvo que desde entonces se haya registrado algo más sobre esa posición, en cuyo caso se mantiene. La transferencia vuelve a la cola, y ningún otro saldo cambia.",
+          "leftControl": "La ganancia que esto contabilizó sale de tu total realizado hasta que la respondas de nuevo, y la transferencia vuelve a la cola."
+        },
+        "split": {
+          "balanceNew": "Ahí se crea una posición nueva en {{symbol}}, con ese ingreso como saldo.",
+          "balanceUnchanged": "No se modifica ningún saldo.",
+          "clause": {
+            "internal": "{{amount}} van a {{location}}, donde se registra un ingreso de {{amount}}",
+            "internalFallback": "{{amount}} van a la posición que has elegido",
+            "leftControl": "{{amount}} se cuentan como una transmisión a valor de mercado el {{date}}",
+            "paired": "{{amount}} conservan lo que pagaste por ellos al pasar a {{location}}",
+            "pairedFallback": "el ingreso que has elegido",
+            "untracked": "{{amount}} siguen siendo tuyos, en algún sitio que Scani no ve"
+          },
+          "commit": "Registrar este reparto",
+          "needTwo": "Dale un importe al menos a dos de ellas. Juntas tienen que sumar {{amount}} {{symbol}}.",
+          "note": "Una retirada puede ser varias cosas a la vez — una parte movida a otra posición tuya, otra parte realmente salida. Repártela y cada parte se trata por separado.",
+          "oneLinkOnly": "Solo una parte puede ir a un sitio que Scani sigue — {{paired}} o {{internal}}, no las dos. El coste de adquisición sigue a un único destino, y dos no lo enviarían a ninguno.",
+          "summary": "{{clauses}}. Solo la transmisión contabiliza una ganancia.",
+          "takeRest": "Coger el resto — {{amount}} {{symbol}}",
+          "transferWas": "La transferencia era de {{amount}} {{symbol}}",
+          "trigger": "Era varias de estas cosas a la vez"
+        },
+        "unreviewedBehaviour": "Mientras estas no tengan respuesta, Scani no contabiliza ninguna ganancia sobre ellas — mover tus propias monedas no es una venta, y suponer que lo fue es como una ganancia inventada acaba en tu gráfico. Si una de estas salió realmente de tu cartera, su ganancia falta en tu total realizado hasta que lo digas.",
+        "unreviewedNote": "Sin respuesta, esto no contabiliza ninguna ganancia en ningún sentido."
+      }
+    },
+    "settings": {
+      "account": {
+        "deleteConfirm": "Eliminarlo todo",
+        "deleteConsequence": "Desaparecen todas las cuentas, posiciones, monederos, credenciales de integración, grupos y objetivos. Tu acceso se mantiene, pero vacío. Esta acción no se puede deshacer.",
+        "deleteFailed": "La eliminación ha fallado",
+        "deleteInFlight": "Tus datos se están eliminando.",
+        "deleteIntro": "Eliminar tus datos borra todas las cuentas, posiciones, monederos, credenciales de integración, grupos y objetivos. El acceso en sí se mantiene, pero vacío.",
+        "deleteTrigger": "Eliminar todos mis datos",
+        "deleted": "Se han eliminado todos tus datos",
+        "deleting": "Eliminando…"
+      },
+      "dataQuality": {
+        "duplicateChip": "{{symbol}}×{{count}}",
+        "duplicateChipLookalike": "{{symbol}}×{{count}} (se muestra como {{lookalikeOf}})",
+        "duplicateRows": "Posiciones mostradas que comparten símbolo con otra línea de token",
+        "flagged": "Marcado",
+        "hiddenNextSweep_many": "De esas, las que se ocultarán en el próximo barrido de {{count}} días",
+        "hiddenNextSweep_one": "De esas, las que se ocultarán en el próximo barrido de {{count}} día",
+        "hiddenNextSweep_other": "De esas, las que se ocultarán en el próximo barrido de {{count}} días",
+        "holdingsShown": "Posiciones mostradas",
+        "holdingsShownHint": "{{count}} en total",
+        "intro": "Se vuelve a contar en cada visita. Todo lo que lleve la marca «{{flag}}» merece que lo revises.",
+        "lookalikeChip": "{{symbol}} (se muestra como {{lookalikeOf}})",
+        "lookalikeRows": "Posiciones mostradas cuyo símbolo imita a otro",
+        "missingCoverage": "Posiciones sin línea de cobertura",
+        "negativeOpening": "Saldo de apertura reconstruido negativo",
+        "negativeOpeningHint": "Una importación que no se remontó hasta antes de la primera operación",
+        "noPriceSource": "Posiciones mostradas sin una fuente de precios utilizable",
+        "noPriceSourceHint": "{{symbols}} — es nuestra configuración, no el mercado",
+        "noRecentPrice": "Posiciones mostradas sin precio reciente",
+        "nothingCanPrice": "Posiciones mostradas que nada puede valorar",
+        "nothingCanPriceHint": "Tokens recibidos por airdrop o excluidos de cotización, sin mercado — quedan fuera de la cobertura de los gráficos",
+        "rowLink": "{{label}}: {{count}} — mostrar en Posiciones",
+        "title": "Calidad de los datos",
+        "zeroBalanceShown": "Posiciones con saldo cero que se siguen mostrando"
+      },
+      "device": {
+        "browserOnOs": "{{browser}} en {{os}}",
+        "genericBrowser": "Navegador",
+        "unknown": "Dispositivo desconocido",
+        "unknownOs": "Sistema desconocido"
+      },
+      "export": {
+        "exportJson": "Exportar en JSON",
+        "exportWorkbook": "Exportar el libro",
+        "intro": "Todos los registros de esta cuenta en un solo archivo — posiciones, el libro de transacciones completo, pagos, grupos, objetivos y el historial de tu patrimonio neto. Las claves de exchanges y brókeres quedan fuera: son credenciales, no registros.",
+        "json": "JSON",
+        "jsonDetail": "Todos los campos, exactamente como los devuelve la API",
+        "scopeAll": "Todo lo que hay en tu cuenta",
+        "subject": "cuenta entera",
+        "title": "Tus datos",
+        "trigger": "Exportarlo todo",
+        "workbook": "Libro de Excel",
+        "workbookDetail": "Una hoja por conjunto — posiciones, transacciones, pagos, historial"
+      },
+      "maintenance": {
+        "intro": "Reconstruye los valores diarios en caché con los que se dibujan los gráficos de Patrimonio neto y Pérdidas y ganancias — el mismo relleno de 365 días que se ejecuta cada noche.",
+        "rebuild": "Reconstruir el historial de la cartera",
+        "rebuildFailed": "La reconstrucción ha fallado",
+        "rebuilding": "Reconstruyendo…",
+        "rebuilt": "Historial de la cartera reconstruido",
+        "title": "Historial de la cartera"
+      },
+      "notifications": {
+        "denied": "Este navegador está bloqueando las notificaciones de Scani. Permítelas en los ajustes de tu navegador o de tu sistema y vuelve aquí.",
+        "disable": "Desactivar los recordatorios",
+        "enable": "Activar los recordatorios",
+        "enabled": "Los recordatorios están activados en este dispositivo.",
+        "intro": "Una sola notificación en este dispositivo sobre las 17:00, el día antes del vencimiento de los pagos — cuántos hay y a cuánto ascienden. No se envía nada un día sin vencimientos.",
+        "iosNeedsInstall": "En iPhone y iPad, las notificaciones solo llegan a Scani una vez añadida a la pantalla de inicio. Abre el menú Compartir, elige Añadir a pantalla de inicio y actívalas desde ahí.",
+        "ready": "Los recordatorios están desactivados en este dispositivo.",
+        "sendTest": "Enviar una notificación de prueba",
+        "serverUnconfigured": "Este servidor no tiene configurada ninguna clave de notificaciones, así que todavía no puede enviar recordatorios.",
+        "testFailed": "El servicio de notificaciones ha rechazado esta notificación (HTTP {{statusCode}}). La suscripción sigue registrada.",
+        "testFailedNoCode": "No se ha podido contactar con el servicio de notificaciones. La suscripción sigue registrada.",
+        "testGoneHere": "La suscripción de este dispositivo había caducado, así que se ha eliminado. Desactiva y vuelve a activar los recordatorios aquí para registrar una nueva.",
+        "testGoneOther": "Otro dispositivo tenía una suscripción caducada, así que se ha eliminado. Vuelve a activar los recordatorios en ese dispositivo.",
+        "testNoDevices": "Todavía no hay ningún dispositivo suscrito, así que no había a quién enviarla.",
+        "testSentHere": "Enviada a este dispositivo. Debería aparecer en unos segundos — si no es así, comprueba que las notificaciones de Scani estén permitidas en los ajustes de tu dispositivo.",
+        "testSentOther": "Enviada a otro dispositivo en el que has activado los recordatorios.",
+        "testVapidMismatch": "El servicio de notificaciones ha rechazado esta notificación (403). La clave con la que se suscribió este dispositivo no es la clave con la que firma el servidor, así que no puede llegarle ningún recordatorio hasta que se corrija. Esto es cosa nuestra, no tuya.",
+        "title": "Recordatorios de pago",
+        "unsupported": "Este navegador no puede recibir notificaciones."
+      },
+      "pending": {
+        "deletingData": "Eliminando tus datos",
+        "exportingAccount": "Exportando tu cuenta",
+        "rebuildingHistory": "Reconstruyendo el historial de tu cartera",
+        "revokingSession": "Revocando la sesión",
+        "savingSettings": "Guardando tus ajustes",
+        "sendingTestNotification": "Enviando una notificación de prueba",
+        "signingOutOthers": "Cerrando las demás sesiones",
+        "togglingNotifications": "Cambiando tu ajuste de notificaciones"
+      },
+      "profile": {
+        "baseCurrencyHint": "Todas las cifras de la aplicación se convierten a esta divisa.",
+        "emailImmutable": "Cambiar esto todavía no es algo que la aplicación pueda hacer."
+      },
+      "sessions": {
+        "currentDevice": "Este es el dispositivo que estás usando — cierra sesión abajo en su lugar",
+        "empty": "No hay sesiones activas.",
+        "intro": "Todos los sitios donde esta cuenta tiene la sesión iniciada ahora mismo. Cierra las que no reconozcas.",
+        "lastUsed": "{{where}} · último uso {{when}}",
+        "revoke": "Revocar",
+        "revokeConfirm": "Cerrar la sesión de {{device}}",
+        "revokeConsequence": "Se cierra la sesión de {{device}} en {{where}} y tendrá que volver a iniciarla con un código nuevo recibido por correo. Tus datos quedan intactos, y no se cierra ninguna otra sesión.",
+        "revoked": "Sesión revocada",
+        "signOutOthers": "Cerrar sesión en todos los demás sitios ({{count}})",
+        "signOutOthersConfirm_many": "Cerrar la sesión de {{count}} dispositivos",
+        "signOutOthersConfirm_one": "Cerrar la sesión de {{count}} dispositivo",
+        "signOutOthersConfirm_other": "Cerrar la sesión de {{count}} dispositivos",
+        "signOutOthersConsequence_many": "Se cierra la sesión en todos los dispositivos salvo este — {{count}} sesiones, incluidas las que sí reconozcas. Cada uno tendrá que volver a iniciar sesión con un código nuevo recibido por correo. Tus datos quedan intactos.",
+        "signOutOthersConsequence_one": "Se cierra la sesión en todos los dispositivos salvo este — {{count}} sesión, incluidas las que sí reconozcas. Cada uno tendrá que volver a iniciar sesión con un código nuevo recibido por correo. Tus datos quedan intactos.",
+        "signOutOthersConsequence_other": "Se cierra la sesión en todos los dispositivos salvo este — {{count}} sesiones, incluidas las que sí reconozcas. Cada uno tendrá que volver a iniciar sesión con un código nuevo recibido por correo. Tus datos quedan intactos.",
+        "signedOutOthers": "Sesión cerrada en todos los demás sitios",
+        "subject": "tus dispositivos",
+        "thisDevice": "{{device}} — este dispositivo",
+        "title": "Dispositivos",
+        "unknownIp": "IP desconocida"
+      }
+    },
+    "shell": {
+      "demo": {
+        "banner": "Demo — datos de muestra de una persona ficticia. Solo lectura, y se reinician cada día.",
+        "signUp": "Crea tu propia cuenta"
+      },
+      "moreDrawer": {
+        "description": "Todo lo que no cabe en la barra de pestañas. Arrastra el tirador hacia arriba para ver la lista completa."
+      },
+      "sidebar": {
+        "landmark": "Barra lateral"
+      },
+      "tabBar": {
+        "landmark": "Principal",
+        "moreWithReview_many": "Más — {{count}} elementos por revisar",
+        "moreWithReview_one": "Más — {{count}} elemento por revisar",
+        "moreWithReview_other": "Más — {{count}} elementos por revisar"
+      }
+    },
+    "tokens": {
+      "actions": {
+        "clearFlag": "Retirar el aviso de fraude para todo el mundo",
+        "clearFlagConsequence": "{{symbol}} ({{name}}) deja de estar marcado como fraudulento para todos los usuarios de Scani, no solo para ti — reaparece en la búsqueda de tokens y en las consultas de precios de todas las cuentas. Haz esto solo si has comprobado el contrato tú mismo.",
+        "holdingRestored": "{{symbol}} ha vuelto a tu panel",
+        "notScam": "No es un fraude",
+        "restoring": "Restaurando el token",
+        "tokenRestored": "{{symbol}} restaurado en la búsqueda de tokens",
+        "unhiding": "Mostrando de nuevo la posición"
+      },
+      "create": {
+        "description": "Para un activo que ningún proveedor de precios sigue. Los tokens personalizados se comparten con todo el mundo aquí, y cualquiera puede cambiar el precio.",
+        "initialPrice": "Precio inicial",
+        "name": "Nombre",
+        "namePlaceholder": "Acciones de Acme Corp",
+        "needName": "introducir un nombre",
+        "needSymbol": "introducir un símbolo",
+        "notes": "Notas",
+        "notesHint": "Opcional.",
+        "notesPlaceholder": "Todo lo que convenga saber sobre este activo",
+        "reasonHint": "De dónde ha salido la cifra — cualquiera podrá leerlo después.",
+        "subject": "el token",
+        "submit": "Crear el token",
+        "submitting": "Creando…",
+        "symbol": "Símbolo",
+        "symbolPlaceholder": "ACME",
+        "symbolTaken": "{{symbol}} ya existe. Elige otro símbolo, o edita el precio de ese token.",
+        "title": "Crear un token personalizado",
+        "type": "Tipo",
+        "typeOther": "Otro",
+        "typePrivateCompany": "Empresa no cotizada"
+      },
+      "custom": {
+        "editPrice": "Editar el precio",
+        "never": "Nunca",
+        "neverPriced": "Nunca valorado",
+        "newToken": "Nuevo token personalizado",
+        "noPrice": "Ningún precio registrado",
+        "nothingRecorded": "Nada registrado",
+        "priceFrom": "Precio procedente de",
+        "priceUpdated": "Precio actualizado",
+        "pricedIn": "Valorado en",
+        "setManually": "Fijado a mano",
+        "type": "Tipo",
+        "unknownSource": "Fuente desconocida"
+      },
+      "hidden": {
+        "account": "Cuenta",
+        "backToHoldings": "Volver a las posiciones",
+        "hidden": "Oculto",
+        "institution": "Institución",
+        "likelyScam": "Probablemente fraudulento",
+        "scamLikelihood": "Probabilidad de fraude",
+        "unhide": "Mostrar de nuevo",
+        "why": "Por qué está oculto"
+      },
+      "hiddenReason": {
+        "both": "Marcado como probablemente fraudulento, y ocultado por ti",
+        "scam": "Marcado como probablemente fraudulento",
+        "user": "Ocultado por ti"
+      },
+      "page": {
+        "newCustomToken": "Nuevo token personalizado",
+        "title": "Tokens",
+        "viewLabel": "Vista de tokens"
+      },
+      "price": {
+        "currently": "Valorado a",
+        "description": "Fija un precio nuevo en cualquier divisa. Cualquiera aquí puede cambiarlo, y todos los cambios se conservan abajo.",
+        "historyEmpty": "Todavía no se ha cambiado ningún precio.",
+        "historyLoading": "Cargando los precios anteriores",
+        "historyTitle": "Precios anteriores",
+        "needCurrency": "elegir una divisa",
+        "needPrice": "introducir un precio mayor que cero",
+        "newPrice": "Precio nuevo",
+        "noReasonGiven": "No se ha indicado ningún motivo",
+        "pricePlaceholder": "1234.56",
+        "reason": "Motivo",
+        "reasonHint": "Opcional, y lo único que explicará este precio al siguiente lector.",
+        "reasonPlaceholder": "Ronda de valoración del 4T 2025",
+        "subject": "el precio",
+        "submit": "Guardar el precio",
+        "submitting": "Guardando…",
+        "title": "Precio de {{symbol}}",
+        "unknownEditor": "Desconocido"
+      },
+      "segment": {
+        "custom": "Personalizados",
+        "hidden": "Ocultos"
+      }
+    },
+    "vaults": {
+      "attach": {
+        "attachedPartial": "{{label}} vinculada al {{available}} % — el resto cuenta para otro objetivo",
+        "attachedWhole": "{{label}} ya cuenta para este objetivo",
+        "attaching": "Vinculando la posición",
+        "fullyClaimed": "{{label}} ya está totalmente asignada a otros objetivos. Reduce antes su parte allí."
+      },
+      "createFirst": "Crea tu primer objetivo",
+      "detail": {
+        "attachHolding": "Vincular una posición",
+        "backToVaults": "Objetivos",
+        "colour": "Color",
+        "countingToward_many": "Cuentan para este objetivo ({{count}})",
+        "countingToward_one": "Cuentan para este objetivo ({{count}})",
+        "countingToward_other": "Cuentan para este objetivo ({{count}})",
+        "dangerZone": "Zona sensible",
+        "deleteCommit": "Eliminar este objetivo",
+        "deleteConsequence_many": "«{{name}}» y su meta desaparecen. Las {{count}} posiciones vinculadas a él no se eliminan — simplemente dejan de contar para una meta.",
+        "deleteConsequence_one": "«{{name}}» y su meta desaparecen. La {{count}} posición vinculada a él no se elimina — simplemente deja de contar para una meta.",
+        "deleteConsequence_other": "«{{name}}» y su meta desaparecen. Las {{count}} posiciones vinculadas a él no se eliminan — simplemente dejan de contar para una meta.",
+        "deleteTrigger": "Eliminar el objetivo",
+        "details": "Detalles",
+        "discard": "Descartar",
+        "empty": "Todavía no cuenta nada para este objetivo. Vincula una posición y empezará a contribuir a la meta.",
+        "name": "Nombre",
+        "needName": "Para guardar: dale un nombre al objetivo.",
+        "needTarget": "Para guardar: fija una meta mayor que cero.",
+        "notFound": "Este objetivo no está en tu lista. Puede que se haya eliminado, o que el enlace ya no esté actualizado.",
+        "saveChanges": "Guardar los cambios",
+        "saved": "Ahorrado",
+        "stillToGo": "Quedan <remaining/> por ahorrar, de una meta de <target/>",
+        "target": "Meta",
+        "targetHint": "En {{symbol}}",
+        "targetReached": "Meta alcanzada — {{percent}} % de la meta",
+        "toast": {
+          "deleted": "Objetivo eliminado",
+          "deleting": "Eliminando el objetivo",
+          "holdingRemoved": "Posición retirada del objetivo",
+          "removingHolding": "Retirando la posición",
+          "shareUpdated": "Parte actualizada",
+          "updated": "Objetivo actualizado",
+          "updating": "Actualizando el objetivo",
+          "updatingShare": "Actualizando la parte"
+        }
+      },
+      "holding": {
+        "cancel": "Cancelar",
+        "changeShare": "Cambiar la parte del {{percent}} % de {{symbol}} que cuenta para este objetivo",
+        "detachConsequence": "{{symbol}} deja de contar para este objetivo — <value/> sale de la cifra ahorrada. La posición en sí, su parte del {{percent}} % y su historial se mantienen; puedes volver a vincularla.",
+        "remove": "Quitar",
+        "removeCommit": "Quitar {{symbol}} de este objetivo",
+        "saveShare": "Guardar la parte",
+        "shareLabel": "Parte de {{symbol}} que cuenta para este objetivo",
+        "thisHolding": "Esta posición",
+        "unknownToken": "Token desconocido"
+      },
+      "list": {
+        "rowSpoken": "{{name}}, {{percent}} % de la meta"
+      },
+      "page": {
+        "blocker": {
+          "currency": "elige una divisa",
+          "name": "ponle nombre al objetivo",
+          "target": "fija una meta mayor que cero"
+        },
+        "cancel": "Cancelar",
+        "colour": "Color",
+        "createVault": "Crear el objetivo",
+        "created": "Objetivo «{{name}}» creado",
+        "creating": "Creando el objetivo",
+        "currency": "Divisa",
+        "name": "Nombre",
+        "namePlaceholder": "Entrada de una casa, fondo de emergencia…",
+        "newVault": "Nuevo objetivo",
+        "target": "Meta",
+        "title": "Objetivos",
+        "toContinue": "Para continuar: {{missing}}."
+      },
+      "targetReached": "Meta alcanzada"
+    }
+  }
+}
