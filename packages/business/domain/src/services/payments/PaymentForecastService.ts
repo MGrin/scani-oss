@@ -83,10 +83,16 @@ export class PaymentForecastService extends BaseService {
     const byPaymentId = new Map<string, ForecastPaymentInput['occurrences'][number][]>();
     for (const occurrence of occurrences) {
       const list = byPaymentId.get(occurrence.paymentId);
+      // `actualAmount` travels with the row rather than being fetched
+      // separately: `findByPaymentIds` already selects it, so SC-625's
+      // history estimate costs this procedure no extra query. Dropping it
+      // here was what made the input the forecast needs unreachable from the
+      // function that needs it.
       const row = {
         dueDate: occurrence.dueDate,
         status: occurrence.status,
         expectedAmount: occurrence.expectedAmount,
+        actualAmount: occurrence.actualAmount,
       };
       if (list) list.push(row);
       else byPaymentId.set(occurrence.paymentId, [row]);
@@ -103,6 +109,7 @@ export class PaymentForecastService extends BaseService {
         anchorDate: payment.anchorDate,
         status: payment.status,
         endDate: payment.endDate,
+        estimateFromHistory: payment.estimateFromHistory,
       },
       occurrences: byPaymentId.get(payment.id) ?? [],
     }));

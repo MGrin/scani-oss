@@ -63,6 +63,9 @@ const CreatePaymentInputSchema = z.object({
   endDate: DATE_STRING.nullable().optional(),
   accountId: z.string().uuid().nullable().optional(),
   notes: z.string().max(2000).nullable().optional(),
+  // SC-625's opt-in. Absent means off, which is the whole point of the
+  // feature — see the migration for why the default is not a placeholder.
+  estimateFromHistory: z.boolean().optional(),
 });
 
 // Same shape as `CreatePaymentInputSchema` minus `vendorId`, which
@@ -90,6 +93,18 @@ const UpdatePaymentInputSchema = z.object({
   endDate: DATE_STRING.nullable().optional(),
   accountId: z.string().uuid().nullable().optional(),
   notes: z.string().max(2000).nullable().optional(),
+  estimateFromHistory: z.boolean().optional(),
+});
+
+// A cap on the bulk write, and it is about the SENTENCE the surface says
+// rather than about database load. "Use last month's actual for all of them"
+// is a claim the reader can hold in their head over a book of this size; a
+// request naming ten thousand ids is not that act, whatever it is.
+const ESTIMATE_FROM_HISTORY_MAX_PAYMENTS = 500;
+
+const SetEstimateFromHistoryInputSchema = z.object({
+  paymentIds: z.array(z.string().uuid()).min(1).max(ESTIMATE_FROM_HISTORY_MAX_PAYMENTS),
+  enabled: z.boolean(),
 });
 
 function serializePayment(payment: Payment) {
@@ -218,6 +233,47 @@ export const paymentsRouter = router({
       const { paymentId, ...patch } = input;
       const updated = await Container.get(PaymentService).update(ctx.userId, paymentId, patch);
       return serializePayment(updated);
+    }),
+
+  /**
+   * Turn SC-625's history estimate on or off across a named set of payments —
+   * the "use it for all of them" act, and the per-payment one too, since one
+   * id is a set of one.
+   *
+   * ## Why the client names the ids rather than saying "all"
+   *
+   * The set the reader is agreeing to is the one the forecast just showed
+   * them: the payments it could not project. Letting the server re-derive
+   * that set would put the rule in two places, and the two would answer
+   * differently the moment a settlement landed between the render and the tap
+   * — the reader would be agreeing to a sentence about N payments and
+   * changing N+1. Named ids make the request the same act the screen
+   * described.
+   *
+   * ## Why this does not go through `PaymentService.update`
+   *
+   * That path invalidates and re-materialises a schedule when the fields
+   * governing due dates change, and it compares amounts to decide whether
+   * future occurrences need rewriting. This flag changes neither: the
+   * estimate is derived at read time and no due date moves. Routing a
+   * single-column write through it would run schedule work for a change that
+   * cannot affect a schedule — and doing so once per payment, which is the
+   * shape "for all of them" would take.
+   *
+   * Ownership lives in the repository's `WHERE`, so an id belonging to
+   * somebody else matches nothing and the count comes back smaller. The count
+   * is returned rather than a success flag for exactly that reason: it is the
+   * only thing that distinguishes "changed them all" from "changed some".
+   */
+  setEstimateFromHistory: protectedProcedure
+    .input(strictInput(SetEstimateFromHistoryInputSchema))
+    .mutation(async ({ ctx, input }) => {
+      const updated = await Container.get(PaymentRepository).setEstimateFromHistory(
+        ctx.userId,
+        input.paymentIds,
+        input.enabled
+      );
+      return { updated: updated.length, requested: input.paymentIds.length };
     }),
 
   pause: protectedProcedure

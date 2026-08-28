@@ -19,6 +19,7 @@ import {
   isIncomeVendor,
   monthlyCommitmentByVendor,
   noSettledSpend,
+  OUTFLOW,
   PER_MONTH_LABEL_KEY,
   paidAllTimeLabel,
   paidWindowLabel,
@@ -34,7 +35,7 @@ import {
   vendorKindLabel,
 } from '@/lib/vendorSpend';
 import { countByVendorId } from '../../lib/money';
-import { convertTotalsToBase } from '../../lib/paymentTotals';
+import { convertTotalsToBase, type HistoryEstimate } from '../../lib/paymentTotals';
 import { V3_ROUTES, vendorPaymentsPath } from '../../lib/routes';
 import { BaseEquivalent } from '../BaseEquivalent';
 import { ConvertedFigure } from '../ConvertedFigure';
@@ -86,6 +87,13 @@ interface VendorListProps {
   tokenSymbolById: Map<string, string>;
   rates: BaseCurrencyRates;
   query: V3QueryState;
+  /**
+   * From `payments.forecast` (SC-625). A vendor's committed figure and the
+   * recurring list's are the same claim about the same book two segments
+   * apart, so they read the projection's estimates rather than each deciding
+   * for themselves whether a variable payment counts.
+   */
+  historyEstimates: ReadonlyMap<string, HistoryEstimate>;
   /** Owned by the page, so the header's "New vendor" button can open it. */
   creating: boolean;
   onCreatingChange: (creating: boolean) => void;
@@ -98,13 +106,20 @@ export function VendorList({
   tokenSymbolById,
   rates,
   query,
+  historyEstimates,
   creating,
   onCreatingChange,
 }: VendorListProps) {
   const { t } = useTranslation();
   const paymentCountByVendorId = useMemo(() => countByVendorId(payments), [payments]);
-  const commitmentByVendorId = useMemo(() => monthlyCommitmentByVendor(payments), [payments]);
-  const incomeByVendorId = useMemo(() => monthlyCommitmentByVendor(payments, INFLOW), [payments]);
+  const commitmentByVendorId = useMemo(
+    () => monthlyCommitmentByVendor(payments, OUTFLOW, historyEstimates),
+    [payments, historyEstimates]
+  );
+  const incomeByVendorId = useMemo(
+    () => monthlyCommitmentByVendor(payments, INFLOW, historyEstimates),
+    [payments, historyEstimates]
+  );
   const settledByVendorId = useMemo(() => settledByVendor(spend?.totals ?? []), [spend]);
   const receivedByVendorId = useMemo(() => settledByVendor(spend?.totals ?? [], INFLOW), [spend]);
   const recentByVendorId = useMemo(() => settlementsByVendor(spend?.recent ?? []), [spend]);

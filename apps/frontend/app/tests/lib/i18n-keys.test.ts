@@ -318,6 +318,23 @@ describe('i18n keys in the keyed roots', () => {
       'v3.money.cadence.every_month_one',
       'v3.money.cadence.every_quarter_one',
       'v3.money.cadence.every_year_one',
+      // SC-625's two buttons in the forecast's caveat blocks. The count picks
+      // "it/its" against "them/their" and prints no number, because the number
+      // is already in the line DIRECTLY ABOVE each button — `couldEstimate`
+      // above `useLastSettled` ("2 of them have settled before…"), and
+      // `estimatedCount` above `stopEstimating` ("3 variable payments are
+      // priced from their last settled amount…"). "Use 2 their last settled
+      // amounts" is not English.
+      //
+      // Identical shape to `vendorPeek.seePayments_*` above, and falsifiable
+      // in one step rather than on my word: if either of those two sibling
+      // keys ever stops printing `{{count}}`, these four lose their reason and
+      // belong back inside the rule. `tests/v3/components/forecast.test.tsx`
+      // pins the rendered sentence ("1 of them has settled before").
+      'v3.money.forecast.useLastSettled_one',
+      'v3.money.forecast.useLastSettled_other',
+      'v3.money.forecast.stopEstimating_one',
+      'v3.money.forecast.stopEstimating_other',
     ]);
     /**
      * A data-view noun is plural-formed but does NOT count (SC-257).
