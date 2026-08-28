@@ -74,6 +74,12 @@ export function AllocationBar({
       <div
         role="img"
         aria-label={label}
+        // A stable hook for the visual gate, which must confirm this bar is
+        // FOLDED before committing a baseline of it (SC-815). The page carries
+        // 21 `role="img"` nodes — every institution mark is one — so a
+        // structural selector picks whichever comes first, and matching on
+        // `aria-label` would tie the harness to a translated string.
+        data-ui="allocation-bar"
         className="flex h-2 gap-[2px] overflow-hidden rounded-full"
       >
         {segments.map((segment) => (
