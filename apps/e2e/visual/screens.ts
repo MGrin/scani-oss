@@ -68,8 +68,15 @@ type VisualViewport = 'desktop' | 'phone';
  * the holdings count is zero, and the seeded user's is not. An empty-state
  * regression is the kind nobody reports, because nobody whose account has
  * data can see it.
+ *
+ * `allocation` is a third user holding eight accounts, and it exists because
+ * the folding allocation bar is unreachable from the seeded one: three
+ * accounts is three parts, and `foldAllocation` folds only above six. Growing
+ * the seeded portfolio instead would have rewritten all three home baselines
+ * plus any holdings shot that gained a row, to buy coverage on one block —
+ * which is the trade the "what stays out" rule above exists to refuse.
  */
-export type VisualSession = 'seeded' | 'empty';
+export type VisualSession = 'seeded' | 'empty' | 'allocation';
 
 /**
  * Which way the document reads (SC-760).
@@ -142,9 +149,49 @@ export interface VisualScreen {
    * appears fails rather than passing quietly.
    */
   institutionMark?: true;
+  /**
+   * This screen's allocation bar must be FOLDED — six coloured segments and an
+   * "Other" standing for the rest (SC-815).
+   *
+   * Same job as `institutionMark` and for the same reason: without it the
+   * screen has a silent success mode. A seed that quietly produced six parts
+   * instead of eight still renders a bar, `--update` still writes a baseline,
+   * and the gate goes green holding a picture of the state it was built to
+   * rule out — the fold, `CHART_OTHER_COLOR` and the disclosed `FoldedRow`
+   * tail all absent, with nothing to say so.
+   *
+   * A baseline that would photograph eight accounts folding and would equally
+   * photograph eight NOT folding is a screenshot, not an assertion. So a
+   * screen declaring this must show the fold before it is captured, and a run
+   * where it does not fails rather than passing quietly.
+   */
+  foldedAllocation?: true;
   /** Why a break on this screen would cost something. */
   why: string;
 }
+
+/**
+ * `viewPreferenceStorageKey('home.allocation-dimension')` as the app writes it,
+ * and the cut the folding baseline is taken on.
+ *
+ * Duplicated rather than imported: this workspace does not depend on
+ * `apps/frontend/app` and `fixtures/v3-routes.ts` keeps route literals here for
+ * the same reason. They are pinned against the app's own constants by
+ * `apps/frontend/app/tests/v3/visual-baselines.test.ts`, which already reads
+ * this file — so a rename fails a unit test in under a second instead of
+ * surviving as a two-minute Docker run that photographs the wrong cut.
+ *
+ * That is not hypothetical. The first run of this screen used `v3:` as the
+ * prefix, seeded nothing, and photographed the DEFAULT `token_type` cut — one
+ * segment, all USD, the exact baseline SC-815 exists to replace. It was caught
+ * by `foldedAllocation`'s assertion rather than by review.
+ */
+export const ALLOCATION_DIMENSION_STORAGE_KEY = 'scani.v3.view.home.allocation-dimension';
+
+/** NOT the default (`token_type`), which cannot fold on this seed: five token
+ *  types exist and all 136 tokens migration `0000` seeds are fiat, so that cut
+ *  has one part (SC-820). */
+export const FOLDING_DIMENSION = 'account';
 
 export const VISUAL_SCREENS: readonly VisualScreen[] = [
   {
@@ -186,6 +233,26 @@ export const VISUAL_SCREENS: readonly VisualScreen[] = [
       'byte-exact baseline can hold still. Phone only: the panel is a bounded card at both ' +
       'widths, and what does differ above `lg` is the shell, which the two desktop shots ' +
       'above already assert.',
+  },
+  {
+    name: 'home-allocation-fold-desktop',
+    route: '/',
+    session: 'allocation',
+    viewport: 'desktop',
+    height: 1400,
+    foldedAllocation: true,
+    why:
+      'The only baseline in which the allocation bar has more than one segment. Until SC-815 ' +
+      'every seeded account held USD, so every committed picture of this block was a ' +
+      "one-segment 100% bar — and `foldAllocation`'s six-slot colour ramp, the cap, " +
+      '`CHART_OTHER_COLOR` and the disclosed `FoldedRow` tail were asserted by no pixel ' +
+      "anywhere. `AllocationBlock`'s docblock argues that cap at length: slots 7 and 8 carry " +
+      "`--interactive`'s and `--loss`'s hues, so a seventh coloured part reads as a button or " +
+      'as a falling figure. That is a claim about colour whose violation fails no unit test, ' +
+      'no axe scan and no contract test, and is obvious in a pixel diff — the exact charter ' +
+      'stated at the top of this file, unmet for the component most plainly in its remit. ' +
+      'Cut by ACCOUNT rather than by token type: five token types exist and all 136 seeded ' +
+      'tokens are fiat, so seven types is unreachable without a live CoinGecko sync (SC-820).',
   },
   {
     name: 'kitchen-sink-desktop',
