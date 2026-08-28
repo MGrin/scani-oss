@@ -44,3 +44,29 @@ describe('provider placement', () => {
     }
   });
 });
+
+describe('the base-currency token carries the id and not the name', () => {
+  // Comments stripped: this asks what the provider DOES, and the file's own
+  // docblock names the shape it stopped doing — which would satisfy a plain
+  // substring search and make the check below vacuously red.
+  const source = read('contexts/BaseCurrencyContext.tsx')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/^\s*\/\/.*$/gm, '');
+
+  /**
+   * SC-419. The provider used to spread `name: baseCurrency.name` over the
+   * name `createCurrencyToken` derives, so a reader saw the CLDR name for one
+   * frame and the English row from Postgres afterwards. The base currency is
+   * always fiat, so the derived name is correct for every row there is.
+   *
+   * The `id` half is the control: it is why the spread exists at all, and a
+   * test that only asserted the absence would pass over a deleted spread.
+   */
+  test('the real id is still carried through', () => {
+    expect(source).toInclude('id: baseCurrency.id');
+  });
+
+  test('the stored name is not', () => {
+    expect(source).not.toInclude('baseCurrency.name');
+  });
+});
