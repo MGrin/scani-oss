@@ -55,33 +55,68 @@ describe('the fallback is the WHOLE letter, never a key of it', () => {
     expect(distinctive.length).toBeGreaterThan(8);
   });
 
-  const russian = [
-    renderMagicLinkEmail({ brand: SCANI_BRAND, url: 'https://app.scani.xyz/x', language: 'ru' }),
-    renderVerificationEmail({ brand: SCANI_BRAND, url: 'https://app.scani.xyz/x', language: 'ru' }),
-    renderOtpEmail({ brand: SCANI_BRAND, code: '123456', type: 'sign-in', language: 'ru' }),
-    renderOtpEmail({
-      brand: SCANI_BRAND,
-      code: '123456',
-      type: 'change-email',
-      language: 'ru',
-    }),
+  /**
+   * Every language we have a bundle for, not a list somebody remembers to
+   * extend. The hard-coded `ru` array this replaces was the whole population
+   * of the two checks below, so a French bundle added beside it shipped with
+   * nothing asserting it was French or free of English (SC-761).
+   */
+  const everyLetter = (language: string) => [
+    renderMagicLinkEmail({ brand: SCANI_BRAND, url: 'https://app.scani.xyz/x', language }),
+    renderVerificationEmail({ brand: SCANI_BRAND, url: 'https://app.scani.xyz/x', language }),
+    renderOtpEmail({ brand: SCANI_BRAND, code: '123456', type: 'sign-in', language }),
+    renderOtpEmail({ brand: SCANI_BRAND, code: '123456', type: 'change-email', language }),
   ];
 
-  test('no English sentence survives into a Russian letter', () => {
-    for (const letter of russian) {
-      const whole = `${letter.subject}\n${letter.text}\n${letter.html}`;
-      const leaked = distinctive.filter((fragment) => whole.includes(fragment));
-      expect(leaked).toEqual([]);
+  const english = everyLetter('en');
+  const translated = Object.keys(EMAIL_STRINGS)
+    .filter((code) => code !== 'en')
+    .map((code) => ({ code, letters: everyLetter(code) }));
+
+  test('there is a translated language to check at all', () => {
+    // Without this the two assertions below pass over an empty list, which is
+    // what a filter narrowing to nothing looks like from the outside.
+    expect(translated.map((l) => l.code)).not.toEqual([]);
+  });
+
+  test('no English sentence survives into a translated letter', () => {
+    for (const { code, letters } of translated) {
+      for (const letter of letters) {
+        const whole = `${letter.subject}\n${letter.text}\n${letter.html}`;
+        const leaked = distinctive.filter((fragment) => whole.includes(fragment));
+        expect([code, leaked]).toEqual([code, []]);
+      }
     }
   });
 
-  test('the Russian letter is actually Russian, subject included', () => {
+  test('a translated letter declares its own language, subject included', () => {
     // The other direction: a template that routed everything through the
     // bundle but resolved `en` would pass the assertion above trivially.
-    for (const letter of russian) {
-      expect(letter.subject).toMatch(/[Ѐ-ӿ]/);
-      expect(letter.text).toMatch(/[Ѐ-ӿ]/);
-      expect(letter.html).toContain('<html lang="ru">');
+    // `lang` is what works for every script; a Latin-script language has no
+    // character class to test the way Cyrillic does. The subject is compared
+    // against ITS OWN English counterpart, not against one fixed subject —
+    // four different letters differ from any single subject for free.
+    for (const { code, letters } of translated) {
+      letters.forEach((letter, i) => {
+        expect([code, i, letter.html.includes(`<html lang="${code}">`)]).toEqual([code, i, true]);
+        expect([
+          code,
+          i,
+          letter.subject === (english[i] as (typeof letters)[number]).subject,
+        ]).toEqual([code, i, false]);
+      });
+    }
+  });
+
+  test('the Russian letter is in Cyrillic', () => {
+    // Kept language-specific on purpose: it is the one assertion above that
+    // a script gives you for free, and dropping it to generalise would trade
+    // a real check for a uniform one.
+    const russian = translated.find((l) => l.code === 'ru');
+    expect(russian?.code).toBe('ru');
+    for (const letter of russian?.letters ?? []) {
+      expect(letter.subject).toMatch(/\p{Script=Cyrillic}/u);
+      expect(letter.text).toMatch(/\p{Script=Cyrillic}/u);
     }
   });
 
