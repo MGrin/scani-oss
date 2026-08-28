@@ -33,9 +33,15 @@ describe('resolving a language', () => {
   });
 
   test('a language we cannot write in falls back to English', () => {
-    for (const tag of ['de', 'ja-JP', 'zzz', '', '   ', null, undefined]) {
+    // Every tag here must be absent from EMAIL_STRINGS, so shipping a bundle
+    // for one turns this test red rather than weakening it silently. `ja-JP`
+    // sat here until Japanese was written, and asserted the opposite of what
+    // the app then did.
+    for (const tag of ['de', 'ko', 'zzz', '', '   ', null, undefined]) {
+      expect(EMAIL_STRINGS[String(tag)]).toBeUndefined();
       expect(resolveEmailStrings(tag)).toBe(EMAIL_STRINGS.en as EmailStrings);
     }
+    expect(resolveEmailStrings('ko-KR')).toBe(EMAIL_STRINGS.en as EmailStrings);
   });
 });
 
