@@ -36,7 +36,7 @@ interface HoldingsSummaryProps {
 
 export function HoldingsSummary({ holdings, currency }: HoldingsSummaryProps) {
   const { t } = useTranslation();
-  const allocation = holdingAllocation(holdings);
+  const allocation = holdingAllocation(t, holdings);
   const excluded = excludedFromTotal(holdings);
 
   return (

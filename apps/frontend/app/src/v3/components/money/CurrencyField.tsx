@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { type RouterOutputs, trpc } from '@/lib/trpc';
+import { tokenTypeLabel } from '../../lib/tokens';
 import { Field } from '../form/Field';
 import { RecordPicker } from '../form/RecordPicker';
 
@@ -88,7 +89,12 @@ export function CurrencyPicker({
   const options = rankCurrencyMatches(tokens, query).map((token) => ({
     id: token.id,
     label: tokenLabel(token),
-    hint: token.type === 'fiat' ? undefined : (token.typeName ?? undefined),
+    // Fiat carries no hint: the label already reads "EUR — Euro", and
+    // "Fiat Currency" under every row of a currency picker is noise.
+    hint:
+      token.type === 'fiat'
+        ? undefined
+        : tokenTypeLabel(t, token.type, token.typeName) || undefined,
   }));
 
   return (

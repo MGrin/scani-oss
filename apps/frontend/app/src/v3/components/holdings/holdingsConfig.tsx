@@ -24,6 +24,7 @@ import {
   tokenTypeOptions,
 } from '../../lib/holdings';
 import { V3_ROUTES } from '../../lib/routes';
+import { tokenTypeLabel } from '../../lib/tokens';
 import { InstitutionMark } from '../entities/InstitutionMark';
 import { HoldingsSummary } from './HoldingsSummary';
 import {
@@ -182,7 +183,7 @@ export function holdingsDataViewConfig({
       {
         key: 'tokenType',
         labelKey: 'ui.dataView.holdings.filter.type',
-        options: tokenTypeOptions(holdings),
+        options: tokenTypeOptions(t, holdings),
         fn: (item: HoldingWithDetails, value) => item.token.typeCode === value,
       },
       {
@@ -255,7 +256,7 @@ export function holdingsDataViewConfig({
       {
         key: 'tokenType',
         labelKey: 'ui.dataView.holdings.groupBy.type',
-        fn: (item: HoldingWithDetails) => item.token.type || item.token.typeCode,
+        fn: (item: HoldingWithDetails) => tokenTypeLabel(t, item.token.typeCode, item.token.type),
       },
     ],
     summary: (items) => <HoldingsSummary holdings={items} currency={currency} />,

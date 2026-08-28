@@ -9,7 +9,7 @@ import {
 import type { AllocationInput } from '@scani/ui/v3/lib/chart';
 import type { TFunction } from 'i18next';
 import { HOLDINGS_QUALITY_PARAM } from './dataQuality';
-import { isScamToken } from './tokens';
+import { isScamToken, tokenTypeLabel } from './tokens';
 
 /**
  * The pure half of the v3 holdings surface: every decision the list and the
@@ -285,7 +285,10 @@ export function excludedFromTotal(holdings: readonly HoldingWithDetails[]): Excl
  * concrete: an allocation whose segments add up to a different number than the
  * figure directly above them is two claims about one portfolio.
  */
-export function holdingAllocation(holdings: readonly HoldingWithDetails[]): AllocationInput[] {
+export function holdingAllocation(
+  t: TFunction,
+  holdings: readonly HoldingWithDetails[]
+): AllocationInput[] {
   const byType = new Map<string, AllocationInput>();
   for (const holding of holdings) {
     if (!countsTowardTotal(holding)) continue;
@@ -293,7 +296,12 @@ export function holdingAllocation(holdings: readonly HoldingWithDetails[]): Allo
     const key = holding.token.typeCode;
     const existing = byType.get(key);
     if (existing) existing.value += holding.value;
-    else byType.set(key, { key, label: holding.token.type || key, value: holding.value });
+    else
+      byType.set(key, {
+        key,
+        label: tokenTypeLabel(t, key, holding.token.type),
+        value: holding.value,
+      });
   }
   return [...byType.values()].sort((a, b) => b.value - a.value);
 }
@@ -413,11 +421,17 @@ export interface SelectOption {
 }
 
 /** Token types present in the data, labelled by their human name. */
-export function tokenTypeOptions(holdings: readonly HoldingWithDetails[]): SelectOption[] {
+export function tokenTypeOptions(
+  t: TFunction,
+  holdings: readonly HoldingWithDetails[]
+): SelectOption[] {
   const byCode = new Map<string, string>();
   for (const holding of holdings) {
     if (!byCode.has(holding.token.typeCode)) {
-      byCode.set(holding.token.typeCode, holding.token.type || holding.token.typeCode);
+      byCode.set(
+        holding.token.typeCode,
+        tokenTypeLabel(t, holding.token.typeCode, holding.token.type)
+      );
     }
   }
   return [...byCode.entries()]
