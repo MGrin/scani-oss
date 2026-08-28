@@ -1,7 +1,7 @@
 import { type Decimal, formatDate } from '@scani/shared';
 import { stripTrailingSlash } from '@scani/ui/v3/lib/path';
 import type { TFunction } from 'i18next';
-import { sumAmountsByCurrency } from './paymentTotals';
+import { type HistoryEstimate, sumAmountsByCurrency } from './paymentTotals';
 import { V3_ROUTES } from './routes';
 
 /**
@@ -285,6 +285,89 @@ export function occurrenceTotals(occurrences: readonly DirectedOccurrence[]): Ma
       currencyTokenId: occurrence.payment.currencyTokenId,
     }))
   );
+}
+
+/** An occurrence that can be priced from its payment's own settled history —
+ *  `DirectedOccurrence` plus the payment id the estimate map is keyed by. */
+export interface EstimableOccurrence extends DirectedOccurrence {
+  payment: { id: string; direction: string; currencyTokenId: string };
+}
+
+/**
+ * The estimate this occurrence's amount slot is standing on, or `null` (SC-798).
+ *
+ * ## Why a surface shows one at all
+ *
+ * An occurrence genuinely has no expected amount until it settles, so the dash
+ * this replaces was occurrence-level honesty rather than a bug. It is still the
+ * wrong answer: a reader who opted this payment into "estimate from what it
+ * last cost" has already answered the question the dash is asking, and three
+ * other surfaces honour that answer. A fourth saying `— No value` beside them
+ * does not read as principled — it reads as broken, and it contradicts a figure
+ * the same reader was shown one tap earlier. The argument for the dash survives
+ * as the MARK, not as the omission, which is why `<EstimatedFromHistory>` is not
+ * optional at the call sites.
+ *
+ * ## The precedence, and why `actualAmount` is in it
+ *
+ * `expectedAmount ?? actualAmount ?? estimate` — the same order
+ * `occurrenceTotals` sums in, so a row and the figure above it can never
+ * resolve one occurrence differently. A settled occurrence keeps the amount that
+ * really moved: an estimate is a claim about the PAYMENT, and a measured
+ * settlement beats it every time.
+ *
+ * It lives HERE rather than beside the row it renders (SC-807) because a second
+ * caller arrived — the line that says how much the committed figure leaves out.
+ * Two implementations of this predicate is precisely the disagreement the
+ * paragraph above exists to prevent, and the row and the exclusion line must
+ * name the same occurrences or the line is describing a different set.
+ */
+export function historyEstimateFor(
+  occurrence: EstimableOccurrence,
+  historyEstimates: ReadonlyMap<string, HistoryEstimate>
+): HistoryEstimate | null {
+  if (occurrence.expectedAmount !== null || occurrence.actualAmount !== null) return null;
+  return historyEstimates.get(occurrence.payment.id) ?? null;
+}
+
+/**
+ * What the occurrences priced from history come to, and how many there are —
+ * the money `occurrenceTotals` scores as zero (SC-807).
+ *
+ * `occurrenceTotals` resolves an estimated occurrence to `'0'`, which is not a
+ * defect to fix there: "Bills committed" and "what is due next" are different
+ * claims, and an estimate is explicitly not a commitment — the reader has told
+ * us we do not know this month's amount. Folding it in would make the headline
+ * assert more than we know, and a total can carry no `<EstimatedFromHistory>`
+ * mark to say so.
+ *
+ * What was wrong is that the money then appeared NOWHERE above the rows, so
+ * `€0.00` sat directly over a row reading `€84.20 · ESTIMATED · from Feb 2026`.
+ * This is the other half of the same sum, kept separate so each figure states
+ * only what it knows — the shape `unestimatedCount` already uses for the
+ * recurring summary's denominator.
+ *
+ * The count travels with the totals rather than in a second function, unlike
+ * `unestimatedCount`: that one is separate because three surfaces add its sum
+ * into other maps and would have to handle a count they never print. This map
+ * is summed by one surface, which prints both in one sentence.
+ */
+export interface EstimatedOccurrenceTotals {
+  totals: Map<string, Decimal>;
+  count: number;
+}
+
+export function estimatedTotals(
+  occurrences: readonly EstimableOccurrence[],
+  historyEstimates: ReadonlyMap<string, HistoryEstimate>
+): EstimatedOccurrenceTotals {
+  const priced = occurrences.flatMap((occurrence) => {
+    const estimate = historyEstimateFor(occurrence, historyEstimates);
+    return estimate === null
+      ? []
+      : [{ amount: estimate.amount, currencyTokenId: occurrence.payment.currencyTokenId }];
+  });
+  return { totals: sumAmountsByCurrency(priced), count: priced.length };
 }
 
 /** How many payments point at each vendor — the one figure the vendor list has
