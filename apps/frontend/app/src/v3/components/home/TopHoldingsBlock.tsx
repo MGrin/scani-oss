@@ -32,7 +32,7 @@ interface TopHoldingsBlockProps {
 
 export function TopHoldingsBlock({ holdings, total, currency }: TopHoldingsBlockProps) {
   const { t } = useTranslation();
-  const rows = topHoldingRows(holdings, total);
+  const rows = topHoldingRows(t, holdings, total);
 
   return (
     <Block>
