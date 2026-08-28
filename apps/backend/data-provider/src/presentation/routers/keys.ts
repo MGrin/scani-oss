@@ -50,6 +50,37 @@ function requireDb(): CloudDb {
 const SELF_SERVICE_TIER = 'free';
 
 export const keysRouter = router({
+  /**
+   * What actually bounds a key on this deployment (SC-816).
+   *
+   * A procedure rather than a field on every `list` row. The budget is one
+   * global default — the limiter is keyed by `apiKeyId`, so each key carries
+   * its own counter, but the VALUE is the same for all of them — so a per-row
+   * field would print an identical number beside every key and imply per-key
+   * configuration that does not exist. That is the defect SC-583 removed from
+   * the console, one layer down.
+   *
+   * The decisive argument is the contract asymmetry rather than the
+   * cosmetics: adding a per-key field once per-key limits are real is
+   * ADDITIVE, and retracting one that external callers already read is
+   * BREAKING. Whether per-key limits ever exist is itself undecided, so the
+   * shape that can be extended beats the one that would have to be retracted.
+   *
+   * `quota_monthly_requests` is deliberately NOT reported here. Nothing on the
+   * request path reads it (SC-583 F3); it is a projection the billing core
+   * will write, and publishing it beside a figure that does bind is how it
+   * came to be believed a bound in the first place.
+   *
+   * No `requireDb()`: this is a property of the deployment, not of a row, so
+   * it answers for a self-hoster running without `CLOUD_MANAGEMENT_ENABLED`
+   * and for an account holding no keys at all.
+   */
+  limits: cookieProcedure.query(({ ctx }) => ({
+    // Null means no hourly budget is enforced. It covers both of the env's
+    // off states on purpose — see `effectiveHourlyRequestLimit`.
+    hourlyRequestLimit: ctx.hourlyRequestLimit,
+  })),
+
   list: cookieProcedure.query(async ({ ctx }) => {
     const db = requireDb();
     const rows = await db

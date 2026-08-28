@@ -27,6 +27,10 @@ export function buildAuthedContext(
     requestId: 'test-request',
     usage: createUsageContext(),
     clientIp: null,
+    // The value production ships (`CLOUD_QUOTA_HOURLY_DEFAULT=1000` in the
+    // data-provider's fly.toml), so a test that does not care reads the
+    // enforcing case rather than the off one.
+    hourlyRequestLimit: 1000,
     ...overrides,
   };
 }
@@ -63,6 +67,7 @@ export function buildUnauthedContext(
     requestId: 'test-request',
     usage: createUsageContext(),
     clientIp: null,
+    hourlyRequestLimit: 1000,
     ...overrides,
   };
 }
