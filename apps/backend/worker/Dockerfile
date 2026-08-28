@@ -21,7 +21,36 @@ COPY --parents apps/*/package.json apps/*/*/package.json packages/*/*/package.js
 # Filter to worker's workspace dep graph only. Worker depends on
 # @scani/providers-google-sheets (the pricing cron uses Google Sheets
 # fallback).
-RUN bun install --frozen-lockfile --filter @scani/worker --linker=hoisted
+#
+# SC-794. `--production` is load-bearing here, not a size tweak, and it only
+# works in combination with `@scani/data-provider` being a devDependency of
+# `@scani/cloud-client` — neither half does anything alone. The chain it cuts:
+#
+#   @scani/worker -> @scani/cloud-client -> @scani/data-provider
+#     -> better-auth -> peerDependencies.next  (declared optional)
+#
+# bun installs that optional peer whenever bun.lock already carries a
+# satisfying `next`, which this lockfile does. An optional peer with NO
+# lockfile entry is not installed — so this does not reproduce in a
+# standalone package, only in a workspace whose lockfile has the entry.
+# cloud-client's only reference to data-provider is a single `import type`,
+# so the worker was downloading Next.js to compile a queue consumer.
+# Measured at this change, deps stage: 239 packages / 809 MB before,
+# 138 / 332 MB after.
+#
+# The worker is the only backend app that can take this: api and data-provider
+# declare `better-auth` themselves and legitimately need it, and
+# apps/frontend/app builds with Vite, which needs devDependencies.
+#
+# Falsifier, after any change to this stage or to that manifest:
+#   docker build --target deps -t sc794 -f apps/backend/worker/Dockerfile .
+#   docker run --rm sc794 sh -c 'ls node_modules/next >/dev/null 2>&1 \
+#     && echo REGRESSED || echo ok'
+#   docker run --rm sc794 sh -c 'ls node_modules/bullmq >/dev/null 2>&1 \
+#     && echo ok || echo BROKEN'
+# The second is a must-be-FOUND control and is not optional: the subject reads
+# ABSENT, so a probe that finds nothing at all reads exactly like a clean pass.
+RUN bun install --frozen-lockfile --filter @scani/worker --linker=hoisted --production
 
 FROM oven/bun:${BUN_VERSION} AS build
 WORKDIR /app
