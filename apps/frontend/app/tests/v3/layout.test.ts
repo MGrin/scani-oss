@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { commentSkipper } from '../../../../../packages/frontend/ui/tests/helpers/source-scan';
 import { readV3Source, v3Sources } from './helpers/v3-sources';
 
 /**
@@ -12,13 +13,6 @@ import { readV3Source, v3Sources } from './helpers/v3-sources';
  * a screen size nobody developing on a laptop looks at.
  */
 const files = v3Sources();
-
-/** Prose about a class name is not a use of it — every fix here left a comment
- *  behind naming the thing it removed. */
-function isComment(line: string): boolean {
-  const trimmed = line.trimStart();
-  return trimmed.startsWith('*') || trimmed.startsWith('//') || trimmed.startsWith('/*');
-}
 
 describe('v3 page measure', () => {
   /**
@@ -36,6 +30,10 @@ describe('v3 page measure', () => {
     for (const file of files) {
       if (file.name === 'components/PageLayout.tsx') continue;
       const text = await Bun.file(file.path).text();
+      // Prose about a class name is not a use of it — every fix here left a
+      // comment behind naming the thing it removed. One skipper per FILE: the
+      // block state must not leak across files (SC-783).
+      const isComment = commentSkipper();
       text.split('\n').forEach((line, index) => {
         if (isComment(line)) return;
         if (/\bmx-auto\b/.test(line) && /\bmax-w-\[/.test(line)) {
