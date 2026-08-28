@@ -4,9 +4,9 @@ import { describe, expect, test } from 'bun:test';
 import { formatDate } from '@scani/shared';
 import { SETTLED_QUERY_STATE } from '@scani/ui/v3/lib/query-state';
 import i18n from 'i18next';
-import type { ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { StaticRouter } from 'react-router-dom/server';
+import { renderDesktop } from '../../../../../../packages/frontend/ui/tests/helpers/render-desktop';
 import type { BaseCurrencyRates } from '../../../src/hooks/useBaseCurrencyRates';
 import { rankCurrencyMatches, tokenLabel } from '../../../src/v3/components/money/CurrencyField';
 import { DuplicateVendorPicker } from '../../../src/v3/components/money/DuplicateVendorPicker';
@@ -375,9 +375,6 @@ const NO_HISTORY = new Map<string, HistoryEstimate>();
 /**
  * Render the DESKTOP surface — the table — instead of the phone card list.
  *
- * `useMediaQuery` reads `window.matchMedia` in its `useState` initialiser, so
- * a stub is enough to make `renderToStaticMarkup` take the table branch.
- *
  * EVERY OTHER TEST IN THIS FILE RENDERS WITH NO `window` AND THEREFORE ONLY
  * EVER SEES THE CARD LIST. That is not a gap in the abstract: SC-625 shipped
  * an `amount` column that rendered a bare dash for an estimated payment, and
@@ -385,30 +382,11 @@ const NO_HISTORY = new Map<string, HistoryEstimate>();
  * satisfied by the card beside it. A column render is invisible here unless
  * something forces this branch.
  *
- * The stub is installed and removed around ONE synchronous render. `bun test`
- * runs every file in one process, so a `window` left defined would be read by
- * every later file that branches on `typeof window` — the same class of leak
- * `restoreContainerAfterAll` exists to prevent for the DI container. The
- * `finally` is what makes that true even when the render throws.
+ * The helper is shared with `@scani/ui`'s own tests (SC-797). It stubs and
+ * restores `window.matchMedia` around one synchronous render, and refuses a
+ * render that never read the stub — but a refusal is a claim about the HOOK,
+ * not about the branch, so every test below still asserts `<table`.
  */
-function renderDesktop(node: ReactNode): string {
-  const had = 'window' in globalThis;
-  const previous = (globalThis as { window?: unknown }).window;
-  (globalThis as { window?: unknown }).window = {
-    matchMedia: () => ({
-      matches: true,
-      addEventListener: () => {},
-      removeEventListener: () => {},
-    }),
-  };
-  try {
-    return renderToStaticMarkup(node);
-  } finally {
-    if (had) (globalThis as { window?: unknown }).window = previous;
-    else delete (globalThis as { window?: unknown }).window;
-  }
-}
-
 function renderRecurringDesktop(overrides: Record<string, unknown> = {}) {
   return renderDesktop(
     <StaticRouter location="/payments/recurring">
