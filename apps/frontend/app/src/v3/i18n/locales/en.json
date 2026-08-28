@@ -386,7 +386,9 @@
         "repeatQuarter_other": "Repeats every {{count}} quarters, anchored on the day it's due.",
         "repeatYear_one": "Repeats every year, anchored on the day it's due.",
         "repeatYear_other": "Repeats every {{count}} years, anchored on the day it's due.",
-        "blockers": "To continue: {{blockers}}."
+        "blockers": "To continue: {{blockers}}.",
+        "estimateFromHistory": "Estimate from what it last cost",
+        "estimateFromHistoryHint": "Off by default. When on, forecasts use the amount you last settled for this payment, and say which month it came from."
       },
       "status": {
         "pause": "Pause",
@@ -505,7 +507,11 @@
         "addPayment": "Add a payment"
       },
       "recurringSummary": {
-        "committedEachMonth": "Committed each month"
+        "committedEachMonth": "Committed each month",
+        "estimatedFromHistory_one": "Includes {{count}} variable payment estimated from its last settled amount.",
+        "estimatedFromHistory_other": "Includes {{count}} variable payments estimated from their last settled amounts.",
+        "notCounted_one": "{{count}} variable payment has no estimate and is not counted.",
+        "notCounted_other": "{{count}} variable payments have no estimate and are not counted."
       },
       "vendorPeek": {
         "newVendor": "New vendor",
@@ -623,7 +629,19 @@
         "answerOverrideActive": "Using your figure of <amount/> a month, set on {{date}}. Measured: <measured/>.",
         "answerRevert": "Go back to the measured figure",
         "answerCurrencyChanged": "Your answer from {{date}} was given in a different currency, so it no longer applies.",
-        "answerFailed": "That did not save."
+        "answerFailed": "That did not save.",
+        "estimatedMark": "Estimated",
+        "estimatedFrom": "from {{month}}",
+        "estimatedFromAmount": "from {{month}} · <value></value>",
+        "estimatedTitle": "Estimated from history",
+        "estimatedCount_one": "{{count}} variable payment is priced from its last settled amount, not from an estimate anybody entered.",
+        "estimatedCount_other": "{{count}} variable payments are priced from their last settled amount, not from an estimate anybody entered.",
+        "couldEstimate_one": "{{count}} of those variable payments has settled before, so its last amount could stand in.",
+        "couldEstimate_other": "{{count}} of those variable payments have settled before, so their last amounts could stand in.",
+        "useLastSettled_one": "Use its last settled amount",
+        "useLastSettled_other": "Use their last settled amounts",
+        "stopEstimating_one": "Stop estimating it",
+        "stopEstimating_other": "Stop estimating them"
       }
     },
     "groups": {

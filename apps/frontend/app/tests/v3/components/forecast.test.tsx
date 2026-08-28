@@ -71,6 +71,7 @@ function payment(over: Partial<ForecastPaymentInput['payment']>): ForecastPaymen
     anchorDate: '2026-03-10',
     status: 'active',
     endDate: null,
+    estimateFromHistory: false,
     ...over,
   };
 }
@@ -83,8 +84,23 @@ function scheduledYear(amount: string) {
       dueDate: date.toISOString().slice(0, 10),
       status: 'scheduled',
       expectedAmount: amount,
+      actualAmount: null,
     };
   });
+}
+
+/**
+ * Settled months BEHIND `TODAY`, which is what SC-625's opt-in reads. On the
+ * 10th, like everything else in this book, so the source date the surface
+ * cites is unambiguous.
+ */
+function settledMonths(entries: readonly (readonly [month: number, actualAmount: string])[]) {
+  return entries.map(([month, actualAmount]) => ({
+    dueDate: new Date(Date.UTC(2026, month - 1, 10)).toISOString().slice(0, 10),
+    status: 'matched',
+    expectedAmount: null,
+    actualAmount,
+  }));
 }
 
 /**
@@ -194,15 +210,23 @@ function render(book: ForecastPaymentInput[], liquidAmount: string, over = {}) {
   const trpcClient = trpc.createClient({
     links: [httpBatchLink({ url: 'http://localhost/trpc' })],
   });
+  // The wire type is inferred from the tRPC router, which a component test
+  // cannot reach; the shape is built from the real `buildForecast` output
+  // above, so the cast asserts a shape this file itself constructed.
+  //
+  // Hoisted out of the JSX because a MULTI-LINE suppression does not attach:
+  // biome applies it to the line after the comment, and after three `//` lines
+  // that is the last plain one, not the `biome-ignore`. It warned on both the
+  // `any` and the dead suppression, and a warning-only rule exits clean.
+  // biome-ignore lint/suspicious/noExplicitAny: no wire type is reachable here
+  const forecastProp = wire(book, liquidAmount) as any;
+
   return renderToStaticMarkup(
     <trpc.Provider client={trpcClient} queryClient={queryClient}>
       <QueryClientProvider client={queryClient}>
         <StaticRouter location="/payments/forecast">
           <ForecastView
-            // biome-ignore lint/suspicious/noExplicitAny: the wire type is inferred
-            // from the tRPC router, which a component test cannot reach; the shape
-            // is built from the real `buildForecast` output above.
-            forecast={wire(book, liquidAmount) as any}
+            forecast={forecastProp}
             tokenSymbolById={SYMBOLS}
             rates={rates()}
             query={READY}
@@ -737,5 +761,120 @@ describe('SC-661 — a forecast payload from an older api', () => {
 
     expect(html).not.toInclude('Is this what you spend?');
     expect(html).not.toInclude("Yes, that's right");
+  });
+});
+
+/**
+ * SC-625, end to end on the surface, through the same real `buildForecast` the
+ * rest of this file uses.
+ *
+ * The utilities bill in `BOOK` is the one payment nothing can price. Here it
+ * gets three settled months behind it, so the ONLY thing that varies between
+ * the two cases below is `estimateFromHistory` — which is what makes the
+ * figures move by exactly the opt-in and nothing else.
+ */
+describe('ForecastView — estimating a variable payment from history (SC-625)', () => {
+  const SETTLED = settledMonths([
+    [1, '80.00'],
+    [2, '90.00'],
+    [3, '110.00'],
+  ]);
+
+  /** `BOOK` with the utilities bill given settled history, opted in or not. */
+  function withUtilityHistory(optedIn: boolean): ForecastPaymentInput[] {
+    return BOOK.map((entry) =>
+      entry.payment.id === 'utilities'
+        ? {
+            payment: { ...entry.payment, estimateFromHistory: optedIn },
+            occurrences: [...SETTLED, ...entry.occurrences],
+          }
+        : entry
+    );
+  }
+
+  test('opted OUT, the count is printed and no figure moves', () => {
+    const html = render(withUtilityHistory(false), '10000');
+
+    // SC-461's sentence, unchanged, over a book that now HAS the history the
+    // option would use. The settled months existing is not consent.
+    expect(html).toInclude('1 variable payment has no estimate');
+    // The six-month outgoings figure from the conversion test above: €9,306.
+    // Untouched, so nothing has quietly started counting the utility bill.
+    expect(html).toInclude('€9,306.00');
+    expect(html).not.toInclude('Estimated from history');
+  });
+
+  test('opted IN, the last settled month prices it — and the figure moves by exactly that', () => {
+    const html = render(withUtilityHistory(true), '10000');
+
+    // March's €110.00 is the last settled month, and the six-month window
+    // holds six of its dates: 9,306 + 660 = €9,966. Not 9,306 (ignored), not
+    // 9,786 (January's 80), not 9,846 (the €93.33 mean — a figure nobody has
+    // ever paid).
+    expect(html).toInclude('€9,966.00');
+    expect(html).not.toInclude('€9,306.00');
+    expect(html).not.toInclude('€9,846.00');
+  });
+
+  test('opted IN, the surface says the figure is estimated and from when', () => {
+    const html = render(withUtilityHistory(true), '10000');
+
+    expect(html).toInclude('Estimated from history');
+    expect(html).toInclude('1 variable payment is priced from its last settled amount');
+  });
+
+  test('THE COUNT STAYS: what is still unestimated is still counted', () => {
+    // Opted in AND priced, so the utility bill leaves the unprojectable list —
+    // and a SECOND variable payment with no history takes its place, still
+    // counted in the same words. The line is a denominator, not an error
+    // message that the option makes go away.
+    const book: ForecastPaymentInput[] = [
+      ...withUtilityHistory(true),
+      {
+        payment: payment({ id: 'water', expectedAmount: null, estimateFromHistory: true }),
+        occurrences: scheduledYear(null as unknown as string),
+      },
+    ];
+    const html = render(book, '10000');
+
+    expect(html).toInclude('Not in this projection');
+    expect(html).toInclude('1 variable payment has no estimate');
+    expect(html).toInclude('1 variable payment is priced from its last settled amount');
+  });
+
+  test('the offer names only the payments a settlement exists for', () => {
+    // Two unprojectable payments, one with history and one without, and
+    // NEITHER opted in. The reader is offered the action for one of them, not
+    // for two — a button saying "use their last settled amounts" over a set
+    // where half have none would change fewer payments than its own sentence
+    // claims.
+    const book: ForecastPaymentInput[] = [
+      ...withUtilityHistory(false),
+      {
+        payment: payment({ id: 'water', expectedAmount: null }),
+        occurrences: scheduledYear(null as unknown as string),
+      },
+    ];
+    const html = render(book, '10000', { onEstimateFromHistory: () => {} });
+
+    expect(html).toInclude('2 variable payments have no estimate');
+    // NAMES ITS REFERENT RATHER THAN SAYING "1 of them". The offer renders
+    // below the overdue-bills line, under a divider, so a pronoun there binds
+    // to the wrong sentence: read in order it said "7 bills are already
+    // overdue … 1 of them has settled before", which is a claim about the
+    // overdue bills and not about the variable payments the button acts on.
+    // Found by reading the rendered page rather than the string.
+    expect(html).toInclude('1 of those variable payments has settled before');
+    expect(html).toInclude('Use its last settled amount');
+  });
+
+  test('with no callback wired the offer is absent, and the count is not', () => {
+    // The control for the test above: the same book, no handler. The view
+    // holds no tRPC of its own, so a page that has not wired the mutation must
+    // still print the denominator rather than a button that does nothing.
+    const html = render(withUtilityHistory(false), '10000');
+
+    expect(html).toInclude('1 variable payment has no estimate');
+    expect(html).not.toInclude('Use its last settled amount');
   });
 });

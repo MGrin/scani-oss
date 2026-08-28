@@ -51,6 +51,12 @@ export interface CreatePaymentInput {
   endDate?: string | null;
   accountId?: string | null;
   notes?: string | null;
+  // SC-625's opt-in, off unless the form says otherwise. Optional here and
+  // required on `ForecastPayment` for opposite reasons: a caller creating a
+  // payment is stating a user's intent and may have none to state, while a
+  // caller building a forecast is answering "what does this book do", which
+  // has no absent answer.
+  estimateFromHistory?: boolean;
   // Where this payment came from. Defaults to the column's own 'manual'
   // when omitted; `CreatePaymentFromExtractionUseCase` passes 'document'.
   origin?: PaymentOrigin;
@@ -124,6 +130,7 @@ export interface UpdatePaymentInput {
   endDate?: string | null;
   accountId?: string | null;
   notes?: string | null;
+  estimateFromHistory?: boolean;
 }
 
 function startOfUtcToday(): Date {
@@ -205,6 +212,7 @@ export class PaymentService {
         endDate: input.endDate ?? null,
         accountId: input.accountId ?? null,
         notes: input.notes ?? null,
+        estimateFromHistory: input.estimateFromHistory ?? false,
         ...(input.origin ? { origin: input.origin } : {}),
       },
       transaction
