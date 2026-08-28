@@ -1764,6 +1764,13 @@
         "custom": "カスタム",
         "hidden": "非表示"
       },
+      "type": {
+        "fiat": "法定通貨",
+        "crypto": "暗号資産",
+        "stock": "株式 / ETF / 証券 / コモディティ",
+        "privateCompany": "非公開企業",
+        "other": "その他"
+      },
       "hiddenReason": {
         "user": "あなたが非表示にしました",
         "scam": "詐欺の可能性があると判定されました",
