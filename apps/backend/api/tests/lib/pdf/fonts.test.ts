@@ -89,3 +89,87 @@ describe('typesetter', () => {
     }
   });
 });
+
+/**
+ * COVERAGE FOR A JOINING OR RTL SCRIPT IS REFUSED UNTIL THE RENDERER ORDERS RUNS
+ * VISUALLY (SC-763).
+ *
+ * The detector that makes an unsettable character visible — `[?]` plus the
+ * metadata note — is `supports()`, and `supports()` is pure codepoint coverage.
+ * So it goes blind at the exact moment coverage arrives. Bundle an Arabic face
+ * and `covers.has` goes true, `supports()` goes true, the mark and the note
+ * disappear, and the failure upgrades from loud-and-unusable to
+ * silent-and-plausible.
+ *
+ * WHAT IS ACTUALLY MISSING IS NOT SHAPING. That was measured rather than
+ * assumed, because the ticket asserted the opposite: fontkit 2.0.4 ships
+ * `ArabicShaper.js` and pdfkit 0.19.1 calls `font.layout(text, features)`.
+ * Laying out `سلام` returns three glyphs for four codepoints — the mandatory
+ * lam-alef ligature — with contextual ids and RTL reordering, against a Latin
+ * control that comes back identical to its isolated forms. Glyphs are fine.
+ *
+ * What is missing is BIDI, in our own draw path: `statement.ts` emits run by run
+ * at explicit x, advancing left to right, and runs split on face boundaries
+ * (`'Сбербанк ABC'` is two runs). A bundled Arabic face therefore yields
+ * `'بنك ABC'` in logical order — correct glyphs, wrong place, no mark.
+ *
+ * WHY THIS IS AN IMPLICATION AND NOT A CONJUNCTION. The tempting form is "an RTL
+ * face is bundled AND the draw path is bidi-naive". The second half is not
+ * mechanically knowable, so it would have to be a flag or an exemption list —
+ * and on the day the guard reds, the cheapest clearance is flipping it, decided
+ * while staring at a red build. That is the escape hatch CLAUDE.md names.
+ *
+ * So the second half is not modelled at all. The antecedent is measured
+ * coverage; the consequent is a refusal. Lifting it costs what it claims:
+ * REPLACE THIS TEST WITH THE RUN-ORDER ASSERTION — that a mixed RTL/LTR line is
+ * drawn in visual order — and make it pass. There is no cheaper clearance,
+ * because there is nothing here to set to `true`.
+ *
+ * It deliberately probes through `supports()` rather than reading `covers`
+ * directly, so it tracks the renderer's own detector rather than a parallel
+ * notion of coverage that could drift from it.
+ */
+describe('joining and RTL scripts', () => {
+  /** One representative letter per script whose shaping our draw path cannot place. */
+  const JOINING = {
+    Arabic: 'ب',
+    Hebrew: 'א',
+    Syriac: 'ܐ',
+    Thaana: 'ހ',
+    NKo: 'ߊ',
+  } as const;
+
+  /**
+   * The must-be-FOUND control, and it is the whole reason the assertion below
+   * means anything. `supports()` returning false for every sample is the
+   * evidence — and a probe that had stopped reading faces would return false for
+   * everything, certifying the tree forever. Cyrillic IS covered, so this
+   * separates "no face covers Arabic" from "the probe read no faces".
+   */
+  it('the coverage probe can see a script that is bundled', () => {
+    expect(type.supports('Б')).toBe(true);
+    expect(drawn('Б')).toBe('Б');
+  });
+
+  it('no bundled face covers a script the draw path cannot place', () => {
+    const covered = Object.entries(JOINING)
+      .filter(([, sample]) => type.supports(sample))
+      .map(
+        ([script]) =>
+          `${script} is now covered by a bundled face, so the [?] mark no longer fires for it — ` +
+          'but statement.ts still places runs in logical order. Implement visual run ordering ' +
+          'and replace this test with the run-order assertion; do not delete it.'
+      );
+    expect(covered).toEqual([]);
+  });
+
+  /**
+   * The state this guard exists to preserve, asserted positively rather than as
+   * the absence of a complaint: an Arabic name is currently MARKED, so a reader
+   * sees `[?]` and the metadata note rather than misordered text.
+   */
+  it('an Arabic name is marked today, not silently misplaced', () => {
+    expect(type.supports('بنك')).toBe(false);
+    expect(drawn('بنك ABC')).toBe(`${UNSUPPORTED_MARK} ABC`);
+  });
+});
