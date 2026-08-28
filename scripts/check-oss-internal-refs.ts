@@ -308,25 +308,101 @@ export const EXIT_UNKNOWN = 9;
  */
 export const EXIT_SELF_TEST_FAILED = 10;
 
-function git(args: string[]): { ok: boolean; stdout: string } {
+/**
+ * A git invocation that either RAN or did not — never a string a caller can use
+ * without deciding which (SC-775).
+ *
+ * This returned `{ ok, stdout }`, and `.ok` was read at three call sites and
+ * NOT at the two that build the file population. A failed `git` therefore
+ * handed back `''`, which split to no paths, which read downstream as *the tree
+ * has no files* — and this guard printed
+ *
+ *     oss-internal-refs: PASS · exit 0 · 10 rule(s) self-tested, 0 tracked
+ *     file(s) scanned, 0 internal reference(s)
+ *
+ * over a directory that is not a git repository at all. Exit 0, from the check
+ * standing between internal references and a public repo, run from a
+ * pre-commit hook that reads the exit status rather than the line.
+ *
+ * The three call sites that DID check are the ones whose failure is harmless;
+ * the two that did not are the two whose failure empties the scan. That is not
+ * carelessness, it is the shape: a type that lets you reach the output without
+ * consulting the status regenerates this defect indefinitely, and no amount of
+ * review catches the next one. SC-743 was the identical defect in
+ * `check-oss-bound-paths.ts`; SC-780 is a third instance elsewhere.
+ *
+ * So the failure is not merely reported, it is made UNREACHABLE: a caller
+ * cannot get at `stdout` without narrowing `kind`, and the compiler enumerates
+ * every consumer rather than a reviewer having to.
+ */
+type GitRun =
+  | { readonly kind: 'ran'; readonly stdout: string }
+  | { readonly kind: 'failed'; readonly why: string };
+
+function git(args: string[]): GitRun {
   const r = spawnSync('git', args, { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
-  return { ok: r.status === 0, stdout: r.stdout ?? '' };
+  if (r.error !== undefined) return { kind: 'failed', why: `git ${args[0]}: ${r.error.message}` };
+  if (r.status !== 0) {
+    const said = (r.stderr ?? '').trim().split('\n')[0] ?? '';
+    return {
+      kind: 'failed',
+      why: `git ${args[0]} exited ${r.status ?? 'on a signal'}${said === '' ? '' : `: ${said}`}`,
+    };
+  }
+  return { kind: 'ran', stdout: r.stdout ?? '' };
 }
 
+/**
+ * For a git command whose NON-ZERO exit is a legitimate answer rather than a
+ * failure — `merge-base --is-ancestor` says "no" that way, and `rev-parse
+ * --verify --quiet` says "no such ref".
+ *
+ * Spelled as its own verb so that asking *did this succeed* and asking *what
+ * did this print* cannot be the same call. Collapsing them is what let a
+ * population read borrow a predicate's tolerance for failure.
+ */
+function gitSucceeds(args: string[]): boolean {
+  return spawnSync('git', args, { encoding: 'utf8' }).status === 0;
+}
+
+/**
+ * `hasUpstreamRemote` is `null` when `git remote` FAILED, and that is the whole
+ * point of the field (SC-775).
+ *
+ * `classifyBranch` in `check-oss-bound-paths.ts` has handled the blind reading
+ * since SC-743 — it returns `unknown`, which becomes `EXIT_UNKNOWN` here. This
+ * file imports that classifier and then could never hand it the value that
+ * reaches the branch: it took `git remote`'s stdout without its status, so a
+ * dead subprocess produced `''`, which contains no `upstream`, which is
+ * `false` — *there is no upstream remote* — and not `null`.
+ *
+ * The consequence is a SKIP rather than a wrong scan, and a skip is exit 0. In
+ * this repo `.private-repo` is present, so `scanScope` reads
+ * `!hasUpstreamRemote` plus that marker and returns
+ * `skip: no upstream remote, and .private-repo marks this as the private repo`.
+ * A guard that could not ask git anything says the thing that means *checked,
+ * nothing to do here*.
+ *
+ * So the remedy for this already existed, fully written and separately tested,
+ * one import away — and was unreachable because the collector could not produce
+ * its input. Worth more than the two-line fix: a repair applied to a shared
+ * classifier does not travel to a caller that feeds it a narrower type.
+ */
 function collectBranchFacts(): BranchFacts {
-  const hasUpstreamRemote = git(['remote']).stdout.trim().split('\n').includes('upstream');
-  const upstreamMainResolved = git([
+  const remotes = git(['remote']);
+  const upstreamMainResolved = gitSucceeds([
     'rev-parse',
     '--verify',
     '--quiet',
     'refs/remotes/upstream/main',
-  ]).ok;
+  ]);
   return {
-    hasUpstreamRemote,
+    hasUpstreamRemote:
+      remotes.kind === 'failed' ? null : remotes.stdout.trim().split('\n').includes('upstream'),
     upstreamMainResolved,
     upstreamIsAncestor:
-      upstreamMainResolved && git(['merge-base', '--is-ancestor', 'upstream/main', 'HEAD']).ok,
-    originIsAncestor: git(['merge-base', '--is-ancestor', 'origin/main', 'HEAD']).ok,
+      upstreamMainResolved && gitSucceeds(['merge-base', '--is-ancestor', 'upstream/main', 'HEAD']),
+    originIsAncestor: gitSucceeds(['merge-base', '--is-ancestor', 'origin/main', 'HEAD']),
     treeMarkers: collectTreeMarkers(),
   };
 }
@@ -362,28 +438,52 @@ function main(argv: readonly string[]): number {
     }
   }
 
-  const listing = wholeTree
-    ? git(['ls-files']).stdout
-    : git(['diff', '--cached', '--name-only', '--diff-filter=ACMR']).stdout;
+  /**
+   * The population. A git that FAILED is `EXIT_UNKNOWN`, never an empty list
+   * (SC-775).
+   *
+   * `git diff --cached` legitimately returning zero paths and `git ls-files`
+   * dying are not the same fact, and the old code could not tell them apart —
+   * both arrived as `''`. Only the first is a scan with nothing in it; the
+   * second is no scan at all, and this file already owns a code that says so.
+   */
+  const listed = wholeTree
+    ? git(['ls-files'])
+    : git(['diff', '--cached', '--name-only', '--diff-filter=ACMR']);
+  if (listed.kind === 'failed') {
+    console.error(
+      `oss-internal-refs: UNKNOWN · exit ${EXIT_UNKNOWN} · could not list the ${wholeTree ? 'tracked' : 'staged'} files to scan — ${listed.why} — NOTHING WAS SCANNED`
+    );
+    return EXIT_UNKNOWN;
+  }
+  const listing = listed.stdout;
   const paths = listing.trim() ? listing.trim().split('\n') : [];
 
   let scanned = 0;
   let skippedBinary = 0;
+  let unreadable = 0;
   const found: { path: string; ref: InternalRef }[] = [];
   const advisories: { path: string; ref: InternalRef }[] = [];
   for (const path of paths) {
     // The STAGED content, not the working tree: a partially staged file is a
     // different file, and the commit carries the half that is in the index.
-    const read = wholeTree
+    const read: GitRun = wholeTree
       ? (() => {
           try {
-            return { ok: true, stdout: readFileSync(path, 'utf8') };
-          } catch {
-            return { ok: false, stdout: '' };
+            return { kind: 'ran', stdout: readFileSync(path, 'utf8') } as const;
+          } catch (e) {
+            return { kind: 'failed', why: (e as Error).message } as const;
           }
         })()
       : git(['show', `:${path}`]);
-    if (!read.ok) continue;
+    // A file that could not be read is COUNTED, not silently dropped. It was a
+    // bare `continue`, so a path skipped this way left the denominator looking
+    // like a complete scan — the same defect as the population read, one file
+    // at a time (SC-775).
+    if (read.kind === 'failed') {
+      unreadable++;
+      continue;
+    }
     if (isBinary(read.stdout)) {
       skippedBinary++;
       continue;
@@ -396,7 +496,7 @@ function main(argv: readonly string[]): number {
   // The denominator is printed on every outcome. `0 found` beside no count at
   // all is indistinguishable from a scan that never read anything.
   const where = wholeTree ? 'tracked' : 'staged';
-  const tail = `${RULE_COUNT} rule(s) self-tested, ${scanned} ${where} file(s) scanned${skippedBinary > 0 ? `, ${skippedBinary} binary skipped` : ''}`;
+  const tail = `${RULE_COUNT} rule(s) self-tested, ${scanned} of ${paths.length} ${where} file(s) scanned${skippedBinary > 0 ? `, ${skippedBinary} binary skipped` : ''}${unreadable > 0 ? `, ${unreadable} UNREADABLE` : ''}`;
 
   // Printed before the verdict and never folded into it. Advisories are a
   // readability defect, not a boundary violation; one exit code for both is
