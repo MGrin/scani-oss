@@ -188,10 +188,25 @@ export default {
           from: { height: 'var(--radix-accordion-content-height)' },
           to: { height: 0 },
         },
+        // A keyframe is not mirrored by `dir` (SC-766). `translateX(-100%)`
+        // means the same displacement in Arabic as in English, so SC-760's
+        // conversion of the markup to logical properties moved the bar's
+        // ANCHOR to `start-0` and left its SWEEP running left-to-right —
+        // anchored at the reading edge and travelling away from it.
+        //
+        // The counterpart is the X-negation, not a re-timing: these keyframes
+        // are palindromes in time (0% and 100% are equal), so
+        // `animation-direction: reverse` yields the identical sweep and fixes
+        // nothing. `rtl-animation-axis.test.ts` asserts the negation pairwise.
         'loading-bar': {
           '0%': { transform: 'translateX(-100%)' },
           '50%': { transform: 'translateX(200%)' },
           '100%': { transform: 'translateX(-100%)' },
+        },
+        'loading-bar-rtl': {
+          '0%': { transform: 'translateX(100%)' },
+          '50%': { transform: 'translateX(-200%)' },
+          '100%': { transform: 'translateX(100%)' },
         },
         'fade-in': {
           from: { opacity: 0 },
@@ -205,10 +220,6 @@ export default {
           from: { opacity: 0, transform: 'scale(0.95)' },
           to: { opacity: 1, transform: 'scale(1)' },
         },
-        'slide-in-right': {
-          from: { transform: 'translateX(100%)' },
-          to: { transform: 'translateX(0)' },
-        },
         'pulse-subtle': {
           '0%, 100%': { opacity: 1 },
           '50%': { opacity: 0.8 },
@@ -218,10 +229,10 @@ export default {
         'accordion-down': 'accordion-down 0.2s ease-out',
         'accordion-up': 'accordion-up 0.2s ease-out',
         'loading-bar': 'loading-bar 2.8s ease-in-out infinite',
+        'loading-bar-rtl': 'loading-bar-rtl 2.8s ease-in-out infinite',
         'fade-in': 'fade-in 0.2s ease-out',
         'fade-in-up': 'fade-in-up 0.3s ease-out',
         'scale-in': 'scale-in 0.2s ease-out',
-        'slide-in-right': 'slide-in-right 0.3s ease-out',
         'pulse-subtle': 'pulse-subtle 2s ease-in-out infinite',
       },
       transitionDuration: {
