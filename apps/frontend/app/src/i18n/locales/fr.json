@@ -87,7 +87,7 @@
     "institutions": "Établissements",
     "groups": "Groupes",
     "entities": "Entités",
-    "vaults": "Coffres",
+    "vaults": "Objectifs",
     "tokens": "Jetons",
     "jobs": "Tâches",
     "settings": "Paramètres",
@@ -162,12 +162,12 @@
         "groups_counted_one": "{{count}} groupe",
         "groups_counted_many": "{{count}} groupes",
         "groups_counted_other": "{{count}} groupes",
-        "vaults_one": "coffre",
-        "vaults_many": "coffres",
-        "vaults_other": "coffres",
-        "vaults_counted_one": "{{count}} coffre",
-        "vaults_counted_many": "{{count}} coffres",
-        "vaults_counted_other": "{{count}} coffres",
+        "vaults_one": "objectif",
+        "vaults_many": "objectifs",
+        "vaults_other": "objectifs",
+        "vaults_counted_one": "{{count}} objectif",
+        "vaults_counted_many": "{{count}} objectifs",
+        "vaults_counted_other": "{{count}} objectifs",
         "jobs_one": "tâche",
         "jobs_many": "tâches",
         "jobs_other": "tâches",
@@ -632,15 +632,15 @@
         "col": {
           "progress": "Progression",
           "saved": "Épargné",
-          "target": "Objectif",
-          "vault": "Coffre"
+          "target": "Cible",
+          "vault": "Objectif"
         },
         "config": {
-          "searchVaults": "Rechercher des coffres"
+          "searchVaults": "Rechercher des objectifs"
         },
         "empty": {
-          "aVaultIsASavingsGoal": "Un coffre est un objectif d’épargne : donnez-lui un nom, fixez un objectif et rattachez-y les positions qui y contribuent.",
-          "noVaultsYet": "Aucun coffre pour l’instant"
+          "aVaultIsASavingsGoal": "Un objectif est un but d’épargne : donnez-lui un nom, fixez une cible et rattachez-y les positions qui y contribuent.",
+          "noVaultsYet": "Aucun objectif pour l’instant"
         },
         "filter": {
           "status": "Statut"
@@ -649,11 +649,11 @@
           "name": "Nom",
           "progress": "Progression",
           "saved": "Épargné",
-          "target": "Objectif"
+          "target": "Cible"
         },
         "option": {
           "stillSaving": "Épargne en cours",
-          "targetReached": "Objectif atteint"
+          "targetReached": "Cible atteinte"
         }
       },
       "vendors": {

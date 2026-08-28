@@ -378,81 +378,81 @@
       }
     },
     "vaults": {
-      "targetReached": "Objectif atteint",
+      "targetReached": "Cible atteinte",
       "list": {
-        "rowSpoken": "{{name}}, {{percent}} % de l’objectif"
+        "rowSpoken": "{{name}}, {{percent}} % de la cible"
       },
       "attach": {
         "attaching": "Rattachement de la position",
-        "fullyClaimed": "{{label}} est déjà entièrement affecté à d’autres coffres. Réduisez d’abord sa part ailleurs.",
-        "attachedWhole": "{{label}} compte désormais pour ce coffre",
-        "attachedPartial": "{{label}} rattaché à {{available}} % — le reste compte pour un autre coffre"
+        "fullyClaimed": "{{label}} est déjà entièrement affecté à d’autres objectifs. Réduisez d’abord sa part ailleurs.",
+        "attachedWhole": "{{label}} compte désormais pour cet objectif",
+        "attachedPartial": "{{label}} rattaché à {{available}} % — le reste compte pour un autre objectif"
       },
-      "createFirst": "Créez votre premier coffre",
+      "createFirst": "Créez votre premier objectif",
       "holding": {
         "thisHolding": "Cette position",
         "unknownToken": "Jeton inconnu",
-        "shareLabel": "Part de {{symbol}} comptée pour ce coffre",
+        "shareLabel": "Part de {{symbol}} comptée pour cet objectif",
         "cancel": "Annuler",
         "saveShare": "Enregistrer la part",
-        "changeShare": "Modifier la part de {{percent}} % de {{symbol}} comptée pour ce coffre",
+        "changeShare": "Modifier la part de {{percent}} % de {{symbol}} comptée pour cet objectif",
         "remove": "Retirer",
-        "removeCommit": "Retirer {{symbol}} de ce coffre",
-        "detachConsequence": "{{symbol}} cesse de compter pour ce coffre — <value/> sort du montant épargné. La position elle-même, sa part de {{percent}} % et son historique restent ; vous pouvez la rattacher à nouveau."
+        "removeCommit": "Retirer {{symbol}} de cet objectif",
+        "detachConsequence": "{{symbol}} cesse de compter pour cet objectif — <value/> sort du montant épargné. La position elle-même, sa part de {{percent}} % et son historique restent ; vous pouvez la rattacher à nouveau."
       },
       "detail": {
         "toast": {
-          "updated": "Coffre mis à jour",
-          "updating": "Mise à jour du coffre",
-          "deleted": "Coffre supprimé",
-          "deleting": "Suppression du coffre",
-          "holdingRemoved": "Position retirée du coffre",
+          "updated": "Objectif mis à jour",
+          "updating": "Mise à jour de l’objectif",
+          "deleted": "Objectif supprimé",
+          "deleting": "Suppression de l’objectif",
+          "holdingRemoved": "Position retirée de l’objectif",
           "removingHolding": "Retrait de la position",
           "shareUpdated": "Part mise à jour",
           "updatingShare": "Mise à jour de la part"
         },
-        "deleteConsequence_one": "« {{name}} » et son objectif disparaissent. La {{count}} position qui y est rattachée n’est pas supprimée — elle cesse simplement de compter pour un objectif.",
-        "deleteConsequence_many": "« {{name}} » et son objectif disparaissent. Les {{count}} positions qui y sont rattachées ne sont pas supprimées — elles cessent simplement de compter pour un objectif.",
-        "deleteConsequence_other": "« {{name}} » et son objectif disparaissent. Les {{count}} positions qui y sont rattachées ne sont pas supprimées — elles cessent simplement de compter pour un objectif.",
-        "backToVaults": "Coffres",
-        "notFound": "Ce coffre n’est pas dans votre liste. Il a peut-être été supprimé, ou le lien n’est plus à jour.",
+        "deleteConsequence_one": "« {{name}} » et sa cible disparaissent. La {{count}} position qui y est rattachée n’est pas supprimée — elle cesse simplement de compter pour une cible.",
+        "deleteConsequence_many": "« {{name}} » et sa cible disparaissent. Les {{count}} positions qui y sont rattachées ne sont pas supprimées — elles cessent simplement de compter pour une cible.",
+        "deleteConsequence_other": "« {{name}} » et sa cible disparaissent. Les {{count}} positions qui y sont rattachées ne sont pas supprimées — elles cessent simplement de compter pour une cible.",
+        "backToVaults": "Objectifs",
+        "notFound": "Cet objectif n’est pas dans votre liste. Il a peut-être été supprimé, ou le lien n’est plus à jour.",
         "saved": "Épargné",
-        "targetReached": "Objectif atteint — {{percent}} % du but",
-        "stillToGo": "Il reste <remaining/> à épargner, sur un objectif de <target/>",
-        "countingToward_one": "Comptent pour ce coffre ({{count}})",
-        "countingToward_many": "Comptent pour ce coffre ({{count}})",
-        "countingToward_other": "Comptent pour ce coffre ({{count}})",
-        "empty": "Rien ne compte encore pour ce coffre. Rattachez une position et elle commencera à contribuer à l’objectif.",
+        "targetReached": "Cible atteinte — {{percent}} % de la cible",
+        "stillToGo": "Il reste <remaining/> à épargner, sur une cible de <target/>",
+        "countingToward_one": "Comptent pour cet objectif ({{count}})",
+        "countingToward_many": "Comptent pour cet objectif ({{count}})",
+        "countingToward_other": "Comptent pour cet objectif ({{count}})",
+        "empty": "Rien ne compte encore pour cet objectif. Rattachez une position et elle commencera à contribuer à la cible.",
         "attachHolding": "Rattacher une position",
         "details": "Détails",
         "name": "Nom",
-        "target": "Objectif",
+        "target": "Cible",
         "targetHint": "En {{symbol}}",
         "colour": "Couleur",
         "saveChanges": "Enregistrer les modifications",
         "discard": "Abandonner",
-        "needName": "Pour enregistrer : donnez un nom au coffre.",
-        "needTarget": "Pour enregistrer : fixez un objectif supérieur à zéro.",
+        "needName": "Pour enregistrer : donnez un nom à l’objectif.",
+        "needTarget": "Pour enregistrer : fixez une cible supérieure à zéro.",
         "dangerZone": "Zone sensible",
-        "deleteTrigger": "Supprimer le coffre",
-        "deleteCommit": "Supprimer ce coffre"
+        "deleteTrigger": "Supprimer l’objectif",
+        "deleteCommit": "Supprimer cet objectif"
       },
       "page": {
-        "title": "Coffres",
-        "created": "Coffre « {{name}} » créé",
-        "creating": "Création du coffre",
+        "title": "Objectifs",
+        "created": "Objectif « {{name}} » créé",
+        "creating": "Création de l’objectif",
         "name": "Nom",
-        "newVault": "Nouveau coffre",
-        "createVault": "Créer le coffre",
+        "newVault": "Nouvel objectif",
+        "createVault": "Créer l’objectif",
         "cancel": "Annuler",
         "namePlaceholder": "Apport pour une maison, fonds d’urgence…",
         "toContinue": "Pour continuer : {{missing}}.",
-        "target": "Objectif",
+        "target": "Cible",
         "currency": "Devise",
         "colour": "Couleur",
         "blocker": {
-          "name": "nommez le coffre",
-          "target": "fixez un objectif supérieur à zéro",
+          "name": "nommez l’objectif",
+          "target": "fixez une cible supérieure à zéro",
           "currency": "choisissez une devise"
         }
       }
@@ -651,8 +651,8 @@
         "occurrences": "Échéances de paiement",
         "groups": "Groupes",
         "groupMembers": "Membres des groupes",
-        "vaults": "Coffres",
-        "vaultHoldings": "Positions des coffres",
+        "vaults": "Objectifs",
+        "vaultHoldings": "Positions des objectifs",
         "documents": "Documents",
         "history": "Historique du patrimoine net",
         "netWorth": "Patrimoine net"
@@ -697,9 +697,9 @@
         "group": "Groupe",
         "memberKind": "Nature du membre",
         "member": "Membre",
-        "vault": "Coffre",
+        "vault": "Objectif",
         "saved": "Épargné",
-        "target": "Objectif",
+        "target": "Cible",
         "holding": "Position",
         "share": "Part",
         "file": "Fichier",
@@ -752,11 +752,11 @@
     },
     "settings": {
       "account": {
-        "deleteIntro": "Supprimer vos données efface tous les comptes, positions, portefeuilles, identifiants d’intégration, groupes et coffres. L’identifiant de connexion, lui, reste, mais vide.",
+        "deleteIntro": "Supprimer vos données efface tous les comptes, positions, portefeuilles, identifiants d’intégration, groupes et objectifs. L’identifiant de connexion, lui, reste, mais vide.",
         "deleting": "Suppression…",
         "deleteTrigger": "Supprimer toutes mes données",
         "deleteConfirm": "Tout supprimer",
-        "deleteConsequence": "Tous les comptes, positions, portefeuilles, identifiants d’intégration, groupes et coffres disparaissent. Votre identifiant de connexion reste, sans rien dedans. Cette action est irréversible.",
+        "deleteConsequence": "Tous les comptes, positions, portefeuilles, identifiants d’intégration, groupes et objectifs disparaissent. Votre identifiant de connexion reste, sans rien dedans. Cette action est irréversible.",
         "deleteInFlight": "Vos données sont en cours de suppression.",
         "deleted": "Toutes vos données ont été supprimées",
         "deleteFailed": "La suppression a échoué"
@@ -771,7 +771,7 @@
         "exportJson": "Exporter en JSON",
         "exportWorkbook": "Exporter le classeur",
         "json": "JSON",
-        "intro": "Tous les enregistrements de ce compte dans un seul fichier — positions, journal complet des transactions, paiements, groupes, coffres et historique de votre patrimoine net. Les clés des plateformes d’échange et des courtiers sont exclues : ce sont des identifiants, pas des enregistrements.",
+        "intro": "Tous les enregistrements de ce compte dans un seul fichier — positions, journal complet des transactions, paiements, groupes, objectifs et historique de votre patrimoine net. Les clés des plateformes d’échange et des courtiers sont exclues : ce sont des identifiants, pas des enregistrements.",
         "trigger": "Tout exporter"
       },
       "maintenance": {
@@ -912,8 +912,8 @@
         "empty": "Vide"
       },
       "vaults": {
-        "title": "Coffres",
-        "progress": "{{name}} : {{percent}} % de l’objectif",
+        "title": "Objectifs",
+        "progress": "{{name}} : {{percent}} % de la cible",
         "ofTarget": "sur <target></target>"
       },
       "allocation": {
