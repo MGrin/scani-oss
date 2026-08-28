@@ -9,7 +9,7 @@ import { Block, BlockHeader } from '@scani/ui/v3/components/Block';
 import { DataRow, DataRowList } from '@scani/ui/v3/components/DataRow';
 import { Numeric } from '@scani/ui/v3/components/Numeric';
 import { describeQueryError } from '@scani/ui/v3/lib/errors';
-import { CheckCircle2, EyeOff, Loader2, ShieldAlert, Trash2 } from 'lucide-react';
+import { CheckCircle2, EyeOff, History, Loader2, ShieldAlert, Trash2 } from 'lucide-react';
 import { useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useNavigate } from 'react-router-dom';
@@ -422,6 +422,16 @@ function CandidateRow({
             <Badge variant="outline" className="gap-1 border-border-strong">
               <ShieldAlert className="size-3" aria-hidden="true" />
               {t(`v3.jobs.wallet.spam.${row.spam}`)}
+            </Badge>
+          ) : null}
+          {row.exited ? (
+            // A `0` with nothing beside it reads as an empty position somebody
+            // forgot to filter out. It is the opposite: a position that was
+            // bought and sold, whose history has nowhere to land unless this
+            // row is kept (SC-398).
+            <Badge variant="outline" className="gap-1 border-border-strong">
+              <History className="size-3" aria-hidden="true" />
+              {t('v3.jobs.wallet.exited')}
             </Badge>
           ) : null}
         </label>
