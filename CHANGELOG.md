@@ -19,6 +19,15 @@ version heading stays there permanently, above every future release. This
 comment is deliberately in that position; explanatory prose should not be.
 -->
 
+## [0.34.1](https://github.com/MGrin/scani-oss/compare/v0.34.0...v0.34.1) (2026-08-28)
+
+
+### Bug Fixes
+
+* **app:** every surface that shows a token name shows the reader's ([14336fb](https://github.com/MGrin/scani-oss/commit/14336fb969ce5c4c4264a3d44fb9fff4d7b08478))
+* **docs:** serve robots.txt, and link the llms-full.txt we publish ([9be0ffb](https://github.com/MGrin/scani-oss/commit/9be0ffb99beef97cb8419796d7f2613f7e29a1be))
+* **docs:** type-check the docs tests without dropping astro check ([df88601](https://github.com/MGrin/scani-oss/commit/df8860193f065810ad20c99b69e38c0a864f1f51))
+
 ## [0.34.0](https://github.com/MGrin/scani-oss/compare/v0.33.0...v0.34.0) (2026-08-28)
 
 
