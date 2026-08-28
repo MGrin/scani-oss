@@ -3,7 +3,7 @@ import { Segmented, SegmentedItem } from '@scani/ui/ui/segmented';
 import { PageHeader, PageLayout } from '@scani/ui/v3/components/PageLayout';
 import { mergeQueries } from '@scani/ui/v3/lib/query-state';
 import { Plus } from 'lucide-react';
-import { useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useBaseCurrencyRates } from '@/hooks/useBaseCurrencyRates';
@@ -12,6 +12,7 @@ import { ForecastView } from '../components/money/ForecastView';
 import { RecurringList } from '../components/money/RecurringList';
 import { UpcomingFeed } from '../components/money/UpcomingFeed';
 import { VendorList } from '../components/money/VendorList';
+import { historyEstimatesByPaymentId } from '../lib/forecast';
 import {
   INCOME_HORIZON_DAYS,
   MONEY_SEGMENTS,
@@ -74,6 +75,44 @@ export function MoneyPage() {
   const recurringState = mergeQueries(payments, vendors, tokens);
   const vendorsState = mergeQueries(vendors, payments, tokens, vendorSpend);
   const forecastState = mergeQueries(forecast, tokens);
+
+  /**
+   * SC-625, and the reason it is derived HERE rather than inside each view.
+   *
+   * The recurring list, the vendor list and the projection all state what the
+   * book commits the reader to each month, and until this map existed the
+   * first two answered a strictly smaller question — they skipped every
+   * variable payment with no estimate, silently. Handing all three the SAME
+   * map, computed from the projection's own answer, is what makes them agree
+   * by construction rather than by three implementations being kept in step.
+   *
+   * It costs no query. `payments.forecast` is already issued on every segment,
+   * for the horizon control's sake, and the home screen's runway line shares
+   * the cache entry.
+   */
+  const historyEstimates = useMemo(
+    () => historyEstimatesByPaymentId(forecast.data?.estimatedFromHistory ?? []),
+    [forecast.data?.estimatedFromHistory]
+  );
+
+  const utils = trpc.useUtils();
+  const setEstimateFromHistory = trpc.payments.setEstimateFromHistory.useMutation({
+    // Both, and neither is optional. The flag changes what the PROJECTION
+    // prices, and it changes what `payments.list` says about each payment —
+    // invalidating one leaves the recurring list showing a figure the
+    // projection has stopped using, or the reverse.
+    onSuccess: () => {
+      void utils.payments.forecast.invalidate();
+      void utils.payments.list.invalidate();
+    },
+  });
+
+  const onEstimateFromHistory = useCallback(
+    (paymentIds: string[], enabled: boolean) => {
+      setEstimateFromHistory.mutate({ paymentIds, enabled });
+    },
+    [setEstimateFromHistory]
+  );
 
   const vendorNameById = new Map(
     (vendors.data ?? []).map((vendor) => [vendor.id, vendor.displayName])
@@ -154,6 +193,7 @@ export function MoneyPage() {
           tokenSymbolById={tokenSymbolById}
           rates={rates}
           query={recurringState}
+          historyEstimates={historyEstimates}
         />
       ) : null}
 
@@ -165,6 +205,8 @@ export function MoneyPage() {
           query={forecastState}
           paymentCount={(payments.data ?? []).length}
           tokens={tokens.data ?? []}
+          onEstimateFromHistory={onEstimateFromHistory}
+          estimateFromHistoryPending={setEstimateFromHistory.isPending}
         />
       ) : null}
 
@@ -176,6 +218,7 @@ export function MoneyPage() {
           tokenSymbolById={tokenSymbolById}
           rates={rates}
           query={vendorsState}
+          historyEstimates={historyEstimates}
           creating={creatingVendor}
           onCreatingChange={setCreatingVendor}
         />

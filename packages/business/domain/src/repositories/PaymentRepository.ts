@@ -1,7 +1,7 @@
 import { BaseRepository, type DatabaseTransaction } from '@scani/db';
 import type { NewPayment, Payment } from '@scani/db/schema';
 import * as schema from '@scani/db/schema';
-import { and, asc, eq, isNull, or, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 import { Service } from 'typedi';
 
 // The recurring-definition side of the payments layer — one row per
@@ -35,6 +35,47 @@ export class PaymentRepository extends BaseRepository<Payment, NewPayment> {
       return payment ?? null;
     } catch (error) {
       this.logger.error({ paymentId, userId, error }, 'Failed to find payment by id+user');
+      throw error;
+    }
+  }
+
+  /**
+   * Turn SC-625's history estimate on or off across a named set of payments,
+   * in one statement.
+   *
+   * **`userId` is in the WHERE clause, not checked beforehand.** The ids come
+   * from a tRPC input, so a pre-flight ownership loop would be a second query
+   * whose result the update does not depend on — a TOCTOU gap and a way for
+   * one user to learn whether another's id exists. Here a foreign id simply
+   * matches no row, and the returned count is the honest answer to "how many
+   * did this change".
+   *
+   * It touches this column ALONE. The flag changes no due date and no stored
+   * amount — the estimate is derived at read time — so routing it through
+   * `PaymentService.update` would run schedule invalidation and
+   * re-materialisation for a write that cannot affect either.
+   */
+  async setEstimateFromHistory(
+    userId: string,
+    paymentIds: readonly string[],
+    estimateFromHistory: boolean,
+    transaction?: DatabaseTransaction
+  ): Promise<Payment[]> {
+    if (paymentIds.length === 0) return [];
+    try {
+      const database = this.getDb(transaction);
+      return await database
+        .update(schema.payments)
+        .set({ estimateFromHistory, updatedAt: new Date() })
+        .where(
+          and(eq(schema.payments.userId, userId), inArray(schema.payments.id, [...paymentIds]))
+        )
+        .returning();
+    } catch (error) {
+      this.logger.error(
+        { userId, count: paymentIds.length, estimateFromHistory, error },
+        'Failed to set estimate-from-history'
+      );
       throw error;
     }
   }
