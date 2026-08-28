@@ -19,6 +19,23 @@ version heading stays there permanently, above every future release. This
 comment is deliberately in that position; explanatory prose should not be.
 -->
 
+## [0.34.0](https://github.com/MGrin/scani-oss/compare/v0.33.0...v0.34.0) (2026-08-28)
+
+
+### Features
+
+* **app:** translate the token type name instead of rendering Postgres prose ([aeaf8be](https://github.com/MGrin/scani-oss/commit/aeaf8be0c0feb13f0e6ad50fedd03752b2b5e839))
+* **data-provider:** report the hourly request limit a key is subject to ([6193053](https://github.com/MGrin/scani-oss/commit/6193053c06b8281aea9c730ec7b9383d8b1691b3))
+
+
+### Bug Fixes
+
+* **app:** a fiat holding shows its currency name in the reader's language ([bee9c4b](https://github.com/MGrin/scani-oss/commit/bee9c4bd961d8251c43d75cc93388df2759783e1))
+* **app:** account for estimated bills above the upcoming feed ([89e04e8](https://github.com/MGrin/scani-oss/commit/89e04e87648f3d1b8f71ac287c7e7e0a354c933e))
+* **app:** the overdue tile leaves out estimates too, and now says so ([0954d25](https://github.com/MGrin/scani-oss/commit/0954d2562678c7281971fcd776df11feeb2014bd))
+* **hooks:** a pre-push hook, because cherry-picks reach the mirror unchecked ([0ed8b23](https://github.com/MGrin/scani-oss/commit/0ed8b235ae97cfad10a3a09b9f96d73730aa5049))
+* **hooks:** the refusal printed advice a pusher cannot follow ([c9172f6](https://github.com/MGrin/scani-oss/commit/c9172f6d380932c255add8a42abb8c820e95e10f))
+
 ## [0.33.0](https://github.com/MGrin/scani-oss/compare/v0.32.0...v0.33.0) (2026-08-28)
 
 
