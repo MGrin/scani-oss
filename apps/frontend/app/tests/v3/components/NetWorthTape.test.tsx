@@ -63,4 +63,25 @@ describe('NetWorthTape', () => {
   test('a non-ISO token symbol renders rather than throwing', () => {
     expect(render('4200', 'PRIVATECO')).toInclude('PRIVATECO');
   });
+
+  /**
+   * SC-760. The hero is COMPOSED, not printed — a flex row of symbol, digit run
+   * and cents, whose digit run is itself a row of one-glyph cells. The bidi
+   * algorithm keeps a single formatted string like `$193,150.00` left-to-right
+   * in an RTL paragraph, which is why `<Numeric>` needs nothing; it cannot do
+   * that for elements, so under `dir="rtl"` all three columns AND the digits
+   * inside them reverse. A phone screenshot caught it rendering `00.051,391 $`.
+   *
+   * Pinned here rather than left to the RTL baseline because the baseline shows
+   * it only on the one screen that happens to photograph the hero.
+   */
+  test('the composed figure is pinned left-to-right, whatever the document is', () => {
+    const html = render('128432.10');
+    expect(html).toInclude('aria-hidden="true" dir="ltr"');
+    // The accessible string is NOT pinned: it is ordinary localised prose and
+    // belongs to the document's direction. If this ever starts matching, the
+    // attribute has been hoisted somewhere it should not be.
+    const srOnly = html.slice(0, html.indexOf('aria-hidden'));
+    expect(srOnly).not.toInclude('dir="ltr"');
+  });
 });

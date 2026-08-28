@@ -115,7 +115,7 @@ interface DataRowProps {
  * non-control (a `div`) nothing neutralises it and it *is* an unconditional
  * row height. Either way the class is the wrong tool; padding is the right one.
  */
-const ZONES = 'grid items-center gap-3 px-4 py-2 text-left';
+const ZONES = 'grid items-center gap-3 px-4 py-2 text-start';
 
 /**
  * The row is the figure's line (SC-72), not the value zone — the value zone is
@@ -218,7 +218,7 @@ export function DataRow({
         <span className="min-w-0 flex-1">{control}</span>
         {/* `pr-2` rather than the row's own `px-4`: the control has its own
             padding and a second full gutter would push it off a 393px row. */}
-        <span className="flex shrink-0 items-center pr-2">{trailing}</span>
+        <span className="flex shrink-0 items-center pe-2">{trailing}</span>
       </span>
     ) : (
       control

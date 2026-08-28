@@ -430,7 +430,7 @@ const BottomDrawerContent = React.forwardRef<
                 <DrawerPrimitive.Close
                   ref={closeRef}
                   aria-label={closeLabel}
-                  className="absolute right-2 z-10 inline-flex items-center justify-center rounded-md text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  className="absolute end-2 z-10 inline-flex items-center justify-center rounded-md text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   style={{
                     minHeight: 'var(--tap-target, 2.75rem)',
                     minWidth: 'var(--tap-target, 2.75rem)',

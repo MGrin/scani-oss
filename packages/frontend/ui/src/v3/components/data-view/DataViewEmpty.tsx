@@ -114,7 +114,7 @@ export function LoadMoreButton({ more }: { more: V3MoreState }) {
   const { t } = useUiTranslation();
   return (
     <Button variant="outline" disabled={more.isFetching} onClick={more.fetch}>
-      {more.isFetching ? <Loader2 className="mr-2 size-4 animate-spin" aria-hidden="true" /> : null}
+      {more.isFetching ? <Loader2 className="me-2 size-4 animate-spin" aria-hidden="true" /> : null}
       {more.isFetching ? t('ui.dataView.toolbar.loadingMore') : t('ui.dataView.toolbar.loadMore')}
     </Button>
   );

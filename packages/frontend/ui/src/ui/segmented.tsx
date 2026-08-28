@@ -106,7 +106,7 @@ const SegmentedItem = React.forwardRef<
       'group-data-[segmented=vertical]/segmented:flex-none',
       'group-data-[segmented=vertical]/segmented:justify-start',
       'group-data-[segmented=vertical]/segmented:whitespace-normal',
-      'group-data-[segmented=vertical]/segmented:text-left',
+      'group-data-[segmented=vertical]/segmented:text-start',
       'transition-colors duration-fast ease-emphasized',
       'ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
       'disabled:pointer-events-none disabled:opacity-50',

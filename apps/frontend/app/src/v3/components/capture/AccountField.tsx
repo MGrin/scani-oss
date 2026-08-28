@@ -1,3 +1,5 @@
+import { cn } from '@scani/ui/lib/cn';
+import { MIRROR_IN_RTL } from '@scani/ui/lib/direction';
 import { Button } from '@scani/ui/ui/button';
 import { Input } from '@scani/ui/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@scani/ui/ui/select';
@@ -116,14 +118,14 @@ export function AccountField({
     <div className="flex flex-col gap-3">
       <Button
         variant="ghost"
-        className="-ml-2 self-start"
+        className="-ms-2 self-start"
         disabled={disabled}
         onClick={() => {
           onDraftChange({ name: '', typeId: '' });
           onModeChange('existing');
         }}
       >
-        <ArrowLeft className="mr-1 h-4 w-4" aria-hidden="true" />
+        <ArrowLeft className={cn(MIRROR_IN_RTL, 'me-1 h-4 w-4')} aria-hidden="true" />
         {t('v3.capture.account.pickExisting')}
       </Button>
 

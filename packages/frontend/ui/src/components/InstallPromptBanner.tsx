@@ -45,7 +45,7 @@ export function InstallPromptBanner({ isLoggedIn, appName = 'Scani' }: InstallPr
         // its clicks — so `How?` and `×` looked live and were inert (SC-69
         // 2.2). Below the scrim it dims with everything else, which is the
         // truth: while a sheet is open this is not reachable.
-        className="fixed top-0 left-0 right-0 z-40 bg-primary text-primary-foreground px-4 flex items-center gap-3 text-sm shadow-lg animate-in slide-in-from-top duration-300"
+        className="fixed top-0 inset-x-0 z-40 bg-primary text-primary-foreground px-4 flex items-center gap-3 text-sm shadow-lg animate-in slide-in-from-top duration-300"
         style={{
           paddingTop: 'calc(0.5rem + env(safe-area-inset-top, 0px))',
           paddingBottom: '0.5rem',

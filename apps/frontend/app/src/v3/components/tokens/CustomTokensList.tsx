@@ -221,7 +221,7 @@ export function CustomTokensList({ tokens, query, onCreate, onEditPrice }: Custo
         ],
         actions: (
           <Button size="sm" variant="outline" onClick={() => onEditPrice(token)}>
-            <Pencil className="mr-2 size-4" aria-hidden="true" />
+            <Pencil className="me-2 size-4" aria-hidden="true" />
             {t('v3.tokens.custom.editPrice')}
           </Button>
         ),
