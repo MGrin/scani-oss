@@ -213,12 +213,31 @@ describe('a git that failed is UNKNOWN, never a clean tree (SC-775)', () => {
 
   /**
    * The must-be-ABSENT arm. Without it both arms above are satisfied by a CLI
-   * that refuses everywhere, which is a different broken guard and not a fix.
+   * that reports `unknown` everywhere, which is a different broken guard and
+   * not a fix.
+   *
+   * IT ASSERTS NON-BLINDNESS, NOT A PASS, AND THE DIFFERENCE IS THE WHOLE
+   * POINT OF THE TICKET. The first version of this test asserted `EXIT_OK`,
+   * and that is a claim about what the tree CONTAINS rather than about whether
+   * the guard could SEE it. It is also false here: `--scan` over the private
+   * tree exits 1 by design, on private-only tooling and on the private-only
+   * sections of files that also exist in the mirror. Measured against the
+   * unmodified pre-SC-775 script, so it is not something this change caused:
+   * 72 internal reference(s) in 29 file(s), among them `scripts/gate-db.ts`,
+   * `scripts/gate-holders.ts` and `scripts/oss-eligibility.ts`, none of which
+   * travel. On a mirror branch the same command passes, which is why the
+   * mistake survived a green run there and only reds privately.
+   *
+   * So the two verdicts this arm accepts are PASS and REFUSED — both mean the
+   * population was read and a content question was answered. The one it
+   * rejects is UNKNOWN, which is the defect. `> 1000` is the second half: a
+   * determinate verdict over an empty list is exactly the silent zero SC-775
+   * exists to make impossible.
    */
-  test('control — inside the real repo it still scans and passes', () => {
+  test('control — inside the real repo it reaches a verdict over a real population', () => {
     const { code, out } = run(repoRoot, '--scan');
-    expect(code).toBe(EXIT_OK);
-    expect(out).toContain('PASS');
+    expect(`${code}\n${out}`).not.toBe(`${EXIT_UNKNOWN}\n${out}`);
+    expect(out).not.toContain('NOTHING WAS SCANNED');
     const scanned = /(\d+) of (\d+) tracked file\(s\) scanned/.exec(out);
     expect(scanned).not.toBeNull();
     expect(Number(scanned?.[1])).toBeGreaterThan(1000);
