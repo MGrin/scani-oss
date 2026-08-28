@@ -200,6 +200,7 @@
         "seeRecurring": "定期支払を見る",
         "addPayment": "支払を追加",
         "billsCommitted_other": "確定した支払（今後{{count}}日間）",
+        "estimatedExcluded_other": "未算入: <amounts></amounts> — 支払{{count}}件は最後に決済した金額からの概算であり、概算は確定額ではありません。",
         "row": "{{vendor}}、期日 {{date}}",
         "label": "今後の支払"
       },

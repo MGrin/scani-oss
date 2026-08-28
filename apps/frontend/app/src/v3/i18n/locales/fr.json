@@ -2311,6 +2311,9 @@
         "billsCommitted_one": "Factures engagées, prochain {{count}} jour",
         "billsCommitted_many": "Factures engagées, {{count}} prochains jours",
         "billsCommitted_other": "Factures engagées, {{count}} prochains jours",
+        "estimatedExcluded_one": "Non compris : <amounts></amounts> — {{count}} facture est estimée d’après son dernier règlement, et une estimation n’est pas un engagement.",
+        "estimatedExcluded_many": "Non compris : <amounts></amounts> — {{count}} factures sont estimées d’après leurs derniers règlements, et une estimation n’est pas un engagement.",
+        "estimatedExcluded_other": "Non compris : <amounts></amounts> — {{count}} factures sont estimées d’après leurs derniers règlements, et une estimation n’est pas un engagement.",
         "row": "{{vendor}}, échéance le {{date}}",
         "label": "prochains paiements"
       },
