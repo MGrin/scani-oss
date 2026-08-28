@@ -486,6 +486,13 @@
         "custom": "Personnalisés",
         "hidden": "Masqués"
       },
+      "type": {
+        "fiat": "Monnaie fiduciaire",
+        "crypto": "Cryptomonnaie",
+        "stock": "Actions / ETF / Titres / Matières premières",
+        "privateCompany": "Société privée",
+        "other": "Autre"
+      },
       "hiddenReason": {
         "user": "Masqué par vous",
         "scam": "Signalé comme probablement frauduleux",

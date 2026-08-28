@@ -27,6 +27,7 @@ import {
 } from '../../lib/holdings';
 import { formatRelative } from '../../lib/relative-time';
 import { groupDetailPath } from '../../lib/routes';
+import { tokenTypeLabel } from '../../lib/tokens';
 import { HoldingAmountFact } from './HoldingAmountFact';
 import { HoldingDeleteAction } from './HoldingDeleteAction';
 import { HoldingLabelFact } from './HoldingLabelFact';
@@ -452,7 +453,10 @@ export function holdingPeekSpec(holding: HoldingWithDetails, ctx: HoldingPeekCon
             },
           ]
         : []),
-      { label: t('v3.holdings.peek.type'), value: holding.token.type || holding.token.typeCode },
+      {
+        label: t('v3.holdings.peek.type'),
+        value: tokenTypeLabel(t, holding.token.typeCode, holding.token.type),
+      },
     ],
     // The `content` slot rather than a section, because a ledger of disposals
     // each with its own lots under it is not a run of label/value pairs — the

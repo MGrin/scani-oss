@@ -3,6 +3,7 @@ import { toFiniteNumber } from '@scani/ui/v3/lib/numeric';
 import type { TFunction } from 'i18next';
 import { compareGroupAmounts, type GroupValue, groupAmount, groupValuesById } from './groups';
 import { V3_ROUTES } from './routes';
+import { tokenTypeLabel } from './tokens';
 
 /**
  * The pure half of the v3 home screen — every decision the five blocks make
@@ -729,6 +730,7 @@ export function allocationHref(dimension: AllocationDimension, key: string): str
  * have opened an empty list.
  */
 export function allocationItems(
+  t: TFunction,
   items: readonly AllocationItem[],
   dimension: AllocationDimension
 ): AllocationInput[] {
@@ -737,7 +739,11 @@ export function allocationItems(
       const value = toFiniteNumber(item.value);
       if (value === null || value <= 0) return [];
       const key = dimension === 'token_type' ? (item.code ?? item.id) : item.id;
-      return [{ key, label: item.name, value }];
+      // Only the type cut is translatable: the other three name an institution,
+      // an account or a group, and those are the reader's own words or a brand.
+      const label =
+        dimension === 'token_type' ? tokenTypeLabel(t, item.code, item.name) : item.name;
+      return [{ key, label, value }];
     })
     .sort((a, b) => b.value - a.value);
 }
