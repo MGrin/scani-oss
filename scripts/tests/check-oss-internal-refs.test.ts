@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { BranchFacts } from '../check-oss-bound-paths';
 import {
@@ -112,6 +113,152 @@ describe('scanScope — which checkouts must have their staged content read', ()
 
   test('the three exit codes are distinct', () => {
     expect(new Set([EXIT_OK, EXIT_REFUSED, EXIT_UNKNOWN]).size).toBe(3);
+  });
+});
+
+/**
+ * SC-775 — a git that FAILED must not be readable as a clean tree.
+ *
+ * This guard built its file population from `git(...).stdout` without ever
+ * consulting the status, so a failed `git` produced `''`, which split to no
+ * paths, which read as *the tree has no files*. It printed
+ *
+ *     oss-internal-refs: PASS · exit 0 · 10 rule(s) self-tested,
+ *     0 tracked file(s) scanned, 0 internal reference(s)
+ *
+ * over a directory that is not a git repository — from the check standing
+ * between internal references and a public repo, run out of a pre-commit hook
+ * that reads the exit status rather than the line.
+ *
+ * TWO INDEPENDENT ROUTES, AND EACH NEEDS ITS OWN ARM — verified by mutation
+ * rather than assumed. Reverting one half reddens exactly one arm:
+ *
+ *   the population read   `git ls-files` failing must refuse instead of
+ *                         yielding an empty list
+ *   the branch facts      `git remote` failing must yield
+ *                         `hasUpstreamRemote: null`, not `false`
+ *
+ * The second is the one that nearly shipped untested. `classifyBranch` has
+ * handled the blind reading since SC-743 and this file imports it — but its own
+ * collector could never produce `null`, so that remedy sat one import away and
+ * unreachable.
+ *
+ * IT CANNOT BE PINNED FROM A NON-REPOSITORY DIRECTORY, which was this block's
+ * first mistake: there `.private-repo` is absent, so a `false` reading routes
+ * to `scan` and the population guard catches it anyway. The arm passed with the
+ * collector reverted, while its comment claimed to be exercising the blind
+ * branch. It needs the PATH shim below — the same one SC-743 used, whose own
+ * note says it best: the defect lives in the WIRING between the probe and the
+ * classifier, and a unit test on either half alone passes.
+ */
+describe('a git that failed is UNKNOWN, never a clean tree (SC-775)', () => {
+  const CLI = new URL('../check-oss-internal-refs.ts', import.meta.url).pathname;
+  const run = (cwd: string, ...args: string[]) => {
+    const r = Bun.spawnSync(['bun', CLI, ...args], { cwd });
+    return { code: r.exitCode, out: `${r.stdout.toString()}${r.stderr.toString()}` };
+  };
+
+  /**
+   * A directory that is not a git repository. `mkdtemp` rather than a fixed
+   * path so the arm cannot pass because somebody's `/tmp` happens to be one.
+   */
+  const outside = mkdtempSync(path.join(tmpdir(), 'oss-internal-refs-'));
+  const repoRoot = new URL('../..', import.meta.url).pathname;
+
+  test('control — git really cannot answer in that directory', () => {
+    expect(Bun.spawnSync(['git', 'ls-files'], { cwd: outside }).exitCode).not.toBe(0);
+  });
+
+  test('--scan refuses rather than reporting a clean tree', () => {
+    const { code, out } = run(outside, '--scan');
+    expect(code).toBe(EXIT_UNKNOWN);
+    expect(out).toContain('UNKNOWN');
+    expect(out).toContain('NOTHING WAS SCANNED');
+    expect(out).not.toContain('PASS');
+  });
+
+  /**
+   * The branch-facts route, end to end. The shim fails ONLY on bare
+   * `git remote`, so the repository stays fully readable and the guard has no
+   * other reason to complain — which is what makes the refusal attributable.
+   */
+  test('`git remote` failing makes the guard refuse rather than skip', () => {
+    const shimDir = mkdtempSync(path.join(tmpdir(), 'sc775-shim-'));
+    writeFileSync(
+      path.join(shimDir, 'git'),
+      '#!/bin/sh\nif [ "$1" = "remote" ] && [ $# -eq 1 ]; then exit 1; fi\nexec /usr/bin/git "$@"\n',
+      { mode: 0o755 }
+    );
+    const r = Bun.spawnSync(['bun', CLI], {
+      cwd: repoRoot,
+      env: { ...process.env, PATH: `${shimDir}:${process.env.PATH}` },
+    });
+    const out = `${r.stdout.toString()}${r.stderr.toString()}`;
+    rmSync(shimDir, { recursive: true, force: true });
+
+    expect(r.exitCode).toBe(EXIT_UNKNOWN);
+    // The exact sentence the defect produced. A blind read must never reach the
+    // determinate verdict, which is exit 0 and reads as "checked, nothing here".
+    expect(out).not.toContain('`.private-repo` marks this as the private repo');
+  });
+
+  /**
+   * Control for the arm above. This repo HAS its remotes, so an `unknown`
+   * without the shim would mean that arm reds for a reason unrelated to it.
+   */
+  test('control — without the shim the same invocation does not report unknown', () => {
+    const r = Bun.spawnSync(['bun', CLI], { cwd: repoRoot });
+    expect(r.exitCode).not.toBe(EXIT_UNKNOWN);
+  });
+
+  /**
+   * The must-be-ABSENT arm. Without it both arms above are satisfied by a CLI
+   * that reports `unknown` everywhere, which is a different broken guard and
+   * not a fix.
+   *
+   * IT ASSERTS NON-BLINDNESS, NOT A PASS, AND THE DIFFERENCE IS THE WHOLE
+   * POINT OF THE TICKET. The first version of this test asserted `EXIT_OK`,
+   * and that is a claim about what the tree CONTAINS rather than about whether
+   * the guard could SEE it. It is also false here: `--scan` over the private
+   * tree exits 1 by design, on private-only tooling and on the private-only
+   * sections of files that also exist in the mirror. Measured against the
+   * unmodified pre-SC-775 script, so it is not something this change caused:
+   * 72 internal reference(s) in 29 file(s), among them `scripts/gate-db.ts`,
+   * `scripts/gate-holders.ts` and `scripts/oss-eligibility.ts`, none of which
+   * travel. On a mirror branch the same command passes, which is why the
+   * mistake survived a green run there and only reds privately.
+   *
+   * So the two verdicts this arm accepts are PASS and REFUSED — both mean the
+   * population was read and a content question was answered. The one it
+   * rejects is UNKNOWN, which is the defect. `> 1000` is the second half: a
+   * determinate verdict over an empty list is exactly the silent zero SC-775
+   * exists to make impossible.
+   */
+  test('control — inside the real repo it reaches a verdict over a real population', () => {
+    const { code, out } = run(repoRoot, '--scan');
+    expect(`${code}\n${out}`).not.toBe(`${EXIT_UNKNOWN}\n${out}`);
+    expect(out).not.toContain('NOTHING WAS SCANNED');
+    const scanned = /(\d+) of (\d+) tracked file\(s\) scanned/.exec(out);
+    expect(scanned).not.toBeNull();
+    expect(Number(scanned?.[1])).toBeGreaterThan(1000);
+  });
+
+  /**
+   * The unit-level half of the staged route: `null` is *could not read*, and
+   * `false` is *there is no upstream remote*. Collapsing them is the defect,
+   * and they must not reach the same verdict.
+   */
+  test('a blind remote reading is unknown, not "no upstream remote"', () => {
+    const blind = scanScope(
+      { ...NO_UPSTREAM_REMOTE, hasUpstreamRemote: null },
+      { privateMarkerPresent: true }
+    );
+    expect(blind.kind).toBe('unknown');
+  });
+
+  test('control — a DETERMINATE absence of the remote still skips, as before', () => {
+    const determinate = scanScope(NO_UPSTREAM_REMOTE, { privateMarkerPresent: true });
+    expect(determinate.kind).toBe('skip');
   });
 });
 
