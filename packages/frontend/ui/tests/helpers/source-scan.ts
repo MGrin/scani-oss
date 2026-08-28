@@ -10,6 +10,13 @@
  * lost is three chances for the copy that loses it to be "simplified" back to a
  * per-line test by somebody who has not met the failure.
  *
+ * That state machine later turned out to cause a false GREEN as well, which is
+ * the worse half and took longer to find because nothing complains: a `//` line
+ * comment quoting `/*` — a route, a glob — opened a block nothing closed, and
+ * everything after it read as prose. 1507 lines across 16 files, 189 of them
+ * inside the guards' own roots (SC-783). Both directions are pinned in
+ * `source-scan.test.ts` now; the false green is the one with no symptom.
+ *
  * IT LIVES IN `@scani/ui` BECAUSE THIS PACKAGE IS BELOW EVERY CONSUMER.
  * `apps/frontend/app` depends on `@scani/ui`; `@scani/ui` depends on nothing
  * above it. A helper in the app's test tree would have to be imported by this
@@ -65,11 +72,13 @@ export function commentSkipper(): (line: string) => boolean {
       if (line.includes('*/')) inBlock = false;
       return true;
     }
+    // A `//` line comment ends at the newline, so it cannot open a block
+    // WHATEVER it quotes — and it quotes `/*` more often than you would guess,
+    // because a route or a glob contains one: `// the /api/auth/* handler`.
+    // Returning here rather than falling through is the whole fix (SC-783).
+    if (trimmed.startsWith('//')) return true;
     const startsComment =
-      trimmed.startsWith('*') ||
-      trimmed.startsWith('//') ||
-      trimmed.startsWith('/*') ||
-      trimmed.startsWith('{/*');
+      trimmed.startsWith('*') || trimmed.startsWith('/*') || trimmed.startsWith('{/*');
     if (!startsComment) return false;
     // Opens a block that this line does not close: everything until `*/` is prose.
     if (line.includes('/*') && !line.includes('*/')) inBlock = true;
