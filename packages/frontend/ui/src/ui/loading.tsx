@@ -105,7 +105,7 @@ export function ProgressIndicator({ progress, label, className }: ProgressIndica
           style={{ width: `${Math.max(0, Math.min(100, progress))}%` }}
         />
       </div>
-      <div className="text-xs text-muted-foreground text-right">{Math.round(progress)}%</div>
+      <div className="text-xs text-muted-foreground text-end">{Math.round(progress)}%</div>
     </div>
   );
 }

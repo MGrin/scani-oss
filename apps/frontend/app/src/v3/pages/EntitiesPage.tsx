@@ -88,7 +88,7 @@ export function EntitiesPage() {
         title={t('v3.ownership.title')}
         action={
           <Button onClick={() => setCreating(true)} disabled={creating}>
-            <Plus className="mr-1.5 size-4" aria-hidden="true" />
+            <Plus className="me-1.5 size-4" aria-hidden="true" />
             {t('v3.ownership.newEntity')}
           </Button>
         }

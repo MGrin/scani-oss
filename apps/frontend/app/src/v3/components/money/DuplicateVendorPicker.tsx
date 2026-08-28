@@ -115,7 +115,7 @@ export function DuplicateVendorPicker({
                 disabled={disabled}
                 onClick={() => onChange(candidate.id)}
                 className={cn(
-                  'flex w-full items-center gap-2 px-3 py-3 text-left text-body transition-colors duration-fast ease-emphasized',
+                  'flex w-full items-center gap-2 px-3 py-3 text-start text-body transition-colors duration-fast ease-emphasized',
                   'hover:bg-surface focus-visible:bg-surface focus-visible:outline-none disabled:opacity-50',
                   selected && 'bg-surface font-medium'
                 )}

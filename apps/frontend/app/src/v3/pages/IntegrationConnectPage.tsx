@@ -164,7 +164,7 @@ function ConnectForm({ integration }: { integration: Integration }) {
       {instructions.steps.length > 0 ? (
         <Block>
           <FieldSet title={t('v3.capture.integration.whereToGet')}>
-            <ol className="flex list-decimal flex-col gap-1.5 pl-5 text-body text-muted-foreground marker:text-caption">
+            <ol className="flex list-decimal flex-col gap-1.5 ps-5 text-body text-muted-foreground marker:text-caption">
               {instructions.steps.map((step) => (
                 <li key={step}>{step}</li>
               ))}

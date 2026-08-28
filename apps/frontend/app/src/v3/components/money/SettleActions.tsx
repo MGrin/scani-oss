@@ -80,9 +80,9 @@ export function SettleActions({
           }
         >
           {settleMutation.isPending ? (
-            <Loader2 className="mr-1.5 h-4 w-4 animate-spin" aria-hidden="true" />
+            <Loader2 className="me-1.5 h-4 w-4 animate-spin" aria-hidden="true" />
           ) : (
-            <Check className="mr-1.5 h-4 w-4" aria-hidden="true" />
+            <Check className="me-1.5 h-4 w-4" aria-hidden="true" />
           )}
           {t('v3.money.settle.confirm')}
         </Button>
@@ -106,7 +106,7 @@ export function SettleActions({
           setEditing(true);
         }}
       >
-        <Check className="mr-1.5 h-4 w-4" aria-hidden="true" />
+        <Check className="me-1.5 h-4 w-4" aria-hidden="true" />
         {settleLabel}
       </Button>
       <Button
