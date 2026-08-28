@@ -1,5 +1,15 @@
 import { relations } from 'drizzle-orm';
-import { date, index, integer, pgTable, text, timestamp, unique, uuid } from 'drizzle-orm/pg-core';
+import {
+  boolean,
+  date,
+  index,
+  integer,
+  pgTable,
+  text,
+  timestamp,
+  unique,
+  uuid,
+} from 'drizzle-orm/pg-core';
 import { accounts } from './accounts';
 import { documentExtractions } from './documents';
 import { holdingTransactions } from './holdings';
@@ -24,6 +34,11 @@ export const payments = pgTable(
     direction: text('direction').notNull(), // 'outflow' | 'inflow'
     kind: text('kind').notNull(), // 'fixed' | 'variable'
     expectedAmount: text('expected_amount'), // Decimal string; null for variable-amount payments with no estimate
+    // SC-625. Opt-in: project this payment from its most recently settled
+    // occurrence when `expectedAmount` is null. Never holds an amount — the
+    // figure is derived at read time from `paymentOccurrences.actualAmount`,
+    // so it cannot drift from the history the surface cites.
+    estimateFromHistory: boolean('estimate_from_history').notNull().default(false),
     currencyTokenId: uuid('currency_token_id')
       .notNull()
       .references(() => tokens.id, { onDelete: 'restrict' }),
