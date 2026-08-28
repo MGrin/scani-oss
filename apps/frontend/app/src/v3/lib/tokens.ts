@@ -65,6 +65,53 @@ export function hiddenReasonLabel(t: TFunction, reason: HiddenHoldingRow['hidden
   return t(HIDDEN_REASON_KEYS[reason]) ?? reason;
 }
 
+/**
+ * `token_types.code` -> the key its name renders under.
+ *
+ * `token_types.name` is English prose in Postgres — "Fiat Currency",
+ * "Cryptocurrency" — seeded once at `0000_clean_start.sql:649` and reachable by
+ * no locale file, so six shipped languages render it in English. The code beside
+ * it is `notNull().unique()` and already on every DTO that carries the name, so
+ * a map on the code translates all six render sites with no migration, no wire
+ * change and nothing new to write.
+ *
+ * `{ code, labelKey }` rather than a `Record` keyed by code, which is the shape
+ * `HIDDEN_REASON_KEYS` above uses: `tests/lib/i18n-keys.test.ts` finds an
+ * indirect key by the `...Key:` property name, so a `Record` is invisible to the
+ * one gate that catches a typo — and i18next renders a key it cannot resolve as
+ * the key itself, in the chart legend on the home screen.
+ */
+export const TOKEN_TYPE_LABELS: readonly { code: string; labelKey: string }[] = [
+  { code: 'fiat', labelKey: 'v3.tokens.type.fiat' },
+  { code: 'crypto', labelKey: 'v3.tokens.type.crypto' },
+  { code: 'stock', labelKey: 'v3.tokens.type.stock' },
+  { code: 'private-company', labelKey: 'v3.tokens.type.privateCompany' },
+  { code: 'other', labelKey: 'v3.tokens.type.other' },
+];
+
+/**
+ * A token type's name, translated where the code is one we seeded.
+ *
+ * The stored-name fallback is load-bearing rather than defensive. `token_types`
+ * is a dynamic enum — rows, not a SQL enum — and the schema says so
+ * (`schema/tokens.ts:109`, "Admin-extensible without a migration"); nothing in
+ * the api, the worker or either frontend inserts one today, but the shape is
+ * built to allow it. A sixth type therefore renders exactly what it renders
+ * now, its stored English name, instead of degrading. Falling through to the
+ * code would put `private-company` on the screen, and returning nothing would
+ * put an unpickable blank row in the holdings filter — a new type would arrive
+ * as a defect in a surface nobody changed.
+ */
+export function tokenTypeLabel(
+  t: TFunction,
+  code: string | null | undefined,
+  storedName?: string | null
+): string {
+  const entry = TOKEN_TYPE_LABELS.find((candidate) => candidate.code === code);
+  if (entry) return t(entry.labelKey);
+  return storedName?.trim() || code?.trim() || '';
+}
+
 export function isScamFlagged(holding: Pick<HiddenHoldingRow, 'hiddenReason'>): boolean {
   return holding.hiddenReason === 'scam' || holding.hiddenReason === 'both';
 }

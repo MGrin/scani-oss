@@ -113,7 +113,7 @@ export function AllocationBlock() {
   const loadingPhase = useDelayedLoading(allocation.isLoading);
 
   const currency = allocation.data?.baseCurrency ?? 'USD';
-  const items = allocationItems(allocation.data?.items ?? [], dimension);
+  const items = allocationItems(t, allocation.data?.items ?? [], dimension);
   const segments = foldAllocation(items);
   const folded = foldedAllocationItems(items, segments);
 
