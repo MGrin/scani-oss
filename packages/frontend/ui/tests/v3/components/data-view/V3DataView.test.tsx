@@ -8,6 +8,7 @@ import { SETTLED_QUERY_STATE, type V3QueryState } from '@scani/ui/v3/lib/query-s
 import { Wallet } from 'lucide-react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { StaticRouter } from 'react-router-dom/server';
+import { renderDesktop } from '../../../helpers/render-desktop';
 
 // The fixtures' own labels, registered the way a host registers its own
 // (SC-262). The assertions below are unchanged English — that is what shows
@@ -408,5 +409,150 @@ describe('V3DataView — bulk selection', () => {
     expect(render({ renderBulkActions: () => <button type="button">Refresh</button> })).toInclude(
       '>Select<'
     );
+  });
+});
+
+/**
+ * SC-797 — the branch nothing rendered.
+ *
+ * Every test above this point renders through `renderToStaticMarkup`, which has
+ * no `window`, so `useIsDesktop()` resolves false and all of them are about the
+ * phone surface. `DataViewTable.test.tsx` covers the table, but it hands the
+ * table its props directly — so between the two files nothing had ever checked
+ * what `V3DataView` PASSES to the table, which is where SC-625's dash came
+ * from: a green assertion found its string on the card beside the column.
+ *
+ * `renderDesktop` throws if nothing read its `matchMedia` stub, so a stub that
+ * stops taking is a failure rather than a silent re-run of the phone surface.
+ * That is a claim about the HOOK; `<table` below is the claim about the BRANCH,
+ * and every test here carries one.
+ */
+function renderDesk(
+  overrides: Partial<V3DataViewConfig<Holding>> = {},
+  query?: Partial<V3QueryState>,
+  path = '/holdings'
+) {
+  return renderDesktop(
+    <StaticRouter location={path}>
+      <V3DataView
+        config={config(overrides)}
+        getId={(item) => item.id}
+        query={query ? { ...SETTLED_QUERY_STATE, ...query } : undefined}
+      />
+    </StaticRouter>
+  );
+}
+
+describe('V3DataView — the desktop surface', () => {
+  test('renders the table instead of the row list, not as well as it', () => {
+    const html = renderDesk();
+    // MUST-BE-FOUND. Without it a stub that stops taking renders the card list
+    // and every assertion below passes for the wrong surface.
+    expect(html).toInclude('<table');
+    // The row list's own marker — `V3DataView` picks in JS precisely so the
+    // rows are not mounted twice behind `hidden lg:block`.
+    expect(html).not.toInclude('divide-y divide-border');
+  });
+
+  test('the table is handed the same rows, in the same order, as the card list', () => {
+    const desktop = renderDesk();
+    const phone = render();
+    expect(desktop).toInclude('<table');
+    for (const symbol of ['VWRA', 'BTC', 'ETH']) {
+      expect(desktop).toInclude(symbol);
+      expect(phone).toInclude(symbol);
+    }
+    // Sorted by value descending on both, from one `sortFn`.
+    expect(desktop.indexOf('VWRA')).toBeLessThan(desktop.indexOf('BTC'));
+    expect(desktop.indexOf('BTC')).toBeLessThan(desktop.indexOf('ETH'));
+  });
+
+  /**
+   * The SC-625 shape, as an assertion. A filter that narrows the surface has to
+   * narrow the TABLE — a column rendering a row the count line says was filtered
+   * out is a wrong list on screen beside a correct sentence about it.
+   */
+  test('a filter reaches the table, so the count line and the rows agree', () => {
+    const html = renderDesk({ defaultFilters: { institution: 'Kraken' } });
+    expect(html).toInclude('<table');
+    expect(html).toInclude('1 of 3 holdings');
+    expect(html).toInclude('BTC');
+    expect(html).not.toInclude('VWRA');
+    expect(html).not.toInclude('ETH');
+  });
+
+  /**
+   * Selection is a standing column on desktop and a MODE on a phone, so the
+   * two surfaces offer different controls for the same capability. Both arms,
+   * because "the toolbar has no Select" is also true of a surface with no bulk
+   * actions at all.
+   */
+  test('selection stands in the table and leaves the toolbar, and the phone surface is the inverse', () => {
+    const bulk = { renderBulkActions: () => <button type="button">Refresh</button> };
+    const desktop = renderDesk(bulk);
+    const phone = render(bulk);
+
+    expect(desktop).toInclude('<table');
+    expect(desktop).toInclude('aria-label="Select all"');
+    expect(desktop).not.toInclude('>Select<');
+
+    expect(phone).toInclude('>Select<');
+    expect(phone).not.toInclude('aria-label="Select all"');
+  });
+
+  test('the current sort reaches the table’s own header control', () => {
+    const html = renderDesk({
+      columns: [
+        { key: 'symbol', headerKey: 'ui.dataView.test.holding', render: (i) => i.symbol },
+        {
+          key: 'value',
+          headerKey: 'ui.dataView.test.value',
+          numeric: true,
+          sortable: true,
+          render: (i) => String(i.value),
+        },
+      ],
+    });
+    expect(html).toInclude('<table');
+    expect(html).toInclude('aria-label="Sort by Value"');
+    // `defaultSort` is value/desc, and the arrow is how the table says so.
+    expect(html).toInclude('lucide-arrow-down');
+  });
+
+  // Grouping is deliberately not covered here, on either surface: `groupBy`
+  // starts empty and is only ever set from the URL by `useDataViewUrlState`,
+  // which syncs in an effect — and `renderToStaticMarkup` runs no effects. The
+  // table's own spanning header is covered in `DataViewTable.test.tsx`, which
+  // hands it groups directly.
+
+  /**
+   * SC-118: a row that opens a page is a real link on desktop, which is what
+   * restores Cmd-click and "Open in new tab". A PEEK list has no page to open,
+   * so `V3DataView` withholds `rowHref` from the table — the one wiring rule
+   * here that is a decision rather than a pass-through.
+   */
+  test('rows that open a page are links; rows that open a peek are not', () => {
+    const withPage = renderDesk({ rowHref: (item) => `/holdings/${item.id}` });
+    expect(withPage).toInclude('<table');
+    expect(withPage).toInclude('href="/holdings/a"');
+
+    const withPeek = renderDesk({
+      rowHref: (item) => `/holdings/${item.id}`,
+      peek: {
+        basePath: '/holdings',
+        render: (item) => ({ title: item.symbol, primary: [] }),
+      },
+    });
+    expect(withPeek).toInclude('<table');
+    expect(withPeek).not.toInclude('href="/holdings/a"');
+  });
+
+  /** Both branches sit behind `!isEmpty`, so the desktop surface must not draw
+   *  a header row over nothing — an empty table is a spreadsheet's answer to a
+   *  question the onboarding copy answers. */
+  test('an empty surface draws the onboarding copy and no table at all', () => {
+    const html = renderDesk({ data: [] });
+    expect(html).toInclude('No holdings yet');
+    expect(html).not.toInclude('<table');
   });
 });
