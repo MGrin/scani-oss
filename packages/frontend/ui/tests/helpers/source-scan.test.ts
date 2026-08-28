@@ -64,6 +64,64 @@ describe('the scanner reads code and not prose', () => {
 });
 
 /**
+ * WHERE THE BLOCK STATE STARTS AND STOPS — pinned because it went wrong in the
+ * quiet direction (SC-783).
+ *
+ * A `//` line comment ends at the newline. The first cut asked only whether the
+ * line STARTED with a comment marker and then, separately, whether it contained
+ * `/*`, so a line comment quoting a route or a glob opened a block that nothing
+ * closed until some later line happened to contain `*​/`:
+ *
+ *     // Better-Auth HTTP handler at /api/auth/*. The frontend hits
+ *
+ * Measured before the fix: 1507 lines across 16 files read as prose that are
+ * code, and in `apps/backend/api/src/index.ts` that was 862 of 1313 lines —
+ * `);` and an `export type` among them. Inside the guards' roots two files were
+ * affected and 189 lines went unscanned.
+ *
+ * **A scanner that swallows a file reports zero, which is what a clean file
+ * reports.** Nothing goes red; the guard simply stops looking. That is why
+ * these are pinned rather than left to the absence claims above, which cannot
+ * distinguish "looked and found nothing" from "did not look".
+ */
+describe('the scanner knows where a comment block starts and stops', () => {
+  const scanned = (lines: string[]): number[] => {
+    const skip = commentSkipper();
+    const out: number[] = [];
+    lines.forEach((line, i) => {
+      if (!skip(line)) out.push(i + 1);
+    });
+    return out;
+  };
+
+  test('a // line comment cannot open a block, whatever it quotes', () => {
+    // Line 1 quotes `/*` inside a route. Lines 2-3 are ordinary code and must
+    // still be scanned — this is the must-be-FOUND arm, and it is the whole bug.
+    expect(
+      scanned([
+        '// Better-Auth HTTP handler at /api/auth/*. The frontend hits',
+        'const handler = auth.handler;',
+        'export { handler };',
+      ])
+    ).toEqual([2, 3]);
+  });
+
+  test('and a real block comment still swallows until its delimiter', () => {
+    // The control. Without it the test above passes on a scanner that has
+    // simply stopped tracking blocks at all, which would be a worse bug.
+    expect(
+      scanned(['/* opening a real block', '   still prose here', '   and here */', 'const x = 1;'])
+    ).toEqual([4]);
+  });
+
+  test('a glob in a JSX comment still opens a block, because {/* is not //', () => {
+    expect(
+      scanned(['{/* routes under app/* are still', '    prose on this line */}', 'const y = 2;'])
+    ).toEqual([3]);
+  });
+});
+
+/**
  * Every rule, with the markup it must catch and the logical spelling it must
  * leave alone.
  *
