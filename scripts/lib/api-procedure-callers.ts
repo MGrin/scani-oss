@@ -118,7 +118,8 @@ const IDENT = '[A-Za-z_$][A-Za-z0-9_$]*';
  * `\s*` around the dots is there for a third shape — a chain Biome wraps
  * across a line, which a line-oriented scan cannot see. **Zero of those exist
  * in the tree today** (measured 2026-08-28 over all 1755 files scanned in the
- * mirror at `f7e923237`, and 2072 in the private tree at `3ad3412d4`), so
+ * mirror at `f7e923237` and all 2073 in the private tree at `ecd087ddd`, with
+ * a control confirming a deliberately-wrapped chain IS detected as one), so
  * that is a capability with no live instance rather than a fix for an observed
  * bug. It is pinned by a fixture in `scripts/tests/api-procedure-callers.test.ts`
  * precisely because the tree cannot exercise it: a zero from a probe that
