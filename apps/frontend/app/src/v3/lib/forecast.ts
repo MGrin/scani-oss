@@ -1,5 +1,10 @@
 import { committedShareOfObserved, Decimal } from '@scani/shared';
-import { type ConversionContext, convertTotalsToBase, type UnconvertedPart } from './paymentTotals';
+import {
+  type ConversionContext,
+  convertTotalsToBase,
+  type HistoryEstimate,
+  type UnconvertedPart,
+} from './paymentTotals';
 
 /**
  * The cashflow projection (SC-461) — the arithmetic behind a claim about the
@@ -25,6 +30,33 @@ import { type ConversionContext, convertTotalsToBase, type UnconvertedPart } fro
  * every foreign bill, which is to say a runway that is too long. It is
  * reported rather than rendered, and the surface shows a skeleton.
  */
+
+/**
+ * Which payments the projection priced from their own settled history, keyed
+ * by payment id (SC-625).
+ *
+ * **This is the only way a surface outside the forecast learns a history
+ * estimate, and that is the point.** `payments.list` carries no occurrence
+ * data, so the recurring list could not compute one if it wanted to; making it
+ * read the projection's answer instead means the two figures on the Money tab
+ * agree BY CONSTRUCTION rather than by two implementations being kept in step.
+ * The alternative — a second query, or a lateral join onto `payments.list` —
+ * is a second rule for "which settlement counts", and the day it drifts is the
+ * day two screens state different commitments for one book.
+ *
+ * Both callers already hold the forecast payload: `MoneyPage` issues
+ * `payments.forecast` on every segment, for the horizon toggle's sake.
+ */
+export function historyEstimatesByPaymentId(
+  estimated: readonly { paymentId: string; amount: string; sourceDueDate: string }[]
+): Map<string, HistoryEstimate> {
+  return new Map(
+    estimated.map((entry) => [
+      entry.paymentId,
+      { amount: entry.amount, sourceDueDate: entry.sourceDueDate },
+    ])
+  );
+}
 
 /** The windows the reader can choose. */
 export const FORECAST_HORIZONS = [3, 6, 12] as const;
