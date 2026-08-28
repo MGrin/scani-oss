@@ -62,6 +62,12 @@ import sansVietnamese from '@fontsource/ibm-plex-sans/files/ibm-plex-sans-vietna
 import boldVietnamese from '@fontsource/ibm-plex-sans/files/ibm-plex-sans-vietnamese-600-normal.woff' with {
   type: 'file',
 };
+import hanJapanese from '@fontsource/noto-sans-jp/files/noto-sans-jp-japanese-400-normal.woff' with {
+  type: 'file',
+};
+import hanSimplified from '@fontsource/noto-sans-sc/files/noto-sans-sc-chinese-simplified-400-normal.woff' with {
+  type: 'file',
+};
 import * as fontkit from 'fontkit';
 import type { Face } from './layout';
 
@@ -86,18 +92,42 @@ import type { Face } from './layout';
  * a run boundary inside a word is invisible; what crosses it is the kerning
  * pair, which at 9.5pt is not a thing anyone can see.
  *
- * **CJK is out of scope, and it does not fail silently.** `三菱UFJ銀行` needs a
- * Han face, and Google now ships Noto Sans JP and SC only as *variable* fonts —
- * 9.6 MB and 17.8 MB — which fontkit cannot instance, which is the exact bug
- * that produced a statement with no text at all in SC-94. Static pan-CJK cuts
- * are ~5 MB per script and correct glyph shapes need four of them (JP, SC, TC,
- * KR), against an 88 MB binary and a European, EUR-denominated user base. So a
- * character no face in the stack covers is replaced with a visible
- * {@link UNSUPPORTED_MARK} and the statement's metadata block says so in words
- * (`statement.ts`). The reader sees that something is unrepresentable rather
- * than absent, and is told where to get it in full.
+ * **Han is covered as of SC-782, and only partly — on purpose.** `三菱UFJ銀行`
+ * used to set as `[?]UFJ[?]`, legible in the CSV beside it and not in the PDF.
+ * What blocked it in SC-127 was that Google ships Noto Sans JP and SC as
+ * *variable* fonts (9.6 MB and 17.8 MB) which fontkit cannot instance — the
+ * exact bug that produced a statement with no text at all in SC-94. Fontsource
+ * publishes *static* per-subset cuts of the same faces, which removes that
+ * blocker without removing the size one.
  *
- * Adding CJK later is adding files to {@link STACKS}; nothing else changes.
+ * The whole face still cannot be subsetted to the input, because the input is a
+ * user-supplied merchant name. So this ships two frequency subsets rather than
+ * four pan-CJK cuts, and the characters outside them keep exactly the behaviour
+ * they have always had: {@link UNSUPPORTED_MARK}, per codepoint, plus the
+ * metadata line. **That is what makes partial coverage safe here** — Han neither
+ * joins nor reorders, so a gap degrades loudly and locally. It would not be safe
+ * for a joining or RTL script, where what breaks is placement and no coverage
+ * check can see it (SC-763).
+ *
+ * **Why these two files.** Measured coverage, from the same fontkit parse this
+ * module uses: JP 6887 codepoints, SC 7947, union 10036 for 2.94 MB against a
+ * 356 kB baseline of Plex subsets. JP is probed first: it and SC share 4798
+ * codepoints, and where a character is in both, the Japanese cut carries the
+ * glyph shapes a Japanese name should have.
+ *
+ * **Traditional Chinese is absent for a PRODUCT reason, not a size one, and the
+ * distinction matters** (mgrin, 2026-08-28). The file is a third 1.36 MB, which
+ * is immaterial to a Fly image and to cold start — if size were the only
+ * argument the honest move would be to move the line, not to leave the gap.
+ * SC-201 ships one Chinese locale, and whether zh-TW ever joins it is a call
+ * this module does not get to make by quietly bundling a face for it. Tracked
+ * separately; a Traditional-only character is marked meanwhile, loudly and per
+ * codepoint, exactly like any other gap.
+ *
+ * **Neither file covers Hangul** — 0 codepoints, measured. Korean names are
+ * still marked, which is a real gap and a deliberate one: Hangul is not Han.
+ *
+ * Adding a script later is adding files to {@link STACKS}; nothing else changes.
  */
 
 /**
@@ -145,16 +175,43 @@ const MONO: readonly Source[] = [
 ];
 
 /**
+ * Probed last, by every role. A Han lookup is rare and these two files are four
+ * times the size of every Plex subset put together, so they sit behind the
+ * ranges a European name actually lands in — and the Plex subsets carry no Han,
+ * so nothing above can shadow them.
+ *
+ * JP before SC: the two share 4798 codepoints, and for a shared one the first
+ * face wins, so this decides whose glyph shapes a mixed name gets. Japanese is
+ * the case that motivated SC-782. Where a name is simplified-only — `银` is in
+ * SC and not in JP — the second file covers it.
+ *
+ * The `-400-` files report `usWeightClass=400` and `subfamilyName=Regular`;
+ * `fullName` reads `Noto Sans JP Thin Regular`, which is Fontsource's naming
+ * artefact from instancing the variable source and NOT a thin cut. Measured
+ * against the Plex baseline, which reads 400/Regular identically.
+ */
+const HAN: readonly Source[] = [
+  ['Han-JP', hanJapanese],
+  ['Han-SC', hanSimplified],
+];
+
+/**
  * Plex Mono has no Greek cut, and a figure column can hold a text cell. Falling
  * through to Sans there sets one cell in the wrong face; refusing to would print
  * a marker over a name that is perfectly renderable. The mono columns this
  * document has are money and dates, so nothing that reaches Sans here was ever
  * going to line up on a decimal point.
+ *
+ * `bold` reaches the same regular-weight Han files rather than a 600 cut of its
+ * own, and that is the same trade one line up: a group heading with a Japanese
+ * name set in regular weight is a smaller loss than one replaced by a marker.
+ * It also costs nothing — faces are loaded and registered by NAME, so a file
+ * named in two stacks is one buffer and one embedded font, not two.
  */
 const STACKS: Record<Face, readonly Source[]> = {
-  sans: SANS,
-  bold: BOLD,
-  mono: [...MONO, ...SANS],
+  sans: [...SANS, ...HAN],
+  bold: [...BOLD, ...HAN],
+  mono: [...MONO, ...SANS, ...HAN],
 };
 
 export interface Run {
