@@ -15,6 +15,7 @@ import type { TFunction } from 'i18next';
 import { ArrowLeftRight, Pencil, RefreshCw, Wallet } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { institutionIconUrl } from '@/lib/icons';
+import { tokenDisplayName } from '@/lib/utils';
 import {
   amountDecimals,
   describeSource,
@@ -329,7 +330,7 @@ export function holdingPeekSpec(holding: HoldingWithDetails, ctx: HoldingPeekCon
 
   return {
     title: holding.token.symbol,
-    subtitle: `${holding.token.name} · ${holding.institution.name}`,
+    subtitle: `${tokenDisplayName(t, holding.token)} · ${holding.institution.name}`,
     leading: (
       <FaviconImg
         src={institutionIconUrl(holding.institution)}
