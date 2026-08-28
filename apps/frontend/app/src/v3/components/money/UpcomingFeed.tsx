@@ -16,14 +16,16 @@ import type { V3QueryState } from '@scani/ui/v3/lib/query-state';
 import type { TFunction } from 'i18next';
 import { ArrowUpRight, CalendarClock } from 'lucide-react';
 import { useMemo } from 'react';
-import { useTranslation } from 'react-i18next';
+import { Trans, useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import type { BaseCurrencyRates } from '@/hooks/useBaseCurrencyRates';
 import type { RouterOutputs } from '@/lib/trpc';
 import {
   directionLabel,
+  estimatedTotals,
   formatOverdueBy,
   groupUpcoming,
+  historyEstimateFor,
   INCOME_HORIZON_DAYS,
   isIncome,
   occurrenceTotals,
@@ -39,6 +41,7 @@ import {
 } from '../../lib/paymentTotals';
 import { V3_PAYMENT_ROUTES, V3_ROUTES } from '../../lib/routes';
 import { BaseEquivalent } from '../BaseEquivalent';
+import { ConvertedFigure } from '../ConvertedFigure';
 import { ConvertedTotal } from '../ConvertedTotal';
 import { EstimatedFromHistory } from './EstimatedFromHistory';
 import { ExpectedIncome } from './ExpectedIncome';
@@ -107,37 +110,6 @@ function vendorFor(
 }
 
 /**
- * The estimate this occurrence's amount slot is standing on, or `null` (SC-798).
- *
- * ## Why the feed shows one at all
- *
- * An occurrence genuinely has no expected amount until it settles, so the dash
- * this replaces was occurrence-level honesty rather than a bug. It is still the
- * wrong answer: a reader who opted this payment into "estimate from what it
- * last cost" has already answered the question the dash is asking, and three
- * other surfaces honour that answer. A fourth saying `— No value` beside them
- * does not read as principled — it reads as broken, and it contradicts a figure
- * the same reader was shown one tap earlier. The argument for the dash survives
- * as the MARK, not as the omission, which is why `<EstimatedFromHistory>` is not
- * optional here.
- *
- * ## The precedence, and why `actualAmount` is in it
- *
- * `expectedAmount ?? actualAmount ?? estimate` — the same order
- * `occurrenceTotals` sums in, so the row and the figure above it can never
- * resolve one occurrence differently. A settled occurrence keeps the amount that
- * really moved: an estimate is a claim about the PAYMENT, and a measured
- * settlement beats it every time.
- */
-function estimateFor(
-  occurrence: UpcomingOccurrence,
-  historyEstimates: ReadonlyMap<string, HistoryEstimate>
-): HistoryEstimate | null {
-  if (occurrence.expectedAmount !== null || occurrence.actualAmount !== null) return null;
-  return historyEstimates.get(occurrence.payment.id) ?? null;
-}
-
-/**
  * What one occurrence looks like in the sheet.
  *
  * Pulled out of the component and exported for the reason `holdingPeekSpec` is:
@@ -170,7 +142,7 @@ export function upcomingPeekSpec({
 }: UpcomingPeekContext): PeekSpec {
   // Same substitution as the row, through the same function: a peek opened from
   // a row showing a figure must not say "No value".
-  const estimate = estimateFor(occurrence, historyEstimates);
+  const estimate = historyEstimateFor(occurrence, historyEstimates);
 
   return {
     title: vendorFor(t, occurrence, vendorNameById),
@@ -298,6 +270,16 @@ export function UpcomingFeed({
   const committed = useMemo(() => occurrenceTotals(ahead), [ahead]);
   const pastDue = useMemo(() => occurrenceTotals(overdue), [overdue]);
 
+  // The other half of `committed`, over exactly the same set (SC-807). An
+  // occurrence priced from its own history contributes `'0'` to the figure
+  // above and `€84.20` to the row below it, and until this line the money
+  // appeared nowhere between them — a headline reading `€0.00` directly over a
+  // row reading `€84.20 · ESTIMATED · from Feb 2026`.
+  const estimated = useMemo(
+    () => estimatedTotals(ahead, historyEstimates),
+    [ahead, historyEstimates]
+  );
+
   const peeked = occurrences.find((occurrence) => occurrence.id === peekRoute.id) ?? null;
 
   const spec: PeekSpec | null = peeked
@@ -404,6 +386,53 @@ export function UpcomingFeed({
           rates={rates}
         />
 
+        {/* What the figure above LEAVES OUT, named with its amount — the same
+            move `<ConvertedTotal>`'s own "Not included:" captions make for a
+            currency it could not convert, and the same move
+            `<RecurringSummary>` makes with `unestimatedCount`. A total with
+            nothing beside it reads as complete whether or not it is.
+
+            The figure is deliberately NOT widened to absorb this. "Bills
+            committed" and "what is due next" are different claims: an estimate
+            is the reader telling us we do not know this month's amount, and a
+            headline can carry no `<EstimatedFromHistory>` mark to say which
+            part of it is guessed. What was wrong was never the `0.00` — it was
+            that the €84.20 was accounted for nowhere above the rows.
+
+            Conditional, and the asymmetry is the point: with nothing estimated
+            there is nothing excluded, and a permanent line reading €0.00 would
+            assert a category most books never have. The cost, stated: a reader
+            who never estimates never learns the committed figure has an
+            exclusion rule — but for them it excludes nothing, so there is no
+            figure to qualify.
+
+            A `<span className="block">` rather than the `<p>` its siblings use:
+            `<ConvertedFigure>` renders a `<div>` skeleton while the rates are
+            in flight, and the HTML parser closes a `<p>` at a `<div>` — which
+            is a hydration mismatch rather than a style problem. */}
+        {estimated.count > 0 ? (
+          <span className="block text-caption text-muted-foreground">
+            {/* One key for the whole sentence with the figure as a slot
+                (SC-201/SC-235): "Excludes X from N bills…" puts its verb, its
+                amount and its reason in an order several of these languages do
+                not share, and splitting it would pin English word order into
+                this JSX. */}
+            <Trans
+              i18nKey="v3.money.upcoming.estimatedExcluded"
+              count={estimated.count}
+              components={{
+                amounts: (
+                  <ConvertedFigure
+                    totals={estimated.totals}
+                    tokenSymbolById={tokenSymbolById}
+                    rates={rates}
+                  />
+                ),
+              }}
+            />
+          </span>
+        ) : null}
+
         {/* Overdue money does not vanish into the figure above it and does not
             get a screen of its own: it is the same obligation, one deadline
             further back, so it sits in the same block as a `default` tile
@@ -437,7 +466,7 @@ export function UpcomingFeed({
           <DataRowList>
             {group.items.map((occurrence) => {
               const vendorName = vendorFor(t, occurrence, vendorNameById);
-              const estimate = estimateFor(occurrence, historyEstimates);
+              const estimate = historyEstimateFor(occurrence, historyEstimates);
               return (
                 <DataRow
                   key={occurrence.id}
