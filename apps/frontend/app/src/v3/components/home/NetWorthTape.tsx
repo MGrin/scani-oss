@@ -150,7 +150,18 @@ export function NetWorthTape({ value, currency, className }: NetWorthTapeProps) 
       {/* Two elements rather than one: the size role stays on the outer span so
           the fit rule's `1em` still means the display size, and the inner one
           carries the reduction. */}
-      <span aria-hidden="true" className="font-display text-display">
+      {/* `dir="ltr"` is load-bearing under RTL and was not here before SC-760.
+          A number is written left-to-right in every locale, including Arabic —
+          but this hero is COMPOSED rather than printed, so it is not one string
+          the bidi algorithm can keep together. It is a flex row of three columns
+          (symbol, digit run, cents) whose digit run is itself a row of one-glyph
+          cells, and under `dir="rtl"` every one of those reverses. A screenshot
+          of the phone home caught `$193,150.00` rendering as `00.051,391 $` —
+          the columns in reverse order AND the digits inside them reversed.
+          `<Numeric>` is unaffected because it prints a single formatted string.
+          It sits on the `aria-hidden` wrapper so the `sr-only` sibling above —
+          ordinary localised prose — still follows the document. */}
+      <span aria-hidden="true" dir="ltr" className="font-display text-display">
         <span
           className="flex items-stretch"
           data-figure-fit="true"
