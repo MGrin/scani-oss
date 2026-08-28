@@ -1,7 +1,12 @@
 import '../../i18n-preload';
 
-import { describe, expect, test } from 'bun:test';
-import type { BalanceGap, BalanceGapList as BalanceGapListDto } from '@scani/shared';
+import { afterEach, describe, expect, test } from 'bun:test';
+import {
+  type BalanceGap,
+  type BalanceGapList as BalanceGapListDto,
+  resetFormatLocale,
+  setFormatLocale,
+} from '@scani/shared';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { httpBatchLink } from '@trpc/client';
 import type { ReactNode } from 'react';
@@ -273,5 +278,45 @@ describe('BalanceGapAnswer — the axis of the answer control', () => {
     const html = render();
     expect(html).toContain('role="radiogroup"');
     expect((html.match(/role="radio"/g) ?? []).length).toBe(4);
+  });
+});
+
+describe('BalanceGapList — the date follows the CHOSEN language (SC-762)', () => {
+  afterEach(resetFormatLocale);
+
+  /**
+   * The rendered card, not the formatter (SC-762).
+   *
+   * `formatDate` has been locale-aware since the `setFormatLocale` seam landed,
+   * and a unit test on it passes either way — the defect this pins is a call
+   * site that never asked it. `t('v3.review.balances.between')` interpolated a
+   * bare `new Date(...).toLocaleDateString()`, which takes the RUNTIME's locale:
+   * a translated sentence with a device-formatted date inside it, which is
+   * SC-175 exactly. Only a render shows that, because the string is assembled
+   * from a key and two arguments and no one of the three is wrong on its own.
+   *
+   * Two arms that must DIFFER. An equality assertion on one language passes on
+   * a card that ignores language entirely — both arms would then print the
+   * runtime's `5/17/2026` and agree with each other.
+   */
+  test.each([
+    ['en', '17 May 2026', '27 Jun 2026'],
+    ['ru', '17 мая 2026 г.', '27 июня 2026 г.'],
+  ])('with %s selected the gap reads %s → %s', (language, from, to) => {
+    setFormatLocale(language);
+    const text = textOf(render());
+    expect(text).toContain(from);
+    expect(text).toContain(to);
+  });
+
+  test('and never the runtime’s numeric order, whichever language is chosen', () => {
+    // The must-be-ABSENT arm, and it is the one that names the defect: `5/17/2026`
+    // is what a bare `toLocaleDateString()` printed on this box, on a card whose
+    // every other date reads `17 May 2026`. Month-named is the whole of SC-175 —
+    // `7/5/2026` is 5 July or 7 May depending on which line you read it on.
+    for (const language of ['en', 'ru']) {
+      setFormatLocale(language);
+      expect(textOf(render())).not.toContain('5/17/2026');
+    }
   });
 });

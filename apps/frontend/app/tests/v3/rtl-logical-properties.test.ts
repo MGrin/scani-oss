@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { readdirSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
+import { commentSkipper } from './helpers/source-scan';
 
 /**
  * The inline axis is decided by the reader's language, not by the author's
@@ -63,49 +64,6 @@ function sources(): Source[] {
   const out: Source[] = [];
   for (const root of ROOTS) walk(root, root, out);
   return out.sort((a, b) => a.name.localeCompare(b.name));
-}
-
-/**
- * Prose about a class name is not a use of it, and several of this ticket's
- * fixes left a comment behind naming the utility they removed. Same rule, and
- * the same reason, as `token-hygiene.test.ts`.
- *
- * THIS IS STATEFUL, AND THE FIRST CUT WAS NOT — which cost a false red on the
- * gate. A per-line test catches `//`, ` *` and the OPENING line of a `/*` or
- * `{/*` block, and misses every CONTINUATION line of a JSX block comment,
- * because those begin with ordinary prose. The sentence
- *
- *     A number is written left-to-right in every locale
- *
- * is then read as code, and `left-to` matches the physical-inset pattern.
- *
- * That is not a curiosity here. These are the files where somebody explaining
- * WHY a rule exists has to write the words "left" and "right", so a scanner
- * that punishes the explanation is worst exactly where the explanation is most
- * needed. Rewording the one comment would have cleared the red and left the
- * trap armed for the next person.
- *
- * `blockDepth` tracks `/* ... *\/` across lines. A line that both opens and
- * closes is a comment and does not open a block.
- */
-function commentSkipper(): (line: string) => boolean {
-  let inBlock = false;
-  return (line: string): boolean => {
-    const trimmed = line.trimStart();
-    if (inBlock) {
-      if (line.includes('*/')) inBlock = false;
-      return true;
-    }
-    const startsComment =
-      trimmed.startsWith('*') ||
-      trimmed.startsWith('//') ||
-      trimmed.startsWith('/*') ||
-      trimmed.startsWith('{/*');
-    if (!startsComment) return false;
-    // Opens a block that this line does not close: everything until `*/` is prose.
-    if (line.includes('/*') && !line.includes('*/')) inBlock = true;
-    return true;
-  };
 }
 
 interface Hit {
