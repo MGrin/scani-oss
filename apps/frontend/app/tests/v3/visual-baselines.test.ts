@@ -3,6 +3,8 @@ import '../i18n-preload';
 import { describe, expect, test } from 'bun:test';
 import { readdirSync } from 'node:fs';
 import { join } from 'node:path';
+import { ALLOCATION_DIMENSION_KEYS } from '@/v3/lib/home';
+import { VIEW_PREFERENCE_KEYS, viewPreferenceStorageKey } from '@/v3/lib/view-preference';
 
 /**
  * The visual-regression gate (SC-24) renders inside the Playwright container,
@@ -90,5 +92,54 @@ describe('v3 visual-regression baselines', () => {
       }
     }
     expect(wrong, `baselines rendered at the wrong size:\n${wrong.join('\n')}`).toEqual([]);
+  });
+});
+
+/**
+ * The two literals `screens.ts` carries about the app's own persistence
+ * (SC-815), pinned to the app's constants.
+ *
+ * `apps/e2e` does not depend on `apps/frontend/app` — `fixtures/v3-routes.ts`
+ * states the rule — so the folding baseline names its localStorage key and its
+ * dimension as strings. A rename on this side leaves them syntactically fine
+ * and semantically dead: `home-allocation-fold-desktop` seeds a key nothing
+ * reads, the block falls back to the default `token_type` cut, and the harness
+ * photographs a one-segment bar.
+ *
+ * That failure is REAL and already happened once. The first run used `v3:` as
+ * the prefix and captured exactly that. `foldedAllocation`'s runtime assertion
+ * caught it — which is the backstop working, and it cost a two-minute Docker
+ * run to say so. These two assertions say the same thing in under a second, on
+ * a machine with no Docker at all.
+ */
+describe('the folding baseline names the app\u2019s own preference', () => {
+  async function literal(name: string): Promise<string> {
+    const source = await Bun.file(SCREENS_FILE).text();
+    const match = new RegExp(`${name}\\s*=\\s*'([^']+)'`).exec(source);
+    if (!match?.[1]) throw new Error(`${name} is not an exported string literal in screens.ts`);
+    return match[1];
+  }
+
+  test('the storage key is the one the app writes', async () => {
+    expect(await literal('ALLOCATION_DIMENSION_STORAGE_KEY')).toBe(
+      viewPreferenceStorageKey(VIEW_PREFERENCE_KEYS.homeAllocationDimension)
+    );
+  });
+
+  test('the dimension is a cut the app actually offers', async () => {
+    const dimension = await literal('FOLDING_DIMENSION');
+    // Widened deliberately: `toContain` narrows its argument to the tuple's own
+    // literals, so the un-widened form is a compile error rather than a check.
+    expect(ALLOCATION_DIMENSION_KEYS as readonly string[]).toContain(dimension);
+  });
+
+  /**
+   * The point of the screen, asserted where it is cheap: the default cut is
+   * `token_type`, which on this seed has ONE part — five token types exist and
+   * every token migration `0000` ships is fiat (SC-820). A folding baseline
+   * taken on the default would photograph the state it exists to replace.
+   */
+  test('it is not the default cut, which cannot fold', async () => {
+    expect(await literal('FOLDING_DIMENSION')).not.toBe('token_type');
   });
 });
