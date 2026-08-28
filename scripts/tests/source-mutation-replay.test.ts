@@ -214,3 +214,132 @@ describe('the journal cannot itself become the artefact it removes', () => {
     );
   });
 });
+
+/**
+ * SC-787. A mutation arm that never applied returns the BASELINE, and a baseline
+ * green from a mutation arm does not read as *the instrument misfired* — it
+ * reads as *the guard cannot catch this bug*. That is the wrong conclusion and
+ * the more natural one, and acting on it means widening a guard that was fine.
+ *
+ * The helper takes full new content, so it cannot no-op itself; the hazard is
+ * one frame up, in callers building that content with `.replace()`, which
+ * returns the subject unchanged when the pattern is absent. So the refusal lives
+ * here, at the chokepoint every present and future caller passes through.
+ */
+describe('a mutation that changes nothing is refused', () => {
+  test('MUST-BE-FOUND — an edit identical to the file refuses, and names the path', () => {
+    const { root, file, rel } = scratchRepo();
+    const original = readFileSync(file, 'utf8');
+
+    let ran = false;
+    expect(() =>
+      withMutatedSources(root, { [rel]: original }, () => {
+        ran = true;
+      })
+    ).toThrow(/byte-identical/);
+
+    // The point is not that it threw — it is that the arm did not execute
+    // against unmutated source and report a baseline.
+    expect(ran).toBe(false);
+    expect(readFileSync(file, 'utf8')).toBe(original);
+  });
+
+  test('the message names the offending path, so the arm can be found', () => {
+    const { root, rel } = scratchRepo();
+    const original = readFileSync(path.join(root, rel), 'utf8');
+    expect(() => withMutatedSources(root, { [rel]: original }, () => undefined)).toThrow(
+      new RegExp(rel.replace(/[/.]/g, '\\$&'))
+    );
+  });
+
+  test('the real shape — a `.replace()` whose pattern is absent', () => {
+    // Not a contrived equal string. This is how the defect actually arrived on
+    // SC-746: the source had been reformatted, so the pattern was gone and
+    // `.replace()` handed back the subject unchanged, silently.
+    const { root, file, rel } = scratchRepo();
+    const original = readFileSync(file, 'utf8');
+    const mutated = original.replace('a string this file does not contain', 'anything');
+
+    expect(mutated).toBe(original); // the silent half, stated
+    expect(() => withMutatedSources(root, { [rel]: mutated }, () => undefined)).toThrow(
+      /byte-identical/
+    );
+  });
+
+  test('MUST-BE-ABSENT — a genuinely different edit still runs, and still restores', () => {
+    // Without this the guard is satisfied by refusing everything, which is a
+    // different broken helper and not a fix.
+    const { root, file, rel } = scratchRepo();
+    const original = readFileSync(file, 'utf8');
+    const mutated = original.replace('apps/frontend/docs', 'apps/frontend/docs-moved-away');
+    expect(mutated).not.toBe(original);
+
+    let seen = '';
+    const result = withMutatedSources(root, { [rel]: mutated }, () => {
+      seen = readFileSync(file, 'utf8');
+      return 'ran';
+    });
+
+    expect(result).toBe('ran');
+    expect(seen).toBe(mutated);
+    expect(readFileSync(file, 'utf8')).toBe(original);
+  });
+
+  test('the refusal leaves no journal, because it happens before the first write', () => {
+    // The refusal is raised before the journal is written and before any file is
+    // touched. A journal stranded by a refusal would be replayed by the next run
+    // and would make `check-staged-test-fixtures.ts` refuse a commit — the
+    // repair mechanism damaged by the guard that was meant to protect it.
+    const { root, rel } = scratchRepo();
+    const original = readFileSync(path.join(root, rel), 'utf8');
+
+    expect(() => withMutatedSources(root, { [rel]: original }, () => undefined)).toThrow();
+
+    expect(strandedMutationJournals(root)).toEqual([]);
+    expect(
+      existsSync(path.join(root, `scripts/.source-mutation-journal-${process.pid}.json`))
+    ).toBe(false);
+  });
+
+  test('one void edit refuses the whole call, and the other file is not touched', () => {
+    // The edits are applied as a set, so a partial application would leave a
+    // tracked file mutated on the refusal path — exactly the corpse SC-601
+    // exists to prevent.
+    const { root, file, rel } = scratchRepo();
+    const original = readFileSync(file, 'utf8');
+    const secondRel = 'src/other.ts';
+    const secondFile = path.join(root, secondRel);
+    const secondOriginal = 'export const OTHER = 1;\n';
+    writeFileSync(secondFile, secondOriginal);
+
+    expect(() =>
+      withMutatedSources(
+        root,
+        {
+          [rel]: original.replace('apps/frontend/docs', 'apps/frontend/gone'),
+          [secondRel]: secondOriginal,
+        },
+        () => undefined
+      )
+    ).toThrow(new RegExp(secondRel.replace(/[/.]/g, '\\$&')));
+
+    expect(readFileSync(file, 'utf8')).toBe(original);
+    expect(readFileSync(secondFile, 'utf8')).toBe(secondOriginal);
+    expect(strandedMutationJournals(root)).toEqual([]);
+  });
+
+  test('a later legitimate call still works after a refusal', () => {
+    // The refusal must not leave the helper in a state that breaks the next
+    // caller — the same process, having thrown once, must still mutate and
+    // restore correctly.
+    const { root, file, rel } = scratchRepo();
+    const original = readFileSync(file, 'utf8');
+
+    expect(() => withMutatedSources(root, { [rel]: original }, () => undefined)).toThrow();
+
+    const mutated = `${original}// appended\n`;
+    withMutatedSources(root, { [rel]: mutated }, () => undefined);
+    expect(readFileSync(file, 'utf8')).toBe(original);
+    expect(strandedMutationJournals(root)).toEqual([]);
+  });
+});
