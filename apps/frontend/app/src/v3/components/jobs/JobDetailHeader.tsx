@@ -186,7 +186,7 @@ export function JobDetailHeader({ job }: { job: JobDetailHeaderJob }) {
             aria-label={t('v3.jobs.running', { label })}
             className="relative h-1 w-full overflow-hidden rounded-full bg-surface-hover"
           >
-            <div className="absolute inset-y-0 left-0 w-1/3 rounded-full bg-primary motion-safe:animate-loading-bar" />
+            <div className="absolute inset-y-0 start-0 w-1/3 rounded-full bg-primary motion-safe:animate-loading-bar" />
           </div>
           <div className="flex items-center justify-between gap-3">
             <span className="text-caption text-muted-foreground">
@@ -201,7 +201,7 @@ export function JobDetailHeader({ job }: { job: JobDetailHeaderJob }) {
               disabled={cancel.isPending}
               onClick={() => cancel.mutate({ jobId: job.jobId })}
             >
-              <X className="mr-2 size-4" aria-hidden="true" />
+              <X className="me-2 size-4" aria-hidden="true" />
               {cancel.isPending ? t('v3.jobs.detail.cancelPending') : t('v3.jobs.detail.cancel')}
             </Button>
           </div>
@@ -282,7 +282,7 @@ export function JobDetailHeader({ job }: { job: JobDetailHeaderJob }) {
                 disabled={retry.isPending}
                 onClick={() => retry.mutate({ jobId: job.jobId })}
               >
-                <RotateCcw className="mr-2 size-4" aria-hidden="true" />
+                <RotateCcw className="me-2 size-4" aria-hidden="true" />
                 {retry.isPending ? t('v3.jobs.detail.retryPending') : t('v3.jobs.detail.retry')}
               </Button>
             ) : null}
@@ -298,7 +298,7 @@ export function JobDetailHeader({ job }: { job: JobDetailHeaderJob }) {
                 disabled={dismissFailure.isPending}
                 onClick={() => dismissFailure.mutate({ jobId: job.jobId, outcome: 'discarded' })}
               >
-                <Check className="mr-2 size-4" aria-hidden="true" />
+                <Check className="me-2 size-4" aria-hidden="true" />
                 {dismissFailure.isPending
                   ? t('v3.jobs.detail.dismissPending')
                   : t('v3.jobs.detail.dismiss')}

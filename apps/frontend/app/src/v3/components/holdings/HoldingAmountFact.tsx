@@ -92,7 +92,7 @@ export function HoldingAmountFact({ amount, symbol, lookalikeOf, onSave }: Holdi
             figure they are free to correct — and the control that corrects it
             is the pencil immediately above (SC-632). */}
         {balanceIsBelowZero(amount) ? (
-          <span className="text-caption text-muted-foreground text-right">
+          <span className="text-caption text-muted-foreground text-end">
             {t('v3.holdings.amountFact.belowZero')}
           </span>
         ) : null}
@@ -110,7 +110,7 @@ export function HoldingAmountFact({ amount, symbol, lookalikeOf, onSave }: Holdi
       <AmountInput
         value={draft}
         onValueChange={setDraft}
-        className="h-9 w-32 text-right text-body"
+        className="h-9 w-32 text-end text-body"
         // Not the display cap: see `BALANCE_EDIT_SCALE` (SC-567).
         decimalScale={BALANCE_EDIT_SCALE}
         aria-label={t('v3.holdings.amountFact.amount')}

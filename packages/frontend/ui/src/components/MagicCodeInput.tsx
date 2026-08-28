@@ -127,7 +127,7 @@ export function MagicCodeInput({
           disabled={code.join('').length !== 6 || isLoading}
           className="w-full"
         >
-          {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+          {isLoading && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
           {t('ui.magicCode.verify')}
         </Button>
 
@@ -138,7 +138,7 @@ export function MagicCodeInput({
           disabled={isResending || isLoading}
           className="w-full"
         >
-          {isResending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+          {isResending && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
           {t('ui.magicCode.resend')}
         </Button>
       </div>

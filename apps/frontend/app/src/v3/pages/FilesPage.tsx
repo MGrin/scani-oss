@@ -64,7 +64,7 @@ export function FilesPage() {
         action={
           <Button asChild>
             <Link to={V3_CAPTURE_ROUTES.invoiceUpload}>
-              <Upload className="mr-1.5 size-4" aria-hidden="true" />
+              <Upload className="me-1.5 size-4" aria-hidden="true" />
               {t('v3.documents.page.uploadInvoice')}
             </Link>
           </Button>

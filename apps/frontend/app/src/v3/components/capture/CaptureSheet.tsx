@@ -1,3 +1,4 @@
+import { MIRROR_IN_RTL } from '@scani/ui/lib/direction';
 import {
   BottomDrawer,
   BottomDrawerBody,
@@ -94,7 +95,7 @@ function CaptureRow({ route, contextQuery }: CaptureRowProps) {
         to={captureHref(route, contextQuery)}
         replace
         className={cn(
-          'flex w-full items-start gap-3 rounded-md px-3 py-3 text-left',
+          'flex w-full items-start gap-3 rounded-md px-3 py-3 text-start',
           'transition-colors duration-fast ease-emphasized hover:bg-surface-hover',
           'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
         )}
@@ -107,7 +108,10 @@ function CaptureRow({ route, contextQuery }: CaptureRowProps) {
           <span className="text-label">{t(route.titleKey)}</span>
           <span className="text-caption text-muted-foreground">{t(route.descriptionKey)}</span>
         </span>
-        <ChevronRight className="mt-2 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+        <ChevronRight
+          className={cn(MIRROR_IN_RTL, 'mt-2 h-4 w-4 shrink-0 text-muted-foreground')}
+          aria-hidden="true"
+        />
       </Link>
     </li>
   );
@@ -155,14 +159,14 @@ export function CaptureSheet({ open, onOpenChange }: CaptureSheetProps) {
     return (
       <Sheet open={open} onOpenChange={onOpenChange}>
         <SheetContent
-          side="right"
+          side="end"
           className="w-full gap-0 overflow-y-auto sm:max-w-md"
           // `SheetContent` sets `backgroundColor` inline against an unset
           // `--background`, and an inline style beats any utility.
           // `--surface-2` is the sheet rung of the ramp (§5.1).
           style={{ backgroundColor: 'hsl(var(--surface-2))' }}
         >
-          <SheetHeader className="pr-8 text-left">
+          <SheetHeader className="pe-8 text-start">
             <SheetTitle className="text-title">{t(TITLE_KEY)}</SheetTitle>
             <SheetDescription className="text-caption">{t(DESCRIPTION_KEY)}</SheetDescription>
           </SheetHeader>

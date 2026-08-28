@@ -78,7 +78,7 @@ export function ThemeToggle({
                   12px this was the smallest text in the More drawer and below
                   v3's caption floor (SC-71 6.1). It is the *answer* to the
                   label beside it, so it has no business being smaller. */}
-              <span className="ml-auto text-[13px] text-muted-foreground">
+              <span className="ms-auto text-[13px] text-muted-foreground">
                 {uiT(currentOption.labelKey)}
               </span>
             </>
@@ -114,7 +114,7 @@ export function ThemeToggle({
                 <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
                 <span>{uiT(labelKey)}</span>
                 {selected && (
-                  <span aria-hidden="true" className="ml-auto text-xs">
+                  <span aria-hidden="true" className="ms-auto text-xs">
                     ✓
                   </span>
                 )}

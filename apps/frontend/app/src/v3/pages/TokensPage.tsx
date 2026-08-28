@@ -51,7 +51,7 @@ export function TokensPage() {
         action={
           segment === 'custom' ? (
             <Button onClick={() => setCreating(true)}>
-              <Plus className="mr-1.5 size-4" aria-hidden="true" />
+              <Plus className="me-1.5 size-4" aria-hidden="true" />
               {t('v3.tokens.page.newCustomToken')}
             </Button>
           ) : undefined

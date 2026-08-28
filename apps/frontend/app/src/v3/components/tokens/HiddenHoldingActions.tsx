@@ -88,7 +88,7 @@ export function HiddenHoldingActions({ holding }: HiddenHoldingActionsProps) {
           disabled={restore.isPending}
           onClick={() => restore.mutate({ id: holding.id })}
         >
-          <Eye className="mr-2 size-4" aria-hidden="true" />
+          <Eye className="me-2 size-4" aria-hidden="true" />
           {t('v3.tokens.hidden.unhide')}
         </Button>
       ) : null}
