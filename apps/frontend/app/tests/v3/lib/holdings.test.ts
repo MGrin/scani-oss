@@ -271,21 +271,24 @@ describe('holdingAllocation', () => {
   ];
 
   test('sums by token type and orders biggest first', () => {
-    expect(holdingAllocation(items)).toEqual([
-      { key: 'stock', label: 'Equity', value: 400 },
-      { key: 'crypto', label: 'Crypto', value: 150 },
+    // The labels are the TRANSLATED names, not the `type` column the fixtures
+    // carry — `Equity` and `Crypto` are what a reader saw before SC-419 and
+    // what would come back if the map were bypassed.
+    expect(holdingAllocation(t, items)).toEqual([
+      { key: 'stock', label: 'Stock / ETF / Equity / Commodity', value: 400 },
+      { key: 'crypto', label: 'Cryptocurrency', value: 150 },
     ]);
   });
 
   test('drops what has no positive value — a bar cannot draw an unknown', () => {
-    expect(holdingAllocation([holding({ value: null })])).toEqual([]);
+    expect(holdingAllocation(t, [holding({ value: null })])).toEqual([]);
   });
 
   /** SC-63 again: the bar and the figure above it are one claim about one
    *  portfolio, so a row the figure ignores cannot be a segment. */
   test('adds up to the same figure the summary shows', () => {
     const withInactive = [...items, holding({ value: 1000, isActive: false })];
-    const barTotal = holdingAllocation(withInactive).reduce((sum, item) => sum + item.value, 0);
+    const barTotal = holdingAllocation(t, withInactive).reduce((sum, item) => sum + item.value, 0);
     expect(barTotal).toBe(holdingsValue(withInactive));
   });
 });
@@ -406,14 +409,14 @@ describe('holdingFiltersFromParams', () => {
 describe('option builders', () => {
   test('token types are labelled by their human name, alphabetically', () => {
     expect(
-      tokenTypeOptions([
+      tokenTypeOptions(t, [
         holding({ token: { ...holding().token, typeCode: 'stock', type: 'Equity' } }),
         holding(),
         holding(),
       ])
     ).toEqual([
-      { value: 'crypto', label: 'Crypto' },
-      { value: 'stock', label: 'Equity' },
+      { value: 'crypto', label: 'Cryptocurrency' },
+      { value: 'stock', label: 'Stock / ETF / Equity / Commodity' },
     ]);
   });
 
