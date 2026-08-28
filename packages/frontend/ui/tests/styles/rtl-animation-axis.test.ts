@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { readdirSync, statSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 import preset from '../../tailwind-preset.js';
+import { commentSkipper } from '../helpers/source-scan';
 
 /**
  * A KEYFRAME IS NOT A LOGICAL PROPERTY, AND NO GUARD HERE HAD A TERM FOR ONE
@@ -234,47 +235,6 @@ const sources = (): Source[] =>
   ROOTS.flatMap((root) => walk(root, [])).sort((a, b) => a.name.localeCompare(b.name));
 
 /**
- * Prose about a utility is not a use of it, and this rule cannot be documented
- * without writing the forbidden strings down — `toast.tsx` and
- * `JobDetailHeader.tsx` both now carry a comment naming the exact utility they
- * pair. That is not an edge case: the files a guard most needs to be right
- * about are the ones explaining why the guard exists (SC-760, whose first cut
- * went red on its own author's sentence).
- *
- * STATEFUL, for the reason that ticket paid for: a per-line test catches `//`,
- * ` *` and the OPENING line of a `/*` or `{/*` block, and misses every
- * CONTINUATION line, because those begin with an ordinary word.
- *
- * Deliberately a local copy rather than an import from
- * `apps/frontend/app/tests/v3/`. This package sits BELOW that app, so reaching
- * up into its test tree inverts the dependency direction the workspace layout
- * exists to enforce. Other guards in this repo still carry per-line copies
- * with the bug SC-760 fixed here; SC-776 names them, dates the reading and
- * carries the falsifier. Deliberately a POINTER and not a list: a ticket is
- * allowed to be a snapshot and this docblock is not, and a count asserted in
- * a comment goes stale the moment one of them is fixed — silently, since
- * nothing compiles prose.
- */
-function commentSkipper(): (line: string) => boolean {
-  let inBlock = false;
-  return (line: string): boolean => {
-    const trimmed = line.trimStart();
-    if (inBlock) {
-      if (line.includes('*/')) inBlock = false;
-      return true;
-    }
-    const startsComment =
-      trimmed.startsWith('*') ||
-      trimmed.startsWith('//') ||
-      trimmed.startsWith('/*') ||
-      trimmed.startsWith('{/*');
-    if (!startsComment) return false;
-    if (line.includes('/*') && !line.includes('*/')) inBlock = true;
-    return true;
-  };
-}
-
-/**
  * What counts as inline-axis motion, derived rather than listed.
  *
  * `tailwindcss-animate`'s `slide-in-from-*` / `slide-out-to-*` set a physical
@@ -349,6 +309,13 @@ async function classifyFiles(files: Source[]): Promise<FileVerdict[]> {
 }
 
 function classifyText(text: string, pattern: RegExp): Omit<FileVerdict, 'name'> {
+  // Prose about a utility is not a use of it, and this rule cannot be
+  // documented without writing the forbidden strings down — `toast.tsx` and
+  // `JobDetailHeader.tsx` both carry a comment naming the exact utility they
+  // pair. The files a guard most needs to be right about are the ones
+  // explaining why the guard exists (SC-760, whose first cut went red on its
+  // own author's sentence).
+  //
   // One skipper per FILE: block state must not leak across files, or an
   // unterminated comment in one would blind the scanner to the next.
   const isComment = commentSkipper();
