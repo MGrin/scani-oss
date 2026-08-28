@@ -1,6 +1,7 @@
 import { en } from './locales/en';
 import { es } from './locales/es';
 import { fr } from './locales/fr';
+import { ja } from './locales/ja';
 import { pt } from './locales/pt';
 import { ru } from './locales/ru';
 import type { EmailStrings } from './strings';
@@ -16,7 +17,7 @@ export { fill } from './strings';
  * own region setting exists for the formats on screen and has nothing to say
  * here (SC-201).
  */
-export const EMAIL_STRINGS: Readonly<Record<string, EmailStrings>> = { en, es, fr, pt, ru };
+export const EMAIL_STRINGS: Readonly<Record<string, EmailStrings>> = { en, es, fr, ja, pt, ru };
 
 /** What a language we cannot write in falls back to — stated, not implied. */
 const EMAIL_FALLBACK_LANGUAGE = 'en';
