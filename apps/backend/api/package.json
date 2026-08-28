@@ -19,6 +19,8 @@
     "@elysiajs/trpc": "^1.1.0",
     "@fontsource/ibm-plex-mono": "^5.3.0",
     "@fontsource/ibm-plex-sans": "^5.3.0",
+    "@fontsource/noto-sans-jp": "^5.3.0",
+    "@fontsource/noto-sans-sc": "^5.3.0",
     "@scani/cloud-client": "workspace:*",
     "@scani/config": "workspace:*",
     "@scani/db": "workspace:*",

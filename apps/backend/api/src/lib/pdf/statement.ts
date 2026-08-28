@@ -315,7 +315,13 @@ function drawFooter(pen: Pen, geo: Geometry, page: number, total: number, subjec
  * short enough to set on one metadata line at portrait width; anything longer
  * is truncated by the same rule as every other value here.
  */
-const UNSUPPORTED_NOTE = `${UNSUPPORTED_MARK} marks a character these fonts cannot set — the CSV and XLSX exports carry the full name.`;
+/**
+ * Exported so the test that proves this note reaches the page can DERIVE its
+ * signature — the characters that appear here and nowhere else the document
+ * sets — rather than hardcoding a word out of it. A test holding its own copy
+ * of this sentence goes quiet the day the sentence is reworded (SC-782).
+ */
+export const UNSUPPORTED_NOTE = `${UNSUPPORTED_MARK} marks a character these fonts cannot set — the CSV and XLSX exports carry the full name.`;
 
 /** The first page's masthead and metadata block. Returns the y the table starts
  *  at, so pagination and drawing cannot disagree about it. */
