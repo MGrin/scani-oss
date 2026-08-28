@@ -34,6 +34,45 @@ export interface DataProviderContext {
   // for per-IP rate limiting; never persisted unhashed. Null when no
   // header is present (direct internal calls / tests).
   clientIp: string | null;
+  /**
+   * The per-key hourly request budget this deployment enforces, or null
+   * when none is (SC-816). Constant for the process lifetime — see
+   * {@link effectiveHourlyRequestLimit}.
+   *
+   * On the context rather than behind an `install*()` like the sink and
+   * the limiter beside it, because `buildCreateContext` already receives
+   * the parsed env and an installer would have to be called from
+   * `index.ts`, which is a `divergent` file — hand-applied separately in
+   * each tree, and the OSS and private copies then free to disagree
+   * about the number a customer is told.
+   */
+  hourlyRequestLimit: number | null;
+}
+
+/**
+ * The hourly budget a caller is actually subject to, from the raw env value.
+ *
+ * `CLOUD_QUOTA_HOURLY_DEFAULT` is a TRI-state and deliberately so (SC-582):
+ * `null` is "nobody has decided", `0` is "somebody decided off", and a
+ * positive integer enforces. This collapses the first two to `null`, and that
+ * is not SC-582's defect repeated one surface over.
+ *
+ * The distinction earns its keep for an OPERATOR, who can act on it — an
+ * overlooked bound and a deliberate one need different responses, and the boot
+ * line and `describeCostControls` keep the tri-state for exactly that reader.
+ * A CUSTOMER can act on neither: "no limit applies to you" is the whole of
+ * what the answer changes for them, and "we have not decided yet" is a fact
+ * about our deployment hygiene that does not belong on a public API.
+ *
+ * The predicate must stay identical to the one `index.ts` installs the limiter
+ * on (`hourlyQuota !== null && hourlyQuota > 0`). It is duplicated rather than
+ * shared because sharing it would mean importing from `index.ts` — the boot
+ * entrypoint, and a `divergent` file. `keys.limits` reporting a number the
+ * middleware does not enforce is the failure this comment exists to prevent;
+ * `tests/presentation/routers/keys.test.ts` pins both halves.
+ */
+export function effectiveHourlyRequestLimit(quotaHourlyDefault: number | null): number | null {
+  return quotaHourlyDefault !== null && quotaHourlyDefault > 0 ? quotaHourlyDefault : null;
 }
 
 export interface BuildContextDeps {
@@ -62,6 +101,11 @@ export interface BuildContextDeps {
  * want.
  */
 export function buildCreateContext({ env, getCloudDb, getBetterAuth }: BuildContextDeps) {
+  // Out here rather than inside the per-request closure: env is frozen for
+  // the process lifetime, so this is one read at wiring time instead of one
+  // per request.
+  const hourlyRequestLimit = effectiveHourlyRequestLimit(env.CLOUD_QUOTA_HOURLY_DEFAULT);
+
   return async ({ req }: { req: Request }): Promise<DataProviderContext> => {
     const requestId = req.headers.get('x-request-id') ?? crypto.randomUUID();
 
@@ -127,7 +171,15 @@ export function buildCreateContext({ env, getCloudDb, getBetterAuth }: BuildCont
       .at(-1);
     const clientIp = flyClientIp ?? xffTail ?? null;
 
-    return { auth, authFailure, cloudUser, requestId, usage: createUsageContext(), clientIp };
+    return {
+      auth,
+      authFailure,
+      cloudUser,
+      requestId,
+      usage: createUsageContext(),
+      clientIp,
+      hourlyRequestLimit,
+    };
   };
 }
 
