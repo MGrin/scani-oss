@@ -564,8 +564,33 @@ export function collectBranchFacts(ref = 'HEAD'): BranchFacts {
   };
 }
 
-function main(allowNewFiles: boolean): number {
-  const boundness = classifyBranch(collectBranchFacts());
+/**
+ * Where `main` gets the paths it judges, and which rev it classifies (SC-813).
+ *
+ * `staged` is the pre-commit caller and the default, and its behaviour is
+ * unchanged to the byte. `given` is the pre-push caller: a cherry-pick and a
+ * rebase both fire NO hook — measured, 0 firings over a landed cherry-pick and
+ * over 2 replayed commits, against a control of 4 ordinary commits firing 4
+ * times — so the one operation that actually carries code across the boundary
+ * is the one pre-commit never sees. The paths there are the ones in the
+ * commits about to leave the machine, which is a different set from anything
+ * in the index.
+ *
+ * `ref` exists because the pushed branch need not be the checked-out one.
+ * `git push upstream branchB` while standing on private branchA would classify
+ * branchA, read `private`, and SKIP — a silent pass on a mirror-bound push,
+ * which is this check's own subject reproduced inside its caller.
+ */
+export interface PathSource {
+  kind: 'staged' | 'given';
+  /** Only for `given`. Already filtered to A/M/R/C by the caller. */
+  paths?: readonly string[];
+  /** Rev to classify. Defaults to HEAD, which is what pre-commit wants. */
+  ref?: string;
+}
+
+function main(allowNewFiles: boolean, source: PathSource = { kind: 'staged' }): number {
+  const boundness = classifyBranch(collectBranchFacts(source.ref ?? 'HEAD'));
 
   if (boundness.kind === 'unknown') {
     console.error(`oss-bound-paths: ${VERDICT.unknown} · exit ${EXIT_UNKNOWN} · ${boundness.why}`);
@@ -581,14 +606,24 @@ function main(allowNewFiles: boolean): number {
   // --cached` yields `''`, which reads as NOTHING IS STAGED — a clean exit 0
   // over a branch whose staged paths were never examined. The remotes one at
   // least printed a wrong verdict you could see.
-  const stagedResult = git(['diff', '--cached', '--name-only', '--diff-filter=ACMR']);
-  if (!stagedResult.ok) {
-    console.error(
-      `oss-bound-paths: ${VERDICT.unknown} · exit ${EXIT_UNKNOWN} · could not list the staged paths — \`git diff --cached\` failed, so NOTHING WAS CHECKED. This is not a pass.`
-    );
-    return EXIT_UNKNOWN;
+  // The noun travels with the source so every verdict line below says which
+  // set it judged. "3 staged path(s)" printed over a pushed range would be the
+  // same defect this check exists to prevent, one level up.
+  const noun = source.kind === 'given' ? 'pushed' : 'staged';
+
+  let paths: string[];
+  if (source.kind === 'given') {
+    paths = [...(source.paths ?? [])];
+  } else {
+    const stagedResult = git(['diff', '--cached', '--name-only', '--diff-filter=ACMR']);
+    if (!stagedResult.ok) {
+      console.error(
+        `oss-bound-paths: ${VERDICT.unknown} · exit ${EXIT_UNKNOWN} · could not list the staged paths — \`git diff --cached\` failed, so NOTHING WAS CHECKED. This is not a pass.`
+      );
+      return EXIT_UNKNOWN;
+    }
+    paths = stagedResult.stdout ? stagedResult.stdout.split('\n') : [];
   }
-  const paths = stagedResult.stdout ? stagedResult.stdout.split('\n') : [];
   const violations = refusedPaths(paths, {
     existsUpstream: (p) => git(['cat-file', '-e', `upstream/main:${p}`]).ok,
     trackedPrivately: (p) => git(['cat-file', '-e', `origin/main:${p}`]).ok,
@@ -599,7 +634,7 @@ function main(allowNewFiles: boolean): number {
   if (refused.length > 0) {
     for (const v of refused) console.error(`  ${v.path}\n      ${v.why}`);
     console.error(
-      `oss-bound-paths: ${VERDICT.refused} · exit ${EXIT_REFUSED} · ${refused.length} of ${paths.length} staged path(s) are not in upstream/main`
+      `oss-bound-paths: ${VERDICT.refused} · exit ${EXIT_REFUSED} · ${refused.length} of ${paths.length} ${noun} path(s) are not in upstream/main`
     );
     // The remedy depends on WHICH kind refused, and naming the flag in front
     // of private-only source is what recruited two people into bypassing this
@@ -631,7 +666,7 @@ function main(allowNewFiles: boolean): number {
   if (admitted.length > 0) {
     for (const v of admitted) console.log(`  admitted: ${v.path}`);
     console.log(
-      `oss-bound-paths: ${VERDICT.allowed} · exit ${EXIT_OK} · OSS_ALLOW_NEW_FILES=1 admitted ${admitted.length} new shared file(s) of ${paths.length} staged; 0 private-only`
+      `oss-bound-paths: ${VERDICT.allowed} · exit ${EXIT_OK} · OSS_ALLOW_NEW_FILES=1 admitted ${admitted.length} new shared file(s) of ${paths.length} ${noun}; 0 private-only`
     );
     return EXIT_OK;
   }
@@ -641,15 +676,47 @@ function main(allowNewFiles: boolean): number {
   // files used to turn a real PASS into `SKIPPED · exit 0`, which bought
   // nothing and looked like the check had not run.
   console.log(
-    `oss-bound-paths: ${VERDICT.pass} · exit ${EXIT_OK} · ${paths.length} staged path(s), 0 absent from upstream/main` +
+    `oss-bound-paths: ${VERDICT.pass} · exit ${EXIT_OK} · ${paths.length} ${noun} path(s), 0 absent from upstream/main` +
       (allowNewFiles ? ' · OSS_ALLOW_NEW_FILES=1 was set and admitted nothing' : '')
   );
   return EXIT_OK;
 }
 
 if (import.meta.main) {
+  // Two OPTIONAL flags, added for the pre-push caller (SC-813). With neither,
+  // every line above runs exactly as it did for pre-commit — the default is
+  // not a special case here, it is the absence of both.
+  //
+  //   --stdin-paths   judge newline-separated paths on stdin, not the index
+  //   --ref <rev>     classify <rev> rather than HEAD
+  const argv = process.argv.slice(2);
+  const refAt = argv.indexOf('--ref');
+  const ref = refAt === -1 ? undefined : argv[refAt + 1];
+  if (refAt !== -1 && !ref) {
+    console.error(
+      `oss-bound-paths: ${VERDICT.unknown} · exit ${EXIT_UNKNOWN} · --ref was given with no rev, so NOTHING WAS CHECKED. This is not a pass.`
+    );
+    process.exit(EXIT_UNKNOWN);
+  }
+
+  let source: PathSource = { kind: 'staged', ref };
+  if (argv.includes('--stdin-paths')) {
+    // Read to EOF. An empty stdin is a real answer — "this push introduces no
+    // A/M/R/C paths" — and is NOT conflated with a failed read: the caller
+    // could not have got here without a successful `git rev-list`.
+    const raw = await Bun.stdin.text();
+    source = {
+      kind: 'given',
+      ref,
+      paths: raw
+        .split('\n')
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0),
+    };
+  }
+
   // Read here and passed in, never consulted deeper: the flag has to reach
   // `main()` for `classifyBranch` and `refusedPaths` to run at all. Reading it
   // in this block and returning early is the SC-639 defect itself.
-  process.exit(main(process.env.OSS_ALLOW_NEW_FILES === '1'));
+  process.exit(main(process.env.OSS_ALLOW_NEW_FILES === '1', source));
 }
