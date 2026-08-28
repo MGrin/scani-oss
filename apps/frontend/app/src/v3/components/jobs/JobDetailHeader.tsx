@@ -186,7 +186,12 @@ export function JobDetailHeader({ job }: { job: JobDetailHeaderJob }) {
             aria-label={t('v3.jobs.running', { label })}
             className="relative h-1 w-full overflow-hidden rounded-full bg-surface-hover"
           >
-            <div className="absolute inset-y-0 start-0 w-1/3 rounded-full bg-primary motion-safe:animate-loading-bar" />
+            {/* The anchor is logical and needs no help; the sweep is not. A
+                keyframe's translateX is a physical displacement `dir` does not
+                mirror, so the bar is anchored at the reading edge and would
+                travel away from it under RTL without this pair (SC-766). It
+                wins by source order — see rtl-css-cascade.test.ts. */}
+            <div className="absolute inset-y-0 start-0 w-1/3 rounded-full bg-primary motion-safe:animate-loading-bar rtl:motion-safe:animate-loading-bar-rtl" />
           </div>
           <div className="flex items-center justify-between gap-3">
             <span className="text-caption text-muted-foreground">

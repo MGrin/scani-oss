@@ -28,7 +28,22 @@ const ToastViewport = React.forwardRef<
 ToastViewport.displayName = ToastPrimitives.Viewport.displayName;
 
 const toastVariants = cva(
-  'group pointer-events-auto relative flex w-full items-center justify-between space-x-4 overflow-hidden rounded-md border p-4 pe-12 sm:p-6 sm:pe-12 shadow-lg transition-all data-[swipe=cancel]:translate-x-0 data-[swipe=end]:translate-x-[var(--radix-toast-swipe-end-x)] data-[swipe=move]:translate-x-[var(--radix-toast-swipe-move-x)] data-[swipe=move]:transition-none data-[state=open]:animate-in data-[state=closed]:animate-out data-[swipe=end]:animate-out data-[state=closed]:fade-out-80 data-[state=closed]:slide-out-to-right-full data-[state=open]:slide-in-from-top-full data-[state=open]:sm:slide-in-from-bottom-full',
+  // The viewport is anchored logically (`sm:end-0`), so under `dir="rtl"` the
+  // toast sits against the physical left — and `slide-out-to-right-full` sent
+  // it out through the opposite edge, across the whole screen (SC-767). A
+  // keyframe translate is a physical displacement `dir` does not mirror, which
+  // is why SC-760's conversion of the markup could not reach it, so the inline
+  // axis carries an explicit `rtl:` counterpart. That pair wins by SOURCE
+  // ORDER and not by specificity — `rtl:` compiles to
+  // `:where([dir="rtl"], [dir="rtl"] *)`, which is zero-specificity by
+  // definition; `rtl-css-cascade.test.ts` pins the ordering.
+  //
+  // TWO THINGS ON THIS LINE ARE CORRECT AS-IS AND MUST NOT BE "CONVERTED".
+  // The swipe utilities follow the POINTER, which is a physical quantity in
+  // any language — a finger that moved right moved right. And
+  // `slide-in-from-top-full` / `sm:slide-in-from-bottom-full` are on the block
+  // axis, which `dir` does not touch.
+  'group pointer-events-auto relative flex w-full items-center justify-between space-x-4 overflow-hidden rounded-md border p-4 pe-12 sm:p-6 sm:pe-12 shadow-lg transition-all data-[swipe=cancel]:translate-x-0 data-[swipe=end]:translate-x-[var(--radix-toast-swipe-end-x)] data-[swipe=move]:translate-x-[var(--radix-toast-swipe-move-x)] data-[swipe=move]:transition-none data-[state=open]:animate-in data-[state=closed]:animate-out data-[swipe=end]:animate-out data-[state=closed]:fade-out-80 data-[state=closed]:slide-out-to-right-full rtl:data-[state=closed]:slide-out-to-left-full data-[state=open]:slide-in-from-top-full data-[state=open]:sm:slide-in-from-bottom-full',
   {
     variants: {
       variant: {
