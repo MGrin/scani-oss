@@ -4,8 +4,18 @@ import {
   type PinnedNetwork,
   pinExternalNetwork,
 } from '../fixtures/visual-network';
-import { VISUAL_EMPTY_SESSION_FILE, VISUAL_SESSION_FILE } from '../fixtures/visual-setup';
-import { VISUAL_SCREENS, type VisualScreen, type VisualSession } from './screens';
+import {
+  VISUAL_ALLOCATION_SESSION_FILE,
+  VISUAL_EMPTY_SESSION_FILE,
+  VISUAL_SESSION_FILE,
+} from '../fixtures/visual-setup';
+import {
+  ALLOCATION_DIMENSION_STORAGE_KEY,
+  FOLDING_DIMENSION,
+  VISUAL_SCREENS,
+  type VisualScreen,
+  type VisualSession,
+} from './screens';
 
 /**
  * The visual-regression gate (SC-24). One test per screen in `screens.ts`,
@@ -23,11 +33,28 @@ import { VISUAL_SCREENS, type VisualScreen, type VisualSession } from './screens
  */
 
 /** The storage state each `session` is photographed under — see
- *  `fixtures/visual-setup.ts`, which writes both. */
+ *  `fixtures/visual-setup.ts`, which writes all three. */
 const SESSION_FILE: Record<VisualSession, string> = {
   seeded: VISUAL_SESSION_FILE,
   empty: VISUAL_EMPTY_SESSION_FILE,
+  allocation: VISUAL_ALLOCATION_SESSION_FILE,
 };
+
+/**
+ * `CHART_SERIES_LIMIT` segments TOTAL, the last of which is the fold.
+ *
+ * Not seven. `foldAllocation` computes
+ * `keepable = positive.length > slots ? slots - 1 : slots`, so "Other" does
+ * not sit beside six coloured parts — it OCCUPIES one of the six. Eight
+ * accounts therefore render five named segments and a sixth standing for
+ * three. This constant said 7 until the harness was pointed at a real folded
+ * bar and disagreed with it.
+ *
+ * Duplicated from `@scani/ui/v3/lib/chart` rather than imported: the assertion
+ * is that the RENDERED bar has this shape, and importing the constant the
+ * component built it from would make the check agree with itself.
+ */
+const EXPECTED_FOLDED_SEGMENTS = 6;
 
 /** The v3 shell's root. Present on every routed screen; absent means the app
  *  never mounted, which is the failure a screenshot hides best — a picture of
@@ -356,6 +383,99 @@ async function assertPhotographedOnce(
   }
 }
 
+/**
+ * Puts the allocation block on the cut that folds, before the app boots.
+ *
+ * `addInitScript` rather than a `goto` and a click: this runs before any
+ * bundle evaluates, so the block's first render is already on the right
+ * dimension and the baseline holds one query's result rather than a
+ * transition between two.
+ */
+async function primeAllocationDimension(page: Page, screen: VisualScreen): Promise<void> {
+  if (!screen.foldedAllocation) return;
+  await page.addInitScript(([key, value]) => window.localStorage.setItem(key, value), [
+    ALLOCATION_DIMENSION_STORAGE_KEY,
+    FOLDING_DIMENSION,
+  ] as const);
+}
+
+/**
+ * A screen declaring `foldedAllocation` must actually be photographing a fold.
+ *
+ * The failure this exists for is silent by construction. A seed that reached
+ * only four accounts renders a perfectly good unfolded bar, `--update`
+ * still writes a baseline, and every later run compares against it happily —
+ * so the gate ends up holding a picture of exactly the state the screen was
+ * added to rule out, with nothing anywhere saying so. Same shape as
+ * `institutionMark` falling back to a letter tile.
+ *
+ * Three things are checked, and they fail differently on purpose: the count
+ * says the fold happened, the colour says it is the FOLD segment and not a
+ * seventh series colour, and the disclosure says the tail is reachable. A
+ * single assertion on the count would pass on a bar that drew seven ordinary
+ * segments, which is the specific defect `AllocationBlock`'s docblock argues
+ * the cap prevents.
+ */
+async function assertAllocationFolded(page: Page, screen: VisualScreen, fail: Fail): Promise<void> {
+  if (!screen.foldedAllocation) return;
+
+  // `[data-ui="allocation-bar"]`, not `[role="img"]`: this page carries 21 of
+  // the latter — every institution mark is one — so a structural selector
+  // reads whichever comes first and reported ONE segment for a bar that was
+  // drawing six. A false red, which is the safe direction, and still a probe
+  // measuring the wrong element.
+  const bar = await page.evaluate(() => {
+    const track = document.querySelector('[data-ui="allocation-bar"]');
+    if (!track) return null;
+    return [...track.children].map((child) => (child as HTMLElement).style.backgroundColor);
+  });
+
+  if (bar === null) {
+    fail(
+      `${screen.name}: declares foldedAllocation and drew no allocation bar at all — no ` +
+        'element carrying data-ui="allocation-bar" is in the DOM. Either the block rendered ' +
+        'its empty state (the ' +
+        'seed did not land) or the bar moved, and both change what this baseline is a ' +
+        'picture of.'
+    );
+    return;
+  }
+
+  if (bar.length !== EXPECTED_FOLDED_SEGMENTS) {
+    fail(
+      `${screen.name}: declares foldedAllocation and drew ${bar.length} segment(s), expected ` +
+        `${EXPECTED_FOLDED_SEGMENTS} (five named parts and the fold, which takes the sixth ` +
+        'slot rather than a seventh). Below that the bar is not folding, so CHART_OTHER_COLOR ' +
+        'and the disclosed FoldedRow tail are absent from this baseline and nothing else would ' +
+        "have said so. Check the eight accounts in visual-setup.ts's ALLOCATION_PORTFOLIO all " +
+        'seeded.'
+    );
+  }
+
+  // `--chart-other` is the fold's own token. A bar that reached seven parts
+  // WITHOUT it would mean the cap was raised rather than the fold rendered —
+  // the exact change AllocationBlock's docblock argues against, and one that
+  // a segment count alone cannot see.
+  const other = bar.filter((color) => color.includes('--chart-other'));
+  if (other.length !== 1) {
+    fail(
+      `${screen.name}: expected exactly one segment painted with --chart-other and found ` +
+        `${other.length}. Colours drawn: ${bar.join(', ')}. Without it the bar is not folded, ` +
+        'whatever its segment count.'
+    );
+  }
+
+  const disclosure = await page
+    .locator('[data-ui="v3"] button', { hasText: /more|other/i })
+    .count();
+  if (disclosure === 0) {
+    fail(
+      `${screen.name}: the bar folded but no disclosure control is present, so the FoldedRow ` +
+        'tail this screen exists to hold is unreachable and unphotographed.'
+    );
+  }
+}
+
 function declare(screen: VisualScreen): void {
   test(`${screen.name} @${screen.viewport}`, async ({ page }, testInfo) => {
     if (screen.height) {
@@ -364,6 +484,7 @@ function declare(screen: VisualScreen): void {
       await page.setViewportSize({ width, height: screen.height });
     }
     await page.clock.setFixedTime(FIXED_NOW);
+    await primeAllocationDimension(page, screen);
 
     // Before `goto`: a route added after a navigation has started does not
     // apply to the requests that navigation already made.
@@ -393,6 +514,7 @@ function declare(screen: VisualScreen): void {
     await assertPhotographedOnce(page, loads, screen.name, fail);
     await assertStillInDirection(page, screen, fail);
     await assertPinnedBytes(page, network, screen, fail);
+    await assertAllocationFolded(page, screen, fail);
     if (captured) throw captured;
   });
 }
