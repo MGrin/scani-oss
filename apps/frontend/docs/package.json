@@ -10,7 +10,7 @@
     "clean": "rm -rf dist .astro",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
-    "type-check": "astro check"
+    "type-check": "astro check && tsgo --noEmit -p tsconfig.test.json"
   },
   "dependencies": {
     "@astrojs/check": "^0.9.4",
