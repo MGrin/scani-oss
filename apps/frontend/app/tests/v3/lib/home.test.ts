@@ -175,17 +175,18 @@ describe('allocationItems', () => {
   test('biggest first, and non-positive parts are dropped', () => {
     expect(
       allocationItems(
+        t,
         [
-          { id: 'stock', name: 'Stocks', value: '31000' },
-          { id: 'crypto', name: 'Crypto', value: '52000' },
-          { id: 'debt', name: 'Debt', value: '-4000' },
-          { id: 'nft', name: 'NFTs', value: '0' },
+          { id: 'stock', code: 'stock', name: 'Stocks', value: '31000' },
+          { id: 'crypto', code: 'crypto', name: 'Crypto', value: '52000' },
+          { id: 'debt', code: 'debt', name: 'Debt', value: '-4000' },
+          { id: 'nft', code: 'nft', name: 'NFTs', value: '0' },
         ],
         'token_type'
       )
     ).toEqual([
-      { key: 'crypto', label: 'Crypto', value: 52000 },
-      { key: 'stock', label: 'Stocks', value: 31000 },
+      { key: 'crypto', label: 'Cryptocurrency', value: 52000 },
+      { key: 'stock', label: 'Stock / ETF / Equity / Commodity', value: 31000 },
     ]);
   });
 
@@ -198,6 +199,7 @@ describe('allocationItems', () => {
   test('two parts sharing a code stay two segments', () => {
     expect(
       allocationItems(
+        t,
         [
           { id: 'a', code: 'Savings', name: 'Savings', value: '10' },
           { id: 'b', code: 'Savings', name: 'Savings', value: '5' },
@@ -205,6 +207,19 @@ describe('allocationItems', () => {
         'group'
       ).map((item) => item.key)
     ).toEqual(['a', 'b']);
+  });
+
+  /**
+   * The must-be-ABSENT arm for SC-419's translation: only the TYPE cut is
+   * translatable. `code` on the other three is an institution's or a group's
+   * NAME, so a map keyed on the code would translate an institution that
+   * happened to be called "crypto" — and an institution's name is a brand,
+   * which is the same word in every language.
+   */
+  test('a non-type cut keeps its own name even when the code collides with a type', () => {
+    expect(
+      allocationItems(t, [{ id: 'i1', code: 'crypto', name: 'crypto', value: '10' }], 'institution')
+    ).toEqual([{ key: 'i1', label: 'crypto', value: 10 }]);
   });
 
   /**
@@ -216,6 +231,7 @@ describe('allocationItems', () => {
   test('the type cut is keyed by the code the holdings filter matches', () => {
     expect(
       allocationItems(
+        t,
         [{ id: '6f0e-uuid', code: 'crypto', name: 'Crypto', value: '10' }],
         'token_type'
       ).map((item) => item.key)

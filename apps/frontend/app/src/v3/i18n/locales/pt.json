@@ -2684,6 +2684,13 @@
       "segment": {
         "custom": "Personalizados",
         "hidden": "Ocultos"
+      },
+      "type": {
+        "fiat": "Moeda fiduciária",
+        "crypto": "Criptomoeda",
+        "stock": "Ações / ETF / Títulos / Matérias-primas",
+        "privateCompany": "Empresa privada",
+        "other": "Outro"
       }
     },
     "vaults": {
