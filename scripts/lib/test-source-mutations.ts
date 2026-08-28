@@ -67,6 +67,39 @@ function writeJournal(file: string, journal: Journal): void {
  *
  * `edits` maps a path (absolute, or relative to `repoRoot`) to its full new
  * content.
+ *
+ * **A VOID MUTATION IS REFUSED HERE (SC-787).** An arm that hands back content
+ * identical to what is on disk runs against UNMUTATED source and returns the
+ * baseline — and a baseline green from a mutation arm does not read as *the
+ * instrument misfired*, it reads as **the guard cannot catch this bug**. That is
+ * the likelier interpretation and the wrong one, and acting on it means widening
+ * a guard that was fine. Measured on SC-746's arm B: `103 pass / 0 fail`, one
+ * sentence from being reported as a gap, when the patch had simply never landed
+ * because biome had reformatted the ternary it targeted.
+ *
+ * **Why the guard belongs at this frame and not at the call sites.** This
+ * signature takes FULL NEW CONTENT, so it cannot no-op itself — which is exactly
+ * what makes it look safe. The hazard is one frame up, in callers building that
+ * content with `.replace()`, which returns the subject unchanged when the
+ * pattern is absent, silently and with no error.
+ * `scripts/tests/check-docs-package-inventory.test.ts` both calls this and
+ * builds its content by replacement. A per-call-site `assert` would cover the
+ * callers that exist today; this covers the ones written next year.
+ *
+ * **There is no opt-out because there is no legitimate case.** A mutation that
+ * changes nothing tests nothing.
+ *
+ * **What this does NOT cover, stated so nobody reads it as more than it is.** It
+ * catches a void arm, not a *wrong* one: content that differs from the original
+ * but mutates something other than what the author meant still passes here. And
+ * it only matters in one direction — a RED arm is self-verifying, because
+ * something changed behaviour, so the patch necessarily landed. Only GREEN arms
+ * need their landing asserted. That is most arms in this repo, and not all.
+ *
+ * The refusal is raised BEFORE the journal is written and before any file is
+ * touched, so it leaves no artefacts: no mutated tracked file, no journal for
+ * the next run to replay. A refusal that has to be cleaned up is one more thing
+ * that can fail.
  */
 export function withMutatedSources<T>(
   repoRoot: string,
@@ -74,9 +107,22 @@ export function withMutatedSources<T>(
   run: () => T
 ): T {
   const originals: Record<string, string> = {};
-  for (const file of Object.keys(edits)) {
+  const unchanged: string[] = [];
+  for (const [file, body] of Object.entries(edits)) {
     const rel = toRelative(repoRoot, file);
     originals[rel] = readFileSync(path.join(repoRoot, rel), 'utf8');
+    if (body === originals[rel]) unchanged.push(rel);
+  }
+
+  if (unchanged.length > 0) {
+    throw new Error(
+      `withMutatedSources refused: the new content is byte-identical to what is ` +
+        `already on disk for ${unchanged.join(', ')}. This arm would have run against ` +
+        `unmutated source and returned the baseline, which reads as "the guard cannot ` +
+        `catch this" rather than "the patch never landed" (SC-787). Check the string ` +
+        `the edit is built from — \`.replace()\` returns the subject unchanged when the ` +
+        `pattern is absent. Nothing was written and no journal was created.`
+    );
   }
 
   // Before the first mutation, never after: the whole point is that a kill
