@@ -8,6 +8,7 @@ import { exportMoney, exportNumber, exportPercent, exportText } from '@scani/ui/
 import { resolveNumeric } from '@scani/ui/v3/lib/numeric';
 import type { TFunction } from 'i18next';
 import { PieChart, Tags } from 'lucide-react';
+import { tokenDisplayName } from '@/lib/utils';
 import {
   type DataQualitySets,
   dataQualityOptions,
@@ -176,7 +177,7 @@ export function holdingsDataViewConfig({
     // Short, because at 393px it shares the row with Refine and Select and a
     // truncated placeholder is a placeholder that no longer explains anything.
     searchPlaceholderKey: 'ui.dataView.holdings.config.searchHoldings',
-    searchFn: holdingMatches,
+    searchFn: (item, query) => holdingMatches(t, item, query),
     defaultFilters,
     defaultSort: { field: 'value', direction: 'desc' },
     filterDefs: [
@@ -303,8 +304,8 @@ export function holdingsDataViewConfig({
       // Tinkoff` are four rows nobody can tell apart, and the user named them
       // precisely so they could (SC-330).
       sublabel: item.label
-        ? `${item.token.name} · ${item.label} · ${item.account.name}`
-        : `${item.token.name} · ${item.account.name}`,
+        ? `${tokenDisplayName(t, item.token)} · ${item.label} · ${item.account.name}`
+        : `${tokenDisplayName(t, item.token)} · ${item.account.name}`,
       // Two figures, deliberately unequal (SC-559). The base-currency value
       // is the headline and keeps the row's `text-label`; the unit count sits
       // under it in caption ink, carrying the SYMBOL it counts — a bare
@@ -356,7 +357,7 @@ export function holdingsDataViewConfig({
       // named `BTC, Bitcoin` alike without them.
       ariaLabel: rowName([
         item.token.symbol,
-        item.token.name,
+        tokenDisplayName(t, item.token),
         // Spoken with the row for the same reason it is drawn: without it a
         // screen reader reads four identical rows.
         item.label ?? null,
@@ -409,7 +410,9 @@ export function holdingsDataViewConfig({
                 where four rows reading `RUB / Russian Ruble / Tinkoff` sit
                 closest together (SC-564). */}
             <span className="truncate text-caption text-muted-foreground">
-              {item.label ? `${item.token.name} · ${item.label}` : item.token.name}
+              {item.label
+                ? `${tokenDisplayName(t, item.token)} · ${item.label}`
+                : tokenDisplayName(t, item.token)}
             </span>
           </span>
         ),

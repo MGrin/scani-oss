@@ -8,6 +8,7 @@ import {
 } from '@scani/shared';
 import type { AllocationInput } from '@scani/ui/v3/lib/chart';
 import type { TFunction } from 'i18next';
+import { tokenDisplayName } from '@/lib/utils';
 import { HOLDINGS_QUALITY_PARAM } from './dataQuality';
 import { isScamToken, tokenTypeLabel } from './tokens';
 
@@ -143,12 +144,15 @@ export function amountDecimals(amount: Decimal.Value): number {
  * v2 searched: group is one of the surface's filter dimensions, so typing a
  * group's name and getting nothing would read as the search being broken.
  */
-export function holdingMatches(holding: HoldingWithDetails, query: string): boolean {
+export function holdingMatches(t: TFunction, holding: HoldingWithDetails, query: string): boolean {
   const needle = query.trim().toLowerCase();
   if (needle === '') return true;
   const haystack = [
     holding.token.symbol,
-    holding.token.name,
+    // The DISPLAYED name, not the stored one (SC-419). A reader shown
+    // `米ドル` who types it must match the row they are looking at; searching
+    // the English underneath it finds nothing and reads as a broken filter.
+    tokenDisplayName(t, holding.token),
     holding.account.name,
     holding.institution.name,
     ...holding.groups.map((group) => group.name),
