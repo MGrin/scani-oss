@@ -26,13 +26,13 @@ const GOOD = 'User-agent: *\nAllow: /\n\nSitemap: https://docs.scani.xyz/sitemap
 
 describe('checkRobots — the mistake it exists for', () => {
   test('the shipped robots.txt passes', () => {
-    expect(checkRobots({ robotsText: GOOD, site: SITE, distPaths: EMITTED })).toEqual([]);
+    expect(checkRobots({ robotsText: GOOD, emittedOrigin: SITE, distPaths: EMITTED })).toEqual([]);
   });
 
   test('naming sitemap.xml fails, and says what the build does emit', () => {
     const errors = checkRobots({
       robotsText: GOOD.replace('sitemap-index.xml', 'sitemap.xml'),
-      site: SITE,
+      emittedOrigin: SITE,
       distPaths: EMITTED,
     });
 
@@ -50,18 +50,18 @@ describe('checkRobots — the mistake it exists for', () => {
 
 describe('checkRobots — the other ways it can be wrong', () => {
   test('an absent robots.txt is a failure, not an empty pass', () => {
-    const absent = checkRobots({ robotsText: null, site: SITE, distPaths: EMITTED });
+    const absent = checkRobots({ robotsText: null, emittedOrigin: SITE, distPaths: EMITTED });
     // must-be-FOUND...
     expect(absent).toHaveLength(1);
     expect(absent[0]).toContain('missing');
     // ...against a control that must read the opposite on the same inputs.
-    expect(checkRobots({ robotsText: GOOD, site: SITE, distPaths: EMITTED })).toEqual([]);
+    expect(checkRobots({ robotsText: GOOD, emittedOrigin: SITE, distPaths: EMITTED })).toEqual([]);
   });
 
   test('a robots.txt with no Sitemap line fails', () => {
     const errors = checkRobots({
       robotsText: 'User-agent: *\nAllow: /\n',
-      site: SITE,
+      emittedOrigin: SITE,
       distPaths: EMITTED,
     });
     expect(errors).toHaveLength(1);
@@ -71,7 +71,7 @@ describe('checkRobots — the other ways it can be wrong', () => {
   test('a relative Sitemap path fails — robots.txt does not resolve one', () => {
     const errors = checkRobots({
       robotsText: 'Sitemap: /sitemap-index.xml\n',
-      site: SITE,
+      emittedOrigin: SITE,
       distPaths: EMITTED,
     });
     expect(errors).toHaveLength(1);
@@ -82,7 +82,7 @@ describe('checkRobots — the other ways it can be wrong', () => {
     expect(
       checkRobots({
         robotsText: 'Sitemap: https://docs.scani.xyz/sitemap-index.xml\n',
-        site: SITE,
+        emittedOrigin: SITE,
         distPaths: EMITTED,
       })
     ).toEqual([]);
@@ -91,7 +91,7 @@ describe('checkRobots — the other ways it can be wrong', () => {
   test('a sitemap on another host fails even though the file name is right', () => {
     const errors = checkRobots({
       robotsText: 'Sitemap: https://scani.xyz/sitemap-index.xml\n',
-      site: SITE,
+      emittedOrigin: SITE,
       distPaths: EMITTED,
     });
     // This is the one that would survive a `curl` check: scani.xyz serves a
@@ -105,7 +105,7 @@ describe('checkRobots — the other ways it can be wrong', () => {
     // The build emits both files; robots.txt names one that is not among them.
     const errors = checkRobots({
       robotsText: 'Sitemap: https://docs.scani.xyz/sitemap-2.xml\n',
-      site: SITE,
+      emittedOrigin: SITE,
       distPaths: EMITTED,
     });
     expect(errors).toHaveLength(1);
@@ -116,7 +116,7 @@ describe('checkRobots — the other ways it can be wrong', () => {
   test('a build that emits no sitemap at all is reported as such', () => {
     const errors = checkRobots({
       robotsText: GOOD,
-      site: SITE,
+      emittedOrigin: SITE,
       distPaths: new Set(['robots.txt', 'index.html']),
     });
     expect(errors).toHaveLength(1);

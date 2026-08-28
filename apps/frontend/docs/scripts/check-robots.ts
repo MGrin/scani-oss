@@ -58,12 +58,22 @@ export function parseSitemapDirectives(robotsText: string): SitemapDirective[] {
 export function checkRobots(input: {
   /** `null` when `dist/robots.txt` does not exist at all. */
   robotsText: string | null;
-  /** The `site` from `astro.config.mjs`, e.g. `https://docs.scani.xyz`. */
-  site: string;
+  /**
+   * The origin the build actually emitted, read off the first `<loc>` in
+   * `sitemap-index.xml` rather than out of `astro.config.mjs`.
+   *
+   * `@astrojs/sitemap` derives those URLs from `site`, so this is the same
+   * value one step later — and one step closer to what is served. Importing
+   * the config to read `site` would also pull Starlight's whole integration
+   * graph into this file's type program, for one string.
+   *
+   * `null` when the build emitted no sitemap to read it from.
+   */
+  emittedOrigin: string | null;
   /** Paths present in `dist/`, relative and slash-separated, no leading `/`. */
   distPaths: ReadonlySet<string>;
 }): string[] {
-  const { robotsText, site, distPaths } = input;
+  const { robotsText, emittedOrigin, distPaths } = input;
   const errors: string[] = [];
 
   if (robotsText === null) {
@@ -81,11 +91,8 @@ export function checkRobots(input: {
     return errors;
   }
 
-  let siteOrigin: string;
-  try {
-    siteOrigin = new URL(site).origin;
-  } catch {
-    errors.push(`\`site\` in astro.config.mjs is not a URL: ${JSON.stringify(site)}`);
+  if (emittedOrigin === null) {
+    errors.push('robots.txt declares a sitemap but the build emitted none to compare it against.');
     return errors;
   }
 
@@ -96,9 +103,9 @@ export function checkRobots(input: {
       );
       continue;
     }
-    if (url.origin !== siteOrigin) {
+    if (url.origin !== emittedOrigin) {
       errors.push(
-        `\`Sitemap: ${raw}\` points at ${url.origin}, but \`site\` is ${siteOrigin}. A cross-host sitemap is discarded unless that host is verified separately.`
+        `\`Sitemap: ${raw}\` points at ${url.origin}, but the build emitted ${emittedOrigin}. A cross-host sitemap is discarded unless that host is verified separately.`
       );
       continue;
     }
@@ -130,16 +137,18 @@ async function walkRelative(dir: string, prefix = ''): Promise<string[]> {
   return out;
 }
 
-async function main(): Promise<void> {
-  const { default: config } = await import('../astro.config.mjs');
-  const site = (config as { site?: string }).site;
-  if (!site) {
-    console.error(
-      'check-robots: `site` is unset in astro.config.mjs. @astrojs/sitemap emits nothing without it, so robots.txt would announce a sitemap that does not exist.'
-    );
-    process.exit(1);
+/** The origin `@astrojs/sitemap` actually wrote, off the first `<loc>`. */
+export function originFromSitemapIndex(xml: string): string | null {
+  const loc = xml.match(/<loc>\s*([^<\s]+)\s*<\/loc>/);
+  if (!loc) return null;
+  try {
+    return new URL(loc[1] as string).origin;
+  } catch {
+    return null;
   }
+}
 
+async function main(): Promise<void> {
   let robotsText: string | null = null;
   try {
     robotsText = await readFile(join(DIST_ROOT, 'robots.txt'), 'utf8');
@@ -147,8 +156,17 @@ async function main(): Promise<void> {
     robotsText = null;
   }
 
+  let emittedOrigin: string | null = null;
+  try {
+    emittedOrigin = originFromSitemapIndex(
+      await readFile(join(DIST_ROOT, 'sitemap-index.xml'), 'utf8')
+    );
+  } catch {
+    emittedOrigin = null;
+  }
+
   const distPaths = new Set(await walkRelative(DIST_ROOT));
-  const errors = checkRobots({ robotsText, site, distPaths });
+  const errors = checkRobots({ robotsText, emittedOrigin, distPaths });
 
   if (errors.length > 0) {
     console.error(`check-robots: ${errors.length} problem(s)`);
@@ -158,7 +176,7 @@ async function main(): Promise<void> {
 
   const announced = parseSitemapDirectives(robotsText ?? '').map((d) => d.raw);
   console.log(
-    `check-robots: ok — robots.txt announces ${announced.length} sitemap(s), all emitted: ${announced.join(', ')}`
+    `check-robots: ok — robots.txt announces ${announced.length} sitemap(s) on ${emittedOrigin}, all emitted: ${announced.join(', ')}`
   );
 }
 
