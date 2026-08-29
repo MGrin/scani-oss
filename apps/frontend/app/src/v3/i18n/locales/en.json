@@ -1378,7 +1378,13 @@
       "destinationPicker": {
         "loading": "Loading your accounts…",
         "legend": "Where this money went",
-        "noDestinations": "You have no other account to move this to. If it went somewhere Scani cannot see, say that instead."
+        "noDestinations": "You have no other account to move this to. If it went somewhere Scani cannot see, say that instead.",
+        "searchPlaceholder": "Search your accounts",
+        "group": {
+          "holdsToken": "Already holds {{symbol}}",
+          "sameNetwork": "On the same network",
+          "other": "Your other accounts"
+        }
       },
       "transfer": {
         "unreviewedBehaviour": "While these are unanswered, Scani books no gain on them — moving your own coins is not a sale, and guessing that it was is how an invented gain gets onto your chart. If one of these really did leave your portfolio, its gain is missing from your realized total until you say so.",
