@@ -12,6 +12,7 @@
 
 import type { OutflowRateLimiter } from '@scani/rate-limiter';
 import Decimal from 'decimal.js';
+import type { ConversionOutcome } from './conversion-outcome';
 
 // `https://api.exchangerate-api.com/v4/latest/{base}` — the `/latest/`
 // segment is required; the previous `/v4/{base}` form silently 404'd
@@ -28,6 +29,16 @@ interface CachedRate {
 }
 
 export class GoogleSheetsCurrencyConverter {
+  // Successful rates only. Caching a FAILURE was measured turning one
+  // upstream hiccup into a window in which every token sharing the pair
+  // failed: the batch loop converts tokens sequentially through this one
+  // cache, so a negative entry written by the first token decided the
+  // outcome for all the rest. A thrown timeout caches nothing and so
+  // affects only the token that hit it, which is why the same defect
+  // presented two ways on different days (SC-847).
+  //
+  // The upstream protection it was providing is the rate limiter's job,
+  // and retrying costs at most one call per token per run.
   private readonly cache = new Map<string, CachedRate>();
 
   constructor(private readonly limiter: OutflowRateLimiter) {}
@@ -37,18 +48,28 @@ export class GoogleSheetsCurrencyConverter {
     fromCurrency: string,
     toCurrency: string,
     _at: Date
-  ): Promise<string> {
-    if (fromCurrency === toCurrency || price === '0') return price;
+  ): Promise<ConversionOutcome> {
+    if (fromCurrency === toCurrency) return { ok: true, price };
     try {
       const rate = await this.getRate(fromCurrency, toCurrency);
-      if (rate === '0') return '0';
-      return new Decimal(price).mul(new Decimal(rate)).toString();
-    } catch {
-      return '0';
+      if (rate === null) {
+        return {
+          ok: false,
+          reason: `no ${fromCurrency}->${toCurrency} rate available upstream`,
+        };
+      }
+      return { ok: true, price: new Decimal(price).mul(new Decimal(rate)).toString() };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return {
+        ok: false,
+        reason: `${fromCurrency}->${toCurrency} rate lookup failed: ${message}`,
+      };
     }
   }
 
-  private async getRate(fromCurrency: string, toCurrency: string): Promise<string> {
+  /** `null` when upstream could not supply the rate. */
+  private async getRate(fromCurrency: string, toCurrency: string): Promise<string | null> {
     const key = `${fromCurrency.toUpperCase()}->${toCurrency.toUpperCase()}`;
     const cached = this.cache.get(key);
     if (cached && cached.expiresAt > Date.now()) return cached.rate;
@@ -63,16 +84,12 @@ export class GoogleSheetsCurrencyConverter {
         clearTimeout(timer);
       }
     });
-    if (!response.ok) {
-      this.cache.set(key, { rate: '0', expiresAt: Date.now() + CONVERSION_TTL_MS });
-      return '0';
-    }
+    if (!response.ok) return null;
+
     const data = (await response.json()) as { rates?: Record<string, number> };
     const raw = data.rates?.[toCurrency];
-    if (typeof raw !== 'number' || raw <= 0) {
-      this.cache.set(key, { rate: '0', expiresAt: Date.now() + CONVERSION_TTL_MS });
-      return '0';
-    }
+    if (typeof raw !== 'number' || raw <= 0) return null;
+
     const rate = raw.toString();
     this.cache.set(key, { rate, expiresAt: Date.now() + CONVERSION_TTL_MS });
     return rate;
