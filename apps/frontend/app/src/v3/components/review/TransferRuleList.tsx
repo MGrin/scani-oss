@@ -1,4 +1,5 @@
 import type { HiddenTransferReview, TransferReviewRule } from '@scani/shared';
+import { accountLabel } from '@scani/shared';
 import { userFacingMessage } from '@scani/ui/lib/user-facing-error';
 import { Checkbox } from '@scani/ui/ui/checkbox';
 import { Label } from '@scani/ui/ui/label';
@@ -183,8 +184,8 @@ function HiddenList({ hidden }: { hidden: HiddenTransferReview[] }) {
               {row.quantity} {row.tokenSymbol}
             </span>
             <span className="text-caption text-muted-foreground">
-              {row.institutionName ? `${row.institutionName} · ` : ''}
-              {row.accountName} · {formatRelative(t, new Date(row.occurredAt))} · {row.ruleNote}
+              {accountLabel(row.accountName, row.institutionName)} ·{' '}
+              {formatRelative(t, new Date(row.occurredAt))} · {row.ruleNote}
             </span>
           </li>
         ))}

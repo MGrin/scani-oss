@@ -41,6 +41,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@scani/ui/ui/tabs';
 import { Textarea } from '@scani/ui/ui/textarea';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@scani/ui/ui/tooltip';
+import { AccountPicker, type AccountPickerOption } from '@scani/ui/v3/components/AccountPicker';
 import { DeltaPill } from '@scani/ui/v3/components/charts/DeltaPill';
 import { Sparkline } from '@scani/ui/v3/components/charts/Sparkline';
 import { StatTile } from '@scani/ui/v3/components/charts/StatTile';
@@ -137,10 +138,53 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
+/**
+ * The rows SC-850 was reported over, near enough to be recognisable.
+ *
+ * `Airwallex` at Airwallex and the Bitcoin wallet are the doubled labels from
+ * the production screenshot; the two Airwallex USD holdings are the shape the
+ * subtitle exists for, and every row below them deliberately has none.
+ */
+const SPECIMEN_ACCOUNTS: AccountPickerOption[] = [
+  {
+    id: 'ap-1',
+    name: 'Airwallex',
+    institution: 'Airwallex',
+    subtitle: '1,201.50 USD · import_airwallex',
+    group: 'Already holds USD',
+  },
+  {
+    id: 'ap-2',
+    name: 'Airwallex',
+    institution: 'Airwallex',
+    subtitle: '6,217.15 USD · manual',
+    group: 'Already holds USD',
+  },
+  {
+    id: 'ap-3',
+    name: 'Solana Network - 7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU',
+    institution: 'Solana Network',
+    group: 'On the same network',
+    groupHint: 'No USD tracked here yet — a holding will be created',
+  },
+  { id: 'ap-4', name: 'Edge Capital', institution: 'Edge Capital', group: 'Your other accounts' },
+  {
+    id: 'ap-5',
+    name: 'Bitcoin Network - bc1q5n8k3vqfjy7t2ep0mhq9wr6l4xz8dc2u',
+    institution: 'Bitcoin Network',
+    group: 'Your other accounts',
+  },
+  { id: 'ap-6', name: 'Spot', institution: 'Kraken', group: 'Your other accounts' },
+  { id: 'ap-7', name: 'Joint current', institution: 'Revolut', group: 'Your other accounts' },
+  { id: 'ap-8', name: 'SGD balance', institution: 'Wise', group: 'Your other accounts' },
+  { id: 'ap-9', name: 'Cash box', institution: null, group: 'Your other accounts' },
+];
+
 function Specimens() {
   const [switchOn, setSwitchOn] = useState(true);
   const [range, setRange] = useState('30d');
   const [checked, setChecked] = useState(true);
+  const [pickedAccount, setPickedAccount] = useState<string | null>('ap-2');
   const switchId = useId();
   const checkboxId = useId();
   const inputId = useId();
@@ -593,6 +637,25 @@ function Specimens() {
             </TooltipTrigger>
             <TooltipContent>Last priced 6 minutes ago</TooltipContent>
           </Tooltip>
+        </div>
+      </Section>
+
+      <Section title="Account picker">
+        {/* The specimen carries every case SC-850 was reported for, so the
+            baseline is what a reader would actually complain about: an account
+            named after its institution, a wallet whose identifying half is at
+            the far end of the name, a subtitle on some rows and none on
+            others, and enough rows to bring out the search field and the fade
+            at the foot. Rendered at the width the transfer sheet gives it. */}
+        <div className="max-w-md">
+          <AccountPicker
+            options={SPECIMEN_ACCOUNTS}
+            value={pickedAccount}
+            onChange={(option) => setPickedAccount(option.id)}
+            name="kitchen-sink-account"
+            legend="Where this money went"
+            emptyLabel="You have no other account to move this to."
+          />
         </div>
       </Section>
     </div>
