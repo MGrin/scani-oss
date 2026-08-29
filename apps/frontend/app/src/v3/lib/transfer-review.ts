@@ -110,18 +110,23 @@ export function candidateSummary(t: TFunction, candidate: TransferCandidate): st
   return `${candidate.quantity} ${candidate.tokenSymbol} · ${formatSignedGap(t, candidate.timeDeltaMs)}`;
 }
 
-/** Where a candidate landed, in the words the accounts list uses. */
+/**
+ * Where a candidate landed, in the words the accounts list uses.
+ *
+ * `accountLabel` rather than a join, for the same reason `destinationLocation`
+ * uses it: these three sit on ONE sheet, and fixing `Airwallex · Airwallex` in
+ * the destination picker while the candidate row above it still reads that way
+ * would answer the report on one line of the screen it was reported about.
+ */
 export function candidateLocation(candidate: TransferCandidate): string {
-  return candidate.institutionName
-    ? `${candidate.institutionName} · ${candidate.accountName}`
-    : candidate.accountName;
+  return accountLabel(candidate.accountName, candidate.institutionName);
 }
 
 export function pendingLocation(item: {
   accountName: string;
   institutionName: string | null;
 }): string {
-  return item.institutionName ? `${item.institutionName} · ${item.accountName}` : item.accountName;
+  return accountLabel(item.accountName, item.institutionName);
 }
 
 /**
