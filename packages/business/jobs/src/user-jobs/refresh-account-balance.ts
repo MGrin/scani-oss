@@ -40,6 +40,14 @@ export const REFRESH_ACCOUNT_BALANCE: UserJobDescriptor<RefreshAccountBalanceJob
   // part of the id so a second click on the same account collapses
   // onto the in-flight job. The api-side `recomputeHistory` flow uses
   // the same pattern (UserJobRepository.findInFlightByName).
+  //
+  // The retention settings below keep a FINISHED job under this id long
+  // after its work is done, and `ON CONFLICT (queue, id) DO NOTHING` has
+  // no notion of state — so "collapse onto the in-flight job" silently
+  // became "collapse onto any job, including last week's" (SC-846).
+  // `BullMqEnqueueService` evicts a finished namesake before adding;
+  // read `evictFinishedNamesake` there before changing this id or
+  // `removeOnComplete` / `removeOnFail`.
   computeJobId: (d) => [JOB_NAMES.refreshAccountBalance, d.userId, d.accountId].join(JOB_ID_SEP),
   summarizePayload: (d) => ({ holdingId: d.holdingId, accountId: d.accountId }),
 };
