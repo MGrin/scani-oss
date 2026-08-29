@@ -16,6 +16,7 @@ import {
   type VisualScreen,
   type VisualSession,
 } from './screens';
+import { assertPixelsSettled } from './stability';
 
 /**
  * The visual-regression gate (SC-24). One test per screen in `screens.ts`,
@@ -493,6 +494,7 @@ function declare(screen: VisualScreen): void {
     await page.goto(screen.route);
     await settle(page, loads);
     await applyDirection(page, screen);
+    await assertPixelsSettled(page, screen.name);
 
     // The capture's own failure is held rather than thrown, because
     // `assertPhotographedOnce` can explain it: a pixel count over a spinner is
