@@ -47,6 +47,7 @@ import type {
 import type {
   ExitedPosition,
   HoldingSnapshot,
+  PositionProbe,
   ProviderContext,
   TransactionEvent,
   TransactionFetchContext,
@@ -198,6 +199,55 @@ export class EtherscanProvider
       if (new Decimal(t.balance).gt(0)) out.push(t);
     }
     return out;
+  }
+
+  /**
+   * One `tokenbalance` (or `balance`, for the native asset) per key the caller
+   * names — the direct question `fetchBalances` cannot ask (SC-852).
+   *
+   * `fetchTokenBalanceRaw` already separates the three answers and this method
+   * exists to stop them being flattened again:
+   *
+   *   `null`      -> `unreadable`. Retries are exhausted or the endpoint did
+   *                  not answer with a balance. It says NOTHING about what the
+   *                  wallet holds, and reporting it as `exited` would anchor a
+   *                  holding at zero on a number nobody read.
+   *   zero        -> `exited`. Measured, and the claim a caller may act on.
+   *   anything    -> `held`. The asset is there and discovery missed it —
+   *                  the 10k-page blind spot `staleStrategy: 'preserve'`
+   *                  exists for, and not an exit.
+   *
+   * The scale is deliberately not applied. Zero is zero at every decimal
+   * count, `held` needs no magnitude to be true, and the caller already has
+   * the token's own `decimals` — reading a scale out of the discovery page
+   * would mean fetching the page this method exists to avoid.
+   *
+   * An invalid address answers `unreadable` for everything rather than `[]`:
+   * an empty list reads as "nothing to say about these", which is the same
+   * silence a working probe over an empty input produces.
+   */
+  async probePositions(
+    ctx: WithUserCreds<ProviderContext> & { institutionCode: string },
+    externalIds: readonly string[]
+  ): Promise<PositionProbe[]> {
+    if (externalIds.length === 0) return [];
+    const chain = this.getChainConfig(ctx.institutionCode);
+    const { walletAddress, apiKey } = await this.resolveRequestParams(ctx);
+    const unreadable = externalIds.map(
+      (externalId): PositionProbe => ({ externalId, state: 'unreadable' })
+    );
+    if (!this.isValidAddress(walletAddress)) return unreadable;
+
+    return Promise.all(
+      externalIds.map(async (externalId): Promise<PositionProbe> => {
+        const raw =
+          externalId === 'native'
+            ? await this.fetchNativeBalanceRaw(chain, walletAddress, apiKey)
+            : await this.fetchTokenBalanceRaw(chain, externalId, walletAddress, apiKey);
+        if (!raw) return { externalId, state: 'unreadable' };
+        return { externalId, state: raw.isZero() ? 'exited' : 'held' };
+      })
+    );
   }
 
   // ============================================================
