@@ -1,0 +1,25 @@
+// Generated companion to tsconfig.json — see docs/technical (SC-280).
+// Type-checks the harness AND the unit tests. `tsconfig.json` stays the
+// editor/build config; this is the one `bun run type-check` uses.
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "composite": false,
+    "declaration": false,
+    "declarationMap": false,
+    "rootDir": "../.."
+  },
+  "include": [
+    "tests/**/*",
+    "capture/**/*",
+    "fixtures/**/*",
+    "scripts/**/*",
+    "unit/**/*",
+    "visual/**/*",
+    "playwright.config.ts",
+    "playwright.shots.config.ts",
+    "playwright.visual.config.ts"
+  ],
+  "exclude": ["node_modules"]
+}
