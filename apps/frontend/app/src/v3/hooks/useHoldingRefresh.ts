@@ -5,6 +5,10 @@ import { invalidatePortfolioQueries } from '@/hooks/invalidatePortfolioQueries';
 import { trpc } from '@/lib/trpc';
 import type { useHoldingActions } from '@/v3/hooks/useHoldingActions';
 import { useJobStatus } from '@/v3/hooks/useJobStatus';
+import {
+  type BalanceRefreshReport,
+  describeBalanceRefresh,
+} from '@/v3/lib/balance-refresh-outcome';
 import { describePriceRefresh, type PriceRefreshReport } from '@/v3/lib/price-refresh-outcome';
 
 /**
@@ -91,28 +95,18 @@ export function useHoldingRefresh(actions: ReturnType<typeof useHoldingActions>)
   useEffect(() => {
     if (!balanceJob) return;
     if (balanceStatus.state === 'completed') {
-      // The venue is asked for the whole account, not for one position, and
-      // it can come back without the symbol the user actually pressed —
-      // Etherscan's tokentx-based discovery has periodic blind spots. Saying
-      // "refreshed" then would be a claim the numbers on the screen disprove.
-      const report = balanceStatus.result as
-        | { syncedSymbols?: string[]; missingSymbols?: string[] }
-        | null
-        | undefined;
-      const synced = (report?.syncedSymbols ?? []).map((s) => s.toUpperCase());
-      const missing = (report?.missingSymbols ?? []).map((s) => s.toUpperCase());
-      const { symbol } = balanceJob;
-
-      if (symbol && missing.includes(symbol) && !synced.includes(symbol)) {
-        showError(
-          t('v3.holdings.refresh.partial', { symbol, count: synced.length }),
-          t('v3.holdings.refresh.partialTitle')
-        );
-      } else if (symbol && synced.includes(symbol)) {
-        showSuccess(t('v3.holdings.refresh.oneBalance', { symbol }));
-      } else {
-        showSuccess(t('v3.holdings.refresh.manyBalances', { count: synced.length }));
-      }
+      // Only ONE of the four outcomes is an error, and which one is the whole
+      // of SC-852: an absent symbol used to mean "the provider didn't return
+      // it — try again in a minute" whether the position was still there or
+      // had left the wallet, and for the second cause retrying can never work.
+      const outcome = describeBalanceRefresh(
+        t,
+        balanceStatus.result as BalanceRefreshReport | null,
+        balanceJob.symbol
+      );
+      // Same `t(...)`-output-not-an-`Error` rule as the price branch (SC-551).
+      if (outcome.kind === 'unresolved') showError(outcome.message, outcome.title);
+      else showSuccess(outcome.message);
       setBalanceJob(null);
       void invalidatePortfolioQueries(utils);
     } else if (balanceStatus.state === 'failed') {
