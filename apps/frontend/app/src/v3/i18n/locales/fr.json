@@ -1877,6 +1877,9 @@
         "answered": "Traités",
         "balancesTitle": "Variations de solde à expliquer"
       },
+      "queues": {
+        "clear": "Rien en attente"
+      },
       "item": {
         "jobFailed": "{{job}} a échoué",
         "invoiceExtracted": "Facture extraite",
