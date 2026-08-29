@@ -74,7 +74,11 @@ describe('AnsweredTransferList', () => {
       render(<AnsweredTransferList items={ROWS} query={SETTLED_QUERY_STATE} onSearch={() => {}} />)
     );
 
-    expect(unattributed).toContain('aria-label="4000 USD, Airwallex · Airwallex');
+    // `Airwallex`, not `Airwallex · Airwallex`. This line asserted the doubled
+    // label until SC-850 — the row is an Airwallex account named `Airwallex`,
+    // and concatenating the institution onto the name said it twice to a
+    // screen reader as well as to the eye. The test was pinning the defect.
+    expect(unattributed).toContain('aria-label="4000 USD, Airwallex,');
     expect(unattributed?.split('aria-label="')[1]?.split('"')[0]).toContain('Not recorded');
   });
 

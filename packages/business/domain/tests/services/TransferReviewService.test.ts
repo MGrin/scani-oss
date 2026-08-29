@@ -1978,6 +1978,60 @@ describe('TransferReviewService — where a transfer can go', () => {
     const outId = await insertOutflow(f, { at: anchor(), quantity: '-100', externalId: 'd-4' });
     expect(await service().listDestinations(randomUUID(), outId)).toEqual([]);
   });
+
+  /**
+   * The ordering is the half of SC-850 that changes the ANSWER (mgrin,
+   * 2026-08-29). Production offered a SOL transfer an Airwallex fiat account
+   * and a Bitcoin wallet above every Solana wallet, every row reading "No SOL
+   * tracked here yet", because the list was sorted by account name.
+   *
+   * Alphabetical was never neutral — it was a ranking too, by a fact about the
+   * name. Ranking by what the app already knows about each destination is not
+   * a guess and does not pre-select: every account is still offered, nothing
+   * is checked, and the reader can scroll past the whole first band.
+   */
+  test('ranks accounts that already hold the token above the rest', async () => {
+    const f = fixture!;
+    const outId = await insertOutflow(f, { at: anchor(), quantity: '-100', externalId: 'd-5' });
+
+    const destinations = await service().listDestinations(f.userId, outId);
+    const bands = destinations.map((d) => d.relevance);
+    // Sorted, therefore already grouped: no band reappears after another.
+    expect(bands).toEqual([...bands].sort((a, b) => bands.indexOf(a) - bands.indexOf(b)));
+    expect(bands[0]).toBe('holds_token');
+    expect(
+      destinations.filter((d) => d.relevance === 'holds_token').map((d) => d.holdingId)
+    ).toEqual(expect.arrayContaining([f.inHoldingId, f.sameAccountHoldingId]));
+  });
+
+  test('an account on the chain the money is leaving outranks one that is not', async () => {
+    const f = fixture!;
+    const outId = await insertOutflow(f, { at: anchor(), quantity: '-100', externalId: 'd-6' });
+
+    const destinations = await service().listDestinations(f.userId, outId);
+    const synced = destinations.find((d) => d.accountId === f.walletSyncedAccountId);
+    const empty = destinations.find((d) => d.accountId === f.emptyAccountId);
+    // Both track no position in this token, so the old list ordered them by
+    // name — and `zz-empty-…` sorts BEFORE `zz-synced-wallet-…`, putting the
+    // account that cannot receive this asset above the one that can.
+    expect(synced?.relevance).toBe('same_network');
+    expect(empty?.relevance).toBe('other');
+    expect(destinations.indexOf(synced!)).toBeLessThan(destinations.indexOf(empty!));
+  });
+
+  test('an account on a DIFFERENT chain is not same-network', async () => {
+    const f = fixture!;
+    const outId = await insertOutflow(f, { at: anchor(), quantity: '-100', externalId: 'd-7' });
+
+    const destinations = await service().listDestinations(f.userId, outId);
+    // The fixture's bridge account is chain 8453 against the outflow's chain
+    // 1 — the same wallet, and still not somewhere this token can land. The
+    // exchange account carries no chain at all. Only the one account on the
+    // source's own chain earns the band.
+    expect(
+      destinations.filter((d) => d.relevance === 'same_network').map((d) => d.accountId)
+    ).toEqual([f.walletSyncedAccountId]);
+  });
 });
 
 /**

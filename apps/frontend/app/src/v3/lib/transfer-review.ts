@@ -10,6 +10,7 @@ import type {
   TransferReviewSplitPortion,
 } from '@scani/shared';
 import {
+  accountLabel,
   Decimal,
   formatCurrency,
   formatDate,
@@ -109,18 +110,23 @@ export function candidateSummary(t: TFunction, candidate: TransferCandidate): st
   return `${candidate.quantity} ${candidate.tokenSymbol} · ${formatSignedGap(t, candidate.timeDeltaMs)}`;
 }
 
-/** Where a candidate landed, in the words the accounts list uses. */
+/**
+ * Where a candidate landed, in the words the accounts list uses.
+ *
+ * `accountLabel` rather than a join, for the same reason `destinationLocation`
+ * uses it: these three sit on ONE sheet, and fixing `Airwallex · Airwallex` in
+ * the destination picker while the candidate row above it still reads that way
+ * would answer the report on one line of the screen it was reported about.
+ */
 export function candidateLocation(candidate: TransferCandidate): string {
-  return candidate.institutionName
-    ? `${candidate.institutionName} · ${candidate.accountName}`
-    : candidate.accountName;
+  return accountLabel(candidate.accountName, candidate.institutionName);
 }
 
 export function pendingLocation(item: {
   accountName: string;
   institutionName: string | null;
 }): string {
-  return item.institutionName ? `${item.institutionName} · ${item.accountName}` : item.accountName;
+  return accountLabel(item.accountName, item.institutionName);
 }
 
 /**
@@ -235,9 +241,10 @@ export const DECISION_LABELS: Record<
 
 /** Where a destination is, in the words the accounts list uses. */
 export function destinationLocation(destination: TransferDestination): string {
-  return destination.institutionName
-    ? `${destination.institutionName} · ${destination.accountName}`
-    : destination.accountName;
+  // `accountLabel`, not a join: production reads `Airwallex · Airwallex` and
+  // `Bitcoin Network · Bitcoin Network - bc1q5n…` because an importer names an
+  // account after the institution that named it (SC-850).
+  return accountLabel(destination.accountName, destination.institutionName);
 }
 
 /**
@@ -268,18 +275,57 @@ export function destinationScale(destinations: readonly TransferDestination[]): 
  * — and on an account with two of them that is the answer.
  */
 export function destinationDetail(
-  t: TFunction,
   destination: TransferDestination,
   tokenSymbol: string,
   scale: number
-): string {
-  if (destination.holdingId === null) {
-    return t('v3.review.transfer.destination.willCreate', { symbol: tokenSymbol });
-  }
+): string | null {
+  // NULL, not a sentence (SC-850). A destination with no holding has nothing
+  // to say that distinguishes it from the next one, and the screenshot that
+  // prompted this had the identical "No SOL tracked here yet" on every single
+  // row — a line repeated down a list is noise wearing the costume of detail.
+  // The fact is true of a whole band, so `destinationGroup` says it once, over
+  // the band's heading.
+  if (destination.holdingId === null) return null;
   const balance = destination.balance
     ? `${formatNumber(destination.balance, { decimals: scale })} ${tokenSymbol}`
     : `— ${tokenSymbol}`;
   return destination.source ? `${balance} · ${destination.source}` : balance;
+}
+
+/**
+ * The heading a destination sits under, and the one sentence that is true of
+ * everything beneath it (SC-850).
+ *
+ * Three bands, ranked by the server: accounts that already hold this token,
+ * accounts on the chain the money is leaving, and everything else. The reader
+ * is answering *where did this go*, and the bands are the app saying what it
+ * already knows about each answer — which is what the flat alphabetical list
+ * withheld while offering an Airwallex account above every Solana wallet for a
+ * SOL transfer.
+ *
+ * The band never pre-selects and never hides a row: every account is still
+ * offered, because "it went to an account I track that has never held SOL" is
+ * a real thing that happens.
+ */
+export function destinationGroup(
+  t: TFunction,
+  destination: TransferDestination,
+  tokenSymbol: string
+): { group: string; groupHint?: string } {
+  switch (destination.relevance) {
+    case 'holds_token':
+      return { group: t('v3.review.destinationPicker.group.holdsToken', { symbol: tokenSymbol }) };
+    case 'same_network':
+      return {
+        group: t('v3.review.destinationPicker.group.sameNetwork'),
+        groupHint: t('v3.review.transfer.destination.willCreate', { symbol: tokenSymbol }),
+      };
+    default:
+      return {
+        group: t('v3.review.destinationPicker.group.other'),
+        groupHint: t('v3.review.transfer.destination.willCreate', { symbol: tokenSymbol }),
+      };
+  }
 }
 
 /**

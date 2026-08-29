@@ -116,6 +116,12 @@
     "title": "Definições"
   },
   "ui": {
+    "accountPicker": {
+      "loading": "A carregar as suas contas…",
+      "searchPlaceholder": "Procurar contas",
+      "noMatch": "Nenhuma conta corresponde a «{{query}}»",
+      "shownOf": "A mostrar {{shown}} de {{total}}"
+    },
     "amountInput": {
       "readAsDecimal": "Lido como {{amount}} — aqui, tanto a vírgula como o ponto significam uma casa decimal. Elimine o separador se queria dizer um milhar.",
       "readAsWhole": "Lido como {{amount}} — este campo aceita apenas números inteiros."
