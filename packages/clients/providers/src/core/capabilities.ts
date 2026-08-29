@@ -32,6 +32,7 @@ import type {
   DiscoveredAccount,
   ExitedPosition,
   HoldingSnapshot,
+  PositionProbe,
   PriceQuote,
   ProviderContext,
   TransactionEvent,
@@ -231,6 +232,39 @@ export interface BalanceProvider extends ProviderBase {
   fetchBalances(
     ctx: WithUserCreds<ProviderContext> & { institutionCode: string }
   ): Promise<HoldingSnapshot[]>;
+
+  /**
+   * The current balance of assets the caller ALREADY KNOWS ABOUT, asked one by
+   * one (SC-852).
+   *
+   * `fetchBalances` answers *what is here now* by discovery, and discovery is
+   * where the ambiguity comes from: Etherscan's reads one 10k-row `tokentx`
+   * page and drops every zero, so a token that left the wallet months ago and
+   * a token a 429 swallowed are indistinguishable — both simply absent. The
+   * refresh path then tells the user their token "wasn't returned by the
+   * provider, try again in a minute", advice that can never work for the
+   * first cause because the balance will never be non-zero again.
+   *
+   * This asks a DIRECT QUESTION instead, which is the same distinction
+   * `fetchExitedPositions` rests on: the answer is measured, not inferred from
+   * an absence.
+   *
+   * THE CALLER SUPPLIES THE POPULATION, and that is what keeps it affordable.
+   * `fetchExitedPositions` walks the whole history to find its candidates;
+   * this one is handed 0-2 externalIds that are already stuck and costs one
+   * upstream call each. `OutflowRateLimiterRegistry` keys one window shared by
+   * every machine, so an implementation must not widen the set it was given.
+   *
+   * OPTIONAL. An absent implementation is today's behaviour — the caller keeps
+   * treating an absence as unresolved — and that is an answer rather than a
+   * stub to fill in. Implement it only where the underlying API can be asked
+   * about a specific asset; a provider that would have to re-derive the
+   * population from a listing has nothing to add here.
+   */
+  probePositions?(
+    ctx: WithUserCreds<ProviderContext> & { institutionCode: string },
+    externalIds: readonly string[]
+  ): Promise<PositionProbe[]>;
 }
 
 export interface TransactionsProvider extends ProviderBase {
