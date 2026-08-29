@@ -884,6 +884,7 @@
         "partial_many": "{{symbol}} não foi devolvido pelo fornecedor — os seus outros {{count}} saldos foram atualizados. Tente outra vez daqui a um minuto, ou volte a importar a conta se isto continuar a acontecer.",
         "partial_one": "{{symbol}} não foi devolvido pelo fornecedor — o seu outro {{count}} saldo foi atualizado. Tente outra vez daqui a um minuto, ou volte a importar a conta se isto continuar a acontecer.",
         "partial_other": "{{symbol}} não foi devolvido pelo fornecedor — os seus outros {{count}} saldos foram atualizados. Tente outra vez daqui a um minuto, ou volte a importar a conta se isto continuar a acontecer.",
+        "exited": "{{symbol}} saiu desta carteira — a rede diz 0, então o saldo na tela agora é 0.",
         "price": "A atualizar o preço",
         "priceFailed": "O trabalho de atualização de preços falhou"
       },

@@ -1,8 +1,11 @@
 import { db, withTransaction } from '@scani/db';
+import type { Holding, Token } from '@scani/db/schema';
 import * as schema from '@scani/db/schema';
 import { createComponentLogger } from '@scani/logging';
+import type { BalanceProvider } from '@scani/providers/core/capabilities';
 import { ProviderRegistry } from '@scani/providers/core/registry';
-import type { ProviderContext } from '@scani/providers/core/types';
+import type { HoldingSnapshot, ProviderContext } from '@scani/providers/core/types';
+import { Decimal } from '@scani/shared';
 import { and, eq } from 'drizzle-orm';
 import { Container, Service } from 'typedi';
 import { deriveBalancesAsOf, withBalancesAsOf } from '../lib/balances-as-of';
@@ -36,13 +39,44 @@ export interface RefreshAccountBalanceResult {
   syncedSymbols: string[];
   /**
    * Symbols of existing holdings whose token wasn't in the provider
-   * response. The UI uses this to warn the user when the holding they
-   * clicked Refresh on wasn't actually re-checked — e.g. Etherscan's
-   * `tokentx`-based discovery silently drops tokens that fall outside
-   * its 10k-row pagination window.
+   * response AND could not be resolved by a direct probe — so nobody
+   * knows what the balance is. The UI warns on these, and "try again in
+   * a minute" is correct advice for exactly this set (SC-852).
+   *
+   * Before the probe existed this also carried every position that had
+   * simply LEFT the wallet, and telling that user to retry was advice
+   * that could never work: a departed token is never non-zero again.
    */
   missingSymbols: string[];
+  /**
+   * Symbols the provider omitted because the position is GONE — asked
+   * directly and measured at zero, not inferred from the absence. The
+   * holdings behind these were anchored to 0 in this run, so the UI has
+   * something true to say instead of an error (SC-852).
+   */
+  exitedSymbols: string[];
   durationMs: number;
+}
+
+/**
+ * The slice of an account's holding rows the exit probe reads.
+ *
+ * Structural rather than `HoldingWithFullDetails` so a test can hand it two
+ * literals: what this needs is a key to ask about, whether the sync owns the
+ * row, and the token identity to write the zero back under.
+ */
+interface HoldingProbeCandidate {
+  holding: Pick<Holding, 'externalId' | 'source' | 'isHidden' | 'balance'>;
+  token: Pick<
+    Token,
+    | 'symbol'
+    | 'name'
+    | 'decimals'
+    | 'iconUrl'
+    | 'marketSegment'
+    | 'providerMetadata'
+    | 'isScamProbability'
+  >;
 }
 
 // Per-account balance refresh, triggered by the user clicking "Refresh
@@ -66,7 +100,8 @@ export class RefreshAccountBalanceUseCase {
   async execute(input: RefreshAccountBalanceInput): Promise<RefreshAccountBalanceResult> {
     const start = Date.now();
 
-    const { account, holdingsForAccount, existingSymbols } = await this.resolveAccount(input);
+    const { account, holdingsForAccount, holdingsWithDetails, existingSymbols } =
+      await this.resolveAccount(input);
 
     const institutionId = account.institutionId;
     const institutionCode =
@@ -163,9 +198,32 @@ export class RefreshAccountBalanceUseCase {
         // Provider failed to return anything → from the user's POV
         // every existing holding on this account was "not refreshed."
         missingSymbols: existingSymbols,
+        // Nothing was probed: a provider that answered with nothing at all is
+        // the outage case, and asking it N more questions in the same breath
+        // spends the shared rate-limit window to learn the same thing twice.
+        exitedSymbols: [],
         durationMs: Date.now() - start,
       };
     }
+
+    // A position that LEFT the wallet and one the provider failed to reach are
+    // the same absence from `snapshots`, and until this ran the refresh treated
+    // both as unresolved: the user was told their token "wasn't returned — try
+    // again in a minute", which is right for the second cause and impossible
+    // for the first, because a departed token is never non-zero again (SC-852).
+    //
+    // A person pressed Refresh, so the extra calls are affordable and there is
+    // somebody to tell. The cron path is deliberately NOT changed here.
+    const probed =
+      source === 'wallet'
+        ? await this.probeExitedPositions({
+            provider,
+            ctx,
+            holdings: holdingsWithDetails,
+            snapshots,
+            capturedAt: new Date(),
+          })
+        : { snapshots: [] as HoldingSnapshot[], exitedSymbols: [] as string[] };
 
     const cryptoTokenType = await this.tokenTypeRepository.findByCode('crypto');
     const fiatTokenType = await this.tokenTypeRepository.findByCode('fiat');
@@ -191,7 +249,7 @@ export class RefreshAccountBalanceUseCase {
         account: { id: account.id, userId: input.userId },
         userId: input.userId,
         userBaseCurrencyId,
-        snapshots,
+        snapshots: [...snapshots, ...probed.snapshots],
         cryptoTokenTypeId: cryptoTokenType.id,
         tokenTypeMap,
         existingHoldings: holdingsForAccount,
@@ -250,7 +308,13 @@ export class RefreshAccountBalanceUseCase {
       )
     );
     const syncedSet = new Set(syncedSymbols);
-    const missingSymbols = existingSymbols.filter((s) => !syncedSet.has(s));
+    // `exitedSymbols` is subtracted rather than folded into `syncedSymbols`:
+    // both are resolved, and only one of them means the number on the screen
+    // just went to zero. A caller that cannot see the difference is back to
+    // the collapse this ticket is about.
+    const exitedSet = new Set(probed.exitedSymbols);
+    const missingSymbols = existingSymbols.filter((s) => !syncedSet.has(s) && !exitedSet.has(s));
+    const exitedSymbols = existingSymbols.filter((s) => exitedSet.has(s) && !syncedSet.has(s));
 
     const durationMs = Date.now() - start;
     logger.info(
@@ -262,6 +326,7 @@ export class RefreshAccountBalanceUseCase {
         holdingsRemoved,
         syncedSymbols,
         missingSymbols,
+        exitedSymbols,
         durationMs,
       },
       'Refresh-balance complete'
@@ -274,8 +339,126 @@ export class RefreshAccountBalanceUseCase {
       holdingsRemoved,
       syncedSymbols,
       missingSymbols,
+      exitedSymbols,
       durationMs,
     };
+  }
+
+  /**
+   * The stuck rows, asked about DIRECTLY, and the two answers separated
+   * (SC-852).
+   *
+   * `fetchBalances` discovers what a wallet holds and drops every zero, so
+   * "this token left the wallet" and "discovery failed to reach it" arrive as
+   * the same absence. `staleStrategy: 'preserve'` then keeps the old number —
+   * correct for the second cause, and the reason a position the chain reports
+   * as `0x0` can sit on a dashboard for months. Softening the toast would not
+   * have fixed it: the number itself was wrong.
+   *
+   * `probePositions` is a different question, not a better inference. Each
+   * candidate's balance is READ, which is the same standard `fetchExitedPositions`
+   * holds itself to and the only one that may anchor a holding at zero —
+   * `holdings.balance` is an anchor rather than a sum, so a wrong zero rewrites
+   * the reconstructed history behind it.
+   *
+   * FOUR THINGS BOUND THE COST, and they are what make this affordable on a
+   * rate-limit window `OutflowRateLimiterRegistry` shares across all four
+   * machines. Candidates must be this account's, owned by the wallet sync, at a
+   * non-zero balance, and absent from the snapshot just returned. That is
+   * usually 0-2 rows; the whole holdings table is not the population.
+   *
+   * The visibility filter matches `existingSymbols` on purpose. This resolves
+   * the warnings a user is shown, so probing rows they cannot see would spend
+   * the budget on scam dust to change a message nobody reads.
+   *
+   * THREE OUTCOMES, and only one of them writes anything:
+   *
+   *   `exited`     -> a snapshot at `'0'`, into the same persistence pass the
+   *                   balances take. `updateOnly` is already true on the wallet
+   *                   path, so it corrects the existing row and creates nothing.
+   *   `held`       -> the discovery blind spot. Left in `missingSymbols`, where
+   *                   "try again in a minute" is true advice.
+   *   `unreadable` -> nobody knows. Same treatment as `held`, for the opposite
+   *                   reason, and deliberately not distinguished to the user:
+   *                   the action is identical and the balance on screen is the
+   *                   last one that was measured either way.
+   *
+   * A FAILURE HERE COSTS THE SPLIT AND NOTHING ELSE. The balances are the
+   * answer the user came for and they are already in hand, so a throwing probe
+   * degrades to today's behaviour — every absence unresolved — rather than
+   * failing the refresh.
+   */
+  private async probeExitedPositions(args: {
+    provider: Pick<BalanceProvider, 'probePositions'>;
+    ctx: Parameters<NonNullable<BalanceProvider['probePositions']>>[0];
+    holdings: readonly HoldingProbeCandidate[];
+    snapshots: readonly HoldingSnapshot[];
+    capturedAt: Date;
+  }): Promise<{ snapshots: HoldingSnapshot[]; exitedSymbols: string[] }> {
+    const empty = { snapshots: [] as HoldingSnapshot[], exitedSymbols: [] as string[] };
+    if (!args.provider.probePositions) return empty;
+
+    const returned = new Set(args.snapshots.map((s) => s.externalId.toLowerCase()));
+    const candidates = new Map<string, HoldingProbeCandidate>();
+    for (const row of args.holdings) {
+      const externalId = row.holding.externalId;
+      if (!externalId) continue;
+      if (row.holding.source !== WALLET_BALANCE_SYNC_SOURCE) continue;
+      if (row.holding.isHidden) continue;
+      if (Number(row.token.isScamProbability ?? 0) >= SCAM_PROBABILITY_THRESHOLD) continue;
+      // Already at zero: nothing to correct, and the probe would spend a call
+      // to confirm the number that is already on the screen.
+      if (new Decimal(row.holding.balance ?? '0').isZero()) continue;
+      if (returned.has(externalId.toLowerCase())) continue;
+      if (candidates.has(externalId)) continue;
+      candidates.set(externalId, row);
+    }
+    if (candidates.size === 0) return empty;
+
+    let probes: Awaited<ReturnType<NonNullable<BalanceProvider['probePositions']>>>;
+    try {
+      probes = await args.provider.probePositions(args.ctx, [...candidates.keys()]);
+    } catch (error) {
+      logger.warn(
+        {
+          externalIds: [...candidates.keys()],
+          error: error instanceof Error ? error.message : String(error),
+        },
+        'Could not probe absent positions — every absence stays unresolved'
+      );
+      return empty;
+    }
+
+    const snapshots: HoldingSnapshot[] = [];
+    const exitedSymbols: string[] = [];
+    for (const probe of probes) {
+      if (probe.state !== 'exited') continue;
+      const candidate = candidates.get(probe.externalId);
+      // A probe about something nobody asked about anchors a holding this
+      // account may not even own. Drop it rather than trusting the key back.
+      if (!candidate) continue;
+      const { token } = candidate;
+      snapshots.push({
+        externalId: probe.externalId,
+        // Built from the token row already on the holding rather than from
+        // anything the probe returned: the snapshot has to resolve back to
+        // THIS token for `dedupStrategy: 'externalId'` to find the existing
+        // row, and the row's own identity is the only thing guaranteed to.
+        tokenIdentity: {
+          symbol: token.symbol,
+          name: token.name,
+          decimals: token.decimals,
+          iconUrl: token.iconUrl,
+          marketSegment: token.marketSegment,
+          providerMetadata: token.providerMetadata,
+        },
+        balance: '0',
+        capturedAt: args.capturedAt,
+      });
+      const symbol = (token.symbol ?? '').toUpperCase();
+      if (symbol.length > 0) exitedSymbols.push(symbol);
+    }
+    return { snapshots, exitedSymbols };
   }
 
   private async resolveAccount(input: RefreshAccountBalanceInput) {
@@ -331,7 +514,7 @@ export class RefreshAccountBalanceUseCase {
           .filter((s) => s.length > 0)
       )
     );
-    return { account, holdingsForAccount, existingSymbols };
+    return { account, holdingsForAccount, holdingsWithDetails, existingSymbols };
   }
 
   private async fetchUserBaseCurrency(
@@ -355,6 +538,7 @@ export class RefreshAccountBalanceUseCase {
       holdingsRemoved: 0,
       syncedSymbols: [],
       missingSymbols: [],
+      exitedSymbols: [],
       durationMs: Date.now() - start,
     };
   }
