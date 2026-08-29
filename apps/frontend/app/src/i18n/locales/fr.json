@@ -956,6 +956,12 @@
       "androidStep1": "Appuyez sur le menu <b>⋮</b> en haut à droite de votre navigateur.",
       "androidStep2": "Choisissez <b>Installer l’application</b> (Chrome) ou <b>Ajouter à l’écran d’accueil</b> (Firefox / Samsung Internet).",
       "androidStep3": "Confirmez. {{appName}} se lance depuis votre tiroir d’applications comme n’importe quelle autre application installée."
+    },
+    "accountPicker": {
+      "loading": "Chargement de vos comptes…",
+      "searchPlaceholder": "Rechercher un compte",
+      "noMatch": "Aucun compte ne correspond à « {{query}} »",
+      "shownOf": "{{shown}} sur {{total}} affichés"
     }
   },
   "offline": {
