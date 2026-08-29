@@ -1164,6 +1164,9 @@
         "answered": "回答済み",
         "balancesTitle": "説明が必要な残高の変動"
       },
+      "queues": {
+        "clear": "待機中の項目はありません"
+      },
       "item": {
         "jobFailed": "{{job}} が失敗しました",
         "invoiceExtracted": "請求書を読み取りました",
