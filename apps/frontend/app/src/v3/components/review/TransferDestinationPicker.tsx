@@ -1,11 +1,8 @@
 import type { TransferDestination } from '@scani/shared';
-import { Check } from 'lucide-react';
+import { AccountPicker, type AccountPickerOption } from '@scani/ui/v3/components/AccountPicker';
+import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import {
-  destinationDetail,
-  destinationLocation,
-  destinationScale,
-} from '../../lib/transfer-review';
+import { destinationDetail, destinationGroup, destinationScale } from '../../lib/transfer-review';
 
 /**
  * Where the money went, when it went somewhere Scani already tracks (SC-187).
@@ -18,20 +15,37 @@ import {
  * that tell them apart: the balance, and where the holding's numbers come
  * from.
  *
- * **Nothing is pre-selected, and nothing is ranked.** Guessing which account a
- * withdrawal went to is the same class of defect as auto-pairing a near-miss,
- * which SC-150 refused deliberately — and it would be a worse version of it,
- * because this answer *writes a transaction*. A wrong guess wearing a
- * checkmark the reader did not put there would put money in an account it
- * never reached.
+ * **Nothing is pre-selected.** Guessing which account a withdrawal went to is
+ * the same class of defect as auto-pairing a near-miss, which SC-150 refused
+ * deliberately — and it would be a worse version of it, because this answer
+ * *writes a transaction*. A wrong guess wearing a checkmark the reader did not
+ * put there would put money in an account it never reached.
  *
- * The last rows are accounts holding no position in this token. They are on
- * the list because "it went to an account I track that has never held USD" is
- * a real thing that happens, and sending the reader off to create a holding by
+ * **It IS ranked, and that is a different act** (SC-850). The list arrives in
+ * three bands — accounts already holding this token, accounts on the chain the
+ * money is leaving, then the rest — because the flat alphabetical list was
+ * itself a ranking, by a fact about the account's name, and it offered an
+ * Airwallex fiat account above every Solana wallet for a SOL transfer. An
+ * order can be ignored by scrolling; a pre-selection cannot.
+ *
+ * The last band is accounts holding no position in this token. They are on the
+ * list because "it went to an account I track that has never held SOL" is a
+ * real thing that happens, and sending the reader off to create a holding by
  * hand and come back would be the queue giving up on its own question. What it
- * does NOT do is hide the consequence: the row says a holding will be created,
- * and the confirm sentence says so again with the balance it will have.
+ * does NOT do is hide the consequence: the band's heading says a holding will
+ * be created, and the confirm sentence says so again with the balance it will
+ * have.
+ *
+ * **The control itself is `@scani/ui`'s `AccountPicker`, not this file's own.**
+ * Fourteen surfaces in this app ask which account and every one of them had
+ * grown its own spelling; this was the worst of them and is the first to
+ * adopt the shared one.
  */
+
+/** A destination's identity for the radio group — `accountId` is not unique. */
+function destinationId(destination: TransferDestination): string {
+  return `${destination.accountId}:${destination.holdingId ?? 'new'}`;
+}
 
 interface TransferDestinationPickerProps {
   destinations: TransferDestination[];
@@ -53,70 +67,38 @@ export function TransferDestinationPicker({
   isLoading,
 }: TransferDestinationPickerProps) {
   const { t } = useTranslation();
-  if (isLoading) {
-    return (
-      <p className="text-caption text-muted-foreground">
-        {t('v3.review.destinationPicker.loading')}
-      </p>
-    );
-  }
-  if (destinations.length === 0) {
-    return (
-      <p className="text-body text-muted-foreground">
-        {t('v3.review.destinationPicker.noDestinations')}
-      </p>
-    );
-  }
 
-  // One scale for the whole list — these balances are read as a column.
-  const scale = destinationScale(destinations);
+  const options = useMemo<AccountPickerOption[]>(() => {
+    // One scale for the whole list — these balances are read as a column.
+    const scale = destinationScale(destinations);
+    return destinations.map((destination) => ({
+      id: destinationId(destination),
+      name: destination.accountName,
+      institution: destination.institutionName,
+      subtitle: destinationDetail(destination, tokenSymbol, scale) ?? undefined,
+      ...destinationGroup(t, destination, tokenSymbol),
+    }));
+  }, [destinations, tokenSymbol, t]);
+
+  const byId = useMemo(
+    () => new Map(destinations.map((destination) => [destinationId(destination), destination])),
+    [destinations]
+  );
 
   return (
-    <fieldset className="flex max-h-72 flex-col gap-2 overflow-y-auto">
-      <legend className="sr-only">{t('v3.review.destinationPicker.legend')}</legend>
-      {destinations.map((destination) => {
-        const key = `${destination.accountId}:${destination.holdingId ?? 'new'}`;
-        const isSelected =
-          selected?.accountId === destination.accountId &&
-          selected?.holdingId === destination.holdingId;
-        return (
-          <label
-            key={key}
-            // `min-h-11` is the 44px touch target; the whole row is the hit
-            // area, which is the part that matters on a phone where a 20px dot
-            // beside the text is a mis-tap that changes where money went.
-            className={`flex min-h-11 w-full cursor-pointer items-start gap-3 rounded-lg border p-3 text-start transition-colors focus-within:ring-2 focus-within:ring-ring ${
-              isSelected
-                ? 'border-primary bg-primary/5'
-                : 'border-border bg-surface-1 hover:bg-surface-hover'
-            }`}
-          >
-            <input
-              type="radio"
-              name={groupName}
-              checked={isSelected}
-              onChange={() => onSelect(destination)}
-              className="sr-only"
-            />
-            <span
-              aria-hidden="true"
-              className={`mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full border ${
-                isSelected ? 'border-primary bg-primary text-primary-foreground' : 'border-border'
-              }`}
-            >
-              {isSelected ? <Check className="size-3" /> : null}
-            </span>
-            <span className="flex min-w-0 flex-col gap-0.5">
-              <span className="truncate text-body font-medium">
-                {destinationLocation(destination)}
-              </span>
-              <span className="text-caption text-muted-foreground">
-                {destinationDetail(t, destination, tokenSymbol, scale)}
-              </span>
-            </span>
-          </label>
-        );
-      })}
-    </fieldset>
+    <AccountPicker
+      options={options}
+      value={selected ? destinationId(selected) : null}
+      onChange={(option) => {
+        const destination = byId.get(option.id);
+        if (destination) onSelect(destination);
+      }}
+      name={groupName}
+      legend={t('v3.review.destinationPicker.legend')}
+      searchPlaceholder={t('v3.review.destinationPicker.searchPlaceholder')}
+      emptyLabel={t('v3.review.destinationPicker.noDestinations')}
+      isLoading={isLoading}
+      loadingLabel={t('v3.review.destinationPicker.loading')}
+    />
   );
 }

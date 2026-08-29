@@ -31,6 +31,7 @@ import {
   RULE_ANSWER_SOURCE,
   RULE_ASSERTED_DECISION,
   splitSumMatches,
+  TRANSFER_DESTINATION_RELEVANCE_ORDER,
   TRANSFER_REVIEW_CREATED_SOURCE,
   TRANSFER_REVIEW_SPLIT,
   transferReviewSplitSchema,
@@ -823,10 +824,17 @@ export class TransferReviewService {
    * account, two USD holdings at 1,201.50 (imported) and 6,217.15 (manual) —
    * and by name alone they are indistinguishable.
    *
-   * Nothing here is ranked, scored or pre-selected. Guessing which account the
-   * money went to is the same class of defect as auto-pairing a near-miss,
-   * which SC-150 refused deliberately; ordering is by account name so the list
-   * reads the same way twice.
+   * **Ranked, and still nothing is pre-selected** (SC-850). Those are two
+   * different acts and only the second is the one SC-150 refused: guessing
+   * which account the money went to writes a transaction, while putting the
+   * accounts that could plausibly have received it at the top writes nothing
+   * and can be ignored by scrolling. Alphabetical order was not neutral — it
+   * was a ranking too, by a fact about the account's name, and it put an
+   * Airwallex fiat account above every Solana wallet for a SOL transfer while
+   * telling the reader nothing they did not already know.
+   *
+   * Within a band the order is still by account name, so the list reads the
+   * same way twice.
    */
   async listDestinations(userId: string, transactionId: string): Promise<TransferDestination[]> {
     const [outflow] = await db
@@ -915,10 +923,24 @@ export class TransferReviewService {
         accountId: schema.accounts.id,
         accountName: schema.accounts.name,
         institutionName: schema.institutions.name,
+        chainKey: sql<string | null>`${schema.accounts.metadata}->>'chainId'`,
       })
       .from(schema.accounts)
       .leftJoin(schema.institutions, eq(schema.institutions.id, schema.accounts.institutionId))
       .where(eq(schema.accounts.userId, userId));
+
+    // The chain the money is leaving, so an account on it can be offered
+    // before one that could not physically receive this token. Null for
+    // anything that is not a wallet — a fiat account has no chain, and then no
+    // destination is `same_network`, which is the correct answer rather than a
+    // degraded one.
+    const [sourceAccount] = await database
+      .select({ chainKey: sql<string | null>`${schema.accounts.metadata}->>'chainId'` })
+      .from(schema.holdings)
+      .innerJoin(schema.accounts, eq(schema.accounts.id, schema.holdings.accountId))
+      .where(eq(schema.holdings.id, excludeHoldingId))
+      .limit(1);
+    const sourceChainKey = sourceAccount?.chainKey ?? null;
 
     const holdings = await database
       .select({
@@ -945,6 +967,9 @@ export class TransferReviewService {
 
     const destinations: TransferDestination[] = [];
     for (const account of accounts) {
+      const onSourceChain = Boolean(
+        sourceChainKey && account.chainKey && account.chainKey === sourceChainKey
+      );
       const existing = byAccount.get(account.accountId) ?? [];
       if (existing.length === 0) {
         destinations.push({
@@ -954,6 +979,7 @@ export class TransferReviewService {
           institutionName: account.institutionName,
           source: null,
           balance: null,
+          relevance: onSourceChain ? 'same_network' : 'other',
         });
         continue;
       }
@@ -965,13 +991,17 @@ export class TransferReviewService {
           institutionName: account.institutionName,
           source: holding.source,
           balance: holding.balance,
+          relevance: 'holds_token',
         });
       }
     }
 
     return destinations.sort(
       (a, b) =>
-        a.accountName.localeCompare(b.accountName) || (a.source ?? '').localeCompare(b.source ?? '')
+        TRANSFER_DESTINATION_RELEVANCE_ORDER.indexOf(a.relevance) -
+          TRANSFER_DESTINATION_RELEVANCE_ORDER.indexOf(b.relevance) ||
+        a.accountName.localeCompare(b.accountName) ||
+        (a.source ?? '').localeCompare(b.source ?? '')
     );
   }
 

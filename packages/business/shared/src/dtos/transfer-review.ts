@@ -244,6 +244,31 @@ export const manualOutflowAnswerSchema = z
 export type ManualOutflowAnswer = z.infer<typeof manualOutflowAnswerSchema>;
 
 /**
+ * How plausible a destination is for THIS token, as three bands (SC-850).
+ *
+ * A rank, never a guess: it decides what the reader reads first and commits
+ * nothing. `holds_token` — this account already tracks the token that moved.
+ * `same_network` — it does not, but it sits on the same chain as the account
+ * the money left, so it could receive it. `other` — everything else.
+ *
+ * The reported case is a SOL transfer out whose picker offered an Airwallex
+ * account and a Bitcoin wallet above the Solana wallets, in alphabetical
+ * order, every row saying "No SOL tracked here yet". Ordering is the only
+ * thing here that changes the answer rather than the appearance: the app knows
+ * which accounts can hold SOL and was making the reader scan for them.
+ */
+export const transferDestinationRelevanceSchema = z.enum(['holds_token', 'same_network', 'other']);
+
+export type TransferDestinationRelevance = z.infer<typeof transferDestinationRelevanceSchema>;
+
+/** Best first — the order `destinationsFor` sorts by and the picker renders in. */
+export const TRANSFER_DESTINATION_RELEVANCE_ORDER: readonly TransferDestinationRelevance[] = [
+  'holds_token',
+  'same_network',
+  'other',
+];
+
+/**
  * A destination as the picker shows it.
  *
  * `source` and `balance` are on the row because they are how a person tells
@@ -261,6 +286,8 @@ export const transferDestinationSchema = z.object({
   source: z.string().nullable(),
   /** Current balance as a Decimal string, or null when no holding exists. */
   balance: z.string().nullable(),
+  /** Which band this row ranks in — see the enum above. */
+  relevance: transferDestinationRelevanceSchema,
 });
 
 export type TransferDestination = z.infer<typeof transferDestinationSchema>;
