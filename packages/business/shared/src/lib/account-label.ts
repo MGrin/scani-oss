@@ -4,31 +4,52 @@
  * Production's transfer picker read `Airwallex · Airwallex` and `Bitcoin
  * Network · Bitcoin Network - bc1q5n…`, because the two fields were
  * concatenated whatever they held. They are not independent: an account named
- * by an importer usually opens with the institution that named it, and a
- * person naming one by hand does the same. So the join has to notice.
+ * by an importer usually repeats the institution that named it, and a person
+ * naming one by hand does the same. So the join has to notice.
  *
  * Here rather than in the picker because two consumers need it and they need
  * different halves — the control renders the institution as its own dim cell,
  * the confirmation sentences need one string. A second implementation of "is
  * this a repeat" would drift, and the drift would be one surface calling an
  * account something the other does not.
+ *
+ * ## THE ONE RULE TO READ BEFORE CHANGING ANY OF THIS
+ *
+ * **The two errors here do not cost the same, so the rule is not balanced and
+ * must not be made so.**
+ *
+ *     a MISS      leaves a label looking silly — `Wise · Wise EUR`
+ *     a FALSE HIT renames a user's account in the picker they move money with
+ *
+ * Every judgement below leans toward the miss. If you are widening this to
+ * catch a case it currently keeps, the question is not "is this a repeat?" —
+ * it is "could this string be an account name somebody chose?", and while the
+ * answer is *maybe*, keeping it is the correct behaviour.
  */
-
-/** ` - `, ` · `, `: `, `/` — whatever a writer used to join the two. */
-const LEADING_SEPARATORS = /^[\s\-–—·:|/]+/;
 
 /**
- * The same characters at the tail, but WITHOUT plain whitespace, and the
- * asymmetry is the whole point.
+ * A repeat is only taken off when real PUNCTUATION joined the two parts, at
+ * whichever end it sits.
  *
- * A LEADING repeat is unambiguous: the name opens with exactly the institution,
- * so `Wise EUR` at Wise is a compound somebody built and `EUR` is the half that
- * identifies it. A TRAILING match is not — `Bitcoin Cash` at an institution
- * called `Cash` ends with it and means nothing of the sort. Requiring real
- * punctuation on this side is what tells `Ledger — Ethereum` (two parts joined)
- * from an ordinary phrase whose last word happens to collide.
+ * Whitespace alone is not enough and that is the whole safety property.
+ *
+ * **`Wise EUR` and `Wise Guys` are structurally identical, so no rule separates
+ * them without semantics.** Both are the institution, a space, and a word. That
+ * is not a case this function has failed to handle — it is a case that is not
+ * decidable here, and the distinction matters to whoever reads this next: there
+ * is no cleverer predicate to find, so both are kept. The first reads a little
+ * redundantly; the second is not silently renamed to `Guys`. Same at the tail,
+ * where `Cash App Savings` at an institution called `Cash` would otherwise
+ * become `App Savings`.
+ *
+ * This costs two of the demo seed's accounts (`Wise EUR`, `Kraken Spot`),
+ ***REMOVED***
+ ***REMOVED***
+ ***REMOVED***
+ ***REMOVED***
  */
-const TRAILING_SEPARATORS = /[\s]*[-–—·:|/][\s]*$/;
+const JOINED_AT_HEAD = /^\s*[-–—·:|/]\s*/;
+const JOINED_AT_TAIL = /\s*[-–—·:|/]\s*$/;
 
 export interface AccountLabelParts {
   /** Null when there is no institution, or when the name already says it. */
@@ -39,21 +60,21 @@ export interface AccountLabelParts {
 
 /**
  * The two cells a row renders — the institution, and what is left of the name
- * once a repeat of it has been taken off either end.
+ * once a repeat of it has been taken off.
  *
- * An account genuinely called nothing but its institution ("Airwallex" at
- * Airwallex) collapses to the one word rather than to an empty leading cell,
- * which reads as a rendering failure rather than as a fact.
+ * Three things are stripped, in this order, and nothing else is:
  *
- * **Both ends, because the demo seed is three-for-three on the trailing one.**
- * The first version handled leading repeats only, on the reasoning that
- * `Airwallex · Airwallex` and `Bitcoin Network · Bitcoin Network - bc1q5n…` are
- * both leading — which they are, and which made the rule look complete. Then
- * `Ledger — Ethereum` at Ethereum, `Ledger — Bitcoin` at Bitcoin and
- * `Phantom — Solana` at Solana rendered `Ethereum · Ledger — Ethereum`: the
- * same defect, from the same two fields, arriving from the other side. Naming a
- * wallet `<device> — <chain>` is the ordinary convention, so this is the common
- * shape rather than the edge one.
+ * 1. **An exact match.** `Airwallex` at Airwallex collapses to the one word
+ *    rather than to an empty leading cell, which reads as a rendering failure
+ *    rather than as a fact.
+ * 2. **A punctuation-joined repeat at the HEAD** — `Bitcoin Network -
+ *    bc1q5n…`, so the identifying half is the half that survives truncation.
+ * 3. **A punctuation-joined repeat at the TAIL** — `Ledger — Ethereum` at
+ *    Ethereum. Found from the demo seed rather than from the report, which is
+ *    three-for-three on this shape: naming a wallet `<device> — <chain>` is
+ *    the ordinary convention, so it is the common case and not the edge one.
+ *    The first version of this function handled the head alone and rendered
+ *    `Ethereum · Ledger — Ethereum`.
  */
 export function accountLabelParts(
   name: string,
@@ -62,24 +83,25 @@ export function accountLabelParts(
   const trimmedName = name.trim();
   const trimmedInstitution = institution?.trim() ?? '';
   if (!trimmedInstitution) return { institution: null, name: trimmedName };
+
   const lowerName = trimmedName.toLowerCase();
   const lowerInstitution = trimmedInstitution.toLowerCase();
 
   if (lowerName.startsWith(lowerInstitution)) {
-    const rest = trimmedName
-      .slice(trimmedInstitution.length)
-      .replace(LEADING_SEPARATORS, '')
-      .trim();
-    return rest
-      ? { institution: trimmedInstitution, name: rest }
-      : { institution: null, name: trimmedName };
+    const tail = trimmedName.slice(trimmedInstitution.length);
+    if (!tail.trim()) return { institution: null, name: trimmedName };
+    if (JOINED_AT_HEAD.test(tail)) {
+      const rest = tail.replace(JOINED_AT_HEAD, '').trim();
+      if (rest) return { institution: trimmedInstitution, name: rest };
+    }
   }
 
   if (lowerName.endsWith(lowerInstitution)) {
     const head = trimmedName.slice(0, trimmedName.length - trimmedInstitution.length);
-    // Only when a separator actually joined them — see `TRAILING_SEPARATORS`.
-    const rest = TRAILING_SEPARATORS.test(head) ? head.replace(TRAILING_SEPARATORS, '').trim() : '';
-    if (rest) return { institution: trimmedInstitution, name: rest };
+    if (JOINED_AT_TAIL.test(head)) {
+      const rest = head.replace(JOINED_AT_TAIL, '').trim();
+      if (rest) return { institution: trimmedInstitution, name: rest };
+    }
   }
 
   return { institution: trimmedInstitution, name: trimmedName };
