@@ -106,11 +106,14 @@ export class BullMqEnqueueService extends EnqueueService {
     }
 
     try {
+      const queue = this.queueClient.get();
+      await this.evictFinishedNamesake(queue, jobId, descriptor.name, data.userId);
       await withDeadline(
-        this.queueClient.get().add(descriptor.name, data, opts),
+        queue.add(descriptor.name, data, opts),
         ENQUEUE_TIMEOUT_MS,
         () => new StoreCommandTimeoutError('postgres', 'enqueue', ENQUEUE_TIMEOUT_MS)
       );
+      await this.assertWorkWasQueued(queue, jobId, data.requestId, descriptor.name);
       logger.info(
         { jobId, jobName: descriptor.name, userId: data.userId, attemptsAllowed },
         'Job enqueued'
@@ -137,6 +140,86 @@ export class BullMqEnqueueService extends EnqueueService {
       throw err;
     }
     return jobId;
+  }
+
+  /**
+   * Delete a FINISHED job already sitting on `jobId`, so the add below is not
+   * silently discarded (SC-846).
+   *
+   * BullMQ's Postgres `add_job` ends in `ON CONFLICT (queue, id) DO NOTHING`,
+   * and **both the `pg_notify` and the `added` event sit inside the
+   * `IF v_inserted` branch while the function returns the id regardless**. So
+   * an add onto an occupied id creates nothing, queues nothing, raises
+   * nothing, and hands the caller back an id that looks like a receipt.
+   *
+   * A deterministic `jobId` is deliberate — `REFRESH_ACCOUNT_BALANCE` leaves
+   * `requestId` out of its id precisely so a second click collapses onto the
+   * in-flight refresh, which is correct. The defect is that `ON CONFLICT` has
+   * no notion of job STATE, so "collapse onto the in-flight job" also means
+   * "collapse onto a job that finished days ago" — and retention guarantees
+   * one is there to collapse onto.
+   *
+   * **Retention is what makes it permanent, and it is NOT only about
+   * failures.** Measured on production 2026-08-29: the row wedging the
+   * reported account was `completed`, retained by `removeOnComplete: 50`.
+   * A successful refresh wedges the button exactly as a failed one does, so
+   * dropping `removeOnFail` to 0 would have fixed nothing.
+   *
+   * Evicting only a FINISHED namesake is what keeps the intended dedup:
+   * a `waiting`/`active`/`delayed` row is real work in progress and is left
+   * alone, so rapid clicks still collapse onto one job.
+   */
+  private async evictFinishedNamesake(
+    queue: {
+      getJob(id: string): Promise<{ finishedOn?: number; remove(): Promise<unknown> } | undefined>;
+    },
+    jobId: string,
+    jobName: string,
+    userId: string
+  ): Promise<void> {
+    const existing = await queue.getJob(jobId);
+    if (!existing || existing.finishedOn == null) return;
+    await existing.remove();
+    logger.info(
+      { jobId, jobName, userId, finishedOn: existing.finishedOn },
+      'Evicted a finished job squatting on a deterministic jobId'
+    );
+  }
+
+  /**
+   * Refuse to report success when the add queued nothing (SC-846).
+   *
+   * `evictFinishedNamesake` closes the reported hole; this closes the class.
+   * The eviction is a read followed by a write, so a job that finishes inside
+   * that window is still collapsed onto — and any descriptor written later
+   * with a deterministic id inherits the same hazard without anyone noticing.
+   * The invariant an enqueue owes its caller is not "the insert did not throw"
+   * but **"live work exists under this id"**, and that is what is checked here.
+   *
+   * The discriminator is whose `requestId` the landed row carries, NOT whether
+   * it is finished: a fast job can legitimately complete before this read, and
+   * treating that as a collapse would reject a perfectly good enqueue. Every
+   * click mints a fresh `crypto.randomUUID()`, so a row carrying somebody
+   * else's `requestId` and already finished is unambiguously not our work.
+   *
+   * A missing row is a success: `removeOnComplete: 0` deletes a job the moment
+   * it finishes, so "gone" and "never inserted" are not distinguishable here
+   * and the former is by far the likelier. The collapse this catches always
+   * leaves the squatter behind — that is the whole reason it is in the way.
+   */
+  private async assertWorkWasQueued(
+    queue: { getJob(id: string): Promise<{ finishedOn?: number; data?: unknown } | undefined> },
+    jobId: string,
+    requestId: string,
+    jobName: string
+  ): Promise<void> {
+    const landed = await queue.getJob(jobId);
+    if (!landed || landed.finishedOn == null) return;
+    const landedRequestId = (landed.data as { requestId?: string } | undefined)?.requestId;
+    if (landedRequestId === requestId) return;
+    throw new Error(
+      `Enqueue of ${jobName} collapsed onto a finished job holding the same id (${jobId}) — no work was queued`
+    );
   }
 
   // Optional mirror — domain wires one in cloud/managed deploys; OSS
