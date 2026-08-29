@@ -241,6 +241,12 @@
       "readAsWhole": "Read as {{amount}} — this field takes whole numbers only.",
       "readAsDecimal": "Read as {{amount}} — a comma and a full stop both mean a decimal point here. Delete the separator if you meant a thousand."
     },
+    "accountPicker": {
+      "loading": "Loading your accounts…",
+      "searchPlaceholder": "Search accounts",
+      "noMatch": "No account matches “{{query}}”",
+      "shownOf": "Showing {{shown}} of {{total}}"
+    },
     "theme": {
       "label": "Theme",
       "system": "System",

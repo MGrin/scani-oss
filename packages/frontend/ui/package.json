@@ -67,6 +67,7 @@
     "./ui/toaster": "./src/ui/toaster.tsx",
     "./ui/tooltip": "./src/ui/tooltip.tsx",
     "./ui/use-toast": "./src/ui/use-toast.tsx",
+    "./v3/components/AccountPicker": "./src/v3/components/AccountPicker.tsx",
     "./v3/components/AmountInput": "./src/v3/components/AmountInput.tsx",
     "./v3/components/ConfirmAction": "./src/v3/components/ConfirmAction.tsx",
     "./v3/components/Block": "./src/v3/components/Block.tsx",

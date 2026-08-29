@@ -14,6 +14,11 @@ export * from './format/date';
 export * from './format/locale';
 export * from './format/precision';
 export {
+  type AccountLabelParts,
+  accountLabel,
+  accountLabelParts,
+} from './lib/account-label';
+export {
   BALANCE_GAP_ANSWERS,
   BALANCE_GAP_DATE_PROMPT_MIN_SPAN_MS,
   BALANCE_GAP_MIN_BASE_VALUE,

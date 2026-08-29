@@ -6,6 +6,7 @@ import i18n from 'i18next';
 import {
   decisionConsequence,
   destinationDetail,
+  destinationGroup,
   destinationScale,
   type SplitDraftRow,
   splitConsequence,
@@ -56,6 +57,7 @@ const SAVINGS: TransferDestination = {
   institutionName: 'Revolut',
   source: 'manual',
   balance: '6500.32',
+  relevance: 'holds_token',
 };
 
 const NO_HOLDING_YET: TransferDestination = {
@@ -65,6 +67,7 @@ const NO_HOLDING_YET: TransferDestination = {
   institutionName: 'Wise',
   source: null,
   balance: null,
+  relevance: 'other',
 };
 
 function rows(overrides: Partial<Record<string, Partial<SplitDraftRow>>> = {}): SplitDraftRow[] {
@@ -85,14 +88,31 @@ describe('destinationDetail', () => {
     // not line up cannot do that job.
     const airwallex: TransferDestination = { ...SAVINGS, balance: '1201.50', holdingId: 'x' };
     const scale = destinationScale([airwallex, SAVINGS]);
-    expect(destinationDetail(t, airwallex, 'USD', scale)).toBe('1,201.50 USD · manual');
-    expect(destinationDetail(t, SAVINGS, 'USD', scale)).toBe('6,500.32 USD · manual');
+    expect(destinationDetail(airwallex, 'USD', scale)).toBe('1,201.50 USD · manual');
+    expect(destinationDetail(SAVINGS, 'USD', scale)).toBe('6,500.32 USD · manual');
   });
 
-  test('says a holding will be created rather than showing an empty balance', () => {
-    expect(destinationDetail(t, NO_HOLDING_YET, 'USD', 2)).toBe(
+  test('says NOTHING about a destination with no holding yet', () => {
+    // SC-850. It used to say "No USD tracked here yet — a holding will be
+    // created" on EVERY such row, and the production screenshot was a list on
+    // which that was every row: one sentence repeated eleven times, which
+    // carries no information and pushed the balances that do off the screen.
+    // The claim is true of a whole band, so the band's heading makes it once.
+    expect(destinationDetail(NO_HOLDING_YET, 'USD', 2)).toBeNull();
+    expect(destinationGroup(t, NO_HOLDING_YET, 'USD').groupHint).toBe(
       'No USD tracked here yet — a holding will be created'
     );
+  });
+});
+
+describe('destinationGroup', () => {
+  test('names the band a destination sits in, and only promises a holding where one is created', () => {
+    expect(destinationGroup(t, SAVINGS, 'USD')).toEqual({ group: 'Already holds USD' });
+    expect(destinationGroup(t, { ...NO_HOLDING_YET, relevance: 'same_network' }, 'SOL')).toEqual({
+      group: 'On the same network',
+      groupHint: 'No SOL tracked here yet — a holding will be created',
+    });
+    expect(destinationGroup(t, NO_HOLDING_YET, 'SOL').group).toBe('Your other accounts');
   });
 });
 
