@@ -352,6 +352,23 @@ describe('list plumbing', () => {
     expect(pendingLocation(pending({ institutionName: null }))).toBe('Spot');
   });
 
+  test('never says the institution twice, on the list rows either (SC-850)', () => {
+    // The queue rows and the candidate rows sit on the SAME sheet as the
+    // destination picker that was reported. `Airwallex · Airwallex` there and
+    // not here would have answered the complaint on one line of one screen.
+    expect(
+      pendingLocation(pending({ institutionName: 'Airwallex', accountName: 'Airwallex' }))
+    ).toBe('Airwallex');
+    expect(
+      pendingLocation(
+        pending({
+          institutionName: 'Bitcoin Network',
+          accountName: 'Bitcoin Network - bc1q5n8k',
+        })
+      )
+    ).toBe('Bitcoin Network · bc1q5n8k');
+  });
+
   test('search reaches the fields a person would actually type', () => {
     const item = pending({ counterparty: '0xdeadbeef', description: 'to cold storage' });
     expect(pendingTransferMatches(item, 'kraken')).toBe(true);
