@@ -198,12 +198,21 @@ export function AccountPicker({
           list ends in a gradient rather than at a hard edge mid-row, so a cut
           row reads as "there is more" instead of as the end. `mask-image` and
           not an overlay div — an overlay would sit above the rows and eat the
-          taps aimed at the last one. */}
+          taps aimed at the last one.
+
+          `pb-8` IS PART OF THE FADE, not spacing. The mask is fixed to the
+          container's bottom edge, so without it the LAST row sits under the
+          gradient once you scroll to it — trading "cut with no affordance" for
+          "the final option is unreadable", which is the same defect wearing a
+          nicer costume. The padding parks the content 2rem clear of the edge at
+          full scroll, so rows fade on their way past and the end of the list is
+          plainly the end. No measurement, no scroll listener: a fade that
+          depends on `scrollTop` is a frame of wrong state on every list. */}
       <div
         className={cn(
           'flex max-h-72 flex-col gap-2 overflow-y-auto',
           visible.length > 4 &&
-            '[mask-image:linear-gradient(to_bottom,black_calc(100%-2rem),transparent)]'
+            'pb-8 [mask-image:linear-gradient(to_bottom,black_calc(100%-2rem),transparent)]'
         )}
       >
         {visible.length === 0 ? (
