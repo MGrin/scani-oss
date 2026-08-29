@@ -31,16 +31,64 @@ const TEST_DESCRIPTOR: UserJobDescriptor<TestPayload> = {
   summarizePayload: (d) => ({ resourceId: d.resourceId }),
 };
 
-function setupQueue(addThrows?: Error) {
+interface FakeJob {
+  id: string;
+  data: { requestId?: string };
+  finishedOn?: number;
+  remove: () => Promise<void>;
+}
+
+interface SeedRow {
+  id: string;
+  requestId: string;
+  /** A `completed`/`failed` row retained by `removeOnComplete` / `removeOnFail`. */
+  finished: boolean;
+}
+
+interface SetupOpts {
+  addThrows?: Error;
+  /** Rows already in `bullmq.job` when this enqueue runs. */
+  seed?: SeedRow[];
+  /** Model a `remove()` that does not take, to exercise the post-condition. */
+  removeIsNoop?: boolean;
+}
+
+/**
+ * A queue that models `add_job`'s `ON CONFLICT (queue, id) DO NOTHING`.
+ *
+ * A fake whose `add` always "succeeds" cannot express SC-846 at all: the
+ * defect is that the insert is skipped and the caller is told it landed. So
+ * this keeps a row store and drops an add whose id is taken, exactly as
+ * `bullmq/postgres/migrations/0002_functions.sql` does.
+ */
+function setupQueue(opts: SetupOpts | Error = {}) {
+  const { addThrows, seed, removeIsNoop }: SetupOpts =
+    opts instanceof Error ? { addThrows: opts } : opts;
+  const store = new Map<string, FakeJob>();
+  const remover = (id: string) => async () => {
+    if (!removeIsNoop) store.delete(id);
+  };
+  for (const row of seed ?? []) {
+    store.set(row.id, {
+      id: row.id,
+      data: { requestId: row.requestId },
+      finishedOn: row.finished ? Date.now() - 60_000 : undefined,
+      remove: remover(row.id),
+    });
+  }
   const addCalls: Array<{ name: string; data: unknown; opts: unknown }> = [];
   const fakeQueue = {
-    add: mock(async (name: string, data: unknown, opts: unknown) => {
-      addCalls.push({ name, data, opts });
+    add: mock(async (name: string, data: unknown, addOpts: unknown) => {
+      addCalls.push({ name, data, opts: addOpts });
       if (addThrows) throw addThrows;
+      const id = (addOpts as { jobId: string }).jobId;
+      if (store.has(id)) return; // ON CONFLICT (queue, id) DO NOTHING
+      store.set(id, { id, data: data as { requestId?: string }, remove: remover(id) });
     }),
+    getJob: mock(async (id: string) => store.get(id)),
   };
   Container.set(QueueClient, { get: () => fakeQueue } as never);
-  return { addCalls, fakeQueue };
+  return { addCalls, fakeQueue, store };
 }
 
 beforeEach(() => {
@@ -133,7 +181,10 @@ describe('BullMqEnqueueService — an unreachable queue store (SC-523)', () => {
   // this class against `bullmq.job` held under `ACCESS EXCLUSIVE`: still
   // unsettled at 30s, resolving at 30684ms when the lock was released.
   function setupHangingQueue() {
-    const fakeQueue = { add: mock(() => new Promise<void>(() => {})) };
+    const fakeQueue = {
+      add: mock(() => new Promise<void>(() => {})),
+      getJob: mock(async () => undefined),
+    };
     Container.set(QueueClient, { get: () => fakeQueue } as never);
     return fakeQueue;
   }
@@ -202,6 +253,7 @@ describe('BullMqEnqueueService — an unreachable queue store (SC-523)', () => {
       add: mock(async () => {
         await Bun.sleep(300);
       }),
+      getJob: mock(async () => undefined),
     };
     Container.set(QueueClient, { get: () => fakeQueue } as never);
     const onEnqueueFailed = mock(async () => {});
@@ -211,5 +263,106 @@ describe('BullMqEnqueueService — an unreachable queue store (SC-523)', () => {
       svc.add(TEST_DESCRIPTOR, { userId: 'u1', requestId: 'r1', resourceId: 'res-9' })
     ).resolves.toBe('test-job_u1_res-9_r1');
     expect(onEnqueueFailed).not.toHaveBeenCalled();
+  });
+});
+
+describe('BullMqEnqueueService — a finished job squatting on a deterministic id (SC-846)', () => {
+  // `REFRESH_ACCOUNT_BALANCE`'s shape: `requestId` is deliberately left OUT of
+  // the id so a second click collapses onto the in-flight refresh. That intent
+  // is correct and is preserved below. What was wrong is that `ON CONFLICT
+  // (queue, id) DO NOTHING` has no notion of job STATE, so the collapse also
+  // lands on a job that finished days ago — and `removeOnComplete` /
+  // `removeOnFail` guarantee one is retained to land on.
+  const COLLAPSING: UserJobDescriptor<TestPayload> = {
+    ...TEST_DESCRIPTOR,
+    name: 'collapsing-job',
+    computeJobId: (d) => ['collapsing-job', d.userId, d.resourceId].join('_'),
+  };
+  const JOB_ID = 'collapsing-job_u1_res-9';
+
+  // Measured on production 2026-08-29 (SC-846): the row occupying the wedged
+  // account's id was `completed`, not `failed`. `removeOnComplete: 50` retains
+  // it exactly as `removeOnFail: 200` would, so the FIRST SUCCESSFUL sync
+  // wedges the button just as thoroughly as a failure does. A test written
+  // only against `failed` would have passed over the state prod was actually in.
+  test('THE DEFECT: a COMPLETED namesake no longer swallows the enqueue', async () => {
+    const { store } = setupQueue({
+      seed: [{ id: JOB_ID, requestId: 'old-click', finished: true }],
+    });
+    const svc = new BullMqEnqueueService();
+    await expect(
+      svc.add(COLLAPSING, { userId: 'u1', requestId: 'new-click', resourceId: 'res-9' })
+    ).resolves.toBe(JOB_ID);
+    // The assertion that matters is not "it resolved" — it always did. It is
+    // that live work now exists under that id.
+    expect(store.get(JOB_ID)?.data.requestId).toBe('new-click');
+    expect(store.get(JOB_ID)?.finishedOn).toBeUndefined();
+  });
+
+  test('CONTROL: an IN-FLIGHT namesake still collapses — the dedup intent is preserved', async () => {
+    const { store, addCalls } = setupQueue({
+      seed: [{ id: JOB_ID, requestId: 'first-click', finished: false }],
+    });
+    const svc = new BullMqEnqueueService();
+    await expect(
+      svc.add(COLLAPSING, { userId: 'u1', requestId: 'second-click', resourceId: 'res-9' })
+    ).resolves.toBe(JOB_ID);
+    // Still ONE job, still the first click's. Two rapid clicks must not become
+    // two refreshes — that is what the descriptor omits `requestId` for.
+    expect(addCalls).toHaveLength(1);
+    expect(store.get(JOB_ID)?.data.requestId).toBe('first-click');
+  });
+
+  // The other half of SC-846, and the half the reporter actually experienced:
+  // the API returned a jobId and the UI showed success while nothing had been
+  // queued. Eviction is what fixes the wedge; this is what makes the silent
+  // no-op impossible to reintroduce — including for a descriptor written later
+  // whose id nobody thought about.
+  test('THE OTHER HALF: an enqueue that queued no work REJECTS instead of reporting success', async () => {
+    setupQueue({
+      seed: [{ id: JOB_ID, requestId: 'old-click', finished: true }],
+      removeIsNoop: true,
+    });
+    const svc = new BullMqEnqueueService();
+    await expect(
+      svc.add(COLLAPSING, { userId: 'u1', requestId: 'new-click', resourceId: 'res-9' })
+    ).rejects.toThrow(/no work was queued/i);
+  });
+
+  test('fails CLOSED: the mirror row is marked failed when nothing was queued', async () => {
+    setupQueue({
+      seed: [{ id: JOB_ID, requestId: 'old-click', finished: true }],
+      removeIsNoop: true,
+    });
+    const onEnqueueFailed = mock<
+      (jobId: string, err: Error, meta: Omit<EnqueuedJobMeta, 'payloadSummary'>) => Promise<void>
+    >(async () => {});
+    Container.set(ENQUEUE_MIRROR, { onEnqueued: async () => {}, onEnqueueFailed });
+    const svc = new BullMqEnqueueService();
+    await expect(
+      svc.add(COLLAPSING, { userId: 'u1', requestId: 'new-click', resourceId: 'res-9' })
+    ).rejects.toBeInstanceOf(Error);
+    expect(onEnqueueFailed).toHaveBeenCalledTimes(1);
+    expect(onEnqueueFailed.mock.calls[0]?.[0]).toBe(JOB_ID);
+  });
+
+  // A job that finishes between our own `add` and the check must NOT read as a
+  // collapse — it is our work, done fast. The discriminator is whose
+  // `requestId` the landed row carries, not whether it is finished.
+  test('CONTROL: our OWN job finishing instantly is a success, not a collapse', async () => {
+    const { store } = setupQueue();
+    const svc = new BullMqEnqueueService();
+    const inner = Container.get(QueueClient).get() as unknown as {
+      add: (n: string, d: unknown, o: unknown) => Promise<void>;
+    };
+    const original = inner.add.bind(inner);
+    inner.add = async (n, d, o) => {
+      await original(n, d, o);
+      const landed = store.get((o as { jobId: string }).jobId);
+      if (landed) landed.finishedOn = Date.now();
+    };
+    await expect(
+      svc.add(COLLAPSING, { userId: 'u1', requestId: 'mine', resourceId: 'res-9' })
+    ).resolves.toBe(JOB_ID);
   });
 });
