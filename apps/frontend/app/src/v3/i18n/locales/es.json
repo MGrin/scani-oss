@@ -2187,6 +2187,9 @@
         "title": "Por revisar",
         "transfersTitle": "Transferencias por confirmar"
       },
+      "queues": {
+        "clear": "Nada pendiente"
+      },
       "rules": {
         "alreadyRuled": "Ya tienes una regla para este destino",
         "commit": "Crear esta regla",
