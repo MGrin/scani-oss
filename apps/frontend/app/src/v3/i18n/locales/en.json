@@ -924,6 +924,7 @@
         "partialTitle": "Balance refresh — partial",
         "partial_one": "{{symbol}} wasn't returned by the provider — your other {{count}} balance refreshed. Try again in a minute, or re-import the account if this keeps happening.",
         "partial_other": "{{symbol}} wasn't returned by the provider — your other {{count}} balances refreshed. Try again in a minute, or re-import the account if this keeps happening.",
+        "exited": "{{symbol}} has left this wallet — the chain says 0, so the balance on screen is now 0.",
         "oneBalance": "{{symbol}} balance refreshed",
         "manyBalances_one": "Refreshed {{count}} balance on this account",
         "manyBalances_other": "Refreshed {{count}} balances on this account",
