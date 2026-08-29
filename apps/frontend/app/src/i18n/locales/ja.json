@@ -878,6 +878,12 @@
       "androidStep1": "ブラウザ右上の <b>⋮</b> メニューをタップします。",
       "androidStep2": "<b>アプリをインストール</b>（Chrome）または <b>ホーム画面に追加</b>（Firefox / Samsung Internet）を選びます。",
       "androidStep3": "確定します。これで {{appName}} が、他のインストール済みアプリと同じようにアプリ一覧から起動できます。"
+    },
+    "accountPicker": {
+      "loading": "口座を読み込んでいます…",
+      "searchPlaceholder": "口座を検索",
+      "noMatch": "「{{query}}」に一致する口座はありません",
+      "shownOf": "{{total}} 件中 {{shown}} 件を表示"
     }
   },
   "offline": {
