@@ -1,6 +1,6 @@
 import { accountLabelParts } from '@scani/shared';
 import { Search } from 'lucide-react';
-import { type ReactNode, useId, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useUiTranslation } from '../../i18n';
 import { cn } from '../../lib/cn';
 import { Input } from '../../ui/input';
@@ -64,17 +64,12 @@ export interface AccountPickerOption {
   /** A second line, when there is something to say that differs between rows.
    *  Omit it — a row without one is a single line. */
   subtitle?: string;
-  /** A figure on the trailing edge, already formatted by the caller. */
-  trailing?: ReactNode;
-  /** Matched by search but never rendered — a wallet address, an IBAN. */
-  searchText?: string;
   /** The heading this row sits under. Rows carrying no group render first,
    *  with no heading at all. */
   group?: string;
   /** One sentence under the group's heading. Where a fact is true of every row
    *  in the group, it belongs here rather than on each of them. */
   groupHint?: string;
-  disabled?: boolean;
 }
 
 interface AccountPickerProps {
@@ -95,17 +90,10 @@ interface AccountPickerProps {
   emptyLabel: string;
   isLoading?: boolean;
   loadingLabel?: string;
-  className?: string;
 }
 
 function matches(option: AccountPickerOption, term: string): boolean {
-  const haystack = [
-    option.name,
-    option.institution,
-    option.subtitle,
-    option.searchText,
-    option.group,
-  ]
+  const haystack = [option.name, option.institution, option.subtitle, option.group]
     .filter(Boolean)
     .join(' ')
     .toLowerCase();
@@ -143,10 +131,8 @@ export function AccountPicker({
   emptyLabel,
   isLoading,
   loadingLabel,
-  className,
 }: AccountPickerProps) {
   const { t } = useUiTranslation();
-  const searchId = useId();
   const [query, setQuery] = useState('');
 
   const term = query.trim().toLowerCase();
@@ -173,7 +159,7 @@ export function AccountPicker({
   const showSearch = options.length >= SEARCH_THRESHOLD || query.length > 0;
 
   return (
-    <fieldset className={cn('flex flex-col gap-2', className)}>
+    <fieldset className="flex flex-col gap-2">
       <legend className="sr-only">{legend}</legend>
 
       {showSearch ? (
@@ -183,7 +169,6 @@ export function AccountPicker({
             aria-hidden="true"
           />
           <Input
-            id={searchId}
             type="search"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
@@ -242,20 +227,16 @@ export function AccountPicker({
                   // the hit area: a 20px dot beside the text is a mis-tap that
                   // changes where money went.
                   className={cn(
-                    'flex min-h-11 w-full items-start gap-3 rounded-lg border p-3 text-start transition-colors focus-within:ring-2 focus-within:ring-ring',
-                    option.disabled
-                      ? 'cursor-not-allowed border-border bg-surface-1 opacity-50'
-                      : 'cursor-pointer',
-                    !option.disabled && isSelected
+                    'flex min-h-11 w-full cursor-pointer items-start gap-3 rounded-lg border p-3 text-start transition-colors focus-within:ring-2 focus-within:ring-ring',
+                    isSelected
                       ? 'border-primary bg-primary/5'
-                      : !option.disabled && 'border-border bg-surface-1 hover:bg-surface-hover'
+                      : 'border-border bg-surface-1 hover:bg-surface-hover'
                   )}
                 >
                   <input
                     type="radio"
                     name={name}
                     checked={isSelected}
-                    disabled={option.disabled}
                     onChange={() => onChange(option)}
                     className="sr-only"
                   />
@@ -288,12 +269,6 @@ export function AccountPicker({
                       </TruncatedText>
                     ) : null}
                   </span>
-
-                  {option.trailing ? (
-                    <span className="shrink-0 text-caption text-muted-foreground">
-                      {option.trailing}
-                    </span>
-                  ) : null}
                 </label>
               );
             })}
