@@ -884,6 +884,7 @@
         "partial_many": "El proveedor no ha devuelto {{symbol}} — tus otros {{count}} saldos se han actualizado. Inténtalo de nuevo dentro de un minuto, o reimporta la cuenta si esto se repite.",
         "partial_one": "El proveedor no ha devuelto {{symbol}} — tu otro {{count}} saldo se ha actualizado. Inténtalo de nuevo dentro de un minuto, o reimporta la cuenta si esto se repite.",
         "partial_other": "El proveedor no ha devuelto {{symbol}} — tus otros {{count}} saldos se han actualizado. Inténtalo de nuevo dentro de un minuto, o reimporta la cuenta si esto se repite.",
+        "exited": "{{symbol}} ha salido de esta billetera — la cadena dice 0, así que el saldo en pantalla ahora es 0.",
         "price": "Actualizando el precio",
         "priceFailed": "La tarea de actualización del precio ha fallado"
       },
