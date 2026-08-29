@@ -2126,7 +2126,13 @@
       "destinationPicker": {
         "legend": "Para onde foi este dinheiro",
         "loading": "A carregar as suas contas…",
-        "noDestinations": "Não tem outra conta para onde mover isto. Se foi para onde o Scani não vê, diga antes isso."
+        "noDestinations": "Não tem outra conta para onde mover isto. Se foi para onde o Scani não vê, diga antes isso.",
+        "searchPlaceholder": "Procurar nas suas contas",
+        "group": {
+          "holdsToken": "Já tem {{symbol}}",
+          "sameNetwork": "Na mesma rede",
+          "other": "As suas outras contas"
+        }
       },
       "item": {
         "balanceChangesToExplain": "Variações de saldo por explicar",
