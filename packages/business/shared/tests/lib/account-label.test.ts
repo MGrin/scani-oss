@@ -58,11 +58,43 @@ describe('accountLabelParts', () => {
   });
 
   test('a name that merely CONTAINS the institution is left alone', () => {
-    // Only a leading repeat is a repeat. "Old Kraken transfers" is a name
-    // somebody chose, and editing the middle of it is not this function's job.
+    // A repeat is at one END. "Old Kraken transfers" is a name somebody chose,
+    // and editing the middle of it is not this function's job.
     expect(accountLabelParts('Old Kraken transfers', 'Kraken')).toEqual({
       institution: 'Kraken',
       name: 'Old Kraken transfers',
+    });
+  });
+
+  test('drops a TRAILING repeat too — the shape the demo seed is three-for-three on', () => {
+    // `<device> — <chain>` is how a wallet is ordinarily named, so this is the
+    // common case, not the edge one. The first version of this function handled
+    // leading repeats only and rendered `Ethereum · Ledger — Ethereum`.
+    expect(accountLabelParts('Ledger — Ethereum', 'Ethereum')).toEqual({
+      institution: 'Ethereum',
+      name: 'Ledger',
+    });
+    expect(accountLabelParts('Phantom — Solana', 'Solana')).toEqual({
+      institution: 'Solana',
+      name: 'Phantom',
+    });
+  });
+
+  test('a trailing match with no separator is NOT a repeat', () => {
+    // The asymmetry with the leading case is deliberate. A name OPENING with
+    // the institution is unambiguous; a name merely ENDING with it can be an
+    // ordinary phrase whose last word collides, and `Cash · Bitcoin` would be
+    // this function inventing an account name.
+    expect(accountLabelParts('Bitcoin Cash', 'Cash')).toEqual({
+      institution: 'Cash',
+      name: 'Bitcoin Cash',
+    });
+  });
+
+  test('a trailing repeat that would leave nothing keeps the name', () => {
+    expect(accountLabelParts('— Solana', 'Solana')).toEqual({
+      institution: 'Solana',
+      name: '— Solana',
     });
   });
 });
