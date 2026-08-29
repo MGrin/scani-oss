@@ -104,6 +104,36 @@ RUN apt-get update \
 
 RUN useradd --create-home --shell /usr/sbin/nologin --uid 1001 app
 
+# HOME FOR THE DROPPED PROCESS (SC-869).
+#
+# This image has no `USER` directive — the container has to start as root so the
+# entrypoint can chown the /data volume — and drops with `setpriv`, which
+# changes uid/gid and leaves the environment ALONE, unlike `su -` or
+# `runuser -l`. Without this line the server runs as uid 1001 still carrying
+# root's `HOME=/root`, a directory uid 1001 cannot even traverse.
+#
+# That is not cosmetic: it failed the nightly `db-backup` job on every run it
+# ever had. libpq resolves its OPTIONAL client certificate to
+# `$HOME/.postgresql/postgresql.crt` and treats an EACCES from that stat as
+# fatal where it treats ENOENT as "no client cert, carry on" —
+#
+#   pg_dump: error: connection to server at "…" port 5432 failed: could not
+#   open certificate file "/root/.postgresql/postgresql.crt": Permission denied
+#
+# `ENV` rather than wrapping the two `setpriv` calls, because it covers every
+# child process the server ever spawns rather than the one that happened to be
+# caught. Do NOT reach for `setpriv --reset-env`: that clears the whole
+# environment the server is configured by.
+ENV HOME=/home/app
+
+# A wrong `HOME` is silent — the image builds, the server boots, and one job
+# fails once a day at 06:00 into a report that is only read when it is already
+# too late. So assert the thing that actually matters, through the real drop:
+# the user this image runs as can enter its own home. `cd` is the syscall that
+# failed above.
+RUN setpriv --reuid app --regid app --init-groups sh -c 'cd "$HOME"' \
+    || (echo "SC-869: uid 1001 cannot enter HOME=$HOME — db-backup's pg_dump would fail on libpq's default client-cert path" && exit 1)
+
 COPY --from=build --chown=app:app /app/apps/backend/worker/dist/server /app/server
 
 # SC-518: the SQL the compiled binary reads at runtime. Path must match the
