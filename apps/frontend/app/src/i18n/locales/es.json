@@ -116,6 +116,12 @@
     "title": "Ajustes"
   },
   "ui": {
+    "accountPicker": {
+      "loading": "Cargando tus cuentas…",
+      "searchPlaceholder": "Buscar cuentas",
+      "noMatch": "Ninguna cuenta coincide con «{{query}}»",
+      "shownOf": "Mostrando {{shown}} de {{total}}"
+    },
     "amountInput": {
       "readAsDecimal": "Se lee como {{amount}} — aquí tanto la coma como el punto significan el separador decimal. Borra el separador si querías decir un millar.",
       "readAsWhole": "Se lee como {{amount}} — este campo solo admite números enteros."

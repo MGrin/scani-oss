@@ -2126,7 +2126,13 @@
       "destinationPicker": {
         "legend": "Adónde fue este dinero",
         "loading": "Cargando tus cuentas…",
-        "noDestinations": "No tienes ninguna otra cuenta a la que mover esto. Si fue a algún sitio que Scani no ve, dilo en su lugar."
+        "noDestinations": "No tienes ninguna otra cuenta a la que mover esto. Si fue a algún sitio que Scani no ve, dilo en su lugar.",
+        "searchPlaceholder": "Busca en tus cuentas",
+        "group": {
+          "holdsToken": "Ya tiene {{symbol}}",
+          "sameNetwork": "En la misma red",
+          "other": "Tus demás cuentas"
+        }
       },
       "item": {
         "balanceChangesToExplain": "Variaciones de saldo por explicar",
