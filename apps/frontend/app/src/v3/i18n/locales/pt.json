@@ -2187,6 +2187,9 @@
         "title": "Revisão",
         "transfersTitle": "Transferências por confirmar"
       },
+      "queues": {
+        "clear": "Nada pendente"
+      },
       "rules": {
         "alreadyRuled": "Já tem uma regra para este destino",
         "commit": "Criar esta regra",

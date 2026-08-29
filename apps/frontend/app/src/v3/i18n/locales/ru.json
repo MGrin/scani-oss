@@ -2473,6 +2473,9 @@
         "answered": "Отвечено",
         "balancesTitle": "Изменения баланса без объяснения"
       },
+      "queues": {
+        "clear": "Ничего не ждёт"
+      },
       "item": {
         "jobFailed": "{{job}} — не удалось",
         "invoiceExtracted": "Инвойс извлечён",
