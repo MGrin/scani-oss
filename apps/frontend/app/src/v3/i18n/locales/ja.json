@@ -835,6 +835,7 @@
         "balanceFailed": "更新処理が失敗しました",
         "partialTitle": "残高の更新 — 一部のみ",
         "partial_other": "{{symbol}} は提供元から返ってきませんでした。他の{{count}}件の残高は更新されています。1分ほど待って再試行するか、これが続くようならこの口座を取り込み直してください。",
+        "exited": "{{symbol}} はこのウォレットから移動しました — チェーンの残高は 0 のため、画面上の残高も 0 になりました。",
         "oneBalance": "{{symbol}} の残高を更新しました",
         "manyBalances_other": "この口座の残高{{count}}件を更新しました",
         "outcome": {

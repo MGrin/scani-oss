@@ -1173,6 +1173,7 @@
         "partial_one": "{{symbol}} n’a pas été renvoyé par le fournisseur — votre autre {{count}} solde a été actualisé. Réessayez dans une minute, ou réimportez le compte si cela se reproduit.",
         "partial_many": "{{symbol}} n’a pas été renvoyé par le fournisseur — vos {{count}} autres soldes ont été actualisés. Réessayez dans une minute, ou réimportez le compte si cela se reproduit.",
         "partial_other": "{{symbol}} n’a pas été renvoyé par le fournisseur — vos {{count}} autres soldes ont été actualisés. Réessayez dans une minute, ou réimportez le compte si cela se reproduit.",
+        "exited": "{{symbol}} a quitté ce portefeuille — la chaîne indique 0, le solde affiché est donc désormais 0.",
         "oneBalance": "Solde de {{symbol}} actualisé",
         "manyBalances_one": "{{count}} solde actualisé sur ce compte",
         "manyBalances_many": "{{count}} soldes actualisés sur ce compte",

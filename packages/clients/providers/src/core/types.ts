@@ -223,6 +223,37 @@ export interface ExitedPosition {
 }
 
 /**
+ * What a direct balance question about ONE already-known asset came back with
+ * (SC-852).
+ *
+ * `fetchBalances` answers by DISCOVERY and omits anything at zero, so a token
+ * that left the wallet and a token the discovery failed to reach are the same
+ * absence. Every layer above inherits that ambiguity: the refresh tells the
+ * user "USDC wasn't returned — try again in a minute", which is right for one
+ * cause and impossible for the other, because a departed token will never be
+ * non-zero again.
+ *
+ * The three states are the whole point of the type. Collapsing `unreadable`
+ * into `exited` anchors a holding at a zero nobody read; collapsing it into
+ * `held` re-creates the bug. A producer that cannot tell them apart must say
+ * `unreadable`.
+ */
+export interface PositionProbe {
+  /** The key that was asked about — same one `fetchBalances` emits. */
+  externalId: string;
+  /**
+   * `exited`     — the balance was READ and is zero. This is the claim a
+   *                caller may anchor a holding on.
+   * `held`       — read, and non-zero. The asset is still there and discovery
+   *                simply missed it, which is the blind spot `staleStrategy:
+   *                'preserve'` exists for.
+   * `unreadable` — the question could not be answered. Says nothing about the
+   *                balance.
+   */
+  state: 'exited' | 'held' | 'unreadable';
+}
+
+/**
  * Sub-account discovered under a single integration credential. Brokers
  * (IBKR Flex Query) and venues (Wise multi-currency, Binance spot vs
  * margin) expose multiple accounts behind one set of credentials; the
