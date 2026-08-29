@@ -34,6 +34,8 @@ import { fetchWithTimeout } from '@scani/providers/core/utils/fetch';
 import type { OutflowRateLimiter } from '@scani/rate-limiter';
 import { eq, inArray } from 'drizzle-orm';
 import { google } from 'googleapis';
+import type { ConversionOutcome } from './conversion-outcome';
+import { type ConvertPriceFn, priceInBaseCurrency } from './price-in-base-currency';
 
 /**
  * Drizzle's jsonb column returns the parsed value (object) for tokens
@@ -89,13 +91,7 @@ export interface PricingExecutionContext {
   timestamp: Date;
 }
 
-/** Re-declared here to avoid pulling in `@scani/pricing-providers`. */
-export type ConvertPriceFn = (
-  price: string,
-  fromCurrency: string,
-  toCurrency: string,
-  timestamp: Date
-) => Promise<string>;
+export type { ConvertPriceFn } from './price-in-base-currency';
 
 /** Re-declared here to avoid pulling in `@scani/pricing-providers`. */
 export type CreateFailureResultFn = (
@@ -160,6 +156,74 @@ export class GoogleSheetsProvider implements CurrentPriceProvider {
     this.logger = deps.logger;
     this.spreadsheetId = loadProvidersConfig().GOOGLE_SHEETS_ID || null;
     this.available = this.initializeCredentials();
+  }
+
+  /**
+   * Read a token's cached exchange info, or `null` when the metadata
+   * cannot be parsed.
+   *
+   * The `catch` this replaces logged at `debug` and then let the caller
+   * continue with the *native* price, so unparseable metadata published
+   * a figure in an unknown currency. Returning `null` routes that into
+   * the same refusal as every other unknown-currency case.
+   */
+  private exchangeInfoOf(providerMetadata: unknown, symbol: string): CachedExchangeInfo | null {
+    try {
+      const metadata = parseTokenMetadata(providerMetadata);
+      return (metadata.exchangeInfo as CachedExchangeInfo | undefined) ?? null;
+    } catch (error) {
+      this.logger.debug({ symbol, error }, 'Google Sheets: token metadata unparseable');
+      return null;
+    }
+  }
+
+  /**
+   * Logging wrapper over `priceInBaseCurrency`. Every path that
+   * publishes a Google Sheets price goes through here, so a withheld
+   * price is announced exactly once and in one format — line ~407 used
+   * to take this branch with no logger call at all.
+   */
+  private async resolvePriceInBaseCurrency(
+    symbol: string,
+    rawPrice: string,
+    exchangeInfo: CachedExchangeInfo | null,
+    baseCurrencySymbol: string,
+    timestamp: Date
+  ): Promise<ConversionOutcome> {
+    const currency = exchangeInfo?.currency;
+    const outcome = await priceInBaseCurrency({
+      rawPrice,
+      currency,
+      baseCurrencySymbol,
+      timestamp,
+      convertPrice: this.convertPriceFn,
+      symbol,
+    });
+
+    if (outcome.ok) {
+      this.logger.debug(
+        {
+          symbol,
+          originalPrice: rawPrice,
+          convertedPrice: outcome.price,
+          fromCurrency: currency,
+          toCurrency: baseCurrencySymbol,
+        },
+        'Google Sheets: Price expressed in base currency'
+      );
+    } else {
+      this.logger.warn(
+        {
+          symbol,
+          fromCurrency: currency,
+          toCurrency: baseCurrencySymbol,
+          reason: outcome.reason,
+        },
+        'Google Sheets: withholding price — currency conversion failed'
+      );
+    }
+
+    return outcome;
   }
 
   isAvailable(): boolean {
@@ -306,59 +370,36 @@ export class GoogleSheetsProvider implements CurrentPriceProvider {
 
             if (isValidPrice(priceValue)) {
               const parsedPrice = parseInternationalNumber(priceValue);
-              let price = parsedPrice!.toString();
+              const inBase = await this.resolvePriceInBaseCurrency(
+                token.symbol,
+                parsedPrice!.toString(),
+                this.exchangeInfoOf(token.providerMetadata, token.symbol),
+                baseCurrencySymbol,
+                timestamp
+              );
 
-              try {
-                const metadata = parseTokenMetadata(token.providerMetadata);
-                const exchangeInfo = metadata.exchangeInfo as CachedExchangeInfo;
-
-                if (exchangeInfo?.currency && exchangeInfo.currency !== baseCurrencySymbol) {
-                  const converted = await this.convertPriceFn(
-                    price,
-                    exchangeInfo.currency,
-                    baseCurrencySymbol,
-                    timestamp
-                  );
-
-                  if (converted !== '0') {
-                    price = converted;
-                    this.logger.debug(
-                      {
-                        symbol: token.symbol,
-                        originalPrice: priceValue,
-                        convertedPrice: price,
-                        fromCurrency: exchangeInfo.currency,
-                        toCurrency: baseCurrencySymbol,
-                      },
-                      'Google Sheets: Price converted to base currency'
-                    );
-                  } else {
-                    this.logger.warn(
-                      {
-                        symbol: token.symbol,
-                        fromCurrency: exchangeInfo.currency,
-                        toCurrency: baseCurrencySymbol,
-                      },
-                      'Google Sheets: Currency conversion failed'
-                    );
-                  }
-                }
-              } catch (error) {
-                this.logger.debug(
-                  { symbol: token.symbol, error },
-                  'Google Sheets: No currency conversion info available, using price as-is'
+              if (!inBase.ok) {
+                results.push(
+                  this.createFailureResult(
+                    token.id,
+                    timestamp,
+                    PROVIDER_NAME_GOOGLE_SHEETS,
+                    new Error(inBase.reason),
+                    { dataEmpty: false }
+                  )
                 );
+                continue;
               }
 
               results.push({
                 tokenId: token.id,
-                price,
+                price: inBase.price,
                 timestamp,
                 source: PROVIDER_NAME_GOOGLE_SHEETS,
               });
 
               this.logger.debug(
-                { symbol: token.symbol, price, row: rowNumber },
+                { symbol: token.symbol, price: inBase.price, row: rowNumber },
                 'Google Sheets: Found existing price'
               );
             } else {
@@ -397,34 +438,27 @@ export class GoogleSheetsProvider implements CurrentPriceProvider {
 
                 if (isValidPrice(priceValue)) {
                   const parsedPrice = parseInternationalNumber(priceValue);
-                  let price = parsedPrice!.toString();
+                  const inBase = await this.resolvePriceInBaseCurrency(
+                    token.symbol,
+                    parsedPrice!.toString(),
+                    this.exchangeInfoOf(token.providerMetadata, token.symbol),
+                    baseCurrencySymbol,
+                    timestamp
+                  );
 
-                  try {
-                    const metadata = parseTokenMetadata(token.providerMetadata);
-                    const exchangeInfo = metadata.exchangeInfo as CachedExchangeInfo;
-
-                    if (exchangeInfo?.currency && exchangeInfo.currency !== baseCurrencySymbol) {
-                      const converted = await this.convertPriceFn(
-                        price,
-                        exchangeInfo.currency,
-                        baseCurrencySymbol,
-                        timestamp
-                      );
-
-                      if (converted !== '0') {
-                        price = converted;
-                      }
-                    }
-                  } catch (error) {
-                    this.logger.debug(
-                      { symbol: token.symbol, error },
-                      'Google Sheets: No currency conversion for individual read'
+                  if (!inBase.ok) {
+                    return this.createFailureResult(
+                      token.id,
+                      timestamp,
+                      PROVIDER_NAME_GOOGLE_SHEETS,
+                      new Error(inBase.reason),
+                      { dataEmpty: false }
                     );
                   }
 
                   return {
                     tokenId: token.id,
-                    price,
+                    price: inBase.price,
                     timestamp,
                     source: PROVIDER_NAME_GOOGLE_SHEETS,
                   };
@@ -578,49 +612,36 @@ export class GoogleSheetsProvider implements CurrentPriceProvider {
 
             if (isValidPrice(priceValue)) {
               const parsedPrice = parseInternationalNumber(priceValue);
-              let price = parsedPrice!.toString();
+              const inBase = await this.resolvePriceInBaseCurrency(
+                token.symbol,
+                parsedPrice!.toString(),
+                exchangeInfo,
+                baseCurrencySymbol,
+                timestamp
+              );
 
-              if (exchangeInfo?.currency && exchangeInfo.currency !== baseCurrencySymbol) {
-                const originalPrice = price;
-                price = await this.convertPriceFn(
-                  price,
-                  exchangeInfo.currency,
-                  baseCurrencySymbol,
-                  timestamp
+              if (!inBase.ok) {
+                results.push(
+                  this.createFailureResult(
+                    token.id,
+                    timestamp,
+                    PROVIDER_NAME_GOOGLE_SHEETS,
+                    new Error(inBase.reason),
+                    { dataEmpty: false }
+                  )
                 );
-
-                if (price === '0') {
-                  this.logger.warn(
-                    {
-                      symbol: token.symbol,
-                      fromCurrency: exchangeInfo.currency,
-                      toCurrency: baseCurrencySymbol,
-                    },
-                    'Google Sheets: Currency conversion failed for new token'
-                  );
-                } else {
-                  this.logger.debug(
-                    {
-                      symbol: token.symbol,
-                      originalPrice,
-                      convertedPrice: price,
-                      fromCurrency: exchangeInfo.currency,
-                      toCurrency: baseCurrencySymbol,
-                    },
-                    'Google Sheets: New token price converted to base currency'
-                  );
-                }
+                continue;
               }
 
               results.push({
                 tokenId: token.id,
-                price,
+                price: inBase.price,
                 timestamp,
                 source: PROVIDER_NAME_GOOGLE_SHEETS,
               });
 
               this.logger.debug(
-                { symbol: token.symbol, price, row: rowNumber },
+                { symbol: token.symbol, price: inBase.price, row: rowNumber },
                 'Google Sheets: Got price for new token'
               );
             } else {
@@ -660,34 +681,27 @@ export class GoogleSheetsProvider implements CurrentPriceProvider {
 
               if (isValidPrice(priceValue)) {
                 const parsedPrice = parseInternationalNumber(priceValue);
-                let price = parsedPrice!.toString();
+                const inBase = await this.resolvePriceInBaseCurrency(
+                  token.symbol,
+                  parsedPrice!.toString(),
+                  exchangeInfo,
+                  baseCurrencySymbol,
+                  timestamp
+                );
 
-                if (exchangeInfo?.currency && exchangeInfo.currency !== baseCurrencySymbol) {
-                  const originalPrice = price;
-                  price = await this.convertPriceFn(
-                    price,
-                    exchangeInfo.currency,
-                    baseCurrencySymbol,
-                    timestamp
+                if (!inBase.ok) {
+                  return this.createFailureResult(
+                    token.id,
+                    timestamp,
+                    PROVIDER_NAME_GOOGLE_SHEETS,
+                    new Error(inBase.reason),
+                    { dataEmpty: false }
                   );
-
-                  if (price !== '0') {
-                    this.logger.debug(
-                      {
-                        symbol: token.symbol,
-                        originalPrice,
-                        convertedPrice: price,
-                        fromCurrency: exchangeInfo.currency,
-                        toCurrency: baseCurrencySymbol,
-                      },
-                      'Google Sheets: New token individual read price converted'
-                    );
-                  }
                 }
 
                 return {
                   tokenId: token.id,
-                  price,
+                  price: inBase.price,
                   timestamp,
                   source: PROVIDER_NAME_GOOGLE_SHEETS,
                 };
