@@ -1267,6 +1267,9 @@
         "answered": "Answered",
         "balancesTitle": "Balance changes to explain"
       },
+      "queues": {
+        "clear": "Nothing waiting"
+      },
       "item": {
         "jobFailed": "{{job}} failed",
         "invoiceExtracted": "Invoice extracted",
