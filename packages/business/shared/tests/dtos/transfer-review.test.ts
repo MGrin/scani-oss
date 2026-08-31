@@ -195,6 +195,81 @@ describe('transferReviewSplitSchema — moving to a holding Scani tracks', () =>
 });
 
 /**
+ * What the refusal is allowed to SAY (SC-874).
+ *
+ * The limit above is sound and stays. What was not sound is that the refusal
+ * named a substitute — *"the rest has to be a disposal or untracked"* — and a
+ * disposal is not a substitute for a move: it writes a realised gain and
+ * retires the lot, so a reader who followed the instruction recorded money
+ * they still hold as sold, and cost basis and every rollup downstream
+ * inherited it.
+ *
+ * Two shapes reach the rule and both are checked, because they used to be
+ * refused by DIFFERENT rules with different words. A fan-out to two tracked
+ * accounts is two `internal` portions, which is two duplicate decisions as
+ * well as two links, and it hit `Each outcome can only appear once in a
+ * split` first — true, and silent about the only thing the reader needs.
+ */
+describe('transferReviewSplitSchema — the refusal prescribes nothing', () => {
+  const A = {
+    accountId: '11111111-2222-4333-8444-555555555555',
+    holdingId: '66666666-7777-4888-8999-aaaaaaaaaaaa',
+  };
+  const B = {
+    accountId: '22222222-3333-4444-8555-666666666666',
+    holdingId: '77777777-8888-4999-8aaa-bbbbbbbbbbbb',
+  };
+
+  const LINKING_SPLITS: ReadonlyArray<readonly [string, unknown]> = [
+    [
+      'a fan-out to two tracked destinations',
+      [
+        { decision: 'internal', quantity: '3000', destination: A },
+        { decision: 'internal', quantity: '1000', destination: B },
+      ],
+    ],
+    [
+      'one leg whose arrival was imported and one that was not',
+      [
+        {
+          decision: 'paired',
+          quantity: '3000',
+          matchTransactionId: '99999999-8888-4777-8666-555555555555',
+        },
+        { decision: 'internal', quantity: '1000', destination: B },
+      ],
+    ],
+  ];
+
+  for (const [label, split] of LINKING_SPLITS) {
+    test(`${label} is refused, and the refusal names the linking limit`, () => {
+      const parsed = transferReviewSplitSchema.safeParse(split);
+      expect(parsed.success).toBe(false);
+      expect(parsed.error?.issues[0]?.message).toContain('Only one part of a transfer can move');
+    });
+
+    test(`${label} is not told to book the rest as a disposal`, () => {
+      const parsed = transferReviewSplitSchema.safeParse(split);
+      expect(parsed.success).toBe(false);
+      const message = parsed.error?.issues[0]?.message ?? '';
+      expect(message).not.toContain('has to be');
+      expect(message).not.toContain('disposal');
+    });
+  }
+
+  test('a duplicate that is not a link still gets the duplicate message', () => {
+    // The linking check runs first now, so this is the control: reordering it
+    // must not have swallowed the rule it moved ahead of.
+    const parsed = transferReviewSplitSchema.safeParse([
+      { decision: 'untracked', quantity: '3000' },
+      { decision: 'untracked', quantity: '1000' },
+    ]);
+    expect(parsed.success).toBe(false);
+    expect(parsed.error?.issues[0]?.message).toBe('Each outcome can only appear once in a split');
+  });
+});
+
+/**
  * Where an answer came from, as one function (SC-350).
  *
  * Tested at the contract because THREE readers derive it — the answered queue,
