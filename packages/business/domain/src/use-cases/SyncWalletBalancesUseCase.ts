@@ -24,6 +24,7 @@ import type { Account, Institution, User, UserWallet } from '@scani/db/schema';
 import * as schema from '@scani/db/schema';
 import { withTransaction } from '@scani/db/transaction';
 import { createComponentLogger } from '@scani/logging';
+import type { BalanceProvider } from '@scani/providers/core/capabilities';
 import { ProviderRegistry } from '@scani/providers/core/registry';
 import type { HoldingSnapshot, ProviderContext } from '@scani/providers/core/types';
 import { integrationCircuitBreaker, withRetry } from '@scani/rate-limiter';
@@ -31,9 +32,13 @@ import { and, asc, eq, gt, sql } from 'drizzle-orm';
 import { Container, Service } from 'typedi';
 import { TokenTypeRepository } from '../repositories/EnumRepositories';
 import { HoldingExclusionRepository } from '../repositories/HoldingExclusionRepository';
+import { HoldingRepository } from '../repositories/HoldingRepository';
 import { TokenRepository } from '../repositories/TokenRepository';
 import {
   AccountService,
+  ExitedPositionProbe,
+  type ExitedPositionProbeResult,
+  type HoldingProbeCandidate,
   HoldingQueryService,
   HoldingsSyncHelper,
   PriceWarmupService,
@@ -62,6 +67,13 @@ export interface SyncWalletBalancesResult {
   holdingsCreated: number;
   /** Total holdings removed (balance = 0) */
   holdingsRemoved: number;
+  /**
+   * Symbols (uppercased) whose holdings this run anchored at zero because the
+   * chain was asked directly and answered zero (SC-872). Never populated by an
+   * absence, a timeout, or a provider that could not be read — those change
+   * nothing, and the split is the whole point (SC-852).
+   */
+  exitedSymbols: string[];
   /** Errors encountered during sync */
   errors: Array<{
     accountId: string;
@@ -88,6 +100,8 @@ export class SyncWalletBalancesUseCase {
   private readonly tokenRepository = Container.get(TokenRepository);
   private readonly scamDetectionService = Container.get(ScamTokenDetectionService);
   private readonly priceWarmupService = Container.get(PriceWarmupService);
+  private readonly holdingRepository = Container.get(HoldingRepository);
+  private readonly exitProbe = Container.get(ExitedPositionProbe);
 
   async execute(): Promise<SyncWalletBalancesResult> {
     const startTime = Date.now();
@@ -108,6 +122,7 @@ export class SyncWalletBalancesUseCase {
         holdingsUpdated: 0,
         holdingsCreated: 0,
         holdingsRemoved: 0,
+        exitedSymbols: [],
         errors: [],
         durationMs: Date.now() - startTime,
       };
@@ -119,6 +134,7 @@ export class SyncWalletBalancesUseCase {
     let holdingsUpdated = 0;
     let holdingsCreated = 0;
     let holdingsRemoved = 0;
+    const exitedSymbols: string[] = [];
 
     try {
       // Get crypto token type
@@ -137,6 +153,7 @@ export class SyncWalletBalancesUseCase {
       holdingsUpdated += result.holdingsUpdated;
       holdingsCreated += result.holdingsCreated;
       holdingsRemoved += result.holdingsRemoved;
+      exitedSymbols.push(...result.exitedSymbols);
       errors.push(...result.errors);
 
       const totalAccountsFound = accountsSynced + accountsFailed;
@@ -150,6 +167,7 @@ export class SyncWalletBalancesUseCase {
           holdingsUpdated,
           holdingsCreated,
           holdingsRemoved,
+          exitedSymbols,
           durationMs,
         },
         'Wallet balance sync completed'
@@ -162,6 +180,7 @@ export class SyncWalletBalancesUseCase {
         holdingsUpdated,
         holdingsCreated,
         holdingsRemoved,
+        exitedSymbols,
         errors,
         durationMs,
       };
@@ -188,9 +207,11 @@ export class SyncWalletBalancesUseCase {
     holdingsUpdated: number;
     holdingsCreated: number;
     holdingsRemoved: number;
+    exitedSymbols: string[];
     errors: SyncWalletBalancesResult['errors'];
   }> {
     const errors: SyncWalletBalancesResult['errors'] = [];
+    const exitedSymbols: string[] = [];
     let accountsSynced = 0;
     let accountsFailed = 0;
     let holdingsUpdated = 0;
@@ -214,6 +235,8 @@ export class SyncWalletBalancesUseCase {
       institution: Institution;
       account: Account;
       snapshots: HoldingSnapshot[];
+      /** Symbols this run measured at zero — counted only once the write commits. */
+      exitedSymbols: string[];
     }> = [];
 
     // Keyset pagination cursor (id is uuid; lexicographic ordering is fine here).
@@ -384,14 +407,14 @@ export class SyncWalletBalancesUseCase {
 
               // EXTERNAL API CALL - Fetch holdings from blockchain (no DB connection held).
               // Retries transient failures (network, 5xx, 429) with backoff.
+              const ctx = makeProviderCtx({
+                institutionCode,
+                userId: user.id,
+                institutionId,
+                walletAddress: userWallet.walletAddress,
+              });
               let snapshots: HoldingSnapshot[];
               try {
-                const ctx = makeProviderCtx({
-                  institutionCode,
-                  userId: user.id,
-                  institutionId,
-                  walletAddress: userWallet.walletAddress,
-                });
                 snapshots = await withRetry(() => provider.fetchBalances(ctx), {
                   onRetry: (attempt, err) => {
                     logger.warn(
@@ -417,13 +440,36 @@ export class SyncWalletBalancesUseCase {
                 (s) => !exclusionKeys.has(`${institutionId}:${s.externalId}`)
               );
 
+              // A position that LEFT the wallet and one discovery failed to
+              // reach are the same absence from `snapshots`, and `preserve`
+              // keeps the old number for both — which is why a holding the
+              // chain reports as `0x0` can sit on a dashboard for months. The
+              // manual refresh has asked the chain directly since SC-852;
+              // nobody presses that button on a wallet they have stopped
+              // looking at, so the correction had to reach the cron (SC-872).
+              const probed = await this.probeExitsForAccount({
+                provider,
+                ctx,
+                snapshots: keptSnapshots,
+                capturedAt: new Date(),
+                loadCandidates: () =>
+                  this.holdingRepository.findByUserWithFullDetails(
+                    user.id,
+                    syncAccount.id,
+                    undefined,
+                    true,
+                    true
+                  ),
+              });
+
               walletDataToSync.push({
                 user,
                 userWallet,
                 institutionId,
                 institution,
                 account: syncAccount,
-                snapshots: keptSnapshots,
+                snapshots: [...keptSnapshots, ...probed.snapshots],
+                exitedSymbols: probed.exitedSymbols,
               });
             } catch (error) {
               accountsFailed++;
@@ -497,6 +543,9 @@ export class SyncWalletBalancesUseCase {
             holdingsUpdated += result.updated;
             holdingsCreated += result.created;
             holdingsRemoved += result.removed;
+            // Claimed after the write, not after the probe: a row whose
+            // persistence threw below still holds the old number.
+            exitedSymbols.push(...walletData.exitedSymbols);
 
             if (result.createdTokenIds.length > 0) {
               const set = createdTokenIdsByUser.get(user.id) ?? new Set<string>();
@@ -546,8 +595,68 @@ export class SyncWalletBalancesUseCase {
       holdingsUpdated,
       holdingsCreated,
       holdingsRemoved,
+      exitedSymbols: Array.from(new Set(exitedSymbols)),
       errors,
     };
+  }
+
+  /**
+   * The unattended half of SC-852's exit probe, and the guard the cron needs
+   * that the manual refresh does not (SC-872).
+   *
+   * `ExitedPositionProbe` owns the three-state policy and is shared verbatim
+   * with `RefreshAccountBalanceUseCase`: `exited` is a measured zero and
+   * anchors the holding, `held` and `unreadable` change nothing. That split is
+   * load-bearing HERE in a way it is not on the manual path — a person who
+   * gets a wrong answer presses Refresh again, and nobody is watching an
+   * hourly cron. Collapsing `unreadable` into `exited` would zero every
+   * candidate on every wallet on the platform during a single Etherscan
+   * outage, and `holdings.balance` is an anchor rather than a sum, so those
+   * zeros rewrite the reconstructed history behind them.
+   *
+   * TWO THINGS ARE REFUSED BEFORE THE CANDIDATES ARE EVEN LOADED, so an
+   * account with nothing to resolve costs neither a query nor an upstream
+   * call:
+   *
+   *   - a provider that does not implement the capability — the pre-SC-852
+   *     behaviour, and an answer rather than a stub to fill in;
+   *   - a fetch that came back EMPTY. That is the outage shape the refresh
+   *     path already refuses to zero on, and asking N more questions in the
+   *     same breath spends the window `OutflowRateLimiterRegistry` shares
+   *     across all four machines to learn the same thing twice. A genuinely
+   *     emptied wallet is left to the next run, which is the conservative
+   *     direction for a write nobody reviews.
+   */
+  private async probeExitsForAccount(args: {
+    provider: Pick<BalanceProvider, 'probePositions'>;
+    ctx: Parameters<NonNullable<BalanceProvider['probePositions']>>[0];
+    snapshots: readonly HoldingSnapshot[];
+    capturedAt: Date;
+    /** Deferred so the two refusals above cost no query. */
+    loadCandidates: () => Promise<readonly HoldingProbeCandidate[]>;
+  }): Promise<ExitedPositionProbeResult> {
+    const empty = { snapshots: [] as HoldingSnapshot[], exitedSymbols: [] as string[] };
+    if (!args.provider.probePositions) return empty;
+    if (args.snapshots.length === 0) return empty;
+
+    let holdings: readonly HoldingProbeCandidate[];
+    try {
+      holdings = await args.loadCandidates();
+    } catch (error) {
+      logger.warn(
+        { error: error instanceof Error ? error.message : String(error) },
+        'Could not load probe candidates — every absence stays unresolved'
+      );
+      return empty;
+    }
+
+    return this.exitProbe.probe({
+      provider: args.provider,
+      ctx: args.ctx,
+      holdings,
+      snapshots: args.snapshots,
+      capturedAt: args.capturedAt,
+    });
   }
 
   /**
