@@ -39,12 +39,22 @@ const CSP_PLACEHOLDER = '${CSP_CONNECT_SRC}';
 
 /**
  * Headers nginx sends that `_headers` deliberately does not declare.
- * Listed explicitly so adding a third one is a decision somebody makes on
- * purpose, not a diff nobody reads. `X-Robots-Tag` is nginx-only because
- * the self-hosted SPA should not be indexed; the Pages deployment of the
- * same bundle is governed by its own host config.
+ *
+ * Empty, and worth keeping empty rather than deleting: the set is what
+ * makes adding an nginx-only header a decision somebody records, instead
+ * of a diff nobody reads.
+ *
+ * It held `X-Robots-Tag` until SC-841, on the grounds that "the Pages
+ * deployment of the same bundle is governed by its own host config".
+ * `public/_headers` IS that config, and it did not declare the header —
+ * so the exception was not describing a deliberate split, it was holding
+ * open the one gap it looked like it had considered. Measured against
+ * production 2026-08-31, unauthenticated: `app.scani.xyz` returned zero
+ * `X-Robots-Tag` on any response, served no `robots.txt`, and answered
+ * `/robots.txt` with the SPA shell. Both hosts now declare it, so it is
+ * an agreement the tests above check rather than an exception.
  */
-const NGINX_ONLY_HEADERS = new Set(['X-Robots-Tag']);
+const NGINX_ONLY_HEADERS = new Set<string>([]);
 
 /** The `/*` block of a `_headers` file: `  Name: value` lines under `/*`. */
 function parseHeadersFile(source: string): Map<string, string> {
