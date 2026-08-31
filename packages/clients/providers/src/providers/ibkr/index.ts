@@ -261,8 +261,27 @@ async function reportStatus(
   }
 }
 
+/**
+ * Read one attribute out of an element's attribute text.
+ *
+ * The name is anchored to a whitespace boundary, and that is the whole
+ * substance of this function (SC-855). Unanchored, `type` matched inside
+ * `securityIDType="ISIN"` — which IBKR emits eleven attributes ahead of the
+ * element's own `type` — so every `<CashTransaction>` in a real statement
+ * read `type = "ISIN"`, `classifyCashType` refused it, and the row was
+ * dropped: 177 of them on each of three consecutive production runs, for
+ * fifteen months. Case-insensitivity is what made a longer name reachable at
+ * all, and it is kept because IBKR's own casing is the thing we do not
+ * control; the anchor is what makes it safe.
+ *
+ * The hazard is not specific to `type` — `conid` sits inside
+ * `underlyingConid` and `currency` inside `ibCommissionCurrency`. Those two
+ * happen to be safe today only because IBKR emits the shorter name first,
+ * which is a property of the statement rather than of this parser, and a
+ * Flex query's columns are the user's to choose.
+ */
 function extractAttr(attrs: string, name: string): string {
-  const regex = new RegExp(`${name}="([^"]*)"`, 'i');
+  const regex = new RegExp(`(?:^|\\s)${name}="([^"]*)"`, 'i');
   return attrs.match(regex)?.[1] ?? '';
 }
 
