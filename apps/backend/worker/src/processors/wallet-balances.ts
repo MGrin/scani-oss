@@ -21,6 +21,11 @@ export class WalletBalancesProcessor extends ScheduledJobProcessor {
           synced: result.accountsSynced,
           failed: result.accountsFailed,
           holdings: `+${result.holdingsCreated} ~${result.holdingsUpdated} -${result.holdingsRemoved}`,
+          // The only thing this run wrote that no human authorised. Logged as
+          // the symbol list rather than a count so an operator reading a
+          // suspiciously long one during an upstream incident can say WHICH
+          // holdings were anchored at zero, and on which accounts (SC-872).
+          exitedSymbols: result.exitedSymbols,
           durationMs: Date.now() - startTime,
         },
         '✅ Wallet balances sync completed'
