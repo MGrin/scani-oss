@@ -2438,19 +2438,22 @@
         "internal": {
           "balanceFallback": "su saldo",
           "carry": "Los {{amount}} {{symbol}} conservan lo que pagaste originalmente por ellos al pasar a {{location}}. No se realiza nada, y no se contabiliza ninguna ganancia.",
-          "writeExisting": "Ahí se registra un ingreso de {{amount}} {{symbol}} con fecha {{date}}. Su saldo se queda en {{balance}} — registrar historial nunca mueve un saldo, así que si ese saldo no incluye ya este movimiento, cámbialo tú.",
-          "writeNew": "Ahí se crea una posición nueva en {{symbol}} con un saldo de {{amount}} {{symbol}}, que contiene un ingreso con fecha {{date}}."
+          "writeExisting": "Se registra allí un ingreso de {{amount}} {{symbol}} con fecha {{date}}. Su saldo se mantiene en {{balance}} — esa cuenta está sincronizada, y su propia sincronización ya refleja el dinero como recibido.",
+          "writeExistingMoves": "Se registra allí un ingreso de {{amount}} {{symbol}} con fecha {{date}}, y su saldo sube desde {{balance}} en {{amount}} {{symbol}}. Nada sincroniza esa cuenta, así que nadie más pondría el dinero — no hace falta que lo cambies tú.",
+          "writeNew": "Ahí se crea una posición nueva en {{symbol}} con un saldo de {{amount}} {{symbol}}, que contiene un ingreso con fecha {{date}}.",
+          "writeNewSynced": "Se crea allí una nueva posición de {{symbol}}, abierta en cero y con un ingreso con fecha {{date}}. Esa cuenta está sincronizada: su próxima sincronización rellenará el saldo real."
         },
         "reopen": {
           "declared": "Esta es una transferencia que registraste tú, así que deshacerla devuelve los dos saldos a como estaban antes — la cuenta de la que salió vuelve a subir, la cuenta a la que llegó vuelve a bajar — y elimina los dos apuntes. No vuelve a la cola: ya no queda ninguna pregunta que responder.",
           "default": "La transferencia vuelve a la cola, y nada sobre ella queda resuelto hasta que la respondas de nuevo.",
-          "internal": "El ingreso que esto registró en la otra cuenta se elimina con ella — si no, tu próxima respuesta contaría ese dinero dos veces. La transferencia vuelve a la cola, y ningún saldo cambia en ningún sentido.",
+          "internal": "El ingreso que esto registró en la otra cuenta se elimina con ella — si no, tu próxima respuesta contaría ese dinero dos veces. Si la respuesta cambió el saldo de esa cuenta, ese cambio también se deshace. La transferencia vuelve a la cola.",
           "internalCreated": "Esa cuenta no seguía nada de este token antes de tu respuesta, así que Scani creó la posición además del ingreso. Se eliminan las dos — salvo que desde entonces se haya registrado algo más sobre esa posición, en cuyo caso se mantiene. La transferencia vuelve a la cola, y ningún otro saldo cambia.",
           "leftControl": "La ganancia que esto contabilizó sale de tu total realizado hasta que la respondas de nuevo, y la transferencia vuelve a la cola."
         },
         "split": {
           "balanceNew": "Ahí se crea una posición nueva en {{symbol}}, con ese ingreso como saldo.",
           "balanceUnchanged": "No se modifica ningún saldo.",
+          "balanceMoves": "El saldo de esa cuenta sube en el importe que llegó allí.",
           "clause": {
             "internal": "{{amount}} van a {{location}}, donde se registra un ingreso de {{amount}}",
             "internalFallback": "{{amount}} van a la posición que has elegido",
