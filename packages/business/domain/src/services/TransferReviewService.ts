@@ -40,7 +40,11 @@ import {
 import Decimal from 'decimal.js';
 import { and, desc, eq, gte, inArray, isNotNull, isNull, lte, ne, or, sql } from 'drizzle-orm';
 import Container, { Service } from 'typedi';
-import { arrivalMetadata, readCreatedDestination } from '../lib/created-destination';
+import {
+  arrivalMetadata,
+  readCreatedDestination,
+  readMovedDestinationAnchor,
+} from '../lib/created-destination';
 import { type DeclaredPairLegFacts, declaredPairLegs } from '../lib/declared-transfer';
 import { holdingIsUntouched } from '../lib/holding-untouched';
 import { ilikePattern } from '../lib/text-search';
@@ -80,6 +84,7 @@ import {
   BalanceSyncOwnershipService,
   type SyncOwnableAccount,
 } from './accounts/BalanceSyncOwnershipService';
+import { type BalanceSyncSource, MANUAL_HOLDING_SOURCE } from './holdings/balance-sync-sources';
 import { HOLDING_OPEN_OBSERVATION_SOURCE, HoldingService } from './holdings/HoldingService';
 import { PriceGraphService } from './pricing/PriceGraphService';
 
@@ -924,6 +929,12 @@ export class TransferReviewService {
         accountName: schema.accounts.name,
         institutionName: schema.institutions.name,
         chainKey: sql<string | null>`${schema.accounts.metadata}->>'chainId'`,
+        // Everything `resolveSyncSource` reads, so the picker can say whether
+        // answering here will move the balance (SC-856).
+        userId: schema.accounts.userId,
+        institutionId: schema.accounts.institutionId,
+        metadata: schema.accounts.metadata,
+        isActive: schema.accounts.isActive,
       })
       .from(schema.accounts)
       .leftJoin(schema.institutions, eq(schema.institutions.id, schema.accounts.institutionId))
@@ -970,6 +981,16 @@ export class TransferReviewService {
       const onSourceChain = Boolean(
         sourceChainKey && account.chainKey && account.chainKey === sourceChainKey
       );
+      // Asked through the service the WRITE path asks, once per account, rather
+      // than reconstructed in bulk from `user_wallets` and
+      // `user_integration_credentials` (SC-856). A bulk query would be a second
+      // implementation of "does a sync own this account", and the whole value
+      // of this field is that the sentence over the button and the write agree.
+      // The cost is bounded by the account count, and this is a picker.
+      const accountSyncSource = await Container.get(BalanceSyncOwnershipService).resolveSyncSource(
+        { ...account, id: account.accountId },
+        database
+      );
       const existing = byAccount.get(account.accountId) ?? [];
       if (existing.length === 0) {
         destinations.push({
@@ -979,6 +1000,9 @@ export class TransferReviewService {
           institutionName: account.institutionName,
           source: null,
           balance: null,
+          // `openingOf`: an unsynced account gets the row AT the moved amount,
+          // a sync-owned one gets it at zero for the sync to restate.
+          movesBalance: accountSyncSource === null,
           relevance: onSourceChain ? 'same_network' : 'other',
         });
         continue;
@@ -991,6 +1015,9 @@ export class TransferReviewService {
           institutionName: account.institutionName,
           source: holding.source,
           balance: holding.balance,
+          // The write path's own predicate, over a sync source already in
+          // hand rather than re-asked per holding.
+          movesBalance: anchorIsUnobserved(holding, accountSyncSource),
           relevance: 'holds_token',
         });
       }
@@ -1290,16 +1317,22 @@ export class TransferReviewService {
    * the external id is this transaction's own id.
    *
    * **A transfer the OWNER DECLARED is UNDONE here instead** (SC-618, mgrin
-   * 2026-08-26), and the difference is not cosmetic. Everything above assumes
-   * the answer moved no balance, which is true of every queue answer — see
-   * `writeInflow`. A declared transfer moved BOTH anchors, so clearing the
-   * answer and unlinking the pair left the source down, the destination up,
+   * 2026-08-26), and the difference is not cosmetic. A declared transfer moved
+   * BOTH anchors, so clearing the answer and unlinking the pair left the source
+   * down, the destination up,
    * and nothing saying why: money that has moved with no explanation, plus an
    * ungrouped arrival that `CostBasisService.walkComponent` opens a fresh lot
    * at market for — the invented gain this whole feature exists to prevent.
    *
    * So for that one shape, and only that one, this restores both anchors and
-   * deletes both legs. The row then leaves the answered list rather than
+   * deletes both legs. **A queue answer restores at most the DESTINATION's**,
+   * and only where it moved one — `clearAnswer` reads the arrival row's own
+   * marker to know (SC-856). The sentence that used to stand here, *"every
+   * queue answer moves no balance"*, was true of `internal` until `writeInflow`
+   * learned to move a destination no sync will correct; it is stated in one
+   * place now, on the row, rather than assumed in two.
+   *
+   * The row then leaves the answered list rather than
    * returning to the queue, which is the honest outcome: the withdrawal was
    * not observed by an importer that we are now unsure about, it was a
    * sentence the owner typed, and withdrawing the sentence removes it. See
@@ -1975,6 +2008,7 @@ export class TransferReviewService {
       )
       .returning({
         holdingId: schema.holdingTransactions.holdingId,
+        quantity: schema.holdingTransactions.quantity,
         sourceMetadata: schema.holdingTransactions.sourceMetadata,
       });
 
@@ -1995,6 +2029,7 @@ export class TransferReviewService {
     //
     // The arrival is already gone by this point, so it does not count itself.
     const survivors: string[] = [];
+    const restore: { holdingId: string; quantity: string }[] = [];
     for (const row of removed) {
       if (
         readCreatedDestination(row.sourceMetadata) === 'created' &&
@@ -2006,6 +2041,38 @@ export class TransferReviewService {
         continue;
       }
       survivors.push(row.holdingId);
+      // **The anchor this answer moved comes back with it** (SC-856).
+      //
+      // `writeInflow` moves a destination balance that no sync will ever
+      // correct, so for those rows the sentence above — every queue answer
+      // moves no balance — stopped being true, and a reopen that only deleted
+      // the arrival would leave the money moved with nothing explaining it:
+      // the shape SC-618 had to repair on the declared path.
+      //
+      // It acts on `moved` alone. `not_moved` is the answer that left the
+      // balance to its sync, and `unrecorded` is every arrival written before
+      // SC-856 — both would be a guess about somebody's money, and both are
+      // already correct with no anchor to put back.
+      if (readMovedDestinationAnchor(row.sourceMetadata) === 'moved') {
+        restore.push({ holdingId: row.holdingId, quantity: row.quantity });
+      }
+    }
+    // After the delete loop, so `holdingIsUntouched` above judges the holding
+    // as the answer left it — the observation this write records would read as
+    // somebody having touched the row.
+    for (const entry of restore) {
+      const [holding] = await tx
+        .select({ balance: schema.holdings.balance })
+        .from(schema.holdings)
+        .where(and(eq(schema.holdings.id, entry.holdingId), eq(schema.holdings.userId, userId)))
+        .limit(1);
+      if (!holding) continue;
+      await Container.get(UpdateHoldingUseCase).execute(
+        entry.holdingId,
+        { balance: new Decimal(holding.balance).sub(entry.quantity).toString() },
+        userId,
+        tx
+      );
     }
     if (survivors.length > 0) {
       await Container.get(HoldingCoverageRepository).syncTxBoundsFromLedger(survivors, tx);
@@ -2560,8 +2627,11 @@ async function claimInflow(
  *
  * Four properties worth stating, because each is load-bearing:
  *
- * - **It never touches `holdings.balance` on an existing holding.** See
- *   `CREATED_INFLOW_KIND` above for why that is safe rather than a compromise.
+ * - **It moves an existing destination's `holdings.balance` only where nobody
+ *   else will** (SC-856). See `arrivalMovesTheAnchor` below. `CREATED_INFLOW_KIND`
+ *   above has the half of the reasoning that is still true: on a destination a
+ *   sync owns, the arrival is already in the balance and moving it would count
+ *   the money twice.
  * - **A destination with no holding gets one**, and WHO OWNS ITS BALANCE
  *   decides how it is opened (SC-356). See `openingOf` below.
  * - **`external_id` is the outflow's id**, which makes the write idempotent
@@ -2598,9 +2668,18 @@ async function writeInflow(
   // because a reopen has to tell "this answer did not create it" from "nobody
   // said", and only one of those may delete a holding (SC-631).
   let createdDestination = false;
+  // The destination this answer REUSED, or null where it opened one. Only a
+  // reused row can have an anchor to move: a created one was opened at the
+  // figure `openingOf` chose, which already accounts for the arrival wherever
+  // it is the user's number to state (SC-856).
+  let reused: { id: string; source: string; balance: string } | null = null;
   if (holdingId) {
     const [holding] = await tx
-      .select({ id: schema.holdings.id })
+      .select({
+        id: schema.holdings.id,
+        source: schema.holdings.source,
+        balance: schema.holdings.balance,
+      })
       .from(schema.holdings)
       .where(
         and(
@@ -2616,6 +2695,7 @@ async function writeInflow(
       )
       .limit(1);
     if (!holding) return false;
+    reused = holding;
   } else {
     // "This account tracks no position in that token yet." Between the picker
     // rendering and this write, one may have appeared — an import ran, another
@@ -2623,7 +2703,11 @@ async function writeInflow(
     // the reader chose the account, and a second holding for the same token in
     // it would be a duplicate nobody asked for.
     const [existing] = await tx
-      .select({ id: schema.holdings.id })
+      .select({
+        id: schema.holdings.id,
+        source: schema.holdings.source,
+        balance: schema.holdings.balance,
+      })
       .from(schema.holdings)
       .where(
         and(
@@ -2636,6 +2720,7 @@ async function writeInflow(
       .limit(1);
     if (existing) {
       holdingId = existing.id;
+      reused = existing;
     } else {
       const opening = await openingOf(tx, account, quantity);
       // **Through the service, not a direct insert** (SC-641). This was the
@@ -2675,6 +2760,10 @@ async function writeInflow(
     }
   }
 
+  const movedAnchor = reused
+    ? await moveUnobservedAnchor(tx, userId, account, reused, quantity)
+    : false;
+
   await tx
     .insert(schema.holdingTransactions)
     .values({
@@ -2689,7 +2778,11 @@ async function writeInflow(
       transferGroupId: groupId,
       counterparty: outflow.counterparty,
       description: 'Arrival you recorded when reviewing the transfer it came from',
-      sourceMetadata: arrivalMetadata({ outflowTransactionId: outflow.id, createdDestination }),
+      sourceMetadata: arrivalMetadata({
+        outflowTransactionId: outflow.id,
+        createdDestination,
+        movedDestinationAnchor: movedAnchor,
+      }),
     })
     // Re-answering after a reopen deletes the previous row first, so a
     // conflict here means two writers for one question. The later one wins on
@@ -2719,6 +2812,122 @@ async function writeInflow(
   // a freshly created destination holding (SC-307).
   await Container.get(HoldingCoverageRepository).syncTxBoundsFromLedger([holdingId], tx);
 
+  return true;
+}
+
+/**
+ * Should this arrival move the destination's `holdings.balance`? (SC-856)
+ *
+ * ## The premise SC-187 wrote down, and the half of it that is false
+ *
+ * `CREATED_INFLOW_KIND` states it plainly: the outflow came from an import and
+ * "whatever produced the destination's balance already observed the arrival, so
+ * moving it would count the money twice". SC-614 re-derived the same sentence
+ * when it fixed this arithmetic on the manual-edit path, and used it to rule
+ * the queue path safe — *"in the transfer-review queue the outflow arrived from
+ * an import, and the destination's balance was observed independently by its
+ * own sync"*.
+ *
+ * Both sentences are about the DESTINATION, and both quietly assume it has a
+ * sync. Where it does not, nothing ever observes that balance: the arrival is
+ * recorded, no money moves, and the owner raises the figure by hand — which
+ * writes a SECOND arrival, `kind = 'deposit'`, `source = 'user-balance-edit'`.
+ * Measured on production 2026-08-28/29: one 2,000 out of Airwallex left THREE
+ * arrival rows on a Wise savings holding, and its ledger now sums 2,000 above
+ * its own anchor.
+ *
+ * ## Why the predicate is two questions and not one
+ *
+ * "Will a balance sync write this row?" needs a yes from BOTH, and the ticket's
+ * own case is the reason the account half alone is not enough:
+ *
+ * - **The holding.** `HoldingsSyncHelper` skips `MANUAL_HOLDING_SOURCE`
+ *   unconditionally — a hand-curated row is one no sync may adopt, which is
+ *   what protects it and also what strands it. The production destination is
+ *   exactly this: `holdings.source = 'manual'`. Asking only about the account
+ *   would leave that row unfixed the moment the institution behind it carries
+ *   credentials, because the ACCOUNT is then sync-owned while the ROW is still
+ *   nobody's.
+ * - **The account.** `resolveSyncSource` — the same call `openingOf` makes two
+ *   functions down, for the same question about a holding that does not exist
+ *   yet. A sync-owned row on an account whose credentials have gone is as
+ *   unobserved as a manual one.
+ *
+ * ## What this deliberately does NOT do
+ *
+ * It does not move every anchor. On a destination a sync owns, the balance
+ * already includes the arrival by the time anyone answers, and moving it is the
+ * double-count the current behaviour exists to prevent — the reason SC-614
+ * split the callers rather than adding a flag to `writeInflow`.
+ *
+ * It also cannot tell whether the owner has ALREADY raised the balance by hand
+ * before answering. Nothing can: a hand edit with no stated cause moves the
+ * anchor and writes no row. That case has its own answer in the queue —
+ * `paired`, against the deposit the edit wrote — and `internal` means "nothing
+ * recorded the arrival, write it for me".
+ */
+function anchorIsUnobserved(
+  holding: { source: string },
+  accountSyncSource: BalanceSyncSource | null
+): boolean {
+  return holding.source === MANUAL_HOLDING_SOURCE || accountSyncSource === null;
+}
+
+/**
+ * The same question with the account half still to resolve — what the WRITE
+ * path asks, one destination at a time.
+ *
+ * `destinationsFor` calls `anchorIsUnobserved` directly instead, because it has
+ * already resolved the account's sync source once for a whole page of
+ * candidates. Both go through that one function on purpose: the sentence over
+ * the button and the write behind it are the two things that must never
+ * disagree, and two spellings of this rule is how they come to.
+ */
+async function arrivalMovesTheAnchor(
+  tx: DatabaseTransaction,
+  account: SyncOwnableAccount,
+  holding: { source: string }
+): Promise<boolean> {
+  const syncSource = await Container.get(BalanceSyncOwnershipService).resolveSyncSource(
+    account,
+    tx
+  );
+  return anchorIsUnobserved(holding, syncSource);
+}
+
+/**
+ * Move a destination anchor nobody else will, and say whether it did (SC-856).
+ *
+ * **Through `UpdateHoldingUseCase`, for the reason `undoDeclaredTransfer` gives
+ * at length**: a second writer with its own `UPDATE holdings SET balance` is
+ * what SC-245 was, and a balance moved without an observation does not degrade
+ * `BalanceAtTimeService`, it makes it confidently wrong on every date after the
+ * gap. `editCause` is omitted deliberately — that is what keeps this from
+ * synthesizing a ledger row, which would be the double-count arriving by the
+ * other door: the arrival row this answer writes IS the ledger entry.
+ *
+ * `balance + quantity` reads TODAY's anchor rather than the balance at the
+ * transfer's date, and that is correct for the same reason the undo reads it:
+ * `holdings.balance` is an anchor, not a sum, and any restatement made since
+ * stands. Only this transfer's own contribution is added.
+ *
+ * The return value is what the arrival row records, so a reopen reverses
+ * exactly what happened rather than re-deriving a predicate whose inputs move.
+ */
+async function moveUnobservedAnchor(
+  tx: DatabaseTransaction,
+  userId: string,
+  account: SyncOwnableAccount,
+  holding: { id: string; source: string; balance: string },
+  quantity: Decimal
+): Promise<boolean> {
+  if (!(await arrivalMovesTheAnchor(tx, account, holding))) return false;
+  await Container.get(UpdateHoldingUseCase).execute(
+    holding.id,
+    { balance: new Decimal(holding.balance).add(quantity).toString() },
+    userId,
+    tx
+  );
   return true;
 }
 

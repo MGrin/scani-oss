@@ -1436,7 +1436,9 @@
         "internal": {
           "carry": "The {{amount}} {{symbol}} keeps what you originally paid for it as it moves to {{location}}. Nothing is realized, and no gain is booked.",
           "writeNew": "A new {{symbol}} holding is created there with a balance of {{amount}} {{symbol}}, holding a deposit dated {{date}}.",
-          "writeExisting": "A deposit of {{amount}} {{symbol}} dated {{date}} is recorded there. Its balance stays at {{balance}} — recording history never moves a balance, so if it does not already include this, change it yourself.",
+          "writeNewSynced": "A new {{symbol}} holding is created there, opening at zero and holding a deposit dated {{date}}. That account is synced, so its next sync fills in the real balance.",
+          "writeExisting": "A deposit of {{amount}} {{symbol}} dated {{date}} is recorded there. Its balance stays at {{balance}} — that account is synced, so its own sync already reports the money as arrived.",
+          "writeExistingMoves": "A deposit of {{amount}} {{symbol}} dated {{date}} is recorded there, and its balance goes from {{balance}} up by {{amount}} {{symbol}}. Nothing syncs that account, so nobody else would ever put the money in — you do not need to change it yourself.",
           "balanceFallback": "its balance"
         },
         "allocation": {
@@ -1462,7 +1464,8 @@
           },
           "summary": "{{clauses}}. Only the disposal books a gain.",
           "balanceNew": "A new {{symbol}} holding is created there, with that deposit as its balance.",
-          "balanceUnchanged": "No balance is changed."
+          "balanceUnchanged": "No balance is changed.",
+          "balanceMoves": "That account’s balance goes up by the amount that arrived there."
         },
         "answered": {
           "paired": "Linked to a deposit — nothing realized",
@@ -1478,7 +1481,7 @@
           "untracked": "{{amount}} untracked"
         },
         "reopen": {
-          "internal": "The deposit this recorded on the other account is deleted with it — otherwise your next answer would count that money twice. The transfer rejoins the queue, and no balance changes either way.",
+          "internal": "The deposit this recorded on the other account is deleted with it — otherwise your next answer would count that money twice. If answering it moved that account's balance, that comes back off too. The transfer rejoins the queue.",
           "internalCreated": "That account tracked none of this token before you answered, so Scani created the holding as well as the deposit. Both are removed — unless something else has been recorded against that holding since, in which case it stays. The transfer rejoins the queue, and no other balance changes.",
           "leftControl": "The gain this booked comes off your realized total until you answer it again, and the transfer rejoins the queue.",
           "default": "The transfer rejoins the queue, and nothing about it is settled until you answer it again.",
