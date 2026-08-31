@@ -2438,19 +2438,22 @@
         "internal": {
           "balanceFallback": "o seu saldo",
           "carry": "Os {{amount}} {{symbol}} mantêm o que pagou originalmente por eles ao passarem para {{location}}. Nada é realizado, e nenhum ganho é apurado.",
-          "writeExisting": "Fica lá registado um depósito de {{amount}} {{symbol}} com data de {{date}}. O saldo mantém-se em {{balance}} — registar histórico nunca mexe num saldo, por isso, se ele ainda não incluir isto, altere-o você.",
-          "writeNew": "É criada lá uma nova posição de {{symbol}} com um saldo de {{amount}} {{symbol}}, contendo um depósito com data de {{date}}."
+          "writeExisting": "É registado aí um depósito de {{amount}} {{symbol}} datado de {{date}}. O saldo mantém-se em {{balance}} — essa conta é sincronizada, e a própria sincronização já reporta o dinheiro como recebido.",
+          "writeExistingMoves": "É registado aí um depósito de {{amount}} {{symbol}} datado de {{date}}, e o saldo sobe de {{balance}} em {{amount}} {{symbol}}. Nada sincroniza essa conta, por isso mais ninguém colocaria o dinheiro — não precisa de o alterar você mesmo.",
+          "writeNew": "É criada lá uma nova posição de {{symbol}} com um saldo de {{amount}} {{symbol}}, contendo um depósito com data de {{date}}.",
+          "writeNewSynced": "É criada aí uma nova posição de {{symbol}}, aberta a zero e com um depósito datado de {{date}}. Essa conta é sincronizada: a próxima sincronização preenche o saldo real."
         },
         "reopen": {
           "declared": "Esta é uma transferência que registou você, por isso anulá-la repõe os dois saldos como estavam antes dela — a conta de onde saiu volta a subir, a conta onde chegou volta a descer — e remove os dois lançamentos. Não regressa à fila: não fica nenhuma pergunta por responder.",
           "default": "A transferência regressa à fila, e nada a seu respeito fica decidido até lhe responder outra vez.",
-          "internal": "O depósito que isto registou na outra conta é eliminado com ela — caso contrário a sua próxima resposta contaria esse dinheiro duas vezes. A transferência regressa à fila, e nenhum saldo muda de nenhum dos lados.",
+          "internal": "O depósito que isto registou na outra conta é eliminado com ela — caso contrário a sua próxima resposta contaria esse dinheiro duas vezes. Se a resposta tiver alterado o saldo dessa conta, essa alteração também é revertida. A transferência regressa à fila.",
           "internalCreated": "Essa conta não acompanhava nada deste token antes de responder, por isso o Scani criou a posição além do depósito. Ambos são removidos — a não ser que entretanto tenha sido registado algo contra essa posição, caso em que ela fica. A transferência regressa à fila, e nenhum outro saldo muda.",
           "leftControl": "O ganho que isto apurou sai do seu total realizado até lhe responder outra vez, e a transferência regressa à fila."
         },
         "split": {
           "balanceNew": "É criada lá uma nova posição de {{symbol}}, com esse depósito como saldo.",
           "balanceUnchanged": "Nenhum saldo é alterado.",
+          "balanceMoves": "O saldo dessa conta sobe no montante que aí chegou.",
           "clause": {
             "internal": "{{amount}} passam para {{location}}, onde é registado um depósito de {{amount}}",
             "internalFallback": "{{amount}} passam para a posição que escolheu",
