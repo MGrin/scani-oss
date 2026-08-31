@@ -50,6 +50,8 @@ const ITEM: PendingTransferReview = {
   candidates: [],
 };
 
+/** The reported destination: hand-maintained, and nothing syncs it — so
+ *  answering `internal` here MOVES its balance (SC-856). */
 const SAVINGS: TransferDestination = {
   accountId: '33333333-3333-4333-8333-333333333333',
   holdingId: '44444444-4444-4444-8444-444444444444',
@@ -57,7 +59,16 @@ const SAVINGS: TransferDestination = {
   institutionName: 'Revolut',
   source: 'manual',
   balance: '6500.32',
+  movesBalance: true,
   relevance: 'holds_token',
+};
+
+/** The same account with an hourly sync behind it: the arrival is already in
+ *  the figure that sync reports, so answering must NOT move it. */
+const SYNCED_SAVINGS: TransferDestination = {
+  ...SAVINGS,
+  source: 'sync_exchange_balances',
+  movesBalance: false,
 };
 
 const NO_HOLDING_YET: TransferDestination = {
@@ -67,6 +78,7 @@ const NO_HOLDING_YET: TransferDestination = {
   institutionName: 'Wise',
   source: null,
   balance: null,
+  movesBalance: true,
   relevance: 'other',
 };
 
@@ -117,13 +129,25 @@ describe('destinationGroup', () => {
 });
 
 describe('decisionConsequence — moved somewhere Scani tracks', () => {
-  test('promises the balance is untouched, which is the whole double-count answer', () => {
+  test('says the balance moves where nobody else would ever move it', () => {
     const text = decisionConsequence(t, 'internal', ITEM, null, SAVINGS);
     expect(text).toContain('keeps what you originally paid for it');
     expect(text).toContain('Revolut · Savings');
     expect(text).toContain('A deposit of 4,000 USD');
-    // The reported user had already raised this balance by hand.
+    // It promised `Its balance stays at 6,500.32 USD` here until SC-856, and
+    // told the reader to raise it themselves if it did not already include the
+    // money — an instruction whose hand edit writes a SECOND arrival row.
+    expect(text).toContain('its balance goes from 6,500.32 USD up by 4,000 USD');
+    expect(text).toContain('you do not need to change it yourself');
+  });
+
+  test('promises the balance is untouched where a sync owns it — the double-count answer', () => {
+    // MUST-BE-ABSENT against the test above, on the same amount and the same
+    // account: the only difference is who owns the balance, which is what
+    // shows the sentence follows `movesBalance` and not the answer.
+    const text = decisionConsequence(t, 'internal', ITEM, null, SYNCED_SAVINGS);
     expect(text).toContain('Its balance stays at 6,500.32 USD');
+    expect(text).not.toContain('goes from');
   });
 
   test('says a holding is being created, with the balance it will have', () => {
@@ -131,6 +155,17 @@ describe('decisionConsequence — moved somewhere Scani tracks', () => {
     expect(text).toContain('A new USD holding is created there with a balance of 4,000 USD');
     // Never the balance promise, which would be false here.
     expect(text).not.toContain('stays at');
+  });
+
+  test('a new holding on a SYNCED account opens at zero, and says so', () => {
+    // SC-356 opens it at zero for the sync to restate, and this sentence
+    // claimed the moved amount on every destination until SC-856.
+    const text = decisionConsequence(t, 'internal', ITEM, null, {
+      ...NO_HOLDING_YET,
+      movesBalance: false,
+    });
+    expect(text).toContain('opening at zero');
+    expect(text).not.toContain('with a balance of 4,000 USD');
   });
 
   test('asks for the destination before it promises anything', () => {
@@ -176,7 +211,7 @@ describe('splitIsCommittable — the reported division', () => {
 });
 
 describe('splitConsequence — moved somewhere Scani tracks', () => {
-  test('names the destination, the deposit and the untouched balance', () => {
+  test('names the destination, the deposit and the balance that moves', () => {
     const draft = rows({
       internal: { amount: '3500', destination: SAVINGS },
       left_control: { amount: '500' },
@@ -185,6 +220,18 @@ describe('splitConsequence — moved somewhere Scani tracks', () => {
     expect(text).toContain('3,500 USD moves to Revolut · Savings');
     expect(text).toContain('a deposit of 3,500 USD is recorded');
     expect(text).toContain('Only the disposal books a gain.');
+    // Nothing syncs this destination, so the anchor moves (SC-856). This read
+    // `No balance is changed.` until then, over a write that now does.
+    expect(text).toContain('balance goes up by the amount that arrived there');
+    expect(text).not.toContain('No balance is changed');
+  });
+
+  test('still says no balance is changed where a sync owns it', () => {
+    const draft = rows({
+      internal: { amount: '3500', destination: SYNCED_SAVINGS },
+      left_control: { amount: '500' },
+    });
+    const text = splitConsequence(t, draft, ITEM, () => null);
     expect(text).toContain('No balance is changed.');
   });
 
