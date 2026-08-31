@@ -184,29 +184,37 @@ export interface OwnWalletDisposal {
 
 /**
  * What answering `internal` writes on the destination, and why writing it is
- * safe (SC-187).
+ * safe (SC-187, amended by SC-856).
  *
- * **`holdings.balance` is not derived from `holding_transactions`, and this
- * never touches it.** The ledger is strictly additive — `holdings.ts:75` says
- * so and `HoldingTransactionRepository.bulkUpsert` is the proof: no insert
- * path anywhere updates a balance. `BalanceAtTimeService` treats the current
- * balance as the *anchor* and walks transactions backwards from it, so an
- * inflow dated in the past leaves today's balance untouched and lowers the
- * reconstructed balance *before* that date by the same amount.
+ * **`holdings.balance` is not derived from `holding_transactions`.** The ledger
+ * is strictly additive — `holdings.ts:75` says so and
+ * `HoldingTransactionRepository.bulkUpsert` is the proof: no insert path
+ * anywhere updates a balance. `BalanceAtTimeService` treats the current balance
+ * as the *anchor* and walks transactions backwards from it, so an inflow dated
+ * in the past leaves today's balance untouched and lowers the reconstructed
+ * balance *before* that date by the same amount. All of that still holds and is
+ * what makes the arrival row worth writing on its own.
  *
- * That is the whole answer to the double-count question, and it points the
- * right way. The reported case is a Revolut holding whose balance the user
- * raised by 3,500 by hand when the money landed: today's 6,500.32 is correct
- * and stays correct, while the history — which until now showed 6,500.32
- * stretching back to the beginning of time, as though the money had always
- * been there — gains the step it was missing. A user who has *not* yet raised
- * the balance is in exactly the position they were already in, and the picker
- * shows them each candidate's current balance so they can see which it is.
+ * **What does NOT follow is that never moving the anchor is the whole answer to
+ * the double-count question, and this docblock said it was.** The sentence it
+ * carried — *"whatever produced the destination's balance already observed the
+ * arrival"* — is a claim about the DESTINATION, and SC-614 quoted it to rule
+ * this path safe. It is true of a destination a balance sync owns and false of
+ * one nobody syncs, where the anchor is nobody's to state and the owner ends up
+ * raising it by hand — an edit that writes a SECOND arrival. Measured: one 2,000
+ * movement, three arrival rows on a Wise savings holding at `source = 'manual'`.
  *
- * The one place a balance is written is a destination holding that did not
- * exist, where the initial balance is the amount that just moved in. That is
- * not a change to a number someone chose; it is the first value of a number
- * nobody had chosen yet, and the form says so before it is committed.
+ * So the answer is now WHO OWNS THE BALANCE, asked in one place —
+ * `anchorIsUnobserved`, below — and the SC-187 story reads as one of its two
+ * branches rather than as the rule. The reported Revolut holding, whose balance
+ * the user had already raised by 3,500 by hand, is the case `paired` is for:
+ * that edit wrote an arrival, and `internal` means nothing recorded one.
+ *
+ * A balance is written in two places, both of them the first or the only value
+ * anyone has for it: a destination holding that did not exist, opened at the
+ * amount that moved in (`openingOf`), and an existing destination that no sync
+ * will ever correct. Neither is a change to a number somebody chose, and the
+ * form says which it is before it is committed.
  */
 const CREATED_INFLOW_KIND = 'transfer_in';
 
