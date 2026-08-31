@@ -27,6 +27,16 @@
  * unconditionally where the throw IS the refusal being asserted. A stub
  * used as a SENTINEL — asserted never to be called — is the opposite and
  * is fine; those are the ones below with `must not run` in their message.
+ *
+ * WHICH HALF EACH TEST COVERS IS NOT UNIFORM (SC-886). `addAlias` is the
+ * one case here where the router IS the enforcement boundary:
+ * `VendorRepository.addAlias(vendorId, rawName, source)` takes no userId
+ * and has no ownership check of its own, so the comparison in
+ * `vendors.addAlias` is the whole of it and a stubbed router test can see
+ * all of it. `merge` is the opposite extreme — the router owns only which
+ * userId it passes. The rest sit in between. A green here means different
+ * things for different tests, so read each one's own note rather than the
+ * file's verdict.
  */
 
 import { afterEach, beforeAll, describe, expect, test } from 'bun:test';
@@ -81,6 +91,20 @@ function fakeUser(id: string): typeof schema.users.$inferSelect {
   } as typeof schema.users.$inferSelect;
 }
 
+function fakeVendor(opts: { id: string; userId: string }): typeof schema.vendors.$inferSelect {
+  return {
+    id: opts.id,
+    userId: opts.userId,
+    displayName: 'Acme',
+    normalizedName: 'acme',
+    matchKey: 'acme',
+    category: null,
+    website: null,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  } as typeof schema.vendors.$inferSelect;
+}
+
 const ATTACKER_ID = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
 const PAYMENT_ID = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
 const OCCURRENCE_ID = 'dddddddd-dddd-dddd-dddd-dddddddddddd';
@@ -88,6 +112,7 @@ const VENDOR_INTO_ID = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee';
 const VENDOR_FROM_ID = 'ffffffff-ffff-ffff-ffff-ffffffffffff';
 const EXTRACTION_ID = '11111111-2222-3333-4444-555555555555';
 const VENDOR_OWNER_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+const VENDOR_ALIAS_ID = '99999999-9999-9999-9999-999999999999';
 
 /**
  * A `VendorRepository.merge` stub that DECIDES, rather than one that
@@ -117,6 +142,52 @@ function stubVendorMerge(): { receivedUserIds: string[] } {
     },
   } as unknown as VendorRepository);
   return { receivedUserIds };
+}
+
+/**
+ * `VendorRepository.findById` is NOT ownership-scoped — unlike
+ * `PaymentRepository.findByIdAndUser`, where `null` genuinely IS the
+ * owner-mismatch answer and the two payments tests above are correct for
+ * exactly that reason. So `findById: async () => null` models THE ROW NOT
+ * EXISTING, and a test built on it can only prove the router handles a
+ * missing vendor: measured on 2026-09-01, deleting the router's own
+ * `vendor.userId !== ctx.userId` comparison left this file at 7 pass /
+ * 0 fail (SC-886).
+ *
+ * Returning a real row owned by somebody ELSE is the case the test's name
+ * describes, and it is the only one that can see that comparison. Same
+ * shape as `fakeHolding` in `idor.test.ts`.
+ *
+ * The absence half it replaces needs no test of its own: `findById`
+ * returns `Vendor | null`, so deleting `!vendor` from that guard is
+ * `TS18047: 'vendor' is possibly 'null'` and never reaches a test run
+ * (measured 2026-09-01).
+ *
+ * `addAlias` COUNTS rather than throwing, on purpose: a stub that throws
+ * makes a fail-open router reject anyway, so the test passes for the wrong
+ * reason and reads exactly like blindness (SC-853 measured that false
+ * negative). Counting lets the call RESOLVE when the guard is gone, which
+ * is a loud red, and gives the owner case below something to succeed at.
+ */
+function stubVendorAddAlias(): { findByIdCalls: number; addAliasCalls: number } {
+  const calls = { findByIdCalls: 0, addAliasCalls: 0 };
+  Container.set(VendorRepository, {
+    findById: async (id: string) => {
+      calls.findByIdCalls += 1;
+      return fakeVendor({ id, userId: VENDOR_OWNER_ID });
+    },
+    addAlias: async (vendorId: string, rawName: string, source?: string) => {
+      calls.addAliasCalls += 1;
+      return {
+        id: VENDOR_ALIAS_ID,
+        vendorId,
+        rawName,
+        source: source ?? null,
+        createdAt: new Date(),
+      };
+    },
+  } as unknown as VendorRepository);
+  return calls;
 }
 
 describe('IDOR — payments router', () => {
@@ -193,20 +264,29 @@ describe('IDOR — vendors router', () => {
   });
 
   test("addAlias refuses to attach an alias to another user's vendor", async () => {
-    let addAliasCalled = false;
-    Container.set(VendorRepository, {
-      findById: async () => null, // owner mismatch -> not found
-      addAlias: async () => {
-        addAliasCalled = true;
-        throw new Error('addAlias must not run on cross-user IDOR');
-      },
-    } as unknown as VendorRepository);
+    const calls = stubVendorAddAlias();
 
     const caller = makeAuthedCaller(fakeUser(ATTACKER_ID));
     await expect(
       caller.vendors.addAlias({ vendorId: VENDOR_INTO_ID, rawName: 'AMZN Mktp GB' })
     ).rejects.toMatchObject({ code: 'NOT_FOUND' });
-    expect(addAliasCalled).toBe(false);
+    // The vendor EXISTS and belongs to VENDOR_OWNER_ID, so the only thing
+    // that can produce this refusal is the router comparing its owner
+    // against ctx.userId. That it consulted the boundary at all is the
+    // other half — a refusal reached without looking would be a different
+    // check (input validation, say) wearing this one's costume.
+    expect(calls.findByIdCalls).toBeGreaterThanOrEqual(1);
+    expect(calls.addAliasCalls).toBe(0);
+  });
+
+  test('addAlias lets the owner through — the control that makes the refusal above a decision', async () => {
+    const calls = stubVendorAddAlias();
+
+    const caller = makeAuthedCaller(fakeUser(VENDOR_OWNER_ID));
+    await expect(
+      caller.vendors.addAlias({ vendorId: VENDOR_INTO_ID, rawName: 'AMZN Mktp GB' })
+    ).resolves.toMatchObject({ vendorId: VENDOR_INTO_ID, rawName: 'AMZN Mktp GB' });
+    expect(calls.addAliasCalls).toBe(1);
   });
 
   test('merge passes ctx.userId to the enforcement boundary, never a client field', async () => {
