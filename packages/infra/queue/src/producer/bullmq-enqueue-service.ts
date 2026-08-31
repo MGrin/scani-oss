@@ -70,6 +70,24 @@ const logger = createComponentLogger('queue:enqueue');
  * retry computes a *different* id. A false fire costs a duplicate job. Hence a
  * bound only an absent store can trip.
  *
+ * **The bound covers the WHOLE enqueue, not just `queue.add`, and that is the
+ * point rather than a detail.** SC-846 added two more store round-trips —
+ * `evictFinishedNamesake`'s `getJob`/`remove` before the add, and
+ * `assertWorkWasQueued`'s `getJob` after it. Bounding only the middle one puts
+ * an unbounded await *first*, so against an unreachable store the sequence
+ * hangs before the deadline is ever reached and the `catch` below never runs:
+ * exactly the state this constant exists to prevent, reintroduced one call
+ * earlier. Measured 2026-08-31 against the ordering this replaces, with a
+ * fake whose `add` resolves instantly and whose `getJob` never settles —
+ * `add()` was still pending at 15003ms.
+ *
+ * **Widening it to three round-trips does not need a bigger number**, because
+ * only the first pays for establishing the connection: the pool is warm for
+ * the two that follow, and a warm round trip measured p50 76ms / p99 1238ms
+ * (n=200). So the worst realistic path is one cold call plus two warm ones,
+ * against a budget sized for a single cold one — the headroom the paragraph
+ * above argues for is unchanged.
+ *
  * **This is not the time a user waits for the error.** `mutations.retry` is
  * `failureCount < 1` in `packages/frontend/ui/src/lib/create-trpc-react.tsx`,
  * so a failing enqueue is attempted twice and the error surfaces at roughly
@@ -107,13 +125,15 @@ export class BullMqEnqueueService extends EnqueueService {
 
     try {
       const queue = this.queueClient.get();
-      await this.evictFinishedNamesake(queue, jobId, descriptor.name, data.userId);
       await withDeadline(
-        queue.add(descriptor.name, data, opts),
+        (async () => {
+          await this.evictFinishedNamesake(queue, jobId, descriptor.name, data.userId);
+          await queue.add(descriptor.name, data, opts);
+          await this.assertWorkWasQueued(queue, jobId, data.requestId, descriptor.name);
+        })(),
         ENQUEUE_TIMEOUT_MS,
         () => new StoreCommandTimeoutError('postgres', 'enqueue', ENQUEUE_TIMEOUT_MS)
       );
-      await this.assertWorkWasQueued(queue, jobId, data.requestId, descriptor.name);
       logger.info(
         { jobId, jobName: descriptor.name, userId: data.userId, attemptsAllowed },
         'Job enqueued'
