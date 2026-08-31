@@ -2057,7 +2057,9 @@
         "internal": {
           "carry": "Les {{amount}} {{symbol}} conservent ce que vous aviez payé pour eux en passant vers {{location}}. Rien n’est réalisé, et aucune plus-value n’est comptabilisée.",
           "writeNew": "Une nouvelle position en {{symbol}} y est créée avec un solde de {{amount}} {{symbol}}, portant un dépôt daté du {{date}}.",
-          "writeExisting": "Un dépôt de {{amount}} {{symbol}} daté du {{date}} y est enregistré. Son solde reste à {{balance}} — enregistrer un historique ne déplace jamais un solde : si celui-ci ne comprend pas déjà ce mouvement, modifiez-le vous-même.",
+          "writeNewSynced": "Une nouvelle position {{symbol}} y est créée, ouverte à zéro et portant un dépôt daté du {{date}}. Ce compte est synchronisé : sa prochaine synchronisation renseignera le solde réel.",
+          "writeExisting": "Un dépôt de {{amount}} {{symbol}} daté du {{date}} y est enregistré. Son solde reste à {{balance}} — ce compte est synchronisé, sa propre synchronisation indique déjà l’argent comme arrivé.",
+          "writeExistingMoves": "Un dépôt de {{amount}} {{symbol}} daté du {{date}} y est enregistré, et son solde passe de {{balance}} à ce montant augmenté de {{amount}} {{symbol}}. Rien ne synchronise ce compte, donc personne d’autre n’y mettrait l’argent — vous n’avez pas à le modifier vous-même.",
           "balanceFallback": "son solde"
         },
         "allocation": {
@@ -2083,7 +2085,8 @@
           },
           "summary": "{{clauses}}. Seule la cession comptabilise une plus-value.",
           "balanceNew": "Une nouvelle position en {{symbol}} y est créée, avec ce dépôt pour solde.",
-          "balanceUnchanged": "Aucun solde n’est modifié."
+          "balanceUnchanged": "Aucun solde n’est modifié.",
+          "balanceMoves": "Le solde de ce compte augmente du montant qui y est arrivé."
         },
         "answered": {
           "paired": "Relié à un dépôt — rien de réalisé",
@@ -2099,7 +2102,7 @@
           "untracked": "{{amount}} non suivi"
         },
         "reopen": {
-          "internal": "Le dépôt que ceci avait enregistré sur l’autre compte est supprimé avec lui — sinon votre prochaine réponse compterait cet argent deux fois. Le transfert rejoint la file, et aucun solde ne change dans un sens ni dans l’autre.",
+          "internal": "Le dépôt que ceci avait enregistré sur l’autre compte est supprimé avec lui — sinon votre prochaine réponse compterait cet argent deux fois. Si la réponse avait modifié le solde de ce compte, cette modification est également annulée. Le transfert rejoint la file.",
           "internalCreated": "Ce compte ne suivait aucun de ces jetons avant votre réponse : Scani avait donc créé la position en plus du dépôt. Les deux sont supprimés — sauf si quelque chose d’autre a été enregistré sur cette position depuis, auquel cas elle reste. Le transfert rejoint la file, et aucun autre solde ne change.",
           "leftControl": "La plus-value que ceci avait comptabilisée sort de votre total réalisé jusqu’à ce que vous y répondiez à nouveau, et le transfert rejoint la file.",
           "default": "Le transfert rejoint la file, et rien à son sujet n’est tranché tant que vous n’y avez pas répondu à nouveau.",
