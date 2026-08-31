@@ -133,3 +133,58 @@ export function describeUnmappedCashTypes(counts: ReadonlyMap<string, number>): 
     'not imported. This one is ours to fix, not yours: please report it.'
   );
 }
+
+/**
+ * The order fields are named in, so two statements with the same blanks
+ * produce the same key and the same sentence.
+ */
+const CASH_FIELD_ORDER = ['type', 'currency', 'amount'] as const;
+
+/**
+ * Cash rows that arrived carrying money with a required field blank (SC-873).
+ *
+ * This is the third way a Flex statement comes back short, and it was the one
+ * with no voice: `describeMissingSections` speaks for a section that never
+ * arrived and `describeUnmappedCashTypes` for a row whose type we could not
+ * place, while a row missing its `currency` or its `amount` was dropped with
+ * nothing said anywhere — not to the user, not to a log. SC-855 measured 177
+ * rows a run taking the LOUD path; nothing ever counted this one, which is
+ * why the true loss is larger than 177 and not knowable from the old code.
+ *
+ * **These rows stay dropped, deliberately.** Importing one means inventing the
+ * blank — the account's base currency, or a zero amount — and a fabricated
+ * ledger row is worse than an absent one: it is indistinguishable from a real
+ * one the next time anybody looks, whereas an absent one is what this warning
+ * now points at. A blank `type` cannot be classified at all.
+ *
+ * It names the FIELD rather than the row because that is what says whose fix
+ * it is. The same field blank on every row is a Flex Query column that was
+ * never ticked, which the user fixes in IBKR's editor; a field blank on one
+ * row out of many is IBKR's own data, which is ours to handle. The two need
+ * different actions, and a warning that only counted rows would send every
+ * reader down the same one.
+ */
+export function describeIncompleteCashRows(counts: ReadonlyMap<string, number>): string | null {
+  if (counts.size === 0) return null;
+  const rows = [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  const total = rows.reduce((sum, [, n]) => sum + n, 0);
+  const named = rows.map(([fields, n]) => `${n} with no ${fields}`).join(', ');
+  return (
+    `ibkr: ${total} cash transaction${total === 1 ? '' : 's'} in this statement ` +
+    `arrived with a required field blank — ${named} — so ` +
+    `${total === 1 ? 'it was' : 'they were'} not imported. ` +
+    'If your Flex Query is missing those columns, add them (IBKR Client Portal → ' +
+    'Performance & Reports → Flex Queries → edit the query), save, and re-run the ' +
+    'import. If the columns are there, the data came to us blank and this one is ' +
+    'ours: please report it.'
+  );
+}
+
+/** The blank fields of one cash row, in `CASH_FIELD_ORDER`, joined for a count key. */
+export function incompleteCashFieldsKey(row: {
+  type: string;
+  currency: string;
+  amount: string;
+}): string {
+  return CASH_FIELD_ORDER.filter((field) => !row[field]).join(' or ');
+}

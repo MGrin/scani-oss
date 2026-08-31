@@ -58,9 +58,11 @@ import { fetchWithTimeout } from '../../core/utils/fetch';
 import { ibkrManifest } from './manifest';
 import {
   BALANCE_SECTIONS,
+  describeIncompleteCashRows,
   describeMissingSections,
   describeUnmappedCashTypes,
   hasFlexSection,
+  incompleteCashFieldsKey,
   missingFlexSections,
   TRANSACTION_SECTIONS,
 } from './statement-warnings';
@@ -557,13 +559,21 @@ function tradeToEvent(t: TradeRow): TransactionEvent | null {
  * Why a cash row produced no event — separated from producing one because the
  * three reasons are not alike (SC-435).
  *
- * `summary` is IBKR's own BASE_SUMMARY total line and is meant to be dropped.
- * `unmapped-type` is the one that matters: `classifyCashType` matches IBKR's
- * `type` attribute EXACTLY, so a string the map has never seen — a category we
- * did not know existed, or one IBKR renamed — takes real money out of the
- * ledger and says nothing. That is the same defect as a section the query
- * never sent, arriving through a different door, and it is the other half of
- * what could have made every IBKR transaction in production a `<Trade>`.
+ * `summary` is IBKR's own BASE_SUMMARY total line and is meant to be dropped,
+ * and it is the ONLY one of the three that may be silent.
+ *
+ * `unmapped-type`: `classifyCashType` matches IBKR's `type` attribute EXACTLY,
+ * so a string the map has never seen — a category we did not know existed, or
+ * one IBKR renamed — takes real money out of the ledger. That is the same
+ * defect as a section the query never sent, arriving through a different door,
+ * and it is the other half of what could have made every IBKR transaction in
+ * production a `<Trade>`.
+ *
+ * `incomplete`: a row that arrived carrying money with `type`, `currency` or
+ * `amount` blank. It reads as the same thing from the user's side — a deposit
+ * that never appeared — and until SC-873 it was the one drop nothing counted,
+ * which is why SC-855's 177 rows a run is a floor on the loss rather than the
+ * figure. Both non-`summary` reasons are now warned on, separately.
  */
 type CashDropReason = 'summary' | 'incomplete' | 'unmapped-type';
 
@@ -773,19 +783,34 @@ export class IbkrProvider
     // A row we received and could not place is money that moved with nothing
     // to say so — the same outcome as a section we never received, so it gets
     // the same voice rather than a log line (SC-435).
+    //
+    // Both non-`summary` reasons are counted, and they are counted SEPARATELY
+    // because they are different questions for the reader (SC-873).
+    // `unmapped-type` is a category our map has never seen — ours to fix.
+    // `incomplete` is a row that arrived with `type`, `currency` or `amount`
+    // blank — which is IBKR's data or the user's Flex Query columns, and
+    // neither is answered by a count of the other. Folding them together
+    // would send every reader down one action for two causes.
     const unmappedTypes = new Map<string, number>();
+    const incompleteFields = new Map<string, number>();
     for (const c of cashTxs) {
       const e = cashTxToEvent(c);
       if (e) {
         events.push(e);
         continue;
       }
-      if (cashTxDropReason(c) === 'unmapped-type') {
+      const reason = cashTxDropReason(c);
+      if (reason === 'unmapped-type') {
         unmappedTypes.set(c.type, (unmappedTypes.get(c.type) ?? 0) + 1);
+      } else if (reason === 'incomplete') {
+        const fields = incompleteCashFieldsKey(c);
+        incompleteFields.set(fields, (incompleteFields.get(fields) ?? 0) + 1);
       }
     }
     const unmapped = describeUnmappedCashTypes(unmappedTypes);
     if (unmapped) ctx.noteWarning?.(unmapped);
+    const incomplete = describeIncompleteCashRows(incompleteFields);
+    if (incomplete) ctx.noteWarning?.(incomplete);
 
     return events;
   }
