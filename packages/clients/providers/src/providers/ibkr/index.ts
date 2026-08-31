@@ -240,6 +240,10 @@ interface CashTransactionRow {
   description: string;
   accountId: string;
   tradeID: string;
+  /** IBKR's own row identifier. Present on DETAIL rows, empty on SUMMARY. */
+  transactionID: string;
+  /** `'DETAIL'` | `'SUMMARY'` | `''` when the template does not ask for it. */
+  levelOfDetail: string;
 }
 
 function delay(ms: number): Promise<void> {
@@ -292,21 +296,44 @@ function extractAttr(attrs: string, name: string): string {
  * IBKR reports times in the user's account timezone — for now we treat
  * them as UTC; the import flow can adjust if account TZ becomes a thing
  * we expose.
+ *
+ * **The time is OPTIONAL, and demanding it crashed the import (SC-880).**
+ * Most `<CashTransaction>` rows in a real statement carry a date-only
+ * `dateTime="YYYYMMDD"` — settlement-dated rows, where IBKR knows the day and
+ * not the second. Rejecting those returned `new Date(NaN)`, which drizzle
+ * threw `RangeError: Invalid Date` on while building the insert; `bulkUpsert`
+ * is one statement for the whole batch, so NOTHING was written — not the cash
+ * rows, and not the trades beside them. The path was unreachable until SC-855
+ * stopped every cash row reading `type="ISIN"`, which is why a parser this old
+ * first crashed the night after a fix landed.
+ *
+ * A date with no time resolves to the instant that day ENDS, which is what
+ * `parseFlexDate` already does with `reportDate` and `toDate` and for the
+ * same reason: the value describes a whole day, and midnight would place it
+ * before every timestamped event on it rather than after.
  */
 function parseFlexDateTime(s: string): Date {
-  const m = s.match(/^(\d{4})(\d{2})(\d{2})[;\s]?(\d{2})(\d{2})(\d{2})$/);
+  const m = s.match(/^(\d{4})(\d{2})(\d{2})(?:[;\s]?(\d{2})(\d{2})(\d{2}))?$/);
   if (!m) return new Date(Number.NaN);
   const [, y, mo, d, h, mi, se] = m as unknown as [
     string,
     string,
     string,
-    string,
-    string,
-    string,
-    string,
+    string | undefined,
+    string | undefined,
+    string | undefined,
+    string | undefined,
   ];
+  const timed = h !== undefined && mi !== undefined && se !== undefined;
   return new Date(
-    Date.UTC(Number(y), Number(mo) - 1, Number(d), Number(h), Number(mi), Number(se))
+    Date.UTC(
+      Number(y),
+      Number(mo) - 1,
+      Number(d),
+      timed ? Number(h) : 23,
+      timed ? Number(mi) : 59,
+      timed ? Number(se) : 59
+    )
   );
 }
 
@@ -449,9 +476,36 @@ function parseCashTransactions(xml: string): CashTransactionRow[] {
       description: extractAttr(attrs, 'description'),
       accountId: extractAttr(attrs, 'accountId'),
       tradeID: extractAttr(attrs, 'tradeID'),
+      transactionID: extractAttr(attrs, 'transactionID'),
+      levelOfDetail: extractAttr(attrs, 'levelOfDetail'),
     });
   }
   return out;
+}
+
+/**
+ * One movement of money, once — because a Flex statement reports each one
+ * TWICE when the template asks for both levels of detail (SC-877).
+ *
+ * Measured on a real statement carrying both levels: the amounts summed per
+ * currency are IDENTICAL between them. `SUMMARY` is a roll-up of the `DETAIL`
+ * rows beneath it, so importing both counts every deposit, dividend and fee
+ * twice.
+ *
+ * The dedup key hid this rather than preventing it: `(holding, source,
+ * externalId)` collapsed only those pairs whose type, date, currency and
+ * amount matched exactly, and let through every pair where one `SUMMARY` row
+ * rolled up several `DETAIL` rows — which is most of them.
+ *
+ * `DETAIL` wins where both exist, and it is the level that carries
+ * `transactionID`. Where there is no `DETAIL` row at all — a template that
+ * asks only for the summary — the summary IS the statement and is kept: the
+ * rule is prefer, not require.
+ */
+function preferDetailCashRows(rows: CashTransactionRow[]): CashTransactionRow[] {
+  const level = (c: CashTransactionRow): string => c.levelOfDetail.toUpperCase();
+  if (!rows.some((c) => level(c) === 'DETAIL')) return rows;
+  return rows.filter((c) => level(c) !== 'SUMMARY');
 }
 
 type CashKind = 'reward' | 'interest' | 'fee' | 'deposit' | 'withdraw';
@@ -459,6 +513,10 @@ type CashKind = 'reward' | 'interest' | 'fee' | 'deposit' | 'withdraw';
 function classifyCashType(type: string, amount: string): CashKind | null {
   switch (type) {
     case 'Dividends':
+    // What a dividend is called when the share was on loan over the record
+    // date. Same money, same direction, same counterparty — and the only type
+    // still warned about once SC-855 let real ones through (SC-877).
+    case 'Payment In Lieu Of Dividends':
       return 'reward';
     case 'Broker Interest Received':
       return 'interest';
@@ -589,7 +647,12 @@ function cashTxToEvent(c: CashTransactionRow): TransactionEvent | null {
   const kind = classifyCashType(c.type, c.amount);
   if (!kind) return null;
   return {
-    externalId: `${c.type}-${c.dateTime}-${c.currency}-${c.amount}`,
+    // IBKR's own row id where it sends one, because the composite below is
+    // not an identifier: it collides wherever a statement repeats a movement,
+    // and it MOVES if IBKR restates an amount — which writes a second row rather
+    // than correcting the first (SC-877). Only `SUMMARY` rows arrive without
+    // it, and those are dropped whenever a `DETAIL` row exists.
+    externalId: c.transactionID || `${c.type}-${c.dateTime}-${c.currency}-${c.amount}`,
     occurredAt: parseFlexDateTime(c.dateTime),
     kind,
     primary: {
@@ -772,7 +835,7 @@ export class IbkrProvider
     if (missing) ctx.noteWarning?.(missing);
 
     const trades = parseTrades(xml);
-    const cashTxs = parseCashTransactions(xml);
+    const cashTxs = preferDetailCashRows(parseCashTransactions(xml));
 
     const events: TransactionEvent[] = [];
     for (const t of trades) {

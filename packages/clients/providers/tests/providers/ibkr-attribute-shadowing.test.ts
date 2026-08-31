@@ -78,8 +78,11 @@ describe('IBKR attribute extraction is not shadowed by a longer attribute name (
     expect(dividend).toBeDefined();
     expect(dividend?.primary.tokenIdentity.symbol).toBe('USD');
     expect(dividend?.primary.quantity).toBe('50');
-    expect(dividend?.externalId).toContain('Dividends');
-    expect(dividend?.externalId).not.toContain('ISIN');
+    // Read the type off the payload rather than off `externalId`, which is
+    // IBKR's `transactionID` where the row carries one (SC-877) and says
+    // nothing about how the type was parsed either way.
+    expect((dividend?.rawPayload as { type: string }).type).toBe('Dividends');
+    expect(JSON.stringify(dividend?.rawPayload)).not.toContain('"type":"ISIN"');
 
     const deposit = events.find((e) => e.kind === 'deposit');
     expect(deposit).toBeDefined();
