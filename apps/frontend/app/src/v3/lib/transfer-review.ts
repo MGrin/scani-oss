@@ -349,11 +349,17 @@ function internalCarryClause(
  * What moving to a tracked holding *writes* — the half `paired` does not have,
  * and the one a reader has to be told before they commit (SC-187).
  *
- * The balance sentence is the point. The reported case is someone who had
- * already raised the destination's balance by hand when the money landed, and
- * the honest thing to say is that answering does not touch it: the deposit
- * being recorded is history, not a second arrival. Saying nothing here is what
- * would leave a person reasonably expecting to be double-counted.
+ * The balance sentence is the point, and it is FOUR sentences rather than two
+ * because whether the balance moves is a property of the destination, not of
+ * the answer (SC-856). `movesBalance` comes from the server, computed by the
+ * predicate the write itself uses.
+ *
+ * It said *"its balance stays at X — recording history never moves a balance,
+ * so if it does not already include this, change it yourself"* on every
+ * destination until then. On one nobody syncs, that instruction is what wrote
+ * the second arrival row: the hand edit the reader was told to make is itself
+ * a deposit. On one a sync owns it is still exactly right, which is why the
+ * branch is here and the sentence was not simply replaced.
  */
 function internalWriteClause(
   t: TFunction,
@@ -363,21 +369,31 @@ function internalWriteClause(
   destination: TransferDestination
 ): string {
   if (destination.holdingId === null) {
-    return t('v3.review.transfer.internal.writeNew', {
-      symbol: tokenSymbol,
-      amount,
-      date: formatDate(occurredAt),
-    });
+    return t(
+      destination.movesBalance
+        ? 'v3.review.transfer.internal.writeNew'
+        : 'v3.review.transfer.internal.writeNewSynced',
+      {
+        symbol: tokenSymbol,
+        amount,
+        date: formatDate(occurredAt),
+      }
+    );
   }
   const balance = destination.balance
     ? `${qty(new Decimal(destination.balance))} ${tokenSymbol}`
     : t('v3.review.transfer.internal.balanceFallback');
-  return t('v3.review.transfer.internal.writeExisting', {
-    amount,
-    symbol: tokenSymbol,
-    date: formatDate(occurredAt),
-    balance,
-  });
+  return t(
+    destination.movesBalance
+      ? 'v3.review.transfer.internal.writeExistingMoves'
+      : 'v3.review.transfer.internal.writeExisting',
+    {
+      amount,
+      symbol: tokenSymbol,
+      date: formatDate(occurredAt),
+      balance,
+    }
+  );
 }
 
 /**
@@ -617,16 +633,19 @@ export function splitConsequence(
         return t('v3.review.transfer.split.clause.untracked', { amount });
     }
   });
-  // The balance sentence differs for a destination that does not exist yet,
-  // and the difference matters: one changes nothing, the other creates a
-  // holding. Saying "no balance is changed" over a holding being created would
-  // be the silent version of the thing this answer exists to make visible.
+  // The balance sentence differs three ways, and the differences are the whole
+  // point: a holding being created, a balance being moved, and a balance left
+  // for its sync to state. Saying "no balance is changed" over any of the
+  // first two would be the silent version of the thing this answer exists to
+  // make visible — which it was over the second until SC-856.
   const internal = filledRows(rows).find((r) => r.decision === 'internal' && r.destination);
   const balanceNote = !internal
     ? ''
     : internal.destination?.holdingId === null
       ? ` ${t('v3.review.transfer.split.balanceNew', { symbol: item.tokenSymbol })}`
-      : ` ${t('v3.review.transfer.split.balanceUnchanged')}`;
+      : internal.destination?.movesBalance
+        ? ` ${t('v3.review.transfer.split.balanceMoves')}`
+        : ` ${t('v3.review.transfer.split.balanceUnchanged')}`;
   return `${t('v3.review.transfer.split.summary', { clauses: clauses.join('. ') })}${balanceNote}`;
 }
 
@@ -679,7 +698,12 @@ export function answeredSummary(t: TFunction, item: AnsweredTransferReview): str
  * - `internal` **deletes the deposit the answer wrote** (SC-187). That is a
  *   transaction disappearing from another account, and a reader who is not
  *   told will find it gone later and have no way to connect the two. It has to
- *   be said here rather than discovered there.
+ *   be said here rather than discovered there. It also says any balance the
+ *   answer moved comes back off (SC-856) — conditionally, because whether it
+ *   moved one depends on who owns that destination's balance, and this copy
+ *   states the rule rather than predicting the case. It promised outright that
+ *   "no balance changes either way" until `writeInflow` learned to move a
+ *   destination anchor no sync will ever correct.
  * - anything else settles nothing and unsettles nothing.
  */
 export function reopenConsequence(t: TFunction, item: AnsweredTransferReview): string {
