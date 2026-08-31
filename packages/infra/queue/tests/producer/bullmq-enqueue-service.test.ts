@@ -189,6 +189,31 @@ describe('BullMqEnqueueService — an unreachable queue store (SC-523)', () => {
     return fakeQueue;
   }
 
+  // The fake above hangs `add` and resolves `getJob` INSTANTLY, so it can only
+  // ever see a bound on the middle of the three store calls this enqueue now
+  // makes. SC-846 added the other two — `evictFinishedNamesake` before the
+  // add, `assertWorkWasQueued` after it — and an unreachable store does not
+  // choose which one it fails to answer. The one that runs FIRST is the one
+  // that decides whether the deadline is ever reached.
+  //
+  // Reproduced 2026-08-31 before this was bounded: `add()` still pending at
+  // 15003ms, with the fake's `queue.add` resolving immediately — so the hang
+  // was unambiguously the `getJob`, not the call the older test covers.
+  test('THE DEFECT: add rejects when the FIRST store call — getJob — never settles', async () => {
+    const fakeQueue = {
+      // Resolves immediately: this is the control. If the bound is only on
+      // `add`, nothing here is slow enough to trip it and the test can only
+      // fail because of the unbounded probe around it.
+      add: mock(async () => {}),
+      getJob: mock(() => new Promise<undefined>(() => {})),
+    };
+    Container.set(QueueClient, { get: () => fakeQueue } as never);
+    const svc = new BullMqEnqueueService();
+    await expect(
+      svc.add(TEST_DESCRIPTOR, { userId: 'u1', requestId: 'r1', resourceId: 'res-9' })
+    ).rejects.toThrow('postgres enqueue timed out after 10000ms');
+  }, 30_000);
+
   test('THE DEFECT: add rejects instead of hanging when queue.add never settles', async () => {
     setupHangingQueue();
     const svc = new BullMqEnqueueService();
