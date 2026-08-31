@@ -220,8 +220,9 @@ describe('IDOR — vendors router', () => {
       // endorsed: `merge` is the one id-taking write in this router that
       // does NOT map the repository's refusal (`update`, `delete`,
       // `deletePreview` and `mergePreview` all do), so the repository's
-      // own sentence arrives as an unmapped INTERNAL_SERVER_ERROR. If
-      // that is ever mapped, this assertion is the thing that says so.
+      // own sentence arrives as an unmapped INTERNAL_SERVER_ERROR. That
+      // is SC-885's to decide; when it is mapped, this assertion is the
+      // thing that says so.
       name: 'TRPCError',
       code: 'INTERNAL_SERVER_ERROR',
     });
