@@ -201,8 +201,9 @@ export interface OwnWalletDisposal {
  * arrival"* — is a claim about the DESTINATION, and SC-614 quoted it to rule
  * this path safe. It is true of a destination a balance sync owns and false of
  * one nobody syncs, where the anchor is nobody's to state and the owner ends up
- * raising it by hand — an edit that writes a SECOND arrival. Measured: one 2,000
- * movement, three arrival rows on a Wise savings holding at `source = 'manual'`.
+ * raising it by hand — an edit that writes a SECOND arrival. Measured: one
+ * movement, three arrival rows on a hand-maintained holding at
+ * `source = 'manual'`.
  *
  * So the answer is now WHO OWNS THE BALANCE, asked in one place —
  * `anchorIsUnobserved`, below — and the SC-187 story reads as one of its two
@@ -2840,9 +2841,9 @@ async function writeInflow(
  * sync. Where it does not, nothing ever observes that balance: the arrival is
  * recorded, no money moves, and the owner raises the figure by hand — which
  * writes a SECOND arrival, `kind = 'deposit'`, `source = 'user-balance-edit'`.
- * Measured on production 2026-08-28/29: one 2,000 out of Airwallex left THREE
- * arrival rows on a Wise savings holding, and its ledger now sums 2,000 above
- * its own anchor.
+ * Measured on production 2026-08-28/29: one movement out of an imported account
+ * left THREE arrival rows on a hand-maintained savings holding, whose ledger now
+ * sums a whole extra movement above its own anchor.
  *
  * ## Why the predicate is two questions and not one
  *

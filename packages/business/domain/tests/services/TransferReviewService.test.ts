@@ -1364,8 +1364,8 @@ describe('TransferReviewService — the answered list is reachable', () => {
  * owns, that sync has already put the money in the balance, so moving it would
  * count it twice. On one nobody syncs there is no such observer: leaving the
  * anchor still recorded the arrival and moved no money, the owner raised the
- * figure by hand, and THAT edit wrote a second arrival. Wise Savings USD held
- * three arrival rows for one 2,000 movement.
+ * figure by hand, and THAT edit wrote a second arrival. One hand-maintained
+ * savings holding was left carrying three arrival rows for one movement.
  *
  * So every test below that writes an inflow asserts the anchor, and which way
  * it asserts is the discriminator: unsynced destinations move, sync-owned ones
@@ -1962,8 +1962,8 @@ describe('TransferReviewService — reopening an answer that had to create its d
  * That premise is a claim about the DESTINATION, and it is false wherever
  * nothing syncs it: the answer recorded the arrival, moved no money, the owner
  * raised the balance by hand, and THAT edit wrote a second arrival. Measured on
- * production 2026-08-28/29 — one 2,000 out of Airwallex, three arrival rows on
- * a Wise savings holding at `source = 'manual'`.
+ * production 2026-08-28/29 — one movement out of an imported account left THREE
+ * arrival rows on a hand-maintained savings holding at `source = 'manual'`.
  *
  * The fix is not "move every anchor", which is the double-count SC-614 split
  * the callers to avoid. It is the discriminator `openingOf` already uses, plus
@@ -2014,13 +2014,17 @@ describe('TransferReviewService — an arrival nobody else will observe (SC-856)
     return row.id;
   }
 
-  test('the reported case: one movement, one arrival, and the money is there', async () => {
+  test('the reported shape: one movement, one arrival, and the money is there', async () => {
     const f = fixture!;
-    await setBalance(f.inHoldingId, '12243.55873729');
+    // Synthetic, and to eight decimal places on purpose: the reported holding's
+    // balance carried that much precision, so a fixture that rounded would not
+    // exercise the `Decimal` addition the anchor move performs. The digits are
+    // sequential so nobody mistakes them for a figure off a real account.
+    await setBalance(f.inHoldingId, '1000.12345678');
     const outId = await insertOutflow(f, {
       at: anchor(),
       quantity: '-2000',
-      externalId: 'sc856-wise',
+      externalId: 'sc856-reported',
     });
 
     expect(
@@ -2029,10 +2033,11 @@ describe('TransferReviewService — an arrival nobody else will observe (SC-856)
       })
     ).toEqual({ ok: true });
 
-    // The production figure, and the number a person would notice being wrong.
-    // Reading 12243.55873729 here is what left the owner to raise it by hand.
-    expect(await balanceOf(f.inHoldingId)).toBe('14243.55873729');
-    // ONE arrival, not the three the Wise holding carries. There is nothing
+    // The number a person would notice being wrong, carried to the last place.
+    // Leaving the anchor where it was is what left the owner to raise it by
+    // hand, and their edit is what wrote the second arrival.
+    expect(await balanceOf(f.inHoldingId)).toBe('3000.12345678');
+    // ONE arrival, not the three the reported holding carries. There is nothing
     // left for the owner to do, so no `user-balance-edit` deposit follows.
     expect(await arrivals(f, outId)).toHaveLength(1);
   });
