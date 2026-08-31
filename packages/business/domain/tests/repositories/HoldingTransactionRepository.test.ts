@@ -692,3 +692,171 @@ describe('describeMergedRows key list', () => {
     expect(described).not.toContain('holding-10/');
   });
 });
+
+describe('findPersonAuthoredOverlaps (SC-858)', () => {
+  test('a hand-entered flow and the import of the same movement both land, and only this sees it', async () => {
+    // The premise, reproduced rather than quoted. `holding_tx_dedup` is
+    // UNIQUE(holding_id, source, external_id) and a person's row carries a
+    // different `source` from an importer's BY CONSTRUCTION, so the constraint
+    // cannot object to the same movement twice — and neither can the
+    // batch-level merge audit, which only ever compares rows against the same
+    // key inside one call.
+    await withTestDb(async (tx) => {
+      const { userId, accountId, tokenId, holdingId } = await makeHoldingFixture(tx);
+      const when = new Date('2026-08-03T00:00:00Z');
+
+      await repo().bulkUpsert(
+        [
+          {
+            userId,
+            holdingId,
+            tokenId,
+            kind: 'deposit',
+            quantity: '500',
+            occurredAt: when,
+            source: 'user-balance-edit',
+            externalId: 'manual-edit:2026-08-03T09:00:00.000Z',
+          },
+        ],
+        tx
+      );
+
+      const imported = await repo().bulkUpsert(
+        [
+          {
+            userId,
+            holdingId,
+            tokenId,
+            kind: 'deposit',
+            quantity: '500',
+            occurredAt: when,
+            source: 'ibkr-api',
+            externalId: 'Deposits/Withdrawals-20260803-USD-500',
+          },
+        ],
+        tx
+      );
+
+      // The import reports itself CLEAN. No merge, no warning, nothing for a
+      // caller to surface — which is why this went unnoticed.
+      expect(imported.merges).toEqual([]);
+      expect(imported.rows.length).toBe(1);
+
+      // And the money is counted twice.
+      const sum = await repo().sumQuantityInRange(
+        holdingId,
+        new Date('2026-08-01T00:00:00Z'),
+        new Date('2026-08-31T00:00:00Z'),
+        tx
+      );
+      expect(sum).toBe('1000');
+
+      // The sibling detector cannot see it, and that is structural rather than
+      // unlucky: it groups BY source, so two sources never fall in one group.
+      const cross = await repo().findCrossHoldingDuplicates(tx);
+      expect(cross.filter((d) => d.accountId === accountId)).toEqual([]);
+
+      // This one does.
+      const overlaps = await repo().findPersonAuthoredOverlaps(tx);
+      const mine = overlaps.filter((o) => o.holdingId === holdingId);
+      expect(mine.length).toBe(1);
+      expect(mine[0]?.source).toBe('user-balance-edit');
+      expect(mine[0]?.importerSources).toEqual(['ibkr-api']);
+      expect(mine[0]?.importedRowCount).toBe(1);
+    });
+  });
+
+  test('a hand-entered row on a holding no importer writes to is not a question (SC-858)', async () => {
+    // The must-be-ABSENT arm. Without it this detector could return every
+    // person-authored row in the table and still pass the test above — and a
+    // detector that names all 44 of them names nothing.
+    await withTestDb(async (tx) => {
+      const { userId, tokenId, holdingId } = await makeHoldingFixture(tx);
+      await repo().bulkUpsert(
+        [
+          {
+            userId,
+            holdingId,
+            tokenId,
+            kind: 'deposit',
+            quantity: '500',
+            occurredAt: new Date('2026-08-03T00:00:00Z'),
+            source: 'user-balance-edit',
+            externalId: 'manual-edit:2026-08-03T09:00:00.000Z',
+          },
+          // Scani writing on the owner's behalf is not an importer observing
+          // anything, so neither of these makes the row above a question.
+          {
+            userId,
+            holdingId,
+            tokenId,
+            kind: 'interest',
+            quantity: '1',
+            occurredAt: new Date('2026-08-04T00:00:00Z'),
+            source: 'apy-payout',
+            externalId: 'apy-2026-08-04',
+          },
+          {
+            userId,
+            holdingId,
+            tokenId,
+            kind: 'opening_balance',
+            quantity: '10',
+            occurredAt: new Date('2026-01-01T00:00:00Z'),
+            source: 'reconciliation-opening',
+            externalId: 'opening_balance',
+          },
+        ],
+        tx
+      );
+
+      const overlaps = await repo().findPersonAuthoredOverlaps(tx);
+      expect(overlaps.filter((o) => o.holdingId === holdingId)).toEqual([]);
+    });
+  });
+
+  test('the answer a row already carries travels with the finding (SC-858)', async () => {
+    // Retiring an answered row is never a neutral edit — `left_control` has
+    // booked a disposal through `isConfirmedDisposal`, and `internal` has
+    // already written an arrival on ANOTHER holding. A reader deciding what to
+    // do about an overlap has to see what the row has already caused, so the
+    // answer is part of the finding rather than something to go and look up.
+    await withTestDb(async (tx) => {
+      const { userId, tokenId, holdingId } = await makeHoldingFixture(tx);
+      const { rows } = await repo().bulkUpsert(
+        [
+          {
+            userId,
+            holdingId,
+            tokenId,
+            kind: 'withdraw',
+            quantity: '-172.85',
+            occurredAt: new Date('2026-08-04T00:00:00Z'),
+            source: 'user-balance-edit',
+            externalId: 'manual-edit:2026-08-04T09:00:00.000Z',
+            transferReview: 'left_control',
+            transferReviewSource: 'user',
+          },
+          {
+            userId,
+            holdingId,
+            tokenId,
+            kind: 'withdraw',
+            quantity: '-175',
+            occurredAt: new Date('2026-07-20T00:00:00Z'),
+            source: 'ibkr-api',
+            externalId: 'ibkr-175',
+          },
+        ],
+        tx
+      );
+      expect(rows.length).toBe(2);
+
+      const overlaps = await repo().findPersonAuthoredOverlaps(tx);
+      const mine = overlaps.filter((o) => o.holdingId === holdingId);
+      expect(mine.length).toBe(1);
+      expect(mine[0]?.transferReview).toBe('left_control');
+      expect(mine[0]?.transferReviewSource).toBe('user');
+    });
+  });
+});
