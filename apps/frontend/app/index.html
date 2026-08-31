@@ -38,6 +38,24 @@
       name="description"
       content="Personal finance management made simple. Track your portfolio, crypto wallets, and investments in one place."
     >
+    <!--
+      This origin is an auth wall — every route but `/auth`, `/signin`,
+      `/signup` and the callback requires a session — so nothing here belongs
+      in a search result. `public/robots.txt` asks crawlers not to fetch it and
+      `public/_headers` sends the same directive as a header; this tag is the
+      third copy, and it is the one that survives being served by a host that
+      reads neither of those files.
+
+      It is a BACKSTOP for crawlers that ignore robots.txt, not the main
+      defence, and the distinction matters because it is easy to read the pair
+      as belt-and-braces for the same hole. A crawler that honours
+      `Disallow: /` never fetches this document, so it never reads this tag.
+      What none of the three closes is a URL on this origin linked from
+      somewhere else, which can still be listed as a bare URL with no snippet.
+      `tests/public/robots.test.ts` carries the reasoning in full. (SC-841)
+    -->
+    <meta name="robots" content="noindex, nofollow">
+
     <meta name="apple-mobile-web-app-capable" content="yes">
     <!--
       `default`, NOT `black-translucent` (SC-64). Under `black-translucent` an
