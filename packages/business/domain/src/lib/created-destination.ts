@@ -34,8 +34,11 @@
  * ever wrote this". Here it can:
  *
  * - `created`    — this answer opened the destination. Undo it.
- * - `reused`     — the destination already existed and this answer never moved
- *                  its balance. Positively asserted, not inferred.
+ * - `reused`     — the destination already existed. Positively asserted, not
+ *                  inferred. Whether the answer moved that destination's
+ *                  balance is a SEPARATE marker — see
+ *                  `readMovedDestinationAnchor` below, which SC-856 added
+ *                  precisely because this one stopped being able to answer it.
  * - `unrecorded` — the key is absent or is not a boolean. Nobody said either
  *                  way, which is what every arrival row written before SC-631
  *                  looks like. **Take no action**: deleting a holding on an
@@ -66,18 +69,27 @@
  *  functions that understand what its absence means. */
 const CREATED_DESTINATION_KEY = 'createdDestinationHolding';
 
+/** The second marker, on the same row and spelled once for the same reason
+ *  (SC-856). See `readMovedDestinationAnchor` for what the three states mean
+ *  and why this is not derivable from `CREATED_DESTINATION_KEY`. */
+const MOVED_ANCHOR_KEY = 'movedDestinationAnchor';
+
 export type CreatedDestination = 'created' | 'reused' | 'unrecorded';
 
-/** The `source_metadata` an arrival row carries. `createdDestination` is
- *  required, so a create path that forgets it does not compile — there is no
- *  default anywhere that would let the omission read as a valid answer. */
+export type MovedDestinationAnchor = 'moved' | 'not_moved' | 'unrecorded';
+
+/** The `source_metadata` an arrival row carries. Both markers are required, so
+ *  a create path that forgets one does not compile — there is no default
+ *  anywhere that would let the omission read as a valid answer. */
 export function arrivalMetadata(opts: {
   outflowTransactionId: string;
   createdDestination: boolean;
+  movedDestinationAnchor: boolean;
 }): Record<string, unknown> {
   return {
     outflowTransactionId: opts.outflowTransactionId,
     [CREATED_DESTINATION_KEY]: opts.createdDestination,
+    [MOVED_ANCHOR_KEY]: opts.movedDestinationAnchor,
   };
 }
 
@@ -93,5 +105,58 @@ export function readCreatedDestination(sourceMetadata: unknown): CreatedDestinat
   const value = (sourceMetadata as Record<string, unknown>)[CREATED_DESTINATION_KEY];
   if (value === true) return 'created';
   if (value === false) return 'reused';
+  return 'unrecorded';
+}
+
+/**
+ * Did this answer MOVE the destination holding's balance? (SC-856)
+ *
+ * ## Why it is a second marker rather than a reading of the first
+ *
+ * `readCreatedDestination` answers "did this answer open the row", and until
+ * SC-856 that also answered "did this answer move a balance": `created` opened
+ * one at the moved amount, `reused` touched none. `writeInflow` now moves the
+ * anchor of a REUSED destination that no balance sync will ever correct, so
+ * one `reused` row moved money and another did not, and the first marker can
+ * no longer tell them apart.
+ *
+ * ## Why the fact is recorded and not re-derived at reopen time
+ *
+ * The predicate is "will a sync write this row" — a question about the account's
+ * credentials and the holding's `source`, both of which move between answering
+ * and reopening. Connect an exchange after answering and re-deriving says *the
+ * anchor was not moved* about a row that moved it, so `reopen` leaves the
+ * destination permanently 2,000 up. Disconnect one and it says the opposite,
+ * and `reopen` takes 2,000 off a balance the answer never added. Neither
+ * failure is visible; both are money. The write knew, so the write says.
+ *
+ * ## The three states, and why `not_moved` is written explicitly
+ *
+ * - `moved`      — `reopen` must put the anchor back.
+ * - `not_moved`  — the destination's balance is somebody else's to state, and
+ *                  this answer left it alone. `reopen` must NOT touch it.
+ * - `unrecorded` — nobody said. Every arrival row written before SC-856 looks
+ *                  like this, and every one of them left the anchor alone —
+ *                  but `unrecorded` is not read as `not_moved` on purpose. The
+ *                  two happen to prescribe the same action today, and a reader
+ *                  that collapsed them would silently start reversing anchors
+ *                  the day a writer forgot the key. **Take no action.**
+ *
+ * Falsifier, one query, no code:
+ *
+ *     select source_metadata->>'movedDestinationAnchor' as marker, count(*)
+ *       from holding_transactions
+ *      where source = 'transfer-review'
+ *      group by 1;
+ *
+ * Rows written since SC-856 read `true` or `false`. A `null` bucket is a
+ * pre-SC-856 row or a writer that stopped setting it; `created_at` separates
+ * those two in the same query.
+ */
+export function readMovedDestinationAnchor(sourceMetadata: unknown): MovedDestinationAnchor {
+  if (typeof sourceMetadata !== 'object' || sourceMetadata === null) return 'unrecorded';
+  const value = (sourceMetadata as Record<string, unknown>)[MOVED_ANCHOR_KEY];
+  if (value === true) return 'moved';
+  if (value === false) return 'not_moved';
   return 'unrecorded';
 }

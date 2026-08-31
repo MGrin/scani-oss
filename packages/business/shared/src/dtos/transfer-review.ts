@@ -286,6 +286,23 @@ export const transferDestinationSchema = z.object({
   source: z.string().nullable(),
   /** Current balance as a Decimal string, or null when no holding exists. */
   balance: z.string().nullable(),
+  /**
+   * Will answering `internal` here leave this destination's balance holding
+   * the money? (SC-856)
+   *
+   * True where nobody else states that balance, which is where `writeInflow`
+   * moves it — and, on a row with no holding yet, where `openingOf` opens the
+   * new one AT the moved amount rather than at zero for a sync to correct.
+   * False where a balance sync owns the figure: the arrival is already in it
+   * and moving it would count the money twice.
+   *
+   * It is here rather than derived on the client because the client cannot
+   * derive it. `source` tells it whether the HOLDING is hand-curated; whether
+   * an hourly sync owns the ACCOUNT is a question about wallets and
+   * credentials, and a second implementation of that rule would let the
+   * sentence over the button describe a write that does something else.
+   */
+  movesBalance: z.boolean(),
   /** Which band this row ranks in — see the enum above. */
   relevance: transferDestinationRelevanceSchema,
 });
