@@ -805,12 +805,18 @@ describe('reopenConsequence — an internal answer that created its destination'
     expect(sentence).not.toContain('no balance changes either way');
   });
 
-  test('a destination that already existed keeps the old sentence', () => {
+  test('a destination that already existed gets the other sentence', () => {
     // MUST-BE-ABSENT, on the same `decision: 'internal'` — so this is what
     // shows the branch reads `createdDestination` rather than the answer.
     const sentence = reopenConsequence(t, answeredRow({ createdDestination: false }));
-    expect(sentence).toContain('no balance changes either way');
+    expect(sentence).toContain('deleted with it');
     expect(sentence).not.toContain('created the holding');
+    // It stopped promising that nothing moves (SC-856): `writeInflow` moves a
+    // destination anchor no sync will correct, and `clearAnswer` puts that
+    // back. The sentence states the rule rather than predicting which case
+    // this row is, the same way the created-destination one does.
+    expect(sentence).not.toContain('no balance changes either way');
+    expect(sentence).toContain('comes back off');
   });
 
   test('declared still wins, even when this answer created a holding', () => {

@@ -1357,12 +1357,19 @@ describe('TransferReviewService — the answered list is reachable', () => {
  * find. `paired` is unwritable, `untracked` is false, and `left_control` books
  * a gain nobody made.
  *
- * **The double-count risk is the live case, not a hypothetical**, because the
- * user had already raised Revolut's balance by 3,500 when the money landed.
- * The assertion that settles it is `expectBalanceUnchanged`: `holdings.balance`
- * is an independent anchor, not a sum of transactions, so writing the arrival
- * gives cost-basis continuity and moves no balance at all. Every test below
- * that writes an inflow checks it.
+ * **The double-count risk is real and is now answered by WHO OWNS THE
+ * DESTINATION'S BALANCE, not by never moving it** (SC-856). `holdings.balance`
+ * is an independent anchor rather than a sum of transactions, so writing the
+ * arrival buys cost-basis continuity on its own — and on a destination a sync
+ * owns, that sync has already put the money in the balance, so moving it would
+ * count it twice. On one nobody syncs there is no such observer: leaving the
+ * anchor still recorded the arrival and moved no money, the owner raised the
+ * figure by hand, and THAT edit wrote a second arrival. One hand-maintained
+ * savings holding was left carrying three arrival rows for one movement.
+ *
+ * So every test below that writes an inflow asserts the anchor, and which way
+ * it asserts is the discriminator: unsynced destinations move, sync-owned ones
+ * do not.
  */
 describe('TransferReviewService — moved to a holding Scani tracks', () => {
   /** The rows this answer wrote, if any. */
@@ -1395,7 +1402,7 @@ describe('TransferReviewService — moved to a holding Scani tracks', () => {
     return row;
   }
 
-  test('writes the arrival, shares the group id, and moves no balance', async () => {
+  test('writes the arrival, shares the group id, and moves an anchor nobody syncs', async () => {
     const f = fixture!;
     const at = anchor();
     const outId = await insertOutflow(f, { at, quantity: '-4000', externalId: 'i-1' });
@@ -1421,8 +1428,11 @@ describe('TransferReviewService — moved to a holding Scani tracks', () => {
     expect(out?.transferGroupId).not.toBeNull();
     expect(inflow?.transferGroupId).toBe(out?.transferGroupId ?? '');
 
-    // The assertion this whole ticket turns on.
-    expect(await balanceOf(f.inHoldingId)).toBe('1');
+    // The assertion this whole ticket turns on, in the direction SC-856 turned
+    // it. `inHolding` is `source = 'manual'` on an account no balance sync
+    // owns, so nothing else will ever put the 4,000 in: leaving the anchor at
+    // 1 is what made the owner raise it by hand and write a second arrival.
+    expect(await balanceOf(f.inHoldingId)).toBe('4001');
 
     expect((await service().pendingSummary(f.userId)).count).toBe(0);
   });
@@ -1450,7 +1460,9 @@ describe('TransferReviewService — moved to a holding Scani tracks', () => {
     // 3,500 arrived. Writing 4,000 would trade an overstated gain for an
     // overstated balance — the same error wearing the other hat.
     expect(inflow?.quantity).toBe('3500');
-    expect(await balanceOf(f.inHoldingId)).toBe('1');
+    // And the anchor moves by the PORTION too, for the same reason — 4,001
+    // here would put the 500 that genuinely left into the destination.
+    expect(await balanceOf(f.inHoldingId)).toBe('3501');
 
     const out = await outflowRow(outId);
     expect(out?.transferReview).toBe('split');
@@ -1472,8 +1484,13 @@ describe('TransferReviewService — moved to a holding Scani tracks', () => {
 
     const [inflow] = await createdInflows(f, outId);
     expect(inflow?.holdingId).toBe(f.sameAccountHoldingId);
-    // A balance that already includes the 700 stays exactly where it was.
-    expect(await balanceOf(f.sameAccountHoldingId)).toBe('6500.32');
+    // Hand-maintained and on an account nobody syncs, so the anchor moves
+    // (SC-856). This assertion read 6500.32 until then, on the premise that
+    // the owner had ALREADY raised it when the money landed — a premise
+    // `writeInflow` cannot check, since a hand edit with no stated cause
+    // moves the anchor and writes no row. The queue's answer for an arrival
+    // that already exists is `paired`; `internal` means nothing recorded it.
+    expect(await balanceOf(f.sameAccountHoldingId)).toBe('7200.32');
   });
 
   test('creates the holding when the account tracks none, at the amount that moved', async () => {
@@ -1936,6 +1953,349 @@ describe('TransferReviewService — reopening an answer that had to create its d
     const after = await holdingsIn(f, f.emptyAccountId);
     expect(after).toHaveLength(1);
     expect(after[0]?.id).toBe(holdingId);
+  });
+});
+
+/**
+ * SC-856. `writeInflow` never moved an existing destination's balance, on the
+ * premise that the destination's own sync had already observed the arrival.
+ * That premise is a claim about the DESTINATION, and it is false wherever
+ * nothing syncs it: the answer recorded the arrival, moved no money, the owner
+ * raised the balance by hand, and THAT edit wrote a second arrival. Measured on
+ * production 2026-08-28/29 — one movement out of an imported account left THREE
+ * arrival rows on a hand-maintained savings holding at `source = 'manual'`.
+ *
+ * The fix is not "move every anchor", which is the double-count SC-614 split
+ * the callers to avoid. It is the discriminator `openingOf` already uses, plus
+ * the half `openingOf` never needed: a holding at `source = 'manual'` is one
+ * `HoldingsSyncHelper` refuses to touch whatever its account looks like.
+ */
+describe('TransferReviewService — an arrival nobody else will observe (SC-856)', () => {
+  async function balanceOf(holdingId: string): Promise<string | undefined> {
+    const [row] = await db
+      .select({ balance: schema.holdings.balance })
+      .from(schema.holdings)
+      .where(eq(schema.holdings.id, holdingId));
+    return row?.balance;
+  }
+
+  async function setBalance(holdingId: string, balance: string): Promise<void> {
+    await db.update(schema.holdings).set({ balance }).where(eq(schema.holdings.id, holdingId));
+  }
+
+  async function arrivals(f: Fixture, outflowId: string) {
+    return db
+      .select()
+      .from(schema.holdingTransactions)
+      .where(
+        and(
+          eq(schema.holdingTransactions.userId, f.userId),
+          eq(schema.holdingTransactions.source, 'transfer-review'),
+          eq(schema.holdingTransactions.externalId, outflowId)
+        )
+      );
+  }
+
+  async function observationCount(holdingId: string): Promise<number> {
+    const rows = await db
+      .select({ id: schema.holdingBalanceObservations.id })
+      .from(schema.holdingBalanceObservations)
+      .where(eq(schema.holdingBalanceObservations.holdingId, holdingId));
+    return rows.length;
+  }
+
+  /** A holding in the given account, at the given `holdings.source`. */
+  async function holdingIn(f: Fixture, accountId: string, source: string, balance: string) {
+    const [row] = await db
+      .insert(schema.holdings)
+      .values({ userId: f.userId, accountId, tokenId: f.tokenId, balance, source })
+      .returning();
+    if (!row) throw new Error('holding insert failed');
+    return row.id;
+  }
+
+  test('the reported shape: one movement, one arrival, and the money is there', async () => {
+    const f = fixture!;
+    // Synthetic, and to eight decimal places on purpose: the reported holding's
+    // balance carried that much precision, so a fixture that rounded would not
+    // exercise the `Decimal` addition the anchor move performs. The digits are
+    // sequential so nobody mistakes them for a figure off a real account.
+    await setBalance(f.inHoldingId, '1000.12345678');
+    const outId = await insertOutflow(f, {
+      at: anchor(),
+      quantity: '-2000',
+      externalId: 'sc856-reported',
+    });
+
+    expect(
+      await service().resolve(f.userId, outId, 'internal', {
+        destination: { accountId: f.inAccountId, holdingId: f.inHoldingId },
+      })
+    ).toEqual({ ok: true });
+
+    // The number a person would notice being wrong, carried to the last place.
+    // Leaving the anchor where it was is what left the owner to raise it by
+    // hand, and their edit is what wrote the second arrival.
+    expect(await balanceOf(f.inHoldingId)).toBe('3000.12345678');
+    // ONE arrival, not the three the reported holding carries. There is nothing
+    // left for the owner to do, so no `user-balance-edit` deposit follows.
+    expect(await arrivals(f, outId)).toHaveLength(1);
+  });
+
+  test('a destination an EXCHANGE sync owns is left alone — the double-count', async () => {
+    const f = fixture!;
+    const syncedHoldingId = await holdingIn(
+      f,
+      f.exchangeSyncedAccountId,
+      'sync_exchange_balances',
+      '500'
+    );
+    const outId = await insertOutflow(f, {
+      at: anchor(),
+      quantity: '-2000',
+      externalId: 'sc856-cex',
+    });
+
+    expect(
+      await service().resolve(f.userId, outId, 'internal', {
+        destination: { accountId: f.exchangeSyncedAccountId, holdingId: syncedHoldingId },
+      })
+    ).toEqual({ ok: true });
+
+    // The hourly exchange sync fetched this balance and the 2,000 is already
+    // in it. Moving the anchor here is exactly what the SC-187 behaviour
+    // existed to prevent, and what SC-614 declined to do by adding a flag.
+    expect(await balanceOf(syncedHoldingId)).toBe('500');
+    expect(await arrivals(f, outId)).toHaveLength(1);
+  });
+
+  test('a WALLET-synced destination is left alone too', async () => {
+    const f = fixture!;
+    const syncedHoldingId = await holdingIn(f, f.walletSyncedAccountId, 'blockchain', '500');
+    const outId = await insertOutflow(f, {
+      at: anchor(),
+      quantity: '-2000',
+      externalId: 'sc856-wallet',
+    });
+
+    await service().resolve(f.userId, outId, 'internal', {
+      destination: { accountId: f.walletSyncedAccountId, holdingId: syncedHoldingId },
+    });
+
+    expect(await balanceOf(syncedHoldingId)).toBe('500');
+  });
+
+  test('a MANUAL holding on a sync-owned account still moves — the half an account check misses', async () => {
+    const f = fixture!;
+    // The reported shape. `resolveSyncSource` says this account is owned by
+    // the exchange sync, and `HoldingsSyncHelper` skips the row anyway because
+    // it is `manual` — so nobody corrects it and the account-level answer is
+    // the wrong one. A discriminator reading only the account leaves the very
+    // row SC-856 was filed about unfixed.
+    const manualOnSynced = await holdingIn(f, f.exchangeSyncedAccountId, 'manual', '500');
+    const outId = await insertOutflow(f, {
+      at: anchor(),
+      quantity: '-2000',
+      externalId: 'sc856-manual-on-synced',
+    });
+
+    await service().resolve(f.userId, outId, 'internal', {
+      destination: { accountId: f.exchangeSyncedAccountId, holdingId: manualOnSynced },
+    });
+
+    expect(await balanceOf(manualOnSynced)).toBe('2500');
+  });
+
+  test('the moved anchor is observed, so history is not reconstructed from a gap', async () => {
+    const f = fixture!;
+    await setBalance(f.inHoldingId, '500');
+    const before = await observationCount(f.inHoldingId);
+    const outId = await insertOutflow(f, {
+      at: anchor(),
+      quantity: '-2000',
+      externalId: 'sc856-obs',
+    });
+
+    await service().resolve(f.userId, outId, 'internal', {
+      destination: { accountId: f.inAccountId, holdingId: f.inHoldingId },
+    });
+
+    // SC-245: a balance mutation with no observation does not degrade
+    // `BalanceAtTimeService`, it makes it confidently wrong on every date
+    // after the gap. This is why the move goes through `UpdateHoldingUseCase`
+    // rather than an `UPDATE holdings SET balance` of its own.
+    expect(await observationCount(f.inHoldingId)).toBe(before + 1);
+  });
+
+  test('the move writes no ledger row of its own — the arrival IS the entry', async () => {
+    const f = fixture!;
+    await setBalance(f.inHoldingId, '500');
+    const outId = await insertOutflow(f, {
+      at: anchor(),
+      quantity: '-2000',
+      externalId: 'sc856-no-synth',
+    });
+
+    await service().resolve(f.userId, outId, 'internal', {
+      destination: { accountId: f.inAccountId, holdingId: f.inHoldingId },
+    });
+
+    // A synthesized `deposit` beside the `transfer_in` would be the same
+    // double-count arriving by the other door — and ungrouped, so
+    // `walkComponent` would open a fresh lot at market for it.
+    const rows = await db
+      .select()
+      .from(schema.holdingTransactions)
+      .where(
+        and(
+          eq(schema.holdingTransactions.userId, f.userId),
+          eq(schema.holdingTransactions.holdingId, f.inHoldingId)
+        )
+      );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.kind).toBe('transfer_in');
+    expect(rows[0]?.source).toBe('transfer-review');
+  });
+
+  test('reopening a SYNC-OWNED destination takes nothing off its balance', async () => {
+    const f = fixture!;
+    const syncedHoldingId = await holdingIn(
+      f,
+      f.exchangeSyncedAccountId,
+      'sync_exchange_balances',
+      '500'
+    );
+    const outId = await insertOutflow(f, {
+      at: anchor(),
+      quantity: '-2000',
+      externalId: 'sc856-reopen-synced',
+    });
+    await service().resolve(f.userId, outId, 'internal', {
+      destination: { accountId: f.exchangeSyncedAccountId, holdingId: syncedHoldingId },
+    });
+
+    expect(await service().reopen(f.userId, outId)).toBe(true);
+
+    // The answer moved nothing, so the undo must move nothing. Reversing on
+    // the shape of the answer rather than on what it did would take 2,000 off
+    // a balance its sync stated.
+    expect(await balanceOf(syncedHoldingId)).toBe('500');
+  });
+
+  test('reopening an arrival written BEFORE this fix takes nothing off either', async () => {
+    const f = fixture!;
+    await setBalance(f.inHoldingId, '500');
+    const outId = await insertOutflow(f, {
+      at: anchor(),
+      quantity: '-2000',
+      externalId: 'sc856-legacy',
+    });
+    await service().resolve(f.userId, outId, 'internal', {
+      destination: { accountId: f.inAccountId, holdingId: f.inHoldingId },
+    });
+    // Every arrival row in production today looks like this: no marker at all.
+    // Those answers moved no anchor, so there is nothing to put back — and
+    // `unrecorded` is refused rather than read as `not_moved`, so a writer
+    // that stopped setting the key cannot quietly start reversing money.
+    await db
+      .update(schema.holdingTransactions)
+      .set({ sourceMetadata: { outflowTransactionId: outId } })
+      .where(
+        and(
+          eq(schema.holdingTransactions.source, 'transfer-review'),
+          eq(schema.holdingTransactions.externalId, outId)
+        )
+      );
+    await setBalance(f.inHoldingId, '500');
+
+    expect(await service().reopen(f.userId, outId)).toBe(true);
+
+    expect(await balanceOf(f.inHoldingId)).toBe('500');
+  });
+
+  test('a split’s internal portion is restored by its PORTION, not the row', async () => {
+    const f = fixture!;
+    await setBalance(f.inHoldingId, '500');
+    const outId = await insertOutflow(f, {
+      at: anchor(),
+      quantity: '-4000',
+      externalId: 'sc856-split',
+    });
+
+    expect(
+      await service().resolveSplit(f.userId, outId, [
+        {
+          decision: 'internal',
+          quantity: '3500',
+          destination: { accountId: f.inAccountId, holdingId: f.inHoldingId },
+        },
+        { decision: 'left_control', quantity: '500' },
+      ])
+    ).toEqual({ ok: true });
+    expect(await balanceOf(f.inHoldingId)).toBe('4000');
+
+    expect(await service().reopen(f.userId, outId)).toBe(true);
+
+    // 500, not 0: the arrival's own quantity is what comes off, and the 500
+    // that genuinely left never arrived here.
+    expect(await balanceOf(f.inHoldingId)).toBe('500');
+  });
+
+  test('the picker says which destinations move, with the write path’s own rule', async () => {
+    const f = fixture!;
+    const syncedHoldingId = await holdingIn(
+      f,
+      f.exchangeSyncedAccountId,
+      'sync_exchange_balances',
+      '500'
+    );
+    const outId = await insertOutflow(f, {
+      at: anchor(),
+      quantity: '-2000',
+      externalId: 'sc856-picker',
+    });
+
+    const offered = await service().listDestinations(f.userId, outId);
+    const by = (holdingId: string | null, accountId: string) =>
+      offered.find((d) => d.holdingId === holdingId && d.accountId === accountId);
+
+    // The sentence over the button has to agree with the write, and this is
+    // the only reason the flag is computed on the server: `source` alone
+    // cannot say whether a sync owns the ACCOUNT.
+    expect(by(f.inHoldingId, f.inAccountId)?.movesBalance).toBe(true);
+    expect(by(syncedHoldingId, f.exchangeSyncedAccountId)?.movesBalance).toBe(false);
+    // No holding yet: `openingOf` opens at the moved amount where nobody
+    // syncs, and at zero where somebody does.
+    expect(by(null, f.emptyAccountId)?.movesBalance).toBe(true);
+    expect(by(null, f.walletSyncedAccountId)?.movesBalance).toBe(false);
+  });
+
+  test('a destination the answer CREATED is still opened, not moved twice', async () => {
+    const f = fixture!;
+    const outId = await insertOutflow(f, {
+      at: anchor(),
+      quantity: '-250',
+      externalId: 'sc856-created',
+    });
+
+    await service().resolve(f.userId, outId, 'internal', {
+      destination: { accountId: f.emptyAccountId, holdingId: null },
+    });
+
+    const [created] = await db
+      .select()
+      .from(schema.holdings)
+      .where(
+        and(
+          eq(schema.holdings.userId, f.userId),
+          eq(schema.holdings.accountId, f.emptyAccountId),
+          eq(schema.holdings.tokenId, f.tokenId)
+        )
+      );
+    // `openingOf` already put the money in when it opened the row. Adding the
+    // 250 again here would be 500 in an account that received 250 — the same
+    // arithmetic error this ticket is about, in the other direction.
+    expect(created?.balance).toBe('250');
   });
 });
 
@@ -3793,20 +4153,25 @@ describe('TransferReviewService — reopening a transfer the OWNER declared (SC-
     expect(await observationCount(f.inHoldingId)).toBe(before.in + 1);
   });
 
-  test('the QUEUE path is untouched — reopening an internal answer moves no balance', async () => {
+  test('a queue answer restores the DESTINATION only — the source was imported', async () => {
     const f = fixture!;
     await setBalance(f.inHoldingId, '500');
     const outId = await insertOutflow(f, { at: anchor(), quantity: '-2000', externalId: 'd-1' });
     await service().resolve(f.userId, outId, 'internal', {
       destination: { accountId: f.inAccountId, holdingId: f.inHoldingId },
     });
-    // `writeInflow` wrote the arrival row and left the anchor alone, because
-    // whatever imported that balance already observed the money landing.
-    expect(await balance(f.inHoldingId)).toBe('500');
+    // Nobody syncs this destination, so `writeInflow` moved its anchor
+    // (SC-856). Before that it wrote the arrival and left the 500 alone.
+    expect(await balance(f.inHoldingId)).toBe('2500');
 
     expect(await service().reopen(f.userId, outId)).toBe(true);
 
+    // Back where it was — otherwise reopening leaves the money moved with the
+    // link that explained it gone, which is the SC-618 shape on the queue.
     expect(await balance(f.inHoldingId)).toBe('500');
+    // The SOURCE is untouched on both halves. Its withdrawal came from an
+    // import and no answer here ever moved it, so there is nothing to restore
+    // — the asymmetry with a declared transfer, which moved both.
     expect(await balance(f.outHoldingId)).toBe('0');
     // The outflow is a question again, which is what reopen means here.
     expect((await service().pendingSummary(f.userId)).count).toBe(1);
