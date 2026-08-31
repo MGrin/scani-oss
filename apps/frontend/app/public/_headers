@@ -17,9 +17,21 @@
 #    must edit the API origin below to match their deployment.
 #  - `frame-ancestors 'none'` is the modern equivalent of X-Frame-Options:
 #    DENY; both are sent to cover legacy browsers.
+#  - `X-Robots-Tag` keeps this bundle out of search indexes. It is not a
+#    security header and sits here anyway, because this is the only file a
+#    static host reads. `nginx-security-headers.inc.template` has sent the
+#    identical directive since SC-561 for the self-hosted image, under the
+#    comment "Don't index the SPA"; the static-host half sent nothing, and
+#    `tests/public/security-headers.test.ts` recorded the header as an
+#    nginx-only exception on the grounds that the static deployment was
+#    "governed by its own host config" — this file being that config.
+#    Paired with `public/robots.txt` and the meta tag in `index.html`;
+#    `tests/public/robots.test.ts` explains what the three together do and
+#    do not buy. A self-hoster who WANTS the app indexed removes all three.
 
 /*
   Content-Security-Policy: default-src 'self'; base-uri 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; connect-src 'self' https://your-api-host.example.com wss://your-api-host.example.com https://*.sentry.io https://*.ingest.sentry.io https://*.r2.cloudflarestorage.com; font-src 'self' data:; frame-ancestors 'none'; form-action 'self'; object-src 'none'
+  X-Robots-Tag: noindex, nofollow
   X-Content-Type-Options: nosniff
   X-Frame-Options: DENY
   Referrer-Policy: strict-origin-when-cross-origin
