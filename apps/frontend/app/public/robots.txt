@@ -1,0 +1,24 @@
+# app.scani.xyz is an auth wall. Every route below /auth, /signin and /signup
+# requires a session, so nothing on this origin belongs in a search result.
+#
+# There is deliberately no `Sitemap:` line and no per-path exception: the two
+# other Scani origins that SHOULD be crawled announce their own (scani.xyz,
+# docs.scani.xyz). Adding one here would announce an origin we are, one line
+# above, asking every crawler to leave alone.
+#
+# Read `Disallow: /` as "do not fetch", not as "do not index" — they are
+# different guarantees. A compliant crawler now never fetches this origin, so
+# it never reads the `noindex` meta in index.html or the `X-Robots-Tag` header
+# either; those two are the backstop for crawlers that ignore this file. What
+# is NOT closed by any of the three is a URL on this origin that something
+# else links to, which can still surface as a bare URL with no snippet.
+#
+# The alternative — allow the crawl so the `noindex` is legible to Google, the
+# combination Google's own guidance prefers — is the wrong trade for THIS
+# origin: every path returns the same 200 SPA shell, and the fallback cannot be
+# scoped the way SC-837 scoped the landing's without breaking the deep links
+# client-side routing exists for. Allowing the crawl would invite it into an
+# unbounded soft-404 space. (SC-841)
+
+User-agent: *
+Disallow: /
