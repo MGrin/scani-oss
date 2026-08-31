@@ -8,6 +8,7 @@ import Decimal from 'decimal.js';
 import { Container, Service } from 'typedi';
 import { BaseService } from '../BaseService';
 import { TokenService } from '../tokens/TokenService';
+import { MANUAL_HOLDING_SOURCE } from './balance-sync-sources';
 import { HoldingService } from './HoldingService';
 import {
   type IntegrationHolding,
@@ -112,7 +113,7 @@ export class HoldingsSyncHelper extends BaseService {
     const existingByCompositeKey = new Map<string, Holding>();
     const existingByTokenId = new Map<string, Holding>();
     for (const h of existingHoldings) {
-      if (h.source === 'manual') continue;
+      if (h.source === MANUAL_HOLDING_SOURCE) continue;
       existingByTokenId.set(h.tokenId, h);
       const compositeKey = h.externalId ? `${h.tokenId}:${h.externalId}` : h.tokenId;
       existingByCompositeKey.set(compositeKey, h);
