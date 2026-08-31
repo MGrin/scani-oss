@@ -74,6 +74,11 @@ export {
   type EnrichHoldingsInput,
   EnrichHoldingsService,
 } from './holdings/EnrichHoldingsService';
+export {
+  ExitedPositionProbe,
+  type ExitedPositionProbeResult,
+  type HoldingProbeCandidate,
+} from './holdings/ExitedPositionProbe';
 export { HoldingQueryService } from './holdings/HoldingQueryService';
 export { HoldingService } from './holdings/HoldingService';
 export {
