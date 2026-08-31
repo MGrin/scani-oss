@@ -12,6 +12,21 @@
  * both vendors and their aliases untouched), and
  * `DocumentExtractionRepository.test.ts` (`setReviewState` returns null
  * and leaves the row untouched for a different user).
+ *
+ * WHAT A STUBBED ROUTER TEST CAN AND CANNOT SEE (SC-853). Everything in
+ * here replaces the enforcing collaborator with a stub, so it can only
+ * ever prove things about the ROUTER: which id it derives, whether it
+ * consults the boundary before acting, and whether it propagates a
+ * refusal instead of reporting success. It is structurally blind to the
+ * check inside the collaborator — deleting `VendorRepository.merge`'s
+ * own `owned.length !== 2` guard leaves every test in this file green,
+ * measured 2026-09-01, and is caught by `VendorRepository.test.ts`
+ * instead. Do not read a green here as "the ownership check exists".
+ *
+ * The shape that makes such a test unfalsifiable is a stub that throws
+ * unconditionally where the throw IS the refusal being asserted. A stub
+ * used as a SENTINEL — asserted never to be called — is the opposite and
+ * is fine; those are the ones below with `must not run` in their message.
  */
 
 import { afterEach, beforeAll, describe, expect, test } from 'bun:test';
@@ -72,6 +87,37 @@ const OCCURRENCE_ID = 'dddddddd-dddd-dddd-dddd-dddddddddddd';
 const VENDOR_INTO_ID = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee';
 const VENDOR_FROM_ID = 'ffffffff-ffff-ffff-ffff-ffffffffffff';
 const EXTRACTION_ID = '11111111-2222-3333-4444-555555555555';
+const VENDOR_OWNER_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+
+/**
+ * A `VendorRepository.merge` stub that DECIDES, rather than one that
+ * always throws.
+ *
+ * `vendors.merge` has no ownership check of its own — all of it lives in
+ * `VendorRepository.merge`, which is precisely what this stub replaces.
+ * So a stub that threw unconditionally made the refusal true by
+ * construction: measured on 2026-09-01, deleting the real
+ * `owned.length !== 2` guard outright left this file at 6 pass / 0 fail
+ * while `VendorRepository.test.ts` went red (SC-853). Modelling the
+ * repository's actual predicate — the ids must belong to the userId it
+ * is handed — makes the refusal a consequence of the id the ROUTER
+ * passed, which is the only part of this the router owns, and gives the
+ * owner case below something to succeed at.
+ */
+function stubVendorMerge(): { receivedUserIds: string[] } {
+  const receivedUserIds: string[] = [];
+  Container.set(VendorRepository, {
+    merge: async (userId: string, intoId: string, fromId: string) => {
+      receivedUserIds.push(userId);
+      if (userId !== VENDOR_OWNER_ID) {
+        throw new Error(
+          `Cannot merge vendors: ${intoId} and ${fromId} must both belong to user ${userId}`
+        );
+      }
+    },
+  } as unknown as VendorRepository);
+  return { receivedUserIds };
+}
 
 describe('IDOR — payments router', () => {
   test("update refuses to modify another user's payment", async () => {
@@ -163,26 +209,36 @@ describe('IDOR — vendors router', () => {
     expect(addAliasCalled).toBe(false);
   });
 
-  test("merge refuses to fold another user's vendor and passes ctx.userId, never a client field", async () => {
-    const receivedUserIds: Array<string | null> = [];
-    Container.set(VendorRepository, {
-      merge: async (userId: string) => {
-        receivedUserIds.push(userId);
-        throw new Error(
-          `Cannot merge vendors: ${VENDOR_INTO_ID} and ${VENDOR_FROM_ID} must both belong to user ${userId}`
-        );
-      },
-    } as unknown as VendorRepository);
+  test('merge passes ctx.userId to the enforcement boundary, never a client field', async () => {
+    const { receivedUserIds } = stubVendorMerge();
 
     const caller = makeAuthedCaller(fakeUser(ATTACKER_ID));
     await expect(
       caller.vendors.merge({ intoId: VENDOR_INTO_ID, fromId: VENDOR_FROM_ID })
-    ).rejects.toThrow();
-    // Proves the router derived userId from ctx, not from any client
-    // input — the merge input schema has no userId field at all, and
-    // this pins that the value passed through is the AUTHENTICATED
-    // caller's id.
-    expect(receivedUserIds[0]).toBe(ATTACKER_ID);
+    ).rejects.toMatchObject({
+      // The shape a caller actually gets today, pinned rather than
+      // endorsed: `merge` is the one id-taking write in this router that
+      // does NOT map the repository's refusal (`update`, `delete`,
+      // `deletePreview` and `mergePreview` all do), so the repository's
+      // own sentence arrives as an unmapped INTERNAL_SERVER_ERROR. If
+      // that is ever mapped, this assertion is the thing that says so.
+      name: 'TRPCError',
+      code: 'INTERNAL_SERVER_ERROR',
+    });
+    // The merge input schema has no userId field at all, so this pins
+    // that the value reaching the boundary is the AUTHENTICATED caller's
+    // id — the half the router actually owns.
+    expect(receivedUserIds).toEqual([ATTACKER_ID]);
+  });
+
+  test('merge lets the owner through — the control that makes the refusal above a decision', async () => {
+    const { receivedUserIds } = stubVendorMerge();
+
+    const caller = makeAuthedCaller(fakeUser(VENDOR_OWNER_ID));
+    await expect(
+      caller.vendors.merge({ intoId: VENDOR_INTO_ID, fromId: VENDOR_FROM_ID })
+    ).resolves.toEqual({ ok: true });
+    expect(receivedUserIds).toEqual([VENDOR_OWNER_ID]);
   });
 });
 
