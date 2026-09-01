@@ -1,6 +1,14 @@
 import type { Sql, TransactionSql } from 'postgres';
 import { advisoryLockKey } from './advisory-lock-key';
 import { type MigrationFile, readMigrationFiles } from './migration-files';
+import {
+  DRIFT_DECLARATIONS,
+  type DriftDeclaration,
+  describeReconciliation,
+  planReconciliation,
+  type ReconciliationPlan,
+  sqlWithoutComments,
+} from './migration-reconciliation';
 
 /**
  * Applies migrations by NAME, one row per migration, instead of by drizzle's
@@ -57,6 +65,12 @@ export interface MigrationRunnerOptions {
    * Adopts every migration up to and including this tag without running it.
    */
   assumeAppliedThrough?: string | null;
+  /**
+   * Drift declarations in force (SC-914). Defaults to `DRIFT_DECLARATIONS`;
+   * the parameter exists so tests can exercise the mechanism without editing
+   * the list every deploy reads.
+   */
+  declarations?: readonly DriftDeclaration[];
   log?: (line: string) => void;
 }
 
@@ -72,6 +86,11 @@ export interface MigrationRunResult {
    * safe assumption.
    */
   legacyDrift: string[];
+  /**
+   * Recorded digests re-recorded under a declaration in
+   * `migration-reconciliation.ts` (SC-914) — `tag: <old> -> <new>`.
+   */
+  reconciled: string[];
 }
 
 /**
@@ -192,10 +211,24 @@ export interface AppliedDrift {
  * would let a divergent schema apply silently in exactly the case this check
  * exists for — and it is the `psql` hand-edit of the migrations table that this
  * message was written to displace, with a blessing attached.
+ *
+ * **SC-914 ADDS A THIRD CAUSE AND A MECHANISM, AND IT IS NOT THAT FLAG.** The
+ * paragraph above is about an assertion made AT THE MOMENT OF THE REFUSAL, by
+ * whoever is looking at a red deploy, with nothing checked. What was added is
+ * the opposite on both counts: a declaration is written in the tree when the
+ * edit is made, by whoever made it, and the runner re-checks its claim against
+ * the file in front of it before acting. A comment-only declaration cannot
+ * cover a file whose non-comment SQL differs from the one it names, and a
+ * wrong `recorded` digest makes it inert rather than dangerous. The two causes
+ * still cannot be told apart from two hashes — that is why the declaration
+ * carries the missing evidence rather than asking anybody to assert it.
+ * `migration-reconciliation.ts` states what each half proves and what it does
+ * not.
  */
 export function driftRefusalMessage(
   drifted: readonly AppliedDrift[],
-  pending: readonly string[]
+  pending: readonly string[],
+  rejected: ReconciliationPlan['rejected'] = []
 ): string {
   const short = (hash: string) => (hash ? `${hash.slice(0, 12)}…` : '<no file>');
   const lines = [
@@ -223,9 +256,34 @@ export function driftRefusalMessage(
     );
   }
 
+  if (rejected.length > 0) {
+    lines.push(
+      '',
+      `  ${rejected.length} drift declaration(s) name(s) a migration above and did NOT apply.`,
+      '  A declaration that does not match is reported rather than ignored, because',
+      '  "I wrote one and nothing happened" is otherwise silent:',
+      ...rejected.flatMap((entry) => [
+        `    ${entry.declaration.tag} (${entry.declaration.kind})`,
+        `      ${entry.because}`,
+      ])
+    );
+  }
+
   lines.push(
     '',
-    '  TWO different things produce this, and which one you are in cannot be known',
+    '  A COMMENT-ONLY EDIT LANDS HERE TOO, and it is the one case with a remedy that',
+    '  is neither of the two below (SC-914). Rewriting a comment inside a migration',
+    '  that has already run drifts its digest exactly as far as rewriting its SQL',
+    '  does. If that is what happened, declare it — from a checkout that still has',
+    '  the version that ran:',
+    '',
+    '        cd packages/infra/db && bun run db:declare-drift <tag>',
+    '',
+    '  It reads the old text out of git, compares the two with comments stripped, and',
+    '  emits the entry for `DRIFT_DECLARATIONS` only when the executable SQL is',
+    '  identical. If it refuses, the SQL changed and one of the two below applies.',
+    '',
+    '  TWO OTHER things produce this, and which one you are in cannot be known',
     '  from here — the runner sees two hashes, not the history that made them differ:',
     '',
     '    1. A migration that had already shipped was EDITED in the tree. The edit is',
@@ -359,17 +417,47 @@ export async function applyMigrations(
         recorded: row.sha256,
         found: byTag.get(row.tag)?.sha256 ?? '',
       }));
-    if (drifted.length > 0) {
+    // SC-914. A comment edit to an applied migration drifts its digest exactly
+    // as far as a SQL edit does, and the refusal below cannot tell them apart
+    // from two hashes. A declaration supplies the missing half — see
+    // `migration-reconciliation.ts` for what each part of one proves. Nothing
+    // is softened: a drift no declaration covers still refuses the whole run.
+    const plan = planReconciliation(
+      drifted,
+      new Map(files.map((file) => [file.tag, sqlWithoutComments(file.sql)])),
+      options.declarations ?? DRIFT_DECLARATIONS
+    );
+
+    const reconciled: string[] = [];
+    for (const entry of plan.reconcile) {
+      // Guarded on the old digest as well as the tag, so a row that moved
+      // between the read above and this write is not overwritten blind.
+      const rows = await tx.unsafe(
+        `update ${tableId} set sha256 = $1 where tag = $2 and sha256 = $3 returning tag`,
+        [entry.to, entry.tag, entry.from]
+      );
+      if (rows.length !== 1) {
+        throw new Error(
+          `reconciling ${entry.tag} matched ${rows.length} rows, expected exactly 1 — ` +
+            'refusing rather than guessing what this database records.'
+        );
+      }
+      log(describeReconciliation(entry));
+      reconciled.push(`${entry.tag}: ${entry.from} -> ${entry.to}`);
+    }
+
+    if (plan.refuse.length > 0) {
       throw new Error(
         driftRefusalMessage(
-          drifted,
-          pending.map((file) => file.tag)
+          plan.refuse,
+          pending.map((file) => file.tag),
+          plan.rejected
         )
       );
     }
     if (pending.length === 0) {
       log(`✓ Schema up to date — ${applied.size} migration(s) applied`);
-      return { adopted, applied: [], alreadyApplied: [...applied], legacyDrift };
+      return { adopted, applied: [], alreadyApplied: [...applied], legacyDrift, reconciled };
     }
 
     log(`▶ ${pending.length} pending migration(s): ${pending.map((f) => f.tag).join(', ')}`);
@@ -390,6 +478,12 @@ export async function applyMigrations(
       log(`  ✓ ${file.tag}`);
     }
 
-    return { adopted, applied: justApplied, alreadyApplied: [...applied], legacyDrift };
+    return {
+      adopted,
+      applied: justApplied,
+      alreadyApplied: [...applied],
+      legacyDrift,
+      reconciled,
+    };
   });
 }
