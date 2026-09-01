@@ -80,6 +80,13 @@ pushed_paths() {
   done | sort -u
 }
 
+# The commits this push would send, newest first. `pushed_paths` folds these
+# into a path list; the figure check needs the commits themselves, because what
+# it judges is the ADDED LINES they introduce and a path list has none.
+pushed_commits() {
+  git rev-list "$1" --not --remotes="$REMOTE_NAME"
+}
+
 # stdin is one line per ref: <local_ref> <local_sha> <remote_ref> <remote_sha>
 checked_any=0
 while read -r _local_ref local_sha _remote_ref _remote_sha; do
@@ -127,6 +134,23 @@ while read -r _local_ref local_sha _remote_ref _remote_sha; do
   # subject reproduced inside its caller.
   if ! printf '%s\n' "$paths" | bun scripts/check-oss-bound-paths.ts --stdin-paths --ref "$local_sha"; then
     fail "paths in the commits being pushed cannot travel to MGrin/scani-oss"
+  fi
+
+  # SC-887. Routing is not content: every file in the leak that produced this
+  # was correctly `oss-eligible`, and what travelled inside one was a live
+  # account balance in a fixture. This is the mode that matters — the same
+  # SC-813 measurement that put the paths check here applies unchanged, because
+  # `cherry-pick` is the documented port flow and fires pre-commit zero times.
+  #
+  # `--ref "$local_sha"` for the reason directly above: classifying HEAD would
+  # answer about the branch you are standing on, not the one being pushed.
+  if [ -f scripts/check-oss-figures.ts ]; then
+    commits=$(pushed_commits "$local_sha") || fail "could not list the commits being pushed — \`git rev-list\` failed, so NO FIGURE WAS CHECKED. This is not a pass."
+    if ! printf '%s\n' "$commits" | bun scripts/check-oss-figures.ts --stdin-commits --ref "$local_sha"; then
+      fail "the commits being pushed add production-looking figures (SC-887)"
+    fi
+  else
+    fail "scripts/check-oss-figures.ts is not in this tree and this push is bound for ${REMOTE_URL} — NO FIGURE WAS CHECKED. This is not a pass."
   fi
 done
 
