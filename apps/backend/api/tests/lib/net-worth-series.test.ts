@@ -297,10 +297,10 @@ describe('unmeasuredDates', () => {
 
 describe('aggregateIncludedHoldingRows — unpriceable holdings (SC-146)', () => {
   test('dust leaves the denominator, so a fully-priced day reads as full', async () => {
-    ***REMOVED***
-    ***REMOVED***
-    ***REMOVED***
-    // owns was priced.
+    // The production shape: several assets priced, a couple of airdrop tokens
+    // that no provider indexes. Before the fix this day counted the airdrops in
+    // the denominator and rendered a coverage figure well under 100% on a
+    // portfolio where everything the user owns was priced.
     seedRepository({
       perHolding: [
         perHoldingRow('2026-08-14', 'h-btc', '60000'),

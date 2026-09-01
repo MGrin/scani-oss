@@ -293,17 +293,17 @@ describe('TransactionImportCoordinator — a wallet import reads its own account
     expect(
       resolveImportWalletAddress('etherscan', ACCOUNT, {
         chainId: '1',
-        walletAddress: '***REMOVED***',
+        walletAddress: '0xb0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9',
       })
-    ***REMOVED***
+    ).toBe('0xb0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9');
   });
 
   test('two accounts sharing one institution credential resolve to different addresses', () => {
     const first = resolveImportWalletAddress('etherscan', ACCOUNT, {
-      walletAddress: '***REMOVED***',
+      walletAddress: '0xa11ce0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7',
     });
     const second = resolveImportWalletAddress('etherscan', ACCOUNT, {
-      walletAddress: '***REMOVED***',
+      walletAddress: '0xc0ffee11223344556677889900aabbccddeeff01',
     });
     expect(first).not.toBe(second);
   });

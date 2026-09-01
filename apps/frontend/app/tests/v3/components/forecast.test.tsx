@@ -245,9 +245,9 @@ function render(book: ForecastPaymentInput[], liquidAmount: string, over = {}) {
  * the home line renders.
  *
  * The two surfaces used to answer this question separately and reached
- ***REMOVED***
- ***REMOVED***
- ***REMOVED***
+ * OPPOSITE conclusions on one account at one instant: home read a runway of
+ * about two years at recent spending, the page read "Lasts beyond 12 months,
+ * the book nets a large positive figure a month". The book is not a second opinion — on the real
  * account it records the income and almost none of the spending, so projected
  * forward it says the money grows forever.
  */
@@ -287,9 +287,9 @@ describe('SC-661 — the forecast page leads with observed burn', () => {
 
     // The window, the statistic BY NAME, the range, and the middle month.
     //
-    ***REMOVED***
-    ***REMOVED***
-    ***REMOVED***
+    // Naming the statistic is not pedantry. Measured on a real book, the mean
+    // came out near twice the median — so one runway and nearly double it are
+    // the same data read two ways. A figure that far
     // from a typical month has to say which one it is, or it alarms the reader
     // about a distribution while sounding like a trend.
     expect(html).toInclude('Mean of 6 complete months, 2025-09 to 2026-02');
@@ -497,7 +497,7 @@ describe('SC-661 — provenance of the counted burn', () => {
   /**
    * The middle class is not dead code. It renders empty within the burn
    * window's `left_control` rows on the one production book we have, and is
-   ***REMOVED***
+   * NOT empty book-wide — rows there do decode as `repair`. This is its
    * control: given a non-zero automated share it must appear.
    */
   test('a named mechanism is named when there is one', () => {
@@ -625,10 +625,10 @@ describe('SC-661 — answering the measured drain', () => {
   });
 
   /**
-   ***REMOVED***
-   ***REMOVED***
-   ***REMOVED***
-   ***REMOVED***
+   * THE ASSERTION THE WHOLE FEATURE IS. On this fixture, €10,000 liquid against
+   * a measured €1,250 a month is 8 months; against an owner's own €2,500 it is
+   * 4. A headline that kept dividing by the measurement would have taken the
+   * correction and displayed it as a caption while ignoring it — which is worse than not
    * offering the override, because it looks like it worked.
    */
   test('an override REPLACES the runway denominator, not just the caption', () => {

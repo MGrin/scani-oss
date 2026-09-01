@@ -70,11 +70,11 @@ import { monthKey } from './forecast';
  *
  * ## The mean, not the median, and why it is on the surface
  *
- ***REMOVED***
- ***REMOVED***
- ***REMOVED***
- ***REMOVED***
- ***REMOVED***
+ * A real book's months span an order of magnitude, so the two differ
+ * materially and the choice is visible in the figure on screen. The mean is
+ * the only one that makes `liquid ÷ burn` mean what it says: total ÷ months IS
+ * the rate the balance actually drained at, and an exceptional month is real
+ * money that really left. The median answers a different question — what a typical month looks
  * like — and a runway built on it survives on paper past the point the
  * account is empty.
  *
@@ -378,8 +378,8 @@ export class ObservedBurnService extends BaseService {
     });
     if (exits.length === 0) return { ...empty(), excluded };
 
-    ***REMOVED***
-    ***REMOVED***
+    // One prefetch for the batch. Per-flow lookups were almost the whole of an
+    // entire request when this was measured on an account with real history
     // (SC-471), and this service runs on the home screen.
     const holdingRows = await this.holdingRepository.findByIds([
       ...new Set(exits.map((tx) => tx.holdingId)),
