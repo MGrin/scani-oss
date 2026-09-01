@@ -9,9 +9,9 @@ import { destinationDetail, destinationGroup, destinationScale } from '../../lib
  *
  * **The destination is a holding, not an account**, and that is the whole
  * reason this is a list rather than a select of account names. Production has
- ***REMOVED***
- ***REMOVED***
- ***REMOVED***
+ * one Airwallex account carrying two USD holdings — one imported, one manual,
+ * with different balances — and a withdrawal that moved between them. By account
+ * and symbol they are the same row twice, so each one has to carry the two facts
  * that tell them apart: the balance, and where the holding's numbers come
  * from.
  *
