@@ -296,6 +296,14 @@ export function HoldingsPage() {
           // the sign of the difference is what decides whether a destination
           // is owed (SC-606).
           isOutflow={new Decimal(causeTarget.balance).lt(causeTarget.holding.amount)}
+          // What left, unsigned — the bound a stated fee has to fit inside and
+          // the figure the arrival is derived from (SC-857). Undefined on an
+          // inflow, where no fee is asked for.
+          outflowQuantity={
+            new Decimal(causeTarget.balance).lt(causeTarget.holding.amount)
+              ? new Decimal(causeTarget.holding.amount).minus(causeTarget.balance).toString()
+              : undefined
+          }
           defaultCause={causeTarget.holding.manualEditCause ?? null}
           onConfirm={(editCause, editOccurredAt, editOutflow) => {
             actions.updateHolding(causeTarget.holding.id, {
