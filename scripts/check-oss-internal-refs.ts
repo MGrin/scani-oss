@@ -412,6 +412,77 @@ function isBinary(content: string): boolean {
   return content.includes('\0');
 }
 
+/**
+ * THE VERDICT WORD HAS TO AGREE WITH THE DENOMINATOR BESIDE IT (SC-842).
+ *
+ * This guard already printed an honest count — `0 of 8 staged file(s) scanned,
+ * 8 binary skipped` — and then opened the line with `PASS`. Both halves were
+ * true and they said opposite things, and the half a reader acts on is the
+ * word: reconciling two integers is precisely the work a verdict exists to
+ * save them. The count was added by SC-775 for this defect class and stops one
+ * step short of it, which is why `scripts/lib/check-verdict.ts` now carries the
+ * mechanism as its own entry rather than as a footnote to the denominator.
+ *
+ * What was actually at stake is the case that produced it. Of the 36 binary
+ * files tracked in the mirror, 21 are PICTURES OF THE RENDERED PRODUCT — the
+ * twelve visual-regression baselines under `apps/e2e/visual/__screenshots__/`,
+ * eight README screenshots, one import fixture. A screenshot can show an
+ * account name, an institution or a balance, and none of it is greppable: no
+ * rule in this file can ever see it, and no rule ever will. So this is not a
+ * gap waiting to be closed by a better pattern. It is the permanent edge of
+ * what a text scanner is, and the only thing the guard owes its reader is to
+ * stop describing that edge as a clean bill.
+ *
+ * IT IS EXIT 0, AND THAT IS A DECISION RATHER THAN A COMPROMISE. Three reasons,
+ * and the third is the one that decides it:
+ *
+ *   1. {@link EXIT_UNKNOWN} means the check COULD NOT RUN, and this run ran
+ *      fine. A file with no text in it is not a failure of the instrument, and
+ *      giving both states one code would cost exit 9 the meaning it was
+ *      separated out to have.
+ *   2. Every icon, favicon and fixture image in the tree is legitimate mirror
+ *      content, and a baseline update is a sanctioned workflow. A refusal on
+ *      all of them is a refusal on ordinary work — the same reasoning that
+ *      keeps `harness` and `orchestrator` off the rule list.
+ *   3. The only way to clear such a refusal is `OSS_ALLOW_INTERNAL_REFS=1`,
+ *      which switches off the SEVEN REFUSAL RULES as well. A weak verdict that
+ *      can only be cleared by waiving the strong ones is worse than no verdict:
+ *      it is `ADVISORY_RULES`' hazard with the tiers collapsed back together.
+ *
+ * So the value here is entirely in the word, and the word is worth having on
+ * its own. What it buys is that nobody can quote this line as evidence a
+ * baseline was checked, because it no longer says so.
+ */
+const VERDICT_PASS = 'PASS';
+const VERDICT_PARTIAL = 'PARTIAL';
+const VERDICT_REFUSED = 'REFUSED';
+
+/**
+ * The files this run did not read, by name and by reason.
+ *
+ * Named rather than counted, and printed on a REFUSED run too: a refusal is a
+ * claim about the files that WERE read, so the ones that were not are exactly
+ * as unexamined as they are on a partial pass.
+ */
+function reportUnread(
+  skippedBinary: readonly string[],
+  unreadable: readonly string[],
+  // The stream the verdict this precedes will use. A refusal writes to stderr,
+  // so a list written to stdout would arrive somewhere else in the operator's
+  // terminal than the lines it belongs to.
+  write: (line: string) => void
+): void {
+  for (const path of skippedBinary) write(`  ${path}\n      not read — no text in it`);
+  for (const path of unreadable) write(`  ${path}\n      NOT READ — could not be read`);
+  write(
+    '  Nothing above was examined for content. A picture is not greppable: a\n' +
+      '  baseline, a screenshot or an icon can show an account name, an institution\n' +
+      '  or a balance, and no rule here will ever see it. Before this travels to\n' +
+      '  MGrin/scani-oss, open them, and check what the fixtures they were rendered\n' +
+      '  from actually hold (SC-842).'
+  );
+}
+
 function main(argv: readonly string[]): number {
   const wholeTree = argv.includes('--scan');
 
@@ -460,8 +531,12 @@ function main(argv: readonly string[]): number {
   const paths = listing.trim() ? listing.trim().split('\n') : [];
 
   let scanned = 0;
-  let skippedBinary = 0;
-  let unreadable = 0;
+  // The paths themselves, not counters. A verdict that says eight files were
+  // not read and cannot say WHICH eight sends its reader to `git diff --cached`
+  // to work it out, and the whole point of the verdict is that they should not
+  // have to reconcile anything (SC-842).
+  const skippedBinary: string[] = [];
+  const unreadable: string[] = [];
   const found: { path: string; ref: InternalRef }[] = [];
   const advisories: { path: string; ref: InternalRef }[] = [];
   for (const path of paths) {
@@ -481,11 +556,11 @@ function main(argv: readonly string[]): number {
     // like a complete scan — the same defect as the population read, one file
     // at a time (SC-775).
     if (read.kind === 'failed') {
-      unreadable++;
+      unreadable.push(path);
       continue;
     }
     if (isBinary(read.stdout)) {
-      skippedBinary++;
+      skippedBinary.push(path);
       continue;
     }
     scanned++;
@@ -496,7 +571,8 @@ function main(argv: readonly string[]): number {
   // The denominator is printed on every outcome. `0 found` beside no count at
   // all is indistinguishable from a scan that never read anything.
   const where = wholeTree ? 'tracked' : 'staged';
-  const tail = `${RULE_COUNT} rule(s) self-tested, ${scanned} of ${paths.length} ${where} file(s) scanned${skippedBinary > 0 ? `, ${skippedBinary} binary skipped` : ''}${unreadable > 0 ? `, ${unreadable} UNREADABLE` : ''}`;
+  const unread = [...skippedBinary, ...unreadable];
+  const tail = `${RULE_COUNT} rule(s) self-tested, ${scanned} of ${paths.length} ${where} file(s) scanned${skippedBinary.length > 0 ? `, ${skippedBinary.length} binary skipped` : ''}${unreadable.length > 0 ? `, ${unreadable.length} UNREADABLE` : ''}`;
 
   // Printed before the verdict and never folded into it. Advisories are a
   // readability defect, not a boundary violation; one exit code for both is
@@ -510,14 +586,24 @@ function main(argv: readonly string[]): number {
   }
 
   if (found.length === 0) {
-    console.log(`oss-internal-refs: PASS · exit ${EXIT_OK} · ${tail}, 0 internal reference(s)`);
+    if (unread.length === 0) {
+      console.log(
+        `oss-internal-refs: ${VERDICT_PASS} · exit ${EXIT_OK} · ${tail}, 0 internal reference(s)`
+      );
+      return EXIT_OK;
+    }
+    reportUnread(skippedBinary, unreadable, (line) => console.log(line));
+    console.log(
+      `oss-internal-refs: ${VERDICT_PARTIAL} · exit ${EXIT_OK} · ${tail}, 0 internal reference(s) in the ${scanned} that were read — ${unread.length} file(s) WERE NOT READ, and this line says nothing about them`
+    );
     return EXIT_OK;
   }
 
+  if (unread.length > 0) reportUnread(skippedBinary, unreadable, (line) => console.error(line));
   for (const { path, ref } of found)
     console.error(`  ${path}:${ref.line}\n      ${ref.rule} — ${ref.why}`);
   console.error(
-    `oss-internal-refs: REFUSED · exit ${EXIT_REFUSED} · ${tail}, ${found.length} internal reference(s) in ${new Set(found.map((f) => f.path)).size} file(s)`
+    `oss-internal-refs: ${VERDICT_REFUSED} · exit ${EXIT_REFUSED} · ${tail}, ${found.length} internal reference(s) in ${new Set(found.map((f) => f.path)).size} file(s)`
   );
   console.error(
     '  This content is bound for MGrin/scani-oss. Rewrite the reference — an `SC-`\n' +
