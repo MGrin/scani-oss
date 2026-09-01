@@ -2,61 +2,75 @@ import { describe, expect, it } from 'bun:test';
 import { ChunkLoadError, importChunk, isChunkLoadError } from '../../src/lib/lazy-chunk';
 
 /**
- * The retry path exists because SC-132 relaxed the top-level-import ban for
+ * `importChunk` exists because SC-132 relaxed the top-level-import ban for
  * frontend route splitting, and the condition attached to that relaxation was
  * that **a failed chunk fetch must be handled**. An unhandled rejection inside
  * React's render path is a white screen with no message and no button — the
  * SC-62 shape.
  *
- * So these are tests of the failure, not of the success: what happens on a
- * connection that blinks, and what a reader is told when it does not come back.
+ * So these are tests of the failure, not of the success: what a reader is told
+ * when a chunk does not arrive.
+ *
+ * ## The test this file used to lead with is deleted, and that is the point
+ *
+ * It read *"re-invokes the factory rather than re-awaiting a rejected
+ * promise"*, and it passed a stub that threw twice and then returned a value —
+ * asserting `calls === 3`. Every claim in it was true about the stub and none
+ * of it was true in a browser. **A closure issues a fresh call every time by
+ * construction**, so the test could not have failed however the module map
+ * behaves, and it is what made a retry loop that issued exactly one network
+ * request look protective for as long as it did (SC-890).
+ *
+ * Nothing replaces it here, because nothing in this process can: the module map
+ * is the browser's, and a stub is not one. The measurement lives on SC-890 and
+ * was taken in Chromium 148, WebKit 26.4 and Brave 152, against both the dev
+ * server and a production build. The behaviour that *can* be tested — the one
+ * document reload that is now the recovery, and the guard that stops it
+ * looping — is in `apps/frontend/app/tests/lib/chunk-reload.test.ts`.
  */
 
-const noSleep = async () => {};
-
 describe('importChunk', () => {
-  it('re-invokes the factory rather than re-awaiting a rejected promise', async () => {
-    // The distinction that matters: a module promise the browser has already
-    // rejected stays rejected, so retrying by awaiting it again never issues a
-    // second request. Counting calls is what pins that.
+  it('returns the module when it arrives, and calls the factory once', async () => {
     let calls = 0;
     const result = await importChunk(
       async () => {
         calls += 1;
-        if (calls < 3) throw new TypeError('Failed to fetch dynamically imported module: /a.js');
         return { value: 'loaded' };
       },
-      { chunk: 'test chunk', sleep: noSleep }
+      { chunk: 'test chunk' }
     );
 
     expect(result).toEqual({ value: 'loaded' });
-    expect(calls).toBe(3);
-  });
-
-  it('does not retry a load that works first time', async () => {
-    let calls = 0;
-    await importChunk(
-      async () => {
-        calls += 1;
-        return 'ok';
-      },
-      { chunk: 'test chunk', sleep: noSleep }
-    );
     expect(calls).toBe(1);
   });
 
-  it('gives up after the configured attempts and says something a person can read', async () => {
+  it('asks exactly once, because a second ask could not reach the network', async () => {
+    // The old loop made three calls here. Two of them could never have issued a
+    // request — they would have hit the module map entry the first rejected
+    // fetch left behind — so all they cost was 750 ms of backoff in front of
+    // somebody already watching a spinner.
     let calls = 0;
     const failing = importChunk(
       async () => {
         calls += 1;
-        throw new TypeError('Failed to fetch dynamically imported module: /Excel-abc123.js');
+        throw new TypeError('Failed to fetch dynamically imported module: /V3App-abc123.js');
       },
-      { chunk: 'Excel writer', attempts: 3, sleep: noSleep }
+      { chunk: 'interface' }
     );
 
     await expect(failing).rejects.toThrow(ChunkLoadError);
-    expect(calls).toBe(3);
+    expect(calls).toBe(1);
+  });
+
+  it('fails with something a person can read', async () => {
+    const failing = importChunk(
+      async () => {
+        throw new TypeError('Failed to fetch dynamically imported module: /Excel-abc123.js');
+      },
+      { chunk: 'Excel writer' }
+    );
+
+    await expect(failing).rejects.toThrow(ChunkLoadError);
 
     const error = await failing.catch((e: unknown) => e as ChunkLoadError);
     // Named, actionable, and free of the hashed filename — the reader cannot do
@@ -69,21 +83,23 @@ describe('importChunk', () => {
     expect((error.cause as Error).message).toContain('abc123');
   });
 
-  it('waits longer between each attempt', async () => {
-    const waits: number[] = [];
-    await importChunk(
-      async () => {
-        if (waits.length < 2) throw new Error('nope');
-        return 'ok';
-      },
-      {
-        chunk: 'test chunk',
-        sleep: async (ms) => {
-          waits.push(ms);
-        },
-      }
+  it('does not resolve fast enough to be doing nothing — it awaits the load', async () => {
+    // Guards the shape of the rewrite rather than its wording: a version that
+    // dropped the `await` would return a promise-of-a-promise and every caller
+    // would render a pending module as a component.
+    let resolved = false;
+    const result = await importChunk(
+      () =>
+        new Promise((r) =>
+          setTimeout(() => {
+            resolved = true;
+            r('late');
+          }, 10)
+        ),
+      { chunk: 'test chunk' }
     );
-    expect(waits).toEqual([250, 500]);
+    expect(resolved).toBe(true);
+    expect(result).toBe('late');
   });
 });
 
