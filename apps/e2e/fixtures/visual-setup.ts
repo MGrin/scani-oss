@@ -2,6 +2,12 @@ import { existsSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { type Browser, chromium, type Page } from '@playwright/test';
+import type { VisualSession } from '../visual/screens';
+import {
+  type ObservedContent,
+  provenanceFailure,
+  type SessionContent,
+} from '../visual/session-provenance';
 import { signIn } from './auth';
 import { createAccount, createHolding } from './ui';
 
@@ -148,9 +154,22 @@ async function assertStackUp(): Promise<void> {
   }
 }
 
-async function isSignedIn(page: Page): Promise<boolean> {
+/**
+ * What this session actually holds, or `null` if it is not signed in.
+ *
+ * One request answering both questions, because they were always one question:
+ * a stored session is worth reusing only if it is live AND still holds the
+ * seed, and asking only the first is the hole SC-842 closes — see
+ * `visual/session-provenance.ts`.
+ */
+async function readSessionContent(page: Page): Promise<ObservedContent | null> {
   const res = await page.request.get(`${API_BASE_URL}/trpc/holdings.getWithDetails?input=%7B%7D`);
-  return res.ok();
+  if (!res.ok()) return null;
+  const body = (await res.json()) as {
+    result: { data: { holdings: { account: { name: string } }[] } };
+  };
+  const holdings = body.result.data.holdings;
+  return { accounts: holdings.map((h) => h.account.name), holdings: holdings.length };
 }
 
 async function seedPortfolio(page: Page): Promise<void> {
@@ -193,7 +212,61 @@ async function storedSessionIsValid(browser: Browser, file: string): Promise<boo
   if (!existsSync(file)) return false;
   const context = await browser.newContext({ storageState: file, baseURL: BASE_URL });
   try {
-    return await isSignedIn(await context.newPage());
+    return (await readSessionContent(await context.newPage())) !== null;
+  } finally {
+    await context.close();
+  }
+}
+
+/**
+ * What each session is declared to hold, derived from the seed the loop above
+ * walks rather than written out a second time.
+ *
+ * Derived, deliberately: a hand-written expectation is a second declaration,
+ * and the moment the two disagree the check is asserting a fixture nobody
+ * seeds. `empty` has no seed and therefore no derivation — its declaration is
+ * that there is nothing, which is the whole reason that session exists.
+ */
+const DECLARED_CONTENT: Record<VisualSession, SessionContent> = {
+  seeded: {
+    accounts: PORTFOLIO.map((spec) => spec.account),
+    holdings: PORTFOLIO.reduce((n, spec) => n + spec.holdings.length, 0),
+  },
+  empty: { accounts: [], holdings: 0 },
+  allocation: {
+    accounts: ALLOCATION_PORTFOLIO.map((spec) => spec.account),
+    holdings: ALLOCATION_PORTFOLIO.length,
+  },
+};
+
+/**
+ * Refuses the whole run unless this session holds what the fixtures declare.
+ *
+ * Run for an ESTABLISHED session as well as a reused one. A fresh seed is not
+ * self-evidently complete — `seedPortfolio`'s own docblock says a partial seed
+ * is intolerable here, and until now the only thing that would have noticed
+ * one was `createHolding` throwing.
+ */
+async function assertSessionProvenance(
+  browser: Browser,
+  file: string,
+  session: VisualSession
+): Promise<void> {
+  const context = await browser.newContext({ storageState: file, baseURL: BASE_URL });
+  try {
+    const observed = await readSessionContent(await context.newPage());
+    if (observed === null) {
+      throw new Error(
+        `the "${session}" visual session is not signed in after being established — ` +
+          'nothing has been captured.'
+      );
+    }
+    const failure = provenanceFailure({
+      session,
+      expected: DECLARED_CONTENT[session],
+      observed,
+    });
+    if (failure !== null) throw new Error(failure);
   } finally {
     await context.close();
   }
@@ -233,23 +306,31 @@ async function establishSession(
  * harness reuses its own — the API rate-limits sign-ins to 6 per IP per hour —
  * and it is a *separate* session from that harness's because the two seed
  * different portfolios. `VISUAL_FRESH=1` forces a new user and a new seed.
+ *
+ * Each session is then checked against what the fixtures declare it holds, and
+ * a run that cannot establish that captures nothing (SC-842). The reuse above
+ * is why: a stored session is only tested for being SIGNED IN, and a signed-in
+ * session is not one that still holds its seed — nor, on a stack this run did
+ * not start, necessarily one whose data this repository has ever described.
+ * See `visual/session-provenance.ts`.
  */
 export default async function globalSetup(): Promise<void> {
   await assertStackUp();
   const browser = await chromium.connect(remoteEndpoint(), { exposeNetwork: '<loopback>' });
   const fresh = process.env.VISUAL_FRESH === '1';
   try {
-    for (const [file, label, seed] of [
-      [VISUAL_SESSION_FILE, 'visual', seedPortfolio],
-      [VISUAL_EMPTY_SESSION_FILE, 'visual-empty', undefined],
-      [VISUAL_ALLOCATION_SESSION_FILE, 'visual-allocation', seedAllocationPortfolio],
+    for (const [file, session, label, seed] of [
+      [VISUAL_SESSION_FILE, 'seeded', 'visual', seedPortfolio],
+      [VISUAL_EMPTY_SESSION_FILE, 'empty', 'visual-empty', undefined],
+      [VISUAL_ALLOCATION_SESSION_FILE, 'allocation', 'visual-allocation', seedAllocationPortfolio],
     ] as const) {
       if (!fresh && (await storedSessionIsValid(browser, file))) {
         // intentional: tells the operator which user the baselines describe
         console.log(`Reusing stored ${label} session (VISUAL_FRESH=1 to reseed).`);
-        continue;
+      } else {
+        await establishSession(browser, file, label, seed);
       }
-      await establishSession(browser, file, label, seed);
+      await assertSessionProvenance(browser, file, session);
     }
   } finally {
     await browser.close();
