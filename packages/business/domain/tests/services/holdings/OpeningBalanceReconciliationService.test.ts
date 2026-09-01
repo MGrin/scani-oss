@@ -628,6 +628,51 @@ describe('OpeningBalanceReconciliationService.reconcileUser', () => {
     expect(capturedReconciliations[0]?.reconciliationNotes).toContain('Missing inflows');
   });
 
+  /**
+   * SC-888 — why the queue's `fee` answer writes no `kind='fee'` row.
+   *
+   * The declared path (SC-857) writes one, and correctly: it owns the source
+   * anchor, so it carves the charge OUT of the withdrawal and the two rows
+   * still sum to the delta the anchor moved by. The queue owns neither the
+   * imported row nor the anchor behind it. Its fee is a share of a quantity
+   * ALREADY in the ledger — `splitSumMatches` refuses a division that does not
+   * sum to the row — so a `kind='fee'` row beside it is the same money twice.
+   *
+   * The pair below is the measurement, not the argument. Identical holding,
+   * identical anchor, one extra row. `sumQuantityForHoldingUntil` filters on
+   * `source = 'reconciliation-opening'` and on nothing else, so no kind is
+   * exempt and `fee` is not special here.
+   */
+  test('a fee row beside a full-amount withdrawal manufactures a phantom opening', async () => {
+    const firstTxAt = new Date('2024-02-01T00:00:00Z');
+    // The imported ledger as it stands: opened at 10,000, one withdrawal of
+    // 4,000 of which 500 was the bank's charge. The anchor agrees.
+    const asImported = makeService({
+      holding: { id: 'h1', userId: 'u1', accountId: 'a1', tokenId: 't1', balance: '6000' },
+      txSumAllTime: '6000',
+      firstTxAt,
+    });
+    const clean = await asImported.service.reconcileHolding('h1');
+    expect(clean?.openingBalanceSynthesized).toBe(false);
+    expect(clean?.computedOpening.toString()).toBe('0');
+
+    // The same ledger with a -500 `kind='fee'` row added beside the untouched
+    // -4,000 withdrawal, which is what "a fee portion writes a real fee row"
+    // means when the withdrawal cannot be restated.
+    const withFeeRow = makeService({
+      holding: { id: 'h1', userId: 'u1', accountId: 'a1', tokenId: 't1', balance: '6000' },
+      txSumAllTime: '5500',
+      firstTxAt,
+    });
+    const damaged = await withFeeRow.service.reconcileHolding('h1');
+    expect(damaged?.openingBalanceSynthesized).toBe(true);
+    // 500 of holdings this account never had, dated before its history begins,
+    // on the very holding the reader was trying to describe accurately.
+    expect(damaged?.computedOpening.toString()).toBe('500');
+    expect(withFeeRow.capturedTxs[0]?.kind).toBe('opening_balance');
+    expect(withFeeRow.capturedTxs[0]?.quantity).toBe('500');
+  });
+
   test('a visible holding is still reconciled — the widen did not narrow anything', async () => {
     const { service } = makeService({
       holding: { id: 'h1', userId: 'u1', accountId: 'a1', tokenId: 't1', balance: '10' },

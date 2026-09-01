@@ -30,7 +30,7 @@ export const TRANSFER_MATCH_WINDOW_LABEL = '30-minute';
 export const TRANSFER_QTY_EPSILON = 0.01;
 
 /**
- * What a person can say about an unpaired outflow. Four answers, no snooze:
+ * What a person can say about an unpaired outflow. Five answers, no snooze:
  * a queue that can be deferred is a queue that is never emptied, and the whole
  * value here is that the count reaching zero means something.
  *
@@ -49,6 +49,12 @@ export const TRANSFER_QTY_EPSILON = 0.01;
  * - `untracked` — still the user's money, in an account Scani cannot see (a
  *   cold wallet, an exchange we have no key for). Not a disposal, so nothing
  *   is realized.
+ * - `fee` — a charge taken out of what left: the 500 of a 4,000 withdrawal
+ *   that never reached the 3,500 which arrived. Value the portfolio CONSUMED,
+ *   so it is neither a disposal nor money still held, and the two answers
+ *   above are each false about it in opposite directions (SC-888). Writes no
+ *   ledger row — see `TRANSFER_REVIEW_FEE` for why the queue cannot, where the
+ *   declared path can.
  *
  * `internal` exists because the three above assume the destination is either
  * *pairable* or *outside Scani*, and the reported case is neither: money moved
@@ -65,7 +71,57 @@ export const TRANSFER_REVIEW_DECISIONS = [
   'internal',
   'left_control',
   'untracked',
+  'fee',
 ] as const;
+
+/**
+ * The answer that says a charge was taken out of the money that left (SC-888).
+ *
+ * ## The two answers it replaces, and why both are false
+ *
+ * A 4,000 withdrawal where 3,500 arrived and 500 was the bank's fee had two
+ * spellings before this and neither is a charge. `left_control` makes
+ * `CostBasisService` price the 500 at market and book a REALISED GAIN on money
+ * the bank took. `untracked` says "still yours, somewhere Scani cannot see",
+ * which is the one thing it demonstrably is not.
+ *
+ * ## Why it writes no ledger row, unlike the declared path (SC-857)
+ *
+ * A `fee` portion is a carve-out BY CONSTRUCTION: `splitSumMatches` refuses a
+ * split that does not sum to the outflow's own quantity, so the 500 is already
+ * inside the -4,000 the importer wrote. A `kind='fee'` row beside it would be
+ * the same money twice — `OpeningBalanceReconciliationService` computes
+ * `holdings.balance - sum(quantity)` over every row with no kind filter, so it
+ * would synthesize a phantom `opening_balance` on the source holding for
+ * exactly the fee, and `BalanceAtTimeService` would double-count it in the
+ * value series the returns engine is weighed against.
+ *
+ * The difference from SC-857 is OWNERSHIP, not taste. A declared transfer owns
+ * its source anchor — the owner states what LEFT — so it may write two rows
+ * that sum to the delta it moved. The queue owns neither the imported row nor
+ * the anchor behind it, and restating an importer's quantity is a claim only
+ * the importer can make. So the carve-out is the split.
+ *
+ * ## How the charge reaches the return figure without a row
+ *
+ * `flowRoleOf('fee')` is `return` — value the portfolio CONSUMED — and
+ * `ExternalFlowService` drops a `return` row from the external flows entirely,
+ * which is what makes a fee reduce the return instead of reading as a
+ * withdrawal. A fee PORTION gets the same rule one level finer: its share of
+ * the row is excluded from that row's external flow. See `feePortionOf`.
+ *
+ * ## What it is NOT
+ *
+ * Not a linking decision — see `TRANSFER_LINKING_DECISIONS`. A fee never takes
+ * the `transfer_group_id`, because a second row on one group id hands
+ * `CostBasisService`'s inflow branch a second `transfer_in` to feed after
+ * `pending.delete(tgid)` has already run, which is SC-150.
+ *
+ * Not an answer the MANUAL edit path offers either — see
+ * `MANUAL_OUTFLOW_DESTINATIONS`. There a fee is `feeQuantity`, a real carved
+ * `kind='fee'` row, for the ownership reason above.
+ */
+export const TRANSFER_REVIEW_FEE: TransferReviewDecision = 'fee';
 
 /**
  * The `holding_transactions.kind` values the review queue asks the question
@@ -154,6 +210,12 @@ export const TRANSFER_REVIEW_SPLIT = 'split';
  * twice, and `transferReviewSplitSchema` rejects them. The *reachable* maximum
  * is one lower than this, since `paired` and `internal` both need the single
  * `transfer_group_id` column and only one of them can have it.
+ *
+ * It rose to five with `fee` (SC-888), and deliberately by counting the
+ * decisions rather than by a literal: a division into "3,500 paired, 400 left
+ * my control, 100 untracked, 500 a fee" is four true statements about one
+ * withdrawal, and a cap written as a number is the thing that would have
+ * silently refused the fourth.
  */
 export const MAX_TRANSFER_REVIEW_PORTIONS = TRANSFER_REVIEW_DECISIONS.length;
 
@@ -193,7 +255,7 @@ export type TransferDestinationRef = z.infer<typeof transferDestinationRefSchema
  * arrived from an import, where nobody has been asked; it is wrong on the
  * manual path, where the person is present and has just spoken.
  *
- * ## Why three of the four, and why the exclusion is structural
+ * ## Why three of the five, and why each exclusion is structural
  *
  * `paired` is missing because it means "this is the same money as that
  * inflow" and needs an inflow row to point at. At edit time no candidate
@@ -201,6 +263,14 @@ export type TransferDestinationRef = z.infer<typeof transferDestinationRefSchema
  * offering an answer that cannot be given. Somebody whose arrival was
  * imported separately still reaches `paired` through the queue, where the
  * candidates exist.
+ *
+ * `fee` is missing for a different reason, and it is not that a hand edit
+ * cannot have one — it is that this path already says it better. The owner
+ * states what LEFT, so the edit owns its own anchor and can carve the charge
+ * into a real `kind='fee'` row: that is `feeQuantity` below, and it is the
+ * shape the importers already write. The queue's `fee` answer exists because
+ * the queue owns neither the imported row nor the anchor behind it and can
+ * only classify a share of what is already there (SC-888).
  *
  * Asked only for a NEGATIVE delta. `answerIsOwedFor` is `withdraw` and
  * `transfer_out`, so a deposit has no second prompt to pre-empt and asking
@@ -520,6 +590,55 @@ export type TransferReviewSplit = z.infer<typeof transferReviewSplitSchema>;
  */
 export function splitSumMatches(split: TransferReviewSplit, quantity: string): boolean {
   return splitTotal(split).eq(new Decimal(quantity).abs());
+}
+
+/**
+ * How much of an outflow its answer calls a FEE, in the token's own units
+ * (SC-888).
+ *
+ * One definition, read by `CostBasisService` (which must not realize a gain on
+ * it) and by `ExternalFlowService` (which must not count it as value crossing
+ * the portfolio boundary). Two spellings of "how much of this was a charge"
+ * would render as a return figure and a cost-basis walk disagreeing about the
+ * same row, with nothing on the screen saying which one is wrong.
+ *
+ * Takes the row's own fields rather than a parsed split, because the two
+ * callers reach it from different shapes and the whole-row answer — the entire
+ * withdrawal was a bank charge — is as real as the divided one.
+ *
+ * `quantity` is the row's, unsigned, and it is the CAP: `outflowPortions`
+ * already treats the transaction as the authority on how much left and the
+ * split as the authority on what happened to it, so a split left stale by a
+ * re-import that shrank the row can never claim more than the row holds.
+ * Anything unparseable is zero — a fee that cannot be read is not a fee that
+ * can be charged.
+ */
+export function feeShareOf(review: string | null, split: unknown, quantity: string): Decimal {
+  let cap: Decimal;
+  try {
+    cap = new Decimal(quantity).abs();
+  } catch {
+    return new Decimal(0);
+  }
+  if (!cap.isFinite() || cap.lte(0)) return new Decimal(0);
+  if (review === TRANSFER_REVIEW_FEE) return cap;
+  if (review !== TRANSFER_REVIEW_SPLIT) return new Decimal(0);
+  const parsed = transferReviewSplitSchema.safeParse(split);
+  if (!parsed.success) return new Decimal(0);
+
+  // Walk the portions in order and take what is LEFT, exactly as
+  // `outflowPortions` does. A fee written third in a split whose earlier
+  // portions already exhaust a shrunken row gets nothing, which is the same
+  // answer the walk gives it.
+  let remaining = cap;
+  for (const portion of parsed.data) {
+    if (remaining.lte(0)) break;
+    const want = new Decimal(portion.quantity).abs();
+    const taken = Decimal.min(want, remaining);
+    remaining = remaining.minus(taken);
+    if (portion.decision === TRANSFER_REVIEW_FEE) return taken;
+  }
+  return new Decimal(0);
 }
 
 /** The portions' sum, unsigned. Exported for the form's "left to allocate". */

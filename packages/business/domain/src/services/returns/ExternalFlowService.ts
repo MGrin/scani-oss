@@ -1,4 +1,5 @@
 import type { HoldingTransaction } from '@scani/db/schema';
+import { feeShareOf } from '@scani/shared';
 import Decimal from 'decimal.js';
 import { Container, Service } from 'typedi';
 import { flowRoleOf } from '../../lib/returns/flow-classification';
@@ -35,7 +36,17 @@ export interface ExternalFlow {
   kind: string;
   occurredAt: Date;
   tokenId: string;
-  /** Signed token quantity exactly as the ledger records it. */
+  /**
+   * Signed token quantity that CROSSED THE BOUNDARY — the ledger's own, less
+   * any share of it the reader answered `fee` (SC-888).
+   *
+   * It read "exactly as the ledger records it" until then, and the two are the
+   * same on every row but a fee-answered outflow. The distinction matters
+   * because SC-458 re-values these quantities in their own currencies and
+   * differences the two series: handing it the gross quantity beside a
+   * fee-netted `baseAmount` would put the charge into the FX residual, which
+   * is the one place nothing would look for it.
+   */
   quantity: string;
   /**
    * Signed base-currency amount, POSITIVE into the scope, already multiplied
@@ -87,15 +98,30 @@ export interface ExternalFlowSeries {
  * flows are already inside its value. Counting a transaction stamped exactly
  * on the anchor boundary would book it twice.
  *
- * ## `transfer_review` needs no handling here, including `'split'`
+ * ## `transfer_review` needs handling for exactly ONE of its answers
  *
  * A withdrawal answered `'untracked'` is the owner saying the asset is still
  * theirs in an account we cannot see. That is still value leaving the
  * MEASURED portfolio, so it is still an external outflow — the same as
- * `'left_control'`. A `'split'` divides one row between those two answers and
- * both halves are external, so the row's own quantity is the whole flow and
- * `transfer_review_split` never has to be read. The answer changes what is
- * REALIZED, which is a different question and a different service.
+ * `'left_control'`. Between those two the row's own quantity is the whole
+ * flow, and the answer changes what is REALIZED, which is a different question
+ * and a different service.
+ *
+ * `'fee'` is the exception, and it is not a special case so much as the
+ * existing rule reaching a share instead of a row (SC-888). A `kind='fee'`
+ * ROW is dropped here entirely, four lines below, because `flowRoleOf` calls
+ * it `return` — value the portfolio CONSUMED rather than value that crossed
+ * the boundary. A fee ANSWER says the same thing about part of an outflow the
+ * importer wrote as one row, and it cannot say it by writing a row of its own:
+ * `splitSumMatches` makes the portion a carve-out of a quantity that is
+ * already in the ledger, so a second row would be the same money twice and
+ * `OpeningBalanceReconciliationService` would synthesize a phantom
+ * `opening_balance` for it. So the share is subtracted here instead, and the
+ * value it removed from the series — which `BalanceAtTimeService` has already
+ * walked in full — stays in the return as the cost it was.
+ *
+ * The whole-row answer is the same statement about all of it, so a withdrawal
+ * answered `'fee'` end to end contributes no external flow at all.
  *
  * ## Cost
  *
@@ -173,12 +199,24 @@ export class ExternalFlowService {
       const weight = weights.get(tx.holdingId);
       if (!weight) continue;
 
-      const quantity = new Decimal(tx.quantity);
-      if (quantity.isZero()) continue;
+      // The share the reader called a charge is `return`, exactly as a
+      // `kind='fee'` row is — see the note above. Subtracted from the
+      // MAGNITUDE and never from the sign, so a fee larger than the row it
+      // sits on (which the schema cannot see and therefore cannot refuse)
+      // zeroes the flow rather than reversing its direction.
+      const asRecorded = new Decimal(tx.quantity);
+      if (asRecorded.isZero()) continue;
+      // `.toString()` rather than the Decimal itself: `@scani/shared` ships the
+      // project-configured clone and this file constructs `decimal.js`'s own,
+      // and arithmetic between two clones is not something either promises.
+      const fee = feeShareOf(tx.transferReview, tx.transferReviewSplit, tx.quantity).toString();
+      const external = asRecorded.abs().minus(fee);
+      if (external.lte(0)) continue;
+      const quantity = asRecorded.isNegative() ? external.negated() : external;
 
       const valuation = await this.valueOf(
         tx,
-        quantity.abs(),
+        external,
         baseCurrencyId,
         heldTokenByHolding,
         priceLookup
@@ -198,7 +236,7 @@ export class ExternalFlowService {
         kind: tx.kind,
         occurredAt: tx.occurredAt,
         tokenId: tx.tokenId,
-        quantity: tx.quantity,
+        quantity: quantity.toString(),
         baseAmount: signed.mul(weight).toString(),
         valuationBasis: valuation ? valuation.basis : null,
         stale: valuation ? valuation.stale : false,
