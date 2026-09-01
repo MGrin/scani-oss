@@ -16,7 +16,7 @@
 -- nullability, same absence of a CHECK.
 --
 -- NULL on every existing row and that is the correct backfill. NULL means
-***REMOVED***
+-- "never asked", which is true of every one of them.
 ALTER TABLE holding_balance_observations
   ADD COLUMN gap_review TEXT,
   ADD COLUMN gap_reviewed_at TIMESTAMPTZ,
@@ -42,13 +42,13 @@ ALTER TABLE holding_balance_observations
 -- Including `balance` makes it index-only, so the walk neither sorts nor
 -- touches the heap.
 --
-***REMOVED***
-***REMOVED***
-***REMOVED***
-***REMOVED***
-***REMOVED***
-***REMOVED***
--- claim about a speed.
+-- Measured before this shipped WITHOUT this index, for the heaviest account in
+-- the dataset: the great majority of the query's time went on a bitmap heap
+-- scan feeding a sort. That the index removes the sort and the heap fetch is
+-- the planner's documented behaviour for a covering btree matching the
+-- window's PARTITION BY / ORDER BY — it has NOT been measured WITH the index
+-- at that size, which is why the observation above describes a plan and this
+-- sentence is not a claim about a speed.
 CREATE INDEX IF NOT EXISTS idx_holding_obs_user_holding_observed
   ON holding_balance_observations (user_id, holding_id, observed_at)
   INCLUDE (balance);
