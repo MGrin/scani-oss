@@ -3,7 +3,7 @@ import { extractCounterparty } from '../../src/core/counterparty';
 
 /**
  * A chain transfer names the address on the other side of it, and until
- * SC-329 nothing read it: all 385 `etherscan` rows in production carried
+ * SC-329 nothing read it: every `etherscan` row in production carried
  * `to` and `from` in their payload and a NULL `counterparty`, while the
  * transfer review queue rendered that empty column under the label "to".
  * That queue's entire question is where the money went, and the answer was

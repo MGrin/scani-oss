@@ -687,7 +687,7 @@ export class CostBasisService {
    *     paired inflow inherits them, cost and acquisition date intact. This
    *     walker popped them, DISCARDED them, and minted a fresh lot at the
    *     transfer date's market value — destroying cost basis on a move that
-   *     never happened. 47 of the 65 production transfer groups are that shape.
+   *     never happened. Most production transfer groups are that shape.
    *   - lots were popped by array position (`lots.shift()`) rather than by
    *     acquisition date. Equivalent while the array stays date-sorted, which
    *     it does until an inherited lot re-enters carrying an older date — i.e.
@@ -757,8 +757,8 @@ export class CostBasisService {
    * aggregation additive.
    *
    * A component of ONE holding is a legitimate and common input, not a
-   * degenerate one: 47 of the 65 production transfer groups have both legs on
-   * the same holding. It is also the same walk `walkLots` performs — see there
+   * degenerate one: most production transfer groups have both legs on the
+   * same holding. It is also the same walk `walkLots` performs — see there
    * for why that is one function now and not two (SC-344).
    */
   async walkComponent(
@@ -1378,12 +1378,12 @@ function carriesAcross(
  * ACTUALLY ARRIVED (SC-506).
  *
  * A network fee makes the two legs of an honest same-token transfer differ:
- * 0.5 ETH leaves and 0.49284214 arrives. The walk used to push the departing
+ * slightly less arrives than left. The walk used to push the departing
  * quantity, so the destination's pool permanently over-reported by the fee —
- * 10 of production's 69 transfer groups drift this way, worth about 76.00 of
- * misplaced basis on one account, and the biggest is 1.45% of its own transfer.
- * The `+-1%` matcher tolerance is what has kept it small rather than anything
- * in this function.
+ * a minority of production's transfer groups drift this way, worth a small
+ * amount of misplaced basis, and the biggest is a low single-digit percentage
+ * of its own transfer. The `+-1%` matcher tolerance is what has kept it small
+ * rather than anything in this function.
  *
  * `cost` is deliberately NOT scaled down with the quantity. The fee is an
  * incidental cost of the transfer, not a disposal of the units it consumed, so

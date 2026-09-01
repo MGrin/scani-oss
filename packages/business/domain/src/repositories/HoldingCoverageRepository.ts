@@ -344,7 +344,7 @@ export class HoldingCoverageRepository {
   // history" badge for holdings whose import couldn't reach back far
   // enough (Helius truncation, mid-history CSV exports). Returns a Map
   // keyed by holding_id; missing keys mean no coverage row was written
-  // for that holding (~22% of prod holdings as of 2026-05).
+  // for that holding (a sizeable minority of prod holdings as of 2026-05).
   async findManyByHoldingIds(
     holdingIds: string[],
     transaction?: DatabaseTransaction

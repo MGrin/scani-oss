@@ -678,9 +678,9 @@ export function splitTotal(split: readonly TransferReviewSplitPortion[]): Decima
  * **What they actually are, measured rather than inferred (SC-324).** This
  * paragraph used to say they were "inserted with `transfer_review` already
  * populated by an import that no longer exists in the tree", and that is
- * disprovable: on 2026-08-17 production held hundreds of unattributed rows
- * against a single attributed one, nearly all of them created on 2026-05-17
- * with `updated_at = created_at`, and the column itself did not exist until
+ * disprovable: on 2026-08-17 production held unattributed rows in bulk
+ * against a single attributed one, nearly all of them created on one day in
+ * 2026-05 with `updated_at = created_at`, and the column itself did not exist until
  * migration 0032 landed on 2026-08-14. Nothing can have been inserted with a
  * column that was three months away. Those rows share one transaction id,
  * committed inside a half-hour window on 2026-08-14 — bracketed by the `xmin`
@@ -1348,8 +1348,8 @@ export const pendingTransferReviewSchema = z.object({
    * confirms what they are ruling on; a dialog that shows a string the rule is
    * not keyed on confirms nothing.
    *
-   * Null on the 202 of 470 production outflows that name no destination at any
-   * layer, which is exactly when `rules.create` refuses.
+   * Null on the production outflows that name no destination at any layer —
+   * a large share of them — which is exactly when `rules.create` refuses.
    */
   counterpartyKey: z.string().nullable(),
   description: z.string().nullable(),
@@ -1385,7 +1385,7 @@ export const pendingTransferReviewSchema = z.object({
    * `left_control` anyway, at 08:27-08:31 on 2026-08-17, forty-four minutes
    * after the address shipped. Every one of them had gone to a wallet he had
    * registered himself. The row was not wrong and it was not missing anything
-   * it claimed to show: it showed `0x9d8ae06a94c5592f57812e0f045438602a7e14ab`,
+   * it claimed to show: it showed `0xc0ffee11223344556677889900aabbccddeeff01`,
    * and a 42-character hex string is not something a person recognises. He
    * booked 10,500 of disposals on his own money, and `left_control` is the one
    * answer that cannot be un-booked by a later matcher run.
@@ -1491,8 +1491,8 @@ export function isBulkEligibleAnswer(decision: string | null): boolean {
 /**
  * The most transfers one apply may write.
  *
- * Above every population this queue has ever had — 74 pending and 219 answered
- * `left_control` in production on 2026-08-18 — and far below anything that
+ * Above every population this queue has ever had in production, pending or
+ * answered `left_control`, and far below anything that
  * makes a single transaction long-running, since the write is at most three
  * `UPDATE … WHERE id = ANY` statements regardless of N.
  */
@@ -1542,8 +1542,8 @@ export const bulkTransferEntriesSchema = z
  *   address-poisoning corpus, which `pendingPredicate` also excludes).
  * - `linked` — it carries a `transfer_group_id`. Either the matcher paired it,
  *   or a `paired`/`internal` answer did. **This gate is load-bearing and is not
- *   implied by the answer column**: 29 of production's 236 unanswered outflows
- *   carry a group id, they are invisible to the queue, and `CostBasisService`
+ *   implied by the answer column**: a minority of production's unanswered
+ *   outflows carry a group id, they are invisible to the queue, and `CostBasisService`
  *   reads `transferGroupId` BEFORE `isConfirmedDisposal` — so a `left_control`
  *   written onto one would book nothing while reading as answered.
  * - `answered_otherwise` — it carries `paired`, `internal` or `split`. `detail`

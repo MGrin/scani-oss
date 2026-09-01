@@ -61,8 +61,8 @@ The section list belongs to the user's saved query, not to us, so a
 query without "Cash Transactions" returns a statement that parses
 perfectly and never contains a dividend, interest payment, deposit or
 withdrawal. Until SC-435 that was indistinguishable from an account
-with no cash activity, and it is not a hypothetical: every one of the
-159 IBKR transactions in production is a `<Trade>`.
+with no cash activity, and it is not a hypothetical: every IBKR
+transaction we have seen in production is a `<Trade>`.
 
 `statement-warnings.ts` checks the **container** element — `<CashTransactions>`,
 not `<CashTransaction>` — because that is what a *selected* section

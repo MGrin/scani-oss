@@ -71,14 +71,13 @@ export function pendingPredicate(userId: string) {
  *
  * **What `pendingPredicate` already contributes**, and the reason the write
  * gate is defined in terms of it rather than spelled out again: it excludes
- * rows that carry a `transfer_group_id`. 29 of production's 236 unanswered
+ * rows that carry a `transfer_group_id`. A minority of production's unanswered
  * outflows are in exactly that state — matcher-paired, invisible to the queue —
  * and `CostBasisService.outflowPortions` reads `transferGroupId` BEFORE
  * `isConfirmedDisposal`, so a `left_control` written onto one books nothing
  * while reading as answered (SC-382). A rule engine with its own copy of
  * "unanswered" would write into that state silently. It has no copy.
- * `pendingPredicate` also excludes the 113 zero-quantity address-poisoning
- * rows, which is why a rule cannot assert a disposal on the corpus an attacker
+ * `pendingPredicate` also excludes the zero-quantity address-poisoning rows, which is why a rule cannot assert a disposal on the corpus an attacker
  * plants.
  *
  * **`transfer_review_source IS NULL`** is stricter than `transfer_review IS
@@ -105,8 +104,8 @@ export function ruleWritablePredicate(userId: string) {
  * Two layers, and both are load-bearing.
  *
  * **Where the destination comes from.** `counterparty` first, the payload's
- * `to` second. The column is NULL on all 249 etherscan, 87 solana and 88
- * kraken outflows in production, so an expression reading only the column
+ * `to` second. The column is NULL on every etherscan, solana and kraken
+ * outflow in production, so an expression reading only the column
  * would match nothing, complete successfully, and look exactly like a user
  * with no rules — SC-329's bug shape. `nullif` twice: an empty stored column
  * falls through to the payload, and a destination that normalizes to the empty

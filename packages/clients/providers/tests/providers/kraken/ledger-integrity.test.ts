@@ -97,19 +97,19 @@ describe('auditKrakenLedger — balance chains', () => {
 
   test('`XETH` and `XETH.F` are separate balances, not one ETH chain', () => {
     // Normalizing first would net a spot entry against an earn entry and
-    // invent a break in both. Production carries 272 XETH and 56 XETH.F.
+    // invent a break in both. Production carries both, in quantity.
     const audit = auditKrakenLedger([
       row('L1', {
         refid: 'A',
         asset: 'XETH',
-        amount: '-0.1433234990',
+        amount: '-0.2500000000',
         balance: '1.0000000000',
         time: 100,
       }),
       row('L2', {
         refid: 'A',
         asset: 'XETH.F',
-        amount: '0.1433234990',
+        amount: '0.2500000000',
         balance: '5.0000000000',
         time: 100,
       }),

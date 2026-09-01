@@ -287,11 +287,11 @@ async function legFacts(
 /**
  * The answered list's ordering key, and the reason it is not a column (SC-241).
  *
- * `transfer_reviewed_at` alone is NULL on 573 of the 579 answered outflows in
+ * `transfer_reviewed_at` alone is NULL on nearly every answered outflow in
  * production — they were inserted with `transfer_review` already set, by an
  * import that is no longer in the tree — and Postgres sorts NULLS FIRST under
- * DESC. So 573 undated rows filled every slot of a 200-row limit and all six
- * genuinely answered rows were not merely mis-ordered, they were **absent**,
+ * DESC. So the undated rows filled every slot of the page limit and the
+ * genuinely answered ones were not merely mis-ordered, they were **absent**,
  * from the one surface built to reach them.
  *
  * The coalesce gives every row the position it actually has: `updated_at` is
@@ -1692,8 +1692,8 @@ export class TransferReviewService {
    *    the address-poisoning corpus and nobody can say where a zero went.
    * 2. **It must carry no `transfer_group_id`.** This gate is not implied by
    *    the answer column and is the one a reader is most likely to leave out:
-   *    29 of production's 236 unanswered outflows carry a group id the matcher
-   *    wrote, they are invisible to the queue, and `outflowPortions` reads
+   *    a minority of production's unanswered outflows carry a group id the
+   *    matcher wrote, they are invisible to the queue, and `outflowPortions` reads
    *    `transferGroupId` BEFORE `isConfirmedDisposal` — so a `left_control`
    *    written onto one books nothing while reading as answered. The same gate
    *    is what keeps `paired` and `internal` answers out of a bulk write, since
@@ -1872,9 +1872,10 @@ export class TransferReviewService {
    * **It stamps every row as the caller's own answer**, through the same two
    * columns `resolve` writes and with the same `'user'` source. That is the
    * entire reason this exists as a service method rather than as something an
-   * operator runs by hand: on 2026-08-14 a raw `UPDATE` answered 555 transfers
-   * in twenty-nine minutes and set neither column, and four days later 56.4%
-   * of production's answers still cannot be attributed to anybody. A bulk apply
+   * operator runs by hand: on 2026-08-14 a raw `UPDATE` answered a whole
+   * backlog of transfers in under half an hour and set neither column, and
+   * days later most of production's answers still cannot be attributed to
+   * anybody. A bulk apply
    * that wrote without attribution would not be a convenience — it would be
    * that incident with a button on it.
    *
@@ -2174,12 +2175,12 @@ export class TransferReviewService {
    * undo at all — not for the user, not for a repair, not for anything. The
    * queue could be corrected and the matcher could not.
    *
-   * The four transfers that made this necessary: `0x1414` sent 1,000 USDC to
-   * `0x9d8a` and, minutes later, `0x9d8a` sent 1,000 USDC to a stranger. Same
-   * token, ±1%, inside thirty minutes — so the matcher paired the ARRIVAL with
-   * the unrelated DEPARTURE, both legs landing on one holding. The genuine
-   * pairing, an arrival matched to mgrin's own outflow on the same transaction
-   * hash, could then never be recorded, because `claimInflow` will not take an
+   * The transfers that made this necessary: one own wallet sent USDC to another
+   * own wallet and, minutes later, that one sent the same amount to a stranger.
+   * Same token, ±1%, inside thirty minutes — so the matcher paired the ARRIVAL
+   * with the unrelated DEPARTURE, both legs landing on one holding. The genuine
+   * pairing, an arrival matched to the owner's own outflow on the same
+   * transaction hash, could then never be recorded, because `claimInflow` will not take an
    * inflow that already carries a group id.
    *
    * Two refusals rather than one, because they mean different things:
@@ -2502,13 +2503,12 @@ export class TransferReviewService {
    * registered as their own — the SC-350 invariant, read over the WHOLE table
    * rather than over the answers anyone signed (SC-365).
    *
-   * SC-350 corrected ten of these and enforced nothing: it joined `user_wallets`
-   * against mgrin's 88 *stamped* answers, so a `left_control` row carrying no
-   * `transfer_review_source` was never in the population. One was, and survived
-   * — 83.985269 USDC that left `0x0158…9630` for `0x1414…1E49` on 2022-08-25,
-   * both addresses in his own `user_wallets`. It is unattributed, i.e. it came
-   * from the raw `UPDATE` of 2026-08-14 (SC-302), and 56.4% of production's
-   * answers are. **A repair scoped to the answers with provenance leaves the
+   * SC-350 corrected a handful of these and enforced nothing: it joined
+   * `user_wallets` against the *stamped* answers only, so a `left_control` row
+   * carrying no `transfer_review_source` was never in the population. One was,
+   * and survived — a USDC outflow between two addresses in the same owner's
+   * `user_wallets`. It is unattributed, i.e. it came from the raw `UPDATE` of
+   * 2026-08-14 (SC-302), and most of production's answers are. **A repair scoped to the answers with provenance leaves the
    * majority of the table unchecked**, which is why this predicate deliberately
    * does not read `transfer_review_source` at all.
    *
@@ -2601,7 +2601,7 @@ export class TransferReviewService {
    * Lowercased on both sides because EVM addresses travel in EIP-55 mixed case
    * and the two sides come from different places: `user_wallets` holds what the
    * user pasted when they added the wallet, and the counterparty comes out of a
-   * chain payload. `0x9d8aE06a…14aB` and `0x9d8ae06a…14ab` are one address, and
+   * chain payload. `0xc0ffE06a…14aB` and `0xc0ffe06a…14ab` are one address, and
    * a case-sensitive check would have gone on reporting "not yours" about
    * exactly the wallets this is for.
    *

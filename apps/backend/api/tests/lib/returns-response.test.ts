@@ -6,9 +6,9 @@ import { withoutPeriodSeries } from '../../src/lib/returns-response';
  * SC-471 — the sub-period series is trimmed from the WIRE, never from the
  * computation.
  *
- * `portfolio.getReturns` sent one entry per measured day on every call: 491
- * of them over `all` on the account with real history, 51 KB of a 91 KB
- * response, for a screen that prints two numbers. The series itself has to
+ * `portfolio.getReturns` sent one entry per measured day on every call: one
+ * per day of history over `all` on an account with real history, and most of
+ * the response by size, for a screen that prints two numbers. The series itself has to
  * survive — SC-458 attributes FX per sub-period and SC-464 chains a benchmark
  * over the same boundaries, and neither can be re-derived from the scalar.
  *

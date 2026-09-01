@@ -144,8 +144,8 @@ export const tokens = pgTable(
      *
      * NULL means no authority answered, and that is a first-class state rather
      * than a gap. It was `real notNull default 2` until SC-544, and the default
-     * is what made a guess indistinguishable from a fact: 20 of 251 production
-     * rows carried a number no source had ever produced. `integer` because it
+     * is what made a guess indistinguishable from a fact: a minority of
+     * production rows carried a number no source had ever produced. `integer` because it
      * is a count of digits — `decimals()` returns a uint8.
      *
      * NULL is the CORRECT answer for an equity, not a cautious one: an equity

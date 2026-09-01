@@ -119,7 +119,7 @@ export function AnsweredTransferList({ items, query, onSearch }: AnsweredTransfe
     // on a different key than the cursor does is how a paginated list starts
     // lying: "Load more" then inserts the next page into the middle, and the
     // rows the reader came for sit at the bottom of page one. Measured — before
-    // this line the two answered rows landed at positions 24 and 25 of 25.
+    // this line the answered rows landed at the very bottom of page one.
     defaultSort: { field: 'answered', direction: 'desc' },
     renderRow: (item) => ({
       label: `${item.quantity} ${item.tokenSymbol}`,

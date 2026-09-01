@@ -482,13 +482,13 @@ function WithdrawnAnswerNotice({ item }: { item: PendingTransferReview }) {
  * "That address is one of yours" — the sentence the address was standing in for
  * (SC-350).
  *
- * On 2026-08-17 mgrin answered ten transfers `left_control` in four minutes,
- * booking 6,500 USDT and 4,000 USDC of disposals on money that moved between two
- * of his own wallets. Every row already showed the destination: SC-346 had
- * shipped it forty-four minutes earlier, linked to Etherscan. It showed
- * `0x9d8ae06a94c5592f57812e0f045438602a7e14ab`, and he had registered that wallet
- * himself. A 42-character hex string is not a thing a person recognises, and
- * `left_control` is the one answer that books a disposal.
+ * On 2026-08-17 an owner answered a run of transfers `left_control` in a few
+ * minutes, booking stablecoin disposals on money that had moved between two of
+ * their own wallets. Every row already showed the destination: SC-346 had
+ * shipped it forty-four minutes earlier, linked to Etherscan. It showed a raw
+ * address they had registered themselves. A 42-character hex string is not a
+ * thing a person recognises, and `left_control` is the one answer that books a
+ * disposal.
  *
  * `user_wallets` held the answer the entire time and nothing joined it.
  *

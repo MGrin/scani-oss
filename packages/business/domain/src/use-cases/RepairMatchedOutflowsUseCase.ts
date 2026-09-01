@@ -19,10 +19,10 @@ const CANDIDATE_WINDOW_MS = 2 * 60 * 60 * 1000;
 /**
  * How far out an arrival is worth ACTING on.
  *
- * Deliberately 2% where the matcher uses 1%. Two of production's pairs arrive
- * short by a fixed gas cost rather than a percentage — ~0.008 ETH, which is
- * 0.77% of 1.04 and 1.43% of 0.5 — so a 1% bound admits one of a matched pair
- * of identical events and refuses the other. The widening is safe only because
+ * Deliberately 2% where the matcher uses 1%. Some of production's pairs arrive
+ * short by a fixed gas cost rather than a percentage, and a fixed cost is a
+ * different percentage of every transfer it is charged on — so a 1% bound
+ * admits one of a matched pair of identical events and refuses the other. The widening is safe only because
  * of what it sits on top of: one candidate, same asset, same direction, inside
  * the matcher's own 30-minute window.
  */

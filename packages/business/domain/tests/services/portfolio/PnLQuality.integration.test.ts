@@ -295,8 +295,8 @@ describe('PnL quality signals, end to end', () => {
   test('a holding with no coverage row is not flagged as truncated', async () => {
     await withTestDb(async (tx) => {
       const f = await setupFixture(tx);
-      // ~22% of production holdings have no `holding_coverage` row: manual
-      // entries, older file imports. Grading those `partial` would flag more
+      // A sizeable minority of production holdings have no `holding_coverage`
+      // row: manual entries, older file imports. Grading those `partial` would flag more
       // holdings than the deliberate `false` does and bury the real signal.
       await tx
         .delete(schema.holdingCoverage)

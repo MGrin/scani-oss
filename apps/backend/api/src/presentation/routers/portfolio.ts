@@ -306,9 +306,9 @@ const ReturnsInput = z.object({
    * attributes FX over and SC-464 chains a benchmark across, and losing it
    * would cost those tickets a re-derivation they cannot do from the scalar.
    * What they do not have to do is reach a browser that only prints two
-   * numbers. Measured on the account with real history, an `all` response is
-   * 93,505 bytes and 744 of them are everything but `periods` — the series is
-   * 99.2% of what was sent on every call, for nothing on screen (SC-471).
+   * numbers. Measured on an account with real history, `periods` is very
+   * nearly the whole of an `all` response — sent on every call, for nothing on
+   * screen (SC-471).
    *
    * One flag for both, because they share their boundaries: a client given
    * one series and not the other could not line them up. Off by default, and

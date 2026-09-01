@@ -205,7 +205,7 @@ describe('findStaleSyncTargets', () => {
     // not reachable: IntegrationImportService creates the account row before
     // skipZeroBalances is consulted, and an import discovering no accounts
     // throws. What actually lands here is a credential whose accounts were
-    // deleted — unreachable by the sync forever, and silent for eight weeks
+    // deleted — unreachable by the sync forever, and silent for a long time
     // in production because of this guard.
     await withTestDb(async (tx) => {
       const user = await makeUser(tx);

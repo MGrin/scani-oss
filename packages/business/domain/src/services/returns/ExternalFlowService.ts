@@ -128,10 +128,11 @@ export interface ExternalFlowSeries {
  * One `token_prices` PREFETCH for the whole batch, not one lookup per flow.
  *
  * Per-flow was the original shape, on the reasoning that a few hundred indexed
- * reads is cheap. Measured against production it was not: on the account with
- * real history, 537 sequential lookups were 51.2 of a 53.1-second `ytd`
- * request and 792 were 70.5 of 71.2 seconds over `all` — 96-99% of the whole
- * call, against 0.02s of arithmetic and 0.5s for the daily series (SC-471).
+ * reads is cheap. Measured against production it was not: on an account with
+ * real history the sequential lookups were nearly the whole of a `ytd` request
+ * lasting most of a minute, and the same again over `all` — almost all of the
+ * call, against a fraction of a second of arithmetic and of the daily series
+ * (SC-471).
  * Sequential round-trips are the entire cost, so collapsing them into one
  * query is the entire fix.
  *

@@ -82,9 +82,9 @@ export const MANUAL_EDIT_CORRECTION_SOURCE = 'user-balance-correction';
  * offers a hand-entered deposit as an arrival, and a reader who picks one is
  * telling us something the matcher could not know.
  *
- * Measured on production 2026-08-26 before the fix: 17 of 670 inflows are
- * person-authored and 0 groups had ever been damaged, against a control of 29
- * matcher-made groups. Prevention, with no repair owed.
+ * Measured on production 2026-08-26 before the fix: a small minority of
+ * inflows are person-authored and 0 groups had ever been damaged, against a
+ * non-empty control of matcher-made groups. Prevention, with no repair owed.
  */
 export const PERSON_AUTHORED_SOURCES = [USER_ENTERED_SOURCE, MANUAL_EDIT_FLOW_SOURCE] as const;
 

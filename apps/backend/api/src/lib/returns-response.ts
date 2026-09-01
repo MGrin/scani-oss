@@ -6,10 +6,10 @@ import type { ReturnsResult } from '@scani/domain/services';
  * What a returns response owes the wire (SC-471, extended by SC-458).
  *
  * `TwrResult.periods` carries one entry per measured day, each with six
- * full-precision decimal strings. Over an `all` window on the account with
- * real history that is 491 entries: the response is 93,505 bytes and 744 of
- * them are everything else, so the series is 99.2% of what was sent on every
- * call for two numbers on a screen.
+ * full-precision decimal strings. Over an `all` window on an account with
+ * real history that is one entry per day of history, and the series is very
+ * nearly the whole of what was sent on every call, for two numbers on a
+ * screen.
  *
  * `ReturnAttribution.periods` is the same series again, one entry per
  * sub-period with the asset and currency legs — so it would roughly double

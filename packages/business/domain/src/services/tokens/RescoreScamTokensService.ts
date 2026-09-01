@@ -95,12 +95,12 @@ export interface RescoreResult {
 }
 
 /**
- * One page. A version bump invalidates every CRYPTO token at once — 217 of
- * them in production today, out of 371 total. The distinction is the whole
- * ballgame: an earlier draft of this comment said "371", which reads as though
- * the population were every token, and the query that matched that reading
- * would have scored 136 fiat and 18 stock rows the function has never been
- * asked about. `AMAZON.COM INC` returns 0.50 under a heuristic built for
+ * One page. A version bump invalidates every CRYPTO token at once — a
+ * majority of the production `tokens` table, but not all of it. The
+ * distinction is the whole ballgame: an earlier draft of this comment quoted
+ * the WHOLE table's size, which reads as though the population were every
+ * token, and the query that matched that reading would have scored the fiat
+ * and stock rows the function has never been asked about. `AMAZON.COM INC` returns 0.50 under a heuristic built for
  * memecoins.
  */
 export const RESCORE_BATCH_SIZE = 500;

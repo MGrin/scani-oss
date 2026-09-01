@@ -17,11 +17,11 @@
  *     never mentioned at all — which no balance chain can catch,
  *     because the chain of an asset we never see does not exist.
  *
- * SC-392 measured both on production. mgrin's Kraken key returns 492
- * entries across XETH / ZUSD / XETH.F / BABY / XXBT / XXBT.F whose
- * balance chains reconcile exactly — and 34 of 77 convert refids plus
- * all 6 trade refids are missing their counter leg, ~$49k of notional
- * whose other side is USDC. Kraken has never returned a USDC entry
+ * SC-392 measured both on production. A live Kraken key returns a
+ * ledger whose per-asset balance chains reconcile exactly — and a large
+ * fraction of its convert refids, plus every one of its trade refids,
+ * are missing their counter leg, a material amount of notional whose
+ * other side is USDC. Kraken has never returned a USDC entry
  * for that key, and scani claimed `hasCompleteTxHistory: true` over
  * it, which `CostBasisService` reads as a `complete` cost basis.
  *

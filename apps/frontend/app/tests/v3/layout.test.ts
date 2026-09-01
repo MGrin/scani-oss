@@ -65,9 +65,9 @@ describe('v3 shell containment', () => {
    * unpositioned one that merely has `overflow`. With nothing positioned
    * between a screen-reader label and the document, every `sr-only` span in a
    * long list resolved against the initial containing block and grew the
-   * *document* rather than the scroll region: measured on production at
-   * 1200×874 with a long holdings list, `documentElement.scrollHeight` ran to
-   * several times the `body` height, so the sidebar scrolled away and bare
+   * *document* rather than the scroll region: measured on a desktop viewport
+   * with a long holdings list, `documentElement.scrollHeight` ran to several
+   * times the `body` height, so the sidebar scrolled away and bare
    * `<body>` showed under it.
    *
    * `overscroll-none` is the second half — it keeps a rubber-band at either

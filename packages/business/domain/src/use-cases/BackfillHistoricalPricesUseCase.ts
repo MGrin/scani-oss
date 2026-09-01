@@ -365,7 +365,7 @@ export class BackfillHistoricalPricesUseCase {
       // history predated the fixed 5-year window — a bug with a start
       // date rather than a trigger, and one nobody would have connected
       // to the lookback constant when it fired. As of 2026-08-15 the
-      // floor sat 21 days away from cutting the oldest receipt in
+      // floor sat within weeks of cutting the oldest receipt in
       // production (SC-171). `sinceDay` now applies only to a token with
       // neither a coverage row nor a transaction to read (SC-229).
       let tokenStart = sinceDay.getTime();

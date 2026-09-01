@@ -253,7 +253,7 @@ describe('cross-currency paired transfers (SC-506)', () => {
 
     // BTC has no route to GBP here, so the deposit opens an unpriced zero-cost
     // lot. Quantity is the whole of what this asserts, and it is the half of
-    // the defect that is live in production: 10 of 69 transfer groups drift.
+    // the defect that is live in production: a minority of transfer groups drift.
     const out = await svc.walkComponent(
       undefined,
       ['kraken', 'ledger'],

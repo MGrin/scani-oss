@@ -13,7 +13,7 @@ import { ReviewQueues } from '../components/review/ReviewQueues';
  * reason: counting client-side over `jobs.listMine` looks equivalent and is
  * not — that query returns the 50 newest, so a pending review older than the
  * last 50 jobs is invisible to it. Measured against real data the badge read 0
- * while the feed held 3. v3's home screen already reads the same hook, so the
+ * while the feed held several. v3's home screen already reads the same hook, so the
  * badge and this page cannot disagree.
  *
  * This is the destination the nav entry and its badge have always pointed at,

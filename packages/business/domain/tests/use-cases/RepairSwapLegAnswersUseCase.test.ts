@@ -27,7 +27,7 @@ import { TransferReviewService } from '@scani/domain/services/TransferReviewServ
 import { RepairSwapLegAnswersUseCase } from '@scani/domain/use-cases/RepairSwapLegAnswersUseCase';
 import { eq } from 'drizzle-orm';
 
-const WALLET = '0x01583d152e3225519d211b1f576d959f70ef9630';
+const WALLET = '0xa11ce0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7';
 const ZERO_EX = '0xdef1c0ded9bec7f1a1670819833240f027b25eff';
 
 interface Fixture {

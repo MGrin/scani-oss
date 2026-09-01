@@ -373,8 +373,8 @@ describe('SolanaProvider', () => {
 
   test('fetchTransactions: a transaction with no accountData emits nothing', async () => {
     // Legs are what this stopped trusting, so a payload carrying only
-    // legs has nothing left to say. None of the 312 production
-    // transactions was shaped this way.
+    // legs has nothing left to say. No production transaction was
+    // shaped this way.
     const p = helius();
     const restore = heliusOnce([
       {

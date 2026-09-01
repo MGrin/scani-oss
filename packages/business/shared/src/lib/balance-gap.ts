@@ -119,18 +119,17 @@ export function isLedgerWritingAnswer(answer: BalanceGapAnswer): answer is Manua
  * account with the rest spread thinly — which is why a per-account page was
  * mistaken for the threshold having stopped working.
  *
- * | floor | gaps | share of the money |
- * |---|---|---|
- * | ≥ 1000 | 25 | 82.9% |
- * | **≥ 250** | **62** | **97.2%** |
- * | ≥ 50 | 89 | 99.4% |
- * | any | 379 | 100% |
+ * The share of the money captured rises steeply to a floor of 250 and then
+ * flattens: raising it to 1000 drops a material slice of the value, while
+ * lowering it to 50 buys a fraction of a percent more and roughly half again
+ * as many questions.
  *
- * 250 is where the queue is still a queue — 62 items across the whole product,
- * 37 of them the heaviest owner's, arriving at roughly 12 a month — while
- * leaving 2.8% of the money unasked about. The 290 gaps below 50 carry 807.44
- * USD between them; asking about those is what turns a queue into a wall, and
- * a wall is abandoned, which surfaces none of the 97.2%.
+ * 250 is where the queue is still a queue — a manageable number of items across
+ * the whole product, arriving at a rate an owner can keep up with — while
+ * leaving only a sliver of the money unasked about. The long tail of gaps below
+ * 50 carries very little between them; asking about those is what turns a queue
+ * into a wall, and a wall is abandoned, which surfaces none of the value the
+ * threshold exists to reach.
  */
 export const BALANCE_GAP_MIN_BASE_VALUE = 250;
 

@@ -10,11 +10,12 @@
  *
  * - `user_confirmed` — a human was shown this position or authored it.
  * - `auto_discovered` — a balance sync created it and nobody was asked. A
- *   claim about a machine, never about the token: of the 17 production rows
- *   migration 0042 stamps, 15 are airdropped junk and 2 are legitimate dust
- *   receipts (SOL, USDT). A signal to show, never a verdict to act on.
+ *   claim about a machine, never about the token: of the production rows
+ *   migration 0042 stamps, nearly all are airdropped junk and a couple are
+ *   legitimate dust receipts (SOL, USDT). A signal to show, never a verdict to
+ *   act on.
  * - `unattributed` — we cannot say. Every row that predates the column, minus
- *   the 17 the backfill could prove. Never evidence in either direction.
+ *   the ones the backfill could prove. Never evidence in either direction.
  *
  * So a consumer must test for `auto_discovered` positively:
  * `arrival !== 'user_confirmed'` is true of 69 legacy rows that are mostly

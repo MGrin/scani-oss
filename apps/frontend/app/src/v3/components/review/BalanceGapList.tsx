@@ -12,27 +12,26 @@ import { BalanceGapAnswer } from './BalanceGapAnswer';
  * A card per gap rather than a `V3DataView`, and the reason is the answer
  * control: this list is not something you sort and filter, it is a short
  * sequence of questions each carrying its own three-way control and a date
- * field. The queue is 37 rows on the heaviest production account and it
- * shrinks as it is worked.
+ * field. The queue is a few dozen rows on the heaviest production account and
+ * it shrinks as it is worked.
  *
  * ## The line that says what was left out
  *
- * `examined` and `suppressed` are printed, not logged. A queue of 33 drawn
- * from 258 candidates is trustworthy in a way that a queue of 33 drawn from
- * nowhere in particular is not — and the specific failure this guards against
+ * `examined` and `suppressed` are printed, not logged. A queue drawn from a
+ * stated number of candidates is trustworthy in a way that the same queue drawn
+ * from nowhere in particular is not — and the specific failure this guards against
  * is a query that silently misses rows, which is indistinguishable from a
  * suppression rule doing its job unless the counts are on screen. The reader
  * is also the only person who knows whether the thing that was suppressed
  * mattered.
  *
  * **These counts are PER USER, and mistaking that for the product-wide figure
- * cost a ticket (SC-576).** The threshold note in `@scani/shared` records
- * `62 gaps out of 379` at ≥250 USD, and that table is *across every user*.
- * Production showing `33 of 258` was read as the queue having grown past what
- * SC-501 measured; measured on production 2026-08-22 the four users answer
- * 258 + 60 + 60 + 1 = **379**, so the page was rendering one user's share of
- * exactly the population that was designed for. Nothing about the threshold
- * had moved. Before proposing a number here, check which population the
+ * cost a ticket (SC-576).** The threshold note in `@scani/shared` records the
+ * gap population at ≥250 USD *across every user*. A per-account count was read
+ * as the queue having grown past what SC-501 measured; measured on production
+ * 2026-08-22 the per-user counts sum to exactly that product-wide population,
+ * so the page was rendering one user's share of what the threshold was designed
+ * for. Nothing about the threshold had moved. Before proposing a number here, check which population the
  * number you are comparing against was drawn from.
  */
 

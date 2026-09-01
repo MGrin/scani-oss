@@ -21,8 +21,8 @@ import { BalanceGapList } from '../../../src/v3/components/review/BalanceGapList
  * SC-501 shipped this surface and it was browser-verified — on a desktop.
  * Nobody opened it at 393px, and what production got was four answer chips
  * collapsed into the single unreadable run `Money movFigure was wrongIt grew
- * I don't know`, above a sentence printing `10906.066301185 →
- * 232.330106461 USD` beside a delta the same card had formatted correctly.
+ * I don't know`, above a sentence printing a pair of full-precision unformatted
+ * quantities beside a delta the same card had formatted correctly.
  *
  * **This file cannot measure a layout** — `renderToStaticMarkup` has no box
  * model — so it does not pretend to. It guards the two decisions that made

@@ -14,8 +14,8 @@
 -- also what a merely stale PRICE does. Two different faults, one indicator,
 -- no magnitude.
 --
--- On production this is the difference between a holding anchored 54 seconds
--- back and one anchored 71 days back, presented identically (SC-245).
+-- On production this is the difference between a holding anchored seconds back
+-- and one anchored months back, presented identically (SC-245).
 --
 -- **Both columns are NULLABLE, and that is the point.** The obvious
 -- declaration is `integer NOT NULL DEFAULT 0`, which is what

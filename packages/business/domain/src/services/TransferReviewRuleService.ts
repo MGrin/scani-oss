@@ -21,10 +21,10 @@ import { TransferReviewService } from './TransferReviewService';
  *
  * `gone` is the same union member the queue uses and means the same thing —
  * "not yours, not an outflow, or not a row anybody could have been looking
- * at". `no_counterparty` is separate because it is not a race: 202 of 470
- * outflows in production name no destination at any layer (88 Kraken, 87
- * Solana, 14 Bybit, 13 IBKR, 5 Airwallex — a Kraken withdrawal record simply
- * does not say where the money went, and Solana rows carry no payload at all).
+ * at". `no_counterparty` is separate because it is not a race: a large share
+ * of outflows in production name no destination at any layer, across every
+ * chain and exchange source we import — a Kraken withdrawal record simply
+ * does not say where the money went, and Solana rows carry no payload at all.
  * The reader needs to be told that this transfer cannot have a rule, rather
  * than that it vanished.
  */

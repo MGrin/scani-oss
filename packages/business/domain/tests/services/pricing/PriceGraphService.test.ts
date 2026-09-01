@@ -352,7 +352,7 @@ describe('PriceGraphService.convert — staleness', () => {
 });
 
 // SC-315. A hub is a `tokens` row and a symbol cannot address one:
-// `USDT` has two rows in production, both crypto, and `findBySymbol`
+// `USDT` has more than one row in production, all crypto, and `findBySymbol`
 // tie-breaks `asc(isScamProbability), desc(createdAt)`. The row that
 // carries the price edges is the canonical un-segmented one (migration
 // 0007 merged the chain-spread duplicates into it); the row the tiebreak

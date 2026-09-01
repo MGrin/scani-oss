@@ -191,26 +191,26 @@ describe('KrakenProvider', () => {
 // subtype alone, so an operation that does move something survives it.
 describe('KrakenProvider — autoallocation', () => {
   test('a refid whose autoallocation entries cancel reaches the ledger as nothing', async () => {
-    // Read off production refid ELC3MXJ-GHEJB-N6WF7C, holding 4e90922e
-    // (Kraken "Main"), 2025-02-23 — INCLUDING the asset codes. The two
-    // legs are `XETH.F` and `XETH`, never one code twice: all 22 pairs
-    // in production carry two distinct raw codes, and a fixture that
-    // put both on `XETH` is what let the suppression ship inert.
+    // Shaped like a real production earn/spot pair — INCLUDING the asset
+    // codes; the identifiers and quantities are synthetic. The two legs
+    // are `XETH.F` and `XETH`, never one code twice: every such pair in
+    // production carries two distinct raw codes, and a fixture that put
+    // both on `XETH` is what let the suppression ship inert.
     const p = new KrakenProvider(
       stubApi({
         ledgers: {
           ledger: {
-            'LVMPIT-LXAOV-O5VCSQ': ledgerEntry({
-              refid: 'ELC3MXJ-GHEJB-N6WF7C',
+            'LEARN1-AAAAA-000001': ledgerEntry({
+              refid: 'REARN01-AAAAA-0000001',
               subtype: 'autoallocation',
               asset: 'XETH.F',
-              amount: '0.1433234990',
+              amount: '0.2500000000',
             }),
-            'LJVGEB-2B5KK-O4IF6H': ledgerEntry({
-              refid: 'ELC3MXJ-GHEJB-N6WF7C',
+            'LEARN2-BBBBB-000002': ledgerEntry({
+              refid: 'REARN01-AAAAA-0000001',
               subtype: 'autoallocation',
               asset: 'XETH',
-              amount: '-0.1433234990',
+              amount: '-0.2500000000',
             }),
           },
           count: 2,
@@ -221,25 +221,24 @@ describe('KrakenProvider — autoallocation', () => {
   });
 
   test('the earn-to-spot direction cancels too, through the XXBT alias', async () => {
-    // Production refid ELWRKNK-P4VIK-2C7HOA, 2025-11-17 — the most
-    // recent pair, and the opposite direction: the `.F` earn leg is
-    // negative. 6 of the 22 pairs are BTC, whose codes reach one
-    // symbol via the suffix strip, the 'X' strip AND the XBT alias.
+    // The opposite direction: the `.F` earn leg is negative. Some of
+    // these pairs are BTC, whose codes reach one symbol via the suffix
+    // strip, the 'X' strip AND the XBT alias.
     const p = new KrakenProvider(
       stubApi({
         ledgers: {
           ledger: {
-            'LSH5UF-I67OB-LDNFD2': ledgerEntry({
-              refid: 'ELWRKNK-P4VIK-2C7HOA',
+            'LEARN3-CCCCC-000003': ledgerEntry({
+              refid: 'REARN02-BBBBB-0000002',
               subtype: 'autoallocation',
               asset: 'XXBT',
-              amount: '0.1015321700',
+              amount: '0.3500000000',
             }),
-            'LMMWFY-DDTUV-42K6SG': ledgerEntry({
-              refid: 'ELWRKNK-P4VIK-2C7HOA',
+            'LEARN4-DDDDD-000004': ledgerEntry({
+              refid: 'REARN02-BBBBB-0000002',
               subtype: 'autoallocation',
               asset: 'XXBT.F',
-              amount: '-0.1015321700',
+              amount: '-0.3500000000',
             }),
           },
           count: 2,
@@ -261,13 +260,13 @@ describe('KrakenProvider — autoallocation', () => {
               refid: 'CROSS-ASSET-0004',
               subtype: 'autoallocation',
               asset: 'XETH.F',
-              amount: '0.1433234990',
+              amount: '0.2500000000',
             }),
             'LHHHHH-88888-HHHHHH': ledgerEntry({
               refid: 'CROSS-ASSET-0004',
               subtype: 'autoallocation',
               asset: 'XXBT',
-              amount: '-0.1433234990',
+              amount: '-0.2500000000',
             }),
           },
           count: 2,
@@ -325,14 +324,14 @@ describe('KrakenProvider — autoallocation', () => {
               type: 'deposit',
               subtype: undefined,
               asset: 'XETH.F',
-              amount: '0.1433234990',
+              amount: '0.2500000000',
             }),
             'LDDDDD-44444-DDDDDD': ledgerEntry({
               refid: 'PLAIN-REFID-0002',
               type: 'withdrawal',
               subtype: undefined,
               asset: 'XETH',
-              amount: '-0.1433234990',
+              amount: '-0.2500000000',
             }),
           },
           count: 2,
@@ -355,13 +354,13 @@ describe('KrakenProvider — autoallocation', () => {
               refid: 'FEE-REFID-0003',
               subtype: 'autoallocation',
               asset: 'XETH.F',
-              amount: '0.1433234990',
+              amount: '0.2500000000',
             }),
             'LFFFFF-66666-FFFFFF': ledgerEntry({
               refid: 'FEE-REFID-0003',
               subtype: 'autoallocation',
               asset: 'XETH',
-              amount: '-0.1433234990',
+              amount: '-0.2500000000',
               fee: '0.0000100000',
             }),
           },
@@ -391,11 +390,11 @@ describe('KrakenProvider — autoallocation', () => {
         amount: '1.0000000000',
       });
     }
-    firstPage['LVMPIT-LXAOV-O5VCSQ'] = ledgerEntry({
-      refid: 'ELC3MXJ-GHEJB-N6WF7C',
+    firstPage['LEARN1-AAAAA-000001'] = ledgerEntry({
+      refid: 'REARN01-AAAAA-0000001',
       subtype: 'autoallocation',
       asset: 'XETH.F',
-      amount: '0.1433234990',
+      amount: '0.2500000000',
     });
 
     const p = new KrakenProvider(
@@ -404,11 +403,11 @@ describe('KrakenProvider — autoallocation', () => {
           { ledger: firstPage, count: 51 },
           {
             ledger: {
-              'LJVGEB-2B5KK-O4IF6H': ledgerEntry({
-                refid: 'ELC3MXJ-GHEJB-N6WF7C',
+              'LEARN2-BBBBB-000002': ledgerEntry({
+                refid: 'REARN01-AAAAA-0000001',
                 subtype: 'autoallocation',
                 asset: 'XETH',
-                amount: '-0.1433234990',
+                amount: '-0.2500000000',
               }),
             },
             count: 51,
@@ -419,7 +418,7 @@ describe('KrakenProvider — autoallocation', () => {
 
     const events = await p.fetchTransactions(baseCtx as never);
     expect(events).toHaveLength(49);
-    expect(events.some((e) => e.externalId.startsWith('LVMPIT'))).toBe(false);
-    expect(events.some((e) => e.externalId.startsWith('LJVGEB'))).toBe(false);
+    expect(events.some((e) => e.externalId.startsWith('LEARN1'))).toBe(false);
+    expect(events.some((e) => e.externalId.startsWith('LEARN2'))).toBe(false);
   }, 15_000); // One real `PAGE_COOLDOWN_MS` sleep sits between the two pages.
 });
