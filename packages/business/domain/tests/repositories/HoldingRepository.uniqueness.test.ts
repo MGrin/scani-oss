@@ -28,15 +28,15 @@ async function scaffold(tx: Parameters<Parameters<typeof withTestDb>[0]>[0]) {
 }
 
 describe('holdings uniqueness on (account_id, token_id, external_id)', () => {
-  ***REMOVED***
-  ***REMOVED***
-  ***REMOVED***
-  ***REMOVED***
-  // forced a merge that loses ~137,000 RUB.
-  ***REMOVED***
+  // The shape a real bank account takes: one screenshot parse returns four
+  // lines, and a later upload moves each one by a different delta, one of them
+  // downwards. Four distinct products on one bank screen — a
+  // `NULLS NOT DISTINCT` key would have made them illegal and forced a merge
+  // that loses most of the balance. The balances below are synthetic.
+  test('permits the four independently-maintained manual rows one bank account holds', async () => {
     await withTestDb(async (tx) => {
       const { user, account, token } = await scaffold(tx);
-      ***REMOVED***
+      for (const balance of ['1000.10', '2000.20', '3000.30', '4000.40']) {
         await makeHolding(tx, {
           userId: user.id,
           accountId: account.id,

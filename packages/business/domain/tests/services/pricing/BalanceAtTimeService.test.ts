@@ -330,33 +330,34 @@ describe('BalanceAtTimeService.getBalance — the lower bound (SC-252)', () => {
 
 describe('BalanceAtTimeService.getBalance — interpolation across sparse observations', () => {
   test('THE DEFECT: ten weeks of unexplained drift used to land on one day', async () => {
-    ***REMOVED***
-    ***REMOVED***
-    ***REMOVED***
-    ***REMOVED***
-    ***REMOVED***
-    ***REMOVED***
+    // The real shape, exactly: a cash holding with two observations months
+    // apart and no transaction between them. Anchoring on "the observation at
+    // or after `at`" means the anchor rolls over the instant the earlier
+    // observation falls into the past, so the whole accumulated difference
+    // fell in a single day and a chained daily return read it as a
+    // double-digit percentage loss on cash — one sub-period carrying an
+    // entire year.
     const first = new Date('2026-05-17T15:07:54.662Z');
     const second = new Date('2026-07-27T23:47:01.714Z');
     const svc = makeService(
       [
-        ***REMOVED***
-        ***REMOVED***
+        { holdingId: HOLD, balance: '40000.85', observedAt: first },
+        { holdingId: HOLD, balance: '25000.58', observedAt: second },
       ],
       []
     );
 
     const dayAfter = await svc.getBalance(HOLD, new Date('2026-05-17T23:59:59.999Z'), undefined);
-    ***REMOVED***
+    // Under the cliff this read 25000.58 — the whole 71 days of drift on
     // the first day. It is now a few hours' worth.
-    ***REMOVED***
+    expect(Number(dayAfter.balance?.toString())).toBeGreaterThan(39900);
     expect(dayAfter.interpolated).toBe(true);
 
     // Halfway across the gap is halfway down.
     const midpoint = new Date((first.getTime() + second.getTime()) / 2);
     expect(
       Number((await svc.getBalance(HOLD, midpoint, undefined)).balance?.toString())
-    ***REMOVED***
+    ).toBeCloseTo((40000.85 + 25000.58) / 2, 6);
   });
 
   test('both measurements are reproduced exactly — only the space between them moves', async () => {
@@ -364,19 +365,19 @@ describe('BalanceAtTimeService.getBalance — interpolation across sparse observ
     const second = new Date('2026-07-27T23:47:01.714Z');
     const svc = makeService(
       [
-        ***REMOVED***
-        ***REMOVED***
+        { holdingId: HOLD, balance: '40000.85', observedAt: first },
+        { holdingId: HOLD, balance: '25000.58', observedAt: second },
       ],
       []
     );
 
     const atFirst = await svc.getBalance(HOLD, first, undefined);
-    ***REMOVED***
+    expect(atFirst.balance?.toString()).toBe('40000.85');
     // `at` sits ON an observation, so there is nothing to draw a line across.
     expect(atFirst.interpolated).toBe(false);
 
     const atSecond = await svc.getBalance(HOLD, second, undefined);
-    ***REMOVED***
+    expect(atSecond.balance?.toString()).toBe('25000.58');
     expect(atSecond.interpolated).toBe(false);
   });
 
@@ -427,9 +428,9 @@ describe('BalanceAtTimeService.getBalance — interpolation across sparse observ
     // from the first observation stands — which is what makes the opening
     // balance visible at all.
     const first = new Date('2026-05-17T15:07:54.662Z');
-    ***REMOVED***
+    const svc = makeService([{ holdingId: HOLD, balance: '40000.85', observedAt: first }], []);
     const r = await svc.getBalance(HOLD, new Date('2026-01-01T00:00:00Z'), undefined);
-    ***REMOVED***
+    expect(r.balance?.toString()).toBe('40000.85');
     expect(r.interpolated).toBe(false);
   });
 });

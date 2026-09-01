@@ -227,8 +227,8 @@ export class HoldingRepository extends BaseRepository<Holding, NewHolding> {
    * or null its `externalId`, and the next run resolves to the manual row and
    * re-ingests the entire history onto it, because `holding_tx_dedup` is
    * UNIQUE per HOLDING and has nothing to dedupe against there. That is
-   ***REMOVED***
-   ***REMOVED***
+   * SC-239: one account's whole event history on both rows, every unit of
+   * its volume counted twice, unnoticed for months. Reading `limit(2)` costs one extra row and turns the
    * moment the hazard becomes live into a log line naming both candidates.
    * Ambiguity is not an error — production holds legitimately split positions
    * (SC-325) — so it warns and proceeds with the deterministic winner.
