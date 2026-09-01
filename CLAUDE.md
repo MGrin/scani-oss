@@ -612,6 +612,67 @@ compose by hand, `export $(bun scripts/dev-stack.ts env | xargs)` first.
 `bun dev:stack:down` tears down either mode; it does not need to know which
 one you started.
 
+### Tear the stack down BEFORE you delete the checkout (SC-803)
+
+**The order is the reverse of the natural one, and getting it wrong strands the
+stack permanently.** A checkout's stack is isolated by its compose PROJECT NAME,
+derived from the checkout's absolute path (SC-491). Delete the directory and the
+name can no longer be produced, so `bun dev:stack:down` — which has to run from
+the directory it is tearing down — is unavailable exactly when it is needed.
+
+**The by-hand attempt is worse than unavailable, because it SUCCEEDS.** Measured
+2026-09-02, and re-measured on a stack stood up for the purpose:
+
+```
+cd <checkout> && docker compose down --volumes --remove-orphans
+  ->  rc=0, ZERO bytes of output, and all four containers still running
+```
+
+`docker-compose.yml` names no containers, so a bare `down` takes the project
+from the DIRECTORY LEAF — `scani` in every linked worktree of this repository, a
+project that holds nothing. It is a well-formed no-op that reports success: the
+removal-side twin of the `up` adoption hazard above.
+
+So: **`bun dev:stack:down` first, `git worktree remove` second.**
+
+**If you already did it the other way round, `bun run dev:stacks:reap`** is the
+recovery, and it needs no compose file — `docker compose -p <project> down` finds
+containers, networks and volumes by their labels, so it still works after the
+directory is gone.
+
+```bash
+bun run dev:stacks              # report only; stops and removes nothing
+bun run dev:stacks:reap         # DRY RUN — says what it would take, touches nothing
+bun run dev:stacks:reap -- --apply
+bun run dev:stacks:reap -- --project <name> --apply    # one project, same guard
+```
+
+**Dry run is the default and `--apply` is the only way past it.** What it removes
+are per-checkout dev volumes — a Postgres, a Redis, a MinIO — which a later
+`bun dev:stack` recreates and migrates from scratch. But "recreatable" is a claim
+about the SCHEMA, not about whatever somebody put in one, and the person who
+would know went with the checkout.
+
+**Every way of not knowing REFUSES rather than reclaiming**, and it exits with a
+distinct code so a caller can tell them apart:
+
+| exit | what happened |
+|---|---|
+| 3 | docker could not be asked. An empty list is what a denied socket returns AND what a clean machine returns, so this refuses rather than picking one |
+| 4 | `git worktree list` could not be answered, so no project can be attributed. This is the one that would do damage: the fallback is "this checkout is the only one", which would put every OTHER live stack outside the live set |
+| 5 | `--project` named something that is not reclaimable, and says which state it is in |
+| 1 | a teardown was attempted and could not be verified as finished |
+
+A project is reclaimed only when its name is a derivation no live checkout
+produces. A live checkout whose stack is merely DOWN is never reclaimable —
+somebody may return to it — and neither is a project whose name is not a
+derivation at all (the bare `scani` a hand-rolled `docker compose up` produces),
+because it may be serving the primary checkout right now.
+
+**In the agent sandbox the docker socket is denied and the denial reads as an
+EMPTY LIST**, so this is exit 3 rather than a false "nothing to reclaim". Run it
+unsandboxed.
+
 ### Mail in dev
 
 All auth emails (magic-link, OTP, verification) land in Mailpit at
