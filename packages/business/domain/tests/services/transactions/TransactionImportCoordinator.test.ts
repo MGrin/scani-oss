@@ -282,9 +282,10 @@ describe("TransactionImportCoordinator — the run's oldest event is not a holdi
 // institution_id), so a user with three Ethereum wallets has ONE Ethereum
 // credential holding ONE address. Resolving a wallet import's address from
 // there gave every Ethereum account the same address's history: in
-***REMOVED***
-***REMOVED***
-***REMOVED***
+// production one wallet's on-chain events were copied across every Ethereum
+// account, more than doubling the row count, and most of the surplus was a
+// copy of a transfer the account it sat on never made. The address has to
+// come from the account.
 describe('TransactionImportCoordinator — a wallet import reads its own account address', () => {
   const ACCOUNT = '00000000-0000-4000-8000-0000000000aa';
 

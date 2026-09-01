@@ -181,8 +181,8 @@ export class OpeningBalanceReconciliationService {
     // that anchors every earlier date, so `BalanceAtTimeService` — which
     // walks back only `(at, anchor]` — never subtracted it. The balance was
     // projected flat across all prior history AND booked as a fresh external
-    ***REMOVED***
-    ***REMOVED***
+    // contribution on the opening day: the same money counted twice on one
+    // production account, for a double-digit negative single-day return.
     //
     // Placing it before the first observation makes the walk-back subtract it,
     // so the pre-history balance is 0 and the value series steps up on the
@@ -219,10 +219,10 @@ export class OpeningBalanceReconciliationService {
     // the quantity says the user held all of that at the opening moment, and
     // for an account whose ledger is incomplete AFTER the opening that is
     // false: every untracked inflow since gets swept in and retro-dated to a
-    ***REMOVED***
-    ***REMOVED***
-    ***REMOVED***
-    ***REMOVED***
+    // moment it did not exist. Production held a Wise savings opening at
+    // roughly twice the balance observed that same afternoon — months of
+    // later arrivals swept in and booked as if they had always been there
+    // (SC-481).
     //
     // The balance we actually OBSERVED at the opening is the honest claim, so
     // walk the first observation back to the opening through the transactions
