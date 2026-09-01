@@ -687,7 +687,7 @@ export class CostBasisService {
    *     paired inflow inherits them, cost and acquisition date intact. This
    *     walker popped them, DISCARDED them, and minted a fresh lot at the
    *     transfer date's market value — destroying cost basis on a move that
-   ***REMOVED***
+   *     never happened. Most production transfer groups are that shape.
    *   - lots were popped by array position (`lots.shift()`) rather than by
    *     acquisition date. Equivalent while the array stays date-sorted, which
    *     it does until an inherited lot re-enters carrying an older date — i.e.
@@ -757,8 +757,8 @@ export class CostBasisService {
    * aggregation additive.
    *
    * A component of ONE holding is a legitimate and common input, not a
-   ***REMOVED***
-   ***REMOVED***
+   * degenerate one: most production transfer groups have both legs on the
+   * same holding. It is also the same walk `walkLots` performs — see there
    * for why that is one function now and not two (SC-344).
    */
   async walkComponent(
@@ -1378,12 +1378,12 @@ function carriesAcross(
  * ACTUALLY ARRIVED (SC-506).
  *
  * A network fee makes the two legs of an honest same-token transfer differ:
- ***REMOVED***
+ * slightly less arrives than left. The walk used to push the departing
  * quantity, so the destination's pool permanently over-reported by the fee —
- ***REMOVED***
- ***REMOVED***
- ***REMOVED***
- * in this function.
+ * a minority of production's transfer groups drift this way, worth a small
+ * amount of misplaced basis, and the biggest is a low single-digit percentage
+ * of its own transfer. The `+-1%` matcher tolerance is what has kept it small
+ * rather than anything in this function.
  *
  * `cost` is deliberately NOT scaled down with the quantity. The fee is an
  * incidental cost of the transfer, not a disposal of the units it consumed, so

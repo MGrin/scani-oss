@@ -31,13 +31,13 @@ export interface SwapLegAnswerPlan {
  *
  * **How the state arises, and why no migration was needed to create it.**
  * SC-332 taught the EVM ingester to write a swap as two linked legs and #934
- ***REMOVED***
+ * re-imported the EVM accounts. `bulkUpsert` carries `kind`, `counter*`,
  * `price_native*` and `swap_group_id` through `ON CONFLICT`, so the backfill
  * this ticket was filed to do happened on its own — measured on production
- ***REMOVED***
+ * 2026-08-18, every `swap_out` and every `swap_in` leg carries a
  * `swap_group_id` and a price, and none is unpriced. `transfer_review` is
  * deliberately ABSENT from that conflict list, because it belongs to a person.
- ***REMOVED***
+ * So the outflows answered `left_control` while they were `transfer_out` are
  * now `swap_out` and still carry the answer.
  *
  * **What that answer did, and why this repair ran.** Nothing to the books, and

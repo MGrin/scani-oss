@@ -159,24 +159,22 @@ export function HomePage() {
   // lower-emphasis press away. `FirstRun` renders it, because it also has to
   // know whether an import is already running (SC-451).
   //
-  ***REMOVED***
-  ***REMOVED***
-  ***REMOVED***
-  ***REMOVED***
-  ***REMOVED***
-  ***REMOVED***
-  ***REMOVED***
+  // **Why a file leads.** #1069 argued it from SC-450's funnel — fewer accounts
+  // connected an integration than got a holding in, read as a preference for
+  // non-credential paths. The per-job rows do not support that reading and it is
+  // corrected here: the gap is manual entry, not file import, and connecting an
+  // exchange is in fact the single most-picked first route.
   //
-  ***REMOVED***
-  ***REMOVED***
-  ***REMOVED***
-  ***REMOVED***
-  ***REMOVED***
-  ***REMOVED***
+  // What the rows do say is stronger. Most accounts never enqueued a capture job
+  // of any kind — every one of them with one session or none — and every account
+  // that did ended up holding a position. Nobody has ever started an import and
+  // failed. So the route is not chosen on a conversion rate, because every route
+  // converts; it is chosen on what it asks of someone with one session of
+  // patience, and `/import` asks for a file and no credential.
   //
   // It names the screenshot before the file for the one measurement that is
   // unambiguous: `file-import` has never run in production, and
-  // `screenshot-parse` has run 12 times.
+  // `screenshot-parse` has.
   if (overview.data.counts.holdings === 0) {
     return (
       <PageLayout className="items-start">

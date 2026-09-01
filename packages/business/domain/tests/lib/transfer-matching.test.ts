@@ -98,7 +98,7 @@ describe('candidatePairClass', () => {
   });
 
   test('refuses one holding on the SAME token row, which is the shape that got made', () => {
-    ***REMOVED***
+    // The groups of SC-347 are all this: one holding, one token row, two
     // unrelated events. `same_token` returned before the holding was ever
     // looked at, so the condition this file already tested applied to bridges
     // alone — and every same-holding group in production is a same_token pair.

@@ -15,17 +15,16 @@
 --   * Each outflow is a `withdraw` on the Kraken account carrying no tx hash —
 --     Kraken's ledger export records the debit, not the destination.
 --   * For each, an ETH `transfer_in` of the SAME quantity to twelve decimal
-***REMOVED***
-***REMOVED***
-***REMOVED***
-***REMOVED***
-***REMOVED***
-***REMOVED***
+--     places exists on the owner's Ethereum holding, 1-3 minutes later.
+--   * Every one of those arrivals has a `raw_payload.to` that is a wallet in
+--     `user_wallets`.
+--   * Every one of those arrival transactions was sent by ONE address — a
+--     single exchange hot wallet servicing all of them, which is what a CEX withdrawal looks like
 --     and what a set of unrelated payments does not.
-***REMOVED***
-***REMOVED***
-***REMOVED***
-***REMOVED***
+--   * The amounts are round numbers minus a constant ETH withdrawal fee — that
+--     constant is Kraken's fee of the period, and it is also why the ±1%
+--     matcher missed the small ones: a fixed fee is a large percentage of a
+--     small withdrawal.
 --
 -- WHY `paired` AND NOT `internal`. The arrival exists as a row, so there is
 -- something to point at; `internal` would write a second one. See
