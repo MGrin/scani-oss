@@ -86,6 +86,7 @@ import {
 } from './accounts/BalanceSyncOwnershipService';
 import { type BalanceSyncSource, MANUAL_HOLDING_SOURCE } from './holdings/balance-sync-sources';
 import { HOLDING_OPEN_OBSERVATION_SOURCE, HoldingService } from './holdings/HoldingService';
+import { manualEditFeeExternalId } from './holdings/ManualBalanceEditService';
 import { PriceGraphService } from './pricing/PriceGraphService';
 
 /**
@@ -1584,7 +1585,20 @@ export class TransferReviewService {
   ): Promise<void> {
     const updateHolding = Container.get(UpdateHoldingUseCase);
 
-    for (const leg of legs) {
+    // The fee this declaration carved out of its own withdrawal, if it stated
+    // one (SC-857). Found here rather than by the caller because the undo has
+    // to be the exact inverse of the declaration, and the declaration wrote
+    // THREE rows when a fee was named: the fee is part of what the owner said
+    // happened, so withdrawing the sentence withdraws all of it.
+    //
+    // It carries no `transfer_group_id` and never has — a third row on the
+    // group id would hand `CostBasisService`'s inflow branch a second
+    // `transfer_in` to feed, which is the SC-150 defect — so it is reached
+    // through the withdrawal's own `external_id` instead, the same natural key
+    // `bulkUpsert` deduped it under.
+    const feeRows = await this.declaredFeeRows(tx, userId, legs);
+
+    for (const leg of [...legs, ...feeRows]) {
       const [holding] = await tx
         .select({ balance: schema.holdings.balance })
         .from(schema.holdings)
@@ -1605,7 +1619,7 @@ export class TransferReviewService {
         eq(schema.holdingTransactions.userId, userId),
         inArray(
           schema.holdingTransactions.id,
-          legs.map((leg) => leg.id)
+          [...legs, ...feeRows].map((leg) => leg.id)
         )
       )
     );
@@ -1617,6 +1631,52 @@ export class TransferReviewService {
       legs.map((leg) => leg.holdingId),
       tx
     );
+  }
+
+  /**
+   * The `fee` rows a declared transfer carved out of its own withdrawal
+   * (SC-857).
+   *
+   * Addressed by `(holding_id, source, external_id)` — the withdrawal's own
+   * key with `:fee` appended, which is what `ManualBalanceEditService` wrote
+   * it under and what `manualEditFeeExternalId` is the single assembly of. A
+   * second spelling here is a key free to drift from that one, and the failure
+   * would be silent in the worst direction: the undo would report success
+   * having left a charge behind against an anchor it restored as though
+   * nothing had been paid.
+   *
+   * Asked of BOTH legs rather than only the negative one. Nothing writes a fee
+   * beside an arrival today, so the arrival's query is expected to return
+   * nothing — but "expected to return nothing" is the assumption, not the
+   * mechanism, and the cost of asking is one indexed lookup on a path that
+   * already does several.
+   */
+  private async declaredFeeRows(
+    tx: DatabaseTransaction,
+    userId: string,
+    legs: readonly DeclaredPairLegFacts[]
+  ): Promise<{ id: string; holdingId: string; quantity: string }[]> {
+    const found: { id: string; holdingId: string; quantity: string }[] = [];
+    for (const leg of legs) {
+      if (!leg.externalId || !leg.source) continue;
+      const rows = await tx
+        .select({
+          id: schema.holdingTransactions.id,
+          holdingId: schema.holdingTransactions.holdingId,
+          quantity: schema.holdingTransactions.quantity,
+        })
+        .from(schema.holdingTransactions)
+        .where(
+          and(
+            eq(schema.holdingTransactions.userId, userId),
+            eq(schema.holdingTransactions.holdingId, leg.holdingId),
+            eq(schema.holdingTransactions.source, leg.source),
+            eq(schema.holdingTransactions.externalId, manualEditFeeExternalId(leg.externalId))
+          )
+        );
+      found.push(...rows);
+    }
+    return found;
   }
 
   /**

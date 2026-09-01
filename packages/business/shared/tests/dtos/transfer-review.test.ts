@@ -7,8 +7,10 @@ import {
   BULK_ELIGIBLE_ANSWERS,
   BULK_TRANSFER_DECISIONS,
   bulkTransferEntriesSchema,
+  feeFitsMovement,
   isBulkEligibleAnswer,
   MAX_TRANSFER_REVIEW_PORTIONS,
+  manualOutflowAnswerSchema,
   mayBeUserAnswer,
   RULE_ANSWER_SOURCE,
   splitSumMatches,
@@ -278,6 +280,95 @@ describe('transferReviewSplitSchema — the refusal prescribes nothing', () => {
  * of them is how a ledger row and the queue row it came from end up disagreeing
  * about who decided.
  */
+/**
+ * The fee a declared transfer may state (SC-857).
+ *
+ * The schema is the half a type cannot check: `feeQuantity` is a string on
+ * every answer, and the two things that make it valid — a positive amount, and
+ * only on `internal` — are refusals, not shapes. `feeFitsMovement` is the
+ * third rule, and it lives here rather than in the schema for the reason
+ * `splitSumMatches` does: the schema cannot see the movement.
+ */
+describe('manualOutflowAnswerSchema — the fee (SC-857)', () => {
+  const DESTINATION = { accountId: crypto.randomUUID(), holdingId: crypto.randomUUID() };
+
+  test('an internal answer may carry one', () => {
+    const parsed = manualOutflowAnswerSchema.parse({
+      decision: 'internal',
+      destination: DESTINATION,
+      feeQuantity: '1.33',
+    });
+    expect(parsed.feeQuantity).toBe('1.33');
+  });
+
+  test('no fee at all is the common answer and stays valid', () => {
+    // The must-be-ABSENT control. Without it every assertion below could be
+    // satisfied by a schema that had simply become stricter about everything.
+    const parsed = manualOutflowAnswerSchema.parse({
+      decision: 'internal',
+      destination: DESTINATION,
+    });
+    expect(parsed.feeQuantity).toBeUndefined();
+  });
+
+  test('a zero fee is refused — that is "no fee", written as a number', () => {
+    // Zero is the portion not being used, expressed by leaving it out, which
+    // is the same rule `transferReviewSplitPortionSchema` states. Admitting it
+    // would put a `fee` row of nothing in a ledger somebody reads.
+    expect(
+      manualOutflowAnswerSchema.safeParse({
+        decision: 'internal',
+        destination: DESTINATION,
+        feeQuantity: '0',
+      }).success
+    ).toBe(false);
+  });
+
+  for (const decision of ['left_control', 'untracked'] as const) {
+    test(`a fee on ${decision} is refused rather than ignored`, () => {
+      // Neither has a second leg for a fee to be the difference between.
+      // Refused, because dropping it silently leaves the owner believing they
+      // recorded a charge.
+      expect(manualOutflowAnswerSchema.safeParse({ decision, feeQuantity: '1.33' }).success).toBe(
+        false
+      );
+    });
+  }
+});
+
+describe('feeFitsMovement', () => {
+  test('is strict, not merely no-larger', () => {
+    // A fee equal to the whole movement leaves nothing to transfer, and a
+    // declared transfer of zero is not a transfer.
+    expect(feeFitsMovement('1.33', '251.33')).toBe(true);
+    expect(feeFitsMovement('251.33', '251.33')).toBe(false);
+    expect(feeFitsMovement('251.34', '251.33')).toBe(false);
+  });
+
+  test('reads the movement as a magnitude, so a stored outflow works unchanged', () => {
+    // Outflow quantities are stored negative and the fee is unsigned — the
+    // same asymmetry `splitSumMatches` handles, and the reason the sign is
+    // taken off here rather than at each caller.
+    expect(feeFitsMovement('1.33', '-251.33')).toBe(true);
+    expect(feeFitsMovement('300', '-251.33')).toBe(false);
+  });
+
+  test('compares in Decimal, not in floats', () => {
+    expect(feeFitsMovement('0.3', '0.30000000000000004')).toBe(true);
+    expect(feeFitsMovement('0.1', '0.1')).toBe(false);
+  });
+
+  test('an unparseable fee is refused, never treated as zero', () => {
+    // The direction matters: reading a bad value as zero would let a garbled
+    // field through as "no fee" and the transfer would silently overstate its
+    // destination, which is the defect SC-857 is about.
+    expect(feeFitsMovement('', '100')).toBe(false);
+    expect(feeFitsMovement('abc', '100')).toBe(false);
+    expect(feeFitsMovement('-5', '100')).toBe(false);
+    expect(feeFitsMovement('1', 'abc')).toBe(false);
+  });
+});
+
 describe('answerSourceOf', () => {
   /**
    * THE TEST THAT USED TO LIVE HERE PINNED THE BUG, AND ITS REASONING WAS SOUND

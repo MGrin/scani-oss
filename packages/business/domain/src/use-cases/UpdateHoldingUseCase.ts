@@ -376,6 +376,12 @@ export class UpdateHoldingUseCase {
                 cause: editCause,
                 occurredAt: editOccurredAt ?? editedAt,
                 editedAt,
+                // Carved out of the withdrawal by `record`, so the two rows it
+                // writes still sum to the delta this anchor moved by (SC-857).
+                // Passed unconditionally: `record` honours it only on a
+                // negative `flow`, which is the one shape a fee can describe,
+                // and one authority for that rule beats two.
+                ...(editOutflow?.feeQuantity ? { fee: new Decimal(editOutflow.feeQuantity) } : {}),
               },
               tx
             )
@@ -425,7 +431,11 @@ export class UpdateHoldingUseCase {
           await this.moveDeclaredTransfer(
             { id: holdingId, tokenId: result.tokenId },
             editOutflow.destination,
-            written.delta.abs(),
+            // What ARRIVED, which is what left minus the fee (SC-857). Read
+            // off `written` rather than off `editOutflow`, so a fee `record`
+            // declined to honour cannot shrink the arrival: the two numbers
+            // come from the same decision or neither does.
+            written.delta.abs().minus(written.fee?.quantity ?? 0),
             { occurredAt: written.occurredAt ?? editedAt, editedAt },
             userId,
             tx

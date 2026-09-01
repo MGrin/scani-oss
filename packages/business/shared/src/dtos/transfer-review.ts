@@ -235,13 +235,94 @@ export const manualOutflowAnswerSchema = z
   .object({
     decision: manualOutflowDestinationSchema,
     destination: transferDestinationRefSchema.optional(),
+    /**
+     * How much of what left was the fee, in the token's own units (SC-857).
+     *
+     * ## Why a transfer needs a second number at all
+     *
+     * A wire leaves one amount and arrives as another, and until this field
+     * existed the declared path had a single `quantity` that it applied to
+     * both legs. That left the owner two ways to record a 251.33 wire that
+     * landed 250.00 and both were wrong: enter what left and the destination
+     * is overstated, enter what landed and the source is understated.
+     * Production took the first and the destination had to be reversed 28
+     * minutes later with a `kind='correction'` row.
+     *
+     * ## Why the FEE and not the arrival amount
+     *
+     * The owner reads two statements. One says 251.33 left; the other will
+     * say 250.00 arrived, tomorrow, if it says anything at all. What they
+     * know at the moment of the edit is the charge — it is on the same line
+     * as the payment — so asking for the fee asks for the figure in front of
+     * them rather than making them subtract two numbers from two sources.
+     *
+     * It also keeps the sum an identity rather than a check: the rows written
+     * always add to the delta the anchor moved by, because the fee is carved
+     * OUT of the withdrawal instead of being added beside it.
+     * `OpeningBalanceReconciliationService` computes
+     * `holdings.balance - sum(real txs)` and synthesizes an `opening_balance`
+     * for the difference, so a fee row added beside a full-amount withdrawal
+     * would manufacture a phantom opening on that holding.
+     *
+     * ## Why it is refused on the other two answers
+     *
+     * `left_control` and `untracked` say the money is no longer here or no
+     * longer visible; neither has a second leg for a fee to be the difference
+     * between. Refused rather than ignored, for the reason the `internal`
+     * rule below already gives: a client that sends one has a bug, and
+     * dropping it silently leaves the owner believing they recorded a charge.
+     *
+     * The amount cannot be checked against the movement here — this schema
+     * cannot see it, exactly as `transferReviewSplitSchema` cannot see the row
+     * it divides. `ManualBalanceEditService` refuses a fee that consumes the
+     * whole movement, where the delta is known.
+     */
+    feeQuantity: z
+      .string()
+      .refine((v) => isPositiveDecimal(v), {
+        message: 'A fee needs an amount greater than zero',
+      })
+      .optional(),
   })
   .refine((value) => value.decision !== 'internal' || value.destination !== undefined, {
     message: 'An "internal" destination answer must name the holding the money went to',
     path: ['destination'],
+  })
+  .refine((value) => value.feeQuantity === undefined || value.decision === 'internal', {
+    message: 'Only a transfer to another holding of yours can carry a fee',
+    path: ['feeQuantity'],
   });
 
 export type ManualOutflowAnswer = z.infer<typeof manualOutflowAnswerSchema>;
+
+/**
+ * Is a stated fee small enough to be PART of the movement it was charged on?
+ *
+ * Strictly smaller, not merely no larger: a fee equal to the whole movement
+ * leaves nothing to transfer, and a declared transfer of zero is not a
+ * transfer. Larger still would flip the withdrawal's sign.
+ *
+ * One definition, read by the form (which disables the button) and by
+ * `ManualBalanceEditService` (which refuses the write) — the same arrangement
+ * `splitSumMatches` has, and for the same reason: two spellings of one rule
+ * are free to disagree, and the disagreement renders either as a button that
+ * cannot be pressed over a valid answer or as a 500 over a form that looked
+ * complete.
+ *
+ * Both arguments are unsigned magnitudes in the token's own units. A value
+ * that is not a decimal at all answers `false`, so an unparseable fee is
+ * refused rather than treated as zero.
+ */
+export function feeFitsMovement(fee: string | Decimal, movement: string | Decimal): boolean {
+  try {
+    const f = new Decimal(fee);
+    const m = new Decimal(movement);
+    if (!f.isFinite() || !m.isFinite()) return false;
+    return f.gt(0) && f.lt(m.abs());
+  } catch {
+    return false;
+  }
+}
 
 /**
  * How plausible a destination is for THIS token, as three bands (SC-850).
