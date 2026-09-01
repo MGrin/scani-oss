@@ -76,10 +76,18 @@ export const USER_ENTERED_SOURCE = 'user-entered';
  ***REMOVED***
  ***REMOVED***
  */
-export const PERSON_AUTHORED_INFLOW_SOURCES = [
-  USER_ENTERED_SOURCE,
-  MANUAL_EDIT_FLOW_SOURCE,
-] as const;
+export const PERSON_AUTHORED_SOURCES = [USER_ENTERED_SOURCE, MANUAL_EDIT_FLOW_SOURCE] as const;
+
+/**
+ * The same two values under the name the matcher's inflow query reads them by.
+ *
+ * DERIVED rather than repeated: authorship is a fact about the row and has no
+ * direction, while "inflow" is a fact about the one caller. Writing the list
+ * out twice would let a third person-authored source be added to whichever
+ * name the next reader happened to open — and the failure mode is silent on
+ * both sides, since each list is individually plausible (SC-858).
+ */
+export const PERSON_AUTHORED_INFLOW_SOURCES = PERSON_AUTHORED_SOURCES;
 
 /** CEX queues delay; chain finality is minutes. Re-exported from
  *  `@scani/shared` so the review surface's explanation of the rule and the
