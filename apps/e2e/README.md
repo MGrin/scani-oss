@@ -729,6 +729,46 @@ clears it for the screens it names, and takes names rather than `1` on purpose.
 actually caught had a cause one of the three guards keys on. This closes a gap
 nothing would have reported, which is why it was worth a ticket.
 
+### These pictures ship publicly, and no text guard can read one (SC-842)
+
+`apps/e2e/visual/__screenshots__/` is mirrored to `MGrin/scani-oss`. Every guard
+between this repository and that one reads TEXT — the path classifier, the
+internal-reference scanner, the figure scanner, the secret scan — and a PNG is
+the outer edge of what all four can do. It carries no line to match, so it is
+skipped. Until SC-842 the skip was reported under the word `PASS`:
+
+```
+oss-internal-refs: PASS · 0 of 8 staged file(s) scanned, 8 binary skipped
+```
+
+Every number there is honest and the verdict word said the opposite. It now
+reads `PARTIAL`, names each file it did not read, and stays exit 0 — the
+blindness is permanent, not a gap a better pattern closes, so the only thing
+owed to a reader is that the line stop describing it as a clean bill. **A
+baseline update is still reviewed by a person looking at the image; nothing
+mechanical will ever do that for you.**
+
+What *is* mechanical is the INPUT, because the input is text. A baseline is a
+picture of one signed-in user's data, and `fixtures/visual-setup.ts` declares
+exactly what that user holds — so before any pixel is captured, each session is
+read back and compared against its own seed. A mismatch aborts the run and
+captures nothing.
+
+The hole that closes is the session reuse two sections up. A stored session is
+kept across runs for the api's 6-sign-ins-per-hour budget, and the reuse test
+was *is this still signed in* — which is not *does this still hold what it was
+seeded with*. On the reuse path the seed does not run again, so nothing
+re-established what the next `--update` would photograph.
+
+**The way out of a refusal is `VISUAL_FRESH=1`**, which signs a new user in and
+reseeds. That is not a waiver: it makes the check pass by making the claim true.
+There is deliberately no flag that says capture anyway. If it still disagrees
+after a reseed, the stack is not the one this checkout publishes — check
+`PLAYWRIGHT_BASE_URL` and `API_BASE_URL`.
+
+`visual/session-provenance.ts` carries the reasoning; `unit/session-provenance.test.ts`
+exercises both arms without a stack or a container.
+
 ### Widening it
 
 The cheapest place is `/kitchen-sink`. It renders every `@scani/ui` primitive
