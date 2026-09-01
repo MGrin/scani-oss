@@ -69,6 +69,12 @@ const FORBIDDEN: Record<string, RegExp> = {
   // a bare `garde` quiet today, and a pattern that reds on correct copy
   // recruits its reader to break it. Custody in French is a phrase.
   fr: /(coffre|chambre forte|sous garde|garde des actifs|dépositaire|entiercement|(conservation|stockage) à froid)/i,
+  // `simpanan` and `tabungan` are NOT here: Indonesian renders Vault as
+  // `target tabungan`, a savings goal, so a pattern reaching for the ordinary
+  // words for savings would red on every correct string in the bundle.
+  // `penitipan` is the custody sense specifically — the safekeeping a
+  // custodian does, not the everyday verb for leaving something with someone.
+  id: /(brankas|lemari besi|peti besi|khazanah|kustodi|penitipan|safe deposit|(penyimpanan|dompet) dingin|cold (storage|wallet))/i,
   ja: /(金庫|保管庫|コールドウォレット|コールドストレージ|カストディ)/,
   pt: /(cofre|caixa-forte|custódia|custodia|armazenamento a frio)/i,
   ru: /(сейф|хранилищ|банковск\w*\s+ячейк|холодн\w*\s+хранени)/i,
@@ -177,6 +183,7 @@ describe('vault vocabulary', () => {
       en: 'A vault is a strongbox for your holdings.',
       es: 'Un objetivo es una caja fuerte para tus posiciones.',
       fr: 'Un objectif est un coffre-fort pour vos positions.',
+      id: 'Target tabungan adalah brankas untuk posisi Anda.',
       ja: '貯蓄目標は保有資産の金庫です。',
       pt: 'Um objetivo é um cofre para as suas posições.',
       ru: 'Копилка — это сейф для ваших активов.',
