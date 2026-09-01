@@ -9,6 +9,43 @@ on:
   # branch ruleset — an override, a direct push — left no result at all.
   push:
     branches: [main]
+  # The E2E job leaves the push path (see its own `if:` below), so something
+  # else has to run it against `main`. It boots the whole docker-compose stack
+  # and a browser, and a `main` push happens once per landing.
+  #
+  # THE PULL REQUEST ALREADY MEASURED THE MERGE RESULT HERE, which is the
+  # difference from a repo with no branch protection. `main-protection`
+  # requires `CI Success` and requires the branch to be up to date before
+  # merging, so a PR cannot land while behind `main`: what E2E ran against on
+  # the PR is `main` plus the change. Re-running it on the landing re-measures
+  # a tree that has already been measured, and the remaining gap — a merge
+  # commit is not byte-identical to the tested head — is what this schedule
+  # covers instead.
+  #
+  # ACCEPTED COST, stated so nobody re-litigates it: a regression only E2E
+  # would catch can sit on `main` until the next scheduled run.
+  #
+  # A DAY IS THAT COST'S OWN GRANULARITY, so the cadence is daily rather than
+  # tuned. `03:40` is off the hour because GitHub delays scheduled runs during
+  # the load spike at the top of every hour.
+  #
+  # THE SCHEDULE RUNS THE WHOLE WORKFLOW, NOT JUST E2E. Lifting one job into a
+  # second file buys a second copy of it to keep in step, and every other job
+  # here is minutes of runner time against E2E's tens — so the duplication
+  # would not be where the saving is. What it buys beside the E2E coverage is
+  # the only unprompted statement this repo makes about whether `main` is
+  # still green between landings.
+  #
+  # A SCHEDULED FAILURE SURFACES TWICE, and neither way requires going to look:
+  # the run is attached to the `main` commit, so `main` carries a red check;
+  # and GitHub emails the scheduled-workflow failure to whoever last edited the
+  # cron syntax in this file — one inbox, not a broadcast, and it transfers
+  # silently when that line is edited.
+  schedule:
+    - cron: '40 3 * * *'
+  # So the schedule can be exercised without waiting for it, and so a red
+  # nightly can be re-run against a fix immediately.
+  workflow_dispatch:
   workflow_call:
 
 # `dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1` reads the PR's changed files via the GitHub
@@ -284,7 +321,32 @@ jobs:
     # party's rate limiter and the runner's IP luck (SC-490).
     name: E2E (Playwright)
     needs: detect-changes
-    if: ${{ needs.detect-changes.outputs.code == 'true' }}
+    # THE EVENT IS THE MECHANISM, AND THE PATH FILTER DELIBERATELY IS NOT.
+    # `needs.detect-changes.outputs.code` is forced `true` on every event that
+    # is not a pull request (see `detect-changes` above), so it cannot keep
+    # this job off the push path and was never asked to. The explicit
+    # `github.event_name != 'push'` is what does it.
+    #
+    # LEAVING IT TO A FILTER WOULD BE THE FALSE-GREEN BUG WEARING THE RIGHT
+    # OUTCOME. `dorny/paths-filter@v4` reads `beforeSha` only when the event is
+    # literally `push`; elsewhere it falls back to `git log --format=
+    # --no-renames --name-status -n 1`, and git prints no diff for a merge
+    # commit under `git log`. A filter matching nothing skips this job too — so
+    # a deliberate skip and a broken one would be the same observation, and it
+    # would rot the moment anyone edited the filter list.
+    #
+    # WHY THE CONDITION IS NEGATIVE. An allowlist of the events that MAY run
+    # this job silently drops any trigger added later — and `workflow_call` is
+    # already declared on this workflow with no caller in the repository today,
+    # so the allowlist would omit it by inspection and the omission would only
+    # show up as a missing browser run the day something did call it.
+    # `!= 'push'` states the requirement and nothing more, so a new trigger
+    # inherits the gate rather than the skip.
+    #
+    # `ci-success` still lists this job in `needs`. A skip is not a failure
+    # there — it fails only on `failure` or `cancelled` — so the required check
+    # is unaffected on a push and unchanged on a pull request.
+    if: ${{ github.event_name != 'push' && needs.detect-changes.outputs.code == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
