@@ -22,8 +22,15 @@ import { ANSWER_SOURCES } from './transfer-review';
  * What the walk did with one outflow — mirrors `DisposalOutcome` in
  * `@scani/domain`. Since SC-150 the interesting half of the question is the
  * *absence* of a realization: an outflow can pop its lots and book nothing,
- * and four different situations produce that identical arithmetic. Only one of
+ * and five different situations produce that identical arithmetic. Only one of
  * them is something a person can act on.
+ *
+ * `fee` is the fifth (SC-888): a charge taken out of what left. It books
+ * nothing for the same reason `retained` books nothing and means the opposite
+ * thing — the money is gone and nobody bought anything with it — and it exists
+ * as its own outcome because the row is the only place the ledger can SAY a
+ * charge was paid. The queue's `fee` answer writes no `kind='fee'` row; see
+ * `TRANSFER_REVIEW_FEE` for why it cannot.
  */
 export const DISPOSAL_OUTCOMES = [
   'realized',
@@ -31,6 +38,7 @@ export const DISPOSAL_OUTCOMES = [
   'unreviewed',
   'retained',
   'awaiting_pair',
+  'fee',
 ] as const;
 
 export const disposalOutcomeSchema = z.enum(DISPOSAL_OUTCOMES);

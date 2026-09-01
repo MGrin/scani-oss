@@ -202,6 +202,12 @@ export function outcomeNote(
       );
     case 'awaiting_pair':
       return t('v3.realizedLedger.outcome.awaitingPair');
+    case 'fee':
+      // Unconditional, and the one outcome with no `unattributed` variant:
+      // nothing here rests on who answered, because no gain was booked either
+      // way and the sentence would be a caveat about a figure the row does not
+      // carry (SC-888).
+      return t('v3.realizedLedger.outcome.fee');
   }
 }
 

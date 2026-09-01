@@ -2027,7 +2027,8 @@
         "retained": "Indicou que isto nunca saiu do seu controlo, por isso nada foi realizado.",
         "retainedUnattributed": "Registado como nunca tendo saído do seu controlo, por isso nada foi realizado. Não há registo de ninguém ter respondido a isto.",
         "unpriced": "Não foi possível encontrar um preço para isto, por isso não foi apurado nenhum ganho. O custo continua a ser mostrado.",
-        "unreviewed": "À espera da sua resposta, por isso não foi apurado nenhum ganho, em nenhum sentido."
+        "unreviewed": "À espera da sua resposta, por isso não foi apurado nenhum ganho, em nenhum sentido.",
+        "fee": "Um encargo retirado do que saiu, por isso não se registou qualquer ganho — conta como custo, não como levantamento."
       },
       "portion": "Parte {{index}} de {{total}} de um mesmo movimento: {{noun}}",
       "valuation": {
@@ -2125,7 +2126,8 @@
           "paired": "Ligado — o custo de aquisição vai com ele",
           "split": "Registado — cada parte nos seus próprios termos",
           "splitRejected": "Essa divisão não foi aceite",
-          "untracked": "Registado como continuando a ser seu"
+          "untracked": "Registado como continuando a ser seu",
+          "fee": "Registado como taxa"
         },
         "whatHappened": "O que aconteceu",
         "withdrawnNotice": "O Scani retirou uma resposta anterior sobre esta transferência. Foi dada a respeito de um emparelhamento que entretanto mostrámos não ser sequer uma transferência, por isso a pergunta voltou — e pode não haver aqui nenhum depósito para apontar.",
@@ -2311,13 +2313,15 @@
           "internal": "Passou para uma posição que acompanha — depósito registado",
           "leftControl": "Contada como uma alienação",
           "paired": "Ligada a um depósito — nada realizado",
-          "untracked": "Continua a ser sua, algures não acompanhado"
+          "untracked": "Continua a ser sua, algures não acompanhado",
+          "fee": "Registado como taxa"
         },
         "answeredShort": {
           "internal": "{{amount}} movidos",
           "leftControl": "{{amount}} alienados",
           "paired": "{{amount}} ligados",
-          "untracked": "{{amount}} não acompanhados"
+          "untracked": "{{amount}} não acompanhados",
+          "fee": "{{amount}} em taxas"
         },
         "bulk": {
           "commit": {
@@ -2395,7 +2399,8 @@
           "leftControlUnpriced": "Contada como uma alienação a {{date}} ao valor de mercado. O Scani não tem preço para {{symbol}} nesse dia, por isso não é apurado nada.",
           "paired": "Os {{quantity}} {{symbol}} mantêm o que pagou originalmente por eles ao passarem para {{location}}. Nada é realizado aqui, e nenhum ganho é apurado.",
           "pairedPrompt": "Escolha o depósito em que este dinheiro chegou.",
-          "untracked": "Continua a ser seu, apenas algures onde o Scani não vê. Não é uma alienação, por isso nenhum ganho é apurado — os {{symbol}} deixam simplesmente de ser contados."
+          "untracked": "Continua a ser seu, apenas algures onde o Scani não vê. Não é uma alienação, por isso nenhum ganho é apurado — os {{symbol}} deixam simplesmente de ser contados.",
+          "fee": "Um encargo retirado do que saiu — o banco, a rede ou a exchange ficou com ele. Não é uma alienação, por isso não se regista qualquer ganho, e os {{symbol}} contam como custo e não como dinheiro que retirou."
         },
         "decision": {
           "internal": {
@@ -2413,6 +2418,10 @@
           "untracked": {
             "commit": "Registar como continuando a ser meu",
             "trigger": "Passou para um sítio não acompanhado"
+          },
+          "fee": {
+            "trigger": "Parte foi uma taxa",
+            "commit": "Registar como taxa"
           }
         },
         "destination": {
