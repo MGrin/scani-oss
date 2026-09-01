@@ -1,0 +1,2439 @@
+{
+  "v3": {
+    "shell": {
+      "demo": {
+        "banner": "演示——虚构人物的示例数据。只读，且每天重置。",
+        "signUp": "创建你自己的账户"
+      },
+      "tabBar": {
+        "landmark": "主导航",
+        "moreWithReview_other": "更多——有 {{count}} 项需要核对"
+      },
+      "sidebar": {
+        "landmark": "侧边栏"
+      },
+      "moreDrawer": {
+        "description": "标签栏放不下的都在这里。向上拖动手柄可查看完整列表。"
+      }
+    },
+    "common": {
+      "convertedTotal": {
+        "includes": "含 <amounts></amounts>，按今日汇率换算",
+        "includesStale": "含 <amounts></amounts>，按 {{date}} 的汇率换算",
+        "notIncluded": "未计入：<amounts></amounts>——{{currencies}} 没有近期汇率。",
+        "working": "正在计算合计",
+        "noTotal": "无合计——今日汇率无法加载",
+        "ratesUnavailable": "未计入：<amounts></amounts>——今日汇率无法加载，因此该数字并不完整。"
+      },
+      "convertedFigure": {
+        "moreCurrencies_other": "有 {{count}} 种货币未换算",
+        "working": "正在计算该数字",
+        "unavailableSpoken": "<value/> 未换算——今日汇率无法加载",
+        "unavailableSpokenMany_other": "有 {{count}} 种货币未换算——今日汇率无法加载",
+        "unconvertedSpoken": "<value/> 未换算——没有近期汇率",
+        "unconvertedSpokenMany_other": "有 {{count}} 种货币未换算——没有近期汇率",
+        "unconvertedSeen": "<value/> 未换算"
+      },
+      "baseEquivalent": {
+        "seen": "≈ <value/>",
+        "seenStale": "≈ <value/> · 较早的汇率",
+        "spoken": "约 <value/>",
+        "spokenStale": "约 <value/>，按较早的汇率计算"
+      },
+      "pullToRefresh": {
+        "refreshing": "正在刷新"
+      },
+      "errorBoundary": {
+        "goHome": "前往 v3 首页"
+      },
+      "action": {
+        "seeAll": "查看全部"
+      },
+      "unknownVendor": "未知收付方",
+      "openRecord": "{{name}}——打开",
+      "listAnd": "{{first}} 和 {{second}}",
+      "listSemicolon": "{{first}}；{{second}}",
+      "cannotBeUndone": "此操作无法撤销。",
+      "relative": {
+        "justNow": "刚刚",
+        "minutes_other": "{{count, number}} 分钟前",
+        "hours_other": "{{count, number}} 小时前",
+        "days_other": "{{count, number}} 天前"
+      }
+    },
+    "notFound": {
+      "title": "此页面不存在",
+      "body": "你请求的地址在 Scani 中没有对应内容。链接可能已过期，或者地址有拼写错误。",
+      "goHome": "前往首页"
+    },
+    "home": {
+      "loadingLabel": "你的投资组合",
+      "empty": {
+        "title": "还没有跟踪任何内容",
+        "body": "一张余额界面的截图就够了——来自交易所、银行或券商都可以。CSV 或对账单导出文件同样可行，而且完全不需要登录任何账号。",
+        "action": "上传截图或文件",
+        "secondaryAction": "或选择其他方式",
+        "importing": {
+          "title": "有一次导入正在进行",
+          "body": "我们正在从中读取持仓。你可以离开这个页面——导入会继续进行，完成后这里就会填上内容。",
+          "action": "查看进度"
+        }
+      },
+      "disclosure": {
+        "showLess": "收起",
+        "show": "显示{{label}}",
+        "theOtherN_other": "其余 {{count}} 项",
+        "theNInOther_other": "“其他”中的 {{count}} 项"
+      },
+      "attentionRow": {
+        "needsReview_other": "有 {{count}} 项需要你核对"
+      },
+      "topHoldings": {
+        "title": "主要持仓",
+        "empty": "还没有已定价的内容。"
+      },
+      "tape": {
+        "noValue": "无数值"
+      },
+      "groups": {
+        "title": "分组",
+        "openGroup": "{{name}}——打开该分组",
+        "empty": "空"
+      },
+      "vaults": {
+        "title": "储蓄目标",
+        "progress": "{{name}}：已达目标的 {{percent}}%",
+        "ofTarget": "目标 <target></target>"
+      },
+      "allocation": {
+        "title": "资产分布",
+        "cutBy": "分布维度",
+        "loadingLabel": "你的资产分布",
+        "empty": "按这个维度还没有已定价的内容。",
+        "barLabel": "按{{dimension}}划分的资产分布",
+        "dimension": {
+          "tokenType": "类型",
+          "institution": "机构",
+          "account": "账户",
+          "group": "分组"
+        }
+      },
+      "upcoming": {
+        "title": "即将到期的账单",
+        "empty_other": "未来 {{count}} 天内没有到期项。",
+        "addPayment": "添加一笔付款",
+        "incomeExpected_other": "未来 {{count}} 天的预计收入"
+      },
+      "metric": {
+        "netWorth": "净资产",
+        "pnl": "损益",
+        "pnlFull": "盈亏损益"
+      },
+      "period": {
+        "label7d": "1周",
+        "suffix7d": "7天",
+        "label30d": "1月",
+        "suffix30d": "30天",
+        "label90d": "3月",
+        "suffix90d": "90天",
+        "label180d": "6月",
+        "suffix180d": "6个月",
+        "label365d": "1年",
+        "suffix365d": "1年"
+      },
+      "hero": {
+        "pnlOverPeriod": "盈亏损益 · {{period}}",
+        "vsPeriod": "相比{{period}}",
+        "chartLabel": "最近{{period}}的{{metric}}",
+        "choosePlot": "选择要绘制的指标",
+        "changePeriod": "更改时间范围",
+        "chartFailed": "图表无法加载。上方的数字是我们最后拿到的数据。",
+        "changeUnavailable": "无法加载该时间段的变化",
+        "changePending": "正在计算该时间段的变化",
+        "pnlNotComputed": "该时间段的损益尚未计算",
+        "noHistory": "该时间段还没有历史数据",
+        "noMeasurementSince": "自 {{date}} 起没有测量数据——最后一个点是今天的实时合计，而不是汇总日数据。",
+        "retry": "重试",
+        "realized": "已实现",
+        "unrealized": "未实现"
+      },
+      "quality": {
+        "allPriced_other": "全部 {{count}} 个持仓均已定价",
+        "partlyPriced": "已定价 {{percent}}%——{{priceable}} 个可定价持仓中的 {{priced}} 个",
+        "withUnpriceable_other": "{{fraction}} · {{count}} 个无法定价",
+        "staleQuotes_other": "{{count}} 个过期报价",
+        "noBasis_other": "{{count}} 个没有成本基础（收益为上限值）",
+        "unreviewedTransfers_other": "已实现损益未包含 {{count}} 笔未确认的转账"
+      },
+      "dueIn": {
+        "today": "今天",
+        "tomorrow": "明天",
+        "days_other": "{{count}} 天后",
+        "weeks_other": "{{count}} 周后",
+        "months_other": "{{count}} 个月后"
+      },
+      "historyExport": {
+        "scopeWindow": "当前的{{period}}时间范围",
+        "scopeDays_other": "{{count}} 天",
+        "scopeAll": "我们拥有的全部数据",
+        "scopeAllDetail": "最长六年",
+        "emptyTitle": "没有可导出的内容",
+        "emptyBody": "该时间范围内还没有测量到的历史数据。",
+        "subject": "净资产历史",
+        "sheetSubject": "净资产历史",
+        "currency": "货币",
+        "resolution": "精度",
+        "oneRowPerDay": "每天一行",
+        "days_other": "{{count}} 天",
+        "pending": "正在导出你的净资产历史",
+        "trigger": "导出净资产历史",
+        "action": "导出历史"
+      },
+      "runway": {
+        "label": "资金可支撑"
+      }
+    },
+    "money": {
+      "upcoming": {
+        "overdueTotal_other": "已逾期，{{count}} 笔账单",
+        "noneAhead_other": "未来 {{count}} 天内没有到期项。",
+        "seeRecurring": "查看定期付款",
+        "addPayment": "添加一笔付款",
+        "billsCommitted_other": "未来 {{count}} 天已承诺的账单",
+        "estimatedExcluded_other": "未计入：<amounts></amounts>——有 {{count}} 笔账单是按上次结算金额估算的，估算不等于承诺。",
+        "estimatedExcludedOverdue_other": "未计入：<amounts></amounts>——有 {{count}} 笔逾期账单是按上次结算金额估算的，实际金额仍然未知。",
+        "row": "{{vendor}}，{{date}} 到期",
+        "label": "即将到期的付款"
+      },
+      "segments": {
+        "upcoming": "即将到期",
+        "recurring": "定期",
+        "vendors": "收付方",
+        "forecast": "预测"
+      },
+      "overdue": {
+        "unknown": "已逾期",
+        "today": "今天到期",
+        "byDays_other": "逾期 {{count}} 天"
+      },
+      "direction": {
+        "income": "收入",
+        "bill": "账单"
+      },
+      "cadence": {
+        "every_week_other": "每 {{count}} 周",
+        "every_month_other": "每 {{count}} 个月",
+        "every_quarter_other": "每 {{count}} 个季度",
+        "every_year_other": "每 {{count}} 年",
+        "everyUnknown": "每 {{count}} × {{unit}}"
+      },
+      "endPayment": {
+        "base": "于 {{date}} 结束 {{vendor}}。它将不再出现在“即将到期”中，已付和已跳过的历史记录会保留。",
+        "checking": "正在检查这会移除多少个已排定的日期…",
+        "noneRemoved": "之后没有需要移除的已排定日期。",
+        "removed_other": "之后 {{count}} 个已排定的日期将被移除。此操作无法撤销——Scani 无法恢复已结束的付款。",
+        "trigger": "结束",
+        "confirm": "结束这笔付款",
+        "ended": "付款已结束",
+        "ending": "正在结束付款"
+      },
+      "deletePayment": {
+        "checking": "删除 {{vendor}} 这笔付款。正在检查它关联了哪些内容…",
+        "blocked_other": "这笔付款已有 {{count}} 个日期完成结算——是真实发生过的资金流动。它无法被删除，因为那会连历史记录一并抹去。",
+        "wayOutEnded": "它已经结束，所以排程已停止，记录会保留。",
+        "wayOutEnd": "建议改为结束它：排程会停止，记录会保留。",
+        "lead": "删除 {{vendor}} 这笔付款，就像它从未存在过一样。",
+        "clauseScheduled_other": "{{count}} 个仍在排定中的日期",
+        "clauseSkipped_other": "{{count}} 个你跳过的日期",
+        "discarded_other": "{{clauses}}会随之一并删除。",
+        "tail": "它会从“即将到期”、各项合计和此列表中消失。如果这笔账单确实发生过，请改用“结束”——那样会保留记录。此操作无法撤销。",
+        "trigger": "删除",
+        "confirmEnd": "结束这笔付款",
+        "confirmDelete": "删除这笔付款",
+        "deleted": "付款已删除"
+      },
+      "deleteVendor": {
+        "checking": "删除“{{vendor}}”。正在检查有哪些内容指向它…",
+        "blocked_other": "仍有 {{count}} 笔付款指向“{{vendor}}”，删除它会连同这些付款以及针对它们的所有结算一并删除。请先结束或删除这些付款，或把“{{vendor}}”合并到你真正想保留的收付方。",
+        "lead": "删除“{{vendor}}”。没有任何款项付给它或由它支付。",
+        "alsoAliases_other": "它曾使用过的 {{count}} 个别名会一并删除",
+        "alsoExtractions_other": "{{count}} 份已解析的发票会保留自身记录，但会失去与该收付方的关联",
+        "alsoFrame": "{{clauses}}。",
+        "trigger": "删除",
+        "confirm": "删除这个收付方",
+        "deleted": "{{vendor}} 已删除"
+      },
+      "mergeVendor": {
+        "base": "“{{duplicate}}”将被删除，“{{survivor}}”将被保留。",
+        "checking": "正在检查有哪些内容会转移过去…",
+        "nothingMoves": "没有任何内容指向“{{duplicate}}”，因此不会有内容转移。此操作无法撤销。",
+        "clausePayments_other": "{{count}} 笔付款",
+        "clauseAliases_other": "{{count}} 个别名",
+        "moves_other": "{{clauses}}将转移到“{{survivor}}”。此操作无法撤销。",
+        "pickOne": "选择一个要并入“{{vendor}}”的重复项。它会保留这条记录；你选中的那个会被删除。",
+        "trigger": "合并重复项",
+        "confirmNamed": "并入 {{vendor}}",
+        "confirm": "合并",
+        "merged": "收付方已合并",
+        "noCandidates": "没有其他可以合并进来的收付方"
+      },
+      "page": {
+        "viewSwitcher": "资金视图",
+        "title": "资金",
+        "newVendor": "新建收付方",
+        "addPayment": "添加付款"
+      },
+      "field": {
+        "direction": "方向"
+      },
+      "paymentForm": {
+        "backToPayment": "返回付款",
+        "allRecurring": "全部定期付款",
+        "titleEdit": "编辑付款",
+        "titleNew": "新建定期付款",
+        "intro": "一笔账单或定期收入，会在交易到达时与之匹配。",
+        "suggestedFrom": "根据 {{vendor}} 的发票推荐。",
+        "suggestedFromNumbered": "根据 {{vendor}} 的第 {{number}} 号发票推荐。",
+        "cadenceCaveat": "一张发票无法证明它多久重复一次——保存前请检查排程。",
+        "extractionGone": "那张发票已不在待核对状态，因此无法预填任何内容。请自行填写表单，或从“核对”中重新打开该文档。",
+        "missingTitle": "找不到这笔付款",
+        "missingBody": "它可能已被结束并移除，或者链接已经过期。",
+        "sectionWho": "对方",
+        "sectionWhat": "内容",
+        "sectionWhen": "时间",
+        "sectionOptional": "可选",
+        "directionIn": "收入",
+        "directionOut": "支出",
+        "amountIs": "金额为",
+        "amountIsVariableHint": "实际数字在你逐笔结算时确定。",
+        "amountIsQuestion": "金额是固定的吗？",
+        "kindFixed": "每次都相同",
+        "kindVariable": "会变动",
+        "amount": "金额",
+        "estimate": "估算金额",
+        "estimateHint": "可选。",
+        "repeatsEvery": "重复周期",
+        "repeatUnit": "重复单位",
+        "repeatUnitPlaceholder": "多久一次？",
+        "unitWeek": "周",
+        "unitMonth": "月",
+        "unitQuarter": "季度",
+        "unitYear": "年",
+        "firstDue": "首次到期",
+        "anchorFromIssueDate": "发票上没有注明到期日——这是它的开具日期。",
+        "anchorMissing": "发票上找不到日期。请选择这笔款项的到期日。",
+        "anchorPlaceholder": "发票上没有",
+        "stopsAfter": "结束于",
+        "stopsAfterHint": "留空表示永远重复。",
+        "stopsAfterPlaceholder": "永不",
+        "markPaid": "这张发票已经支付",
+        "markPaidHint": "把它覆盖的周期标记为已结算，这样你接下来看到的就是下一次付款，而不是这一次。",
+        "linkedAccount": "关联账户",
+        "noLinkedAccount": "没有关联账户",
+        "notes": "备注",
+        "notesPlaceholder": "关于这笔付款值得记下的任何内容",
+        "saving": "保存中…",
+        "saveChanges": "保存更改",
+        "create": "创建付款",
+        "created": "付款已创建",
+        "createdFromInvoice": "已根据发票创建付款",
+        "updated": "付款已更新",
+        "repeatNoUnit": "一张发票无法证明周期——请说明这笔账单多久来一次。",
+        "repeatWeek_other": "每 {{count}} 周重复一次，以到期日为起算日。",
+        "repeatMonth_other": "每 {{count}} 个月重复一次，以到期日为起算日。",
+        "repeatQuarter_other": "每 {{count}} 个季度重复一次，以到期日为起算日。",
+        "repeatYear_other": "每 {{count}} 年重复一次，以到期日为起算日。",
+        "blockers": "需要先完成：{{blockers}}。",
+        "estimateFromHistory": "按上次的实际金额估算",
+        "estimateFromHistoryHint": "默认关闭。开启后，预测会使用你上次为这笔付款结算的金额，并注明它来自哪个月份。"
+      },
+      "status": {
+        "pause": "暂停",
+        "resume": "恢复",
+        "pauseConfirm": "暂停这笔付款",
+        "resumeConfirm": "恢复这笔付款",
+        "pauseConsequence": "暂停期间不会产生新的到期日。期间到期的款项会记为已跳过，而不是逾期。",
+        "resumeConsequence": "会沿用原有排程——日期与之前完全相同。已经过去的到期日保持原样。",
+        "resumeConsequenceSince": "会沿用原有排程——日期与之前完全相同。自 {{date}} 起到期的款项会记为已跳过，而不是逾期。",
+        "paused": "付款已暂停",
+        "resumed": "付款已恢复"
+      },
+      "settle": {
+        "markReceived": "标记为已收到",
+        "markPaid": "标记为已支付",
+        "markedReceived": "已标记为已收到",
+        "markedPaid": "已标记为已支付",
+        "skipped": "已跳过这一期",
+        "amountSettled": "已结算金额",
+        "confirm": "确认",
+        "cancel": "取消",
+        "skip": "跳过"
+      },
+      "vendorSpend": {
+        "notSubtracted": "不会从你的应付金额中扣除——这是两个独立的数字。"
+      },
+      "vendorEdit": {
+        "name": "名称",
+        "category": "类别",
+        "categoryPlaceholder": "未分类",
+        "website": "网站",
+        "websitePlaceholder": "没有记录",
+        "edit": "编辑",
+        "cancel": "取消",
+        "save": "保存收付方"
+      },
+      "vendorCreate": {
+        "placeholder": "收付方名称",
+        "label": "收付方名称",
+        "cancel": "取消"
+      },
+      "vendorField": {
+        "label": "收付方",
+        "pendingHint": "从发票中读取。保存时如果这个收付方还不存在，我们会为你创建。",
+        "searchPlaceholder": "搜索或创建收付方",
+        "empty": "还没有叫这个名字的收付方。",
+        "didYouMean": "你是否想找",
+        "typeToCreate": "输入名称即可创建收付方",
+        "sameVendor": "同一个收付方",
+        "similar": "相似",
+        "createNamed": "创建“{{term}}”",
+        "similarNames_other": "已经存在名称相似的收付方：",
+        "use": "使用 {{name}}"
+      },
+      "vendorList": {
+        "uncategorised": "未分类",
+        "billsGroup": "账单",
+        "billKind": "账单",
+        "paymentCount_other": "{{count}} 笔付款"
+      },
+      "vendor": {
+        "saved": "{{name}} 已保存",
+        "created": "{{name}} 已创建"
+      },
+      "currencyField": {
+        "label": "货币",
+        "searchPlaceholder": "USD、EUR、BTC…",
+        "empty": "你的标的列表中没有匹配项。"
+      },
+      "duplicatePicker": {
+        "noMatch": "没有其他收付方匹配“{{query}}”。",
+        "searchPlaceholder": "搜索收付方",
+        "searchLabel": "搜索要合并的重复收付方",
+        "optionLabel": "要并入 {{vendor}} 的重复项",
+        "intro": "选择要删除的重复项。它会被并入 <survivor>{{vendor}}</survivor>，后者予以保留。"
+      },
+      "expectedIncome": {
+        "title_other": "未来 {{count}} 天的预计收入",
+        "unknownPayer": "未知付款方",
+        "row": "{{vendor}}，预计 {{date}}",
+        "caption_other": "你预计会收到的款项。不会抵扣上面 {{count}} 天的账单数字。",
+        "expected": "预计 {{date}}",
+        "expectedLate": "预计 {{date}} · 尚未收到"
+      },
+      "peek": {
+        "status": "状态",
+        "monthlyEquivalent": "折合每月",
+        "amountIs": "金额为",
+        "varies": "会变动",
+        "fixed": "固定",
+        "notSet": "未设置",
+        "noAmount": "无金额",
+        "setOnSettling": "结算时确定",
+        "started": "开始时间",
+        "schedule": "排程",
+        "repeats": "重复",
+        "anchorDate": "起算日期",
+        "ends": "结束",
+        "never": "永不",
+        "pausedSince": "暂停起始",
+        "notes": "备注",
+        "note": "备注",
+        "edit": "编辑",
+        "due": "到期",
+        "editPayment": "编辑付款",
+        "cadenceAndDirection": "{{cadence}} · {{direction}}",
+        "expectedOn": "预计 {{date}}",
+        "expectedOnLate": "预计 {{date}} · 尚未收到",
+        "dueOn": "{{date}} 到期"
+      },
+      "recurringList": {
+        "addPayment": "添加一笔付款"
+      },
+      "recurringSummary": {
+        "committedEachMonth": "每月承诺金额",
+        "estimatedFromHistory_other": "其中包含 {{count}} 笔按上次结算金额估算的浮动付款。",
+        "notCounted_other": "有 {{count}} 笔浮动付款没有估算金额，未计入。"
+      },
+      "vendorPeek": {
+        "newVendor": "新建收付方",
+        "seePayments_other": "查看付款",
+        "payments": "付款",
+        "incomeFromThisVendor": "来自该收付方的收入",
+        "recentIncome": "近期收入",
+        "recentPayments": "近期付款",
+        "details": "详情",
+        "website": "网站",
+        "noWebsite": "没有记录",
+        "direction": "方向",
+        "unclassified": "这个收付方的付款没有说明资金是流出还是流入，因此不显示每月数字。",
+        "notCounted": "未计入"
+      },
+      "pending": {
+        "creatingVendor": "正在创建收付方",
+        "creatingPayment": "正在创建付款",
+        "updatingPayment": "正在更新付款",
+        "deletingPayment": "正在删除付款",
+        "deletingVendor": "正在删除收付方",
+        "savingVendor": "正在保存收付方",
+        "mergingVendors": "正在合并收付方",
+        "pausingPayment": "正在暂停付款",
+        "resumingPayment": "正在恢复付款",
+        "updatingOccurrence": "正在更新付款期次"
+      },
+      "thisPayment": "这笔付款",
+      "group": {
+        "overdue": "已逾期"
+      },
+      "blocker": {
+        "enterAmount": "填写金额",
+        "estimateAboveZero": "把估算金额改为大于零，或者清空它",
+        "chooseVendor": "选择一个收付方",
+        "pickCurrency": "从列表中选择一种货币",
+        "setAnchorDate": "设置起算日期",
+        "chooseCadence": "选择重复的频率",
+        "setRepeatCount": "设置有效的重复次数"
+      },
+      "forecast": {
+        "projectedMark": "预测值",
+        "label": "现金流预测",
+        "working": "正在计算…",
+        "runwayLabel": "可支撑期",
+        "runsOutIn": "将在 {{month}} 用尽",
+        "lastsBeyond_other": "可支撑 {{count}} 个月以上",
+        "netPerMonth": "账面每月净额为 <value></value>。",
+        "basis_other": "计入了 {{count}} 个持仓中的 <value></value>。",
+        "basisIlliquid_other": "{{count}} 个房产和非上市持仓合计 <value></value>，因流动性不足未计入。",
+        "basisUnpriceable_other": "有 {{count}} 个持仓没有价格，未计入。",
+        "horizonSwitcher": "预测时间范围",
+        "horizonOption_other": "{{count}} 个月",
+        "balanceAt": "{{month}} 的余额",
+        "chartLabel_other": "未来 {{count}} 个月的余额预测",
+        "goingOut_other": "未来 {{count}} 个月的流出",
+        "comingIn_other": "未来 {{count}} 个月的流入",
+        "notCounted": "不在此预测中",
+        "unprojectable_other": "有 {{count}} 笔浮动付款没有估算金额，因此没有为它们做任何预测。",
+        "overdueExcluded_other": "有 {{count}} 笔账单已经逾期，不在此序列中。",
+        "seeRecurring": "查看定期付款",
+        "addPayment": "添加一笔付款",
+        "affordTitle": "我负担得起吗？",
+        "affordAmount": "金额",
+        "affordWhen": "时间",
+        "affordAsk": "查一下",
+        "affordClear": "清除",
+        "affordLowest": "余额的最低点",
+        "affordLowestIn": "出现在 {{month}}",
+        "affordLowestNow": "今天，在任何资金变动之前",
+        "affordStaysPositive": "在整个时间范围内余额始终大于零。",
+        "affordGoesNegative": "到那时余额会低于零。",
+        "affordCostsMonths_other": "它会消耗 {{count}} 个月的可支撑期。",
+        "affordRunwayAfter": "之后，资金会在 {{month}} 用尽。",
+        "affordRunwayStillBeyond_other": "可支撑期仍在 {{count}} 个月以上。",
+        "observedRunway_other": "按近期支出速度约可支撑 {{count}} 个月",
+        "ofWhichCommitted": "其中约 {{percent}}% 的支出是已承诺的",
+        "committedTitle": "已承诺的部分",
+        "committedNote": "仅指你的定期付款账面——已排定的内容及其时间。它并不代表你的实际支出。",
+        "observedBasis": "{{from}} 至 {{to}} 共 {{count}} 个完整月份的平均值：每月 <value></value>。",
+        "observedSpread": "这些月份的区间为 <min></min> 至 <max></max>；中位月份为 <median></median>。",
+        "observedNotCounted_other": "有 {{count}} 笔流出未计入——尚未答复，或转到了 Scani 看不到的地方。",
+        "affordRemaining": "之后还剩多少",
+        "affordRunwayAfterObserved_other": "按近期支出速度约可支撑 {{count}} 个月。",
+        "affordCannot": "这超过了可动用余额。",
+        "affordNoSchedule": "这是按你的平均速度衡量的，因此无法区分现在购买和年内稍后购买。",
+        "provenanceTitle": "已计入的这部分资金由谁判定",
+        "provenanceUser": "其中 {{percent}}% 的价值依据的是你给出的答复。",
+        "provenanceAutomated": "其中 {{percent}}% 由一条你可以自行查看的具名规则判定。",
+        "provenanceUnattributed": "其中 {{percent}}% 没有留下任何关于由谁或由什么判定的记录。",
+        "answerTitle": "这就是你的实际支出吗？",
+        "answerConfirm": "是的，没错",
+        "answerOverride": "使用我自己的数字",
+        "answerCancel": "取消",
+        "answerSave": "保存",
+        "answerAmountLabel": "你每月的实际支出",
+        "answerConfirmed": "你已于 {{date}} 确认过。",
+        "answerConfirmedMoved": "你已于 {{date}} 确认为 <was/>。现在是 <now/>。",
+        "answerOverrideActive": "正在使用你在 {{date}} 设定的每月 <amount/>。实测值为 <measured/>。",
+        "answerRevert": "改回实测数字",
+        "answerCurrencyChanged": "你在 {{date}} 给出的答复使用的是另一种货币，因此不再适用。",
+        "answerFailed": "保存失败。",
+        "estimatedMark": "估算值",
+        "estimatedFrom": "来自 {{month}}",
+        "estimatedFromAmount": "来自 {{month}} · <value></value>",
+        "estimatedTitle": "根据历史估算",
+        "estimatedCount_other": "有 {{count}} 笔浮动付款是按上次结算金额定价的，而不是按任何人填写的估算值。",
+        "couldEstimate_other": "其中有 {{count}} 笔浮动付款此前结算过，因此可以用它们上次的金额来替代。",
+        "useLastSettled_other": "使用它们上次的结算金额",
+        "stopEstimating_other": "不再为它们估算"
+      }
+    },
+    "groups": {
+      "coverage": {
+        "empty": "这个分组中今天没有任何内容具备价值。",
+        "counted_other": "这笔合计背后 {{count}} 个持仓今天的价值。",
+        "countedAll_other": "涵盖下面列出的全部 {{count}} 个持仓。",
+        "countedOf_other": "涵盖下面列出的 {{listed}} 个持仓中的 {{count}} 个。"
+      },
+      "accountNote": "加入分组的账户会带上它持有的全部内容以及以后收到的内容。同时被两种方式计入的持仓仍然只计一次。",
+      "inactiveNote_other": "其中有 {{count}} 个已停用：它们仍留在分组中并列在下面，但不计入这笔合计。",
+      "unpriced": {
+        "listAll": "{{head}} 和 {{last}}",
+        "listMore": "{{head}} 等 {{count}} 项",
+        "note_other": "{{named}} 今天无法定价，因此不计入这笔合计。"
+      },
+      "createFirst": "创建你的第一个分组",
+      "assign": {
+        "title": "分配分组",
+        "description": "这里勾选的每个分组都会应用到{{entities}}。它们并非全部已共有的分组不会出现在列表中，也不会被改动。",
+        "holdingCount_other": "{{count}} 个持仓",
+        "accountCount_other": "{{count}} 个账户",
+        "save": "保存分组",
+        "saving": "保存中…",
+        "newGroup": "新建分组",
+        "loading": "正在加载分组",
+        "stillLoading": "等待分组加载完成",
+        "firstTitle": "创建你的第一个分组",
+        "firstDescription": "你还没有任何分组。这个分组会被创建并应用到{{entities}}。",
+        "createAndAssign": "创建并分配",
+        "creating": "创建中…",
+        "needName": "给分组起个名字",
+        "subject": "这些分组",
+        "groupSubject": "该分组",
+        "toast": {
+          "added_other": "已加入 {{count}} 个分组",
+          "removed_other": "已从 {{count}} 个分组中移除",
+          "changed": "分组已更新",
+          "createdAndAssigned": "分组“{{name}}”已创建并分配"
+        }
+      },
+      "colour": {
+        "legend": "颜色",
+        "swatch": "颜色 {{color}}"
+      },
+      "detail": {
+        "toast": {
+          "updated": "分组已更新",
+          "updating": "正在更新分组",
+          "deleted": "分组已删除",
+          "deleting": "正在删除分组"
+        },
+        "backToGroups": "分组",
+        "removeMember": "把 {{label}} 从 {{group}} 中移除",
+        "notFound": "这个分组不在你的列表中。它可能已被删除，或者链接已经过期。",
+        "value": "价值",
+        "inThisGroup": "在这个分组中",
+        "noun": "持仓和账户",
+        "note": "加入整个账户会让它持续留在分组中——包括它以后收到的内容。要移除单个持仓，请从上面的列表中操作。",
+        "empty": "这个分组中还没有任何内容。添加一个持仓或账户，它就会出现在这里。",
+        "addMembers": "添加持仓或账户",
+        "details": "详情",
+        "name": "名称",
+        "description": "描述",
+        "colour": "颜色",
+        "saveChanges": "保存更改",
+        "discard": "放弃",
+        "needName": "保存前请先给分组起个名字。",
+        "dangerZone": "危险操作",
+        "deleteConsequence": "“{{name}}”会从所有列表和筛选中消失。其中的{{members}}不会被删除——它们只是不再带有这个标签。",
+        "deleteTrigger": "删除分组",
+        "deleteCommit": "删除这个分组"
+      },
+      "page": {
+        "title": "分组",
+        "created": "分组“{{name}}”已创建",
+        "creating": "正在创建分组",
+        "name": "名称",
+        "newGroup": "新建分组",
+        "createGroup": "创建分组",
+        "cancel": "取消",
+        "namePlaceholder": "退休、应税、共同账户…",
+        "colour": "颜色",
+        "needName": "继续前请先给分组起个名字。"
+      }
+    },
+    "realizedLedger": {
+      "answerTransfers": "答复等待中的转账",
+      "portion": "一笔{{noun}}中的第 {{index}} 部分，共 {{total}} 部分",
+      "noun": {
+        "sale": "卖出",
+        "swap": "兑换",
+        "withdrawal": "提取",
+        "transfer": "转账",
+        "disposal": "处置"
+      },
+      "verb": {
+        "sold": "已卖出",
+        "swapped": "已兑换",
+        "withdrew": "已提取",
+        "transferredOut": "已转出",
+        "disposed": "已处置"
+      },
+      "outcome": {
+        "unpriced": "找不到这笔交易的价格，因此没有计入任何收益。成本仍然显示。",
+        "unreviewed": "正在等待你的答复，因此无论如何都没有计入收益。",
+        "retained": "你表示这笔资金从未脱离你的掌控，因此没有产生任何已实现损益。",
+        "awaitingPair": "这次资金流动只导入了一侧，因此没有计入任何收益。",
+        "realizedUnattributed": "记录显示它已离开你的投资组合，因此计入了这笔收益。没有任何记录表明有人答复过它——该答复并非在核对队列中给出。",
+        "retainedUnattributed": "记录显示它从未脱离你的掌控，因此没有产生任何已实现损益。没有任何记录表明有人答复过它。"
+      },
+      "basis": {
+        "partialNote": "依据的历史记录已知不完整，或者价格超出了我们的时效窗口。",
+        "unknownNote": "我们没有取得这项资产的记录，因此全部金额都显示为收益。最常见的原因是某次导入无法回溯到足够早的时间。",
+        "partialLabel": "部分成本基础",
+        "unknownLabel": "无成本基础记录"
+      },
+      "held": {
+        "sameDay": "当天",
+        "days_other": "{{count}} 天",
+        "months_other": "{{count}} 个月",
+        "years": "{{years}} 年"
+      },
+      "answer": {
+        "unattributedLabel": "未记录答复来源"
+      },
+      "valuation": {
+        "heldTokenFallback": "按转出的标的在当天的价格估值：换回来的标的没有价格历史，因此无法换算这笔兑换的成交汇率。",
+        "estimatedLabel": "按转出的标的估值"
+      }
+    },
+    "holdings": {
+      "amountFact": {
+        "edit": "编辑数量",
+        "amount": "数量",
+        "save": "保存",
+        "belowZero": "小于零——你输入任何数值都不会得到这个结果。它出现在一笔被撤销的转账跨过了之后又发生变化的余额时。请把它改成正确的数字。"
+      },
+      "labelFact": {
+        "unnamed": "未命名",
+        "edit": "为这笔 {{symbol}} 持仓命名",
+        "name": "用途名称",
+        "placeholder": "储蓄、押金、婚礼礼金…",
+        "save": "保存"
+      },
+      "deleteAction": {
+        "trigger": "删除",
+        "commit": "删除 {{symbol}}",
+        "consequence": "{{account}} 中的 {{symbol}} 会被移除，针对它记录的每一笔交易也会一并删除——你的投资组合合计将减少 <value/>。无法恢复；要找回历史只能重新导入。如果只是想把它移出合计但保留记录，请使用“停用”。"
+      },
+      "trendLabel": "最近{{period}} {{symbol}} 的价值",
+      "payout": {
+        "daily": "每天",
+        "weekdays": "工作日（周一至周五）",
+        "weekly": "每周{{day}}",
+        "monthly": "每月 {{day}} 日",
+        "yearly": "每年 {{date}}",
+        "yearlyLastDay": "每年 {{month}} 的最后一天"
+      },
+      "peek": {
+        "editPriceOf": "编辑 {{symbol}} 的价格",
+        "pot": "用途",
+        "interest": "利息",
+        "apy": "APY",
+        "apyEdit": "编辑",
+        "apyRemove": "移除",
+        "configure": "配置",
+        "payout": "收益发放",
+        "lastPayout": "上次发放",
+        "status": "状态",
+        "active": "启用中",
+        "inactive": "已停用",
+        "lastUpdated": "上次更新",
+        "source": "来源",
+        "added": "添加时间",
+        "price": "价格",
+        "unpriceableNote": "从来没有任何数据源为这个标的提供过报价，我们暂时不再尝试。它会被排除在你的净资产之外，而不是按零计入。",
+        "history": "历史",
+        "incompleteHistory": "不完整——缺少第一笔导入交易之前的流入，因此该日期之前的价值会被限制处理。",
+        "performance": "表现",
+        "costBasis": "成本基础",
+        "gainLoss": "盈亏",
+        "record": "记录",
+        "groups": "分组",
+        "in": "属于",
+        "noGroups": "没有分组",
+        "refreshing": "正在刷新…",
+        "refreshPrice": "刷新价格",
+        "syncing": "正在同步…",
+        "syncBalance": "同步余额",
+        "amount": "数量",
+        "account": "账户",
+        "type": "类型"
+      },
+      "badge": {
+        "noPrice": "无价格",
+        "noPriceTitle": "从来没有任何价格数据源为这个标的提供过报价，我们暂时不再尝试。它会被排除在你的净资产之外，而不是按零计入。",
+        "lookalike": "显示为 {{impersonates}}",
+        "lookalikeTitle": "这个标的的代码使用了能画出“{{impersonates}}”样子的字符，但它并不是那个标的。这一行以及你的余额都会保留，因为隐藏它并不能告诉你任何信息——但它不是它看起来的那个标的。",
+        "noPriceSpoken": "没有可用价格",
+        "lookalikeSpoken": "显示为 {{impersonates}}",
+        "lookalikeExportCell": "{{symbol}}（显示为 {{impersonates}}）"
+      },
+      "empty": {
+        "action": "添加你的第一笔持仓"
+      },
+      "bulk": {
+        "assignGroups": "分配分组",
+        "deleteConsequence_other": "{{symbols}} 会从你的投资组合中移除，针对它们记录的每一笔交易也会一并删除。此操作无法撤销。"
+      },
+      "realized": {
+        "heading": "已实现",
+        "noGain": "未计入收益",
+        "lotAcquired": "<qty/> 于 {{date}} 取得",
+        "lotHeld": "<qty/> 于 {{date}} 取得 · 持有 {{duration}}",
+        "lotNoAcquisition": "<qty/>，没有取得记录",
+        "costOf": "成本 <value/>"
+      },
+      "apy": {
+        "removed": "已移除利息配置",
+        "removing": "正在移除利息配置",
+        "trigger": "移除利息配置",
+        "consequence": "这笔持仓将不再计息。已经记录的发放会保留。",
+        "commit": "移除",
+        "createTitle": "配置利息",
+        "editTitle": "编辑利息",
+        "description": "每个发放日，利息会加到这笔持仓的余额上，并在那里记录为一笔你可以在历史中看到的交易。",
+        "subject": "利息配置",
+        "rate": "年利率（%）",
+        "ratePlaceholder": "4.5",
+        "frequencyLabel": "发放频率",
+        "dayOfWeek": "星期几",
+        "month": "月份",
+        "dayOfMonth": "每月第几天",
+        "dayOfMonthPlaceholder": "1–31",
+        "needRate": "填写一个大于 0 且不超过 100 的年利率",
+        "needDayOfMonth": "填写 1 到 31 之间的日期",
+        "shortMonths": "天数较少的月份在当月最后一天发放。",
+        "pastMonthEnd": "{{month}} 在那之前就结束了，因此这一次在当月最后一天发放。",
+        "preview": "{{schedule}}。按今天的余额计算，下次发放约为 {{amount}} {{symbol}}。",
+        "editRestarts": "保存后排程会从今天重新开始——下次发放是从现在起第一个符合条件的日期。",
+        "saveCreate": "开始计息",
+        "saveEdit": "保存",
+        "saving": "保存中…",
+        "frequency": {
+          "daily": "每天",
+          "weekdays": "每个工作日",
+          "weekly": "每周",
+          "monthly": "每月",
+          "yearly": "每年"
+        }
+      },
+      "page": {
+        "title": "持仓"
+      },
+      "refresh": {
+        "price": "正在刷新价格",
+        "priceFailed": "价格刷新任务失败",
+        "balance": "正在刷新余额",
+        "balanceFailed": "刷新任务失败",
+        "partialTitle": "余额刷新——部分完成",
+        "partial_other": "数据源没有返回 {{symbol}}——你的其余 {{count}} 个余额已刷新。请过一分钟再试，如果一直如此，请重新导入该账户。",
+        "exited": "{{symbol}} 已离开这个钱包——链上显示为 0，因此屏幕上的余额现在也是 0。",
+        "oneBalance": "{{symbol}} 余额已刷新",
+        "manyBalances_other": "已刷新该账户上的 {{count}} 个余额",
+        "outcome": {
+          "noPrice": "没有数据源提供 {{symbol}} 的价格。屏幕上的数字保持不变。",
+          "storedWithAge": "{{symbol}} 没有新价格——显示的是 {{age}} 的价格",
+          "stored": "{{symbol}} 没有新价格——已存储的价格保持不变",
+          "updated": "{{symbol}} 价格已更新"
+        }
+      },
+      "summary": {
+        "value": "价值",
+        "excludes_other": "未包含 {{count}} 个已停用的持仓（价值 <value/>），它们仍列在下面。",
+        "allocation": "按资产类型划分的分布"
+      },
+      "status": {
+        "confirm": "{{label}} {{symbol}}",
+        "deactivateConsequence": "{{account}} 中的 {{symbol}} 将不再计入你的投资组合合计——合计减少 <value/>。持仓及其历史会保留，在这里标记为“已停用”，你可以随时重新启用。",
+        "activateConsequence": "{{account}} 中的 {{symbol}} 会重新计入你的投资组合合计——合计增加 <value/>。",
+        "deactivateAction": "停用",
+        "activateAction": "启用"
+      },
+      "toast": {
+        "deleted": "持仓已删除",
+        "deletingContext": "正在删除持仓",
+        "bulkDeleted_other": "已删除 {{count}} 个持仓",
+        "bulkDeletedWithFailures_other": "已删除 {{count}} 个持仓，{{failed}} 个失败",
+        "bulkDeletingContext": "正在删除持仓",
+        "updated": "持仓已更新",
+        "updatingContext": "正在更新持仓"
+      },
+      "editCause": {
+        "title": "这次改动意味着什么？",
+        "description": "{{holding}} 的余额发生了变化。Scani 无法区分资金流动、数字更正和余额自然增长，而这三者的处理方式各不相同。",
+        "option": {
+          "flow": "资金发生了流动",
+          "correction": "更正数字",
+          "growth": "它增长了"
+        },
+        "explain": {
+          "flow": "你存入或取出了资金。这算作本金变动，而不是收益。",
+          "correction": "之前的数字是错的。Scani 会重述它所覆盖的历史，而不是记录当下发生了什么。",
+          "growth": "利息、一次发放或一次重估。这就是收益，也是 Scani 在你手工维护的余额上唯一能看到收益的方式。"
+        },
+        "dateLabel": "资金是什么时候流动的？",
+        "destinationLabel": "它去了哪里？",
+        "destination": {
+          "internal": "这里的另一个账户",
+          "left_control": "已离开我的投资组合",
+          "untracked": "Scani 看不到的账户"
+        },
+        "destinationExplain": {
+          "internal": "它转到了你追踪的另一笔持仓。请选择去向，Scani 会把两侧关联起来，这样成本基础会随之延续，而不是在这里实现、在那里重新开始。",
+          "left_control": "花掉、赠出，或在 Scani 看不到的地方卖出。这会就转出的部分产生已实现收益或亏损。",
+          "untracked": "仍然是你的钱，只是放在 Scani 无法访问的钱包或账户里。不会产生任何已实现损益。"
+        },
+        "cancel": "取消",
+        "save": "保存"
+      },
+      "fee": {
+        "label": "手续费，如果这次转账产生了费用",
+        "explain": "如果没有产生费用请留空。手续费会在这个账户上记为一项单独的成本，这样到账金额就是实际收到的金额。",
+        "arrives": "到账 {{amount}} {{symbol}}；手续费在这里记为一项成本。",
+        "tooLarge": "手续费必须小于流动的金额。"
+      },
+      "amountBelow": "< {{amount}}",
+      "movement": {
+        "title": "记录一次资金流动",
+        "description": "说明你做了什么，由 Scani 算出余额——而不是反过来。",
+        "holdingLabel": "哪一笔持仓发生了流动",
+        "holdingPlaceholder": "搜索机构、账户和持仓",
+        "direction": {
+          "inflow": "资金流入",
+          "outflow": "资金流出",
+          "transfer": "转账"
+        },
+        "amountLabel": "流动了多少",
+        "currentBalance": "当前为 {{amount}} {{symbol}}",
+        "dateLabel": "资金是什么时候流动的？",
+        "whereLabel": "它去了哪里？",
+        "where": {
+          "left_control": {
+            "title": "花掉、卖出或赠出",
+            "detail": "它离开了你的投资组合，因此其上的收益会被实现。"
+          },
+          "untracked": {
+            "title": "转到了 Scani 看不到的地方",
+            "detail": "仍然是你的钱——冷钱包，或没有连接的账户。不会产生任何已实现损益。"
+          },
+          "transfer": {
+            "title": "转到了我持有的另一个账户",
+            "detail": "Scani 会记录两侧并把它们关联起来，之后不会再就此询问你。"
+          }
+        },
+        "destinationTitle": "它的去向",
+        "noteLabel": "备注（可选）",
+        "cancel": "取消",
+        "save": "记录",
+        "saving": "正在记录…",
+        "recorded": "资金流动已记录",
+        "peekAction": "记录一次资金流动",
+        "holdingNoResults": "没有匹配的持仓。",
+        "holdingAria": "持仓",
+        "directionLabel": "发生了什么",
+        "whatFieldset": "这次流动",
+        "busyLabel": "记录",
+        "blocker": {
+          "holding": "选择发生流动的持仓",
+          "amount": "填写流动的金额",
+          "where": "说明资金去了哪里",
+          "fee": "把手续费改成小于流动的金额"
+        }
+      }
+    },
+    "export": {
+      "sheet": {
+        "accounts": "账户",
+        "holdings": "持仓",
+        "transactions": "交易",
+        "vendors": "收付方",
+        "payments": "付款",
+        "occurrences": "付款期次",
+        "groups": "分组",
+        "groupMembers": "分组成员",
+        "vaults": "储蓄目标",
+        "vaultHoldings": "储蓄目标持仓",
+        "documents": "文档",
+        "history": "净资产历史",
+        "netWorth": "净资产"
+      },
+      "column": {
+        "account": "账户",
+        "institution": "机构",
+        "accountType": "类型",
+        "description": "描述",
+        "hidden": "已隐藏",
+        "active": "启用中",
+        "added": "添加时间",
+        "id": "ID",
+        "symbol": "代码",
+        "token": "标的",
+        "balance": "余额",
+        "source": "来源",
+        "lastUpdated": "上次更新",
+        "occurred": "发生时间",
+        "transactionKind": "种类",
+        "quantity": "数量",
+        "priceNative": "价格（原币）",
+        "counterQuantity": "对手方数量",
+        "fee": "手续费",
+        "counterparty": "交易对手",
+        "externalId": "外部 ID",
+        "vendor": "收付方",
+        "category": "类别",
+        "website": "网站",
+        "direction": "方向",
+        "paymentKind": "种类",
+        "amount": "金额",
+        "every": "每",
+        "starting": "开始",
+        "ending": "结束",
+        "status": "状态",
+        "origin": "来源",
+        "notes": "备注",
+        "due": "到期",
+        "expected": "预计",
+        "actual": "实际",
+        "group": "分组",
+        "memberKind": "成员类型",
+        "member": "成员",
+        "vault": "储蓄目标",
+        "saved": "已存",
+        "target": "目标",
+        "holding": "持仓",
+        "share": "占比",
+        "file": "文件",
+        "documentKind": "种类",
+        "mimeType": "类型",
+        "bytes": "字节数",
+        "classification": "分类",
+        "uploaded": "上传时间",
+        "date": "日期",
+        "netWorth": "净资产",
+        "coverage": "覆盖度",
+        "holdingsPriced": "已定价持仓数",
+        "holdingsTotal": "持仓总数",
+        "holdingsUnpriceable": "无法定价的持仓数",
+        "holdingsStalePriced": "按过期报价定价的持仓数"
+      },
+      "value": {
+        "yes": "是",
+        "no": "否",
+        "every_week_other": "{{count}} 周",
+        "every_month_other": "{{count}} 个月",
+        "every_quarter_other": "{{count}} 个季度",
+        "every_year_other": "{{count}} 年",
+        "everyUnknown": "{{count}} × {{unit}}"
+      },
+      "provenance": {
+        "subject": "整个账号",
+        "scope": "{{holdings}}、{{transactions}}、{{history}}",
+        "scopeHoldings_other": "{{count}} 个持仓",
+        "scopeTransactions_other": "{{count}} 笔交易",
+        "scopeHistory_other": "{{count}} 天的历史",
+        "accountLabel": "账户",
+        "notIncludedLabel": "未包含",
+        "notIncludedValue": "交易所和券商的凭据、会话、已上传文件的内容"
+      }
+    },
+    "settings": {
+      "account": {
+        "deleteIntro": "删除你的数据会移除所有账户、持仓、钱包、集成凭据、分组和储蓄目标。登录账号本身会保留，但里面是空的。",
+        "deleting": "正在删除…",
+        "deleteTrigger": "删除我的全部数据",
+        "deleteConfirm": "删除全部",
+        "deleteConsequence": "所有账户、持仓、钱包、集成凭据、分组和储蓄目标都会被删除。你的登录账号会保留，但里面空无一物。此操作无法撤销。",
+        "deleteInFlight": "你的数据正在删除中。",
+        "deleted": "你的全部数据已删除",
+        "deleteFailed": "删除失败"
+      },
+      "export": {
+        "title": "你的数据",
+        "subject": "整个账号",
+        "workbook": "Excel 工作簿",
+        "workbookDetail": "每类数据一张工作表——持仓、交易、付款、历史",
+        "jsonDetail": "每一个字段，与 API 返回的完全一致",
+        "scopeAll": "你账号中的全部内容",
+        "exportJson": "导出为 JSON",
+        "exportWorkbook": "导出工作簿",
+        "json": "JSON",
+        "intro": "这个账号上的每一条记录汇成一个文件——持仓、完整交易台账、付款、分组、储蓄目标以及你的净资产历史。交易所和券商的密钥不在其中：它们是凭据，不是记录。",
+        "trigger": "导出全部"
+      },
+      "maintenance": {
+        "title": "投资组合历史",
+        "rebuild": "重建投资组合历史",
+        "rebuilt": "投资组合历史已重建",
+        "rebuildFailed": "重建失败",
+        "intro": "重建净资产和损益图表所依据的每日缓存数值——与每晚运行的 365 天回填相同。",
+        "rebuilding": "正在重建…"
+      },
+      "notifications": {
+        "title": "付款提醒",
+        "intro": "在付款到期前一天下午 5 点左右，在这台设备上发送一条通知——包含有多少笔、合计多少。没有到期项的日子不会发送。",
+        "ready": "这台设备上的提醒已关闭。",
+        "enabled": "这台设备上的提醒已开启。",
+        "enable": "开启提醒",
+        "disable": "关闭提醒",
+        "denied": "这个浏览器阻止了 Scani 的通知。请在浏览器或系统设置中允许通知，然后再回来。",
+        "iosNeedsInstall": "在 iPhone 和 iPad 上，只有把 Scani 添加到主屏幕后通知才能送达。请打开分享菜单，选择“添加到主屏幕”，然后在那里开启通知。",
+        "unsupported": "这个浏览器无法接收通知。",
+        "serverUnconfigured": "这台服务器没有配置通知密钥，因此暂时无法发送提醒。",
+        "sendTest": "发送一条测试通知",
+        "testNoDevices": "还没有任何设备订阅，因此没有可发送的对象。",
+        "testSentHere": "已发送到这台设备。它应该会在几秒内出现——如果没有，请检查设备设置中是否允许 Scani 发送通知。",
+        "testSentOther": "已发送到你开启过提醒的另一台设备。",
+        "testGoneHere": "这台设备的订阅已过期，因此已被移除。请在这里关闭再重新开启提醒以重新注册。",
+        "testGoneOther": "另一台设备的订阅已过期，因此已被移除。请在那台设备上重新开启提醒。",
+        "testVapidMismatch": "推送服务拒绝了这条通知（403）。这台设备订阅时使用的密钥与服务器签名使用的密钥不一致，在修复之前任何提醒都无法送达。这是我们的问题，不是你的。",
+        "testFailed": "推送服务拒绝了这条通知（HTTP {{statusCode}}）。订阅仍然有效。",
+        "testFailedNoCode": "无法连接推送服务。订阅仍然有效。"
+      },
+      "profile": {
+        "emailImmutable": "应用暂时还不支持修改这一项。",
+        "baseCurrencyHint": "应用中的每一个数字都会换算成这种货币。"
+      },
+      "sessions": {
+        "title": "设备",
+        "subject": "你的设备",
+        "intro": "当前登录了这个账号的所有地方。遇到你不认识的，请结束它。",
+        "empty": "没有活跃的会话。",
+        "revoked": "会话已撤销",
+        "signedOutOthers": "已在其他所有地方退出登录",
+        "signOutOthers": "在其他所有地方退出登录（{{count}}）",
+        "signOutOthersConfirm_other": "让 {{count}} 台设备退出登录",
+        "signOutOthersConsequence_other": "除这台设备以外的所有设备都会退出登录——共 {{count}} 个会话，包括你确实认识的那些。每一台都需要用邮件中的新验证码重新登录。你的数据不受影响。",
+        "revoke": "撤销",
+        "revokeConfirm": "让 {{device}} 退出登录",
+        "revokeConsequence": "位于 {{where}} 的 {{device}} 会退出登录，需要用邮件中的新验证码重新登录。你的数据不受影响，其他设备也不会退出。",
+        "currentDevice": "这是你正在使用的设备——请改用下方的退出登录",
+        "thisDevice": "{{device}}——这台设备",
+        "lastUsed": "{{where}} · 上次使用 {{when}}",
+        "unknownIp": "未知 IP"
+      },
+      "device": {
+        "unknown": "未知设备",
+        "genericBrowser": "浏览器",
+        "unknownOs": "未知操作系统",
+        "browserOnOs": "{{os}} 上的 {{browser}}"
+      },
+      "dataQuality": {
+        "title": "数据质量",
+        "flagged": "已标记",
+        "duplicateRows": "与另一条标的记录共用同一代码的显示中持仓",
+        "duplicateChip": "{{symbol}}×{{count}}",
+        "duplicateChipLookalike": "{{symbol}}×{{count}}（显示为 {{lookalikeOf}}）",
+        "lookalikeRows": "代码仿冒了其他代码的显示中持仓",
+        "lookalikeChip": "{{symbol}}（显示为 {{lookalikeOf}}）",
+        "holdingsShown": "显示中的持仓",
+        "holdingsShownHint": "共 {{count}} 个",
+        "zeroBalanceShown": "仍在显示的零余额持仓",
+        "hiddenNextSweep_other": "其中将在下一次 {{count}} 天清理时隐藏的",
+        "noRecentPrice": "没有近期价格的显示中持仓",
+        "noPriceSource": "缺少可用价格来源的显示中持仓",
+        "noPriceSourceHint": "{{symbols}}——是我们的配置问题，不是市场问题",
+        "nothingCanPrice": "任何数据源都无法定价的显示中持仓",
+        "nothingCanPriceHint": "没有市场的空投或已退市标的——不计入图表覆盖度",
+        "negativeOpening": "合成的起始余额为负",
+        "negativeOpeningHint": "某次导入没有回溯到第一笔交易之前",
+        "missingCoverage": "没有覆盖度记录的持仓",
+        "intro": "每次访问都会重新统计。标记为“{{flag}}”的都值得查看一下。",
+        "rowLink": "{{label}}：{{count}}——在持仓中查看"
+      },
+      "pending": {
+        "deletingData": "正在删除你的数据",
+        "exportingAccount": "正在导出你的账号",
+        "rebuildingHistory": "正在重建你的投资组合历史",
+        "savingSettings": "正在保存你的设置",
+        "revokingSession": "正在撤销会话",
+        "signingOutOthers": "正在结束其他会话",
+        "togglingNotifications": "正在更改你的通知设置",
+        "sendingTestNotification": "正在发送测试通知"
+      }
+    },
+    "feedback": {
+      "stale": {
+        "notice": "无法连接 Scani。这些是我们最后拿到的数字，不是今天的。",
+        "retry": "重试"
+      }
+    },
+    "review": {
+      "page": {
+        "title": "核对",
+        "transfersTitle": "待确认的转账",
+        "answered": "已答复",
+        "balancesTitle": "待说明的余额变化"
+      },
+      "queues": {
+        "clear": "没有待处理项"
+      },
+      "item": {
+        "jobFailed": "{{job}}失败",
+        "invoiceExtracted": "已从发票中提取",
+        "transfersToConfirm": "待确认的转账",
+        "holdings_other": "{{count}} 个持仓",
+        "holdingsWithSymbols_other": "{{count}} 个持仓 · {{symbols}}",
+        "symbolsOverflow": "{{symbols}} 等 {{hidden}} 项",
+        "needsCurrency_other": "{{count}} 笔交易——需要指定货币",
+        "needsCurrencyWithType_other": "{{count}} 笔交易 · {{fileType}}——需要指定货币",
+        "chains_other": "{{count}} 条链",
+        "candidatesAcross_other": "{{chains}} 上共 {{count}} 个候选项",
+        "nothingFound": "没有找到任何内容",
+        "labelled": "{{label}} · {{body}}",
+        "unpairedTransfers_other": "{{count}} 笔没有对应存入的转出",
+        "balanceChangesToExplain": "待说明的余额变化",
+        "unexplainedBalanceChanges_other": "{{count}} 笔我们无法解释的余额变化"
+      },
+      "kind": {
+        "withdrawal": "提取",
+        "transferOut": "转出"
+      },
+      "list": {
+        "valueAwaiting": "<label>等待答复的价值：</label> <value/>",
+        "valueAwaitingUnpriced_other": "<label>等待答复的价值：</label> <value/><label>，另有 {{count}} 笔当天没有价格</label>",
+        "backToReview": "返回核对",
+        "seeAllJobs": "查看全部任务",
+        "field": {
+          "when": "时间",
+          "to": "去向",
+          "description": "描述",
+          "transaction": "交易",
+          "viewOnExplorer": "在区块浏览器中查看",
+          "toOwnWallet": "你添加过的钱包——这笔钱仍在你的投资组合中"
+        }
+      },
+      "answered": {
+        "title": "已答复的转账",
+        "backToQueue": "返回队列",
+        "field": {
+          "answered": "已答复",
+          "to": "去向"
+        },
+        "source": {
+          "unrecorded": "未记录",
+          "unrecordedLong": "未记录——这个答复不是在队列中给出的",
+          "user": "你在这里给出的",
+          "repair": "由 Scani 更正",
+          "repairNote": "Scani 更正了这个答复",
+          "rule": "由你写的一条规则给出",
+          "ruleNote": "由你的规则答复：{{note}}",
+          "ruleNoteUnnamed": "由你针对这个去向写的一条规则答复"
+        },
+        "reopen": {
+          "trigger": "修改这个答复",
+          "commit": "把它放回队列",
+          "declaredTrigger": "撤销这笔转账",
+          "declaredCommit": "撤销它并还原两边的余额"
+        },
+        "toast": {
+          "reopened": "已放回队列——请在那里重新答复",
+          "reopenFailed": "这笔转账无法重新打开",
+          "undone": "转账已撤销——两边的余额都已还原"
+        },
+        "attribution": {
+          "user": "你表示",
+          "repair": "Scani 把它更正为",
+          "unattributed": "记录为",
+          "rule": "你的规则答复为"
+        }
+      },
+      "split": {
+        "movingTo": "转移到 {{location}}",
+        "wherePrompt": "这一部分去了哪里？",
+        "amountLabel": "{{outcome}}——以 {{symbol}} 计的金额",
+        "pickDepositFirst": "请先在上面选择存入记录",
+        "addsUp": "金额吻合"
+      },
+      "decision": {
+        "possibleMatches": "可能的匹配项",
+        "candidatesLegend": "可能匹配的存入记录",
+        "noCandidates": "在这笔转账前后一周内，Scani 中任何地方都没有出现金额相近的 {{symbol}} 存入。如果它去了 Scani 看不到的地方，请在下面说明。",
+        "whatHappened": "发生了什么",
+        "noLinkTarget": "没有足够接近、可以与之关联的存入记录",
+        "toast": {
+          "paired": "已关联——成本基础随之转移",
+          "internal": "已记录——存入已记在另一侧",
+          "leftControl": "已记为一次处置",
+          "untracked": "已记为仍属于你",
+          "split": "已记录——每一部分按各自的方式处理",
+          "gone": "这笔转账已不在等待中",
+          "splitRejected": "这次拆分未被接受"
+        },
+        "ownWalletNotice": "这笔资金转到了你添加过的钱包，所以钱仍然是你的。请把它与对应的存入记录配对，或记录它转到了哪里——选择“已离开我的投资组合”会把它记为一次卖出。",
+        "withdrawnNotice": "Scani 撤回了此前对这笔转账的答复。当时的答复是针对某个配对给出的，而我们后来证明那根本不是一笔转账，所以问题又回来了——而且这里可能没有可指向的存入记录。",
+        "withdrawnRuleNotice": "你收回了规则对这笔转账给出的答复，因此它回到这里等你亲自答复。该规则不会再答复它。"
+      },
+      "destinationPicker": {
+        "loading": "正在加载你的账户…",
+        "legend": "这笔钱去了哪里",
+        "noDestinations": "你没有其他可以转入的账户。如果它去了 Scani 看不到的地方，请改选那一项。",
+        "searchPlaceholder": "搜索你的账户",
+        "group": {
+          "holdsToken": "已持有 {{symbol}}",
+          "sameNetwork": "在同一条网络上",
+          "other": "你的其他账户"
+        }
+      },
+      "transfer": {
+        "unreviewedBehaviour": "在这些还没有答复之前，Scani 不会就它们计入任何收益——转移你自己的币不是卖出，而擅自当作卖出正是凭空造出收益的方式。如果其中确实有资金离开了你的投资组合，在你说明之前，它的收益不会计入你的已实现合计。",
+        "unreviewedNote": "未答复时，这笔无论如何都不会计入收益。",
+        "candidateReason": {
+          "ambiguous": "匹配——但另一笔存入也同样匹配",
+          "quantity": "金额相差 {{pct}}",
+          "time": "超出我们用于匹配的 {{window}} 窗口",
+          "both": "相差 {{pct}}，且超出 {{window}} 窗口"
+        },
+        "hint": {
+          "equallyGood_other": "有 {{count}} 个同样接近的匹配项",
+          "none": "没有找到接近的存入记录",
+          "possible_other": "有 {{count}} 个可能的匹配项",
+          "ownWallet": "转到了你添加过的钱包"
+        },
+        "consequence": {
+          "paired": "这 {{quantity}} {{symbol}} 在转移到 {{location}} 时会保留你最初为它支付的成本。这里不产生任何已实现损益，也不计入收益。",
+          "pairedPrompt": "请选择这笔钱到账时对应的存入记录。",
+          "internalPrompt": "请选择这笔钱转入的持仓。",
+          "leftControlPriced": "按 {{date}} 的市价计为一次处置——所得约 {{amount}}，与你支付的成本相抵。",
+          "leftControlUnpriced": "按 {{date}} 的市价计为一次处置。Scani 没有 {{symbol}} 当天的价格，因此不计入任何金额。",
+          "untracked": "仍然是你的，只是在 Scani 看不到的地方。不是处置，因此不计入收益——这些 {{symbol}} 只是不再被统计。"
+        },
+        "decision": {
+          "paired": {
+            "trigger": "同一笔钱",
+            "commit": "关联这两笔"
+          },
+          "internal": {
+            "trigger": "转到了 Scani 追踪的地方",
+            "commit": "记录这次转移"
+          },
+          "leftControl": {
+            "trigger": "已离开我的投资组合",
+            "commit": "计为一次处置"
+          },
+          "untracked": {
+            "trigger": "转到了未追踪的地方",
+            "commit": "记为仍属于我"
+          }
+        },
+        "destination": {
+          "willCreate": "这里还没有追踪 {{symbol}}——将为它创建一笔持仓"
+        },
+        "internal": {
+          "carry": "这 {{amount}} {{symbol}} 在转移到 {{location}} 时会保留你最初为它支付的成本。不产生任何已实现损益，也不计入收益。",
+          "writeNew": "那里会新建一笔 {{symbol}} 持仓，余额为 {{amount}} {{symbol}}，并含一笔日期为 {{date}} 的存入。",
+          "writeNewSynced": "那里会新建一笔 {{symbol}} 持仓，初始余额为零，并含一笔日期为 {{date}} 的存入。该账户会自动同步，因此下次同步会填入真实余额。",
+          "writeExisting": "那里会记录一笔日期为 {{date}}、金额为 {{amount}} {{symbol}} 的存入。它的余额仍为 {{balance}}——该账户会自动同步，它自己的同步已经报告这笔钱到账了。",
+          "writeExistingMoves": "那里会记录一笔日期为 {{date}}、金额为 {{amount}} {{symbol}} 的存入，余额会从 {{balance}} 增加 {{amount}} {{symbol}}。没有任何东西同步该账户，所以不会有别的来源把这笔钱记进去——你不需要自己再改一次。",
+          "balanceFallback": "它的余额"
+        },
+        "allocation": {
+          "unparseable": "其中有一个金额不是数字。",
+          "over": "这比转账金额多了 {{amount}} {{symbol}}。",
+          "under": "还有 {{amount}} {{symbol}} 没有说明去向。"
+        },
+        "split": {
+          "trigger": "它同时属于其中的多种情况",
+          "commit": "记录这次拆分",
+          "note": "一笔提取可能同时是多件事——一部分转到了你自己的另一笔持仓，一部分确实离开了。把它拆开，每一部分各自处理。",
+          "oneLinkOnly": "只有一部分可以转到 Scani 追踪的地方——{{paired}} 或 {{internal}}，不能同时选。成本基础只能跟随一个去向，选两个会导致它哪个都不跟。",
+          "needTwo": "请至少为其中两项填写金额。它们加起来必须等于 {{amount}} {{symbol}}。",
+          "takeRest": "把剩下的都算上——{{amount}} {{symbol}}",
+          "transferWas": "这笔转账为 {{amount}} {{symbol}}",
+          "clause": {
+            "paired": "{{amount}} 在转移到 {{location}} 时保留你为它支付的成本",
+            "pairedFallback": "你选择的那笔存入",
+            "internal": "{{amount}} 转移到 {{location}}，并在那里记录一笔 {{amount}} 的存入",
+            "internalFallback": "{{amount}} 转移到你选择的持仓",
+            "leftControl": "{{amount}} 按 {{date}} 的市价计为一次处置",
+            "untracked": "{{amount}} 仍然是你的，在 Scani 看不到的地方"
+          },
+          "summary": "{{clauses}}。只有处置那一部分会计入收益。",
+          "balanceNew": "那里会新建一笔 {{symbol}} 持仓，以这笔存入作为余额。",
+          "balanceUnchanged": "不改变任何余额。",
+          "balanceMoves": "该账户的余额会按到账金额相应增加。"
+        },
+        "answered": {
+          "paired": "已与一笔存入关联——不产生已实现损益",
+          "internal": "已转入你追踪的持仓——存入已记录",
+          "leftControl": "已计为一次处置",
+          "untracked": "仍然是你的，在未追踪的地方",
+          "fallback": "已答复"
+        },
+        "answeredShort": {
+          "paired": "已关联 {{amount}}",
+          "internal": "已转移 {{amount}}",
+          "leftControl": "已处置 {{amount}}",
+          "untracked": "未追踪 {{amount}}"
+        },
+        "reopen": {
+          "internal": "这次答复在另一个账户上记录的存入会随之删除——否则你的下一个答复会把这笔钱算两遍。如果当时的答复改动过那个账户的余额，改动也会一并撤回。这笔转账会重新回到队列。",
+          "internalCreated": "在你答复之前，那个账户没有追踪过这个标的，因此 Scani 连同存入一起创建了持仓。两者都会被移除——除非此后又有别的内容记在了那笔持仓上，那样它会保留。这笔转账会重新回到队列，其他余额都不会变化。",
+          "leftControl": "在你重新答复之前，这次记入的收益会从你的已实现合计中扣除，这笔转账会重新回到队列。",
+          "default": "这笔转账会重新回到队列，在你重新答复之前，关于它的一切都不算定论。",
+          "declared": "这是一笔你自己记录的转账，因此撤销它会把两边的余额还原成之前的状态——转出的账户余额回升，收到的账户余额回落——并删除两条记录。它不会回到队列：已经没有需要答复的问题了。"
+        },
+        "gap": {
+          "sameMinute": "同一分钟",
+          "later": "晚 {{gap}}",
+          "earlier": "早 {{gap}}",
+          "minutes_other": "{{count}} 分钟",
+          "hours_other": "{{count}} 小时",
+          "days_other": "{{count}} 天"
+        },
+        "bulk": {
+          "consequence": {
+            "loading": "正在计算这么做的后果…",
+            "none": "所选转账中没有一笔可以这样答复。",
+            "leftControl_other": "把 {{count}} 笔转账计为处置——所得约 {{amount}}，与你支付的成本相抵。",
+            "leftControlUnpriced_other": "把 {{count}} 笔转账计为处置。Scani 没有它们当天的任何价格，因此不计入任何金额。",
+            "untracked_other": "把 {{count}} 笔转账记为仍属于你，在 Scani 看不到的地方。不产生任何已实现损益。",
+            "takesBack_other": "这会把约 {{amount}} 的已实现收益从目前计为处置的 {{count}} 笔中扣回。",
+            "takesBackUnpriced_other": "其中有 {{count}} 笔目前计为处置，而 Scani 没有它们中任何一笔的价格，因此不会扣回任何金额。",
+            "unpriced_other": "另有 {{count}} 笔当天没有价格，不计入任何金额，因此这个数字是下限。"
+          },
+          "commit": {
+            "leftControl_other": "把 {{count}} 笔计为处置",
+            "untracked_other": "把 {{count}} 笔记为仍属于我"
+          },
+          "refusal": {
+            "ownWallet_other": "有 {{count}} 笔转到了你登记过的钱包，其中第一笔是 {{address}}——它们没有离开你的投资组合，因此不能计为处置。",
+            "answered_other": "有 {{count}} 笔已经答复为“{{answer}}”。要修改请从它们各自的行中重新打开。",
+            "linked_other": "有 {{count}} 笔已经与存入记录关联，因此在这里答复不会有任何改变。",
+            "gone_other": "有 {{count}} 笔已经不是可以答复的转账了。"
+          },
+          "deselect_other": "取消选择那 {{count}} 笔转账",
+          "overCap": "一次最多选择 {{max}} 笔转账。",
+          "undo": "撤销",
+          "toast": {
+            "leftControl_other": "已把 {{count}} 笔转账计为处置",
+            "untracked_other": "已把 {{count}} 笔转账记为仍属于你",
+            "undone_other": "已把 {{count}} 笔转账还原为原样",
+            "refused": "没有任何内容被更改",
+            "undoFailed": "无法撤销该操作"
+          }
+        }
+      },
+      "rules": {
+        "title": "去向规则",
+        "trigger": "为这个去向创建一条规则",
+        "commit": "创建这条规则",
+        "manage": "查看你的去向规则",
+        "alreadyRuled": "你已经为这个去向设置了规则",
+        "revoke": "收回这条规则",
+        "revokeCommit": "收回这条规则",
+        "field": {
+          "counterparty": "这笔转账转到了",
+          "key": "该规则将匹配",
+          "keyHint": "金额被刻意排除在外，这样下一笔转到同一去向的转账也会匹配。",
+          "note": "这个去向是什么？",
+          "notePlaceholder": "我在 Bybit 的充值地址",
+          "verdict": "这条规则要做什么"
+        },
+        "verdict": {
+          "askMe": "继续询问，但标注名称",
+          "notADisposal": "不再询问它",
+          "alwaysADisposal": "直接答复为处置"
+        },
+        "consequence": {
+          "askMe": "每一笔转到 {{key}} 的转账，无论金额多少，都会留在这个队列中并带上你的备注。不会自动答复，也不会计入任何收益——每一笔仍由你自己决定。",
+          "notADisposal": "每一笔转到 {{key}} 的转账，无论金额多少，都会离开这个队列，改列在“去向规则”下。不会向它们写入任何内容：未答复的转账不计入收益，而收回这条规则会让它们全部立刻回到这里。",
+          "mark_other": "把 {{count}} 笔转到这个去向的转账答复为已离开你的投资组合，计入 {{proceeds}} 的所得。之后每一笔转到该去向的转账都会以同样方式答复，无需打开。每一笔仍可单独撤销，而撤销其中一笔会让该规则永久不再覆盖那笔转账。",
+          "markUnpriced_other": "{{count}} 笔转到这个去向的转账会被答复为已离开你的投资组合。它们当天都没有价格，因此今天不计入任何金额。之后每一笔转到该去向的转账都会以同样方式答复，无需打开。",
+          "markUnpricedTail_other": "其中有 {{count}} 笔当天没有价格，不计入任何金额。",
+          "markFuture": "目前没有针对这个去向的待处理项，因此今天不会答复任何内容。之后每一笔转到该去向的转账都会被答复为已离开你的投资组合，无需打开，并计入收益。"
+        },
+        "revokeConsequence": {
+          "notADisposal_other": "{{count}} 笔转账会回到队列。此前没有向它们写入任何内容，因此没有需要撤销的东西。",
+          "askMe": "转到这个去向的转账将不再带上你的备注。规则从未答复过它们，因此其他一切都不会改变。",
+          "markKeep_other": "该规则将不再答复转到这个去向的新转账。它已经答复过的 {{count}} 笔仍保持已答复状态并继续计入收益——勾选上面的选项可以把它们也一并收回。",
+          "markWithdraw_other": "该规则将不再答复新的转账，它已经答复过的 {{count}} 笔会回到队列，恢复为未答复。它们的收益将不再计入。"
+        },
+        "row": {
+          "hiding_other": "让 {{count}} 笔转账留在队列之外",
+          "labelling_other": "为队列中的 {{count}} 笔转账标注名称",
+          "answering_other": "已把 {{count}} 笔转账答复为处置"
+        },
+        "hidden": {
+          "title": "被你的规则挡在队列外的转账",
+          "body": "这些都还没有被答复。它们在队列之外等待，收回规则即可把它们放进来。"
+        },
+        "empty": {
+          "title": "还没有去向规则",
+          "body": "在队列中打开一笔转账，写下它去了哪里。之后每一笔转到同一去向的转账都会带上你的备注，无论金额多少——而你标记过的去向会自动为你答复。"
+        },
+        "notice": {
+          "label": "你对这个去向的备注",
+          "markExempt": "你把这个去向标记为处置，而你在这笔转账上收回了那个答复。它不会再被自动答复。"
+        },
+        "toast": {
+          "created": "规则已保存",
+          "refused": "那条规则未被保存",
+          "revoked": "规则已收回",
+          "revokeFailed": "那条规则未被收回",
+          "revokedWithdrawn_other": "规则已收回——{{count}} 个答复已退回队列",
+          "revokedKept_other": "规则已收回——它给出的 {{count}} 个答复保持不变"
+        },
+        "refusal": {
+          "ownWallet": "{{key}} 是你自己的钱包之一。转到它的资金并没有离开你的投资组合，因此不能标记为处置。"
+        },
+        "withdrawAnswers_other": "同时收回它给出的 {{count}} 个答复"
+      },
+      "balances": {
+        "intro": "有什么东西改变了这笔余额，但没有任何交易能说明原因。告诉我们发生了什么，它就不会再被当作投资表现来统计。",
+        "loading": "正在查找我们无法解释的余额变化…",
+        "empty": "没有需要说明的内容——每一笔余额变化都有着落。",
+        "queue_other": "有 {{count}} 笔余额变化需要说明，从金额最大的开始。",
+        "examined": "共检查了 {{examined}} 笔；其中 {{suppressed}} 笔未列入：金额太小、由你自己设置的余额、在下一次读数中被抵消，或者无法为它们定价。",
+        "examinedWithAnswered": "共检查了 {{examined}} 笔；其中 {{suppressed}} 笔未列入——金额太小、由你自己设置的余额、在下一次读数中被抵消，或者无法为它们定价——另有 {{answered}} 笔你已经答复过。",
+        "subject": "{{account}} · {{symbol}}",
+        "between": "在 {{from}} 与 {{to}} 之间",
+        "balances": "<previous/> → <current/> {{symbol}}。",
+        "partlyExplained_other": "已有 {{count}} 笔交易可以解释其中一部分。",
+        "answerLabel": "这次变化是什么？",
+        "dateLabel": "资金是什么时候流动的？",
+        "record": "记录",
+        "answerFailed": "无法记录",
+        "answerFailedBody": "没有保存任何内容。请重试。",
+        "option": {
+          "flow": "资金发生了流动",
+          "correction": "数字是错的",
+          "growth": "它增长了",
+          "unknown": "我不知道"
+        },
+        "explain": {
+          "flow": "按你填写的日期记为一笔存入或提取，因此不会被计为收益或亏损。",
+          "correction": "记为一次重述，日期回溯到错误数字进入记录的时间。既不是收益，也不是投入的资金。",
+          "growth": "不写入任何内容。这类余额上的增长本身就是收益，而且已经按收益统计。",
+          "unknown": "不写入任何内容，也不会再就这一笔询问你。它会继续被计为投资表现——在没人知道答案时，这是最诚实的处理方式。",
+          "flowNoDate": "记为一笔存入或提取，日期定在两次读数之间——我们知道它发生的时间比一个日期能表达的更精确。"
+        }
+      }
+    },
+    "form": {
+      "dateField": {
+        "clear": "清除日期",
+        "placeholder": "选择一个日期"
+      },
+      "recordPicker": {
+        "change": "更改{{label}}",
+        "changeAction": "更改",
+        "searching": "搜索中…"
+      },
+      "fiatCurrency": {
+        "noun": "货币",
+        "searchPlaceholder": "搜索货币…",
+        "empty": "没有叫这个名字的货币",
+        "label": "货币"
+      },
+      "cancel": "取消",
+      "blockers": "继续前请先：{{blockers}}。",
+      "sheet": {
+        "expand": "显示完整表单",
+        "collapse": "收起表单",
+        "close": "关闭表单"
+      }
+    },
+    "capture": {
+      "form": {
+        "enterField": "填写{{label}}",
+        "optionalField": "{{label}}（可选）",
+        "pasteField": "粘贴你的{{label}}"
+      },
+      "group": {
+        "upload": "上传",
+        "connect": "连接",
+        "manual": "手动输入"
+      },
+      "route": {
+        "screenshot": {
+          "title": "一张截图",
+          "description": "我们会从余额界面读取数字。"
+        },
+        "statement": {
+          "title": "一份对账单文件",
+          "description": "来自银行或券商的 CSV 或 OFX。"
+        },
+        "invoice": {
+          "title": "一张发票",
+          "description": "一份 PDF 或一张照片。我们会读取收付方和金额。"
+        },
+        "wallet": {
+          "title": "一个钱包地址",
+          "description": "每小时从链上读取余额。"
+        },
+        "exchange": {
+          "title": "交易所或券商登录",
+          "description": "只读 API 密钥，静态加密存储。"
+        },
+        "manual": {
+          "title": "直接填写数字",
+          "description": "把持仓输入到一个账户中。"
+        },
+        "payment": {
+          "title": "一笔重复的账单",
+          "description": "会在交易到达时与之匹配。"
+        },
+        "movement": {
+          "title": "记录一次资金流动",
+          "description": "资金流入、流出，或在你的账户之间转账。"
+        }
+      },
+      "fileImport": {
+        "screenshot": {
+          "title": "上传一张截图",
+          "description": "来自交易所、银行或券商的余额界面。我们会从中读取持仓，并在保存任何内容之前先展示读到的结果。"
+        },
+        "statement": {
+          "title": "上传一份对账单文件",
+          "description": "来自银行或券商的 CSV、TSV、OFX 或 QIF 导出文件。我们会从中读取持仓，并在保存任何内容之前先展示读到的结果。"
+        },
+        "either": {
+          "title": "上传一个文件",
+          "description": "一张余额截图、一份银行对账单或券商导出文件。我们会从中读取持仓，并在保存任何内容之前先展示读到的结果。"
+        },
+        "whereItBelongs": "它属于哪里"
+      },
+      "formats": {
+        "import": "PNG、JPG、WEBP、PDF、CSV、TSV、OFX 或 QIF",
+        "invoice": "PDF、PNG、JPG、WEBP 或 HEIC"
+      },
+      "stage": {
+        "account": "正在设置账户…",
+        "upload": "正在发送文件…",
+        "parse": "正在开始解析…",
+        "enqueue": "正在开始导入…",
+        "connect": "正在校验凭据…"
+      },
+      "file": {
+        "extension": "一个 .{{ext}} 文件",
+        "noExtension": "完全没有文件扩展名",
+        "unsupported": "这个是{{named}}。Scani 可读取 {{formats}}。",
+        "remove": "移除 {{name}}"
+      },
+      "blocker": {
+        "chooseFile": "选择要上传的文件",
+        "chooseInvoice": "选择要上传的发票",
+        "chooseInstitution": "选择账户所在的机构",
+        "nameInstitution": "为新机构起个名字",
+        "institutionType": "选择机构的类型",
+        "chooseAccount": "选择一个账户",
+        "nameAccount": "为新账户起个名字",
+        "accountType": "选择账户的类型",
+        "addHolding": "添加一笔同时填写了标的和数量的持仓",
+        "duplicateToken": "为每一行指向同一标的的记录各起一个名字，或者把它们合并",
+        "walletEmpty": "填写钱包地址",
+        "walletIncomplete": "补全钱包地址",
+        "walletUnrecognised": "检查一下钱包地址"
+      },
+      "category": {
+        "cryptoExchange": "加密货币交易所",
+        "cryptoWallet": "加密货币钱包",
+        "bank": "银行",
+        "broker": "券商",
+        "other": "其他"
+      },
+      "wallet": {
+        "shape": {
+          "ethereum": "以 0x 开头，后接 40 个十六进制字符，共 42 位",
+          "bitcoin": "以 bc1 开头，后接 39 到 59 个小写字母和数字",
+          "ton": "以 EQ 或 UQ 开头，后接 46 个字符，共 48 位",
+          "tron": "以 T 开头，后接 33 个字符，共 34 位",
+          "solana": "32 到 44 个字母和数字，其中不含 0、O、I 或 l"
+        },
+        "everyShape": "以太坊及其他 EVM 链是 0x 加 40 个十六进制字符；比特币以 1、3 或 bc1 开头；Solana 是 32 到 44 个字母和数字；波场以 T 开头；TON 以 EQ 或 UQ 开头。",
+        "incomplete_other": "这不是一个完整的 {{chain}} 地址——完整地址{{shape}}，而这个只有 {{count}} 个字符。",
+        "unrecognised": "Scani 无法识别地址形如这样的任何一条链。{{shapes}}"
+      },
+      "institution": {
+        "lookUpName": "从网站查找名称",
+        "name": "名称",
+        "namePlaceholder": "Revolut",
+        "type": "类型",
+        "typeLabel": "机构类型",
+        "typePlaceholder": "银行、券商、交易所…",
+        "label": "机构",
+        "searchPlaceholder": "搜索银行、券商、交易所…",
+        "noResults": "还没有叫这个名字的。",
+        "addUnlisted": "添加一个未列出的",
+        "addNamed": "添加“{{name}}”",
+        "website": "网站",
+        "websiteHint": "会自动填入名称和图标。可选。",
+        "pickExisting": "选择一个已有的机构"
+      },
+      "token": {
+        "defillamaUnsupported": "DeFiLlama 的结果需要合约地址，因此无法从这里添加。",
+        "addFailed": "正在添加该标的",
+        "searchPlaceholder": "BTC、AAPL、EUR…",
+        "noResults": "无论在这里还是在我们的定价数据源中，都没有叫这个名字的。",
+        "prompt": "输入一个代码或名称。"
+      },
+      "integrations": {
+        "uploadInstead": "改为上传对账单"
+      },
+      "sheet": {
+        "title": "添加数据",
+        "subtitle": "选择你手上有的东西，其余的都会随之而来。",
+        "trigger": "显示所有添加数据的方式",
+        "collapse": "收起"
+      },
+      "account": {
+        "namePlaceholder": "活期账户、ISA、交易账户…",
+        "type": "类型",
+        "typeLabel": "账户类型",
+        "typePlaceholder": "储蓄、券商、加密货币…",
+        "label": "账户",
+        "name": "名称",
+        "newInstitutionHint": "全新的机构还没有任何账户——请添加第一个。",
+        "searchPlaceholder": "搜索你的账户…",
+        "noResults": "这里没有叫这个名字的账户。",
+        "addNamed": "添加“{{name}}”",
+        "addNew": "添加一个新账户",
+        "pickExisting": "选择一个已有的账户"
+      },
+      "page": {
+        "uploadAndRead": "上传并读取",
+        "fileImport": {
+          "fieldset": "文件",
+          "subject": "这个文件",
+          "prompt": "选择一个文件，或把文件拖到这里"
+        },
+        "invoice": {
+          "title": "上传一张发票",
+          "description": "一份 PDF 或它的照片。我们会读取收付方、金额和明细行，并放到“核对”中由你接受或拒绝。",
+          "fieldset": "发票",
+          "prompt": "选择一张发票，或把它拖到这里"
+        },
+        "manual": {
+          "subject": "这些持仓",
+          "title": "手动添加持仓",
+          "description": "说明它们存放在哪里、里面有什么。保存后我们会为每一笔定价。",
+          "fieldset": "内容",
+          "token": "标的",
+          "amount": "数量",
+          "removeHolding": "移除第 {{index}} 笔持仓",
+          "save": "保存持仓",
+          "tokenFor": "第 {{index}} 笔持仓的标的",
+          "addAnother": "再添加一笔",
+          "potName": "这是哪一笔？",
+          "potNameHint": "你在多行中填写了同一个标的。请给每一笔起一个自己的名字，我们会把它们保留为独立的持仓。",
+          "potNamePlaceholder": "储蓄、押金、婚礼礼金…"
+        },
+        "wallet": {
+          "subject": "这个钱包",
+          "title": "监视一个钱包地址",
+          "description": "我们会识别它属于哪条链，从链上读取余额，并每小时刷新一次。",
+          "fieldset": "地址",
+          "addressLabel": "钱包地址",
+          "addressHint": "任何受支持的链——以太坊、比特币、Solana 等等。你不需要说明是哪一条。",
+          "addressPlaceholder": "0x… 或 bc1… 或 …",
+          "nameLabel": "名称",
+          "nameHint": "可选。你对这个钱包的称呼，而不是它的地址。",
+          "namePlaceholder": "冷钱包、交易钱包…",
+          "submit": "监视这个钱包"
+        }
+      },
+      "integration": {
+        "title": "连接一项服务",
+        "subtitle": "一组只读密钥，静态加密存储。",
+        "listSubtitle": "只读 API 密钥，静态加密存储。余额每小时同步一次，你也可以对同一项服务保留多个连接。",
+        "allServices": "全部服务",
+        "thisService": "这项服务",
+        "notFoundTitle": "不是我们支持的",
+        "notFoundBody": "Scani 没有叫这个名字的集成。它可能已改名，或者链接已经过期。",
+        "connectNamed": "连接 {{name}}",
+        "permissions": "Scani 只需要只读权限。密钥会静态加密存储，且绝不会离开我们的工作节点。",
+        "whereToGet": "在哪里获取",
+        "credentials": "凭据",
+        "ownDocs": "{{name}} 的官方文档",
+        "unverifiedTitle": "无法校验你的 {{name}} 密钥",
+        "unverifiedDetail": "{{name}} 没有响应，因此我们无法确定密钥是否正确。没有保存任何内容——请过一分钟再试。"
+      }
+    },
+    "tokens": {
+      "custom": {
+        "nothingRecorded": "没有记录",
+        "unknownSource": "未知来源",
+        "setManually": "手动设置",
+        "neverPriced": "从未定价",
+        "newToken": "新建自定义标的",
+        "type": "类型",
+        "pricedIn": "计价货币",
+        "noPrice": "没有价格记录",
+        "priceUpdated": "价格更新时间",
+        "never": "从未",
+        "priceFrom": "价格来自",
+        "editPrice": "编辑价格"
+      },
+      "hidden": {
+        "backToHoldings": "返回持仓",
+        "unhide": "取消隐藏",
+        "likelyScam": "疑似骗局",
+        "hidden": "已隐藏",
+        "why": "它被隐藏的原因",
+        "account": "账户",
+        "institution": "机构",
+        "scamLikelihood": "骗局可能性"
+      },
+      "segment": {
+        "custom": "自定义",
+        "hidden": "已隐藏"
+      },
+      "type": {
+        "fiat": "法定货币",
+        "crypto": "加密货币",
+        "stock": "股票 / ETF / 权益 / 大宗商品",
+        "privateCompany": "非上市公司",
+        "other": "其他"
+      },
+      "hiddenReason": {
+        "user": "由你隐藏",
+        "scam": "被标记为疑似骗局",
+        "both": "被标记为疑似骗局，且由你隐藏"
+      },
+      "actions": {
+        "unhiding": "正在取消隐藏该持仓",
+        "restoring": "正在恢复该标的",
+        "notScam": "不是骗局",
+        "clearFlag": "为所有人清除骗局标记",
+        "clearFlagConsequence": "{{symbol}}（{{name}}）将对所有 Scani 用户取消骗局标记，而不只是对你——它会在标的搜索和全账号的价格查询中重新出现。只有在你自己核查过合约之后才这么做。",
+        "holdingRestored": "{{symbol}} 已回到你的仪表盘",
+        "tokenRestored": "{{symbol}} 已在标的搜索中恢复"
+      },
+      "page": {
+        "title": "标的",
+        "viewLabel": "标的视图",
+        "newCustomToken": "新建自定义标的"
+      },
+      "create": {
+        "title": "创建自定义标的",
+        "description": "用于任何定价数据源都不覆盖的资产。自定义标的会与这里的所有人共享，任何人都可以修改价格。",
+        "subject": "该标的",
+        "symbol": "代码",
+        "symbolPlaceholder": "ACME",
+        "symbolTaken": "{{symbol}} 已经存在。请换一个代码，或者直接编辑那个标的的价格。",
+        "name": "名称",
+        "namePlaceholder": "Acme 公司股份",
+        "type": "类型",
+        "typePrivateCompany": "非上市公司",
+        "typeOther": "其他",
+        "initialPrice": "初始价格",
+        "reasonHint": "这个数字的来源——之后任何人都能看到。",
+        "notes": "备注",
+        "notesPlaceholder": "关于这项资产值得了解的任何内容",
+        "notesHint": "可选。",
+        "needSymbol": "填写一个代码",
+        "needName": "填写一个名称",
+        "submit": "创建标的",
+        "submitting": "创建中…"
+      },
+      "price": {
+        "title": "{{symbol}} 价格",
+        "description": "用任意法定货币设定一个新价格。这里的任何人都可以修改它，每一次修改都会记录在下面。",
+        "subject": "价格",
+        "currently": "当前定价",
+        "newPrice": "新价格",
+        "pricePlaceholder": "1234.56",
+        "reason": "原因",
+        "reasonPlaceholder": "2025 年第四季度估值轮",
+        "reasonHint": "可选，也是唯一能向下一位读者解释这个价格的东西。",
+        "needPrice": "填写一个大于零的价格",
+        "needCurrency": "选择一种货币",
+        "submit": "保存价格",
+        "submitting": "保存中…",
+        "historyTitle": "更早的价格",
+        "historyLoading": "正在加载更早的价格",
+        "historyEmpty": "还没有修改过任何价格。",
+        "noReasonGiven": "未说明原因",
+        "unknownEditor": "未知"
+      }
+    },
+    "entities": {
+      "value": "价值",
+      "account": {
+        "unknownInstitution": "未知机构",
+        "unknownType": "未知类型",
+        "neverSynced": "从未——这个账户由手工维护",
+        "valueByAccount": "按账户划分的价值",
+        "byHand": "手工维护",
+        "lastSyncOverdue": "{{when}} · 已逾期",
+        "sublabel_other": "{{institution}} · {{count}} 个持仓",
+        "syncOverdue": "同步已逾期",
+        "viewHoldings": "查看持仓",
+        "assignGroups": "分配分组",
+        "pageTitle": "账户",
+        "addFirst": "添加你的第一个账户",
+        "holdings": "持仓",
+        "type": "类型",
+        "lastSynced": "上次同步",
+        "balancesAsOf": "余额截至",
+        "groups": "分组",
+        "bulkDeleteConsequence_other": "{{names}} 会被移除，其中的每一笔持仓及其交易历史也会一并删除。此操作无法撤销。",
+        "toast": {
+          "deleted": "账户已成功删除",
+          "deletingContext": "删除账户失败",
+          "bulkDeleted_other": "已删除 {{count}} 个账户",
+          "bulkDeletedWithFailures_other": "已删除 {{count}} 个账户，{{failed}} 个失败",
+          "bulkDeletingContext": "删除账户失败",
+          "updated": "账户已成功更新",
+          "updatingContext": "更新账户失败",
+          "syncing": "正在同步账户——余额稍后会刷新",
+          "syncingContext": "无法启动账户同步"
+        }
+      },
+      "institution": {
+        "unknownType": "未知类型",
+        "valueByInstitution": "按机构划分的价值",
+        "sublabel_other": "{{count}} 个账户",
+        "viewHoldings": "查看持仓",
+        "viewAccounts": "查看账户",
+        "pageTitle": "机构",
+        "connectOne": "连接一个",
+        "accounts": "账户",
+        "type": "类型",
+        "website": "网站",
+        "noWebsite": "没有记录",
+        "description": "描述"
+      }
+    },
+    "documents": {
+      "fileRemoved": "文件已移除",
+      "thisFile": "这个文件",
+      "uploadInvoice": "上传一张发票",
+      "page": {
+        "title": "文件",
+        "uploadInvoice": "上传发票"
+      },
+      "totals": {
+        "stored": "已存储",
+        "invoicesFound": "找到的发票",
+        "fileMissing_other": "有 {{count}} 个文件已不再存储——它们的记录还在，文件本身已经没有了。"
+      },
+      "extraction": {
+        "state": {
+          "pending": "待核对",
+          "accepted": "已接受",
+          "rejected": "已拒绝"
+        },
+        "invoiceNumber": "发票 {{number}}",
+        "noInvoiceNumber": "没有发票号",
+        "issueDate": "开具日期",
+        "dueDate": "到期日期",
+        "paymentStatus": "付款状态",
+        "confidence": "置信度",
+        "notRecorded": "未记录",
+        "approve": "通过",
+        "paymentPaid": "已支付",
+        "paymentUnpaid": "未支付",
+        "paymentNotStated": "未注明",
+        "reject": "拒绝",
+        "rejectCommit": "拒绝这张发票",
+        "approveNote": "会打开一张根据这张发票预填的定期付款。在你确认之前不会保存任何内容。",
+        "rejectConsequence": "来自 {{vendor}} 的这张发票会被标记为已拒绝，这个文件不再把它提交核对。不会创建任何付款。只有重新解析该文件才能把它找回来。",
+        "rejectConsequenceNumbered": "来自 {{vendor}} 的第 {{number}} 号发票会被标记为已拒绝，这个文件不再把它提交核对。不会创建任何付款。只有重新解析该文件才能把它找回来。"
+      },
+      "detail": {
+        "backToFiles": "全部文件",
+        "copyGone": "这个文件存储的副本已经丢失，因此无法再下载或读取。删除这条记录后，该文件可以重新上传。",
+        "reparsing": "正在重新解析该文档",
+        "deleted": "文件已删除——你可以重新上传它",
+        "deleting": "正在删除文件",
+        "reparseTrigger": "重新读取这个文件",
+        "reparseConsequence": "用当前的提取器重新处理该文件，并替换尚未转成付款的每一张发票——已转成付款的会保留。这会消耗一次 AI 调用。",
+        "reparseCommit": "重新解析",
+        "deleteTrigger": "删除这个文件",
+        "deleteConsequence": "会移除这条记录、从中提取的每一张发票以及存储的副本。之后重新上传同一个文件会被重新读取，而不是当作重复文件跳过。已经转成付款的发票会阻止删除——请先解除该付款的关联。此操作无法撤销。",
+        "deleteCommit": "删除",
+        "invoiceRejected": "发票已拒绝",
+        "rejectingInvoice": "正在拒绝该发票",
+        "noInvoicesFound": "这个文件中没有找到发票",
+        "noInvoicesBody": "文件已读取，但没有提取出任何形似发票的内容。重新解析会用当前的提取器再处理一次。",
+        "download": "下载",
+        "reparsePending": "正在重新解析…",
+        "deletePending": "正在删除…",
+        "readAs": "识别为{{classification}}",
+        "uploadedAt": "上传于 {{when}}",
+        "arrivedBy": "通过 {{source}} 到达",
+        "extractedCount_other": "已提取 {{count}} 张发票"
+      },
+      "outcome": {
+        "extracted": "找到的发票",
+        "nothingFound": "没有找到任何内容",
+        "notRead": "未按发票读取"
+      },
+      "invoiceCount_other": "{{count}} 张发票",
+      "parse": {
+        "alreadyRead": "已经读取过一次",
+        "alreadyReadNote": "这个文件与你之前发送过的一个相同，因此没有重新读取——不会产生第二次 AI 费用，也不会产生重复发票。第一次读到的内容都在原来那条记录上。",
+        "unrecognised": "这个任务结束时没有返回我们能识别的结果，因此没有可核对的内容。",
+        "noInvoicesNote": "文件已读取，但里面没有任何内容看起来像发票。对账单和余额截图请改用“导入文件”——那才是创建持仓的入口。",
+        "approveNote": "会打开一张根据发票填好的付款表单。在你确认之前不会保存任何内容——一张发票无法证明它多久重复一次。",
+        "openOriginal": "打开原件",
+        "noInvoices": "这个文件中没有发票",
+        "openFile": "打开文件",
+        "found_other": "找到 {{count}} 张发票",
+        "unknownVendor": "未知收付方",
+        "turnIntoPayment": "把它变成一笔定期付款",
+        "setUpNamed": "设置 {{name}}",
+        "thisInvoice": "这张发票"
+      },
+      "toast": {
+        "downloadingContext": "正在下载文件"
+      }
+    },
+    "vaults": {
+      "targetReached": "已达成目标",
+      "list": {
+        "rowSpoken": "{{name}}，已达目标的 {{percent}}%"
+      },
+      "attach": {
+        "attaching": "正在关联该持仓",
+        "fullyClaimed": "{{label}} 已被其他储蓄目标全额计入。请先在那里下调它的占比。",
+        "attachedWhole": "{{label}} 现在计入这个储蓄目标",
+        "attachedPartial": "{{label}} 已按 {{available}}% 关联——其余部分计入另一个储蓄目标"
+      },
+      "createFirst": "创建你的第一个储蓄目标",
+      "holding": {
+        "thisHolding": "这笔持仓",
+        "unknownToken": "未知标的",
+        "shareLabel": "计入这个储蓄目标的 {{symbol}} 占比",
+        "cancel": "取消",
+        "saveShare": "保存占比",
+        "changeShare": "更改计入这个储蓄目标的 {{symbol}} 占比（当前 {{percent}}%）",
+        "remove": "移除",
+        "removeCommit": "把 {{symbol}} 从这个储蓄目标中移除",
+        "detachConsequence": "{{symbol}} 将不再计入这个储蓄目标——已存金额减少 <value/>。持仓本身、它的 {{percent}}% 占比及其历史都会保留；你可以随时重新关联。"
+      },
+      "detail": {
+        "toast": {
+          "updated": "储蓄目标已更新",
+          "updating": "正在更新储蓄目标",
+          "deleted": "储蓄目标已删除",
+          "deleting": "正在删除储蓄目标",
+          "holdingRemoved": "已把持仓从储蓄目标中移除",
+          "removingHolding": "正在移除该持仓",
+          "shareUpdated": "占比已更新",
+          "updatingShare": "正在更新占比"
+        },
+        "deleteConsequence_other": "“{{name}}”及其目标金额会消失。关联到它的 {{count}} 笔持仓不会被删除——它们只是不再计入任何目标。",
+        "backToVaults": "储蓄目标",
+        "notFound": "这个储蓄目标不在你的列表中。它可能已被删除，或者链接已经过期。",
+        "saved": "已存",
+        "targetReached": "已达成目标——完成度 {{percent}}%",
+        "stillToGo": "距离 <target/> 的目标还差 <remaining/>",
+        "countingToward_other": "计入这个储蓄目标的内容（{{count}}）",
+        "empty": "还没有任何内容计入这个储蓄目标。关联一笔持仓，它就会开始为目标做贡献。",
+        "attachHolding": "关联一笔持仓",
+        "details": "详情",
+        "name": "名称",
+        "target": "目标",
+        "targetHint": "以 {{symbol}} 计",
+        "colour": "颜色",
+        "saveChanges": "保存更改",
+        "discard": "放弃",
+        "needName": "保存前请先给储蓄目标起个名字。",
+        "needTarget": "保存前请设置一个大于零的目标金额。",
+        "dangerZone": "危险操作",
+        "deleteTrigger": "删除储蓄目标",
+        "deleteCommit": "删除这个储蓄目标"
+      },
+      "page": {
+        "title": "储蓄目标",
+        "created": "储蓄目标“{{name}}”已创建",
+        "creating": "正在创建储蓄目标",
+        "name": "名称",
+        "newVault": "新建储蓄目标",
+        "createVault": "创建储蓄目标",
+        "cancel": "取消",
+        "namePlaceholder": "购房首付、应急金…",
+        "toContinue": "继续前请先：{{missing}}。",
+        "target": "目标",
+        "currency": "货币",
+        "colour": "颜色",
+        "blocker": {
+          "name": "给储蓄目标起个名字",
+          "target": "设置一个大于零的目标金额",
+          "currency": "选择一种货币"
+        }
+      }
+    },
+    "jobs": {
+      "importSomething": "导入一些内容",
+      "bucket": {
+        "review": "需要你核对",
+        "running": "运行中",
+        "failed": "已失败——不会重试",
+        "completed": "已完成"
+      },
+      "kind": {
+        "holdingPriceRefresh": "持仓价格刷新",
+        "fileFallback": "文件",
+        "fileEnriched": "{{type}} · 已增强",
+        "deleteAllData": "删除账号全部数据"
+      },
+      "fileCount_other": "{{count}} 个文件",
+      "page": {
+        "title": "任务"
+      },
+      "state": {
+        "queued": "排队中",
+        "active": "进行中",
+        "progress": "运行中",
+        "completed": "已完成",
+        "failed": "已失败",
+        "needsReview": "需要核对",
+        "needsReviewSpoken": "需要核对"
+      },
+      "retryUnavailable": {
+        "cancelled": "你取消了这一次。请从你最初发起的地方重新开始。",
+        "neverDelivered": "它从未进入队列，因此没有可重新运行的内容。请从你最初发起的地方重新开始。",
+        "stillRetrying": "已经有另一次尝试在排队中——无需操作。",
+        "evicted": "这次运行太久远，无法从这里重新运行：队列中已不再保存它需要的内容。请从你最初发起的地方重新开始。",
+        "notFailed": "没有可重试的内容。"
+      },
+      "detail": {
+        "backToJobs": "全部任务",
+        "notFound": "这个任务不在你的列表中。它可能已被移除，或者链接已经过期。",
+        "attempt": "第 {{attempt}} 次尝试，共允许 {{allowed}} 次",
+        "cancel": "取消",
+        "cancelPending": "正在取消…",
+        "removed": "任务已移除",
+        "retry": "重试",
+        "retryPending": "正在重新排队…",
+        "dismiss": "忽略",
+        "dismissPending": "正在忽略…",
+        "createdAt": "创建于 {{when}}",
+        "startedAt": "开始于 {{when}}",
+        "finishedAt": "结束于 {{when}}"
+      },
+      "toast": {
+        "requeued": "任务已重新排队",
+        "retrying": "正在重试该任务",
+        "cancelled": "任务已取消",
+        "cancelling": "正在取消该任务",
+        "discarded": "解析结果已丢弃——没有导入任何内容",
+        "discarding": "正在丢弃解析结果",
+        "dismissed": "已忽略——它仍会留在你的任务历史中",
+        "dismissing": "正在忽略该失败",
+        "removing": "正在移除该任务"
+      },
+      "running": "{{label}}正在运行",
+      "awaitingYou": "这次运行正在等待你。它的内容还没有进入你的投资组合。",
+      "discard": {
+        "trigger": "丢弃",
+        "commit": "丢弃这次解析结果",
+        "consequence": "这次{{label}}将不再请求核对，也不会由它创建任何持仓。你的投资组合不会有任何变化。只有重新运行导入才能把它找回来。"
+      },
+      "remove": {
+        "trigger": "移除",
+        "commit": "移除这次运行",
+        "consequence": "这次{{label}}运行及其上方的错误信息会被删除。它已经导入的内容会保留。此操作无法撤销。"
+      },
+      "label": {
+        "walletImport": "钱包导入",
+        "exchangeImport": "交易所导入",
+        "documentParse": "文档解析",
+        "invoiceParse": "发票解析",
+        "fileImport": "文件导入",
+        "manualHoldings": "手动持仓",
+        "historyBackfill": "历史回填",
+        "priceRefresh": "价格刷新",
+        "accountDeletion": "账号删除",
+        "transactionImport": "交易历史导入"
+      },
+      "review": {
+        "title": "核对提取到的持仓",
+        "subject": "提取到的持仓",
+        "viewHoldings": "查看持仓",
+        "confidence": "置信度 {{percent}}%",
+        "importing": "正在导入…",
+        "import_other": "导入 {{count}} 笔持仓",
+        "willImport_other": "将导入 {{count}} 行",
+        "unmatchedNote_other": "有 {{count}} 行没有匹配到任何标的，将被跳过。",
+        "source": {
+          "screenshot": "截图",
+          "statement": "对账单",
+          "files": "文件"
+        },
+        "assetType": {
+          "fiat": "法币",
+          "crypto": "加密货币",
+          "stock": "股票"
+        },
+        "row": {
+          "new": "新增",
+          "update": "更新",
+          "changeToken": "更改与 {{symbol}} 匹配的标的",
+          "keepToken": "保留 {{symbol}}",
+          "searchLabel": "为 {{symbol}} 查找另一个标的",
+          "nameLabel": "这笔 {{symbol}} 持仓的名称",
+          "namePlaceholder": "例如：储蓄",
+          "amountLabel": "{{symbol}} 的数量",
+          "remove": "移除 {{symbol}}",
+          "restore": "恢复 {{symbol}}",
+          "currentLabel": "当前"
+        },
+        "blocker": {
+          "duplicatePosition": "为 {{symbols}} 下的每一行各起一个名字，或者移除多余的行",
+          "missingAmount_other": "有 {{count}} 行没有填写数量——请为每一行填上，或者移除它们",
+          "nothingToImport": "至少把一行匹配到一个标的"
+        },
+        "imported": {
+          "title": "已经导入过",
+          "when": "已于 {{when}} 确认",
+          "body": "这些行已经确认并保存到你的投资组合中。再次导入同一次解析结果会造成重复，因此这里已锁定。"
+        },
+        "discarded": {
+          "title": "已丢弃",
+          "when": "已于 {{when}} 丢弃",
+          "screenshot": "这张截图中的内容没有写入你的投资组合，它也不再等待核对。只有重新解析它才能把这些行找回来。",
+          "statement": "这份对账单中的内容没有写入你的投资组合，它也不再等待核对。只有重新解析它才能把这些行找回来。",
+          "files": "这些文件中的内容没有写入你的投资组合，它们也不再等待核对。只有重新解析它们才能把这些行找回来。",
+          "wallet": "这个钱包中的内容没有写入你的投资组合，它也不再等待核对。只有重新运行导入才能把这些行找回来。"
+        }
+      },
+      "screenshot": {
+        "title": {
+          "image": "截图解析",
+          "pdf": "对账单解析",
+          "mixed": "文件解析"
+        },
+        "filesRead": "已读取文件",
+        "holdingsFound": "找到的持仓",
+        "ofTotal": "{{total}} 中的 {{done}}",
+        "failedTitle_other": "有 {{count}} 个文件无法读取",
+        "failedAdvice": {
+          "image": "分辨率过低或画面过于杂乱的截图容易出现这种情况。可以尝试更清晰的截图、把画面裁剪到列出余额的部分，或者改为上传 CSV 或 OFX 导出文件。",
+          "pdf": "扫描件、纯图片或加密的 PDF，以及版式特殊的文件容易出现这种情况。可以尝试文本版的副本，或者改为上传 CSV 或 OFX 导出文件。",
+          "mixed": "可以尝试更清晰的截图或文档的文本版副本，或者改为上传 CSV 或 OFX 导出文件。"
+        },
+        "noAccount": {
+          "title": "这些行没有可去之处",
+          "body": "这次运行没有记录这些持仓属于哪个账户，因此这里没有可以保存它们的地方。没有导入任何内容，也没有丢失任何内容——请选好账户后重新上传该文件。",
+          "action": "重新上传"
+        }
+      },
+      "issues": {
+        "more_other": "…另有 {{count}} 项"
+      },
+      "wallet": {
+        "subject": "这个钱包",
+        "chainsDetected": "检测到的链",
+        "chainsRead": "已读取的链",
+        "tokensFound": "找到的标的",
+        "chainsFailed_other": "有 {{count}} 条链无法读取",
+        "chainsFailedNote": "持有在未响应的链上的内容不会出现在这里显示的结果中。",
+        "outcome": {
+          "found": "检测到的持仓",
+          "partial": "检测到的持仓——部分读取",
+          "empty": "没有可核对的内容",
+          "unreadable": "无法读取这个钱包"
+        },
+        "outcomeBody": {
+          "found": "请选择要保留哪些。只有勾选的行会成为持仓。",
+          "partial": "请选择要保留哪些。只有勾选的行会成为持仓——而且至少有一条链没有响应，因此这并不是该地址持有的全部内容。",
+          "empty": "所有链都已响应且没有报告任何余额，因此就我们所见这个地址是空的。没有任何失败。",
+          "unreadable": "没有任何链响应，因此我们不知道这个地址持有什么。这并不是读到了一个空钱包——重新运行导入是安全的。"
+        },
+        "hideSpam_other": "隐藏 {{count}} 个疑似垃圾标的",
+        "selectAll": "全选当前显示项",
+        "selectNone": "清除选择",
+        "spam": {
+          "solicitation": "看起来像广告",
+          "mixedScript": "混用了多种字母"
+        },
+        "exited": "买入后已卖出",
+        "hiddenSelected_other": "有 {{count}} 个已勾选的行被筛选条件隐藏",
+        "showHidden": "显示它们",
+        "afterConfirm": "确认后会创建持仓并进行定价。",
+        "blocker": {
+          "nothingPicked": "至少勾选一行"
+        },
+        "import_other": "导入 {{count}} 笔持仓",
+        "importing": "正在导入…",
+        "toast": {
+          "imported_other": "已导入 {{count}} 笔持仓"
+        },
+        "confirmed": {
+          "title": "钱包已导入",
+          "when": "已于 {{when}} 确认",
+          "body": "你保留的行已创建为持仓。从这里再次导入这个钱包会造成重复，因此这里已锁定。"
+        },
+        "unavailable": {
+          "title": "检测到的列表不在这里",
+          "body": "这个钱包已被读取，但标的列表没有随任务一起保存，因此这里没有可供选择的内容。没有导入任何内容，也没有丢失任何内容——重新运行导入即可拿回列表。"
+        },
+        "importAgain": "重新导入这个钱包",
+        "imported": {
+          "title": "已导入的持仓",
+          "holdings": "已创建的持仓",
+          "accounts": "已创建的账户",
+          "reviewTitle": "核对已创建的内容",
+          "pruneNote": "删除你不想要的部分，然后完成。在此之前，这次运行会一直留在你的列表中，标记为需要处理。",
+          "finish": "核对完成",
+          "finishing": "正在完成…",
+          "finishedWhen": "核对已于 {{when}} 完成。这些持仓已在你的投资组合中生效，仍可从“持仓”中删除。",
+          "remove": "删除 {{symbol}}",
+          "allGone": "这些持仓都已不在你的列表中——它们已被删除或被标记。",
+          "nothingTitle": "没有导入任何内容"
+        },
+        "empty": {
+          "unreadable": "因为没有任何链可以读取，所以没有导入任何内容。这并不是读到了一个空钱包：余额从未被取回。重新运行导入是安全的。",
+          "noChains": "没有为这个地址检测到任何链。要么它在本应用支持的链上没有活动，要么检测请求没有响应。重新运行导入是安全的。",
+          "zeroBalances": "检测到的每一条链都已响应并报告余额为零，因此没有可导入的内容。没有任何失败。"
+        }
+      },
+      "exchange": {
+        "title": "交易所导入",
+        "accountsCreated": "已创建的账户",
+        "holdingsImported": "已导入的持仓",
+        "connectedButEmpty": "账户连接成功，数据源没有返回任何余额。对于空账户来说这很正常——之后新增的内容会在下一次每小时同步时到达。",
+        "failedTitle_other": "有 {{count}} 个账户无法读取",
+        "failedNote": "存放在那里的内容不会出现在上面的数字中。重新运行导入是安全的。"
+      },
+      "file": {
+        "title": {
+          "imported": "文件已导入",
+          "nothing": "没有写入任何内容"
+        },
+        "nothingBody": "文件解析成功，但里面没有我们可以使用的交易、余额或持仓。请确认这是你想上传的那个导出文件。",
+        "format": "格式",
+        "transactions": "交易",
+        "newHoldings": "新增持仓",
+        "balanceAnchors": "余额锚点",
+        "holdingsTitle": "涉及的持仓",
+        "row": {
+          "new": "新增",
+          "updated": "已更新",
+          "transactions_other": "{{count}} 笔交易",
+          "statementClose": "对账单期末",
+          "noClosingBalance": "没有期末余额"
+        },
+        "warningsTitle_other": "{{count}} 条警告",
+        "importAnother": "导入另一个文件",
+        "unreadablePayload": "这次运行结束时返回的结果我们无法读取。你的投资组合没有任何变化。",
+        "currency": {
+          "title": "这份对账单使用的是哪种货币？",
+          "body_other": "我们从这个文件中读到了 {{count}} 笔交易，但它没有注明货币，也无法自动识别。目前还没有导入任何内容。",
+          "preview": "{{total}} 中的 {{shown}}",
+          "noDescription": "没有描述",
+          "fieldLabel": "对账单货币",
+          "blocker": "选择这些交易所使用的货币",
+          "apply": "按这种货币导入",
+          "applying": "正在重新导入…",
+          "subject": "这个文件"
+        }
+      },
+      "manual": {
+        "title": "持仓已保存",
+        "saved": "已写入的行",
+        "priced": "已定价",
+        "row": {
+          "new": "新增",
+          "updated": "已更新",
+          "noPrice": "尚无价格"
+        },
+        "unpricedNote_other": "有 {{count}} 行还没有价格。它们无论如何都已保存——你可以在“持仓”中刷新它们，或者等待下一次每小时的定价扫描。",
+        "addMore": "继续添加",
+        "unreadablePayload": "这次运行结束时返回的结果我们无法读取。你的投资组合没有任何变化。"
+      },
+      "generic": {
+        "title": "结果",
+        "noPayload": "这次运行结束时没有返回结果内容。没有可处理的东西。",
+        "nothingToShow": "结果中没有我们可以展示的字段。原始内容如下。",
+        "errorsTitle_other": "{{count}} 条错误",
+        "rawResult": "原始结果",
+        "warningsTitle_other": "{{count}} 条值得了解的信息",
+        "warningsNote": "这些不是失败。这次运行已经完成——它们说明了有哪些内容没能取到，以及为什么写入的结果看起来偏少。"
+      },
+      "failure": {
+        "cancelled": {
+          "label": "已取消",
+          "sentence": "你在这个任务完成前把它停止了。"
+        },
+        "neverDelivered": {
+          "label": "从未开始",
+          "sentence": "这个任务从未交给工作节点，因此从未运行，也没有改变任何内容。请从你最初发起的地方重新开始。"
+        },
+        "unrecoverable": {
+          "label": "已失败——不会重试",
+          "sentence": "它失败的原因不是再试一次能解决的，而且没有记录下任何我们可以展示给你的内容。原样重新运行会以同样的方式失败。",
+          "sentenceWithDetail": "它失败的原因不是再试一次能解决的。请查看下面的详情，更正后重新开始。"
+        },
+        "exhausted": {
+          "label": "已失败——不会重试",
+          "sentence_other": "它尝试了 {{count, number}} 次，每次都失败。系统不会再自动尝试。"
+        },
+        "noRetry": {
+          "label": "已失败——不会重试",
+          "sentence": "它已失败，系统不会再自动尝试。"
+        },
+        "notQueued": {
+          "label": "已失败",
+          "sentence": "上一次尝试失败，也没有为它排入新的尝试。"
+        },
+        "retrying": {
+          "label": "正在重试（第 {{made, number}} 次，共 {{allowed, number}} 次）",
+          "sentence": "第 {{made, number}} 次尝试失败，共允许 {{allowed, number}} 次。下一次会自动开始——你暂时无需做任何事。"
+        },
+        "settling": {
+          "label": "已失败",
+          "sentence": "上一次尝试失败。正在检查是否还有为它排队的尝试。"
+        }
+      }
+    },
+    "membership": {
+      "picker": {
+        "done": "完成"
+      },
+      "holdings_other": "持仓（{{count}}）",
+      "wholeAccounts_other": "整个账户（{{count}}）",
+      "wholeAccountsNote": "整个账户都在这个分组中——它现在持有的内容以及以后收到的内容。移除它会把这些全部移出。",
+      "searchPlaceholder": "搜索{{noun}}",
+      "searchLabel": "搜索要添加的{{noun}}",
+      "add": "添加 {{label}}",
+      "added": "{{label}} 已加入该分组",
+      "removed": "{{label}} 已从该分组中移除",
+      "adding": "正在加入分组",
+      "removing": "正在从分组中移除",
+      "addAction": "添加",
+      "addPending": "正在添加",
+      "removeAction": "移除",
+      "removePending": "正在移除",
+      "noMatch": "剩下可添加的内容中没有匹配“{{query}}”的。",
+      "allAdded": "你拥有的一切都已经在这里了——没有其他可添加的{{noun}}。",
+      "allOfCount_other": "全部 {{count}} 笔持仓",
+      "count": {
+        "holding_other": "{{count}} 笔持仓",
+        "account_other": "{{count}} 个账户"
+      }
+    },
+    "ownership": {
+      "title": "实体",
+      "description": "把你自己的钱和公司的钱分开。净资产仍然是一个数字。",
+      "newEntity": "新建实体",
+      "name": "名称",
+      "namePlaceholder": "例如：某某有限公司",
+      "create": "创建",
+      "cancel": "取消",
+      "created": "{{name}} 已创建",
+      "creating": "正在创建实体",
+      "assigning": "正在移动账户",
+      "loading": "正在计算每套账簿的价值…",
+      "empty": "还没有数值。",
+      "unassigned": "未分配",
+      "combined": "合计",
+      "holdingsCounted_other": "{{count}} 笔持仓",
+      "unpriced": "{{symbols}} 今天无法定价",
+      "accountsHeading": "每个账户属于哪个实体",
+      "accountEntityLabel": "{{name}} 的实体"
+    }
+  }
+}
