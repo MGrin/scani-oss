@@ -88,6 +88,40 @@ export function MovementWhatFields({ form, holding, holdings, disabled }: Moveme
         />
       </Field>
 
+      {/* A wire leaves one amount and arrives as another, and until SC-889 the
+          movement form had no way to say so — it wrote the sent amount to both
+          legs. Directly under the amount it is carved out of, and only on a
+          transfer: an inflow has no second leg for a fee to be the difference
+          between, and an outflow says the money left the portfolio. */}
+      {form.direction === 'transfer' ? (
+        <Field
+          label={t('v3.holdings.fee.label')}
+          htmlFor="movement-fee"
+          // Three readings, because two would leave the reassuring one — "leave
+          // empty if nothing was charged" — sitting under a field that is
+          // actively disabling Save. The blocker list at the foot of the form
+          // says the same thing; this says it where the number is.
+          hint={
+            form.feeArrives !== null
+              ? t('v3.holdings.fee.arrives', {
+                  amount: form.feeArrives,
+                  symbol: form.selected?.token.symbol ?? '',
+                })
+              : form.feeBlocked
+                ? t('v3.holdings.fee.tooLarge')
+                : t('v3.holdings.fee.explain')
+          }
+        >
+          <AmountInput
+            id="movement-fee"
+            value={form.fee}
+            onValueChange={form.setFee}
+            className="text-body"
+            disabled={disabled}
+          />
+        </Field>
+      ) : null}
+
       <Field label={t('v3.holdings.movement.dateLabel')} htmlFor="movement-date">
         <DateField id="movement-date" value={form.date} onChange={form.setDate} />
       </Field>

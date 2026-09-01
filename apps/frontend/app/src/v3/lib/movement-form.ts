@@ -1,4 +1,6 @@
 import {
+  Decimal,
+  feeFitsMovement,
   type HoldingMovementDirection,
   MANUAL_OUTFLOW_DESTINATIONS,
   type ManualOutflowDestination,
@@ -35,6 +37,11 @@ export interface MovementSubmission {
   destination?: ManualOutflowDestination;
   /** Resolved by the caller through `ensureAccount`; null when incomplete. */
   ensureAccount?: ReturnType<typeof buildEnsureAccountInput>;
+  /**
+   * How much of `amount` the rail kept, on a transfer that cost something
+   * (SC-889). Absent means no fee was stated, which is the common case.
+   */
+  feeQuantity?: string;
 }
 
 /**
@@ -63,6 +70,8 @@ export interface MovementDraft {
   direction: HoldingMovementDirection;
   amount: string;
   destination: MovementOutflowOption | null;
+  /** What the fee field holds, verbatim. Empty means none was stated. */
+  fee?: string;
 }
 
 function amountIsPositive(amount: string): boolean {
@@ -88,7 +97,48 @@ export function movementBlockerKeys(draft: MovementDraft): string[] {
   if (draft.direction === 'outflow' && draft.destination === null) {
     blockers.push('v3.holdings.movement.blocker.where');
   }
+  // A fee that is not smaller than the movement leaves nothing to transfer, and
+  // `ManualBalanceEditService` refuses it (SC-889). Read off the same function
+  // that computes the arrival figure, so the button's enabled state and the
+  // number shown beside the field can never be answers to different questions.
+  if (movementFeeStated(draft) && movementFeeArrival(draft) === null) {
+    blockers.push('v3.holdings.movement.blocker.fee');
+  }
   return blockers;
+}
+
+/**
+ * Did the owner state a fee this form will act on (SC-889)?
+ *
+ * Gated on the DIRECTION as well as on the field, not merely on the field: only
+ * a transfer shows the input, so a value left behind by flipping the control
+ * back to `outflow` must stop counting as an answer — otherwise Save is
+ * disabled with nothing on screen saying why, and a fee is sent for a movement
+ * that has no second leg to be the difference between.
+ */
+export function movementFeeStated(draft: MovementDraft): boolean {
+  return draft.direction === 'transfer' && (draft.fee?.trim() ?? '') !== '';
+}
+
+/**
+ * What will ARRIVE once the fee is carved out, or `null` when there is nothing
+ * to say — no fee stated, or one this form is refusing.
+ *
+ * `null` is deliberately the same answer for both, because both mean "do not
+ * show an arrival figure and do not send a fee". The blocker above distinguishes
+ * them by asking `movementFeeStated` first.
+ *
+ * `feeFitsMovement` rather than a second spelling of the rule: it is the one
+ * predicate `ManualBalanceEditService` refuses on, so a fee this returns a
+ * figure for is a fee the server will honour. Two spellings would render either
+ * as a button that cannot be pressed over a valid answer or as a 500 over a form
+ * that looked complete.
+ */
+export function movementFeeArrival(draft: MovementDraft): string | null {
+  if (!movementFeeStated(draft)) return null;
+  const fee = (draft.fee ?? '').trim();
+  if (!amountIsPositive(draft.amount) || !feeFitsMovement(fee, draft.amount)) return null;
+  return new Decimal(draft.amount).minus(fee).toString();
 }
 
 /** The row's main text: the pot, then the account it sits in. */

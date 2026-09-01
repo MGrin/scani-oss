@@ -730,10 +730,6 @@
         "trigger": "Eliminar"
       },
       "editCause": {
-        "feeLabel": "Comisión, si la transferencia costó algo",
-        "feeExplain": "Déjalo vacío si no se cobró nada. La comisión se registra como un coste propio en esta cuenta, así que lo que llega es lo que realmente llegó.",
-        "feeArrives": "Llegan {{amount}} {{symbol}}; la comisión se registra aquí como un coste.",
-        "feeTooLarge": "La comisión tiene que ser menor que el importe que se movió.",
         "cancel": "Cancelar",
         "dateLabel": "¿Cuándo se movió el dinero?",
         "description": "El saldo de {{holding}} ha cambiado. Scani no puede distinguir entre dinero que se mueve, una cifra que se corrige y un saldo que crece, y cada caso se trata de forma distinta.",
@@ -761,6 +757,12 @@
         "save": "Guardar",
         "title": "¿Qué significaba ese cambio?"
       },
+      "fee": {
+        "label": "Comisión, si la transferencia costó algo",
+        "explain": "Déjalo vacío si no se cobró nada. La comisión se registra como un coste propio en esta cuenta, así que lo que llega es lo que realmente llegó.",
+        "arrives": "Llegan {{amount}} {{symbol}}; la comisión se registra aquí como un coste.",
+        "tooLarge": "La comisión tiene que ser menor que el importe que se movió."
+      },
       "empty": {
         "action": "Añade tu primera posición"
       },
@@ -776,7 +778,8 @@
         "blocker": {
           "amount": "introduce cuánto se movió",
           "holding": "elige la posición que se movió",
-          "where": "di adónde fue el dinero"
+          "where": "di adónde fue el dinero",
+          "fee": "la comisión tiene que ser menor que el importe que se movió"
         },
         "busyLabel": "el registro",
         "cancel": "Cancelar",
