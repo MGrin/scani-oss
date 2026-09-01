@@ -219,6 +219,33 @@ else
   note "scripts/check-oss-prose.ts is not in this tree; deployment-prose check NOT run"
 fi
 
+# -------- 0f. No EDIT to an applied migration without a drift declaration --------
+#
+# SC-914. Editing a migration that has already run — comments included — moves
+# its sha256 away from what `drizzle.__scani_migrations` recorded, and
+# `migration-runner.ts` refuses the WHOLE `db:migrate` run until a
+# `DRIFT_DECLARATIONS` entry says the edit is safe. On 2026-09-01 two pull
+# requests edited comments in applied migrations, were reviewed for behaviour
+# changes, correctly found to have none, and merged. Deploys were blocked for
+# about an hour. Nothing in the repo said a comment counted.
+#
+# Only when a migration or the declaration list is staged: this is the moment
+# the edit is made and the declaration is cheap to write. A REFUSAL on any
+# non-zero status, exit 9 included — a base it could not resolve is not a pass.
+#
+# It is a seatbelt, not a gate. CI runs the same check on every pull request,
+# where `--no-verify` cannot reach it.
+migration_relevant=$(staged_files -- 'packages/infra/db/src/migrations/*.sql' 'packages/infra/db/src/migration-reconciliation.ts' || true)
+if [ -n "$migration_relevant" ]; then
+  if [ -f scripts/check-migration-drift-declared.ts ]; then
+    if ! bun scripts/check-migration-drift-declared.ts; then
+      fail "an applied migration is edited with no drift declaration (SC-914)"
+    fi
+  else
+    note "scripts/check-migration-drift-declared.ts is not in this tree; drift-declaration check NOT run"
+  fi
+fi
+
 # -------- 1. Biome lint (staged files only, fast) --------
 
 biome_relevant=$(staged_files -- '*.ts' '*.tsx' '*.js' '*.jsx' '*.json' '*.jsonc' || true)
