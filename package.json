@@ -27,6 +27,7 @@
     "dev:stack:infra": "bun scripts/dev-stack.ts up --infra-only",
     "dev:stack:down": "bun scripts/dev-stack.ts down",
     "dev:stacks": "bun scripts/stacks.ts",
+    "dev:stacks:reap": "bun scripts/reap-stacks.ts",
     "env:sync": "bun scripts/sync-env.ts",
     "build": "bun run --filter='*' build",
     "clean": "bun run --filter='*' clean",
