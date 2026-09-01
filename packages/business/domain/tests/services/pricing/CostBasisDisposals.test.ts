@@ -640,9 +640,10 @@ describe('walkLots disposal ledger', () => {
     );
 
     // The arithmetic is UNCHANGED and that is the assertion, not an oversight.
-    // Making `isConfirmedDisposal` require the stamp would un-realize 560
-    // production rows at once and move the realized total by 39,349.52 USD;
-    // whether it should is SC-302, a question about what those rows are. This
+    // Making `isConfirmedDisposal` require the stamp would un-realize hundreds
+    // of production rows at once and move the realized total by the full
+    // amount; whether it should is SC-302, a question about what those rows
+    // are. This
     // test exists so that change is a deliberate one — it must be edited to be
     // made, rather than merely not noticed.
     const row = ledger[0] as DisposalLotMatch;

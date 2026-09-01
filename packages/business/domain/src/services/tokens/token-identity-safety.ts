@@ -11,9 +11,9 @@ import { decodeForDetection } from '../../lib/decode-for-detection';
  *
  * 1. A symbol built from LOOKALIKE CHARACTERS. `UЅDС` — Cyrillic Ѕ,
  *    Cyrillic С — is a different string from `USDC` and an identical
- *    picture. Ten of these were sitting in production on Polygon, 45% of
- *    that chain's entire token set, indistinguishable in every surface
- *    that prints a symbol (SC-197).
+ *    picture. Several of these were sitting in production on Polygon, a
+ *    large share of that chain's entire token set, indistinguishable in
+ *    every surface that prints a symbol (SC-197).
  *
  * 2. A NAME that is an instruction rather than a name.
  *    `✅ SWAP YOUR VOUCHER ON T.LY/SHIBASWAP` is an attack we ingested

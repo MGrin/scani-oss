@@ -204,8 +204,9 @@ describe('reading a screenshot-parse result', () => {
    * not be delegated.
    *
    * `EnrichHoldingsService` sets `existingLabel` for SC-330 — the Tinkoff
-   * re-upload that proposed 284,767.31 for a pot holding 5,683.47, four rows
-   * reading "Russian Ruble" with nothing to tell them apart. v2's aggregation
+   * re-upload that proposed a balance orders of magnitude above the pot it
+   * would land on, with several rows reading "Russian Ruble" and nothing to
+   * tell them apart. v2's aggregation
    * in `ScreenshotParseResult` lists every other enriched field and omits this
    * one, and that renderer is the ONLY consumer of `ReviewHoldingsCard`. So the
    * fix has never rendered, and the collision guard keyed on it has been

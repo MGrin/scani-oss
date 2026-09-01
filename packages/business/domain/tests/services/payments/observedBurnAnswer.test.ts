@@ -120,7 +120,7 @@ describe('observedBurnAnswerOf', () => {
 
   /**
    * The answer stores its own currency so a later base-currency change cannot
-   * reinterpret 6,300 EUR as 6,300 USD. Something has to happen when it does:
+   * reinterpret 1,000 EUR as 1,000 USD. Something has to happen when it does:
    * reporting `none` DELETES his answer from the screen with no event to notice
    * it by, and reporting it live shows a figure in the wrong unit. Saying it no
    * longer applies is the only reading that is true.

@@ -53,13 +53,13 @@ export interface GroupValuationResult {
  * Membership is a standing rule now (mgrin, 2026-08-18): a holding is in a
  * group by its own `holding_groups` row OR because its account is in the group,
  * unless it carries a `holding_group_exclusions` veto. `account_groups` stopped
- * being a cache — it is the rule itself — so the eight rows that were stale on
- * production are true again, and the 6,218.75 USD of Airwallex cash that this
- * service was made to stop counting is counted once more, this time by the
- * holdings list as well. Liquid reads 53,024.05 on both surfaces — where the
- * card alone said 53,024.05 before SC-385, and both said 46,805.30 after it.
+ * being a cache — it is the rule itself — so the rows that were stale on
+ * production are true again, and the Airwallex cash that this service was made
+ * to stop counting is counted once more, this time by the holdings list as
+ * well. Liquid reads the same figure on both surfaces — where the card alone
+ * carried it before SC-385, and both dropped it after.
  *
- * The reason it is safe to add back is the veto. Six of those wallets receive
+ * The reason it is safe to add back is the veto. Several of those wallets receive
  * airdrops continuously; without a per-holding way out, a standing rule would
  * drag every one of them into the group. With one, the remove the user already
  * has takes a single position out and leaves the account where it is.

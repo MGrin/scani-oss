@@ -158,9 +158,8 @@ describe('auditKrakenLedger — two-legged operations', () => {
   });
 
   test('a `spend` whose `receive` never arrived is reported', () => {
-    // Production TS6JBSQ-MTBTI-4B3RF7: 0.05390129 XXBT sold, and 2
-    // minutes later 3,564.02 USDC landed on-chain. No USDC row exists
-    // on either side of it.
+    // A production `spend`: XXBT sold, and minutes later the matching USDC
+    // landed on-chain. No USDC row exists on either side of it.
     const audit = auditKrakenLedger([
       row('L1', {
         refid: 'TS6JBSQ-MTBTI-4B3RF7',

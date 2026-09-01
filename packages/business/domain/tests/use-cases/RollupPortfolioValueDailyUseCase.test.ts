@@ -351,9 +351,10 @@ describe('RollupPortfolioValueDailyUseCase', () => {
   });
 
   /**
-   * SC-66 / P-5. Production held 5,710 rows written this way, and 123 of them
-   * sat between two days worth real money — the chart drew a plunge to zero and
-   * a spike back out, and the period delta was measured against the zero.
+   * SC-66 / P-5. Production held a large number of rows written this way, and
+   * many of them sat between two days worth real money — the chart drew a plunge
+   * to zero and a spike back out, and the period delta was measured against the
+   * zero.
    */
   test('a scope with nothing priced that day is unknown coverage, not a confident zero', async () => {
     const f = fixture!;

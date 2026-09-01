@@ -142,9 +142,9 @@ export interface UpdateHoldingInput {
  * What was NOT deliberate is that it therefore skipped the sync-capture
  * observation `HoldingService` appends on every other balance mutation.
  * Every manual balance edit any user ever made is missing from
- * `holding_balance_observations` — five holdings and 29,746.55 of drift on
- * production when it was found, against zero across all 65 synced holdings
- * (SC-245).
+ * `holding_balance_observations` — several holdings and a material amount of
+ * drift on production when it was found, against zero across every synced
+ * holding (SC-245).
  *
  * That is worse than a bookkeeping gap because of how the trail is read:
  * `BalanceAtTimeService` anchors a past-date balance on the nearest

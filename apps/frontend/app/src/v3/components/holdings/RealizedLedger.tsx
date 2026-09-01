@@ -38,11 +38,11 @@ import { TRANSFER_REVIEW_PATH } from '../../lib/routes';
  *   ledger of realizations alone would leave the lots visibly gone and the
  *   change unexplained.
  * - **Says whose answer each disposal rests on** (SC-324). `realized` on a
- *   withdrawal is produced by a `left_control` answer, and in production 560 of
- *   the 561 rows carrying that answer have no record of anyone giving it. The
+ *   withdrawal is produced by a `left_control` answer, and in production nearly
+ *   every row carrying that answer has no record of anyone giving it. The
  *   figure is booked either way, so the row says which it is — otherwise the
- *   ledger asserts a provenance for -39,349.52 USD that the data does not
- *   carry. Whether those rows are right is SC-302, and is not a question this
+ *   ledger asserts a provenance the data does not carry. Whether those rows are
+ *   right is SC-302, and is not a question this
  *   surface may answer by staying quiet.
  * - **Carries `basisQuality` to the lot** (SC-149). A gain derived from an
  *   import that reported itself truncated must say so *here*, next to the

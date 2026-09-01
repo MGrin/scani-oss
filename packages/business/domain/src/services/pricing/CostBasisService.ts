@@ -331,13 +331,13 @@ const OUTFLOW_SELL_KINDS = new Set(['sell', 'swap_out']);
  * used to say it did** (SC-324). The two are not the same question:
  * `transfer_review` is written by `TransferReviewService` with
  * `transfer_reviewed_at` beside it, and it has also been written by a raw
- * `UPDATE` that set neither. Measured in production on 2026-08-17: 560 of 561
- * `left_control` rows carry no timestamp, 555 of them from one transaction on
- * 2026-08-14, and they account for -39,349.52 USD of a -33,026.05 USD realized
- * total.
+ * `UPDATE` that set neither. Measured in production on 2026-08-17: all but one
+ * `left_control` row carries no timestamp, nearly all of them from one
+ * transaction on 2026-08-14, and between them they account for more than the
+ * whole of the realized total.
  *
  * Requiring the timestamp here is a one-line change that would un-realize all
- * 560 at once and move that total by the full amount. Whether it *should*
+ * of them at once and move that total by the full amount. Whether it *should*
  * is SC-302 — a question about what those rows are, which no query can settle
  * and which is not this function's to decide. So the predicate stays as it is,
  * deliberately, and the distinction it cannot make is carried to the reader

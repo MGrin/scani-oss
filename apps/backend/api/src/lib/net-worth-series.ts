@@ -214,7 +214,7 @@ export function aggregateIncludedHoldingRows(
       //
       // Left as-is on purpose. The fix is not here — it is the column, and
       // repairing the column needs a cutoff that does not exist: on
-      // production all 37,245 rows computed before 2026-08-14 carry 0 in
+      // production every row computed before 2026-08-14 carries 0 in
       // every quality count, and the migration timestamps are hand-authored
       // journal values rather than deploy times. See the block comment above
       // these columns in `schema/portfolio.ts`.

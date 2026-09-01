@@ -68,7 +68,7 @@ export interface EntityValuationResult {
  *    `value` strings and adds them with the same `Decimal`. The combined total
  *    is that service's `totalValue`, untouched. There is no second valuation
  *    to disagree with the first — the SC-385 failure, where one figure had two
- *    resolutions and they differed by 6,185 USD on production for weeks.
+ *    resolutions and they differed materially on production for weeks.
  *
  * 2. **It buckets by ACCOUNT, and the partition is total.**
  *    `holdings.account_id` is `NOT NULL` and an account holds exactly one

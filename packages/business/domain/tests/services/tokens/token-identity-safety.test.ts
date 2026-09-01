@@ -13,7 +13,7 @@ import {
 
 /**
  * SC-197. Every symbol below was found in production on Polygon, where
- * ten lookalikes made up 45% of the chain's token set. They are written
+ * lookalikes made up a large share of the chain's token set. They are written
  * here in the exact characters that were in the database — if an editor
  * or a formatter ever "helpfully" normalises them, these tests fail,
  * which is the correct outcome.

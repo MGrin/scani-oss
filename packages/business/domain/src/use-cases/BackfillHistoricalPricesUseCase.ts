@@ -238,9 +238,9 @@ export class BackfillHistoricalPricesUseCase {
 
     // A missing `holding_coverage` row used to send the token to the full
     // 1,826-day lookback — the widest window in the run, applied to exactly
-    // the tokens we know least about. On a production dry run that was
-    // 25,564 of 52,022 missing days and 56 of ~128 provider requests, spent
-    // establishing that a set of memecoins has no price feed (SC-229).
+    // the tokens we know least about. On a production dry run that was about
+    // half the missing days and half the provider requests, spent establishing
+    // that a set of memecoins has no price feed (SC-229).
     //
     // Coverage stays the authority where it exists; only a NULL falls
     // through to here. Both ends fall through together, so a closed

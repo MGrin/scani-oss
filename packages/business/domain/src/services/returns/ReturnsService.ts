@@ -430,7 +430,7 @@ export class ReturnsService {
           baseCurrencyId,
           new Date(`${date}T23:59:59.999Z`),
           // `daily` because these are end-of-day valuations and forex history
-          // is written daily — 1,360 of production's 1,377 CAD rows are, and
+          // is written daily — nearly every CAD row in production is, and
           // the handful of intraday rows are mid-morning quotes that would
           // disagree with the close the value series was built from.
           { preferGranularity: 'daily', priceLookup, tx: undefined }

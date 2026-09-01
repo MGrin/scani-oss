@@ -468,10 +468,10 @@ describe('TransactionRouter.run', () => {
 describe('TransactionRouter — a wallet source mints no token it cannot use (SC-343)', () => {
   // The router resolved the token identity FIRST and the holding second, so a
   // wallet-derived event for a token the user dropped at review wrote a
-  // `tokens` row and then threw every event that referenced it away. 111 rows
-  // on production, 47 of them plain `USDC` / `USD Coin` / `Tether USD` on a
-  // spam contract with a scam score of 0 — indistinguishable, in token search,
-  // from the real thing.
+  // `tokens` row and then threw every event that referenced it away. A hundred
+  // or so rows on production, many of them plain `USDC` / `USD Coin` /
+  // `Tether USD` on a spam contract with a scam score of 0 — indistinguishable,
+  // in token search, from the real thing.
   //
   // A holding cannot exist without a token row, so under FIND-ONLY a token
   // that is not already in the database can never yield a holding. Creating

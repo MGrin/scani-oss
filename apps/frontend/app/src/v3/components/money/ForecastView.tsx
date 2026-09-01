@@ -710,10 +710,10 @@ function ObservedBasis({
  *
  * The figure above is money and months derived from money, so a count-weighted
  * share describes a different quantity than the number it qualifies. Measured
- * on the production book, window 2026-02..2026-07, `left_control`: **34 of 79
- * rows carry a user stamp — 57% not the user's by COUNT, 76.3% by VALUE.**
- * Nearly twenty points, and the unattributed rows are the big ones: the single
- * largest transaction, 16,236, is 19.5% of the window on its own and has no
+ * on the production book, window 2026-02..2026-07, `left_control`: **a minority
+ * of rows carry a user stamp, and the share that is not the user's is markedly
+ * higher by VALUE than by COUNT.** The unattributed rows are the big ones: the
+ * single largest transaction is a fifth of the window on its own and has no
  * source.
  *
  * The count is the flattering reading, and `ObservedBurnService` returns no
@@ -748,7 +748,7 @@ function ObservedBasis({
  * the honest claim is the narrow one: nobody recorded who decided.
  *
  * The value is the burn's own quantity proxy rather than
- * `valueTransactionInBase` — 526 off 83,905 on the production book, 0.6%, and
+ * `valueTransactionInBase` — under a percent apart on the production book, and
  * these outflows are essentially all dollar-denominated. Stated because the
  * percentages are printed to the whole number and that difference cannot move
  * one.
@@ -861,8 +861,8 @@ function BurnProvenance({ burn }: { burn: NonNullable<ForecastData['observedBurn
  * The first build of this made a DECLARED monthly spend the headline. It was
  * rejected on a measurement: asked what they spend a month, people give typical
  * RECURRING spend and omit exceptional items. On the one production book that
- * is ~6,300, yielding a 17.8-month runway against an actual drain of 8.1 — a
- * ~2x overstatement, in the flattering direction, which is the exact failure
+ * yielded a runway roughly twice the one the actual drain supports — an
+ * overstatement in the flattering direction, which is the exact failure
  * SC-657 exists to avoid. So the measurement leads and the user corrects it.
  * An override has something to disagree with; a declaration has nothing.
  *

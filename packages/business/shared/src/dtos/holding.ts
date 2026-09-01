@@ -81,10 +81,10 @@ export const UpdateHoldingDto = z.object({
    * exists (SC-564).
    *
    * The column, the render and the create-time write all shipped with SC-330;
-   * this is the only path that was missing, which is why production held 100
-   * rows with a NULL label and no way to change that. The four RUB rows the
-   * pot name was designed for were created 2026-05-17, before the column
-   * existed, so they could never acquire one.
+   * this is the only path that was missing, which is why every holding that
+   * predated it was stuck with a NULL label and no way to change that. The RUB
+   * rows the pot name was designed for were created before the column existed,
+   * so they could never acquire one.
    *
    * `null` clears the name. `undefined` leaves it alone — the distinction
    * matters because most updates here are balance edits that must not touch

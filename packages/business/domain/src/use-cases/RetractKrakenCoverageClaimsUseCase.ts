@@ -84,11 +84,11 @@ function isAuditableEntry(payload: unknown): payload is KrakenLedgerEntry {
  * WHY IT NEEDS NO API CALL, which is the part worth reading. Kraken stamps a
  * running `balance` and an operation `refid` on every ledger entry, and the
  * importer stores each entry verbatim in `holding_transactions.raw_payload`.
- * Measured read-only on production 2026-08-19: 492 rows carry a Kraken
- * payload, 0 of them missing `refid`, `balance` or any other audited field —
- * exactly the 492 entries SC-392 measured against the live API. Running
+ * Measured read-only on production 2026-08-19: every row carrying a Kraken
+ * payload has `refid`, `balance` and every other audited field, and the stored
+ * population is exactly what SC-392 measured against the live API. Running
  * `auditKrakenLedger` over the stored copy reproduces the live result to the
- * entry: 2 balance-chain breaks and 40 unpaired legs. So the evidence for
+ * entry, break for break and unpaired leg for unpaired leg. So the evidence for
  * this repair is in our own database, and no unanswered request has to be
  * read as agreement.
  *
