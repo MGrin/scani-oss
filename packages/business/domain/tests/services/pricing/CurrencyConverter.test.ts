@@ -322,8 +322,8 @@ describe('CurrencyConverter.getStoredRateDetail — the user read path', () => {
   /**
    * The daily hole this closes. forex-backfill writes rows timestamped at
    * midnight and runs at 03:30, so a row is past `DB_RATE_MAX_AGE_MS` for the
-   * three and a half hours between the two — and EUR->USD was measured at
-   * **31.3 hours** old in production, a missed night on top of that. Under the
+   * three and a half hours between the two — and EUR->USD was measured well
+   * over a day old in production, a missed night on top of that. Under the
    * old rule every one of those reads paid the upstream call.
    */
   test('an old stored rate is served and dated, not refused', async () => {

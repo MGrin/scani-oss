@@ -21,7 +21,7 @@
 -- rule key is `transfer_counterparty_key(counterparty)`, and counterparty is a
 -- field an ATTACKER can write to: address poisoning sprays zero-value
 -- `transferFrom` calls on the real USDC contract to plant a lookalike address
--- in a victim's history, and production carries 113 such rows. Slice 1
+-- in a victim's history, and production carries a corpus of them. Slice 1
 -- contained that by making no verdict able to assert a disposal. That leg is
 -- gone for a marked address, so the remaining containment has to be stated
 -- rather than assumed. It is three properties, none of them a check somebody

@@ -19,9 +19,9 @@ restoreContainerAfterAll();
 /**
  * The coverage denominator (SC-146).
  *
- * The production account that opened the ticket: 69 holdings, 55 priced,
- * and every one of the 14 misses an unsolicited EVM airdrop token with no
- * market. The chart reported "80% of holdings priced" while 100% of the
+ * The production account that opened the ticket: most of its holdings priced,
+ * and every one of the misses an unsolicited EVM airdrop token with no market.
+ * The chart reported a coverage figure well under 100% while 100% of the
  * assets the user actually owns were priced. `USDT` is in the fixture
  * carrying the same 0.3 scam score as the spam, because it is on the real
  * account and because any fix that reads that score instead of pricing

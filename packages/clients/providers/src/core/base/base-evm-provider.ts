@@ -175,8 +175,8 @@ const NATIVE_TOKEN_KEY = 'native';
 
 /**
  * The `externalId` a token leg gets when its transaction moves that token
- * exactly once, which is true of 522 of the 535 `(hash, contract, holding)`
- * sites on production — the other 13 are SC-341. Built from
+ * exactly once, which is true of all but a handful of the `(hash, contract,
+ * holding)` sites on production — the rest are SC-341. Built from
  * `contractAddress` verbatim rather than lowercased because it is the key
  * rows already in the ledger were written under.
  */
@@ -691,14 +691,14 @@ export abstract class BaseEvmProvider implements ProviderBase {
    * is load-bearing: it is why this change needs no migration. Every token
    * row already in the ledger was written by a dedupe map whose last
    * occurrence wins, so each one describes the LAST leg of its group —
-   * checked against `eth_getTransactionReceipt` for all 13 production
-   * collision sites, 13 of 13. Numbering only the earlier legs makes the fix
+   * checked against `eth_getTransactionReceipt` for every production
+   * collision site, all of them. Numbering only the earlier legs makes the fix
    * a pure INSERT: no `external_id` is rewritten, no row's content is
    * replaced by a different leg's, and no `transfer_review` answer ends up
-   * attached to an event it was not given about. Ten of those 13 rows carry
-   * an unattributed `left_control`, and one of them books a 161.38 USDC
-   * disposal that a forward-numbered key would have silently moved onto a
-   * 1.63 USDC leg.
+   * attached to an event it was not given about. Most of those rows carry
+   * an unattributed `left_control`, and one of them books a USDC disposal
+   * that a forward-numbered key would have silently moved onto a much
+   * smaller leg of the same transaction.
    */
   private normalizeTokenTx(
     row: EvmTokenTxRow,

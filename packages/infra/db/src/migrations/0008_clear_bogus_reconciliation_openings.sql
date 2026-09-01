@@ -4,7 +4,7 @@
 -- sum, which oscillated the opening's sign whenever a holding was
 -- migrated; on prod this manifested as cost_basis=0 for every IBKR
 -- equity (and most chain-spread crypto), making the PnL chart show a
--- $102K gain that's entirely unrealized-against-zero-cost.
+-- large gain that's entirely unrealized-against-zero-cost.
 --
 -- After this migration, every real holding's tx chain stands on its
 -- own. The portfolio-history-backfill job (manual or nightly) calls

@@ -491,8 +491,8 @@ describe('BackfillHistoricalPricesUseCase', () => {
    * Empty meant "no price history", which meant a 7-day unpriceable
    * cooldown, which meant the token was skipped before it could be
    * retried — and re-marked when it finally was. Many tokens sat in that
-   * state in production, ETH, BTC, AAPL and NVDA among them, a batch of them
-   * stamped by a single run to the millisecond.
+   * state in production, including major ones, a batch of them stamped by a
+   * single run to the millisecond.
    *
    * A run that never got an answer must not produce a verdict.
    */

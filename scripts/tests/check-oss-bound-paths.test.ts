@@ -393,9 +393,9 @@ describe('the tree discriminator weighs shares, not presence (SC-659)', () => {
  * later file reads — the same class of leak `restoreContainerAfterAll` exists
  * for. Spawning with `cwd` set touches nothing.
  *
- * The denominators are small where production's are 546 and 10; what has to
+ * The denominators here are small where the real tree's are large; what has to
  * match is the SHAPE — a private tree carrying the whole private-only set and
- * exactly one mirror-only path. Production's numbers are in the classifier's
+ * exactly one mirror-only path. The real numbers are in the classifier's
  * docblock and in the table above.
  */
 describe('an upstream-first window on real repositories (SC-659)', () => {

@@ -122,8 +122,8 @@ export function TransferRuleAction({
     },
   });
 
-  // Nothing to key a rule on. 202 of 470 production outflows are in this state
-  // — a Kraken withdrawal record does not say where the money went, and Solana
+  // Nothing to key a rule on. A large share of production outflows are in this
+  // state — a Kraken withdrawal record does not say where the money went, and Solana
   // rows carry no payload at all — so the control is absent rather than
   // present and refusing. Keyed on `counterpartyKey` and not `counterparty`,
   // because that is the field `rules.create` refuses on.

@@ -82,7 +82,7 @@ function tx(p: {
   transferReviewSplit?: unknown;
   /** Defaults to a stamp whenever an answer is present — which is what every
    *  application write path does. Pass `null` for the state that only a raw
-   *  `UPDATE` produces, and that 560 production rows are in (SC-324).
+   *  `UPDATE` produces, and that most production rows are in (SC-324).
    *
    *  **It no longer decides provenance** (SC-673). It used to, and the fixture
    *  set no source at all — so every answered row here was `user` by default,

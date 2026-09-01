@@ -167,10 +167,10 @@ export function resolveInstitutionCode(source: string, accountMetadata: unknown)
  * `user_integration_credentials` is UNIQUE on (user_id, institution_id),
  * so a user with three Ethereum wallets has exactly one Ethereum
  * credential and therefore one surviving address. Every Ethereum account
- * then imported whichever address won that row. In production all 287 EVM
- * outflows carried the same `from`: 122 distinct on-chain events fanned
- * across nine accounts on three wallets, and 165 of the rows were copies
- * of a transfer the account they sat on had never made.
+ * then imported whichever address won that row. In production every EVM
+ * outflow carried the same `from`: a far smaller set of distinct on-chain
+ * events fanned across every account on every wallet, so most of the rows
+ * were copies of a transfer the account they sat on had never made.
  *
  * The balance side never had this bug because it does exactly what this
  * does — `SyncWalletBalancesUseCase.makeProviderCtx` synthesizes the

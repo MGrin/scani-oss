@@ -24,8 +24,8 @@ import { formatRelative } from '../../lib/relative-time';
  * `affectedCount` is on every rule for the failure this feature is most likely
  * to have: a rule that matches nothing, or matches only the row it was written
  * from, looks exactly like a rule with nothing to do. A rule keyed on the
- * `counterparty` column — the obvious implementation — would today match zero
- * of 249 chain outflows in production and report itself as working, and the
+ * `counterparty` column — the obvious implementation — would today match no
+ * chain outflow in production and report itself as working, and the
  * first real rule anybody wrote carried the payment amount in its key and
  * could only ever match one row (SC-381).
  *

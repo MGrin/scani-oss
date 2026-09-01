@@ -31,18 +31,18 @@ describe('upstreamEventKey', () => {
 
   test('reads Kraken’s refid, NOT its per-entry ledger id', () => {
     // The two legs of one Kraken operation carry different `external_id`s —
-    // `LVMPIT-LXAOV-O5VCSQ` and `LJVGEB-2B5KK-O4IF6H` — and the same refid.
-    // Splitting the external_id is how all 22 of these got miscounted as
-    // artifacts.
-    const deposit = upstreamEventKey('kraken-api', 'LVMPIT-LXAOV-O5VCSQ', {
-      refid: 'ELC3MXJ-GHEJB-N6WF7C',
+    // `LEARN1-AAAAA-000001` and `LEARN2-BBBBB-000002` — and the same refid.
+    // Splitting the external_id is how every one of these got miscounted
+    // as an artifact.
+    const deposit = upstreamEventKey('kraken-api', 'LEARN1-AAAAA-000001', {
+      refid: 'REARN01-AAAAA-0000001',
       subtype: 'autoallocation',
     });
-    const withdraw = upstreamEventKey('kraken-api', 'LJVGEB-2B5KK-O4IF6H', {
-      refid: 'ELC3MXJ-GHEJB-N6WF7C',
+    const withdraw = upstreamEventKey('kraken-api', 'LEARN2-BBBBB-000002', {
+      refid: 'REARN01-AAAAA-0000001',
       subtype: 'autoallocation',
     });
-    expect(deposit).toBe('elc3mxj-ghejb-n6wf7c');
+    expect(deposit).toBe('rearn01-aaaaa-0000001');
     expect(withdraw).toBe(deposit);
   });
 
@@ -81,7 +81,7 @@ describe('sameHoldingGroupVerdict', () => {
   });
 
   test('keeps a Kraken autoallocation pair, which is the 22-group cluster', () => {
-    const refid = 'elc3mxj-ghejb-n6wf7c';
+    const refid = 'rearn01-aaaaa-0000001';
     const verdict = sameHoldingGroupVerdict([
       leg({ source: 'kraken-api', eventKey: refid }),
       leg({ source: 'kraken-api', eventKey: refid }),

@@ -87,8 +87,8 @@ async function setupFixture(): Promise<Fixture> {
     if (!row) throw new Error(`${name} account insert failed`);
     return row;
   };
-  const ethAccount = await account('eth-0x1414', '1');
-  const baseAccount = await account('base-0x1414', '8453');
+  const ethAccount = await account('eth-0xb0b1', '1');
+  const baseAccount = await account('base-0xb0b1', '8453');
 
   const [tokenType] = await db
     .insert(schema.tokenTypes)
@@ -200,7 +200,7 @@ async function insertArrival(
       occurredAt: secondsLater(opts.seconds ?? 4),
       source: 'etherscan',
       externalId: `${hash()}-0x833589fc`,
-      rawPayload: { to: '0x141451c9405875cf0cdc23c0ee5be72069231e49' },
+      rawPayload: { to: '0xb0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9' },
       ...(opts.transferGroupId ? { transferGroupId: opts.transferGroupId } : {}),
     })
     .returning();
@@ -369,9 +369,9 @@ describe('RepairBridgedOutflowsUseCase — deriving the decision', () => {
 
   test('a near miss in the WIDE net does not veto a decision the deciding bounds settle', async () => {
     const f = fixture!;
-    // The production contradiction (`d5872ea7`): a second arrival 73 minutes
-    // out — outside the 30-minute window, and in production the arrival that a
-    // DIFFERENT departure claims four seconds after leaving. Showing it is the
+    // The production contradiction: a second arrival over an hour out — outside
+    // the 30-minute window, and in production the arrival that a DIFFERENT
+    // departure claims seconds after leaving. Showing it is the
     // wide net's job; vetoing with it is not.
     const departure = await insertDeparture(f);
     const arrival = await insertArrival(f, { seconds: 6 });

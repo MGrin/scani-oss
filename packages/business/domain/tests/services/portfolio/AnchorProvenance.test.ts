@@ -29,8 +29,8 @@ restoreContainerAfterAll();
  * timestamp, and only asserting those fails before the fix.
  *
  * The discriminating case is `oldestAnchorAt`. Production holds both extremes
- * in one portfolio — a holding anchored 54 seconds back and another 71 days
- * back (SC-245) — and an implementation that recorded the FIRST backward
+ * in one portfolio — a holding anchored seconds back and another months back
+ * (SC-245) — and an implementation that recorded the FIRST backward
  * anchor it saw, or the most recent one, would satisfy every other assertion
  * here while answering the only question a reader has.
  */

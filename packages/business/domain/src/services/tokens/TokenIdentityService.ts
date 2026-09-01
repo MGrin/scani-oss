@@ -114,9 +114,9 @@ export class TokenIdentityService extends BaseService {
    * holding cannot exist without a `tokens` row, so an identity the database
    * does not already know can never yield one. Creating it is work whose
    * every result is then discarded, and the row it leaves behind is the
-   * entire cost: 111 of them on production in a single re-import, 47 plain
-   * `USDC` / `USD Coin` / `Tether USD` entries on spam contracts that token
-   * search cannot tell from the real thing (SC-343).
+   * entire cost: production wrote a batch of them in a single re-import, many
+   * of them plain `USDC` / `USD Coin` / `Tether USD` entries on spam contracts
+   * that token search cannot tell from the real thing (SC-343).
    */
   async findByIdentity(
     partial: Partial<NewToken>,

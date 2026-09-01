@@ -27,7 +27,7 @@ import { users } from './users';
  *
  * **The key is a field an attacker can write to.** Address poisoning sprays
  * zero-value transfers to plant a lookalike address in a victim's history, and
- * `pendingPredicate` already excludes 113 such rows in production. Two things
+ * `pendingPredicate` already excludes that corpus in production. Two things
  * contain that here and both are structural rather than careful: no verdict in
  * this table can assert a disposal, and `match_counterparty` is never typed — it is
  * copied out of a transaction the user owns, by the service, which is why
@@ -48,7 +48,7 @@ export const transferReviewRules = pgTable(
     // cover every payment to a recipient.
     matchCounterparty: text('match_counterparty').notNull(),
     verdict: text('verdict').notNull(),
-    // The user's own words: `0x9d8ae06a…` is unreadable and "my Bybit deposit"
+    // The user's own words: `0xc0ffe06a…` is unreadable and "my Bybit deposit"
     // is not, and the queue's whole problem is that the reader cannot
     // recognise an address. Required, not decoration.
     note: text('note').notNull(),

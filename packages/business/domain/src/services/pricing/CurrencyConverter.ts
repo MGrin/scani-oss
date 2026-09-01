@@ -270,8 +270,8 @@ export class CurrencyConverter {
    * 1. **It never fetches.** `exchangeRateFetch` goes through an outflow
    *    limiter of 2 requests per 60 seconds whose `execute` *sleeps* until a
    *    slot frees. That is correct for a nightly job and catastrophic on a
-   *    request someone is watching a skeleton for: three uncovered currencies
-   *    measured at 26 seconds in production, one at 7.5. Refreshing is the
+   *    request someone is watching a skeleton for: several uncovered currencies
+   *    measured at tens of seconds in production. Refreshing is the
    *    worker's job; this returns what is known now and the caller enqueues.
    * 2. **It has no maximum age.** A rate from 30 hours ago is a far better
    *    answer than no rate: the wire carries `asOf`, and every surface that

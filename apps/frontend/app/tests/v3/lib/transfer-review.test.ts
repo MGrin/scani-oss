@@ -703,10 +703,10 @@ describe('bulkConsequence', () => {
 describe('bulkRefusalNotes', () => {
   test('names the own wallet rather than counting it', () => {
     const notes = bulkRefusalNotes(t, [
-      { transactionId: 'a', reason: 'own_wallet', detail: '0x9d8ae06a…14ab' },
+      { transactionId: 'a', reason: 'own_wallet', detail: '0xc0ff…ff01' },
     ]);
     expect(notes).toHaveLength(1);
-    expect(notes[0]).toInclude('0x9d8ae06a…14ab');
+    expect(notes[0]).toInclude('0xc0ff…ff01');
     expect(notes[0]).toInclude('cannot be counted as a disposal');
   });
 

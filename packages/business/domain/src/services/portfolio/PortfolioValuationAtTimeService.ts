@@ -115,9 +115,9 @@ export interface PortfolioValueAtTimeResult {
    * the weakest reconstruction behind this total. `null` when none were.
    *
    * This is the number that ranks two `'partial'` days against each other.
-   * Production has both extremes in the same portfolio — one holding
-   * anchored 54 seconds back, another 71 days back (SC-245) — and without
-   * it they are the same answer.
+   * Production has both extremes in the same portfolio — one holding anchored
+   * seconds back, another months back (SC-245) — and without it they are the
+   * same answer.
    */
   oldestAnchorAt: Date | null;
   /**
@@ -142,7 +142,8 @@ export interface PortfolioValueAtTimeResult {
    * improvement on the cliff it replaces — the alternative put ten weeks of
    * drift on one day — and downgrading every day of every sparsely-observed
    * holding would saturate a bucket that is already saturated
-   * (`daysNotFullyCovered` reads 367 of 367 on a real account). The count is
+   * (`daysNotFullyCovered` reads every day of the window on a real account).
+   * The count is
    * here so that a number partly drawn rather than measured can be told
    * apart later; nothing surfaces it yet, and that is the point of writing
    * it down now rather than when someone needs it.
@@ -417,8 +418,9 @@ export class PortfolioValuationAtTimeService {
       // Nothing in scope we could ever price, so `total` is 0 because we
       // measured nothing — not because the scope was worth nothing.
       // Calling that 'full' let the chart draw a confident €0 between two
-      // days worth €25k (observed in production on institution-scope
-      // rows), and the period delta was then computed against that zero.
+      // days that were plainly worth something (observed in production on
+      // institution-scope rows), and the period delta was then computed
+      // against that zero.
       // A scope containing only unpriceable dust lands here too, which is
       // the same statement: we have no measurement of it.
       coverageQuality = 'unknown';

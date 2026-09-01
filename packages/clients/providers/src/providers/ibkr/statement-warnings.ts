@@ -13,11 +13,11 @@
  * a query id; which sections come back is a per-query setting ticked in IBKR's
  * UI, and a query saved without "Cash Transactions" returns a statement that
  * parses perfectly and contains no dividend, interest, deposit or withdrawal
- * ever. Every one of the 159 IBKR transactions in production is a `<Trade>`,
- * and the cash that plainly moved — USD +1.90 on 2026-08-14, +300.00 on
- * 2026-08-15 — has no row at all.
+ * ever. Every IBKR transaction we have seen in production is a `<Trade>`, and
+ * the cash that plainly moved has no row at all.
  *
- * We could not tell those apart. The statement is 734 KB and we pulled four
+ * We could not tell those apart. The statement runs to hundreds of kilobytes
+ * and we pulled four
  * sections out of it without once checking that four were sent, so a section
  * the query never requested and a section with nothing in it read the same:
  * as "you had no dividends this year".
