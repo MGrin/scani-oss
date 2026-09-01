@@ -267,10 +267,11 @@ describe('SC-657 — the statistic', () => {
  *
  * The figure this qualifies is money, and months derived from money, so a
  * count-weighted share describes a different quantity than the number it sits
- ***REMOVED***
- ***REMOVED***
- ***REMOVED***
- * unattributed rows are the big ones.
+ * under. Measured on a production book over a six-month window, fewer than
+ * half the rows carry a user stamp — so by COUNT most of the burn is not the
+ * user's, while by VALUE most of it is. The two answers differ by tens of
+ * points, and the count is the flattering one — the unattributed rows are the
+ * big ones.
  *
  * The service returns no counts at all rather than returning them with a
  * comment asking nobody to use them. This feature has erred flattering at

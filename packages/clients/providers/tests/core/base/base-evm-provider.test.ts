@@ -876,8 +876,8 @@ describe('BaseEvmProvider — repeated token legs in one transaction (SC-341)', 
     // This is the whole reason there is no migration. Every etherscan token
     // row in the ledger was written by the last-wins dedupe, so each one
     // already describes the LAST leg of its `(hash, contract)` group —
-    ***REMOVED***
-    ***REMOVED***
+    // verified against `eth_getTransactionReceipt` for every production
+    // collision site, all of them. Numbering the earlier legs and leaving the
     // last one bare therefore makes the fix pure INSERT: no `external_id`
     // is rewritten, and no `transfer_review` answer moves to a leg it was
     // not given about.
@@ -1041,7 +1041,7 @@ describe('BaseEvmProvider — a zero-value token transfer is not a transfer (SC-
   });
 
   test('a transaction whose every token leg is zero contributes nothing', async () => {
-    ***REMOVED***
+    // Nearly every affected production group is shaped like this.
     const provider = new TestEvmProvider([ETHEREUM], {
       native: [],
       token: [

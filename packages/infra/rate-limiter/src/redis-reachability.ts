@@ -13,7 +13,7 @@
  *  - `closeHandler` reconnects for as long as `retryStrategy` returns a
  *    number, and the default is `Math.min(times * 50, 2000)` — a number
  *    always. **It never gives up**, and the 2000 ms ceiling is exactly the
- *    ~2s cadence seen in production.
+ *    ~2s reconnect cadence this is observed at.
  *
  * So a client emitting `ENOTFOUND` every ~2s is re-resolving every ~2s and
  * genuinely failing. There is nothing in ioredis to fix: the name does not

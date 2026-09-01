@@ -858,10 +858,10 @@ describe('LinkTransferPairsUseCase — bridged assets', () => {
  * a reader who picks one is telling us something true, and the last test here
  * is what stops somebody enforcing this "consistently" and removing that.
  *
- ***REMOVED***
- ***REMOVED***
- ***REMOVED***
- ***REMOVED***
+ * Measured on production 2026-08-26 before any of this was written: a small
+ * minority of inflows are person-authored, 0 were at risk, and 0 groups had
+ * ever been damaged — against a non-empty control of matcher-made groups, so
+ * the zero is a measurement. Prevention, with no repair owed.
  *
  * ## THE "STILL CLAIMS AN ORDINARY DEPOSIT" TEST BELOW IS CORROBORATION, NOT
  * THE GUARD
@@ -949,9 +949,9 @@ describe('LinkTransferPairsUseCase — a row a person authored is not the matche
 
   test('AN ORDINARY IMPORTED DEPOSIT IS STILL CLAIMED — the feature is not broken', async () => {
     const f = fixture!;
-    ***REMOVED***
-    ***REMOVED***
-    ***REMOVED***
+    // MUST-BE-ABSENT, and the axis that matters most: nearly every production
+    // inflow is this shape. A predicate wide enough to catch the person-authored
+    // few and also catch these would fix the hole by turning the matcher off.
     await outflowAndInflow(f, { inflowSource: 'etherscan', externalId: 's611-c' });
 
     const summary = await Container.get(LinkTransferPairsUseCase).execute({ userId: f.userId });

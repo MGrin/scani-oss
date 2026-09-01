@@ -157,7 +157,7 @@ export class RepairOwnWalletDisposalsUseCase {
    *
    * Matched on `accounts.metadata.walletAddress` + `chainId` rather than on the
    * account NAME, which is a truncated display string ("Ethereum -
-   ***REMOVED***
+   * 0xb0b1...a8b9") that two different wallets sharing a prefix would both
    * satisfy.
    */
   private async internalPlan(

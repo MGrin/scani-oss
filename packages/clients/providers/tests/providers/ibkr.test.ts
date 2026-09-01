@@ -491,8 +491,8 @@ describe('IbkrProvider — Flex error classification', () => {
  * template is structurally too heavy, so retrying only deepens IBKR's backlog.
  * That is a hypothesis about a cause the code cannot observe, and production
  * has never produced a single instance of it to weigh: measured 2026-08-19,
- ***REMOVED***
- ***REMOVED***
+ * no `user_jobs` row in three months carries any of these codes and no live
+ * IBKR credential carries a non-zero `sync_failure_count`. So the backlog cost is
  * speculative and the false instruction is certain, and the retry budget on
  * each descriptor already bounds the downside at 3-4 attempts.
  */

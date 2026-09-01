@@ -799,7 +799,7 @@ describe('CostBasisService — basis quality', () => {
 
   test('no coverage row recorded is not treated as incomplete', async () => {
     const svc = makeService();
-    ***REMOVED***
+    // A sizeable minority of production holdings have no coverage row at all. Grading those
     // `partial` would flag more holdings than the deliberate `false` does and
     // bury the signal this ticket is about.
     const r = await svc.walkLots(undefined, boughtOnce, USD, BTC, undefined, 'unrecorded');
