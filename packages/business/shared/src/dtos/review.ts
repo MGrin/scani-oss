@@ -167,8 +167,44 @@ export const reviewItemSchema = z.object({
   label: reviewLabelSchema,
   detail: reviewDetailSchema.optional(),
   amount: reviewAmountSchema.optional(),
+  /**
+   * How many things actually wait behind this row (SC-860).
+   *
+   * **A row is not always one thing.** Three of the feed's collectors emit a
+   * row per record and carry `1`; the two whose queue is unbounded emit ONE
+   * row for the whole queue and carry its size — `unpairedTransfers` and
+   * `unexplainedBalanceChanges`, whose `detail` already holds the same
+   * figure for the sentence the client renders.
+   *
+   * Until this field existed nothing on the wire said so, and the nav badge
+   * read `items.length`: 200 unpaired transfers plus 30 unexplained balance
+   * changes announced themselves as **2**. Aggregating stays right for the
+   * FEED — the queue is unbounded and every item points at the same page, so
+   * enumerating it would bury the three imports that each point somewhere
+   * different. The badge answers a different question, "how much is waiting
+   * on me", so it sums this instead of counting rows (`reviewBadgeCount`).
+   *
+   * Required rather than defaulted to 1, on purpose: a collector added later
+   * that aggregates and forgets to say so fails this schema, where a default
+   * would silently weigh its whole queue as one and reproduce the bug.
+   */
+  represents: z.number().int().positive(),
   createdAt: z.date(),
   href: z.string().min(1),
 });
 
 export type ReviewItem = z.infer<typeof reviewItemSchema>;
+
+/**
+ * "How much is waiting on me" — the number the nav badge, the home screen's
+ * attention row and the More drawer all show.
+ *
+ * It lives here rather than at any of those call sites so there is exactly
+ * one summing rule, for the same reason `useReviewFeed` is one hook: the
+ * badge and the page must not be able to disagree. Structurally typed on
+ * `represents` alone so it takes both the server's `ReviewItem` and the
+ * serialised row the client holds, whose `createdAt` is an ISO string.
+ */
+export function reviewBadgeCount(items: readonly { represents: number }[]): number {
+  return items.reduce((total, item) => total + item.represents, 0);
+}
