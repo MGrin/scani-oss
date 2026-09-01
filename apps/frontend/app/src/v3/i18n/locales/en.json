@@ -764,7 +764,8 @@
         "retained": "You said this never left your control, so nothing was realized.",
         "awaitingPair": "Only one side of this move was imported, so no gain was booked.",
         "realizedUnattributed": "Recorded as having left your portfolio, so this gain was booked. There is no record of anyone answering it — the answer was not given in the review queue.",
-        "retainedUnattributed": "Recorded as never having left your control, so nothing was realized. There is no record of anyone answering it."
+        "retainedUnattributed": "Recorded as never having left your control, so nothing was realized. There is no record of anyone answering it.",
+        "fee": "A charge taken out of what left, so no gain was booked — it is counted as a cost, not as a withdrawal."
       },
       "basis": {
         "partialNote": "Based on history we know is incomplete or a price outside our freshness window.",
@@ -1377,7 +1378,8 @@
           "untracked": "Recorded as still yours",
           "split": "Recorded — each part on its own terms",
           "gone": "That transfer is no longer waiting",
-          "splitRejected": "That division was not accepted"
+          "splitRejected": "That division was not accepted",
+          "fee": "Recorded as a fee"
         },
         "ownWalletNotice": "This went to a wallet you added, so the money is still yours. Pair it with the matching deposit, or record where it moved to — choosing that it left your portfolio books it as a sale.",
         "withdrawnNotice": "Scani withdrew an earlier answer on this transfer. It was given about a pairing we have since shown was not a transfer at all, so the question is back — and there may be no deposit here to point at.",
@@ -1417,7 +1419,8 @@
           "internalPrompt": "Pick the holding this money moved to.",
           "leftControlPriced": "Counted as a disposal on {{date}} at market value — about {{amount}} of proceeds against what you paid.",
           "leftControlUnpriced": "Counted as a disposal on {{date}} at market value. Scani has no price for {{symbol}} that day, so nothing is booked.",
-          "untracked": "Still yours, just somewhere Scani cannot see. Not a disposal, so no gain is booked — the {{symbol}} simply stops being counted."
+          "untracked": "Still yours, just somewhere Scani cannot see. Not a disposal, so no gain is booked — the {{symbol}} simply stops being counted.",
+          "fee": "A charge taken out of what left — the bank, the network or the exchange kept it. Not a disposal, so no gain is booked, and the {{symbol}} is counted as a cost rather than as money you took out."
         },
         "decision": {
           "paired": {
@@ -1435,6 +1438,10 @@
           "untracked": {
             "trigger": "Moved somewhere untracked",
             "commit": "Record it as still mine"
+          },
+          "fee": {
+            "trigger": "Part of it was a fee",
+            "commit": "Record it as a fee"
           }
         },
         "destination": {
@@ -1479,13 +1486,15 @@
           "internal": "Moved to a holding you track — deposit recorded",
           "leftControl": "Counted as a disposal",
           "untracked": "Still yours, somewhere untracked",
-          "fallback": "Answered"
+          "fallback": "Answered",
+          "fee": "Recorded as a charge"
         },
         "answeredShort": {
           "paired": "{{amount}} linked",
           "internal": "{{amount}} moved",
           "leftControl": "{{amount}} disposed",
-          "untracked": "{{amount}} untracked"
+          "untracked": "{{amount}} untracked",
+          "fee": "{{amount}} in fees"
         },
         "reopen": {
           "internal": "The deposit this recorded on the other account is deleted with it — otherwise your next answer would count that money twice. If answering it moved that account's balance, that comes back off too. The transfer rejoins the queue.",
