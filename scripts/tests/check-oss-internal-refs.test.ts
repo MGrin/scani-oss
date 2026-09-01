@@ -497,3 +497,109 @@ describe('selfTest — the guard demonstrating it still works', () => {
     expect(new Set([EXIT_OK, EXIT_REFUSED, EXIT_UNKNOWN, EXIT_SELF_TEST_FAILED]).size).toBe(4);
   });
 });
+
+/**
+ * SC-842 — the verdict word has to agree with the denominator beside it.
+ *
+ * This guard printed
+ *
+ *     oss-internal-refs: PASS · 0 of 8 staged file(s) scanned, 8 binary skipped
+ *
+ * over eight PNGs bound for the public mirror. Every number is honest: SC-775
+ * added that denominator for exactly this defect class, and it stops one step
+ * short of it, because the half a reader acts on is the WORD. Reconciling two
+ * integers is the work a verdict exists to save them.
+ *
+ * WHY IT MATTERS FOR PNGs SPECIFICALLY. 21 of the 36 binary files tracked in
+ * the mirror are pictures of the rendered product — the twelve visual-
+ * regression baselines, eight README screenshots, one import fixture. A
+ * screenshot can show an account name, an institution or a balance and no rule
+ * in this file can ever see it. That is the permanent edge of a text scanner,
+ * not a gap a better pattern closes, so the only thing owed is that the line
+ * stop describing the edge as a clean bill.
+ *
+ * BOTH ARMS ARE REQUIRED AND NEITHER IS SUFFICIENT. A CLI that says `PARTIAL`
+ * unconditionally satisfies the first and is a different broken guard; one that
+ * says `PASS` unconditionally is the defect itself. The pair is what
+ * discriminates.
+ */
+describe('a population read only in part is not a PASS (SC-842)', () => {
+  const CLI = new URL('../check-oss-internal-refs.ts', import.meta.url).pathname;
+
+  /**
+   * A repository with no `upstream` remote and no `.private-repo` marker, which
+   * `scanScope` reads as the public mirror — so its staged content is scanned
+   * rather than skipped. That is the state this verdict is about.
+   */
+  function mirrorLikeRepo(): string {
+    const dir = mkdtempSync(path.join(tmpdir(), 'sc842-'));
+    expect(Bun.spawnSync(['git', 'init', '-q', dir]).exitCode).toBe(0);
+    return dir;
+  }
+
+  function stageAndRun(dir: string, files: Record<string, Uint8Array | string>) {
+    for (const [name, content] of Object.entries(files)) {
+      writeFileSync(path.join(dir, name), content);
+    }
+    expect(Bun.spawnSync(['git', 'add', '-A'], { cwd: dir }).exitCode).toBe(0);
+    const r = Bun.spawnSync(['bun', CLI], { cwd: dir });
+    return { code: r.exitCode, out: `${r.stdout.toString()}${r.stderr.toString()}` };
+  }
+
+  /** A NUL byte is what `isBinary` keys on, and every real PNG carries one. */
+  const BINARY = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00]);
+
+  test('a staged file with no text in it makes the verdict PARTIAL, never PASS', () => {
+    const dir = mirrorLikeRepo();
+    const { code, out } = stageAndRun(dir, {
+      'baseline.png': BINARY,
+      'notes.md': 'ordinary text, nothing internal about it\n',
+    });
+    rmSync(dir, { recursive: true, force: true });
+
+    expect(out).toContain('PARTIAL');
+    // The word that must not be there. It is the whole ticket.
+    expect(out).not.toContain('oss-internal-refs: PASS');
+    // Named, not merely counted: a verdict that says one file went unread and
+    // cannot say which sends its reader to `git diff --cached` to work it out.
+    expect(out).toContain('baseline.png');
+    expect(out).toContain('1 of 2 staged file(s) scanned');
+    // Exit 0 is deliberate — see the verdict block in the guard. A refusal here
+    // is only clearable with OSS_ALLOW_INTERNAL_REFS=1, which waives the seven
+    // refusal rules too.
+    expect(code).toBe(EXIT_OK);
+  });
+
+  test('control — a population read in FULL is still a PASS', () => {
+    const dir = mirrorLikeRepo();
+    const { code, out } = stageAndRun(dir, {
+      'notes.md': 'ordinary text, nothing internal about it\n',
+      'more.md': 'also fine\n',
+    });
+    rmSync(dir, { recursive: true, force: true });
+
+    expect(out).toContain('oss-internal-refs: PASS');
+    expect(out).not.toContain('PARTIAL');
+    expect(out).toContain('2 of 2 staged file(s) scanned');
+    expect(code).toBe(EXIT_OK);
+  });
+
+  /**
+   * A refusal is a claim about the files that WERE read. The ones that were not
+   * are exactly as unexamined on a red run as on a partial pass, and a reader
+   * who fixes the named reference would otherwise be left believing the commit
+   * had been checked through.
+   */
+  test('a refusal still reports what it did not read', () => {
+    const dir = mirrorLikeRepo();
+    const { code, out } = stageAndRun(dir, {
+      'baseline.png': BINARY,
+      'notes.md': `an ${'MX'}-269 reference, which cannot travel\n`,
+    });
+    rmSync(dir, { recursive: true, force: true });
+
+    expect(code).toBe(EXIT_REFUSED);
+    expect(out).toContain('REFUSED');
+    expect(out).toContain('baseline.png');
+  });
+});
