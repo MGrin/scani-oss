@@ -130,6 +130,35 @@ else
   note "scripts/check-oss-internal-refs.ts is not in this tree; internal-reference check NOT run"
 fi
 
+# -------- 0d. No new production FIGURE may ride inside a file that travels --------
+#
+# SC-887. The check above reads what is inside a travelling file, and every
+# rule it carries reads ZERO against this repository. A precise decimal cannot:
+# there are 858 of them across 176 files here after exclusions, every one
+# legitimate — a price formatter's test needs them, and so does a colour-space
+# helper. So this check judges the FLOW instead, figures on ADDED lines only,
+# and refuses until somebody says the number is synthetic.
+#
+# WHAT IT IS FOR. A precise decimal in a fixture is either invented or measured,
+# and nothing about the text says which. A measured one is somebody's real
+# account, and it has reached this repository that way before — inside a test
+# fixture, in a file that was correctly public, caught by a person rather than
+# by anything mechanical.
+#
+# STATED LIMIT, and it is half the hazard: this reads digits and cannot read
+# PROSE. The refusal says so itself rather than leaving you to find out.
+#
+# A REFUSAL on any non-zero status, exit 9 and exit 10 included, on the same
+# reasoning as the blocks above: "could not tell" and "the guard could not
+# verify itself" are not passes.
+if [ -f scripts/check-oss-figures.ts ]; then
+  if ! bun scripts/check-oss-figures.ts; then
+    fail "staged lines add figures precise enough to be measurements (SC-887)"
+  fi
+else
+  note "scripts/check-oss-figures.ts is not in this tree; figure check NOT run"
+fi
+
 # -------- 1. Biome lint (staged files only, fast) --------
 
 biome_relevant=$(staged_files -- '*.ts' '*.tsx' '*.js' '*.jsx' '*.json' '*.jsonc' || true)
