@@ -53,18 +53,24 @@ describe('the e2e runner can only ever compose against its own project', () => {
     }
   });
 
-  test('the non-compose escape hatch is read-only, and only these two verbs', () => {
+  test('the non-compose escape hatch is read-only, and only these verbs', () => {
     // Widening the rule above is safe only while the exception cannot mutate
     // anything. `dockerQuery` takes its verb as a separate parameter precisely
     // so this can be read without depending on how the argv array is
     // formatted — a check that breaks when biome rewraps a line is a check
     // that gets deleted.
+    //
+    // SC-894 added the third verb, `info`, to ask docker where its root
+    // directory is — the filesystem that images, volumes and the build cache
+    // actually fill. It is read-only, takes no project, and is the one way to
+    // avoid reporting the CHECKOUT's free space as though it were docker's on
+    // a box where they are different volumes.
     const verbs = [...SOURCE.matchAll(/dockerQuery\('([a-z]+)'/g)]
       .map((m) => m[1])
       .filter((v): v is string => v !== undefined);
     expect(verbs.length).toBeGreaterThan(0);
     for (const verb of verbs) {
-      expect(['ps', 'inspect']).toContain(verb);
+      expect(['ps', 'inspect', 'info']).toContain(verb);
     }
   });
 
