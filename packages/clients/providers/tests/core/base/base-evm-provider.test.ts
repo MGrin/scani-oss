@@ -853,8 +853,8 @@ describe('BaseEvmProvider — repeated token legs in one transaction (SC-341)', 
     // Before SC-341 both legs keyed on `<hash>-<contract>`, so
     // `bulkUpsert`'s dedupe map — last occurrence wins — handed Postgres
     // one row and the earlier leg was never written. Measured on
-    ***REMOVED***
-    ***REMOVED***
+    // production: a dozen or so legs across as many transactions, no warning,
+    // and the import still reported `hasCompleteTxHistory: true`.
     const provider = new TestEvmProvider([ETHEREUM], {
       native: [],
       token: [
@@ -1023,7 +1023,7 @@ describe('BaseEvmProvider — repeated token legs in one transaction (SC-341)', 
 
 describe('BaseEvmProvider — a zero-value token transfer is not a transfer (SC-348)', () => {
   test('a zero-value token leg is dropped', async () => {
-    ***REMOVED***
+    // A hundred or so rows on production are this: a `Transfer` log of 0 on the REAL
     // USDC/USDT contract, `from` spoofed to the victim's own address so the
     // lookalike beside it gets copied out of their history later. The name
     // and symbol are genuinely USDC's, so no name-based filter can see it —

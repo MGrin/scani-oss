@@ -52,10 +52,10 @@ export const portfolioValueDaily = pgTable(
     // **This is documented rather than repaired, because no honest cutoff
     // exists.** Measured on production 2026-08-15, read-only:
     //
-    ***REMOVED***
-    ***REMOVED***
+    //   * computed_at spans 2026-05-15..2026-08-15.
+    //   * Every row computed before 2026-08-14 carries 0 in all four.
     //   * The first non-zero value in ANY of them appears 2026-08-14 18:07.
-    ***REMOVED***
+    //   * `transfers_unreviewed` is 0 in every row — no signal at all.
     //   * `drizzle.__drizzle_migrations.created_at` cannot date the boundary:
     //     the timestamps are hand-authored journal values, evenly spaced
     //     10,000s apart, not deploy times.
@@ -63,7 +63,7 @@ export const portfolioValueDaily = pgTable(
     // So a backfill would have to invent the cutoff, and would then discard
     // genuine zeros on the recent side of it to remove false ones on the
     // other — two unfounded assertions in place of one. Recomputing instead
-    ***REMOVED***
+    // is the whole table and was already declined once, for a larger benefit,
     // under SC-242.
     //
     // What a reader can use instead is a fact already recorded rather than

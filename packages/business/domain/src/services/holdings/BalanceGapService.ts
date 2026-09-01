@@ -54,9 +54,9 @@ export type BalanceGapAnswerRefusal = 'gone' | 'already-answered' | 'no-longer-a
  * historical backfill and `statement-close` is a figure read off a statement,
  * and neither carries an answer to stamp.
  *
- ***REMOVED***
- ***REMOVED***
- ***REMOVED***
+ * Measured on production 2026-08-22: a handful of drifting intervals close on
+ * a non-sync observation, and one of them is the single largest gap by value in
+ * the entire product. So this suppression is not
  * a rounding correction — without it the first row the owner is shown is one
  * they already answered.
  */

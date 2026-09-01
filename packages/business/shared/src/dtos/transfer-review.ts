@@ -224,8 +224,8 @@ export const MAX_TRANSFER_REVIEW_PORTIONS = TRANSFER_REVIEW_DECISIONS.length;
  *
  * The destination is a **holding**, not an account, and that is not a detail.
  * Production has one Airwallex account carrying two USD holdings — one
- ***REMOVED***
- ***REMOVED***
+ * imported, one manual, with different balances — and a withdrawal that moved
+ * between them. An account-level destination cannot express that: both
  * candidates are "Airwallex", same currency, and the reader has no way to say
  * which.
  *
@@ -659,11 +659,11 @@ export function splitTotal(split: readonly TransferReviewSplitPortion[]): Decima
  * the application, and the conclusion is still false, because it needs one more
  * premise that was never stated: **that the application is the only writer.**
  *
- ***REMOVED***
- ***REMOVED***
- ***REMOVED***
- ***REMOVED***
- * a user stamp.
+ * It is not. SC-324 measured hundreds of answered rows written by something
+ * outside it — a hand-run UPDATE, or a version that no longer exists — and rows
+ * later acquired timestamps with no source the same way. Measured on production
+ * 2026-08-26: most of the observed burn by value decoded as `user`, while only a
+ * fraction of the rows carried a user stamp.
  *
  * The lesson is narrower than "the comment was wrong", because it was not. An
  * argument about what the CODE does cannot establish what is in the DATABASE
@@ -678,12 +678,13 @@ export function splitTotal(split: readonly TransferReviewSplitPortion[]): Decima
  * **What they actually are, measured rather than inferred (SC-324).** This
  * paragraph used to say they were "inserted with `transfer_review` already
  * populated by an import that no longer exists in the tree", and that is
- ***REMOVED***
- ***REMOVED***
- ***REMOVED***
- ***REMOVED***
- ***REMOVED***
- ***REMOVED***
+ * disprovable: on 2026-08-17 production held hundreds of unattributed rows
+ * against a single attributed one, nearly all of them created on 2026-05-17
+ * with `updated_at = created_at`, and the column itself did not exist until
+ * migration 0032 landed on 2026-08-14. Nothing can have been inserted with a
+ * column that was three months away. Those rows share one transaction id,
+ * committed inside a half-hour window on 2026-08-14 — bracketed by the `xmin`
+ * of neighbouring rows,
  * since the app's own write path sets `updated_at` alongside the answer and
  * these rows' `updated_at` never moved. So: **one raw `UPDATE`, on the day the
  * queue shipped, touching neither timestamp.** Who ran it and on what basis is
@@ -696,17 +697,17 @@ export function splitTotal(split: readonly TransferReviewSplitPortion[]): Decima
  * silently for precisely that reason.
  *
  * **`repair` is the third, and it exists because two were not enough (SC-350).**
- ***REMOVED***
- ***REMOVED***
- ***REMOVED***
+ * A handful of an owner's own `left_control` answers sent money to addresses in
+ * that same owner's `user_wallets`, booking disposals on money that never left
+ * the portfolio; he asked for them to be corrected in production. A correction made
  * ON a user's behalf is neither of the two values above, and both available ways
  * of recording it are false:
  *
  * - **Stamping `transfer_reviewed_at`** would read as `user` — which this file
  *   documents as provable and means "the caller answered it, in the queue, on
  *   that date". He did not; he answered the opposite. It would also erase the
- ***REMOVED***
- ***REMOVED***
+ *   only evidence they were ever wrong, leaving the repair indistinguishable
+ *   from his own judgement. That is SC-302's failure exactly: a write
  *   with no attribution, and four investigations to work out who did it.
  * - **Leaving it NULL** would read as `unattributed` — "not given through the
  *   queue, and the database does not say by whom". Here the database can say:
@@ -731,8 +732,8 @@ export function splitTotal(split: readonly TransferReviewSplitPortion[]): Decima
  * it. That answer is his in the sense that he authorized the standing sentence
  * behind it, and it is emphatically NOT his in the sense the other three
  * values are about: he did not look at this row, and the measurement he
- ***REMOVED***
- ***REMOVED***
+ * accepted when he asked for it says a small share of them will be wrong —
+ * always in the direction of a gain he did not make (SC-345).
  *
  * So it cannot be recorded as `user`, which this file documents as provable
  * and means "the caller answered THIS transfer, in the queue, on that date".
@@ -805,18 +806,20 @@ export type AnswerAttribution = (typeof ANSWER_ATTRIBUTIONS)[number];
  * review timestamp and no source was reported as **the user's own answer**, on
  * no evidence but a date.
  *
- ***REMOVED***
- ***REMOVED***
- ***REMOVED***
- ***REMOVED***
+ * That was accurate for all but one row on the day it shipped, and the test
+ * pinning it said so: *"the column is NULL on every row that predates it, and
+ * adding it must not change one row's provenance."* At the time all but one
+ * answered row had no timestamp (SC-324), and every write path in the
+ * application set both
  * columns together — so *has a timestamp* and *a person answered* were the same
  * predicate about the same rows.
  *
  * Then rows acquired timestamps without sources, and the predicate inverted
- ***REMOVED***
- ***REMOVED***
- ***REMOVED***
- ***REMOVED***
+ * with nothing to announce it. Measured on production 2026-08-26, over the
+ * `left_control` rows feeding observed burn: **most of the value read as
+ * `user`, while only a fraction of the rows carried a user stamp.** That
+ * difference was this line, guessing, in the user's favour. The timestamps
+ * cluster on three dates, which
  * is the signature of bulk writes rather than of a person answering.
  *
  * So the timestamp is gone from the signature rather than merely unread. A

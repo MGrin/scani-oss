@@ -41,10 +41,10 @@ restoreContainerAfterAll();
  * folds fails here rather than in production six months later.
  *
  * Verified RED against the pre-SC-344 walkers: `agree on every generated
- ***REMOVED***
- ***REMOVED***
- ***REMOVED***
- * inflow leg's price.
+ * history` failed on well over a third of the generated histories, and the
+ * round-trip fixture below reported realized -1,900 through `walkLots` against
+ * 500 through `walkComponent` — 2,700 of cost invented by re-minting a
+ * returning lot at the inflow leg's price.
  */
 
 const USD = 'token-USD';
@@ -444,8 +444,9 @@ describe('a self-spanning transfer group is a no-op (SC-344)', () => {
     // 10 bought at 100 = 1,000; all 10 sold at 150 = 1,500. The 3 that left and
     // came back are the same 3, so realized is 500 and not a penny of it comes
     // from re-valuing them at the 900 the inflow leg carries. Minting a fresh
-    ***REMOVED***
-    ***REMOVED***
+    // lot there is what produced the small but real discrepancy in production.
+    // At this fixture's scale the same defect is 3 lots re-valued at the 900 the
+    // inflow leg carries, so it would be visible as 2,700 of invented cost.
     const r = await bothWalks([buy, ...roundTrip, sell]);
     expect(r.realizedLots.toFixed(2)).toBe('500.00');
     expect(r.realizedComponent.toFixed(2)).toBe('500.00');

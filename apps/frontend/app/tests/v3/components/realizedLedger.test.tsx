@@ -158,7 +158,8 @@ describe('RealizedLedger provenance', () => {
   test('a withdrawal with the same stale-looking answer still carries the caveat', () => {
     // The gate is on the question, not a blanket silence. `withdraw` is the
     // kind the queue asks about, so SC-324's sentence must survive intact —
-    ***REMOVED***
+    // a few hundred rows in production, and the realized PnL they carry, rest
+    // on it.
     const html = render([lot({ kind: 'withdraw', answerSource: 'unattributed' })]);
 
     expect(html).toContain('Answer not recorded');
