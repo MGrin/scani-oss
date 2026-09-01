@@ -60,7 +60,9 @@ import {
   BALANCE_SECTIONS,
   describeIncompleteCashRows,
   describeMissingSections,
+  describeStatementWindow,
   describeUnmappedCashTypes,
+  type FlexStatementWindow,
   hasFlexSection,
   incompleteCashFieldsKey,
   missingFlexSections,
@@ -364,6 +366,17 @@ function parseFlexDate(s: string): Date {
 }
 
 /**
+ * The attribute text of the `<FlexStatement>` element, or `''` when the
+ * statement has none. Both readers below want a different attribute off the
+ * same element, and an empty string is the right miss for both: `extractAttr`
+ * returns `''` for an attribute that is not there, which `parseFlexDate`
+ * already turns into `Invalid Date`.
+ */
+function flexStatementAttrs(xml: string): string {
+  return xml.match(/<FlexStatement\s+([^>]*?)\/?>/)?.[1] ?? '';
+}
+
+/**
  * The date the STATEMENT claims to describe, from `<FlexStatement>`'s own
  * attributes — the account-wide fallback for rows that carry no `reportDate`
  * of their own.
@@ -374,10 +387,28 @@ function parseFlexDate(s: string): Date {
  * reproduce exactly the lie this function exists to stop telling.
  */
 function parseStatementAsOf(xml: string): Date | null {
-  const match = xml.match(/<FlexStatement\s+([^>]*?)\/?>/);
-  if (!match) return null;
-  const at = parseFlexDate(extractAttr(match[1] ?? '', 'toDate'));
+  const at = parseFlexDate(extractAttr(flexStatementAttrs(xml), 'toDate'));
   return Number.isNaN(at.getTime()) ? null : at;
+}
+
+/**
+ * The window `<FlexStatement>` says it covers, read from the same element
+ * `parseStatementAsOf` above reads and for the mirror-image reason: that one
+ * asks how recent the data is, this one asks how far back it goes (SC-882).
+ *
+ * `fromDate` is absent from a statement often enough to matter — the element
+ * carries whatever attributes the saved query produced — so the two halves
+ * are returned separately rather than collapsed into a default. A missing
+ * `fromDate` means the range is UNKNOWN, which is not the same fact as a
+ * range that reaches the account's start.
+ */
+function parseStatementWindow(xml: string): FlexStatementWindow {
+  const attrs = flexStatementAttrs(xml);
+  const from = parseFlexDate(extractAttr(attrs, 'fromDate'));
+  return {
+    from: Number.isNaN(from.getTime()) ? null : from,
+    period: extractAttr(attrs, 'period'),
+  };
 }
 
 /**
@@ -833,6 +864,21 @@ export class IbkrProvider
     // itself can tell them apart (SC-435).
     const missing = describeMissingSections(missingFlexSections(xml, TRANSACTION_SECTIONS));
     if (missing) ctx.noteWarning?.(missing);
+
+    // A run that asked for the whole ledger got this statement's window and
+    // nothing older, and IBKR can declare no `transactionHistoryHorizonMs`
+    // because the window is the user's saved-query setting rather than ours
+    // (SC-882). `describeStatementWindow` carries the argument.
+    //
+    // SCOPED TO A `since`-LESS RUN, and that is the load-bearing half.
+    // `TransactionImportCoordinator` passes `completenessIsClaimed: !since ||
+    // historyRetractions.length > 0`, so retracting on an incremental run
+    // WRITES `has_complete_tx_history` through where the nightly leaves the
+    // stored value alone — moving a cost-basis flag as a side effect of a
+    // claim that run never made (SC-877). The router's own `describeHorizon`
+    // is guarded the same way and for the same stated reason: a window is the
+    // caller's choice rather than a shortfall.
+    if (!ctx.since) ctx.retractHistoryClaim?.(describeStatementWindow(parseStatementWindow(xml)));
 
     const trades = parseTrades(xml);
     const cashTxs = preferDetailCashRows(parseCashTransactions(xml));
