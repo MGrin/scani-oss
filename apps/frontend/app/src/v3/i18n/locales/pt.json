@@ -730,10 +730,6 @@
         "trigger": "Eliminar"
       },
       "editCause": {
-        "feeLabel": "Taxa, se a transferência custou alguma coisa",
-        "feeExplain": "Deixe vazio se nada foi cobrado. A taxa é registada como um custo próprio nesta conta, por isso o que chega é o que realmente chegou.",
-        "feeArrives": "Chegam {{amount}} {{symbol}}; a taxa fica registada aqui como um custo.",
-        "feeTooLarge": "A taxa tem de ser menor do que o valor que se moveu.",
         "cancel": "Cancelar",
         "dateLabel": "Quando é que o dinheiro se mexeu?",
         "description": "O saldo de {{holding}} mexeu-se. O Scani não consegue distinguir dinheiro a mexer-se de um valor a ser corrigido ou de um saldo a crescer, e cada caso é tratado de forma diferente.",
@@ -761,6 +757,12 @@
         "save": "Guardar",
         "title": "O que significou essa alteração?"
       },
+      "fee": {
+        "label": "Taxa, se a transferência custou alguma coisa",
+        "explain": "Deixe vazio se nada foi cobrado. A taxa é registada como um custo próprio nesta conta, por isso o que chega é o que realmente chegou.",
+        "arrives": "Chegam {{amount}} {{symbol}}; a taxa fica registada aqui como um custo.",
+        "tooLarge": "A taxa tem de ser menor do que o valor que se moveu."
+      },
       "empty": {
         "action": "Adicione a sua primeira posição"
       },
@@ -776,7 +778,8 @@
         "blocker": {
           "amount": "introduza quanto se mexeu",
           "holding": "escolha a posição que se mexeu",
-          "where": "diga para onde foi o dinheiro"
+          "where": "diga para onde foi o dinheiro",
+          "fee": "a taxa tem de ser menor do que o valor que se moveu"
         },
         "busyLabel": "o registo",
         "cancel": "Cancelar",

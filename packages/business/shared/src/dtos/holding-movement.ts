@@ -101,6 +101,39 @@ export const RecordHoldingMovementDto = z.discriminatedUnion('direction', [
      * friction this ticket removes. Omitted means find-or-create.
      */
     destinationHoldingId: z.string().uuid().optional(),
+    /**
+     * How much of `amount` the rail kept (SC-889).
+     *
+     * The same field, spelled the same way, as `manualOutflowAnswerSchema`
+     * carries for the balance editor — one wire vocabulary for one concept, so
+     * a grep for `feeQuantity` finds every surface a fee can be stated on.
+     *
+     * On the `transfer` variant ALONE, which is this union's own discipline
+     * rather than a narrowing: `inflow` has no second leg for a fee to be the
+     * difference between, and `outflow` says the money left the portfolio, so
+     * there is nothing for a charge to be carved out of that is still ours. It
+     * sits beside `destination` on an inflow — a field the union already
+     * declines to give a direction that cannot mean it.
+     *
+     * Carved OUT of `amount`, never added beside it: the source books
+     * `amount - feeQuantity` as the withdrawal and `feeQuantity` as its own
+     * `kind='fee'` row, the two summing to the delta the anchor moved by, and
+     * the destination receives `amount - feeQuantity` because that is what
+     * arrived. See SC-857's design record.
+     *
+     * Not checked against `amount` here even though both are visible, because
+     * `ManualBalanceEditService` refuses a fee that consumes the whole
+     * movement through `feeFitsMovement` and its message names both figures.
+     * A third spelling of one rule is a third thing free to disagree with the
+     * other two.
+     */
+    feeQuantity: z
+      .string()
+      .trim()
+      .refine((value) => /^\d+(\.\d+)?$/.test(value) && Number.parseFloat(value) > 0, {
+        message: 'A fee needs an amount greater than zero',
+      })
+      .optional(),
   }),
 ]);
 
