@@ -15,10 +15,10 @@ restoreContainerAfterAll();
  * Regression guard for the badge/feed mismatch found during manual testing.
  *
  * The badge used to count reviewable jobs client-side over `jobs.listMine`,
- ***REMOVED***
- ***REMOVED***
- ***REMOVED***
- ***REMOVED***
+ * which returns the 50 NEWEST jobs. On a real account with hundreds of
+ * completed-unactioned jobs whose only reviewable ones were weeks old, the
+ * newest 50 held zero reviewable jobs — so the badge read 0 while the review
+ * page listed several. Zero is the worst possible wrong answer: the
  * badge is the only affordance telling anyone the page has contents.
  *
  * The feed must never inherit that window. It filters server-side across

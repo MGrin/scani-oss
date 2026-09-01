@@ -17,25 +17,23 @@
 --
 -- THE EVIDENCE, measured read-only against production 2026-08-17.
 --
-***REMOVED***
-***REMOVED***
-***REMOVED***
+--   * One wallet is party to EVERY etherscan row: `from` on every outflow,
+--     `to` on every inflow. Not one exception. Every row therefore describes that wallet,
 --     and belongs on ITS account for the row's chain.
 --   * The rows sit on nine accounts spanning three wallets and five chains.
-***REMOVED***
+--     0xb0b1...a8b9 and 0xc0ff...ff01 never sent or received any of them;
 --     their own history was never fetched, because their credential lost.
---   * Placement, by whether the account was actually involved:
-***REMOVED***
-***REMOVED***
-***REMOVED***
-***REMOVED***
-***REMOVED***
---     booked three times, 17 twice.
-***REMOVED***
-***REMOVED***
-***REMOVED***
-***REMOVED***
-***REMOVED***
+--   * Placement, by whether the account was actually involved: a large
+--     majority of both the outflow and the inflow rows sit on an account that
+--     was NEITHER the sender nor the recipient.
+--   * Grouping by (tx hash, chain, token, kind) collapses them to far fewer
+--     events, and NO event has more than one row on the involved account. Most
+--     outflow events are booked three times, the rest twice.
+--   * The uninvolved outflow rows carry a material amount of ETH and almost as
+--     many unattributed `left_control` answers. `isConfirmedDisposal` realizes
+--     per ROW, so one ETH transfer booked on three accounts realized three
+--     disposals — which is why SC-324's realized figure and SC-302's "left the
+--     portfolio" quantity are both inflated.
 --
 -- WHY DELETION AND NOT RE-ANSWERING. A `transfer_review` answer is a claim
 -- about a transaction. A row that should not exist has no correct answer:
@@ -43,21 +41,21 @@
 -- here has its review touched — whether those answers are right is SC-302 and
 -- SC-328, and a different question from whether the row should exist.
 --
-***REMOVED***
-***REMOVED***
-***REMOVED***
-***REMOVED***
+-- WHY SOME ROWS MOVE INSTEAD OF DYING. Fewer outflow rows sit on the sending
+-- account than there are outflow events: a minority of outflow events and a
+-- handful of inflow events have NO row on the involved account at all, only
+-- copies elsewhere. Deleting "the copies" would delete those events outright. They
 -- exist only elsewhere because the router is FIND-ONLY for wallet sources
 -- (`isWalletDerivedSource`) — the token had no holding on the correct account,
-***REMOVED***
+-- so the event could only land where one existed. Every row that moves is USDC
 -- or WETH; every ETH, MATIC, SAND, CODE and STETH event already has its row in
 -- the right place, so nothing that moves here carries material realized PnL.
 --
-***REMOVED***
-***REMOVED***
+-- WHY TWO HOLDINGS ARE CREATED. Most of the rows that move have no holding on
+-- the target account to move to. Neither target appears in `holding_exclusions` — the
 -- user did not reject them at wallet review; they hold nothing today, so the
 -- review never offered them. Both are created with balance 0, which is what
-***REMOVED***
+-- the chain says they hold. The alternative was deleting real events.
 --
 -- REVERSIBILITY. Every one of the 219 deleted rows is a field-for-field
 -- duplicate of the row that survives its event — same quantity, same
@@ -110,16 +108,15 @@ INSERT INTO holdings (id, user_id, account_id, token_id, balance, source, extern
 SELECT '5c331000-0000-4331-8000-000000000001', '***REMOVED***', '***REMOVED***', '***REMOVED***', '0', 'etherscan', '0x3c499c542cef5e3811e1192ce70d8cc03d5c3359', false, true, 'unattributed'
  ***REMOVED***
    AND EXISTS (SELECT 1 FROM tokens   WHERE id = '***REMOVED***')
-***REMOVED***
+ON CONFLICT DO NOTHING;  -- Polygon / USDC
 INSERT INTO holdings (id, user_id, account_id, token_id, balance, source, external_id, is_hidden, is_active, arrival)
 SELECT '5c331000-0000-4331-8000-000000000002', '***REMOVED***', '***REMOVED***', '***REMOVED***', '0', 'etherscan', '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2', false, true, 'unattributed'
  WHERE EXISTS (SELECT 1 FROM accounts WHERE id = '***REMOVED***')
    ***REMOVED***
-***REMOVED***
+ON CONFLICT DO NOTHING;  -- Ethereum / WETH
 
-***REMOVED***
-***REMOVED***
-***REMOVED***
+-- Move the rows whose event has no row at all on the account that made it. Without this they would be deleted as "copies" and the event lost.
+-- Ethereum / USDC — rows off an uninvolved account
 ***REMOVED***
  WHERE id IN (
     ***REMOVED***
@@ -128,13 +125,13 @@ SELECT '5c331000-0000-4331-8000-000000000002', '***REMOVED***', '***REMOVED***',
     ***REMOVED***
     '***REMOVED***'
  );
-***REMOVED***
+-- Base / USDC — rows off an uninvolved account
 ***REMOVED***
  WHERE id IN (
     ***REMOVED***
     ***REMOVED***
  );
-***REMOVED***
+-- Polygon / USDC — rows into the holding created above
 UPDATE holding_transactions SET holding_id = '5c331000-0000-4331-8000-000000000001'
  WHERE id IN (
     ***REMOVED***
@@ -144,7 +141,7 @@ UPDATE holding_transactions SET holding_id = '5c331000-0000-4331-8000-0000000000
     ***REMOVED***
     ***REMOVED***
  );
-***REMOVED***
+-- Ethereum / WETH — rows into the holding created above
 UPDATE holding_transactions SET holding_id = '5c331000-0000-4331-8000-000000000002'
  WHERE id IN (
     ***REMOVED***
@@ -257,7 +254,7 @@ ON CONFLICT (holding_id) DO UPDATE
        updated_at = now();
 
 -- COVERAGE, half two: the holdings that lose every row. These sit on
-***REMOVED***
+-- two other own wallets, and each claims a COMPLETE etherscan
 -- history. That claim was never true — those wallets' own history was never
 -- fetched, because their credential lost the unique (user, institution) slot —
 -- and after this migration it stands over an empty ledger. SC-149 made this

@@ -655,8 +655,8 @@ right. A repaired answer is still an answer you can change.
 
 #### Unattributed (`unattributed`)
 **Means:** only that the answer did **not** come through the
-***REMOVED***
-***REMOVED***
+queue. It does not say who or what gave it — nearly every answered
+outflow in production is one of these, inserted already-answered by an
 import that no longer exists.
 **Careful:** do not translate this as "imported", "automatic" or
 "system". The word is deliberately weak because the data does not

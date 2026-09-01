@@ -135,8 +135,8 @@ function refuseBulk(result: Exclude<BulkResolveResult, { ok: true }>): never {
 /**
  * One refusal, one status, for the rule write path.
  *
- ***REMOVED***
- ***REMOVED***
+ * `no_counterparty` is deliberately not folded into NOT_FOUND: a large share
+ * of production outflows name no destination at any layer — a Kraken withdrawal
  * record does not say where the money went, and Solana rows carry no payload
  * at all — and "that transfer is gone" would be false about a row still
  * sitting in front of the reader. The correct sentence is that this particular

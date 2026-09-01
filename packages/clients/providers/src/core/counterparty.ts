@@ -11,7 +11,7 @@
  * buy is asset-centric and has no payee, so a missing entry yields `{}`.
  * That reasoning used to be written as "crypto is asset-centric", which
  * swept chain TRANSFERS in with it and was wrong about them (SC-329):
- ***REMOVED***
+ * every `etherscan` row in production carried `to` and
  * `from` in its payload and a NULL counterparty, while the transfer
  * review queue rendered that empty column under the label "to" — the
  * one screen whose whole question is where the money went.

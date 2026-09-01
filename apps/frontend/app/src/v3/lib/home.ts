@@ -282,7 +282,7 @@ export function qualityHeadline(quality: FigureQuality, t: TFunction): string {
  * silence here would not be neutral.
  *
  * **Every word here is paid for in vertical space** (SC-176). At 390px this run
- ***REMOVED***
+ * had grown to four wrapped lines, more than the hero figure it qualifies,
  * and a qualifier that outweighs its figure reads as the content with the
  * number as its heading. The counts and their subjects are the information;
  * "left out of the count" and "with unknown" were not, so they went — but

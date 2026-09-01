@@ -11,9 +11,9 @@ import { asc, desc, sql } from 'drizzle-orm';
  * outflowRank)`, and `Array.prototype.sort` is stable — so two events sharing
  * both keys were matched in whatever physical order Postgres happened to
  * return, which changes on a VACUUM, a dump/restore, a table rewrite or a
- ***REMOVED***
- ***REMOVED***
- ***REMOVED***
+ * different plan. One SOL holding read three different quantities across three
+ * database states whose ledgers were md5-identical. A quarter of production
+ * rows share an exact `occurred_at` with a sibling in the same holding.
  *
  * ## The keys, and why each one is there
  *
@@ -27,8 +27,8 @@ import { asc, desc, sql } from 'drizzle-orm';
  * 4. `external_id` — **chosen over `id` deliberately.** Where the provider
  *    numbers its own events this is real sequence, not an arbitrary one:
  *    IBKR's execution ids are fixed-width 10-digit integers, so ascending
- ***REMOVED***
- ***REMOVED***
+ *    text order *is* ascending execution order, and it discriminates every
+ *    production tie group on that source. Where the provider issues
  *    a hash (Solana signatures, `etherscan`'s `hash-contract`) it carries no
  *    sequence, but it is still intrinsic to the event rather than to our
  *    storage. `id` would be arbitrary in both cases.
@@ -37,13 +37,13 @@ import { asc, desc, sql } from 'drizzle-orm';
  *    arbitrary everywhere — and it stays deterministic, which is the point.
  * 5. `id` — the guarantee of totality, and it is load-bearing rather than
  *    decorative: `external_id` is unique only per (holding, source), and
- ***REMOVED***
+ *    `walkComponent` flattens several holdings into one sequence. Some
  *    production (occurred_at, rank, source, external_id) keys are shared by
  *    two holdings — both legs of a transfer carry the same chain hash.
  *
  * `created_at` was considered and rejected on measurement: an importer writes
  * its batch in one statement, so `now()` is identical for every row in it, and
- ***REMOVED***
+ * it ties for **every** production tie group, `solana` included. It
  * discriminates exactly the rows that never needed discriminating.
  *
  * ## Both ends, or neither

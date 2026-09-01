@@ -277,8 +277,8 @@ async function reportStatus(
  * `securityIDType="ISIN"` — which IBKR emits eleven attributes ahead of the
  * element's own `type` — so every `<CashTransaction>` in a real statement
  * read `type = "ISIN"`, `classifyCashType` refused it, and the row was
- ***REMOVED***
- ***REMOVED***
+ * dropped, on every one of three consecutive production runs, for fifteen
+ * months. Case-insensitivity is what made a longer name reachable at
  * all, and it is kept because IBKR's own casing is the thing we do not
  * control; the anchor is what makes it safe.
  *
