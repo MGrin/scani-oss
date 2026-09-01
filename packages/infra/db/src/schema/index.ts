@@ -21,6 +21,7 @@ export * from './holding-exclusions';
 export * from './holdings';
 export * from './institutions';
 export * from './job-heartbeats';
+export * from './operator-alarms';
 export * from './payments';
 export * from './portfolio';
 export * from './protocol-native-decimals';
