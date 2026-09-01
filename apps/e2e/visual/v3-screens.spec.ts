@@ -9,6 +9,7 @@ import {
   VISUAL_EMPTY_SESSION_FILE,
   VISUAL_SESSION_FILE,
 } from '../fixtures/visual-setup';
+import { BASELINE_SHRINK_ALLOW_ENV, baselineBytes, baselineCollapse } from './capture-size';
 import { describeSpinner, ROUTE_PENDING, readPendingRoutes } from './route-pending';
 import {
   ALLOCATION_DIMENSION_STORAGE_KEY,
@@ -371,6 +372,50 @@ async function assertStillInDirection(page: Page, screen: VisualScreen, fail: Fa
   }
 }
 
+/**
+ * That the picture still has something in it (SC-867).
+ *
+ * The fourth spinner defence, and the only one that keys on the SYMPTOM. The
+ * other three each name a cause — a page that was still moving, a second
+ * document load, a route chunk that never arrived — and a loading state with
+ * none of those causes passes all of them: a query in flight leaves a stable,
+ * once-loaded, fully-routed page whose picture is a spinner.
+ *
+ * `capture-size.ts` carries the argument for the ratio and for why the
+ * reference is this screen's own previous baseline. Two things worth knowing
+ * here.
+ *
+ * It is a POST-capture check, unlike `assertPixelsSettled`, because nothing
+ * can be compared against the previous baseline until the capture has decided
+ * whether to replace it. So it goes through the same `fail` as the others and
+ * inherits the "already overwritten, `git checkout` it" warning, which is true
+ * for this one.
+ *
+ * And it runs LAST. Measured on the eight data-driven screens with their data
+ * stalled: `holdings-phone`, `holdings-desktop`, `holdings-desktop-rtl` and
+ * `home-allocation-fold-desktop` are also caught by `assertPinnedBytes` and
+ * `assertAllocationFolded`, whose messages name the missing thing rather than
+ * a byte count. Ordering this first would have replaced four good diagnoses
+ * with a worse one. It is the general check, so it speaks when none of the
+ * specific ones does — which on that run was `home-desktop`, `home-phone`,
+ * `home-phone-rtl` and `home-empty-phone`, none of which any existing guard
+ * had an opinion about.
+ */
+function assertBaselineNotCollapsed(
+  screen: string,
+  before: number | null,
+  after: number | null,
+  fail: Fail
+): void {
+  const collapse = baselineCollapse({
+    screen,
+    before,
+    after,
+    allowed: process.env[BASELINE_SHRINK_ALLOW_ENV],
+  });
+  if (collapse) fail(collapse);
+}
+
 async function assertPhotographedOnce(
   page: Page,
   loads: DocumentLoads,
@@ -494,6 +539,74 @@ async function assertAllocationFolded(page: Page, screen: VisualScreen, fail: Fa
   }
 }
 
+/**
+ * Renders every screen in its LOADING state, on request (SC-867).
+ *
+ * This exists so the ratio in `capture-size.ts` is a measurement somebody can
+ * re-take rather than a number they have to believe. `MIN_BASELINE_RATIO` is
+ * set from how small each of these twelve screens gets when its data never
+ * arrives, and that column is worthless the moment it cannot be reproduced —
+ * a guard calibrated against figures nobody can check again is calibrated
+ * against nothing.
+ *
+ * **It replaces `window.fetch` rather than routing the request, and that is
+ * the whole difficulty of reproducing this ticket.** Two cheaper constructions
+ * were tried first and both fail for reasons worth keeping:
+ *
+ * - `page.route('**\/trpc**', () => {})` also matches the dev server's own
+ *   module request for `/src/lib/trpc.ts`, so the document never finished
+ *   loading and `page.goto` hit the test timeout with nothing captured.
+ * - Narrowing that to the `/trpc` PATH fixes the load and still hangs, in
+ *   `settle`: an unanswered route leaves the request outstanding, `networkidle`
+ *   therefore never arrives, and the test times out before the capture.
+ *
+ * The second failure is the interesting one, because it says something about
+ * the hazard rather than about the harness: a query whose REQUEST is still
+ * open is one `settle` already stops on, by hanging. What SC-867 actually
+ * describes is the case where the network is quiet and the screen is still
+ * loading — a resolved-but-unrendered query, a `LoadingRamp` beat, a suspense
+ * fallback inside a route that arrived fine. A `fetch` that never settles and
+ * never touches the network is exactly that: no connection is opened, so
+ * `networkidle` fires immediately, the shell mounts, the route resolves, the
+ * document loads once and the page is perfectly still — and the picture is a
+ * spinner.
+ *
+ * So a run under this flag is not merely a way to produce small PNGs. It is
+ * the demonstration that all three existing guards pass a screen none of them
+ * has looked at.
+ *
+ * ```sh
+ * # from a booted stack — writes twelve loading-state PNGs and refuses each
+ * SCANI_VISUAL_STALL_DATA=1 bun run visual --update
+ * ls -l visual/__screenshots__/ && git checkout visual/__screenshots__/
+ * ```
+ *
+ * Deliberately not a `--flag` on `scripts/visual.ts`: this ruins every
+ * baseline it touches, and an environment variable spelled out in full is
+ * harder to reach for by accident than a flag sitting beside `--update` in
+ * `--help`.
+ */
+async function stallDataIfAsked(page: Page): Promise<void> {
+  if (!process.env.SCANI_VISUAL_STALL_DATA) return;
+  await page.addInitScript(() => {
+    const real = window.fetch.bind(window);
+    const stalling = (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      const href =
+        typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      const { pathname } = new URL(href, window.location.href);
+      // Only the tRPC endpoint. `/api/auth/*` has to keep working or the shell
+      // never mounts and there is nothing to photograph.
+      if (pathname === '/trpc' || pathname.startsWith('/trpc/'))
+        return new Promise<Response>(() => {});
+      return real(input, init);
+    };
+    // `typeof fetch` carries `preconnect` in lib.dom; the cast keeps the
+    // override to the one call signature this needs to intercept rather than
+    // reimplementing a hint nothing in the SPA calls.
+    window.fetch = Object.assign(stalling, { preconnect: window.fetch.preconnect });
+  });
+}
+
 function declare(screen: VisualScreen): void {
   test(`${screen.name} @${screen.viewport}`, async ({ page }, testInfo) => {
     if (screen.height) {
@@ -507,7 +620,13 @@ function declare(screen: VisualScreen): void {
     // Before `goto`: a route added after a navigation has started does not
     // apply to the requests that navigation already made.
     const network = await pinExternalNetwork(page);
+    await stallDataIfAsked(page);
     const loads = trackDocumentLoads(page);
+    // Read before `goto`, because `toHaveScreenshot` has already overwritten
+    // the file by the time the post-capture checks run: the only moment the
+    // baseline this run was measured against still exists is now.
+    const baselinePath = testInfo.snapshotPath(`${screen.name}.png`);
+    const baselineBefore = baselineBytes(baselinePath);
     await page.goto(screen.route);
     await settle(page, loads, screen.name);
     await applyDirection(page, screen);
@@ -534,6 +653,12 @@ function declare(screen: VisualScreen): void {
     await assertStillInDirection(page, screen, fail);
     await assertPinnedBytes(page, network, screen, fail);
     await assertAllocationFolded(page, screen, fail);
+    // LAST, and that is the whole point of it. The four above each name a
+    // specific cause or a specific missing thing, and where one of them
+    // applies its message is strictly more useful than a byte count. This one
+    // speaks only when none of them has anything to say, which is the gap
+    // SC-867 describes.
+    assertBaselineNotCollapsed(screen.name, baselineBefore, baselineBytes(baselinePath), fail);
     if (captured) throw captured;
   });
 }
