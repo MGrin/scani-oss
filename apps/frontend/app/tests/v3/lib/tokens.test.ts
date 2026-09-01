@@ -190,11 +190,30 @@ describe('tokenTypeLabel', () => {
    * against `en.json` as a whole; this reads the five keys directly, so a
    * locale that is later exempted in `incomplete-locales.json` cannot take
    * these down with it silently.
+   *
+   * The set is pinned BY NAME, not by cardinality (SC-895). It is the same
+   * denominator the `scanned` assertion above is — `codes` is what the loop
+   * below iterates, so a length derived from this same `readdirSync` would be
+   * `n === n` and pass over an empty directory, restoring exactly the silence
+   * this test exists to prevent. Naming them keeps that property and adds two:
+   * a locale that appears or vanishes is NAMED in the failure rather than
+   * arriving as `8 !== 7`, and the bump is self-documenting in the diff.
+   * Stripped codes rather than filenames because `ru`, not `ru.json`, is what
+   * `incomplete-locales.json`, `supportedLngs` and `getFixedT` all call a
+   * locale — the failure should name a language, not a path artefact.
    */
-  test('all seven shipped locales carry every type key', () => {
+  test('every shipped locale carries every type key', () => {
     const dir = resolve(import.meta.dir, '../../../src/v3/i18n/locales');
     const codes = readdirSync(dir).filter((f) => f.endsWith('.json'));
-    expect(codes.length).toBe(7);
+    expect(codes.map((f) => f.replace(/\.json$/, '')).sort()).toEqual([
+      'en',
+      'es',
+      'fr',
+      'ja',
+      'pt',
+      'ru',
+      'zh',
+    ]);
 
     const missing: string[] = [];
     for (const file of codes) {
