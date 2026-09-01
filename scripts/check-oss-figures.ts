@@ -370,10 +370,11 @@ export function main(argv: readonly string[], cwd: string, stdin: string): numbe
 
   // The denominator is printed on every outcome. `0 figure(s)` beside no count
   // at all is indistinguishable from a run that read nothing.
-  const where = commits === null ? 'staged' : `${commits.length} pushed commit(s)`;
+  const where =
+    commits === null ? 'staged path(s)' : `path(s) in ${commits.length} pushed commit(s)`;
   const tail =
     `${PROBE_COUNT} probe(s) self-tested, ${read.length} added line(s) read across ` +
-    `${new Set(read.map((l) => l.path)).size} ${where} path(s)` +
+    `${new Set(read.map((l) => l.path)).size} ${where}` +
     (unread.size > 0 ? `, ${unread.size} path(s) not read (${UNREAD_EXTENSIONS.join(' ')})` : '');
 
   if (process.env.OSS_ALLOW_FIGURES === '1') {
