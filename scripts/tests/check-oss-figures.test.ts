@@ -480,6 +480,11 @@ describe('the commit-list mode', () => {
       const out = dec.decode(r.stdout) + dec.decode(r.stderr);
       expect(out).toContain('98765.43210987');
       expect(r.exitCode).toBe(EXIT_REFUSED);
+      // The denominator has to READ, not just be present. Interpolating the
+      // commit count into the slot the word `staged` occupies produced
+      // `across 4 1 pushed commit(s) path(s)`, which is the one line a reader
+      // is asked to quote as evidence a check ran.
+      expect(out).toMatch(/1 added line\(s\) read across 1 path\(s\) in 1 pushed commit\(s\)/);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
