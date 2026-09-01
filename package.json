@@ -47,6 +47,7 @@
     "docs:check": "bun scripts/check-docs.ts",
     "docs:check:soft": "bun scripts/check-docs.ts --soft",
     "db:migrate": "bun scripts/migrate.ts",
+    "db:drift:check": "bun scripts/check-migration-drift-declared.ts",
     "deps:lint": "syncpack lint",
     "deps:fix": "syncpack fix",
     "deps:unused": "knip --dependencies --include files,exports,types",
