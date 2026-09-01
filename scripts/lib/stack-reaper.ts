@@ -105,7 +105,7 @@ export interface ReapActions {
 }
 
 /** One project the plan will act on, with what it is expected to reclaim. */
-export interface ReapTarget {
+interface ReapTarget {
   readonly project: string;
   readonly containers: number;
   readonly volumes: number;
@@ -114,7 +114,7 @@ export interface ReapTarget {
 }
 
 /** One project the plan deliberately leaves alone, and why. */
-export interface KeptProject {
+interface KeptProject {
   readonly project: string;
   readonly reason: string;
 }
