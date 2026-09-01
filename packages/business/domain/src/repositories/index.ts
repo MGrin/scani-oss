@@ -49,6 +49,11 @@ export {
 export { InstitutionBlockchainMappingRepository } from './InstitutionBlockchainMappingRepository';
 export { InstitutionRepository, type StaleSyncTarget } from './InstitutionRepository';
 export {
+  type AlarmSyncOptions,
+  type AlarmSyncResult,
+  OperatorAlarmRepository,
+} from './OperatorAlarmRepository';
+export {
   PaymentOccurrenceRepository,
   type UpcomingOccurrence,
 } from './PaymentOccurrenceRepository';
