@@ -108,6 +108,25 @@ export interface UpdateHoldingInput {
    * is what every caller written before this did.
    */
   editOutflow?: ManualOutflowAnswer;
+  /**
+   * How much of a DOWNWARD `flow` was a charge rather than a movement, for a
+   * caller with no `editOutflow` to carry it in (SC-889).
+   *
+   * `RecordHoldingMovementUseCase`'s `transfer` direction is the only such
+   * caller and the only one that can be: it writes both legs itself and links
+   * them as `paired`, so it never sends the `internal` answer that
+   * `editOutflow.feeQuantity` rides on. SC-857 built the fee on that answer
+   * and left this surface unable to say the same thing.
+   *
+   * Domain-only — deliberately absent from `UpdateHoldingDto`, so no HTTP
+   * caller can reach it and `editOutflow.feeQuantity` stays the one wire
+   * spelling on this endpoint.
+   *
+   * Read by `ManualBalanceEditService` under exactly the rules
+   * `editOutflow.feeQuantity` is read under, because it is resolved into the
+   * same single `fee` below rather than into a second argument.
+   */
+  editFee?: Decimal;
 }
 
 /**
@@ -294,10 +313,24 @@ export class UpdateHoldingUseCase {
         editOccurredAt,
         editedAt: requestedEditedAt,
         editOutflow,
+        editFee,
         label: requestedLabel,
         ...columns
       } = data;
       const editedAt = requestedEditedAt ?? new Date();
+
+      // One fee, whichever surface stated it (SC-889). The balance editor
+      // carries it inside the outflow answer it is already sending; the
+      // movement form has no answer object, because its transfer direction
+      // writes both legs itself. Resolved to a single value HERE rather than
+      // branched on at the call to `record`, so there is one thing to reason
+      // about downstream and no ordering between two fields to get wrong.
+      //
+      // They cannot both be set: `editFee` is off the wire and reachable only
+      // from the movement form's transfer branch, which sends no `editOutflow`
+      // at all.
+      const fee =
+        editFee ?? (editOutflow?.feeQuantity ? new Decimal(editOutflow.feeQuantity) : undefined);
 
       // Read BEFORE the update, in the same transaction, because the delta a
       // synthesized transaction has to explain is `new - previous` and the
@@ -381,7 +414,7 @@ export class UpdateHoldingUseCase {
                 // Passed unconditionally: `record` honours it only on a
                 // negative `flow`, which is the one shape a fee can describe,
                 // and one authority for that rule beats two.
-                ...(editOutflow?.feeQuantity ? { fee: new Decimal(editOutflow.feeQuantity) } : {}),
+                ...(fee ? { fee } : {}),
               },
               tx
             )

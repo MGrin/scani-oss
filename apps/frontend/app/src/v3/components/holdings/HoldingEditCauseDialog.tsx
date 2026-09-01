@@ -299,7 +299,7 @@ export function HoldingEditCauseDialog({
                       and a required field here would make every one of them
                       a decision. */}
                   <div className="flex flex-col gap-2">
-                    <Label htmlFor="holding-edit-fee">{t('v3.holdings.editCause.feeLabel')}</Label>
+                    <Label htmlFor="holding-edit-fee">{t('v3.holdings.fee.label')}</Label>
                     <AmountInput
                       id="holding-edit-fee"
                       value={fee}
@@ -308,13 +308,13 @@ export function HoldingEditCauseDialog({
                     />
                     <p className="text-label text-muted-foreground">
                       {arrives !== null
-                        ? t('v3.holdings.editCause.feeArrives', {
+                        ? t('v3.holdings.fee.arrives', {
                             amount: arrives,
                             symbol: tokenSymbol,
                           })
                         : feeIsUsable
-                          ? t('v3.holdings.editCause.feeExplain')
-                          : t('v3.holdings.editCause.feeTooLarge')}
+                          ? t('v3.holdings.fee.explain')
+                          : t('v3.holdings.fee.tooLarge')}
                     </p>
                   </div>
                 </>
