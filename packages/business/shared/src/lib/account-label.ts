@@ -43,10 +43,10 @@
  * become `App Savings`.
  *
  * This costs two of the demo seed's accounts (`Wise EUR`, `Kraken Spot`),
- * which keep a redundant label. It costs NONE of the three cases actually
- * reported: `Airwallex` at Airwallex and `Edge Capital` at Edge Capital are
- * exact matches and collapse below without needing a separator at all, and
- * `Bitcoin Network - bc1q5n…` carries a real ` - `.
+ * which keep a redundant label. It costs NONE of the cases actually reported:
+ * those are accounts whose name repeats their institution exactly, so they
+ * collapse below without needing a separator at all, and a wallet label such
+ * as `Bitcoin Network - bc1q5n…` carries a real ` - `.
  */
 const JOINED_AT_HEAD = /^\s*[-–—·:|/]\s*/;
 const JOINED_AT_TAIL = /\s*[-–—·:|/]\s*$/;

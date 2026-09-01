@@ -101,7 +101,7 @@ async function withSeededDb(
           (holding_id, first_tx_at, last_tx_at, tx_sources, has_complete_tx_history,
            opening_balance_quantity, reconciliation_notes)
         VALUES (${solHoldingId}, now(), now(), ARRAY['solana'], true,
-                '-5.795743451', 'Missing inflows of 5.795743451')`);
+                '-1.5', 'Missing inflows of 1.5')`);
 
       const row = async (
         holdingId: string,

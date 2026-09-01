@@ -18,18 +18,18 @@
  * then moves WSOL out of it; WSOL resolves to the same token identity
  * as native SOL, so replaying both legs booked the same 0.5 SOL twice.
  * `events.swap` restated it a third time, which is what SC-339
- * removed. Measured over the full production history — 312
- * transactions, 650 legs — the leg replay put +7.016826988 SOL in the
- * ledger against 2.053650427 actually on chain.
+ * removed. Measured over the full history of the affected wallets,
+ * the leg replay put several times more SOL in the ledger than the
+ * chain actually holds.
  *
  * The primitive that cannot double count is `accountData[]`:
  * `nativeBalanceChange` on the wallet's own account plus
  * `tokenBalanceChanges` on the accounts it owns is the transaction's
  * NET effect per token, stated once. This provider projects that and
  * nothing else — one event per token per transaction, keyed
- * `<signature>-net-<mint|native>`. Summed over the same 312
- * transactions it gives +2.053715427 SOL, 0.000065 from the balance
- * `getBalance` reports, where the leg replay was 3.4x over.
+ * `<signature>-net-<mint|native>`. Summed over the same history it
+ * lands within a rounding error of the balance `getBalance` reports,
+ * where the leg replay was several times over.
  *
  * Three consequences worth stating, because each looks like a bug
  * until you know it is the point:

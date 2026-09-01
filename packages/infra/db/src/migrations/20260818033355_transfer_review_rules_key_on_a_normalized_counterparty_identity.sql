@@ -1,25 +1,26 @@
 -- SC-381. A rule keyed on a payment DESCRIPTION matches one amount, once.
 --
--- mgrin wrote the first real rule minutes after SC-375 deployed, and it can
--- never fire again:
+-- The first real rule was written minutes after SC-375 shipped, and it can
+-- never fire again. Its shape, with a SYNTHETIC counterparty standing in for
+-- the real one throughout this comment:
 --
---   match_address  'pay 10578346.01 idr to valeriia parkesova (dividends)'
+--   match_address  'pay 1234567.89 xyz to example recipient (dividends)'
 --   verdict        not_a_disposal
---   note           'Valeriia Permata'
+--   note           'Example Recipient'
 --
 -- That is not an address. SC-375 was designed around chain addresses, and the
--- production measurement says the only key it can actually reach is prose:
--- every populated `counterparty` in the ledger is free text a payment rail
--- rendered, and not one of the 249 etherscan / 87 solana / 88 kraken outflows
--- has the column filled at all. The prose then varies in exactly the wrong
--- place — it leads with the amount, which is per-transaction — so 12 payments
--- to two recipients carry 12 distinct descriptions and need 12 rules.
+-- measurement says the only key it can actually reach is prose: every
+-- populated `counterparty` in the ledger is free text a payment rail rendered,
+-- and not one chain or exchange outflow has the column filled at all. The
+-- prose then varies in exactly the wrong place — it leads with the amount,
+-- which is per-transaction — so a dozen payments to two recipients carry a
+-- dozen distinct descriptions and need a rule each.
 --
 -- The fix is NOT substring, prefix or fuzzy matching. SC-375 chose exact
 -- full-string equality deliberately, against a key an ATTACKER can write to:
 -- address poisoning sprays zero-value transfers to plant a lookalike in a
--- victim's history, which is what the 113 zero-quantity rows the queue
--- excludes are. A `contains` rule over adversary-supplied text is a larger
+-- victim's history, which is what the zero-quantity rows the queue excludes
+-- are. A `contains` rule over adversary-supplied text is a larger
 -- hole than the one it closes.
 --
 -- So matching stays exact and what changes is what both sides are normalized
@@ -31,19 +32,20 @@
 -- byte, and two payments whose recipient text is identical are payments to the
 -- same recipient.
 --
--- Verified against every counterparty string in production (25 rows, 19
--- distinct): it collapses `Pay 500.00 USD to Nikita Grishin (Dividends)` and
--- its six siblings onto one key, collapses the five Valeriia rows onto one,
--- and leaves the other eleven strings — `Deposit to account 7949949259`,
--- `INVOICE 136 , WITHFLARE LTD`, `Fee for payout P260622-GWU99S8` — untouched.
+-- Verified against every counterparty string in the ledger. The strings below
+-- are SYNTHETIC stand-ins of the same shapes, never the real values: it
+-- collapses `Pay 500.00 USD to Example Recipient (Dividends)` and its siblings
+-- onto one key, collapses a second recipient's rows onto one, and leaves every
+-- string that does not open with the preamble — `Deposit to account <number>`,
+-- `INVOICE <n> , EXAMPLE LTD`, `Fee for payout <reference>` — untouched.
 -- No chain address is affected: none begins with `Pay `.
 --
 -- What is deliberately NOT stripped is the `(Dividends)` suffix. It is a
 -- purpose the user chose and part of who is being paid for what — merging it
 -- with `(Loan)` would rule on transfers they may want ruled differently. The
 -- `(Dividents)` typo in the source data therefore keys separately, and that is
--- correct: 12 of the 14 payment rows collapse to 2 keys, and the 2 typos stay
--- their own. Perfect coverage was never the ask.
+-- correct: nearly every payment row collapses onto one of two keys, and the
+-- typos stay their own. Perfect coverage was never the ask.
 --
 -- IMMUTABLE and in the database rather than in TypeScript, because the whole
 -- failure mode of a derived key is the two ends drifting apart. SC-376's
@@ -91,8 +93,8 @@ ALTER INDEX IF EXISTS "transfer_review_rules_active_address_uq"
 -- (user, key) and two rules whose descriptions differ only by amount now
 -- normalize onto the same key. The oldest wins; any later sibling keeps its
 -- literal key and goes on matching exactly the row it always matched, which is
--- a rule that does less than intended rather than a row that disappeared. In
--- production today this collides with nothing: there is one rule.
+-- a rule that does less than intended rather than a row that disappeared. At
+-- the time this shipped it collided with nothing: there was a single rule.
 WITH rekeyed AS (
   SELECT
     id,

@@ -40,31 +40,27 @@ ALTER TABLE "holdings"
 -- creates its holdings inside the same request that creates the account. The
 -- hourly cron is what is left.
 --
--- Measured against production before writing this file:
---
---   source            at-import(<=1h)  1h..1d  post-import(>1d)  total
---   blockchain                     23       0                17     40
---   manual                         20       0                 1     21
---   import_ibkr                    16       0                 0     16
---   import_bybit                    4       0                 0      4
---   import_kraken                   4       0                 0      4
---   import_airwallex                1       0                 0      1
+-- Measured against a real dataset before writing this file, bucketing every
+-- holding by the gap between its own creation and its account's. Every
+-- importer source lands entirely inside the first hour, which is what "the
+-- import creates its holdings inside the same request" looks like from the
+-- data. `blockchain` is the only source with a second cluster past a day.
 --
 -- The two blockchain clusters do not touch and there is nothing between them:
--- the widest at-import gap is 59m47s and the narrowest post-import gap is
--- 4d17h, a factor of 113. Rows flagged: 17, across 2 users and 3 accounts.
--- At-import rows flagged by mistake: 0 — not "few", zero, and no threshold
--- between one hour and four days changes that number.
+-- the widest at-import gap is under an hour and the narrowest post-import gap
+-- is several days, two orders of magnitude apart. At-import rows flagged by
+-- mistake: 0 — not "few", zero, and no threshold anywhere inside that gap
+-- changes which rows are selected.
 --
 -- Two further checks, because a late row could in principle be a second import
 -- rather than the cron. No confirmed `wallet-import` job lands within +/-30
--- minutes of any of the 17, and all 17 were written between :00:59 and :01:22
+-- minutes of any flagged row, and every one of them was written about a minute
 -- past an hour — the cron's schedule, not a person's.
 --
--- `manual`'s one post-import row is not touched: the source filter excludes
--- it, and correctly — a manual row is user-authored whenever it was written.
--- `sync_exchange_balances` has never created a holding in production (0 rows),
--- so the exchange cron contributes nothing here despite also running with
+-- `manual`'s post-import row is not touched: the source filter excludes it,
+-- and correctly — a manual row is user-authored whenever it was written.
+-- `sync_exchange_balances` has never created a holding at all, so the exchange
+-- cron contributes nothing here despite also running with
 -- `updateOnly: false`.
 UPDATE "holdings" h
 SET "arrival" = 'auto_discovered'
@@ -73,7 +69,8 @@ WHERE a."id" = h."account_id"
   AND h."source" = 'blockchain'
   AND h."created_at" > a."created_at" + interval '1 day';
 
--- The remaining 69 rows stay `unattributed` on purpose. The evidence above
+-- Every row the predicate does not select stays `unattributed` on purpose.
+-- The evidence above
 -- proves which rows a machine created; it does not prove a human picked any
 -- specific one of the rest, and `unattributed` is the value that says so.
 -- Backfilling them to `user_confirmed` would be an inference dressed as a

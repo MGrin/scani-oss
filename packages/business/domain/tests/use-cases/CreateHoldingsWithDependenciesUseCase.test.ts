@@ -4,7 +4,7 @@
  *
  * All three groups measured on 2026-08-16 came through this call:
  *
- *   Tinkoff  / RUB  4 manual rows, one transaction  (55120.85 / 5413.77 / 70077.53 / 6737.60)
+ *   Bank     / RUB  4 manual rows, one transaction  (synthetic balances)
  *   Revolut  / USD  2 manual rows, one transaction  (6500.32 / 1004.59)
  *   Airwallex/ USD  1 manual row added six days after an import made another
  *
@@ -114,8 +114,8 @@ describe('CreateHoldingsWithDependenciesUseCase', () => {
           {
             accountId: account.id,
             holdings: [
-              { tokenId: rub.id, balance: '55120.85' },
-              { tokenId: rub.id, balance: '5413.77' },
+              { tokenId: rub.id, balance: '2000.20' },
+              { tokenId: rub.id, balance: '4000.40' },
             ],
           },
           user,

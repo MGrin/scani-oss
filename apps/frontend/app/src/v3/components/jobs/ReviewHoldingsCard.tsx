@@ -253,9 +253,9 @@ export function ReviewHoldingsCard({
                     <span>{t('v3.jobs.review.row.currentLabel')}</span>
                     {/* Through `Numeric` at `quantityDecimals`, not interpolated
                         into the sentence: `existingBalance` arrives as the raw
-                        `5683.47000000` the column holds, and a figure spliced
-                        into a translated string is a figure no locale ever
-                        formats. */}
+                        fixed-point string the column holds, trailing zeros and
+                        all, and a figure spliced into a translated string is a
+                        figure no locale ever formats. */}
                     <Numeric
                       value={row.existingBalance}
                       format="plain"

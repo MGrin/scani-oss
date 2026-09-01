@@ -12,7 +12,7 @@ describe('unexplainedDrift', () => {
   });
 
   test('an outflow with no transaction beside it is negative', () => {
-    expect(unexplainedDrift('41749.85', '22174.58', []).toString()).toBe('-19575.27');
+    expect(unexplainedDrift('40000.85', '25000.58', []).toString()).toBe('-15000.27');
   });
 
   test('a balance that did not move but had transactions in it still drifts', () => {

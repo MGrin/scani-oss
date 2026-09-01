@@ -68,9 +68,9 @@ export interface EnrichedParsedHolding {
   holdingId?: string;
   existingBalance?: string;
   // The name on the holding this line was matched to, when it has one. The
-  // match below is by ORDER within a token, which is how a 2026-07-05 Tinkoff
-  // re-upload proposed 284767.31 for the pot that actually held 5683.47:
-  // four rows reading "Russian Ruble" and nothing to tell them apart. Carrying
+  // match below is by ORDER within a token, which is how a bank re-upload
+  // proposed one product's balance for a completely different pot: several
+  // rows reading the same currency name and nothing to tell them apart. Carrying
   // the name does not fix the matching — it gives the human reviewing it
   // something to catch the mismatch with (SC-330).
   existingLabel?: string | null;

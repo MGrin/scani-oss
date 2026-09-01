@@ -3,9 +3,10 @@
 --
 -- `holding_coverage.first_observation_at` / `last_observation_at` were a
 -- denormalized cache of `min(observed_at)` / `max(observed_at)` over
--- `holding_balance_observations`, keyed by holding. Measured read-only on
--- production 2026-08-19: 70 coverage rows, 0 non-null in either column,
--- while 93 holdings carry 69,233 observation rows between them. No import
+-- `holding_balance_observations`, keyed by holding. Measured read-only before
+-- this shipped: across every coverage row, not one non-null value in either
+-- column, while the observations table behind them holds tens of thousands of
+-- rows. No import
 -- has ever populated them — the one live writer,
 -- `TransactionImportCoordinator.persistAndReport`, passed null for both on
 -- every call — and nothing has ever read them.
@@ -16,18 +17,19 @@
 -- whichever path had just written the ledger. Six of seven writers reported
 -- nothing; the seventh reported the whole run's oldest and newest event to
 -- every holding it touched, so a holding first seen last week inherited the
--- 2021 start of the BTC position imported alongside it (SC-307, SC-308) and
+-- years-older start date of a position imported alongside it (SC-307, SC-308)
+-- and
 -- needed a production repair (SC-319). The fix there was to stop reporting
 -- and derive from the table, because a summary of a table has one correct
 -- source and it is the table. These two columns are the same summary of a
--- different table, with no reader to justify the cache at all — and 69,233
--- rows across 93 holdings is a `min`/`max` on an indexed `holding_id`, not a
--- number worth storing twice.
+-- different table, with no reader to justify the cache at all — and at this
+-- table's size a `min`/`max` on an indexed `holding_id` is not a number worth
+-- storing twice.
 --
 -- Safe to drop, on three measurements rather than on inspection:
 --
 --   1. No data is lost. Not "nearly none" — `count(first_observation_at)`
---      and `count(last_observation_at)` are both exactly 0 over all 70 rows.
+--      and `count(last_observation_at)` are both exactly 0 over every row.
 --   2. Nothing in the catalogue depends on them. No view, materialized view,
 --      constraint or index references either column; `holding_coverage` has
 --      one index, its primary key on `holding_id`.

@@ -4,11 +4,11 @@
 -- nothing else, and the stored number silently becomes a claim no current code
 -- would make.
 --
--- Measured in production before the manual repair: 29 of 371 tokens held a
--- score the shipped function would not produce. Six crossed the UI threshold.
--- One was `USCON` — "United States Covert Operations Network" — scored 0.80
--- because "Network" starts with "net", and it was a real holding being
--- subtracted from the portfolio total.
+-- Measured before the manual repair: a small fraction of existing tokens held
+-- a score the shipped function would not produce, and several of those crossed
+-- the UI threshold. One was a token whose name ends in "Network", scored 0.80
+-- because "Network" starts with "net" — a legitimate holding being subtracted
+-- from the portfolio total.
 --
 -- This column records WHICH version of the function produced the stored value,
 -- so a row can be asked whether it is current. Without it the only way to know
@@ -25,7 +25,8 @@ COMMENT ON COLUMN "tokens"."scam_score_version" IS
   'Version of calculateScamProbability that produced is_scam_probability. NULL = scored before versioning. SC-286.';
 
 -- The backfill asks one question — "which rows are not at the current version"
--- — and at 217 crypto tokens that is a sequential scan either way. The index
+-- — and at the token counts this table holds that is a sequential scan
+-- either way. The index
 -- is for the table this becomes, not the table it is.
 CREATE INDEX IF NOT EXISTS "idx_tokens_scam_score_version" ON "tokens" ("scam_score_version");
 
@@ -38,9 +39,10 @@ CREATE INDEX IF NOT EXISTS "idx_tokens_scam_score_version" ON "tokens" ("scam_sc
 --    not tell those from a heuristic score would silently revert a decision a
 --    person made on purpose.
 --
--- 2. `TokenIdentityService` scores CRYPTO ONLY (see its step 4). Production
---    today is 217 crypto, 136 fiat, 18 stock: 154 rows hold a 0 the scoring
---    function never produced, because it never ran on them. Defaulting those
+-- 2. `TokenIdentityService` scores CRYPTO ONLY (see its step 4). Fiat and
+--    stock together are a large minority of the table, and every one of those
+--    rows holds a 0 the scoring function never produced, because it never ran
+--    on them. Defaulting those
 --    to `heuristic` would assert that the function stands behind a number it
 --    never saw — and the first review of #849 measured what that assertion is
 --    worth. Scored as if it were crypto, `AMAZON.COM INC` returns 0.50: a
@@ -76,14 +78,14 @@ WHERE "type_id" IN (SELECT "id" FROM "token_types" WHERE "code" = 'crypto');
 --
 -- 1.0 is claimed for `user` because that direction fails safe: the cost is a
 -- heuristic 1.0 row that never gets recomputed, versus a user's "this is a
--- scam" being silently undone. (Verified against production during review:
--- there are ZERO tokens at exactly 1.0, so this claims nothing today.)
+-- scam" being silently undone. (Verified during review: no token sat at
+-- exactly 1.0, so this claimed nothing at the time it shipped.)
 --
 -- Rows at 0 cannot be claimed — that would freeze every legitimate token
 -- forever. So one residual survives and is not measurable: a CRYPTO token a
 -- user explicitly unmarked before this migration can be re-flagged by the
--- first run. The unmark events are not recoverable — Fly retains roughly 40
--- minutes of logs and these are months old, and there is no audit table. It
+-- first run. The unmark events are not recoverable — log retention is far
+-- shorter than the age of these events, and there is no audit table. It
 -- is stated in the PR as a known unmeasurable residual rather than papered
 -- over here.
 UPDATE "tokens" SET "scam_score_source" = 'user' WHERE "is_scam_probability" = 1.0;

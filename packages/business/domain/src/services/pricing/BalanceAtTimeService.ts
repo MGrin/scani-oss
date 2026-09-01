@@ -162,10 +162,11 @@ export class BalanceAtTimeService {
   // path is unchanged.
   //
   // Where they do not, the whole difference lands on the single day the
-  // anchor rolls over from one observation to the next. Production held
-  // exactly that: an Edge Capital USD holding with two observations 71 days
-  // apart and no transaction between them dropped 19,575.27 in one day, and
-  // a chained daily return read it as a 22% loss on cash (SC-475 fault B).
+  // anchor rolls over from one observation to the next. A real account held
+  // exactly that: a cash holding with two observations months apart and no
+  // transaction between them dropped its whole accumulated difference in one
+  // day, and a chained daily return read it as a double-digit percentage loss
+  // on cash (SC-475 fault B).
   //
   // So the drift is spread linearly across the gap instead. This is
   // INVENTED data — a straight line between two measurements, drawn because
