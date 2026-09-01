@@ -191,10 +191,10 @@ describe('tokenTypeLabel', () => {
    * locale that is later exempted in `incomplete-locales.json` cannot take
    * these down with it silently.
    */
-  test('all six shipped locales carry every type key', () => {
+  test('all seven shipped locales carry every type key', () => {
     const dir = resolve(import.meta.dir, '../../../src/v3/i18n/locales');
     const codes = readdirSync(dir).filter((f) => f.endsWith('.json'));
-    expect(codes.length).toBe(6);
+    expect(codes.length).toBe(7);
 
     const missing: string[] = [];
     for (const file of codes) {

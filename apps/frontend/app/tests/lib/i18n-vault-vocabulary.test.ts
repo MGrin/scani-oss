@@ -72,6 +72,10 @@ const FORBIDDEN: Record<string, RegExp> = {
   ja: /(金庫|保管庫|コールドウォレット|コールドストレージ|カストディ)/,
   pt: /(cofre|caixa-forte|custódia|custodia|armazenamento a frio)/i,
   ru: /(сейф|хранилищ|банковск\w*\s+ячейк|холодн\w*\s+хранени)/i,
+  // `保管` alone is NOT here: it is the ordinary verb for keeping something,
+  // and `保管库` is the strongbox reading. Chinese renders Vault as 储蓄目标,
+  // a savings goal, which shares no character with any of these.
+  zh: /(金库|保险库|保险柜|保险箱|保管库|保管箱|冷存储|冷钱包|冷藏|托管)/,
 };
 
 type Leaf = readonly [string, string];
@@ -162,7 +166,7 @@ describe('vault vocabulary', () => {
   /**
    * The must-be-FOUND arm on the PATTERNS themselves. The test above proves
    * the sweep reaches a non-empty population; it cannot prove that any of the
-   * six regexes is capable of matching anything, and a pattern that matches
+   * seven regexes is capable of matching anything, and a pattern that matches
    * nothing produces the same clean run as a compliant bundle.
    *
    * These run through `offendingKeys`, not through a copy of it, so a change
@@ -176,6 +180,7 @@ describe('vault vocabulary', () => {
       ja: '貯蓄目標は保有資産の金庫です。',
       pt: 'Um objetivo é um cofre para as suas posições.',
       ru: 'Копилка — это сейф для ваших активов.',
+      zh: '储蓄目标是存放你持仓的金库。',
     };
     const english = { 'v3.vaults.page.title': 'Vaults' };
 
