@@ -74,6 +74,7 @@ schema-only summary.
 |---|---|
 | `user_jobs` | User-initiated async job state (screenshot parses, imports, deletes). |
 | `job_heartbeats` | Per-job heartbeat rows; drives the `job-heartbeat-probe`. |
+| `operator_alarms` | One row per condition an operator alarm is currently OPEN on. Its absence is how "it cleared" is expressed, which is what makes an alarm fire on ENTERING a condition and again if the same fault recurs. |
 | `admin_audit_log` | Operator actions on api admin endpoints. |
 | `user_wallets` | User-tracked blockchain wallet addresses. |
 | `cloud_api_keys`, `cloud_usage_events` | Tier 2/3 cloud-management (`CLOUD_MANAGEMENT_ENABLED=true`). |
