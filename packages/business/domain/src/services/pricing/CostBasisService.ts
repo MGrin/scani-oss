@@ -5,6 +5,7 @@ import {
   answerSourceOf,
   type DisposalAnswerSourceDto,
   isLinkingDecision,
+  TRANSFER_REVIEW_FEE,
   TRANSFER_REVIEW_SPLIT,
   type TransferReviewSplit,
   transferReviewSplitSchema,
@@ -164,7 +165,13 @@ export function historyCompletenessOf(
  *   itself the day the pair completes. Deliberately not `unreviewed`: the
  *   queue does not hold it, so there is nothing for a reader to go and answer.
  */
-export type DisposalOutcome = 'realized' | 'unpriced' | 'unreviewed' | 'retained' | 'awaiting_pair';
+export type DisposalOutcome =
+  | 'realized'
+  | 'unpriced'
+  | 'unreviewed'
+  | 'retained'
+  | 'awaiting_pair'
+  | 'fee';
 
 /**
  * Which of `txValueInBase`'s two routes produced a row's figure (SC-397).
@@ -392,10 +399,15 @@ function disposalAnswerSourceOf(tx: HoldingTransaction): DisposalAnswerSource {
  * - `realize` — priced at market and booked, the `left_control` answer.
  * - `hold` — the lots leave and nothing is booked. `held` says which of the
  *   several situations that produce that identical arithmetic this one is.
+ * - `fee` — a charge taken out of what left (SC-888). Books nothing, like
+ *   `hold`, and is a fourth action rather than a `held` value because the two
+ *   differ in where the share's COST goes: a `hold` share's lots are gone,
+ *   while a fee's join the group's buffer when there is one, so `rehome` still
+ *   lands the whole cost on the units that survive the move.
  */
 interface OutflowPortion extends PortionRef {
   qty: Decimal;
-  action: 'carry' | 'realize' | 'hold';
+  action: 'carry' | 'realize' | 'hold' | 'fee';
   held: DisposalOutcome;
 }
 
@@ -427,8 +439,19 @@ const WHOLE_PORTION: PortionRef = { index: 0, count: 1 };
 function outflowPortions(tx: HoldingTransaction, qtyAbs: Decimal): OutflowPortion[] {
   const split = parseSplit(tx);
   if (split === null) {
+    // The group id is still read FIRST — `transfer-review-queue.ts` and two
+    // test files rest on that precedence, and a matcher-linked row carries its
+    // lots whatever answer is stamped on it. `fee` sits between the link and
+    // `isConfirmedDisposal` because the whole-row answer "this withdrawal WAS
+    // the bank's charge" must never reach the `realize` branch (SC-888).
     const action: OutflowPortion['action'] =
-      tx.transferGroupId !== null ? 'carry' : isConfirmedDisposal(tx) ? 'realize' : 'hold';
+      tx.transferGroupId !== null
+        ? 'carry'
+        : tx.transferReview === TRANSFER_REVIEW_FEE
+          ? 'fee'
+          : isConfirmedDisposal(tx)
+            ? 'realize'
+            : 'hold';
     return [{ index: 0, count: 1, qty: qtyAbs, action, held: skippedOutcome(tx) }];
   }
 
@@ -454,11 +477,16 @@ function outflowPortions(tx: HoldingTransaction, qtyAbs: Decimal): OutflowPortio
         ? 'carry'
         : entry.decision === 'left_control'
           ? 'realize'
-          : 'hold',
+          : entry.decision === TRANSFER_REVIEW_FEE
+            ? 'fee'
+            : 'hold',
       // `untracked` — the user said this share is still theirs somewhere we
       // cannot see. Same sentence the ledger already has for a whole
       // `untracked` answer, because it is the same claim about less of it.
-      held: 'retained',
+      //
+      // A `fee` share overrides it below rather than here: `held` is what the
+      // `hold` branch renders, and a fee is not held by anybody.
+      held: entry.decision === TRANSFER_REVIEW_FEE ? 'fee' : 'retained',
     });
   }
   if (remaining.gt(0)) {
@@ -1053,6 +1081,33 @@ export class CostBasisService {
             pendingRealization.set(tgid, accs);
             continue;
           }
+          if (portion.action === 'fee') {
+            // A charge taken out of what left (SC-888). Nothing is realized —
+            // the bank took the money, the reader did not sell it — and the
+            // units are gone from the pool because they are gone from the
+            // balance.
+            //
+            // Where the row is linked, the popped lots join the SAME buffer
+            // the carry share filled, with no realization accumulator beside
+            // them: a fee never becomes a disposal, whatever happens to the
+            // pair. That is `rehome`'s own rule, reached deliberately rather
+            // than by accident — "the fee is an incidental cost of the
+            // transfer, not a disposal of the units it consumed, so the whole
+            // cost carries onto the units that survive it". Answering
+            // "3,500 paired, 500 a fee" therefore lands the destination on the
+            // same basis as answering `paired` for the whole 4,000 does today,
+            // which is the arithmetic this ticket is explicitly not changing.
+            const popped = popHolding(holdingId, portion.qty);
+            if (tgid) {
+              // Copied, not aliased — SC-90, and for the identical reason the
+              // carry branch gives.
+              const bucket = pending.get(tgid);
+              if (bucket) bucket.push(...popped);
+              else pending.set(tgid, [...popped]);
+            }
+            record(tx, portion.qty, null, popped, 'fee', portion);
+            continue;
+          }
           if (portion.action === 'realize') {
             // The user said this share left their control. Realize at FMV like
             // a sale — and identify it like one, because it IS one: this share
@@ -1372,6 +1427,7 @@ function rehome(
 function skippedOutcome(tx: HoldingTransaction): DisposalOutcome {
   if (tx.transferGroupId !== null) return 'awaiting_pair';
   if (tx.transferReview === TRANSFER_REVIEW_SPLIT) return 'unreviewed';
+  if (tx.transferReview === TRANSFER_REVIEW_FEE) return 'fee';
   return tx.transferReview === null ? 'unreviewed' : 'retained';
 }
 
