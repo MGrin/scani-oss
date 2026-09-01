@@ -89,6 +89,29 @@ bun run test
 # running it here saves the round trip.
 bun scripts/sync-dockerhub-readme.ts --check
 
+# Every EDITED migration carries a drift declaration. Fast (~0.3s), no
+# services, and it is the only check between a comment edit and a blocked
+# deploy.
+#
+# `migration-files.ts` hashes each migration with `sha256(sql)` over the WHOLE
+# FILE, comments included, and `migration-runner.ts` refuses the entire
+# `db:migrate` run when that disagrees with `drizzle.__scani_migrations`. On
+# 2026-09-01 two pull requests rewrote comments inside applied migrations, were
+# reviewed for behaviour changes, correctly found to have none, and merged.
+# Nothing in the repo said a comment counted.
+#
+# THE ADDITION ARM IS THE CONTROL, NOT AN OVERSIGHT: adding a migration is
+# never refused, and a guard that fired on every migration touch would be
+# switched off inside a week.
+#
+# THREE EXIT CODES, and the third is not a louder failure. 0 clean, 1 refusing
+# and naming every tag beside the exact `db:declare-drift` command that fixes
+# it, 9 when it could not resolve the base — which prints NOTHING WAS COMPARED
+# and is not a pass. It also runs in `.githooks/pre-commit` when a migration is
+# staged, and as CI's `validate-migrations`; the CI copy is the one
+# `--no-verify` cannot reach.
+bun run db:drift:check
+
 # Docs match source, and every `.mdx` page under
 # `apps/frontend/docs/src/content/` compiles. Fast (~0.4s), no services. CI
 # runs this too, but running it here turns an MDX syntax error into a named
@@ -489,6 +512,10 @@ Workflows in `.github/workflows/`:
     changed). It invokes the package scripts rather than inlining their flags,
     and so does this line as of SC-739: the flags were copied into prose here
     and drifted at SC-558 without anything noticing.
+  - `validate-migrations` — `bun run db:drift:check`, on a full-history
+    checkout. Unfiltered and ungated: a migration edited with no
+    `DRIFT_DECLARATIONS` entry refuses every deploy, and a base a shallow
+    clone cannot resolve is exit 9 rather than a pass.
   - `test` — Postgres 16 service container; runs `bun run db:migrate`
     then `bun test --preload ./packages/business/domain/test-preload.ts $PATHS --timeout 30000`.
   - `secret-scan` — grep-based secret detection (always runs).
