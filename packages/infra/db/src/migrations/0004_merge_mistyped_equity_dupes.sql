@@ -84,8 +84,8 @@ BEGIN
     END LOOP;
 
     -- Drop the duplicate's Yahoo price rows: they cover the same dates
-    ***REMOVED***
-    ***REMOVED***
+    -- the canonical's stock-typed Yahoo rows already cover; the canonical
+    -- wins on count + correctness.
     DELETE FROM token_prices WHERE token_id = duplicate_token_id;
 
     DELETE FROM tokens WHERE id = duplicate_token_id;

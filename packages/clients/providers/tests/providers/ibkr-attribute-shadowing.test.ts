@@ -25,8 +25,8 @@ const ctx = {
  * own column order, where `securityIDType` sits eleven attributes ahead of
  * `type` — and an unanchored, case-insensitive `/type="([^"]*)"/i` finds
  * `Type="ISIN"` inside it first. Every cash row in production read
- ***REMOVED***
- * them on each of three consecutive runs.
+ * `type = "ISIN"`, was refused by `classifyCashType`, and was dropped, on
+ * every one of three consecutive runs.
  */
 const REAL_ORDER_XML = `
   <FlexQueryResponse>

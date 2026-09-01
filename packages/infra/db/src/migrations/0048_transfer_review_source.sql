@@ -1,10 +1,10 @@
 -- SC-350. WHO answered a transfer review, when the answer was not the user's.
 --
-***REMOVED***
-***REMOVED***
-***REMOVED***
-***REMOVED***
-***REMOVED***
+-- A run of an owner's own `left_control` answers — the one answer that books a
+-- disposal — sent money to addresses in their own `user_wallets`, realizing
+-- stablecoin gains on money that never left the portfolio. They asked for the
+-- rows to be corrected in production, which raises the question this column
+-- answers: what should the corrected rows say about who decided?
 --
 -- Provenance had exactly two representable states, both derived from whether
 -- `transfer_reviewed_at` was NULL: stamped meant "the user, in the queue, on

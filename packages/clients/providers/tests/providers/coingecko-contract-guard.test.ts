@@ -109,8 +109,8 @@ describe('resolveCoingeckoId — an address outranks a symbol', () => {
    * impersonator can aim at, and they carry a positive-match bar instead.
    *
    * This is the case that used to read `.toBe('weth')`. It was changed on
-   ***REMOVED***
-   ***REMOVED***
+   * a measurement, not a preference: that production row has had no
+   * CoinGecko price in its life and a long DeFiLlama history, and DeFiLlama
    * priced it as recently as the hour this was measured. Refusing the
    * CoinGecko leg costs it nothing.
    */
@@ -131,7 +131,7 @@ describe('resolveCoingeckoId — an address outranks a symbol', () => {
   /**
    * Rows with no contract at all — fiat, equities, exchange catalogue
    * entries, and native assets like BTC and ETH — are the majority of the
-   ***REMOVED***
+   * table (about half the production rows carrying a resolvable id). They
    * have no address to contradict anything and must resolve as before.
    */
   test('a row with no contract address resolves by symbol as before', () => {

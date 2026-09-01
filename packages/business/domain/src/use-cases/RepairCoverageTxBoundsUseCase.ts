@@ -41,9 +41,9 @@ function toDate(value: unknown): Date | null {
  * reports `null` for both bounds and `HoldingTransactionRepository.bulkUpsert`
  * derives them per holding at the write, so every holding self-heals the next
  * time anything writes its ledger. What it cannot reach is a holding nothing
- ***REMOVED***
- ***REMOVED***
- ***REMOVED***
+ * writes to again — measured read-only on production 2026-08-18, nearly every
+ * coverage row was re-derived by that morning's imports and a handful were
+ * not, because those holdings received no event. Those keep whatever SC-308
  * stamped, and `LEAST`/`GREATEST` could only ever have widened it.
  *
  * WHY IT UPDATES AND NEVER INSERTS. The obvious statement — insert ... select

@@ -39,13 +39,14 @@
  * find a coincidental inflow and quietly un-answer the question.
  *
  * **That skip is why the bridge rule below changes nothing in production
- ***REMOVED***
- ***REMOVED***
- ***REMOVED***
- ***REMOVED***
- ***REMOVED***
- ***REMOVED***
- ***REMOVED***
+ * today, and it is deliberate** (SC-336). Every bridge outflow in this ledger
+ * already carries a `left_control` answer, so this pass never sees them:
+ * measured 2026-08-17, the rule forms a handful of pairs on the stored
+ * population — some of which the same-token pass already had — and none of
+ * them are reachable while those answers stand. Reopening them is a separate
+ * decision (SC-302/SC-324) and this pass is the thing that has to exist first,
+ * or reopening would put those bridges into the queue with no arrival to pair
+ * them to.
  */
 
 import type { DatabaseTransaction } from '@scani/db';

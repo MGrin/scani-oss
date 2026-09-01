@@ -54,8 +54,8 @@ import { CHAIN_ID_TO_DEFILLAMA, DEFILLAMA_MIN_CONFIDENCE } from './chains';
  * not DeFiLlama's. Every range over 500 days therefore 400'd, and since
  * the 400 came back as `[]` the backfill read it as "no history" and put
  * the token in an unpriceable cooldown. Prices older than 500 days could
- ***REMOVED***
- ***REMOVED***
+ * not be fetched by any token, ever, and a large minority of production
+ * inflows had booked zero-cost lots by the time it was measured (SC-171).
  */
 const DEFILLAMA_MAX_POINTS_PER_REQUEST = 500;
 

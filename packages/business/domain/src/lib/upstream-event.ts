@@ -39,8 +39,8 @@ import { txHashFromPayload } from '@scani/shared';
  *   knows the hash lives in `raw_payload.hash` and also leads the
  *   `external_id` for both native and ERC-20 rows.
  * - **Kraken** — `raw_payload.refid`, Kraken's reference for ONE ledger
- ***REMOVED***
- ***REMOVED***
+ *   operation. `external_id` is the per-ENTRY ledger id (`LEARN1-AAAAA-000001`
+ *   vs `LEARN2-BBBBB-000002` for the same operation), so reading the id is
  *   worse than useless here: it looks like an answer and it is always "two
  *   different events". Every previous measurement of this population did
  *   exactly that and miscounted 22 real single-operation groups as artifacts.

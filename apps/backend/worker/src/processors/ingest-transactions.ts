@@ -172,9 +172,9 @@ export class IngestTransactionsProcessor extends UserJobProcessor<TransactionImp
 
 // Adaptive lookback. First-ever rollup for a user → full year. Steady
 // state → days-since-last-rollup + safety pad. This collapses the
-***REMOVED***
-***REMOVED***
-// every subsequent tx-import.
+// post-import backfill from 365 days × every holding × ~3 DB queries
+// (the multi-hour prod incident on 2026-05-02) down to ~1-7 days × …
+// on every subsequent tx-import.
 //
 // HOWEVER — if a tx-import discovered a NEW holding (Etherscan found
 // a token-transfer to the user's address that minted a fresh

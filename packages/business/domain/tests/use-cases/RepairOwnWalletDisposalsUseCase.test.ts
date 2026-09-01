@@ -2,8 +2,8 @@
  * `RepairOwnWalletDisposalsUseCase` integration tests (SC-365).
  *
  * The fixture is the production shape, because the decision this makes is only
- ***REMOVED***
- ***REMOVED***
+ * interesting against it: an outflow of USDC from `0xa11c…a6b7` to
+ * `0xb0b1…a8b9`, two wallets the same person registered, answered
  * `left_control` by a raw UPDATE that left no record of itself.
  *
  * Same isolation shape as `TransferReviewService.test.ts` and for the same
@@ -25,17 +25,17 @@ import { eq } from 'drizzle-orm';
 import { RepairOwnWalletDisposalsUseCase } from '../../src/use-cases/RepairOwnWalletDisposalsUseCase';
 
 /** The two addresses the ticket is about, in the case the chain reports them. */
-const SOURCE_WALLET = '***REMOVED***';
-const DEST_WALLET = '***REMOVED***';
-const HASH = '***REMOVED***1c04b0da734d5f2d56c092f4';
+const SOURCE_WALLET = '0xa11ce0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7';
+const DEST_WALLET = '0xB0B1c2D3e4F5a6B7c8D9e0F1a2B3c4D5e6F7a8B9';
+const HASH = '0xabcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789';
 
 interface Fixture {
   userId: string;
   tokenId: string;
-  ***REMOVED***
+  /** `Ethereum - 0xa11c…a6b7 / USDC` — where the money left from. */
   outHoldingId: string;
   outAccountId: string;
-  ***REMOVED***
+  /** `Ethereum - 0xb0b1…a8b9 / USDC` — where it landed. */
   destHoldingId: string;
   destAccountId: string;
   /** The same destination wallet on ANOTHER chain, holding the same token.
@@ -221,7 +221,7 @@ afterEach(async () => {
 describe('RepairOwnWalletDisposalsUseCase — deriving the decision', () => {
   test('derives `internal` when the chain transaction has no imported arrival', async () => {
     const f = fixture!;
-    ***REMOVED***
+    // The measured production case. `0xb0b1…a8b9`'s own history was never
     // fetched — its credential lost the unique (user, institution) slot, which
     // is what migration 0045 is about — so there is no arrival row to pair to
     // and the destination holding exists only because the balance sync made it.
