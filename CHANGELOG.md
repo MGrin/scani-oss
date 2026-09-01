@@ -19,6 +19,53 @@ version heading stays there permanently, above every future release. This
 comment is deliberately in that position; explanatory prose should not be.
 -->
 
+## [0.35.0](https://github.com/MGrin/scani-oss/compare/v0.34.1...v0.35.0) (2026-09-01)
+
+
+### Features
+
+* **app:** ship Simplified Chinese on all three surfaces ([0898891](https://github.com/MGrin/scani-oss/commit/0898891d52a995b669f12d2314c79853c28e5833))
+* **holdings:** let the hourly sync anchor a position the chain measures at zero ([be5fcd5](https://github.com/MGrin/scani-oss/commit/be5fcd5d8b3dbe10b3c4ada551843103493c4827))
+* **holdings:** the movement form can state a transfer's fee (SC-889) ([7f61d9e](https://github.com/MGrin/scani-oss/commit/7f61d9eae68e3d79a4829a0dfac361a062529648))
+* **i18n:** Indonesian (id) across all three translated surfaces (SC-761) ([ae7c094](https://github.com/MGrin/scani-oss/commit/ae7c09406078b1c14194debea9bbedafec95337d))
+* **oss:** refuse a new production-looking figure on an added line (SC-887) ([70fbb17](https://github.com/MGrin/scani-oss/commit/70fbb172671f7161f70b7a658af66590bf46821f))
+* **reconciliation:** see where a person's rows and an importer's meet (SC-858) ([6f56dd4](https://github.com/MGrin/scani-oss/commit/6f56dd46d08bcd0a4f8587984cf73c93b73a6e6a))
+* **review:** answer the fee keys in zh (SC-888) ([d27c652](https://github.com/MGrin/scani-oss/commit/d27c65216f1778fa7cf9ad34245d9ad61ff71810))
+* **review:** the queue's split can say part of an outflow was a fee (SC-888) ([1ba5938](https://github.com/MGrin/scani-oss/commit/1ba5938d3773dbb676f5e9a90f1a0e8cdcd3f0c3))
+* **transfers:** let a declared transfer state its fee (SC-857) ([d212767](https://github.com/MGrin/scani-oss/commit/d212767d93800a05d2a35598115e8fc868706961))
+* **ui:** one AccountPicker, and rank a transfer's destinations ([e80f9c9](https://github.com/MGrin/scani-oss/commit/e80f9c954ee1933891586f29162ee22ee5b2944a))
+
+
+### Bug Fixes
+
+* **app:** keep the app origin out of search indexes ([cb1f92b](https://github.com/MGrin/scani-oss/commit/cb1f92b57691b91a56a98a0aacb68dd2f2eaf982))
+* **chunks:** make the route-chunk retry a retry (SC-890) ([cc5bb48](https://github.com/MGrin/scani-oss/commit/cc5bb487e1c9ff483a8e5b93efc99d851ff11081))
+* **domain:** break the transfer-matching import cycle (SC-902) ([380328d](https://github.com/MGrin/scani-oss/commit/380328d5334d7b245251af693ec3d0e80148c186))
+* **e2e:** name the service and the disk when the stack fails to start ([1b23b64](https://github.com/MGrin/scani-oss/commit/1b23b640878ec61b3413a07150ebd9c060f246cf))
+* **e2e:** refuse a visual baseline the harness cannot vouch for ([11ae20d](https://github.com/MGrin/scani-oss/commit/11ae20dc8c4000e2836e8bdb65c8648cb7a5c491))
+* **holdings:** ask the chain whether an absent token left the wallet ([1d3aa9a](https://github.com/MGrin/scani-oss/commit/1d3aa9a2bfc4efac270c569f06748c1b11fd0933))
+* **holdings:** use the project-configured Decimal in the movement form ([3abd763](https://github.com/MGrin/scani-oss/commit/3abd76360675d03e9f8be5f96bbd591ef021bcb9))
+* **i18n:** reach the new picker's strings, and stop pinning a doubled label ([621fd6c](https://github.com/MGrin/scani-oss/commit/621fd6c2cc75514cc056322f881213b75796a857))
+* **ibkr:** anchor the Flex attribute regex so cash rows keep their own type ([d4b58b2](https://github.com/MGrin/scani-oss/commit/d4b58b20ccbcf503227ecb5eb399eab78fda1e39))
+* **ibkr:** let a cash row that carries a date and no time reach the ledger ([1c19091](https://github.com/MGrin/scani-oss/commit/1c190911cfaa4207a133aab8e28d6dfcf8c8009c))
+* **ibkr:** retract the completeness claim a Flex window cannot support ([10d9bd2](https://github.com/MGrin/scani-oss/commit/10d9bd2e79b1dedbfa1f8d7e80859a49d1dd32bb))
+* **ibkr:** warn on cash rows dropped for a blank required field ([0872c53](https://github.com/MGrin/scani-oss/commit/0872c53910da7c76625c6f58bc2a4340787533fb))
+* **oss:** make the figure guard's own denominator read as a sentence (SC-887) ([de0e8cb](https://github.com/MGrin/scani-oss/commit/de0e8cb7c184a8d773d88bbcd44e4874fd833ce7))
+* **providers-google-sheets:** refuse a price whose currency is unknown ([70af184](https://github.com/MGrin/scani-oss/commit/70af18467d5e73b232e57321396d4c6c2adb810f))
+* **queue:** bound the whole enqueue, not just queue.add ([5c25455](https://github.com/MGrin/scani-oss/commit/5c254552b22d55fc51af4bc134f853dc5906365f))
+* **queue:** evict a finished job squatting on a deterministic jobId ([6c72cf5](https://github.com/MGrin/scani-oss/commit/6c72cf556ffaf0fd5a41c8cae614967d7af8ac38))
+* **review:** badge sums what each feed row represents (SC-860) ([5be7c9b](https://github.com/MGrin/scani-oss/commit/5be7c9bddb0bda5c8c556c99b7801367578427ad))
+* **review:** stop saying the institution twice on the rest of the sheet ([aaa683f](https://github.com/MGrin/scani-oss/commit/aaa683fc8aed005dbe93ffb362e3a0d0279ae45e))
+* **shared:** drop a repeated institution from either end of the name ([2765f83](https://github.com/MGrin/scani-oss/commit/2765f83587d8b16d727118edc8be397fff8989e7))
+* **shared:** require punctuation before dropping a repeated institution ([af8d7f1](https://github.com/MGrin/scani-oss/commit/af8d7f1baaf3c08e8fe96925348ab2d4e8c93b39))
+* **transfer-review:** move a destination anchor nobody else will observe ([d927974](https://github.com/MGrin/scani-oss/commit/d9279748ebc4d81321c8ada12f2ff9e7dfcad132))
+* **transfer-review:** stop the split refusal prescribing a disposal ([ab35782](https://github.com/MGrin/scani-oss/commit/ab3578240717ea1a2dfb25bc4a0ab8ac07614659))
+* **ui:** keep the last account out of its own fade ([bfda1f4](https://github.com/MGrin/scani-oss/commit/bfda1f4c61f0d043dc79a69214e206cfe1b3afcb))
+* **v3:** give the review sub-queues navigation, and guard reachability ([06e7632](https://github.com/MGrin/scani-oss/commit/06e7632836397c608ce502413d90e03226ca73a7))
+* **vendors:** let mergePreview's failures through as the 500 they are (SC-897) ([9d5c9e7](https://github.com/MGrin/scani-oss/commit/9d5c9e7393ba03d29bf4dd3a6fb26f4a517a5bd6))
+* **vendors:** map merge's ownership refusal to NOT_FOUND (SC-885) ([4db3ee5](https://github.com/MGrin/scani-oss/commit/4db3ee5e5a75121364a98ed42223dc30cbe2327b))
+* **worker:** give the setpriv-dropped process a HOME it can enter ([72676d6](https://github.com/MGrin/scani-oss/commit/72676d6c8d03057e4320ed764561e9a10bab932d))
+
 ## [0.34.1](https://github.com/MGrin/scani-oss/compare/v0.34.0...v0.34.1) (2026-08-28)
 
 
