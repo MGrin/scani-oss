@@ -305,7 +305,13 @@ describe('VendorRepository', () => {
         await repo().addAlias(into.id, 'Amazon.co.uk', 'counterparty', tx);
         await repo().addAlias(from.id, 'AMZN Mktp GB', 'counterparty', tx);
 
-        await expect(repo().merge(userA.id, into.id, from.id, tx)).rejects.toThrow();
+        // The CLASS, not just "it threw": `vendors.merge` maps this refusal
+        // by type and rethrows everything else as the 500 it is, so a plain
+        // `Error` here would come back out as an unmapped INTERNAL_SERVER_ERROR
+        // carrying this sentence (SC-885).
+        await expect(repo().merge(userA.id, into.id, from.id, tx)).rejects.toThrow(
+          VendorNotFoundError
+        );
 
         // Neither vendor moved, and neither was half-merged: both still
         // exist and each still owns exactly the alias it started with —

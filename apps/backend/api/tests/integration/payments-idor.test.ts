@@ -33,10 +33,11 @@
  * `VendorRepository.addAlias(vendorId, rawName, source)` takes no userId
  * and has no ownership check of its own, so the comparison in
  * `vendors.addAlias` is the whole of it and a stubbed router test can see
- * all of it. `merge` is the opposite extreme — the router owns only which
- * userId it passes. The rest sit in between. A green here means different
- * things for different tests, so read each one's own note rather than the
- * file's verdict.
+ * all of it. `merge` is the opposite extreme — the router owns which
+ * userId it passes and how it maps the repository's refusal (SC-885), and
+ * nothing about whether that refusal is correct. The rest sit in between.
+ * A green here means different things for different tests, so read each
+ * one's own note rather than the file's verdict.
  */
 
 import { afterEach, beforeAll, describe, expect, test } from 'bun:test';
@@ -45,6 +46,7 @@ import {
   DocumentExtractionRepository,
   PaymentOccurrenceRepository,
   PaymentRepository,
+  VendorNotFoundError,
   VendorRepository,
 } from '@scani/domain/repositories';
 import { PaymentService } from '@scani/domain/services';
@@ -128,16 +130,19 @@ const VENDOR_ALIAS_ID = '99999999-9999-9999-9999-999999999999';
  * is handed — makes the refusal a consequence of the id the ROUTER
  * passed, which is the only part of this the router owns, and gives the
  * owner case below something to succeed at.
+ *
+ * It throws what the real `VendorRepository.merge` throws (SC-885): the
+ * router now maps that refusal by TYPE, so a stub throwing a plain `Error`
+ * would exercise the rethrow branch and pin a 500 the real repository can
+ * no longer produce.
  */
 function stubVendorMerge(): { receivedUserIds: string[] } {
   const receivedUserIds: string[] = [];
   Container.set(VendorRepository, {
-    merge: async (userId: string, intoId: string, fromId: string) => {
+    merge: async (userId: string, intoId: string, _fromId: string) => {
       receivedUserIds.push(userId);
       if (userId !== VENDOR_OWNER_ID) {
-        throw new Error(
-          `Cannot merge vendors: ${intoId} and ${fromId} must both belong to user ${userId}`
-        );
+        throw new VendorNotFoundError(intoId);
       }
     },
   } as unknown as VendorRepository);
@@ -296,15 +301,16 @@ describe('IDOR — vendors router', () => {
     await expect(
       caller.vendors.merge({ intoId: VENDOR_INTO_ID, fromId: VENDOR_FROM_ID })
     ).rejects.toMatchObject({
-      // The shape a caller actually gets today, pinned rather than
-      // endorsed: `merge` is the one id-taking write in this router that
-      // does NOT map the repository's refusal (`update`, `delete`,
-      // `deletePreview` and `mergePreview` all do), so the repository's
-      // own sentence arrives as an unmapped INTERNAL_SERVER_ERROR. That
-      // is SC-885's to decide; when it is mapped, this assertion is the
-      // thing that says so.
+      // SC-885 decided this and it is now endorsed, not pinned: `merge`
+      // answers a refused ownership check with NOT_FOUND, the same answer
+      // `mergePreview` gives, so the destructive action cannot discriminate
+      // "not yours" from "not there" where the read it previews refuses to.
+      // The message is asserted too, because the point of the mapping is
+      // that the repository's own sentence — which names the caller's
+      // userId and both ids — no longer reaches the client.
       name: 'TRPCError',
-      code: 'INTERNAL_SERVER_ERROR',
+      code: 'NOT_FOUND',
+      message: 'Vendor not found',
     });
     // The merge input schema has no userId field at all, so this pins
     // that the value reaching the boundary is the AUTHENTICATED caller's

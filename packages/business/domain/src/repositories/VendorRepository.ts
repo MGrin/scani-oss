@@ -616,7 +616,10 @@ export class VendorRepository extends BaseRepository<Vendor, NewVendor> {
    * guard: `merge` is reachable from a mutation that takes two raw ids
    * off the client, and without this check one user could fold another
    * user's vendor into their own — reading its aliases, then deleting it
-   * — by simply guessing or enumerating an id.
+   * — by simply guessing or enumerating an id. It refuses with
+   * `VendorNotFoundError`, which is the class's documented job: "no such
+   * vendor" and "belongs to someone else" are one answer all the way out
+   * to the client.
    *
    * CALLERS MUST PASS `transaction`. The writes below (dedup delete,
    * alias reassignment, payment reassignment, extraction reassignment,
@@ -644,9 +647,14 @@ export class VendorRepository extends BaseRepository<Vendor, NewVendor> {
           and(eq(schema.vendors.userId, userId), inArray(schema.vendors.id, [intoId, fromId]))
         );
       if (owned.length !== 2) {
-        throw new Error(
-          `Cannot merge vendors: ${intoId} and ${fromId} must both belong to user ${userId}`
-        );
+        // `VendorNotFoundError`, not a plain `Error`, so `vendors.merge` can
+        // map THIS refusal by type and let everything else through as the
+        // 500 it is — the shape `updateForUser` and `deleteForUser` already
+        // give their callers. Naming the id that is not the caller's
+        // discloses nothing: they supplied both.
+        const ownedIds = new Set(owned.map((row) => row.id));
+        const unowned = [intoId, fromId].find((id) => !ownedIds.has(id));
+        throw new VendorNotFoundError(unowned ?? fromId);
       }
 
       // An alias with the same raw_name may already exist under `intoId`

@@ -346,10 +346,40 @@ export const vendorsRouter = router({
           message: 'Cannot merge a vendor into itself',
         });
       }
-      await withTransaction(
-        (tx) => Container.get(VendorRepository).merge(ctx.userId, input.intoId, input.fromId, tx),
-        { name: 'vendors.merge' }
-      );
+      try {
+        await withTransaction(
+          (tx) => Container.get(VendorRepository).merge(ctx.userId, input.intoId, input.fromId, tx),
+          { name: 'vendors.merge' }
+        );
+      } catch (error) {
+        // NOT_FOUND, the same answer `mergePreview` gives, and for the same
+        // reason rather than by imitation (SC-885).
+        //
+        // The case for a DISTINCT code here is that a caller who reached the
+        // confirm dialog has already been told both vendors exist, so hiding
+        // that from them protects nothing. That is true of the honest caller
+        // and false of the only caller the code is chosen for: this is a
+        // `protectedProcedure` reachable with two guessed uuids and no
+        // preview call, so a discriminating answer would make the
+        // destructive action a better probe than the read `mergePreview`
+        // was deliberately written to close — same two ids, same shape, and
+        // now the reply says which of them is somebody's.
+        //
+        // It is also the right answer for the honest caller. The one way a
+        // merge refuses ownership after a green preview is that a vendor was
+        // removed in between (another tab, another device), and "Vendor not
+        // found" is precisely what happened.
+        //
+        // Typed, NOT `mergePreview`'s bare catch: that one swallows a
+        // Postgres failure too, which on a read is a wrong answer and on
+        // this transaction would report a broken write as "Vendor not
+        // found" — a settled answer over a non-result. Anything that is not
+        // the ownership refusal stays the 500 it is.
+        if (error instanceof VendorNotFoundError) {
+          throw new TRPCError({ code: 'NOT_FOUND', message: 'Vendor not found' });
+        }
+        throw error;
+      }
       return { ok: true as const };
     }),
 });
