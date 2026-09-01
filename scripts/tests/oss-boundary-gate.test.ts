@@ -173,6 +173,17 @@ describe('SC-838 · the OSS boundary gate is wired to be able to refuse', () => 
     // The denominator, so a run that read nothing cannot look like one that
     // read everything (SC-771).
     expect(step?.run).toContain('non-merge commit(s)');
+    // THE MERGE BASE, not `base.sha`, which is the base branch's TIP and need
+    // not be an ancestor of what was checked out. Pinned because the shorter
+    // form reads correct.
+    //
+    // It is NOT what fixed the 283-commit range this job's own pull request
+    // first reported — there the merge base and `base.sha` were the same
+    // commit, and the cause was a branch cut from a lineage the force-push of
+    // 2026-09-01 had rewritten away. Recorded here because a reader who finds
+    // that number in the history will otherwise credit it to this line.
+    expect(step?.run).toContain('git merge-base');
+    expect(step?.run).not.toMatch(/rev-list --no-merges "\$\{PR_BASE\}\.\./);
   });
 
   /**
