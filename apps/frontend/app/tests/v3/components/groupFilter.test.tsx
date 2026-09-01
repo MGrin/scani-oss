@@ -9,7 +9,7 @@ import { holdingsValue } from '../../../src/v3/lib/holdings';
 /**
  * SC-385, and still the same pin after SC-386. `/holdings?group=<id>` is what
  * an allocation row on the dashboard opens, and the figure it puts at the top
- ***REMOVED***
+ * has to be the figure the row was showing. They disagreed materially on
  * production for weeks because the two sides answered "who is in this group"
  * differently: the card unioned `holding_groups` with the `account_groups`
  * cache, the list read the row's own `groups`. The server answers it once now

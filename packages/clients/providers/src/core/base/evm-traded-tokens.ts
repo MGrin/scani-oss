@@ -20,10 +20,10 @@
 //
 // The signature separates them structurally: those legs sit in transactions the
 // wallet never signed, and the attacker cannot forge that. Measured on
-***REMOVED***
-***REMOVED***
-***REMOVED***
-***REMOVED***
+// production 2026-08-18 across every EVM wallet account on four chains: over
+// half the non-zero ERC-20 legs were dropped. The great majority of those are
+// unsigned arrivals, but a minority are real positions carrying real realized
+// PnL. `docs/technical/2026-08-18_sc398-findonly-drops.md`.
 
 /** One token's movements through one wallet, reduced to what the verdict needs. */
 export interface TokenMovements {

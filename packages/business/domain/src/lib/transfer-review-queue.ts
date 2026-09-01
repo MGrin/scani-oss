@@ -28,7 +28,7 @@ export function pendingPredicate(userId: string) {
     // `isConfirmedDisposal` books the same nothing. Asking about one spends
     // the reader's attention on a question with one answer (SC-346).
     //
-    ***REMOVED***
+    // It is a hundred or so rows in production, every one an `etherscan` USDC/USDT
     // `tokentx` row, and THEY ARE CORRECTLY ZERO. A zero-value
     // `transferFrom` costs an attacker nothing and emits a real `Transfer`
     // log on the real USDC/USDT contract, so address poisoning sprays them
