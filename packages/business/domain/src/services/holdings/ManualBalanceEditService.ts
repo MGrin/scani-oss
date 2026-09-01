@@ -1,7 +1,12 @@
 import type { DatabaseTransaction } from '@scani/db';
 import type { Holding } from '@scani/db/schema';
 import { createComponentLogger } from '@scani/logging';
-import { isManualEditCause, type ManualEditCause, manualEditNeedsCause } from '@scani/shared';
+import {
+  feeFitsMovement,
+  isManualEditCause,
+  type ManualEditCause,
+  manualEditNeedsCause,
+} from '@scani/shared';
 import Decimal from 'decimal.js';
 import { Container, Service } from 'typedi';
 import { HoldingBalanceObservationRepository } from '../../repositories/HoldingBalanceObservationRepository';
@@ -24,6 +29,42 @@ export const MANUAL_EDIT_CORRECTION_SOURCE = 'user-balance-correction';
 /** The dedup key every row this service writes is addressed by. */
 function manualEditExternalId(editedAt: Date): string {
   return `manual-edit:${editedAt.toISOString()}`;
+}
+
+/**
+ * The FEE row's dedup key, derived from the row it was carved out of
+ * (SC-857).
+ *
+ * Suffixed from the withdrawal's own key rather than given one of its own,
+ * which is the convention `StatementTransactionIngester` already writes fees
+ * under: `bulkUpsert` keys on `(holding_id, source, external_id)`, so a
+ * retried submission collapses onto the same two rows the first one wrote,
+ * and `undoDeclaredTransfer` can find the fee from the leg it is undoing
+ * without a third column to carry the relationship.
+ *
+ * Exported for the reason `manualEditFlowLeg` is: `TransferReviewService` has
+ * to find these rows after they were written, and a second assembly of the
+ * key there is one free to drift from this one — which would fail silently in
+ * the worst direction, an undo reporting success having left a charge behind.
+ */
+export function manualEditFeeExternalId(flowExternalId: string): string {
+  return `${flowExternalId}:fee`;
+}
+
+/**
+ * The fee stated on a movement was not smaller than the movement itself.
+ *
+ * Refused rather than clamped, for the reason `undoDeclaredTransfer` gives
+ * about not clamping a negative destination: silently absorbing the
+ * difference produces a figure nobody chose and leaves nothing on screen
+ * saying it happened. A fee equal to the whole movement also leaves no
+ * transfer to declare, and a larger one would flip the withdrawal's sign.
+ */
+export class ManualEditFeeRefused extends Error {
+  constructor(fee: string, delta: string) {
+    super(`A fee of ${fee} is not smaller than the ${delta} that moved`);
+    this.name = 'ManualEditFeeRefused';
+  }
 }
 
 /**
@@ -66,6 +107,15 @@ export interface ManualBalanceEditInput {
    * from `occurredAt`, which is when the money moved.
    */
   editedAt: Date;
+  /**
+   * How much of a negative `flow` was a fee rather than a movement (SC-857).
+   *
+   * Unsigned and strictly smaller than the delta. Read only for a `flow`
+   * whose delta is negative — a fee is a charge on money going out, and a
+   * `correction` restating a figure or a `growth` that writes no row has
+   * nothing for it to be part of.
+   */
+  fee?: Decimal;
 }
 
 export interface ManualBalanceEditResult {
@@ -85,6 +135,17 @@ export interface ManualBalanceEditResult {
    */
   transactionId: string | null;
   occurredAt: Date | null;
+  /**
+   * The `fee` row this wrote, or null when the edit carried none (SC-857).
+   *
+   * Returned for the same reason `transactionId` is: the caller settles what
+   * the movement MEANT in this transaction, and for a declared transfer that
+   * means subtracting the fee from what reaches the destination. Handing back
+   * the amount that was actually carved out — rather than letting the caller
+   * re-read its own input — keeps one arithmetic authority, so a fee this
+   * service declined to honour cannot silently shrink an arrival.
+   */
+  fee: { transactionId: string | null; quantity: Decimal } | null;
   /** Why nothing was written, when `kind` is null. */
   skipped: 'no-delta' | 'growth-needs-no-row' | null;
 }
@@ -211,6 +272,7 @@ export class ManualBalanceEditService {
         kind: null,
         occurredAt: null,
         transactionId: null,
+        fee: null,
         skipped: 'no-delta',
       };
     }
@@ -222,6 +284,7 @@ export class ManualBalanceEditService {
         kind: null,
         occurredAt: null,
         transactionId: null,
+        fee: null,
         skipped: 'growth-needs-no-row',
       };
     }
@@ -234,6 +297,27 @@ export class ManualBalanceEditService {
     const kind =
       cause === 'correction' ? 'correction' : delta.isPositive() ? 'deposit' : 'withdraw';
 
+    // How much of this movement was a charge rather than a movement (SC-857).
+    //
+    // Only a negative `flow` can carry one: a `correction` restates a figure
+    // that was never paid and a `growth` returned above without writing
+    // anything, so honouring a fee on either would attach a charge to an event
+    // that did not happen. A caller sending one there gets it dropped rather
+    // than refused, because the two paths that pass this field only ever set
+    // it beside a declared transfer's withdrawal.
+    const fee = cause === 'flow' && delta.isNegative() ? (input.fee ?? null) : null;
+    if (fee && !feeFitsMovement(fee, delta)) {
+      throw new ManualEditFeeRefused(fee.toString(), delta.abs().toString());
+    }
+
+    const flowExternalId = manualEditExternalId(editedAt);
+    // Carved OUT of the movement, never added beside it. The rows this writes
+    // must sum to the delta the anchor moved by, or
+    // `OpeningBalanceReconciliationService` — which computes
+    // `holdings.balance - sum(real txs)` — synthesizes a phantom
+    // `opening_balance` for the difference on this very holding.
+    const movement = fee ? delta.add(fee) : delta;
+
     const written = await this.transactionRepository.bulkUpsert(
       [
         {
@@ -241,7 +325,7 @@ export class ManualBalanceEditService {
           holdingId: holding.id,
           tokenId: holding.tokenId,
           kind,
-          quantity: delta.toString(),
+          quantity: movement.toString(),
           occurredAt,
           source: cause === 'correction' ? MANUAL_EDIT_CORRECTION_SOURCE : MANUAL_EDIT_FLOW_SOURCE,
           // Keyed on the EDIT instant, not on the date the user gave. The
@@ -249,7 +333,7 @@ export class ManualBalanceEditService {
           // deposits can share a date; the edit instant is what makes a
           // retried mutation collapse onto its own row and two real edits
           // stay two rows.
-          externalId: manualEditExternalId(editedAt),
+          externalId: flowExternalId,
           sourceMetadata: {
             cause,
             previousBalance: input.previousBalance,
@@ -261,9 +345,58 @@ export class ManualBalanceEditService {
             ...(cause === 'flow' ? { userSuppliedDate: input.occurredAt.toISOString() } : {}),
           },
         },
+        // The fee as its OWN ledger row, not `fee_quantity` on the one above.
+        //
+        // `fee_quantity` is a sidecar and nothing sums it — the same reason
+        // `StatementTransactionIngester` gives, and the reason this follows
+        // that ingester's shape down to the `:fee` key suffix. Balance-at-time
+        // and the opening-balance reconciler add up `quantity` alone, so a fee
+        // written into the sidecar would be visible in the CSV export and
+        // absent from every figure that matters.
+        //
+        // It also makes the hand-entered record match the IMPORTED one. The
+        // Airwallex importer already writes a -16.85 beside each incoming
+        // 5,617.60, and a person reconciling by hand entered the net 5,600.75
+        // — a one-to-two relation no pairwise matcher can express, and the
+        // reason SC-858 refused to ship one. Two record-keepers describing one
+        // movement the same way is what makes them comparable at all.
+        ...(fee
+          ? [
+              {
+                userId: holding.userId,
+                holdingId: holding.id,
+                tokenId: holding.tokenId,
+                kind: 'fee' as const,
+                quantity: fee.neg().toString(),
+                // Same instant as the movement it was charged on. The ledger
+                // is ordered by `occurred_at`, and a fee that sorts away from
+                // the payment that incurred it reads as an unexplained charge.
+                occurredAt,
+                source: MANUAL_EDIT_FLOW_SOURCE,
+                externalId: manualEditFeeExternalId(flowExternalId),
+                sourceMetadata: {
+                  cause,
+                  editedAt: editedAt.toISOString(),
+                  // Which row this was carved out of, in the data rather than
+                  // only in the key, so a reader who has one row does not have
+                  // to know the suffix convention to find the other.
+                  feeForExternalId: flowExternalId,
+                },
+              },
+            ]
+          : []),
       ],
       transaction
     );
+
+    // By key, never by index. `returning()` on a multi-row insert makes no
+    // promise about order, and reading `rows[0]` as "the movement" would put
+    // the transfer's group id on the fee the day Postgres returns them the
+    // other way round.
+    const movementRow = written.rows.find((row) => row.externalId === flowExternalId);
+    const feeRow = fee
+      ? written.rows.find((row) => row.externalId === manualEditFeeExternalId(flowExternalId))
+      : undefined;
 
     logger.info(
       {
@@ -271,6 +404,8 @@ export class ManualBalanceEditService {
         cause,
         kind,
         delta: delta.toString(),
+        movement: movement.toString(),
+        fee: fee?.toString() ?? null,
         occurredAt: occurredAt.toISOString(),
       },
       'Synthesized transaction for manual balance edit'
@@ -281,7 +416,8 @@ export class ManualBalanceEditService {
       delta,
       kind,
       occurredAt,
-      transactionId: written.rows[0]?.id ?? null,
+      transactionId: movementRow?.id ?? null,
+      fee: fee ? { transactionId: feeRow?.id ?? null, quantity: fee } : null,
       skipped: null,
     };
   }

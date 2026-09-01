@@ -10,6 +10,7 @@ import {
   HoldingQueryService,
   HoldingService,
   ManualBalanceEditService,
+  ManualEditFeeRefused,
   RealizedLedgerService,
 } from '@scani/domain/services';
 import {
@@ -178,6 +179,13 @@ export const holdingsRouter = router({
             // Both are things the reader can act on, and the edit was rolled
             // back — so this is a refusal, not a 500 over a lost balance.
             if (error instanceof ManualOutflowAnswerRefused) {
+              throw new TRPCError({ code: 'BAD_REQUEST', message: error.message });
+            }
+            // A stated fee that was not smaller than the movement it was
+            // charged on (SC-857). Same class of thing as the refusal above —
+            // an answer the reader gave that cannot be honoured, with the edit
+            // rolled back — so it gets the same treatment rather than a 500.
+            if (error instanceof ManualEditFeeRefused) {
               throw new TRPCError({ code: 'BAD_REQUEST', message: error.message });
             }
             if (error instanceof HoldingLabelTakenError) {
