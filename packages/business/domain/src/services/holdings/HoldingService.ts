@@ -144,8 +144,9 @@ export class HoldingService extends BaseService {
   // comment is why nobody looked: `UpdateHoldingUseCase` — the only path a
   // user can edit a MANUAL holding's balance through — wrote the table
   // directly and never reached this service. Measured on production
-  ***REMOVED***
-  ***REMOVED***
+  // 2026-08-15: zero missing observations across every synced holding,
+  // several across the manual ones, and a material amount of unrecorded
+  // drift. A clean
   // partition along the one write path that skipped the service (SC-245).
   //
   // `recordBalanceObservation` below is public so that path can satisfy

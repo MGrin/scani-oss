@@ -158,9 +158,9 @@ describe('GroupRepository', () => {
    * 2026-08-18 — the account is in the group, and so is what it receives — so
    * the row is true again and the arrival is in the group by it.
    *
-   ***REMOVED***
-   ***REMOVED***
-   ***REMOVED***
+   * On production this is the Airwallex cash and a batch of airdrops joining
+   * Liquid, moving the group's figure on BOTH surfaces rather than on the
+   * dashboard alone.
    */
   test('a holding created after the account joined a group IS in it, by the account rule', async () => {
     await withTestDb(async (tx) => {
