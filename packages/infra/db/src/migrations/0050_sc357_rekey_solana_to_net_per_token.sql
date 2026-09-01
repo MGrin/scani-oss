@@ -1,5 +1,6 @@
--- SC-357. The Solana ledger holds 474 rows describing 229 transactions, and
--- its net SOL is 3.4x what the wallet has ever held. `SolanaProvider` replayed
+-- SC-357. The Solana ledger holds several hundred rows describing a couple of
+-- hundred transactions, and its net SOL is several times what the wallet has
+-- ever held. `SolanaProvider` replayed
 -- Helius transfer LEGS, and several of a transaction's legs are the same money
 -- seen from different sides: a wrap moves lamports into the wallet's own WSOL
 -- account and then moves WSOL out of it, WSOL resolves to the same token
@@ -11,28 +12,24 @@
 -- (`<signature>-native-3`, `<signature>-token-0`) to one-per-token-per-
 -- transaction (`<signature>-net-native`, `<signature>-net-<mint>`). Nothing
 -- upserts onto the old keys any more, so the old rows would sit beside the new
--- ones forever, and the ledger would then be 3.4x wrong PLUS a duplicate of
--- itself. They have to go, and this archives them before they do.
+-- ones forever, and the ledger would then be wrong by that same multiple PLUS
+-- a duplicate of itself. They have to go, and this archives them before they
+-- do.
 --
--- MEASURED read-only against production 2026-08-17, by re-fetching the full
--- Helius enhanced history for both Solana wallets (312 transactions) and
--- projecting it both ways:
---
---     net SOL, leg replay (today's ledger)     +7.016826988
---     net SOL, netted from accountData         +2.053715427
---     net SOL, `getBalance` right now           2.053650427
---
--- The netted projection lands 0.000065 SOL from the balance the chain reports
--- — 13 transaction fees' worth, on transactions Helius's enhanced feed does
--- not return — against a leg replay that was 4.96 SOL over. 111 of the 226
+-- MEASURED read-only, by re-fetching the full Helius enhanced history for the
+-- affected Solana wallets and projecting it both ways. The leg replay — which
+-- is what today's ledger holds — comes out several times the balance the chain
+-- reports. The netted projection from `accountData` lands within a rounding
+-- error of what `getBalance` returns: a handful of transaction fees' worth, on
+-- transactions Helius's enhanced feed does not return. Around half the
 -- signatures carrying SOL have the wrong total today.
 --
--- ►► WHOSE ANSWERS THIS DROPS, AND WHY IT IS ALLOWED TO. 243 of the 474 rows
+-- ►► WHOSE ANSWERS THIS DROPS, AND WHY IT IS ALLOWED TO. About half the rows
 --    carry a `transfer_review`. NONE is attributable: zero have
 --    `transfer_reviewed_at`, zero have `transfer_review_source`. They are part
---    of the 560-row raw UPDATE of 2026-08-14 whose provenance SC-302 and
---    SC-324 both failed to establish — nobody is recorded as having decided
---    any of them. mgrin's own answers are all `etherscan`, none is touched
+--    of one untraced bulk UPDATE whose provenance SC-302 and SC-324 both
+--    failed to establish — nobody is recorded as having decided any of them.
+--    The answers that ARE attributable are all `etherscan`, none is touched
 --    here, and the postcondition below re-counts them rather than trusting
 --    that. If any Solana row has acquired an ATTRIBUTED answer since the
 --    measurement, this migration raises and stops: an answer someone gave is
@@ -44,43 +41,43 @@
 --    the new key is the signature plus `holdings.external_id`, which for a
 --    Solana holding is literally `'native'` or the mint — the same two values
 --    the provider keys on, written by the same provider's `fetchBalances`. So
---    "which new row absorbed this answer" stays answerable for all 474.
---    472 of them name a key the re-import will write. The other two are both
---    legs of `3JWxWwtVQWyy…`, an ATA rent deposit and its refund, whose SOL
---    net is exactly zero — the transaction moved nothing and will have no row.
+--    "which new row absorbed this answer" stays answerable for every archived
+--    row. Nearly all of them name a key the re-import will write. The only
+--    exceptions are the two legs of one signature — an ATA rent deposit and
+--    its refund — whose SOL net is exactly zero: the transaction moved nothing
+--    and will have no row.
 --
--- ►► THE 16 GROUPED ROWS ARE ARTIFACTS OF THE BUG, AND ARE NOT REPRODUCED.
---    All 8 transfer groups pair a 0.00203928 SOL ATA rent deposit against its
---    own refund (7 groups) or a 0.000096663 WSOL round trip (1 group). Both
---    shapes net to zero inside their transaction under the new projection, so
---    the rows do not survive to be re-paired and the matcher has nothing to
---    match. Five of the eight are worse than redundant: they pair legs from
---    DIFFERENT signatures — `1cb32f50` links a rent credit on `5xJ4qMfy…` to a
---    rent debit on `FsRgsfNV…` — which the matcher only did because rent is
---    always the same number. None carries an answer, none is mgrin's, and none
---    should exist. No `transfer_group_id` is lost that named a real transfer.
+-- ►► THE GROUPED ROWS ARE ARTIFACTS OF THE BUG, AND ARE NOT REPRODUCED.
+--    Every transfer group pairs an ATA rent deposit against its own refund, or
+--    else a WSOL round trip. Both shapes net to zero inside their transaction
+--    under the new projection, so the rows do not survive to be re-paired and
+--    the matcher has nothing to match. Most of the groups are worse than
+--    redundant: they pair legs from DIFFERENT signatures — a rent credit on
+--    one transaction against a rent debit on an unrelated one — which the
+--    matcher only did because rent is always the same number. None carries an
+--    attributable answer, and none should exist. No `transfer_group_id` is
+--    lost that named a real transfer.
 --
 -- ►► THIS MIGRATION LEAVES THE SOLANA LEDGER EMPTY, AND NOTHING REFILLS IT ON
 --    A SCHEDULE. `SyncExchangeTransactionsUseCase` skips `crypto_wallet`
 --    institutions outright, so a wallet's transaction history has never been
 --    re-imported since its initial wallet import — which is separately why the
---    ledger is missing 29 movements the chain shows, including a 2250.002 USDC
---    outflow on 2026-06-22 that left `Y38VPD4d…` holding 0.0001 USDC while the
---    ledger says 2250.002. The re-import is therefore a REQUIRED step, not a
---    convenience, and it must be run immediately after this deploys:
+--    ledger is missing movements the chain shows, including a stablecoin
+--    outflow that emptied a holding while the ledger still reports its
+--    pre-outflow balance. The re-import is therefore a REQUIRED step, not a
+--    convenience, and it must be run immediately after this deploys, naming
+--    the affected holding ids:
 --
---        bun scripts/reimport-wallet-transactions.ts --apply \
---          d9fdbfb4-d58b-4d6d-bcdd-e4df815766d4 \
---          6cc19864-ee11-41d6-9d4b-b42920d7dfb7
+--        bun scripts/reimport-wallet-transactions.ts --apply <holding-id>…
 --
---    It writes 257 rows: 252 SOL and 5 USDC. `holdings.balance` is anchored by
+--    It rewrites the ledger from the chain. `holdings.balance` is anchored by
 --    the balance sync and not derived from this ledger, so the portfolio's
 --    value stays correct throughout; what is empty in between is the history
 --    cost basis is built from.
 --
--- ►► COVERAGE IS RETRACTED RATHER THAN LEFT LYING. Both holdings claim
---    `has_complete_tx_history`, and one carries an opening balance of
---    -5.795743451 with a note explaining that its history "does not reach far
+-- ►► COVERAGE IS RETRACTED RATHER THAN LEFT LYING. The affected holdings
+--    claim `has_complete_tx_history`, and one carries a NEGATIVE opening
+--    balance with a note explaining that its history "does not reach far
 --    enough back". Both statements are about a ledger that stops existing
 --    three statements from here, and the negative opening balance is itself an
 --    artifact of the double count. The re-import rewrites all of it.
@@ -89,8 +86,8 @@ BEGIN;
 
 -- The prior state, kept rather than described. A `transfer_review` cannot be
 -- restored from a row that is gone, and the question SC-302 spent four
--- investigations on — what were those 243 answers, and what did they attach
--- to — has to stay answerable after this.
+-- investigations on — what were those unattributed answers, and what did they
+-- attach to — has to stay answerable after this.
 CREATE TABLE IF NOT EXISTS "_sc357_solana_rekey_20260817" (
   "id"                     uuid PRIMARY KEY,
   "holding_id"             uuid NOT NULL,
@@ -171,10 +168,10 @@ BEGIN
     RAISE EXCEPTION 'SC-357: % solana row(s) survived the delete', n;
   END IF;
 
-  -- Nothing outside `solana` may move. The answers that ARE mgrin's are all
-  -- `etherscan`, and two repairs wrote to that source the same day this was
-  -- written (SC-350, SC-354), so this re-counts them rather than assuming the
-  -- WHERE clause held.
+  -- Nothing outside `solana` may move. The answers that ARE attributable are
+  -- all `etherscan`, and two repairs wrote to that source alongside this one
+  -- (SC-350, SC-354), so this re-counts them rather than assuming the WHERE
+  -- clause held.
   SELECT count(*) INTO n
     FROM "holding_transactions"
    WHERE "source" <> 'solana' AND "transfer_review" IS NOT NULL;

@@ -1,11 +1,11 @@
 -- SC-330. A short user-given name for a position, so an account can hold
 -- several rows for one token and the user can tell them apart.
 --
--- Production account 4c2e5436 (Tinkoff) holds four hand-entered RUB rows —
--- four real products on one bank screen, each maintained separately. Before
--- this column the only thing distinguishing them was their balance, which is
--- why a second screenshot on 2026-07-05 proposed 284767.31 for the pot that
--- actually held 5683.47: the AI had four identical "Russian Ruble" rows and
+-- A real bank account holds several hand-entered rows for one currency —
+-- several distinct products on one bank screen, each maintained separately.
+-- Before this column the only thing distinguishing them was their balance,
+-- which is why a later screenshot proposed one product's balance for a
+-- different one entirely: the AI had several identically-named rows and
 -- nothing to match on but order.
 --
 -- NULL is the ordinary case and stays the ordinary case: an account with one
@@ -15,6 +15,6 @@
 --
 -- No index and no constraint deliberately. Migration 0043's key covers rows an
 -- importer addresses; this one is about rows only a human addresses, and the
--- four rows already in production share an empty label. A unique index here
--- would fail against them on the first deploy.
+-- rows that already exist all share an empty label. A unique index here would
+-- fail against them on the first deploy.
 ALTER TABLE "holdings" ADD COLUMN IF NOT EXISTS "label" text;

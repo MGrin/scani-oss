@@ -145,7 +145,7 @@ describe('repeatedHoldingTokenIds', () => {
       { uid: 'a', tokenId: 'tok-rub', tokenLabel: 'RUB', balance: '3053.60', label: 'Current' },
       { uid: 'b', tokenId: 'tok-rub', tokenLabel: 'RUB', balance: '54121.34', label: 'Savings' },
       { uid: 'c', tokenId: 'tok-rub', tokenLabel: 'RUB', balance: '69428.89', label: 'Deposit' },
-      { uid: 'd', tokenId: 'tok-rub', tokenLabel: 'RUB', balance: '5683.47', label: 'Cashback' },
+      { uid: 'd', tokenId: 'tok-rub', tokenLabel: 'RUB', balance: '1500.15', label: 'Cashback' },
     ];
     expect(describeManualEntryBlockers(t, draft({ holdings: pots }))).toEqual([]);
   });

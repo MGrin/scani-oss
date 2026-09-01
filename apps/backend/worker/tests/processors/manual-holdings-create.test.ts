@@ -12,7 +12,7 @@
  *   `onTerminalFailure`, which skips UnrecoverableError. Somebody entering
  *   RUB twice must not page Sentry.
  * - The message names symbols. The domain layer only has uuids, and a
- *   sentence reading `5a1daef4-…` is one nobody can act on.
+ *   sentence reading a bare uuid is one nobody can act on.
  */
 
 import { afterEach, describe, expect, test } from 'bun:test';
@@ -36,8 +36,8 @@ const JOB: ManualHoldingsCreateJob = {
   baseCurrencyId: 'token-usd',
   accountId: 'acct-1',
   newHoldings: [
-    { tokenId: 'token-rub', balance: '55120.85' },
-    { tokenId: 'token-rub', balance: '5413.77' },
+    { tokenId: 'token-rub', balance: '2000.20' },
+    { tokenId: 'token-rub', balance: '4000.40' },
   ],
   updateHoldings: [],
 } as ManualHoldingsCreateJob;

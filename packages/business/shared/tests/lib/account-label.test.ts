@@ -14,9 +14,9 @@ import { accountLabel, accountLabelParts } from '../../src/lib/account-label';
 
 describe('accountLabelParts — the three it strips', () => {
   test('an exact match collapses to one cell, never an empty one', () => {
-    // `Airwallex · Airwallex` and `Edge Capital · Edge Capital`, both real rows
-    // off app.scani.xyz. `{ institution: 'Airwallex', name: '' }` would render
-    // as a dim prefix followed by nothing, which reads as a rendering failure.
+    // An institution whose account name repeats it, which is a shape real rows
+    // take. `{ institution: 'Airwallex', name: '' }` would render as a dim
+    // prefix followed by nothing, which reads as a rendering failure.
     expect(accountLabelParts('Airwallex', 'Airwallex')).toEqual({
       institution: null,
       name: 'Airwallex',

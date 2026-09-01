@@ -130,8 +130,9 @@ export const portfolioValueDaily = pgTable(
     // INTERPOLATED across a gap between two observations the ledger does not
     // explain (SC-475 fault B). Before that fix the whole unexplained
     // difference landed on the single day the anchor rolled over from one
-    // observation to the next — production put 19,575.27 of drift on one day
-    // and a chained daily return read it as a 22% loss on cash.
+    // observation to the next — a real account put months of accumulated
+    // drift on one day and a chained daily return read it as a double-digit
+    // percentage loss on cash.
     //
     // The number on such a row is therefore partly DRAWN rather than
     // measured: a straight line between two observations. Nothing surfaces

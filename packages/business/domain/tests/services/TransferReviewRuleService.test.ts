@@ -516,7 +516,7 @@ describe('TransferReviewRuleService — payment descriptions', () => {
     const result = await service().create(f.userId, {
       transactionId: authored,
       verdict: 'not_a_disposal',
-      note: 'Amara Permata',
+      note: 'Amara Sitanggang',
     });
 
     expect(result.ok).toBe(true);
@@ -530,7 +530,7 @@ describe('TransferReviewRuleService — payment descriptions', () => {
     expect(result.rule.affectedCount).toBe(2);
   });
 
-  test("two rules cover all 12 of production's dividend payments", async () => {
+  test('two rules cover every dividend payment in the set', async () => {
     const f = fixture!;
     for (const [i, description] of [...OWNER, ...AMARA].entries()) {
       await payment(f, `p-all-${i}`, description);
@@ -569,10 +569,10 @@ describe('TransferReviewRuleService — payment descriptions', () => {
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    // `Dividents` is a real string in production, on 2 of the 14 rows. Closing
-    // that gap needs edit distance, and edit distance over a field an attacker
-    // writes is the hole this ticket refused to open. Matching 12 of 14 is the
-    // transformation; the last two are typed again.
+    // `Dividents` is a real typo in the source data, on a couple of the rows.
+    // Closing that gap needs edit distance, and edit distance over a field an
+    // attacker writes is the hole this ticket refused to open. Matching all
+    // but those is the transformation; the stragglers are typed again.
     expect(result.rule.matchCounterparty).toBe('teodor vance (dividents)');
     expect(result.rule.affectedCount).toBe(1);
   });
@@ -582,12 +582,12 @@ describe('TransferReviewRuleService — payment descriptions', () => {
     // The other two shapes production's `counterparty` carries. Neither begins
     // with a `Pay <amount> <CCY> to ` preamble, so neither is touched: the
     // pattern is anchored and complete, not a search for the word "to".
-    const deposit = await payment(f, 'p-prose-1', 'Deposit to account 7949949259');
-    const invoice = await payment(f, 'p-prose-2', 'INVOICE 136 , WITHFLARE LTD');
+    const deposit = await payment(f, 'p-prose-1', 'Deposit to account 1234567890');
+    const invoice = await payment(f, 'p-prose-2', 'INVOICE 42 , EXAMPLE LTD');
 
     for (const [txId, expected] of [
-      [deposit, 'deposit to account 7949949259'],
-      [invoice, 'invoice 136 , withflare ltd'],
+      [deposit, 'deposit to account 1234567890'],
+      [invoice, 'invoice 42 , example ltd'],
     ] as const) {
       const result = await service().create(f.userId, {
         transactionId: txId,

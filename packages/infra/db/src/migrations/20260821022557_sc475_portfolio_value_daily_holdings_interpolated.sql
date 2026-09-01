@@ -6,10 +6,11 @@
 -- there. Where two consecutive observations differ by more than the
 -- transactions between them explain, the whole difference used to land on
 -- the single day the anchor rolled over from one observation to the next.
--- Production held exactly that: an Edge Capital USD holding with two
--- observations 71 days apart and no transaction between them fell 19,575.27
--- on 2026-05-17, and the chained daily return read a 22% loss on cash. Ten
--- weeks of drift on one day.
+-- A real account held exactly that: a cash holding whose two observations sat
+-- months apart with no transaction between them dropped the entire accumulated
+-- difference on the single day the anchor rolled over, and the chained daily
+-- return read a double-digit percentage loss on cash. Months of drift landing
+-- on one day.
 --
 -- That drift is now spread linearly across the gap. It is an improvement and
 -- it is also partly INVENTED — a straight line between two measurements,
@@ -22,9 +23,9 @@
 -- It deliberately does NOT feed `coverage_quality`, unlike every count added
 -- before it. Interpolating is strictly better than the cliff it replaces, and
 -- downgrading every day of every sparsely-observed holding would saturate a
--- bucket already saturated — `daysNotFullyCovered` reads 367 of 367 on a real
--- account, which is the failure SC-475 §7 records about the one coverage
--- signal the returns engine surfaces.
+-- bucket already saturated — `daysNotFullyCovered` reads every single day of
+-- the window on a real account, which is the failure SC-475 §7 records about
+-- the one coverage signal the returns engine surfaces.
 --
 -- NULLABLE, like `holdings_stale_anchored` (0037) and
 -- `holdings_before_records` (SC-317) and unlike the four counts before them:

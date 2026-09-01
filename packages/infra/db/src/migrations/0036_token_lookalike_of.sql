@@ -1,7 +1,7 @@
 -- SC-197. Tokens whose SYMBOL is built from lookalike characters — `UЅDС`
 -- with a Cyrillic Ѕ and С renders as `USDC` and is a different string.
--- Ten of these were in production on Polygon, 45% of that chain's token
--- set, indistinguishable in every surface that prints a symbol.
+-- A cluster of these turned up on Polygon, a large fraction of that chain's
+-- token set, indistinguishable in every surface that prints a symbol.
 --
 -- The column holds the ASCII symbol the token PRESENTS AS, so a reader
 -- (or a UI) can say what it is impersonating rather than only that it is

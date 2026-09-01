@@ -8,9 +8,9 @@ import { JOB_NAMES } from '../job-names';
 // A position split across two rows can therefore carry the same event twice,
 // once on each, and no constraint objects. Nothing detected this: each holding
 // reconciles to its own synthesized opening anchor, so every per-holding
-// consistency check passes while the money is counted twice. SC-239 sat in
-// production for months on exactly that (24 Airwallex events, 44,340.05 USD)
-// and was found by hand while working an unrelated ticket.
+// consistency check passes while the money is counted twice. SC-239 sat
+// undetected for months on exactly that — an account's whole event history
+// counted twice — and was found by hand while working an unrelated ticket.
 //
 // Runs at 04:30, after the nightly chain (historical-price-backfill 03:00,
 // forex 03:30, transfer-linking 03:45, portfolio-value-rollup 04:00) has
