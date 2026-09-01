@@ -102,7 +102,7 @@ describe('GroupValuationService.valueByGroup', () => {
    * back into two answers.
    *
    * The dashboard's allocation card and the holdings list it opens are two
-   ***REMOVED***
+   * readings of one group, and they disagreed materially on production for
    * weeks because there were two membership resolutions. There is one now:
    * `GroupRepository.findGroupsForHoldings`, stubbed below, which is also what
    * `holdings.getWithDetails` puts on the wire. So this stub stands in for both
@@ -112,8 +112,8 @@ describe('GroupValuationService.valueByGroup', () => {
    * `(holding_groups ∪ the account's standing rule) − per-holding vetoes`, so
    * `h-new` — the Airwallex-shaped one, created after the account joined the
    * group — is in it. The card and the list BOTH move to the new figure. On
-   ***REMOVED***
-   * spells out.
+   * production Liquid's figure rises by what the account rule pulls in, which
+   * is what the fixture spells out.
    */
   test('the card and the holdings list agree on every group, including on what the account rule pulls in', async () => {
     const membership: Membership = { h1: ['g1'], h2: ['g1', 'g2'], 'h-new': ['g1'] };
@@ -134,8 +134,8 @@ describe('GroupValuationService.valueByGroup', () => {
       ]);
     }
     // Stated absolutely as well, so the pairing cannot pass by both sides being
-    ***REMOVED***
-    // figures the ticket names.
+    // wrong in the same direction: the pre-existing total plus what the account
+    // rule pulls in.
     expect(groups.map((entry) => entry.total.value)).toEqual(['53024.05', '250']);
     expect(ungrouped.value).toBe('0');
   });

@@ -69,7 +69,7 @@ export class ScamTokenDetectionService extends BaseService {
    * A URL needs a DOT, not a space (SC-275).
    *
    * This used to accept `[\s˳.]` before each TLD, so a space followed by
-   ***REMOVED***
+   * `to`, `me`, `net`, `app`… read as a domain. Measured against the
    * token names in production, that scored **`LooksRare Token`,
    * `Liquid Staking Token`, `BullRun Meme` and `Base Lotto` at 0.80** — over
    * the 0.35 gate, so excluded from every portfolio total, the holdings total

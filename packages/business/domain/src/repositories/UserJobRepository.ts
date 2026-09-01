@@ -304,9 +304,9 @@ export class UserJobRepository {
    * stripped the field before it reached the client. It stripped it in
    * TypeScript: `SELECT *` still detoasted up to 50 jsonb payloads per call
    * so the router could drop them, and that call is invalidated on **every
-   ***REMOVED***
-   ***REMOVED***
-   * ~13 MB out of Neon per invalidation.
+   * WS event during a recompute**. A wallet-import result for a large wallet
+   * measures hundreds of kilobytes (SC-145), so the discarded read was worth
+   * megabytes out of Neon per invalidation.
    *
    * That read is the concrete cost SC-155 set out to remove, and removing it
    * needs a column list rather than a second datastore — see the ticket's

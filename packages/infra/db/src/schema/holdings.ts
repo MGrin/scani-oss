@@ -203,22 +203,24 @@ export const holdingTransactions = pgTable(
     // representable states — stamped meant "the user, in the queue" and
     // unstamped meant "not through the queue at all" — and a correction Scani
     // makes on the user's behalf is neither. Writing the stamp would forge his
-    ***REMOVED***
-    ***REMOVED***
+    // answer; leaving it null would file the correction alongside the raw
+    // UPDATE this vocabulary exists to tell apart.
     //
     // NULL is the whole of the pre-SC-350 corpus and means the database does
     // not record who. Nothing is backfilled.
     //
     // THE LINE THAT WAS HERE PRESCRIBED THE DEFECT (SC-673). It read: *"read it
     // as `transfer_reviewed_at IS NOT NULL ? 'user' : 'unattributed'`"*, and
-    ***REMOVED***
-    ***REMOVED***
-    ***REMOVED***
+    // that reading was accurate for all but one row the day it was written —
+    // every write path set both columns together, and every answered row but
+    // one had no timestamp, so *stamped* and *a person answered* picked out the
+    // same rows.
     //
     // Rows then acquired timestamps without sources and it inverted, silently.
-    ***REMOVED***
-    ***REMOVED***
-    ***REMOVED***
+    // Measured on production 2026-08-26, over the `left_control` rows feeding
+    // observed burn: **most of the value decoded as `user`, while only a
+    // fraction of the rows carried a user stamp.** The prescription outlived
+    // the data shape that
     // made it true, and a schema comment is the worst place for that, because
     // it is where the NEXT reader goes for the vocabulary.
     //
@@ -236,7 +238,7 @@ export const holdingTransactions = pgTable(
     // is no longer on the row.
     //
     // Not merely "a rule did this". The sentence this whole feature exists to
-    ***REMOVED***
+    // preserve is mgrin's about the already-answered transfers — "I honestly
     // can not remember that anymore anyway" — and a row that cannot name the
     // rule cannot repeat back the note he wrote about the destination, which
     // is the only part of it he will still understand in three years.

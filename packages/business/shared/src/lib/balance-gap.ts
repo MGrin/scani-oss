@@ -99,29 +99,25 @@ export function isLedgerWritingAnswer(answer: BalanceGapAnswer): answer is Manua
  * The threshold is applied to `|drift| × price at the interval's end`,
  * converted to the owner's base currency — never to the raw quantity.
  *
- ***REMOVED***
+ * Measured on production 2026-08-22, three rows from the same population sit
+ * in three different units: a rouble cash drift with a large quantity and a
+ * negligible value, a dollar cash drift where quantity and value coincide, and
+ * a small share count worth several thousand dollars.
  *
- * | holding | drift (quantity) | in USD |
- * |---|---|---|
- * | Tinkoff RUB | 3,684.00 | ~40 |
- ***REMOVED***
- * | IBKR FXI | 172.85 (shares) | 6,236 |
- *
- ***REMOVED***
- ***REMOVED***
- ***REMOVED***
- ***REMOVED***
- ***REMOVED***
- ***REMOVED***
+ * A quantity threshold is wrong in both directions at once: it ranks the
+ * near-worthless rouble drift above a real dollar transfer, and it hides a
+ * several-thousand-dollar share movement behind a two-figure quantity. Any
+ * total quoted for this population as `SUM(ABS(drift))` with nothing converted
+ * adds roubles to dollars to share counts and is not money in any currency.
  *
  * ## Why 250
  *
  * Measured on production 2026-08-22 **across every user**, priced. That is
  * the whole product and not one queue: `BalanceGapService.listPending` is
  * scoped to a `userId`, so no reader will ever see these totals on a page.
- ***REMOVED***
- ***REMOVED***
- * the threshold having stopped working.
+ * Re-measured 2026-08-22 for SC-576, the population is concentrated in one
+ * account with the rest spread thinly — which is why a per-account page was
+ * mistaken for the threshold having stopped working.
  *
  * | floor | gaps | share of the money |
  * |---|---|---|
@@ -210,9 +206,9 @@ export const BALANCE_GAP_DATE_PROMPT_MIN_SPAN_MS = 24 * 60 * 60 * 1000;
  * Why a gap was not asked about.
  *
  * Counted and reported rather than silently dropped, so the queue's size is
- ***REMOVED***
- ***REMOVED***
- ***REMOVED***
+ * attributable: "N of M, and here is where the rest went" is a different claim
+ * from "N". A suppression that cannot be counted is indistinguishable from a
+ * query that missed rows.
  */
 export const BALANCE_GAP_SUPPRESSIONS = [
   /** Below `BALANCE_GAP_MIN_BASE_VALUE` once priced. */
@@ -245,16 +241,14 @@ export type BalanceGapSuppressionCounts = Record<BalanceGapSuppression, number>;
 /**
  * A drift the next interval takes straight back is a feed artefact, not money.
  *
- ***REMOVED***
- ***REMOVED***
- ***REMOVED***
- ***REMOVED***
- ***REMOVED***
+ * Measured on production 2026-08-22. A brokerage equity position was observed
+ * jumping to several times its share count for a single day and back again,
+ * every row a `sync-capture`, with no transaction anywhere near it. That
+ * produces a drift of +N followed by −N on the next interval.
  *
- ***REMOVED***
- ***REMOVED***
- ***REMOVED***
- * brokerage feed glitch, twice.
+ * Priced, those two were among the largest prompts in the entire product, for
+ * a position that never changed. The first thing the owner would have been
+ * asked about is a brokerage feed glitch, twice.
  *
  * So it is a rule, not a special case: a drift whose immediate successor on
  * the same holding is its exact negation, with no transaction in either
