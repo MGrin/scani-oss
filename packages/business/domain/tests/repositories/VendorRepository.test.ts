@@ -395,8 +395,14 @@ describe('VendorRepository', () => {
         const into = await makeVendor(tx, { userId: user.id, displayName: 'Amazon' });
         const foreign = await makeVendor(tx, { userId: other.id, displayName: 'Netflix' });
 
+        // The CLASS, not the message: `vendors.mergePreview` maps this
+        // refusal by type and rethrows everything else as the 500 it is, so
+        // a plain `Error` here would put a Postgres outage and an ownership
+        // refusal down the same branch — which is what SC-897 fixed. An
+        // assertion on the substring passes either way and so cannot say
+        // that the router's typed catch is reachable.
         await expect(repo().mergeImpact(user.id, into.id, foreign.id, tx)).rejects.toThrow(
-          'must both belong to user'
+          VendorNotFoundError
         );
       });
     });

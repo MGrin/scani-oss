@@ -322,11 +322,26 @@ export const vendorsRouter = router({
           input.intoId,
           input.fromId
         );
-      } catch {
-        // `mergeImpact` throws a message naming both ids when either is
-        // not the caller's. Same precedent as `get`: "not yours" and
-        // "not there" are one answer, so this cannot be used to probe.
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Vendor not found' });
+      } catch (error) {
+        // NOT_FOUND for the ownership refusal, same precedent as `get`:
+        // "not yours" and "not there" are one answer, so this cannot be
+        // used to probe for another user's vendor ids. That decision is
+        // unchanged and is the whole point of the mapping.
+        //
+        // TYPED, where this was a bare `catch {}` until SC-897. The bare
+        // one answered NOT_FOUND to everything `mergeImpact` can throw —
+        // a Postgres outage, a timeout, a bug in any of its three counting
+        // queries — so a failure became a settled answer over a
+        // non-result, told the reader a vendor they are looking at does
+        // not exist, and never reached the error tier. Catching the class
+        // keeps the anti-probe exactly as wide as it was chosen to be and
+        // no wider: anything that is not the ownership refusal stays the
+        // 500 it is. Same shape as `deletePreview` above and `merge`
+        // below (SC-885).
+        if (error instanceof VendorNotFoundError) {
+          throw new TRPCError({ code: 'NOT_FOUND', message: 'Vendor not found' });
+        }
+        throw error;
       }
     }),
 
