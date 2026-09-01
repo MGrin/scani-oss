@@ -19,6 +19,19 @@ version heading stays there permanently, above every future release. This
 comment is deliberately in that position; explanatory prose should not be.
 -->
 
+## [0.36.0](https://github.com/MGrin/scani-oss/compare/v0.35.0...v0.36.0) (2026-09-01)
+
+
+### Features
+
+* **oss-guards:** report prose that describes a deployment on lines that travel ([082b584](https://github.com/MGrin/scani-oss/commit/082b584fb6d2b2392f609b64640832b50266baef))
+
+
+### Bug Fixes
+
+* **db:** let a declared comment-only migration edit past the drift refusal ([37529d3](https://github.com/MGrin/scani-oss/commit/37529d3af7dda948725eb703abd40abfe2ff355d))
+* **worker:** fire the stale-sync alarm on entering a condition, not per probe ([a9d2326](https://github.com/MGrin/scani-oss/commit/a9d23262efca424c464bc24cffcb10d76025d804))
+
 ## [0.35.0](https://github.com/MGrin/scani-oss/compare/v0.34.1...v0.35.0) (2026-09-01)
 
 
