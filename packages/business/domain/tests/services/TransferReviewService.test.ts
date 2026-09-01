@@ -31,6 +31,7 @@ import {
   TransferReviewService,
 } from '../../src/services/TransferReviewService';
 import { RecordHoldingMovementUseCase } from '../../src/use-cases/RecordHoldingMovementUseCase';
+import { UpdateHoldingUseCase } from '../../src/use-cases/UpdateHoldingUseCase';
 import { restoreContainerAfterAll } from '../../test/helpers/container';
 
 // Container stubs are process-global; put back whatever this file changes
@@ -4175,6 +4176,50 @@ describe('TransferReviewService — reopening a transfer the OWNER declared (SC-
     expect(await balance(f.outHoldingId)).toBe('0');
     // The outflow is a question again, which is what reopen means here.
     expect((await service().pendingSummary(f.userId)).count).toBe(1);
+  });
+
+  test('a declared transfer that stated a fee gives all three rows back (SC-857)', async () => {
+    // The undo has to be the exact inverse of the declaration, and a
+    // declaration that named a fee wrote THREE rows: a 250 withdrawal, a 1.33
+    // fee, and a 250 arrival. Leaving the fee behind would strand a charge
+    // explaining nothing against a source anchor restored as though it had
+    // never been paid — the ledger and the balance disagreeing by 1.33, which
+    // is the shape `OpeningBalanceReconciliationService` turns into a phantom
+    // opening.
+    const f = fixture!;
+    await setBalance(f.outHoldingId, '4000');
+    await setBalance(f.inHoldingId, '500');
+
+    await Container.get(UpdateHoldingUseCase).execute(
+      f.outHoldingId,
+      {
+        balance: '3748.67',
+        editCause: 'flow',
+        editOccurredAt: anchor(),
+        editOutflow: {
+          decision: 'internal',
+          destination: { accountId: f.inAccountId, holdingId: f.inHoldingId },
+          feeQuantity: '1.33',
+        },
+      },
+      f.userId
+    );
+
+    const declared = await ledgerRows(f);
+    // Must-be-FOUND. Without it the emptiness asserted below would be
+    // satisfied by a declaration that never wrote a fee at all, and the test
+    // would pass against the very code it exists to guard.
+    expect(declared.filter((r) => r.kind === 'fee')).toHaveLength(1);
+    expect(declared).toHaveLength(3);
+    expect(await balance(f.inHoldingId)).toBe('750');
+
+    const outflowId = declared.find((r) => r.kind === 'withdraw')?.id;
+    expect(await service().reopen(f.userId, outflowId ?? '')).toBe(true);
+
+    expect(await ledgerRows(f)).toHaveLength(0);
+    // The whole 251.33 back, fee included — not 250.
+    expect(await balance(f.outHoldingId)).toBe('4000');
+    expect(await balance(f.inHoldingId)).toBe('500');
   });
 
   test('two hand-entered edits the QUEUE paired are not a declared pair', async () => {
