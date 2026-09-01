@@ -1237,12 +1237,14 @@
           "left_control": "Dépensé, offert, ou vendu quelque part que Scani ne voit pas. Cela réalise une plus ou moins-value sur le montant sorti.",
           "untracked": "Toujours votre argent, dans un portefeuille ou un compte auquel Scani n’a pas accès. Rien n’est réalisé."
         },
-        "feeLabel": "Frais, si le transfert en a coûté",
-        "feeExplain": "Laissez vide si rien n'a été prélevé. Les frais sont enregistrés comme un coût propre à ce compte, donc ce qui arrive est ce qui est réellement arrivé.",
-        "feeArrives": "{{amount}} {{symbol}} arrivent ; les frais sont enregistrés ici comme un coût.",
-        "feeTooLarge": "Les frais doivent être inférieurs au montant déplacé.",
         "cancel": "Annuler",
         "save": "Enregistrer"
+      },
+      "fee": {
+        "label": "Frais, si le transfert en a coûté",
+        "explain": "Laissez vide si rien n'a été prélevé. Les frais sont enregistrés comme un coût propre à ce compte, donc ce qui arrive est ce qui est réellement arrivé.",
+        "arrives": "{{amount}} {{symbol}} arrivent ; les frais sont enregistrés ici comme un coût.",
+        "tooLarge": "Les frais doivent être inférieurs au montant déplacé."
       },
       "amountBelow": "< {{amount}}",
       "movement": {
@@ -1288,7 +1290,8 @@
         "blocker": {
           "holding": "choisissez la position qui a bougé",
           "amount": "indiquez combien a bougé",
-          "where": "dites où l’argent est allé"
+          "where": "dites où l’argent est allé",
+          "fee": "les frais doivent être inférieurs au montant déplacé"
         }
       }
     },
