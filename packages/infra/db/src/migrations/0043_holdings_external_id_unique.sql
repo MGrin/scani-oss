@@ -6,20 +6,21 @@
 -- (SC-193). That lookup takes the first result and assumes there is only one;
 -- nothing enforced it. Two rows sharing an address means an importer forked its
 -- own position, and every later sync and every ingested transaction then lands
-***REMOVED***
-***REMOVED***
+-- on a coin flip — which is how one imported account's history came to be
+-- recorded twice against two rows, doubling every event and every unit of
+-- gross volume in it.
 --
 -- PARTIAL, and NOT `NULLS NOT DISTINCT`. Both SC-325's proposed
 -- `(account_id, token_id)` and SC-323's `(account_id, token_id, external_id)
-***REMOVED***
-***REMOVED***
-***REMOVED***
-***REMOVED***
-***REMOVED***
-***REMOVED***
-***REMOVED***
-***REMOVED***
--- keep-newest deletes ~137,000 RUB.
+-- NULLS NOT DISTINCT` forbid a shape real accounts hold and their owners
+-- actively maintain: several manual rows for the same currency in one bank
+-- account, created together by a single screenshot parse that returned that
+-- many lines, then each independently re-confirmed against a later upload —
+-- with a different delta on each, one of them negative. Those are several
+-- distinct products on one bank screen, not one aggregate split into lines,
+-- and no automatic repair keeps them all: merge-and-sum collapses positions
+-- the user maintains separately, and keep-newest deletes the rest of the
+-- balance outright.
 --
 -- A row with no external_id is not addressable by any importer, so uniqueness
 -- says nothing about it. Whether an account may hold two hand-entered rows for
@@ -27,8 +28,9 @@
 -- they come through — `CreateHoldingsWithDependenciesUseCase` refuses the
 -- payload (SC-303). Policy in the app, invariant in the database.
 --
-***REMOVED***
-***REMOVED***
+-- No backfill: the violating population under this key is empty (measured
+-- against a real dataset before this shipped — no holding shares the key with
+-- another). If a fork appears between now
 -- and deploy, this fails with the offending key named in the error DETAIL,
 -- which is the actionable form of the failure.
 CREATE UNIQUE INDEX IF NOT EXISTS "holdings_account_token_external_uq"

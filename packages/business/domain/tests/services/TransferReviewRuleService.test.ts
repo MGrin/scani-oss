@@ -516,7 +516,7 @@ describe('TransferReviewRuleService — payment descriptions', () => {
     const result = await service().create(f.userId, {
       transactionId: authored,
       verdict: 'not_a_disposal',
-      note: 'Amara Permata',
+      note: 'Amara Sitanggang',
     });
 
     expect(result.ok).toBe(true);
@@ -530,7 +530,7 @@ describe('TransferReviewRuleService — payment descriptions', () => {
     expect(result.rule.affectedCount).toBe(2);
   });
 
-  ***REMOVED***
+  test('two rules cover every dividend payment in the set', async () => {
     const f = fixture!;
     for (const [i, description] of [...OWNER, ...AMARA].entries()) {
       await payment(f, `p-all-${i}`, description);
@@ -569,10 +569,10 @@ describe('TransferReviewRuleService — payment descriptions', () => {
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    ***REMOVED***
-    ***REMOVED***
-    ***REMOVED***
-    ***REMOVED***
+    // `Dividents` is a real typo in the source data, on a couple of the rows.
+    // Closing that gap needs edit distance, and edit distance over a field an
+    // attacker writes is the hole this ticket refused to open. Matching all
+    // but those is the transformation; the stragglers are typed again.
     expect(result.rule.matchCounterparty).toBe('teodor vance (dividents)');
     expect(result.rule.affectedCount).toBe(1);
   });
@@ -582,12 +582,12 @@ describe('TransferReviewRuleService — payment descriptions', () => {
     // The other two shapes production's `counterparty` carries. Neither begins
     // with a `Pay <amount> <CCY> to ` preamble, so neither is touched: the
     // pattern is anchored and complete, not a search for the word "to".
-    ***REMOVED***
-    ***REMOVED***
+    const deposit = await payment(f, 'p-prose-1', 'Deposit to account 1234567890');
+    const invoice = await payment(f, 'p-prose-2', 'INVOICE 42 , EXAMPLE LTD');
 
     for (const [txId, expected] of [
-      ***REMOVED***
-      ***REMOVED***
+      [deposit, 'deposit to account 1234567890'],
+      [invoice, 'invoice 42 , example ltd'],
     ] as const) {
       const result = await service().create(f.userId, {
         transactionId: txId,

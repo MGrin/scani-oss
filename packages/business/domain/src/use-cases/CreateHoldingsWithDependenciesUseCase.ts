@@ -29,7 +29,7 @@ export interface UpdateExistingHoldingInput {
  *
  * Carries the token ids rather than a rendered sentence: the caller has the
  * symbols the user typed, this layer has only uuids, and a message naming
- ***REMOVED***
+ * `a uuid` instead of `RUB` is a message nobody can act on. The worker
  * resolves them before the user sees anything.
  */
 export class DuplicateHoldingTokenError extends Error {
