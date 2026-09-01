@@ -1,11 +1,11 @@
 import {
+  Decimal,
   feeFitsMovement,
   type HoldingMovementDirection,
   MANUAL_OUTFLOW_DESTINATIONS,
   type ManualOutflowDestination,
   movementOutflowRefusesInternal,
 } from '@scani/shared';
-import Decimal from 'decimal.js';
 import type { buildEnsureAccountInput } from './manual-entry';
 
 /**
