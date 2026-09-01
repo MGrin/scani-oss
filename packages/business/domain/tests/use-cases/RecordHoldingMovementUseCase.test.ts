@@ -21,10 +21,14 @@
 
 import { describe, expect, test } from 'bun:test';
 import * as schema from '@scani/db/schema';
+import Decimal from 'decimal.js';
 import { eq } from 'drizzle-orm';
 import { Container } from 'typedi';
 import { pendingPredicate } from '../../src/lib/transfer-review-queue';
-import { MANUAL_EDIT_FLOW_SOURCE } from '../../src/services/holdings/ManualBalanceEditService';
+import {
+  MANUAL_EDIT_FLOW_SOURCE,
+  ManualEditFeeRefused,
+} from '../../src/services/holdings/ManualBalanceEditService';
 import {
   MovementExceedsBalanceError,
   MovementSameHoldingError,
@@ -324,6 +328,239 @@ describe('ownership', () => {
           tx
         )
       ).rejects.toThrow();
+    });
+  });
+});
+
+/**
+ * A declared transfer that cost something, reached from the MOVEMENT form
+ * (SC-889).
+ *
+ * SC-857 built this model on the balance-edit path and left this one unable to
+ * express it: `execute` passes an `editOutflow` only on `direction: 'outflow'`,
+ * so the transfer branch had no answer object for a fee to travel in. The
+ * consequence was silent rather than loud — `RecordHoldingMovementDto` is a
+ * discriminated union of plain objects, so a client that sent a fee got
+ * `success: true` with the field STRIPPED, and both legs booked the full
+ * amount.
+ *
+ * These assert the shape SC-857 decided rather than re-deciding it: the fee is
+ * an outflow from the SOURCE, carved OUT of the withdrawal, and the arrival is
+ * what arrived.
+ */
+describe('a declared transfer that cost something (SC-889)', () => {
+  /** Source at 4,000 and a destination at 10, in the same token. */
+  async function pair(tx: Tx) {
+    const base = await scaffold(tx);
+    const other = await makeAccount(tx, {
+      userId: base.user.id,
+      institutionId: base.institution.id,
+    });
+    const destination = await makeHolding(tx, {
+      userId: base.user.id,
+      accountId: other.id,
+      tokenId: base.token.id,
+      balance: '10',
+      source: 'manual',
+    });
+    return { ...base, other, destination };
+  }
+
+  test('the fee is carved OUT of the withdrawal and the arrival is what arrived', async () => {
+    await withTestDb(async (tx) => {
+      const { user, holding, other, destination } = await pair(tx);
+
+      await useCase().execute(
+        {
+          direction: 'transfer',
+          holdingId: holding.id,
+          amount: '251.33',
+          occurredAt: MOVED_AT,
+          destinationAccountId: other.id,
+          destinationHoldingId: destination.id,
+          feeQuantity: '1.33',
+        },
+        user.id,
+        tx
+      );
+
+      // The owner stated what LEFT, so the source anchor falls by all of it.
+      expect(await balanceOf(tx, holding.id)).toBe('3748.67');
+      // And the destination gets what ARRIVED — 250, not 251.33. Reading
+      // 261.33 here is the whole defect: the sent amount on both legs.
+      expect(await balanceOf(tx, destination.id)).toBe('260');
+
+      const source = await ledger(tx, holding.id);
+      expect(source).toHaveLength(2);
+      const withdraw = source.find((row) => row.kind === 'withdraw');
+      const fee = source.find((row) => row.kind === 'fee');
+      expect(withdraw?.quantity).toBe('-250');
+      expect(fee?.quantity).toBe('-1.33');
+      // Same instant as the payment that incurred it: the ledger is ordered by
+      // `occurred_at` and a fee that sorts away from its payment reads as an
+      // unexplained charge.
+      expect(fee?.occurredAt.toISOString()).toBe(MOVED_AT);
+
+      const arrival = await ledger(tx, destination.id);
+      expect(arrival).toHaveLength(1);
+      expect(arrival[0]?.kind).toBe('deposit');
+      expect(arrival[0]?.quantity).toBe('250');
+    });
+  });
+
+  /**
+   * The identity `OpeningBalanceReconciliationService` depends on.
+   *
+   * It computes `holdings.balance - sum(real txs)` and synthesizes an
+   * `opening_balance` for the difference, so a fee ADDED BESIDE a full-amount
+   * withdrawal (-251.33 + -1.33 = -252.66 against an anchor that moved
+   * -251.33) manufactures a phantom 1.33 opening on this very holding.
+   *
+   * Asserted as arithmetic over the rows rather than by naming them, so it
+   * still fires if a future change writes a third row nobody thought about.
+   */
+  test('the source rows sum to exactly the delta its anchor moved by', async () => {
+    await withTestDb(async (tx) => {
+      const { user, holding, other, destination } = await pair(tx);
+      const before = new Decimal(await balanceOf(tx, holding.id));
+
+      await useCase().execute(
+        {
+          direction: 'transfer',
+          holdingId: holding.id,
+          amount: '251.33',
+          occurredAt: MOVED_AT,
+          destinationAccountId: other.id,
+          destinationHoldingId: destination.id,
+          feeQuantity: '1.33',
+        },
+        user.id,
+        tx
+      );
+
+      const after = new Decimal(await balanceOf(tx, holding.id));
+      const rows = await ledger(tx, holding.id);
+      // Two rows, or the sum below is an identity the unfixed code satisfies
+      // trivially by writing one full-amount withdrawal and no fee at all.
+      expect(rows).toHaveLength(2);
+      const summed = rows.reduce((total, row) => total.add(row.quantity), new Decimal(0));
+      expect(summed.toString()).toBe(after.sub(before).toString());
+      expect(summed.toString()).toBe('-251.33');
+    });
+  });
+
+  /**
+   * SC-150, restated as a test rather than as a comment.
+   *
+   * `CostBasisService`'s inflow branch hands the FIRST `transfer_in` every
+   * buffered lot and then `pending.delete(tgid)`, so a second row on one group
+   * id opens a fresh market-value lot and invents a gain. The fee must
+   * therefore carry no `transfer_group_id` — and `linkDeclaredPair` refuses a
+   * pairing that touches anything other than exactly two rows, so a fee that
+   * drifted onto the group would also roll the transfer back.
+   */
+  test('the fee row carries no transfer_group_id, so the group is still exactly two rows', async () => {
+    await withTestDb(async (tx) => {
+      const { user, holding, other, destination } = await pair(tx);
+
+      const result = await useCase().execute(
+        {
+          direction: 'transfer',
+          holdingId: holding.id,
+          amount: '251.33',
+          occurredAt: MOVED_AT,
+          destinationAccountId: other.id,
+          destinationHoldingId: destination.id,
+          feeQuantity: '1.33',
+        },
+        user.id,
+        tx
+      );
+
+      expect(result.transferGroupId).not.toBeNull();
+      const fee = (await ledger(tx, holding.id)).find((row) => row.kind === 'fee');
+      expect(fee).toBeDefined();
+      expect(fee?.transferGroupId).toBeNull();
+
+      const grouped = await tx
+        .select({ kind: schema.holdingTransactions.kind })
+        .from(schema.holdingTransactions)
+        .where(eq(schema.holdingTransactions.transferGroupId, result.transferGroupId ?? ''));
+      expect(grouped).toHaveLength(2);
+      expect(grouped.filter((row) => row.kind === 'deposit')).toHaveLength(1);
+
+      // And the declaration still answers the queue, fee or no fee.
+      expect(await reviewPrompts(tx, user.id)).toBe(0);
+    });
+  });
+
+  /**
+   * A fee that is not smaller than the movement leaves nothing to transfer,
+   * and `feeFitsMovement` is the one predicate that says so. Refused through
+   * `ManualBalanceEditService`'s own error rather than a second rule here, so
+   * the two surfaces cannot disagree about what fits.
+   *
+   * The refusal lands on the SOURCE leg, which is written first — so the
+   * destination is never touched and no pair is ever linked. That is the half
+   * this test can see. It deliberately does NOT assert that the source is
+   * untouched: `execute` was handed this test's own transaction, so it runs
+   * `run(tx)` directly and the rollback belongs to the caller. In production
+   * the router calls it with no transaction, `withTransaction` opens one, and
+   * the throw discards the whole movement — a claim about `withTransaction`
+   * rather than about this use case, and asserting it here would need a
+   * committed database instead of `withTestDb`'s rollback.
+   */
+  test('a fee that is not smaller than the movement is refused before the arrival is written', async () => {
+    await withTestDb(async (tx) => {
+      const { user, holding, other, destination } = await pair(tx);
+
+      await expect(
+        useCase().execute(
+          {
+            direction: 'transfer',
+            holdingId: holding.id,
+            amount: '251.33',
+            occurredAt: MOVED_AT,
+            destinationAccountId: other.id,
+            destinationHoldingId: destination.id,
+            feeQuantity: '251.33',
+          },
+          user.id,
+          tx
+        )
+      ).rejects.toBeInstanceOf(ManualEditFeeRefused);
+
+      expect(await balanceOf(tx, destination.id)).toBe('10');
+      expect(await ledger(tx, destination.id)).toHaveLength(0);
+    });
+  });
+
+  /**
+   * The must-be-FOUND control for every assertion above. Without it, a
+   * `feeQuantity` the DTO strips or the use case ignores would read exactly
+   * like a fee correctly applied to a transfer that happened to have none —
+   * the arrival is 251.33 either way, and no assertion here could tell them
+   * apart.
+   */
+  test('the same transfer with no fee puts the whole amount on both legs', async () => {
+    await withTestDb(async (tx) => {
+      const { user, holding, other, destination } = await pair(tx);
+
+      await useCase().execute(
+        {
+          direction: 'transfer',
+          holdingId: holding.id,
+          amount: '251.33',
+          occurredAt: MOVED_AT,
+          destinationAccountId: other.id,
+          destinationHoldingId: destination.id,
+        },
+        user.id,
+        tx
+      );
+
+      expect(await balanceOf(tx, destination.id)).toBe('261.33');
+      expect(await ledger(tx, holding.id)).toHaveLength(1);
     });
   });
 });

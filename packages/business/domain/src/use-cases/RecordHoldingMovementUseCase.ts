@@ -138,22 +138,38 @@ export class RecordHoldingMovementUseCase {
         throw new MovementExceedsBalanceError(source.balance, input.amount);
       }
 
-      const after = await this.applyFlow(
-        source,
-        amount.neg(),
-        occurredAt,
-        editedAt,
-        userId,
-        tx,
-        input.direction === 'outflow' ? { decision: input.destination } : undefined
-      );
+      // What the rail kept (SC-889). `amount` is what LEFT — the figure on the
+      // owner's statement — so the source anchor falls by all of it and the
+      // fee is carved out of the withdrawal rather than added beside it.
+      const fee =
+        input.direction === 'transfer' && input.feeQuantity ? new Decimal(input.feeQuantity) : null;
+
+      const after = await this.applyFlow(source, amount.neg(), occurredAt, editedAt, userId, tx, {
+        ...(input.direction === 'outflow' ? { editOutflow: { decision: input.destination } } : {}),
+        ...(fee ? { fee } : {}),
+      });
 
       if (input.direction === 'outflow') return this.result(after, null, null);
 
       const destination = await this.destinationHolding(input, source, userId, tx);
       if (destination.id === source.id) throw new MovementSameHoldingError(source.id);
 
-      const arrived = await this.applyFlow(destination, amount, occurredAt, editedAt, userId, tx);
+      // What ARRIVED. Computed from this use case's own input rather than read
+      // back off the withdrawal — which is where `UpdateHoldingUseCase` gets
+      // it, and the difference is worth stating. `record` DROPS a fee it will
+      // not honour on a `correction` or a `growth`, and that path's caller has
+      // to allow for it; here the leg above is a `flow` whose delta is
+      // `-amount` with `amount` positive by schema, so the drop is
+      // unreachable and the only other outcome is `ManualEditFeeRefused`
+      // rolling the whole transaction back. Honoured or nothing was written.
+      const arrived = await this.applyFlow(
+        destination,
+        fee ? amount.sub(fee) : amount,
+        occurredAt,
+        editedAt,
+        userId,
+        tx
+      );
 
       const transferGroupId = await this.linkTransferPairs.linkDeclaredPair(
         {
@@ -198,7 +214,12 @@ export class RecordHoldingMovementUseCase {
     editedAt: Date,
     userId: string,
     tx: DatabaseTransaction,
-    editOutflow?: ManualOutflowAnswer
+    /**
+     * What this leg MEANT, for the legs that mean something beyond their own
+     * arithmetic. One object rather than two trailing positionals so the two
+     * calls that pass neither stay six arguments long.
+     */
+    meaning?: { editOutflow?: ManualOutflowAnswer; fee?: Decimal }
   ): Promise<typeof schema.holdings.$inferSelect> {
     return await this.updateHolding.execute(
       holding.id,
@@ -207,7 +228,11 @@ export class RecordHoldingMovementUseCase {
         editCause: 'flow',
         editOccurredAt: occurredAt,
         editedAt,
-        ...(editOutflow ? { editOutflow } : {}),
+        ...(meaning?.editOutflow ? { editOutflow: meaning.editOutflow } : {}),
+        // `editFee` rather than `editOutflow.feeQuantity`: a transfer declared
+        // here is answered `paired` by `linkDeclaredPair`, never `internal`,
+        // so there is no answer object for a fee to travel in (SC-889).
+        ...(meaning?.fee ? { editFee: meaning.fee } : {}),
       },
       userId,
       tx

@@ -262,6 +262,14 @@ export const holdingsRouter = router({
                 message: 'A transfer has to go to a different holding.',
               });
             }
+            // A stated transfer fee that was not smaller than the transfer
+            // (SC-889). Reached from this surface as of that ticket, and
+            // mapped for the reason `update` maps it above: the whole movement
+            // was rolled back, and the figure the owner typed is on the form
+            // in front of them, so it is a refusal rather than a 500.
+            if (error instanceof ManualEditFeeRefused) {
+              throw new TRPCError({ code: 'BAD_REQUEST', message: error.message });
+            }
             throw error;
           });
 
