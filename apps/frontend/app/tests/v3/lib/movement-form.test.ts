@@ -3,6 +3,7 @@ import {
   type MovementHolding,
   matchMovementHoldings,
   movementBlockerKeys,
+  movementFeeArrival,
   movementHoldingLabel,
   movementHoldingSelectedLabel,
 } from '@/v3/lib/movement-form';
@@ -183,5 +184,80 @@ describe('movementBlockerKeys', () => {
     expect(
       movementBlockerKeys({ ...complete, direction: 'transfer', destination: 'transfer' })
     ).toEqual([]);
+  });
+});
+
+/**
+ * The fee, on the form that could not state one until SC-889.
+ *
+ * Held here rather than by a rendered assertion for the reason this module's
+ * docblock gives, and for a second one this ticket measured: `RecordMovementSheet`
+ * is a Radix sheet and Radix renders nothing under `renderToStaticMarkup`, so
+ * the same gap that left `HoldingEditCauseDialog`'s fee field covered by
+ * type-check alone would apply here. The rules are pure, so they are testable;
+ * the rendering was exercised in a real browser instead.
+ */
+describe('the transfer fee', () => {
+  const transfer = {
+    holdingId: 'kraken-btc',
+    direction: 'transfer' as const,
+    amount: '251.33',
+    destination: 'transfer' as const,
+  };
+
+  test('what arrives is what left minus the fee', () => {
+    expect(movementFeeArrival({ ...transfer, fee: '1.33' })).toBe('250');
+    expect(movementBlockerKeys({ ...transfer, fee: '1.33' })).toEqual([]);
+  });
+
+  test('no fee stated is not a fee of zero — there is no arrival figure to show', () => {
+    expect(movementFeeArrival({ ...transfer, fee: '' })).toBeNull();
+    expect(movementFeeArrival({ ...transfer, fee: '  ' })).toBeNull();
+    expect(movementFeeArrival(transfer)).toBeNull();
+    // And none of them is a blocker: a transfer that cost nothing is the
+    // common case and must stay submittable.
+    expect(movementBlockerKeys({ ...transfer, fee: '' })).toEqual([]);
+  });
+
+  /**
+   * The refusal, through `feeFitsMovement` rather than a second spelling of it
+   * — so the button and `ManualBalanceEditService` cannot disagree about what
+   * fits. Equal is refused as well as larger: a fee equal to the whole movement
+   * leaves nothing to transfer.
+   */
+  test('a fee that is not smaller than the movement blocks the submit', () => {
+    expect(movementBlockerKeys({ ...transfer, fee: '251.33' })).toEqual([
+      'v3.holdings.movement.blocker.fee',
+    ]);
+    expect(movementBlockerKeys({ ...transfer, fee: '300' })).toEqual([
+      'v3.holdings.movement.blocker.fee',
+    ]);
+    expect(movementFeeArrival({ ...transfer, fee: '251.33' })).toBeNull();
+  });
+
+  /**
+   * The must-be-ABSENT control, and the reason `movementFeeStated` reads the
+   * direction rather than only the field. Typing a fee and then flipping the
+   * control back to `outflow` leaves the value in state with the input gone; if
+   * the direction were not read, Save would be disabled with nothing on screen
+   * saying why, and the fee would ride out on a movement with no second leg.
+   */
+  test('a fee left behind by switching away from a transfer counts for nothing', () => {
+    const outflow = {
+      ...transfer,
+      direction: 'outflow' as const,
+      destination: 'untracked' as const,
+      fee: '300',
+    };
+    expect(movementBlockerKeys(outflow)).toEqual([]);
+    expect(movementFeeArrival(outflow)).toBeNull();
+    expect(movementFeeArrival({ ...outflow, direction: 'inflow' as const })).toBeNull();
+  });
+
+  /** An unparseable amount has no arrival to compute, and must not throw. */
+  test('a fee against an amount that is not a number is refused, not thrown on', () => {
+    expect(movementFeeArrival({ ...transfer, amount: '', fee: '1.33' })).toBeNull();
+    expect(movementFeeArrival({ ...transfer, amount: 'abc', fee: '1.33' })).toBeNull();
+    expect(movementFeeArrival({ ...transfer, amount: '251.33', fee: 'abc' })).toBeNull();
   });
 });
