@@ -823,9 +823,22 @@ jobs:
             echo "::error::could not resolve the base commit '${PR_BASE}', so the range this change introduces is unknown and NOTHING WAS SCANNED. This is not a pass."
             exit 1
           fi
-          git rev-list --no-merges "${PR_BASE}..HEAD" > "$RUNNER_TEMP/oss-boundary-commits.txt"
+          # THE MERGE BASE, not `base.sha` itself. `base.sha` is the base
+          # BRANCH'S TIP at the time of the event, and nothing guarantees it is
+          # an ancestor of what was checked out — so `base.sha..HEAD` silently
+          # widens to the whole divergence whenever the branch has merged main
+          # or main has moved. Measured in this repository 2026-09-02: it read
+          # `281 non-merge commit(s)` and 88554 added lines for a pull request
+          # that adds two commits, and refused on a fixture in somebody else's
+          # file. A guard that judges other people's commits is one that gets
+          # switched off. The merge base is an ancestor of both by definition.
+          if ! base=$(git merge-base "${PR_BASE}" HEAD); then
+            echo "::error::no merge base between '${PR_BASE}' and HEAD, so the range this change introduces is unknown and NOTHING WAS SCANNED. This is not a pass."
+            exit 1
+          fi
+          git rev-list --no-merges "${base}..HEAD" > "$RUNNER_TEMP/oss-boundary-commits.txt"
           n=$(wc -l < "$RUNNER_TEMP/oss-boundary-commits.txt" | tr -d ' ')
-          echo "range ${PR_BASE}..$(git rev-parse HEAD) — $n non-merge commit(s)"
+          echo "range ${base}..$(git rev-parse HEAD) — $n non-merge commit(s) (merge base of ${PR_BASE})"
           bun scripts/check-oss-data-shapes.ts --stdin-commits < "$RUNNER_TEMP/oss-boundary-commits.txt"
           bun scripts/check-oss-figures.ts --stdin-commits < "$RUNNER_TEMP/oss-boundary-commits.txt"
           bun scripts/check-oss-prose.ts --stdin-commits < "$RUNNER_TEMP/oss-boundary-commits.txt"

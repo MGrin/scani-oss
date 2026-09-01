@@ -173,6 +173,13 @@ describe('SC-838 · the OSS boundary gate is wired to be able to refuse', () => 
     // The denominator, so a run that read nothing cannot look like one that
     // read everything (SC-771).
     expect(step?.run).toContain('non-merge commit(s)');
+    // THE MERGE BASE, not `base.sha`. Measured in real CI 2026-09-02: the
+    // latter is the base branch's TIP and need not be an ancestor of what was
+    // checked out, so the range widened to 281 commits and 88554 added lines
+    // for a two-commit pull request, and the guard refused on a fixture in
+    // somebody else's file. Pinned because the shorter form reads correct.
+    expect(step?.run).toContain('git merge-base');
+    expect(step?.run).not.toMatch(/rev-list --no-merges "\$\{PR_BASE\}\.\./);
   });
 
   /**
