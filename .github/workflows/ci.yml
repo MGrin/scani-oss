@@ -679,14 +679,14 @@ jobs:
       # run is not a pass.
       #
       # `check-oss-bound-paths.ts` and `lib/check-verdict.ts` are in the list
-      # though nothing calls them directly — the three scanners import them, so
-      # their absence is the scan's absence.
+      # though nothing calls them directly — the scanners import them, so their
+      # absence is the scan's absence.
       - name: The guards are present in this tree
         run: |
           set -euo pipefail
           present=0
           missing=""
-          for f in check-oss-figures check-oss-prose check-oss-internal-refs check-oss-bound-paths lib/check-verdict; do
+          for f in check-oss-data-shapes check-oss-figures check-oss-prose check-oss-internal-refs check-oss-bound-paths lib/check-verdict; do
             if [ -f "scripts/$f.ts" ]; then
               present=$((present + 1))
             else
@@ -697,7 +697,7 @@ jobs:
             echo "::error::NOTHING WAS SCANNED — absent from this tree:$missing. This is not a pass."
             exit 1
           fi
-          echo "$present of 5 guard file(s) present"
+          echo "$present of 6 guard file(s) present"
 
       # ARM 3 OF THE MATRIX IN MGrin/scani#1374, MOVED INTO CI. Every other step
       # here is a green whenever the tree is clean, and a green from an
@@ -773,6 +773,15 @@ jobs:
       # THE ADDED LINES THIS CHANGE INTRODUCES — the population the pre-push
       # hook judges, asked of the repository instead of the machine.
       #
+      # `check-oss-data-shapes.ts` is first because it is the one that answers
+      # the question the 2026-09-01 exposure actually asked. Everything that
+      # leaked was DATA — a bank account number, wallet addresses, a transaction
+      # hash, 283 row identifiers — and the other two detect CLAIMS, so all of
+      # them passed it. Measured over the 20 landings before 2026-09-02 it
+      # refuses none: 20 green, 0 findings, after the repository's own fixture
+      # convention was named in its allowlist. It has NO environment-variable
+      # escape, unlike the other two.
+      #
       # PULL REQUESTS ONLY, and the reason is the label below rather than cost.
       # `github.event.pull_request.labels` does not exist on a push, so the
       # assertion that cleared a pull request is unreadable from the run that
@@ -817,5 +826,6 @@ jobs:
           git rev-list --no-merges "${PR_BASE}..HEAD" > "$RUNNER_TEMP/oss-boundary-commits.txt"
           n=$(wc -l < "$RUNNER_TEMP/oss-boundary-commits.txt" | tr -d ' ')
           echo "range ${PR_BASE}..$(git rev-parse HEAD) — $n non-merge commit(s)"
+          bun scripts/check-oss-data-shapes.ts --stdin-commits < "$RUNNER_TEMP/oss-boundary-commits.txt"
           bun scripts/check-oss-figures.ts --stdin-commits < "$RUNNER_TEMP/oss-boundary-commits.txt"
           bun scripts/check-oss-prose.ts --stdin-commits < "$RUNNER_TEMP/oss-boundary-commits.txt"
