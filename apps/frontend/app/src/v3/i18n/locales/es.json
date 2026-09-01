@@ -2027,7 +2027,8 @@
         "retained": "Indicaste que esto nunca salió de tu control, así que no se ha realizado nada.",
         "retainedUnattributed": "Registrado como que nunca salió de tu control, así que no se ha realizado nada. No hay constancia de que nadie lo respondiera.",
         "unpriced": "No se ha encontrado ningún precio para esto, así que no se ha contabilizado ninguna ganancia. El coste se sigue mostrando.",
-        "unreviewed": "A la espera de tu respuesta, así que no se ha contabilizado ninguna ganancia en ningún sentido."
+        "unreviewed": "A la espera de tu respuesta, así que no se ha contabilizado ninguna ganancia en ningún sentido.",
+        "fee": "Un cargo descontado de lo que salió, así que no se registró ninguna ganancia: cuenta como coste, no como retirada."
       },
       "portion": "Parte {{index}} de {{total}} de una misma {{noun}}",
       "valuation": {
@@ -2125,7 +2126,8 @@
           "paired": "Enlazado — el coste de adquisición se mueve con ello",
           "split": "Registrado — cada parte según sus propias condiciones",
           "splitRejected": "Ese reparto no se ha aceptado",
-          "untracked": "Registrado como que sigue siendo tuyo"
+          "untracked": "Registrado como que sigue siendo tuyo",
+          "fee": "Registrado como comisión"
         },
         "whatHappened": "Qué ha pasado",
         "withdrawnNotice": "Scani ha retirado una respuesta anterior sobre esta transferencia. Se dio a propósito de un emparejamiento que desde entonces hemos demostrado que no era una transferencia en absoluto, así que la pregunta vuelve a plantearse — y puede que aquí no haya ningún ingreso al que señalar.",
@@ -2311,13 +2313,15 @@
           "internal": "Movido a una posición que sigues — ingreso registrado",
           "leftControl": "Contado como una transmisión",
           "paired": "Enlazado con un ingreso — no se ha realizado nada",
-          "untracked": "Sigue siendo tuyo, en algún sitio sin seguimiento"
+          "untracked": "Sigue siendo tuyo, en algún sitio sin seguimiento",
+          "fee": "Registrado como comisión"
         },
         "answeredShort": {
           "internal": "{{amount}} movidos",
           "leftControl": "{{amount}} transmitidos",
           "paired": "{{amount}} enlazados",
-          "untracked": "{{amount}} sin seguimiento"
+          "untracked": "{{amount}} sin seguimiento",
+          "fee": "{{amount}} en comisiones"
         },
         "bulk": {
           "commit": {
@@ -2395,7 +2399,8 @@
           "leftControlUnpriced": "Contado como una transmisión el {{date}} a valor de mercado. Scani no tiene precio para {{symbol}} ese día, así que no se contabiliza nada.",
           "paired": "Los {{quantity}} {{symbol}} conservan lo que pagaste originalmente por ellos al pasar a {{location}}. Aquí no se realiza nada, y no se contabiliza ninguna ganancia.",
           "pairedPrompt": "Elige el ingreso en el que llegó este dinero.",
-          "untracked": "Sigue siendo tuyo, solo que en algún sitio que Scani no ve. No es una transmisión, así que no se contabiliza ninguna ganancia — los {{symbol}} simplemente dejan de contarse."
+          "untracked": "Sigue siendo tuyo, solo que en algún sitio que Scani no ve. No es una transmisión, así que no se contabiliza ninguna ganancia — los {{symbol}} simplemente dejan de contarse.",
+          "fee": "Un cargo descontado de lo que salió: se lo quedó el banco, la red o el exchange. No es una venta, así que no se registra ninguna ganancia, y los {{symbol}} cuentan como coste y no como dinero que retiraste."
         },
         "decision": {
           "internal": {
@@ -2413,6 +2418,10 @@
           "untracked": {
             "commit": "Registrarlo como que sigue siendo mío",
             "trigger": "Movido a un sitio sin seguimiento"
+          },
+          "fee": {
+            "trigger": "Parte fue una comisión",
+            "commit": "Registrarlo como comisión"
           }
         },
         "destination": {
