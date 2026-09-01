@@ -1,7 +1,8 @@
 import { ChunkErrorBoundary } from '@scani/ui/components/ChunkErrorBoundary';
-import { type ChunkLoadState, importChunk } from '@scani/ui/lib/lazy-chunk';
+import type { ChunkLoadState } from '@scani/ui/lib/lazy-chunk';
 import { LoadingSpinner } from '@scani/ui/ui/loading';
-import { type ComponentType, lazy, Suspense, useSyncExternalStore } from 'react';
+import { type ComponentType, lazy, Suspense } from 'react';
+import { chunkReloadSpent, loadChunkWithOneReload } from '@/lib/chunk-reload';
 import { reportClientError } from '@/lib/report-client-error';
 
 /**
@@ -18,8 +19,19 @@ import { reportClientError } from '@/lib/report-client-error';
  *
  * The two things:
  *
- * 1. **Retries**, via `importChunk`. The usual chunk failure is a phone whose
- *    connection blinked, and it succeeds on the next attempt.
+ * 1. **A second chance at the request**, which since SC-890 is one document
+ *    reload rather than a retry loop. The usual chunk failure is a phone whose
+ *    connection blinked and would serve it on the next ask — but there is no
+ *    way to ask again from inside this page. A rejected dynamic import is
+ *    recorded in the browser's **module map** under its resolved URL, and every
+ *    later `import()` of that URL re-delivers the stored failure without
+ *    touching the network. `importChunk` used to run three attempts against
+ *    that and issued exactly one request; `lazy-chunk.ts` carries what was
+ *    measured. Replacing the document is what gets a fresh module map — and,
+ *    because it also re-fetches `index.html`, it is the only recovery that
+ *    helps when the chunk is gone for the other reason, a new build having
+ *    shipped while this tab was open. `chunk-reload.ts` owns the once-per-tab
+ *    guard that keeps it from becoming a loop.
  * 2. **A boundary above the split**, via `ChunkErrorBoundary`. Each generation
  *    carries its own error boundary, but those are *inside* the chunk and
  *    cannot catch it failing to arrive. Without one out here the failure is an
@@ -34,60 +46,31 @@ import { reportClientError } from '@/lib/report-client-error';
 export function lazyRoute(chunk: string, load: () => Promise<ComponentType>): ComponentType {
   // Created once, outside render. A `lazy()` built during render is a new
   // component type on every pass, which remounts the tree it wraps.
-  //
-  // The store sits here for the same reason and shares that lifetime: the fetch
-  // runs outside React entirely, so the fallback needs somewhere to read its
-  // progress from that survives a render. One per chunk, like the `lazy()` it
-  // describes.
-  let state: ChunkLoadState = { phase: 'loading', attempt: 1, failures: 0 };
-  const listeners = new Set<() => void>();
-  const read = (): ChunkLoadState => state;
-  const subscribe = (notify: () => void): (() => void) => {
-    listeners.add(notify);
-    return () => {
-      listeners.delete(notify);
-    };
-  };
-
   const Loaded = lazy(async () => ({
-    default: await importChunk(load, {
-      chunk,
-      onState: (next) => {
-        // A fresh object each time, which is what `useSyncExternalStore`
-        // compares on: mutating the existing one would leave the snapshot
-        // referentially equal and the fallback would never re-render.
-        state = next;
-        for (const notify of listeners) notify();
-      },
-    }),
+    default: await loadChunkWithOneReload(chunk, load),
   }));
+
+  // Read once, at the same lifetime as the `lazy()` it describes, because
+  // within one document it cannot change: SC-890 made the second attempt a
+  // document RELOAD, so there is no transition here to subscribe to. The
+  // store and `useSyncExternalStore` this replaces (SC-840) existed to watch
+  // `importChunk`'s retry loop tick over, and that loop is gone — it issued no
+  // second request. What carries the state across the reload instead is the
+  // marker in `chunk-reload.ts`, which is the only thing that survives the
+  // document being replaced.
+  const state: ChunkLoadState = chunkReloadSpent(chunk)
+    ? { phase: 'retrying', attempt: 2, failures: 1 }
+    : { phase: 'loading', attempt: 1, failures: 0 };
 
   return function LazyRoute() {
     return (
       <ChunkErrorBoundary chunk={chunk} onError={(error) => void reportClientError({ error })}>
-        <Suspense fallback={<RoutePending chunk={chunk} subscribe={subscribe} read={read} />}>
+        <Suspense fallback={<RoutePendingFallback chunk={chunk} state={state} />}>
           <Loaded />
         </Suspense>
       </ChunkErrorBoundary>
     );
   };
-}
-
-/** Subscribes the fallback to its own chunk's progress. Split from the markup
- *  so `RoutePendingFallback` can be rendered against a state directly — a
- *  fallback is markup that only exists while something is unfinished, which is
- *  exactly the markup hardest to reach any other way. Same reasoning as
- *  `ChunkLoadFallback` next door. */
-function RoutePending({
-  chunk,
-  subscribe,
-  read,
-}: {
-  chunk: string;
-  subscribe: (notify: () => void) => () => void;
-  read: () => ChunkLoadState;
-}) {
-  return <RoutePendingFallback chunk={chunk} state={useSyncExternalStore(subscribe, read, read)} />;
 }
 
 /**
@@ -111,11 +94,20 @@ function RoutePending({
  *                                             ChunkLoadFallback's card instead
  *
  * Only the third was ever distinguishable. The first two were the same DOM and
- * the same picture for the whole of `importChunk`'s backoff — to a reader
- * looking at the screen, and to the gate, which read this element with
- * `.count()` and threw the name away. A spinner that means "this is arriving"
- * and one that means "two fetches of this have already failed" want opposite
- * responses, and the second one is not fixed by waiting longer.
+ * the same picture — to a reader looking at the screen, and to the gate, which
+ * read this element with `.count()` and threw the name away. A spinner that
+ * means "this is arriving" and one that means "a fetch of this has already
+ * failed" want opposite responses, and the second one is not fixed by waiting
+ * longer.
+ *
+ * **SC-890 changed what the middle row measures.** It read `phase=retrying
+ * failures>0` off `importChunk`'s retry loop, and that loop issued no second
+ * request — so the number counted attempts that never reached the network, and
+ * the window it described was 750 ms of backoff rather than a fetch. The second
+ * attempt is now a document reload, so the same two attributes now say
+ * something stronger and simpler: **`failures=1` means one fetch genuinely
+ * failed and this document is the retry.** A gate that reads `retrying` is
+ * looking at a page that has already been reloaded once for this chunk.
  *
  * Nothing here is rendered: three data attributes on the element that was
  * already there, so no baseline moves and no reader sees a change.

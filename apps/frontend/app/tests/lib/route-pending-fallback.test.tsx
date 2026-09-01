@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { type ChunkLoadState, importChunk } from '@scani/ui/lib/lazy-chunk';
+import type { ChunkLoadState } from '@scani/ui/lib/lazy-chunk';
 import { LoadingSpinner } from '@scani/ui/ui/loading';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -17,12 +17,19 @@ import { RoutePendingFallback } from '../../src/lib/lazy-route';
  *     fetches have FAILED, backing off        erroring  — waiting will not help
  *     it failed for good                      ChunkErrorBoundary's card
  *
- * Only the third was ever distinguishable. `importChunk` retries three times
- * with 250ms and 500ms of backoff and reported none of it, so for that whole
- * window — plus however long three failing fetches take — a reader saw a
- * spinner that meant "this may never arrive" and read it as "this is
- * arriving". The visual gate had exactly the same problem one level up, and
- * spent four runs unable to say what it had photographed.
+ * Only the third was ever distinguishable, so a reader saw a spinner that meant
+ * "this may never arrive" and read it as "this is arriving". The visual gate had
+ * exactly the same problem one level up, and spent four runs unable to say what
+ * it had photographed.
+ *
+ * **SC-890 changed where the middle row comes from.** SC-840 drove it from
+ * `importChunk`'s retry loop, and that loop issued no second request — so the
+ * state it reported described 750 ms of backoff between two attempts that never
+ * reached the network. The second attempt is now a document reload, so the
+ * middle row is seeded from `chunk-reload.ts`'s marker, which is the only thing
+ * that survives the document being replaced. The tests for that source live in
+ * `chunk-reload.test.ts`; what stays here is the rendering, which is unchanged
+ * and is what the e2e parser reads.
  *
  * So the property under test is **that two different situations produce two
  * different markups**, not that a spinner renders. A test asserting only that
@@ -88,63 +95,5 @@ describe('RoutePendingFallback', () => {
       )
     );
     expect(stripped).toBe(bare);
-  });
-});
-
-describe('importChunk reports what the fallback needs', () => {
-  test('a first request reports loading with no failures', async () => {
-    const seen: ChunkLoadState[] = [];
-    await importChunk(async () => 'ok', {
-      chunk: 'interface',
-      onState: (s) => seen.push(s),
-      sleep: async () => {},
-    });
-    expect(seen).toEqual([{ phase: 'loading', attempt: 1, failures: 0 }]);
-  });
-
-  test('a failure is reported BEFORE the backoff, not after it', async () => {
-    // The backoff is most of the time spent in the failing state. Reporting it
-    // only when the next request starts would leave that whole gap described as
-    // `loading` — the one window where "arriving" is exactly what it is not.
-    const seen: ChunkLoadState[] = [];
-    const order: string[] = [];
-    let calls = 0;
-    await importChunk(
-      async () => {
-        calls += 1;
-        order.push(`attempt ${calls}`);
-        if (calls < 2) throw new TypeError('Failed to fetch dynamically imported module: /a.js');
-        return 'ok';
-      },
-      {
-        chunk: 'interface',
-        onState: (s) => {
-          seen.push(s);
-          order.push(`state ${s.phase}`);
-        },
-        sleep: async () => {
-          order.push('sleep');
-        },
-      }
-    );
-
-    expect(seen).toEqual([
-      { phase: 'loading', attempt: 1, failures: 0 },
-      { phase: 'retrying', attempt: 1, failures: 1 },
-      { phase: 'loading', attempt: 2, failures: 1 },
-    ]);
-    expect(order).toEqual([
-      'state loading',
-      'attempt 1',
-      'state retrying',
-      'sleep',
-      'state loading',
-      'attempt 2',
-    ]);
-  });
-
-  test('a caller that passes no observer is unaffected', async () => {
-    // Every existing caller does exactly this, so the option has to be free.
-    await expect(importChunk(async () => 'ok', { chunk: 'interface' })).resolves.toBe('ok');
   });
 });
