@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 
 import { spawnSync } from 'node:child_process';
-import { copyFileSync, existsSync, constants as fsConstants } from 'node:fs';
+import { copyFileSync, existsSync, constants as fsConstants, statfsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import {
   e2eProjectName,
@@ -175,6 +175,203 @@ export function resolveApiService(
 }
 
 /**
+ * WHY A BOOT FAILURE GETS A REPORT AND NOT A SENTENCE (SC-894).
+ *
+ * `Stack failed to start.` was the whole diagnosis this file produced, and it
+ * is unfalsifiable: a reader cannot tell a timed-out wait from a crashed
+ * container from a compose file that would not parse from an image that would
+ * not pull. Measured on the private `Accessibility gate & mobile smoke` job at
+ * 2026-09-01T02:39:02Z — 4m18s, and the two lines a person had to work from
+ * were that sentence and `error: script "test:e2e:a11y" exited with code 1`.
+ *
+ * The actual cause there was the RUNNER'S DISK, and it is the reason this
+ * report reads disk before it reads anything else. A full disk is the one boot
+ * failure a service structurally cannot report, because writing the log line
+ * needs the same disk that ran out: `deps` emitted `bun install v1.3.13` and
+ * then nothing at all, and the only evidence anywhere in that job was an
+ * `ENOSPC` from `actions/checkout`'s own post-step three seconds later. So an
+ * EMPTY container log is a symptom to be explained, not the absence of one —
+ * and `dumpOneShotLogs`, which this file already had, could only ever hand
+ * back that same silence.
+ *
+ * SC-190 / SC-488 / SC-640 are the family: a non-result rendering as a settled
+ * one. Naming the service and the reason is what makes the next failure a
+ * question somebody can answer.
+ */
+export interface ComposeContainerState {
+  service: string;
+  /** compose's own word — `running`, `exited`, `created`, `restarting`, … */
+  state: string;
+  exitCode: number;
+  /** `healthy` / `unhealthy` / `starting`, or empty where no healthcheck exists. */
+  health: string;
+}
+
+/**
+ * One filesystem, as this process can see it. `free`/`total` are `null` when
+ * the path could not be stat'd — which is a real answer and not a zero: on a
+ * Mac the docker root lives inside a VM and is not a host path at all, and
+ * reporting `0 GiB free` for it would be a fabricated out-of-disk verdict.
+ */
+export interface DiskReading {
+  label: string;
+  path: string;
+  free: number | null;
+  total: number | null;
+}
+
+/** Below this, say so in words rather than leaving a reader to compare figures. */
+const LOW_DISK_BYTES = 2 * 1024 ** 3;
+
+function parseJsonOrNull(text: string): unknown {
+  if (!text) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * `docker compose ps --format json` emits a JSON ARRAY on some compose
+ * versions and one object PER LINE on others, and which one you get is a
+ * property of the reader's docker rather than of this repo. Both shapes are
+ * accepted because a parser that handles one of them fails by returning an
+ * empty list — which this report would then render as "compose reported no
+ * containers", a confident sentence about the wrong thing.
+ *
+ * A row with no `Service` is dropped rather than guessed at: the service name
+ * is the only field the report is built on.
+ */
+export function parseComposePs(stdout: string): ComposeContainerState[] {
+  const text = stdout.trim();
+  if (!text) return [];
+  const rows = text.startsWith('[')
+    ? asRows(parseJsonOrNull(text))
+    : text.split('\n').flatMap((line) => asRows(parseJsonOrNull(line.trim())));
+  return rows
+    .map(toContainerState)
+    .filter((state): state is ComposeContainerState => state !== null);
+}
+
+function asRows(value: unknown): unknown[] {
+  if (Array.isArray(value)) return value;
+  return value !== null && typeof value === 'object' ? [value] : [];
+}
+
+function toContainerState(row: unknown): ComposeContainerState | null {
+  if (row === null || typeof row !== 'object') return null;
+  const fields = row as Record<string, unknown>;
+  const service = typeof fields.Service === 'string' ? fields.Service : '';
+  if (!service) return null;
+  const exitCode = Number(fields.ExitCode);
+  return {
+    service,
+    state: typeof fields.State === 'string' && fields.State ? fields.State : 'unknown',
+    exitCode: Number.isFinite(exitCode) ? exitCode : 0,
+    health: typeof fields.Health === 'string' ? fields.Health : '',
+  };
+}
+
+/**
+ * A one-shot that finished its work is `exited` with code 0, and is not a
+ * failure — `env-sync`, `deps`, `migrate` and `minio-init` all end there on a
+ * healthy boot. Everything else that is not `running` never reached a good
+ * state, and a `running` container whose healthcheck says `unhealthy` is worse
+ * than one that died, because compose waited on it.
+ */
+export function stackServiceIsBroken(state: ComposeContainerState): boolean {
+  if (state.state === 'running') return state.health === 'unhealthy';
+  if (state.state === 'exited') return state.exitCode !== 0;
+  return true;
+}
+
+function gib(bytes: number): string {
+  return `${(bytes / 1024 ** 3).toFixed(1)} GiB`;
+}
+
+function describeContainer(state: ComposeContainerState): string {
+  if (state.state === 'exited') return `exited ${state.exitCode}`;
+  if (state.state === 'created') return 'created — never started';
+  if (state.health) return `${state.state} (${state.health})`;
+  return state.state;
+}
+
+/**
+ * The half of the diagnosis that is the same wherever the stack went wrong, so
+ * the boot failure and the health-wait failure cannot drift apart.
+ *
+ * Returned rather than printed: the message is the half that runs in the
+ * reader, and `scripts/tests/e2e-stack-failure.test.ts` asserts it rather than
+ * anyone eyeballing a CI log — the same seam `resolveApiService` exists for.
+ */
+export function describeStackState(
+  containers: readonly ComposeContainerState[],
+  disks: readonly DiskReading[]
+): string {
+  const lines: string[] = [];
+
+  if (containers.length === 0) {
+    lines.push(
+      'compose reported no containers for this project, so whatever failed is upstream of',
+      'any service: a compose file it could not parse, an image it could not pull, or a',
+      "docker it could not reach. Compose's own output above is the whole diagnosis."
+    );
+  } else {
+    const broken = containers.filter(stackServiceIsBroken);
+    const healthy = containers.filter((c) => !stackServiceIsBroken(c));
+    if (broken.length === 0) {
+      lines.push(
+        'Every container compose knows about is running or exited 0, so the failure is not',
+        `one of them. Up: ${healthy.map((c) => c.service).join(', ')}.`
+      );
+    } else {
+      lines.push('Did not come up:');
+      const width = Math.max(...broken.map((c) => c.service.length));
+      for (const state of broken) {
+        lines.push(`  ${state.service.padEnd(width)}  ${describeContainer(state)}`);
+      }
+      lines.push(
+        healthy.length > 0
+          ? `Up: ${healthy.map((c) => c.service).join(', ')}.`
+          : 'Nothing else came up either.'
+      );
+    }
+  }
+
+  lines.push('', 'Disk:');
+  for (const disk of disks) {
+    if (disk.free === null || disk.total === null) {
+      lines.push(
+        `  ${disk.label} ${disk.path}: not readable from this host — docker is remote or`,
+        '    in a VM, so the reading above is this checkout, which may not be what filled.'
+      );
+      continue;
+    }
+    const usedPct = disk.total > 0 ? Math.round(((disk.total - disk.free) / disk.total) * 100) : 0;
+    lines.push(
+      `  ${disk.label} ${disk.path}: ${gib(disk.free)} free of ${gib(disk.total)} (${usedPct}% used)`
+    );
+  }
+
+  const starved = disks.filter(
+    (disk): disk is DiskReading & { free: number } =>
+      disk.free !== null && disk.free < LOW_DISK_BYTES
+  );
+  if (starved.length > 0) {
+    lines.push(
+      '',
+      `OUT OF DISK — ${gib(starved[0]?.free ?? 0)} free on ${starved[0]?.path}. Read this BEFORE the`,
+      'container logs below. A full disk is the one boot failure a service cannot report,',
+      'because writing the log line needs the same disk that ran out, so an EMPTY log is',
+      'the symptom rather than the absence of one.'
+    );
+  }
+
+  return lines.join('\n');
+}
+
+/**
  * The spec path a caller's own `--project <name>` is about to swallow, or
  * `null` (SC-533).
  *
@@ -290,7 +487,10 @@ function applyResolvedDb(): void {
  * parameter — `scripts/tests/e2e-compose-project.test.ts` reads the call sites
  * and fails on any verb outside the read-only set.
  */
-function dockerQuery(verb: 'ps' | 'inspect', args: string[]): { status: number; stdout: string } {
+function dockerQuery(
+  verb: 'ps' | 'inspect' | 'info',
+  args: string[]
+): { status: number; stdout: string } {
   const r = spawnSync('docker', [verb, ...args], { cwd: REPO_ROOT, encoding: 'utf8' });
   return { status: r.status ?? 1, stdout: r.stdout ?? '' };
 }
@@ -361,6 +561,41 @@ function apiService(): string {
   return resolved.service;
 }
 
+/** What `describeStackState` reads, gathered from a stack that is already up
+ *  (or half up). Failures here are reported as failures, never as zero. */
+function readStackState(): ComposeContainerState[] {
+  return parseComposePs(composeCapture(['ps', '--all', '--format', 'json']));
+}
+
+function readDisk(label: string, path: string): DiskReading {
+  try {
+    const stats = statfsSync(path);
+    const block = Number(stats.bsize);
+    return {
+      label,
+      path,
+      free: Number(stats.bavail) * block,
+      total: Number(stats.blocks) * block,
+    };
+  } catch {
+    return { label, path, free: null, total: null };
+  }
+}
+
+/**
+ * The checkout always, and the docker root when docker names one this host can
+ * see. On a Linux CI runner they are the same filesystem and the second line
+ * is redundant; on a box where `/var/lib/docker` is its own volume it is the
+ * only one that matters, because images, volumes and the build cache are what
+ * actually fill up.
+ */
+function readDisks(): DiskReading[] {
+  const disks = [readDisk('checkout', REPO_ROOT)];
+  const dockerRoot = dockerQuery('info', ['--format', '{{.DockerRootDir}}']).stdout.trim();
+  if (dockerRoot && dockerRoot !== REPO_ROOT) disks.push(readDisk('docker root', dockerRoot));
+  return disks;
+}
+
 // `docker compose up` reports only `service "x" didn't complete successfully:
 // exit 1` and discards the container's own output, so a boot failure here is
 // undiagnosable from a CI log alone — which is exactly what happened to
@@ -368,8 +603,17 @@ function apiService(): string {
 // non-local database") only became visible once the one-shot containers were
 // dumped. Ported from scani-oss caebf28e, which put the dump in `ci.yml`;
 // this repo boots the stack from here rather than from a workflow step.
-function dumpOneShotLogs() {
-  compose(['logs', '--no-color', ...ONE_SHOT_SERVICES]);
+//
+// The one-shots stay in the list whatever compose says about them (SC-894):
+// `migrate` can exit 0 having refused, and `deps` is what every long-running
+// service waits on. What is added is the services compose itself reports as
+// broken — a crashed `frontend` is exactly as mute as a crashed `deps` was,
+// and it was in no list here.
+function dumpServiceLogs(containers: readonly ComposeContainerState[]) {
+  const broken = containers.filter(stackServiceIsBroken).map((c) => c.service);
+  const services = [...new Set([...broken, ...ONE_SHOT_SERVICES])];
+  console.error(`--- docker compose logs: ${services.join(', ')} ---`);
+  compose(['logs', '--no-color', ...services]);
 }
 
 /** `down -v` only ever runs against `PROJECT`, so it can only delete volumes
@@ -430,8 +674,10 @@ async function main() {
       STUB_CHAIN_DATA: '1',
     });
     if (upStatus !== 0) {
-      console.error('Stack failed to start.');
-      dumpOneShotLogs();
+      const containers = readStackState();
+      console.error(`Stack failed to start — \`docker compose up\` exited ${upStatus}.`);
+      console.error(describeStackState(containers, readDisks()));
+      dumpServiceLogs(containers);
       process.exit(upStatus);
     }
     // The suite's direct-SQL assertions reach Postgres by container name,
@@ -449,7 +695,12 @@ async function main() {
   const waitScript = resolve(E2E_ROOT, 'scripts/wait-for-stack.ts');
   const healthStatus = run('bun', [waitScript], SERVICE_ENV);
   if (healthStatus !== 0) {
-    dumpOneShotLogs();
+    // `wait-for-stack.ts` already names which URLs never answered. What it
+    // cannot see is WHY — a container that exited, or a disk that filled while
+    // the wait was running — so the same report follows it (SC-894).
+    const containers = readStackState();
+    console.error(describeStackState(containers, readDisks()));
+    dumpServiceLogs(containers);
     if (!stackWasUp && !KEEP_STACK) {
       tearDown();
     }
