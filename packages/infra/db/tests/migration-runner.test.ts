@@ -3,6 +3,8 @@ import { unlinkSync } from 'node:fs';
 import path from 'node:path';
 import postgres from 'postgres';
 import { sha256 } from '../src/migration-files';
+import type { DriftDeclaration } from '../src/migration-reconciliation';
+import { sqlWithoutComments } from '../src/migration-reconciliation';
 import {
   applyMigrations,
   driftRefusalMessage,
@@ -59,13 +61,19 @@ function creates(schema: string, table: string): string {
   return `create table "${schema}"."${table}" (id int primary key)`;
 }
 
-function run(dir: string, schema: string, assumeAppliedThrough: string | null = null) {
+function run(
+  dir: string,
+  schema: string,
+  assumeAppliedThrough: string | null = null,
+  declarations: readonly DriftDeclaration[] = []
+) {
   return applyMigrations(sql, {
     folder: dir,
     schema,
     table: 'applied',
     legacyTable: 'legacy_drizzle',
     assumeAppliedThrough,
+    declarations,
   });
 }
 
@@ -270,6 +278,106 @@ describe('applyMigrations', () => {
 
     // And it held them back — the point of the check, not just of the message.
     expect(await tables(schema)).toEqual(['applied', 'edited']);
+  });
+
+  /**
+   * SC-914. A comment edit to a migration that has already run is
+   * indistinguishable, from two hashes, from a SQL edit — and the deploy that
+   * meets it is a demo or a self-hoster's upgrade, where nobody has the
+   * context. These four tests are the whole mechanism: it lets a declared
+   * comment edit through, it lets nothing else through, and the drift check
+   * itself is untouched in every other case above.
+   */
+  test('a declared comment-only edit reconciles instead of refusing (SC-914)', async () => {
+    const schema = newSchema();
+    const ran = `-- a real account was named here\n${creates(schema, 'declared')}`;
+    const dir = await folder({ '20260817120000_declared.sql': ran });
+    await run(dir, schema);
+
+    const scrubbed = `-- a synthetic example is named here\n${creates(schema, 'declared')}`;
+    await Bun.write(path.join(dir, '20260817120000_declared.sql'), scrubbed);
+
+    const declaration: DriftDeclaration = {
+      kind: 'comment-only',
+      tag: '20260817120000_declared',
+      recorded: sha256(ran),
+      sqlSha256: sha256(sqlWithoutComments(ran)),
+      why: 'test: the comment was rewritten and the SQL was not',
+    };
+
+    const result = await run(dir, schema, null, [declaration]);
+    expect(result.reconciled).toEqual([
+      `20260817120000_declared: ${sha256(ran)} -> ${sha256(scrubbed)}`,
+    ]);
+
+    const rows = (await sql.unsafe(`select sha256 from "${schema}".applied`)) as Array<{
+      sha256: string;
+    }>;
+    expect(rows.map((row) => row.sha256)).toEqual([sha256(scrubbed)]);
+
+    // The point of the whole exercise: the next run is an ordinary no-op.
+    expect((await run(dir, schema, null, [declaration])).reconciled).toEqual([]);
+  });
+
+  test('a declaration does not cover a SQL change to the same file (SC-914)', async () => {
+    const schema = newSchema();
+    const ran = `-- a real account was named here\n${creates(schema, 'guarded')}`;
+    const dir = await folder({ '20260817120000_guarded.sql': ran });
+    await run(dir, schema);
+
+    // Same comment rewrite AND a SQL change, under a declaration that names
+    // the correct recorded digest. The recorded digest matching is exactly the
+    // case a `{from, to}` table would have waved through.
+    await Bun.write(
+      path.join(dir, '20260817120000_guarded.sql'),
+      `-- a synthetic example is named here\n${creates(schema, 'guarded')};\nselect 1`
+    );
+
+    await expect(
+      run(dir, schema, null, [
+        {
+          kind: 'comment-only',
+          tag: '20260817120000_guarded',
+          recorded: sha256(ran),
+          sqlSha256: sha256(sqlWithoutComments(ran)),
+          why: 'test: the comment was rewritten and the SQL was not',
+        },
+      ])
+    ).rejects.toThrow(/SQL change, not a comment edit/);
+  });
+
+  test('a declared SQL change reconciles only the exact file it names (SC-914)', async () => {
+    const schema = newSchema();
+    const ran = creates(schema, 'override');
+    const dir = await folder({ '20260817120000_override.sql': ran });
+    await run(dir, schema);
+
+    const reviewed = `${ran};\nselect 1`;
+    await Bun.write(path.join(dir, '20260817120000_override.sql'), reviewed);
+    const declaration: DriftDeclaration = {
+      kind: 'sql-changed',
+      tag: '20260817120000_override',
+      recorded: sha256(ran),
+      becomes: sha256(reviewed),
+      why: 'test: a deliberate override of a real SQL change, reviewed by a human',
+    };
+    expect((await run(dir, schema, null, [declaration])).reconciled).toHaveLength(1);
+
+    // An override covers ONE reviewed file, not the next edit to it.
+    await sql.unsafe(`update "${schema}".applied set sha256 = $1`, [sha256(ran)]);
+    await Bun.write(path.join(dir, '20260817120000_override.sql'), `${reviewed};\nselect 2`);
+    await expect(run(dir, schema, null, [declaration])).rejects.toThrow(/edited again since/);
+  });
+
+  test('the refusal tells a comment editor what to do about it (SC-914)', async () => {
+    const schema = newSchema();
+    const dir = await folder({ '20260817120000_edited.sql': creates(schema, 'edited') });
+    await run(dir, schema);
+    await Bun.write(
+      path.join(dir, '20260817120000_edited.sql'),
+      `-- a note\n${creates(schema, 'edited')}`
+    );
+    await expect(run(dir, schema)).rejects.toThrow(/db:declare-drift/);
   });
 
   test('editing a migration that has NOT been applied yet is not drift', async () => {
