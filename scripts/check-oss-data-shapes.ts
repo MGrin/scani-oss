@@ -49,7 +49,6 @@
 //   bun scripts/check-oss-data-shapes.ts --scan            # audit the whole tree
 
 import { existsSync } from 'node:fs';
-import { type BranchFacts, collectTreeMarkers } from './check-oss-bound-paths';
 import {
   type AddedLine,
   addedLines,
