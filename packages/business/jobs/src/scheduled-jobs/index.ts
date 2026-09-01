@@ -21,7 +21,11 @@ export { RECONCILE_ORPHANED_USER_JOBS_SCHEDULE } from './reconcile-orphaned-user
 export { RECONCILE_PENDING_CREDENTIALS_SCHEDULE } from './reconcile-pending-credentials';
 export { RESCORE_SCAM_TOKENS_SCHEDULE } from './rescore-scam-tokens';
 export { SPLIT_HOLDING_PROBE_SCHEDULE } from './split-holding-probe';
-export { STALE_SYNC_PROBE_SCHEDULE } from './stale-sync-probe';
+export {
+  STALE_SYNC_ALARM,
+  STALE_SYNC_PROBE_SCHEDULE,
+  STALE_SYNC_RENOTIFY_MS,
+} from './stale-sync-probe';
 export {
   TOKEN_PRICES_DOWNSAMPLE_SCHEDULE,
   TOKEN_PRICES_INTRADAY_RETENTION_DAYS,
