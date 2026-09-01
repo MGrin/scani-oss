@@ -136,6 +136,25 @@ while read -r _local_ref local_sha _remote_ref _remote_sha; do
     fail "paths in the commits being pushed cannot travel to MGrin/scani-oss"
   fi
 
+  # SC-838. THE SHAPE THE OTHER TWO CANNOT SEE. `check-oss-figures` detects a
+  # MEASUREMENT and `check-oss-prose` a CLAIM; what left this machine for the
+  # mirror on 2026-09-01 was neither — a bank account number, four wallet
+  # addresses, a transaction hash, 283 row identifiers, an invoice number. None
+  # carries a scope word or a quantity, so every guard here passed all of it and
+  # three waves were found by a person reading files.
+  #
+  # It is here as well as in CI for the same reason the figures check is: this
+  # is the last point before the content is public, and it is the only one a
+  # cherry-picked port reaches at all.
+  if [ -f scripts/check-oss-data-shapes.ts ]; then
+    commits=$(pushed_commits "$local_sha") || fail "could not list the commits being pushed — \`git rev-list\` failed, so NO IDENTIFIER WAS CHECKED. This is not a pass."
+    if ! printf '%s\n' "$commits" | bun scripts/check-oss-data-shapes.ts --stdin-commits --ref "$local_sha"; then
+      fail "the commits being pushed carry an opaque identifier (SC-838)"
+    fi
+  else
+    fail "scripts/check-oss-data-shapes.ts is not in this tree and this push is bound for ${REMOTE_URL} — NO IDENTIFIER WAS CHECKED. This is not a pass."
+  fi
+
   # SC-887. Routing is not content: every file in the leak that produced this
   # was correctly `oss-eligible`, and what travelled inside one was a live
   # account balance in a fixture. This is the mode that matters — the same
