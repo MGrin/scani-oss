@@ -20,12 +20,14 @@
 
 import { describe, expect, test } from 'bun:test';
 import * as schema from '@scani/db/schema';
+import Decimal from 'decimal.js';
 import { and, asc, eq } from 'drizzle-orm';
 import { Container } from 'typedi';
 import { unexplainedDrift } from '../../src/lib/balances/unexplained-drift';
 import { flowRoleOf } from '../../src/lib/returns/flow-classification';
 import { pendingPredicate } from '../../src/lib/transfer-review-queue';
 import { HoldingBalanceObservationRepository } from '../../src/repositories/HoldingBalanceObservationRepository';
+import { ManualEditFeeRefused } from '../../src/services/holdings/ManualBalanceEditService';
 import { TransferReviewService } from '../../src/services/TransferReviewService';
 import {
   HoldingLabelTakenError,
@@ -1051,6 +1053,143 @@ describe('UpdateHoldingUseCase — one edit, one question (SC-606)', () => {
       expect(arrival?.transferGroupId).toBe(withdrawal?.transferGroupId ?? null);
 
       expect(await pendingOutflows(tx, user.id)).toHaveLength(0);
+    });
+  });
+
+  test('a declared transfer states its fee: the destination gets what ARRIVED (SC-857)', async () => {
+    // The measured case, reduced. A wire leaves 251.33 and lands 250.00; the
+    // 1.33 is the bank's. Before this, `moveDeclaredTransfer` had one
+    // `quantity` and applied it to both legs, so the owner's only two options
+    // were to overstate the destination or understate the source — and the
+    // production record shows the first, reversed 28 minutes later by a
+    // separate `correction` row.
+    //
+    // The fee is an OUTFLOW FROM THE SOURCE, not a reduction of the arrival,
+    // and the difference is the whole design. It is a `kind='fee'` sibling of
+    // the withdrawal — the pattern `StatementTransactionIngester` already
+    // writes and the Airwallex importer already produces — so the two
+    // record-keepers now describe one movement the same way, which is what
+    // SC-858 could not reconcile.
+    await withTestDb(async (tx) => {
+      const { user, institution, token, holding } = await cashHoldingObservedToday(tx);
+      const other = await makeAccount(tx, { userId: user.id, institutionId: institution.id });
+      const destination = await makeHolding(tx, {
+        userId: user.id,
+        accountId: other.id,
+        tokenId: token.id,
+        balance: '500',
+        source: 'manual',
+      });
+
+      await useCase().execute(
+        holding.id,
+        {
+          // 4,000 -> 3,748.67. The owner states what LEFT their account,
+          // which is the only figure their statement shows.
+          balance: '3748.67',
+          editCause: 'flow',
+          editOccurredAt: backdatedBeforeLastObservation(),
+          editOutflow: {
+            decision: 'internal',
+            destination: { accountId: other.id, holdingId: destination.id },
+            feeQuantity: '1.33',
+          },
+        },
+        user.id,
+        tx
+      );
+
+      const [arrived] = await tx
+        .select()
+        .from(schema.holdings)
+        .where(eq(schema.holdings.id, destination.id));
+      const [left] = await tx
+        .select()
+        .from(schema.holdings)
+        .where(eq(schema.holdings.id, holding.id));
+
+      // THE assertion. 500 + 250.00, not 500 + 251.33. Against the one-amount
+      // model this reads 751.33 — the overstatement the owner had to undo.
+      expect(arrived?.balance).toBe('750');
+      expect(left?.balance).toBe('3748.67');
+
+      const sourceLedger = await ledgerFor(tx, holding.id);
+      const withdrawal = sourceLedger.find((row) => row.kind === 'withdraw');
+      const fee = sourceLedger.find((row) => row.kind === 'fee');
+      const arrival = (await ledgerFor(tx, destination.id)).find((row) => row.kind === 'deposit');
+
+      // Two rows on the source, and the split between them is what makes the
+      // fee sayable at all.
+      expect(withdrawal?.quantity).toBe('-250');
+      expect(fee?.quantity).toBe('-1.33');
+      expect(arrival?.quantity).toBe('250');
+
+      // The invariant this design cannot survive losing: what the rows sum to
+      // is what the anchor moved by. `OpeningBalanceReconciliationService`
+      // computes `holdings.balance - sum(real txs)` and synthesizes an
+      // `opening_balance` for the difference, so a fee row added BESIDE a
+      // full-amount withdrawal — rather than carved out of it — would
+      // manufacture a phantom 1.33 opening on this holding.
+      const summed = sourceLedger.reduce((total, row) => total.add(row.quantity), new Decimal(0));
+      expect(summed.toString()).toBe('-251.33');
+
+      // The fee is not a leg of the transfer and must never be linked as one:
+      // `CostBasisService`'s inflow branch hands the FIRST `transfer_in` every
+      // buffered lot and then deletes the bucket, so a second row on this
+      // group id would open a fresh market-value lot and invent a gain
+      // (SC-150). One group, two legs, exactly as before.
+      expect(withdrawal?.transferGroupId).not.toBeNull();
+      expect(arrival?.transferGroupId).toBe(withdrawal?.transferGroupId ?? null);
+      expect(fee?.transferGroupId).toBeNull();
+
+      // …and it is not a question. `answerIsOwedFor` covers `withdraw` and
+      // `transfer_out` only, so a `fee` row cannot reach the review queue —
+      // asserted rather than assumed, because a fee that queued would ask the
+      // owner where their bank's money went.
+      expect(await pendingOutflows(tx, user.id)).toHaveLength(0);
+
+      // A cost the portfolio CONSUMED, so it belongs in the return figure
+      // rather than in the owner's contributions. `flowRoleOf` already says
+      // so for every imported fee; this asserts the declared one lands in the
+      // same place.
+      expect(flowRoleOf('fee')).toBe('return');
+    });
+  });
+
+  test('a fee that consumes the whole movement is refused, not clamped (SC-857)', async () => {
+    // A fee equal to or larger than the amount that left leaves nothing to
+    // transfer, and the arrival would be zero or negative. Refused rather
+    // than clamped for the reason `undoDeclaredTransfer` gives about not
+    // clamping: silently losing the difference produces a figure nobody
+    // chose, and the owner cannot see that it happened.
+    await withTestDb(async (tx) => {
+      const { user, institution, token, holding } = await cashHoldingObservedToday(tx);
+      const other = await makeAccount(tx, { userId: user.id, institutionId: institution.id });
+      const destination = await makeHolding(tx, {
+        userId: user.id,
+        accountId: other.id,
+        tokenId: token.id,
+        balance: '500',
+        source: 'manual',
+      });
+
+      await expect(
+        useCase().execute(
+          holding.id,
+          {
+            balance: '3748.67',
+            editCause: 'flow',
+            editOccurredAt: backdatedBeforeLastObservation(),
+            editOutflow: {
+              decision: 'internal',
+              destination: { accountId: other.id, holdingId: destination.id },
+              feeQuantity: '251.33',
+            },
+          },
+          user.id,
+          tx
+        )
+      ).rejects.toThrow(ManualEditFeeRefused);
     });
   });
 

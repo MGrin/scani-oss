@@ -730,6 +730,10 @@
         "trigger": "Eliminar"
       },
       "editCause": {
+        "feeLabel": "Taxa, se a transferência custou alguma coisa",
+        "feeExplain": "Deixe vazio se nada foi cobrado. A taxa é registada como um custo próprio nesta conta, por isso o que chega é o que realmente chegou.",
+        "feeArrives": "Chegam {{amount}} {{symbol}}; a taxa fica registada aqui como um custo.",
+        "feeTooLarge": "A taxa tem de ser menor do que o valor que se moveu.",
         "cancel": "Cancelar",
         "dateLabel": "Quando é que o dinheiro se mexeu?",
         "description": "O saldo de {{holding}} mexeu-se. O Scani não consegue distinguir dinheiro a mexer-se de um valor a ser corrigido ou de um saldo a crescer, e cada caso é tratado de forma diferente.",
