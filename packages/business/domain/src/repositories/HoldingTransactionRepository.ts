@@ -17,7 +17,7 @@ import {
 } from 'drizzle-orm';
 import { Container, Service } from 'typedi';
 import { ledgerOrderBy } from '../lib/ledger-order';
-import { PERSON_AUTHORED_SOURCES } from '../lib/transfer-matching';
+import { PERSON_AUTHORED_SOURCES } from '../lib/person-authored-sources';
 import { HoldingCoverageRepository } from './HoldingCoverageRepository';
 import { describeMergedBatch, type MergedRowSubject } from './merged-rows';
 

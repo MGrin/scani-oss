@@ -24,11 +24,9 @@ import * as schema from '@scani/db/schema';
 import Decimal from 'decimal.js';
 import { eq } from 'drizzle-orm';
 import { Container } from 'typedi';
+import { MANUAL_EDIT_FLOW_SOURCE } from '../../src/lib/person-authored-sources';
 import { pendingPredicate } from '../../src/lib/transfer-review-queue';
-import {
-  MANUAL_EDIT_FLOW_SOURCE,
-  ManualEditFeeRefused,
-} from '../../src/services/holdings/ManualBalanceEditService';
+import { ManualEditFeeRefused } from '../../src/services/holdings/ManualBalanceEditService';
 import {
   MovementExceedsBalanceError,
   MovementSameHoldingError,

@@ -13,6 +13,7 @@
     "./test-helpers": "./test/helpers/index.ts",
     "./lib/constants": "./src/lib/constants.ts",
     "./lib/normalize-vendor-name": "./src/lib/normalize-vendor-name.ts",
+    "./lib/person-authored-sources": "./src/lib/person-authored-sources.ts",
     "./lib/request-cache": "./src/lib/request-cache.ts",
     "./lib/returns/fx-attribution": "./src/lib/returns/fx-attribution.ts",
     "./lib/returns/twr": "./src/lib/returns/twr.ts",
