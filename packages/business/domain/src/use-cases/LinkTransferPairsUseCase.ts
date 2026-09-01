@@ -55,12 +55,12 @@ import { createComponentLogger } from '@scani/logging';
 import Decimal from 'decimal.js';
 import { and, eq, gte, inArray, isNull, notInArray, or, sql } from 'drizzle-orm';
 import { Service } from 'typedi';
+import { PERSON_AUTHORED_INFLOW_SOURCES } from '../lib/person-authored-sources';
 import {
   candidatePairClass,
   INFLOW_KINDS,
   MATCH_WINDOW_MS,
   OUTFLOW_KINDS,
-  PERSON_AUTHORED_INFLOW_SOURCES,
   QTY_MATCH_EPSILON,
   type TransferLeg,
 } from '../lib/transfer-matching';

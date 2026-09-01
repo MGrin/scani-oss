@@ -13,7 +13,7 @@
 
 import { db } from '@scani/db/connection';
 import * as schema from '@scani/db/schema';
-import { USER_ENTERED_SOURCE } from '@scani/domain/lib/transfer-matching';
+import { USER_ENTERED_SOURCE } from '@scani/domain/lib/person-authored-sources';
 import {
   HoldingCoverageRepository,
   HoldingTransactionRepository,
