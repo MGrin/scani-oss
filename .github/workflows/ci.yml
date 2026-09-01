@@ -596,6 +596,7 @@ jobs:
         e2e,
         prod-guards-integration,
         secret-scan,
+        oss-boundary,
       ]
     if: always()
     runs-on: ubuntu-latest
@@ -611,3 +612,210 @@ jobs:
             exit 1
           fi
           echo "All required jobs passed or were skipped."
+
+  # SC-838. THE GATE ON THE PRIVATE/PUBLIC BOUNDARY. What stood here before was
+  # a pre-push hook, and a hook is not a gate: `--no-verify` skips it, a fresh
+  # clone has none until `bun install` sets `core.hooksPath`, and it is
+  # per-machine — measured set in one checkout and nowhere else. On 2026-09-01
+  # a real leak reached MGrin/scani-oss past it, and the public history had to
+  # be rewritten and force-pushed. The hook stays: a seatbelt and a gate is the
+  # intended end state, not one replacing the other.
+  #
+  # NEVER PATH-FILTERED, and never `needs: detect-changes`. That leak travelled
+  # in a SQL migration and in prose; a filter deciding this job is irrelevant to
+  # a change is a filter deciding a leak is irrelevant.
+  #
+  # WHAT THIS JOB DELIBERATELY DOES NOT RUN, because the obvious wiring is a
+  # false green. `scripts/check-oss-bound-paths.ts` asks WHICH REPO a branch
+  # belongs to, and answers by diffing the two mains — so it needs both trees,
+  # and a checkout of one repository has one. Measured 2026-09-02 in a clean
+  # mirror-shaped clone, both arms:
+  #
+  #   no `upstream` remote         -> `SKIPPED · exit 0 · no upstream remote is
+  #                                   configured` — a green over a tree it never
+  #                                   looked at, which is the defect this job
+  #                                   exists to be the opposite of
+  #   `upstream` pointed at itself -> `UNKNOWN · exit 9`, permanently: the two
+  #                                   mains are the same commit, so nothing
+  #                                   distinguishes them
+  #
+  # Its PREDICATE does not port here either — "refuse a path absent from
+  # `upstream/main`" is, inside the mirror, "refuse every new file". 14 of the
+  # 30 landings before 2026-09-02 added at least one, so it would refuse about
+  # half of all work and `OSS_ALLOW_NEW_FILES=1` would become the habit rather
+  # than the exception. A guard whose escape hatch is routine is not a guard.
+  # It stays a pre-commit/pre-push check, where both trees are present.
+  #
+  # The three CONTENT scanners have no such problem and already know this
+  # repository by name: `scanScope` reads "no `upstream` remote and no
+  # `.private-repo` marker" as *this checkout is the public mirror, so every
+  # commit in it is public*, and scans. They are what this job runs, and they
+  # are what would have caught the 2026-09-01 leak.
+  #
+  # A `pull_request` run executes the workflow from the PR's own merge commit,
+  # so a pull request can edit this job. That is GitHub's model and is not
+  # worked around here: the threat this gate is built for is an accidental
+  # port, and a diff that weakens the boundary gate is visible in review.
+  oss-boundary:
+    name: OSS boundary
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+        with:
+          # A pull request's base is unreachable at the default depth of 1.
+          # Without this the range step refuses every run — loudly, and
+          # uselessly.
+          fetch-depth: 0
+      - uses: ./.github/actions/setup-bun
+        with:
+          # The guards import node builtins and each other, nothing else.
+          install: "false"
+
+      # THE DELETED-GUARD HOLE. Every scan below is `bun scripts/check-oss-*`,
+      # so a missing script exits non-zero — the right answer by accident rather
+      # than by construction, and the wrong one the moment somebody adds an
+      # `|| true`, an `if [ -f ]`, or a fourth scanner. The invariant is stated
+      # once, here, in the words the hook already uses: a check that could not
+      # run is not a pass.
+      #
+      # `check-oss-bound-paths.ts` and `lib/check-verdict.ts` are in the list
+      # though nothing calls them directly — the three scanners import them, so
+      # their absence is the scan's absence.
+      - name: The guards are present in this tree
+        run: |
+          set -euo pipefail
+          present=0
+          missing=""
+          for f in check-oss-figures check-oss-prose check-oss-internal-refs check-oss-bound-paths lib/check-verdict; do
+            if [ -f "scripts/$f.ts" ]; then
+              present=$((present + 1))
+            else
+              missing="$missing scripts/$f.ts"
+            fi
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::NOTHING WAS SCANNED — absent from this tree:$missing. This is not a pass."
+            exit 1
+          fi
+          echo "$present of 5 guard file(s) present"
+
+      # ARM 3 OF THE MATRIX IN MGrin/scani#1374, MOVED INTO CI. Every other step
+      # here is a green whenever the tree is clean, and a green from an
+      # instrument nobody has watched refuse is exactly the non-result rendered
+      # as a settled one that this job exists to be the opposite of. So: a
+      # throwaway repository, one commit carrying a value of the shape that
+      # leaked, and the real CLI. It must exit non-zero.
+      #
+      # IT PROVES WHAT THE SCANNERS' OWN SELF-TESTS CANNOT. Each scanner already
+      # verifies its rule table and exits 10 if a rule stopped behaving, and the
+      # test suite already asserts the CLI refuses. Neither reads THIS STEP. A
+      # `run:` block that piped the scanner into something, or lost its status
+      # to a subshell, passes every green arm above and is caught only here.
+      #
+      # The probe repository has no remotes and no `.private-repo`, which is how
+      # `scanScope` recognises a public checkout — so the scanner scans there
+      # whichever repository this job runs in, and this arm means the same thing
+      # in both.
+      #
+      # The value is synthetic: it is the fixture
+      # `scripts/tests/check-oss-figures.test.ts` already uses.
+      - name: The guard can still go RED
+        run: |
+          set -euo pipefail
+          probe="$RUNNER_TEMP/oss-boundary-probe"
+          rm -rf "$probe"
+          mkdir -p "$probe"
+          git -C "$probe" init -q -b main
+          git -C "$probe" config user.email ci@example.com
+          git -C "$probe" config user.name ci
+          git -C "$probe" config commit.gpgsign false
+          echo seed > "$probe/seed.txt"
+          git -C "$probe" add -A
+          git -C "$probe" commit -qm seed
+          printf "const balance = '98765.43210987';\n" > "$probe/probe.test.ts"
+          git -C "$probe" add -A
+          git -C "$probe" commit -qm probe
+          git -C "$probe" rev-parse HEAD > "$probe/commits.txt"
+          rc=0
+          ( cd "$probe" && bun "$GITHUB_WORKSPACE/scripts/check-oss-figures.ts" \
+              --stdin-commits < "$probe/commits.txt" ) > "$probe/out.txt" 2>&1 || rc=$?
+          cat "$probe/out.txt"
+          if [ "$rc" -eq 0 ]; then
+            echo "::error::the figure guard did NOT refuse a commit carrying 98765.43210987, so every green in this job is uninformative — NOTHING THIS JOB REPORTS IS EVIDENCE."
+            exit 1
+          fi
+          echo "the guard refused the probe with exit $rc — a red is reachable from this step"
+
+      # A WHOLE-TREE ASSERTION, not a claim about this change: the public tree
+      # contains no internal reference at all. It is true today — measured
+      # 2026-09-02 in a mirror clone, `2252 of 2288 tracked file(s) scanned, 36
+      # binary skipped, 0 internal reference(s)` — so making it a gate costs
+      # nothing now and refuses the first change that adds one. It is also the
+      # only arm that reads a merge commit's own content, which the added-line
+      # scan below structurally cannot.
+      #
+      # `--scan` is this guard's only whole-tree mode and it bypasses the scope
+      # question by design, so it must NOT run on the private repository, whose
+      # tree carries internal references throughout. The branch is taken in
+      # shell and PRINTED rather than written as a step-level `if:`: `skipped`
+      # is already one word for two opposite things in this repository's CI
+      # (SC-726), and a third meaning for it inside the boundary gate is not
+      # worth the two saved lines.
+      - name: No internal reference anywhere in the tree
+        run: |
+          set -euo pipefail
+          if [ -f .private-repo ]; then
+            echo "NOT RUN: .private-repo marks this as the private repository, whose tree carries internal references by design. This arm is the mirror's."
+          else
+            bun scripts/check-oss-internal-refs.ts --scan
+          fi
+
+      # THE ADDED LINES THIS CHANGE INTRODUCES — the population the pre-push
+      # hook judges, asked of the repository instead of the machine.
+      #
+      # PULL REQUESTS ONLY, and the reason is the label below rather than cost.
+      # `github.event.pull_request.labels` does not exist on a push, so the
+      # assertion that cleared a pull request is unreadable from the run that
+      # follows it — re-running this scan on `main` would turn every cleared
+      # pull request into a permanently red `main`, which is worse than not
+      # running it. Nothing is lost that this job otherwise sees: a merge commit
+      # adds no lines a per-commit diff can read (below), so the push run has
+      # nothing here to read that the pull-request run did not.
+      #
+      # `--no-merges`, and the blind spot that leaves is stated rather than
+      # papered over: `git diff-tree` prints nothing for a merge commit without
+      # `-m`, so feeding one to the scanner reads zero added lines and reports
+      # `PASS · 0 added line(s) ... in 1 pushed commit(s)` — measured
+      # 2026-09-02. Excluding merges makes the count honest about what it read.
+      # A conflict resolution that ADDS a line inside a merge commit is
+      # therefore invisible here; the whole-tree arm above is what covers it.
+      #
+      # An unresolvable base is a REFUSAL, never an empty range. Both arrive as
+      # an empty commit list and only one of them is a scan.
+      #
+      # THE LABEL IS AN ASSERTION, NOT A MUTE BUTTON. `OSS_ALLOW_FIGURES=1` is
+      # the escape the guard already documents, and applying
+      # `figures-are-synthetic` to a pull request is a person saying the figures
+      # in it were made up rather than taken off a real account. It is recorded
+      # in the verdict line, which names every value it admitted. Measured over
+      # the 20 landings before 2026-09-02, this arm refuses 2 — a rate at which
+      # clearing one is a decision somebody makes, not a reflex.
+      - name: Scan what this change introduces
+        env:
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          OSS_ALLOW_FIGURES: ${{ contains(github.event.pull_request.labels.*.name, 'figures-are-synthetic') && '1' || '' }}
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_EVENT_NAME" != "pull_request" ]; then
+            echo "NOT RUN: event '$GITHUB_EVENT_NAME' carries no pull-request labels, so a cleared figure could not be read back and this arm would red \`main\` after every cleared pull request. The whole-tree arm above is what covers this run."
+            exit 0
+          fi
+          if ! git rev-parse --verify --quiet "${PR_BASE}^{commit}" > /dev/null; then
+            echo "::error::could not resolve the base commit '${PR_BASE}', so the range this change introduces is unknown and NOTHING WAS SCANNED. This is not a pass."
+            exit 1
+          fi
+          git rev-list --no-merges "${PR_BASE}..HEAD" > "$RUNNER_TEMP/oss-boundary-commits.txt"
+          n=$(wc -l < "$RUNNER_TEMP/oss-boundary-commits.txt" | tr -d ' ')
+          echo "range ${PR_BASE}..$(git rev-parse HEAD) — $n non-merge commit(s)"
+          bun scripts/check-oss-figures.ts --stdin-commits < "$RUNNER_TEMP/oss-boundary-commits.txt"
+          bun scripts/check-oss-prose.ts --stdin-commits < "$RUNNER_TEMP/oss-boundary-commits.txt"
