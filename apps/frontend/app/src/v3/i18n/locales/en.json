@@ -984,12 +984,14 @@
           "left_control": "Spent, gifted, or sold somewhere Scani cannot see. This realizes a gain or a loss on the amount that left.",
           "untracked": "Still your money, in a wallet or an account Scani has no access to. Nothing is realized."
         },
-        "feeLabel": "Fee, if the transfer cost anything",
-        "feeExplain": "Leave empty if nothing was charged. A fee is recorded as its own cost on this account, so what arrives is what actually landed.",
-        "feeArrives": "{{amount}} {{symbol}} arrives; the fee is recorded as a cost here.",
-        "feeTooLarge": "The fee has to be smaller than the amount that moved.",
         "cancel": "Cancel",
         "save": "Save"
+      },
+      "fee": {
+        "label": "Fee, if the transfer cost anything",
+        "explain": "Leave empty if nothing was charged. A fee is recorded as its own cost on this account, so what arrives is what actually landed.",
+        "arrives": "{{amount}} {{symbol}} arrives; the fee is recorded as a cost here.",
+        "tooLarge": "The fee has to be smaller than the amount that moved."
       },
       "amountBelow": "< {{amount}}",
       "movement": {
@@ -1035,7 +1037,8 @@
         "blocker": {
           "holding": "pick the holding that moved",
           "amount": "enter how much moved",
-          "where": "say where the money went"
+          "where": "say where the money went",
+          "fee": "the fee has to be smaller than the amount that moved"
         }
       }
     },
