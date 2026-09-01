@@ -12,9 +12,9 @@ import { normalizeForDetection } from './token-identity-safety';
  *
  * The score is written once, at token creation, and both call sites refuse to
  * touch a token that already exists — so before SC-286 every improvement to
- ***REMOVED***
- ***REMOVED***
- ***REMOVED***
+ * the heuristic applied to future tokens and to nothing else. A minority of
+ * production tokens held a score the shipped function would not produce; a
+ * handful of those crossed the 0.35 UI threshold. One was `USCON`, scored 0.80 because
  * "Network" begins with "net", and it was a real holding being subtracted from
  * the portfolio total.
  *
@@ -91,9 +91,9 @@ export class ScamTokenDetectionService extends BaseService {
    * separators entirely, "ends in -to" or "-me" was enough: in production
    * that scored `Base Lotto`, `Slop Sato` and `BullRun Meme` at 0.80 and
    * excluded them from every total. Ordinary words end in `to` and `me`;
-   ***REMOVED***
-   ***REMOVED***
-   ***REMOVED***
+   * essentially none end in `com`, `net` or `xyz`. Measured over every
+   * production token name, the long-TLD form matches a handful of rows and
+   * every one of them is a real hit of the kind this rule is for.
    *
    * The short TLDs are not lost — `URL_PATTERN` still catches them when a
    * real dot is present, which is how `Draf.io` and `@ MetaWin.to` are

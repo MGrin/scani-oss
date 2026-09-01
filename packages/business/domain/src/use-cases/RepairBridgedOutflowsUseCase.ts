@@ -234,9 +234,9 @@ export class RepairBridgedOutflowsUseCase {
       // not on everything the wider net showed.** The wide net exists so a near
       // miss is reported rather than vanishing; letting it veto a decision the
       // deciding bounds settle is the opposite of that, and it produced a
-      ***REMOVED***
-      ***REMOVED***
-      ***REMOVED***
+      // contradiction in production: one departure's "second candidate" is an
+      // arrival over an hour away that a DIFFERENT departure claims seconds
+      // after its own — one arrival counted as both settled and ambiguous.
       const actionable = measured.filter((c) => c.inWindow && c.inBound);
       if (actionable.length > 1) {
         plans.push(

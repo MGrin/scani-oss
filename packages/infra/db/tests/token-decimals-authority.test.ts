@@ -1,9 +1,9 @@
 /**
  * SC-544 — `tokens.decimals` may only carry a number an authority produced.
  *
- ***REMOVED***
- ***REMOVED***
- ***REMOVED***
+ * The column was `real NOT NULL DEFAULT 2` and a minority of production rows
+ * carried a value no source had ever supplied: equities at 18 from one IBKR
+ * import, and chainless crypto rows at 18 from `typeCode === 'crypto' ? 18 :
  * 2`. Neither writer was lying — neither had an answer, and the schema gave
  * them no way to say so.
  *

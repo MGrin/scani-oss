@@ -315,7 +315,7 @@ describe('migration 0050 — re-key Solana from one row per leg to one per token
   });
 
   test('an ATTRIBUTED answer stops the migration instead of vanishing', async () => {
-    ***REMOVED***
+    // Zero exist on production: every Solana answer has a null
     // `transfer_reviewed_at` and a null `transfer_review_source`. If one is
     // answered between the measurement and the deploy, the loud failure is
     // the point — the quiet alternative discards a decision a person made.

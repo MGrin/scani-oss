@@ -754,7 +754,7 @@ export function reopenConsequence(t: TFunction, item: AnsweredTransferReview): s
  * 1. **What is booked, or un-booked.** `left_control` adds proceeds;
  *    `untracked` takes back off whatever the selection already books. The
  *    second one is not a footnote — it is the operation SC-186 asked for, over
- ***REMOVED***
+ *    the production rows that already carry a disposal — and a confirmation
  *    that only ever described additions would be silent about the whole of it.
  * 2. **What is missing from the figure.** Rows with no price on their day book
  *    nothing, so the total is a floor, and a reader who is not told will read

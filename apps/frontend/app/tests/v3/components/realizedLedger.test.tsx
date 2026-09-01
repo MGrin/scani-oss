@@ -109,7 +109,7 @@ describe('RealizedLedger provenance', () => {
   });
 
   test('a swap priced from its counter leg carries no valuation caveat', () => {
-    ***REMOVED***
+    // The ordinary case, and it is nearly every swap leg in production. A
     // caveat on those would be a caveat the reader learns to skip.
     const html = render([
       lot({ kind: 'swap_out', valuationBasis: 'execution_rate', answerSource: 'none' }),

@@ -571,16 +571,16 @@ function RunwayBasis({ forecast, baseSymbol }: { forecast: ForecastData; baseSym
  *
  * ## Why the MEDIAN is printed beside the mean
  *
- ***REMOVED***
- ***REMOVED***
- ***REMOVED***
- ***REMOVED***
- ***REMOVED***
+ * Illustrative of the case this guards, with the same SHAPE as the account it
+ * was measured against but synthetic values: a mean well above the median, over
+ * a range spanning an order of magnitude. **A mean near twice the median** makes
+ * the choice of statistic more than a rounding difference — it is one runway
+ * against nearly double it on the same balance, driven by one or two
  * exceptional months.
  *
  * SC-657 chose the mean deliberately and correctly: total ÷ months IS the rate
- ***REMOVED***
- ***REMOVED***
+ * the balance actually drained at, and an exceptional month is real money that
+ * really left. A median-based runway survives on paper past the point the account is
  * empty. But a figure that far from the typical month has to say so, or the
  * line alarms the reader about a distribution while sounding like a trend.
  *

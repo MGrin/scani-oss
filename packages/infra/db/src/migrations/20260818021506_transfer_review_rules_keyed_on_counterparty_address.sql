@@ -30,8 +30,8 @@
 --
 -- `match_address` is stored lowercased and trimmed. It is compared by exact
 -- full-string equality against the address the queue itself reads — the
-***REMOVED***
-***REMOVED***
+-- payload's `to`, not the `counterparty` column, which is NULL on every
+-- chain outflow in production and against which a rule would match nothing.
 --
 -- The column is also a field an ATTACKER can write to: address poisoning
 -- sprays zero-value transfers on real token contracts to plant a lookalike

@@ -47,11 +47,12 @@ export function RunwayLine() {
   /**
    * The observed answer, and it is the one that ships (SC-657).
    *
-   ***REMOVED***
-   ***REMOVED***
-   ***REMOVED***
-   ***REMOVED***
-   ***REMOVED***
+   * Runway used to be the recurring book walked forward. Reported from
+   * production use: that book does not describe how an owner spends money. They
+   * move it to current accounts Scani deliberately does not track and spend
+   * from there, so their burn is the rate money LEAVES THE TRACKED PERIMETER —
+   * `left_control` outflows, varying by an order of magnitude month to month,
+   * nothing like a schedule.
    *
    * `committed` is shown beside it as a SHARE, never as an addend:
    * `runwayDenominator` takes one argument and there is no way to hand it the

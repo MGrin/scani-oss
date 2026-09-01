@@ -6,10 +6,10 @@ import { z } from 'zod';
  * zod strips unknown keys by default, so a caller guessing a parameter name
  * gets a normal-looking answer to a request that was never valid. Measured on
  * production 2026-08-26: `transferReview.listAnswered` accepted `offset`,
- * `answerSource`, `sort` and `order` and ignored all four. Looping
- ***REMOVED***
- ***REMOVED***
- * well-formed.
+ * `answerSource`, `sort` and `order` and ignored all four. Looping `offset`
+ * over four successive pages pushed four pages of rows into a Set that ended
+ * up holding exactly one page — four copies of page one, every response HTTP
+ * 200 and well-formed.
  *
  * A zero or a duplicate is worse than an error, because it READS AS A FINDING.
  * That one cost a wrong conclusion the same day: the rows SC-673 was written

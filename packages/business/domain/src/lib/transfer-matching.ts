@@ -166,14 +166,14 @@ export type CandidatePairClass = 'same_token' | 'bridged_asset';
  *    has drawn no boundary — which is every portfolio until they do.
  * 5. **The arrival does not precede the departure.** Physics, not tolerance,
  *    so it belongs here and not in a window. Measured on production: the
- ***REMOVED***
- ***REMOVED***
+ *    ±30min window symmetric around the departure offers pairs whose arrival
+ *    lands BEFORE the money left, and every one of them is false.
  *
  * **Condition 5 is deliberately NOT applied to `same_token`, and that is not
  * an oversight.** A `same_token` pair can be one movement reported by two
- ***REMOVED***
- ***REMOVED***
- ***REMOVED***
+ * providers with two clocks: a substantial share of the genuine cross-holding
+ * groups in production are a Kraken withdrawal to the owner's own wallet where
+ * Kraken stamps its ledger entry 1-2 minutes AFTER the chain block, so the arrival
  * legitimately precedes the departure. Physics constrains the money, not two
  * vendors' timestamps; a bridge is held to the stricter rule because its two
  * legs come from the same kind of source and skew is not available as an
