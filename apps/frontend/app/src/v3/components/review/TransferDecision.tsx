@@ -110,7 +110,9 @@ export function TransferDecision({ item, onResolved }: TransferDecisionProps) {
               ? t('v3.review.decision.toast.internal')
               : variables.decision === 'left_control'
                 ? t('v3.review.decision.toast.leftControl')
-                : t('v3.review.decision.toast.untracked'),
+                : variables.decision === 'fee'
+                  ? t('v3.review.decision.toast.fee')
+                  : t('v3.review.decision.toast.untracked'),
       });
       setOpenDecision(null);
       onResolved();
@@ -308,6 +310,24 @@ export function TransferDecision({ item, onResolved }: TransferDecisionProps) {
               open={openDecision === 'untracked'}
               onOpenChange={(open) => setOpenDecision(open ? 'untracked' : null)}
               onConfirm={() => commit('untracked')}
+            />
+          )}
+          {/*
+            The whole row was a charge (SC-888) — a bank fee, a network fee, an
+            exchange's withdrawal cut, imported with a kind the queue asks
+            about. It sits below the other three because it is the rarest whole
+            answer and the one this ticket was really about is the SPLIT below;
+            a fee is usually PART of a transfer, not all of it.
+          */}
+          {(openDecision === null || openDecision === 'fee') && (
+            <ConfirmAction
+              label={t(DECISION_LABELS.fee.triggerKey)}
+              confirmLabel={t(DECISION_LABELS.fee.commitKey)}
+              consequence={decisionConsequence(t, 'fee', item, null)}
+              isPending={isPending}
+              open={openDecision === 'fee'}
+              onOpenChange={(open) => setOpenDecision(open ? 'fee' : null)}
+              onConfirm={() => commit('fee')}
             />
           )}
           {/*

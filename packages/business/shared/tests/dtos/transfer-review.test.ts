@@ -8,13 +8,16 @@ import {
   BULK_TRANSFER_DECISIONS,
   bulkTransferEntriesSchema,
   feeFitsMovement,
+  feeShareOf,
   isBulkEligibleAnswer,
+  isLinkingDecision,
   MAX_TRANSFER_REVIEW_PORTIONS,
   manualOutflowAnswerSchema,
   mayBeUserAnswer,
   RULE_ANSWER_SOURCE,
   splitSumMatches,
   splitTotal,
+  TRANSFER_REVIEW_FEE,
   TRANSFER_REVIEW_SPLIT,
   transferReviewSplitSchema,
   undoEntriesFor,
@@ -53,7 +56,12 @@ describe('transferReviewSplitSchema', () => {
     // *reachable* ceiling is one lower, because `paired` and `internal` share
     // the single `transfer_group_id` column and the linking rule below refuses
     // a division that uses both (SC-187).
-    expect(MAX_TRANSFER_REVIEW_PORTIONS).toBe(4);
+    //
+    // Five since `fee` joined the decisions (SC-888). Asserted as a literal on
+    // purpose: `MAX_TRANSFER_REVIEW_PORTIONS` is derived from the enum's
+    // length, so writing the derivation here would be the schema agreeing with
+    // itself and this line would pass whatever the enum became.
+    expect(MAX_TRANSFER_REVIEW_PORTIONS).toBe(5);
     expect(
       transferReviewSplitSchema.safeParse([
         { decision: 'paired', quantity: '1000', matchTransactionId: crypto.randomUUID() },
@@ -607,5 +615,113 @@ describe('the bulk vocabulary', () => {
       { transactionId: 'a', decision: 'untracked' },
       { transactionId: 'b', decision: null },
     ]);
+  });
+});
+
+/**
+ * The `fee` answer (SC-888).
+ *
+ * Two properties, and the second is the one a later change is most likely to
+ * break without meaning to: a fee must never become a LINKING decision.
+ * Linking writes the single `transfer_group_id`, and a second row on one group
+ * id hands `CostBasisService`'s inflow branch another `transfer_in` to feed
+ * after `pending.delete(tgid)` has run, which is SC-150.
+ */
+describe('a fee is part of an answer, never a destination', () => {
+  test('paired + fee is accepted; paired + internal still is not', () => {
+    const matchTransactionId = crypto.randomUUID();
+    expect(
+      transferReviewSplitSchema.safeParse([
+        { decision: 'paired', quantity: '3500', matchTransactionId },
+        { decision: 'fee', quantity: '500' },
+      ]).success
+    ).toBe(true);
+    // The control. Both of these want the one `transfer_group_id`; a fee wants
+    // none, which is the whole reason the first parse is allowed to pass.
+    expect(
+      transferReviewSplitSchema.safeParse([
+        { decision: 'paired', quantity: '3500', matchTransactionId },
+        {
+          decision: 'internal',
+          quantity: '500',
+          destination: { accountId: crypto.randomUUID(), holdingId: null },
+        },
+      ]).success
+    ).toBe(false);
+  });
+
+  test('`fee` is not a linking decision', () => {
+    expect(isLinkingDecision(TRANSFER_REVIEW_FEE)).toBe(false);
+    // Positive control: the predicate is not simply answering `false`.
+    expect(isLinkingDecision('paired')).toBe(true);
+    expect(isLinkingDecision('internal')).toBe(true);
+  });
+
+  test('a fee portion needs no target, unlike the two that link', () => {
+    expect(
+      transferReviewSplitSchema.safeParse([
+        { decision: 'untracked', quantity: '3500' },
+        { decision: 'fee', quantity: '500' },
+      ]).success
+    ).toBe(true);
+  });
+});
+
+/**
+ * `feeShareOf` — how much of an outflow its answer calls a charge (SC-888).
+ *
+ * One definition, read by the cost-basis walk and by the returns engine. It is
+ * the number that decides whether a bank's cut lands in the return figure as a
+ * cost or reads as money the owner took out, so the edges matter more than the
+ * happy path.
+ */
+describe('feeShareOf', () => {
+  test('reads the fee portion of a split, and zero when there is none', () => {
+    const split = [
+      { decision: 'untracked', quantity: '3500' },
+      { decision: 'fee', quantity: '500' },
+    ];
+    expect(feeShareOf(TRANSFER_REVIEW_SPLIT, split, '-4000').toString()).toBe('500');
+    expect(
+      feeShareOf(
+        TRANSFER_REVIEW_SPLIT,
+        [
+          { decision: 'untracked', quantity: '3500' },
+          { decision: 'left_control', quantity: '500' },
+        ],
+        '-4000'
+      ).toString()
+    ).toBe('0');
+  });
+
+  test('a whole answer of `fee` is the whole row', () => {
+    expect(feeShareOf(TRANSFER_REVIEW_FEE, null, '-16.85').toString()).toBe('16.85');
+  });
+
+  test('an unanswered row has no fee', () => {
+    expect(feeShareOf(null, null, '-4000').toString()).toBe('0');
+    expect(feeShareOf('left_control', null, '-4000').toString()).toBe('0');
+  });
+
+  test('the row is the cap, so a stale split cannot claim more than is there', () => {
+    // A re-import that corrected 4,000 down to 600 knows nothing about the
+    // answer attached to it. `outflowPortions` treats the transaction as the
+    // authority on how much left; this reads the same way, taking what is left
+    // after the portions ahead of it.
+    const split = [
+      { decision: 'untracked', quantity: '3500' },
+      { decision: 'fee', quantity: '500' },
+    ];
+    expect(feeShareOf(TRANSFER_REVIEW_SPLIT, split, '-600').toString()).toBe('0');
+    expect(feeShareOf(TRANSFER_REVIEW_SPLIT, split, '-3800').toString()).toBe('300');
+  });
+
+  test('an unreadable split or quantity is zero, never a throw', () => {
+    // The callers are a cost-basis walk and a returns engine; neither has a
+    // sensible response to an exception halfway through a portfolio, and both
+    // have one to "no fee was stated".
+    expect(feeShareOf(TRANSFER_REVIEW_SPLIT, 'not a split', '-100').toString()).toBe('0');
+    expect(feeShareOf(TRANSFER_REVIEW_SPLIT, [{ decision: 'fee' }], '-100').toString()).toBe('0');
+    expect(feeShareOf(TRANSFER_REVIEW_FEE, null, 'not a number').toString()).toBe('0');
   });
 });

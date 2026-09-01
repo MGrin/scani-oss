@@ -190,6 +190,12 @@ export function decisionConsequence(
       return destination
         ? `${internalCarryClause(t, qty(new Decimal(item.quantity).abs()), item.tokenSymbol, destination)} ${internalWriteClause(t, qty(new Decimal(item.quantity).abs()), item.tokenSymbol, item.occurredAt, destination)}`
         : t('v3.review.transfer.consequence.internalPrompt');
+    case 'fee':
+      // No date and no market value, unlike `left_control` directly below. A
+      // charge is not priced at market and books no gain, so the two figures
+      // that sentence carries are exactly the two this one must not, or it
+      // reads as a disposal wearing a different word (SC-888).
+      return t('v3.review.transfer.consequence.fee', { symbol: item.tokenSymbol });
     case 'left_control':
       // The date is the one the reader just read in the sheet's `When` fact,
       // eight lines above — so it is the same formatter, not a bare
@@ -236,6 +242,13 @@ export const DECISION_LABELS: Record<
   untracked: {
     triggerKey: 'v3.review.transfer.decision.untracked.trigger',
     commitKey: 'v3.review.transfer.decision.untracked.commit',
+  },
+  // "A fee" and not "a bank fee": the charge is as often a network fee, an
+  // exchange withdrawal fee or an intermediary's cut, and naming one of them
+  // makes the row it fits look like the only row it is for (SC-888).
+  fee: {
+    triggerKey: 'v3.review.transfer.decision.fee.trigger',
+    commitKey: 'v3.review.transfer.decision.fee.commit',
   },
 };
 
@@ -865,6 +878,7 @@ const ANSWER_SUMMARY_KEYS: Record<string, string> = {
   internal: 'v3.review.transfer.answered.internal',
   left_control: 'v3.review.transfer.answered.leftControl',
   untracked: 'v3.review.transfer.answered.untracked',
+  fee: 'v3.review.transfer.answered.fee',
 };
 
 const ANSWER_SHORT_KEYS: Record<TransferReviewDecision, string> = {
@@ -872,6 +886,7 @@ const ANSWER_SHORT_KEYS: Record<TransferReviewDecision, string> = {
   internal: 'v3.review.transfer.answeredShort.internal',
   left_control: 'v3.review.transfer.answeredShort.leftControl',
   untracked: 'v3.review.transfer.answeredShort.untracked',
+  fee: 'v3.review.transfer.answeredShort.fee',
 };
 
 /** A quantity at the precision it actually carries, never a raw Decimal. */

@@ -30,7 +30,7 @@ import { TransferDestinationPicker } from './TransferDestinationPicker';
  *
  * Four decisions this shape makes, all of them load-bearing:
  *
- * - **All four outcomes are always on screen, and a blank is an exclusion.**
+ * - **Every outcome is always on screen, and a blank is an exclusion.**
  *   No add-a-part button, no outcome picker per row, no way to enter the same
  *   outcome twice. The editor's whole state is four strings and a destination.
  * - **Nothing is pre-filled.** Dividing 4,000 as 3,500/500 is a fact only the
@@ -183,9 +183,21 @@ export function TransferSplitEditor({
   );
 }
 
-/** The four rows, empty — the state the editor opens in. */
+/**
+ * The rows, empty — the state the editor opens in.
+ *
+ * The order is the enum's, and `fee` goes LAST deliberately: it is the only
+ * part of a division that is not a destination, so it reads as the leftover it
+ * usually is rather than as a fifth place the money could have gone (SC-888).
+ */
 export function emptySplitRows(matchTransactionId: string | null): SplitDraftRow[] {
-  const decisions: TransferReviewDecision[] = ['paired', 'internal', 'left_control', 'untracked'];
+  const decisions: TransferReviewDecision[] = [
+    'paired',
+    'internal',
+    'left_control',
+    'untracked',
+    'fee',
+  ];
   return decisions.map((decision) => ({
     decision,
     amount: '',

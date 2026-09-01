@@ -539,11 +539,11 @@ user untranslated today (see
 [Coverage quality](#coverage-quality-grades)) — they are listed so
 a translator can recognise them, not so they can be translated.
 
-### The four answers to "where did this go?"
+### The five answers to "where did this go?"
 
 An outflow that nothing paired to an inflow is a question the app
 asks the user, because guessing it wrong invents a taxable gain
-that never happened. These four are the only answers, they are
+that never happened. These five are the only answers, they are
 mutually exclusive, and each has a different consequence for
 money. Source: `packages/business/shared/src/dtos/transfer-review.ts`.
 
@@ -589,16 +589,35 @@ nothing is realized.
 **Careful:** "untracked" describes the *destination*, not the
 transaction. The money is not lost, unknown, or unrecorded.
 
+#### Part of it was a fee (`fee`)
+**In the UI:** "Part of it was a fee" · confirm: "Record it as a
+fee"
+**Means:** a charge taken out of what left — 500 of a 4,000
+withdrawal that never reached the 3,500 which arrived. Kept by the
+bank, the network or the exchange. **Not** a disposal, so nothing
+is realized, and **not** money the user still holds: it is counted
+as a cost, which is what makes it reduce the return figure instead
+of reading as a withdrawal.
+**Where:** the transfer-review queue, usually as one part of a
+split; also available as a whole answer for a charge the importer
+recorded as a withdrawal.
+**Careful:** "fee" here is the *user's* word for the charge, not a
+technical one — a bank fee, a network fee and an exchange's
+withdrawal cut are all this answer. Do not translate it as
+"commission" if that word implies a percentage in the target
+language, and do not translate it with a word that implies a sale.
+
 #### Split, and part
 **In the UI:** "Part {{index}} of {{total}} of one {{noun}}"
 **Means:** one outflow answered as more than one thing at once —
-3,500 moved internally and 500 spent. Each part carries its own
-answer and its own quantity in the token's own units.
+3,500 moved internally and 500 spent, or 3,500 paired and 500 a
+fee. Each part carries its own answer and its own quantity in the
+token's own units.
 **Where:** the transfer-review queue; the realized ledger, which
 groups on transaction *and* part.
 **Careful:** `split` is a marker meaning "the answer is stored
 elsewhere, go and read it". Nobody chooses "split" as an answer,
-and it is deliberately not one of the four above.
+and it is deliberately not one of the five above.
 
 ### Where an answer came from
 
@@ -657,8 +676,8 @@ Shown on each suggested inflow in the review queue, in this order.
 
 ### What happened to a disposal
 
-Shown in the realized ledger. Five outcomes, because "no gain was
-booked" has four different causes and they are not interchangeable.
+Shown in the realized ledger. Six outcomes, because "no gain was
+booked" has five different causes and they are not interchangeable.
 Source: `CostBasisService`, `DisposalOutcome`.
 
 - `realized` — proceeds were known and the gain is in the total.
@@ -673,6 +692,11 @@ Source: `CostBasisService`, `DisposalOutcome`.
 - `awaiting_pair` — **In the UI:** "Only one side of this move was
   imported, so no gain was booked." Resolves itself when the other
   leg arrives; nothing for the user to do.
+- `fee` — **In the UI:** "A charge taken out of what left, so no
+  gain was booked — it is counted as a cost, not as a withdrawal."
+  The `fee` answer. The distinction from `retained` is the whole
+  point: `retained` says the money is still the user's somewhere,
+  and this says it is gone and nobody bought anything with it.
 
 ### The words for a disposal
 
