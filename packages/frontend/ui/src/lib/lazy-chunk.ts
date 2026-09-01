@@ -43,6 +43,33 @@ export class ChunkLoadError extends UserFacingError {
   }
 }
 
+/**
+ * What a pending chunk is doing right now (SC-840).
+ *
+ * `loading` — a request is in flight. `retrying` — the last one REJECTED and
+ * this is the backoff before the next.
+ *
+ * **The distinction is the whole point of reporting anything.** The retry loop
+ * below is invisible from outside it: for the entire 250ms + 500ms backoff, and
+ * for however long three failing fetches take, a caller showing a spinner shows
+ * the identical spinner whether the chunk is arriving or has already failed
+ * twice. Those need opposite responses — wait, versus stop waiting — and until
+ * this existed nothing anywhere could tell them apart.
+ *
+ * The *terminal* failure was always distinguishable, because `ChunkErrorBoundary`
+ * swaps in a card a reader can act on. It is these two that were one observation,
+ * which is how the visual gate spent four runs unable to say what it had
+ * photographed (SC-840).
+ */
+export interface ChunkLoadState {
+  phase: 'loading' | 'retrying';
+  /** 1-based: the request this state is about. */
+  attempt: number;
+  /** How many attempts have already rejected. `0` while the first is in flight,
+   *  so `failures > 0` is exactly "this chunk is erroring, not slow". */
+  failures: number;
+}
+
 interface ImportChunkOptions {
   /** Named in the failure message, so it says what could not be loaded rather
    *  than that something could not be. */
@@ -52,6 +79,10 @@ interface ImportChunkOptions {
    *  someone is looking at a spinner. */
   delayMs?: (attempt: number) => number;
   sleep?: (ms: number) => Promise<void>;
+  /** Called on every transition, so whoever is showing the spinner can say
+   *  which of the two it stands for. Optional, and never called after the
+   *  promise settles — by then the caller has either the module or the error. */
+  onState?: (state: ChunkLoadState) => void;
 }
 
 const defaultSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
@@ -67,15 +98,29 @@ const defaultSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(r
  */
 export async function importChunk<T>(
   load: () => Promise<T>,
-  { chunk, attempts = 3, delayMs = (n) => 250 * 2 ** n, sleep = defaultSleep }: ImportChunkOptions
+  {
+    chunk,
+    attempts = 3,
+    delayMs = (n) => 250 * 2 ** n,
+    sleep = defaultSleep,
+    onState,
+  }: ImportChunkOptions
 ): Promise<T> {
   let last: unknown;
   for (let attempt = 0; attempt < attempts; attempt++) {
+    onState?.({ phase: 'loading', attempt: attempt + 1, failures: attempt });
     try {
       return await load();
     } catch (error) {
       last = error;
-      if (attempt < attempts - 1) await sleep(delayMs(attempt));
+      if (attempt < attempts - 1) {
+        // Reported BEFORE the sleep, not after it. The backoff is most of the
+        // time a caller spends in this state, so a report that waited until the
+        // next request would leave the whole gap described as `loading` — the
+        // one window where "arriving" is precisely what it is not.
+        onState?.({ phase: 'retrying', attempt: attempt + 1, failures: attempt + 1 });
+        await sleep(delayMs(attempt));
+      }
     }
   }
   throw new ChunkLoadError(chunk, last);
