@@ -598,6 +598,73 @@ re-optimisation in the server log.
 screen was photographed across more than one — on a passing capture as well as a
 failing one, because the passing case is the one that lies.
 
+### Two spinners, not one (SC-840)
+
+**A spinner in this gate has at least two unrelated causes, and until SC-840 all
+three of the exits that report one said the same thing about them.**
+
+    A  the SPA full-reloaded mid-run    document loads, module-graph write
+    B  a route chunk was still pending  NO document load, cause NOT established
+
+A is the section above, and its mechanism is measured. B is what four
+consecutive SC-825 runs hit, on four different screens, and it is not A.
+
+**The discriminator is the document-load count, and it is decisive rather than
+suggestive.** A's mechanism replaces the document, which always fires `load`. So
+a spinner with no load beyond the navigation has A *excluded*, not merely
+unobserved. `visual/route-pending.ts` derives the verdict from that count and
+`v3-screens.spec.ts` calls it from all three exits, so they cannot drift into
+disagreeing about the same page.
+
+That mattered because the branch reporting B **cited A**. It is reachable only
+when `loads.count <= 1` — the branch above it throws on anything higher — and it
+said "The SPA remounted mid-capture (SC-499)". It was written inside SC-499's own
+commit (`e66a4024c`) and inherited its citation, so every reader who followed it
+went looking for a module-graph write that could not have been there.
+
+**The message is the only artefact either cause leaves.** `playwright.visual.config.ts`
+sets `trace: 'off'`, `video: 'off'` and `screenshot: 'off'` — there is no trace
+to open and no frame to look at afterwards. If you meet either of these, paste
+the sentence onto SC-840; it is the whole record.
+
+**Cause B's mechanism is still not established.** SC-840 says what is known and
+what is not, and asks for the controlled experiment rather than the hypothesis:
+hold the module graph still, vary load, count route-pending failures. Four
+uncontrolled observations are not that experiment, and a quiet-versus-hammered
+comparison is the one design a race would defeat — under that hypothesis both
+arms come back clean. A 12/12 run on an idle box (measured 2026-09-01) is
+therefore not evidence that B is gone.
+
+### What a pending spinner is a spinner FOR
+
+`lazy-route.tsx` marks its Suspense fallback `data-route-pending="<chunk>"`, and
+since SC-840 also `data-route-pending-phase` and `data-route-pending-failures`.
+The two extra attributes exist because the bare marker made three situations one
+observation:
+
+| situation | DOM |
+|---|---|
+| the first request is in flight | `phase=loading  failures=0` |
+| fetches have FAILED, backing off | `phase=retrying failures>0` |
+| it failed for good | no `[data-route-pending]`; `ChunkLoadFallback`'s card |
+
+Only the third was ever distinguishable. `importChunk` retries three times with
+250 ms and 500 ms of backoff and reported none of it, so across that whole window
+a reader — and the gate — saw the identical spinner whether the chunk was
+arriving or had already failed twice. Those want opposite responses, and the
+second is not fixed by waiting longer.
+
+Measured live against this stack, 2026-09-01, by intercepting the chunk request:
+
+    slow    [{"chunk":"interface","phase":"loading","failures":0}]
+    flaky   [{"chunk":"interface","phase":"retrying","failures":1}] then failures 2
+    dead    []  and the heading "Could not load the interface"
+
+Nothing rendered changed — three data attributes on an element that was already
+there — and the full gate stayed 12/12 across the change, which is the claim that
+matters: a fix paid for with an `--update` is how a spinner became a baseline in
+the first place.
+
 ### Widening it
 
 The cheapest place is `/kitchen-sink`. It renders every `@scani/ui` primitive
