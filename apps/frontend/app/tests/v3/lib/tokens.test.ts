@@ -209,6 +209,7 @@ describe('tokenTypeLabel', () => {
       'en',
       'es',
       'fr',
+      'id',
       'ja',
       'pt',
       'ru',
