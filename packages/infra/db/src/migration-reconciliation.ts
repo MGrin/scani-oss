@@ -234,6 +234,21 @@ const SCRUB_COMMENTS =
   'SC-912/SC-915 replaced real account data in this migration with synthetic ' +
   'examples so the mirrored tree stops carrying it. Comments only.';
 
+const SCRUB_0044 =
+  'SC-917 replaced the production row identifiers this migration carried in ' +
+  'EXECUTABLE SQL — the comment-level data was taken in SC-915, so no ' +
+  'comment-only declaration is writable for it any more. Re-recording it is ' +
+  'safe because no database will ever run either version again: the INSERT ' +
+  'joins its eleven literal id pairs against `holding_transactions` on both ' +
+  'legs, so where those rows do not exist it stages nothing, and the two ' +
+  'UPDATEs below read only that staging table and become no-ops. The only ' +
+  'database whose rows those ids ever named has already applied the old text. ' +
+  'The edit narrows rather than widens — the pairs now name ids no real row ' +
+  'carries, so no database can reach the UPDATEs at all, where before exactly ' +
+  'one could. Statement list, order, column lists and the eleven pairs are ' +
+  'unchanged: normalising every UUID in both versions and diffing leaves them ' +
+  'identical.';
+
 const SCRUB_0045 =
   'SC-916 replaced production identifiers this migration carried in EXECUTABLE ' +
   'SQL, not in comments — so no comment-only declaration is writable for it. ' +
@@ -302,11 +317,11 @@ export const DRIFT_DECLARATIONS: readonly DriftDeclaration[] = [
     why: SCRUB_COMMENTS,
   },
   {
-    kind: 'comment-only',
+    kind: 'sql-changed',
     tag: '0044_sc328_pair_kraken_eth_withdrawals',
     recorded: '259e6759f12f472cb05c7d8c60c2d2e170da4ff6968e990bf88ac9e90df01f81',
-    sqlSha256: '03cd464079594d598fc558c56e5e9012469bb6e291c5cbc0efaff40b38e241cf',
-    why: SCRUB_COMMENTS,
+    becomes: '3914f8af82195dda57f0e866dcb603bf3f6f3b86392d1969ad39112fd6ac3ba6',
+    why: SCRUB_0044,
   },
   {
     kind: 'sql-changed',
