@@ -188,3 +188,45 @@ export function incompleteCashFieldsKey(row: {
 }): string {
   return CASH_FIELD_ORDER.filter((field) => !row[field]).join(' or ');
 }
+
+/** The window a `<FlexStatement>` says it covers. `from` is null when the
+ *  statement carried no readable `fromDate`. */
+export interface FlexStatementWindow {
+  readonly from: Date | null;
+  /** IBKR's own name for the range, e.g. `Last365CalendarDays`. Often blank. */
+  readonly period: string;
+}
+
+/**
+ * Why a run that asked for the whole ledger did not get one (SC-882).
+ *
+ * The other nine providers with a bounded look-back DECLARE it, as
+ * `transactionHistoryHorizonMs`, and `TransactionRouter` reads that before
+ * the call to decide whether a completeness claim is available at all. IBKR
+ * cannot: it substitutes no window of its own — `requestReport` puts `t`, `q`
+ * and `v=3` on the wire and no date range — so the window is whatever the
+ * user's saved Flex Query names, unknown until the statement arrives and
+ * different for the next user. A static declaration would be a guess about
+ * somebody else's configuration, and the router would then state that guess
+ * back to a reader whose query names thirty days.
+ *
+ * So the statement's own `fromDate` is the answer, and the channel for
+ * evidence that arrives DURING a walk is `retractHistoryClaim` (SC-395).
+ *
+ * **A window that cannot be read still retracts.** Silence about the range is
+ * not a range covering everything, and reading it as one is the same
+ * optimistic default this exists to remove, one layer down.
+ */
+export function describeStatementWindow(window: FlexStatementWindow): string {
+  const scope =
+    window.from === null
+      ? 'this Flex statement does not say which window it covers, so it cannot be read as the account’s whole history'
+      : `this Flex statement covers ${window.from.toISOString().slice(0, 10)} onward` +
+        `${window.period ? ` (period "${window.period}")` : ''}, ` +
+        'so anything before that was never fetched';
+  return (
+    `ibkr: ${scope}. The range is a setting on your saved Flex Query and Scani does not ` +
+    'choose it — to reach further back, change that query’s date range (IBKR Client Portal → ' +
+    'Performance & Reports → Flex Queries → edit the query), save, and re-run the import.'
+  );
+}
