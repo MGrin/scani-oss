@@ -17,6 +17,7 @@ import {
 } from 'drizzle-orm';
 import { Container, Service } from 'typedi';
 import { ledgerOrderBy } from '../lib/ledger-order';
+import { PERSON_AUTHORED_SOURCES } from '../lib/transfer-matching';
 import { HoldingCoverageRepository } from './HoldingCoverageRepository';
 import { describeMergedBatch, type MergedRowSubject } from './merged-rows';
 
@@ -77,6 +78,88 @@ export interface CrossHoldingDuplicate {
  * detector stops being read.
  */
 const SYNTHESIZED_SOURCES = ['reconciliation-opening'] as const;
+
+/**
+ * Sources that are neither a person's typing nor an importer's observation,
+ * and so are evidence of neither in `findPersonAuthoredOverlaps`.
+ *
+ * Each is Scani writing into the ledger on the user's behalf, so counting one
+ * as "an importer also recorded here" would report a doubt Scani itself
+ * manufactured. `apy-payout` is a scheduled synthesis, `transfer-review` is
+ * the arrival the queue writes when an outflow is answered `internal`
+ * (`TransferReviewService`), and `user-balance-correction` is a restatement
+ * of a figure rather than a movement — it writes `kind = 'correction'`, which
+ * describes the record and not the money.
+ */
+const NEITHER_PERSON_NOR_IMPORTER_SOURCES = [
+  ...SYNTHESIZED_SOURCES,
+  'apy-payout',
+  'transfer-review',
+  'user-balance-correction',
+] as const;
+
+/**
+ * A row a person authored on a holding an IMPORTER also writes to — the
+ * precondition for the whole of SC-858, and deliberately not a claim that
+ * anything is duplicated.
+ *
+ * ## Why this reports a region and not a pair
+ *
+ * The obvious detector is a matcher: same holding, same sign, amount within
+ * a tolerance, time within a window. It was built as a query and measured
+ * against a restored copy of production before this was written, and it is
+ * the wrong instrument for four reasons that are facts about the data rather
+ * than tuning problems:
+ *
+ * 1. **The correspondence is not one-to-one.** A hand-entered deposit can be
+ *    the imported deposit MINUS its imported fee, and a hand-entered
+ *    withdrawal the sum of two imported ones — a person reconciles to the
+ *    NET, an importer records the legs. A pairwise matcher cannot express
+ *    that at all, and the near-equality it reads instead is an arithmetic
+ *    coincidence rather than a detection of the relation.
+ * 2. **Amounts are not identifiers.** A recurring payment puts the same
+ *    amount on the same holding month after month, so widening the net far
+ *    enough to reach a real pair hands one hand-entered row a whole column of
+ *    equally good candidates and no basis to choose among them.
+ * 3. **There is no tight net to fall back on.** At zero tolerance and zero
+ *    window the matcher finds NOTHING — not even pairs a human had already
+ *    identified as exact duplicates, because a person types a DATE and an
+ *    importer records an INSTANT.
+ * 4. **Widening reaches the tax rows first.** The candidate carrying
+ *    `transfer_review = 'left_control'` — the answer `isConfirmedDisposal`
+ *    books as a real disposal — rested on the WEAKEST evidence of any pair
+ *    found. A matcher that reaches it is a matcher that rewrites realized PnL
+ *    on the thinnest thing it saw.
+ *
+ * So the machine's job stops at naming where two record-keepers both wrote,
+ * which needs no tolerance and cannot be wrong about money. What the overlap
+ * MEANS is a question for the person who typed the row. The measurements
+ * behind each of the four are on SC-858; they are one portfolio's real
+ * movements, so they stay on the board rather than travelling in a comment.
+ *
+ * ## The answer already on the row is part of the finding
+ *
+ * `transferReview` travels with each overlap because retiring an answered row
+ * is never a neutral edit: `left_control` has booked a disposal,
+ * `internal` has already written an arrival on ANOTHER holding, and `split`
+ * has done both in portions. A reader deciding what to do needs to see what
+ * the row has already caused.
+ */
+export interface PersonAuthoredOverlap {
+  transactionId: string;
+  holdingId: string;
+  kind: string;
+  quantity: string;
+  occurredAt: Date;
+  source: string;
+  /** The answer this row already carries, and therefore what retiring it undoes. */
+  transferReview: string | null;
+  transferReviewSource: string | null;
+  /** Distinct importer sources writing to the same holding. Never empty. */
+  importerSources: string[];
+  /** How many rows those importers have put on this holding. */
+  importedRowCount: number;
+}
 
 export interface BulkUpsertResult {
   rows: HoldingTransaction[];
@@ -864,6 +947,85 @@ export class HoldingTransactionRepository extends BaseRepository<
       this.logger.error(
         { error: error instanceof Error ? error.message : error },
         'Failed to find cross-holding duplicate transactions'
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * Every person-authored row sitting on a holding an importer also writes to
+   * (SC-858). Empty is the healthy answer, and a non-empty answer is a list of
+   * QUESTIONS rather than a list of defects.
+   *
+   * The complement of `findCrossHoldingDuplicates`, which is the other half of
+   * what `holding_tx_dedup` cannot see. That constraint is
+   * UNIQUE(holding_id, source, external_id), so it misses in two directions:
+   * one source across two holdings, which the sibling above finds, and two
+   * SOURCES on one holding, which is this. Neither can be closed by tightening
+   * the constraint — a person's row and an importer's row carry different
+   * sources by construction, which is exactly what `PERSON_AUTHORED_SOURCES`
+   * is a fact about.
+   *
+   * Read-only, and it stays read-only. See `PersonAuthoredOverlap` for the
+   * measurements that rule a matcher out.
+   */
+  async findPersonAuthoredOverlaps(
+    transaction?: DatabaseTransaction
+  ): Promise<PersonAuthoredOverlap[]> {
+    try {
+      const database = this.getDb(transaction);
+      const importerRows = database
+        .select({
+          holdingId: schema.holdingTransactions.holdingId,
+          sources: sql<string[]>`array_agg(distinct ${schema.holdingTransactions.source})`.as(
+            'sources'
+          ),
+          rowCount: sql<number>`count(*)::int`.as('row_count'),
+        })
+        .from(schema.holdingTransactions)
+        .where(
+          notInArray(schema.holdingTransactions.source, [
+            ...PERSON_AUTHORED_SOURCES,
+            ...NEITHER_PERSON_NOR_IMPORTER_SOURCES,
+          ])
+        )
+        .groupBy(schema.holdingTransactions.holdingId)
+        .as('importer_rows');
+
+      const rows = await database
+        .select({
+          transactionId: schema.holdingTransactions.id,
+          holdingId: schema.holdingTransactions.holdingId,
+          kind: schema.holdingTransactions.kind,
+          quantity: schema.holdingTransactions.quantity,
+          occurredAt: schema.holdingTransactions.occurredAt,
+          source: schema.holdingTransactions.source,
+          transferReview: schema.holdingTransactions.transferReview,
+          transferReviewSource: schema.holdingTransactions.transferReviewSource,
+          importerSources: importerRows.sources,
+          importedRowCount: importerRows.rowCount,
+        })
+        .from(schema.holdingTransactions)
+        .innerJoin(importerRows, eq(importerRows.holdingId, schema.holdingTransactions.holdingId))
+        .where(inArray(schema.holdingTransactions.source, [...PERSON_AUTHORED_SOURCES]))
+        .orderBy(asc(schema.holdingTransactions.occurredAt));
+
+      return rows.map((r) => ({
+        transactionId: r.transactionId,
+        holdingId: r.holdingId,
+        kind: r.kind,
+        quantity: r.quantity,
+        occurredAt: r.occurredAt,
+        source: r.source,
+        transferReview: r.transferReview,
+        transferReviewSource: r.transferReviewSource,
+        importerSources: r.importerSources,
+        importedRowCount: r.importedRowCount,
+      }));
+    } catch (error) {
+      this.logger.error(
+        { error: error instanceof Error ? error.message : error },
+        'Failed to find person-authored rows overlapping an importer'
       );
       throw error;
     }
