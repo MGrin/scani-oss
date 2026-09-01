@@ -236,10 +236,15 @@ fi
 # It is a seatbelt, not a gate. CI runs the same check on every pull request,
 # where `--no-verify` cannot reach it.
 migration_relevant=$(staged_files -- 'packages/infra/db/src/migrations/*.sql' 'packages/infra/db/src/migration-reconciliation.ts' || true)
-if [ -n "$migration_relevant" ]; then
+# SC-919. `staged_files` is `--diff-filter=ACMR`: deletions excluded, on purpose
+# and correctly for every other caller. A commit that ONLY deletes a migration
+# therefore matched nothing here, and the guard never ran on the one shape it
+# cannot recover from — a green script behind a trigger that cannot fire.
+migration_deleted=$(git diff --cached --name-only --diff-filter=D -- 'packages/infra/db/src/migrations/*.sql' || true)
+if [ -n "$migration_relevant" ] || [ -n "$migration_deleted" ]; then
   if [ -f scripts/check-migration-drift-declared.ts ]; then
     if ! bun scripts/check-migration-drift-declared.ts; then
-      fail "an applied migration is edited with no drift declaration (SC-914)"
+      fail "an applied migration is edited, deleted or renamed without cover (SC-914, SC-919)"
     fi
   else
     note "scripts/check-migration-drift-declared.ts is not in this tree; drift-declaration check NOT run"

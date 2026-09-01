@@ -9,9 +9,11 @@
  * bytes, differing only in `A` against `M`.
  *
  * NO MIGRATION IN THIS REPOSITORY IS TOUCHED BY THIS FILE. Editing one is the
- * defect under test, and doing it here would need a declaration of its own.
- * Every must-be-FOUND case is a scratch git repository under the OS temp dir,
- * or a synthetic declaration list handed to a pure function.
+ * defect under test, and doing it here would need a declaration of its own;
+ * DELETING one — the SC-919 arm — would break every deploy and could not be
+ * declared away at all. Every must-be-FOUND case is a scratch git repository
+ * under the OS temp dir, or a synthetic declaration list handed to a pure
+ * function.
  */
 
 import { afterAll, describe, expect, test } from 'bun:test';
@@ -33,6 +35,7 @@ import {
   judge,
   MIGRATIONS_DIR,
   parseDiff,
+  parseRenames,
   unknown,
   verdict,
 } from '../check-migration-drift-declared.ts';
@@ -116,6 +119,39 @@ describe('parseDiff reads the migration files out of a --name-status diff', () =
   });
 });
 
+describe('parseRenames reads the rename-aware diff, which parseDiff cannot', () => {
+  test('an R line pairs old tag with new tag', () => {
+    const diff = [
+      `R100\t${MIGRATIONS_DIR}/0004_a.sql\t${MIGRATIONS_DIR}/0009_b.sql`,
+      `M\t${MIGRATIONS_DIR}/0005_c.sql`,
+      '',
+    ].join('\n');
+    expect([...parseRenames(diff)]).toEqual([['0004_a', '0009_b']]);
+  });
+
+  /**
+   * The reason the rename diff is a SECOND call rather than a flag change on
+   * the first. Fed to `parseDiff`, this same line yields the OLD path under
+   * status `R` — a status nothing handles, so the deletion silently vanishes.
+   */
+  test('parseDiff would misread that same line, which is why they are separate', () => {
+    const line = `R100\t${MIGRATIONS_DIR}/0004_a.sql\t${MIGRATIONS_DIR}/0009_b.sql`;
+    expect(parseDiff(line)).toEqual([
+      { status: 'R', tag: '0004_a', file: `${MIGRATIONS_DIR}/0004_a.sql` },
+    ]);
+  });
+
+  test('a rename OUT of the migrations folder pairs nothing — it is a deletion', () => {
+    const diff = `R100\t${MIGRATIONS_DIR}/0004_a.sql\tdocs/0004_a.sql`;
+    expect([...parseRenames(diff)]).toEqual([]);
+  });
+
+  test('non-rename statuses and empty input pair nothing', () => {
+    expect([...parseRenames(`M\t${MIGRATIONS_DIR}/0004_a.sql`)]).toEqual([]);
+    expect([...parseRenames('')]).toEqual([]);
+  });
+});
+
 describe('the rule: EDITING needs a declaration, ADDING never does', () => {
   const sql = new Map([[PROBE_TAG, COMMENT_EDITED]]);
 
@@ -134,10 +170,48 @@ describe('the rule: EDITING needs a declaration, ADDING never does', () => {
     expect(judge([changed('A', PROBE_TAG)], sql, [])).toEqual([]);
   });
 
-  test('a DELETED migration is out of scope, and deliberately', () => {
-    // No declaration can cover one: `planReconciliation` rejects a tag with no
-    // file in the tree, so prescribing `db:declare-drift` would be wrong advice.
-    expect(judge([changed('D', PROBE_TAG)], sql, [])).toEqual([]);
+  /**
+   * SC-919. This case asserted the OPPOSITE until 2026-09-02 — that a `D` is
+   * out of scope — and the reasoning it carried was half right: no declaration
+   * can cover a removal, so `db:declare-drift` really would be wrong advice.
+   * What did not follow is that the guard should therefore say nothing. It has
+   * a different remedy, not no remedy.
+   */
+  test('a DELETED migration is REFUSED, with no declaration consulted', () => {
+    expect(judge([changed('D', PROBE_TAG)], sql, [])).toEqual([
+      { kind: 'deleted', tag: PROBE_TAG, file: `${MIGRATIONS_DIR}/${PROBE_TAG}.sql` },
+    ]);
+  });
+
+  test('a declaration naming the deleted tag does not rescue it', () => {
+    // The declaration is well formed and covers the file it names. It still
+    // cannot help: `planReconciliation` rejects a tag with no file in the tree
+    // before any declaration is read, so a pass here would be a lie the reader
+    // acts on.
+    const findings = judge([changed('D', PROBE_TAG)], sql, [commentOnly(PROBE_TAG, APPLIED)]);
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.kind).toBe('deleted');
+  });
+
+  test('a rename is reported as a rename, not as an unrelated deletion', () => {
+    const renamed = new Map([[PROBE_TAG, '0099_renamed']]);
+    expect(
+      judge([changed('D', PROBE_TAG), changed('A', '0099_renamed')], sql, [], renamed)
+    ).toEqual([
+      {
+        kind: 'renamed',
+        tag: PROBE_TAG,
+        file: `${MIGRATIONS_DIR}/${PROBE_TAG}.sql`,
+        toTag: '0099_renamed',
+      },
+    ]);
+  });
+
+  test('an unpaired deletion degrades to `deleted`, and is still a finding', () => {
+    // The rename diff failing must not be able to turn a refusal into a pass.
+    expect(judge([changed('D', PROBE_TAG)], sql, [], new Map())).toEqual([
+      { kind: 'deleted', tag: PROBE_TAG, file: `${MIGRATIONS_DIR}/${PROBE_TAG}.sql` },
+    ]);
   });
 
   test('an edit covered by a comment-only declaration passes', () => {
@@ -200,7 +274,7 @@ describe('the verdict line carries what the reader needs and nothing it cannot c
     const line = verdict({ ...base, changed: [changed('A', PROBE_TAG)], findings: [] }).lines[0];
     expect(line).toContain('clean');
     expect(line).toContain('1 migration file(s) changed');
-    expect(line).toContain('0 edited, 1 added');
+    expect(line).toContain('0 edited, 1 added, 0 deleted');
   });
 
   test('a base that IS this tree says so rather than printing a bare zero', () => {
@@ -229,6 +303,89 @@ describe('the verdict line carries what the reader needs and nothing it cannot c
     const judgement = unknown('git fell over');
     expect(judgement.exit).toBe(9);
     expect(judgement.lines.join('\n')).toContain('This is not a pass.');
+  });
+
+  /**
+   * SC-919. THE POINT OF THE WHOLE TICKET IS THE ABSENCE HERE. `db:declare-drift`
+   * is the remedy for an edit and cannot fix a removal — there is no file to
+   * hash — so printing it would send the reader down a path that dead-ends
+   * while deploys are refusing. This asserts it is NOT printed, which no
+   * assertion about what IS printed can cover.
+   */
+  test('a removal is refused WITHOUT ever prescribing db:declare-drift', () => {
+    const judgement = verdict({
+      ...base,
+      changed: [changed('D', PROBE_TAG)],
+      findings: [{ kind: 'deleted', tag: PROBE_TAG, file: `${MIGRATIONS_DIR}/${PROBE_TAG}.sql` }],
+    });
+    expect(judgement.exit).toBe(1);
+    expect(judgement.lines[0]).toContain('1 applied migration(s) deleted or renamed');
+    expect(judgement.lines[0]).toContain(PROBE_TAG);
+    const body = judgement.lines.join('\n');
+    // It NAMES the command in order to rule it out — that is the point. What
+    // it must never do is PRESCRIBE one, which is what the reader would run.
+    expect(body).not.toContain('bun run db:declare-drift');
+    expect(body).toContain('`db:declare-drift` is NOT the remedy here');
+    expect(body).toContain('cannot be deleted or renamed');
+    expect(body).toContain(`git checkout ${base.baseSha} -- ${MIGRATIONS_DIR}/${PROBE_TAG}.sql`);
+  });
+
+  test('a rename says what it became, and what to do with the new file', () => {
+    const body = verdict({
+      ...base,
+      changed: [changed('D', PROBE_TAG), changed('A', '0099_renamed')],
+      findings: [
+        {
+          kind: 'renamed',
+          tag: PROBE_TAG,
+          file: `${MIGRATIONS_DIR}/${PROBE_TAG}.sql`,
+          toTag: '0099_renamed',
+        },
+      ],
+    }).lines.join('\n');
+    expect(body).toContain(`${PROBE_TAG} — renamed to 0099_renamed`);
+    expect(body).toContain('genuinely wanted as a NEW migration');
+    expect(body).not.toContain('bun run db:declare-drift');
+  });
+
+  /**
+   * A branch can do both, and the two remedies must not be blended. The edit
+   * section keeps its command; the removal section still must not acquire one.
+   */
+  test('an edit and a removal on one branch get their own sections', () => {
+    const judgement = verdict({
+      ...base,
+      changed: [changed('M', '0004_other'), changed('D', PROBE_TAG)],
+      findings: [
+        { kind: 'undeclared', tag: '0004_other' },
+        { kind: 'deleted', tag: PROBE_TAG, file: `${MIGRATIONS_DIR}/${PROBE_TAG}.sql` },
+      ],
+    });
+    expect(judgement.lines[0]).toContain('1 edited migration(s) no drift declaration covers');
+    expect(judgement.lines[0]).toContain('1 applied migration(s) deleted or renamed');
+    const body = judgement.lines.join('\n');
+    expect(body).toContain('bun run db:declare-drift 0004_other');
+    expect(body).not.toContain(`bun run db:declare-drift ${PROBE_TAG}`);
+  });
+
+  test('an unavailable rename pairing is printed, not assumed away', () => {
+    const body = verdict({
+      ...base,
+      changed: [changed('D', PROBE_TAG)],
+      findings: [{ kind: 'deleted', tag: PROBE_TAG, file: `${MIGRATIONS_DIR}/${PROBE_TAG}.sql` }],
+      renamePairingUnavailable: 'git diff exited 128',
+    }).lines.join('\n');
+    expect(body).toContain('Renames could not be paired (git diff exited 128)');
+  });
+
+  test('the denominator counts deletions rather than calling them out of scope', () => {
+    const line = verdict({
+      ...base,
+      changed: [changed('D', PROBE_TAG)],
+      findings: [{ kind: 'deleted', tag: PROBE_TAG, file: `${MIGRATIONS_DIR}/${PROBE_TAG}.sql` }],
+    }).lines[0];
+    expect(line).toContain('0 edited, 0 added, 1 deleted');
+    expect(line).not.toContain('out of scope');
   });
 });
 
@@ -333,6 +490,75 @@ describe('end to end, against a real repository', () => {
     expect(run.status).toBe(9);
     expect(run.out).toContain('This is not a pass.');
   });
+
+  /**
+   * SC-919, END TO END. The falsifier the ticket names, run against a scratch
+   * repository rather than this one: `git rm` an applied migration and the
+   * guard must refuse. Exit 0 here means the ticket is open again.
+   *
+   * The `A` control two cases above is what keeps this from being satisfied by
+   * a guard that simply refuses everything.
+   */
+  test('DELETING an applied migration is REFUSED, and never told to declare drift', () => {
+    const repo = makeRepo();
+    git(repo, 'rm', '--quiet', `${MIGRATIONS_DIR}/${PROBE_TAG}.sql`);
+    git(repo, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '--quiet', '-m', 'delete');
+    const run = runGuard(repo, '--base', 'main');
+    expect(run.status).toBe(1);
+    expect(run.out).toContain('REFUSED');
+    expect(run.out).toContain('applied migration(s) deleted or renamed');
+    expect(run.out).toContain(PROBE_TAG);
+    expect(run.out).toContain('cannot be deleted or renamed');
+    expect(run.out).toContain('`db:declare-drift` is NOT the remedy here');
+    expect(run.out).not.toContain('bun run db:declare-drift');
+  });
+
+  test('an UNCOMMITTED deletion is refused too — the working tree is compared', () => {
+    const repo = makeRepo();
+    rmSync(path.join(repo, MIGRATIONS_DIR, `${PROBE_TAG}.sql`));
+    const run = runGuard(repo, '--base', 'main');
+    expect(run.status).toBe(1);
+    expect(run.out).toContain('applied migration(s) deleted or renamed');
+  });
+
+  /**
+   * The shape the ticket is really about. Under `--no-renames` this arrives as
+   * `D` + `A`, and `A` is the exempt arm — so before SC-919 the most dangerous
+   * change was the one that looked cleanest. The message has to name the NEW
+   * tag, or the reader is told to restore a file they can see is still there
+   * under another name.
+   */
+  test('RENAMING an applied migration is refused AS A RENAME, naming both tags', () => {
+    const repo = makeRepo();
+    const renamed = '20260303000000_zz_renamed_sc919';
+    git(repo, 'mv', `${MIGRATIONS_DIR}/${PROBE_TAG}.sql`, `${MIGRATIONS_DIR}/${renamed}.sql`);
+    git(repo, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '--quiet', '-m', 'rename');
+    const run = runGuard(repo, '--base', 'main');
+    expect(run.status).toBe(1);
+    expect(run.out).toContain(`${PROBE_TAG} — renamed to ${renamed}`);
+    expect(run.out).toContain('genuinely wanted as a NEW migration');
+    expect(run.out).not.toContain('bun run db:declare-drift');
+    // The denominator still counts what the primary diff saw: one gone, one new.
+    expect(run.out).toContain('0 edited, 1 added, 1 deleted');
+  });
+
+  /**
+   * The discriminating pair, end to end and one command apart: delete refuses,
+   * add passes, same repository, same guard, same invocation.
+   */
+  test('the pair: a deletion refuses where an addition of the same shape passes', () => {
+    const deleting = makeRepo();
+    git(deleting, 'rm', '--quiet', `${MIGRATIONS_DIR}/${PROBE_TAG}.sql`);
+    const refused = runGuard(deleting, '--base', 'main');
+
+    const adding = makeRepo();
+    write(adding, `${MIGRATIONS_DIR}/20260404000000_zz_added_sc919.sql`, APPLIED);
+    git(adding, 'add', '-A');
+    const clean = runGuard(adding, '--base', 'main');
+
+    expect([refused.status, clean.status]).toEqual([1, 0]);
+    expect(clean.out).toContain('clean');
+  });
 });
 
 /**
@@ -369,7 +595,21 @@ describe('the guard is wired where it has to run', () => {
     // `|| true` here would swallow exit 9 as well as exit 1 — the shape
     // `check-oss-prose.ts` uses deliberately and this must not.
     expect(hook).not.toContain('bun scripts/check-migration-drift-declared.ts || true');
-    expect(hook).toContain('fail "an applied migration is edited with no drift declaration');
+    expect(hook).toContain('fail "an applied migration is edited, deleted or renamed');
+  });
+
+  /**
+   * SC-919. THE TRIGGER HAD TO CHANGE TOO, AND THAT IS THE HALF NOTHING WOULD
+   * HAVE CAUGHT. `staged_files` is `--diff-filter=ACMR` — deletions excluded by
+   * design — so a commit that ONLY deletes a migration matched no path, the
+   * guard never ran, and a correct refusal it would have printed was never
+   * reached. A green script beside a trigger that cannot fire is exactly the
+   * shape `scripts/lib/check-verdict.ts` is about.
+   */
+  test('pre-commit triggers on a DELETED migration, which staged_files excludes', () => {
+    const hook = read('.githooks/pre-commit');
+    expect(hook).toContain("--diff-filter=D -- 'packages/infra/db/src/migrations/*.sql'");
+    expect(hook).toContain('[ -n "$migration_deleted" ]');
   });
 });
 
