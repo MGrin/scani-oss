@@ -836,8 +836,8 @@ export class TransferReviewService {
    * **The destination is a holding, not an account**, and the row carries the
    * two facts that tell two same-token holdings in one account apart: the
    * balance and the source. Production has exactly that shape — one Airwallex
-   ***REMOVED***
-   ***REMOVED***
+   * account, two USD holdings with different balances, one imported and one
+   * manual — and by name alone they are indistinguishable.
    *
    * **Ranked, and still nothing is pre-selected** (SC-850). Those are two
    * different acts and only the second is the one SC-150 refused: guessing

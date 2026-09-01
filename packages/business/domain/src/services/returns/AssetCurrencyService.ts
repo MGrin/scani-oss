@@ -12,8 +12,9 @@ import { TokenRepository } from '../../repositories/TokenRepository';
  * request grows a second N+1 one ticket after the first was removed (SC-471).
  *
  * Two queries for any number of holdings: the tokens with their type codes,
- ***REMOVED***
- ***REMOVED***
+ * and every active fiat token. The second is a whole-table read of a table that
+ * stays small on production — cheaper than the `IN (…)` it replaces, and it is
+ * narrowed to
  * `market_segment IS NULL` in memory because a symbol is not an identity here:
  * that is the same narrowing `findByIdentityTuple` performs, and the one that
  * keeps a memecoin called USD from beating the currency (SC-223).

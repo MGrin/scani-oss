@@ -66,9 +66,9 @@ describe('v3 shell containment', () => {
    * between a screen-reader label and the document, every `sr-only` span in a
    * long list resolved against the initial containing block and grew the
    ***REMOVED***
-   ***REMOVED***
-   ***REMOVED***
-   * under it.
+   * 1200×874 with a long holdings list, `documentElement.scrollHeight` ran to
+   * several times the `body` height, so the sidebar scrolled away and bare
+   * `<body>` showed under it.
    *
    * `overscroll-none` is the second half — it keeps a rubber-band at either
    * end of the region from chaining to the document, where `<body>` carries

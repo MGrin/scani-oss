@@ -10,9 +10,10 @@ import { useTranslation } from 'react-i18next';
  *
  * `holdings.label` shipped with SC-330 — the column, the list sublabel, this
  * fact and the create-time write. What never shipped was any way to set one on
- ***REMOVED***
- ***REMOVED***
- ***REMOVED***
+ * a holding that already exists, which is why every holding that predated the
+ * change was stuck with a NULL label: the RUB rows the feature was designed for
+ * were created before the column existed and could never acquire a name
+ * (SC-564).
  *
  * Same interaction as `HoldingAmountFact` on purpose. The two facts a reader
  * corrects on a hand-tracked holding are what it holds and what it is called,

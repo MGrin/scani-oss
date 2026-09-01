@@ -163,9 +163,9 @@ export function candidateHint(t: TFunction, item: PendingTransferReview): string
  *
  * **The figures are formatted, not interpolated** (SC-173). This is the last
  * sentence between a person and an irreversible answer that moves realized PnL,
- ***REMOVED***
- ***REMOVED***
- ***REMOVED***
+ * and it read as a raw twelve-decimal float with a trailing ISO code, against
+ * the same figure rendered through `formatCurrency` three times elsewhere on
+ * the same sheet. Both branches of that mistake are here: the
  * amount goes through `formatCurrency` like every other consumer of the field,
  * and the quantity through the precision it actually carries rather than
  * whatever the wire happened to send.

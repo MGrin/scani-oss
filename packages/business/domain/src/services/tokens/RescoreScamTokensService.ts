@@ -17,8 +17,9 @@ import { SCAM_SCORE_VERSION, ScamTokenDetectionService } from './ScamTokenDetect
  * to the heuristic applied to tokens created afterwards and to nothing else,
  * and the stored number quietly became a claim no shipped code would make.
  *
- ***REMOVED***
- ***REMOVED***
+ * Measured in production: a small fraction of stored tokens held a score the
+ * current function would not produce, several of them across the 0.35 UI
+ * threshold. One was
  * `USCON` — "United States Covert Operations Network" — at 0.80, because
  * "Network" starts with "net". It was a real holding, and its value was being
  * subtracted from the portfolio total.

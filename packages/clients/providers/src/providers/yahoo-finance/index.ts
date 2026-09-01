@@ -185,9 +185,9 @@ export class YahooFinanceProvider implements HistoricalPriceProvider {
    * exotic fiat that Frankfurter doesn't cover (RUB / KZT / GEL / …).
    *
    * Crypto is intentionally left to CoinGecko / DeFiLlama. Frankfurter-
-   ***REMOVED***
-   ***REMOVED***
-   ***REMOVED***
+   * covered fiat is also skipped so we don't write duplicate rows: prod
+   * carries both `frankfurter_historical` and `yahoo-finance_fx_historical`
+   * rows for the same major pairs.
    * Frankfurter (ECB-sourced, no auth, no rate limit) wins when it
    * covers the fiat; Yahoo stays the fallback for everything else.
    */
