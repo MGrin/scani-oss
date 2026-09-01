@@ -9,22 +9,15 @@ import {
 } from '@scani/shared';
 import Decimal from 'decimal.js';
 import { Container, Service } from 'typedi';
+import {
+  MANUAL_EDIT_CORRECTION_SOURCE,
+  MANUAL_EDIT_FLOW_SOURCE,
+} from '../../lib/person-authored-sources';
 import { HoldingBalanceObservationRepository } from '../../repositories/HoldingBalanceObservationRepository';
 import { HoldingTransactionRepository } from '../../repositories/HoldingTransactionRepository';
 import { DEFAULT_OPENING_EPSILON } from './OpeningBalanceReconciliationService';
 
 const logger = createComponentLogger('service:ManualBalanceEditService');
-
-/**
- * The two `source` values this service writes, and nothing else writes.
- *
- * Separate from `'user-entered'` — which is a person typing a TRANSACTION —
- * because these rows describe an edit to a BALANCE that we then explained.
- * The distinction is what lets an audit ask "what did we synthesize" without
- * catching every hand-entered trade in the product.
- */
-export const MANUAL_EDIT_FLOW_SOURCE = 'user-balance-edit';
-export const MANUAL_EDIT_CORRECTION_SOURCE = 'user-balance-correction';
 
 /** The dedup key every row this service writes is addressed by. */
 function manualEditExternalId(editedAt: Date): string {
