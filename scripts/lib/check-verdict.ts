@@ -9,7 +9,7 @@
  * than two, and the third is not a louder failure. It says the run happened and
  * its result is not evidence about anything.
  *
- * The failure has two mechanisms and they need different remedies:
+ * The failure has three mechanisms and they need different remedies:
  *
  *   A SUBPROCESS whose failure converts to an empty success value. `git`
  *   exiting 128 hands back `''`, which splits to no paths, which reads as *the
@@ -27,6 +27,36 @@
  *   that examined all of them. A count of PATTERNS COMPILED is the trap:
  *   it is a real, specific number about a different question, and it makes the
  *   line look instrumented while saying nothing about whether a file was read.
+ *
+ *   A POPULATION EXAMINED ONLY IN PART, with the denominator already correct
+ *   and the VERDICT WORD still `PASS`. This is the mechanism the remedy above
+ *   does not reach, and it is the one that survives having applied it (SC-842).
+ *   `check-oss-internal-refs.ts` printed
+ *
+ *       oss-internal-refs: PASS · 0 of 8 staged file(s) scanned, 8 binary
+ *       skipped
+ *
+ *   over eight PNGs bound for the public mirror. Every number there is honest —
+ *   the denominator covers the population, the skip is counted and named — and
+ *   the line still opens with the word that means *looked, and clean*. A reader
+ *   who checks the verdict rather than reconciling two integers is told the
+ *   opposite of what happened, and checking the verdict is what a verdict is
+ *   for.
+ *
+ *   So the denominator is necessary and not sufficient: **the word has to agree
+ *   with it.** Where a check can examine part of its population, it needs a
+ *   verdict for that too, and it must not be the one it prints for a complete
+ *   run. Note the direction — this is not a failure, so it is not
+ *   {@link EXIT_UNKNOWN} either. The check ran, and what it says is simply
+ *   narrower than the reader assumes.
+ *
+ *   ONLY WHERE THE CHECK COULD NOT LOOK, never where it DECLINED to. An
+ *   exclusion made on purpose and measured — `check-oss-figures.ts` not reading
+ *   `.svg` or `.lock`, on the grounds that 1093 of 2296 figure sites in the
+ *   tree are logo coordinates and resolved versions — is a decision about what
+ *   is in scope, and a verdict is a statement about the scope it has. Widening
+ *   the partial verdict to cover those would fire it on most ordinary commits,
+ *   which is how the word stops meaning anything.
  *
  * {@link EXIT_UNKNOWN} is the shared number for the third verdict. It matches
  * `check-oss-bound-paths.ts` and `check-oss-internal-refs.ts`, which each
