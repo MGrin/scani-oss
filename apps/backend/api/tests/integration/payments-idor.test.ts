@@ -33,11 +33,19 @@
  * `VendorRepository.addAlias(vendorId, rawName, source)` takes no userId
  * and has no ownership check of its own, so the comparison in
  * `vendors.addAlias` is the whole of it and a stubbed router test can see
- * all of it. `merge` is the opposite extreme — the router owns which
- * userId it passes and how it maps the repository's refusal (SC-885), and
- * nothing about whether that refusal is correct. The rest sit in between.
- * A green here means different things for different tests, so read each
- * one's own note rather than the file's verdict.
+ * all of it. `merge` and `mergePreview` are the opposite extreme — the
+ * router owns which userId it passes and how it maps the repository's
+ * refusal (SC-885, SC-897), and nothing about whether that refusal is
+ * correct. The rest sit in between. A green here means different things
+ * for different tests, so read each one's own note rather than the file's
+ * verdict.
+ *
+ * The `mergePreview` failure case is the one test here that is not about
+ * ownership at all, and it is in this file because it is the guard ON the
+ * anti-probing mapping the tests above assert: NOT_FOUND for "not yours"
+ * is a deliberate disclosure decision, and a catch that answered it to
+ * every failure as well made the mitigation into a correctness bug
+ * (SC-897). The pair states how wide that mapping is allowed to be.
  */
 
 import { afterEach, beforeAll, describe, expect, test } from 'bun:test';
@@ -147,6 +155,56 @@ function stubVendorMerge(): { receivedUserIds: string[] } {
     },
   } as unknown as VendorRepository);
   return { receivedUserIds };
+}
+
+/**
+ * A `VendorRepository.mergeImpact` stub that DECIDES, for the reason
+ * `stubVendorMerge` above documents: `vendors.mergePreview` owns which
+ * userId it passes and how it maps the repository's refusal, and nothing
+ * about whether that refusal is correct. The real predicate lives in
+ * `VendorRepository.mergeImpact` and is covered by
+ * `VendorRepository.test.ts`.
+ *
+ * It throws `VendorNotFoundError`, which is what the real repository
+ * throws since SC-897 — a stub throwing a plain `Error` would take the
+ * router's rethrow branch and pin a 500 the ownership path can no longer
+ * produce.
+ */
+function stubVendorMergeImpact(): { receivedUserIds: string[] } {
+  const receivedUserIds: string[] = [];
+  Container.set(VendorRepository, {
+    mergeImpact: async (userId: string, intoId: string, _fromId: string) => {
+      receivedUserIds.push(userId);
+      if (userId !== VENDOR_OWNER_ID) {
+        throw new VendorNotFoundError(intoId);
+      }
+      return { payments: 2, aliases: 1, extractions: 0 };
+    },
+  } as unknown as VendorRepository);
+  return { receivedUserIds };
+}
+
+/**
+ * A `VendorRepository.mergeImpact` stub that FAILS the way Postgres does,
+ * for every caller including the owner.
+ *
+ * Unconditional on purpose, and it is not the shape the file header warns
+ * about: there the throw IS the refusal being asserted, so the test proves
+ * itself. Here the throw is the INPUT, and what is asserted is what the
+ * router does with it — whether a failure the ownership check never
+ * reached comes back as a 500 or as the settled "Vendor not found" the
+ * bare `catch {}` used to give it (SC-897). Ownership is deliberately not
+ * in play: the caller is the owner.
+ */
+function stubVendorMergeImpactFailing(failure: Error): { calls: () => number } {
+  let calls = 0;
+  Container.set(VendorRepository, {
+    mergeImpact: async () => {
+      calls += 1;
+      throw failure;
+    },
+  } as unknown as VendorRepository);
+  return { calls: () => calls };
 }
 
 /**
@@ -326,6 +384,70 @@ describe('IDOR — vendors router', () => {
       caller.vendors.merge({ intoId: VENDOR_INTO_ID, fromId: VENDOR_FROM_ID })
     ).resolves.toEqual({ ok: true });
     expect(receivedUserIds).toEqual([VENDOR_OWNER_ID]);
+  });
+
+  test('mergePreview answers a refused ownership check with NOT_FOUND', async () => {
+    const { receivedUserIds } = stubVendorMergeImpact();
+
+    const caller = makeAuthedCaller(fakeUser(ATTACKER_ID));
+    await expect(
+      caller.vendors.mergePreview({ intoId: VENDOR_INTO_ID, fromId: VENDOR_FROM_ID })
+    ).rejects.toMatchObject({
+      // Unchanged by SC-897 and asserted so it stays that way: "not yours"
+      // and "not there" are one answer here, so a preview cannot be used to
+      // probe for another user's vendor ids. The message is asserted too,
+      // because the repository's own sentence names the caller's userId and
+      // both ids and must not reach the client.
+      name: 'TRPCError',
+      code: 'NOT_FOUND',
+      message: 'Vendor not found',
+    });
+    expect(receivedUserIds).toEqual([ATTACKER_ID]);
+  });
+
+  test('mergePreview lets the owner through — the control that makes the refusal above a decision', async () => {
+    const { receivedUserIds } = stubVendorMergeImpact();
+
+    const caller = makeAuthedCaller(fakeUser(VENDOR_OWNER_ID));
+    await expect(
+      caller.vendors.mergePreview({ intoId: VENDOR_INTO_ID, fromId: VENDOR_FROM_ID })
+    ).resolves.toEqual({ payments: 2, aliases: 1, extractions: 0 });
+    expect(receivedUserIds).toEqual([VENDOR_OWNER_ID]);
+  });
+
+  test('mergePreview reports a repository FAILURE as a 500, not as NOT_FOUND', async () => {
+    // The point of SC-897. `mergePreview` caught with a bare `catch {}`, so
+    // every one of these — a Postgres outage, a timeout, a bug in any of
+    // `mergeImpact`'s three counting queries — was answered "Vendor not
+    // found": a settled answer over a non-result, shown to a reader who is
+    // looking at the vendor, and never an error-tier event. Only this
+    // changes; the anti-probing NOT_FOUND above is untouched.
+    const failure = Object.assign(
+      new Error('terminating connection due to administrator command'),
+      { code: '57P01' }
+    );
+    const { calls } = stubVendorMergeImpactFailing(failure);
+
+    const caller = makeAuthedCaller(fakeUser(VENDOR_OWNER_ID));
+    const thrown = await caller.vendors
+      .mergePreview({ intoId: VENDOR_INTO_ID, fromId: VENDOR_FROM_ID })
+      .then(
+        () => null,
+        (error: unknown) => error as { name?: string; code?: string; message?: string }
+      );
+
+    // Called by the OWNER, so the ownership branch is not what produced
+    // this — the failure is, and it is the only thing the router had to
+    // classify.
+    expect(calls()).toBe(1);
+    expect(thrown).not.toBeNull();
+    expect(thrown?.name).toBe('TRPCError');
+    expect(thrown?.code).toBe('INTERNAL_SERVER_ERROR');
+    // Asserted separately from the code because it is the half a reader
+    // sees: a message check alone would pass on a mapped NOT_FOUND that
+    // happened to carry other words, and a code check alone would pass on
+    // a 500 that still told them the vendor does not exist.
+    expect(thrown?.message).not.toBe('Vendor not found');
   });
 });
 
