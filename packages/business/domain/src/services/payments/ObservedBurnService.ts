@@ -119,10 +119,10 @@ export interface ObservedBurnExcluded {
  * The figure this qualifies is a value — base-currency money, and months
  * derived from money — so a count-weighted share describes a different
  * quantity than the number it sits under. Measured on the production book,
- ***REMOVED***
- ***REMOVED***
- ***REMOVED***
- ***REMOVED***
+ * window 2026-02..2026-07: **a minority of rows carry a user stamp, and the
+ * share that is not the user's is markedly higher by VALUE than by COUNT.**
+ * The unattributed rows are the big ones — the single largest transaction is a
+ * fifth of the window on its own and has no source.
  *
  * The count is the flattering one, so it is not returned at all rather than
  * returned with a comment asking nobody to use it. This feature has erred
@@ -210,7 +210,7 @@ export const CONFIRMATION_TOLERANCE = new Decimal('0.05');
  *
  * FOUR STATES AND NOT THREE. `currencyChanged` is not defensive padding: the
  * answer stores its own currency precisely so a later base-currency change
- ***REMOVED***
+ * cannot silently reinterpret 1,000 EUR as 1,000 USD, and something has to
  * happen when that occurs. Treating it as `none` would DELETE his answer from
  * the screen with no event to notice it by; treating it as live would show a
  * figure in the wrong unit. Saying the answer no longer applies is the only

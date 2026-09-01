@@ -52,9 +52,9 @@ export type DisposalOutcomeDto = (typeof DISPOSAL_OUTCOMES)[number];
  * different facts and the ledger needs both, because the outcome that books
  * money — `realized` on a withdrawal — is produced by `transfer_review =
  * 'left_control'` alone, and that column carries two things at once: an answer
- ***REMOVED***
- ***REMOVED***
- ***REMOVED***
+ * a person gave, and a value something wrote. In production on 2026-08-17, all
+ * but one `left_control` row is the second kind, and between them they account
+ * for more than the whole of the realized total. A ledger that
  * renders both as "you said this left your portfolio" is asserting a
  * provenance for a figure that does not have one.
  *

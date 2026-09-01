@@ -167,10 +167,10 @@ export function disposalVerb(kind: string, t: TFunction): string {
  * **The two outcomes that come from an answer take the answer's provenance**
  * (SC-324). `retained` said *"You said this never left your control"* on every
  * row, and `realized` said nothing at all, on both the rows a person answered
- ***REMOVED***
- ***REMOVED***
- ***REMOVED***
- ***REMOVED***
+ * and the hundreds in production where an `UPDATE` wrote `left_control` and no
+ * record of who decided exists. Those are the rows that book money — between
+ * them more than the whole of the realized total on 2026-08-17 — so this is the
+ * one surface where the difference is worth a sentence.
  *
  * **`kind` is here because provenance is only a question for the kinds the
  * review queue asks about** (SC-402). A `swap_out` books its gain on its kind

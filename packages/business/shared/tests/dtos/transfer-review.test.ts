@@ -385,14 +385,14 @@ describe('answerSourceOf', () => {
    * It read *"a stamped row with no source is `user` — the whole existing
    * corpus"*, justified as: *"the column is NULL on every row that predates it,
    * and adding it must not change one row's provenance."* On the day it was
-   ***REMOVED***
+   * written that was right for all but one row — every answered row but one
    * carried no timestamp (SC-324), and every write path set both columns
    * together, so *stamped* and *a person answered* picked out the same rows.
    *
    * Rows then acquired timestamps without sources and the predicate inverted,
    * silently, because nothing in it was ever a statement about authorship.
-   ***REMOVED***
-   * `user`; 23.7% carried a user stamp.
+   * Measured on production 2026-08-26: most of the observed burn by value read
+   * as `user`, while only a fraction of the rows carried a user stamp.
    *
    * Which is why the tests below assert a PROPERTY rather than a corpus. A test
    * written against the shape of today's data is a test that expires when the

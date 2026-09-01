@@ -22,8 +22,9 @@ restoreContainerAfterAll();
  * that already exists. So each improvement to the heuristic applied to tokens
  * created afterwards and to nothing else.
  *
- ***REMOVED***
- ***REMOVED***
+ * In production that produced a small fraction of stored tokens holding a
+ * score the shipped function would not produce, several across the 0.35 UI
+ * threshold. The one that
  * surfaced it was `USCON` — "United States Covert Operations Network" — stored
  * at 0.80 because "Network" starts with "net", a real holding whose value was
  * being subtracted from the portfolio total.
