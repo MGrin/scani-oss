@@ -32,7 +32,15 @@ async function buildPayload(
 
   if (!movement.ensureAccount) return null;
   const destinationAccountId = await resolveAccount(movement.ensureAccount);
-  return { ...common, direction: 'transfer', destinationAccountId };
+  return {
+    ...common,
+    direction: 'transfer',
+    destinationAccountId,
+    // What the rail kept (SC-889). Spread rather than set to `undefined`,
+    // because the DTO refuses a fee that is not a positive decimal and an
+    // explicit key is a value the schema then has to be asked about.
+    ...(movement.feeQuantity ? { feeQuantity: movement.feeQuantity } : {}),
+  };
 }
 
 /**
