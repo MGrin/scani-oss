@@ -55,6 +55,7 @@ export class ReviewFeedService {
       kind: j.jobName,
       label: { code: 'job' as const, jobName: j.jobName },
       detail: describePendingReview(j.jobName, j.result),
+      represents: 1,
       createdAt: j.createdAt,
       href: `/jobs/${j.jobId}`,
     }));
@@ -104,6 +105,7 @@ export class ReviewFeedService {
             attemptsAllowed: j.attemptsAllowed,
           },
         },
+        represents: 1,
         createdAt: j.deadAt ?? j.createdAt,
         href: `/jobs/${j.jobId}`,
       }));
@@ -127,6 +129,7 @@ export class ReviewFeedService {
         label: { code: 'invoiceExtracted' as const },
         detail: vendor ? { code: 'vendor' as const, name: vendor } : undefined,
         amount: extractionAmount(e),
+        represents: 1,
         createdAt: e.createdAt,
         href: `/documents/${e.documentId}`,
       };
@@ -149,6 +152,12 @@ export class ReviewFeedService {
    * withdrawal floats this to the top of the feed the way a fresh import
    * does. The age of the *oldest* unanswered one belongs on the page, where
    * there is room to say it per row.
+   *
+   * **The badge does not inherit the collapse** (SC-860). Everything above is
+   * an argument about the feed — what a list of what needs you should contain.
+   * "How much is waiting on me" is a different question, and answering it with
+   * a row count made two hundred unpaired transfers read as `1`. The row
+   * carries `represents`, which the badge sums; the feed still shows one row.
    */
   private async fromTransfers(userId: string): Promise<ReviewItem[]> {
     const { count, latestCreatedAt } = await this.transferReviews.pendingSummary(userId);
@@ -159,6 +168,9 @@ export class ReviewFeedService {
         kind: TRANSFER_REVIEW_KIND,
         label: { code: 'transfersToConfirm' as const },
         detail: { code: 'unpairedTransfers' as const, transfers: count },
+        // The badge sums this where the feed counts rows (SC-860): one row
+        // here, `count` things actually waiting.
+        represents: count,
         createdAt: latestCreatedAt,
         href: '/review/transfers',
       },
@@ -187,6 +199,8 @@ export class ReviewFeedService {
         kind: BALANCE_GAP_REVIEW_KIND,
         label: { code: 'balanceChangesToExplain' as const },
         detail: { code: 'unexplainedBalanceChanges' as const, changes: count },
+        // As in the transfer collector above: one row, `count` things.
+        represents: count,
         createdAt: latestAt,
         href: '/review/balances',
       },
