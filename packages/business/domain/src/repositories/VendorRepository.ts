@@ -534,7 +534,12 @@ export class VendorRepository extends BaseRepository<Vendor, NewVendor> {
    * needs "3 payments move", never the payments themselves.
    *
    * Ownership is verified here for the same reason `merge` verifies it:
-   * both ids arrive off the client, and a count is still a disclosure.
+   * both ids arrive off the client, and a count is still a disclosure. It
+   * refuses with `VendorNotFoundError`, which is the class's documented
+   * job: "no such vendor" and "belongs to someone else" are one answer all
+   * the way out to the client, and a TYPED one is what lets the caller
+   * keep that mapping narrow enough to be exactly the anti-probe and no
+   * wider (SC-897).
    * `aliases` is the number that will SURVIVE the move — a raw name
    * already aliased to `intoId` is deduped away by `merge` rather than
    * reassigned, so counting the source's rows verbatim would promise the
@@ -556,9 +561,18 @@ export class VendorRepository extends BaseRepository<Vendor, NewVendor> {
           and(eq(schema.vendors.userId, userId), inArray(schema.vendors.id, [intoId, fromId]))
         );
       if (owned.length !== 2) {
-        throw new Error(
-          `Cannot describe merge: ${intoId} and ${fromId} must both belong to user ${userId}`
-        );
+        // `VendorNotFoundError`, not a plain `Error`, so `vendors.mergePreview`
+        // can map THIS refusal by type and let everything else through as the
+        // 500 it is (SC-897). With a plain `Error` the router had no way to
+        // tell the ownership refusal from a Postgres outage or a bug in the
+        // three counting queries below, and answered "Vendor not found" to
+        // all of them — a settled answer over a non-result, on the read that
+        // fills a confirmation dialog. `merge` was given the same treatment
+        // one procedure over (SC-885). Naming the id that is not the
+        // caller's discloses nothing: they supplied both.
+        const ownedIds = new Set(owned.map((row) => row.id));
+        const unowned = [intoId, fromId].find((id) => !ownedIds.has(id));
+        throw new VendorNotFoundError(unowned ?? fromId);
       }
 
       const [payments] = await database
