@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { reviewItemSchema } from '@scani/shared';
+import { reviewBadgeCount, reviewItemSchema } from '@scani/shared';
 import Container from 'typedi';
 import { DocumentExtractionRepository } from '../../src/repositories/DocumentExtractionRepository';
 import { UserJobRepository } from '../../src/repositories/UserJobRepository';
@@ -16,7 +16,8 @@ function makeService(
   jobs: unknown[],
   extractions: unknown[] = [],
   transfers: { count: number; latestCreatedAt: Date | null } = { count: 0, latestCreatedAt: null },
-  deadJobs: unknown[] = []
+  deadJobs: unknown[] = [],
+  balanceGaps: { count: number; latestAt: Date | null } = { count: 0, latestAt: null }
 ): ReviewFeedService {
   Container.set(UserJobRepository, {
     findPendingReview: async () => jobs,
@@ -30,12 +31,13 @@ function makeService(
   Container.set(TransferReviewService, {
     pendingSummary: async () => transfers,
   } as unknown as TransferReviewService);
-  // The balance-gap collector (SC-501) is on the same feed. These suites are
-  // about the other producers, so it answers empty — stubbed rather than left
-  // to resolve, because a class-field dep that reaches a real repository here
-  // fails against the database instead of failing as a missing stub.
+  // The balance-gap collector (SC-501) is on the same feed. Most suites here
+  // are about the other producers, so it defaults to empty — stubbed rather
+  // than left to resolve, because a class-field dep that reaches a real
+  // repository here fails against the database instead of failing as a
+  // missing stub.
   Container.set(BalanceGapService, {
-    pendingSummary: async () => ({ count: 0, latestAt: null }),
+    pendingSummary: async () => balanceGaps,
   } as unknown as BalanceGapService);
   const instance = new ReviewFeedService();
   Container.set(ReviewFeedService, instance);
@@ -171,6 +173,58 @@ describe('ReviewFeedService.listPending', () => {
   test('an empty transfer queue adds no row', async () => {
     const svc = makeService([], [], { count: 0, latestCreatedAt: null });
     expect(await svc.listPending('user-1')).toEqual([]);
+  });
+
+  /**
+   * SC-860. The two halves in one test on purpose: they are the whole point,
+   * and a change that collapses them back together has to fail here.
+   *
+   * The FEED still shows one row per unbounded queue — that is the decision
+   * the collector comments above defend, and it is not being reversed. The
+   * BADGE is a different question, "how much is waiting on me", and until
+   * `represents` existed it inherited the feed's row count, so 200 unpaired
+   * transfers plus 30 unexplained balance changes read as **2**.
+   *
+   * `reviewBadgeCount` is the badge's own rule, imported here rather than
+   * re-implemented as `reduce`, so this asserts what `useReviewFeed` actually
+   * computes rather than a copy of it that can drift.
+   */
+  test('two aggregated queues stay two rows and weigh their full size', async () => {
+    const svc = makeService(
+      [],
+      [],
+      { count: 200, latestCreatedAt: new Date('2026-08-12T00:00:00Z') },
+      [],
+      { count: 30, latestAt: new Date('2026-08-11T00:00:00Z') }
+    );
+    const items = await svc.listPending('user-1');
+
+    expect(items).toHaveLength(2);
+    expect(reviewBadgeCount(items)).toBe(230);
+
+    const transfers = items.find((i) => i.id === 'transfer-review:pending');
+    const gaps = items.find((i) => i.id === 'balance-gap:pending');
+    expect(transfers?.represents).toBe(200);
+    expect(gaps?.represents).toBe(30);
+    // The count the row already carried for its sentence and the weight the
+    // badge sums are the same fact, and they may not drift apart.
+    expect(transfers?.detail).toEqual({ code: 'unpairedTransfers', transfers: 200 });
+    expect(gaps?.detail).toEqual({ code: 'unexplainedBalanceChanges', changes: 30 });
+  });
+
+  /**
+   * The other side of the same rule: a collector that emits a row per record
+   * weighs one each, so for those the badge and the row count agree — which
+   * is what makes the aggregate rows' disagreement meaningful rather than an
+   * arbitrary second number.
+   */
+  test('per-record rows weigh one each, so the badge equals the row count', async () => {
+    const svc = makeService([job({ jobId: 'a1' }), job({ jobId: 'a2' }), job({ jobId: 'a3' })]);
+    const items = await svc.listPending('user-1');
+
+    expect(items).toHaveLength(3);
+    expect(reviewBadgeCount(items)).toBe(3);
+    expect(items.every((i) => i.represents === 1)).toBe(true);
   });
 
   /**
