@@ -162,10 +162,11 @@ export class BalanceAtTimeService {
   // path is unchanged.
   //
   // Where they do not, the whole difference lands on the single day the
-  ***REMOVED***
-  ***REMOVED***
-  ***REMOVED***
-  ***REMOVED***
+  // anchor rolls over from one observation to the next. A real account held
+  // exactly that: a cash holding with two observations months apart and no
+  // transaction between them dropped its whole accumulated difference in one
+  // day, and a chained daily return read it as a double-digit percentage loss
+  // on cash (SC-475 fault B).
   //
   // So the drift is spread linearly across the gap instead. This is
   // INVENTED data — a straight line between two measurements, drawn because
