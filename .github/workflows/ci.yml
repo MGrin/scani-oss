@@ -3,6 +3,12 @@ name: CI
 on:
   pull_request:
     branches: [main]
+  # Squash is disabled on this repo, so every landing is a merge commit. A
+  # pull request's green is a claim about its own head; without this trigger
+  # no job had ever run against `main` itself, and a merge that bypassed the
+  # branch ruleset — an override, a direct push — left no result at all.
+  push:
+    branches: [main]
   workflow_call:
 
 # `dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1` reads the PR's changed files via the GitHub
@@ -30,17 +36,33 @@ jobs:
   detect-changes:
     name: Detect changes
     runs-on: ubuntu-latest
+    # PATH FILTERING IS A PULL-REQUEST-ONLY OPTIMISATION. A filter needs a base
+    # to diff against, and `pull_request` is the only event here that has one:
+    # on anything else every output is forced to `true` and the filter step does
+    # not run, so a `main` push builds the merged tree in full.
+    #
+    # THE ALTERNATIVE IS A FALSE GREEN, NOT A NARROWER RUN.
+    # `dorny/paths-filter` reads `github.event.before` only when the event name
+    # is literally `push`; on any other event it falls back to
+    # `getChangesInLastCommit()`, which runs
+    # `git log --format= --no-renames --name-status -n 1`. git prints no diff
+    # for a merge commit under `git log` — measured on a real landing here, 0
+    # lines against 4 for the equivalent `git diff <before>..<merge>`. Zero
+    # lines is every filter `false`, every dependent job `skipped`, and a green
+    # run that built nothing. Forcing the outputs makes that branch unreachable
+    # rather than betting on which one runs.
     outputs:
-      code: ${{ steps.filter.outputs.code }}
-      deps: ${{ steps.filter.outputs.deps }}
-      docs: ${{ steps.filter.outputs.docs }}
-      prod-guards: ${{ steps.filter.outputs.prod-guards }}
+      code: ${{ github.event_name != 'pull_request' || steps.filter.outputs.code == 'true' }}
+      deps: ${{ github.event_name != 'pull_request' || steps.filter.outputs.deps == 'true' }}
+      docs: ${{ github.event_name != 'pull_request' || steps.filter.outputs.docs == 'true' }}
+      prod-guards: ${{ github.event_name != 'pull_request' || steps.filter.outputs.prod-guards == 'true' }}
     steps:
       - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
         with:
           fetch-depth: 2
       - uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
         id: filter
+        if: ${{ github.event_name == 'pull_request' }}
         with:
           list-files: none
           filters: |
