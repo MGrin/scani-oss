@@ -1008,6 +1008,107 @@ describe('TransferReviewService — a divided answer', () => {
     expect(out?.transferReview).toBe('split');
   });
 
+  /**
+   * SC-888 — the invariant a fee portion must not break, asserted rather than
+   * assumed.
+   *
+   * `transfer_group_id` is ONE column on the outflow, and
+   * `CostBasisService`'s inflow branch hands the FIRST `transfer_in` every
+   * buffered lot and then `pending.delete(tgid)`. A second row on one group id
+   * therefore finds nothing buffered and opens a fresh market-value lot —
+   * SC-150 exactly, and the reason `transferReviewSplitSchema` allows at most
+   * one LINKING portion.
+   *
+   * A fee is not a linking portion, so `paired + fee` must be accepted AND
+   * must produce exactly one arrival on the group. Both halves are needed: a
+   * schema that refused it would be safe and useless, and one that accepted it
+   * while writing two arrivals would be the defect.
+   */
+  test('a fee part never takes the group id — one deposit on the group, not two', async () => {
+    const f = fixture!;
+    const at = anchor();
+    const outId = await insertOutflow(f, { at, quantity: '-4000', externalId: 's-fee-1' });
+    const inId = await insertInflow(f, {
+      at: new Date(at.getTime() + 60_000),
+      quantity: '3500',
+      externalId: 's-in-fee-1',
+    });
+
+    const result = await service().resolveSplit(f.userId, outId, [
+      { decision: 'paired', quantity: '3500', matchTransactionId: inId },
+      { decision: 'fee', quantity: '500' },
+    ]);
+    expect(result).toEqual({ ok: true });
+
+    const rows = await db
+      .select()
+      .from(schema.holdingTransactions)
+      .where(eq(schema.holdingTransactions.userId, f.userId));
+    const out = rows.find((r) => r.id === outId);
+    expect(out?.transferGroupId).not.toBeNull();
+    const groupId = out?.transferGroupId ?? '';
+
+    // Exactly two rows on the group — the departure and the one arrival. This
+    // is the assertion that goes red if a fee ever acquires the group id,
+    // whether by a third row being written for it or by the answer stamping
+    // the id on one.
+    const onGroup = rows.filter((r) => r.transferGroupId === groupId);
+    expect(onGroup).toHaveLength(2);
+    expect(onGroup.filter((r) => Number(r.quantity) > 0)).toHaveLength(1);
+    expect(onGroup.map((r) => r.id).sort()).toEqual([outId, inId].sort());
+
+    // And nothing new was written anywhere: a fee portion is a carve-out of a
+    // quantity already in the ledger, so a `kind='fee'` row beside it would be
+    // the same money twice and `OpeningBalanceReconciliationService` would
+    // synthesize a phantom opening for the difference.
+    expect(rows.filter((r) => r.kind === 'fee')).toHaveLength(0);
+  });
+
+  test('a fee part is not a second tracked destination — paired + internal still refused', async () => {
+    // The control for the test above. `paired + fee` is accepted because a fee
+    // takes no group id; `paired + internal` is still refused because both
+    // want the one column. If `isLinkingDecision` ever grew a `fee` member the
+    // first would start failing here and this would keep passing, which is
+    // what tells the two apart.
+    const f = fixture!;
+    const at = anchor();
+    const outId = await insertOutflow(f, { at, quantity: '-4000', externalId: 's-fee-2' });
+    const inId = await insertInflow(f, {
+      at: new Date(at.getTime() + 60_000),
+      quantity: '2000',
+      externalId: 's-in-fee-2',
+    });
+
+    const refused = await service().resolveSplit(f.userId, outId, [
+      { decision: 'paired', quantity: '2000', matchTransactionId: inId },
+      {
+        decision: 'internal',
+        quantity: '2000',
+        destination: { accountId: f.inAccountId, holdingId: f.inHoldingId },
+      },
+    ]);
+    expect(refused.ok).toBe(false);
+    expect((await service().pendingSummary(f.userId)).count).toBe(1);
+  });
+
+  test('a whole withdrawal can be answered `fee`', async () => {
+    const f = fixture!;
+    const outId = await insertOutflow(f, {
+      at: anchor(),
+      quantity: '-12.40',
+      externalId: 's-fee-3',
+    });
+    expect(await service().resolve(f.userId, outId, 'fee')).toEqual({ ok: true });
+
+    const [row] = await db
+      .select()
+      .from(schema.holdingTransactions)
+      .where(eq(schema.holdingTransactions.id, outId));
+    expect(row?.transferReview).toBe('fee');
+    expect(row?.transferGroupId).toBeNull();
+    expect((await service().pendingSummary(f.userId)).count).toBe(0);
+  });
+
   test('refuses a paired part whose deposit was claimed in the meantime', async () => {
     const f = fixture!;
     const at = anchor();
