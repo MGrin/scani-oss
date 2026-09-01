@@ -328,7 +328,7 @@ export type CheckoutEnumeration =
   | { readonly kind: 'unreadable' };
 
 /** The set to judge against, or `null` — see `CensusInput.liveProjects`. */
-export function enumeratedProjects(e: CheckoutEnumeration): ReadonlySet<string> | null {
+function enumeratedProjects(e: CheckoutEnumeration): ReadonlySet<string> | null {
   return e.kind === 'unreadable' ? null : e.projects;
 }
 
@@ -336,7 +336,7 @@ export function enumeratedProjects(e: CheckoutEnumeration): ReadonlySet<string> 
  * Every checkout of this repository, as compose project names, with how the
  * answer was reached.
  */
-export function liveCheckoutProjects(repoRoot: string): CheckoutEnumeration {
+function liveCheckoutProjects(repoRoot: string): CheckoutEnumeration {
   const probe = spawnSync('git', ['worktree', 'list', '--porcelain'], {
     cwd: repoRoot,
     encoding: 'utf8',
