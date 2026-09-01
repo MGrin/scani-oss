@@ -9,6 +9,7 @@ import {
   VISUAL_EMPTY_SESSION_FILE,
   VISUAL_SESSION_FILE,
 } from '../fixtures/visual-setup';
+import { describeSpinner, ROUTE_PENDING, readPendingRoutes } from './route-pending';
 import {
   ALLOCATION_DIMENSION_STORAGE_KEY,
   FOLDING_DIMENSION,
@@ -61,21 +62,6 @@ const EXPECTED_FOLDED_SEGMENTS = 6;
  *  never mounted, which is the failure a screenshot hides best — a picture of
  *  a blank page is still a picture. */
 const SHELL = '[data-ui="v3"]';
-
-/**
- * The route chunk's Suspense fallback, and the reason the shell alone is not a
- * readiness check (SC-473).
- *
- * v3 splits its routes and deliberately does **not** split the shell, so
- * `SHELL` is on screen from the first paint whether or not the screen under it
- * has downloaded. Home lost that race where the other four screens won it, and
- * the first `home-phone` baseline generated from this file was a picture of a
- * centred spinner — which the gate would then have asserted forever, going
- * green on a screen it had never seen. `lazy-route.tsx` marks the fallback for
- * this wait; `detached` also passes instantly when the chunk was already
- * cached and the fallback never mounted.
- */
-const ROUTE_PENDING = '[data-route-pending]';
 
 /** How long a screen gets to put the shell on screen. Generous because the
  *  first navigation of a run also compiles the v3 module graph: the stack
@@ -175,12 +161,23 @@ function trackDocumentLoads(page: Page): DocumentLoads {
  * "whatever the page was doing" to "it was rendered and still rendered
  * `SETTLE_MS` later", and it fails with a sentence rather than a baseline.
  */
-async function settle(page: Page, loads: DocumentLoads): Promise<void> {
+async function settle(page: Page, loads: DocumentLoads, name: string): Promise<void> {
   const deadline = Date.now() + SHELL_TIMEOUT_MS;
   for (let attempt = 1; ; attempt++) {
     const before = loads.count;
     await page.waitForSelector(SHELL, { timeout: SHELL_TIMEOUT_MS });
-    await page.waitForSelector(ROUTE_PENDING, { state: 'detached', timeout: SHELL_TIMEOUT_MS });
+    try {
+      await page.waitForSelector(ROUTE_PENDING, { state: 'detached', timeout: SHELL_TIMEOUT_MS });
+    } catch (error) {
+      // Bare, this is a Playwright timeout saying a selector did not detach —
+      // no cause, no chunk, no load count. It was the one of this file's three
+      // spinner exits that named nothing at all, and it is the one that fires
+      // when the route simply never arrives, which is the case most worth
+      // telling apart from a reload (SC-840).
+      throw new Error(await report(page, loads, name, `after ${SHELL_TIMEOUT_MS}ms of waiting`), {
+        cause: error,
+      });
+    }
     await page.waitForLoadState('networkidle').catch(() => undefined);
     await page.waitForTimeout(SETTLE_MS);
 
@@ -190,14 +187,34 @@ async function settle(page: Page, loads: DocumentLoads): Promise<void> {
       (await page.locator(ROUTE_PENDING).count()) === 0;
     if (stillThere) return;
     if (Date.now() > deadline) {
+      // `stillThere` is a conjunction of three, so this fires for a reload OR a
+      // re-pending route OR a vanished shell — and it used to answer all three
+      // with "Something is reloading the SPA under the run", pointing at the
+      // note above. `report` reads the evidence and picks.
       throw new Error(
-        `the screen kept unmounting: ${attempt} attempts, and after each settle the shell was ` +
-          `gone or the route was pending again (${loads.count} document loads at ` +
-          `${loads.at.join('ms, ')}ms). Something is reloading the SPA under the run — see the ` +
-          'note on this function.'
+        `${await report(page, loads, name, 'at the end of the last settle window')}\n\n` +
+          `${attempt} settle attempt(s), and after each one the screen was gone again.`
       );
     }
   }
+}
+
+/** Gathers what the page can still be asked and hands it to the classifier. The
+ *  three exits differ only in `where`, which is the point: one verdict function,
+ *  so they cannot drift into disagreeing about the same state (SC-840). */
+async function report(
+  page: Page,
+  loads: DocumentLoads,
+  name: string,
+  where: string
+): Promise<string> {
+  return describeSpinner({
+    screen: name,
+    loads: { count: loads.count, at: loads.at },
+    pending: await readPendingRoutes(page),
+    shellPresent: (await page.locator(SHELL).count()) > 0,
+    where,
+  });
 }
 
 /**
@@ -360,28 +377,28 @@ async function assertPhotographedOnce(
   name: string,
   fail: Fail
 ): Promise<void> {
-  if (loads.count > 1) {
-    fail(
-      `${name}: the SPA reloaded under the capture — ${loads.count} document loads at ` +
-        `${loads.at.join('ms, ')}ms after goto. Whatever this run photographed, it is not the ` +
-        'screen it waited for, so neither a pass nor a pixel diff means anything. Something ' +
-        "wrote to a file in the app's Vite module graph while the run was in flight (SC-499): " +
-        'do not lint, rebase, check out or save under apps/frontend/app or packages/frontend/ui ' +
-        'while the gate is running.'
-    );
-  }
-  if ((await page.locator(ROUTE_PENDING).count()) > 0) {
-    fail(
-      `${name}: the route chunk was pending again when the capture finished, so the picture is ` +
-        "the shell's spinner rather than the screen. The SPA remounted mid-capture (SC-499)."
-    );
-  }
-  if ((await page.locator(SHELL).count()) === 0) {
-    fail(
-      `${name}: the v3 shell was gone when the capture finished — the app unmounted mid-capture ` +
-        '(SC-499). A picture of a blank page is still a picture.'
-    );
-  }
+  const pending = await readPendingRoutes(page);
+  const shellPresent = (await page.locator(SHELL).count()) > 0;
+  if (loads.count <= 1 && pending.length === 0 && shellPresent) return;
+
+  // One gather, one verdict. This used to be three `if`s with three hardcoded
+  // sentences, and the second of them — the route-pending one — is reachable
+  // ONLY when the first did not fire, so only when `loads.count <= 1`. It said
+  // "The SPA remounted mid-capture (SC-499)", and SC-499's mechanism is a Vite
+  // `full-reload`, which replaces the document and always fires `load`. So the
+  // one branch that fires for cause B cited the ticket for cause A, having just
+  // proven cause A absent — it was written inside SC-499's own commit
+  // (`e66a4024c`) and inherited its citation. Four SC-825 runs followed it and
+  // went looking for a module-graph write that was not there (SC-840).
+  fail(
+    describeSpinner({
+      screen: name,
+      loads: { count: loads.count, at: loads.at },
+      pending,
+      shellPresent,
+      where: 'when the capture finished',
+    })
+  );
 }
 
 /**
@@ -492,7 +509,7 @@ function declare(screen: VisualScreen): void {
     const network = await pinExternalNetwork(page);
     const loads = trackDocumentLoads(page);
     await page.goto(screen.route);
-    await settle(page, loads);
+    await settle(page, loads, screen.name);
     await applyDirection(page, screen);
     await assertPixelsSettled(page, screen.name);
 
