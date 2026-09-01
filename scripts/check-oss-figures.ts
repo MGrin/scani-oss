@@ -50,6 +50,12 @@
 // covered one half quietly would be trusted for both, so the refusal says so
 // itself rather than leaving it in a ticket.
 //
+// `scripts/check-oss-prose.ts` reads the other half as of SC-909, and it does
+// NOT close this limit — it narrows it. That check reports a SENTENCE carrying
+// both a scope signal and a measurement, advisory and without an escape; a
+// named credential, an account label and a person's name still travel past
+// both of us. Neither check is a reason to skip reading your own diff.
+//
 // It is a seatbelt on the machine doing the work, not a gate on the repository:
 // `--no-verify` skips it, and a fresh clone has no hooks until `bun install`
 // sets `core.hooksPath`. Nothing here should be read as though it were a gate.
@@ -272,7 +278,7 @@ export function selfTest(): string[] {
  * read `private`, and SKIP — a silent pass on a mirror-bound push, which is
  * this check's own subject reproduced inside its caller.
  */
-function collectBranchFacts(cwd: string, ref: string): BranchFacts {
+export function collectBranchFacts(cwd: string, ref: string): BranchFacts {
   const remotes = runGit(['remote'], cwd);
   const upstreamMainResolved =
     runGit(['rev-parse', '--verify', '--quiet', 'refs/remotes/upstream/main'], cwd).kind === 'ran';

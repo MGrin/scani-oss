@@ -159,6 +159,46 @@ else
   note "scripts/check-oss-figures.ts is not in this tree; figure check NOT run"
 fi
 
+# -------- 0e. PROSE describing a deployment, on lines that travel --------
+#
+# SC-909. The check above reads decimal literals and says in its own header that
+# it cannot read PROSE — and that limitation is reachable through the most
+# ordinary route there is: writing a good comment explaining WHY a change
+# exists, using the incident that motivated it. A draft carried an incident's
+# evidence verbatim into code comments, a migration and a pull request body, and
+# all four checks above passed it. Each was right to: routing was correct, the
+# references were legitimate, and there was no precise decimal anywhere in it.
+#
+# A MIGRATION COMMENT IS THE URGENT ONE. `scripts/migrate.ts` refuses the whole
+# run on sha256 drift, for an edited applied migration and for a deleted one,
+# with no escape flag — so an applied migration's text is permanent, and there
+# is no later at which a sentence in one gets fixed.
+#
+# READ THE INVERSION, BECAUSE EVERY BLOCK ABOVE IS THE OTHER WAY. Those four are
+# a REFUSAL on any non-zero status, exit 9 and exit 10 included. This one NEVER
+# fails the commit, on any status, and that is not an oversight:
+#
+#   It reports a SHAPE, not a defect. "This sentence is specific about a running
+#   deployment and it is going public" is a true statement about text that a
+#   person then has to judge. A false positive on prose is cheap to read past; a
+#   false refusal on a good comment is what gets a guard switched off, and a
+#   disabled guard is strictly worse than the gap it was closing.
+#
+#   There is consequently no escape variable, and nothing to disable.
+#
+#   Its own rot is caught where it belongs — `scripts/tests/check-oss-prose.test.ts`
+#   asserts the self-test and the fixtures, so a signal that has stopped
+#   matching fails CI rather than passing quietly here.
+#
+# `|| true` is deliberate and load-bearing: without it `set -eu` at the top of
+# this file turns exit 9 or 10 into a refused commit, which is the posture this
+# block exists to avoid.
+if [ -f scripts/check-oss-prose.ts ]; then
+  bun scripts/check-oss-prose.ts || true
+else
+  note "scripts/check-oss-prose.ts is not in this tree; deployment-prose check NOT run"
+fi
+
 # -------- 1. Biome lint (staged files only, fast) --------
 
 biome_relevant=$(staged_files -- '*.ts' '*.tsx' '*.js' '*.jsx' '*.json' '*.jsonc' || true)
