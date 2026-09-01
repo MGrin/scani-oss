@@ -40,31 +40,27 @@ ALTER TABLE "holdings"
 -- creates its holdings inside the same request that creates the account. The
 -- hourly cron is what is left.
 --
-***REMOVED***
---
-***REMOVED***
-***REMOVED***
-***REMOVED***
-***REMOVED***
-***REMOVED***
-***REMOVED***
-***REMOVED***
+-- Measured against a real dataset before writing this file, bucketing every
+-- holding by the gap between its own creation and its account's. Every
+-- importer source lands entirely inside the first hour, which is what "the
+-- import creates its holdings inside the same request" looks like from the
+-- data. `blockchain` is the only source with a second cluster past a day.
 --
 -- The two blockchain clusters do not touch and there is nothing between them:
-***REMOVED***
-***REMOVED***
-***REMOVED***
-***REMOVED***
+-- the widest at-import gap is under an hour and the narrowest post-import gap
+-- is several days, two orders of magnitude apart. At-import rows flagged by
+-- mistake: 0 — not "few", zero, and no threshold anywhere inside that gap
+-- changes which rows are selected.
 --
 -- Two further checks, because a late row could in principle be a second import
 -- rather than the cron. No confirmed `wallet-import` job lands within +/-30
-***REMOVED***
+-- minutes of any flagged row, and every one of them was written about a minute
 -- past an hour — the cron's schedule, not a person's.
 --
-***REMOVED***
-***REMOVED***
-***REMOVED***
-***REMOVED***
+-- `manual`'s post-import row is not touched: the source filter excludes it,
+-- and correctly — a manual row is user-authored whenever it was written.
+-- `sync_exchange_balances` has never created a holding at all, so the exchange
+-- cron contributes nothing here despite also running with
 -- `updateOnly: false`.
 UPDATE "holdings" h
 SET "arrival" = 'auto_discovered'
@@ -73,7 +69,8 @@ WHERE a."id" = h."account_id"
   AND h."source" = 'blockchain'
   AND h."created_at" > a."created_at" + interval '1 day';
 
-***REMOVED***
+-- Every row the predicate does not select stays `unattributed` on purpose.
+-- The evidence above
 -- proves which rows a machine created; it does not prove a human picked any
 -- specific one of the rest, and `unattributed` is the value that says so.
 -- Backfilling them to `user_confirmed` would be an inference dressed as a

@@ -96,10 +96,10 @@ describe('CreateHoldingsWithDependenciesDto validation', () => {
  * used to hold three copies of it, and a form that refuses less than the
  * server refuses is a form that submits and then fails the job.
  *
- ***REMOVED***
- ***REMOVED***
- ***REMOVED***
- ***REMOVED***
+ * The shape it exists for is real: a bank account can hold several
+ * hand-entered rows for one currency, and a later screenshot updates each to a
+ * different value, one of them downwards. Several products on one bank
+ * screen.
  */
 describe('holdingPositionKey', () => {
   test('an absent name is not a wildcard — it is the empty name', () => {
