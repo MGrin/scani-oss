@@ -159,6 +159,26 @@ else
   note "scripts/check-oss-figures.ts is not in this tree; figure check NOT run"
 fi
 
+# -------- 0d-bis. OPAQUE IDENTIFIERS, the shape neither of the above sees --------
+#
+# SC-838. `check-oss-figures` reads a MEASUREMENT and `check-oss-prose` a CLAIM.
+# What reached the mirror on 2026-09-01 was neither: a bank account number, four
+# wallet addresses, a transaction hash, 283 row identifiers, an invoice number.
+# None of them carries a scope word or a quantity, so every guard in this file
+# passed all of it and three separate waves were found by a person reading files.
+#
+# A REFUSAL on any non-zero status, exits 9 and 10 included, for the reason the
+# block above gives. There is deliberately NO environment variable that silences
+# this one: its allowlist is the escape, and an allowlist entry is a line in a
+# diff that somebody reviews.
+if [ -f scripts/check-oss-data-shapes.ts ]; then
+  if ! bun scripts/check-oss-data-shapes.ts; then
+    fail "staged lines carry an identifier this check cannot tell from production data (SC-838)"
+  fi
+else
+  note "scripts/check-oss-data-shapes.ts is not in this tree; opaque-identifier check NOT run"
+fi
+
 # -------- 0e. PROSE describing a deployment, on lines that travel --------
 #
 # SC-909. The check above reads decimal literals and says in its own header that
