@@ -1451,9 +1451,9 @@ describe('TransferReviewService — the answered list is reachable', () => {
 /**
  * The fourth answer: it moved to a holding Scani tracks (SC-187).
  *
- * The reported case, with the production rows behind it. A 4,000 USD Airwallex
- * withdrawal, of which 3,500 moved to a Revolut savings account the user keeps
- * up to date **by hand** and 500 genuinely left. There is no deposit on
+ * The reported case, with the production rows behind it. An Airwallex
+ * withdrawal, most of which moved to a savings account the user keeps up to
+ * date **by hand** while the remainder genuinely left. There is no deposit on
  * Revolut to pair with, and there never was: the account has no importer, so
  * the matcher was not failing to find a counterpart — there was nothing to
  * find. `paired` is unwritable, `untracked` is false, and `left_control` books

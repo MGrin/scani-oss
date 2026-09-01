@@ -119,8 +119,8 @@ describe('copy', () => {
 
   test('a booked gain nobody is recorded as choosing says so (SC-324)', () => {
     // The one that books money. Silence here is the defect: the reader cannot
-    // tell this from the row above it, and the difference is 560 rows and
-    // -39,349.52 USD of realized PnL in production.
+    // tell this from the row above it, and the difference is a few hundred rows
+    // of realized PnL in production.
     const note = outcomeNote('withdraw', 'realized', 'unattributed', t);
     expect(note).toContain('no record of anyone answering it');
     expect(answerLabel('withdraw', 'unattributed', t)).toBe('Answer not recorded');

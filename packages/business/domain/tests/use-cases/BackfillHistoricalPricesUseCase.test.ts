@@ -490,8 +490,8 @@ describe('BackfillHistoricalPricesUseCase', () => {
    * to 1825, and the resulting HTTP 400 came back as an empty range.
    * Empty meant "no price history", which meant a 7-day unpriceable
    * cooldown, which meant the token was skipped before it could be
-   * retried — and re-marked when it finally was. 120 tokens sat in that
-   * state in production, ETH, BTC, AAPL and NVDA among them, 17 of them
+   * retried — and re-marked when it finally was. Many tokens sat in that
+   * state in production, ETH, BTC, AAPL and NVDA among them, a batch of them
    * stamped by a single run to the millisecond.
    *
    * A run that never got an answer must not produce a verdict.
@@ -692,9 +692,9 @@ describe('BackfillHistoricalPricesUseCase', () => {
  * The per-token start used to read `holding_coverage.first_tx_at` and, on a
  * NULL, fall all the way back to the 1,826-day lookback. The widest window in
  * the run therefore landed on the tokens we knew least about: on a production
- * dry run, 14 tokens with no coverage row accounted for 25,564 of 52,022
- * missing days and 56 of ~128 provider requests — half a run's budget spent
- * establishing that a set of memecoins has no price feed.
+ * dry run, a handful of tokens with no coverage row accounted for about half
+ * the missing days and about half the provider requests — half a run's budget
+ * spent establishing that a set of memecoins has no price feed.
  *
  * The transactions were there the whole time. They are why discovery finds
  * these tokens at all.

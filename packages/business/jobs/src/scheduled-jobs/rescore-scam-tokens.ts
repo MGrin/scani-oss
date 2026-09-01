@@ -3,9 +3,10 @@ import { JOB_NAMES } from '../job-names';
 
 // SC-286. `is_scam_probability` is written once, at token creation, and never
 // recomputed — so every improvement to the heuristic applied to tokens created
-// after it and to nothing else. In production 29 of 371 tokens held a score the
-// shipped function would not produce, six across the 0.35 UI threshold; one was
-// a real holding being subtracted from the portfolio total.
+// after it and to nothing else. In production a small fraction of stored tokens
+// held a score the shipped function would not produce, several across the 0.35
+// UI threshold; one was a real holding being subtracted from the portfolio
+// total.
 //
 // Daily, not hourly, and deliberately so. The trigger for work is a developer
 // bumping `SCAM_SCORE_VERSION` in a deploy — an event measured in months, not

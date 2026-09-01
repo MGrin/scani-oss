@@ -648,9 +648,10 @@ export abstract class BaseEvmProvider implements ProviderBase {
    * quantity of zero cannot move a balance, cost basis or realized PnL, so
    * nothing downstream loses an input it was using.
    *
-   * Measured on production 2026-08-17 by re-reading `tokentx` for all three
-   * wallets on four chains (1071 legs): 117 legs carry value 0, all of them on
-   * six REAL contracts, and 114 reached the ledger. 113 are poisoning. The
+   * Measured on production 2026-08-17 by re-reading `tokentx` for every wallet
+   * on four chains: a small number of legs carry value 0, all of them on a
+   * handful of REAL contracts, and nearly all of those reached the ledger. All
+   * but one are poisoning. The
    * one that is not is a user-initiated `unstake(uint256)` whose SOMM payout
    * really was zero — verified against `eth_getTransactionReceipt`, whose
    * `Transfer` log data reads `0x00…00`. It moved nothing either.
@@ -661,7 +662,7 @@ export abstract class BaseEvmProvider implements ProviderBase {
    * to add after the fact: removing a leg can never renumber a surviving one,
    * so no stored `external_id` moves onto a different movement. It matters
    * because a `transfer_review` answer travels with `external_id`, and SC-341
-   * measured 159.75 USDC of realized PnL that a key change would have silently
+   * measured real realized PnL that a key change would have silently
    * re-attached.
    *
    * One transaction can move the same token more than once through the same
@@ -669,8 +670,8 @@ export abstract class BaseEvmProvider implements ProviderBase {
    * payment across two recipients — and `tokentx` reports each `Transfer`
    * log separately. `<hash>-<contract>` cannot tell them apart, so
    * `bulkUpsert`'s dedupe on `(holding_id, source, external_id)` kept one and
-   * dropped the rest silently: 13 legs across 13 transactions on production,
-   * `warnings` empty and `hasCompleteTxHistory: true` (SC-341).
+   * dropped the rest silently: a dozen or so legs across as many transactions
+   * on production, `warnings` empty and `hasCompleteTxHistory: true` (SC-341).
    *
    * `logIndex` would be the natural discriminator and Etherscan V2's
    * `tokentx` response does not carry one — the 22 fields it returns are

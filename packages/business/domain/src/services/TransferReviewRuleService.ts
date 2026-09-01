@@ -83,14 +83,14 @@ export interface CreateRuleInput {
  * that `create` still takes a transaction id and never an address, so the key
  * is copied by the server off a row the caller owns, under `pendingPredicate`
  * — their own, an outflow, unpaired, unanswered, NON-ZERO. That last condition
- * is what keeps the 113 address-poisoning rows unruleable, and it is why an
+ * is what keeps the address-poisoning rows unruleable, and it is why an
  * adversary reaching this session still cannot mark a destination the user has
  * never sent real money to. The other two live in `ruleWritablePredicate`.
  *
- * Marking one of the reader's OWN wallets is refused outright. Ten
- * `left_control` answers on addresses in `user_wallets` booked 10,500 of
- * disposals on money that never left the portfolio (SC-350), and a standing
- * rule is that mistake with a repeat count on it.
+ * Marking one of the reader's OWN wallets is refused outright. A handful of
+ * `left_control` answers on addresses in `user_wallets` booked disposals on
+ * money that never left the portfolio (SC-350), and a standing rule is that
+ * mistake with a repeat count on it.
  *
  * Everything the engine does still happens at read time, in
  * `TransferReviewService`. For the two non-writing verdicts that is what makes

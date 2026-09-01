@@ -12,8 +12,8 @@ import { makeToken } from '../../test/helpers/factories-extra';
  * the production shape rather than a minimal one (SC-146).
  *
  * The row that matters most is `USDT`: on the real account it carries
- * `is_scam_probability = 0.3`, the *same* score as fourteen airdrop spam
- * tokens, alongside 1,439 price rows. Any scam-score threshold that
+ * `is_scam_probability = 0.3`, the *same* score as a batch of airdrop spam
+ * tokens, alongside a long price history. Any scam-score threshold that
  * catches the spam removes Tether from the portfolio. A test without that
  * row would have passed the naive fix.
  */

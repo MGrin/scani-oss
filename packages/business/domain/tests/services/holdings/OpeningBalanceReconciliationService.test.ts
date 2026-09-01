@@ -268,8 +268,8 @@ describe('OpeningBalanceReconciliationService.reconcileHolding', () => {
     // day's accrual, so an opening at `first tx − 1ms` lands 7h08m AFTER the
     // observation that anchors every earlier date. `BalanceAtTimeService`
     // walks back only `(at, anchor]`, so it never subtracted it: the balance
-    // was projected flat across thirteen months of history AND booked as a
-    // fresh +26,976.50 contribution on the same day.
+    // was projected flat across the whole of prior history AND booked as a
+    // fresh contribution of the same size on the same day.
     const observedAt = new Date('2026-05-17T16:51:42.148Z');
     const firstTxAt = new Date('2026-05-18T00:00:00.000Z');
     const { service, capturedTxs } = makeService({
@@ -326,8 +326,8 @@ describe('OpeningBalanceReconciliationService.reconcileHolding', () => {
   });
 
   test("THE DEFECT (SC-481): the quantity is the balance observed AT the opening, not today's", async () => {
-    // Production: Wise Savings opened at 20,037.16 against a balance observed
-    // that same afternoon of 10,671.32. The difference is money that arrived
+    // Production: a Wise savings opening at roughly twice the balance observed
+    // that same afternoon. The difference is money that arrived
     // over the following three months, swept into the opening by a quantity
     // recomputed against today's balance and retro-dated to a moment it did
     // not exist.

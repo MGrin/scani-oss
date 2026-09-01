@@ -431,10 +431,10 @@ describe('LinkTransferPairsUseCase', () => {
    *
    * Nothing moved between accounts: a departure and an arrival happened close
    * together in the same wallet, and token + time — the only two facts this
-   * matcher reads — cannot tell that from a hop. It produced a wrong answer four
-   * times in production. `0x1414` sent 1,000 USDC to `0x9d8a`, then three
-   * minutes later `0x9d8a` sent 1,000 USDC to a stranger; this paired the
-   * arrival to the departure, which made the genuine pairing unrecordable
+   * matcher reads — cannot tell that from a hop. It produced a wrong answer
+   * several times in production: one wallet sent USDC to a second, then minutes
+   * later that second wallet sent the same amount on to a stranger; this paired
+   * the arrival to the departure, which made the genuine pairing unrecordable
    * because `claimInflow` will not take a claimed inflow.
    */
   test('does NOT pair an inflow and outflow that sit on the same holding', async () => {

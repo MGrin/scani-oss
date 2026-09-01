@@ -86,19 +86,20 @@ export class RealizedLedgerService {
    * `forHolding` walks the component and then keeps `row.holdingId ===
    * holdingId`, so the per-holding results PARTITION the component. That makes
    * one holding a perfectly good handle to walk *by* and a terrible one to
-   * report *from*: measured on production 2026-08-18, `forHolding` on the
-   * Ethereum ETH holding of `0x0158` returns 120 rows and on the Optimism ETH
-   * holding in the same 7-holding component returns 1. Two repair scripts
+   * report *from*: measured on production 2026-08-18, `forHolding` on one
+   * component's Ethereum ETH holding returns over a hundred rows and on the
+   * Optimism ETH holding in the same component returns one. Two repair scripts
    * summed one representative per component and called it the component's
    * realized PnL.
    *
    * Those figures were not small versions of the truth, they were ARBITRARY:
    * which holding survived depended on `Set` insertion order, so the same
    * question asked twice could answer with a different magnitude and a
-   * different SIGN. Re-derived on production 2026-08-18, SC-328's delta is
-   * +503.34; the representative walk reported +3,828.59 on the day and
-   * -935.94 when the same comparison was reconstructed from a different seed
-   * order. A measurement that moves with hash ordering is not a measurement.
+   * different SIGN. Re-derived on production 2026-08-18, SC-328's delta is a
+   * small positive figure; the representative walk reported one several times
+   * larger on the day, and a NEGATIVE one when the same comparison was
+   * reconstructed from a different seed order. A measurement that moves with
+   * hash ordering is not a measurement.
    *
    * So this walks each distinct component ONCE and returns everything it
    * emits. No cross-holding de-duplication is applied or needed, and none

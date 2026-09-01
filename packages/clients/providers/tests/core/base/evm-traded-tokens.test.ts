@@ -42,8 +42,8 @@ describe('isTradedPosition — what the wallet review may offer (SC-398)', () =>
   });
 
   test('an airdrop the wallet claimed for gas is a position', () => {
-    // The ENS claim: 247.7 ENS taken for gas in Nov 2021 and sold into 2.797
-    // ETH. Two thirds of SC-398's +17,444.88 is this one token, and the
+    // The ENS claim: an ENS airdrop taken for gas in Nov 2021 and sold into
+    // ETH. Most of the realized PnL SC-398 recovered is this one token, and the
     // disposal is absent from the ledger on BOTH sides today.
     expect(
       isTradedPosition(movements({ inflowHashes: ['0xclaim'], signedHashes: new Set(['0xclaim']) }))
@@ -51,7 +51,7 @@ describe('isTradedPosition — what the wallet review may offer (SC-398)', () =>
   });
 
   // MUST-BE-ABSENT. These are what find-only exists to keep out, and what a
-  // balance-based relaxation would re-admit: 330 tokens / 419 legs of the 484
+  // balance-based relaxation would re-admit: the great majority of what was
   // dropped on production.
   test('a token that only ever ARRIVED is not a position', () => {
     expect(isTradedPosition(movements({ inflowHashes: ['0xspam'] }))).toBe(false);

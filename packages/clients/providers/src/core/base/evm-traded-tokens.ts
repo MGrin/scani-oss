@@ -20,10 +20,10 @@
 //
 // The signature separates them structurally: those legs sit in transactions the
 // wallet never signed, and the attacker cannot forge that. Measured on
-// production 2026-08-18 across nine EVM wallet accounts on four chains — 914
-// non-zero ERC-20 legs, 484 dropped across 348 tokens, of which 330 tokens /
-// 419 legs are unsigned arrivals and 14 tokens / 58 legs are real positions
-// worth +17,444.88 of realized PnL. `docs/technical/2026-08-18_sc398-findonly-drops.md`.
+// production 2026-08-18 across every EVM wallet account on four chains: over
+// half the non-zero ERC-20 legs were dropped. The great majority of those are
+// unsigned arrivals, but a minority are real positions carrying real realized
+// PnL. `docs/technical/2026-08-18_sc398-findonly-drops.md`.
 
 /** One token's movements through one wallet, reduced to what the verdict needs. */
 export interface TokenMovements {

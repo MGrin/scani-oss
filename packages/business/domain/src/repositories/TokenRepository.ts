@@ -431,13 +431,13 @@ export class TokenRepository extends BaseRepository<Token, NewToken> {
    * The obvious lever looks like `tokens.is_scam_probability`, and it is
    * a trap. Measured on the production account, that column takes three
    * values across held tokens — 0.0, 0.3, 0.8 — and the 0.3 bucket holds
-   * `USDT` (1,439 price rows) next to fourteen airdrop spam tokens. Any
-   * threshold that catches the spam deletes Tether from the portfolio.
+   * `USDT`, with a long price history, next to a batch of airdrop spam tokens.
+   * Any threshold that catches the spam deletes Tether from the portfolio.
    *
    * This predicate is behavioural instead: a token the system has
    * repeatedly failed to price and has *never once* priced cannot be
    * priced, whatever a name-shape heuristic believes. On the same data it
-   * matched the unpriced holdings 15 for 15 with no false positives, and
+   * matched every unpriced holding with no false positives, and
    * USDT falls out on its own because it has prices. It also self-heals —
    * the day a provider finally quotes the token, the backfill clears the
    * cooldown and writes a price row, and the token re-enters the

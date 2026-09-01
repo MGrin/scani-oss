@@ -251,8 +251,8 @@ describe('BalanceGapService.listPending', () => {
   test('there is no age gate — a change observed one second ago is still asked about', async () => {
     // SC-501's first design held recent gaps back on the theory that a feed
     // was about to explain them. Measured on production 2026-08-22 that
-    // theory was false forty-seven minutes on, over a real 1,000 USDC
-    // transfer. This is the test that stops it being re-added.
+    // theory was false forty-seven minutes on, over a real USDC transfer.
+    // This is the test that stops it being re-added.
     const now = new Date();
     const { service } = seed([candidate({ from: new Date(now.getTime() - HOUR), to: now })]);
     const listing = await service.listPending(USER);
