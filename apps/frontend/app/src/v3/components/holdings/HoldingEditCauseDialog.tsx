@@ -4,6 +4,8 @@ import type {
   TransferDestination,
 } from '@scani/shared';
 import {
+  Decimal,
+  feeFitsMovement,
   MANUAL_EDIT_CAUSES,
   MANUAL_OUTFLOW_DESTINATIONS,
   type ManualEditCause,
@@ -19,6 +21,7 @@ import {
 } from '@scani/ui/ui/dialog';
 import { Label } from '@scani/ui/ui/label';
 import { Segmented, SegmentedItem } from '@scani/ui/ui/segmented';
+import { AmountInput } from '@scani/ui/v3/components/AmountInput';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { trpc } from '@/lib/trpc';
@@ -122,6 +125,16 @@ interface HoldingEditCauseDialogProps {
    * prompt this dialog exists to remove.
    */
   isOutflow: boolean;
+  /**
+   * How much the balance went DOWN by, unsigned, or `undefined` when it went
+   * up (SC-857).
+   *
+   * The fee field needs it for two things a type cannot supply: the arrival
+   * figure it shows back, and the bound `feeFitsMovement` checks. Passed in
+   * rather than derived here because the page holds both balances and this
+   * dialog holds neither.
+   */
+  outflowQuantity?: string;
   /** The last answer given for this holding, pre-selected. */
   defaultCause?: ManualEditCause | null;
   onConfirm: (
@@ -157,6 +170,7 @@ export function HoldingEditCauseDialog({
   holdingId,
   tokenSymbol,
   isOutflow,
+  outflowQuantity,
   defaultCause,
   onConfirm,
 }: HoldingEditCauseDialogProps) {
@@ -169,6 +183,9 @@ export function HoldingEditCauseDialog({
   const [date, setDate] = useState(todayIso);
   const [destination, setDestination] = useState<ManualOutflowDestination | null>(null);
   const [holdingDestination, setHoldingDestination] = useState<TransferDestination | null>(null);
+  // Empty means "no fee", which is the common case and must stay one keystroke
+  // away from nothing rather than a zero somebody has to clear.
+  const [fee, setFee] = useState('');
 
   const asksDestination = cause === 'flow' && isOutflow;
 
@@ -191,7 +208,20 @@ export function HoldingEditCauseDialog({
   // a queue that exists for exactly this — they may not know, and "I don't
   // know" is already representable here the way it is in the queue: by not
   // answering. The row then goes to transfer review as it always did.
-  const incomplete = asksDestination && destination === 'internal' && !holdingDestination;
+  const feeStated = destination === 'internal' && fee.trim() !== '';
+  // A fee that is not smaller than the movement it was charged on leaves
+  // nothing to transfer, and the server refuses it. Checked here through the
+  // SAME predicate rather than a second spelling of it, so the button and the
+  // write cannot disagree — the arrangement `splitSumMatches` already has.
+  const feeIsUsable =
+    feeStated && outflowQuantity !== undefined ? feeFitsMovement(fee, outflowQuantity) : true;
+  const arrives =
+    feeStated && feeIsUsable && outflowQuantity !== undefined
+      ? new Decimal(outflowQuantity).minus(fee).toString()
+      : null;
+
+  const incomplete =
+    (asksDestination && destination === 'internal' && !holdingDestination) || !feeIsUsable;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -252,14 +282,42 @@ export function HoldingEditCauseDialog({
                 </p>
               ) : null}
               {destination === 'internal' ? (
-                <TransferDestinationPicker
-                  destinations={destinations.data ?? []}
-                  tokenSymbol={tokenSymbol}
-                  groupName={`holding-edit-destination-${holdingId}`}
-                  selected={holdingDestination}
-                  onSelect={setHoldingDestination}
-                  isLoading={destinations.isLoading}
-                />
+                <>
+                  <TransferDestinationPicker
+                    destinations={destinations.data ?? []}
+                    tokenSymbol={tokenSymbol}
+                    groupName={`holding-edit-destination-${holdingId}`}
+                    selected={holdingDestination}
+                    onSelect={setHoldingDestination}
+                    isLoading={destinations.isLoading}
+                  />
+                  {/* A wire leaves one amount and arrives as another, and
+                      until SC-857 there was no way to say so: the same figure
+                      went to both legs, so the destination was overstated by
+                      whatever the bank kept. Optional and empty by default —
+                      most transfers between your own accounts cost nothing,
+                      and a required field here would make every one of them
+                      a decision. */}
+                  <div className="flex flex-col gap-2">
+                    <Label htmlFor="holding-edit-fee">{t('v3.holdings.editCause.feeLabel')}</Label>
+                    <AmountInput
+                      id="holding-edit-fee"
+                      value={fee}
+                      onValueChange={setFee}
+                      suffix={` ${tokenSymbol}`}
+                    />
+                    <p className="text-label text-muted-foreground">
+                      {arrives !== null
+                        ? t('v3.holdings.editCause.feeArrives', {
+                            amount: arrives,
+                            symbol: tokenSymbol,
+                          })
+                        : feeIsUsable
+                          ? t('v3.holdings.editCause.feeExplain')
+                          : t('v3.holdings.editCause.feeTooLarge')}
+                    </p>
+                  </div>
+                </>
               ) : null}
             </div>
           ) : null}
@@ -286,6 +344,10 @@ export function HoldingEditCauseDialog({
                             },
                           }
                         : {}),
+                      // Sent only when it is both stated and usable. An empty
+                      // field is not a zero fee, it is no answer, and the
+                      // schema refuses a zero.
+                      ...(feeStated && feeIsUsable ? { feeQuantity: fee } : {}),
                     }
                   : undefined
               )
