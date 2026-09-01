@@ -1,3 +1,4 @@
+import { reviewBadgeCount } from '@scani/shared';
 import { type RouterOutputs, trpc } from '@/lib/trpc';
 
 type ReviewFeedItem = RouterOutputs['review']['listPending'][number];
@@ -21,9 +22,17 @@ export interface UseReviewFeedResult {
  *
  * `review.listPending` filters server-side across all jobs, so the badge
  * and the page cannot disagree.
+ *
+ * **`count` is not `items.length`, and that is the point** (SC-860). Two
+ * collectors emit one row for a whole unbounded queue — unpaired transfers,
+ * unexplained balance changes — so a user with 200 of the first and 30 of the
+ * second had a feed of two rows and a badge reading `2`. Each row carries
+ * `represents`; `reviewBadgeCount` sums it. One query and one hook still, so
+ * the two numbers are two questions about the same answer rather than two
+ * answers that can drift.
  */
 export function useReviewFeed(): UseReviewFeedResult {
   const query = trpc.review.listPending.useQuery();
   const items = query.data ?? [];
-  return { items, count: items.length, isLoading: query.isLoading };
+  return { items, count: reviewBadgeCount(items), isLoading: query.isLoading };
 }
