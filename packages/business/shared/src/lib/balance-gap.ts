@@ -35,13 +35,12 @@
  *
  * ## Why a human is not the preferred channel but the only one
  *
- ***REMOVED***
- ***REMOVED***
- ***REMOVED***
- ***REMOVED***
- ***REMOVED***
- ***REMOVED***
- * reach the ledger.
+ * Measured against a real dataset: every cash and savings holding at an
+ * institution we have no transaction adapter for carries **zero transactions
+ * of any kind**, and the few that carry any at all carry nothing but
+ * `apy-payout` accruals. With no adapter, no import will ever explain a
+ * deposit into them. Somebody saying so is the only way a flow can reach the
+ * ledger.
  */
 
 import { MANUAL_EDIT_CAUSES, type ManualEditCause } from './manual-balance-edit';
@@ -164,8 +163,9 @@ export const BALANCE_GAP_MIN_BASE_VALUE = 250;
  * Below this span, the two observations already date the movement more
  * precisely than the owner can: an hour of wall clock beats a recollection of
  * which day it was. The answer is stamped inside the interval and no date is
- ***REMOVED***
- ***REMOVED***
+ * asked for. Above it — the months-long gaps a sparsely-observed cash
+ * holding accumulates — only the owner knows, so the question is worth
+ * asking, and the
  * answer is clamped into the interval because that is where the evidence says
  * the money moved.
  */
@@ -180,14 +180,14 @@ export const BALANCE_GAP_DATE_PROMPT_MIN_SPAN_MS = 24 * 60 * 60 * 1000;
  * and it was wrong, in a way worth recording so it is not re-added.
  *
  * **"The feed will handle it" is a prediction, and it was tested and failed.**
- ***REMOVED***
- ***REMOVED***
- ***REMOVED***
- ***REMOVED***
- ***REMOVED***
- ***REMOVED***
- ***REMOVED***
- ***REMOVED***
+ * Measured against a real dataset: a stablecoin outflow left an Ethereum
+ * wallet, with the matching gas fee on the same wallet in the same second.
+ * That wallet's transactions come from Etherscan. Three quarters of an hour
+ * later there were still ZERO transaction rows for that leg, and the most
+ * recent Etherscan-sourced rows in the database were hours old and belonged
+ * to a different wallet on a different chain. The owner confirmed it was a
+ * real transfer, sold for fiat, and had already booked the fiat half by
+ * hand.
  *
  * An age window would have hidden a genuine, large, half-answered transfer
  * for two days on the theory that something else was about to explain it.

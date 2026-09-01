@@ -13,7 +13,7 @@ import {
 // `findCrossHoldingDuplicates` is the only check in the system that looks at
 // more than one holding at a time. Everything else reconciles a holding
 // against its own synthesized opening anchor, which is exactly why SC-239
-***REMOVED***
+// (an account's whole event history on both rows of one position, counted
 // twice) balanced on both sides for months while being wrong.
 
 const repo = () => Container.get(HoldingTransactionRepository);

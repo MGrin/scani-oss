@@ -383,7 +383,7 @@ export class ManualHoldingsCreateProcessor extends UserJobProcessor<
 
   /**
    * The symbols behind a `DuplicateHoldingTokenError`'s uuids, so the sentence
-   ***REMOVED***
+   * in /jobs names `RUB` rather than a bare uuid. Falls back to the uuids if
    * a token has vanished between the write and this read — a worse message is
    * better than a second failure while reporting the first.
    */
