@@ -665,6 +665,70 @@ there — and the full gate stayed 12/12 across the change, which is the claim t
 matters: a fix paid for with an `--update` is how a spinner became a baseline in
 the first place.
 
+### A third spinner, that no cause-guard looks for (SC-867)
+
+The three guards above key on a **cause**: a page still moving, a second
+document load, a `[data-route-pending]` node. The hazard is defined by a
+**symptom**, and a loading state with none of those causes passes all three —
+the route resolved fine, the document loaded once, the page is perfectly still,
+and it is the DATA that has not arrived. Under `--update` that capture becomes
+the baseline and every later run agrees with it.
+
+`visual/capture-size.ts` is the fourth guard and the only one that reads the
+**output**: a rewritten baseline under 70% of the one it replaced is refused by
+name. It needs no decoder and no DOM query — a PNG of a fixed canvas is its
+content through DEFLATE, so the byte count is a compressed-size proxy for how
+much is drawn.
+
+**Reproduce it, which is also how the 70% was derived.** `SCANI_VISUAL_STALL_DATA=1`
+replaces `window.fetch` for the `/trpc` path with one that never settles and
+never touches the network — so `networkidle` fires immediately and the shell
+mounts, which is what makes it this ticket's case rather than SC-499's:
+
+```sh
+SCANI_VISUAL_STALL_DATA=1 bun run visual --update
+git checkout visual/__screenshots__/
+```
+
+Measured 2026-09-01. Twelve screens, eight of which draw queried data:
+
+| | ratio to own baseline | what refused it |
+|---|---|---|
+| `home-phone` | 24.8% | the 70% floor |
+| `home-phone-rtl` | 24.9% | the 70% floor |
+| `home-allocation-fold-desktop` | 35.3% | `foldedAllocation` |
+| `home-desktop` | 43.2% | the 70% floor |
+| `holdings-phone` | 45.0% | `institutionMark` |
+| `home-empty-phone` | 47.9% | the 70% floor |
+| `holdings-desktop` | 52.8% | `institutionMark` |
+| `holdings-desktop-rtl` | 52.9% | `institutionMark` |
+| the other four | 100.0-100.1% | nothing, correctly |
+
+The four unmoved ones are `kitchen-sink-desktop`, `-rtl`, `-phone` and
+`payment-form-phone`. They render a static gallery and an empty form, so
+stalling their data produces the same picture and there is nothing degenerate to
+refuse — **the floor catches every screen on which this hazard exists.** It also
+runs LAST, so where a per-screen content assertion applies its better message
+wins; the four the floor itself catches are the four no existing guard had an
+opinion about.
+
+**Do not calibrate to SC-867's own 5.3% figure.** That is a RELOAD spinner
+(SC-499) — the document was replaced, so the shell is gone too. This ticket's
+case keeps the shell, and a v3 sidebar is a large share of a screen's compressed
+bytes, which is why the worst artefact here is 24.8% rather than 5%. A floor set
+from 5.3% would miss six of these eight.
+
+The other side of the margin is the repository's own history: across 37 baseline
+revisions the smallest ratio any legitimate update has produced is **93.7%**
+(`holdings-phone`, 38,302 -> 35,876). So 52.9% and 93.7% bound a 40.8-point gap
+with nothing in it, and 70% is its geometric midpoint — about 5x the largest
+move any real update has ever made. `SCANI_ALLOW_BASELINE_SHRINK=<screen>[,...]`
+clears it for the screens it names, and takes names rather than `1` on purpose.
+
+**No instance has ever been observed in the wild.** Every spinner this gate has
+actually caught had a cause one of the three guards keys on. This closes a gap
+nothing would have reported, which is why it was worth a ticket.
+
 ### Widening it
 
 The cheapest place is `/kitchen-sink`. It renders every `@scani/ui` primitive
