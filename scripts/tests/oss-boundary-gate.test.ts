@@ -94,18 +94,21 @@ describe('SC-838 · the OSS boundary gate is wired to be able to refuse', () => 
   });
 
   /**
-   * The three content scanners are the gate. `check-oss-bound-paths.ts` is
+   * The four content scanners are the gate. `check-oss-bound-paths.ts` is
    * deliberately NOT among them — it needs both repositories' trees and has
    * only one here, so it answers `SKIPPED · exit 0` in a mirror checkout. That
    * absence is asserted, not merely omitted: adding it back would be a green
    * over a tree nothing looked at.
    */
-  test('the gate runs the three content scanners and not the two-tree one', () => {
+  test('the gate runs the four content scanners and not the two-tree one', () => {
     // EACH ASSERTION IS BOUND TO THE STEP THAT MUST CARRY IT. Against the
     // job's whole shell, `contains('check-oss-figures.ts')` is satisfied by
     // the RED-probe step alone: replacing the real scan with `true` left this
     // green, because the evidence came from a different step than the claim
     // (measured while writing this file).
+    expect(stepRun('Scan what this change introduces')).toContain(
+      'bun scripts/check-oss-data-shapes.ts --stdin-commits'
+    );
     expect(stepRun('Scan what this change introduces')).toContain(
       'bun scripts/check-oss-figures.ts --stdin-commits'
     );
@@ -131,6 +134,7 @@ describe('SC-838 · the OSS boundary gate is wired to be able to refuse', () => 
     expect(step?.run).toContain('NOTHING WAS SCANNED');
     expect(step?.run).toContain('This is not a pass');
     for (const f of [
+      'check-oss-data-shapes',
       'check-oss-figures',
       'check-oss-prose',
       'check-oss-internal-refs',
@@ -203,5 +207,6 @@ describe('SC-838 · the OSS boundary gate is wired to be able to refuse', () => 
     const hook = readFileSync(new URL('../../.githooks/pre-push', import.meta.url), 'utf8');
     expect(hook).toContain('scripts/check-oss-bound-paths.ts');
     expect(hook).toContain('scripts/check-oss-figures.ts');
+    expect(hook).toContain('scripts/check-oss-data-shapes.ts');
   });
 });
