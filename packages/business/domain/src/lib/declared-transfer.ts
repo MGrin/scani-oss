@@ -42,7 +42,7 @@
  * of an `if` at each call site.
  */
 
-import { MANUAL_EDIT_FLOW_SOURCE } from '../services/holdings/ManualBalanceEditService';
+import { MANUAL_EDIT_FLOW_SOURCE } from './person-authored-sources';
 
 /** The only leg facts the test below reads. */
 export interface DeclaredPairLegFacts {
