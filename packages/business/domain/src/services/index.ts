@@ -109,6 +109,8 @@ export {
   type ManualBalanceEditInput,
   type ManualBalanceEditResult,
   ManualBalanceEditService,
+  ManualEditFeeRefused,
+  manualEditFeeExternalId,
   manualEditFlowLeg,
 } from './holdings/ManualBalanceEditService';
 export {
