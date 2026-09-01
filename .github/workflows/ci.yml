@@ -823,9 +823,33 @@ jobs:
             echo "::error::could not resolve the base commit '${PR_BASE}', so the range this change introduces is unknown and NOTHING WAS SCANNED. This is not a pass."
             exit 1
           fi
-          git rev-list --no-merges "${PR_BASE}..HEAD" > "$RUNNER_TEMP/oss-boundary-commits.txt"
+          # THE MERGE BASE, not `base.sha` itself. `base.sha` is the base
+          # BRANCH'S TIP at the time of the event and need not be an ancestor of
+          # what was checked out; the merge base is one by definition, so the
+          # range cannot silently widen past what this change actually adds.
+          #
+          # BE PRECISE ABOUT WHAT THIS DID AND DID NOT FIX, because the first
+          # version of this comment claimed the wrong thing. The pull request
+          # that added this job read `283 non-merge commit(s)` and 88591 added
+          # lines for three commits, and refused on a wallet fixture in a file
+          # it never touched — and the merge base was IDENTICAL to `base.sha`,
+          # so this change did not move that number at all. The cause was that
+          # the branch had been cut from a commit `main` no longer contained:
+          # this repository's history was rewritten and force-pushed on
+          # 2026-09-01, and a branch rooted in the rewritten-away lineage really
+          # does add every one of those commits.
+          #
+          # So the wide range was a TRUE reading of a branch that should not
+          # have existed, and the remedy for that is to re-cut the branch, not
+          # to narrow the range. This stays because it is correct on its own
+          # terms and costs one command — not because it fixed that.
+          if ! base=$(git merge-base "${PR_BASE}" HEAD); then
+            echo "::error::no merge base between '${PR_BASE}' and HEAD, so the range this change introduces is unknown and NOTHING WAS SCANNED. This is not a pass."
+            exit 1
+          fi
+          git rev-list --no-merges "${base}..HEAD" > "$RUNNER_TEMP/oss-boundary-commits.txt"
           n=$(wc -l < "$RUNNER_TEMP/oss-boundary-commits.txt" | tr -d ' ')
-          echo "range ${PR_BASE}..$(git rev-parse HEAD) — $n non-merge commit(s)"
+          echo "range ${base}..$(git rev-parse HEAD) — $n non-merge commit(s) (merge base of ${PR_BASE})"
           bun scripts/check-oss-data-shapes.ts --stdin-commits < "$RUNNER_TEMP/oss-boundary-commits.txt"
           bun scripts/check-oss-figures.ts --stdin-commits < "$RUNNER_TEMP/oss-boundary-commits.txt"
           bun scripts/check-oss-prose.ts --stdin-commits < "$RUNNER_TEMP/oss-boundary-commits.txt"
