@@ -107,9 +107,10 @@ export function createTokensRouter(db: DbType, schemaObj: typeof schema) {
      * live exchangerate-api call for any pair the price graph could not
      * answer, and that call sits behind an outflow limiter of two requests
      * per sixty seconds whose acquire *sleeps*. Measured against production:
-     ***REMOVED***
-     ***REMOVED***
-     ***REMOVED***
+     * well under a second warm, **seconds** once the converter's ten-minute
+     * memory cache expired, and **tens of seconds** for a few pairs with
+     * nothing stored — one blocked user request paying for the backfill
+     * nobody had run. A pair we cannot
      * answer is queued for the worker to fetch and returned as `null` now.
      *
      * `rate: null` means the pair has no resolvable rate *right now*.

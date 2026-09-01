@@ -92,7 +92,7 @@ const SYNC_OBSERVATION_SOURCE = 'sync-capture';
  * small to be worth a question. Priced, the first alone would put a brokerage
  * glitch in the second and third largest positions in the whole queue. A
  * queue whose first row is visibly wrong is a queue nobody opens twice, and
- ***REMOVED***
+ * nearly all of the real money behind it is then never reached — so the
  * suppressions are not polish, they are what makes the rest of the feature
  * reachable.
  *

@@ -80,8 +80,8 @@ interface Template {
  * differ on, not to be exhaustive:
  *
  *   - `out-g1` + `in-g1` at one instant is the self-spanning no-op — one
- ***REMOVED***
- ***REMOVED***
+ *     on-chain transaction with the wallet on both sides. Most production
+ *     transfer groups are that shape. The old `walkLots` popped the
  *     lots, DISCARDED them and minted a fresh lot at the transfer date's
  *     market value, destroying cost basis on a move the position never felt.
  *   - `in-g1` before `out-g1` leaves the outflow's lots buffered with no

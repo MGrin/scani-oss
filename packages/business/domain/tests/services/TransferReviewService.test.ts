@@ -1240,8 +1240,8 @@ describe('TransferReviewService — answered transfers', () => {
  * is the whole defect and it is invisible to a fixture where each row is
  * stamped: ordering by a stamped column is correct right up until the column is
  * NULL, and then Postgres sorts NULLS FIRST under DESC and the limit cuts the
- ***REMOVED***
- ***REMOVED***
+ * list before a single real answer. In production the undated rows buried
+ * every dated one, on the one surface built to reach them.
  */
 describe('TransferReviewService — the answered list is reachable', () => {
   /** The bulk-pass shape: answered, with nothing recording who answered. */
@@ -2516,16 +2516,16 @@ describe('TransferReviewService — own-wallet corrections (SC-350)', () => {
   describe('counterpartyIsOwnWallet', () => {
     test('is true for an address in user_wallets, read from the PAYLOAD', async () => {
       const f = fixture!;
-      ***REMOVED***
+      // Every production row has `counterparty` NULL and the address only in
       // `raw_payload.to`. A check against the column would have reported "not
       // yours" about the wallet printed in the very next field.
-      await addOwnWallet(f, '***REMOVED***');
+      await addOwnWallet(f, '0xc0FFee11223344556677889900AaBbCcDdEeFf01');
       await insertOutflow(f, {
         at: anchor(),
         quantity: '-1000',
         externalId: 'ow-1',
         kind: 'transfer_out',
-        rawPayload: { to: '***REMOVED***', hash: '0xabc' },
+        rawPayload: { to: '0xc0ffee11223344556677889900aabbccddeeff01', hash: '0xabc' },
       });
       const [item] = await service().listPending(f.userId);
       expect(item?.counterpartyIsOwnWallet).toBe(true);
@@ -2535,13 +2535,13 @@ describe('TransferReviewService — own-wallet corrections (SC-350)', () => {
       const f = fixture!;
       // The two sides come from different places: `user_wallets` holds what the
       // user pasted, the counterparty comes out of a chain payload. One address.
-      await addOwnWallet(f, '***REMOVED***');
+      await addOwnWallet(f, '0xC0FFEE11223344556677889900AABBCCDDEEFF01');
       await insertOutflow(f, {
         at: anchor(),
         quantity: '-1000',
         externalId: 'ow-2',
         kind: 'transfer_out',
-        rawPayload: { to: '***REMOVED***' },
+        rawPayload: { to: '0xc0ffee11223344556677889900aabbccddeeff01' },
       });
       const [item] = await service().listPending(f.userId);
       expect(item?.counterpartyIsOwnWallet).toBe(true);
@@ -2549,13 +2549,13 @@ describe('TransferReviewService — own-wallet corrections (SC-350)', () => {
 
     test('is false for an address the user has not registered', async () => {
       const f = fixture!;
-      await addOwnWallet(f, '***REMOVED***');
+      await addOwnWallet(f, '0xc0ffee11223344556677889900aabbccddeeff01');
       await insertOutflow(f, {
         at: anchor(),
         quantity: '-1000',
         externalId: 'ow-3',
         kind: 'transfer_out',
-        rawPayload: { to: '***REMOVED***' },
+        rawPayload: { to: '0xd15734e900112233445566778899aabbccddeeff' },
       });
       const [item] = await service().listPending(f.userId);
       expect(item?.counterpartyIsOwnWallet).toBe(false);
@@ -2588,8 +2588,8 @@ describe('TransferReviewService — own-wallet corrections (SC-350)', () => {
   describe('unlinkPair', () => {
     test('frees both legs of a matcher pairing so the inflow can be claimed', async () => {
       const f = fixture!;
-      ***REMOVED***
-      ***REMOVED***
+      // The production shape: the arrival at 0xc0ff is already grouped with an
+      // unrelated departure from 0xc0ff, so the genuine partner cannot take it.
       const groupId = randomUUID();
       const arrival = await insertInflow(f, {
         at: anchor(),
@@ -3000,16 +3000,16 @@ describe('TransferReviewService — same-holding candidates (SC-347)', () => {
 /**
  * The invariant SC-350 established, held over the WHOLE table (SC-365).
  *
- ***REMOVED***
- ***REMOVED***
- ***REMOVED***
- ***REMOVED***
+ * SC-350 corrected a handful of rows and enforced nothing. It joined
+ * `user_wallets` against the *stamped* answers only, so the one violating row
+ * that carried no `transfer_review_source` was never in the population — and
+ * most of production's answers carry none. These tests are the assertion that the
  * predicate never reads that column: every source value below is a separate
  * case, and they must all come back.
  */
 describe('TransferReviewService — the own-wallet invariant (SC-365)', () => {
-  const OWN = '***REMOVED***';
-  const STRANGER = '***REMOVED***';
+  const OWN = '0xb0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9';
+  const STRANGER = '0xd15734e900112233445566778899aabbccddeeff';
 
   async function addOwnWallet(f: Fixture, address: string): Promise<void> {
     await db
@@ -3020,9 +3020,9 @@ describe('TransferReviewService — the own-wallet invariant (SC-365)', () => {
   describe('ownWalletDisposals', () => {
     test('finds an UNATTRIBUTED left_control row — the one SC-350 could not see', async () => {
       const f = fixture!;
-      ***REMOVED***
-      ***REMOVED***
-      ***REMOVED***
+      // The production shape, with synthetic values: a USDC outflow between
+      // two addresses in the same owner's `user_wallets`, answered by the raw
+      // UPDATE of 2026-08-14 with neither a source nor a timestamp.
       await addOwnWallet(f, OWN);
       const id = await insertOutflow(f, {
         at: anchor(),
@@ -3030,7 +3030,7 @@ describe('TransferReviewService — the own-wallet invariant (SC-365)', () => {
         externalId: 'sc365-1',
         kind: 'transfer_out',
         transferReview: 'left_control',
-        rawPayload: { to: OWN, from: '***REMOVED***', hash: '0xbd05' },
+        rawPayload: { to: OWN, from: '0xa11ce0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7', hash: '0xbd05' },
       });
 
       const found = await service().ownWalletDisposals(f.userId);
@@ -3153,14 +3153,14 @@ describe('TransferReviewService — the own-wallet invariant (SC-365)', () => {
       const f = fixture!;
       // Every etherscan row this was built for has `counterparty` NULL and the
       // address only in `raw_payload.to`, in mixed case.
-      await addOwnWallet(f, '***REMOVED***');
+      await addOwnWallet(f, '0xB0B1c2D3e4F5a6B7c8D9e0F1a2B3c4D5e6F7a8B9');
       const id = await insertOutflow(f, {
         at: anchor(),
         quantity: '-100',
         externalId: 'sc365-case',
         kind: 'transfer_out',
         transferReview: 'left_control',
-        rawPayload: { to: '***REMOVED***' },
+        rawPayload: { to: '0xb0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9' },
       });
       expect((await service().ownWalletDisposals(f.userId)).map((d) => d.transactionId)).toEqual([
         id,
@@ -3806,7 +3806,7 @@ describe('TransferReviewService — withdrawing a false pairing (SC-378)', () =>
  * attribution that the 2026-08-14 raw UPDATE left out of 555 rows.
  */
 describe('TransferReviewService — bulk apply (SC-382)', () => {
-  const OWN_BULK = '***REMOVED***';
+  const OWN_BULK = '0xc0ffee11223344556677889900aabbccddeeff01';
 
   async function answersOf(ids: string[]) {
     const rows = await db
@@ -3840,7 +3840,7 @@ describe('TransferReviewService — bulk apply (SC-382)', () => {
     for (const id of ids) {
       const row = after.get(id);
       expect(row?.review).toBe('left_control');
-      ***REMOVED***
+      // The whole reason this is a service method: most of production's
       // answers carry neither of these two columns, and a bulk path that
       // wrote without them would be the 2026-08-14 UPDATE with a button on it.
       expect(row?.source).toBe('user');
@@ -3989,7 +3989,7 @@ describe('TransferReviewService — bulk apply (SC-382)', () => {
     expect(preview.refusals).toEqual([{ transactionId: linked, reason: 'linked', detail: null }]);
     // The row that already books a disposal is reported on its own, because
     // answering it `untracked` takes that gain back OFF — the direction the
-    ***REMOVED***
+    // production rows that already book a disposal need, and the one a confirmation that only ever
     // describes additions would be silent about.
     expect(preview.alreadyDisposedCount).toBe(1);
     // No price graph in this fixture, so every eligible row is unpriced —
