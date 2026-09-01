@@ -1,0 +1,902 @@
+{
+  "$meta": {
+    "name": "Indonesian",
+    "nativeName": "Bahasa Indonesia"
+  },
+  "auth": {
+    "signIn": {
+      "title": "Selamat datang",
+      "subtitle": "Masukkan email Anda untuk masuk atau membuat akun",
+      "emailLabel": "Email",
+      "emailPlaceholder": "Masukkan alamat email Anda",
+      "emailRequired": "Email wajib diisi",
+      "emailInvalid": "Masukkan alamat email yang valid",
+      "submit": "Lanjutkan dengan Email",
+      "offline": "Anda sedang offline. Kami akan mengirim kode Anda begitu koneksi kembali.",
+      "hintCode": "Kami akan mengirimkan kode 6 digit untuk masuk.",
+      "hintLink": "Kami akan mengirimkan tautan masuk yang aman.",
+      "newAccount": "Baru di Scani? Akun Anda akan dibuat secara otomatis."
+    },
+    "code": {
+      "title": "Masukkan kode verifikasi",
+      "sentTo": "Kami telah mengirim kode 6 digit ke {{email}}",
+      "differentEmail": "Gunakan email lain"
+    },
+    "linkSent": {
+      "title": "Periksa email Anda",
+      "subtitle": "Kami telah mengirimkan tautan masuk kepada Anda",
+      "body": "Klik tautan di email Anda untuk mengakses akun Anda. Jika ini pertama kalinya, kami akan membuatkan akun untuk Anda secara otomatis.",
+      "resend": "Kirim email lagi"
+    },
+    "callback": {
+      "signingInTitle": "Memasukkan Anda…",
+      "signingInSubtitle": "Mohon tunggu, kami sedang memverifikasi autentikasi Anda",
+      "signingInBody": "Ini hanya butuh sebentar.",
+      "successTitle": "Selamat datang!",
+      "successSubtitle": "Anda berhasil masuk",
+      "successBody": "Mengalihkan Anda ke dasbor…",
+      "errorTitle": "Kesalahan Autentikasi",
+      "errorSubtitle": "Ada masalah saat memasukkan Anda",
+      "tryAgain": "Coba lagi",
+      "support": "Jika masalah berlanjut, silakan hubungi dukungan.",
+      "linkFailed": "Autentikasi gagal",
+      "unreachable": "Kami tidak dapat menghubungi server untuk menyelesaikan proses masuk. Periksa koneksi Anda lalu coba tautan itu lagi.",
+      "expired": "Tautan masuk Anda sudah kedaluwarsa atau tidak dapat diverifikasi. Silakan minta yang baru."
+    },
+    "failure": {
+      "offline": "Anda sedang offline, jadi kami tidak dapat menghubungi Scani. Kami akan mencoba lagi sendiri begitu Anda kembali online.",
+      "timeout": "Scani terlalu lama menjawab. Periksa koneksi Anda lalu ketuk Lanjutkan lagi.",
+      "unreachable": "Kami tidak dapat menghubungi Scani. Periksa koneksi Anda lalu ketuk Lanjutkan lagi.",
+      "server": "Terjadi kesalahan. Coba lagi."
+    }
+  },
+  "currency": {
+    "unknownName": "Mata Uang {{symbol}}"
+  },
+  "vendors": {
+    "paidWindow_other": "Dibayar, {{count}} bulan terakhir",
+    "receivedWindow_other": "Diterima, {{count}} bulan terakhir",
+    "committedPerMonth": "Komitmen per bulan",
+    "expectedPerMonth": "Perkiraan per bulan",
+    "paidAllTime": "Dibayar, sepanjang waktu",
+    "receivedAllTime": "Diterima, sepanjang waktu",
+    "withUnconverted": "{{base}} + {{rest}} belum dikonversi",
+    "unpriced_other": "{{count}} penyelesaian tidak memiliki jumlah tercatat dan tidak termasuk dalam total ini.",
+    "kind": {
+      "income": "Pemasukan",
+      "both": "Tagihan & pemasukan",
+      "unclassified": "Arah tidak tercatat"
+    }
+  },
+  "nav": {
+    "sections": {
+      "portfolio": "Portofolio",
+      "organization": "Organisasi",
+      "activity": "Aktivitas",
+      "payments": "Pembayaran"
+    },
+    "home": "Beranda",
+    "holdings": "Kepemilikan",
+    "accounts": "Akun",
+    "institutions": "Institusi",
+    "groups": "Grup",
+    "entities": "Entitas",
+    "vaults": "Target Tabungan",
+    "tokens": "Token",
+    "jobs": "Proses",
+    "settings": "Pengaturan",
+    "signOut": "Keluar",
+    "more": "Lainnya",
+    "add": "Tambah",
+    "addData": "Tambah data",
+    "addDataButton": "Tambah Data",
+    "paymentsOverview": "Ringkasan",
+    "recurringPayments": "Pembayaran Berulang",
+    "vendors": "Vendor",
+    "review": "Tinjauan",
+    "files": "Berkas",
+    "payments": "Pembayaran",
+    "money": "Uang"
+  },
+  "settings": {
+    "title": "Pengaturan",
+    "subtitle": "Kelola preferensi Anda",
+    "profile": "Profil",
+    "name": "Nama",
+    "namePlaceholder": "Nama Anda",
+    "email": "Email",
+    "preferences": "Preferensi",
+    "baseCurrency": "Mata Uang Dasar",
+    "language": "Bahasa",
+    "languageHint": "Terjemahan disumbangkan oleh komunitas. Teks yang belum diterjemahkan akan ditampilkan dalam bahasa Inggris.",
+    "region": "Wilayah",
+    "regionAuto": "Ikuti bahasa antarmuka",
+    "regionHint": "Tanggal dan angka ditampilkan sebagai {{sample}}.",
+    "saving": "Menyimpan...",
+    "autoSave": "Perubahan akan tersimpan otomatis",
+    "account": "Akun",
+    "signOut": "Keluar"
+  },
+  "ui": {
+    "dataView": {
+      "noun": {
+        "holdings_other": "kepemilikan",
+        "holdings_counted_other": "{{count}} kepemilikan",
+        "payments_other": "pembayaran",
+        "payments_counted_other": "{{count}} pembayaran",
+        "vendors_other": "vendor",
+        "vendors_counted_other": "{{count}} vendor",
+        "accounts_other": "akun",
+        "accounts_counted_other": "{{count}} akun",
+        "institutions_other": "institusi",
+        "institutions_counted_other": "{{count}} institusi",
+        "groups_other": "grup",
+        "groups_counted_other": "{{count}} grup",
+        "vaults_other": "target tabungan",
+        "vaults_counted_other": "{{count}} target tabungan",
+        "jobs_other": "proses",
+        "jobs_counted_other": "{{count}} proses",
+        "files_other": "berkas",
+        "files_counted_other": "{{count}} berkas",
+        "integrations_other": "integrasi",
+        "integrations_counted_other": "{{count}} integrasi",
+        "reviewItems_other": "item",
+        "reviewItems_counted_other": "{{count}} item",
+        "transfers_other": "transfer",
+        "transfers_counted_other": "{{count}} transfer",
+        "hiddenHoldings_other": "kepemilikan tersembunyi",
+        "hiddenHoldings_counted_other": "{{count}} kepemilikan tersembunyi",
+        "customTokens_other": "token khusus",
+        "customTokens_counted_other": "{{count}} token khusus"
+      },
+      "accounts": {
+        "col": {
+          "account": "Akun",
+          "holdings": "Kepemilikan",
+          "institution": "Institusi",
+          "lastSynced": "Terakhir disinkronkan",
+          "type": "Tipe",
+          "value": "Nilai"
+        },
+        "config": {
+          "search": "Cari",
+          "details": "Detail untuk {{name}}"
+        },
+        "empty": {
+          "anAccountIsCreatedForYou": "Akun dibuatkan untuk Anda saat Anda menghubungkan integrasi atau mengimpor rekening koran.",
+          "noAccountsYet": "Belum ada akun"
+        },
+        "filter": {
+          "contents": "Isi",
+          "group": "Grup",
+          "institution": "Institusi",
+          "type": "Tipe"
+        },
+        "group": {
+          "institution": "Institusi",
+          "type": "Tipe"
+        },
+        "sort": {
+          "holdings": "Kepemilikan",
+          "name": "Nama",
+          "value": "Nilai"
+        },
+        "option": {
+          "holdsSomething": "Berisi sesuatu",
+          "empty": "Kosong"
+        }
+      },
+      "answeredTransfers": {
+        "col": {
+          "answer": "Jawaban",
+          "answered": "Dijawab",
+          "from": "Dari",
+          "left": "Keluar",
+          "when": "Kapan"
+        },
+        "config": {
+          "searchAnsweredTransfers": "Cari transfer yang sudah dijawab"
+        },
+        "empty": {
+          "answersYouGiveInTheTransfer": "Jawaban yang Anda berikan di antrean transfer muncul di sini, sehingga Anda bisa kembali dan mengubahnya.",
+          "noTransfersAnsweredYet": "Belum ada transfer yang dijawab"
+        },
+        "filter": {
+          "answered": "Dijawab"
+        },
+        "sort": {
+          "answered": "Dijawab",
+          "asset": "Aset",
+          "when": "Kapan"
+        }
+      },
+      "customTokens": {
+        "col": {
+          "price": "Harga",
+          "priceUpdated": "Harga diperbarui",
+          "token": "Token",
+          "type": "Tipe"
+        },
+        "config": {
+          "searchCustomTokens": "Cari token khusus"
+        },
+        "empty": {
+          "createOneForAnAssetNo": "Buat satu untuk aset yang tidak dilacak penyedia harga mana pun — saham perusahaan tertutup, kepemilikan fisik. Token dan harganya dibagikan ke semua pengguna Scani.",
+          "noCustomTokensYet": "Belum ada token khusus"
+        },
+        "filter": {
+          "type": "Tipe"
+        },
+        "group": {
+          "type": "Tipe"
+        },
+        "sort": {
+          "priceUpdated": "Harga diperbarui",
+          "symbol": "Simbol"
+        }
+      },
+      "files": {
+        "col": {
+          "invoices": "Faktur",
+          "kind": "Jenis",
+          "name": "Nama",
+          "size": "Ukuran",
+          "uploaded": "Diunggah"
+        },
+        "config": {
+          "searchFiles": "Cari berkas"
+        },
+        "empty": {
+          "invoicesScreenshotsAndStatementFilesYou": "Faktur, tangkapan layar, dan berkas rekening koran yang Anda unggah disimpan di sini, beserta apa pun yang berhasil dibaca darinya.",
+          "noFilesYet": "Belum ada berkas"
+        },
+        "filter": {
+          "invoices": "Faktur",
+          "kind": "Jenis"
+        },
+        "group": {
+          "invoices": "Faktur",
+          "kind": "Jenis"
+        },
+        "sort": {
+          "kind": "Jenis",
+          "name": "Nama",
+          "size": "Ukuran",
+          "uploaded": "Diunggah"
+        }
+      },
+      "groups": {
+        "col": {
+          "accounts": "Akun",
+          "group": "Grup",
+          "holdings": "Kepemilikan",
+          "value": "Nilai"
+        },
+        "config": {
+          "searchGroups": "Cari grup",
+          "value": "Nilai"
+        },
+        "empty": {
+          "aGroupIsYourOwnLabel": "Grup adalah label Anda sendiri yang melintasi kepemilikan dan akun — \"dana pensiun\", \"kena pajak\", \"yang bersama\".",
+          "noGroupsYet": "Belum ada grup"
+        },
+        "filter": {
+          "members": "Anggota"
+        },
+        "sort": {
+          "accounts": "Akun",
+          "holdings": "Kepemilikan",
+          "name": "Nama",
+          "value": "Nilai"
+        },
+        "option": {
+          "hasMembers": "Punya anggota",
+          "empty": "Kosong"
+        }
+      },
+      "hiddenHoldings": {
+        "col": {
+          "account": "Akun",
+          "balance": "Saldo",
+          "reason": "Alasan",
+          "token": "Token"
+        },
+        "config": {
+          "searchHidden": "Cari yang tersembunyi"
+        },
+        "empty": {
+          "everythingYouOwnIsCountedOnYourDashboard": "Semua yang Anda miliki sudah dihitung di dasbor Anda.",
+          "nothingIsHidden": "Tidak ada yang disembunyikan"
+        },
+        "filter": {
+          "reason": "Alasan"
+        },
+        "group": {
+          "institution": "Institusi"
+        },
+        "sort": {
+          "balance": "Saldo",
+          "symbol": "Simbol"
+        },
+        "option": {
+          "hiddenByYou": "Disembunyikan oleh Anda",
+          "likelyScam": "Kemungkinan penipuan"
+        }
+      },
+      "holdings": {
+        "col": {
+          "account": "Akun",
+          "amount": "Jumlah",
+          "gainLoss": "Untung / rugi",
+          "holding": "Kepemilikan",
+          "institution": "Institusi",
+          "price": "Harga",
+          "value": "Nilai"
+        },
+        "config": {
+          "searchHoldings": "Cari kepemilikan"
+        },
+        "empty": {
+          "description": "Hubungkan bursa, impor rekening koran, atau tambahkan posisi secara manual — ketiganya bermuara di sini.",
+          "title": "Belum ada kepemilikan"
+        },
+        "filter": {
+          "account": "Akun",
+          "group": "Grup",
+          "institution": "Institusi",
+          "type": "Tipe",
+          "quality": "Kualitas data"
+        },
+        "groupBy": {
+          "account": "Akun",
+          "institution": "Institusi",
+          "type": "Tipe"
+        },
+        "sort": {
+          "amount": "Jumlah",
+          "pnl": "Untung / rugi",
+          "price": "Harga",
+          "symbol": "Simbol",
+          "value": "Nilai"
+        },
+        "qualityOption": {
+          "duplicateSymbol": "Simbol tercatat di lebih dari satu baris token",
+          "lookalike": "Simbol meniru simbol lain",
+          "zeroBalance": "Saldo nol",
+          "noRecentPrice": "Tidak ada harga terbaru",
+          "noPriceSource": "Tidak ada sumber harga yang bisa kami pakai",
+          "negativeOpening": "Saldo awal negatif",
+          "noCoverage": "Tidak ada baris cakupan"
+        }
+      },
+      "institutions": {
+        "col": {
+          "accounts": "Akun",
+          "institution": "Institusi",
+          "type": "Tipe",
+          "value": "Nilai"
+        },
+        "config": {
+          "searchInstitutions": "Cari institusi"
+        },
+        "empty": {
+          "anInstitutionAppearsHereTheFirst": "Institusi muncul di sini pertama kali impor atau integrasi membawa masuk sebuah akun darinya.",
+          "noInstitutionsYet": "Belum ada institusi"
+        },
+        "filter": {
+          "type": "Tipe"
+        },
+        "group": {
+          "type": "Tipe"
+        },
+        "sort": {
+          "accounts": "Akun",
+          "name": "Nama",
+          "value": "Nilai"
+        }
+      },
+      "integrations": {
+        "col": {
+          "kind": "Jenis",
+          "service": "Layanan",
+          "whatItSyncs": "Yang disinkronkan"
+        },
+        "config": {
+          "search": "Cari"
+        },
+        "empty": {
+          "noServicesToConnect": "Tidak ada layanan untuk dihubungkan",
+          "scaniShipsItsIntegrationsWithThe": "Scani menyertakan integrasinya bersama aplikasi, jadi daftar kosong berarti katalog gagal dimuat, bukan berarti tidak ada yang tersedia."
+        },
+        "filter": {
+          "kind": "Jenis"
+        },
+        "group": {
+          "kind": "Jenis"
+        },
+        "sort": {
+          "name": "Nama"
+        }
+      },
+      "jobs": {
+        "col": {
+          "detail": "Detail",
+          "job": "Proses",
+          "started": "Dimulai",
+          "status": "Status"
+        },
+        "config": {
+          "searchJobs": "Cari proses"
+        },
+        "empty": {
+          "importsParsesAndPriceRefreshesRun": "Impor, pembacaan berkas, dan pembaruan harga berjalan di latar belakang dan melapor di sini selama bekerja.",
+          "noBackgroundJobsYet": "Belum ada proses latar belakang"
+        },
+        "filter": {
+          "status": "Status"
+        },
+        "group": {
+          "status": "Status"
+        },
+        "sort": {
+          "started": "Dimulai",
+          "status": "Status"
+        }
+      },
+      "kitchenSink": {
+        "col": {
+          "24h": "24j",
+          "holding": "Kepemilikan",
+          "institution": "Institusi",
+          "price": "Harga",
+          "units": "Unit",
+          "value": "Nilai"
+        },
+        "config": {
+          "searchHoldings": "Cari kepemilikan"
+        },
+        "empty": {
+          "connectAnExchangeOrImportAStatementAndYourPositionsAppearHere": "Hubungkan bursa atau impor rekening koran, dan posisi Anda akan muncul di sini.",
+          "noHoldingsYet": "Belum ada kepemilikan"
+        },
+        "filter": {
+          "institution": "Institusi",
+          "type": "Tipe"
+        },
+        "group": {
+          "institution": "Institusi",
+          "type": "Tipe"
+        },
+        "sort": {
+          "change": "Perubahan",
+          "name": "Nama",
+          "value": "Nilai"
+        }
+      },
+      "payments": {
+        "col": {
+          "amount": "Jumlah",
+          "cadence": "Frekuensi",
+          "direction": "Arah",
+          "status": "Status",
+          "vendor": "Vendor"
+        },
+        "config": {
+          "searchByVendor": "Cari berdasarkan vendor"
+        },
+        "empty": {
+          "addABillOrRecurringIncomeAndScaniTracksEveryDateItFallsDue": "Tambahkan tagihan atau pemasukan berulang, dan Scani akan melacak setiap tanggal jatuh temponya.",
+          "noRecurringPaymentsYet": "Belum ada pembayaran berulang"
+        },
+        "filter": {
+          "direction": "Arah",
+          "status": "Status",
+          "vendor": "Vendor"
+        },
+        "group": {
+          "direction": "Arah",
+          "status": "Status"
+        },
+        "sort": {
+          "amount": "Jumlah",
+          "status": "Status",
+          "vendor": "Vendor"
+        },
+        "option": {
+          "active": "Aktif",
+          "paused": "Dijeda",
+          "ended": "Berakhir",
+          "bill": "Tagihan",
+          "income": "Pemasukan"
+        }
+      },
+      "review": {
+        "col": {
+          "amount": "Jumlah",
+          "arrived": "Tiba",
+          "detail": "Detail",
+          "item": "Item"
+        },
+        "config": {
+          "searchReview": "Cari tinjauan"
+        },
+        "empty": {
+          "importsLandHereWhenTheyFinish": "Impor bermuara di sini setelah selesai dan menunggu konfirmasi Anda sebelum kepemilikannya ikut dihitung.",
+          "nothingNeedsYourReview": "Tidak ada yang perlu Anda tinjau"
+        },
+        "filter": {
+          "type": "Tipe"
+        },
+        "group": {
+          "type": "Tipe"
+        },
+        "sort": {
+          "arrived": "Tiba",
+          "item": "Item"
+        }
+      },
+      "transferReview": {
+        "col": {
+          "from": "Dari",
+          "ifItWasASale": "Jika ini penjualan",
+          "left": "Keluar",
+          "when": "Kapan",
+          "whyItIsHere": "Mengapa ada di sini"
+        },
+        "config": {
+          "searchTransfers": "Cari transfer"
+        },
+        "empty": {
+          "everyTransferIsAccountedFor": "Setiap transfer sudah terjelaskan",
+          "moneyMovingBetweenYourOwnAccounts": "Uang yang berpindah antar akun Anda sendiri dicocokkan secara otomatis. Apa pun yang tidak bisa diselesaikan sendiri oleh pencocok akan muncul di sini untuk Anda jawab."
+        },
+        "sort": {
+          "asset": "Aset",
+          "value": "Nilai",
+          "when": "Kapan"
+        }
+      },
+      "vaults": {
+        "col": {
+          "progress": "Kemajuan",
+          "saved": "Terkumpul",
+          "target": "Target",
+          "vault": "Target tabungan"
+        },
+        "config": {
+          "searchVaults": "Cari target tabungan"
+        },
+        "empty": {
+          "aVaultIsASavingsGoal": "Target tabungan adalah sasaran menabung: beri nama, tetapkan targetnya, lalu lampirkan kepemilikan yang dihitung ke dalamnya.",
+          "noVaultsYet": "Belum ada target tabungan"
+        },
+        "filter": {
+          "status": "Status"
+        },
+        "sort": {
+          "name": "Nama",
+          "progress": "Kemajuan",
+          "saved": "Terkumpul",
+          "target": "Target"
+        },
+        "option": {
+          "stillSaving": "Masih menabung",
+          "targetReached": "Target tercapai"
+        }
+      },
+      "vendors": {
+        "col": {
+          "category": "Kategori",
+          "kind": "Jenis",
+          "payments": "Pembayaran",
+          "vendor": "Vendor",
+          "perMonth": "Per bulan"
+        },
+        "config": {
+          "searchVendors": "Cari vendor"
+        },
+        "empty": {
+          "aVendorIsCreatedForYou": "Vendor dibuatkan untuk Anda pertama kali Anda mengarahkan sebuah pembayaran kepadanya. Anda juga bisa menambahkannya di sini.",
+          "noVendorsYet": "Belum ada vendor"
+        },
+        "group": {
+          "billsIncome": "Tagihan / pemasukan",
+          "category": "Kategori"
+        },
+        "sort": {
+          "name": "Nama",
+          "payments": "Pembayaran"
+        }
+      },
+      "upcoming": {
+        "empty": {
+          "nothingDue_other": "Tidak ada yang jatuh tempo dalam {{count}} hari ke depan",
+          "noPayments": "Belum ada pembayaran berulang",
+          "outsideWindow": "Pembayaran tetap Anda jatuh tempo di luar rentang ini.",
+          "addOne": "Tambahkan tagihan atau pemasukan berulang, dan tanggal-tanggal berikutnya akan muncul di sini."
+        }
+      },
+      "forecast": {
+        "empty": {
+          "nothingToProject": "Tidak ada yang bisa diproyeksikan",
+          "noPayments": "Belum ada pembayaran berulang",
+          "allPausedOrUnpriced": "Semua pembayaran yang tercatat sedang dijeda, sudah berakhir, atau tidak memiliki jumlah untuk diproyeksikan.",
+          "addOne": "Tambahkan tagihan atau pemasukan berulang, dan perkiraannya akan muncul di sini."
+        }
+      },
+      "itemCount_other": "{{count}} item",
+      "nameList": {
+        "all": "{{head}} dan {{last}}",
+        "more": "{{head}} dan {{count}} lainnya"
+      },
+      "toolbar": {
+        "refine": "Sesuaikan",
+        "refineAria": "Filter, urutkan, dan kelompokkan",
+        "select": "Pilih",
+        "done": "Selesai",
+        "export": "Ekspor",
+        "search": "Cari {{noun}}",
+        "filteredOf": "{{shown}} dari {{counted}}",
+        "loadedSoFar": "{{counted}} sudah dimuat",
+        "filteredOfLoaded": "{{shown}} dari {{counted}} yang sudah dimuat",
+        "loadMore": "Muat lebih banyak",
+        "loadingMore": "Memuat lagi…",
+        "selected": "{{counted}} dipilih",
+        "removeFilter": "Hapus filter {{label}}: {{value}}"
+      },
+      "table": {
+        "clearSelection": "Bersihkan pilihan",
+        "selectAll": "Pilih semua",
+        "selectRow": "Pilih {{name}}",
+        "sortBy": "Urutkan menurut {{header}}",
+        "rowActions": "Detail",
+        "rowCount_other": "{{count}} baris"
+      },
+      "empty": {
+        "clearSearchAndFilters": "Bersihkan pencarian dan filter",
+        "noMatchSearch": "Tidak ada {{noun}} yang cocok dengan “{{search}}”",
+        "noMatchFilters": "Tidak ada {{noun}} yang cocok dengan filter itu",
+        "noMatchLoaded": "Tidak ada yang cocok di antara yang sudah dimuat",
+        "loadedOnly": "Pencarian dan filter hanya melihat {{counted}} yang sudah dimuat. Muat lebih banyak untuk memperluasnya.",
+        "filteredBy": "Difilter menurut {{list}}."
+      },
+      "bulk": {
+        "delete": "Hapus",
+        "deleteCount": "Hapus {{counted}}"
+      },
+      "refine": {
+        "title": "Sesuaikan",
+        "filter": "Filter",
+        "sortBy": "Urutkan menurut",
+        "groupBy": "Kelompokkan menurut",
+        "any": "Semua",
+        "noGrouping": "Tanpa pengelompokan",
+        "lowToHigh": "Rendah ke tinggi",
+        "highToLow": "Tinggi ke rendah",
+        "clearAll": "Bersihkan semua",
+        "done": "Selesai",
+        "expand": "Tampilkan semua pilihan",
+        "collapse": "Tampilkan lebih sedikit pilihan",
+        "close": "Tutup penyesuaian",
+        "liveCount": "{{counted}} · perubahan langsung diterapkan"
+      },
+      "export": {
+        "title": "Ekspor",
+        "whatToExport": "Apa yang diekspor",
+        "format": "Format",
+        "separator": "Pemisah",
+        "privacy": "Privasi",
+        "hideAmounts": "Sembunyikan nominal",
+        "hideAmountsDetail": "Menghapus setiap kolom nilai, untung/rugi, dan hasil konversi. Berkasnya akan menyatakan bahwa kolom itu ditahan.",
+        "cancel": "Batal",
+        "preparing": "Menyiapkan…",
+        "expand": "Tampilkan semua pilihan",
+        "collapse": "Tampilkan lebih sedikit pilihan",
+        "close": "Tutup ekspor",
+        "separatorComma": "Koma",
+        "separatorCommaDetail": "a,b,c — pilihan yang biasa",
+        "separatorSemicolon": "Titik koma",
+        "separatorSemicolonDetail": "a;b;c — untuk lembar kerja yang disetel ke lokal Eropa",
+        "formatCsv": "CSV (.csv)",
+        "formatCsvDetail": "Teks biasa. Bisa dibuka di mana saja, bisa diimpor ke apa saja.",
+        "formatXlsx": "Excel (.xlsx)",
+        "formatXlsxDetail": "Angka tetap angka, judul kolom tetap terlihat saat Anda menggulir.",
+        "formatPdf": "PDF (.pdf)",
+        "formatPdfDetail": "Laporan untuk dikirim ke akuntan, bank, atau pemilik properti.",
+        "onScreenNow": "Yang tampil di layar sekarang",
+        "ignoresFilters": "Mengabaikan filter dan pencarian",
+        "nothingTitle": "Tidak ada yang bisa diekspor",
+        "nothingFiltered": "Tidak ada yang cocok dengan filter itu, jadi tidak ada isi untuk berkasnya.",
+        "nothingAtAll": "Belum ada apa pun di sini, jadi tidak ada isi untuk berkasnya.",
+        "action": "Ekspor {{counted}}",
+        "scopeThese": "{{counted}} ini",
+        "scopeAllShort": "Semua {{counted}}",
+        "scopeAllLoadedShort": "Semua {{counted}} yang dimuat",
+        "scopeAll": "Semua {{counted}}",
+        "scopeAllLoaded": "Semua {{counted}} yang sudah dimuat",
+        "scopeFiltered": "Difilter — {{shown}} dari {{counted}}",
+        "scopeFilteredLoaded": "Difilter — {{shown}} dari {{counted}} yang sudah dimuat",
+        "loadedOnly": "Hanya baris yang sudah dimuat — sisanya tidak pernah diambil",
+        "partialSet": "Bukan keseluruhan data",
+        "partialSetDetail": "Hanya {{counted}} yang dimuat di layar yang diekspor.",
+        "errorContext": "Mengekspor {{noun}}",
+        "groupedBy": "Dikelompokkan menurut",
+        "search": "Pencarian",
+        "sortedBy": "Diurutkan menurut",
+        "sortedAscending": "{{label}}, rendah ke tinggi",
+        "sortedDescending": "{{label}}, tinggi ke rendah",
+        "subjectDescription": "Unduh {{subject}} Anda sebagai berkas milik Anda sendiri."
+      }
+    },
+    "brand": {
+      "logoAlt": "Logo {{name}}"
+    },
+    "toast": {
+      "errorTitle": "Terjadi kesalahan",
+      "successTitle": "Berhasil",
+      "unknownError": "Kesalahan tidak dikenal",
+      "viewDetails": "Lihat Detail",
+      "dismiss": "Abaikan",
+      "viewDetailsAlt": "Lihat detail kesalahan di konsol",
+      "detail": "{{context}}: {{message}}"
+    },
+    "export": {
+      "pdfUnavailable": "Ekspor PDF tidak tersedia di sini",
+      "nothingToExport": "Tidak ada yang bisa diekspor",
+      "pdfTooManyRows": "PDF memuat maksimal {{max}} baris sedangkan ini {{rows}} — ekspor sebagai CSV atau Excel, atau persempit rentangnya.",
+      "xlsxChunk": "penulis Excel",
+      "workbook": {
+        "currency": "{{header}} ({{currency}})",
+        "currencyConverted": "{{header}} ({{currency}}, dikonversi)",
+        "currencyColumn": "Mata uang {{header}}"
+      },
+      "provenance": {
+        "exportedFrom": "Diekspor dari",
+        "subject": "Subjek",
+        "scope": "Lingkup",
+        "generated": "Dibuat",
+        "rows": "Baris",
+        "amounts": "Nominal",
+        "withheld": "Ditahan — setiap kolom nilai, untung/rugi, dan hasil konversi sengaja dihapus",
+        "aboutSheet": "Tentang",
+        "field": "Bidang",
+        "value": "Nilai"
+      },
+      "download": {
+        "shared": "Dikirim ke lembar berbagi Anda",
+        "sharedDetail": "Pilih Simpan ke File untuk menyimpan {{fileName}}.",
+        "saved": "Diekspor",
+        "savedDetail": "{{subject}} dalam {{fileName}}"
+      }
+    },
+    "errors": {
+      "offline": {
+        "title": "Tidak dapat menghubungi server",
+        "detail": "Periksa koneksi Anda. Tidak ada yang diubah."
+      },
+      "session": {
+        "title": "Sesi Anda berakhir",
+        "detail": "Masuk lagi untuk melihat {{subject}}."
+      },
+      "timeout": {
+        "title": "Server terlalu lama merespons",
+        "detail": "Permintaan untuk {{verb}} {{subject}} melebihi batas waktu. Data Anda tidak tersentuh."
+      },
+      "rateLimit": {
+        "title": "Terlalu banyak permintaan",
+        "detail": "Server meminta kami memperlambat. Tunggu sebentar, lalu coba lagi."
+      },
+      "generic": {
+        "title": "Tidak dapat {{verb}} {{subject}}",
+        "detail": "Server mengembalikan kesalahan. Data Anda tidak tersentuh."
+      },
+      "rejected": {
+        "detail": "{{reason}}. Data Anda tidak tersentuh."
+      },
+      "chunk": {
+        "message": "Tidak dapat memuat {{chunk}}. Periksa koneksi Anda lalu coba lagi — jika aplikasi diperbarui saat tab ini terbuka, memuat ulang halaman akan mengatasinya.",
+        "title": "Tidak dapat memuat {{chunk}}",
+        "detail": "Sebagian aplikasi gagal diunduh. Ini biasanya karena koneksi terputus, atau pembaruan yang dirilis saat tab ini terbuka.",
+        "reload": "Muat ulang halaman"
+      },
+      "crash": {
+        "title": "Terjadi kesalahan",
+        "detail": "Terjadi kesalahan tak terduga. Data Anda tidak tersentuh.",
+        "home": "Ke Dasbor"
+      },
+      "verb": {
+        "load": "memuat",
+        "create": "membuat",
+        "save": "menyimpan",
+        "connect": "menghubungkan"
+      },
+      "tryAgain": "Coba lagi",
+      "retry": "Ulangi"
+    },
+    "magicCode": {
+      "prompt": "Masukkan kode 6 digit dari email Anda",
+      "verify": "Verifikasi Kode",
+      "resend": "Kirim Ulang Kode",
+      "digit": "Digit {{index}}",
+      "expiry": "Kode ini kedaluwarsa dalam 10 menit"
+    },
+    "update": {
+      "updating": "Memperbarui... mohon tunggu",
+      "available": "Versi baru tersedia",
+      "action": "Perbarui",
+      "dismiss": "Abaikan"
+    },
+    "dialog": {
+      "close": "Tutup"
+    },
+    "sheet": {
+      "close": "Tutup"
+    },
+    "loading": {
+      "label": "Memuat..."
+    },
+    "numeric": {
+      "noValue": "Tidak ada nilai"
+    },
+    "confirmAction": {
+      "cancel": "Batal"
+    },
+    "loadingRamp": {
+      "stalled": "Masih menunggu server. Tidak ada yang diubah.",
+      "retry": "Coba lagi",
+      "loading": "Memuat {{label}}"
+    },
+    "peek": {
+      "recordDetail": "Detail catatan",
+      "loading": "Memuat",
+      "notFound": "Tidak ditemukan",
+      "notOnList": "{{noun}} ini tidak ada di daftar ini. Mungkin sudah dihapus, atau tautannya sudah tidak berlaku.",
+      "expand": "Tampilkan detail lengkap",
+      "collapse": "Tampilkan lebih sedikit"
+    },
+    "amountInput": {
+      "readAsWhole": "Dibaca sebagai {{amount}} — kolom ini hanya menerima bilangan bulat.",
+      "readAsDecimal": "Dibaca sebagai {{amount}} — koma maupun titik sama-sama berarti tanda desimal di sini. Hapus pemisahnya jika yang Anda maksud adalah ribuan."
+    },
+    "accountPicker": {
+      "loading": "Memuat akun Anda…",
+      "searchPlaceholder": "Cari akun",
+      "noMatch": "Tidak ada akun yang cocok dengan “{{query}}”",
+      "shownOf": "Menampilkan {{shown}} dari {{total}}"
+    },
+    "theme": {
+      "label": "Tema",
+      "system": "Sistem",
+      "light": "Terang",
+      "dark": "Gelap",
+      "trigger": "Tema: {{theme}}"
+    },
+    "install": {
+      "headline": "Pasang {{appName}} di ponsel Anda",
+      "installAction": "Pasang",
+      "howAction": "Caranya?",
+      "sheetDescription": "Tambahkan ikon di layar utama untuk akses layar penuh seperti aplikasi.",
+      "safariOnly": "Di iOS, hanya Safari yang mendukung penambahan aplikasi ke layar utama. Buka halaman ini di Safari, lalu ikuti langkah-langkah di bawah.",
+      "dismissPrompt": "Abaikan ajakan pemasangan",
+      "iosStep1": "Ketuk tombol Bagikan <icon/> di bilah alat Safari.",
+      "iosStep2": "Gulir lembar berbagi lalu ketuk <icon/> <b>Tambahkan ke Layar Utama</b>.",
+      "iosStep3": "Konfirmasi dengan <b>Tambah</b>. {{appName}} kini terbuka dari layar utama seperti aplikasi asli.",
+      "androidStep1": "Ketuk menu <b>⋮</b> di pojok kanan atas peramban Anda.",
+      "androidStep2": "Pilih <b>Pasang aplikasi</b> (Chrome) atau <b>Tambahkan ke layar Utama</b> (Firefox / Samsung Internet).",
+      "androidStep3": "Konfirmasi. {{appName}} akan terbuka dari laci aplikasi Anda seperti aplikasi terpasang lainnya."
+    }
+  },
+  "offline": {
+    "title": "Tidak dapat menghubungi Scani",
+    "subtitleOnline": "Perangkat Anda online, tetapi server Scani tidak menjawab.",
+    "subtitleOffline": "Perangkat ini sedang tidak memiliki koneksi.",
+    "bodySignedIn": "Anda masih masuk sebagai {{email}}. Tidak ada yang dikeluarkan — kami hanya belum bisa memuat data Anda sampai server menjawab.",
+    "bodyUnknown": "Kami tidak bisa memuat apa pun sampai server menjawab.",
+    "reassurance": "Ini akan dicoba ulang sendiri begitu koneksi kembali.",
+    "retry": "Coba lagi",
+    "retrying": "Mencoba lagi…",
+    "signInDifferent": "Masuk dengan email lain",
+    "connectionIssue": "Masalah koneksi",
+    "connectionIssueRetrying": "Masalah koneksi — mencoba lagi"
+  }
+}
