@@ -834,9 +834,9 @@ export class HoldingTransactionRepository extends BaseRepository<
    * The recurring transaction sync asks this to tell a re-sync from a first
    * read. An incremental `since` over an EMPTY ledger imports nothing but
    * the window — and a wallet's movements are mostly older than any window
-   ***REMOVED***
-   ***REMOVED***
-   ***REMOVED***
+   * worth running nightly. Production's Solana ledger spans years and has
+   * zero rows inside the last 30 days, so a 30-day sync of it would have
+   * restored exactly nothing (SC-360).
    */
   async findAccountsWithLedgerFor(
     accountIds: readonly string[],

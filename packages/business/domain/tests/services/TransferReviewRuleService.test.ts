@@ -4,8 +4,8 @@
  * Integration rather than stubbed-DI for the same reason the queue's own tests
  * are: nearly everything asserted here *is* the SQL. That a rule reads the
  * address out of the payload rather than the column is the difference between
- ***REMOVED***
- ***REMOVED***
+ * this feature working and it matching zero rows in production — every chain
+ * outflow there has `counterparty` NULL — and a stubbed repository would
  * assert that a stub returns what it was given.
  *
  * The refusals get as much room as the successes on purpose. The rule key is a
@@ -136,8 +136,8 @@ async function cleanupFixture(f: Fixture): Promise<void> {
 /**
  * An outflow shaped the way production's are: `counterparty` NULL and the
  * destination only in the payload. Passing `counterparty` explicitly is the
- ***REMOVED***
- * chain rows look like.
+ * exception here, not the default, because the default is what every chain
+ * row looks like.
  */
 async function insertOutflow(
   f: Fixture,
@@ -324,8 +324,8 @@ describe('TransferReviewRuleService — authoring', () => {
 
   test('refuses a transfer with no destination anywhere', async () => {
     const f = fixture!;
-    ***REMOVED***
-    ***REMOVED***
+    // A large share of production outflows are this: a Kraken withdrawal record
+    // does not say where the money went, Solana rows carry no payload at all, and
     // no design fixes either.
     const txId = await insertOutflow(f, { externalId: 'r-7' });
 
@@ -466,10 +466,10 @@ describe('TransferReviewRuleService — listing and undo', () => {
  * *"the next transfer will have a different amount but I still need it to be
  * applied"*, and that is the whole of what these assert.
  *
- ***REMOVED***
- ***REMOVED***
- ***REMOVED***
- * and this repository is public.
+ * The descriptions below have production's SHAPE — a run of rows, two
+ * recipients, one typo of the kind the source data actually contains — but the
+ * recipients' names and the amounts are INVENTED. They were a real third
+ * party's, and this repository is public.
  *
  * The shape is what matters and it is preserved: amounts that vary row to row
  * (which is why keying on the whole string failed), a two-word name, and a
@@ -749,7 +749,7 @@ describe('TransferReviewRuleService — marking a destination a disposal', () =>
   test('never writes onto a matcher-linked row, which would book nothing while reading as answered', async () => {
     const f = fixture!;
     const authoredFrom = await insertOutflow(f, { externalId: 'm-6', to: ADDRESS });
-    ***REMOVED***
+    // A minority of production's unanswered outflows are in exactly this state:
     // a `transfer_group_id` the matcher wrote, no answer, invisible to the
     // queue. `outflowPortions` reads the group id BEFORE `isConfirmedDisposal`,
     // so a `left_control` here books nothing and looks decided (SC-382).
@@ -770,8 +770,8 @@ describe('TransferReviewRuleService — marking a destination a disposal', () =>
     const f = fixture!;
     const authoredFrom = await insertOutflow(f, { externalId: 'm-8', to: ADDRESS });
     // A zero-value `transferFrom` on the real USDC contract, sprayed to plant a
-    ***REMOVED***
-    ***REMOVED***
+    // lookalike in the victim's history. Production carries a corpus of them,
+    // and they appear on no screen — so no answer to one could ever be read.
     const poisoning = await insertOutflow(f, {
       externalId: 'm-9',
       to: ADDRESS,

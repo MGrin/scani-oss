@@ -17,11 +17,11 @@
  *     never mentioned at all — which no balance chain can catch,
  *     because the chain of an asset we never see does not exist.
  *
- ***REMOVED***
- ***REMOVED***
- ***REMOVED***
- ***REMOVED***
- ***REMOVED***
+ * SC-392 measured both on production. A live Kraken key returns a
+ * ledger whose per-asset balance chains reconcile exactly — and a large
+ * fraction of its convert refids, plus every one of its trade refids,
+ * are missing their counter leg, a material amount of notional whose
+ * other side is USDC. Kraken has never returned a USDC entry
  * for that key, and scani claimed `hasCompleteTxHistory: true` over
  * it, which `CostBasisService` reads as a `complete` cost basis.
  *

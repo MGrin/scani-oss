@@ -86,7 +86,7 @@ export interface AggregatedDailyPoint {
    * those (`0` vs `null`).
    *
    * This is what ranks two `'partial'` days. Production holds both extremes
-   ***REMOVED***
+   * at once: one holding anchored seconds back, another months back.
    */
   oldestAnchorAt: string | null;
   /**

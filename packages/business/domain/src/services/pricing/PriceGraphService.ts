@@ -287,7 +287,7 @@ export class PriceGraphService {
   // Each hub is resolved on `(symbol, typeId, marketSegment: null)`,
   // which the `tokens_symbol_type_segment_unique` constraint makes at
   // most one row. That matters because a symbol is not an identity here:
-  ***REMOVED***
+  // `USDT` has more than one row in production, all crypto, so narrowing to the
   // type alone still leaves `findBySymbolAndType`'s
   // `asc(isScamProbability), desc(createdAt)` tiebreak to guess between
   // the merged canonical row and one chain's ERC-20. The canonical row

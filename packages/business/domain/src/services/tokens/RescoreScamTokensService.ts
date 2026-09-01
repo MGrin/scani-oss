@@ -95,12 +95,12 @@ export interface RescoreResult {
 }
 
 /**
- ***REMOVED***
- ***REMOVED***
- ***REMOVED***
- ***REMOVED***
- ***REMOVED***
- ***REMOVED***
+ * One page. A version bump invalidates every CRYPTO token at once — a
+ * majority of the production `tokens` table, but not all of it. The
+ * distinction is the whole ballgame: an earlier draft of this comment quoted
+ * the WHOLE table's size, which reads as though the population were every
+ * token, and the query that matched that reading would have scored the fiat
+ * and stock rows the function has never been asked about. `AMAZON.COM INC` returns 0.50 under a heuristic built for
  * memecoins.
  */
 export const RESCORE_BATCH_SIZE = 500;
