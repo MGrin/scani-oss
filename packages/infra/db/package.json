@@ -20,6 +20,7 @@
     "db:generate": "bun src/migration-cli.ts journal && bun drizzle-kit generate",
     "db:new": "bun src/migration-cli.ts new",
     "db:journal": "bun src/migration-cli.ts journal",
+    "db:declare-drift": "bun src/migration-cli.ts declare-drift",
     "db:drop": "bun drizzle-kit drop",
     "db:migrate": "bun src/migrate.ts",
     "db:studio": "bun drizzle-kit studio"
