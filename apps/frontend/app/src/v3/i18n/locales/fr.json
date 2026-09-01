@@ -249,7 +249,8 @@
         "retained": "Vous avez indiqué que cela n’a jamais quitté votre contrôle, rien n’a donc été réalisé.",
         "awaitingPair": "Un seul côté de ce mouvement a été importé, aucune plus-value n’a donc été comptabilisée.",
         "realizedUnattributed": "Enregistré comme étant sorti de votre portefeuille, cette plus-value a donc été comptabilisée. Rien n’indique qui y a répondu — la réponse n’a pas été donnée dans la file de vérification.",
-        "retainedUnattributed": "Enregistré comme n’ayant jamais quitté votre contrôle, rien n’a donc été réalisé. Rien n’indique qui y a répondu."
+        "retainedUnattributed": "Enregistré comme n’ayant jamais quitté votre contrôle, rien n’a donc été réalisé. Rien n’indique qui y a répondu.",
+        "fee": "Des frais prélevés sur ce qui est parti, donc aucune plus-value n'a été enregistrée : cela compte comme un coût, pas comme un retrait."
       },
       "basis": {
         "partialNote": "Établi à partir d’un historique que nous savons incomplet, ou d’un prix hors de notre fenêtre de fraîcheur.",
@@ -1996,7 +1997,8 @@
           "untracked": "Enregistré comme toujours à vous",
           "split": "Enregistré — chaque partie selon ses propres termes",
           "gone": "Ce transfert n’est plus en attente",
-          "splitRejected": "Cette répartition n’a pas été acceptée"
+          "splitRejected": "Cette répartition n’a pas été acceptée",
+          "fee": "Enregistré comme frais"
         },
         "ownWalletNotice": "Ceci est allé vers un portefeuille que vous avez ajouté : l’argent est donc toujours à vous. Reliez-le au dépôt correspondant, ou enregistrez où il a été déplacé — choisir qu’il est sorti de votre portefeuille le comptabilise comme une vente.",
         "withdrawnNotice": "Scani a retiré une réponse antérieure sur ce transfert. Elle avait été donnée à propos d’un rapprochement dont nous avons depuis montré qu’il n’était pas un transfert du tout : la question se pose donc à nouveau — et il se peut qu’il n’y ait ici aucun dépôt à désigner.",
@@ -2038,7 +2040,8 @@
           "internalPrompt": "Choisissez la position vers laquelle cet argent s’est déplacé.",
           "leftControlPriced": "Compté comme une cession le {{date}} à la valeur de marché — environ {{amount}} de produit de cession face à ce que vous aviez payé.",
           "leftControlUnpriced": "Compté comme une cession le {{date}} à la valeur de marché. Scani n’a aucun prix pour {{symbol}} ce jour-là : rien n’est donc comptabilisé.",
-          "untracked": "Toujours à vous, simplement quelque part que Scani ne voit pas. Ce n’est pas une cession, aucune plus-value n’est donc comptabilisée — les {{symbol}} cessent simplement d’être comptés."
+          "untracked": "Toujours à vous, simplement quelque part que Scani ne voit pas. Ce n’est pas une cession, aucune plus-value n’est donc comptabilisée — les {{symbol}} cessent simplement d’être comptés.",
+          "fee": "Des frais prélevés sur ce qui est parti — la banque, le réseau ou la plateforme les a gardés. Ce n'est pas une cession, donc aucune plus-value n'est enregistrée, et les {{symbol}} comptent comme un coût et non comme de l'argent retiré."
         },
         "decision": {
           "paired": {
@@ -2056,6 +2059,10 @@
           "untracked": {
             "trigger": "Déplacé vers un endroit non suivi",
             "commit": "L’enregistrer comme toujours à moi"
+          },
+          "fee": {
+            "trigger": "Une partie était des frais",
+            "commit": "Enregistrer comme frais"
           }
         },
         "destination": {
@@ -2100,13 +2107,15 @@
           "internal": "Déplacé vers une position que vous suivez — dépôt enregistré",
           "leftControl": "Compté comme une cession",
           "untracked": "Toujours à vous, quelque part de non suivi",
-          "fallback": "Traité"
+          "fallback": "Traité",
+          "fee": "Enregistré comme frais"
         },
         "answeredShort": {
           "paired": "{{amount}} relié",
           "internal": "{{amount}} déplacé",
           "leftControl": "{{amount}} cédé",
-          "untracked": "{{amount}} non suivi"
+          "untracked": "{{amount}} non suivi",
+          "fee": "{{amount}} de frais"
         },
         "reopen": {
           "internal": "Le dépôt que ceci avait enregistré sur l’autre compte est supprimé avec lui — sinon votre prochaine réponse compterait cet argent deux fois. Si la réponse avait modifié le solde de ce compte, cette modification est également annulée. Le transfert rejoint la file.",
