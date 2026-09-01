@@ -222,6 +222,40 @@ jobs:
       - name: Check docs/source drift
         run: bun run docs:check
 
+  validate-migrations:
+    # SC-914. A migration that has already run may not be EDITED — comments
+    # included — without a `DRIFT_DECLARATIONS` entry. The digest
+    # `migration-runner.ts` compares against `drizzle.__scani_migrations` is
+    # taken over the whole file, so a comment rewrite refuses the entire
+    # `db:migrate` run and every deploy with it. That happened on 2026-09-01,
+    # through two pull requests that were reviewed for behaviour changes and
+    # correctly found to have none.
+    #
+    # THIS IS THE HALF THE LOCAL HOOK CANNOT BE. `.githooks/pre-commit` runs the
+    # same check and is bypassable with `--no-verify` and absent from a fresh
+    # clone until `bun install` sets `core.hooksPath`; a hurried merge skips
+    # exactly it.
+    #
+    # UNFILTERED AND UNGATED. It costs about a third of a second, and the change
+    # that needs it is not always a `.sql` one — an edit to
+    # `migration-reconciliation.ts` can retire a declaration another branch is
+    # relying on. Off a pull request the base resolves to `origin/main`, which
+    # on a `main` build IS the tree; the verdict line says so in words rather
+    # than printing a bare zero.
+    name: Migration drift declared
+    runs-on: ubuntu-latest
+    steps:
+      # FULL HISTORY. The check needs `origin/main` and a merge base with it;
+      # the default depth-1 checkout has neither, and a base it cannot resolve
+      # is exit 9 — a refusal, not a pass, so a shallow clone fails LOUDLY here
+      # rather than reporting a clean tree.
+      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/setup-bun
+      - name: Every edited migration carries a drift declaration
+        run: bun run db:drift:check
+
   test:
     name: Test
     needs: detect-changes
@@ -592,6 +626,7 @@ jobs:
         validate-code,
         validate-deps,
         validate-docs,
+        validate-migrations,
         test,
         e2e,
         prod-guards-integration,
