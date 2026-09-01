@@ -97,6 +97,40 @@ them to check a setting that is already correct is worse than silence.
 `BASE_SUMMARY` rows are IBKR's own total line and are dropped on
 purpose; they never count as unmapped.
 
+### When the statement's date range is shorter than the account (SC-882)
+
+The third way, and the one that produced a wrong **number** rather than a
+missing row. The period is a saved-query setting like the section list —
+`requestReport` puts `t`, `q` and `v=3` on the wire and **no date range** —
+and the statement echoes it back as `period`, `fromDate` and `toDate` on
+`<FlexStatement>`.
+
+`TransactionRouter.claimsCompleteHistory` writes
+`has_complete_tx_history = true` for a run with no `since` against a provider
+that declares no `transactionHistoryHorizonMs`, and IBKR could declare none:
+the nine providers that do have a look-back they choose themselves, whereas
+this one's window belongs to a user we cannot ask before the fetch. So a
+full-history run — a fresh connect, or any run after the ledger is emptied —
+claimed the whole ledger over whatever range the query happened to name. That
+flag feeds cost basis (SC-149), so the claim reaches a figure on a screen.
+
+`fetchTransactions` therefore retracts through `ctx.retractHistoryClaim`
+(SC-395), naming the window the statement itself carries. Two properties
+worth keeping:
+
+- **A window that cannot be read still retracts.** Silence about the range is
+  not a range covering everything.
+- **Only on a `since`-less run.** `TransactionImportCoordinator` passes
+  `completenessIsClaimed: !since || historyRetractions.length > 0`, so
+  retracting on an incremental run would write `has_complete_tx_history`
+  through where the nightly leaves the stored value alone — moving a
+  cost-basis flag as a side effect of a claim that run never made. The
+  router's own `describeHorizon` is guarded the same way, for the same
+  reason: a window is the caller's choice rather than a shortfall.
+
+Widening the range is the user's action in Account Management and nothing
+here can do it for them, which is what the retraction's wording says.
+
 ## Auth + env
 
 - Per-user `flexQueryToken` + `flexQueryId` (both encrypted; user
