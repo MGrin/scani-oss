@@ -19,6 +19,13 @@ version heading stays there permanently, above every future release. This
 comment is deliberately in that position; explanatory prose should not be.
 -->
 
+## [0.38.2](https://github.com/MGrin/scani-oss/compare/v0.38.1...v0.38.2) (2026-09-02)
+
+
+### Bug Fixes
+
+* **db:** one account per mailbox — unique index on lower(users.email) ([87610e0](https://github.com/MGrin/scani-oss/commit/87610e056aab4d8b7093e4fe4574a909ec9a334c))
+
 ## [0.38.1](https://github.com/MGrin/scani-oss/compare/v0.38.0...v0.38.1) (2026-09-02)
 
 
