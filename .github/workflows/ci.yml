@@ -284,7 +284,30 @@ jobs:
           --health-timeout 3s
           --health-retries 10
     steps:
+      # FULL HISTORY. `declaration-covers-every-released-digest.test.ts` derives
+      # the digests it checks from real history rather than from a fixture —
+      # deliberately, so they keep meaning the same thing as the repo moves. It
+      # reads `git tag --list 'v*'` and then `git cat-file blob` at each release
+      # tag. The default depth-1 checkout has neither the tags nor the blobs
+      # they point at, so `releases.length` is 0, every gap check is vacuous,
+      # and the file would read as a PASS if its own control did not fail first.
+      #
+      # It needs BOTH the tag refs and the objects they point at, so the
+      # setting has to guarantee both without a magic number.
+      #
+      # WHY NOT `fetch-depth: <N>`. The deepest read is the oldest release tag
+      # that still has a declaration, and that distance GROWS with every release.
+      # Any N is a timer, and it goes off later as a confusing red on an
+      # unrelated PR by someone who never touched these files.
+      #
+      # MEASURED: this repo's history carries 43 `v*` tags; a `--depth 1
+      # --no-tags` clone of it reads 0, which is the `Expected: > 0 / Received:
+      # 0` this job failed with. COST is the same trade `validate-migrations`
+      # already makes one job up — seconds of checkout against a job whose test
+      # step dominates its runtime.
       - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+        with:
+          fetch-depth: 0
       - uses: ./.github/actions/setup-bun
       - name: Run DB migrations
         # Seeds the schema + all required lookup rows (institutions,
