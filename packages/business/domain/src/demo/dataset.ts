@@ -256,6 +256,14 @@ interface DemoWalletRow {
   readonly label: string;
 }
 
+/**
+ * The `user_wallets` row a wallet account's `metadata.userWalletId` points at.
+ * The account and the wallet are built in different places and both need this
+ * id, so it is derived once — a second `demoUuid('wallet', …)` call site is how
+ * the two would silently stop referring to the same row.
+ */
+const demoWalletId = (accountKey: string): string => demoUuid('wallet', accountKey);
+
 interface DemoApyRow {
   readonly holdingKey: string;
   readonly annualRatePct: string;
@@ -1411,7 +1419,20 @@ export function buildDemoDataset(options: BuildDemoDatasetOptions = {}): DemoDat
     name: spec.name,
     typeCode: spec.typeCode,
     description: spec.description,
-    metadata: spec.walletAddress ? { walletAddress: spec.walletAddress } : {},
+    // The six fields `ImportWalletAddressUseCase` writes, so a seeded wallet
+    // account is shaped like an imported one. `migrated` is vestigial — nothing
+    // reads it any more (see `AccountService.deleteAccount`) — and is here
+    // because the point is to match the importer, not to be minimal (SC-864).
+    metadata: spec.wallet
+      ? {
+          walletAddress: spec.wallet.address,
+          chainId: spec.wallet.chainId,
+          chainName: spec.institution,
+          displayName: spec.name,
+          userWalletId: demoWalletId(spec.key),
+          migrated: true,
+        }
+      : {},
     createdAt,
   }));
 
@@ -1453,13 +1474,17 @@ export function buildDemoDataset(options: BuildDemoDatasetOptions = {}): DemoDat
     };
   });
 
-  const wallets: DemoWalletRow[] = DEMO_ACCOUNTS.filter((spec) => spec.walletAddress).map(
-    (spec) => ({
-      id: demoUuid('wallet', spec.key),
-      walletAddress: spec.walletAddress as string,
-      institution: spec.institution,
-      label: spec.name,
-    })
+  const wallets: DemoWalletRow[] = DEMO_ACCOUNTS.flatMap((spec) =>
+    spec.wallet
+      ? [
+          {
+            id: demoWalletId(spec.key),
+            walletAddress: spec.wallet.address,
+            institution: spec.institution,
+            label: spec.name,
+          },
+        ]
+      : []
   );
 
   // ---- vendors, payments --------------------------------------------------

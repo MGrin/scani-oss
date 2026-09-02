@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'bun:test';
+import { readFileSync } from 'node:fs';
 import { buildDemoDataset } from '../../src/demo/dataset';
 import { DEMO_ANCHOR_DATE, DEMO_HISTORY_DAYS } from '../../src/demo/persona';
+import { sourceForChainId } from '../../src/services/transactions/transaction-source';
 
 const dataset = buildDemoDataset();
 
@@ -218,5 +220,84 @@ describe('demo dataset — it has to survive being looked at', () => {
     expect(Number(closing?.totalValue)).toBeGreaterThan(100_000);
     expect(Number(closing?.totalValue)).toBeLessThan(1_000_000);
     expect(Number(closing?.costBasis)).toBeGreaterThan(0);
+  });
+});
+
+describe('demo dataset — a wallet account is shaped like an imported one', () => {
+  const walletAccounts = dataset.accounts.filter(
+    (row) => (row.metadata as Record<string, unknown>).walletAddress !== undefined
+  );
+
+  it('writes every field the wallet importer writes, and no more', () => {
+    // The drift guard, and the reason this reads the importer's source rather
+    // than a copy of its key list: a hand-written list agrees with the
+    // importer only on the day it is written. SC-864 was this seed carrying
+    // one of six fields, which nothing noticed because a missing key reads as
+    // `null` at every consumer and `null` reads as "not a wallet".
+    const source = readFileSync(
+      new URL('../../src/use-cases/ImportWalletAddressUseCase.ts', import.meta.url),
+      'utf8'
+    );
+    const block = /accountMetadataPatch:\s*\{([^}]*)\}/.exec(source)?.[1];
+    expect(block).toBeDefined();
+    const importerKeys = new Set(
+      [...(block as string).matchAll(/^\s*(\w+):/gm)].map((match) => match[1] as string)
+    );
+    // A control: the regex finding nothing would make every comparison below
+    // pass against an empty set.
+    expect(importerKeys.size).toBe(6);
+
+    expect(walletAccounts).toHaveLength(3);
+    for (const account of walletAccounts) {
+      expect(new Set(Object.keys(account.metadata as object))).toEqual(importerKeys);
+    }
+  });
+
+  it('gives each wallet a chainId the transaction pipeline actually dispatches on', () => {
+    // `sourceForChainId` is the production function, so this cannot pass on a
+    // plausible-looking string. Two of the three are non-EVM sentinels — `'0'`
+    // and `'-2'` — which is exactly the shape a value invented from memory
+    // would get wrong.
+    const sources = walletAccounts.map((account) =>
+      sourceForChainId((account.metadata as { chainId: string }).chainId)
+    );
+    expect(sources).not.toContain(null);
+    expect(new Set(sources)).toEqual(new Set(['etherscan', 'bitcoin', 'solana']));
+  });
+
+  it('points each account at the user_wallets row the seeder really creates', () => {
+    // `userWalletId` is what makes an account sync-owned:
+    // `SyncWalletBalancesUseCase` finds its account by this field alone, and
+    // `AccountService.deleteAccount` reads it to decide whether to clean up
+    // the wallet. An id pointing at no row is worse than a null one.
+    const walletIds = new Set(dataset.wallets.map((row) => row.id));
+    expect(walletIds.size).toBe(3);
+    for (const account of walletAccounts) {
+      expect(walletIds).toContain((account.metadata as { userWalletId: string }).userWalletId);
+    }
+  });
+
+  it('leaves the five non-wallet accounts with no metadata at all', () => {
+    // The control on the assertions above, and the scope correction SC-864
+    // needed: `accountMetadataPatch` has exactly one writer in the tree, the
+    // WALLET importer. No bank, broker or exchange import writes account
+    // metadata, so `{}` on Wise, Revolut, IBKR and Kraken is faithful and
+    // copying wallet fields onto them would be a new kind of wrong.
+    const others = dataset.accounts.filter((row) => !walletAccounts.includes(row));
+    expect(others).toHaveLength(5);
+    for (const account of others) expect(account.metadata).toEqual({});
+  });
+
+  it('still cannot make TransferReviewService offer a same_network destination', () => {
+    // Recorded rather than fixed, because it is a DATASET fact and not a
+    // metadata one: `same_network` needs two accounts sharing a chainId, and
+    // the persona has one wallet per chain. Adding the six fields removed the
+    // structural reason the band could never fire; this is the remaining one,
+    // and it is filed separately. Pinned so the next reader learns it from a
+    // test rather than from a two-band list that looks entirely correct.
+    const chainIds = walletAccounts.map(
+      (account) => (account.metadata as { chainId: string }).chainId
+    );
+    expect(new Set(chainIds).size).toBe(chainIds.length);
   });
 });
