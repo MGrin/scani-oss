@@ -76,20 +76,32 @@ export async function flushSentry(timeoutMs = 2000): Promise<void> {
  * routes — is not a counter-example: better-auth ships its own OpenTelemetry
  * instrumentation, which Sentry adopts. Nothing patched the HTTP layer.
  *
- * `source: 'route'` because every span this wrapper is asked for names a
- * bounded server route; without it Sentry treats the name as a low-quality
- * `custom` one and may cluster it. Set here rather than at each call site so
+ * A `source` is set because without one Sentry treats the name as a low-quality
+ * `custom` one and may cluster it. It defaults to `route` — every caller until
+ * SC-822 named a bounded server route — and `task` is for a background job,
+ * which has no route to name. Set here rather than at each call site so
  * `@sentry/node` stays imported in exactly this file (`@scani/logging/sentry`
  * is the wrapper every backend reaches Sentry through).
+ *
+ * THE QUEUE WORKER HAS NO SOURCE OF SPANS AT ALL, WHICH IS A HARDER ZERO THAN
+ * THE ONE ABOVE (SC-822). `Bun.serve` at least produces requests the SDK could
+ * have instrumented; a BullMQ consumer is not an HTTP server, so there is no
+ * transport for anything to patch — a deployment can therefore report errors
+ * normally and no performance data whatsoever, with nothing in its
+ * configuration looking wrong. `@scani/queue`'s dispatch calls this for every
+ * job, which is what closes it.
  */
-export function withSpan<T>(span: { name: string; op: string }, fn: () => T): T {
+export function withSpan<T>(
+  span: { name: string; op: string; source?: 'route' | 'task' },
+  fn: () => T
+): T {
   if (!initialized) return fn();
   return Sentry.startSpan(
     {
       name: span.name,
       op: span.op,
       attributes: {
-        [Sentry.SEMANTIC_ATTRIBUTE_SENTRY_SOURCE]: 'route',
+        [Sentry.SEMANTIC_ATTRIBUTE_SENTRY_SOURCE]: span.source ?? 'route',
         [Sentry.SEMANTIC_ATTRIBUTE_SENTRY_ORIGIN]: 'manual',
       },
     },
