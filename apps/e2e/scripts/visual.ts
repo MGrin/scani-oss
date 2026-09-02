@@ -48,9 +48,21 @@
 
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
+import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { basename, dirname, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { isPrimaryCheckout, resolveStackPorts } from '../../../scripts/lib/worktree';
+import {
+  type BaselineRow,
+  changedBaselines,
+  EMPTY_MANIFEST,
+  formatProvenance,
+  type Git,
+  type Manifest,
+  manifestDrift,
+  mergeManifest,
+  readTreeProvenance,
+} from '../visual/baseline-provenance';
 
 const E2E_ROOT = resolve(import.meta.dir, '..');
 const REPO_ROOT = resolve(E2E_ROOT, '../..');
@@ -197,6 +209,98 @@ async function waitForServer(ws: string, timeoutMs = 60_000): Promise<void> {
   throw new Error(`Browser container never started listening on ${ws}`);
 }
 
+/**
+ * Where the provenance of the committed baselines lives (SC-833).
+ *
+ * A SIBLING of `__screenshots__/` rather than a file inside it, so nothing has
+ * to reason about a non-PNG in a directory Playwright writes to, and so the
+ * manifest shows up in a PR beside the images it describes — which is the
+ * whole point: baselines are reviewed as an image diff, and this is the only
+ * place a reviewer can learn what tree the diff is a picture of.
+ */
+const BASELINES_DIR = resolve(E2E_ROOT, 'visual/__screenshots__');
+const MANIFEST_FILE = resolve(E2E_ROOT, 'visual/baselines.provenance.json');
+
+/** Every committed baseline by name, mapped to the sha256 of its bytes. */
+function baselineDigests(): Record<string, string> {
+  const digests: Record<string, string> = {};
+  let names: string[];
+  try {
+    names = readdirSync(BASELINES_DIR);
+  } catch {
+    return digests;
+  }
+  for (const name of names.sort()) {
+    if (!name.endsWith('.png')) continue;
+    try {
+      digests[name.slice(0, -'.png'.length)] = createHash('sha256')
+        .update(readFileSync(join(BASELINES_DIR, name)))
+        .digest('hex');
+    } catch {
+      // A file that cannot be read is one this run has no claim about; leaving
+      // it out makes it "no row", which is a state manifestDrift reports.
+    }
+  }
+  return digests;
+}
+
+function readManifest(): Manifest {
+  try {
+    const parsed = JSON.parse(readFileSync(MANIFEST_FILE, 'utf8')) as Partial<Manifest>;
+    return { baselines: parsed.baselines ?? {} };
+  } catch {
+    return EMPTY_MANIFEST;
+  }
+}
+
+/**
+ * `git` for `readTreeProvenance`, bounded and quiet.
+ *
+ * `null` on any non-zero exit rather than a throw, because none of these
+ * readings is worth failing a capture over — the record is a record. The
+ * timeout is what keeps `ls-remote` from turning a gate into a network wait;
+ * a denied or slow remote is the UNCONFIRMED reading, which the manifest
+ * states rather than hiding.
+ */
+const git: Git = (args) => {
+  const run = spawnSync('git', [...args], {
+    cwd: REPO_ROOT,
+    encoding: 'utf8',
+    timeout: 20_000,
+  });
+  return run.status === 0 ? run.stdout : null;
+};
+
+/**
+ * Record what tree the baselines this run WROTE are pictures of.
+ *
+ * Keyed on the bytes changing, not on which screens ran: under `--update` a
+ * screen that already matched is rewritten identically, and moving its row to
+ * today's commit would assert a tree that did not produce those pixels.
+ */
+function recordProvenance(before: Record<string, string>, after: Record<string, string>): void {
+  const written = changedBaselines(before, after);
+  if (written.length === 0) {
+    // intentional: "nothing was written" and "provenance was not recorded" must
+    // not read alike — the same reason gate-db prints its quiet sweep line.
+    console.log('\nNo baseline bytes changed, so no provenance row was rewritten.');
+    return;
+  }
+
+  const provenance = readTreeProvenance(git);
+  const capturedAt = new Date().toISOString();
+  const rows: Record<string, BaselineRow> = {};
+  for (const name of written) {
+    rows[name] = { ...provenance, sha256: after[name] as string, capturedAt };
+  }
+
+  const manifest = mergeManifest(readManifest(), rows);
+  writeFileSync(MANIFEST_FILE, `${JSON.stringify(manifest, null, 2)}\n`);
+  // intentional: the record has two readers — this one now, and the reviewer
+  // reading the manifest in the PR diff later. Only the second can act on it.
+  console.log(`\n${formatProvenance(written, provenance).join('\n')}`);
+}
+
 const argv = process.argv.slice(2);
 if (argv.includes('--help')) {
   // intentional: this is the CLI's help output
@@ -221,6 +325,7 @@ try {
   // and the stack it is pointed at — see PORTS above for why that is not noise
   console.log(`Rendering in ${image} (${name}) against ${STACK_ENV.PLAYWRIGHT_BASE_URL}`);
 
+  const before = baselineDigests();
   status =
     spawnSync(
       'bunx',
@@ -235,11 +340,22 @@ try {
     ).status ?? 1;
 
   if (update && status === 0) {
+    recordProvenance(before, baselineDigests());
     // intentional: the discipline this harness is worth nothing without
     console.log(
       '\nBaselines regenerated. Review them as an image diff in the PR — they are ' +
-        'migrations, not build output.'
+        'migrations, not build output, and `visual/baselines.provenance.json` in the ' +
+        'same diff says what tree each one is a picture of.'
     );
+  } else if (!update) {
+    // The arm a write-time refusal could never have had (SC-833): a --update run
+    // writes the PNG and its row together, so a disagreement between them came
+    // from somewhere this harness is not. Reported whatever the tests did —
+    // a red run is exactly when somebody is about to reach for --update.
+    const drift = manifestDrift(readManifest(), baselineDigests());
+    // intentional: names an unanswerable provenance question; it does not
+    // change the verdict, and the message says so.
+    if (drift) console.log(`\n${drift}`);
   }
 } finally {
   if (keepServer) {
