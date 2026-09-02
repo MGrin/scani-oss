@@ -67,6 +67,7 @@
 import { EXIT_OK, EXIT_REFUSED, EXIT_UNKNOWN, runGit } from './lib/check-verdict.ts';
 import {
   type ArmVerdict,
+  classifyIndex,
   classifyShape,
   countLiteral,
   type Expectation,
@@ -186,16 +187,18 @@ async function main(argv: readonly string[]): Promise<number> {
       (fallbackBody === null ? ' (no fallback body, so the byte-identity tell is off)' : '')
   );
 
-  const indexShape = classifyShape(index, null);
-  if (indexShape.kind === 'unreachable') {
-    console.log(`  ${mark('fail')} ${origin}/ — ${indexShape.why}`);
+  // `classifyIndex`, NOT `classifyShape`: on an index document `text/html` is
+  // correct rather than a tell, so the asset arm condemns every healthy one.
+  const indexRead = classifyIndex(index);
+  if (indexRead.kind !== 'index') {
+    console.log(`  ${mark('fail')} ${origin}/ — ${indexRead.why}`);
     console.log(
       `deploy-probe: UNVERIFIED · exit ${EXIT_UNKNOWN} · the index document could not be read, so no asset could be resolved${tail}`
     );
     return EXIT_UNKNOWN;
   }
 
-  const wanted = [...new Set([...extractAssets(index.body), ...extra])];
+  const wanted = [...new Set([...indexRead.assets, ...extra])];
   const js = wanted.filter((a) => a.endsWith('.js'));
   if (js.length === 0) {
     console.log(
@@ -287,11 +290,11 @@ async function main(argv: readonly string[]): Promise<number> {
 
   if (against !== null && against !== '') {
     const other = await get(against.replace(/\/+$/, ''));
-    const otherShape = classifyShape(other, null);
-    if (otherShape.kind !== 'real') {
-      arms.push({ arm: `difference vs ${against}`, state: 'unverified', detail: otherShape.why });
+    const otherRead = classifyIndex(other);
+    if (otherRead.kind !== 'index') {
+      arms.push({ arm: `difference vs ${against}`, state: 'unverified', detail: otherRead.why });
     } else {
-      const { moved, held } = manifestDiff(extractAssets(other.body), extractAssets(index.body));
+      const { moved, held } = manifestDiff(otherRead.assets, indexRead.assets);
       arms.push(
         moved.length === 0
           ? {

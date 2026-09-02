@@ -107,6 +107,36 @@ export function extractAssets(html: string): string[] {
 }
 
 /**
+ * Whether an INDEX document was really read — a different question from
+ * {@link classifyShape}, which must not be pointed at one.
+ *
+ * The shape arm reads `text/html` as the tell that an ASSET request was
+ * answered by the fallback. On the index that content-type is simply correct,
+ * so the same arm condemns every healthy index document. Measured 2026-09-03:
+ * pointing `classifyShape` at an index made the `--against` comparison report
+ * UNVERIFIED against a perfectly good deployment, on all three inputs tried —
+ * which is this ticket's own defect, in the tool written to close it, in the one
+ * arm that had not been exercised live.
+ *
+ * The tell that survives is REFERENCES: a document that names no `/assets/*` is
+ * not an index whatever its content-type says, and one that names some was read.
+ */
+export type IndexVerdict =
+  | { readonly kind: 'index'; readonly assets: string[] }
+  | { readonly kind: 'not-an-index'; readonly why: string };
+
+export function classifyIndex(got: Fetched): IndexVerdict {
+  if (got.status !== 200) return { kind: 'not-an-index', why: `HTTP ${got.status}` };
+  const assets = extractAssets(got.body);
+  return assets.length === 0
+    ? {
+        kind: 'not-an-index',
+        why: `${got.body.length} bytes referencing no /assets/* at all, so there is nothing to resolve`,
+      }
+    : { kind: 'index', assets };
+}
+
+/**
  * The commit a served bundle was built from, when the host puts one there.
  *
  * On `app.scani.xyz` it is `VITE_SENTRY_RELEASE`, which the deploy sets to the

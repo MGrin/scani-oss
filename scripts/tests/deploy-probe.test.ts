@@ -16,6 +16,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
+  classifyIndex,
   classifyShape,
   countLiteral,
   extractAssets,
@@ -180,6 +181,47 @@ describe('countLiteral', () => {
 
   test('an empty needle counts nothing rather than everything', () => {
     expect(countLiteral('abc', '')).toBe(0);
+  });
+});
+
+describe('classifyIndex — the arm that must NOT be the shape arm', () => {
+  // The bug this pins, found 2026-09-03 by exercising `--against` live for the
+  // first time. `classifyShape` treats `text/html` as the tell that an ASSET
+  // request was answered by the fallback. Pointed at an INDEX document that
+  // content-type is simply correct, so the difference arm reported UNVERIFIED
+  // against three perfectly good deployments in a row — this ticket's own
+  // defect, in the tool written to close it, in the one arm never run live.
+  test('a healthy index is text/html and must still read as an index', () => {
+    const v = classifyIndex({
+      url: 'https://example.test/',
+      status: 200,
+      contentType: 'text/html; charset=utf-8',
+      body: '<!doctype html><script src="/assets/index-Aa1.js"></script>',
+    });
+    expect(v.kind).toBe('index');
+    expect(v.kind === 'index' && v.assets).toEqual(['/assets/index-Aa1.js']);
+  });
+
+  // The tell that survives: references, not content-type.
+  test('a document referencing no assets is not an index, whatever its type', () => {
+    const v = classifyIndex({
+      url: 'https://example.test/version.json',
+      status: 200,
+      contentType: 'application/json',
+      body: '{"version":"x"}',
+    });
+    expect(v.kind).toBe('not-an-index');
+    expect(v.kind === 'not-an-index' && v.why).toContain('no /assets/*');
+  });
+
+  test('a non-200 is not an index', () => {
+    const v = classifyIndex({
+      url: 'https://example.test/',
+      status: 404,
+      contentType: 'text/html',
+      body: '<!doctype html><script src="/assets/index-Aa1.js"></script>',
+    });
+    expect(v.kind).toBe('not-an-index');
   });
 });
 
