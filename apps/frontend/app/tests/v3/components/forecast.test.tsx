@@ -303,7 +303,7 @@ describe('SC-661 — the forecast page leads with observed burn', () => {
   });
 
   /**
-   * `committedShareOfObserved` can exceed 1 and `burn.ts` forbids clamping it:
+   * `projectedShareOfObserved` can exceed 1 and `burn.ts` forbids clamping it:
    * a book committing more per month than actually left the perimeter is a
    * real state — the book is stale, or the month was funded from cash already
    * outside — and clamping to 100% would hide exactly the divergence that
@@ -579,7 +579,7 @@ describe('SC-661 — provenance of the counted burn', () => {
 
   /**
    * A share of nothing is not three zeroes, it is a question with no answer —
-   * the same rule `committedShareOfObserved` follows. A window with no counted
+   * the same rule `projectedShareOfObserved` follows. A window with no counted
    * exits says nothing rather than printing confident zeroes.
    */
   test('a window with nothing counted says nothing rather than 0%', () => {

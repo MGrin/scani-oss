@@ -2,9 +2,9 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import {
-  committedShareOfObserved,
   Decimal,
   observedRunwayMonths,
+  projectedShareOfObserved,
   runwayDenominator,
 } from '@scani/shared';
 
@@ -49,14 +49,14 @@ describe('SC-657 — the home runway divides by observed alone', () => {
     // first cut of this ticket -- the same shape as the runway drift, caught
     // by reading the diff rather than by two figures disagreeing in front of
     // somebody, which is how the runway one was found.
-    expect(SOURCE).toContain('committedShare(');
-    expect(FORECAST_SOURCE).toContain('committedShare(');
+    expect(SOURCE).toContain('projectedShare(');
+    expect(FORECAST_SOURCE).toContain('projectedShare(');
 
     // The shapes a re-inlined computation would take, on either surface.
     for (const source of [SOURCE, FORECAST_SOURCE]) {
       expect(source).not.toMatch(/dividedBy\(\s*perMonth\s*\)/);
       expect(source).not.toMatch(/perMonthMean[^\n]*dividedBy\(/);
-      expect(source).not.toContain('committedShareOfObserved(');
+      expect(source).not.toContain('projectedShareOfObserved(');
       expect(source).not.toMatch(/reduce\([^\n]*point\.outflow/);
     }
   });
@@ -176,7 +176,7 @@ describe('SC-657 — the home runway divides by observed alone', () => {
     const months = liquid.dividedBy(runwayDenominator('20000')).floor().toNumber();
     expect(months).toBe(10);
 
-    const share = committedShareOfObserved('15000', '20000');
+    const share = projectedShareOfObserved('15000', '20000');
     expect((share as Decimal).times(100).toFixed(0)).toBe('75');
   });
 });

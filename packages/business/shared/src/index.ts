@@ -40,10 +40,10 @@ export {
   txHashFromPayload,
 } from './lib/block-explorer';
 export {
-  committedShareOfObserved,
   type ObservedAffordability,
   observedAffordability,
   observedRunwayMonths,
+  projectedShareOfObserved,
   runwayDenominator,
 } from './lib/burn';
 export {
