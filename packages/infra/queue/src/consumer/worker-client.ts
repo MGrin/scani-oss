@@ -1,4 +1,5 @@
 import { createComponentLogger } from '@scani/logging';
+import { withSpan } from '@scani/logging/sentry';
 import {
   createPostgresBackend,
   type Job,
@@ -115,6 +116,50 @@ export class WorkerClient {
     this.terminalFailureHooks.push(hook);
   }
 
+  // The one place every job — scheduled and user-initiated alike — is
+  // dispatched, and therefore the one place a span has to be asked for
+  // (SC-822). Nothing instruments a BullMQ consumer on its own: the SDK's
+  // default integrations patch `node:http`, and a worker is not an HTTP
+  // server, so before this a deployment reported errors normally and no
+  // performance data at all — which reads as a working monitoring setup right
+  // up until somebody asks how long a job takes.
+  //
+  // The span opens AFTER the semaphore, so its duration is the same window as
+  // the `durationMs` on the completion log line below. Time spent waiting for
+  // a cron-budget slot is queue latency rather than the job being slow, and
+  // folding it in would make the two numbers disagree with no way to tell
+  // which question a reader was asking.
+  private async runJob(job: Job): Promise<unknown> {
+    const processor = this.processors.get(job.name);
+    if (!processor) throw new Error(`No processor registered for job '${job.name}'`);
+    // Gate scheduled jobs through the cron semaphore (when one was
+    // configured) so the hourly cron tide can't pin the entire
+    // worker concurrency budget. The slot is held in BullMQ either
+    // way — the semaphore just stalls the actual handler invocation
+    // until a cron-budget slot frees up.
+    const release =
+      this.cronSemaphore && this.scheduledNames.has(job.name)
+        ? await this.cronSemaphore.acquire()
+        : null;
+    const start = Date.now();
+    log.info({ jobId: job.id, name: job.name }, '▶️ Processing job');
+    try {
+      // `job.name` and not the job id: a span name is what Sentry aggregates
+      // on, so it has to be the bounded set (one per registered processor)
+      // rather than one name per execution.
+      const result = await withSpan({ name: job.name, op: 'queue.process', source: 'task' }, () =>
+        processor(job)
+      );
+      log.info(
+        { jobId: job.id, name: job.name, durationMs: Date.now() - start },
+        '✅ Job completed'
+      );
+      return result;
+    } finally {
+      if (release) release();
+    }
+  }
+
   async start(): Promise<PgWorker> {
     if (!this.config) {
       throw new Error('WorkerClient not configured — call configure() at boot');
@@ -125,31 +170,7 @@ export class WorkerClient {
 
     this.worker = new Worker(
       queueName,
-      async (job) => {
-        const processor = this.processors.get(job.name);
-        if (!processor) throw new Error(`No processor registered for job '${job.name}'`);
-        // Gate scheduled jobs through the cron semaphore (when one was
-        // configured) so the hourly cron tide can't pin the entire
-        // worker concurrency budget. The slot is held in BullMQ either
-        // way — the semaphore just stalls the actual handler invocation
-        // until a cron-budget slot frees up.
-        const release =
-          this.cronSemaphore && this.scheduledNames.has(job.name)
-            ? await this.cronSemaphore.acquire()
-            : null;
-        const start = Date.now();
-        log.info({ jobId: job.id, name: job.name }, '▶️ Processing job');
-        try {
-          const result = await processor(job);
-          log.info(
-            { jobId: job.id, name: job.name, durationMs: Date.now() - start },
-            '✅ Job completed'
-          );
-          return result;
-        } finally {
-          if (release) release();
-        }
-      },
+      (job) => this.runJob(job),
       {
         connection: { connectionString: cfg.connection, schema: cfg.schema ?? 'bullmq' },
         concurrency: cfg.concurrency ?? 1,
