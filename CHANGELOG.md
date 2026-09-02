@@ -19,6 +19,31 @@ version heading stays there permanently, above every future release. This
 comment is deliberately in that position; explanatory prose should not be.
 -->
 
+## [0.37.0](https://github.com/MGrin/scani-oss/compare/v0.36.0...v0.37.0) (2026-09-02)
+
+
+### Features
+
+* **db:** refuse a migration edit that carries no drift declaration ([c07138f](https://github.com/MGrin/scani-oss/commit/c07138fdbfdba0c37fa33012eff700f32fd94829))
+* **oss:** refuse an opaque identifier at the boundary, in CI and in both hooks ([95e32e5](https://github.com/MGrin/scani-oss/commit/95e32e529ab99e157b353197c3a1e54d25501045))
+* **scripts:** reclaim compose projects whose checkout was deleted ([bd96346](https://github.com/MGrin/scani-oss/commit/bd963462ded3816a000412d0548ae1ca6cabb420))
+* **scripts:** refuse a deleted or renamed applied migration ([8c88e9b](https://github.com/MGrin/scani-oss/commit/8c88e9b3c81ba8f3baf2e6970a7bd8fde37663fc))
+
+
+### Bug Fixes
+
+* **db:** declare 0044's drift from the digest deployed databases actually hold ([38443c2](https://github.com/MGrin/scani-oss/commit/38443c2984f44fe3f319bc9fd20fcd5f4adc23e5))
+* **oss:** drop an unused import from the data-shape guard ([060a968](https://github.com/MGrin/scani-oss/commit/060a968164debc102026396b40ef9d5685da7973))
+* **oss:** name the values the data-shape guard cannot judge, and fail its scan closed ([940f947](https://github.com/MGrin/scani-oss/commit/940f947590285bcfdfbb98cd060126a8748ba23f))
+* **oss:** scan from the merge base, not the base branch's tip ([58af437](https://github.com/MGrin/scani-oss/commit/58af437226b010e87a2ec872e4874bef5c9077e0))
+* **oss-guard:** a population read only in part is not a PASS ([f7c6e9e](https://github.com/MGrin/scani-oss/commit/f7c6e9e7266c30a46bdffa99dc882e9b07e46ada))
+* **scripts:** narrow four exports knip reported as unused ([d4b6bd9](https://github.com/MGrin/scani-oss/commit/d4b6bd9c5964cb34c22db8907c78825c1f7915a7))
+
+
+### Reverts
+
+* **db:** drop the released-digest test — its data source cannot answer ([878fbbd](https://github.com/MGrin/scani-oss/commit/878fbbd137b71fb00a521d8811b44d4d0e13c695))
+
 ## [0.36.0](https://github.com/MGrin/scani-oss/compare/v0.35.0...v0.36.0) (2026-09-01)
 
 
