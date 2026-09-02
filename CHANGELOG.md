@@ -36,6 +36,7 @@ comment is deliberately in that position; explanatory prose should not be.
 * **oss:** drop an unused import from the data-shape guard ([060a968](https://github.com/MGrin/scani-oss/commit/060a968164debc102026396b40ef9d5685da7973))
 * **oss:** name the values the data-shape guard cannot judge, and fail its scan closed ([940f947](https://github.com/MGrin/scani-oss/commit/940f947590285bcfdfbb98cd060126a8748ba23f))
 * **oss:** scan from the merge base, not the base branch's tip ([58af437](https://github.com/MGrin/scani-oss/commit/58af437226b010e87a2ec872e4874bef5c9077e0))
+* **oss-guard:** a population read only in part is not a PASS ([f7c6e9e](https://github.com/MGrin/scani-oss/commit/f7c6e9e7266c30a46bdffa99dc882e9b07e46ada))
 * **scripts:** narrow four exports knip reported as unused ([d4b6bd9](https://github.com/MGrin/scani-oss/commit/d4b6bd9c5964cb34c22db8907c78825c1f7915a7))
 
 
