@@ -19,6 +19,21 @@ version heading stays there permanently, above every future release. This
 comment is deliberately in that position; explanatory prose should not be.
 -->
 
+## [0.38.0](https://github.com/MGrin/scani-oss/compare/v0.37.0...v0.38.0) (2026-09-02)
+
+
+### Features
+
+* **e2e:** record what tree each visual baseline is a picture of (SC-833) ([b2ae0e8](https://github.com/MGrin/scani-oss/commit/b2ae0e8d480475df99da4c94d4d5866a88852808))
+* **frontend:** turn on Sentry browser tracing, the CSP block having lifted ([79ea888](https://github.com/MGrin/scani-oss/commit/79ea888dc85d234ee062f68c8e8916dd981129ad))
+* **queue:** open a Sentry span for every BullMQ job dispatch ([9f88117](https://github.com/MGrin/scani-oss/commit/9f8811754c4515f7eced952436f43f9c9c625e3c))
+
+
+### Bug Fixes
+
+* **dev-stack:** ask Postgres over TCP before calling the stack up ([ba2f411](https://github.com/MGrin/scani-oss/commit/ba2f411fd87a5be90c910aeffe6103e8164c09ff))
+* **dev-stack:** say UP INCOMPLETE when a service was never created ([f0c8120](https://github.com/MGrin/scani-oss/commit/f0c8120a8677ec23186f29d6ea9624ec3f85ca0b))
+
 ## [0.37.0](https://github.com/MGrin/scani-oss/compare/v0.36.0...v0.37.0) (2026-09-02)
 
 
