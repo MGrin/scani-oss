@@ -196,6 +196,35 @@ export const reviewItemSchema = z.object({
 export type ReviewItem = z.infer<typeof reviewItemSchema>;
 
 /**
+ * Where a review row sends the reader — one spelling per path (SC-861).
+ *
+ * `ReviewItem.href` is minted in `@scani/domain` and resolved by v3's router,
+ * so a review destination is the one kind of path that crosses a package
+ * boundary. Each of these used to be written twice, a constant in v3's
+ * `routes.ts` and a bare literal in `ReviewFeedService`, with nothing tying
+ * the pair together: renaming the route left the feed row pointing at v3's
+ * terminal catch-all. Nothing threw, no test failed and the row still looked
+ * like a row, so the reader clicked the one thing telling them twelve
+ * transfers needed answering and landed on a 404.
+ *
+ * The second spelling also defeated the search that would have found it —
+ * SC-849 read `/review/balances` as having no inbound link anywhere, true of
+ * the constant and false of the screen.
+ *
+ * Here rather than in `routes.ts` because the server is the half that cannot
+ * import the app; the reverse direction already exists. The children compose
+ * from `REVIEW_PATH` so the parent segment has one spelling too, and v3's
+ * route table reads all three rather than restating any of them.
+ */
+export const REVIEW_PATH = '/review';
+
+/** The transfer-review queue (SC-150). */
+export const TRANSFER_REVIEW_PATH = `${REVIEW_PATH}/transfers`;
+
+/** The unexplained-balance-change queue (SC-501). */
+export const BALANCE_GAP_REVIEW_PATH = `${REVIEW_PATH}/balances`;
+
+/**
  * "How much is waiting on me" — the number the nav badge, the home screen's
  * attention row and the More drawer all show.
  *

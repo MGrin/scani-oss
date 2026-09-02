@@ -1,12 +1,14 @@
 import type { DocumentExtraction, UserJob } from '@scani/db/schema';
 import {
   BALANCE_GAP_REVIEW_KIND,
+  BALANCE_GAP_REVIEW_PATH,
   DEAD_JOB_REVIEW_KIND,
   DOCUMENT_EXTRACTION_REVIEW_KIND,
   isJobAwaitingFailureDecision,
   type ReviewAmount,
   type ReviewItem,
   TRANSFER_REVIEW_KIND,
+  TRANSFER_REVIEW_PATH,
 } from '@scani/shared';
 import Container, { Service } from 'typedi';
 import { DocumentExtractionRepository } from '../repositories/DocumentExtractionRepository';
@@ -172,7 +174,7 @@ export class ReviewFeedService {
         // here, `count` things actually waiting.
         represents: count,
         createdAt: latestCreatedAt,
-        href: '/review/transfers',
+        href: TRANSFER_REVIEW_PATH,
       },
     ];
   }
@@ -202,7 +204,7 @@ export class ReviewFeedService {
         // As in the transfer collector above: one row, `count` things.
         represents: count,
         createdAt: latestAt,
-        href: '/review/balances',
+        href: BALANCE_GAP_REVIEW_PATH,
       },
     ];
   }
