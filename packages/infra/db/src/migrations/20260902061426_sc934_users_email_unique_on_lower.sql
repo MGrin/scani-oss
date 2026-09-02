@@ -1,0 +1,67 @@
+-- 20260902061426 — sc934 users email unique on lower
+--
+-- SC-934 — `users.email` is the identity that billing will resolve entitlement
+-- against, and until now nothing stopped two accounts holding the same one.
+-- `cloud_users.email` has carried `UNIQUE(email)` since the clean start
+-- (0000_clean_start.sql:114); `users.email` was `text NOT NULL` and nothing
+-- else.
+--
+-- It is latent today only because no access decision reads it: nothing in the
+-- tree enforces entitlement yet. It goes live with the first thing that does,
+-- and the failure is not a duplicate row — it is a paying customer's
+-- entitlement resolving onto somebody else's account registered with the same
+-- address. Fixing it before billing is a migration; fixing it after is a
+-- change to an access rule real customers are already sitting behind.
+--
+-- ## Why `lower(email)` and not `UNIQUE(email)`
+--
+-- `A@b.com` and `a@b.com` are one mailbox to every provider and two distinct
+-- values to a plain `UNIQUE`. So a plain unique constraint would refuse the
+-- collision that is easy to imagine and admit the one that actually matters —
+-- it looks like it closes the hole without closing it.
+--
+-- Better-Auth already normalises on write, at every entry point: its
+-- `internalAdapter.createUser` and `updateUser` lowercase the value before it
+-- reaches the column, and `findUserByEmail` lowercases the needle. The
+-- email-OTP plugin lowercases again at each route. So canonical storage is a
+-- property this schema currently BORROWS from a library it does not own, and
+-- nothing here would go red if a version bump dropped it — the next mixed-case
+-- signup would simply become a second account nobody can sign into, and every
+-- later attempt another one.
+--
+-- This index is the same invariant stated where it cannot silently regress.
+-- It is strictly stronger than `UNIQUE(email)`: it refuses everything the
+-- plain constraint refuses, plus the case variants.
+--
+-- ## What it deliberately does NOT do
+--
+-- It does not require the STORED value to be lowercase — no `CHECK (email =
+-- lower(email))`. The two directions of a case mismatch are not equally bad.
+-- A mixed-case row cannot collide with its own lowercase twin any more, so the
+-- dangerous direction — one mailbox reaching two accounts — is closed. What
+-- remains is a lookup by raw email missing a mixed-case row, which loses
+-- entitlement rather than misdirecting it: a support ticket, not a security
+-- boundary. A CHECK would add no protection the index does not already give
+-- and would turn a library regression into a failed signup.
+--
+-- ## Measured before writing this
+--
+-- The deployed database was measured before this was written, through a
+-- read-only session, on 2026-09-02: ZERO duplicates — every row distinct on
+-- `email` AND on `lower(email)`, none differing from its own lowercase form,
+-- none carrying surrounding whitespace. That measurement is why this is a
+-- plain `CREATE UNIQUE INDEX` and not a data migration. On a table that
+-- already holds duplicates this statement FAILS, and a failing migration
+-- blocks every deploy behind it — so anyone porting this to a database that
+-- was not measured must measure it first:
+--
+--   select lower(email), count(*) from users group by 1 having count(*) > 1;
+--
+-- Not `CONCURRENTLY` — the runner executes each migration inside one
+-- `sql.begin`, which forbids it, and the table is small enough for the brief
+-- ACCESS EXCLUSIVE lock to be irrelevant.
+CREATE UNIQUE INDEX IF NOT EXISTS users_email_lower_unique
+  ON users (lower(email));
+
+COMMENT ON INDEX users_email_lower_unique IS
+  'SC-934. One account per mailbox, case-insensitively. Deliberately on lower(email) rather than a plain UNIQUE(email): the plain form admits A@b.com beside a@b.com, which is one mailbox and would let a billing lookup by email resolve entitlement onto the wrong account. Better-Auth also lowercases on write, but that is a borrowed property of a library this schema does not own; this is the same invariant where a version bump cannot drop it.';
