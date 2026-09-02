@@ -478,6 +478,8 @@
         "row": "{{vendor}}, expected {{date}}",
         "caption_one": "What you expect to receive. Not counted against the {{count}}-day bill figure above.",
         "caption_other": "What you expect to receive. Not counted against the {{count}}-day bill figure above.",
+        "estimatedExcluded_one": "Not included: <amounts></amounts> — {{count}} payment is estimated from its last settled amount, and a past amount is not a forecast.",
+        "estimatedExcluded_other": "Not included: <amounts></amounts> — {{count}} payments are estimated from their last settled amounts, and a past amount is not a forecast.",
         "expected": "Expected {{date}}",
         "expectedLate": "Expected {{date}} · not received yet"
       },

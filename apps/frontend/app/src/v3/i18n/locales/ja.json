@@ -427,6 +427,7 @@
         "unknownPayer": "支払元不明",
         "row": "{{vendor}}、{{date}} に見込み",
         "caption_other": "受け取る見込みの金額です。上の{{count}}日間の支払額とは相殺していません。",
+        "estimatedExcluded_other": "未算入: <amounts></amounts> — 入金{{count}}件は最後に決済した金額からの概算であり、過去の金額は見込みではありません。",
         "expected": "{{date}} に見込み",
         "expectedLate": "{{date}} に見込み · 未受領"
       },

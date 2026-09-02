@@ -641,6 +641,106 @@ describe('UpcomingFeed — a payment priced from history (SC-798)', () => {
   });
 
   /**
+   * The income block below the feed, which had the same defect twice over
+   * (SC-818). Nothing in `historyEstimatesByPaymentId` filters by direction, so
+   * an INFLOW can be priced from its own settled history — and
+   * `<ExpectedIncome>` neither counted it nor showed it: the figure summed it
+   * as `'0'` and the row rendered an em dash.
+   *
+   * BOTH halves are asserted, because either alone is a defect the other one
+   * creates. A caption naming €300.00 over a row reading `—` asserts the
+   * surface was checked while contradicting itself in the same glance, which is
+   * worse than the silent zero it replaces (mgrin, 2026-08-29 on SC-807).
+   */
+  describe('and the income block below the feed', () => {
+    /** A client who invoices a different amount each time. */
+    const VARIABLE_PAYER = {
+      ...SALARY,
+      id: 'payment-client',
+      kind: 'variable',
+      expectedAmount: null,
+      currencyTokenId: 'token-eur',
+    };
+
+    /** …and one invoice of theirs, neither declared nor settled. */
+    const VARIABLE_INVOICE = {
+      ...SALARY_OCCURRENCE,
+      id: 'occurrence-client',
+      paymentId: VARIABLE_PAYER.id,
+      expectedAmount: null,
+      actualAmount: null,
+      payment: VARIABLE_PAYER,
+    };
+
+    const CLIENT_ESTIMATE: ReadonlyMap<string, HistoryEstimate> = new Map([
+      ['payment-client', { amount: '300.00', sourceDueDate: '2026-03-15' }],
+    ]);
+
+    const renderIncome = (historyEstimates: ReadonlyMap<string, HistoryEstimate>) =>
+      renderFeed('/payments', { occurrences: asAny([VARIABLE_INVOICE]), historyEstimates });
+
+    test('the row shows the estimated figure and cites the month it came from', () => {
+      const income = renderIncome(CLIENT_ESTIMATE);
+      const block = income.slice(income.indexOf('Income expected'));
+
+      expect(block).toInclude('300.00');
+      // The mark travels with the figure. A bare number here would make an
+      // estimated invoice indistinguishable from a declared one in the same
+      // list, which is the one outcome worse than the dash it replaces.
+      expect(block).toInclude('Estimated');
+      expect(block).toInclude('Mar 2026');
+    });
+
+    test('the figure names what it leaves out, in a forecast’s own words', () => {
+      const income = renderIncome(CLIENT_ESTIMATE);
+
+      expect(income).toInclude('is estimated from its last settled amount');
+      expect(income).toInclude('a past amount is not a forecast');
+      // Neither bill sentence. "An estimate is not a commitment" is false by
+      // category on a figure the reader owes nothing against, and "its real
+      // amount is still unknown" is a claim about lateness no income row makes.
+      expect(income).not.toInclude('an estimate is not a commitment');
+      expect(income).not.toInclude('its real amount is still unknown');
+    });
+
+    test('the caption names only money the reader can see on the same surface', () => {
+      // SC-807's ruling one level tighter than the tile it was written about.
+      // The figure is still €0.00 — that is the ruling, not the defect — but
+      // €300.00 is now above the rows AND in one, rather than in neither.
+      const income = renderIncome(CLIENT_ESTIMATE);
+      const block = income.slice(income.indexOf('Income expected'));
+
+      expect(block).toInclude('€0.00');
+      expect(block.split('300.00').length - 1).toBeGreaterThanOrEqual(2);
+      expect(block).not.toInclude('No value');
+    });
+
+    test('the control: with no estimate there is no caption and no figure', () => {
+      // A conditional that never renders is indistinguishable from one that
+      // cannot, unless the cases above prove it does.
+      const income = renderIncome(NO_HISTORY);
+
+      expect(income).toInclude('Income expected, next 90 days');
+      expect(income).not.toInclude('a past amount is not a forecast');
+      expect(income).not.toInclude('300.00');
+      expect(income).not.toInclude('Mar 2026');
+      expect(income).toInclude('No value');
+    });
+
+    test('the control: a declared invoice is in the figure and in no exclusion', () => {
+      // `SALARY_OCCURRENCE` declares £2,400.00, so it belongs IN the forecast.
+      // The case that catches the caption firing off the wrong predicate.
+      const income = renderFeed('/payments', {
+        occurrences: asAny([SALARY_OCCURRENCE]),
+        historyEstimates: CLIENT_ESTIMATE,
+      });
+
+      expect(income).toInclude('+€2,760.00');
+      expect(income).not.toInclude('a past amount is not a forecast');
+    });
+  });
+
+  /**
    * The peek is the second render site, and it is the one SC-797 is about: the
    * sheet mounts through a Radix portal, so `renderToStaticMarkup` renders none
    * of it and every assertion above passes over a peek that still says `No

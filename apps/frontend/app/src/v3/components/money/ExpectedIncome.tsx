@@ -3,12 +3,21 @@ import { Block } from '@scani/ui/v3/components/Block';
 import { DataRow, DataRowList } from '@scani/ui/v3/components/DataRow';
 import { Numeric } from '@scani/ui/v3/components/Numeric';
 import { ArrowDownLeft } from 'lucide-react';
-import { useTranslation } from 'react-i18next';
+import { Trans, useTranslation } from 'react-i18next';
 import type { BaseCurrencyRates } from '@/hooks/useBaseCurrencyRates';
 import type { RouterOutputs } from '@/lib/trpc';
-import { INCOME_HORIZON_DAYS, occurrenceTotals, PAYMENTS_HORIZON_DAYS } from '../../lib/money';
+import {
+  estimatedTotals,
+  historyEstimateFor,
+  INCOME_HORIZON_DAYS,
+  occurrenceTotals,
+  PAYMENTS_HORIZON_DAYS,
+} from '../../lib/money';
+import type { HistoryEstimate } from '../../lib/paymentTotals';
 import { BaseEquivalent } from '../BaseEquivalent';
+import { ConvertedFigure } from '../ConvertedFigure';
 import { ConvertedTotal } from '../ConvertedTotal';
+import { EstimatedFromHistory } from './EstimatedFromHistory';
 
 /**
  * Money coming in — a **forecast**, kept in its own block rather than mixed
@@ -55,6 +64,16 @@ interface ExpectedIncomeProps {
   rates: BaseCurrencyRates;
   today: string;
   onPeek: (occurrenceId: string) => void;
+  /**
+   * Which payments the projection priced from their own settled history
+   * (SC-625), keyed by payment id — the same map the feed above reads,
+   * threaded down rather than derived here so the two blocks state one
+   * answer rather than two that are kept in step.
+   *
+   * Nothing in `historyEstimatesByPaymentId` filters by direction, so an
+   * INFLOW can be priced this way (SC-818).
+   */
+  historyEstimates: ReadonlyMap<string, HistoryEstimate>;
 }
 
 export function ExpectedIncome({
@@ -64,6 +83,7 @@ export function ExpectedIncome({
   rates,
   today,
   onPeek,
+  historyEstimates,
 }: ExpectedIncomeProps) {
   const { t } = useTranslation();
   // No income at all is not a fact worth a block. A reader with only bills is
@@ -72,6 +92,10 @@ export function ExpectedIncome({
   if (occurrences.length === 0) return null;
 
   const totals = occurrenceTotals(occurrences);
+  // The other half of that sum (SC-818). `occurrenceTotals` resolves an
+  // occurrence priced from its own settled history to `'0'`, so its money is in
+  // neither figure — and until this line it was nowhere above the rows either.
+  const estimated = estimatedTotals(occurrences, historyEstimates);
   const rows = [...occurrences].sort((a, b) => a.dueDate.localeCompare(b.dueDate));
 
   return (
@@ -88,6 +112,43 @@ export function ExpectedIncome({
           tokenSymbolById={tokenSymbolById}
           rates={rates}
         />
+        {/* What the figure above LEAVES OUT, directly under it and above the
+            block's standing caption: this is a fact about the number, the
+            caption below is a fact about the screen.
+
+            The figure is deliberately not widened to absorb it — SC-807's
+            ruling, and it holds here for a second reason: a total can carry no
+            `<EstimatedFromHistory>` mark, so folding an estimate in would make
+            an income forecast assert a precision it does not have.
+
+            Its OWN sentence. "An estimate is not a commitment" is false by
+            category on this figure — nothing here is owed by the reader, it is
+            money somebody else has to send — and the overdue tile's "its real
+            amount is still unknown" is a claim about lateness that no row here
+            makes. Shared with the home screen's income foot-line, which prints
+            this same figure over the same 90-day set from the same query.
+
+            A `<span className="block">` rather than a `<p>`:
+            `<ConvertedFigure>` renders a `<div>` skeleton while the rates are
+            in flight, and the HTML parser closes a `<p>` at a `<div>`. */}
+        {estimated.count > 0 ? (
+          <span className="block text-caption text-muted-foreground">
+            <Trans
+              i18nKey="v3.money.expectedIncome.estimatedExcluded"
+              count={estimated.count}
+              components={{
+                amounts: (
+                  <ConvertedFigure
+                    totals={estimated.totals}
+                    tokenSymbolById={tokenSymbolById}
+                    rates={rates}
+                  />
+                ),
+              }}
+            />
+          </span>
+        ) : null}
+
         {/* Said in words, because the difference between the two figures on this
             screen is one of *certainty*, and no amount of layout carries that. */}
         <p className="text-caption text-muted-foreground">
@@ -101,6 +162,12 @@ export function ExpectedIncome({
             vendorNameById.get(occurrence.payment.vendorId) ??
             t('v3.money.expectedIncome.unknownPayer');
           const late = occurrence.dueDate < today;
+          // Same precedence as the bill feed and as `occurrenceTotals`:
+          // `expectedAmount ?? actualAmount ?? estimate`. Without it the
+          // caption above would name €84.20 over a row rendering an em dash —
+          // one honest figure beside a dishonest one, which is the state
+          // SC-807 ruled is worse than shipping neither (mgrin, 2026-09-02).
+          const estimate = historyEstimateFor(occurrence, historyEstimates);
           return (
             <DataRow
               key={occurrence.id}
@@ -129,19 +196,28 @@ export function ExpectedIncome({
                 <Numeric
                   delta
                   indicator="sign"
-                  value={occurrence.expectedAmount ?? occurrence.actualAmount}
+                  value={occurrence.expectedAmount ?? occurrence.actualAmount ?? estimate?.amount}
                   currency={tokenSymbolById.get(occurrence.payment.currencyTokenId) ?? 'USD'}
                 />
               }
               // The row keeps the currency it will actually arrive in; the line
               // under it says what that is worth in the reader's, the same way
-              // a bill row does.
+              // a bill row does — unless the figure is an estimate, in which
+              // case the mark takes that line instead. The same trade the bill
+              // feed and `<RecurringList>` make: converting a figure into
+              // another currency says less about it than saying it is last
+              // February's, and an estimate indistinguishable from a declared
+              // invoice is the one thing SC-625 exists to prevent.
               delta={
-                <BaseEquivalent
-                  amount={occurrence.expectedAmount ?? occurrence.actualAmount}
-                  currencyTokenId={occurrence.payment.currencyTokenId}
-                  rates={rates}
-                />
+                estimate ? (
+                  <EstimatedFromHistory sourceDueDate={estimate.sourceDueDate} />
+                ) : (
+                  <BaseEquivalent
+                    amount={occurrence.expectedAmount ?? occurrence.actualAmount}
+                    currencyTokenId={occurrence.payment.currencyTokenId}
+                    rates={rates}
+                  />
+                )
               }
               onClick={() => onPeek(occurrence.id)}
               aria-label={t('v3.money.expectedIncome.row', {
