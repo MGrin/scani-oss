@@ -1,3 +1,4 @@
+import { BALANCE_GAP_REVIEW_PATH, REVIEW_PATH, TRANSFER_REVIEW_PATH } from '@scani/shared';
 import { stripTrailingSlash } from '@scani/ui/v3/lib/path';
 import { type DataQualityKind, HOLDINGS_QUALITY_PARAM } from './dataQuality';
 import { V3_BASE } from './ui-version';
@@ -19,7 +20,9 @@ export const V3_ROUTES = {
   forecast: '/payments/forecast',
   accounts: '/accounts',
   institutions: '/institutions',
-  review: '/review',
+  /** From `@scani/shared` so the segment its two queues compose from has
+   *  one spelling across the boundary they cross (SC-861). */
+  review: REVIEW_PATH,
   files: '/documents',
   vaults: '/vaults',
   settings: '/settings',
@@ -181,30 +184,28 @@ export function documentDetailPath(documentId: string): string {
 }
 
 /**
- * The transfer-review queue (SC-150) — a surface under Review rather than a
- * nav entry of its own.
+ * The two queues under Review: the transfer-review queue (SC-150) and the
+ * unexplained-balance-change queue (SC-501).
  *
- * Deliberately outside `V3_ROUTES`, like the payment form: that constant is
- * built into `V3_NAV_PATHS`, and this is somewhere you are *sent* by a review
+ * **Owned by `@scani/shared` and re-exported here (SC-861)**, because they are
+ * the one kind of v3 destination that leaves the app: `ReviewFeedService`
+ * mints each into a feed row's `href` and cannot import this table. Spelling
+ * them on both sides was a rename away from a row that still rendered and
+ * resolved to v3's catch-all, with nothing failing. `V3_ROUTES.review` reads
+ * the same owner, so the segment they compose from has one spelling too.
+ *
+ * Both sit outside `V3_ROUTES`, like the payment form: that constant is built
+ * into `V3_NAV_PATHS`, and these are somewhere you are *sent* by a review
  * item, never somewhere you browse to. `resolveActiveV3Path` still lights
- * Review while you are on it, because `/review` covers `/review/transfers` by
+ * Review while you are on one, because `/review` covers `/review/transfers` by
  * the same path-segment rule that makes Money cover the recurring list.
  *
- * Its rows peek, so the surface also registers a `:peekId` child route —
- * without one the deep link `/review/transfers/<txId>` resolves to v3's
+ * Both are segments, so each registers before any dynamic sibling. The
+ * transfer queue's rows peek, so it also registers a `:peekId` child route —
+ * without one the deep link `/review/transfers/<txId>` resolves to the
  * catch-all and bounces the reader home.
  */
-export const TRANSFER_REVIEW_PATH = `${V3_ROUTES.review}/transfers`;
-
-/**
- * The unexplained-balance-change queue (SC-501) — the second surface under
- * Review, and outside `V3_ROUTES` for the same reason as the first: somewhere
- * a review item sends you, never somewhere you browse to.
- *
- * `balances` is a segment, so it registers before any dynamic sibling for the
- * same reason `transfers` does.
- */
-export const BALANCE_GAP_REVIEW_PATH = `${V3_ROUTES.review}/balances`;
+export { BALANCE_GAP_REVIEW_PATH, TRANSFER_REVIEW_PATH };
 
 /**
  * The answers already given (SC-181) — the route back.

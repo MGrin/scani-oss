@@ -2,6 +2,7 @@ import '../../i18n-preload';
 import { describe, expect, test } from 'bun:test';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { REVIEW_PATH } from '@scani/shared';
 import * as routes from '../../../src/v3/lib/routes';
 
 /**
@@ -28,16 +29,18 @@ import * as routes from '../../../src/v3/lib/routes';
  *    `routes.ts` and `V3App.tsx` names the constant.
  *
  * **What deliberately does not count, and why the exclusion is the point.**
- * `ReviewFeedService` mints `href: '/review/balances'` as a bare string in
- * `@scani/domain`, which is how that screen was reachable at all. Three
- * things are wrong with counting it. It is a second spelling of a path that
- * `routes.ts` owns, and no rename follows it — moving the route leaves the
- * feed row pointing at v3's catch-all. It is conditional on the queue being
- * non-empty, so the way in disappears exactly when somebody wants to look at
- * what they have already answered. And it is a row the app decides to
- * mention, which is a *shortcut*, not navigation: `RealizedLedger` and
- * `CoverageNote` are the same shape and are good precisely because something
- * else already leads there.
+ * `ReviewFeedService` mints `href: BALANCE_GAP_REVIEW_PATH` in `@scani/domain`,
+ * which is how that screen was reachable at all. Two things are still wrong
+ * with counting it. It is conditional on the queue being non-empty, so the way
+ * in disappears exactly when somebody wants to look at what they have already
+ * answered. And it is a row the app decides to mention, which is a *shortcut*,
+ * not navigation: `RealizedLedger` and `CoverageNote` are the same shape and
+ * are good precisely because something else already leads there.
+ *
+ * A third reason has been fixed and is gone (SC-861): it used to be a bare
+ * `'/review/balances'`, a second spelling of a path `routes.ts` owned that no
+ * rename followed. Both sides now read `@scani/shared`, and the check below
+ * keeps this file's half of that true.
  *
  * So this scans `apps/frontend/app/src` alone. A destination that only a
  * server-side string reaches reads as unreachable here, and that is the
@@ -163,6 +166,32 @@ describe('the route table is the whole route table', () => {
       if (!(literal[1] in UNTABLED_ROUTES)) untabled.push(literal[1]);
     }
     expect(untabled).toEqual([]);
+  });
+
+  test('the review paths are not respelled here', () => {
+    // `@scani/shared` owns them, because `ReviewFeedService` mints them into a
+    // feed row's href and cannot import this app (SC-861). Re-adding a literal
+    // on this side breaks the pair exactly as silently as the server-side
+    // literal did — the row still renders, and it resolves to the catch-all.
+    // The mirror of this check, over `@scani/domain`, is
+    // `tests/services/review-route-spelling.test.ts` in that package.
+    //
+    // Comments only are stripped: `code()` also drops `export` lines, and an
+    // `export const TRANSFER_REVIEW_PATH = '/review/transfers'` is precisely
+    // the line that would come back.
+    const withoutComments = readFileSync(ROUTES_FILE, 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .split('\n')
+      .filter((line) => !/^\s*\/\//.test(line))
+      .join('\n');
+    expect(withoutComments).toContain('V3_ROUTES');
+    expect(
+      [`'${REVIEW_PATH}`, `"${REVIEW_PATH}`, `\`${REVIEW_PATH}`].filter((spelling) =>
+        withoutComments.includes(spelling)
+      ),
+      'routes.ts writes a review path as a string literal. It is owned by @scani/shared so ' +
+        'the server and this route table cannot drift apart; import it instead.'
+    ).toEqual([]);
   });
 
   test('every relative() argument is an export of routes.ts', () => {
