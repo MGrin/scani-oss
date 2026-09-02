@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { randomUUID } from 'node:crypto';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import {
@@ -10,6 +10,7 @@ import {
   EXIT_UNKNOWN,
   findInLine,
   looksSynthetic,
+  main,
   RULES,
   selfTest,
 } from '../check-oss-data-shapes';
@@ -79,10 +80,10 @@ describe('SC-838 · the data-shape guard, both directions', () => {
 
   test('an opaque value of each shape is reported', () => {
     expect(
-      findInLine("where id = '43a7d2a8-f227-4e24-8c17-5028de8449e4'").map((f) => f.rule)
+      findInLine("where id = 'f269e434-c1e4-477a-ae3d-9db32ee72aa5'").map((f) => f.rule)
     ).toEqual(['row-identifier']);
     expect(
-      findInLine("const owner = '0x3a23f943181408eac424116af7b7790c94cb97a5';").map((f) => f.rule)
+      findInLine("const owner = '0xfd91d367ab8a3722031528e5a5c6a08b743aef80';").map((f) => f.rule)
     ).toEqual(['wallet-address']);
     expect(findInLine("memo: 'Deposit to account 4029571836'").map((f) => f.rule)).toEqual([
       'account-number',
@@ -133,7 +134,7 @@ describe('SC-838 · the process', () => {
     try {
       writeFileSync(
         path.join(dir, 'm.sql'),
-        "delete from transactions where id = '43a7d2a8-f227-4e24-8c17-5028de8449e4';\n"
+        "delete from transactions where id = 'f269e434-c1e4-477a-ae3d-9db32ee72aa5';\n"
       );
       Bun.spawnSync(['git', 'add', '-A'], { cwd: dir });
       Bun.spawnSync(['git', 'commit', '-qm', 'add'], { cwd: dir });
@@ -141,7 +142,7 @@ describe('SC-838 · the process', () => {
         .decode(Bun.spawnSync(['git', 'rev-parse', 'HEAD'], { cwd: dir }).stdout)
         .trim();
       const { code, out } = run(dir, ['--stdin-commits'], `${sha}\n`);
-      expect(out).toContain('43a7d2a8-f227-4e24-8c17-5028de8449e4');
+      expect(out).toContain('f269e434-c1e4-477a-ae3d-9db32ee72aa5');
       expect(out).toContain('m.sql:1');
       expect(code).toBe(EXIT_REFUSED);
     } finally {
@@ -199,7 +200,7 @@ describe('SC-838 · the process', () => {
     try {
       writeFileSync(
         path.join(dir, 'm.sql'),
-        "delete from transactions where id = '43a7d2a8-f227-4e24-8c17-5028de8449e4';\n"
+        "delete from transactions where id = 'f269e434-c1e4-477a-ae3d-9db32ee72aa5';\n"
       );
       Bun.spawnSync(['git', 'add', '-A'], { cwd: dir });
       Bun.spawnSync(['git', 'commit', '-qm', 'add'], { cwd: dir });
@@ -238,5 +239,179 @@ describe('SC-838 · the guard is wired where it can stop something', () => {
   test('the CI boundary gate runs it', async () => {
     const wf = await Bun.file(path.join(root, '.github', 'workflows', 'ci.yml')).text();
     expect(wf).toContain('bun scripts/check-oss-data-shapes.ts --stdin-commits');
+  });
+});
+
+/**
+ * SC-918. `--scan` audits the whole tree and could not be wired blocking,
+ * because a mode that returns the same red on a clean branch as on a dirty one
+ * is the SC-190 family — a non-result that reads as a result. Two things had to
+ * change before it could block, and both are asserted here rather than in the
+ * private caller, because both travel: the population has to be nameable, and
+ * a file it could not read has to stop being a smaller denominator.
+ */
+describe('SC-918 · --scan as a population a caller can block on', () => {
+  function scanRepo(files: Record<string, string>): string {
+    const dir = mkdtempSync(path.join(tmpdir(), 'scani-data-shapes-scan-'));
+    for (const args of [
+      ['init', '-q', '-b', 'main'],
+      ['config', 'user.email', 't@example.com'],
+      ['config', 'user.name', 'T'],
+    ]) {
+      Bun.spawnSync(['git', ...args], { cwd: dir });
+    }
+    for (const [name, body] of Object.entries(files)) {
+      const full = path.join(dir, name);
+      mkdirSync(path.dirname(full), { recursive: true });
+      writeFileSync(full, body);
+    }
+    Bun.spawnSync(['git', 'add', '-A'], { cwd: dir });
+    return dir;
+  }
+
+  function capture(fn: () => number): { code: number; out: string } {
+    const lines: string[] = [];
+    const realErr = console.error;
+    const realLog = console.log;
+    console.error = (...a: unknown[]) => void lines.push(a.join(' '));
+    console.log = (...a: unknown[]) => void lines.push(a.join(' '));
+    try {
+      return { code: fn(), out: lines.join('\n') };
+    } finally {
+      console.error = realErr;
+      console.log = realLog;
+    }
+  }
+
+  const OPAQUE = "const owner = '0xfd91d367ab8a3722031528e5a5c6a08b743aef80';\n";
+
+  /**
+   * The default has to be the CLOSED one, or a caller that forgets to pass a
+   * population gets a quiet pass instead of the stricter answer. Both arms,
+   * because a predicate that exempted nothing and one that was never consulted
+   * read identically from the exit code alone.
+   */
+  test('with no population every finding counts; with one, only the published paths do', () => {
+    const dir = scanRepo({ 'pub/a.ts': OPAQUE, 'priv/b.ts': OPAQUE });
+    try {
+      expect(capture(() => main(['--scan'], dir, '')).code).toBe(EXIT_REFUSED);
+      const scoped = capture(() =>
+        main(['--scan'], dir, '', { unpublished: (p) => p.startsWith('priv/') })
+      );
+      expect(scoped.code).toBe(EXIT_REFUSED);
+      expect(scoped.out).toContain('1 opaque identifier(s) in 1 file(s)');
+      expect(scoped.out).toContain('published paths only');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  /**
+   * A scoped scan that says nothing about what it skipped is indistinguishable
+   * from one that read everything and found it clean — and the difference here
+   * is roughly a hundred real identifiers. It names the FILES and withholds the
+   * VALUES: printing those would republish them into every log that runs the
+   * check, which is the thing the guard exists to stop.
+   */
+  test('a skipped path is named and its value is not', () => {
+    const dir = scanRepo({ 'priv/b.ts': OPAQUE });
+    try {
+      const r = capture(() => main(['--scan'], dir, '', { unpublished: () => true }));
+      expect(r.code).toBe(EXIT_OK);
+      expect(r.out).toContain('priv/b.ts');
+      expect(r.out).toContain('does NOT publish');
+      expect(r.out).not.toContain('0xfd91d367ab8a3722031528e5a5c6a08b743aef80');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  /**
+   * This was `unreadable++; continue` — counted in the tail, changing no exit
+   * code. Fine for an audit somebody reads, fatal for a check that blocks: an
+   * unreadable tree read as a clean one with a denominator nobody was checking.
+   */
+  test('a file it cannot read from the index is UNKNOWN, not a smaller denominator', () => {
+    const dir = scanRepo({ 'a.ts': OPAQUE });
+    try {
+      // ONE loose object, not the whole store: removing `.git/objects` makes
+      // `git ls-files` itself fail, which is the OTHER blindness and already
+      // has its own test. What has to be reachable here is a tree that lists
+      // fine and whose content cannot be read.
+      const blob = new TextDecoder()
+        .decode(Bun.spawnSync(['git', 'rev-parse', ':a.ts'], { cwd: dir, stdout: 'pipe' }).stdout)
+        .trim();
+      rmSync(path.join(dir, '.git', 'objects', blob.slice(0, 2), blob.slice(2)), { force: true });
+      const listed = Bun.spawnSync(['git', 'ls-files'], { cwd: dir, stdout: 'pipe' });
+      expect(new TextDecoder().decode(listed.stdout)).toContain('a.ts');
+      const r = capture(() => main(['--scan'], dir, ''));
+      expect(r.out).toContain('THE SCAN IS INCOMPLETE');
+      expect(r.out).not.toContain('PASS');
+      expect(r.code).toBe(EXIT_UNKNOWN);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+/**
+ * SC-918 triaged the whole tree rather than one landing, and these are the
+ * values it asserted are not production data. Each is pinned in BOTH
+ * directions: {@link looksSynthetic} must NOT admit it — otherwise the entry is
+ * dead weight that reads as a decision — and {@link findInLine} must stay quiet
+ * about it, which is the assertion that goes red if somebody deletes the line.
+ */
+describe('SC-918 · every asserted value is load-bearing', () => {
+  const ASSERTED_BY_SC918 = [
+    '0xcc9a0b7c43dc2a5f023bb9b738e45b0ef6b06e04',
+    '0x7d2768de32b0b80b7a3454c06bdac94a69ddc7a9',
+    '0xdef1c0ded9bec7f1a1670819833240f027b25eff',
+    '0x3a23f943181408eac424116af7b7790c94cb97a5',
+    '0x455e53cbb86018ac2b8092fdcd39d8444affc3f6',
+    '0xf2b2c2a4e4eae02ba07decece8d831b11bd7a350',
+    '0x742d35cc6634c0532925a3b844bc454e4438f44e',
+    '0x742d35cc6634c0532925a3b844bc9e7595f0beb0',
+    '0x7a3f91b2c4d5e6f708192a3b4c5d6e7f8091a2b3',
+    '0x7a3f91b2c4d5e6f708192a3b4c5d6e7f8091a2b4',
+    '0x1234567890abcdef1234567890abcdef12345678',
+    '0x7f2c9a4b1d8e6f30a2c5b7e9d1f4a68c0b3e5d72',
+    'f37aaae9-601c-46ab-968d-b01da1842f50',
+  ] as const;
+
+  test('each is in the list, and none of them is admitted by the structure test', () => {
+    for (const value of ASSERTED_BY_SC918) {
+      expect(ASSERTED_NOT_PRODUCTION.has(value)).toBe(true);
+      expect(looksSynthetic(value)).toBe(false);
+      expect(findInLine(`const x = '${value}';`)).toEqual([]);
+    }
+  });
+
+  /**
+   * The control, and it is the arm that matters: a one-character neighbour of
+   * each asserted value is still reported. Without it, a `findInLine` that had
+   * stopped reporting anything at all would pass every assertion above.
+   */
+  test('a one-character neighbour of each is still reported', () => {
+    for (const value of ASSERTED_BY_SC918) {
+      const last = value.slice(-1);
+      const neighbour = value.slice(0, -1) + (last === '0' ? '1' : '0');
+      if (looksSynthetic(neighbour)) continue;
+      expect(findInLine(`const x = '${neighbour}';`).length).toBe(1);
+    }
+  });
+
+  /**
+   * The two values SC-918 could not prove synthetic were replaced rather than
+   * asserted, and the replacements carry the ticket number in their leading
+   * digits exactly as `5c331000-…` does — so they need no list entry at all.
+   */
+  test('the SC-918 replacements are admitted by structure, not by assertion', () => {
+    for (const value of [
+      '0x5c918000000000000000000000000000000000a1',
+      '0x5c918000000000000000000000000000000000b2',
+    ]) {
+      expect(looksSynthetic(value)).toBe(true);
+      expect(ASSERTED_NOT_PRODUCTION.has(value)).toBe(false);
+    }
   });
 });
