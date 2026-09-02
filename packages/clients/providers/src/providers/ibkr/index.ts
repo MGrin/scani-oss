@@ -878,7 +878,20 @@ export class IbkrProvider
     // claim that run never made (SC-877). The router's own `describeHorizon`
     // is guarded the same way and for the same stated reason: a window is the
     // caller's choice rather than a shortfall.
-    if (!ctx.since) ctx.retractHistoryClaim?.(describeStatementWindow(parseStatementWindow(xml)));
+    //
+    // The window travels WITH the retraction as of SC-900, so the reader's
+    // sentence and the boundary a later reconciliation reasons from are the
+    // same fact rather than two that can drift. `from` is null often enough to
+    // matter — the element carries whatever attributes the saved query
+    // produced — and a null one retracts with no bound rather than defaulting
+    // to a date, because silence about the range is not a range.
+    if (!ctx.since) {
+      const window = parseStatementWindow(xml);
+      ctx.retractHistoryClaim?.(
+        describeStatementWindow(window),
+        window.from ? { historyStartsAt: window.from } : undefined
+      );
+    }
 
     const trades = parseTrades(xml);
     const cashTxs = preferDetailCashRows(parseCashTransactions(xml));

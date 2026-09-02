@@ -606,3 +606,116 @@ describe('upsertManyFromIngester — a collapsed batch says so', () => {
     expect(describeMergedCoverageRows([])).toBeNull();
   });
 });
+
+/**
+ * SC-900 — where the ledger's SOURCE begins, kept beside where its rows do.
+ *
+ * `first_tx_at` is the earliest row we hold; `history_starts_at` is the
+ * earliest date the source covers. They are different numbers and the
+ * difference is the whole point — a statement covering a date range can report
+ * a row dated before that range, so a boundary derived from the ledger claims
+ * a wider window than the one that was actually fetched.
+ */
+describe('HoldingCoverageRepository — the window the source covers', () => {
+  const EARLY = new Date('2024-03-01T00:00:00Z');
+  const LATER = new Date('2024-09-01T00:00:00Z');
+
+  test('defaults to null, which means unstated rather than unbounded', async () => {
+    await withTestDb(async (tx) => {
+      const { holdingId } = await makeHoldingFixture(tx);
+      const row = await ingest(tx, {
+        holdingId,
+        firstTxAt: null,
+        lastTxAt: null,
+        txSources: ['ibkr-api'],
+        hasCompleteTxHistory: false,
+      });
+      expect(row.historyStartsAt).toBeNull();
+    });
+  });
+
+  test('a run that states one writes it', async () => {
+    await withTestDb(async (tx) => {
+      const { holdingId } = await makeHoldingFixture(tx);
+      const row = await ingest(tx, {
+        holdingId,
+        firstTxAt: null,
+        lastTxAt: null,
+        txSources: ['ibkr-api'],
+        hasCompleteTxHistory: false,
+        historyStartsAt: EARLY,
+      });
+      expect(row.historyStartsAt?.toISOString()).toBe(EARLY.toISOString());
+    });
+  });
+
+  /**
+   * LEAST, matching `first_tx_at` beside it, and the direction is load-bearing.
+   *
+   * The saved query's range slides. If it slides FORWARD, the rows an earlier
+   * pull already wrote are still in the ledger — so taking the newest stated
+   * window would move the boundary past rows we hold, and the boundary is read
+   * as "money that moved before this has no row here". A sentence that reaches
+   * forward over rows we have is a false explanation, which is strictly worse
+   * than the honest "unexplained" this replaces.
+   */
+  test('a window sliding FORWARD does not move the boundary past rows we hold', async () => {
+    await withTestDb(async (tx) => {
+      const { holdingId } = await makeHoldingFixture(tx);
+      const base = {
+        holdingId,
+        firstTxAt: null,
+        lastTxAt: null,
+        txSources: ['ibkr-api'],
+        hasCompleteTxHistory: false,
+      };
+      await ingest(tx, { ...base, historyStartsAt: EARLY });
+      const row = await ingest(tx, { ...base, historyStartsAt: LATER });
+      expect(row.historyStartsAt?.toISOString()).toBe(EARLY.toISOString());
+    });
+  });
+
+  /**
+   * The other direction is the documented remedy — widen the saved query, or
+   * add a second one covering the earlier period — so it has to take effect.
+   * Without this the explanation would go on naming a boundary the account has
+   * already reached past, which is the same defect with the sign flipped.
+   */
+  test('a window reaching FURTHER BACK moves the boundary with it', async () => {
+    await withTestDb(async (tx) => {
+      const { holdingId } = await makeHoldingFixture(tx);
+      const base = {
+        holdingId,
+        firstTxAt: null,
+        lastTxAt: null,
+        txSources: ['ibkr-api'],
+        hasCompleteTxHistory: false,
+      };
+      await ingest(tx, { ...base, historyStartsAt: LATER });
+      const row = await ingest(tx, { ...base, historyStartsAt: EARLY });
+      expect(row.historyStartsAt?.toISOString()).toBe(EARLY.toISOString());
+    });
+  });
+
+  /**
+   * A run whose provider names no window must not CLEAR one already stated —
+   * the nightly is that run for every account with a ledger, so a merge that
+   * overwrote with null would erase the boundary within a day of it being set
+   * and nothing would fail.
+   */
+  test('a run that states nothing leaves a stored window standing', async () => {
+    await withTestDb(async (tx) => {
+      const { holdingId } = await makeHoldingFixture(tx);
+      const base = {
+        holdingId,
+        firstTxAt: null,
+        lastTxAt: null,
+        txSources: ['ibkr-api'],
+        hasCompleteTxHistory: false,
+      };
+      await ingest(tx, { ...base, historyStartsAt: EARLY });
+      const row = await ingest(tx, base);
+      expect(row.historyStartsAt?.toISOString()).toBe(EARLY.toISOString());
+    });
+  });
+});
