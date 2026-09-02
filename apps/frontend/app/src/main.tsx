@@ -60,7 +60,7 @@ if (SENTRY_DSN) {
     // `browserTracingIntegration` and `replayIntegration` compile predicates
     // via `new Function(...)`, our CSP is `script-src 'self'` with no
     // `'unsafe-eval'`, and the SDK surfaced the block as an unhandled EvalError
-    // on every page load (Sentry issue SCANI-FRONTEND-9).
+    // on every page load.
     //
     // Measured against the installed 8.55.2 on 2026-09-02: `new Function(` and
     // `eval(` appear in 0 of the 430 built `.js` files across `@sentry/react`,
@@ -80,10 +80,12 @@ if (SENTRY_DSN) {
     // measured it, and it is the heavier of the two in both bytes and spend.
     //
     // `tracePropagationTargets` is deliberately left at the SDK default
-    // (same-origin and localhost). `app.scani.xyz` calls `api.scani.xyz`
-    // cross-origin, so propagating there would add `sentry-trace` and `baggage`
-    // to a CORS preflight the API has not been asked about; the self-hosted
-    // image's same-origin `/api` propagates and needs no preflight at all.
+    // (same-origin and localhost), which is the safe default for BOTH
+    // deployment shapes this app supports. A split-origin one — bundle on one
+    // host, API on another — would otherwise add `sentry-trace` and `baggage`
+    // to a cross-origin preflight the API has not been asked about. The
+    // single-origin shape, where nginx proxies `/api` from the same host, is
+    // same-origin already: it propagates and needs no preflight at all.
     integrations: [Sentry.browserTracingIntegration()],
     // The same rate the backend uses. Raising it is a spend decision, not a
     // wiring one, so it is not made here.
