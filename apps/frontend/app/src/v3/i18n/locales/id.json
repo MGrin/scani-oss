@@ -754,6 +754,8 @@
         "unpriceableNote": "Tidak ada sumber yang pernah memberi harga untuk token ini, dan untuk sementara kami berhenti bertanya. Token ini dikeluarkan dari kekayaan bersih Anda, bukan dihitung sebagai nol.",
         "history": "Riwayat",
         "incompleteHistory": "Tidak lengkap — arus masuk sebelum transaksi pertama yang diimpor tidak ada, jadi nilai sebelum tanggal itu dibatasi.",
+        "openingPosition": "Posisi awal",
+        "predatesEarliestStatement": "Mendahului laporan paling awal yang tersedia (sejak {{date}}) — uang yang berpindah sebelum itu tidak pernah diambil, jadi tidak ada transaksi di sini yang bisa menjelaskannya. Impor laporan yang mencakup periode sebelumnya untuk menutupnya.",
         "performance": "Kinerja",
         "costBasis": "Basis biaya",
         "gainLoss": "Untung / rugi",

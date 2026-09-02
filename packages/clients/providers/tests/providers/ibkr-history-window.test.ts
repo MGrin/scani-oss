@@ -33,7 +33,7 @@ function statement(flexStatementAttrs: string): string {
 async function run(
   xml: string,
   since?: Date
-): Promise<{ retractions: string[]; warnings: string[] }> {
+): Promise<{ retractions: string[]; warnings: string[]; bounds: Array<Date | undefined> }> {
   const original = globalThis.fetch;
   globalThis.fetch = (async (url: string | URL | Request) =>
     String(url).includes('SendRequest')
@@ -44,13 +44,20 @@ async function run(
   try {
     const retractions: string[] = [];
     const warnings: string[] = [];
+    // Captured positionally beside the reason: what matters is that the two
+    // arrive on the SAME call, so a bound cannot be stated by a run that did
+    // not also retract (SC-900).
+    const bounds: Array<Date | undefined> = [];
     await new IbkrProvider(passthroughLimiter(), noSleep).fetchTransactions({
       ...ctx,
       since,
-      retractHistoryClaim: (r: string) => retractions.push(r),
+      retractHistoryClaim: (r: string, bound?: { historyStartsAt: Date }) => {
+        retractions.push(r);
+        bounds.push(bound?.historyStartsAt);
+      },
       noteWarning: (w: string) => warnings.push(w),
     } as never);
-    return { retractions, warnings };
+    return { retractions, warnings, bounds };
   } finally {
     globalThis.fetch = original;
   }
@@ -132,5 +139,57 @@ describe('IBKR retracts the completeness claim its statement cannot support', ()
     const { retractions, warnings } = await run(statement(BOUNDED));
     expect(retractions).toHaveLength(1);
     expect(warnings.some((w) => w.includes('2025-08-29'))).toBe(false);
+  });
+});
+
+/**
+ * SC-900 — the window is also a NUMBER, not only a sentence.
+ *
+ * SC-882 shipped the reader's half: a statement that cannot cover the whole
+ * ledger says so in words. Reconciliation needs the same fact as a date, so it
+ * can tell a residue with a known, permanent cause apart from one nobody can
+ * account for — and a service parsing a date back out of English prose is how
+ * those two come to disagree.
+ *
+ * It rides on `retractHistoryClaim` rather than on a sink of its own. A bound
+ * is only meaningful about a ledger already known to be short, so a provider
+ * must not be able to state one while still claiming it read everything.
+ */
+describe('IBKR states how far back its statement reaches, beside the reason', () => {
+  test('the window travels with the retraction as a date', async () => {
+    const { retractions, bounds } = await run(statement(BOUNDED));
+    expect(retractions).toHaveLength(1);
+    expect(bounds).toHaveLength(1);
+    expect(bounds[0]?.toISOString().slice(0, 10)).toBe('2025-08-29');
+  });
+
+  /**
+   * The window slides — it is a date range somebody picked in Account
+   * Management, and re-picking it is the documented remedy for a ledger that
+   * does not reach far enough. Two statements, one variable.
+   */
+  test('a different saved window produces a different bound', async () => {
+    const { bounds } = await run(
+      statement('accountId="U1" fromDate="20230104" toDate="20240930" period=""')
+    );
+    expect(bounds[0]?.toISOString().slice(0, 10)).toBe('2023-01-04');
+  });
+
+  /**
+   * THE CONTROL. A statement whose window cannot be read still retracts —
+   * silence about the range is not a range — but it must not manufacture a
+   * boundary, because a date invented here becomes an explanation printed over
+   * a gap nobody measured.
+   */
+  test('an unreadable window retracts with NO bound rather than a default', async () => {
+    const { retractions, bounds } = await run(statement('accountId="U1"'));
+    expect(retractions).toHaveLength(1);
+    expect(bounds[0]).toBeUndefined();
+  });
+
+  test('an incremental run states neither, so the nightly path is untouched', async () => {
+    const { retractions, bounds } = await run(statement(BOUNDED), new Date('2026-08-01T00:00:00Z'));
+    expect(retractions).toEqual([]);
+    expect(bounds).toEqual([]);
   });
 });

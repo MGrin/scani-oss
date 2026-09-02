@@ -243,11 +243,32 @@ export type HoldingWithDetails = {
    * `holding_coverage.opening_balance_quantity` (a negative value
    * means the synthesized opening balance was negative, i.e. the
    * import implies inflows we never saw).
+   *
+   * The flag says the shortfall EXISTS; `historyStartsAt` says whether
+   * anything is known about why (SC-900).
    */
   dataIntegrity?: {
     incompleteHistory: boolean;
     missingQuantity?: string;
     note?: string;
+    /**
+     * The earliest date this holding's ledger SOURCE covers, ISO-8601, when
+     * one has been stated (SC-900).
+     *
+     * Its presence is what separates two readings of the identical shortfall:
+     * *we cannot account for this*, which is worth investigating, and *this
+     * predates the earliest statement obtainable*, which was settled the
+     * moment a date range was chosen in the broker's report editor. Both were
+     * the same sentence until now, so every audit that met the second one
+     * re-opened it.
+     *
+     * Absent — not null — when no source has stated a window, and absence must
+     * be read as "unknown" rather than "the ledger reaches the beginning".
+     * Sent as a DATE rather than a rendered phrase because the client formats
+     * and translates it; the server's `note` carries the English long form for
+     * a client that has neither.
+     */
+    historyStartsAt?: string;
   };
   /**
    * True when this holding's token is unpriceable **in fact**: it has never

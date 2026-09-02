@@ -264,6 +264,14 @@ export class HoldingQueryService extends BaseService {
               incompleteHistory: true,
               missingQuantity: opening.toString(),
               ...(coverage.reconciliationNotes ? { note: coverage.reconciliationNotes } : {}),
+              // Sent whenever the source has stated one, so the client can say
+              // WHY the history is short rather than only that it is (SC-900).
+              // Omitted rather than nulled when unstated: absence is "nobody
+              // has established a boundary", which the client must not render
+              // as one.
+              ...(coverage.historyStartsAt
+                ? { historyStartsAt: coverage.historyStartsAt.toISOString() }
+                : {}),
             };
           }
         }
