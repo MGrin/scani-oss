@@ -50,18 +50,44 @@ if (SENTRY_DSN) {
     dsn: SENTRY_DSN,
     environment: import.meta.env.VITE_SENTRY_ENVIRONMENT || import.meta.env.MODE,
     release: import.meta.env.VITE_SENTRY_RELEASE || undefined,
-    // No `integrations` array: the default integrations (Breadcrumbs,
-    // GlobalHandlers, LinkedErrors, HttpContext, Dedupe, etc) do not
-    // require `eval` and run cleanly under our strict CSP
-    // (`script-src 'self'`, no `'unsafe-eval'`). Both
-    // `browserTracingIntegration` and `replayIntegration` internally
-    // compile predicate functions via `new Function(...)`, which CSP
-    // blocks — and the SDK surfaces the block as an unhandled
-    // EvalError on every page load (Sentry issue SCANI-FRONTEND-9).
-    // If tracing or session replay is needed in the future, either
-    // gate behind an opt-in build flag that also relaxes CSP, or
-    // wait for upstream Sentry to ship an eval-free build of those
-    // integrations.
+    // Performance tracing, which a deployed build reported ZERO of for a month
+    // while reporting errors normally (SC-822) — a `pageload` and a
+    // `navigation` transaction, on top of the default integrations
+    // (Breadcrumbs, GlobalHandlers, LinkedErrors, HttpContext, Dedupe, …).
+    //
+    // IT WAS OMITTED FOR A REASON THAT NO LONGER HOLDS, AND THE REASON IS KEPT
+    // BECAUSE IT IS THE ONE THAT WOULD PUT IT BACK. This block used to read:
+    // `browserTracingIntegration` and `replayIntegration` compile predicates
+    // via `new Function(...)`, our CSP is `script-src 'self'` with no
+    // `'unsafe-eval'`, and the SDK surfaced the block as an unhandled EvalError
+    // on every page load (Sentry issue SCANI-FRONTEND-9).
+    //
+    // Measured against the installed 8.55.2 on 2026-09-02: `new Function(` and
+    // `eval(` appear in 0 of the 430 built `.js` files across `@sentry/react`,
+    // `@sentry/browser`, `@sentry-internal/browser-utils` and `@sentry/core`,
+    // with `browserTracingIntegration` itself found in 14 of them — the control
+    // that the search could see anything at all.
+    //
+    // A GREP IS NOT A PAGE LOAD, so this was then verified by building `dist/`
+    // and serving it under the exact `script-src 'self'` CSP from
+    // `public/_headers` with a `report-uri`, in a real Chromium: 13 loads, ZERO
+    // violations reported and zero error envelopes, and `pageload` transactions
+    // transmitted. The control is what makes that zero a measurement — a page
+    // with one inline `<script>` served from the same origin under the same
+    // header DID report a `script-src-elem` violation, so the channel works.
+    //
+    // `replayIntegration` is a separate package and stays OFF: nothing here
+    // measured it, and it is the heavier of the two in both bytes and spend.
+    //
+    // `tracePropagationTargets` is deliberately left at the SDK default
+    // (same-origin and localhost). `app.scani.xyz` calls `api.scani.xyz`
+    // cross-origin, so propagating there would add `sentry-trace` and `baggage`
+    // to a CORS preflight the API has not been asked about; the self-hosted
+    // image's same-origin `/api` propagates and needs no preflight at all.
+    integrations: [Sentry.browserTracingIntegration()],
+    // The same rate the backend uses. Raising it is a spend decision, not a
+    // wiring one, so it is not made here.
+    tracesSampleRate: 0.1,
     // Message-level noise filters live in `@scani/shared` so they're unit
     // tested — see packages/business/shared/tests/utils/sentry-noise.test.ts.
     ignoreErrors: SENTRY_IGNORED_ERROR_PATTERNS,
