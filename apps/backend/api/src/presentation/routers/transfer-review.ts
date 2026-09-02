@@ -77,6 +77,19 @@ function refuse(result: Exclude<SplitResolveResult, { ok: true }>): never {
         code: 'BAD_REQUEST',
         message: 'That holding is no longer there — pick where the money went again',
       });
+    // Not a race and not a missing row (SC-859): the destination is there and
+    // is on the other side of an ownership boundary, so this movement is a
+    // real event on two sets of books rather than money staying put. Says what
+    // it knows and what the remaining answers are, like `own_wallet_destination`
+    // below, because the reader has just been contradicted rather than raced.
+    case 'cross_entity':
+      throw new TRPCError({
+        code: 'BAD_REQUEST',
+        message:
+          'That account belongs to a different entity, so this money moved between two sets ' +
+          'of books rather than staying put. Record it as leaving your control, or move the ' +
+          'account into the same entity if it does not.',
+      });
     // The one refusal that contradicts the reader rather than the world
     // (SC-365), so it says what it knows and what to do instead. `left_control`
     // realizes a gain, and the destination is a wallet they registered
