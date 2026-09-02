@@ -427,6 +427,7 @@
         "unknownPayer": "未知付款方",
         "row": "{{vendor}}，预计 {{date}}",
         "caption_other": "你预计会收到的款项。不会抵扣上面 {{count}} 天的账单数字。",
+        "estimatedExcluded_other": "未计入：<amounts></amounts>——有 {{count}} 笔收入是按上次结算金额估算的，过去的金额不等于预计。",
         "expected": "预计 {{date}}",
         "expectedLate": "预计 {{date}} · 尚未收到"
       },

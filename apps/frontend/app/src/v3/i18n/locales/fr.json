@@ -2550,6 +2550,9 @@
         "caption_one": "Ce que vous attendez de recevoir. Non déduit du montant de factures sur {{count}} jour ci-dessus.",
         "caption_many": "Ce que vous attendez de recevoir. Non déduit du montant de factures sur {{count}} jours ci-dessus.",
         "caption_other": "Ce que vous attendez de recevoir. Non déduit du montant de factures sur {{count}} jours ci-dessus.",
+        "estimatedExcluded_one": "Non compris : <amounts></amounts> — {{count}} encaissement est estimé d’après son dernier règlement, et un montant passé n’est pas une prévision.",
+        "estimatedExcluded_many": "Non compris : <amounts></amounts> — {{count}} encaissements sont estimés d’après leurs derniers règlements, et un montant passé n’est pas une prévision.",
+        "estimatedExcluded_other": "Non compris : <amounts></amounts> — {{count}} encaissements sont estimés d’après leurs derniers règlements, et un montant passé n’est pas une prévision.",
         "expected": "Attendu le {{date}}",
         "expectedLate": "Attendu le {{date}} · pas encore reçu"
       },

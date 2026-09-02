@@ -427,6 +427,7 @@
         "unknownPayer": "Pembayar tidak dikenal",
         "row": "{{vendor}}, diharapkan {{date}}",
         "caption_other": "Yang Anda harapkan diterima. Tidak diperhitungkan terhadap angka tagihan {{count}} hari di atas.",
+        "estimatedExcluded_other": "Tidak termasuk: <amounts></amounts> — {{count}} pemasukan diperkirakan dari jumlah terakhir yang diselesaikan, dan jumlah masa lalu bukanlah prakiraan.",
         "expected": "Diharapkan {{date}}",
         "expectedLate": "Diharapkan {{date}} · belum diterima"
       },
