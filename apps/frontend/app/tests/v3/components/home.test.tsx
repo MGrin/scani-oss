@@ -3,6 +3,7 @@ import '../../i18n-preload';
 import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { StaticRouter } from 'react-router-dom/server';
+import type { BaseCurrencyRates } from '../../../src/hooks/useBaseCurrencyRates';
 import { CoverageNote } from '../../../src/v3/components/home/CoverageNote';
 import { DisclosureButton } from '../../../src/v3/components/home/DisclosureButton';
 import {
@@ -11,8 +12,15 @@ import {
   resolveFirstRunState,
 } from '../../../src/v3/components/home/FirstRunPanel';
 import { formatChartDate } from '../../../src/v3/components/home/PortfolioChart';
+import { UpcomingFootLine } from '../../../src/v3/components/home/UpcomingBlock';
 import { VaultProgressRow } from '../../../src/v3/components/home/VaultsBlock';
 import type { FigureQuality, VaultRow } from '../../../src/v3/lib/home';
+import {
+  type EstimableOccurrence,
+  estimatedTotals,
+  occurrenceTotals,
+} from '../../../src/v3/lib/money';
+import type { HistoryEstimate } from '../../../src/v3/lib/paymentTotals';
 
 /**
  * The blocks themselves each own a tRPC query, so they cannot be rendered
@@ -347,5 +355,138 @@ describe('FirstRunPanel', () => {
     // The sheet stays offered: a running import does not cover the account the
     // reader was about to add.
     expect(html).toInclude('Or pick another way in');
+  });
+});
+
+/**
+ * SC-818. Both foot-lines at the bottom of `<UpcomingBlock>` are fed by
+ * `occurrenceTotals`, which resolves an occurrence priced from its own settled
+ * history to `'0'` — so that money was in neither figure, and nowhere else on
+ * the home screen either.
+ *
+ * Asserted against the exported line rather than `<UpcomingBlock>`, which owns
+ * four tRPC queries and cannot be rendered without a client — the same reason
+ * `<VaultProgressRow>` is exported. SC-797 is a defect that shipped precisely
+ * because a second render site was invisible to a green suite, and an exclusion
+ * line is exactly the sort of thing that reaches one site and not the other.
+ */
+describe('UpcomingFootLine', () => {
+  const RATES: BaseCurrencyRates = {
+    baseCurrencyTokenId: 'token-eur',
+    baseSymbol: 'EUR',
+    rateByCurrencyTokenId: new Map(),
+    ratesStatus: 'ready',
+  };
+  const TOKEN_SYMBOLS = new Map([['token-eur', 'EUR']]);
+
+  /** A variable bill with nothing declared and nothing settled. Annotated
+   *  rather than inferred: `expectedAmount: null` would otherwise narrow to
+   *  the `null` LITERAL, and `DECLARED` below is that shape with an amount. */
+  const ESTIMATED: EstimableOccurrence = {
+    id: 'occurrence-power',
+    dueDate: '2026-03-01',
+    expectedAmount: null,
+    actualAmount: null,
+    payment: { id: 'payment-power', direction: 'outflow', currencyTokenId: 'token-eur' },
+  };
+
+  /** The same shape with an amount on it — the set that belongs IN a figure. */
+  const DECLARED: EstimableOccurrence = {
+    ...ESTIMATED,
+    id: 'occurrence-hetzner',
+    expectedAmount: '42.00',
+    payment: { id: 'payment-hetzner', direction: 'outflow', currencyTokenId: 'token-eur' },
+  };
+
+  const POWER_ESTIMATE: ReadonlyMap<string, HistoryEstimate> = new Map([
+    ['payment-power', { amount: '84.20', sourceDueDate: '2026-02-15' }],
+  ]);
+  const NO_HISTORY = new Map<string, HistoryEstimate>();
+
+  function render(
+    exclusionKey: string,
+    occurrences: (typeof ESTIMATED)[],
+    historyEstimates: ReadonlyMap<string, HistoryEstimate>
+  ): string {
+    return renderToStaticMarkup(
+      <UpcomingFootLine
+        label="Overdue, 1 bill"
+        totals={occurrenceTotals(occurrences)}
+        estimated={estimatedTotals(occurrences, historyEstimates)}
+        exclusionKey={exclusionKey}
+        tokenSymbolById={TOKEN_SYMBOLS}
+        rates={RATES}
+      />
+    );
+  }
+
+  const OVERDUE_KEY = 'v3.money.upcoming.estimatedExcludedOverdue';
+  const INCOME_KEY = 'v3.money.expectedIncome.estimatedExcluded';
+
+  test('the overdue line names what its figure leaves out, with the amount', () => {
+    const html = render(OVERDUE_KEY, [ESTIMATED], POWER_ESTIMATE);
+
+    // The figure is still €0.00 — that is SC-807's ruling, not the defect — but
+    // the €84.20 is now accounted for beside it rather than nowhere at all.
+    expect(html).toInclude('€0.00');
+    expect(html).toInclude('€84.20');
+    expect(html).toInclude('Not included');
+    expect(html).toInclude('1 overdue bill is estimated from its last settled amount');
+    expect(html).toInclude('its real amount is still unknown');
+  });
+
+  test('the overdue line borrows the Money tab’s sentence, not the committed one', () => {
+    // The same claim about the same set on two screens gets ONE key: two
+    // spellings of one sentence is a drift hazard, and the day one is
+    // retranslated the home screen and the Money tab would state different
+    // facts about the same bills. The COMMITTED sentence stays off it, for the
+    // reason SC-807 kept it off the tile this line mirrors.
+    expect(render(OVERDUE_KEY, [ESTIMATED], POWER_ESTIMATE)).not.toInclude(
+      'an estimate is not a commitment'
+    );
+  });
+
+  test('the income line says what a forecast can say, and not what a bill says', () => {
+    const html = render(INCOME_KEY, [ESTIMATED], POWER_ESTIMATE);
+
+    expect(html).toInclude('€84.20');
+    expect(html).toInclude('1 payment is estimated from its last settled amount');
+    expect(html).toInclude('a past amount is not a forecast');
+    // Neither bill sentence: nothing on an income figure is owed by the reader,
+    // and nothing on it is late.
+    expect(html).not.toInclude('an estimate is not a commitment');
+    expect(html).not.toInclude('its real amount is still unknown');
+  });
+
+  test('the control: with nothing estimated there is no second line at all', () => {
+    // The asymmetry, pinned. A permanent line reading €0.00 would assert a
+    // category most books never have — and a conditional that never renders is
+    // indistinguishable from one that cannot, unless the cases above prove it
+    // does.
+    const html = render(OVERDUE_KEY, [DECLARED], NO_HISTORY);
+
+    expect(html).toInclude('€42.00');
+    expect(html).not.toInclude('Not included');
+    expect(html).not.toInclude('is estimated from its last settled amount');
+  });
+
+  test('the control: a declared bill is in the figure and in no exclusion', () => {
+    // The case that catches the line firing off the wrong predicate: the
+    // estimate is keyed to a payment that is not in this set.
+    const html = render(OVERDUE_KEY, [DECLARED], POWER_ESTIMATE);
+
+    expect(html).toInclude('€42.00');
+    expect(html).not.toInclude('€84.20');
+    expect(html).not.toInclude('Not included');
+  });
+
+  test('the figure counts the declared money and the line counts the rest', () => {
+    // Both in one set, so the two numbers have to be different and neither may
+    // be their sum — the same rule the Money tab's two lines obey.
+    const html = render(OVERDUE_KEY, [DECLARED, ESTIMATED], POWER_ESTIMATE);
+
+    expect(html).toInclude('€42.00');
+    expect(html).toInclude('€84.20');
+    expect(html).not.toInclude('€126.20');
   });
 });

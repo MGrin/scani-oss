@@ -566,6 +566,9 @@ export function UpcomingFeed({
         rates={rates}
         today={today}
         onPeek={peekRoute.open}
+        // The same map the feed above reads, so the two blocks on this screen
+        // state one answer about a payment rather than two (SC-818).
+        historyEstimates={historyEstimates}
       />
 
       {sheet}
