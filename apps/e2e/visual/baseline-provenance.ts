@@ -103,7 +103,7 @@ import { createHash } from 'node:crypto';
  * session holds exactly what the fixtures declare before a pixel is captured.
  * If that reasoning is ever shown wrong, this is one constant to widen.
  */
-export const RENDERED_PATHS: readonly string[] = [
+const RENDERED_PATHS: readonly string[] = [
   'apps/frontend/app',
   'packages/frontend/ui',
   'packages/business/shared',
@@ -182,7 +182,7 @@ export interface Manifest {
  * write four hundred lines into a JSON file somebody has to read in a diff,
  * and the four hundredth name carries no information the count does not.
  */
-export const DIRTY_CAP = 12;
+const DIRTY_CAP = 12;
 
 export const EMPTY_MANIFEST: Manifest = { baselines: {} };
 
