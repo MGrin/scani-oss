@@ -227,7 +227,7 @@ async function insertSameHoldingPartner(
       occurredAt: secondsLater(opts.seconds ?? 106),
       source: 'etherscan',
       externalId: `${hash()}-0x833589fc`,
-      rawPayload: { to: '0x804f84639c5062d22f491014fb96af0a083f63e9' },
+      rawPayload: { to: '0x5c918000000000000000000000000000000000b2' },
       transferGroupId: opts.transferGroupId,
       ...(opts.review === null
         ? {}

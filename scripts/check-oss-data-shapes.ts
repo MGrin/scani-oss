@@ -47,6 +47,10 @@
 //   bun scripts/check-oss-data-shapes.ts --stdin-commits   # additions in commits on stdin
 //   bun scripts/check-oss-data-shapes.ts                   # staged additions
 //   bun scripts/check-oss-data-shapes.ts --scan            # audit the whole tree
+//
+// `--scan` READS THE INDEX, NOT THE WORKING TREE — `git show :0:<path>`, the
+// same population `--cached` gives the diff mode. An edit you have not staged
+// is not in what it scanned, and it reports the same count either way.
 
 import { existsSync } from 'node:fs';
 import {
@@ -251,6 +255,57 @@ export const ASSERTED_NOT_PRODUCTION: ReadonlySet<string> = new Set(
     // that leaked. alice, and bob.
     '0xa11ce0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7',
     '0xb0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9',
+    //
+    // SC-918 triaged the whole tree rather than one landing, so the entries
+    // below arrive in one block. Each is a deployed contract, a published
+    // specimen, or a fixture whose structure is what it tests — never a value
+    // read off an account.
+    //
+    // DEPLOYED CONTRACTS. A contract address is published by its own
+    // deployment: it is on every block explorer before this repository names
+    // it, and naming it discloses nothing about who used it. Aave V2's
+    // WETHGateway and the LendingPool behind it — both already named in
+    // `RepairProtocolDepositOutflowsUseCase`'s protocol table, which is the
+    // point of that table.
+    '0xcc9a0b7c43dc2a5f023bb9b738e45b0ef6b06e04',
+    '0x7d2768de32b0b80b7a3454c06bdac94a69ddc7a9',
+    // 0x Protocol's ExchangeProxy. The vanity prefix is the tell.
+    '0xdef1c0ded9bec7f1a1670819833240f027b25eff',
+    // SocketGateway, identified from its verified source before a bridge leg
+    // was ever accepted through it.
+    '0x3a23f943181408eac424116af7b7790c94cb97a5',
+    // POL on Ethereum, already carried by `well-known-ids.ts` — which is
+    // exempt by path, so the value reaches this list only through a test.
+    '0x455e53cbb86018ac2b8092fdcd39d8444affc3f6',
+    // The ERC-20 that shares BONK's symbol on Ethereum and is the reason
+    // token identity needs an authority at all. A contract, not a holder.
+    '0xf2b2c2a4e4eae02ba07decece8d831b11bd7a350',
+    //
+    // PUBLISHED SPECIMENS, the address-shaped equivalent of the RFC-4122 UUID
+    // above. The first is the example address wallet documentation has used
+    // for years; the second is this repository's one-character variant of it.
+    // Both sit beside the Bitcoin genesis address and wrapped SOL's mint in
+    // the fixtures that use them, and for the same reason.
+    '0x742d35cc6634c0532925a3b844bc454e4438f44e',
+    '0x742d35cc6634c0532925a3b844bc9e7595f0beb0',
+    //
+    // FIXTURES WHOSE STRUCTURE IS THE TEST. The address-poisoning pair differs
+    // in its final character and nothing else; that difference IS the fixture,
+    // so replacing either value would leave every test built on it asserting
+    // nothing. {@link looksSynthetic} cannot admit them — a pair that differs
+    // in one character has to look like two real addresses to be worth testing.
+    '0x7a3f91b2c4d5e6f708192a3b4c5d6e7f8091a2b3',
+    '0x7a3f91b2c4d5e6f708192a3b4c5d6e7f8091a2b4',
+    // `1234567890abcdef` walked twice and truncated. Hand-written, and it
+    // misses `isPeriodic` only because 40 is not a multiple of 16.
+    '0x1234567890abcdef1234567890abcdef12345678',
+    // The v3 peek sheet's "long, unbroken identifier" — a layout fixture that
+    // exists to make a value column wrap rather than truncate, and shipped
+    // with the design system rather than with any ledger work.
+    '0x7f2c9a4b1d8e6f30a2c5b7e9d1f4a68c0b3e5d72',
+    // drizzle-kit's own snapshot id, written by the generator into the
+    // migration journal. It identifies a schema snapshot, not a row.
+    'f37aaae9-601c-46ab-968d-b01da1842f50',
   ].map((v) => v.toLowerCase())
 );
 
@@ -268,6 +323,20 @@ export const ASSERTED_NOT_PRODUCTION: ReadonlySet<string> = new Set(
  * THE COST IS STATED: a private identifier pasted into one of these five files
  * is not seen here. Nothing else in the tree gets this treatment, and the list
  * is short enough that a reviewer can hold all of it.
+ *
+ * AND THE COST WAS REAL, WITHIN A DAY (SC-918). `check-oss-data-shapes.test.ts`
+ * carried a row identifier that the pre-rewrite mirror proves was PUBLISHED —
+ * it is one of the values `0044` leaked, and the backup at that path is the
+ * must-be-PRESENT control that makes the reading decisive rather than an
+ * absence. Four sites, in a file this list makes unscannable, on an
+ * `oss-eligible` path. It is gone; the lesson is that these five files are
+ * audited BY HAND or not at all, and "a reviewer can hold all of it" is the
+ * whole safety argument rather than a remark.
+ *
+ * HOW TO AUDIT ONE. Ask whether the value predates the guard: a fixture minted
+ * for it appears in the commit that wrote it and nowhere else in the history,
+ * while a leaked value appears in the migration or repair script it came from.
+ * `git log --all -S<value> --name-only` separates the two in one step.
  */
 export const IDENTIFIER_BY_DESIGN_PATHS: readonly string[] = [
   'packages/clients/providers/src/providers/coingecko/well-known-ids.ts',
@@ -401,9 +470,34 @@ function population(cwd: string, fromCommits: readonly string[] | null): GitRun 
   return { kind: 'ran', stdout: parts.join('\n') };
 }
 
-function report(findings: readonly Finding[], tail: string): number {
+/**
+ * The identifiers on paths this tree does not publish — NAMED, never counted
+ * toward the refusal, and never with their values.
+ *
+ * Silence here would be the defect this whole family is about. A scan scoped
+ * to the published paths and reporting nothing else is indistinguishable from
+ * a scan that read the whole tree and found it clean, and the difference is
+ * roughly a hundred real identifiers. Naming the files says which question was
+ * answered. Printing the VALUES would republish them into every CI log that
+ * runs the check, which is the thing the guard exists to stop.
+ */
+function reportUnpublished(unpublished: readonly Finding[]): void {
+  if (unpublished.length === 0) return;
+  const files = [...new Set(unpublished.map((f) => f.path))].sort();
+  console.error(
+    `\n  ${unpublished.length} more opaque identifier(s) in ${files.length} file(s) this tree does NOT publish — reported, not refused. Values withheld deliberately:`
+  );
+  for (const path of files) console.error(`    ${path}`);
+}
+
+function report(
+  findings: readonly Finding[],
+  tail: string,
+  unpublished: readonly Finding[] = []
+): number {
   if (findings.length === 0) {
     console.log(`oss-data-shapes: PASS · exit ${EXIT_OK} · ${tail}, 0 opaque identifier(s)`);
+    reportUnpublished(unpublished);
     return EXIT_OK;
   }
   for (const f of findings) console.error(`  ${f.path}:${f.line}  [${f.rule}]  ${f.value}`);
@@ -427,10 +521,34 @@ function report(findings: readonly Finding[], tail: string): number {
       '  WHAT THIS CANNOT SEE: a name, an email, a street address, a memo line.\n' +
       '  Those have no shape. Read your own diff.'
   );
+  reportUnpublished(unpublished);
   return EXIT_REFUSED;
 }
 
-export function main(argv: readonly string[], cwd: string, stdin: string): number {
+export interface ScanOptions {
+  /**
+   * WHETHER A PATH IS ONE THIS TREE DOES NOT PUBLISH.
+   *
+   * ABSENT MEANS EVERY TRACKED PATH IS PUBLISHED, which is the truth in
+   * `MGrin/scani-oss` and is why this is an injected option rather than an
+   * import. The module that knows which paths stay private is itself private,
+   * so a guard that named it would not resolve in the mirror — and this guard
+   * travels. `scripts/check-oss-mirror-shapes.ts` is the private caller that
+   * supplies it.
+   *
+   * THE DEFAULT IS THE CLOSED ONE. With no predicate every finding counts
+   * toward the refusal, so a caller that forgets to pass one gets the stricter
+   * answer rather than a quiet pass.
+   */
+  readonly unpublished?: (path: string) => boolean;
+}
+
+export function main(
+  argv: readonly string[],
+  cwd: string,
+  stdin: string,
+  opts: ScanOptions = {}
+): number {
   const broken = selfTest();
   if (broken.length > 0) {
     for (const b of broken) console.error(`  ${b}`);
@@ -454,26 +572,36 @@ export function main(argv: readonly string[], cwd: string, stdin: string): numbe
     }
     const paths = listed.stdout.trim() === '' ? [] : listed.stdout.trim().split('\n');
     const findings: Finding[] = [];
+    const unpublished: Finding[] = [];
     let scanned = 0;
-    let unreadable = 0;
     for (const path of paths.filter(scannable)) {
       const read = runGit(['show', `:0:${path}`], cwd);
-      let content: string;
-      if (read.kind === 'ran') {
-        content = read.stdout;
-      } else {
-        unreadable++;
-        continue;
+      // FAIL CLOSED, and this used to be `unreadable++; continue`. A file the
+      // scan could not open was counted in the tail and changed no exit code,
+      // so an unreadable tree — a corrupt object, a `git` that stopped
+      // answering partway — read as a clean one with a smaller denominator
+      // than anybody was checking. That is fine for an audit somebody reads
+      // and fatal for a check that blocks: NOTHING IS KNOWN about a file that
+      // was not read, and this mode is now the blocking one.
+      if (read.kind !== 'ran') {
+        console.error(
+          `oss-data-shapes: UNKNOWN · exit ${EXIT_UNKNOWN} · could not read \`${path}\` from the index — ${read.why} — THE SCAN IS INCOMPLETE, which is not a pass`
+        );
+        return EXIT_UNKNOWN;
       }
+      const content = read.stdout;
       if (content.includes('\0')) continue;
       scanned++;
+      const published = opts.unpublished === undefined || !opts.unpublished(path);
+      const into = published ? findings : unpublished;
       content.split('\n').forEach((text, i) => {
-        for (const f of findInLine(text)) findings.push({ path, line: i + 1, ...f });
+        for (const f of findInLine(text)) into.push({ path, line: i + 1, ...f });
       });
     }
     return report(
       findings,
-      `${RULE_COUNT} rule(s) self-tested, ${scanned} of ${paths.length} tracked file(s) scanned${unreadable > 0 ? `, ${unreadable} UNREADABLE` : ''}`
+      `${RULE_COUNT} rule(s) self-tested, ${scanned} of ${paths.length} tracked file(s) scanned${opts.unpublished === undefined ? '' : ', published paths only'}`,
+      unpublished
     );
   }
 
