@@ -128,6 +128,21 @@ export const users = pgTable(
     // silently regress, and it refuses everything `UNIQUE(email)` would refuse
     // as well as the case variants.
     emailLowerUq: uniqueIndex('users_email_lower_unique').on(sql`lower(${table.email})`),
+    // SC-938. Declared here, created by migration 20260819141744 (as
+    // `idx_users_digest_unsubscribe_token`) and renamed by 20260819145111 — so
+    // this adds no migration and changes no database. Unique because the token
+    // is the whole of what `/e/u/:token` authenticates on, and indexed because
+    // a lookup by it is that endpoint's only query.
+    //
+    // It was absent from this file from the day it was created until SC-938,
+    // and nothing went red: `schema-drift.test.ts` compares COLUMNS — its
+    // `expectedSchema()` yields `[table, columns]` and its real-database arm
+    // queries `information_schema.columns` — so an index in one place and not
+    // the other is outside what that guard can see by construction, the same
+    // shape as the `SELECT 1` health check its own docstring is about.
+    emailUnsubscribeTokenUq: uniqueIndex('idx_users_email_unsubscribe_token').on(
+      table.emailUnsubscribeToken
+    ),
   })
 );
 
