@@ -27,6 +27,7 @@ const GALA = '0xaaaa000000000000000000000000000000000001';
 const SPAMC = '0xbbbb000000000000000000000000000000000002';
 const FAKEUSDT = '0xcccc000000000000000000000000000000000003';
 const HELD = '0xdddd000000000000000000000000000000000004';
+const PAID_WITH = '0xeeee000000000000000000000000000000000005';
 
 const ctx = {
   institutionCode: 'ethereum',
@@ -212,6 +213,61 @@ describe('EtherscanProvider.fetchExitedPositions', () => {
       balances: { [FAKEUSDT]: '0' },
     });
     expect(out.map((p) => p.externalId)).toEqual([FAKEUSDT]);
+  });
+
+  // SC-764, END TO END. One poisoning contract emitting BOTH legs in ONE
+  // transaction the wallet never signed. The outbound leg is what puts the
+  // hash in `paidHashes`, so the inbound leg read as "bought, paying with
+  // itself" and the token was offered as a closed position.
+  test('refuses an in-and-out pair from one contract in an unsigned transaction', async () => {
+    const out = await run({
+      txlist: [],
+      tokentx: [
+        tokenRow({
+          hash: '0xpair',
+          from: ATTACKER,
+          to: WALLET,
+          contractAddress: FAKEUSDT,
+          tokenSymbol: 'USDT',
+          tokenName: 'Tether USD',
+        }),
+        tokenRow({
+          hash: '0xpair',
+          from: WALLET,
+          to: ATTACKER,
+          contractAddress: FAKEUSDT,
+          tokenSymbol: 'USDT',
+          tokenName: 'Tether USD',
+        }),
+      ],
+      balances: { [FAKEUSDT]: '0' },
+    });
+    expect(out).toEqual([]);
+  });
+
+  // THE CONTROL, and it is the arm that fails if the refusal above is ever
+  // reached by requiring a signature instead. Same absence of any `txlist` row
+  // — which is what a Safe, an ERC-4337 account or a solver-submitted swap
+  // looks like, since only an EOA can be a transaction's `from` — but the
+  // wallet gave up a DIFFERENT token to get this one. That is a purchase and
+  // it has to survive.
+  test('offers a token bought with another token in a transaction the wallet did not sign', async () => {
+    const out = await run({
+      txlist: [],
+      tokentx: [
+        tokenRow({
+          hash: '0xswap',
+          from: WALLET,
+          to: ATTACKER,
+          contractAddress: PAID_WITH,
+          tokenSymbol: 'PAYC',
+          tokenName: 'Payment Coin',
+        }),
+        tokenRow({ hash: '0xswap', from: ATTACKER, to: WALLET, contractAddress: GALA }),
+      ],
+      balances: { [GALA]: '0' },
+    });
+    expect(out.map((p) => p.externalId)).toEqual([GALA]);
   });
 
   // A zero-value `Transfer` is not a transfer (SC-348). It must not count as a

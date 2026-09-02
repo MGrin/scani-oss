@@ -89,20 +89,49 @@ describe('isTradedPosition — what the wallet review may offer (SC-398)', () =>
     expect(isTradedPosition(signed)).toBe(true);
   });
 
-  // SC-764, PINNED AS A KNOWN BEHAVIOUR RATHER THAN AS A WANTED ONE. Read a
-  // red here as somebody having narrowed the rule on purpose, not as a
-  // regression: `paid-for` is reached with no signature anywhere, because
-  // `paidHashes` is fed by `tokentx` rows whose `from` is the wallet — which
-  // is exactly the spoofed shape. No poisoning contract measured on production
-  // emits an inbound leg as well, so the shape does not occur; the cost if one
-  // appeared is one extra unticked row on a review card.
-  test('SC-764: an unsigned in-and-out pair is admitted as paid-for', () => {
+  // SC-764, THE HOLE. One contract emitting BOTH legs in one unsigned
+  // transaction: the inflow's only evidence of payment is that same token
+  // leaving, because `paidHashes` is fed by `tokentx` rows whose `from` is the
+  // wallet — which is exactly the spoofed shape. This read `paid-for` and was
+  // admitted.
+  test('SC-764: an unsigned in-and-out pair on one contract is not a position', () => {
     const m = movements({
       inflowHashes: ['0xh'],
       outflowHashes: ['0xh'],
       paidHashes: new Set(['0xh']),
     });
+    expect(classifyDrop(m)).toBe('unsolicited-arrival');
+    expect(isTradedPosition(m)).toBe(false);
+  });
+
+  // THE CONTROL THAT PINS THE FIX THAT WAS NOT TAKEN (SC-764). Requiring a
+  // signature on the `paid-for` branch closes the case above and returns
+  // `unsolicited-arrival` here too — and this is a real purchase. Only an
+  // externally-owned account can be a transaction's `from`, so a Safe, an
+  // ERC-4337 account and any swap a solver submits reach `paid-for` with
+  // `signedHashes` empty by protocol construction. A red here means somebody
+  // took the signature route and emptied the answer for every wallet that is
+  // not an EOA.
+  test('a token bought with ANOTHER asset is a position with no signature anywhere', () => {
+    const m = movements({
+      inflowHashes: ['0xswap'],
+      outflowHashes: [],
+      paidHashes: new Set(['0xswap']),
+    });
     expect(classifyDrop(m)).toBe('paid-for');
+    expect(isTradedPosition(m)).toBe(true);
+  });
+
+  // The signed path must not have narrowed with it: the same in-and-out pair,
+  // signed, is still a position — by the signature rather than by the payment.
+  test('a signed in-and-out pair is still a position', () => {
+    const m = movements({
+      inflowHashes: ['0xh'],
+      outflowHashes: ['0xh'],
+      paidHashes: new Set(['0xh']),
+      signedHashes: new Set(['0xh']),
+    });
+    expect(classifyDrop(m)).toBe('claimed-then-sent');
     expect(isTradedPosition(m)).toBe(true);
   });
 });
