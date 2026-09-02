@@ -2,7 +2,9 @@ import { describe, expect, test } from 'bun:test';
 import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import {
+  awaitPostgresOverTcp,
   composeInterpolates,
+  composePostgresCredentials,
   defaultProfileInterpolations,
   defaultProfileLongRunning,
   downArgs,
@@ -829,5 +831,196 @@ describe('up says when a service was never created (SC-795)', () => {
     expect(
       upVerdict(17, [H('p-postgres-1', 'healthy')], 'p', 'full', ['postgres', 'worker']).exit
     ).toBe(17);
+  });
+});
+
+describe('up asks Postgres the question the caller cares about (SC-748)', () => {
+  const H = (name: string, state: 'healthy' | 'unhealthy' | 'starting' | 'none') => ({
+    name,
+    service: name.replace(/^.+?-(.+)-\d+$/, '$1'),
+    state,
+  });
+  const READY = { ready: true, seconds: 2, budgetSeconds: 60, lastError: null };
+  const NEVER = {
+    ready: false,
+    seconds: 60,
+    budgetSeconds: 60,
+    lastError: 'the database system is starting up',
+  };
+
+  /**
+   * A clock that only moves when the probe waits, so the test is instant.
+   *
+   * The wait THROWS once the probe has asked far past any sane budget. Without
+   * that, an unbounded probe spins forever on a fake clock and the test does
+   * not go red — it produces no output at all, which is the same
+   * indistinguishable-from-nothing failure the bound exists to prevent, one
+   * level up. Measured: with the budget check removed the run hung and was
+   * killed with zero test lines; with this cap it fails by name.
+   */
+  const fakeClock = (maxWaits = 1000) => {
+    let now = 0;
+    let waits = 0;
+    return {
+      clock: () => now,
+      wait: async (ms: number) => {
+        if (++waits > maxWaits) throw new Error('the probe never stopped asking');
+        now += ms;
+      },
+    };
+  };
+
+  test('a server that answers at once is ready in 0s', async () => {
+    const { clock, wait } = fakeClock();
+    const probe = await awaitPostgresOverTcp(async () => {}, 60, clock, wait);
+    expect(probe.ready).toBe(true);
+    expect(probe.seconds).toBe(0);
+    expect(probe.lastError).toBeNull();
+  });
+
+  test('a server that refuses and then answers reports how long it took', async () => {
+    const { clock, wait } = fakeClock();
+    let refusals = 4;
+    const probe = await awaitPostgresOverTcp(
+      async () => {
+        if (refusals-- > 0) throw new Error('the database system is starting up');
+      },
+      60,
+      clock,
+      wait
+    );
+    expect(probe.ready).toBe(true);
+    // Four refusals at 500ms apart. The figure is the point of the probe: a
+    // reader who never sees it cannot tell a stack that was ready from one
+    // that was asked and answered late.
+    expect(probe.seconds).toBe(2);
+  });
+
+  test('a server that never answers gives up at the budget rather than hanging', async () => {
+    // A probe with no bound is a WORSE failure than the one it closes: it
+    // produces no output at all, and a hang has nowhere to be read. The
+    // assertion is that it RETURNS — the count is what proves it stopped
+    // asking rather than that the test happened to end.
+    const { clock, wait } = fakeClock();
+    let asked = 0;
+    const probe = await awaitPostgresOverTcp(
+      async () => {
+        asked += 1;
+        throw new Error('57P03 the database system is starting up');
+      },
+      60,
+      clock,
+      wait
+    );
+    expect(probe.ready).toBe(false);
+    expect(probe.seconds).toBe(60);
+    expect(probe.lastError).toContain('57P03');
+    expect(asked).toBeGreaterThan(1);
+    expect(asked).toBeLessThan(200);
+  });
+
+  test('a stack whose Postgres never answers is UP UNREACHABLE, not UP', async () => {
+    // The measured failure: `--wait` rc=0 with every container healthy, and a
+    // gate refused seconds later by that same Postgres over TCP.
+    const { message, exit } = upVerdict(
+      0,
+      [H('p-postgres-1', 'healthy')],
+      'p',
+      'infra',
+      ['postgres'],
+      NEVER
+    );
+    expect(exit).not.toBe(0);
+    expect(message).toContain('UP UNREACHABLE');
+    expect(message).toContain('60s');
+    expect(message).toContain('the database system is starting up');
+  });
+
+  test('a stack that did answer says how long it took', () => {
+    const { message, exit } = upVerdict(
+      0,
+      [H('p-postgres-1', 'healthy')],
+      'p',
+      'infra',
+      ['postgres'],
+      READY
+    );
+    expect(exit).toBe(0);
+    expect(message).toContain('PG_READY_AFTER=2s');
+  });
+
+  test('a probe that was not asked is never read as one that passed', () => {
+    // Silence has to be silence. Printing the clause unconditionally would
+    // make "no Postgres in this compose file" indistinguishable from "asked
+    // and answered instantly".
+    const { message, exit } = upVerdict(0, [H('p-redis-1', 'healthy')], 'p', 'infra', ['redis']);
+    expect(exit).toBe(0);
+    expect(message).not.toContain('PG_READY_AFTER');
+    expect(message).not.toContain('UNREACHABLE');
+  });
+
+  test('an earlier failure outranks the probe', () => {
+    // Every branch above UNREACHABLE describes a stack the probe should never
+    // have been run against, and `main` does not run it there. Pinned anyway:
+    // a verdict that reported a Postgres timeout over a stack whose containers
+    // do not exist would name the wrong problem.
+    expect(upVerdict(0, null, 'p', 'infra', ['postgres'], NEVER).message).toContain(
+      'UP UNVERIFIED'
+    );
+    expect(
+      upVerdict(0, [H('p-redis-1', 'healthy')], 'p', 'infra', ['postgres', 'redis'], NEVER).message
+    ).toContain('UP INCOMPLETE');
+    expect(
+      upVerdict(0, [H('p-postgres-1', 'unhealthy')], 'p', 'infra', ['postgres'], NEVER).message
+    ).toContain('UP UNHEALTHY');
+  });
+
+  test('the UNREACHABLE line cannot contradict its own exit code', () => {
+    for (const code of [0, 17]) {
+      const { message, exit } = upVerdict(
+        code,
+        [H('p-postgres-1', 'healthy')],
+        'p',
+        'infra',
+        ['postgres'],
+        NEVER
+      );
+      expect(`${code}: ${message}`).toContain(`exit ${exit}`);
+    }
+  });
+
+  test('the probe does not share an instrument with the healthcheck it checks', () => {
+    // THE WHOLE REASON THIS PROBE EXISTS, pinned so the next simplification
+    // has to argue with it. The compose healthcheck is `pg_isready` with no
+    // `-h`, so it goes over the container's unix socket — and the step that
+    // originally confirmed `--wait` was sufficient ran `pg_isready` too. A
+    // verification that shares an instrument with the thing being verified
+    // cannot come back red when the claim is false.
+    //
+    // If the healthcheck ever gains `-h`, this goes red and the reasoning
+    // above needs revisiting rather than the assertion relaxing.
+    const compose = readFileSync(new URL('../../docker-compose.yml', import.meta.url), 'utf8');
+    const healthcheck = /test:\s*\[\s*"CMD-SHELL",\s*"(pg_isready[^"]*)"/.exec(compose);
+    expect(healthcheck).not.toBeNull();
+    expect((healthcheck?.[1] as string).includes('-h')).toBe(false);
+
+    // Comments stripped first, because this asks what the CODE does and the
+    // paragraph explaining WHY it is not pg_isready has to be free to name it.
+    const source = readFileSync(new URL('../dev-stack.ts', import.meta.url), 'utf8');
+    expect(source).toContain('pg_isready');
+    const code = source.replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/g, '');
+    expect(code.includes('pg_isready')).toBe(false);
+    expect(code).toContain('select 1');
+  });
+
+  test('the credentials come from the compose file, not from a copy of it', () => {
+    // A wrong credential does not fail as a wrong credential: it fails as
+    // UP UNREACHABLE after the full budget, which reads exactly like the
+    // defect the probe exists to catch.
+    const credentials = composePostgresCredentials();
+    expect(credentials).not.toBeNull();
+    const compose = readFileSync(new URL('../../docker-compose.yml', import.meta.url), 'utf8');
+    expect(compose).toContain(`POSTGRES_USER: ${credentials?.user}`);
+    expect(compose).toContain(`POSTGRES_PASSWORD: ${credentials?.password}`);
   });
 });

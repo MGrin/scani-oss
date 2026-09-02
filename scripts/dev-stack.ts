@@ -25,6 +25,7 @@
 
 import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
+import { SQL } from 'bun';
 import {
   type DockerProbe,
   describeBlindProbe,
@@ -496,6 +497,81 @@ export function upArgs(passthrough: readonly string[] = [], mode: StackMode = 'f
   ];
 }
 
+/**
+ * How long `up` will keep asking Postgres before it refuses (SC-748).
+ *
+ * A probe with no bound is a worse failure than the one it closes: it produces
+ * no output at all, and a hang has nowhere to be read. Measured values on warm
+ * volumes were 0s, 1s and 2s; this is the cold-initdb case with room, not a
+ * budget anybody should be near.
+ */
+export const POSTGRES_TCP_BUDGET_SECONDS = 60;
+
+export interface PostgresProbe {
+  readonly ready: boolean;
+  /** Wall-clock seconds spent asking. This is the `PG_READY_AFTER` figure. */
+  readonly seconds: number;
+  readonly budgetSeconds: number;
+  /** Why the last attempt failed. `null` once one succeeded. */
+  readonly lastError: string | null;
+}
+
+/**
+ * Ask Postgres the question the CALLER cares about, over TCP, until it answers
+ * or the budget runs out (SC-748).
+ *
+ * WHY THIS IS NOT `pg_isready`, WHICH IS RIGHT THERE. The compose healthcheck
+ * is `pg_isready -U scani -d scani` with no `-h`, so it goes over the
+ * container's unix socket; `postgres:16-alpine`'s entrypoint runs the
+ * init-phase server socket-only (`-c listen_addresses=''`, line 297 of its
+ * `docker-entrypoint.sh`), so during initdb the socket accepts while TCP
+ * refuses. `--wait` therefore returns rc=0 over a Postgres that then answers a
+ * host TCP connection with `57P03 the database system is starting up` — which
+ * is what a gate meets, seconds later, as a wall of red tests attributed to
+ * the caller's own change.
+ *
+ * THE TRANSFERABLE HALF, AND THE REASON NOT TO "SIMPLIFY" THIS BACK. The step
+ * that originally confirmed `--wait` was sufficient ran `docker exec …
+ * pg_isready` — the SAME instrument as the healthcheck it was confirming. It
+ * shares that healthcheck's blind spot exactly, so it could not have come back
+ * red when the claim was false. **A verification that shares an instrument
+ * with the thing being verified cannot fail.** A real query over TCP asks a
+ * different question, which is the only reason it discriminates. `pg_isready`
+ * with a `-h` would still be the same tool answering a weaker question: it
+ * completes a connection and never runs a statement, so it cannot separate a
+ * server that is listening from one that will serve.
+ *
+ * `--wait` STAYS. It is necessary — it is what stands behind every other
+ * service's healthcheck. This is the second question, not a replacement.
+ *
+ * Pure but for the two injected effects, so the budget can be tested without a
+ * Postgres: `askOnce` rejects until the server answers, and the caller owns
+ * bounding a single attempt. A `clock`/`wait` pair rather than a real sleep is
+ * what keeps that test from being a real minute long.
+ */
+export async function awaitPostgresOverTcp(
+  askOnce: () => Promise<void>,
+  budgetSeconds: number,
+  clock: () => number = Date.now,
+  wait: (ms: number) => Promise<void> = (ms) => new Promise((r) => setTimeout(r, ms))
+): Promise<PostgresProbe> {
+  const started = clock();
+  const elapsed = () => Math.round((clock() - started) / 1000);
+  let lastError = 'the probe never ran';
+  for (;;) {
+    try {
+      await askOnce();
+      return { ready: true, seconds: elapsed(), budgetSeconds, lastError: null };
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : String(error);
+    }
+    if (clock() - started >= budgetSeconds * 1000) {
+      return { ready: false, seconds: elapsed(), budgetSeconds, lastError };
+    }
+    await wait(500);
+  }
+}
+
 export interface ServiceHealth {
   readonly name: string;
   /**
@@ -548,7 +624,8 @@ export function upVerdict(
   health: readonly ServiceHealth[] | null,
   project: string,
   mode: StackMode = 'full',
-  expected: readonly string[] | null = null
+  expected: readonly string[] | null = null,
+  postgres: PostgresProbe | null = null
 ): UpVerdict {
   const compose = code === 0 ? '' : ` · compose exit ${code}`;
   // Named on BOTH modes on purpose (SC-706). A count with no provenance is
@@ -593,9 +670,25 @@ export function upVerdict(
       exit,
     };
   }
+  if (postgres !== null && !postgres.ready) {
+    // LAST, because it is the only branch that describes a stack compose and
+    // docker both consider finished. Anything above it is a reason the probe
+    // should never have been run.
+    const exit = code === 0 ? 1 : code;
+    return {
+      message:
+        `dev-stack: UP UNREACHABLE · exit ${exit}${compose}${started} · every container in ${project} is up and Postgres did not answer a query over TCP within ${postgres.budgetSeconds}s — this is not a stack you should gate against\n` +
+        `  last error after ${postgres.seconds}s: ${postgres.lastError}`,
+      exit,
+    };
+  }
   const verified = health.filter((h) => h.state === 'healthy').length;
+  // Printed on success, not only on failure: a figure that appears only when
+  // something is wrong teaches nobody to look for it, and this one is how a
+  // reader knows the second question was asked at all (SC-748).
+  const pg = postgres === null ? '' : ` · PG_READY_AFTER=${postgres.seconds}s`;
   return {
-    message: `dev-stack: UP · exit ${code} · ${health.length} running${denominator}, ${verified} health-verified in ${project}${started}`,
+    message: `dev-stack: UP · exit ${code} · ${health.length} running${denominator}, ${verified} health-verified in ${project}${started}${pg}`,
     exit: code,
   };
 }
@@ -643,6 +736,85 @@ async function containerHealth(env: Record<string, string>): Promise<ServiceHeal
             : 'none';
       return { name, service, state };
     });
+}
+
+/**
+ * The Postgres credentials THIS compose file sets, or `null` if it sets none
+ * (SC-748).
+ *
+ * Derived rather than hardcoded for the reason every other list here is: the
+ * two trees do not have to agree, and a wrong credential does not fail as a
+ * wrong credential — it fails as `UP UNREACHABLE` after the full budget, which
+ * reads exactly like the defect this probe exists to catch. `null` disables the
+ * probe rather than guessing, so a compose file with no Postgres is silent
+ * instead of wrong.
+ *
+ * These are the dev stack's own container credentials, which this compose file
+ * already states in the clear; nothing here reaches a real environment.
+ */
+export function composePostgresCredentials(): { user: string; password: string } | null {
+  const source = readFileSync(resolve(REPO_ROOT, 'docker-compose.yml'), 'utf8');
+  const user = /^\s*POSTGRES_USER:\s*(\S+)\s*$/m.exec(source);
+  const password = /^\s*POSTGRES_PASSWORD:\s*(\S+)\s*$/m.exec(source);
+  if (user === null || password === null) return null;
+  return { user: user[1] as string, password: password[1] as string };
+}
+
+/** An unref'd timer, so a losing race can never hold the process open. */
+function after(ms: number): Promise<void> {
+  return new Promise((resolve_) => {
+    setTimeout(resolve_, ms).unref();
+  });
+}
+
+/**
+ * One `select 1` over TCP, bounded (SC-748).
+ *
+ * `Bun.SQL` rather than the `postgres` package: this file is shared with a
+ * repository that does not depend on it, and a readiness probe is not a reason
+ * to add a dependency to somebody else's tree. The bound lives here because
+ * `awaitPostgresOverTcp` owns the BUDGET and a single hung attempt is a
+ * different problem — a probe that never returns has no output to read, which
+ * is worse than the wrong answer it replaced.
+ */
+async function selectOneOverTcp(url: string, boundMs: number): Promise<void> {
+  const sql = new SQL(url, {
+    max: 1,
+    idleTimeout: 1,
+    connectionTimeout: Math.ceil(boundMs / 1000),
+  });
+  try {
+    await Promise.race([
+      sql`select 1`,
+      after(boundMs).then(() => {
+        throw new Error(`no answer within ${boundMs}ms`);
+      }),
+    ]);
+  } finally {
+    await Promise.race([sql.end().catch(() => {}), after(1000)]);
+  }
+}
+
+/**
+ * The second question, asked only of a stack that already claims to be up.
+ *
+ * `null` means it was not asked — no Postgres in this compose file, none
+ * running, or no port derived for it — and the verdict then says nothing about
+ * TCP rather than implying it checked.
+ */
+async function probePostgres(
+  env: Record<string, string>,
+  health: readonly ServiceHealth[]
+): Promise<PostgresProbe | null> {
+  if (!health.some((h) => h.service === 'postgres')) return null;
+  const port = env.POSTGRES_HOST_PORT;
+  const credentials = composePostgresCredentials();
+  if (port === undefined || credentials === null) return null;
+  // The `postgres` maintenance database, which every server has, rather than
+  // `POSTGRES_DB`: readiness is a question about the SERVER, and a caller who
+  // needs a particular database gets a better error from its own connection.
+  const url = `postgres://${credentials.user}:${credentials.password}@localhost:${port}/postgres?sslmode=disable`;
+  return await awaitPostgresOverTcp(() => selectOneOverTcp(url, 5000), POSTGRES_TCP_BUDGET_SECONDS);
 }
 
 async function run(command: string[], env: Record<string, string>): Promise<number> {
@@ -778,13 +950,14 @@ async function main(): Promise<never> {
   if (code !== 0) process.stderr.write(explainPortConflicts(env));
 
   const project = env.COMPOSE_PROJECT_NAME ?? composeProjectName(REPO_ROOT);
-  const verdict = upVerdict(
-    code,
-    await containerHealth(env),
-    project,
-    mode,
-    expectedServices(mode, passthrough)
-  );
+  const health = await containerHealth(env);
+  const expected = expectedServices(mode, passthrough);
+  // The TCP probe is asked only of a stack every other check already passed.
+  // Over a failed build there is nothing to be ready, and a minute of retries
+  // would bury the reason under a timeout that is not the problem.
+  const settled = upVerdict(code, health, project, mode, expected);
+  const postgres = settled.exit === 0 && health !== null ? await probePostgres(env, health) : null;
+  const verdict = upVerdict(code, health, project, mode, expected, postgres);
   process.stderr.write(`${verdict.message}\n`);
   if (verdict.exit !== 0) process.exit(verdict.exit);
 
