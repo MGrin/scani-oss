@@ -45,7 +45,11 @@
 //              the served bundle names the commit it was built from, so
 //              ancestry answers "is my change in there" outright. Available on
 //              hosts whose deploy passes a Sentry DSN; UNAVAILABLE, not absent,
-//              elsewhere.
+//              elsewhere. It is a fact about ONE ARTEFACT: where a pipeline
+//              rebuilds by path, a change that ships without touching this
+//              bundle's inputs cannot move its marker, and the arm reads
+//              non-contained over a deploy that succeeded. It names both
+//              readings rather than picking one.
 //   signal     `--signal` + `--alive`. The fallback where identity is
 //              unavailable, and the only arm that answers "did THIS code ship"
 //              rather than "which commit built this". Search the ADJACENCY a
@@ -74,6 +78,7 @@ import {
   extractAssets,
   extractRelease,
   type Fetched,
+  identityVerdict,
   manifestDiff,
   type ShapeVerdict,
   signalVerdict,
@@ -258,18 +263,8 @@ async function main(argv: readonly string[]): Promise<number> {
       const head = runGit(['rev-parse', commit], process.cwd());
       const want = head.kind === 'ran' ? head.stdout.trim() : commit;
       const verdict = isAncestor(want, served, process.cwd());
-      if (verdict === 'yes') {
-        arms.push({
-          arm: 'identity',
-          state: 'pass',
-          detail: `served commit ${served.slice(0, 12)} contains ${want.slice(0, 12)}`,
-        });
-      } else if (verdict === 'no') {
-        arms.push({
-          arm: 'identity',
-          state: 'fail',
-          detail: `served commit ${served.slice(0, 12)} does NOT contain ${want.slice(0, 12)} — the deploy predates your change`,
-        });
+      if (verdict === 'yes' || verdict === 'no') {
+        arms.push(identityVerdict(want, served, verdict === 'yes'));
       } else {
         arms.push({ arm: 'identity', state: 'unverified', detail: verdict.why });
       }

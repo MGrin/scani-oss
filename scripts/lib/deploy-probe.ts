@@ -245,6 +245,43 @@ export function signalVerdict(r: SignalReading): ArmVerdict {
 }
 
 /**
+ * IDENTITY — and the sentence it must not say.
+ *
+ * A non-ancestor reading is a fact about ONE ARTEFACT: the bundle was built
+ * from a commit that does not contain yours. It is NOT the fact a reader wants,
+ * which is *did my change ship*, and those come apart whenever a deploy
+ * pipeline rebuilds artefacts by path.
+ *
+ * Measured on this repository 2026-09-03: the backend and worker deploy on
+ * `packages/business/**` while every frontend deploys on the far narrower
+ * `packages/business/shared/**`. So a change under `packages/business/domain/**`
+ * ships to the backend and never rebuilds the app bundle — and the marker in
+ * that bundle therefore CANNOT move, however correctly the change was deployed.
+ *
+ * This function used to render that as *"the deploy predates your change"*,
+ * which is a claim about the deploy drawn from a measurement about one file:
+ * the ticket's own defect, committed by the tool written to close it. The
+ * direction is the kinder one — a false ALARM, never a false green — but a
+ * reader who trusts the sentence goes hunting for a broken deploy that never
+ * happened.
+ *
+ * So the message names BOTH readings and neither is presented as the default.
+ * Deliberately NOT resolved here: doing that means reading the deploy
+ * pipeline's path filters, which are specific to one repository's topology and
+ * are not something a tool that takes an arbitrary URL can know.
+ */
+export function identityVerdict(want: string, served: string, contained: boolean): ArmVerdict {
+  const pair = `${served.slice(0, 12)} / ${want.slice(0, 12)}`;
+  return contained
+    ? { arm: 'identity', state: 'pass', detail: `served commit ${pair} — contained` }
+    : {
+        arm: 'identity',
+        state: 'fail',
+        detail: `this artefact was built from ${served.slice(0, 12)}, which does NOT contain ${want.slice(0, 12)}. TWO READINGS, and they are not the same thing: (a) your change is not deployed, or (b) it IS deployed and touched no path that rebuilds THIS artefact, so the bundle was never rebuilt and its marker could not move. Ask whether your diff reaches this artefact's build inputs before reading this as a failed deploy`,
+      };
+}
+
+/**
  * DIFFERENCE — which hashes moved between two deployments, and which HELD.
  *
  * The reusable half of SC-821, and it came out of that run unplanned. Its

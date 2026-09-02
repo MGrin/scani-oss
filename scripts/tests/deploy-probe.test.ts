@@ -22,6 +22,7 @@ import {
   extractAssets,
   extractRelease,
   type Fetched,
+  identityVerdict,
   manifestDiff,
   signalVerdict,
   worstOf,
@@ -181,6 +182,40 @@ describe('countLiteral', () => {
 
   test('an empty needle counts nothing rather than everything', () => {
     expect(countLiteral('abc', '')).toBe(0);
+  });
+});
+
+describe('identityVerdict — the sentence it must not say', () => {
+  const A = 'a'.repeat(40);
+  const B = 'b'.repeat(40);
+
+  test('contained is a pass', () => {
+    expect(identityVerdict(A, B, true).state).toBe('pass');
+  });
+
+  test('not contained is a fail, because the artefact really was read', () => {
+    expect(identityVerdict(A, B, false).state).toBe('fail');
+  });
+
+  // The reason this is pinned rather than left to review. A non-ancestor
+  // reading is a fact about ONE ARTEFACT, and it is NOT the fact the reader
+  // wants. Measured on this repository 2026-09-03: the backend and worker
+  // deploy on `packages/business/**` while every frontend deploys on
+  // `packages/business/shared/**`, so a change under
+  // `packages/business/domain/**` ships to the backend and never rebuilds the
+  // app bundle — whose marker therefore cannot move, however correct the
+  // deploy was.
+  //
+  // The message used to read "the deploy predates your change": a claim about
+  // the deploy drawn from a measurement about one file, which is this file's
+  // own defect. A reader who trusts it hunts for a broken deploy that never
+  // happened. Simplifying the message back to one reading is the regression.
+  test('a fail names BOTH readings and presents neither as the default', () => {
+    const d = identityVerdict(A, B, false).detail;
+    expect(d).toContain('TWO READINGS');
+    expect(d).toContain('not deployed');
+    expect(d).toContain('rebuilds THIS artefact');
+    expect(d).not.toContain('the deploy predates your change');
   });
 });
 
