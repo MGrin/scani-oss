@@ -381,6 +381,13 @@ export const holdingCoverage = pgTable('holding_coverage', {
   // ['etherscan', 'binance-api'].
   txSources: text('tx_sources').array().notNull().default(sql`'{}'`),
   hasCompleteTxHistory: boolean('has_complete_tx_history').notNull().default(false),
+  // The earliest date the SOURCE of this ledger covers — a broker statement's
+  // own `fromDate`, not the earliest row it happened to send (SC-900). NULL
+  // means no source has stated one, which is not the same fact as a ledger
+  // that reaches the beginning: it is the reading that lets a bounded-source
+  // residue be told apart from an unexplained one, and NULL declines to make
+  // either claim.
+  historyStartsAt: timestamp('history_starts_at', { withTimezone: true }),
   lastReconciledAt: timestamp('last_reconciled_at', { withTimezone: true }),
   // The synthesized opening balance (positive or negative Decimal.js
   // string), or null if reconciliation has not yet run or sum(txs)

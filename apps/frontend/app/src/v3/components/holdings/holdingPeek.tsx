@@ -255,12 +255,34 @@ export function holdingPeekSpec(holding: HoldingWithDetails, ctx: HoldingPeekCon
     // v2 hangs this on a `title` attribute on the table row, which a phone has
     // no way to show at all. It qualifies every historical figure for this
     // holding, so it belongs where those figures are read.
-    record.push({
-      label: t('v3.holdings.peek.history'),
-      // The server's own note wins when it sends one — it knows which holding
-      // this is. The fallback is ours and is the only half that translates.
-      value: holding.dataIntegrity.note ?? t('v3.holdings.peek.incompleteHistory'),
-    });
+    //
+    // TWO READINGS OF THE SAME SHORTFALL, and until SC-900 they wore one label
+    // and one sentence. "We cannot account for this" is worth investigating;
+    // "this predates the earliest statement obtainable" was settled the moment
+    // somebody chose a date range in their broker's report editor, and a
+    // reader who cannot tell them apart re-opens the second one every time
+    // they meet it — which is what happened, four times, to one account.
+    //
+    // `historyStartsAt` is the discriminator, and this is the one place the
+    // server's note LOSES: it is English prose, and the label has to change
+    // too, so a translated sentence with the date interpolated is strictly
+    // better than a note the reader may not be able to read. Where no window
+    // has been stated the precedence is unchanged — the server knows which
+    // holding this is and the fallback is ours.
+    const historyStartsAt = holding.dataIntegrity.historyStartsAt;
+    record.push(
+      historyStartsAt
+        ? {
+            label: t('v3.holdings.peek.openingPosition'),
+            value: t('v3.holdings.peek.predatesEarliestStatement', {
+              date: formatDate(historyStartsAt),
+            }),
+          }
+        : {
+            label: t('v3.holdings.peek.history'),
+            value: holding.dataIntegrity.note ?? t('v3.holdings.peek.incompleteHistory'),
+          }
+    );
   }
 
   const sections: PeekSection[] = [];

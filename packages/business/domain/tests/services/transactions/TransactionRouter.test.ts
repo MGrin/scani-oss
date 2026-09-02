@@ -62,6 +62,10 @@ interface SetupOpts {
       Mirrors a paginator that set out for the whole ledger and came back
       knowing it had not reached the end. */
   retractWith?: readonly string[];
+  /** How far back the stub says its source reaches, stated ON the retraction
+      (SC-900). One entry per `retractWith` reason, `undefined` for a provider
+      that retracts without being able to name a boundary. */
+  retractBounds?: ReadonlyArray<Date | undefined>;
   /** Reasons the stub provider reports WITHOUT retracting (SC-428) — a walk
       that annotates rather than produces, such as bitstamp's txid lookup. */
   noteWith?: readonly string[];
@@ -85,7 +89,10 @@ function setup(opts: SetupOpts): {
       institutionCode === opts.withProviderForInstitution,
     fetchTransactions: async (ctx) => {
       fetchCalls++;
-      for (const reason of opts.retractWith ?? []) ctx.retractHistoryClaim?.(reason);
+      (opts.retractWith ?? []).forEach((reason, i) => {
+        const at = opts.retractBounds?.[i];
+        ctx.retractHistoryClaim?.(reason, at ? { historyStartsAt: at } : undefined);
+      });
       for (const reason of opts.noteWith ?? []) ctx.noteWarning?.(reason);
       return opts.events;
     },
@@ -880,5 +887,103 @@ describe('TransactionRouter — a provider retracts the completeness claim', () 
 
     expect(result.hasCompleteTxHistory).toBe(false);
     expect(result.historyRetractions).toEqual([]);
+  });
+});
+
+/**
+ * SC-900 — the router carries how far back the walk reached, not only that it
+ * came back short.
+ *
+ * `has_complete_tx_history = false` says the ledger does not reach the
+ * beginning. It does not say where the ledger DOES begin, and without that a
+ * reconciliation shortfall with a known, permanent cause is indistinguishable
+ * from one nobody can account for.
+ */
+describe('TransactionRouter — a retraction can say how far back it reached', () => {
+  const EVENT = {
+    externalId: 'evt-1',
+    occurredAt: new Date('2024-06-01T10:00:00Z'),
+    kind: 'deposit',
+    primary: { tokenIdentity: { symbol: 'BTC' }, quantity: '1' },
+  } as TransactionEvent;
+
+  const WINDOW_OPENS = new Date('2024-03-01T00:00:00Z');
+
+  test('the stated bound reaches the result', async () => {
+    const { router, request } = setup({
+      events: [EVENT],
+      withProviderForInstitution: 'kraken',
+      retractWith: ['stub: this statement covers 2024-03-01 onward'],
+      retractBounds: [WINDOW_OPENS],
+    });
+
+    const result = await router.run(request);
+
+    expect(result.hasCompleteTxHistory).toBe(false);
+    expect(result.historyStartsAt).toEqual(WINDOW_OPENS);
+  });
+
+  /**
+   * THE CONTROL. A retraction that names no boundary must leave the field
+   * null rather than defaulting to a date — the whole value of the field is
+   * that its absence means "nobody has established this", and a default would
+   * turn every retraction in the product into a stated window.
+   */
+  test('a retraction with no bound leaves it null', async () => {
+    const { router, request } = setup({
+      events: [EVENT],
+      withProviderForInstitution: 'kraken',
+      retractWith: ['stub: the ledger contradicts itself'],
+    });
+
+    const result = await router.run(request);
+
+    expect(result.hasCompleteTxHistory).toBe(false);
+    expect(result.historyStartsAt).toBeNull();
+  });
+
+  test('a run that retracts nothing states no window either', async () => {
+    const { router, request } = setup({ events: [EVENT], withProviderForInstitution: 'kraken' });
+    const result = await router.run(request);
+    expect(result.historyStartsAt).toBeNull();
+  });
+
+  /**
+   * The EARLIEST of what was stated, not the last to speak. The field is read
+   * as "money that moved before this has no row here", so it must never reach
+   * further forward than the ledger actually does or it explains away rows we
+   * hold.
+   */
+  test('two bounds reduce to the earlier one, whichever order they arrive in', async () => {
+    const { router, request } = setup({
+      events: [EVENT],
+      withProviderForInstitution: 'kraken',
+      retractWith: ['stub: window A', 'stub: window B'],
+      retractBounds: [new Date('2024-09-01T00:00:00Z'), WINDOW_OPENS],
+    });
+
+    const result = await router.run(request);
+
+    expect(result.historyStartsAt).toEqual(WINDOW_OPENS);
+  });
+
+  /**
+   * A run that fetched nothing still tells the coordinator what it reached —
+   * zero events is the shape a revoked key or an emptied feed takes, and the
+   * empty-result path is a second construction site that can silently drop a
+   * field the populated one carries.
+   */
+  test('an empty run carries the bound too', async () => {
+    const { router, request } = setup({
+      events: [],
+      withProviderForInstitution: 'kraken',
+      retractWith: ['stub: this statement covers 2024-03-01 onward'],
+      retractBounds: [WINDOW_OPENS],
+    });
+
+    const result = await router.run(request);
+
+    expect(result.transactions).toEqual([]);
+    expect(result.historyStartsAt).toEqual(WINDOW_OPENS);
   });
 });
