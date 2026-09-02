@@ -122,19 +122,58 @@ function sourceFiles(dir: string): string[] {
 }
 
 /**
+ * The opening line of a multi-line binding list: `import {`, `import type {`,
+ * `import React, {`, `export {`. Deliberately not `export const X = {`, whose
+ * brace opens code rather than a list of names.
+ */
+const OPENS_BINDING_LIST =
+  /^\s*(?:import|export)\b(?:\s+type\b)?\s*(?:[A-Za-z_$][\w$]*\s*,\s*)?\{[^}]*$/;
+
+/** A whole line that is not code: an import or export clause, the `} from '…'`
+ *  that closes one, or a line comment. */
+const NOT_CODE = /^\s*(?:import|export)\b|^\s*(?:\}?\s*from\s|\/\/)/;
+
+/**
  * The file with everything that is not code removed: block comments, line
  * comments, and the import statements that carry an identifier into a module
  * without using it. What is left is the places a destination is actually
  * reached.
+ *
+ * Whole statements, not lines (SC-952). A line filter drops `import {` on one
+ * arm and `} from '…'` on the other and leaves everything between them — bare
+ * identifiers with a trailing comma, matching neither — so every named binding
+ * of a multi-line import survived and read as a *use*. That is the one
+ * distinction this guard exists to make, collapsed in the direction of a false
+ * green: 73 files under `src/v3` carry such an import and 359 identifiers were
+ * surviving. A single-line `import { X } from 'y'` was stripped correctly,
+ * which is why the helper looked right.
+ *
+ * SC-861's mirror in `@scani/domain` strips the statement with one regex
+ * (`\bimport\b[\s\S]*?from …`). That cannot be copied here: this tree has
+ * dynamic `import(…)` for route splitting and `import.meta`, and an unanchored
+ * lazy scan forward to the next `from '…'` would eat the live code between.
+ * Same idea, anchored to the shape this tree actually contains.
  */
+function stripToCode(source: string): string {
+  const kept: string[] = [];
+  let inBindingList = false;
+  for (const line of source.replace(/\/\*[\s\S]*?\*\//g, '').split('\n')) {
+    if (inBindingList) {
+      if (line.includes('}')) inBindingList = false;
+      continue;
+    }
+    if (OPENS_BINDING_LIST.test(line)) {
+      inBindingList = true;
+      continue;
+    }
+    if (NOT_CODE.test(line)) continue;
+    kept.push(line);
+  }
+  return kept.join('\n');
+}
+
 function code(file: string): string {
-  return readFileSync(file, 'utf8')
-    .replace(/\/\*[\s\S]*?\*\//g, '')
-    .split('\n')
-    .filter(
-      (line) => !/^\s*(?:import|export)\b/.test(line) && !/^\s*(?:\}?\s*from\s|\/\/)/.test(line)
-    )
-    .join('\n');
+  return stripToCode(readFileSync(file, 'utf8'));
 }
 
 const NAV_PATHS = new Set(routes.V3_NAV_PATHS);
@@ -151,6 +190,52 @@ function linksTo(expr: string): string[] {
 }
 
 const V3APP = readFileSync(V3APP_FILE, 'utf8');
+
+describe('the scan reads uses, not imports', () => {
+  // The scan above is the whole instrument: `linksTo` is a substring test over
+  // what `stripToCode` leaves, so anything it fails to strip is reported as a
+  // link. Both directions are asserted here — a negative that cannot come back
+  // positive is not a reading (SC-952).
+
+  test('a single-line import is not a use', () => {
+    expect(stripToCode("import { V3_ROUTES } from './routes';\nconst a = 1;\n")).not.toContain(
+      'V3_ROUTES'
+    );
+  });
+
+  test('a multi-line import is not a use either', () => {
+    // The regression. Every line of the binding list matched neither arm of
+    // the old line filter, so the identifiers survived and read as uses.
+    const source =
+      "import {\n  V3_ROUTES,\n  TRANSFER_REVIEW_PATH,\n} from './routes';\nconst a = 1;\n";
+    expect(stripToCode(source)).not.toContain('V3_ROUTES');
+    expect(stripToCode(source)).not.toContain('TRANSFER_REVIEW_PATH');
+  });
+
+  test.each([
+    ['a default beside a list', "import React, {\n  V3_ROUTES,\n} from './routes';\n"],
+    ['a type-only list', "import type {\n  V3_ROUTES,\n} from './routes';\n"],
+    ['a re-export list', "export {\n  V3_ROUTES,\n} from './routes';\n"],
+  ])('%s is not a use', (_name, source) => {
+    expect(stripToCode(source)).not.toContain('V3_ROUTES');
+  });
+
+  test('a real use survives', () => {
+    // The positive control. Without it, a helper that returned '' would pass
+    // every case above and make the whole guard vacuous.
+    const source = "import {\n  V3_ROUTES,\n} from './routes';\n\nconst to = V3_ROUTES.holdings;\n";
+    expect(stripToCode(source)).toContain('V3_ROUTES.holdings');
+  });
+
+  test('an object body is not mistaken for a binding list', () => {
+    // `export const X = {` also ends in a brace. Swallowing to the next `}`
+    // there would delete real code and turn this guard's greens into silence
+    // of a different kind.
+    expect(stripToCode('export const X = {\n  to: V3_ROUTES.holdings,\n};\n')).toContain(
+      'V3_ROUTES.holdings'
+    );
+  });
+});
 
 describe('the route table is the whole route table', () => {
   test('every registered route names a path from routes.ts, or is named here', () => {
