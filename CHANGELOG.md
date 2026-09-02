@@ -19,6 +19,15 @@ version heading stays there permanently, above every future release. This
 comment is deliberately in that position; explanatory prose should not be.
 -->
 
+## [0.38.1](https://github.com/MGrin/scani-oss/compare/v0.38.0...v0.38.1) (2026-09-02)
+
+
+### Bug Fixes
+
+* **transfer-review:** refuse an internal answer across the entity boundary ([581f26b](https://github.com/MGrin/scani-oss/commit/581f26bce691ee6d3ed75b0ed74b6ffb52633bc1))
+* **v3:** "committed" means one thing, and estimate-inclusive figures say "projected" ([c4a8a96](https://github.com/MGrin/scani-oss/commit/c4a8a960010f9b13ea4bb82b9d98011e69cd630e))
+* **v3:** name the estimated money three figures score as zero (SC-818) ([8a033e4](https://github.com/MGrin/scani-oss/commit/8a033e4b3f995aec65e0994901e1cfdc7d0bef3c))
+
 ## [0.38.0](https://github.com/MGrin/scani-oss/compare/v0.37.0...v0.38.0) (2026-09-02)
 
 
