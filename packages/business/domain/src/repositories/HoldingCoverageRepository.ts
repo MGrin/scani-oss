@@ -166,6 +166,16 @@ export class HoldingCoverageRepository {
           set: {
             firstTxAt: sql`LEAST(${schema.holdingCoverage.firstTxAt}, EXCLUDED.first_tx_at)`,
             lastTxAt: sql`GREATEST(${schema.holdingCoverage.lastTxAt}, EXCLUDED.last_tx_at)`,
+            // LEAST, so the column means the furthest back ANY run has reached
+            // for this holding rather than the last one to state a window
+            // (SC-900). A saved query whose range slides forward would
+            // otherwise move the boundary past rows the ledger still holds,
+            // and the boundary is read as "money that moved before this has no
+            // row here" — a sentence that must never reach forward over rows
+            // we have. Postgres `LEAST` ignores NULLs, so a run that states
+            // nothing leaves a stored bound standing, and the first run to
+            // state one on a NULL row writes it.
+            historyStartsAt: sql`LEAST(${schema.holdingCoverage.historyStartsAt}, EXCLUDED.history_starts_at)`,
             txSources: sql`ARRAY(SELECT DISTINCT UNNEST(${schema.holdingCoverage.txSources} || EXCLUDED.tx_sources))`,
             hasCompleteTxHistory: completenessIsClaimed
               ? sql`EXCLUDED.has_complete_tx_history`

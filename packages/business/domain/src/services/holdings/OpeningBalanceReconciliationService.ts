@@ -7,6 +7,44 @@ import { HoldingRepository } from '../../repositories/HoldingRepository';
 import { HoldingTransactionRepository } from '../../repositories/HoldingTransactionRepository';
 import { BalanceAtTimeService } from '../pricing/BalanceAtTimeService';
 
+/**
+ * Why the ledger falls short, when it does (SC-900).
+ *
+ * `unexplained` and `before-available-history` are the same ARITHMETIC and
+ * completely different facts, and until now they were the same sentence. One
+ * is a reconciliation failure worth investigating; the other was settled the
+ * moment somebody chose a date range in their broker's report editor, and is
+ * permanent for as long as that range stands.
+ *
+ * The cost of not separating them is not confusion, it is REPETITION: a
+ * settled fact wearing an open question's clothes is re-derived by every audit
+ * that meets it, and this one was re-derived four times over one account
+ * before it was written down.
+ *
+ * ## What decides it, and what deliberately does not
+ *
+ * `before-available-history` requires `holding_coverage.history_starts_at`,
+ * which is written only by a run that RETRACTED its completeness claim while
+ * naming the window its source covers. NULL — the default, and every row's
+ * value until something states otherwise — yields `unexplained`, so the
+ * explanation cannot appear on a holding nobody has established a bound for.
+ *
+ * It is NOT decided by `has_complete_tx_history`, which is `false` by default
+ * and false for reasons that say nothing about reach. Keying on it would
+ * relabel every unexplained residue in the product as a known boundary, which
+ * is the same defect this fixes with the sign flipped — and worse, because a
+ * false explanation over a real gap is harder to notice than an honest
+ * "unexplained" over a settled one.
+ *
+ * ## It is a CAUSE, not a discount
+ *
+ * Naming it changes no arithmetic. The amount is still computed, still
+ * reported, and still not netted into an adjusting entry — a residue that
+ * reconciles to zero is exactly what would stop anyone noticing the day the
+ * window genuinely breaks.
+ */
+export type ResidueCause = 'none' | 'unexplained' | 'before-available-history';
+
 // What the reconciler will do to one holding, computed without doing it.
 export interface OpeningProjection {
   holdingId: string;
@@ -32,6 +70,11 @@ export interface OpeningProjection {
   openingAt: Date | null;
   openingQuantity: Decimal;
   unexplainedResidual: Decimal;
+  // Why the shortfall exists, when there is one. See `ResidueCause`.
+  residueCause: ResidueCause;
+  // The window this holding's ledger source covers, copied from coverage so a
+  // caller previewing the write reads the same boundary the write used.
+  historyStartsAt: Date | null;
 }
 
 export interface ReconciliationResult {
@@ -60,6 +103,10 @@ export interface ReconciliationResult {
   openingAt: Date | null;
   // Note left on holding_coverage if anything notable happened.
   notes: string | null;
+  // Why the shortfall exists, when there is one. See `ResidueCause`.
+  residueCause: ResidueCause;
+  // The window this holding's ledger source covers, or null when unstated.
+  historyStartsAt: Date | null;
 }
 
 // Tiny threshold below which we treat diffs as "rounding" and skip synthesis.
@@ -144,6 +191,14 @@ export class OpeningBalanceReconciliationService {
     const holdingsBalance = new Decimal(holding.balance);
     const computedOpening = holdingsBalance.sub(txSumAllTime);
 
+    // The window this holding's ledger SOURCE covers, when one has been stated
+    // (SC-900). Read here rather than at the branch that uses it so the
+    // projection carries it whatever it decides — a caller previewing the
+    // write sees the boundary the write reasoned from, which is the same
+    // reason `projectHolding` exists at all.
+    const coverage = await this.coverageRepository.findByHolding(holdingId);
+    const historyStartsAt = coverage?.historyStartsAt ?? null;
+
     const base = {
       holdingId,
       userId: holding.userId,
@@ -152,6 +207,7 @@ export class OpeningBalanceReconciliationService {
       holdingsBalance,
       txSumAllTime,
       computedOpening,
+      historyStartsAt,
     };
 
     if (computedOpening.abs().lte(epsilon)) {
@@ -166,6 +222,7 @@ export class OpeningBalanceReconciliationService {
         openingAt: null,
         openingQuantity: new Decimal(0),
         unexplainedResidual: new Decimal(0),
+        residueCause: 'none',
       };
     }
 
@@ -210,6 +267,22 @@ export class OpeningBalanceReconciliationService {
         openingAt,
         openingQuantity: new Decimal(0),
         unexplainedResidual: computedOpening,
+        // The ONLY branch that can reach `before-available-history`, and the
+        // restriction is evidence rather than caution (SC-900).
+        //
+        // A negative computed opening says the ledger records more leaving
+        // this holding than ever arrived in it, which for a correct ledger is
+        // only possible if inflows predate where the ledger starts. When the
+        // source has also stated where it starts, the two halves meet and the
+        // shortfall has a named, permanent cause.
+        //
+        // The other three branches cannot. `arrived-later` holds positive
+        // evidence pointing the other way — an observation says the ledger
+        // explained the balance at the start, so whatever is missing arrived
+        // AFTER it — and `opening`'s residual is the same evidence expressed
+        // as a cap. Labelling those from the window would be reading a
+        // boundary over the top of a measurement that contradicts it.
+        residueCause: historyStartsAt ? 'before-available-history' : 'unexplained',
       };
     }
 
@@ -274,6 +347,7 @@ export class OpeningBalanceReconciliationService {
       openingAt,
       openingQuantity,
       unexplainedResidual,
+      residueCause: unexplainedResidual.abs().lte(epsilon) ? 'none' : 'unexplained',
     };
   }
 
@@ -292,6 +366,8 @@ export class OpeningBalanceReconciliationService {
       openingAt,
       openingQuantity,
       unexplainedResidual,
+      residueCause,
+      historyStartsAt,
     } = projection;
     const identity = {
       holdingId,
@@ -317,12 +393,29 @@ export class OpeningBalanceReconciliationService {
         openingBalanceSynthesized: false,
         openingAt: null,
         notes: null,
+        residueCause,
+        historyStartsAt,
       };
     }
 
     if (projection.action === 'missing-inflows') {
       await this.transactionRepository.deleteReconciliationOpening(holdingId);
-      const gapNotes = `Missing inflows of ${computedOpening.abs().toString()} before ${openingAt?.toISOString()} — the transaction history does not reach far enough back to explain the current balance. No opening balance was synthesized, because a negative holding is not a possible fact.`;
+      // Two sentences for two facts, and which one a reader gets is the whole
+      // of SC-900. Both name the same amount and neither nets it away — the
+      // figure staying visible is what would still catch the day the window
+      // genuinely breaks.
+      //
+      // The date named is the SOURCE'S window, not `openingAt`. They are
+      // different dates and the difference is the point: `openingAt` sits one
+      // millisecond before this holding's earliest evidence, and a statement
+      // covering a range can report a row dated before that range — an accrued
+      // fee, a corrected settlement — so `openingAt` can be months earlier than
+      // anything was actually fetched from. Naming it here would claim a wider
+      // window than the one that exists.
+      const gapNotes =
+        residueCause === 'before-available-history' && historyStartsAt
+          ? `Opening position: ${computedOpening.abs().toString()} of the current balance predates the earliest available statement (from ${historyStartsAt.toISOString()}), which is as far back as this holding's source reaches. Money that moved before then was never fetched, so no transaction here can account for it. This is a known boundary rather than a reconciliation failure, and it stands until a statement covering the earlier period is imported. No opening balance was synthesized, because a negative holding is not a possible fact.`
+          : `Missing inflows of ${computedOpening.abs().toString()} before ${openingAt?.toISOString()} — the transaction history does not reach far enough back to explain the current balance. No opening balance was synthesized, because a negative holding is not a possible fact.`;
       await this.coverageRepository.upsertReconciliation({
         holdingId,
         lastReconciledAt: new Date(),
@@ -334,6 +427,8 @@ export class OpeningBalanceReconciliationService {
           ...identity,
           missingQuantity: computedOpening.abs().toString(),
           before: openingAt?.toISOString(),
+          residueCause,
+          historyStartsAt: historyStartsAt?.toISOString() ?? null,
         },
         'Unreconciled holding — missing inflows, no opening balance synthesized'
       );
@@ -347,6 +442,8 @@ export class OpeningBalanceReconciliationService {
         openingBalanceSynthesized: false,
         openingAt: null,
         notes: gapNotes,
+        residueCause,
+        historyStartsAt,
       };
     }
 
@@ -375,6 +472,8 @@ export class OpeningBalanceReconciliationService {
         openingBalanceSynthesized: false,
         openingAt: null,
         notes: laterNotes,
+        residueCause,
+        historyStartsAt,
       };
     }
 
@@ -436,6 +535,8 @@ export class OpeningBalanceReconciliationService {
       openingBalanceSynthesized: true,
       openingAt: occurredAt,
       notes,
+      residueCause,
+      historyStartsAt,
     };
   }
 

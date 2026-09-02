@@ -34,7 +34,12 @@ import type {
 } from '@scani/db/schema';
 import type { TransactionsProvider } from '@scani/providers/core/capabilities';
 import { ProviderRegistry } from '@scani/providers/core/registry';
-import type { ProviderContext, TransactionEvent, WithUserCreds } from '@scani/providers/core/types';
+import type {
+  HistoryBound,
+  ProviderContext,
+  TransactionEvent,
+  WithUserCreds,
+} from '@scani/providers/core/types';
 import { Container, Service } from 'typedi';
 import { TokenTypeRepository } from '../../repositories/EnumRepositories';
 import { HoldingService } from '../holdings/HoldingService';
@@ -99,6 +104,19 @@ export interface TransactionRouterResult {
    * inherit from having asked for a window (SC-360).
    */
   historyRetractions: string[];
+  /**
+   * The earliest date any retracting provider says its source COVERS, or null
+   * when none named one (SC-900).
+   *
+   * The EARLIEST of what was stated, not the latest. It is written to
+   * `holding_coverage.history_starts_at` and read back as "money that moved
+   * before this has no row here" — a claim that must never reach further
+   * forward than the ledger actually does, or it explains away rows we hold.
+   * One run resolves one provider today, so the reduction has nothing to do
+   * but pass a single value through; it is written as a reduction because that
+   * is a property of this method rather than of the type.
+   */
+  historyStartsAt: Date | null;
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -162,12 +180,13 @@ export class TransactionRouter {
     // to the caller's state without the caller handing it a service.
     const retractions: string[] = [];
     const notices: string[] = [];
+    let historyStartsAt: Date | null = null;
 
     const ctx: WithUserCreds<ProviderContext> & {
       institutionCode: string;
       since?: Date;
       until?: Date;
-      retractHistoryClaim?: (reason: string) => void;
+      retractHistoryClaim?: (reason: string, bound?: HistoryBound) => void;
       noteWarning?: (reason: string) => void;
     } = {
       baseCurrency: request.baseCurrency,
@@ -184,8 +203,15 @@ export class TransactionRouter {
       // no way back — a provider cannot know whether the caller asked for a
       // window, so letting it CLAIM completeness would let an incremental
       // run declare a whole ledger every night.
-      retractHistoryClaim: (reason: string) => {
+      retractHistoryClaim: (reason: string, bound?: HistoryBound) => {
         retractions.push(reason);
+        // Kept beside the reason rather than folded into it: the sentence is
+        // for the reader and the date is for reconciliation, and a service
+        // parsing a date back out of English prose is how the two come to
+        // disagree (SC-900).
+        if (bound && (historyStartsAt === null || bound.historyStartsAt < historyStartsAt)) {
+          historyStartsAt = bound.historyStartsAt;
+        }
       },
       // The other half of the same channel, and deliberately NOT the same
       // array. A retraction is evidence about the ledger and moves
@@ -205,10 +231,10 @@ export class TransactionRouter {
     if (horizon) notices.unshift(horizon);
 
     if (events.length === 0) {
-      return this.emptyResult(complete, retractions, notices);
+      return this.emptyResult(complete, retractions, notices, historyStartsAt);
     }
 
-    return this.materializeEvents(events, request, complete, retractions, notices);
+    return this.materializeEvents(events, request, complete, retractions, notices, historyStartsAt);
   }
 
   /**
@@ -292,7 +318,8 @@ export class TransactionRouter {
     request: TransactionRouterRequest,
     hasCompleteTxHistory: boolean,
     historyRetractions: readonly string[],
-    notices: readonly string[] = []
+    notices: readonly string[] = [],
+    historyStartsAt: Date | null = null
   ): Promise<TransactionRouterResult> {
     const transactions: NewHoldingTransaction[] = [];
     // Seeded with the retractions so a reader meets "why is my history
@@ -520,6 +547,7 @@ export class TransactionRouter {
       lastEventAt: accumulator.last,
       hasCompleteTxHistory,
       historyRetractions: [...historyRetractions],
+      historyStartsAt,
     };
   }
 
@@ -598,7 +626,8 @@ export class TransactionRouter {
   private emptyResult(
     hasCompleteTxHistory: boolean,
     historyRetractions: readonly string[],
-    notices: readonly string[] = []
+    notices: readonly string[] = [],
+    historyStartsAt: Date | null = null
   ): TransactionRouterResult {
     return {
       transactions: [],
@@ -613,6 +642,7 @@ export class TransactionRouter {
       lastEventAt: null,
       hasCompleteTxHistory,
       historyRetractions: [...historyRetractions],
+      historyStartsAt,
     };
   }
 }

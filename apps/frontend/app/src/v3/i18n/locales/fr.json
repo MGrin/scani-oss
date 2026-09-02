@@ -1084,6 +1084,8 @@
         "unpriceableNote": "Aucune source n’a jamais coté ce jeton, et nous avons cessé de demander pour l’instant. Il est exclu de votre patrimoine net plutôt que compté pour zéro.",
         "history": "Historique",
         "incompleteHistory": "Incomplet — les entrées antérieures à la première transaction importée manquent, les valeurs avant cette date sont donc bornées.",
+        "openingPosition": "Position d’ouverture",
+        "predatesEarliestStatement": "Antérieur au relevé le plus ancien disponible (à partir du {{date}}) : l’argent déplacé avant cette date n’a jamais été récupéré, donc aucune transaction ici ne peut l’expliquer. Importez un relevé couvrant la période antérieure pour le solder.",
         "performance": "Performance",
         "costBasis": "Prix de revient",
         "gainLoss": "Plus ou moins-value",

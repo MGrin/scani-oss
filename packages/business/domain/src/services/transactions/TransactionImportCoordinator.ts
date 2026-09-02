@@ -474,6 +474,17 @@ export class TransactionImportCoordinator {
         lastTxAt: null,
         txSources: [source],
         hasCompleteTxHistory: result.hasCompleteTxHistory,
+        // Every holding this run touched gets the same window, because the
+        // window is a property of the STATEMENT and not of a holding within it
+        // (SC-900). Null on every run whose provider named none, and `LEAST`
+        // in the merge leaves a stored bound standing rather than clearing it.
+        //
+        // Deliberately NOT gated on `completenessIsClaimed`. That gate exists
+        // because an incremental run's `false` is silence about the ledger
+        // rather than evidence, and a bound is the opposite: it is only ever
+        // set by a provider that has just RETRACTED, so it carries evidence in
+        // the one direction the gate protects.
+        historyStartsAt: result.historyStartsAt,
       })),
       { completenessIsClaimed: !since || result.historyRetractions.length > 0 }
     );
