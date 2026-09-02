@@ -234,6 +234,52 @@ const SCRUB_COMMENTS =
   'SC-912/SC-915 replaced real account data in this migration with synthetic ' +
   'examples so the mirrored tree stops carrying it. Comments only.';
 
+/**
+ * The safety argument, shared by both 0044 entries below. It is about the FILE,
+ * so it does not change with which database is being reconciled.
+ */
+const SCRUB_0044_WHY =
+  'SC-917 replaced the production row identifiers this migration carried in ' +
+  'EXECUTABLE SQL — the comment-level data was taken in SC-915, so no ' +
+  'comment-only declaration is writable for it any more. Re-recording it is ' +
+  'safe because no database will ever run either version again: the INSERT ' +
+  'joins its eleven literal id pairs against `holding_transactions` on both ' +
+  'legs, so where those rows do not exist it stages nothing, and the two ' +
+  'UPDATEs below read only that staging table and become no-ops. The only ' +
+  'database whose rows those ids ever named has already applied the old text. ' +
+  'The edit narrows rather than widens — the pairs now name ids no real row ' +
+  'carries, so no database can reach the UPDATEs at all, where before exactly ' +
+  'one could. Statement list, order, column lists and the eleven pairs are ' +
+  'unchanged: normalising every UUID in both versions and diffing leaves them ' +
+  'identical.';
+
+/**
+ * TWO ENTRIES, BECAUSE `recorded` IS A CLAIM ABOUT WHAT A DATABASE HOLDS NOW —
+ * not about what this repo shipped, and the two stopped being the same the
+ * moment anything reconciled.
+ *
+ * This migration has shipped three times: the original, the SC-915 comment
+ * scrub, and this edit. The comment-only declaration that covered the first
+ * hop was REPLACED here, because its `sqlSha256` no longer describes the file
+ * — but by then it had already fired on both deployed databases, leaving them
+ * on the SC-915 digest. Declaring only the original digest would therefore
+ * cover the one population that no longer exists, and `planReconciliation`
+ * filters candidates on `tag` AND `recorded`, so the real drift would match
+ * nothing, fall into `refuse`, and fail the whole deploy — this mechanism
+ * producing the outage it exists to prevent.
+ *
+ * Both are live: `-FROM_ORIGINAL` covers a self-hoster still on the pre-SC-915
+ * text, `-FROM_SCRUBBED` covers anything that took the SC-915 hop.
+ * `declaration-covers-every-released-digest.test.ts` is what keeps this honest.
+ */
+const SCRUB_0044_FROM_ORIGINAL =
+  'Covers a database still on the pre-SC-915 text, which never took the comment ' +
+  `scrub. ${SCRUB_0044_WHY}`;
+
+const SCRUB_0044_FROM_SCRUBBED =
+  'Covers a database that already reconciled the SC-915 comment scrub — which is ' +
+  `every database deployed as of 0.36.0. ${SCRUB_0044_WHY}`;
+
 const SCRUB_0045 =
   'SC-916 replaced production identifiers this migration carried in EXECUTABLE ' +
   'SQL, not in comments — so no comment-only declaration is writable for it. ' +
@@ -302,11 +348,18 @@ export const DRIFT_DECLARATIONS: readonly DriftDeclaration[] = [
     why: SCRUB_COMMENTS,
   },
   {
-    kind: 'comment-only',
+    kind: 'sql-changed',
     tag: '0044_sc328_pair_kraken_eth_withdrawals',
     recorded: '259e6759f12f472cb05c7d8c60c2d2e170da4ff6968e990bf88ac9e90df01f81',
-    sqlSha256: '03cd464079594d598fc558c56e5e9012469bb6e291c5cbc0efaff40b38e241cf',
-    why: SCRUB_COMMENTS,
+    becomes: '3914f8af82195dda57f0e866dcb603bf3f6f3b86392d1969ad39112fd6ac3ba6',
+    why: SCRUB_0044_FROM_ORIGINAL,
+  },
+  {
+    kind: 'sql-changed',
+    tag: '0044_sc328_pair_kraken_eth_withdrawals',
+    recorded: '030cd1bb18654eb9590da4f5ef5594a10518ea08049bade9de338409b3a73398',
+    becomes: '3914f8af82195dda57f0e866dcb603bf3f6f3b86392d1969ad39112fd6ac3ba6',
+    why: SCRUB_0044_FROM_SCRUBBED,
   },
   {
     kind: 'sql-changed',
