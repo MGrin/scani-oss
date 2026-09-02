@@ -19,6 +19,14 @@ version heading stays there permanently, above every future release. This
 comment is deliberately in that position; explanatory prose should not be.
 -->
 
+## [0.38.3](https://github.com/MGrin/scani-oss/compare/v0.38.2...v0.38.3) (2026-09-02)
+
+
+### Bug Fixes
+
+* **ci:** give the Coverage job the git history its suite reads ([acf63c0](https://github.com/MGrin/scani-oss/commit/acf63c0b82c0f01d4dd551a4772d94deeb916699))
+* **db:** declare the users email-unsubscribe-token index in drizzle ([cf45a39](https://github.com/MGrin/scani-oss/commit/cf45a39b1b812c929f6c3ab65b5b3be13be74530))
+
 ## [0.38.2](https://github.com/MGrin/scani-oss/compare/v0.38.1...v0.38.2) (2026-09-02)
 
 
