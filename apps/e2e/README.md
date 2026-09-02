@@ -845,3 +845,71 @@ against the v3 tokens in both themes at once with no network data behind any of
 it, and both of its baselines are already in the set — so a specimen added to
 the gallery is covered by the next `--update` for free, on a screen that cannot
 drift.
+
+### A second token type is not one of the things it can be widened with (SC-820)
+
+Every seeded token is fiat, so a baseline can only ever picture one token type.
+Measured against a migrated database rather than against the migration text:
+
+    token_types      fiat, crypto, stock, private-company, other
+    tokens by type   136 fiat, and no other group at all
+    account_types    5    (control — so the query is reading real rows)
+
+The five types and the 136 tokens are seeded once, in `0000_clean_start.sql`,
+and nothing since has added a token: `INSERT INTO tokens` appears in that one
+file across 74 migrations, where the control `INSERT INTO institutions` appears
+in two.
+
+**What decides whether you can get a second type is whether you hold a database
+handle — not whether you are a test.** There are two doors:
+
+- **Through the product.** `fixtures/ui.ts`'s `createHolding` calls
+  `tokens.search` over HTTP and accepts only a hit whose `source` is
+  `'database'`. Non-fiat identities arrive as `source: 'external'`, which
+  `routers/tokens.ts` delegates to the data-provider and which returns nothing
+  when `SCANI_CLOUD_URL` is unset. So this door offers the 136 fiat rows and
+  exactly one way past them: a live CoinGecko or Finnhub call, whose result
+  becomes a `tokens` row when the holding is created.
+- **Directly.** Anything holding a `db` handle inserts whatever type it likes
+  with no upstream call, and three things in the tree do —
+  `packages/business/domain/test/helpers/factories-extra.ts` inside a test
+  transaction, `packages/business/domain/src/demo/DemoDatasetSeeder.ts` for the
+  demo persona's four crypto and four stock rows, and this directory's own
+  `scripts/seed-cold-boot.ts`.
+
+**Every fixture behind a baseline is on the first door on purpose.** The
+harness drives the real product over HTTP so that a picture is of the product
+and not of a database, which is the same reason `fixtures/visual-network.ts`
+lets nothing off this machine. A committed baseline that depended on a
+third-party call would fail on the day CoinGecko did. `fixtures/visual-setup.ts`
+is fiat-only for that reason and not because somebody forgot to widen it.
+
+**So writing this down does not open the door.** It was decided on 2026-09-03
+that the sync stays a documented prerequisite: no canonical crypto or stock
+identities ship in a migration, and no fixture inserts them. What that accepts
+is that the token-type label sites — the `CurrencyField` picker hint, the
+`holdingPeek` Type fact, the `holdingAllocation` bar, the `tokenTypeOptions`
+filter and the group-by header — have no baseline and no fixture, indefinitely.
+`home-allocation-fold-desktop` cuts the bar **by account** for this reason, and
+that is the answer rather than a stopgap. Both alternatives were considered and
+declined, so proposing either again needs a reason the decision was wrong
+rather than a restatement of the cost.
+
+**A domain test is not blocked by any of this, and reading the paragraphs above
+as though it were is the mistake they invite.** A test that owns a transaction
+can insert a token type and a token itself;
+`domain/tests/repositories/TokenRepository.scam-score-selection.test.ts` looks a
+code up and creates it when absent, which is the pattern to copy. `makeToken`
+will not do it for you: its `getOrCreateCryptoTokenType` inserts `crypto` only
+when `token_types` is EMPTY, and on a migrated database its `select … limit 1`
+returns **fiat** despite the name. Pass `typeId` when you care which type you
+get.
+
+Falsifier, one query against any migrated stack. A second row in the result
+means a non-fiat token now ships and this section is stale:
+
+```sh
+psql "$DATABASE_URL" -c \
+  "select tt.code, count(*) from tokens t
+     join token_types tt on tt.id = t.type_id group by tt.code"
+```
