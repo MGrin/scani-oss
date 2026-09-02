@@ -4115,6 +4115,187 @@ describe('TransferReviewService — the entity boundary', () => {
     await putAccountInEntity(f.outAccountId, null);
     expect((await service().listPending(f.userId))[0]?.candidates).toHaveLength(1);
   });
+
+  /**
+   * The `internal` answer is the OTHER door onto the same outcome (SC-859).
+   *
+   * `candidatePairClass` refuses a cross-entity pair, so `paired` is
+   * unreachable across the boundary — which leaves `internal` as the only
+   * linking answer a reader is offered there. It writes the same shared
+   * `transfer_group_id` and `walkComponent` inherits the lots through it
+   * identically, so a guard on one door and not the other refuses the answer
+   * and permits the outcome.
+   *
+   * The control below is not the one three tests up: those run with every
+   * account unassigned, so a writer that refused every `internal` answer
+   * would leave all of them passing.
+   */
+  async function createdInflows(f: Fixture, outflowId: string) {
+    return db
+      .select()
+      .from(schema.holdingTransactions)
+      .where(
+        and(
+          eq(schema.holdingTransactions.userId, f.userId),
+          eq(schema.holdingTransactions.source, 'transfer-review'),
+          eq(schema.holdingTransactions.externalId, outflowId)
+        )
+      );
+  }
+
+  test('writes the arrival for an `internal` answer inside ONE entity', async () => {
+    const f = fixture!;
+    const personal = await makeEntity(f.userId, 'personal');
+    await putAccountInEntity(f.outAccountId, personal);
+    await putAccountInEntity(f.inAccountId, personal);
+    const outId = await insertOutflow(f, {
+      at: anchor(),
+      quantity: '-4000',
+      externalId: 'ent-int-ctl',
+    });
+
+    expect(
+      await service().resolve(f.userId, outId, 'internal', {
+        destination: { accountId: f.inAccountId, holdingId: f.inHoldingId },
+      })
+    ).toEqual({ ok: true });
+    expect(await createdInflows(f, outId)).toHaveLength(1);
+  });
+
+  test('refuses an `internal` answer across the boundary, and writes nothing', async () => {
+    const f = fixture!;
+    await putAccountInEntity(f.outAccountId, await makeEntity(f.userId, 'personal'));
+    await putAccountInEntity(f.inAccountId, await makeEntity(f.userId, 'company'));
+    const outId = await insertOutflow(f, {
+      at: anchor(),
+      quantity: '-4000',
+      externalId: 'ent-int-1',
+    });
+
+    expect(
+      await service().resolve(f.userId, outId, 'internal', {
+        destination: { accountId: f.inAccountId, holdingId: f.inHoldingId },
+      })
+    ).toEqual({ ok: false, reason: 'cross_entity' });
+
+    expect(await createdInflows(f, outId)).toHaveLength(0);
+    const [out] = await db
+      .select()
+      .from(schema.holdingTransactions)
+      .where(eq(schema.holdingTransactions.id, outId));
+    // The whole answer rolled back: the row is still a question, which is what
+    // the refusal is FOR — its owner has to classify the movement.
+    expect(out?.transferReview).toBeNull();
+    expect(out?.transferGroupId).toBeNull();
+    expect((await service().pendingSummary(f.userId)).count).toBe(1);
+  });
+
+  /**
+   * The split is a third entry point onto `writeInflow`, and it reaches it
+   * with a portion's quantity rather than the row's. A guard placed in
+   * `resolve` alone would leave "3,500 of this went to the company account"
+   * writing exactly the arrival the whole-row answer was refused.
+   */
+  test('refuses the `internal` PORTION of a split across the boundary', async () => {
+    const f = fixture!;
+    await putAccountInEntity(f.outAccountId, await makeEntity(f.userId, 'personal'));
+    await putAccountInEntity(f.inAccountId, await makeEntity(f.userId, 'company'));
+    const outId = await insertOutflow(f, {
+      at: anchor(),
+      quantity: '-4000',
+      externalId: 'ent-int-2',
+    });
+
+    expect(
+      await service().resolveSplit(f.userId, outId, [
+        {
+          decision: 'internal',
+          quantity: '3500',
+          destination: { accountId: f.inAccountId, holdingId: f.inHoldingId },
+        },
+        { decision: 'left_control', quantity: '500' },
+      ])
+    ).toEqual({ ok: false, reason: 'cross_entity' });
+
+    expect(await createdInflows(f, outId)).toHaveLength(0);
+    expect((await service().pendingSummary(f.userId)).count).toBe(1);
+  });
+
+  /**
+   * And the PICKER cannot route around it either.
+   *
+   * The refusal in the writer is the half that protects the ledger; this is
+   * the half that makes the surface honest. `transferLegFacts` already says
+   * why — *"the queue must not OFFER a pairing the matcher is refusing, or the
+   * reader completes it by hand and the refusal has bought nothing"* — and the
+   * destination list is that same offer for the other answer.
+   *
+   * The control runs first, in this test rather than beside it: the assertion
+   * is an ABSENCE from a list, and a picker that returned nothing at all would
+   * satisfy it while proving nothing.
+   */
+  test('does not OFFER a destination across the boundary', async () => {
+    const f = fixture!;
+    const personal = await makeEntity(f.userId, 'personal');
+    await putAccountInEntity(f.outAccountId, personal);
+    await putAccountInEntity(f.inAccountId, personal);
+    // The must-be-FOUND control, and it has to be inside the boundary too: an
+    // account left unassigned is on the far side of one, which is the next
+    // assertion.
+    await putAccountInEntity(f.emptyAccountId, personal);
+    const outId = await insertOutflow(f, {
+      at: anchor(),
+      quantity: '-4000',
+      externalId: 'ent-dest-1',
+    });
+
+    const offered = await service().listDestinations(f.userId, outId);
+    expect(offered.map((d) => d.accountId)).toContain(f.inAccountId);
+
+    await putAccountInEntity(f.inAccountId, await makeEntity(f.userId, 'company'));
+    const after = await service().listDestinations(f.userId, outId);
+    expect(after.map((d) => d.accountId)).not.toContain(f.inAccountId);
+    // The near side is still offered — a picker that emptied itself would pass
+    // the assertion above and be useless.
+    expect(after.map((d) => d.accountId)).toContain(f.emptyAccountId);
+  });
+
+  /**
+   * The consequence worth stating out loud, because it is what the production
+   * shape actually looks like (SC-859): ONE account assigned to an entity and
+   * every other account NULL.
+   *
+   * Unassigned is not "inside every entity", it is outside them all — the same
+   * reading `candidatePairClass` has always had, asserted three tests up for
+   * candidates. So an outflow from the one assigned account is offered NO
+   * linking destination at all until its counterpart is classified too, and
+   * the answers left to it are the ones that do not carry basis. That is the
+   * intended outcome rather than a gap: a movement whose two ends nobody has
+   * put on the same set of books is exactly the movement a person has to
+   * classify.
+   */
+  test('an assigned source offers no UNASSIGNED destination', async () => {
+    const f = fixture!;
+    await putAccountInEntity(f.outAccountId, await makeEntity(f.userId, 'company'));
+    const outId = await insertOutflow(f, {
+      at: anchor(),
+      quantity: '-4000',
+      externalId: 'ent-dest-2',
+    });
+
+    const offered = await service().listDestinations(f.userId, outId);
+    // What survives is the source's OWN account — the fixture's second
+    // same-token holding in it, which is trivially on the near side. Every
+    // other account is unassigned and therefore across the boundary.
+    expect([...new Set(offered.map((d) => d.accountId))]).toEqual([f.outAccountId]);
+    expect(offered.length).toBeGreaterThan(0);
+
+    // And nothing changes for a portfolio whose owner has drawn no boundary,
+    // which is every portfolio until they draw one.
+    await putAccountInEntity(f.outAccountId, null);
+    const unassigned = await service().listDestinations(f.userId, outId);
+    expect(new Set(unassigned.map((d) => d.accountId)).size).toBeGreaterThan(1);
+  });
 });
 
 /**

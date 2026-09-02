@@ -188,6 +188,31 @@ export type CandidatePairClass = 'same_token' | 'bridged_asset';
  * shown, and answered `paired` on, an arrival three days older than the
  * departure on the same holding.
  */
+/**
+ * Do these two accounts sit on opposite sides of an ownership boundary?
+ *
+ * Exported, and read by three surfaces rather than spelled out at each of
+ * them: `candidatePairClass` below (so nothing is auto-linked or recommended
+ * across the boundary), `TransferReviewService.writeInflow` (so the `internal`
+ * answer cannot write the arrival the pairing was refused), and the
+ * destination picker that feeds it (so a reader is never offered the account
+ * the writer is going to refuse).
+ *
+ * It exists as its own function because those three came to disagree once and
+ * silently: the boundary lived in this predicate alone, and `internal` writes
+ * the same shared `transfer_group_id` that `walkComponent` inherits lots
+ * through, so refusing the pair and permitting the answer produced the very
+ * carry the guard was written to stop (SC-859).
+ *
+ * **Null matches null**, so this is a no-op for a portfolio whose owner has
+ * drawn no boundary — which is every portfolio until they draw one. An account
+ * nobody has classified is outside every entity, so a movement between it and
+ * an assigned one does cross one.
+ */
+export function crossesEntityBoundary(a: string | null, b: string | null): boolean {
+  return a !== b;
+}
+
 export function candidatePairClass(
   out: TransferLeg,
   inflow: TransferLeg
@@ -198,7 +223,7 @@ export function candidatePairClass(
   // boundary check below it would guard bridges only — and the common
   // cross-entity movement (moving cash from the company to yourself) is the
   // same token, not a bridge.
-  if (out.entityId !== inflow.entityId) return null;
+  if (crossesEntityBoundary(out.entityId, inflow.entityId)) return null;
   if (out.tokenId === inflow.tokenId) return 'same_token';
   if (out.canonicalAssetKey === null || out.canonicalAssetKey !== inflow.canonicalAssetKey) {
     return null;
