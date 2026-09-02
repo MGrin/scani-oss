@@ -948,7 +948,7 @@
   },
   "vendors": {
     "projectedPerMonth": "Projetado por mês",
-    "expectedPerMonth": "Esperado por mês",
+    "projectedIncomePerMonth": "Receita projetada por mês",
     "kind": {
       "both": "Faturas e receitas",
       "income": "Receitas",

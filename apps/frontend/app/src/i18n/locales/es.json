@@ -948,7 +948,7 @@
   },
   "vendors": {
     "projectedPerMonth": "Proyectado al mes",
-    "expectedPerMonth": "Previsto al mes",
+    "projectedIncomePerMonth": "Ingresos proyectados al mes",
     "kind": {
       "both": "Facturas e ingresos",
       "income": "Ingresos",

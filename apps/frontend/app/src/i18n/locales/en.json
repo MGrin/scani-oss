@@ -59,7 +59,7 @@
     "receivedWindow_one": "Received, last {{count}} month",
     "receivedWindow_other": "Received, last {{count}} months",
     "projectedPerMonth": "Projected per month",
-    "expectedPerMonth": "Expected per month",
+    "projectedIncomePerMonth": "Projected income per month",
     "paidAllTime": "Paid, all time",
     "receivedAllTime": "Received, all time",
     "withUnconverted": "{{base}} + {{rest}} unconverted",

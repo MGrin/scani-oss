@@ -329,17 +329,36 @@ export function paidAllTimeLabel(t: TFunction): string {
 }
 
 /**
- * The income wording, kept apart from the spend wording rather than reusing it
- * with a different figure.
+ * The income wording. Same word as the spend figure, different noun (SC-933).
  *
- * The spend figure's word is not reused here. It labels obligations the user
- * has taken on; income is somebody else's intention, which is the distinction
- * V3-47 built the whole two-figure rule on, and "Expected" carries it.
- * Likewise "Paid" describes money you sent, so a salary that landed is
- * "Received".
+ * This figure said "Expected" until 2026-09-02, on V3-47's reasoning: a bill is
+ * an obligation the user took on, income is somebody else's intention, and the
+ * two words carried that difference. mgrin withdrew it, and what it costs is
+ * recorded rather than rediscovered — **the labels no longer say the two kinds
+ * of certainty differ**, and that is accepted, not an oversight.
+ *
+ * What it buys is one word for one computation. This figure and
+ * `commitmentLabel`'s are both `monthlyCommitmentByVendor` over the same
+ * `historyEstimates` map, and nothing in that map filters by direction
+ * (SC-818) — so the substitution that forced the outflow label off "Committed"
+ * was present here too, under the word SC-817 had rejected for it.
+ *
+ * It also removes the collision on this side: `expectedAmount` is the wire
+ * field for the DECLARED, non-estimated amount, so "Expected" over a figure
+ * that substitutes history meant the opposite thing one layer down.
+ *
+ * The noun is what keeps the pair distinct, and it has to: `vendorSpend.test`
+ * asserts these two labels never collapse to one string, in Russian as well as
+ * English. "Paid" is still untouched — money you sent is not money you got, so
+ * a salary that landed is "Received".
+ *
+ * Not to be confused with `v3.money.expectedIncome.*`, which keeps "expected"
+ * on purpose: that tile sums `expectedAmount ?? actualAmount` and substitutes
+ * no estimate, which is the same resolution as "Bills committed". See
+ * `i18n-committed-means-one-thing.test.ts`, which pins both halves.
  */
 export function incomeCommitmentLabel(t: TFunction): string {
-  return t('vendors.expectedPerMonth');
+  return t('vendors.projectedIncomePerMonth');
 }
 
 export function receivedAllTimeLabel(t: TFunction): string {

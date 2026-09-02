@@ -1198,7 +1198,11 @@ describe('VendorList', () => {
 
   test('the income total is beside what is owed, never netted into it', () => {
     const html = renderVendors();
-    expect(html).toInclude('Expected per month');
+    // "Projected income per month" since SC-933 — same word as the outflow
+    // figure beside it, because both substitute the same history estimates.
+    // The NOUN is what keeps the two apart, so assert both are on screen.
+    expect(html).toInclude('Projected income per month');
+    expect(html).toInclude('Projected each month');
     expect(html).toInclude('Not subtracted from what you owe');
     // The bills figure is untouched by the salary sitting next to it.
     expect(html).toInclude('€84.00');

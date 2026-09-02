@@ -77,8 +77,8 @@ export function VendorSpendSummary({
           beside them: what a vendor pays you is not a smaller version of what
           you owe, and V3-47 forbids the two being read as a comparable pair.
           Absent entirely when there is no income among the rows on screen —
-          an empty "Expected each month" would be the €0.00 this ticket is
-          about, one level up. */}
+          an empty "Projected income per month" would be the €0.00 this ticket
+          is about, one level up. */}
       {income.size > 0 ? (
         <div className="flex flex-col gap-2 border-t border-border pt-4">
           <ConvertedTotal
