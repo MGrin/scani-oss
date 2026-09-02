@@ -2,11 +2,15 @@ import { describe, expect, test } from 'bun:test';
 import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import {
+  awaitPostgresOverTcp,
   composeInterpolates,
+  composePostgresCredentials,
   defaultProfileInterpolations,
   defaultProfileLongRunning,
   downArgs,
   downVerdict,
+  expectedServices,
+  longRunningServices,
   parseMode,
   publishedServices,
   stackEnv,
@@ -461,8 +465,12 @@ describe('`down` finishes, and says so only when it can prove it (SC-663)', () =
 });
 
 describe('up waits for the healthchecks that are already declared (SC-669)', () => {
+  // The compose SERVICE a container is an instance of. `dev-stack.ts` reads it
+  // from the label; here it is recovered from the container name, which is the
+  // same derivation compose applies in the other direction.
   const H = (name: string, state: 'healthy' | 'unhealthy' | 'starting' | 'none') => ({
     name,
+    service: name.replace(/^.+?-(.+)-\d+$/, '$1'),
     state,
   });
 
@@ -567,8 +575,12 @@ describe('up waits for the healthchecks that are already declared (SC-669)', () 
 });
 
 describe('--infra-only starts what a gate uses and nothing else (SC-706)', () => {
+  // The compose SERVICE a container is an instance of. `dev-stack.ts` reads it
+  // from the label; here it is recovered from the container name, which is the
+  // same derivation compose applies in the other direction.
   const H = (name: string, state: 'healthy' | 'unhealthy' | 'starting' | 'none') => ({
     name,
+    service: name.replace(/^.+?-(.+)-\d+$/, '$1'),
     state,
   });
 
@@ -684,5 +696,331 @@ describe('--infra-only starts what a gate uses and nothing else (SC-706)', () =>
     // A stack that could not be verified is the case a reader most needs the
     // provenance for, so the clause must not be success-only.
     expect(upVerdict(0, null, 'proj', 'infra').message).toContain('infra-only');
+  });
+});
+
+describe('up says when a service was never created (SC-795)', () => {
+  const H = (name: string, state: 'healthy' | 'unhealthy' | 'starting' | 'none') => ({
+    name,
+    service: name.replace(/^.+?-(.+)-\d+$/, '$1'),
+    state,
+  });
+
+  test('the expected set is derived, non-empty, and grows with the profile', () => {
+    // Zero iterations satisfy every assertion below by having nothing to
+    // check, and read identically to a healthy derivation (SC-733). `full`
+    // being strictly larger is what makes the two modes distinguishable at
+    // all — a mode that expected the same set as `infra` could not tell a
+    // `full` stack missing every app service from a healthy infra one, which
+    // is precisely the reading SC-795 is about.
+    expect(longRunningServices('infra').length).toBeGreaterThan(0);
+    expect(longRunningServices('full').length).toBeGreaterThan(longRunningServices('infra').length);
+    for (const name of longRunningServices('infra')) {
+      expect(longRunningServices('full')).toContain(name);
+    }
+  });
+
+  test('no one-shot is ever expected to still be running', () => {
+    // Read out of the compose text rather than out of the same derivation, so
+    // the assertion is not a restatement of the function under test. A
+    // one-shot in the expected set would report every healthy stack as
+    // INCOMPLETE the moment it exited, which is the false-alarm direction.
+    const compose = readFileSync(new URL('../../docker-compose.yml', import.meta.url), 'utf8');
+    const oneShots = [...compose.matchAll(/^ {2}([a-zA-Z0-9_-]+):\n(?: {4}.*\n|\n)*/gm)]
+      .filter((m) => /^ {4}restart:\s*["']?no["']?\s*$/m.test(m[0]))
+      .map((m) => m[1] as string);
+    expect(oneShots.length).toBeGreaterThan(0);
+    for (const oneShot of oneShots) {
+      expect(longRunningServices('full')).not.toContain(oneShot);
+    }
+  });
+
+  test('a stack missing services is UP INCOMPLETE and names them', () => {
+    // SC-795's measured case: the worker image failed to build, so most
+    // services were never created. They are absent from `health`, so the
+    // unhealthy filter has nothing to find and the run used to fall through
+    // to the success word.
+    const expected = ['postgres', 'redis', 'worker', 'frontend'];
+    const { message, exit } = upVerdict(
+      0,
+      [H('p-postgres-1', 'healthy'), H('p-redis-1', 'healthy')],
+      'p',
+      'full',
+      expected
+    );
+    expect(exit).not.toBe(0);
+    expect(message).toContain('UP INCOMPLETE');
+    expect(message).toContain('2 running of 4 expected');
+    expect(message).toContain('worker');
+    expect(message).toContain('frontend');
+  });
+
+  test('a healthy stack with everything running still reads plain UP', () => {
+    // THE CONTROL, and it is the whole risk of this change. A verdict word
+    // people meet on healthy runs is one they learn to skip, and the next
+    // real INCOMPLETE is then read as noise. Built from the REAL derived set
+    // rather than a hand-written one, so it fails if the derivation ever
+    // expects something a healthy stack does not run.
+    const expected = longRunningServices('infra');
+    const health = expected.map((service) => H(`proj-${service}-1`, 'healthy'));
+    const { message, exit } = upVerdict(0, health, 'proj', 'infra', expected);
+    expect(exit).toBe(0);
+    expect(message).toContain('UP · exit 0');
+    expect(message).not.toContain('INCOMPLETE');
+    expect(message).toContain(`${expected.length} running of ${expected.length} expected`);
+  });
+
+  test('a surplus container is not a shortfall', () => {
+    // A one-shot caught by `docker ps` between finishing and exiting makes
+    // `running` exceed `expected`. That is not INCOMPLETE — the check is on
+    // the NAMES of what is missing, never on the arithmetic, so an extra
+    // container cannot manufacture one.
+    const expected = ['postgres', 'redis'];
+    const { message, exit } = upVerdict(
+      0,
+      [H('p-postgres-1', 'healthy'), H('p-redis-1', 'healthy'), H('p-migrate-1', 'none')],
+      'p',
+      'full',
+      expected
+    );
+    expect(exit).toBe(0);
+    expect(message).toContain('3 running of 2 expected');
+  });
+
+  test('a caller who named services is not held to the derived set', () => {
+    // `bun run dev:stack -- postgres` starts a subset this script did not
+    // choose. Comparing it against the derivation would print INCOMPLETE over
+    // a start that did exactly what it was told — the false alarm that
+    // teaches people to ignore the word.
+    expect(expectedServices('full', ['postgres'])).toBeNull();
+    expect(expectedServices('full', ['--force-recreate'])).toEqual(longRunningServices('full'));
+    expect(expectedServices('infra', [])).toEqual(longRunningServices('infra'));
+  });
+
+  test('no denominator is printed when the run could not establish one', () => {
+    // `null` is not zero and is never resolved toward one. Printing a
+    // denominator the run did not have would be the false-provenance failure
+    // this change exists to close, wearing the fix's clothes.
+    const health = [H('p-postgres-1', 'healthy')];
+    expect(upVerdict(0, health, 'p', 'full', null).message).not.toContain('expected');
+    expect(upVerdict(0, health, 'p', 'full', null).exit).toBe(0);
+  });
+
+  test('a service that was never created outranks one that is unhealthy', () => {
+    // The order is an argument, not a preference: a missing service explains
+    // a dependent that is unhealthy, and never the other way round.
+    const { message } = upVerdict(0, [H('p-postgres-1', 'unhealthy')], 'p', 'full', [
+      'postgres',
+      'worker',
+    ]);
+    expect(message).toContain('UP INCOMPLETE');
+    expect(message).not.toContain('UP UNHEALTHY');
+  });
+
+  test('the INCOMPLETE line cannot contradict its own exit code', () => {
+    // Same lesson as `downVerdict` and the SC-669 loop above: asserting the
+    // exit and the text separately never catches a message naming the other
+    // number.
+    for (const code of [0, 17]) {
+      const { message, exit } = upVerdict(code, [H('p-postgres-1', 'healthy')], 'p', 'full', [
+        'postgres',
+        'worker',
+      ]);
+      expect(`${code}: ${message}`).toContain(`exit ${exit}`);
+    }
+    expect(
+      upVerdict(17, [H('p-postgres-1', 'healthy')], 'p', 'full', ['postgres', 'worker']).exit
+    ).toBe(17);
+  });
+});
+
+describe('up asks Postgres the question the caller cares about (SC-748)', () => {
+  const H = (name: string, state: 'healthy' | 'unhealthy' | 'starting' | 'none') => ({
+    name,
+    service: name.replace(/^.+?-(.+)-\d+$/, '$1'),
+    state,
+  });
+  const READY = { ready: true, seconds: 2, budgetSeconds: 60, lastError: null };
+  const NEVER = {
+    ready: false,
+    seconds: 60,
+    budgetSeconds: 60,
+    lastError: 'the database system is starting up',
+  };
+
+  /**
+   * A clock that only moves when the probe waits, so the test is instant.
+   *
+   * The wait THROWS once the probe has asked far past any sane budget. Without
+   * that, an unbounded probe spins forever on a fake clock and the test does
+   * not go red — it produces no output at all, which is the same
+   * indistinguishable-from-nothing failure the bound exists to prevent, one
+   * level up. Measured: with the budget check removed the run hung and was
+   * killed with zero test lines; with this cap it fails by name.
+   */
+  const fakeClock = (maxWaits = 1000) => {
+    let now = 0;
+    let waits = 0;
+    return {
+      clock: () => now,
+      wait: async (ms: number) => {
+        if (++waits > maxWaits) throw new Error('the probe never stopped asking');
+        now += ms;
+      },
+    };
+  };
+
+  test('a server that answers at once is ready in 0s', async () => {
+    const { clock, wait } = fakeClock();
+    const probe = await awaitPostgresOverTcp(async () => {}, 60, clock, wait);
+    expect(probe.ready).toBe(true);
+    expect(probe.seconds).toBe(0);
+    expect(probe.lastError).toBeNull();
+  });
+
+  test('a server that refuses and then answers reports how long it took', async () => {
+    const { clock, wait } = fakeClock();
+    let refusals = 4;
+    const probe = await awaitPostgresOverTcp(
+      async () => {
+        if (refusals-- > 0) throw new Error('the database system is starting up');
+      },
+      60,
+      clock,
+      wait
+    );
+    expect(probe.ready).toBe(true);
+    // Four refusals at 500ms apart. The figure is the point of the probe: a
+    // reader who never sees it cannot tell a stack that was ready from one
+    // that was asked and answered late.
+    expect(probe.seconds).toBe(2);
+  });
+
+  test('a server that never answers gives up at the budget rather than hanging', async () => {
+    // A probe with no bound is a WORSE failure than the one it closes: it
+    // produces no output at all, and a hang has nowhere to be read. The
+    // assertion is that it RETURNS — the count is what proves it stopped
+    // asking rather than that the test happened to end.
+    const { clock, wait } = fakeClock();
+    let asked = 0;
+    const probe = await awaitPostgresOverTcp(
+      async () => {
+        asked += 1;
+        throw new Error('57P03 the database system is starting up');
+      },
+      60,
+      clock,
+      wait
+    );
+    expect(probe.ready).toBe(false);
+    expect(probe.seconds).toBe(60);
+    expect(probe.lastError).toContain('57P03');
+    expect(asked).toBeGreaterThan(1);
+    expect(asked).toBeLessThan(200);
+  });
+
+  test('a stack whose Postgres never answers is UP UNREACHABLE, not UP', async () => {
+    // The measured failure: `--wait` rc=0 with every container healthy, and a
+    // gate refused seconds later by that same Postgres over TCP.
+    const { message, exit } = upVerdict(
+      0,
+      [H('p-postgres-1', 'healthy')],
+      'p',
+      'infra',
+      ['postgres'],
+      NEVER
+    );
+    expect(exit).not.toBe(0);
+    expect(message).toContain('UP UNREACHABLE');
+    expect(message).toContain('60s');
+    expect(message).toContain('the database system is starting up');
+  });
+
+  test('a stack that did answer says how long it took', () => {
+    const { message, exit } = upVerdict(
+      0,
+      [H('p-postgres-1', 'healthy')],
+      'p',
+      'infra',
+      ['postgres'],
+      READY
+    );
+    expect(exit).toBe(0);
+    expect(message).toContain('PG_READY_AFTER=2s');
+  });
+
+  test('a probe that was not asked is never read as one that passed', () => {
+    // Silence has to be silence. Printing the clause unconditionally would
+    // make "no Postgres in this compose file" indistinguishable from "asked
+    // and answered instantly".
+    const { message, exit } = upVerdict(0, [H('p-redis-1', 'healthy')], 'p', 'infra', ['redis']);
+    expect(exit).toBe(0);
+    expect(message).not.toContain('PG_READY_AFTER');
+    expect(message).not.toContain('UNREACHABLE');
+  });
+
+  test('an earlier failure outranks the probe', () => {
+    // Every branch above UNREACHABLE describes a stack the probe should never
+    // have been run against, and `main` does not run it there. Pinned anyway:
+    // a verdict that reported a Postgres timeout over a stack whose containers
+    // do not exist would name the wrong problem.
+    expect(upVerdict(0, null, 'p', 'infra', ['postgres'], NEVER).message).toContain(
+      'UP UNVERIFIED'
+    );
+    expect(
+      upVerdict(0, [H('p-redis-1', 'healthy')], 'p', 'infra', ['postgres', 'redis'], NEVER).message
+    ).toContain('UP INCOMPLETE');
+    expect(
+      upVerdict(0, [H('p-postgres-1', 'unhealthy')], 'p', 'infra', ['postgres'], NEVER).message
+    ).toContain('UP UNHEALTHY');
+  });
+
+  test('the UNREACHABLE line cannot contradict its own exit code', () => {
+    for (const code of [0, 17]) {
+      const { message, exit } = upVerdict(
+        code,
+        [H('p-postgres-1', 'healthy')],
+        'p',
+        'infra',
+        ['postgres'],
+        NEVER
+      );
+      expect(`${code}: ${message}`).toContain(`exit ${exit}`);
+    }
+  });
+
+  test('the probe does not share an instrument with the healthcheck it checks', () => {
+    // THE WHOLE REASON THIS PROBE EXISTS, pinned so the next simplification
+    // has to argue with it. The compose healthcheck is `pg_isready` with no
+    // `-h`, so it goes over the container's unix socket — and the step that
+    // originally confirmed `--wait` was sufficient ran `pg_isready` too. A
+    // verification that shares an instrument with the thing being verified
+    // cannot come back red when the claim is false.
+    //
+    // If the healthcheck ever gains `-h`, this goes red and the reasoning
+    // above needs revisiting rather than the assertion relaxing.
+    const compose = readFileSync(new URL('../../docker-compose.yml', import.meta.url), 'utf8');
+    const healthcheck = /test:\s*\[\s*"CMD-SHELL",\s*"(pg_isready[^"]*)"/.exec(compose);
+    expect(healthcheck).not.toBeNull();
+    expect((healthcheck?.[1] as string).includes('-h')).toBe(false);
+
+    // Comments stripped first, because this asks what the CODE does and the
+    // paragraph explaining WHY it is not pg_isready has to be free to name it.
+    const source = readFileSync(new URL('../dev-stack.ts', import.meta.url), 'utf8');
+    expect(source).toContain('pg_isready');
+    const code = source.replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/g, '');
+    expect(code.includes('pg_isready')).toBe(false);
+    expect(code).toContain('select 1');
+  });
+
+  test('the credentials come from the compose file, not from a copy of it', () => {
+    // A wrong credential does not fail as a wrong credential: it fails as
+    // UP UNREACHABLE after the full budget, which reads exactly like the
+    // defect the probe exists to catch.
+    const credentials = composePostgresCredentials();
+    expect(credentials).not.toBeNull();
+    const compose = readFileSync(new URL('../../docker-compose.yml', import.meta.url), 'utf8');
+    expect(compose).toContain(`POSTGRES_USER: ${credentials?.user}`);
+    expect(compose).toContain(`POSTGRES_PASSWORD: ${credentials?.password}`);
   });
 });
