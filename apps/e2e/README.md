@@ -729,6 +729,75 @@ clears it for the screens it names, and takes names rather than `1` on purpose.
 actually caught had a cause one of the three guards keys on. This closes a gap
 nothing would have reported, which is why it was worth a ticket.
 
+### A baseline says WHAT it shows and not what tree it came from (SC-833)
+
+Every guard above asks whether the pixels are right. None of them asks what the
+pixels are OF. A baseline written from a stale or dirty checkout is perfectly
+stable, perfectly rendered, and a picture of a tree nobody will ever have again
+— it passes `assertPixelsSettled`, `assertPhotographedOnce`, `baselineCollapse`
+and the SC-842 session check alike, and then becomes the permanent expectation
+every later run is measured against.
+
+It nearly happened. Mid-SC-825 `origin/main` was four commits ahead of the
+checkout and nothing said so; it was harmless only because both differing files
+were under `apps/frontend/landing`, which this gate never photographs.
+
+So `--update` now writes `visual/baselines.provenance.json` beside
+`__screenshots__/`, one row per baseline whose bytes it changed:
+
+```json
+"home-desktop": {
+  "sha256": "…",                     // binds the row to the PNG's bytes
+  "capturedAt": "2026-09-02T…Z",
+  "head": "96b8a05ff…",              // WHAT was measured
+  "renderedDigest": "34d820038…",    // a digest over the rendered paths' content
+  "dirty": ["apps/frontend/app/src/v3/Home.tsx"],
+  "dirtyCount": 1,
+  "base": { "ref": "…", "confirmed": true, "behind": 0 }
+}
+```
+
+`visual/baseline-provenance.ts` carries the reasoning. Four things worth knowing
+without opening it:
+
+**It records and never refuses, and that is the design decision.** Every trigger
+a refusal could key on is the NORMAL path: a dirty tree is not an anomaly during
+a regeneration, it is the entire workflow. A guard that fired there would fire on
+every legitimate use and be switched off inside a week. And being behind main
+does not make a picture WRONG — it makes it UNATTRIBUTABLE, and the remedy for
+unattributable is attribution. `scripts/gate-db.ts`'s `base MOVED` clause, the
+precedent this follows, reports and exits 0 for the same reason.
+
+**The paths are scoped, and the scoping is the control.** `RENDERED_PATHS` is the
+SPA's workspace closure (`apps/frontend/app`, `@scani/ui`, `@scani/shared`) plus
+the harness that decides what is photographed. A landing-only drift genuinely
+cannot reach a baseline, and a check that fired on it would be noise. The backend
+is deliberately out: it reaches a baseline only through the data, and the data
+half is SC-842's.
+
+**`base` has four forms and UNCONFIRMED is not a weaker `unchanged`** — it says
+the question was not answered. `origin/main` is a local ref that a sibling
+worktree's fetch moves, so the remote is asked and the answer is recorded either
+way.
+
+**The digest is of the SOURCE, never of the bundle that was served.** The stack
+serves the SPA from a Vite dev server started before the run, and a dev server
+does not always pick up an edit — so `rendered paths clean` is compatible with a
+picture of whatever that server had compiled. The honest claim tops out at *the
+checkout that produced this PNG looked like this*.
+
+An assert run (no `--update`) compares the rows against the PNGs on disk and
+reports any disagreement without changing the verdict. That is the arm a
+write-time refusal could not have had: `--update` writes a PNG and its row
+together, so a mismatch came from somewhere this harness is not — a hand edit, a
+conflict resolution that took one and not the other, a half cherry-pick.
+
+**The twelve baselines standing when this shipped carry `head: null`.** Their
+trees are unrecoverable and backfilling them with today's HEAD would be the exact
+defect the ticket is about — a field that always reads clean is worse than none.
+They record their bytes, so a hand edit from now on is still reportable, and each
+becomes a real row the next time it is regenerated.
+
 ### These pictures ship publicly, and no text guard can read one (SC-842)
 
 `apps/e2e/visual/__screenshots__/` is mirrored to `MGrin/scani-oss`. Every guard
