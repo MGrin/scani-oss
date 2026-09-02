@@ -273,7 +273,7 @@ export interface V3DataViewConfig<T>
    *
    * Only for a surface whose value is not self-evident from the rows. On
    * `/vendors` it is not: the column reads €0.00 / €65.82 / €411.67 and the
-   * summary directly above it carries **two** labelled totals ("Committed each
+   * summary directly above it carries **two** labelled totals ("Projected each
    * month" and "Paid in the last N months"), so an unheaded money column is a
    * figure the reader cannot attach to either of them (SC-69 3.3). The desktop
    * table has always had "Per month" in its `columns`; this is that header, at

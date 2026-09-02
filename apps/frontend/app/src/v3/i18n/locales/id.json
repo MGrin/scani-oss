@@ -460,7 +460,7 @@
         "addPayment": "Tambahkan pembayaran"
       },
       "recurringSummary": {
-        "committedEachMonth": "Komitmen tiap bulan",
+        "projectedEachMonth": "Proyeksi tiap bulan",
         "estimatedFromHistory_other": "Termasuk {{count}} pembayaran berubah-ubah yang diperkirakan dari jumlah terakhir yang diselesaikan.",
         "notCounted_other": "{{count}} pembayaran berubah-ubah tidak memiliki perkiraan dan tidak dihitung."
       },
@@ -539,9 +539,9 @@
         "affordRunwayAfter": "Setelah itu, uangnya habis pada {{month}}.",
         "affordRunwayStillBeyond_other": "Ketahanan dana tetap melebihi {{count}} bulan.",
         "observedRunway_other": "Sekitar {{count}} bulan dengan pengeluaran belakangan ini",
-        "ofWhichCommitted": "~{{percent}}% dari pengeluaran itu sudah dikomitmenkan",
-        "committedTitle": "Yang sudah dikomitmenkan",
-        "committedNote": "Hanya buku pembayaran berulang Anda — apa yang terjadwal, dan kapan. Ini tidak menggambarkan berapa yang Anda belanjakan.",
+        "ofWhichProjected": "~{{percent}}% dari pengeluaran itu diproyeksikan",
+        "projectedTitle": "Yang diproyeksikan",
+        "projectedNote": "Hanya buku pembayaran berulang Anda — apa yang terjadwal, dan kapan. Ini tidak menggambarkan berapa yang Anda belanjakan.",
         "observedBasis": "Rata-rata dari {{count}} bulan penuh, {{from}} sampai {{to}}: <value></value> sebulan.",
         "observedSpread": "Bulan-bulan itu berkisar <min></min> sampai <max></max>; bulan tengahnya <median></median>.",
         "observedNotCounted_other": "{{count}} arus keluar tidak dihitung — belum dijawab, atau berpindah ke tempat yang tidak bisa dilihat Scani.",

@@ -395,7 +395,7 @@ export function VendorList({
               <DeleteVendorAction vendorId={vendor.id} vendorName={vendor.displayName} />
             </>
           ),
-          // Committed (or expected) first, then what has actually settled.
+          // Projected (or expected) first, then what has actually settled.
           // Three money facts rather than one because they are three different
           // claims, and the reader is owed the window each is measured over —
           // and the words have to match the direction, or the figure is filed

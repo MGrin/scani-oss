@@ -58,7 +58,7 @@
     "paidWindow_other": "Paid, last {{count}} months",
     "receivedWindow_one": "Received, last {{count}} month",
     "receivedWindow_other": "Received, last {{count}} months",
-    "committedPerMonth": "Committed per month",
+    "projectedPerMonth": "Projected per month",
     "expectedPerMonth": "Expected per month",
     "paidAllTime": "Paid, all time",
     "receivedAllTime": "Received, all time",

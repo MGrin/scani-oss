@@ -60,7 +60,7 @@
     "receivedWindow_one": "Reçu, {{count}} dernier mois",
     "receivedWindow_many": "Reçu, {{count}} derniers mois",
     "receivedWindow_other": "Reçu, {{count}} derniers mois",
-    "committedPerMonth": "Engagé par mois",
+    "projectedPerMonth": "Projeté par mois",
     "expectedPerMonth": "Attendu par mois",
     "paidAllTime": "Payé, depuis le début",
     "receivedAllTime": "Reçu, depuis le début",

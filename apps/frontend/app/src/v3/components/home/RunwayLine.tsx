@@ -131,7 +131,7 @@ export function RunwayLine() {
           {t('v3.money.forecast.observedRunway', { count: observedAnswer.months })}
           {share ? (
             <span className="text-caption text-muted-foreground">
-              {t('v3.money.forecast.ofWhichCommitted', {
+              {t('v3.money.forecast.ofWhichProjected', {
                 percent: share.times(100).toFixed(0),
               })}
             </span>

@@ -963,7 +963,7 @@
         "addPayment": "Добавить платёж"
       },
       "recurringSummary": {
-        "committedEachMonth": "Обязательства на месяц",
+        "projectedEachMonth": "Прогноз на месяц",
         "estimatedFromHistory_one": "Включая {{count}} платёж с плавающей суммой, оценённый по последнему закрытому платежу.",
         "estimatedFromHistory_few": "Включая {{count}} платежа с плавающей суммой, оценённых по последним закрытым платежам.",
         "estimatedFromHistory_many": "Включая {{count}} платежей с плавающей суммой, оценённых по последним закрытым платежам.",
@@ -1090,9 +1090,9 @@
         "observedRunway_few": "Около {{count}} месяцев при текущих тратах",
         "observedRunway_many": "Около {{count}} месяцев при текущих тратах",
         "observedRunway_other": "Около {{count}} месяцев при текущих тратах",
-        "ofWhichCommitted": "~{{percent}}% этих трат — обязательные платежи",
-        "committedTitle": "Запланировано",
-        "committedNote": "Только регулярные платежи — что запланировано и когда. Это не описывает ваши траты.",
+        "ofWhichProjected": "~{{percent}}% этих трат — прогнозируемые платежи",
+        "projectedTitle": "Что в прогнозе",
+        "projectedNote": "Только регулярные платежи — что запланировано и когда. Это не описывает ваши траты.",
         "observedBasis": "Среднее за {{count}} полных месяцев, {{from}} — {{to}}: <value></value> в месяц.",
         "observedSpread": "Разброс по месяцам: от <min></min> до <max></max>; медианный месяц — <median></median>.",
         "observedNotCounted_one": "{{count}} списание не учтено — без ответа или ушло туда, куда Scani не видит.",

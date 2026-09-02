@@ -274,7 +274,7 @@ describe('SC-661 — the forecast page leads with observed burn', () => {
     // Demoted, not deleted: an observed month says nothing about how much of
     // it could be STOPPED, and the book is the only thing that does.
     // Asserted on the note rather than the heading because React escapes the
-    // apostrophe in "What's committed" to `&#x27;`, and a test that matches
+    // apostrophe in "What's projected" to `&#x27;`, and a test that matches
     // the source spelling fails on markup that is perfectly correct.
     expect(html).toInclude('Your recurring book alone');
     expect(html).toInclude('€14,734.00');
@@ -312,13 +312,13 @@ describe('SC-661 — the forecast page leads with observed burn', () => {
    * This fixture is that case: €1,551 a month committed against a €1,250
    * observed mean.
    */
-  test('a committed share above 100% is printed, not clamped', () => {
+  test('a projected share above 100% is printed, not clamped', () => {
     const html = render(BOOK, '10000', {
       forecast: { ...wire(BOOK, '10000'), observedBurn: observedBurn() },
     });
 
-    expect(html).toInclude('~124% of that spending is committed');
-    expect(html).not.toInclude('~100% of that spending is committed');
+    expect(html).toInclude('~124% of that spending is projected');
+    expect(html).not.toInclude('~100% of that spending is projected');
   });
 
   /**

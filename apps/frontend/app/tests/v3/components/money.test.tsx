@@ -747,8 +747,8 @@ describe('RecurringList', () => {
    * £2,400 is 26 payments a year, not 24 — but it is income and must not appear
    * here at all, so the only outflow (€42 monthly) is the whole figure.
    */
-  test('committed-each-month counts active outflows only', () => {
-    expect(renderRecurring()).toInclude('Committed each month');
+  test('projected-each-month counts active outflows only', () => {
+    expect(renderRecurring()).toInclude('Projected each month');
     expect(renderRecurring()).toInclude('€42.00');
   });
 
@@ -846,7 +846,7 @@ describe('RecurringSummary', () => {
   });
 
   /**
-   * SC-625 on the surface the ticket names. "Committed each month" has skipped
+   * SC-625 on the surface the ticket names. "Projected each month" has skipped
    * variable payments with no estimate since it was written, and said nothing
    * about it — so the count below is not decoration attached to the new
    * option, it is the denominator this figure never had.
@@ -1067,9 +1067,9 @@ describe('VendorList', () => {
   });
 
   // The two claims stay two figures — one about the future, one about the past.
-  test('the summary separates what is committed from what has been paid', () => {
+  test('the summary separates what is projected from what has been paid', () => {
     const html = renderVendors();
-    expect(html).toInclude('Committed each month');
+    expect(html).toInclude('Projected each month');
     expect(html).toInclude('Paid, last 12 months');
   });
 

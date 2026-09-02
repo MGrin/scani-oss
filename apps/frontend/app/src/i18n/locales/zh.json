@@ -56,7 +56,7 @@
   "vendors": {
     "paidWindow_other": "近 {{count}} 个月已付",
     "receivedWindow_other": "近 {{count}} 个月已收",
-    "committedPerMonth": "每月承诺金额",
+    "projectedPerMonth": "每月预测金额",
     "expectedPerMonth": "每月预计金额",
     "paidAllTime": "累计已付",
     "receivedAllTime": "累计已收",

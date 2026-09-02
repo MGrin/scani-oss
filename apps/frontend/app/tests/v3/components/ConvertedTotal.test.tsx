@@ -51,7 +51,7 @@ describe('ConvertedTotal', () => {
   test('every currency converts: one figure, and it says what it folded in', () => {
     const html = renderToStaticMarkup(
       <ConvertedTotal
-        label="Committed each month"
+        label="Projected each month"
         totals={BOOK}
         tokenSymbolById={SYMBOLS}
         rates={rates()}
@@ -70,7 +70,7 @@ describe('ConvertedTotal', () => {
   test('mid-fetch it renders no figure at all rather than the base-currency-only sum', () => {
     const html = renderToStaticMarkup(
       <ConvertedTotal
-        label="Committed each month"
+        label="Projected each month"
         totals={BOOK}
         tokenSymbolById={SYMBOLS}
         rates={rates({ rateByCurrencyTokenId: new Map(), ratesStatus: 'loading' })}
@@ -83,7 +83,7 @@ describe('ConvertedTotal', () => {
     expect(html).toInclude('animate-pulse');
     expect(html).toInclude('Working out the total');
     // The label stays — the tile holds its place, only the figure waits.
-    expect(html).toInclude('Committed each month');
+    expect(html).toInclude('Projected each month');
   });
 
   /**
@@ -94,7 +94,7 @@ describe('ConvertedTotal', () => {
   test('when the rates fail, the figure is shown with what is missing from it named', () => {
     const html = renderToStaticMarkup(
       <ConvertedTotal
-        label="Committed each month"
+        label="Projected each month"
         totals={BOOK}
         tokenSymbolById={SYMBOLS}
         rates={rates({ rateByCurrencyTokenId: new Map(), ratesStatus: 'unavailable' })}
@@ -115,7 +115,7 @@ describe('ConvertedTotal', () => {
   test('a currency with genuinely no rate keeps its own sentence, not the failure one', () => {
     const html = renderToStaticMarkup(
       <ConvertedTotal
-        label="Committed each month"
+        label="Projected each month"
         totals={BOOK}
         tokenSymbolById={SYMBOLS}
         rates={rates({
@@ -141,7 +141,7 @@ describe('ConvertedTotal', () => {
   test('with nothing knowable it shows no number rather than zero', () => {
     const html = renderToStaticMarkup(
       <ConvertedTotal
-        label="Committed each month"
+        label="Projected each month"
         totals={BOOK}
         tokenSymbolById={SYMBOLS}
         rates={rates({
@@ -160,7 +160,7 @@ describe('ConvertedTotal', () => {
   test('an empty book is a real zero and still renders as one', () => {
     const html = renderToStaticMarkup(
       <ConvertedTotal
-        label="Committed each month"
+        label="Projected each month"
         totals={new Map()}
         tokenSymbolById={SYMBOLS}
         rates={rates()}

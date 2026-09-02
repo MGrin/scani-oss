@@ -947,7 +947,7 @@
     }
   },
   "vendors": {
-    "committedPerMonth": "Comprometido al mes",
+    "projectedPerMonth": "Proyectado al mes",
     "expectedPerMonth": "Previsto al mes",
     "kind": {
       "both": "Facturas e ingresos",

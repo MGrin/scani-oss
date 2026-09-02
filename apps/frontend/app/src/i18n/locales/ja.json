@@ -56,7 +56,7 @@
   "vendors": {
     "paidWindow_other": "支払（直近{{count}}か月）",
     "receivedWindow_other": "受取（直近{{count}}か月）",
-    "committedPerMonth": "確定分（月あたり）",
+    "projectedPerMonth": "予測（月あたり）",
     "expectedPerMonth": "見込み（月あたり）",
     "paidAllTime": "支払（全期間）",
     "receivedAllTime": "受取（全期間）",

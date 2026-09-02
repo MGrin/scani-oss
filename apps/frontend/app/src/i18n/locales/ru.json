@@ -62,7 +62,7 @@
     "receivedWindow_few": "Получено за {{count}} месяца",
     "receivedWindow_many": "Получено за {{count}} месяцев",
     "receivedWindow_other": "Получено за {{count}} месяца",
-    "committedPerMonth": "Обязательства в месяц",
+    "projectedPerMonth": "Прогноз в месяц",
     "expectedPerMonth": "Ожидается в месяц",
     "paidAllTime": "Оплачено за всё время",
     "receivedAllTime": "Получено за всё время",

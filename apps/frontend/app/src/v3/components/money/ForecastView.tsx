@@ -396,9 +396,13 @@ export function ForecastView({
       {forecast.movements.length === 0 ? null : (
         <Block className="flex flex-col gap-4 border-dashed p-4">
           <div className="flex flex-col gap-1">
-            <p className="text-label">{t('v3.money.forecast.committedTitle')}</p>
+            {/* "Projected", never "Committed": this walk substitutes a payment's own
+                settled history (`basis: 'history'` in `buildForecast`), so an
+                estimate is inside the figure. See `RecurringSummary` for the rule
+                and why "Expected" is not available (SC-817). */}
+            <p className="text-label">{t('v3.money.forecast.projectedTitle')}</p>
             <p className="text-caption text-muted-foreground">
-              {t('v3.money.forecast.committedNote')}
+              {t('v3.money.forecast.projectedNote')}
             </p>
           </div>
           <div className="flex flex-col gap-3">
@@ -673,7 +677,7 @@ function ObservedBasis({
       ) : null}
       {share ? (
         <p className="text-caption text-muted-foreground">
-          {t('v3.money.forecast.ofWhichCommitted', { percent: share.times(100).toFixed(0) })}
+          {t('v3.money.forecast.ofWhichProjected', { percent: share.times(100).toFixed(0) })}
         </p>
       ) : null}
       {/* PROVENANCE SITS ABOVE THE EXCLUDED SENTENCE, and the placement is part
