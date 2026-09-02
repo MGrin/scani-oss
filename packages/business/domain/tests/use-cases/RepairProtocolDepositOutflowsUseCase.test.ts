@@ -30,7 +30,7 @@ const WALLET = '0xa11ce0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7';
 const WETH9 = '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2';
 const AAVE_WETH_GATEWAY = '0xcc9a0b7c43dc2a5f023bb9b738e45b0ef6b06e04';
 const AAVE_V2_LENDING_POOL = '0x7d2768de32b0b80b7a3454c06bdac94a69ddc7a9';
-const STRANGER = '0x5863f4a2d6b8f0a1c9e2b7d4f1a3c5e7b9d1f3a5';
+const STRANGER = '0x5c918000000000000000000000000000000000a1';
 
 interface Fixture {
   userId: string;
