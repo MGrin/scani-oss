@@ -249,8 +249,29 @@ export interface AccountSpec {
   /** One of the `account_types` codes seeded by migration 0000. */
   readonly typeCode: 'checking' | 'savings' | 'investment' | 'crypto' | 'other';
   readonly description: string;
-  /** Present on the three self-custody wallets; drives `accounts.metadata`. */
-  readonly walletAddress?: string;
+  /**
+   * Present on the three self-custody wallets, and the whole of what
+   * `accounts.metadata` is built from for them.
+   *
+   * Grouped rather than two sibling optionals because every consumer treats a
+   * null `chainId` as "not a wallet" and says nothing — so a spec carrying an
+   * address without a chain would seed exactly the silent hole this shape
+   * exists to close (SC-864).
+   */
+  readonly wallet?: WalletSpec;
+}
+
+/**
+ * `chainId` is the string the wallet importer writes to
+ * `accounts.metadata.chainId`, and its values come from
+ * `institution_blockchain_mappings` in `0000_clean_start.sql`. Only Ethereum's
+ * `'1'` is a chain number: Bitcoin and Solana are the non-EVM sentinels `'0'`
+ * and `'-2'` that `sourceForChainId` dispatches on, so they look wrong and are
+ * not.
+ */
+interface WalletSpec {
+  readonly address: string;
+  readonly chainId: string;
 }
 
 /**
@@ -299,7 +320,7 @@ export const DEMO_ACCOUNTS: readonly AccountSpec[] = [
     institution: 'Ethereum',
     name: 'Ledger — Ethereum',
     typeCode: 'crypto',
-    walletAddress: '0x0000000000000000000000000000000000000dem0',
+    wallet: { address: '0x0000000000000000000000000000000000000dem0', chainId: '1' },
     description: 'Self-custody, Ethereum mainnet',
   },
   {
@@ -307,7 +328,7 @@ export const DEMO_ACCOUNTS: readonly AccountSpec[] = [
     institution: 'Bitcoin',
     name: 'Ledger — Bitcoin',
     typeCode: 'crypto',
-    walletAddress: 'bc1qdem00000000000000000000000000000000000',
+    wallet: { address: 'bc1qdem00000000000000000000000000000000000', chainId: '0' },
     description: 'Self-custody, cold storage',
   },
   {
@@ -315,7 +336,7 @@ export const DEMO_ACCOUNTS: readonly AccountSpec[] = [
     institution: 'Solana',
     name: 'Phantom — Solana',
     typeCode: 'crypto',
-    walletAddress: 'Dem0000000000000000000000000000000000000000',
+    wallet: { address: 'Dem0000000000000000000000000000000000000000', chainId: '-2' },
     description: 'Staked with a validator',
   },
 ];
