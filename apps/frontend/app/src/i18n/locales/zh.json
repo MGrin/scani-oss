@@ -57,7 +57,7 @@
     "paidWindow_other": "近 {{count}} 个月已付",
     "receivedWindow_other": "近 {{count}} 个月已收",
     "projectedPerMonth": "每月预测金额",
-    "expectedPerMonth": "每月预计金额",
+    "projectedIncomePerMonth": "每月预测收入",
     "paidAllTime": "累计已付",
     "receivedAllTime": "累计已收",
     "withUnconverted": "{{base}} + {{rest}}（未换算）",

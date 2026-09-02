@@ -356,8 +356,10 @@ describe('classifying a vendor by the direction its money moves', () => {
 });
 
 describe('income wording', () => {
-  test('income is expected and received, never committed and paid', () => {
-    expect(incomeCommitmentLabel(t)).toBe('Expected per month');
+  test('income is projected and received, never committed and paid', () => {
+    // "Projected", matching the outflow twin, since 2026-09-02 (SC-933). The
+    // noun is what keeps the pair apart now that the adjective is shared.
+    expect(incomeCommitmentLabel(t)).toBe('Projected income per month');
     expect(receivedWindowLabel(t, 12)).toBe('Received, last 12 months');
     expect(receivedWindowLabel(t, 3)).toBe('Received, last 3 months');
     expect(receivedAllTimeLabel(t)).toBe('Received, all time');
