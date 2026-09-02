@@ -299,12 +299,44 @@ export function censusProjects(input: CensusInput): StackProject[] {
 }
 
 /**
- * Every checkout of this repository, as compose project names.
+ * How the set of live checkouts was arrived at, as opposed to what it contains
+ * (SC-803).
  *
- * `null` when git could not be asked — see `CensusInput.liveProjects` for why
- * that is not an empty set.
+ * The census only ever needed the SET, and folded the three ways of getting one
+ * into `Set | null`. That is correct for a reporter, whose reader is told the
+ * count and warned to check it. It is not enough for anything that ACTS on the
+ * answer, because two of the three are not measurements:
+ *
+ *   enumerated  git listed the worktrees. The only answer that is evidence.
+ *   assumed     git could not be asked, so this checkout is taken to be the
+ *               only one. Ordinary for a self-hoster with a source tarball,
+ *               and indistinguishable from `enumerated` with one worktree once
+ *               the set is all you keep.
+ *   unreadable  git answered with a shape this cannot parse.
+ *
+ * `assumed` is the dangerous one and the reason this distinction exists. Every
+ * project on the machine that is not THIS checkout's then falls outside the
+ * live set, so on a box with seven worktrees a failed `git` call makes six live
+ * stacks — the primary checkout's among them — read as behind no checkout. A
+ * reporter prints that under a heading telling the reader to check it. A reaper
+ * acting on it deletes somebody's database, so `stack-reaper.ts` requires
+ * `enumerated` and refuses the other two.
  */
-function liveCheckoutProjects(repoRoot: string): Set<string> | null {
+export type CheckoutEnumeration =
+  | { readonly kind: 'enumerated'; readonly projects: ReadonlySet<string> }
+  | { readonly kind: 'assumed'; readonly projects: ReadonlySet<string> }
+  | { readonly kind: 'unreadable' };
+
+/** The set to judge against, or `null` — see `CensusInput.liveProjects`. */
+function enumeratedProjects(e: CheckoutEnumeration): ReadonlySet<string> | null {
+  return e.kind === 'unreadable' ? null : e.projects;
+}
+
+/**
+ * Every checkout of this repository, as compose project names, with how the
+ * answer was reached.
+ */
+function liveCheckoutProjects(repoRoot: string): CheckoutEnumeration {
   const probe = spawnSync('git', ['worktree', 'list', '--porcelain'], {
     cwd: repoRoot,
     encoding: 'utf8',
@@ -312,10 +344,10 @@ function liveCheckoutProjects(repoRoot: string): Set<string> | null {
   });
 
   // A tarball or a non-repository answers nothing, and then this checkout is
-  // the only one there is. Not `null`: that is a settled answer rather than an
-  // unasked question, and it is the ordinary case for a self-hoster.
+  // the only one there is. Not `unreadable`: that is a settled answer rather
+  // than an unasked question, and it is the ordinary case for a self-hoster.
   if (probe.status !== 0 || typeof probe.stdout !== 'string') {
-    return new Set([composeProjectName(resolve(repoRoot))]);
+    return { kind: 'assumed', projects: new Set([composeProjectName(resolve(repoRoot))]) };
   }
 
   const projects = new Set<string>();
@@ -326,7 +358,7 @@ function liveCheckoutProjects(repoRoot: string): Set<string> | null {
   // `git worktree list` always lists at least the main working tree, so an
   // empty result means the output shape changed under us rather than that no
   // checkout exists.
-  return projects.size === 0 ? null : projects;
+  return projects.size === 0 ? { kind: 'unreadable' } : { kind: 'enumerated', projects };
 }
 
 function probe(argv: readonly string[]): DockerProbe {
@@ -358,6 +390,18 @@ export interface MachineCensus {
    * reclaimable — so the number goes on the report rather than in a comment.
    */
   checkouts: number | null;
+  /**
+   * HOW that number was reached, for a consumer that ACTS on it (SC-803).
+   *
+   * The count alone cannot separate `enumerated` with one worktree from
+   * `assumed` after a failed `git` call — see `CheckoutEnumeration`. The report
+   * does not need the difference because it prints a warning either way; a
+   * reaper does, because `assumed` on this machine would make six live stacks
+   * read as reclaimable.
+   *
+   * `null` when docker was blind, so nothing was enumerated at all.
+   */
+  enumeration: CheckoutEnumeration | null;
 }
 
 /**
@@ -366,14 +410,16 @@ export interface MachineCensus {
  */
 export function censusFromMachine(repoRoot: string, withSizes: boolean): MachineCensus {
   const ps = probe(['docker', 'ps', '-a', '--no-trunc', '--format', DOCKER_PS_FORMAT]);
-  if (ps.kind !== 'ok') return { projects: [], blind: ps, checkouts: null };
+  if (ps.kind !== 'ok') return { projects: [], blind: ps, checkouts: null, enumeration: null };
 
   const volumeProbe = withSizes
     ? probe(['docker', 'system', 'df', '-v', '--format', '{{json .Volumes}}'])
     : probe(['docker', 'volume', 'ls', '--format', DOCKER_VOLUME_FORMAT]);
-  if (volumeProbe.kind !== 'ok') return { projects: [], blind: volumeProbe, checkouts: null };
+  if (volumeProbe.kind !== 'ok')
+    return { projects: [], blind: volumeProbe, checkouts: null, enumeration: null };
 
-  const liveProjects = liveCheckoutProjects(repoRoot);
+  const enumeration = liveCheckoutProjects(repoRoot);
+  const liveProjects = enumeratedProjects(enumeration);
   return {
     projects: censusProjects({
       containers: parseComposeContainers(ps.output),
@@ -384,6 +430,7 @@ export function censusFromMachine(repoRoot: string, withSizes: boolean): Machine
     }),
     blind: null,
     checkouts: liveProjects?.size ?? null,
+    enumeration,
   };
 }
 
@@ -393,6 +440,14 @@ export function censusFromMachine(repoRoot: string, withSizes: boolean): Machine
  * SILENT ON ZERO. A line that prints on every teardown becomes furniture, and
  * `down` is the hottest path in this repo — every worker runs it at the end of
  * every gate.
+ *
+ * IT NAMES THE REAPER AS WELL AS THE REPORTER (SC-803). This clause is the one
+ * place a person meets an orphan on a path they were already walking, and until
+ * there was something to DO about it, that was all it could be: reclaiming a
+ * stack whose worktree is gone needed a `docker compose -p <derived project>`
+ * incantation that is nowhere in this repository's documented commands. A
+ * notice whose only remedy is a command nobody knows produces the count that
+ * went from six to twenty-one in a week.
  *
  * SILENT WHEN DOCKER IS BLIND, which is not a false clean: `down` derives
  * `remainingContainers` from the same daemon, so a blind census means `down`
@@ -405,7 +460,8 @@ export function orphanClause(projects: readonly StackProject[], ownProject: stri
   if (orphans.length === 0) return null;
   return (
     `dev-stack: ${orphans.length} other compose project(s) on this machine have no ` +
-    'checkout behind them — `bun run dev:stacks`'
+    'checkout behind them — `bun run dev:stacks` to see them, ' +
+    '`bun run dev:stacks:reap` to reclaim them (dry run by default)'
   );
 }
 

@@ -9,6 +9,7 @@ import {
   formatCensus,
   inScope,
   isReclaimable,
+  type MachineCensus,
   orphanClause,
   PROJECT_PREFIX,
   parseComposeContainers,
@@ -283,9 +284,10 @@ describe('the down clause is silent unless there is something to say', () => {
 });
 
 describe('the report never prints one number a reader could reap from', () => {
-  const census = {
+  const census: MachineCensus = {
     blind: null,
     checkouts: 1,
+    enumeration: { kind: 'enumerated', projects: new Set([LIVE_PROJECT]) },
     projects: censusProjects({
       containers: [container({ project: GONE_PROJECT, workingDir: GONE_DIR })],
       volumes: [volume(LIVE_PROJECT, 1_730_000_000), volume(GONE_PROJECT, 65_200_000)],
@@ -315,19 +317,25 @@ describe('the report never prints one number a reader could reap from', () => {
   });
 
   test('a blind probe is reported as blind, not as a clean machine', () => {
-    const text = formatCensus({
+    const blind: MachineCensus = {
       projects: [],
       blind: { kind: 'unavailable', reason: 'no socket' },
       checkouts: null,
-    });
+      enumeration: null,
+    };
+    const text = formatCensus(blind);
     expect(text).toContain('could not be asked');
     expect(text).not.toContain('no scani compose project');
   });
 
   test('an empty machine says so rather than printing nothing', () => {
-    expect(formatCensus({ projects: [], blind: null, checkouts: 1 })).toContain(
-      'no scani compose project'
-    );
+    const empty: MachineCensus = {
+      projects: [],
+      blind: null,
+      checkouts: 1,
+      enumeration: { kind: 'enumerated', projects: new Set([LIVE_PROJECT]) },
+    };
+    expect(formatCensus(empty)).toContain('no scani compose project');
   });
 });
 
