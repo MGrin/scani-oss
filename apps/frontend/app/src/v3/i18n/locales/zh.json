@@ -461,7 +461,7 @@
         "addPayment": "添加一笔付款"
       },
       "recurringSummary": {
-        "committedEachMonth": "每月承诺金额",
+        "projectedEachMonth": "每月预测金额",
         "estimatedFromHistory_other": "其中包含 {{count}} 笔按上次结算金额估算的浮动付款。",
         "notCounted_other": "有 {{count}} 笔浮动付款没有估算金额，未计入。"
       },
@@ -540,9 +540,9 @@
         "affordRunwayAfter": "之后，资金会在 {{month}} 用尽。",
         "affordRunwayStillBeyond_other": "可支撑期仍在 {{count}} 个月以上。",
         "observedRunway_other": "按近期支出速度约可支撑 {{count}} 个月",
-        "ofWhichCommitted": "其中约 {{percent}}% 的支出是已承诺的",
-        "committedTitle": "已承诺的部分",
-        "committedNote": "仅指你的定期付款账面——已排定的内容及其时间。它并不代表你的实际支出。",
+        "ofWhichProjected": "其中约 {{percent}}% 的支出是预测的",
+        "projectedTitle": "预测的部分",
+        "projectedNote": "仅指你的定期付款账面——已排定的内容及其时间。它并不代表你的实际支出。",
         "observedBasis": "{{from}} 至 {{to}} 共 {{count}} 个完整月份的平均值：每月 <value></value>。",
         "observedSpread": "这些月份的区间为 <min></min> 至 <max></max>；中位月份为 <median></median>。",
         "observedNotCounted_other": "有 {{count}} 笔流出未计入——尚未答复，或转到了 Scani 看不到的地方。",

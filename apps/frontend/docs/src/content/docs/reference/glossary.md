@@ -802,6 +802,35 @@ one. Cleared by the next successful price write.
 not about the asset being worthless or untradeable. Airdrop spam
 lands here, and so does a perfectly real token no provider covers.
 
+### Committed, and projected {#committed-and-projected}
+
+**In the UI:** "Bills committed, next 30 days" · "Projected each
+month" · "Projected per month" · "What's projected" · "~N% of that
+spending is projected".
+**Means:** two words for two certainties about one book. The
+difference is **where the amount came from**, never how likely the
+payment is to happen.
+
+- **Committed** sums declared amounts only. A payment whose amount
+  was inferred from its own last settled bill contributes **zero**
+  to a committed figure and is named beside it instead — the
+  shipped caption states the rule outright: "an estimate is not a
+  commitment".
+- **Projected** sums declared amounts *plus* amounts substituted
+  from a payment's own settled history. A payment with no amount
+  at all is in neither figure and is counted separately.
+
+**Where:** committed — the upcoming-bills headline on Money.
+Projected — the recurring list's monthly figure, the vendor list
+and its summary, and the forecast's own block.
+**Careful:** do not translate the two with one word. They *were*
+one word until SC-817, and the two figures then disagreed by
+exactly the estimated amount, one segmented control apart, with
+nothing on screen saying the word had changed meaning. Do not
+reach for "expected" for either: `expectedAmount` is the wire
+field for the **declared** amount, so "expected" one layer down
+means the opposite of an estimate.
+
 ### Vendor
 
 **In the UI:** "Vendors" (a top-level navigation item); "Unknown

@@ -15,7 +15,7 @@ import {
  * The question is ambiguous and both readings are useful, so both are here
  * and neither is allowed to stand in for the other:
  *
- * - **Committed per month** — what the vendor's *active* recurring payments
+ * - **Projected per month** — what the vendor's *active* recurring payments
  *   add up to on a monthly basis. Comparable across vendors regardless of
  *   when each was set up, which is why it is the figure the list sorts on.
  *   It is a claim about the future and it is not money that has moved.
@@ -147,7 +147,7 @@ export interface CommitmentInput {
  * counts: a paused or ended payment commits the user to nothing.
  *
  * `historyEstimates` is threaded through rather than defaulted away (SC-625).
- * A vendor's "Committed per month" and the recurring list's "Committed each
+ * A vendor's "Projected per month" and the recurring list's "Projected each
  * month" are the same claim about the same book, sit two segments apart on one
  * page, and are read against each other — so one of them silently omitting a
  * payment the other includes is worse than either omitting it.
@@ -321,7 +321,7 @@ export function paidWindowLabel(t: TFunction, windowMonths: number): string {
 }
 
 export function commitmentLabel(t: TFunction): string {
-  return t('vendors.committedPerMonth');
+  return t('vendors.projectedPerMonth');
 }
 
 export function paidAllTimeLabel(t: TFunction): string {
@@ -332,10 +332,11 @@ export function paidAllTimeLabel(t: TFunction): string {
  * The income wording, kept apart from the spend wording rather than reusing it
  * with a different figure.
  *
- * "Committed" is wrong for money arriving: a bill is an obligation and income
- * is a forecast, which is the distinction V3-47 built the whole two-figure rule
- * on. "Expected" carries it. Likewise "Paid" describes money you sent, so a
- * salary that landed is "Received".
+ * The spend figure's word is not reused here. It labels obligations the user
+ * has taken on; income is somebody else's intention, which is the distinction
+ * V3-47 built the whole two-figure rule on, and "Expected" carries it.
+ * Likewise "Paid" describes money you sent, so a salary that landed is
+ * "Received".
  */
 export function incomeCommitmentLabel(t: TFunction): string {
   return t('vendors.expectedPerMonth');

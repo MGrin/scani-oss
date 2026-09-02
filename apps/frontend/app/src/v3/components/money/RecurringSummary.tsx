@@ -43,6 +43,23 @@ import { ConvertedTotal } from '../ConvertedTotal';
  * nothing to compute from — and reading the projection's own answer is what
  * makes this figure and the projection's agree by construction rather than by
  * being kept in step.
+ *
+ * ## Why the label says "Projected" and not "Committed" (SC-817)
+ *
+ * Because this figure resolves `expectedAmount ?? historyEstimate`, a payment
+ * priced from its own settled history is INSIDE it — while `UpcomingFeed`'s
+ * "Bills committed" resolves `expectedAmount ?? actualAmount`, so the same
+ * payment contributes zero there. One segmented control apart, one English
+ * word, opposite treatments. SC-807 had already ruled which sense wins, in
+ * shipped copy: "an estimate is not a commitment". So "committed" is reserved
+ * for declared amounts, and every figure that substitutes history says
+ * "projected".
+ *
+ * NOT "Expected", which was considered and rejected (mgrin, 2026-09-02):
+ * `expectedAmount` is the wire field for the DECLARED amount, so that word
+ * would mean the opposite thing one layer down — the defect this removes.
+ * `tests/lib/i18n-committed-means-one-thing.test.ts` holds the rule and fails
+ * if an estimate-inclusive figure takes the word back.
  */
 
 type PaymentRow = RouterOutputs['payments']['list'][number];
@@ -79,7 +96,7 @@ export function RecurringSummary({
   return (
     <Block className="flex flex-col gap-2 p-4">
       <ConvertedTotal
-        label={t('v3.money.recurringSummary.committedEachMonth')}
+        label={t('v3.money.recurringSummary.projectedEachMonth')}
         totals={commitment}
         tokenSymbolById={tokenSymbolById}
         rates={rates}

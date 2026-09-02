@@ -2586,7 +2586,7 @@
         "addPayment": "Ajouter un paiement"
       },
       "recurringSummary": {
-        "committedEachMonth": "Engagé chaque mois",
+        "projectedEachMonth": "Projeté chaque mois",
         "estimatedFromHistory_one": "Comprend {{count}} paiement variable estimé d’après son dernier règlement.",
         "estimatedFromHistory_many": "Comprend {{count}} paiements variables estimés d’après leurs derniers règlements.",
         "estimatedFromHistory_other": "Comprend {{count}} paiements variables estimés d’après leurs derniers règlements.",
@@ -2766,9 +2766,9 @@
         "observedRunway_one": "Environ {{count}} mois au rythme de dépenses récent",
         "observedRunway_many": "Environ {{count}} mois au rythme de dépenses récent",
         "observedRunway_other": "Environ {{count}} mois au rythme de dépenses récent",
-        "ofWhichCommitted": "~{{percent}} % de ces dépenses sont engagées",
-        "committedTitle": "Ce qui est engagé",
-        "committedNote": "Votre portefeuille de paiements récurrents seul — ce qui est planifié, et quand. Cela ne décrit pas ce que vous dépensez.",
+        "ofWhichProjected": "~{{percent}} % de ces dépenses sont projetées",
+        "projectedTitle": "Ce qui est projeté",
+        "projectedNote": "Votre portefeuille de paiements récurrents seul — ce qui est planifié, et quand. Cela ne décrit pas ce que vous dépensez.",
         "observedBasis": "Moyenne de {{count}} mois complets, de {{from}} à {{to}} : <value></value> par mois.",
         "observedSpread": "Ces mois se sont échelonnés de <min></min> à <max></max> ; le mois médian était à <median></median>.",
         "observedNotCounted_one": "{{count}} sortie n’est pas comptée — sans réponse, ou déplacée quelque part que Scani ne voit pas.",

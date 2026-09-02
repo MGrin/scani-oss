@@ -513,7 +513,7 @@
         "addPayment": "Add a payment"
       },
       "recurringSummary": {
-        "committedEachMonth": "Committed each month",
+        "projectedEachMonth": "Projected each month",
         "estimatedFromHistory_one": "Includes {{count}} variable payment estimated from its last settled amount.",
         "estimatedFromHistory_other": "Includes {{count}} variable payments estimated from their last settled amounts.",
         "notCounted_one": "{{count}} variable payment has no estimate and is not counted.",
@@ -608,9 +608,9 @@
         "affordRunwayStillBeyond_other": "Runway still runs beyond {{count}} months.",
         "observedRunway_one": "About {{count}} month at recent spending",
         "observedRunway_other": "About {{count}} months at recent spending",
-        "ofWhichCommitted": "~{{percent}}% of that spending is committed",
-        "committedTitle": "What's committed",
-        "committedNote": "Your recurring book alone — what is scheduled, and when. It does not describe what you spend.",
+        "ofWhichProjected": "~{{percent}}% of that spending is projected",
+        "projectedTitle": "What's projected",
+        "projectedNote": "Your recurring book alone — what is scheduled, and when. It does not describe what you spend.",
         "observedBasis": "Mean of {{count}} complete months, {{from}} to {{to}}: <value></value> a month.",
         "observedSpread": "Those months ranged <min></min> to <max></max>; the middle month was <median></median>.",
         "observedNotCounted_one": "{{count}} outflow is not counted — unanswered, or moved somewhere Scani cannot see.",

@@ -461,7 +461,7 @@
         "addPayment": "支払を追加"
       },
       "recurringSummary": {
-        "committedEachMonth": "毎月の確定額",
+        "projectedEachMonth": "毎月の予測額",
         "estimatedFromHistory_other": "金額が変動する支払{{count}}件を、最後に決済した金額から概算して含めています。",
         "notCounted_other": "金額が変動する支払{{count}}件には概算がないため、含めていません。"
       },
@@ -540,9 +540,9 @@
         "affordRunwayAfter": "その後、資金は {{month}} に尽きます。",
         "affordRunwayStillBeyond_other": "それでも{{count}}か月以上もちます。",
         "observedRunway_other": "最近の支出ペースで約{{count}}か月",
-        "ofWhichCommitted": "その支出の約{{percent}}%は確定分です",
-        "committedTitle": "確定している分",
-        "committedNote": "定期支払の一覧だけを見たものです。何がいつ予定されているかであって、実際の支出額を表すものではありません。",
+        "ofWhichProjected": "その支出の約{{percent}}%は予測分です",
+        "projectedTitle": "予測している分",
+        "projectedNote": "定期支払の一覧だけを見たものです。何がいつ予定されているかであって、実際の支出額を表すものではありません。",
         "observedBasis": "{{from}} から {{to}} までの完了した{{count}}か月の平均: 月あたり <value></value>。",
         "observedSpread": "その各月は <min></min> から <max></max> の幅があり、中央の月は <median></median> でした。",
         "observedNotCounted_other": "{{count}}件の出金は算入していません。未回答か、Scaniが把握できない先へ動いたものです。",

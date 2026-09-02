@@ -1646,8 +1646,8 @@
         "comingIn_many": "Entradas, próximos {{count}} meses",
         "comingIn_one": "Entradas, próximo {{count}} mes",
         "comingIn_other": "Entradas, próximos {{count}} meses",
-        "committedNote": "Solo tus pagos recurrentes — lo que está planificado, y cuándo. No describe lo que gastas.",
-        "committedTitle": "Lo que está comprometido",
+        "projectedNote": "Solo tus pagos recurrentes — lo que está planificado, y cuándo. No describe lo que gastas.",
+        "projectedTitle": "Lo que está proyectado",
         "couldEstimate_many": "{{count}} de esos pagos variables ya se han liquidado antes, así que sus últimos importes podrían servir.",
         "couldEstimate_one": "{{count}} de esos pagos variables ya se ha liquidado antes, así que su último importe podría servir.",
         "couldEstimate_other": "{{count}} de esos pagos variables ya se han liquidado antes, así que sus últimos importes podrían servir.",
@@ -1679,7 +1679,7 @@
         "observedRunway_one": "Un {{count}} mes al ritmo de gasto reciente",
         "observedRunway_other": "Unos {{count}} meses al ritmo de gasto reciente",
         "observedSpread": "Esos meses fueron de <min></min> a <max></max>; el mes intermedio fue de <median></median>.",
-        "ofWhichCommitted": "~{{percent}} % de ese gasto está comprometido",
+        "ofWhichProjected": "~{{percent}} % de ese gasto está proyectado",
         "overdueExcluded_many": "{{count}} facturas ya están en retraso y no figuran en la serie.",
         "overdueExcluded_one": "{{count}} factura ya está en retraso y no figura en la serie.",
         "overdueExcluded_other": "{{count}} facturas ya están en retraso y no figuran en la serie.",
@@ -1849,7 +1849,7 @@
         "addPayment": "Añadir un pago"
       },
       "recurringSummary": {
-        "committedEachMonth": "Comprometido cada mes",
+        "projectedEachMonth": "Proyectado cada mes",
         "estimatedFromHistory_many": "Incluye {{count}} pagos variables estimados a partir de sus últimos importes liquidados.",
         "estimatedFromHistory_one": "Incluye {{count}} pago variable estimado a partir de su último importe liquidado.",
         "estimatedFromHistory_other": "Incluye {{count}} pagos variables estimados a partir de sus últimos importes liquidados.",

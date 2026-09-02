@@ -13,13 +13,13 @@ import { ConvertedTotal } from '../ConvertedTotal';
 /**
  * What the vendors on screen cost, over the rows actually shown.
  *
- * Two figures, never one. "Committed each month" is a claim about the future
+ * Two figures, never one. "Projected each month" is a claim about the future
  * — what the standing payments pointed at these vendors add up to — and
  * "Paid" is a claim about the past. Netting them, or showing either alone
  * under a label as vague as "spend", would answer a question the reader did
  * not ask with a number they cannot act on.
  *
- * Committed leads as the hero because it is the comparable one: it does not
+ * The projected figure leads as the hero because it is the comparable one: it does not
  * depend on how long ago each vendor was set up, which is what makes the list
  * beneath it sortable in a way that means anything.
  */
@@ -55,7 +55,7 @@ export function VendorSpendSummary({
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="flex flex-col gap-2">
           <ConvertedTotal
-            label={t('v3.money.recurringSummary.committedEachMonth')}
+            label={t('v3.money.recurringSummary.projectedEachMonth')}
             totals={mergeCurrencyTotals(commitment)}
             tokenSymbolById={tokenSymbolById}
             rates={rates}

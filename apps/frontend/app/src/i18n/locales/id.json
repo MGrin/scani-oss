@@ -56,7 +56,7 @@
   "vendors": {
     "paidWindow_other": "Dibayar, {{count}} bulan terakhir",
     "receivedWindow_other": "Diterima, {{count}} bulan terakhir",
-    "committedPerMonth": "Komitmen per bulan",
+    "projectedPerMonth": "Proyeksi per bulan",
     "expectedPerMonth": "Perkiraan per bulan",
     "paidAllTime": "Dibayar, sepanjang waktu",
     "receivedAllTime": "Diterima, sepanjang waktu",
