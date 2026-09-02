@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+
 // The local stack, isolated to this worktree.
 //
 // WHY THIS EXISTS (SC-491). `bun dev:stack` was `docker compose up` with the
@@ -169,9 +170,58 @@ export function defaultProfileInterpolations(): ReadonlySet<string> {
  * that made its lifecycle legible.
  */
 export function defaultProfileLongRunning(): readonly string[] {
+  return longRunningServices('infra');
+}
+
+/**
+ * The services this mode starts that are meant to STILL BE RUNNING afterwards
+ * (SC-795).
+ *
+ * This is the denominator `up` had no way to name. `publishedServices` is the
+ * neighbouring list and is the wrong one here: it answers "where can I reach
+ * something", so it counts a service once per published PORT and cannot count
+ * `worker`, which publishes none. The question a verdict needs is "how many
+ * containers should still be up", and that is exactly the compose file's
+ * non-one-shot services in the requested profile.
+ *
+ * Derived from the compose file for the reason `defaultProfileLongRunning` is:
+ * the two trees do not agree about the service set — upstream has `api` where
+ * this tree has `backend`, and this tree has frontends upstream does not — so a
+ * hardcoded count is already wrong in one of the two repos on the day it is
+ * written, and wrong in the direction that manufactures a false `UP
+ * INCOMPLETE`.
+ */
+export function longRunningServices(mode: StackMode): readonly string[] {
   return composeServiceBlocks()
-    .filter((b) => b.inDefaultProfile && !b.oneShot)
+    .filter((b) => !b.oneShot && (mode === 'full' || b.inDefaultProfile))
     .map((b) => b.name);
+}
+
+/**
+ * The services this run is entitled to expect, or `null` when it cannot say
+ * (SC-795).
+ *
+ * `null` IS NOT ZERO AND IS NEVER RESOLVED TOWARD ONE — the same rule
+ * `downVerdict` and `upVerdict` already follow for an unaskable docker. A
+ * caller who named services (`bun run dev:stack -- postgres`) asked compose to
+ * start a subset this script did not choose, so the derived set is not what
+ * they expect and comparing against it would print `UP INCOMPLETE` over a
+ * start that did exactly what it was told.
+ *
+ * THAT MATTERS MORE THAN THE DEFECT IT GUARDS. A verdict word people meet on
+ * healthy runs is one they learn to skip, and the next real `UP INCOMPLETE`
+ * is then read as noise — which leaves the stack in SC-795's original state
+ * with an extra word in the way.
+ *
+ * A bare argument is a service name; anything beginning `-` is a compose flag
+ * (`--force-recreate`, `--pull`), which narrows nothing.
+ */
+export function expectedServices(
+  mode: StackMode,
+  passthrough: readonly string[]
+): readonly string[] | null {
+  if (passthrough.some((arg) => !arg.startsWith('-'))) return null;
+  return longRunningServices(mode);
 }
 
 /**
@@ -448,6 +498,13 @@ export function upArgs(passthrough: readonly string[] = [], mode: StackMode = 'f
 
 export interface ServiceHealth {
   readonly name: string;
+  /**
+   * The compose SERVICE this container is an instance of, read from the
+   * `com.docker.compose.service` label rather than parsed out of `name`
+   * (SC-795). Parsing would work today and is a guess about a format compose
+   * owns; the label is the thing the format is derived FROM.
+   */
+  readonly service: string;
   /** `none` is a container with no healthcheck — started, never verified. */
   readonly state: 'healthy' | 'unhealthy' | 'starting' | 'none';
 }
@@ -470,12 +527,28 @@ export interface UpVerdict {
  * no healthcheck at all, so the gap is the normal case rather than an alarm —
  * printing it is how the reader knows which services `--wait` actually stood
  * behind.
+ *
+ * AND IT COUNTS AGAINST A DENOMINATOR, BECAUSE UNTIL SC-795 THERE WAS A WORD
+ * FOR "A SERVICE DID NOT BECOME HEALTHY" AND NONE FOR "A SERVICE WAS NEVER
+ * CREATED". A `full` stack whose worker image failed to build printed
+ *
+ *   dev-stack: UP · exit 1 · 2 running, 2 health-verified in <project> · full
+ *
+ * over roughly nine services that did not exist. Every one of them is absent
+ * from `health`, so the unhealthy filter has nothing to find and the run falls
+ * through to the success word — and `2 running` is a true statement that reads
+ * as a small stack rather than a broken one. The reader meets `UP` first.
+ *
+ * `expected` is the fix and `null` is its refusal: see `expectedServices`.
+ * A count with no denominator is the shape that made SC-500 invisible, and
+ * this is the same shape one field over.
  */
 export function upVerdict(
   code: number,
   health: readonly ServiceHealth[] | null,
   project: string,
-  mode: StackMode = 'full'
+  mode: StackMode = 'full',
+  expected: readonly string[] | null = null
 ): UpVerdict {
   const compose = code === 0 ? '' : ` · compose exit ${code}`;
   // Named on BOTH modes on purpose (SC-706). A count with no provenance is
@@ -491,6 +564,25 @@ export function upVerdict(
       exit,
     };
   }
+  // `of N expected` only when there IS an N. Printing a denominator the run
+  // could not establish would be the false-provenance failure this exists to
+  // close, wearing the fix's clothes.
+  const denominator = expected === null ? '' : ` of ${expected.length} expected`;
+  const running = new Set(health.map((h) => h.service));
+  const missing = expected === null ? [] : expected.filter((s) => !running.has(s));
+  if (missing.length > 0) {
+    // BEFORE the unhealthy branch, and the order is an argument rather than a
+    // preference: a service that was never created explains a dependent that
+    // is unhealthy, and never the other way round. Leading with the dependent
+    // would name a symptom of the thing on the line below it.
+    const exit = code === 0 ? 1 : code;
+    return {
+      message:
+        `dev-stack: UP INCOMPLETE · exit ${exit}${compose}${started} · ${health.length} running${denominator} in ${project} · ${missing.length} service(s) were never created:\n` +
+        missing.map((name) => `  ${name}`).join('\n'),
+      exit,
+    };
+  }
   const bad = health.filter((h) => h.state === 'unhealthy' || h.state === 'starting');
   if (bad.length > 0) {
     const exit = code === 0 ? 1 : code;
@@ -503,7 +595,7 @@ export function upVerdict(
   }
   const verified = health.filter((h) => h.state === 'healthy').length;
   return {
-    message: `dev-stack: UP · exit ${code} · ${health.length} running, ${verified} health-verified in ${project}${started}`,
+    message: `dev-stack: UP · exit ${code} · ${health.length} running${denominator}, ${verified} health-verified in ${project}${started}`,
     exit: code,
   };
 }
@@ -525,7 +617,7 @@ async function containerHealth(env: Record<string, string>): Promise<ServiceHeal
       'docker',
       'ps',
       '--format',
-      '{{.Names}}\t{{.State}}\t{{.Status}}',
+      '{{.Names}}\t{{.State}}\t{{.Status}}\t{{.Label "com.docker.compose.service"}}',
       '--filter',
       `label=com.docker.compose.project=${env.COMPOSE_PROJECT_NAME}`,
     ],
@@ -538,7 +630,7 @@ async function containerHealth(env: Record<string, string>): Promise<ServiceHeal
     .map((line) => line.trim())
     .filter((line) => line.length > 0)
     .map((line) => {
-      const [name = '', , status = ''] = line.split('\t');
+      const [name = '', , status = '', service = ''] = line.split('\t');
       // `Status` carries the health in parentheses when a healthcheck exists:
       // `Up 3 minutes (healthy)`. No parenthetical means no healthcheck, which
       // is started-but-unverified rather than a failure.
@@ -549,7 +641,7 @@ async function containerHealth(env: Record<string, string>): Promise<ServiceHeal
           : /\(health: starting\)/.test(status)
             ? 'starting'
             : 'none';
-      return { name, state };
+      return { name, service, state };
     });
 }
 
@@ -686,7 +778,13 @@ async function main(): Promise<never> {
   if (code !== 0) process.stderr.write(explainPortConflicts(env));
 
   const project = env.COMPOSE_PROJECT_NAME ?? composeProjectName(REPO_ROOT);
-  const verdict = upVerdict(code, await containerHealth(env), project, mode);
+  const verdict = upVerdict(
+    code,
+    await containerHealth(env),
+    project,
+    mode,
+    expectedServices(mode, passthrough)
+  );
   process.stderr.write(`${verdict.message}\n`);
   if (verdict.exit !== 0) process.exit(verdict.exit);
 
