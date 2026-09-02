@@ -118,6 +118,14 @@ const factLabels = (item: HoldingWithDetails, title: string) =>
     .find((section) => section.title === title)
     ?.facts.map((fact) => fact.label) ?? [];
 
+// Facts carry a `ReactNode`, so a value is asserted on as rendered markup —
+// most of these are plain strings, and the ones that are not would otherwise
+// have to be asserted on by shape.
+const factValues = (item: HoldingWithDetails, title: string) =>
+  (holdingPeekSpec(item, CONTEXT).sections ?? [])
+    .find((section) => section.title === title)
+    ?.facts.map((fact) => renderNode(fact.value)) ?? [];
+
 describe('the four facts above the fold', () => {
   test('are what the position is, not everything known about it', () => {
     const spec = holdingPeekSpec(holding(), CONTEXT);
@@ -184,6 +192,60 @@ describe('sections', () => {
     expect(factLabels(holding({ dataIntegrity: { incompleteHistory: true } }), 'Record')).toContain(
       'History'
     );
+  });
+
+  /**
+   * SC-900 — the same shortfall, two readings, and until now one sentence.
+   *
+   * "We cannot account for this" is a defect worth investigating. "This
+   * predates the earliest statement obtainable" was settled the moment
+   * somebody chose a date range in their broker's report editor. A reader who
+   * cannot tell them apart re-opens the second one every time they meet it,
+   * which is what happened — four times, over one account.
+   */
+  test('a shortfall with a known boundary reads as a settled opening position', () => {
+    const bounded = holding({
+      dataIntegrity: { incompleteHistory: true, historyStartsAt: '2024-03-01T00:00:00.000Z' },
+    });
+    expect(factLabels(bounded, 'Record')).toContain('Opening position');
+    expect(factLabels(bounded, 'Record')).not.toContain('History');
+    expect(factValues(bounded, 'Record').join(' ')).toContain(
+      'Predates the earliest available statement'
+    );
+  });
+
+  /**
+   * THE CONTROL, and it has to be able to fail on its own. Without a stated
+   * boundary nothing is known about reach, so the honest answer is the one
+   * that was always there — a change that reached the new wording
+   * unconditionally would relabel every incomplete history in the product and
+   * pass the test above.
+   */
+  test('a shortfall with NO boundary keeps the words it always had', () => {
+    const unbounded = holding({ dataIntegrity: { incompleteHistory: true } });
+    expect(factLabels(unbounded, 'Record')).toContain('History');
+    expect(factLabels(unbounded, 'Record')).not.toContain('Opening position');
+    expect(factValues(unbounded, 'Record').join(' ')).toContain('Incomplete');
+  });
+
+  /**
+   * The boundary is a DATE on the wire and a formatted, translated sentence on
+   * the screen. The server's note is English prose that a reader may not be
+   * able to read, and this is the one case where the label changes too — so
+   * the client's own string wins here and only here.
+   */
+  test('the date is formatted and the reason is translated, not the server prose', () => {
+    const bounded = holding({
+      dataIntegrity: {
+        incompleteHistory: true,
+        historyStartsAt: '2024-03-01T00:00:00.000Z',
+        note: 'Opening position: 100 of the current balance predates …',
+      },
+    });
+    const value = factValues(bounded, 'Record').join(' ');
+    expect(value).not.toContain('Opening position: 100');
+    expect(value).not.toContain('2024-03-01T00:00:00.000Z');
+    expect(value).toContain('2024');
   });
 });
 

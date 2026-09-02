@@ -104,9 +104,31 @@ export type TransactionFetchContext = WithUserCreds<ProviderContext> & {
   institutionCode: string;
   since?: Date;
   until?: Date;
-  retractHistoryClaim?: (reason: string) => void;
+  retractHistoryClaim?: (reason: string, bound?: HistoryBound) => void;
   noteWarning?: (reason: string) => void;
 };
+
+/**
+ * How far back the walk that just retracted actually reached (SC-900).
+ *
+ * It rides on `retractHistoryClaim` rather than on a sink of its own, and that
+ * is the point rather than a convenience: a bound is only meaningful about a
+ * ledger already known to be short, so a provider must not be able to state one
+ * while still claiming it read everything. One call, one fact — "I did not get
+ * the whole ledger, and this is the earliest date I could see".
+ *
+ * `historyStartsAt` is the window the SOURCE covers, not the earliest row it
+ * sent. A statement covering a date range can report a row dated before that
+ * range — an accrued fee, a corrected settlement — so the two are different
+ * numbers and only the first one says what was never fetched.
+ *
+ * Optional on the retraction for the same reason `retractHistoryClaim` is
+ * optional on the context: a provider that knows its ledger is short and cannot
+ * name a boundary must still be able to say the first half.
+ */
+export interface HistoryBound {
+  historyStartsAt: Date;
+}
 
 /**
  * `noteWarning` is the same voice with none of the authority (SC-428).

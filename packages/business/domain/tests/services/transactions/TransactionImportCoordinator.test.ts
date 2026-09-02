@@ -185,6 +185,7 @@ describe("TransactionImportCoordinator — the run's oldest event is not a holdi
       lastEventAt: RUN_NEWEST,
       hasCompleteTxHistory: true,
       historyRetractions: [],
+      historyStartsAt: null,
     };
   }
 
@@ -255,6 +256,7 @@ describe("TransactionImportCoordinator — the run's oldest event is not a holdi
       ...routerResult(),
       hasCompleteTxHistory: false,
       historyRetractions: [],
+      historyStartsAt: null,
     };
 
     await persist('user-1', 'account-1', 'kraken-api', notRetracted, new Date('2026-01-01'));
@@ -405,6 +407,7 @@ describe('TransactionImportCoordinator — a merged batch says so in the summary
       lastEventAt: new Date('2026-08-01T00:00:00Z'),
       hasCompleteTxHistory: true,
       historyRetractions: [],
+      historyStartsAt: null,
     };
   }
 

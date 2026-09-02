@@ -59,6 +59,10 @@ function makeService(opts: {
   // Real transactions the walk from the first observation back to the
   // opening has to pass through.
   txsBeforeFirstObs?: Array<{ occurredAt: Date; quantity: string; source?: string }>;
+  // What `holding_coverage.history_starts_at` says: the earliest date this
+  // holding's ledger SOURCE covers, or undefined for the default — no source
+  // has stated one (SC-900).
+  historyStartsAt?: Date;
 }): {
   service: OpeningBalanceReconciliationService;
   capturedTxs: CapturedTx[];
@@ -124,6 +128,11 @@ function makeService(opts: {
       capturedReconciliations.push(row);
       return row as never;
     },
+    // Only `history_starts_at` is read, and only the null/non-null distinction
+    // decides anything — the rest of the row is left off deliberately so a
+    // future reader cannot key on a column this stub happens to invent.
+    findByHolding: async () =>
+      (opts.historyStartsAt ? { historyStartsAt: opts.historyStartsAt } : null) as never,
   } as unknown as HoldingCoverageRepository);
 
   // Rebuilt per test: typedi caches by class, and a BalanceAtTimeService
@@ -684,5 +693,196 @@ describe('OpeningBalanceReconciliationService.reconcileUser', () => {
 
     expect(results).toHaveLength(1);
     expect(results[0]?.openingBalanceSynthesized).toBe(true);
+  });
+});
+
+/**
+ * SC-900 — a settled fact must not render as an open question.
+ *
+ * A holding whose ledger comes from a bounded source leaves money that moved
+ * before the bound with no transaction to record it. The arithmetic is
+ * identical to a genuine reconciliation failure and the sentence used to be
+ * identical too, so every audit that met the second case re-opened the first.
+ * It was re-derived four times over one account before it was written down.
+ *
+ * Every figure and date below is invented. The production numbers this was
+ * found on stay on the board.
+ */
+describe('OpeningBalanceReconciliationService — a bounded source is not an unexplained gap', () => {
+  // A window a saved report query might name. Nothing here is derived from
+  // any real account; the dates only have to be ordered.
+  const STATEMENT_FROM = new Date('2024-03-01T00:00:00Z');
+  const LATER_STATEMENT_FROM = new Date('2024-09-01T00:00:00Z');
+  // Earlier than the window on purpose: a statement covering a range can
+  // REPORT a row dated before that range (an accrued fee, a corrected
+  // settlement), which is exactly why the boundary cannot be derived from the
+  // ledger's own earliest row.
+  const FIRST_TX_AT = new Date('2024-01-15T00:00:00Z');
+
+  // The shape that reaches this branch: the transactions sum to more than the
+  // holding actually holds, so `balance - sum(txs)` is negative — a "you held
+  // minus a hundred before your history begins" that cannot be a fact, and is
+  // recorded as missing inflows instead (SC-199).
+  function missingInflows(historyStartsAt?: Date) {
+    return makeService({
+      holding: { id: 'h1', userId: 'u1', accountId: 'a1', tokenId: 't1', balance: '40' },
+      txSumAllTime: '140',
+      firstTxAt: FIRST_TX_AT,
+      ...(historyStartsAt ? { historyStartsAt } : {}),
+    });
+  }
+
+  test('with a stated window the shortfall is categorised as an opening position', async () => {
+    const { service, capturedReconciliations } = missingInflows(STATEMENT_FROM);
+    const r = await service.reconcileHolding('h1');
+
+    expect(r?.residueCause).toBe('before-available-history');
+    expect(r?.historyStartsAt).toEqual(STATEMENT_FROM);
+    expect(capturedReconciliations[0]?.reconciliationNotes).toContain(
+      'predates the earliest available statement'
+    );
+  });
+
+  /**
+   * THE CONTROL, and it has to be able to come back red on its own. Without a
+   * stated window nothing is known about reach, so the honest answer is the
+   * one that was always there. A change that reached the new category from
+   * `has_complete_tx_history` — false by default, and false for reasons that
+   * say nothing about reach — would relabel every unexplained residue in the
+   * product and pass every other test in this block.
+   */
+  test('with NO stated window it stays unexplained, in the words it always had', async () => {
+    const { service, capturedReconciliations } = missingInflows();
+    const r = await service.reconcileHolding('h1');
+
+    expect(r?.residueCause).toBe('unexplained');
+    expect(r?.historyStartsAt).toBeNull();
+    const note = capturedReconciliations[0]?.reconciliationNotes ?? '';
+    expect(note).toContain('Missing inflows');
+    expect(note).not.toContain('predates the earliest available statement');
+  });
+
+  /**
+   * CONSTRAINT 1, and the whole reason the boundary is a stored value rather
+   * than a literal. The window slides — it is a date range somebody picked in
+   * their broker's report editor, and re-picking it moves the boundary. A
+   * hardcoded date would go on printing the old one, which is a false
+   * explanation over a real gap and strictly worse than the honest
+   * "unexplained" it replaced.
+   *
+   * Two runs, one variable: the same holding, the same ledger, the same
+   * shortfall, a different stated window.
+   */
+  test('the boundary follows the window: a later statement moves the date it names', async () => {
+    const early = missingInflows(STATEMENT_FROM);
+    await early.service.reconcileHolding('h1');
+    const earlyNote = early.capturedReconciliations[0]?.reconciliationNotes ?? '';
+
+    const late = missingInflows(LATER_STATEMENT_FROM);
+    const lateResult = await late.service.reconcileHolding('h1');
+    const lateNote = late.capturedReconciliations[0]?.reconciliationNotes ?? '';
+
+    expect(earlyNote).toContain(STATEMENT_FROM.toISOString());
+    expect(lateNote).toContain(LATER_STATEMENT_FROM.toISOString());
+    expect(lateNote).not.toContain(STATEMENT_FROM.toISOString());
+    expect(lateResult?.historyStartsAt).toEqual(LATER_STATEMENT_FROM);
+  });
+
+  /**
+   * The date named is the SOURCE'S window, not `openingAt`.
+   *
+   * `openingAt` sits one millisecond before this holding's earliest evidence,
+   * and the fixture puts that six weeks BEFORE the window the statement covers
+   * — the real shape, because a statement can report a row dated before its
+   * own range. Naming `openingAt` would claim a wider window than the one that
+   * exists and explain away the weeks between the two dates, which nothing
+   * fetched.
+   */
+  test('it names the window, not the holding earliest evidence', async () => {
+    const { service, capturedReconciliations } = missingInflows(STATEMENT_FROM);
+    await service.reconcileHolding('h1');
+    const note = capturedReconciliations[0]?.reconciliationNotes ?? '';
+
+    expect(note).toContain(STATEMENT_FROM.toISOString());
+    expect(note).not.toContain(new Date(FIRST_TX_AT.getTime() - 1).toISOString());
+  });
+
+  /**
+   * IT IS A CAUSE, NOT A DISCOUNT. Naming the boundary must change no
+   * arithmetic and must not net the residue away — a figure reconciling to
+   * zero is exactly what would stop anyone noticing the day the window
+   * genuinely breaks.
+   */
+  test('the amount survives being explained', async () => {
+    const named = missingInflows(STATEMENT_FROM);
+    const bare = missingInflows();
+    const withWindow = await named.service.reconcileHolding('h1');
+    const without = await bare.service.reconcileHolding('h1');
+
+    expect(withWindow?.unexplainedResidual.toString()).toBe(
+      without?.unexplainedResidual.toString()
+    );
+    expect(withWindow?.computedOpening.toString()).toBe('-100');
+    expect(withWindow?.openingBalanceSynthesized).toBe(false);
+    // Still on the coverage row with the sign the data-quality UI keys on.
+    expect(named.capturedReconciliations[0]?.openingBalanceQuantity).toBe('-100');
+    expect(named.capturedReconciliations[0]?.reconciliationNotes).toContain('100');
+  });
+
+  /**
+   * CONSTRAINT 2 — per holding, and derived rather than declared.
+   *
+   * A stated window does NOT reach a residue the reconciler has positive
+   * evidence about. `arrived-later` means an observation says the ledger
+   * explained the balance as of the holding's start, so whatever is missing
+   * arrived AFTER the window rather than before it, and the boundary cannot
+   * account for it. Two currencies on one bounded statement land on the two
+   * different branches for exactly this reason, which is why the split falls
+   * out of the evidence instead of needing a flag.
+   */
+  test('a residue that demonstrably arrived LATER is never explained by the window', async () => {
+    const observedAt = new Date('2024-06-01T00:00:00Z');
+    const { service, capturedReconciliations } = makeService({
+      holding: { id: 'h1', userId: 'u1', accountId: 'a1', tokenId: 't1', balance: '30' },
+      txSumAllTime: '10',
+      firstTxAt: FIRST_TX_AT,
+      // The balance observed at the opening moment is zero, so the ledger
+      // already explained the holding then and the 20 arrived afterwards.
+      observations: [{ observedAt, balance: '10' }],
+      txsBeforeFirstObs: [{ occurredAt: new Date('2024-02-01T00:00:00Z'), quantity: '10' }],
+      historyStartsAt: STATEMENT_FROM,
+    });
+    const r = await service.reconcileHolding('h1');
+
+    expect(r?.residueCause).toBe('unexplained');
+    expect(r?.unexplainedResidual.toString()).toBe('20');
+    expect(capturedReconciliations[0]?.reconciliationNotes).not.toContain(
+      'predates the earliest available statement'
+    );
+  });
+
+  test('a holding whose ledger closes has no residue to categorise', async () => {
+    const { service } = makeService({
+      holding: { id: 'h1', userId: 'u1', accountId: 'a1', tokenId: 't1', balance: '10' },
+      txSumAllTime: '10',
+      firstTxAt: FIRST_TX_AT,
+      historyStartsAt: STATEMENT_FROM,
+    });
+    const r = await service.reconcileHolding('h1');
+    expect(r?.residueCause).toBe('none');
+  });
+
+  /**
+   * `projectHolding` is what a repair script shows an operator before the
+   * write happens, so it has to carry the same category the write will use —
+   * a preview that could not show the boundary would put the operator back on
+   * the original evidence, which is the repetition this ticket is about.
+   */
+  test('the projection carries the same category as the write', async () => {
+    const { service } = missingInflows(STATEMENT_FROM);
+    const projection = await service.projectHolding('h1');
+    expect(projection?.action).toBe('missing-inflows');
+    expect(projection?.residueCause).toBe('before-available-history');
+    expect(projection?.historyStartsAt).toEqual(STATEMENT_FROM);
   });
 });

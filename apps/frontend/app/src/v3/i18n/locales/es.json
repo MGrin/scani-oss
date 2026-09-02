@@ -848,6 +848,8 @@
         "in": "En",
         "inactive": "Inactiva",
         "incompleteHistory": "Incompleto — faltan las entradas anteriores a la primera transacción importada, así que los valores previos a esa fecha están acotados.",
+        "openingPosition": "Posición inicial",
+        "predatesEarliestStatement": "Es anterior al extracto más antiguo disponible (desde {{date}}): el dinero que se movió antes nunca se descargó, así que ninguna transacción aquí puede explicarlo. Importa un extracto que cubra el periodo anterior para cerrarlo.",
         "interest": "Intereses",
         "lastPayout": "Último pago",
         "lastUpdated": "Última actualización",
