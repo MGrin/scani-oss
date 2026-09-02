@@ -12,9 +12,9 @@ import { Decimal } from '../decimal';
  * exit.
  *
  *     observed  = money leaving tracked accounts   <- the real total money-out
- *     committed = the recurring book               <- funded from inside `observed`
+ *     projected = the recurring book               <- funded from inside `observed`
  *
- * **`committed` is a SUBSET of `observed`.** Adding them roughly doubles the
+ * **`projected` is a SUBSET of `observed`.** Adding them roughly doubles the
  * burn and halves the runway.
  *
  * Two numbers side by side look like they want summing — to the reader, to
@@ -24,7 +24,18 @@ import { Decimal } from '../decimal';
  * ONE argument and there is no overload that accepts both, so the wrong
  * arithmetic has nowhere to be written.
  *
- * ## What `committed` is genuinely for
+ * ## Why `projected` and not `committed` (SC-932)
+ *
+ * The book figure resolves an amount the user never declared: a payment with
+ * no `expectedAmount` takes `basis: 'history'` in `buildForecast` and is
+ * priced from its own settled occurrences. SC-817 settled the vocabulary for
+ * exactly that substitution — **committed = an amount you declared**, and
+ * every figure that substitutes history says **projected** — and fixed the
+ * user-facing strings. These identifiers said `committed` for another two
+ * weeks, so a reader grepping the word still landed on an estimate-inclusive
+ * figure. Nothing about what is summed changed here; only the name.
+ *
+ * ## What `projected` is genuinely for
  *
  * Not a second denominator — a floor on the discretionary question. An
  * observed $37k month says nothing about how much of it he could STOP. The
@@ -35,7 +46,7 @@ import { Decimal } from '../decimal';
 /**
  * The burn to divide the liquid balance by: **observed alone**.
  *
- * Deliberately unary. `liquid ÷ (observed + committed)` is the mistake this
+ * Deliberately unary. `liquid ÷ (observed + projected)` is the mistake this
  * signature exists to make unwritable — see the module doc.
  */
 export function runwayDenominator(observedPerMonthMean: string): Decimal {
@@ -43,25 +54,29 @@ export function runwayDenominator(observedPerMonthMean: string): Decimal {
 }
 
 /**
- * `committed` expressed as what it is: a share of `observed`.
+ * `projected` expressed as what it is: a share of `observed`.
+ *
+ * Both surfaces render this through `v3.money.forecast.ofWhichProjected` —
+ * "~{{percent}}% of that spending is projected".
  *
  * `null` when observed is zero — a share of nothing is not 0%, it is a
- * question with no answer, and rendering "0% committed" over a month he moved
- * nothing out would be a confident statement about an empty set.
+ * question with no answer, and rendering "0% of that spending is projected"
+ * over a month he moved nothing out would be a confident statement about an
+ * empty set.
  *
  * Can exceed 1. That is not a bug and must not be clamped: it means the book
- * commits more per month than actually left the perimeter, which is a real
+ * projects more per month than actually left the perimeter, which is a real
  * and interesting state — it says the book is stale, or that he funded the
  * month from cash already outside. Clamping it to 100% would hide exactly the
  * divergence that showing two numbers exists to reveal.
  */
-export function committedShareOfObserved(
-  committedPerMonth: string,
+export function projectedShareOfObserved(
+  projectedPerMonth: string,
   observedPerMonthMean: string
 ): Decimal | null {
   const observed = new Decimal(observedPerMonthMean);
   if (observed.isZero() || observed.isNegative()) return null;
-  return new Decimal(committedPerMonth).dividedBy(observed);
+  return new Decimal(projectedPerMonth).dividedBy(observed);
 }
 
 /**
@@ -104,7 +119,7 @@ export interface ObservedAffordability {
  *
  * ## What this gives up, deliberately
  *
- * The committed walk knew WHEN. It inserted the one-off into a dated bucket
+ * The projected walk knew WHEN. It inserted the one-off into a dated bucket
  * and could say the balance dips in March, because the recurring book carries
  * real dates. Observed burn is a mean over six complete months — it has no
  * schedule, so this cannot tell a purchase in March from one in September.
@@ -114,7 +129,7 @@ export interface ObservedAffordability {
  *
  * `affordability()` returns `monthsLost: null` unless BOTH walks run out
  * inside the twelve-month window. On the account this was measured against, the
- * committed projection nets a positive figure every month, so neither walk
+ * projected walk nets a positive figure every month, so neither walk
  * ever runs out and the
  * panel could only ever answer "affordable" — whatever he typed into it. A
  * control that cannot return a second answer is not a control.

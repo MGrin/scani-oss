@@ -6,9 +6,9 @@ import { useBaseCurrencyRates } from '@/hooks/useBaseCurrencyRates';
 import { trpc } from '@/lib/trpc';
 import {
   bucketMovements,
-  committedShare,
   monthSequence,
   project,
+  projectedShare,
   runway,
 } from '../../lib/forecast';
 import { V3_ROUTES } from '../../lib/routes';
@@ -99,7 +99,7 @@ export function RunwayLine() {
       monthSequence(forecast.data.today, forecast.data.horizonMonths)
     );
     const projection = project(new Decimal(forecast.data.liquid.amount), buckets, rates);
-    return committedShare(projection, observedAnswer.burn.perMonthMean);
+    return projectedShare(projection, observedAnswer.burn.perMonthMean);
   }, [observedAnswer, forecast.data, rates]);
 
   if (observedAnswer) {

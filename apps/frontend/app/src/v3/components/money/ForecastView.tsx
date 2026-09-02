@@ -20,13 +20,13 @@ import { useViewPreference } from '../../hooks/useViewPreference';
 import {
   affordability,
   bucketMovements,
-  committedShare,
   DEFAULT_FORECAST_HORIZON,
   FORECAST_HORIZONS,
   type ForecastHorizon,
   monthSequence,
   type OneOffOutflow,
   project,
+  projectedShare,
   runway,
   windowTotals,
   withOneOff,
@@ -198,14 +198,14 @@ export function ForecastView({
    * The book's own monthly outflow as a SHARE of observed, never an addend.
    * Taken from the projection so it comes through the same currency
    * conversion — a second path would let the two figures on one screen
-   * disagree invisibly. See `@scani/shared` `lib/burn.ts` for why committed is
+   * disagree invisibly. See `@scani/shared` `lib/burn.ts` for why projected is
    * a subset of observed and adding them halves the runway.
    */
   const share = useMemo(
     () =>
       observedMonths === null || !forecast?.observedBurn || effectiveBurn === null
         ? null
-        : committedShare(runwayProjection, effectiveBurn),
+        : projectedShare(runwayProjection, effectiveBurn),
     [observedMonths, forecast?.observedBurn, runwayProjection, effectiveBurn]
   );
 
@@ -764,7 +764,7 @@ function BurnProvenance({ burn }: { burn: NonNullable<ForecastData['observedBurn
     .plus(burn.provenance.automated)
     .plus(burn.provenance.unattributed);
   // A share of nothing is not 0%, it is a question with no answer — the same
-  // rule `committedShareOfObserved` follows. A window with no counted exits
+  // rule `projectedShareOfObserved` follows. A window with no counted exits
   // says nothing rather than reporting three confident zeroes.
   if (total.lessThanOrEqualTo(0)) return null;
 

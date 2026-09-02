@@ -1,4 +1,4 @@
-import { committedShareOfObserved, Decimal } from '@scani/shared';
+import { Decimal, projectedShareOfObserved } from '@scani/shared';
 import {
   type ConversionContext,
   convertTotalsToBase,
@@ -294,18 +294,22 @@ export function runway(projection: Projection): Runway {
  * figures disagreeing in front of somebody, which is how the first one was
  * found.
  *
+ * Named `projected` rather than `committed` (SC-932): the outflow it averages
+ * includes movements priced from a payment's own settled history, which is
+ * precisely the substitution SC-817 ruled may not be called committed.
+ *
  * `null` when the projection is not ready or observed is zero: a share of
  * nothing is a question with no answer, not 0%.
  */
-export function committedShare(
+export function projectedShare(
   projection: Projection,
   observedPerMonthMean: string
 ): Decimal | null {
   if (projection.pending || projection.points.length === 0) return null;
-  const committed = projection.points
+  const projected = projection.points
     .reduce((sum, point) => sum.plus(point.outflow), new Decimal(0))
     .dividedBy(projection.points.length);
-  return committedShareOfObserved(committed.toString(), observedPerMonthMean);
+  return projectedShareOfObserved(projected.toString(), observedPerMonthMean);
 }
 
 export interface Affordability {
