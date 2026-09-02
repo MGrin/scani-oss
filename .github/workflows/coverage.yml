@@ -49,7 +49,25 @@ jobs:
           --health-timeout 3s
           --health-retries 10
     steps:
+      # FULL HISTORY, for the same reason ci.yml's `test` job takes it (SC-884).
+      # This step runs the same `bun run test`, and part of that suite derives a
+      # base from real git history — `git rev-parse <sha>^`, `HEAD~5`. At the
+      # default depth of 1 those exit 128, and a job that cannot resolve a
+      # parent commit is red on every commit forever.
+      #
+      # It is not a hypothetical (SC-937): the two jobs once disagreed on one
+      # head in the same minute — ci.yml's `Test` at depth 0 green, this job at
+      # depth 1 red — and by then this workflow had gone 200 consecutive runs
+      # without a single success. Nobody noticed, because a gate that is red on
+      # every commit cannot answer the one question it exists for, so nobody
+      # reads it. SC-884 put the setting on ci.yml and left this file behind.
+      #
+      # NOT `fetch-depth: <N>`: any N is a timer that goes off later as a
+      # confusing red on an unrelated change. Depth 0 costs ~2s of a job whose
+      # test step alone is ~180s.
       - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+        with:
+          fetch-depth: 0
       - uses: ./.github/actions/setup-bun
 
       - name: Run DB migrations
