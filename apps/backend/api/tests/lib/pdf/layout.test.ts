@@ -18,6 +18,7 @@ import {
   statementTimestamp,
   TYPE,
   totalsRow,
+  tracking,
   truncate,
   withoutGroupColumn,
 } from '../../../src/lib/pdf/layout';
@@ -179,6 +180,56 @@ describe('truncate', () => {
     const cut = truncate(text, 60, TYPE.rowText, measure);
     expect(cut.endsWith('…')).toBe(true);
     expect(measure(cut, TYPE.rowText)).toBeLessThanOrEqual(60.05);
+  });
+});
+
+/**
+ * SC-985. `characterSpacing` inserts a gap after every glyph's advance, and
+ * Arabic joining works because one glyph's connecting stroke ends at that
+ * advance and the next one's begins at zero — so any positive tracking opens a
+ * gap at every junction in the word. Measured with SF Arabic at
+ * `TYPE.columnHeader`'s own 8pt: at `spacing: 0.4` every joint of `الحساب` is
+ * severed; at `0` the baseline stroke runs unbroken.
+ *
+ * The list is an ALLOWLIST, and these tests are what makes that load-bearing: a
+ * script nobody has thought about gets no tracking, which is at worst a heading
+ * set a fraction narrow. Adding a face to `fonts.ts` must not quietly add its
+ * script here, and the Arabic case below goes red if it does.
+ */
+describe('tracking', () => {
+  it('drops the tracking of a script whose letters join', () => {
+    expect(tracking(TYPE.columnHeader, 'الحساب')).toBe(0);
+    expect(tracking(TYPE.totalLabel, 'المجموع')).toBe(0);
+  });
+
+  it('keeps it for every script the bundled faces can set', () => {
+    // The positive arm. Without it the assertions above are satisfied by a
+    // `tracking` that returns 0 for everything.
+    for (const text of [
+      'GAIN / LOSS',
+      'BALANCE (USD) 1,234.50',
+      'СБЕРБАНК',
+      'ΤΡΑΠΕΖΑ',
+      '三菱UFJ銀行',
+      'ㄅㄆㄇ',
+    ]) {
+      expect({ text, spacing: tracking(TYPE.columnHeader, text) }).toEqual({
+        text,
+        spacing: TYPE.columnHeader.spacing,
+      });
+    }
+  });
+
+  it('leaves an untracked style untracked whatever the script', () => {
+    expect(tracking(TYPE.rowText, 'الحساب')).toBe(0);
+    expect(tracking(TYPE.rowText, 'GAIN / LOSS')).toBe(0);
+  });
+
+  it('tracks the unsupported marker, which is what an unbundled script sets as', () => {
+    // Why this change moves no document that can be produced today: an Arabic
+    // header has already become `[?]` by the time runs exist, and that is
+    // ASCII. The tracking turns off when a face is bundled, not before.
+    expect(tracking(TYPE.columnHeader, '[?]')).toBe(TYPE.columnHeader.spacing);
   });
 });
 

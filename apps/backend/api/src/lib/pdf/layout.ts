@@ -90,6 +90,58 @@ export const TYPE = {
   footer: { face: 'sans', size: 8 } as const,
 } satisfies Record<string, TypeStyle>;
 
+/**
+ * The scripts a tracked style is actually tracked in — SC-985.
+ *
+ * **What tracking does to a cursive script.** `characterSpacing` inserts a gap
+ * after every glyph's advance, and Arabic joining works precisely because one
+ * glyph's connecting stroke ends at that advance and the next one's begins at
+ * zero. Any positive tracking therefore opens a gap at *every* junction in the
+ * word, by construction — the only question is whether the gap is visible, and
+ * at the size these styles are set it plainly is. Measured 2026-09-03 with SF
+ * Arabic as an instrument, rendered at {@link TYPE}`.columnHeader`'s own 8pt and
+ * rasterised: at `spacing: 0.4` every joint of `الحساب` is severed and the word
+ * reads as six disconnected letterforms, against a bare control at `0` whose
+ * baseline stroke runs unbroken. It sets 27.109pt tracked against 25.109pt bare
+ * — 2.000pt, which is 0.4 at each of the five junctions.
+ *
+ * **An allowlist rather than a list of scripts to skip, and that is the whole
+ * point.** This defect cannot be seen today: no Arabic face is bundled, so the
+ * text is already `fonts.ts`'s unsupported marker by the time it is drawn. It
+ * appears the moment a face is added, which is the moment nobody is looking for
+ * it. A denylist would default a newly bundled script to *tracked* and break it
+ * silently; an allowlist defaults it to *untracked*, which at worst sets a
+ * heading a fraction narrower than it might have been. So **adding a face to
+ * `fonts.ts`'s `STACKS` does not add its script here** — that is a second,
+ * deliberate decision, and forgetting to make it is safe.
+ *
+ * **What is in it is exactly what is renderable today**, so this changes no
+ * document that can currently be produced: of the 10,596 codepoints the bundled
+ * faces cover, 10,595 track exactly as before and the one exception is U+FFFF, a
+ * Unicode noncharacter. Bopomofo is here because the Noto CJK subsets cover it —
+ * 44 codepoints, found by measuring rather than by reasoning about what a
+ * "Japanese" subset contains — and, like every other script listed, it does not
+ * join.
+ */
+const TRACKABLE_SCRIPTS =
+  /^[\p{Script_Extensions=Latin}\p{Script_Extensions=Greek}\p{Script_Extensions=Cyrillic}\p{Script_Extensions=Han}\p{Script_Extensions=Hiragana}\p{Script_Extensions=Katakana}\p{Script_Extensions=Bopomofo}\p{Script_Extensions=Common}\p{Script_Extensions=Inherited}]*$/u;
+
+/**
+ * The tracking `text` is actually set with — `style.spacing`, or none where
+ * letterspacing would damage the script rather than loosen it.
+ *
+ * Asked per *run* rather than per string, because a run is already uniform in
+ * face and in direction and is the unit both the measure pass and the draw pass
+ * iterate. Two consequences worth stating: a mixed heading keeps its tracking on
+ * the Latin half, and a run that mixes an allowed script with a disallowed one —
+ * which needs a single face covering both — loses tracking for the whole run,
+ * which is the safe direction.
+ */
+export function tracking(style: TypeStyle, text: string): number {
+  const spacing = style.spacing ?? 0;
+  return spacing > 0 && !TRACKABLE_SCRIPTS.test(text) ? 0 : spacing;
+}
+
 export interface Column {
   header: string;
   /** Right-aligned, and set in the mono face so decimals line up. */
