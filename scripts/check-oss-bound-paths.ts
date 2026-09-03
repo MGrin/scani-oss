@@ -378,6 +378,102 @@ export function refusedPaths(staged: readonly string[], facts: PathFacts): Viola
   return out;
 }
 
+/**
+ * How a diff routes: how many of its paths can travel to the mirror, and what
+ * the rest are.
+ *
+ * SC-835. THIS EXISTS FOR THE *SKIPPING* PATH, WHICH ANSWERED A DIFFERENT
+ * QUESTION FROM THE ONE ITS READER WAS ASKING. On a mirror-bound branch the
+ * guard reports its verdict per path, by name. On a private-majority tree it
+ * returned before looking at the diff at all and printed a fact about the
+ * REPOSITORY — how much of each repo's one-sided path set HEAD's tree carries
+ * — in the slot where the other branch reports a fact about the CHANGE. (The
+ * counts are deliberately not quoted here: they move with both repos, and a
+ * pinned pair in a comment is a measurement nothing re-takes.) Both sentences
+ * are true; only one answers *where does my change
+ * route*, which is the question somebody has at a pre-commit hook, and the
+ * repository sentence prints directly above `biome clean` and `type-check
+ * clean`, which ARE verdicts about the staged files. Three lines, formatted
+ * alike, two about the diff and one about the repo.
+ *
+ * The guard's DECISION is unchanged and was never wrong: a private tree skips,
+ * and nothing here can refuse. What changed is that the skip now says what it
+ * skipped over.
+ */
+export interface PathRouting {
+  readonly total: number;
+  /** Already in `upstream/main` — the paths that can travel. */
+  readonly inUpstream: number;
+  /**
+   * Of the rest, how many are tracked in `origin/main`.
+   *
+   * `null` when `origin/main` could not be READ, which is a different fact
+   * from zero and must not be printed as one — the same distinction
+   * `hasUpstreamRemote` draws for the remotes probe (SC-743). A `0` here off
+   * an unreadable ref would be this ticket's own defect rebuilt one level
+   * down: a manufactured fact in the slot where a measurement belongs.
+   */
+  readonly privateOnly: number | null;
+  /** Absent from both repos. `null` for the same reason. */
+  readonly newFile: number | null;
+}
+
+/**
+ * Classify a diff's paths against the two repositories.
+ *
+ * Built on {@link refusedPaths} rather than beside it, so the skip line and a
+ * refusal can never disagree about what a path IS — only about whether that
+ * matters on this branch. `trackedPrivately` is nullable because the caller
+ * may not have been able to read `origin/main`, and reporting two buckets off
+ * one readable tree is honest where a silent zero is not.
+ */
+export function routePaths(
+  paths: readonly string[],
+  existsUpstream: (path: string) => boolean,
+  trackedPrivately: ((path: string) => boolean) | null
+): PathRouting {
+  const total = paths.length;
+  if (trackedPrivately === null) {
+    return {
+      total,
+      inUpstream: paths.filter((p) => existsUpstream(p)).length,
+      privateOnly: null,
+      newFile: null,
+    };
+  }
+  const absent = refusedPaths(paths, { existsUpstream, trackedPrivately });
+  return {
+    total,
+    inUpstream: total - absent.length,
+    privateOnly: absent.filter((v) => v.kind === 'private-only').length,
+    newFile: absent.filter((v) => v.kind === 'new-file').length,
+  };
+}
+
+/**
+ * The clause a skip prints about the diff it skipped over.
+ *
+ * EVERY WAY OF NOT KNOWING READS DIFFERENTLY FROM A ZERO, which is most of the
+ * point. `null` is *the paths could not be listed*; a `total` of 0 is *there
+ * were none*; an unreadable `origin/main` narrows the split rather than
+ * inventing one. SC-808 made an empty classifier run say `classified nothing`,
+ * and SC-865 is the same lesson on a concurrency clause: an absent reading and
+ * a reading of zero must not print alike.
+ */
+export function routingClause(routing: PathRouting | null, noun: string): string {
+  if (routing === null) {
+    return `the ${noun} paths could not be listed, so NOTHING WAS CLASSIFIED — the absence of a reading, not a count of zero`;
+  }
+  if (routing.total === 0) {
+    return `0 ${noun} path(s), so there was nothing to classify`;
+  }
+  const rest =
+    routing.privateOnly === null
+      ? `${routing.total - routing.inUpstream} not — \`origin/main\` could not be read, so private-only source cannot be told apart from a new file`
+      : `${routing.privateOnly} private-only, ${routing.newFile} in neither repo`;
+  return `of ${routing.total} ${noun} path(s): ${routing.inUpstream} already in upstream/main, ${rest}`;
+}
+
 /** What the new-files allowance did to a set of violations. */
 export interface Allowance {
   /** Violations that still refuse the commit. */
@@ -589,40 +685,94 @@ export interface PathSource {
   ref?: string;
 }
 
+/**
+ * The paths a run judges, or `null` when they could not be READ.
+ *
+ * SC-743, and the worse of that ticket's two halves: this call had the same
+ * defect as the remotes probe and fails in the opposite direction. A dead
+ * `git diff --cached` yields `''`, which reads as NOTHING IS STAGED — a clean
+ * exit 0 over a branch whose staged paths were never examined. The remotes one
+ * at least printed a wrong verdict you could see.
+ *
+ * Extracted from `main()` for SC-835, which needs the same set on the skipping
+ * path. It is one function so the two callers cannot drift into reading the
+ * index two different ways — and so `null` keeps meaning *could not read*
+ * wherever it is consumed, rather than being re-derived beside a second
+ * `.stdout` that nobody checked.
+ */
+function resolvePaths(source: PathSource): string[] | null {
+  if (source.kind === 'given') return [...(source.paths ?? [])];
+  const staged = git(['diff', '--cached', '--name-only', '--diff-filter=ACMR']);
+  if (!staged.ok) return null;
+  return staged.stdout ? staged.stdout.split('\n') : [];
+}
+
+/**
+ * What a SKIP says about the diff it skipped over (SC-835).
+ *
+ * MEMBERSHIP IS ASKED WITH `ls-tree`, NOT `cat-file`, and that is deliberate
+ * rather than incidental. The skip DECISION comes from `collectTreeMarkers`,
+ * which is a set difference over two `ls-tree` listings (SC-662) — so reading
+ * the same trees the same way is what stops one line carrying two readings of
+ * one pair of trees that could disagree. It is also constant-cost: two calls,
+ * measured at 31ms against this repo's two mains, where per-path `cat-file`
+ * runs ~11ms EACH and this path fires on every private commit rather than on
+ * the rare mirror-bound one.
+ *
+ * NOTHING HERE CAN REFUSE. Every failure narrows the sentence and leaves the
+ * verdict and the exit code exactly where they were: the skip is a conclusion
+ * about the TREE, and a diff that could not be listed is not evidence against
+ * it. Turning a degraded report into a non-zero exit would break every private
+ * commit to improve a clause.
+ */
+function skipRouting(source: PathSource, noun: string): string {
+  const upstreamPaths = treePaths('upstream/main');
+  if (upstreamPaths === null) {
+    return 'there is no readable `upstream/main` to compare against, so no path was classified';
+  }
+  const paths = resolvePaths(source);
+  if (paths === null) return routingClause(null, noun);
+
+  const inUpstream = new Set(upstreamPaths);
+  const originPaths = treePaths('origin/main');
+  const inOrigin = originPaths === null ? null : new Set(originPaths);
+  return routingClause(
+    routePaths(paths, (p) => inUpstream.has(p), inOrigin === null ? null : (p) => inOrigin.has(p)),
+    noun
+  );
+}
+
 function main(allowNewFiles: boolean, source: PathSource = { kind: 'staged' }): number {
   const boundness = classifyBranch(collectBranchFacts(source.ref ?? 'HEAD'));
+
+  // The noun travels with the source so every verdict line below says which
+  // set it judged. "3 staged path(s)" printed over a pushed range would be the
+  // same defect this check exists to prevent, one level up.
+  const noun = source.kind === 'given' ? 'pushed' : 'staged';
 
   if (boundness.kind === 'unknown') {
     console.error(`oss-bound-paths: ${VERDICT.unknown} · exit ${EXIT_UNKNOWN} · ${boundness.why}`);
     return EXIT_UNKNOWN;
   }
   if (boundness.kind === 'private') {
-    console.log(`oss-bound-paths: ${VERDICT.skipped} · exit ${EXIT_OK} · ${boundness.why}`);
+    // SC-835. THE DIFF CLAUSE COMES FIRST AND THE TREE CLAUSE IS THE REASON.
+    // This line used to be `boundness.why` alone — a fact about the repository
+    // standing where a reader was looking for a fact about their change. The
+    // tree numbers stay, because they are what makes the skip checkable; they
+    // are just no longer the answer to a question nobody asked.
+    console.log(
+      `oss-bound-paths: ${VERDICT.skipped} · exit ${EXIT_OK} · ${skipRouting(source, noun)}` +
+        ` · not bound for MGrin/scani-oss, so nothing was refused: ${boundness.why}`
+    );
     return EXIT_OK;
   }
 
-  // SC-743, and the worse of the two: this call had the same defect as the
-  // remotes probe and fails in the opposite direction. A dead `git diff
-  // --cached` yields `''`, which reads as NOTHING IS STAGED — a clean exit 0
-  // over a branch whose staged paths were never examined. The remotes one at
-  // least printed a wrong verdict you could see.
-  // The noun travels with the source so every verdict line below says which
-  // set it judged. "3 staged path(s)" printed over a pushed range would be the
-  // same defect this check exists to prevent, one level up.
-  const noun = source.kind === 'given' ? 'pushed' : 'staged';
-
-  let paths: string[];
-  if (source.kind === 'given') {
-    paths = [...(source.paths ?? [])];
-  } else {
-    const stagedResult = git(['diff', '--cached', '--name-only', '--diff-filter=ACMR']);
-    if (!stagedResult.ok) {
-      console.error(
-        `oss-bound-paths: ${VERDICT.unknown} · exit ${EXIT_UNKNOWN} · could not list the staged paths — \`git diff --cached\` failed, so NOTHING WAS CHECKED. This is not a pass.`
-      );
-      return EXIT_UNKNOWN;
-    }
-    paths = stagedResult.stdout ? stagedResult.stdout.split('\n') : [];
+  const paths = resolvePaths(source);
+  if (paths === null) {
+    console.error(
+      `oss-bound-paths: ${VERDICT.unknown} · exit ${EXIT_UNKNOWN} · could not list the staged paths — \`git diff --cached\` failed, so NOTHING WAS CHECKED. This is not a pass.`
+    );
+    return EXIT_UNKNOWN;
   }
   const violations = refusedPaths(paths, {
     existsUpstream: (p) => git(['cat-file', '-e', `upstream/main:${p}`]).ok,
