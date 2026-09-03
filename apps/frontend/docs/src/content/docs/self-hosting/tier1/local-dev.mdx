@@ -71,6 +71,29 @@ services (profile: full)
 
 </Steps>
 
+<Aside type="caution" title="dev:stack and a bare docker compose are two different projects">
+  `bun run dev:stack` names the compose project after this checkout's
+  absolute path (`scani_<label>_<digest>`), which is what lets two
+  checkouts hold a stack at once. A bare `docker compose` command sets no
+  project name, so compose falls back to the directory's — and the two
+  never match.
+
+  Compose does not complain about a project that does not exist. A bare
+  `docker compose down -v` after a `bun run dev:stack` exits `0`, prints
+  nothing and wipes nothing, which reads exactly like success.
+
+  Use the `dev:stack` commands below. If you need to drive compose by
+  hand, export this checkout's identity first:
+
+  ```sh
+  export $(bun scripts/dev-stack.ts env | xargs)
+  ```
+
+  That sets `COMPOSE_PROJECT_NAME`, `SCANI_DEV_DB`, `SCANI_STACK_TAG` and
+  one `<SERVICE>_HOST_PORT` per published service — see
+  [Environment variables](/reference/environment/).
+</Aside>
+
 ## Bring it down
 
 ```sh
@@ -80,7 +103,7 @@ bun run dev:stack:down   # remove containers; volumes preserved
 To also wipe Postgres / MinIO / Redis data:
 
 ```sh
-docker compose down -v
+bun run dev:stack:down -- --volumes
 ```
 
 ## Run apps on the host instead of in containers
@@ -91,12 +114,16 @@ when iterating on the api or worker:
 <Tabs>
   <TabItem label="Infra in compose, apps on host">
     ```sh
-    docker compose up -d postgres redis mailpit minio
+    bun run dev:stack:infra # Postgres, Redis, MinIO, Mailpit — nothing else
     bun install
     bun dev               # api + frontend/app
     bun dev:worker        # separate terminal
     bun dev:data-provider # separate terminal
     ```
+
+    The api binds `PORT` from the root `.env` on this path — **`3001`**,
+    not the `3011` in [Default ports](#default-ports) below. See the note
+    under that table.
   </TabItem>
   <TabItem label="Full stack in compose (default)">
     ```sh
@@ -143,9 +170,14 @@ precedence inside containers.
 
 ## Default ports
 
+Host ports published by the **containerised** stack — the
+`bun run dev:stack` path. A linked git worktree offsets every one of them
+and prints what it chose; the numbers below are what a plain checkout
+gets.
+
 | Service | Host port |
 |---|---|
-| Postgres | `localhost:5433` (user/db `scani` / `scani`) |
+| Postgres | `localhost:5433` (user `scani`, password `scani`) |
 | Redis | `localhost:6380` |
 | Mailpit SMTP | `localhost:1026` |
 | Mailpit UI | `http://localhost:8026` |
@@ -155,7 +187,26 @@ precedence inside containers.
 | API | `http://localhost:3011` |
 | Frontend | `http://localhost:5173` |
 
+**On the host-side path** (`bun dev`, above) only the api moves: it binds
+`PORT` from the root `.env`, which `.env.example` ships as **`3001`**.
+`3011` is the host port compose publishes for the containerised api
+(container port `8080`), and nothing publishes it when the api runs on
+the host. The data-provider (`8082`) and the SPA (`5173`) are the same
+on both paths.
+
+The database the stack's apps use is **not** `scani`. `bun run dev:stack`
+creates one per checkout and passes its name as `SCANI_DEV_DB`; the
+compose default `scani` applies only to a stack started without it.
+
 ## Common dev tasks
+
+Each of these drives compose directly, so export this checkout's identity
+first — otherwise they address a project `bun run dev:stack` never
+created, and say nothing about it:
+
+```sh
+export $(bun scripts/dev-stack.ts env | xargs)
+```
 
 ```sh
 # Rebuild just one image
@@ -167,8 +218,8 @@ docker compose --profile full logs -f api worker data-provider
 # Run migrations on demand (when Drizzle generates new ones)
 docker compose --profile migrate run --rm migrate
 
-# Open a psql shell
-docker compose exec postgres psql -U scani scani
+# Open a psql shell on this checkout's database
+docker compose exec postgres psql -U scani "$SCANI_DEV_DB"
 
 # Open a redis-cli
 docker compose exec redis redis-cli
