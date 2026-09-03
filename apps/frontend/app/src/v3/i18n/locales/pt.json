@@ -869,7 +869,7 @@
         "type": "Tipo",
         "unpriceableNote": "Nenhuma fonte alguma vez cotou este token, e por agora deixámos de perguntar. Fica de fora do seu património líquido, em vez de ser contado como zero.",
         "priceAge": "Idade da cotação",
-        "staleNote": "A cotação acima é mais antiga do que consideramos atual para este tipo de preço. O valor é o desse momento e continua a contar nos seus totais."
+        "staleNote": "A cotação por trás deste valor é mais antiga do que consideramos atual para este tipo de preço. O valor é o desse momento e continua a contar nos seus totais."
       },
       "realized": {
         "costOf": "custo <value/>",

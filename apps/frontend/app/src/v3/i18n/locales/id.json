@@ -758,7 +758,7 @@
         "price": "Harga",
         "unpriceableNote": "Tidak ada sumber yang pernah memberi harga untuk token ini, dan untuk sementara kami berhenti bertanya. Token ini dikeluarkan dari kekayaan bersih Anda, bukan dihitung sebagai nol.",
         "priceAge": "Usia harga",
-        "staleNote": "Kutipan harga di atas lebih lama daripada yang kami anggap terkini untuk jenis harga ini. Nilainya adalah nilai pada saat itu, dan tetap dihitung dalam total Anda.",
+        "staleNote": "Kutipan harga di balik nilai ini lebih lama daripada yang kami anggap terkini untuk jenis harga ini. Nilainya adalah nilai pada saat itu, dan tetap dihitung dalam total Anda.",
         "history": "Riwayat",
         "incompleteHistory": "Tidak lengkap — arus masuk sebelum transaksi pertama yang diimpor tidak ada, jadi nilai sebelum tanggal itu dibatasi.",
         "openingPosition": "Posisi awal",

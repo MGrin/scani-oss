@@ -1087,7 +1087,7 @@
         "price": "Prix",
         "unpriceableNote": "Aucune source n’a jamais coté ce jeton, et nous avons cessé de demander pour l’instant. Il est exclu de votre patrimoine net plutôt que compté pour zéro.",
         "priceAge": "Ancienneté du cours",
-        "staleNote": "Le cours ci-dessus est plus ancien que ce que nous considérons comme actuel pour ce type de prix. La valeur est celle de ce moment-là, et elle compte toujours dans vos totaux.",
+        "staleNote": "La cotation derrière cette valeur est plus ancienne que ce que nous considérons comme actuel pour ce type de prix. La valeur est celle de ce moment-là, et elle compte toujours dans vos totaux.",
         "history": "Historique",
         "incompleteHistory": "Incomplet — les entrées antérieures à la première transaction importée manquent, les valeurs avant cette date sont donc bornées.",
         "openingPosition": "Position d’ouverture",

@@ -869,7 +869,7 @@
         "type": "Tipo",
         "unpriceableNote": "Ninguna fuente ha cotizado nunca este token, y de momento hemos dejado de preguntar. Queda fuera de tu patrimonio neto en lugar de contarse como cero.",
         "priceAge": "Antigüedad del precio",
-        "staleNote": "La cotización de arriba es más antigua de lo que consideramos actual para este tipo de precio. El valor es el de ese momento y sigue contando en tus totales."
+        "staleNote": "La cotización detrás de este valor es más antigua de lo que consideramos actual para este tipo de precio. El valor es el de ese momento y sigue contando en tus totales."
       },
       "realized": {
         "costOf": "coste <value/>",

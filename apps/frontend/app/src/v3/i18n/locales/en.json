@@ -844,7 +844,7 @@
         "price": "Price",
         "unpriceableNote": "No source has ever quoted this token, and we have stopped asking for now. It is left out of your net worth rather than counted as zero.",
         "priceAge": "Price age",
-        "staleNote": "The quote above is older than we treat as current for this kind of price. The value is what it was worth then, and it still counts toward your totals.",
+        "staleNote": "The quote behind this value is older than we treat as current for this kind of price. The value is what it was worth then, and it still counts toward your totals.",
         "history": "History",
         "incompleteHistory": "Incomplete — inflows from before the first imported transaction are missing, so values before that date are clamped.",
         "openingPosition": "Opening position",
