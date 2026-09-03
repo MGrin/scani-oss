@@ -120,6 +120,10 @@ when iterating on the api or worker:
     bun dev:worker        # separate terminal
     bun dev:data-provider # separate terminal
     ```
+
+    The api binds `PORT` from the root `.env` on this path — **`3001`**,
+    not the `3011` in [Default ports](#default-ports) below. See the note
+    under that table.
   </TabItem>
   <TabItem label="Full stack in compose (default)">
     ```sh
@@ -166,6 +170,11 @@ precedence inside containers.
 
 ## Default ports
 
+Host ports published by the **containerised** stack — the
+`bun run dev:stack` path. A linked git worktree offsets every one of them
+and prints what it chose; the numbers below are what a plain checkout
+gets.
+
 | Service | Host port |
 |---|---|
 | Postgres | `localhost:5433` (user `scani`, password `scani`) |
@@ -177,6 +186,13 @@ precedence inside containers.
 | Data-provider | `http://localhost:8082` |
 | API | `http://localhost:3011` |
 | Frontend | `http://localhost:5173` |
+
+**On the host-side path** (`bun dev`, above) only the api moves: it binds
+`PORT` from the root `.env`, which `.env.example` ships as **`3001`**.
+`3011` is the host port compose publishes for the containerised api
+(container port `8080`), and nothing publishes it when the api runs on
+the host. The data-provider (`8082`) and the SPA (`5173`) are the same
+on both paths.
 
 The database the stack's apps use is **not** `scani`. `bun run dev:stack`
 creates one per checkout and passes its name as `SCANI_DEV_DB`; the

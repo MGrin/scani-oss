@@ -70,6 +70,10 @@ provider API keys.
 
 ## What you get
 
+These are the ports the **containerised** stack publishes. Running the
+apps on the host instead changes one of them — see
+[below](#running-services-on-the-host-instead-of-in-containers).
+
 | Service | URL |
 |---|---|
 | Frontend SPA | `http://localhost:5173` |
@@ -122,6 +126,12 @@ HMR, easier debugger attach) and only run infra in Docker:
     bun dev:worker        # separate terminal — the BullMQ consumer
     bun dev:data-provider # separate terminal — outbound 3rd-party calls
     ```
+
+    On this path the api binds `PORT` from the root `.env` — **`3001`**,
+    not the `3011` the table above lists. `3011` is the host port compose
+    publishes for the containerised api; nothing publishes it here. The
+    data-provider (`8082`) and the SPA (`5173`) are the same on both
+    paths.
   </TabItem>
   <TabItem label="Everything in compose (the default)">
     ```sh
