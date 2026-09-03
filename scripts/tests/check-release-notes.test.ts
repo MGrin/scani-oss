@@ -2,8 +2,10 @@ import { describe, expect, test } from 'bun:test';
 import {
   earnsAReleaseNote,
   extractVersionSection,
+  findReleaseCommit,
   findShortfall,
   normaliseDescription,
+  oneCommitRoutes,
   parseBulletDescriptions,
   parseSubject,
   RELEASE_NOTE_TYPES,
@@ -366,5 +368,110 @@ describe('grouping the unparseable by sibling coverage', () => {
         'fix(self-host): serve the nine security headers the nginx image never sent',
       ])
     ).not.toBeNull();
+  });
+});
+
+/**
+ * SC-922. The failure message's recovery prescribed a SQUASH, and squash is
+ * disabled on both of this project's repositories — so a correct check handed
+ * whoever it blocked the one instruction the repository refuses.
+ *
+ *     MGrin/scani-oss   squash=false  merge=true  rebase=true
+ *     MGrin/scani       squash=false  merge=true  rebase=false
+ *
+ * These tests pin the two halves of the repair. `oneCommitRoutes` is the part
+ * that can rot — it is what the message says you may press — so it is pure and
+ * fed the settings, and the SETTINGS themselves are read from the API at the
+ * moment the message prints rather than written down here. That is deliberate:
+ * a test asserting `squash=false` today would itself be a prose claim about a
+ * repository setting, which is the defect (a network call in the gate is worse
+ * than useless — it would be red offline and green on a stale cache).
+ *
+ * What is pinned instead is the PROPERTY that cannot go stale: whatever the
+ * settings say, the advice never names a method the settings disable, and an
+ * unreadable setting never resolves toward a route.
+ */
+describe('SC-922 — the recovery names a merge method this repository has', () => {
+  test('squash is offered only when the repository allows it', () => {
+    expect(oneCommitRoutes({ squash: true, merge: true, rebase: true })).toContain('squash-merge');
+    expect(oneCommitRoutes({ squash: false, merge: true, rebase: true })).not.toContain(
+      'squash-merge it'
+    );
+  });
+
+  test("scani-oss's real shape offers rebase and never squash", () => {
+    const advice = oneCommitRoutes({ squash: false, merge: true, rebase: true });
+    expect(advice).toContain('rebase-merge it');
+    expect(advice).not.toContain('squash-merge it');
+    expect(advice).toContain('squash=false');
+  });
+
+  test("scani's real shape offers no route at all, and says so rather than naming one", () => {
+    // merge-only. A merge commit lands TWO commits carrying the same body, so
+    // there is no override route — and the message must send the reader to the
+    // direct edit instead of quietly offering a method that duplicates.
+    const advice = oneCommitRoutes({ squash: false, merge: true, rebase: false });
+    expect(advice).toContain('NO MERGE METHOD HERE LANDS ONE COMMIT');
+    expect(advice).toContain('direct edit');
+    expect(advice).not.toContain('squash-merge it');
+    expect(advice).not.toContain('rebase-merge it');
+  });
+
+  test('an unreadable setting asserts nothing and never resolves toward a route', () => {
+    // The reachable case, not a hypothetical: GitHub OMITS allow_squash_merge
+    // and its siblings from an unauthenticated response, so a hand run without
+    // a token lands here. Coercing those absences to `false` would print the
+    // merge-only verdict above at HTTP 200 — a confident wrong answer.
+    const advice = oneCommitRoutes(null);
+    expect(advice).toContain('COULD NOT BE READ');
+    expect(advice).toContain('gh api repos/');
+    expect(advice).not.toContain('NO MERGE METHOD HERE LANDS ONE COMMIT');
+    expect(advice).not.toContain('rebase-merge it');
+    expect(advice).not.toContain('squash-merge it');
+  });
+});
+
+/**
+ * SC-922. The release branch is main's tip plus ONE release commit — until the
+ * recovery this file prescribes is carried out, which pushes a commit on top of
+ * it. Measured on the real 0.37.0 repair (MGrin/scani-oss#401):
+ *
+ *     --head 11bcab41e  the release commit       FAILED · exit 1 · 1 of 11 …
+ *     --head cb93749f4  the repair on top of it  BLIND  · exit 3
+ *
+ * There was no head at which the guard could confirm a correct repair.
+ */
+describe('SC-922 — the release commit is found under a repaired branch head', () => {
+  test('the head itself, the ordinary case', () => {
+    expect(findReleaseCommit(['chore(main): release 0.37.0'])).toBe(0);
+  });
+
+  test('one repair commit pushed on top — the 0.37.0 shape', () => {
+    expect(
+      findReleaseCommit([
+        "chore(release): add the 0.37.0 entry release-please's walk could not reach",
+        'chore(main): release 0.37.0',
+      ])
+    ).toBe(1);
+  });
+
+  test('the FIRST release commit wins, so the walk cannot reach past it', () => {
+    expect(
+      findReleaseCommit([
+        'chore(release): repair',
+        'chore(main): release 0.37.0',
+        'chore(main): release 0.36.0',
+      ])
+    ).toBe(1);
+  });
+
+  test('an ordinary branch has none — this is the blindness, and it must stay reachable', () => {
+    expect(
+      findReleaseCommit(['fix(oss-guard): a population read only in part is not a PASS'])
+    ).toBeNull();
+    // `chore(main): release-please--branches--main` is not a release commit:
+    // the subject must be `release <something>`, and a near miss must not pass.
+    expect(findReleaseCommit(['chore(main): released 0.37.0'])).toBeNull();
+    expect(findReleaseCommit([])).toBeNull();
   });
 });

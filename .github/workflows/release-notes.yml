@@ -226,6 +226,14 @@ jobs:
           exit "$rc"
         env:
           TARGET_SHA: ${{ steps.target.outputs.sha }}
+          # SC-922. The failure message names which merge methods this
+          # repository actually offers, read from the API rather than asserted
+          # in prose — it used to prescribe a squash that is disabled here.
+          # `allow_squash_merge` and its siblings are OMITTED from an
+          # unauthenticated response, so without this the check lands on its
+          # "could not be read" arm and prints a `gh api` line instead. It never
+          # fails the run either way; the read is on the failure path only.
+          GITHUB_TOKEN: ${{ github.token }}
 
       # `always()`, because the whole point is that the release PR carries a
       # visible verdict. A workflow_run job is not a check on the pull request,
@@ -264,7 +272,14 @@ jobs:
                 ? 'BLIND — the check never ran; this is not a pass'
                 : rc === '3'
                   ? 'BLIND — no comparison was made; this is not a pass'
-                  : 'A releasable commit has no entry in the release notes';
+                  // SC-922. Exit 4 is a different finding, not a louder one: a
+                  // releasable commit was pushed onto the RELEASE BRANCH, where
+                  // no release can ever list it. Describing it as a missing
+                  // entry sends the reader to write a changelog bullet, which
+                  // is the one repair that does not help.
+                  : rc === '4'
+                    ? 'A releasable commit was pushed onto the release branch — it can never be listed'
+                    : 'A releasable commit has no entry in the release notes';
             await github.rest.repos.createCommitStatus({
               owner: context.repo.owner,
               repo: context.repo.repo,
