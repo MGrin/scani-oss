@@ -1,4 +1,5 @@
 import { getFormatLocale } from '@scani/shared';
+import { useDirection } from '@scani/ui/lib/direction';
 import { ChartFrame } from '@scani/ui/v3/components/charts/ChartFrame';
 import { Numeric } from '@scani/ui/v3/components/Numeric';
 import { resolveNumeric } from '@scani/ui/v3/lib/numeric';
@@ -112,9 +113,18 @@ export function ProjectionChart({
   ];
   const crossesZero = points.some((point) => point.balance.lessThanOrEqualTo(0));
 
+  // See `PortfolioChart`: recharts places the axis gutter from a coordinate, so
+  // it follows the document only when told to (SC-969). The trailing margin
+  // moves with it — it is there so the first and last dots are not clipped, and
+  // under RTL the free edge is the other one.
+  const isRtl = useDirection() === 'rtl';
+
   return (
     <ChartFrame label={label} height={height}>
-      <LineChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
+      <LineChart
+        data={data}
+        margin={{ top: 8, bottom: 0, right: isRtl ? 0 : 8, left: isRtl ? 8 : 0 }}
+      >
         <CartesianGrid vertical={false} stroke="hsl(var(--border))" strokeDasharray="2 4" />
         <XAxis
           dataKey="month"
@@ -125,6 +135,7 @@ export function ProjectionChart({
           tickLine={false}
         />
         <YAxis
+          orientation={isRtl ? 'right' : 'left'}
           tick={AXIS_TICK}
           tickFormatter={(value: number) => resolveNumeric(value, { currency, compact: true }).text}
           axisLine={false}

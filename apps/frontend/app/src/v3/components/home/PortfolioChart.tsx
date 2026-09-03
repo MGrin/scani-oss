@@ -1,4 +1,5 @@
 import { getFormatLocale } from '@scani/shared';
+import { useDirection } from '@scani/ui/lib/direction';
 import { ChartFrame } from '@scani/ui/v3/components/charts/ChartFrame';
 import { Numeric } from '@scani/ui/v3/components/Numeric';
 import { resolveNumeric } from '@scani/ui/v3/lib/numeric';
@@ -156,6 +157,13 @@ export function PortfolioChart({
   // the second one paint with the first one's colour.
   const gradientId = useId();
 
+  // The y-axis gutter and the spare margin are the chart's leading and
+  // trailing edges, and recharts places both from coordinates rather than from
+  // logical properties — so they follow the document only if something tells
+  // them to (SC-969). Whether the plotted SERIES should also reverse is a
+  // separate question about time and is deliberately not answered here.
+  const isRtl = useDirection() === 'rtl';
+
   const isPnl = metric === 'pnl';
   const data = isPnl ? pnl : netWorth;
   const dataKey = isPnl ? 'total' : 'value';
@@ -165,7 +173,10 @@ export function PortfolioChart({
 
   return (
     <ChartFrame label={label} height={height}>
-      <AreaChart data={[...data]} margin={{ top: 8, right: 4, bottom: 0, left: 0 }}>
+      <AreaChart
+        data={[...data]}
+        margin={{ top: 8, bottom: 0, right: isRtl ? 0 : 4, left: isRtl ? 4 : 0 }}
+      >
         <defs>
           <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor={color} stopOpacity={0.28} />
@@ -184,6 +195,7 @@ export function PortfolioChart({
           tickLine={false}
         />
         <YAxis
+          orientation={isRtl ? 'right' : 'left'}
           tick={AXIS_TICK}
           // Compact through `<Numeric>`'s own formatter, so an axis tick and
           // the figure above the chart round the same way.

@@ -56,7 +56,33 @@ export function ChartFrame({ label, height, className, children }: ChartFramePro
     // `w-full` and an explicit height rather than an aspect ratio:
     // ResponsiveContainer measures its parent, and a parent sized by its own
     // content measures as zero.
-    <div role="img" aria-label={label} className={cn('w-full', className)} style={{ height }}>
+    // `dir="ltr"` is load-bearing under RTL, and it is not a claim that a chart
+    // should read left to right (SC-969). SVG `text-anchor` is DIRECTION-
+    // relative — `end` means the physical left under `dir="rtl"` — while every
+    // coordinate recharts computes is physical. Measured on the committed
+    // baselines at `bac193fd3`: the home chart's plot area is identical in both
+    // directions (gridline x=97..355 in each), and the `$193.2K` tick moved from
+    // x=37..88 to x=89..140 — the same 51px of text, flipped to the far side of
+    // an anchor that had not moved, drawn over the gridline it labels. Anchoring
+    // physically here is what lets a chart choose its axis SIDE deliberately,
+    // which `orientation` on the y-axis then does. Same reasoning as
+    // `NetWorthTape`'s figure: a thing laid out from coordinates is not prose.
+    //
+    // It reaches the tooltip too, which recharts renders inside this box. That
+    // is not a cost today and is why the scope is left this wide: an axis date
+    // is `4 Mar` in every other place on the screen (SC-175) and RTL bidi was
+    // reordering it to `Mar 4` — the space between a number and a word takes
+    // the paragraph direction — so the tooltip's own date was reordered the
+    // same way. What it WOULD cost is a future Arabic string in the tooltip
+    // laid out under an LTR paragraph direction; a wholly-RTL run still renders
+    // right to left, so that is a difference in edge punctuation, not in words.
+    <div
+      dir="ltr"
+      role="img"
+      aria-label={label}
+      className={cn('w-full', className)}
+      style={{ height }}
+    >
       {/* `height` in px, not `"100%"`: a percentage makes recharts re-derive
           from a ResizeObserver a number this component was handed directly, and
           until that observer's first callback the height is the container's
