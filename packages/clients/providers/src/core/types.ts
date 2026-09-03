@@ -104,9 +104,72 @@ export type TransactionFetchContext = WithUserCreds<ProviderContext> & {
   institutionCode: string;
   since?: Date;
   until?: Date;
-  retractHistoryClaim?: (reason: string, bound?: HistoryBound) => void;
-  noteWarning?: (reason: string) => void;
+  retractHistoryClaim?: (reason: NoticeInput, bound?: HistoryBound) => void;
+  noteWarning?: (reason: NoticeInput) => void;
 };
+
+/**
+ * One sentence for the reader, and — when we wrote it — the key it can be
+ * translated under (SC-434).
+ *
+ * The reader of a job page is the only person these sentences are for, and
+ * they are the only place an import says why the history it just wrote is
+ * short. A Russian reader met them in English: everything around them is
+ * keyed, and the sentence under the heading is a bare string produced by a
+ * server process that holds no reader's language —
+ * `packages/business/shared/src/format/locale.ts` states that property
+ * deliberately, and it is why translating on the server is not the answer.
+ * A job result is also DURABLE: it is stored in `user_jobs.result` and read
+ * back months later, possibly by someone who has since changed language, so
+ * a sentence frozen into one language at write time is wrong the moment they
+ * switch. The key is language-neutral and the client renders it in whatever
+ * language the reader has NOW.
+ *
+ * `text` is not a fallback bolted on; it is what makes this shape adoptable.
+ * A key the client's bundle does not carry — an older build behind a service
+ * worker, a locale that has not been written yet, a key added after the
+ * result was stored — renders `text`, which is exactly the English sentence
+ * that ships today. So the worst case of this mechanism is the current
+ * behaviour, and nothing has to move at once.
+ */
+export interface JobNotice {
+  /**
+   * An i18n key under `v3.jobs.notices.*`, or `null` when the sentence is
+   * not ours to translate.
+   *
+   * `null` is a first-class answer rather than a gap. An upstream 400, a
+   * parser's `row 4: no date column`, an exchange's own refusal — those are
+   * written by something outside this app and no key exists to translate
+   * them under. Saying so in the type keeps the honest case from looking
+   * like an unfinished one.
+   */
+  key: string | null;
+  /**
+   * What the key interpolates. Kept flat and primitive on purpose: this
+   * crosses a jsonb column and is read back by a client that must survive
+   * whatever a year-old row holds.
+   */
+  params?: Readonly<Record<string, string | number>>;
+  /** The English sentence. ALWAYS present, whether or not there is a key. */
+  text: string;
+}
+
+/**
+ * What a warning sink accepts.
+ *
+ * A plain string still works and still means what it always meant — an
+ * untranslatable sentence, `key: null`. That is what stops this being a
+ * migration: a producer with no key yet is not broken, not deferred and not
+ * a lint error, it is simply a producer whose sentence is not keyed. Keys
+ * arrive one producer at a time, and a producer that never gets one keeps
+ * behaving exactly as it does today.
+ */
+export type NoticeInput = string | JobNotice;
+
+/** A bare sentence and a keyed one, read the same way by everything downstream. */
+export function toJobNotice(input: NoticeInput): JobNotice {
+  return typeof input === 'string' ? { key: null, text: input } : input;
+}
 
 /**
  * How far back the walk that just retracted actually reached (SC-900).

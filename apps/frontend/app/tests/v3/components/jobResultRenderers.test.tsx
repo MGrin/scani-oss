@@ -1,6 +1,7 @@
 import '../../i18n-preload';
 
 import { describe, expect, test } from 'bun:test';
+import i18n from 'i18next';
 import type { ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { StaticRouter } from 'react-router-dom/server';
@@ -104,6 +105,67 @@ describe('GenericJobResult', () => {
     // Under its own heading. A warning is not a failure, and a run that
     // finished cleanly must not read as one.
     expect(html).not.toContain('error');
+  });
+
+  /**
+   * SC-434, and it is the whole ticket in one render. Before this, the
+   * heading said "1 замечание" and the sentence under it said "a run with no
+   * start date reaches 5 years back" — chrome translated, content not.
+   *
+   * The language is changed for the length of one render and put back in a
+   * `finally`, because `bun test` runs every file in ONE process and i18next's
+   * instance is global: a leaked `ru` would render every later test's
+   * assertions in Russian (the SC-448 hazard, on a different singleton).
+   */
+  test('a keyed warning reaches a Russian reader in Russian', async () => {
+    const before = i18n.language;
+    try {
+      await i18n.changeLanguage('ru');
+      const html = render(
+        <GenericJobResult
+          result={{
+            transactions: 12,
+            warnings: ['binance: a run with no start date reaches 5 years back and no further'],
+            warningDetails: [
+              {
+                key: 'v3.jobs.notices.providerHorizon',
+                params: { provider: 'binance', durationCount: 5, durationUnit: 'year' },
+                text: 'binance: a run with no start date reaches 5 years back and no further',
+              },
+            ],
+          }}
+        />
+      );
+      // Everything above the raw-payload disclosure, which quotes the stored
+      // English verbatim on purpose and would satisfy a whole-document
+      // negative assertion by itself.
+      const rendered = html.slice(0, html.indexOf('<details'));
+      expect(rendered).toContain('замечание');
+      expect(rendered).toContain('5 лет');
+      expect(rendered).not.toContain('reaches 5 years back');
+    } finally {
+      await i18n.changeLanguage(before);
+    }
+  });
+
+  /**
+   * The other half of the same render, and the reason the English text
+   * travels beside the key: a result stored before any of this — 182 rows of
+   * it — has no `warningDetails`, and must still say what it always said.
+   */
+  test('a stored row with no keys still renders its English to a Russian reader', async () => {
+    const before = i18n.language;
+    try {
+      await i18n.changeLanguage('ru');
+      const html = render(
+        <GenericJobResult
+          result={{ warnings: ['Failed to resolve token identity evm:1:0xabc: upstream 429'] }}
+        />
+      );
+      expect(html).toContain('Failed to resolve token identity');
+    } finally {
+      await i18n.changeLanguage(before);
+    }
   });
 
   test('a run with only warnings is not "nothing to show"', () => {

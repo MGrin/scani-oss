@@ -2239,6 +2239,10 @@
       "issues": {
         "more_other": "…另有 {{count}} 项"
       },
+      "notices": {
+        "providerHorizon": "{{provider}}：未指定开始日期的运行最多回溯 {{durationCount, duration}}，更早的记录从未获取",
+        "tokenIdentityFailed": "无法识别标的 {{identity}}：{{error}}"
+      },
       "wallet": {
         "subject": "这个钱包",
         "chainsDetected": "检测到的链",

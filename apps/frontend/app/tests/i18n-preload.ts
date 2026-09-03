@@ -29,6 +29,7 @@
 import { addUiLocale } from '@scani/ui/i18n';
 import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
+import { registerDurationFormatter } from '../src/i18n/duration-format';
 import shellEn from '../src/i18n/locales/en.json';
 import shellRu from '../src/i18n/locales/ru.json';
 // v3's half ships in the v3 chunk and is registered by `src/v3/i18n` at run
@@ -49,6 +50,11 @@ void i18n.use(initReactI18next).init({
   // apostrophe in "today's rates" into `&#39;` inside an assertion.
   interpolation: { escapeValue: false },
 });
+
+// The one part of boot this file IMPORTS rather than mirrors (SC-434). A
+// server-produced duration renders through it, so a test without it asserts
+// against a raw `{{durationCount, duration}}` and would pin the wrong string.
+registerDurationFormatter(i18n);
 
 /**
  * The `ui.` half of the bundle, forwarded into `@scani/ui`'s own instance —

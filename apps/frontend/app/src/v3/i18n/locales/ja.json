@@ -2239,6 +2239,10 @@
       "issues": {
         "more_other": "…ほか{{count}}件"
       },
+      "notices": {
+        "providerHorizon": "{{provider}}: 開始日を指定しない実行は{{durationCount, duration}}前までしかさかのぼりません。それより古いものは取得されていません",
+        "tokenIdentityFailed": "トークン {{identity}} を特定できませんでした: {{error}}"
+      },
       "wallet": {
         "subject": "このウォレット",
         "chainsDetected": "検出したチェーン",

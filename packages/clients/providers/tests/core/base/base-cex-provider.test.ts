@@ -7,11 +7,13 @@ import {
 } from '../../../src/core/base/base-cex-provider';
 import type { Capability } from '../../../src/core/capabilities';
 import { createMockSelfCredContext } from '../../../src/core/testing';
-import type {
-  ProviderContext,
-  TransactionEvent,
-  TransactionFetchContext,
-  WithUserCreds,
+import {
+  type NoticeInput,
+  type ProviderContext,
+  type TransactionEvent,
+  type TransactionFetchContext,
+  toJobNotice,
+  type WithUserCreds,
 } from '../../../src/core/types';
 
 // Minimal subclass: stubbable history generator + identity map. Lets the
@@ -74,8 +76,8 @@ function recordingCtx(): TransactionFetchContext & { retractions: string[] } {
     ...ctx(),
     institutionCode: 'kraken',
     retractions,
-    retractHistoryClaim: (reason: string) => {
-      retractions.push(reason);
+    retractHistoryClaim: (reason: NoticeInput) => {
+      retractions.push(toJobNotice(reason).text);
     },
   };
 }

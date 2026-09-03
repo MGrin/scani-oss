@@ -10,7 +10,7 @@ import { db } from '@scani/db/connection';
 import * as schema from '@scani/db/schema';
 import { createComponentLogger } from '@scani/logging';
 import { ProviderRegistry } from '@scani/providers/core/registry';
-import type { HoldingSnapshot } from '@scani/providers/core/types';
+import { type HoldingSnapshot, toJobNotice } from '@scani/providers/core/types';
 import { and, eq } from 'drizzle-orm';
 import { Container, Service } from 'typedi';
 import { makeProviderContext, type SelfCredentialedProviderContext } from '../lib/provider-context';
@@ -641,7 +641,10 @@ export class ImportWalletAddressUseCase {
       const exited = await historyProvider.fetchExitedPositions({
         ...args.ctx,
         institutionCode: args.institutionCode,
-        noteWarning: (reason) => notes.push(reason),
+        // Keeps the sentence and drops the key: these land in
+        // `ImportWalletResult.errors`, a different result shape with no keyed
+        // channel yet (SC-434). English here is what ships today, unchanged.
+        noteWarning: (reason) => notes.push(toJobNotice(reason).text),
       });
       for (const note of notes) {
         args.errors.push({

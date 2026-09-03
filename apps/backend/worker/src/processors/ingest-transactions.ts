@@ -1,6 +1,6 @@
 import { TransactionImportCoordinator, TransactionImportUnrecoverableError } from '@scani/domain';
 import { HoldingRepository, PortfolioValueDailyRepository } from '@scani/domain/repositories';
-import { PortfolioValueCache } from '@scani/domain/services';
+import { noteOnResult, PortfolioValueCache } from '@scani/domain/services';
 import {
   PORTFOLIO_HISTORY_BACKFILL,
   PORTFOLIO_HISTORY_LOOKBACK_DAYS,
@@ -146,7 +146,7 @@ export class IngestTransactionsProcessor extends UserJobProcessor<TransactionImp
           kind: 'backfill-enqueue-failure',
           userId: data.userId,
         });
-        result.warnings.push(`Backfill enqueue failed: ${message}`);
+        noteOnResult(result, `Backfill enqueue failed: ${message}`);
       }
 
       emitEntityChange({

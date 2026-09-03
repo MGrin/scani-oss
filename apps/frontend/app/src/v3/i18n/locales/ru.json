@@ -1937,6 +1937,10 @@
         "more_many": "…и ещё {{count}}",
         "more_other": "…и ещё {{count}}"
       },
+      "notices": {
+        "providerHorizon": "{{provider}}: запуск без даты начала охватывает {{durationCount, duration}} назад и не глубже — всё, что старше, никогда не загружалось",
+        "tokenIdentityFailed": "Не удалось определить токен {{identity}}: {{error}}"
+      },
       "wallet": {
         "subject": "этот кошелёк",
         "chainsDetected": "Найдено сетей",

@@ -22,6 +22,7 @@ import { db } from '@scani/db/connection';
 import * as schema from '@scani/db/schema';
 import { createComponentLogger } from '@scani/logging';
 import { ProviderError } from '@scani/providers/core/errors';
+import { type JobNotice, type NoticeInput, toJobNotice } from '@scani/providers/core/types';
 import { eq } from 'drizzle-orm';
 import { Container, Service } from 'typedi';
 import { HoldingBalanceObservationRepository } from '../../repositories/HoldingBalanceObservationRepository';
@@ -58,8 +59,36 @@ export interface TransactionImportResult {
   lastEventAt: string | null;
   hasCompleteTxHistory: boolean;
   warnings: string[];
+  /**
+   * `warnings`, same order and same length, each carrying the key it can be
+   * translated under when we wrote it (SC-434).
+   *
+   * This is the field that reaches `user_jobs.result` and therefore the job
+   * page. `warnings` stays beside it for the rows already stored and for a
+   * client too old to know about this one.
+   */
+  warningDetails: JobNotice[];
   /** Always 'ok' when this resolves — anything else throws. */
   status: 'ok';
+}
+
+/**
+ * Append one line to a job result, to both halves of it at once (SC-434).
+ *
+ * `warnings` and `warningDetails` are the same list said twice, and the
+ * invariant that they are index-aligned is what lets the client read either.
+ * Two `push` calls at each site would keep that invariant by convention; this
+ * keeps it by construction, and the three sites below all run AFTER the
+ * router has returned, which is exactly where a hand-written pair would be
+ * easiest to half-write.
+ */
+export function noteOnResult(
+  result: { warnings: string[]; warningDetails: JobNotice[] },
+  input: NoticeInput
+): void {
+  const notice = toJobNotice(input);
+  result.warnings.push(notice.text);
+  result.warningDetails.push(notice);
 }
 
 /**
@@ -421,7 +450,8 @@ export class TransactionImportCoordinator {
       // that `completenessIsClaimed` below exists to prevent.
       const merged = describeMergedRows(written.merges);
       if (merged) {
-        result.warnings.push(
+        noteOnResult(
+          result,
           `${source}: ${merged} If this source's externalId is not unique per event, those rows are lost.`
         );
       }
@@ -498,7 +528,8 @@ export class TransactionImportCoordinator {
     // cost-basis downgrade `completenessIsClaimed` exists to prevent.
     const mergedCoverage = describeMergedCoverageRows(coverage.merges);
     if (mergedCoverage) {
-      result.warnings.push(
+      noteOnResult(
+        result,
         `${source}: ${mergedCoverage} Only the last row's sources and completeness claim reached the table.`
       );
     }
@@ -512,7 +543,8 @@ export class TransactionImportCoordinator {
         try {
           await this.reconciliation.reconcileHolding(holdingId);
         } catch (error) {
-          result.warnings.push(
+          noteOnResult(
+            result,
             `Reconciliation failed for holding ${holdingId}: ${error instanceof Error ? error.message : String(error)}`
           );
         }
@@ -532,6 +564,7 @@ export class TransactionImportCoordinator {
       lastEventAt: result.lastEventAt?.toISOString() ?? null,
       hasCompleteTxHistory: result.hasCompleteTxHistory,
       warnings: result.warnings,
+      warningDetails: result.warningDetails,
       status: 'ok',
     };
   }
