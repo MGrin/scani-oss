@@ -104,6 +104,141 @@ export interface Measured<T> {
 }
 
 /**
+ * What the walk measures — and why it is built from vocabularies this product
+ * does not own, rather than from a list of the controls it happens to ship.
+ *
+ * Until SC-989 this was `button, a[href], [role="button"], [role="tab"],
+ * summary`: five shapes chosen by looking at v3. An element outside that set
+ * was not measured, and **"not measured" reports identically to "no
+ * offenders"** — the `scanned` floor below is a liveness check on the walk,
+ * not a per-element claim, so a control the query never matches contributes
+ * nothing to it either. The v3 token layer's `@media (pointer: coarse)` block
+ * is an allow-list of the same shape, kept in a file that does not reference
+ * this one, so a control type missing from BOTH gets no 44px floor AND no
+ * measurement. `<select>` was missing from both, and shipped at 36px on a
+ * phone through the gate that exists to find 36px targets (SC-978).
+ *
+ * A longer list of the same kind is not the repair. Two enumerations agreeing
+ * is not coverage — they would agree on being equally incomplete, and the next
+ * control type nobody thought of repeats the failure exactly. So the default
+ * is inverted: unknown is MEASURED rather than invisible, and the query is
+ * assembled from two closed vocabularies that do not grow when this product
+ * does — HTML's own interactive elements, and the ARIA widget roles that name
+ * a discrete pointer target — plus anything the author has put in the tab
+ * order, which is how a `<div>` becomes a control without adopting either.
+ *
+ * This is also why the token layer's list is NOT derived from this one, and
+ * why no test asserts that the two agree. They answer different questions.
+ * The token layer decides what to GIVE a floor to, and is necessarily narrow:
+ * a blanket `min-height` inflates inline links, checkboxes and table rows into
+ * slabs, which is the regression its neutraliser block exists to undo. This
+ * decides what to MEASURE, and being wider is the point — a control the token
+ * layer does not reach either clears 44px on its own geometry or turns the
+ * walk red. **The walk is the backstop for the CSS list, not its mirror**, and
+ * that is what makes a future omission from the CSS loud instead of silent.
+ *
+ * `select` IS THE CASE THAT PROVES THE TWO LISTS MUST BE ALLOWED TO DIFFER,
+ * and it is why "widen both together" was the wrong instinct. Adding `select`
+ * to the token layer was tried first and does nothing: `min-height` does not
+ * floor a native `<select>` in WebKit — measured 2026-09-03 against this
+ * repo's compiled stylesheet in an `iPhone 15 Pro` context, the rule matched,
+ * it was the only `min-height` declaration on the element, and the computed
+ * value was **18px**; an inline `min-height: 44px` computed 18px as well, and
+ * only `appearance: none` restored it. A `select` entry there would be a floor
+ * that reads as present and is inert, which is this ticket's own defect one
+ * level up. So the walk measures `select` and the token layer does not floor
+ * it: the remedy at a call site is `@scani/ui`'s `Select`, whose trigger is a
+ * `<button>`, which is what `token-hygiene.test.ts` already requires.
+ */
+export const INTERACTIVE_TARGETS = [
+  // HTML's interactive elements. `input[type=hidden]` is the only type with
+  // no box at all; every other one is a target or is exempted below on its
+  // own merits, which is the fail-closed half of this list.
+  'button',
+  'a[href]',
+  'select',
+  'textarea',
+  'summary',
+  'input:not([type="hidden"])',
+  '[contenteditable]:not([contenteditable="false"])',
+
+  // The ARIA widget roles that name a DISCRETE pointer target. The container
+  // and output roles are deliberately absent — `tablist`, `radiogroup`,
+  // `menu`, `listbox`, `grid`, `dialog`, `progressbar` and `status` have
+  // nothing to hit, and their children are what this list names instead. So
+  // are `scrollbar` and a focusable `separator`: both are dragged rather than
+  // tapped, and both are sized by the region they operate on, so a 44px floor
+  // on either would be a claim about the wrong box.
+  '[role="button"]',
+  '[role="checkbox"]',
+  '[role="combobox"]',
+  '[role="link"]',
+  '[role="menuitem"]',
+  '[role="menuitemcheckbox"]',
+  '[role="menuitemradio"]',
+  '[role="option"]',
+  '[role="radio"]',
+  '[role="searchbox"]',
+  '[role="slider"]',
+  '[role="spinbutton"]',
+  '[role="switch"]',
+  '[role="tab"]',
+  '[role="textbox"]',
+  '[role="treeitem"]',
+
+  // Anything the author put in the tab order itself and gave NO role. This is
+  // the arm that catches a control belonging to neither vocabulary — a `<div>`
+  // with a click handler and `tabIndex={0}` is a target, and nothing above
+  // would see it.
+  //
+  // Negative values are excluded: `tabIndex={-1}` marks an element that is
+  // focusable only programmatically, which every Radix overlay and every
+  // nested link inside an already-clickable row uses precisely to say "the hit
+  // target is not me".
+  //
+  // `:not([role])` is the measured half. Focus is not the same claim as
+  // touch: WCAG 2.1.1 puts a CONTAINER in the tab order so a keyboard can
+  // reach what is inside it, and Radix's `TabsContent` and the `ScrollArea`
+  // viewport both do exactly that. The first widened walk reported
+  // `div[role=tabpanel] "12 positions across 4 institutions." is 327×24` —
+  // a paragraph of text, reported as an undersized tap target. So where the
+  // author has named a role, the role vocabulary above has ALREADY decided
+  // whether the element is a target, and this arm defers to it rather than
+  // overriding it with a growing list of exemptions.
+  '[tabindex]:not([tabindex^="-"]):not([role])',
+].join(', ');
+
+/**
+ * Exempt, each because the control reaches its hit area somewhere other than
+ * its own box:
+ * - `[role=checkbox|radio|switch]` grow their target through the label beside
+ *   them; the token layer excludes them for the same reason.
+ * - `input[type=checkbox|radio]` are the native spelling of the same two, and
+ *   have to be named separately because `matches()` reads the ATTRIBUTE: an
+ *   `<input type="radio">` carries the implicit role and does not match
+ *   `[role="radio"]`. The token layer already treats them this way — its
+ *   neutraliser returns both to `min-height: 0` and the `pointer: coarse`
+ *   block does not float them again.
+ * - An anchor inside a paragraph is an inline link — WCAG 2.2 SC 2.5.8's own
+ *   "inline" exception.
+ * - `[data-a11y-target=inline]` is the opt-out for the same case where the
+ *   markup is not a `<p>`; it has to be spelled out at the call site.
+ *
+ * Nothing is exempted here speculatively. A control type that is not rendered
+ * today cannot be shown to need an exemption, and pre-writing one would put
+ * the fail-closed default back where it started — the next one to arrive
+ * should turn the walk red and be argued then, which is the whole design.
+ */
+export const EXEMPT_TARGETS = [
+  '[role="checkbox"]',
+  '[role="radio"]',
+  '[role="switch"]',
+  'input[type="checkbox"]',
+  'input[type="radio"]',
+  '[data-a11y-target=inline]',
+].join(', ');
+
+/**
  * The house touch-target rule: 44×44 CSS px on anything a finger points at.
  *
  * Deliberately measured rather than asserted from class names — the v3 rule
@@ -111,15 +246,6 @@ export interface Measured<T> {
  * elements that carry no class saying so, which is exactly why the previous
  * attempt to check this by grepping `min-h-tap` found nothing and shipped a
  * 28px control anyway.
- *
- * Three exemptions, each because the control reaches its hit area somewhere
- * other than its own box:
- * - `[role=checkbox|radio|switch]` grow their target through the label beside
- *   them; the token layer excludes them for the same reason.
- * - An anchor inside a paragraph is an inline link — WCAG 2.2 SC 2.5.8's own
- *   "inline" exception.
- * - `[data-a11y-target=inline]` is the opt-out for the same case where the
- *   markup is not a `<p>`; it has to be spelled out at the call site.
  */
 export async function measureUndersizedTargets(
   page: Page,
@@ -127,20 +253,25 @@ export async function measureUndersizedTargets(
   minimum = 44
 ): Promise<Measured<TargetMeasurement>> {
   return page.evaluate(
-    ({ surface: label, minimum: floor }) => {
+    ({ surface: label, minimum: floor, interactive: INTERACTIVE, exempt: EXEMPT }) => {
       const empty = { scanned: 0, offenders: [] };
       const scope = document.querySelector('[data-ui="v3"]');
       if (!scope) return empty;
 
-      const INTERACTIVE = 'button, a[href], [role="button"], [role="tab"], summary';
-      const EXEMPT =
-        '[role="checkbox"], [role="radio"], [role="switch"], [data-a11y-target=inline]';
-
       function describe(element: Element): string {
         const tag = element.tagName.toLowerCase();
+        // The role and the input type are what say which arm of the query
+        // matched. A widened query reports `div` for a menu item, an option
+        // and a slider alike, and a name is not always there to tell them
+        // apart — the offender then reads as "some div", which is the one
+        // description nobody can act on.
+        const role = element.getAttribute('role');
+        const type = tag === 'input' ? element.getAttribute('type') : null;
         const name =
           element.getAttribute('aria-label') ?? element.textContent?.trim().slice(0, 40) ?? '';
-        return `${tag}${name ? ` "${name}"` : ''}`;
+        return `${tag}${type ? `[type=${type}]` : ''}${role ? `[role=${role}]` : ''}${
+          name ? ` "${name}"` : ''
+        }`;
       }
 
       const offenders: Array<{
@@ -170,7 +301,7 @@ export async function measureUndersizedTargets(
       }
       return { scanned, offenders };
     },
-    { surface, minimum }
+    { surface, minimum, interactive: INTERACTIVE_TARGETS, exempt: EXEMPT_TARGETS }
   );
 }
 

@@ -160,24 +160,44 @@ describe('v3 token hygiene', () => {
    *
    * The two tests above are about a class or an inline style outranking
    * `min-height: var(--tap-target)`. This one is about never matching it.
-   * V3-23's `@media (pointer: coarse)` block spends `--tap-target` on
+   * V3-23's `@media (pointer: coarse)` block spent `--tap-target` on
    * `button, [role=button], [role=tab], [role=radiogroup], a[href],
    * input[type=button|submit]`, and the unscoped v2 rule it neutralises
    * (`apps/frontend/app/src/styles/accessibility.css`) lists the same shapes.
-   * A native `<select>` is in neither list, so its height is whatever the call
-   * site wrote — `h-9`, 36px, on a phone.
+   * A native `<select>` was in neither list, so its height was whatever the
+   * call site wrote — `h-9`, 36px, on a phone.
    *
-   * And the §2.6 walk is blind to exactly the same set:
-   * `measureUndersizedTargets` in `apps/e2e/fixtures/a11y.ts` queries
+   * And the §2.6 walk was blind to exactly the same set:
+   * `measureUndersizedTargets` in `apps/e2e/fixtures/a11y.ts` queried
    * `button, a[href], [role="button"], [role="tab"], summary`. So the one v3
    * control that was not a `<button>` was the one control the gate never
    * measured, which is why a 36px target survived the accessibility gate that
    * exists to find 36px targets.
    *
+   * ONE HALF OF THAT IS FIXED AND THE OTHER CANNOT BE, WHICH IS WHY THIS TEST
+   * MATTERS MORE THAN IT LOOKS (SC-989). The walk's query is no longer an
+   * enumeration of the shapes v3 happens to ship — it is HTML's interactive
+   * elements plus the ARIA widget roles that name a pointer target — so a
+   * `<select>` is now MEASURED and turns the walk red at 36px.
+   *
+   * It is still not FLOORED, and it is not an omission. `min-height` does not
+   * floor a native `<select>` in WebKit: measured 2026-09-03 against this
+   * repo's compiled stylesheet in an `iPhone 15 Pro` context, a `select` with
+   * the rule matching and no competing declaration computed `min-height:
+   * 18px`, and an INLINE `min-height: 44px` computed 18px too. Only
+   * `appearance: none` restored it. So there is no CSS fix for a raw
+   * `<select>` short of stripping the native control's chrome, and THIS TEST
+   * is the thing that keeps one out of v3 in the first place. Read it for
+   * what it is, though: a text scan over v3 page source, naming one element.
+   * It cannot see a `<select>` arriving from a shared or v2-era component,
+   * and it says nothing about any other control type. The measurement is the
+   * walk.
+   *
    * `@scani/ui`'s `Select` renders a `<button>` trigger, so it earns the floor
-   * from the token layer and enters the walk's measured set. This test is the
-   * cheap part: a raw `<select>` type-checks, lints, renders and passes the
-   * a11y walk, so a text scan is the only thing that can see it.
+   * from the token layer and was always in the walk's measured set. This test
+   * is the cheap part: a raw `<select>` type-checks, lints and renders, and
+   * before SC-989 it passed the a11y walk too, so a text scan was the only
+   * thing that could see it.
    */
   test('no v3 surface uses a native select', async () => {
     // Lower-case `<select` only. `<SelectTrigger` / `<SelectContent` /

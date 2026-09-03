@@ -80,10 +80,20 @@ describe('the v3 date field', () => {
     expect(render()).toContain(formatDate(new Date(2026, 7, 12)));
   });
 
+  // `-inset-px`, not `inset-0` (SC-989). Out of flow is the claim in the title
+  // and either spelling satisfies it; what the inset decides is how much of the
+  // wrapper the tap target covers. The wrapper is `h-11` INCLUDING its 1px
+  // border, so an input inset to the CONTENT box is 42px tall and the border
+  // ring is dead to a finger. The §2.6 touch walk measured exactly that as soon
+  // as it could see inputs at all — `input[type=date] is 325×42, under 44` on
+  // `/payments/recurring/new` and `/record-movement`.
   test('takes the native input out of flow, so it cannot size its container', () => {
     const markup = render();
     expect(markup).toContain('type="date"');
-    expect(markup).toMatch(/class="[^"]*absolute inset-0[^"]*"/);
+    expect(markup).toMatch(/class="[^"]*absolute -inset-px[^"]*"/);
+    // The regression this replaces: an inset to the content box leaves the
+    // border outside the target and the field 2px under the floor.
+    expect(markup).not.toMatch(/class="[^"]*absolute inset-0[^"]*"/);
   });
 
   test('hides the native value at rest and reveals it on focus', () => {

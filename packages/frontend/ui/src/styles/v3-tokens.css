@@ -407,7 +407,33 @@
    * pseudo-element or the label beside them (see the note in switch.tsx).
    * Without the exclusion Radix's `button[role="checkbox"]` matches `button`
    * below and inflates into a 44px slab, which is the same mistake as the
-   * global rule this block exists to undo. */
+   * global rule this block exists to undo.
+   *
+   * `[role='option']` joined the list in SC-989, when the §2.6 walk was
+   * widened past `button, a[href], [role=button], [role=tab], summary` and
+   * measured a `cmdk` row at **317×32** on a phone. `DuplicateVendorPicker`
+   * had already written the diagnosis down — *"a Radix `SelectItem` renders
+   * `div[role="option"]`, so it is not matched and the rows came out at
+   * whatever the type set them to"* — and it stayed true for as long as
+   * nothing could see it. It is a discrete row a finger lands on, so it takes
+   * the height floor; it is laid out full width, so it is not in the width
+   * rule below.
+   *
+   * `select` IS NOT HERE, AND ADDING IT IS THE OBVIOUS WRONG MOVE — it was
+   * tried first, and `min-height` does not floor a native `<select>` in
+   * WebKit at all. Measured 2026-09-03 against this repo's compiled
+   * stylesheet in a Playwright `iPhone 15 Pro` context: the rule matched
+   * (`el.matches()` true), it was the ONLY `min-height` declaration matching
+   * the element, and `getComputedStyle().minHeight` still read **18px** with
+   * the box at 36. An INLINE `min-height: 44px` read 18px too, inside the v3
+   * scope and outside it. Only `appearance: none` restored it (44px), which
+   * would strip the native control's own chrome from every select in v3. So a
+   * `select` entry here would be a floor that reads as present and does
+   * nothing — the exact "quietest where it is wrong" failure SC-989 is about.
+   * The walk measures `select` instead, and the remedy at a call site is
+   * `@scani/ui`'s `Select`, whose trigger is a `<button>` and earns this rule
+   * — which is what `token-hygiene.test.ts` already requires and what SC-978
+   * did. */
   @media (pointer: coarse) {
     [data-ui='v3']
       :is(
@@ -416,6 +442,7 @@
         [role='tab'],
         [role='tablist'],
         [role='radiogroup'],
+        [role='option'],
         a[href],
         input[type='button'],
         input[type='submit']
