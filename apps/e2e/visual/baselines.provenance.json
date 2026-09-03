@@ -1,7 +1,7 @@
 {
   "baselines": {
-    "holdings-desktop-rtl": {
-      "sha256": "d4e9fdd2afefa243b90865ac565a36ef2c3c781f2b39abb532237801b03d882f",
+    "holdings-desktop": {
+      "sha256": "f706f1dc056537081a9bd4fb3ad3d1b993868b9c7c5a3d79446b1f0ae825e9fb",
       "capturedAt": null,
       "head": null,
       "renderedDigest": null,
@@ -13,8 +13,8 @@
         "behind": 0
       }
     },
-    "holdings-desktop": {
-      "sha256": "f706f1dc056537081a9bd4fb3ad3d1b993868b9c7c5a3d79446b1f0ae825e9fb",
+    "holdings-desktop-rtl": {
+      "sha256": "d4e9fdd2afefa243b90865ac565a36ef2c3c781f2b39abb532237801b03d882f",
       "capturedAt": null,
       "head": null,
       "renderedDigest": null,
@@ -78,19 +78,6 @@
         "behind": 0
       }
     },
-    "home-phone-rtl": {
-      "sha256": "22d00710128791d4dc55cfd7764ea92c3fc60dd161a3b1a3a44b1f5273873922",
-      "capturedAt": null,
-      "head": null,
-      "renderedDigest": null,
-      "dirty": [],
-      "dirtyCount": 0,
-      "base": {
-        "ref": null,
-        "confirmed": false,
-        "behind": 0
-      }
-    },
     "home-phone": {
       "sha256": "d5cecc2815e8bfea8306749f18d6b249416d4e4214466b97b66dc0d5a8c4e55e",
       "capturedAt": null,
@@ -104,8 +91,8 @@
         "behind": 0
       }
     },
-    "kitchen-sink-desktop-rtl": {
-      "sha256": "1bb6321dbf2d803bc726496a782b5f67acab5622922fb422c6d59648dd9658ac",
+    "home-phone-rtl": {
+      "sha256": "22d00710128791d4dc55cfd7764ea92c3fc60dd161a3b1a3a44b1f5273873922",
       "capturedAt": null,
       "head": null,
       "renderedDigest": null,
@@ -119,6 +106,19 @@
     },
     "kitchen-sink-desktop": {
       "sha256": "dd3eea212c767c305d00fb547ec5a109e258646928341da7028c487bee263da3",
+      "capturedAt": null,
+      "head": null,
+      "renderedDigest": null,
+      "dirty": [],
+      "dirtyCount": 0,
+      "base": {
+        "ref": null,
+        "confirmed": false,
+        "behind": 0
+      }
+    },
+    "kitchen-sink-desktop-rtl": {
+      "sha256": "1bb6321dbf2d803bc726496a782b5f67acab5622922fb422c6d59648dd9658ac",
       "capturedAt": null,
       "head": null,
       "renderedDigest": null,
@@ -144,17 +144,17 @@
       }
     },
     "payment-form-phone": {
-      "sha256": "50201ab064889009fb503d4b0d4d2100afbbd9373a4494425b3507fde10cf2af",
-      "capturedAt": null,
-      "head": null,
-      "renderedDigest": null,
+      "head": "e50d9281d7f96143d3f0a4c93703a2eddc368dcf",
+      "renderedDigest": "23354c435db68266e7345820e2c4612cddb8c8eeb0ce8bd962fc73a56a978918",
       "dirty": [],
       "dirtyCount": 0,
       "base": {
-        "ref": null,
-        "confirmed": false,
+        "ref": "17d106aa644e385d6c01187bed9ec8d61a1ecf3e",
+        "confirmed": true,
         "behind": 0
-      }
+      },
+      "sha256": "960a4586191b36bf9d413975448ac20407697be924223e75d7f6273be71c4ef7",
+      "capturedAt": "2026-09-03T05:39:17.713Z"
     }
   }
 }
