@@ -5,6 +5,9 @@ import i18n from 'i18next';
 import {
   describeRepeatInterval,
   describeV3PaymentFormBlockers,
+  type PaymentAccountChoice,
+  paymentAccountOptions,
+  paymentAccountSelectedLabel,
   type V3PaymentFormDraft,
 } from '../../../src/v3/lib/payment-form';
 
@@ -155,6 +158,107 @@ describe('describeRepeatInterval', () => {
   test.each([[''], ['0'], ['abc'], ['-2']])('a count of %p reads as one occurrence', (count) => {
     expect(describeRepeatInterval(t, count, 'year')).toBe(
       "Repeats every year, anchored on the day it's due."
+    );
+  });
+});
+
+/**
+ * The linked-account picker's rows (SC-862).
+ *
+ * It was a `<Select>` over `{account.name}` alone — no search, and two accounts
+ * called `Savings` were one string twice.
+ */
+describe('paymentAccountOptions', () => {
+  const ACCOUNTS: PaymentAccountChoice[] = [
+    { id: 'a', name: 'Savings', institution: 'Wise' },
+    { id: 'b', name: 'Savings', institution: 'Kraken' },
+    { id: 'c', name: 'Airwallex', institution: 'Airwallex' },
+    { id: 'd', name: 'Bitcoin Network - bc1q5n', institution: 'Bitcoin Network' },
+    { id: 'e', name: 'Cash', institution: null },
+  ];
+
+  test('two accounts of one name are told apart by their institution, in a hint of their own', () => {
+    expect(paymentAccountOptions(ACCOUNTS, '').slice(0, 2)).toEqual([
+      { id: 'a', label: 'Savings', hint: 'Wise' },
+      { id: 'b', label: 'Savings', hint: 'Kraken' },
+    ]);
+  });
+
+  test('an account named after its institution says it once', () => {
+    expect(paymentAccountOptions(ACCOUNTS, '')[2]).toEqual({
+      id: 'c',
+      label: 'Airwallex',
+      hint: undefined,
+    });
+  });
+
+  test('a punctuation-joined repeat keeps the half that identifies it', () => {
+    expect(paymentAccountOptions(ACCOUNTS, '')[3]).toEqual({
+      id: 'd',
+      label: 'bc1q5n',
+      hint: 'Bitcoin Network',
+    });
+  });
+
+  test('an account with no institution is one line, and the hint is absent rather than empty', () => {
+    expect(paymentAccountOptions(ACCOUNTS, '')[4]).toEqual({
+      id: 'e',
+      label: 'Cash',
+      hint: undefined,
+    });
+  });
+
+  /**
+   * The non-obvious half. Collapsing the repeat above is only safe while the
+   * search still reads the RAW institution — otherwise fixing a cosmetic
+   * duplicate would have made a name untypeable.
+   */
+  test('the institution is searchable on the row that no longer shows it', () => {
+    expect(paymentAccountOptions(ACCOUNTS, 'airwallex').map((row) => row.id)).toEqual(['c']);
+    expect(paymentAccountOptions(ACCOUNTS, 'bitcoin').map((row) => row.id)).toEqual(['d']);
+  });
+
+  test('and the institution narrows across accounts that share a name', () => {
+    expect(paymentAccountOptions(ACCOUNTS, 'kraken').map((row) => row.id)).toEqual(['b']);
+    expect(paymentAccountOptions(ACCOUNTS, 'savings').map((row) => row.id)).toEqual(['a', 'b']);
+  });
+
+  /** The control: a query naming nothing returns nothing, so the filter above
+   *  cannot be passing by returning everything. */
+  test('a query naming nothing returns nothing', () => {
+    expect(paymentAccountOptions(ACCOUNTS, 'zzzz')).toEqual([]);
+  });
+
+  /** Uncapped here — `RecordPicker` caps, and it is the only party that can
+   *  then say how many rows it withheld. */
+  test('nothing is capped at this level', () => {
+    const many = Array.from({ length: 40 }, (_, index) => ({
+      id: `id-${index}`,
+      name: `Savings ${index}`,
+      institution: 'Wise',
+    }));
+    expect(paymentAccountOptions(many, '')).toHaveLength(40);
+  });
+});
+
+describe('paymentAccountSelectedLabel', () => {
+  test('the chosen account carries the institution its row put in a hint', () => {
+    expect(paymentAccountSelectedLabel({ id: 'a', name: 'Savings', institution: 'Wise' })).toBe(
+      'Wise · Savings'
+    );
+  });
+
+  test('and says it once when the name already did', () => {
+    expect(
+      paymentAccountSelectedLabel({ id: 'c', name: 'Airwallex', institution: 'Airwallex' })
+    ).toBe('Airwallex');
+  });
+
+  /** The institution query can resolve after the accounts one; a name alone is
+   *  the honest answer rather than a dangling separator. */
+  test('an institution that has not arrived yet leaves the name alone', () => {
+    expect(paymentAccountSelectedLabel({ id: 'e', name: 'Cash', institution: undefined })).toBe(
+      'Cash'
     );
   });
 });
