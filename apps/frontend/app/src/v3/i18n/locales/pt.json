@@ -2638,6 +2638,9 @@
         "moreWithReview_many": "Mais — {{count}} itens precisam de revisão",
         "moreWithReview_one": "Mais — {{count}} item precisa de revisão",
         "moreWithReview_other": "Mais — {{count}} itens precisam de revisão"
+      },
+      "navBadge": {
+        "overflow": "{{cap}}+"
       }
     },
     "tokens": {

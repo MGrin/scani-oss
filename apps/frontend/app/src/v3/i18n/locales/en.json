@@ -15,6 +15,9 @@
       },
       "moreDrawer": {
         "description": "Everything that does not fit in the tab bar. Drag the handle up for the full list."
+      },
+      "navBadge": {
+        "overflow": "{{cap}}+"
       }
     },
     "common": {
