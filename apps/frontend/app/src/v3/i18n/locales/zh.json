@@ -14,6 +14,9 @@
       },
       "moreDrawer": {
         "description": "标签栏放不下的都在这里。向上拖动手柄可查看完整列表。"
+      },
+      "navBadge": {
+        "overflow": "{{cap}}+"
       }
     },
     "common": {

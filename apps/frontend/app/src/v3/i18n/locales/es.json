@@ -2634,6 +2634,9 @@
         "moreWithReview_many": "Más — {{count}} elementos por revisar",
         "moreWithReview_one": "Más — {{count}} elemento por revisar",
         "moreWithReview_other": "Más — {{count}} elementos por revisar"
+      },
+      "navBadge": {
+        "overflow": "{{cap}}+"
       }
     },
     "tokens": {

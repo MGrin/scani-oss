@@ -6,6 +6,7 @@ import { Link } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { navIcon } from '../lib/nav-icons';
 import { V3_ROUTES, V3_SIDEBAR_SECTIONS } from '../lib/routes';
+import { V3NavBadge } from './V3NavBadge';
 
 interface V3SidebarProps {
   /** Result of `resolveActiveV3Path` — longest match, so a detail page
@@ -85,11 +86,7 @@ export function V3Sidebar({ activePath, actionRequiredCount = 0, onCapturePress 
                     >
                       <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
                       <span className="truncate">{t(item.labelKey)}</span>
-                      {badge > 0 && (
-                        <span className="ms-auto inline-flex items-center justify-center rounded-full bg-interactive px-1.5 py-0.5 text-caption font-medium leading-none text-interactive-foreground">
-                          {badge}
-                        </span>
-                      )}
+                      <V3NavBadge count={badge} className="ms-auto" />
                     </Link>
                   </li>
                 );

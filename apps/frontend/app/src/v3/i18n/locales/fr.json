@@ -16,6 +16,9 @@
       },
       "moreDrawer": {
         "description": "Tout ce qui ne tient pas dans la barre d’onglets. Faites glisser la poignée vers le haut pour la liste complète."
+      },
+      "navBadge": {
+        "overflow": "{{cap}}+"
       }
     },
     "common": {
