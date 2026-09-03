@@ -47,9 +47,14 @@ export function GenericJobResult({ result }: { result: unknown }) {
           <h2 className="text-title">{t('v3.jobs.generic.title')}</h2>
         </div>
         {/* The worker's own sentence, when it wrote one. English and left
-            alone: it is produced per job on the server and there is no key to
-            translate it under — the same limit `describeQueryError` has with a
-            provider's message. */}
+            alone: it is produced per job on the server and no key names it.
+            The warnings below no longer share that limit — they carry
+            `warningDetails` since SC-434 — and `message` has not been given
+            the same treatment because production has never stored one.
+            `describeQueryError` was named here as having the same limit and
+            does not: `ui.errors.rejected.detail` is a keyed frame with the
+            provider's message as a param, which is what SC-434 built for a
+            warning. */}
         {view.message ? (
           <p className="border-t border-border p-4 text-body">{view.message}</p>
         ) : null}
