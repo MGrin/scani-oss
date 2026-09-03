@@ -181,6 +181,84 @@ describe('truncate', () => {
     expect(cut.endsWith('…')).toBe(true);
     expect(measure(cut, TYPE.rowText)).toBeLessThanOrEqual(60.05);
   });
+
+  /**
+   * SC-984. The cut used to be made on `text.length` and `slice`, which are
+   * UTF-16 code UNITS, so it could land between the halves of a surrogate pair
+   * or between a combining mark and its base. A lone surrogate has no face, so
+   * the cell ended `[?]…` and the metadata note fired — the document claiming a
+   * character was unrenderable when the input was fine and the renderer broke
+   * it.
+   *
+   * Asserted as the general property rather than against a fixed string,
+   * because "does not split a character" is what the code has to hold and a
+   * pinned expectation would only cover the one width it was written at. The
+   * ASCII and precomposed-CJK cases are the control: they offer no interior
+   * boundary to get wrong, so a check that flagged them would be flagging
+   * everything.
+   */
+  describe('cuts only where a character is not taken apart', () => {
+    const graphemes = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
+
+    function boundaries(text: string): Set<number> {
+      const offsets = [0];
+      for (const { segment } of graphemes.segment(text)) {
+        offsets.push((offsets[offsets.length - 1] as number) + segment.length);
+      }
+      return new Set(offsets);
+    }
+
+    const cases: [string, string][] = [
+      // CJK Extension B — the range `fonts.test.ts`'s own sweep draws from, and
+      // the one a merchant name reaches this through.
+      ['astral', '\u{20000}\u{20001}\u{20002}\u{20003}'],
+      ['an Arabic name with its marks', 'بَنْكَبَنْكَ'],
+      ['Devanagari with matras', 'नितिननितिन'],
+      ['a decomposed Latin name', 'école-longer'],
+      ['a ZWJ emoji sequence', '\u{1F469}‍\u{1F4BB}\u{1F469}‍\u{1F4BB}'],
+      ['ASCII, the control', 'abcdefghij'],
+      ['precomposed CJK, the control', '三菱UFJ銀行です'],
+    ];
+
+    // Taken from `measure` rather than written out, so the widths below stay
+    // one-character steps whatever the stub's scale is. A fixed number here was
+    // under one character wide and every case returned '' — a loop that passes
+    // by never testing anything, which is what the assertion after it exists to
+    // catch.
+    const unit = measure('a', TYPE.rowText);
+
+    for (const [label, text] of cases) {
+      it(label, () => {
+        const cut = boundaries(text);
+        let everCut = false;
+        // Every width from "nothing fits" to "it all fits", so the search is
+        // exercised at every position it can settle on rather than one.
+        for (let step = 1; step <= text.length + 2; step += 1) {
+          const shown = truncate(text, unit * step, TYPE.rowText, measure);
+          if (shown === '' || shown === text) continue;
+          everCut = true;
+          const body = shown.slice(0, -1);
+          expect({ step, body, onBoundary: cut.has(body.length) }).toEqual({
+            step,
+            body,
+            onBoundary: true,
+          });
+        }
+        // Without this the loop is satisfied by a `truncate` that only ever
+        // returns the whole string or nothing, and asserts about no cut at all.
+        expect({ text, everCut }).toEqual({ text, everCut: true });
+      });
+    }
+
+    it('cuts where the old code-unit search cut, when that was already safe', () => {
+      // The fix is not "cut earlier": on text with no interior boundary to get
+      // wrong it must land in exactly the same place as before.
+      expect(truncate('abcdefghij', unit * 5, TYPE.rowText, measure)).toBe('abcd…');
+      expect(
+        truncate('\u{20000}\u{20001}\u{20002}\u{20003}', unit * 5, TYPE.rowText, measure)
+      ).toBe('\u{20000}\u{20001}…');
+    });
+  });
 });
 
 /**
@@ -207,7 +285,7 @@ describe('tracking', () => {
     // `tracking` that returns 0 for everything.
     for (const text of [
       'GAIN / LOSS',
-      'BALANCE (USD) 1,234.50',
+      'BALANCE (USD) 1,000.00',
       'СБЕРБАНК',
       'ΤΡΑΠΕΖΑ',
       '三菱UFJ銀行',

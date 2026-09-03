@@ -297,6 +297,47 @@ export function layoutColumns(
 }
 
 /**
+ * Grapheme-cluster segmentation, built once — the constructor is the expensive
+ * part and the result is stateless. Locale-independent on purpose: grapheme
+ * boundaries do not vary by locale, and this module is handed no locale to vary
+ * by.
+ */
+const GRAPHEMES = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
+
+/**
+ * The offsets into `text` a cut may land on without taking a character apart —
+ * SC-984.
+ *
+ * **Why not `text.length`, which is what this searched over.** `String.length`
+ * and `slice` are UTF-16 code UNITS, so a cut can fall between the halves of a
+ * surrogate pair. No face covers a lone surrogate, so `shape()` replaces it with
+ * the unsupported marker and the cell ends `[?]…` — the document claiming a
+ * character was unrenderable when the input was fine and the renderer broke it.
+ * Measured: truncating four CJK Extension B characters returned a string
+ * containing a lone high surrogate, against an ASCII control that did not.
+ *
+ * **Why not code points either, which is the obvious repair.** `[...text]` fixes
+ * the surrogate case and still cuts a combining mark away from its base, which
+ * renders as an accent floating over the ellipsis rather than as a marker. That
+ * half of the ticket was reasoned rather than measured, so it was measured: of
+ * the interior cut positions code-point slicing offers, three of five land
+ * mid-grapheme on an Arabic word carrying its marks, two of four on a
+ * Devanagari one, one of five on a decomposed `école`, and two on a ZWJ emoji
+ * sequence — against ASCII and precomposed-CJK controls, which offer none, so
+ * the reading can come back zero.
+ *
+ * So the unit is the grapheme cluster, and the boundaries are computed once and
+ * searched over rather than re-segmented at every probe.
+ */
+function cutPoints(text: string): number[] {
+  const points = [0];
+  for (const { segment } of GRAPHEMES.segment(text)) {
+    points.push((points[points.length - 1] as number) + segment.length);
+  }
+  return points;
+}
+
+/**
  * As much of `text` as fits, with an ellipsis where it was cut.
  *
  * Done here rather than by pdfkit's own `ellipsis` option because that option
@@ -316,14 +357,17 @@ export function truncate(
   // to say the one the column was built for — is the failure that produced.
   if (!text || measure(text, style) <= maxWidth + 0.05) return text;
   const ellipsis = '…';
+  // The search runs over positions in `cuts`, not over offsets in `text`: every
+  // index it can settle on is therefore a boundary no character straddles.
+  const cuts = cutPoints(text);
   let low = 0;
-  let high = text.length;
+  let high = cuts.length - 1;
   while (low < high) {
     const mid = Math.ceil((low + high) / 2);
-    if (measure(text.slice(0, mid) + ellipsis, style) <= maxWidth) low = mid;
+    if (measure(text.slice(0, cuts[mid]) + ellipsis, style) <= maxWidth) low = mid;
     else high = mid - 1;
   }
-  return low > 0 ? text.slice(0, low).trimEnd() + ellipsis : '';
+  return low > 0 ? text.slice(0, cuts[low]).trimEnd() + ellipsis : '';
 }
 
 /** What a cell prints. The figures arrive pre-formatted by the same code that
