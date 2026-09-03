@@ -90,6 +90,58 @@ export const TYPE = {
   footer: { face: 'sans', size: 8 } as const,
 } satisfies Record<string, TypeStyle>;
 
+/**
+ * The scripts a tracked style is actually tracked in — SC-985.
+ *
+ * **What tracking does to a cursive script.** `characterSpacing` inserts a gap
+ * after every glyph's advance, and Arabic joining works precisely because one
+ * glyph's connecting stroke ends at that advance and the next one's begins at
+ * zero. Any positive tracking therefore opens a gap at *every* junction in the
+ * word, by construction — the only question is whether the gap is visible, and
+ * at the size these styles are set it plainly is. Measured 2026-09-03 with SF
+ * Arabic as an instrument, rendered at {@link TYPE}`.columnHeader`'s own 8pt and
+ * rasterised: at `spacing: 0.4` every joint of `الحساب` is severed and the word
+ * reads as six disconnected letterforms, against a bare control at `0` whose
+ * baseline stroke runs unbroken. It sets 27.109pt tracked against 25.109pt bare
+ * — 2.000pt, which is 0.4 at each of the five junctions.
+ *
+ * **An allowlist rather than a list of scripts to skip, and that is the whole
+ * point.** This defect cannot be seen today: no Arabic face is bundled, so the
+ * text is already `fonts.ts`'s unsupported marker by the time it is drawn. It
+ * appears the moment a face is added, which is the moment nobody is looking for
+ * it. A denylist would default a newly bundled script to *tracked* and break it
+ * silently; an allowlist defaults it to *untracked*, which at worst sets a
+ * heading a fraction narrower than it might have been. So **adding a face to
+ * `fonts.ts`'s `STACKS` does not add its script here** — that is a second,
+ * deliberate decision, and forgetting to make it is safe.
+ *
+ * **What is in it is exactly what is renderable today**, so this changes no
+ * document that can currently be produced: of the 10,596 codepoints the bundled
+ * faces cover, 10,595 track exactly as before and the one exception is U+FFFF, a
+ * Unicode noncharacter. Bopomofo is here because the Noto CJK subsets cover it —
+ * 44 codepoints, found by measuring rather than by reasoning about what a
+ * "Japanese" subset contains — and, like every other script listed, it does not
+ * join.
+ */
+const TRACKABLE_SCRIPTS =
+  /^[\p{Script_Extensions=Latin}\p{Script_Extensions=Greek}\p{Script_Extensions=Cyrillic}\p{Script_Extensions=Han}\p{Script_Extensions=Hiragana}\p{Script_Extensions=Katakana}\p{Script_Extensions=Bopomofo}\p{Script_Extensions=Common}\p{Script_Extensions=Inherited}]*$/u;
+
+/**
+ * The tracking `text` is actually set with — `style.spacing`, or none where
+ * letterspacing would damage the script rather than loosen it.
+ *
+ * Asked per *run* rather than per string, because a run is already uniform in
+ * face and in direction and is the unit both the measure pass and the draw pass
+ * iterate. Two consequences worth stating: a mixed heading keeps its tracking on
+ * the Latin half, and a run that mixes an allowed script with a disallowed one —
+ * which needs a single face covering both — loses tracking for the whole run,
+ * which is the safe direction.
+ */
+export function tracking(style: TypeStyle, text: string): number {
+  const spacing = style.spacing ?? 0;
+  return spacing > 0 && !TRACKABLE_SCRIPTS.test(text) ? 0 : spacing;
+}
+
 export interface Column {
   header: string;
   /** Right-aligned, and set in the mono face so decimals line up. */
@@ -245,6 +297,47 @@ export function layoutColumns(
 }
 
 /**
+ * Grapheme-cluster segmentation, built once — the constructor is the expensive
+ * part and the result is stateless. Locale-independent on purpose: grapheme
+ * boundaries do not vary by locale, and this module is handed no locale to vary
+ * by.
+ */
+const GRAPHEMES = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
+
+/**
+ * The offsets into `text` a cut may land on without taking a character apart —
+ * SC-984.
+ *
+ * **Why not `text.length`, which is what this searched over.** `String.length`
+ * and `slice` are UTF-16 code UNITS, so a cut can fall between the halves of a
+ * surrogate pair. No face covers a lone surrogate, so `shape()` replaces it with
+ * the unsupported marker and the cell ends `[?]…` — the document claiming a
+ * character was unrenderable when the input was fine and the renderer broke it.
+ * Measured: truncating four CJK Extension B characters returned a string
+ * containing a lone high surrogate, against an ASCII control that did not.
+ *
+ * **Why not code points either, which is the obvious repair.** `[...text]` fixes
+ * the surrogate case and still cuts a combining mark away from its base, which
+ * renders as an accent floating over the ellipsis rather than as a marker. That
+ * half of the ticket was reasoned rather than measured, so it was measured: of
+ * the interior cut positions code-point slicing offers, three of five land
+ * mid-grapheme on an Arabic word carrying its marks, two of four on a
+ * Devanagari one, one of five on a decomposed `école`, and two on a ZWJ emoji
+ * sequence — against ASCII and precomposed-CJK controls, which offer none, so
+ * the reading can come back zero.
+ *
+ * So the unit is the grapheme cluster, and the boundaries are computed once and
+ * searched over rather than re-segmented at every probe.
+ */
+function cutPoints(text: string): number[] {
+  const points = [0];
+  for (const { segment } of GRAPHEMES.segment(text)) {
+    points.push((points[points.length - 1] as number) + segment.length);
+  }
+  return points;
+}
+
+/**
  * As much of `text` as fits, with an ellipsis where it was cut.
  *
  * Done here rather than by pdfkit's own `ellipsis` option because that option
@@ -264,14 +357,17 @@ export function truncate(
   // to say the one the column was built for — is the failure that produced.
   if (!text || measure(text, style) <= maxWidth + 0.05) return text;
   const ellipsis = '…';
+  // The search runs over positions in `cuts`, not over offsets in `text`: every
+  // index it can settle on is therefore a boundary no character straddles.
+  const cuts = cutPoints(text);
   let low = 0;
-  let high = text.length;
+  let high = cuts.length - 1;
   while (low < high) {
     const mid = Math.ceil((low + high) / 2);
-    if (measure(text.slice(0, mid) + ellipsis, style) <= maxWidth) low = mid;
+    if (measure(text.slice(0, cuts[mid]) + ellipsis, style) <= maxWidth) low = mid;
     else high = mid - 1;
   }
-  return low > 0 ? text.slice(0, low).trimEnd() + ellipsis : '';
+  return low > 0 ? text.slice(0, cuts[low]).trimEnd() + ellipsis : '';
 }
 
 /** What a cell prints. The figures arrive pre-formatted by the same code that

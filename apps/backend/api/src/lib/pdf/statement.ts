@@ -43,6 +43,7 @@ import {
   TYPE,
   type TypeStyle,
   totalsRow,
+  tracking,
   truncate,
   withoutGroupColumn,
 } from './layout';
@@ -108,19 +109,25 @@ interface Pen {
   type: Typesetter;
 }
 
-/** How wide `runs` set, in the style they will be drawn in. */
+/** How wide `runs` set, in the style they will be drawn in.
+ *
+ *  Tracking is asked for per run rather than taken from the style, because a
+ *  run in a script that joins is set without it (`layout.tracking`, SC-985).
+ *  pdfkit charges tracking *between* characters and not after the last one, so
+ *  a string cut into k runs is short by exactly the k-1 boundaries; each
+ *  boundary is charged at the tracking of the run that precedes it, which is
+ *  what `put` advances the cursor by. Without this a tracked heading measures
+ *  narrower than it draws, which is the same defect as measuring `Gain / loss`
+ *  and drawing `GAIN / LOSS`. */
 function runsWidth(pen: Pen, runs: readonly Run[], style: TypeStyle): number {
-  const spacing = style.spacing ?? 0;
   let width = 0;
-  for (const run of runs) {
+  runs.forEach((run, index) => {
+    const spacing = tracking(style, run.text);
     pen.doc.font(run.font).fontSize(style.size);
     width += pen.doc.widthOfString(run.text, { characterSpacing: spacing });
-  }
-  // pdfkit charges tracking *between* characters and not after the last one, so
-  // a string cut into k runs is short by exactly the k-1 boundaries. Without
-  // this a tracked heading measures narrower than it draws, which is the same
-  // defect as measuring `Gain / loss` and drawing `GAIN / LOSS`.
-  return width + spacing * Math.max(runs.length - 1, 0);
+    if (index < runs.length - 1) width += spacing;
+  });
+  return width;
 }
 
 /**
@@ -181,10 +188,10 @@ function put(
   const width = options.width;
   const shown = width === undefined ? text : truncate(text, width, style, measurer(pen));
   const runs = laidOut(pen, shown, style);
-  const spacing = style.spacing ?? 0;
   let cursor =
     options.align === 'right' && width !== undefined ? x + width - runsWidth(pen, runs, style) : x;
   for (const run of runs) {
+    const spacing = tracking(style, run.text);
     pen.doc.font(run.font).fontSize(style.size).fillColor(colour);
     pen.doc.text(run.text, cursor, y, { lineBreak: false, characterSpacing: spacing });
     cursor += pen.doc.widthOfString(run.text, { characterSpacing: spacing }) + spacing;
