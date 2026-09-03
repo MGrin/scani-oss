@@ -99,6 +99,40 @@ describe('PeekHeader — what survives at the 50% rest height', () => {
     const html = render(<PeekHeader spec={{ title: 'CASH', primary: [] }} />);
     expect(html).toInclude('sr-only');
   });
+
+  /**
+   * SC-1002. The record's name is the top-level heading of the exposed
+   * document, so it is an `h1`.
+   *
+   * That is a claim about what a screen reader can reach, not about the DOM.
+   * While the peek is open Radix marks the surface behind it `aria-hidden`, so
+   * the list page's own `h1` — "Holdings", "Accounts", "Money" — is not in the
+   * accessibility tree at all. Measured on `demo.scani.xyz` 2026-09-04: the
+   * `h1` sat inside `main[aria-hidden="true"]` on all three, and the only
+   * headings left were this title and the body's `h3` sections. The outline
+   * therefore began at `h2` with nothing above it.
+   *
+   * Every v3 peek renders through this component, so the assertion covers
+   * `/holdings/<id>`, `/accounts/<id>` and `/payments/<id>` at once.
+   */
+  test('the record name is the top-level heading of what the dialog exposes', () => {
+    const html = render(<PeekHeader spec={SPEC} />);
+    expect(html).toInclude('<h1');
+    // The tag is the whole point: an `h2` here is a subsection of a heading
+    // that is `aria-hidden`, which is a level that leads nowhere.
+    expect(html).not.toInclude('<h2');
+  });
+
+  /**
+   * `asChild` makes Radix merge its props onto the `h1` rather than render its
+   * own element. The id it generates is what `DialogContent`'s
+   * `aria-labelledby` points at, so losing it would trade a heading-level fix
+   * for an unlabelled dialog — a strictly worse outcome, and a silent one.
+   */
+  test('promoting the tag keeps the id the dialog is labelled by', () => {
+    const html = render(<PeekHeader spec={SPEC} />);
+    expect(html).toMatch(/<h1[^>]*\sid="[^"]+"/);
+  });
 });
 
 describe('PeekBody — the depth', () => {

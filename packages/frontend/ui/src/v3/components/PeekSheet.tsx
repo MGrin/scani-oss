@@ -86,7 +86,16 @@ export function PeekHeader({ spec }: { spec: PeekSpec }) {
           <span className="flex shrink-0 items-center pt-0.5">{spec.leading}</span>
         ) : null}
         <div className="min-w-0 flex-1">
-          <SheetTitle className="truncate text-title">{spec.title}</SheetTitle>
+          {/* An `h1`, not `SheetTitle`'s default `h2` (SC-1002). While a peek
+              is open the surface behind it is `aria-hidden` — Radix sets it on
+              `<main>` — so the exposed document is this dialog and nothing
+              else. Its outline started at `h2` with no `h1` above it, which
+              made the record's name a subsection of a heading no assistive
+              technology could reach. `asChild` keeps Radix's generated id on
+              the element, so `aria-labelledby` still names this heading. */}
+          <SheetTitle asChild className="truncate text-title">
+            <h1>{spec.title}</h1>
+          </SheetTitle>
           {spec.subtitle ? (
             <SheetDescription className="truncate text-caption">{spec.subtitle}</SheetDescription>
           ) : (
