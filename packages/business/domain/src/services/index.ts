@@ -311,7 +311,13 @@ export {
   ExpiredCredentialsError,
   IntegrationCredentialsService,
 } from './users/IntegrationCredentialsService';
-export { ObservedBurnAnswerCurrencyMismatch, UserService } from './users/UserService';
+export {
+  COST_BASIS_METHOD_CHANGE_SOURCE,
+  type CostBasisMethodChange,
+  ObservedBurnAnswerCurrencyMismatch,
+  type UpdateUserResult,
+  UserService,
+} from './users/UserService';
 export { UserWalletService } from './users/UserWalletService';
 export { VaultService } from './users/VaultService';
 export {

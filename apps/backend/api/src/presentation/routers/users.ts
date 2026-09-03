@@ -16,6 +16,7 @@ import {
 import { TRPCError } from '@trpc/server';
 import { Container } from 'typedi';
 import { z } from 'zod';
+import { enqueuePortfolioRollup } from '../lib/portfolio-rollup';
 import { strictInput } from '../lib/strict-input';
 import { requireAuth } from '../middleware/auth';
 import { protectedProcedure, router } from '../trpc';
@@ -37,21 +38,48 @@ export const usersRouter = router({
     return dbUser;
   }),
 
-  // Update current user. When `baseCurrencyId` actually changes we
-  // broadcast a `user:update` realtime event so every open tab /
-  // device for this user re-invalidates portfolio queries without
-  // waiting for the user to refresh — every dashboard total, holding
-  // price, vault value, etc. is denominated in the user's base, so
-  // the currency switch is effectively a "refetch everything that
-  // shows money" trigger. Name-only edits do NOT emit (no portfolio
-  // impact; refetching dozens of queries on a name typo is wasteful).
+  /**
+   * Update current user.
+   *
+   * Two of the fields here are not preferences — they are the unit and the rule
+   * every money figure on every screen is computed with, so changing either
+   * moves numbers the user has already read. Both emit a `user:update` realtime
+   * event, which every open tab and device turns into a re-invalidation of the
+   * portfolio queries. Name-only edits do NOT emit: refetching dozens of queries
+   * on a name typo is waste, and there is nothing to explain.
+   *
+   * - `baseCurrencyId` — every dashboard total, holding price and vault value is
+   *   denominated in it, so a switch is effectively "refetch everything that
+   *   shows money".
+   * - `costBasisMethod` — decides which lots a disposal is matched against, so it
+   *   moves every REALIZED figure, historical ones included (SC-957).
+   *
+   * ## What a cost-basis change does, and why it is not silent
+   *
+   * The persisted derived figures are the `portfolio_value_daily` rollup rows,
+   * which carry cost basis and realized PnL, plus the live valuation cache.
+   * `enqueuePortfolioRollup` busts the cache and enqueues the same
+   * `PORTFOLIO_HISTORY_BACKFILL` job the 04:00 UTC schedule runs, over
+   * `PORTFOLIO_HISTORY_LOOKBACK_DAYS` — so re-computation is bounded to that
+   * window for this one user, and BullMQ's job id coalesces a burst of edits
+   * into one run.
+   *
+   * The event is emitted for the same reason the currency one is: figures that
+   * move while somebody is looking at them must move VISIBLY. `UserService`
+   * has already recorded what the method was, what it became and when, so a
+   * figure that moved also has a stored cause after the fact — which is the
+   * property this ticket is actually about.
+   */
   updateCurrent: protectedProcedure
     .input(strictInput(UpdateUserDto))
     .output(CurrentUserDto)
     .mutation(async ({ input, ctx }) => {
       const { dbUser } = await requireAuth(ctx);
       const previousBaseCurrencyId = dbUser.baseCurrencyId;
-      const updated = await Container.get(UserService).updateUser(dbUser.id, input);
+      const { user: updated, costBasisMethodChange } = await Container.get(UserService).updateUser(
+        dbUser.id,
+        input
+      );
       if (input.baseCurrencyId !== undefined && input.baseCurrencyId !== previousBaseCurrencyId) {
         emitEntityChange({
           entityType: 'user',
@@ -62,6 +90,33 @@ export const usersRouter = router({
             source: 'base-currency-change',
             previousBaseCurrencyId,
             newBaseCurrencyId: updated.baseCurrencyId,
+          },
+        });
+      }
+      if (costBasisMethodChange) {
+        usersLogger.info(
+          {
+            userId: dbUser.id,
+            previousMethod: costBasisMethodChange.previousMethod,
+            newMethod: costBasisMethodChange.newMethod,
+          },
+          'Cost-basis method changed — recomputing every figure it moved'
+        );
+        // Non-fatal by construction: `enqueuePortfolioRollup` swallows enqueue
+        // failures because the nightly rollup and the next mutation catch up.
+        // The history row is already committed either way, so a lost enqueue
+        // leaves stale figures with a recorded cause rather than moved figures
+        // with none.
+        await enqueuePortfolioRollup(dbUser.id);
+        emitEntityChange({
+          entityType: 'user',
+          operationType: 'update',
+          entityId: dbUser.id,
+          userId: dbUser.id,
+          metadata: {
+            source: 'cost-basis-method-change',
+            previousCostBasisMethod: costBasisMethodChange.previousMethod,
+            newCostBasisMethod: costBasisMethodChange.newMethod,
           },
         });
       }

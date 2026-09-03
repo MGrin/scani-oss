@@ -1,9 +1,12 @@
+import { type DatabaseTransaction, withTransaction } from '@scani/db';
 import { db } from '@scani/db/connection';
 import type { User } from '@scani/db/schema';
 import * as schema from '@scani/db/schema';
-import type { ObservedBurnAnswerInput, UpdateUserInput } from '@scani/shared';
+import type { CostBasisMethodDto, ObservedBurnAnswerInput, UpdateUserInput } from '@scani/shared';
+import { parseCostBasisMethod } from '@scani/shared';
 import { eq } from 'drizzle-orm';
 import { Container, Service } from 'typedi';
+import { UserCostBasisMethodChangeRepository } from '../../repositories/UserCostBasisMethodChangeRepository';
 import { UserRepository } from '../../repositories/UserRepository';
 import { BaseService } from '../BaseService';
 
@@ -35,21 +38,118 @@ export interface BaseCurrencyToken {
   name: string;
 }
 
+/**
+ * The only write path that changes `users.cost_basis_method`, named for the
+ * `source` column's CHECK (SC-957). A second writer — a support tool, an admin
+ * action — must add a value there in a migration, which is the loud step that a
+ * nullable actor column would not have forced.
+ */
+export const COST_BASIS_METHOD_CHANGE_SOURCE = 'user_profile_update';
+
+/** A cost-basis method change that actually moved figures, or `null`. */
+export interface CostBasisMethodChange {
+  readonly previousMethod: CostBasisMethodDto;
+  readonly newMethod: CostBasisMethodDto;
+}
+
+/**
+ * The updated row, plus whether this edit moved the cost-basis method.
+ *
+ * The second half is returned rather than acted on here: re-computation is a
+ * queued job, and enqueueing inside the transaction that writes the row would
+ * publish work for a change that may still roll back.
+ */
+export interface UpdateUserResult {
+  readonly user: User;
+  readonly costBasisMethodChange: CostBasisMethodChange | null;
+}
+
 @Service()
 export class UserService extends BaseService {
   private readonly userRepository = Container.get(UserRepository);
+  private readonly costBasisMethodChanges = Container.get(UserCostBasisMethodChangeRepository);
 
   constructor() {
     super('UserService');
   }
 
-  async updateUser(userId: string, data: UpdateUserInput): Promise<User> {
+  /**
+   * Apply a profile edit, and RECORD it when it moved the cost-basis method
+   * (SC-957).
+   *
+   * The method decides which lots a disposal is matched against, so changing it
+   * changes every realized figure the account has already been shown. It is not
+   * refused — mgrin weighed locking it, and locking only periods already shown,
+   * and declined both on 2026-09-03: FIFO against HMRC-verified section 104 is
+   * exactly the decision a new user gets wrong on day one, and a lock punishes
+   * the person least equipped to have made it. What changes is that the change
+   * stops being invisible.
+   *
+   * ## Why the row and the column are written in ONE transaction
+   *
+   * They are two halves of one fact. A column that moved with no row beside it
+   * is precisely the state this ticket is about, and it is the half that
+   * survives a partial failure if these are two statements — the user row is
+   * written first because it is the one the caller waits on. Committed together,
+   * the history cannot be missing an era.
+   *
+   * ## Why the caller is told, rather than this method acting
+   *
+   * Re-computing every figure the change moved is a queued job, and enqueueing
+   * from inside a transaction publishes work for a row that may still roll back.
+   * The change is returned; `users.updateCurrent` enqueues it after the commit.
+   *
+   * ## Why a no-op change records nothing
+   *
+   * Saving the same method again moved no figure, so a row for it would explain
+   * nothing and dilute the only reading this table has — every row moved
+   * somebody's numbers. `user_cost_basis_method_changes_is_a_change` refuses
+   * such a row at the database as well, so this is not merely a habit here.
+   */
+  async updateUser(
+    userId: string,
+    data: UpdateUserInput,
+    transaction?: DatabaseTransaction
+  ): Promise<UpdateUserResult> {
     try {
-      const existingUser = await this.userRepository.findById(userId);
+      const existingUser = await this.userRepository.findById(userId, transaction);
       this.assertExists(existingUser, `User with ID ${userId} not found`);
-      const updatedUser = await this.userRepository.update(userId, data);
-      this.assertExists(updatedUser, 'Failed to update user');
-      return updatedUser;
+
+      // `parseCostBasisMethod` on the stored side because the column is `text`
+      // with a CHECK, so the type system sees a string a database constraint
+      // narrows. Comparing the raw column against a parsed input would compare
+      // two differently-trusted values.
+      const previousMethod = parseCostBasisMethod(existingUser.costBasisMethod);
+      const nextMethod = data.costBasisMethod;
+      const change =
+        nextMethod !== undefined && nextMethod !== previousMethod
+          ? { previousMethod, newMethod: nextMethod }
+          : null;
+
+      const write = async (tx: DatabaseTransaction): Promise<User> => {
+        const updated = await this.userRepository.update(userId, data, tx);
+        this.assertExists(updated, 'Failed to update user');
+        if (change) {
+          await this.costBasisMethodChanges.create(
+            {
+              userId,
+              previousMethod: change.previousMethod,
+              newMethod: change.newMethod,
+              source: COST_BASIS_METHOD_CHANGE_SOURCE,
+            },
+            tx
+          );
+        }
+        return updated;
+      };
+      // A caller already in a transaction JOINS it rather than opening a second
+      // one: two transactions cannot commit together, which is the one property
+      // the row and the column need from each other.
+      const updatedUser = transaction
+        ? await write(transaction)
+        : await withTransaction(write, { name: 'updateUser' });
+
+      return { user: updatedUser, costBasisMethodChange: change };
     } catch (error) {
       throw this.handleError(error, 'updateUser');
     }

@@ -20,12 +20,7 @@ import { PeriodDisposalsService, type ReturnsScope, ReturnsService } from '@scan
 import { HIDE_CLOSED_HOLDINGS_STALE_DAYS } from '@scani/domain/use-cases';
 import { PORTFOLIO_HISTORY_BACKFILL, PORTFOLIO_HISTORY_LOOKBACK_DAYS } from '@scani/jobs';
 import { BullMqEnqueueService } from '@scani/queue';
-import {
-  costBasisMethodSchema,
-  type PeriodDisposals,
-  parseCostBasisMethod,
-  toDisposalLotMatchDto,
-} from '@scani/shared';
+import { type PeriodDisposals, parseCostBasisMethod, toDisposalLotMatchDto } from '@scani/shared';
 import { TRPCError } from '@trpc/server';
 import Decimal from 'decimal.js';
 import { and, eq, sql } from 'drizzle-orm';
@@ -205,7 +200,6 @@ const DisposalWindowInput = z
   .object({
     from: z.coerce.date(),
     to: z.coerce.date(),
-    costBasisMethod: costBasisMethodSchema.optional(),
   })
   .refine((v) => v.to.getTime() > v.from.getTime(), {
     message: '`to` must be strictly greater than `from` — the window is half-open, [from, to)',
@@ -566,13 +560,28 @@ export const portfolioRouter = router({
    * `userId` and sources its holding set from `findIdsForUser`, so the caller
    * has no way to name a holding at all. Contrast `realizedLedger`, which does
    * take a holding id and therefore does carry one.
+   *
+   * **The method is the account's stored one and cannot be overridden per
+   * request (SC-957).** This input carried an optional `costBasisMethod` that
+   * won over `users.cost_basis_method`, so a caller could be handed realized
+   * figures computed under a rule the user never selected and that nothing
+   * anywhere recorded. mgrin's 2026-09-03 decision is that the method stays
+   * freely changeable *with a recorded history* — and an override defeats that
+   * by construction, because the method it computes under is never stored, so
+   * no history row can explain the figure it produced.
+   *
+   * It was removed rather than recorded because it had no caller to serve:
+   * `git grep getDisposals` returned exactly one line, this definition, and
+   * `costBasisMethod` appeared in no frontend file. `strictInput` (SC-675) means
+   * a client that sends it now gets a refusal rather than being quietly ignored,
+   * so the removal cannot fail silently either.
    */
   getDisposals: protectedProcedure
     .input(strictInput(DisposalWindowInput))
     .query(async ({ ctx, input }): Promise<PeriodDisposals> => {
       const { dbUser } = await requireAuth(ctx);
       const baseCurrencyId = dbUser.baseCurrencyId ?? null;
-      const method = parseCostBasisMethod(input.costBasisMethod ?? dbUser.costBasisMethod);
+      const method = parseCostBasisMethod(dbUser.costBasisMethod);
       const empty = {
         periodStart: input.from.toISOString(),
         periodEnd: input.to.toISOString(),
