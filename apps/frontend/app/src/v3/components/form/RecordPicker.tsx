@@ -44,6 +44,9 @@ interface RecordPickerProps {
   onQueryChange: (query: string) => void;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Every match, not a capped page of them — the cap is
+   *  `RECORD_PICKER_MAX_ROWS` and this component applies it, so that it can
+   *  say how many rows it is holding back. */
   options: PickerOption[];
   isLoading?: boolean;
   placeholder: string;
@@ -67,6 +70,21 @@ interface RecordPickerProps {
   disabled?: boolean;
   inputId?: string;
 }
+
+/**
+ * How many rows the dropdown renders before it stops and says so (SC-862).
+ *
+ * The cap itself is not new — four callers each held their own `.slice(0, 20)`
+ * and none of them said anything, so the list simply ended. An account past the
+ * twentieth was unreachable and the screen was indistinguishable from one
+ * showing every account there is. The cap lives HERE now because this is the
+ * component that renders the list, and a component that ends a list silently
+ * cannot be fixed by the caller that handed it one.
+ *
+ * Exported because `VendorField` has to know which rows are actually on screen
+ * to decide what counts as a near-duplicate worth warning about.
+ */
+export const RECORD_PICKER_MAX_ROWS = 20;
 
 const ROW =
   'flex w-full items-center gap-2 px-3 py-3 text-start text-body transition-colors duration-fast ease-emphasized hover:bg-surface-hover focus-visible:outline-none focus-visible:bg-surface-hover disabled:opacity-50';
@@ -129,6 +147,8 @@ export function RecordPicker({
   }
 
   const canCreate = Boolean(createLabel && onCreate);
+  const shown = options.slice(0, RECORD_PICKER_MAX_ROWS);
+  const withheld = options.length - shown.length;
 
   return (
     <div className="relative" ref={containerRef}>
@@ -197,7 +217,7 @@ export function RecordPicker({
           ) : null}
 
           {!isLoading &&
-            options.map((option) => (
+            shown.map((option) => (
               <button
                 key={option.id}
                 type="button"
@@ -223,6 +243,26 @@ export function RecordPicker({
               the name that was typed. */}
           {!isLoading && options.length === 0 && !suggestions?.length ? (
             <p className="px-3 py-3 text-body text-muted-foreground">{emptyLabel}</p>
+          ) : null}
+
+          {/* Under the rows and above the create row, so create stays last
+              (SC-69 1.4) and this reads as the foot of the list it describes.
+
+              It says what to DO, not only that rows were withheld: the way to
+              the twenty-first row is a narrower query, and a bare count leaves
+              the reader looking for a scrollbar that will never appear. Not a
+              button — "show the rest" is the 500-row dropdown this cap exists
+              to prevent. */}
+          {!isLoading && withheld > 0 ? (
+            <p
+              role="status"
+              className="border-t border-border px-3 py-2 text-caption text-muted-foreground"
+            >
+              {t('v3.form.recordPicker.shownOf', {
+                shown: shown.length,
+                total: options.length,
+              })}
+            </p>
           ) : null}
 
           {/* LAST, under the matches — never first (SC-69 1.4). A dropdown

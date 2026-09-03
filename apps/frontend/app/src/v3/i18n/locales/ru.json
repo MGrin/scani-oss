@@ -217,7 +217,8 @@
       "recordPicker": {
         "change": "Изменить: {{label}}",
         "changeAction": "Изменить",
-        "searching": "Ищем…"
+        "searching": "Ищем…",
+        "shownOf": "Показано {{shown}} из {{total}} — продолжайте вводить, чтобы сузить"
       },
       "fiatCurrency": {
         "noun": "валюта",

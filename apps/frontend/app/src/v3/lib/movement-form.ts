@@ -169,9 +169,9 @@ function haystack(holding: MovementHolding): string {
  *
  * The ordering is the answer to "what did I mean by typing that": a query that
  * starts a token's symbol means that token, and one that starts an institution
- * means everything held there. Without it a 20-row cap is decided by insertion
- * order, so typing `btc` can return twenty rows of a bank that happens to hold
- * a token called `BTCB`.
+ * means everything held there. Without it the renderer's row cap is decided by
+ * insertion order, so typing `btc` can put twenty rows of a bank that happens
+ * to hold a token called `BTCB` in front of the one holding that is Bitcoin.
  */
 function rank(holding: MovementHolding, query: string): number {
   const pot = (holding.label || holding.token.symbol).toLowerCase();
@@ -198,11 +198,18 @@ function alphabetical(a: MovementHolding, b: MovementHolding): number {
  * levels stays useful once a portfolio has more rows than the list can show.
  * An empty query is the whole list, alphabetically: opening the field with
  * nothing typed should still show what there is to pick.
+ *
+ * **`limit` no longer defaults to 20 (SC-862).** It used to, and `HoldingField`
+ * took the default — so the list stopped at twenty holdings with nothing on
+ * screen saying it had. `RecordPicker` caps now and says how many it withheld;
+ * this function ranks, which is what makes the first twenty the right twenty.
+ * The parameter stays for a caller that genuinely wants a bounded slice, and
+ * for the test that pins the ranking against one.
  */
 export function matchMovementHoldings<T extends MovementHolding>(
   holdings: readonly T[],
   query: string,
-  limit = 20
+  limit = Number.POSITIVE_INFINITY
 ): T[] {
   const trimmed = query.trim().toLowerCase();
   if (!trimmed) return [...holdings].sort(alphabetical).slice(0, limit);
