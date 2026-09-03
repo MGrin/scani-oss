@@ -119,8 +119,22 @@ describe('matchMovementHoldings', () => {
     ]);
   });
 
-  test('the cap is honoured', () => {
+  test('the cap is honoured when one is asked for', () => {
     expect(matchMovementHoldings(PORTFOLIO, '', 2)).toHaveLength(2);
+  });
+
+  /**
+   * And is NOT applied when one is not (SC-862). It used to default to 20, and
+   * `HoldingField` took the default — so a portfolio of twenty-one holdings
+   * showed twenty and nothing on screen said the list had stopped. `RecordPicker`
+   * caps now, and can only say how many rows it withheld if it is handed all of
+   * them. The control is the line above: an explicit cap still binds.
+   */
+  test('with no cap asked for, every match comes back', () => {
+    const many = Array.from({ length: 25 }, (_, index) =>
+      holding({ id: `many-${index}`, account: { name: `Account ${index}` } })
+    );
+    expect(matchMovementHoldings(many, '')).toHaveLength(25);
   });
 });
 

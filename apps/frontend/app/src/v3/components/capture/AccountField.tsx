@@ -65,9 +65,13 @@ export function AccountField({
       ? all.filter((account) => account.institutionId === institutionId)
       : all;
   const term = query.trim().toLowerCase();
-  const options = (term ? scoped.filter((a) => a.name.toLowerCase().includes(term)) : scoped)
-    .slice(0, 20)
-    .map((account) => ({ id: account.id, label: account.name }));
+  // Not capped here: `RecordPicker` caps, and it is the only party that can
+  // then say how many rows it held back. A `.slice(0, 20)` at this line meant
+  // a reader with twenty-one accounts saw twenty and nothing at all saying so
+  // (SC-862).
+  const options = (term ? scoped.filter((a) => a.name.toLowerCase().includes(term)) : scoped).map(
+    (account) => ({ id: account.id, label: account.name })
+  );
 
   const selectedLabel = all.find((account) => account.id === value)?.name ?? value;
 

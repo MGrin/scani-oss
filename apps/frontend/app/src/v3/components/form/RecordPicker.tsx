@@ -44,7 +44,24 @@ interface RecordPickerProps {
   onQueryChange: (query: string) => void;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Every match, not a capped page of them — the cap is
+   *  `RECORD_PICKER_MAX_ROWS` and this component applies it, so that it can
+   *  say how many rows it is holding back. */
   options: PickerOption[];
+  /**
+   * Overrides `RECORD_PICKER_MAX_ROWS` for a field whose list may not be cut.
+   *
+   * `Number.POSITIVE_INFINITY` is the only value anything passes, and only
+   * `FiatCurrencyField` passes it: 69 seeded currencies is a list a reader
+   * SCROLLS to recognise a name in, because somebody choosing a base currency
+   * often knows "Swiss Franc" and not `CHF`. That decision predates this cap
+   * and is stated in that file; overriding it here would be a design change
+   * wearing a bug fix (SC-862).
+   *
+   * Uncapping can never produce the defect this cap exists to announce — a
+   * list that shows everything cannot be short about it.
+   */
+  maxRows?: number;
   isLoading?: boolean;
   placeholder: string;
   /** Announces the search field, since `<Field>`'s label sits on the control
@@ -68,6 +85,21 @@ interface RecordPickerProps {
   inputId?: string;
 }
 
+/**
+ * How many rows the dropdown renders before it stops and says so (SC-862).
+ *
+ * The cap itself is not new — four callers each held their own `.slice(0, 20)`
+ * and none of them said anything, so the list simply ended. An account past the
+ * twentieth was unreachable and the screen was indistinguishable from one
+ * showing every account there is. The cap lives HERE now because this is the
+ * component that renders the list, and a component that ends a list silently
+ * cannot be fixed by the caller that handed it one.
+ *
+ * Exported because `VendorField` has to know which rows are actually on screen
+ * to decide what counts as a near-duplicate worth warning about.
+ */
+export const RECORD_PICKER_MAX_ROWS = 20;
+
 const ROW =
   'flex w-full items-center gap-2 px-3 py-3 text-start text-body transition-colors duration-fast ease-emphasized hover:bg-surface-hover focus-visible:outline-none focus-visible:bg-surface-hover disabled:opacity-50';
 
@@ -80,6 +112,7 @@ export function RecordPicker({
   open,
   onOpenChange,
   options,
+  maxRows = RECORD_PICKER_MAX_ROWS,
   isLoading,
   placeholder,
   ariaLabel,
@@ -129,6 +162,8 @@ export function RecordPicker({
   }
 
   const canCreate = Boolean(createLabel && onCreate);
+  const shown = options.slice(0, maxRows);
+  const withheld = options.length - shown.length;
 
   return (
     <div className="relative" ref={containerRef}>
@@ -197,7 +232,7 @@ export function RecordPicker({
           ) : null}
 
           {!isLoading &&
-            options.map((option) => (
+            shown.map((option) => (
               <button
                 key={option.id}
                 type="button"
@@ -223,6 +258,26 @@ export function RecordPicker({
               the name that was typed. */}
           {!isLoading && options.length === 0 && !suggestions?.length ? (
             <p className="px-3 py-3 text-body text-muted-foreground">{emptyLabel}</p>
+          ) : null}
+
+          {/* Under the rows and above the create row, so create stays last
+              (SC-69 1.4) and this reads as the foot of the list it describes.
+
+              It says what to DO, not only that rows were withheld: the way to
+              the twenty-first row is a narrower query, and a bare count leaves
+              the reader looking for a scrollbar that will never appear. Not a
+              button — "show the rest" is the 500-row dropdown this cap exists
+              to prevent. */}
+          {!isLoading && withheld > 0 ? (
+            <p
+              role="status"
+              className="border-t border-border px-3 py-2 text-caption text-muted-foreground"
+            >
+              {t('v3.form.recordPicker.shownOf', {
+                shown: shown.length,
+                total: options.length,
+              })}
+            </p>
           ) : null}
 
           {/* LAST, under the matches — never first (SC-69 1.4). A dropdown
