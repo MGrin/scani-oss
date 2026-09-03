@@ -71,7 +71,7 @@ describe('visualRuns', () => {
      * The regression this one guards is subtle enough to be worth its own test.
      * Rule I1 gives European digits in left-to-right text an embedding level of
      * their OWN — 2, not 0 — so a reordering that reversed "every run above the
-     * base level" would set `1,234.50` as `05.432,1` on a page that has never
+     * base level" would set `12.34` as `43.21` on a page that has never
      * contained a right-to-left character. Rule L2 saves it by reversing twice,
      * and the early exit here never gets that far: with no odd level present
      * there is nothing to reorder.
@@ -120,7 +120,7 @@ describe('visualRuns', () => {
      * an Arabic line resolves to a level of its own and must keep its digits in
      * reading order while moving to the other end of the line. Reversing the
      * characters of every odd-level run — the obvious hand-rolled shortcut —
-     * places the run correctly and prints `05.432,1`.
+     * places the run correctly and prints its digits back to front.
      */
     it('moves an amount without reversing its digits', () => {
       expect(line('بنك 1,234.50')).toBe('1,234.50 بنك');
