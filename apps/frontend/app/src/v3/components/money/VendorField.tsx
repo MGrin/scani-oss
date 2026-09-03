@@ -5,7 +5,7 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { trpc } from '@/lib/trpc';
 import { Field } from '../form/Field';
-import { RecordPicker } from '../form/RecordPicker';
+import { RECORD_PICKER_MAX_ROWS, RecordPicker } from '../form/RecordPicker';
 
 /**
  * Who the payment is to (or from). Search the vendors you have, or create one
@@ -72,13 +72,13 @@ export function VendorField({
     : staged;
 
   const term = query.trim().toLowerCase();
-  const options = (term ? items.filter((v) => v.displayName.toLowerCase().includes(term)) : items)
-    .slice(0, 20)
-    .map((vendor) => ({
-      id: vendor.id,
-      label: vendor.displayName,
-      hint: vendor.category ?? undefined,
-    }));
+  const options = (
+    term ? items.filter((v) => v.displayName.toLowerCase().includes(term)) : items
+  ).map((vendor) => ({
+    id: vendor.id,
+    label: vendor.displayName,
+    hint: vendor.category ?? undefined,
+  }));
 
   // Whichever name is on the table: what the user is typing, or the one the
   // invoice supplied and nobody has confirmed yet.
@@ -90,8 +90,11 @@ export function VendorField({
   );
 
   // A candidate the substring filter already surfaced is not a near-duplicate
-  // warning, it's the row directly below.
-  const shown = new Set(options.map((option) => option.id));
+  // warning, it's the row directly below. Only the rows `RecordPicker` will
+  // actually render count: past the cap there IS no row below, so suppressing
+  // the warning on the strength of one would hide the near-duplicate entirely
+  // (SC-862).
+  const shown = new Set(options.slice(0, RECORD_PICKER_MAX_ROWS).map((option) => option.id));
   const candidates = (similar.data ?? [])
     .filter((candidate) => candidate.vendor.id !== value && !shown.has(candidate.vendor.id))
     .slice(0, 3);

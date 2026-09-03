@@ -26,9 +26,6 @@ import { RecordPicker } from '../form/RecordPicker';
 
 type TokenRow = RouterOutputs['tokens']['getAll'][number];
 
-/** Enough to scan, few enough that the list does not become the page. */
-const MAX_RESULTS = 20;
-
 /** `tokens.getAll` calls the CODE `type`, so that is what the helper's
  *  `typeCode` gets — see `tokenDisplayName` on why the name is not `type`. */
 export function tokenLabel(
@@ -63,9 +60,10 @@ export function rankCurrencyMatches(
     return token.type === 'fiat' ? 1 : 2;
   };
 
-  return [...matches]
-    .sort((a, b) => band(a) - band(b) || a.symbol.localeCompare(b.symbol))
-    .slice(0, MAX_RESULTS);
+  // Ranked, not capped: `RecordPicker` applies `RECORD_PICKER_MAX_ROWS` and is
+  // the only party that can then say how many rows it withheld (SC-862). The
+  // ranking is what makes its first twenty the right twenty.
+  return [...matches].sort((a, b) => band(a) - band(b) || a.symbol.localeCompare(b.symbol));
 }
 
 interface CurrencyPickerProps {

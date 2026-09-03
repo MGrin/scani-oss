@@ -57,9 +57,10 @@ export function InstitutionField({
 
   const items = institutions.data ?? [];
   const term = query.trim().toLowerCase();
-  const options = (term ? items.filter((i) => i.name.toLowerCase().includes(term)) : items)
-    .slice(0, 20)
-    .map((institution) => {
+  // `RecordPicker` caps and announces it (SC-862) — see `AccountField`, which
+  // sits directly below this one in the same fieldset.
+  const options = (term ? items.filter((i) => i.name.toLowerCase().includes(term)) : items).map(
+    (institution) => {
       const favicon = institutionIconUrl(institution);
       return {
         id: institution.id,
@@ -75,7 +76,8 @@ export function InstitutionField({
           />
         ) : undefined,
       };
-    });
+    }
+  );
 
   const selectedLabel = items.find((institution) => institution.id === value)?.name ?? value;
 

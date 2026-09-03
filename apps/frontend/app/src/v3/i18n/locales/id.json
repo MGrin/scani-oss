@@ -1537,7 +1537,8 @@
       "recordPicker": {
         "change": "Ubah {{label}}",
         "changeAction": "Ubah",
-        "searching": "Mencari…"
+        "searching": "Mencari…",
+        "shownOf": "Menampilkan {{shown}} dari {{total}} — terus ketik untuk mempersempit"
       },
       "fiatCurrency": {
         "noun": "mata uang",

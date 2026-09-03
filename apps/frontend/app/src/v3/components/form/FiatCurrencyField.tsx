@@ -55,8 +55,15 @@ function fiatCurrencyName(t: TFunction, currency: Pick<FiatCurrency, 'symbol' | 
  * those letters.
  *
  * Uncapped, unlike `CurrencyField`'s twenty. That list is drawn from every
- * token in the database; this one is 69 rows and the picker scrolls, so a cap
- * would only hide currencies without saying so.
+ * token in the database; this one is 69 rows and the picker scrolls.
+ *
+ * SC-862 gave `RecordPicker` a row cap that announces itself, which retires
+ * half the original reason — a cap here would no longer "hide currencies
+ * without saying so". The other half stands and is why this field opts out
+ * with `maxRows`: somebody choosing a base currency often knows "Swiss Franc"
+ * and not `CHF`, so this is a list to SCROLL, and "keep typing to narrow" is
+ * the wrong instruction to give a reader who cannot type what they are
+ * looking for.
  */
 export function rankFiatCurrencies(
   t: TFunction,
@@ -149,6 +156,10 @@ export function FiatCurrencyField({
         // was showing comes back rather than leaving an empty search box.
         if (!next) setChanging(false);
       }}
+      // See the note on `rankFiatCurrencies` above: this one list is scrolled
+      // rather than narrowed, so it is the only caller that opts out of
+      // `RECORD_PICKER_MAX_ROWS` (SC-862).
+      maxRows={Number.POSITIVE_INFINITY}
       options={rankFiatCurrencies(t, list, query).map((currency) => ({
         id: currency.id,
         label: currency.symbol,

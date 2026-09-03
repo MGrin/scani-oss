@@ -1537,7 +1537,8 @@
       "recordPicker": {
         "change": "更改{{label}}",
         "changeAction": "更改",
-        "searching": "搜索中…"
+        "searching": "搜索中…",
+        "shownOf": "显示 {{total}} 项中的 {{shown}} 项 — 继续输入以缩小范围"
       },
       "fiatCurrency": {
         "noun": "货币",
