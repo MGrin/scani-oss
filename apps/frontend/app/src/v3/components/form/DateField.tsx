@@ -134,7 +134,12 @@ export function DateField({
         onChange={(event) => onChange(event.target.value)}
         disabled={disabled}
         className={cn(
-          'peer absolute inset-0 h-full w-full appearance-none bg-transparent px-3 text-body opacity-0 outline-none',
+          // `-inset-px`, not `inset-0`: the wrapper is `h-11` INCLUDING its
+          // 1px border, so an input inset to the content box is 42px tall and
+          // the border ring is dead to a finger. The §2.6 walk measured
+          // exactly that as soon as it could see inputs at all —
+          // `input[type=date] is 325×42, under 44` on two routes (SC-989).
+          'peer absolute -inset-px appearance-none bg-transparent px-3 text-body opacity-0 outline-none',
           'focus:opacity-100 [&::-webkit-date-and-time-value]:text-start'
         )}
       />

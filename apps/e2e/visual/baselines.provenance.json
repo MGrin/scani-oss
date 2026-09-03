@@ -131,17 +131,22 @@
       }
     },
     "kitchen-sink-phone": {
-      "sha256": "2b59e926123933c800ac08e7c8ffac693eb5076db8a6b4caf3ae5523f6f087bf",
-      "capturedAt": null,
-      "head": null,
-      "renderedDigest": null,
-      "dirty": [],
-      "dirtyCount": 0,
+      "head": "a430837ac832a9ab65e9b3016be29f257c87f958",
+      "renderedDigest": "c358c75d7e660c4ffe775a813adeaab6b57981063ad1058d90f172dd8e6fb13f",
+      "dirty": [
+        "apps/e2e/fixtures/a11y.ts",
+        "apps/frontend/app/src/v3/components/form/DateField.tsx",
+        "apps/frontend/app/tests/v3/token-hygiene.test.ts",
+        "packages/frontend/ui/src/styles/v3-tokens.css"
+      ],
+      "dirtyCount": 4,
       "base": {
-        "ref": null,
-        "confirmed": false,
+        "ref": "a430837ac832a9ab65e9b3016be29f257c87f958",
+        "confirmed": true,
         "behind": 0
-      }
+      },
+      "sha256": "7fb946b93c94ea61c471b1a2e866d239c1e936662ff5da769161f4fb179a4414",
+      "capturedAt": "2026-09-03T09:16:52.894Z"
     },
     "payment-form-phone": {
       "head": "e50d9281d7f96143d3f0a4c93703a2eddc368dcf",
