@@ -92,17 +92,17 @@
       }
     },
     "home-phone-rtl": {
-      "sha256": "22d00710128791d4dc55cfd7764ea92c3fc60dd161a3b1a3a44b1f5273873922",
-      "capturedAt": null,
-      "head": null,
-      "renderedDigest": null,
+      "head": "0c03d231d0b4130e6764e8c0b7798af5b7b3f921",
+      "renderedDigest": "ebea7c887a7da002e4d3e1e7b7e02c863cd44b2523e606cda866ba6595290def",
       "dirty": [],
       "dirtyCount": 0,
       "base": {
-        "ref": null,
-        "confirmed": false,
-        "behind": 0
-      }
+        "ref": "97cbf01a570076769e34c0dd1214d8a45caba63c",
+        "confirmed": true,
+        "behind": 1
+      },
+      "sha256": "1dc2c5c06e7d9a8e060a685f3d7140ab8b1fa02840dbf39c36c4111fde7e413f",
+      "capturedAt": "2026-09-03T07:54:31.078Z"
     },
     "kitchen-sink-desktop": {
       "sha256": "dd3eea212c767c305d00fb547ec5a109e258646928341da7028c487bee263da3",
