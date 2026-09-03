@@ -155,6 +155,55 @@ describe('v3 token hygiene', () => {
   });
 
   /**
+   * The third member of the tap-floor family above, and the one neither of
+   * them could have caught: an ELEMENT the floor does not reach (SC-978).
+   *
+   * The two tests above are about a class or an inline style outranking
+   * `min-height: var(--tap-target)`. This one is about never matching it.
+   * V3-23's `@media (pointer: coarse)` block spends `--tap-target` on
+   * `button, [role=button], [role=tab], [role=radiogroup], a[href],
+   * input[type=button|submit]`, and the unscoped v2 rule it neutralises
+   * (`apps/frontend/app/src/styles/accessibility.css`) lists the same shapes.
+   * A native `<select>` is in neither list, so its height is whatever the call
+   * site wrote — `h-9`, 36px, on a phone.
+   *
+   * And the §2.6 walk is blind to exactly the same set:
+   * `measureUndersizedTargets` in `apps/e2e/fixtures/a11y.ts` queries
+   * `button, a[href], [role="button"], [role="tab"], summary`. So the one v3
+   * control that was not a `<button>` was the one control the gate never
+   * measured, which is why a 36px target survived the accessibility gate that
+   * exists to find 36px targets.
+   *
+   * `@scani/ui`'s `Select` renders a `<button>` trigger, so it earns the floor
+   * from the token layer and enters the walk's measured set. This test is the
+   * cheap part: a raw `<select>` type-checks, lints, renders and passes the
+   * a11y walk, so a text scan is the only thing that can see it.
+   */
+  test('no v3 surface uses a native select', async () => {
+    // Lower-case `<select` only. `<SelectTrigger` / `<SelectContent` /
+    // `<SelectItem` are the fix rather than the defect, and a JSX regex is
+    // case-sensitive, so the component names cannot match; the lookahead is
+    // belt-and-braces against a longer lower-case tag.
+    //
+    // NOT `/<select[\s>]/`, which was the first cut and could not see the very
+    // element it was written for. `EntitiesPage` opened the tag on its own line
+    // with the attributes below it, so the character after `select` was the end
+    // of the line and neither arm of that class matched. The control below is
+    // what found it — the first arm is that exact shape.
+    const nativeSelect = /<select(?![\w-])/;
+    // The pattern has to be able to fire, or an empty result would mean
+    // nothing. Both directions: what it must catch, and what it must not.
+    expect(nativeSelect.test('              <select')).toBe(true);
+    expect(nativeSelect.test('<select aria-label="x">')).toBe(true);
+    expect(nativeSelect.test('<select>')).toBe(true);
+    expect(nativeSelect.test('                <SelectTrigger')).toBe(false);
+    expect(nativeSelect.test('                <SelectValue />')).toBe(false);
+    expect(nativeSelect.test("import { Select } from '@scani/ui/ui/select';")).toBe(false);
+
+    expect(format(await scan(nativeSelect))).toEqual([]);
+  });
+
+  /**
    * A colour utility naming a token the preset does not define.
    *
    * This is the same failure the file opens with — it type-checks, it lints, it

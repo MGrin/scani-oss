@@ -1,5 +1,6 @@
 import { Button } from '@scani/ui/ui/button';
 import { Input } from '@scani/ui/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@scani/ui/ui/select';
 import { showError, showSuccess } from '@scani/ui/ui/use-toast';
 import { Block } from '@scani/ui/v3/components/Block';
 import { PageHeader, PageLayout } from '@scani/ui/v3/components/PageLayout';
@@ -147,27 +148,73 @@ export function EntitiesPage() {
               className="flex items-center justify-between gap-4 py-2.5"
               data-testid={`ownership-account-${account.id}`}
             >
-              <span className="truncate text-label">{account.name}</span>
-              <select
-                aria-label={t('v3.ownership.accountEntityLabel', { name: account.name })}
-                data-testid={`ownership-account-select-${account.id}`}
-                className="h-9 rounded-md border border-input bg-background px-2 text-caption"
+              <span className="min-w-0 flex-1 truncate text-label">{account.name}</span>
+              {/*
+                The shared `Select`, not a native `<select>` — and the reason is
+                the hit area rather than the styling (SC-978).
+
+                Nothing gives a `<select>` the 44px touch floor. V3-23's
+                `@media (pointer: coarse)` block in `v3-tokens.css` spends
+                `--tap-target` on `button, [role=button], [role=tab],
+                [role=radiogroup], a[href], input[type=button|submit]`, and the
+                unscoped v2 rule it neutralises
+                (`apps/frontend/app/src/styles/accessibility.css`) lists the
+                same shapes. `select` is in neither, so `h-9` was the whole
+                answer: a 36px target on a phone.
+
+                And the gate could not see it. `measureUndersizedTargets`
+                (`apps/e2e/fixtures/a11y.ts`) walks `button, a[href],
+                [role="button"], [role="tab"], summary`, so the one v3 control
+                that was not a `<button>` was the one control the §2.6 walk
+                never measured. Both facts have the same cause, and a
+                `SelectTrigger` fixes both at once: it is a `<button>`, so the
+                token layer hands it 44px on touch and the walk starts counting
+                it. `token-hygiene.test.ts` keeps the raw element from coming
+                back.
+
+                Weighed against keeping the native picker, which is a real
+                option and is what `DateField` chose: that decision was about a
+                native input rendering its *value* in the system locale, which a
+                `<select>` does not do — it shows the option text we give it. So
+                the defect that justifies keeping the platform control there
+                does not exist here, and what is left is one control behaving
+                unlike the five other v3 selects.
+
+                Sizes: the trigger stays `text-caption`, subordinate to the
+                account name it sits beside — the identity is the column that
+                should not give way. The open list is `text-body`, matching
+                every other v3 dropdown. Width is capped so a long entity name
+                clamps inside the trigger instead of pushing the account name
+                out at 390px.
+              */}
+              <Select
                 value={account.entityId ?? UNASSIGNED_ENTITY}
                 disabled={assignAccounts.isPending}
-                onChange={(event) =>
+                onValueChange={(next) =>
                   assignAccounts.mutate({
                     accountIds: [account.id],
-                    entityId: event.target.value === UNASSIGNED_ENTITY ? null : event.target.value,
+                    entityId: next === UNASSIGNED_ENTITY ? null : next,
                   })
                 }
               >
-                <option value={UNASSIGNED_ENTITY}>{t('v3.ownership.unassigned')}</option>
-                {entities.map((entity) => (
-                  <option key={entity.id} value={entity.id}>
-                    {entity.name}
-                  </option>
-                ))}
-              </select>
+                <SelectTrigger
+                  aria-label={t('v3.ownership.accountEntityLabel', { name: account.name })}
+                  data-testid={`ownership-account-select-${account.id}`}
+                  className="w-auto max-w-[50%] shrink-0 gap-2 text-caption"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={UNASSIGNED_ENTITY} className="text-body">
+                    {t('v3.ownership.unassigned')}
+                  </SelectItem>
+                  {entities.map((entity) => (
+                    <SelectItem key={entity.id} value={entity.id} className="text-body">
+                      {entity.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </li>
           ))}
         </ul>
