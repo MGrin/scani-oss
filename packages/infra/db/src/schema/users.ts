@@ -200,11 +200,62 @@ export const userVerifications = pgTable('user_verifications', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
+/**
+ * Every time this account's cost-basis method changed (SC-957).
+ *
+ * The method decides which lots a disposal is matched against, so changing it
+ * moves every realized figure the account has already been shown. It stays
+ * freely changeable — mgrin weighed locking it and declined, because FIFO
+ * against section 104 is the decision a new user is least equipped to make —
+ * and this is what makes a moved figure explicable instead of unrecoverable.
+ *
+ * Append-only, one row per transition, and a row cannot record a non-change:
+ * `previous_method <> new_method` is a CHECK, so every row here moved somebody's
+ * numbers. A single `changed_at` column on `users` was the cheaper shape and
+ * cannot answer the actual question — an account that went fifo -> s104 -> fifo
+ * has figures from three eras and one timestamp separates none of them.
+ */
+export const userCostBasisMethodChanges = pgTable(
+  'user_cost_basis_method_changes',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    // Both carry the same CHECK as `users.cost_basis_method` and are read
+    // through `parseCostBasisMethod` in `@scani/shared`, for the reason given
+    // on that column: this package cannot import the contract.
+    previousMethod: text('previous_method').notNull(),
+    newMethod: text('new_method').notNull(),
+    // Which write path made the change. CHECK-constrained to one value, because
+    // there is one writer — `UserService.updateUser`, reached only by
+    // `users.updateCurrent`. A second one costs a migration, which is the loud
+    // step; a nullable actor column that is always the same user is not.
+    source: text('source').notNull(),
+    // `clock_timestamp()` rather than `defaultNow()`: `now()` is
+    // transaction_timestamp() and does not advance within a transaction, so two
+    // changes committed together would tie and the newest-first ordering could
+    // not say which era followed which.
+    changedAt: timestamp('changed_at', { withTimezone: true })
+      .notNull()
+      .default(sql`clock_timestamp()`),
+  },
+  (table) => ({
+    // The only query: this account's methods, newest first. "Which method was
+    // that figure computed under" is answered by walking back from now.
+    userChangedAtIdx: index('idx_user_cost_basis_method_changes_user_changed_at').on(
+      table.userId,
+      table.changedAt
+    ),
+  })
+);
+
 export const usersRelations = relations(users, ({ one, many }) => ({
   accounts: many(accounts),
   holdings: many(holdings),
   userWallets: many(userWallets),
   userIntegrationCredentials: many(userIntegrationCredentials),
+  costBasisMethodChanges: many(userCostBasisMethodChanges),
   groups: many(groups),
   vaults: many(vaults),
   baseCurrency: one(tokens, {
@@ -215,3 +266,6 @@ export const usersRelations = relations(users, ({ one, many }) => ({
 
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
+
+export type UserCostBasisMethodChange = typeof userCostBasisMethodChanges.$inferSelect;
+export type NewUserCostBasisMethodChange = typeof userCostBasisMethodChanges.$inferInsert;

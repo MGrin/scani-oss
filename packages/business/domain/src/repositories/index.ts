@@ -71,6 +71,7 @@ export type { TokenPriceEditHistoryWithEditor } from './TokenPriceEditHistoryRep
 export { TokenPriceEditHistoryRepository } from './TokenPriceEditHistoryRepository';
 export { TokenPriceRepository } from './TokenPriceRepository';
 export { TokenRepository } from './TokenRepository';
+export { UserCostBasisMethodChangeRepository } from './UserCostBasisMethodChangeRepository';
 export { UserIntegrationCredentialsRepository } from './UserIntegrationCredentialsRepository';
 export { UserJobRepository } from './UserJobRepository';
 export {
