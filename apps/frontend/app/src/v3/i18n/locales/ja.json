@@ -1540,7 +1540,8 @@
       "recordPicker": {
         "change": "{{label}}を変更",
         "changeAction": "変更",
-        "searching": "検索しています…"
+        "searching": "検索しています…",
+        "shownOf": "{{total}} 件中 {{shown}} 件を表示中 — 入力を続けて絞り込んでください"
       },
       "fiatCurrency": {
         "noun": "通貨",

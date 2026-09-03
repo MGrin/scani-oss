@@ -1688,7 +1688,8 @@
       "recordPicker": {
         "change": "Change {{label}}",
         "changeAction": "Change",
-        "searching": "Searching…"
+        "searching": "Searching…",
+        "shownOf": "Showing {{shown}} of {{total}} — keep typing to narrow"
       },
       "fiatCurrency": {
         "noun": "currency",

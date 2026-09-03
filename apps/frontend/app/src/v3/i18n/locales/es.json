@@ -557,7 +557,8 @@
       "recordPicker": {
         "change": "Cambiar {{label}}",
         "changeAction": "Cambiar",
-        "searching": "Buscando…"
+        "searching": "Buscando…",
+        "shownOf": "Mostrando {{shown}} de {{total}}: sigue escribiendo para acotar"
       },
       "sheet": {
         "close": "Cerrar el formulario",

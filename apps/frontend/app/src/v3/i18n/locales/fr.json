@@ -91,7 +91,8 @@
       "recordPicker": {
         "change": "Modifier {{label}}",
         "changeAction": "Modifier",
-        "searching": "Recherche…"
+        "searching": "Recherche…",
+        "shownOf": "Affichage de {{shown}} sur {{total}} — continuez à taper pour affiner"
       },
       "fiatCurrency": {
         "noun": "devise",
