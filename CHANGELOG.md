@@ -19,6 +19,39 @@ version heading stays there permanently, above every future release. This
 comment is deliberately in that position; explanatory prose should not be.
 -->
 
+## [0.39.0](https://github.com/MGrin/scani-oss/compare/v0.38.3...v0.39.0) (2026-09-03)
+
+
+### Features
+
+* **holdings:** say when a value rests on a quote we would not call current ([4859fb0](https://github.com/MGrin/scani-oss/commit/4859fb0506ff0524645f8350d99287d8f10ff36a))
+* **jobs:** a job warning carries the key it can be translated under (SC-434) ([1fe39c4](https://github.com/MGrin/scani-oss/commit/1fe39c4f1f09f7debb0f632cd13118c3cc962275))
+* **pdf:** order statement runs visually, so a right-to-left name lands where it reads ([1a6da04](https://github.com/MGrin/scani-oss/commit/1a6da04bb4878a40190b706297b8b04b85c36855))
+* **scripts:** a deploy probe that refuses when it read the fallback ([a8d9b13](https://github.com/MGrin/scani-oss/commit/a8d9b13c23123cd657f0ae448324b58883b06545))
+* **users:** record every cost-basis method change and recompute what it moved ([416f9b2](https://github.com/MGrin/scani-oss/commit/416f9b28d20f2fffee8aacaec2acb91450a74228))
+
+
+### Bug Fixes
+
+* **demo:** seed wallet accounts with the metadata the importer writes (SC-864) ([33941ab](https://github.com/MGrin/scani-oss/commit/33941ab4e2872237219ed98d23a959f6c88ed99b))
+* **holdings:** name the quote the stale note is about, not its position ([774c546](https://github.com/MGrin/scani-oss/commit/774c54669d39ba1605cf5f97158e3a1ed87eb060))
+* **oss-bound-paths:** a skip says what it skipped over (SC-835) ([832c688](https://github.com/MGrin/scani-oss/commit/832c68852cc15fc2cab721f172c2ddd5c054c271))
+* **pdf:** cut a truncated cell on a character, not on a code unit ([9514f31](https://github.com/MGrin/scani-oss/commit/9514f31c3a212625e0405aead717599543fda0c9))
+* **pdf:** do not letterspace a script whose letters join ([eda0d0b](https://github.com/MGrin/scani-oss/commit/eda0d0b59525a74828f0b79cae39fe6d79ee1a4c))
+* **pickers:** two account selectors that say the institution twice, or not at all (SC-862) ([4a2676b](https://github.com/MGrin/scani-oss/commit/4a2676b0b8c5ce231bfd7379b7684a7fa5ea7e46))
+* **providers:** a token cannot be its own payment (SC-764) ([d057a20](https://github.com/MGrin/scani-oss/commit/d057a20cd423fe5bf2f4500d90c71c937ac082b8))
+* **reconciliation:** a bounded ledger source is not an unexplained gap ([6e1a0d3](https://github.com/MGrin/scani-oss/commit/6e1a0d371262649387fd3d4a22e045025826497b))
+* **record-picker:** the list says when it continues (SC-862) ([d8c6c70](https://github.com/MGrin/scani-oss/commit/d8c6c70c4ac43db3d36f5a371c25779a8bf6ad59))
+* **record-picker:** the one list that may not be cut opts out (SC-862) ([c623396](https://github.com/MGrin/scani-oss/commit/c6233960225ae2428d056ab36e9ca040bc443591))
+* **release-notes:** prescribe a recovery this repository can actually run (SC-922) ([61ecad2](https://github.com/MGrin/scani-oss/commit/61ecad227c063bf288090129c0365612fb620e89))
+* **review:** own the /review queue paths in @scani/shared ([b9a2c90](https://github.com/MGrin/scani-oss/commit/b9a2c90b189ff3d3a39043dc60314042cfbc03f7))
+* **scripts:** the difference arm condemned every healthy index ([383b1a3](https://github.com/MGrin/scani-oss/commit/383b1a3e02430e4d110d0f27e360c9369551d620))
+* **scripts:** the identity arm claimed more than it measured ([3a5cb34](https://github.com/MGrin/scani-oss/commit/3a5cb347d7156da246d38f3bcc3adcb368c4e4ee))
+* **tests:** strip whole import statements in the route-reachability scan ([d8eed74](https://github.com/MGrin/scani-oss/commit/d8eed74ee74d63a23bbfed76ce8957f0d181c27b))
+* **v3-nav:** bound the review badge at 99+, sized against the tile (SC-905) ([2c22625](https://github.com/MGrin/scani-oss/commit/2c226251fb296737f0affc8ace8a08ced1b97c60))
+* **v3:** chart axis and tick text follow the document direction ([ed4fca3](https://github.com/MGrin/scani-oss/commit/ed4fca351d10d03653468f9e3060b0a542484535))
+* **v3:** the entity picker is a Select, so the tap floor reaches it (SC-978) ([f6cce68](https://github.com/MGrin/scani-oss/commit/f6cce689d390f7b9d22e54707b21373eb76374ca))
+
 ## [0.38.3](https://github.com/MGrin/scani-oss/compare/v0.38.2...v0.38.3) (2026-09-02)
 
 
