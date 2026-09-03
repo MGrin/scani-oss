@@ -14,6 +14,9 @@
       },
       "moreDrawer": {
         "description": "タブバーに収まらないものすべてです。ハンドルを上に引くと一覧が全部表示されます。"
+      },
+      "navBadge": {
+        "overflow": "{{cap}}+"
       }
     },
     "common": {
