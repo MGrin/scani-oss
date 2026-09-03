@@ -34,11 +34,14 @@ import type {
 } from '@scani/db/schema';
 import type { TransactionsProvider } from '@scani/providers/core/capabilities';
 import { ProviderRegistry } from '@scani/providers/core/registry';
-import type {
-  HistoryBound,
-  ProviderContext,
-  TransactionEvent,
-  WithUserCreds,
+import {
+  type HistoryBound,
+  type JobNotice,
+  type NoticeInput,
+  type ProviderContext,
+  type TransactionEvent,
+  toJobNotice,
+  type WithUserCreds,
 } from '@scani/providers/core/types';
 import { Container, Service } from 'typedi';
 import { TokenTypeRepository } from '../../repositories/EnumRepositories';
@@ -105,6 +108,20 @@ export interface TransactionRouterResult {
    */
   historyRetractions: string[];
   /**
+   * The same lines as `warnings`, same order and same length, each carrying
+   * the key it can be translated under when we wrote it (SC-434).
+   *
+   * Parallel to `warnings` rather than replacing it, and both halves of that
+   * matter. `user_jobs.result` already holds 182 English sentences that
+   * cannot be re-derived, and the job page is served to a PWA whose service
+   * worker may be several builds old — a client that has never heard of this
+   * field keeps reading `warnings` and keeps rendering exactly what it
+   * renders today. The invariant `warnings[i] === warningDetails[i].text` is
+   * what lets a reader treat either one as authoritative, and
+   * `transaction-router-notices.test.ts` asserts it.
+   */
+  warningDetails: JobNotice[];
+  /**
    * The earliest date any retracting provider says its source COVERS, or null
    * when none named one (SC-900).
    *
@@ -130,16 +147,27 @@ const DAY_MS = 24 * 60 * 60 * 1000;
  * read as a promise of more history than the provider actually serves.
  */
 function describeDuration(ms: number): string {
+  const { count, unit } = measureDuration(ms);
+  return `${count} ${unit}${count === 1 ? '' : 's'}`;
+}
+
+/**
+ * The same horizon as a number and a unit, for a client that can say it in
+ * its own language (SC-434).
+ *
+ * Deliberately NOT a translation key per scale. `Intl.NumberFormat` with
+ * `style: 'unit'` renders `5 years` / `5 лет` / `5 ans` from CLDR, which
+ * already knows every plural category of every locale we ship and of every
+ * locale we have not written yet. Three hand-written keys with `_one` /
+ * `_few` / `_many` variants would be a second, worse copy of a table the
+ * platform maintains — and the one that rots the first time a language is
+ * added.
+ */
+function measureDuration(ms: number): { count: number; unit: 'year' | 'month' | 'day' } {
   const days = Math.max(1, Math.floor(ms / DAY_MS));
-  if (days >= 365) {
-    const years = Math.floor(days / 365);
-    return `${years} year${years === 1 ? '' : 's'}`;
-  }
-  if (days >= 30) {
-    const months = Math.floor(days / 30);
-    return `${months} month${months === 1 ? '' : 's'}`;
-  }
-  return `${days} day${days === 1 ? '' : 's'}`;
+  if (days >= 365) return { count: Math.floor(days / 365), unit: 'year' };
+  if (days >= 30) return { count: Math.floor(days / 30), unit: 'month' };
+  return { count: days, unit: 'day' };
 }
 
 @Service()
@@ -178,16 +206,16 @@ export class TransactionRouter {
     // One array per run, closed over by the sinks below. Nothing here is
     // shared between runs, which is the property that lets a provider write
     // to the caller's state without the caller handing it a service.
-    const retractions: string[] = [];
-    const notices: string[] = [];
+    const retractions: JobNotice[] = [];
+    const notices: JobNotice[] = [];
     let historyStartsAt: Date | null = null;
 
     const ctx: WithUserCreds<ProviderContext> & {
       institutionCode: string;
       since?: Date;
       until?: Date;
-      retractHistoryClaim?: (reason: string, bound?: HistoryBound) => void;
-      noteWarning?: (reason: string) => void;
+      retractHistoryClaim?: (reason: NoticeInput, bound?: HistoryBound) => void;
+      noteWarning?: (reason: NoticeInput) => void;
     } = {
       baseCurrency: request.baseCurrency,
       timestamp: new Date(),
@@ -203,8 +231,8 @@ export class TransactionRouter {
       // no way back — a provider cannot know whether the caller asked for a
       // window, so letting it CLAIM completeness would let an incremental
       // run declare a whole ledger every night.
-      retractHistoryClaim: (reason: string, bound?: HistoryBound) => {
-        retractions.push(reason);
+      retractHistoryClaim: (reason: NoticeInput, bound?: HistoryBound) => {
+        retractions.push(toJobNotice(reason));
         // Kept beside the reason rather than folded into it: the sentence is
         // for the reader and the date is for reconciliation, and a service
         // parsing a date back out of English prose is how the two come to
@@ -220,8 +248,8 @@ export class TransactionRouter {
       // ANNOTATE events — bitstamp's `/crypto-transactions/` txid map — costs
       // an annotation and not a row, so retracting on it would downgrade a
       // cost basis over a missing hash (SC-426, SC-428).
-      noteWarning: (reason: string) => {
-        notices.push(reason);
+      noteWarning: (reason: NoticeInput) => {
+        notices.push(toJobNotice(reason));
       },
     };
 
@@ -257,13 +285,20 @@ export class TransactionRouter {
   private describeHorizon(
     provider: TransactionsProvider,
     request: TransactionRouterRequest
-  ): string | null {
+  ): JobNotice | null {
     const horizon = provider.transactionHistoryHorizonMs;
     if (request.since || horizon === undefined) return null;
-    return (
-      `${provider.providerKey}: a run with no start date reaches ${describeDuration(horizon)} ` +
-      `back and no further — anything older than that was never fetched`
-    );
+    const { count, unit } = measureDuration(horizon);
+    return {
+      key: 'v3.jobs.notices.providerHorizon',
+      // The provider key travels as a param rather than being spliced into
+      // the sentence: `binance` is a name and reads the same in every
+      // language, but where it sits in the sentence does not.
+      params: { provider: provider.providerKey, durationCount: count, durationUnit: unit },
+      text:
+        `${provider.providerKey}: a run with no start date reaches ${describeDuration(horizon)} ` +
+        `back and no further — anything older than that was never fetched`,
+    };
   }
 
   /**
@@ -317,8 +352,8 @@ export class TransactionRouter {
     events: readonly TransactionEvent[],
     request: TransactionRouterRequest,
     hasCompleteTxHistory: boolean,
-    historyRetractions: readonly string[],
-    notices: readonly string[] = [],
+    historyRetractions: readonly JobNotice[],
+    notices: readonly JobNotice[] = [],
     historyStartsAt: Date | null = null
   ): Promise<TransactionRouterResult> {
     const transactions: NewHoldingTransaction[] = [];
@@ -327,7 +362,7 @@ export class TransactionRouter {
     // tell them, rather than in a log line nobody opens. The notices sit in
     // front of them: a declared horizon is the standing shape of the run and
     // reads first, a retraction is what this particular walk observed.
-    const warnings: string[] = [...notices, ...historyRetractions];
+    const warnings: JobNotice[] = [...notices, ...historyRetractions];
     const accumulator: { first: Date | null; last: Date | null } = {
       first: null,
       last: null,
@@ -407,9 +442,20 @@ export class TransactionRouter {
         tokenCache.set(cacheKey, token.id);
         return token.id;
       } catch (err) {
-        warnings.push(
-          `Failed to resolve token identity ${cacheKey}: ${err instanceof Error ? err.message : String(err)}`
-        );
+        // KEYED, and the tail deliberately is not (SC-434). `identity` is a
+        // chain and a contract address and `error` is whatever the lookup
+        // threw — an upstream refusal, a timeout, a message written by
+        // something outside this app. Translating the FRAME and quoting the
+        // rest verbatim is the honest split: a reader gets a Russian
+        // sentence saying what failed, with the untranslatable evidence
+        // intact inside it. Inventing a key per upstream message is the
+        // alternative and it is a parser.
+        const error = err instanceof Error ? err.message : String(err);
+        warnings.push({
+          key: 'v3.jobs.notices.tokenIdentityFailed',
+          params: { identity: cacheKey, error },
+          text: `Failed to resolve token identity ${cacheKey}: ${error}`,
+        });
         return null;
       }
     };
@@ -462,7 +508,9 @@ export class TransactionRouter {
         return holding.id;
       } catch (err) {
         warnings.push(
-          `Failed to resolve holding for token ${tokenId}: ${err instanceof Error ? err.message : String(err)}`
+          toJobNotice(
+            `Failed to resolve holding for token ${tokenId}: ${err instanceof Error ? err.message : String(err)}`
+          )
         );
         return null;
       }
@@ -535,18 +583,21 @@ export class TransactionRouter {
       let skippedTotal = 0;
       for (const n of skippedByToken.values()) skippedTotal += n;
       warnings.push(
-        `Skipped ${skippedTotal} tx event(s) referencing ${skippedByToken.size} token(s) the user didn't keep during wallet review.`
+        toJobNotice(
+          `Skipped ${skippedTotal} tx event(s) referencing ${skippedByToken.size} token(s) the user didn't keep during wallet review.`
+        )
       );
     }
 
     return {
       transactions,
       observations: [],
-      warnings,
+      warnings: warnings.map((notice) => notice.text),
+      warningDetails: warnings,
       firstEventAt: accumulator.first,
       lastEventAt: accumulator.last,
       hasCompleteTxHistory,
-      historyRetractions: [...historyRetractions],
+      historyRetractions: historyRetractions.map((notice) => notice.text),
       historyStartsAt,
     };
   }
@@ -585,7 +636,7 @@ export class TransactionRouter {
    */
   private resolveSwapGroups(
     groups: ReadonlyMap<string, NewHoldingTransaction[]>,
-    warnings: string[]
+    warnings: JobNotice[]
   ): void {
     let orphaned = 0;
     for (const legs of groups.values()) {
@@ -606,7 +657,9 @@ export class TransactionRouter {
     }
     if (orphaned > 0) {
       warnings.push(
-        `Recorded ${orphaned} swap leg(s) as plain transfers: the other side of the swap has no holding on this account, so nothing could be linked or priced.`
+        toJobNotice(
+          `Recorded ${orphaned} swap leg(s) as plain transfers: the other side of the swap has no holding on this account, so nothing could be linked or priced.`
+        )
       );
     }
   }
@@ -625,8 +678,8 @@ export class TransactionRouter {
 
   private emptyResult(
     hasCompleteTxHistory: boolean,
-    historyRetractions: readonly string[],
-    notices: readonly string[] = [],
+    historyRetractions: readonly JobNotice[],
+    notices: readonly JobNotice[] = [],
     historyStartsAt: Date | null = null
   ): TransactionRouterResult {
     return {
@@ -637,11 +690,12 @@ export class TransactionRouter {
       // takes, which is exactly when the reason matters most — and an empty
       // result from a horizon provider is exactly the run whose short history
       // looks like lost data.
-      warnings: [...notices, ...historyRetractions],
+      warnings: [...notices, ...historyRetractions].map((notice) => notice.text),
+      warningDetails: [...notices, ...historyRetractions],
       firstEventAt: null,
       lastEventAt: null,
       hasCompleteTxHistory,
-      historyRetractions: [...historyRetractions],
+      historyRetractions: historyRetractions.map((notice) => notice.text),
       historyStartsAt,
     };
   }

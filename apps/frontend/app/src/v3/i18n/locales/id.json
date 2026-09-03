@@ -2235,6 +2235,10 @@
       "issues": {
         "more_other": "…dan {{count}} lainnya"
       },
+      "notices": {
+        "providerHorizon": "{{provider}}: proses tanpa tanggal mulai hanya menjangkau {{durationCount, duration}} ke belakang — apa pun yang lebih lama tidak pernah diambil",
+        "tokenIdentityFailed": "Gagal mengenali token {{identity}}: {{error}}"
+      },
       "wallet": {
         "subject": "dompet ini",
         "chainsDetected": "Rantai yang terdeteksi",

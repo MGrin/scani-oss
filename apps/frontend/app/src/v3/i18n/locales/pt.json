@@ -1219,6 +1219,10 @@
         "more_one": "…e mais {{count}}",
         "more_other": "…e mais {{count}}"
       },
+      "notices": {
+        "providerHorizon": "{{provider}}: uma execução sem data de início alcança {{durationCount, duration}} atrás e não mais — tudo o que for mais antigo nunca foi obtido",
+        "tokenIdentityFailed": "Não foi possível identificar o token {{identity}}: {{error}}"
+      },
       "kind": {
         "deleteAllData": "Eliminar todos os dados da conta",
         "fileEnriched": "{{type}} · enriquecido",

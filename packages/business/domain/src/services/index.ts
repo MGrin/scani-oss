@@ -299,6 +299,7 @@ export {
 } from './tokens/token-identity-safety';
 // transactions/
 export {
+  noteOnResult,
   TransactionImportCoordinator,
   type TransactionImportInput,
   type TransactionImportResult,

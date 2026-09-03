@@ -2402,6 +2402,10 @@
         "more_one": "…and {{count}} more",
         "more_other": "…and {{count}} more"
       },
+      "notices": {
+        "providerHorizon": "{{provider}}: a run with no start date reaches {{durationCount, duration}} back and no further — anything older than that was never fetched",
+        "tokenIdentityFailed": "Failed to resolve token identity {{identity}}: {{error}}"
+      },
       "wallet": {
         "subject": "this wallet",
         "chainsDetected": "Chains detected",

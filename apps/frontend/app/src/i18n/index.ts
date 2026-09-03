@@ -2,6 +2,7 @@ import { addUiLocale, setUiLanguage } from '@scani/ui/i18n';
 import i18n from 'i18next';
 import LanguageDetector from 'i18next-browser-languagedetector';
 import { initReactI18next } from 'react-i18next';
+import { registerDurationFormatter } from './duration-format';
 import { resolveUiLocale } from './resolve-ui-locale';
 
 // Auto-discover every JSON file under `locales/`. Adding `es.json` (or
@@ -61,6 +62,8 @@ void i18n
       caches: ['localStorage'],
     },
   });
+
+registerDurationFormatter(i18n);
 
 /**
  * Keep `@scani/ui` on the same language as the app (SC-250).

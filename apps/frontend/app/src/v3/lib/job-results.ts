@@ -24,6 +24,62 @@ function asStringList(value: unknown): string[] {
 }
 
 /**
+ * One line of a job result, with the key it can be translated under when the
+ * server wrote one (SC-434).
+ *
+ * `text` is always the English the server produced, and a line with no `key`
+ * renders it — that is the honest case, not a gap: an upstream refusal or a
+ * parser's `row 4: no date column` is written by something outside this app.
+ */
+export interface JobLine {
+  key: string | null;
+  params?: Record<string, string | number>;
+  text: string;
+}
+
+/**
+ * The keyed lines of a result, or the plain ones read the old way.
+ *
+ * Everything about this function is about what a YEAR-OLD ROW holds. 182
+ * warning strings are already stored in `user_jobs.result` with no keys and
+ * cannot be re-derived, so `warnings` is still the field that must be read
+ * when `warningDetails` is absent — and it will be absent forever on those.
+ * A detail entry that is not the shape we expect falls back to its own
+ * `text`, and a details array that does not line up with `warnings` is
+ * ignored wholesale rather than zipped: a mismatched pair would attach one
+ * line's key to another line's sentence, which renders a confident wrong
+ * sentence where the un-keyed read renders a correct English one.
+ */
+export function readJobLines(record: Record<string, unknown>): JobLine[] {
+  const text = asStringList(record.warnings);
+  const details = Array.isArray(record.warningDetails) ? record.warningDetails : null;
+  if (!details || details.length !== text.length) return text.map(asPlainLine);
+  return details.map((entry, index) => {
+    const detail = asRecord(entry);
+    const line = typeof detail.text === 'string' ? detail.text : text[index];
+    if (line === undefined) return asPlainLine(text[index] ?? '');
+    const key = typeof detail.key === 'string' ? detail.key : null;
+    return key === null
+      ? { key: null, text: line }
+      : { key, params: asParams(detail.params), text: line };
+  });
+}
+
+function asPlainLine(text: string): JobLine {
+  return { key: null, text };
+}
+
+/** Only primitives cross the jsonb boundary; anything else is dropped. */
+function asParams(value: unknown): Record<string, string | number> {
+  const out: Record<string, string | number> = {};
+  for (const [key, raw] of Object.entries(asRecord(value))) {
+    if (typeof raw === 'string' || (typeof raw === 'number' && Number.isFinite(raw)))
+      out[key] = raw;
+  }
+  return out;
+}
+
+/**
  * A list rendered short, with what was cut counted rather than dropped.
  *
  * Every list in v2's job results slices to a cap and says nothing about the
@@ -251,7 +307,7 @@ export interface GenericJobView {
    * looks (SC-428). Those warnings are the only place an import says why the
    * history it just wrote is short.
    */
-  warnings: string[];
+  warnings: JobLine[];
   isEmpty: boolean;
 }
 
@@ -268,7 +324,7 @@ export function readGenericJobResult(result: unknown): GenericJobView | null {
     .filter(([, value]) => typeof value === 'number' && Number.isFinite(value))
     .map(([key, value]) => ({ key, value: value as number }));
   const errors = readErrorLines(record.errors);
-  const warnings = asStringList(record.warnings);
+  const warnings = readJobLines(record);
   return {
     message,
     stats,

@@ -1689,6 +1689,10 @@
         "more_many": "…et {{count}} de plus",
         "more_other": "…et {{count}} de plus"
       },
+      "notices": {
+        "providerHorizon": "{{provider}} : une exécution sans date de début remonte à {{durationCount, duration}} et pas plus loin — tout ce qui est plus ancien n'a jamais été récupéré",
+        "tokenIdentityFailed": "Impossible d'identifier le jeton {{identity}} : {{error}}"
+      },
       "wallet": {
         "subject": "ce portefeuille",
         "chainsDetected": "Chaînes détectées",
