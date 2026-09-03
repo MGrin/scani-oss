@@ -11,6 +11,8 @@ import {
   EXIT_REFUSED,
   EXIT_UNKNOWN,
   refusedPaths,
+  routePaths,
+  routingClause,
   type TreeMarkers,
   VERDICT,
   type Violation,
@@ -660,6 +662,107 @@ describe('an upstream-first window on real repositories (SC-659)', () => {
     expect(code).toBe(EXIT_OK);
     expect(out).toContain(`0/${MIRROR_ONLY} mirror-only`);
   });
+
+  /**
+   * SC-835. THE SKIP LINE IS ABOUT THE DIFF, AND THE PAIR IS WHAT PROVES IT.
+   *
+   * One branch, one tree, two commits' worth of staging — so the repository
+   * clause is IDENTICAL in both readings and only the diff clause moves.
+   * Either test alone proves nothing: if the clause were still computed from
+   * the tree, both would read the same and the pair fails; if it were computed
+   * from nothing, both would read zero and the pair fails the same way.
+   *
+   * The tree assertion rides along on purpose. The repair is an addition, not
+   * a substitution — the denominators are what make a skip checkable, and
+   * dropping them to make room for the diff clause would trade one missing
+   * fact for another.
+   */
+  describe('a skip says what it skipped over (SC-835)', () => {
+    // Its own branch rather than reusing `no-window`, so this pair cannot be
+    // reordered into passing by an earlier test's leftovers.
+    function stageOnPrivate(path: string, body: string): { code: number; out: string } {
+      writeFileSync(join(work, path), body);
+      return runGuard('routing', path);
+    }
+
+    test('a shared path reads as already in upstream/main', () => {
+      git(work, 'checkout', '--quiet', '-b', 'routing', '--no-track', 'origin/main');
+      const { code, out } = stageOnPrivate('shared0.ts', 'edited shared\n');
+      expect(code).toBe(EXIT_OK);
+      expect(out).toContain(VERDICT.skipped);
+      expect(out).toContain('of 1 staged path(s): 1 already in upstream/main');
+      expect(out).toContain('0 private-only, 0 in neither repo');
+      expect(out).toContain(`0/${MIRROR_ONLY} mirror-only`);
+    });
+
+    test('a private-only path reads as private-only, on the same branch and tree', () => {
+      const { code, out } = stageOnPrivate('private7.ts', 'edited private\n');
+      expect(code).toBe(EXIT_OK);
+      expect(out).toContain(VERDICT.skipped);
+      expect(out).toContain('of 1 staged path(s): 0 already in upstream/main');
+      expect(out).toContain('1 private-only, 0 in neither repo');
+      // Same tree as the test above, so this is the constant against which the
+      // clause above is the variable.
+      expect(out).toContain(`0/${MIRROR_ONLY} mirror-only`);
+    });
+
+    test('a file in neither repo reads as being in neither repo', () => {
+      const { code, out } = stageOnPrivate('brand-new.ts', 'new\n');
+      expect(code).toBe(EXIT_OK);
+      expect(out).toContain('of 1 staged path(s): 0 already in upstream/main');
+      expect(out).toContain('0 private-only, 1 in neither repo');
+    });
+
+    /**
+     * An empty index is a real answer and must not read like the three above
+     * with the numbers happening to be zero — SC-808's `classified nothing`,
+     * and SC-865's rule that an absent reading and a reading of zero must not
+     * print alike.
+     */
+    test('an empty index says there was nothing to classify', () => {
+      git(work, 'checkout', '--quiet', 'routing');
+      const run = Bun.spawnSync(['bun', guard], {
+        cwd: work,
+        env: { ...process.env, GIT_CEILING_DIRECTORIES: root },
+        stdout: 'pipe',
+        stderr: 'pipe',
+      });
+      const out = new TextDecoder().decode(run.stdout) + new TextDecoder().decode(run.stderr);
+      expect(run.exitCode).toBe(EXIT_OK);
+      expect(out).toContain('0 staged path(s), so there was nothing to classify');
+      expect(out).not.toContain('already in upstream/main');
+    });
+
+    /**
+     * MUST-BE-RED. `git diff --cached` failing is exactly the SC-743 shape,
+     * and on this path it cannot be answered with a refusal: the skip is a
+     * conclusion about the TREE, which is still readable. So the clause has to
+     * degrade rather than the exit code — and the one thing it must never do
+     * is report the zero that a genuinely empty index reports.
+     */
+    test('a dead `git diff --cached` degrades the clause and never reads as zero', () => {
+      git(work, 'checkout', '--quiet', 'routing');
+      writeFileSync(join(work, 'private7.ts'), 'edited again\n');
+      const shimDir = mkdtempSync(join(tmpdir(), 'sc835-diff-'));
+      writeFileSync(
+        join(shimDir, 'git'),
+        '#!/bin/sh\nif [ "$1" = "diff" ]; then for a in "$@"; do [ "$a" = "--cached" ] && exit 1; done; fi\nexec /usr/bin/git "$@"\n',
+        { mode: 0o755 }
+      );
+      const { code, out } = runGuard('routing', 'private7.ts', {
+        PATH: `${shimDir}:${process.env.PATH}`,
+      });
+      rmSync(shimDir, { recursive: true, force: true });
+
+      expect(code).toBe(EXIT_OK);
+      expect(out).toContain(VERDICT.skipped);
+      expect(out).toContain('NOTHING WAS CLASSIFIED');
+      // The reading it must not be confusable with.
+      expect(out).not.toContain('0 staged path(s), so there was nothing to classify');
+      // And the verdict is unchanged: a report degraded, not a guard refusing.
+      expect(code).not.toBe(EXIT_UNKNOWN);
+    });
+  });
 });
 
 /**
@@ -1061,5 +1164,97 @@ describe('a git call that dies is not a determinate answer (SC-743)', () => {
     const out = new TextDecoder().decode(run.stdout) + new TextDecoder().decode(run.stderr);
     expect(run.exitCode).not.toBe(EXIT_UNKNOWN);
     expect(out).not.toContain('could not read this repository');
+  });
+});
+
+/**
+ * SC-835, the predicate under the sentence. These hand `routePaths` its two
+ * membership functions directly, so they prove the classification and nothing
+ * about what fills it; the real-repository pair above is the other half.
+ */
+describe('routePaths (SC-835)', () => {
+  const upstream = new Set(['shared.ts', 'also-shared.ts']);
+  const origin = new Set(['shared.ts', 'also-shared.ts', 'private.ts']);
+  const has = (s: Set<string>) => (p: string) => s.has(p);
+
+  test('splits a diff three ways', () => {
+    expect(
+      routePaths(['shared.ts', 'private.ts', 'brand-new.ts'], has(upstream), has(origin))
+    ).toEqual({ total: 3, inUpstream: 1, privateOnly: 1, newFile: 1 });
+  });
+
+  test('an empty diff is a total of zero, not a null', () => {
+    expect(routePaths([], has(upstream), has(origin))).toEqual({
+      total: 0,
+      inUpstream: 0,
+      privateOnly: 0,
+      newFile: 0,
+    });
+  });
+
+  /**
+   * An unreadable `origin/main` cannot separate private source from a new
+   * file, and reporting `0 private-only` off a ref nobody read would be this
+   * ticket's own defect one level down. The `inUpstream` half is still a real
+   * measurement and is still reported — the narrowing is scoped to the split.
+   */
+  test('an unreadable origin/main narrows the split rather than zeroing it', () => {
+    expect(routePaths(['shared.ts', 'private.ts'], has(upstream), null)).toEqual({
+      total: 2,
+      inUpstream: 1,
+      privateOnly: null,
+      newFile: null,
+    });
+  });
+
+  /**
+   * The classification is the SAME predicate a refusal uses. If these ever
+   * disagree, one line of one run can call a path private-only while the next
+   * calls it new.
+   */
+  test('agrees with refusedPaths about what each path is', () => {
+    const paths = ['shared.ts', 'private.ts', 'brand-new.ts'];
+    const violations = refusedPaths(paths, {
+      existsUpstream: has(upstream),
+      trackedPrivately: has(origin),
+    });
+    const routed = routePaths(paths, has(upstream), has(origin));
+    expect(routed.privateOnly).toBe(violations.filter((v) => v.kind === 'private-only').length);
+    expect(routed.newFile).toBe(violations.filter((v) => v.kind === 'new-file').length);
+    expect(routed.inUpstream).toBe(paths.length - violations.length);
+  });
+});
+
+describe('routingClause (SC-835)', () => {
+  test('a populated diff names the counts and the noun it judged', () => {
+    const clause = routingClause({ total: 7, inUpstream: 4, privateOnly: 2, newFile: 1 }, 'pushed');
+    expect(clause).toBe(
+      'of 7 pushed path(s): 4 already in upstream/main, 2 private-only, 1 in neither repo'
+    );
+  });
+
+  /**
+   * Three ways of having no split, and no two of them may print alike. A
+   * reader who cannot tell *there were none* from *nobody looked* is back to
+   * reading a non-result as a settled one, which is the family this ticket is
+   * in (SC-190 / SC-679 / SC-726 / SC-865).
+   */
+  test('nothing to classify, nothing readable, and a narrowed split all read differently', () => {
+    const empty = routingClause({ total: 0, inUpstream: 0, privateOnly: 0, newFile: 0 }, 'staged');
+    const blind = routingClause(null, 'staged');
+    const narrowed = routingClause(
+      { total: 2, inUpstream: 1, privateOnly: null, newFile: null },
+      'staged'
+    );
+    expect(empty).toContain('nothing to classify');
+    expect(blind).toContain('NOTHING WAS CLASSIFIED');
+    expect(blind).toContain('not a count of zero');
+    expect(narrowed).toContain('`origin/main` could not be read');
+    expect(new Set([empty, blind, narrowed]).size).toBe(3);
+  });
+
+  test('the noun travels, so a pushed range is never described as staged', () => {
+    expect(routingClause(null, 'pushed')).toContain('pushed paths');
+    expect(routingClause(null, 'pushed')).not.toContain('staged');
   });
 });
