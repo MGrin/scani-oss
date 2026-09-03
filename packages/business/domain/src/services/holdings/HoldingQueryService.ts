@@ -129,6 +129,16 @@ export class HoldingQueryService extends BaseService {
         ])
     );
 
+    // Kept in its own map rather than folded into `priceMetadataMap` above,
+    // which is filtered to rows that HAVE a timestamp. Staleness is answered
+    // for exactly the same rows, but its third state — `undefined`, meaning
+    // nothing dated this price so the question could not be asked — is the one
+    // that filter silently produces, and merging the two would make an absence
+    // here indistinguishable from a row the filter dropped (SC-956).
+    const priceStaleMap = new Map(
+      portfolioValue.holdings.map((h) => [h.tokenSymbol, h.priceStale])
+    );
+
     const detailedHoldings: HoldingWithDetails[] = holdingsWithFullDetails.map(
       ({ holding, token, account, institution }) => {
         const currentPrice = portfolioPriceMap.get(token.symbol);
@@ -154,6 +164,7 @@ export class HoldingQueryService extends BaseService {
         const costBasis = cachedCostBasis !== undefined ? cachedCostBasis : currentValue;
 
         let priceInfo = priceMetadataMap.get(token.symbol);
+        let priceStale = priceStaleMap.get(token.symbol);
 
         if (!priceInfo && token.id === user.baseCurrencyId) {
           priceInfo = {
@@ -161,6 +172,10 @@ export class HoldingQueryService extends BaseService {
             timestamp: new Date().toISOString(),
             source: 'Base Currency',
           };
+          // A currency against itself is 1 at every instant, so this rate is
+          // not old and is not unknown either — it is the one price that
+          // cannot go stale.
+          priceStale = false;
         }
 
         const holdingGroups = groupsMap.get(holding.id) || [];
@@ -197,6 +212,7 @@ export class HoldingQueryService extends BaseService {
           value: currentValue,
           costBasis: costBasis,
           price: priceInfo,
+          priceStale,
           account: {
             id: account.id,
             name: account.name,

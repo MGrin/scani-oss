@@ -249,6 +249,23 @@ describe('sections', () => {
   });
 });
 
+describe('a stale price', () => {
+  test('the peek turns the age above it into a judgement about it', () => {
+    // `Price age` is not another date. The peek already prints how old the
+    // quote is; what a reader cannot get from that is whether it is past the
+    // window we treat as current, because nothing on screen names the window.
+    expect(factLabels(holding({ priceStale: true }), 'Record')).toContain('Price age');
+    expect(factValues(holding({ priceStale: true }), 'Record').join(' ')).toContain(
+      'still counts toward your totals'
+    );
+  });
+
+  test('and says nothing when the price is fresh or was never dated', () => {
+    expect(factLabels(holding({ priceStale: false }), 'Record')).not.toContain('Price age');
+    expect(factLabels(holding(), 'Record')).not.toContain('Price age');
+  });
+});
+
 describe('actions', () => {
   test('a manual holding is not offered a sync it cannot do', () => {
     const synced = renderNode(holdingPeekSpec(holding(), CONTEXT).actions);

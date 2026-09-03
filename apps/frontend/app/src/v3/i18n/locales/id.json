@@ -550,6 +550,7 @@
         "observedBasis": "Rata-rata dari {{count}} bulan penuh, {{from}} sampai {{to}}: <value></value> sebulan.",
         "observedSpread": "Bulan-bulan itu berkisar <min></min> sampai <max></max>; bulan tengahnya <median></median>.",
         "observedNotCounted_other": "{{count}} arus keluar tidak dihitung — belum dijawab, atau berpindah ke tempat yang tidak bisa dilihat Scani.",
+        "observedStaleValued_other": "{{count}} pengeluaran yang dihitung dinilai dari kutipan harga usang.",
         "affordRemaining": "Yang tersisa setelahnya",
         "affordRunwayAfterObserved_other": "Sekitar {{count}} bulan dengan pengeluaran belakangan ini.",
         "affordCannot": "Itu lebih besar daripada saldo likuid.",
@@ -756,6 +757,8 @@
         "added": "Ditambahkan",
         "price": "Harga",
         "unpriceableNote": "Tidak ada sumber yang pernah memberi harga untuk token ini, dan untuk sementara kami berhenti bertanya. Token ini dikeluarkan dari kekayaan bersih Anda, bukan dihitung sebagai nol.",
+        "priceAge": "Usia harga",
+        "staleNote": "Kutipan harga di atas lebih lama daripada yang kami anggap terkini untuk jenis harga ini. Nilainya adalah nilai pada saat itu, dan tetap dihitung dalam total Anda.",
         "history": "Riwayat",
         "incompleteHistory": "Tidak lengkap — arus masuk sebelum transaksi pertama yang diimpor tidak ada, jadi nilai sebelum tanggal itu dibatasi.",
         "openingPosition": "Posisi awal",
@@ -856,6 +859,7 @@
       "summary": {
         "value": "Nilai",
         "excludes_other": "Tidak termasuk {{count}} kepemilikan tidak aktif senilai <value/>, yang tetap tercantum di bawah.",
+        "stalePriced_other": "Termasuk {{count}} kepemilikan senilai <value/> yang dinilai dari kutipan harga usang.",
         "allocation": "Alokasi menurut jenis aset"
       },
       "status": {

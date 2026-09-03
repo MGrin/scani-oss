@@ -1086,6 +1086,8 @@
         "added": "Ajoutée",
         "price": "Prix",
         "unpriceableNote": "Aucune source n’a jamais coté ce jeton, et nous avons cessé de demander pour l’instant. Il est exclu de votre patrimoine net plutôt que compté pour zéro.",
+        "priceAge": "Ancienneté du cours",
+        "staleNote": "Le cours ci-dessus est plus ancien que ce que nous considérons comme actuel pour ce type de prix. La valeur est celle de ce moment-là, et elle compte toujours dans vos totaux.",
         "history": "Historique",
         "incompleteHistory": "Incomplet — les entrées antérieures à la première transaction importée manquent, les valeurs avant cette date sont donc bornées.",
         "openingPosition": "Position d’ouverture",
@@ -1197,6 +1199,9 @@
         "excludes_one": "Exclut {{count}} position inactive valant <value/>, toujours listée ci-dessous.",
         "excludes_many": "Exclut {{count}} positions inactives valant <value/>, toujours listées ci-dessous.",
         "excludes_other": "Exclut {{count}} positions inactives valant <value/>, toujours listées ci-dessous.",
+        "stalePriced_one": "Inclut {{count}} position valant <value/> évaluée sur une cotation périmée.",
+        "stalePriced_many": "Inclut {{count}} positions valant <value/> évaluées sur des cotations périmées.",
+        "stalePriced_other": "Inclut {{count}} positions valant <value/> évaluées sur des cotations périmées.",
         "allocation": "Répartition par type d’actif"
       },
       "status": {
@@ -2785,6 +2790,9 @@
         "observedNotCounted_one": "{{count}} sortie n’est pas comptée — sans réponse, ou déplacée quelque part que Scani ne voit pas.",
         "observedNotCounted_many": "{{count}} sorties ne sont pas comptées — sans réponse, ou déplacées quelque part que Scani ne voit pas.",
         "observedNotCounted_other": "{{count}} sorties ne sont pas comptées — sans réponse, ou déplacées quelque part que Scani ne voit pas.",
+        "observedStaleValued_one": "{{count}} sortie comptée a été évaluée sur une cotation périmée.",
+        "observedStaleValued_many": "{{count}} sorties comptées ont été évaluées sur des cotations périmées.",
+        "observedStaleValued_other": "{{count}} sorties comptées ont été évaluées sur des cotations périmées.",
         "affordRemaining": "Ce qu’il reste ensuite",
         "affordRunwayAfterObserved_one": "Environ {{count}} mois au rythme de dépenses récent.",
         "affordRunwayAfterObserved_many": "Environ {{count}} mois au rythme de dépenses récent.",

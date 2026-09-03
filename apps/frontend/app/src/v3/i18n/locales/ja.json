@@ -550,6 +550,7 @@
         "observedBasis": "{{from}} から {{to}} までの完了した{{count}}か月の平均: 月あたり <value></value>。",
         "observedSpread": "その各月は <min></min> から <max></max> の幅があり、中央の月は <median></median> でした。",
         "observedNotCounted_other": "{{count}}件の出金は算入していません。未回答か、Scaniが把握できない先へ動いたものです。",
+        "observedStaleValued_other": "計上済みの支出{{count}}件は古い相場で評価しています。",
         "affordRemaining": "その後に残る額",
         "affordRunwayAfterObserved_other": "最近の支出ペースで約{{count}}か月です。",
         "affordCannot": "流動性のある残高を超えています。",
@@ -756,6 +757,8 @@
         "added": "追加日",
         "price": "価格",
         "unpriceableNote": "このトークンの価格を提示した提供元は一度もなく、現時点で問い合わせを止めています。ゼロとして数えるのではなく、純資産から除外しています。",
+        "priceAge": "価格の鮮度",
+        "staleNote": "上の相場は、この種類の価格について現在とみなす期間より古いものです。金額はその時点の価値であり、合計には引き続き含まれます。",
         "history": "履歴",
         "incompleteHistory": "不完全です。最初に取り込んだ取引より前の入金が欠けているため、その日付より前の評価額は据え置かれています。",
         "openingPosition": "期首ポジション",
@@ -856,6 +859,7 @@
       "summary": {
         "value": "評価額",
         "excludes_other": "無効な保有資産{{count}}件（<value/>）を除いています。下には引き続き表示されます。",
+        "stalePriced_other": "古い相場で評価した保有資産{{count}}件（<value/>）を含みます。",
         "allocation": "資産種類別の配分"
       },
       "status": {

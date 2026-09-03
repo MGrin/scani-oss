@@ -3,7 +3,12 @@ import { Block } from '@scani/ui/v3/components/Block';
 import { StatTile } from '@scani/ui/v3/components/charts/StatTile';
 import { Numeric } from '@scani/ui/v3/components/Numeric';
 import { Trans, useTranslation } from 'react-i18next';
-import { excludedFromTotal, holdingAllocation, holdingsValue } from '../../lib/holdings';
+import {
+  excludedFromTotal,
+  holdingAllocation,
+  holdingsValue,
+  stalePricedInTotal,
+} from '../../lib/holdings';
 import { AllocationBar } from '../charts/AllocationBar';
 
 /**
@@ -27,6 +32,20 @@ import { AllocationBar } from '../charts/AllocationBar';
  * that the total above them ignores — so the gap is stated rather than left to
  * be discovered by adding the column up. An unexplained exclusion is the same
  * experience as a wrong total.
+ *
+ * **TWO CAPTIONS, AND THE ORDER IS THE ARGUMENT (SC-956).** The stale-quote
+ * line is a claim about value that IS in the figure; the excluded line is a
+ * caveat about rows that are not. They are opposite operations, and adjacent
+ * in the other order they read as two versions of one caveat — a reader who
+ * has just been told what was left out takes the next sentence as more of the
+ * same and stops. `ObservedBasis` on the money surface made this call first
+ * and for the same reason; this follows it rather than re-deciding.
+ *
+ * The stale line names what it INCLUDES, in as many words, because the whole
+ * hazard is that an old price is silently indistinguishable from a fresh one.
+ * A stale price still counts — the rollup decided that deliberately, since
+ * dropping the holding fabricates a gap on a pure data-gap day — so this
+ * labels the figure rather than changing it.
  */
 
 interface HoldingsSummaryProps {
@@ -38,6 +57,7 @@ export function HoldingsSummary({ holdings, currency }: HoldingsSummaryProps) {
   const { t } = useTranslation();
   const allocation = holdingAllocation(t, holdings);
   const excluded = excludedFromTotal(holdings);
+  const stale = stalePricedInTotal(holdings);
 
   return (
     <Block className="flex flex-col gap-4 p-4">
@@ -47,6 +67,17 @@ export function HoldingsSummary({ holdings, currency }: HoldingsSummaryProps) {
           label={t('v3.holdings.summary.value')}
           value={<Numeric value={holdingsValue(holdings)} currency={currency} />}
         />
+        {stale.count > 0 ? (
+          <p className="text-caption text-muted-foreground">
+            <Trans
+              i18nKey="v3.holdings.summary.stalePriced"
+              count={stale.count}
+              components={{
+                value: <Numeric value={stale.value} currency={currency} className="text-caption" />,
+              }}
+            />
+          </p>
+        ) : null}
         {excluded.count > 0 ? (
           <p className="text-caption text-muted-foreground">
             {/* One sentence, one key, the figure as a slot (SC-235). Built as

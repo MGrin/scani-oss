@@ -34,6 +34,23 @@ import { formatProjectionMonth } from '../money/ProjectionChart';
  * no recurring payments would otherwise get "lasts more than 12 months", which
  * is true, vacuous, and the most reassuring possible way to say "we know
  * nothing about your outgoings".
+ *
+ * **`staleValued` is NOT reported here, and that is a decision rather than an
+ * oversight (SC-956).** The observed burn behind this figure can rest partly
+ * on quotes weeks old, and `ObservedBasis` on the forecast page now says so.
+ * Three reasons it stops there. This line already carries a mark saying the
+ * whole figure is not a measurement, which is the strongest qualifier on the
+ * screen and the one a second clause would have to compete with. Its content
+ * is a month count, not money, so there is no figure here for a stale price to
+ * make wrong in the way it makes a burn total wrong. And it is a link whose
+ * destination leads with the same figure and now carries the caveat, which is
+ * exactly what a link is for.
+ *
+ * The half of that worth doubting: home is the default screen, and "the fact
+ * existed everywhere except the screen its reader opens" is the failure
+ * `CoverageNote` was built to fix. The difference relied on is that the figure
+ * there was presented as measured and this one is marked projected. If that
+ * turns out to be too fine a distinction, this is where the clause goes.
  */
 export function RunwayLine() {
   const { t } = useTranslation();

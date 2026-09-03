@@ -246,6 +246,38 @@ export function holdingsValue(holdings: readonly HoldingWithDetails[]): number {
   );
 }
 
+/**
+ * How much of the figure above rests on a quote we would not call current, and
+ * what those rows are worth (SC-956).
+ *
+ * The sibling of `excludedFromTotal` below, and deliberately the OPPOSITE
+ * operation: that one names rows the total leaves out, this one names rows the
+ * total counts and should not be read as freshly priced. A reader who has met
+ * one of them expects the other to be more of the same, so the two sentences
+ * are worded to say which way each runs rather than sharing a shape.
+ *
+ * Over the rows that COUNT, for the reason SC-63 makes concrete about the
+ * allocation bar: a count beside a figure has to describe the set that figure
+ * is made of, or the two are claims about different portfolios. An inactive
+ * holding priced from an ancient quote is not in the total and so is not in
+ * here either.
+ *
+ * `priceStale === true` and not `!== false`: absent means nothing dated the
+ * price, so the question was never asked. Counting an unasked question as a
+ * yes would put a number on the screen that no server ever computed.
+ */
+export function stalePricedInTotal(holdings: readonly HoldingWithDetails[]): ExcludedFromTotal {
+  let count = 0;
+  let value = 0;
+  for (const holding of holdings) {
+    if (!countsTowardTotal(holding)) continue;
+    if (holding.priceStale !== true) continue;
+    count += 1;
+    value += holding.value ?? 0;
+  }
+  return { count, value };
+}
+
 export interface ExcludedFromTotal {
   count: number;
   value: number;

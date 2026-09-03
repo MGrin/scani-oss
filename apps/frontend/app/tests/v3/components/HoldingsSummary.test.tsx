@@ -65,6 +65,41 @@ describe('HoldingsSummary', () => {
     expect(render([holding({ value: 100 })])).not.toInclude('Excludes');
   });
 
+  test('names the value it counts from a quote it would not call current', () => {
+    const html = render([
+      holding({ id: 'h1', value: 100 }),
+      holding({ id: 'h2', value: 250.5, priceStale: true }),
+    ]);
+    // Both figures are in the total — a stale price still counts — so the
+    // hero must be the sum and the sentence must say "Includes".
+    expect(html).toInclude('350.50');
+    expect(html).toInclude('Includes 1 holding');
+    expect(html).toInclude('250.50');
+  });
+
+  test('the stale sentence comes before the excluded one', () => {
+    // Opposite operations. Adjacent in the other order the larger claim about
+    // counted value reads as a footnote to the smaller caveat about rows left
+    // out, and a reader who has met one stops at the second.
+    const html = render([
+      holding({ id: 'h1', value: 100, priceStale: true }),
+      holding({ id: 'h2', value: 20, isActive: false }),
+    ]);
+    expect(html.indexOf('Includes 1 holding')).toBeGreaterThan(-1);
+    expect(html.indexOf('Excludes 1 inactive holding')).toBeGreaterThan(-1);
+    expect(html.indexOf('Includes 1 holding')).toBeLessThan(
+      html.indexOf('Excludes 1 inactive holding')
+    );
+  });
+
+  test('says nothing about staleness when nothing was judged stale', () => {
+    // An absent flag is "we could not date the price", not "it is fresh" —
+    // neither earns a sentence, and inventing one for the first would be a
+    // claim about a question nobody answered.
+    expect(render([holding({ value: 100 })])).not.toInclude('Includes');
+    expect(render([holding({ value: 100, priceStale: false })])).not.toInclude('Includes');
+  });
+
   test('pluralises the sentence it is about to make the reader trust', () => {
     const html = render([
       holding({ id: 'h1', value: 10 }),

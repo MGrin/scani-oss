@@ -603,6 +603,13 @@ function RunwayBasis({ forecast, baseSymbol }: { forecast: ForecastData; baseSym
  * a large share, the burn is understated and the runway is too long — the
  * flattering direction again, which is why the count is printed rather than
  * folded away.
+ *
+ * `staleValued` is the newest of them and the only one about the PRICE rather
+ * than about which rows were seen (SC-956). `ObservedBurnService` has counted
+ * it since SC-151 and nothing rendered it, so a mean built partly on quotes
+ * weeks old reached this page presented exactly like one built on today's —
+ * and the runway on the home screen is that mean divided into the liquid
+ * total, so the same silence carried one figure further.
  */
 function ObservedBasis({
   burn,
@@ -690,6 +697,25 @@ function ObservedBasis({
           the next qualifier as more of the same and stops. Arriving second, the
           larger claim would be dressed as a footnote to the smaller one. */}
       <BurnProvenance burn={burn} />
+      {burn.staleValued > 0 ? (
+        // SITS BETWEEN PROVENANCE AND THE EXCLUDED LINE, and both neighbours
+        // are why (SC-956). It is a claim about rows that ARE counted, like
+        // provenance and unlike `notCounted`, so it belongs on that side of
+        // the break. And it is the smaller of the two counted-value claims, so
+        // it goes second — the same ordering argument the provenance block
+        // above states, applied one step down.
+        //
+        // The direction is NOT stated, and that is the difference from every
+        // other clause here. `unclassified` and `unvalued` are treated as zero,
+        // so the burn is understated and the runway too long — the flattering
+        // direction, which is worth naming. A quote from three weeks ago is
+        // not systematically high or low; asserting a direction would be
+        // inventing one. What the reader needs is that the figure moved on a
+        // price nobody refreshed.
+        <p className="text-caption text-muted-foreground">
+          {t('v3.money.forecast.observedStaleValued', { count: burn.staleValued })}
+        </p>
+      ) : null}
       {notCounted > 0 ? (
         <p className="text-caption text-muted-foreground">
           {t('v3.money.forecast.observedNotCounted', { count: notCounted })}

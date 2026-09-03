@@ -34,6 +34,7 @@ import {
   holdingsValue,
   isSynced,
   payoutScheduleLabel,
+  stalePricedInTotal,
   supportsApy,
   tokenTypeOptions,
 } from '../../../src/v3/lib/holdings';
@@ -285,6 +286,34 @@ describe('excludedFromTotal', () => {
 
   test('is silent when everything on screen counts', () => {
     expect(excludedFromTotal([holding({ value: 10 })])).toEqual({ count: 0, value: 0 });
+  });
+});
+
+describe('stalePricedInTotal', () => {
+  test('counts the rows the figure DOES include but should not read as fresh', () => {
+    expect(
+      stalePricedInTotal([
+        holding({ id: 'a', value: 10 }),
+        holding({ id: 'b', value: 90, priceStale: true }),
+        holding({ id: 'c', value: 5, priceStale: false }),
+      ])
+    ).toEqual({ count: 1, value: 90 });
+  });
+
+  test('leaves out a stale row the total does not count either', () => {
+    // The count has to describe the set the figure above it is made of. An
+    // inactive holding is not in the total, so its stale price says nothing
+    // about the number on screen.
+    expect(
+      stalePricedInTotal([holding({ id: 'a', value: 90, priceStale: true, isActive: false })])
+    ).toEqual({ count: 0, value: 0 });
+  });
+
+  test('an absent flag is not counted — the question was never asked', () => {
+    // `undefined` means nothing dated the price, which is a different fact
+    // from a price we dated and found old. Counting it would put a number on
+    // screen no server computed.
+    expect(stalePricedInTotal([holding({ id: 'a', value: 90 })])).toEqual({ count: 0, value: 0 });
   });
 });
 

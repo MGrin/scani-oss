@@ -251,6 +251,25 @@ export function holdingPeekSpec(holding: HoldingWithDetails, ctx: HoldingPeekCon
     });
   }
 
+  if (holding.priceStale === true) {
+    // The peek already prints how old the price is, one fact up. That is a
+    // DATE and this is a JUDGEMENT about it — a reader cannot tell "eleven
+    // days ago" from "eleven days ago and that is beyond what we treat as
+    // current for this kind of price" without knowing the window, and nothing
+    // on the screen tells them. Same reasoning as the unpriceable note above:
+    // the list carries the flag, the peek carries the sentence (SC-154).
+    //
+    // It says the value still counts, because it does and because that is the
+    // question a reader arrives with. Flagging a stale price rather than
+    // dropping the holding is deliberate — dropping it opens a hole in the
+    // chart on a pure data-gap day — so the sentence states the trade instead
+    // of leaving "is this in my total?" to be guessed (SC-956).
+    record.push({
+      label: t('v3.holdings.peek.priceAge'),
+      value: t('v3.holdings.peek.staleNote'),
+    });
+  }
+
   if (holding.dataIntegrity?.incompleteHistory) {
     // v2 hangs this on a `title` attribute on the table row, which a phone has
     // no way to show at all. It qualifies every historical figure for this

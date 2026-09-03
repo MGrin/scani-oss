@@ -3,7 +3,7 @@ import type { TokenPriceGranularity } from '@scani/db/schema';
 import { createComponentLogger } from '@scani/logging';
 import Decimal from 'decimal.js';
 import { Container, Service } from 'typedi';
-import { MAX_DAILY_PRICE_AGE_MS, MAX_INTRADAY_PRICE_AGE_MS } from '../../lib/constants';
+import { isPriceStale } from '../../lib/price-freshness';
 import { TokenTypeRepository } from '../../repositories/EnumRepositories';
 import { TokenPriceRepository } from '../../repositories/TokenPriceRepository';
 import { TokenRepository } from '../../repositories/TokenRepository';
@@ -109,8 +109,7 @@ export class PriceGraphService {
     const tx = options.tx;
     // Daily-granularity lookups tolerate a wider staleness window than
     // intraday — thin-pair daily closes are legitimately weekly.
-    const staleCap = prefer === 'daily' ? MAX_DAILY_PRICE_AGE_MS : MAX_INTRADAY_PRICE_AGE_MS;
-    const isStale = (effectiveAt: Date): boolean => at.getTime() - effectiveAt.getTime() > staleCap;
+    const isStale = (effectiveAt: Date): boolean => isPriceStale(effectiveAt, at, prefer);
 
     // Depth 1 — direct.
     const direct = await this.tryDirect(fromTokenId, toTokenId, at, prefer, lookup, tx);
