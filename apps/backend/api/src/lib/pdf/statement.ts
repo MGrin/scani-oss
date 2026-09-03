@@ -21,6 +21,7 @@ import PDFDocument from 'pdfkit';
  * and every string is split into runs by which subset covers each character.
  * `fonts.ts` explains why, and what a character no subset covers prints as.
  */
+import { visualRuns } from './bidi';
 import { loadTypesetter, type Run, type Typesetter, UNSUPPORTED_MARK } from './fonts';
 import {
   type Block,
@@ -122,8 +123,22 @@ function runsWidth(pen: Pen, runs: readonly Run[], style: TypeStyle): number {
   return width + spacing * Math.max(runs.length - 1, 0);
 }
 
+/**
+ * The runs of `text`, cut by face and then ordered as they are drawn.
+ *
+ * The single place both halves go through, and that is the point rather than
+ * tidiness: `runsWidth` charges tracking per run BOUNDARY, and ordering cuts a
+ * mixed-direction line into more runs than the face split alone does. A
+ * measure pass that skipped this would count a different number of boundaries
+ * from the draw pass, which is the "measuring and drawing come to disagree"
+ * failure this file already carries a comment about.
+ */
+function laidOut(pen: Pen, text: string, style: TypeStyle): Run[] {
+  return visualRuns(pen.type.shape(text, style.face));
+}
+
 function measurer(pen: Pen): Measure {
-  return (text, style) => runsWidth(pen, pen.type.shape(text, style.face), style);
+  return (text, style) => runsWidth(pen, laidOut(pen, text, style), style);
 }
 
 /** One line of text at an exact point, never wrapped, never re-flowed. pdfkit's
@@ -133,7 +148,13 @@ function measurer(pen: Pen): Measure {
  *  Drawn run by run at explicit coordinates rather than with `continued: true`:
  *  a continued run inherits pdfkit's flow, which is the thing this document
  *  cannot have, and advancing x by the width already measured keeps the drawn
- *  line exactly as wide as the layout was told it would be. */
+ *  line exactly as wide as the layout was told it would be.
+ *
+ *  The cursor still advances left to right and always will — that is what a
+ *  page coordinate means. What changed in SC-968 is that `laidOut` hands the
+ *  runs over in the order they are DRAWN rather than the order they are
+ *  stored, so a right-to-left run arrives at the point on the line where it
+ *  belongs instead of the point its characters happen to be typed at. */
 function put(
   pen: Pen,
   text: string,
@@ -141,11 +162,25 @@ function put(
   y: number,
   style: TypeStyle,
   colour: string,
+  // `align` stays PHYSICAL, and SC-968 deliberately left it that way. Making it
+  // logical means resolving `start`/`end` against a base direction, and the
+  // render input has none to resolve against: `RenderPdfInput` carries a sheet
+  // and a provenance block and no locale, language or direction anywhere in
+  // either. Renaming the two values without an input that can select between
+  // them would be an abstraction with nothing driving it, and it would read as
+  // though the document had been made direction-aware when it had not.
+  //
+  // Nothing is misplaced by that. Alignment decides where a box of text sits in
+  // its column; `laidOut` decides the order inside the box, and that is the
+  // half a right-to-left name needs. Mirroring the TABLE — column order, the
+  // mark, the footer — is SC-201's own step and is the thing that would supply
+  // the missing direction (`@scani/shared`'s `LANGUAGE_FORMATS` already carries
+  // `ar: { dir: 'rtl' }` for it).
   options: { width?: number; align?: 'left' | 'right' } = {}
 ): void {
   const width = options.width;
   const shown = width === undefined ? text : truncate(text, width, style, measurer(pen));
-  const runs = pen.type.shape(shown, style.face);
+  const runs = laidOut(pen, shown, style);
   const spacing = style.spacing ?? 0;
   let cursor =
     options.align === 'right' && width !== undefined ? x + width - runsWidth(pen, runs, style) : x;

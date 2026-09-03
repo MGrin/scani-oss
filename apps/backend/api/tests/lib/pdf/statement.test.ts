@@ -363,3 +363,38 @@ describe('pdfkit default-font trap', () => {
     }
   });
 });
+
+/**
+ * NO DRAW PATH MAY BYPASS THE RUN ORDERING (SC-968).
+ *
+ * `bidi.test.ts` proves the ordering is right. This proves it is REACHED, which
+ * is a different claim and the one a future edit is most likely to break: the
+ * failure would be a second `type.shape(...)` call added straight into a draw
+ * or measure path, which type-checks, renders, and quietly places a
+ * right-to-left run back in logical order.
+ *
+ * It also pins the half that has nothing to do with direction. `runsWidth`
+ * charges tracking once per run BOUNDARY, and ordering cuts a mixed line into
+ * more runs than the face split alone. A measure pass that skipped the ordering
+ * would count a different number of boundaries from the draw pass and set a
+ * tracked column header at a width it is not drawn at — the same defect as
+ * measuring `Gain / loss` and drawing `GAIN / LOSS`, which this document has
+ * already had once.
+ */
+describe('run ordering is on the only path to the page', () => {
+  it('shapes text in exactly one place, and orders it there', async () => {
+    const source = await Bun.file(
+      new URL('../../../src/lib/pdf/statement.ts', import.meta.url)
+    ).text();
+
+    // The must-be-FOUND control: a mistyped URL, a moved file or a renamed
+    // method all yield an empty read, and an empty read satisfies "no
+    // unordered call" perfectly.
+    expect(source).toContain('function put(');
+    expect(source).toContain('function measurer(');
+
+    const shaped = source.match(/\.shape\(/g) ?? [];
+    expect(shaped).toHaveLength(1);
+    expect(source).toMatch(/visualRuns\(\s*pen\.type\.shape\(/);
+  });
+});

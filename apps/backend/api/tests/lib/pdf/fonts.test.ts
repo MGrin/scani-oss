@@ -201,85 +201,138 @@ describe('typesetter', () => {
 });
 
 /**
- * COVERAGE FOR A JOINING OR RTL SCRIPT IS REFUSED UNTIL THE RENDERER ORDERS RUNS
- * VISUALLY (SC-763).
+ * THE RUN-ORDER ASSERTION THAT LIFTS SC-763's REFUSAL (SC-968).
  *
- * The detector that makes an unsettable character visible — `[?]` plus the
- * metadata note — is `supports()`, and `supports()` is pure codepoint coverage.
- * So it goes blind at the exact moment coverage arrives. Bundle an Arabic face
- * and `covers.has` goes true, `supports()` goes true, the mark and the note
- * disappear, and the failure upgrades from loud-and-unusable to
- * silent-and-plausible.
+ * SC-763 refused coverage for a joining or right-to-left script and named its
+ * own price: *"REPLACE THIS TEST WITH THE RUN-ORDER ASSERTION — that a mixed
+ * RTL/LTR line is drawn in visual order — and make it pass."* That assertion is
+ * `bidi.test.ts`, and this block is what connects it to a real page.
  *
- * WHAT IS ACTUALLY MISSING IS NOT SHAPING. That was measured rather than
- * assumed, because the ticket asserted the opposite: fontkit 2.0.4 ships
- * `ArabicShaper.js` and pdfkit 0.19.1 calls `font.layout(text, features)`.
- * Laying out `سلام` returns three glyphs for four codepoints — the mandatory
- * lam-alef ligature — with contextual ids and RTL reordering, against a Latin
- * control that comes back identical to its isolated forms. Glyphs are fine.
+ * **The refusal is gone rather than weakened, and that is the point.** It was
+ * an implication with a measured antecedent — coverage — and a consequent that
+ * cost writing the ordering. The ordering is written; there was never anything
+ * here to set to `true`.
  *
- * What is missing is BIDI, in our own draw path: `statement.ts` emits run by run
- * at explicit x, advancing left to right, and runs split on face boundaries
- * (`'Сбербанк ABC'` is two runs). A bundled Arabic face therefore yields
- * `'بنك ABC'` in logical order — correct glyphs, wrong place, no mark.
- *
- * WHY THIS IS AN IMPLICATION AND NOT A CONJUNCTION. The tempting form is "an RTL
- * face is bundled AND the draw path is bidi-naive". The second half is not
- * mechanically knowable, so it would have to be a flag or an exemption list —
- * and on the day the guard reds, the cheapest clearance is flipping it, decided
- * while staring at a red build. That is the escape hatch CLAUDE.md names.
- *
- * So the second half is not modelled at all. The antecedent is measured
- * coverage; the consequent is a refusal. Lifting it costs what it claims:
- * REPLACE THIS TEST WITH THE RUN-ORDER ASSERTION — that a mixed RTL/LTR line is
- * drawn in visual order — and make it pass. There is no cheaper clearance,
- * because there is nothing here to set to `true`.
- *
- * It deliberately probes through `supports()` rather than reading `covers`
- * directly, so it tracks the renderer's own detector rather than a parallel
- * notion of coverage that could drift from it.
+ * What replaces it is narrower and mechanical: the two facts `bidi.ts` rests on
+ * that are properties of the FONTS rather than of our code, so a face bundled
+ * by SC-201 could falsify either one without touching a line of the renderer.
  */
-describe('joining and RTL scripts', () => {
-  /** One representative letter per script whose shaping our draw path cannot place. */
-  const JOINING = {
-    Arabic: 'ب',
-    Hebrew: 'א',
-    Syriac: 'ܐ',
-    Thaana: 'ހ',
-    NKo: 'ߊ',
-  } as const;
+describe('what the run ordering assumes about the faces', () => {
+  /**
+   * fontkit reverses the glyphs of a run it reads as right-to-left, and
+   * `bidi.ts` relies on that: it orders the RUNS and leaves the characters
+   * inside each one alone. Doing both would undo one.
+   *
+   * The instrument is a face that covers NONE of these scripts, which is the
+   * only kind this repo has — and it works because fontkit takes the direction
+   * from the text's own script, never from the font. That is the whole claim,
+   * and it is exactly what makes it assertable here.
+   */
+  it('fontkit reads direction from the text, not from the font', () => {
+    const plex = fontkit.create(embedded.get('Sans') as Buffer);
+    if (!('layout' in plex)) throw new Error('Sans is a collection, not a face');
+
+    expect(plex.layout('بنك').direction).toBe('rtl');
+    expect(plex.layout('בנק').direction).toBe('rtl');
+
+    // The must-be-LTR controls. Without them a `direction` stuck at `rtl` would
+    // satisfy the two assertions above and say nothing.
+    expect(plex.layout('ABC').direction).toBe('ltr');
+    expect(plex.layout('Сбербанк').direction).toBe('ltr');
+  });
 
   /**
-   * The must-be-FOUND control, and it is the whole reason the assertion below
-   * means anything. `supports()` returning false for every sample is the
-   * evidence — and a probe that had stopped reading faces would return false for
-   * everything, certifying the tree forever. Cyrillic IS covered, so this
-   * separates "no face covers Arabic" from "the probe read no faces".
+   * And the case `bidi.ts` has to handle itself, asserted rather than reasoned
+   * about: a run of nothing but neutrals has no strong character to detect a
+   * script from, so fontkit calls it left-to-right and leaves it in logical
+   * order even at an odd embedding level. That is why `drawnText` reverses
+   * exactly those runs and no others.
+   */
+  it('leaves a run of neutrals left-to-right, whatever its level', () => {
+    const plex = fontkit.create(embedded.get('Sans') as Buffer);
+    if (!('layout' in plex)) throw new Error('Sans is a collection, not a face');
+
+    expect(plex.layout(' (').direction).toBe('ltr');
+    expect(plex.layout('1,234.50').direction).toBe('ltr');
+  });
+
+  /**
+   * `bidi.ts` applies rule L4 — mirroring a bracket at an odd level — itself,
+   * because leaving it to the `rtlm` OpenType feature would make the output
+   * depend on which face happened to be bundled. fontkit DOES enable `rtlm` for
+   * a right-to-left run, so a face that defined it would mirror a second time
+   * and turn `'(ABC) بنك'` back into `')ABC( بنك'`.
+   *
+   * No face declares it today, and none of the Arabic faces on the machine this
+   * was measured on does either — mirroring is the layout engine's job in
+   * practice, not the font's. This is the one-command check SC-201 owes when it
+   * bundles one, expressed as a test so that nobody has to remember to run it.
+   */
+  it('no bundled face declares rtlm, so the mirroring is not applied twice', () => {
+    const declaring: string[] = [];
+    let readable = 0;
+    for (const [name, bytes] of embedded) {
+      const face = fontkit.create(bytes);
+      if (!('availableFeatures' in face)) throw new Error(`${name} is a collection, not a face`);
+      if (face.availableFeatures.length > 0) readable += 1;
+      if (face.availableFeatures.includes('rtlm')) declaring.push(name);
+    }
+
+    // The must-be-FOUND control, and it is global rather than per face for a
+    // reason this control found itself: `Mono-Cyrillic-Ext` reports an EMPTY
+    // feature list, and that is the truth about it rather than a failed read —
+    // a subset with no layout tables declares nothing, and so cannot declare
+    // `rtlm` either. A per-face floor would fail on it while a reader that had
+    // gone blind everywhere would still pass this. `kern` was the first choice
+    // and is not universal here: one cut declares only `ccmp` and `mark`.
+    expect(readable).toBeGreaterThan(0);
+    expect(declaring).toEqual([]);
+  });
+});
+
+/**
+ * WHY THE RUN-ORDER ASSERTION CANNOT BE MADE ON A DOCUMENT (SC-968).
+ *
+ * Kept from SC-763, and it has changed job. It used to be the positive
+ * statement of the state that guard preserved. It is now the reason
+ * `bidi.test.ts` asserts on `visualRuns` and not on a rendered page: there is
+ * no string a statement can draw today that resolves to an odd embedding level,
+ * so a document-level assertion would be an assertion about `[?]`.
+ *
+ * It is also the thing SC-201 changes. When these expectations flip, the
+ * ordering is what stands between a reader and a misplaced name.
+ */
+describe('no right-to-left character can reach the page today', () => {
+  /**
+   * The must-be-FOUND control. `supports()` returning false for everything
+   * would satisfy every assertion below while reading no faces at all.
    */
   it('the coverage probe can see a script that is bundled', () => {
     expect(type.supports('Б')).toBe(true);
     expect(drawn('Б')).toBe('Б');
   });
 
-  it('no bundled face covers a script the draw path cannot place', () => {
-    const covered = Object.entries(JOINING)
-      .filter(([, sample]) => type.supports(sample))
-      .map(
-        ([script]) =>
-          `${script} is now covered by a bundled face, so the [?] mark no longer fires for it — ` +
-          'but statement.ts still places runs in logical order. Implement visual run ordering ' +
-          'and replace this test with the run-order assertion; do not delete it.'
-      );
-    expect(covered).toEqual([]);
+  it('an Arabic name is marked, so a mixed line is pure ASCII', () => {
+    expect(type.supports('بنك')).toBe(false);
+    expect(drawn('بنك ABC')).toBe(`${UNSUPPORTED_MARK} ABC`);
+  });
+
+  /** One representative letter per script whose placement the ordering now
+   *  handles but whose glyphs are still not bundled. */
+  it('nor does any other joining or right-to-left script', () => {
+    for (const sample of ['ب', 'א', 'ܐ', 'ހ', 'ߊ']) {
+      expect(type.supports(sample)).toBe(false);
+    }
   });
 
   /**
-   * The state this guard exists to preserve, asserted positively rather than as
-   * the absence of a complaint: an Arabic name is currently MARKED, so a reader
-   * sees `[?]` and the metadata note rather than misordered text.
+   * And no directional control character either, which is the arm that would
+   * otherwise be missed: RLO or RLE alone is enough to force an odd level out
+   * of ordinary Latin text, without any RTL script being covered at all.
    */
-  it('an Arabic name is marked today, not silently misplaced', () => {
-    expect(type.supports('بنك')).toBe(false);
-    expect(drawn('بنك ABC')).toBe(`${UNSUPPORTED_MARK} ABC`);
+  it('nor any character that could force a direction on its own', () => {
+    for (const control of ['‏', '؜', '‫', '‮', '⁧']) {
+      expect(type.supports(control)).toBe(false);
+    }
   });
 });
