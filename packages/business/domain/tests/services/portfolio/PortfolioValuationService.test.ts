@@ -316,6 +316,8 @@ describe('PortfolioValuationService (integration — price metadata)', () => {
   interface MetadataFixture {
     userId: string;
     tokenIds: string[];
+    assetId: string;
+    freshId: string;
     tokenTypeId: string;
     institutionId: string;
     institutionTypeId: string;
@@ -346,6 +348,9 @@ describe('PortfolioValuationService (integration — price metadata)', () => {
     const base = await makeToken(tokenType.id, `PVSEUR${suffix.toUpperCase()}`);
     const quote = await makeToken(tokenType.id, `PVSUSD${suffix.toUpperCase()}`);
     const asset = await makeToken(tokenType.id, `PVSBTC${suffix.toUpperCase()}`);
+    // A second asset whose only difference is when it was last quoted, so the
+    // staleness assertion below has both arms on one fixture (SC-956).
+    const fresh = await makeToken(tokenType.id, `PVSETH${suffix.toUpperCase()}`);
 
     const [user] = await db
       .insert(schema.users)
@@ -379,25 +384,50 @@ describe('PortfolioValuationService (integration — price metadata)', () => {
       })
       .returning();
 
-    await db.insert(schema.holdings).values({
-      userId: user.id,
-      accountId: account!.id,
-      tokenId: asset.id,
-      balance: '2',
-    });
+    await db.insert(schema.holdings).values([
+      {
+        userId: user.id,
+        accountId: account!.id,
+        tokenId: asset.id,
+        balance: '2',
+      },
+      {
+        userId: user.id,
+        accountId: account!.id,
+        tokenId: fresh.id,
+        balance: '1',
+      },
+    ]);
 
     // The provider row: priced in the QUOTE currency, not the user's base.
-    await db.insert(schema.tokenPrices).values({
-      tokenId: asset.id,
-      baseTokenId: quote.id,
-      price: '60000',
-      timestamp: new Date('2026-08-13T06:00:00Z'),
-      source: 'coingecko',
-    });
+    //
+    // Its timestamp is FIXED and in the past, so it is past the intraday
+    // window and stays past it — age only grows. The row beside it is stamped
+    // at fixture time, so it is inside the window and stays inside it. Neither
+    // arm can flip with the wall clock, which is what makes the pair a test
+    // rather than a snapshot of the day it was written.
+    await db.insert(schema.tokenPrices).values([
+      {
+        tokenId: asset.id,
+        baseTokenId: quote.id,
+        price: '60000',
+        timestamp: new Date('2026-08-13T06:00:00Z'),
+        source: 'coingecko',
+      },
+      {
+        tokenId: fresh.id,
+        baseTokenId: quote.id,
+        price: '3000',
+        timestamp: new Date(),
+        source: 'coingecko',
+      },
+    ]);
 
     fixture = {
       userId: user.id,
-      tokenIds: [base.id, quote.id, asset.id],
+      tokenIds: [base.id, quote.id, asset.id, fresh.id],
+      assetId: asset.id,
+      freshId: fresh.id,
       tokenTypeId: tokenType.id,
       institutionId: institution!.id,
       institutionTypeId: institutionType!.id,
@@ -407,7 +437,11 @@ describe('PortfolioValuationService (integration — price metadata)', () => {
     // Stand in for the pricing pipeline: it resolved the USD row and converted
     // it, which is why the holding has a value at all.
     Container.set(PricingService, {
-      getCachedTokenPrices: async () => new Map([[asset.id, '55200']]),
+      getCachedTokenPrices: async () =>
+        new Map([
+          [asset.id, '55200'],
+          [fresh.id, '2760'],
+        ]),
     } as unknown as PricingService);
     // Redis is not part of this assertion; compute every time.
     Container.set(PortfolioValueCache, {
@@ -440,9 +474,29 @@ describe('PortfolioValuationService (integration — price metadata)', () => {
       fixture.userId
     );
 
-    const holding = portfolio.holdings[0];
-    expect(holding?.value).toBe('110400');
+    const holding = portfolio.holdings.find((h) => h.value === '110400');
     expect(holding?.priceSource).toBe('coingecko');
     expect(holding?.priceTimestamp?.toISOString()).toBe('2026-08-13T06:00:00.000Z');
+  });
+
+  /**
+   * The half of the price metadata nothing computed until SC-956. The
+   * timestamp was already on the wire and already rendered as "3 weeks ago";
+   * what a reader could not get from it is whether three weeks is past the
+   * window this kind of price is held to, because nothing on the screen names
+   * the window.
+   *
+   * Both arms, on one valuation, because a one-armed assertion here cannot
+   * separate "the rule ran and said no" from "the field is never populated".
+   */
+  test('a price past its freshness window is flagged, and a current one is not', async () => {
+    const portfolio = await Container.get(PortfolioValuationService).getUserPortfolioValue(
+      fixture.userId
+    );
+
+    const stale = portfolio.holdings.find((h) => h.value === '110400');
+    const current = portfolio.holdings.find((h) => h.value === '2760');
+    expect(stale?.priceStale).toBe(true);
+    expect(current?.priceStale).toBe(false);
   });
 });

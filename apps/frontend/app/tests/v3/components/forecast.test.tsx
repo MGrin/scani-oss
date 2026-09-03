@@ -578,6 +578,38 @@ describe('SC-661 — provenance of the counted burn', () => {
   });
 
   /**
+   * The count `ObservedBurnService` has kept since SC-151 and nothing rendered
+   * (SC-956). It is about the PRICE rather than about which rows were seen,
+   * which is why it does not join the excluded sentence: those rows are
+   * treated as zero and bias the mean one way, while a three-week-old quote
+   * has no direction to assert.
+   */
+  test('names the counted outflows valued from a stale quote', () => {
+    const html = render(BOOK, '10000', {
+      forecast: {
+        ...wire(BOOK, '10000'),
+        observedBurn: observedBurn({ staleValued: 2 }),
+      },
+    });
+
+    expect(html).toInclude('2 counted outflows were valued from stale quotes');
+    // It is a claim about counted value, like provenance and unlike the
+    // excluded line, so it sits on that side of the break.
+    const stale = html.indexOf('valued from stale quotes');
+    const excluded = html.indexOf('outflows are not counted');
+    expect(html.indexOf('Who classified the money')).toBeLessThan(stale);
+    expect(stale).toBeLessThan(excluded);
+  });
+
+  test('and says nothing when every counted outflow had a current quote', () => {
+    const html = render(BOOK, '10000', withBurn());
+    expect(html).not.toInclude('valued from stale quotes');
+    // Control: the basis around it still renders, so the absence above is the
+    // zero-count guard rather than the block failing to draw.
+    expect(html).toInclude('Mean of 6 complete months');
+  });
+
+  /**
    * A share of nothing is not three zeroes, it is a question with no answer —
    * the same rule `projectedShareOfObserved` follows. A window with no counted
    * exits says nothing rather than printing confident zeroes.

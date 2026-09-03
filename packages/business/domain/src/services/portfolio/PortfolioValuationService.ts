@@ -6,6 +6,7 @@ import { and, eq, lt } from 'drizzle-orm';
 import { Container, Service } from 'typedi';
 import { SCAM_PROBABILITY_THRESHOLD } from '../../lib/constants';
 import { isIncludedInTotal } from '../../lib/holding-inclusion';
+import { isPriceStale } from '../../lib/price-freshness';
 import {
   createPortfolioCacheKey,
   createPortfolioRedisKey,
@@ -40,6 +41,19 @@ export type PortfolioValueResult = {
     value: string | null;
     priceTimestamp?: Date;
     priceSource?: string;
+    /**
+     * The price behind `currentPrice` is older than its granularity's
+     * freshness window — the same `isPriceStale` rule the price graph
+     * applies, and the same two constants (SC-956).
+     *
+     * `undefined` is NOT "fresh". It means the question could not be asked:
+     * no `token_prices` row was found to date this price, which happens for
+     * a converted price whose metadata lookup missed. Three states on
+     * purpose — `true` old, `false` judged and fine, absent unknown — because
+     * the alternative is the failure this codebase keeps writing down, where
+     * an absence renders identically to good news.
+     */
+    priceStale?: boolean;
     isActive: boolean;
   }>;
 };
@@ -248,12 +262,15 @@ export class PortfolioValuationService {
     // from, and `currentPrice` is already expressed in the user's base
     // currency, so nothing needs converting a second time here.
     const tokenIds = Array.from(new Set(holdings.map((h) => h.tokenId)));
-    // Narrowed to the two fields anyone downstream reads, so the third pass
+    // Narrowed to the three fields anyone downstream reads, so the third pass
     // below can seed a rate the graph derived — which has a timestamp and a
-    // provenance but is not a `token_prices` row and never will be.
-    const priceMetadata = new Map<string, { timestamp: Date; source: string | null }>(
-      await this.tokenPriceRepository.findLatestPricesForTokens(tokenIds, baseCurrency.id)
-    );
+    // provenance but is not a `token_prices` row and never will be, so it has
+    // no `granularity` either. `isPriceStale` reads that absence as "not
+    // daily" and applies the tighter cap; see its note.
+    const priceMetadata = new Map<
+      string,
+      { timestamp: Date; source: string | null; granularity?: string | null }
+    >(await this.tokenPriceRepository.findLatestPricesForTokens(tokenIds, baseCurrency.id));
     const tokensWithoutMetadata = tokenIds.filter((id) => !priceMetadata.has(id));
     if (tokensWithoutMetadata.length > 0) {
       const anyBase = await this.tokenPriceRepository.findLatestPricesForTokensAnyBase(
@@ -284,7 +301,11 @@ export class PortfolioValuationService {
           now
         );
         for (const [tokenId, rate] of fiatRates.entries()) {
-          priceMetadata.set(tokenId, { timestamp: rate.timestamp, source: rate.source });
+          priceMetadata.set(tokenId, {
+            timestamp: rate.timestamp,
+            source: rate.source,
+            granularity: null,
+          });
         }
       }
     }
@@ -315,6 +336,14 @@ export class PortfolioValuationService {
           value,
           priceTimestamp: priceInfo?.timestamp,
           priceSource: priceInfo?.source || undefined,
+          // Only ever answered where the price it describes exists. A
+          // holding nothing could price has no quote to call old, and
+          // saying `false` there would be a claim about a price that is not
+          // on the row.
+          priceStale:
+            currentPrice !== null && priceInfo
+              ? isPriceStale(priceInfo.timestamp, now, priceInfo.granularity)
+              : undefined,
           isActive: holding.isActive,
         };
       } catch (error) {
@@ -337,6 +366,7 @@ export class PortfolioValuationService {
           value: null,
           priceTimestamp: undefined,
           priceSource: undefined,
+          priceStale: undefined,
           isActive: holding.isActive,
         };
       }

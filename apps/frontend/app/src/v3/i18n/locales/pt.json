@@ -867,7 +867,9 @@
         "syncBalance": "Sincronizar o saldo",
         "syncing": "A sincronizar…",
         "type": "Tipo",
-        "unpriceableNote": "Nenhuma fonte alguma vez cotou este token, e por agora deixámos de perguntar. Fica de fora do seu património líquido, em vez de ser contado como zero."
+        "unpriceableNote": "Nenhuma fonte alguma vez cotou este token, e por agora deixámos de perguntar. Fica de fora do seu património líquido, em vez de ser contado como zero.",
+        "priceAge": "Idade da cotação",
+        "staleNote": "A cotação por trás deste valor é mais antiga do que consideramos atual para este tipo de preço. O valor é o desse momento e continua a contar nos seus totais."
       },
       "realized": {
         "costOf": "custo <value/>",
@@ -910,6 +912,9 @@
         "excludes_many": "Exclui {{count}} posições inativas no valor de <value/>, ainda listadas em baixo.",
         "excludes_one": "Exclui {{count}} posição inativa no valor de <value/>, ainda listada em baixo.",
         "excludes_other": "Exclui {{count}} posições inativas no valor de <value/>, ainda listadas em baixo.",
+        "stalePriced_one": "Inclui {{count}} posição no valor de <value/> avaliada com uma cotação desatualizada.",
+        "stalePriced_many": "Inclui {{count}} posições no valor de <value/> avaliadas com cotações desatualizadas.",
+        "stalePriced_other": "Inclui {{count}} posições no valor de <value/> avaliadas com cotações desatualizadas.",
         "value": "Valor"
       },
       "toast": {
@@ -1682,6 +1687,9 @@
         "observedNotCounted_many": "{{count}} saídas não são contadas — sem resposta, ou passaram para onde o Scani não vê.",
         "observedNotCounted_one": "{{count}} saída não é contada — sem resposta, ou passou para onde o Scani não vê.",
         "observedNotCounted_other": "{{count}} saídas não são contadas — sem resposta, ou passaram para onde o Scani não vê.",
+        "observedStaleValued_one": "{{count}} saída contabilizada foi avaliada com uma cotação desatualizada.",
+        "observedStaleValued_many": "{{count}} saídas contabilizadas foram avaliadas com cotações desatualizadas.",
+        "observedStaleValued_other": "{{count}} saídas contabilizadas foram avaliadas com cotações desatualizadas.",
         "observedRunway_many": "Cerca de {{count}} meses ao ritmo de gastos recente",
         "observedRunway_one": "Cerca de {{count}} mês ao ritmo de gastos recente",
         "observedRunway_other": "Cerca de {{count}} meses ao ritmo de gastos recente",

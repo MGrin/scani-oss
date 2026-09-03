@@ -550,6 +550,7 @@
         "observedBasis": "{{from}} 至 {{to}} 共 {{count}} 个完整月份的平均值：每月 <value></value>。",
         "observedSpread": "这些月份的区间为 <min></min> 至 <max></max>；中位月份为 <median></median>。",
         "observedNotCounted_other": "有 {{count}} 笔流出未计入——尚未答复，或转到了 Scani 看不到的地方。",
+        "observedStaleValued_other": "已计入的 {{count}} 笔支出使用了过时的报价估值。",
         "affordRemaining": "之后还剩多少",
         "affordRunwayAfterObserved_other": "按近期支出速度约可支撑 {{count}} 个月。",
         "affordCannot": "这超过了可动用余额。",
@@ -756,6 +757,8 @@
         "added": "添加时间",
         "price": "价格",
         "unpriceableNote": "从来没有任何数据源为这个标的提供过报价，我们暂时不再尝试。它会被排除在你的净资产之外，而不是按零计入。",
+        "priceAge": "报价时效",
+        "staleNote": "这笔数值所依据的报价，比我们对这类价格视为当前的时间更久。该数值是当时的价值，并且仍计入你的总额。",
         "history": "历史",
         "incompleteHistory": "不完整——缺少第一笔导入交易之前的流入，因此该日期之前的价值会被限制处理。",
         "openingPosition": "期初持仓",
@@ -856,6 +859,7 @@
       "summary": {
         "value": "价值",
         "excludes_other": "未包含 {{count}} 个已停用的持仓（价值 <value/>），它们仍列在下面。",
+        "stalePriced_other": "包含 {{count}} 个持仓（价值 <value/>），其估值来自过时的报价。",
         "allocation": "按资产类型划分的分布"
       },
       "status": {

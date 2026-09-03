@@ -290,6 +290,31 @@ export type HoldingWithDetails = {
    */
   unpriceable?: boolean;
   /**
+   * The price behind `value` is older than the freshness window its
+   * granularity is held to — `MAX_INTRADAY_PRICE_AGE_MS` for an intraday row,
+   * `MAX_DAILY_PRICE_AGE_MS` for a daily close, both unchanged and both
+   * carrying their reasoning in `@scani/domain`'s `constants.ts` (SC-956).
+   *
+   * The sibling of `unpriceable` above, and on the wire beside it rather than
+   * inside `price` for that reason: both answer "why is this figure weaker
+   * than it looks", the same two surfaces read them together, and splitting
+   * the pair across two levels would make them read as unrelated facts.
+   *
+   * They are NOT the same fact and neither implies the other. `unpriceable`
+   * means nobody has ever quoted this token and the value is absent; this
+   * means somebody quoted it, the value is present and counted, and the quote
+   * is old. `value` stays in every total either way — flagging a stale price
+   * rather than dropping the holding is a decision the rollup already made and
+   * wrote down, because dropping it fabricates a hole on a pure data-gap day.
+   *
+   * THREE STATES, and `undefined` is not "fresh". It means no `token_prices`
+   * row was found to date this price, so the question could not be asked —
+   * which is a different thing from asking it and getting no. Unlike
+   * `unpriceable`, whose absence is merely the common case, an absence here
+   * carries information, so it is not compressed to "absent means false".
+   */
+  priceStale?: boolean;
+  /**
    * The last answer this holding's owner gave to "what did that edit mean"
    * (SC-510), or null if they have never been asked. The client pre-selects
    * it so the second month of a monthly savings update is one tap.

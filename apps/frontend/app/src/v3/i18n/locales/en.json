@@ -619,6 +619,8 @@
         "observedSpread": "Those months ranged <min></min> to <max></max>; the middle month was <median></median>.",
         "observedNotCounted_one": "{{count}} outflow is not counted — unanswered, or moved somewhere Scani cannot see.",
         "observedNotCounted_other": "{{count}} outflows are not counted — unanswered, or moved somewhere Scani cannot see.",
+        "observedStaleValued_one": "{{count}} counted outflow was valued from a stale quote.",
+        "observedStaleValued_other": "{{count}} counted outflows were valued from stale quotes.",
         "affordRemaining": "What's left afterwards",
         "affordRunwayAfterObserved_one": "About {{count}} month at recent spending.",
         "affordRunwayAfterObserved_other": "About {{count}} months at recent spending.",
@@ -841,6 +843,8 @@
         "added": "Added",
         "price": "Price",
         "unpriceableNote": "No source has ever quoted this token, and we have stopped asking for now. It is left out of your net worth rather than counted as zero.",
+        "priceAge": "Price age",
+        "staleNote": "The quote behind this value is older than we treat as current for this kind of price. The value is what it was worth then, and it still counts toward your totals.",
         "history": "History",
         "incompleteHistory": "Incomplete — inflows from before the first imported transaction are missing, so values before that date are clamped.",
         "openingPosition": "Opening position",
@@ -948,6 +952,8 @@
         "value": "Value",
         "excludes_one": "Excludes {{count}} inactive holding worth <value/>, still listed below.",
         "excludes_other": "Excludes {{count}} inactive holdings worth <value/>, still listed below.",
+        "stalePriced_one": "Includes {{count}} holding worth <value/> priced from a stale quote.",
+        "stalePriced_other": "Includes {{count}} holdings worth <value/> priced from stale quotes.",
         "allocation": "Allocation by asset type"
       },
       "status": {
