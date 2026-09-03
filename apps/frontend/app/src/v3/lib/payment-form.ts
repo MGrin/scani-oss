@@ -1,3 +1,4 @@
+import { accountLabel, accountLabelParts } from '@scani/shared';
 import type { TFunction } from 'i18next';
 
 /**
@@ -140,4 +141,60 @@ export function describeRepeatInterval(
     case 'year':
       return t('v3.money.paymentForm.repeatYear', { count: plural });
   }
+}
+
+/** The two fields the linked-account picker reads off an account. The page
+ *  hands them in rather than importing a DTO: the institution arrives from a
+ *  separate query, so nothing on the account carries its name. */
+export interface PaymentAccountChoice {
+  id: string;
+  name: string;
+  institution: string | null | undefined;
+}
+
+export interface PaymentAccountOption {
+  id: string;
+  label: string;
+  hint?: string;
+}
+
+/**
+ * The rows the linked-account picker shows (SC-862).
+ *
+ * It was a `<Select>` over `{account.name}` alone, so two accounts called
+ * `Savings` were one string twice and there was nothing to search. Both halves
+ * are fixed here rather than in the page, because both are the kind of rule a
+ * screenshot cannot hold:
+ *
+ * - **The institution is the row's `hint`, never part of its name**, and it is
+ *   dropped when the name already opens with it — `accountLabelParts`, not a
+ *   join, so `Airwallex` at Airwallex is one word rather than two.
+ * - **The search reads the RAW fields**, institution included. That is the
+ *   non-obvious half: an account whose row no longer shows its institution
+ *   must still be findable by typing it, or collapsing the repeat would have
+ *   made a name unsearchable to fix a cosmetic one.
+ *
+ * Uncapped. `RecordPicker` caps and is the only party that can then say how
+ * many rows it withheld.
+ */
+export function paymentAccountOptions(
+  accounts: readonly PaymentAccountChoice[],
+  query: string
+): PaymentAccountOption[] {
+  const term = query.trim().toLowerCase();
+  return accounts
+    .filter(
+      (account) =>
+        !term || `${account.name} ${account.institution ?? ''}`.toLowerCase().includes(term)
+    )
+    .map((account) => {
+      const parts = accountLabelParts(account.name, account.institution);
+      return { id: account.id, label: parts.name, hint: parts.institution ?? undefined };
+    });
+}
+
+/** The chosen account, shown alone with no hint beside it — so its one line
+ *  has to name the institution too, once (SC-862). */
+export function paymentAccountSelectedLabel(account: PaymentAccountChoice): string {
+  return accountLabel(account.name, account.institution);
 }

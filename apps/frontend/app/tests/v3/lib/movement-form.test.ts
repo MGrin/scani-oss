@@ -4,6 +4,7 @@ import {
   matchMovementHoldings,
   movementBlockerKeys,
   movementFeeArrival,
+  movementHoldingAccount,
   movementHoldingLabel,
   movementHoldingSelectedLabel,
 } from '@/v3/lib/movement-form';
@@ -150,6 +151,49 @@ describe('the row and the chosen value', () => {
     expect(movementHoldingSelectedLabel(PORTFOLIO[0] as MovementHolding)).toBe(
       'BTC · Spot · Kraken'
     );
+  });
+
+  /**
+   * Production read `USD · Airwallex · Airwallex` (SC-862). The account and the
+   * institution are not independent fields — an importer names the account
+   * after the institution that named it — so the join has to notice.
+   *
+   * The row is asserted beside the chosen value on purpose: the row showed the
+   * SAME repeat, spread across its label and the `hint` rendered beside it, so
+   * a fix that only touched the selected line would have left the list saying
+   * `Airwallex` twice in two cells.
+   */
+  test('an account named after its institution says it once, in the row and in the chosen value', () => {
+    const doubled = holding({
+      id: 'airwallex-usd',
+      account: { name: 'Airwallex' },
+      institution: { id: 'airwallex', name: 'Airwallex', website: 'airwallex.com' },
+    });
+    expect(movementHoldingAccount(doubled)).toEqual({ institution: null, name: 'Airwallex' });
+    expect(movementHoldingLabel(doubled)).toBe('USD · Airwallex');
+    expect(movementHoldingSelectedLabel(doubled)).toBe('USD · Airwallex');
+  });
+
+  /** A punctuation-joined repeat is the wallet convention, and it doubles the
+   *  same way — the identifying half is what has to survive. */
+  test('a punctuation-joined repeat keeps the identifying half and names the institution once', () => {
+    const wallet = holding({
+      id: 'btc-wallet',
+      token: { symbol: 'BTC', name: 'Bitcoin' },
+      account: { name: 'Bitcoin Network - bc1q5n' },
+      institution: { id: 'btc', name: 'Bitcoin Network', website: 'bitcoin.org' },
+    });
+    expect(movementHoldingLabel(wallet)).toBe('BTC · bc1q5n');
+    expect(movementHoldingSelectedLabel(wallet)).toBe('BTC · bc1q5n · Bitcoin Network');
+  });
+
+  /** The control: an account whose name is nothing like its institution is
+   *  untouched, so the rule above cannot be a blanket strip. */
+  test('an unrelated account name is left exactly as it is', () => {
+    expect(movementHoldingAccount(PORTFOLIO[0] as MovementHolding)).toEqual({
+      institution: 'Kraken',
+      name: 'Spot',
+    });
   });
 });
 

@@ -1,4 +1,5 @@
 import {
+  accountLabelParts,
   Decimal,
   feeFitsMovement,
   type HoldingMovementDirection,
@@ -141,15 +142,38 @@ export function movementFeeArrival(draft: MovementDraft): string | null {
   return new Decimal(draft.amount).minus(fee).toString();
 }
 
+/**
+ * The institution, and what is left of the account name once a repeat of it has
+ * been taken off — `accountLabelParts`, not a join (SC-862).
+ *
+ * Production reads `USD · Airwallex · Airwallex`, because the row names the
+ * account and then the institution names it again. The two fields are not
+ * independent: an account an importer named usually repeats the institution
+ * that named it. `movementHoldingSelectedLabel` concatenates all three, so it
+ * showed the repeat outright; the row showed the same repeat spread across its
+ * label and the `hint` beside it, which is why both are computed from here
+ * rather than each fixing itself.
+ */
+export function movementHoldingAccount(holding: MovementHolding): {
+  institution: string | null;
+  name: string;
+} {
+  return accountLabelParts(holding.account.name, holding.institution.name);
+}
+
 /** The row's main text: the pot, then the account it sits in. */
 export function movementHoldingLabel(holding: MovementHolding): string {
-  return `${holding.label || holding.token.symbol} · ${holding.account.name}`;
+  return `${holding.label || holding.token.symbol} · ${movementHoldingAccount(holding).name}`;
 }
 
 /** The chosen holding, shown in place of the search field — where the
- *  institution can no longer be read off the row's favicon. */
+ *  institution can no longer be read off the row's favicon. Dropped entirely
+ *  when the account name already said it, which is the whole of SC-862's
+ *  second site. */
 export function movementHoldingSelectedLabel(holding: MovementHolding): string {
-  return `${movementHoldingLabel(holding)} · ${holding.institution.name}`;
+  const institution = movementHoldingAccount(holding).institution;
+  const label = movementHoldingLabel(holding);
+  return institution ? `${label} · ${institution}` : label;
 }
 
 function haystack(holding: MovementHolding): string {

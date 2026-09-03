@@ -4,6 +4,7 @@ import { institutionIconUrl } from '@/lib/icons';
 import {
   type MovementHolding,
   matchMovementHoldings,
+  movementHoldingAccount,
   movementHoldingLabel,
   movementHoldingSelectedLabel,
 } from '../../lib/movement-form';
@@ -29,6 +30,11 @@ import { RecordPicker } from '../form/RecordPicker';
  * The institution is the row's `leading` favicon AND its `hint`, deliberately
  * both: the mark is what makes a list scannable, and the name is what explains
  * why a row came back when the query was an institution nobody can see on it.
+ *
+ * The `hint` is dropped when the account name already says the institution
+ * (SC-862): an account called `Airwallex` at Airwallex rendered `USD ·
+ * Airwallex` with `Airwallex` beside it. The favicon stays either way — a mark
+ * is not a repeat of a word.
  */
 interface HoldingFieldProps {
   holdings: readonly MovementHolding[];
@@ -48,7 +54,7 @@ export function HoldingField({ holdings, value, onSelect, disabled, inputId }: H
     return {
       id: holding.id,
       label: movementHoldingLabel(holding),
-      hint: holding.institution.name,
+      hint: movementHoldingAccount(holding).institution ?? undefined,
       leading: favicon ? (
         <img
           src={favicon}

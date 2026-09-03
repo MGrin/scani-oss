@@ -31,6 +31,7 @@ import {
 } from '@/v3/lib/extractionPrefill';
 import { DateField } from '../components/form/DateField';
 import { Field, FieldRow, FieldSet } from '../components/form/Field';
+import { RecordPicker } from '../components/form/RecordPicker';
 import { CurrencyField, tokenLabel } from '../components/money/CurrencyField';
 import { VendorField } from '../components/money/VendorField';
 import {
@@ -39,6 +40,8 @@ import {
   type IntervalUnit,
   type IntervalUnitChoice,
   type PaymentKind,
+  paymentAccountOptions,
+  paymentAccountSelectedLabel,
 } from '../lib/payment-form';
 import { todayDateString } from '../lib/paymentTotals';
 import { V3_ROUTES } from '../lib/routes';
@@ -77,8 +80,6 @@ import { V3_ROUTES } from '../lib/routes';
  */
 
 type Direction = 'outflow' | 'inflow';
-
-const NO_ACCOUNT = '__none__';
 
 /**
  * The anchor sets the day every future occurrence lands on, so where it
@@ -145,6 +146,10 @@ export function PaymentFormPage() {
 
   const paymentQuery = trpc.payments.get.useQuery({ paymentId: id ?? '' }, { enabled: isEdit });
   const accountsQuery = trpc.accounts.getByUserIdWithSummary.useQuery();
+  // Only for the linked-account picker's rows: an account carries an
+  // `institutionId` and not a name, and a row that cannot say where the account
+  // is held makes two accounts called `Savings` indistinguishable (SC-862).
+  const institutionsQuery = trpc.institutions.getByUserId.useQuery();
   const tokensQuery = trpc.tokens.getAll.useQuery();
   // Fetched by id rather than pulled out of the pending-review queue: that queue
   // holds only extractions still awaiting a decision, so a revisited link would
@@ -161,7 +166,12 @@ export function PaymentFormPage() {
   // so including `paymentQuery` on the create route would hold the form behind
   // a skeleton that could never resolve.
   const formState = mergeQueries(
-    ...(isEdit ? [paymentQuery] : []),
+    // `accountsQuery` on the edit route only, and it is not decoration: the
+    // linked-account picker shows its chosen account by NAME, which it cannot
+    // do before the accounts arrive — so an edit rendered ahead of them said
+    // "no account linked" about a payment that has one (SC-862). On the create
+    // route nothing is chosen, so there is nothing to be wrong about.
+    ...(isEdit ? [paymentQuery, accountsQuery] : []),
     ...(fromExtraction ? [extractionQuery] : []),
     ...(isEdit || fromExtraction ? [tokensQuery] : [])
   );
@@ -184,7 +194,13 @@ export function PaymentFormPage() {
       payment anchors on today by choice, which needs no caveat. */
   const [anchorDateSource, setAnchorDateSource] = useState<AnchorDateSource>('none');
   const [endDate, setEndDate] = useState('');
-  const [accountId, setAccountId] = useState(NO_ACCOUNT);
+  /** Empty is a real answer here — the section is optional and an unlinked
+   *  payment is the common case. It was a `'__none__'` sentinel while this was
+   *  a `<Select>`, which cannot hold an empty value; a combobox with nothing in
+   *  it says the same thing without a row that has to be chosen (SC-862). */
+  const [accountId, setAccountId] = useState('');
+  const [accountQuery, setAccountQuery] = useState('');
+  const [accountOpen, setAccountOpen] = useState(false);
   const [notes, setNotes] = useState('');
   const [prefilled, setPrefilled] = useState(false);
   const [invoicePrefilled, setInvoicePrefilled] = useState(false);
@@ -210,7 +226,7 @@ export function PaymentFormPage() {
     setIntervalCount(String(payment.intervalCount));
     setAnchorDate(payment.anchorDate);
     setEndDate(payment.endDate ?? '');
-    setAccountId(payment.accountId ?? NO_ACCOUNT);
+    setAccountId(payment.accountId ?? '');
     setNotes(payment.notes ?? '');
     setPrefilled(true);
   }, [isEdit, prefilled, paymentQuery.data, tokens, t]);
@@ -333,7 +349,7 @@ export function PaymentFormPage() {
       intervalCount: Number.parseInt(intervalCount, 10),
       anchorDate,
       endDate: endDate.trim() ? endDate.trim() : null,
-      accountId: accountId === NO_ACCOUNT ? null : accountId,
+      accountId: accountId || null,
       notes: notes.trim() ? notes.trim() : null,
     };
     if (isEdit && id) {
@@ -404,7 +420,16 @@ export function PaymentFormPage() {
     );
   }
 
-  const accounts = accountsQuery.data ?? [];
+  const institutionNames = new Map(
+    (institutionsQuery.data ?? []).map((institution) => [institution.id, institution.name])
+  );
+  const accountChoices = (accountsQuery.data ?? []).map((account) => ({
+    id: account.id,
+    name: account.name,
+    institution: institutionNames.get(account.institutionId),
+  }));
+  const accountOptions = paymentAccountOptions(accountChoices, accountQuery);
+  const selectedAccount = accountChoices.find((account) => account.id === accountId);
 
   return (
     <PageLayout>
@@ -677,25 +702,42 @@ export function PaymentFormPage() {
 
       <Block>
         <FieldSet title={t('v3.money.paymentForm.sectionOptional')}>
-          <Field label={t('v3.money.paymentForm.linkedAccount')}>
-            <Select value={accountId} onValueChange={setAccountId} disabled={isSaving}>
-              <SelectTrigger
-                className="text-body"
-                aria-label={t('v3.money.paymentForm.linkedAccount')}
-              >
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={NO_ACCOUNT} className="text-body">
-                  {t('v3.money.paymentForm.noLinkedAccount')}
-                </SelectItem>
-                {accounts.map((account) => (
-                  <SelectItem key={account.id} value={account.id} className="text-body">
-                    {account.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          {/* `RecordPicker`, not the `<Select>` this was: a select over every
+              account has no search, so a reader with more accounts than the
+              popover shows scrolls a list of bare names — and the name alone
+              cannot tell two `Savings` apart. Deliberately not `AccountPicker`,
+              which is the control for COMPARING rows and would put an inline
+              radio list of every account into an optional section (SC-862). */}
+          <Field label={t('v3.money.paymentForm.linkedAccount')} htmlFor="payment-account">
+            <RecordPicker
+              inputId="payment-account"
+              ariaLabel={t('v3.money.paymentForm.linkedAccount')}
+              value={
+                selectedAccount
+                  ? { id: selectedAccount.id, label: paymentAccountSelectedLabel(selectedAccount) }
+                  : null
+              }
+              onSelect={(chosenId) => {
+                setAccountId(chosenId);
+                setAccountQuery('');
+              }}
+              // No "none" row to go back to, and none is needed: an empty
+              // optional field already says no account is linked.
+              onClear={() => {
+                setAccountId('');
+                setAccountQuery('');
+                setAccountOpen(true);
+              }}
+              query={accountQuery}
+              onQueryChange={setAccountQuery}
+              open={accountOpen}
+              onOpenChange={setAccountOpen}
+              options={accountOptions}
+              isLoading={accountsQuery.isLoading}
+              placeholder={t('v3.money.paymentForm.accountSearchPlaceholder')}
+              emptyLabel={t('v3.money.paymentForm.accountNoResults')}
+              disabled={isSaving}
+            />
           </Field>
 
           <Field label={t('v3.money.paymentForm.notes')} htmlFor="payment-notes">
