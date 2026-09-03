@@ -48,6 +48,20 @@ interface RecordPickerProps {
    *  `RECORD_PICKER_MAX_ROWS` and this component applies it, so that it can
    *  say how many rows it is holding back. */
   options: PickerOption[];
+  /**
+   * Overrides `RECORD_PICKER_MAX_ROWS` for a field whose list may not be cut.
+   *
+   * `Number.POSITIVE_INFINITY` is the only value anything passes, and only
+   * `FiatCurrencyField` passes it: 69 seeded currencies is a list a reader
+   * SCROLLS to recognise a name in, because somebody choosing a base currency
+   * often knows "Swiss Franc" and not `CHF`. That decision predates this cap
+   * and is stated in that file; overriding it here would be a design change
+   * wearing a bug fix (SC-862).
+   *
+   * Uncapping can never produce the defect this cap exists to announce — a
+   * list that shows everything cannot be short about it.
+   */
+  maxRows?: number;
   isLoading?: boolean;
   placeholder: string;
   /** Announces the search field, since `<Field>`'s label sits on the control
@@ -98,6 +112,7 @@ export function RecordPicker({
   open,
   onOpenChange,
   options,
+  maxRows = RECORD_PICKER_MAX_ROWS,
   isLoading,
   placeholder,
   ariaLabel,
@@ -147,7 +162,7 @@ export function RecordPicker({
   }
 
   const canCreate = Boolean(createLabel && onCreate);
-  const shown = options.slice(0, RECORD_PICKER_MAX_ROWS);
+  const shown = options.slice(0, maxRows);
   const withheld = options.length - shown.length;
 
   return (

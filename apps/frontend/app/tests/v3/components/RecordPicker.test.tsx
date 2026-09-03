@@ -33,7 +33,7 @@ function options(count: number) {
   }));
 }
 
-function picker(count: number): string {
+function picker(count: number, maxRows?: number): string {
   return html(
     <RecordPicker
       value={null}
@@ -44,6 +44,7 @@ function picker(count: number): string {
       open
       onOpenChange={() => {}}
       options={options(count)}
+      maxRows={maxRows}
       ariaLabel="account"
       placeholder="Search accounts"
       emptyLabel="No account by that name"
@@ -82,5 +83,26 @@ describe('a capped list says so', () => {
     expect(short).toInclude('Account 2');
     expect(short).not.toInclude('keep typing to narrow');
     expect(short).not.toInclude('Showing');
+  });
+});
+
+/**
+ * `FiatCurrencyField` is scrolled, not narrowed — 69 seeded currencies, and
+ * somebody choosing a base currency often knows "Swiss Franc" and not `CHF`.
+ * Capping it would be a design change wearing a bug fix, so it opts out.
+ *
+ * An uncapped list cannot produce the defect the cap announces: a list showing
+ * everything is not short about it, so there is nothing to say and it says
+ * nothing.
+ */
+describe('a field that may not be cut opts out', () => {
+  const uncapped = picker(RECORD_PICKER_MAX_ROWS + 5, Number.POSITIVE_INFINITY);
+
+  test('every row is rendered, including the ones past the shared cap', () => {
+    expect(uncapped).toInclude(`Account ${RECORD_PICKER_MAX_ROWS + 4}`);
+  });
+
+  test('and it says nothing, because nothing was withheld', () => {
+    expect(uncapped).not.toInclude('keep typing to narrow');
   });
 });
