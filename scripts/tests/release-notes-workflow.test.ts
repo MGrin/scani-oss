@@ -251,3 +251,42 @@ describe('the control that keeps it demonstrable', () => {
     expect(chained).toContain('release pull requests:');
   });
 });
+
+/**
+ * SC-922. Two things the failure message now depends on that live in the YAML,
+ * and both fail SILENTLY if they are dropped — the message still prints, just
+ * with less in it, which is exactly the shape this file exists to pin.
+ */
+describe('SC-922 — the message can name what the repository actually allows', () => {
+  /**
+   * The recovery names which merge methods this repository offers, read from
+   * the API. GitHub OMITS `allow_squash_merge` and its siblings from an
+   * UNAUTHENTICATED response — measured 2026-09-03, same URL, same second:
+   *
+   *     no token    HTTP 200, squash=undefined merge=undefined rebase=undefined
+   *     with token  HTTP 200, squash=false     merge=true       rebase=true
+   *
+   * Drop this env and every run lands on the "could not be read" arm. The check
+   * still fails correctly and never crashes, so nothing goes red; the message
+   * simply stops answering the question SC-922 was filed about.
+   */
+  test('the check step is given a token, or the merge settings read as absent', async () => {
+    const chained = await read('.github/workflows/release-notes.yml');
+    expect(chained).toMatch(/GITHUB_TOKEN:\s*\$\{\{\s*github\.token\s*\}\}/);
+  });
+
+  /**
+   * Exit 4 is a DIFFERENT finding, not a louder shortfall: a releasable commit
+   * was pushed onto the release branch, where the tag lands on the release PR's
+   * merge commit and no future window can ever reach it. Falling through to the
+   * generic description sends the reader to write a changelog bullet — the one
+   * repair that cannot help, because the commit is unrecoverable where it sits.
+   */
+  test('exit 4 is described as itself, not as a missing entry', async () => {
+    const chained = await read('.github/workflows/release-notes.yml');
+    expect(chained).toMatch(/rc === '4'/);
+    expect(chained).toContain('pushed onto the release branch');
+    // Must-be-ABSENT: a finding mapping to a green state.
+    expect(chained).not.toMatch(/rc === '4'[\s\S]{0,120}?'success'/);
+  });
+});

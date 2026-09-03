@@ -71,9 +71,9 @@
  * placement trap of its own — see the message.
  *
  * BLINDNESS IS NOT A PASS. Every way this check can fail to look — no release
- * commit at the head, no previous tag, a changelog whose top section is not
- * the version being released, or a window in which it finds NO releasable
- * commits at all — exits 3 and says so. The last one is the important one: a
+ * commit anywhere in the first-parent walk from the head, no previous tag, a
+ * changelog whose top section is not the version being released, or a window in
+ * which it finds NO releasable commits at all — exits 3 and says so. The last one is the important one: a
  * release PR exists precisely because release-please found something
  * releasable, so a commit side that comes back empty means this check's own
  * derivation is broken, not that the release is clean. A young release PR with
@@ -81,6 +81,43 @@
  */
 
 const RELEASE_COMMIT_SUBJECT = /^chore(?:\([^)]*\))?: release /;
+
+/**
+ * SC-922. The release branch is main's tip plus ONE release commit — until
+ * somebody repairs it, which is the whole point of the recovery this file's
+ * failure message prescribes. Writing the missing bullet into CHANGELOG.md and
+ * pushing that commit moves the pull request's head OFF the release commit, and
+ * this check used to refuse the result.
+ *
+ * Measured on the real 0.37.0 repair (MGrin/scani-oss#401), which is the
+ * instance SC-922 was filed from:
+ *
+ *     --head 11bcab41e  the release commit      FAILED · exit 1 · 1 of 11 …
+ *     --head cb93749f4  the repair on top of it BLIND  · exit 3 · not a release commit
+ *
+ * So there was NO head at which the guard could confirm the repair: it reported
+ * a shortfall against the unrepaired commit and refused to look at the repaired
+ * one. A remedy that turns the guard off is worse than one that cannot be run,
+ * because the release then merges with nothing watching.
+ *
+ * The fix is to separate the two sides again. `base` — what release-please
+ * generated the notes FROM — is the RELEASE commit's parent, whatever sits on
+ * top of it. CHANGELOG.md is read at the HEAD, because that is what will land.
+ *
+ * The walk is `--first-parent` and bounded. It cannot run away into main and
+ * find an older release: on this repository every release commit is merged, so
+ * it hangs off a merge's SECOND parent and a first-parent walk never reaches
+ * one. Falsify in one step — expect no output:
+ *
+ *     git log --first-parent -n 200 --format='%s' origin/main | grep '^chore(main): release '
+ */
+const RELEASE_BRANCH_WALK_LIMIT = 20;
+
+/** Index of the first release commit in a first-parent walk from the head, or null. */
+export function findReleaseCommit(subjects: readonly string[]): number | null {
+  const at = subjects.findIndex((subject) => RELEASE_COMMIT_SUBJECT.test(subject.trim()));
+  return at === -1 ? null : at;
+}
 
 /**
  * The conventional-commit types release-please renders into a visible
@@ -266,7 +303,147 @@ export function findShortfall(commits: ReleasableCommit[], bullets: string[]): R
   return missing;
 }
 
+/**
+ * SC-922. WHICH MERGE METHODS THIS REPOSITORY ACTUALLY OFFERS, read at the
+ * moment the message is printed rather than asserted in prose.
+ *
+ * The recovery below used to say the override's pull request must be
+ * SQUASH-merged. Squash is disabled on both repositories — measured
+ * 2026-09-02, and re-measured 2026-09-03:
+ *
+ *     MGrin/scani-oss   squash=false  merge=true  rebase=true
+ *     MGrin/scani       squash=false  merge=true  rebase=false
+ *
+ * So a correct check handed whoever it blocked the one instruction the
+ * repository refuses, at the exact moment they were blocked. A settings claim
+ * written into prose cannot notice that it has stopped being true; this one is
+ * read from the API on the failure path, and when it cannot be read it says so
+ * and asserts nothing (`oneCommitRoutes(null)`).
+ */
+export interface MergeMethods {
+  squash: boolean;
+  merge: boolean;
+  rebase: boolean;
+}
+
+/**
+ * SC-922. THE RULE IS NOT "SQUASH". It is ONE COMMIT OF THAT PULL REQUEST
+ * INSIDE THE WALK, and squash was only ever one way to get it.
+ *
+ * `preprocessCommitMessage` reads the override out of `commit.pullRequest.body`,
+ * and `mergeCommitsGraphQL` attaches a pull request to EVERY commit it is
+ * associated with (`pullRequest = mergePullRequest || associatedPullRequests
+ * .nodes[0]`) — not only to the merge commit. So the override fires once per
+ * commit of that PR that the walk reaches. Measured against release-please
+ * 17.11.2's own `parseConventionalCommits`, with a control so the result is a
+ * measurement rather than a hopeful reading:
+ *
+ *     1 commit of the PR in the walk                    ->  1 bullet
+ *     2 commits (a merge-merged single-commit PR)       ->  2 bullets
+ *     4 commits (scani-oss#281's straddling shape)      ->  4 bullets
+ *     control: the same 4, no override in the body      ->  1 bullet
+ *
+ * The control is what makes the first three mean anything: it fires, and it
+ * fires once, because only the branch commit's own subject parses.
+ *
+ * A MERGE COMMIT ALWAYS COSTS A SECOND COMMIT. A single-commit branch merged
+ * with a merge commit puts TWO commits on main — the branch commit and the
+ * merge — and both carry the body. That is why `merge` alone cannot produce a
+ * usable override, and why this function refuses to name it as a route.
+ *
+ * NOT MEASURED, AND SAID SO RATHER THAN SMOOTHED OVER: that GitHub populates
+ * `associatedPullRequests` for a REBASE-merged commit. It is derived — from
+ * release-please's own source comment at `github.js`, which names the case
+ * outright ("rebase merged PRs will only be matched if they contain a single
+ * commit"), and from the association being demonstrated here on ordinary
+ * branch commits, which are non-merge shas exactly as a rebased commit is.
+ * No rebase-merged commit exists on either repository to check against.
+ */
+export function oneCommitRoutes(methods: MergeMethods | null): string {
+  if (methods === null) {
+    return (
+      `  This repository's merge settings COULD NOT BE READ, so nothing below is a claim\n` +
+      `  about what you may press. Check them and pick the route that exists:\n\n` +
+      `    squash-merge            one commit, whatever the branch holds\n` +
+      `    rebase-merge            one commit, but ONLY if the branch is one commit\n` +
+      `    merge commit            TWO commits — the branch commit and the merge, both\n` +
+      `                            carrying the body. No override route.\n\n` +
+      `    gh api repos/<owner>/<repo> -q '"squash=\\(.allow_squash_merge) merge=\\(.allow_merge_commit) rebase=\\(.allow_rebase_merge)"'`
+    );
+  }
+  const routes: string[] = [];
+  if (methods.squash) {
+    routes.push(`    squash-merge it           one commit, whatever the branch holds`);
+  }
+  if (methods.rebase) {
+    routes.push(
+      `    rebase-merge it           one commit — the branch must BE one commit, or you\n` +
+        `                              get one bullet per commit on it`
+    );
+  }
+  const settings =
+    `  Read from the API just now: squash=${methods.squash} merge=${methods.merge} ` +
+    `rebase=${methods.rebase}.\n`;
+  if (routes.length === 0) {
+    return (
+      settings +
+      `\n  NO MERGE METHOD HERE LANDS ONE COMMIT, so there is no override route at all.\n` +
+      `  A merge commit puts TWO commits on main for that pull request — the branch\n` +
+      `  commit and the merge — and both carry the body, so the entry is listed twice.\n` +
+      `  Take the direct edit below; it needs no merge method.`
+    );
+  }
+  return `${settings}\n${routes.join('\n')}`;
+}
+
+/**
+ * The failure path only. Bounded, and every way of not knowing returns null so
+ * the message says it could not read them rather than guessing a route.
+ *
+ * THE NULL ARM IS ROUTINE, NOT AN EDGE CASE, AND THE `typeof === 'boolean'`
+ * GUARD IS WHY IT IS SAFE. GitHub omits `allow_squash_merge`,
+ * `allow_merge_commit` and `allow_rebase_merge` from an UNAUTHENTICATED
+ * response — measured 2026-09-03, same URL, same second:
+ *
+ *     no token    HTTP 200, squash=undefined merge=undefined rebase=undefined
+ *     with token  HTTP 200, squash=false     merge=true       rebase=true
+ *
+ * A reader coercing those to booleans gets `false false false` at HTTP 200 and
+ * prints "NO MERGE METHOD HERE LANDS ONE COMMIT" — a confident wrong answer,
+ * from a request that succeeded. Absent is not false. So the workflow passes
+ * `GITHUB_TOKEN`, and running this by hand without one lands on the null arm,
+ * which asserts nothing and hands you the `gh api` line instead.
+ */
+async function readMergeSettings(): Promise<MergeMethods | null> {
+  const slug =
+    process.env.GITHUB_REPOSITORY ??
+    /github\.com[/:]([^/]+\/[^/.]+)/.exec(git(['remote', 'get-url', 'origin']).stdout)?.[1];
+  if (!slug) return null;
+  const token = process.env.GITHUB_TOKEN ?? process.env.GH_TOKEN;
+  try {
+    const response = await fetch(`https://api.github.com/repos/${slug}`, {
+      headers: {
+        accept: 'application/vnd.github+json',
+        ...(token ? { authorization: `Bearer ${token}` } : {}),
+      },
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!response.ok) return null;
+    const body = (await response.json()) as Record<string, unknown>;
+    const read = (key: string) => (typeof body[key] === 'boolean' ? (body[key] as boolean) : null);
+    const squash = read('allow_squash_merge');
+    const merge = read('allow_merge_commit');
+    const rebase = read('allow_rebase_merge');
+    if (squash === null || merge === null || rebase === null) return null;
+    return { squash, merge, rebase };
+  } catch {
+    return null;
+  }
+}
+
 const BLIND = 3;
+/** SC-922. A releasable commit pushed onto the release branch — see the message. */
+const SWALLOWED = 4;
 
 function git(args: string[]): { ok: boolean; stdout: string } {
   const run = Bun.spawnSync(['git', ...args]);
@@ -287,20 +464,70 @@ if (import.meta.main) {
   const headArg = process.argv.indexOf('--head');
   const head = headArg === -1 ? 'HEAD' : (process.argv[headArg + 1] ?? 'HEAD');
 
-  const headSubject = git(['log', '-1', '--format=%s', head]);
-  if (!headSubject.ok) blind(`\`${head}\` does not resolve to a commit`);
-  if (!RELEASE_COMMIT_SUBJECT.test(headSubject.stdout.trim())) {
+  const walk = git([
+    'log',
+    '--first-parent',
+    '-n',
+    String(RELEASE_BRANCH_WALK_LIMIT),
+    '--format=%H%x1f%s%x1e',
+    head,
+  ]);
+  if (!walk.ok) blind(`\`${head}\` does not resolve to a commit`);
+  const chain = walk.stdout
+    .split('\x1e')
+    .map((record) => record.replace(/^\n/, '').split('\x1f'))
+    .filter((pair): pair is [string, string] => Boolean(pair[0]) && pair[1] !== undefined);
+  if (chain.length === 0) blind(`\`${head}\` does not resolve to a commit`);
+
+  const releaseCommitAt = findReleaseCommit(chain.map(([, subject]) => subject));
+  if (releaseCommitAt === null) {
     blind(
-      `\`${head}\` is not a release commit — its subject is ` +
-        `"${headSubject.stdout.trim()}", not "chore(main): release X.Y.Z"`
+      `neither \`${head}\` nor the ${chain.length - 1} first-parent commit(s) below it is ` +
+        `a release commit — the head's subject is "${chain[0]![1]}", not ` +
+        `"chore(main): release X.Y.Z"`
     );
   }
+  const releaseCommit = chain[releaseCommitAt]![0];
+  /** Commits pushed onto the release branch ON TOP of the release commit. */
+  const repairs = chain.slice(0, releaseCommitAt);
 
-  // The release branch is main's tip plus one release commit, so the parent IS
-  // the commit release-please generated these notes from. Reading main's tip
-  // instead would report a shortfall for anything merged in the meantime,
-  // which release-please has not been asked to look at yet.
-  const parents = git(['rev-list', '--parents', '-n', '1', head]);
+  // SC-922. A `fix:` or `feat:` commit pushed onto the release branch is lost
+  // FOREVER, silently — which is this file's own failure class, created by its
+  // own recovery. The tag lands on the release PR's MERGE commit (measured:
+  // v0.37.0 -> ec4f46bef, a merge, and the repair cb93749f4 is its ancestor),
+  // so every commit on that branch is behind the next window's stop point and
+  // no later run can ever see it. Refusing is the only reading available: by
+  // the time it is on main it is unrecoverable without rewriting history.
+  const swallowed = repairs.filter(([, subject]) => {
+    const parsed = parseSubject(subject);
+    return parsed !== null && earnsAReleaseNote(parsed);
+  });
+  if (swallowed.length > 0) {
+    console.error(
+      `check-release-notes: FAILED · exit ${SWALLOWED} · ${swallowed.length} releasable ` +
+        `commit(s) were pushed onto the release branch, on top of the release commit\n\n` +
+        swallowed.map(([sha, subject]) => `    ${sha.slice(0, 9)}  ${subject}`).join('\n') +
+        `\n\nThese will never appear in any release notes, and no later run can find them.\n` +
+        `The tag is created on the release pull request's MERGE commit, so everything on\n` +
+        `this branch is an ancestor of it and sits behind the next window's stop point.\n` +
+        `Measured on v0.37.0: the tag is ec4f46bef, a merge commit, and the repair\n` +
+        `cb93749f4 pushed onto that branch is its ancestor.\n\n` +
+        `Repairing a release branch is legitimate — see the recovery this check prints on\n` +
+        `a shortfall. It is the TYPE that has to be inert: use \`chore\`, \`docs\`, \`ci\`,\n` +
+        `\`test\`, \`build\`, \`style\` or \`refactor\`. RELEASE_NOTE_TYPES is\n` +
+        `${RELEASE_NOTE_TYPES.join(' | ')}, plus anything marked breaking with \`!\`.\n\n` +
+        `If that commit carries real work, it does not belong here. Put it on an ordinary\n` +
+        `pull request against main and let the NEXT release list it.`
+    );
+    process.exit(SWALLOWED);
+  }
+
+  // `base` is what release-please generated the notes FROM: the RELEASE
+  // commit's parent, never the head's. Those differ the moment the branch is
+  // repaired (SC-922). Reading main's tip instead would report a shortfall for
+  // anything merged in the meantime, which release-please has not been asked to
+  // look at yet.
+  const parents = git(['rev-list', '--parents', '-n', '1', releaseCommit]);
   const parentShas = parents.stdout.trim().split(/\s+/).slice(1);
   if (parentShas.length !== 1) {
     blind(`the release commit has ${parentShas.length} parents, expected exactly 1`);
@@ -374,6 +601,15 @@ if (import.meta.main) {
   const missing = findShortfall(releasable, bullets);
 
   const window = `${previousTag}..${base.slice(0, 9)}`;
+  // SC-922. Which tree the changelog side was read from. Printed on every
+  // verdict including the quiet case, because an absent clause would make
+  // "read at the release commit" and "never looked for a repair" the same
+  // reading — the SC-865 shape.
+  const branchState =
+    repairs.length === 0
+      ? `release commit ${releaseCommit.slice(0, 9)} is the head; CHANGELOG.md read there`
+      : `${repairs.length} commit(s) pushed onto the release branch above release commit ` +
+        `${releaseCommit.slice(0, 9)}; CHANGELOG.md read at the head ${chain[0]![0].slice(0, 9)}`;
   if (unparseable.length > 0) {
     const siblingSubjects = new Map<string, string[]>();
     const merges = git([
@@ -445,10 +681,11 @@ if (import.meta.main) {
   }
 
   if (missing.length > 0) {
+    const methods = await readMergeSettings();
     console.error(
       `check-release-notes: FAILED · exit 1 · ${missing.length} of ${releasable.length} ` +
         `releasable commits in ${window} have no entry in the ${version} release notes ` +
-        `(${bullets.length} bullets)\n\n` +
+        `(${bullets.length} bullets) · ${branchState}\n\n` +
         missing.map(({ sha, subject }) => `    ${sha}  ${subject}`).join('\n') +
         `\n\nThese are on main and not in ${previousTag}, so merging this release ships ` +
         `them with no line in CHANGELOG.md and no line in the GitHub release.\n\n` +
@@ -475,16 +712,35 @@ if (import.meta.main) {
         `tag's:\n\n` +
         `    TZ=UTC git show -s --date=iso-strict-local --format='%cd %h %s' ${previousTag} ` +
         `${missing.map(({ sha }) => sha).join(' ')}\n\n` +
-        `RECOVERY, and the placement matters. Put ` +
-        `BEGIN_COMMIT_OVERRIDE / END_COMMIT_OVERRIDE\ncarrying the conventional message ` +
-        `you wanted in the BODY of a pull request that is\nSQUASH-merged. The rule is ONE ` +
-        `commit on main for that pull request:\npreprocessCommitMessage reads the override ` +
-        `out of the pull request BODY, and the\nwalk attaches that body to EVERY commit of ` +
-        `the same PR — so behind a merge commit\nthe merge and each branch commit produce ` +
-        `the entry, which is the duplication\ncheck-pr-title.ts exists to prevent. Measured ` +
-        `against 17.11.2:\n\n` +
-        `    override on a merge-commit PR    21 bullets, the entry listed twice\n` +
-        `    override on a squash-merged PR   20 bullets, the entry listed once\n\n` +
+        `THERE ARE TWO RECOVERIES AND ONLY ONE OF THEM NEEDS A MERGE BUTTON. Read the ` +
+        `rule\nfirst, because the one this message used to give was wrong (SC-922).\n\n` +
+        `THE RULE IS NOT "SQUASH IT". It is ONE COMMIT OF THAT PULL REQUEST INSIDE THE ` +
+        `WALK.\npreprocessCommitMessage reads BEGIN_COMMIT_OVERRIDE / END_COMMIT_OVERRIDE out ` +
+        `of the\npull request BODY, and the walk attaches that body to EVERY commit it ` +
+        `associates\nwith that PR — \`pullRequest = mergePullRequest || ` +
+        `associatedPullRequests.nodes[0]\`,\nso branch commits carry it too, not just the ` +
+        `merge. The override therefore fires\nonce per commit of that PR the walk reaches. ` +
+        `Measured against 17.11.2's own\nparseConventionalCommits, with a control:\n\n` +
+        `    1 commit of the PR in the walk                ->  1 bullet\n` +
+        `    2 commits (a merge-merged single-commit PR)   ->  2 bullets\n` +
+        `    4 commits (scani-oss#281's shape, below)      ->  4 bullets\n` +
+        `    control: the same 4, no override in the body  ->  1 bullet\n\n` +
+        `Squash was only ever ONE WAY to get one commit, and this message named it as ` +
+        `though\nit were the rule. It is disabled on both of this project's repositories, ` +
+        `so the\ninstruction could not be followed on the day it was needed. What this ` +
+        `repository\noffers, read from the API just now rather than asserted here:\n\n` +
+        `${oneCommitRoutes(methods)}\n\n` +
+        `A MERGE COMMIT IS NEVER A ROUTE: a single-commit branch merged with a merge ` +
+        `commit\nputs TWO commits on main for that PR — the branch commit and the merge — ` +
+        `and both\ncarry the body, which is the duplication check-pr-title.ts exists to ` +
+        `prevent.\n\n` +
+        `WHICH PULL REQUEST'S BODY. A FRESH one, whose commit count is still yours to ` +
+        `choose.\nThe pull request that lost the commit is already merged, so how many of ` +
+        `its commits\nsit inside the walk is FIXED HISTORY — no merge setting, present or ` +
+        `future, can\nchange it. Put the override in a new pull request that lands one ` +
+        `commit and the\nbroken PR's topology stops mattering at all. Overriding the ` +
+        `already-merged PR still\nworks where exactly one of ITS commits is in the walk, ` +
+        `which is the 0.23.0 case below.\n\n` +
         `THAT CAVEAT IS CONDITIONAL ON THE WHOLE BRANCH BEING BEHIND THE STOP POINT, AND ` +
         `THE\nCONDITION IS EASY TO READ PAST. Duplication needs the merge AND its branch ` +
         `commits\nboth INSIDE the walk. Where cause 1 partitions a pull request cleanly — every ` +
@@ -510,25 +766,56 @@ if (import.meta.main) {
         `    03:21:08Z  5f8f018  Merge pull request #281                 merge,  in the walk\n\n` +
         `One commit short of the walk, FOUR commits of the same PR inside it. An override in ` +
         `that\nbody therefore fires four times per message: measured, two override messages ` +
-        `produced\nEIGHT bullets. So there is no licence to skip the squash here, and the rule ` +
-        `above — ONE\ncommit on main for that pull request — holds without exception. Check the ` +
-        `branch against\nthe stop point first — and ANCESTRY IS THE WRONG INSTRUMENT for ` +
+        `produced\nEIGHT bullets. THAT SHAPE IS UNFIXABLE IN THAT PULL REQUEST AND THERE IS ` +
+        `NO BUTTON FOR IT\n(SC-922) — it is merged, its four commits are on main, and nothing ` +
+        `you can press now\nchanges how many the walk reaches. This message used to answer ` +
+        `"there is no licence to\nskip the squash here", which reads as an instruction and is ` +
+        `not one: you cannot squash a\npull request that has already merged. Use a FRESH pull ` +
+        `request, or the direct edit\nbelow. Check the branch against the stop point first — ` +
+        `and ANCESTRY IS THE WRONG INSTRUMENT for ` +
         `that.\n${previousTag}..<head> will mislead you: it lists the OUTSIDE commit too, ` +
         `because the walk\norders by COMMITTER DATE, not by reachability. Compare dates ` +
         `directly, the same way\ncause 1 is told apart above:\n\n` +
         `    TZ=UTC git show -s --date=iso-strict-local --format='%cd %h %s' ${previousTag} <every sha of that PR>\n\n` +
         `Any dated EARLIER than the tag is outside the walk. TWO OR MORE dated later means ` +
         `an\noverride in that body will duplicate.\n\n` +
+        `THE SECOND RECOVERY NEEDS NO MERGE METHOD AND NO OVERRIDE: WRITE THE BULLET ` +
+        `YOURSELF.\nCheck out this release branch, add the entry to CHANGELOG.md under the ` +
+        `right "###"\nheading in release-please's own bullet form, and push it. This check ` +
+        `reads\nCHANGELOG.md at the branch HEAD, so it sees the repair — it did not until ` +
+        `SC-922,\nwhen pushing that commit moved the head off the release commit and the ` +
+        `guard\nanswered BLIND, exit 3, over a repair that was correct. It is what was ` +
+        `actually done\nfor 0.37.0 (scani-oss#401, commit cb93749f4).\n\n` +
+        `  THE COMMIT TYPE MUST BE INERT — \`chore\`, not \`fix\`. A releasable commit on ` +
+        `this\n  branch is lost forever: the tag is created on the release pull request's ` +
+        `MERGE\n  commit, so everything on the branch is an ancestor of it and sits behind ` +
+        `the next\n  window's stop point. This check now refuses that outright, exit 4, ` +
+        `rather than\n  leaving it to prose.\n\n` +
+        `  IT DOES NOT FIX THE GITHUB RELEASE, and that is the half most easily missed.\n` +
+        `  release-please builds the release body from the release PULL REQUEST'S BODY\n` +
+        `  (\`buildRelease\` reads \`pullRequestBody.releaseData[].notes\`), never from\n` +
+        `  CHANGELOG.md. Editing only the file leaves CHANGELOG.md right on main and the\n` +
+        `  GitHub release still short. Edit the pull request body too.\n\n` +
+        `  BOTH EDITS ARE ON A CLOCK, AND EDITING THE BODY STARTS IT. On its next run\n` +
+        `  release-please compares the pull request's CURRENT body against the one it just\n` +
+        `  computed, and force-pushes the branch when they differ (\`force: true\` — files ` +
+        `AND\n  body). So: edit the file alone and the comparison still matches, and the ` +
+        `repair\n  survives until something else merges to main. Edit the body and the very ` +
+        `next run\n  overwrites both. release-please runs \`on: push: branches: [main]\`, so ` +
+        `the window is\n  exactly "until the next merge to main" — do the body last, and ` +
+        `merge the release.\n\n` +
         `THE PRICE OF THE RECOVERY, WHICH IS REAL AND SMALL: both bullets attribute to ` +
         `90eeb01,\nthe MERGE sha. A reader following the changelog link lands on a merge ` +
         `rather than on\nthe commit that made the change. Known consequence, not a defect.\n\n` +
+        `IF SQUASH IS EVER RE-ENABLED HERE, this is what it is worth and what it costs.\n` +
         `The override REPLACES the commit's own message, so the squash SUBJECT does not\n` +
-        `matter here — measured: a multi-commit squash whose subject was the unparseable\n` +
-        `PR title still yielded exactly one entry, the overridden one. That holds only\n` +
-        `WITH an override. A pull request you are NOT overriding must not be squashed\n` +
-        `unless its branch is a single conventional commit, because\n` +
-        `squash_merge_commit_title is COMMIT_OR_PR_TITLE and check-pr-title.ts has forced\n` +
-        `that title to be unparseable — cause 2 again, from the other direction.\n\n` +
+        `matter — measured: a multi-commit squash whose subject was the unparseable PR\n` +
+        `title still yielded exactly one entry, the overridden one. That holds only WITH\n` +
+        `an override. A pull request you are NOT overriding must not be squashed unless\n` +
+        `its branch is a single conventional commit, because squash_merge_commit_title is\n` +
+        `COMMIT_OR_PR_TITLE and check-pr-title.ts has forced that title to be unparseable\n` +
+        `— cause 2 again, from the other direction. The routes named above are read from\n` +
+        `the API, so they follow that setting without this paragraph being rewritten.\n\n` +
         `Those markers are literal, and that is the trap in 2b: do NOT write either of ` +
         `them\nin the body of a pull request you are not actually overriding. A lone ` +
         `opening marker\nreplaces every commit message of that PR. check-pr-body.ts ` +
@@ -559,6 +846,7 @@ if (import.meta.main) {
 
   console.log(
     `check-release-notes: PASS · exit 0 · ${releasable.length} releasable commits in ` +
-      `${window}, ${bullets.length} bullets in the ${version} release notes, 0 missing`
+      `${window}, ${bullets.length} bullets in the ${version} release notes, 0 missing · ` +
+      `${branchState}`
   );
 }
