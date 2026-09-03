@@ -64,7 +64,7 @@ provider API keys.
    ```
 
    Containers go away; named volumes (your Postgres data, your MinIO
-   bucket) persist until you `docker compose down -v`.
+   bucket) persist until you run `bun run dev:stack:down -- --volumes`.
 
 </Steps>
 
@@ -116,7 +116,7 @@ HMR, easier debugger attach) and only run infra in Docker:
 <Tabs>
   <TabItem label="Infra in compose, apps on host">
     ```sh
-    docker compose up -d postgres redis mailpit minio
+    bun run dev:stack:infra # Postgres, Redis, MinIO, Mailpit — nothing else
     bun install
     bun dev               # api + frontend/app concurrently
     bun dev:worker        # separate terminal — the BullMQ consumer
@@ -142,10 +142,11 @@ HMR, easier debugger attach) and only run infra in Docker:
 
 ## Common gotchas
 
-- **`compose up` fails with a name conflict.** One-shot init containers
-  (`env-sync`, `deps`, `minio-init`, `migrate`) exit cleanly but linger
-  with their container names reserved. `bun run dev:stack:down` removes
-  them. `compose up` without a prior `down` will hit the conflict.
+- **The stack fails to start with a container-name conflict.** One-shot
+  init containers (`env-sync`, `deps`, `minio-init`, `migrate`) exit
+  cleanly but linger with their container names reserved.
+  `bun run dev:stack:down` removes them; bringing the stack up again
+  without a prior `down` will hit the conflict.
 - **API keys go in `.env`, not in compose.** `.env` is the single source
   of truth. `scripts/sync-env.ts` propagates it to per-app `.env` files.
   Editing `docker-compose.yml` directly will drift.
@@ -153,15 +154,22 @@ HMR, easier debugger attach) and only run infra in Docker:
   same value in `.env.example` for a reason — if they differ, the worker
   cannot decrypt the integration credentials the api stored, and every
   import silently fails.
-- **Persistent data lives in named volumes.** `docker compose down`
-  preserves them; `docker compose down -v` wipes them. The Postgres
-  data, the MinIO bucket, and the Redis AOF all live there.
-- **Two scani checkouts running in parallel share nothing by default.**
-  Compose volumes are scoped per project name (the parent directory),
-  so each worktree gets its own Postgres / Redis / MinIO data. If you
-  want them to share, use `--project-name` explicitly. If you don't,
-  remember each `bun run dev:stack:down -v` only wipes that worktree's
-  data.
+- **Drive the stack with the `dev:stack` commands, not with a bare
+  `docker compose`.** They address two different compose projects.
+  `bun run dev:stack` names the project after this checkout's absolute
+  path (`scani_<label>_<digest>`); a bare `docker compose` sets no
+  project name, so compose falls back to the directory's. The two never
+  match, and compose does not complain — a bare `docker compose down -v`
+  after a `bun run dev:stack` exits `0`, prints nothing and wipes
+  nothing, which reads exactly like success.
+- **Persistent data lives in named volumes.** `bun run dev:stack:down`
+  preserves them; `bun run dev:stack:down -- --volumes` wipes them. The
+  Postgres data, the MinIO bucket, and the Redis AOF all live there.
+- **Two scani checkouts run side by side and share nothing.** Each
+  derives its own project name, its own volumes and its own host ports,
+  so one checkout's `bun run dev:stack:down -- --volumes` cannot reach
+  another's data. If two of them land on the same host port, see
+  [Troubleshooting](/self-hosting/tier1/troubleshooting/).
 
 ## Going to production
 
@@ -170,9 +178,10 @@ flow at [Self-hosting → Production](/self-hosting/tier1/production/).
 Two notable differences:
 
 - **Migrations are an explicit step.** Prod compose ships them as a
-  profile-gated one-shot (`docker compose --profile migrate run --rm
-  migrate`) — you run it on first install and on every upgrade. The
-  dev compose runs them automatically as part of `bun run dev:stack`.
+  profile-gated one-shot (`docker compose -f docker-compose.prod.yml
+  --profile migrate run --rm migrate`) — you run it on first install and
+  on every upgrade. The dev compose runs them automatically as part of
+  `bun run dev:stack`.
 - **`/api/readyz` validates schema.** The prod compose api healthcheck
   fails (and frontend-app is blocked) until migrations have been
   applied. Forgetting to migrate is a loud failure, not a silent one.
