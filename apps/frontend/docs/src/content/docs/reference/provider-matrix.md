@@ -7,8 +7,12 @@ sidebar:
 
 Each provider lives in `packages/clients/providers/src/providers/`
 and implements one or more [capability interfaces](/contributing/adding-a-provider/#the-capability-based-interface-model).
-Without the relevant env var, the capability is disabled and the
-tRPC call returns `PRECONDITION_FAILED`.
+Without the relevant env var the provider still registers and
+degrades — it returns nothing, or falls back to a keyless public tier —
+rather than refusing the call. No route returns an error to say a key is
+missing, so [How to tell what's
+enabled](/self-hosting/tier1/optional-keys/#how-to-tell-whats-enabled)
+is the check.
 
 ## Pricing
 

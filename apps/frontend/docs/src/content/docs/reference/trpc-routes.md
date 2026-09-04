@@ -84,16 +84,20 @@ also the source of truth for the SPA's tRPC client types.
 
 ## How calls are gated
 
-Three gates fire in order:
+Two gates fire in order:
 
 1. **Bearer / cookie auth.** No bearer / cookie → `UNAUTHORIZED`.
-2. **Capability gate.** A call needing a provider key (e.g.
-   `ai.parseScreenshot` needs `OPENAI_API_KEY`) returns
-   `PRECONDITION_FAILED` when unconfigured.
-3. **Rate limit.** Per-provider rate limiter
+2. **Rate limit.** Per-provider rate limiter
    (`@scani/rate-limiter`) returns `TOO_MANY_REQUESTS` when the
    upstream's quota is hit. The api retries via BullMQ's retry
    policy.
+
+**A missing provider key is not a gate.** A call whose provider has no
+key is not refused: the provider degrades and the call succeeds with
+less in it, or — for `screenshots.parseScreenshots`, which needs
+`OPENAI_API_KEY` — the upload is accepted and the queued parse job is
+what fails. See [Optional integration
+keys](/self-hosting/tier1/optional-keys/).
 
 ## Adding a new router
 

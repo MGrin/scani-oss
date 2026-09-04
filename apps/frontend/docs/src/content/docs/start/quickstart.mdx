@@ -96,9 +96,22 @@ apps on the host instead changes one of them — see
 
 ## What needs a key
 
-These integrations are gated by an API key — without the key, the
-corresponding tRPC routes return `PRECONDITION_FAILED` and the rest of
-the app keeps working.
+These integrations need an API key for full capability — but **a
+missing key is not an error**. A provider that boots without its key
+still registers and degrades: it contributes no rows, or falls back to a
+keyless public tier. The call succeeds and the rest of the app keeps
+working. On a stack with no `FINNHUB_API_KEY`, searching for a US equity
+returns HTTP 200 with the crypto matches and no equities — nothing
+anywhere says a key is missing.
+
+The exception is OpenAI: with no `OPENAI_API_KEY` the provider throws on
+every call, so a screenshot still uploads but its parse job fails.
+
+Because the rest degrade silently, check what is configured rather than
+waiting for an error — every backend prints a `provider credentials:`
+line at boot naming the providers that came up unkeyed, and the api
+serves the same record on `/health/deep`. See [How to tell what's
+enabled](/self-hosting/tier1/optional-keys/#how-to-tell-whats-enabled).
 
 | Provider | Env var | Unlocks |
 |---|---|---|

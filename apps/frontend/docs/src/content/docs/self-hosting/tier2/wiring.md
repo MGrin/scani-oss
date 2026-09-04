@@ -184,9 +184,10 @@ curl -sX POST "$SCANI_CLOUD_URL/trpc/pricing.fetchCurrentPrice" \
 Expected: `{"result":{"data":{"json":{"price":"...","timestamp":"..."}}}}`.
 
 A `401 Unauthorized` means the bearer doesn't match the operator's
-`DATA_PROVIDER_API_KEY`. A `403 Forbidden` or `PRECONDITION_FAILED`
-means the operator hasn't configured the relevant provider key on
-their side (`COINGECKO_API_KEY` in this example); ask them.
+`DATA_PROVIDER_API_KEY`. An empty or partial result — a 200 with
+nothing useful in it — is what an unconfigured provider key on their
+side looks like (`COINGECKO_API_KEY` in this example); nothing in the
+response says so, so ask them.
 
 ## Rolling back to Tier 1
 

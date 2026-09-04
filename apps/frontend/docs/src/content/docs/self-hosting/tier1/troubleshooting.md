@@ -207,17 +207,24 @@ If the worker logs `schema "bullmq" is not initialized`, the queue
 schema was never applied — run the `migrate` image (see
 [Apply migrations](/self-hosting/tier1/production/#apply-migrations)).
 
-## "PRECONDITION_FAILED: <FOO>_API_KEY is not configured"
+## An integration returns nothing, and nothing errors
 
-**Symptom.** A tRPC call returns this error.
+**Symptom.** Prices, balances or search results are missing for one
+provider — a US equity ticker finds only crypto matches, an EVM wallet
+shows no balance. No error in the UI, nothing in the logs.
 
-**Cause.** The integration the call needs requires a provider key
-the data-provider doesn't have. The named env var is missing.
+**Cause.** That provider has no API key. A keyless provider is not
+refused: it degrades quietly, so a missing key is indistinguishable
+from "no such data exists". Nothing returns an error naming the
+variable.
 
-**Fix.** Set the variable in `.env`, restart the data-provider:
+**Fix.** Read which providers came up unkeyed, set the variable in
+`.env`, and restart the services that use it:
 
 ```sh
-docker compose -f docker-compose.prod.yml restart data-provider
+docker compose -f docker-compose.prod.yml logs api worker data-provider \
+  | grep 'provider credentials:'
+docker compose -f docker-compose.prod.yml restart api worker data-provider
 ```
 
 See [Optional integration keys](/self-hosting/tier1/optional-keys/).
