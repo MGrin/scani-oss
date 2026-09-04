@@ -343,10 +343,64 @@ jobs:
     needs: detect-changes
     if: ${{ needs.detect-changes.outputs.code == 'true' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # SC-925. THE JOB BUDGET IS A BACKSTOP AND MUST NOT BE THE BINDING
+    # CONSTRAINT, because it is the only budget here whose expiry is
+    # ILLEGIBLE. `timeout-minutes` on a JOB kills it as `cancelled` — neither
+    # red nor green — and `CI Success` then turns that into a `failure`, so a
+    # PR is blocked by a job that did not fail and the honest answer to "what
+    # broke" is "nothing". A STEP budget expiring is an ordinary `failure`
+    # that names the step it killed.
+    #
+    # 15 WAS NOT MERELY TIGHT. It was absorbing two unrelated faults and
+    # rendering both as the same non-result. Measured over the last 200 runs
+    # of this workflow, 2026-09-01T18:51Z .. 2026-09-04T11:41Z — n=131
+    # successful `E2E (Playwright)` jobs:
+    #
+    #   min 7m00s  p50 8m32s  p90 9m56s  p95 10m26s  p99 11m30s  max 12m09s
+    #
+    # so the suite does not "take about 11 minutes": 11m is already its p99.
+    #
+    # AND `cancelled` USUALLY IS A SUPERSEDE, WHICH IS WHY THE MINORITY CASE
+    # HIDES. 14 jobs concluded `cancelled` in that window; 12 ran 0m-9m10s and
+    # are ordinary `cancel-in-progress` cancellations. Only TWO were this
+    # clock, and they had OPPOSITE causes — which is why raising one number
+    # was the wrong repair:
+    #
+    #   33721539739  15m50s  the SUITE ran 11m12s and was killed mid-run. It
+    #                        was already reporting 8 real failures, every one
+    #                        a `waitForJob(...) gave up after 60s` that costs
+    #                        a literal minute of wall clock. It was going to
+    #                        be RED; the clock replaced a diagnosable red with
+    #                        `cancelled`. A bigger budget HELPS this one.
+    #   33862593062  15m24s  `playwright install --with-deps` reached
+    #                        packages.microsoft.com and emitted nothing for
+    #                        14m40s. Steps 6-9 never ran; the suite was never
+    #                        started. A bigger budget makes this one WORSE.
+    #
+    # Bounding the steps serves both: the hang is caught by a budget that
+    # names it, and the slow red gets the room to finish and report itself.
+    #
+    # 35 IS THE SMALLEST HONEST BACKSTOP, not a comfort margin: 12 + 15 for
+    # the two bounded steps, plus the observed maxima of everything left
+    # unbounded (stack boot 2m26s, checkout+setup+cache 0m50s, teardown 0m17s,
+    # post-steps 2m07s). It is sized never to fire.
+    timeout-minutes: 35
     env:
       COMPOSE_PROJECT_NAME: mgrin-e2e-suite
+      # The same number as `timeout-minutes` above. A job-level
+      # `timeout-minutes` cannot read the `env` context and no context carries
+      # it back, so the budget is stated twice by necessity;
+      # `scripts/tests/e2e-timeout-is-legible.test.ts` fails when the two
+      # disagree, which is what makes one number in two places safe.
+      E2E_BUDGET_MINUTES: '35'
     steps:
+      # Before checkout deliberately: the earliest point the job can write
+      # anything, so the elapsed figure reported at the end covers as much of
+      # the budget as a step can see. It undercounts by the seconds GitHub
+      # spends in `Set up job`, which is why the verdict below compares
+      # against a threshold and not an equality.
+      - name: Start the clock
+        run: echo "E2E_STARTED_AT=$(date +%s)" >> "$GITHUB_ENV"
       - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
       - uses: ./.github/actions/setup-bun
 
@@ -356,7 +410,27 @@ jobs:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('apps/e2e/package.json') }}
 
+      # SC-925. `--with-deps` shells out to `apt-get`, so this step takes a
+      # hard dependency on packages.microsoft.com — a host we need no browser
+      # from and do not control. It has broken this job twice in three days,
+      # in two shapes: a 403 that killed the step in 42s, and a silent 14m40s
+      # hang that ate the whole job budget and reported `cancelled`.
+      #
+      # 12 MINUTES, NOT 5, AND THE DIFFERENCE IS A MEASUREMENT RATHER THAN
+      # CAUTION. This job's own history says 5 would be ample — n=56
+      # successful runs, p50 0m35s, p99 1m36s, max 2m02s. The private
+      # repository runs the identical command on the identical runner image
+      # and its slowest SUCCESSFUL install is 7m33s (n=30, p50 0m38s), spent
+      # inside `apt-get` installing several hundred WebKit packages — GTK4,
+      # GStreamer, the font sets — none of which the runner image ships and
+      # none of which any cache here covers. Sizing this to one repo's
+      # distribution would have converted that run into a red.
+      #
+      # So: 1.6x the slowest success observed anywhere, and still 2m40s
+      # sooner than today's job budget catches the hang, with a `failure`
+      # that names this step instead of a `cancelled` that names nothing.
       - name: Install Playwright Chromium + WebKit
+        timeout-minutes: 12
         run: cd apps/e2e && bunx playwright install --with-deps chromium webkit
 
       - name: Start stack
@@ -388,7 +462,19 @@ jobs:
       # So CI declares them, and derives the container from the project name it
       # already sets rather than repeating the literal. There is no default to
       # fall back on any more: the fixture refuses and says NO QUERY WAS MADE.
+      # THE ONE BUDGET SIZED FOR A RED RUN RATHER THAN A GREEN ONE, and the
+      # reason is measured. A green suite is 4m18s-8m42s (n=51, p50 6m16s,
+      # p99 8m40s). A FAILING suite is far slower, because each failure pays a
+      # real timeout before it reports: 33721539739 was 11m12s in and still
+      # going, having spent 8 x 60s inside `waitForJob(...) gave up after
+      # 60s`. Sizing this to the green distribution would keep converting
+      # exactly the runs that have something to say into `cancelled`.
+      #
+      # 15 is 1.7x the slowest green run and ~34% more than the censored red
+      # one had. The censoring is why no tighter number is defensible: that
+      # run was killed, so how much longer it needed is not in the data.
       - name: Run Playwright suite
+        timeout-minutes: 15
         run: cd apps/e2e && bunx playwright test
         env:
           CI: "true"
@@ -407,6 +493,67 @@ jobs:
           name: playwright-report
           path: apps/e2e/playwright-report/
           retention-days: 7
+
+      # SC-925. THE CLOCK IS THE ONE FACT A TIMED-OUT RUN DOES NOT STATE.
+      # A job killed by `timeout-minutes` concludes `cancelled` and prints no
+      # budget anywhere, so the reader's first move is to check whether
+      # something superseded the run — and on this workflow that instinct is
+      # usually CORRECT, which is exactly what hides the minority case: of 14
+      # `cancelled` E2E jobs measured over three days, 12 were
+      # `cancel-in-progress` supersedes and 2 were the clock. A timeout here
+      # is a supersede wearing the majority's costume, so the discriminating
+      # pair — elapsed against the declared budget — is printed on EVERY run,
+      # including the ordinary ones. A line that appears only when something
+      # is wrong teaches nobody to look for it.
+      #
+      # IT RUNS BEFORE `Stop stack`, AND THAT ORDER IS EVIDENCE RATHER THAN
+      # TASTE. `Stop stack` was this job's only `always()` step, and it is
+      # `success` in BOTH timed-out runs (33721539739, 33862593062) while the
+      # neighbouring `if: failure()` upload was `skipped` — so `always()`
+      # survives a job timeout here and `failure()` does not. Sitting first in
+      # the always-chain means the smallest cancellation grace still reaches
+      # it. The cost is that the elapsed figure excludes teardown, 0m00s-0m17s
+      # (n=56), which is inside the 90s of slack below.
+      #
+      # IT NEVER FAILS THE JOB. A reporting step that can redden a green run
+      # is a step somebody deletes. When it cannot establish the elapsed time
+      # it says UNVERIFIED and exits 0 — the absence of a reading, not a
+      # reading of zero.
+      - name: Report the clock
+        if: always()
+        run: |
+          set -uo pipefail
+          if [ -z "${E2E_STARTED_AT:-}" ] || [ -z "${E2E_BUDGET_MINUTES:-}" ]; then
+            echo "E2E clock UNVERIFIED - the start marker or the budget was never set, so this run says nothing about its own duration."
+            exit 0
+          fi
+          elapsed=$(( $(date +%s) - E2E_STARTED_AT ))
+          budget=$(( E2E_BUDGET_MINUTES * 60 ))
+          # 90s of slack. The marker is written a few seconds after the job
+          # clock starts and this step sits before teardown, so a job killed
+          # at its budget reads slightly under it here. No green run can reach
+          # the threshold: the slowest of 131 was 12m09s against 35m.
+          threshold=$(( budget - 90 ))
+          took="$(printf '%dm%02ds' $(( elapsed / 60 )) $(( elapsed % 60 )))"
+          of="${E2E_BUDGET_MINUTES}m"
+          if [ "$elapsed" -ge "$threshold" ]; then
+            echo "::error::E2E HIT ITS CLOCK: ran ${took} of a ${of} budget. This job was killed by timeout-minutes, not by a failing test. GitHub reports that as 'cancelled', which is neither red nor green - nothing in this run is a statement about the change under test. Read which step was still running; do not read your diff."
+            {
+              echo "### E2E clock: HIT THE BUDGET"
+              echo ""
+              echo "- ran **${took}** of a **${of}** budget"
+              echo "- \`cancelled\` here means TIMED OUT, not superseded"
+              echo "- this run is not evidence about the change under test"
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "E2E clock: ran ${took} of a ${of} budget - it did NOT hit the clock."
+            {
+              echo "### E2E clock: ${took} of a ${of} budget"
+              echo ""
+              echo "Did **not** hit the clock. A \`cancelled\` conclusion on this run is a"
+              echo "supersede (\`cancel-in-progress\`), not a timeout."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Stop stack
         if: always()
