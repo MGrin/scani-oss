@@ -26,6 +26,11 @@ comment is deliberately in that position; explanatory prose should not be.
 
 * **jobs:** key four more job warnings so a Russian reader gets Russian (SC-434) ([9b33672](https://github.com/MGrin/scani-oss/commit/9b3367209c06fa1c8c2fa05617610b318cb1d043))
 
+
+### Bug Fixes
+
+* **ci:** run the jobs a ci.yml-only pull request changes ([8d6cc9a](https://github.com/MGrin/scani-oss/commit/8d6cc9a42a735c5d7e6deb15f3244c5c5d5bde27))
+
 ## [0.40.0](https://github.com/MGrin/scani-oss/compare/v0.39.1...v0.40.0) (2026-09-04)
 
 
