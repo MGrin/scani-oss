@@ -4,14 +4,17 @@
  * The admin app (Cloudflare Pages, passkey-gated) proxies retry/remove
  * requests here so that BullMQ's own state machine — `job.retry()` /
  * `job.remove()` — stays authoritative. We deliberately do NOT expose raw
- * Redis writes from the admin app, because BullMQ uses Lua scripts to
- * transition jobs between sets and recomputing that manually is fragile.
+ * writes against the queue's storage from the admin app: BullMQ transitions
+ * a job between states through its own commands, and recomputing that by
+ * hand is fragile whichever backend is underneath.
  *
- * Queue *reads* also proxy through here (`POST /admin/jobs/redis-read`):
- * the queue Redis is embedded in the scani-worker machine and reachable
- * over Fly 6PN only, so the admin app can't inspect it directly the way
- * it could Upstash REST. The endpoint accepts a pipeline of whitelisted
- * read-only commands on `bull:*` keys — see validateRedisReadCommands.
+ * `POST /admin/jobs/redis-read` lives here for history and is NOT a queue
+ * endpoint. The queue is on the Postgres backend (`createPostgresBackend`,
+ * `@scani/queue`) and the admin reads it straight out of `bullmq.job`; SC-518
+ * took `bull:` off the whitelist below, so a queue key is now rejected 400.
+ * What the proxy still carries is the rate limiter's `rl:*` windows, which
+ * are on the worker-embedded Redis, reachable over Fly 6PN only — see
+ * validateRedisReadCommands and REDIS_READ_KEY_PREFIXES.
  *
  * Auth + replay protection + the tamper-evident audit writer live in
  * ./admin-common (shared with admin-data).
