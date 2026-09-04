@@ -19,6 +19,13 @@ version heading stays there permanently, above every future release. This
 comment is deliberately in that position; explanatory prose should not be.
 -->
 
+## [0.41.0](https://github.com/MGrin/scani-oss/compare/v0.40.0...v0.41.0) (2026-09-04)
+
+
+### Features
+
+* **jobs:** key four more job warnings so a Russian reader gets Russian (SC-434) ([9b33672](https://github.com/MGrin/scani-oss/commit/9b3367209c06fa1c8c2fa05617610b318cb1d043))
+
 ## [0.40.0](https://github.com/MGrin/scani-oss/compare/v0.39.1...v0.40.0) (2026-09-04)
 
 
