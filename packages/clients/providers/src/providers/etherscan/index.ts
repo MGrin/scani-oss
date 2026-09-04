@@ -347,9 +347,14 @@ export class EtherscanProvider
       // is a claim about the LEDGER, and nothing has been written here. This
       // walk being short means the offer list is short, and the person picking
       // from it is who needs to know (SC-428's voice, on the review side).
-      ctx.noteWarning?.(
-        `etherscan: pagination stopped early on ${truncated.join(', ')} for chain ${chain.chainId} — positions closed before that point are not offered`
-      );
+      const streams = truncated.join(', ');
+      ctx.noteWarning?.({
+        key: 'v3.jobs.notices.reviewPaginationStopped',
+        // `txlist` / `tokentx` are Etherscan's own action names, so they are
+        // the same token in every language (SC-434).
+        params: { streams, chainId: chain.chainId },
+        text: `etherscan: pagination stopped early on ${streams} for chain ${chain.chainId} — positions closed before that point are not offered`,
+      });
     }
 
     // A FAILED transaction still carries the signature; it just moved nothing.

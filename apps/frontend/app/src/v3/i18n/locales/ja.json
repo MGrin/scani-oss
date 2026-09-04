@@ -2246,7 +2246,13 @@
       },
       "notices": {
         "providerHorizon": "{{provider}}: 開始日を指定しない実行は{{durationCount, duration}}前までしかさかのぼりません。それより古いものは取得されていません",
-        "tokenIdentityFailed": "トークン {{identity}} を特定できませんでした: {{error}}"
+        "tokenIdentityFailed": "トークン {{identity}} を特定できませんでした: {{error}}",
+        "walletPaginationStopped": "{{provider}}: チェーン {{chainId}} の {{streams}} でページ取得が途中で止まりました — このウォレットの履歴には、それ以降のものが含まれていません",
+        "reviewPaginationStopped": "etherscan: チェーン {{chainId}} の {{streams}} でページ取得が途中で止まりました — その時点より前に決済されたポジションはここに表示されません",
+        "walkUnconfirmed": "{{provider}}: ページ取得がこの口座の履歴の末尾まで到達したことを確認できませんでした",
+        "ibkrStatementWindow": "ibkr: この Flex レポートは {{from}} 以降を対象としているため、それより前のものは取得されていません。対象期間は保存済みの Flex Query の設定で、Scani が選ぶものではありません — さらに過去まで遡るには、そのクエリの日付範囲を変更し（IBKR Client Portal → Performance & Reports → Flex Queries → edit the query）、保存してからインポートを実行し直してください。",
+        "ibkrStatementWindowPeriod": "ibkr: この Flex レポートは {{from}} 以降（period「{{period}}」）を対象としているため、それより前のものは取得されていません。対象期間は保存済みの Flex Query の設定で、Scani が選ぶものではありません — さらに過去まで遡るには、そのクエリの日付範囲を変更し（IBKR Client Portal → Performance & Reports → Flex Queries → edit the query）、保存してからインポートを実行し直してください。",
+        "ibkrStatementWindowUnknown": "ibkr: この Flex レポートは対象期間を示していないため、口座の全履歴とは読めません。対象期間は保存済みの Flex Query の設定で、Scani が選ぶものではありません — さらに過去まで遡るには、そのクエリの日付範囲を変更し（IBKR Client Portal → Performance & Reports → Flex Queries → edit the query）、保存してからインポートを実行し直してください。"
       },
       "wallet": {
         "subject": "このウォレット",

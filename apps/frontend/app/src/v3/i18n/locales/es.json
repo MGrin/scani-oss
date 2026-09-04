@@ -1227,7 +1227,13 @@
       },
       "notices": {
         "providerHorizon": "{{provider}}: una ejecución sin fecha de inicio alcanza {{durationCount, duration}} atrás y no más — todo lo anterior nunca se descargó",
-        "tokenIdentityFailed": "No se pudo identificar el token {{identity}}: {{error}}"
+        "tokenIdentityFailed": "No se pudo identificar el token {{identity}}: {{error}}",
+        "walletPaginationStopped": "{{provider}}: la paginación se detuvo antes de tiempo en {{streams}} de la cadena {{chainId}} — al historial de esta cartera le falta todo lo que venía después",
+        "reviewPaginationStopped": "etherscan: la paginación se detuvo antes de tiempo en {{streams}} de la cadena {{chainId}} — las posiciones cerradas antes de ese punto no se ofrecen aquí",
+        "walkUnconfirmed": "{{provider}}: el paginador no confirmó que hubiera llegado al final del historial de esta cuenta",
+        "ibkrStatementWindow": "ibkr: este extracto Flex cubre desde {{from}} en adelante, así que nada anterior se llegó a descargar. El rango es un ajuste de tu Flex Query guardada y Scani no lo elige — para llegar más atrás, cambia el rango de fechas de esa consulta (IBKR Client Portal → Performance & Reports → Flex Queries → edit the query), guárdala y vuelve a ejecutar la importación.",
+        "ibkrStatementWindowPeriod": "ibkr: este extracto Flex cubre desde {{from}} en adelante (period «{{period}}»), así que nada anterior se llegó a descargar. El rango es un ajuste de tu Flex Query guardada y Scani no lo elige — para llegar más atrás, cambia el rango de fechas de esa consulta (IBKR Client Portal → Performance & Reports → Flex Queries → edit the query), guárdala y vuelve a ejecutar la importación.",
+        "ibkrStatementWindowUnknown": "ibkr: este extracto Flex no dice qué periodo cubre, así que no puede tomarse como el historial completo de la cuenta. El rango es un ajuste de tu Flex Query guardada y Scani no lo elige — para llegar más atrás, cambia el rango de fechas de esa consulta (IBKR Client Portal → Performance & Reports → Flex Queries → edit the query), guárdala y vuelve a ejecutar la importación."
       },
       "kind": {
         "deleteAllData": "Eliminación de todos los datos de la cuenta",

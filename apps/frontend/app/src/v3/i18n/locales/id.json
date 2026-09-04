@@ -2246,7 +2246,13 @@
       },
       "notices": {
         "providerHorizon": "{{provider}}: proses tanpa tanggal mulai hanya menjangkau {{durationCount, duration}} ke belakang — apa pun yang lebih lama tidak pernah diambil",
-        "tokenIdentityFailed": "Gagal mengenali token {{identity}}: {{error}}"
+        "tokenIdentityFailed": "Gagal mengenali token {{identity}}: {{error}}",
+        "walletPaginationStopped": "{{provider}}: pagination berhenti lebih awal pada {{streams}} untuk chain {{chainId}} — riwayat dompet ini kehilangan semua yang datang setelah itu",
+        "reviewPaginationStopped": "etherscan: pagination berhenti lebih awal pada {{streams}} untuk chain {{chainId}} — posisi yang ditutup sebelum titik itu tidak ditawarkan di sini",
+        "walkUnconfirmed": "{{provider}}: paginator tidak memastikan bahwa ia sudah mencapai ujung riwayat akun ini",
+        "ibkrStatementWindow": "ibkr: laporan Flex ini mencakup {{from}} dan sesudahnya, jadi apa pun sebelum itu tidak pernah diambil. Rentangnya adalah pengaturan pada Flex Query tersimpan Anda dan Scani tidak memilihnya — untuk menjangkau lebih jauh ke belakang, ubah rentang tanggal kueri itu (IBKR Client Portal → Performance & Reports → Flex Queries → edit the query), simpan, lalu jalankan impor lagi.",
+        "ibkrStatementWindowPeriod": "ibkr: laporan Flex ini mencakup {{from}} dan sesudahnya (period \"{{period}}\"), jadi apa pun sebelum itu tidak pernah diambil. Rentangnya adalah pengaturan pada Flex Query tersimpan Anda dan Scani tidak memilihnya — untuk menjangkau lebih jauh ke belakang, ubah rentang tanggal kueri itu (IBKR Client Portal → Performance & Reports → Flex Queries → edit the query), simpan, lalu jalankan impor lagi.",
+        "ibkrStatementWindowUnknown": "ibkr: laporan Flex ini tidak menyebut periode mana yang dicakupnya, jadi ia tidak bisa dibaca sebagai riwayat lengkap akun. Rentangnya adalah pengaturan pada Flex Query tersimpan Anda dan Scani tidak memilihnya — untuk menjangkau lebih jauh ke belakang, ubah rentang tanggal kueri itu (IBKR Client Portal → Performance & Reports → Flex Queries → edit the query), simpan, lalu jalankan impor lagi."
       },
       "wallet": {
         "subject": "dompet ini",

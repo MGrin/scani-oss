@@ -121,6 +121,65 @@ describe('the Russian reader', () => {
     expect(sentence).toContain('CoinGecko rejected request: 429 Too Many Requests');
   });
 
+  /**
+   * The four producers keyed by the migration half of SC-434.
+   *
+   * Each asserts three things, and the third is the one that matters: the
+   * sentence is Russian, the identifiers inside it are untouched, and it is
+   * NOT the English the server stored. Without that last arm a key that
+   * silently fell back to English would pass the first two.
+   */
+  test('gets the wallet-pagination retraction in Russian, identifiers intact', () => {
+    const sentence = ru('v3.jobs.notices.walletPaginationStopped', {
+      provider: 'ethereum',
+      streams: 'native, token',
+      chainId: 1,
+    });
+    expect(sentence).toContain('постраничная загрузка');
+    // The stream names are the API's own and stay as they are — that is what
+    // made this sentence keyable in the first place.
+    expect(sentence).toContain('native, token');
+    expect(sentence).not.toContain('pagination stopped early');
+  });
+
+  test('gets the exited-positions warning in Russian', () => {
+    const sentence = ru('v3.jobs.notices.reviewPaginationStopped', {
+      streams: 'tokentx',
+      chainId: 1,
+    });
+    expect(sentence).toContain('tokentx');
+    expect(sentence).not.toContain('are not offered');
+  });
+
+  test('gets the unconfirmed-walk retraction in Russian', () => {
+    const sentence = ru('v3.jobs.notices.walkUnconfirmed', { provider: 'kraken' });
+    expect(sentence).toContain('kraken');
+    expect(sentence).toContain('не подтвердил');
+    expect(sentence).not.toContain('did not confirm');
+  });
+
+  test('gets the IBKR window retraction in Russian, ISO date and period intact', () => {
+    const sentence = ru('v3.jobs.notices.ibkrStatementWindowPeriod', {
+      from: '2025-08-29',
+      period: 'Last365CalendarDays',
+    });
+    // A date and IBKR's own name for the range: both identifiers, neither
+    // translated. Everything else is.
+    expect(sentence).toContain('2025-08-29');
+    expect(sentence).toContain('Last365CalendarDays');
+    expect(sentence).toContain('отчёт Flex');
+    expect(sentence).not.toContain('was never fetched');
+  });
+
+  test('the window branch with no period, and the one that cannot be read', () => {
+    expect(ru('v3.jobs.notices.ibkrStatementWindow', { from: '2023-01-04' })).toContain(
+      '2023-01-04'
+    );
+    const unknown = ru('v3.jobs.notices.ibkrStatementWindowUnknown');
+    expect(unknown).toContain('не указывает');
+    expect(unknown).not.toContain('does not say');
+  });
+
   test('a key this build lacks is reported as absent, so the renderer shows the stored English', () => {
     // An older service worker, a locale not written yet, a result stored by
     // a newer server. `JobIssueList` asks this question and renders

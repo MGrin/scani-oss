@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { OutflowRateLimiter } from '@scani/rate-limiter';
+import { type JobNotice, type NoticeInput, toJobNotice } from '../../src/core/types';
 import { IbkrProvider } from '../../src/providers/ibkr';
 
 function passthroughLimiter(): OutflowRateLimiter {
@@ -33,7 +34,12 @@ function statement(flexStatementAttrs: string): string {
 async function run(
   xml: string,
   since?: Date
-): Promise<{ retractions: string[]; warnings: string[]; bounds: Array<Date | undefined> }> {
+): Promise<{
+  retractions: string[];
+  notices: JobNotice[];
+  warnings: string[];
+  bounds: Array<Date | undefined>;
+}> {
   const original = globalThis.fetch;
   globalThis.fetch = (async (url: string | URL | Request) =>
     String(url).includes('SendRequest')
@@ -43,6 +49,9 @@ async function run(
       : new Response(xml)) as typeof fetch;
   try {
     const retractions: string[] = [];
+    // The same retraction as a structure, so a test can ask what key it
+    // travels under as well as what it says (SC-434).
+    const notices: JobNotice[] = [];
     const warnings: string[] = [];
     // Captured positionally beside the reason: what matters is that the two
     // arrive on the SAME call, so a bound cannot be stated by a run that did
@@ -51,13 +60,15 @@ async function run(
     await new IbkrProvider(passthroughLimiter(), noSleep).fetchTransactions({
       ...ctx,
       since,
-      retractHistoryClaim: (r: string, bound?: { historyStartsAt: Date }) => {
-        retractions.push(r);
+      retractHistoryClaim: (r: NoticeInput, bound?: { historyStartsAt: Date }) => {
+        const notice = toJobNotice(r);
+        notices.push(notice);
+        retractions.push(notice.text);
         bounds.push(bound?.historyStartsAt);
       },
-      noteWarning: (w: string) => warnings.push(w),
+      noteWarning: (w: NoticeInput) => warnings.push(toJobNotice(w).text),
     } as never);
-    return { retractions, warnings, bounds };
+    return { retractions, notices, warnings, bounds };
   } finally {
     globalThis.fetch = original;
   }
@@ -139,6 +150,52 @@ describe('IBKR retracts the completeness claim its statement cannot support', ()
     const { retractions, warnings } = await run(statement(BOUNDED));
     expect(retractions).toHaveLength(1);
     expect(warnings.some((w) => w.includes('2025-08-29'))).toBe(false);
+  });
+});
+
+/**
+ * The same retraction, carrying the key a Russian reader renders it under
+ * (SC-434).
+ *
+ * The three branches are asserted separately because they are three keys, and
+ * the one a run takes is decided by data the user chose in IBKR rather than by
+ * anything here — a saved query with a period, one without, and one whose
+ * window cannot be read at all. `text` is asserted alongside every key, since
+ * it is what renders when a build does not carry the key and is therefore the
+ * half that must never go missing.
+ *
+ * Note what is NOT in `params`: the navigation path and the explanation are
+ * inside the translated sentence, not interpolated into it. Only the date and
+ * IBKR's own `period` identifier cross the boundary, which is the rule that
+ * decides whether a producer can be keyed at all.
+ */
+describe('the IBKR window retraction names a key', () => {
+  test('a statement with a period', async () => {
+    const { notices } = await run(statement(BOUNDED));
+    expect(notices[0]?.key).toBe('v3.jobs.notices.ibkrStatementWindowPeriod');
+    expect(notices[0]?.params).toEqual({ from: '2025-08-29', period: 'Last365CalendarDays' });
+    expect(notices[0]?.text).toContain('2025-08-29');
+  });
+
+  test('a statement with no period takes the other key', async () => {
+    const { notices } = await run(
+      statement('accountId="U1" fromDate="2025-08-29" toDate="2026-08-28" period=""')
+    );
+    expect(notices[0]?.key).toBe('v3.jobs.notices.ibkrStatementWindow');
+    expect(notices[0]?.params).toEqual({ from: '2025-08-29' });
+    expect(notices[0]?.text).toContain('2025-08-29');
+  });
+
+  /**
+   * The unreadable window is keyed too. It is the branch that says the least,
+   * which is exactly why it must not be the one that falls back to English:
+   * a reader meeting it has the least to go on already.
+   */
+  test('an unreadable window is keyed, with no params to interpolate', async () => {
+    const { notices } = await run(statement('accountId="U1"'));
+    expect(notices[0]?.key).toBe('v3.jobs.notices.ibkrStatementWindowUnknown');
+    expect(notices[0]?.params).toBeUndefined();
+    expect(notices[0]?.text).toContain('does not say which window it covers');
   });
 });
 

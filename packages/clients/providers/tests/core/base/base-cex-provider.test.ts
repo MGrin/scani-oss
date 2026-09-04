@@ -8,6 +8,7 @@ import {
 import type { Capability } from '../../../src/core/capabilities';
 import { createMockSelfCredContext } from '../../../src/core/testing';
 import {
+  type JobNotice,
   type NoticeInput,
   type ProviderContext,
   type TransactionEvent,
@@ -70,14 +71,23 @@ function ctx() {
 }
 
 /** A context that records every retraction, the way `TransactionRouter` does. */
-function recordingCtx(): TransactionFetchContext & { retractions: string[] } {
+function recordingCtx(): TransactionFetchContext & {
+  retractions: string[];
+  notices: JobNotice[];
+} {
   const retractions: string[] = [];
+  // The structured form beside the sentence, so a test can ask what key the
+  // reader renders it under (SC-434).
+  const notices: JobNotice[] = [];
   return {
     ...ctx(),
     institutionCode: 'kraken',
     retractions,
+    notices,
     retractHistoryClaim: (reason: NoticeInput) => {
-      retractions.push(toJobNotice(reason).text);
+      const notice = toJobNotice(reason);
+      notices.push(notice);
+      retractions.push(notice.text);
     },
   };
 }
@@ -146,6 +156,40 @@ describe('BaseCexProvider — the paginator retracts through the caller', () => 
 
     expect(c.retractions).toHaveLength(1);
     expect(c.retractions[0]).toContain('test-cex');
+  });
+
+  /**
+   * The split that decides which half of this can be keyed at all (SC-434).
+   *
+   * The base's own sentence is one this class wrote and can name a key for.
+   * A subclass's `reason` is not: it is a sentence written somewhere else,
+   * for a walk this class knows nothing about, so it travels unkeyed and
+   * renders exactly as it always has — `key: null` is the honest answer
+   * rather than a gap.
+   *
+   * Both arms are asserted together on purpose. Keying the base sentence and
+   * silently keying the subclass one under it would send a Russian reader a
+   * translated frame around somebody else's English, which is worse than the
+   * English sentence they get today.
+   */
+  test("the base's own sentence is keyed and a subclass's is not", async () => {
+    const absent = recordingCtx();
+    await new TestCexProvider([event], { BTC }, null).runFetchTransactions(absent);
+    expect(absent.notices[0]?.key).toBe('v3.jobs.notices.walkUnconfirmed');
+    expect(absent.notices[0]?.params).toEqual({ provider: 'test-cex' });
+    expect(absent.notices[0]?.text).toContain('did not confirm');
+
+    const ours = recordingCtx();
+    await new TestCexProvider(
+      [event],
+      { BTC },
+      {
+        hasCompleteTxHistory: false,
+        reason: 'test-cex: the ledger contradicts itself over 492 entries',
+      }
+    ).runFetchTransactions(ours);
+    expect(ours.notices[0]?.key).toBeNull();
+    expect(ours.notices[0]?.text).toBe('test-cex: the ledger contradicts itself over 492 entries');
   });
 
   // A provider is not required to be handed a sink — provider tests and the

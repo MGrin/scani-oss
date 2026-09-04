@@ -1227,7 +1227,13 @@
       },
       "notices": {
         "providerHorizon": "{{provider}}: uma execução sem data de início alcança {{durationCount, duration}} atrás e não mais — tudo o que for mais antigo nunca foi obtido",
-        "tokenIdentityFailed": "Não foi possível identificar o token {{identity}}: {{error}}"
+        "tokenIdentityFailed": "Não foi possível identificar o token {{identity}}: {{error}}",
+        "walletPaginationStopped": "{{provider}}: a paginação parou cedo demais em {{streams}} da rede {{chainId}} — falta ao histórico desta carteira tudo o que vinha depois",
+        "reviewPaginationStopped": "etherscan: a paginação parou cedo demais em {{streams}} da rede {{chainId}} — as posições encerradas antes desse ponto não são oferecidas aqui",
+        "walkUnconfirmed": "{{provider}}: o paginador não confirmou ter chegado ao fim do histórico desta conta",
+        "ibkrStatementWindow": "ibkr: este extrato Flex cobre de {{from}} em diante, portanto nada anterior chegou a ser buscado. O intervalo é uma configuração da sua Flex Query salva e a Scani não o escolhe — para alcançar datas mais antigas, altere o intervalo de datas dessa consulta (IBKR Client Portal → Performance & Reports → Flex Queries → edit the query), salve e execute a importação de novo.",
+        "ibkrStatementWindowPeriod": "ibkr: este extrato Flex cobre de {{from}} em diante (period «{{period}}»), portanto nada anterior chegou a ser buscado. O intervalo é uma configuração da sua Flex Query salva e a Scani não o escolhe — para alcançar datas mais antigas, altere o intervalo de datas dessa consulta (IBKR Client Portal → Performance & Reports → Flex Queries → edit the query), salve e execute a importação de novo.",
+        "ibkrStatementWindowUnknown": "ibkr: este extrato Flex não diz qual período cobre, portanto não pode ser lido como o histórico completo da conta. O intervalo é uma configuração da sua Flex Query salva e a Scani não o escolhe — para alcançar datas mais antigas, altere o intervalo de datas dessa consulta (IBKR Client Portal → Performance & Reports → Flex Queries → edit the query), salve e execute a importação de novo."
       },
       "kind": {
         "deleteAllData": "Eliminar todos os dados da conta",

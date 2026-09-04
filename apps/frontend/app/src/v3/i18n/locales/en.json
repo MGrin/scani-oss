@@ -2415,7 +2415,13 @@
       },
       "notices": {
         "providerHorizon": "{{provider}}: a run with no start date reaches {{durationCount, duration}} back and no further — anything older than that was never fetched",
-        "tokenIdentityFailed": "Failed to resolve token identity {{identity}}: {{error}}"
+        "tokenIdentityFailed": "Failed to resolve token identity {{identity}}: {{error}}",
+        "walletPaginationStopped": "{{provider}}: pagination stopped early on {{streams}} for chain {{chainId}} — this wallet's history is missing whatever came after",
+        "reviewPaginationStopped": "etherscan: pagination stopped early on {{streams}} for chain {{chainId}} — positions closed before that point are not offered",
+        "walkUnconfirmed": "{{provider}}: the paginator did not confirm it reached the end of this account's history",
+        "ibkrStatementWindow": "ibkr: this Flex statement covers {{from}} onward, so anything before that was never fetched. The range is a setting on your saved Flex Query and Scani does not choose it — to reach further back, change that query’s date range (IBKR Client Portal → Performance & Reports → Flex Queries → edit the query), save, and re-run the import.",
+        "ibkrStatementWindowPeriod": "ibkr: this Flex statement covers {{from}} onward (period \"{{period}}\"), so anything before that was never fetched. The range is a setting on your saved Flex Query and Scani does not choose it — to reach further back, change that query’s date range (IBKR Client Portal → Performance & Reports → Flex Queries → edit the query), save, and re-run the import.",
+        "ibkrStatementWindowUnknown": "ibkr: this Flex statement does not say which window it covers, so it cannot be read as the account’s whole history. The range is a setting on your saved Flex Query and Scani does not choose it — to reach further back, change that query’s date range (IBKR Client Portal → Performance & Reports → Flex Queries → edit the query), save, and re-run the import."
       },
       "wallet": {
         "subject": "this wallet",

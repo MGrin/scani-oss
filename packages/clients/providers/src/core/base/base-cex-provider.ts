@@ -47,13 +47,15 @@ import type {
   TokenIdentityProvider,
   TransactionsProvider,
 } from '../capabilities';
-import type {
-  HoldingSnapshot,
-  PriceQuote,
-  ProviderContext,
-  TransactionEvent,
-  TransactionFetchContext,
-  WithUserCreds,
+import {
+  type HoldingSnapshot,
+  type NoticeInput,
+  type PriceQuote,
+  type ProviderContext,
+  type TransactionEvent,
+  type TransactionFetchContext,
+  toJobNotice,
+  type WithUserCreds,
 } from '../types';
 
 /**
@@ -257,11 +259,17 @@ export abstract class BaseCexProvider implements ProviderBase {
    */
   private reportWalkVerdict(ctx: TransactionFetchContext, verdict: CexWalkVerdict): void {
     if (verdict?.hasCompleteTxHistory) return;
-    const reason =
-      verdict?.reason ??
-      `${this.providerKey}: the paginator did not confirm it reached the end of this account's history`;
+    // Only the ABSENT-verdict sentence is ours to key (SC-434). A subclass's
+    // own `reason` is a sentence this class did not write and cannot name a
+    // key for, so it travels as a plain string and renders as it always has.
+    const notice: NoticeInput = verdict?.reason ?? {
+      key: 'v3.jobs.notices.walkUnconfirmed',
+      params: { provider: this.providerKey },
+      text: `${this.providerKey}: the paginator did not confirm it reached the end of this account's history`,
+    };
+    const reason = toJobNotice(notice).text;
     this.logger.warn({ providerKey: this.providerKey, reason }, 'Transaction walk was partial');
-    ctx.retractHistoryClaim?.(reason);
+    ctx.retractHistoryClaim?.(notice);
   }
 
   /**
