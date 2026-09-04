@@ -157,3 +157,9 @@ export {
   type UpdateTokenPricesResult,
   UpdateTokenPricesUseCase,
 } from './UpdateTokenPricesUseCase';
+export {
+  type TableDisposition,
+  USER_DATA_TABLE_DISPOSITIONS,
+  USER_ROW_COLUMN_DISPOSITIONS,
+  type UserColumnDisposition,
+} from './user-data-deletion-manifest';

@@ -2513,10 +2513,10 @@
     "settings": {
       "account": {
         "deleteConfirm": "Eliminarlo todo",
-        "deleteConsequence": "Desaparecen todas las cuentas, posiciones, monederos, credenciales de integración, grupos y objetivos. Tu acceso se mantiene, pero vacío. Esta acción no se puede deshacer.",
+        "deleteConsequence": "Desaparece todo lo que hay en esta cuenta, incluidos todos los archivos que has subido y su copia almacenada. Tu acceso se mantiene, pero vacío. Esta acción no se puede deshacer.",
         "deleteFailed": "La eliminación ha fallado",
         "deleteInFlight": "Tus datos se están eliminando.",
-        "deleteIntro": "Eliminar tus datos borra todas las cuentas, posiciones, monederos, credenciales de integración, grupos y objetivos. El acceso en sí se mantiene, pero vacío.",
+        "deleteIntro": "Eliminar tus datos borra todo lo que hay en esta cuenta: posiciones, conexiones, pagos y los archivos que has subido. El acceso en sí se mantiene, pero vacío.",
         "deleteTrigger": "Eliminar todos mis datos",
         "deleted": "Se han eliminado todos tus datos",
         "deleting": "Eliminando…"

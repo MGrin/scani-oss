@@ -1058,11 +1058,11 @@
     },
     "settings": {
       "account": {
-        "deleteIntro": "Menghapus data Anda akan menghapus setiap akun, kepemilikan, dompet, kredensial integrasi, grup, dan target tabungan. Login-nya sendiri tetap ada, dalam keadaan kosong.",
+        "deleteIntro": "Menghapus data Anda akan menghapus semua isi akun ini: kepemilikan, koneksi, pembayaran, dan berkas yang Anda unggah. Login-nya sendiri tetap ada, dalam keadaan kosong.",
         "deleting": "Menghapus…",
         "deleteTrigger": "Hapus semua data saya",
         "deleteConfirm": "Hapus semuanya",
-        "deleteConsequence": "Setiap akun, kepemilikan, dompet, kredensial integrasi, grup, dan target tabungan akan hilang. Login Anda tetap ada, tanpa isi apa pun. Tindakan ini tidak dapat dibatalkan.",
+        "deleteConsequence": "Semua isi akun ini akan hilang, termasuk setiap berkas yang Anda unggah beserta salinan tersimpannya. Login Anda tetap ada, tanpa isi apa pun. Tindakan ini tidak dapat dibatalkan.",
         "deleteInFlight": "Data Anda sedang dihapus.",
         "deleted": "Semua data Anda telah dihapus",
         "deleteFailed": "Penghapusan gagal"

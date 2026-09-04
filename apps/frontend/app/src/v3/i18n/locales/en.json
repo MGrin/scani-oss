@@ -1161,11 +1161,11 @@
     },
     "settings": {
       "account": {
-        "deleteIntro": "Deleting your data removes every account, holding, wallet, integration credential, group and vault. The login itself stays, empty.",
+        "deleteIntro": "Deleting your data removes everything in this account — portfolios, connections, payments, and the files you uploaded. The login itself stays, empty.",
         "deleting": "Deleting…",
         "deleteTrigger": "Delete all my data",
         "deleteConfirm": "Delete everything",
-        "deleteConsequence": "Every account, holding, wallet, integration credential, group and vault goes. Your login remains, with nothing in it. This cannot be undone.",
+        "deleteConsequence": "Everything in this account goes, including every file you uploaded and its stored copy. Your login remains, with nothing in it. This cannot be undone.",
         "deleteInFlight": "Your data is being deleted.",
         "deleted": "All your data has been deleted",
         "deleteFailed": "The delete failed"
