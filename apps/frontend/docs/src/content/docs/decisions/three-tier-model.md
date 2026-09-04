@@ -94,7 +94,7 @@ credential ever crosses it.
 - **Tier 1 keeps every credential on one host.** No hosted service is
   involved at all, and the OSS distribution sends no telemetry. Note
   this is not an air gap: pricing, chain and AI calls still go out to
-  the upstreams whose keys you set, from your own api and worker.
+  their providers, from your own api and worker.
 
 ## What the design costs
 
