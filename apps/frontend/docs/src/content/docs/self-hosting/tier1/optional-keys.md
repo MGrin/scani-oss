@@ -139,14 +139,13 @@ An unkeyed provider deliberately does **not** turn `/health/deep` red
 — it is a configuration choice, not an outage. The worker has no HTTP
 health endpoint; its boot line is the only signal.
 
-Routes that genuinely refuse rather than degrade return
-`PRECONDITION_FAILED` naming the variable, and the SPA renders those
-as a soft empty-state rather than a crash:
-
-```json
-{ "error": { "code": "PRECONDITION_FAILED",
-             "message": "OPENAI_API_KEY is not configured" } }
-```
+**No route refuses a call because a provider key is missing**, so do
+not wait for one. A keyless provider degrades, and the OpenAI path
+throws inside the queued screenshot-parse job rather than in the route
+that accepted the upload — the upload returns 200 either way.
+`PRECONDITION_FAILED` is returned elsewhere in the API (a manual
+holding has nothing to refresh; an upload never landed), never to
+report an unset key.
 
 ## See also
 
