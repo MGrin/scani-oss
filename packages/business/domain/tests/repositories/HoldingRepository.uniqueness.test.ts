@@ -54,7 +54,9 @@ describe('holdings uniqueness on (account_id, token_id, external_id)', () => {
     });
   });
 
-  // Account 36032290 / token 8567a750 (Airwallex, USD). The imported row is
+  // An Airwallex USD account and token. The identifiers they had here were
+  // real and are deliberately not recorded (SC-971) — do not put a concrete
+  // one back; nothing in this test depends on their values. The imported row is
   // overwritten by every hourly sync; the hand-entered one beside it is not.
   // Two positions, not one duplicated — SC-303 kept this shape legal on
   // purpose and `findUnsyncedByAccountAndTokens` draws the same line.
