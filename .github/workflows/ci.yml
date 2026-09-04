@@ -401,6 +401,15 @@ jobs:
       # against a threshold and not an equality.
       - name: Start the clock
         run: echo "E2E_STARTED_AT=$(date +%s)" >> "$GITHUB_ENV"
+      # TEMPORARY SC-925 PROBE — REMOVED IN THE NEXT COMMIT ON THIS BRANCH.
+      # The whole design rests on one claim nothing in either repository had
+      # ever exercised: that a STEP budget expiring reports `failure` and
+      # names its step, where a JOB budget expiring reports `cancelled` and
+      # names nothing. No step in either `ci.yml` has ever carried a
+      # `timeout-minutes`, so there is no run to read it off. This measures it.
+      - name: SC-925 probe - what does a step-level timeout conclude as?
+        timeout-minutes: 1
+        run: sleep 120
       - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
       - uses: ./.github/actions/setup-bun
 
