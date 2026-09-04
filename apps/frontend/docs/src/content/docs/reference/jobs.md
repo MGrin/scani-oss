@@ -97,7 +97,7 @@ per-user job ID so the user can see "in flight" status in the SPA.
 | `portfolio-history-backfill` | After import / manual edit | Rebuild `portfolio_value_daily` for the affected date range for one user. |
 | `currency-rate-refresh` | A read path needed a currency pair storage could not answer | Fetch the pair off the request. The upstream call sits behind a two-per-sixty-seconds limiter whose acquire *sleeps*, so on a read path the third uncovered currency waited ~26 s; here nobody waits. The figure renders without the pair and says so, and the next read has it (SC-222). |
 | `transaction-import` | (Reserved) | One-off transaction-only import flow. |
-| `user-data-delete` | User requests account / data deletion | Delete (or export, depending on the flag) all user data per GDPR-style flow. |
+| `user-data-delete` | User requests account / data deletion | Delete all user data per GDPR-style flow. |
 
 ## Retry policies
 

@@ -64,20 +64,12 @@ Bitcoin, Tron, TON, and ENS resolution use public RPCs without
 key requirements. The provider implementations live in
 `packages/clients/providers/src/providers/`.
 
-## Exchange OAuth
+## Exchanges
 
-Most exchanges use API-key + secret credentials the user pastes into
-the app. Binance is the exception — it uses OAuth, which requires
-operator-side configuration:
-
-| Variable | What it does |
-|---|---|
-| `BINANCE_OAUTH_CLIENT_ID` | Issued when you register your deployment with Binance. |
-| `BINANCE_OAUTH_CLIENT_SECRET` | Issued alongside the client ID. |
-| `BINANCE_OAUTH_REDIRECT_URI` | The callback URL Binance will redirect to after the user authorises. Must match what you register with Binance, e.g. `https://api.scani.example.com/auth/binance/callback`. |
-
-Without these set, the **Binance** integration is unavailable; every
-other exchange continues to work via the standard API-key flow.
+**No exchange needs an operator-side key.** Every exchange — Binance
+included — uses API-key + secret credentials the user pastes into the
+app, encrypted per user. There is nothing on this page to set for
+them.
 
 ## Sentry (error tracking)
 

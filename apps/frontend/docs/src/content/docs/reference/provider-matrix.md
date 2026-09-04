@@ -29,7 +29,7 @@ is the check.
 
 | Provider | Env var | Capabilities | Notes |
 |---|---|---|---|
-| Binance | `BINANCE_OAUTH_CLIENT_ID/SECRET/REDIRECT_URI` | balance, transaction | OAuth flow. Other exchanges use user-pasted API keys. |
+| Binance | _user-supplied API key/secret_ | balance, transaction | HMAC-signed, like every other exchange here. |
 | Kraken | _user-supplied API key/secret_ | balance, transaction, price, token-identity | Full breadth. |
 | Bybit | _user_ | balance, transaction | |
 | OKX | _user_ | balance, transaction | |
