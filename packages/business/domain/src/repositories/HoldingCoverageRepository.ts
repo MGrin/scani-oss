@@ -307,6 +307,12 @@ export class HoldingCoverageRepository {
     row: Pick<NewHoldingCoverage, 'holdingId'> & {
       lastReconciledAt: Date;
       openingBalanceQuantity: string | null;
+      // Required rather than optional, and written through on every branch
+      // (SC-951). A residue that has been explained since — a late statement
+      // arriving, a manual movement recorded — must be able to go back to
+      // NULL, and an optional field that callers omit when there is nothing to
+      // say would leave the last run's figure standing forever.
+      unexplainedResidual: string | null;
       reconciliationNotes: string | null;
     },
     transaction?: DatabaseTransaction
@@ -329,6 +335,7 @@ export class HoldingCoverageRepository {
           set: {
             lastReconciledAt: sql`EXCLUDED.last_reconciled_at`,
             openingBalanceQuantity: sql`EXCLUDED.opening_balance_quantity`,
+            unexplainedResidual: sql`EXCLUDED.unexplained_residual`,
             reconciliationNotes: sql`EXCLUDED.reconciliation_notes`,
             updatedAt: sql`now()`,
           },

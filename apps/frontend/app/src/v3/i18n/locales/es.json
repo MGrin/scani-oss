@@ -850,6 +850,8 @@
         "inactive": "Inactiva",
         "incompleteHistory": "Incompleto — faltan las entradas anteriores a la primera transacción importada, así que los valores previos a esa fecha están acotados.",
         "openingPosition": "Posición inicial",
+        "unaccountedBalance": "Saldo sin registrar",
+        "unaccountedBalanceNote": "{{amount}} {{symbol}} del saldo actual no tiene ninguna transacción que lo registre. Llegó después de que el historial de aquí ya explicara el resto, por lo que las cifras anteriores no lo incluyen.",
         "predatesEarliestStatement": "Es anterior al extracto más antiguo disponible (desde {{date}}): el dinero que se movió antes nunca se descargó, así que ninguna transacción aquí puede explicarlo. Importa un extracto que cubra el periodo anterior para cerrarlo.",
         "interest": "Intereses",
         "lastPayout": "Último pago",

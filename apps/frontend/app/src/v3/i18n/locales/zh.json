@@ -762,6 +762,8 @@
         "history": "历史",
         "incompleteHistory": "不完整——缺少第一笔导入交易之前的流入，因此该日期之前的价值会被限制处理。",
         "openingPosition": "期初持仓",
+        "unaccountedBalance": "未记录的余额",
+        "unaccountedBalanceNote": "当前余额中有 {{amount}} {{symbol}} 没有任何交易记录。它是在此处的历史已经解释了其余部分之后才出现的，因此更早的数值不包含它。",
         "predatesEarliestStatement": "早于可获取的最早对账单（自 {{date}} 起）——在此之前发生的资金变动从未被抓取，因此这里的任何交易都无法解释它。导入涵盖更早期间的对账单即可消除。",
         "performance": "表现",
         "costBasis": "成本基础",

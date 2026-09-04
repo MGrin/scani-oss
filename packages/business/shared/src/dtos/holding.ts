@@ -271,6 +271,35 @@ export type HoldingWithDetails = {
     historyStartsAt?: string;
   };
   /**
+   * Balance that no transaction accounts for and that arrived AFTER this
+   * holding's ledger already explained it — a positive Decimal string, or
+   * absent when there is none (SC-951).
+   *
+   * The reconciler computes this on two of its four branches and, until this
+   * field, had nowhere to put it: `arrived-later` writes no transaction and a
+   * literal `'0'` opening, and `opening` buries the figure in a transaction's
+   * `source_metadata`. So the amount reached a reader nowhere at all, which is
+   * strictly worse than reaching them mislabelled — there was no wording to be
+   * suspicious of.
+   *
+   * NOT `dataIntegrity`, which is a different fact wearing a similar shape.
+   * That one says the ledger did not reach back far enough to explain the
+   * balance at the START; this is a hole INSIDE the covered window, money that
+   * demonstrably was not there at the opening because an observation says so.
+   *
+   * **It is a fact, not a flag** (mgrin, 2026-09-03). Nothing counts it, filters
+   * on it, or captions it as worth looking into: a benign interest accrual on a
+   * cash account and a genuinely missed deposit are indistinguishable in the
+   * data — `residueCause` is hardcoded `'unexplained'` on both branches that
+   * reach here — so a "worth looking into" bucket would be permanently wrong
+   * for the case that actually fires. What that accepts is that a missed
+   * deposit reads as unremarkable, and it was accepted knowingly.
+   *
+   * Absent rather than null, the same convention `unpriceable` below states:
+   * the field is an exception, and the wire payload's shape says so.
+   */
+  unexplainedResidual?: string;
+  /**
    * True when this holding's token is unpriceable **in fact**: it has never
    * had a single `token_prices` row and is currently inside an unpriceable
    * cooldown — `TokenRepository.findNeverPricedInCooldownTokenIds`, the same
