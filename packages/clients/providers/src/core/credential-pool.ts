@@ -49,7 +49,7 @@ import {
   userIntegrationCredentials,
 } from '@scani/db/schema';
 import { createComponentLogger, pseudonymizeId } from '@scani/logging';
-import { and, asc, eq, gt, isNull, or, sql } from 'drizzle-orm';
+import { and, asc, eq, gt, isNull, lt, or, sql } from 'drizzle-orm';
 import { Service } from 'typedi';
 import type { ProviderError } from './errors';
 import type { DecryptedCredentials } from './types';
@@ -173,11 +173,12 @@ export class CredentialPool {
 
     const decrypted = await this.resolveCredentials(candidate.userId, institutionId);
     if (!decrypted) {
-      // The credential row was deleted between the pick and the
-      // resolve — the next borrow will skip this user automatically
-      // (no row in user_integration_credentials, no row in pass 2
-      // either). One-shot warn keeps the log meaningful without
-      // flooding.
+      // A genuine race: the credential was deactivated or deleted
+      // between the pick and the resolve. `pickCandidate` selects
+      // through `user_integration_credentials`, so the stale entry is
+      // gone from the next borrow's candidate set rather than winning
+      // the LRU again (SC-1020) — this costs one borrow, and the
+      // caller falls through to its public endpoint.
       this.logger.warn(
         { providerKey, userIdHash: pseudonymizeId(candidate.userId) },
         'Pool entry resolved to no credentials — likely deleted; skipping'
@@ -269,47 +270,32 @@ export class CredentialPool {
   // ============================================================
 
   /**
-   * Two-pass selection:
-   *   1. Existing `credential_pool_state` rows that aren't quarantined,
-   *      ordered by `last_borrowed_at NULLS FIRST` (LRU).
-   *   2. Fall through to `user_integration_credentials` for any active
-   *      cred without a state row yet — first borrow lazy-creates the
-   *      row at bookkeeping time.
+   * The least-recently-borrowed borrowable credential for this
+   * institution, or null when there is none.
    *
-   * The two passes are needed because the partial index in the
-   * migration only covers existing state rows; brand-new credentials
-   * have no row until their first borrow.
+   * Selection starts from `user_integration_credentials` and LEFT JOINs
+   * the pool's bookkeeping, so a candidate exists only for as long as
+   * its credential does. One query, not two, and that is the fix rather
+   * than a tidy-up (SC-1020): reading `credential_pool_state` first and
+   * only falling through to the credential table when it came back
+   * empty meant a state row whose credential had been disconnected won
+   * the LRU, failed to resolve, was never bumped, and won again on
+   * every subsequent borrow — wedging the institution permanently while
+   * a healthy credential sat beside it. Disconnecting is a soft delete
+   * (`IntegrationCredentialsService.deleteCredentials` sets
+   * `is_active = false`) and nothing deletes the state row, so this was
+   * reachable from the ordinary disconnect flow.
+   *
+   * `NULLS FIRST` is what distributes brand-new credentials: they have
+   * no state row at all, so they must sort ahead of everything already
+   * borrowed. Postgres defaults `ASC` to NULLS LAST, which would put
+   * every never-borrowed entry behind every borrowed one.
    */
   private async pickCandidate(institutionId: string): Promise<{ userId: string } | null> {
     const db = getDb();
     const now = new Date();
 
-    const stateRows = await db
-      .select({
-        userId: credentialPoolState.userId,
-        lastBorrowedAt: credentialPoolState.lastBorrowedAt,
-      })
-      .from(credentialPoolState)
-      .where(
-        and(
-          eq(credentialPoolState.institutionId, institutionId),
-          or(
-            isNull(credentialPoolState.quarantinedUntil),
-            sql`${credentialPoolState.quarantinedUntil} < ${now}`
-          )
-        )
-      )
-      .orderBy(asc(credentialPoolState.lastBorrowedAt))
-      .limit(1);
-
-    if (stateRows[0]) {
-      return { userId: stateRows[0].userId };
-    }
-
-    // No state row → either nothing's been borrowed yet for this
-    // institution, or every state row is quarantined. Look for a
-    // cred row that has no state row yet (first-time borrow path).
-    const credRows = await db
+    const rows = await db
       .select({ userId: userIntegrationCredentials.userId })
       .from(userIntegrationCredentials)
       .leftJoin(
@@ -323,13 +309,19 @@ export class CredentialPool {
         and(
           eq(userIntegrationCredentials.institutionId, institutionId),
           eq(userIntegrationCredentials.isActive, true),
-          isNull(credentialPoolState.userId)
+          or(
+            isNull(credentialPoolState.quarantinedUntil),
+            lt(credentialPoolState.quarantinedUntil, now)
+          )
         )
       )
-      .orderBy(asc(userIntegrationCredentials.createdAt))
+      .orderBy(
+        sql`${credentialPoolState.lastBorrowedAt} asc nulls first`,
+        asc(userIntegrationCredentials.createdAt)
+      )
       .limit(1);
 
-    return credRows[0] ? { userId: credRows[0].userId } : null;
+    return rows[0] ?? null;
   }
 
   private async bumpLastBorrowed(userId: string, institutionId: string, now: Date): Promise<void> {

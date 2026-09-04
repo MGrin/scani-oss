@@ -116,9 +116,15 @@ export const credentialPoolState = pgTable(
     totalFailuresCount: integer('total_failures_count').notNull().default(0),
   },
   (table) => ({
+    // The only index on this table, and it is the one the selector
+    // needs: `CredentialPool.pickCandidate` joins here from
+    // `user_integration_credentials` on exactly these two columns.
+    //
+    // There is no partial LRU index. A comment here claimed one was
+    // created in the migration directly; no migration ever created it
+    // (SC-1020), and the old two-pass selector's stated reason for
+    // existing rested on that index.
     pk: primaryKey({ columns: [table.userId, table.institutionId] }),
-    // Note: the partial LRU index used by the selector is created in
-    // the migration directly (Drizzle's index() doesn't support WHERE).
   })
 );
 
