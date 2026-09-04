@@ -56,6 +56,7 @@ jobs:
       deps: ${{ github.event_name != 'pull_request' || steps.filter.outputs.deps == 'true' }}
       docs: ${{ github.event_name != 'pull_request' || steps.filter.outputs.docs == 'true' }}
       prod-guards: ${{ github.event_name != 'pull_request' || steps.filter.outputs.prod-guards == 'true' }}
+      ci-config: ${{ github.event_name != 'pull_request' || steps.filter.outputs.ci-config == 'true' }}
     steps:
       - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
         with:
@@ -174,11 +175,41 @@ jobs:
               - 'apps/backend/api/package.json'
               - 'apps/backend/api/src/config/**'
               - '.github/workflows/ci.yml'
+            # SC-1024. THE FILES THIS WORKFLOW IS BUILT FROM. Every filter above
+            # names the code a job TESTS; none named the definition of the job
+            # itself, so a pull request whose only change was `ci.yml` did not
+            # run the jobs it edited — they reported `skipped`, the same word a
+            # healthy path-filtered skip produces (the SC-726 collision, in the
+            # one place where the change under test IS the workflow), and
+            # `CI Success` treats `skipped` as passing.
+            #
+            # Measured on this repository: PR #383 changed `ci.yml` and nothing
+            # else — and the change was to `detect-changes` itself — while Test,
+            # E2E, Lint, Docs and knip all reported `skipped` and `CI Success`
+            # reported success. `prod-guards` above is the one filter that
+            # already named this file, which is why its job ran and the rest
+            # did not.
+            #
+            # SCOPED TO WHAT THIS FILE IS MADE OF, not to `.github/workflows/**`.
+            # `coverage.yml`, `codeql.yml` and `release-please.yml` define none
+            # of the jobs below, so widening this to every workflow would boot a
+            # docker stack and a browser for a change that cannot affect them.
+            # Measured over the last 100 merged pull requests here: 7 touched
+            # `.github/**`, 5 of those already matched `code` and so already ran
+            # everything, and of the remaining 2 exactly one is in scope. The
+            # cost of this entry is about one extra full run per 100 merges.
+            #
+            # `.github/actions/**` is here because `setup-bun` is a step in every
+            # gated job below and is in no other filter — breaking it breaks all
+            # of them, silently, on a change that matches nothing.
+            ci-config:
+              - '.github/workflows/ci.yml'
+              - '.github/actions/**'
 
   validate-code:
     name: Lint & Type Check
     needs: detect-changes
-    if: ${{ needs.detect-changes.outputs.code == 'true' || needs.detect-changes.outputs.deps == 'true' }}
+    if: ${{ needs.detect-changes.outputs.code == 'true' || needs.detect-changes.outputs.deps == 'true' || needs.detect-changes.outputs.ci-config == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
@@ -195,7 +226,7 @@ jobs:
   validate-deps:
     name: Deps sync & dead code (knip)
     needs: detect-changes
-    if: ${{ needs.detect-changes.outputs.deps == 'true' || needs.detect-changes.outputs.code == 'true' }}
+    if: ${{ needs.detect-changes.outputs.deps == 'true' || needs.detect-changes.outputs.code == 'true' || needs.detect-changes.outputs.ci-config == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
@@ -210,7 +241,7 @@ jobs:
   validate-docs:
     name: Docs in sync with source
     needs: detect-changes
-    if: ${{ needs.detect-changes.outputs.docs == 'true' || needs.detect-changes.outputs.code == 'true' }}
+    if: ${{ needs.detect-changes.outputs.docs == 'true' || needs.detect-changes.outputs.code == 'true' || needs.detect-changes.outputs.ci-config == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
@@ -263,7 +294,7 @@ jobs:
     # The suite finishes in ~13s on the GH runner — much cheaper than
     # the per-package scoping it replaced, and immune to "PR only touches
     # apps/backend/api so test job skips entirely" gaps.
-    if: ${{ needs.detect-changes.outputs.code == 'true' || needs.detect-changes.outputs.deps == 'true' }}
+    if: ${{ needs.detect-changes.outputs.code == 'true' || needs.detect-changes.outputs.deps == 'true' || needs.detect-changes.outputs.ci-config == 'true' }}
     runs-on: ubuntu-latest
     # Postgres is only booted when this job runs. `withTestDb` wraps each
     # test in a rolled-back transaction so tests share the schema but not
@@ -341,7 +372,7 @@ jobs:
     # party's rate limiter and the runner's IP luck (SC-490).
     name: E2E (Playwright)
     needs: detect-changes
-    if: ${{ needs.detect-changes.outputs.code == 'true' }}
+    if: ${{ needs.detect-changes.outputs.code == 'true' || needs.detect-changes.outputs.ci-config == 'true' }}
     runs-on: ubuntu-latest
     # SC-925. THE JOB BUDGET IS A BACKSTOP AND MUST NOT BE THE BINDING
     # CONSTRAINT, because it is the only budget here whose expiry is
