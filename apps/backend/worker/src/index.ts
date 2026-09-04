@@ -269,8 +269,13 @@ async function main(): Promise<void> {
     logger.info({}, '✅ @scani/providers registry initialized');
   }
 
-  // BullMQ requires maxRetriesPerRequest: null on the ioredis connection
-  // it uses for blocking commands (subscribe, bzpopmin, etc.).
+  // `maxRetriesPerRequest: null` was set because BullMQ required it for the
+  // blocking commands it ran here. Since SC-518 the queue is on Postgres and
+  // never touches this client, so that reason is gone — but the option is
+  // still set, and `@scani/deadline` exists because of what it does: ioredis
+  // only flushes its offline queue when the value is a NUMBER, so a command
+  // issued while the connection is down never rejects (SC-522). Dropping it
+  // would change that behaviour and has not been argued.
   const connection = new Redis(env.REDIS_URL, {
     maxRetriesPerRequest: null,
     enableReadyCheck: true,
@@ -298,8 +303,11 @@ async function main(): Promise<void> {
     },
   });
 
-  // Separate publisher connection for WS job events so publishes don't
-  // interfere with BullMQ's blocking commands on `connection`.
+  // Separate publisher connection for WS job events. The original reason —
+  // not interfering with BullMQ's blocking commands on `connection` — no
+  // longer applies (SC-518 moved the queue to Postgres). `connection` now
+  // carries the rate limiter and the reachability probe; whether the split
+  // still earns its keep has not been re-argued.
   const publisher = connection.duplicate();
   Container.get(RedisRealtimeUpdatesService).configure(publisher);
   Container.get(RedisLifecyclePublisher).configure(publisher);

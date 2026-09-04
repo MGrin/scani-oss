@@ -232,9 +232,11 @@ logger.info(
   '🚀 Starting Scani Backend Server'
 );
 
-// Shared ioredis connection — powers BullMQ (enqueue jobs), the rate
-// limiter (fairness across horizontally-scaled instances), and the WS
-// pub/sub (real-time fan-out across instances).
+// Shared ioredis connection — powers the rate limiter (fairness across
+// horizontally-scaled instances) and the WS pub/sub (real-time fan-out
+// across instances). NOT the queue: SC-518 put BullMQ on the Postgres
+// backend, and `QueueClient.configure()` is handed `env.DATABASE_URL`, so
+// this client is never passed to it.
 const redisConnection = new Redis(env.REDIS_URL, { maxRetriesPerRequest: null });
 // SC-225. Without an `error` listener ioredis falls through to
 // `console.error('[ioredis] Unhandled error event:')` (Redis.js:532) — that
@@ -1259,7 +1261,9 @@ const gracefulShutdown = async (signal: string) => {
       logger.error({ err }, 'Error closing PG pool during shutdown');
     }
 
-    // Close the BullMQ queue + its Redis connection (if configured).
+    // Close the BullMQ queue (its own Postgres connection) and the shared
+    // Redis client that the rate limiter and WS pub/sub use. Two unrelated
+    // resources, closed together because this is the last chance at both.
     try {
       await Container.get(QueueClient).close();
       if (redisConnection) {
