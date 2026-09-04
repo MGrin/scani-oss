@@ -19,6 +19,17 @@ version heading stays there permanently, above every future release. This
 comment is deliberately in that position; explanatory prose should not be.
 -->
 
+## [0.39.1](https://github.com/MGrin/scani-oss/compare/v0.39.0...v0.39.1) (2026-09-04)
+
+
+### Bug Fixes
+
+* **a11y:** measure every interactive control, not five chosen shapes ([31cba41](https://github.com/MGrin/scani-oss/commit/31cba41741a8261b78ab8ab268144dfa824625ce))
+* **oss:** the distinct-symbol arm is a rate, not a count (SC-971) ([dff3b57](https://github.com/MGrin/scani-oss/commit/dff3b5745e165c45e163c68f563fb369d99210ac))
+* **providers:** don't borrow a pool candidate whose credential is gone ([8e5d57d](https://github.com/MGrin/scani-oss/commit/8e5d57def4ea599d0ca0247272fe23cf3e13d15c))
+* **tests:** drop real account identifiers from a holdings test comment (SC-971) ([836d12e](https://github.com/MGrin/scani-oss/commit/836d12effeb874bab11a524fec072089e1ef4277))
+* **ui:** title a peek with an h1 so its outline has a top level ([5f03db2](https://github.com/MGrin/scani-oss/commit/5f03db2ff037909b1df89030d59ad179d1b4009f))
+
 ## [0.39.0](https://github.com/MGrin/scani-oss/compare/v0.38.3...v0.39.0) (2026-09-03)
 
 
