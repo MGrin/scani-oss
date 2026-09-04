@@ -150,6 +150,118 @@ function isDoubled(s: string): boolean {
 }
 
 /**
+ * THE FALSE-ADMISSION RATE THE DISTINCT-SYMBOL ARM IS ALLOWED TO SPEND.
+ *
+ * 1e-5, and it is not a number invented here. SC-954 put this exact question
+ * about the neighbouring `longestRun >= 6` arm — which admits a real v4 UUID at
+ * a measured 0.0029% — and that rate was accepted on 2026-09-02 as the hole
+ * this guard is willing to carry. This budget is strictly tighter than the arm
+ * already in the tree, so it introduces no tolerance the file did not already
+ * carry.
+ */
+export const SYNTHETIC_ADMISSION_BUDGET = { numerator: 1n, denominator: 100_000n };
+
+function binomial(n: number, k: number): bigint {
+  let r = 1n;
+  for (let i = 0; i < k; i++) r = (r * BigInt(n - i)) / BigInt(i + 1);
+  return r;
+}
+
+/** Strings of length `n` over `k` symbols using AT MOST `d` distinct ones. */
+function stringsWithAtMostDistinct(n: number, k: number, d: number): bigint {
+  let total = 0n;
+  for (let j = 1; j <= d; j++) {
+    let surjections = 0n;
+    for (let i = 0; i <= j; i++) {
+      const term = binomial(j, i) * BigInt(j - i) ** BigInt(n);
+      surjections += i % 2 === 0 ? term : -term;
+    }
+    total += binomial(k, j) * surjections;
+  }
+  return total;
+}
+
+const ceilingCache = new Map<string, number>();
+
+/**
+ * THE LARGEST DISTINCT-SYMBOL COUNT THE ARM MAY ADMIT AT `n` SYMBOLS DRAWN FROM
+ * AN ALPHABET OF `k` — a false-admission RATE expressed as a count, rather than
+ * a count somebody picked.
+ *
+ * WHY THIS IS NOT A THIRD THRESHOLD (SC-971). What this replaces was
+ * `distinct <= k / 2`, a constant. Every other arm of {@link looksSynthetic}
+ * sits near 1e-5 at every length it meets; this one swung five orders of
+ * magnitude, because a constant symbol count is a STATISTICAL test wearing a
+ * STRUCTURAL threshold. Exactly, over uniform strings, `P(distinct <= k/2)`:
+ *
+ *      8 decimal digits   41.032%        32 hex digits   0.00027%
+ *      9 decimal digits   25.156%        40 hex digits   0.0000011%
+ *     10 decimal digits   14.646%        64 hex digits   ~0
+ *
+ * `\d{8,}` is the `account-number` rule's own minimum, so the arm was widest
+ * exactly where account numbers live: two of every five 8-digit account numbers
+ * were admitted without review. That is the second hole found in this one
+ * function — SC-954 was the first — and two holes from one constant is why the
+ * repair is the criterion rather than the number.
+ *
+ * BOTH OBVIOUS REPAIRS STILL DO NOT WORK, and they are recorded because a
+ * reader will reach for them again. A FLAT `<= 8 distinct` is a fair test of a
+ * 32-hex identifier and no test at all of a ten-digit one. SCALING TO LENGTH
+ * fixes that and breaks the other end: `length / 4` is 16 for a 64-hex
+ * transaction hash, which no hex string can ever exceed, so every one of them
+ * read as synthetic. Both were caught by the must-fire fixtures rather than by
+ * review, and both are still covered by them.
+ *
+ * CLAMPED TO `k / 2`, WHICH MAKES THIS A PURE TIGHTENING. At 40 and 64 hex
+ * digits the budget alone would allow 9 and 11 distinct where the constant
+ * allowed 8, and a guard change that ADMITS what it used to refuse is a
+ * relaxation however well argued. Nothing moves from refused to admitted; only
+ * short decimals move the other way.
+ *
+ * IT RETURNS 1 FOR AN 8- OR 9-DIGIT DECIMAL, WHICH MAKES THE ARM INERT THERE,
+ * AND THAT IS THE HONEST ANSWER RATHER THAN A DEGENERATE ONE. A count of 1 is
+ * an all-one-digit value, which `longestRun >= 6` already admits — so at those
+ * lengths this arm says it has nothing to add, because no distinct-symbol count
+ * separates a hand-written value from an account number over eight digits. The
+ * other four arms — run, periodic, sequential, doubled — carry the shape on
+ * their own, and a synthetic short decimal that none of them recognises needs
+ * {@link ASSERTED_NOT_PRODUCTION}, which is a line in a diff somebody reviews.
+ *
+ * The derived ceiling, at the lengths this guard actually meets — pinned in
+ * `check-oss-data-shapes.test.ts` so a reader can check the threshold by
+ * looking at it, which is the property every other arm here has:
+ *
+ *      8 decimal   1      16 decimal  3      32 hex  8   (unchanged)
+ *      9 decimal   1      24 decimal  4      40 hex  8   (clamped from 9)
+ *     10 decimal   2      32 decimal  5      64 hex  8   (clamped from 11)
+ *
+ * EXACT, NEVER SAMPLED. `#strings of length n over k symbols using at most d
+ * distinct` is `sum_j C(k,j) * Surj(n,j)`, compared with `budget * k^n` as
+ * whole numbers, so the verdict carries no floating-point rounding and is the
+ * same on every machine that runs it.
+ */
+export function distinctCeiling(n: number, k: number): number {
+  const clamp = Math.floor(k / 2);
+  // At 64 symbols the clamp is already far inside any budget this guard would
+  // set: `P(distinct <= d) <= C(k,d) * (d/k)^n`, which at `d = k/2` is at most
+  // `C(16,8) * 2^-64`, about 7e-16. Short-circuiting keeps the exact arithmetic
+  // off a token long enough to make `k^n` expensive to compute.
+  if (n >= 64) return clamp;
+  const key = `${n}:${k}`;
+  const memo = ceilingCache.get(key);
+  if (memo !== undefined) return memo;
+  const total = BigInt(k) ** BigInt(n);
+  let best = 0;
+  for (let d = 1; d <= clamp; d++) {
+    const admitted = stringsWithAtMostDistinct(n, k, d) * SYNTHETIC_ADMISSION_BUDGET.denominator;
+    if (admitted > SYNTHETIC_ADMISSION_BUDGET.numerator * total) break;
+    best = d;
+  }
+  ceilingCache.set(key, best);
+  return best;
+}
+
+/**
  * WHETHER A PERSON WROTE THIS IDENTIFIER RATHER THAN A DATABASE.
  *
  * This is the load-bearing predicate: everything it calls synthetic is admitted
@@ -160,7 +272,8 @@ function isDoubled(s: string): boolean {
  * WHAT IT ADMITS, and the numbers are the reason each arm exists:
  *
  *   run of >= 6 identical symbols   `5c331000-0000-4000-8000-000000000001`
- *   <= half its own alphabet     a value drawing on few of the symbols it could
+ *   too few distinct symbols        judged against chance at this length and
+ *                                   alphabet — {@link distinctCeiling}, never a constant
  *   periodic                        `0xabcdef0123…` repeated to length
  *   sequential                      `0x1234…` or `1234567890`, either wrap
  *   doubled                         `0xc0ffee11223344556677889900aabbccddeeff01`
@@ -185,23 +298,9 @@ export function looksSynthetic(token: string): boolean {
   const s = symbols(token);
   if (s.length === 0) return true;
   if (longestRun(s) >= 6) return true;
-  // KEYED TO THE TOKEN'S OWN ALPHABET, and neither obvious alternative works.
-  //
-  // A FLAT `<= 8 distinct` is a fair test of a 32-hex identifier and no test at
-  // all of a ten-digit one: decimal draws from ten symbols and a random
-  // ten-digit number averages six or seven distinct, so `5426392559` — an
-  // account number, the shape this guard exists for — read as synthetic.
-  //
-  // SCALING TO LENGTH fixes that and breaks the other end, because hex has only
-  // sixteen symbols to draw from however long the string is: `length / 4` is 16
-  // for a 64-hex transaction hash, which no hex string can ever exceed, so
-  // every one of them read as synthetic. Both were caught by the must-fire
-  // fixtures rather than by review.
-  //
-  // Half the alphabet is far below what chance produces — a random 32-hex
-  // string averages 15 distinct of a possible 16, and a random ten-digit number
-  // 6.5 of 10 — and the 200-UUID control is what confirms the margin.
-  if (new Set(s).size <= alphabetOf(s) / 2) return true;
+  // FEWER DISTINCT SYMBOLS THAN CHANCE PRODUCES AT THIS LENGTH AND ALPHABET.
+  // The threshold is derived rather than chosen — see {@link distinctCeiling}.
+  if (new Set(s).size <= distinctCeiling(s.length, alphabetOf(s))) return true;
   if (isPeriodic(s)) return true;
   if (isSequential(s)) return true;
   if (isDoubled(s)) return true;
@@ -402,7 +501,19 @@ export const RULES: readonly Rule[] = [
     // The keyword carries the meaning; the digits alone are a version, a
     // timestamp or a row count. The capture is what gets judged.
     re: /\b(?:account|acct|deposit|iban|payout|invoice|reference)\b[^0-9\n]{0,24}(\d{8,})\b/gi,
-    mustFire: "expect(memo).toBe('Deposit to account 5426392559');",
+    // THE FIXTURE SITS INSIDE THE HOLE, WHICH IS THE POINT (SC-971). The value
+    // here was `5426392559` — six distinct symbols, so it fired under the
+    // `distinct <= alphabet / 2` constant as well as under what replaced it,
+    // and a fixture that fires under both CANNOT report the hole between them.
+    // The guard shipped with the arm admitting two of every five eight-digit
+    // account numbers and this self-test was green throughout.
+    //
+    // `52255232` is eight digits over three distinct symbols, longest run 2,
+    // neither periodic nor sequential — invented here, and squarely in the
+    // 41.032% the constant admitted. Any future loosening of that arm now
+    // fails the self-test at EVERY invocation of this guard rather than only
+    // in the test file, and a failed self-test scans nothing.
+    mustFire: "expect(memo).toBe('Deposit to account 52255232');",
     mustNotFire: "expect(memo).toBe('Deposit to account 1234567890');",
   },
 ];

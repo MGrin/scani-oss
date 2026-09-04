@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import {
   ASSERTED_NOT_PRODUCTION,
+  distinctCeiling,
   EXIT_OK,
   EXIT_REFUSED,
   EXIT_UNKNOWN,
@@ -12,6 +13,7 @@ import {
   looksSynthetic,
   main,
   RULES,
+  SYNTHETIC_ADMISSION_BUDGET,
   selfTest,
 } from '../check-oss-data-shapes';
 
@@ -413,5 +415,190 @@ describe('SC-918 · every asserted value is load-bearing', () => {
       expect(looksSynthetic(value)).toBe(true);
       expect(ASSERTED_NOT_PRODUCTION.has(value)).toBe(false);
     }
+  });
+});
+
+/**
+ * SC-971. The distinct-symbol arm was `distinct <= alphabet / 2`, a constant,
+ * and a constant symbol count is a STATISTICAL test wearing a STRUCTURAL
+ * threshold: sound at 1e-6 on a 32-hex identifier and a near coin-flip on the
+ * eight-digit decimal the `account-number` rule's own `\d{8,}` minimum admits.
+ *
+ * EVERY VALUE IN THIS BLOCK WAS INVENTED FOR IT. None is drawn from the
+ * repository's history, from production, or from any ticket.
+ *
+ * Each assertion carries the control that makes it evidence: a must-fire needs
+ * a neighbour the shipped guard ALREADY reported, or it cannot tell a working
+ * harness from a broken one, and a must-not-fire needs a neighbour that fires.
+ */
+describe('SC-971 · the distinct-symbol arm is a rate, not a count', () => {
+  /**
+   * THE HOLE, RED BEFORE AND GREEN AFTER. `52255232` is eight digits over three
+   * distinct symbols with no run of six, neither periodic nor sequential — one
+   * of the 41.032% of eight-digit values the constant admitted without review.
+   */
+  test('a short decimal with few distinct symbols is reported', () => {
+    expect(
+      findInLine("expect(memo).toBe('Deposit to account 52255232');").map((f) => f.rule)
+    ).toEqual(['account-number']);
+    expect(findInLine("const ref = 'reference 7383873837';").map((f) => f.rule)).toEqual([
+      'account-number',
+    ]);
+  });
+
+  /**
+   * THE POSITIVE CONTROL for the test above. Six distinct symbols, so the
+   * SHIPPED constant reported it too — a run where this one is quiet is a
+   * broken harness rather than a finding about the arm.
+   */
+  test('control · a value the old constant also reported still fires', () => {
+    expect(
+      findInLine("expect(memo).toBe('Deposit to account 5426392559');").map((f) => f.rule)
+    ).toEqual(['account-number']);
+  });
+
+  /**
+   * THE NEGATIVE CONTROLS, one per surviving arm. If tightening the distinct
+   * arm made these fire, the guard would have become noise — and a guard that
+   * is noise is one somebody switches off, which is worse than the hole.
+   */
+  test('control · a hand-written short decimal stays quiet, by four other arms', () => {
+    for (const line of [
+      "expect(memo).toBe('Deposit to account 1234567890');", // isSequential
+      "expect(memo).toBe('Deposit to account 88888888');", // longestRun >= 6
+      "expect(memo).toBe('invoice 24682468');", // isPeriodic
+    ]) {
+      expect(findInLine(line)).toEqual([]);
+    }
+  });
+
+  /**
+   * THE OTHER END, which is what both recorded alternatives broke. A flat
+   * threshold is no test of a ten-digit value; scaling to length makes
+   * `length / 4` exceed hex's sixteen symbols so every 64-hex hash reads
+   * synthetic. Neither may have happened here.
+   */
+  test('the hex end is untouched — every documented synthetic shape still admitted', () => {
+    for (const value of [
+      '0xabcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789',
+      '0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef',
+      '0xc0ffee11223344556677889900aabbccddeeff01',
+      '5c331000-0000-4000-8000-000000000001',
+    ]) {
+      expect(looksSynthetic(value)).toBe(true);
+    }
+    // …and the opaque neighbour of each end is still REPORTED, so the line
+    // above is a statement about those values rather than about the guard.
+    expect(
+      findInLine("const tx = '0xd6233689dbc66c118b8639808426e2d192c15b49408833fe9e2cec914dc50a77';")
+        .length
+    ).toBe(1);
+    expect(findInLine("where id = 'f269e434-c1e4-477a-ae3d-9db32ee72aa5'").length).toBe(1);
+  });
+
+  /**
+   * THE CHANGE IS A PURE TIGHTENING, asserted mechanically rather than argued.
+   * The budget alone would admit 9 distinct at 40 hex digits and 11 at 64,
+   * where the old constant admitted 8 — so the clamp is load-bearing, and a
+   * guard change that ADMITS what it used to refuse is a relaxation however
+   * well reasoned.
+   */
+  test('no length or alphabet may admit more than the constant it replaces', () => {
+    for (const k of [10, 16]) {
+      for (let n = 1; n <= 96; n++) {
+        expect(distinctCeiling(n, k)).toBeLessThanOrEqual(Math.floor(k / 2));
+      }
+    }
+  });
+
+  /**
+   * WHAT THE ARM NOW ADMITS, printed so a reader can check the threshold by
+   * looking at it — the property the docblock says every arm here must have.
+   * The 32-hex row is the one that must not move: it is where the 334 UUIDs in
+   * the tree are judged.
+   */
+  test('the derived ceiling, at the lengths this guard actually meets', () => {
+    // 1 is an all-one-digit value, which `longestRun >= 6` already admits — so
+    // the arm is inert at eight and nine digits, which is the honest answer.
+    expect(distinctCeiling(8, 10)).toBe(1);
+    expect(distinctCeiling(9, 10)).toBe(1);
+    expect(distinctCeiling(10, 10)).toBe(2);
+    expect(distinctCeiling(16, 10)).toBe(3);
+    expect(distinctCeiling(24, 10)).toBe(4);
+    expect(distinctCeiling(32, 10)).toBe(5); // unchanged: the all-digit UUID series
+    expect(distinctCeiling(16, 16)).toBe(4);
+    expect(distinctCeiling(32, 16)).toBe(8); // UNCHANGED — the 32-hex row-identifier
+    expect(distinctCeiling(40, 16)).toBe(8); // clamped down from 9
+    expect(distinctCeiling(64, 16)).toBe(8); // clamped down from 11
+  });
+
+  /**
+   * THE CEILING IS THE BOUNDARY IT CLAIMS TO BE, in both directions — admitting
+   * `d` must be within budget and admitting `d + 1` must not. Checked against a
+   * count taken by BRUTE-FORCE ENUMERATION rather than by the same formula the
+   * implementation uses, so this is a second instrument and not a mirror.
+   */
+  test('control · the ceiling is exact, cross-checked by enumeration', () => {
+    const enumerate = (n: number, k: number, d: number): bigint => {
+      let hits = 0n;
+      const total = k ** n;
+      for (let code = 0; code < total; code++) {
+        const seen = new Set<number>();
+        let rest = code;
+        for (let i = 0; i < n; i++) {
+          seen.add(rest % k);
+          rest = Math.floor(rest / k);
+        }
+        if (seen.size <= d) hits++;
+      }
+      return hits;
+    };
+    // Small enough to enumerate whole, large enough that the boundary is not
+    // trivially at the clamp: 8^6 = 262,144 strings.
+    const n = 6;
+    const k = 8;
+    const clamp = Math.floor(k / 2);
+    const ceiling = distinctCeiling(n, k);
+    const within = (d: number) =>
+      enumerate(n, k, d) * SYNTHETIC_ADMISSION_BUDGET.denominator <=
+      SYNTHETIC_ADMISSION_BUDGET.numerator * BigInt(k ** n);
+    if (ceiling > 0) expect(within(ceiling)).toBe(true);
+    if (ceiling < clamp) expect(within(ceiling + 1)).toBe(false);
+    // The control on the control: this (n, k) must have a boundary INSIDE the
+    // clamp, or neither assertion above ran and the test proved nothing.
+    expect(ceiling).toBeLessThan(clamp);
+  });
+
+  /**
+   * THE HOLE'S SIZE, empirically, on a DETERMINISTIC stream. SC-954 is why
+   * there is no `Math.random` here: a sampling assertion against a rare
+   * property went red about one run in 177, on branches with no connection to
+   * the guard, and the first hypothesis was always the reader's own change.
+   */
+  test('the old constant admitted ~41% of 8-digit values; the ceiling admits none', () => {
+    // xorshift32, not a linear congruential generator: an LCG modulo a power of
+    // two has short-period LOW-ORDER BITS, so `seed % 10` is not uniform and the
+    // first draft of this test read 99% where it should have read 41%. The 41%
+    // assertion is what caught it, which is why the expected rate is asserted
+    // rather than merely reported.
+    let seed = 0x5c971000;
+    const next = () => {
+      seed ^= seed << 13;
+      seed ^= seed >>> 17;
+      seed ^= seed << 5;
+      return seed >>> 0;
+    };
+    const draw = (n: number) => Array.from({ length: n }, () => String(next() % 10)).join('');
+    let oldArm = 0;
+    let newArm = 0;
+    const trials = 20_000;
+    for (let i = 0; i < trials; i++) {
+      const distinct = new Set(draw(8)).size;
+      if (distinct <= 5) oldArm++; // the constant this replaces
+      if (distinct <= distinctCeiling(8, 10)) newArm++;
+    }
+    expect(oldArm / trials).toBeGreaterThan(0.35);
+    expect(oldArm / trials).toBeLessThan(0.47);
+    expect(newArm).toBe(0);
   });
 });
