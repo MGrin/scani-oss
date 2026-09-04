@@ -19,6 +19,18 @@ version heading stays there permanently, above every future release. This
 comment is deliberately in that position; explanatory prose should not be.
 -->
 
+## [0.40.0](https://github.com/MGrin/scani-oss/compare/v0.39.1...v0.40.0) (2026-09-04)
+
+
+### Features
+
+* **deps:** fail the suite when node_modules is not the lockfile's tree ([7678a04](https://github.com/MGrin/scani-oss/commit/7678a0472b6ed9f7f0a3fd452aee4b20f678dedd))
+
+
+### Bug Fixes
+
+* **ci:** bound the E2E steps so a timeout reports as a failure, not `cancelled` ([973e7d7](https://github.com/MGrin/scani-oss/commit/973e7d7d5a5343cc57031a4425cb5304917529b2))
+
 ## [0.39.1](https://github.com/MGrin/scani-oss/compare/v0.39.0...v0.39.1) (2026-09-04)
 
 
