@@ -21,7 +21,8 @@ const SCAN_COUNT = 100;
  * as absent (SC-522).
  *
  * **Without a bound the `catch` blocks below never run.** The shared client is
- * built `{ maxRetriesPerRequest: null }` — BullMQ requires it — and ioredis
+ * built `{ maxRetriesPerRequest: null }` — once BullMQ's requirement, still
+ * set now that the queue is on Postgres (SC-518) — and ioredis
  * 5.10.1 only flushes its offline queue `if (typeof maxRetriesPerRequest ===
  * "number")`, so a command issued while the connection is down is never
  * rejected. Measured 2026-08-21 against a real Redis container stopped
