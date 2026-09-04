@@ -348,8 +348,18 @@ jobs:
     # ILLEGIBLE. `timeout-minutes` on a JOB kills it as `cancelled` — neither
     # red nor green — and `CI Success` then turns that into a `failure`, so a
     # PR is blocked by a job that did not fail and the honest answer to "what
-    # broke" is "nothing". A STEP budget expiring is an ordinary `failure`
-    # that names the step it killed.
+    # broke" is "nothing".
+    #
+    # A STEP budget EXPIRING IS AN ORDINARY `failure` THAT NAMES THE STEP, and
+    # that is measured rather than assumed — no step in either repository's
+    # `ci.yml` had ever carried a `timeout-minutes`, so there was no run to
+    # read it off. Run 33871685277 on this branch was that run: a probe step
+    # given `timeout-minutes: 1` and `sleep 120` concluded **`failure`**, the
+    # job concluded `failure`, and the log carries
+    # `##[error]The action '...' has timed out after 1 minutes.` The contrast
+    # with a job timeout is the whole point — the same run also showed
+    # `if: failure()` steps EXECUTING, where both job-timeout runs
+    # (33721539739, 33862593062) `skipped` them.
     #
     # 15 WAS NOT MERELY TIGHT. It was absorbing two unrelated faults and
     # rendering both as the same non-result. Measured over the last 200 runs
@@ -401,15 +411,6 @@ jobs:
       # against a threshold and not an equality.
       - name: Start the clock
         run: echo "E2E_STARTED_AT=$(date +%s)" >> "$GITHUB_ENV"
-      # TEMPORARY SC-925 PROBE — REMOVED IN THE NEXT COMMIT ON THIS BRANCH.
-      # The whole design rests on one claim nothing in either repository had
-      # ever exercised: that a STEP budget expiring reports `failure` and
-      # names its step, where a JOB budget expiring reports `cancelled` and
-      # names nothing. No step in either `ci.yml` has ever carried a
-      # `timeout-minutes`, so there is no run to read it off. This measures it.
-      - name: SC-925 probe - what does a step-level timeout conclude as?
-        timeout-minutes: 1
-        run: sleep 120
       - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
       - uses: ./.github/actions/setup-bun
 

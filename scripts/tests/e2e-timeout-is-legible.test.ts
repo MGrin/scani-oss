@@ -164,17 +164,27 @@ describe('SC-925 · the Playwright job cannot die on an unexplained clock', () =
 
   /**
    * `always()` survives a job timeout here and `failure()` does not — measured
-   * on both timed-out runs, where `Stop stack` is `success` and the
+   * on both timed-out runs, where the teardown step is `success` and the
    * neighbouring `if: failure()` upload is `skipped`. A reporter guarded on
    * anything but `always()` would be silent in the one case it exists for.
+   *
+   * The placement is stated as "after all the work" rather than as a fixed
+   * index or a named neighbour, because the two repositories' jobs do not
+   * share one: the mirror ends with `docker compose ... down -v` and the
+   * private job's runner tears its own stack down. What both must hold is
+   * that nothing the reporter is reporting ON still lies ahead of it.
    */
-  test('the reporter exists, runs on always(), and precedes the teardown', () => {
+  test('the reporter runs on always(), after every step it reports on', () => {
     expect(REPORTER).toBeDefined();
     expect(REPORTER?.if).toBe('always()');
     const reporterAt = stepIndex((s) => s === REPORTER);
-    const teardownAt = stepIndex((s) => (s.run ?? '').includes('down -v'));
-    expect(teardownAt).toBeGreaterThan(-1);
-    expect(reporterAt).toBeLessThan(teardownAt);
+    expect(reporterAt).toBeGreaterThan(-1);
+    const lastBudgetedAt = STEPS.reduce(
+      (acc, s, i) => (typeof s['timeout-minutes'] === 'number' ? i : acc),
+      -1
+    );
+    expect(lastBudgetedAt).toBeGreaterThan(-1);
+    expect(reporterAt).toBeGreaterThan(lastBudgetedAt);
   });
 
   /**
