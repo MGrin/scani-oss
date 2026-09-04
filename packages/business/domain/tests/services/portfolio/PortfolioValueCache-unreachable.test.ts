@@ -8,7 +8,8 @@ import { PortfolioValueCache } from '../../../src/services/portfolio/PortfolioVa
  *
  * **The production failure this pins.** `holdings.getWithDetails` reaches this
  * cache on every load of the portfolio page. The api's shared client is built
- * `{ maxRetriesPerRequest: null }` — BullMQ asserts that option must be null —
+ * `{ maxRetriesPerRequest: null }` — once BullMQ's requirement, still set now
+ * that the queue is on Postgres (SC-518) —
  * and ioredis 5.10.1 only flushes its offline queue `if (typeof
  * maxRetriesPerRequest === "number")`, so a command issued while the
  * connection is down is never rejected. The `try/catch` around the read was

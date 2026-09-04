@@ -12,7 +12,9 @@ any package may take this without inheriting anything else.
 ## Why it exists
 
 The api, worker and data-provider all build their shared ioredis client with
-`maxRetriesPerRequest: null`, because BullMQ requires it. ioredis only flushes
+`maxRetriesPerRequest: null`. BullMQ required that and no longer uses these
+clients (SC-518 put the queue on Postgres); the option is still set. ioredis
+only flushes
 its offline queue `if (typeof maxRetriesPerRequest === "number")`, so a command
 issued while the connection is down is **never rejected** — it waits for a
 connection that, on a machine whose Redis host stopped resolving, never comes.

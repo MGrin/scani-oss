@@ -37,8 +37,9 @@ const envSchema = z.object({
   // both provide direct connections).
   DATABASE_URL: urlSchema,
 
-  // Redis. Required — powers BullMQ enqueue, WS pub/sub fan-out across
-  // backend instances, and the rate limiter's shared bucket state.
+  // Redis. Required — powers WS pub/sub fan-out across backend instances and
+  // the rate limiter's shared bucket state. NOT the job queue: that runs on
+  // the Postgres backend, out of `DATABASE_URL`'s `bullmq` schema (SC-518).
   REDIS_URL: urlSchema,
 
   // Frontend origin for CORS. Required in production, must be https://.

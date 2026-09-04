@@ -36,7 +36,7 @@ export class ReconcileOrphanedUserJobsProcessor extends ScheduledJobProcessor {
         // "Queued for more than 30s" is not the same claim as "never
         // delivered" — a job can sit in the waiting set that long simply
         // because every slot is busy, and this processor's whole output is a
-        // *terminal* verdict now (SC-153). Ask Redis before declaring one:
+        // *terminal* verdict now (SC-153). Ask the queue before declaring one:
         // if BullMQ still holds the job, the row is behind, not orphaned.
         const live = await queue.getJob(row.jobId);
         if (live) continue;
@@ -44,7 +44,7 @@ export class ReconcileOrphanedUserJobsProcessor extends ScheduledJobProcessor {
         const marked = await userJobRepo.markDead(row.jobId, {
           reason: 'never_delivered',
           error:
-            'Enqueue reconciler: job was never delivered to Redis (api likely crashed between DB insert and queue.add). Nothing ran; start it again from where you began it.',
+            'Enqueue reconciler: job was never delivered to the queue (api likely crashed between DB insert and queue.add). Nothing ran; start it again from where you began it.',
           attemptsMade: 0,
           attemptsAllowed: row.attemptsAllowed,
         });

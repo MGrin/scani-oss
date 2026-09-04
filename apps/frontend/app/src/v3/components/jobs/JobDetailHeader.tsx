@@ -49,7 +49,7 @@ export interface JobDetailHeaderJob {
   deadAt?: string | Date | null;
   failureReason?: string | null;
   /** Whether re-running is actually possible, answered by the server against
-   *  Redis rather than assumed from the state. Retry needs the original
+   *  the queue rather than assumed from the state. Retry needs the original
    *  payload and only the BullMQ entry has it, so for an evicted job the
    *  button cannot work — and a button that cannot work is the defect this
    *  ticket is about wearing a different hat. */

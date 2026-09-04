@@ -100,9 +100,9 @@ export function requiredInProd<T extends z.ZodString>(
  * Cross-environment-isolation check for shared infrastructure URLs
  * (Redis, Postgres). The threat: a developer's local stack picking up
  * a prod URL by accident, or a misconfigured CI job pointing at a
- * shared instance. BullMQ in particular shares its Redis prefix
- * across every connection, so a stray dev process pulling jobs from
- * the prod queue would silently process real user data.
+ * shared instance. BullMQ in particular namespaces the queue by name
+ * alone, so a stray dev process on the prod `DATABASE_URL` would pull
+ * jobs from the prod queue and silently process real user data.
  *
  * Heuristic: if the URL contains the substring `localhost`,
  * `127.0.0.1`, `0.0.0.0`, or `host.docker.internal`, it's a dev URL.

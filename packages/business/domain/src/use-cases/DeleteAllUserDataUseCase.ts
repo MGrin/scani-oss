@@ -30,8 +30,10 @@ export class DeleteAllUserDataUseCase {
     logger.warn({ userId }, 'User requested deletion of all data');
 
     // Captured inside the transaction, consumed after it commits. The DB rows
-    // go via the tx; BullMQ payloads live in Redis and R2 objects live in
-    // object storage, and neither can join a Postgres transaction. Doing both
+    // go via the tx; BullMQ payloads live in the `bullmq` schema and R2
+    // objects live in object storage, and neither can join this transaction.
+    // The queue is in the same database since SC-518, but BullMQ holds its own
+    // connection, so its writes are outside the tx just as R2's are. Doing both
     // *after* the commit is deliberate — see the purges at the bottom.
     const echoed = new Map<PgTable, string[]>();
 
@@ -152,7 +154,8 @@ export class DeleteAllUserDataUseCase {
   }
 
   /**
-   * Purge the user's BullMQ job payloads from Redis. The `user_jobs` rows are
+   * Purge the user's BullMQ job payloads from the queue (the `bullmq` schema
+   * of the application database, not Redis). The `user_jobs` rows are
    * gone; without this the payloads (wallet addresses, exchange names,
    * sometimes a file's r2Key) linger until BullMQ's own cleanup ages them out.
    * `queue.getJob(id)` returns null for ids never enqueued (inline-completed

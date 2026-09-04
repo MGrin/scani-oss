@@ -5,12 +5,12 @@
  * history — the backend's enqueue helper inserts a row before calling
  * `queue.add`, and the worker's processor wrapper writes through every
  * lifecycle transition (active / progress / completed / failed) before
- * publishing the WS event. Redis is the transport, not the record.
+ * publishing the WS event. The queue is the transport, not the record.
  *
  * `status` here merges: DB row (authoritative state + result + error) +
  * live BullMQ progress (only consulted while the row is non-terminal, so
  * the UI's progress bar stays smooth). For terminal states and evicted
- * jobs we never touch Redis — the DB is always complete.
+ * jobs we never touch the queue — `user_jobs` is always complete.
  *
  * This router exists for two fallback cases vs. the preferred WS channel:
  *   1. WS is down / delayed — the frontend hook polls `jobs.status` every 2s.
@@ -46,7 +46,7 @@ type RetryUnavailableReason =
 interface RetryAvailability {
   available: boolean;
   reason?: RetryUnavailableReason;
-  /** Whether Redis still holds the job — the frontend reads this to tell a
+  /** Whether the queue still holds the job — the frontend reads this to tell a
    *  genuine pending retry from a row whose counters outlived the queue
    *  entry (`describeJobFailure` in @scani/shared). Undefined when the
    *  question was answered without a lookup. */
@@ -82,7 +82,7 @@ async function describeRetryAvailability(row: UserJob): Promise<RetryAvailabilit
   if (row.state !== 'failed') return { available: false, reason: 'not_failed' };
   // The user stopped it on purpose; re-running is a new action, not a repair.
   if (row.failureReason === 'cancelled') return { available: false, reason: 'cancelled' };
-  // Never reached Redis, so there is no payload to replay — by definition,
+  // Never reached the queue, so there is no payload to replay — by definition,
   // not by lookup.
   if (row.failureReason === 'never_delivered') {
     return { available: false, reason: 'never_delivered' };
@@ -110,9 +110,10 @@ export const jobsRouter = router({
       if (!row) return { state: 'not_found' as const };
 
       // Overlay live BullMQ progress on still-running jobs so the progress
-      // bar reflects sub-second changes that haven't been mirrored to the
-      // DB yet. Terminal-state jobs are served entirely from the DB; Redis
-      // is never consulted for them (it may have evicted the job entirely).
+      // bar reflects sub-second changes that haven't been mirrored to
+      // `user_jobs` yet. Terminal-state jobs are served entirely from that
+      // mirror; the queue is never consulted for them (it may have evicted
+      // the job entirely).
       let liveProgress: number | null = null;
       if (NON_TERMINAL.has(row.state)) {
         const job = await getQueue().getJob(input.jobId);
@@ -183,7 +184,7 @@ export const jobsRouter = router({
    * not a guess (SC-153). Retry needs the original payload, and `user_jobs`
    * only keeps a redacted `payload_summary` — the full data lives in the
    * BullMQ entry, which `removeOnFail` evicts. So the question can only be
-   * answered by asking Redis, and a Retry button rendered without asking is
+   * answered by asking the queue, and a Retry button rendered without asking is
    * a button that silently fails for exactly the oldest, most-stuck jobs.
    * One lookup per detail-page open; deliberately not offered on the list,
    * where it would be one lookup per row.
@@ -253,7 +254,7 @@ export const jobsRouter = router({
    * was not entitled to and is really just an uncleared counter.
    *
    * Limitation: BullMQ only retains failed jobs up to `removeOnFail`
-   * (currently 500). Older failures are evicted from Redis, so retry
+   * (currently 500). Older failures are evicted from the queue, so retry
    * is best-effort for recent failures only; we surface a clear 404
    * message when that happens so the UI can point the user at
    * re-triggering the originating action manually.
@@ -369,8 +370,8 @@ export const jobsRouter = router({
 
   /**
    * Clear a failed job out of the user's list once they have decided not to
-   * retry. The underlying BullMQ entry (if still in Redis) is removed too, so
-   * it cannot be retried later.
+   * retry. The underlying BullMQ entry (if the queue still holds it) is
+   * removed too, so it cannot be retried later.
    *
    * **The mirror row is kept, and stamped `dismissed_at` (SC-292).** This used
    * to delete it. Two `document-parse` failures on 2026-08-11 left four DLQ
@@ -406,7 +407,7 @@ export const jobsRouter = router({
         try {
           await job.remove();
         } catch {
-          // Already evicted from Redis — DB row deletion is enough.
+          // Already evicted from the queue — DB row deletion is enough.
         }
       }
       return { ok: true as const };

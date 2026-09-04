@@ -34,9 +34,12 @@
  * store can be unreachable, and each one has its own way of never answering:
  *
  * **ioredis** — the api, worker and data-provider all build their shared
- * client with `maxRetriesPerRequest: null`, because BullMQ asserts that option
- * must be null. In ioredis 5.10.1 the queue-flush branch runs only `if (typeof
- * maxRetriesPerRequest === "number")` (`built/redis/event_handler.js:199`), so
+ * client with `maxRetriesPerRequest: null`. That was BullMQ's requirement; it
+ * no longer uses these clients (SC-518 moved the queue to Postgres) and the
+ * option is still set, so what follows is why that matters whatever the
+ * original reason was. In ioredis 5.10.1 the queue-flush branch runs only
+ * `if (typeof maxRetriesPerRequest === "number")`
+ * (`built/redis/event_handler.js:199`), so
  * a command issued while the connection is down is never rejected — it sits in
  * the offline queue until the connection returns, which on a machine whose
  * Redis host stopped resolving is never. Measured against a real client on a

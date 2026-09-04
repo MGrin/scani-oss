@@ -22,7 +22,7 @@ export const USER_JOB_FAILURE_REASONS = [
   /** Classified by-design failure (bad credentials, unsupported file) —
    *  BullMQ's `UnrecoverableError`. Retrying changes nothing on its own. */
   'unrecoverable',
-  /** The mirror row was written but the job never reached Redis. It did not
+  /** The mirror row was written but the job never reached the queue. It did not
    *  run, and nothing it would have touched was touched. */
   'never_delivered',
   /** The user stopped it. */
@@ -52,7 +52,7 @@ export interface JobFailureFacts {
   attemptsAllowed?: number | null;
   /**
    * Whether the queue still holds this job. Only the server can answer it (one
-   * Redis lookup), so it is optional — the list leaves it undefined and trusts
+   * queue lookup), so it is optional — the list leaves it undefined and trusts
    * the counters.
    *
    * When it is explicitly `false`, the counters are stale: a row reading
@@ -82,7 +82,7 @@ export interface JobFailureFacts {
 export type JobFailureNaming =
   /** The user stopped it. */
   | { code: 'cancelled' }
-  /** Never reached Redis: it did not run and changed nothing. */
+  /** Never reached the queue: it did not run and changed nothing. */
   | { code: 'neverDelivered' }
   /** `UnrecoverableError` — another attempt on its own changes nothing. */
   | { code: 'unrecoverable' }
