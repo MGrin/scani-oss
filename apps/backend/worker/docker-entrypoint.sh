@@ -3,7 +3,7 @@
 #
 # With REDIS_EMBEDDED=1 (set in fly.toml for production) it first starts
 # a redis-server next to the worker binary. This machine hosts the
-# queue/rate-limiter/realtime Redis for the whole backend — api and
+# rate-limiter/realtime Redis for the whole backend — api and
 # data-provider reach it as scani-worker.internal:6379 over Fly 6PN
 # private networking (the app has no public IP, so "bind everything" is
 # 6PN-only). It replaced the metered Upstash database, whose idle BullMQ

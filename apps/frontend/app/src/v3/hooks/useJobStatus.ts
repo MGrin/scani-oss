@@ -105,7 +105,7 @@ export function useJobStatus(jobId: string | null): UseJobStatusResult {
 
     // Count consecutive not_found replies. A one-off is fine (BullMQ may not
     // have the row yet), but sustained 'not_found' signals an orphaned jobId —
-    // the backend accepted the request but the job never landed in Redis.
+    // the backend accepted the request but the job never landed in the queue.
     // Flag to Sentry once we've polled past the threshold so ops knows.
     let notFoundStreak = 0;
     const NOT_FOUND_SENTRY_THRESHOLD = 5; // ≈10s of missing-job before we flag

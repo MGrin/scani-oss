@@ -25,7 +25,7 @@ export const userJobStateEnum = pgEnum('user_job_state', [
 // BullMQ evicts completed/failed jobs past retention
 // (removeOnComplete/removeOnFail), so the "/jobs" UI reads from here for
 // historical listings and falls back to here for `jobs.status` when
-// Redis no longer has the job. The api's BullMqEnqueueService inserts
+// the queue no longer has the job. The api's BullMqEnqueueService inserts
 // a row before calling `queue.add`; the worker's UserJobLifecycleMirror
 // updates state+progress+result on every lifecycle event.
 export const userJobs = pgTable(
