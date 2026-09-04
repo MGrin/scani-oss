@@ -1,3 +1,4 @@
+# SC-1024 verification probe — this branch changes ci.yml and nothing else.
 name: CI
 
 on:
