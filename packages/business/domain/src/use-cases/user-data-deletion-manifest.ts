@@ -153,12 +153,13 @@ export const USER_DATA_TABLE_DISPOSITIONS: readonly TableDisposition[] = [
     echo: schema.transferReviewRules.id,
   },
 
-  // Not merely this user's copy of shared bookkeeping — leaving it is an
-  // active fault. `CredentialPool.pickCandidate` selects from this table
-  // ALONE (LRU, `limit 1`) and only afterwards resolves the credential, and
-  // the failed resolve returns before `bumpLastBorrowed`. So a row that
-  // outlives its `user_integration_credentials` row keeps winning the LRU and
-  // the pool stops borrowing for that institution entirely.
+  // This user's own bookkeeping, so it goes whatever the pool does with
+  // it. It USED to be an active fault as well: `pickCandidate` selected
+  // from this table alone, so a row outliving its
+  // `user_integration_credentials` row kept winning the LRU and wedged
+  // the institution. SC-1020 made the selector join the credential
+  // table, so a surviving row is now inert rather than harmful — the
+  // reason changed, the entry did not.
   {
     kind: 'delete',
     table: schema.credentialPoolState,
