@@ -54,17 +54,26 @@ you'd like to see it.
 
 ## Switching tiers from a Tier-3 instance
 
-A Tier 3 user can move to Tier 2 by:
+**Scani ships no data-export feature today**, so there is no
+supported way to pull your existing data out of a Tier-3 instance.
+The `user-data-delete` job deletes and does nothing else: its payload
+is `{ userId, requestId }` with no flag anywhere in it, and
+`DeleteAllUserDataUseCase` only issues deletes.
 
-1. Asking the operator for a data export (Scani ships data-export
-   functionality under the user-data-delete job pipeline, which
-   doubles as an export when the `delete` flag is unset).
-2. Spinning up a self-hosted Tier-2 stack
+What does work is rebuilding on Tier 2 rather than transferring:
+
+1. Spin up a self-hosted Tier-2 stack
    ([Tier 2 overview](/self-hosting/tier2/overview/)).
-3. Importing the data.
+2. Re-add your exchange and wallet connections there. Connected
+   accounts backfill from the source on first sync
+   (`exchange-import`, `wallet-import`), so that history comes back
+   without needing anything from the Tier-3 instance.
+3. Re-upload any statements or CSVs through the ordinary file-import
+   flow (`file-import`). Manual holdings and manually edited prices
+   are the part with no source to re-read, and have to be re-entered.
 
-A migration tool to automate this is on the wishlist; the manual
-path works today.
+Both a data export and a migration tool that automates this are on
+the wishlist.
 
 ## See also
 

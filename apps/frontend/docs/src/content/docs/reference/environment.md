@@ -144,9 +144,6 @@ enabled](/self-hosting/tier1/optional-keys/#how-to-tell-whats-enabled).
 | `DEEPSEEK_API_KEY` | DeepSeek | Read by `aiDeepseekFactory`, which **no backend service registers**. No effect today. |
 | `ETHERSCAN_API_KEY` | Etherscan V2 | All EVM wallet balances + transactions. |
 | `HELIUS_API_KEY` | Helius | Solana balances + transactions. |
-| `BINANCE_OAUTH_CLIENT_ID` | Binance | OAuth flow. |
-| `BINANCE_OAUTH_CLIENT_SECRET` | Binance | OAuth flow. |
-| `BINANCE_OAUTH_REDIRECT_URI` | Binance | OAuth callback URL (e.g. `https://api.your-domain.example.com/auth/binance/callback`). |
 | `GOOGLE_SHEETS_ID` | Google Sheets | Sheet ID for manual-asset pricing fallback. Optional. |
 | `GOOGLE_SERVICE_ACCOUNT_KEY` | Google Sheets | Base64-encoded service-account JSON used to read the sheet above. Optional. |
 
