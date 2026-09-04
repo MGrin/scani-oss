@@ -117,8 +117,10 @@ If you don't want screenshots leaving your machine, the lever is on
 `.env`. The screenshot-parse job then fails on every attempt (the
 OpenAI provider throws without a key) rather than degrading quietly.
 Note that this stops the *parsing*, not the *upload* — the image is
-already in the operator's bucket by then. Tier 1, where the bucket is
-yours too, is the configuration where nothing leaves.
+already in the operator's bucket by then. In Tier 1 the bucket is
+yours too: you run the whole stack, database and object storage
+included. Pricing and any integrations you enable still call out to
+their providers.
 
 ## See also
 
