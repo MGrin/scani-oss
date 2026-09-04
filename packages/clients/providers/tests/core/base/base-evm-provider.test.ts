@@ -10,6 +10,7 @@ import {
 import type { Capability } from '../../../src/core/capabilities';
 import { createMockSelfCredContext } from '../../../src/core/testing';
 import {
+  type JobNotice,
   type NoticeInput,
   type ProviderContext,
   type TransactionEvent,
@@ -129,13 +130,19 @@ function ctx(institutionCode: string) {
 /** A context that records every retraction, the way `TransactionRouter` does. */
 function recordingCtx(
   institutionCode: string
-): TransactionFetchContext & { retractions: string[] } {
+): TransactionFetchContext & { retractions: string[]; notices: JobNotice[] } {
   const retractions: string[] = [];
+  // The structured form beside the sentence, so a test can ask what key the
+  // reader renders it under (SC-434).
+  const notices: JobNotice[] = [];
   return {
     ...ctx(institutionCode),
     retractions,
+    notices,
     retractHistoryClaim: (reason: NoticeInput) => {
-      retractions.push(toJobNotice(reason).text);
+      const notice = toJobNotice(reason);
+      notices.push(notice);
+      retractions.push(notice.text);
     },
   };
 }
@@ -434,6 +441,36 @@ describe('BaseEvmProvider — a truncated walk retracts the completeness claim',
 
     expect(c.retractions).toHaveLength(1);
     expect(c.retractions[0]).toContain('native');
+  });
+
+  /**
+   * And it names the key that sentence is translated under (SC-434).
+   *
+   * Every param is an identifier or a number — the provider key, the API's own
+   * stream names, the chain id — which is what makes this sentence keyable at
+   * all. `PageCapWatch` produces the same kind of warning and is still a plain
+   * string precisely because its list carries English noun phrases.
+   */
+  test('the retraction carries the key and the params the reader interpolates', async () => {
+    const provider = new TestEvmProvider([ETHEREUM], {
+      native: [
+        { rows: [nativeRow({ blockNumber: '500' })], hitPageCap: true },
+        { rows: [nativeRow({ blockNumber: '100' })], hitPageCap: true },
+      ],
+      token: [],
+    });
+    const c = recordingCtx('ethereum');
+
+    await provider.runFetchTransactions(c);
+
+    expect(c.notices[0]?.key).toBe('v3.jobs.notices.walletPaginationStopped');
+    expect(c.notices[0]?.params).toEqual({
+      provider: 'test-evm',
+      streams: 'native',
+      chainId: 1,
+    });
+    // The English is still there, and is what an older build renders.
+    expect(c.notices[0]?.text).toContain('pagination stopped early on native');
   });
 
   // The negative control. Every other test in this file walks to a tail, so

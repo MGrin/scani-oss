@@ -2246,7 +2246,13 @@
       },
       "notices": {
         "providerHorizon": "{{provider}}：未指定开始日期的运行最多回溯 {{durationCount, duration}}，更早的记录从未获取",
-        "tokenIdentityFailed": "无法识别标的 {{identity}}：{{error}}"
+        "tokenIdentityFailed": "无法识别标的 {{identity}}：{{error}}",
+        "walletPaginationStopped": "{{provider}}：链 {{chainId}} 上 {{streams}} 的分页提前中止 — 该钱包的历史缺少此后的全部记录",
+        "reviewPaginationStopped": "etherscan：链 {{chainId}} 上 {{streams}} 的分页提前中止 — 在该点之前平掉的仓位不会在此列出",
+        "walkUnconfirmed": "{{provider}}：分页遍历未能确认已读到该账户历史的末尾",
+        "ibkrStatementWindow": "ibkr：该 Flex 报表覆盖 {{from}} 及之后，因此更早的记录从未被取回。时间范围是你保存的 Flex Query 中的设置，Scani 不会替你选择 — 若要回溯更早，请修改该查询的日期范围（IBKR Client Portal → Performance & Reports → Flex Queries → edit the query），保存后重新运行导入。",
+        "ibkrStatementWindowPeriod": "ibkr：该 Flex 报表覆盖 {{from}} 及之后（period「{{period}}」），因此更早的记录从未被取回。时间范围是你保存的 Flex Query 中的设置，Scani 不会替你选择 — 若要回溯更早，请修改该查询的日期范围（IBKR Client Portal → Performance & Reports → Flex Queries → edit the query），保存后重新运行导入。",
+        "ibkrStatementWindowUnknown": "ibkr：该 Flex 报表未说明覆盖哪个时间范围，因此不能当作账户的完整历史。时间范围是你保存的 Flex Query 中的设置，Scani 不会替你选择 — 若要回溯更早，请修改该查询的日期范围（IBKR Client Portal → Performance & Reports → Flex Queries → edit the query），保存后重新运行导入。"
       },
       "wallet": {
         "subject": "这个钱包",

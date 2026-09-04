@@ -1950,7 +1950,13 @@
       },
       "notices": {
         "providerHorizon": "{{provider}}: запуск без даты начала охватывает {{durationCount, duration}} назад и не глубже — всё, что старше, никогда не загружалось",
-        "tokenIdentityFailed": "Не удалось определить токен {{identity}}: {{error}}"
+        "tokenIdentityFailed": "Не удалось определить токен {{identity}}: {{error}}",
+        "walletPaginationStopped": "{{provider}}: постраничная загрузка прервалась досрочно на {{streams}} в сети {{chainId}} — в истории этого кошелька нет всего, что было дальше",
+        "reviewPaginationStopped": "etherscan: постраничная загрузка прервалась досрочно на {{streams}} в сети {{chainId}} — позиции, закрытые раньше этой точки, здесь не предлагаются",
+        "walkUnconfirmed": "{{provider}}: постраничный обход не подтвердил, что дошёл до конца истории этого счёта",
+        "ibkrStatementWindow": "ibkr: этот отчёт Flex охватывает период с {{from}} и далее, поэтому всё, что было раньше, никогда не загружалось. Диапазон задаётся в вашем сохранённом Flex Query, и Scani его не выбирает — чтобы захватить более ранние даты, измените диапазон дат этого запроса (IBKR Client Portal → Performance & Reports → Flex Queries → edit the query), сохраните и запустите импорт заново.",
+        "ibkrStatementWindowPeriod": "ibkr: этот отчёт Flex охватывает период с {{from}} и далее (period «{{period}}»), поэтому всё, что было раньше, никогда не загружалось. Диапазон задаётся в вашем сохранённом Flex Query, и Scani его не выбирает — чтобы захватить более ранние даты, измените диапазон дат этого запроса (IBKR Client Portal → Performance & Reports → Flex Queries → edit the query), сохраните и запустите импорт заново.",
+        "ibkrStatementWindowUnknown": "ibkr: этот отчёт Flex не указывает, какой период он охватывает, поэтому его нельзя считать полной историей счёта. Диапазон задаётся в вашем сохранённом Flex Query, и Scani его не выбирает — чтобы захватить более ранние даты, измените диапазон дат этого запроса (IBKR Client Portal → Performance & Reports → Flex Queries → edit the query), сохраните и запустите импорт заново."
       },
       "wallet": {
         "subject": "этот кошелёк",

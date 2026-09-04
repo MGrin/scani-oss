@@ -83,7 +83,27 @@ export class PageCapWatch {
     ctx.noteWarning?.(`${sentence} — ${consequence}`);
   }
 
-  /** What the walks observed, or null when none of them capped. */
+  /**
+   * What the walks observed, or null when none of them capped.
+   *
+   * **This sentence stays a plain string, and that is a decision (SC-434).**
+   * Every other producer keyed under `v3.jobs.notices.*` interpolates only
+   * identifiers, numbers and dates — a provider key, an API's own stream name,
+   * an ISO date — so the frame can be translated and the params left alone.
+   * This one interpolates `hit.walk`, which is an English NOUN PHRASE written
+   * by the caller: `the crypto-transactions lookup`, `the account list`,
+   * `transactions for account <id>`. A key here would put a Russian frame
+   * around English prose, which reads worse than the all-English sentence it
+   * replaces, and `JobNotice.params` is flat primitives by design — a
+   * variable-length list of clauses has to be pre-joined into one string, so
+   * the mechanism cannot reach inside it.
+   *
+   * Keying it properly means giving `PageCapHit` a key of its own, which is
+   * eight call sites across five providers plus a translation each, two of
+   * them interpolated (`${symbol} trades`). That is a design change rather
+   * than a migration, so it is not done here. `key: null` is the honest
+   * answer meanwhile, and the sentence renders exactly as it does today.
+   */
   private describe(providerKey: string): string | null {
     if (this.hits.length === 0) return null;
     const named = this.hits

@@ -35,6 +35,8 @@
  * how the query is CONFIGURED, which is not visible from this side.
  */
 
+import type { JobNotice } from '../../core/types';
+
 /** One section of an Activity Flex Query. */
 export interface FlexSection {
   /** The container element a selected section produces. */
@@ -87,6 +89,18 @@ export function missingFlexSections(xml: string, sections: readonly FlexSection[
 /**
  * One warning naming every missing section, rather than one per section.
  *
+ * **Unkeyed on purpose (SC-434), and for the same reason as `PageCapWatch`.**
+ * `describeStatementWindow` below is keyed because everything it interpolates
+ * is an identifier — an ISO date, IBKR's own `period` name. This one
+ * interpolates `FlexSection.consequence`, which is English prose written in
+ * this file (`no dividends, interest, deposits, withdrawals or fees could be
+ * imported`), joined into a variable-length list. `JobNotice.params` is flat
+ * primitives because it crosses a jsonb column, so that list has to arrive
+ * pre-joined as one string — a key would put a translated frame around
+ * untranslated English, which reads worse than the English sentence it
+ * replaces. Keying it means keying the sections, which is a change to the
+ * section table rather than to this function.
+ *
  * A reader missing two sections has one problem — a query saved with the wrong
  * boxes ticked — and should meet it once, next to the single edit that fixes
  * it. Returns null when nothing is missing, so the caller has nothing to say.
@@ -119,6 +133,14 @@ const TYPES_NAMED = 4;
  * It names the types verbatim because the string is the actionable part — it
  * is what has to be added to the map, and a reader who forwards the warning
  * has forwarded the whole bug report.
+ *
+ * **Unkeyed (SC-434).** The types themselves are IBKR identifiers and would
+ * travel fine, but `and N further types` is an English clause inside the same
+ * interpolated list, and the sentence pluralises on a count in three places —
+ * which in Russian is three `_one`/`_few`/`_many` stems per key, the
+ * hand-written plural table `providerHorizon` avoids by wording its number
+ * through `Intl` instead. Neither is unsolvable; both are more than a
+ * migration.
  */
 export function describeUnmappedCashTypes(counts: ReadonlyMap<string, number>): string | null {
   if (counts.size === 0) return null;
@@ -156,6 +178,11 @@ const CASH_FIELD_ORDER = ['type', 'currency', 'amount'] as const;
  * ledger row is worse than an absent one: it is indistinguishable from a real
  * one the next time anybody looks, whereas an absent one is what this warning
  * now points at. A blank `type` cannot be classified at all.
+ *
+ * **Unkeyed (SC-434):** the list is `N with no currency or amount` — our own
+ * English joining IBKR's field names — so the clause inside the interpolation
+ * would stay English under a Russian frame. Same boundary as
+ * `describeMissingSections` above.
  *
  * It names the FIELD rather than the row because that is what says whose fix
  * it is. The same field blank on every row is a Flex Query column that was
@@ -216,17 +243,48 @@ export interface FlexStatementWindow {
  * **A window that cannot be read still retracts.** Silence about the range is
  * not a range covering everything, and reading it as one is the same
  * optimistic default this exists to remove, one layer down.
+ *
+ * **It returns a `JobNotice` rather than a string, so a Russian reader meets
+ * it in Russian (SC-434).** This is the only one of this file's four sentences
+ * that can be keyed: the two things it interpolates are an ISO date and
+ * IBKR's own `period` identifier, and neither is a word. Three keys rather
+ * than one, because the branch a run takes is decided by the user's saved
+ * query rather than by anything here. `text` is still the English sentence
+ * and is what renders when a build does not carry the key.
  */
-export function describeStatementWindow(window: FlexStatementWindow): string {
-  const scope =
-    window.from === null
-      ? 'this Flex statement does not say which window it covers, so it cannot be read as the account’s whole history'
-      : `this Flex statement covers ${window.from.toISOString().slice(0, 10)} onward` +
-        `${window.period ? ` (period "${window.period}")` : ''}, ` +
-        'so anything before that was never fetched';
-  return (
-    `ibkr: ${scope}. The range is a setting on your saved Flex Query and Scani does not ` +
+export function describeStatementWindow(window: FlexStatementWindow): JobNotice {
+  const advice =
+    'The range is a setting on your saved Flex Query and Scani does not ' +
     'choose it — to reach further back, change that query’s date range (IBKR Client Portal → ' +
-    'Performance & Reports → Flex Queries → edit the query), save, and re-run the import.'
-  );
+    'Performance & Reports → Flex Queries → edit the query), save, and re-run the import.';
+  if (window.from === null) {
+    return {
+      key: 'v3.jobs.notices.ibkrStatementWindowUnknown',
+      text:
+        'ibkr: this Flex statement does not say which window it covers, so it cannot be read ' +
+        `as the account’s whole history. ${advice}`,
+    };
+  }
+  // ISO-8601, and it stays ISO-8601 in every language. The date crosses a
+  // jsonb column as a flat primitive (`JobNotice.params`), and re-parsing a
+  // string back into a `Date` on the client to localise it buys a failure mode
+  // on the one screen a reader opens when their import has already gone wrong.
+  const from = window.from.toISOString().slice(0, 10);
+  return window.period
+    ? {
+        key: 'v3.jobs.notices.ibkrStatementWindowPeriod',
+        // `period` is IBKR's own name for the range — `Last365CalendarDays` —
+        // so it is an identifier rather than a sentence.
+        params: { from, period: window.period },
+        text:
+          `ibkr: this Flex statement covers ${from} onward (period "${window.period}"), so ` +
+          `anything before that was never fetched. ${advice}`,
+      }
+    : {
+        key: 'v3.jobs.notices.ibkrStatementWindow',
+        params: { from },
+        text:
+          `ibkr: this Flex statement covers ${from} onward, so anything before that was never ` +
+          `fetched. ${advice}`,
+      };
 }

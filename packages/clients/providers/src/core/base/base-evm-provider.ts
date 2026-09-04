@@ -362,9 +362,17 @@ export abstract class BaseEvmProvider implements ProviderBase {
     // retracted is a fact about the WALK: a `since` that happens to exclude
     // every truncated row does not make the wallet's history whole.
     if (truncatedStreams.length > 0) {
-      ctx.retractHistoryClaim?.(
-        `${this.providerKey}: pagination stopped early on ${truncatedStreams.join(', ')} for chain ${chain.chainId} — this wallet's history is missing whatever came after`
-      );
+      // Keyed, and every param is an identifier or a number (SC-434). The
+      // stream names are the API's own — `native`, `token`, `internal` — so
+      // they read the same in every language; a sentence carrying an English
+      // NOUN PHRASE could not be keyed this way without translating that
+      // phrase too, which is why `PageCapWatch` still sends a plain string.
+      const streams = truncatedStreams.join(', ');
+      ctx.retractHistoryClaim?.({
+        key: 'v3.jobs.notices.walletPaginationStopped',
+        params: { provider: this.providerKey, streams, chainId: chain.chainId },
+        text: `${this.providerKey}: pagination stopped early on ${streams} for chain ${chain.chainId} — this wallet's history is missing whatever came after`,
+      });
     }
 
     // since/until filter — we always paginate the full chain because

@@ -445,3 +445,65 @@ describe('i18n keys in the keyed roots', () => {
     expect(broken).toEqual([]);
   });
 });
+
+/**
+ * The keys the SERVER names, checked against the bundle that has to render
+ * them (SC-434).
+ *
+ * A job warning is written on a server that holds no reader's language, so it
+ * travels as `{ key, params, text }` and the client resolves the key. Nothing
+ * above this covers those: the roots this file walks are `src/v3` and
+ * `src/pages`, and the producer is in `packages/clients/providers` or
+ * `packages/business/domain` — a different workspace, on the other side of a
+ * jsonb column.
+ *
+ * **The failure mode is not the one the rest of this file guards.** A typo in
+ * a `t('…')` call renders the raw key in 48px type, which someone notices. A
+ * typo in a producer's key renders the server's ENGLISH SENTENCE — because
+ * `JobIssueList` asks `i18n.exists(key)` first and falls back to `text` when
+ * it does not — so the sentence reads perfectly, in the wrong language, and
+ * looks exactly like a producer nobody has keyed yet. That fallback is right
+ * and is what makes the mechanism adoptable; it also means a typo is silent
+ * forever, and this is the only thing that would say so.
+ *
+ * Both directions, because they fail differently. A key the server names and
+ * the bundle lacks is a warning that never gets translated. A key the bundle
+ * carries that no producer names is a sentence eight translators wrote for
+ * nothing, and it is how a namespace fills up with strings that describe
+ * behaviour that has been deleted.
+ */
+describe('every job-notice key the server names is in the bundle', () => {
+  const PRODUCER_ROOTS = [
+    join(import.meta.dir, '../../../../../packages/clients/providers/src'),
+    join(import.meta.dir, '../../../../../packages/business/domain/src'),
+  ];
+  const NOTICE_KEY = /'(v3\.jobs\.notices\.[A-Za-z0-9_]+)'/g;
+
+  const named = new Set<string>();
+  let producerFiles = 0;
+  for (const root of PRODUCER_ROOTS) {
+    for (const file of sourceFiles(root)) {
+      producerFiles++;
+      for (const m of readFileSync(file, 'utf8').matchAll(NOTICE_KEY)) named.add(m[1]!);
+    }
+  }
+
+  const inBundle = new Set(Object.keys(v3En.v3.jobs.notices).map((k) => `v3.jobs.notices.${k}`));
+
+  test('the scan reached the producers at all', () => {
+    // Non-vacuous both ways: an empty scan would make the rule below pass by
+    // comparing nothing against everything, and a moved workspace is exactly
+    // how that happens.
+    expect(producerFiles).toBeGreaterThan(100);
+    expect(named.size).toBeGreaterThan(0);
+    expect(inBundle.size).toBeGreaterThan(0);
+  });
+
+  test('no producer names a key the bundle cannot resolve', () => {
+    expect([...named].filter((k) => !inBundle.has(k)).sort()).toEqual([]);
+  });
+
+  test('no notice key sits in the bundle with nothing producing it', () => {
+    expect([...inBundle].filter((k) => !named.has(k)).sort()).toEqual([]);
+  });
+});

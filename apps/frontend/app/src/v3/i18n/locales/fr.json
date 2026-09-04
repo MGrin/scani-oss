@@ -1700,7 +1700,13 @@
       },
       "notices": {
         "providerHorizon": "{{provider}} : une exécution sans date de début remonte à {{durationCount, duration}} et pas plus loin — tout ce qui est plus ancien n'a jamais été récupéré",
-        "tokenIdentityFailed": "Impossible d'identifier le jeton {{identity}} : {{error}}"
+        "tokenIdentityFailed": "Impossible d'identifier le jeton {{identity}} : {{error}}",
+        "walletPaginationStopped": "{{provider}} : la pagination s’est arrêtée trop tôt sur {{streams}} pour la chaîne {{chainId}} — il manque à l’historique de ce portefeuille tout ce qui venait ensuite",
+        "reviewPaginationStopped": "etherscan : la pagination s’est arrêtée trop tôt sur {{streams}} pour la chaîne {{chainId}} — les positions fermées avant ce point ne sont pas proposées ici",
+        "walkUnconfirmed": "{{provider}} : le paginateur n’a pas confirmé avoir atteint la fin de l’historique de ce compte",
+        "ibkrStatementWindow": "ibkr : ce relevé Flex couvre la période à partir du {{from}}, donc rien d’antérieur n’a été récupéré. La plage est un réglage de votre Flex Query enregistrée et Scani ne la choisit pas — pour remonter plus loin, modifiez la plage de dates de cette requête (IBKR Client Portal → Performance & Reports → Flex Queries → edit the query), enregistrez, puis relancez l’import.",
+        "ibkrStatementWindowPeriod": "ibkr : ce relevé Flex couvre la période à partir du {{from}} (period « {{period}} »), donc rien d’antérieur n’a été récupéré. La plage est un réglage de votre Flex Query enregistrée et Scani ne la choisit pas — pour remonter plus loin, modifiez la plage de dates de cette requête (IBKR Client Portal → Performance & Reports → Flex Queries → edit the query), enregistrez, puis relancez l’import.",
+        "ibkrStatementWindowUnknown": "ibkr : ce relevé Flex n’indique pas la période qu’il couvre, il ne peut donc pas être lu comme l’historique complet du compte. La plage est un réglage de votre Flex Query enregistrée et Scani ne la choisit pas — pour remonter plus loin, modifiez la plage de dates de cette requête (IBKR Client Portal → Performance & Reports → Flex Queries → edit the query), enregistrez, puis relancez l’import."
       },
       "wallet": {
         "subject": "ce portefeuille",
