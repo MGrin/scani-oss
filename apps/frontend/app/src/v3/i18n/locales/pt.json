@@ -2513,10 +2513,10 @@
     "settings": {
       "account": {
         "deleteConfirm": "Eliminar tudo",
-        "deleteConsequence": "Desaparecem todas as contas, posições, carteiras, credenciais de integração, grupos e objetivos. O seu acesso mantém-se, sem nada lá dentro. Isto não pode ser anulado.",
+        "deleteConsequence": "Desaparece tudo o que existe nesta conta, incluindo todos os ficheiros que carregou e a respetiva cópia armazenada. O seu acesso mantém-se, sem nada lá dentro. Isto não pode ser anulado.",
         "deleteFailed": "A eliminação falhou",
         "deleteInFlight": "Os seus dados estão a ser eliminados.",
-        "deleteIntro": "Eliminar os seus dados remove todas as contas, posições, carteiras, credenciais de integração, grupos e objetivos. O acesso em si mantém-se, vazio.",
+        "deleteIntro": "Eliminar os seus dados remove tudo o que existe nesta conta: posições, ligações, pagamentos e os ficheiros que carregou. O acesso em si mantém-se, vazio.",
         "deleteTrigger": "Eliminar todos os meus dados",
         "deleted": "Todos os seus dados foram eliminados",
         "deleting": "A eliminar…"

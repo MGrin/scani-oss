@@ -764,11 +764,11 @@
     },
     "settings": {
       "account": {
-        "deleteIntro": "Supprimer vos données efface tous les comptes, positions, portefeuilles, identifiants d’intégration, groupes et objectifs. L’identifiant de connexion, lui, reste, mais vide.",
+        "deleteIntro": "Supprimer vos données efface tout ce que contient ce compte : positions, connexions, paiements et les fichiers que vous avez importés. L’identifiant de connexion, lui, reste, mais vide.",
         "deleting": "Suppression…",
         "deleteTrigger": "Supprimer toutes mes données",
         "deleteConfirm": "Tout supprimer",
-        "deleteConsequence": "Tous les comptes, positions, portefeuilles, identifiants d’intégration, groupes et objectifs disparaissent. Votre identifiant de connexion reste, sans rien dedans. Cette action est irréversible.",
+        "deleteConsequence": "Tout ce que contient ce compte disparaît, y compris chaque fichier que vous avez importé et sa copie stockée. Votre identifiant de connexion reste, sans rien dedans. Cette action est irréversible.",
         "deleteInFlight": "Vos données sont en cours de suppression.",
         "deleted": "Toutes vos données ont été supprimées",
         "deleteFailed": "La suppression a échoué"

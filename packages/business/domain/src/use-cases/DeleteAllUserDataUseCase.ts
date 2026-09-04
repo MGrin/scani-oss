@@ -1,113 +1,90 @@
+import { StorageFacade } from '@scani/cloud-client/facades/storage-facade';
 import * as schema from '@scani/db/schema';
 import { withTransaction } from '@scani/db/transaction';
 import { createComponentLogger } from '@scani/logging';
 import { QueueClient } from '@scani/queue';
-import { eq } from 'drizzle-orm';
+import { eq, getTableColumns } from 'drizzle-orm';
+import { type AnyPgColumn, getTableConfig, type PgTable } from 'drizzle-orm/pg-core';
 import { Container, Service } from 'typedi';
+import {
+  USER_DATA_TABLE_DISPOSITIONS,
+  USER_ROW_COLUMN_DISPOSITIONS,
+} from './user-data-deletion-manifest';
 
 const logger = createComponentLogger('use-case:delete-all-user-data');
+
+/**
+ * The TypeScript property name a drizzle column is reachable under, which is
+ * what `.set()` keys on — `column.name` is the SQL name and silently updates
+ * nothing when the two differ, which they do for every camel-cased column.
+ */
+function columnKey(table: PgTable, column: AnyPgColumn): string {
+  const entry = Object.entries(getTableColumns(table)).find(([, col]) => col === column);
+  if (!entry) throw new Error(`Column ${column.name} is not on ${getTableConfig(table).name}`);
+  return entry[0];
+}
 
 @Service()
 export class DeleteAllUserDataUseCase {
   async execute(userId: string): Promise<{ success: true }> {
     logger.warn({ userId }, 'User requested deletion of all data');
 
-    // Captured outside the transaction so the post-commit BullMQ purge
-    // can iterate them. The DB rows go via the tx; the queue rows are
-    // in Redis and have to be cleaned separately. Doing the Redis
-    // delete *after* the tx commits is intentional: if the tx rolls
-    // back we don't want to leave the user with phantom-deleted job
-    // payloads but live DB rows pointing at them.
-    let purgedJobIds: string[] = [];
+    // Captured inside the transaction, consumed after it commits. The DB rows
+    // go via the tx; BullMQ payloads live in Redis and R2 objects live in
+    // object storage, and neither can join a Postgres transaction. Doing both
+    // *after* the commit is deliberate — see the purges at the bottom.
+    const echoed = new Map<PgTable, string[]>();
 
     await withTransaction(
       async (tx) => {
-        // Delete in FK-safe order. Junction tables (holdingGroups,
-        // accountGroups, vaultHoldings) cascade automatically from their
-        // parent deletes.
-        //
-        // PnL / historical-balance tables — explicit deletes even though
-        // accounts-delete would cascade-clean holding_transactions and
-        // holding_balance_observations. Explicit keeps the row counts in
-        // the audit log for user-visible "here's what we removed"
-        // surfaces. `portfolio_value_daily` ONLY cascades on users.id;
-        // because this flow wipes data without removing the user row, it
-        // must be explicit or rows leak.
-        const portfolioDailyDel = await tx
-          .delete(schema.portfolioValueDaily)
-          .where(eq(schema.portfolioValueDaily.userId, userId))
-          .returning({ snapshotDate: schema.portfolioValueDaily.snapshotDate });
+        // Every table keyed on `users.id` is classified in the manifest, and
+        // the loop is driven by it rather than by a hand-written list of
+        // deletes. That is the whole point: this flow was correct when it was
+        // written and silently wrong three months later, because a new table
+        // is not a change to any file anyone re-reads (SC-1018). Junction
+        // tables (holdingGroups, accountGroups, vaultHoldings,
+        // holdingCoverage, documentExtractions, paymentOccurrences,
+        // vendorAliases) carry no userId and cascade from their parents here.
+        for (const entry of USER_DATA_TABLE_DISPOSITIONS) {
+          if (entry.kind === 'keep') continue;
 
-        const holdingTxDel = await tx
-          .delete(schema.holdingTransactions)
-          .where(eq(schema.holdingTransactions.userId, userId))
-          .returning({ id: schema.holdingTransactions.id });
+          if (entry.kind === 'anonymise') {
+            await tx
+              .update(entry.table)
+              .set({ [columnKey(entry.table, entry.userColumn)]: null })
+              .where(eq(entry.userColumn, userId));
+            continue;
+          }
 
-        const holdingObsDel = await tx
-          .delete(schema.holdingBalanceObservations)
-          .where(eq(schema.holdingBalanceObservations.userId, userId))
-          .returning({ id: schema.holdingBalanceObservations.id });
+          const removed = await tx
+            .delete(entry.table)
+            .where(eq(entry.userColumn, userId))
+            .returning({ echo: entry.echo });
+          echoed.set(
+            entry.table,
+            removed.map((row) => String(row.echo))
+          );
+        }
 
-        const holdingsDel = await tx
-          .delete(schema.holdings)
-          .where(eq(schema.holdings.userId, userId))
-          .returning({ id: schema.holdings.id });
-
-        // `holding_coverage` is keyed by (accountId, tokenId) and has no
-        // userId. Its accountId FK is ON DELETE CASCADE, so the accounts
-        // delete below cleans it automatically.
-        const accountsDel = await tx
-          .delete(schema.accounts)
-          .where(eq(schema.accounts.userId, userId))
-          .returning({ id: schema.accounts.id });
-
-        const vaultsDel = await tx
-          .delete(schema.vaults)
-          .where(eq(schema.vaults.userId, userId))
-          .returning({ id: schema.vaults.id });
-
-        const groupsDel = await tx
-          .delete(schema.groups)
-          .where(eq(schema.groups.userId, userId))
-          .returning({ id: schema.groups.id });
-
-        const walletsDel = await tx
-          .delete(schema.userWallets)
-          .where(eq(schema.userWallets.userId, userId))
-          .returning({ id: schema.userWallets.id });
-
-        const credentialsDel = await tx
-          .delete(schema.userIntegrationCredentials)
-          .where(eq(schema.userIntegrationCredentials.userId, userId))
-          .returning({ id: schema.userIntegrationCredentials.id });
-
-        // Wipe the user's job history too. `users(id)` has ON DELETE
-        // CASCADE over user_jobs, but this flow deletes *user data*
-        // without removing the user row — so the cascade never fires
-        // and stale job rows would linger in the /jobs page. Note: the
-        // running `user-data-delete` job deletes its own row here; the
-        // worker's post-handler markCompleted then becomes a no-op
-        // UPDATE (zero rows affected), which is fine.
-        const jobsDel = await tx
-          .delete(schema.userJobs)
-          .where(eq(schema.userJobs.userId, userId))
-          .returning({ jobId: schema.userJobs.jobId });
-
-        purgedJobIds = jobsDel.map((row) => row.jobId);
+        // The user row survives on purpose — the account stays able to sign
+        // in — so its own columns are the one thing the FK enumeration above
+        // cannot reach. The manifest classifies them too; anything holding
+        // content the user entered is cleared here.
+        const cleared = USER_ROW_COLUMN_DISPOSITIONS.filter((c) => c.kind === 'clear');
+        if (cleared.length > 0) {
+          await tx
+            .update(schema.users)
+            .set(Object.fromEntries(cleared.map((c) => [columnKey(schema.users, c.column), null])))
+            .where(eq(schema.users.id, userId));
+        }
 
         logger.info(
           {
             userId,
-            holdings: holdingsDel.length,
-            holdingTransactions: holdingTxDel.length,
-            holdingBalanceObservations: holdingObsDel.length,
-            portfolioValueDaily: portfolioDailyDel.length,
-            accounts: accountsDel.length,
-            vaults: vaultsDel.length,
-            groups: groupsDel.length,
-            wallets: walletsDel.length,
-            credentials: credentialsDel.length,
-            jobs: jobsDel.length,
+            removed: Object.fromEntries(
+              [...echoed].map(([table, rows]) => [getTableConfig(table).name, rows.length])
+            ),
+            clearedUserColumns: cleared.length,
           },
           'All user data deleted successfully'
         );
@@ -115,51 +92,104 @@ export class DeleteAllUserDataUseCase {
       { name: 'deleteAllUserData', timeout: 30000 }
     );
 
-    // Purge the user's BullMQ job payloads from Redis. The DB-side
-    // `user_jobs` rows are gone; without this step the job payloads
-    // (which include wallet addresses, exchange names, sometimes the
-    // file r2Key) linger in Redis until BullMQ's own cleanup window
-    // ages them out. `queue.getJob(id)` returns null for ids that
-    // were never enqueued (e.g. inline-completed jobs that never hit
-    // BullMQ), so we treat missing as a no-op. Removing the currently-
-    // executing self-delete job is fine: BullMQ marks it failed but
-    // the user-facing delete has already happened.
-    if (purgedJobIds.length > 0) {
+    await this.purgeStoredObjects(userId, echoed.get(schema.documents) ?? []);
+    await this.purgeQueuePayloads(userId, echoed.get(schema.userJobs) ?? []);
+
+    return { success: true };
+  }
+
+  /**
+   * Remove the R2 objects behind the documents just deleted — the bank
+   * statements, screenshots and invoices, which are the most sensitive bytes
+   * the product holds and outlived this flow entirely until SC-1014.
+   *
+   * **Objects go after the commit, and the failure this ordering picks is the
+   * recoverable one.** An object delete cannot join a Postgres transaction.
+   * Deleting objects first means a rollback leaves rows pointing at bytes that
+   * are gone — dead pointers on a user whose data was NOT deleted, and nothing
+   * can repair them. Deleting them after means a failed object delete leaves
+   * bytes with no row, which is enumerable by prefix
+   * (`documents/{userId}/{documentId}.{ext}`, `DocumentRetentionService:36`)
+   * and logged with its key.
+   *
+   * `DocumentDeletionService` reaches the same order for a different reason
+   * and is deliberately not reused: it runs its own connection outside this
+   * transaction, and it REFUSES a document a settled payment occurrence
+   * depends on — a refusal that is right one document at a time and wrong
+   * here, where the payments were removed moments ago.
+   */
+  private async purgeStoredObjects(userId: string, r2Keys: string[]): Promise<void> {
+    if (r2Keys.length === 0) return;
+    let storage: StorageFacade;
+    try {
+      storage = Container.get(StorageFacade);
+    } catch (err) {
+      logger.error(
+        { userId, objects: r2Keys.length, error: err instanceof Error ? err.message : String(err) },
+        'Storage unavailable; document rows are deleted but their stored objects remain'
+      );
+      return;
+    }
+
+    let removed = 0;
+    for (const key of r2Keys) {
       try {
-        const queue = Container.get(QueueClient).get();
-        let removed = 0;
-        for (const jobId of purgedJobIds) {
-          try {
-            const job = await queue.getJob(jobId);
-            if (job) {
-              await job.remove();
-              removed++;
-            }
-          } catch (err) {
-            // One stuck job shouldn't block the rest of the purge —
-            // log and continue. The remaining payload still rotates
-            // out of Redis via BullMQ's standard cleanup.
-            logger.warn(
-              { userId, jobId, error: err instanceof Error ? err.message : String(err) },
-              'Failed to remove BullMQ payload during user-data-delete (non-fatal)'
-            );
-          }
-        }
-        logger.info(
-          { userId, totalJobIds: purgedJobIds.length, removed },
-          'BullMQ payloads purged for deleted user'
-        );
+        await storage.delete(key);
+        removed++;
       } catch (err) {
-        // QueueClient not configured — likely a test context where the
-        // queue isn't wired. The DB delete already happened; surface
-        // the issue but don't fail the use case.
+        // One unreachable object must not strip the rest. It is logged with
+        // its key because that is the only thing left that can find it.
         logger.warn(
-          { userId, error: err instanceof Error ? err.message : String(err) },
-          'QueueClient unavailable; skipping BullMQ payload purge'
+          { userId, r2Key: key, error: err instanceof Error ? err.message : String(err) },
+          'Document row deleted but its stored object could not be removed'
         );
       }
     }
+    logger.info(
+      { userId, objects: r2Keys.length, removed },
+      'Stored objects purged for deleted user'
+    );
+  }
 
-    return { success: true };
+  /**
+   * Purge the user's BullMQ job payloads from Redis. The `user_jobs` rows are
+   * gone; without this the payloads (wallet addresses, exchange names,
+   * sometimes a file's r2Key) linger until BullMQ's own cleanup ages them out.
+   * `queue.getJob(id)` returns null for ids never enqueued (inline-completed
+   * jobs), so missing is a no-op. Removing the currently-executing self-delete
+   * job is fine: BullMQ marks it failed and the user-facing delete has already
+   * happened.
+   */
+  private async purgeQueuePayloads(userId: string, jobIds: string[]): Promise<void> {
+    if (jobIds.length === 0) return;
+    try {
+      const queue = Container.get(QueueClient).get();
+      let removed = 0;
+      for (const jobId of jobIds) {
+        try {
+          const job = await queue.getJob(jobId);
+          if (job) {
+            await job.remove();
+            removed++;
+          }
+        } catch (err) {
+          logger.warn(
+            { userId, jobId, error: err instanceof Error ? err.message : String(err) },
+            'Failed to remove BullMQ payload during user-data-delete (non-fatal)'
+          );
+        }
+      }
+      logger.info(
+        { userId, totalJobIds: jobIds.length, removed },
+        'BullMQ payloads purged for deleted user'
+      );
+    } catch (err) {
+      // QueueClient not configured — likely a test context where the queue
+      // isn't wired. The DB delete already happened; surface it, don't fail.
+      logger.warn(
+        { userId, error: err instanceof Error ? err.message : String(err) },
+        'QueueClient unavailable; skipping BullMQ payload purge'
+      );
+    }
   }
 }

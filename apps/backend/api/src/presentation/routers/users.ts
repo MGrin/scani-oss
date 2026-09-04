@@ -220,9 +220,15 @@ export const usersRouter = router({
 
   /**
    * Enqueue deletion of all user data. The worker runs the large
-   * transaction (accounts, holdings, wallets, credentials, groups,
-   * vaults) off the request path so it doesn't time out for users
-   * with hundreds of holdings. `attempts: 1` — destructive, no retry.
+   * transaction off the request path so it doesn't time out for users
+   * with hundreds of holdings, then purges the R2 objects and BullMQ
+   * payloads that cannot join it. `attempts: 1` — destructive, no retry.
+   *
+   * WHAT it deletes is not restated here on purpose: this docstring listed
+   * six tables and was three months and twelve tables out of date by the
+   * time anyone counted (SC-1018). The one list is
+   * `USER_DATA_TABLE_DISPOSITIONS` in @scani/domain, which classifies every
+   * foreign key on `users.id` and fails the build when a new one appears.
    */
   deleteAllData: protectedProcedure
     .input(strictInput(z.object({ requestId: z.string().uuid() })))
