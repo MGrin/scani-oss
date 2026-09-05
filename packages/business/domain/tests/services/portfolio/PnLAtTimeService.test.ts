@@ -13,6 +13,7 @@ import {
   type CostBasisAtTime,
   CostBasisService,
 } from '../../../src/services/pricing/CostBasisService';
+import { TransferReviewService } from '../../../src/services/TransferReviewService';
 import { restoreContainerAfterAll } from '../../../test/helpers/container';
 
 // Container stubs are process-global; put back whatever this file changes
@@ -83,6 +84,16 @@ function makeService(
   Container.set(PortfolioValuationAtTimeService, valuation);
   Container.set(CostBasisService, costBasis);
   Container.set(HoldingTransactionRepository, {} as unknown as HoldingTransactionRepository);
+  // The queue's rule-hidden set (SC-1067). Empty here: every case in this
+  // file is about the aggregation, and an empty set is the state in which the
+  // walk's own count reaches the result unchanged — which is what these
+  // assertions are checking. The agreement between this count and the queue is
+  // asserted against a real database in
+  // `tests/services/TransferReviewCountMatchesQueue.test.ts`; a stub could
+  // only agree with itself.
+  Container.set(TransferReviewService, {
+    ruleHiddenTransactionIds: async () => new Set<string>(),
+  } as unknown as TransferReviewService);
   Container.set(HoldingCoverageRepository, {
     findManyByHoldingIds: async () => new Map(),
   } as unknown as HoldingCoverageRepository);
