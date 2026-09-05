@@ -19,6 +19,13 @@ version heading stays there permanently, above every future release. This
 comment is deliberately in that position; explanatory prose should not be.
 -->
 
+## [0.42.0](https://github.com/MGrin/scani-oss/compare/v0.41.0...v0.42.0) (2026-09-05)
+
+
+### Features
+
+* **holdings:** surface unexplained opening residue on the holding peek ([92c5492](https://github.com/MGrin/scani-oss/commit/92c5492ae793552483fb4c5938fee5992296c9bb))
+
 ## [0.41.0](https://github.com/MGrin/scani-oss/compare/v0.40.0...v0.41.0) (2026-09-04)
 
 
