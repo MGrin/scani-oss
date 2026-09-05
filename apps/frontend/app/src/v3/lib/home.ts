@@ -188,10 +188,15 @@ export interface QualityPoint extends CoveragePoint {
    * net-worth series and both exports share — deliberately omits it rather
    * than ship a column explaining a figure that file does not contain.
    *
-   * The risk of an optional count is the one SC-151 paid for: a signal that
-   * silently reads as zero reaches nobody and looks like good news.
-   * `tests/v3/lib/home.test.ts` pins the PnL point's shape against
-   * `summariseQuality` so a dropped field fails a test rather than a reader.
+   * **THE CAPTION DOES NOT READ THIS, AND IT IS ON THE WIRE ANYWAY (SC-1070).**
+   * It is the count as it stood on that DAY, written into
+   * `portfolio_value_daily` by the 04:00 rollup — a historical column, correct
+   * for the chart point it belongs to. The caption is not a chart point: it
+   * states what is true now and links to a queue promising to hold exactly
+   * those rows, so it reads the live queue instead (`heroFigureQuality`).
+   * Kept here rather than deleted precisely so a future surface meets the
+   * warning at the field instead of finding the same number unannotated on
+   * the raw tRPC row.
    */
   transfersUnreviewed?: number;
 }
@@ -225,7 +230,19 @@ export interface FigureQuality {
 
 export function summariseQuality(
   point: QualityPoint | null | undefined,
-  options: { includeBasis: boolean }
+  options: {
+    includeBasis: boolean;
+    /**
+     * How many transfers are waiting in the review queue **right now** — not
+     * how many were waiting on the day `point` describes (SC-1070).
+     *
+     * Required, and deliberately not defaulted to `point.transfersUnreviewed`.
+     * A fallback would let the caption silently revert to the 04:00 snapshot
+     * the moment a caller forgot to pass it, which is the defect rather than a
+     * degraded form of the fix; required makes that omission a type error.
+     */
+    transfersUnreviewedNow: number;
+  }
 ): FigureQuality | null {
   if (!point) return null;
   const priceable = point.holdingsTotal - point.holdingsUnpriceable;
@@ -241,7 +258,7 @@ export function summariseQuality(
     unpriceable: point.holdingsUnpriceable,
     stalePriced: point.holdingsStalePriced,
     basisUnknown: options.includeBasis ? point.holdingsBasisUnknown : 0,
-    transfersUnreviewed: options.includeBasis ? (point.transfersUnreviewed ?? 0) : 0,
+    transfersUnreviewed: options.includeBasis ? options.transfersUnreviewedNow : 0,
   };
 }
 
@@ -617,6 +634,50 @@ export function latestPnlSource(series: readonly PnLPoint[]): PnLPoint | null {
     if (row && row.totalPnl !== null && hasKnownCoverage(row)) return row;
   }
   return null;
+}
+
+/**
+ * The hero caption's `quality` — the whole derivation, so it can be exercised
+ * without a tRPC client (SC-1070).
+ *
+ * **A caption is not a chart point, and that is the split this function
+ * exists to hold.** Every count on a series row is what was true on the day
+ * that row describes; they are read out of `portfolio_value_daily`, which the
+ * 04:00 `portfolio-value-rollup` writes, and today's row is a 04:00 snapshot
+ * rather than a live figure. That is correct for a chart and wrong for the
+ * one clause of the caption that makes a promise about the present:
+ * `<CoverageNote>` renders `transfersUnreviewed` as a link to the review
+ * queue on the grounds that the queue "holds exactly those rows and answering
+ * them takes the count to zero". Answering them took the queue to zero and
+ * left the sentence saying four until the next night — a link to an empty
+ * page, which reads as the answer not having taken.
+ *
+ * So the count comes from `pendingTransfers` — the live queue, via
+ * `review.listPending`, which is `TransferReviewService.pendingSummary` and
+ * the same number the nav badge and the queue tile show. Nothing else moves:
+ * the series keeps its stored column and the curve is untouched.
+ *
+ * `latestPnlSource` rather than the last row for the same reason it always
+ * was — the rollup fills value before PnL, so a PnL headline routinely states
+ * an earlier day than the series ends on, and qualifying a different day than
+ * the one on screen would be its own quiet lie.
+ */
+export function heroFigureQuality(input: {
+  isPnl: boolean;
+  netWorthPoints: readonly QualityPoint[];
+  pnlPoints: readonly PnLPoint[];
+  /** The review queue as it stands now. Ignored while net worth is the metric,
+   *  by the same gate `basisUnknown` goes through: an unanswered withdrawal
+   *  says nothing about what the portfolio is worth (SC-160). */
+  pendingTransfers: number;
+}): FigureQuality | null {
+  const source = input.isPnl
+    ? latestPnlSource(input.pnlPoints)
+    : latestMeasured(input.netWorthPoints);
+  return summariseQuality(source, {
+    includeBasis: input.isPnl,
+    transfersUnreviewedNow: input.pendingTransfers,
+  });
 }
 
 export function latestPnl(points: readonly PnLChartPoint[]): PnLChartPoint | null {

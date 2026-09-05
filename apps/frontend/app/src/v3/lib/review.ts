@@ -16,6 +16,8 @@
  * somewhere it also does not exist.
  */
 
+import { TRANSFER_REVIEW_KIND } from '@scani/shared';
+
 /**
  * The fields the feed's own logic reads — a row that has already been NAMED.
  *
@@ -82,4 +84,23 @@ export function compareReviewItems(
 /** `query` arrives already lower-cased from `useDataView`. */
 export function reviewMatches(item: ReviewRow, query: string): boolean {
   return item.search.toLowerCase().includes(query);
+}
+
+/**
+ * How many transfers the review queue is holding right now (SC-1070).
+ *
+ * The transfer collector emits one aggregate row for the whole queue and
+ * carries its size in `represents` — the field `reviewBadgeCount` sums for
+ * exactly this reason, that "how much is waiting on me" is a different
+ * question from how many rows the feed has. It is absent once the queue
+ * empties, because the collector stops emitting a row at all, so a missing
+ * row is a real zero rather than a gap.
+ *
+ * Structurally typed rather than taking `ReviewWireRow`, so it reads the
+ * server's `ReviewItem` and the serialised row the client holds alike.
+ */
+export function pendingTransferCount(
+  items: readonly { kind: string; represents: number }[]
+): number {
+  return items.find((item) => item.kind === TRANSFER_REVIEW_KIND)?.represents ?? 0;
 }

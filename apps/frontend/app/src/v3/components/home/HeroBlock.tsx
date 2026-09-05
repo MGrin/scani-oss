@@ -8,6 +8,7 @@ import { Numeric } from '@scani/ui/v3/components/Numeric';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { trpc } from '@/lib/trpc';
+import { useReviewFeed } from '../../hooks/useReviewFeed';
 import { useViewPreference } from '../../hooks/useViewPreference';
 import {
   DEFAULT_HOME_PERIOD,
@@ -16,18 +17,17 @@ import {
   HOME_PERIOD_KEYS,
   HOME_PERIODS,
   heroDeltaState,
+  heroFigureQuality,
   homePeriodByKey,
   homePeriodRange,
   lastMeasuredBeforeToday,
-  latestMeasured,
   latestPnl,
-  latestPnlSource,
   netWorthChartPoints,
   rebasePnlSeries,
   resolvePeriodDelta,
-  summariseQuality,
 } from '../../lib/home';
 import { todayDateString } from '../../lib/paymentTotals';
+import { pendingTransferCount } from '../../lib/review';
 import { VIEW_PREFERENCE_KEYS } from '../../lib/view-preference';
 import { CoverageNote } from './CoverageNote';
 import { HistoryExport } from './HistoryExport';
@@ -128,6 +128,8 @@ export function HeroBlock({ total, currency }: HeroBlockProps) {
     { enabled: metric === 'pnl' }
   );
 
+  const { items: reviewItems } = useReviewFeed();
+
   const points = series.data?.series ?? [];
   const today = todayDateString();
   const delta = resolvePeriodDelta(points, total);
@@ -148,10 +150,21 @@ export function HeroBlock({ total, currency }: HeroBlockProps) {
   // rollup fills value before it fills PnL, so a PnL headline routinely states
   // an earlier day than the series ends on, and qualifying a different day than
   // the one on screen would be its own quiet lie.
-  const qualitySource = isPnl
-    ? latestPnlSource(pnlSeries.data?.series ?? [])
-    : latestMeasured(points);
-  const quality = summariseQuality(qualitySource, { includeBasis: isPnl });
+  //
+  // One of the four does not come off the series at all (SC-1070). The
+  // unreviewed-transfer clause is the only one that links somewhere and
+  // promises that page holds exactly the rows it counted, and the series
+  // carries a 04:00 snapshot of that count — so a reader who answered every
+  // transfer watched the sentence say four over an empty queue until the next
+  // night. It reads the live queue instead, which `HomePage` and `V3Shell`
+  // have already fetched: same hook, same query, one cache entry, no second
+  // request, and every answer path already invalidates it.
+  const quality = heroFigureQuality({
+    isPnl,
+    netWorthPoints: points,
+    pnlPoints: pnlSeries.data?.series ?? [],
+    pendingTransfers: pendingTransferCount(reviewItems),
+  });
   const granularity = (isPnl ? pnlSeries.data?.granularity : series.data?.granularity) ?? 'daily';
   const loading = isPnl ? pnlSeries.isLoading : series.isLoading;
   const active = isPnl ? pnlSeries : series;
