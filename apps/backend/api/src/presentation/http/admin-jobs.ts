@@ -8,6 +8,15 @@
  * a job between states through its own commands, and recomputing that by
  * hand is fragile whichever backend is underneath.
  *
+ * `POST /admin/schedules/:name/run` and `POST /admin/dlq/:id/replay`
+ * (SC-1045) are the two operator WRITES, and both are enqueues for the
+ * same reason: the api is the producer and holds no processors, so the
+ * only way either can reach the worker's own safeguards — the advisory
+ * lock a scheduled processor takes, the retry policy a job descriptor
+ * carries — is to arrive on the queue as an ordinary job. Each also
+ * pins a deterministic job id, which is what stops a held-down button
+ * queueing the same work twice.
+ *
  * `POST /admin/jobs/redis-read` lives here for history and is NOT a queue
  * endpoint. The queue is on the Postgres backend (`createPostgresBackend`,
  * `@scani/queue`) and the admin reads it straight out of `bullmq.job`; SC-518
@@ -20,12 +29,14 @@
  * ./admin-common (shared with admin-data).
  */
 
+import { SCHEDULED_JOB_DESCRIPTORS } from '@scani/jobs';
 import { QueueClient } from '@scani/queue';
 import type { Redis } from 'ioredis';
 import { Container } from 'typedi';
 import { audit, createAdminGate, parseAdminRawBody, verifiedRawBody } from './admin-common';
 
 const getQueue = () => Container.get(QueueClient).get();
+const getDlq = () => Container.get(QueueClient).getDlq();
 
 // Read-only Redis commands the admin dashboard may run through
 // /admin/jobs/redis-read, each with the key at argv[1]. The queue +
@@ -104,6 +115,55 @@ export function validateRedisReadCommands(input: unknown): RedisReadValidation {
     commands.push([name.toLowerCase(), key, ...(args as Array<string | number>)]);
   }
   return { ok: true, commands };
+}
+
+/**
+ * The schedules a manual fire may name, read off the registry the worker
+ * arms rather than a literal.
+ *
+ * The admin app carried a hand-maintained six-name list and 19 of the 25
+ * registered schedules could not be named through it — the same drift
+ * SC-1034 fixed on the page. A second copy here would reintroduce it, and
+ * a name the worker never registered enqueues a job no processor claims,
+ * which fails once and lands in the DLQ.
+ */
+const RUNNABLE_SCHEDULE_NAMES: ReadonlySet<string> = new Set(
+  SCHEDULED_JOB_DESCRIPTORS.map((d) => d.name)
+);
+
+/**
+ * The id a manual fire is enqueued under, and the whole of the
+ * held-down-button defence for `/admin/schedules/:name/run`.
+ *
+ * BullMQ will not create a second job under an id it already holds:
+ * `add_job` ends `ON CONFLICT (queue, id) DO NOTHING` and returns the
+ * existing id (`bullmq@6.2.0`,
+ * `dist/cjs/postgres/migrations/0002_functions.sql`). So N clicks produce
+ * ONE queued fire however fast they arrive, and the `getJob` check below
+ * is what turns that into a legible 409 rather than a silent no-op —
+ * it is not what makes it safe.
+ *
+ * One id per schedule NAME rather than per click, because two pending
+ * manual fires of `pricing` is the storm. `removeOnComplete` frees the
+ * id once the fire is over, so a later legitimate run is not refused by
+ * its own finished job.
+ */
+const manualRunJobId = (name: string) => `admin-run:${name}`;
+
+/** Same shape, for a DLQ entry: one replay per DLQ job, ever. */
+const replayJobId = (dlqJobId: string) => `dlq-replay:${dlqJobId}`;
+
+/**
+ * The part of a DLQ entry a replay reads. `WorkerClient` writes more than
+ * this (`failedReason`, `stack`, `attemptsMade`, …); that is post-mortem
+ * detail which the stamp below preserves and this route never inspects.
+ * Every field is optional because an entry written by an older worker may
+ * carry none of them, and the route has to answer 400 rather than throw.
+ */
+interface DlqPayload {
+  originalName?: unknown;
+  data?: unknown;
+  replayedAt?: unknown;
 }
 
 // biome-ignore lint/suspicious/noExplicitAny: Elysia accumulates route types; match whatever shape the caller has.
@@ -200,6 +260,159 @@ export function registerAdminJobsRoutes(app: any, redis?: Redis | null): void {
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
           await audit(actor, 'job.remove', params.id, 'failure', { error: msg }, secret);
+          set.status = 500;
+          return { error: msg };
+        }
+      },
+      { parse: parseAdminRawBody }
+    )
+    /**
+     * Fire one scheduled job now, out of cadence.
+     *
+     * It ENQUEUES rather than executing, and that is the safety property
+     * rather than an implementation detail. The api holds no processors;
+     * the worker does, and every scheduled processor reaches its work
+     * through `ScheduledJobProcessor.process()`, which wraps `handle()`
+     * in the Postgres advisory lock named by the descriptor
+     * (`apps/backend/worker/src/lib/cron-lock.ts`). `WorkerClient.runJob`
+     * dispatches on `job.name` alone and cannot tell a manual fire from a
+     * cron one — so a manual fire that lands on the queue goes THROUGH
+     * that lock, and one that ran inline here would go around it and be
+     * free to run concurrently with the cron fire the lock exists to
+     * serialise.
+     *
+     * `data: {}` and no opts: exactly what `JobScheduler.upsertAll` arms
+     * each schedule with, so the worker sees the same job either way.
+     */
+    .post(
+      '/admin/schedules/:name/run',
+      // biome-ignore lint/suspicious/noExplicitAny: Elysia handler ctx types are dynamic
+      async ({ params, request, body, set }: any) => {
+        const actor = await authenticate(request, 'POST', set, body);
+        if (!actor) return authFailureBody(set.status);
+
+        const name = String(params.name);
+        if (!RUNNABLE_SCHEDULE_NAMES.has(name)) {
+          await audit(
+            actor,
+            'schedules.run',
+            name,
+            'failure',
+            { reason: 'unknown_schedule' },
+            secret
+          );
+          set.status = 404;
+          return { error: 'unknown schedule' };
+        }
+
+        try {
+          const queue = getQueue();
+          const jobId = manualRunJobId(name);
+          const pending = await queue.getJob(jobId);
+          if (pending) {
+            await audit(
+              actor,
+              'schedules.run',
+              name,
+              'denied',
+              { reason: 'already_queued', jobId },
+              secret
+            );
+            set.status = 409;
+            return { error: 'a manual run of this schedule is already queued', jobId };
+          }
+          await queue.add(
+            name,
+            {},
+            {
+              jobId,
+              // Free the id once the fire is over, so a later legitimate
+              // manual run is not refused by its own completed job. The
+              // cron fires keep their own history; this one is a click.
+              removeOnComplete: true,
+              removeOnFail: { age: 24 * 60 * 60 },
+            }
+          );
+          await audit(actor, 'schedules.run', name, 'success', { jobId }, secret);
+          return { ok: true, name, jobId };
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          await audit(actor, 'schedules.run', name, 'failure', { error: msg }, secret);
+          set.status = 500;
+          return { error: msg };
+        }
+      },
+      { parse: parseAdminRawBody }
+    )
+    /**
+     * Put one DLQ entry back on the main queue.
+     *
+     * Two layers, and they are not redundant. The deterministic
+     * `dlq-replay:<id>` job id is the GUARANTEE: BullMQ refuses a second
+     * job under an id it holds, so a held-down button re-runs the work
+     * exactly once whatever else fails. The `replayedAt` stamp on the DLQ
+     * entry is the LEGIBILITY: it is what lets a second click answer 409
+     * with a reason instead of looking like it worked.
+     *
+     * The enqueue happens BEFORE the stamp on purpose. Stamping first and
+     * failing to enqueue would mark an entry replayed that never ran, and
+     * nothing short of hand-editing the DLQ row clears that. The other
+     * order is recoverable: a second click re-enqueues under the same id,
+     * BullMQ hands back the job already there, and no duplicate work
+     * happens.
+     */
+    .post(
+      '/admin/dlq/:id/replay',
+      // biome-ignore lint/suspicious/noExplicitAny: Elysia handler ctx types are dynamic
+      async ({ params, request, body, set }: any) => {
+        const actor = await authenticate(request, 'POST', set, body);
+        if (!actor) return authFailureBody(set.status);
+
+        const id = String(params.id);
+        try {
+          const entry = await getDlq().getJob(id);
+          if (!entry) {
+            await audit(actor, 'dlq.replay', id, 'failure', { reason: 'not_found' }, secret);
+            set.status = 404;
+            return { error: 'dlq entry not found' };
+          }
+          const payload = (entry.data ?? {}) as DlqPayload;
+          if (payload.replayedAt != null) {
+            await audit(
+              actor,
+              'dlq.replay',
+              id,
+              'denied',
+              { reason: 'already_replayed', replayedAt: String(payload.replayedAt) },
+              secret
+            );
+            set.status = 409;
+            return { error: 'already replayed', replayedAt: String(payload.replayedAt) };
+          }
+          if (typeof payload.originalName !== 'string' || payload.originalName.length === 0) {
+            await audit(actor, 'dlq.replay', id, 'failure', { reason: 'no_original_name' }, secret);
+            set.status = 400;
+            return { error: 'dlq entry carries no originalName — nothing to replay' };
+          }
+
+          const jobId = replayJobId(id);
+          await getQueue().add(payload.originalName, payload.data ?? {}, { jobId });
+
+          const replayedAt = new Date().toISOString();
+          await entry.updateData({ ...payload, replayedAt, replayedBy: actor, replayJobId: jobId });
+
+          await audit(
+            actor,
+            'dlq.replay',
+            id,
+            'success',
+            { name: payload.originalName, jobId },
+            secret
+          );
+          return { ok: true, dlqJobId: id, name: payload.originalName, jobId };
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          await audit(actor, 'dlq.replay', id, 'failure', { error: msg }, secret);
           set.status = 500;
           return { error: msg };
         }
