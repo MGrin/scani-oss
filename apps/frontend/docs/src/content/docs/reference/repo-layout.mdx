@@ -186,7 +186,9 @@ library, copy from there.
 | What | Where |
 |---|---|
 | tRPC routers | `apps/backend/api/src/presentation/routers/` |
-| Queue names + enqueue helpers | `packages/infra/queue/src/{queue-names,enqueue}.ts` |
+| Queue names | `packages/infra/queue/src/core/default-names.ts` |
+| Job names | `packages/business/jobs/src/job-names.ts` |
+| Enqueue helpers | `packages/infra/queue/src/producer/` |
 | Worker processors | `apps/backend/worker/src/processors/` |
 | Repeatable schedules | `packages/business/jobs/src/scheduled-jobs/` |
 | Domain services / repos / use cases | `packages/business/domain/src/` |
