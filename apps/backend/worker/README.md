@@ -62,7 +62,7 @@ src/
 6. Wire `@scani/ingesters` callbacks: pass `Container.get(ScreenshotParsingService).parseScreenshot.bind(...)` into `ScreenshotTransactionIngester`; register both ingesters with `TransactionIngesterRegistry`.
 7. **Resolve every processor class** via `Container.get(...)` — side-effect imports at the top of `index.ts` ensure typedi has them registered. The list lives in `index.ts` itself; adding a new processor means importing it here AND calling `workerClient.register()`.
 8. Register the BullMQ Worker on the shared `scani-jobs` queue + the dead-letter `scani-dlq`.
-9. Register repeatable schedules from `@scani/jobs/scheduled-jobs/REPEATABLE_SCHEDULES` via `JobScheduler.upsertAll()`.
+9. Register repeatable schedules from `SCHEDULED_JOB_DESCRIPTORS` in `@scani/jobs` via `JobScheduler.upsertAll()`, which reconciles: a schedule dropped from that list is removed from BullMQ rather than firing forever. Under `SCANI_DEMO_MODE=1` the worker registers `DEMO_RESET_SCHEDULE` and nothing else.
 10. SIGTERM/SIGINT: drain in-flight jobs, `Sentry.flush(2s)`, exit.
 
 ## Processor anatomy
@@ -90,7 +90,7 @@ Domain logic does NOT live in processors. If you find yourself writing `if`-bran
 2. Add the processor class here under `src/processors/`.
 3. Side-effect-import the class at the top of `src/index.ts`.
 4. Call `workerClient.register(Container.get(YourProcessor))` in the registration loop.
-5. For scheduled jobs only: also add an entry to `REPEATABLE_SCHEDULES` in `@scani/jobs`.
+5. For scheduled jobs only: also add the descriptor to `SCHEDULED_JOB_DESCRIPTORS` in `packages/business/jobs/src/scheduled-jobs/index.ts`.
 
 ## Local dev
 

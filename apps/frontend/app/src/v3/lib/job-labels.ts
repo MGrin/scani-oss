@@ -8,7 +8,7 @@
  * constraint `tests/lib/i18n-locales.test.ts` enforces from the other side —
  * the eager bundle may not carry v3's strings.
  *
- * Keep in sync with `JOB_NAMES` in `packages/infra/queue/src/queue-names.ts`.
+ * Keep in sync with `JOB_NAMES` in `packages/business/jobs/src/job-names.ts`.
  */
 
 import type { TFunction } from 'i18next';
