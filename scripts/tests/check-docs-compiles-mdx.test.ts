@@ -23,8 +23,9 @@ setDefaultTimeout(30_000);
  * SC-469. Nothing a developer runs compiled MDX. `docs:check` read Markdown as
  * text, `bun run test` did not build the site, and the only compiler behind
  * `apps/frontend/docs/src/content/**\/*.mdx` was the Starlight build in the OSS
- * deploy workflow — so on the private repo, where Actions is billing-blocked, an
- * MDX syntax error reached `main` and was found by the docs deploy after merge.
+ * deploy workflow — so on the private repo, whose Actions billing flaps and has
+ * blocked for most of that repo's history, an MDX syntax error reached `main`
+ * and was found by the docs deploy after merge.
  *
  * SC-453 is the measured instance: two Markdown autolinks, valid Markdown and
  * invalid MDX, under a fully green local gate.

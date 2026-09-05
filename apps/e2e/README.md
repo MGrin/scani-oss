@@ -333,10 +333,11 @@ bun run visual -- --screen=holdings-phone
 
 The ticket (SC-24) said baselines had to be generated *in CI*, inside the
 Playwright Docker image, because macOS and `ubuntu-latest` do not rasterise the
-same text. The reasoning was right and the mechanism is gone — GitHub Actions is
-billing-blocked account-wide (SC-128, SC-414). But the requirement was never CI.
-It was **a deterministic Linux renderer**, and that is a container, which runs
-here today.
+same text. The reasoning was right and the mechanism cannot be relied on — Actions
+billing on the private repo flaps, and has blocked for most of that repo's
+history (SC-128, SC-414, SC-1023). But the requirement was never CI. It was
+**a deterministic Linux renderer**, and that is a container, which runs here
+whatever GitHub is doing.
 
 So `scripts/visual.ts` starts `playwright run-server` inside
 `mcr.microsoft.com/playwright:v<version>-noble`, points the runner at it over

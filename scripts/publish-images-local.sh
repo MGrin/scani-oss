@@ -5,10 +5,11 @@
 # MGrin/scani-oss.
 #
 # Why this exists: the same reason scripts/deploy-local.sh does. The publish
-# workflow lives in the public mirror and does still run there, but it is
-# reachable only through a release-please tag, and this repo — where the work
-# actually happens — is billing-blocked for Actions repo-wide (SC-128,
-# SC-433). The observable cost is that `scani/*:latest` sat at 0.12.0 from
+# workflow lives in the public mirror, whose Actions are unmetered and do run,
+# but it is reachable only through a release-please tag — and the private repo,
+# where the work actually happens, has Actions billing that FLAPS and has
+# blocked for most of that repo's history (SC-128, SC-433, SC-1023). The
+# observable cost is that `scani/*:latest` sat at 0.12.0 from
 # 2026-08-12 while main moved on, and the 0.13.0 release PR has been parked
 # at `action_required` since 2026-08-15. A self-hoster running `:latest` gets
 # whatever main looked like a fortnight ago, and nothing says so.

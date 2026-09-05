@@ -153,8 +153,9 @@ export const ONE_SHOT_SERVICES = ['migrate', 'deps', 'env-sync', 'minio-init'];
  * SC-496 fixed the api name by ASKING compose instead of assuming it. What it
  * could not fix is that the asking happens inside a function that spawns
  * docker and calls `process.exit`, so the resolution itself was reachable by
- * no test — and `apps/e2e/scripts/run.ts` is run by no CI that executes
- * (private CI is billing-blocked, upstream CI invokes `bunx playwright test`
+ * no test — and `apps/e2e/scripts/run.ts` is run by no CI that can be
+ * depended on (Actions billing on the private repo flaps and has blocked for
+ * most of that repo's history; upstream CI invokes `bunx playwright test`
  * directly and says so in its own comment). A resolution bug here therefore
  * ships silently, which is exactly how the `backend` literal survived from the
  * day the runner was written.
