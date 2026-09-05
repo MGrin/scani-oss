@@ -37,6 +37,13 @@ const MAX_SKEW_MS = 5_000;
 const NONCE_TTL_MS = MAX_SKEW_MS * 4;
 const EMPTY_BODY_SHA256 = createHash('sha256').update('').digest('hex');
 
+/**
+ * Returned by `parseAdminRawBody` when the signed bytes are gone. A
+ * unique symbol rather than a string or a shape: a caller cannot send
+ * one as a request body, so it can never be forged into a refusal.
+ */
+export const ADMIN_BODY_UNREADABLE = Symbol('admin.rawBody.unreadable');
+
 // Per-process fallback when no Redis client was passed at registration.
 // Tests + local dev without Redis: a Map keyed by signature, swept on
 // every check. Production passes a real Redis client.
@@ -106,20 +113,72 @@ function verifyHmac(
 }
 
 /**
- * Read the raw request body as text, defending against Elysia's body
- * parsing. `request.clone()` preserves the original byte stream so we
- * can hash exactly what the admin signed. If the body has already been
- * consumed (empty GET/DELETE), `text()` returns an empty string and the
- * hash matches `EMPTY_BODY_SHA256`.
+ * Handed to a route as its own `parse` hook so the gate and the handler
+ * read ONE set of bytes, read once, and it is the same set the admin
+ * signed.
+ *
+ * Elysia parses the body before a route function runs, and it does that
+ * on EVERY route here rather than only on tRPC's: `@elysiajs/trpc`
+ * mounts `onParse({ as: 'global' })`, which turns body parsing on
+ * app-wide. By the time an `/admin/*` handler runs the stream is
+ * already drained, so `request.clone().text()` throws `Body already
+ * used` — measured on elysia 1.4.28 / @elysiajs/trpc 1.1.0 / bun 1.3.14
+ * (SC-1032), and pinned by `admin-gate-body.test.ts`, whose control arm
+ * is the same route with no global `onParse`, where the clone succeeds.
+ *
+ * Claiming the parse step is what keeps the bytes: Elysia uses whatever
+ * this returns as `ctx.body`, so the route gets the exact raw text and
+ * nothing has to re-read the request.
  */
-async function rawBodyHash(request: Request): Promise<string> {
+export async function parseAdminRawBody({
+  request,
+}: {
+  request: Request;
+}): Promise<string | typeof ADMIN_BODY_UNREADABLE> {
+  // Something upstream drained the stream, so the signed bytes are gone
+  // and no honest hash can be computed. Say so rather than hashing the
+  // empty string — see `bodyHashFor`.
+  if (request.bodyUsed) return ADMIN_BODY_UNREADABLE;
   try {
-    const raw = await request.clone().text();
-    if (raw.length === 0) return EMPTY_BODY_SHA256;
-    return sha256Hex(raw);
+    return await request.text();
   } catch {
-    return EMPTY_BODY_SHA256;
+    return ADMIN_BODY_UNREADABLE;
   }
+}
+
+/**
+ * Hash the body a route's `parse` hook produced.
+ *
+ * The two cases this separates are the whole of SC-1032. A genuinely
+ * bodyless GET/DELETE hashes the empty string, which is what the client
+ * signs for it. A body that could not be READ is NOT that: hashing the
+ * empty string there made every real-body signature fail while an
+ * empty-body signature passed, and it silently removed the body from
+ * the signature's coverage. It refuses instead.
+ */
+function bodyHashFor(body: unknown): { ok: true; hex: string } | { ok: false; reason: string } {
+  // GET carries no body and Elysia skips the parse hook entirely, so
+  // `undefined` here is the bodyless case rather than a failed read.
+  if (body === undefined) return { ok: true, hex: EMPTY_BODY_SHA256 };
+  if (body === ADMIN_BODY_UNREADABLE) {
+    return { ok: false, reason: 'raw body unreadable — cannot verify signature' };
+  }
+  if (typeof body !== 'string') {
+    // Only `parseAdminRawBody` may feed this. Anything else means the
+    // route was registered without it and `body` is already parsed, so
+    // the original bytes are unrecoverable.
+    return { ok: false, reason: 'admin route is missing its raw-body parser' };
+  }
+  return { ok: true, hex: body.length === 0 ? EMPTY_BODY_SHA256 : sha256Hex(body) };
+}
+
+/**
+ * The raw text a verified admin request carried, as a string. Safe to
+ * call only after `authenticate` returned an actor — that is what rules
+ * out every non-string shape.
+ */
+export function verifiedRawBody(body: unknown): string {
+  return typeof body === 'string' ? body : '';
 }
 
 export interface AdminGate {
@@ -130,7 +189,7 @@ export interface AdminGate {
    * or null after setting the response status on `set`.
    */
   // biome-ignore lint/suspicious/noExplicitAny: Elysia `set` is dynamic
-  authenticate(request: Request, method: string, set: any): Promise<string | null>;
+  authenticate(request: Request, method: string, set: any, body: unknown): Promise<string | null>;
   authFailureBody(status: number): { error: string };
 }
 
@@ -156,8 +215,13 @@ export function createAdminGate(component: string, redis?: Redis | null): AdminG
         return new InMemoryNonceStore();
       })();
 
-  // biome-ignore lint/suspicious/noExplicitAny: Elysia `set` is dynamic
-  async function authenticate(request: Request, method: string, set: any): Promise<string | null> {
+  async function authenticate(
+    request: Request,
+    method: string,
+    // biome-ignore lint/suspicious/noExplicitAny: Elysia `set` is dynamic
+    set: any,
+    body: unknown
+  ): Promise<string | null> {
     const pathname = new URL(request.url).pathname;
     if (!secret) {
       set.status = 503;
@@ -168,8 +232,13 @@ export function createAdminGate(component: string, redis?: Redis | null): AdminG
       'x-admin-timestamp': request.headers.get('x-admin-timestamp') ?? undefined,
       'x-admin-actor': request.headers.get('x-admin-actor') ?? undefined,
     };
-    const bodyHash = await rawBodyHash(request);
-    const v = verifyHmac(secret, headers, method, pathname, bodyHash);
+    const bodyHash = bodyHashFor(body);
+    if (!bodyHash.ok) {
+      logger.error({ reason: bodyHash.reason, path: pathname }, 'admin gate cannot hash body');
+      set.status = 500;
+      return null;
+    }
+    const v = verifyHmac(secret, headers, method, pathname, bodyHash.hex);
     if (!v.ok) {
       logger.warn({ reason: v.reason, path: pathname }, 'HMAC verification failed');
       set.status = 401;
@@ -188,8 +257,11 @@ export function createAdminGate(component: string, redis?: Redis | null): AdminG
   return {
     secret,
     authenticate,
-    authFailureBody: (status: number) =>
-      status === 503 ? { error: 'admin endpoints unavailable' } : { error: 'unauthorized' },
+    authFailureBody: (status: number) => {
+      if (status === 503) return { error: 'admin endpoints unavailable' };
+      if (status === 500) return { error: 'admin gate could not read the request body' };
+      return { error: 'unauthorized' };
+    },
   };
 }
 

@@ -23,7 +23,7 @@
 import { QueueClient } from '@scani/queue';
 import type { Redis } from 'ioredis';
 import { Container } from 'typedi';
-import { audit, createAdminGate } from './admin-common';
+import { audit, createAdminGate, parseAdminRawBody, verifiedRawBody } from './admin-common';
 
 const getQueue = () => Container.get(QueueClient).get();
 
@@ -104,85 +104,99 @@ export function registerAdminJobsRoutes(app: any, redis?: Redis | null): void {
   const { secret, authenticate, authFailureBody } = createAdminGate('admin-jobs', redis);
 
   app
-    // biome-ignore lint/suspicious/noExplicitAny: Elysia handler ctx types are dynamic
-    .post('/admin/jobs/redis-read', async ({ request, set }: any) => {
-      const actor = await authenticate(request, 'POST', set);
-      if (!actor) return authFailureBody(set.status);
-      if (!redis) {
-        set.status = 503;
-        return { error: 'queue redis unavailable' };
-      }
-      let parsedBody: unknown;
-      try {
-        parsedBody = JSON.parse(await request.clone().text());
-      } catch {
-        set.status = 400;
-        return { error: 'body must be JSON' };
-      }
-      const validated = validateRedisReadCommands((parsedBody as { commands?: unknown })?.commands);
-      if (!validated.ok) {
-        set.status = 400;
-        return { error: validated.reason };
-      }
-      try {
-        const executed = await redis.pipeline(validated.commands).exec();
-        // ioredis exec() yields [error, result] pairs; surface per-command
-        // failures as null so one bad key can't fail the whole dashboard.
-        const results = (executed ?? []).map(([err, result]) => (err ? null : result));
-        return { results };
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        set.status = 500;
-        return { error: msg };
-      }
-    })
-    // biome-ignore lint/suspicious/noExplicitAny: Elysia handler ctx types are dynamic
-    .post('/admin/jobs/:id/retry', async ({ params, request, set }: any) => {
-      const actor = await authenticate(request, 'POST', set);
-      if (!actor) return authFailureBody(set.status);
-
-      try {
-        const queue = getQueue();
-        const job = await queue.getJob(params.id);
-        if (!job) {
-          await audit(actor, 'job.retry', params.id, 'failure', { reason: 'not_found' }, secret);
-          set.status = 404;
-          return { error: 'job not found' };
+    .post(
+      '/admin/jobs/redis-read',
+      // biome-ignore lint/suspicious/noExplicitAny: Elysia handler ctx types are dynamic
+      async ({ request, body, set }: any) => {
+        const actor = await authenticate(request, 'POST', set, body);
+        if (!actor) return authFailureBody(set.status);
+        if (!redis) {
+          set.status = 503;
+          return { error: 'queue redis unavailable' };
         }
-        // Same reset as the user-facing retry (SC-167): without it the job
-        // comes back with its budget already spent and gets exactly one
-        // attempt, while `attempts_made` climbs past `attempts_allowed`.
-        await job.retry('failed', { resetAttemptsMade: true });
-        await audit(actor, 'job.retry', params.id, 'success', { name: job.name }, secret);
-        return { ok: true, jobId: params.id };
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        await audit(actor, 'job.retry', params.id, 'failure', { error: msg }, secret);
-        set.status = 500;
-        return { error: msg };
-      }
-    })
-    // biome-ignore lint/suspicious/noExplicitAny: Elysia handler ctx types are dynamic
-    .delete('/admin/jobs/:id', async ({ params, request, set }: any) => {
-      const actor = await authenticate(request, 'DELETE', set);
-      if (!actor) return authFailureBody(set.status);
-
-      try {
-        const queue = getQueue();
-        const job = await queue.getJob(params.id);
-        if (!job) {
-          await audit(actor, 'job.remove', params.id, 'failure', { reason: 'not_found' }, secret);
-          set.status = 404;
-          return { error: 'job not found' };
+        let parsedBody: unknown;
+        try {
+          parsedBody = JSON.parse(verifiedRawBody(body));
+        } catch {
+          set.status = 400;
+          return { error: 'body must be JSON' };
         }
-        await job.remove();
-        await audit(actor, 'job.remove', params.id, 'success', { name: job.name }, secret);
-        return { ok: true, jobId: params.id };
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        await audit(actor, 'job.remove', params.id, 'failure', { error: msg }, secret);
-        set.status = 500;
-        return { error: msg };
-      }
-    });
+        const validated = validateRedisReadCommands(
+          (parsedBody as { commands?: unknown })?.commands
+        );
+        if (!validated.ok) {
+          set.status = 400;
+          return { error: validated.reason };
+        }
+        try {
+          const executed = await redis.pipeline(validated.commands).exec();
+          // ioredis exec() yields [error, result] pairs; surface per-command
+          // failures as null so one bad key can't fail the whole dashboard.
+          const results = (executed ?? []).map(([err, result]) => (err ? null : result));
+          return { results };
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          set.status = 500;
+          return { error: msg };
+        }
+      },
+      { parse: parseAdminRawBody }
+    )
+    .post(
+      '/admin/jobs/:id/retry',
+      // biome-ignore lint/suspicious/noExplicitAny: Elysia handler ctx types are dynamic
+      async ({ params, request, body, set }: any) => {
+        const actor = await authenticate(request, 'POST', set, body);
+        if (!actor) return authFailureBody(set.status);
+
+        try {
+          const queue = getQueue();
+          const job = await queue.getJob(params.id);
+          if (!job) {
+            await audit(actor, 'job.retry', params.id, 'failure', { reason: 'not_found' }, secret);
+            set.status = 404;
+            return { error: 'job not found' };
+          }
+          // Same reset as the user-facing retry (SC-167): without it the job
+          // comes back with its budget already spent and gets exactly one
+          // attempt, while `attempts_made` climbs past `attempts_allowed`.
+          await job.retry('failed', { resetAttemptsMade: true });
+          await audit(actor, 'job.retry', params.id, 'success', { name: job.name }, secret);
+          return { ok: true, jobId: params.id };
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          await audit(actor, 'job.retry', params.id, 'failure', { error: msg }, secret);
+          set.status = 500;
+          return { error: msg };
+        }
+      },
+      { parse: parseAdminRawBody }
+    )
+    .delete(
+      '/admin/jobs/:id',
+      // biome-ignore lint/suspicious/noExplicitAny: Elysia handler ctx types are dynamic
+      async ({ params, request, body, set }: any) => {
+        const actor = await authenticate(request, 'DELETE', set, body);
+        if (!actor) return authFailureBody(set.status);
+
+        try {
+          const queue = getQueue();
+          const job = await queue.getJob(params.id);
+          if (!job) {
+            await audit(actor, 'job.remove', params.id, 'failure', { reason: 'not_found' }, secret);
+            set.status = 404;
+            return { error: 'job not found' };
+          }
+          await job.remove();
+          await audit(actor, 'job.remove', params.id, 'success', { name: job.name }, secret);
+          return { ok: true, jobId: params.id };
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          await audit(actor, 'job.remove', params.id, 'failure', { error: msg }, secret);
+          set.status = 500;
+          return { error: msg };
+        }
+      },
+      { parse: parseAdminRawBody }
+    );
 }
