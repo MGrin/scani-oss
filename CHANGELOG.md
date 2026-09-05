@@ -19,6 +19,15 @@ version heading stays there permanently, above every future release. This
 comment is deliberately in that position; explanatory prose should not be.
 -->
 
+## [0.42.1](https://github.com/MGrin/scani-oss/compare/v0.42.0...v0.42.1) (2026-09-05)
+
+
+### Bug Fixes
+
+* **admin:** emit lowercase command names to ioredis in redis-read ([4ddf537](https://github.com/MGrin/scani-oss/commit/4ddf5378897ec55645a2961a85e2e469250cc950))
+* **admin:** sign and read one body, read once, so admin POSTs authenticate (SC-1032) ([a782f68](https://github.com/MGrin/scani-oss/commit/a782f68bf047f779e9b14c0034f5a4c70ce5ba5e))
+* **shared:** render a future time as "in 12m", not "-12m ago" ([408ceac](https://github.com/MGrin/scani-oss/commit/408ceac1b1d725b19ed356f1f1ec41cec76d9410))
+
 ## [0.42.0](https://github.com/MGrin/scani-oss/compare/v0.41.0...v0.42.0) (2026-09-05)
 
 
