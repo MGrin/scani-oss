@@ -848,6 +848,8 @@
         "history": "History",
         "incompleteHistory": "Incomplete — inflows from before the first imported transaction are missing, so values before that date are clamped.",
         "openingPosition": "Opening position",
+        "unaccountedBalance": "Unaccounted balance",
+        "unaccountedBalanceNote": "{{amount}} {{symbol}} of the current balance has no transaction recording it. It arrived after the history here already accounted for the rest, so earlier figures do not include it.",
         "predatesEarliestStatement": "Predates the earliest available statement (from {{date}}) — money that moved before then was never fetched, so no transaction here can account for it. Import a statement covering the earlier period to close it.",
         "performance": "Performance",
         "costBasis": "Cost basis",

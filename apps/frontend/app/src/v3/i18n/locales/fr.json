@@ -1091,6 +1091,8 @@
         "history": "Historique",
         "incompleteHistory": "Incomplet — les entrées antérieures à la première transaction importée manquent, les valeurs avant cette date sont donc bornées.",
         "openingPosition": "Position d’ouverture",
+        "unaccountedBalance": "Solde non justifié",
+        "unaccountedBalanceNote": "{{amount}} {{symbol}} du solde actuel n’est enregistré par aucune transaction. Ce montant est arrivé après que l’historique présent ici expliquait déjà le reste, donc les chiffres antérieurs ne l’incluent pas.",
         "predatesEarliestStatement": "Antérieur au relevé le plus ancien disponible (à partir du {{date}}) : l’argent déplacé avant cette date n’a jamais été récupéré, donc aucune transaction ici ne peut l’expliquer. Importez un relevé couvrant la période antérieure pour le solder.",
         "performance": "Performance",
         "costBasis": "Prix de revient",

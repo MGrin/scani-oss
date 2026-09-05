@@ -375,12 +375,33 @@ export class OpeningBalanceReconciliationService {
       tokenId: projection.tokenId,
     };
 
+    // The residue a reader is told about, and NULL is the only other answer
+    // (SC-951).
+    //
+    // One expression rather than four, because the sign already separates the
+    // branches. `reconciled` computes exactly zero and `missing-inflows`
+    // computes a NEGATIVE residual which IS the shortfall that
+    // `openingBalanceQuantity` carries three lines below — writing it here too
+    // would put the same money in two columns and invite a reader to add them.
+    // Only the two positive branches survive, which is the fact this column
+    // exists for.
+    //
+    // Epsilon-filtered HERE rather than at the reader, because this is where
+    // the epsilon lives: it is the same threshold `residueCause` and the
+    // `opening` branch's residual sentence already use, and a reader
+    // re-deriving it would be one more copy of the reconciler's arithmetic to
+    // drift.
+    const persistedResidual = unexplainedResidual.gt(epsilon)
+      ? unexplainedResidual.toString()
+      : null;
+
     if (projection.action === 'reconciled') {
       await this.transactionRepository.deleteReconciliationOpening(holdingId);
       await this.coverageRepository.upsertReconciliation({
         holdingId,
         lastReconciledAt: new Date(),
         openingBalanceQuantity: null,
+        unexplainedResidual: null,
         reconciliationNotes: null,
       });
       return {
@@ -420,6 +441,7 @@ export class OpeningBalanceReconciliationService {
         holdingId,
         lastReconciledAt: new Date(),
         openingBalanceQuantity: computedOpening.toString(),
+        unexplainedResidual: persistedResidual,
         reconciliationNotes: gapNotes,
       });
       this.logger.warn(
@@ -460,6 +482,7 @@ export class OpeningBalanceReconciliationService {
         holdingId,
         lastReconciledAt: new Date(),
         openingBalanceQuantity: '0',
+        unexplainedResidual: persistedResidual,
         reconciliationNotes: laterNotes,
       });
       return {
@@ -511,6 +534,7 @@ export class OpeningBalanceReconciliationService {
       holdingId,
       lastReconciledAt: new Date(),
       openingBalanceQuantity: openingQuantity.toString(),
+      unexplainedResidual: persistedResidual,
       reconciliationNotes: notes,
     });
 

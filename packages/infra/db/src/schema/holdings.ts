@@ -393,6 +393,15 @@ export const holdingCoverage = pgTable('holding_coverage', {
   // string), or null if reconciliation has not yet run or sum(txs)
   // matched observation.
   openingBalanceQuantity: text('opening_balance_quantity'),
+  // Balance that has no transaction to account for it and arrived AFTER the
+  // ledger already explained this holding at its first observation (SC-951).
+  // Positive Decimal string, epsilon-filtered by the reconciler, NULL when
+  // there is none — which is not a claim that the ledger is complete.
+  //
+  // Distinct from `openingBalanceQuantity` above, which on the one branch that
+  // writes it negative carries a shortfall from BEFORE the window. This is the
+  // hole INSIDE it, and the two are never populated together.
+  unexplainedResidual: text('unexplained_residual'),
   reconciliationNotes: text('reconciliation_notes'),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });

@@ -122,17 +122,56 @@ describe('HoldingCoverageRepository', () => {
           holdingId,
           lastReconciledAt: reconciledAt,
           openingBalanceQuantity: '6.0',
+          unexplainedResidual: '0.25',
           reconciliationNotes: 'Synthesized opening balance',
         },
         tx
       );
       expect(after.lastReconciledAt?.getTime()).toBe(reconciledAt.getTime());
       expect(after.openingBalanceQuantity).toBe('6.0');
+      expect(after.unexplainedResidual).toBe('0.25');
       expect(after.reconciliationNotes).toBe('Synthesized opening balance');
       // Tx-range fields preserved from the ingester upsert.
       expect(after.firstTxAt?.getTime()).toBe(new Date('2024-01-01T00:00:00Z').getTime());
       expect(after.lastTxAt?.getTime()).toBe(new Date('2024-12-31T23:59:59Z').getTime());
       expect(after.txSources).toEqual(['kraken-api']);
+    });
+  });
+
+  // SC-951. `unexplainedResidual` is a REQUIRED field on the upsert argument,
+  // and this is why: a residue that has since been explained — a late
+  // statement, a manually recorded movement — has to be able to go back to
+  // NULL. An optional field that callers omit when there is nothing to say
+  // would leave the previous run's figure standing on the peek forever, and
+  // the failure would be a stale number rather than an error.
+  test('upsertReconciliation clears a residue a later run no longer finds', async () => {
+    await withTestDb(async (tx) => {
+      const { holdingId } = await makeHoldingFixture(tx);
+      await repo().upsertReconciliation(
+        {
+          holdingId,
+          lastReconciledAt: new Date('2025-01-01T00:00:00Z'),
+          openingBalanceQuantity: '0',
+          unexplainedResidual: '3.5',
+          reconciliationNotes: 'arrived later',
+        },
+        tx
+      );
+      // The control: it was there to begin with, so the null below is a
+      // clearing rather than a write that never landed.
+      expect((await repo().findByHolding(holdingId, tx))?.unexplainedResidual).toBe('3.5');
+
+      const after = await repo().upsertReconciliation(
+        {
+          holdingId,
+          lastReconciledAt: new Date('2025-02-01T00:00:00Z'),
+          openingBalanceQuantity: null,
+          unexplainedResidual: null,
+          reconciliationNotes: null,
+        },
+        tx
+      );
+      expect(after.unexplainedResidual).toBeNull();
     });
   });
 
@@ -144,12 +183,14 @@ describe('HoldingCoverageRepository', () => {
           holdingId,
           lastReconciledAt: new Date('2025-01-01T00:00:00Z'),
           openingBalanceQuantity: null,
+          unexplainedResidual: null,
           reconciliationNotes: null,
         },
         tx
       );
       expect(after.holdingId).toBe(holdingId);
       expect(after.openingBalanceQuantity).toBeNull();
+      expect(after.unexplainedResidual).toBeNull();
       expect(after.firstTxAt).toBeNull();
       expect(after.txSources).toEqual([]);
     });
@@ -427,6 +468,7 @@ describe('HoldingCoverageRepository.syncTxBoundsFromLedger', () => {
           holdingId,
           lastReconciledAt: new Date('2026-08-01T00:00:00Z'),
           openingBalanceQuantity: '12.5',
+          unexplainedResidual: null,
           reconciliationNotes: 'synthesized',
         },
         tx

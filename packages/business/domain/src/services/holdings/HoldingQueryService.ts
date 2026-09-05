@@ -292,6 +292,26 @@ export class HoldingQueryService extends BaseService {
           }
         }
 
+        // The hole INSIDE the covered window, stated as a fact and nothing
+        // more (SC-951).
+        //
+        // A separate `if` on a separate column, deliberately not folded into
+        // the `dataIntegrity` block above: that one is gated on
+        // `openingBalanceQuantity < 0` and feeds a badge whose copy says the
+        // history did not reach back before the first trade, which is the
+        // opposite claim. The two columns are never populated together, so the
+        // reader can only ever meet one of them — but the day that stops being
+        // true, two facts is the honest answer and one merged sentence is not.
+        //
+        // No predicate here beyond "the reconciler wrote one". The sign and
+        // the epsilon were both decided by the writer, which is where the
+        // epsilon lives; re-deriving either would be a second copy of the
+        // reconciler's arithmetic, which is the thing `projectHolding` exists
+        // to prevent.
+        if (coverage?.unexplainedResidual != null) {
+          result.unexplainedResidual = coverage.unexplainedResidual;
+        }
+
         return result;
       }
     );

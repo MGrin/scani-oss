@@ -762,6 +762,8 @@
         "history": "履歴",
         "incompleteHistory": "不完全です。最初に取り込んだ取引より前の入金が欠けているため、その日付より前の評価額は据え置かれています。",
         "openingPosition": "期首ポジション",
+        "unaccountedBalance": "記録のない残高",
+        "unaccountedBalanceNote": "現在の残高のうち {{amount}} {{symbol}} には、それを記録する取引がありません。ここの履歴が残りを説明し終えたあとに増えた分のため、それより前の数値には含まれていません。",
         "predatesEarliestStatement": "取得できる最も古い明細（{{date}} 以降）より前の分です。それ以前に動いた資金は取得されていないため、ここにある取引では説明できません。前の期間を含む明細を取り込むと解消します。",
         "performance": "パフォーマンス",
         "costBasis": "取得原価",

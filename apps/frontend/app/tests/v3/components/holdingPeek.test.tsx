@@ -249,6 +249,76 @@ describe('sections', () => {
   });
 });
 
+/**
+ * SC-951 — the reconciler's OTHER residue, and the only surface it has.
+ *
+ * `dataIntegrity` is gated on a negative `opening_balance_quantity`, which one
+ * of the reconciler's four actions ever writes. A residue on either positive
+ * branch reached a reader nowhere at all — there was no wording to be
+ * suspicious of, which is why it needed a row of its own rather than a wider
+ * predicate on the one that exists.
+ *
+ * It is a FACT, not a flag (mgrin, 2026-09-03): no badge, no data-quality
+ * count, no Refine filter. The tests below are mostly about keeping it apart
+ * from `dataIntegrity`, because merging the two is exactly how a neutral fact
+ * acquires a "worth looking into" caption by accident.
+ */
+describe('an unaccounted balance', () => {
+  test('is stated as its own fact, with the amount and the symbol in it', () => {
+    const withResidue = holding({ unexplainedResidual: '20.5' });
+    expect(factLabels(withResidue, 'Record')).toContain('Unaccounted balance');
+    const value = factValues(withResidue, 'Record').join(' ');
+    expect(value).toContain('20.5');
+    expect(value).toContain('BTC');
+    expect(value).toContain('no transaction recording it');
+  });
+
+  /** The control: the row is absent when there is nothing to say, so the
+   *  assertion above is about the field rather than about a row that is always
+   *  there. */
+  test('is absent entirely when there is no residue', () => {
+    expect(factLabels(holding(), 'Record')).not.toContain('Unaccounted balance');
+  });
+
+  /**
+   * The interpolation is real, and this is what proves it: i18next renders the
+   * raw KEY when a key is missing, so a run over a locale file that never got
+   * the string would still find a `Record` fact with a plausible-looking label.
+   * Asserting the key name is absent is the only reading that separates a
+   * translated sentence from a missing one.
+   */
+  test('renders the sentence, not the key it is looked up by', () => {
+    const value = factValues(holding({ unexplainedResidual: '20.5' }), 'Record').join(' ');
+    expect(value).not.toContain('unaccountedBalanceNote');
+    expect(value).not.toContain('{{amount}}');
+    expect(value).not.toContain('{{symbol}}');
+  });
+
+  /**
+   * The two facts are two columns read by two predicates, and neither may
+   * become the other. A residue raises no `History` / `Opening position` row —
+   * those are `dataIntegrity`'s, whose copy says the ledger did not reach back
+   * far enough, which is the opposite claim to a hole INSIDE the window.
+   */
+  test('raises none of the incomplete-history wording on its own', () => {
+    const labels = factLabels(holding({ unexplainedResidual: '20.5' }), 'Record');
+    expect(labels).not.toContain('History');
+    expect(labels).not.toContain('Opening position');
+  });
+
+  /** And the mirror of it: the two coexist as two rows rather than one merged
+   *  sentence, on the day a writer produces both. */
+  test('stands beside an incomplete history rather than replacing it', () => {
+    const both = holding({
+      unexplainedResidual: '20.5',
+      dataIntegrity: { incompleteHistory: true },
+    });
+    const labels = factLabels(both, 'Record');
+    expect(labels).toContain('History');
+    expect(labels).toContain('Unaccounted balance');
+  });
+});
+
 describe('a stale price', () => {
   test('the peek turns the age above it into a judgement about it', () => {
     // `Price age` is not another date. The peek already prints how old the

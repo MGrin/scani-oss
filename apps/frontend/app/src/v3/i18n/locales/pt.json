@@ -850,6 +850,8 @@
         "inactive": "Inativa",
         "incompleteHistory": "Incompleto — faltam as entradas anteriores à primeira transação importada, por isso os valores anteriores a essa data ficam limitados.",
         "openingPosition": "Posição inicial",
+        "unaccountedBalance": "Saldo sem registo",
+        "unaccountedBalanceNote": "{{amount}} {{symbol}} do saldo atual não tem nenhuma transação que o registe. Chegou depois de o histórico aqui já explicar o resto, pelo que os valores anteriores não o incluem.",
         "predatesEarliestStatement": "Anterior ao extrato mais antigo disponível (desde {{date}}) — o dinheiro movimentado antes disso nunca foi obtido, portanto nenhuma transação aqui pode explicá-lo. Importe um extrato que cubra o período anterior para encerrá-lo.",
         "interest": "Juros",
         "lastPayout": "Último pagamento",

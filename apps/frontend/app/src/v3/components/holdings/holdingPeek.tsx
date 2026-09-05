@@ -304,6 +304,33 @@ export function holdingPeekSpec(holding: HoldingWithDetails, ctx: HoldingPeekCon
     );
   }
 
+  if (holding.unexplainedResidual) {
+    // The other reconciliation residue, and the only surface it has (SC-951).
+    //
+    // Stated, not flagged. It carries no badge in the list, no data-quality
+    // count and no Refine filter, because the product cannot tell a benign
+    // interest accrual on a cash account from a missed deposit and a
+    // "worth looking into" caption would therefore be permanently wrong for
+    // the case that actually fires (mgrin, 2026-09-03). What that accepts is
+    // that a missed deposit reads as unremarkable here.
+    //
+    // The AMOUNT is the fact — the server's note is English prose and, on the
+    // branch this comes from, is a sentence about not backdating that answers
+    // a question nobody asked. So the figure is interpolated into a translated
+    // sentence rather than the note being printed, the same choice the
+    // `predatesEarliestStatement` fact above makes and for the same reason.
+    record.push({
+      label: t('v3.holdings.peek.unaccountedBalance'),
+      value: t('v3.holdings.peek.unaccountedBalanceNote', {
+        amount: resolveNumeric(holding.unexplainedResidual, {
+          format: 'plain',
+          decimals: amountDecimals(holding.unexplainedResidual),
+        }).text,
+        symbol: holding.token.symbol,
+      }),
+    });
+  }
+
   const sections: PeekSection[] = [];
 
   if (gainLoss) {

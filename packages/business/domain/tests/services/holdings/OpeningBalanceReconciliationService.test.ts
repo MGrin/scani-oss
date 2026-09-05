@@ -36,6 +36,7 @@ interface CapturedReconciliation {
   holdingId: string;
   lastReconciledAt: Date;
   openingBalanceQuantity: string | null;
+  unexplainedResidual: string | null;
   reconciliationNotes: string | null;
 }
 
@@ -856,6 +857,9 @@ describe('OpeningBalanceReconciliationService — a bounded source is not an une
 
     expect(r?.residueCause).toBe('unexplained');
     expect(r?.unexplainedResidual.toString()).toBe('20');
+    // SC-951: and it reaches the coverage row as a NUMBER, not only as a
+    // clause inside the English note beside it.
+    expect(capturedReconciliations[0]?.unexplainedResidual).toBe('20');
     expect(capturedReconciliations[0]?.reconciliationNotes).not.toContain(
       'predates the earliest available statement'
     );
@@ -884,5 +888,90 @@ describe('OpeningBalanceReconciliationService — a bounded source is not an une
     expect(projection?.action).toBe('missing-inflows');
     expect(projection?.residueCause).toBe('before-available-history');
     expect(projection?.historyStartsAt).toEqual(STATEMENT_FROM);
+  });
+});
+
+/**
+ * SC-951 — the residue reaches the coverage row as a figure, on the two
+ * branches that compute one and on neither of the two that do not.
+ *
+ * Before this the amount existed nowhere as a number: `arrived-later` writes
+ * no transaction and the literal `'0'` opening, and `opening` buries it in a
+ * transaction's `source_metadata`. The only trace either left was a clause
+ * inside an English sentence, which one reader reads and only on the branch
+ * this column is not about.
+ *
+ * Each test below names the branch it is on, because the whole claim is that
+ * the four are written DIFFERENTLY — a suite that only checked the two
+ * populated ones would pass over a writer that populated all four.
+ */
+describe('OpeningBalanceReconciliationService — the residue is persisted as a figure', () => {
+  const FIRST_TX_AT = new Date('2024-01-15T00:00:00Z');
+
+  test('arrived-later writes the residue beside the zero opening', async () => {
+    const { service, capturedReconciliations } = makeService({
+      holding: { id: 'h1', userId: 'u1', accountId: 'a1', tokenId: 't1', balance: '30' },
+      txSumAllTime: '10',
+      firstTxAt: FIRST_TX_AT,
+      observations: [{ observedAt: new Date('2024-06-01T00:00:00Z'), balance: '10' }],
+      txsBeforeFirstObs: [{ occurredAt: new Date('2024-02-01T00:00:00Z'), quantity: '10' }],
+    });
+    const r = await service.reconcileHolding('h1');
+
+    expect(r?.openingBalanceSynthesized).toBe(false);
+    expect(capturedReconciliations[0]?.openingBalanceQuantity).toBe('0');
+    expect(capturedReconciliations[0]?.unexplainedResidual).toBe('20');
+  });
+
+  test('opening writes the residue beside the positive opening', async () => {
+    const { service, capturedReconciliations } = makeService({
+      holding: { id: 'h1', userId: 'u1', accountId: 'a1', tokenId: 't1', balance: '30' },
+      txSumAllTime: '10',
+      firstTxAt: FIRST_TX_AT,
+      // A pre-history position of 5 as well, so this lands on `opening`
+      // rather than `arrived-later`: the branch differs only in whether one
+      // existed, and the residue is the same event either way.
+      observations: [{ observedAt: new Date('2024-06-01T00:00:00Z'), balance: '15' }],
+      txsBeforeFirstObs: [{ occurredAt: new Date('2024-02-01T00:00:00Z'), quantity: '10' }],
+    });
+    const r = await service.reconcileHolding('h1');
+
+    expect(r?.openingBalanceSynthesized).toBe(true);
+    expect(capturedReconciliations[0]?.openingBalanceQuantity).toBe('5');
+    expect(capturedReconciliations[0]?.unexplainedResidual).toBe('15');
+  });
+
+  /**
+   * The one that would be wrong to write. `missing-inflows` HAS a residual and
+   * it is NEGATIVE — it is the shortfall `openingBalanceQuantity` already
+   * carries, and the two surfaces that exist today read it there. Writing it
+   * into this column too would put the same money in two places and invite a
+   * reader to add them.
+   */
+  test('missing-inflows leaves the column null, because its residual is the shortfall beside it', async () => {
+    const { service, capturedReconciliations } = makeService({
+      holding: { id: 'h1', userId: 'u1', accountId: 'a1', tokenId: 't1', balance: '10' },
+      txSumAllTime: '110',
+      firstTxAt: FIRST_TX_AT,
+    });
+    const r = await service.reconcileHolding('h1');
+
+    // The control: there IS a residual here, so the null below is a decision
+    // rather than an absence.
+    expect(r?.unexplainedResidual.toString()).toBe('-100');
+    expect(capturedReconciliations[0]?.openingBalanceQuantity).toBe('-100');
+    expect(capturedReconciliations[0]?.unexplainedResidual).toBeNull();
+  });
+
+  test('a ledger that closes writes null, and clears whatever a prior run left', async () => {
+    const { service, capturedReconciliations } = makeService({
+      holding: { id: 'h1', userId: 'u1', accountId: 'a1', tokenId: 't1', balance: '10' },
+      txSumAllTime: '10',
+      firstTxAt: FIRST_TX_AT,
+    });
+    await service.reconcileHolding('h1');
+
+    expect(capturedReconciliations[0]?.openingBalanceQuantity).toBeNull();
+    expect(capturedReconciliations[0]?.unexplainedResidual).toBeNull();
   });
 });

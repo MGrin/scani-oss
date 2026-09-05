@@ -762,6 +762,8 @@
         "history": "Riwayat",
         "incompleteHistory": "Tidak lengkap — arus masuk sebelum transaksi pertama yang diimpor tidak ada, jadi nilai sebelum tanggal itu dibatasi.",
         "openingPosition": "Posisi awal",
+        "unaccountedBalance": "Saldo tanpa catatan",
+        "unaccountedBalanceNote": "{{amount}} {{symbol}} dari saldo saat ini tidak memiliki transaksi yang mencatatnya. Jumlah itu masuk setelah riwayat di sini sudah menjelaskan sisanya, sehingga angka-angka sebelumnya tidak memasukkannya.",
         "predatesEarliestStatement": "Mendahului laporan paling awal yang tersedia (sejak {{date}}) — uang yang berpindah sebelum itu tidak pernah diambil, jadi tidak ada transaksi di sini yang bisa menjelaskannya. Impor laporan yang mencakup periode sebelumnya untuk menutupnya.",
         "performance": "Kinerja",
         "costBasis": "Basis biaya",
