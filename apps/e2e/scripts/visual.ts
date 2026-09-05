@@ -5,10 +5,11 @@
  *
  * The ticket specified that baselines be generated "in CI only, inside the
  * Playwright Docker image", because macOS-rendered PNGs will never match
- * `ubuntu-latest`. The reasoning is right and the mechanism is gone: GitHub
- * Actions is billing-blocked account-wide (SC-128, SC-414). But the
- * requirement was never *CI* — it was **a deterministic Linux renderer**, and
- * that is a container, which runs here.
+ * `ubuntu-latest`. The reasoning is right and the mechanism cannot be relied
+ * on: Actions billing on the private repo flaps, and has blocked for most of
+ * that repo's history (SC-128, SC-414, SC-1023). But the requirement was never
+ * *CI* — it was **a deterministic Linux renderer**, and that is a container,
+ * which runs here whatever GitHub is doing.
  *
  * So this script starts `playwright run-server` inside
  * `mcr.microsoft.com/playwright:v<version>-noble`, points the test runner at

@@ -24,10 +24,11 @@
 # hits @scani/security's hex fast path so credential encryption skips scrypt
 # (see packages/infra/security/src/encryption.ts).
 #
-# GitHub Actions is billing-blocked on the private repo (SC-128, SC-433), so
-# nothing here may depend on a workflow firing. It does not: this is the same
-# shape as scripts/deploy-local.sh — the automated path reproduced so a human
-# can run it from a laptop.
+# Actions billing on the private repo flaps, and has blocked for most of that
+# repo's history (SC-128, SC-433, SC-1023), so nothing here may depend on a
+# workflow firing. It does not: this is the same shape as
+# scripts/deploy-local.sh — the automated path reproduced so a human can run it
+# from a laptop.
 #
 # Env overrides:
 #   SCANI_REF=main            git ref of scani-oss to fetch the compose file from

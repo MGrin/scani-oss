@@ -31,8 +31,9 @@
 // `main` unnoticed, one of them a value a user is shown that SC-258 says must
 // be in the glossary before it is translated. It is now in CLAUDE.md's
 // before-pushing list, which is the gate that actually runs on this machine,
-// and in `ci.yml` as `validate-docs`, which cannot run while GitHub Actions is
-// billing-blocked (SC-128, SC-414) and is there for the day it is not.
+// and in `ci.yml` as `validate-docs`, which runs only while a billing block is
+// not keeping the private repo's Actions from starting — and that flaps
+// (SC-128, SC-414, SC-1023), so the local list is the copy to rely on.
 //
 // Only errors fail. Warnings exit 0 and stay warnings on purpose: the
 // env-coverage check has too low a signal-to-noise ratio to block a PR, and a
@@ -810,9 +811,9 @@ function checkMarkdownPlacement(): void {
 // Nothing else a developer runs compiles MDX (SC-469). The checks above read
 // Markdown as text, `bun run test` does not build the site, and the only
 // compiler behind `apps/frontend/docs/src/content/**/*.mdx` is the Starlight
-// build in the OSS deploy workflow. Actions is billing-blocked on the private
-// repo, so an MDX syntax error there lands on `main` and is found by the docs
-// deploy, after merge.
+// build in the OSS deploy workflow. Actions billing on the private repo flaps
+// and has blocked for most of that repo's history, so an MDX syntax error
+// there lands on `main` and is found by the docs deploy, after merge.
 //
 // SC-453 is the measured instance: two Markdown autolinks,
 //
