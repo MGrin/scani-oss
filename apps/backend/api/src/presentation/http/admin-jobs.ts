@@ -94,7 +94,14 @@ export function validateRedisReadCommands(input: unknown): RedisReadValidation {
         return { ok: false, reason: 'command args must be strings or numbers' };
       }
     }
-    commands.push([name.toUpperCase(), key, ...(args as Array<string | number>)]);
+    // LOWERCASE, not the uppercase the allowlist lookup above is keyed on.
+    // `redis.pipeline()` resolves this first element as a METHOD NAME on the
+    // Pipeline object and ioredis defines those lowercase, so an uppercase
+    // name resolves to `undefined` and `this[commandName].apply` throws —
+    // a 500 on every call (SC-1043). The lookup on line 83 keeps normalising
+    // UP because REDIS_READ_COMMANDS is stored uppercase; the two cases are
+    // deliberately different and neither may be changed to match the other.
+    commands.push([name.toLowerCase(), key, ...(args as Array<string | number>)]);
   }
   return { ok: true, commands };
 }
