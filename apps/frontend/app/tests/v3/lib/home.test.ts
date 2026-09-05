@@ -832,7 +832,7 @@ describe('summariseQuality', () => {
     // clamped — and never "28 of 30, you are missing two".
     const quality = summariseQuality(
       point({ holdingsWithKnownValue: 26, holdingsUnpriceable: 4 }),
-      { includeBasis: false }
+      { includeBasis: false, transfersUnreviewedNow: 0 }
     );
     expect(quality?.priceable).toBe(26);
     expect(quality?.complete).toBe(true);
@@ -842,6 +842,7 @@ describe('summariseQuality', () => {
   test('the percentage floors, so a near-miss never reads as a full house', () => {
     const quality = summariseQuality(point({ holdingsWithKnownValue: 299, holdingsTotal: 300 }), {
       includeBasis: false,
+      transfersUnreviewedNow: 0,
     });
     expect(quality?.percent).toBe(99);
     expect(quality?.complete).toBe(false);
@@ -853,6 +854,7 @@ describe('summariseQuality', () => {
     expect(
       summariseQuality(point({ holdingsWithKnownValue: 0, holdingsUnpriceable: 30 }), {
         includeBasis: false,
+        transfersUnreviewedNow: 0,
       })
     ).toBeNull();
   });
@@ -861,8 +863,12 @@ describe('summariseQuality', () => {
     // SC-149 is explicit that basis must not degrade the value reading. The
     // net-worth figure never mentions it; the PnL figure always does.
     const source = point({ holdingsBasisUnknown: 3 });
-    expect(summariseQuality(source, { includeBasis: false })?.basisUnknown).toBe(0);
-    expect(summariseQuality(source, { includeBasis: true })?.basisUnknown).toBe(3);
+    expect(
+      summariseQuality(source, { includeBasis: false, transfersUnreviewedNow: 0 })?.basisUnknown
+    ).toBe(0);
+    expect(
+      summariseQuality(source, { includeBasis: true, transfersUnreviewedNow: 0 })?.basisUnknown
+    ).toBe(3);
   });
 });
 
@@ -876,7 +882,7 @@ describe('qualityHeadline', () => {
         holdingsStalePriced: 0,
         holdingsBasisUnknown: 0,
       },
-      { includeBasis: false }
+      { includeBasis: false, transfersUnreviewedNow: 0 }
     );
     expect(quality).not.toBeNull();
     const text = qualityHeadline(quality as FigureQuality, t);
@@ -903,7 +909,7 @@ describe('qualityHeadline', () => {
         holdingsStalePriced: 0,
         holdingsBasisUnknown: 0,
       },
-      { includeBasis: false }
+      { includeBasis: false, transfersUnreviewedNow: 0 }
     );
     expect(qualityHeadline(quality as FigureQuality, t)).toBe(
       'All 12 holdings priced · 2 unpriceable'
@@ -921,7 +927,7 @@ describe('qualityHeadline', () => {
         holdingsStalePriced: 0,
         holdingsBasisUnknown: 0,
       },
-      { includeBasis: false }
+      { includeBasis: false, transfersUnreviewedNow: 0 }
     );
     expect(qualityHeadline(quality as FigureQuality, t)).toBe('All 12 holdings priced');
   });
@@ -1078,29 +1084,59 @@ describe('unreviewedTransfersNote', () => {
       holdingsUnpriceable: 0,
       holdingsStalePriced: 0,
       holdingsBasisUnknown: 0,
-      transfersUnreviewed: 4,
     };
-    expect(summariseQuality(source, { includeBasis: false })?.transfersUnreviewed).toBe(0);
-    expect(summariseQuality(source, { includeBasis: true })?.transfersUnreviewed).toBe(4);
+    expect(
+      summariseQuality(source, { includeBasis: false, transfersUnreviewedNow: 4 })
+        ?.transfersUnreviewed
+    ).toBe(0);
+    expect(
+      summariseQuality(source, { includeBasis: true, transfersUnreviewedNow: 4 })
+        ?.transfersUnreviewed
+    ).toBe(4);
   });
 
   /**
-   * The net-worth series does not carry the field at all — `NetWorthHistoryRow`
-   * omits it deliberately — so `QualityPoint` declares it optional. That is
-   * accurate, and it is also the shape that can go quiet: a wiring break reads
-   * as "nothing to report" rather than as a failure. Pinned here.
+   * SC-1070 — the count comes from the LIVE queue, not from the series row.
+   *
+   * The row's `transfersUnreviewed` is what the 04:00 rollup wrote, so a
+   * reader who answered every transfer at lunchtime kept being told the
+   * realized figure excluded four of them, under a link to a page they had
+   * just emptied. This is the arm that goes red if the caption is ever wired
+   * back to the stored column: the two numbers are deliberately different and
+   * only the live one may reach the sentence.
    */
-  test('a point without the field reads as an empty queue, not as a crash', () => {
-    const netWorthPoint: QualityPoint = {
+  test('the stored snapshot on the row never reaches the caption', () => {
+    const stale: QualityPoint = {
       holdingsWithKnownValue: 30,
       holdingsTotal: 30,
       holdingsUnpriceable: 0,
       holdingsStalePriced: 0,
       holdingsBasisUnknown: 0,
+      transfersUnreviewed: 4,
     };
-    const q = summariseQuality(netWorthPoint, { includeBasis: true });
+    const q = summariseQuality(stale, { includeBasis: true, transfersUnreviewedNow: 0 });
     expect(q?.transfersUnreviewed).toBe(0);
     expect(unreviewedTransfersNote(q as FigureQuality, t)).toBeNull();
+  });
+
+  test('an answer that empties the queue is not the only direction it moves', () => {
+    // The control for the test above. A live count of 2 against a stored 4
+    // must read 2 — if it read 0 the arm above would pass for the wrong
+    // reason, because "the live value won" and "the count was zeroed" would
+    // be the same observation.
+    const stale: QualityPoint = {
+      holdingsWithKnownValue: 30,
+      holdingsTotal: 30,
+      holdingsUnpriceable: 0,
+      holdingsStalePriced: 0,
+      holdingsBasisUnknown: 0,
+      transfersUnreviewed: 4,
+    };
+    const q = summariseQuality(stale, { includeBasis: true, transfersUnreviewedNow: 2 });
+    expect(q?.transfersUnreviewed).toBe(2);
+    expect(unreviewedTransfersNote(q as FigureQuality, t)).toBe(
+      'Realized PnL excludes 2 unconfirmed transfers'
+    );
   });
 });
 
@@ -1131,6 +1167,11 @@ describe('latestPnlSource', () => {
       pnlPoint('2026-08-11', null, null, null),
     ];
     expect(latestPnlSource(series)?.date).toBe('2026-08-10');
-    expect(summariseQuality(latestPnlSource(series), { includeBasis: true })?.basisUnknown).toBe(2);
+    expect(
+      summariseQuality(latestPnlSource(series), {
+        includeBasis: true,
+        transfersUnreviewedNow: 0,
+      })?.basisUnknown
+    ).toBe(2);
   });
 });

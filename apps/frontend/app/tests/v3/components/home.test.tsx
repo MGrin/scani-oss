@@ -1,6 +1,7 @@
 import '../../i18n-preload';
 
 import { describe, expect, test } from 'bun:test';
+import { TRANSFER_REVIEW_KIND } from '@scani/shared';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { StaticRouter } from 'react-router-dom/server';
 import type { BaseCurrencyRates } from '../../../src/hooks/useBaseCurrencyRates';
@@ -14,13 +15,19 @@ import {
 import { formatChartDate } from '../../../src/v3/components/home/PortfolioChart';
 import { UpcomingFootLine } from '../../../src/v3/components/home/UpcomingBlock';
 import { VaultProgressRow } from '../../../src/v3/components/home/VaultsBlock';
-import type { FigureQuality, VaultRow } from '../../../src/v3/lib/home';
+import {
+  type FigureQuality,
+  heroFigureQuality,
+  type PnLPoint,
+  type VaultRow,
+} from '../../../src/v3/lib/home';
 import {
   type EstimableOccurrence,
   estimatedTotals,
   occurrenceTotals,
 } from '../../../src/v3/lib/money';
 import type { HistoryEstimate } from '../../../src/v3/lib/paymentTotals';
+import { pendingTransferCount } from '../../../src/v3/lib/review';
 
 /**
  * The blocks themselves each own a tRPC query, so they cannot be rendered
@@ -266,6 +273,106 @@ describe('CoverageNote', () => {
 
   test('an empty queue renders no clause at all', () => {
     expect(renderNote({ ...FULL, basisUnknown: 1 })).not.toInclude('Realized PnL excludes');
+  });
+});
+
+/**
+ * SC-1070 — the caption moves when the queue does, without waiting for 04:00.
+ *
+ * The whole path a reader traverses, minus the two things a static render
+ * cannot hold: the wire rows `review.listPending` produces, through
+ * `pendingTransferCount` and `heroFigureQuality`, into the sentence
+ * `<CoverageNote>` puts on the screen.
+ *
+ * **What went wrong is not visible from any one of those pieces.** The series
+ * row is a `portfolio_value_daily` snapshot the rollup wrote at 04:00 and is
+ * correct as a chart point; the caption's sentence is correct as English; the
+ * queue is correct. Only the composition is wrong — the sentence promises the
+ * queue holds exactly the rows it counted, and answering them left the count
+ * where it was until the next night, under a link to a page with nothing on
+ * it. So the assertion has to be made over the composition, and the series row
+ * carries a DIFFERENT number from the queue in every case below on purpose:
+ * if the two agreed, a caption reading the stale column would pass.
+ */
+const PNL_ROW_SAYING_FOUR: PnLPoint = {
+  date: '2026-09-05',
+  realizedPnl: '100',
+  unrealizedPnl: '10',
+  totalPnl: '110',
+  holdingsWithKnownValue: 30,
+  holdingsTotal: 30,
+  holdingsUnpriceable: 0,
+  holdingsStalePriced: 0,
+  holdingsBasisUnknown: 0,
+  // What the 04:00 rollup wrote. Never what the caption says.
+  transfersUnreviewed: 4,
+};
+
+/** The shape `ReviewFeedService.fromTransfers` emits — one aggregate row for
+ *  the whole queue, carrying its size in `represents`, and no row at all once
+ *  the queue is empty. */
+const transferQueueRow = (waiting: number) => ({
+  kind: TRANSFER_REVIEW_KIND,
+  represents: waiting,
+});
+
+const renderCaption = (feed: { kind: string; represents: number }[]) => {
+  const quality = heroFigureQuality({
+    isPnl: true,
+    netWorthPoints: [],
+    pnlPoints: [PNL_ROW_SAYING_FOUR],
+    pendingTransfers: pendingTransferCount(feed),
+  });
+  expect(quality).not.toBeNull();
+  return renderNote(quality as FigureQuality);
+};
+
+describe('the PnL caption against the live review queue', () => {
+  test('answering every transfer clears the sentence in the same request cycle', () => {
+    // The collector stops emitting a row once the queue empties, so this feed
+    // is what the reader's next render sees the moment the answer lands —
+    // no rollup in between. The series row still says four.
+    expect(renderCaption([])).not.toInclude('Realized PnL excludes');
+  });
+
+  test('answering some of them moves the number rather than zeroing it', () => {
+    // The control. Without it, the arm above passes for either of two
+    // reasons — "the live count won" and "the count was hard-zeroed" are the
+    // same observation at zero — and only one of them is the fix.
+    const html = renderCaption([transferQueueRow(2)]);
+    expect(html).toInclude('Realized PnL excludes 2 unconfirmed transfers');
+    expect(html).not.toInclude('4 unconfirmed');
+  });
+
+  test('a queue that has gained rows since 04:00 is stated at its live size', () => {
+    // The other direction, and the one that says this is not a fix pointed
+    // downward: six waiting against a stored four must read six.
+    expect(renderCaption([transferQueueRow(6)])).toInclude(
+      'Realized PnL excludes 6 unconfirmed transfers'
+    );
+  });
+
+  test('another queue\u2019s rows are not counted as transfers', () => {
+    // `review.listPending` is a read-model over several producers and the
+    // balance-gap collector aggregates the same way. Summing the feed instead
+    // of finding the transfer row would put unexplained balance changes in a
+    // sentence about transfers.
+    expect(renderCaption([{ kind: 'balance-gap', represents: 9 }])).not.toInclude(
+      'Realized PnL excludes'
+    );
+  });
+
+  test('the net-worth metric ignores the queue entirely', () => {
+    // SC-160's gate, restated against the live source: an unanswered
+    // withdrawal says nothing about what the portfolio is worth.
+    const quality = heroFigureQuality({
+      isPnl: false,
+      netWorthPoints: [PNL_ROW_SAYING_FOUR],
+      pnlPoints: [],
+      pendingTransfers: 6,
+    });
+    expect(quality?.transfersUnreviewed).toBe(0);
+    expect(renderNote(quality as FigureQuality)).not.toInclude('Realized PnL excludes');
   });
 });
 
