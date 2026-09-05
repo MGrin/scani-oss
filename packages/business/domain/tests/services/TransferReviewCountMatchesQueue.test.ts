@@ -13,6 +13,17 @@
  * because the whole of what is under test IS the predicate. A stubbed queue
  * returns what it was handed and would have agreed with anything.
  *
+ * **The last case asserts the same SET, not the same count.** Two counts that
+ * agree at one moment can be counts of different rows, and every assertion
+ * built from a single reading would pass on that. It is settled with a
+ * differential rather than by comparing ids, because the caption exposes no
+ * ids to compare: the rows are answered ONE AT A TIME through the queue's own
+ * `resolve`, and both numbers must fall together at every step. If the two
+ * sides held the same count over different sets, answering a row in the
+ * queue's set would drop the queue and leave the caption where it was. That is
+ * also `CoverageNote.tsx`'s promise stated literally — *answering them takes
+ * the count to zero*.
+ *
  * **Every case carries a control that moves.** A test that says two zeros are
  * equal passes on a fixture that seeds nothing, on a query that reads the
  * wrong user, and on a service that has been deleted. So each case reads a
@@ -55,6 +66,7 @@ interface Fixture {
 /** Invented addresses. Nothing here is copied from any real ledger. */
 const DEST_A = '0x1111111111111111111111111111111111110001';
 const DEST_B = '0x1111111111111111111111111111111111110002';
+const DEST_C = '0x1111111111111111111111111111111111110003';
 
 let fixture: Fixture | null = null;
 
@@ -310,5 +322,48 @@ describe('the caption count and the review queue are one set (SC-1067)', () => {
 
     expect(await queueCount(f)).toBe(2);
     expect(await captionCount(f)).toBe(2);
+  });
+
+  test('answering one row at a time takes both counts down together, to zero', async () => {
+    const f = fixture!;
+    await insertBuy(f, '20');
+    const hidden = await insertOutflow(f, { to: DEST_A });
+    await insertOutflow(f, { to: DEST_B });
+    await insertOutflow(f, { to: DEST_C });
+
+    const rule = await new TransferReviewRuleService().create(f.userId, {
+      transactionId: hidden,
+      verdict: 'not_a_disposal',
+      note: 'my own account',
+    });
+    expect(rule.ok).toBe(true);
+
+    // Three outflows, one of them rule-hidden, so the set under test is not
+    // simply "every outflow" — a caption that ignored rules would start at 3
+    // here and stay one ahead all the way down.
+    expect(await queueCount(f)).toBe(2);
+    expect(await captionCount(f)).toBe(2);
+
+    const reviews = new TransferReviewService();
+    const pending = await reviews.listPending(f.userId);
+    expect(pending).toHaveLength(2);
+
+    // The differential. Each answer removes ONE row from the queue's set; if
+    // the caption were counting a different set of the same size, one of these
+    // steps would leave it behind.
+    let expected = 2;
+    for (const row of pending) {
+      await reviews.resolve(f.userId, row.transactionId, 'left_control', {});
+      expected -= 1;
+      expect(await queueCount(f)).toBe(expected);
+      expect(await captionCount(f)).toBe(expected);
+    }
+
+    // The promise in `CoverageNote.tsx`, literally: answering them takes the
+    // count to zero. A rule-hidden row still sits in the ledger and must not
+    // hold the caption above zero.
+    expect(expected).toBe(0);
+    expect(await queueCount(f)).toBe(0);
+    expect(await captionCount(f)).toBe(0);
   });
 });
