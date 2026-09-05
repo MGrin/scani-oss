@@ -891,7 +891,6 @@ describe('OpeningBalanceReconciliationService — a bounded source is not an une
   });
 });
 
-
 /**
  * SC-951 — the residue reaches the coverage row as a figure, on the two
  * branches that compute one and on neither of the two that do not.
