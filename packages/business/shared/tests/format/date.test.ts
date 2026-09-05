@@ -66,6 +66,53 @@ describe('formatRelative', () => {
   test('accepts string ISO input', () => {
     expect(formatRelative(new Date(Date.now() - 5 * MIN).toISOString())).toBe('5m ago');
   });
+
+  // SC-1038. Every assertion above this point measures a PAST timestamp, which
+  // is why a function that appends " ago" unconditionally stayed green for as
+  // long as it has.
+
+  test('a future time reads as future, not as a negative past', () => {
+    expect(formatRelative(new Date(Date.now() + 12 * MIN))).toBe('in 12m');
+    expect(formatRelative(new Date(Date.now() + 21 * HOUR))).toBe('in 21h');
+    expect(formatRelative(new Date(Date.now() + 2 * DAY))).toBe('in 2d');
+  });
+
+  test('"just now" is direction-neutral, so the <45s window is symmetric', () => {
+    expect(formatRelative(new Date(Date.now() + 30 * 1000))).toBe('just now');
+  });
+
+  test('the >30d fallback is an absolute date in the future direction too', () => {
+    const far = new Date(Date.now() + 400 * DAY);
+    expect(formatRelative(far)).toBe(formatDate(far));
+  });
+
+  test('the same distance rounds to the same magnitude either side of now', () => {
+    // `Math.round(-1.5)` is -1 and `Math.round(1.5)` is 2, so rounding the
+    // SIGNED difference made 90s in the future one unit smaller than 90s in
+    // the past. The magnitude is taken before the unit is chosen.
+    for (const ms of [90 * 1000, 90 * MIN, 36 * HOUR]) {
+      const past = formatRelative(new Date(Date.now() - ms));
+      const future = formatRelative(new Date(Date.now() + ms));
+      expect(future).toBe(`in ${past.replace(' ago', '')}`);
+    }
+  });
+
+  test('no reachable input renders a negative number', () => {
+    for (const ms of [1000, 50 * 1000, 90 * 1000, 5 * MIN, 3 * HOUR, 36 * HOUR, 5 * DAY]) {
+      for (const sign of [-1, 1]) {
+        expect(formatRelative(new Date(Date.now() + sign * ms))).not.toMatch(/-\d/);
+      }
+    }
+  });
+
+  test('CONTROL: the past strings the other call sites render are unchanged', () => {
+    // Green before this fix and after it. 33 call sites across 19 files pass a
+    // past timestamp; none of them may move.
+    expect(formatRelative(new Date(Date.now() - 30 * 1000))).toBe('just now');
+    expect(formatRelative(new Date(Date.now() - 5 * MIN))).toBe('5m ago');
+    expect(formatRelative(new Date(Date.now() - 3 * HOUR))).toBe('3h ago');
+    expect(formatRelative(new Date(Date.now() - 5 * DAY))).toBe('5d ago');
+  });
 });
 
 /**

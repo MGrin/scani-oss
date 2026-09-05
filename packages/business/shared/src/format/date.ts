@@ -57,22 +57,47 @@ function defaultDateLocale(): string {
 export type DateLocale = string | undefined;
 
 /**
- * "12s ago" / "5m ago" / "3h ago" / "2d ago". For very recent (<45s)
- * returns "just now". For >30 days falls back to an absolute date —
- * after that point absolute dates communicate better than "62d ago".
+ * "5m ago" / "3h ago" / "2d ago", and "in 5m" / "in 3h" / "in 2d" for a time
+ * that has not arrived yet. Within 45s either way returns "just now". Beyond
+ * 30 days in either direction falls back to an absolute date — at that
+ * distance a date communicates better than "62d ago".
+ *
+ * **The magnitude is taken before the unit is chosen, not after** (SC-1038).
+ * This measured a SIGNED difference and appended " ago" unconditionally, which
+ * is two defects rather than one, both invisible while every caller passed a
+ * past timestamp:
+ *
+ * 1. A future time rendered as a negative number under a past-tense word —
+ *    admin's "Next run" column showed `-21h ago`.
+ * 2. The same distance rounded to a different magnitude either side of now,
+ *    because `Math.round(-1.5)` is -1 while `Math.round(1.5)` is 2. 90s ahead
+ *    read `-1m` against 90s behind reading `2m`.
+ *
+ * The `Math.abs()` guards below each branch hid the first by picking the right
+ * UNIT for a future date, which is what made this look handled.
+ *
+ * The four words here are plain English, deliberately, and unlike every other
+ * renderer in this file. `@scani/shared` is the wire contract — imported by
+ * `apps/backend/api` and the worker, where there is no `t()` — which is why
+ * SC-369 made a keyed COPY at `apps/frontend/app/src/v3/lib/relative-time.ts`
+ * instead of threading a translator through here. `"in "` is therefore no more
+ * hardcoded than the `" ago"` it joins, and needs no key that `" ago"` does
+ * not already need.
  */
 export function formatRelative(input: DateInput, locale?: DateLocale): string {
   const date = toDate(input);
   if (!date) return '—';
   const diffMs = Date.now() - date.getTime();
-  const seconds = Math.round(diffMs / 1000);
-  if (Math.abs(seconds) < 45) return 'just now';
+  const tense = (magnitude: number, unit: string): string =>
+    diffMs < 0 ? `in ${magnitude}${unit}` : `${magnitude}${unit} ago`;
+  const seconds = Math.round(Math.abs(diffMs) / 1000);
+  if (seconds < 45) return 'just now';
   const minutes = Math.round(seconds / 60);
-  if (Math.abs(minutes) < 60) return `${minutes}m ago`;
+  if (minutes < 60) return tense(minutes, 'm');
   const hours = Math.round(minutes / 60);
-  if (Math.abs(hours) < 24) return `${hours}h ago`;
+  if (hours < 24) return tense(hours, 'h');
   const days = Math.round(hours / 24);
-  if (Math.abs(days) < 30) return `${days}d ago`;
+  if (days < 30) return tense(days, 'd');
   // `formatDate`, not a numeric `toLocaleDateString`. The numeric short form
   // is the ambiguous one — and this fallback is invisible until history ages
   // past 30 days, so the day it appears is the day a list that read "3d ago"
