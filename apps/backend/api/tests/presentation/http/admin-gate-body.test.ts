@@ -31,6 +31,7 @@ process.env.REDIS_URL ??= 'redis://localhost:6380';
 import { afterAll, describe, expect, it } from 'bun:test';
 import { createHash, createHmac } from 'node:crypto';
 import { Elysia } from 'elysia';
+import { Pipeline as IORedisPipeline } from 'ioredis';
 import { createAdminGate, parseAdminRawBody } from '../../../src/presentation/http/admin-common';
 import { registerAdminJobsRoutes } from '../../../src/presentation/http/admin-jobs';
 
@@ -56,13 +57,35 @@ function signedHeaders(method: string, path: string, bodyHashHex: string): Recor
  * route pipelines through it. `set` always succeeds so each request in
  * a file gets a fresh nonce — replay is covered by the gate's own
  * store, not by these cases.
+ *
+ * SC-1043 MADE `pipeline` RESOLVE THE COMMAND NAME. It used to accept any
+ * name at all, and that is exactly why this file — which drives the real
+ * route through a real Elysia — could not see that every name reaching it
+ * was one ioredis rejects. A stub looser than the thing it stands in for
+ * does not merely miss a bug; it certifies the route as working.
+ *
+ * The names are resolved against the REAL `Pipeline.prototype`
+ * rather than a hand-copied list, so this cannot drift from what ioredis
+ * actually defines. It stays a stub in every other respect: no socket, no
+ * server, results still faked.
  */
 function fakeRedis() {
   return {
     set: async () => 'OK',
-    pipeline: (commands: unknown[][]) => ({
-      exec: async () => commands.map(() => [null, 0]),
-    }),
+    pipeline: (commands: unknown[][]) => {
+      for (const [name] of commands) {
+        const method = (IORedisPipeline.prototype as unknown as Record<string, unknown>)[
+          name as string
+        ];
+        if (typeof method !== 'function') {
+          // The shape ioredis fails with: it does `this[name].apply(...)`
+          // at construction, so an unknown name is a TypeError, not a
+          // rejected promise.
+          throw new TypeError(`ioredis defines no pipeline command '${String(name)}'`);
+        }
+      }
+      return { exec: async () => commands.map(() => [null, 0]) };
+    },
     // biome-ignore lint/suspicious/noExplicitAny: stand-in for ioredis in a route test
   } as any;
 }
@@ -271,5 +294,47 @@ describe('admin gate, body drained before the route parser', () => {
       body: JSON.stringify({ hello: 'world' }),
     });
     expect(res.status).toBe(500);
+  });
+});
+
+/**
+ * SC-1043 at the route, rather than at the validator. `admin-jobs.test.ts`
+ * asserts the validator emits names ioredis defines; this asserts the whole
+ * path — sign, gate, parse, validate, pipeline — comes back 200 rather than
+ * the 500 it returned on every call.
+ *
+ * These are the SAME route and the SAME strict `fakeRedis` the cases above
+ * use. They are stated separately because the case above is named for what it
+ * covers (body hashing) and a casing regression reddening it would read as an
+ * SC-1032 regression to whoever hits it next.
+ */
+describe('SC-1043: redis-read reaches the client with a usable command name', () => {
+  const base = listen(withJobsRoutes, true);
+
+  it.each([
+    ['ZCARD'],
+    ['zcard'],
+    ['HGETALL'],
+  ])('POST with %s returns 200, not the 500 the uppercased name produced', async (name) => {
+    const body = JSON.stringify({ commands: [[name, 'rl:coingecko']] });
+    const res = await fetch(base + REDIS_READ, {
+      method: 'POST',
+      headers: {
+        ...signedHeaders('POST', REDIS_READ, sha256Hex(body)),
+        'content-type': 'application/json',
+      },
+      body,
+    });
+    // The 500 carried the ioredis message in `error`; assert the shape of
+    // success rather than the absence of one particular string.
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ results: [0] });
+  });
+
+  it('CONTROL: the strict fakeRedis rejects a name ioredis does not define', () => {
+    // Without this, a green above cannot be told from a stub that accepts
+    // anything — which is the state this file was in before SC-1043.
+    expect(() => fakeRedis().pipeline([['ZCARD', 'rl:coingecko']])).toThrow();
+    expect(() => fakeRedis().pipeline([['zcard', 'rl:coingecko']])).not.toThrow();
   });
 });

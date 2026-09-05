@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'bun:test';
+import IORedis, { Pipeline as IORedisPipeline } from 'ioredis';
 import { validateRedisReadCommands } from '../../../src/presentation/http/admin-jobs';
 
 /**
@@ -38,9 +39,20 @@ describe('validateRedisReadCommands', () => {
     expect(validateRedisReadCommands([['ZCARD', 'rl:coingecko']]).ok).toBe(true);
   });
 
-  it('normalizes command names to uppercase', () => {
-    const result = validateRedisReadCommands([['zcard', 'rl:coingecko']]);
-    expect(result).toEqual({ ok: true, commands: [['ZCARD', 'rl:coingecko']] });
+  // SC-1043 FLIPPED THIS. It asserted `commands: [['ZCARD', ...]]` and was the
+  // one test that pinned the defect: uppercase is what the ALLOWLIST is keyed
+  // on (`REDIS_READ_COMMANDS.has(name.toUpperCase())`, still correct and
+  // unchanged), but it is not what ioredis accepts. The direction of the
+  // normalisation is load-bearing, so it is asserted rather than left to the
+  // crossing tests below.
+  it('normalizes command names to lowercase — the case ioredis defines', () => {
+    const result = validateRedisReadCommands([['ZCARD', 'rl:coingecko']]);
+    expect(result).toEqual({ ok: true, commands: [['zcard', 'rl:coingecko']] });
+    // The allowlist is still case-insensitive on the way IN.
+    expect(validateRedisReadCommands([['zcard', 'rl:coingecko']])).toEqual({
+      ok: true,
+      commands: [['zcard', 'rl:coingecko']],
+    });
   });
 
   // The narrowing itself, asserted rather than assumed. Queue keys were
@@ -88,5 +100,85 @@ describe('validateRedisReadCommands', () => {
     // used `bull:` keys, so after the narrowing this "length cap" test was
     // actually exercising the prefix check.
     expect(over).toMatchObject({ reason: expect.stringContaining('exceeds 256') });
+  });
+});
+
+/**
+ * SC-1043 — the crossing from the validator into the client, which nothing
+ * tested. The cases above assert the validator's OUTPUT SHAPE; the route then
+ * hands that output to `redis.pipeline(...)`, and every one of those names was
+ * rejected by ioredis. A pure-function assertion cannot see that, so
+ * `POST /admin/jobs/redis-read` 500'd on every call from the day the route
+ * became reachable (SC-1032 fixed the gate that had been refusing first).
+ *
+ * `ioredis` resolves a pipeline entry's first element as a METHOD NAME on the
+ * Pipeline object and defines those LOWERCASE, so an uppercase name resolves
+ * to `undefined` and `this[commandName].apply` throws. The throw is at
+ * pipeline CONSTRUCTION, not at `exec()`, which is what lets these run with no
+ * Redis server: `lazyConnect` never opens a socket.
+ *
+ * The `REJECTS` case at the end is the control. Without it a green here is
+ * indistinguishable from a test that constructs nothing — it is what proves
+ * this instrument can come back red.
+ */
+describe('SC-1043: the validator emits names ioredis will accept', () => {
+  const lazyClient = () => new IORedis({ lazyConnect: true, port: 1, retryStrategy: () => null });
+
+  // Every allowlisted command, not just the one the admin app happens to
+  // send today. ZCARD is providerStatus.ts's only caller, so a spot check on
+  // it would leave the other six untested against the client.
+  const ALLOWLISTED: Array<[string, Array<string | number>]> = [
+    ['LLEN', ['rl:coingecko']],
+    ['LRANGE', ['rl:coingecko', 0, 9]],
+    ['LPOS', ['rl:coingecko', '123']],
+    ['ZCARD', ['rl:coingecko']],
+    ['ZRANGE', ['rl:coingecko', 0, 49]],
+    ['ZSCORE', ['rl:coingecko', '123']],
+    ['HGETALL', ['rl:coingecko']],
+  ];
+
+  it.each(
+    ALLOWLISTED
+  )('%s: the validated pipeline builds against a real ioredis client', (name, argv) => {
+    const validated = validateRedisReadCommands([[name, ...argv]]);
+    expect(validated.ok).toBe(true);
+    if (!validated.ok) return;
+
+    const client = lazyClient();
+    try {
+      // The exact call the route makes at admin-jobs.ts's
+      // `redis.pipeline(validated.commands)`. This threw for all seven.
+      expect(() => client.pipeline(validated.commands)).not.toThrow();
+    } finally {
+      client.disconnect();
+    }
+  });
+
+  it('emits names that are real methods on ioredis Pipeline, whatever case came in', () => {
+    // Both directions: the admin app sends uppercase (providerStatus.ts),
+    // and a hand-rolled caller may send lowercase. Neither may reach Redis
+    // in a form it does not define.
+    for (const incoming of ['ZCARD', 'zcard', 'ZcArD']) {
+      const validated = validateRedisReadCommands([[incoming, 'rl:coingecko']]);
+      expect(validated.ok).toBe(true);
+      if (!validated.ok) return;
+      const emitted = validated.commands[0]?.[0] as string;
+      expect(
+        typeof (IORedisPipeline.prototype as unknown as Record<string, unknown>)[emitted]
+      ).toBe('function');
+    }
+  });
+
+  it('CONTROL: an uppercase name really does throw, so the cases above can fail', () => {
+    const client = lazyClient();
+    try {
+      // Not routed through the validator on purpose — this asserts the
+      // property of ioredis that the cases above depend on. If ioredis ever
+      // starts accepting uppercase, this goes red and they become vacuous.
+      expect(() => client.pipeline([['ZCARD', 'rl:coingecko']])).toThrow();
+      expect(() => client.pipeline([['zcard', 'rl:coingecko']])).not.toThrow();
+    } finally {
+      client.disconnect();
+    }
   });
 });
