@@ -14,6 +14,7 @@ import {
   historyCompletenessOf,
 } from '../pricing/CostBasisService';
 import type { PriceLookup } from '../pricing/PriceLookup';
+import { TransferReviewService } from '../TransferReviewService';
 import {
   PortfolioValuationAtTimeService,
   type PortfolioValueScope,
@@ -115,19 +116,38 @@ export interface PnLAtTimeResult {
    * figure that is knowingly short and does not say so is the same defect
    * SC-149 closed on the cost side, pointed downward.
    *
-   * A count of transactions, not of holdings, and only of rows the review
-   * queue actually holds — see `countsAsUnreviewed`. That made it the same
-   * number as `TransferReviewService.pendingSummary` for a reader looking at
-   * today, and the number that was true on the day for a reader looking back.
+   * A count of transactions, not of holdings, and exactly the rows the review
+   * queue holds: the same number as `TransferReviewService.pendingSummary`
+   * for a reader looking at today, and the number that was true on the day for
+   * a reader looking back.
    *
-   * **Since SC-375 the first half of that can differ, and deliberately so.** A
-   * `not_a_disposal` address rule removes a row from what the queue *shows*
-   * while writing nothing to it, so the row still pops its lots and still
-   * books no gain. The understatement this count exists to declare is
-   * therefore unchanged by a rule, and following `pendingSummary` down would
-   * quietly retract a caveat that is still true. The queue's own count is the
-   * one that may shrink, because it measures questions outstanding rather than
-   * gains deferred.
+   * **THIS COMMENT SAID THE OPPOSITE, AND SAID IT WAS DELIBERATE (SC-1067).**
+   * It read: *"Since SC-375 the first half of that can differ, and
+   * deliberately so. A `not_a_disposal` address rule removes a row from what
+   * the queue shows while writing nothing to it, so the row still pops its
+   * lots and still books no gain. The understatement this count exists to
+   * declare is therefore unchanged by a rule."* So SC-375 did not overlook
+   * this counter — it reasoned about it and left it alone, which is why the
+   * divergence survived a ticket that fixed the same fault in two others.
+   *
+   * Every clause of that is true and the conclusion does not follow. A row
+   * books no gain, yes — but this count does not report *a gain was not
+   * booked*, it reports *a gain that SHOULD have been booked was not*, and a
+   * `not_a_disposal` rule is the reader saying that destination is not a
+   * disposal. There is nothing missing from the figure to declare.
+   *
+   * **And the caveat it preserved was unclearable, which is the half that
+   * reached a person.** `CoverageNote.tsx` gives this count the one link on
+   * the block precisely because *"the review queue holds exactly those rows
+   * and answering them takes the count to zero"*. A rule-hidden row is not in
+   * that queue, so no answer can ever take it to zero — the line said four,
+   * the page it opened showed none, and mgrin reported it from production.
+   * Two code comments asserting opposite invariants, and the one that was
+   * enforced was the one nobody could act on.
+   *
+   * A rule is an answer. `always_a_disposal` clears the caveat by realizing
+   * the gain; `not_a_disposal` clears it by saying there was none. The count
+   * follows the queue, and `ruleHiddenTransactionIds` is how.
    */
   transfersUnreviewed: number;
   perHolding: PnLAtTimePerHolding[];
@@ -144,6 +164,9 @@ export class PnLAtTimeService {
   private readonly costBasisService = Container.get(CostBasisService);
   private readonly txRepository = Container.get(HoldingTransactionRepository);
   private readonly coverageRepository = Container.get(HoldingCoverageRepository);
+  // The queue's own service, so the caption's count and the page its link
+  // opens are answering to one predicate (SC-1067).
+  private readonly transferReviewService = Container.get(TransferReviewService);
 
   async getPnL(
     userId: string,
@@ -210,6 +233,19 @@ export class PnLAtTimeService {
     // so a transfer carries the original lot cost across accounts
     // instead of resetting it to market value. Unconnected holdings keep
     // the cheap per-holding walk.
+    // Which pending outflows a `not_a_disposal` rule has taken out of the
+    // review queue (SC-1067). One query for the user, handed to every walk
+    // below: the caption's `transfersUnreviewed` is rendered beside a link to
+    // that queue and promised to be the same set, and a rule is the one thing
+    // that narrows the queue without touching the three columns the walk
+    // reads. Counting a rule-hidden row asserted the reader's realized PnL was
+    // short by a transfer they had already declared was not a disposal, and
+    // sent them to a page with nothing on it.
+    const ruleHiddenTxIds = await this.transferReviewService.ruleHiddenTransactionIds(
+      userId,
+      opts.tx
+    );
+
     const { components, singletons } = buildTransferComponents(holdingIds, txsByHolding);
     const costByHolding = new Map<string, CostBasisAtTime>();
     for (const component of components) {
@@ -223,7 +259,8 @@ export class PnLAtTimeService {
         opts.priceLookup,
         historyByHolding,
         undefined,
-        opts.costBasisMethod
+        opts.costBasisMethod,
+        ruleHiddenTxIds
       );
       for (const [h, c] of result) costByHolding.set(h, c);
     }
@@ -235,6 +272,7 @@ export class PnLAtTimeService {
         ...(opts.priceLookup ? { priceLookup: opts.priceLookup } : {}),
         ...(txs ? { txs } : {}),
         ...(opts.costBasisMethod ? { method: opts.costBasisMethod } : {}),
+        ruleHiddenTxIds,
         tx: opts.tx,
       });
       costByHolding.set(h, cost);

@@ -733,6 +733,41 @@ export class TransferReviewService {
   }
 
   /**
+   * The same set as `listHiddenByRule`, as bare ids, for a caller that is
+   * counting rather than showing (SC-1067).
+   *
+   * `CostBasisService` produces the PnL caption's `transfersUnreviewed` from
+   * `pendingPredicate`'s three columns and nothing else, so a row a
+   * `not_a_disposal` rule had taken out of the queue was still counted as
+   * understating realized PnL — the caption said four and the page it links to
+   * showed none. SC-375 put the rule join on `pendingSummary` and
+   * `TransferReviewRuleService`'s affected-row count for exactly this reason
+   * and did not reach the third counter.
+   *
+   * It hands back ids rather than a count per holding because the walk is
+   * already visiting the rows: intersecting by id needs no agreement about
+   * which holding a row belongs to, and no second opinion about the `at`
+   * cutoff — a row the walk never reaches cannot be subtracted twice.
+   *
+   * A rule-hidden row is not missing from realized PnL. The rule asserts the
+   * destination is not a disposal, so there is no gain nobody booked, and a
+   * caveat about it is a claim the queue cannot clear.
+   */
+  async ruleHiddenTransactionIds(
+    userId: string,
+    dbTx?: DatabaseTransaction
+  ): Promise<ReadonlySet<string>> {
+    const rows = await (dbTx ?? db)
+      .select({ id: schema.holdingTransactions.id })
+      .from(schema.holdingTransactions)
+      .innerJoin(schema.transferReviewRules, activeRuleJoin(userId))
+      .where(
+        and(pendingPredicate(userId), eq(schema.transferReviewRules.verdict, 'not_a_disposal'))
+      );
+    return new Set(rows.map((row) => row.id));
+  }
+
+  /**
    * Record the user's answer.
    *
    * `paired` needs a partner and `internal` needs a destination; both write a

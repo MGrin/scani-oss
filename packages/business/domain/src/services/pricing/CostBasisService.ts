@@ -537,9 +537,18 @@ function parseSplit(tx: HoldingTransaction): TransferReviewSplit | null {
  * occurred, not realizing is the correct and temporary answer, and the day
  * the pair completes it resolves itself.
  */
-function countsAsUnreviewed(tx: HoldingTransaction): boolean {
-  return tx.transferGroupId === null && tx.transferReview === null;
+function countsAsUnreviewed(tx: HoldingTransaction, ruleHiddenTxIds: ReadonlySet<string>): boolean {
+  // The rule half comes in as a set of ids rather than being re-derived here
+  // (SC-1067). `transfer_counterparty_key` is a SQL function and the
+  // destination it normalizes is read from two columns; a second opinion about
+  // either, computed in TypeScript, is the drift `counterpartyKeySql` was
+  // centralized to prevent. The queue answers "which of these does a rule
+  // hide" and this asks it.
+  return tx.transferGroupId === null && tx.transferReview === null && !ruleHiddenTxIds.has(tx.id);
 }
+
+/** Shared so the default path allocates nothing per walk. */
+const NO_RULE_HIDDEN_TX_IDS: ReadonlySet<string> = new Set<string>();
 
 // Outflows that move assets *out* of the tracked portfolio with no
 // buyer on the other side. A withdraw / transfer_out that's linked
@@ -642,6 +651,17 @@ export class CostBasisService {
        * error.
        */
       tx: DatabaseTransaction | undefined;
+      /**
+       * The pending rows an active `not_a_disposal` rule hides from the review
+       * queue (SC-1067). Omitted is empty, which is what a caller with no
+       * access to the queue should get: it counts every unanswered outflow,
+       * the behaviour every figure before this ticket was computed with.
+       *
+       * `PnLAtTimeService` is the caller that must pass it, because it is the
+       * one producing the number the caption shows beside a link to that
+       * queue.
+       */
+      ruleHiddenTxIds?: ReadonlySet<string>;
     }
   ): Promise<CostBasisAtTime> {
     const [txs, heldTokenId] = await Promise.all([
@@ -660,7 +680,8 @@ export class CostBasisService {
       opts.priceLookup,
       opts.historyCompleteness,
       opts.collect,
-      opts.method
+      opts.method,
+      opts.ruleHiddenTxIds
     );
   }
 
@@ -709,7 +730,8 @@ export class CostBasisService {
     priceLookup?: PriceLookup,
     historyCompleteness: HistoryCompleteness = 'unrecorded',
     collect?: DisposalLotMatch[],
-    method: CostBasisMethod = DEFAULT_COST_BASIS_METHOD
+    method: CostBasisMethod = DEFAULT_COST_BASIS_METHOD,
+    ruleHiddenTxIds: ReadonlySet<string> = NO_RULE_HIDDEN_TX_IDS
   ): Promise<CostBasisAtTime> {
     const holdingId = txs[0]?.holdingId ?? SOLE_HOLDING;
     // A single shared lot pool is this signature's contract — it takes rows,
@@ -728,7 +750,8 @@ export class CostBasisService {
       priceLookup,
       new Map([[holdingId, historyCompleteness]]),
       collect,
-      method
+      method,
+      ruleHiddenTxIds
     );
     const result = walked.get(holdingId);
     // `walkPool` emits a row for every holding it is asked about, so this
@@ -771,7 +794,8 @@ export class CostBasisService {
     priceLookup?: PriceLookup,
     historyByHolding: ReadonlyMap<string, HistoryCompleteness> = new Map(),
     collect?: DisposalLotMatch[],
-    method: CostBasisMethod = DEFAULT_COST_BASIS_METHOD
+    method: CostBasisMethod = DEFAULT_COST_BASIS_METHOD,
+    ruleHiddenTxIds: ReadonlySet<string> = NO_RULE_HIDDEN_TX_IDS
   ): Promise<Map<string, CostBasisAtTime>> {
     const upTo = new Map<string, ReadonlyArray<HoldingTransaction>>();
     for (const h of holdingIds) upTo.set(h, filterTxsUpTo(txsByHolding.get(h) ?? [], at));
@@ -784,7 +808,8 @@ export class CostBasisService {
       priceLookup,
       historyByHolding,
       collect,
-      method
+      method,
+      ruleHiddenTxIds
     );
   }
 
@@ -806,7 +831,8 @@ export class CostBasisService {
     priceLookup?: PriceLookup,
     historyByHolding: ReadonlyMap<string, HistoryCompleteness> = new Map(),
     collect?: DisposalLotMatch[],
-    method: CostBasisMethod = DEFAULT_COST_BASIS_METHOD
+    method: CostBasisMethod = DEFAULT_COST_BASIS_METHOD,
+    ruleHiddenTxIds: ReadonlySet<string> = NO_RULE_HIDDEN_TX_IDS
   ): Promise<Map<string, CostBasisAtTime>> {
     // Flatten + globally order every tx in the component, in the canonical
     // ledger order (`lib/ledger-order.ts`). On equal timestamps an outflow
@@ -1159,7 +1185,7 @@ export class CostBasisService {
           );
           // Once per transaction: the count is of queue rows, and the queue
           // holds one row per transaction however many parts its answer has.
-          if (!countedUnreviewed && countsAsUnreviewed(tx)) {
+          if (!countedUnreviewed && countsAsUnreviewed(tx, ruleHiddenTxIds)) {
             unreviewedByHolding.set(holdingId, (unreviewedByHolding.get(holdingId) ?? 0) + 1);
             countedUnreviewed = true;
           }
