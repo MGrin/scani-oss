@@ -30,10 +30,19 @@ process.env.REDIS_URL ??= 'redis://localhost:6380';
 
 import { afterAll, describe, expect, it } from 'bun:test';
 import { createHash, createHmac } from 'node:crypto';
+import { db } from '@scani/db/connection';
+import { adminAuditLog } from '@scani/db/schema';
+import { restoreContainerAfterAll } from '@scani/domain/test-helpers';
+import { SCHEDULED_JOB_DESCRIPTORS } from '@scani/jobs';
+import { QueueClient } from '@scani/queue';
+import { and, eq } from 'drizzle-orm';
 import { Elysia } from 'elysia';
 import { Pipeline as IORedisPipeline } from 'ioredis';
+import { Container } from 'typedi';
 import { createAdminGate, parseAdminRawBody } from '../../../src/presentation/http/admin-common';
 import { registerAdminJobsRoutes } from '../../../src/presentation/http/admin-jobs';
+
+restoreContainerAfterAll();
 
 const SECRET = process.env.JOBS_HMAC_SECRET as string;
 const ACTOR = 'admin-app:test';
@@ -336,5 +345,399 @@ describe('SC-1043: redis-read reaches the client with a usable command name', ()
     // anything — which is the state this file was in before SC-1043.
     expect(() => fakeRedis().pipeline([['ZCARD', 'rl:coingecko']])).toThrow();
     expect(() => fakeRedis().pipeline([['zcard', 'rl:coingecko']])).not.toThrow();
+  });
+});
+
+/**
+ * SC-1045: the two admin WRITE routes — `/admin/schedules/:name/run` and
+ * `/admin/dlq/:id/replay` — through the same real Elysia, real port, real
+ * gate this file already stands up.
+ *
+ * WHY THESE LIVE HERE AND NOT IN A NEW FILE. Both are writes behind the
+ * gate SC-1032 had just repaired, and a route whose signature does not
+ * cover its body is exactly the defect that closed. A parallel harness
+ * would be a second thing to keep in step with the gate, and the first
+ * time it drifted it would certify a route the real gate rejects.
+ *
+ * THE QUEUE IS STUBBED AND THE AUDIT LOG IS NOT. The queue stub models
+ * BullMQ's duplicate-id behaviour rather than accepting everything (see
+ * `fakeQueueClient`), on the same reasoning the `fakeRedis` above carries:
+ * a stub looser than the thing it stands in for certifies the route as
+ * working. The audit assertions read the REAL `admin_audit_log` through
+ * the real `audit()` — its `catch {}` swallows every failure by design, so
+ * a route that returns 200 while its audit write dies looks identical from
+ * the outside. That is why the assertion is on the ROW.
+ */
+
+/** Actor unique to this run, so the audit queries below cannot pick up another file's rows. */
+const WRITE_ACTOR = `admin-app:sc1045-${process.pid}-${Date.now()}`;
+
+function signedFor(
+  method: string,
+  path: string,
+  bodyHashHex: string,
+  actor: string = WRITE_ACTOR
+): Record<string, string> {
+  const timestamp = String(Date.now());
+  const canonical = `${method}\n${path}\n${timestamp}\n${actor}\n${bodyHashHex}`;
+  return {
+    'x-admin-hmac': createHmac('sha256', SECRET).update(canonical).digest('hex'),
+    'x-admin-timestamp': timestamp,
+    'x-admin-actor': actor,
+  };
+}
+
+interface FakeJob {
+  id: string;
+  name: string;
+  data: Record<string, unknown>;
+  updateData(next: Record<string, unknown>): Promise<void>;
+}
+
+/**
+ * A queue that refuses a second job under an id it already holds, because
+ * that is what BullMQ's Postgres backend does: `add_job` ends
+ * `ON CONFLICT (queue, id) DO NOTHING` and returns the existing id
+ * (`bullmq@6.2.0`, `dist/cjs/postgres/migrations/0002_functions.sql`).
+ * That property IS the held-down-button defence for both routes, so a
+ * stub that quietly appended a second job would make the storm tests pass
+ * over a route with no defence at all.
+ */
+function fakeQueue(seed: FakeJob[] = []) {
+  const jobs = new Map<string, FakeJob>(seed.map((j) => [j.id, j]));
+  const addCalls: Array<{ name: string; data: unknown; opts: Record<string, unknown> }> = [];
+  return {
+    jobs,
+    addCalls,
+    async getJob(id: string) {
+      return jobs.get(id);
+    },
+    async add(name: string, data: Record<string, unknown>, opts: Record<string, unknown> = {}) {
+      addCalls.push({ name, data, opts });
+      const id = String(opts.jobId ?? `auto-${jobs.size}`);
+      const existing = jobs.get(id);
+      if (existing) return existing;
+      const job = makeJob(id, name, data);
+      jobs.set(id, job);
+      return job;
+    },
+  };
+}
+
+function makeJob(id: string, name: string, data: Record<string, unknown>): FakeJob {
+  const job: FakeJob = {
+    id,
+    name,
+    data,
+    async updateData(next: Record<string, unknown>) {
+      job.data = next;
+    },
+  };
+  return job;
+}
+
+type FakeQueue = ReturnType<typeof fakeQueue>;
+
+/** Stand in for the `QueueClient` @Service the routes resolve at request time. */
+function installQueues(main: FakeQueue, dlq: FakeQueue): void {
+  Container.set(QueueClient, { get: () => main, getDlq: () => dlq } as unknown as QueueClient);
+}
+
+/**
+ * Audit rows one actor wrote for one action+resource.
+ *
+ * Scoped by ACTOR and not only by action+resource, because a schedule's
+ * resource is its NAME — the same for every case in the block below — so an
+ * unscoped query counts the rows earlier cases in the same run wrote and a
+ * `toHaveLength(1)` reads 2. Each case that asserts a row therefore signs as
+ * its own actor.
+ */
+async function auditRows(action: string, resource: string, actor: string = WRITE_ACTOR) {
+  return db
+    .select({
+      actor: adminAuditLog.actor,
+      action: adminAuditLog.action,
+      resource: adminAuditLog.resource,
+      result: adminAuditLog.result,
+      details: adminAuditLog.details,
+    })
+    .from(adminAuditLog)
+    .where(
+      and(
+        eq(adminAuditLog.actor, actor),
+        eq(adminAuditLog.action, action),
+        eq(adminAuditLog.resource, resource)
+      )
+    );
+}
+
+// A real registered schedule, taken from the registry rather than typed in —
+// a literal here would drift exactly as the admin app's six-name list did.
+const A_SCHEDULE = SCHEDULED_JOB_DESCRIPTORS[0];
+
+describe('SC-1045: POST /admin/schedules/:name/run', () => {
+  const base = listen(withJobsRoutes, true);
+  const runPath = (name: string) => `/admin/schedules/${encodeURIComponent(name)}/run`;
+
+  const post = (name: string, actor: string = WRITE_ACTOR) =>
+    fetch(base + runPath(name), {
+      method: 'POST',
+      headers: signedFor('POST', runPath(name), EMPTY_SHA256, actor),
+    });
+
+  it('CONTROL: the registry names a schedule and it is locked', () => {
+    // Both halves of the claim the route rests on. Without the first, every
+    // "unknown schedule" assertion below passes for the wrong reason; without
+    // the second, "the manual path goes through the advisory lock" is a
+    // sentence about a descriptor that does not ask for one.
+    expect(SCHEDULED_JOB_DESCRIPTORS.length).toBeGreaterThan(20);
+    expect(typeof A_SCHEDULE?.name).toBe('string');
+    expect(A_SCHEDULE?.lockName).toBeTruthy();
+  });
+
+  it('enqueues the schedule by its OWN name, which is what routes it through the advisory lock', async () => {
+    const main = fakeQueue();
+    installQueues(main, fakeQueue());
+
+    const res = await post(A_SCHEDULE.name);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      ok: true,
+      name: A_SCHEDULE.name,
+      jobId: `admin-run:${A_SCHEDULE.name}`,
+    });
+
+    // The lock is the worker's: `WorkerClient.runJob` dispatches on
+    // `job.name` alone and `ScheduledJobProcessor.process` wraps `handle`
+    // in `JobLock.withLock(descriptor.lockName)`. So a manual fire is
+    // subject to it precisely when it arrives on the queue under the
+    // descriptor's own name, with the `data: {}` `JobScheduler.upsertAll`
+    // arms — which is what this asserts. Running the handler inline here
+    // would go around the lock entirely.
+    expect(main.addCalls).toHaveLength(1);
+    expect(main.addCalls[0]?.name).toBe(A_SCHEDULE.name);
+    expect(main.addCalls[0]?.data).toEqual({});
+  });
+
+  it('writes an audit ROW, not just a 200', async () => {
+    const name = A_SCHEDULE.name;
+    const actor = `${WRITE_ACTOR}:run-audit`;
+    installQueues(fakeQueue(), fakeQueue());
+    expect((await post(name, actor)).status).toBe(200);
+
+    // `audit()` swallows every failure (`admin-common.ts`'s `catch`), so a
+    // 200 says nothing about whether the trail recorded anything. Two
+    // months of an empty tamper-evident log is what that cost (SC-1032).
+    const rows = await auditRows('schedules.run', name, actor);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.result).toBe('success');
+    expect((rows[0]?.details as { jobId?: string })?.jobId).toBe(`admin-run:${name}`);
+  });
+
+  it('REFUSES a second fire while one is still queued, and enqueues nothing', async () => {
+    const main = fakeQueue();
+    installQueues(main, fakeQueue());
+
+    expect((await post(A_SCHEDULE.name)).status).toBe(200);
+    const second = await post(A_SCHEDULE.name);
+    expect(second.status).toBe(409);
+    expect(((await second.json()) as { error: string }).error).toContain('already queued');
+
+    // The held-down button. One add, one job — and the id is deterministic,
+    // so even a racing add BullMQ did accept would collapse onto the same
+    // row rather than queueing a second real fire.
+    expect(main.addCalls).toHaveLength(1);
+    expect(main.jobs.size).toBe(1);
+  });
+
+  it('audits the refusal as `denied`', async () => {
+    const name = A_SCHEDULE.name;
+    const actor = `${WRITE_ACTOR}:run-denied`;
+    installQueues(fakeQueue(), fakeQueue());
+    expect((await post(name, actor)).status).toBe(200);
+    expect((await post(name, actor)).status).toBe(409);
+
+    const denied = (await auditRows('schedules.run', name, actor)).filter(
+      (r) => r.result === 'denied'
+    );
+    expect(denied).toHaveLength(1);
+  });
+
+  it('404s a name the registry does not carry, and audits it', async () => {
+    const actor = `${WRITE_ACTOR}:run-404`;
+    installQueues(fakeQueue(), fakeQueue());
+    const res = await post('not-a-real-schedule', actor);
+    expect(res.status).toBe(404);
+
+    const rows = await auditRows('schedules.run', 'not-a-real-schedule', actor);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.result).toBe('failure');
+  });
+
+  it('REFUSES a signature made for a different schedule', async () => {
+    // The gate covers method+path, so a signature minted for one schedule
+    // must not fire another. Nothing else on this route carries a body,
+    // which is what makes the path half load-bearing here.
+    installQueues(fakeQueue(), fakeQueue());
+    const res = await fetch(base + runPath(A_SCHEDULE.name), {
+      method: 'POST',
+      headers: signedFor('POST', runPath('some-other-schedule'), EMPTY_SHA256),
+    });
+    expect(res.status).toBe(401);
+  });
+});
+
+describe('SC-1045: POST /admin/dlq/:id/replay', () => {
+  const base = listen(withJobsRoutes, true);
+  const replayPath = (id: string) => `/admin/dlq/${encodeURIComponent(id)}/replay`;
+
+  const post = (id: string) =>
+    fetch(base + replayPath(id), {
+      method: 'POST',
+      headers: signedFor('POST', replayPath(id), EMPTY_SHA256),
+    });
+
+  /** What `WorkerClient` writes into the DLQ on terminal failure. */
+  const dlqEntry = (id: string, extra: Record<string, unknown> = {}) =>
+    makeJob(id, 'holding-price-update', {
+      originalJobId: `orig-${id}`,
+      originalName: 'holding-price-update',
+      data: { holdingCount: 3 },
+      failedReason: 'upstream timeout',
+      attemptsMade: 3,
+      ...extra,
+    });
+
+  it('CONTROL: the fake queue refuses a duplicate id, as BullMQ does', () => {
+    // Without this the storm assertions below cannot be told from a stub
+    // that appends whatever it is handed — which would make a route with
+    // no defence at all read green.
+    const q = fakeQueue();
+    return (async () => {
+      const a = await q.add('x', {}, { jobId: 'same' });
+      const b = await q.add('x', {}, { jobId: 'same' });
+      expect(q.jobs.size).toBe(1);
+      expect(b).toBe(a);
+      await q.add('x', {}, { jobId: 'other' });
+      expect(q.jobs.size).toBe(2);
+    })();
+  });
+
+  it('re-enqueues the original job onto the main queue', async () => {
+    const id = `dlq-ok-${Date.now()}`;
+    const main = fakeQueue();
+    installQueues(main, fakeQueue([dlqEntry(id)]));
+
+    const res = await post(id);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      ok: true,
+      dlqJobId: id,
+      name: 'holding-price-update',
+      jobId: `dlq-replay:${id}`,
+    });
+    expect(main.addCalls).toHaveLength(1);
+    expect(main.addCalls[0]?.name).toBe('holding-price-update');
+    expect(main.addCalls[0]?.data).toEqual({ holdingCount: 3 });
+    expect(main.addCalls[0]?.opts).toEqual({ jobId: `dlq-replay:${id}` });
+  });
+
+  it('writes an audit ROW, not just a 200', async () => {
+    const id = `dlq-audit-${Date.now()}`;
+    installQueues(fakeQueue(), fakeQueue([dlqEntry(id)]));
+    expect((await post(id)).status).toBe(200);
+
+    const rows = await auditRows('dlq.replay', id);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.result).toBe('success');
+    expect((rows[0]?.details as { name?: string })?.name).toBe('holding-price-update');
+  });
+
+  it('stamps the DLQ entry so the refusal below has something to read', async () => {
+    const id = `dlq-stamp-${Date.now()}`;
+    const dlq = fakeQueue([dlqEntry(id)]);
+    installQueues(fakeQueue(), dlq);
+    expect((await post(id)).status).toBe(200);
+
+    const stamped = dlq.jobs.get(id)?.data as Record<string, unknown>;
+    expect(typeof stamped.replayedAt).toBe('string');
+    expect(stamped.replayedBy).toBe(WRITE_ACTOR);
+    // The post-mortem detail survives the stamp — an operator still needs it.
+    expect(stamped.failedReason).toBe('upstream timeout');
+  });
+
+  it('REFUSES an entry it has already replayed, and enqueues nothing', async () => {
+    const id = `dlq-twice-${Date.now()}`;
+    const main = fakeQueue();
+    installQueues(main, fakeQueue([dlqEntry(id)]));
+
+    expect((await post(id)).status).toBe(200);
+    const second = await post(id);
+    expect(second.status).toBe(409);
+    expect(((await second.json()) as { error: string }).error).toBe('already replayed');
+    expect(main.addCalls).toHaveLength(1);
+  });
+
+  it('audits the refusal as `denied`', async () => {
+    const id = `dlq-denied-${Date.now()}`;
+    installQueues(fakeQueue(), fakeQueue([dlqEntry(id)]));
+    expect((await post(id)).status).toBe(200);
+    expect((await post(id)).status).toBe(409);
+
+    const denied = (await auditRows('dlq.replay', id)).filter((r) => r.result === 'denied');
+    expect(denied).toHaveLength(1);
+  });
+
+  it('runs the job ONCE even when the stamp never landed — the storm case', async () => {
+    // The `replayedAt` stamp is legibility; the deterministic job id is the
+    // guarantee. Model the stamp failing (it is a separate write, after the
+    // enqueue) and the second click must still not duplicate the work.
+    const id = `dlq-storm-${Date.now()}`;
+    const main = fakeQueue();
+    const entry = dlqEntry(id);
+    entry.updateData = async () => {
+      throw new Error('stamp write failed');
+    };
+    installQueues(main, fakeQueue([entry]));
+
+    await post(id);
+    await post(id);
+    await post(id);
+
+    // Three clicks, three adds attempted, ONE job — the id collapses them,
+    // exactly as `add_job`'s `ON CONFLICT (queue, id) DO NOTHING` does.
+    expect(main.jobs.size).toBe(1);
+    expect([...main.jobs.keys()]).toEqual([`dlq-replay:${id}`]);
+  });
+
+  it('404s an id the DLQ does not hold, and audits it', async () => {
+    installQueues(fakeQueue(), fakeQueue());
+    const res = await post('no-such-dlq-entry');
+    expect(res.status).toBe(404);
+
+    const rows = await auditRows('dlq.replay', 'no-such-dlq-entry');
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.result).toBe('failure');
+  });
+
+  it('400s an entry carrying no originalName rather than enqueueing a nameless job', async () => {
+    const id = `dlq-noname-${Date.now()}`;
+    const main = fakeQueue();
+    installQueues(main, fakeQueue([makeJob(id, 'x', { data: { a: 1 } })]));
+
+    const res = await post(id);
+    expect(res.status).toBe(400);
+    expect(main.addCalls).toHaveLength(0);
+    expect((await auditRows('dlq.replay', id))[0]?.result).toBe('failure');
+  });
+
+  it('REFUSES a signature made for a different DLQ id', async () => {
+    const id = `dlq-sig-${Date.now()}`;
+    installQueues(fakeQueue(), fakeQueue([dlqEntry(id)]));
+    const res = await fetch(base + replayPath(id), {
+      method: 'POST',
+      headers: signedFor('POST', replayPath('some-other-id'), EMPTY_SHA256),
+    });
+    expect(res.status).toBe(401);
   });
 });
