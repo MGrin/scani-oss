@@ -69,8 +69,10 @@ historical backfills, transfer linking, APY payouts, …) and every
 user-initiated job (screenshot parse, exchange import, wallet
 import, file import, …) runs here in one binary.
 
-Processors live in `apps/backend/worker/src/processors/`. The
-cron-lock helper is in `apps/backend/worker/src/lib/cron-lock.ts`.
+Processors live in `apps/backend/worker/src/processors/`. A
+scheduled one extends `ScheduledJobProcessor`, which takes the
+advisory lock for it when the descriptor sets `lockName`; see
+[Adding a scheduled job](/contributing/adding-a-job/).
 
 ### `apps/backend/data-provider`
 

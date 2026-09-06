@@ -11,10 +11,12 @@ Every async job in Scani — scheduled (`pricing`, `wallet-balances`,
 `portfolio-value-rollup`, `transfer-linking`, …) and user-initiated
 (`screenshot-parse`, `exchange-import`, `wallet-import`, …) — runs
 through one queue (`scani-jobs`) on **BullMQ over Postgres**,
-consumed by `apps/backend/worker`. For *scheduled* jobs, each
-processor wraps its work in a **Postgres advisory lock** so two
-overlapping fires of the same job-name silently no-op rather than
-racing.
+consumed by `apps/backend/worker`. For *scheduled* jobs the
+overlap guarantee is **opt-in per descriptor**: one that sets
+`lockName` has its work wrapped in a **Postgres advisory lock**, so
+a second fire of that job-name is skipped and logged rather than
+racing. A descriptor that leaves `lockName` unset tolerates
+overlap deliberately.
 
 :::note[The queue used to be on Redis]
 BullMQ v6 added a Postgres backend and Scani moved onto it. The
@@ -62,9 +64,18 @@ and the work would fail; if the lock succeeds, the work can proceed.
 A Redis-only lock could grant the lock while Postgres is unreachable,
 leading to a half-completed run on a partial connection.
 
-The advisory-lock helper is `apps/backend/worker/src/lib/cron-lock.ts`
-— wrap a scheduled-job handler with it and overlapping fires of the
-same job name silently no-op.
+The lock lives behind the `JobLock` port, implemented by
+`PostgresJobLock`
+(`packages/business/jobs/src/infrastructure/postgres-job-lock.ts`).
+`ScheduledJobProcessor` takes it for you when the descriptor names
+a `lockName`; nothing is wrapped by hand. With no implementation
+bound to the container the job runs unlocked, which is the dev and
+self-host path.
+
+`apps/backend/worker/src/lib/cron-lock.ts` is a separate
+worker-local wrapper over the same primitive with a single caller,
+and that caller is a user-initiated job. It is not the scheduled
+path.
 
 ## What this design unlocks
 
@@ -75,8 +86,10 @@ same job name silently no-op.
   pods.
 - **Cron isn't a separate service.** Repeatable schedules live in
   `packages/business/jobs/src/scheduled-jobs/` as descriptors; the
-  worker registers them with BullMQ at boot via `upsertJobScheduler`.
-  No cron container, no cron config file.
+  worker reconciles them with BullMQ at boot via
+  `JobScheduler.upsertAll`, which also removes schedules whose
+  descriptor has since been deleted. No cron container, no cron
+  config file.
 - **Failure shares a domain with the data.** When work is about to
   hit Postgres, the lock is in Postgres — and, since the backend
   move, so is the queue. A worker cannot dequeue a job it will then
@@ -96,11 +109,13 @@ same job name silently no-op.
   (`POSTGRES_POOL_MAX`). Redis is still required infrastructure —
   rate limiters and realtime pub/sub — so it is one fewer *failure
   domain*, not one fewer *service*.
-- **The advisory-lock helper has to be applied per scheduled
-  processor.** Not on by default — a contributor adding a new
-  scheduled job has to remember. The
+- **The lock is opt-in per descriptor.** Not on by default — a
+  contributor adding a new scheduled job has to set `lockName`, and
+  one that needs it and omits it gets no protection and no warning.
+  That is the cost of letting the idempotent sweepers overlap on
+  purpose. The
   [Adding a scheduled job](/contributing/adding-a-job/) guide
-  documents the pattern.
+  documents both sides.
 
 ## What this rules out
 

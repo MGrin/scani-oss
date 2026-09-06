@@ -1,6 +1,6 @@
 ---
 title: Adding a scheduled job
-description: Where the job-name lives, where the descriptor lives, where the processor lives, and how to wrap it in the advisory lock.
+description: Where the job-name lives, where the descriptor lives, where the processor lives, and how overlap protection is opted into.
 sidebar:
   order: 6
 ---
@@ -19,15 +19,18 @@ processors stay close to the worker that runs them.
   BullMQ uses; renaming it requires a coordinated rolling deploy,
   so pick well.
 - `packages/business/jobs/src/scheduled-jobs/my-new-job.ts` — the
-  descriptor: schedule (cron expression), payload schema, retry
-  policy, summariser. Imports the job name from `job-names.ts`.
+  descriptor: the cron expression and, when the job needs it, the
+  overlap lock. It is a plain object literal typed as
+  `ScheduledJobDescriptor`, not a call to a factory helper. Imports
+  the job name from `job-names.ts`.
 - `apps/backend/worker/src/processors/my-new-job.ts` — the
-  processor: the handler function, wrapped in the advisory-lock
-  helper from `apps/backend/worker/src/lib/cron-lock.ts`.
+  processor: a `@Service()` class extending `ScheduledJobProcessor`
+  that names its descriptor and implements `handle`.
 
-The worker reads the registry at boot and registers everything
-with BullMQ via `upsertJobScheduler`. There is no separate cron
-container.
+The worker reads the descriptor registry at boot and reconciles it
+with BullMQ via `JobScheduler.upsertAll`, which also removes
+schedules whose descriptor has since been deleted. There is no
+separate cron container.
 
 ## The step-by-step
 
@@ -45,84 +48,136 @@ container.
 2. **Write the descriptor.**
    ```ts
    // packages/business/jobs/src/scheduled-jobs/my-new-job.ts
+   import type { ScheduledJobDescriptor } from '@scani/queue';
    import { JOB_NAMES } from '../job-names';
-   import { repeatableSchedule } from '../infrastructure';
 
-   export const myNewJob = repeatableSchedule({
+   export const MY_NEW_JOB_SCHEDULE: ScheduledJobDescriptor = {
      name: JOB_NAMES.myNewJob,
-     cron: '0 4 * * *',           // 04:00 UTC daily
-     retryPolicy: 'standard',     // see retry-policies.ts
-     payloadSchema: z.object({}),
-   });
+     cron: '0 4 * * *',             // 04:00 UTC daily
+     lockName: JOB_NAMES.myNewJob,  // opt into overlap protection
+   };
    ```
+
+   `ScheduledJobDescriptor`
+   (`packages/infra/queue/src/core/job-descriptor.ts`) has `name`
+   and `cron`, plus the optional `timezone`, `defaultOpts`,
+   `lockName` and `jitterMs`. It has **no `retryPolicy` and no
+   `payloadSchema`** — those belong to user-initiated jobs, and
+   [Retry policies](#retry-policies) below says where.
 
 3. **Add it to the registry.** Re-export from
    `packages/business/jobs/src/scheduled-jobs/index.ts` so the
    worker's boot-time iterator picks it up.
 
-4. **Write the processor.**
+4. **Write the processor.** Extend `ScheduledJobProcessor`. The base
+   class applies `jitterMs`, takes the lock when the descriptor
+   names one, and records the run's heartbeat — so `handle` only
+   holds the work.
    ```ts
    // apps/backend/worker/src/processors/my-new-job.ts
-   import { JOB_NAMES } from '@scani/jobs';
-   import { withCronLock } from '../lib/cron-lock';
-   import { Container } from 'typedi';
    import { MyService } from '@scani/domain';
+   import { MY_NEW_JOB_SCHEDULE } from '@scani/jobs';
+   import { ScheduledJobProcessor } from '@scani/queue';
+   import { Container, Service } from 'typedi';
 
-   export const myNewJobProcessor = {
-     name: JOB_NAMES.myNewJob,
-     handler: withCronLock(JOB_NAMES.myNewJob, async (job) => {
-       const service = Container.get(MyService);
-       const summary = await service.run();
-       return summary;
-     }),
-   };
+   @Service()
+   export class MyNewJobProcessor extends ScheduledJobProcessor {
+     readonly descriptor = MY_NEW_JOB_SCHEDULE;
+
+     protected async handle(): Promise<void> {
+       await Container.get(MyService).run();
+     }
+   }
    ```
 
-5. **Register the processor** in the worker's index:
+5. **Register the processor** in the worker's single declarative
+   list. There is no `processors/index.ts` barrel to re-export
+   from:
    ```ts
-   // apps/backend/worker/src/processors/index.ts
-   export * from './my-new-job';
+   // apps/backend/worker/src/index.ts
+   import { MyNewJobProcessor } from './processors/my-new-job';
+
+   function resolveProcessors() {
+     return [
+       // ...existing...
+       Container.get(MyNewJobProcessor),
+     ];
+   }
    ```
 
-6. **Write tests** for the underlying service. Don't test the cron
-   wrapper itself — the wrapper is shared infra and is tested in
-   `apps/backend/worker/tests/lib/cron-lock.test.ts`.
+6. **Write tests** for the underlying service. Don't test the base
+   class itself — it is shared infra and is tested in
+   `packages/infra/queue/tests/consumer/scheduled-job-processor.test.ts`.
 
 7. **Document it** in [Job catalogue](/reference/jobs/) with the
    schedule, what it does, and what it depends on.
 
 </Steps>
 
-## The advisory-lock wrapper
+## Overlap protection is opt-in, and there are two mechanisms
 
-`withCronLock(jobName, handler)` acquires a Postgres advisory lock
-keyed on the job name, runs the handler, then releases. If the
-lock is already held (a sibling worker or an overlapping fire),
-the handler is **silently skipped** — that's the point. Two
-worker pods running the same cron tick will not race; one wins
-the lock and the other no-ops.
+**Set `lockName`** and `ScheduledJobProcessor.process` wraps
+`handle()` in a Postgres advisory lock (`PostgresJobLock`,
+`packages/business/jobs/src/infrastructure/postgres-job-lock.ts`).
+A second fire is **skipped and logged** rather than raced, so two
+worker pods on the same cron tick will not both run it. With no
+lock implementation bound to the container the job runs
+**unlocked** — that fall-through is deliberate, and it is the dev
+and self-host path.
+
+**Leave `lockName` unset** and overlap is **tolerated by design**,
+not prevented. The `reconcile-*` sweepers do this on purpose: they
+are idempotent re-scans, BullMQ's deterministic job ID dedupes the
+duplicate enqueue, and `jitterMs` spreads replicas that would
+otherwise fire on the same wallclock second.
+
+<Aside type="caution" title="Read the descriptor, don't assume the lock">
+  These are different guarantees with different failure modes, and
+  neither is the default. A non-idempotent processor with no
+  `lockName` gets no protection at all, and it surfaces as a
+  duplicated side effect under load — far from the line that chose
+  it. Decide which guarantee your job needs, then say so in the
+  descriptor.
+</Aside>
+
+`apps/backend/worker/src/lib/cron-lock.ts` is a third thing and is
+not this path: a worker-local logging wrapper over the same
+primitive, with a single caller, and that caller is a
+**user-initiated** job rather than a scheduled one. Don't reach for
+it when adding a scheduled job.
 
 Full rationale in
 [Why BullMQ + Postgres advisory locks](/decisions/bullmq-advisory-locks/).
 
-<Aside type="caution" title="The lock is opt-in">
-  `withCronLock` is not applied automatically. If you forget to
-  wrap your handler, two replicas of the worker pod will both run
-  the job and produce duplicates / contention. Always wrap.
-</Aside>
-
 ## Retry policies
 
-The standard retry shapes live in
-`packages/business/jobs/src/retry-policies.ts`. Pick one:
+**A scheduled job does not name one.** `ScheduledJobDescriptor` has
+no `retryPolicy` field. The named retry shapes are for
+*user-initiated* jobs, whose `UserJobDescriptor` carries the
+`defaultOpts` BullMQ reads.
 
-| Policy | Shape | Use |
-|---|---|---|
-| `standard` | Exponential backoff, 5 attempts, 60s base. | Most scheduled jobs. |
-| `aggressive` | Fast retries, 10 attempts, 5s base. | Quick reconcilers (`reconcile-pending-credentials`). |
-| `none` | One shot, no retry. | Diagnostics (`dlq-depth-probe`, `job-heartbeat-probe`). |
+They live in `packages/business/jobs/src/retry-policies.ts` and are
+`JobsOptions` fragments rather than strings — `RETRY_NONE`,
+`RETRY_FAST`, `RETRY_EXTERNAL`, `RETRY_HEAVY`. A user job spreads
+one:
 
-Custom policies are fine but justify them in the PR.
+```ts
+export const WALLET_IMPORT: UserJobDescriptor<WalletImportJob> = {
+  name: JOB_NAMES.walletImport,
+  schema: walletImportSchema,
+  defaultOpts: {
+    ...RETRY_EXTERNAL,
+    removeOnComplete: 100,
+    removeOnFail: 500,
+  },
+  // computeJobId / summarizePayload …
+};
+```
+
+A scheduled descriptor *may* set `defaultOpts` if it genuinely
+needs BullMQ options, but none does today: a scheduled run that
+fails is normally left to its next fire rather than retried inside
+the tick.
 
 ## Schedule conventions
 
@@ -142,10 +197,11 @@ clashing with the existing nightly chain (3:00 → 3:30 → 4:00 →
 
 A user-initiated job (`screenshot-parse`, `exchange-import`,
 `wallet-import`, …) lives under
-`packages/business/jobs/src/user-jobs/` and is enqueued by the
-api in response to a user action. It does NOT use the cron lock —
-each enqueue gets a unique job ID and runs once. Different
-contract, similar shape.
+`packages/business/jobs/src/user-jobs/` and is enqueued by the api
+in response to a user action. It carries a payload schema and a
+retry policy — neither of which a scheduled descriptor has — and
+each enqueue computes its own job ID. Different contract, similar
+shape.
 
 ## See also
 
