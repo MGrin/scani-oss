@@ -25,6 +25,17 @@ export interface PresignedUpload {
 
 export type HealthResult = { ok: true; latencyMs: number } | { ok: false; error: string };
 
+/** Target a bucket other than the configured `S3_BUCKET` for one call. */
+export interface BucketOverride {
+  bucket?: string;
+}
+
+// `{ bucket: undefined }` is not the same as `undefined` to Bun's S3Client —
+// the first overrides the client's configured bucket with nothing.
+function bucketOpt(opts?: BucketOverride): { bucket: string } | undefined {
+  return opts?.bucket ? { bucket: opts.bucket } : undefined;
+}
+
 const TEMP_PREFIX = 'temp/';
 const DEFAULT_REGION = 'auto';
 const DEFAULT_UPLOAD_TTL_SECONDS = 15 * 60;
@@ -165,8 +176,8 @@ export class StorageService {
     throw new Error(`StorageService.exists: unexpected status ${res.status} for ${key}`);
   }
 
-  async read(key: string): Promise<Buffer> {
-    const bytes = await this.serverClient().file(key).arrayBuffer();
+  async read(key: string, opts?: BucketOverride): Promise<Buffer> {
+    const bytes = await this.serverClient().file(key, bucketOpt(opts)).arrayBuffer();
     return Buffer.from(bytes);
   }
 
@@ -178,10 +189,21 @@ export class StorageService {
    * institution icons of SC-208 — and it takes a whole key rather than the
    * (prefix, extension) pair, so it gets `assertSafeKey` for the same reason
    * `copy` does.
+   *
+   * `opts.bucket` targets a bucket OTHER than `S3_BUCKET` on this one call —
+   * the nightly `db-backup` job writes to the archive bucket while everything
+   * else keeps writing to the job-uploads one (SC-793). It is per-call and not
+   * a second configured client on purpose: moving the default is what would
+   * make an unrelated upload land somewhere nobody is looking.
    */
-  async write(key: string, bytes: Uint8Array, contentType: string): Promise<void> {
+  async write(
+    key: string,
+    bytes: Uint8Array,
+    contentType: string,
+    opts?: BucketOverride
+  ): Promise<void> {
     assertSafeKey(key, 'write key');
-    await this.serverClient().file(key).write(bytes, { type: contentType });
+    await this.serverClient().file(key, bucketOpt(opts)).write(bytes, { type: contentType });
   }
 
   /**

@@ -2,6 +2,7 @@ export { ALERT_SWEEP_SCHEDULE } from './alert-sweep';
 export { APY_PAYOUTS_SCHEDULE } from './apy-payouts';
 export { BACKFILL_COUNTERPARTY_SCHEDULE } from './backfill-counterparty';
 export { BACKFILL_TOKEN_IDENTITY_SCHEDULE } from './backfill-token-identity';
+export { DB_BACKUP_SCHEDULE } from './db-backup';
 export { DEMO_RESET_SCHEDULE } from './demo-reset';
 export { DLQ_DEPTH_PROBE_SCHEDULE } from './dlq-depth-probe';
 export { EXCHANGE_BALANCES_SCHEDULE } from './exchange-balances';
@@ -38,6 +39,7 @@ import { ALERT_SWEEP_SCHEDULE } from './alert-sweep';
 import { APY_PAYOUTS_SCHEDULE } from './apy-payouts';
 import { BACKFILL_COUNTERPARTY_SCHEDULE } from './backfill-counterparty';
 import { BACKFILL_TOKEN_IDENTITY_SCHEDULE } from './backfill-token-identity';
+import { DB_BACKUP_SCHEDULE } from './db-backup';
 import { DLQ_DEPTH_PROBE_SCHEDULE } from './dlq-depth-probe';
 import { EXCHANGE_BALANCES_SCHEDULE } from './exchange-balances';
 import { EXCHANGE_TRANSACTIONS_SCHEDULE } from './exchange-transactions';
@@ -94,4 +96,7 @@ export const SCHEDULED_JOB_DESCRIPTORS = [
   JOB_HEARTBEAT_PROBE_SCHEDULE,
   STALE_SYNC_PROBE_SCHEDULE,
   SPLIT_HOLDING_PROBE_SCHEDULE,
+  // Registered in the SAME commit as `DbBackupProcessor` (SC-793), for the
+  // reason given on `PAYMENT_DUE_REMINDER_SCHEDULE` above.
+  DB_BACKUP_SCHEDULE,
 ] as const;

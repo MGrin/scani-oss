@@ -100,6 +100,21 @@ const envSchema = z.object({
   FRONTEND_URL: optionalUrl,
   BACKEND_URL: optionalUrl,
 
+  // Where the nightly `db-backup` job writes the dump (SC-793). Deliberately
+  // a DIFFERENT bucket from the one `@scani/storage` is configured with:
+  // `S3_BUCKET` is the temp job-payload store, and putting the only offsite
+  // copy of the database in it would tie backup retention to a bucket with a
+  // lifecycle rule on it.
+  //
+  // OPTIONAL for the reason FRONTEND_URL above is (SC-453): the worker runs
+  // every scheduled job in one binary, so refusing to boot over one job's
+  // variable stops the hourly pricing, balance and reconcile jobs too.
+  // `DbBackupProcessor` refuses loudly per fire instead, which is a message
+  // an operator can read — and `scripts/backup-audit.sh` sees the same absence
+  // from the artefact side within 36h, which is the signal that does not
+  // depend on this process being healthy at all.
+  BACKUP_BUCKET: z.string().min(1).optional(),
+
   // Sentry — optional, empty string treated as unset (see `optionalUrl`).
   // SDK init gates on DSN presence regardless.
   //
