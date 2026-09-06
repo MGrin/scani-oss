@@ -43,10 +43,20 @@ const logger = createComponentLogger('processor:reconcile-pending-credentials');
 
 const MAX_RECONCILE_ATTEMPTS = 3;
 const PENDING_CUTOFF_MS = 5 * 60 * 1000; // 5 min
-// Per-tick bound. The reconciler runs every minute; if there are more
-// than 100 orphans queued (an incident, not normal operation), we drain
-// them across successive ticks rather than tying up the worker for a
-// full minute on a single fire and risking overlap with the next tick.
+// Per-tick bound: at most this many orphans per fire (an incident, not
+// normal operation), the rest on later ticks. The cadence is the
+// descriptor's own `cron` and is deliberately NOT restated here — it has
+// moved once already, and the comment naming the cadence it used to have
+// outlived it by months (SC-1093).
+//
+// The bound keeps ONE FIRE short. It is not overlap protection: this
+// descriptor sets no `lockName`, so two sweepers may run at once by
+// design — they are idempotent re-scans, and BullMQ's deterministic jobId
+// dedups the double-enqueue.
+//
+// 100 was sized against a per-minute tick. Whether it is right for the
+// cadence the descriptor now sets needs the orphan-rate distribution,
+// which is production data — SC-1093 deliberately left the number alone.
 const RECONCILE_BATCH_LIMIT = 100;
 
 @Service()
@@ -76,7 +86,16 @@ export class ReconcilePendingCredentialsProcessor extends ScheduledJobProcessor 
         await credentialsService.markImportFailed(
           row.id,
           `Reconciler gave up after ${MAX_RECONCILE_ATTEMPTS} attempts. ` +
-            'Manual retry required via /services/credentials admin page.'
+            // SC-1084. This string is PERSISTED to `import_last_error` and read
+            // back in the admin's "Last error" column, so it outlives any edit
+            // here — it named `/services/credentials`, which has no page and no
+            // redirect, and it reached an operator at the moment something had
+            // already failed. It names no route now for the same reason the
+            // sibling message below names none: the remedy is a user flow, and
+            // the one page that could host an admin retry is the queue, which
+            // this row never reached.
+            'Manual retry required — reconnect the integration to re-trigger the import. ' +
+            'No job was ever enqueued, so the admin queue retry does not apply to this row.'
         );
         logger.error(
           { credentialsId: row.id, attempts: row.importRetryCount },

@@ -126,7 +126,7 @@ test('preload from bunfig took effect', () => {
   });
 });
 
-describe('the two working homes for the budget stay wired up', () => {
+describe('the three working homes for the budget stay wired up', () => {
   test('bunfig.toml does not declare a `timeout` — it would be inert', () => {
     const bunfig = readFileSync(join(REPO_ROOT, 'bunfig.toml'), 'utf8');
     const declarations = bunfig.split('\n').filter((line) => /^\s*timeout\s*=/.test(line));
@@ -140,6 +140,87 @@ describe('the two working homes for the budget stay wired up', () => {
     };
 
     expect(pkg.scripts.test).toContain('--timeout');
+  });
+
+  /**
+   * THE THIRD HOME, and it was standing in this file as an instrument before
+   * anyone counted it as one (SC-737). The CONTROL above proves a bunfig
+   * `preload` runs — it sets a global and reads it back. What nobody asked was
+   * what else a preload can do, and the answer is `setDefaultTimeout`, which
+   * makes the per-file class unnecessary rather than better-enumerated.
+   *
+   * Driven end to end in a scratch directory rather than asserted from source,
+   * for the same reason as every other probe here: a test that greps the
+   * preload for the call proves the line is present and cannot notice bun
+   * starting or stopping to honour it.
+   */
+  test('a preload can set the budget, which is what empties the per-file class', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'sc737-preload-budget-'));
+    try {
+      writeFileSync(
+        join(dir, 'budget.ts'),
+        "import { setDefaultTimeout } from 'bun:test';\nsetDefaultTimeout(30_000);\n"
+      );
+      writeFileSync(join(dir, 'probe.test.ts'), SLOW_TEST);
+
+      // MUST-BE-FOUND first: the same sleep, the same argv budget, no preload.
+      // Without this the pass below would satisfy a preload that did nothing.
+      writeFileSync(join(dir, 'bunfig.toml'), '[test]\n');
+      const without = Bun.spawnSync(
+        ['bun', 'test', 'probe.test.ts', '--timeout', String(BUDGET_MS)],
+        {
+          cwd: dir,
+        }
+      );
+      const withoutOut = `${without.stdout.toString()}${without.stderr.toString()}`;
+      expect(withoutOut).toContain(`timed out after ${BUDGET_MS}ms`);
+
+      writeFileSync(join(dir, 'bunfig.toml'), '[test]\npreload = ["./budget.ts"]\n');
+      const withPreload = Bun.spawnSync(
+        ['bun', 'test', 'probe.test.ts', '--timeout', String(BUDGET_MS)],
+        { cwd: dir }
+      );
+      const withOut = `${withPreload.stdout.toString()}${withPreload.stderr.toString()}`;
+
+      expect(withOut).toContain('1 pass');
+      expect(withOut).not.toContain('timed out');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  /**
+   * And that the repo actually uses it. The probe above proves bun HONOURS a
+   * preload budget; this proves ours carries one. Two different facts, and a
+   * green on the first while the second is false is precisely the shape that
+   * put "exactly two working homes" into `bunfig.toml`.
+   */
+  test('the shared preload carries the budget, and bunfig still preloads it', () => {
+    const preload = 'packages/business/domain/test-preload.ts';
+    const source = readFileSync(join(REPO_ROOT, preload), 'utf8');
+
+    // LINE-ANCHORED, and the first version of this test was not — it used
+    // `toContain('setDefaultTimeout(30_000)')`, and that file's own doc comment
+    // contains the call in prose. Commenting the real call out left the test
+    // GREEN, which a mutation caught and review would not have: the probe
+    // string was chosen from the SUBJECT of the edit rather than from its
+    // SHAPE, and prose about a thing contains the thing.
+    const CALLS_IT = /^setDefaultTimeout\(30_000\);$/m;
+    expect(CALLS_IT.test(source)).toBe(true);
+
+    // MUST-BE-ABSENT on the pattern itself, so a future loosening that
+    // re-admits a comment fails here rather than silently going vacuous again.
+    expect(CALLS_IT.test(' * see `setDefaultTimeout(30_000);` above\n')).toBe(false);
+
+    // And the same shape for bunfig, which the line above got wrong twice. This
+    // was `toContain(preload)`, and `bunfig.toml` names that path in a COMMENT
+    // four lines under the key — so removing `preload = [...]` outright left
+    // this file 9 pass / 0 fail. A preload that is not preloaded carries the
+    // budget nowhere, and the arm above would still have been green.
+    const bunfig = readFileSync(join(REPO_ROOT, 'bunfig.toml'), 'utf8');
+    const PRELOADS_IT = new RegExp(`^preload = \\[[^\\]]*${preload}[^\\]]*\\]$`, 'm');
+    expect(PRELOADS_IT.test(bunfig)).toBe(true);
+    expect(PRELOADS_IT.test(`#   - \`${preload}\`, preloaded by the line above,\n`)).toBe(false);
   });
 
   /**
