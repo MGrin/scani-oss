@@ -917,7 +917,9 @@
         "stalePriced_one": "Inclui {{count}} posição no valor de <value/> avaliada com uma cotação desatualizada.",
         "stalePriced_many": "Inclui {{count}} posições no valor de <value/> avaliadas com cotações desatualizadas.",
         "stalePriced_other": "Inclui {{count}} posições no valor de <value/> avaliadas com cotações desatualizadas.",
-        "value": "Valor"
+        "value": "Valor",
+        "inactiveValue": "Valor inativo",
+        "allInactive": "Nada do que está listado aqui está ativo, por isso nada disto entra no total do seu portefólio."
       },
       "toast": {
         "bulkDeletedWithFailures_many": "{{count}} posições eliminadas, {{failed}} falharam",

@@ -860,9 +860,11 @@
       },
       "summary": {
         "value": "評価額",
+        "inactiveValue": "無効な保有資産の評価額",
         "excludes_other": "無効な保有資産{{count}}件（<value/>）を除いています。下には引き続き表示されます。",
         "stalePriced_other": "古い相場で評価した保有資産{{count}}件（<value/>）を含みます。",
-        "allocation": "資産種類別の配分"
+        "allocation": "資産種類別の配分",
+        "allInactive": "ここに表示されている保有資産はすべて無効なため、ポートフォリオの合計には含まれません。"
       },
       "status": {
         "confirm": "{{symbol}} を{{label}}",
