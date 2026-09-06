@@ -1,0 +1,51 @@
+# The robots.txt this image serves when `ROBOTS_POLICY=index-root`.
+#
+# It replaces `public/robots.txt` at container start (see
+# `docker-robots-policy.envsh`); by default it is never used and the image
+# serves the `Disallow: /` file the bundle ships with.
+#
+# ## Why the root and nothing else
+#
+# Every path on this origin returns the same 200 SPA shell — that fallback is
+# what client-side routing needs, and scoping it away would break deep links.
+# Measured against a running instance, `/`, `/holdings`, `/dashboard` and
+# `/zz-not-real` returned four byte-identical documents. So an unscoped
+# `Allow: /` does not offer a crawler "the site", it offers an unbounded
+# soft-404 space in which every URL is a duplicate of every other. That is the
+# trade `public/robots.txt` refuses for the auth-walled deployment, and the
+# shell is the same shell.
+#
+# `Allow: /$` is anchored, so it matches the root document and nothing else,
+# and the `Disallow: /` beneath it covers the rest. Google resolves a conflict
+# by the length of the path pattern, so the two-character `/$` wins over `/`
+# for the root URL and loses everywhere else.
+#
+# ## Why the asset lines are not optional
+#
+# This is a client-rendered application: the root document is an empty
+# `<div id="root">` until the bundle runs. A crawler that cannot fetch
+# `/assets/` indexes that empty document, which is worse than not being
+# indexed — so blocking the bundle would defeat the only reason to allow the
+# crawl at all. `/icons/` and `/manifest.json` are what a crawler reads for
+# the installable-web-app and mobile signals.
+#
+# ## Where an unsupporting crawler lands
+#
+# `$` anchoring is not universal. A crawler that does not implement it reads
+# `Allow: /$` as a literal path, matches no URL with it, and falls through to
+# `Disallow: /` — it declines to crawl rather than crawling everything. The
+# unsupported case fails closed, which is the direction to fail in.
+#
+# There is deliberately no `Sitemap:` line: this origin generates no sitemap,
+# and announcing one that does not exist is worse than announcing none.
+
+User-agent: *
+Allow: /$
+Allow: /assets/
+Allow: /icons/
+Allow: /manifest.json
+Allow: /favicon.svg
+Allow: /favicon.ico
+Allow: /favicon-16x16.png
+Allow: /favicon-32x32.png
+Disallow: /
