@@ -917,7 +917,9 @@
         "stalePriced_one": "Incluye {{count}} posición por valor de <value/> valorada con una cotización desactualizada.",
         "stalePriced_many": "Incluye {{count}} posiciones por valor de <value/> valoradas con cotizaciones desactualizadas.",
         "stalePriced_other": "Incluye {{count}} posiciones por valor de <value/> valoradas con cotizaciones desactualizadas.",
-        "value": "Valor"
+        "value": "Valor",
+        "inactiveValue": "Valor inactivo",
+        "allInactive": "Nada de lo que aparece aquí está activo, así que nada de esto entra en el total de tu cartera."
       },
       "toast": {
         "bulkDeletedWithFailures_many": "{{count}} posiciones eliminadas, {{failed}} con error",

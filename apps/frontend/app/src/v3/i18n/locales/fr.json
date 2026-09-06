@@ -1198,13 +1198,15 @@
       },
       "summary": {
         "value": "Valeur",
+        "inactiveValue": "Valeur inactive",
         "excludes_one": "Exclut {{count}} position inactive valant <value/>, toujours listée ci-dessous.",
         "excludes_many": "Exclut {{count}} positions inactives valant <value/>, toujours listées ci-dessous.",
         "excludes_other": "Exclut {{count}} positions inactives valant <value/>, toujours listées ci-dessous.",
         "stalePriced_one": "Inclut {{count}} position valant <value/> évaluée sur une cotation périmée.",
         "stalePriced_many": "Inclut {{count}} positions valant <value/> évaluées sur des cotations périmées.",
         "stalePriced_other": "Inclut {{count}} positions valant <value/> évaluées sur des cotations périmées.",
-        "allocation": "Répartition par type d’actif"
+        "allocation": "Répartition par type d’actif",
+        "allInactive": "Rien de ce qui est listé ici n’est actif, donc rien de tout cela n’entre dans le total de votre portefeuille."
       },
       "status": {
         "confirm": "{{label}} {{symbol}}",

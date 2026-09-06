@@ -15,6 +15,7 @@ import i18n from 'i18next';
 import shellRu from '../../../src/i18n/locales/ru.json';
 import v3Ru from '../../../src/v3/i18n/locales/ru.json';
 import {
+  allExcludedFromTotal,
   amountDecimals,
   BALANCE_EDIT_SCALE,
   balanceEditWrites,
@@ -286,6 +287,52 @@ describe('excludedFromTotal', () => {
 
   test('is silent when everything on screen counts', () => {
     expect(excludedFromTotal([holding({ value: 10 })])).toEqual({ count: 0, value: 0 });
+  });
+});
+
+describe('allExcludedFromTotal', () => {
+  test('is true only when NOTHING on screen counts', () => {
+    expect(allExcludedFromTotal([holding({ id: 'a', value: 10, isActive: false })])).toBe(true);
+    expect(
+      allExcludedFromTotal([
+        holding({ id: 'a', value: 10, isActive: false }),
+        holding({ id: 'b', value: 90, isActive: false }),
+      ])
+    ).toBe(true);
+  });
+
+  test('one counting row is enough to make it false', () => {
+    // The scope boundary of SC-1122 in one assertion. A mixed list keeps the
+    // behaviour mgrin called correct, and "mixed" starts at a single active
+    // row among any number of inactive ones.
+    expect(
+      allExcludedFromTotal([
+        holding({ id: 'a', value: 10 }),
+        holding({ id: 'b', value: 90, isActive: false }),
+      ])
+    ).toBe(false);
+  });
+
+  test('an empty list is false, not vacuously true', () => {
+    // Nothing to be inactive. The vacuous reading would headline an
+    // inactive-value figure over a list with no rows in it.
+    expect(allExcludedFromTotal([])).toBe(false);
+  });
+
+  test('asks whether rows COUNT, never whether the total is zero', () => {
+    // An active but unpriceable list also totals zero, and that zero is
+    // correct and keeps its own headline: nothing is excluded, we simply do
+    // not know what it is worth. A predicate on the figure cannot tell the
+    // two apart.
+    expect(holdingsValue([holding({ value: null })])).toBe(0);
+    expect(allExcludedFromTotal([holding({ value: null })])).toBe(false);
+  });
+
+  test('any exclusion reason will do, not just inactive', () => {
+    // `countsTowardTotal` is the whole rule. Hidden and scam-flagged rows do
+    // not reach this surface today, but the predicate must not quietly
+    // depend on that remaining true.
+    expect(allExcludedFromTotal([holding({ isHidden: true })])).toBe(true);
   });
 });
 

@@ -952,11 +952,13 @@
       },
       "summary": {
         "value": "Value",
+        "inactiveValue": "Inactive value",
         "excludes_one": "Excludes {{count}} inactive holding worth <value/>, still listed below.",
         "excludes_other": "Excludes {{count}} inactive holdings worth <value/>, still listed below.",
         "stalePriced_one": "Includes {{count}} holding worth <value/> priced from a stale quote.",
         "stalePriced_other": "Includes {{count}} holdings worth <value/> priced from stale quotes.",
-        "allocation": "Allocation by asset type"
+        "allocation": "Allocation by asset type",
+        "allInactive": "Nothing listed here is active, so none of this is in your portfolio total."
       },
       "status": {
         "confirm": "{{label}} {{symbol}}",

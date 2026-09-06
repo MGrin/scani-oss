@@ -860,9 +860,11 @@
       },
       "summary": {
         "value": "价值",
+        "inactiveValue": "已停用持仓的价值",
         "excludes_other": "未包含 {{count}} 个已停用的持仓（价值 <value/>），它们仍列在下面。",
         "stalePriced_other": "包含 {{count}} 个持仓（价值 <value/>），其估值来自过时的报价。",
-        "allocation": "按资产类型划分的分布"
+        "allocation": "按资产类型划分的分布",
+        "allInactive": "这里列出的持仓都已停用，因此都不计入你的投资组合合计。"
       },
       "status": {
         "confirm": "{{label}} {{symbol}}",

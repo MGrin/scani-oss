@@ -860,9 +860,11 @@
       },
       "summary": {
         "value": "Nilai",
+        "inactiveValue": "Nilai tidak aktif",
         "excludes_other": "Tidak termasuk {{count}} kepemilikan tidak aktif senilai <value/>, yang tetap tercantum di bawah.",
         "stalePriced_other": "Termasuk {{count}} kepemilikan senilai <value/> yang dinilai dari kutipan harga usang.",
-        "allocation": "Alokasi menurut jenis aset"
+        "allocation": "Alokasi menurut jenis aset",
+        "allInactive": "Tidak ada yang tercantum di sini yang masih aktif, jadi tidak ada satu pun yang masuk ke total portofolio Anda."
       },
       "status": {
         "confirm": "{{label}} {{symbol}}",

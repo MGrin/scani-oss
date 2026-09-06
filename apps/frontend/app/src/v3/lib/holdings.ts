@@ -310,6 +310,30 @@ export function excludedFromTotal(holdings: readonly HoldingWithDetails[]): Excl
 }
 
 /**
+ * Whether every row on screen is one the total leaves out (SC-1122).
+ *
+ * The degenerate end of `excludedFromTotal`: filter the list to an account
+ * whose holdings are all inactive and the caption is exhaustive rather than
+ * explanatory — it names every row on the page, under a headline reading zero.
+ * The figure is technically right and communicates nothing, because a page
+ * whose every row carries a value totalling zero is not a fact about money.
+ *
+ * A PREDICATE ON ROWS, NOT ON THE FIGURE. `holdingsValue` is also zero for a
+ * list of active-but-unpriceable holdings, and that zero is correct and must
+ * keep its "Value" headline: nothing there is excluded, we simply do not know
+ * what it is worth. Asking whether anything COUNTS separates the two; asking
+ * whether the total is zero cannot.
+ *
+ * Empty is false, deliberately. An empty list has no rows to be inactive, and
+ * "every one of no holdings is inactive" is vacuously true and useless — it
+ * would put an inactive-value headline on a list with nothing in it.
+ */
+export function allExcludedFromTotal(holdings: readonly HoldingWithDetails[]): boolean {
+  if (holdings.length === 0) return false;
+  return !holdings.some((holding) => countsTowardTotal(holding));
+}
+
+/**
  * Allocation by token type, for the stacked bar.
  *
  * Ordered by value, biggest first: `foldAllocation` assigns colour by position

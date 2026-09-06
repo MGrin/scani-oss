@@ -108,4 +108,77 @@ describe('HoldingsSummary', () => {
     ]);
     expect(html).toInclude('Excludes 2 inactive holdings');
   });
+
+  /**
+   * The degenerate case (SC-1122). Filtered to an account whose holdings are
+   * every one inactive, the caption stops explaining a difference and names
+   * the whole page, under a hero reading zero. The number the reader came for
+   * is on screen twice — in the caption and on the row — and the largest
+   * element on the page says they have nothing.
+   *
+   * The control on every one of these is the MIXED case directly below. mgrin
+   * called that behaviour correct in as many words, so a fix that also moved
+   * it would have overreached and undone SC-388.
+   */
+  describe('when every listed holding is inactive', () => {
+    test('headlines what they are worth instead of zero', () => {
+      const html = render([
+        holding({ id: 'h1', value: 1200.5, isActive: false }),
+        holding({ id: 'h2', value: 300.25, isActive: false }),
+      ]);
+      expect(html).toInclude('1,500.75');
+      expect(html).not.toInclude('0.00');
+    });
+
+    test('marks the figure at the tile label, not only underneath it', () => {
+      // A bare total under "Value" would read as live portfolio value, which
+      // is the SC-388 defect running the other way and quieter than the zero
+      // it replaces.
+      const html = render([holding({ value: 1200.5, isActive: false })]);
+      expect(html).toInclude('Inactive value');
+      expect(html).not.toInclude('>Value<');
+    });
+
+    test('says the figure is in no portfolio total', () => {
+      const html = render([holding({ value: 1200.5, isActive: false })]);
+      expect(html).toInclude('none of this is in your portfolio total');
+    });
+
+    test('drops the excludes caption, which would now contradict the headline', () => {
+      // "Excludes 1 inactive holding worth $1,200.50" directly under a hero
+      // reading $1,200.50 is the same number claimed as both counted and not.
+      const html = render([holding({ value: 1200.5, isActive: false })]);
+      expect(html).not.toInclude('Excludes');
+    });
+  });
+
+  test('a mixed list is untouched — one active row is enough', () => {
+    // The boundary, asserted rather than promised. Same data as the
+    // all-inactive case plus a single active row.
+    const html = render([
+      holding({ id: 'h1', value: 40 }),
+      holding({ id: 'h2', value: 1200.5, isActive: false }),
+    ]);
+    expect(html).toInclude('Excludes 1 inactive holding');
+    expect(html).not.toInclude('Inactive value');
+    expect(html).not.toInclude('none of this is in your portfolio total');
+  });
+
+  test('an empty list keeps the ordinary headline', () => {
+    // No rows to be inactive. "Every one of no holdings is inactive" is
+    // vacuously true and would put an inactive-value label on nothing.
+    const html = render([]);
+    expect(html).not.toInclude('Inactive value');
+    expect(html).toInclude('0.00');
+  });
+
+  test('an active but unpriceable list keeps the ordinary headline', () => {
+    // Also totals zero, and that zero is correct: nothing is excluded, we
+    // just do not know what it is worth. Keying the new case on the FIGURE
+    // rather than on the rows would capture this one too and claim the
+    // holding is inactive when it is not.
+    const html = render([holding({ value: null })]);
+    expect(html).not.toInclude('Inactive value');
+    expect(html).not.toInclude('Excludes');
+  });
 });
