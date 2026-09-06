@@ -169,6 +169,26 @@ not.
 The check is not in the `main-protection` ruleset's required contexts, so a red
 run is visible on the release PR rather than blocking it.
 
+**On a release pull request the verdict is the commit status, not the job.**
+The run that does the comparison chains off Release Please and is not associated
+with the pull request — measured, `pull_requests: 0` and `head_branch: main` —
+so it reports by posting a commit status named `Release notes cover every
+releasable commit`. The only run that attaches a *check* to a release PR is the
+`pull_request_target` one, and that path deliberately compares nothing: the
+`workflow_run` chain owns the release branch. It used to conclude success
+anyway, so `gh pr checks` printed `pass` for a run that had compared nothing
+(SC-1029). That job is now skipped instead, and shows as `skipping`.
+
+So read the row that carries a description. A push to the release branch cannot
+by itself verify a repair — re-run the comparison against a known commit:
+
+```sh
+gh workflow run release-notes.yml -f head=<full 40-char sha>
+```
+
+The sha must be the full forty characters: `actions/checkout` and the statuses
+API both refuse an abbreviated one.
+
 ### Recovering a commit that is already merged
 
 Put a `BEGIN_COMMIT_OVERRIDE` / `END_COMMIT_OVERRIDE` block in the body of the
