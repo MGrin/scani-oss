@@ -111,7 +111,7 @@ export class LiquidAssetsService extends BaseService {
     for (const { holding, token, institution } of holdingsWithDetails) {
       if (!holding.isActive) continue;
 
-      const price = priceMap.get(token.symbol);
+      const price = priceMap.get(token.id);
       if (!price) {
         unpriceableCount += 1;
         continue;

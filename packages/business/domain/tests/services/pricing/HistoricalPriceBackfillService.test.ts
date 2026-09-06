@@ -68,11 +68,20 @@ function makeService(opts: {
   Container.set(TokenRepository, {
     findById: async (id: string) => (opts.tokens.get(id) as never) ?? null,
     // findWithType is what backfill actually uses for the token-being-priced
-    // (so the equity-only-provider filter can read typeCode). Tests don't
-    // need a real type here — null typeCode keeps every provider in scope.
+    // (so the type filter can read typeCode). These tests are about provider
+    // ITERATION — which one wins, what a throw does to the verdict — so the
+    // token needs a type that admits providers at all. `crypto` keeps every
+    // pricer these tests register: the crypto branch drops only
+    // EQUITY_ONLY_PROVIDER_KEYS, and none of the invented keys here is one.
+    //
+    // This used to read `typeCode: null` with "tests don't need a real type
+    // here — null typeCode keeps every provider in scope", which stopped being
+    // true when an unrecognised type stopped being offered providers
+    // (SC-1115). A fixture leaning on permissiveness is a fixture that goes
+    // silent the moment permissiveness is what gets fixed.
     findWithType: async (id: string) => {
       const t = opts.tokens.get(id);
-      return t ? ({ ...t, typeCode: null } as never) : null;
+      return t ? ({ ...t, typeCode: 'crypto' } as never) : null;
     },
   } as unknown as TokenRepository);
 
@@ -399,8 +408,51 @@ describe('filterProvidersByTokenType', () => {
     expect(out).not.toContain('finnhub');
   });
 
-  test('unknown / null type keeps every provider (best-effort)', () => {
-    expect(keys(filterProvidersByTokenType(ALL, null))).toEqual(keys(ALL));
-    expect(keys(filterProvidersByTokenType(ALL, 'other'))).toEqual(keys(ALL));
+  /**
+   * SC-1115. This block asserted the opposite — "unknown / null type keeps
+   * every provider (best-effort)" — and the word doing the damage was
+   * `best-effort`. There is no best effort available for a token nothing can
+   * price: the effort produces a price for a DIFFERENT asset and writes it to
+   * `token_prices`, where the manual fallback in `PricingService` cannot tell
+   * it from a legitimate quote.
+   *
+   * A `private-company` token is a symbol with no chain behind it, which is
+   * precisely the hazard the two provider sets above exist to prevent, and
+   * `CoinGeckoProvider.canPrice` resolves an id from the symbol alone with no
+   * reference to the token's type — so the collision is reachable, not
+   * theoretical.
+   */
+  test('a private-company token is offered NO provider — its owner is the only authority', () => {
+    expect(keys(filterProvidersByTokenType(ALL, 'private-company'))).toEqual([]);
+  });
+
+  test("an 'other' token is offered NO provider, for the same reason", () => {
+    expect(keys(filterProvidersByTokenType(ALL, 'other'))).toEqual([]);
+  });
+
+  /**
+   * The direction here is chosen on the asymmetry of harm rather than on
+   * symmetry with the known types, and it matches what `PricingProviderRouter`
+   * already does with an unrecognised code (warn, then `return null`).
+   * Refusing costs an absent price, which renders as "—" and is repaired by
+   * adding the type to `TOKEN_TYPE_TO_PROVIDER`. Asking costs a same-symbol
+   * price for a different asset, written down and indistinguishable afterwards.
+   */
+  test('an unrecognised or absent type is offered NO provider', () => {
+    expect(keys(filterProvidersByTokenType(ALL, null))).toEqual([]);
+    expect(keys(filterProvidersByTokenType(ALL, undefined))).toEqual([]);
+    expect(keys(filterProvidersByTokenType(ALL, 'not-a-real-token-type'))).toEqual([]);
+  });
+
+  /**
+   * The control for the four tests above: an empty list is also what a filter
+   * that refused EVERYTHING would return, and that filter would satisfy every
+   * one of them. At least one type must still be offered providers, or the
+   * assertions say nothing about the rule and only about the return value.
+   */
+  test('the refusals are a rule, not a filter that refuses everything', () => {
+    expect(keys(filterProvidersByTokenType(ALL, 'crypto')).length).toBeGreaterThan(0);
+    expect(keys(filterProvidersByTokenType(ALL, 'stock')).length).toBeGreaterThan(0);
+    expect(keys(filterProvidersByTokenType(ALL, 'fiat')).length).toBeGreaterThan(0);
   });
 });

@@ -36,6 +36,10 @@ function pHolding(
 ): PortfolioValueResult['holdings'][number] {
   return {
     accountId,
+    // These fixtures give every symbol its own token, so a symbol-derived id
+    // is unique here. A test that needs two tokens on one symbol builds the
+    // rows directly — see `HoldingQueryService`'s SC-1114 regression.
+    tokenId: `token-${tokenSymbol}`,
     tokenSymbol,
     balance,
     currentPrice: value === null ? null : new Decimal(value).div(balance).toString(),

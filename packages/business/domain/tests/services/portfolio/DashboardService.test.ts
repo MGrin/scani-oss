@@ -21,6 +21,7 @@ interface PortfolioValueResult {
   totalValue: string;
   baseCurrency: string;
   holdings: Array<{
+    tokenId: string;
     tokenSymbol: string;
     balance: string;
     // `null` matches the PortfolioValuationService contract — unpriceable
@@ -65,15 +66,16 @@ interface HoldingWithDetails {
 function extractPriceMap(portfolioValue: PortfolioValueResult): Map<string, string> {
   // Mirror the real extractPriceMap (packages/business/domain/src/lib/price-map.ts):
   // null `value` → skip the holding entirely; the returned map only
-  // contains symbols we can actually price.
+  // contains tokens we can actually price, keyed on the token ID because a
+  // symbol is not unique (SC-1114).
   const priceMap = new Map<string, string>();
   for (const h of portfolioValue.holdings) {
     if (h.value === null) continue;
     const balance = new Decimal(h.balance);
     const value = new Decimal(h.value);
-    if (balance.greaterThan(0) && !priceMap.has(h.tokenSymbol)) {
+    if (balance.greaterThan(0) && !priceMap.has(h.tokenId)) {
       const price = value.div(balance);
-      priceMap.set(h.tokenSymbol, price.toString());
+      priceMap.set(h.tokenId, price.toString());
     }
   }
   return priceMap;
@@ -91,7 +93,7 @@ function calculateTopHoldings(
   const holdingsWithValues = holdingsWithDetails
     .filter(({ holding }) => holding.isActive)
     .flatMap(({ holding, token, account, institution }) => {
-      const currentPrice = priceMap.get(token.symbol);
+      const currentPrice = priceMap.get(token.id);
       if (!currentPrice) return [];
       const balance = new Decimal(holding.balance);
       const value = balance.mul(new Decimal(currentPrice)).toString();
@@ -228,8 +230,20 @@ describe('DashboardService (unit)', () => {
         totalValue: '270000',
         baseCurrency: 'USD',
         holdings: [
-          { tokenSymbol: 'BTC', balance: '2', currentPrice: '60000', value: '120000' },
-          { tokenSymbol: 'ETH', balance: '50', currentPrice: '3000', value: '150000' },
+          {
+            tokenId: 't1',
+            tokenSymbol: 'BTC',
+            balance: '2',
+            currentPrice: '60000',
+            value: '120000',
+          },
+          {
+            tokenId: 't2',
+            tokenSymbol: 'ETH',
+            balance: '50',
+            currentPrice: '3000',
+            value: '150000',
+          },
         ],
       };
 
@@ -263,8 +277,20 @@ describe('DashboardService (unit)', () => {
         totalValue: '60000',
         baseCurrency: 'USD',
         holdings: [
-          { tokenSymbol: 'BTC', balance: '1', currentPrice: '60000', value: '60000' },
-          { tokenSymbol: 'ETH', balance: '100', currentPrice: '3000', value: '300000' },
+          {
+            tokenId: 't1',
+            tokenSymbol: 'BTC',
+            balance: '1',
+            currentPrice: '60000',
+            value: '60000',
+          },
+          {
+            tokenId: 't2',
+            tokenSymbol: 'ETH',
+            balance: '100',
+            currentPrice: '3000',
+            value: '300000',
+          },
         ],
       };
 
@@ -287,6 +313,7 @@ describe('DashboardService (unit)', () => {
         totalValue: '360',
         baseCurrency: 'USD',
         holdings: holdings.map((h, i) => ({
+          tokenId: h.token.id,
           tokenSymbol: h.token.symbol,
           balance: h.holding.balance,
           currentPrice: String(((10 - i) * 10) / Number(h.holding.balance)),
@@ -330,7 +357,15 @@ describe('DashboardService (unit)', () => {
         // Unpriceable holding: value is `null`, not `'0'`. The dashboard
         // must distinguish "couldn't price" from "worth zero" — both
         // resolve to "not in top holdings" but for different reasons.
-        holdings: [{ tokenSymbol: 'UNKNOWN', balance: '100', currentPrice: null, value: null }],
+        holdings: [
+          {
+            tokenId: 't1',
+            tokenSymbol: 'UNKNOWN',
+            balance: '100',
+            currentPrice: null,
+            value: null,
+          },
+        ],
       };
 
       const result = buildDashboardOverview(holdings, portfolioValue);

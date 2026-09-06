@@ -1,11 +1,12 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { setSharedRedis } from '@scani/rate-limiter';
+import { createPortfolioRedisKey } from '../../../src/lib/request-cache';
 import type { PortfolioValueResult } from '../../../src/services/portfolio/PortfolioValuationService';
 import { PortfolioValueCache } from '../../../src/services/portfolio/PortfolioValueCache';
 
 // Minimal in-memory Redis double — only the four commands
 // PortfolioValueCache uses (get / set / scan / unlink). `scan` does a
-// prefix match, which is all the `pv:v1:<userId>:*` bust pattern needs.
+// prefix match, which is all the `pv:<version>:<userId>:*` bust pattern needs.
 function makeFakeRedis() {
   const store = new Map<string, string>();
   return {
@@ -40,6 +41,7 @@ function sampleResult(totalValue = '100'): PortfolioValueResult {
     holdings: [
       {
         accountId: 'acc-1',
+        tokenId: 'token-1',
         tokenSymbol: 'BTC',
         balance: '1',
         currentPrice: '100',
@@ -66,7 +68,7 @@ describe('PortfolioValueCache', () => {
     const cache = new PortfolioValueCache();
 
     let calls = 0;
-    const result = await cache.getOrCompute('pv:v1:u1:all:c1', async () => {
+    const result = await cache.getOrCompute('pv:v2:u1:all:c1', async () => {
       calls++;
       return sampleResult('42');
     });
@@ -74,7 +76,7 @@ describe('PortfolioValueCache', () => {
     expect(calls).toBe(1);
     expect(result.totalValue).toBe('42');
     await flush();
-    expect(redis.store.has('pv:v1:u1:all:c1')).toBe(true);
+    expect(redis.store.has('pv:v2:u1:all:c1')).toBe(true);
   });
 
   test('hit returns the cached value without running the factory', async () => {
@@ -88,9 +90,9 @@ describe('PortfolioValueCache', () => {
       return sampleResult('7');
     };
 
-    await cache.getOrCompute('pv:v1:u1:all:c1', factory);
+    await cache.getOrCompute('pv:v2:u1:all:c1', factory);
     await flush();
-    const second = await cache.getOrCompute('pv:v1:u1:all:c1', factory);
+    const second = await cache.getOrCompute('pv:v2:u1:all:c1', factory);
 
     expect(calls).toBe(1);
     expect(second.totalValue).toBe('7');
@@ -101,9 +103,9 @@ describe('PortfolioValueCache', () => {
     useFakeRedis(redis);
     const cache = new PortfolioValueCache();
 
-    await cache.getOrCompute('pv:v1:u1:all:c1', async () => sampleResult());
+    await cache.getOrCompute('pv:v2:u1:all:c1', async () => sampleResult());
     await flush();
-    const hit = await cache.getOrCompute('pv:v1:u1:all:c1', async () => sampleResult());
+    const hit = await cache.getOrCompute('pv:v2:u1:all:c1', async () => sampleResult());
 
     expect(hit.holdings[0]?.priceTimestamp).toBeInstanceOf(Date);
     expect(hit.holdings[0]?.priceTimestamp?.toISOString()).toBe('2026-05-21T00:00:00.000Z');
@@ -119,8 +121,8 @@ describe('PortfolioValueCache', () => {
       return sampleResult();
     };
 
-    await cache.getOrCompute('pv:v1:u1:all:c1', factory);
-    await cache.getOrCompute('pv:v1:u1:all:c1', factory);
+    await cache.getOrCompute('pv:v2:u1:all:c1', factory);
+    await cache.getOrCompute('pv:v2:u1:all:c1', factory);
 
     expect(calls).toBe(2);
   });
@@ -130,15 +132,25 @@ describe('PortfolioValueCache', () => {
     useFakeRedis(redis);
     const cache = new PortfolioValueCache();
 
-    redis.store.set('pv:v1:u1:all:c1', '{}');
-    redis.store.set('pv:v1:u1:acc-9:c1', '{}');
-    redis.store.set('pv:v1:u2:all:c1', '{}');
+    // Derived, never spelled. The builder and `bust`'s SCAN pattern are two
+    // statements of one keyspace, and a fixture spelling the version out is a
+    // THIRD — so bumping the version (SC-1114 bumped it to v2) reddened this
+    // test for a reason that had nothing to do with what it asserts. Deriving
+    // it also makes the test a guard that the two agree: a builder and a bust
+    // that disagree now fail here rather than leaking keys in production.
+    const mine = createPortfolioRedisKey('u1', undefined, 'c1');
+    const minePerAccount = createPortfolioRedisKey('u1', 'acc-9', 'c1');
+    const someoneElses = createPortfolioRedisKey('u2', undefined, 'c1');
+
+    redis.store.set(mine, '{}');
+    redis.store.set(minePerAccount, '{}');
+    redis.store.set(someoneElses, '{}');
 
     await cache.bust('u1');
 
-    expect(redis.store.has('pv:v1:u1:all:c1')).toBe(false);
-    expect(redis.store.has('pv:v1:u1:acc-9:c1')).toBe(false);
-    expect(redis.store.has('pv:v1:u2:all:c1')).toBe(true);
+    expect(redis.store.has(mine)).toBe(false);
+    expect(redis.store.has(minePerAccount)).toBe(false);
+    expect(redis.store.has(someoneElses)).toBe(true);
   });
 
   test('bust is a no-op when no Redis is configured', async () => {

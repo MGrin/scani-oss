@@ -102,12 +102,19 @@ export class HoldingQueryService extends BaseService {
       this.tokenRepository.findNeverPricedInCooldownTokenIds(heldTokenIds, new Date()),
     ]);
 
-    // portfolioPriceMap only contains symbols we could actually price.
+    // All three maps below are keyed on the TOKEN ID, never the symbol.
+    // A symbol is not unique — a `private-company` token and a crypto token
+    // can carry the same one — and `new Map()` keeps the LAST duplicate, so
+    // keying on it made both holdings render the survivor's price, source and
+    // staleness. `PortfolioValuationService` prices per token id throughout
+    // and now says so on its row shape (SC-1114).
+    //
+    // portfolioPriceMap only contains tokens we could actually price.
     // Skipping null currentPrices here propagates "unpriceable" all the
     // way to the wire so the UI can render "—" instead of "$0".
     const portfolioPriceMap = new Map(
       portfolioValue.holdings.flatMap((h) =>
-        h.currentPrice !== null ? [[h.tokenSymbol, h.currentPrice] as const] : []
+        h.currentPrice !== null ? [[h.tokenId, h.currentPrice] as const] : []
       )
     );
 
@@ -118,7 +125,7 @@ export class HoldingQueryService extends BaseService {
       portfolioValue.holdings
         .filter((h) => h.priceTimestamp)
         .map((h) => [
-          h.tokenSymbol,
+          h.tokenId,
           {
             // Pass null through — the UI distinguishes "no price" from
             // "price = $0" via the nullable field on the wire DTO.
@@ -135,13 +142,11 @@ export class HoldingQueryService extends BaseService {
     // nothing dated this price so the question could not be asked — is the one
     // that filter silently produces, and merging the two would make an absence
     // here indistinguishable from a row the filter dropped (SC-956).
-    const priceStaleMap = new Map(
-      portfolioValue.holdings.map((h) => [h.tokenSymbol, h.priceStale])
-    );
+    const priceStaleMap = new Map(portfolioValue.holdings.map((h) => [h.tokenId, h.priceStale]));
 
     const detailedHoldings: HoldingWithDetails[] = holdingsWithFullDetails.map(
       ({ holding, token, account, institution }) => {
-        const currentPrice = portfolioPriceMap.get(token.symbol);
+        const currentPrice = portfolioPriceMap.get(token.id);
 
         // Bounded rounding before .toNumber() (4 dp = 1/100 of a cent).
         // See git history for the previous comment about IEEE-754
@@ -163,8 +168,8 @@ export class HoldingQueryService extends BaseService {
         const cachedCostBasis = costBasisMap.get(holding.id);
         const costBasis = cachedCostBasis !== undefined ? cachedCostBasis : currentValue;
 
-        let priceInfo = priceMetadataMap.get(token.symbol);
-        let priceStale = priceStaleMap.get(token.symbol);
+        let priceInfo = priceMetadataMap.get(token.id);
+        let priceStale = priceStaleMap.get(token.id);
 
         if (!priceInfo && token.id === user.baseCurrencyId) {
           priceInfo = {

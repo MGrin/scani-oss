@@ -6,21 +6,11 @@ import { getOrComputeFromCache } from '../../lib/request-cache';
 import { HoldingRepository } from '../../repositories/HoldingRepository';
 import { BaseService } from '../BaseService';
 import { GroupValuationService } from './GroupValuationService';
-import { PortfolioValuationService, type RequestCache } from './PortfolioValuationService';
-
-type PortfolioValueResult = {
-  totalValue: string;
-  baseCurrency: string;
-  holdings: Array<{
-    tokenSymbol: string;
-    balance: string;
-    // See `PortfolioValuationService` — null when unpriceable.
-    currentPrice: string | null;
-    value: string | null;
-    priceTimestamp?: Date;
-    priceSource?: string;
-  }>;
-};
+import {
+  PortfolioValuationService,
+  type PortfolioValueResult,
+  type RequestCache,
+} from './PortfolioValuationService';
 
 type HoldingWithCompleteDetails = {
   holding: {
@@ -157,7 +147,7 @@ export class AssetAllocationService extends BaseService {
       // allocation (the corresponding slice would be 0 anyway, but
       // skipping makes the intent explicit and avoids confusing
       // "unpriceable" with "worth zero").
-      const price = priceMap.get(token.symbol);
+      const price = priceMap.get(token.id);
       if (!price) continue;
       const balance = new Decimal(holding.balance);
       const value = balance.mul(new Decimal(price));

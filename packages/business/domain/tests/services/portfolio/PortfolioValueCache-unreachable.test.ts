@@ -66,7 +66,7 @@ describe('an unreachable Redis degrades instead of hanging', () => {
     const cache = new PortfolioValueCache();
 
     const started = performance.now();
-    const result = await cache.getOrCompute('pv:v1:u1:all:c1', async () => sampleResult('42'));
+    const result = await cache.getOrCompute('pv:v2:u1:all:c1', async () => sampleResult('42'));
 
     expect(result.totalValue).toBe('42');
     // 8x the cache's own 250ms deadline: loose enough that a saturated box
@@ -80,7 +80,7 @@ describe('an unreachable Redis degrades instead of hanging', () => {
     useRedis({ get: boom, set: boom, scan: boom, unlink: boom });
     const cache = new PortfolioValueCache();
 
-    const result = await cache.getOrCompute('pv:v1:u1:all:c1', async () => sampleResult('42'));
+    const result = await cache.getOrCompute('pv:v2:u1:all:c1', async () => sampleResult('42'));
 
     expect(result.totalValue).toBe('42');
   });
@@ -104,7 +104,7 @@ describe('an unreachable Redis degrades instead of hanging', () => {
     useRedis({
       get: never,
       set: never,
-      scan: async () => ['0', ['pv:v1:u1:all:c1']] as [string, string[]],
+      scan: async () => ['0', ['pv:v2:u1:all:c1']] as [string, string[]],
       unlink: never,
     });
     const cache = new PortfolioValueCache();
@@ -141,7 +141,7 @@ describe('a healthy Redis is still used — the case a wrong bound would break',
     const cache = new PortfolioValueCache();
 
     let factoryCalls = 0;
-    const result = await cache.getOrCompute('pv:v1:u1:all:c1', async () => {
+    const result = await cache.getOrCompute('pv:v2:u1:all:c1', async () => {
       factoryCalls++;
       return sampleResult('1');
     });
@@ -159,7 +159,7 @@ describe('a healthy Redis is still used — the case a wrong bound would break',
     const cache = new PortfolioValueCache();
 
     let factoryCalls = 0;
-    const result = await cache.getOrCompute('pv:v1:u1:all:c1', async () => {
+    const result = await cache.getOrCompute('pv:v2:u1:all:c1', async () => {
       factoryCalls++;
       return sampleResult('1');
     });
@@ -171,7 +171,7 @@ describe('a healthy Redis is still used — the case a wrong bound would break',
   test('bust still unlinks the keys a live Redis reports', async () => {
     const unlinked: string[] = [];
     useRedis({
-      scan: async () => ['0', ['pv:v1:u1:all:c1', 'pv:v1:u1:acc-9:c1']] as [string, string[]],
+      scan: async () => ['0', ['pv:v2:u1:all:c1', 'pv:v2:u1:acc-9:c1']] as [string, string[]],
       unlink: async (...keys: string[]) => {
         unlinked.push(...keys);
         return keys.length;
@@ -181,7 +181,7 @@ describe('a healthy Redis is still used — the case a wrong bound would break',
 
     await cache.bust('u1');
 
-    expect(unlinked).toEqual(['pv:v1:u1:all:c1', 'pv:v1:u1:acc-9:c1']);
+    expect(unlinked).toEqual(['pv:v2:u1:all:c1', 'pv:v2:u1:acc-9:c1']);
   });
 
   test('bust still walks every SCAN page — the bound is per command, not per bust', async () => {
@@ -189,8 +189,8 @@ describe('a healthy Redis is still used — the case a wrong bound would break',
     // someone later moves the timeout to wrap the whole loop, this is the test
     // that notices, because page two would be cut off mid-walk.
     const pages: Array<[string, string[]]> = [
-      ['7', ['pv:v1:u1:a:c1']],
-      ['0', ['pv:v1:u1:b:c1']],
+      ['7', ['pv:v2:u1:a:c1']],
+      ['0', ['pv:v2:u1:b:c1']],
     ];
     let page = 0;
     const unlinked: string[] = [];
@@ -205,6 +205,6 @@ describe('a healthy Redis is still used — the case a wrong bound would break',
 
     await cache.bust('u1');
 
-    expect(unlinked).toEqual(['pv:v1:u1:a:c1', 'pv:v1:u1:b:c1']);
+    expect(unlinked).toEqual(['pv:v2:u1:a:c1', 'pv:v2:u1:b:c1']);
   });
 });

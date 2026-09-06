@@ -80,6 +80,9 @@ function makeService(coverage: Coverage | null): HoldingQueryService {
     getUserPortfolioValue: async () => ({
       holdings: [
         {
+          // The token id is what a price is keyed on — a symbol is not unique
+          // (SC-1114). Matches the holding row's token above.
+          tokenId: 'token-0',
           tokenSymbol: 'TESTCOIN',
           currentPrice: '2',
           priceTimestamp: new Date('2026-08-14T00:00:00Z'),

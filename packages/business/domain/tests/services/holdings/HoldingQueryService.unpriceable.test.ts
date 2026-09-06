@@ -69,7 +69,10 @@ function makeService(rows: Row[], unpriceableTokenIds: string[]): HoldingQuerySe
   } as unknown as HoldingRepository);
   Container.set(PortfolioValuationService, {
     getUserPortfolioValue: async () => ({
-      holdings: rows.map((row) => ({
+      holdings: rows.map((row, i) => ({
+        // The token id is what a price is keyed on — a symbol is not unique
+        // (SC-1114). Same `token-${i}` the holding rows above carry.
+        tokenId: `token-${i}`,
         tokenSymbol: row.symbol,
         currentPrice: row.price,
         priceTimestamp: row.price ? new Date('2026-08-14T00:00:00Z') : null,

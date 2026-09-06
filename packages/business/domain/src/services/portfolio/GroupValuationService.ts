@@ -11,7 +11,9 @@ import { PortfolioValuationService, type RequestCache } from './PortfolioValuati
 /** The shape this service needs off a holding; anything wider satisfies it. */
 export type ValuableHolding = {
   holding: { id: string; accountId: string; balance: string; isActive: boolean };
-  token: { symbol: string };
+  /** `id` is what a price is keyed on — a symbol is not unique (SC-1114).
+   *  `symbol` is carried for the human-readable `unpriced` diagnostic only. */
+  token: { id: string; symbol: string };
 };
 
 export interface GroupValue {
@@ -195,7 +197,7 @@ export class GroupValuationService extends BaseService {
       if (!member) continue;
 
       const balance = new Decimal(member.holding.balance);
-      const price = priceMap.get(member.token.symbol);
+      const price = priceMap.get(member.token.id);
       if (price === undefined) {
         // A zero balance is worth zero in every currency, so it needs no price
         // and is not a gap in the figure.
