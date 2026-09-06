@@ -228,8 +228,10 @@ export class IntegrationCredentialsService extends BaseService {
 
   /**
    * Reconciler helper: find rows stuck in pending_enqueue beyond the cutoff.
-   * `limit` bounds the per-tick batch so a misfire that produces thousands
-   * of orphans can't tie up the worker for a full minute.
+   * `limit` bounds ONE batch so a misfire that produces thousands of orphans
+   * cannot tie up its caller on a single call; the caller drains the rest on
+   * later ones. Deliberately says nothing about how often that is — the
+   * cadence belongs to the caller's schedule, not to this service (SC-1093).
    */
   async findPendingEnqueueOlderThan(cutoff: Date, limit?: number) {
     try {

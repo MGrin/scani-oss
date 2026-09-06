@@ -34,11 +34,20 @@ preload = ["./packages/business/domain/test-preload.ts"]
 # dies at 5000.10ms. `testTimeout`, `test-timeout` and `defaultTimeout` are
 # ignored too, so there is no spelling to reach for.
 #
-# The budget therefore has exactly two working homes, and a file needing more
-# than 5s must use one of them or it is fine in CI and flaky by hand:
+# The budget has THREE working homes. This comment said "exactly two" until
+# SC-737 measured the third, and the third was standing four lines above it the
+# whole time: `preload` was cited as the control proving bun reads this section,
+# and nobody asked what else a preload could do. A claim about the SET of homes,
+# written while fixing one of them.
+#   - `packages/business/domain/test-preload.ts`, preloaded by the line above,
+#     calls `setDefaultTimeout(30_000)`. This is the one that covers everything:
+#     it reaches every test file under every invocation, so no file has to know
+#     it is expensive and nothing has to enumerate which ones are (SC-737).
 #   - `package.json`'s `test` script, which passes `--timeout 30000` on argv.
-#     That is what `bun run test` and the gate get.
-#   - `setDefaultTimeout(30_000)` from `bun:test`, at the top of the file.
-#     Invocation-independent, so an ad-hoc `bun test <path>` gets it too.
+#     That is what `bun run test` and the gate get, and always did.
+#   - `setDefaultTimeout(30_000)` from `bun:test`, at the top of one file.
+#     Still correct, and eight files still carry it. Redundant now rather than
+#     wrong: a per-file call beats a budget that depends on a preload somebody
+#     may later scope differently.
 #
 # `scripts/tests/test-timeout-budget.test.ts` fails if this comes back.

@@ -24,7 +24,14 @@ export class DlqDepthProbeProcessor extends ScheduledJobProcessor {
     if (depth >= threshold) {
       const err = new Error(
         `DLQ depth ${depth} crossed alert threshold ${threshold}. ` +
-          'Inspect failed jobs in admin/services/bullmq and decide retry vs purge.'
+          // SC-1084's second instance, found by sweeping the package rather
+          // than fixing the line the ticket named. `services/bullmq` is the
+          // pre-`/platform` information architecture: it survives only as a
+          // 308 to `/jobs/queue`, and that is the wrong page anyway — the
+          // dead-letter queue this alert is about is `/jobs/dlq`. Wrong twice,
+          // and it reaches Sentry rather than the database, so no operator
+          // ever sees it beside a working link to compare against.
+          'Inspect the dead-letter queue on the admin /jobs/dlq page and decide retry vs purge.'
       );
       logger.error({ depth, threshold }, '🚨 DLQ depth crossed alert threshold');
       captureException(err, {
