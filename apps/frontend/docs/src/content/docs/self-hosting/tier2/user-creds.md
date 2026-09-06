@@ -31,7 +31,7 @@ this page's title.** Object storage is one of the four capabilities
 Tier 2 moves, so those bytes live in the **operator's** bucket, not
 yours. What the file *yielded* — the extracted holdings and
 transactions — is rows in your Postgres and stays there. On Tier 1
-the bucket is yours too and nothing about a file leaves.
+the bucket is yours too.
 
 ## What the data-provider does see
 

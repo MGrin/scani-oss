@@ -81,6 +81,14 @@ and is auto-merged by `docker compose` on every command.
   <img alt="Scani holdings — positions across all connected sources" src="./.github/assets/screenshots/holdings-light-desktop.webp">
 </picture>
 
+**Money** — recurring bills and expected income, in every currency you
+hold, converted at today's rates.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="./.github/assets/screenshots/money-dark-desktop.webp">
+  <img alt="Scani money — recurring bills and expected income" src="./.github/assets/screenshots/money-light-desktop.webp">
+</picture>
+
 **Accounts** — exchanges, wallets, and brokerages grouped by institution.
 
 <picture>
@@ -88,7 +96,9 @@ and is auto-merged by `docker compose` on every command.
   <img alt="Scani accounts — exchanges, wallets, and brokerages grouped by institution" src="./.github/assets/screenshots/accounts-light-desktop.webp">
 </picture>
 
-**Integrations** — the connector catalog: exchanges, on-chain, brokerages, pricing, AI.
+**Integrations** — the 15 credentialed connectors: exchanges, brokerages
+and banks. Read-only API keys, encrypted at rest. Chains, pricing and AI
+need no per-user credential and are configured with your own keys in `.env`.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="./.github/assets/screenshots/integrations-dark-desktop.webp">
@@ -281,9 +291,9 @@ Three deployable Bun services + one SPA:
   call for object storage, the email transport, Open Graph metadata and
   token search. This is the seam between the tiers: in Tier 1 it's on
   `localhost:8082`, in Tier 2/3 it's a hosted endpoint. It also exposes
-  `pricing.*`, `ai.*` and `chains.*` routers, which the api and worker
-  do **not** use — those calls are made directly, from their own
-  environment's keys.
+  a `chains.*` router that has no live caller today. Pricing and AI
+  calls never come here at all — the api and worker make them directly,
+  from their own environment's keys.
 - **`apps/frontend/app`** — React + Vite SPA. tRPC client end-to-end
   type-safe with the api.
 
@@ -316,11 +326,13 @@ Out of the box, Scani knows how to talk to:
 **Exchanges**: Binance, Bitget, Bitstamp, Bybit, Coinbase, Gate.io,
 Gemini, Huobi, Kraken, KuCoin, MEXC, OKX
 
-**Brokerages / banks**: Interactive Brokers (Flex Web Service), Wise
+**Brokerages / banks**: Interactive Brokers (Flex Web Service), Wise,
+Airwallex
 
 **On-chain**: Ethereum + every EVM chain Etherscan V2 supports
 (Polygon, Arbitrum, Optimism, Base, …), Solana (via Helius), Bitcoin,
-Tron, TON, ENS
+Tron, TON. Ethereum addresses are labelled by ENS reverse-resolution;
+an ENS name is not accepted as input.
 
 **Pricing**: CoinGecko, Finnhub, DeFiLlama, ExchangeRate-API, Yahoo
 Finance, Google Sheets (for manual-asset prices)
