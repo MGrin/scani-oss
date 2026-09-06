@@ -284,6 +284,12 @@ services:
       # above. Widen it only if the browser calls the api on a different
       # origin — see self-hosting → TLS & reverse proxy.
       CSP_CONNECT_SRC: "${CSP_CONNECT_SRC:-'self'}"
+      # Whether a search engine may index this origin. `noindex` (default)
+      # keeps the SPA out of search results the way it always has;
+      # `index-root` offers the root document and nothing below it, which
+      # is the only shape that makes sense for a client-rendered app whose
+      # every path returns the same shell. Anything else refuses to start.
+      ROBOTS_POLICY: ${ROBOTS_POLICY:-noindex}
     ports:
       # Front the SPA on port 8080 of the host. Put your TLS-terminating
       # reverse proxy in front of this.

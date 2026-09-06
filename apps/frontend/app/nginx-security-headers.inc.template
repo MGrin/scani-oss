@@ -29,6 +29,17 @@ add_header Permissions-Policy "camera=(), microphone=(), geolocation=(), interes
 add_header Cross-Origin-Opener-Policy "same-origin" always;
 add_header Cross-Origin-Resource-Policy "same-site" always;
 
-# Don't index the SPA — only the SSR landing page would. Self-hosters who
-# want indexing should layer their own front-of-stack.
-add_header X-Robots-Tag "noindex, nofollow" always;
+# Don't index the SPA — only the SSR landing page would.
+#
+# `${ROBOTS_DIRECTIVE}` is expanded by the same envsubst that fills
+# `${CSP_CONNECT_SRC}` above, and it is DERIVED rather than set: the
+# Dockerfile defaults it to `noindex, nofollow`, and
+# `docker-robots-policy.envsh` overwrites it from `ROBOTS_POLICY` on every
+# boot. That indirection exists because a crawler takes the most restrictive
+# of the header, the `<meta name="robots">` in `index.html` and
+# `robots.txt` — so a header that could be flipped on its own would buy an
+# operator nothing but the belief that they had flipped something. One knob
+# moves all three; see that file. The sentence this replaces told a
+# self-hoster who wanted indexing to layer their own front-of-stack, which
+# was the honest advice while there was no knob to offer them.
+add_header X-Robots-Tag "${ROBOTS_DIRECTIVE}" always;

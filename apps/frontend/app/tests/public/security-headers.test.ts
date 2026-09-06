@@ -56,6 +56,22 @@ const CSP_PLACEHOLDER = '${CSP_CONNECT_SRC}';
  */
 const NGINX_ONLY_HEADERS = new Set<string>([]);
 
+/**
+ * Headers nginx sends through an envsubst variable rather than a literal.
+ *
+ * These are NOT exceptions to the agreement — they are compared against the
+ * Dockerfile's default for that variable instead, one test below, so an image
+ * nobody has configured still sends exactly what `_headers` declares. The
+ * difference from `NGINX_ONLY_HEADERS` is that the split here is a runtime
+ * one an operator chooses, not a header only one host has.
+ *
+ * `X-Robots-Tag` is here because this bundle is served both to an auth wall
+ * and to a public demo, and the demo cannot say so without a knob (SC-1108).
+ * `apps/frontend/app/tests/public/robots.test.ts` carries the reasoning and
+ * asserts the rest of that posture.
+ */
+const PARAMETERISED_BY_NGINX = new Set<string>(['X-Robots-Tag']);
+
 /** The `/*` block of a `_headers` file: `  Name: value` lines under `/*`. */
 function parseHeadersFile(source: string): Map<string, string> {
   const out = new Map<string, string>();
@@ -161,7 +177,27 @@ describe('_headers and the nginx include declare one policy', () => {
   test('every header `_headers` declares, nginx sends with the same value', () => {
     for (const [name, value] of declared) {
       if (name === 'Content-Security-Policy') continue;
+      if (PARAMETERISED_BY_NGINX.has(name)) continue;
       expect(`${name}: ${nginx.get(name)}`).toBe(`${name}: ${value}`);
+    }
+  });
+
+  test('the parameterised headers still agree with `_headers` at their default', () => {
+    // The exemption above would otherwise be a hole rather than a split: a
+    // header nginx parameterises is compared against the Dockerfile's default
+    // instead of against a literal, so an unconfigured image still sends what
+    // `_headers` sends. Skipping the comparison entirely is what the
+    // `NGINX_ONLY_HEADERS` comment above describes going wrong for this same
+    // header once already.
+    for (const name of PARAMETERISED_BY_NGINX) {
+      const placeholder = nginx.get(name);
+      expect(`${name} is parameterised: ${placeholder?.startsWith('${')}`).toBe(
+        `${name} is parameterised: true`
+      );
+
+      const variable = placeholder?.slice(2, -1) ?? '';
+      const fromDockerfile = DOCKERFILE.match(new RegExp(`^ENV ${variable}="([^"]*)"`, 'm'))?.[1];
+      expect(`${name} default: ${fromDockerfile}`).toBe(`${name} default: ${declared.get(name)}`);
     }
   });
 
