@@ -23,7 +23,10 @@ function holding(
   balance: string,
   isActive = true
 ): ValuableHolding {
-  return { holding: { id, accountId, balance, isActive }, token: { symbol } };
+  return {
+    holding: { id, accountId, balance, isActive },
+    token: { id: `token-${symbol}`, symbol },
+  };
 }
 
 /**
@@ -62,10 +65,12 @@ function makeService(groupIds: string[], membership: Membership): GroupValuation
   return instance;
 }
 
+// Keyed on TOKEN ID, which is what `valueByGroup` looks a price up by — a
+// symbol is not unique (SC-1114). `holding()` above mints `token-<symbol>`.
 const PRICES = new Map([
-  ['AAPL', '200'],
-  ['EUR', '1'],
-  ['USD', '1'],
+  ['token-AAPL', '200'],
+  ['token-EUR', '1'],
+  ['token-USD', '1'],
 ]);
 
 /**
@@ -89,7 +94,7 @@ function holdingsListTotal(
     .filter((entry) => (membership[entry.holding.id] ?? []).includes(groupId))
     .reduce(
       (sum, entry) =>
-        sum.add(new Decimal(entry.holding.balance).mul(prices.get(entry.token.symbol) ?? '0')),
+        sum.add(new Decimal(entry.holding.balance).mul(prices.get(entry.token.id) ?? '0')),
       new Decimal(0)
     )
     .toString();

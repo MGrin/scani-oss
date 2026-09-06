@@ -15,23 +15,12 @@ import {
   type PricingResult,
   type RoutedToken,
 } from './PricingProviderAdapter';
+// The token-type → provider table. Shared with the historical backfill's
+// `filterProvidersByTokenType`, which used to make its own contradictory
+// statement about the same question (SC-1115).
+import { TOKEN_TYPE_TO_PROVIDER } from './token-type-pricing';
 
 const routerLogger = createComponentLogger('pricing:router');
-
-/**
- * Token-type → pricing-provider table. Adding a new token type is one
- * entry here; runtime discrimination (stock→Finnhub vs Google Sheets by
- * exchange) lives in `stockProviderFor`. `null` means "no external
- * provider — manual pricing only" (used for `private-company` and
- * `other` types).
- */
-const TOKEN_TYPE_TO_PROVIDER: Record<string, PricingProviderKey | 'stock-discriminator' | null> = {
-  fiat: 'exchangeRate',
-  crypto: 'coinGecko',
-  stock: 'stock-discriminator',
-  'private-company': null,
-  other: null,
-};
 
 /**
  * Exchange identifiers that Finnhub's free tier covers. Extracted so a

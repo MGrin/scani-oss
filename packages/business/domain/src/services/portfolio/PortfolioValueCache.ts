@@ -110,7 +110,7 @@ export class PortfolioValueCache {
       let cursor = '0';
       do {
         const [next, keys] = await withDeadline(
-          redis.scan(cursor, 'MATCH', `pv:v1:${userId}:*`, 'COUNT', SCAN_COUNT),
+          redis.scan(cursor, 'MATCH', `pv:v2:${userId}:*`, 'COUNT', SCAN_COUNT),
           REDIS_TIMEOUT_MS,
           () => new StoreCommandTimeoutError('redis', 'SCAN', REDIS_TIMEOUT_MS)
         );
