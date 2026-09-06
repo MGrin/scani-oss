@@ -27,10 +27,6 @@
       "project": ["src/**/*.{ts,tsx}"],
       "ignoreDependencies": ["tailwindcss-animate"]
     },
-    "apps/frontend/admin": {
-      "entry": ["src/lib/cross-fetch-shim.ts"],
-      "project": ["src/**/*.{ts,tsx}"]
-    },
     "apps/frontend/landing": {
       "entry": ["src/entry-server.tsx"],
       "project": ["src/**/*.{ts,tsx}"]
