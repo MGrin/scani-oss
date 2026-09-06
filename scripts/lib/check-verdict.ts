@@ -125,3 +125,60 @@ export function runGit(args: readonly string[], cwd: string): GitRun {
 
   return { kind: 'ran', stdout: new TextDecoder().decode(proc.stdout) };
 }
+
+/**
+ * What a SKIP did not read (SC-972).
+ *
+ * A skipping content scanner is the {@link EXIT_UNKNOWN} family's least
+ * alarming costume: `SKIPPED · exit 0` over a commit **not one line of which
+ * was read**, printed identically whatever was staged. SC-835 fixed the
+ * sibling that routes PATHS — its skip now leads with the diff and keeps the
+ * repository sentence as the reason — and left the four that scan CONTENT
+ * printing the repository sentence alone, because the missing half is not
+ * something the shared classifier can supply: `scanScope` is handed
+ * `BranchFacts`, and the population differs per check. Whole files for
+ * `check-oss-internal-refs`, added lines for `check-oss-figures`,
+ * `check-oss-data-shapes` and `check-oss-prose`.
+ *
+ * So the renderer is shared and the counting is not. This is the denominator
+ * rule at the top of this file applied to the one verdict that has no
+ * denominator at all: a run that examined zero things must not read like a run
+ * that examined all of them, and on a skip the honest number is zero with the
+ * population beside it.
+ *
+ * NOTHING HERE CAN REFUSE, and that is the same reasoning SC-835 gives. The
+ * skip is a conclusion about the BRANCH, which is still readable; a diff that
+ * could not be listed is not evidence against it. Every failure narrows the
+ * sentence and leaves the verdict and the exit code where they were.
+ */
+export interface Unread {
+  /** Paths in the population, whether or not this check would have read them. */
+  readonly paths: number;
+  /**
+   * Added lines this check would have read, for the checks that read a diff.
+   *
+   * `null` for a whole-file scanner, where the unit is the file and a line
+   * count would be a number about a different question — the
+   * patterns-compiled trap this file's header names.
+   */
+  readonly addedLines: number | null;
+}
+
+/**
+ * The clause a content scanner's SKIP prints about the change it did not read.
+ *
+ * EVERY WAY OF NOT KNOWING READS DIFFERENTLY FROM A ZERO, for the reason
+ * `routingClause` gives in `check-oss-bound-paths.ts`: `null` is *the change
+ * could not be read*, a `paths` of 0 is *there was nothing staged*, and a
+ * populated path set with no readable lines in it is a third thing again. A
+ * check whose scope excluded every staged path and one with an empty index
+ * printing alike is SC-808 and SC-865 rebuilt one verdict over.
+ */
+export function unreadClause(unread: Unread | null, noun: 'staged' | 'pushed'): string {
+  if (unread === null) {
+    return `the ${noun} change could not be read, so NOTHING WAS SCANNED — the absence of a reading, not a count of zero`;
+  }
+  if (unread.paths === 0) return `0 ${noun} path(s), so there was nothing to scan`;
+  if (unread.addedLines === null) return `${unread.paths} ${noun} path(s) went UNSCANNED`;
+  return `${unread.addedLines} added line(s) across ${unread.paths} ${noun} path(s) went UNSCANNED`;
+}

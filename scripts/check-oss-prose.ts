@@ -92,11 +92,12 @@ import {
   type AddedLine,
   addedLines,
   collectBranchFacts,
+  countUnread,
   isScannable,
   refArg,
 } from './check-oss-figures';
 import { type RepoFacts, scanScope } from './check-oss-internal-refs';
-import { EXIT_OK, EXIT_UNKNOWN, type GitRun, runGit } from './lib/check-verdict';
+import { EXIT_OK, EXIT_UNKNOWN, type GitRun, runGit, unreadClause } from './lib/check-verdict';
 
 export { EXIT_OK, EXIT_UNKNOWN };
 
@@ -476,17 +477,30 @@ export function main(argv: readonly string[], cwd: string, stdin: string): numbe
     console.error(`oss-prose: UNKNOWN · exit ${EXIT_UNKNOWN} · ${scope.why}`);
     return EXIT_UNKNOWN;
   }
-  if (scope.kind === 'skip') {
-    console.log(`oss-prose: SKIPPED · exit ${EXIT_OK} · ${scope.why}`);
-    return EXIT_OK;
-  }
-
+  // Read above the skip, because the skip has to say what it did not read
+  // (SC-972). It is the same population the scan below uses — one function, so
+  // the two lines cannot disagree about what was in the commit.
   const commits = argv.includes('--stdin-commits')
     ? stdin
         .split('\n')
         .map((s) => s.trim())
         .filter((s) => s !== '')
     : null;
+  const noun = commits === null ? 'staged' : 'pushed';
+
+  if (scope.kind === 'skip') {
+    // SC-972. THE DIFF CLAUSE COMES FIRST AND THE BRANCH CLAUSE IS THE REASON,
+    // the shape SC-835 settled on for the sibling that routes paths. A failed
+    // read narrows this sentence and nothing else: the skip is a conclusion
+    // about the branch, and it stays exit 0.
+    const skipped = population(cwd, commits);
+    const unread = skipped.kind === 'failed' ? null : countUnread(skipped.stdout, isScannable);
+    console.log(
+      `oss-prose: SKIPPED · exit ${EXIT_OK} · ${unreadClause(unread, noun)}` +
+        ` · not bound for MGrin/scani-oss: ${scope.why}`
+    );
+    return EXIT_OK;
+  }
 
   const diff = population(cwd, commits);
   if (diff.kind === 'failed') {
