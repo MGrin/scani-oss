@@ -5,6 +5,7 @@ import type { PriceQuote, ProviderContext } from '@scani/providers/core/types';
 import { Container, Service } from 'typedi';
 import { TokenPriceRepository } from '../../repositories/TokenPriceRepository';
 import { TokenRepository } from '../../repositories/TokenRepository';
+import { hasExternalPricingAuthority } from './token-type-pricing';
 
 // Providers whose universe is equities + fiat — they MUST NOT be
 // asked to price crypto tokens. Yahoo Finance and Finnhub both
@@ -372,8 +373,15 @@ interface ProviderAttempt {
 // ticker to a same-symbol coin. typeCode is cheaply available here
 // (the service does a `findWithType` lookup right before this call),
 // so the filter lives here rather than in each provider's canPrice.
-// Unknown / 'other' / 'private-company' types keep every provider —
-// best-effort, since none of the type-specific hazards apply.
+//
+// A type with no external pricing authority gets NO provider, which is
+// `PricingProviderRouter`'s answer for the same token read off the same table
+// (SC-1115). This used to read "unknown / 'other' / 'private-company' types
+// keep every provider — best-effort, since none of the type-specific hazards
+// apply", and that reasoning inverted the fact two lines above it: the hazard
+// named there is a crypto provider matching a same-symbol coin, and a
+// `private-company` token is precisely a symbol with no chain behind it. It is
+// the MOST exposed type, not an exempt one.
 //
 // Exported for unit testing — the pure routing decision is the part
 // worth covering directly.
@@ -381,6 +389,7 @@ export function filterProvidersByTokenType<P extends { providerKey: string }>(
   providers: readonly P[],
   typeCode: string | null | undefined
 ): readonly P[] {
+  if (!hasExternalPricingAuthority(typeCode)) return [];
   if (typeCode === 'crypto') {
     return providers.filter((p) => !EQUITY_ONLY_PROVIDER_KEYS.has(p.providerKey));
   }
