@@ -1,0 +1,92 @@
+# shellcheck shell=sh
+#
+# Resolve `ROBOTS_POLICY` into the three things that decide whether a search
+# engine may index this origin. Sourced by the nginx image's entrypoint as
+# `/docker-entrypoint.d/18-robots-policy.envsh`, immediately before
+# `20-envsubst-on-templates.sh` runs.
+#
+# ## Why one knob and not three
+#
+# A crawler takes the MOST RESTRICTIVE of what it is told, and this bundle
+# tells it in three places: `robots.txt`, the `<meta name="robots">` in
+# `index.html`, and the `X-Robots-Tag` header. Flipping one or two of them
+# produces a deployment that looks configured and is not — the origin is
+# excluded, by a mechanism nobody remembers is there, and the config that
+# appears to grant indexing is dead. That half-state is the failure this file
+# exists to make unreachable, so the three move together or not at all.
+#
+# ## Why `.envsh` and not `.sh`
+#
+# The image's entrypoint SOURCES `*.envsh` and EXECUTES `*.sh`. Only the
+# sourced form can export a variable that reaches `20-envsubst-on-templates.sh`
+# in the same run, which is how `ROBOTS_DIRECTIVE` gets into the header. The
+# same mechanism the image's own `15-local-resolvers.envsh` uses.
+#
+# ## Values
+#
+#   noindex     (default) Nothing on this origin belongs in a search result.
+#               Byte-for-byte the behaviour of an image without this file.
+#   index-root  The root document may be indexed. Deep routes and the SPA
+#               fallback space may not — see `nginx-robots-index-root.txt`
+#               for why that distinction is the whole point.
+#
+# Anything else REFUSES to start. A typo that quietly resolved to `noindex`
+# would leave an operator who meant to opt in believing they had, with no
+# artefact anywhere saying otherwise; a typo that quietly resolved to `index`
+# would publish an origin nobody chose to publish. Neither direction is a
+# reasonable guess, so it does not guess.
+#
+# `ROBOTS_DIRECTIVE` is DERIVED, not an input. It is declared in the Dockerfile
+# so that envsubst has a fail-closed default if this file is ever removed, and
+# it is overwritten here on every boot — setting it directly does nothing.
+
+_robots_policy="${ROBOTS_POLICY:-noindex}"
+_robots_root="${NGINX_ROBOTS_ROOT:-/usr/share/nginx/html}"
+_robots_index_root_src="${NGINX_ROBOTS_INDEX_ROOT_SRC:-/etc/nginx/robots-index-root.txt}"
+
+case "$_robots_policy" in
+  noindex)
+    ROBOTS_DIRECTIVE='noindex, nofollow'
+    export ROBOTS_DIRECTIVE
+    echo "robots-policy: noindex — robots.txt, meta and X-Robots-Tag all exclude this origin"
+    ;;
+
+  index-root)
+    ROBOTS_DIRECTIVE='index, follow'
+    export ROBOTS_DIRECTIVE
+
+    if [ ! -f "$_robots_index_root_src" ]; then
+      echo "robots-policy: FATAL — ROBOTS_POLICY=index-root but $_robots_index_root_src is missing." >&2
+      echo "robots-policy: refusing to start rather than serving a Disallow: / under an index policy." >&2
+      exit 1
+    fi
+    cp "$_robots_index_root_src" "$_robots_root/robots.txt"
+
+    # Rewrite the meta rather than delete it, so the document keeps saying
+    # something explicit. Both the count check and the read-back are here
+    # because a `sed` that matches nothing exits 0: without them a renamed or
+    # reformatted meta would leave `noindex` in place under an `index` policy
+    # and report success, which is the exact half-state above.
+    _robots_html="$_robots_root/index.html"
+    _robots_hits="$(grep -c 'name="robots"' "$_robots_html" || true)"
+    if [ "$_robots_hits" != "1" ]; then
+      echo "robots-policy: FATAL — expected exactly 1 robots meta in index.html, found $_robots_hits." >&2
+      exit 1
+    fi
+    sed -i 's|<meta name="robots" content="[^"]*"|<meta name="robots" content="index, follow"|' "$_robots_html"
+    if ! grep -q '<meta name="robots" content="index, follow"' "$_robots_html"; then
+      echo "robots-policy: FATAL — the robots meta in index.html did not rewrite." >&2
+      exit 1
+    fi
+
+    echo "robots-policy: index-root — the root document is offered for indexing; deep routes are not"
+    ;;
+
+  *)
+    echo "robots-policy: FATAL — ROBOTS_POLICY=\"$_robots_policy\" is not a value this image knows." >&2
+    echo "robots-policy: use \"noindex\" (default) or \"index-root\"." >&2
+    exit 1
+    ;;
+esac
+
+unset _robots_policy _robots_root _robots_index_root_src _robots_html _robots_hits

@@ -60,6 +60,20 @@ ENV API_UPSTREAM=http://api:3001
 # so an unset value would leave the literal placeholder in the header.
 ENV CSP_CONNECT_SRC="'self'"
 
+# Whether a search engine may index this origin. `noindex` (the default) is
+# byte-for-byte the behaviour of the image before this knob existed;
+# `index-root` offers the root document and nothing below it. The values, and
+# why one variable moves robots.txt, the meta and the header together rather
+# than three that can disagree, are in `docker-robots-policy.envsh`.
+ENV ROBOTS_POLICY=noindex
+
+# DERIVED from ROBOTS_POLICY by that script on every boot — setting it
+# directly does nothing. It is declared here anyway so the failure mode of
+# deleting the script is a `noindex` header rather than a literal
+# `${ROBOTS_DIRECTIVE}` that no crawler reads as a directive at all: envsubst
+# only substitutes variables that exist, so an undeclared one fails OPEN.
+ENV ROBOTS_DIRECTIVE="noindex, nofollow"
+
 # Static assets from the Vite build.
 COPY --from=build /app/apps/frontend/app/dist /usr/share/nginx/html
 
@@ -83,6 +97,19 @@ COPY apps/frontend/app/nginx.conf.template /etc/nginx/templates/default.conf.tem
 # of nginx.conf's own `include /etc/nginx/conf.d/*.conf`, so it is only
 # pulled in where the site config asks for it.
 COPY apps/frontend/app/nginx-security-headers.inc.template /etc/nginx/templates/security-headers.inc.template
+
+# The robots posture. The entrypoint SOURCES `*.envsh` and EXECUTES `*.sh`,
+# and only the sourced form can export `ROBOTS_DIRECTIVE` into the envsubst
+# pass that follows it — hence the suffix, and hence `18-`, which sorts after
+# the image's own `15-local-resolvers.envsh` and before
+# `20-envsubst-on-templates.sh`.
+COPY apps/frontend/app/docker-robots-policy.envsh /docker-entrypoint.d/18-robots-policy.envsh
+
+# The alternate robots.txt, kept OUT of the web root: under `ROBOTS_POLICY=noindex`
+# it must not be reachable at all, and a second robots file published beside
+# the real one is a config file describing rules the deployment is not using —
+# the same reason `_headers` is deleted above.
+COPY apps/frontend/app/nginx-robots-index-root.txt /etc/nginx/robots-index-root.txt
 
 EXPOSE 80
 
