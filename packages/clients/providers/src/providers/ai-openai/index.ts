@@ -33,6 +33,7 @@
  */
 
 import type { ProviderFactory } from '../../core/boot';
+import type { RateLimiterRegistry } from '../../core/rate-limiter-registry';
 import { ChatCompletionsProvider } from '../_chat-completions';
 
 // gpt-5.6-luna's published per-1M-token rate (2026-08-11). One model
@@ -44,8 +45,9 @@ const OPENAI_PRICING = {
 };
 
 export class OpenAIProvider extends ChatCompletionsProvider {
-  constructor(apiKey: string) {
+  constructor(apiKey: string, rateLimiterRegistry?: RateLimiterRegistry) {
     super({
+      rateLimiterRegistry,
       providerKey: 'ai-openai',
       baseUrl: 'https://api.openai.com/v1',
       model: 'gpt-5.6-luna',
@@ -76,5 +78,5 @@ export const aiOpenAIFactory: ProviderFactory = async (deps) => {
     keyed: apiKey !== '',
     degradedBehaviour: 'throws on every call, so screenshot and document parsing fail',
   });
-  return new OpenAIProvider(apiKey);
+  return new OpenAIProvider(apiKey, deps.rateLimiterRegistry);
 };

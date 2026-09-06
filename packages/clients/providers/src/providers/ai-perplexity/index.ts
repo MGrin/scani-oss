@@ -13,11 +13,13 @@
  */
 
 import type { ProviderFactory } from '../../core/boot';
+import type { RateLimiterRegistry } from '../../core/rate-limiter-registry';
 import { ChatCompletionsProvider } from '../_chat-completions';
 
 export class PerplexityProvider extends ChatCompletionsProvider {
-  constructor(apiKey: string) {
+  constructor(apiKey: string, rateLimiterRegistry?: RateLimiterRegistry) {
     super({
+      rateLimiterRegistry,
       providerKey: 'ai-perplexity',
       baseUrl: 'https://api.perplexity.ai',
       model: 'sonar',
@@ -37,5 +39,5 @@ export const aiPerplexityFactory: ProviderFactory = async (deps) => {
     keyed: apiKey !== '',
     degradedBehaviour: 'throws on every call',
   });
-  return new PerplexityProvider(apiKey);
+  return new PerplexityProvider(apiKey, deps.rateLimiterRegistry);
 };

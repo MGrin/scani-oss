@@ -25,6 +25,7 @@
 import { type CustomLogger, createComponentLogger } from '@scani/logging';
 import { createOutflowLimiter, getSharedRedis, type OutflowRateLimiter } from '@scani/rate-limiter';
 import type { AIInferenceProvider, AIResult, AIUsage, Capability } from '../core/capabilities';
+import type { RateLimiterRegistry } from '../core/rate-limiter-registry';
 import { fetchWithTimeout } from '../core/utils/fetch';
 
 /** Builds the token-limit + temperature fields a given provider accepts.
@@ -93,6 +94,21 @@ export interface ChatCompletionsConfig {
     promptUsdPerMillion: number;
     completionUsdPerMillion: number;
   };
+  /**
+   * Boot's namespace map, passed by the factory. The other 25 provider
+   * directories call `register()` in their own factory; these three build
+   * their limiter in the shared base below, so the registry has to reach
+   * the base to be told about them at all — and until SC-1090 it never
+   * was, leaving `registry.list()` short by exactly the three namespaces
+   * with the structural `ai:${providerKey}` doubling and the duplicate
+   * guard blind to them.
+   *
+   * OPTIONAL because direct construction (`new OpenAIProvider(key)` in
+   * tests) has no boot and no registry, and registering from a bare
+   * `new` would make a second construction in the same process throw on
+   * a namespace the first one took. Registration belongs to boot.
+   */
+  rateLimiterRegistry?: RateLimiterRegistry;
 }
 
 interface ChatCompletionsResponse {
@@ -149,12 +165,30 @@ export class ChatCompletionsProvider implements AIInferenceProvider {
     // (api / worker / data-provider), in-memory in tests / OSS without
     // Redis. Namespace per providerKey so OpenAI ≠ Perplexity ≠ DeepSeek
     // budgets stay independent.
-    this.limiter = createOutflowLimiter({
+    //
+    // The literal is built HERE and read back off `limiterConfig` rather
+    // than spelled twice: `provider-namespaces.test.ts` parses this one
+    // line as the source of truth for the AI namespaces, and a second
+    // copy is a second thing to keep in step. The doubled `ai` in
+    // `ai:ai-openai` is deliberate and untouched — a namespace is a live
+    // Redis key, so renaming it abandons whatever window is in flight
+    // (SC-1085 recorded it as-is for that reason).
+    const limiterConfig = {
       maxRequests: config.rateLimitPerMinute ?? DEFAULT_RATE_LIMIT_PER_MINUTE,
       windowMs: 60_000,
       redis: getSharedRedis(),
       namespace: `ai:${config.providerKey}`,
-    });
+    };
+    const limiter = createOutflowLimiter(limiterConfig);
+    // SC-1090. `register()` returns the limiter, so the registered one is
+    // what this provider uses — the same shape the other 25 factories have.
+    this.limiter =
+      config.rateLimiterRegistry?.register({
+        namespace: limiterConfig.namespace,
+        limiter,
+        registeredFrom: `providers/${config.providerKey}`,
+        description: `${config.providerKey}: ${limiterConfig.maxRequests} req / 60s`,
+      }) ?? limiter;
   }
 
   isConfigured(): boolean {
