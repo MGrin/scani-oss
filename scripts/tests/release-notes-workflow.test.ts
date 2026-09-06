@@ -290,3 +290,81 @@ describe('SC-922 — the message can name what the repository actually allows', 
     expect(chained).not.toMatch(/rc === '4'[\s\S]{0,120}?'success'/);
   });
 });
+
+/**
+ * SC-1029. A JOB NAME IS A CheckRun NAME, AND ON A RELEASE PULL REQUEST THIS
+ * ONE COULD NEVER CARRY A VERDICT.
+ *
+ * `pull_request_target` is the only trigger here that attaches a CheckRun to a
+ * pull request at all — `workflow_run` and `workflow_dispatch` runs are not
+ * associated with one — and on that trigger a release branch always resolves
+ * to `mode: silent`. So before the split, the row a reader saw on a release PR
+ * was always the run that compared nothing, and `gh pr checks` printed it
+ * `pass 3s` (run 33925389087; control 33925444500, the same job name over a
+ * real comparison, 46 seconds later).
+ *
+ * Nothing enforces this guard — `main-protection` does not require the context,
+ * because requiring it deadlocked the repository (SC-647). A reader is its only
+ * consumer, so a green that means nothing is the whole failure.
+ *
+ * These pin the two halves that would each silently restore it: the comparison
+ * living in a job that can be skipped, and the gate reading the one input that
+ * discriminates.
+ */
+describe('SC-1029 — a run that compared nothing does not render as a pass', () => {
+  const checkJob = async () => {
+    const chained = await read('.github/workflows/release-notes.yml');
+    // Everything from the `check:` job header to its first step.
+    const header = /\n {2}check:\n([\s\S]*?)\n {4}steps:\n/.exec(chained);
+    expect(header).not.toBeNull();
+    return { chained, header: header?.[1] ?? '' };
+  };
+
+  /**
+   * Merge the two jobs back and the comparison is a STEP again — a step can be
+   * skipped while its job concludes success, which is the defect exactly.
+   * Only a JOB can be skipped in a way `gh pr checks` renders as `skipping`
+   * (measured on `Prod-guards integration (compiled api)`, MGrin/scani-oss#489).
+   */
+  test('the verdict name is on a job that a silent run does not run', async () => {
+    const { header } = await checkJob();
+    expect(header).toContain('name: Release notes cover every releasable commit');
+    expect(header).toMatch(/^\s*if:/m);
+    expect(header).toContain('needs: target');
+  });
+
+  /**
+   * The must-be-ABSENT axis, and it is the one the repository has been burned
+   * by twice. `skipped` means two opposite things here — a filter that matched
+   * nothing, and nothing having been considered at all — so a gate keyed on the
+   * word cannot separate them. A job or step RESULT is the same mistake in
+   * another spelling: `needs: target` already implies the resolver succeeded,
+   * and `deploy-fly.yaml`'s `upstream-gate` reads the one discriminating input
+   * and no `needs.`/`steps.` value for exactly this reason (SC-726).
+   *
+   * Pinned as an EXACT string rather than a substring: a widening reads as an
+   * addition, and a substring assertion survives every addition.
+   */
+  test('the gate reads the resolved mode and nothing else', async () => {
+    const { header } = await checkJob();
+    const gate = /^\s*if: (.+)$/m.exec(header)?.[1]?.trim();
+    expect(gate).toBe("needs.target.outputs.mode != 'silent'");
+    expect(gate).not.toMatch(/\.result\b/);
+    expect(gate).not.toMatch(/steps\./);
+    expect(gate).not.toMatch(/skipped|failure\(|always\(/);
+  });
+
+  /**
+   * The resolver runs on every event and can never be skipped, so if it ever
+   * wore the verdict's name the false green would simply move one job over —
+   * the same defect, refactored rather than fixed.
+   */
+  test('the job that always runs does not wear the verdict name', async () => {
+    const chained = await read('.github/workflows/release-notes.yml');
+    const target = chained.slice(chained.indexOf('\n  target:\n'), chained.indexOf('\n  check:\n'));
+    // Must-be-FOUND control: an empty slice would pass the assertion below for
+    // a reason having nothing to do with the name.
+    expect(target).toContain('name: Find the release commit to check');
+    expect(target).not.toContain('Release notes cover every releasable commit');
+  });
+});

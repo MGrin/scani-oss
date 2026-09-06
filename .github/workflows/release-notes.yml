@@ -40,6 +40,46 @@ name: Release notes
 # ruleset's required contexts is a repository-settings change; scani-oss is not
 # under Terraform (SC-565), so it is a manual one.
 
+# SC-1029. TWO JOBS, AND THE SPLIT IS THE POINT — DO NOT MERGE THEM BACK.
+# A job's `name` becomes a CheckRun name, and `gh pr checks` prints CheckRuns
+# and StatusContexts side by side under whatever names they carry. This job's
+# name and the status context it posts are the SAME STRING, deliberately: the
+# context is what a ruleset would match on, so a second wording would satisfy
+# nothing. The cost is that a CheckRun can wear the verdict's name while
+# carrying no verdict.
+#
+# On a RELEASE pull request it could never wear anything else.
+# `pull_request_target` is the only trigger here that attaches a CheckRun to a
+# pull request at all — `workflow_run` and `workflow_dispatch` runs are not
+# associated with one — and on that trigger a release branch always resolves to
+# `mode: silent`. So the CheckRun a reader sees on a release PR is, by
+# construction, always the run that compared nothing, while the real verdict
+# arrives separately as a StatusContext from the `workflow_run` chain.
+#
+# Measured on two runs 46 seconds apart, same repository, same job name:
+#
+#     33925389087  pull_request_target  JOB conclusion: success
+#       skipped  Every releasable commit has a release note   <- nothing compared
+#     33925444500  workflow_dispatch    JOB conclusion: success
+#       success  Every releasable commit has a release note   <- a real verdict
+#
+# `gh pr checks` printed the first as `pass 3s`. Somebody who pushes a repair to
+# a release branch, sees that green and merges has verified nothing — and since
+# `main-protection` does not require this context (SC-647 deadlocked the
+# repository when it did), a reader is this guard's ONLY consumer.
+#
+# So the comparison lives in its own job, gated on the mode the resolver
+# produced. A silent run SKIPS it, and `gh pr checks` renders a skipped job as
+# `skipping` rather than `pass` — measured on `Prod-guards integration (compiled
+# api)`, MGrin/scani-oss#489. Not green, and deliberately not an alarm either:
+# firing on a legitimate silent run is what trains people to ignore a check
+# (SC-726).
+#
+# THE GATE READS THE RESOLVED MODE AND NOTHING ELSE — not `needs.*.result`, not
+# a step conclusion, and never the word `skipped`, which means two opposite
+# things in this repository. `release-notes-workflow.test.ts` refuses if that
+# condition is widened to read any of them.
+
 on:
   # SC-653. THIS IS NOT A REVERT OF SC-640, AND THE DIFFERENCE IS THE WHOLE
   # POINT. `pull_request` used to be how the check REACHED THE RELEASE PR, and
@@ -106,9 +146,14 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  check:
-    name: Release notes cover every releasable commit
+  # Runs on every event, and names nothing it has not established: this job
+  # decides WHAT to compare, and never whether the comparison passed.
+  target:
+    name: Find the release commit to check
     runs-on: ubuntu-latest
+    outputs:
+      mode: ${{ steps.target.outputs.mode }}
+      sha: ${{ steps.target.outputs.sha }}
     steps:
       - id: target
         name: Find the release commit to check
@@ -184,17 +229,29 @@ jobs:
             core.setOutput('sha', release[0].head.sha);
             core.setOutput('mode', 'check');
 
+  check:
+    # SC-1029. The gate, and the whole reason this is a second job. `silent`
+    # means nothing was compared, so the job carrying that claim must not run
+    # and must not conclude success — a skipped job reads as `skipping`.
+    # Read the resolver's OUTPUT, never a job or step RESULT: `needs.target`
+    # already implies the resolver succeeded, and keying on a conclusion is how
+    # a legitimate skip and a broken chain become one observation.
+    if: needs.target.outputs.mode != 'silent'
+    needs: target
+    name: Release notes cover every releasable commit
+    runs-on: ubuntu-latest
+    steps:
       # The second guard on the fork path, deliberately redundant with
       # `mode == 'check'` being unreachable from that trigger. Redundant
       # because the cost of the two disagreeing is executing a contributor's
       # branch with a write token, and a guard that depends on a script above
       # it staying correct is not the guard you want for that.
-      - if: steps.target.outputs.mode == 'check' && github.event_name != 'pull_request_target'
+      - if: needs.target.outputs.mode == 'check' && github.event_name != 'pull_request_target'
         uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
         with:
           # The release commit itself, whose single parent is exactly what
           # release-please generated these notes from.
-          ref: ${{ steps.target.outputs.sha }}
+          ref: ${{ needs.target.outputs.sha }}
           # The whole history and every tag. A shallow checkout cannot reach
           # the previous release tag, and "no previous tag" reads exactly like
           # a repository that has never released — which is why the script
@@ -202,14 +259,14 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
 
-      - if: steps.target.outputs.mode == 'check' && github.event_name != 'pull_request_target'
+      - if: needs.target.outputs.mode == 'check' && github.event_name != 'pull_request_target'
         uses: ./.github/actions/setup-bun
         with:
           # The check imports nothing but git.
           install: "false"
 
       - id: check
-        if: steps.target.outputs.mode == 'check' && github.event_name != 'pull_request_target'
+        if: needs.target.outputs.mode == 'check' && github.event_name != 'pull_request_target'
         name: Every releasable commit has a release note
         # Not `set -e`: the exit code IS the result, and it has to survive to
         # the status step. Reading `$?` unpiped rather than grepping the text.
@@ -225,7 +282,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
           exit "$rc"
         env:
-          TARGET_SHA: ${{ steps.target.outputs.sha }}
+          TARGET_SHA: ${{ needs.target.outputs.sha }}
           # SC-922. The failure message names which merge methods this
           # repository actually offers, read from the API rather than asserted
           # in prose — it used to prescribe a squash that is disabled here.
@@ -236,20 +293,20 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
 
       # `always()`, because the whole point is that the release PR carries a
-      # visible verdict. A workflow_run job is not a check on the pull request,
-      # so without this the result lives somewhere nobody looks — which is the
-      # bug this file exists to close, one level up.
-      - if: always() && steps.target.outputs.mode != 'silent'
+      # visible verdict even when the check step exits non-zero. It no longer
+      # re-tests `mode != 'silent'`: the job gate above already decided that,
+      # and a second copy of a condition is a second copy to keep in step.
+      - if: always()
         name: Report the verdict onto the head commit
         uses: actions/github-script@v7
         with:
           script: |
-            const mode = '${{ steps.target.outputs.mode }}';
+            const mode = '${{ needs.target.outputs.mode }}';
             if (mode === 'reported') {
               await github.rest.repos.createCommitStatus({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                sha: '${{ steps.target.outputs.sha }}',
+                sha: '${{ needs.target.outputs.sha }}',
                 state: 'success',
                 context: 'Release notes cover every releasable commit',
                 description: 'Not a release pull request — no release notes to cover',
@@ -283,7 +340,7 @@ jobs:
             await github.rest.repos.createCommitStatus({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              sha: '${{ steps.target.outputs.sha }}',
+              sha: '${{ needs.target.outputs.sha }}',
               state,
               context: 'Release notes cover every releasable commit',
               description: description.slice(0, 140),
