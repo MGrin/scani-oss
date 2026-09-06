@@ -21,7 +21,6 @@ src/
 │   ├── boot.ts                    buildProviderRegistry({ mode, redis, env, providers })
 │   ├── capabilities.ts            9 capability interfaces + duck-typed guards
 │   ├── config.ts                  loadProvidersConfig() — package-owned env shape
-│   ├── credential-pool.ts         cross-user credential borrow + quarantine
 │   ├── errors.ts                  ProviderError + classifyError + .fromHttp(res)
 │   ├── rate-limiter-registry.ts   single namespace map (boot fails on duplicates)
 │   ├── registry.ts                capability-bucketed dispatch
@@ -31,8 +30,6 @@ src/
 │   │   ├── base-cex-provider.ts        pagination + asset-identity for stream-history CEX (Kraken)
 │   │   ├── base-hmac-cex-provider.ts   signed-HTTP scaffolding for the 11 simpler CEX
 │   │   └── base-evm-provider.ts        EVM-chain scaffolding (Etherscan)
-│   ├── cloud/                     cloud-mode capability proxies + factory helpers
-│   │                              (data-provider tRPC bridge in @scani/cloud-client)
 │   └── utils/
 │       └── fetch.ts               fetchWithTimeout — every provider's HTTP path
 ├── providers/
@@ -65,65 +62,38 @@ capability — `assertImplementsCapability(provider, 'transactions')`
 in tests catches that before it becomes a "no transactions provider for
 institutionCode='kraken'" runtime surprise.
 
-## Modes — `direct` vs `cloud`
+## One mode — every process runs the real providers
 
-`buildProviderRegistry({ mode, ... })`:
+`buildProviderRegistry()` constructs real provider instances that talk to
+upstream APIs (CoinGecko, Binance, OpenAI, …) directly, in every process
+that calls it. Every app therefore needs every per-provider API key set in
+its env; none of them has a fallback.
 
-- **`direct`** — the default. The factories construct real provider
-  instances that talk to upstream APIs (CoinGecko, Binance, OpenAI,
-  …) directly. Apps that boot in direct mode need every per-provider
-  API key set in their env.
+**There used to be a second mode.** `mode: 'cloud'` filled every capability
+slot with a proxy from `core/cloud/` that forwarded to
+`apps/backend/data-provider` over tRPC via a `CloudProviderClientBridge`.
+It was complete and it was never adopted — all three backend apps passed
+`mode: 'direct'` as a string literal and `mode` was never derived from
+`env`, so no environment variable or Fly secret could reach it (SC-521).
+**It was deleted in SC-587 on mgrin's decision**, together with the
+data-provider's `pricing.*` and `ai.*` routers, whose only caller was the
+bridge.
 
-- **`cloud`** — every capability slot is filled with a proxy from
-  `core/cloud/` (`CloudCurrentPricer`, `CloudBalanceFetcher`,
-  `CloudAIProvider`, …) that forwards calls to a `CloudProviderClient`
-  the app supplies. The `CloudProviderClientBridge` in
-  `@scani/cloud-client/cloud-services/cloud-provider-client.ts`
-  implements that interface by translating to tRPC calls against
-  `apps/backend/data-provider`.
+Two things that were true of it and remain true without it:
 
-  **Status: UNADOPTED. No app boots cloud mode** (SC-521). All three
-  backend apps pass `mode: 'direct'` as a string literal — `api`,
-  `worker` and `data-provider` alike — and `mode` is a required
-  parameter that `buildProviderRegistry` never derives from `env`, so
-  no environment variable or Fly secret can switch it on.
-  `CloudProviderClientBridge` is constructed nowhere outside tests, so
-  the data-provider's `ai.*` and `pricing.*` routers have no live
-  caller either.
+- **Do not reason about egress as though there were a single hop.** The
+  api and worker call CoinGecko, DeFiLlama, Frankfurter, Finnhub, Yahoo
+  Finance, Etherscan, the chain RPCs and OpenAI themselves.
+- **What keeps upstream budgets coherent across the four processes is
+  Redis, not topology**: `buildProviderRegistry` calls `setSharedRedis`,
+  and `OutflowRateLimiterRegistry` keys every limiter `rl:<namespace>`
+  with no per-service discriminator. Moving a limiter in-process would
+  multiply every agreed cap by the process count.
 
-  Two consequences worth stating plainly:
-
-  - **This directory is dead code** by the repo's own guidelines, and
-    `knip` cannot see it — `rules.exports` is `off` and `./core/cloud`
-    is a declared package export. It survives because nothing looks,
-    not because something decided it should.
-  - **Do not reason about egress as though it were wired up.** The api
-    and worker call CoinGecko, DeFiLlama, Frankfurter, Finnhub, Yahoo
-    Finance, Etherscan, the chain RPCs and OpenAI themselves.
-
-  Whether to adopt it or delete it is an open decision, not an
-  oversight. Adopting it would not make the data-provider sole egress
-  either: the 15 user-credentialed CEX/broker/fiat providers must stay
-  in the api and worker so decrypted per-tenant credentials never
-  cross into a shared multi-tenant service, and the bridge refuses
-  `fetchBalances` / `fetchTransactions` by design for that reason.
-
-  What keeps upstream budgets coherent across the four processes is
-  **Redis, not topology**: `buildProviderRegistry` calls
-  `setSharedRedis`, and `OutflowRateLimiterRegistry` keys every limiter
-  `rl:<namespace>` with no per-service discriminator. Moving a limiter
-  in-process would multiply every agreed cap by the process count.
-
-  Route coverage, checked 2026-08-22: `pricing.*`, `ai.*` and
-  `tokens.enrichIdentity` all exist on the data-provider and are
-  implemented by the bridge. The only two methods that throw
-  `not-supported` are `fetchBalances` and `fetchTransactions` — and
-  those are intentional, per the tenant-boundary reason above, not a
-  gap waiting to be filled. (An earlier version of this section said
-  pricing and token-identity were still missing; they were added since.
-  Falsifier: `grep -c 'notSupported(' \
-  ../cloud-client/src/cloud-services/cloud-provider-client.ts` — expect
-  3, two call sites plus the definition.) See "Follow-ups" below.
+Adopting it would never have moved the 15 user-credentialed
+CEX/broker/fiat providers anyway: those stay in the api and worker so
+decrypted per-tenant credentials never cross into a shared multi-tenant
+service. **That boundary is unchanged by the deletion.**
 
 ## Boot
 
@@ -134,7 +104,6 @@ import { aiOpenAIFactory } from '@scani/providers/providers/ai-openai';
 // … etc.
 
 await buildProviderRegistry({
-  mode: 'direct',
   redis: providerRedis,
   env: process.env,
   providers: [
@@ -142,34 +111,6 @@ await buildProviderRegistry({
     finnhubFactory,
     aiOpenAIFactory,
     // order = dispatch priority
-  ],
-});
-```
-
-Cloud-mode wiring, for reference only — **no app does this** (SC-521).
-The routes are ready; the adoption never happened:
-
-```ts
-import { buildProviderRegistry } from '@scani/providers/core/boot';
-import {
-  makeCloudCurrentPricerFactory,
-  makeCloudAIProviderFactory,
-} from '@scani/providers/core/cloud';
-import { CloudProviderClientBridge } from '@scani/cloud-client/cloud-services/cloud-provider-client';
-import { getCloudClient } from '@scani/cloud-client/runtime';
-
-const client = getCloudClient();
-if (!client) throw new Error('cloud mode requires SCANI_CLOUD_URL');
-const bridge = new CloudProviderClientBridge(client);
-
-await buildProviderRegistry({
-  mode: 'cloud',
-  cloudClient: bridge,
-  env: process.env,
-  providers: [
-    makeCloudCurrentPricerFactory('coingecko'),
-    makeCloudCurrentPricerFactory('finnhub'),
-    makeCloudAIProviderFactory('openai'),
   ],
 });
 ```
@@ -228,20 +169,19 @@ Per-user CEX credentials (apiKey / apiSecret / passphrase) live in
 arrive at the provider via `ctx.resolveCredentials(ctx.credentialsRef)`,
 not via env.
 
-## Credential pool
+## Credentials
 
-`CredentialPool` (`core/credential-pool.ts`) lets pool-credentialed
-providers (CoinGecko, Finnhub) borrow any user's API credentials at
-request time. Borrows are health-tracked: a credential that returns
-`UPSTREAM_ERROR` gets quarantined for the namespace's rate-limit
-window, then returns to the pool. Self-credentialed providers (every
-CEX, IBKR, Wise) bypass the pool — they only ever use the
-session-scoped `ctx.credentialsRef`.
+Self-credentialed providers (every CEX, IBKR, Wise) use only the
+session-scoped `ctx.credentialsRef`. The `WithUserCreds<T>` type brand on
+`BalanceProvider.fetchBalances` + `TransactionsProvider.fetchTransactions`
+makes passing a context without `credentialsRef` a compile-time error.
 
-The `WithUserCreds<T>` type brand on `BalanceProvider.fetchBalances`
-+ `TransactionsProvider.fetchTransactions` makes passing a context
-without `credentialsRef` a compile-time error, so the compiler refuses
-to route a pool credential into a balance fetch.
+**A `CredentialPool` that would have let platform-credentialed providers
+borrow any user's API credentials at request time was deleted in
+SC-1022**, having been constructed and wired at boot with its one
+functional method called from nowhere. Its two bookkeeping tables
+(`credential_pool_state`, `credential_pool_borrow_log`) are deliberately
+retained — see `packages/infra/db/src/schema/user-integration-credentials.ts`.
 
 ## Tests
 
@@ -263,27 +203,17 @@ test time.
   shape, env vars, rate limit + namespace, error taxonomy, known
   quirks, and pointer files. The remaining 20 stubs match the
   original short-form pattern; flesh out as the venues evolve.
-- ~~**F2** — Cloud-mode bridge coverage~~. Mostly done.
-  `CloudProviderClientBridge` is now live for:
-  - `ai.{parseScreenshot, parseDocumentText, completeText}`
-  - `pricing.{fetchCurrentPrice, fetchCurrentPrices, fetchHistoricalPrice,
-    fetchHistoricalRange}`
-  - `tokens.enrichIdentity`
-
-  **Intentionally not implemented**: `fetchBalances` and
-  `fetchTransactions`. Both are user-credentialed (CEXes, brokers, IBKR
-  Flex Query). Routing them through data-provider would require sending
-  decrypted user credentials over the wire on every sync, which is the
-  architectural boundary we keep intact. Backend in cloud mode runs a
-  small direct-mode sub-registry for those venues.
+- ~~**F2** — Cloud-mode bridge coverage~~. Moot. The bridge and the
+  routers it called were deleted in SC-587; there is no second egress
+  path left to cover.
 - ~~**F3** — `googleapis` (~160MB) is a top-level dep~~. Done.
   GoogleSheetsProvider now lives in its own sub-workspace
   `@scani/providers-google-sheets` with `googleapis` as the only
   unique dep. PricingService obtains it via the registry instead of
   `new GoogleSheetsProvider(...)` — backend + worker boot construct
   it via `googleSheetsFactory(...)` and `registry.register(...)` it.
-  data-provider keeps its registry Google-Sheets-free (no per-user
-  DB state in cloud-mode). Domain code (`@scani/domain`) no longer
+  data-provider keeps its registry Google-Sheets-free (it holds no
+  per-user DB state). Domain code (`@scani/domain`) no longer
   carries `googleapis` transitively; only api + worker do.
 - ~~**F4** — `BaseCexProvider` + `BaseEvmProvider` deeper test coverage~~.
   Done. `tests/core/base/{base-cex-provider,base-evm-provider}.test.ts`

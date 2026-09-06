@@ -2,7 +2,7 @@ import { describe, expect, it } from 'bun:test';
 import { TRPCError } from '@trpc/server';
 import { AUTH_MESSAGES, validateBearerToken } from '../../src/auth/api-key';
 import type { CloudDb } from '../../src/db/connection';
-import { pricingRouter } from '../../src/presentation/routers/pricing';
+import { tokensRouter } from '../../src/presentation/routers/tokens';
 import { buildUnauthedContext } from '../helpers/test-context';
 
 /**
@@ -130,7 +130,7 @@ describe('bearer refusals name their own cause', () => {
 describe('bearerProcedure surfaces the context’s refusal', () => {
   it('re-throws the reason auth failed instead of a generic one', async () => {
     const revokedAt = new Date('2026-08-12T09:30:00.000Z');
-    const caller = pricingRouter.createCaller(
+    const caller = tokensRouter.createCaller(
       buildUnauthedContext({
         authFailure: new TRPCError({
           code: 'UNAUTHORIZED',
@@ -138,15 +138,17 @@ describe('bearerProcedure surfaces the context’s refusal', () => {
         }),
       })
     );
-    await expect(
-      caller.convertRate({ fromCurrency: 'USD', toCurrency: 'EUR' })
-    ).rejects.toMatchObject({ code: 'UNAUTHORIZED', message: AUTH_MESSAGES.revoked(revokedAt) });
+    await expect(caller.search({ query: 'btc', limit: 1 })).rejects.toMatchObject({
+      code: 'UNAUTHORIZED',
+      message: AUTH_MESSAGES.revoked(revokedAt),
+    });
   });
 
   it('falls back to the missing-header message when nothing tried bearer auth', async () => {
-    const caller = pricingRouter.createCaller(buildUnauthedContext());
-    await expect(
-      caller.convertRate({ fromCurrency: 'USD', toCurrency: 'EUR' })
-    ).rejects.toMatchObject({ code: 'UNAUTHORIZED', message: AUTH_MESSAGES.missingHeader });
+    const caller = tokensRouter.createCaller(buildUnauthedContext());
+    await expect(caller.search({ query: 'btc', limit: 1 })).rejects.toMatchObject({
+      code: 'UNAUTHORIZED',
+      message: AUTH_MESSAGES.missingHeader,
+    });
   });
 });

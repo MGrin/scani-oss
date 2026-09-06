@@ -14,7 +14,7 @@ describe('securityHeaders', () => {
   });
 
   test('every API surface still refuses framing outright', () => {
-    for (const path of ['/trpc/pricing.convertRate', '/openapi.json', '/ready', '/']) {
+    for (const path of ['/trpc/tokens.search', '/openapi.json', '/ready', '/']) {
       const headers = securityHeaders(path, false);
       expect(headers['X-Frame-Options'], path).toBe('DENY');
       expect(headers['Content-Security-Policy'], path).toContain("frame-ancestors 'none'");

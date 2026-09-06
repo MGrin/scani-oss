@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'bun:test';
 import type { ProviderFactory, ProviderFactoryDeps } from '../../src/core/boot';
-import { CredentialPool } from '../../src/core/credential-pool';
 import {
   ProviderCredentialReport,
   type ProviderCredentialStatus,
@@ -157,12 +156,9 @@ async function runFactory(
   // namespace, and the shared container's is other suites' state.
   const recorded: ProviderCredentialStatus[] = [];
   const deps: ProviderFactoryDeps = {
-    mode: 'direct',
     redis: null,
     env,
     rateLimiterRegistry: new RateLimiterRegistry(),
-    credentialPool: new CredentialPool(),
-    cloudClient: null,
     reportCredentialStatus: (s) => recorded.push(s),
   };
   await factory(deps);

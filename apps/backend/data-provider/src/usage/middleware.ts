@@ -230,9 +230,12 @@ export function buildUsageMiddleware({ sink, quotaLimiter, globalCostBreaker }: 
 }
 
 function derivePrimaryProvider(path: string): string {
-  // tRPC paths come in as e.g. "ai.vision.extract" or "pricing.getPrice";
-  // the top-level namespace matches our router split (ai/pricing/chains/…)
-  // which doubles as the "provider family" on the usage dashboard.
+  // tRPC paths come in as e.g. "tokens.search" or "chains.hasActivity";
+  // the top-level namespace matches our router split (tokens/chains/og/…)
+  // which doubles as the "provider family" on the usage dashboard. It is
+  // derived from the path rather than matched against a list, so removing
+  // a router — as SC-587 did with `ai` and `pricing` — needs no change
+  // here; historical `cloud_usage_events` rows keep their old family.
   const [head] = path.split('.');
   return head || 'unknown';
 }

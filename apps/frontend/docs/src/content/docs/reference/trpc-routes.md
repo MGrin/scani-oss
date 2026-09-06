@@ -63,16 +63,21 @@ Composed in `apps/backend/data-provider/src/presentation/router.ts`.
 
 | Router | Auth | Role |
 |---|---|---|
-| `pricing` | Bearer | Current and historical prices via the routed provider stack (CoinGecko, Finnhub, DeFiLlama, Frankfurter, Yahoo Finance). |
 | `chains` | Bearer | Blockchain balance + transaction reads (Etherscan V2 across EVM chains, Helius for Solana, Bitcoin RPC, Tron, TON, ENS). |
-| `ai` | Bearer | Screenshot parsing (OpenAI Vision). Optionally Perplexity / DeepSeek for token-identity assistance. |
-| `tokens` | Bearer | Identity-related calls used by `TokenIdentityService` (CoinGecko slug lookup, Etherscan contract lookup, …). |
+| `tokens` | Bearer | `tokens.search` — free-text search fanned out across CoinGecko, DeFiLlama and Finnhub. The api holds no upstream keys, so its own token search calls this for every external result. Also `tokens.enrichIdentity` for identity lookups. |
 | `email` | Bearer — **internal only** | `email.send` — used by the api to send magic-link / OTP / verification emails. A customer's Cloud API key gets `403 FORBIDDEN`: this is a facade for Scani's own services, not a product endpoint (SC-585). |
 | `storage` | Bearer — **internal only** | Presigned URL minting + the rare server-side read path. The only service that holds S3/R2 credentials; api + worker request presigned URLs from here so creds never leave the data-provider. A customer's Cloud API key gets `403 FORBIDDEN` — the bucket is shared and object keys are unprefixed, so reaching these at all is reaching every tenant's objects (SC-585). |
 | `og` | Bearer | Open Graph metadata fetch (used by the SPA's link previews). |
 | `contact` | Public | Landing-page contact form: validates a submission, emails support, sends a receipt. Per-IP rate-limited. No bearer (called from the public marketing site). |
 | `keys` | Cookie | Cloud-management surface (`CLOUD_MANAGEMENT_ENABLED=true`): mint, list, revoke cloud API keys scoped to the authenticated cloud user. |
 | `usage` | Cookie | Cloud-management read-API: per-user / per-tier usage aggregation from `cloud_usage_events`. |
+
+`pricing` and `ai` routers stood here until SC-587 (2026-09) deleted them.
+Their only caller was a `mode: 'cloud'` provider registry in the api and
+worker that was built and never adopted, and which went in the same change —
+so every backend process now calls CoinGecko, Finnhub, DeFiLlama, Frankfurter,
+Yahoo Finance and OpenAI itself. Nine public procedures were removed with
+them; they return `NOT_FOUND`.
 
 Auth column: **Bearer** = `DATA_PROVIDER_API_KEY` (every api / worker call). **Cookie** = Better-Auth session, only available when `CLOUD_MANAGEMENT_ENABLED=true` and the data-provider is fronted by the cloud-frontend. **Public** = no auth (rate-limited per-IP).
 

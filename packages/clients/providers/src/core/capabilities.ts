@@ -173,10 +173,10 @@ export interface AIResult<T> {
 export interface AIInferenceProvider extends ProviderBase {
   /**
    * Whether `parseScreenshot` accepts `application/pdf`. Declared rather
-   * than discovered so a caller — or the data-provider's `ai.status`
-   * route, which relays it to cloud-mode clients — can route around a
-   * provider that can't read a PDF instead of paying for a request the
-   * endpoint refuses.
+   * than discovered so a caller can route around a provider that can't
+   * read a PDF instead of paying for a request the endpoint refuses.
+   * (The data-provider's `ai.status` route relayed this to cloud-mode
+   * clients until both were deleted in SC-587.)
    *
    * Absent means "no": a provider that supports PDFs has to say so.
    * A proxy that can only learn the answer over the wire (see

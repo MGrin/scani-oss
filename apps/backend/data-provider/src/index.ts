@@ -538,12 +538,10 @@ void (async () => {
   const backoffMs = (attempt: number) => Math.min(60_000, 5_000 * 2 ** Math.min(attempt, 4));
   for (let attempt = 1; attempt <= MAX_BOOT_ATTEMPTS; attempt++) {
     try {
-      // Stand up the @scani/providers registry. The data-provider
-      // runs in `direct` mode — it holds the platform-credentialed
-      // provider instances and exposes them to backend/worker via
-      // the tRPC routers.
+      // Stand up the @scani/providers registry. It holds the
+      // platform-credentialed provider instances this service's
+      // tRPC routers dispatch through.
       await buildProviderRegistry({
-        mode: 'direct',
         redis: redisConnection,
         env: process.env,
         providers: [

@@ -36,18 +36,21 @@ export interface DecryptedCredentials {
  * decryption inside `IntegrationCredentialsService` and means no
  * provider can accidentally leak a credential into a log line.
  *
- * Pool-credentialed methods (current/historical pricing, identity
- * enrichment) treat `credentialsRef` as optional — they self-resolve
- * via `CredentialPool` when the caller has no integration. Self-
+ * Platform-credentialed methods (current/historical pricing, identity
+ * enrichment) treat `credentialsRef` as optional — they run on Scani's
+ * own upstream keys when the caller has no integration. Self-
  * credentialed methods (balances, transactions, validation) require
  * `credentialsRef` at the type level via `WithUserCreds<T>`.
+ *
+ * A `CredentialPool` that would have borrowed another user's credential
+ * for the optional case was deleted in SC-1022, never having been called.
  */
 export interface ProviderContext {
   /** Token to denominate prices in. Always a real Token row. */
   baseCurrency: Token;
   /** Wall-clock timestamp the caller wants prices/balances "as of". */
   timestamp?: Date;
-  /** Owning user — used for audit trails on pool borrows. */
+  /** Owning user — used for audit trails. */
   userId?: string;
   /** Owning account — for balance / transaction calls. */
   accountId?: string;

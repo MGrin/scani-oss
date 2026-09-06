@@ -83,13 +83,16 @@ const envSchema = z.object({
   // COINGECKO_API_KEY, FINNHUB_API_KEY, ETHERSCAN_API_KEY, HELIUS_API_KEY,
   // GOOGLE_SHEETS_ID, GOOGLE_SERVICE_ACCOUNT_KEY) are owned by
   // @scani/providers' env schema. They are required HERE, in every
-  // deployment: the api boots `buildProviderRegistry({ mode: 'direct' })`
-  // unconditionally (see src/index.ts) and calls these upstreams itself.
+  // deployment: the api boots `buildProviderRegistry(...)` unconditionally
+  // (see src/index.ts) and calls these upstreams itself.
   //
   // This comment used to say they were "only required on the host that
   // actually boots in direct mode — typically the data-provider". That was
-  // false and it was a footgun (SC-521): every backend app boots direct
-  // mode, and none of these keys has a data-provider fallback. Setting
+  // false and it was a footgun (SC-521): every backend app runs the real
+  // provider classes in-process, and none of these keys has a
+  // data-provider fallback. The proxy mode that would have provided one
+  // was deleted unadopted in SC-587, so there is no longer a second
+  // egress path to mistake this for. Setting
   // them only on the data-provider degrades the api SILENTLY — Finnhub
   // returns null for every call, Etherscan goes unauthenticated, CoinGecko
   // drops to the public tier, and OpenAI throws on every call.

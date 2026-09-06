@@ -13,7 +13,6 @@
 
 import { describe, expect, test } from 'bun:test';
 import type { ProviderFactory, ProviderFactoryDeps } from '../../src/core/boot';
-import { CredentialPool } from '../../src/core/credential-pool';
 import { RateLimiterRegistry } from '../../src/core/rate-limiter-registry';
 import { ProviderRegistry } from '../../src/core/registry';
 import { bitcoinFactory } from '../../src/providers/bitcoin';
@@ -37,12 +36,9 @@ async function registerFresh(factory: ProviderFactory): Promise<ProviderRegistry
   // registry is other suites' state.
   const registry = new ProviderRegistry();
   const deps: ProviderFactoryDeps = {
-    mode: 'direct',
     redis: null,
     env: {},
     rateLimiterRegistry: new RateLimiterRegistry(),
-    credentialPool: new CredentialPool(),
-    cloudClient: null,
     reportCredentialStatus: () => {},
   };
   const result = await factory(deps);

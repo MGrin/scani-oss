@@ -201,7 +201,6 @@ async function main(): Promise<void> {
       enableReadyCheck: true,
     });
     const built = await buildProviderRegistry({
-      mode: 'direct',
       redis: providerRedis,
       env: process.env,
       providers: [

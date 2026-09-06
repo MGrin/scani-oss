@@ -274,10 +274,8 @@
       "version": "1.0.0",
       "dependencies": {
         "@scani/config": "workspace:*",
-        "@scani/db": "workspace:*",
         "@scani/email": "workspace:*",
         "@scani/logging": "workspace:*",
-        "@scani/providers": "workspace:*",
         "@scani/rate-limiter": "workspace:*",
         "@scani/storage": "workspace:*",
         "@trpc/client": "^10.45.4",
@@ -298,7 +296,6 @@
         "@scani/logging": "workspace:*",
         "@scani/rate-limiter": "workspace:*",
         "decimal.js": "^10.6.0",
-        "drizzle-orm": "^0.45.2",
         "ioredis": "^5.10.1",
         "typedi": "^0.10.0",
         "zod": "^3.25.76",
