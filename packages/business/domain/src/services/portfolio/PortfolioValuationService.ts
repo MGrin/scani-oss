@@ -35,6 +35,21 @@ export type PortfolioValueResult = {
   baseCurrency: string;
   holdings: Array<{
     accountId: string;
+    /**
+     * The identity every consumer must key a per-holding price on.
+     *
+     * This service prices per token id and is correct at every step; the row
+     * shape used to carry only `tokenSymbol`, so a consumer building a price
+     * map off it had nothing unique to key on. Two tokens can share a symbol
+     * — a `private-company` token and a crypto token, one of several such
+     * pairs in production — and `new Map()` over an array of pairs keeps the
+     * LAST duplicate, so both holdings rendered the survivor's price, source
+     * and staleness while the total computed here stayed right (SC-1114).
+     *
+     * `tokenSymbol` stays for display. It is not an identity and must not be
+     * used as one.
+     */
+    tokenId: string;
     tokenSymbol: string;
     balance: string;
     currentPrice: string | null;
@@ -330,6 +345,7 @@ export class PortfolioValuationService {
 
         return {
           accountId: holding.accountId,
+          tokenId: holding.tokenId,
           tokenSymbol: holding.tokenSymbol,
           balance: balance.toString(),
           currentPrice,
@@ -360,6 +376,7 @@ export class PortfolioValuationService {
         const balance = new Decimal(holding.balance);
         return {
           accountId: holding.accountId,
+          tokenId: holding.tokenId,
           tokenSymbol: holding.tokenSymbol,
           balance: balance.toString(),
           currentPrice: null,

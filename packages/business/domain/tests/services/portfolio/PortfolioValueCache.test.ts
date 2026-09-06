@@ -40,6 +40,7 @@ function sampleResult(totalValue = '100'): PortfolioValueResult {
     holdings: [
       {
         accountId: 'acc-1',
+        tokenId: 'token-1',
         tokenSymbol: 'BTC',
         balance: '1',
         currentPrice: '100',

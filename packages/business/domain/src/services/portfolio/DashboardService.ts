@@ -6,21 +6,11 @@ import { getOrComputeFromCache } from '../../lib/request-cache';
 import { HoldingRepository } from '../../repositories/HoldingRepository';
 import { BaseService } from '../BaseService';
 import { AssetAllocationService } from './AssetAllocationService';
-import { PortfolioValuationService, type RequestCache } from './PortfolioValuationService';
-
-type PortfolioValueResult = {
-  totalValue: string;
-  baseCurrency: string;
-  holdings: Array<{
-    tokenSymbol: string;
-    balance: string;
-    // See `PortfolioValuationService` — null when unpriceable.
-    currentPrice: string | null;
-    value: string | null;
-    priceTimestamp?: Date;
-    priceSource?: string;
-  }>;
-};
+import {
+  PortfolioValuationService,
+  type PortfolioValueResult,
+  type RequestCache,
+} from './PortfolioValuationService';
 
 type HoldingWithDetails = {
   holding: Holding;
@@ -192,7 +182,7 @@ export class DashboardService extends BaseService {
     const holdingsWithValues = holdingsWithDetails
       .filter(({ holding }) => holding.isActive)
       .flatMap(({ holding, token, account, institution }) => {
-        const currentPrice = priceMap.get(token.symbol);
+        const currentPrice = priceMap.get(token.id);
         if (!currentPrice) return [];
         const balance = new Decimal(holding.balance);
         const value = balance.mul(new Decimal(currentPrice)).toString();

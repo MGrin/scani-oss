@@ -98,15 +98,24 @@ export function createPortfolioCacheKey(userId: string, accountId?: string): str
 }
 
 /** Redis key for the cross-request portfolio-value cache. Deliberately
- *  distinct from `createPortfolioCacheKey`: it is versioned (`v1`) so the
+ *  distinct from `createPortfolioCacheKey`: it is versioned (`v2`) so the
  *  shape can change without colliding with stale entries, and it includes
  *  the base currency because cached values are denominated in it. Every
- *  key for a user shares the `pv:v1:<userId>:` prefix so
- *  `PortfolioValueCache.bust` can drop them all with one SCAN. */
+ *  key for a user shares the `pv:v2:<userId>:` prefix so
+ *  `PortfolioValueCache.bust` can drop them all with one SCAN.
+ *
+ *  `v1` -> `v2` because `PortfolioValueResult.holdings[]` gained `tokenId`,
+ *  which consumers now key their price maps on (SC-1114). A `v1` entry
+ *  written by the previous release revives with that field absent, so every
+ *  lookup misses and the holdings list renders "—" beside a total that is
+ *  still right. Harmless and self-healing inside the 45s TTL — and avoidable
+ *  for the cost of one character, which is what the version is for. Bump it
+ *  whenever the cached shape changes, and bump `bust`'s SCAN pattern with it
+ *  or the two stop describing the same keyspace. */
 export function createPortfolioRedisKey(
   userId: string,
   accountId: string | undefined,
   baseCurrencyId: string
 ): string {
-  return `pv:v1:${userId}:${accountId ?? 'all'}:${baseCurrencyId}`;
+  return `pv:v2:${userId}:${accountId ?? 'all'}:${baseCurrencyId}`;
 }
