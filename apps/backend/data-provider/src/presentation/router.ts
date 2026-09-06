@@ -1,10 +1,8 @@
-import { aiRouter } from './routers/ai';
 import { chainsRouter } from './routers/chains';
 import { contactRouter } from './routers/contact';
 import { emailRouter } from './routers/email';
 import { keysRouter } from './routers/keys';
 import { ogRouter } from './routers/og';
-import { pricingRouter } from './routers/pricing';
 import { storageRouter } from './routers/storage';
 import { tokensRouter } from './routers/tokens';
 import { usageRouter } from './routers/usage';
@@ -14,8 +12,6 @@ export { installCloudDb } from './routers/keys';
 export { installUsageDeps } from './routers/usage';
 
 export const appRouter = router({
-  pricing: pricingRouter,
-  ai: aiRouter,
   chains: chainsRouter,
   contact: contactRouter,
   email: emailRouter,

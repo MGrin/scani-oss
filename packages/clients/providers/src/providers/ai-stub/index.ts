@@ -6,10 +6,10 @@
  * `completeText` all short-circuit to a deterministic response without
  * touching upstream APIs (no OpenAI key, no network, no cost).
  *
- * The payload mirrors the data-provider's `ai.parseScreenshot` stub
- * (`apps/backend/data-provider/src/presentation/routers/ai.ts`) so e2e
- * tests assert against the same shape regardless of which tier dispatch
- * mode (`direct` vs `cloud`) the worker is running in.
+ * The payload shape is what e2e tests assert against. It mirrored the
+ * data-provider's own `ai.parseScreenshot` stub until SC-587 deleted that
+ * router; there is one dispatch path now, so there is nothing left for
+ * the two shapes to disagree about.
  *
  * Refusal in production: the worker reads `STUB_AI` directly from
  * `process.env`, but the data-provider's `loadEnv()` already rejects

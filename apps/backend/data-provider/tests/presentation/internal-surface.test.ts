@@ -18,16 +18,19 @@
  * Two controls, because one axis is half a check:
  *   - must-be-FOUND: the same calls REACH the resolver on an internal ctx,
  *     so the refusals below are the gate and not a broken caller.
- *   - must-be-ABSENT: the 16 product procedures a Cloud API customer is
+ *   - must-be-ABSENT: the product procedures a Cloud API customer is
  *     buying stay open to that same customer ctx, so the gate has not
- *     over-matched into the surface it is meant to leave alone.
+ *     over-matched into the surface it is meant to leave alone. The
+ *     vehicle is `tokens.*`; it was `pricing.*` until SC-587 deleted
+ *     that router, and it is enumerated rather than counted so the
+ *     next such deletion does not have to find a number in prose.
  */
 
 import { describe, expect, test } from 'bun:test';
 import type { AnyRouter } from '@trpc/server';
 import { emailRouter } from '../../src/presentation/routers/email';
-import { pricingRouter } from '../../src/presentation/routers/pricing';
 import { storageRouter } from '../../src/presentation/routers/storage';
+import { tokensRouter } from '../../src/presentation/routers/tokens';
 import { buildAuthedContext, buildCustomerContext } from '../helpers/test-context';
 
 function procedureNames(r: AnyRouter): string[] {
@@ -82,11 +85,11 @@ describe('the internal facades refuse a customer key (SC-585)', () => {
 
   // must-be-ABSENT: the gate must not have swallowed the product surface.
   test('a product procedure stays open to the same customer key', async () => {
-    const caller = pricingRouter.createCaller(buildCustomerContext()) as Record<
+    const caller = tokensRouter.createCaller(buildCustomerContext()) as Record<
       string,
       (input: unknown) => Promise<unknown>
     >;
-    const names = procedureNames(pricingRouter);
+    const names = procedureNames(tokensRouter);
     expect(names.length).toBeGreaterThan(0);
     for (const name of names) {
       await expect(caller[name]?.({})).rejects.toMatchObject({ code: 'BAD_REQUEST' });

@@ -9,7 +9,6 @@
     "./cloud-services/cloud-email-service": "./src/cloud-services/cloud-email-service.ts",
     "./cloud-services/cloud-storage": "./src/cloud-services/cloud-storage.ts",
     "./cloud-services/cloud-og-client": "./src/cloud-services/cloud-og-client.ts",
-    "./cloud-services/cloud-provider-client": "./src/cloud-services/cloud-provider-client.ts",
     "./facades/storage-facade": "./src/facades/storage-facade.ts",
     "./facades/email-facade": "./src/facades/email-facade.ts",
     "./health-probe": "./src/health-probe.ts",
@@ -23,10 +22,8 @@
   },
   "dependencies": {
     "@scani/config": "workspace:*",
-    "@scani/db": "workspace:*",
     "@scani/email": "workspace:*",
     "@scani/logging": "workspace:*",
-    "@scani/providers": "workspace:*",
     "@scani/rate-limiter": "workspace:*",
     "@scani/storage": "workspace:*",
     "@trpc/client": "^10.45.4",

@@ -170,18 +170,17 @@ without a `down + up -d` to recreate the containers.
 ## Smoke-test the hosted data-provider
 
 A single tRPC call from your api confirms the bearer is accepted and
-the upstream is reachable. The simplest one is a price fetch (no DB
-side-effects, no credentials):
+the upstream is reachable. The simplest one is a token search (no DB
+side-effects, no credentials) — and it is also the call your api makes
+for real on every token lookup:
 
 ```sh
 # From a shell on the api host (or `docker compose exec api`):
-curl -sX POST "$SCANI_CLOUD_URL/trpc/pricing.fetchCurrentPrice" \
-  -H "Authorization: Bearer $SCANI_CLOUD_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"json":{"tokenSymbol":"BTC","baseCurrency":"USD"}}'
+curl -s "$SCANI_CLOUD_URL/trpc/tokens.search?input=%7B%22query%22%3A%22BTC%22%2C%22limit%22%3A1%7D" \
+  -H "Authorization: Bearer $SCANI_CLOUD_API_KEY"
 ```
 
-Expected: `{"result":{"data":{"json":{"price":"...","timestamp":"..."}}}}`.
+Expected: `{"result":{"data":{"json":[{"symbol":"BTC","name":"Bitcoin",...}]}}}`.
 
 A `401 Unauthorized` means the bearer doesn't match the operator's
 `DATA_PROVIDER_API_KEY`. An empty or partial result — a 200 with

@@ -26,15 +26,14 @@ Two environment variables switch tiers:
 The design below assumes *every* third-party call crosses the
 data-provider seam. As implemented, four do — object storage, email,
 Open Graph metadata and token search. Pricing, AI and chain calls do
-not: all three backend services boot
-`buildProviderRegistry({ mode: 'direct' })` and reach CoinGecko,
-DeFiLlama, Frankfurter, Finnhub, Etherscan, Helius and OpenAI
-themselves, on every tier.
+not: all three backend services construct the real providers in-process
+and reach CoinGecko, DeFiLlama, Frankfurter, Finnhub, Etherscan, Helius
+and OpenAI themselves, on every tier.
 
-A `mode: 'cloud'` registry that would close the gap exists in
-`packages/clients/providers/src/core/cloud/` and is constructed by no
-app. Until it is adopted, **provider API keys are required on the api
-and worker whatever tier you run** — see
+A `mode: 'cloud'` registry that would have closed the gap was built,
+never adopted by any app, and **deleted in 2026-09**. So this is the
+shape now rather than an unfinished migration: **provider API keys are
+required on the api and worker whatever tier you run** — see
 [Tier 2 overview](/self-hosting/tier2/overview/#you-still-need-your-provider-api-keys).
 :::
 

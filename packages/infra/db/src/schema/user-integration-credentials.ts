@@ -89,14 +89,28 @@ export const userIntegrationCredentials = pgTable(
 );
 
 // =============================================================================
-// CredentialPool — bookkeeping for cross-user credential pool (migration 0055)
+// Credential pool — bookkeeping tables, RETAINED WITH NO CODE BEHIND THEM
 // =============================================================================
 //
-// Per-(user, institution) entry tracking LRU + quarantine state for the
-// credential pool that backs pool-credentialed reads (pricing, token
-// identity) across all users. See @scani/providers/core/credential-pool.ts.
-// Lives outside user_integration_credentials because it changes on every
-// borrow and would thrash that table's encrypted-payload indexes.
+// Created in `0000_clean_start.sql:346` and `:336`, so they exist in every
+// deployment including production and every self-host. The comment here
+// said `migration 0055`; there has never been one — the four-digit series
+// is 51 files stopping at `0050` (SC-1022). That is the second wrong claim
+// found in this block, after SC-1020's partial LRU index below, so read the
+// whole block rather than the line you came for.
+//
+// Per-(user, institution) LRU + quarantine state for a cross-user credential
+// pool that would have backed pool-credentialed reads (pricing, token
+// identity). **`CredentialPool` was deleted in SC-1022** — it was constructed
+// and wired at boot and its one functional method was called from nowhere, so
+// nothing has ever written these tables in a deployed process.
+//
+// THE TABLES DELIBERATELY OUTLIVE THE CODE. They may hold rows, nobody has
+// counted them, and dropping a table in the same deploy that removes its last
+// reader is the ordering SC-1097 exists to prevent. The drop is a separate,
+// later migration. Until then they stay declared here because
+// `user-data-deletion-manifest.ts` enumerates them for GDPR erasure — a table
+// absent from the manifest is user data nothing deletes.
 export const credentialPoolState = pgTable(
   'credential_pool_state',
   {
@@ -116,8 +130,8 @@ export const credentialPoolState = pgTable(
     totalFailuresCount: integer('total_failures_count').notNull().default(0),
   },
   (table) => ({
-    // The only index on this table, and it is the one the selector
-    // needs: `CredentialPool.pickCandidate` joins here from
+    // The only index on this table. It served the selector in the
+    // deleted `CredentialPool.pickCandidate`, which joined here from
     // `user_integration_credentials` on exactly these two columns.
     //
     // There is no partial LRU index. A comment here claimed one was
@@ -128,8 +142,8 @@ export const credentialPoolState = pgTable(
   })
 );
 
-// Append-only audit of every pool borrow. No read paths in this PR; a
-// future work session will surface borrow stats to users.
+// Append-only audit of every pool borrow. Never had a read path, and now has
+// no writer either — see the note above on why both tables are retained.
 export const credentialPoolBorrowLog = pgTable(
   'credential_pool_borrow_log',
   {

@@ -22,8 +22,7 @@ never leave the tenant boundary.
 
 | Domain | tRPC router | Upstream |
 |--------|-------------|----------|
-| Pricing | `pricing.*` | CoinGecko, Finnhub, DeFiLlama, ExchangeRate-API, Google Sheets |
-| AI / LLM | `ai.*` | OpenAI, Perplexity, DeepSeek |
+| Token search | `tokens.*` | CoinGecko, DeFiLlama, Finnhub |
 | Public chains | `chains.*` | Etherscan V2, Solana (Helius / public), Bitcoin, Tron, TON, ENS |
 | Email | `email.send` | Fastmail JMAP (falls back to SMTP) |
 | Object storage | `storage.*` | S3-compatible storage (presign + read + delete) |
@@ -35,13 +34,16 @@ matching `Cloud*` adapter in
 domain services in `packages/business/domain` can swap the real implementation
 for a cloud-backed one without code-site churn.
 
-**`pricing.*`, `ai.*` and `chains.*` have no live caller.** The api and worker
-boot `buildProviderRegistry({ mode: 'direct' })` — as does this service — so
-each calls CoinGecko, Finnhub, DeFiLlama, OpenAI, Etherscan and Helius itself.
-The `CloudProviderClientBridge` that would route them here is constructed
-nowhere outside tests. The practical consequence: **provider API keys are
-required on the api and worker on every tier**, not only here, and a missing
-one degrades silently rather than failing at boot. `buildProviderRegistry`
+**`chains.*` has no live caller, and `pricing.*` / `ai.*` no longer exist.**
+The api and worker construct the real providers in-process — as does this
+service — so each calls CoinGecko, Finnhub, DeFiLlama, OpenAI, Etherscan and
+Helius itself. The `CloudProviderClientBridge` that would have routed those
+calls here was constructed nowhere outside tests (SC-521) and was deleted
+with the two routers in SC-587. `tokens.search` is the exception and IS live:
+the api holds zero upstream API keys, so its user-facing token search calls
+this service for every external result. The practical consequence:
+**provider API keys are required on the api and worker on every tier**, not
+only here, and a missing one degrades silently rather than failing at boot. `buildProviderRegistry`
 logs one `provider credentials:` summary line per service at boot, and
 `/health/deep` reports the same record under `providerCredentials`.
 

@@ -38,9 +38,14 @@ function successSchema(operation: Operation): Record<string, unknown> | undefine
 
 describe('OpenAPI document', () => {
   test('exposes every operation the routers annotate', () => {
-    // 26 since SC-208 added `storage.readObject` and `storage.writeObject`
-    // (24 since SC-167 added `storage.objectExists`). One fewer than private: no waitlist router.
-    expect(everyOperation().length).toBe(26);
+    // 17 since SC-587 removed the `pricing.*` (5) and `ai.*` (4) routers.
+    // The 26 - 9 = 17 is worth keeping as arithmetic rather than a new
+    // number: it is the independent check that the deletion removed
+    // exactly the nine procedures the PR says it did.
+    // (26 since SC-208 added `storage.readObject` + `storage.writeObject`;
+    // 24 since SC-167 added `storage.objectExists`.)
+    // One fewer than private: no waitlist router.
+    expect(everyOperation().length).toBe(17);
   });
 
   test('no operation publishes an empty response schema', () => {
@@ -67,12 +72,11 @@ describe('OpenAPI document', () => {
     }
   });
 
-  test('pricing.convertRate documents the rate it actually returns', () => {
-    const schema = successSchema(paths['/trpc/pricing.convertRate']?.get as Operation) as {
-      properties: { result: { properties: { data: { properties: Record<string, unknown> } } } };
-    };
-    expect(schema.properties.result.properties.data.properties).toHaveProperty('rate');
-  });
+  // A `pricing.convertRate documents the rate it actually returns` test stood
+  // here until SC-587 deleted that router. It was the named instance of the
+  // generic assertion above, which runs over `everyOperation()` and survives.
+  // Not replaced with the same assertion pointed at another procedure: that
+  // would be a new check wearing the old one's evidence.
 
   test('the error response matches the envelope tRPC actually sends', () => {
     const components = doc.components as {

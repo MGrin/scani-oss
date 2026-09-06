@@ -79,7 +79,7 @@ describe('buildUsageMiddleware', () => {
     await expect(
       mw({
         ctx,
-        path: 'ai.parseScreenshot',
+        path: 'tokens.enrichIdentity',
         type: 'mutation',
         next: async () => {
           throw new TRPCError({ code: 'TOO_MANY_REQUESTS', message: 'rate limit' });
@@ -88,8 +88,8 @@ describe('buildUsageMiddleware', () => {
     ).rejects.toBeInstanceOf(TRPCError);
     expect(sink.events).toHaveLength(1);
     expect(firstEvent(sink)).toMatchObject({
-      route: 'ai.parseScreenshot',
-      provider: 'ai',
+      route: 'tokens.enrichIdentity',
+      provider: 'tokens',
       outcome: 'rate_limited',
       statusCode: 429,
       errorCode: 'TOO_MANY_REQUESTS',
@@ -102,7 +102,7 @@ describe('buildUsageMiddleware', () => {
     const ctx = makeCtx();
     await mw({
       ctx,
-      path: 'ai.parseScreenshot',
+      path: 'tokens.enrichIdentity',
       type: 'mutation',
       next: async () => {
         ctx.usage.annotate({ provider: 'custom-llm', tokensIn: 1024, tokensOut: 256 });
