@@ -110,3 +110,156 @@ jobs:
           message: ${{ steps.badge.outputs.message }}
           color: ${{ steps.badge.outputs.color }}
           forceUpdate: true
+
+  # SC-949. THE ALARM, and the only job here that exists to reach a person.
+  #
+  # This workflow's verdict lands on an already-merged commit and gates nothing
+  # — there is no `pull_request` trigger, so it cannot be a required check, and
+  # `deploy-fly.yaml` chains off `Terraform` rather than off this. It was red
+  # for 200 consecutive runs back to 2026-08-26T19:59:45Z with zero successes
+  # and nobody noticed. Not a quiet signal: a loud one that had been loud long
+  # enough to read as furniture.
+  #
+  # mgrin chose the transition alarm over the two alternatives on 2026-09-06.
+  # Leaving it advisory is what produced the outage; a `pull_request` trigger
+  # plus a required check costs a second full suite run on every PR on top of
+  # `ci.yml`'s, and required checks are not available on this repo's plan at all
+  # (`branches/main/protection` and `/rulesets` both 403 "Upgrade to GitHub Pro
+  # or make this repository public"). So: **red HAVING BEEN GREEN**, which is
+  # the reading that carries information, and nothing else.
+  #
+  # IT MUST NOT FIRE ON STATE (SC-726). A red that was already red carries
+  # nothing new, and an alarm that repeats itself is switched off inside a week
+  # — after which the repository is worse off than under the silence it
+  # replaced. The prior verdict comes from this workflow's own run history and
+  # `scripts/coverage-transition.ts` decides; it walks past `cancelled` runs,
+  # which `cancel-in-progress` above produces routinely, and it REFUSES (exit 9,
+  # no alert) rather than inferring a state it could not read. "No history" is
+  # never read as "was green".
+  #
+  # THE CHANNEL IS AN ISSUE, NOT A RED JOB. The run is already red when this
+  # job runs, so a second red job adds nothing that was not there for the
+  # previous 200. An issue is assigned — which notifies the assignee whether or
+  # not they watch the repository — and persists until somebody closes it,
+  # unlike a workflow-failure email that has already proved skippable here.
+  # This job's OWN colour reports the alarm's health: green when it decided
+  # correctly (fired or stayed silent), red only when it could not decide.
+  #
+  # Guarded by `scripts/tests/coverage-alerts-on-transition.test.ts`.
+  coverage-went-red:
+    name: Coverage went red having been green
+    needs: coverage
+    if: ${{ always() && needs.coverage.result == 'failure' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+      issues: write
+    steps:
+      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+      - uses: ./.github/actions/setup-bun
+        with:
+          # The detector imports `node:fs` and nothing else. Installing the
+          # monorepo to run it would put a ~15s dependency install on the alarm
+          # path, which is the last path that should be able to fail slowly.
+          install: "false"
+
+      - name: Fetch this workflow's own run history
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          set -uo pipefail
+          # Resolved from the CURRENT RUN rather than from the filename, so
+          # renaming this file cannot blind the detector while leaving it
+          # confidently answering.
+          wf_id=$(gh api "repos/${REPO}/actions/runs/${RUN_ID}" -q '.workflow_id')
+          for attempt in 1 2 3; do
+            if gh api "repos/${REPO}/actions/workflows/${wf_id}/runs?branch=main&per_page=60" \
+                 > runs.json 2> fetch.err; then
+              exit 0
+            fi
+            echo "attempt ${attempt} failed: $(head -1 fetch.err)"
+            sleep 5
+          done
+          # A transport failure is not a state. Leave `runs.json` unusable and
+          # let the detector refuse rather than guessing.
+          echo '{}' > runs.json
+
+      - name: Decide whether this is a transition
+        id: transition
+        run: bun scripts/coverage-transition.ts --runs runs.json --run-id "${{ github.run_id }}"
+
+      - name: Open an issue naming the transition
+        if: ${{ steps.transition.outputs.verdict == 'transition' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          OWNER: ${{ github.repository_owner }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          SHA: ${{ github.sha }}
+          PRIOR_URL: ${{ steps.transition.outputs.prior_run_url }}
+          PRIOR_AT: ${{ steps.transition.outputs.prior_run_at }}
+        run: |
+          set -euo pipefail
+          short="${SHA:0:9}"
+          title="Coverage went red having been green (${short})"
+
+          # EVENT IDEMPOTENCY, NOT STATE SUPPRESSION. Re-running this same run
+          # re-evaluates the same transition and would open a second identical
+          # issue — one event, two alerts, which is the repetition this alarm
+          # exists to avoid. A LATER commit going red after a green is a
+          # different event, has a different sha, and still fires.
+          existing=$(gh issue list --repo "$REPO" --state all --limit 5 \
+            --search "in:title \"${title}\"" --json number,title \
+            --jq "[.[] | select(.title == \"${title}\")] | length" 2>/dev/null || echo 0)
+          if [ "${existing:-0}" -gt 0 ]; then
+            echo "::notice title=Already alerted::an issue already names ${short}; not opening a second"
+            exit 0
+          fi
+
+          cat > body.md <<BODY
+          @${OWNER} — the \`Coverage\` workflow just went **red having been green**.
+
+          | | |
+          |---|---|
+          | this run | ${RUN_URL} |
+          | commit | \`${SHA}\` |
+          | last green run | ${PRIOR_URL} (${PRIOR_AT}) |
+
+          **This fires once per transition, not once per red run.** You will get
+          nothing further until Coverage goes green and red again — an alarm that
+          repeated itself would be switched off inside a week (SC-726), which is how
+          this workflow managed 200 consecutive red runs unnoticed (SC-937, SC-949).
+
+          Coverage gates nothing by design: there is no \`pull_request\` trigger, so
+          nothing was blocked and nothing needs unblocking. What is lost while this
+          is red is the badge number and the suite's own coverage reading.
+
+          Close this issue when it is dealt with; nothing closes it automatically.
+          BODY
+
+          gh issue create --repo "$REPO" \
+            --title "$title" \
+            --body-file body.md \
+            --assignee "$OWNER"
+
+      - name: Report what was read
+        if: ${{ always() }}
+        env:
+          VERDICT: ${{ steps.transition.outputs.verdict }}
+        run: |
+          set -uo pipefail
+          {
+            echo "## Coverage transition alarm"
+            echo
+            echo "verdict: \`${VERDICT:-unreadable}\`"
+            echo
+            echo "- \`transition\` — red having been green. An issue was opened and assigned."
+            echo "- \`still-red\` — the previous verdict was already red. Silent on purpose."
+            echo "- \`no-prior-verdict\` — nothing before this run ever concluded. Silent:"
+            echo "  no history is not the same as having been green."
+            echo "- \`blind\` — the run list could not be read, or did not contain this run."
+            echo "  Nothing was inferred and no issue was opened; this job is red instead."
+          } >> "$GITHUB_STEP_SUMMARY"
