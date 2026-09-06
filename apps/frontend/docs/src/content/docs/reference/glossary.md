@@ -902,8 +902,9 @@ A per-user container for [holdings](#holding) at one
 
 ### Advisory lock
 A Postgres-level lock that callers cooperatively acquire.
-*In Scani:* used by the cron-lock wrapper to make scheduled jobs
-idempotent. See
+*In Scani:* `ScheduledJobProcessor` takes one for a scheduled job
+whose descriptor sets `lockName`, so an overlapping fire is skipped
+rather than raced. It is opt-in per descriptor, not automatic. See
 [Why BullMQ + Postgres advisory locks](/decisions/bullmq-advisory-locks/).
 
 ### BullMQ
