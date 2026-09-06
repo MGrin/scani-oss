@@ -59,6 +59,7 @@
 import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { type BranchFacts, classifyBranch, collectTreeMarkers } from './check-oss-bound-paths';
+import { unreadClause } from './lib/check-verdict';
 
 /**
  * A pattern is written with escaped separators and non-capturing alternations
@@ -495,6 +496,23 @@ function main(argv: readonly string[]): number {
     return EXIT_SELF_TEST_FAILED;
   }
 
+  /**
+   * The population. A git that FAILED is `EXIT_UNKNOWN`, never an empty list
+   * (SC-775).
+   *
+   * `git diff --cached` legitimately returning zero paths and `git ls-files`
+   * dying are not the same fact, and the old code could not tell them apart —
+   * both arrived as `''`. Only the first is a scan with nothing in it; the
+   * second is no scan at all, and this file already owns a code that says so.
+   *
+   * READ ABOVE THE SKIP, because the skip has to say what it did not read
+   * (SC-972) — and it is the same read the scan below uses, so the two lines
+   * cannot disagree about what was staged.
+   */
+  const listed = wholeTree
+    ? git(['ls-files'])
+    : git(['diff', '--cached', '--name-only', '--diff-filter=ACMR']);
+
   if (!wholeTree) {
     const scope = scanScope(collectBranchFacts(), {
       privateMarkerPresent: existsSync('.private-repo'),
@@ -504,23 +522,33 @@ function main(argv: readonly string[]): number {
       return EXIT_UNKNOWN;
     }
     if (scope.kind === 'skip') {
-      console.log(`oss-internal-refs: SKIPPED · exit ${EXIT_OK} · ${scope.why}`);
+      // SC-972. THE DIFF CLAUSE COMES FIRST AND THE BRANCH CLAUSE IS THE
+      // REASON, the shape SC-835 settled on for the sibling that routes paths.
+      //
+      // THE UNIT IS THE FILE HERE, not the added line: this check reads whole
+      // staged CONTENT, so `addedLines: null`. A line count would be a precise
+      // number about a question this check does not ask — the
+      // patterns-compiled trap `lib/check-verdict.ts` names.
+      //
+      // A failed listing narrows this sentence and nothing else. Above, the
+      // same failure is EXIT_UNKNOWN, and the asymmetry is deliberate: there
+      // the read IS the scan, here the verdict is a conclusion about the
+      // branch and the unlisted diff is not evidence against it.
+      const unread =
+        listed.kind === 'failed'
+          ? null
+          : {
+              paths: listed.stdout.trim() === '' ? 0 : listed.stdout.trim().split('\n').length,
+              addedLines: null,
+            };
+      console.log(
+        `oss-internal-refs: SKIPPED · exit ${EXIT_OK} · ${unreadClause(unread, 'staged')}` +
+          ` · not bound for MGrin/scani-oss: ${scope.why}`
+      );
       return EXIT_OK;
     }
   }
 
-  /**
-   * The population. A git that FAILED is `EXIT_UNKNOWN`, never an empty list
-   * (SC-775).
-   *
-   * `git diff --cached` legitimately returning zero paths and `git ls-files`
-   * dying are not the same fact, and the old code could not tell them apart —
-   * both arrived as `''`. Only the first is a scan with nothing in it; the
-   * second is no scan at all, and this file already owns a code that says so.
-   */
-  const listed = wholeTree
-    ? git(['ls-files'])
-    : git(['diff', '--cached', '--name-only', '--diff-filter=ACMR']);
   if (listed.kind === 'failed') {
     console.error(
       `oss-internal-refs: UNKNOWN · exit ${EXIT_UNKNOWN} · could not list the ${wholeTree ? 'tracked' : 'staged'} files to scan — ${listed.why} — NOTHING WAS SCANNED`

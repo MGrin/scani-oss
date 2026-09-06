@@ -68,7 +68,15 @@
 import { existsSync } from 'node:fs';
 import { type BranchFacts, collectTreeMarkers } from './check-oss-bound-paths';
 import { type RepoFacts, scanScope } from './check-oss-internal-refs';
-import { EXIT_OK, EXIT_REFUSED, EXIT_UNKNOWN, type GitRun, runGit } from './lib/check-verdict';
+import {
+  EXIT_OK,
+  EXIT_REFUSED,
+  EXIT_UNKNOWN,
+  type GitRun,
+  runGit,
+  type Unread,
+  unreadClause,
+} from './lib/check-verdict';
 
 /**
  * The guard could not verify itself. Its own code rather than a refusal,
@@ -174,6 +182,35 @@ export function addedLines(diff: string): AddedLine[] {
     }
   }
   return out;
+}
+
+/**
+ * What a diff-reading check's SKIP did not read (SC-972).
+ *
+ * Shared with `check-oss-data-shapes` and `check-oss-prose`, which already
+ * take {@link addedLines} from here, so the three cannot drift into counting
+ * their own skips three ways.
+ *
+ * THE TWO NUMBERS COME FROM DIFFERENT PASSES ON PURPOSE. `paths` is read off
+ * the `+++` headers rather than off the added lines, so a staged path this
+ * check does not read still appears in the denominator: counting paths through
+ * the scannable filter would report `0 staged path(s), so there was nothing to
+ * scan` over a commit that staged a `.svg`, which is the reading an EMPTY
+ * INDEX gives and a different fact entirely.
+ */
+export function countUnread(diff: string, scannable: (path: string) => boolean): Unread {
+  const paths = new Set<string>();
+  for (const raw of diff.split('\n')) {
+    if (!raw.startsWith('+++ ')) continue;
+    const target = raw.slice(4).trim();
+    // A deletion has no post-image; `--diff-filter=ACMR` should exclude it, but
+    // the parse does not depend on the caller having passed the filter.
+    if (target !== '/dev/null') paths.add(target.replace(/^b\//, ''));
+  }
+  return {
+    paths: paths.size,
+    addedLines: addedLines(diff).filter((l) => scannable(l.path)).length,
+  };
 }
 
 /**
@@ -345,17 +382,31 @@ export function main(argv: readonly string[], cwd: string, stdin: string): numbe
     console.error(`oss-figures: UNKNOWN · exit ${EXIT_UNKNOWN} · ${scope.why}`);
     return EXIT_UNKNOWN;
   }
-  if (scope.kind === 'skip') {
-    console.log(`oss-figures: SKIPPED · exit ${EXIT_OK} · ${scope.why}`);
-    return EXIT_OK;
-  }
 
+  // Read above the skip, because the skip has to say what it did not read
+  // (SC-972). It is the same population the scan below uses — one function, so
+  // the two lines cannot disagree about what was in the commit.
   const commits = argv.includes('--stdin-commits')
     ? stdin
         .split('\n')
         .map((s) => s.trim())
         .filter((s) => s !== '')
     : null;
+  const noun = commits === null ? 'staged' : 'pushed';
+
+  if (scope.kind === 'skip') {
+    // SC-972. THE DIFF CLAUSE COMES FIRST AND THE BRANCH CLAUSE IS THE REASON,
+    // the shape SC-835 settled on for the sibling that routes paths. A failed
+    // read narrows this sentence and nothing else: the skip is a conclusion
+    // about the branch, and it stays exit 0.
+    const diff = population(cwd, commits);
+    const unread = diff.kind === 'failed' ? null : countUnread(diff.stdout, isScannable);
+    console.log(
+      `oss-figures: SKIPPED · exit ${EXIT_OK} · ${unreadClause(unread, noun)}` +
+        ` · not bound for MGrin/scani-oss: ${scope.why}`
+    );
+    return EXIT_OK;
+  }
 
   const diff = population(cwd, commits);
   if (diff.kind === 'failed') {
