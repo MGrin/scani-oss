@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -19,6 +19,65 @@ import {
 
 const SCRIPT = path.resolve(import.meta.dir, '..', 'check-oss-data-shapes.ts');
 
+const V4_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+
+/**
+ * REAL-SHAPED v4 UUIDs, DERIVED RATHER THAN COMMITTED — and a committed corpus
+ * is not merely the road less taken here, it is one this repository refuses.
+ *
+ * A UUID this test needs is one {@link looksSynthetic} does NOT admit, which is
+ * the same value {@link findInLine} reports as an opaque `row-identifier`.
+ * Measured 2026-09-06: 200 of 200 fresh v4 UUIDs are reported, against 0 for
+ * the tree's `5c331000-…` synthetic series and 0 for an allowlisted one, with
+ * the rule demonstrably firing — so the two zeros are readings rather than a
+ * check that never ran. Committing the corpus therefore refuses this very file
+ * at the pre-commit hook, and the only way past it would be 200 lines of
+ * {@link ASSERTED_NOT_PRODUCTION}, a list whose stated design is being short.
+ *
+ * sha256 over a counter rather than a PRNG: deterministic on every machine,
+ * nothing to implement, and no low-order structure to have to argue about. The
+ * version and variant nibbles are imposed so the population is the one node
+ * emits, and the test below asserts that against `randomUUID` rather than
+ * against this comment.
+ */
+function pinnedV4Corpus(n: number): string[] {
+  const out: string[] = [];
+  for (let i = 0; i < n; i++) {
+    const h = createHash('sha256').update(`SC-1119:${i}`).digest('hex');
+    const s = `${h.slice(0, 12)}4${h.slice(13, 16)}${'89ab'[Number.parseInt(h[16] as string, 16) % 4]}${h.slice(17, 32)}`;
+    out.push(
+      `${s.slice(0, 8)}-${s.slice(8, 12)}-${s.slice(12, 16)}-${s.slice(16, 20)}-${s.slice(20)}`
+    );
+  }
+  return out;
+}
+
+/**
+ * 500,000, and the number is about a REGRESSION rather than about this run.
+ *
+ * The corpus is fixed, so nothing here is sampled twice — what varies is a
+ * future arm nobody has written yet. At the file's own
+ * {@link SYNTHETIC_ADMISSION_BUDGET} of 1e-5, a corpus this size exercises such
+ * an arm with probability 0.993, against 0.86 at 200,000; at the 2.71e-5 the
+ * three accepted arms produce today it expects 13.6 admissions and finds 11, so
+ * the control below passes with room rather than on one lucky value. It costs
+ * about 1.3s against a suite that runs for minutes.
+ */
+const V4_CORPUS_SIZE = 500_000;
+
+/**
+ * THE FALSE-ADMISSION RATE ON REAL v4 UUIDs THIS TEST WILL ACCEPT.
+ *
+ * Chosen from the two numbers either side of it rather than to make the run
+ * green. The guard as written admits at an exact 2.71e-5; the nearest plausible
+ * loosening — `longestRun >= 5` in place of `>= 6` — admits at an exact
+ * 3.881e-4, seventeen times the run arm alone. 1e-4 separates them: 3.7x of
+ * headroom over what is accepted, and a quarter of what the loosening would
+ * produce. A ceiling pinned to today's count would instead go red on any
+ * re-derivation of {@link distinctCeiling}, which is a legitimate change.
+ */
+const V4_ADMISSION_CEILING = 1e-4;
+
 /**
  * SC-838. Every guard that stood between the private tree and the mirror
  * detects a CLAIM; what leaked on 2026-09-01 was DATA, which carries no scope
@@ -36,14 +95,51 @@ describe('SC-838 · the data-shape guard, both directions', () => {
   /**
    * THE ARM THAT MATTERS MOST. `looksSynthetic` admits without review, so an
    * exemption that also admitted production data would be worse than no guard —
-   * it would be a guard somebody trusts. 200 rather than a handful: the arms
-   * are probabilistic in effect even though each is a hard property, and one
-   * lucky UUID proves nothing either way.
+   * it would be a guard somebody trusts.
+   *
+   * IT ASSERTED ZERO, AND THE DESIGN ACCEPTS A NON-ZERO RATE (SC-1119). What
+   * stood here classified 200 FRESHLY random v4 UUIDs and required that none be
+   * admitted. Three arms admit a real v4 UUID, all three deliberately, and
+   * their exact rates sum to 2.71e-5:
+   *
+   *     longestRun >= 6     2.247e-5   accepted on 2026-09-02 (SC-954)
+   *     distinct <= 8       2.7e-6     {@link SYNTHETIC_ADMISSION_BUDGET}
+   *     isDoubled           1.899e-6   16 even-offset pairs, each p = 1/16
+   *
+   * So the test failed on about 1 run in 185 and reddened `scani-oss#487`, a
+   * pull request about token decimals that touches none of this. A red on an
+   * unrelated change invites exactly the wrong conclusion, and the correct
+   * response — re-run — is indistinguishable from retrying until green.
+   *
+   * ITS DECOMPOSITION WAS ALSO WRONG IN THE DIRECTION THAT MATTERS. The ticket
+   * measured 5 admissions over 300,000 and read the distinct-symbol arm as
+   * contributing ZERO; at 2.7e-6 that sample expected 0.8 of them, so the zero
+   * was the sample size rather than the arm. Over 3,000,000 fresh UUIDs the
+   * three arms read 57 / 9 / 3 and `isPeriodic` and `isSequential` read 0 —
+   * which is why the property asserted below is a RATE and not a list of arms.
    */
-  test('200 real v4 UUIDs are all classified NOT synthetic', () => {
-    const real = Array.from({ length: 200 }, () => randomUUID());
-    const admitted = real.filter((u) => looksSynthetic(u));
-    expect(admitted).toEqual([]);
+  test('real-shaped v4 UUIDs are admitted only at the rate the design accepts (SC-1119)', () => {
+    const corpus = pinnedV4Corpus(V4_CORPUS_SIZE);
+    expect(corpus.every((u) => V4_SHAPE.test(u))).toBe(true);
+    expect(new Set(corpus).size).toBe(V4_CORPUS_SIZE);
+
+    const admitted = corpus.filter((u) => looksSynthetic(u));
+    expect(admitted.length / V4_CORPUS_SIZE).toBeLessThanOrEqual(V4_ADMISSION_CEILING);
+    // THE CONTROL, and the assertion above is worth nothing without it: a
+    // `looksSynthetic` that had stopped admitting anything at all would satisfy
+    // a ceiling trivially, and read as the guard being tighter than it is.
+    expect(admitted.length).toBeGreaterThan(0);
+  });
+
+  /**
+   * The corpus stands in for `randomUUID`, so the shape it stands in for is
+   * asserted against the real generator rather than against the regex alone.
+   * Non-flaky in a way the test it replaces was not: every UUID node emits
+   * matches this, at every seed and on every machine.
+   */
+  test('the pinned corpus is shaped exactly like what node crypto emits', () => {
+    expect(V4_SHAPE.test(randomUUID())).toBe(true);
+    expect(pinnedV4Corpus(64).every((u) => V4_SHAPE.test(u))).toBe(true);
   });
 
   test('each documented synthetic shape is admitted', () => {
