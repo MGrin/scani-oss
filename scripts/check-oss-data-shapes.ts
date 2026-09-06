@@ -145,9 +145,12 @@ function isSequential(s: string): boolean {
  * symbols, has no run of 6, and is neither periodic nor sequential, so without
  * this it reads as production data. The must-not-fire fixture caught it.
  *
- * Half the pairs is far above anything chance produces: a uniformly random hex
- * string doubles about one pair in sixteen, and the 200-UUID control below is
- * what confirms the margin rather than the arithmetic.
+ * Half the pairs is far above anything chance produces, and the margin is
+ * arithmetic rather than a sample: 32 hex symbols make 16 even-offset pairs,
+ * each matching with p = 1/16, so `P(>= 8 of 16)` is an exact 1.899e-6 — one v4
+ * UUID in 526,543. That is a rate this arm SPENDS, not a rate of zero, which is
+ * what the 200-UUID control cited here could never have established either way
+ * (SC-1119).
  */
 function isDoubled(s: string): boolean {
   if (s.length < 16) return false;
@@ -292,10 +295,21 @@ export function distinctCeiling(n: number, k: number): number {
  * UUID and 1 is a Drizzle snapshot id, both allowlisted below; the other 22 are
  * a genuine residual, reported rather than admitted.
  *
- * THE NEGATIVE CONTROL, and it is the arm that matters: 200 freshly generated
- * v4 UUIDs were classified, and 200 of 200 came back NOT synthetic. An
- * exemption that also admitted real identifiers would be worse than no guard,
- * because it would be a guard somebody trusts.
+ * WHAT IT ADMITS OF REAL DATA, and the honest answer is not zero (SC-1119).
+ * Three of the five arms admit a genuine v4 UUID, every one of them
+ * deliberately, at exact rates summing to 2.71e-5 — about one in 36,900:
+ *
+ *   longestRun >= 6   2.247e-5   accepted 2026-09-02, SC-954
+ *   distinct <= 8     2.7e-6     inside {@link SYNTHETIC_ADMISSION_BUDGET}
+ *   isDoubled         1.899e-6   see the arithmetic on {@link isDoubled}
+ *
+ * `isPeriodic` and `isSequential` admitted none over 3,000,000 fresh UUIDs.
+ * This paragraph read "200 freshly generated v4 UUIDs … 200 of 200 came back
+ * NOT synthetic", which was a true reading of a sample too small to see any of
+ * the three, and the test asserting it failed on about 1 run in 185. An
+ * exemption that admitted real identifiers at a rate NOBODY HAD PRICED would be
+ * worse than no guard, because it would be a guard somebody trusts; a priced
+ * one is the trade this file exists to make.
  *
  * IT IS NOT AN ENTROPY ESTIMATE, deliberately. Shannon entropy over 32 hex
  * digits is too noisy a statistic at that length to threshold safely, and a
