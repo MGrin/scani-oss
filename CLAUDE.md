@@ -193,8 +193,9 @@ plus the cross-cutting `apps/e2e` Playwright suite.
   wallet/exchange balance syncs, APY payouts, historical-price backfill,
   forex backfill, portfolio-value rollup, transfer linking, token-identity
   backfill, orphan reconcilers) live in
-  `packages/infra/queue/src/queue-names.ts:REPEATABLE_SCHEDULES`; the worker
-  registers them with BullMQ at boot. There is no separate cron app.
+  `packages/business/jobs/src/scheduled-jobs/` as one descriptor each,
+  aggregated as `SCHEDULED_JOB_DESCRIPTORS`; the worker reconciles them with
+  BullMQ at boot. There is no separate cron app.
 - `apps/backend/data-provider` — tRPC service fronting a *subset* of
   outbound third-party calls: **object storage (R2), email (JMAP / SMTP),
   OG-metadata fetching, and token search**. The same binary serves all
@@ -527,10 +528,13 @@ Workflows in `.github/workflows/`:
 Single Postgres-backed queue (`scani-jobs`) plus a dead-letter queue
 (`scani-dlq`), on BullMQ's Postgres backend — the `bullmq` schema of
 `DATABASE_URL`, not Redis.
-The api enqueues; `apps/backend/worker` consumes everything. Job names +
-repeatable schedules are defined in `packages/infra/queue/src/queue-names.ts` —
-the worker registers the schedules with BullMQ at boot via
-`upsertJobScheduler`, so there is no separate cron app.
+The api enqueues; `apps/backend/worker` consumes everything. The two queue
+names live in `packages/infra/queue/src/core/default-names.ts` and every job
+name in `packages/business/jobs/src/job-names.ts`; the repeatable schedules are
+one descriptor each under `packages/business/jobs/src/scheduled-jobs/`. The
+worker reconciles them with BullMQ at boot via `JobScheduler.upsertAll`, which
+REMOVES a schedule whose descriptor has since been deleted rather than leaving
+it firing against a missing processor — so there is no separate cron app.
 
 **Repeatable jobs** (cron strings live in
 `packages/business/jobs/src/scheduled-jobs/*.ts` — that file is the
@@ -551,9 +555,43 @@ nightly chain; `backfill-token-identity` (weekly Sunday 02:00 UTC);
 
 Local: jobs aren't processed unless the worker is running
 (`bun dev:worker` against the compose infra, or `docker compose --profile full up`).
-Each scheduled processor wraps in a Postgres advisory lock
-(`apps/backend/worker/src/lib/cron-lock.ts`) so two overlapping fires of the
-same job-name silently no-op rather than racing.
+**Overlap protection is OPT-IN PER DESCRIPTOR, and there are two mechanisms
+rather than one (SC-1095).** This line used to read *"each scheduled processor
+wraps in a Postgres advisory lock … so two overlapping fires of the same
+job-name silently no-op"*, which was wrong twice — the quantifier AND the
+consequence — and the second half is why weakening `each` to `most` is not the
+repair. Read the descriptor, do not assume the lock:
+
+- **`lockName` set** → `ScheduledJobProcessor.process` wraps `handle()` in
+  `JOB_LOCK`, a Postgres advisory lock (`PostgresJobLock`,
+  `packages/business/jobs/src/infrastructure/postgres-job-lock.ts`). A second
+  fire is SKIPPED and logged rather than raced. **With no lock impl bound it
+  runs UNLOCKED** — `tryGetLock()` returning nothing falls through
+  deliberately, which is the dev and self-host path.
+- **`lockName` unset** — the `reconcile-*` sweepers — → overlap is **TOLERATED
+  by design**, not prevented. They are idempotent re-scans, BullMQ's
+  deterministic jobId dedupes the duplicate enqueue, and `jitterMs` spreads
+  replicas. Different guarantee, different failure modes: a non-idempotent
+  processor with no `lockName` gets nothing, and it surfaces as a duplicated
+  side effect under load, far from the decision.
+
+`apps/backend/worker/src/lib/cron-lock.ts` is a THIRD thing and is what this
+line used to point at as though it were the mechanism: a worker-local logging
+wrapper over the same primitive, with exactly one caller — and that caller is
+`processors/portfolio-history-backfill.ts`, which extends **`UserJobProcessor`**
+and is therefore **not a scheduled job at all**. So the file this line pointed
+at is not in the population the line was describing, which is the sharpest form
+of the defect: following the pointer lands you on code that cannot explain the
+behaviour in front of you. Falsifier, one step:
+`git grep -c withJobLock -- apps/backend/worker/src/processors` reading more
+than one file means adoption spread; *control:* the same grep for
+`ScheduledJobProcessor` must return several, or the query is wrong rather than
+the lock unused.
+
+**No tally of which jobs lock is written here, on purpose.** A count goes stale
+the next time somebody adds a descriptor, and it answers the wrong question: at
+the decision point the reader is asking *does MY job lock*, and that is settled
+by `lockName` in its own descriptor file, not by a number in this one.
 
 Operator tooling can call HMAC-gated job endpoints on the api
 (retry / remove / DLQ replay) signed with `JOBS_HMAC_SECRET`.
