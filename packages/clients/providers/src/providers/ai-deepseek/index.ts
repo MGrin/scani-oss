@@ -14,11 +14,13 @@
  */
 
 import type { ProviderFactory } from '../../core/boot';
+import type { RateLimiterRegistry } from '../../core/rate-limiter-registry';
 import { ChatCompletionsProvider } from '../_chat-completions';
 
 class DeepSeekProvider extends ChatCompletionsProvider {
-  constructor(apiKey: string) {
+  constructor(apiKey: string, rateLimiterRegistry?: RateLimiterRegistry) {
     super({
+      rateLimiterRegistry,
       providerKey: 'ai-deepseek',
       baseUrl: 'https://api.deepseek.com/v1',
       model: 'deepseek-chat',
@@ -40,5 +42,5 @@ export const aiDeepseekFactory: ProviderFactory = async (deps) => {
     keyed: apiKey !== '',
     degradedBehaviour: 'throws on every call',
   });
-  return new DeepSeekProvider(apiKey);
+  return new DeepSeekProvider(apiKey, deps.rateLimiterRegistry);
 };
