@@ -45,10 +45,13 @@ import type { Page } from '@playwright/test';
  */
 export interface PendingRoute {
   chunk: string;
-  /** `loading` — a request is in flight. `retrying` — the last one REJECTED and
-   *  `importChunk` is backing off before the next. See `phase` on the DOM. */
+  /** `loading` — a request is in flight and none has failed. `retrying` — a
+   *  fetch of this chunk ALREADY FAILED in this tab and the document you are
+   *  looking at is the reload that followed (SC-890). See `phase` on the DOM. */
   phase: string;
-  /** How many fetches have already failed. `0` is the ordinary case. */
+  /** How many fetches of this chunk have already failed. `0` is the ordinary
+   *  case. Before SC-890 this counted retry-loop attempts, which issued no
+   *  request; it now counts fetches that genuinely failed. */
   failures: number;
 }
 

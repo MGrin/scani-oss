@@ -1,3 +1,41 @@
+import { setDefaultTimeout } from 'bun:test';
+
+/**
+ * The per-test budget, for EVERY test in the repo (SC-737).
+ *
+ * `bunfig.toml` cannot supply one: bun reads `[test]` and silently drops a
+ * `timeout` key, so an ad-hoc `bun test <path>` runs on bun's 5000ms default
+ * while `bun run test` gets 30s from `--timeout` on argv (SC-694). The two
+ * invocations therefore disagreed, and only the by-hand one could die — which
+ * is the worst direction, because it dies under exactly the load that made
+ * somebody want a quick answer.
+ *
+ * SC-694 closed that per-file, with `setDefaultTimeout(30_000)` at the top of
+ * each file that needed it. SC-737 asked what enumerates that class, and the
+ * answer measured out as: nothing can. 53 files under `scripts/tests/` spawn a
+ * subprocess and 8 carried a budget, so the obvious predicate is wrong 45 times
+ * in 53 — and spawn CALL-SITE count INVERTS against the ground truth
+ * (`oss-eligibility.test.ts` 15 sites and no budget; the eight at 1-3 each,
+ * below the median). The cost is spawns x tests-executed x per-spawn cost and
+ * none of those three is visible in the source.
+ *
+ * So the class is emptied rather than enumerated. This is the third home for
+ * the budget, and it was measured rather than assumed — bare `bun test <path>`
+ * on a 6000ms test, against this very file: unchanged it times out at 5000ms,
+ * with this call it passes.
+ *
+ * TWO THINGS TO KNOW BEFORE READING A SLOW RED.
+ *
+ * A genuinely hung test now costs 30s to fail instead of 5s. That is the price
+ * of the two invocations agreeing, and it is deliberate — but a suite that
+ * feels slower on a FAILURE is this line, not your change.
+ *
+ * And this moves only the by-hand invocation. `bun run test` already passed
+ * `--timeout 30000` and always did, so the gate is unaffected either way:
+ * nothing here made the gate green, and nothing here can make it green.
+ */
+setDefaultTimeout(30_000);
+
 import { acquireSuiteLock, busyMessage, nodeEnvRefusal } from './test-suite-guard';
 
 // Before anything else: the suite has one NODE_ENV, and a root `.env` can
