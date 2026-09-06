@@ -97,6 +97,7 @@ a self-host deployment can skip it entirely.
 | `S3_SECRET_ACCESS_KEY` | package | |
 | `S3_BUCKET` | package | Bucket name. |
 | `S3_REGION` | package | Optional. Defaults to `auto` (works for R2 + MinIO). Set explicitly for AWS S3 (e.g. `us-east-1`). |
+| `BACKUP_BUCKET` | app (`worker`) | Archive bucket for the nightly `db-backup` job. Deliberately not `S3_BUCKET`: that one is the temp job-payload store, and the only offsite copy of the database should not share a bucket with a lifecycle rule. Unset means the job refuses on every fire and writes nothing. |
 
 ## Email
 

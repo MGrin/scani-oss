@@ -102,6 +102,47 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates redis-server util-linux \
     && rm -rf /var/lib/apt/lists/*
 
+# pg_dump / pg_restore for the nightly `db-backup` job (SC-793).
+#
+# THE MAJOR IS PINNED AND IT IS NOT DEBIAN'S. `apt-get install postgresql-client`
+# on bookworm gives **15.19**, and this database is Neon PostgreSQL **16** — a
+# client older than the server does not degrade, it refuses:
+#
+#   pg_dump: error: aborting because of server version mismatch
+#   pg_dump: detail: server version: 16.15; pg_dump version: 15.19
+#
+# Measured 2026-08-29 against a real PG16, both clients, same URL and flags:
+# 15.19 exits 1 with zero bytes, 16.15 exits 0 with an archive. So the PGDG
+# repository is the requirement, not a preference — and it costs 80 KB more
+# than the wrong answer (runtime stage 34.13 -> 49.21 MB, against 49.13 for
+# Debian's 15).
+#
+# `--file` is written by the job under /tmp and removed in a `finally`.
+#
+# When Neon moves to 17 this refuses on the same line, loudly, on the next
+# fire — bump the major here. That is the safe direction: SC-259 is the other
+# one, where a NEWER client wrote an archive that errored on restore while the
+# data in it was fine.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl gnupg \
+    && install -d /usr/share/postgresql-common/pgdg \
+    && curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+       https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+    && echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt bookworm-pgdg main" \
+       > /etc/apt/sources.list.d/pgdg.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends postgresql-client-16 \
+    && apt-get purge -y curl gnupg && apt-get autoremove -y \
+    && rm -rf /var/lib/apt/lists/*
+
+# The image is useless for this job without them, and `COPY`/`RUN` above cannot
+# fail loudly if a future base image or repo move drops the package. Assert on
+# the binaries the processor actually spawns, and on the MAJOR, not merely on
+# their presence: a 15 client here builds green and refuses at 06:00.
+RUN pg_dump --version | grep -qE '^pg_dump \(PostgreSQL\) 16\.' \
+    && pg_restore --version | grep -qE '^pg_restore \(PostgreSQL\) 16\.' \
+    || (echo "SC-793: pg_dump/pg_restore are not PostgreSQL 16 — db-backup would refuse against Neon 16" && exit 1)
+
 RUN useradd --create-home --shell /usr/sbin/nologin --uid 1001 app
 
 # HOME FOR THE DROPPED PROCESS (SC-869).

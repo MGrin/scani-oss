@@ -42,6 +42,7 @@ export const JOB_NAMES = {
   staleSyncProbe: 'stale-sync-probe',
   splitHoldingProbe: 'split-holding-probe',
   demoReset: 'demo-reset',
+  dbBackup: 'db-backup',
 } as const;
 
 export type JobName = (typeof JOB_NAMES)[keyof typeof JOB_NAMES];

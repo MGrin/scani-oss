@@ -99,6 +99,7 @@ import { ApyPayoutsProcessor } from './processors/apy-payouts';
 import { BackfillCounterpartyProcessor } from './processors/backfill-counterparty';
 import { BackfillTokenIdentityProcessor } from './processors/backfill-token-identity';
 import { CurrencyRateRefreshProcessor } from './processors/currency-rate-refresh';
+import { DbBackupProcessor } from './processors/db-backup';
 import { DemoResetProcessor } from './processors/demo-reset';
 import { DlqDepthProbeProcessor } from './processors/dlq-depth-probe';
 import { DocumentParseProcessor } from './processors/document-parse';
@@ -157,6 +158,7 @@ function resolveProcessors() {
     Container.get(ReconcilePendingCredentialsProcessor),
     Container.get(ReconcileOrphanedUserJobsProcessor),
     Container.get(DlqDepthProbeProcessor),
+    Container.get(DbBackupProcessor),
     Container.get(JobHeartbeatProbeProcessor),
     Container.get(StaleSyncProbeProcessor),
     Container.get(SplitHoldingProbeProcessor),
