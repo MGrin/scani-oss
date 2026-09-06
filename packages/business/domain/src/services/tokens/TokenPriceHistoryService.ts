@@ -1,4 +1,9 @@
-import type { Token, TokenMetadata, TokenPriceEditHistory } from '@scani/db/schema';
+import {
+  attributeDecimals,
+  type Token,
+  type TokenMetadata,
+  type TokenPriceEditHistory,
+} from '@scani/db/schema';
 import { Container, Service } from 'typedi';
 import { TokenTypeRepository } from '../../repositories/EnumRepositories';
 import {
@@ -94,7 +99,18 @@ export class TokenPriceHistoryService extends BaseService {
             symbol,
             name: data.name,
             typeId: tokenType.id,
-            decimals: data.decimals ?? null,
+            // `user` is the authority here and there is no weaker reading of
+            // it: a custom token has no chain and no standard, so its creator
+            // is the only party who can answer (`DecimalsSource` in
+            // `@scani/db/schema`). This path wrote the number with a NULL
+            // source, which is indistinguishable from a row predating the
+            // column — so anything later reasoning "NULL means nobody asked"
+            // was wrong about exactly the case where somebody did (SC-1116).
+            //
+            // `attributeDecimals` drops both halves when no decimals was
+            // supplied, so an unanswered field stays NULL/NULL rather than
+            // claiming a source for a value that does not exist.
+            ...attributeDecimals(data.decimals, 'user'),
             iconUrl: data.iconUrl ?? null,
             providerMetadata,
             isActive: true,
