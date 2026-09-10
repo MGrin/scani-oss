@@ -19,19 +19,19 @@ import { replayStrandedMutations, withMutatedSources } from '../lib/test-source-
 setDefaultTimeout(30_000);
 
 /**
- * SC-528. CLAUDE.md's package list ran six workspaces short here and one short
+ * SC-528. The package list, in CLAUDE.md at the time, ran six workspaces short here and one short
  * in the mirror, under a heading claiming fifteen. Nothing noticed, because a
  * list nobody derives cannot disagree with anything.
  *
  * `docs:check` now derives it. These tests exist so that check has been SEEN to
  * fail — a guard nobody has watched go red is a guard nobody knows is wired up.
  *
- * They mutate the real CLAUDE.md and restore it around a single synchronous
+ * They mutate the real AGENTS.md and restore it around a single synchronous
  * spawn, so there is no window in which another test could observe the mutated
  * file.
  *
  * SC-601. That restore is a `finally`, and `SIGKILL` skips it — leaving a
- * TRACKED file rewritten on disk, where `git add -A` commits a CLAUDE.md nobody
+ * TRACKED file rewritten on disk, where `git add -A` commits a AGENTS.md nobody
  * wrote. It is the site SC-596's name-pattern sweep can least reach: the
  * mutations here DELETE and REFORMAT bullets, so there is no sentinel string to
  * find and nothing to reverse. `withMutatedSources` journals the original bytes
@@ -41,26 +41,26 @@ setDefaultTimeout(30_000);
  */
 
 const REPO_ROOT = path.resolve(import.meta.dir, '../..');
-const CLAUDE_MD = path.join(REPO_ROOT, 'CLAUDE.md');
+const AGENTS_MD = path.join(REPO_ROOT, 'AGENTS.md');
 
 const restored = replayStrandedMutations(REPO_ROOT);
 if (restored.length > 0) console.log(`restored ${restored.length} file(s): ${restored.join(', ')}`);
 
-const ORIGINAL = readFileSync(CLAUDE_MD, 'utf8');
+const ORIGINAL = readFileSync(AGENTS_MD, 'utf8');
 
 function runCheck(): { exitCode: number; output: string } {
   return runCheckDocs(REPO_ROOT);
 }
 
 // Mutate, run, restore — around the single spawn that reads the file, so the
-// mutated CLAUDE.md cannot survive it whatever the assertions below do.
+// mutated AGENTS.md cannot survive it whatever the assertions below do.
 function withDoc(doc: string): { exitCode: number; output: string } {
   // Control: the caller's substitution matched. A doc identical to ORIGINAL
   // would run the check against the committed tree and assert nothing.
   expect(doc).not.toBe(ORIGINAL);
 
-  const result = withMutatedSources(REPO_ROOT, { [CLAUDE_MD]: doc }, runCheck);
-  expect(readFileSync(CLAUDE_MD, 'utf8')).toBe(ORIGINAL);
+  const result = withMutatedSources(REPO_ROOT, { [AGENTS_MD]: doc }, runCheck);
+  expect(readFileSync(AGENTS_MD, 'utf8')).toBe(ORIGINAL);
   return result;
 }
 
@@ -68,7 +68,7 @@ function withDoc(doc: string): { exitCode: number; output: string } {
 // something rather than matching nothing. Asserted before every use.
 const A_REAL_BULLET = /^- `packages\/infra\/deadline`.*$/m;
 
-describe('docs:check derives CLAUDE.md package list from the tree', () => {
+describe('docs:check derives AGENTS.md package list from the tree', () => {
   test('the committed tree is green — the baseline every assertion below needs', () => {
     const { exitCode, output } = runCheck();
     expect(output).toMatch(/all \d+ checks passed/);
