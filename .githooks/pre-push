@@ -171,6 +171,42 @@ while read -r _local_ref local_sha _remote_ref _remote_sha; do
   else
     fail "scripts/check-oss-figures.ts is not in this tree and this push is bound for ${REMOTE_URL} — NO FIGURE WAS CHECKED. This is not a pass."
   fi
+
+  # SC-1101. THE ONLY ONE OF THE FOUR WITH REFUSAL RULES WAS THE ONE NOT HERE,
+  # and its absence is what made a correct pre-commit skip load-bearing.
+  #
+  # `check-oss-internal-refs` ran in pre-commit and nowhere else. Pre-commit is
+  # the one moment the destination is structurally unknowable — a commit does
+  # not know where it is going — so on a private branch `scanScope` reads
+  # `private` and skips, which is right. The skip was harmless only if some
+  # later reader existed, and none did: cherry-pick and rebase fire pre-commit
+  # zero times (the SC-813 measurement above), and this hook invoked the other
+  # three. So a thr_ id, an MX board key or a `/Users/<name>/` path authored on
+  # a private branch into a mirror-tracked file reached MGrin/scani-oss with
+  # the one check that refuses it never having read the content.
+  #
+  # Measured 2026-09-11 on `1369b172a`, with the control that makes the zero a
+  # reading: occurrences in this file of `check-oss-internal-refs` = 0, of
+  # `check-oss-figures` = 4.
+  #
+  # IT TAKES `$paths`, NOT `$commits`, and reads whole content at the pushed
+  # ref. The two checks above judge ADDED LINES because a measurement and a
+  # claim are both legitimately everywhere in the mirror's own tree; this one's
+  # rules are each measured at zero occurrences there before being added, and
+  # still are — whole content over all 2345 paths of `upstream/main` finds 0,
+  # against 99 in 44 private-only files by the same call. So whole content
+  # costs nothing and catches what an added-line scan cannot: a first-time port
+  # of a file whose reference predates the commits being pushed.
+  #
+  # `$paths` is already computed above for the bound-paths check, so this adds
+  # no `git` call to the hook.
+  if [ -f scripts/check-oss-internal-refs.ts ]; then
+    if ! printf '%s\n' "$paths" | bun scripts/check-oss-internal-refs.ts --stdin-paths --ref "$local_sha"; then
+      fail "the commits being pushed carry references that cannot travel to MGrin/scani-oss (SC-1101)"
+    fi
+  else
+    fail "scripts/check-oss-internal-refs.ts is not in this tree and this push is bound for ${REMOTE_URL} — NO INTERNAL REFERENCE WAS CHECKED. This is not a pass."
+  fi
 done
 
 [ "$checked_any" = 1 ] && ok "pre-push passed"

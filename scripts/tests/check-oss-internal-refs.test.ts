@@ -603,3 +603,143 @@ describe('a population read only in part is not a PASS (SC-842)', () => {
     expect(out).toContain('baseline.png');
   });
 });
+
+/**
+ * SC-1101. THE MODE THAT DID NOT EXIST, AND ITS ABSENCE WAS THE WHOLE DEFECT.
+ *
+ * This check ran in pre-commit and nowhere else. On a private branch
+ * `scanScope` reads `private` and skips — correctly, because a commit does not
+ * know where it is going — and that skip was harmless only if something later
+ * read the content. Nothing did: cherry-pick and rebase fire pre-commit zero
+ * times (SC-813), and `.githooks/pre-push`, which does know the destination,
+ * invoked the other three scanners and not this one.
+ *
+ * So these arms assert the mode exists and refuses, and the arm in
+ * `oss-boundary-gate.test.ts` asserts the hook still calls it. NEITHER IS
+ * SUFFICIENT ALONE: a working mode nothing invokes is the state this ticket
+ * describes, and an invocation of a mode that scans nothing is the state it
+ * would be replaced by.
+ */
+describe('--stdin-paths — the content of a branch being pushed (SC-1101)', () => {
+  const CLI = new URL('../check-oss-internal-refs.ts', import.meta.url).pathname;
+
+  /**
+   * A repository with no remotes and no `.private-repo`, which is how
+   * `scanScope` recognises a public checkout — so the guard scans there
+   * whichever repository the suite runs in, and these arms mean the same thing
+   * in both. The same shape the `oss-boundary` CI job's own red-probe uses.
+   */
+  function pushableRepo(files: Record<string, string>): { dir: string; sha: string } {
+    const dir = mkdtempSync(path.join(tmpdir(), 'sc1101-'));
+    expect(Bun.spawnSync(['git', 'init', '-q', '-b', 'main', dir]).exitCode).toBe(0);
+    for (const [k, v] of Object.entries({
+      'user.email': 't@example.com',
+      'user.name': 't',
+      'commit.gpgsign': 'false',
+    })) {
+      expect(Bun.spawnSync(['git', 'config', k, v], { cwd: dir }).exitCode).toBe(0);
+    }
+    for (const [name, content] of Object.entries(files))
+      writeFileSync(path.join(dir, name), content);
+    expect(Bun.spawnSync(['git', 'add', '-A'], { cwd: dir }).exitCode).toBe(0);
+    expect(Bun.spawnSync(['git', 'commit', '-qm', 'probe'], { cwd: dir }).exitCode).toBe(0);
+    const sha = Bun.spawnSync(['git', 'rev-parse', 'HEAD'], { cwd: dir }).stdout.toString().trim();
+    return { dir, sha };
+  }
+
+  function runPushed(dir: string, sha: string, paths: string) {
+    const r = Bun.spawnSync(['bun', CLI, '--stdin-paths', '--ref', sha], {
+      cwd: dir,
+      stdin: new TextEncoder().encode(paths),
+    });
+    return { code: r.exitCode, out: `${r.stdout.toString()}${r.stderr.toString()}` };
+  }
+
+  test('an internal reference in a path being pushed is REFUSED', () => {
+    const { dir, sha } = pushableRepo({
+      'planted.ts': `// see ${'MX'}-1234 for the reasoning\nexport const x = 1;\n`,
+    });
+    const { code, out } = runPushed(dir, sha, 'planted.ts\n');
+    rmSync(dir, { recursive: true, force: true });
+
+    expect(code).toBe(EXIT_REFUSED);
+    expect(out).toContain('REFUSED');
+    expect(out).toContain('planted.ts:1');
+    expect(out).toContain('internal board key');
+    // The noun has to agree with the population. "staged" over a pushed range
+    // is the defect this whole file guards against, one level up.
+    expect(out).toContain('1 of 1 pushed file(s) scanned');
+  });
+
+  /**
+   * The must-be-ABSENT control. Without it the arm above is satisfied by a CLI
+   * that refuses everything, which would be a worse guard than none.
+   */
+  test('control — an SC- reference in the same mode is a PASS', () => {
+    const { dir, sha } = pushableRepo({
+      'control.ts': '// see SC-1101 for the reasoning\nexport const y = 2;\n',
+    });
+    const { code, out } = runPushed(dir, sha, 'control.ts\n');
+    rmSync(dir, { recursive: true, force: true });
+
+    expect(code).toBe(EXIT_OK);
+    expect(out).toContain('oss-internal-refs: PASS');
+    expect(out).toContain('1 of 1 pushed file(s) scanned');
+  });
+
+  /**
+   * The content read is `<ref>:<path>`, not the index and not the working tree.
+   * A branch being pushed need not be checked out, so there is no index to
+   * read — and reading the working tree would judge whatever the operator
+   * happens to have open rather than what is leaving.
+   */
+  test('the content judged is the pushed ref, not the working tree', () => {
+    const { dir, sha } = pushableRepo({
+      'file.ts': `// see ${'MX'}-1234 for the reasoning\n`,
+    });
+    // The working tree is made clean AFTER the commit. The reference is still
+    // in the ref being pushed, so it must still refuse.
+    writeFileSync(path.join(dir, 'file.ts'), '// nothing internal here\n');
+    const { code, out } = runPushed(dir, sha, 'file.ts\n');
+    rmSync(dir, { recursive: true, force: true });
+
+    expect(code).toBe(EXIT_REFUSED);
+    expect(out).toContain('internal board key');
+  });
+
+  /**
+   * A path the pushed commits introduce and then remove does not resolve at
+   * the tip. That is the right answer — it is not in the tree that is
+   * leaving — but it must be REPORTED, because "read and clean" and "never
+   * read" are the two readings this whole family of checks exists to separate.
+   */
+  test('a path absent from the pushed ref is named UNREADABLE, not counted as clean', () => {
+    const { dir, sha } = pushableRepo({ 'real.ts': 'export const z = 3;\n' });
+    const { code, out } = runPushed(dir, sha, 'real.ts\nvanished.ts\n');
+    rmSync(dir, { recursive: true, force: true });
+
+    expect(out).toContain('vanished.ts');
+    expect(out).toContain('UNREADABLE');
+    expect(out).not.toContain('oss-internal-refs: PASS');
+    expect(out).toContain('PARTIAL');
+    expect(code).toBe(EXIT_OK);
+  });
+
+  /**
+   * `--scan` wins when both are given. It is the only mode that asks about the
+   * TREE rather than about a change, and one verdict line cannot carry a
+   * denominator for two different questions.
+   */
+  test('--scan takes precedence over --stdin-paths', () => {
+    const { dir, sha } = pushableRepo({ 'a.ts': 'export const a = 1;\n' });
+    const r = Bun.spawnSync(['bun', CLI, '--scan', '--stdin-paths', '--ref', sha], {
+      cwd: dir,
+      stdin: new TextEncoder().encode('a.ts\n'),
+    });
+    const out = `${r.stdout.toString()}${r.stderr.toString()}`;
+    rmSync(dir, { recursive: true, force: true });
+
+    expect(out).toContain('tracked file(s) scanned');
+    expect(out).not.toContain('pushed file(s) scanned');
+  });
+});

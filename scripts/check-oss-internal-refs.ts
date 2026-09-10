@@ -51,9 +51,62 @@
 // private side. What is new is a content check that ALSO runs in the mirror,
 // which that one structurally cannot, being part of the private classifier.
 //
+// IT HAD ONE FIRING OPPORTUNITY AND IT WAS THE WRONG ONE (SC-1101). Until this
+// paragraph, `--stdin-paths` did not exist and nothing but pre-commit ran this
+// check. Pre-commit is the one moment the destination is structurally unknowable
+// — a commit does not know where it is going — so on a private branch
+// `scanScope` reads `private` and SKIPS, correctly and by construction. What
+// made that skip load-bearing rather than harmless is that no LATER reader
+// existed: `cherry-pick` and `rebase` fire pre-commit zero times (measured,
+// SC-813), and `.githooks/pre-push` — which does know the destination, and which
+// its own comments call "the last point before the content is public, and the
+// only one a cherry-picked port reaches at all" — invoked
+// `check-oss-bound-paths`, `check-oss-data-shapes` and `check-oss-figures`, and
+// not this file. So content authored on a private branch into a mirror-tracked
+// file reached MGrin/scani-oss without this check, the only one of the four with
+// REFUSAL rules, ever having read it.
+//
+// Measured 2026-09-11 on `1369b172a`, and the sign matters both ways:
+//
+//   .githooks/pre-push, occurrences of check-oss-internal-refs   0
+//   .githooks/pre-push, occurrences of check-oss-figures         4   (the control)
+//
+// A zero beside a zero would have said the reading was broken. IT IS NOT THE
+// ROUTING THAT WAS WRONG: `classifyBranch` answers the question it is asked,
+// and answers it correctly — the private-side eligibility classifier agrees,
+// verified separately against a file that exists in only one of the two
+// repositories. The defect was that the correct answer was the last word.
+//
+// That classifier is deliberately not named here as a command to run. It is
+// private-only, so an instruction to run it is unrunnable in this repository —
+// which is the SC-656 rule, and this paragraph broke it on the first attempt:
+// `scripts/tests/prescribed-commands-resolve.test.ts` was green in the private
+// tree, where the command resolves, and red in the mirror, where it does not.
+// The whole point of this file is that it is shared, so a measurement taken on
+// one side has to be reported rather than re-prescribed.
+//
+// WHAT WAS ALREADY BEHIND IT, so this is not read as an unguarded boundary: the
+// mirror's `oss-boundary` CI job runs `--scan` over its whole tree and is a
+// required check. That catches an internal reference before MERGE, and this
+// catches it before the branch is PUSHED to a public repository at all. The
+// second is the guarantee pre-push exists to make.
+//
+// THE PUSHED MODE READS WHOLE CONTENT AT THE PUSHED REF, not added lines, and
+// that is the one place it differs from its two siblings in that hook. They read
+// a MEASUREMENT and a CLAIM, which the mirror's own tree is full of legitimately,
+// so an added-line population is what keeps them usable. This file's rules are
+// each measured at zero occurrences in the mirror before being added, and the
+// same measurement holds today: whole-content over all 2345 paths of
+// `upstream/main` finds 0 references in 0 files, against 99 in 44 private-only
+// files with the same call — so whole content costs nothing here and catches the
+// case an added-line scan structurally cannot, a first-time port of a file whose
+// reference predates the commits being pushed.
+//
 // Usage:
 //   bun scripts/check-oss-internal-refs.ts          # staged content
 //   bun scripts/check-oss-internal-refs.ts --scan   # every tracked file
+//   bun scripts/check-oss-internal-refs.ts --stdin-paths --ref <sha>
+//                                                   # content of those paths at <sha>
 //   OSS_ALLOW_INTERNAL_REFS=1 git commit ...        # the escape
 
 import { spawnSync } from 'node:child_process';
@@ -389,7 +442,7 @@ function gitSucceeds(args: string[]): boolean {
  * its input. Worth more than the two-line fix: a repair applied to a shared
  * classifier does not travel to a caller that feeds it a narrower type.
  */
-function collectBranchFacts(): BranchFacts {
+function collectBranchFacts(ref = 'HEAD'): BranchFacts {
   const remotes = git(['remote']);
   const upstreamMainResolved = gitSucceeds([
     'rev-parse',
@@ -398,14 +451,32 @@ function collectBranchFacts(): BranchFacts {
     'refs/remotes/upstream/main',
   ]);
   return {
+    subject: ref,
     hasUpstreamRemote:
       remotes.kind === 'failed' ? null : remotes.stdout.trim().split('\n').includes('upstream'),
     upstreamMainResolved,
     upstreamIsAncestor:
-      upstreamMainResolved && gitSucceeds(['merge-base', '--is-ancestor', 'upstream/main', 'HEAD']),
-    originIsAncestor: gitSucceeds(['merge-base', '--is-ancestor', 'origin/main', 'HEAD']),
-    treeMarkers: collectTreeMarkers(),
+      upstreamMainResolved && gitSucceeds(['merge-base', '--is-ancestor', 'upstream/main', ref]),
+    originIsAncestor: gitSucceeds(['merge-base', '--is-ancestor', 'origin/main', ref]),
+    treeMarkers: collectTreeMarkers(ref),
   };
+}
+
+/**
+ * `--ref <sha>`, or `--ref=<sha>`; `HEAD` when the flag is absent.
+ *
+ * DEFAULTING TO `HEAD` IS WHAT MAKES THE PRE-PUSH CALLER CORRECT, and spelled
+ * the same way as `check-oss-figures.ts`'s so the two hook invocations beside
+ * each other cannot mean different things. `git push upstream branchB` while
+ * standing on private branchA classifies branchA without it, reads `private`,
+ * and SKIPS — a silent pass on a mirror-bound push, which is this file's own
+ * subject reproduced inside its caller.
+ */
+export function refArg(argv: readonly string[]): string {
+  const i = argv.indexOf('--ref');
+  if (i >= 0 && argv[i + 1] !== undefined) return argv[i + 1] as string;
+  const inline = argv.find((a) => a.startsWith('--ref='));
+  return inline === undefined ? 'HEAD' : inline.slice('--ref='.length);
 }
 
 /** A file with a NUL byte is not text; matching regexes against it reports noise. */
@@ -484,8 +555,20 @@ function reportUnread(
   );
 }
 
-function main(argv: readonly string[]): number {
+function main(argv: readonly string[], stdin = ''): number {
   const wholeTree = argv.includes('--scan');
+  /**
+   * The pre-push caller (SC-1101). The paths are the ones the commits being
+   * pushed introduce, already filtered to A/M/R/C by the hook, and the content
+   * is read at `--ref` rather than from the index — there is no index for a
+   * branch you are not standing on, which is the whole case.
+   *
+   * `--scan` wins if both are given, because it is the only mode that asks a
+   * question about the tree rather than about a change, and answering two
+   * questions off one verdict line is what a denominator cannot survive.
+   */
+  const givenPaths = !wholeTree && argv.includes('--stdin-paths');
+  const ref = refArg(argv);
 
   const broken = selfTest();
   if (broken.length > 0) {
@@ -509,12 +592,14 @@ function main(argv: readonly string[]): number {
    * (SC-972) — and it is the same read the scan below uses, so the two lines
    * cannot disagree about what was staged.
    */
-  const listed = wholeTree
+  const listed: GitRun = wholeTree
     ? git(['ls-files'])
-    : git(['diff', '--cached', '--name-only', '--diff-filter=ACMR']);
+    : givenPaths
+      ? { kind: 'ran', stdout: stdin }
+      : git(['diff', '--cached', '--name-only', '--diff-filter=ACMR']);
 
   if (!wholeTree) {
-    const scope = scanScope(collectBranchFacts(), {
+    const scope = scanScope(collectBranchFacts(ref), {
       privateMarkerPresent: existsSync('.private-repo'),
     });
     if (scope.kind === 'unknown') {
@@ -542,7 +627,7 @@ function main(argv: readonly string[]): number {
               addedLines: null,
             };
       console.log(
-        `oss-internal-refs: SKIPPED · exit ${EXIT_OK} · ${unreadClause(unread, 'staged')}` +
+        `oss-internal-refs: SKIPPED · exit ${EXIT_OK} · ${unreadClause(unread, givenPaths ? 'pushed' : 'staged')}` +
           ` · not bound for MGrin/scani-oss: ${scope.why}`
       );
       return EXIT_OK;
@@ -551,7 +636,7 @@ function main(argv: readonly string[]): number {
 
   if (listed.kind === 'failed') {
     console.error(
-      `oss-internal-refs: UNKNOWN · exit ${EXIT_UNKNOWN} · could not list the ${wholeTree ? 'tracked' : 'staged'} files to scan — ${listed.why} — NOTHING WAS SCANNED`
+      `oss-internal-refs: UNKNOWN · exit ${EXIT_UNKNOWN} · could not list the ${wholeTree ? 'tracked' : givenPaths ? 'pushed' : 'staged'} files to scan — ${listed.why} — NOTHING WAS SCANNED`
     );
     return EXIT_UNKNOWN;
   }
@@ -570,6 +655,12 @@ function main(argv: readonly string[]): number {
   for (const path of paths) {
     // The STAGED content, not the working tree: a partially staged file is a
     // different file, and the commit carries the half that is in the index.
+    //
+    // `--stdin-paths` reads `<ref>:<path>` instead, because a branch being
+    // pushed need not be checked out and so has no index to read. A path the
+    // pushed commits introduce and then remove does not resolve there — and
+    // that failure is the right answer, reported by name as UNREADABLE below:
+    // it is not in the tree that is leaving, so it is not travelling.
     const read: GitRun = wholeTree
       ? (() => {
           try {
@@ -578,7 +669,7 @@ function main(argv: readonly string[]): number {
             return { kind: 'failed', why: (e as Error).message } as const;
           }
         })()
-      : git(['show', `:${path}`]);
+      : git(['show', givenPaths ? `${ref}:${path}` : `:${path}`]);
     // A file that could not be read is COUNTED, not silently dropped. It was a
     // bare `continue`, so a path skipped this way left the denominator looking
     // like a complete scan — the same defect as the population read, one file
@@ -598,7 +689,7 @@ function main(argv: readonly string[]): number {
 
   // The denominator is printed on every outcome. `0 found` beside no count at
   // all is indistinguishable from a scan that never read anything.
-  const where = wholeTree ? 'tracked' : 'staged';
+  const where = wholeTree ? 'tracked' : givenPaths ? 'pushed' : 'staged';
   const unread = [...skippedBinary, ...unreadable];
   const tail = `${RULE_COUNT} rule(s) self-tested, ${scanned} of ${paths.length} ${where} file(s) scanned${skippedBinary.length > 0 ? `, ${skippedBinary.length} binary skipped` : ''}${unreadable.length > 0 ? `, ${unreadable.length} UNREADABLE` : ''}`;
 
@@ -646,5 +737,6 @@ if (import.meta.main) {
     console.log(`oss-internal-refs: SKIPPED · exit ${EXIT_OK} · OSS_ALLOW_INTERNAL_REFS=1 was set`);
     process.exit(EXIT_OK);
   }
-  process.exit(main(process.argv.slice(2)));
+  const stdin = process.argv.includes('--stdin-paths') ? await Bun.stdin.text() : '';
+  process.exit(main(process.argv.slice(2), stdin));
 }
