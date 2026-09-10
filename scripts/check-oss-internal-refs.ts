@@ -71,10 +71,19 @@
 //   .githooks/pre-push, occurrences of check-oss-internal-refs   0
 //   .githooks/pre-push, occurrences of check-oss-figures         4   (the control)
 //
-// A zero beside a zero would have said the reading was broken. It is not the
-// routing that was wrong — `bun scripts/oss-classify.ts scripts/gate-db.ts`
-// returns `excluded`, and `classifyBranch` answers the question it is asked
-// correctly. The defect was that the correct answer was the last word.
+// A zero beside a zero would have said the reading was broken. IT IS NOT THE
+// ROUTING THAT WAS WRONG: `classifyBranch` answers the question it is asked,
+// and answers it correctly — the private-side eligibility classifier agrees,
+// verified separately against a file that exists in only one of the two
+// repositories. The defect was that the correct answer was the last word.
+//
+// That classifier is deliberately not named here as a command to run. It is
+// private-only, so an instruction to run it is unrunnable in this repository —
+// which is the SC-656 rule, and this paragraph broke it on the first attempt:
+// `scripts/tests/prescribed-commands-resolve.test.ts` was green in the private
+// tree, where the command resolves, and red in the mirror, where it does not.
+// The whole point of this file is that it is shared, so a measurement taken on
+// one side has to be reported rather than re-prescribed.
 //
 // WHAT WAS ALREADY BEHIND IT, so this is not read as an unguarded boundary: the
 // mirror's `oss-boundary` CI job runs `--scan` over its whole tree and is a
