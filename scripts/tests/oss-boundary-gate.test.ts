@@ -44,6 +44,24 @@ function stepRun(name: string): string {
   return STEPS.find((s) => s.name === name)?.run ?? '';
 }
 
+const PRE_PUSH = readFileSync(new URL('../../.githooks/pre-push', import.meta.url), 'utf8');
+
+/**
+ * Whether the pre-push hook actually RUNS a scanner, as opposed to mentioning
+ * it (SC-1101).
+ *
+ * A comment line is excluded, because that is the exact difference the arms
+ * below turn on: `check-oss-prose` is named in that hook's prose and invoked
+ * nowhere, so a substring test reports it as wired. Keyed on `bun <script>`,
+ * which is how every invocation in that file is spelled — a `printf … | bun
+ * scripts/x.ts` still matches, and a bare mention of the filename does not.
+ */
+function invokedByPrePush(script: string): boolean {
+  return PRE_PUSH.split('\n').some(
+    (line) => !line.trimStart().startsWith('#') && line.includes(`bun scripts/${script}.ts`)
+  );
+}
+
 /**
  * Whether this checkout is the private repository. The same discriminator the
  * scanners use (`scanScope`), read the same way, so this file and the guards it
@@ -215,9 +233,67 @@ describe('SC-838 · the OSS boundary gate is wired to be able to refuse', () => 
    * leaves the machine.
    */
   test('the pre-push hook still runs the boundary checks', () => {
-    const hook = readFileSync(new URL('../../.githooks/pre-push', import.meta.url), 'utf8');
-    expect(hook).toContain('scripts/check-oss-bound-paths.ts');
-    expect(hook).toContain('scripts/check-oss-figures.ts');
-    expect(hook).toContain('scripts/check-oss-data-shapes.ts');
+    expect(invokedByPrePush('check-oss-bound-paths')).toBe(true);
+    expect(invokedByPrePush('check-oss-figures')).toBe(true);
+    expect(invokedByPrePush('check-oss-data-shapes')).toBe(true);
+  });
+
+  /**
+   * SC-1101. THE ONE OF THE FOUR SCANNERS WITH REFUSAL RULES WAS THE ONE THIS
+   * HOOK DID NOT CALL, and the arm above could not have told anybody.
+   *
+   * `check-oss-internal-refs` ran in pre-commit and nowhere else. Pre-commit is
+   * the one moment the destination is structurally unknowable, so on a private
+   * branch `scanScope` reads `private` and skips — correctly. The skip is
+   * harmless only if a later reader exists, and none did: cherry-pick and
+   * rebase fire pre-commit zero times (SC-813), and this hook invoked the other
+   * three. Content authored privately into a mirror-tracked file therefore
+   * reached MGrin/scani-oss with the only check that refuses it never having
+   * read it.
+   *
+   * `toContain` WAS THE WRONG INSTRUMENT AND WOULD HAVE PASSED, which is why
+   * the arm above is rewritten rather than extended. `check-oss-prose` appears
+   * in this hook — in a comment, explaining what it detects — and is invoked
+   * exactly nowhere. A substring assertion cannot tell a mention from a call,
+   * and this file's whole subject is a check that reports nothing reading
+   * identically to one with nothing to report.
+   */
+  test('a mention is not an invocation — the assertion can tell them apart', () => {
+    // The control, and it is what makes the arm above a reading. `prose` is
+    // named in this hook and never run; if this flipped to `true` the matcher
+    // has gone back to matching prose and the arm above means nothing.
+    expect(PRE_PUSH).toContain('check-oss-prose');
+    expect(invokedByPrePush('check-oss-prose')).toBe(false);
+  });
+
+  /**
+   * `--ref "$local_sha"`, not HEAD. `git push upstream branchB` while standing
+   * on private branchA would classify branchA, read `private`, and skip — a
+   * silent pass on a mirror-bound push, which is this hook's own subject
+   * reproduced inside it.
+   */
+  test('the internal-reference check runs at the push, on the ref being pushed', () => {
+    expect(invokedByPrePush('check-oss-internal-refs')).toBe(true);
+    const call = PRE_PUSH.split('\n').find(
+      (l) => l.includes('bun scripts/check-oss-internal-refs.ts') && !l.trimStart().startsWith('#')
+    );
+    expect(call).toBeDefined();
+    expect(call).toContain('--stdin-paths');
+    expect(call).toContain('--ref "$local_sha"');
+  });
+
+  /**
+   * A missing script must be a REFUSAL here, not a note. pre-commit notes,
+   * which is right for a commit — local and amendable. This is the last point
+   * before the content is public, so the answer flips, and the invariant is
+   * stated once in the hook's own words: a check that could not run is not a
+   * pass.
+   */
+  test('an absent internal-reference check fails the push rather than noting it', () => {
+    const guard = PRE_PUSH.slice(
+      PRE_PUSH.indexOf('check-oss-internal-refs.ts is not in this tree')
+    );
+    expect(guard).toContain('NO INTERNAL REFERENCE WAS CHECKED');
+    expect(guard).toContain('This is not a pass.');
   });
 });
