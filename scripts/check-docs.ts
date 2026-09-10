@@ -29,7 +29,7 @@
 // IN THE GATE, error class only (SC-430). It had been wired only into
 // `bun run check`, which nothing invokes — so three findings accumulated on
 // `main` unnoticed, one of them a value a user is shown that SC-258 says must
-// be in the glossary before it is translated. It is now in CLAUDE.md's
+// be in the glossary before it is translated. It is now in AGENTS.md's
 // before-pushing list, which is the gate that actually runs on this machine,
 // and in `ci.yml` as `validate-docs`, which runs only while a billing block is
 // not keeping the private repo's Actions from starting — and that flaps
@@ -760,12 +760,15 @@ function checkMarkdownPlacement(): void {
   // `CHANGELOG.md` is written at the root by release-please and read from there
   // by GitHub's release page and the Docker Hub description sync; moving it
   // under docs/ would leave the generator recreating it on the next release.
+  // `AGENTS.md` is the one-source instruction file every agent provider reads
+  // from the root, and `CLAUDE.md` is a one-line `@AGENTS.md` include.
   const ROOT_ALLOWED = new Set([
     'README.md',
     'CONTRIBUTING.md',
     'CODE_OF_CONDUCT.md',
     'CLAUDE.md',
     'CHANGELOG.md',
+    'AGENTS.md',
   ]);
 
   // A README by function under a name GitHub does not auto-render: it sits
@@ -785,6 +788,10 @@ function checkMarkdownPlacement(): void {
     if (!file.includes('/')) return ROOT_ALLOWED.has(file);
     // GitHub reads these from fixed paths; they cannot move.
     if (file.startsWith('.github/')) return true;
+    // Claude Code loads a path-scoped rule only from `.claude/rules/`, and only
+    // when a file its `paths:` glob matches is opened. Moved anywhere else it
+    // never loads at all.
+    if (file.startsWith('.claude/rules/')) return true;
     // The published docs site at docs.scani.xyz. This content IS the product,
     // not documentation about the repo.
     if (file.startsWith('apps/frontend/docs/src/content/')) return true;
@@ -831,7 +838,7 @@ function checkMarkdownPlacement(): void {
 // validates frontmatter against the content schema, resolves component imports
 // and link targets, and runs `check-tables.ts` — none of which a bare compile
 // sees. `bun --cwd apps/frontend/docs build` remains the complete answer, and
-// CLAUDE.md says so. (Note the flag order: `bun --cwd DIR run build` prints
+// AGENTS.md says so. (Note the flag order: `bun --cwd DIR run build` prints
 // bun's help and exits 0.)
 //
 // `@mdx-js/mdx` is pinned at the root rather than taken transitively from
@@ -1066,10 +1073,10 @@ function checkQueueBackendClaims(): void {
 // =============================================================================
 
 // =============================================================================
-// Check 13 — CLAUDE.md's package inventory vs the workspaces on disk
+// Check 13 — AGENTS.md's package inventory vs the workspaces on disk
 // =============================================================================
 //
-// CLAUDE.md is the file every session loads as binding instruction, and its
+// AGENTS.md is the file every session loads as binding instruction, and its
 // package list is what a reader consults to decide where a new file belongs. A
 // package missing from that list is not merely undocumented, it is invisible —
 // so the logic that belonged in it gets rebuilt somewhere else, or a helper is
@@ -1082,7 +1089,9 @@ function checkQueueBackendClaims(): void {
 //
 // Source of truth: a workspace is a tracked `packages/<category>/<name>/
 // package.json`. Doc target: every `- `packages/<category>/<name>`` bullet in
-// CLAUDE.md, wherever in the file it sits.
+// AGENTS.md, wherever in the file it sits. It read `CLAUDE.md` until that file
+// became a one-line `@AGENTS.md` include; an include is not followed
+// here, so pointing this at `CLAUDE.md` again lands in the blind state below.
 //
 // The heading's parenthesised count is VERIFIED IF PRESENT and not required.
 // Both repos dropped it, because a number is the part that rots silently while
@@ -1116,7 +1125,7 @@ function checkPackageInventory(): void {
     return;
   }
 
-  const doc = read('CLAUDE.md');
+  const doc = read('AGENTS.md');
 
   const documented = new Set<string>();
   for (const m of doc.matchAll(/^- `(packages\/[^/`]+\/[^/`]+)`/gm)) {
@@ -1129,7 +1138,7 @@ function checkPackageInventory(): void {
   if (documented.size === 0) {
     fail(
       NAME,
-      'CLAUDE.md has no `- `packages/<category>/<name>`` bullets. The inventory was ' +
+      'AGENTS.md has no `- `packages/<category>/<name>`` bullets. The inventory was ' +
         'renamed or reformatted; this check cannot read it and is reporting that, not ' +
         `that all ${actual.size} packages are undocumented.`
     );
@@ -1140,7 +1149,7 @@ function checkPackageInventory(): void {
   if (missing.length > 0) {
     fail(
       NAME,
-      `CLAUDE.md's package list omits ${missing.length} workspace(s): ${missing.join(', ')}. ` +
+      `AGENTS.md's package list omits ${missing.length} workspace(s): ${missing.join(', ')}. ` +
         'Give each one a line describing its role and what may depend on it — read its ' +
         'entry points first; the name is not the role.'
     );
@@ -1150,7 +1159,7 @@ function checkPackageInventory(): void {
   if (stale.length > 0) {
     fail(
       NAME,
-      `CLAUDE.md's package list names ${stale.length} workspace(s) that no longer exist: ` +
+      `AGENTS.md's package list names ${stale.length} workspace(s) that no longer exist: ` +
         `${stale.join(', ')}.`
     );
   }
@@ -1176,7 +1185,7 @@ function checkPackageInventory(): void {
   if (misfiled.length > 0) {
     fail(
       NAME,
-      `CLAUDE.md files ${misfiled.length} package bullet(s) under the wrong category heading: ${misfiled.join('; ')}.`
+      `AGENTS.md files ${misfiled.length} package bullet(s) under the wrong category heading: ${misfiled.join('; ')}.`
     );
   }
 
@@ -1185,7 +1194,7 @@ function checkPackageInventory(): void {
   if (!heading) {
     fail(
       NAME,
-      'CLAUDE.md has no `**Packages:**` heading over the package list. The bullets were ' +
+      'AGENTS.md has no `**Packages:**` heading over the package list. The bullets were ' +
         'found, so this is the heading having moved or been renamed rather than the ' +
         'inventory being absent.'
     );
@@ -1195,7 +1204,7 @@ function checkPackageInventory(): void {
   if (claimed !== undefined && Number(claimed) !== actual.size) {
     fail(
       NAME,
-      `CLAUDE.md's heading claims ${claimed} packages; the tree has ${actual.size}. The ` +
+      `AGENTS.md's heading claims ${claimed} packages; the tree has ${actual.size}. The ` +
         'count is optional and both repos dropped it — a missing bullet fails by ' +
         'omission, a stale number does not — so deleting it is a valid fix.'
     );
