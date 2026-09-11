@@ -345,7 +345,8 @@
           "group": "グループ",
           "institution": "金融機関",
           "type": "種類",
-          "quality": "データ品質"
+          "quality": "データ品質",
+          "price": "価格"
         },
         "groupBy": {
           "account": "口座",
@@ -367,6 +368,9 @@
           "noPriceSource": "利用できる価格提供元なし",
           "negativeOpening": "初期残高がマイナス",
           "noCoverage": "カバレッジ行なし"
+        },
+        "priceOption": {
+          "stale": "古い相場"
         }
       },
       "institutions": {

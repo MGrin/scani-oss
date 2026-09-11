@@ -872,6 +872,7 @@
         "lookalike": "Displays as {{impersonates}}",
         "lookalikeTitle": "This token's symbol is written with characters that draw \"{{impersonates}}\" without being it. The row is kept, and your balance with it, because hiding it would tell you nothing — but it is not the token it resembles.",
         "noPriceSpoken": "no price available",
+        "staleQuote": "Stale quote, {{age}}",
         "lookalikeSpoken": "displays as {{impersonates}}",
         "lookalikeExportCell": "{{symbol}} (displays as {{impersonates}})"
       },
