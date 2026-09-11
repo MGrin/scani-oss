@@ -2,6 +2,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test
 import { createPostgresBackend, type PostgresQueueBackend, Queue, Worker } from 'bullmq';
 import { Pool } from 'pg';
 import { runQueueMigrations } from '../../src/migrate';
+import { interruptIdleWait, serveWorkerWake, WorkerWakeClient } from '../../src/wake/worker-wake';
 
 /**
  * SC-963. An idle BullMQ worker cannot let a scale-to-zero Postgres suspend:
@@ -203,5 +204,92 @@ describe('an idle worker with a far-future delayed job still starts new work pro
     await queue.add('after-reconnect', {});
     const againStartedAt = await waitFor(() => started.get('after-reconnect'), (CAP_S + 3) * 1_000);
     expect(againStartedAt - againAt).toBeLessThan(3_000);
+  });
+});
+
+/**
+ * SC-1144. The price of the arm above is a job enqueued while the compute is
+ * suspended waiting for the worker's timer — up to 600s in production. The api
+ * now pings the worker after a user enqueues, and the ping interrupts that
+ * wait. All three arms share one fixture and differ only in the ping, so the
+ * control is the same fixture with the wake disabled.
+ */
+describe('a job enqueued while the LISTEN connection is down (SC-1144)', () => {
+  const CAP_S = 6;
+  const SECRET = 'test_wake_secret_at_least_32_characters_long';
+
+  async function suspendedWorker() {
+    const name = uniqueQueue();
+    const queue = makeQueue(name);
+    await queue.add('far-future', {}, { delay: 3_600_000 });
+    const { worker, started } = makeWorker(name, {
+      maximumBlockTimeout: CAP_S,
+      drainDelay: CAP_S,
+      stalledInterval: 1_000,
+    });
+    await worker.waitUntilReady();
+    await Bun.sleep(500);
+    await queue.add('prime', {});
+    await waitFor(() => started.get('prime'), 5_000);
+    await Bun.sleep(300);
+    const killed = await pool.query(
+      `select pg_terminate_backend(pid) from pg_stat_activity
+       where application_name = $1 and query like '%LISTEN bullmq_jobs;%'`,
+      [name]
+    );
+    expect(killed.rows.length).toBe(1);
+    await Bun.sleep(200);
+
+    const server = serveWorkerWake({
+      port: 0,
+      hostname: '127.0.0.1',
+      secret: SECRET,
+      onWake: () => interruptIdleWait(worker),
+    });
+    open.push({ close: async () => server.stop() });
+    return { queue, worker, started, url: `http://127.0.0.1:${server.port}` };
+  }
+
+  function wakeClient(url: string | undefined, secret: string) {
+    const c = new WorkerWakeClient();
+    c.configure({ url, secret });
+    return c;
+  }
+
+  test('with the wake, it starts in seconds, and the worker listens again', async () => {
+    const { queue, started, url } = await suspendedWorker();
+    const addedAt = Date.now();
+    await queue.add('while-suspended', {});
+    expect(await wakeClient(url, SECRET).ping()).toBe('woken');
+    const startedAt = await waitFor(() => started.get('while-suspended'), (CAP_S + 3) * 1_000);
+    expect(startedAt - addedAt).toBeLessThan(2_500);
+
+    await Bun.sleep(500);
+    const againAt = Date.now();
+    await queue.add('after-wake', {});
+    const againStartedAt = await waitFor(() => started.get('after-wake'), (CAP_S + 3) * 1_000);
+    expect(againStartedAt - againAt).toBeLessThan(2_500);
+  });
+
+  // The control. Without it the arm above could pass on a NOTIFY that still
+  // reached a live connection, and would say nothing about the wake.
+  test('CONTROL: with the wake disabled, it waits for the timer', async () => {
+    const { queue, started } = await suspendedWorker();
+    const addedAt = Date.now();
+    await queue.add('while-suspended', {});
+    expect(await wakeClient(undefined, SECRET).ping()).toBe('unconfigured');
+    const startedAt = await waitFor(() => started.get('while-suspended'), (CAP_S + 3) * 1_000);
+    expect(startedAt - addedAt).toBeGreaterThan(3_500);
+    expect(startedAt - addedAt).toBeLessThan((CAP_S + 2) * 1_000);
+  });
+
+  test('a failed wake costs nothing: the job still starts within the timer bound', async () => {
+    const { queue, started, url } = await suspendedWorker();
+    const addedAt = Date.now();
+    await queue.add('while-suspended', {});
+    expect(await wakeClient(url, 'another_secret_of_at_least_32_characters').ping()).toBe('failed');
+    const startedAt = await waitFor(() => started.get('while-suspended'), (CAP_S + 3) * 1_000);
+    expect(startedAt - addedAt).toBeGreaterThan(3_500);
+    expect(startedAt - addedAt).toBeLessThan((CAP_S + 2) * 1_000);
   });
 });

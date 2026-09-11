@@ -10,6 +10,7 @@ import type { EnqueuedJobMeta, UserJobBase } from '../../src/core/types';
 import { BullMqEnqueueService } from '../../src/producer/bullmq-enqueue-service';
 import { ENQUEUE_MIRROR } from '../../src/producer/enqueue-mirror';
 import { QueueClient } from '../../src/producer/queue-client';
+import { WorkerWakeClient } from '../../src/wake/worker-wake';
 
 // Container stubs are process-global; put back whatever this file changes
 // so no later test file resolves them (SC-448).
@@ -94,6 +95,7 @@ function setupQueue(opts: SetupOpts | Error = {}) {
 beforeEach(() => {
   Container.remove(QueueClient);
   Container.remove(ENQUEUE_MIRROR);
+  Container.set(WorkerWakeClient, new WorkerWakeClient());
 });
 afterEach(() => {
   Container.remove(QueueClient);
@@ -288,6 +290,59 @@ describe('BullMqEnqueueService — an unreachable queue store (SC-523)', () => {
       svc.add(TEST_DESCRIPTOR, { userId: 'u1', requestId: 'r1', resourceId: 'res-9' })
     ).resolves.toBe('test-job_u1_res-9_r1');
     expect(onEnqueueFailed).not.toHaveBeenCalled();
+  });
+});
+
+describe('BullMqEnqueueService — waking the worker (SC-1144)', () => {
+  function stubWake(ping: () => Promise<unknown>) {
+    const spy = mock(ping);
+    Container.set(WorkerWakeClient, { ping: spy } as never);
+    return spy;
+  }
+
+  test('pings the worker once, after the job has landed', async () => {
+    const { store } = setupQueue();
+    let landedAtPing = false;
+    const ping = stubWake(async () => {
+      landedAtPing = store.has('test-job_u1_res-9_r1');
+      return 'woken';
+    });
+    const svc = new BullMqEnqueueService();
+    await svc.add(TEST_DESCRIPTOR, { userId: 'u1', requestId: 'r1', resourceId: 'res-9' });
+    expect(ping).toHaveBeenCalledTimes(1);
+    expect(landedAtPing).toBe(true);
+  });
+
+  test('does not ping when the enqueue failed', async () => {
+    setupQueue(new Error('queue store down'));
+    const ping = stubWake(async () => 'woken');
+    const svc = new BullMqEnqueueService();
+    await expect(
+      svc.add(TEST_DESCRIPTOR, { userId: 'u1', requestId: 'r1', resourceId: 'res-9' })
+    ).rejects.toThrow('queue store down');
+    expect(ping).not.toHaveBeenCalled();
+  });
+
+  test('a ping that never settles does not hold the enqueue', async () => {
+    setupQueue();
+    stubWake(() => new Promise(() => {}));
+    const svc = new BullMqEnqueueService();
+    const started = Date.now();
+    await expect(
+      svc.add(TEST_DESCRIPTOR, { userId: 'u1', requestId: 'r1', resourceId: 'res-9' })
+    ).resolves.toBe('test-job_u1_res-9_r1');
+    expect(Date.now() - started).toBeLessThan(1_000);
+  });
+
+  test('a ping that rejects does not fail the enqueue', async () => {
+    setupQueue();
+    stubWake(async () => {
+      throw new Error('worker unreachable');
+    });
+    const svc = new BullMqEnqueueService();
+    await expect(
+      svc.add(TEST_DESCRIPTOR, { userId: 'u1', requestId: 'r1', resourceId: 'res-9' })
+    ).resolves.toBe('test-job_u1_res-9_r1');
   });
 });
 

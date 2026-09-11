@@ -115,6 +115,20 @@ const envSchema = z.object({
   // depend on this process being healthy at all.
   BACKUP_BUCKET: z.string().min(1).optional(),
 
+  // The port the worker listens on for the api's wake ping (SC-1144), and
+  // the secret that signs it — the same JOBS_HMAC_SECRET the api holds. Both
+  // are needed to serve it; with either unset the worker serves nothing and
+  // picks jobs up off NOTIFY and its idle poll, as it always has. OPTIONAL,
+  // and deliberately lenient, for the reason SENTRY_DSN below is: a
+  // self-hoster's worker must not refuse to boot over an optimisation their
+  // Postgres, which never suspends, has no use for. Empty strings from
+  // compose's `${VAR:-}` read as unset.
+  WORKER_WAKE_PORT: z.preprocess(
+    (v) => (v === '' ? undefined : v),
+    z.coerce.number().int().min(1).max(65535).optional()
+  ),
+  JOBS_HMAC_SECRET: z.preprocess((v) => (v === '' ? undefined : v), z.string().optional()),
+
   // Sentry — optional, empty string treated as unset (see `optionalUrl`).
   // SDK init gates on DSN presence regardless.
   //

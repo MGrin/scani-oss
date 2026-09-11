@@ -56,7 +56,7 @@ const dataProviderReachable = await (async () => {
 
 // CRITICAL: Initialize container BEFORE importing any routers
 // This must happen before any module that calls Container.get()
-import { assertQueueBindings, QueueClient } from '@scani/queue';
+import { assertQueueBindings, QueueClient, WorkerWakeClient } from '@scani/queue';
 import {
   createSessionRevokeLimiter,
   createSignupLimiter,
@@ -287,6 +287,10 @@ startRedisStrandWatchdog({
   },
 });
 Container.get(QueueClient).configure({ connection: env.DATABASE_URL });
+Container.get(WorkerWakeClient).configure({
+  url: env.WORKER_WAKE_URL,
+  secret: env.JOBS_HMAC_SECRET,
+});
 // SC-298. Without a registered enqueue mirror every job this api accepts runs
 // with no `user_jobs` row and nothing is logged at any level. The mirror
 // registers as a decorator side-effect of `import '@scani/jobs'`, so the
