@@ -62,6 +62,7 @@
       "project": ["src/**/*.ts"]
     },
     "packages/frontend/ui": {
+      "entry": ["tests/helpers/dom-preload.ts"],
       "project": ["src/**/*.{ts,tsx}"]
     },
     "packages/infra/config": {
