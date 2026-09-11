@@ -13,6 +13,7 @@ import {
 } from '../../../src/repositories/HoldingTransactionRepository';
 import { TokenRepository } from '../../../src/repositories/TokenRepository';
 import { OpeningBalanceReconciliationService } from '../../../src/services/holdings/OpeningBalanceReconciliationService';
+import { TransferReviewService } from '../../../src/services/TransferReviewService';
 import {
   resolveImportWalletAddress,
   resolveInstitutionCode,
@@ -95,6 +96,7 @@ afterEach(() => {
   Container.set(OpeningBalanceReconciliationService, new OpeningBalanceReconciliationService());
   Container.set(IntegrationCredentialsService, new IntegrationCredentialsService());
   Container.set(TransactionRouter, new TransactionRouter());
+  Container.set(TransferReviewService, new TransferReviewService());
 });
 
 // A nonexistent account is the earliest failure `execute` has — earlier
@@ -115,7 +117,11 @@ const INPUT = {
 // `persistAndReport` is the function these tickets name. Reaching it
 // through `execute` would mean standing up a provider, credentials and an
 // account row to test a step that happens after all three.
-function persistWithStubs(bulkUpserted: string[], merges: BulkUpsertMerge[] = []) {
+function persistWithStubs(
+  bulkUpserted: string[],
+  merges: BulkUpsertMerge[] = [],
+  marks: { calls: string[]; fail?: boolean } = { calls: [] }
+) {
   Container.set(HoldingTransactionRepository, {
     bulkUpsert: async (rows: Array<{ holdingId: string }>) => {
       bulkUpserted.push(...rows.map((r) => r.holdingId));
@@ -124,6 +130,13 @@ function persistWithStubs(bulkUpserted: string[], merges: BulkUpsertMerge[] = []
   });
   Container.set(OpeningBalanceReconciliationService, {
     reconcileHolding: async () => undefined,
+  });
+  Container.set(TransferReviewService, {
+    applyDisposalMarks: async (userId: string) => {
+      marks.calls.push(userId);
+      if (marks.fail) throw new Error('rules table unreachable');
+      return 0;
+    },
   });
   const c = new TransactionImportCoordinator();
   // biome-ignore lint/complexity/useLiteralKeys: dot access on a private member is a TS error; bracket notation is the only way to reach the method under test.
@@ -469,6 +482,46 @@ describe('TransactionImportCoordinator — a merged batch says so in the summary
   // claim (#948); flipping it here would retract that claim on what may
   // be one legitimate re-sent event, which is the same harm from the
   // other direction.
+  // SC-1071. The queue's reads stopped applying destination rules, so the
+  // import that brings an outflow to a marked destination is what answers it —
+  // for the user whose ledger it just wrote, and without anyone reading.
+  test('the rows it writes are put under their destination rules for that user', async () => {
+    const marks = { calls: [] as string[] };
+    const persist = persistWithStubs([], [], marks);
+
+    await persist('user-1', 'account-1', 'etherscan', routerResult(), undefined);
+
+    expect(marks.calls).toEqual(['user-1']);
+  });
+
+  test('a run that wrote nothing applies nothing', async () => {
+    const marks = { calls: [] as string[] };
+    const persist = persistWithStubs([], [], marks);
+
+    await persist(
+      'user-1',
+      'account-1',
+      'etherscan',
+      { ...routerResult(), transactions: [] },
+      undefined
+    );
+
+    expect(marks.calls).toEqual([]);
+  });
+
+  // The rows are already in the ledger when the rules are applied, so failing
+  // the import there would report as lost a run that landed — and the nightly
+  // transfer-linking sweep applies the rules anyway.
+  test('rules that could not be applied do not fail the import', async () => {
+    const marks = { calls: [] as string[], fail: true };
+    const persist = persistWithStubs([], [], marks);
+
+    const summary = await persist('user-1', 'account-1', 'etherscan', routerResult(), undefined);
+
+    expect(marks.calls).toEqual(['user-1']);
+    expect(summary.status).toBe('ok');
+  });
+
   test('the merge does not retract the run completeness claim', async () => {
     const persist = persistWithStubs(
       [],

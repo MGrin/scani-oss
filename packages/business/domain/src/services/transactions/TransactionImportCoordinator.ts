@@ -36,6 +36,7 @@ import {
 } from '../../repositories/HoldingTransactionRepository';
 import { TokenRepository } from '../../repositories/TokenRepository';
 import { OpeningBalanceReconciliationService } from '../holdings/OpeningBalanceReconciliationService';
+import { TransferReviewService } from '../TransferReviewService';
 import { IntegrationCredentialsService } from '../users/IntegrationCredentialsService';
 import { TransactionRouter, type TransactionRouterResult } from './TransactionRouter';
 import { NON_EVM_WALLET_SOURCES } from './transaction-source';
@@ -239,6 +240,7 @@ export class TransactionImportCoordinator {
   private readonly credentialsService = Container.get(IntegrationCredentialsService);
   private readonly tokenRepo = Container.get(TokenRepository);
   private readonly router = Container.get(TransactionRouter);
+  private readonly transferReviews = Container.get(TransferReviewService);
 
   async execute(input: TransactionImportInput): Promise<TransactionImportResult> {
     try {
@@ -428,7 +430,7 @@ export class TransactionImportCoordinator {
    * meant to be stored verbatim on the user_jobs row.
    */
   private async persistAndReport(
-    _userId: string,
+    userId: string,
     accountId: string,
     source: string,
     result: TransactionRouterResult,
@@ -436,6 +438,20 @@ export class TransactionImportCoordinator {
   ): Promise<TransactionImportResult> {
     if (result.transactions.length > 0) {
       const written = await this.holdingTransactionRepo.bulkUpsert(result.transactions);
+      // An outflow to a destination the reader has marked *"always a
+      // disposal"* is answered here, when it is written, rather than by
+      // whoever reads the queue next — a read that wrote made the PnL caption
+      // depend on which page was opened first (SC-1071). Non-fatal: the rows
+      // are safely in the ledger, and the nightly transfer-linking sweep
+      // applies whatever this missed.
+      try {
+        await this.transferReviews.applyDisposalMarks(userId);
+      } catch (error) {
+        this.logger.warn(
+          { accountId, source, error: error instanceof Error ? error.message : error },
+          'Applying destination rules to imported rows failed — the nightly sweep will'
+        );
+      }
       // `bulkUpsert` must collapse rows sharing (holdingId, source,
       // externalId) — Postgres refuses a statement carrying the conflict
       // key twice — and until SC-349 the collapse was reported to nobody.
