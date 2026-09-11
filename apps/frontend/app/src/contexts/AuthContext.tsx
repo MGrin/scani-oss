@@ -18,6 +18,7 @@ import {
   readCachedUser,
   writeCachedUser,
 } from '@/lib/session-cache';
+import { withSignupSource } from '@/lib/signup-source';
 import { trpc } from '@/lib/trpc';
 
 /**
@@ -221,11 +222,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // PWAs get a 6-digit code instead of a magic link: clicking a link in
     // an installed standalone app bounces the user out to the system browser
     // and breaks the session. Browsers keep the magic-link flow.
+    // This branch carries no signup source and cannot (SC-515): Better-Auth's
+    // `POST /sign-in/email-otp` takes `{email, otp}` and no `callbackURL`, so
+    // there is nothing for a tag to ride on. Accounts created here record
+    // `unknown` rather than `direct` — see `signup-source.ts` on the api for
+    // why those are not the same value. It costs nothing today: reaching this
+    // branch means the app is already installed, which means an account.
     if (runningAsPWA) {
       return attempt(() => authClient.emailOtp.sendVerificationOtp({ email, type: 'sign-in' }));
     }
 
-    const callbackURL = `${window.location.origin}/auth/callback`;
+    // The demo's tag, if this visit carried one, rides out on the callbackURL
+    // and comes back on the request that creates the account (SC-515). It is
+    // the only part of this sign-in the server still holds after the email
+    // round trip — see `lib/signup-source.ts`.
+    const callbackURL = withSignupSource(`${window.location.origin}/auth/callback`);
     return attempt(() => authClient.signIn.magicLink({ email, callbackURL }));
   };
 

@@ -11,9 +11,36 @@
  */
 
 import { isDemoModeRequested } from '@scani/domain/demo';
+import { DEMO_SIGNUP_TAG, SIGNUP_SOURCE_PARAM } from '../auth/signup-source';
 
 /** Where "create your own account" sends a visitor who wants the real thing. */
 const DEFAULT_SIGNUP_URL = 'https://app.scani.xyz';
+
+/**
+ * Adds the tag the funnel counts (SC-515).
+ *
+ * Here rather than in `SCANI_DEMO_SIGNUP_URL` because a configuration value is
+ * a thing somebody can set wrong, and the one deployment that emits this link
+ * is the one deployment that knows the click came from the demo. A self-hoster
+ * pointing the variable at their own app gets the tag too, which is correct —
+ * it says "from the demo", not "from ours".
+ *
+ * Idempotent, and never overwrites: a configured URL that already carries `src`
+ * is making a claim of its own, and this is not the place to argue with it.
+ */
+function taggedAsDemo(signupUrl: string): string {
+  let url: URL;
+  try {
+    url = new URL(signupUrl);
+  } catch {
+    // Not our validation boundary. An unparseable value still reaches the
+    // banner unchanged, which is what it did before this existed.
+    return signupUrl;
+  }
+  if (url.searchParams.has(SIGNUP_SOURCE_PARAM)) return signupUrl;
+  url.searchParams.set(SIGNUP_SOURCE_PARAM, DEMO_SIGNUP_TAG);
+  return url.toString();
+}
 
 export interface DemoConfig {
   readonly enabled: boolean;
@@ -29,7 +56,7 @@ export function loadDemoConfig(env: Record<string, string | undefined> = process
   const configured = env.SCANI_DEMO_SIGNUP_URL?.trim();
   cached = {
     enabled,
-    signupUrl: configured && configured.length > 0 ? configured : DEFAULT_SIGNUP_URL,
+    signupUrl: taggedAsDemo(configured && configured.length > 0 ? configured : DEFAULT_SIGNUP_URL),
   };
   return cached;
 }
