@@ -21,7 +21,7 @@ import { TRPCError } from '@trpc/server';
  */
 export const FORECAST_AS_OF_ENV = 'ALLOW_FORECAST_AS_OF';
 
-export function forecastAsOfAllowed(env: Record<string, string | undefined>): boolean {
+function forecastAsOfAllowed(env: Record<string, string | undefined>): boolean {
   return env.NODE_ENV !== 'production' && env[FORECAST_AS_OF_ENV] === '1';
 }
 
