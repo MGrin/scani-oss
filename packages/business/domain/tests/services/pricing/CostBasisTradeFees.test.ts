@@ -1,6 +1,7 @@
 process.env.DATABASE_URL = process.env.DATABASE_URL || 'postgresql://dummy:dummy@localhost/dummy';
 
 import { describe, expect, test } from 'bun:test';
+import type { DatabaseTransaction } from '@scani/db';
 import type { HoldingTransaction } from '@scani/db/schema';
 import { TRANSFER_REVIEW_SPLIT } from '@scani/shared';
 import Decimal from 'decimal.js';
@@ -13,6 +14,7 @@ import {
   type DisposalLotMatch,
 } from '../../../src/services/pricing/CostBasisService';
 import { PriceGraphService } from '../../../src/services/pricing/PriceGraphService';
+import { PriceLookup } from '../../../src/services/pricing/PriceLookup';
 import { restoreContainerAfterAll } from '../../../test/helpers/container';
 import {
   BNB,
@@ -374,5 +376,89 @@ describe('which outflows a fee reaches', () => {
     // Same day: 5 of the 10 bought that morning, at 120 each plus half of
     // its 20 fee — 610 of cost against 750 of proceeds.
     expect(r.realizedPnl.toString()).toBe('140');
+  });
+});
+
+describe('a fee is valued once per price snapshot (SC-1145)', () => {
+  // The rollup re-walks every holding once per day of its window, and a fee's
+  // worth is fixed at the row's own instant, so each re-walk used to value
+  // every fee again: fees x days price conversions for an answer that cannot
+  // change inside one snapshot.
+  const feeRows = (): HoldingTransaction[] => [
+    buy({ quantity: '2', feeQuantity: '-0.01', feeTokenId: BNB }),
+    buy({ occurredAt: '2024-02-01T10:00:00Z', feeQuantity: '-0.5', feeTokenId: BTC }),
+    sell({ feeQuantity: '-0.02', feeTokenId: BNB }),
+    sell({ occurredAt: '2024-07-01T10:00:00Z', feeQuantity: '-3', feeTokenId: OBSCURE }),
+  ];
+
+  async function walkWith(
+    svc: CostBasisService,
+    rows: HoldingTransaction[],
+    priceLookup: PriceLookup | undefined,
+    method: CostBasisMethod = 'fifo',
+    dbTx: DatabaseTransaction | undefined = undefined
+  ) {
+    const collect: DisposalLotMatch[] = [];
+    const r = await svc.walkLots(dbTx, rows, USD, BTC, priceLookup, 'complete', collect, method);
+    return serialize({ ...r, collect });
+  }
+
+  test('re-walking under one snapshot converts no fee twice', async () => {
+    const calls: ConvertCall[] = [];
+    const svc = makeService(calls);
+    const rows = feeRows();
+    const lookup = new PriceLookup([]);
+    await walkWith(svc, rows, lookup);
+    // Two BNB fees and the OBSCURE one; the BTC fee rides the trade's own rate.
+    expect(calls.length).toBe(3);
+    await walkWith(svc, rows, lookup);
+    await walkWith(svc, rows, lookup);
+    expect(calls.length).toBe(3);
+  });
+
+  test('the control: with no snapshot, or a new one, every walk asks again', async () => {
+    const calls: ConvertCall[] = [];
+    const svc = makeService(calls);
+    const rows = feeRows();
+    await walkWith(svc, rows, undefined);
+    await walkWith(svc, rows, undefined);
+    expect(calls.length).toBe(6);
+    await walkWith(svc, rows, new PriceLookup([]));
+    await walkWith(svc, rows, new PriceLookup([]));
+    expect(calls.length).toBe(12);
+  });
+
+  test('under a database transaction nothing is remembered', async () => {
+    const calls: ConvertCall[] = [];
+    const svc = makeService(calls);
+    const rows = feeRows();
+    const lookup = new PriceLookup([]);
+    const dbTx = {} as DatabaseTransaction;
+    await walkWith(svc, rows, lookup, 'fifo', dbTx);
+    await walkWith(svc, rows, lookup, 'fifo', dbTx);
+    expect(calls.length).toBe(6);
+  });
+
+  test.each([
+    'fifo',
+    'uk_section_104',
+  ] as const)('%s — a remembered fee produces the figures a fresh one does', async (method) => {
+    const rows = feeRows();
+    const fresh = await walkWith(makeService(), rows, undefined, method);
+    const svc = makeService();
+    const lookup = new PriceLookup([]);
+    const first = await walkWith(svc, rows, lookup, method);
+    const again = await walkWith(svc, rows, lookup, method);
+    expect(first).toBe(fresh);
+    expect(again).toBe(fresh);
+    // The fees reach the figures at all, or the equality above proves nothing.
+    expect(fresh).not.toBe(
+      await walkWith(
+        makeService(),
+        rows.map((r) => ({ ...r, feeQuantity: null, feeTokenId: null })),
+        undefined,
+        method
+      )
+    );
   });
 });
