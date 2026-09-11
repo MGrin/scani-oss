@@ -444,10 +444,10 @@ export class RollupPortfolioValueDailyUseCase {
         // half that matters: the home chart, the PnL series and both exports
         // read these per-holding rows, so a downgrade applied only in
         // `PortfolioValuationAtTimeService` above would reach no reader at
-        // all. Production held `total_value = 586.94, coverage_quality =
-        // 'full'` for 2025-06-21 on a holding whose first transaction is
-        // 2026-06-22 — every other quality signal on that row reads clean,
-        // which is precisely why it read 'full'.
+        // all. The shape to picture: a row carrying a non-zero `total_value`
+        // and `coverage_quality = 'full'` for a date a year BEFORE the
+        // holding's first transaction — every other quality signal on that
+        // row reads clean, which is precisely why it read 'full'.
         coverageQuality =
           staleAnchoredCount > 0 || stalePricedCount > 0 || beforeRecordsCount > 0
             ? 'partial'

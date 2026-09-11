@@ -132,13 +132,13 @@ export function V3Shell() {
                 unpositioned one. With nothing positioned between a screen-reader
                 label and the document, every `sr-only` span in a long list
                 resolved against the initial containing block, escaped this
-                element's `overflow-y: auto`, and extended the *document*.
-                Measured on production at 1200×874 with 69 holdings:
-                `documentElement.scrollHeight` 4250 against a `body` of 874, so
-                the whole shell — sidebar included — scrolled away and left the
-                bare `<body>` showing under it. Positioning this element makes it
-                the containing block, so those spans are clipped here and the
-                document stops growing.
+                element's `overflow-y: auto`, and extended the *document*. On a
+                desktop viewport with a holdings list long enough to scroll,
+                `documentElement.scrollHeight` came out several times the height
+                of `body`, so the whole shell — sidebar included — scrolled away
+                and left the bare `<body>` showing under it. Positioning this
+                element makes it the containing block, so those spans are
+                clipped here and the document stops growing.
 
                 `overscroll-none` is the other half: it stops a rubber-band at
                 either end of this scroller from chaining to the document, where

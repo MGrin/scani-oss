@@ -41,7 +41,8 @@ const useCase = () => Container.get(RecordHoldingMovementUseCase);
 
 type Tx = Parameters<Parameters<typeof withTestDb>[0]>[0];
 
-/** A manual cash holding at 4,000 — mgrin's reported shape. */
+/** A manual cash holding at 4,000 — a round balance, so an over-move is
+ * obvious by a cent rather than by arithmetic. */
 async function scaffold(tx: Tx) {
   const user = await makeUser(tx);
   const institution = await makeInstitution(tx);
