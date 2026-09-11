@@ -14,7 +14,7 @@ restoreContainerAfterAll();
 
 // The exact string R2 returns, as it reaches the worker: the data-provider
 // stringifies the S3 error into a TRPCError message and `CloudError.wrap`
-// carries it through. Sentry SCANI-WORKER-P is four events of precisely
+// carries it through. The Sentry issue was four events of precisely
 // this text escaping unclassified.
 const R2_MISSING = 'The specified key does not exist.';
 
@@ -158,7 +158,7 @@ describe('DocumentParseProcessor retention', () => {
   });
 
   test('a failed promotion does not fail the job, and keeps the object its row points at', async () => {
-    // Two things at once, and the second is the SCANI-WORKER-P bug.
+    // Two things at once, and the second is the missing-temp-object bug.
     //
     // The AI spend is already incurred; throwing here would re-bill the
     // same file on the BullMQ retry — so the job still succeeds.
@@ -203,7 +203,7 @@ describe('DocumentParseProcessor retention', () => {
   });
 
   test('an unreadable temp object fails terminally instead of raising raw R2', async () => {
-    // SCANI-WORKER-P itself. `readSource` classified only the retained
+    // The missing-temp-object bug itself. `readSource` classified only the retained
     // prefix, so a missing temp object rethrew the raw `CloudError` — an
     // unactionable string for the user, a second doomed BullMQ attempt,
     // and a Sentry error for a file that is simply gone.

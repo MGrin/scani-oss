@@ -6,7 +6,7 @@ import {
 } from '../../src/utils/sentry-noise';
 
 describe('isIgnoredSentryMessage — aborted fetches', () => {
-  // SCANI-FRONTEND-8: 17 events / 4 users over two months, all mobile
+  // 17 events / 4 users over two months, all mobile
   // Chromium. The breadcrumbs show the preceding tRPC calls returning 200,
   // so the connection was alive and then went away mid-request.
   test('drops the Chromium/Android wording', () => {

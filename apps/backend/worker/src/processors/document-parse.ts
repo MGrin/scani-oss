@@ -172,7 +172,7 @@ export class DocumentParseProcessor extends UserJobProcessor<
       // The object is gone. No number of retries brings it back, so this
       // is `UnrecoverableError`: BullMQ stops immediately and the Sentry
       // hook skips it, while the user still sees the failure in the UI.
-      // Sentry SCANI-WORKER-P was the missing half of this — only the
+      // The Sentry error was the missing half of this — only the
       // retained prefix was classified, so a missing temp object rethrew
       // `CloudError: The specified key does not exist.`, burned a second
       // doomed attempt, and paged us about a file that simply is not there.

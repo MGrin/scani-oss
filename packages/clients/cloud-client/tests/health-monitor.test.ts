@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { DataProviderHealthMonitor } from '../src/health-monitor';
 import type { ProbeResult } from '../src/health-probe';
 
-// Sentry SCANI-BACKEND-7 verbatim: `probeDataProvider` exhausts its three
+// The Sentry event verbatim: `probeDataProvider` exhausts its three
 // 3s attempts and reports the last AbortController message.
 const ABORTED: ProbeResult = {
   ok: false,
@@ -44,7 +44,7 @@ function makeMonitor(
 
 describe('DataProviderHealthMonitor', () => {
   test('a deploy cutover does not raise an outage', async () => {
-    // The actual SCANI-BACKEND-7 shape: the single data-provider machine
+    // The actual production shape: the single data-provider machine
     // is replaced, a cycle or two abort, then it comes back. Three events
     // in three weeks were all exactly this, and all three paged us.
     const { monitor, outages, cycles, recoveries, run } = makeMonitor([ABORTED, ABORTED, OK]);
@@ -61,7 +61,7 @@ describe('DataProviderHealthMonitor', () => {
   test('threshold 1 reproduces the old behaviour — the same cutover pages us', async () => {
     // The delta, pinned. `failuresBeforeAlert: 1` is exactly what the api
     // and worker did inline, and against the identical deploy script it
-    // raises the outage that produced SCANI-BACKEND-7. If anyone lowers
+    // raises the outage that paged us. If anyone lowers
     // the default back to 1, the test above starts failing and this one
     // says why.
     const { outages, run } = makeMonitor([ABORTED, ABORTED, OK], { failuresBeforeAlert: 1 });

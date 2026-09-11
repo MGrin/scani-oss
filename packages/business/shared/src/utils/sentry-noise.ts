@@ -45,7 +45,7 @@ interface EventLike {
  * health checks rather than by the browser.
  */
 const ABORTED_FETCH_PATTERNS: RegExp[] = [
-  // Chromium — Chrome, Edge, Android WebView, Yandex. This is SCANI-FRONTEND-8.
+  // Chromium — Chrome, Edge, Android WebView, Yandex.
   /^(TypeError: )?Failed to fetch$/,
   // WebKit — Safari, every iOS browser.
   /^(TypeError: )?Load failed$/,
