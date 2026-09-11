@@ -41,9 +41,8 @@ export interface PaymentForecast extends Forecast {
   horizonMonths: number;
 }
 
-function startOfUtcToday(): Date {
-  const now = new Date();
-  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+function startOfUtcDay(at: Date): Date {
+  return new Date(Date.UTC(at.getUTCFullYear(), at.getUTCMonth(), at.getUTCDate()));
 }
 
 function toDateString(date: Date): string {
@@ -59,8 +58,9 @@ export class PaymentForecastService extends BaseService {
     super('PaymentForecastService');
   }
 
-  async forecast(userId: string): Promise<PaymentForecast> {
-    const start = startOfUtcToday();
+  /** `asOf` is the day the series starts; the router decides who may move it. */
+  async forecast(userId: string, asOf: Date = new Date()): Promise<PaymentForecast> {
+    const start = startOfUtcDay(asOf);
     const today = toDateString(start);
     const horizonEnd = toDateString(
       new Date(
