@@ -308,9 +308,10 @@ describe('convertTotalsToBase', () => {
 /**
  * The reported bug, as arithmetic (SC-210).
  *
- * mgrin opened Money and read $425 where the answer was $888, because every
- * foreign payment was silently dropped while the rates were in flight — and
- * on a failed fetch it stayed $425 for good. These tests pin the distinction
+ * Money reported a total far below the true one — synthetically, $310 where
+ * the answer was $760 — because every foreign payment was silently dropped
+ * while the rates were in flight, and on a failed fetch the understated figure
+ * stayed for good. These tests pin the distinction
  * that makes both cases expressible: a rate the source ANSWERED for and did
  * not have is a fact about the currency; a rate nobody has told us about is a
  * fact about the fetch, and the two must never produce the same figure with

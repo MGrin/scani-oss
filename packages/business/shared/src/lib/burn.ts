@@ -38,9 +38,10 @@ import { Decimal } from '../decimal';
  * ## What `projected` is genuinely for
  *
  * Not a second denominator — a floor on the discretionary question. An
- * observed $37k month says nothing about how much of it he could STOP. The
- * recurring book does. That is a real second fact, and it is why showing two
- * is right even though they overlap.
+ * observed heavy month — $18k against a $2k quiet one, synthetic figures of
+ * the shape this guards — says nothing about how much of it could be STOPPED.
+ * The recurring book does. That is a real second fact, and it is why showing
+ * two is right even though they overlap.
  */
 
 /**
