@@ -345,7 +345,8 @@
           "group": "Grup",
           "institution": "Institusi",
           "type": "Tipe",
-          "quality": "Kualitas data"
+          "quality": "Kualitas data",
+          "price": "Harga"
         },
         "groupBy": {
           "account": "Akun",
@@ -367,6 +368,9 @@
           "noPriceSource": "Tidak ada sumber harga yang bisa kami pakai",
           "negativeOpening": "Saldo awal negatif",
           "noCoverage": "Tidak ada baris cakupan"
+        },
+        "priceOption": {
+          "stale": "Kutipan harga usang"
         }
       },
       "institutions": {

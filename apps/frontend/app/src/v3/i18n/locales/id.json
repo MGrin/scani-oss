@@ -786,6 +786,7 @@
         "lookalike": "Tampil sebagai {{impersonates}}",
         "lookalikeTitle": "Simbol token ini ditulis dengan karakter yang tergambar seperti \"{{impersonates}}\" tanpa benar-benar menjadi token itu. Barisnya tetap dipertahankan, beserta saldo Anda, karena menyembunyikannya tidak memberi tahu apa pun — tetapi ini bukan token yang mirip dengannya.",
         "noPriceSpoken": "tidak ada harga tersedia",
+        "staleQuote": "Kutipan harga usang, {{age}}",
         "lookalikeSpoken": "tampil sebagai {{impersonates}}",
         "lookalikeExportCell": "{{symbol}} (tampil sebagai {{impersonates}})"
       },

@@ -396,6 +396,7 @@
           "group": "Grupo",
           "institution": "Institución",
           "quality": "Calidad de los datos",
+          "price": "Precio",
           "type": "Tipo"
         },
         "groupBy": {
@@ -411,6 +412,9 @@
           "noPriceSource": "Ninguna fuente de precios utilizable",
           "noRecentPrice": "Ningún precio reciente",
           "zeroBalance": "Saldo cero"
+        },
+        "priceOption": {
+          "stale": "Cotización desactualizada"
         },
         "sort": {
           "amount": "Cantidad",

@@ -786,6 +786,7 @@
         "lookalike": "显示为 {{impersonates}}",
         "lookalikeTitle": "这个标的的代码使用了能画出“{{impersonates}}”样子的字符，但它并不是那个标的。这一行以及你的余额都会保留，因为隐藏它并不能告诉你任何信息——但它不是它看起来的那个标的。",
         "noPriceSpoken": "没有可用价格",
+        "staleQuote": "过时的报价，{{age}}",
         "lookalikeSpoken": "显示为 {{impersonates}}",
         "lookalikeExportCell": "{{symbol}}（显示为 {{impersonates}}）"
       },

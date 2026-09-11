@@ -27,6 +27,18 @@ import type { UserJobProcessor } from './user-job-processor';
 
 const log = createComponentLogger('queue:worker-client');
 
+// The longest an idle worker blocks without touching the database. It bounds
+// how late a job enqueued while the compute was suspended can start: the
+// suspend kills the LISTEN connection, the NOTIFY has nobody to reach, and the
+// job waits for this timer. On Neon that is at most 900 - 300 = 600s, because
+// the suspend comes at least 300s into the wait. 900 matches the fastest
+// schedule (every 15 minutes), so production wakes no more often than it
+// already does.
+const IDLE_BLOCK_SECONDS = 900;
+// Must exceed the 300s suspend window too, or it alone keeps the compute up. A
+// job orphaned by a dead worker is reclaimed within two intervals.
+const STALLED_INTERVAL_MS = 600_000;
+
 export interface WorkerClientConfig {
   /** Postgres connection string — the same DATABASE_URL the app already uses. */
   connection: string;
@@ -45,7 +57,6 @@ export interface WorkerClientConfig {
    * slack for user work.
    */
   cronConcurrency?: number;
-  drainDelay?: number;
 }
 
 type ProcessorClass =
@@ -174,14 +185,17 @@ export class WorkerClient {
       {
         connection: { connectionString: cfg.connection, schema: cfg.schema ?? 'bullmq' },
         concurrency: cfg.concurrency ?? 1,
-        // drainDelay is now largely decorative and it is worth knowing why.
-        // BullMQ caps the blocking wait at `maximumBlockTimeout = 10` seconds
-        // (src/classes/worker.ts:49) whenever ANY delayed job exists, and a
-        // repeatable schedule IS a delayed job — we have eleven. So the idle
-        // worker wakes every 10s regardless of what is set here, which is what
-        // keeps the Postgres compute from ever reaching its suspend timeout.
-        // Upstream: taskforcesh/bullmq#4601.
-        drainDelay: cfg.drainDelay ?? 5,
+        // SC-963. Neon suspends a compute only after 300s with no query, so an
+        // idle worker has to leave the database alone for longer than that.
+        // Stock BullMQ caps the blocking wait at 10s whenever a delayed job
+        // exists (every repeatable schedule is one) and runs the stalled
+        // check every 30s, so the suspend window was never reached.
+        // `maximumBlockTimeout` is an option only because
+        // `patches/bullmq@6.2.0.patch` makes it one — upstream it is a
+        // hardcoded constant (taskforcesh/bullmq#4601).
+        drainDelay: IDLE_BLOCK_SECONDS,
+        maximumBlockTimeout: IDLE_BLOCK_SECONDS,
+        stalledInterval: STALLED_INTERVAL_MS,
       } as never,
       createPostgresBackend
     );

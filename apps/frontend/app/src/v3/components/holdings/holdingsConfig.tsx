@@ -7,7 +7,8 @@ import { nameList, rowName, type V3DataViewConfig } from '@scani/ui/v3/lib/data-
 import { exportMoney, exportNumber, exportPercent, exportText } from '@scani/ui/v3/lib/export/cell';
 import { resolveNumeric } from '@scani/ui/v3/lib/numeric';
 import type { TFunction } from 'i18next';
-import { PieChart, Tags } from 'lucide-react';
+import { Clock, PieChart, Tags } from 'lucide-react';
+import type { ReactNode } from 'react';
 import { tokenDisplayName } from '@/lib/utils';
 import {
   type DataQualitySets,
@@ -19,11 +20,15 @@ import {
   amountDecimals,
   compareHoldings,
   entityOptions,
+  HOLDINGS_PRICE_PARAM,
   holdingGainLoss,
   holdingMatches,
   holdingPrice,
+  isStalePricedInTotal,
+  STALE_PRICE,
   tokenTypeOptions,
 } from '../../lib/holdings';
+import { formatRelative } from '../../lib/relative-time';
 import { V3_ROUTES } from '../../lib/routes';
 import { tokenTypeLabel } from '../../lib/tokens';
 import { InstitutionMark } from '../entities/InstitutionMark';
@@ -152,6 +157,48 @@ function UnpriceableBadge({ t }: { t: TFunction }) {
   );
 }
 
+function staleQuoteLabel(t: TFunction, holding: HoldingWithDetails): string {
+  return t('v3.holdings.badge.staleQuote', {
+    age: formatRelative(t, holding.price?.timestamp ?? null),
+  });
+}
+
+/**
+ * A figure priced from a quote we would not call current (SC-981).
+ *
+ * On the figure, NOT in the badge slot. The label zone at 390px is a contest
+ * with a stated survival order — lookalike, then inactive, then no price — and
+ * unlike those three this one can sit on many rows at once, so a badge would
+ * push the lookalike mark off exactly the portfolios with the most rows. The
+ * cell the fact is about is the figure, and a stale figure otherwise reads
+ * exactly like a fresh one: `unpriceable` announces itself with a dash, this
+ * had nothing to notice.
+ *
+ * Quiet on purpose: muted ink and a 12px clock, not a colour. Green and red
+ * already mean something about money on this row, and amber would read as a
+ * warning about the holding rather than about our quote. The age is in the
+ * accessible name and the tooltip, because "stale" alone does not say whether
+ * the quote is two days old or two months.
+ */
+function StaleQuoteMark({
+  holding,
+  t,
+  children,
+}: {
+  holding: HoldingWithDetails;
+  t: TFunction;
+  children: ReactNode;
+}) {
+  const label = staleQuoteLabel(t, holding);
+  return (
+    <span className="inline-flex items-center gap-1 text-muted-foreground" title={label}>
+      <Clock className="size-3 shrink-0" aria-hidden="true" />
+      {children}
+      <span className="sr-only">{label}</span>
+    </span>
+  );
+}
+
 export function holdingsDataViewConfig({
   holdings,
   currency,
@@ -231,6 +278,25 @@ export function holdingsDataViewConfig({
         labelKey: 'ui.dataView.holdings.filter.quality',
         options: dataQualityOptions(qualitySets),
         fn: qualityMatches,
+      },
+      {
+        /**
+         * Where the summary's stale-quote count lands (SC-981). The predicate
+         * is the one that count is computed by, so the list this opens is as
+         * long as the number the reader tapped.
+         *
+         * Offered only when some row would match, for the reason
+         * `dataQualityOptions` gives: an option that selects nothing answers a
+         * question nobody asked. Declared either way, so a stale bookmark
+         * narrows to nothing rather than to everything.
+         */
+        key: HOLDINGS_PRICE_PARAM,
+        labelKey: 'ui.dataView.holdings.filter.price',
+        options: holdings.some(isStalePricedInTotal)
+          ? [{ value: STALE_PRICE, labelKey: 'ui.dataView.holdings.priceOption.stale' }]
+          : [],
+        fn: (item: HoldingWithDetails, value) =>
+          value === STALE_PRICE && isStalePricedInTotal(item),
       },
     ],
     sortDefs: [
@@ -315,7 +381,13 @@ export function holdingsDataViewConfig({
       // and two on one row read as two different claims.
       value: (
         <span className="flex min-w-0 flex-col items-end">
-          <Numeric value={item.value} currency={currency} />
+          {isStalePricedInTotal(item) ? (
+            <StaleQuoteMark holding={item} t={t}>
+              <Numeric value={item.value} currency={currency} />
+            </StaleQuoteMark>
+          ) : (
+            <Numeric value={item.value} currency={currency} />
+          )}
           <span className="flex min-w-0 items-baseline gap-1 text-caption text-muted-foreground">
             {holdingAmount(item, t)}
             {/* The unit, and the ONE thing in this zone allowed to give way.
@@ -366,6 +438,7 @@ export function holdingsDataViewConfig({
         // Read out with the row, not hidden in a tooltip: on a screen reader
         // the dash and the badge are the same silence otherwise.
         item.unpriceable ? t('v3.holdings.badge.noPriceSpoken') : null,
+        isStalePricedInTotal(item) ? staleQuoteLabel(t, item) : null,
         // And the lookalike louder than either, because a screen reader is
         // where the attack is strongest: `UЅDС` and `USDC` are not merely
         // similar when spoken, they are IDENTICAL. The badge is the only
@@ -468,7 +541,16 @@ export function holdingsDataViewConfig({
         headerKey: 'ui.dataView.holdings.col.price',
         sortable: true,
         numeric: true,
-        render: (item) => <Numeric value={holdingPrice(item)} currency={currency} />,
+        // The desktop table has a price column, and that is the cell the fact
+        // is about; the phone row has only the value, so it carries it there.
+        render: (item) =>
+          isStalePricedInTotal(item) ? (
+            <StaleQuoteMark holding={item} t={t}>
+              <Numeric value={holdingPrice(item)} currency={currency} />
+            </StaleQuoteMark>
+          ) : (
+            <Numeric value={holdingPrice(item)} currency={currency} />
+          ),
         exportValue: (item) => exportMoney(holdingPrice(item), currency),
       },
       {
