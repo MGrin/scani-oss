@@ -563,6 +563,36 @@ with no screen, and a baseline rendered at the wrong viewport width all fail
 there. That is the same tie `a11y-coverage.test.ts` keeps between the
 accessibility gate and `fixtures/v3-routes.ts`.
 
+### Restart the frontend after a branch excursion
+
+**A red run taken after detaching the worktree and coming back can photograph a
+STALE dev bundle**, and it fails as a plausible red in exactly the row you
+expected to move:
+
+```
+expected  [ No linked account ]
+actual    [ v3.money.paymentForm.accountSearchPl… ]
+```
+
+The app registers its locales with an eager `import.meta.glob`, and after a
+checkout vite's evaluated module graph can keep the locale bundle from before
+it. The dev server still serves the current file, so **neither check a careful
+person reaches for tells you**: `curl` on the locale JSON reads correct, and a
+sibling key in the same namespace resolves on the same screen. `--update` there
+commits a baseline of a broken string, and every later run compares against it.
+
+`bun run visual` now refuses when HEAD has moved to a different commit — by a
+checkout, reset, rebase or merge, not by committing — since this checkout's
+frontend container started, and prints the restart:
+
+```bash
+docker restart <project>-frontend-1
+```
+
+It cannot see a host-side vite (it prints `NOT SAMPLED` then), a `git stash`,
+or a hand edit. It answers "has the tree moved under the server", never "did
+the page render what is on disk".
+
 ### Do not write to the app's sources while the gate runs (SC-499)
 
 **A `bun lint:fix`, a `git checkout`, a rebase or an editor save under

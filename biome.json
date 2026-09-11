@@ -33,7 +33,7 @@
         "noUselessConstructor": "error"
       },
       "correctness": {
-        "noUnusedVariables": "warn",
+        "noUnusedVariables": "error",
         "useExhaustiveDependencies": "error"
       },
       "style": {
