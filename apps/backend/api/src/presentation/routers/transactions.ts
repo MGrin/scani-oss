@@ -1,26 +1,12 @@
 /**
  * Transactions tRPC router
  *
- * CRUD over `holding_transactions` scoped to manual user entry
- * (source='user-entered'). Every write ownership-checks by joining
- * through the account to ensure the tx belongs to the authenticated
- * user, so we can't accept spoofed userId fields.
- *
- * Ingester-sourced rows are listed but not mutated via this router;
- * they come and go via their respective ingesters and the deduplication
- * key.
+ * Read-only over `holding_transactions`, scoped to the authenticated
+ * user by the repository query itself. Rows are written by the
+ * ingesters and come and go with their deduplication key.
  */
 
-import { db } from '@scani/db/connection';
-import * as schema from '@scani/db/schema';
-import { USER_ENTERED_SOURCE } from '@scani/domain/lib/person-authored-sources';
-import {
-  HoldingCoverageRepository,
-  HoldingTransactionRepository,
-} from '@scani/domain/repositories';
-import { HoldingService } from '@scani/domain/services';
-import { TRPCError } from '@trpc/server';
-import { and, eq } from 'drizzle-orm';
+import { HoldingTransactionRepository } from '@scani/domain/repositories';
 import { Container } from 'typedi';
 import { z } from 'zod';
 import { strictInput } from '../lib/strict-input';
@@ -37,34 +23,6 @@ const ListInput = z.object({
   limit: z.number().int().positive().max(500).default(100),
   offset: z.number().int().nonnegative().default(0),
 });
-
-const CreateInput = z.object({
-  accountId: z.string().uuid(),
-  tokenId: z.string().uuid(),
-  kind: z.enum([
-    'buy',
-    'sell',
-    'deposit',
-    'withdraw',
-    'transfer_in',
-    'transfer_out',
-    'fee',
-    'reward',
-    'interest',
-    'airdrop',
-  ]),
-  quantity: z.string(),
-  priceNative: z.string().optional(),
-  priceNativeTokenId: z.string().uuid().optional(),
-  counterTokenId: z.string().uuid().optional(),
-  counterQuantity: z.string().optional(),
-  feeQuantity: z.string().optional(),
-  feeTokenId: z.string().uuid().optional(),
-  occurredAt: z.coerce.date(),
-  note: z.string().max(500).optional(),
-});
-
-const DeleteInput = z.object({ id: z.string().uuid() });
 
 export const transactionsRouter = router({
   list: protectedProcedure.input(strictInput(ListInput)).query(async ({ ctx, input }) => {
@@ -83,95 +41,5 @@ export const transactionsRouter = router({
       order: 'desc',
     });
     return { transactions: rows };
-  }),
-
-  create: protectedProcedure.input(strictInput(CreateInput)).mutation(async ({ ctx, input }) => {
-    const { dbUser } = await requireAuth(ctx);
-
-    // Ownership check: the account must belong to the authenticated user.
-    // Cheap DB check rather than trusting the caller-provided userId.
-    const accountRow = await db
-      .select({ userId: schema.accounts.userId })
-      .from(schema.accounts)
-      .where(eq(schema.accounts.id, input.accountId))
-      .limit(1);
-    if (!accountRow[0] || accountRow[0].userId !== dbUser.id) {
-      // `FORBIDDEN` rather than a raw Error — keeps the failure out of
-      // the 5xx budget (bare throws surface as INTERNAL_SERVER_ERROR at
-      // the tRPC boundary) and matches the rest of the codebase.
-      throw new TRPCError({ code: 'FORBIDDEN', message: 'Account does not belong to user' });
-    }
-
-    const repo = Container.get(HoldingTransactionRepository);
-    const holdingService = Container.get(HoldingService);
-    // Resolve or create the holding the manual entry attaches to. If
-    // the user is entering a tx for an asset they never held via sync
-    // (e.g. historical BTC buy that predates when they added this
-    // account), we create a zero-balance holding so the ledger has an
-    // anchor and the tx can be displayed under the right position.
-    const holding = await holdingService.findOrCreateForIngest({
-      userId: dbUser.id,
-      accountId: input.accountId,
-      tokenId: input.tokenId,
-    });
-
-    // Synthetic external_id covering every distinguishing field:
-    // `(occurred_at, kind, quantity, holdingId)`. The dedup unique
-    // constraint is (holding_id, source, external_id). Including
-    // holdingId in the string makes the value self-describing in logs.
-    const externalId = `manual:${input.occurredAt.toISOString()}:${input.kind}:${input.quantity}:${holding.id}`;
-
-    const {
-      rows: [created],
-    } = await repo.bulkUpsert([
-      {
-        userId: dbUser.id,
-        holdingId: holding.id,
-        tokenId: input.tokenId,
-        kind: input.kind,
-        quantity: input.quantity,
-        priceNative: input.priceNative ?? null,
-        priceNativeTokenId: input.priceNativeTokenId ?? null,
-        counterTokenId: input.counterTokenId ?? null,
-        counterQuantity: input.counterQuantity ?? null,
-        feeQuantity: input.feeQuantity ?? null,
-        feeTokenId: input.feeTokenId ?? null,
-        occurredAt: input.occurredAt,
-        externalId,
-        source: USER_ENTERED_SOURCE,
-        sourceMetadata: input.note ? { note: input.note } : {},
-      },
-    ]);
-
-    return { transaction: created };
-  }),
-
-  delete: protectedProcedure.input(strictInput(DeleteInput)).mutation(async ({ ctx, input }) => {
-    const { dbUser } = await requireAuth(ctx);
-    // Ownership: only delete rows that belong to this user AND carry
-    // source='user-entered'. Ingester-sourced rows are immutable from
-    // the UI — their dedup key is what keeps them consistent.
-    const row = await db
-      .select({
-        id: schema.holdingTransactions.id,
-        holdingId: schema.holdingTransactions.holdingId,
-      })
-      .from(schema.holdingTransactions)
-      .where(
-        and(
-          eq(schema.holdingTransactions.id, input.id),
-          eq(schema.holdingTransactions.userId, dbUser.id),
-          eq(schema.holdingTransactions.source, USER_ENTERED_SOURCE)
-        )
-      )
-      .limit(1);
-    if (!row[0]) {
-      throw new TRPCError({ code: 'NOT_FOUND', message: 'Transaction not found or not deletable' });
-    }
-    await db.delete(schema.holdingTransactions).where(eq(schema.holdingTransactions.id, input.id));
-    // Deleting the row that WAS the holding's earliest is how a wrong
-    // first_tx_at outlives the transaction it came from (SC-307).
-    await Container.get(HoldingCoverageRepository).syncTxBoundsFromLedger([row[0].holdingId]);
-    return { deleted: true };
   }),
 });

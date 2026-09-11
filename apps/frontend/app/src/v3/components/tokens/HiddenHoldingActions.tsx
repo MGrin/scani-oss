@@ -33,7 +33,7 @@ import { type HiddenHoldingRow, isScamFlagged } from '../../lib/tokens';
  * also the exact shape §8.1 rejected, a second surface stacked over the sheet.
  * `ConfirmAction` is the house pattern and it costs nothing to use here.
  *
- * `destructive` is right even though `markAsScam` technically reverses it. The
+ * `destructive` is right even though this technically reverses a flag. The
  * red is about the write having no inverse *for the reader*, and this one has
  * none: no v3 surface can re-flag a token, and the window during which every
  * other user can find it again cannot be taken back by a later flag.

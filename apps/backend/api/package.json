@@ -25,7 +25,6 @@
     "@scani/config": "workspace:*",
     "@scani/db": "workspace:*",
     "@scani/domain": "workspace:*",
-    "@scani/file-import": "workspace:*",
     "@scani/http-fetch": "workspace:*",
     "@scani/jobs": "workspace:*",
     "@scani/logging": "workspace:*",

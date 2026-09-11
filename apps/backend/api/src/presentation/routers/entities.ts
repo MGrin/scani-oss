@@ -1,12 +1,6 @@
 import { EntityRepository } from '@scani/domain/repositories';
 import { EntityValuationService } from '@scani/domain/services';
-import {
-  AssignAccountsToEntityDto,
-  CreateEntityDto,
-  entityValuationSchema,
-  IdInputDto,
-  UpdateEntityDto,
-} from '@scani/shared';
+import { AssignAccountsToEntityDto, CreateEntityDto, entityValuationSchema } from '@scani/shared';
 import { Container } from 'typedi';
 import { strictInput } from '../lib/strict-input';
 import { requireAuth } from '../middleware/auth';
@@ -52,35 +46,6 @@ export const entitiesRouter = router({
         description: input.description ?? null,
       });
     }),
-
-  update: protectedProcedure
-    .input(strictInput(UpdateEntityDto))
-    .mutation(async ({ input, ctx }) => {
-      const { dbUser } = await requireAuth(ctx);
-      const repository = Container.get(EntityRepository);
-      const existing = await repository.findByIdForUser(dbUser.id, input.id);
-      if (!existing) throw new Error('Unauthorized access to entity');
-
-      const { id, ...changes } = input;
-      return await repository.update(id, { ...changes, updatedAt: new Date() });
-    }),
-
-  /**
-   * Deleting a boundary does NOT delete what is inside it.
-   *
-   * The FK is `ON DELETE SET NULL`, so the accounts fall back to unassigned —
-   * visible in their own bucket, with their holdings and history intact.
-   * Cascading here would destroy real financial records to remove a label.
-   */
-  delete: protectedProcedure.input(strictInput(IdInputDto)).mutation(async ({ input, ctx }) => {
-    const { dbUser } = await requireAuth(ctx);
-    const repository = Container.get(EntityRepository);
-    const existing = await repository.findByIdForUser(dbUser.id, input.id);
-    if (!existing) throw new Error('Unauthorized access to entity');
-
-    await repository.delete(input.id);
-    return { success: true as const };
-  }),
 
   /**
    * Move accounts across the boundary, or out of every boundary with a null

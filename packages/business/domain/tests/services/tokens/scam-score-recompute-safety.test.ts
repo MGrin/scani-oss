@@ -101,11 +101,10 @@ describe('the function is deterministic in the token characters alone', () => {
 describe('the version is a promise about the stored number', () => {
   test('every PERSISTED write of a scam score records where the score came from', async () => {
     // The defect this ticket is about is a stored score nobody can date, and
-    // the near-miss found while fixing it is `markAsScam` — a human verdict
-    // written into the same column, which a recompute would have silently
-    // undone. A new persistence site that sets `isScamProbability` and says
-    // nothing else would reintroduce one or the other, and nothing but this
-    // would catch it.
+    // the near-miss found while fixing it was a human verdict written into the
+    // same column, which a recompute would have silently undone. A new
+    // persistence site that sets `isScamProbability` and says nothing else
+    // would reintroduce one or the other, and nothing but this would catch it.
     //
     // Only `.set({...})` / `.values({...})` count. `isScamProbability:` also
     // appears in select projections, DTO type literals and synthetic in-memory
@@ -138,9 +137,19 @@ describe('the version is a promise about the stored number', () => {
 
     expect(offenders).toEqual([]);
     // A scan that matches nothing passes vacuously and protects nothing. There
-    // are three such writes today — the repository's stamp and the two user
-    // verdicts — so this pins the scan to something it can actually see.
-    expect(compliant).toBeGreaterThanOrEqual(3);
+    // are TWO such writes today — the repository's stamp
+    // (`TokenRepository.ts`, `scamScoreVersion`) and `tokens.unmarkAsScam`
+    // (`routers/tokens.ts`, `scamScoreSource: 'user'`) — so this pins the scan
+    // to something it can actually see.
+    //
+    // It was three until 2026-09-12. `tokens.markAsScam` wrote the third, and
+    // it was deleted as never-called surface (SC-1152): production recorded
+    // zero calls to it over 14d 18h and nothing in the tree called it. So the
+    // scam probability now has a user path that CLEARS it and none that SETS
+    // it — a flag is written only by the heuristic scorer. Lowering this floor
+    // is therefore recording what the tree holds, not weakening the guard: the
+    // offenders assertion above is unchanged and still reads 0.
+    expect(compliant).toBeGreaterThanOrEqual(2);
   });
 
   test('the token-creation path stamps a version', async () => {
