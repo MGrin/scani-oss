@@ -69,5 +69,8 @@
     "syncpack": "^14.3.0",
     "typescript": "^5"
   },
-  "dependencies": {}
+  "dependencies": {},
+  "patchedDependencies": {
+    "bullmq@6.2.0": "patches/bullmq@6.2.0.patch"
+  }
 }
