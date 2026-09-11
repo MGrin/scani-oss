@@ -1134,6 +1134,7 @@
         "lookalike": "S’affiche comme {{impersonates}}",
         "lookalikeTitle": "Le symbole de ce jeton est écrit avec des caractères qui dessinent « {{impersonates}} » sans en être un. La ligne est conservée, et votre solde avec elle, car la masquer ne vous apprendrait rien — mais ce n’est pas le jeton auquel elle ressemble.",
         "noPriceSpoken": "aucun prix disponible",
+        "staleQuote": "Cotation périmée, {{age}}",
         "lookalikeSpoken": "s’affiche comme {{impersonates}}",
         "lookalikeExportCell": "{{symbol}} (s’affiche comme {{impersonates}})"
       },

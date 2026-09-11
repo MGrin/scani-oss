@@ -717,6 +717,7 @@
         "lookalikeTitle": "El símbolo de este token está escrito con caracteres que dibujan «{{impersonates}}» sin serlo. La línea se conserva, y tu saldo con ella, porque ocultarla no te diría nada — pero no es el token al que se parece.",
         "noPrice": "Sin precio",
         "noPriceSpoken": "no hay precio disponible",
+        "staleQuote": "Cotización desactualizada, {{age}}",
         "noPriceTitle": "Ninguna fuente de precios ha cotizado nunca este token, y de momento hemos dejado de preguntar. Queda fuera de tu patrimonio neto en lugar de contarse como cero."
       },
       "bulk": {

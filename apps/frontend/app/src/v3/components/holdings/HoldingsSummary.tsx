@@ -3,12 +3,16 @@ import { Block } from '@scani/ui/v3/components/Block';
 import { StatTile } from '@scani/ui/v3/components/charts/StatTile';
 import { Numeric } from '@scani/ui/v3/components/Numeric';
 import { Trans, useTranslation } from 'react-i18next';
+import { Link, useLocation } from 'react-router-dom';
 import {
   allExcludedFromTotal,
   excludedFromTotal,
+  HOLDINGS_PRICE_PARAM,
   holdingAllocation,
   holdingsValue,
+  STALE_PRICE,
   stalePricedInTotal,
+  stalePriceSearch,
 } from '../../lib/holdings';
 import { AllocationBar } from '../charts/AllocationBar';
 
@@ -66,6 +70,14 @@ import { AllocationBar } from '../charts/AllocationBar';
  * so that this is structural rather than a promise. mgrin called the mixed
  * behaviour correct in as many words; a change that tidied it would be wrong
  * even where it looked better.
+ *
+ * **THE STALE SENTENCE IS A LINK (SC-981)** to the same rows narrowed by the
+ * `price=stale` filter, which applies the predicate this count is made of — so
+ * the list it opens is as long as the number in it. The whole sentence is the
+ * target, as with `CoverageNote`'s transfer line: a count-sized tap target in a
+ * caption is the thing a thumb misses. Once the list already is that set it is
+ * plain text again; a link to the page you are on is a control that does
+ * nothing.
  */
 
 interface HoldingsSummaryProps {
@@ -75,10 +87,21 @@ interface HoldingsSummaryProps {
 
 export function HoldingsSummary({ holdings, currency }: HoldingsSummaryProps) {
   const { t } = useTranslation();
+  const { pathname, search } = useLocation();
   const allocation = holdingAllocation(t, holdings);
   const excluded = excludedFromTotal(holdings);
   const stale = stalePricedInTotal(holdings);
   const allInactive = allExcludedFromTotal(holdings);
+  const staleSentence = (
+    <Trans
+      i18nKey="v3.holdings.summary.stalePriced"
+      count={stale.count}
+      components={{
+        value: <Numeric value={stale.value} currency={currency} className="text-caption" />,
+      }}
+    />
+  );
+  const staleFilterApplied = new URLSearchParams(search).get(HOLDINGS_PRICE_PARAM) === STALE_PRICE;
 
   return (
     <Block className="flex flex-col gap-4 p-4">
@@ -107,15 +130,16 @@ export function HoldingsSummary({ holdings, currency }: HoldingsSummaryProps) {
           <>
             {stale.count > 0 ? (
               <p className="text-caption text-muted-foreground">
-                <Trans
-                  i18nKey="v3.holdings.summary.stalePriced"
-                  count={stale.count}
-                  components={{
-                    value: (
-                      <Numeric value={stale.value} currency={currency} className="text-caption" />
-                    ),
-                  }}
-                />
+                {staleFilterApplied ? (
+                  staleSentence
+                ) : (
+                  <Link
+                    to={{ pathname, search: stalePriceSearch(search) }}
+                    className="text-balance underline"
+                  >
+                    {staleSentence}
+                  </Link>
+                )}
               </p>
             ) : null}
             {excluded.count > 0 ? (

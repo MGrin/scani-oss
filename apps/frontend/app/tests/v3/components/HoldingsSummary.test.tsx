@@ -3,6 +3,7 @@ import '../../i18n-preload';
 import { describe, expect, test } from 'bun:test';
 import type { HoldingWithDetails } from '@scani/shared';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { StaticRouter } from 'react-router-dom/server';
 import { HoldingsSummary } from '../../../src/v3/components/holdings/HoldingsSummary';
 
 /**
@@ -45,8 +46,17 @@ function holding(overrides: Partial<HoldingWithDetails> = {}): HoldingWithDetail
   };
 }
 
-function render(holdings: HoldingWithDetails[]): string {
-  return renderToStaticMarkup(<HoldingsSummary holdings={holdings} currency="USD" />);
+function render(holdings: HoldingWithDetails[], location = '/holdings'): string {
+  return renderToStaticMarkup(
+    <StaticRouter location={location}>
+      <HoldingsSummary holdings={holdings} currency="USD" />
+    </StaticRouter>
+  );
+}
+
+/** The `href` of the one link in the markup, or null. */
+function linkHref(html: string): string | null {
+  return /<a [^>]*href="([^"]*)"/.exec(html)?.[1]?.replaceAll('&amp;', '&') ?? null;
 }
 
 describe('HoldingsSummary', () => {
@@ -98,6 +108,43 @@ describe('HoldingsSummary', () => {
     // claim about a question nobody answered.
     expect(render([holding({ value: 100 })])).not.toInclude('Includes');
     expect(render([holding({ value: 100, priceStale: false })])).not.toInclude('Includes');
+  });
+
+  /**
+   * The count, made reachable (SC-981). It links to the stale-price filter
+   * layered on whatever is already applied, because the count is over the rows
+   * on screen and the list it opens has to be those rows' stale subset.
+   */
+  describe('the stale sentence links to exactly the rows it counts', () => {
+    const rows = [
+      holding({ id: 'h1', value: 100 }),
+      holding({ id: 'h2', value: 250.5, priceStale: true }),
+    ];
+
+    test('to the stale-price filter', () => {
+      expect(linkHref(render(rows))).toBe('/holdings?price=stale');
+    });
+
+    test('keeping the filters already applied', () => {
+      const href = linkHref(render(rows, '/holdings?account=a1'));
+      const params = new URLSearchParams(href?.split('?')[1]);
+      expect(params.get('account')).toBe('a1');
+      expect(params.get('price')).toBe('stale');
+    });
+
+    test('and is plain text once the list already is that set', () => {
+      // A link to the page you are on. The sentence still says what it says.
+      const html = render(rows, '/holdings?price=stale');
+      expect(html).toInclude('Includes 1 holding');
+      expect(linkHref(html)).toBeNull();
+    });
+
+    test('nothing else in the summary is a link', () => {
+      // The control: the excluded caption has nowhere to send the reader.
+      expect(
+        linkHref(render([holding({ value: 10 }), holding({ id: 'h2', isActive: false })]))
+      ).toBeNull();
+    });
   });
 
   test('pluralises the sentence it is about to make the reader trust', () => {
