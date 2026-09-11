@@ -77,6 +77,16 @@ describe('a sentence is reported only when it carries BOTH axes', () => {
     ['a claim about what production never did', 'Production has never once drained one.'],
     ['a count of rows in the running system', 'In production 12 rows carried the empty label.'],
     ['a vendor beside a measurement', 'Sentry grouped 1,208 of them into a single issue.'],
+    ['a money figure off one real book', 'On the real account it settled at $98,765 a month.'],
+    ['a value read off one real row', 'On the real account it carries score = 0.98 today.'],
+    [
+      'a run of values off real rows',
+      'Measured on the production account that column takes 0.98, 0.76 and 0.54.',
+    ],
+    [
+      'a person observing the running system',
+      'mgrin opened the dashboard and saw $98,765 where the total differed.',
+    ],
   ])('MUST FIRE — %s', (_shape, sentence) => {
     expect(readSentence(sentence)).not.toBeNull();
   });
@@ -113,6 +123,12 @@ describe('a sentence is reported only when it carries BOTH axes', () => {
     ['the vendor as a dependency', 'Sentry appears in the CSP and in the env schema.'],
     ['our, with an ordinary noun', 'That is our code, our tests and our own error handling.'],
     ['a dotted version', 'Run bunx @biomejs/biome@2.4.12 check over it.'],
+    ['an INDEFINITE real account', 'The fixture builds a real account with 12 rows.'],
+    ['a synthetic figure', 'On a synthetic account the fixture settles at $98,765 a month.'],
+    ['a shell positional beside a scope word', 'In production it passes $1 and $2 through.'],
+    ['a dotted version beside a scope word', 'In production it runs bun 1.3.14 and node 2.0.1.'],
+    ['a clock time beside a scope word', 'In production the sweep starts at 12:30 each day.'],
+    ['a person beside a ruling', "mgrin's ruling: print the count and invent nothing."],
   ])('MUST NOT FIRE — %s', (_shape, sentence) => {
     expect(readSentence(sentence)).toBeNull();
   });
@@ -545,6 +561,143 @@ describe('the process', () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+/**
+ * SC-1131, BOTH ARMS THROUGH THE REAL SCRIPT. One arm alone establishes
+ * nothing: a guard that reported everything would pass the first, and one that
+ * reported nothing would pass the second. The figure is the SAME in both, so
+ * the only thing that differs between them is the framing — which is the claim
+ * this widening makes.
+ */
+describe('a real-account claim and the same figure framed as synthetic', () => {
+  const SCRIPT = path.resolve(import.meta.dir, '..', 'check-oss-prose.ts');
+
+  function repo(): string {
+    const dir = mkdtempSync(path.join(tmpdir(), 'scani-prose-real-'));
+    for (const args of [
+      ['init', '-q', '-b', 'main'],
+      ['config', 'user.email', 't@example.com'],
+      ['config', 'user.name', 'T'],
+      ['config', 'commit.gpgsign', 'false'],
+    ]) {
+      Bun.spawnSync(['git', ...args], { cwd: dir });
+    }
+    writeFileSync(path.join(dir, 'seed.txt'), 'seed\n');
+    Bun.spawnSync(['git', 'add', '-A'], { cwd: dir });
+    Bun.spawnSync(['git', 'commit', '-qm', 'seed'], { cwd: dir });
+    return dir;
+  }
+
+  function stageAndRun(body: string): { code: number; out: string } {
+    const dir = repo();
+    try {
+      const full = path.join(dir, 'packages/business/domain/src/x.ts');
+      mkdirSync(path.dirname(full), { recursive: true });
+      writeFileSync(full, body);
+      Bun.spawnSync(['git', 'add', '-A'], { cwd: dir });
+      const r = Bun.spawnSync(['bun', SCRIPT], {
+        cwd: dir,
+        env: process.env,
+        stdout: 'pipe',
+        stderr: 'pipe',
+      });
+      const dec = new TextDecoder();
+      return { code: r.exitCode ?? -1, out: dec.decode(r.stdout) + dec.decode(r.stderr) };
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
+  test('MUST REPORT — the figure is said to have been read off the real account', () => {
+    const { code, out } = stageAndRun('// On the real account it settled at $98,765 a month.\n');
+    expect(out).toContain('ADVISORY');
+    expect(out).toContain('our real account');
+    expect(code).toBe(EXIT_OK);
+  });
+
+  test('MUST NOT REPORT — the same figure, framed as synthetic', () => {
+    const { code, out } = stageAndRun('// On a synthetic account it settles at $98,765 a month.\n');
+    expect(out).toContain('PASS');
+    expect(out).not.toContain('ADVISORY');
+    expect(code).toBe(EXIT_OK);
+  });
+});
+
+/**
+ * SC-1131. THE CORRECTED LIMIT IS ASSERTED, because the wrong one had no
+ * failure mode: it said a person's name carries no measurement and no scope
+ * word, so a reader meeting it concluded the class was accounted for and
+ * stopped looking, while nine sentences of exactly that shape sat in published
+ * files. Restoring either sentence reddens this rather than going quiet.
+ */
+describe('what the guard says it cannot see', () => {
+  const source = readFileSync(path.resolve(import.meta.dir, '..', 'check-oss-prose.ts'), 'utf8');
+
+  test('it no longer claims a person’s name carries no scope word', () => {
+    expect(source).not.toContain("an account label, or a person's name.\n//   Those carry no");
+  });
+
+  test('it states that a rewording defeats it', () => {
+    expect(source).toContain('DEFEATED BY A REWORDING');
+    expect(source).toContain('NOT EVIDENCE THAT NO REAL FIGURE IS PUBLISHED');
+  });
+
+  test('the advisory footer carries the rewording limit too', () => {
+    expect(source).toContain('DEFEATED BY A REWORDING');
+    expect(source).toContain('A PASS IS NOT EVIDENCE THAT NO REAL FIGURE IS PUBLISHED');
+  });
+
+  test('the header separates the two causes of a miss', () => {
+    expect(source).toContain('TWO DIFFERENT CAUSES');
+    expect(source).toContain('NOT A LIMIT OF THIS VOCABULARY AT ALL');
+  });
+});
+
+/**
+ * SC-1131 PINNED THE EXTRACTION GAP and SC-1135 closed it. This is SC-1135's
+ * falsifier on SC-1131's own inputs: the two lines SC-1131 pinned as code now
+ * read as prose IN ORDER, and its two controls are unchanged. The four inputs
+ * are the ones the row was filed with, so this is the same reading taken on
+ * the other side of the repair rather than a new one.
+ *
+ * The continuation line READ ON ITS OWN is still code, and that is the point
+ * rather than a leftover: it is indented English exactly like a line of JSX
+ * text, and only the open block before it makes it prose.
+ */
+describe('a JSX comment is read, which is why the fourth site is caught', () => {
+  const OPENER = '      {/* THE HERO IS OBSERVED, and this explains why.';
+  const CONTINUATION = '          The committed book is not a second opinion.';
+
+  test('the opener and its continuation are both prose, in order', () => {
+    expect(proseOfLines('x.tsx', [OPENER, CONTINUATION])).toEqual([
+      'THE HERO IS OBSERVED, and this explains why.',
+      'The committed book is not a second opinion.',
+    ]);
+  });
+
+  test('the continuation line read on its own is still code', () => {
+    expect(proseOf('x.tsx', CONTINUATION)).toBeNull();
+  });
+
+  test.each([
+    ['a docblock continuation', '   * reviewed outflows over five years'],
+    ['a line comment', '// an ordinary line comment'],
+  ])('CONTROL — %s is still prose', (_what, line) => {
+    expect(proseOf('x.tsx', line)).not.toBeNull();
+  });
+
+  /**
+   * The vocabulary is not what fails. The same sentence, handed to the rules
+   * directly, fires both axes — on a signal that predates this widening.
+   */
+  test('the sentence hiding in one fires both axes when it is handed over', () => {
+    const claim = readSentence(
+      'On the real account it records $98,765 a month in and $543 a month out.'
+    );
+    expect(claim).not.toBeNull();
+    expect(claim?.specific).toBe('a grouped number');
   });
 });
 

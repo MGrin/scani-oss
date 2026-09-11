@@ -70,9 +70,50 @@
 //   oversight — widening to the paragraph makes a long docblock co-occur by
 //   accident.
 //
-//   IT CANNOT SEE A NAMED CREDENTIAL, an account label, or a person's name.
-//   Those carry no measurement and no scope word, and they were half of the
-//   near-miss that produced this. Read the comments yourself as well.
+//   IT CANNOT SEE A NAMED CREDENTIAL or an account label. Those carry no
+//   measurement and no scope word, and they were half of the near-miss that
+//   produced this. Read the comments yourself as well.
+//
+//   THAT SENTENCE USED TO NAME A PERSON'S NAME AS A THIRD, AND IT WAS WRONG
+//   IN THE DIRECTION THAT MATTERS (SC-1131). Nine sentences across seven
+//   published files asserted that a figure had been taken off one real
+//   account, and they DID carry measurements — so a reader meeting the old
+//   wording would have concluded this class was already accounted for and
+//   stopped looking. A name standing alone carries nothing; a name beside a
+//   verb of observation is a scope signal, and it is one now.
+//
+//   IT IS DEFEATED BY A REWORDING, and that limit outlives every vocabulary
+//   change made to it. This reads the words the claims that have been made
+//   are made of; the same fact said differently passes. A GREEN RUN IS NOT
+//   EVIDENCE THAT NO REAL FIGURE IS PUBLISHED. It is a tripwire on the shapes
+//   that have happened, never a proof about the shapes that have not.
+//
+//   IT CATCHES THREE OF THOSE NINE, MEASURED RATHER THAN ASSUMED, AND THE SIX
+//   IT MISSES HAVE TWO DIFFERENT CAUSES. An earlier draft of this paragraph
+//   attributed all six to the sentence-scope limit above. That was wrong about
+//   one of them, and a wrong explanation written into a stated limit is worse
+//   than none: it tells the next reader the class is accounted for.
+//
+//   FIVE are a missing axis in their own sentence — a money amount with no
+//   scope word beside it, or a claim of realness with no figure beside it.
+//   That is the sentence-scope limit, and the only rule that would reach them
+//   keys on a pronoun, which fires on the stock.
+//
+//   THE SIXTH WAS NOT A LIMIT OF THIS VOCABULARY AT ALL, and it is the worst
+//   of the nine. It fires BOTH axes as written, and one of the two is a signal
+//   that predates this widening entirely — so the rules always reached it. It
+//   was missed because it was never handed to them: the extractor was anchored
+//   on the comment sigil, a JSX comment opens with a brace before the sigil,
+//   and a brace is not whitespace, so that line and every unprefixed
+//   continuation line inside the block read as code. Over fifteen hundred
+//   lines of tracked `.tsx` and `.jsx` were unreadable for that reason, and
+//   the money screens are largely made of them.
+//
+//   SC-1135 REPAIRED THE EXTRACTION, separately and with a replay of its own:
+//   see the block-comment limits below. So the guard now catches FOUR of the
+//   nine, and the five it misses are all the first cause, which is still a
+//   limit. Reading the two causes as one is what this paragraph exists to
+//   prevent.
 //
 //   IT DOES NOT READ PULL REQUEST BODIES. The same text in a PR description
 //   reaches the same audience and no hook sees it.
@@ -207,6 +248,52 @@ export const SCOPE: readonly Signal[] = [
     probe: 'Sentry grouped them as one issue',
     antiProbe: 'sentries at the gate and a neonatal ward',
   },
+  {
+    /**
+     * A FIGURE READ OFF ONE PARTICULAR BOOK (SC-1131).
+     *
+     * The bare phrase was measured and rejected on the same footing as the two
+     * candidates above: `real account` alone reads twenty-five sentences in
+     * twenty-two tracked files and nearly every one is ordinary test prose
+     * about *a* real account. THE ARTICLE IS THE DISCRIMINATOR — a definite or
+     * possessive determiner makes it a reference to one particular book, and
+     * an indefinite one makes it a category, which is why `a` is absent from
+     * the alternation and its absence is load-bearing.
+     *
+     * With the SPECIFIC axis also required the determined form reads one
+     * sentence across the whole tracked tree. That is the answer to the worry
+     * that a phrase list of this kind cannot be narrowed: the narrowing is not
+     * done by the phrase, it is done by the second axis.
+     */
+    name: 'our real account',
+    pattern:
+      /\b(?:the|his|her|their|my|our) (?:real|live|actual|genuine|production) (?:account|book|portfolio|wallet|ledger|holdings?|balances?|spread)\b/i,
+    probe: 'measured on the real account',
+    antiProbe: 'a real account of the outage, our production build and the live query hook',
+  },
+  {
+    /**
+     * A NAMED PERSON OBSERVING OUR RUNNING SYSTEM (SC-1131).
+     *
+     * This is a CORRECTION to a limit this file used to state rather than an
+     * addition beside it. The old wording said a person's name could not be
+     * seen because it carries neither a measurement nor a scope word. That is
+     * true of a name standing alone and false of one beside a verb of
+     * observation — which is exactly what a figure read off somebody's own
+     * book looks like once it is written down, and one of the sentences that
+     * reached the mirror had that shape.
+     *
+     * The verb list is observation only. A name beside a RULING, a preference
+     * or an objection is a product decision and is nobody's balance, so those
+     * verbs are deliberately absent; `read` is absent too, because it matches
+     * inside `read-only` and would fire on a replica.
+     */
+    name: 'a person read it off our system',
+    pattern:
+      /\bmgrin\b[^.]{0,80}\b(?:opened|saw|noticed|observed|checked|reported)\b|\b(?:reported|observed|measured) by mgrin\b/i,
+    probe: 'mgrin opened the dashboard and noticed it',
+    antiProbe: "mgrin's ruling on variable payments: print the count and invent nothing",
+  },
 ];
 
 /**
@@ -251,6 +338,65 @@ export const SPECIFIC: readonly Signal[] = [
     pattern: /\bnever once\b|\bnot once (?:has|have|did|was)\b/i,
     probe: 'it has never once fired',
     antiProbe: 'it never fired and was not run once more',
+  },
+  {
+    /**
+     * THE SHAPE THAT ACTUALLY REACHED THE MIRROR (SC-1131), and not one of the
+     * four rules above saw it. A bare money amount is not a grouped number, not
+     * a percentage, not a counted noun and not a claim of never — so of the
+     * nine sentences later redacted from seven published files, EIGHT fired
+     * nothing at all on this axis. The ticket was filed believing all nine
+     * failed the SCOPE axis alone; measured, eight failed both.
+     *
+     * THE NINTH IS THE INSTRUCTIVE ONE and an earlier draft of this comment
+     * denied it existed, saying zero of the nine fired here. It carries a
+     * thousands separator, so it fires `a grouped number`, which predates this
+     * rule — and it went unnoticed because the population was gathered THROUGH
+     * the extractor, which could not read the JSX comment it sits in until
+     * SC-1135. A measurement taken through the instrument under test reports
+     * the instrument's blind spot as an absence in the world.
+     *
+     * A LONE DIGIT AFTER THE SIGIL IS EXCLUDED, and that is not tidiness. A
+     * shell positional has the shape of an amount, and `proseOf` reads a
+     * leading `--` as a comment, so a `case` arm handling a long option arrives
+     * here as prose and matched on the first draft.
+     */
+    name: 'a currency amount',
+    pattern: /\$\s?\d(?:[\d,.]*\d|\s?[km]\b)/i,
+    probe: 'it settled at $98,765 that month',
+    antiProbe: `pass $1 and $2 through, and read \${PORT} from the environment`,
+  },
+  {
+    /**
+     * A VALUE STATED AS AN ASSIGNMENT (SC-1131) — the way a measurement taken
+     * off one real row gets written into a comment.
+     *
+     * Anchored on the `=` or the `:`, because a BARE decimal is not a
+     * measurement here: it reads over a thousand sentences across the tracked
+     * tree and fires on every version number and every duration, which is the
+     * ground the two rejected candidates in {@link SCOPE} were rejected on.
+     * Anchored, it costs three sentences.
+     */
+    name: 'a stated value',
+    pattern: /[=:]\s*\d+\.\d+/,
+    probe: 'it held total_value = 98.76 for that row',
+    antiProbe: 'at 12:30 it shipped version 1.2 with a 0.5s budget',
+  },
+  {
+    /**
+     * A RUN OF VALUES IN ONE SENTENCE (SC-1131) — a measurement transcribed off
+     * several real rows rather than one threshold quoted from the code beside
+     * it. Two decimals with no sentence end between them costs six sentences
+     * once a scope signal is also required, which is what makes it affordable
+     * where the bare decimal above is not.
+     *
+     * The lookarounds reject a dotted version, which is the only shape that
+     * reads as two decimals and is neither.
+     */
+    name: 'a run of stated values',
+    pattern: /(?<![\w.])\d+\.\d+(?![\w.])[^.]{0,60}?(?<![\w.])\d+\.\d+(?![\w.])/,
+    probe: 'the three buckets scored 0.98, 0.76 and 0.54',
+    antiProbe: 'bun 1.3.14 and version 2.0.1 both shipped',
   },
 ];
 
@@ -513,8 +659,12 @@ function report(findings: readonly Finding[], tail: string): number {
       '  refuses the whole run on sha256 drift, so an applied migration’s comment is\n' +
       '  permanent. Read those twice.\n' +
       '\n' +
-      '  WHAT THIS CANNOT SEE: a named credential, an account label or a person’s\n' +
-      '  name. None carries a measurement or a scope word (SC-909).'
+      '  WHAT THIS CANNOT SEE: a named credential or an account label. Neither\n' +
+      '  carries a measurement or a scope word (SC-909).\n' +
+      '\n' +
+      '  AND IT IS DEFEATED BY A REWORDING. It reads the vocabulary the claims\n' +
+      '  that have been made are made of, so the same fact in other words passes\n' +
+      '  it. A PASS IS NOT EVIDENCE THAT NO REAL FIGURE IS PUBLISHED (SC-1131).'
   );
   return EXIT_OK;
 }
