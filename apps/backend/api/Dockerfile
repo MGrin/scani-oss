@@ -16,6 +16,8 @@ WORKDIR /app
 # workspaces under `apps/*/*/` or `packages/*/*/` are picked up
 # automatically — no Dockerfile churn per new package.
 COPY package.json bun.lock ./
+# `patchedDependencies` in package.json points here; install fails without it.
+COPY patches ./patches
 # apps/*/package.json picks up single-level workspaces (e.g. apps/e2e).
 # apps/*/*/package.json picks up nested workspaces (e.g. apps/backend/api).
 COPY --parents apps/*/package.json apps/*/*/package.json packages/*/*/package.json ./

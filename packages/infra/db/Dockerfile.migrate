@@ -42,6 +42,8 @@ WORKDIR /app
 # workspace registration that `bun install --filter` requires stays
 # correct without enumerating every package.json by hand.
 COPY package.json bun.lock ./
+# `patchedDependencies` in package.json points here; install fails without it.
+COPY patches ./patches
 COPY --parents apps/*/package.json apps/*/*/package.json packages/*/*/package.json ./
 
 # Filter to the dep graphs of the two workspaces the entrypoint imports —
