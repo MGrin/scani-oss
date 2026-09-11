@@ -55,6 +55,7 @@ import {
   PostgresResourceLock,
   QueueClient,
   RedisLifecyclePublisher,
+  serveWorkerWake,
   WorkerClient,
 } from '@scani/queue';
 import {
@@ -409,6 +410,29 @@ async function main(): Promise<void> {
   await Container.get(JobScheduler).upsertAll(schedules);
 
   await workerClient.start();
+
+  // SC-1144. Lets the api cut the idle wait short after a user enqueues, so a
+  // job added while the compute is suspended does not wait for the 900s timer.
+  // Opt-in, and a failure to bind is logged rather than fatal: without it jobs
+  // still start, just at the next poll.
+  if (env.WORKER_WAKE_PORT && env.JOBS_HMAC_SECRET) {
+    try {
+      serveWorkerWake({
+        port: env.WORKER_WAKE_PORT,
+        hostname: '::',
+        secret: env.JOBS_HMAC_SECRET,
+        onWake: () => workerClient.wake(),
+      });
+      logger.info({ port: env.WORKER_WAKE_PORT }, '⏰ Wake endpoint listening');
+    } catch (err) {
+      logger.error(
+        { port: env.WORKER_WAKE_PORT, error: err instanceof Error ? err.message : String(err) },
+        'Wake endpoint could not bind — jobs start at the next poll instead'
+      );
+    }
+  } else if (env.WORKER_WAKE_PORT) {
+    logger.warn({}, 'WORKER_WAKE_PORT set without JOBS_HMAC_SECRET — no wake endpoint');
+  }
 
   // --- Data-provider re-probe ----------------------------------------------
   // Background re-probe so a transient unavailability at boot doesn't

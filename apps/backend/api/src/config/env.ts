@@ -115,6 +115,14 @@ const envSchema = z.object({
   // DLQ replay). Required in prod.
   JOBS_HMAC_SECRET: requiredInProd(z.string().min(32), 'JOBS_HMAC_SECRET'),
 
+  // Where the api pings the worker after a user enqueues, so the job starts
+  // at once even while a scale-to-zero Postgres has the worker's LISTEN down
+  // (SC-1144). Signed with JOBS_HMAC_SECRET. Optional everywhere: unset, the
+  // ping is a no-op and the job starts at the worker's next poll — which on a
+  // Postgres that never suspends is immediately anyway, so self-hosting needs
+  // neither this nor the worker's WORKER_WAKE_PORT.
+  WORKER_WAKE_URL: optionalUrl,
+
   // Shared secret for the screenshot-bot endpoint. Lets the GH Actions
   // workflow mint a Better-Auth session for the single allow-listed
   // landing-screenshots user. Optional everywhere — the endpoint itself
