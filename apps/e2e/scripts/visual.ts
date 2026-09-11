@@ -52,7 +52,11 @@ import { createHash } from 'node:crypto';
 import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { basename, dirname, join, resolve } from 'node:path';
-import { isPrimaryCheckout, resolveStackPorts } from '../../../scripts/lib/worktree';
+import {
+  composeProjectName,
+  isPrimaryCheckout,
+  resolveStackPorts,
+} from '../../../scripts/lib/worktree';
 import {
   type BaselineRow,
   changedBaselines,
@@ -64,6 +68,7 @@ import {
   mergeManifest,
   readTreeProvenance,
 } from '../visual/baseline-provenance';
+import { movedSince, parseReflog, parseStartedAt, REFLOG_ARGS } from '../visual/stale-bundle';
 
 const E2E_ROOT = resolve(import.meta.dir, '..');
 const REPO_ROOT = resolve(E2E_ROOT, '../..');
@@ -302,6 +307,58 @@ function recordProvenance(before: Record<string, string>, after: Record<string, 
   console.log(`\n${formatProvenance(written, provenance).join('\n')}`);
 }
 
+/**
+ * Refuse to photograph a frontend container that predates a branch excursion.
+ * See `visual/stale-bundle.ts`: the served bytes and the evaluated module graph
+ * can disagree after a checkout, and only a restart reconciles them.
+ *
+ * A host-side vite has no container to read, and an unreadable reading is
+ * printed as NOT SAMPLED rather than as a pass.
+ */
+function assertFreshBundle(): void {
+  const project = process.env.COMPOSE_PROJECT_NAME ?? composeProjectName(REPO_ROOT);
+  const ps = docker([
+    'ps',
+    '--filter',
+    `label=com.docker.compose.project=${project}`,
+    '--filter',
+    'label=com.docker.compose.service=frontend',
+    '--format',
+    '{{.Names}}',
+  ]);
+  const container = ps.status === 0 ? (ps.stdout.trim().split('\n')[0] ?? '') : '';
+  if (!container) {
+    // intentional: an absent reading must not read like a clean one
+    console.log(
+      `Stale-bundle check NOT SAMPLED: no running frontend container in compose project ${project}.`
+    );
+    return;
+  }
+  const inspect = docker(['inspect', '-f', '{{.State.StartedAt}}', container]);
+  const startedAt = inspect.status === 0 ? parseStartedAt(inspect.stdout) : null;
+  const log = git(REFLOG_ARGS);
+  const entries = log === null ? [] : parseReflog(log);
+  if (startedAt === null || entries.length === 0 || entries.some((e) => !Number.isFinite(e.at))) {
+    // intentional: same reason as above
+    console.log(
+      `Stale-bundle check NOT SAMPLED: could not read ${container}'s start time or HEAD's reflog.`
+    );
+    return;
+  }
+  const moved = movedSince(entries, startedAt);
+  if (moved) {
+    console.error(
+      `HEAD moved to ${moved.sha.slice(0, 9)} (${moved.subject}) after ${container} started, so ` +
+        'vite may be serving a module graph from before the move — a raw i18n key in a ' +
+        'baseline is what that looks like. Restart it and re-run:\n\n' +
+        `  docker restart ${container}\n`
+    );
+    process.exit(1);
+  }
+  // intentional: names what was compared, so a pass is a reading
+  console.log(`Stale-bundle check: HEAD has not left its commit since ${container} started.`);
+}
+
 const argv = process.argv.slice(2);
 if (argv.includes('--help')) {
   // intentional: this is the CLI's help output
@@ -314,6 +371,7 @@ const keepServer = argv.includes('--keep-server');
 const screen = argv.find((arg) => arg.startsWith('--screen='))?.slice('--screen='.length);
 
 assertDocker();
+assertFreshBundle();
 const image = `mcr.microsoft.com/playwright:v${playwrightVersion()}-noble`;
 ensureImage(image);
 
