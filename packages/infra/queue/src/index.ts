@@ -67,6 +67,7 @@ export {
   QueueClient,
   type QueueClientConfig,
 } from './producer/queue-client';
+export { serveWorkerWake, WorkerWakeClient } from './wake/worker-wake';
 // SC-225 / SC-321. The bounded ping and the reachability tracker moved to
 // `@scani/rate-limiter`, which the data-provider already depends on and this
 // package's BullMQ weight made unusable there. Both are zero-import pure
