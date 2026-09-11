@@ -635,6 +635,11 @@ export class CostBasisService {
   private readonly txRepository = Container.get(HoldingTransactionRepository);
   private readonly holdingRepository = Container.get(HoldingRepository);
   private readonly priceGraphService = Container.get(PriceGraphService);
+  // Keyed weakly on the snapshot, so the fees go when the rollup drops it.
+  private readonly tradeFeesBySnapshot = new WeakMap<
+    PriceLookup,
+    Map<string, FeeValuation | null>
+  >();
 
   async getCostBasis(
     holdingId: string,
@@ -1330,7 +1335,21 @@ export class CostBasisService {
     );
   }
 
-  /** This row's trade fee in base currency at `occurredAt` — see `valueTradeFeeInBase`. */
+  /**
+   * This row's trade fee in base currency at `occurredAt` — see
+   * `valueTradeFeeInBase` — remembered for as long as `priceLookup` lives.
+   *
+   * A fee is valued at its own row's instant, so one price snapshot gives it
+   * one answer however many times it is walked. The rollup walks every holding
+   * once per day of its window, so valuing each fee afresh on each of those
+   * walks cost fees x days conversions — and a round trip each wherever the
+   * prefetch does not cover the pair (SC-1145). The answer is remembered, not
+   * approximated: a remembered fee is the value the first walk computed.
+   *
+   * Bypassed under a database transaction, for the reason
+   * `PriceGraphService.resolveHubTokenIds` bypasses its cache: a value read
+   * through a transaction must not answer for a later read that is not in it.
+   */
   private async tradeFeeInBase(
     dbTx: DatabaseTransaction | undefined,
     tx: HoldingTransaction,
@@ -1338,14 +1357,27 @@ export class CostBasisService {
     heldTokenId: string | null,
     priceLookup?: PriceLookup
   ): Promise<FeeValuation | null> {
-    return valueTradeFeeInBase(
-      this.priceGraphService,
-      dbTx,
-      tx,
-      baseCurrencyId,
-      heldTokenId,
-      priceLookup
-    );
+    const value = () =>
+      valueTradeFeeInBase(
+        this.priceGraphService,
+        dbTx,
+        tx,
+        baseCurrencyId,
+        heldTokenId,
+        priceLookup
+      );
+    if (!priceLookup || dbTx !== undefined) return value();
+    let remembered = this.tradeFeesBySnapshot.get(priceLookup);
+    if (!remembered) {
+      remembered = new Map();
+      this.tradeFeesBySnapshot.set(priceLookup, remembered);
+    }
+    const key = `${tx.id}|${baseCurrencyId}|${heldTokenId}`;
+    const hit = remembered.get(key);
+    if (hit !== undefined) return hit;
+    const fee = await value();
+    remembered.set(key, fee);
+    return fee;
   }
 }
 
