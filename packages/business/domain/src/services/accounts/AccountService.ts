@@ -194,14 +194,14 @@ export class AccountService extends BaseService {
       // Check if this is a wallet account with user_wallet association.
       //
       // Historically we also checked `metadata.migrated === true` here,
-      // but `SyncWalletBalancesUseCase`'s "auto-create account for newly
-      // detected chain" block writes metadata WITHOUT that flag. That
-      // meant deleting a cron-auto-created wallet account silently
-      // skipped the wallet cleanup below, leaving a stale institutionId
-      // on the wallet row — and the next sync immediately re-created
-      // the account. The only reliable signal of "this is a wallet
-      // account" is `userWalletId` being set; `migrated` is a vestigial
-      // flag from the pre-user_wallet data migration.
+      // because `SyncWalletBalancesUseCase` once auto-created accounts
+      // for newly detected chains and wrote metadata WITHOUT that flag,
+      // so deleting one skipped the wallet cleanup below. That block is
+      // gone (the sync no longer creates accounts), and the one writer
+      // of wallet account metadata left is `ImportWalletAddressUseCase`.
+      // The check stays on `userWalletId` regardless: it is the signal
+      // that means "this is a wallet account", and `migrated` is a
+      // vestigial flag from the pre-user_wallet data migration.
       const metadata = existing.metadata as Record<string, unknown>;
       const userWalletId = metadata?.userWalletId as string | undefined;
 

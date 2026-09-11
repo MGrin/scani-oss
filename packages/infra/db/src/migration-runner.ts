@@ -468,7 +468,7 @@ export async function applyMigrations(
         await tx.unsafe(statement);
       }
       // Recorded immediately after its own statements rather than at the end:
-      // a migration carrying its own COMMIT (three do) ends this transaction
+      // a migration carrying its own COMMIT ends this transaction
       // early, and the row has to be as durable as the effect it describes.
       await tx.unsafe(`insert into ${tableId} (tag, sha256) values ($1, $2)`, [
         file.tag,
