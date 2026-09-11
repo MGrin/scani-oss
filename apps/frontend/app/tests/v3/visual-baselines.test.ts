@@ -39,24 +39,26 @@ interface DeclaredScreen {
   name: string;
   viewport: keyof typeof VIEWPORT_WIDTH;
   height?: number;
+  /** An element capture (SC-623): its size is the element's, not the viewport's. */
+  element: boolean;
 }
 
 async function declaredScreens(): Promise<DeclaredScreen[]> {
   const source = await Bun.file(SCREENS_FILE).text();
   const body = source.slice(source.indexOf('VISUAL_SCREENS'));
-  return [...body.matchAll(/name:\s*'([^']+)',[\s\S]*?viewport:\s*'(desktop|phone)',/g)].map(
-    (match) => {
-      const [entry, name, viewport] = match;
-      const height = /height:\s*([\d_]+)/.exec(
-        body.slice(match.index, match.index + entry.length + 200)
-      );
-      return {
-        name: name as string,
-        viewport: viewport as keyof typeof VIEWPORT_WIDTH,
-        height: height ? Number(height[1]?.replace(/_/g, '')) : undefined,
-      };
-    }
-  );
+  const matches = [...body.matchAll(/name:\s*'([^']+)',[\s\S]*?viewport:\s*'(desktop|phone)',/g)];
+  return matches.map((match, i) => {
+    const [, name, viewport] = match;
+    // One entry's text: from its `name:` to the next entry's.
+    const entry = body.slice(match.index, matches[i + 1]?.index ?? body.length);
+    const height = /height:\s*([\d_]+)/.exec(entry);
+    return {
+      name: name as string,
+      viewport: viewport as keyof typeof VIEWPORT_WIDTH,
+      height: height ? Number(height[1]?.replace(/_/g, '')) : undefined,
+      element: /\belement:\s*'/.test(entry),
+    };
+  });
 }
 
 /** IHDR is the first chunk of every PNG: 8-byte signature, 4-byte length,
@@ -84,6 +86,16 @@ describe('v3 visual-regression baselines', () => {
     for (const screen of await declaredScreens()) {
       const size = await pngSize(join(BASELINE_DIR, `${screen.name}.png`));
       const width = VIEWPORT_WIDTH[screen.viewport];
+      if (screen.element) {
+        // Narrower than the viewport is the element; wider is not possible
+        // from the renderer this harness starts.
+        if (size.width > width) {
+          wrong.push(
+            `${screen.name}: ${size.width}px wide, wider than ${width} (${screen.viewport})`
+          );
+        }
+        continue;
+      }
       if (size.width !== width) {
         wrong.push(`${screen.name}: ${size.width}px wide, expected ${width} (${screen.viewport})`);
       }

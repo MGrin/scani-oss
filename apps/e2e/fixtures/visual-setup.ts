@@ -2,14 +2,14 @@ import { existsSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { type Browser, chromium, type Page } from '@playwright/test';
-import type { VisualSession } from '../visual/screens';
+import { FORECAST_AS_OF, type VisualSession } from '../visual/screens';
 import {
   type ObservedContent,
   provenanceFailure,
   type SessionContent,
 } from '../visual/session-provenance';
 import { signIn } from './auth';
-import { createAccount, createHolding } from './ui';
+import { createAccount, createHolding, findDatabaseTokenId, trpcMutate } from './ui';
 
 // `import.meta.dir` is Bun-only and this module is loaded by the Playwright
 // runner under Node; resolve the standard ESM way instead.
@@ -47,6 +47,17 @@ export const VISUAL_EMPTY_SESSION_FILE = resolve(E2E_ROOT, '.visual-empty-sessio
  * the empty session already makes.
  */
 export const VISUAL_ALLOCATION_SESSION_FILE = resolve(E2E_ROOT, '.visual-allocation-session.json');
+
+/**
+ * A fourth signed-in user holding a book of recurring payments, for the
+ * screens declared `session: 'forecast'` (SC-623).
+ *
+ * A separate account because home's "What's due" block lists recurring
+ * payments, so seeding them on the first user would rewrite both of its home
+ * baselines. It is also the session that found the sign-in budget was already
+ * spent — see `sessionUserAgent`.
+ */
+export const VISUAL_FORECAST_SESSION_FILE = resolve(E2E_ROOT, '.visual-forecast-session.json');
 
 /**
  * The websocket `scripts/visual.ts` publishes for the containerised browser.
@@ -136,6 +147,57 @@ const ALLOCATION_PORTFOLIO = [
   { account: 'Cash Buffer', type: 'Other', quantity: '4200' },
 ];
 
+/** The money the forecast's book is drawn down from. USD, as `PORTFOLIO` is,
+ *  for the same reason: a converted figure is a function of an FX rate. */
+const FORECAST_PORTFOLIO = { account: 'Operating', type: 'Checking Account', quantity: '14000' };
+
+/**
+ * The recurring book. Sized so the money RUNS OUT inside the twelve-month
+ * window — in August 2027, from 14,000 — because the exhausted branch is the
+ * one SC-623 is about: it alone draws the zero reference line and paints
+ * `--loss`. A book that lasted would render "lasts beyond 12 months".
+ *
+ * Every anchor falls due AFTER `FORECAST_AS_OF`, and that is what keeps the
+ * picture still. Occurrence rows are materialised relative to the REAL date,
+ * and one dated before the pinned day would be counted overdue — a count that
+ * would grow as the real date moves. Dated after it, a materialised row and the
+ * rule's projection of the same due date are the same movement, so the
+ * forecast is the same whichever of the two produced it. `seedForecastBook`
+ * refuses an anchor that breaks this rather than trusting the list.
+ *
+ * USD throughout, and an inflow among the outflows so the chart has both.
+ */
+const FORECAST_BOOK = [
+  {
+    vendor: 'Foxwood Studios',
+    direction: 'outflow',
+    amount: '3200',
+    unit: 'month',
+    anchor: '2027-03-15',
+  },
+  {
+    vendor: 'Northwind Software',
+    direction: 'outflow',
+    amount: '480',
+    unit: 'month',
+    anchor: '2027-03-20',
+  },
+  {
+    vendor: 'Harbour Insurance',
+    direction: 'outflow',
+    amount: '1350',
+    unit: 'quarter',
+    anchor: '2027-04-01',
+  },
+  {
+    vendor: 'Atlas Retainer',
+    direction: 'inflow',
+    amount: '1500',
+    unit: 'month',
+    anchor: '2027-03-28',
+  },
+] as const;
+
 async function assertStackUp(): Promise<void> {
   const probes: Array<[label: string, url: string]> = [
     ['api', `${API_BASE_URL}/health`],
@@ -208,6 +270,45 @@ async function seedAllocationPortfolio(page: Page): Promise<void> {
   }
 }
 
+/** The operating account and the recurring book drawn from it. Same
+ *  intolerance of a partial seed as `seedPortfolio`: a missing payment moves
+ *  the runway month, and the forecast would still render. */
+async function seedForecastBook(page: Page): Promise<void> {
+  const account = await createAccount(page, {
+    name: FORECAST_PORTFOLIO.account,
+    type: FORECAST_PORTFOLIO.type,
+  });
+  await createHolding(page, {
+    accountId: account.id,
+    symbol: 'USD',
+    quantity: FORECAST_PORTFOLIO.quantity,
+    jobTimeoutMs: 120_000,
+  });
+  const currencyTokenId = await findDatabaseTokenId(page, 'USD');
+  for (const payment of FORECAST_BOOK) {
+    if (payment.anchor <= FORECAST_AS_OF) {
+      throw new Error(
+        `${payment.vendor} is anchored ${payment.anchor}, on or before the pinned ` +
+          `${FORECAST_AS_OF}: it would be counted overdue — see FORECAST_BOOK.`
+      );
+    }
+    const vendor = await trpcMutate<{ id: string }>(page, 'vendors.create', {
+      displayName: payment.vendor,
+    });
+    await trpcMutate(page, 'payments.create', {
+      vendorId: vendor.id,
+      direction: payment.direction,
+      kind: 'fixed',
+      expectedAmount: payment.amount,
+      currencyTokenId,
+      intervalUnit: payment.unit,
+      intervalCount: 1,
+      anchorDate: payment.anchor,
+      accountId: account.id,
+    });
+  }
+}
+
 async function storedSessionIsValid(browser: Browser, file: string): Promise<boolean> {
   if (!existsSync(file)) return false;
   const context = await browser.newContext({ storageState: file, baseURL: BASE_URL });
@@ -237,6 +338,7 @@ const DECLARED_CONTENT: Record<VisualSession, SessionContent> = {
     accounts: ALLOCATION_PORTFOLIO.map((spec) => spec.account),
     holdings: ALLOCATION_PORTFOLIO.length,
   },
+  forecast: { accounts: [FORECAST_PORTFOLIO.account], holdings: 1 },
 };
 
 /**
@@ -272,6 +374,29 @@ async function assertSessionProvenance(
   }
 }
 
+/** Distinguishes one globalSetup run from the next, as `RUN_TAG` in
+ *  `fixtures/test.ts` does for the suite. */
+const RUN_TAG = `${Date.now().toString(36)}${process.pid.toString(36)}`;
+
+/**
+ * The User-Agent a session signs in under, so its sign-in spends a budget no
+ * other session shares (SC-623).
+ *
+ * The api buckets `send-verification-otp` and `sign-in` TOGETHER, 6 per hour
+ * per client, and with no edge in front of the compose stack a client is
+ * `user-agent|origin|method` — one string for every context this file opened.
+ * So one sign-in cost 2 of 6, three sessions spent all six, and the fourth
+ * session's OTP request came back 429 with `retryAfterSec: 1782`, measured on
+ * a fresh stack. "Two of six stay free" was counting sign-ins, not attempts.
+ *
+ * The User-Agent rather than a header for the reason `fixtures/test.ts` gives,
+ * and with the same property: the limiter is isolated, not lenient — every
+ * session still meets the configured cap on the production key function.
+ */
+function sessionUserAgent(label: string): string {
+  return `scani-e2e/${label}-${RUN_TAG}`;
+}
+
 /**
  * Signs a new user in and leaves its storage state at `file`, running `seed`
  * against the signed-in page first when there is one to run.
@@ -282,7 +407,10 @@ async function establishSession(
   label: string,
   seed?: (page: Page) => Promise<void>
 ): Promise<void> {
-  const context = await browser.newContext({ baseURL: BASE_URL });
+  const context = await browser.newContext({
+    baseURL: BASE_URL,
+    userAgent: sessionUserAgent(label),
+  });
   const page = await context.newPage();
   const { email } = await signIn({ page, label });
   // intentional: names the user the baselines taken under this session describe
@@ -295,12 +423,15 @@ async function establishSession(
 /**
  * Playwright globalSetup for the visual config: confirms the stack is up and
  * leaves a signed-in, seeded storage state at `VISUAL_SESSION_FILE`, an empty
- * one at `VISUAL_EMPTY_SESSION_FILE`, and an eight-account one at
- * `VISUAL_ALLOCATION_SESSION_FILE`.
+ * one at `VISUAL_EMPTY_SESSION_FILE`, an eight-account one at
+ * `VISUAL_ALLOCATION_SESSION_FILE`, and one holding a recurring book at
+ * `VISUAL_FORECAST_SESSION_FILE`.
  *
- * Three sign-ins on a cold run, against the api's limit of 6 per IP per hour.
- * That is the headroom this loop has, and a fourth session is the change that
- * would spend it.
+ * Four sign-ins on a cold run. Each spends 2 of the api's 6 auth attempts per
+ * client per hour — the OTP request and the sign-in — and each signs in under
+ * its own client (`sessionUserAgent`), so each keeps 4 of its 6 free. On one
+ * shared client the same run needs 8 of 6, which is why the fourth session
+ * could not be added without that.
  *
  * The session is reused across runs for the same reason the screenshot
  * harness reuses its own — the API rate-limits sign-ins to 6 per IP per hour —
@@ -323,6 +454,7 @@ export default async function globalSetup(): Promise<void> {
       [VISUAL_SESSION_FILE, 'seeded', 'visual', seedPortfolio],
       [VISUAL_EMPTY_SESSION_FILE, 'empty', 'visual-empty', undefined],
       [VISUAL_ALLOCATION_SESSION_FILE, 'allocation', 'visual-allocation', seedAllocationPortfolio],
+      [VISUAL_FORECAST_SESSION_FILE, 'forecast', 'visual-forecast', seedForecastBook],
     ] as const) {
       if (!fresh && (await storedSessionIsValid(browser, file))) {
         // intentional: tells the operator which user the baselines describe
