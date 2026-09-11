@@ -1,8 +1,8 @@
 import path from 'node:path';
+import { viteVersion } from '@scani/ui/vite/version-plugin';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
 import svgr from 'vite-plugin-svgr';
-import { viteVersion } from './plugins/vite-version';
 
 export default defineConfig({
   plugins: [

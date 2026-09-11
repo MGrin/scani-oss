@@ -7,6 +7,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./tailwind-preset": "./tailwind-preset.js",
+    "./vite/version-plugin": "./src/vite/version-plugin.ts",
     "./styles/globals.css": "./src/styles/globals.css",
     "./styles/v3-fonts.css": "./src/styles/v3-fonts.css",
     "./styles/v3-tokens.css": "./src/styles/v3-tokens.css",
@@ -170,6 +171,7 @@
     "@types/react-dom": "^18.3.7",
     "tailwindcss": "^3.4.19",
     "tailwindcss-animate": "^1.0.7",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vite": "^5.4.21"
   }
 }
