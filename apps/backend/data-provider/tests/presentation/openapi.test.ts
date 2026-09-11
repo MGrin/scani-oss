@@ -44,7 +44,6 @@ describe('OpenAPI document', () => {
     // exactly the nine procedures the PR says it did.
     // (26 since SC-208 added `storage.readObject` + `storage.writeObject`;
     // 24 since SC-167 added `storage.objectExists`.)
-    // One fewer than private: no waitlist router.
     expect(everyOperation().length).toBe(17);
   });
 
