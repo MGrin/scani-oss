@@ -328,9 +328,31 @@ describe('SC-1029 — a run that compared nothing does not render as a pass', ()
    */
   test('the verdict name is on a job that a silent run does not run', async () => {
     const { header } = await checkJob();
-    expect(header).toContain('name: Release notes cover every releasable commit');
+    expect(header).toContain("'Release notes cover every releasable commit'");
     expect(header).toMatch(/^\s*if:/m);
     expect(header).toContain('needs: target');
+  });
+
+  /**
+   * On an ordinary pull request this job runs only to post the vacuous success,
+   * and under the verdict's name `gh pr checks` then showed two identical green
+   * rows, one of which compared nothing. The job name now depends on the mode;
+   * the status context it posts does not, because a ruleset matches on that.
+   */
+  test('a reported run wears a different job name; a checked run wears the verdict', async () => {
+    const { chained, header } = await checkJob();
+    const name =
+      /^\s*name: \$\{\{ needs\.target\.outputs\.mode == 'reported' && '([^']+)' \|\| '([^']+)' \}\}$/m.exec(
+        header
+      );
+    // must-be-FOUND: a reshaped expression is a thrown assertion, not a pass.
+    expect(name).not.toBeNull();
+    const [, reported, checked] = name ?? [];
+    expect(checked).toBe('Release notes cover every releasable commit');
+    expect(reported).not.toBe(checked);
+    expect(reported).not.toContain('cover every releasable commit');
+    // control: the context an ordinary PR receives still carries the verdict's name.
+    expect(chained).toContain("context: 'Release notes cover every releasable commit'");
   });
 
   /**
