@@ -3,7 +3,7 @@ import { isMissingObjectError } from '../src/missing-object';
 
 describe('isMissingObjectError', () => {
   test('matches the message R2 actually returns through tRPC', () => {
-    // The literal text of Sentry SCANI-WORKER-P. The predicate this
+    // The literal text of the Sentry error. The predicate this
     // replaced (/NoSuchKey|404|not found/i) matched none of these words.
     expect(isMissingObjectError(new Error('The specified key does not exist.'))).toBe(true);
   });

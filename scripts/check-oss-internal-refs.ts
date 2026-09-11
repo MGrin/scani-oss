@@ -184,6 +184,21 @@ const RULES: readonly Rule[] = [
     antiProbe: 'connect-src https://*.ingest.sentry.io https://o12345.ingest.sentry.io/678',
   },
   {
+    name: 'Sentry issue short-id',
+    // The suffix is Sentry's base32 alphabet, which has no I, L, O or U — not a
+    // decimal, so issue twelve renders as a letter. A digits-only suffix read
+    // half of what had already travelled (SC-923).
+    //
+    // Landed in one commit with the removal of every id already in the mirror.
+    // Pre-push reads the whole content of each pushed file, so the rule alone
+    // would have refused every later port of those files, on content older
+    // than the rule.
+    pattern: /\bSCANI-[A-Z]+-[0-9A-HJKMNP-TV-Z]+\b/,
+    why: 'an issue id in our own Sentry organisation, which no reader of this repository can open. Keep the argument and drop the id',
+    probe: `see ${'SCANI'}-WORKER-P for the trace`,
+    antiProbe: `the scani-worker-1 machine, the ${'SCANI'}-FRONTEND-LOGIN flow, SCANI_CLOUD_URL and SC-923`,
+  },
+  {
     name: 'analytics project key',
     // The vendor goes deliberately unnamed here and in the test beside it: the
     // private-side marker list in `scripts/oss-eligibility.ts` already treats
@@ -517,7 +532,7 @@ function isBinary(content: string): boolean {
  *      all of them is a refusal on ordinary work — the same reasoning that
  *      keeps `harness` and `orchestrator` off the rule list.
  *   3. The only way to clear such a refusal is `OSS_ALLOW_INTERNAL_REFS=1`,
- *      which switches off the SEVEN REFUSAL RULES as well. A weak verdict that
+ *      which switches off the EIGHT REFUSAL RULES as well. A weak verdict that
  *      can only be cleared by waiving the strong ones is worse than no verdict:
  *      it is `ADVISORY_RULES`' hazard with the tiers collapsed back together.
  *

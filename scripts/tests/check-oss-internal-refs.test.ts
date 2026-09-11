@@ -356,6 +356,30 @@ describe('findInternalRefs — what must not travel', () => {
     ).toHaveLength(0);
   });
 
+  /**
+   * SC-923. The suffix is Sentry's base32, so issue twelve is a letter. The
+   * ticket's digits-only pattern read 6 of the 12 already in the mirror, so the
+   * letter suffixes are the arms that matter.
+   */
+  test('a Sentry issue short-id is refused, whatever its suffix', () => {
+    for (const id of ['P', 'C', '7', '1Z']) {
+      const refs = findInternalRefs(`// see ${'SCANI'}-WORKER-${id} for the trace`);
+      expect(refs).toHaveLength(1);
+      expect(refs[0]?.rule).toBe('Sentry issue short-id');
+    }
+  });
+
+  /**
+   * The must-be-ABSENT control. Fly machine and compose names are lowercase,
+   * the env vars take an underscore, and an uppercase word after the project
+   * name carries a letter base32 never uses.
+   */
+  test('a Sentry-shaped name that is not a short-id is clean', () => {
+    expect(findInternalRefs('fly machine scani-worker-1')).toHaveLength(0);
+    expect(findInternalRefs(`the ${'SCANI'}-FRONTEND-LOGIN flow`)).toHaveLength(0);
+    expect(findInternalRefs('SCANI_CLOUD_URL and SC-923')).toHaveLength(0);
+  });
+
   test('an analytics project key is refused', () => {
     const refs = findInternalRefs(`ANALYTICS_KEY=${'phc_'}${'a'.repeat(24)}`);
     expect(refs).toHaveLength(1);
@@ -467,7 +491,7 @@ describe('findAdvisoryRefs — agent-tooling jargon, reported and never refused'
 describe('selfTest — the guard demonstrating it still works', () => {
   test('every shipped rule matches its probe and rejects its anti-probe', () => {
     expect(selfTest()).toEqual([]);
-    expect(RULE_COUNT).toBe(10);
+    expect(RULE_COUNT).toBe(11);
   });
 
   test('a rule that stopped matching is caught', () => {
@@ -565,7 +589,7 @@ describe('a population read only in part is not a PASS (SC-842)', () => {
     expect(out).toContain('baseline.png');
     expect(out).toContain('1 of 2 staged file(s) scanned');
     // Exit 0 is deliberate — see the verdict block in the guard. A refusal here
-    // is only clearable with OSS_ALLOW_INTERNAL_REFS=1, which waives the seven
+    // is only clearable with OSS_ALLOW_INTERNAL_REFS=1, which waives the eight
     // refusal rules too.
     expect(code).toBe(EXIT_OK);
   });

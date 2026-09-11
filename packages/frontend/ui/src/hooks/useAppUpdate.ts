@@ -158,7 +158,7 @@ export function useAppUpdate(): AppUpdateState {
             // Then try to pull the new worker down. `requestServiceWorkerUpdate`
             // owns the failure — an un-awaited `update()` here escaped this
             // try/catch and reached Sentry as an unhandled rejection whenever
-            // a deploy landed mid-session (SCANI-FRONTEND-C).
+            // a deploy landed mid-session.
             const registration = await serviceWorkerReady();
             if (registration) {
               await requestServiceWorkerUpdate(registration);

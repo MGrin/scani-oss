@@ -9,7 +9,7 @@ import { type ProbeResult, probeDataProvider } from './health-probe';
  * reason about and one thing to test.
  *
  * The rule it exists to enforce: **do not alert on a single failed cycle.**
- * Sentry SCANI-BACKEND-7 was three `data-provider re-probe failed: The
+ * The Sentry issue behind it was three `data-provider re-probe failed: The
  * operation was aborted.` errors, and all three landed inside a deploy
  * window — the api on release N probing while release N+1 replaced the
  * data-provider machine. `apps/backend/data-provider/fly.toml` runs
