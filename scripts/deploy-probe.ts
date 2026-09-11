@@ -44,8 +44,9 @@
 //   identity   `--commit`. The strongest arm and it needs no per-change design:
 //              the served bundle names the commit it was built from, so
 //              ancestry answers "is my change in there" outright. Available on
-//              hosts whose deploy passes a Sentry DSN; UNAVAILABLE, not absent,
-//              elsewhere. It is a fact about ONE ARTEFACT: where a pipeline
+//              hosts whose deploy passes a Sentry DSN, and on static pages that
+//              carry `<meta name="scani-commit">` (docs, SC-995); UNAVAILABLE,
+//              not absent, elsewhere. It is a fact about ONE ARTEFACT: where a pipeline
 //              rebuilds by path, a change that ships without touching this
 //              bundle's inputs cannot move its marker, and the arm reads
 //              non-contained over a deploy that succeeded. It names both
@@ -75,7 +76,7 @@ import {
   classifyShape,
   countLiteral,
   type Expectation,
-  extractAssets,
+  extractPageCommit,
   extractRelease,
   type Fetched,
   identityVerdict,
@@ -195,8 +196,33 @@ async function main(argv: readonly string[]): Promise<number> {
   // `classifyIndex`, NOT `classifyShape`: on an index document `text/html` is
   // correct rather than a tell, so the asset arm condemns every healthy one.
   const indexRead = classifyIndex(index);
+
+  // A static site references no bundle, and until SC-995 that made
+  // `docs.scani.xyz` unanswerable. Its pages name their own commit, so the
+  // index document is the artefact and identity is read straight off it.
+  const pageCommit = index.status === 200 ? extractPageCommit(index.body) : null;
+  if (indexRead.kind !== 'index' && pageCommit !== null && commit !== null && commit !== '') {
+    console.log(
+      `  read ${origin}/ — HTTP ${index.status}, ${index.body.length} bytes, a static page naming commit ${pageCommit.slice(0, 12)}`
+    );
+    const arms = [identityArm(commit, pageCommit)];
+    if (signal !== null) {
+      arms.push({
+        arm: `signal '${signal}'`,
+        state: 'unverified',
+        detail: `${origin}/ references no /assets/*.js, so there is no bundle to count a code shape over`,
+      });
+    }
+    return report(arms, `over ${origin}/`, tail);
+  }
+
   if (indexRead.kind !== 'index') {
-    console.log(`  ${mark('fail')} ${origin}/ — ${indexRead.why}`);
+    console.log(
+      `  ${mark('fail')} ${origin}/ — ${indexRead.why}` +
+        (index.status === 200 && pageCommit === null
+          ? ', and no <meta name="scani-commit"> to read identity from instead'
+          : '')
+    );
     console.log(
       `deploy-probe: UNVERIFIED · exit ${EXIT_UNKNOWN} · the index document could not be read, so no asset could be resolved${tail}`
     );
@@ -260,14 +286,7 @@ async function main(argv: readonly string[]): Promise<number> {
         detail: `no release marker in ${readable.length} readable artefact(s) — this host's deploy passes no Sentry DSN, so it cannot say which commit it serves. NOT a claim that your commit is absent`,
       });
     } else {
-      const head = runGit(['rev-parse', commit], process.cwd());
-      const want = head.kind === 'ran' ? head.stdout.trim() : commit;
-      const verdict = isAncestor(want, served, process.cwd());
-      if (verdict === 'yes' || verdict === 'no') {
-        arms.push(identityVerdict(want, served, verdict === 'yes'));
-      } else {
-        arms.push({ arm: 'identity', state: 'unverified', detail: verdict.why });
-      }
+      arms.push(identityArm(commit, served));
     }
   }
 
@@ -317,12 +336,23 @@ async function main(argv: readonly string[]): Promise<number> {
     return EXIT_UNKNOWN;
   }
 
-  for (const a of arms) console.log(`  ${mark(a.state)} ${a.arm}: ${a.detail}`);
-
   // The denominator, on every verdict, naming the artefacts a conclusion is
   // scoped to. A must-be-ABSENT reading is a fact about THESE bytes; a change
   // in a lazily loaded chunk is legitimately absent from all of them.
-  const scope = `over ${readable.map((c) => c.path).join(' ')}`;
+  return report(arms, `over ${readable.map((c) => c.path).join(' ')}`, tail);
+}
+
+function identityArm(commit: string, served: string): ArmVerdict {
+  const head = runGit(['rev-parse', commit], process.cwd());
+  const want = head.kind === 'ran' ? head.stdout.trim() : commit;
+  const verdict = isAncestor(want, served, process.cwd());
+  return verdict === 'yes' || verdict === 'no'
+    ? identityVerdict(want, served, verdict === 'yes')
+    : { arm: 'identity', state: 'unverified', detail: verdict.why };
+}
+
+function report(arms: readonly ArmVerdict[], scope: string, tail: string): number {
+  for (const a of arms) console.log(`  ${mark(a.state)} ${a.arm}: ${a.detail}`);
   switch (worstOf(arms)) {
     case 'unverified':
       console.log(
