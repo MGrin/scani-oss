@@ -8,6 +8,7 @@
     "start": "./dist/server",
     "clean": "rm -rf dist",
     "backfill:statement-fees": "bun scripts/backfill-statement-fees.ts",
+    "recompute:trade-fee-history": "bun scripts/recompute-trade-fee-history.ts",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
     "type-check": "tsgo --noEmit -p tsconfig.test.json"

@@ -177,17 +177,6 @@ export class RollupPortfolioValueDailyUseCase {
             // through silently to the per-call DB path for anything
             // a future code path needs but the prefetch missed.
             const userHoldings = await this.holdingRepository.findByUser(user.id);
-
-            // Prefetch all the prices the inner per-(day, holding)
-            // loop is about to ask for — single query instead of
-            // ~80k. Any pair the prefetch did not cover falls through
-            // to the per-call DB path rather than answering "no price".
-            const priceLookup = await this.priceGraphService.buildPriceLookup(
-              userHoldings.map((h) => h.tokenId),
-              baseCurrencyId,
-              runStart,
-              undefined
-            );
             const holdingIds = userHoldings.map((h) => h.id);
             // Coverage joins the same prefetch: `has_complete_tx_history`
             // is a property of the import, not of the snapshot date, so
@@ -197,6 +186,24 @@ export class RollupPortfolioValueDailyUseCase {
               this.observationRepository.findForHoldingsAll(holdingIds),
               this.coverageRepository.findManyByHoldingIds(holdingIds),
             ]);
+
+            // Prefetch all the prices the inner per-(day, holding)
+            // loop is about to ask for — single query instead of
+            // ~80k. Any pair the prefetch did not cover falls through
+            // to the per-call DB path rather than answering "no price".
+            // Fee tokens join the held ones because the walk values every
+            // trade fee on every day it re-walks (SC-1142), and a fee paid
+            // in a token the user no longer holds would otherwise take the
+            // per-call path once per fee per day.
+            const feeTokenIds = [...txHistory.values()].flatMap((txs) =>
+              txs.flatMap((t) => (t.feeTokenId ? [t.feeTokenId] : []))
+            );
+            const priceLookup = await this.priceGraphService.buildPriceLookup(
+              [...userHoldings.map((h) => h.tokenId), ...feeTokenIds],
+              baseCurrencyId,
+              runStart,
+              undefined
+            );
 
             // Resolved once for all `lookback` days: "never had a price
             // row and still in cooldown" is a statement about the token's

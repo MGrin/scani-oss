@@ -24,9 +24,12 @@ import {
   type Section104Plan,
 } from '../../lib/lot-matching';
 import {
+  type FeeValuation,
   type TxValuation,
   type ValuationBasis,
+  valueTradeFeeInBase,
   valueTransactionInBase,
+  withTradeFee,
 } from '../../lib/tx-valuation';
 import { HoldingRepository } from '../../repositories/HoldingRepository';
 import { HoldingTransactionRepository } from '../../repositories/HoldingTransactionRepository';
@@ -242,7 +245,9 @@ export interface DisposalLotMatch {
   quantity: Decimal;
   /** Base currency at the disposal's own date, or null when nothing was
    *  valued — either because no price route resolved, or because this outcome
-   *  never asked for one. `outcome` distinguishes the two. */
+   *  never asked for one. `outcome` distinguishes the two. Net of the
+   *  disposal's trade fee, split across the rows the way proceeds are
+   *  (SC-1142). */
   proceeds: Decimal | null;
   /** Base currency at the *acquisition's* date. Zero when `acquiredAt` is null. */
   costBasis: Decimal;
@@ -572,10 +577,23 @@ const NO_RULE_HIDDEN_TX_IDS: ReadonlySet<string> = new Set<string>();
 // by the gain nobody booked. `transfersUnreviewed` counts those rows so the
 // figure can carry the caveat and point at the queue that clears it.
 const OUTFLOW_NEUTRAL_KINDS = new Set(['withdraw', 'transfer_out']);
-// Fees are ignored for cost basis in the MVP. A more accurate
-// accounting model would deduct fees from realized PnL on the same
-// transaction, but that requires per-tx fee allocation logic that
-// matters more for tax reporting than for a chart.
+// A row's own trade fee — `fee_quantity` in `fee_token_id` — reaches the walk
+// (SC-1142). An acquisition's fee adds to the lot's cost and a disposal's comes
+// off its proceeds, identically under both identification methods, because
+// both treat incidental costs as allowable. `valueTradeFeeInBase` says what a
+// fee is worth.
+//
+// Only where the walk values the row: an acquisition that opens a lot at its
+// own worth, or an outflow that realizes. A move between the reader's own
+// accounts and an outflow that books nothing are neither, so their fee is not
+// applied — the quantity side of a transfer's fee is `rehome`'s (SC-506), and
+// the review queue's `fee` answer is SC-888's. A standalone `kind = 'fee'` row
+// is not a trade fee either, and is still skipped with the other unknown kinds
+// (SC-857 states what that leaves in the pool).
+//
+// A fee paid in a THIRD token is valued, and nothing is taken out of that
+// token's holding. Whether spending BNB on a fee is itself a disposal of BNB is
+// a tax-regime question that has not been ruled on, so the walk does not answer it.
 
 /**
  * Per-holding cost-basis walker.
@@ -597,7 +615,7 @@ const OUTFLOW_NEUTRAL_KINDS = new Set(['withdraw', 'transfer_out']);
  * not silent):
  *   - Two identification methods, no LIFO and no specific-id
  *   - No wash-sale detection
- *   - Fees ignored for cost basis
+ *   - A trade fee paid in a third token is valued, never disposed of
  *   - deposit / reward / airdrop / interest / transfer_in lots use
  *     fair-market value at receipt (priceNative when set, otherwise
  *     held-token spot price → base via PriceGraphService); only when
@@ -941,17 +959,25 @@ export class CostBasisService {
     // and two chances to disagree. Slices take a share of the whole exactly
     // the way `recordDisposal` splits proceeds, so a lot and the pro-rata part
     // of it that a disposal claims cannot round apart.
+    //
+    // The trade fee is added HERE, once, so the pool lot and every Section 104
+    // slice of the same acquisition carry the same share of it (SC-1142).
     const acquisitionValues = new Map<string, TxValuation | null>();
     const acquisitionValue = async (tx: HoldingTransaction): Promise<TxValuation | null> => {
       const hit = acquisitionValues.get(tx.id);
       if (hit !== undefined) return hit;
-      const value = await this.txValueInBase(
-        dbTx,
-        tx,
-        new Decimal(tx.quantity).abs(),
-        baseCurrencyId,
-        heldTokenByHolding.get(tx.holdingId) ?? null,
-        priceLookup
+      const heldTokenId = heldTokenByHolding.get(tx.holdingId) ?? null;
+      const value = withTradeFee(
+        await this.txValueInBase(
+          dbTx,
+          tx,
+          new Decimal(tx.quantity).abs(),
+          baseCurrencyId,
+          heldTokenId,
+          priceLookup
+        ),
+        await this.tradeFeeInBase(dbTx, tx, baseCurrencyId, heldTokenId, priceLookup),
+        WHOLE_ROW
       );
       acquisitionValues.set(tx.id, value);
       return value;
@@ -1042,13 +1068,10 @@ export class CostBasisService {
       }
 
       if (OUTFLOW_SELL_KINDS.has(tx.kind)) {
-        const proceeds = await this.txValueInBase(
-          dbTx,
-          tx,
-          qtyAbs,
-          baseCurrencyId,
-          heldTokenId,
-          priceLookup
+        const proceeds = withTradeFee(
+          await this.txValueInBase(dbTx, tx, qtyAbs, baseCurrencyId, heldTokenId, priceLookup),
+          await this.tradeFeeInBase(dbTx, tx, baseCurrencyId, heldTokenId, priceLookup),
+          WHOLE_ROW.neg()
         );
         doubtFor(holdingId).observe(proceeds);
         const popped = await matchedLots(`${tx.id}#${WHOLE_PORTION.index}`, holdingId, qtyAbs);
@@ -1142,13 +1165,19 @@ export class CostBasisService {
             // at occurredAt) fall through silently at zero realized rather than
             // fabricating a phantom loss.
             const popped = await matchedLots(`${tx.id}#${portion.index}`, holdingId, portion.qty);
-            const proceeds = await this.txValueInBase(
-              dbTx,
-              tx,
-              portion.qty,
-              baseCurrencyId,
-              heldTokenId,
-              priceLookup
+            // The fee is the whole row's, so this share bears its part of it
+            // and a share that realizes nothing bears none.
+            const proceeds = withTradeFee(
+              await this.txValueInBase(
+                dbTx,
+                tx,
+                portion.qty,
+                baseCurrencyId,
+                heldTokenId,
+                priceLookup
+              ),
+              await this.tradeFeeInBase(dbTx, tx, baseCurrencyId, heldTokenId, priceLookup),
+              portion.qty.div(qtyAbs).neg()
             );
             doubtFor(holdingId).observe(proceeds);
             record(
@@ -1217,13 +1246,17 @@ export class CostBasisService {
           record(acc.tx, acc.qtyAbs, null, acc.popped, 'awaiting_pair', acc.portion);
           continue;
         }
-        const proceeds = await this.txValueInBase(
-          dbTx,
-          acc.tx,
-          acc.qtyAbs,
-          baseCurrencyId,
-          acc.heldTokenId,
-          priceLookup
+        const proceeds = withTradeFee(
+          await this.txValueInBase(
+            dbTx,
+            acc.tx,
+            acc.qtyAbs,
+            baseCurrencyId,
+            acc.heldTokenId,
+            priceLookup
+          ),
+          await this.tradeFeeInBase(dbTx, acc.tx, baseCurrencyId, acc.heldTokenId, priceLookup),
+          acc.qtyAbs.div(new Decimal(acc.tx.quantity).abs()).neg()
         );
         doubtFor(acc.holdingId).observe(proceeds);
         record(
@@ -1296,7 +1329,28 @@ export class CostBasisService {
       priceLookup
     );
   }
+
+  /** This row's trade fee in base currency at `occurredAt` — see `valueTradeFeeInBase`. */
+  private async tradeFeeInBase(
+    dbTx: DatabaseTransaction | undefined,
+    tx: HoldingTransaction,
+    baseCurrencyId: string,
+    heldTokenId: string | null,
+    priceLookup?: PriceLookup
+  ): Promise<FeeValuation | null> {
+    return valueTradeFeeInBase(
+      this.priceGraphService,
+      dbTx,
+      tx,
+      baseCurrencyId,
+      heldTokenId,
+      priceLookup
+    );
+  }
 }
+
+/** The share of a row's trade fee an acquisition bears: all of it. */
+const WHOLE_ROW = new Decimal(1);
 
 // Accumulates the reasons a walk's output is less than a settled figure.
 // Two of them, both one-directional in their effect on reported gain: a

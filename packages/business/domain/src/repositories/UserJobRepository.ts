@@ -534,6 +534,26 @@ export class UserJobRepository {
   }
 
   /**
+   * The recorded state of each job id that has a row. An id with no row was
+   * never enqueued through the mirror, which is what lets a one-shot sweep
+   * tell "not done yet" from "done" without asking BullMQ — whose completed
+   * jobs are evicted past `removeOnComplete`.
+   */
+  async findStatesByJobIds(
+    jobIds: string[],
+    transaction?: DatabaseTransaction
+  ): Promise<Map<string, UserJobState>> {
+    const out = new Map<string, UserJobState>();
+    if (jobIds.length === 0) return out;
+    const rows = await this.getDb(transaction)
+      .select({ jobId: schema.userJobs.jobId, state: schema.userJobs.state })
+      .from(schema.userJobs)
+      .where(inArray(schema.userJobs.jobId, jobIds));
+    for (const row of rows) out.set(row.jobId, row.state);
+    return out;
+  }
+
+  /**
    * Find rows that have been `queued` longer than `olderThan`. Used by
    * the orphan reconciler: if the backend crashed between
    * `insertEnqueued` and `queue.add` we left a row sitting in `queued`

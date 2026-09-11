@@ -87,6 +87,10 @@ export {
   ParseScreenshotUseCase,
 } from './ParseScreenshotUseCase';
 export {
+  PlanTradeFeeRecomputeUseCase,
+  type TradeFeeRecomputePlan,
+} from './PlanTradeFeeRecomputeUseCase';
+export {
   type ReconcilePaymentsSummary,
   ReconcilePaymentsUseCase,
 } from './ReconcilePaymentsUseCase';
