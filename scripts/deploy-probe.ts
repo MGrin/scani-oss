@@ -43,10 +43,12 @@
 //              not travel to a sibling.
 //   identity   `--commit`. The strongest arm and it needs no per-change design:
 //              the served bundle names the commit it was built from, so
-//              ancestry answers "is my change in there" outright. Available on
-//              hosts whose deploy passes a Sentry DSN, and on static pages that
-//              carry `<meta name="scani-commit">` (docs, SC-995); UNAVAILABLE,
-//              not absent, elsewhere. It is a fact about ONE ARTEFACT: where a pipeline
+//              ancestry answers "is my change in there" outright. Read from the
+//              bundle's Sentry release where the deploy passes a DSN, else from
+//              the site's `/version.json` (every Vite site, SC-964), and from
+//              `<meta name="scani-commit">` on static pages (docs, SC-995);
+//              UNAVAILABLE, not absent, where none of those names a commit.
+//              It is a fact about ONE ARTEFACT: where a pipeline
 //              rebuilds by path, a change that ships without touching this
 //              bundle's inputs cannot move its marker, and the arm reads
 //              non-contained over a deploy that succeeded. It names both
@@ -78,6 +80,7 @@ import {
   type Expectation,
   extractPageCommit,
   extractRelease,
+  extractVersionCommit,
   type Fetched,
   identityVerdict,
   manifestDiff,
@@ -88,6 +91,9 @@ import {
 
 /** A path no build has ever emitted, so whatever comes back is the fallback. */
 const INVENTED = '/assets/index-ZZZZprobe0.js';
+
+/** Where every Vite site names the commit it was built from (SC-964). */
+const VERSION_PATH = '/version.json';
 
 async function get(url: string): Promise<Fetched> {
   try {
@@ -274,16 +280,30 @@ async function main(argv: readonly string[]): Promise<number> {
   const corpus = readable.map((c) => c.got.body).join('\n');
 
   const arms: ArmVerdict[] = [];
+  const read = readable.map((c) => c.path);
 
   if (commit !== null && commit !== '') {
-    const served = readable.map((c) => extractRelease(c.got.body)).find((r) => r !== null) ?? null;
+    let served = readable.map((c) => extractRelease(c.got.body)).find((r) => r !== null) ?? null;
+    // No Sentry release in the bundle, so ask the site's own version.json,
+    // which names the commit on every Vite site since SC-964.
+    let versionRead = '';
+    if (served === null) {
+      const version = await get(`${origin}${VERSION_PATH}`);
+      served = extractVersionCommit(version);
+      versionRead = `HTTP ${version.status}, ${version.contentType || 'no content-type'}, ${version.body.length} bytes`;
+      console.log(
+        `  read ${VERSION_PATH} — ${versionRead}` +
+          (served === null ? ', names no commit' : `, names commit ${served.slice(0, 12)}`)
+      );
+      if (served !== null) read.push(VERSION_PATH);
+    }
     if (served === null) {
       arms.push({
         arm: 'identity',
         state: 'unavailable',
         // The distinction this file exists to keep: no marker is a fact about
         // the HOST, never about the commit.
-        detail: `no release marker in ${readable.length} readable artefact(s) — this host's deploy passes no Sentry DSN, so it cannot say which commit it serves. NOT a claim that your commit is absent`,
+        detail: `no release marker in ${readable.length} readable artefact(s) and no commit in ${VERSION_PATH} (${versionRead}) — this host cannot say which commit it serves. NOT a claim that your commit is absent`,
       });
     } else {
       arms.push(identityArm(commit, served));
@@ -339,7 +359,7 @@ async function main(argv: readonly string[]): Promise<number> {
   // The denominator, on every verdict, naming the artefacts a conclusion is
   // scoped to. A must-be-ABSENT reading is a fact about THESE bytes; a change
   // in a lazily loaded chunk is legitimately absent from all of them.
-  return report(arms, `over ${readable.map((c) => c.path).join(' ')}`, tail);
+  return report(arms, `over ${read.join(' ')}`, tail);
 }
 
 function identityArm(commit: string, served: string): ArmVerdict {

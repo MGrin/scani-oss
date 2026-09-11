@@ -25,6 +25,22 @@ const VERSION_STORAGE_KEY = 'scani-last-known-version';
 const DISMISSED_VERSION_STORAGE_KEY = 'scani-dismissed-update-version';
 
 /**
+ * The build identity a `/version.json` payload offers, or `null` when it offers
+ * none worth comparing (a dev server, or anything that is not the payload).
+ *
+ * Only `version` is read. The payload also names the `commit` a build came
+ * from (SC-964), and that must never stand in for it: two builds of one commit
+ * are still two deploys, and keying on the commit would stop a redeploy from
+ * offering the update.
+ */
+export function deployedVersion(payload: unknown): string | null {
+  if (typeof payload !== 'object' || payload === null) return null;
+  const version = (payload as { version?: unknown }).version;
+  if (typeof version !== 'string' || version === '' || version === 'dev') return null;
+  return version;
+}
+
+/**
  * Hook that detects when a new version of the app is deployed.
  *
  * Two detection mechanisms:
@@ -131,10 +147,8 @@ export function useAppUpdate(): AppUpdateState {
         });
         if (!response.ok) return;
 
-        const data = await response.json();
-        const version = data.version;
-
-        if (!version || version === 'dev') return;
+        const version = deployedVersion(await response.json());
+        if (version === null) return;
 
         if (initialVersion.current === null) {
           // First check this session — compare with last known version from localStorage

@@ -22,6 +22,7 @@ import {
   extractAssets,
   extractPageCommit,
   extractRelease,
+  extractVersionCommit,
   type Fetched,
   identityVerdict,
   manifestDiff,
@@ -190,6 +191,50 @@ describe('extractPageCommit — a static site names its own commit (SC-995)', ()
 
   test('a short sha is not a commit', () => {
     expect(extractPageCommit('<meta name="scani-commit" content="cee3544">')).toBeNull();
+  });
+});
+
+describe('extractVersionCommit — every Vite site names its commit (SC-964)', () => {
+  const SHA = 'cee35445753d2c8ecc3f4606fc0fbcf7772a6935';
+  const json = (body: string, over: Partial<Fetched> = {}): Fetched =>
+    fetched({
+      url: 'https://example.test/version.json',
+      contentType: 'application/json',
+      body,
+      ...over,
+    });
+
+  test('finds the commit the build plugin writes', () => {
+    expect(
+      extractVersionCommit(
+        json(`{"version":"1-abc","buildTime":"2026-09-11T10:00:00.000Z","commit":"${SHA}"}`)
+      )
+    ).toBe(SHA);
+  });
+
+  // app.scani.xyz answers an unknown path with index.html at 200, so a site
+  // with no version.json hands back HTML — and that must not parse as a commit
+  // even when the page happens to carry one.
+  test('the SPA fallback is not a payload, even when it names a commit', () => {
+    const html = `<!doctype html><meta name="scani-commit" content="${SHA}">`;
+    expect(
+      extractVersionCommit(json(html, { contentType: 'text/html; charset=utf-8' }))
+    ).toBeNull();
+    expect(extractVersionCommit(json(html))).toBeNull();
+  });
+
+  test('a pre-SC-964 payload names no commit — unavailable, not absent', () => {
+    expect(extractVersionCommit(json('{"version":"1-abc","buildTime":"x"}'))).toBeNull();
+  });
+
+  test('a short or non-string commit is not a commit', () => {
+    expect(extractVersionCommit(json('{"commit":"cee3544"}'))).toBeNull();
+    expect(extractVersionCommit(json('{"commit":42}'))).toBeNull();
+    expect(extractVersionCommit(json('null'))).toBeNull();
+  });
+
+  test('a non-200 reads nothing, whatever the body says', () => {
+    expect(extractVersionCommit(json(`{"commit":"${SHA}"}`, { status: 404 }))).toBeNull();
   });
 });
 

@@ -150,8 +150,9 @@ export function classifyIndex(got: Fetched): IndexVerdict {
  * level up.** Measured 2026-09-03 in one pass: `app.scani.xyz` carries it,
  * `scani.xyz` and `cloud.scani.xyz` serve real JavaScript with no marker at all
  * (their deploys pass no DSN), and `docs.scani.xyz` references no
- * `/assets/*.js`. So `null` here means *this host does not answer that
- * question* and must never be rendered as *your commit is not deployed*.
+ * `/assets/*.js`. So `null` here means *this bundle does not answer that
+ * question* and must never be rendered as *your commit is not deployed* —
+ * {@link extractVersionCommit} is where the probe asks next.
  */
 export function extractRelease(js: string): string | null {
   return /\brelease\s*:\s*["']([0-9a-f]{40})["']/.exec(js)?.[1] ?? null;
@@ -179,6 +180,33 @@ export function extractPageCommit(html: string): string | null {
     if (sha !== undefined) return sha;
   }
   return null;
+}
+
+/**
+ * The commit a site's `/version.json` names, for a host whose bundle carries no
+ * {@link extractRelease} marker (SC-964).
+ *
+ * Every Vite site writes `version.json` at build time, and since SC-964 it
+ * carries the `commit` the deploy passed in — so `scani.xyz` and
+ * `cloud.scani.xyz` can name their commit without a Sentry DSN, which would
+ * have switched error reporting on as a side effect of wanting a marker.
+ *
+ * `null` for anything that is not that payload: a non-200, the SPA fallback's
+ * HTML (`app.scani.xyz` answers an unknown path with `index.html` at 200), a
+ * pre-SC-964 payload with no `commit`, or a short sha. Like a missing release,
+ * that is a fact about the host and never about the commit.
+ */
+export function extractVersionCommit(got: Fetched): string | null {
+  if (got.status !== 200 || /\btext\/html\b/.test(got.contentType)) return null;
+  let payload: unknown;
+  try {
+    payload = JSON.parse(got.body);
+  } catch {
+    return null;
+  }
+  if (typeof payload !== 'object' || payload === null) return null;
+  const commit = (payload as { commit?: unknown }).commit;
+  return typeof commit === 'string' && /^[0-9a-f]{40}$/.test(commit) ? commit : null;
 }
 
 /**
