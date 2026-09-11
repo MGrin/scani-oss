@@ -304,6 +304,69 @@ describe('the process', () => {
     }
   });
 
+  /**
+   * SC-992. The refusal used to print `re-run with OSS_ALLOW_FIGURES=1`, and on
+   * CI that is the one instruction that provably does nothing: the workflow
+   * derives the variable from `github.event.pull_request.labels`, and a re-run
+   * replays the payload stored when the run was created. Measured on
+   * `MGrin/scani-oss#440` — label applied and confirmed attached, `gh run rerun
+   * --failed`, `OSS_ALLOW_FIGURES:` still empty, refused again with the same
+   * three values.
+   *
+   * A documented escape whose documented invocation silently does nothing is
+   * worse than one with no hatch at all: the reader's next inference is *the
+   * hatch is unavailable on CI*, which is what that thread concluded and nearly
+   * acted on by rewriting two pushed commits.
+   *
+   * BOTH ARMS, and the second is the one that rots. Asserting only that the
+   * label is named passes over a message that names the label AND keeps the
+   * false sentence beside it, which is the defect unrepaired.
+   *
+   * THE WORDING IS CONSTRAINED BY WHERE THIS FILE TRAVELS. `ci.yml` is pinned
+   * `merge=ours`, so its two copies are edited independently and neither
+   * carries `types: [... labeled]` today — but this script is `oss-eligible`
+   * and ships to both repos. A message reading *apply the label* full stop
+   * would be true only in a repo that had taken that trigger, so the remedy
+   * names the class that works under every combination: apply it, then raise a
+   * new pull-request event. It stays true if either copy later takes the
+   * trigger, which is the property a single message shipping to two
+   * independently-edited workflows has to have.
+   *
+   * ADDING THAT TRIGGER WAS THE OTHER CANDIDATE AND IT WAS MEASURED AND
+   * DECLINED, in both repos, on 2026-09-11. `ci.yml` is the expensive workflow
+   * and `labeled` cannot be narrowed to one label name at the trigger. Pull
+   * request label events, from `GET /repos/{repo}/issues/events`:
+   *
+   *   MGrin/scani-oss, 90 days   165 total — 159 of them release-please bot
+   *                              churn (`autorelease: pending` 61 applied + 49
+   *                              removed, `autorelease: tagged` 49 applied) and
+   *                              6 `figures-are-synthetic`. A 26:1 ratio of
+   *                              added full CI runs to uses of this hatch, and
+   *                              49 of them would fire on an already-merged PR.
+   *   MGrin/scani, 11 months     115 — 96 of them `bypass-oss-drift`. Private
+   *                              Actions billing is not starting jobs at all
+   *                              (SC-1023), so runs added there may never run.
+   *
+   * The precedent is in the tree rather than in this reasoning:
+   * `oss-drift-check.yml` DOES carry `labeled, unlabeled`, and its
+   * `bypass-oss-drift` hatch works on a bare label for that reason — which is
+   * why 96 applications of it never produced a ticket. A label-driven escape
+   * belongs on a workflow cheap enough to re-fire; this one is bolted to the
+   * full suite. Declining keeps both `ci.yml` copies behaving identically,
+   * which is what makes one message true in both places.
+   */
+  test('the refusal names the label route and no longer prescribes a re-run', () => {
+    const dir = repo();
+    try {
+      stage(dir, 'tests/x.test.ts', "const balance = '98765.43210987';\n");
+      const { out } = run(dir);
+      expect(out).toContain('figures-are-synthetic');
+      expect(out).not.toMatch(/re-run with OSS_ALLOW_FIGURES/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   test('passes a staged fixture whose figures are all timestamps', () => {
     const dir = repo();
     try {

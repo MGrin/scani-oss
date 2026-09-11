@@ -463,8 +463,22 @@ export function main(argv: readonly string[], cwd: string, stdin: string): numbe
       '  cannot tell one somebody made up from one taken off a real account.\n' +
       '\n' +
       '  Replace anything drawn from production with a synthetic value. If they are\n' +
-      '  already synthetic, re-run with OSS_ALLOW_FIGURES=1 — setting it is you\n' +
-      '  asserting that none of them came from real data (SC-887).\n' +
+      '  already synthetic, the escape is OSS_ALLOW_FIGURES=1 — setting it is you\n' +
+      '  asserting that none of them came from real data (SC-887). How you set it\n' +
+      '  depends on where you are reading this:\n' +
+      '\n' +
+      '    locally   OSS_ALLOW_FIGURES=1 git commit ...\n' +
+      '\n' +
+      '    on CI     apply the `figures-are-synthetic` label to the pull request,\n' +
+      '              AND THEN make GitHub raise a new pull-request event — push a\n' +
+      '              commit, update the branch, or close and reopen the PR.\n' +
+      '\n' +
+      '  RE-RUNNING THE JOB DOES NOT WORK AND THIS LINE USED TO SAY IT DID (SC-992).\n' +
+      '  The workflow reads the label out of the event payload, and a re-run replays\n' +
+      '  the payload stored when the run was created — so it carries the labels as\n' +
+      '  they were then, never the one you just applied, and refuses again with the\n' +
+      '  same values. Measured on MGrin/scani-oss#440. The label is not broken; a\n' +
+      '  re-run is simply not a new event, and only a new event carries it.\n' +
       '\n' +
       '  WHAT THIS CANNOT SEE, and it was half of the leak that caused it: PROSE.\n' +
       '  The same change named a live account in two docblocks, a test comment and\n' +
