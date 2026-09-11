@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react';
 import { useUiTranslation } from '../../i18n';
 import { cn } from '../../lib/cn';
 import { Input } from '../../ui/input';
+import { ChoiceRow } from './ChoiceRow';
 import { TruncatedText } from './TruncatedText';
 
 /**
@@ -221,55 +222,28 @@ export function AccountPicker({
               const isSelected = option.id === value;
               const label = accountLabelParts(option.name, option.institution);
               return (
-                <label
+                <ChoiceRow
                   key={option.id}
-                  // `min-h-11` is the 44px touch target, and the whole row is
-                  // the hit area: a 20px dot beside the text is a mis-tap that
-                  // changes where money went.
-                  className={cn(
-                    'flex min-h-11 w-full cursor-pointer items-start gap-3 rounded-lg border p-3 text-start transition-colors focus-within:ring-2 focus-within:ring-ring',
-                    isSelected
-                      ? 'border-primary bg-primary/5'
-                      : 'border-border bg-surface-1 hover:bg-surface-hover'
-                  )}
+                  name={name}
+                  checked={isSelected}
+                  onSelect={() => onChange(option)}
                 >
-                  <input
-                    type="radio"
-                    name={name}
-                    checked={isSelected}
-                    onChange={() => onChange(option)}
-                    className="sr-only"
-                  />
-                  <span
-                    aria-hidden="true"
-                    className={cn(
-                      'mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full border',
-                      isSelected ? 'border-primary bg-primary' : 'border-border'
-                    )}
-                  >
-                    {isSelected ? (
-                      <span className="size-2 rounded-full bg-primary-foreground" />
+                  <TruncatedText className="truncate text-body font-medium">
+                    {label.institution ? (
+                      <span className="font-normal text-muted-foreground">
+                        {label.institution} ·{' '}
+                      </span>
                     ) : null}
-                  </span>
-
-                  <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                    <TruncatedText className="truncate text-body font-medium">
-                      {label.institution ? (
-                        <span className="font-normal text-muted-foreground">
-                          {label.institution} ·{' '}
-                        </span>
-                      ) : null}
-                      {label.name}
+                    {label.name}
+                  </TruncatedText>
+                  {/* Only when there is one. A row that has nothing to add
+                      does not reserve a line for it. */}
+                  {option.subtitle ? (
+                    <TruncatedText className="truncate text-caption text-muted-foreground">
+                      {option.subtitle}
                     </TruncatedText>
-                    {/* Only when there is one. A row that has nothing to add
-                        does not reserve a line for it. */}
-                    {option.subtitle ? (
-                      <TruncatedText className="truncate text-caption text-muted-foreground">
-                        {option.subtitle}
-                      </TruncatedText>
-                    ) : null}
-                  </span>
-                </label>
+                  ) : null}
+                </ChoiceRow>
               );
             })}
           </div>

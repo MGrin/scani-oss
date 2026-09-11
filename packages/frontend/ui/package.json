@@ -70,6 +70,7 @@
     "./ui/use-toast": "./src/ui/use-toast.tsx",
     "./v3/components/AccountPicker": "./src/v3/components/AccountPicker.tsx",
     "./v3/components/AmountInput": "./src/v3/components/AmountInput.tsx",
+    "./v3/components/ChoiceRow": "./src/v3/components/ChoiceRow.tsx",
     "./v3/components/ConfirmAction": "./src/v3/components/ConfirmAction.tsx",
     "./v3/components/Block": "./src/v3/components/Block.tsx",
     "./v3/components/DataRow": "./src/v3/components/DataRow.tsx",
