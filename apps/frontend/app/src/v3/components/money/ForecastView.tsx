@@ -321,13 +321,14 @@ export function ForecastView({
       {/* THE HERO IS OBSERVED (SC-661, mgrin). It answers the same question as
           the home line, in the same words, through the same helper.
 
-          The committed book is not a second opinion here — on the real account
-          it records ~$11,235/mo in and ~$784/mo out, because the income is a
-          recurring payment and the spending happens outside the tracked
-          perimeter. Projected forward that book says the money grows forever.
-          It is not a different question honestly answered; it is a projection
-          missing its largest term, erring in the flattering direction by
-          construction. So it does not get to be the runway. */}
+          The committed book is not a second opinion here — it records a large
+          recurring inflow against a near-zero outflow (illustratively
+          ~$4,200/mo in and ~$60/mo out; synthetic values, same shape), because
+          the income is a recurring payment and the spending happens outside
+          the tracked perimeter. Projected forward that book says the money
+          grows forever. It is not a different question honestly answered; it
+          is a projection missing its largest term, erring in the flattering
+          direction by construction. So it does not get to be the runway. */}
       <Block className="flex flex-col gap-3 border-dashed p-4">
         {/* Note the order against `pending`. The observed figure answers even
             while the rates are still coming, and that is correct rather than a
@@ -390,7 +391,8 @@ export function ForecastView({
           DEMOTED, and the heading is the whole of it (SC-661). This block used
           to be the runway's evidence; it is now a separate, narrower claim —
           what the recurring book has scheduled, and when. It is still worth a
-          screen: an observed $37k month says nothing about how much of it
+          screen: an observed heavy month — $18k where a quiet one is $2k,
+          on the synthetic spread below — says nothing about how much of it
           could be STOPPED, and the book is the only thing that does. What it
           may no longer do is answer "how long does the money last". */}
       {forecast.movements.length === 0 ? null : (
@@ -592,11 +594,12 @@ function RunwayBasis({ forecast, baseSymbol }: { forecast: ForecastData; baseSym
  * "Averaged over" — and the middle month is printed next to the range. Neither
  * surface said which statistic it used before this.
  *
- * Every one of these is here because a single number over $3k-$37k months,
- * presented alone, is more confident than the data. The spread says so; the
- * excluded count says how many outflows the figure did not see; the committed
- * share says how much of the spending is contractual rather than
- * discretionary — the one question the recurring book genuinely answers.
+ * Every one of these is here because a single number over months spanning
+ * $2k-$18k — synthetic, as above — presented alone, is more confident than
+ * the data. The spread says so; the excluded count says how many outflows the
+ * figure did not see; the committed share says how much of the spending is
+ * contractual rather than discretionary — the one question the recurring book
+ * genuinely answers.
  *
  * `excluded.unclassified` is the one to watch. Those are outflows nobody has
  * answered the review question on, and they are treated as zero. If they are

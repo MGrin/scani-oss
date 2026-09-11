@@ -21,9 +21,10 @@ import { monthKey } from './forecast';
  * of a tracked account into an untracked one.
  *
  * So from Scani's side his burn is not a schedule. It is **the rate at which
- * money leaves the tracked perimeter**, and that signal already exists: 303
- * reviewed outflows over five years, running $3k–$37k a month and nothing
- * like a recurrence.
+ * money leaves the tracked perimeter**, and that signal already exists: on a
+ * book of that shape it is several hundred reviewed outflows over several
+ * years, spread over something like $2k–$18k a month — synthetic figures, the
+ * shape is the point — and nothing like a recurrence.
  *
  * ## `left_control` only, and `untracked` deliberately NOT
  *

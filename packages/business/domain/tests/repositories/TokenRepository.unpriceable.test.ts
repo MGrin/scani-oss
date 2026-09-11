@@ -11,7 +11,7 @@ import { makeToken } from '../../test/helpers/factories-extra';
  * against the net-worth chart's coverage figure, so the fixture below is
  * the production shape rather than a minimal one (SC-146).
  *
- * The row that matters most is `USDT`: on the real account it carries
+ * The row that matters most is `USDT`: the fixture gives it
  * `is_scam_probability = 0.3`, the *same* score as a batch of airdrop spam
  * tokens, alongside a long price history. Any scam-score threshold that
  * catches the spam removes Tether from the portfolio. A test without that
