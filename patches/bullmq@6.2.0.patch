@@ -1,0 +1,355 @@
+diff --git a/dist/cjs/classes/worker.js b/dist/cjs/classes/worker.js
+index 35d1c047ba79384bb35819d9ecacb9d63beb13e1..f734748ddcb089ff2dd68c8c8bb191d38d3ba233 100644
+--- a/dist/cjs/classes/worker.js
++++ b/dist/cjs/classes/worker.js
+@@ -466,10 +466,14 @@ class Worker extends queue_base_1.QueueBase {
+                 return this.minimumBlockTimeout;
+             }
+             else {
+-                // We restrict the maximum block timeout to 10 second to avoid
+-                // blocking the connection for too long in the case of reconnections
+-                // reference: https://github.com/taskforcesh/bullmq/issues/1658
+-                return Math.min(blockDelay / 1000, maximumBlockTimeout);
++                // Capped (10s unless `maximumBlockTimeout` is set) so a worker whose
++                // connection dropped re-checks within the cap:
++                // https://github.com/taskforcesh/bullmq/issues/1658. On a
++                // scale-to-zero Postgres every expiry is a query, so this cap alone
++                // decides whether the database can ever go idle.
++                return Math.min(blockDelay / 1000, typeof opts.maximumBlockTimeout === 'number'
++                    ? opts.maximumBlockTimeout
++                    : maximumBlockTimeout);
+             }
+         }
+         else {
+@@ -814,7 +818,12 @@ class Worker extends queue_base_1.QueueBase {
+     }
+     async stalledChecker() {
+         while (!(this.closing || this.paused)) {
+-            await this.checkConnectionError(() => this.moveStalledJobsToWait());
++            // An idle worker whose LISTEN connection is down leaves the database
++            // alone: on a scale-to-zero Postgres the compute is suspended and this
++            // check would wake it. The main loop's own timer reconnects.
++            if (!(this.waiting && this.backend.blockingConnectionLost)) {
++                await this.checkConnectionError(() => this.moveStalledJobsToWait());
++            }
+             await new Promise(resolve => {
+                 const timeout = setTimeout(resolve, this.opts.stalledInterval);
+                 this.stalledCheckStopper = () => {
+diff --git a/dist/cjs/postgres/postgres-connection.js b/dist/cjs/postgres/postgres-connection.js
+index e81ff8bc9c61a6df42df5bcebecd710f35f122cc..b1783bf4cb9ee822bc512dd8f4926b2b522d374d 100644
+--- a/dist/cjs/postgres/postgres-connection.js
++++ b/dist/cjs/postgres/postgres-connection.js
+@@ -46,6 +46,11 @@ class PostgresConnection extends events_1.EventEmitter {
+          * (owned pool); `false` when it is a pooled client we must `release()`.
+          */
+         this.listenClientIsStandalone = false;
++        /**
++         * `true` from the moment the LISTEN client dies until a replacement is
++         * established — on a scale-to-zero Postgres, while the compute sleeps.
++         */
++        this.listenClientLost = false;
+         if ((0, pg_types_1.isPgPool)(connection)) {
+             this.pool = connection;
+             this.ownsPool = false;
+@@ -159,21 +164,55 @@ class PostgresConnection extends events_1.EventEmitter {
+                     const client = new this.pgModule.Client(this.listenClientConfig);
+                     await client.connect();
+                     client.on('error', err => this.emitError(err));
++                    this.forgetWhenLost(client);
+                     this.listenClientIsStandalone = true;
+                     this.listenClient = client;
++                    this.listenClientLost = false;
+                     return client;
+                 }
+                 else {
+                     const client = await this.pool.connect();
+                     client.on('error', err => this.emitError(err));
++                    this.forgetWhenLost(client);
+                     this.listenClientIsStandalone = false;
+                     this.listenClient = client;
++                    this.listenClientLost = false;
+                     return client;
+                 }
+             })();
++            const pending = this.listenClientPromise;
++            // A failed connect must not stay memoized, or every later wait
++            // rejects with the same error forever.
++            pending.catch(() => {
++                if (this.listenClientPromise === pending) {
++                    this.listenClientPromise = undefined;
++                }
++            });
+         }
+         return this.listenClientPromise;
+     }
++    /**
++     * Forgets a LISTEN client once it dies, so the NEXT {@link getListenClient}
++     * opens a fresh one. It deliberately does not reconnect here: on a
++     * scale-to-zero Postgres the disconnect IS the compute suspending, and
++     * reconnecting is a query that wakes it straight back up.
++     */
++    forgetWhenLost(client) {
++        const forget = () => {
++            if (this.listenClient !== client) {
++                return;
++            }
++            this.listenClient = undefined;
++            this.listenClientPromise = undefined;
++            this.listenClientLost = true;
++            if (!this.listenClientIsStandalone) {
++                // A dead pooled client is destroyed, never returned to the pool.
++                client.release(true);
++            }
++        };
++        client.on('error', forget);
++        client.on('end', forget);
++    }
+     /**
+      * Truthy once {@link PostgresConnection.close} has begun.
+      */
+diff --git a/dist/cjs/postgres/postgres-queue-backend.js b/dist/cjs/postgres/postgres-queue-backend.js
+index b72b3035e989304feb69ad2ae2872a3a5dc8eebb..7fc129bfaf08a43bc1d536514ab7eb944906222f 100644
+--- a/dist/cjs/postgres/postgres-queue-backend.js
++++ b/dist/cjs/postgres/postgres-queue-backend.js
+@@ -252,6 +252,28 @@ class PostgresQueueBackend extends events_1.EventEmitter {
+         await client.query(`SELECT set_config('application_name', $1, false)`, [
+             name,
+         ]);
++        this.listenName = name;
++        this.namedClient = client;
++    }
++    /**
++     * Carries the name over to a LISTEN client that replaced a dead one, so
++     * getWorkers still discovers this worker after a reconnect.
++     */
++    async renameIfReplaced(client) {
++        if (this.listenName && this.namedClient !== client) {
++            await client.query(`SELECT set_config('application_name', $1, false)`, [
++                this.listenName,
++            ]);
++            this.namedClient = client;
++        }
++    }
++    /**
++     * True while the dedicated LISTEN connection is known dead and not yet
++     * replaced. On a scale-to-zero Postgres that is while the compute is
++     * suspended, and an idle worker skips work that would wake it.
++     */
++    get blockingConnectionLost() {
++        return this.connection.listenClientLost === true;
+     }
+     /**
+      * PostgreSQL `LISTEN`/`NOTIFY` has no minimum block granularity, so any
+@@ -1542,18 +1564,23 @@ class PostgresQueueBackend extends events_1.EventEmitter {
+     /** Subscribes the dedicated client to the shared jobs channel (once). */
+     async ensureListening() {
+         const client = await this.connection.getListenClient();
+-        if (!this.listening) {
++        // LISTEN is per session, so a client that replaced a dead one subscribes again.
++        if (!this.listening || this.listeningClient !== client) {
++            await this.renameIfReplaced(client);
+             await client.query((0, sql_loader_1.loadCommandSql)('listen_jobs'));
+             this.listening = true;
++            this.listeningClient = client;
+         }
+         return client;
+     }
+     /** Subscribes the dedicated client to the shared events channel (once). */
+     async ensureListeningEvents() {
+         const client = await this.connection.getListenClient();
+-        if (!this.listeningEvents) {
++        if (!this.listeningEvents || this.listeningEventsClient !== client) {
++            await this.renameIfReplaced(client);
+             await client.query((0, sql_loader_1.loadCommandSql)('listen_events'));
+             this.listeningEvents = true;
++            this.listeningEventsClient = client;
+         }
+         return client;
+     }
+diff --git a/dist/esm/classes/worker.js b/dist/esm/classes/worker.js
+index fc5a952bd63325e1ade8cce0c6c649fa32b6fcc3..461200350bb4fe6583a3084f0a38dfba19333df0 100644
+--- a/dist/esm/classes/worker.js
++++ b/dist/esm/classes/worker.js
+@@ -463,10 +463,14 @@ export class Worker extends QueueBase {
+                 return this.minimumBlockTimeout;
+             }
+             else {
+-                // We restrict the maximum block timeout to 10 second to avoid
+-                // blocking the connection for too long in the case of reconnections
+-                // reference: https://github.com/taskforcesh/bullmq/issues/1658
+-                return Math.min(blockDelay / 1000, maximumBlockTimeout);
++                // Capped (10s unless `maximumBlockTimeout` is set) so a worker whose
++                // connection dropped re-checks within the cap:
++                // https://github.com/taskforcesh/bullmq/issues/1658. On a
++                // scale-to-zero Postgres every expiry is a query, so this cap alone
++                // decides whether the database can ever go idle.
++                return Math.min(blockDelay / 1000, typeof opts.maximumBlockTimeout === 'number'
++                    ? opts.maximumBlockTimeout
++                    : maximumBlockTimeout);
+             }
+         }
+         else {
+@@ -811,7 +815,12 @@ export class Worker extends QueueBase {
+     }
+     async stalledChecker() {
+         while (!(this.closing || this.paused)) {
+-            await this.checkConnectionError(() => this.moveStalledJobsToWait());
++            // An idle worker whose LISTEN connection is down leaves the database
++            // alone: on a scale-to-zero Postgres the compute is suspended and this
++            // check would wake it. The main loop's own timer reconnects.
++            if (!(this.waiting && this.backend.blockingConnectionLost)) {
++                await this.checkConnectionError(() => this.moveStalledJobsToWait());
++            }
+             await new Promise(resolve => {
+                 const timeout = setTimeout(resolve, this.opts.stalledInterval);
+                 this.stalledCheckStopper = () => {
+diff --git a/dist/esm/interfaces/worker-options.d.ts b/dist/esm/interfaces/worker-options.d.ts
+index 6a69a818e6d9114ec346a574a63f941a71131159..46bde6ba911896141f59125ffd1dffb9a22a9f2d 100644
+--- a/dist/esm/interfaces/worker-options.d.ts
++++ b/dist/esm/interfaces/worker-options.d.ts
+@@ -107,6 +107,14 @@ export interface WorkerOptions extends QueueBaseOptions, SandboxedOptions, KeyPr
+      * @defaultValue 5
+      */
+     drainDelay?: number;
++    /**
++     * Longest time, in seconds, an idle worker blocks while a delayed job
++     * exists before re-checking the queue. Raise it above a scale-to-zero
++     * Postgres's suspend timeout so an idle worker lets the database sleep.
++     *
++     * @defaultValue 10
++     */
++    maximumBlockTimeout?: number;
+     /**
+      * Duration of the lock for the job in milliseconds. The lock represents that
+      * a worker is processing the job. If the lock is lost, the job will be eventually
+diff --git a/dist/esm/postgres/postgres-connection.js b/dist/esm/postgres/postgres-connection.js
+index 762523471683500c4b00d887560ec5414359af5b..e05151a157f38213c80c5266753f317a39312c12 100644
+--- a/dist/esm/postgres/postgres-connection.js
++++ b/dist/esm/postgres/postgres-connection.js
+@@ -43,6 +43,11 @@ export class PostgresConnection extends EventEmitter {
+          * (owned pool); `false` when it is a pooled client we must `release()`.
+          */
+         this.listenClientIsStandalone = false;
++        /**
++         * `true` from the moment the LISTEN client dies until a replacement is
++         * established — on a scale-to-zero Postgres, while the compute sleeps.
++         */
++        this.listenClientLost = false;
+         if (isPgPool(connection)) {
+             this.pool = connection;
+             this.ownsPool = false;
+@@ -156,21 +161,55 @@ export class PostgresConnection extends EventEmitter {
+                     const client = new this.pgModule.Client(this.listenClientConfig);
+                     await client.connect();
+                     client.on('error', err => this.emitError(err));
++                    this.forgetWhenLost(client);
+                     this.listenClientIsStandalone = true;
+                     this.listenClient = client;
++                    this.listenClientLost = false;
+                     return client;
+                 }
+                 else {
+                     const client = await this.pool.connect();
+                     client.on('error', err => this.emitError(err));
++                    this.forgetWhenLost(client);
+                     this.listenClientIsStandalone = false;
+                     this.listenClient = client;
++                    this.listenClientLost = false;
+                     return client;
+                 }
+             })();
++            const pending = this.listenClientPromise;
++            // A failed connect must not stay memoized, or every later wait
++            // rejects with the same error forever.
++            pending.catch(() => {
++                if (this.listenClientPromise === pending) {
++                    this.listenClientPromise = undefined;
++                }
++            });
+         }
+         return this.listenClientPromise;
+     }
++    /**
++     * Forgets a LISTEN client once it dies, so the NEXT {@link getListenClient}
++     * opens a fresh one. It deliberately does not reconnect here: on a
++     * scale-to-zero Postgres the disconnect IS the compute suspending, and
++     * reconnecting is a query that wakes it straight back up.
++     */
++    forgetWhenLost(client) {
++        const forget = () => {
++            if (this.listenClient !== client) {
++                return;
++            }
++            this.listenClient = undefined;
++            this.listenClientPromise = undefined;
++            this.listenClientLost = true;
++            if (!this.listenClientIsStandalone) {
++                // A dead pooled client is destroyed, never returned to the pool.
++                client.release(true);
++            }
++        };
++        client.on('error', forget);
++        client.on('end', forget);
++    }
+     /**
+      * Truthy once {@link PostgresConnection.close} has begun.
+      */
+diff --git a/dist/esm/postgres/postgres-queue-backend.js b/dist/esm/postgres/postgres-queue-backend.js
+index 0b4eefa1a931402a9d0836849061e734f79c157b..c6d6c0571040af45821db94725172adb3d860985 100644
+--- a/dist/esm/postgres/postgres-queue-backend.js
++++ b/dist/esm/postgres/postgres-queue-backend.js
+@@ -249,6 +249,28 @@ export class PostgresQueueBackend extends EventEmitter {
+         await client.query(`SELECT set_config('application_name', $1, false)`, [
+             name,
+         ]);
++        this.listenName = name;
++        this.namedClient = client;
++    }
++    /**
++     * Carries the name over to a LISTEN client that replaced a dead one, so
++     * getWorkers still discovers this worker after a reconnect.
++     */
++    async renameIfReplaced(client) {
++        if (this.listenName && this.namedClient !== client) {
++            await client.query(`SELECT set_config('application_name', $1, false)`, [
++                this.listenName,
++            ]);
++            this.namedClient = client;
++        }
++    }
++    /**
++     * True while the dedicated LISTEN connection is known dead and not yet
++     * replaced. On a scale-to-zero Postgres that is while the compute is
++     * suspended, and an idle worker skips work that would wake it.
++     */
++    get blockingConnectionLost() {
++        return this.connection.listenClientLost === true;
+     }
+     /**
+      * PostgreSQL `LISTEN`/`NOTIFY` has no minimum block granularity, so any
+@@ -1539,18 +1561,23 @@ export class PostgresQueueBackend extends EventEmitter {
+     /** Subscribes the dedicated client to the shared jobs channel (once). */
+     async ensureListening() {
+         const client = await this.connection.getListenClient();
+-        if (!this.listening) {
++        // LISTEN is per session, so a client that replaced a dead one subscribes again.
++        if (!this.listening || this.listeningClient !== client) {
++            await this.renameIfReplaced(client);
+             await client.query(loadCommandSql('listen_jobs'));
+             this.listening = true;
++            this.listeningClient = client;
+         }
+         return client;
+     }
+     /** Subscribes the dedicated client to the shared events channel (once). */
+     async ensureListeningEvents() {
+         const client = await this.connection.getListenClient();
+-        if (!this.listeningEvents) {
++        if (!this.listeningEvents || this.listeningEventsClient !== client) {
++            await this.renameIfReplaced(client);
+             await client.query(loadCommandSql('listen_events'));
+             this.listeningEvents = true;
++            this.listeningEventsClient = client;
+         }
+         return client;
+     }

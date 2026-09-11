@@ -352,7 +352,6 @@ async function main(): Promise<void> {
     connection: env.DATABASE_URL,
     concurrency: env.WORKER_CONCURRENCY,
     cronConcurrency: cronConcurrency > 0 ? cronConcurrency : undefined,
-    drainDelay: 5,
   });
 
   // Sentry capture is application policy, not framework concern. The
