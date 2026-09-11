@@ -46,7 +46,9 @@ ownership rule.
 | `BACKEND_URL` | app (api), worker | Browser-facing api URL. Embedded in magic-link emails, and in the one-click unsubscribe links (`/e/u/:token` for the digest, `/e/a/:token` for alerts — SC-460, SC-459). Optional on the worker — absent, both jobs log a refusal and send nothing. |
 | `COOKIE_DOMAIN` | app (api) | Cross-subdomain cookie scope. Leave unset for same-origin. |
 | `BETTER_AUTH_SECRET` | app (api) | 32+ chars. Better-Auth session signing key. |
-| `JOBS_HMAC_SECRET` | app (api) | 32+ chars. HMAC for operator job endpoints. |
+| `JOBS_HMAC_SECRET` | app (api), worker | 32+ chars. HMAC for operator job endpoints, and for the api's wake ping to the worker. Optional on the worker — only its wake endpoint needs it. |
+| `WORKER_WAKE_URL` | app (api) | Where the api pings the worker after a user enqueues, e.g. `http://worker:8081`. **Optional** — only a Postgres that scales to zero (Neon) needs it, because a suspend kills the worker's `LISTEN` and a new job then waits for the worker's idle poll, up to 10 minutes. Self-hosters leave it unset: their Postgres never suspends, so jobs already start at once. |
+| `WORKER_WAKE_PORT` | app (worker) | Port the worker's wake endpoint listens on, on all interfaces. **Optional** — served only when `JOBS_HMAC_SECRET` is set too. Pair with `WORKER_WAKE_URL`. |
 | `SCREENSHOT_BOT_SECRET` | app (api) | 32+ chars. Screenshot-bot sign-in bearer. **Optional everywhere** — unset endpoint refuses with 403, feature disabled. Set if you use a screenshot-capture pipeline. |
 | `ENCRYPTION_KEY` | **package** (`@scani/security`) | ≥32 chars (recommended: 64 hex chars from `openssl rand -hex 32`). AES-256-GCM. Must match api ↔ worker. |
 | `LOG_ID_PEPPER` | **package** (`@scani/logging`) | 16+ chars. ID-hashing pepper. Required in production. |

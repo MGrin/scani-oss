@@ -20,6 +20,7 @@ import { Container, Service } from 'typedi';
 import { DEFAULT_DLQ_NAME, DEFAULT_QUEUE_NAME } from '../core/default-names';
 import { isScheduledJobDescriptor } from '../core/job-descriptor';
 import { userFacingMessage } from '../core/user-facing';
+import { interruptIdleWait } from '../wake/worker-wake';
 import { LIFECYCLE_MIRROR, type LifecycleMirror } from './lifecycle-mirror';
 import type { ScheduledJobProcessor } from './scheduled-job-processor';
 import { Semaphore } from './semaphore';
@@ -373,6 +374,11 @@ export class WorkerClient {
     this.cronSemaphore = null;
     this.terminalFailureHooks.length = 0;
     this.config = null;
+  }
+
+  /** Poll now instead of at the idle timer — the api's ping after an enqueue (SC-1144). */
+  wake(): void {
+    if (this.worker) interruptIdleWait(this.worker);
   }
 
   // Total DLQ entries (waiting / delayed / active; failed jobs land in 'waiting'

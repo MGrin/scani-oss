@@ -4,6 +4,7 @@ import type { JobsOptions } from 'bullmq';
 import { Container, Service } from 'typedi';
 import type { UserJobDescriptor } from '../core/job-descriptor';
 import type { UserJobBase } from '../core/types';
+import { WorkerWakeClient } from '../wake/worker-wake';
 import { ENQUEUE_MIRROR, type EnqueueMirror } from './enqueue-mirror';
 import { EnqueueService } from './enqueue-service';
 import { QueueClient } from './queue-client';
@@ -98,6 +99,7 @@ const ENQUEUE_TIMEOUT_MS = 10_000;
 @Service()
 export class BullMqEnqueueService extends EnqueueService {
   private readonly queueClient = Container.get(QueueClient);
+  private readonly workerWake = Container.get(WorkerWakeClient);
 
   override async add<TPayload extends UserJobBase, TResult>(
     descriptor: UserJobDescriptor<TPayload, TResult>,
@@ -138,6 +140,10 @@ export class BullMqEnqueueService extends EnqueueService {
         { jobId, jobName: descriptor.name, userId: data.userId, attemptsAllowed },
         'Job enqueued'
       );
+      // Detached on purpose (SC-1144): the job is queued whether or not the
+      // worker hears about it, so the enqueue neither waits on nor fails with
+      // the ping.
+      this.workerWake.ping().catch(() => undefined);
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err));
       logger.error(
