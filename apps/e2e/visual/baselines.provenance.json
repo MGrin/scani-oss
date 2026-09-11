@@ -1,5 +1,31 @@
 {
   "baselines": {
+    "forecast-desktop": {
+      "head": "160da87bddc5058c481e26b78924c37c14e3fcb9",
+      "renderedDigest": "2c55dc68f2f694ab8f6f2e5da4b1f07a78bac244c5fe9c329ab02ec424c9e166",
+      "dirty": [],
+      "dirtyCount": 0,
+      "base": {
+        "ref": "2375224e50aeff689ad53622e09e6a66d8c34fc2",
+        "confirmed": true,
+        "behind": 0
+      },
+      "sha256": "a63700cbc98682fc30d1a1d3048eb30bfab7330b5f2603a1b6b63461fc1822bd",
+      "capturedAt": "2026-09-11T09:35:45.749Z"
+    },
+    "forecast-phone": {
+      "head": "160da87bddc5058c481e26b78924c37c14e3fcb9",
+      "renderedDigest": "2c55dc68f2f694ab8f6f2e5da4b1f07a78bac244c5fe9c329ab02ec424c9e166",
+      "dirty": [],
+      "dirtyCount": 0,
+      "base": {
+        "ref": "2375224e50aeff689ad53622e09e6a66d8c34fc2",
+        "confirmed": true,
+        "behind": 0
+      },
+      "sha256": "1dd5869ee2414b497aeb828396193d8811400aaad60641cf17468f229bcab491",
+      "capturedAt": "2026-09-11T09:35:45.749Z"
+    },
     "holdings-desktop": {
       "sha256": "f706f1dc056537081a9bd4fb3ad3d1b993868b9c7c5a3d79446b1f0ae825e9fb",
       "capturedAt": null,
@@ -103,6 +129,19 @@
       },
       "sha256": "1dc2c5c06e7d9a8e060a685f3d7140ab8b1fa02840dbf39c36c4111fde7e413f",
       "capturedAt": "2026-09-03T07:54:31.078Z"
+    },
+    "home-runway-phone": {
+      "head": "160da87bddc5058c481e26b78924c37c14e3fcb9",
+      "renderedDigest": "2c55dc68f2f694ab8f6f2e5da4b1f07a78bac244c5fe9c329ab02ec424c9e166",
+      "dirty": [],
+      "dirtyCount": 0,
+      "base": {
+        "ref": "2375224e50aeff689ad53622e09e6a66d8c34fc2",
+        "confirmed": true,
+        "behind": 0
+      },
+      "sha256": "d2599e7f4dc55c451be2520c169a7921f62936e91223cf14832207479d9429ee",
+      "capturedAt": "2026-09-11T09:35:45.749Z"
     },
     "kitchen-sink-desktop": {
       "sha256": "dd3eea212c767c305d00fb547ec5a109e258646928341da7028c487bee263da3",

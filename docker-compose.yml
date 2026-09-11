@@ -338,6 +338,12 @@ services:
       # a Solana RPC, so the E2E gate does not depend on a public API's rate
       # limiter. Refused in production by every env schema (SC-490).
       STUB_CHAIN_DATA: "${STUB_CHAIN_DATA:-}"
+      # ON by default here, because this stack is the one `bun run visual` and
+      # the e2e suite photograph: it lets `payments.forecast` take an `asOf`, so
+      # a forecast baseline does not move with the real date (SC-623). The api
+      # env schema refuses it in production, and the router refuses `asOf`
+      # wherever it is off. `ALLOW_FORECAST_AS_OF= bun dev:stack` turns it off.
+      ALLOW_FORECAST_AS_OF: "${ALLOW_FORECAST_AS_OF-1}"
 
   worker:
     profiles: ["full"]

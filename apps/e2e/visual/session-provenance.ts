@@ -22,8 +22,8 @@
  * ## The hole it closes, which is not hypothetical
  *
  * `visual-setup.ts` reuses a stored session across runs, deliberately: the api
- * rate-limits sign-ins to 6 per IP per hour and three sessions is most of that
- * budget. The reuse test was `isSignedIn` — one request, asking only whether
+ * rate-limits auth attempts to 6 per client per hour and a sign-in spends two
+ * of them. The reuse test was `isSignedIn` — one request, asking only whether
  * the cookie still works. **A session that is signed in is not a session that
  * still holds what it was seeded with**, and on the reuse path the seed does
  * not run again, so nothing re-established what the next `--update` would

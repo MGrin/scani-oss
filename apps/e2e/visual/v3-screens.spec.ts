@@ -7,13 +7,16 @@ import {
 import {
   VISUAL_ALLOCATION_SESSION_FILE,
   VISUAL_EMPTY_SESSION_FILE,
+  VISUAL_FORECAST_SESSION_FILE,
   VISUAL_SESSION_FILE,
 } from '../fixtures/visual-setup';
 import { BASELINE_SHRINK_ALLOW_ENV, baselineBytes, baselineCollapse } from './capture-size';
 import { describeSpinner, ROUTE_PENDING, readPendingRoutes } from './route-pending';
 import {
   ALLOCATION_DIMENSION_STORAGE_KEY,
+  FIXED_NOW,
   FOLDING_DIMENSION,
+  FORECAST_AS_OF,
   VISUAL_SCREENS,
   type VisualScreen,
   type VisualSession,
@@ -36,11 +39,12 @@ import { assertPixelsSettled } from './stability';
  */
 
 /** The storage state each `session` is photographed under — see
- *  `fixtures/visual-setup.ts`, which writes all three. */
+ *  `fixtures/visual-setup.ts`, which writes all four. */
 const SESSION_FILE: Record<VisualSession, string> = {
   seeded: VISUAL_SESSION_FILE,
   empty: VISUAL_EMPTY_SESSION_FILE,
   allocation: VISUAL_ALLOCATION_SESSION_FILE,
+  forecast: VISUAL_FORECAST_SESSION_FILE,
 };
 
 /**
@@ -76,18 +80,96 @@ const SHELL_TIMEOUT_MS = 90_000;
  */
 const SETTLE_MS = 800;
 
+/** The procedure whose clock `FORECAST_AS_OF` pins. */
+const FORECAST_PROCEDURE = 'payments.forecast';
+
+/** The procedures one tRPC request carries: `/trpc/a,b,c` is a batch of three. */
+function trpcProcedures(url: URL): string[] {
+  if (!url.pathname.startsWith('/trpc/')) return [];
+  return decodeURIComponent(url.pathname.slice('/trpc/'.length)).split(',');
+}
+
+/** What every `payments.forecast` the page received was dated from. */
+interface ForecastReads {
+  todays: string[];
+  errors: string[];
+}
+
 /**
- * Every screen renders at this instant. A form that defaults a date field to
- * "today" writes today's date into its baseline, and that baseline is wrong
- * tomorrow — `/payments/recurring/new` did exactly that on the first
- * generation run. Pinning the clock removes the whole class rather than the
- * one instance, and costs nothing on a screen that never asks the time.
+ * Pins the api's clock for a screen that declares `forecastAsOf` (SC-623).
  *
- * Past the seeded data on purpose: the session this runs under was created
- * whenever the seed last ran, and a clock set before that would put the
- * screens in front of a session the client considers unissued.
+ * The app never sends `asOf` — only this gate needs a forecast that does not
+ * move with the real date — so it is added to the request here rather than
+ * taught to the product. A batched GET carries one input per procedure, keyed
+ * by position, and `payments.forecast` takes none, so its slot is absent and
+ * is written rather than merged into.
+ *
+ * `fallback` rather than `continue`, so `pinExternalNetwork`'s handler still
+ * sees the request after this one has rewritten it.
  */
-const FIXED_NOW = new Date('2027-03-04T09:15:00Z');
+async function pinForecastClock(page: Page, screen: VisualScreen): Promise<ForecastReads | null> {
+  if (!screen.forecastAsOf) return null;
+  const reads: ForecastReads = { todays: [], errors: [] };
+
+  await page.route(
+    (url) => trpcProcedures(url).includes(FORECAST_PROCEDURE),
+    async (route) => {
+      const url = new URL(route.request().url());
+      const index = trpcProcedures(url).indexOf(FORECAST_PROCEDURE);
+      const raw = url.searchParams.get('input');
+      const parsed = (raw ? JSON.parse(raw) : {}) as Record<string, unknown>;
+      const input =
+        url.searchParams.get('batch') === '1'
+          ? { ...parsed, [index]: { ...(parsed[index] as object), asOf: FORECAST_AS_OF } }
+          : { ...parsed, asOf: FORECAST_AS_OF };
+      url.searchParams.set('input', JSON.stringify(input));
+      await route.fallback({ url: url.toString() });
+    }
+  );
+
+  page.on('response', async (response) => {
+    const url = new URL(response.url());
+    const index = trpcProcedures(url).indexOf(FORECAST_PROCEDURE);
+    if (index === -1) return;
+    const body = (await response.json().catch(() => null)) as unknown;
+    const entry = (Array.isArray(body) ? body[index] : body) as {
+      result?: { data?: { today?: unknown } };
+      error?: { message?: string };
+    } | null;
+    const today = entry?.result?.data?.today;
+    if (typeof today === 'string') reads.todays.push(today);
+    else reads.errors.push(entry?.error?.message ?? `HTTP ${response.status()}`);
+  });
+
+  return reads;
+}
+
+/** That every forecast on the page was dated from `FORECAST_AS_OF`. Checked on
+ *  a passing capture too — see `forecastAsOf` in `screens.ts`. */
+function assertForecastPinned(screen: VisualScreen, reads: ForecastReads | null, fail: Fail): void {
+  if (!reads) return;
+  if (reads.errors.length > 0) {
+    fail(
+      `${screen.name}: payments.forecast was refused or failed: ${reads.errors.join('; ')}. ` +
+        'The api honours asOf only with ALLOW_FORECAST_AS_OF=1, which docker-compose.yml sets ' +
+        'by default — a stack started with it empty cannot be photographed here (SC-623).'
+    );
+  }
+  if (reads.todays.length === 0) {
+    fail(
+      `${screen.name}: declares forecastAsOf and the page received no payments.forecast ` +
+        'response, so nothing says which day this picture of a forecast is dated from.'
+    );
+  }
+  const wrong = reads.todays.filter((today) => today !== FORECAST_AS_OF);
+  if (wrong.length > 0) {
+    fail(
+      `${screen.name}: a forecast on this page is dated ${wrong.join(', ')}, not ` +
+        `${FORECAST_AS_OF}. The asOf rewrite did not reach it, so this is a picture of the ` +
+        'real date and would change next month.'
+    );
+  }
+}
 
 /**
  * How many times the document has loaded since `goto`, and when.
@@ -620,6 +702,7 @@ function declare(screen: VisualScreen): void {
     // Before `goto`: a route added after a navigation has started does not
     // apply to the requests that navigation already made.
     const network = await pinExternalNetwork(page);
+    const forecastReads = await pinForecastClock(page, screen);
     await stallDataIfAsked(page);
     const loads = trackDocumentLoads(page);
     // Read before `goto`, because `toHaveScreenshot` has already overwritten
@@ -630,6 +713,21 @@ function declare(screen: VisualScreen): void {
     await page.goto(screen.route);
     await settle(page, loads, screen.name);
     await applyDirection(page, screen);
+    if (screen.element) {
+      // A component that renders nothing is absent rather than empty, so a
+      // missing element is its own failure rather than a timeout inside the
+      // capture.
+      await page
+        .locator(screen.element)
+        .waitFor({ state: 'visible', timeout: SHELL_TIMEOUT_MS })
+        .catch((error: unknown) => {
+          throw new Error(
+            `${screen.name}: ${screen.element} never appeared. The component rendered nothing, ` +
+              'so the seed behind it did not land or the selector moved.',
+            { cause: error }
+          );
+        });
+    }
     await assertPixelsSettled(page, screen.name);
 
     // The capture's own failure is held rather than thrown, because
@@ -638,7 +736,11 @@ function declare(screen: VisualScreen): void {
     // how SC-473 spent a session comparing images of nothing.
     let captured: unknown;
     try {
-      await expect(page).toHaveScreenshot(`${screen.name}.png`);
+      if (screen.element) {
+        await expect(page.locator(screen.element)).toHaveScreenshot(`${screen.name}.png`);
+      } else {
+        await expect(page).toHaveScreenshot(`${screen.name}.png`);
+      }
     } catch (error) {
       captured = error;
     }
@@ -653,6 +755,7 @@ function declare(screen: VisualScreen): void {
     await assertStillInDirection(page, screen, fail);
     await assertPinnedBytes(page, network, screen, fail);
     await assertAllocationFolded(page, screen, fail);
+    assertForecastPinned(screen, forecastReads, fail);
     // LAST, and that is the whole point of it. The four above each name a
     // specific cause or a specific missing thing, and where one of them
     // applies its message is strictly more useful than a byte count. This one

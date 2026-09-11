@@ -144,6 +144,13 @@ const envSchema = z.object({
   STUB_CHAIN_DATA: inProd
     ? z.literal(undefined).optional()
     : z.union([z.literal('1'), z.literal('')]).optional(),
+
+  // Test-only: when "1", `payments.forecast` honours an `asOf` date so the
+  // visual gate can photograph a forecast that does not move with the real
+  // date (SC-623). Refused in production — see `presentation/lib/forecast-as-of.ts`.
+  ALLOW_FORECAST_AS_OF: inProd
+    ? z.literal(undefined).optional()
+    : z.union([z.literal('1'), z.literal('')]).optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;
