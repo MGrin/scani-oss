@@ -345,7 +345,8 @@
           "group": "分组",
           "institution": "机构",
           "type": "类型",
-          "quality": "数据质量"
+          "quality": "数据质量",
+          "price": "价格"
         },
         "groupBy": {
           "account": "账户",
@@ -367,6 +368,9 @@
           "noPriceSource": "没有可用的价格来源",
           "negativeOpening": "起始余额为负",
           "noCoverage": "没有覆盖度记录"
+        },
+        "priceOption": {
+          "stale": "过时的报价"
         }
       },
       "institutions": {

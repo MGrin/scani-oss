@@ -33,9 +33,11 @@ import {
   holdingMatches,
   holdingPrice,
   holdingsValue,
+  isStalePricedInTotal,
   isSynced,
   payoutScheduleLabel,
   stalePricedInTotal,
+  stalePriceSearch,
   supportsApy,
   tokenTypeOptions,
 } from '../../../src/v3/lib/holdings';
@@ -361,6 +363,68 @@ describe('stalePricedInTotal', () => {
     // from a price we dated and found old. Counting it would put a number on
     // screen no server computed.
     expect(stalePricedInTotal([holding({ id: 'a', value: 90 })])).toEqual({ count: 0, value: 0 });
+  });
+});
+
+/**
+ * The one rule behind the caption's count, the filter it links to and the mark
+ * on the row (SC-981). Three readers of one predicate is the point: the count
+ * has to BE the length of the list the link opens, and a row marked stale has
+ * to be one the filter finds.
+ */
+describe('isStalePricedInTotal', () => {
+  test('a counted row whose quote was judged stale', () => {
+    expect(isStalePricedInTotal(holding({ priceStale: true }))).toBe(true);
+  });
+
+  test('a fresh row is not', () => {
+    // The control: without it a predicate returning true for everything
+    // passes the test above.
+    expect(isStalePricedInTotal(holding({ priceStale: false }))).toBe(false);
+  });
+
+  test('an undated row is not — the question was never asked', () => {
+    expect(isStalePricedInTotal(holding({ priceStale: undefined }))).toBe(false);
+  });
+
+  test('a stale row the total does not count is not', () => {
+    // Otherwise the filter would hold a row the caption's count leaves out,
+    // and the link would open a list one longer than the number it sits on.
+    expect(isStalePricedInTotal(holding({ priceStale: true, isActive: false }))).toBe(false);
+  });
+
+  test('is the rule stalePricedInTotal counts by', () => {
+    const rows = [
+      holding({ id: 'a', priceStale: true }),
+      holding({ id: 'b', priceStale: true, isActive: false }),
+      holding({ id: 'c', priceStale: false }),
+      holding({ id: 'd', priceStale: true }),
+      holding({ id: 'e' }),
+    ];
+    expect(stalePricedInTotal(rows).count).toBe(rows.filter(isStalePricedInTotal).length);
+  });
+});
+
+describe('stalePriceSearch', () => {
+  test('adds the stale-price filter to an empty query', () => {
+    expect(stalePriceSearch('')).toBe('?price=stale');
+  });
+
+  test('keeps every filter already applied, so the link narrows what is on screen', () => {
+    // The caption counts the rows on screen. A link that dropped the account
+    // filter would open every stale row in the portfolio under a count of
+    // this account's.
+    const search = stalePriceSearch('?account=a1&quality=noCoverage');
+    const params = new URLSearchParams(search);
+    expect(params.get('account')).toBe('a1');
+    expect(params.get('quality')).toBe('noCoverage');
+    expect(params.get('price')).toBe('stale');
+  });
+
+  test('is read back by holdingFiltersFromParams', () => {
+    expect(holdingFiltersFromParams(new URLSearchParams(stalePriceSearch('')))).toEqual({
+      price: 'stale',
+    });
   });
 });
 

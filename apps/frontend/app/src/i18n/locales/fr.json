@@ -407,7 +407,8 @@
           "group": "Groupe",
           "institution": "Établissement",
           "type": "Type",
-          "quality": "Qualité des données"
+          "quality": "Qualité des données",
+          "price": "Prix"
         },
         "groupBy": {
           "account": "Compte",
@@ -429,6 +430,9 @@
           "noPriceSource": "Aucune source de prix utilisable",
           "negativeOpening": "Solde d’ouverture négatif",
           "noCoverage": "Aucune ligne de couverture"
+        },
+        "priceOption": {
+          "stale": "Cotation périmée"
         }
       },
       "institutions": {

@@ -247,6 +247,23 @@ export function holdingsValue(holdings: readonly HoldingWithDetails[]): number {
 }
 
 /**
+ * One row of `stalePricedInTotal` — and the rule the `price=stale` filter and
+ * the row's stale mark apply, so there is exactly one (SC-981).
+ *
+ * Three readers of one predicate is what makes the caption's count a link: the
+ * count is `rows.filter(this).length` and the list it opens is the same filter,
+ * so they agree by construction rather than by review (`mem_gjdys7erqxa`).
+ *
+ * The mark follows it too, which is why an INACTIVE row with an old quote goes
+ * unmarked. Marking it would put a clock on a row that the "stale price"
+ * filter then does not find, and its figure is already set apart by the
+ * `Inactive` badge and the caption that says the total leaves it out.
+ */
+export function isStalePricedInTotal(holding: HoldingWithDetails): boolean {
+  return countsTowardTotal(holding) && holding.priceStale === true;
+}
+
+/**
  * How much of the figure above rests on a quote we would not call current, and
  * what those rows are worth (SC-956).
  *
@@ -270,8 +287,7 @@ export function stalePricedInTotal(holdings: readonly HoldingWithDetails[]): Exc
   let count = 0;
   let value = 0;
   for (const holding of holdings) {
-    if (!countsTowardTotal(holding)) continue;
-    if (holding.priceStale !== true) continue;
+    if (!isStalePricedInTotal(holding)) continue;
     count += 1;
     value += holding.value ?? 0;
   }
@@ -444,6 +460,10 @@ export function payoutScheduleLabel(
   }
 }
 
+/** The stale-price filter's key and parameter name, and its one value. */
+export const HOLDINGS_PRICE_PARAM = 'price';
+export const STALE_PRICE = 'stale';
+
 /**
  * The filter keys a link into this surface may set.
  *
@@ -464,7 +484,24 @@ export const HOLDING_FILTER_PARAMS = [
   // nowhere — so this one spelling is the contract, and `dataQuality.ts` owns
   // the values it may take.
   HOLDINGS_QUALITY_PARAM,
+  // Stale quotes (SC-981). Not a data-quality kind: those are id-sets the
+  // server's report names, and this is a flag every row already carries.
+  HOLDINGS_PRICE_PARAM,
 ] as const;
+
+/**
+ * The query string with the stale-price filter layered onto what is already
+ * there — the caption's link (SC-981).
+ *
+ * Layered, not replaced: the caption counts the rows on screen, so the list it
+ * opens has to be THOSE rows' stale subset. Search is not on the URL and stays
+ * applied in the list's own state, which is the same set again.
+ */
+export function stalePriceSearch(search: string): string {
+  const params = new URLSearchParams(search);
+  params.set(HOLDINGS_PRICE_PARAM, STALE_PRICE);
+  return `?${params.toString()}`;
+}
 
 export function holdingFiltersFromParams(params: URLSearchParams): Record<string, string> {
   const filters: Record<string, string> = {};

@@ -786,6 +786,7 @@
         "lookalike": "「{{impersonates}}」に見せかけています",
         "lookalikeTitle": "このトークンのシンボルは、「{{impersonates}}」ではないのにそう見える文字で書かれています。隠しても何も分からないため、この行と残高はそのまま残しています。ただし、似せている対象のトークンではありません。",
         "noPriceSpoken": "価格を取得できません",
+        "staleQuote": "古い相場、{{age}}",
         "lookalikeSpoken": "{{impersonates}} に見せかけています",
         "lookalikeExportCell": "{{symbol}}（{{impersonates}} に見せかけ）"
       },

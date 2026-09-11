@@ -376,7 +376,8 @@
           "group": "Group",
           "institution": "Institution",
           "type": "Type",
-          "quality": "Data quality"
+          "quality": "Data quality",
+          "price": "Price"
         },
         "groupBy": {
           "account": "Account",
@@ -398,6 +399,9 @@
           "noPriceSource": "No price source we can use",
           "negativeOpening": "Negative opening balance",
           "noCoverage": "No coverage row"
+        },
+        "priceOption": {
+          "stale": "Stale quote"
         }
       },
       "institutions": {
