@@ -10,6 +10,6 @@
     "declarationMap": false,
     "rootDir": "../../.."
   },
-  "include": ["src/**/*", "tests/**/*", "test/**/*"],
+  "include": ["src/**/*", "tests/**/*", "test/**/*", "scripts/**/*"],
   "exclude": ["dist", "node_modules"]
 }

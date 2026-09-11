@@ -814,6 +814,46 @@ export class HoldingTransactionRepository extends BaseRepository<
     }
   }
 
+  /**
+   * Every user with a base currency whose ledger carries a trade fee — the
+   * users whose stored history SC-1142's fee treatment moves.
+   *
+   * A superset on purpose. The walk treats a fee as absent when it is blank or
+   * reads as zero; this leaves out only literal zeros (`0`, `-0.00`), so a fee
+   * the walk cannot read — free text, `0e3` — is still selected. Selecting a
+   * user whose figures do not move costs one idempotent recompute; missing one
+   * whose figures DO move leaves their stored history wrong with nothing to
+   * say so. No base currency means the rollup skips the user anyway.
+   */
+  async findUserIdsWithTradeFees(
+    opts: { userId?: string } = {},
+    transaction?: DatabaseTransaction
+  ): Promise<string[]> {
+    try {
+      const database = this.getDb(transaction);
+      const ht = schema.holdingTransactions;
+      const conditions = [
+        isNotNull(ht.feeQuantity),
+        sql`${ht.feeQuantity} !~ '^\\s*[-+]?0*\\.?0*\\s*$'`,
+        isNotNull(schema.users.baseCurrencyId),
+      ];
+      if (opts.userId) conditions.push(eq(ht.userId, opts.userId));
+      const rows = await database
+        .selectDistinct({ userId: ht.userId })
+        .from(ht)
+        .innerJoin(schema.users, eq(schema.users.id, ht.userId))
+        .where(and(...conditions))
+        .orderBy(asc(ht.userId));
+      return rows.map((r) => r.userId);
+    } catch (error) {
+      this.logger.error(
+        { opts, error: error instanceof Error ? error.message : error },
+        'Failed to find users with trade fees'
+      );
+      throw error;
+    }
+  }
+
   // Drop the synthesized `reconciliation-opening` row for a holding.
   // OpeningBalanceReconciliationService calls this when the real tx
   // chain perfectly explains the current balance, so a stale opening

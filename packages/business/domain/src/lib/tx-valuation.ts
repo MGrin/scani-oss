@@ -62,9 +62,7 @@ export async function valueTransactionInBase(
   heldTokenId: string | null,
   priceLookup?: PriceLookup
 ): Promise<TxValuation | null> {
-  const convertOpts = priceLookup
-    ? ({ preferGranularity: 'daily', priceLookup, tx: dbTx } as const)
-    : ({ preferGranularity: 'daily', tx: dbTx } as const);
+  const convertOpts = convertOptions(dbTx, priceLookup);
 
   if (tx.priceNative && tx.priceNativeTokenId) {
     const native = new Decimal(tx.priceNative).mul(qtyAbs);
@@ -104,4 +102,121 @@ export async function valueTransactionInBase(
   }
 
   return null;
+}
+
+function convertOptions(dbTx: DatabaseTransaction | undefined, priceLookup?: PriceLookup) {
+  return priceLookup
+    ? ({ preferGranularity: 'daily', priceLookup, tx: dbTx } as const)
+    : ({ preferGranularity: 'daily', tx: dbTx } as const);
+}
+
+/** The subset of a ledger row a trade-fee valuation reads. */
+export type FeeBearingTransaction = ValuableTransaction &
+  Pick<HoldingTransaction, 'tokenId' | 'feeQuantity' | 'feeTokenId'>;
+
+/**
+ * A row's trade fee in base currency at `occurredAt` (SC-1142).
+ *
+ * `amount: null` is a fee that IS on the row and could not be valued — a token
+ * nothing prices, a token since deleted (`fee_token_id` is `ON DELETE SET
+ * NULL`), or text that is not a number. It is not zero: zero is a figure.
+ */
+export interface FeeValuation {
+  amount: Decimal | null;
+  stale: boolean;
+}
+
+/**
+ * What the row's trade fee is worth, or `null` when it carries none — absent,
+ * blank, or zero in any spelling. That `null` is what lets a fee-free ledger
+ * take exactly the path it took before fees were read at all.
+ *
+ * Each route is the one the walk already uses for the same instant:
+ *
+ *   - **In the row's own token** — `valueTransactionInBase`, so the trade's own
+ *     execution rate when it has one. A fee taken in the coin being bought is
+ *     worth what that coin cost in this trade, not a spot quote.
+ *   - **In any other token** — the counter asset, or a third one such as BNB —
+ *     the price graph at `occurredAt`, at the same granularity and through the
+ *     same lookup.
+ *
+ * Providers store the fee negative and the manual route stores what was typed,
+ * so the sign is ignored and the magnitude is valued.
+ */
+export async function valueTradeFeeInBase(
+  priceGraphService: PriceGraphService,
+  dbTx: DatabaseTransaction | undefined,
+  tx: FeeBearingTransaction,
+  baseCurrencyId: string,
+  heldTokenId: string | null,
+  priceLookup?: PriceLookup
+): Promise<FeeValuation | null> {
+  const qty = tradeFeeQuantity(tx.feeQuantity);
+  if (qty === null) return null;
+  if (qty === 'unreadable' || tx.feeTokenId === null) return { amount: null, stale: false };
+
+  if (tx.feeTokenId === tx.tokenId || tx.feeTokenId === heldTokenId) {
+    const own = await valueTransactionInBase(
+      priceGraphService,
+      dbTx,
+      tx,
+      qty,
+      baseCurrencyId,
+      heldTokenId,
+      priceLookup
+    );
+    return own ? { amount: own.amount, stale: own.stale } : { amount: null, stale: false };
+  }
+
+  const converted = await priceGraphService.convert(
+    qty,
+    tx.feeTokenId,
+    baseCurrencyId,
+    tx.occurredAt,
+    convertOptions(dbTx, priceLookup)
+  );
+  return converted
+    ? { amount: converted.amount, stale: converted.stale }
+    : { amount: null, stale: false };
+}
+
+function tradeFeeQuantity(stored: string | null): Decimal | 'unreadable' | null {
+  const text = stored?.trim();
+  if (!text) return null;
+  let qty: Decimal;
+  try {
+    qty = new Decimal(text);
+  } catch {
+    return 'unreadable';
+  }
+  if (!qty.isFinite()) return 'unreadable';
+  return qty.isZero() ? null : qty.abs();
+}
+
+/**
+ * `valuation` with `share` of the row's fee applied: `1` for an acquisition,
+ * whose fee adds to what it cost, and a negative share for a disposal, whose
+ * fee comes off what it raised — `-1` for a whole row, less for one share of a
+ * split answer.
+ *
+ * Returns `valuation` itself when there is no fee, never a copy, so a fee-free
+ * row's figures are the same objects they always were.
+ *
+ * A fee nothing could value leaves the amount alone and sets `stale`. Every
+ * reader of that flag reads it as "this figure rests on a price that could not
+ * be settled" and grades the basis `partial`, which is the claim to make about
+ * a figure that knowingly leaves a charge out.
+ */
+export function withTradeFee(
+  valuation: TxValuation | null,
+  fee: FeeValuation | null,
+  share: Decimal
+): TxValuation | null {
+  if (fee === null || valuation === null) return valuation;
+  if (fee.amount === null) return { ...valuation, stale: true };
+  return {
+    amount: valuation.amount.add(fee.amount.mul(share)),
+    stale: valuation.stale || fee.stale,
+    basis: valuation.basis,
+  };
 }
