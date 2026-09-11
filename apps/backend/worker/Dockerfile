@@ -14,6 +14,8 @@ WORKDIR /app
 # workspaces under `apps/*/*/` or `packages/*/*/` are picked up
 # automatically.
 COPY package.json bun.lock ./
+# `patchedDependencies` in package.json points here; install fails without it.
+COPY patches ./patches
 # apps/*/package.json picks up single-level workspaces (e.g. apps/e2e).
 # apps/*/*/package.json picks up nested workspaces (e.g. apps/backend/worker).
 COPY --parents apps/*/package.json apps/*/*/package.json packages/*/*/package.json ./
@@ -88,6 +90,11 @@ RUN cd apps/backend/worker && bun run build
 RUN test -s node_modules/bullmq/dist/esm/postgres/commands/add_job.sql \
     && test -s node_modules/bullmq/dist/esm/postgres/migrations/0001_schema.sql \
     || (echo "SC-518: bullmq Postgres SQL assets missing — the compiled binary cannot enqueue" && exit 1)
+
+# SC-963. A patch that did not apply builds a worker that pins the Neon compute
+# awake again, and nothing else fails. Assert on the patched line itself.
+RUN grep -q 'opts.maximumBlockTimeout' node_modules/bullmq/dist/esm/classes/worker.js \
+    || (echo "SC-963: patches/bullmq@6.2.0.patch is not applied — the idle worker would poll Postgres every 10s" && exit 1)
 
 FROM debian:bookworm-slim AS runtime
 WORKDIR /app
