@@ -6,8 +6,9 @@ import type {
 } from '@scani/shared';
 import { userFacingMessage } from '@scani/ui/lib/user-facing-error';
 import { useToast } from '@scani/ui/ui/use-toast';
+import { ChoiceRow } from '@scani/ui/v3/components/ChoiceRow';
 import { ConfirmAction } from '@scani/ui/v3/components/ConfirmAction';
-import { Check, RotateCcw, StickyNote, Wallet } from 'lucide-react';
+import { RotateCcw, StickyNote, Wallet } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { trpc } from '@/lib/trpc';
@@ -559,38 +560,14 @@ function CandidateRow({
 }) {
   const { t } = useTranslation();
   return (
-    <label
-      // `min-h-11` is the 44px touch target.
-      className={`flex min-h-11 w-full cursor-pointer items-start gap-3 rounded-lg border p-3 text-start transition-colors focus-within:ring-2 focus-within:ring-ring ${
-        selected
-          ? 'border-primary bg-primary/5'
-          : 'border-border bg-surface-1 hover:bg-surface-hover'
-      }`}
-    >
-      <input
-        type="radio"
-        name={groupName}
-        checked={selected}
-        onChange={onSelect}
-        className="sr-only"
-      />
+    <ChoiceRow name={groupName} checked={selected} onSelect={onSelect}>
+      <span className="truncate text-body font-medium">{candidateLocation(candidate)}</span>
+      <span className="text-caption text-muted-foreground">{candidateSummary(t, candidate)}</span>
       <span
-        aria-hidden="true"
-        className={`mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full border ${
-          selected ? 'border-primary bg-primary text-primary-foreground' : 'border-border'
-        }`}
+        className={`text-caption ${candidate.withinStrictTolerance ? 'text-foreground' : 'text-muted-foreground'}`}
       >
-        {selected ? <Check className="size-3" /> : null}
+        {candidateReasonLabel(t, candidate)}
       </span>
-      <span className="flex min-w-0 flex-col gap-0.5">
-        <span className="truncate text-body font-medium">{candidateLocation(candidate)}</span>
-        <span className="text-caption text-muted-foreground">{candidateSummary(t, candidate)}</span>
-        <span
-          className={`text-caption ${candidate.withinStrictTolerance ? 'text-foreground' : 'text-muted-foreground'}`}
-        >
-          {candidateReasonLabel(t, candidate)}
-        </span>
-      </span>
-    </label>
+    </ChoiceRow>
   );
 }
