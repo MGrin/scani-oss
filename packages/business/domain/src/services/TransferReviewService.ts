@@ -401,9 +401,11 @@ export class TransferReviewService {
    * cheap one: the review feed reads this on every page load, while the full
    * listing does a price lookup and a candidate search per row. One indexed
    * aggregate against `idx_holding_tx_transfer_review_pending`.
+   *
+   * It writes nothing, and neither does `listPending` (SC-1071) — see
+   * `applyDisposalMarks` for where rule answers are written instead.
    */
   async pendingSummary(userId: string): Promise<{ count: number; latestCreatedAt: Date | null }> {
-    await this.applyDisposalMarks(userId);
     const [row] = await db
       .select({
         count: sql<number>`count(*)::int`,
@@ -436,8 +438,6 @@ export class TransferReviewService {
     userId: string,
     opts: { limit?: number } = {}
   ): Promise<PendingTransferReview[]> {
-    await this.applyDisposalMarks(userId);
-
     const [user] = await db
       .select({ baseCurrencyId: schema.users.baseCurrencyId })
       .from(schema.users)
@@ -534,10 +534,12 @@ export class TransferReviewService {
         counterpartyIsOwnWallet: isOwnWallet(counterparty, ownWallets),
         // A rule on a row in this list has NOT answered it, whatever its
         // verdict. `not_a_disposal` took its rows out of the list entirely, and
-        // `always_a_disposal` answered its rows out of the queue — so the only
-        // way its verdict reaches here is a row the reader personally took the
-        // rule's answer back on (SC-380), which is exactly the row that most
-        // needs to say which rule it is exempt from.
+        // `always_a_disposal` answered its rows out of the queue — so its
+        // verdict reaches here on a row the reader personally took the rule's
+        // answer back on (SC-380), which is exactly the row that most needs to
+        // say which rule it is exempt from. Since SC-1071 it can also reach here
+        // briefly on a row one of the writers `applyDisposalMarks` leaves to the
+        // nightly sweep made markable, until that sweep answers it.
         matchedRule: row.rule
           ? {
               ruleId: row.rule.id,
@@ -575,12 +577,40 @@ export class TransferReviewService {
    *
    * mgrin was asked whether a rule may book a disposal unattended and said:
    * *"Auto-answer, but only on addresses I explicitly mark."* This is that
-   * sentence as code, and the reason it is here rather than in
-   * `TransferReviewRuleService` is that evaluation stays where SC-375 put it —
-   * at READ time, in this service. There is no scheduled job scanning the
-   * ledger for rule matches. The queue's two reads call this first, so a
-   * transfer imported at 3am is answered the next time somebody looks, by the
-   * same expression that decides what the queue shows.
+   * sentence as code, and it lives here rather than in
+   * `TransferReviewRuleService` so that it is the same expression that decides
+   * what the queue shows.
+   *
+   * **It is called by the writers, and never by a read (SC-1071).** It used to
+   * run first thing in `pendingSummary` and `listPending`, so reading the queue
+   * decided which world the PnL caption was in: before the mark a matched row is
+   * a disposal whose gain is not booked and the caption counts it, after it the
+   * gain is booked and the caption does not. Neither number was wrong — the
+   * caption was right only once somebody had opened a page. And the rollup the
+   * caption is served from (SC-1070) could not be that somebody without a write
+   * inside a walk over every user and every day.
+   *
+   * So the mark is applied where a row comes to fall under it. Every writer
+   * that can put a row inside `ruleWritablePredicate` calls this after its
+   * write:
+   *
+   * - `TransferReviewRuleService.create` — the rule itself;
+   * - `TransactionImportCoordinator` (wallet and exchange sync) and the
+   *   `file-import` processor (statements) — a new outflow, or a re-import
+   *   that changed an existing row's destination, kind or quantity;
+   * - `reopen`, `bulkResolve` and `unlinkPair` below — an answer or a link
+   *   taken off a row;
+   * - the nightly `transfer-linking` sweep, after the matcher, for every user.
+   *   It is the net under everything else: `backfill-counterparty` rewriting a
+   *   key, a wallet leaving `user_wallets`, a batch above the cap, and every
+   *   row that was already unmarked when reads stopped marking.
+   *
+   * Manual entry and manual balance edits are not on the list because they
+   * cannot match: neither writes a `counterparty` or a payload `to`, and
+   * `transfer_counterparty_key` returns NULL on NULL input, which equals no
+   * rule key. Openings, interest and fees write a kind outside `OUTFLOW_KINDS`,
+   * and a declared transfer writes its withdrawal already linked. The demo
+   * seeder is left to the sweep.
    *
    * **What it may write to is `ruleWritablePredicate`, and that predicate is
    * the whole safety argument** — read it there rather than trusting a
@@ -608,9 +638,9 @@ export class TransferReviewService {
    * read, so the transfer stays in the queue as a question rather than
    * disappearing into a booked gain.
    *
-   * Capped at `MAX_BULK_TRANSFER_ROWS` per read. Above that the remainder is
-   * answered on the next one; a read that writes is a read that must stay
-   * bounded, and the largest population this queue has ever had is 236.
+   * Capped at `MAX_BULK_TRANSFER_ROWS` per call. Above that the remainder is
+   * answered by the next writer or the nightly sweep; the largest population
+   * this queue has ever had is 236.
    */
   async applyDisposalMarks(userId: string): Promise<number> {
     const candidates = await db
@@ -1423,7 +1453,7 @@ export class TransferReviewService {
    * the source.
    */
   async reopen(userId: string, transactionId: string): Promise<boolean> {
-    return db.transaction(async (tx) => {
+    const reopened = await db.transaction(async (tx) => {
       const [row] = await tx
         .select()
         .from(schema.holdingTransactions)
@@ -1478,6 +1508,11 @@ export class TransferReviewService {
 
       return true;
     });
+    // An answer taken off a row is one of the writers that can bring it under a
+    // destination rule, so it applies them here rather than leaving it to the
+    // next read of the queue (SC-1071).
+    if (reopened) await this.applyDisposalMarks(userId);
+    return reopened;
   }
 
   /**
@@ -1971,7 +2006,7 @@ export class TransferReviewService {
     userId: string,
     entries: readonly BulkTransferEntry[]
   ): Promise<BulkResolveResult> {
-    return db.transaction(async (tx) => {
+    const result = await db.transaction(async (tx) => {
       const { eligible, refusals } = await this.bulkClassify(tx, userId, entries);
       if (refusals.length > 0) return { ok: false, reason: 'refused', refusals } as const;
 
@@ -2036,6 +2071,10 @@ export class TransferReviewService {
 
       return { ok: true, applied } as const;
     });
+    // The undo direction leaves rows unanswered with no source, which is a
+    // writer bringing them under any destination rule (SC-1071).
+    if (result.ok) await this.applyDisposalMarks(userId);
+    return result;
   }
 
   /**
@@ -2275,7 +2314,7 @@ export class TransferReviewService {
    * only the user can explain.
    */
   async unlinkPair(userId: string, transactionId: string): Promise<UnlinkPairResult> {
-    return db.transaction(async (tx) => {
+    const result = await db.transaction(async (tx) => {
       const [row] = await tx
         .select()
         .from(schema.holdingTransactions)
@@ -2318,6 +2357,10 @@ export class TransferReviewService {
 
       return { ok: true, unlinked: legs.map((leg) => leg.id) } as const;
     });
+    // An unlinked outflow is back in the queue, so a destination rule it falls
+    // under answers it now rather than at the next read (SC-1071).
+    if (result.ok) await this.applyDisposalMarks(userId);
+    return result;
   }
 
   /**

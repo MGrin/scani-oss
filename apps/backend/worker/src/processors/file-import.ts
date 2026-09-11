@@ -11,6 +11,7 @@ import {
 import {
   CsvColumnDetectionService,
   HoldingService,
+  TransferReviewService,
   UploadedFileService,
 } from '@scani/domain/services';
 import { parseStatement } from '@scani/file-import';
@@ -252,6 +253,18 @@ export class FileImportProcessor extends UserJobProcessor<FileImportJob, FileImp
     const merged = describeMergedRows(written.merges);
     if (merged) {
       ingestResult.warnings.push(`${merged} Check the statement for genuinely repeated entries.`);
+    }
+    // A statement's payments carry the counterparty a destination rule is keyed
+    // on, so an outflow to a marked destination is answered here, when it is
+    // written, rather than by whoever reads the queue next (SC-1071).
+    // Non-fatal: the nightly transfer-linking sweep applies whatever this missed.
+    try {
+      await Container.get(TransferReviewService).applyDisposalMarks(data.userId);
+    } catch (err) {
+      logger.warn(
+        { jobId: ctx.job.id, error: err instanceof Error ? err.message : err },
+        'Applying destination rules to imported statement rows failed (non-fatal)'
+      );
     }
     await obsRepo.bulkAppend(ingestResult.observations);
 

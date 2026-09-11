@@ -855,16 +855,44 @@ describe('TransferReviewRuleService — marking a destination a disposal', () =>
     expect((await reviewColumns(authoredFrom))?.transferReview).toBe('left_control');
   });
 
-  test('a transfer imported after the mark is answered on the next read', async () => {
+  test('reading the queue answers nothing — the writer that brought the transfer does (SC-1071)', async () => {
     const f = fixture!;
     const authoredFrom = await insertOutflow(f, { externalId: 'm-17', to: ADDRESS });
     expect((await mark(f, authoredFrom)).ok).toBe(true);
 
+    // Inserted directly, i.e. by a writer that has not applied the mark.
     const arrived = await insertOutflow(f, { externalId: 'm-18', to: ADDRESS });
     expect((await reviewColumns(arrived))?.transferReview).toBeNull();
 
+    // Both reads, and neither writes. They used to, which is what made the PnL
+    // caption depend on which page was opened first.
     await reviews().pendingSummary(f.userId);
+    await reviews().listPending(f.userId);
+    expect((await reviewColumns(arrived))?.transferReview).toBeNull();
+
+    // What every writer calls after its write. The control: the rule does match
+    // this row, so the null above is the reads declining, not the rule missing.
+    expect(await reviews().applyDisposalMarks(f.userId)).toBe(1);
     expect((await reviewColumns(arrived))?.transferReview).toBe('left_control');
+  });
+
+  test('reopening an answer onto a marked destination is answered by the reopen, not by the next read', async () => {
+    const f = fixture!;
+    // Answered by the reader BEFORE the destination was marked, so the mark
+    // does not reach it: it is not pending.
+    const answeredFirst = await insertOutflow(f, { externalId: 'm-18b', to: ADDRESS });
+    expect((await reviews().resolve(f.userId, answeredFirst, 'untracked', {})).ok).toBe(true);
+    const authoredFrom = await insertOutflow(f, { externalId: 'm-18c', to: ADDRESS });
+    expect((await mark(f, authoredFrom)).ok).toBe(true);
+    expect((await reviewColumns(answeredFirst))?.transferReview).toBe('untracked');
+
+    // Their own answer taken back leaves the source null — as unanswered as a
+    // row nobody answered — so the rule owns it now, and the write that put it
+    // back in the queue is the one that applies the rule.
+    expect(await reviews().reopen(f.userId, answeredFirst)).toBe(true);
+    const after = await reviewColumns(answeredFirst);
+    expect(after?.transferReview).toBe('left_control');
+    expect(after?.transferReviewSource).toBe('rule');
   });
 
   test('revoking reports what it did NOT undo, and can undo it on request', async () => {
