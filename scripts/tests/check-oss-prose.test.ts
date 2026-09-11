@@ -8,6 +8,7 @@ import {
   findInContent,
   findInLines,
   proseOf,
+  proseOfLines,
   readSentence,
   SCOPE,
   SIGNAL_COUNT,
@@ -188,6 +189,98 @@ describe('what counts as prose', () => {
     expect(proseOf('a.md', 'In production 12 rows carried it.')).toBe(
       'In production 12 rows carried it.'
     );
+  });
+});
+
+/**
+ * SC-1135. A continuation line of a JSX comment, or of any `/* *\/` block
+ * written without a leading `*`, carries no marker — and neither does a line of
+ * JSX text. So the extractor carries whether a block is OPEN from one line to
+ * the next, and the controls below matter as much as the reads: a check that
+ * read every indented line would pass the first test and fail the rest.
+ */
+describe('a block comment is read by state, not by line', () => {
+  const OPENER = '      {/* An opener, and the first sentence of the comment.';
+  const CONTINUATION = '          A continuation line with no marker at all.';
+
+  test('a JSX comment opener and its unprefixed continuation are both prose', () => {
+    expect(proseOfLines('x.tsx', [OPENER, CONTINUATION])).toEqual([
+      'An opener, and the first sentence of the comment.',
+      'A continuation line with no marker at all.',
+    ]);
+  });
+
+  test('an unprefixed continuation of a plain block comment is prose', () => {
+    expect(proseOfLines('x.ts', ['/* opened here', '   and continued here */'])).toEqual([
+      'opened here',
+      'and continued here',
+    ]);
+  });
+
+  test('CONTROL — the same continuation line read on its own is code', () => {
+    expect(proseOf('x.tsx', CONTINUATION)).toBeNull();
+  });
+
+  test.each([
+    ['a docblock continuation', '   * a docblock line'],
+    ['a line comment', '// an ordinary line comment'],
+  ])('CONTROL — %s is prose with or without state', (_what, line) => {
+    expect(proseOf('x.tsx', line)).not.toBeNull();
+    expect(proseOfLines('x.tsx', [line])).toEqual([proseOf('x.tsx', line)]);
+  });
+
+  test('nothing after the close is prose', () => {
+    expect(
+      proseOfLines('x.tsx', [
+        '{/* one',
+        '   two */}',
+        '      <p>JSX text in production with 12 rows</p>',
+        '      plain JSX text',
+      ])
+    ).toEqual(['one', 'two', null, null]);
+  });
+
+  test('a docblock closer is not a sentence of its own', () => {
+    expect(proseOfLines('x.ts', ['/**', ' * text.', ' */'])).toEqual([null, 'text.', null]);
+  });
+
+  test('an empty block opens and closes on one line', () => {
+    expect(proseOfLines('x.ts', ['/**/', 'const rows = 12;'])).toEqual([null, null]);
+  });
+
+  test('where `/*` is not a comment, no block opens', () => {
+    expect(proseOfLines('_headers', ['/*', '  X-Frame-Options: DENY'])).toEqual([null, null]);
+  });
+
+  test('a claim inside a JSX comment is found, at the line the comment opens', () => {
+    const { findings } = findInContent(
+      'x.tsx',
+      [
+        'export const X = () => (',
+        '  <div>',
+        '    {/* An explanation of the layout.',
+        '        We saw it in production when 12 rows carried the label. */}',
+        '    <p>In production 12 rows is JSX text, not a comment.</p>',
+        '  </div>',
+        ');',
+      ].join('\n')
+    );
+    expect(findings.map((f) => f.line)).toEqual([3]);
+  });
+
+  /**
+   * Whatever lies between two hunks may have closed the block, so an open one
+   * does not survive the gap. The adjacent pair is the control: without it the
+   * gapped pair reads nothing whether or not the state works.
+   */
+  test('an open block does not survive a gap between two hunks', () => {
+    const at = (a: number, b: number) =>
+      findInLines([
+        { path: 'x.tsx', line: a, text: '    {/* An explanation, opened here' },
+        { path: 'x.tsx', line: b, text: '        in production 12 rows carried the label.' },
+      ]).findings;
+    expect(at(4, 90)).toEqual([]);
+    expect(at(4, 5)).toHaveLength(1);
   });
 });
 
