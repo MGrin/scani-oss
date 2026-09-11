@@ -389,6 +389,15 @@ describe('a fee is valued once per price snapshot (SC-1145)', () => {
     buy({ occurredAt: '2024-02-01T10:00:00Z', feeQuantity: '-0.5', feeTokenId: BTC }),
     sell({ feeQuantity: '-0.02', feeTokenId: BNB }),
     sell({ occurredAt: '2024-07-01T10:00:00Z', feeQuantity: '-3', feeTokenId: OBSCURE }),
+    // No price native: the trade AND its own-token fee are both valued from
+    // the held token's price, so each walk converts twice for this row and a
+    // remembered fee takes one of the two away.
+    buy({
+      occurredAt: '2024-08-01T10:00:00Z',
+      priceNative: undefined,
+      feeQuantity: '-0.5',
+      feeTokenId: BTC,
+    }),
   ];
 
   async function walkWith(
@@ -409,11 +418,14 @@ describe('a fee is valued once per price snapshot (SC-1145)', () => {
     const rows = feeRows();
     const lookup = new PriceLookup([]);
     await walkWith(svc, rows, lookup);
-    // Two BNB fees and the OBSCURE one; the BTC fee rides the trade's own rate.
-    expect(calls.length).toBe(3);
+    // Two BNB fees, the OBSCURE one, and the last row's trade and its fee. The
+    // first BTC fee rides its trade's execution rate in USD, which converts
+    // nothing.
+    expect(calls.length).toBe(5);
     await walkWith(svc, rows, lookup);
     await walkWith(svc, rows, lookup);
-    expect(calls.length).toBe(3);
+    // Only the last row's own trade valuation is asked again; its fee is not.
+    expect(calls.length).toBe(7);
   });
 
   test('the control: with no snapshot, or a new one, every walk asks again', async () => {
@@ -422,10 +434,10 @@ describe('a fee is valued once per price snapshot (SC-1145)', () => {
     const rows = feeRows();
     await walkWith(svc, rows, undefined);
     await walkWith(svc, rows, undefined);
-    expect(calls.length).toBe(6);
+    expect(calls.length).toBe(10);
     await walkWith(svc, rows, new PriceLookup([]));
     await walkWith(svc, rows, new PriceLookup([]));
-    expect(calls.length).toBe(12);
+    expect(calls.length).toBe(20);
   });
 
   test('under a database transaction nothing is remembered', async () => {
@@ -436,7 +448,7 @@ describe('a fee is valued once per price snapshot (SC-1145)', () => {
     const dbTx = {} as DatabaseTransaction;
     await walkWith(svc, rows, lookup, 'fifo', dbTx);
     await walkWith(svc, rows, lookup, 'fifo', dbTx);
-    expect(calls.length).toBe(6);
+    expect(calls.length).toBe(10);
   });
 
   test.each([
