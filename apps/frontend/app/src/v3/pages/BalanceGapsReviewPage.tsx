@@ -1,3 +1,4 @@
+import { useDocumentTitle } from '@scani/ui/hooks/useDocumentTitle';
 import { PageHeader, PageLayout } from '@scani/ui/v3/components/PageLayout';
 import { useTranslation } from 'react-i18next';
 import { trpc } from '@/lib/trpc';
@@ -21,6 +22,7 @@ import { BalanceGapList } from '../components/review/BalanceGapList';
  */
 export function BalanceGapsReviewPage() {
   const { t } = useTranslation();
+  useDocumentTitle(t('v3.review.page.balancesTitle'));
   const query = trpc.balanceGaps.listPending.useQuery();
 
   return (

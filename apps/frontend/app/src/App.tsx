@@ -1,3 +1,5 @@
+import { useDocumentTitle } from '@scani/ui/hooks/useDocumentTitle';
+import { useTranslation } from 'react-i18next';
 import { Navigate, Outlet, Route, BrowserRouter as Router, Routes } from 'react-router-dom';
 import { InstallPromptHost } from '@/components/InstallPromptHost';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
@@ -37,6 +39,8 @@ const V3App = lazyRoute('interface', () => import('@/v3/V3App').then((m) => m.V3
  * portfolio they were sent to see (SC-466).
  */
 function AuthScreen() {
+  const { t } = useTranslation();
+  useDocumentTitle(t('auth.signIn.title'));
   const { isDemo } = useAuth();
   return isDemo ? <Navigate to="/" replace /> : <Auth />;
 }

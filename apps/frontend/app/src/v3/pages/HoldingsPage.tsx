@@ -1,5 +1,6 @@
 import { Decimal, type HoldingWithDetails, manualEditNeedsCause } from '@scani/shared';
 import { ConfirmDialog } from '@scani/ui/components/ConfirmDialog';
+import { useDocumentTitle } from '@scani/ui/hooks/useDocumentTitle';
 import { showError, showSuccess } from '@scani/ui/ui/use-toast';
 import { V3DataView } from '@scani/ui/v3/components/data-view/V3DataView';
 import { PageLayout } from '@scani/ui/v3/components/PageLayout';
@@ -56,6 +57,7 @@ import { V3_ROUTES } from '../lib/routes';
 
 export function HoldingsPage() {
   const { t } = useTranslation();
+  useDocumentTitle(t('v3.holdings.page.title'));
   const holdingsQuery = trpc.holdings.getWithDetails.useQuery();
   const groupsQuery = trpc.groups.getAll.useQuery();
   const baseCurrencyQuery = trpc.users.getBaseCurrency.useQuery();

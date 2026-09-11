@@ -1,4 +1,5 @@
 import { HOLDING_LABEL_MAX_LENGTH } from '@scani/shared';
+import { useDocumentTitle } from '@scani/ui/hooks/useDocumentTitle';
 import { Button } from '@scani/ui/ui/button';
 import { Input } from '@scani/ui/ui/input';
 import { AmountInput } from '@scani/ui/v3/components/AmountInput';
@@ -53,6 +54,7 @@ import { jobDetailPath } from '../lib/routes';
  */
 export function ManualEntryPage() {
   const { t } = useTranslation();
+  useDocumentTitle(t('v3.capture.page.manual.title'));
   const navigate = useNavigate();
   const target = useAccountTarget();
 

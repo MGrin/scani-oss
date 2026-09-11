@@ -1,3 +1,4 @@
+import { useDocumentTitle } from '@scani/ui/hooks/useDocumentTitle';
 import { Button } from '@scani/ui/ui/button';
 import { Block } from '@scani/ui/v3/components/Block';
 import { PageLayout } from '@scani/ui/v3/components/PageLayout';
@@ -42,6 +43,7 @@ import { V3_BASE } from '../lib/ui-version';
  */
 export function NotFoundPage({ location }: { location: Location }) {
   const { t } = useTranslation();
+  useDocumentTitle(t('v3.notFound.title'));
 
   return (
     <PageLayout>

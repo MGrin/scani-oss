@@ -1,4 +1,5 @@
 import { safeExternalUrl } from '@scani/shared';
+import { useDocumentTitle } from '@scani/ui/hooks/useDocumentTitle';
 import { Input } from '@scani/ui/ui/input';
 import { Skeleton } from '@scani/ui/ui/skeleton';
 import { Textarea } from '@scani/ui/ui/textarea';
@@ -48,6 +49,11 @@ export function IntegrationConnectPage() {
 
   const integration = (integrationsQuery.data ?? []).find(
     (candidate) => candidate.providerKey === providerKey
+  );
+  useDocumentTitle(
+    integration
+      ? t('v3.capture.integration.connectNamed', { name: integration.institution.name })
+      : t('v3.capture.integration.title')
   );
 
   if (integrationsQuery.isError) {

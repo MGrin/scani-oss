@@ -1,3 +1,4 @@
+import { useDocumentTitle } from '@scani/ui/hooks/useDocumentTitle';
 import { Button } from '@scani/ui/ui/button';
 import { Segmented, SegmentedItem } from '@scani/ui/ui/segmented';
 import { PageHeader, PageLayout } from '@scani/ui/v3/components/PageLayout';
@@ -34,6 +35,7 @@ import {
  */
 export function TokensPage() {
   const { t } = useTranslation();
+  useDocumentTitle(t('v3.tokens.page.title'));
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const segment = resolveTokenSegment(pathname);

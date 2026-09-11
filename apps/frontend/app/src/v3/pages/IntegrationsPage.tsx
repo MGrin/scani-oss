@@ -1,3 +1,4 @@
+import { useDocumentTitle } from '@scani/ui/hooks/useDocumentTitle';
 import { PageLayout } from '@scani/ui/v3/components/PageLayout';
 import { mergeQueries } from '@scani/ui/v3/lib/query-state';
 import { useTranslation } from 'react-i18next';
@@ -21,6 +22,7 @@ import { IntegrationsList } from '../components/capture/IntegrationsList';
  */
 export function IntegrationsPage() {
   const { t } = useTranslation();
+  useDocumentTitle(t('v3.capture.integration.title'));
   const integrationsQuery = trpc.integrations.listAvailable.useQuery();
 
   return (

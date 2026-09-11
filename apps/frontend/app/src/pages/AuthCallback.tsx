@@ -1,3 +1,4 @@
+import { useDocumentTitle } from '@scani/ui/hooks/useDocumentTitle';
 import { Alert, AlertDescription } from '@scani/ui/ui/alert';
 import { Button } from '@scani/ui/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@scani/ui/ui/card';
@@ -30,6 +31,7 @@ import { useAuth } from '@/contexts/AuthContext';
  */
 export function AuthCallback() {
   const { t } = useTranslation();
+  useDocumentTitle(t('auth.callback.signingInTitle'));
   const location = useLocation();
   const searchParams = new URLSearchParams(location.search);
 

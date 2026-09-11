@@ -38,6 +38,7 @@
     "./hooks/useAppUpdate": "./src/hooks/useAppUpdate.ts",
     "./hooks/useDebouncedValue": "./src/hooks/useDebouncedValue.ts",
     "./hooks/useDismissOnHide": "./src/hooks/useDismissOnHide.ts",
+    "./hooks/useDocumentTitle": "./src/hooks/useDocumentTitle.ts",
     "./hooks/useInstallPrompt": "./src/hooks/useInstallPrompt.ts",
     "./ui/accordion": "./src/ui/accordion.tsx",
     "./ui/alert": "./src/ui/alert.tsx",

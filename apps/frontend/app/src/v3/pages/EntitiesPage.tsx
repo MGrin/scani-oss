@@ -1,3 +1,4 @@
+import { useDocumentTitle } from '@scani/ui/hooks/useDocumentTitle';
 import { Button } from '@scani/ui/ui/button';
 import { Input } from '@scani/ui/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@scani/ui/ui/select';
@@ -35,6 +36,7 @@ import { UNASSIGNED_ENTITY } from '../lib/ownership';
  */
 export function EntitiesPage() {
   const { t } = useTranslation();
+  useDocumentTitle(t('v3.ownership.title'));
   const utils = trpc.useUtils();
   const entitiesQuery = trpc.entities.getAll.useQuery();
   const valuesQuery = trpc.entities.getValues.useQuery();

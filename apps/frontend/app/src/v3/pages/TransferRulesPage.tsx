@@ -1,3 +1,4 @@
+import { useDocumentTitle } from '@scani/ui/hooks/useDocumentTitle';
 import { Button } from '@scani/ui/ui/button';
 import { PageHeader, PageLayout } from '@scani/ui/v3/components/PageLayout';
 import { useTranslation } from 'react-i18next';
@@ -17,6 +18,7 @@ import { TRANSFER_REVIEW_PATH } from '../lib/routes';
  */
 export function TransferRulesPage() {
   const { t } = useTranslation();
+  useDocumentTitle(t('v3.review.rules.title'));
   const rules = trpc.transferReview.rules.list.useQuery();
   const hidden = trpc.transferReview.rules.listHidden.useQuery();
 
