@@ -6,6 +6,7 @@ import {
   type PostgresQueueBackend,
   Queue,
   UnrecoverableError,
+  WaitingError,
   Worker,
 } from 'bullmq';
 
@@ -39,6 +40,11 @@ const IDLE_BLOCK_SECONDS = 900;
 // Must exceed the 300s suspend window too, or it alone keeps the compute up. A
 // job orphaned by a dead worker is reclaimed within two intervals.
 const STALLED_INTERVAL_MS = 600_000;
+// BullMQ's default, set on purpose (SC-1146). A restart no longer spends it —
+// `close(true)` hands in-flight jobs back — so a stall now means the process
+// died mid-job, and a job that kills it twice is failed rather than retried
+// into a crash loop.
+const MAX_STALLED_COUNT = 1;
 
 export interface WorkerClientConfig {
   /** Postgres connection string — the same DATABASE_URL the app already uses. */
@@ -66,6 +72,13 @@ type ProcessorClass =
 
 export type TerminalFailureHook = (job: Job, err: Error) => void;
 
+interface InFlightJob {
+  job: Job;
+  token: string | undefined;
+  handedBack: boolean;
+  abandon: (err: Error) => void;
+}
+
 // Wraps a single BullMQ Worker. Owns the per-job-name dispatch table and
 // the DLQ push on terminal failure. Application-policy concerns (Sentry
 // capture, custom alerting) plug in via `onTerminalFailure(hook)`.
@@ -85,6 +98,9 @@ export class WorkerClient {
   private readonly scheduledNames = new Set<string>();
   private cronSemaphore: Semaphore | null = null;
   private readonly terminalFailureHooks: TerminalFailureHook[] = [];
+  private readonly inFlight = new Map<string, InFlightJob>();
+  private handingBack = false;
+  private closing: Promise<void> | null = null;
 
   configure(config: WorkerClientConfig): void {
     if (this.config) {
@@ -141,7 +157,31 @@ export class WorkerClient {
   // a cron-budget slot is queue latency rather than the job being slow, and
   // folding it in would make the two numbers disagree with no way to tell
   // which question a reader was asking.
-  private async runJob(job: Job): Promise<unknown> {
+  //
+  // The race is what lets `handBack()` end an attempt BullMQ is still waiting
+  // on: the handler cannot be cancelled, so the attempt settles with
+  // `WaitingError` instead, which BullMQ records as nothing at all.
+  private async runJob(job: Job, token: string | undefined): Promise<unknown> {
+    const id = String(job.id);
+    let abandon!: (err: Error) => void;
+    const abandoned = new Promise<never>((_, reject) => {
+      abandon = reject;
+    });
+    const entry: InFlightJob = { job, token, handedBack: false, abandon };
+    this.inFlight.set(id, entry);
+    try {
+      if (this.handingBack) await this.handBackOne(entry);
+      const work = this.dispatch(entry);
+      // A handed-back handler still settles later, with nobody awaiting it.
+      work.catch(() => undefined);
+      return await Promise.race([work, abandoned]);
+    } finally {
+      this.inFlight.delete(id);
+    }
+  }
+
+  private async dispatch(entry: InFlightJob): Promise<unknown> {
+    const { job } = entry;
     const processor = this.processors.get(job.name);
     if (!processor) throw new Error(`No processor registered for job '${job.name}'`);
     // Gate scheduled jobs through the cron semaphore (when one was
@@ -153,6 +193,10 @@ export class WorkerClient {
       this.cronSemaphore && this.scheduledNames.has(job.name)
         ? await this.cronSemaphore.acquire()
         : null;
+    if (entry.handedBack) {
+      release?.();
+      return undefined;
+    }
     const start = Date.now();
     log.info({ jobId: job.id, name: job.name }, '▶️ Processing job');
     try {
@@ -182,7 +226,7 @@ export class WorkerClient {
 
     this.worker = new Worker(
       queueName,
-      (job) => this.runJob(job),
+      (job, token) => this.runJob(job, token),
       {
         connection: { connectionString: cfg.connection, schema: cfg.schema ?? 'bullmq' },
         concurrency: cfg.concurrency ?? 1,
@@ -197,6 +241,7 @@ export class WorkerClient {
         drainDelay: IDLE_BLOCK_SECONDS,
         maximumBlockTimeout: IDLE_BLOCK_SECONDS,
         stalledInterval: STALLED_INTERVAL_MS,
+        maxStalledCount: MAX_STALLED_COUNT,
       } as never,
       createPostgresBackend
     );
@@ -348,19 +393,31 @@ export class WorkerClient {
   /**
    * Close the worker.
    *
-   * Default (force=false): BullMQ waits for every in-flight job to
-   * complete before resolving. With long-running processors
-   * (portfolio-history-backfill at ~35s, wallet-import at ~75s) this
-   * can exceed Fly's 30s grace_period and the platform will SIGKILL
-   * the process mid-shutdown — leaving Sentry breadcrumbs unflushed
-   * and possibly corrupting BullMQ lock state.
+   * `close(false)` waits for every in-flight job to finish, which a long
+   * job (a 400-day portfolio backfill runs ~45 min) never does inside
+   * Fly's 30s grace period.
    *
-   * Callers (worker app graceful shutdown) should wrap this in a
-   * Promise.race with their own timeout, log active count, and call
-   * close(true) on timeout to force-cancel remaining jobs (BullMQ
-   * marks them as `failed` so they retry on the next worker boot).
+   * `close(true)` hands every in-flight job back to `waiting` first
+   * (`handBack()`), then closes. It also completes a `close(false)` that
+   * is already pending, because the jobs it was waiting on have returned.
+   *
+   * Before SC-1146 neither was true. BullMQ's own force-close writes
+   * nothing, so the job stayed `active` until its lock expired and the
+   * stalled check reclaimed it — one stalled interval (600s) after the next
+   * boot, spending the one stall `maxStalledCount` allows, so a second
+   * deploy failed the job outright. And a force-close after a pending `close(false)` returned
+   * BullMQ's same pending promise and waited on the job it was meant to
+   * abandon.
    */
   async close(force = false): Promise<void> {
+    if (force) await this.handBack();
+    this.closing ??= this.closeWorker(force);
+    const closing = this.closing;
+    await closing;
+    if (this.closing === closing) this.closing = null;
+  }
+
+  private async closeWorker(force: boolean): Promise<void> {
     if (this.worker) {
       await this.worker.close(force);
       this.worker = null;
@@ -374,6 +431,43 @@ export class WorkerClient {
     this.cronSemaphore = null;
     this.terminalFailureHooks.length = 0;
     this.config = null;
+    this.handingBack = false;
+  }
+
+  /**
+   * Move every in-flight job back to `waiting` with its lock token, so the
+   * next worker picks it up at once. It spends neither an attempt nor a
+   * stall, and it is only reached on a graceful shutdown: a process that
+   * dies runs none of this, and its jobs are reclaimed by the stalled check
+   * and counted against `maxStalledCount`. That asymmetry is the point — it
+   * is what tells a long job apart from one that kills the worker.
+   *
+   * The handlers keep running until the process exits; their results are
+   * discarded, because the token they would commit with is no longer the
+   * job's.
+   */
+  async handBack(): Promise<void> {
+    if (!this.worker) return;
+    this.handingBack = true;
+    // Paused, so BullMQ does not fetch a replacement for each job returned.
+    await this.worker.pause(true);
+    await Promise.all([...this.inFlight.values()].map((entry) => this.handBackOne(entry)));
+  }
+
+  private async handBackOne(entry: InFlightJob): Promise<void> {
+    if (entry.handedBack) return;
+    entry.handedBack = true;
+    const { job } = entry;
+    try {
+      await job.moveToWait(entry.token);
+      log.warn({ jobId: job.id, name: job.name }, '↩️ Handed an in-flight job back to waiting');
+    } catch (err) {
+      log.error(
+        { jobId: job.id, name: job.name, error: err instanceof Error ? err.message : String(err) },
+        'Could not hand the job back — the stalled check will reclaim it'
+      );
+    }
+    entry.abandon(new WaitingError());
   }
 
   /** Poll now instead of at the idle timer — the api's ping after an enqueue (SC-1144). */
