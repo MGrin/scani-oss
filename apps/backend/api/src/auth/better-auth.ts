@@ -16,6 +16,7 @@ import { emailOTP, magicLink } from 'better-auth/plugins';
 import { and, eq, isNull } from 'drizzle-orm';
 import { Container } from 'typedi';
 import { screenshotBotPlugin } from './screenshot-bot-plugin';
+import { recordSignupSource, signupSourceFromAuthContext } from './signup-source';
 
 const authLogger = createComponentLogger('auth');
 
@@ -109,7 +110,10 @@ export function createBetterAuth(opts: {
     databaseHooks: {
       user: {
         create: {
-          after: async (user) => {
+          after: async (user, ctx) => {
+            // SC-515. Where this account came from, read off the sign-in request
+            // itself — the only place that survives the email round trip.
+            await recordSignupSource(user.id, signupSourceFromAuthContext(ctx));
             try {
               const baseCurrencyId = await getDefaultBaseCurrencyId();
               if (!baseCurrencyId) return;

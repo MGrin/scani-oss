@@ -16,6 +16,7 @@ import { Toaster } from '@scani/ui/ui/toaster';
 import * as Sentry from '@sentry/react';
 import React from 'react';
 import ReactDOM from 'react-dom/client';
+import { captureSignupSource } from '@/lib/signup-source';
 import { TRPCProvider } from '@/lib/trpc-provider';
 import { warmInterface } from '@/lib/warm-interface';
 import { applyDocumentUiVersion } from '@/v3/lib/ui-version';
@@ -131,6 +132,12 @@ applyFormatLocale(
 // millisecond it saved. No-ops for a device that has never had a session; it is
 // going to the sign-in form and needs none of it.
 void warmInterface(window.location.pathname);
+
+// Here, not in a component, because an anonymous visitor arriving at
+// `/?src=demo` is redirected to `/auth` before anything renders and the query
+// string does not survive that (SC-515). Reads one parameter, writes one
+// sessionStorage key, and does nothing at all on a visit that carried no tag.
+captureSignupSource();
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {

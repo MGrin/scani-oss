@@ -44,14 +44,64 @@ describe('loadDemoConfig', () => {
     expect(
       loadDemoConfig({ SCANI_DEMO_MODE: '1', SCANI_DEMO_SIGNUP_URL: 'https://app.example.com/x' })
         .signupUrl
-    ).toBe('https://app.example.com/x');
+    ).toBe('https://app.example.com/x?src=demo');
   });
 
   test('a blank configured URL falls back rather than rendering a dead link', () => {
     resetDemoConfig();
     expect(loadDemoConfig({ SCANI_DEMO_MODE: '1', SCANI_DEMO_SIGNUP_URL: '  ' }).signupUrl).toBe(
-      'https://app.scani.xyz'
+      'https://app.scani.xyz/?src=demo'
     );
+  });
+
+  /**
+   * SC-515. The demo is the one deployment that knows a click came from the
+   * demo, so the tag is put on here rather than trusted to configuration.
+   */
+  describe('the signup link carries the funnel tag', () => {
+    test('the default destination is tagged', () => {
+      resetDemoConfig();
+      expect(loadDemoConfig({ SCANI_DEMO_MODE: '1' }).signupUrl).toBe(
+        'https://app.scani.xyz/?src=demo'
+      );
+    });
+
+    test("a self-hoster's own app is tagged too — it says where the click came from, not whose app it went to", () => {
+      resetDemoConfig();
+      expect(
+        loadDemoConfig({ SCANI_DEMO_MODE: '1', SCANI_DEMO_SIGNUP_URL: 'https://money.example.org' })
+          .signupUrl
+      ).toBe('https://money.example.org/?src=demo');
+    });
+
+    test('an existing query string survives', () => {
+      resetDemoConfig();
+      expect(
+        loadDemoConfig({
+          SCANI_DEMO_MODE: '1',
+          SCANI_DEMO_SIGNUP_URL: 'https://app.example.com/join?ref=x',
+        }).signupUrl
+      ).toBe('https://app.example.com/join?ref=x&src=demo');
+    });
+
+    test('a configured tag is not overwritten', () => {
+      resetDemoConfig();
+      expect(
+        loadDemoConfig({
+          SCANI_DEMO_MODE: '1',
+          SCANI_DEMO_SIGNUP_URL: 'https://app.example.com/?src=partner',
+        }).signupUrl
+      ).toBe('https://app.example.com/?src=partner');
+    });
+
+    test('an unparseable URL reaches the banner unchanged rather than becoming an error', () => {
+      // Not this module's validation boundary, and a demo that refuses to boot
+      // over a bad link is worse than one whose banner link does nothing.
+      resetDemoConfig();
+      expect(
+        loadDemoConfig({ SCANI_DEMO_MODE: '1', SCANI_DEMO_SIGNUP_URL: 'not a url' }).signupUrl
+      ).toBe('not a url');
+    });
   });
 
   test('caches, so posture cannot change between two requests of one process', () => {

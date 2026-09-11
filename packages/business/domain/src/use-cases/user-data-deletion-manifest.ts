@@ -315,6 +315,12 @@ export const USER_ROW_COLUMN_DISPOSITIONS: readonly UserColumnDisposition[] = [
   },
   {
     kind: 'keep',
+    column: schema.users.signupSource,
+    reason:
+      'Which of three fixed words described the sign-in that created the row — `demo`, `direct` or `unknown`. It holds nothing the user entered, identifies nobody (every account that ever came from the demo carries the same word), and survives the deletion the way the row it sits on does. Clearing it would move the account into the NULL bucket, which is defined as "predates the column" — asserting something false about an instrument rather than erasing something true about a person (SC-515).',
+  },
+  {
+    kind: 'keep',
     column: schema.users.emailUnsubscribeToken,
     reason:
       "The bearer credential every unsubscribe link authenticates on. Rotating it here would break links already in the account's inbox.",

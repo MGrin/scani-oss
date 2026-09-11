@@ -94,6 +94,24 @@ export const users = pgTable(
     // is derivable from rows the product already writes. NULL on the accounts
     // that predate the column means "unknown", not "never exported".
     firstExportAt: timestamp('first_export_at', { withTimezone: true }),
+    // Where the sign-in that CREATED this account came from (SC-515). The
+    // activation funnel is keyed to a row in this table, so a demo visitor —
+    // who has no account — cannot appear in it at all; this is the one place
+    // the demo's own conversion can be recorded, and it is written once, in
+    // Better-Auth's `user.create.after` hook, from the sign-in request itself.
+    //
+    // `demo` / `direct` / `unknown`, enforced by `users_signup_source_known`;
+    // `signupSourceFrom` in `apps/backend/api/src/auth/signup-source.ts` is the
+    // only thing that produces a value. `direct` is an OBSERVED absence and
+    // `unknown` is a flow that cannot carry a tag (the PWA's email-OTP
+    // sign-in), and they are separate for the same reason NULL is a fourth
+    // state here: NULL means the account predates the column — unknown, not
+    // "not from the demo", exactly like `first_export_at` above.
+    //
+    // Not a credential and not trusted: the tag rides in the `callbackURL` a
+    // browser supplied, so anybody can assert `demo`. It is an attribution
+    // signal, which is all the funnel needs it to be.
+    signupSource: text('signup_source'),
     // What every unsubscribe link authenticates on — a bearer credential, minted
     // per user, deliberately not `users.id` (which travels through API responses
     // and logs). ONE token for every stream (SC-459): the token names the
