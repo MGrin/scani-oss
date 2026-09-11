@@ -1,3 +1,4 @@
+import { useDocumentTitle } from '@scani/ui/hooks/useDocumentTitle';
 import { Skeleton } from '@scani/ui/ui/skeleton';
 import { LoadingRamp } from '@scani/ui/v3/components/feedback/LoadingRamp';
 import { QueryError } from '@scani/ui/v3/components/feedback/QueryError';
@@ -113,6 +114,7 @@ function useNetWorthSeriesPrefetch(): void {
 
 export function HomePage() {
   const { t } = useTranslation();
+  useDocumentTitle(t('nav.home'));
   const overview = trpc.dashboard.getOverview.useQuery();
   const openCapture = useOpenCapture();
   const { count: reviewCount } = useReviewFeed();

@@ -1,3 +1,4 @@
+import { useDocumentTitle } from '@scani/ui/hooks/useDocumentTitle';
 import { Button } from '@scani/ui/ui/button';
 import { Input } from '@scani/ui/ui/input';
 import { showError, showSuccess } from '@scani/ui/ui/use-toast';
@@ -31,6 +32,7 @@ import { groupDetailPath } from '../lib/routes';
  */
 export function GroupsPage() {
   const { t } = useTranslation();
+  useDocumentTitle(t('v3.groups.page.title'));
   const navigate = useNavigate();
   const utils = trpc.useUtils();
   const groupsQuery = trpc.groups.getAllWithCounts.useQuery();

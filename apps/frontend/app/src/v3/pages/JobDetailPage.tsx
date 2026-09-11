@@ -1,3 +1,4 @@
+import { useDocumentTitle } from '@scani/ui/hooks/useDocumentTitle';
 import { cn } from '@scani/ui/lib/cn';
 import { MIRROR_IN_RTL } from '@scani/ui/lib/direction';
 import { Button } from '@scani/ui/ui/button';
@@ -9,6 +10,7 @@ import { Link, useParams } from 'react-router-dom';
 import { trpc } from '@/lib/trpc';
 import { useJobStatus } from '@/v3/hooks/useJobStatus';
 import { JobDetailHeader } from '../components/jobs/JobDetailHeader';
+import { jobLabelFor } from '../lib/job-labels';
 import { resolveV3ReviewRenderer } from '../lib/job-result';
 import { deriveJobOutcomeState } from '../lib/jobs';
 import { V3_ROUTES } from '../lib/routes';
@@ -38,6 +40,9 @@ export function JobDetailPage() {
   const { jobId = '' } = useParams<{ jobId: string }>();
   const jobQuery = trpc.jobs.getMine.useQuery({ jobId }, { enabled: Boolean(jobId) });
   const live = useJobStatus(jobId || null);
+  useDocumentTitle(
+    jobQuery.data ? jobLabelFor(t, jobQuery.data.jobName).label : t('v3.jobs.page.title')
+  );
 
   if (jobQuery.isLoading) {
     return (

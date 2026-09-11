@@ -1,3 +1,4 @@
+import { useDocumentTitle } from '@scani/ui/hooks/useDocumentTitle';
 import {
   Accordion,
   AccordionContent,
@@ -998,6 +999,7 @@ function ThemePane({ theme }: { theme: (typeof THEMES)[number] }) {
 }
 
 export function KitchenSinkPage() {
+  useDocumentTitle('Kitchen sink');
   return (
     <div className="mx-auto flex max-w-6xl flex-col gap-4 p-4">
       <header>

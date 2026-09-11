@@ -1,3 +1,4 @@
+import { useDocumentTitle } from '@scani/ui/hooks/useDocumentTitle';
 import { Button } from '@scani/ui/ui/button';
 import { Segmented, SegmentedItem } from '@scani/ui/ui/segmented';
 import { PageHeader, PageLayout } from '@scani/ui/v3/components/PageLayout';
@@ -50,6 +51,11 @@ export function MoneyPage() {
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const segment = resolveMoneySegment(pathname);
+  // Money is the heading on every view; the other three name themselves.
+  const segmentLabelKey = MONEY_SEGMENTS.find((entry) => entry.key === segment)?.labelKey;
+  useDocumentTitle(
+    segment === 'upcoming' || !segmentLabelKey ? t('v3.money.page.title') : t(segmentLabelKey)
+  );
   const [creatingVendor, setCreatingVendor] = useState(false);
 
   // The longer of the two windows (V3-47): bills are read from the first thirty

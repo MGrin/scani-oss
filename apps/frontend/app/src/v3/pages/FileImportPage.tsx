@@ -1,3 +1,4 @@
+import { useDocumentTitle } from '@scani/ui/hooks/useDocumentTitle';
 import { Block } from '@scani/ui/v3/components/Block';
 import { PageLayout } from '@scani/ui/v3/components/PageLayout';
 import { describeQueryError } from '@scani/ui/v3/lib/errors';
@@ -58,6 +59,7 @@ export function FileImportPage() {
   // (SC-71 5.4).
   const [searchParams] = useSearchParams();
   const heading = fileImportCopy(searchParams.get(FILE_IMPORT_KIND_PARAM));
+  useDocumentTitle(t(heading.titleKey));
 
   const [file, setFile] = useState<File | null>(null);
   const [stage, setStage] = useState<CaptureStage | null>(null);

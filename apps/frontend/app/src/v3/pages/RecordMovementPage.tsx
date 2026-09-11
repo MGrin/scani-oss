@@ -1,3 +1,4 @@
+import { useDocumentTitle } from '@scani/ui/hooks/useDocumentTitle';
 import { Block } from '@scani/ui/v3/components/Block';
 import { PageLayout } from '@scani/ui/v3/components/PageLayout';
 import { useTranslation } from 'react-i18next';
@@ -42,6 +43,7 @@ import { V3_ROUTES } from '../lib/routes';
  */
 export function RecordMovementPage() {
   const { t } = useTranslation();
+  useDocumentTitle(t('v3.holdings.movement.title'));
   const navigate = useNavigate();
   const holdingsQuery = trpc.holdings.getWithDetails.useQuery();
   const leave = () => navigate(V3_ROUTES.holdings, { replace: true });

@@ -1,3 +1,4 @@
+import { useDocumentTitle } from '@scani/ui/hooks/useDocumentTitle';
 import { PageHeader, PageLayout } from '@scani/ui/v3/components/PageLayout';
 import { mergeQueries } from '@scani/ui/v3/lib/query-state';
 import { useTranslation } from 'react-i18next';
@@ -15,6 +16,7 @@ import type { InstitutionRow } from '../lib/accounts';
  */
 export function InstitutionsPage() {
   const { t } = useTranslation();
+  useDocumentTitle(t('v3.entities.institution.pageTitle'));
   const institutionsQuery = trpc.institutions.getByUserIdWithSummary.useQuery();
   const typesQuery = trpc.institutionTypes.getAll.useQuery();
   const { symbol: currency } = useBaseCurrency();

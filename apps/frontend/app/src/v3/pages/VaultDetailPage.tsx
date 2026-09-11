@@ -1,3 +1,4 @@
+import { useDocumentTitle } from '@scani/ui/hooks/useDocumentTitle';
 import { cn } from '@scani/ui/lib/cn';
 import { MIRROR_IN_RTL } from '@scani/ui/lib/direction';
 import { Button } from '@scani/ui/ui/button';
@@ -60,6 +61,7 @@ export function VaultDetailPage() {
   const navigate = useNavigate();
   const utils = trpc.useUtils();
   const vaultQuery = trpc.vaults.getById.useQuery({ id }, { enabled: Boolean(id) });
+  useDocumentTitle(vaultQuery.data?.name ?? t('v3.vaults.page.title'));
 
   const [attaching, setAttaching] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);

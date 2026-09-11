@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { useDocumentTitle } from '../../hooks/useDocumentTitle';
 import { useUiTranslation } from '../../i18n';
 import {
   BottomDrawer,
@@ -191,6 +192,9 @@ export function PeekSheet({ open, onOpenChange, spec, noun, isLoading }: PeekShe
   const { t } = useUiTranslation();
   const isDesktop = useIsDesktop();
   const loadingPhase = useDelayedLoading(Boolean(isLoading));
+  // The record names the tab once it has loaded — until then the list page's
+  // title stands, rather than "Loading…" or "Not found" (SC-996).
+  useDocumentTitle(open && spec ? spec.title : null);
 
   const resolved: PeekSpec = spec ?? {
     title: isLoading ? t('ui.peek.loading') : t('ui.peek.notFound'),

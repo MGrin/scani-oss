@@ -1,3 +1,4 @@
+import { useDocumentTitle } from '@scani/ui/hooks/useDocumentTitle';
 import { PageHeader, PageLayout } from '@scani/ui/v3/components/PageLayout';
 import { loadingOnly } from '@scani/ui/v3/lib/query-state';
 import { useTranslation } from 'react-i18next';
@@ -25,6 +26,7 @@ import { ReviewQueues } from '../components/review/ReviewQueues';
  */
 export function ReviewPage() {
   const { t } = useTranslation();
+  useDocumentTitle(t('v3.review.page.title'));
   const { items, isLoading } = useReviewFeed();
 
   return (

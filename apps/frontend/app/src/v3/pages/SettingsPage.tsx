@@ -1,3 +1,4 @@
+import { useDocumentTitle } from '@scani/ui/hooks/useDocumentTitle';
 import { PageHeader, PageLayout } from '@scani/ui/v3/components/PageLayout';
 import { useTranslation } from 'react-i18next';
 import { AccountSettings } from '../components/settings/AccountSettings';
@@ -38,6 +39,7 @@ import { SessionsSettings } from '../components/settings/SessionsSettings';
  */
 export function SettingsPage() {
   const { t } = useTranslation();
+  useDocumentTitle(t('settings.title'));
 
   return (
     <PageLayout>
