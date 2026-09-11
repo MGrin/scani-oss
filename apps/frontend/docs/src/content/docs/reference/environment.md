@@ -158,6 +158,7 @@ enabled](/self-hosting/tier1/optional-keys/#how-to-tell-whats-enabled).
 | `VITE_SENTRY_DSN` | app (frontend) | Browser-side Sentry. Baked at build time. |
 | `VITE_SENTRY_ENABLED` | app (frontend) | Enable client-side reporting. |
 | `VITE_API_URL` | app (frontend) | URL the SPA calls for `/api`. Bun-bundled image bakes `/api`. |
+| `SCANI_COMMIT` | docs site (build) | Full 40-hex commit the docs are built from, written into every page as `<meta name="scani-commit">` so a probe can tell which commit a host serves. Unset = no marker; anything else that is not a full sha fails the build. |
 | `API_UPSTREAM` | app (frontend-app nginx) | Inside the prod `frontend-app` image, nginx reverse-proxies `/api/*` → `${API_UPSTREAM}`. Default `http://api:3001` (compose network). Override when running `frontend-app` outside compose. |
 | `FRONTEND_PORT` | docker-compose.prod.yml | Host port for the `frontend-app` container. Default 8080. |
 | `CSP_CONNECT_SRC` | app (frontend-app nginx) | `connect-src` for the Content-Security-Policy nginx sends. Default `'self'`, which is correct when the SPA reaches the API through the container's own `/api` proxy. Set it when you serve the SPA and the API from different origins, e.g. `'self' https://api.example.com wss://api.example.com` — the browser blocks XHR/WebSocket to any origin not listed. Leave the other CSP directives alone; they are fixed in the image. |

@@ -20,6 +20,7 @@ import {
   classifyShape,
   countLiteral,
   extractAssets,
+  extractPageCommit,
   extractRelease,
   type Fetched,
   identityVerdict,
@@ -162,6 +163,33 @@ describe('extractRelease — unavailable is not absent', () => {
 
   test('a short hex string is not a commit', () => {
     expect(extractRelease('release:"cee3544"')).toBeNull();
+  });
+});
+
+describe('extractPageCommit — a static site names its own commit (SC-995)', () => {
+  const SHA = 'cee35445753d2c8ecc3f4606fc0fbcf7772a6935';
+
+  test('finds the marker the docs build writes into every page', () => {
+    const html = `<head><meta charset="utf-8"><meta name="scani-commit" content="${SHA}"></head>`;
+    expect(extractPageCommit(html)).toBe(SHA);
+  });
+
+  test('attribute order is not a contract', () => {
+    expect(extractPageCommit(`<meta content="${SHA}" name="scani-commit"/>`)).toBe(SHA);
+  });
+
+  // The control for the case above: a 40-hex content on some OTHER meta must
+  // not be read as the commit, or any page with a hash in its head would pass.
+  test('another meta carrying a hash is not the marker', () => {
+    expect(extractPageCommit(`<meta name="generator" content="${SHA}">`)).toBeNull();
+  });
+
+  test('a page with no marker reads null — a pre-SC-995 build, not an absent commit', () => {
+    expect(extractPageCommit('<head><meta name="generator" content="Astro v6"></head>')).toBeNull();
+  });
+
+  test('a short sha is not a commit', () => {
+    expect(extractPageCommit('<meta name="scani-commit" content="cee3544">')).toBeNull();
   });
 });
 

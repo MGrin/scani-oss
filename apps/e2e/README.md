@@ -901,10 +901,10 @@ as though it were is the mistake they invite.** A test that owns a transaction
 can insert a token type and a token itself;
 `domain/tests/repositories/TokenRepository.scam-score-selection.test.ts` looks a
 code up and creates it when absent, which is the pattern to copy. `makeToken`
-will not do it for you: its `getOrCreateCryptoTokenType` inserts `crypto` only
-when `token_types` is EMPTY, and on a migrated database its `select … limit 1`
-returns **fiat** despite the name. Pass `typeId` when you care which type you
-get.
+does the same for `crypto`: with no `typeId`, its `getOrCreateCryptoTokenType`
+looks up `code = 'crypto'` and inserts it only when absent, so the default is a
+crypto token on a migrated database too. Until SC-967 it read `select … limit 1`
+and returned **fiat** despite the name. Pass `typeId` for any other type.
 
 Falsifier, one query against any migrated stack. A second row in the result
 means a non-fiat token now ships and this section is stale:

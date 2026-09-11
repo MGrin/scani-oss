@@ -13,7 +13,11 @@ import { makeInstitution, makeVendor } from './factories';
 async function getOrCreateCryptoTokenType(
   tx: DatabaseTransaction
 ): Promise<typeof schema.tokenTypes.$inferSelect> {
-  const existing = await tx.select().from(schema.tokenTypes).limit(1);
+  const existing = await tx
+    .select()
+    .from(schema.tokenTypes)
+    .where(eq(schema.tokenTypes.code, 'crypto'))
+    .limit(1);
   if (existing[0]) return existing[0];
   const [row] = await tx
     .insert(schema.tokenTypes)

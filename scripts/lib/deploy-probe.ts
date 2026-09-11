@@ -158,6 +158,30 @@ export function extractRelease(js: string): string | null {
 }
 
 /**
+ * The commit a static PAGE was built from, for a host that ships no bundle to
+ * carry {@link extractRelease}'s marker (SC-995).
+ *
+ * `docs.scani.xyz` is Astro output: HTML with `/_astro/*` assets and no
+ * `/assets/*.js`, so the bundle arm had nothing to read and the site could not
+ * say which commit it served. Its build writes
+ * `<meta name="scani-commit" content="<sha>">` into every page instead, so the
+ * index document the probe already fetched answers the question itself.
+ *
+ * Matched on the attribute pair in either order, because the renderer's
+ * attribute order is not a contract. `null` means the page carries no marker —
+ * a build that predates it or ran without `SCANI_COMMIT` — and, like a missing
+ * release, is a fact about the host rather than the commit.
+ */
+export function extractPageCommit(html: string): string | null {
+  for (const tag of html.match(/<meta\b[^>]*>/gi) ?? []) {
+    if (!/\bname\s*=\s*["']scani-commit["']/i.test(tag)) continue;
+    const sha = /\bcontent\s*=\s*["']([0-9a-f]{40})["']/.exec(tag)?.[1];
+    if (sha !== undefined) return sha;
+  }
+  return null;
+}
+
+/**
  * Non-overlapping occurrences of a literal.
  *
  * A literal rather than a pattern on purpose: the searchable unit for a
