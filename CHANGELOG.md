@@ -32,6 +32,7 @@ comment is deliberately in that position; explanatory prose should not be.
 
 ### Bug Fixes
 
+* port nine drifted oss-eligible paths to the mirror (SC-1105) ([9c5331a](https://github.com/MGrin/scani-oss/commit/9c5331accc94c90231257d6e62dc1a2e9cf16260))
 * **ci:** skip the release-notes check job when nothing is compared ([794b6ce](https://github.com/MGrin/scani-oss/commit/794b6ce81deb405e3c74d5cc7b8c5835ab8299b2))
 * **docs:** point docs:check at AGENTS.md (SC-1140) ([e4540ef](https://github.com/MGrin/scani-oss/commit/e4540ef5423e604305fd5d76005d2023d8dd08a8))
 * **holdings:** headline the inactive total when every listed holding is inactive ([b33edfe](https://github.com/MGrin/scani-oss/commit/b33edfe177760fe139611d8c14e61404a76677a8))
