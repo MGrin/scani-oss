@@ -19,6 +19,31 @@ version heading stays there permanently, above every future release. This
 comment is deliberately in that position; explanatory prose should not be.
 -->
 
+## [0.44.0](https://github.com/MGrin/scani-oss/compare/v0.43.0...v0.44.0) (2026-09-11)
+
+
+### Features
+
+* **auth:** record where a signup came from, so the demo has a funnel step (SC-515) ([cde553e](https://github.com/MGrin/scani-oss/commit/cde553e9669e871922d7715967df4366a9cf4ab6))
+* **ci:** alert when Coverage goes red having been green ([2bbdfc1](https://github.com/MGrin/scani-oss/commit/2bbdfc143b95a8f44b3e762a83397461ccfc04ad))
+* **settings:** show the cost-basis method, and change it only behind a confirmation (SC-980) ([117b02b](https://github.com/MGrin/scani-oss/commit/117b02b1dba242a8bac08f3db833e1941b3ae7f0))
+* **worker:** add the nightly db-backup job ([7a1af05](https://github.com/MGrin/scani-oss/commit/7a1af05da36d97a2d72d3a4fbb3a470036e6af5f))
+
+
+### Bug Fixes
+
+* **ci:** skip the release-notes check job when nothing is compared ([794b6ce](https://github.com/MGrin/scani-oss/commit/794b6ce81deb405e3c74d5cc7b8c5835ab8299b2))
+* **docs:** point docs:check at AGENTS.md (SC-1140) ([e4540ef](https://github.com/MGrin/scani-oss/commit/e4540ef5423e604305fd5d76005d2023d8dd08a8))
+* **holdings:** headline the inactive total when every listed holding is inactive ([b33edfe](https://github.com/MGrin/scani-oss/commit/b33edfe177760fe139611d8c14e61404a76677a8))
+* **holdings:** price a holding by token id, not by symbol ([74d0ee5](https://github.com/MGrin/scani-oss/commit/74d0ee5fc452e8c68389f0d21edcb3e602d9dfc5))
+* **oss:** read a block comment by state, so JSX comments are prose (SC-1135) ([7884e42](https://github.com/MGrin/scani-oss/commit/7884e421afe8d13015baf9e1aca095be0f4dce40))
+* **oss:** refuse Sentry issue short-IDs, and remove the ones already published (SC-923) ([1e60a7b](https://github.com/MGrin/scani-oss/commit/1e60a7b057e99c120f184464256ea0101e238c13))
+* **oss:** run the internal-reference check at the push, not only at commit (SC-1101) ([7713803](https://github.com/MGrin/scani-oss/commit/77138038f49d79e10edb04ac5e7305e2f141b1e3))
+* **oss:** the figures refusal names the route that works, not a re-run (SC-992) ([1ae5b56](https://github.com/MGrin/scani-oss/commit/1ae5b56e535ab9119352d13a466d64d180a2874c))
+* **oss:** widen check-oss-prose to figure claims about one specific account ([eb45679](https://github.com/MGrin/scani-oss/commit/eb45679cd2d2f6f8b0a5eacab25384c3bd5bbcd9))
+* **pricing:** refuse external providers for a manually-priced token type ([3961a4d](https://github.com/MGrin/scani-oss/commit/3961a4dab43ec676776d93a8cd2da4ef0bd75768))
+* **tokens:** attribute a custom token's decimals to its creator ([70d2c1d](https://github.com/MGrin/scani-oss/commit/70d2c1d8083b950d66cb7c46a45b180e5791b1e3))
+
 ## [0.43.0](https://github.com/MGrin/scani-oss/compare/v0.42.0...v0.43.0) (2026-09-06)
 
 
