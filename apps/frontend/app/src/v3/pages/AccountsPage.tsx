@@ -1,3 +1,4 @@
+import { useDocumentTitle } from '@scani/ui/hooks/useDocumentTitle';
 import { PageHeader, PageLayout } from '@scani/ui/v3/components/PageLayout';
 import { mergeQueries } from '@scani/ui/v3/lib/query-state';
 import { useMemo, useState } from 'react';
@@ -26,6 +27,7 @@ import { accountFiltersFromParams } from '../lib/accounts';
  */
 export function AccountsPage() {
   const { t } = useTranslation();
+  useDocumentTitle(t('v3.entities.account.pageTitle'));
   const accountsQuery = trpc.accounts.getByUserIdWithSummary.useQuery();
   const groupsQuery = trpc.groups.getAll.useQuery();
   const institutionsQuery = trpc.institutions.getByUserId.useQuery();

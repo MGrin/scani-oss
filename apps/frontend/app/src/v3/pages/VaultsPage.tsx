@@ -1,3 +1,4 @@
+import { useDocumentTitle } from '@scani/ui/hooks/useDocumentTitle';
 import { Button } from '@scani/ui/ui/button';
 import { Input } from '@scani/ui/ui/input';
 import { showError, showSuccess } from '@scani/ui/ui/use-toast';
@@ -34,6 +35,7 @@ import { vaultDetailPath } from '../lib/routes';
  */
 export function VaultsPage() {
   const { t } = useTranslation();
+  useDocumentTitle(t('v3.vaults.page.title'));
   const navigate = useNavigate();
   const utils = trpc.useUtils();
   const vaultsQuery = trpc.vaults.getAll.useQuery();

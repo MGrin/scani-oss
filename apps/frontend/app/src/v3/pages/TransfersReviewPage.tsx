@@ -1,3 +1,4 @@
+import { useDocumentTitle } from '@scani/ui/hooks/useDocumentTitle';
 import { Button } from '@scani/ui/ui/button';
 import { PageHeader, PageLayout } from '@scani/ui/v3/components/PageLayout';
 import { mergeQueries } from '@scani/ui/v3/lib/query-state';
@@ -22,6 +23,7 @@ import { TRANSFER_ANSWERED_PATH, TRANSFER_RULES_PATH } from '../lib/routes';
  */
 export function TransfersReviewPage() {
   const { t } = useTranslation();
+  useDocumentTitle(t('v3.review.page.transfersTitle'));
   const query = trpc.transferReview.listPending.useQuery();
 
   return (

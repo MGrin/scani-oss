@@ -1,3 +1,4 @@
+import { useDocumentTitle } from '@scani/ui/hooks/useDocumentTitle';
 import { cn } from '@scani/ui/lib/cn';
 import { MIRROR_IN_RTL } from '@scani/ui/lib/direction';
 import { Button } from '@scani/ui/ui/button';
@@ -38,6 +39,7 @@ export function DocumentDetailPage() {
     { documentId },
     { enabled: Boolean(documentId) }
   );
+  useDocumentTitle(documentQuery.data?.document.originalFilename ?? t('v3.documents.page.title'));
 
   const reject = trpc.documents.rejectExtraction.useMutation({
     onSuccess: () => showSuccess(t('v3.documents.detail.invoiceRejected')),

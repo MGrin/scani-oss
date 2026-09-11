@@ -1,3 +1,4 @@
+import { useDocumentTitle } from '@scani/ui/hooks/useDocumentTitle';
 import { cn } from '@scani/ui/lib/cn';
 import { MIRROR_IN_RTL } from '@scani/ui/lib/direction';
 import { Button } from '@scani/ui/ui/button';
@@ -135,6 +136,9 @@ export function PaymentFormPage() {
   const { t } = useTranslation();
   const { id } = useParams<{ id: string }>();
   const isEdit = Boolean(id);
+  useDocumentTitle(
+    isEdit ? t('v3.money.paymentForm.titleEdit') : t('v3.money.paymentForm.titleNew')
+  );
   const [searchParams] = useSearchParams();
   // Only meaningful on create: an edit already has its own vendor, amount and
   // cadence, and re-applying an invoice over them is a silent overwrite of what

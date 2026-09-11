@@ -1,3 +1,4 @@
+import { useDocumentTitle } from '@scani/ui/hooks/useDocumentTitle';
 import { Button } from '@scani/ui/ui/button';
 import { PageHeader, PageLayout } from '@scani/ui/v3/components/PageLayout';
 import { mergeQueries } from '@scani/ui/v3/lib/query-state';
@@ -34,6 +35,7 @@ const PAGE_SIZE = 100;
  */
 export function FilesPage() {
   const { t } = useTranslation();
+  useDocumentTitle(t('v3.documents.page.title'));
   const [search, setSearch] = useState('');
   const filesQuery = trpc.documents.list.useInfiniteQuery(
     {

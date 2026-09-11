@@ -1,3 +1,4 @@
+import { useDocumentTitle } from '@scani/ui/hooks/useDocumentTitle';
 import { cn } from '@scani/ui/lib/cn';
 import { MIRROR_IN_RTL } from '@scani/ui/lib/direction';
 import { Button } from '@scani/ui/ui/button';
@@ -82,6 +83,7 @@ export function GroupDetailPage() {
   const groupsQuery = trpc.groups.getAllWithCounts.useQuery();
   const valuesQuery = trpc.groups.getValues.useQuery();
   const group = groupsQuery.data?.find((candidate) => candidate.id === id);
+  useDocumentTitle(group?.name ?? t('v3.groups.page.title'));
   const groupValue = groupValuesById(valuesQuery.data?.groups ?? []).get(id);
 
   const membership = useGroupMembership(id);

@@ -1,3 +1,4 @@
+import { useDocumentTitle } from '@scani/ui/hooks/useDocumentTitle';
 import { Input } from '@scani/ui/ui/input';
 import { Block } from '@scani/ui/v3/components/Block';
 import { PageLayout } from '@scani/ui/v3/components/PageLayout';
@@ -36,6 +37,7 @@ import { jobDetailPath } from '../lib/routes';
  */
 export function WalletImportPage() {
   const { t } = useTranslation();
+  useDocumentTitle(t('v3.capture.page.wallet.title'));
   const navigate = useNavigate();
 
   const [draft, setDraft] = useState(emptyWalletImportDraft);

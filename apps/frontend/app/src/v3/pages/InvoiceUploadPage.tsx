@@ -1,3 +1,4 @@
+import { useDocumentTitle } from '@scani/ui/hooks/useDocumentTitle';
 import { Block } from '@scani/ui/v3/components/Block';
 import { PageLayout } from '@scani/ui/v3/components/PageLayout';
 import { describeQueryError } from '@scani/ui/v3/lib/errors';
@@ -35,6 +36,7 @@ import { jobDetailPath } from '../lib/routes';
  */
 export function InvoiceUploadPage() {
   const { t } = useTranslation();
+  useDocumentTitle(t('v3.capture.page.invoice.title'));
   const navigate = useNavigate();
 
   const [file, setFile] = useState<File | null>(null);
