@@ -41,6 +41,7 @@ import {
 import { TRPCError } from '@trpc/server';
 import { Container } from 'typedi';
 import { z } from 'zod';
+import { resolveForecastAsOf } from '../lib/forecast-as-of';
 import { strictInput } from '../lib/strict-input';
 import { requireAuth } from '../middleware/auth';
 import { protectedProcedure, router } from '../trpc';
@@ -410,43 +411,49 @@ export const paymentsRouter = router({
    * holding's value has been valued server-side by `PortfolioValuationService`
    * everywhere else in the app and re-deriving it here would be the second
    * rate path this avoids.
+   *
+   * `asOf` moves "today" for the e2e stack only, and is refused everywhere
+   * else — see `lib/forecast-as-of.ts` (SC-623). The app never sends it.
    */
-  forecast: protectedProcedure.query(async ({ ctx }) => {
-    const { dbUser } = await requireAuth(ctx);
-    const [forecast, liquid, observedBurn] = await Promise.all([
-      Container.get(PaymentForecastService).forecast(ctx.userId),
-      Container.get(LiquidAssetsService).getLiquidAssets(
-        ctx.userId,
-        dbUser.baseCurrencyId ?? undefined,
-        ctx.requestCache
-      ),
-      // SC-657. Burn measured as the rate money leaves the tracked perimeter,
-      // alongside — never summed with — the recurring book. See
-      // `services/payments/burn.ts` for why the two are not additive.
-      //
-      // `null` without a base currency rather than a figure in mixed tokens:
-      // the exits run USD/USDC/USDT/SOL/ETH, and summing raw quantity across
-      // those is meaningless. A surface with nothing to say says nothing.
-      dbUser.baseCurrencyId
-        ? Container.get(ObservedBurnService).observed(ctx.userId, dbUser.baseCurrencyId)
-        : Promise.resolve(null),
-    ]);
-    return {
-      ...forecast,
-      liquid,
-      observedBurn,
-      // SC-661. What the user has SAID about the measured drain, sent as a
-      // state rather than as six columns for the client to interpret. Whether a
-      // confirmation still holds is a domain judgement with a tolerance in it
-      // (`CONFIRMATION_TOLERANCE`), and a surface that re-derived it would be
-      // the second place that rule lives.
-      //
-      // No extra query: the columns are already on `dbUser`.
-      observedBurnAnswer: wireAnswer(
-        observedBurnAnswerOf(dbUser, dbUser.baseCurrencyId, observedBurn?.perMonthMean ?? null)
-      ),
-    };
-  }),
+  forecast: protectedProcedure
+    .input(strictInput(z.object({ asOf: DATE_STRING.optional() }).optional()))
+    .query(async ({ ctx, input }) => {
+      const asOf = resolveForecastAsOf(input?.asOf, process.env);
+      const { dbUser } = await requireAuth(ctx);
+      const [forecast, liquid, observedBurn] = await Promise.all([
+        Container.get(PaymentForecastService).forecast(ctx.userId, asOf),
+        Container.get(LiquidAssetsService).getLiquidAssets(
+          ctx.userId,
+          dbUser.baseCurrencyId ?? undefined,
+          ctx.requestCache
+        ),
+        // SC-657. Burn measured as the rate money leaves the tracked perimeter,
+        // alongside — never summed with — the recurring book. See
+        // `services/payments/burn.ts` for why the two are not additive.
+        //
+        // `null` without a base currency rather than a figure in mixed tokens:
+        // the exits run USD/USDC/USDT/SOL/ETH, and summing raw quantity across
+        // those is meaningless. A surface with nothing to say says nothing.
+        dbUser.baseCurrencyId
+          ? Container.get(ObservedBurnService).observed(ctx.userId, dbUser.baseCurrencyId, asOf)
+          : Promise.resolve(null),
+      ]);
+      return {
+        ...forecast,
+        liquid,
+        observedBurn,
+        // SC-661. What the user has SAID about the measured drain, sent as a
+        // state rather than as six columns for the client to interpret. Whether a
+        // confirmation still holds is a domain judgement with a tolerance in it
+        // (`CONFIRMATION_TOLERANCE`), and a surface that re-derived it would be
+        // the second place that rule lives.
+        //
+        // No extra query: the columns are already on `dbUser`.
+        observedBurnAnswer: wireAnswer(
+          observedBurnAnswerOf(dbUser, dbUser.baseCurrencyId, observedBurn?.perMonthMean ?? null)
+        ),
+      };
+    }),
 
   settleOccurrence: protectedProcedure
     .input(

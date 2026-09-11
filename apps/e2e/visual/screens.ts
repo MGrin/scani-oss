@@ -75,8 +75,41 @@ type VisualViewport = 'desktop' | 'phone';
  * the seeded portfolio instead would have rewritten all three home baselines
  * plus any holdings shot that gained a row, to buy coverage on one block —
  * which is the trade the "what stays out" rule above exists to refuse.
+ *
+ * `forecast` is a fourth user holding a book of recurring payments, for the
+ * cashflow forecast (SC-623). Same reason again: recurring payments on the
+ * seeded user would rewrite both of its home baselines, because home's
+ * "What's due" block lists them.
  */
-export type VisualSession = 'seeded' | 'empty' | 'allocation';
+export type VisualSession = 'seeded' | 'empty' | 'allocation' | 'forecast';
+
+/**
+ * Every screen renders at this instant. A form that defaults a date field to
+ * "today" writes today's date into its baseline, and that baseline is wrong
+ * tomorrow — `/payments/recurring/new` did exactly that on the first
+ * generation run. Pinning the clock removes the whole class rather than the
+ * one instance, and costs nothing on a screen that never asks the time.
+ *
+ * Past the seeded data on purpose: the session this runs under was created
+ * whenever the seed last ran, and a clock set before that would put the
+ * screens in front of a session the client considers unissued.
+ *
+ * Exported because the forecast seed is dated from it (SC-623): its payments
+ * must fall due AFTER this day, or the forecast would count them overdue.
+ */
+export const FIXED_NOW = new Date('2027-03-04T09:15:00Z');
+
+/**
+ * `FIXED_NOW` as the `YYYY-MM-DD` the api's forecast is pinned to.
+ *
+ * This is the other clock. `FIXED_NOW` pins the BROWSER's, and the forecast is
+ * dated by the API's (`PaymentForecastService` starts from its own "today"),
+ * so without this the runway month and the chart's axis move with the real
+ * date. The spec rewrites every `payments.forecast` request on a screen that
+ * declares `forecastAsOf` to carry this day, and the api honours it only on a
+ * stack with `ALLOW_FORECAST_AS_OF=1` — the compose default.
+ */
+export const FORECAST_AS_OF = FIXED_NOW.toISOString().slice(0, 10);
 
 /**
  * Which way the document reads (SC-760).
@@ -166,6 +199,27 @@ export interface VisualScreen {
    * where it does not fails rather than passing quietly.
    */
   foldedAllocation?: true;
+  /**
+   * This screen reads `payments.forecast`, so the api's clock has to be pinned
+   * as well as the browser's — see `FORECAST_AS_OF` (SC-623).
+   *
+   * And checked, for the reason `institutionMark` is: a rewrite that silently
+   * stopped matching, or a stack with the flag off, still renders a forecast —
+   * one dated from the real day. `--update` would write it and every run that
+   * month would agree. So the spec reads the `today` of every forecast the page
+   * received and fails unless each is `FORECAST_AS_OF`.
+   */
+  forecastAsOf?: true;
+  /**
+   * Photograph this one element rather than the page.
+   *
+   * For a component whose neighbours are not a function of the seed. Home's
+   * runway line sits under "What's due", whose rows come from
+   * `payments.upcoming` — dated by the api's clock, which `asOf` does not move.
+   * Photographing the page would hold those rows too, and they change every
+   * month. The width is the element's, not the viewport's.
+   */
+  element?: string;
   /** Why a break on this screen would cost something. */
   why: string;
 }
@@ -306,6 +360,49 @@ export const VISUAL_SCREENS: readonly VisualScreen[] = [
       'The only twelve-field form in the product, and forms are where duplicated or misplaced ' +
       'actions show up — a second Cancel 80px from the first is a form defect. Label-to-field ' +
       'alignment, control sizing and the disabled-submit affordance are decided here too.',
+  },
+  // --- the cashflow forecast (SC-623) ------------------------------------------
+  //
+  // SC-461's whole constraint is that a projection never looks like a measured
+  // figure: dashed `<Block>` borders, `<ProjectedTile>` rather than
+  // `<StatTile>`, a dashed neutral chart line with no fill. That claim is all
+  // presentation, so a type-check and a unit test cannot see it. The seed runs
+  // out of money inside the window, so the runway is a DATE — the exhausted
+  // branch, the only one with the zero reference line and `--loss`.
+  {
+    name: 'forecast-phone',
+    route: '/payments/forecast',
+    session: 'forecast',
+    viewport: 'phone',
+    height: 1700,
+    forecastAsOf: true,
+    why:
+      'The one screen whose every figure is a projection, at the width where a dashed border ' +
+      'and a solid one are two pixels apart. A stylesheet change that makes the two look ' +
+      'alike passes `forecast.test.tsx`, which asserts the class name, and is plain here.',
+  },
+  {
+    name: 'forecast-desktop',
+    route: '/payments/forecast',
+    session: 'forecast',
+    viewport: 'desktop',
+    height: 1300,
+    forecastAsOf: true,
+    why:
+      'The same screen with room for the chart: the month axis, the dashed projection line and ' +
+      'the zero reference line it crosses are drawn at full width only here.',
+  },
+  {
+    name: 'home-runway-phone',
+    route: '/',
+    session: 'forecast',
+    viewport: 'phone',
+    element: '[data-ui="runway-line"]',
+    forecastAsOf: true,
+    why:
+      "Home's one projected line: a dashed rule and a Projected mark under two solid foot-lines, " +
+      'on the screen a reader scans rather than reads. Photographed as an element because the ' +
+      "rows above it are dated by the api's clock, which this gate cannot pin.",
   },
   // --- the RTL pass (SC-760) -------------------------------------------------
   //

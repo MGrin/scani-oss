@@ -41,7 +41,7 @@ async function trpcGet<T>(page: Page, procedure: string): Promise<T> {
   return body.result.data;
 }
 
-async function trpcMutate<T>(
+export async function trpcMutate<T>(
   page: Page,
   procedure: string,
   data: Record<string, unknown>
@@ -420,14 +420,13 @@ export async function waitForJob<R = unknown>(
  * persists the holding, then fetches prices. We wait until the job is
  * `completed` and read the holding id out of its `returnvalue`.
  */
-export async function createHolding(
-  page: Page,
-  opts: CreateHoldingOptions
-): Promise<CreatedHolding> {
-  // 1. Look up the token id via `tokens.search`. For "USD" the seeded
-  //    fiat row matches the query exactly, so we can pick the first
-  //    database-sourced hit whose symbol matches case-insensitively.
-  const searchInput = encodeURIComponent(JSON.stringify({ query: opts.symbol, limit: 10 }));
+/**
+ * The id of a token already in the database, via `tokens.search`. For "USD"
+ * the seeded fiat row matches the query exactly, so the first
+ * database-sourced hit whose symbol matches case-insensitively is it.
+ */
+export async function findDatabaseTokenId(page: Page, symbol: string): Promise<string> {
+  const searchInput = encodeURIComponent(JSON.stringify({ query: symbol, limit: 10 }));
   const searchRes = await page.request.get(
     `${API_BASE_URL}/trpc/tokens.search?input=${searchInput}`
   );
@@ -436,16 +435,25 @@ export async function createHolding(
   }
   const searchBody = (await searchRes.json()) as { result: { data: TokenSearchHit[] } };
   const dbHit = searchBody.result.data.find(
-    (t) => t.source === 'database' && t.symbol.toUpperCase() === opts.symbol.toUpperCase() && t.id
+    (t) => t.source === 'database' && t.symbol.toUpperCase() === symbol.toUpperCase() && t.id
   );
   if (!dbHit?.id) {
     throw new Error(
-      `Token "${opts.symbol}" not found in DB; hits: ${searchBody.result.data
+      `Token "${symbol}" not found in DB; hits: ${searchBody.result.data
         .map((t) => `${t.symbol}/${t.source}`)
         .slice(0, 5)
         .join(', ')}`
     );
   }
+  return dbHit.id;
+}
+
+export async function createHolding(
+  page: Page,
+  opts: CreateHoldingOptions
+): Promise<CreatedHolding> {
+  // 1. Look up the token id.
+  const tokenId = await findDatabaseTokenId(page, opts.symbol);
 
   // 2. Enqueue the manual-holdings-create job.
   const requestId = `e2e-${opts.accountId}-${opts.symbol}-${Date.now()}-${Math.random()
@@ -457,7 +465,7 @@ export async function createHolding(
     {
       requestId,
       accountId: opts.accountId,
-      newHoldings: [{ tokenId: dbHit.id, balance: opts.quantity }],
+      newHoldings: [{ tokenId: tokenId, balance: opts.quantity }],
       updateHoldings: [],
     }
   );
@@ -480,10 +488,10 @@ export async function createHolding(
       `manual-holdings-create job ${enqueueResult.jobId} completed without a returnvalue`
     );
   }
-  const created = status.returnvalue.holdings.find((h) => h.tokenId === dbHit.id);
+  const created = status.returnvalue.holdings.find((h) => h.tokenId === tokenId);
   if (!created) {
     throw new Error(
-      `manual-holdings-create job ${enqueueResult.jobId} returned no holding for tokenId ${dbHit.id}`
+      `manual-holdings-create job ${enqueueResult.jobId} returned no holding for tokenId ${tokenId}`
     );
   }
   return {
