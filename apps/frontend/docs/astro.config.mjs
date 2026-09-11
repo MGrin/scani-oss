@@ -5,6 +5,15 @@ import starlight from '@astrojs/starlight';
 import { defineConfig } from 'astro/config';
 import { rehypeScrollableTables } from './src/plugins/rehype-scrollable-tables.mjs';
 
+// The commit this build is from, written into every page so a deploy probe can
+// say which commit `docs.scani.xyz` serves (SC-995). The site ships no JS bundle
+// to carry one, and without it the only way to learn the site was stale was to
+// read a page and notice. Unset in a plain build, which then carries no marker.
+const commit = process.env.SCANI_COMMIT ?? '';
+if (commit !== '' && !/^[0-9a-f]{40}$/.test(commit)) {
+  throw new Error(`SCANI_COMMIT must be a full 40-hex commit sha; got '${commit}'`);
+}
+
 // https://astro.build/config
 export default defineConfig({
   site: 'https://docs.scani.xyz',
@@ -47,6 +56,9 @@ export default defineConfig({
           tag: 'script',
           attrs: { src: '/table-scroll.js', defer: true },
         },
+        ...(commit === ''
+          ? []
+          : [{ tag: /** @type {const} */ ('meta'), attrs: { name: 'scani-commit', content: commit } }]),
       ],
       title: 'Scani docs',
       description:
