@@ -1,5 +1,6 @@
 import { db } from '@scani/db/connection';
 import * as schema from '@scani/db/schema';
+import { TransferReviewService } from '@scani/domain/services';
 import { LinkTransferPairsUseCase } from '@scani/domain/use-cases';
 import { TRANSFER_LINKING_SCHEDULE } from '@scani/jobs';
 import { createComponentLogger } from '@scani/logging';
@@ -17,9 +18,11 @@ export class TransferLinkingProcessor extends ScheduledJobProcessor {
     logger.info('🕐 Starting transfer-link sweep');
     try {
       const useCase = Container.get(LinkTransferPairsUseCase);
+      const reviews = Container.get(TransferReviewService);
       const users = await db.select({ id: schema.users.id }).from(schema.users);
       let totalLinked = 0;
       let totalAmbiguous = 0;
+      let totalRuleAnswered = 0;
       // Counted separately because it is a different claim about the money:
       // a bridge is one asset arriving on another chain, and until SC-336 the
       // pass could not see one at all. A run whose `bridged` count moves is
@@ -37,6 +40,12 @@ export class TransferLinkingProcessor extends ScheduledJobProcessor {
               totalLinked += s.linked;
               totalAmbiguous += s.ambiguous;
               totalBridged += s.bridged;
+              // After the matcher, so a rule only ever answers a row the
+              // matcher declined. The net under every writer that does not
+              // apply destination rules itself — and the pass that answers
+              // rows left unmarked when the queue's reads stopped writing
+              // (SC-1071).
+              totalRuleAnswered += await reviews.applyDisposalMarks(u.id);
             } catch (error) {
               logger.warn(
                 { userId: u.id, error: error instanceof Error ? error.message : error },
@@ -52,6 +61,7 @@ export class TransferLinkingProcessor extends ScheduledJobProcessor {
           linked: totalLinked,
           bridged: totalBridged,
           ambiguous: totalAmbiguous,
+          ruleAnswered: totalRuleAnswered,
           totalMs: Date.now() - start,
         },
         '✅ Transfer-link sweep complete'
