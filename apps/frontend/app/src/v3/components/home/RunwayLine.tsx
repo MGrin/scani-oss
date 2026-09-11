@@ -136,6 +136,7 @@ export function RunwayLine() {
     return (
       <Link
         to={V3_ROUTES.forecast}
+        data-ui="runway-line"
         className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-t border-dashed border-border px-4 py-3 transition-colors hover:bg-surface-hover"
       >
         <span className="flex flex-wrap items-center gap-2 text-caption text-muted-foreground">
@@ -163,6 +164,7 @@ export function RunwayLine() {
   return (
     <Link
       to={V3_ROUTES.forecast}
+      data-ui="runway-line"
       className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-t border-dashed border-border px-4 py-3 transition-colors hover:bg-surface-hover"
     >
       <span className="flex flex-wrap items-center gap-2 text-caption text-muted-foreground">

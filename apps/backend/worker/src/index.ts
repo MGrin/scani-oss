@@ -531,9 +531,12 @@ async function main(): Promise<void> {
       '🛑 Shutdown signal received — draining worker'
     );
     try {
-      // Race the graceful close against the drain budget. On timeout
-      // we force-close: BullMQ marks active jobs as failed and they
-      // retry on the next worker boot per their job's retry policy.
+      // Race the graceful close against the drain budget. On timeout we
+      // force-close: WorkerClient moves each still-running job back to
+      // `waiting` with its lock token, so the next boot picks it up at once
+      // and no attempt or stall is spent (SC-1146). The handlers are not
+      // cancelled; they die with the process. Only a process that dies
+      // without reaching this leaves jobs to the stalled check.
       const drainResult = await Promise.race([
         workerClient.close(false).then(() => 'drained' as const),
         new Promise<'timeout'>((resolve) => setTimeout(() => resolve('timeout'), DRAIN_TIMEOUT_MS)),
@@ -541,7 +544,7 @@ async function main(): Promise<void> {
       if (drainResult === 'timeout') {
         logger.warn(
           { elapsedMs: Date.now() - startedAt },
-          '⏱️ Drain budget exceeded — force-closing worker. Active jobs will be marked failed and retried on next boot.'
+          '⏱️ Drain budget exceeded — force-closing worker. In-flight jobs go back to waiting for the next boot.'
         );
         await workerClient.close(true).catch((err) => {
           logger.error({ err }, 'Force-close threw');
