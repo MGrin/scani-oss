@@ -92,11 +92,13 @@ export interface CreateRuleInput {
  * money that never left the portfolio (SC-350), and a standing rule is that
  * mistake with a repeat count on it.
  *
- * Everything the engine does still happens at read time, in
- * `TransferReviewService`. For the two non-writing verdicts that is what makes
- * the undo trivial — a revoked rule stops matching and the rows it hid are
- * pending again, with nothing to un-write. For `always_a_disposal` it is not
- * enough and was never claimed to be: revoking stops future answers, `revoke`
+ * The two non-writing verdicts are evaluated at read time, in
+ * `TransferReviewService`, which is what makes their undo trivial — a revoked
+ * rule stops matching and the rows it hid are pending again, with nothing to
+ * un-write. `always_a_disposal` writes, and since SC-1071 it writes when a
+ * matching row is WRITTEN rather than when the queue is read — the list of
+ * writers is on `TransferReviewService.applyDisposalMarks`. Its undo was never
+ * the trivial one: revoking stops future answers, `revoke`
  * reports how many rows it already owns, and it can withdraw them in the same
  * transaction. Per row, `reopen` is the undo and it is durable — see the
  * comment on it.
@@ -280,12 +282,13 @@ export class TransferReviewRuleService {
     // collide here.
     if (!created) return { ok: false, reason: 'duplicate', counterparty };
 
-    // Applied here as well as at read time, and not as an optimisation: the
-    // reader has just authorized a specific number of disposals against a
-    // specific amount of money, and a rule that reported "0 answered" until
-    // they navigated somewhere would be showing them a different transaction
-    // than the one they confirmed. Evaluation is still one expression in one
-    // place — this calls it, it does not reimplement it.
+    // The rule is itself one of the writers that bring a row under a mark, so
+    // it applies marks like the others (SC-1071): the reader has just
+    // authorized a specific number of disposals against a specific amount of
+    // money, and a rule that reported "0 answered" until some later write
+    // would be showing them a different transaction than the one they
+    // confirmed. Evaluation is still one expression in one place — this calls
+    // it, it does not reimplement it.
     const answered = ruleAssertsDisposal(input.verdict)
       ? await reviews.applyDisposalMarks(userId)
       : 0;

@@ -367,3 +367,76 @@ describe('the caption count and the review queue are one set (SC-1067)', () => {
     expect(await captionCount(f)).toBe(0);
   });
 });
+
+describe('neither side writes, so the order they are read in cannot matter (SC-1071)', () => {
+  /**
+   * The ticket's fixture: one holding, an outflow a rule is authored from, and
+   * a second outflow to the same destination that arrives AFTER the rule, by a
+   * writer that has not applied the mark. Authoring applies marks itself, so
+   * only a row that arrives later can open the window.
+   *
+   * The control arm answers the first outflow by hand instead of authoring a
+   * rule, so the two arms differ in the rule and in nothing else.
+   */
+  async function arrange(f: Fixture, opts: { rule: boolean }): Promise<string> {
+    await insertBuy(f, '10');
+    const first = await insertOutflow(f, { to: DEST_A });
+    if (opts.rule) {
+      const created = await new TransferReviewRuleService().create(f.userId, {
+        transactionId: first,
+        verdict: 'always_a_disposal',
+        note: 'exchange deposit',
+      });
+      expect(created.ok).toBe(true);
+    } else {
+      await new TransferReviewService().resolve(f.userId, first, 'left_control', {});
+    }
+    return insertOutflow(f, { to: DEST_A });
+  }
+
+  /** Caption first, then both queue reads, with the caption between and after. */
+  async function readings(f: Fixture): Promise<number[]> {
+    const captionFirst = await captionCount(f);
+    const queueSecond = await queueCount(f);
+    const captionAgain = await captionCount(f);
+    const listed = (await new TransferReviewService().listPending(f.userId)).length;
+    const captionLast = await captionCount(f);
+    return [captionFirst, queueSecond, captionAgain, listed, captionLast];
+  }
+
+  async function reviewOf(txId: string): Promise<string | null | undefined> {
+    const [row] = await db
+      .select({ transferReview: schema.holdingTransactions.transferReview })
+      .from(schema.holdingTransactions)
+      .where(eq(schema.holdingTransactions.id, txId));
+    return row?.transferReview;
+  }
+
+  test('a rule-matched row not yet marked reads the same caption-first, queue-second and caption-again', async () => {
+    const f = fixture!;
+    const arrived = await arrange(f, { rule: true });
+
+    // Before SC-1071 this read [1, 0, 0, 0, 0]: the queue's read stamped the
+    // row answered, so the caption agreed with the queue only after it.
+    expect(await readings(f)).toEqual([1, 1, 1, 1, 1]);
+    expect(await reviewOf(arrived)).toBeNull();
+
+    // The ticket's own control: the rule DOES match this fixture. Applied the
+    // way a writer applies it, every reading falls to zero together. If they
+    // all still read 1, the rule never matched and the equality above says
+    // nothing about rules.
+    expect(await new TransferReviewService().applyDisposalMarks(f.userId)).toBe(1);
+    expect(await reviewOf(arrived)).toBe('left_control');
+    expect(await readings(f)).toEqual([0, 0, 0, 0, 0]);
+  });
+
+  test('control: the same fixture with no rule counts the outflow as 1 on every reading', async () => {
+    const f = fixture!;
+    const arrived = await arrange(f, { rule: false });
+
+    expect(await readings(f)).toEqual([1, 1, 1, 1, 1]);
+    expect(await new TransferReviewService().applyDisposalMarks(f.userId)).toBe(0);
+    expect(await reviewOf(arrived)).toBeNull();
+    expect(await readings(f)).toEqual([1, 1, 1, 1, 1]);
+  });
+});
