@@ -355,4 +355,17 @@ export const VISUAL_SCREENS: readonly VisualScreen[] = [
       'stays readable when the axis it aligns against reverses. A figure column that follows ' +
       'the text direction is a table of numbers nobody can scan.',
   },
+  {
+    name: 'payment-form-phone-rtl',
+    route: '/payments/recurring/new',
+    viewport: 'phone',
+    height: 1800,
+    dir: 'rtl',
+    why:
+      'The only RTL shot of a FORM, which is its own layout class: the three above cover nav, ' +
+      'tables, charts and the sheet, and none of them puts a label beside a field. ' +
+      'Label-to-field alignment is the most direction-sensitive layout there is, and it fails ' +
+      'at phone width, where labels wrap and controls shrink — not in the kitchen sink, where ' +
+      'the same controls stand alone on a demo page (SC-970).',
+  },
 ];
