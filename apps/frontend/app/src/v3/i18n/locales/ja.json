@@ -1172,7 +1172,24 @@
         "revokingSession": "セッションを終了しています",
         "signingOutOthers": "他のセッションをサインアウトしています",
         "togglingNotifications": "通知の設定を変更しています",
-        "sendingTestNotification": "テスト通知を送信しています"
+        "sendingTestNotification": "テスト通知を送信しています",
+        "changingCostBasis": "損益の計算方法を変更しています"
+      },
+      "costBasis": {
+        "title": "取得原価の計算方法",
+        "intro": "損益を計算するとき、売却をどの購入に対応させるかを決めるルールです。",
+        "current": "損益は{{method}}で計算されています。",
+        "method": {
+          "fifo": "先入先出法（FIFO）",
+          "uk_section_104": "英国セクション104プール方式"
+        },
+        "changeTrigger": "損益の計算方法を変更",
+        "chooserLabel": "取得原価の計算方法",
+        "consequence_other": "このアカウントのすべての損益が{{method}}で計算し直されます。すでにご覧になった約{{count}}日分の履歴も対象です。ダッシュボード・チャート・レポートの数値は変わります。数分かかりますが、元の方法に戻せば現在の数値に戻ります。",
+        "consequenceUnchanged": "損益はすでに{{method}}で計算されています。別のルールを選ぶと、変更した場合の内容が表示されます。",
+        "changeConfirm": "{{method}}で損益を計算し直す",
+        "changeInFlight": "損益を計算し直しています。",
+        "recomputing": "損益を計算し直しています。アプリ全体の数値はまだ確定していません。"
       }
     },
     "feedback": {

@@ -880,7 +880,26 @@
         "revokingSession": "Révocation de la session",
         "signingOutOthers": "Déconnexion des autres sessions",
         "togglingNotifications": "Modification de votre réglage de notifications",
-        "sendingTestNotification": "Envoi d’une notification de test"
+        "sendingTestNotification": "Envoi d’une notification de test",
+        "changingCostBasis": "Modification du mode de calcul de vos plus-values"
+      },
+      "costBasis": {
+        "title": "Prix de revient",
+        "intro": "La règle qui décide à quel achat une vente est rattachée lors du calcul de votre plus-value ou moins-value.",
+        "current": "Vos plus-values sont calculées avec {{method}}.",
+        "method": {
+          "fifo": "Premier entré, premier sorti (FIFO)",
+          "uk_section_104": "Mutualisation Section 104 (Royaume-Uni)"
+        },
+        "changeTrigger": "Changer le mode de calcul des plus-values",
+        "chooserLabel": "Méthode de prix de revient",
+        "consequence_one": "Toutes les plus-values et moins-values de ce compte sont recalculées selon {{method}}, y compris {{count}} jour d'historique que vous avez déjà consulté. Votre tableau de bord, vos graphiques et vos rapports afficheront des chiffres différents. Cela prend quelques minutes, et revenir en arrière les rétablit tels qu'ils apparaissent aujourd'hui.",
+        "consequence_many": "Toutes les plus-values et moins-values de ce compte sont recalculées selon {{method}}, y compris environ {{count}} jours d'historique que vous avez déjà consultés. Votre tableau de bord, vos graphiques et vos rapports afficheront des chiffres différents. Cela prend quelques minutes, et revenir en arrière les rétablit tels qu'ils apparaissent aujourd'hui.",
+        "consequence_other": "Toutes les plus-values et moins-values de ce compte sont recalculées selon {{method}}, y compris environ {{count}} jours d'historique que vous avez déjà consultés. Votre tableau de bord, vos graphiques et vos rapports afficheront des chiffres différents. Cela prend quelques minutes, et revenir en arrière les rétablit tels qu'ils apparaissent aujourd'hui.",
+        "consequenceUnchanged": "Vos plus-values sont déjà calculées avec {{method}}. Choisissez une autre règle pour voir ce que changerait ce changement.",
+        "changeConfirm": "Recalculer mes plus-values avec {{method}}",
+        "changeInFlight": "Vos plus-values sont en cours de recalcul.",
+        "recomputing": "Recalcul de vos plus-values — les chiffres de l'application sont encore en train de se stabiliser."
       }
     },
     "home": {

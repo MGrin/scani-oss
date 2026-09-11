@@ -1278,7 +1278,25 @@
         "revokingSession": "Revoking the session",
         "signingOutOthers": "Signing out the other sessions",
         "togglingNotifications": "Changing your notification setting",
-        "sendingTestNotification": "Sending a test notification"
+        "sendingTestNotification": "Sending a test notification",
+        "changingCostBasis": "Changing how your gains are worked out"
+      },
+      "costBasis": {
+        "title": "Cost basis",
+        "intro": "The rule that decides which purchase a sale is matched against when your profit or loss is worked out.",
+        "current": "Your gains are worked out using {{method}}.",
+        "method": {
+          "fifo": "First in, first out (FIFO)",
+          "uk_section_104": "UK Section 104 pooling"
+        },
+        "changeTrigger": "Change how gains are worked out",
+        "chooserLabel": "Cost-basis method",
+        "consequence_one": "Every gain and loss in this account is worked out again on the {{method}} basis, including the {{count}} day of history you have already seen. Your dashboard, charts and reports will show different numbers. It takes a few minutes, and switching back returns them to what they read now.",
+        "consequence_other": "Every gain and loss in this account is worked out again on the {{method}} basis, including roughly {{count}} days of history you have already seen. Your dashboard, charts and reports will show different numbers. It takes a few minutes, and switching back returns them to what they read now.",
+        "consequenceUnchanged": "Your gains are already worked out using {{method}}. Pick a different rule to see what changing it would do.",
+        "changeConfirm": "Recalculate my gains on {{method}}",
+        "changeInFlight": "Your gains are being recalculated.",
+        "recomputing": "Recalculating your gains — figures across the app are still settling."
       }
     },
     "feedback": {

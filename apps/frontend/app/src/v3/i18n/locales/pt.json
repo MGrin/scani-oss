@@ -2612,7 +2612,8 @@
         "savingSettings": "A guardar as suas definições",
         "sendingTestNotification": "A enviar uma notificação de teste",
         "signingOutOthers": "A terminar as outras sessões",
-        "togglingNotifications": "A alterar a sua definição de notificações"
+        "togglingNotifications": "A alterar a sua definição de notificações",
+        "changingCostBasis": "A alterar como os seus ganhos são calculados"
       },
       "profile": {
         "baseCurrencyHint": "Todos os valores da aplicação são convertidos para esta.",
@@ -2639,6 +2640,24 @@
         "thisDevice": "{{device}} — este dispositivo",
         "title": "Dispositivos",
         "unknownIp": "IP desconhecido"
+      },
+      "costBasis": {
+        "title": "Base de custo",
+        "intro": "A regra que decide com qual compra uma venda é emparelhada ao calcular o seu lucro ou prejuízo.",
+        "current": "Os seus ganhos são calculados com {{method}}.",
+        "method": {
+          "fifo": "Primeiro a entrar, primeiro a sair (FIFO)",
+          "uk_section_104": "Agrupamento Section 104 do Reino Unido"
+        },
+        "changeTrigger": "Alterar como os ganhos são calculados",
+        "chooserLabel": "Método de base de custo",
+        "consequence_one": "Todos os ganhos e perdas desta conta são recalculados com {{method}}, incluindo {{count}} dia de histórico que já viu. O seu painel, gráficos e relatórios passarão a mostrar números diferentes. Demora alguns minutos, e voltar atrás repõe-nos tal como se leem agora.",
+        "consequence_many": "Todos os ganhos e perdas desta conta são recalculados com {{method}}, incluindo cerca de {{count}} dias de histórico que já viu. O seu painel, gráficos e relatórios passarão a mostrar números diferentes. Demora alguns minutos, e voltar atrás repõe-nos tal como se leem agora.",
+        "consequence_other": "Todos os ganhos e perdas desta conta são recalculados com {{method}}, incluindo cerca de {{count}} dias de histórico que já viu. O seu painel, gráficos e relatórios passarão a mostrar números diferentes. Demora alguns minutos, e voltar atrás repõe-nos tal como se leem agora.",
+        "consequenceUnchanged": "Os seus ganhos já são calculados com {{method}}. Escolha outra regra para ver o que a alteração faria.",
+        "changeConfirm": "Recalcular os meus ganhos com {{method}}",
+        "changeInFlight": "Os seus ganhos estão a ser recalculados.",
+        "recomputing": "A recalcular os seus ganhos — os números da aplicação ainda estão a assentar."
       }
     },
     "shell": {
