@@ -77,6 +77,21 @@
 //   IT DOES NOT READ PULL REQUEST BODIES. The same text in a PR description
 //   reaches the same audience and no hook sees it.
 //
+//   A BLOCK COMMENT IS READ BY STATE, NOT BY LINE (SC-1135). A continuation
+//   line of a `/* */` block written without a leading `*` — every JSX comment
+//   is one — carries no marker, and neither does a line of JSX text, so only
+//   whether a block is open tells them apart. Two limits follow from that:
+//
+//   OVER A DIFF, A LINE INSIDE A BLOCK IS READ ONLY WHEN ITS OPENER IS ALSO
+//   ADDED. The hook sees added lines and nothing else, so one sentence edited
+//   in the middle of an existing block arrives with no opener before it and
+//   reads as code. `--scan` reads whole files and has no such gap.
+//
+//   A BLOCK OPENED AFTER CODE ON THE SAME LINE IS NOT READ — `<p>{/*` with the
+//   comment below it. The anchor is what keeps a `//` inside a URL from being a
+//   comment, and relaxing it for `/*` alone would read a glob or a regex in an
+//   expression as the start of a block.
+//
 // It is a seatbelt on the machine doing the work, not a gate on the repository:
 // `--no-verify` skips the hook, and a fresh clone has no hooks until
 // `bun install` sets `core.hooksPath`.
@@ -259,24 +274,100 @@ export function selfTest(): string[] {
 export type { Signal as SignalType };
 
 /**
- * The prose carried by one line, or `null` when the line is not prose.
+ * Where a line opening `/*` IS a comment. Everywhere else it need not be: a
+ * Pages `_headers` rule and a `.gitignore` entry both start that way, and
+ * entering a block there would read the rest of the file as prose.
+ */
+const BLOCK_COMMENT_EXTENSIONS = [
+  '.ts',
+  '.tsx',
+  '.mts',
+  '.cts',
+  '.js',
+  '.jsx',
+  '.mjs',
+  '.cjs',
+  '.css',
+  '.scss',
+  '.sql',
+];
+
+function hasBlockComments(path: string): boolean {
+  const dot = path.lastIndexOf('.');
+  return (
+    dot > path.lastIndexOf('/') && BLOCK_COMMENT_EXTENSIONS.includes(path.slice(dot).toLowerCase())
+  );
+}
+
+interface LineRead {
+  readonly prose: string | null;
+  /** Whether the NEXT line starts inside an open `/* … *\/`. */
+  readonly inBlock: boolean;
+}
+
+function nonEmpty(body: string): string | null {
+  const t = body.trim();
+  return t === '' ? null : t;
+}
+
+/**
+ * One line, given whether it starts inside an open block comment (SC-1135).
+ *
+ * THE STATE IS THE WHOLE FIX. A continuation line of a JSX comment, or of any
+ * `/* *\/` block not written with a leading `*`, carries no marker at all — it
+ * is indented English, and so is a line of JSX text. Nothing on the line tells
+ * the two apart; only whether a block is open does. So the opener is read
+ * where it is anchored, `{/*` included, and the lines after it are prose until
+ * the `*\/` — and never a line after that.
+ */
+function readLine(path: string, line: string, inBlock: boolean): LineRead {
+  if (path.endsWith('.md') || path.endsWith('.mdx')) {
+    const t = line.trim();
+    // A fence or a table rule carries no sentence, and a code block inside
+    // markdown is code — the same reason only comments are read elsewhere.
+    if (t === '' || t.startsWith('```') || t.startsWith('|'))
+      return { prose: null, inBlock: false };
+    return { prose: t, inBlock: false };
+  }
+  if (hasBlockComments(path)) {
+    if (inBlock) {
+      const close = line.indexOf('*/');
+      const body = (close === -1 ? line : line.slice(0, close)).replace(/^\s*\*?/, '');
+      return { prose: nonEmpty(body), inBlock: close === -1 };
+    }
+    const open = /^(\s*\{?\s*)\/\*+/.exec(line);
+    if (open !== null) {
+      // Searched from just past the `/*`, so `/**/` closes where it opens.
+      const close = line.indexOf('*/', (open[1] ?? '').length + 2);
+      const body = line.slice(open[0].length, close === -1 ? undefined : close);
+      return { prose: nonEmpty(body), inBlock: close === -1 };
+    }
+  }
+  const m = /^\s*(?:\/\/+|#+|--|\*|\/\*+|<!--)\s?(.*?)\s*(?:\*\/|-->)?\s*$/.exec(line);
+  return { prose: m === null ? null : nonEmpty(m[1] ?? ''), inBlock: false };
+}
+
+/**
+ * The prose carried by one line READ ON ITS OWN, or `null` when it is not
+ * prose. A continuation line of a block comment is `null` here by
+ * construction — see {@link proseOfLines}, which is what the scan uses.
  *
  * Comment bodies and markdown, and nothing else, because the value axis is
  * already `check-oss-figures.ts`'s. Anchored at the start of the line so a
  * `//` inside a URL and a `--` inside an expression are not comments.
  */
 export function proseOf(path: string, line: string): string | null {
-  if (path.endsWith('.md') || path.endsWith('.mdx')) {
-    const t = line.trim();
-    // A fence or a table rule carries no sentence, and a code block inside
-    // markdown is code — the same reason only comments are read elsewhere.
-    if (t === '' || t.startsWith('```') || t.startsWith('|')) return null;
-    return t;
-  }
-  const m = /^\s*(?:\/\/+|#+|--|\*|\/\*+|<!--)\s?(.*?)\s*(?:\*\/|-->)?\s*$/.exec(line);
-  if (m === null) return null;
-  const body = (m[1] ?? '').trim();
-  return body === '' ? null : body;
+  return readLine(path, line, false).prose;
+}
+
+/** The prose carried by each of a run of CONSECUTIVE lines of one file. */
+export function proseOfLines(path: string, lines: readonly string[]): (string | null)[] {
+  let inBlock = false;
+  return lines.map((line) => {
+    const r = readLine(path, line, inBlock);
+    inBlock = r.inBlock;
+    return r.prose;
+  });
 }
 
 /**
@@ -316,7 +407,9 @@ export interface Finding extends Claim {
  *
  * Contiguity is what makes this correct over a diff: an added line that is not
  * adjacent to the previous one belongs to a different hunk, and joining two
- * hunks into a paragraph would manufacture a sentence nobody wrote.
+ * hunks into a paragraph would manufacture a sentence nobody wrote. An open
+ * block comment does not survive a gap either, for the same reason — whatever
+ * lies between the two hunks may have closed it.
  */
 export function findInLines(lines: readonly AddedLine[]): {
   findings: Finding[];
@@ -328,6 +421,7 @@ export function findInLines(lines: readonly AddedLine[]): {
   let blockPath = '';
   let blockLine = 0;
   let previous: { path: string; line: number } | null = null;
+  let inBlock = false;
 
   const flush = (): void => {
     if (block.length === 0) return;
@@ -340,9 +434,11 @@ export function findInLines(lines: readonly AddedLine[]): {
   };
 
   for (const l of lines) {
-    const prose = proseOf(l.path, l.text);
     const contiguous =
       previous !== null && previous.path === l.path && l.line === previous.line + 1;
+    const read = readLine(l.path, l.text, contiguous && inBlock);
+    inBlock = read.inBlock;
+    const prose = read.prose;
     if (prose === null || !contiguous) flush();
     if (prose !== null) {
       // The block's own first line, captured when it OPENS. Carrying it over
