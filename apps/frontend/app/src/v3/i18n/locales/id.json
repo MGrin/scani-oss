@@ -1172,7 +1172,24 @@
         "revokingSession": "Mencabut sesi",
         "signingOutOthers": "Mengeluarkan sesi lainnya",
         "togglingNotifications": "Mengubah pengaturan notifikasi Anda",
-        "sendingTestNotification": "Mengirim notifikasi uji coba"
+        "sendingTestNotification": "Mengirim notifikasi uji coba",
+        "changingCostBasis": "Mengubah cara keuntungan Anda dihitung"
+      },
+      "costBasis": {
+        "title": "Dasar biaya",
+        "intro": "Aturan yang menentukan pembelian mana yang dipasangkan dengan sebuah penjualan saat untung atau rugi Anda dihitung.",
+        "current": "Keuntungan Anda dihitung memakai {{method}}.",
+        "method": {
+          "fifo": "Masuk pertama, keluar pertama (FIFO)",
+          "uk_section_104": "Penggabungan Section 104 Inggris"
+        },
+        "changeTrigger": "Ubah cara keuntungan dihitung",
+        "chooserLabel": "Metode dasar biaya",
+        "consequence_other": "Semua untung dan rugi di akun ini dihitung ulang dengan dasar {{method}}, termasuk sekitar {{count}} hari riwayat yang sudah Anda lihat. Dasbor, grafik, dan laporan Anda akan menampilkan angka yang berbeda. Perlu beberapa menit, dan beralih kembali mengembalikannya seperti yang terbaca sekarang.",
+        "consequenceUnchanged": "Keuntungan Anda sudah dihitung memakai {{method}}. Pilih aturan lain untuk melihat apa yang akan terjadi.",
+        "changeConfirm": "Hitung ulang keuntungan saya dengan {{method}}",
+        "changeInFlight": "Keuntungan Anda sedang dihitung ulang.",
+        "recomputing": "Menghitung ulang keuntungan Anda — angka di seluruh aplikasi masih menyesuaikan."
       }
     },
     "feedback": {

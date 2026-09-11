@@ -1,15 +1,23 @@
+import { UserJobRepository } from '@scani/domain/repositories';
 import {
   ObservedBurnAnswerCurrencyMismatch,
   TokenService,
   UserService,
 } from '@scani/domain/services';
-import { USER_DATA_DELETE } from '@scani/jobs';
+import {
+  PORTFOLIO_HISTORY_BACKFILL,
+  PORTFOLIO_HISTORY_LOOKBACK_DAYS,
+  USER_DATA_DELETE,
+} from '@scani/jobs';
 import { createComponentLogger } from '@scani/logging';
 import { BullMqEnqueueService } from '@scani/queue';
 import { emitEntityChange } from '@scani/realtime';
+import type { CostBasisMethodState } from '@scani/shared';
 import {
   CurrentUserDto,
+  costBasisMethodStateSchema,
   ObservedBurnAnswerDto,
+  parseCostBasisMethod,
   ReportTimezoneDto,
   UpdateUserDto,
 } from '@scani/shared';
@@ -37,6 +45,40 @@ export const usersRouter = router({
     const { dbUser } = await requireAuth(ctx);
     return dbUser;
   }),
+
+  /**
+   * Which rule this account's figures are computed under, how much history a
+   * change rewrites, and whether a rewrite is running (SC-980).
+   *
+   * Its own query rather than a field on `CurrentUserDto`, and that is the
+   * point rather than an oversight. `CurrentUserDto`'s comment refuses
+   * `costBasisMethod` by name on the ground that no screen reads it back, and
+   * every field it does carry has a live reader; a screen now exists, but it
+   * needs two things that are not user columns at all — the lookback window
+   * and the id of the job rewriting the rows — so putting one third of its
+   * answer on the projection every signed-in tab fetches would leave the
+   * screen making a second call anyway and would grow `getCurrent` for one
+   * surface. The refusal stands on its own terms and this asks the whole
+   * question in one place.
+   *
+   * `findInFlightByName` is the same primitive `portfolio.recomputeHistory`
+   * dedups on, so "is a backfill running" has one definition rather than two
+   * that can disagree.
+   */
+  getCostBasisMethod: protectedProcedure
+    .output(costBasisMethodStateSchema)
+    .query(async ({ ctx }): Promise<CostBasisMethodState> => {
+      const { dbUser } = await requireAuth(ctx);
+      const inFlight = await Container.get(UserJobRepository).findInFlightByName(
+        dbUser.id,
+        PORTFOLIO_HISTORY_BACKFILL.name
+      );
+      return {
+        method: parseCostBasisMethod(dbUser.costBasisMethod),
+        lookbackDays: PORTFOLIO_HISTORY_LOOKBACK_DAYS,
+        recomputingJobId: inFlight?.jobId ?? null,
+      };
+    }),
 
   /**
    * Update current user.

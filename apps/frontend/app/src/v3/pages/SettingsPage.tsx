@@ -1,6 +1,7 @@
 import { PageHeader, PageLayout } from '@scani/ui/v3/components/PageLayout';
 import { useTranslation } from 'react-i18next';
 import { AccountSettings } from '../components/settings/AccountSettings';
+import { CostBasisSettings } from '../components/settings/CostBasisSettings';
 import { DataExportSettings } from '../components/settings/DataExportSettings';
 import { DataQualitySettings } from '../components/settings/DataQualitySettings';
 import { MaintenanceSettings } from '../components/settings/MaintenanceSettings';
@@ -17,6 +18,13 @@ import { SessionsSettings } from '../components/settings/SessionsSettings';
  * who you are and what currency you read in, then what this device is allowed
  * to do, then where you are signed in, then the two diagnostic blocks, then
  * leaving.
+ *
+ * Cost basis sits directly under the profile block because it belongs to the
+ * same question those fields answer — what the figures on every other screen
+ * MEAN — and not with Maintenance further down, which is about rebuilding a
+ * cache rather than changing what is computed. It is a block of its own rather
+ * than a field inside `ProfileSettings` because that block auto-saves and this
+ * control must not: see the note on `CostBasisSettings` (SC-980).
  *
  * Notifications sit with the preferences rather than with the devices below
  * because a push subscription is per BROWSER, not per session — signing out
@@ -37,6 +45,7 @@ export function SettingsPage() {
       <p className="text-body text-muted-foreground">{t('settings.subtitle')}</p>
 
       <ProfileSettings />
+      <CostBasisSettings />
       <NotificationSettings />
       <SessionsSettings />
       <DataExportSettings />

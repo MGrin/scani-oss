@@ -2612,7 +2612,8 @@
         "savingSettings": "Guardando tus ajustes",
         "sendingTestNotification": "Enviando una notificación de prueba",
         "signingOutOthers": "Cerrando las demás sesiones",
-        "togglingNotifications": "Cambiando tu ajuste de notificaciones"
+        "togglingNotifications": "Cambiando tu ajuste de notificaciones",
+        "changingCostBasis": "Cambiando cómo se calculan tus ganancias"
       },
       "profile": {
         "baseCurrencyHint": "Todas las cifras de la aplicación se convierten a esta divisa.",
@@ -2639,6 +2640,24 @@
         "thisDevice": "{{device}} — este dispositivo",
         "title": "Dispositivos",
         "unknownIp": "IP desconocida"
+      },
+      "costBasis": {
+        "title": "Base de coste",
+        "intro": "La regla que decide con qué compra se empareja una venta al calcular tu ganancia o pérdida.",
+        "current": "Tus ganancias se calculan con {{method}}.",
+        "method": {
+          "fifo": "Primero en entrar, primero en salir (FIFO)",
+          "uk_section_104": "Agrupación Section 104 del Reino Unido"
+        },
+        "changeTrigger": "Cambiar cómo se calculan las ganancias",
+        "chooserLabel": "Método de base de coste",
+        "consequence_one": "Todas las ganancias y pérdidas de esta cuenta se vuelven a calcular con {{method}}, incluido {{count}} día de historial que ya has visto. Tu panel, tus gráficos y tus informes mostrarán cifras distintas. Tarda unos minutos, y volver al método anterior las devuelve a como se leen ahora.",
+        "consequence_many": "Todas las ganancias y pérdidas de esta cuenta se vuelven a calcular con {{method}}, incluidos unos {{count}} días de historial que ya has visto. Tu panel, tus gráficos y tus informes mostrarán cifras distintas. Tarda unos minutos, y volver al método anterior las devuelve a como se leen ahora.",
+        "consequence_other": "Todas las ganancias y pérdidas de esta cuenta se vuelven a calcular con {{method}}, incluidos unos {{count}} días de historial que ya has visto. Tu panel, tus gráficos y tus informes mostrarán cifras distintas. Tarda unos minutos, y volver al método anterior las devuelve a como se leen ahora.",
+        "consequenceUnchanged": "Tus ganancias ya se calculan con {{method}}. Elige otra regla para ver qué haría cambiarla.",
+        "changeConfirm": "Recalcular mis ganancias con {{method}}",
+        "changeInFlight": "Tus ganancias se están recalculando.",
+        "recomputing": "Recalculando tus ganancias: las cifras de la aplicación aún se están asentando."
       }
     },
     "shell": {

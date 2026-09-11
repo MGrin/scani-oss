@@ -1172,7 +1172,24 @@
         "revokingSession": "正在撤销会话",
         "signingOutOthers": "正在结束其他会话",
         "togglingNotifications": "正在更改你的通知设置",
-        "sendingTestNotification": "正在发送测试通知"
+        "sendingTestNotification": "正在发送测试通知",
+        "changingCostBasis": "正在更改盈亏的计算方式"
+      },
+      "costBasis": {
+        "title": "成本基础",
+        "intro": "计算盈亏时，决定一笔卖出与哪一笔买入相匹配的规则。",
+        "current": "你的盈亏使用{{method}}计算。",
+        "method": {
+          "fifo": "先进先出（FIFO）",
+          "uk_section_104": "英国 Section 104 归集法"
+        },
+        "changeTrigger": "更改盈亏的计算方式",
+        "chooserLabel": "成本基础方法",
+        "consequence_other": "本账户的每一笔盈亏都会按{{method}}重新计算，包括你已经看过的约 {{count}} 天历史记录。仪表盘、图表和报告中的数字都会改变。这需要几分钟，改回原方法会让它们恢复成现在的样子。",
+        "consequenceUnchanged": "你的盈亏已经在使用{{method}}计算。选择另一条规则可以看到更改后的影响。",
+        "changeConfirm": "按{{method}}重新计算我的盈亏",
+        "changeInFlight": "你的盈亏正在重新计算。",
+        "recomputing": "正在重新计算你的盈亏 — 应用中的数字仍在调整。"
       }
     },
     "feedback": {
