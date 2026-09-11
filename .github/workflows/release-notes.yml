@@ -236,9 +236,15 @@ jobs:
     # Read the resolver's OUTPUT, never a job or step RESULT: `needs.target`
     # already implies the resolver succeeded, and keying on a conclusion is how
     # a legitimate skip and a broken chain become one observation.
+    #
+    # On an ordinary pull request (`mode: reported`) this job still runs, only to
+    # post the vacuous success above, so it takes a DIFFERENT name there. Under
+    # one name `gh pr checks` showed two identical green rows, one of which
+    # compared nothing. The STATUS CONTEXT keeps the verdict's name in every
+    # mode, because that string is what a ruleset would match on.
     if: needs.target.outputs.mode != 'silent'
     needs: target
-    name: Release notes cover every releasable commit
+    name: ${{ needs.target.outputs.mode == 'reported' && 'Release notes — not a release pull request, nothing to compare' || 'Release notes cover every releasable commit' }}
     runs-on: ubuntu-latest
     steps:
       # The second guard on the fork path, deliberately redundant with
