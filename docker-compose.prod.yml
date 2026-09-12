@@ -81,7 +81,14 @@ services:
 
   # Comment out if pointing S3_* at a managed bucket (R2 / S3 / B2 / …).
   minio:
-    image: minio/minio:latest
+    # `minio/*` was REMOVED from Docker Hub (SC-1156): a pull of the tag AND of a
+    # digest we already held both come back `pull access denied … may require
+    # 'docker login'`, while `postgres:16` pulls fine from the same daemon in the
+    # same second. quay.io is MinIO's own registry and serves the identical image
+    # — the manifest digest below is byte-for-byte the one Docker Hub served for
+    # `RELEASE.2025-04-22T22-12-26Z`. Pinned tag AND digest because an unpinned
+    # upstream tag disappearing is exactly the failure this line is repairing.
+    image: quay.io/minio/minio:RELEASE.2025-04-22T22-12-26Z@sha256:a1ea29fa28355559ef137d71fc570e508a214ec84ff8083e39bc5428980b015e
     restart: unless-stopped
     command: server /data --console-address ":9001"
     environment:
@@ -97,7 +104,7 @@ services:
 
   # One-shot to create the S3 bucket on first boot (idempotent).
   minio-init:
-    image: minio/mc:latest
+    image: quay.io/minio/mc:RELEASE.2025-04-16T18-13-26Z@sha256:aead63c77f9db9107f1696fb08ecb0faeda23729cde94b0f663edf4fe09728e3
     depends_on:
       minio:
         condition: service_healthy
