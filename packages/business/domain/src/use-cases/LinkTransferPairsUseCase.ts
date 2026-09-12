@@ -157,6 +157,21 @@ export class LinkTransferPairsUseCase {
    *
    * Returns the group id both legs now share, or `null` when either row was
    * already spoken for.
+   *
+   * **CROSSING AN ENTITY BOUNDARY HERE IS INTENDED, NOT AN OVERSIGHT**
+   * (SC-929, mgrin, 2026-09-12). This path has never consulted
+   * `crossesEntityBoundary` and must not start. **Entities are a reporting
+   * convenience, not a change of owner**: a movement between the owner's
+   * personal books and their company's is the same person's money staying put,
+   * so the shared `transfer_group_id` and the basis `walkComponent` carries
+   * through it are the right answer on both sets of books.
+   *
+   * Stated here because the row has been filed once and CANCELLED once on the
+   * reading that the absence looked accidental. It is a decision. SC-1151
+   * removed the two guards that had come to disagree with it — the destination
+   * picker and `TransferReviewService.writeInflow` — so the declared doors and
+   * the queue's `internal` answer now say the same thing. What still refuses is
+   * `candidatePairClass`, and only because it acts unattended.
    */
   async linkDeclaredPair(
     pair: {

@@ -53,7 +53,6 @@ import {
   CANDIDATE_REASON_RANK,
   CANDIDATE_WINDOW_MS,
   candidatePairClass,
-  crossesEntityBoundary,
   INFLOW_KINDS,
   MATCH_WINDOW_MS,
   OUTFLOW_KINDS,
@@ -110,7 +109,6 @@ export type TransferResolveResult =
    * a holding that is present and deliberately refused, and it would send the
    * reader back to a picker to choose the same account again.
    */
-  | { ok: false; reason: 'cross_entity' }
   | { ok: false; reason: 'own_wallet_destination'; address: string };
 
 /**
@@ -1030,9 +1028,6 @@ export class TransferReviewService {
         institutionId: schema.accounts.institutionId,
         metadata: schema.accounts.metadata,
         isActive: schema.accounts.isActive,
-        // The ownership boundary, so the picker cannot offer what the write
-        // path is going to refuse (SC-859).
-        entityId: schema.accounts.entityId,
       })
       .from(schema.accounts)
       .leftJoin(schema.institutions, eq(schema.institutions.id, schema.accounts.institutionId))
@@ -1047,14 +1042,12 @@ export class TransferReviewService {
       .select({
         accountId: schema.accounts.id,
         chainKey: sql<string | null>`${schema.accounts.metadata}->>'chainId'`,
-        entityId: schema.accounts.entityId,
       })
       .from(schema.holdings)
       .innerJoin(schema.accounts, eq(schema.accounts.id, schema.holdings.accountId))
       .where(eq(schema.holdings.id, excludeHoldingId))
       .limit(1);
     const sourceChainKey = sourceAccount?.chainKey ?? null;
-    const sourceEntityId = sourceAccount?.entityId ?? null;
     const sourceAccountId = sourceAccount?.accountId ?? null;
 
     const holdings = await database
@@ -1082,23 +1075,17 @@ export class TransferReviewService {
 
     const destinations: TransferDestination[] = [];
     for (const account of accounts) {
-      // The offer half of the entity guard (SC-859). `transferLegFacts` gives
-      // the reason for the pairing candidates and it is the same reason here:
-      // the queue must not offer what the writer is refusing, or the reader
-      // completes it by hand and the refusal has bought nothing.
+      // NO ENTITY NARROWING HERE (SC-1151, reversing the offer half of SC-859).
+      // The rule it enforced was "the queue must not offer what the writer is
+      // refusing", and it was right about that — `writeInflow` no longer
+      // refuses, so the same rule now says offer. Reading the two changes apart
+      // is how this becomes a regression: a picker narrowed to a writer that
+      // has been relaxed is the SC-859 defect with the surfaces swapped.
       //
-      // **This is a narrowing, and the paragraph above says not to narrow this
-      // list.** That instruction is about the SHAPES this picker offers — an
-      // account with no position in the token, a second same-token holding —
-      // and it holds. This removes no shape: it removes the accounts on the far
-      // side of a boundary, every one of which `writeInflow` now refuses.
-      //
-      // It applies to `listDestinationsForHolding` too, whose writer is the
-      // DECLARED path rather than `writeInflow` and does not yet consult the
-      // rule. The two surfaces offering different accounts would be worse than
-      // both offering fewer, and an offer narrower than a writer errs in the
-      // direction that cannot corrupt a ledger.
-      if (crossesEntityBoundary(sourceEntityId, account.entityId)) continue;
+      // Measured on the portfolio that reopened this (SC-929): 21 accounts, one
+      // of them carrying an `entity_id`, and it was the SOURCE. So the guard
+      // removed the other twenty and left the account the money had just left —
+      // the one destination that cannot be right.
       const onSourceChain = Boolean(
         sourceChainKey && account.chainKey && account.chainKey === sourceChainKey
       );
@@ -2831,7 +2818,7 @@ async function claimInflow(
  * different sentences, and `resolve` and `resolveSplit` both surface this one
  * straight to a reader.
  */
-type InflowWriteResult = { ok: true } | { ok: false; reason: 'destination_gone' | 'cross_entity' };
+type InflowWriteResult = { ok: true } | { ok: false; reason: 'destination_gone' };
 
 /**
  * Write the arrival an `internal` answer describes (SC-187).
@@ -2881,34 +2868,30 @@ async function writeInflow(
       institutionId: schema.accounts.institutionId,
       metadata: schema.accounts.metadata,
       isActive: schema.accounts.isActive,
-      entityId: schema.accounts.entityId,
     })
     .from(schema.accounts)
     .where(and(eq(schema.accounts.id, destination.accountId), eq(schema.accounts.userId, userId)))
     .limit(1);
   if (!account) return { ok: false, reason: 'destination_gone' };
 
-  // The boundary `candidatePairClass` refuses to cross, asked here because
-  // this is the other way to write the same pairing (SC-859). `internal`
-  // shares a `transfer_group_id` and `walkComponent` inherits the buffered
-  // lots through it exactly as it does for a matcher-made pair, so a movement
-  // between the owner's books and their company's would carry the basis
-  // across intact and realize nothing — the wrong answer on both sets of books
-  // at once, which is the whole of what that guard is for.
+  // NO ENTITY CHECK HERE, and its absence is a decision rather than an
+  // oversight (mgrin, 2026-09-12, reopening SC-929). SC-859 refused this write
+  // across an entity boundary on the reasoning that `internal` shares a
+  // `transfer_group_id`, `walkComponent` inherits the buffered lots through
+  // it, and carrying basis between the owner's books and their company's is
+  // the wrong answer on both sets at once.
   //
-  // Read from the OUTFLOW's account rather than taken from the caller: both
-  // `resolve` and `resolveSplit` reach this function, and a check at their
-  // call sites would be two copies of the rule that already disagreed once.
-  const [origin] = await tx
-    .select({ entityId: schema.accounts.entityId })
-    .from(schema.holdings)
-    .innerJoin(schema.accounts, eq(schema.accounts.id, schema.holdings.accountId))
-    .where(eq(schema.holdings.id, outflow.holdingId))
-    .limit(1);
-  if (!origin) return { ok: false, reason: 'destination_gone' };
-  if (crossesEntityBoundary(origin.entityId, account.entityId)) {
-    return { ok: false, reason: 'cross_entity' };
-  }
+  // **Entities are a reporting convenience, not an ownership change.** Both
+  // accounts are the same person's, so the movement is money staying put and
+  // the carry is correct — which is what the OWNER-DECLARED door
+  // (`linkDeclaredPair`) has always done and what SC-859 never changed. The
+  // two doors agree again, in the other direction.
+  //
+  // What this does NOT touch is `candidatePairClass`, so the MATCHER still
+  // refuses to pair across the boundary on its own and the queue still will
+  // not recommend one. That asymmetry is deliberate and narrow: relaxing a
+  // predicate a nightly job acts on without anybody answering is a change to
+  // what happens unattended, and it is not this ticket's to make.
 
   let holdingId = destination.holdingId;
   // Recorded on the arrival row below, on EVERY branch. See
