@@ -321,50 +321,6 @@ export function createTokensRouter(db: DbType, schemaObj: typeof schema) {
         return results.slice(0, input.limit);
       }),
 
-    createManyfromExternal: protectedProcedure
-      .input(
-        strictInput(
-          z.array(
-            z.object({
-              externalId: z.string().min(1),
-              symbol: z
-                .string()
-                .min(1)
-                .max(20)
-                .transform((val) => val.toUpperCase()),
-              metadata: z.record(z.unknown()),
-              provider: z.enum(['finnhub', 'coingecko', 'defillama']),
-            })
-          )
-        )
-      )
-      .mutation(async ({ input, ctx }) => {
-        const { dbUser } = await requireAuth(ctx);
-
-        // Delegate to service for business logic
-        const allTokens = await tokenService.createManyFromExternal(input, dbUser.id);
-
-        // Emit events for created tokens (filter out existing ones)
-        const createdTokens = allTokens.filter((t) =>
-          input.some((i) => i.symbol === t.symbol && !t.externalId)
-        );
-
-        for (const token of createdTokens) {
-          emitEntityChange({
-            entityType: 'token',
-            operationType: 'create',
-            entityId: token.id,
-            userId: dbUser.id,
-            data: {
-              symbol: token.symbol,
-              typeId: token.typeId,
-            },
-          });
-        }
-
-        return allTokens;
-      }),
-
     // Create token from external provider metadata (for holding creation)
     createFromExternal: protectedProcedure
       .input(
@@ -409,67 +365,13 @@ export function createTokensRouter(db: DbType, schemaObj: typeof schema) {
       }),
 
     /**
-     * Flag a token as a scam (global). Sets `is_scam_probability = 1.0` on
-     * the token row; the token then falls out of `tokens.getAll`/`search`
-     * (which filter < SCAM_PROBABILITY_THRESHOLD) and the frontend renders
-     * a scam badge wherever it's still shown (owned holdings, job result
-     * pages, etc.).
+     * Clears a user's scam verdict — resets `is_scam_probability` to 0. Any
+     * authenticated user. Used by the undo path in the ScamActionButton
+     * confirmation dialog.
      *
-     * Authorization: any authenticated user. Scoped this broadly by product
-     * decision — it's a small-user-base trust model. Abuse is surfaced via
-     * the audit-style log line below + the existing token entity-change WS
-     * event.
-     */
-    markAsScam: protectedProcedure
-      .input(strictInput(z.object({ tokenId: z.string().uuid() })))
-      .mutation(async ({ input, ctx }) => {
-        const { dbUser } = await requireAuth(ctx);
-
-        const [token] = await db
-          .select({
-            id: schemaObj.tokens.id,
-            symbol: schemaObj.tokens.symbol,
-            typeCode: schemaObj.tokenTypes.code,
-          })
-          .from(schemaObj.tokens)
-          .leftJoin(schemaObj.tokenTypes, eq(schemaObj.tokens.typeId, schemaObj.tokenTypes.id))
-          .where(eq(schemaObj.tokens.id, input.tokenId))
-          .limit(1);
-
-        if (!token) {
-          throw new Error('Token not found');
-        }
-
-        await db
-          .update(schemaObj.tokens)
-          .set({ isScamProbability: 1.0, scamScoreSource: 'user', updatedAt: new Date() })
-          .where(eq(schemaObj.tokens.id, input.tokenId));
-
-        tokensLogger.info(
-          {
-            userId: dbUser.id,
-            tokenId: token.id,
-            symbol: token.symbol,
-            type: token.typeCode,
-          },
-          'Token marked as scam by user'
-        );
-
-        emitEntityChange({
-          entityType: 'token',
-          operationType: 'update',
-          entityId: token.id,
-          userId: dbUser.id,
-          data: { scamProbability: 1.0 },
-        });
-
-        return { success: true as const, tokenId: token.id };
-      }),
-
-    /**
-     * Reverse `markAsScam` — resets `is_scam_probability` to 0. Same
-     * authorization: any authenticated user. Used by the undo path in the
-     * ScamActionButton confirmation dialog.
+     * It has no inverse on this router any more. The mutation it used to
+     * reverse was deleted as never-called surface (SC-1152), so a scam
+     * probability is now written only by the heuristic scorer.
      */
     unmarkAsScam: protectedProcedure
       .input(strictInput(z.object({ tokenId: z.string().uuid() })))

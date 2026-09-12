@@ -5,7 +5,7 @@ import {
   AttachHoldingToVaultUseCase,
   DetachHoldingFromVaultUseCase,
 } from '@scani/domain/use-cases';
-import { emitBulkEntityChanges, emitEntityChange } from '@scani/realtime';
+import { emitEntityChange } from '@scani/realtime';
 import {
   AttachHoldingToVaultDto,
   CreateVaultDto,
@@ -16,7 +16,6 @@ import {
 } from '@scani/shared';
 import { Container } from 'typedi';
 import { z } from 'zod';
-import { executeBulkOperation } from '../lib/bulk-operation';
 import { strictInput } from '../lib/strict-input';
 import { requireAuth } from '../middleware/auth';
 import { protectedProcedure, router } from '../trpc';
@@ -182,21 +181,6 @@ export const vaultsRouter = router({
 
     return result;
   }),
-
-  // Bulk delete vaults
-  bulkDelete: protectedProcedure
-    .input(strictInput(z.object({ ids: z.array(z.string()).min(1) })))
-    .mutation(async ({ input, ctx }) => {
-      const { dbUser } = await requireAuth(ctx);
-
-      const result = await executeBulkOperation(input.ids, (id) => deleteVault(id, dbUser.id));
-
-      if (result.deletedIds.length > 0) {
-        emitBulkEntityChanges('vault', 'delete', result.deletedIds, dbUser.id);
-      }
-
-      return result;
-    }),
 
   // Attach a holding to a vault
   attachHolding: protectedProcedure

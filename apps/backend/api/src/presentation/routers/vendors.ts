@@ -79,23 +79,6 @@ export const vendorsRouter = router({
   }),
 
   /**
-   * `VendorRepository` has no `findByIdAndUser` (unlike
-   * `PaymentRepository`) — ownership is checked here instead, and, same
-   * precedent as everywhere else in this feature, "belongs to someone
-   * else" and "doesn't exist" both surface as a plain NOT_FOUND so a
-   * caller can't use this to probe for another user's vendor ids.
-   */
-  get: protectedProcedure
-    .input(strictInput(z.object({ vendorId: z.string().uuid() })))
-    .query(async ({ ctx, input }) => {
-      const vendor = await Container.get(VendorRepository).findById(input.vendorId);
-      if (!vendor || vendor.userId !== ctx.userId) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Vendor not found' });
-      }
-      return serializeVendor(vendor);
-    }),
-
-  /**
    * Existing vendors whose name resembles `name`, best first. Read-only, and
    * the picker's answer to "is this a near-duplicate?" BEFORE the user commits
    * to creating one — `create` itself silently reuses only the confident band,

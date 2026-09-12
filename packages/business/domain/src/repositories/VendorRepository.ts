@@ -78,8 +78,8 @@ export interface VendorDeleteImpact {
 
 /**
  * Raised for both "no such vendor" and "belongs to someone else" — the
- * caller maps it to a plain NOT_FOUND, same precedent as `vendors.get`, so
- * it can't be used to probe for another user's vendor ids.
+ * caller maps it to a plain NOT_FOUND, so it can't be used to probe for
+ * another user's vendor ids.
  */
 export class VendorNotFoundError extends Error {
   constructor(vendorId: string) {

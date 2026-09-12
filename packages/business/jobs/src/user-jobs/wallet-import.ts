@@ -7,8 +7,8 @@ export interface WalletImportJob extends UserJobBase {
   chain: string;
   address: string;
   label?: string;
-  // Pre-detected institution IDs from the frontend's `wallet.detectChains`
-  // step. When present, the worker skips the redundant detection.
+  // Pre-detected institution IDs supplied by the caller. When present, the
+  // worker skips the redundant detection.
   detectedInstitutionIds?: string[];
 }
 

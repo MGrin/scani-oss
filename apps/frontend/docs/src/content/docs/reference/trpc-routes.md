@@ -26,12 +26,12 @@ Located in `apps/backend/api/src/presentation/routers/`.
 | `tokens` | Search tokens, materialise via `TokenIdentityService`. |
 | `transactions` | Read the ledger. Filter by date range, kind, account, holding, transfer group. |
 | `vaults` | CRUD on vaults, attach/detach holdings with percentage splits. |
-| `groups` | CRUD on groups, attach holdings + accounts. |
-| `entities` | CRUD on ownership boundaries, assign accounts, per-entity totals plus the combined view. |
+| `groups` | CRUD on groups, attach holdings. |
+| `entities` | Read and create ownership boundaries, assign accounts, per-entity totals plus the combined view. |
 | `portfolio` | Dashboard headline + chart series (reads `portfolio_value_daily`). |
 | `dashboard` | Aggregate dashboard data — composes calls to `portfolio` + per-scope rollups. |
 | `integrations` | Connect / disconnect provider integrations (Binance OAuth, exchange API keys, brokerage tokens, wallets). Owns encrypt/decrypt of credentials. |
-| `wallet` | Add / discover on-chain wallets. |
+| `wallet` | Add on-chain wallets; list the chains that are supported. |
 | `screenshots` | Upload screenshot to S3, enqueue `screenshot-parse` job. |
 | `file-import` | Upload CSV / file, enqueue `file-import` job. |
 | `storage` | Presigned URL minting for direct S3 reads. |

@@ -31,7 +31,7 @@ import { usersRouter } from './routers/users';
 import { vaultsRouter } from './routers/vaults';
 import { vendorsRouter } from './routers/vendors';
 import { walletRouter } from './routers/wallet';
-import { publicProcedure, router } from './trpc';
+import { router } from './trpc';
 
 const tokensRouter = createTokensRouter(db, schema);
 
@@ -119,14 +119,6 @@ export const appRouter = router({
   // Web Push subscriptions (protected) - one row per browser per device,
   // consumed by the payment-due reminder on the worker (SC-226).
   push: pushRouter,
-
-  // Health check (public)
-  health: router({
-    check: publicProcedure.query(() => ({
-      status: 'ok',
-      timestamp: new Date(),
-    })),
-  }),
 });
 
 export type AppRouter = typeof appRouter;
