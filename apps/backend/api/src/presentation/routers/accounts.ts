@@ -1,5 +1,5 @@
 import { AccountRepository, GroupRepository } from '@scani/domain/repositories';
-import { AccountService, HoldingQueryService } from '@scani/domain/services';
+import { AccountService } from '@scani/domain/services';
 import { BulkAssignAccountGroupsUseCase } from '@scani/domain/use-cases';
 import { REFRESH_ACCOUNT_BALANCE } from '@scani/jobs';
 import { BullMqEnqueueService } from '@scani/queue';
@@ -24,35 +24,10 @@ export const accountsRouter = router({
     return await Container.get(AccountService).getAccountsByUserIdWithSummary(dbUser.id);
   }),
 
-  getByIdWithSummary: protectedProcedure
-    .input(strictInput(IdInputDto))
-    .query(async ({ input, ctx }) => {
-      const { dbUser } = await requireAuth(ctx);
-      return await Container.get(AccountService).getAccountByIdWithSummary(dbUser.id, input.id);
-    }),
-
   getById: protectedProcedure.input(strictInput(IdInputDto)).query(async ({ input, ctx }) => {
     const { dbUser } = await requireAuth(ctx);
     return await Container.get(AccountService).getAccountById(dbUser.id, input.id);
   }),
-
-  getHoldings: protectedProcedure
-    .input(
-      strictInput(
-        z.object({
-          id: z.string().uuid(),
-          includeHidden: z.boolean().optional().default(false),
-        })
-      )
-    )
-    .query(async ({ input, ctx }) => {
-      const { dbUser } = await requireAuth(ctx);
-      return await Container.get(HoldingQueryService).getHoldingsByAccountIdWithSummary(
-        dbUser,
-        input.id,
-        input.includeHidden
-      );
-    }),
 
   update: protectedProcedure
     .input(

@@ -3,7 +3,6 @@
  *
  * Exposes the historical-balance + PnL surface area to the frontend:
  *  - getNetWorthSeries: the daily-granularity chart data
- *  - getHoldingHistory: per-holding balance/value series (Phase 3)
  *
  * Reads `portfolio_value_daily` by default. Falls back to live
  * computation via PortfolioValuationAtTimeService for days not yet
@@ -16,11 +15,9 @@ import { db } from '@scani/db/connection';
 import * as schema from '@scani/db/schema';
 import { SCAM_PROBABILITY_THRESHOLD } from '@scani/domain/lib/constants';
 import { PortfolioValueDailyRepository, UserJobRepository } from '@scani/domain/repositories';
-import { PeriodDisposalsService, type ReturnsScope, ReturnsService } from '@scani/domain/services';
 import { HIDE_CLOSED_HOLDINGS_STALE_DAYS } from '@scani/domain/use-cases';
 import { PORTFOLIO_HISTORY_BACKFILL, PORTFOLIO_HISTORY_LOOKBACK_DAYS } from '@scani/jobs';
 import { BullMqEnqueueService } from '@scani/queue';
-import { type PeriodDisposals, parseCostBasisMethod, toDisposalLotMatchDto } from '@scani/shared';
 import { TRPCError } from '@trpc/server';
 import Decimal from 'decimal.js';
 import { and, eq, sql } from 'drizzle-orm';
@@ -36,7 +33,6 @@ import {
   unmeasuredDates,
   userNetWorthDaily,
 } from '../../lib/net-worth-series';
-import { withoutPeriodSeries } from '../../lib/returns-response';
 import { strictInput } from '../lib/strict-input';
 import { requireAuth } from '../middleware/auth';
 import { protectedProcedure, router } from '../trpc';
@@ -181,52 +177,9 @@ const NetWorthSeriesInput = z
     { message: `Date span must be ≤ ${MAX_NET_WORTH_SPAN_DAYS} days` }
   );
 
-/**
- * A half-open window of disposals, `[from, to)` (SC-90).
- *
- * `to` is EXCLUSIVE and strictly greater than `from`, which is the one place
- * this differs from every other window input in this file. Two reasons, both
- * about a reading a caller cannot check:
- *
- * - Half-open so adjacent windows partition disposals. An inclusive upper
- *   bound counts a midnight disposal in both, and somebody adding two periods
- *   together gets a number with no error to notice.
- * - Strictly greater so `to === from` is a REFUSAL rather than an empty
- *   result. A zero-width window returns zero rows over a portfolio that may
- *   have hundreds, and an empty answer to a malformed question is
- *   indistinguishable from an empty answer to a good one.
- */
-const DisposalWindowInput = z
-  .object({
-    from: z.coerce.date(),
-    to: z.coerce.date(),
-  })
-  .refine((v) => v.to.getTime() > v.from.getTime(), {
-    message: '`to` must be strictly greater than `from` — the window is half-open, [from, to)',
-  })
-  .refine(
-    (v) => (v.to.getTime() - v.from.getTime()) / (24 * 60 * 60 * 1000) <= MAX_NET_WORTH_SPAN_DAYS,
-    { message: `Date span must be ≤ ${MAX_NET_WORTH_SPAN_DAYS} days` }
-  );
-
-const HoldingHistoryInput = z
-  .object({
-    holdingId: z.string().uuid(),
-    from: z.coerce.date(),
-    to: z.coerce.date(),
-  })
-  .refine((v) => v.to.getTime() >= v.from.getTime(), {
-    message: '`to` must be greater than or equal to `from`',
-  })
-  .refine(
-    (v) => (v.to.getTime() - v.from.getTime()) / (24 * 60 * 60 * 1000) <= MAX_NET_WORTH_SPAN_DAYS,
-    { message: `Date span must be ≤ ${MAX_NET_WORTH_SPAN_DAYS} days` }
-  );
-
 // Per-entity scope ownership check. Throws TRPCError NOT_FOUND when
 // the entity doesn't exist or doesn't belong to `userId`. Returns
-// silently when the scope is valid. Mirrors the pattern used by
-// `getHoldingHistory` further down the file.
+// silently when the scope is valid.
 async function assertScopeOwnership(
   userId: string,
   scope: { kind: 'institution' | 'account' | 'holding'; id: string }
@@ -260,101 +213,7 @@ async function assertScopeOwnership(
   if (!row[0]) throw new TRPCError({ code: 'NOT_FOUND', message: 'Institution not found' });
 }
 
-/**
- * TWR + XIRR over a window, at any level the product has a page for (SC-457).
- *
- * The scope is optional and absent means the whole portfolio, matching
- * `getNetWorthSeries` above so the two are asked the same way. Ownership is
- * NOT checked here: `ReturnsScopeResolver` resolves a scope that is not this
- * user's to `null`, so a foreign id produces the same NOT_FOUND as one that
- * does not exist — one gate, in the layer that knows what a scope is.
- */
-const ReturnsInput = z.object({
-  baseCurrencyId: z.string().uuid().optional(),
-  scope: z
-    .discriminatedUnion('kind', [
-      z.object({ kind: z.literal('holding'), id: z.string().uuid() }),
-      z.object({ kind: z.literal('account'), id: z.string().uuid() }),
-      z.object({ kind: z.literal('institution'), id: z.string().uuid() }),
-      z.object({ kind: z.literal('group'), id: z.string().uuid() }),
-      z.object({ kind: z.literal('vault'), id: z.string().uuid() }),
-    ])
-    .optional(),
-  window: z
-    .discriminatedUnion('kind', [
-      z.object({ kind: z.literal('ytd') }),
-      z.object({ kind: z.literal('1y') }),
-      z.object({ kind: z.literal('all') }),
-      z.object({
-        kind: z.literal('custom'),
-        from: z.coerce.date(),
-        to: z.coerce.date(),
-      }),
-    ])
-    .default({ kind: 'all' }),
-  /**
-   * Whether the per-sub-period breakdowns cross the wire — the TWR chain's,
-   * and the FX attribution's over the same boundaries.
-   *
-   * They are always COMPUTED — `TwrResult.periods` is the boundary set SC-458
-   * attributes FX over and SC-464 chains a benchmark across, and losing it
-   * would cost those tickets a re-derivation they cannot do from the scalar.
-   * What they do not have to do is reach a browser that only prints two
-   * numbers. Measured on an account with real history, `periods` is very
-   * nearly the whole of an `all` response — sent on every call, for nothing on
-   * screen (SC-471).
-   *
-   * One flag for both, because they share their boundaries: a client given
-   * one series and not the other could not line them up. Off by default, and
-   * ABSENT rather than empty when off — `[]` would say the window had no
-   * sub-periods, which is a different and false statement. The counts beside
-   * them still travel, so a client can tell how many there were without
-   * carrying them.
-   */
-  includePeriods: z.boolean().default(false),
-});
-
 export const portfolioRouter = router({
-  // The performance surface. Reads the same rollup rows the chart above
-  // plots, so a return can never disagree with the curve it is printed under.
-  getReturns: protectedProcedure.input(strictInput(ReturnsInput)).query(async ({ ctx, input }) => {
-    const { dbUser } = await requireAuth(ctx);
-
-    if (input.window.kind === 'custom') {
-      const span =
-        (input.window.to.getTime() - input.window.from.getTime()) / (24 * 60 * 60 * 1000);
-      if (span < 0 || span > MAX_NET_WORTH_SPAN_DAYS) {
-        throw new TRPCError({
-          code: 'BAD_REQUEST',
-          message: `Custom window must be between 0 and ${MAX_NET_WORTH_SPAN_DAYS} days`,
-        });
-      }
-    }
-
-    const scope: ReturnsScope = input.scope ?? { kind: 'user' };
-    // The base currency is resolved by the SERVICE, not here (SC-457 review).
-    // This handler used to do it, which meant the only caller that could not
-    // reach the query without one was this one — and every script, job and
-    // test that called `compute` directly passed `undefined` straight into a
-    // primary-key column.
-    const outcome = await Container.get(ReturnsService).compute({
-      userId: dbUser.id,
-      baseCurrencyId: input.baseCurrencyId,
-      scope,
-      window: input.window,
-    });
-
-    // Same shape `getNetWorthSeries` uses for the "set a base currency" CTA:
-    // an account with none has no rollup rows either, so there is nothing to
-    // show and nothing has gone wrong.
-    if (outcome.status === 'no-base-currency') return { returns: null, baseCurrencyId: null };
-    if (outcome.status === 'scope-not-found') {
-      throw new TRPCError({ code: 'NOT_FOUND', message: 'Scope not found' });
-    }
-    const returns = input.includePeriods ? outcome.returns : withoutPeriodSeries(outcome.returns);
-    return { returns, baseCurrencyId: outcome.returns.baseCurrencyId };
-  }),
-
   getNetWorthSeries: protectedProcedure
     .input(strictInput(NetWorthSeriesInput))
     .query(async ({ ctx, input }) => {
@@ -537,137 +396,6 @@ export const portfolioRouter = router({
         };
       });
       return { series, baseCurrencyId: baseId, granularity };
-    }),
-
-  // Phase-3 surface: per-holding balance-over-time. Kept in the router
-  // from the start so the frontend can code against a stable endpoint
-  // shape as Phase 3 lands cost basis + sparkline.
-  /**
-   * Every disposal across the portfolio in a window of time (SC-90).
-   *
-   * The wider sibling of `holdings.realizedLedger`, which answers the same
-   * question for one holding. It exists because "why did my realized gain move
-   * this year" is not answerable by asking that question once per holding: a
-   * coin bought on an exchange and sold from a wallet belongs to a transfer
-   * component, and `forComponentsOf` is what walks those on one shared lot
-   * ledger rather than resetting the cost at the transfer.
-   *
-   * **Not tax output.** See `docs/technical/2026-08-14_why-no-tax-statement.md`
-   * and the note on the `period-disposals` contract. The window is two instants
-   * on purpose — the route encodes no jurisdiction's idea of a year.
-   *
-   * No ownership guard is needed and none would help: the service takes a
-   * `userId` and sources its holding set from `findIdsForUser`, so the caller
-   * has no way to name a holding at all. Contrast `realizedLedger`, which does
-   * take a holding id and therefore does carry one.
-   *
-   * **The method is the account's stored one and cannot be overridden per
-   * request (SC-957).** This input carried an optional `costBasisMethod` that
-   * won over `users.cost_basis_method`, so a caller could be handed realized
-   * figures computed under a rule the user never selected and that nothing
-   * anywhere recorded. mgrin's 2026-09-03 decision is that the method stays
-   * freely changeable *with a recorded history* — and an override defeats that
-   * by construction, because the method it computes under is never stored, so
-   * no history row can explain the figure it produced.
-   *
-   * It was removed rather than recorded because it had no caller to serve:
-   * `git grep getDisposals` returned exactly one line, this definition, and
-   * `costBasisMethod` appeared in no frontend file. `strictInput` (SC-675) means
-   * a client that sends it now gets a refusal rather than being quietly ignored,
-   * so the removal cannot fail silently either.
-   */
-  getDisposals: protectedProcedure
-    .input(strictInput(DisposalWindowInput))
-    .query(async ({ ctx, input }): Promise<PeriodDisposals> => {
-      const { dbUser } = await requireAuth(ctx);
-      const baseCurrencyId = dbUser.baseCurrencyId ?? null;
-      const method = parseCostBasisMethod(dbUser.costBasisMethod);
-      const empty = {
-        periodStart: input.from.toISOString(),
-        periodEnd: input.to.toISOString(),
-        costBasisMethod: method,
-        rows: [],
-        rowCount: 0,
-        byOutcome: {
-          realized: 0,
-          unpriced: 0,
-          unreviewed: 0,
-          retained: 0,
-          awaiting_pair: 0,
-        },
-        byBasisQuality: { known: 0, partial: 0, unknown: 0 },
-        totals: { proceeds: '0', costBasis: '0', gain: '0' },
-      };
-      if (!baseCurrencyId) {
-        // Every figure here is denominated in the base currency, so without
-        // one there is no ledger to report — not an empty one. Same refusal
-        // `realizedLedger` makes, and for the same reason.
-        return { ...empty, baseCurrencyId: null };
-      }
-
-      const result = await Container.get(PeriodDisposalsService).forPeriod(
-        dbUser.id,
-        baseCurrencyId,
-        { from: input.from, to: input.to },
-        method
-      );
-
-      return {
-        periodStart: input.from.toISOString(),
-        periodEnd: input.to.toISOString(),
-        baseCurrencyId,
-        costBasisMethod: result.method,
-        rows: result.rows.map(toDisposalLotMatchDto),
-        rowCount: result.rows.length,
-        byOutcome: result.byOutcome,
-        byBasisQuality: result.byBasisQuality,
-        totals: {
-          proceeds: result.totals.proceeds.toString(),
-          costBasis: result.totals.costBasis.toString(),
-          gain: result.totals.gain.toString(),
-        },
-      };
-    }),
-
-  getHoldingHistory: protectedProcedure
-    .input(strictInput(HoldingHistoryInput))
-    .query(async ({ ctx, input }) => {
-      const { dbUser } = await requireAuth(ctx);
-      // Ownership guard — verify the holding belongs to the caller so the
-      // endpoint can't become an IDOR.
-      const holdingRow = await db
-        .select({ id: schema.holdings.id })
-        .from(schema.holdings)
-        .where(and(eq(schema.holdings.id, input.holdingId), eq(schema.holdings.userId, dbUser.id)))
-        .limit(1);
-      if (!holdingRow[0]) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Holding not found' });
-      }
-      const baseId = dbUser.baseCurrencyId ?? null;
-      if (!baseId) {
-        return { holdingId: input.holdingId, series: [] as Array<{ date: string; value: number }> };
-      }
-      // Per-day value series for the holding — reads the
-      // `scope_kind='holding'` rollup rows the rollup already produces.
-      const rows = await Container.get(PortfolioValueDailyRepository).findRange(
-        dbUser.id,
-        baseId,
-        input.from,
-        input.to,
-        undefined,
-        { kind: 'holding', id: input.holdingId }
-      );
-      const points: LttbPoint<(typeof rows)[number]>[] = rows.map((row) => ({
-        x: new Date(String(row.snapshotDate)).getTime(),
-        y: Number(row.totalValue),
-        raw: row,
-      }));
-      const sampled = lttbDownsample(points, LTTB_TARGET_POINTS);
-      const series = sampled.map((p) => ({
-        date: String(p.raw.snapshotDate).slice(0, 10),
-        value: Number(p.raw.totalValue),
-      }));
-      return { holdingId: input.holdingId, series };
     }),
 
   // Manual trigger for the portfolio-history-backfill job — same job

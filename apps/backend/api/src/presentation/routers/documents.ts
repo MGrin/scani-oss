@@ -361,12 +361,6 @@ export const documentsRouter = router({
       };
     }),
 
-  /** Extractions still awaiting an accept/reject decision, scoped to the caller. */
-  listExtractions: protectedProcedure.query(async ({ ctx }) => {
-    const rows = await Container.get(DocumentExtractionRepository).findPendingByUser(ctx.userId);
-    return rows.map(serializeExtraction);
-  }),
-
   /**
    * A single document plus every extraction found in it, scoped to the
    * caller — backs `/documents/:id`, the page every extraction row in the

@@ -4,11 +4,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import {
-  HoldingExclusionRepository,
-  InstitutionBlockchainMappingRepository,
-  UserJobRepository,
-} from '@scani/domain/repositories';
+import { HoldingExclusionRepository, UserJobRepository } from '@scani/domain/repositories';
 import { sourceForChainId, WalletDiscoveryService } from '@scani/domain/services';
 import { ImportWalletAddressUseCase, type WalletReviewChain } from '@scani/domain/use-cases';
 import {
@@ -34,9 +30,11 @@ const ImportWalletSchema = z.object({
   displayName: z.string().max(100, 'Display name is too long').optional(),
   chain: z.string().min(1).default('auto'),
   requestId: z.string().uuid(),
-  // When the frontend already ran `wallet.detectChains`, it passes the
-  // institution IDs here so the worker skips re-detection — avoids a
-  // second 30+ second chain-by-chain RPC sweep on the worker side.
+  // A caller that has already resolved the chains passes the institution
+  // IDs here so the worker skips re-detection — avoids a second 30+ second
+  // chain-by-chain RPC sweep on the worker side. Nothing in this tree fills
+  // it: the endpoint that produced these ids was deleted as never-called
+  // surface (SC-1152).
   detectedInstitutionIds: z.array(z.string().uuid()).optional(),
 });
 
@@ -288,128 +286,4 @@ export const walletRouter = router({
         transactionImportEnqueued: txImportEnqueued,
       };
     }),
-
-  /**
-   * Synchronous chain detection — kept inline because it's a preview
-   * step shown before the import mutation. Fast enough (1–3s) that
-   * queuing would add perceived latency.
-   */
-  detectChains: protectedProcedure
-    .input(
-      strictInput(
-        z.object({
-          address: z
-            .string()
-            .min(1, 'Wallet address is required')
-            .max(200, 'Wallet address is too long'),
-        })
-      )
-    )
-    .mutation(async ({ input }) => {
-      const discovery = Container.get(WalletDiscoveryService);
-      const mappingRepository = Container.get(InstitutionBlockchainMappingRepository);
-
-      const { detected: detectedInstitutionCodes, failures } = await discovery.detectWalletChains(
-        input.address
-      );
-
-      // Translate institutionCodes back to chain detail rows for the UI.
-      // The chain catalog still lives in WalletDiscoveryService for
-      // backward compatibility with the existing chainId-keyed shape the
-      // frontend's wallet picker consumes.
-      const allChains = discovery.getAllSupportedChains();
-      const detectedSet = new Set(detectedInstitutionCodes);
-      const detectedChainDetails = allChains
-        .map((chain) => ({
-          ...chain,
-          institutionCode: instCodeForChain(chain.chainId),
-        }))
-        .filter((c) => c.institutionCode && detectedSet.has(c.institutionCode))
-        .map((chain) => ({
-          chainId: chain.chainId,
-          name: chain.name,
-          type: chain.type,
-          nativeSymbol: chain.nativeSymbol,
-        }));
-
-      // Look up institution IDs for detected chains so the import step
-      // can skip redundant re-detection (avoids rate-limit hits on
-      // public RPCs).
-      const institutionIds: string[] = [];
-      for (const chain of detectedChainDetails) {
-        const mapping = await mappingRepository.findByChainId(String(chain.chainId));
-        if (mapping) {
-          institutionIds.push(mapping.institutionId);
-        }
-      }
-
-      const result = {
-        address: input.address,
-        chainsDetected: detectedChainDetails,
-        totalChains: detectedChainDetails.length,
-        institutionIds,
-        /** Chains whose probe could not be completed — see below. */
-        unreachableChains: failures.map((f) => ({ chain: f.chainName, error: f.error })),
-      };
-
-      if (result.totalChains === 0) {
-        // "We asked every chain and none had activity" and "we could not
-        // ask" are different answers and used to be the same message.
-        // The first is the user's address being wrong; the second is ours
-        // (an upstream throttle, a missing key) and retrying helps (SC-490).
-        if (failures.length > 0) {
-          // TIMEOUT, not INTERNAL_SERVER_ERROR: an upstream throttle is
-          // retryable and is not a bug on this side, and tRPC has no
-          // SERVICE_UNAVAILABLE code. A 500 here would page us for
-          // somebody else's rate limiter.
-          throw new TRPCError({
-            code: 'TIMEOUT',
-            message: `Could not check ${failures.map((f) => f.chainName).join(', ')} right now (${failures[0]?.error}). No activity was found on the chains that did answer — try again in a few minutes.`,
-          });
-        }
-        throw new TRPCError({
-          code: 'NOT_FOUND',
-          message:
-            'No wallet activity found on any supported chain. Check the address, or add blockchain-explorer API keys (ETHERSCAN_API_KEY, etc.) if the backend is missing them.',
-        });
-      }
-      return result;
-    }),
 });
-
-// Map a chain catalog row's `chainId` (numeric for EVM, magic-number for
-// non-EVM) to the static institutionCode the `@scani/providers` registry
-// filters by. Mirrors the maps inside `WalletDiscoveryService`. Kept
-// here so the chain-detail filter stays simple at the call site.
-function instCodeForChain(chainId: number | string): string | null {
-  const evm: Record<number, string> = {
-    1: 'ethereum',
-    56: 'bsc',
-    137: 'polygon',
-    43114: 'avalanche',
-    42161: 'arbitrum',
-    10: 'optimism',
-    8453: 'base',
-    250: 'fantom',
-    25: 'cronos',
-    42170: 'arbitrum-nova',
-    324: 'zksync-era',
-    534352: 'scroll',
-    59144: 'linea',
-    81457: 'blast',
-    5000: 'mantle',
-    204: 'opbnb',
-    100: 'gnosis',
-    42220: 'celo',
-    1284: 'moonbeam',
-    1285: 'moonriver',
-  };
-  const nonEvm: Record<string, string> = {
-    '0': 'bitcoin',
-    '-2': 'solana',
-    '-1': 'tron',
-    '-15': 'ton',
-  };
-  if (typeof chainId === 'number') return evm[chainId] ?? nonEvm[String(chainId)] ?? null;
-  return nonEvm[chainId] ?? evm[Number(chainId)] ?? null;
-}

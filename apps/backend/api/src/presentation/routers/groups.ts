@@ -1,10 +1,9 @@
 import type { Group } from '@scani/db/schema';
-import { AccountRepository, GroupRepository, HoldingRepository } from '@scani/domain/repositories';
+import { GroupRepository, HoldingRepository } from '@scani/domain/repositories';
 import { GroupValuationService } from '@scani/domain/services';
-import { AssignAccountGroupsUseCase, AssignHoldingGroupsUseCase } from '@scani/domain/use-cases';
-import { emitBulkEntityChanges, emitEntityChange } from '@scani/realtime';
+import { AssignHoldingGroupsUseCase } from '@scani/domain/use-cases';
+import { emitEntityChange } from '@scani/realtime';
 import {
-  AssignAccountGroupsDto,
   AssignHoldingGroupsDto,
   CreateGroupDto,
   GroupWithCountsDto,
@@ -13,7 +12,6 @@ import {
 } from '@scani/shared';
 import { Container } from 'typedi';
 import { z } from 'zod';
-import { executeBulkOperation } from '../lib/bulk-operation';
 import { strictInput } from '../lib/strict-input';
 import { requireAuth } from '../middleware/auth';
 import { protectedProcedure, router } from '../trpc';
@@ -163,22 +161,6 @@ export const groupsRouter = router({
     return result;
   }),
 
-  // Bulk delete groups
-  bulkDelete: protectedProcedure
-    .input(strictInput(z.object({ ids: z.array(z.string()).min(1) })))
-    .mutation(async ({ input, ctx }) => {
-      const { dbUser } = await requireAuth(ctx);
-
-      const result = await executeBulkOperation(input.ids, (id) => deleteGroup(id, dbUser.id));
-
-      // PERFORMANCE: Emit single bulk event instead of looping
-      if (result.deletedIds.length > 0) {
-        emitBulkEntityChanges('group', 'delete', result.deletedIds, dbUser.id);
-      }
-
-      return result;
-    }),
-
   // Assign groups to a holding
   assignHoldingGroups: protectedProcedure
     .input(strictInput(AssignHoldingGroupsDto))
@@ -200,27 +182,6 @@ export const groupsRouter = router({
       return result;
     }),
 
-  // Assign groups to an account
-  assignAccountGroups: protectedProcedure
-    .input(strictInput(AssignAccountGroupsDto))
-    .mutation(async ({ input, ctx }) => {
-      const { dbUser } = await requireAuth(ctx);
-
-      const result = await Container.get(AssignAccountGroupsUseCase).execute(input, dbUser.id);
-
-      emitEntityChange({
-        entityType: 'account',
-        operationType: 'update',
-        entityId: input.accountId,
-        userId: dbUser.id,
-        metadata: {
-          groupsUpdated: true,
-        },
-      });
-
-      return result;
-    }),
-
   // Get groups assigned to a holding
   getHoldingGroups: protectedProcedure
     .input(strictInput(IdInputDto))
@@ -233,19 +194,5 @@ export const groupsRouter = router({
         throw new Error('Unauthorized access to holding');
       }
       return await groupRepository.findGroupsByHoldingId(input.id);
-    }),
-
-  // Get groups assigned to an account
-  getAccountGroups: protectedProcedure
-    .input(strictInput(IdInputDto))
-    .query(async ({ input, ctx }) => {
-      const { dbUser } = await requireAuth(ctx);
-      const groupRepository = Container.get(GroupRepository);
-      const accountRepository = Container.get(AccountRepository);
-      const account = await accountRepository.findById(input.id);
-      if (!account || account.userId !== dbUser.id) {
-        throw new Error('Unauthorized access to account');
-      }
-      return await groupRepository.findGroupsByAccountId(input.id);
     }),
 });

@@ -317,7 +317,7 @@ describe('strictInput', () => {
     expect(schema.safeParse({ symbol: 'btc', zzStray: 1 }).success).toBe(false);
   });
 
-  /** SC-687. `tokens.createManyfromExternal` takes a bare array of objects. */
+  /** SC-687. An input schema may be a bare array of objects, not only an object. */
   test('array elements refuse an undeclared key', () => {
     const schema = strictInput(z.array(z.object({ a: z.number() })));
     expect(schema.safeParse([{ a: 1 }]).success).toBe(true);

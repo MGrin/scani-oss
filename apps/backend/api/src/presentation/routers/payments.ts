@@ -36,7 +36,6 @@ import {
   AnchorOccurrenceMissingError,
   CreatePaymentFromExtractionUseCase,
   ExtractionNotFoundError,
-  ReconcilePaymentsUseCase,
 } from '@scani/domain/use-cases';
 import { TRPCError } from '@trpc/server';
 import { Container } from 'typedi';
@@ -475,15 +474,4 @@ export const paymentsRouter = router({
       );
       return serializeOccurrence(updated);
     }),
-
-  /**
-   * Runs the opt-in bank-matching sweep (`ReconcilePaymentsUseCase`) for
-   * the caller only — the use case itself loads payments via
-   * `PaymentRepository.findByUser(userId)` and settles matches through
-   * `PaymentService.settleOccurrence`, so every write it makes is
-   * already ownership-checked at the point the use case was wired.
-   */
-  reconcile: protectedProcedure.mutation(async ({ ctx }) => {
-    return Container.get(ReconcilePaymentsUseCase).execute(ctx.userId);
-  }),
 });
