@@ -22,6 +22,40 @@ const HEIGHT = /const DRAWER_HEIGHT =\s*\n?\s*'([^']*)'/.exec(SOURCE)?.[1] ?? ''
  *  second argument, which is the caller's own `className`. */
 const CONTENT_CLASSES = /'(fixed inset-x-0 bottom-0[^']*)'/.exec(SOURCE)?.[1] ?? '';
 
+/**
+ * The tap a drag ate (SC-1151).
+ *
+ * Asserted in the source for this file's own stated reason — the component is
+ * a portal and there is no DOM environment here to mount it in — and the
+ * BEHAVIOUR was measured instead, on the real transfer-review screen at
+ * 390x844 through `Input.synthesizeScrollGesture` with
+ * `gestureSourceType: 'touch'`. Before: one upward flick, then tap 1 on a
+ * destination row left `checked=0` and tap 2 selected it. Two taps for one
+ * choice, on the control that decides where money went.
+ *
+ * `dragConsumedClick` is right about the click a MOUSE drag synthesises at its
+ * release. A touch drag synthesises none, so the flag stayed armed with
+ * nothing to disarm it.
+ */
+describe('bottom drawer — a drag does not eat the next tap', () => {
+  test('the swallow flag is cleared when a new gesture begins', () => {
+    const down = /const handlePointerDown = [\s\S]*?\n {4}\};/.exec(SOURCE)?.[0] ?? '';
+    expect(down).toContain('dragConsumedClick.current = false;');
+    // Before `drag.current` is replaced, so the clear cannot be read as part
+    // of building the new state and moved with it.
+    expect(down.indexOf('dragConsumedClick.current = false;')).toBeLessThan(
+      down.indexOf('drag.current = {')
+    );
+  });
+
+  test('the flag is still armed by a release that moved the sheet', () => {
+    // The control. A clear with nothing arming it is a component that has
+    // stopped swallowing the drag's OWN click, which is the defect this
+    // whole mechanism exists to prevent — and it would pass the test above.
+    expect(SOURCE).toContain('dragConsumedClick.current = true;');
+  });
+});
+
 describe('bottom drawer — the ways out', () => {
   test('the sheet stops below the top safe-area inset', () => {
     expect(HEIGHT).toContain('env(safe-area-inset-top');
@@ -94,9 +128,15 @@ describe('bottom drawer — the ways out', () => {
     // The fourth is a downward flick, which on a phone is the *first* one a
     // reader reaches for — and it resolves in `resolveRelease`, so the flag
     // has to reach there (SC-76).
-    expect(SOURCE).toContain(
-      'resolveRelease(dragPosition, state.velocity, points, { dismissible })'
-    );
+    //
+    // Asserted over the CALL rather than over one spelling of it: SC-1151
+    // added a second option to the same call and the literal match broke,
+    // which would have read as the flag no longer reaching the release rule.
+    const call = /resolveRelease\(dragPosition, state\.velocity, points, \{[\s\S]*?\}\)/.exec(
+      SOURCE
+    )?.[0];
+    expect(call).toBeDefined();
+    expect(call).toContain('dismissible');
   });
 
   test('the close button is absent when the drawer is not dismissible, not disabled', () => {

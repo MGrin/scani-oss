@@ -86,7 +86,23 @@ export interface ReleaseOptions {
    *  `BottomDrawerContent`'s `dismissible`. A downward flick then settles on
    *  the shortest snap point instead of dismissing. */
   dismissible?: boolean;
+  /**
+   * The snap index the drag STARTED on. Supplying it turns on the detent rule
+   * below; omitting it is the pre-SC-1151 behaviour, and every caller that
+   * cannot say where the gesture began should omit it rather than guess.
+   */
+  from?: number;
 }
+
+/**
+ * How far UP a drag must travel, as a fraction of the viewport, to count as
+ * asking for the next stop rather than as a thumb that moved.
+ *
+ * 0.04 is ~34px on an 844px phone — an order of magnitude above Chrome's 8px
+ * touch slop and the component's own 4px claim threshold, and well under the
+ * smallest distance anybody drags on purpose.
+ */
+const DETENT_TRAVEL = 0.04;
 
 /**
  * What a release does: settle on a snap point, or close.
@@ -100,17 +116,45 @@ export interface ReleaseOptions {
  * back, so the gesture settles at the shortest snap point and the sheet stays
  * up. Deciding that here rather than in the component keeps the whole release
  * rule in one testable place (SC-76).
+ *
+ * `from` adds the DETENT rule — see the comment on the branch itself. Without
+ * it the projection term is the only thing separating a flick from a drag,
+ * and it is calibrated in fractions of the VIEWPORT while the distance that
+ * actually matters is the gap between two stops. On `PEEK_SNAP_POINTS` that
+ * gap is half the viewport, so a flick had to clear 211px on a 390x844 phone
+ * before anything at all happened (SC-1151).
  */
 export function resolveRelease(
   position: number,
   velocity: number,
   snapPoints: readonly number[],
-  { dismissible = true }: ReleaseOptions = {}
+  { dismissible = true, from }: ReleaseOptions = {}
 ): ReleaseOutcome {
   const projected = position + velocity * PROJECTION_MS;
   const smallest = snapPoints[0] as number;
   if (projected < smallest * CLOSE_FRACTION) return { close: dismissible, index: 0 };
-  return { close: false, index: nearestSnapIndex(projected, snapPoints) };
+  const index = nearestSnapIndex(projected, snapPoints);
+  if (from === undefined || index !== from) return { close: false, index };
+
+  // The detent (SC-1151). Landing back on the stop the drag started from is
+  // the one outcome that has to be looked at twice, because the sheet has
+  // already TAKEN the gesture by then: `resolveDragClaim` gives it every
+  // upward drag below the ceiling and `BottomDrawerContent` cancels the
+  // `touchmove`, so the list under the finger could not scroll either. A
+  // spring-back there is not a neutral "nothing happened" — it is a flick
+  // that reached nothing at all, and with two stops half a viewport apart
+  // every ordinary flick lands in it.
+  //
+  // Upward only, and that asymmetry is the safety half rather than an
+  // oversight: a detent DOWN from the shortest stop is a dismissal, and a
+  // downward drag is the reflex gesture that fires before the reader has
+  // decided anything (SC-76). Down keeps the projection rule exactly as it
+  // was.
+  const origin = snapPoints[from];
+  if (origin === undefined || position - origin < DETENT_TRAVEL) {
+    return { close: false, index };
+  }
+  return { close: false, index: Math.min(from + 1, snapPoints.length - 1) };
 }
 
 /** Who a vertical gesture inside the drawer belongs to. */

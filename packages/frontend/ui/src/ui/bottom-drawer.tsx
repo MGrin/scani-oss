@@ -233,6 +233,15 @@ const BottomDrawerContent = React.forwardRef<
 
     const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
       if (!event.isPrimary) return;
+      // A NEW gesture means the previous one's click never arrived, so the
+      // swallow below has nothing left to do (SC-1151). A mouse drag
+      // synthesises a `click` between its own `pointerup` and any next
+      // `pointerdown`, so the case the flag exists for is untouched; a TOUCH
+      // drag synthesises none, and the flag used to stay armed until the
+      // reader's next unrelated tap — which it then ate. Measured at 390x844
+      // on the transfer-review picker: after one upward flick, tap 1 on a
+      // destination row left nothing selected and tap 2 selected it.
+      dragConsumedClick.current = false;
       drag.current = {
         pointerId: event.pointerId,
         startY: event.clientY,
@@ -281,7 +290,13 @@ const BottomDrawerContent = React.forwardRef<
       const state = drag.current;
       drag.current = null;
       if (!state || state.pointerId !== event.pointerId || dragPosition === null) return;
-      const outcome = resolveRelease(dragPosition, state.velocity, points, { dismissible });
+      // `settledIndex` is where this drag began — `resolveRelease` needs it to
+      // tell a flick that reached nothing from one that asked for nothing
+      // (SC-1151).
+      const outcome = resolveRelease(dragPosition, state.velocity, points, {
+        dismissible,
+        from: settledIndex,
+      });
       setDragPosition(null);
       if (outcome.close) {
         // Not flagged as drag-consumed: the dismissal *is* a programmatic click

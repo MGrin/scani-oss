@@ -902,10 +902,16 @@ export class TransferReviewService {
   /**
    * Where an `internal` answer can send this transfer (SC-187).
    *
-   * Every holding of the same token except the one it left, plus every account
-   * that holds none — because "the money went to an account I track that has
-   * no position in this token yet" is a real destination, and refusing it
-   * would send the reader off to create a holding by hand and come back.
+   * Every holding of the same token except the one it left, plus every OTHER
+   * account that holds none — because "the money went to an account I track
+   * that has no position in this token yet" is a real destination, and
+   * refusing it would send the reader off to create a holding by hand and come
+   * back.
+   *
+   * **`OTHER` is load-bearing** (SC-1151). The account the money left keeps
+   * its own second same-token holding, and does not get the "open one here"
+   * row: a withdrawal cannot arrive in a fresh copy of the position it
+   * departed. See the `continue` in `destinationsFor` for what that costs.
    *
    * Minus anything across an ownership boundary (SC-859), which is the one
    * exclusion that is about the ANSWER rather than about the token: money
@@ -1039,6 +1045,7 @@ export class TransferReviewService {
     // degraded one.
     const [sourceAccount] = await database
       .select({
+        accountId: schema.accounts.id,
         chainKey: sql<string | null>`${schema.accounts.metadata}->>'chainId'`,
         entityId: schema.accounts.entityId,
       })
@@ -1048,6 +1055,7 @@ export class TransferReviewService {
       .limit(1);
     const sourceChainKey = sourceAccount?.chainKey ?? null;
     const sourceEntityId = sourceAccount?.entityId ?? null;
+    const sourceAccountId = sourceAccount?.accountId ?? null;
 
     const holdings = await database
       .select({
@@ -1106,6 +1114,24 @@ export class TransferReviewService {
       );
       const existing = byAccount.get(account.accountId) ?? [];
       if (existing.length === 0) {
+        // The account the money LEFT is not somewhere to OPEN a position in
+        // the token it just sent away (SC-1151). The source HOLDING is
+        // excluded by id above, and a second same-token holding in the same
+        // account stays — that is SC-187's measured production shape, one
+        // Airwallex account with two USD holdings and a withdrawal between
+        // them. This is the other branch, and it has no such shape behind it:
+        // reaching it means the holding the money left was the account's only
+        // position in this token, so "create one here" describes the money
+        // arriving in a second copy of the position it departed.
+        //
+        // It is the one row mgrin was offered on production, and the entity
+        // boundary is what made it the ONLY one: with a single assigned
+        // account (SC-859) every other is across the boundary and skipped
+        // above, leaving the source itself. What is left after this `continue`
+        // is an EMPTY list, which is the correct answer for a movement whose
+        // two ends are on different sets of books — and a different defect,
+        // SC-930, owns what that empty list then says.
+        if (account.accountId === sourceAccountId) continue;
         destinations.push({
           accountId: account.accountId,
           holdingId: null,

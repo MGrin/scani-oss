@@ -28,13 +28,20 @@ import { destinationDetail, destinationGroup, destinationScale } from '../../lib
  * Airwallex fiat account above every Solana wallet for a SOL transfer. An
  * order can be ignored by scrolling; a pre-selection cannot.
  *
- * The last band is accounts holding no position in this token. They are on the
- * list because "it went to an account I track that has never held SOL" is a
- * real thing that happens, and sending the reader off to create a holding by
- * hand and come back would be the queue giving up on its own question. What it
- * does NOT do is hide the consequence: the band's heading says a holding will
- * be created, and the confirm sentence says so again with the balance it will
- * have.
+ * The last band is OTHER accounts holding no position in this token. They are
+ * on the list because "it went to an account I track that has never held SOL"
+ * is a real thing that happens, and sending the reader off to create a holding
+ * by hand and come back would be the queue giving up on its own question. What
+ * it does NOT do is hide the consequence: the band's heading says a holding
+ * will be created, and the confirm sentence says so again with the balance it
+ * will have.
+ *
+ * **The account the money LEFT is not in that band** (SC-1151), though its own
+ * second holding of the token is still in the first one. Opening a fresh
+ * position in the token a withdrawal just took out of that same account
+ * describes nothing that can have happened — and on a portfolio with one
+ * account inside an entity and every other outside it (SC-859), that row was
+ * the ONLY thing the picker offered.
  *
  * **The control itself is `@scani/ui`'s `AccountPicker`, not this file's own.**
  * Fourteen surfaces in this app ask which account and every one of them had

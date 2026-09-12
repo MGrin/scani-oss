@@ -2481,6 +2481,50 @@ describe('TransferReviewService — where a transfer can go', () => {
     expect(destinations.indexOf(synced!)).toBeLessThan(destinations.indexOf(empty!));
   });
 
+  /**
+   * The account the money LEFT is never a place to CREATE a holding of the
+   * token that just left it (SC-1151).
+   *
+   * `destinationsFor` excludes the source HOLDING and has never excluded the
+   * source ACCOUNT — deliberately, because SC-187's production shape is one
+   * Airwallex account carrying two USD holdings and a withdrawal that moved
+   * between them. What it also has to do, and did not, is skip the
+   * `holdingId: null` band for that account: when the source holding is the
+   * account's only position in the token, the account falls through to
+   * "tracks none of this token yet" and is offered as somewhere to open a new
+   * one. That row says the money left a USD position and arrived in a second
+   * USD position of the same account — the one destination that cannot be
+   * right, and the only one mgrin was offered on production.
+   *
+   * The control is the assertion above it, and it is not decoration: the
+   * claim is an ABSENCE from a list, and a picker that returned nothing at
+   * all would satisfy it while proving nothing.
+   */
+  test('does not offer the source ACCOUNT as somewhere to create a holding of the token that left it', async () => {
+    const f = fixture!;
+    // Asked for `inHoldingId`, whose account holds exactly one position in
+    // this token. Remove it and the account tracks none — which is the band
+    // that manufactured the row.
+    const offered = await service().listDestinationsForHolding(f.userId, f.inHoldingId);
+
+    expect(offered.length).toBeGreaterThan(0);
+    expect(offered.filter((d) => d.accountId === f.inAccountId)).toEqual([]);
+  });
+
+  /**
+   * The half of the source account that stays (SC-187), asserted here rather
+   * than left to the block's first test: the fix above is a narrowing, and the
+   * cheapest wrong version of it drops the source account entirely.
+   */
+  test('still offers a SECOND holding of the token in the account the money left', async () => {
+    const f = fixture!;
+    const outId = await insertOutflow(f, { at: anchor(), quantity: '-100', externalId: 'd-8' });
+
+    const offered = await service().listDestinations(f.userId, outId);
+    const sibling = offered.find((d) => d.holdingId === f.sameAccountHoldingId);
+    expect(sibling?.accountId).toBe(f.outAccountId);
+  });
+
   test('an account on a DIFFERENT chain is not same-network', async () => {
     const f = fixture!;
     const outId = await insertOutflow(f, { at: anchor(), quantity: '-100', externalId: 'd-7' });
@@ -4295,6 +4339,38 @@ describe('TransferReviewService — the entity boundary', () => {
     await putAccountInEntity(f.outAccountId, null);
     const unassigned = await service().listDestinations(f.userId, outId);
     expect(new Set(unassigned.map((d) => d.accountId)).size).toBeGreaterThan(1);
+  });
+
+  /**
+   * mgrin's screen, 2026-09-12 (SC-1151). The two facts above compose into a
+   * shape neither test had: an ASSIGNED source account whose only position in
+   * the token is the one the money is leaving.
+   *
+   * The boundary removes every unassigned account, the source holding is
+   * excluded by id — and what was left was the source ACCOUNT itself, offered
+   * as somewhere to open a second holding of the token it had just sent away.
+   * One row, reading `Airwallex`, and it is the account the money came out of.
+   *
+   * **The right answer here is an EMPTY list, and that is SC-930's state, not
+   * a fix for it.** Empty is correct: an outflow whose counterpart nobody has
+   * put on the same set of books has no `internal` answer, which is what
+   * SC-859 decided on purpose. What the empty picker then SAYS is still wrong
+   * — `noDestinations` claims the reader has no other account — and that
+   * wording is blocked on SC-929. Naming the two apart is the point of this
+   * test: before it, the two failures were one screen.
+   */
+  test('an assigned source whose only position is the one leaving offers NOTHING, not itself', async () => {
+    const f = fixture!;
+    // The control first, and it has to be here: `inAccountId` unassigned is
+    // offered a list this fixture is not empty of, so the emptiness below is
+    // produced by the boundary rather than by a picker that never works.
+    const before = await service().listDestinationsForHolding(f.userId, f.inHoldingId);
+    expect(before.length).toBeGreaterThan(0);
+
+    await putAccountInEntity(f.inAccountId, await makeEntity(f.userId, 'company'));
+    const offered = await service().listDestinationsForHolding(f.userId, f.inHoldingId);
+
+    expect(offered).toEqual([]);
   });
 });
 
