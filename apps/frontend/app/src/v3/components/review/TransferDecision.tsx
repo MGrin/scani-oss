@@ -50,13 +50,19 @@ import { emptySplitRows, TransferSplitEditor } from './TransferSplitEditor';
  * The candidate that would have matched is *labelled* as such and sorted
  * first — which is help — and it still takes a deliberate tap.
  *
- * The picker lives in the sheet body rather than inside `ConfirmAction`'s
- * `chooser` slot, which is where `MergeVendorAction` puts its equivalent. The
- * difference is size: a vendor merge chooses one row from a `Command` palette,
- * while this is up to eight rows each carrying three lines of comparison, and
- * `ConfirmAction` renders in the peek's fixed header. Choosing first and
- * confirming second also matches the actual order of the judgement — you work
- * out which deposit it was, then you say so.
+ * **The picker IS `ConfirmAction`'s `chooser`** — this paragraph said the
+ * opposite until SC-1151, and its reason was that `ConfirmAction` renders in
+ * the peek's fixed header. It does not: the block below passes `chooser=`, and
+ * what lands in the peek's fixed header is `spec.actions`, which this is not.
+ * `TransferReviewList` puts the whole of this component in `spec.content`, so
+ * the picker is inside the sheet's SCROLLING body either way — which is the
+ * fact the scroll half of SC-1151 turned on, and it was recorded here as its
+ * opposite.
+ *
+ * Choosing first and confirming second is the part of that paragraph that
+ * stands, and it is why the chooser sits above the consequence: it matches the
+ * order of the judgement — you work out which deposit it was, then you say
+ * so.
  */
 
 interface TransferDecisionProps {

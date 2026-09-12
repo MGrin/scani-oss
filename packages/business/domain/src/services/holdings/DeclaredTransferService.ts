@@ -70,6 +70,21 @@ export class DeclaredTransferService {
    * a constant (SC-356): a row opened `manual` inside a sync-owned account is
    * one `HoldingsSyncHelper` may never correct, and the next sync then creates
    * a SECOND holding for the same (account, token).
+   *
+   * **CROSSING AN ENTITY BOUNDARY HERE IS INTENDED, NOT AN OVERSIGHT**
+   * (SC-929, mgrin, 2026-09-12). This path has never consulted
+   * `crossesEntityBoundary` and must not start. **Entities are a reporting
+   * convenience, not a change of owner**: a movement between the owner's
+   * personal books and their company's is the same person's money staying put,
+   * so the shared `transfer_group_id` and the basis `walkComponent` carries
+   * through it are the right answer on both sets of books.
+   *
+   * Stated here because the row has been filed once and CANCELLED once on the
+   * reading that the absence looked accidental. It is a decision. SC-1151
+   * removed the two guards that had come to disagree with it — the destination
+   * picker and `TransferReviewService.writeInflow` — so the declared doors and
+   * the queue's `internal` answer now say the same thing. What still refuses is
+   * `candidatePairClass`, and only because it acts unattended.
    */
   async destinationHolding(
     destination: TransferDestinationRef,

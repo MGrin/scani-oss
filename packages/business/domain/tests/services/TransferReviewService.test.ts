@@ -2481,6 +2481,50 @@ describe('TransferReviewService — where a transfer can go', () => {
     expect(destinations.indexOf(synced!)).toBeLessThan(destinations.indexOf(empty!));
   });
 
+  /**
+   * The account the money LEFT is never a place to CREATE a holding of the
+   * token that just left it (SC-1151).
+   *
+   * `destinationsFor` excludes the source HOLDING and has never excluded the
+   * source ACCOUNT — deliberately, because SC-187's production shape is one
+   * Airwallex account carrying two USD holdings and a withdrawal that moved
+   * between them. What it also has to do, and did not, is skip the
+   * `holdingId: null` band for that account: when the source holding is the
+   * account's only position in the token, the account falls through to
+   * "tracks none of this token yet" and is offered as somewhere to open a new
+   * one. That row says the money left a USD position and arrived in a second
+   * USD position of the same account — the one destination that cannot be
+   * right, and the only one mgrin was offered on production.
+   *
+   * The control is the assertion above it, and it is not decoration: the
+   * claim is an ABSENCE from a list, and a picker that returned nothing at
+   * all would satisfy it while proving nothing.
+   */
+  test('does not offer the source ACCOUNT as somewhere to create a holding of the token that left it', async () => {
+    const f = fixture!;
+    // Asked for `inHoldingId`, whose account holds exactly one position in
+    // this token. Remove it and the account tracks none — which is the band
+    // that manufactured the row.
+    const offered = await service().listDestinationsForHolding(f.userId, f.inHoldingId);
+
+    expect(offered.length).toBeGreaterThan(0);
+    expect(offered.filter((d) => d.accountId === f.inAccountId)).toEqual([]);
+  });
+
+  /**
+   * The half of the source account that stays (SC-187), asserted here rather
+   * than left to the block's first test: the fix above is a narrowing, and the
+   * cheapest wrong version of it drops the source account entirely.
+   */
+  test('still offers a SECOND holding of the token in the account the money left', async () => {
+    const f = fixture!;
+    const outId = await insertOutflow(f, { at: anchor(), quantity: '-100', externalId: 'd-8' });
+
+    const offered = await service().listDestinations(f.userId, outId);
+    const sibling = offered.find((d) => d.holdingId === f.sameAccountHoldingId);
+    expect(sibling?.accountId).toBe(f.outAccountId);
+  });
+
   test('an account on a DIFFERENT chain is not same-network', async () => {
     const f = fixture!;
     const outId = await insertOutflow(f, { at: anchor(), quantity: '-100', externalId: 'd-7' });
@@ -4162,7 +4206,19 @@ describe('TransferReviewService — the entity boundary', () => {
     expect(await createdInflows(f, outId)).toHaveLength(1);
   });
 
-  test('refuses an `internal` answer across the boundary, and writes nothing', async () => {
+  /**
+   * mgrin, 2026-09-12, reopening SC-929: **entities are a reporting
+   * convenience, not an ownership change.** A cross-entity movement keeps the
+   * shared `transfer_group_id` and carries the basis across intact,
+   * deliberately — which is what the OWNER-DECLARED door has always done, and
+   * SC-859 never changed.
+   *
+   * This test asserted the opposite refusal for ten days. It is inverted
+   * rather than deleted, because the refusal was real, shipped and reasoned
+   * about at length: the record that matters is that the behaviour was chosen
+   * TWICE, in opposite directions, and the second choice is the product's.
+   */
+  test('writes the arrival for an `internal` answer ACROSS the boundary', async () => {
     const f = fixture!;
     await putAccountInEntity(f.outAccountId, await makeEntity(f.userId, 'personal'));
     await putAccountInEntity(f.inAccountId, await makeEntity(f.userId, 'company'));
@@ -4176,27 +4232,32 @@ describe('TransferReviewService — the entity boundary', () => {
       await service().resolve(f.userId, outId, 'internal', {
         destination: { accountId: f.inAccountId, holdingId: f.inHoldingId },
       })
-    ).toEqual({ ok: false, reason: 'cross_entity' });
+    ).toEqual({ ok: true });
 
-    expect(await createdInflows(f, outId)).toHaveLength(0);
+    expect(await createdInflows(f, outId)).toHaveLength(1);
     const [out] = await db
       .select()
       .from(schema.holdingTransactions)
       .where(eq(schema.holdingTransactions.id, outId));
-    // The whole answer rolled back: the row is still a question, which is what
-    // the refusal is FOR — its owner has to classify the movement.
-    expect(out?.transferReview).toBeNull();
-    expect(out?.transferGroupId).toBeNull();
-    expect((await service().pendingSummary(f.userId)).count).toBe(1);
+    expect(out?.transferReview).toBe('internal');
+    // The SHARED group id is the decision, not a side effect: it is what
+    // `walkComponent` inherits the buffered lots through, so asserting it is
+    // asserting that the basis carried rather than that a row appeared.
+    expect(out?.transferGroupId).not.toBeNull();
+    const [arrival] = await createdInflows(f, outId);
+    expect(arrival?.transferGroupId).toBe(out?.transferGroupId as string);
+    expect((await service().pendingSummary(f.userId)).count).toBe(0);
   });
 
   /**
    * The split is a third entry point onto `writeInflow`, and it reaches it
-   * with a portion's quantity rather than the row's. A guard placed in
-   * `resolve` alone would leave "3,500 of this went to the company account"
-   * writing exactly the arrival the whole-row answer was refused.
+   * with a portion's quantity rather than the row's — so it is asserted
+   * separately in BOTH directions. It was the case a guard in `resolve` alone
+   * would have missed; it is now the case a relaxation in `resolve` alone
+   * would miss, and it is mgrin's actual shape: part of a withdrawal to an
+   * account he tracks, the rest outside.
    */
-  test('refuses the `internal` PORTION of a split across the boundary', async () => {
+  test('writes the `internal` PORTION of a split across the boundary', async () => {
     const f = fixture!;
     await putAccountInEntity(f.outAccountId, await makeEntity(f.userId, 'personal'));
     await putAccountInEntity(f.inAccountId, await makeEntity(f.userId, 'company'));
@@ -4215,33 +4276,28 @@ describe('TransferReviewService — the entity boundary', () => {
         },
         { decision: 'left_control', quantity: '500' },
       ])
-    ).toEqual({ ok: false, reason: 'cross_entity' });
+    ).toEqual({ ok: true });
 
-    expect(await createdInflows(f, outId)).toHaveLength(0);
-    expect((await service().pendingSummary(f.userId)).count).toBe(1);
+    expect(await createdInflows(f, outId)).toHaveLength(1);
+    expect((await service().pendingSummary(f.userId)).count).toBe(0);
   });
 
   /**
-   * And the PICKER cannot route around it either.
+   * And the PICKER follows the WRITER — which is the same rule it has always
+   * been, now pointing the other way.
    *
-   * The refusal in the writer is the half that protects the ledger; this is
-   * the half that makes the surface honest. `transferLegFacts` already says
-   * why — *"the queue must not OFFER a pairing the matcher is refusing, or the
-   * reader completes it by hand and the refusal has bought nothing"* — and the
-   * destination list is that same offer for the other answer.
-   *
-   * The control runs first, in this test rather than beside it: the assertion
-   * is an ABSENCE from a list, and a picker that returned nothing at all would
-   * satisfy it while proving nothing.
+   * SC-859 put the boundary in three places at once so the surfaces could not
+   * disagree: the matcher, the writer, and this list. mgrin's SC-929 ruling
+   * moves the writer, so this has to move with it. A picker narrower than its
+   * writer is not a safe half-measure here — it is the same defect SC-859 was
+   * filed about, mirrored: the reader is refused an answer the ledger would
+   * have accepted, and the screen says nothing about why.
    */
-  test('does not OFFER a destination across the boundary', async () => {
+  test('OFFERS a destination across the boundary', async () => {
     const f = fixture!;
     const personal = await makeEntity(f.userId, 'personal');
     await putAccountInEntity(f.outAccountId, personal);
     await putAccountInEntity(f.inAccountId, personal);
-    // The must-be-FOUND control, and it has to be inside the boundary too: an
-    // account left unassigned is on the far side of one, which is the next
-    // assertion.
     await putAccountInEntity(f.emptyAccountId, personal);
     const outId = await insertOutflow(f, {
       at: anchor(),
@@ -4252,29 +4308,27 @@ describe('TransferReviewService — the entity boundary', () => {
     const offered = await service().listDestinations(f.userId, outId);
     expect(offered.map((d) => d.accountId)).toContain(f.inAccountId);
 
+    // Moved to the far side, and still offered. This is the assertion that
+    // flipped; every other line of this test is unchanged, which is what makes
+    // the flip legible in a diff.
     await putAccountInEntity(f.inAccountId, await makeEntity(f.userId, 'company'));
     const after = await service().listDestinations(f.userId, outId);
-    expect(after.map((d) => d.accountId)).not.toContain(f.inAccountId);
-    // The near side is still offered — a picker that emptied itself would pass
-    // the assertion above and be useless.
+    expect(after.map((d) => d.accountId)).toContain(f.inAccountId);
     expect(after.map((d) => d.accountId)).toContain(f.emptyAccountId);
   });
 
   /**
-   * The consequence worth stating out loud, because it is what the production
-   * shape actually looks like (SC-859): ONE account assigned to an entity and
-   * every other account NULL.
+   * The production shape, and the whole of why SC-1151 was filed: ONE account
+   * assigned to an entity and every other account NULL (21 and 1, measured).
    *
-   * Unassigned is not "inside every entity", it is outside them all — the same
-   * reading `candidatePairClass` has always had, asserted three tests up for
-   * candidates. So an outflow from the one assigned account is offered NO
-   * linking destination at all until its counterpart is classified too, and
-   * the answers left to it are the ones that do not carry basis. That is the
-   * intended outcome rather than a gap: a movement whose two ends nobody has
-   * put on the same set of books is exactly the movement a person has to
-   * classify.
+   * Under SC-859 an outflow from that one assigned account was offered NO
+   * linking destination whatsoever — every other account is unassigned, and
+   * unassigned is outside every entity rather than inside all of them. That
+   * was called the intended outcome. mgrin's ruling says it is not: entities
+   * are a reporting convenience, so a movement between them is still a
+   * movement between two accounts he owns.
    */
-  test('an assigned source offers no UNASSIGNED destination', async () => {
+  test('an assigned source offers the UNASSIGNED destinations too', async () => {
     const f = fixture!;
     await putAccountInEntity(f.outAccountId, await makeEntity(f.userId, 'company'));
     const outId = await insertOutflow(f, {
@@ -4283,18 +4337,42 @@ describe('TransferReviewService — the entity boundary', () => {
       externalId: 'ent-dest-2',
     });
 
-    const offered = await service().listDestinations(f.userId, outId);
-    // What survives is the source's OWN account — the fixture's second
-    // same-token holding in it, which is trivially on the near side. Every
-    // other account is unassigned and therefore across the boundary.
-    expect([...new Set(offered.map((d) => d.accountId))]).toEqual([f.outAccountId]);
-    expect(offered.length).toBeGreaterThan(0);
+    const assigned = await service().listDestinations(f.userId, outId);
+    expect(new Set(assigned.map((d) => d.accountId)).size).toBeGreaterThan(1);
+    expect(assigned.map((d) => d.accountId)).toContain(f.inAccountId);
 
-    // And nothing changes for a portfolio whose owner has drawn no boundary,
-    // which is every portfolio until they draw one.
+    // The must-stay-GREEN control: assigning the source changes NOTHING about
+    // the list now, so the two readings have to agree. Without it a picker
+    // that had simply stopped filtering on anything would pass the assertion
+    // above, and so would one that ignored `userId`.
     await putAccountInEntity(f.outAccountId, null);
     const unassigned = await service().listDestinations(f.userId, outId);
-    expect(new Set(unassigned.map((d) => d.accountId)).size).toBeGreaterThan(1);
+    expect(new Set(unassigned.map((d) => d.accountId))).toEqual(
+      new Set(assigned.map((d) => d.accountId))
+    );
+  });
+
+  /**
+   * mgrin's screen, 2026-09-12 (SC-1151), and it needed BOTH halves of this
+   * ticket.
+   *
+   * The boundary removed every unassigned account and the source holding was
+   * excluded by id, so what was left was the source ACCOUNT itself — offered
+   * as somewhere to open a second holding of the token it had just sent away.
+   * One row, and it was the account the money came out of.
+   *
+   * Relaxing the boundary alone would have buried that row in a long list
+   * rather than removed it, and excluding the source alone would have left the
+   * list EMPTY. So this asserts both at once: the source is gone AND there is
+   * something to pick.
+   */
+  test('an assigned source whose only position is the one leaving offers the others, never itself', async () => {
+    const f = fixture!;
+    await putAccountInEntity(f.inAccountId, await makeEntity(f.userId, 'company'));
+    const offered = await service().listDestinationsForHolding(f.userId, f.inHoldingId);
+
+    expect(offered.length).toBeGreaterThan(0);
+    expect(offered.map((d) => d.accountId)).not.toContain(f.inAccountId);
   });
 });
 

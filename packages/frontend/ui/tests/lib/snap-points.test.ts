@@ -78,6 +78,63 @@ describe('resolveRelease', () => {
     expect(resolveRelease(0.38, -0.002, TWO_STOP).close).toBe(true);
   });
 
+  /**
+   * The gesture that reached NOTHING (SC-1151).
+   *
+   * `resolveDragClaim` gives every upward gesture to the SHEET while the
+   * drawer is below its tallest stop, and `BottomDrawerContent` then
+   * `preventDefault`s the `touchmove` — so the list under the finger cannot
+   * scroll natively. The sheet was supposed to grow instead. With
+   * `PEEK_SNAP_POINTS` the two stops are half a viewport apart, so anything
+   * under a QUARTER of the viewport projects short of the midpoint and settles
+   * back on the stop it started from: the sheet does not grow AND the list
+   * does not scroll, and the flick is swallowed whole.
+   *
+   * Measured on the real screen at 390x844 before this changed, through
+   * `Input.synthesizeScrollGesture` with `gestureSourceType: 'touch'` — six
+   * consecutive 60px flicks over the destination rows left `picker.scrollTop`
+   * at 0, `body.scrollTop` at 214 and the sheet at 422. A 200px one grew the
+   * sheet, and a 60px one AFTER that scrolled the list by 62px, which is what
+   * says the dead zone is the stop distance rather than the instrument.
+   *
+   * So an upward release that the sheet claimed advances one stop rather than
+   * springing back. Downward is deliberately untouched: a detent there would
+   * turn the reflex dismissal gesture into a close on a 34px twitch, which is
+   * the hazard SC-76 exists for.
+   */
+  test('a deliberate upward drag that lands back on its own stop advances one instead', () => {
+    // 60px of 844 is 0.071, and a slow finger projects almost nothing.
+    expect(resolveRelease(0.471, 0.0001, TWO_STOP, { from: 0 })).toEqual({
+      close: false,
+      index: 1,
+    });
+  });
+
+  test('a wobble is not a deliberate drag and still springs back', () => {
+    // 8px of 844. Above the component's 4px claim threshold and nowhere near
+    // an intention — without this the detent fires on a resting thumb.
+    expect(resolveRelease(0.409, 0, TWO_STOP, { from: 0 })).toEqual({
+      close: false,
+      index: 0,
+    });
+  });
+
+  test('the detent cannot push past the tallest stop', () => {
+    expect(resolveRelease(1.08, 0.0001, TWO_STOP, { from: 1 })).toEqual({
+      close: false,
+      index: 1,
+    });
+  });
+
+  test('a DOWNWARD drag that lands back on its own stop is unchanged', () => {
+    // The safety half. 0.329 is 60px below the rest stop on an 844px phone,
+    // and it must spring back rather than detent down into a dismissal.
+    expect(resolveRelease(0.329, 0, TWO_STOP, { from: 0 })).toEqual({
+      close: false,
+      index: 0,
+    });
+  });
+
   test('a single snap point still resolves', () => {
     expect(resolveRelease(0.9, 0, [1])).toEqual({ close: false, index: 0 });
     expect(resolveRelease(0.4, 0, [1]).close).toBe(true);

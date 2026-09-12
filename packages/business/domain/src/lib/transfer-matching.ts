@@ -191,18 +191,26 @@ export type CandidatePairClass = 'same_token' | 'bridged_asset';
 /**
  * Do these two accounts sit on opposite sides of an ownership boundary?
  *
- * Exported, and read by three surfaces rather than spelled out at each of
- * them: `candidatePairClass` below (so nothing is auto-linked or recommended
- * across the boundary), `TransferReviewService.writeInflow` (so the `internal`
- * answer cannot write the arrival the pairing was refused), and the
- * destination picker that feeds it (so a reader is never offered the account
- * the writer is going to refuse).
+ * **ONE surface reads it today, and it had three (SC-1151).** `candidatePairClass`
+ * below is the whole of it: nothing is auto-linked or RECOMMENDED across the
+ * boundary. The other two — `TransferReviewService.writeInflow` and the
+ * destination picker that feeds it — were removed when mgrin reopened SC-929
+ * and ruled that an owner-DECLARED cross-entity transfer keeps today's
+ * behaviour deliberately: shared `transfer_group_id`, basis carried across
+ * intact, because **entities are a reporting convenience rather than an
+ * ownership change**.
  *
- * It exists as its own function because those three came to disagree once and
- * silently: the boundary lived in this predicate alone, and `internal` writes
- * the same shared `transfer_group_id` that `walkComponent` inherits lots
- * through, so refusing the pair and permitting the answer produced the very
- * carry the guard was written to stop (SC-859).
+ * SC-859's own reasoning is what makes the split coherent rather than a
+ * half-reverted guard. It existed because the three surfaces came to disagree
+ * once and silently — refusing the pair while permitting the answer produced
+ * the very carry it was written to stop. What differs between them is WHO
+ * decides: the matcher acts unattended, nightly, on a heuristic, so a wrong
+ * carry there is one nobody chose. `internal` is a sentence a human answered.
+ * The declared door (`linkDeclaredPair`) has never checked this and never
+ * changed; the two declared doors now agree again.
+ *
+ * So a NEW reader of this predicate is adding an unattended rule, not
+ * restoring symmetry. Say which it is.
  *
  * **Null matches null**, so this is a no-op for a portfolio whose owner has
  * drawn no boundary — which is every portfolio until they draw one. An account
