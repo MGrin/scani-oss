@@ -98,7 +98,7 @@ For real backups, use `mc mirror`:
 
 ```sh
 docker run --rm --network scani_default \
-  minio/mc:latest \
+  quay.io/minio/mc:RELEASE.2025-04-16T18-13-26Z \
   sh -c "mc alias set local http://minio:9000 minioadmin minioadmin && \
          mc mirror --overwrite local/job-uploads-dev s3://your-backup-bucket/scani"
 ```
