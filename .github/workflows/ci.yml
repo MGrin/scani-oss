@@ -202,9 +202,17 @@ jobs:
             # `.github/actions/**` is here because `setup-bun` is a step in every
             # gated job below and is in no other filter — breaking it breaks all
             # of them, silently, on a change that matches nothing.
+            #
+            # `docker-compose*.yml` is here for the same reason and was MISSING when
+            # it mattered (SC-1156). It matches no other filter, so Docker Hub
+            # removing `minio/*` left `E2E (Playwright)` — the job whose first step
+            # IS `docker compose up` — skipped on the pull request repairing it,
+            # while `CI Success` read `pass` over the skip. The file the stack is
+            # built from must reach the job that starts the stack.
             ci-config:
               - '.github/workflows/ci.yml'
               - '.github/actions/**'
+              - 'docker-compose*.yml'
 
   validate-code:
     name: Lint & Type Check
