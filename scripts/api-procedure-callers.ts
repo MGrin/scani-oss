@@ -130,6 +130,8 @@ const {
   urlOnly,
   typedOnly,
   noCaller,
+  callerUnresolved,
+  unresolvedTypedAliases,
   unresolvedUrls,
   fixturesSeen,
 } = result;
@@ -149,7 +151,8 @@ const out: string[] = [
   `    also reached through the typed client ${pad(typedAndUrl)}`,
   `    URL ONLY                              ${pad(urlOnly.length)}   <- a typed-client sweep sees NONE of these`,
   `  reached only through the typed client   ${pad(typedOnly.length)}`,
-  `  no caller in this tree                  ${pad(noCaller.length)}   <- a QUESTION, not a deletion list (SC-680)`,
+  `  no caller found in this tree            ${pad(noCaller.length)}   <- a QUESTION, not a deletion list (SC-680)`,
+  `  caller resolution incomplete            ${pad(callerUnresolved.length)}   <- NEVER evidence for deletion`,
   '',
 ];
 
@@ -160,8 +163,24 @@ if (urlOnly.length > 0) {
 }
 
 if (noCaller.length > 0) {
-  out.push('  no caller in this tree:');
+  out.push('  no caller found in this tree:');
   for (const p of noCaller) out.push(`    ${p}`);
+  out.push('');
+}
+
+if (callerUnresolved.length > 0) {
+  out.push('  caller resolution incomplete — excluded from the no-caller list:');
+  for (const p of callerUnresolved) out.push(`    ${p}`);
+  out.push('');
+}
+
+if (unresolvedTypedAliases.length > 0) {
+  out.push(`  ${unresolvedTypedAliases.length} typed router alias site(s) could not be resolved:`);
+  for (const ref of unresolvedTypedAliases) {
+    out.push(
+      `    ${ref.file}:${ref.line}  ${ref.alias} -> ${ref.path} · ${ref.why} · ${ref.affectedProcedures.length} procedure(s) affected`
+    );
+  }
   out.push('');
 }
 
@@ -186,8 +205,10 @@ if (staleFixtures.length > 0) {
 }
 
 out.push('  What this cannot see, in the order it is likely to matter:');
-out.push('    - a procedure reached dynamically: trpc[router][proc], or a URL whose');
-out.push('      procedure segment comes from a variable. Nothing textual reaches those.');
+out.push('    - a procedure whose router is selected dynamically: trpc[router][proc], or');
+out.push('      a URL whose procedure segment comes from a variable. A static router alias');
+out.push('      with dynamic use is reported above; a dynamic router makes the whole caller');
+out.push('      denominator unresolved because there is no narrower honest bound.');
 out.push('    - any caller outside this repository — a saved request, an integration');
 out.push('      nobody wrote down. That is why the last count is a question.');
 out.push('    - anything uncommitted. The population is every tracked `.ts`/`.tsx`');

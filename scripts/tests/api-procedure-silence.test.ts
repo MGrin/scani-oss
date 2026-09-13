@@ -29,6 +29,7 @@ import {
 const CENSUS = ['alpha.list', 'beta.create', 'gamma.everything', 'delta.archive'];
 /** Two of the four, so each half of the never-fired split has a member. */
 const NO_CALLER = ['gamma.everything', 'delta.archive'];
+const CALLER_UNRESOLVED: string[] = [];
 
 const at = (iso: string) => new Date(iso);
 
@@ -61,7 +62,13 @@ describe('an empty table produces NO list', () => {
    * has been called or nothing has been RECORDED. The two render identically
    * and only one is a fact about the procedures.
    */
-  const result = report({ apiProcedures: CENSUS, noCaller: NO_CALLER, rows: [], now: NOW });
+  const result = report({
+    apiProcedures: CENSUS,
+    noCaller: NO_CALLER,
+    callerUnresolved: CALLER_UNRESOLVED,
+    rows: [],
+    now: NOW,
+  });
 
   test('the verdict says the recorder produced nothing, not that the api is silent', () => {
     expect(result.verdict).toBe('NO RECORDING');
@@ -83,7 +90,13 @@ describe('an empty table produces NO list', () => {
 });
 
 describe('the never-fired list is the difference, and it is split but never widened', () => {
-  const result = report({ apiProcedures: CENSUS, noCaller: NO_CALLER, rows: ROWS, now: NOW });
+  const result = report({
+    apiProcedures: CENSUS,
+    noCaller: NO_CALLER,
+    callerUnresolved: CALLER_UNRESOLVED,
+    rows: ROWS,
+    now: NOW,
+  });
   if (result.verdict !== 'REPORT') throw new Error('expected a REPORT verdict');
 
   test('never fired is census minus the recorded keys', () => {
@@ -136,6 +149,7 @@ describe('a caller in the tree moves a procedure between halves and nothing else
   const result = report({
     apiProcedures: CENSUS,
     noCaller: ['delta.archive'],
+    callerUnresolved: CALLER_UNRESOLVED,
     rows: ROWS,
     now: NOW,
   });
@@ -148,8 +162,41 @@ describe('a caller in the tree moves a procedure between halves and nothing else
   });
 });
 
+describe('unresolved caller evidence survives the silence-report join', () => {
+  const result = report({
+    apiProcedures: CENSUS,
+    noCaller: ['delta.archive'],
+    callerUnresolved: ['gamma.everything'],
+    rows: ROWS,
+    now: NOW,
+  });
+  if (result.verdict !== 'REPORT') throw new Error('expected a REPORT verdict');
+
+  test('uncertainty has its own bucket and never becomes confirmed silence', () => {
+    expect(result.neverFiredAndNoCaller).toEqual(['delta.archive']);
+    expect(result.neverFiredCallerUnresolved).toEqual(['gamma.everything']);
+    expect(result.neverFiredWithCaller).toEqual([]);
+  });
+
+  test('the three buckets are exhaustive and disjoint', () => {
+    const split = [
+      ...result.neverFiredAndNoCaller,
+      ...result.neverFiredCallerUnresolved,
+      ...result.neverFiredWithCaller,
+    ];
+    expect(split.sort()).toEqual(result.neverFired);
+    expect(new Set(split).size).toBe(split.length);
+  });
+});
+
 describe('the window ends at the last recorded call', () => {
-  const result = report({ apiProcedures: CENSUS, noCaller: NO_CALLER, rows: ROWS, now: NOW });
+  const result = report({
+    apiProcedures: CENSUS,
+    noCaller: NO_CALLER,
+    callerUnresolved: CALLER_UNRESOLVED,
+    rows: ROWS,
+    now: NOW,
+  });
   if (result.verdict !== 'REPORT') throw new Error('expected a REPORT verdict');
 
   test('it begins at the earliest first_seen_at, across all rows', () => {
@@ -190,12 +237,14 @@ describe('no length of silence changes what is reported', () => {
   const early = report({
     apiProcedures: CENSUS,
     noCaller: NO_CALLER,
+    callerUnresolved: CALLER_UNRESOLVED,
     rows: ROWS,
     now: oneDayAfterRecordingStarted,
   });
   const late = report({
     apiProcedures: CENSUS,
     noCaller: NO_CALLER,
+    callerUnresolved: CALLER_UNRESOLVED,
     rows: ROWS,
     now: twoYearsAfter,
   });
@@ -224,7 +273,11 @@ describe('a census that produced nothing is refused, never resolved', () => {
    * That is the reassuring reading, so it is the one that has to be
    * unreachable.
    */
-  const good = JSON.stringify({ apiProcedures: CENSUS, noCaller: NO_CALLER });
+  const good = JSON.stringify({
+    apiProcedures: CENSUS,
+    noCaller: NO_CALLER,
+    callerUnresolved: ['beta.create'],
+  });
 
   test('the must-be-FOUND control: real census output is accepted', () => {
     // Without this arm every assertion below is satisfied by a function that
@@ -234,6 +287,7 @@ describe('a census that produced nothing is refused, never resolved', () => {
     if (!read.ok) throw new Error('unreachable');
     expect(read.apiProcedures).toEqual(CENSUS);
     expect(read.noCaller).toEqual(NO_CALLER);
+    expect(read.callerUnresolved).toEqual(['beta.create']);
   });
 
   test('a non-zero exit is refused, and the census stderr is carried through', () => {
@@ -268,7 +322,11 @@ describe('a census that produced nothing is refused, never resolved', () => {
   test('valid JSON carrying an EMPTY denominator is refused', () => {
     // The quiet one: it parses, it has the right keys, and it makes every
     // later set difference vacuously empty.
-    const read = readCensusOutput(0, JSON.stringify({ apiProcedures: [], noCaller: [] }), '');
+    const read = readCensusOutput(
+      0,
+      JSON.stringify({ apiProcedures: [], noCaller: [], callerUnresolved: [] }),
+      ''
+    );
     expect(read.ok).toBe(false);
     if (read.ok) throw new Error('unreachable');
     expect(read.why.join('\n')).toContain('shape has changed');
@@ -277,6 +335,21 @@ describe('a census that produced nothing is refused, never resolved', () => {
   test('valid JSON of the wrong shape is refused', () => {
     expect(readCensusOutput(0, JSON.stringify({ procedures: CENSUS }), '').ok).toBe(false);
     expect(readCensusOutput(0, JSON.stringify({ apiProcedures: CENSUS }), '').ok).toBe(false);
+  });
+
+  test('overlapping caller buckets are refused instead of joining ambiguously', () => {
+    const read = readCensusOutput(
+      0,
+      JSON.stringify({
+        apiProcedures: CENSUS,
+        noCaller: ['gamma.everything'],
+        callerUnresolved: ['gamma.everything'],
+      }),
+      ''
+    );
+    expect(read.ok).toBe(false);
+    if (read.ok) throw new Error('unreachable');
+    expect(read.why.join('\n')).toContain('overlap');
   });
 });
 
@@ -294,5 +367,15 @@ describe('humanDuration', () => {
     // instrument as the healthiest possible reading.
     expect(humanDuration(-3 * 86_400_000)).toBe('-3d 0h');
     expect(humanDuration(-90_000)).toBe('-1m');
+  });
+});
+
+describe('SC-1153 — the reporter describes the population it actually scans', () => {
+  test('obsolete close-SC-755 advice is absent and the invariant is present tense', async () => {
+    const source = await Bun.file(new URL('../api-procedure-silence.ts', import.meta.url)).text();
+    expect(source).not.toContain('Close SC-755');
+    expect(source).not.toContain('While SC-755 is open');
+    expect(source).not.toContain('CURRENTLY OUTSIDE THAT POPULATION');
+    expect(source).toContain('This file is inside that population today');
   });
 });

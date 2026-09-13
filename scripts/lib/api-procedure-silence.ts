@@ -50,7 +50,7 @@
  * seam is the fix; a `finally` is not.
  */
 export type CensusRead =
-  | { ok: true; apiProcedures: string[]; noCaller: string[] }
+  | { ok: true; apiProcedures: string[]; noCaller: string[]; callerUnresolved: string[] }
   | { ok: false; why: string[] };
 
 /**
@@ -92,20 +92,48 @@ export function readCensusOutput(code: number | null, stdout: string, stderr: st
     };
   }
 
-  const { apiProcedures, noCaller } = parsed as { apiProcedures?: unknown; noCaller?: unknown };
+  const { apiProcedures, noCaller, callerUnresolved } = parsed as {
+    apiProcedures?: unknown;
+    noCaller?: unknown;
+    callerUnresolved?: unknown;
+  };
   // The population, asserted rather than assumed. The census refuses its own
   // floor at exit 2, so reaching here with an empty array means its output
   // SHAPE changed rather than that the router is small — and an empty
   // denominator makes every later difference vacuously empty. No number is
   // repeated from the census here: duplicating its floor would be a second
   // copy to drift.
-  if (!Array.isArray(apiProcedures) || apiProcedures.length === 0 || !Array.isArray(noCaller)) {
+  if (
+    !Array.isArray(apiProcedures) ||
+    apiProcedures.length === 0 ||
+    !Array.isArray(noCaller) ||
+    !Array.isArray(callerUnresolved)
+  ) {
     return {
       ok: false,
-      why: ['the census returned no `apiProcedures` — its output shape has changed'],
+      why: ['the census omitted a required caller bucket — its output shape has changed'],
     };
   }
-  return { ok: true, apiProcedures: apiProcedures as string[], noCaller: noCaller as string[] };
+  const api = new Set(apiProcedures as string[]);
+  const noCallerSet = new Set(noCaller as string[]);
+  if (
+    !(apiProcedures as unknown[]).every((p) => typeof p === 'string') ||
+    !(noCaller as unknown[]).every((p) => typeof p === 'string' && api.has(p)) ||
+    !(callerUnresolved as unknown[]).every(
+      (p) => typeof p === 'string' && api.has(p) && !noCallerSet.has(p)
+    )
+  ) {
+    return {
+      ok: false,
+      why: ['the census caller buckets overlap or name something outside the denominator'],
+    };
+  }
+  return {
+    ok: true,
+    apiProcedures: apiProcedures as string[],
+    noCaller: noCaller as string[],
+    callerUnresolved: callerUnresolved as string[],
+  };
 }
 
 /** One row of `api_procedure_calls`, as read. */
@@ -128,6 +156,8 @@ export interface SilenceInput {
    * SPLIT the never-fired list; it never adds to or removes from it.
    */
   noCaller: string[];
+  /** Procedures whose only possible caller is behind a typed alias the census cannot resolve. */
+  callerUnresolved: string[];
   rows: ProcedureCallRow[];
   now: Date;
 }
@@ -166,6 +196,8 @@ export type SilenceReport =
       neverFiredAndNoCaller: string[];
       /** Never fired but something in the tree calls it. A different question. */
       neverFiredWithCaller: string[];
+      /** Never fired and caller resolution was incomplete. Never deletable on source silence. */
+      neverFiredCallerUnresolved: string[];
       /**
        * Rows naming a procedure the router no longer defines — removed,
        * renamed, or a sub-router that failed to mount. A disagreement between
@@ -184,6 +216,7 @@ export function report(input: SilenceInput): SilenceReport {
   const recorded = new Set(input.rows.map((r) => r.procedure));
   const census = new Set(input.apiProcedures);
   const noCaller = new Set(input.noCaller);
+  const callerUnresolved = new Set(input.callerUnresolved);
 
   const neverFired = [...census].filter((p) => !recorded.has(p)).sort();
   const recordedNotInCensus = [...recorded].filter((p) => !census.has(p)).sort();
@@ -204,7 +237,8 @@ export function report(input: SilenceInput): SilenceReport {
     },
     neverFired,
     neverFiredAndNoCaller: neverFired.filter((p) => noCaller.has(p)),
-    neverFiredWithCaller: neverFired.filter((p) => !noCaller.has(p)),
+    neverFiredCallerUnresolved: neverFired.filter((p) => callerUnresolved.has(p)),
+    neverFiredWithCaller: neverFired.filter((p) => !noCaller.has(p) && !callerUnresolved.has(p)),
     recordedNotInCensus,
   };
 }
