@@ -358,6 +358,11 @@ export function findTypedAliasRefs(
   );
   const refs: ProcedureRef[] = [];
   const ambiguities: TypedAliasAmbiguity[] = [];
+  const deferredChains: Array<{
+    node: ts.PropertyAccessExpression | ts.ElementAccessExpression;
+    scope: Scope;
+  }> = [];
+  const deferredExports: Array<{ node: ts.Identifier; scope: Scope }> = [];
   const addAmbiguity = (
     index: number,
     alias: string,
@@ -389,7 +394,8 @@ export function findTypedAliasRefs(
 
   const visitChain = (
     node: ts.PropertyAccessExpression | ts.ElementAccessExpression,
-    scope: Scope
+    scope: Scope,
+    deferUnknown = true
   ) => {
     const chain = chainOf(node);
     if (!chain) return;
@@ -415,7 +421,10 @@ export function findTypedAliasRefs(
       ? chain.segments.slice(0, chain.segments.indexOf(null))
       : chain.segments;
     const tail = accessorTail([chain.root, ...(staticPrefix as string[])]);
-    if (tail === null) return;
+    if (tail === null) {
+      if (deferUnknown) deferredChains.push({ node, scope });
+      return;
+    }
     const router = tail.join('.');
     if (affectedBy(router, procedures).length > 0 && !procedureIn(router, procedures)) {
       addAmbiguity(node.getStart(syntax), chain.root, router, 'router proxy used as a value');
@@ -558,6 +567,17 @@ export function findTypedAliasRefs(
       if (!parentContinues) {
         if (chainOf(node)) visitChain(node, scope);
         else ts.forEachChild(node, (part) => visit(part, scope));
+        let part: ts.Expression = node;
+        while (ts.isPropertyAccessExpression(part) || ts.isElementAccessExpression(part)) {
+          if (
+            ts.isElementAccessExpression(part) &&
+            part.argumentExpression &&
+            !ts.isStringLiteralLike(part.argumentExpression)
+          ) {
+            visit(part.argumentExpression, scope);
+          }
+          part = unwrap(part.expression);
+        }
       }
       return;
     }
@@ -576,6 +596,12 @@ export function findTypedAliasRefs(
         if (!isName && !isAssignment) {
           addAmbiguity(node.getStart(syntax), node.text, found.binding.router, 'dynamic alias use');
         }
+      } else if (
+        (ts.isExportSpecifier(node.parent) &&
+          node === (node.parent.propertyName ?? node.parent.name)) ||
+        (ts.isExportAssignment(node.parent) && node.parent.expression === node)
+      ) {
+        deferredExports.push({ node, scope });
       }
       return;
     }
@@ -586,6 +612,18 @@ export function findTypedAliasRefs(
   const root = { bindings: new Map() } as Scope;
   root.functionScope = root;
   visit(syntax, root);
+  for (const deferred of deferredChains) visitChain(deferred.node, deferred.scope, false);
+  for (const deferred of deferredExports) {
+    const found = bindingIn(deferred.scope, deferred.node.text);
+    if (found?.binding) {
+      addAmbiguity(
+        deferred.node.getStart(syntax),
+        deferred.node.text,
+        found.binding.router,
+        'exported router proxy'
+      );
+    }
+  }
 
   const uniqueRefs = new Map(refs.map((ref) => [`${ref.file}:${ref.line}:${ref.path}`, ref]));
   const uniqueAmbiguities = new Map(

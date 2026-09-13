@@ -314,6 +314,52 @@ describe('router aliases keep confirmed calls separate from unresolved ones', ()
     expect(result.noCaller).toEqual([]);
   });
 
+  test('a closure resolves an alias declared later in its parent scope', () => {
+    const result = census({
+      apiProcedures: ['widgets.list', 'widgets.archive'],
+      dataProviderProcedures: [],
+      files: [
+        [
+          'f.ts',
+          'function run() { proxy.list.query(); }\nconst proxy = utils.client.widgets;\nrun();',
+        ],
+      ],
+    });
+    expect(result.typedOnly).toEqual(['widgets.list']);
+    expect(result.callerUnresolved).toEqual([]);
+    expect(result.noCaller).toEqual(['widgets.archive']);
+  });
+
+  test('an alias inside an unrelated computed index is still an unresolved escape', () => {
+    const result = census({
+      apiProcedures: ['widgets.list', 'widgets.archive'],
+      dataProviderProcedures: [],
+      files: [['f.ts', 'const proxy = utils.client.widgets;\ncache[consume(proxy)];']],
+    });
+    expect(result.typedOnly).toEqual([]);
+    expect(result.callerUnresolved).toEqual(['widgets.archive', 'widgets.list']);
+    expect(result.noCaller).toEqual([]);
+  });
+
+  test('a named export declared before its alias preserves uncertainty', () => {
+    const result = census({
+      apiProcedures: ['widgets.list', 'widgets.archive'],
+      dataProviderProcedures: [],
+      files: [['f.ts', 'export { proxy };\nconst proxy = utils.client.widgets;']],
+    });
+    expect(result.typedOnly).toEqual([]);
+    expect(result.callerUnresolved).toEqual(['widgets.archive', 'widgets.list']);
+    expect(result.noCaller).toEqual([]);
+    expect(result.unresolvedTypedAliases).toMatchObject([
+      {
+        line: 1,
+        alias: 'proxy',
+        router: 'widgets',
+        why: 'exported router proxy',
+      },
+    ]);
+  });
+
   test('direct dynamic access retains the static router bound', () => {
     const result = census({
       apiProcedures: procedures,
