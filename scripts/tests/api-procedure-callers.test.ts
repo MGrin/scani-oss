@@ -221,6 +221,52 @@ describe('router aliases keep confirmed calls separate from unresolved ones', ()
     expect(result.unresolvedTypedAliases[0]?.why).toBe('router proxy used as a value');
   });
 
+  test('passing an alias through a chained call remains unresolved', () => {
+    const result = census({
+      apiProcedures: ['widgets.list', 'widgets.archive'],
+      dataProviderProcedures: [],
+      files: [['f.ts', 'const proxy = utils.client.widgets;\nconsume(proxy).then(done);']],
+    });
+    expect(result.typedOnly).toEqual([]);
+    expect(result.callerUnresolved).toEqual(['widgets.archive', 'widgets.list']);
+    expect(result.noCaller).toEqual([]);
+    expect(result.unresolvedTypedAliases).toMatchObject([
+      {
+        line: 2,
+        alias: 'proxy',
+        router: 'widgets',
+        why: 'dynamic alias use',
+      },
+    ]);
+  });
+
+  test('a parameter default carries its router alias into the function body', () => {
+    const result = census({
+      apiProcedures: ['widgets.list', 'widgets.archive'],
+      dataProviderProcedures: [],
+      files: [['f.ts', 'function run(proxy = utils.client.widgets) { proxy.list.query(); }']],
+    });
+    expect(result.typedOnly).toEqual(['widgets.list']);
+    expect(result.callerUnresolved).toEqual([]);
+    expect(result.noCaller).toEqual(['widgets.archive']);
+  });
+
+  test('a var router alias remains visible after its declaring block', () => {
+    const result = census({
+      apiProcedures: ['widgets.list', 'widgets.archive'],
+      dataProviderProcedures: [],
+      files: [
+        [
+          'f.ts',
+          'function run() { if (flag) { var proxy = utils.client.widgets; } proxy.list.query(); }',
+        ],
+      ],
+    });
+    expect(result.typedOnly).toEqual(['widgets.list']);
+    expect(result.callerUnresolved).toEqual([]);
+    expect(result.noCaller).toEqual(['widgets.archive']);
+  });
+
   test('direct dynamic access retains the static router bound', () => {
     const result = census({
       apiProcedures: procedures,

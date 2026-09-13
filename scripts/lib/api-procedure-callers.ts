@@ -256,6 +256,7 @@ function procedureIn(chain: string, procedures: readonly string[]): string | und
 interface Scope {
   parent?: Scope;
   bindings: Map<string, AliasBinding | null>;
+  functionScope: Scope;
 }
 
 interface Chain {
@@ -424,14 +425,38 @@ export function findTypedAliasRefs(
   const visit = (node: ts.Node, scope: Scope): void => {
     if (isFunctionScope(node)) {
       if (node.name && ts.isIdentifier(node.name)) scope.bindings.set(node.name.text, null);
-      const child: Scope = { parent: scope, bindings: new Map() };
-      for (const parameter of node.parameters) bindNames(parameter.name, child);
+      const child = { parent: scope, bindings: new Map() } as Scope;
+      child.functionScope = child;
+      for (const parameter of node.parameters) {
+        if (ts.isIdentifier(parameter.name)) {
+          const binding = parameter.initializer ? aliasFrom(parameter.initializer, child) : null;
+          child.bindings.set(parameter.name.text, binding);
+          if (parameter.initializer && !binding) visit(parameter.initializer, child);
+        } else {
+          bindNames(parameter.name, child);
+          if (parameter.initializer) {
+            const binding = aliasFrom(parameter.initializer, child);
+            if (binding) {
+              addAmbiguity(
+                parameter.initializer.getStart(syntax),
+                parameter.name.getText(syntax),
+                binding.router,
+                'router proxy used as a value'
+              );
+            } else {
+              visit(parameter.initializer, child);
+            }
+          }
+        }
+      }
       if (node.body) visit(node.body, child);
       return;
     }
 
     if (ts.isBlock(node) || ts.isSourceFile(node)) {
-      const child: Scope = ts.isSourceFile(node) ? scope : { parent: scope, bindings: new Map() };
+      const child: Scope = ts.isSourceFile(node)
+        ? scope
+        : { parent: scope, bindings: new Map(), functionScope: scope.functionScope };
       ts.forEachChild(node, (part) => visit(part, child));
       return;
     }
@@ -442,22 +467,35 @@ export function findTypedAliasRefs(
       ts.isForOfStatement(node) ||
       ts.isCaseBlock(node)
     ) {
-      const child: Scope = { parent: scope, bindings: new Map() };
+      const child: Scope = {
+        parent: scope,
+        bindings: new Map(),
+        functionScope: scope.functionScope,
+      };
       ts.forEachChild(node, (part) => visit(part, child));
       return;
     }
 
     if (ts.isCatchClause(node)) {
-      const child: Scope = { parent: scope, bindings: new Map() };
+      const child: Scope = {
+        parent: scope,
+        bindings: new Map(),
+        functionScope: scope.functionScope,
+      };
       if (node.variableDeclaration) bindNames(node.variableDeclaration.name, child);
       visit(node.block, child);
       return;
     }
 
     if (ts.isVariableDeclaration(node)) {
+      const declarationList = ts.isVariableDeclarationList(node.parent) ? node.parent : undefined;
+      const declarationScope =
+        declarationList && !(declarationList.flags & ts.NodeFlags.BlockScoped)
+          ? scope.functionScope
+          : scope;
       if (ts.isIdentifier(node.name)) {
         const binding = node.initializer ? aliasFrom(node.initializer, scope) : null;
-        scope.bindings.set(node.name.text, binding);
+        declarationScope.bindings.set(node.name.text, binding);
         if (node.initializer && !binding) visit(node.initializer, scope);
       } else {
         bindNames(node.name, scope);
@@ -502,7 +540,10 @@ export function findTypedAliasRefs(
       const parentContinues =
         (ts.isPropertyAccessExpression(node.parent) || ts.isElementAccessExpression(node.parent)) &&
         node.parent.expression === node;
-      if (!parentContinues) visitChain(node, scope);
+      if (!parentContinues) {
+        if (chainOf(node)) visitChain(node, scope);
+        else ts.forEachChild(node, (part) => visit(part, scope));
+      }
       return;
     }
 
@@ -527,7 +568,9 @@ export function findTypedAliasRefs(
     ts.forEachChild(node, (part) => visit(part, scope));
   };
 
-  visit(syntax, { bindings: new Map() });
+  const root = { bindings: new Map() } as Scope;
+  root.functionScope = root;
+  visit(syntax, root);
 
   const uniqueRefs = new Map(refs.map((ref) => [`${ref.file}:${ref.line}:${ref.path}`, ref]));
   const uniqueAmbiguities = new Map(
