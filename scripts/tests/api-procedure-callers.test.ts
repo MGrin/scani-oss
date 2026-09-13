@@ -267,6 +267,53 @@ describe('router aliases keep confirmed calls separate from unresolved ones', ()
     expect(result.noCaller).toEqual(['widgets.archive']);
   });
 
+  test('an exported router alias preserves uncertainty for another module', () => {
+    const result = census({
+      apiProcedures: ['widgets.list', 'widgets.archive'],
+      dataProviderProcedures: [],
+      files: [['f.ts', 'export const proxy = utils.client.widgets;']],
+    });
+    expect(result.typedOnly).toEqual([]);
+    expect(result.callerUnresolved).toEqual(['widgets.archive', 'widgets.list']);
+    expect(result.noCaller).toEqual([]);
+    expect(result.unresolvedTypedAliases).toMatchObject([
+      {
+        alias: 'proxy',
+        router: 'widgets',
+        why: 'exported router proxy',
+      },
+    ]);
+  });
+
+  test('a named re-export preserves the alias uncertainty', () => {
+    const result = census({
+      apiProcedures: ['widgets.list', 'widgets.archive'],
+      dataProviderProcedures: [],
+      files: [['f.ts', 'const proxy = utils.client.widgets;\nexport { proxy as widgetsProxy };']],
+    });
+    expect(result.typedOnly).toEqual([]);
+    expect(result.callerUnresolved).toEqual(['widgets.archive', 'widgets.list']);
+    expect(result.noCaller).toEqual([]);
+    expect(result.unresolvedTypedAliases).toMatchObject([
+      {
+        line: 2,
+        alias: 'proxy',
+        router: 'widgets',
+      },
+    ]);
+  });
+
+  test('a local continuation remains confirmed beside an exported alias escape', () => {
+    const result = census({
+      apiProcedures: ['widgets.list', 'widgets.archive'],
+      dataProviderProcedures: [],
+      files: [['f.ts', 'export const proxy = utils.client.widgets;\nproxy.list.query();']],
+    });
+    expect(result.typedOnly).toEqual(['widgets.list']);
+    expect(result.callerUnresolved).toEqual(['widgets.archive']);
+    expect(result.noCaller).toEqual([]);
+  });
+
   test('direct dynamic access retains the static router bound', () => {
     const result = census({
       apiProcedures: procedures,

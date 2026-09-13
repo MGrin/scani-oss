@@ -223,7 +223,7 @@ interface TypedAliasAmbiguity extends ProcedureRef {
   router: string;
   /** Procedures that cannot honestly remain in the confirmed-no-caller set. */
   affectedProcedures: string[];
-  why: 'dynamic alias use' | 'router proxy used as a value';
+  why: 'dynamic alias use' | 'router proxy used as a value' | 'exported router proxy';
 }
 
 export interface TypedAliasScan {
@@ -489,6 +489,13 @@ export function findTypedAliasRefs(
 
     if (ts.isVariableDeclaration(node)) {
       const declarationList = ts.isVariableDeclarationList(node.parent) ? node.parent : undefined;
+      const variableStatement = declarationList?.parent;
+      const exported =
+        variableStatement &&
+        ts.isVariableStatement(variableStatement) &&
+        ts
+          .getModifiers(variableStatement)
+          ?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword);
       const declarationScope =
         declarationList && !(declarationList.flags & ts.NodeFlags.BlockScoped)
           ? scope.functionScope
@@ -496,6 +503,14 @@ export function findTypedAliasRefs(
       if (ts.isIdentifier(node.name)) {
         const binding = node.initializer ? aliasFrom(node.initializer, scope) : null;
         declarationScope.bindings.set(node.name.text, binding);
+        if (binding && exported) {
+          addAmbiguity(
+            node.name.getStart(syntax),
+            node.name.text,
+            binding.router,
+            'exported router proxy'
+          );
+        }
         if (node.initializer && !binding) visit(node.initializer, scope);
       } else {
         bindNames(node.name, scope);
