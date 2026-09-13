@@ -34,6 +34,7 @@ import path from 'node:path';
 import {
   census,
   FIXTURE_URLS,
+  findTypedAliasRefs,
   findTypedRefs,
   findUrlRefs,
   isDefinitionSite,
@@ -164,6 +165,313 @@ describe('nothing counts segments, so neither arity bug is reachable', () => {
   test('a chain wrapped across a line is still found', () => {
     const src = 'const q = trpc.delta\n  .getWithDetails.useQuery();';
     expect(findTypedRefs(src, 'f.ts', isProc).map((r) => r.path)).toEqual(['delta.getWithDetails']);
+  });
+});
+
+describe('router aliases keep confirmed calls separate from unresolved ones', () => {
+  const procedures = ['alpha.report', 'alpha.archive', 'beta.list'];
+
+  test('a two-step utils.client alias is a confirmed caller, while an uncalled sibling stays silent', () => {
+    const result = census({
+      apiProcedures: procedures,
+      dataProviderProcedures: [],
+      files: [
+        ['f.ts', 'const proxy = utils.client.alpha;\nawait proxy.report.query({ value: 1 });'],
+      ],
+    });
+    expect(result.typedOnly).toEqual(['alpha.report']);
+    expect(result.noCaller).toEqual(['alpha.archive', 'beta.list']);
+    expect(result.callerUnresolved).toEqual([]);
+  });
+
+  test('dynamic property access is unresolved for that router and never manufactured as silence', () => {
+    const result = census({
+      apiProcedures: procedures,
+      dataProviderProcedures: [],
+      files: [['f.ts', 'const proxy = trpc.alpha;\nawait proxy[operation].query();']],
+    });
+    expect(result.callerUnresolved).toEqual(['alpha.archive', 'alpha.report']);
+    expect(result.noCaller).toEqual(['beta.list']);
+    expect(result.unresolvedTypedAliases).toMatchObject([
+      {
+        file: 'f.ts',
+        line: 2,
+        alias: 'proxy',
+        router: 'alpha',
+        affectedProcedures: ['alpha.archive', 'alpha.report'],
+        why: 'dynamic alias use',
+      },
+    ]);
+    const json = JSON.parse(JSON.stringify(result));
+    expect(json.callerUnresolved).toEqual(['alpha.archive', 'alpha.report']);
+    expect(json.unresolvedTypedAliases[0].affectedProcedures).toEqual([
+      'alpha.archive',
+      'alpha.report',
+    ]);
+  });
+
+  test('passing a router proxy onward is unresolved rather than counted either way', () => {
+    const result = census({
+      apiProcedures: procedures,
+      dataProviderProcedures: [],
+      files: [['f.ts', 'consume(utils.client.alpha);']],
+    });
+    expect(result.callerUnresolved).toEqual(['alpha.archive', 'alpha.report']);
+    expect(result.noCaller).toEqual(['beta.list']);
+    expect(result.unresolvedTypedAliases[0]?.why).toBe('router proxy used as a value');
+  });
+
+  test('passing an alias through a chained call remains unresolved', () => {
+    const result = census({
+      apiProcedures: ['widgets.list', 'widgets.archive'],
+      dataProviderProcedures: [],
+      files: [['f.ts', 'const proxy = utils.client.widgets;\nconsume(proxy).then(done);']],
+    });
+    expect(result.typedOnly).toEqual([]);
+    expect(result.callerUnresolved).toEqual(['widgets.archive', 'widgets.list']);
+    expect(result.noCaller).toEqual([]);
+    expect(result.unresolvedTypedAliases).toMatchObject([
+      {
+        line: 2,
+        alias: 'proxy',
+        router: 'widgets',
+        why: 'router proxy used as a value',
+      },
+    ]);
+  });
+
+  test('a parameter default carries its router alias into the function body', () => {
+    const result = census({
+      apiProcedures: ['widgets.list', 'widgets.archive'],
+      dataProviderProcedures: [],
+      files: [['f.ts', 'function run(proxy = utils.client.widgets) { proxy.list.query(); }']],
+    });
+    expect(result.typedOnly).toEqual(['widgets.list']);
+    expect(result.callerUnresolved).toEqual([]);
+    expect(result.noCaller).toEqual(['widgets.archive']);
+  });
+
+  test('a var router alias remains visible after its declaring block', () => {
+    const result = census({
+      apiProcedures: ['widgets.list', 'widgets.archive'],
+      dataProviderProcedures: [],
+      files: [
+        [
+          'f.ts',
+          'function run() { if (flag) { var proxy = utils.client.widgets; } proxy.list.query(); }',
+        ],
+      ],
+    });
+    expect(result.typedOnly).toEqual(['widgets.list']);
+    expect(result.callerUnresolved).toEqual([]);
+    expect(result.noCaller).toEqual(['widgets.archive']);
+  });
+
+  test('an exported router alias preserves uncertainty for another module', () => {
+    const result = census({
+      apiProcedures: ['widgets.list', 'widgets.archive'],
+      dataProviderProcedures: [],
+      files: [['f.ts', 'export const proxy = utils.client.widgets;']],
+    });
+    expect(result.typedOnly).toEqual([]);
+    expect(result.callerUnresolved).toEqual(['widgets.archive', 'widgets.list']);
+    expect(result.noCaller).toEqual([]);
+    expect(result.unresolvedTypedAliases).toMatchObject([
+      {
+        alias: 'proxy',
+        router: 'widgets',
+        why: 'exported router proxy',
+      },
+    ]);
+  });
+
+  test('a named re-export preserves the alias uncertainty', () => {
+    const result = census({
+      apiProcedures: ['widgets.list', 'widgets.archive'],
+      dataProviderProcedures: [],
+      files: [['f.ts', 'const proxy = utils.client.widgets;\nexport { proxy as widgetsProxy };']],
+    });
+    expect(result.typedOnly).toEqual([]);
+    expect(result.callerUnresolved).toEqual(['widgets.archive', 'widgets.list']);
+    expect(result.noCaller).toEqual([]);
+    expect(result.unresolvedTypedAliases).toMatchObject([
+      {
+        line: 2,
+        alias: 'proxy',
+        router: 'widgets',
+      },
+    ]);
+  });
+
+  test('a local continuation remains confirmed beside an exported alias escape', () => {
+    const result = census({
+      apiProcedures: ['widgets.list', 'widgets.archive'],
+      dataProviderProcedures: [],
+      files: [['f.ts', 'export const proxy = utils.client.widgets;\nproxy.list.query();']],
+    });
+    expect(result.typedOnly).toEqual(['widgets.list']);
+    expect(result.callerUnresolved).toEqual(['widgets.archive']);
+    expect(result.noCaller).toEqual([]);
+  });
+
+  test('a closure resolves an alias declared later in its parent scope', () => {
+    const result = census({
+      apiProcedures: ['widgets.list', 'widgets.archive'],
+      dataProviderProcedures: [],
+      files: [
+        [
+          'f.ts',
+          'function run() { proxy.list.query(); }\nconst proxy = utils.client.widgets;\nrun();',
+        ],
+      ],
+    });
+    expect(result.typedOnly).toEqual(['widgets.list']);
+    expect(result.callerUnresolved).toEqual([]);
+    expect(result.noCaller).toEqual(['widgets.archive']);
+  });
+
+  test('an alias inside an unrelated computed index is still an unresolved escape', () => {
+    const result = census({
+      apiProcedures: ['widgets.list', 'widgets.archive'],
+      dataProviderProcedures: [],
+      files: [['f.ts', 'const proxy = utils.client.widgets;\ncache[consume(proxy)];']],
+    });
+    expect(result.typedOnly).toEqual([]);
+    expect(result.callerUnresolved).toEqual(['widgets.archive', 'widgets.list']);
+    expect(result.noCaller).toEqual([]);
+  });
+
+  test('a named export declared before its alias preserves uncertainty', () => {
+    const result = census({
+      apiProcedures: ['widgets.list', 'widgets.archive'],
+      dataProviderProcedures: [],
+      files: [['f.ts', 'export { proxy };\nconst proxy = utils.client.widgets;']],
+    });
+    expect(result.typedOnly).toEqual([]);
+    expect(result.callerUnresolved).toEqual(['widgets.archive', 'widgets.list']);
+    expect(result.noCaller).toEqual([]);
+    expect(result.unresolvedTypedAliases).toMatchObject([
+      {
+        line: 1,
+        alias: 'proxy',
+        router: 'widgets',
+        why: 'exported router proxy',
+      },
+    ]);
+  });
+
+  test('forward bare-value escapes remain unresolved in every value context', () => {
+    const sources = [
+      'function run() { consume(proxy); }\nconst proxy = utils.client.widgets;\nrun();',
+      'function expose() { return proxy; }\nconst proxy = utils.client.widgets;',
+      'function expose() { return { proxy }; }\nconst proxy = utils.client.widgets;',
+      'useThing(() => proxy);\nconst proxy = utils.client.widgets;',
+    ];
+    for (const source of sources) {
+      const result = census({
+        apiProcedures: ['widgets.list', 'widgets.archive'],
+        dataProviderProcedures: [],
+        files: [['f.ts', source]],
+      });
+      expect(result.typedOnly).toEqual([]);
+      expect(result.callerUnresolved).toEqual(['widgets.archive', 'widgets.list']);
+      expect(result.noCaller).toEqual([]);
+      expect(result.unresolvedTypedAliases).toMatchObject([
+        {
+          alias: 'proxy',
+          router: 'widgets',
+          why: 'router proxy used as a value',
+        },
+      ]);
+    }
+  });
+
+  test('a property or type name is not mistaken for a forward value use', () => {
+    const result = census({
+      apiProcedures: ['widgets.list', 'widgets.archive'],
+      dataProviderProcedures: [],
+      files: [
+        [
+          'f.ts',
+          'const record = { proxy: ordinaryValue };\ntype proxy = string;\nconst proxy = utils.client.widgets;',
+        ],
+      ],
+    });
+    expect(result.typedOnly).toEqual([]);
+    expect(result.callerUnresolved).toEqual([]);
+    expect(result.noCaller).toEqual(['widgets.archive', 'widgets.list']);
+    expect(result.unresolvedTypedAliases).toEqual([]);
+  });
+
+  test('direct dynamic access retains the static router bound', () => {
+    const result = census({
+      apiProcedures: procedures,
+      dataProviderProcedures: [],
+      files: [['f.ts', 'utils.client.alpha[operation].query();']],
+    });
+    expect(result.callerUnresolved).toEqual(['alpha.archive', 'alpha.report']);
+    expect(result.noCaller).toEqual(['beta.list']);
+    expect(result.unresolvedTypedAliases[0]).toMatchObject({
+      router: 'alpha',
+      affectedProcedures: ['alpha.archive', 'alpha.report'],
+    });
+  });
+
+  test('a dynamic router makes the whole denominator unresolved', () => {
+    const result = census({
+      apiProcedures: procedures,
+      dataProviderProcedures: [],
+      files: [['f.ts', 'trpc[router][operation].query();']],
+    });
+    expect(result.callerUnresolved).toEqual(procedures.toSorted());
+    expect(result.noCaller).toEqual([]);
+    expect(result.unresolvedTypedAliases[0]).toMatchObject({
+      router: '',
+      affectedProcedures: procedures.toSorted(),
+    });
+  });
+
+  test('a shadowed alias is resolved only inside its own scope', () => {
+    const source = [
+      '{',
+      '  const proxy = utils.client.alpha;',
+      '  proxy.report.query();',
+      '}',
+      '{',
+      '  const proxy = ordinaryClient;',
+      '  proxy.archive.query();',
+      '}',
+    ].join('\n');
+    const result = census({
+      apiProcedures: procedures,
+      dataProviderProcedures: [],
+      files: [['f.ts', source]],
+    });
+    expect(result.typedOnly).toEqual(['alpha.report']);
+    expect(result.noCaller).toEqual(['alpha.archive', 'beta.list']);
+    expect(result.callerUnresolved).toEqual([]);
+  });
+
+  test('a reassigned alias does not attribute a later call to the old router or manufacture silence', () => {
+    const result = census({
+      apiProcedures: procedures,
+      dataProviderProcedures: [],
+      files: [
+        ['f.ts', 'let proxy = utils.client.alpha;\nproxy = ordinaryClient;\nproxy.report.query();'],
+      ],
+    });
+    expect(result.typedOnly).toEqual([]);
+    expect(result.callerUnresolved).toEqual(['alpha.archive', 'alpha.report']);
+    expect(result.noCaller).toEqual(['beta.list']);
+  });
+
+  test('the shipped download hook is the real positive arm', async () => {
+    const file = 'apps/frontend/app/src/v3/hooks/useDocumentDownload.ts';
+    const source = await Bun.file(new URL(`../../${file}`, import.meta.url)).text();
+    const procedure = ['documents', 'getDownloadUrl'].join('.');
+    const result = findTypedAliasRefs(source, file, [procedure]);
+    expect(result.refs).toEqual([{ path: procedure, file, line: 25 }]);
+    expect(result.ambiguities).toEqual([]);
   });
 });
 
@@ -397,6 +705,9 @@ describe('the census does not appear in its own results', () => {
     'scripts/lib/api-procedure-callers.ts',
     'scripts/api-procedure-callers.ts',
     'scripts/tests/api-procedure-callers.test.ts',
+    'scripts/lib/api-procedure-silence.ts',
+    'scripts/api-procedure-silence.ts',
+    'scripts/tests/api-procedure-silence.test.ts',
   ] as const;
 
   const run = Bun.spawnSync(['bun', 'scripts/api-procedure-callers.ts', '--json'], {
@@ -425,6 +736,11 @@ describe('the census does not appear in its own results', () => {
     for (const f of OWN) {
       const src = await Bun.file(new URL(`../../${f}`, import.meta.url).pathname).text();
       for (const r of findTypedRefs(src, f, isReal)) hits.push(`${r.file}:${r.line} ${r.path}`);
+      const aliases = findTypedAliasRefs(src, f, real);
+      for (const r of aliases.refs) hits.push(`${r.file}:${r.line} ${r.path}`);
+      for (const r of aliases.ambiguities) {
+        if (r.affectedProcedures.length > 0) hits.push(`${r.file}:${r.line} unresolved ${r.path}`);
+      }
     }
     expect(hits).toEqual([]);
   });
@@ -445,9 +761,12 @@ describe('the census does not appear in its own results', () => {
    * read clean if the scanners themselves went blind, which is the same failure
    * they exist to catch. This proves both can still fire on the exact shapes.
    */
-  test('control — both scanners still fire on a real procedure name', () => {
+  test('control — all three scanners still fire on a real procedure name', () => {
     const victim = real[0] as string;
     expect(findTypedRefs(`trpc.${victim}.useQuery();`, 'f.ts', isReal)).toHaveLength(1);
+    const [router, ...procedure] = victim.split('.');
+    const aliasSource = `const proxy = trpc.${router}; proxy.${procedure.join('.')}.query();`;
+    expect(findTypedAliasRefs(aliasSource, 'f.ts', real).refs).toHaveLength(1);
     expect(findUrlRefs(`\`\${b}${T}${victim}\``, 'f.ts')).toHaveLength(1);
   });
 });

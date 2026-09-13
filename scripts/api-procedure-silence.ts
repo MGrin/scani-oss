@@ -51,13 +51,10 @@
  * file a CALLER of the procedure, moving it out of the very set both tools
  * exist to find. Do not add an example; nothing here needs one.
  *
- * THIS PARTICULAR FILE IS CURRENTLY OUTSIDE THAT POPULATION, AND THAT IS A BUG
- * RATHER THAN A LICENCE (SC-755). The census's pathspec puts `**` between two
- * slashes, and git requires an intermediate directory there — measured
- * 2026-08-28, it reaches 0 of the 67 `.ts` files sitting directly under
- * `scripts/` and 125 of 125 under `scripts/{lib,tests}/`. So the sibling lib and
- * test ARE scanned, this one is not, and it will be the day SC-755 lands.
- * Writing a real path here would be relying on a defect to stay unfixed.
+ * This file is inside that population today: SC-755 replaced the broken
+ * pathspecs with the tracked-file index. Writing a real path here immediately
+ * makes the reporter a caller of the procedure it is trying to classify, so
+ * the prohibition above is a present invariant rather than future advice.
  */
 
 import { SQL } from 'bun';
@@ -87,7 +84,11 @@ function refuse(code: number, verdict: string, lines: string[]): never {
  * this function would mean corrupting process-global state, and `bun test` runs
  * every file in one process.
  */
-async function readCensus(): Promise<{ apiProcedures: string[]; noCaller: string[] }> {
+async function readCensus(): Promise<{
+  apiProcedures: string[];
+  noCaller: string[];
+  callerUnresolved: string[];
+}> {
   const proc = Bun.spawn(['bun', 'scripts/api-procedure-callers.ts', '--json'], {
     cwd: REPO_ROOT,
     stdout: 'pipe',
@@ -99,7 +100,11 @@ async function readCensus(): Promise<{ apiProcedures: string[]; noCaller: string
   ]);
   const read = readCensusOutput(await proc.exited, stdout, stderr);
   if (!read.ok) refuse(2, 'NO CENSUS', read.why);
-  return { apiProcedures: read.apiProcedures, noCaller: read.noCaller };
+  return {
+    apiProcedures: read.apiProcedures,
+    noCaller: read.noCaller,
+    callerUnresolved: read.callerUnresolved,
+  };
 }
 
 /** `host:port/database`, so the verdict names what it reached. Never the credentials. */
@@ -153,9 +158,9 @@ if (!url) {
   ]);
 }
 
-const { apiProcedures, noCaller } = await readCensus();
+const { apiProcedures, noCaller, callerUnresolved } = await readCensus();
 const rows = await readRows(url);
-const result = report({ apiProcedures, noCaller, rows, now: new Date() });
+const result = report({ apiProcedures, noCaller, callerUnresolved, rows, now: new Date() });
 const where = describeDatabase(url);
 
 if (result.verdict === 'NO RECORDING') {
@@ -183,6 +188,7 @@ const out: string[] = [
   `  procedures with a row                   ${pad(result.rowCount)}`,
   `  NEVER FIRED (no row at all)             ${pad(result.neverFired.length)}`,
   `    and no caller in this tree            ${pad(result.neverFiredAndNoCaller.length)}`,
+  `    and caller resolution is incomplete   ${pad(result.neverFiredCallerUnresolved.length)}`,
   `    but something in this tree calls it   ${pad(result.neverFiredWithCaller.length)}`,
   `  recorded calls, all procedures          ${pad(result.totalCalls)}`,
   '',
@@ -212,6 +218,13 @@ if (result.neverFiredWithCaller.length > 0) {
   out.push('');
 }
 
+if (result.neverFiredCallerUnresolved.length > 0) {
+  out.push('  NEVER FIRED, and caller resolution is incomplete — source silence cannot');
+  out.push('  be claimed for these, so they are never candidates on that evidence:');
+  for (const p of result.neverFiredCallerUnresolved) out.push(`    ${p}`);
+  out.push('');
+}
+
 if (result.recordedNotInCensus.length > 0) {
   out.push(
     `  ${result.recordedNotInCensus.length} recorded procedure(s) the router no longer defines — removed or`
@@ -235,10 +248,6 @@ out.push('      from `api-procedure-callers`, which sees only tracked files in t
 out.push('      — not a dynamic call, not a saved request, not an integration nobody');
 out.push('      wrote down. That is why the first list is a QUESTION for whoever operates');
 out.push('      this deployment, and never a deletion list (SC-680).');
-out.push('    - how many callers that split missed. While SC-755 is open the census');
-out.push('      excludes every script sitting directly under `scripts/`, which can only');
-out.push('      UNDER-count callers — so the first list above is a CEILING and the second');
-out.push('      is a floor. Close SC-755 before acting on either.');
 out.push('');
 
 console.log(out.join('\n'));

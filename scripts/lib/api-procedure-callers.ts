@@ -65,8 +65,10 @@
  * WHAT THIS CANNOT SEE — printed by the CLI beside every count, because a
  * census that does not name its floor gets quoted for more than it measured:
  *
- *   - dynamic construction: `trpc[routerName][procName]`, or a URL whose
- *     procedure segment comes from a variable. Nothing textual reaches those.
+ *   - dynamic construction cannot resolve to one procedure. When a static
+ *     router prefix exists, every procedure below it is reported as unresolved;
+ *     a dynamic router makes the whole denominator unresolved. A URL whose
+ *     procedure segment comes from a variable still has no typed prefix to use.
  *   - any caller outside this repository — a saved request, a curl in
  *     somebody's notes, an integration nobody wrote down. An api procedure
  *     with no caller here is a QUESTION, never a deletion list (SC-680).
@@ -74,6 +76,8 @@
  *     call site you have written and not staged is invisible, and the run is
  *     green about a tree that does not contain it.
  */
+
+import ts from 'typescript';
 
 /** A `<router>.<procedure>` pair as it appeared in source, with where. */
 export interface ProcedureRef {
@@ -213,6 +217,459 @@ export function findTypedRefs(
   return out;
 }
 
+interface TypedAliasAmbiguity extends ProcedureRef {
+  alias: string;
+  /** The known router or procedure prefix the alias may reach. Empty means the client root. */
+  router: string;
+  /** Procedures that cannot honestly remain in the confirmed-no-caller set. */
+  affectedProcedures: string[];
+  why: 'dynamic alias use' | 'router proxy used as a value' | 'exported router proxy';
+}
+
+export interface TypedAliasScan {
+  refs: ProcedureRef[];
+  ambiguities: TypedAliasAmbiguity[];
+}
+
+interface AliasBinding {
+  router: string;
+}
+
+function accessorTail(segments: string[]): string[] | null {
+  const first = segments[0];
+  if (!(TYPED_ACCESSORS as readonly string[]).includes(first as string)) return null;
+  if (first === 'utils' && segments[1] === 'client') return segments.slice(2);
+  return segments.slice(1);
+}
+
+function affectedBy(router: string, procedures: readonly string[]): string[] {
+  if (router === '') return [...procedures].sort();
+  return procedures.filter((p) => p === router || p.startsWith(`${router}.`)).sort();
+}
+
+function procedureIn(chain: string, procedures: readonly string[]): string | undefined {
+  return procedures
+    .filter((p) => chain === p || chain.startsWith(`${p}.`))
+    .sort((a, b) => b.length - a.length)[0];
+}
+
+interface Scope {
+  parent?: Scope;
+  bindings: Map<string, AliasBinding | null>;
+  functionScope: Scope;
+}
+
+interface Chain {
+  root: string;
+  segments: Array<string | null>;
+  dynamic: boolean;
+}
+
+function unwrap(expression: ts.Expression): ts.Expression {
+  let current = expression;
+  while (
+    ts.isParenthesizedExpression(current) ||
+    ts.isAsExpression(current) ||
+    ts.isTypeAssertionExpression(current) ||
+    ts.isNonNullExpression(current) ||
+    ts.isSatisfiesExpression(current)
+  ) {
+    current = current.expression;
+  }
+  return current;
+}
+
+function chainOf(expression: ts.Expression): Chain | null {
+  let current = unwrap(expression);
+  const segments: Array<string | null> = [];
+  let dynamic = false;
+  while (ts.isPropertyAccessExpression(current) || ts.isElementAccessExpression(current)) {
+    if (ts.isPropertyAccessExpression(current)) segments.unshift(current.name.text);
+    else if (ts.isStringLiteralLike(current.argumentExpression)) {
+      segments.unshift(current.argumentExpression.text);
+    } else {
+      segments.unshift(null);
+      dynamic = true;
+    }
+    current = unwrap(current.expression);
+  }
+  if (!ts.isIdentifier(current)) return null;
+  return { root: current.text, segments, dynamic };
+}
+
+function bindingIn(
+  scope: Scope,
+  name: string
+): { scope: Scope; binding: AliasBinding | null } | null {
+  let current: Scope | undefined = scope;
+  while (current) {
+    if (current.bindings.has(name)) {
+      return { scope: current, binding: current.bindings.get(name) ?? null };
+    }
+    current = current.parent;
+  }
+  return null;
+}
+
+function bindNames(name: ts.BindingName, scope: Scope): void {
+  if (ts.isIdentifier(name)) {
+    scope.bindings.set(name.text, null);
+    return;
+  }
+  for (const element of name.elements) {
+    if (!ts.isOmittedExpression(element)) bindNames(element.name, scope);
+  }
+}
+
+function isEqualsAssignmentTarget(node: ts.Identifier): boolean {
+  let current: ts.Node = node;
+  while (
+    ts.isParenthesizedExpression(current.parent) ||
+    ts.isObjectLiteralExpression(current.parent) ||
+    ts.isArrayLiteralExpression(current.parent) ||
+    ts.isPropertyAssignment(current.parent) ||
+    ts.isShorthandPropertyAssignment(current.parent) ||
+    ts.isSpreadAssignment(current.parent)
+  ) {
+    current = current.parent;
+  }
+  return (
+    ts.isBinaryExpression(current.parent) &&
+    current.parent.left === current &&
+    current.parent.operatorToken.kind === ts.SyntaxKind.EqualsToken
+  );
+}
+
+function isNonValueName(node: ts.Identifier): boolean {
+  const parent = node.parent;
+  if (ts.isShorthandPropertyAssignment(parent) || ts.isExportSpecifier(parent)) return false;
+  if ('name' in parent && (parent as ts.NamedDeclaration).name === node) return true;
+  let typeParent = parent;
+  while (ts.isQualifiedName(typeParent)) typeParent = typeParent.parent;
+  return (
+    ts.isTypeNode(typeParent) ||
+    ts.isLabeledStatement(parent) ||
+    ts.isBreakOrContinueStatement(parent)
+  );
+}
+
+function isFunctionScope(node: ts.Node): node is ts.FunctionLikeDeclaration {
+  return (
+    ts.isFunctionDeclaration(node) ||
+    ts.isFunctionExpression(node) ||
+    ts.isArrowFunction(node) ||
+    ts.isMethodDeclaration(node) ||
+    ts.isConstructorDeclaration(node) ||
+    ts.isGetAccessorDeclaration(node) ||
+    ts.isSetAccessorDeclaration(node)
+  );
+}
+
+/**
+ * Typed calls made through a router proxy stored in a local variable.
+ *
+ * A static continuation such as `alias.<procedure>.<leaf>` resolves to a
+ * caller. Passing the proxy onward, indexing it, destructuring it, or otherwise
+ * using the router value without a statically readable continuation is kept as
+ * an ambiguity over every procedure below that router. The latter procedures
+ * cannot honestly be called silent: the scanner did not establish either
+ * answer.
+ */
+export function findTypedAliasRefs(
+  source: string,
+  file: string,
+  procedures: readonly string[]
+): TypedAliasScan {
+  const starts = lineStartsOf(source);
+  const syntax = ts.createSourceFile(
+    file,
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    file.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS
+  );
+  const refs: ProcedureRef[] = [];
+  const ambiguities: TypedAliasAmbiguity[] = [];
+  const deferredChains: Array<{
+    node: ts.PropertyAccessExpression | ts.ElementAccessExpression;
+    scope: Scope;
+  }> = [];
+  const deferredValueUses: Array<{
+    node: ts.Identifier;
+    scope: Scope;
+    why: TypedAliasAmbiguity['why'];
+  }> = [];
+  const addAmbiguity = (
+    index: number,
+    alias: string,
+    router: string,
+    why: TypedAliasAmbiguity['why']
+  ) => {
+    const affectedProcedures = affectedBy(router, procedures);
+    ambiguities.push({
+      path: router || '<client root>',
+      file,
+      line: lineOf(starts, index),
+      alias,
+      router,
+      affectedProcedures,
+      why,
+    });
+  };
+
+  const aliasFrom = (expression: ts.Expression, scope: Scope): AliasBinding | null => {
+    const unwrapped = unwrap(expression);
+    if (ts.isIdentifier(unwrapped)) return bindingIn(scope, unwrapped.text)?.binding ?? null;
+    const chain = chainOf(unwrapped);
+    if (!chain || chain.dynamic) return null;
+    const tail = accessorTail([chain.root, ...(chain.segments as string[])]);
+    if (tail === null) return null;
+    const router = tail.join('.');
+    return affectedBy(router, procedures).length > 0 ? { router } : null;
+  };
+
+  const visitChain = (
+    node: ts.PropertyAccessExpression | ts.ElementAccessExpression,
+    scope: Scope,
+    deferUnknown = true
+  ) => {
+    const chain = chainOf(node);
+    if (!chain) return;
+    const found = bindingIn(scope, chain.root);
+    if (found?.binding) {
+      if (chain.dynamic) {
+        addAmbiguity(node.getStart(syntax), chain.root, found.binding.router, 'dynamic alias use');
+        return;
+      }
+      const joined = [found.binding.router, ...(chain.segments as string[])]
+        .filter(Boolean)
+        .join('.');
+      const procedure = procedureIn(joined, procedures);
+      if (procedure) {
+        refs.push({ path: procedure, file, line: lineOf(starts, node.getStart(syntax)) });
+      } else {
+        addAmbiguity(node.getStart(syntax), chain.root, found.binding.router, 'dynamic alias use');
+      }
+      return;
+    }
+
+    const staticPrefix = chain.dynamic
+      ? chain.segments.slice(0, chain.segments.indexOf(null))
+      : chain.segments;
+    const tail = accessorTail([chain.root, ...(staticPrefix as string[])]);
+    if (tail === null) {
+      if (deferUnknown) deferredChains.push({ node, scope });
+      return;
+    }
+    const router = tail.join('.');
+    if (affectedBy(router, procedures).length > 0 && !procedureIn(router, procedures)) {
+      addAmbiguity(node.getStart(syntax), chain.root, router, 'router proxy used as a value');
+    }
+  };
+
+  const visit = (node: ts.Node, scope: Scope): void => {
+    if (isFunctionScope(node)) {
+      if (node.name && ts.isIdentifier(node.name)) scope.bindings.set(node.name.text, null);
+      const child = { parent: scope, bindings: new Map() } as Scope;
+      child.functionScope = child;
+      for (const parameter of node.parameters) {
+        if (ts.isIdentifier(parameter.name)) {
+          const binding = parameter.initializer ? aliasFrom(parameter.initializer, child) : null;
+          child.bindings.set(parameter.name.text, binding);
+          if (parameter.initializer && !binding) visit(parameter.initializer, child);
+        } else {
+          bindNames(parameter.name, child);
+          if (parameter.initializer) {
+            const binding = aliasFrom(parameter.initializer, child);
+            if (binding) {
+              addAmbiguity(
+                parameter.initializer.getStart(syntax),
+                parameter.name.getText(syntax),
+                binding.router,
+                'router proxy used as a value'
+              );
+            } else {
+              visit(parameter.initializer, child);
+            }
+          }
+        }
+      }
+      if (node.body) visit(node.body, child);
+      return;
+    }
+
+    if (ts.isBlock(node) || ts.isSourceFile(node)) {
+      const child: Scope = ts.isSourceFile(node)
+        ? scope
+        : { parent: scope, bindings: new Map(), functionScope: scope.functionScope };
+      ts.forEachChild(node, (part) => visit(part, child));
+      return;
+    }
+
+    if (
+      ts.isForStatement(node) ||
+      ts.isForInStatement(node) ||
+      ts.isForOfStatement(node) ||
+      ts.isCaseBlock(node)
+    ) {
+      const child: Scope = {
+        parent: scope,
+        bindings: new Map(),
+        functionScope: scope.functionScope,
+      };
+      ts.forEachChild(node, (part) => visit(part, child));
+      return;
+    }
+
+    if (ts.isCatchClause(node)) {
+      const child: Scope = {
+        parent: scope,
+        bindings: new Map(),
+        functionScope: scope.functionScope,
+      };
+      if (node.variableDeclaration) bindNames(node.variableDeclaration.name, child);
+      visit(node.block, child);
+      return;
+    }
+
+    if (ts.isVariableDeclaration(node)) {
+      const declarationList = ts.isVariableDeclarationList(node.parent) ? node.parent : undefined;
+      const variableStatement = declarationList?.parent;
+      const exported =
+        variableStatement &&
+        ts.isVariableStatement(variableStatement) &&
+        ts
+          .getModifiers(variableStatement)
+          ?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword);
+      const declarationScope =
+        declarationList && !(declarationList.flags & ts.NodeFlags.BlockScoped)
+          ? scope.functionScope
+          : scope;
+      if (ts.isIdentifier(node.name)) {
+        const binding = node.initializer ? aliasFrom(node.initializer, scope) : null;
+        declarationScope.bindings.set(node.name.text, binding);
+        if (binding && exported) {
+          addAmbiguity(
+            node.name.getStart(syntax),
+            node.name.text,
+            binding.router,
+            'exported router proxy'
+          );
+        }
+        if (node.initializer && !binding) visit(node.initializer, scope);
+      } else {
+        bindNames(node.name, scope);
+        if (node.initializer) {
+          const binding = aliasFrom(node.initializer, scope);
+          if (binding) {
+            addAmbiguity(
+              node.initializer.getStart(syntax),
+              node.name.getText(syntax),
+              binding.router,
+              'router proxy used as a value'
+            );
+          } else {
+            visit(node.initializer, scope);
+          }
+        }
+      }
+      return;
+    }
+
+    if (
+      ts.isBinaryExpression(node) &&
+      node.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
+      ts.isIdentifier(node.left)
+    ) {
+      const binding = aliasFrom(node.right, scope);
+      if (!binding) visit(node.right, scope);
+      const existing = bindingIn(scope, node.left.text);
+      if (existing?.binding && existing.binding.router !== binding?.router) {
+        addAmbiguity(
+          node.left.getStart(syntax),
+          node.left.text,
+          existing.binding.router,
+          'dynamic alias use'
+        );
+      }
+      (existing?.scope ?? scope).bindings.set(node.left.text, binding);
+      return;
+    }
+
+    if (ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node)) {
+      const parentContinues =
+        (ts.isPropertyAccessExpression(node.parent) || ts.isElementAccessExpression(node.parent)) &&
+        node.parent.expression === node;
+      if (!parentContinues) {
+        if (chainOf(node)) visitChain(node, scope);
+        else ts.forEachChild(node, (part) => visit(part, scope));
+        let part: ts.Expression = node;
+        while (ts.isPropertyAccessExpression(part) || ts.isElementAccessExpression(part)) {
+          if (
+            ts.isElementAccessExpression(part) &&
+            part.argumentExpression &&
+            !ts.isStringLiteralLike(part.argumentExpression)
+          ) {
+            visit(part.argumentExpression, scope);
+          }
+          part = unwrap(part.expression);
+        }
+      }
+      return;
+    }
+
+    if (ts.isIdentifier(node)) {
+      const exportReference =
+        (ts.isExportSpecifier(node.parent) &&
+          node === (node.parent.propertyName ?? node.parent.name)) ||
+        (ts.isExportAssignment(node.parent) && node.parent.expression === node);
+      const valueUse =
+        exportReference || (!isNonValueName(node) && !isEqualsAssignmentTarget(node));
+      if (!valueUse) return;
+      const found = bindingIn(scope, node.text);
+      if (found?.binding) {
+        addAmbiguity(
+          node.getStart(syntax),
+          node.text,
+          found.binding.router,
+          exportReference ? 'exported router proxy' : 'router proxy used as a value'
+        );
+      } else {
+        deferredValueUses.push({
+          node,
+          scope,
+          why: exportReference ? 'exported router proxy' : 'router proxy used as a value',
+        });
+      }
+      return;
+    }
+
+    ts.forEachChild(node, (part) => visit(part, scope));
+  };
+
+  const root = { bindings: new Map() } as Scope;
+  root.functionScope = root;
+  visit(syntax, root);
+  for (const deferred of deferredChains) visitChain(deferred.node, deferred.scope, false);
+  for (const deferred of deferredValueUses) {
+    const found = bindingIn(deferred.scope, deferred.node.text);
+    if (found?.binding) {
+      addAmbiguity(
+        deferred.node.getStart(syntax),
+        deferred.node.text,
+        found.binding.router,
+        deferred.why
+      );
+    }
+  }
+
+  const uniqueRefs = new Map(refs.map((ref) => [`${ref.file}:${ref.line}:${ref.path}`, ref]));
+  const uniqueAmbiguities = new Map(
+    ambiguities.map((ref) => [`${ref.file}:${ref.line}:${ref.alias}:${ref.router}:${ref.why}`, ref])
+  );
+  return { refs: [...uniqueRefs.values()], ambiguities: [...uniqueAmbiguities.values()] };
+}
+
 /**
  * Files whose `/trpc/…` strings DECLARE a procedure rather than call one.
  *
@@ -310,6 +767,10 @@ export interface Census {
   typedOnly: string[];
   /** api procedures with no caller anywhere in the scanned tree. */
   noCaller: string[];
+  /** api procedures whose only possible caller sits behind an unresolved typed alias. */
+  callerUnresolved: string[];
+  /** Alias sites that prevent a confirmed caller/no-caller answer. */
+  unresolvedTypedAliases: TypedAliasAmbiguity[];
   /** URL references naming no procedure on either router, minus declared fixtures. */
   unresolvedUrls: ProcedureRef[];
   /** Declared fixtures actually seen, so a stale declaration is visible. */
@@ -410,6 +871,8 @@ export function census(input: CensusInput): Census {
 
   const urlHits = new Set<string>();
   const typedHits = new Set<string>();
+  const callerUnresolved = new Set<string>();
+  const unresolvedTypedAliases: TypedAliasAmbiguity[] = [];
   const unresolvedUrls: ProcedureRef[] = [];
   const fixturesSeen: ProcedureRef[] = [];
   let filesScanned = 0;
@@ -433,12 +896,19 @@ export function census(input: CensusInput): Census {
     for (const ref of findTypedRefs(source, file, (p) => api.has(p))) {
       typedHits.add(ref.path);
     }
+    const aliasScan = findTypedAliasRefs(source, file, input.apiProcedures);
+    for (const ref of aliasScan.refs) typedHits.add(ref.path);
+    for (const ambiguity of aliasScan.ambiguities) {
+      unresolvedTypedAliases.push(ambiguity);
+      for (const procedure of ambiguity.affectedProcedures) callerUnresolved.add(procedure);
+    }
   }
 
   const reachedByUrl: string[] = [];
   const urlOnly: string[] = [];
   const typedOnly: string[] = [];
   const noCaller: string[] = [];
+  const unresolvedCaller: string[] = [];
 
   for (const p of [...api].sort()) {
     const byUrl = urlHits.has(p);
@@ -446,6 +916,7 @@ export function census(input: CensusInput): Census {
     if (byUrl) reachedByUrl.push(p);
     if (byUrl && !byTyped) urlOnly.push(p);
     else if (!byUrl && byTyped) typedOnly.push(p);
+    else if (!byUrl && !byTyped && callerUnresolved.has(p)) unresolvedCaller.push(p);
     else if (!byUrl && !byTyped) noCaller.push(p);
   }
 
@@ -459,6 +930,8 @@ export function census(input: CensusInput): Census {
     urlOnly,
     typedOnly,
     noCaller,
+    callerUnresolved: unresolvedCaller,
+    unresolvedTypedAliases,
     unresolvedUrls,
     fixturesSeen,
   };
