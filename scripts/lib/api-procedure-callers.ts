@@ -321,6 +321,38 @@ function bindNames(name: ts.BindingName, scope: Scope): void {
   }
 }
 
+function isEqualsAssignmentTarget(node: ts.Identifier): boolean {
+  let current: ts.Node = node;
+  while (
+    ts.isParenthesizedExpression(current.parent) ||
+    ts.isObjectLiteralExpression(current.parent) ||
+    ts.isArrayLiteralExpression(current.parent) ||
+    ts.isPropertyAssignment(current.parent) ||
+    ts.isShorthandPropertyAssignment(current.parent) ||
+    ts.isSpreadAssignment(current.parent)
+  ) {
+    current = current.parent;
+  }
+  return (
+    ts.isBinaryExpression(current.parent) &&
+    current.parent.left === current &&
+    current.parent.operatorToken.kind === ts.SyntaxKind.EqualsToken
+  );
+}
+
+function isNonValueName(node: ts.Identifier): boolean {
+  const parent = node.parent;
+  if (ts.isShorthandPropertyAssignment(parent) || ts.isExportSpecifier(parent)) return false;
+  if ('name' in parent && (parent as ts.NamedDeclaration).name === node) return true;
+  let typeParent = parent;
+  while (ts.isQualifiedName(typeParent)) typeParent = typeParent.parent;
+  return (
+    ts.isTypeNode(typeParent) ||
+    ts.isLabeledStatement(parent) ||
+    ts.isBreakOrContinueStatement(parent)
+  );
+}
+
 function isFunctionScope(node: ts.Node): node is ts.FunctionLikeDeclaration {
   return (
     ts.isFunctionDeclaration(node) ||
@@ -362,7 +394,11 @@ export function findTypedAliasRefs(
     node: ts.PropertyAccessExpression | ts.ElementAccessExpression;
     scope: Scope;
   }> = [];
-  const deferredExports: Array<{ node: ts.Identifier; scope: Scope }> = [];
+  const deferredValueUses: Array<{
+    node: ts.Identifier;
+    scope: Scope;
+    why: TypedAliasAmbiguity['why'];
+  }> = [];
   const addAmbiguity = (
     index: number,
     alias: string,
@@ -583,25 +619,27 @@ export function findTypedAliasRefs(
     }
 
     if (ts.isIdentifier(node)) {
-      const found = bindingIn(scope, node.text);
-      if (found?.binding) {
-        const isName =
-          (ts.isVariableDeclaration(node.parent) && node.parent.name === node) ||
-          (isFunctionScope(node.parent) && node.parent.name === node) ||
-          (ts.isParameter(node.parent) && node.parent.name === node);
-        const isAssignment =
-          ts.isBinaryExpression(node.parent) &&
-          node.parent.left === node &&
-          node.parent.operatorToken.kind === ts.SyntaxKind.EqualsToken;
-        if (!isName && !isAssignment) {
-          addAmbiguity(node.getStart(syntax), node.text, found.binding.router, 'dynamic alias use');
-        }
-      } else if (
+      const exportReference =
         (ts.isExportSpecifier(node.parent) &&
           node === (node.parent.propertyName ?? node.parent.name)) ||
-        (ts.isExportAssignment(node.parent) && node.parent.expression === node)
-      ) {
-        deferredExports.push({ node, scope });
+        (ts.isExportAssignment(node.parent) && node.parent.expression === node);
+      const valueUse =
+        exportReference || (!isNonValueName(node) && !isEqualsAssignmentTarget(node));
+      if (!valueUse) return;
+      const found = bindingIn(scope, node.text);
+      if (found?.binding) {
+        addAmbiguity(
+          node.getStart(syntax),
+          node.text,
+          found.binding.router,
+          exportReference ? 'exported router proxy' : 'router proxy used as a value'
+        );
+      } else {
+        deferredValueUses.push({
+          node,
+          scope,
+          why: exportReference ? 'exported router proxy' : 'router proxy used as a value',
+        });
       }
       return;
     }
@@ -613,14 +651,14 @@ export function findTypedAliasRefs(
   root.functionScope = root;
   visit(syntax, root);
   for (const deferred of deferredChains) visitChain(deferred.node, deferred.scope, false);
-  for (const deferred of deferredExports) {
+  for (const deferred of deferredValueUses) {
     const found = bindingIn(deferred.scope, deferred.node.text);
     if (found?.binding) {
       addAmbiguity(
         deferred.node.getStart(syntax),
         deferred.node.text,
         found.binding.router,
-        'exported router proxy'
+        deferred.why
       );
     }
   }

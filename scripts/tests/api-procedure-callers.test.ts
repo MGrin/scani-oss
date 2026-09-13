@@ -235,7 +235,7 @@ describe('router aliases keep confirmed calls separate from unresolved ones', ()
         line: 2,
         alias: 'proxy',
         router: 'widgets',
-        why: 'dynamic alias use',
+        why: 'router proxy used as a value',
       },
     ]);
   });
@@ -358,6 +358,49 @@ describe('router aliases keep confirmed calls separate from unresolved ones', ()
         why: 'exported router proxy',
       },
     ]);
+  });
+
+  test('forward bare-value escapes remain unresolved in every value context', () => {
+    const sources = [
+      'function run() { consume(proxy); }\nconst proxy = utils.client.widgets;\nrun();',
+      'function expose() { return proxy; }\nconst proxy = utils.client.widgets;',
+      'function expose() { return { proxy }; }\nconst proxy = utils.client.widgets;',
+      'useThing(() => proxy);\nconst proxy = utils.client.widgets;',
+    ];
+    for (const source of sources) {
+      const result = census({
+        apiProcedures: ['widgets.list', 'widgets.archive'],
+        dataProviderProcedures: [],
+        files: [['f.ts', source]],
+      });
+      expect(result.typedOnly).toEqual([]);
+      expect(result.callerUnresolved).toEqual(['widgets.archive', 'widgets.list']);
+      expect(result.noCaller).toEqual([]);
+      expect(result.unresolvedTypedAliases).toMatchObject([
+        {
+          alias: 'proxy',
+          router: 'widgets',
+          why: 'router proxy used as a value',
+        },
+      ]);
+    }
+  });
+
+  test('a property or type name is not mistaken for a forward value use', () => {
+    const result = census({
+      apiProcedures: ['widgets.list', 'widgets.archive'],
+      dataProviderProcedures: [],
+      files: [
+        [
+          'f.ts',
+          'const record = { proxy: ordinaryValue };\ntype proxy = string;\nconst proxy = utils.client.widgets;',
+        ],
+      ],
+    });
+    expect(result.typedOnly).toEqual([]);
+    expect(result.callerUnresolved).toEqual([]);
+    expect(result.noCaller).toEqual(['widgets.archive', 'widgets.list']);
+    expect(result.unresolvedTypedAliases).toEqual([]);
   });
 
   test('direct dynamic access retains the static router bound', () => {
