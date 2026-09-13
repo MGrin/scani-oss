@@ -19,6 +19,24 @@ version heading stays there permanently, above every future release. This
 comment is deliberately in that position; explanatory prose should not be.
 -->
 
+## [0.45.0](https://github.com/MGrin/scani-oss/compare/v0.44.0...v0.45.0) (2026-09-13)
+
+
+### Features
+
+* **docs:** pages name the commit they were built from; deploy-probe reads it ([de2d397](https://github.com/MGrin/scani-oss/commit/de2d39759ba7a536309ab6d1a0078c59bffc50fe))
+* **frontend:** every route names the document title (SC-996) ([0dac8ff](https://github.com/MGrin/scani-oss/commit/0dac8ff675bd9190d729b78621768cdbe63f9f84))
+* **holdings:** make stale-priced holdings findable in the list (SC-981) ([e2121cc](https://github.com/MGrin/scani-oss/commit/e2121cc6bb8b80db2e79fe3e032c41af5476d2e8))
+
+
+### Bug Fixes
+
+* **cost-basis:** trade fees reach cost basis and realized gains ([127dcb0](https://github.com/MGrin/scani-oss/commit/127dcb01e8d0820e789d771b2f455ece5e3afe5e))
+* **queue:** let an idle worker leave Postgres alone long enough to suspend (SC-963) ([dff2d3c](https://github.com/MGrin/scani-oss/commit/dff2d3cb49cb655334d6fc8ce2396c6a85475752))
+* stop the transfer-review picker offering the account the money left, and the sheet swallowing the flick that would scroll it ([04814a8](https://github.com/MGrin/scani-oss/commit/04814a8b73f6fbb56ca9799db663f2dd5fb174db))
+* **test:** makeToken's default type is crypto, not the first seeded row (SC-967) ([8f0ed25](https://github.com/MGrin/scani-oss/commit/8f0ed25cc9bc159c93d63eb1a8a809d2a8fb95c7))
+* **transfer-review:** apply always_a_disposal marks at write time, never on read (SC-1071) ([2058b95](https://github.com/MGrin/scani-oss/commit/2058b959b92ddae07cad6cc456122b1f4e322c95))
+
 ## [0.44.0](https://github.com/MGrin/scani-oss/compare/v0.43.0...v0.44.0) (2026-09-11)
 
 
