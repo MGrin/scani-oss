@@ -17,6 +17,12 @@
 // A served commit that is not an ancestor is a different build and is never
 // waited on, and a deploy that never propagates still ends NOT SERVED.
 //
+// `--exact` requires the served commit to BE the sha, not contain it. Ancestry
+// cannot prove a ROLLBACK: the build it replaces is newer and contains the
+// target, so a rollback that never landed reads SERVED (SC-1185). Under
+// `--exact` a served DESCENDANT is NOT SERVED, and is waited on the same way,
+// because it is what an edge still serving the pre-rollback build looks like.
+//
 // Exit codes:
 //   0  every arm that could run agrees the artefact carries what you named
 //   1  an arm RAN and disagrees — a measured absence
@@ -228,10 +234,17 @@ type Log = (line: string) => void;
 /**
  * One read, with its lines buffered, so a wait prints the reading it ended on
  * rather than every stale one before it. `stale` is set when identity failed
- * only because the host serves an ancestor of the commit asked about.
+ * only because the host serves an ancestor of the commit asked about, or under
+ * `exact` a descendant of it — the two shapes of an edge that has not caught up.
  */
+interface Stale {
+  readonly sha: string;
+  readonly relation: 'ANCESTOR' | 'DESCENDANT';
+}
+
 interface Attempt {
-  stale: string | null;
+  readonly exact: boolean;
+  stale: Stale | null;
 }
 
 async function run(argv: readonly string[]): Promise<number> {
@@ -245,10 +258,14 @@ async function run(argv: readonly string[]): Promise<number> {
   const started = Date.now();
   for (let reads = 1; ; reads += 1) {
     const lines: string[] = [];
-    const attempt: Attempt = { stale: null };
+    const attempt: Attempt = { exact: argv.includes('--exact'), stale: null };
     const code = await main(argv, (l) => lines.push(l), attempt);
     const elapsed = Date.now() - started;
-    if (code === EXIT_REFUSED && attempt.stale !== null && elapsed + pollMs <= wait * 1000) {
+    // A non-zero wait always buys a second read: under load one read can take
+    // longer than a short wait, which would otherwise report "no second read"
+    // for a wait that was asked for. The overshoot is one poll, at most 10s.
+    const budget = elapsed + pollMs <= wait * 1000 || (reads === 1 && wait > 0);
+    if (code === EXIT_REFUSED && attempt.stale !== null && budget) {
       await Bun.sleep(pollMs);
       continue;
     }
@@ -266,24 +283,25 @@ function waitNote(
   seconds: number,
   wait: number,
   code: number,
-  stale: string | null
+  stale: Stale | null
 ): string | null {
   if (stale !== null) {
+    const serves = `${stale.sha.slice(0, 12)}, ${stale.relation === 'ANCESTOR' ? 'an ANCESTOR' : 'a DESCENDANT'} of your commit`;
     return reads === 1
-      ? `  wait: the host serves ${stale.slice(0, 12)}, an ANCESTOR of your commit, and --wait ${wait} allowed no second read — re-run with a wait before reading this as a failed publish`
-      : `  wait: ${reads} reads over ${seconds}s (--wait ${wait}) and the host still serves ${stale.slice(0, 12)}, an ANCESTOR of your commit — the publish did not land, or propagation is slower than ${wait}s. The deployment's preview URL separates the two`;
+      ? `  wait: the host serves ${serves}, and --wait ${wait} allowed no second read — re-run with a wait before reading this as a failed publish`
+      : `  wait: ${reads} reads over ${seconds}s (--wait ${wait}) and the host still serves ${serves} — the publish did not land, or propagation is slower than ${wait}s. The deployment's preview URL separates the two`;
   }
   if (reads === 1) return null;
   return code === EXIT_OK
     ? `  wait: ${reads} reads over ${seconds}s before the host served your commit — the earlier reads were the edge catching up, not a failed publish`
-    : `  wait: ${reads} reads over ${seconds}s, and the host stopped serving an ancestor without serving your commit`;
+    : `  wait: ${reads} reads over ${seconds}s, and the host stopped serving an older build without serving your commit`;
 }
 
 async function main(argv: readonly string[], log: Log, attempt: Attempt): Promise<number> {
   const url = flag(argv, '--url');
   if (url === null || url === '') {
     console.error(
-      'usage: bun scripts/deploy-probe.ts --url <origin> [--commit <sha>] [--signal <literal> --alive <literal> --contrast <origin|file|dir>] [--expect present|absent] [--asset <path>] [--against <origin>] [--wait <seconds>] [--simulate-fallback]'
+      'usage: bun scripts/deploy-probe.ts --url <origin> [--commit <sha>] [--signal <literal> --alive <literal> --contrast <origin|file|dir>] [--expect present|absent] [--asset <path>] [--against <origin>] [--exact] [--wait <seconds>] [--simulate-fallback]'
     );
     return EXIT_UNKNOWN;
   }
@@ -556,10 +574,13 @@ function identityArm(commit: string, served: string, attempt: Attempt): ArmVerdi
   const want = head.kind === 'ran' ? head.stdout.trim() : commit;
   const verdict = isAncestor(want, served, process.cwd());
   if (verdict === 'no' && isAncestor(served, want, process.cwd()) === 'yes') {
-    attempt.stale = served;
+    attempt.stale = { sha: served, relation: 'ANCESTOR' };
+  }
+  if (attempt.exact && verdict === 'yes' && served !== want) {
+    attempt.stale = { sha: served, relation: 'DESCENDANT' };
   }
   return verdict === 'yes' || verdict === 'no'
-    ? identityVerdict(want, served, verdict === 'yes')
+    ? identityVerdict(want, served, verdict === 'yes', attempt.exact)
     : { arm: 'identity', state: 'unverified', detail: verdict.why };
 }
 

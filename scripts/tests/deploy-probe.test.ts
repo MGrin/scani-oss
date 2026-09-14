@@ -351,6 +351,15 @@ describe('identityVerdict — the sentence it must not say', () => {
     expect(identityVerdict(A, B, true).state).toBe('pass');
   });
 
+  // SC-1185: a rollback replaces a newer build, which contains its target.
+  test('exact: a containing but different commit fails; the commit itself passes', () => {
+    const v = identityVerdict(A, B, true, true);
+    expect(v.state).toBe('fail');
+    expect(v.detail).toContain('CONTAINS');
+    expect(identityVerdict(A, A, true, true).state).toBe('pass');
+    expect(identityVerdict(A, B, false, true).state).toBe('fail');
+  });
+
   test('not contained is a fail, because the artefact really was read', () => {
     expect(identityVerdict(A, B, false).state).toBe('fail');
   });
