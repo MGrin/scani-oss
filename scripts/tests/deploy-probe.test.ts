@@ -24,6 +24,7 @@ import {
   extractRelease,
   extractVersionCommit,
   type Fetched,
+  falsifierClause,
   identityVerdict,
   manifestDiff,
   signalVerdict,
@@ -95,7 +96,12 @@ describe('classifyShape — the arm that refuses', () => {
 });
 
 describe('signalVerdict — why alive is mandatory', () => {
-  const base = { signal: 'typeCode==="fiat"', alive: 'typeCode', expect: 'present' as const };
+  const base = {
+    signal: 'typeCode==="fiat"',
+    alive: 'typeCode',
+    expect: 'present' as const,
+    contrast: null,
+  };
 
   // SC-821's own readings: deploy 2 signal=0 alive=2, deploy 3 signal=1 alive=3.
   test('a zero with a live alive arm is a MEASURED absence, not an unknown', () => {
@@ -110,14 +116,7 @@ describe('signalVerdict — why alive is mandatory', () => {
     expect(v.detail).toContain('VOID');
   });
 
-  test('found is found', () => {
-    expect(signalVerdict({ ...base, signalCount: 1, aliveCount: 3 }).state).toBe('pass');
-  });
-
-  test('expect absent inverts the verdict, and still needs the alive arm', () => {
-    expect(signalVerdict({ ...base, expect: 'absent', signalCount: 0, aliveCount: 2 }).state).toBe(
-      'pass'
-    );
+  test('expect absent inverts the fail, and still needs the alive arm', () => {
     expect(signalVerdict({ ...base, expect: 'absent', signalCount: 1, aliveCount: 3 }).state).toBe(
       'fail'
     );
@@ -129,16 +128,102 @@ describe('signalVerdict — why alive is mandatory', () => {
   // An alive arm that is not part of the signal goes on reading non-zero after
   // the signal moves, so it could never report a dead read — the defect this
   // function exists to prevent, one level in.
-  test('an alive literal outside the signal is refused, however healthy it looks', () => {
-    const v = signalVerdict({
-      signal: 'typeCode==="fiat"',
-      alive: 'React',
-      expect: 'present',
-      signalCount: 0,
-      aliveCount: 400,
-    });
+  test('an alive literal outside the signal is refused without a contrast', () => {
+    const v = signalVerdict({ ...base, alive: 'React', signalCount: 0, aliveCount: 400 });
     expect(v.state).toBe('unverified');
     expect(v.detail).toContain('not a substring');
+  });
+});
+
+describe('signalVerdict — a pass needs a falsifier (SC-1172)', () => {
+  const read = (signalCount: number, aliveCount: number) => ({
+    kind: 'read' as const,
+    source: 'https://prev.example.test',
+    signalCount,
+    aliveCount,
+  });
+
+  // SC-1168's landing deploy, measured 2026-09-12: a module-level analytics
+  // host constant is emitted whether or not analytics resolved, so the deploy
+  // that shipped disabled read alive=2 and a present signal. That reading was
+  // quoted as SERVED.
+  const sc1168 = {
+    signal: 'ingest.analytics.test',
+    alive: 'analytics',
+    expect: 'present' as const,
+    signalCount: 1,
+    aliveCount: 2,
+  };
+
+  test('a present signal with no contrast is UNVERIFIED, naming the falsifier NOT TAKEN', () => {
+    const v = signalVerdict({ ...sc1168, contrast: null });
+    expect(v.state).toBe('unverified');
+    expect(v.detail).toContain('falsifier was NOT TAKEN');
+  });
+
+  test('an absent signal with no contrast is UNVERIFIED too — a typo reads 0 forever', () => {
+    const v = signalVerdict({ ...sc1168, expect: 'absent', signalCount: 0, contrast: null });
+    expect(v.state).toBe('unverified');
+    expect(v.detail).toContain('NOT TAKEN');
+  });
+
+  // The defect itself: the pre-deploy bundle carries the constant as well.
+  test('a signal that reads the same on the contrast is a constant, not evidence', () => {
+    const v = signalVerdict({ ...sc1168, contrast: read(1, 2) });
+    expect(v.state).toBe('unverified');
+    expect(v.detail).toContain('constant');
+  });
+
+  // The control for the case above, and the SC-1168 arm that did settle it:
+  // the key prefix 1 on the deploy, 0 on the pre-deploy bundle, vendor name 2 on both.
+  test('a signal that moves between the two is a pass, with an independent alive token', () => {
+    const v = signalVerdict({
+      signal: 'key_',
+      alive: 'analytics',
+      expect: 'present',
+      signalCount: 1,
+      aliveCount: 2,
+      contrast: read(0, 2),
+    });
+    expect(v.state).toBe('pass');
+    expect(v.detail).toContain('contrast https://prev.example.test signal=0 alive=2');
+  });
+
+  test('expect absent wants the contrast to carry the signal', () => {
+    const absent = { ...sc1168, expect: 'absent' as const, signalCount: 0 };
+    expect(signalVerdict({ ...absent, contrast: read(3, 2) }).state).toBe('pass');
+    expect(signalVerdict({ ...absent, contrast: read(0, 2) }).state).toBe('unverified');
+  });
+
+  test('a contrast whose alive reads 0 is a void read, whatever its signal says', () => {
+    const v = signalVerdict({ ...sc1168, contrast: read(0, 0) });
+    expect(v.state).toBe('unverified');
+    expect(v.detail).toContain('VOID');
+  });
+
+  test('an unreadable contrast is UNVERIFIED and names why', () => {
+    const v = signalVerdict({
+      ...sc1168,
+      contrast: { kind: 'unreadable', source: 'dist/', why: 'ENOENT' },
+    });
+    expect(v.state).toBe('unverified');
+    expect(v.detail).toContain('ENOENT');
+  });
+
+  // A fail is a measured absence however little the signal discriminates, and
+  // its error direction is a false alarm; it needs no falsifier.
+  test('a measured fail needs no contrast', () => {
+    expect(signalVerdict({ ...sc1168, signalCount: 0, contrast: null }).state).toBe('fail');
+  });
+
+  test('the verdict clause says which falsifier was taken, including none', () => {
+    expect(falsifierClause(null)).toContain('NOT TAKEN');
+    expect(falsifierClause(read(0, 2))).toBe(
+      'signal falsifier https://prev.example.test signal=0 alive=2'
+    );
+    expect(falsifierClause({ kind: 'unreadable', source: 'dist/', why: 'ENOENT' })).toContain(
+      'UNREADABLE'
+    );
   });
 });
 
