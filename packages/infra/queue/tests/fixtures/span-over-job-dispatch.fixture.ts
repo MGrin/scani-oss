@@ -25,13 +25,27 @@
  * does not reach around it, so arm B is a 1-in-10 draw per dispatch. It runs the
  * arm ITERATIONS times instead: at 300 draws the chance of arm B reporting zero
  * against a working SDK is 0.9^300, about 2e-14.
+ *
+ * TWO READINGS PER ARM, NOT ONE (SC-1192). `built` counts the transaction
+ * envelopes the client handed to its transport (`beforeEnvelope`, the last
+ * hook before the network); `received` counts what reached the sink. A full
+ * gate once reported arm B = 0 against a tree that passed alone, and with one
+ * number nobody could say whether dispatch stopped starting spans or delivery
+ * lost them. Each arm now waits, up to DELIVERY_DEADLINE_MS, for `received` to
+ * catch up with `built`, so a slow transport under load is a wait rather than
+ * a zero, and a lost envelope is reported as delivery, never as a missing span.
  */
-import { flushSentry, initSentry } from '@scani/logging/sentry';
+import { initSentry } from '@scani/logging/sentry';
 import type { Job } from 'bullmq';
+import {
+  countBuiltTransactions,
+  flushReportingCompletion,
+} from '../../../logging/tests/fixtures/sentry-delivery-probe';
 import { WorkerClient } from '../../src/consumer/worker-client';
 
 const ITERATIONS = 300;
 const JOB_NAME = 'sc822-probe';
+const DELIVERY_DEADLINE_MS = 15_000;
 
 type Item = { type: string; name?: string; op?: string; source?: string };
 const received: Item[] = [];
@@ -69,7 +83,31 @@ const sink = Bun.serve({
 process.env.SENTRY_DSN = `http://sc822publickey@127.0.0.1:${sink.port}/1`;
 initSentry({ component: 'worker' });
 
+const builtSoFar = countBuiltTransactions();
+
 const transactionsSoFar = () => received.filter((item) => item.type === 'transaction');
+
+type Delivery = { built: number; received: number; flushed: boolean; waitedMs: number };
+
+// Flush, then wait for the sink to have everything the client built since
+// `builtBefore`. Returns the readings rather than judging them: the test does.
+async function settle(builtBefore: number, receivedBefore: number): Promise<Delivery> {
+  const start = Date.now();
+  const flushed = await flushReportingCompletion(5000);
+  while (
+    transactionsSoFar().length - receivedBefore < builtSoFar() - builtBefore &&
+    Date.now() - start < DELIVERY_DEADLINE_MS
+  ) {
+    await Bun.sleep(25);
+  }
+  await Bun.sleep(150);
+  return {
+    built: builtSoFar() - builtBefore,
+    received: transactionsSoFar().length - receivedBefore,
+    flushed,
+    waitedMs: Date.now() - start,
+  };
+}
 
 let processorCalls = 0;
 const processor = {
@@ -92,9 +130,8 @@ const job = { id: 'sc822-1', name: JOB_NAME, data: {} } as unknown as Job;
 for (let i = 0; i < ITERATIONS; i++) {
   await processor.process();
 }
-await flushSentry(5000);
-await Bun.sleep(150);
-const armA = transactionsSoFar().length;
+const armADelivery = await settle(0, 0);
+const armA = armADelivery.received;
 
 // ---- Arm B: the same work, through the dispatch this repo instrumented ----
 // `runJob` is private: it is dispatch, not API, and BullMQ hands it to a
@@ -106,14 +143,15 @@ const runJob = (client as unknown as { runJob: (job: Job) => Promise<unknown> })
 for (let i = 0; i < ITERATIONS; i++) {
   await runJob(job);
 }
-await flushSentry(5000);
-await Bun.sleep(150);
+const armBDelivery = await settle(armADelivery.built, armA);
 const armBItems = transactionsSoFar().slice(armA);
 
 console.log(
   `SC822_RESULT ${JSON.stringify({
     iterations: ITERATIONS,
     processorCalls,
+    armA_delivery: armADelivery,
+    armB_delivery: armBDelivery,
     armA_directCallTransactions: armA,
     armB_dispatchTransactions: armBItems.length,
     armB_names: [...new Set(armBItems.map((item) => item.name))],
