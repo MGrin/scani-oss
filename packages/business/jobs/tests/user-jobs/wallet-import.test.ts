@@ -42,14 +42,13 @@ describe('WALLET_IMPORT descriptor', () => {
       chain: 'ethereum',
       address: '0x1234567890abcdef1234567890abcdef12345678',
       label: 'My ETH',
-      detectedInstitutionIds: ['inst-1'], // not surfaced
     });
     expect(summary).toEqual({
       chain: 'ethereum',
       address: '0x1234…5678',
       label: 'My ETH',
     });
-    expect(summary).not.toHaveProperty('detectedInstitutionIds');
+    expect(summary).not.toHaveProperty('requestId');
     expect(summary).not.toHaveProperty('userId');
   });
 
@@ -67,5 +66,20 @@ describe('WALLET_IMPORT descriptor', () => {
     expect(WALLET_IMPORT.defaultOpts.attempts).toBe(3);
     expect(WALLET_IMPORT.defaultOpts.removeOnComplete).toBe(100);
     expect(WALLET_IMPORT.defaultOpts.removeOnFail).toBe(500);
+  });
+
+  // SC-1155. A job enqueued before the field was removed still carries it, and
+  // must parse rather than fail: the object schema strips the unknown key.
+  test('a payload queued with the removed detectedInstitutionIds still parses, without it', () => {
+    const queued = {
+      userId: 'u1',
+      requestId: 'r1',
+      chain: 'auto',
+      address: '0xABC',
+      detectedInstitutionIds: ['00000000-0000-4000-8000-000000000000'],
+    };
+    const parsed = WALLET_IMPORT.schema.safeParse(queued);
+    expect(parsed.success).toBe(true);
+    expect(parsed.data).toEqual({ userId: 'u1', requestId: 'r1', chain: 'auto', address: '0xABC' });
   });
 });
