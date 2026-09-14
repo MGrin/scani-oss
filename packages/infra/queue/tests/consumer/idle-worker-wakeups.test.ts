@@ -134,13 +134,17 @@ describe('an idle worker with a far-future delayed job still starts new work pro
   }
 
   // The bounds are loose for a loaded gate; anything under a few seconds
-  // already rules out the 900s timer they exist to distinguish from.
+  // already rules out the 900s timer they exist to distinguish from. Every
+  // UPPER bound on elapsed time in this file is tagged `// [wall-clock]`, so
+  // the deploy preflight reads its failure as the box rather than a
+  // regression (SC-1149). Lower bounds are not: a slow box cannot make a job
+  // start sooner, so their failure is still evidence about the code.
   test('an immediate job starts within 3s, off the NOTIFY, not the 900s timer', async () => {
     const { queue, started } = await idleWorker({ maximumBlockTimeout: 900, drainDelay: 900 });
     const addedAt = Date.now();
     await queue.add('immediate', {});
     const startedAt = await waitFor(() => started.get('immediate'), 5_000);
-    expect(startedAt - addedAt).toBeLessThan(3_000);
+    expect(startedAt - addedAt).toBeLessThan(3_000); // [wall-clock]
   });
 
   test('a delayed job added while idle starts when it comes due, not at the 900s timer', async () => {
@@ -149,7 +153,7 @@ describe('an idle worker with a far-future delayed job still starts new work pro
     await queue.add('due-soon', {}, { delay: 1_500 });
     const startedAt = await waitFor(() => started.get('due-soon'), 6_000);
     expect(startedAt - addedAt).toBeGreaterThanOrEqual(1_400);
-    expect(startedAt - addedAt).toBeLessThan(4_500);
+    expect(startedAt - addedAt).toBeLessThan(4_500); // [wall-clock]
   });
 
   test('after the LISTEN connection dies, the worker waits for its timer without touching the database, then listens again', async () => {
@@ -184,7 +188,7 @@ describe('an idle worker with a far-future delayed job still starts new work pro
     // The control: the job WAITED, so the NOTIFY really had nobody to reach.
     expect(startedAt - addedAt).toBeGreaterThan(1_500);
     // The bound: no later than the timer that was already running.
-    expect(startedAt - killedAt).toBeLessThan((CAP_S + 2) * 1_000);
+    expect(startedAt - killedAt).toBeLessThan((CAP_S + 2) * 1_000); // [wall-clock]
 
     // Lazy: between the kill and the timer the worker issued nothing at all —
     // no reconnect, no stalled check, no probe.
@@ -203,7 +207,7 @@ describe('an idle worker with a far-future delayed job still starts new work pro
     const againAt = Date.now();
     await queue.add('after-reconnect', {});
     const againStartedAt = await waitFor(() => started.get('after-reconnect'), (CAP_S + 3) * 1_000);
-    expect(againStartedAt - againAt).toBeLessThan(3_000);
+    expect(againStartedAt - againAt).toBeLessThan(3_000); // [wall-clock]
   });
 });
 
@@ -263,13 +267,13 @@ describe('a job enqueued while the LISTEN connection is down (SC-1144)', () => {
     await queue.add('while-suspended', {});
     expect(await wakeClient(url, SECRET).ping()).toBe('woken');
     const startedAt = await waitFor(() => started.get('while-suspended'), (CAP_S + 3) * 1_000);
-    expect(startedAt - addedAt).toBeLessThan(2_500);
+    expect(startedAt - addedAt).toBeLessThan(2_500); // [wall-clock]
 
     await Bun.sleep(500);
     const againAt = Date.now();
     await queue.add('after-wake', {});
     const againStartedAt = await waitFor(() => started.get('after-wake'), (CAP_S + 3) * 1_000);
-    expect(againStartedAt - againAt).toBeLessThan(2_500);
+    expect(againStartedAt - againAt).toBeLessThan(2_500); // [wall-clock]
   });
 
   // The control. Without it the arm above could pass on a NOTIFY that still
@@ -281,7 +285,7 @@ describe('a job enqueued while the LISTEN connection is down (SC-1144)', () => {
     expect(await wakeClient(undefined, SECRET).ping()).toBe('unconfigured');
     const startedAt = await waitFor(() => started.get('while-suspended'), (CAP_S + 3) * 1_000);
     expect(startedAt - addedAt).toBeGreaterThan(3_500);
-    expect(startedAt - addedAt).toBeLessThan((CAP_S + 2) * 1_000);
+    expect(startedAt - addedAt).toBeLessThan((CAP_S + 2) * 1_000); // [wall-clock]
   });
 
   test('a failed wake costs nothing: the job still starts within the timer bound', async () => {
@@ -291,6 +295,6 @@ describe('a job enqueued while the LISTEN connection is down (SC-1144)', () => {
     expect(await wakeClient(url, 'another_secret_of_at_least_32_characters').ping()).toBe('failed');
     const startedAt = await waitFor(() => started.get('while-suspended'), (CAP_S + 3) * 1_000);
     expect(startedAt - addedAt).toBeGreaterThan(3_500);
-    expect(startedAt - addedAt).toBeLessThan((CAP_S + 2) * 1_000);
+    expect(startedAt - addedAt).toBeLessThan((CAP_S + 2) * 1_000); // [wall-clock]
   });
 });
