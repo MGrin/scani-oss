@@ -248,7 +248,11 @@ async function run(argv: readonly string[]): Promise<number> {
     const attempt: Attempt = { stale: null };
     const code = await main(argv, (l) => lines.push(l), attempt);
     const elapsed = Date.now() - started;
-    if (code === EXIT_REFUSED && attempt.stale !== null && elapsed + pollMs <= wait * 1000) {
+    // A non-zero wait always buys a second read: under load one read can take
+    // longer than a short wait, which would otherwise report "no second read"
+    // for a wait that was asked for. The overshoot is one poll, at most 10s.
+    const budget = elapsed + pollMs <= wait * 1000 || (reads === 1 && wait > 0);
+    if (code === EXIT_REFUSED && attempt.stale !== null && budget) {
       await Bun.sleep(pollMs);
       continue;
     }
