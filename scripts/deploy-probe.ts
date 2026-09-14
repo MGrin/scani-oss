@@ -9,6 +9,14 @@
 //   bun scripts/deploy-probe.ts --url https://app.scani.xyz --against https://<prev>.pages.dev
 //   bun scripts/deploy-probe.ts --url https://app.scani.xyz --commit HEAD --simulate-fallback
 //
+// `--commit` waits up to 120s (`--wait <seconds>`, 0 to read once) while the
+// host serves an ANCESTOR of the commit asked about, because a Pages publish
+// is not at the edge the instant wrangler returns (SC-1150). Measured
+// 2026-09-11 on d75a25b3d: scani.xyz named the previous commit, the preview
+// URL already named the new one, and scani.xyz agreed under a minute later.
+// A served commit that is not an ancestor is a different build and is never
+// waited on, and a deploy that never propagates still ends NOT SERVED.
+//
 // Exit codes:
 //   0  every arm that could run agrees the artefact carries what you named
 //   1  an arm RAN and disagrees — a measured absence
@@ -211,11 +219,71 @@ function mark(state: string): string {
   return '??  ';
 }
 
-async function main(argv: readonly string[]): Promise<number> {
+/** Default bound on waiting for the edge, and the ceiling on one poll. */
+const DEFAULT_WAIT_S = 120;
+const MAX_POLL_S = 10;
+
+type Log = (line: string) => void;
+
+/**
+ * One read, with its lines buffered, so a wait prints the reading it ended on
+ * rather than every stale one before it. `stale` is set when identity failed
+ * only because the host serves an ancestor of the commit asked about.
+ */
+interface Attempt {
+  stale: string | null;
+}
+
+async function run(argv: readonly string[]): Promise<number> {
+  const waitFlag = flag(argv, '--wait');
+  const wait = waitFlag === null ? DEFAULT_WAIT_S : Number(waitFlag);
+  if (waitFlag === '' || !Number.isFinite(wait) || wait < 0) {
+    console.error(`--wait takes a number of seconds, 0 or more; got '${waitFlag}'`);
+    return EXIT_UNKNOWN;
+  }
+  const pollMs = Math.max(1, Math.min(MAX_POLL_S, wait / 12)) * 1000;
+  const started = Date.now();
+  for (let reads = 1; ; reads += 1) {
+    const lines: string[] = [];
+    const attempt: Attempt = { stale: null };
+    const code = await main(argv, (l) => lines.push(l), attempt);
+    const elapsed = Date.now() - started;
+    if (code === EXIT_REFUSED && attempt.stale !== null && elapsed + pollMs <= wait * 1000) {
+      await Bun.sleep(pollMs);
+      continue;
+    }
+    const verdict = lines.pop();
+    for (const l of lines) console.log(l);
+    const note = waitNote(reads, Math.round(elapsed / 1000), wait, code, attempt.stale);
+    if (note !== null) console.log(note);
+    if (verdict !== undefined) console.log(verdict);
+    return code;
+  }
+}
+
+function waitNote(
+  reads: number,
+  seconds: number,
+  wait: number,
+  code: number,
+  stale: string | null
+): string | null {
+  if (stale !== null) {
+    return reads === 1
+      ? `  wait: the host serves ${stale.slice(0, 12)}, an ANCESTOR of your commit, and --wait ${wait} allowed no second read — re-run with a wait before reading this as a failed publish`
+      : `  wait: ${reads} reads over ${seconds}s (--wait ${wait}) and the host still serves ${stale.slice(0, 12)}, an ANCESTOR of your commit — the publish did not land, or propagation is slower than ${wait}s. The deployment's preview URL separates the two`;
+  }
+  if (reads === 1) return null;
+  return code === EXIT_OK
+    ? `  wait: ${reads} reads over ${seconds}s before the host served your commit — the earlier reads were the edge catching up, not a failed publish`
+    : `  wait: ${reads} reads over ${seconds}s, and the host stopped serving an ancestor without serving your commit`;
+}
+
+async function main(argv: readonly string[], log: Log, attempt: Attempt): Promise<number> {
   const url = flag(argv, '--url');
   if (url === null || url === '') {
     console.error(
-      'usage: bun scripts/deploy-probe.ts --url <origin> [--commit <sha>] [--signal <literal> --alive <literal> --contrast <origin|file|dir>] [--expect present|absent] [--asset <path>] [--against <origin>] [--simulate-fallback]'
+      'usage: bun scripts/deploy-probe.ts --url <origin> [--commit <sha>] [--signal <literal> --alive <literal> --contrast <origin|file|dir>] [--expect present|absent] [--asset <path>] [--against <origin>] [--wait <seconds>] [--simulate-fallback]'
     );
     return EXIT_UNKNOWN;
   }
@@ -266,8 +334,8 @@ async function main(argv: readonly string[]): Promise<number> {
   const fallbackBody = control.status === 200 ? control.body : null;
   const index = await get(origin);
 
-  console.log(`deploy-probe — ${origin}${tail}`);
-  console.log(
+  log(`deploy-probe — ${origin}${tail}`);
+  log(
     `  control ${INVENTED} — HTTP ${control.status}, ${control.contentType || 'no content-type'}, ${control.body.length} bytes` +
       (fallbackBody === null ? ' (no fallback body, so the byte-identity tell is off)' : '')
   );
@@ -281,10 +349,10 @@ async function main(argv: readonly string[]): Promise<number> {
   // index document is the artefact and identity is read straight off it.
   const pageCommit = index.status === 200 ? extractPageCommit(index.body) : null;
   if (indexRead.kind !== 'index' && pageCommit !== null && commit !== null && commit !== '') {
-    console.log(
+    log(
       `  read ${origin}/ — HTTP ${index.status}, ${index.body.length} bytes, a static page naming commit ${pageCommit.slice(0, 12)}`
     );
-    const arms = [identityArm(commit, pageCommit)];
+    const arms = [identityArm(commit, pageCommit, attempt)];
     if (signal !== null) {
       arms.push({
         arm: `signal '${signal}'`,
@@ -292,7 +360,12 @@ async function main(argv: readonly string[]): Promise<number> {
         detail: `${origin}/ references no /assets/*.js, so there is no bundle to count a code shape over`,
       });
     }
-    return report(arms, `over ${origin}/${noBundle('not read, the deploy has no bundle')}`, tail);
+    return report(
+      log,
+      arms,
+      `over ${origin}/${noBundle('not read, the deploy has no bundle')}`,
+      tail
+    );
   }
 
   // A Fly app serves no document at all. Its `/version.json` names the commit
@@ -310,10 +383,10 @@ async function main(argv: readonly string[]): Promise<number> {
       : await get(`${origin}${VERSION_PATH}`);
     const served = extractVersionCommit(version);
     if (served !== null) {
-      console.log(
+      log(
         `  read ${origin}${VERSION_PATH} — HTTP ${version.status}, ${version.contentType}, a service naming commit ${served.slice(0, 12)} (no index document: ${indexRead.why})`
       );
-      const arms = [identityArm(commit, served)];
+      const arms = [identityArm(commit, served, attempt)];
       if (signal !== null) {
         arms.push({
           arm: `signal '${signal}'`,
@@ -322,24 +395,25 @@ async function main(argv: readonly string[]): Promise<number> {
         });
       }
       return report(
+        log,
         arms,
         `over ${origin}${VERSION_PATH}${noBundle('not read, the deploy has no bundle')}`,
         tail
       );
     }
-    console.log(
+    log(
       `  read ${origin}${VERSION_PATH} — HTTP ${version.status}, ${version.contentType || 'no content-type'}, ${version.body.length} bytes, names no commit`
     );
   }
 
   if (indexRead.kind !== 'index') {
-    console.log(
+    log(
       `  ${mark('fail')} ${origin}/ — ${indexRead.why}` +
         (index.status === 200 && pageCommit === null
           ? ', and no <meta name="scani-commit"> to read identity from instead'
           : '')
     );
-    console.log(
+    log(
       `deploy-probe: UNVERIFIED · exit ${EXIT_UNKNOWN} · the index document could not be read, so no asset could be resolved${tail}`
     );
     return EXIT_UNKNOWN;
@@ -348,7 +422,7 @@ async function main(argv: readonly string[]): Promise<number> {
   const wanted = [...new Set([...indexRead.assets, ...extra])];
   const js = wanted.filter((a) => a.endsWith('.js'));
   if (js.length === 0) {
-    console.log(
+    log(
       `deploy-probe: UNVERIFIED · exit ${EXIT_UNKNOWN} · ${origin}/ references no /assets/*.js, so there is nothing to count over${tail}`
     );
     return EXIT_UNKNOWN;
@@ -370,9 +444,9 @@ async function main(argv: readonly string[]): Promise<number> {
     chunks.push({ path, got, shape: classifyShape(got, fallbackBody) });
   }
 
-  console.log(`  read ${chunks.length} JS artefact(s) referenced by ${origin}/:`);
+  log(`  read ${chunks.length} JS artefact(s) referenced by ${origin}/:`);
   for (const c of chunks) {
-    console.log(
+    log(
       `    ${mark(c.shape.kind === 'real' ? 'pass' : 'fail')} ${c.path} — ` +
         (c.shape.kind === 'real'
           ? `HTTP ${c.got.status}, ${c.got.contentType}, ${c.shape.bytes} bytes`
@@ -382,7 +456,7 @@ async function main(argv: readonly string[]): Promise<number> {
 
   const readable = chunks.flatMap((c) => (c.shape.kind === 'real' ? [c] : []));
   if (readable.length === 0) {
-    console.log(
+    log(
       `deploy-probe: UNVERIFIED · exit ${EXIT_UNKNOWN} · every artefact came back as the host's fallback, so every count over them would read 0 for a reason that has nothing to do with your change${tail}`
     );
     return EXIT_UNKNOWN;
@@ -401,7 +475,7 @@ async function main(argv: readonly string[]): Promise<number> {
       const version = await get(`${origin}${VERSION_PATH}`);
       served = extractVersionCommit(version);
       versionRead = `HTTP ${version.status}, ${version.contentType || 'no content-type'}, ${version.body.length} bytes`;
-      console.log(
+      log(
         `  read ${VERSION_PATH} — ${versionRead}` +
           (served === null ? ', names no commit' : `, names commit ${served.slice(0, 12)}`)
       );
@@ -416,7 +490,7 @@ async function main(argv: readonly string[]): Promise<number> {
         detail: `no release marker in ${readable.length} readable artefact(s) and no commit in ${VERSION_PATH} (${versionRead}) — this host cannot say which commit it serves. NOT a claim that your commit is absent`,
       });
     } else {
-      arms.push(identityArm(commit, served));
+      arms.push(identityArm(commit, served, attempt));
     }
   }
 
@@ -465,7 +539,7 @@ async function main(argv: readonly string[]): Promise<number> {
   }
 
   if (arms.length === 0) {
-    console.log(
+    log(
       `deploy-probe: UNVERIFIED · exit ${EXIT_UNKNOWN} · read ${readable.length} artefact(s) and was given nothing to check them against — pass --commit, or --signal with --alive${tail}`
     );
     return EXIT_UNKNOWN;
@@ -474,40 +548,43 @@ async function main(argv: readonly string[]): Promise<number> {
   // The denominator, on every verdict, naming the artefacts a conclusion is
   // scoped to. A must-be-ABSENT reading is a fact about THESE bytes; a change
   // in a lazily loaded chunk is legitimately absent from all of them.
-  return report(arms, `over ${read.join(' ')}${falsifier}`, tail);
+  return report(log, arms, `over ${read.join(' ')}${falsifier}`, tail);
 }
 
-function identityArm(commit: string, served: string): ArmVerdict {
+function identityArm(commit: string, served: string, attempt: Attempt): ArmVerdict {
   const head = runGit(['rev-parse', commit], process.cwd());
   const want = head.kind === 'ran' ? head.stdout.trim() : commit;
   const verdict = isAncestor(want, served, process.cwd());
+  if (verdict === 'no' && isAncestor(served, want, process.cwd()) === 'yes') {
+    attempt.stale = served;
+  }
   return verdict === 'yes' || verdict === 'no'
     ? identityVerdict(want, served, verdict === 'yes')
     : { arm: 'identity', state: 'unverified', detail: verdict.why };
 }
 
-function report(arms: readonly ArmVerdict[], scope: string, tail: string): number {
-  for (const a of arms) console.log(`  ${mark(a.state)} ${a.arm}: ${a.detail}`);
+function report(log: Log, arms: readonly ArmVerdict[], scope: string, tail: string): number {
+  for (const a of arms) log(`  ${mark(a.state)} ${a.arm}: ${a.detail}`);
   switch (worstOf(arms)) {
     case 'unverified':
-      console.log(
+      log(
         `deploy-probe: UNVERIFIED · exit ${EXIT_UNKNOWN} · ${scope} · an arm could not be read, so this is not evidence either way${tail}`
       );
       return EXIT_UNKNOWN;
     case 'fail':
-      console.log(`deploy-probe: NOT SERVED · exit ${EXIT_REFUSED} · ${scope}${tail}`);
+      log(`deploy-probe: NOT SERVED · exit ${EXIT_REFUSED} · ${scope}${tail}`);
       return EXIT_REFUSED;
     case 'unavailable':
-      console.log(
+      log(
         `deploy-probe: UNVERIFIED · exit ${EXIT_UNKNOWN} · ${scope} · every arm was unavailable on this host — nothing was compared${tail}`
       );
       return EXIT_UNKNOWN;
     default:
-      console.log(`deploy-probe: SERVED · exit ${EXIT_OK} · ${scope}${tail}`);
+      log(`deploy-probe: SERVED · exit ${EXIT_OK} · ${scope}${tail}`);
       return EXIT_OK;
   }
 }
 
 if (import.meta.main) {
-  process.exit(await main(process.argv.slice(2)));
+  process.exit(await run(process.argv.slice(2)));
 }
