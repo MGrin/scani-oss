@@ -28,7 +28,6 @@ export class WalletImportProcessor extends UserJobProcessor<WalletImportJob, unk
       {
         address: data.address,
         displayName: data.label,
-        detectedInstitutionIds: data.detectedInstitutionIds,
       },
       data.userId,
       (message) => ctx.reportStatus(message)

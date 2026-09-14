@@ -35,7 +35,6 @@ const logger = createComponentLogger('use-case:import-wallet');
 export interface ImportWalletInput {
   address: string;
   displayName?: string;
-  detectedInstitutionIds?: string[];
 }
 
 /**
@@ -399,18 +398,6 @@ export class ImportWalletAddressUseCase {
     input: ImportWalletInput,
     userId: string
   ): Promise<{ institutionIds: string[]; failures: ChainProbeFailure[] }> {
-    if (input.detectedInstitutionIds && input.detectedInstitutionIds.length > 0) {
-      logger.info(
-        {
-          userId,
-          detectedInstitutionsCount: input.detectedInstitutionIds.length,
-          institutionIds: input.detectedInstitutionIds,
-        },
-        'Using pre-detected institution IDs (skipping redundant detection)'
-      );
-      return { institutionIds: input.detectedInstitutionIds, failures: [] };
-    }
-
     const { institutionIds, failures } = await this.walletDiscovery.detectWalletInstitutions(
       input.address
     );

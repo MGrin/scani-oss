@@ -7,9 +7,6 @@ export interface WalletImportJob extends UserJobBase {
   chain: string;
   address: string;
   label?: string;
-  // Pre-detected institution IDs supplied by the caller. When present, the
-  // worker skips the redundant detection.
-  detectedInstitutionIds?: string[];
 }
 
 export const walletImportSchema: z.ZodType<WalletImportJob> = z.object({
@@ -18,7 +15,6 @@ export const walletImportSchema: z.ZodType<WalletImportJob> = z.object({
   chain: z.string().min(1),
   address: z.string().min(1),
   label: z.string().optional(),
-  detectedInstitutionIds: z.array(z.string()).optional(),
 });
 
 const JOB_ID_SEP = '_';

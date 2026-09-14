@@ -30,12 +30,6 @@ const ImportWalletSchema = z.object({
   displayName: z.string().max(100, 'Display name is too long').optional(),
   chain: z.string().min(1).default('auto'),
   requestId: z.string().uuid(),
-  // A caller that has already resolved the chains passes the institution
-  // IDs here so the worker skips re-detection — avoids a second 30+ second
-  // chain-by-chain RPC sweep on the worker side. Nothing in this tree fills
-  // it: the endpoint that produced these ids was deleted as never-called
-  // surface (SC-1152).
-  detectedInstitutionIds: z.array(z.string().uuid()).optional(),
 });
 
 export const walletRouter = router({
@@ -76,7 +70,6 @@ export const walletRouter = router({
         chain: input.chain,
         address: input.address,
         label: input.displayName,
-        detectedInstitutionIds: input.detectedInstitutionIds,
       });
       return { jobId };
     }),
