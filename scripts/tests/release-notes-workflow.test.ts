@@ -361,8 +361,8 @@ describe('SC-1029 — a run that compared nothing does not render as a pass', ()
    * nothing, and nothing having been considered at all — so a gate keyed on the
    * word cannot separate them. A job or step RESULT is the same mistake in
    * another spelling: `needs: target` already implies the resolver succeeded,
-   * and `deploy-fly.yaml`'s `upstream-gate` reads the one discriminating input
-   * and no `needs.`/`steps.` value for exactly this reason (SC-726).
+   * so the gate reads the one discriminating input and no `needs.`/`steps.`
+   * value (SC-726).
    *
    * Pinned as an EXACT string rather than a substring: a widening reads as an
    * addition, and a substring assertion survives every addition.
