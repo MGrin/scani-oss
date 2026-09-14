@@ -184,8 +184,14 @@ export function RecordPicker({
             : null,
           canCreate && createLabel ? createLabel(trimmed) : null,
         ]
-          .filter(Boolean)
-          .join('. ')
+          .filter((part): part is string => Boolean(part))
+          // A caller's label may already end its sentence ("Nothing by that
+          // name yet."), and a plain join read that as "yet.." aloud.
+          .reduce(
+            (spoken, part) =>
+              spoken ? `${spoken}${/[.!?…。！？]$/.test(spoken) ? '' : '.'} ${part}` : part,
+            ''
+          )
       : '';
 
   return (

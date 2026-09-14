@@ -145,6 +145,14 @@ describe('the picker tells a screen reader what appeared', () => {
     expect(announced({})).toBe('No institution by that name. Add "Kraken"');
   });
 
+  test('a label that already ends its sentence is not given a second full stop', () => {
+    // Found in the browser, not by the case above: the real empty label is
+    // "Nothing by that name yet." and the first join announced "yet.." (SC-999).
+    expect(announced({ emptyLabel: 'Nothing by that name yet.' })).toBe(
+      'Nothing by that name yet. Add "Kraken"'
+    );
+  });
+
   test('matches are counted, and the create row still follows them', () => {
     expect(announced({ options: options(2) })).toBe('2 matches. Add "Kraken"');
     expect(announced({ options: options(1), createLabel: undefined, onCreate: undefined })).toBe(
