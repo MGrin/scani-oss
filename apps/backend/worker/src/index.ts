@@ -7,6 +7,7 @@ const env = loadEnv();
 import { loadCloudClientConfig } from '@scani/cloud-client';
 import { DataProviderHealthMonitor } from '@scani/cloud-client/health-monitor';
 import { probeDataProvider } from '@scani/cloud-client/health-probe';
+import { servedVersion } from '@scani/config';
 // Import DI-registered modules so Container.get() resolves the @scani/domain
 // services + repositories the processors inject.
 import '@scani/domain/repositories';
@@ -422,6 +423,7 @@ async function main(): Promise<void> {
         hostname: '::',
         secret: env.JOBS_HMAC_SECRET,
         onWake: () => workerClient.wake(),
+        version: servedVersion(Bun.env.SERVICE_VERSION),
       });
       logger.info({ port: env.WORKER_WAKE_PORT }, '⏰ Wake endpoint listening');
     } catch (err) {

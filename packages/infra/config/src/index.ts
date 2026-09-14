@@ -209,3 +209,21 @@ export const DEMO_MODE_ENV_VAR = 'SCANI_DEMO_MODE';
 export function isDemoModeRequested(env: Record<string, string | undefined>): boolean {
   return env[DEMO_MODE_ENV_VAR] === '1';
 }
+
+/**
+ * What a Fly app's `GET /version.json` answers: the commit it was deployed
+ * from, in the payload shape every Pages site already serves (SC-964), so
+ * `scripts/deploy-probe.ts --commit` and the deploy's served-commit reads parse
+ * one shape everywhere (SC-1182).
+ *
+ * `commit` is present only when `SERVICE_VERSION` is a full 40-hex sha, which
+ * is what `deploy-local.sh` stages. Anything else — unset in dev, `unknown`, a
+ * short sha — names no commit rather than a guess, and a reader reports that
+ * host as unable to say, never as serving an old build. Nothing else from the
+ * environment is echoed.
+ */
+export function servedVersion(serviceVersion: string | undefined): { commit?: string } {
+  return serviceVersion !== undefined && /^[0-9a-f]{40}$/.test(serviceVersion)
+    ? { commit: serviceVersion }
+    : {};
+}

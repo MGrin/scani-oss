@@ -3,6 +3,7 @@ import {
   serveWorkerWake,
   signWorkerWake,
   verifyWorkerWake,
+  WORKER_VERSION_PATH,
   WORKER_WAKE_PATH,
   WORKER_WAKE_TIMEOUT_MS,
   WorkerWakeClient,
@@ -25,8 +26,16 @@ afterEach(() => {
   for (const s of servers.splice(0)) s.stop();
 });
 
-function serve(onWake: () => void) {
-  const server = serveWorkerWake({ port: 0, hostname: '127.0.0.1', secret: SECRET, onWake });
+const COMMIT = 'c'.repeat(40);
+
+function serve(onWake: () => void, version: { commit?: string } = { commit: COMMIT }) {
+  const server = serveWorkerWake({
+    port: 0,
+    hostname: '127.0.0.1',
+    secret: SECRET,
+    onWake,
+    version,
+  });
   servers.push(server);
   return server;
 }
@@ -77,6 +86,35 @@ describe('the wake endpoint', () => {
       headers: signWorkerWake(SECRET, Date.now()),
     });
     expect(res.status).toBe(404);
+  });
+});
+
+describe('the commit the worker serves (SC-1182)', () => {
+  test('GET /version.json names the deployed commit, unsigned, and wakes nothing', async () => {
+    let wakes = 0;
+    const server = serve(() => wakes++);
+    const res = await fetch(`http://127.0.0.1:${server.port}${WORKER_VERSION_PATH}`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toContain('application/json');
+    expect(await res.json()).toEqual({ commit: COMMIT });
+    expect(wakes).toBe(0);
+  });
+
+  test('a worker with no sha serves an empty payload rather than a guess', async () => {
+    const server = serve(() => undefined, {});
+    const res = await fetch(`http://127.0.0.1:${server.port}${WORKER_VERSION_PATH}`);
+    expect(await res.json()).toEqual({});
+  });
+
+  test('only GET reads it — a POST there is not the wake route either', async () => {
+    let wakes = 0;
+    const server = serve(() => wakes++);
+    const res = await fetch(`http://127.0.0.1:${server.port}${WORKER_VERSION_PATH}`, {
+      method: 'POST',
+      headers: signWorkerWake(SECRET, Date.now()),
+    });
+    expect(res.status).toBe(404);
+    expect(wakes).toBe(0);
   });
 });
 

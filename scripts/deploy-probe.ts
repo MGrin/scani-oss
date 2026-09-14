@@ -46,7 +46,8 @@
 //              ancestry answers "is my change in there" outright. Read from the
 //              bundle's Sentry release where the deploy passes a DSN, else from
 //              the site's `/version.json` (every Vite site, SC-964), and from
-//              `<meta name="scani-commit">` on static pages (docs, SC-995);
+//              `<meta name="scani-commit">` on static pages (docs, SC-995),
+//              and from `/version.json` on a Fly app with no index (SC-1182);
 //              UNAVAILABLE, not absent, where none of those names a commit.
 //              It is a fact about ONE ARTEFACT: where a pipeline
 //              rebuilds by path, a change that ships without touching this
@@ -220,6 +221,39 @@ async function main(argv: readonly string[]): Promise<number> {
       });
     }
     return report(arms, `over ${origin}/`, tail);
+  }
+
+  // A Fly app serves no document at all. Its `/version.json` names the commit
+  // the machine was deployed from (SC-1182), in the Pages payload shape, so an
+  // api host answers `--commit` the way a Vite site does. Tried only where no
+  // index could be read, so it never replaces the bundle-based arms.
+  if (indexRead.kind !== 'index' && pageCommit === null && commit !== null && commit !== '') {
+    const version = simulated
+      ? {
+          url: `${origin}${VERSION_PATH}`,
+          status: 200,
+          contentType: 'text/html; charset=utf-8',
+          body: fallbackBody ?? '<!doctype html>',
+        }
+      : await get(`${origin}${VERSION_PATH}`);
+    const served = extractVersionCommit(version);
+    if (served !== null) {
+      console.log(
+        `  read ${origin}${VERSION_PATH} — HTTP ${version.status}, ${version.contentType}, a service naming commit ${served.slice(0, 12)} (no index document: ${indexRead.why})`
+      );
+      const arms = [identityArm(commit, served)];
+      if (signal !== null) {
+        arms.push({
+          arm: `signal '${signal}'`,
+          state: 'unverified',
+          detail: `${origin} is a service with no bundle, so there is no code shape to count`,
+        });
+      }
+      return report(arms, `over ${origin}${VERSION_PATH}`, tail);
+    }
+    console.log(
+      `  read ${origin}${VERSION_PATH} — HTTP ${version.status}, ${version.contentType || 'no content-type'}, ${version.body.length} bytes, names no commit`
+    );
   }
 
   if (indexRead.kind !== 'index') {

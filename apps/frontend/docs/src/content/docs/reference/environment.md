@@ -122,7 +122,7 @@ a self-host deployment can skip it entirely.
 | `LOG_RESPONSE_BODIES` | package | Log outbound HTTP response bodies. Dev only. |
 | `LOG_WEBSOCKET_MESSAGES` | package | Log WebSocket frames. Default on. |
 | `SERVICE_NAME` | app | Set automatically by compose (`api`, `worker`, `data-provider`). |
-| `SERVICE_VERSION` | app | Set automatically by the build; surfaces in log records. |
+| `SERVICE_VERSION` | app | Set automatically by the build; surfaces in log records. When it is a full 40-character commit sha, the api, the worker's wake port and the data-provider also answer `GET /version.json` with `{"commit": "<sha>"}`; anything else answers `{}`. |
 | `AI_DEFAULT_PROVIDER` | app (worker) | Optional. Which AI provider the worker picks first. Defaults to `openai`, which is also the only AI provider any backend service registers. |
 
 ## Provider keys (read by the api and worker)

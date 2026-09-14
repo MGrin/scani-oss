@@ -10,7 +10,7 @@ const env = loadEnv();
 
 import { cors } from '@elysiajs/cors';
 import { trpc } from '@elysiajs/trpc';
-import { getNodeEnv, isNodeEnvProduction } from '@scani/config';
+import { getNodeEnv, isNodeEnvProduction, servedVersion } from '@scani/config';
 import { createTimer, logger, sanitizeUrl } from '@scani/logging';
 import { flushSentry, initSentry, captureException as sentryCapture } from '@scani/logging/sentry';
 import { buildProviderRegistry } from '@scani/providers/core/boot';
@@ -364,6 +364,10 @@ const app = new Elysia()
     set.headers['Content-Type'] = 'application/json';
     return;
   })
+  // The commit this machine was deployed from, in the Pages `/version.json`
+  // shape, so the deploy reads what is SERVED rather than a per-laptop record
+  // (SC-1182). Only the sha: nothing else from the environment.
+  .get('/version.json', () => servedVersion(Bun.env.SERVICE_VERSION))
   // Readiness — only 200 once boot is fully complete (provider registry
   // built, cloud DB pool open if enabled, Better-Auth wired if enabled).
   // Fly's machine check probes this so traffic isn't routed to a freshly

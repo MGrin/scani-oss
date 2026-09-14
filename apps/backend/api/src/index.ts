@@ -14,7 +14,7 @@ import { trpc } from '@elysiajs/trpc';
 import { loadCloudClientConfig } from '@scani/cloud-client';
 import { DataProviderHealthMonitor } from '@scani/cloud-client/health-monitor';
 import { probeDataProvider } from '@scani/cloud-client/health-probe';
-import { getNodeEnv, isNodeEnvProduction } from '@scani/config';
+import { getNodeEnv, isNodeEnvProduction, servedVersion } from '@scani/config';
 import { assertDemoOnlyDatabase } from '@scani/domain/demo';
 import { createComponentLogger, createTimer, logger, sanitizeUrl } from '@scani/logging';
 import { flushSentry, initSentry, captureException as sentryCapture } from '@scani/logging/sentry';
@@ -716,6 +716,10 @@ app
     set.headers['Content-Type'] = 'application/json';
     return;
   })
+  // The commit this machine was deployed from, in the Pages `/version.json`
+  // shape, so the deploy reads what is SERVED rather than a per-laptop record
+  // (SC-1182). Only the sha: nothing else from the environment.
+  .get('/version.json', () => servedVersion(Bun.env.SERVICE_VERSION))
   .get('/health/db', async ({ set }: { set: { status: number } }) => {
     try {
       const startTime = Date.now();

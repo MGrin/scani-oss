@@ -245,6 +245,7 @@ describe('a job enqueued while the LISTEN connection is down (SC-1144)', () => {
       hostname: '127.0.0.1',
       secret: SECRET,
       onWake: () => interruptIdleWait(worker),
+      version: {},
     });
     open.push({ close: async () => server.stop() });
     return { queue, worker, started, url: `http://127.0.0.1:${server.port}` };

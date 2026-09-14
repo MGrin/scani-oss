@@ -70,7 +70,7 @@ default is auto-on in development, auto-off in production.
 | Var | Default | Purpose |
 |---|---|---|
 | `SERVICE_NAME` | `scani` | Goes into every log line's `service` field. Each app's `docker-compose.yml` sets this so a shared log stream can tell `api` / `worker` / `data-provider` rows apart. |
-| `SERVICE_VERSION` | `unknown` | Goes into every log line's `version` field. The deploy workflow stages `${GITHUB_SHA}` per Fly app. |
+| `SERVICE_VERSION` | `unknown` | Goes into every log line's `version` field. The deploy workflow stages `${GITHUB_SHA}` per Fly app. When it is a full 40-character commit sha, the api, the data-provider and the worker's wake port also serve it at `GET /version.json`. |
 | `LOG_LEVEL` | `debug` (dev) / `info` (prod) | Standard pino levels. |
 | `LOG_PRETTY` | auto by `NODE_ENV` | Human-readable single-line vs JSON. |
 | `LOG_COLORIZE` | on in dev | ANSI colours in pretty mode. |

@@ -128,15 +128,27 @@ export interface WorkerWakeServerOptions {
   hostname: string;
   secret: string;
   onWake: () => void;
+  /**
+   * What `GET /version.json` answers — the commit this machine was deployed
+   * from, built by `servedVersion` (SC-1182). The worker has no public HTTP
+   * service, so this port is the one place the deploy can read it, over
+   * `flyctl proxy`. Unsigned on purpose: it carries a sha and nothing else.
+   */
+  version: { commit?: string };
 }
 
-/** The worker's side: one signed route, nothing else. */
+export const WORKER_VERSION_PATH = '/version.json';
+
+/** The worker's side: one signed route, plus the unsigned commit it serves. */
 export function serveWorkerWake(opts: WorkerWakeServerOptions): { port: number; stop(): void } {
   const server = Bun.serve({
     port: opts.port,
     hostname: opts.hostname,
     fetch(req) {
       const { pathname } = new URL(req.url);
+      if (req.method === 'GET' && pathname === WORKER_VERSION_PATH) {
+        return Response.json(opts.version);
+      }
       if (req.method !== 'POST' || pathname !== WORKER_WAKE_PATH) {
         return new Response(null, { status: 404 });
       }
