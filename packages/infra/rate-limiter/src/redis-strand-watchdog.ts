@@ -68,10 +68,9 @@ import type { RedisReachability } from './redis-reachability';
  * How long a strand must persist before it is somebody's problem.
  *
  * It is the repair path's own deadline, not a guess. `scripts/recycle-redis-
- * consumers.sh` is the only thing that fixes this, and the "Recycle Redis
- * consumers" step in `.github/workflows/deploy-fly.yaml` runs it under
- * `timeout-minutes: 10` — so ten minutes is precisely the point at which the
- * deploy path itself declares the repair failed. Before that a repair may
+ * consumers.sh` is the only thing that fixes this, and the deploy workflow
+ * that first ran it gave that step `timeout-minutes: 10` — so ten minutes is
+ * the point at which the deploy path itself declared the repair failed. Before that a repair may
  * still be in flight; after it, by CI's own definition, nobody is coming.
  *
  * The arithmetic agrees. Worst case per consumer machine is a restart, a

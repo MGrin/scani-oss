@@ -165,9 +165,8 @@ agree on, which is why four migrations collided in one day
 - **Apply order**: the sorted filenames. `0000`–`0050` keep their
   four-digit names permanently, and a 14-digit stamp sorts after all
   of them.
-- **Production migrate**: `bun run db:migrate` (used by the deploy
-  workflow before the api/worker boot — see
-  `.github/workflows/deploy-fly.yaml`). It refuses, naming the
+- **Production migrate**: `bun run db:migrate` (run by the deploy before
+  the api/worker boot). It refuses, naming the
   migration, when an applied file has been edited, renamed, or
   deleted.
 - **Recovery for a database with no record of its own migrations**:
