@@ -407,8 +407,25 @@ export function falsifierClause(contrast: ContrastReading | null): string {
  * pipeline's path filters, which are specific to one repository's topology and
  * are not something a tool that takes an arbitrary URL can know.
  */
-export function identityVerdict(want: string, served: string, contained: boolean): ArmVerdict {
+export function identityVerdict(
+  want: string,
+  served: string,
+  contained: boolean,
+  exact = false
+): ArmVerdict {
   const pair = `${served.slice(0, 12)} / ${want.slice(0, 12)}`;
+  // `--exact` (SC-1185): a rollback replaces a NEWER build, which contains the
+  // target, so containment reads SERVED over a rollback that never landed.
+  if (exact && contained && served !== want) {
+    return {
+      arm: 'identity (exact)',
+      state: 'fail',
+      detail: `this artefact was built from ${served.slice(0, 12)}, which CONTAINS ${want.slice(0, 12)} but is not it. --exact asks for that commit and no other: a rollback to ${want.slice(0, 12)} that has not landed reads exactly like this`,
+    };
+  }
+  if (exact && contained) {
+    return { arm: 'identity (exact)', state: 'pass', detail: `served commit ${pair} — exactly it` };
+  }
   return contained
     ? { arm: 'identity', state: 'pass', detail: `served commit ${pair} — contained` }
     : {
