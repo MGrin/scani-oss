@@ -5,7 +5,7 @@
 // Usage:
 //   bun scripts/deploy-probe.ts --url https://app.scani.xyz --commit "$(git rev-parse HEAD)"
 //   bun scripts/deploy-probe.ts --url https://app.scani.xyz \
-//     --signal 'typeCode==="fiat"' --alive 'typeCode'
+//     --signal 'typeCode==="fiat"' --alive 'typeCode' --contrast https://<prev>.pages.dev
 //   bun scripts/deploy-probe.ts --url https://app.scani.xyz --against https://<prev>.pages.dev
 //   bun scripts/deploy-probe.ts --url https://app.scani.xyz --commit HEAD --simulate-fallback
 //
@@ -60,6 +60,11 @@
 //              change creates, not the tokens its diff adds — minifiers
 //              preserve property names and string literals, so `typeCode==="fiat"`
 //              is new even though neither `typeCode` nor `fiat` is.
+//              A pass also needs `--contrast`: an origin, a file or a build
+//              directory where the signal reads the OPPOSITE, because `--alive`
+//              proves the read happened and never that the signal could fail
+//              (SC-1172). Without one the arm is UNVERIFIED and the verdict line
+//              says `signal falsifier NOT TAKEN`.
 //   difference `--against`. Reports which asset hashes MOVED and which HELD
 //              between two deployments, so you can name an artefact your change
 //              could not have touched instead of trusting that hashes mean
@@ -72,9 +77,13 @@
 // a fact about the artefacts named on the verdict line and not about the app.
 // Every verdict prints which URLs it read, for that reason.
 
+import { readdirSync, readFileSync, statSync } from 'node:fs';
+import path from 'node:path';
+
 import { EXIT_OK, EXIT_REFUSED, EXIT_UNKNOWN, runGit } from './lib/check-verdict.ts';
 import {
   type ArmVerdict,
+  type ContrastReading,
   classifyIndex,
   classifyShape,
   countLiteral,
@@ -83,6 +92,7 @@ import {
   extractRelease,
   extractVersionCommit,
   type Fetched,
+  falsifierClause,
   identityVerdict,
   manifestDiff,
   type ShapeVerdict,
@@ -138,6 +148,57 @@ function isAncestor(a: string, b: string, cwd: string): 'yes' | 'no' | { why: st
   return { why: `git merge-base exited ${proc.exitCode}${said === '' ? '' : `: ${said}`}` };
 }
 
+/**
+ * Every JS body a contrast source offers: a deployed origin read the way the
+ * probe reads its own target (index, entry chunks, the shape arm per chunk), or
+ * a local file, or every `*.js` under a local build directory.
+ */
+async function readContrast(
+  source: string,
+  signal: string,
+  alive: string
+): Promise<ContrastReading> {
+  const counted = (bodies: readonly string[]): ContrastReading => {
+    const corpus = bodies.join('\n');
+    return {
+      kind: 'read',
+      source,
+      signalCount: countLiteral(corpus, signal),
+      aliveCount: countLiteral(corpus, alive),
+    };
+  };
+  if (/^https?:\/\//.test(source)) {
+    const origin = source.replace(/\/+$/, '');
+    const control = await get(`${origin}${INVENTED}`);
+    const index = classifyIndex(await get(origin));
+    if (index.kind !== 'index') return { kind: 'unreadable', source, why: index.why };
+    const bodies: string[] = [];
+    for (const asset of index.assets.filter((a) => a.endsWith('.js'))) {
+      const got = await get(`${origin}${asset}`);
+      if (classifyShape(got, control.status === 200 ? control.body : null).kind === 'real') {
+        bodies.push(got.body);
+      }
+    }
+    return bodies.length === 0
+      ? { kind: 'unreadable', source, why: 'no referenced JS artefact came back as JavaScript' }
+      : counted(bodies);
+  }
+  let files: string[];
+  try {
+    files = statSync(source).isDirectory()
+      ? readdirSync(source, { recursive: true, encoding: 'utf8' })
+          .filter((f) => f.endsWith('.js'))
+          .map((f) => path.join(source, f))
+      : [source];
+  } catch (e) {
+    return { kind: 'unreadable', source, why: (e as Error).message };
+  }
+  const bodies = files.map((f) => readFileSync(f, 'utf8')).filter((b) => b !== '');
+  return bodies.length === 0
+    ? { kind: 'unreadable', source, why: 'no non-empty .js file there' }
+    : counted(bodies);
+}
+
 function flag(argv: readonly string[], name: string): string | null {
   const at = argv.indexOf(name);
   return at === -1 ? null : (argv[at + 1] ?? '');
@@ -154,7 +215,7 @@ async function main(argv: readonly string[]): Promise<number> {
   const url = flag(argv, '--url');
   if (url === null || url === '') {
     console.error(
-      'usage: bun scripts/deploy-probe.ts --url <origin> [--commit <sha>] [--signal <literal> --alive <substring>] [--expect present|absent] [--asset <path>] [--against <origin>] [--simulate-fallback]'
+      'usage: bun scripts/deploy-probe.ts --url <origin> [--commit <sha>] [--signal <literal> --alive <literal> --contrast <origin|file|dir>] [--expect present|absent] [--asset <path>] [--against <origin>] [--simulate-fallback]'
     );
     return EXIT_UNKNOWN;
   }
@@ -163,6 +224,7 @@ async function main(argv: readonly string[]): Promise<number> {
   const signal = flag(argv, '--signal');
   const alive = flag(argv, '--alive');
   const against = flag(argv, '--against');
+  const contrastSource = flag(argv, '--contrast');
   const expect = (flag(argv, '--expect') ?? 'present') as Expectation;
   const extra = argv
     .flatMap((a, i) => (a === '--asset' ? [argv[i + 1] ?? ''] : []))
@@ -185,10 +247,20 @@ async function main(argv: readonly string[]): Promise<number> {
   // script exists for — so the tool must not be able to produce one.
   if (signal !== null && (alive === null || alive === '')) {
     console.error(
-      `--signal needs --alive: a substring of the signal, counted on the SAME fetch. Without it a 0 cannot be told from a read that never happened.`
+      `--signal needs --alive: a substring of the signal (or, beside --contrast, any token), counted on the SAME fetch. Without it a 0 cannot be told from a read that never happened.`
     );
     return EXIT_UNKNOWN;
   }
+  if (contrastSource !== null && (signal === null || contrastSource === '')) {
+    console.error(
+      '--contrast takes an origin, file or directory, and only beside --signal: it is where that signal must read the opposite of --expect.'
+    );
+    return EXIT_UNKNOWN;
+  }
+  const noBundle = (why: string): string =>
+    signal === null
+      ? ''
+      : ` · ${falsifierClause(contrastSource === null ? null : { kind: 'unreadable', source: contrastSource, why })}`;
 
   const control = await get(`${origin}${INVENTED}`);
   const fallbackBody = control.status === 200 ? control.body : null;
@@ -220,7 +292,7 @@ async function main(argv: readonly string[]): Promise<number> {
         detail: `${origin}/ references no /assets/*.js, so there is no bundle to count a code shape over`,
       });
     }
-    return report(arms, `over ${origin}/`, tail);
+    return report(arms, `over ${origin}/${noBundle('not read, the deploy has no bundle')}`, tail);
   }
 
   // A Fly app serves no document at all. Its `/version.json` names the commit
@@ -249,7 +321,11 @@ async function main(argv: readonly string[]): Promise<number> {
           detail: `${origin} is a service with no bundle, so there is no code shape to count`,
         });
       }
-      return report(arms, `over ${origin}${VERSION_PATH}`, tail);
+      return report(
+        arms,
+        `over ${origin}${VERSION_PATH}${noBundle('not read, the deploy has no bundle')}`,
+        tail
+      );
     }
     console.log(
       `  read ${origin}${VERSION_PATH} — HTTP ${version.status}, ${version.contentType || 'no content-type'}, ${version.body.length} bytes, names no commit`
@@ -344,7 +420,10 @@ async function main(argv: readonly string[]): Promise<number> {
     }
   }
 
+  let falsifier = '';
   if (signal !== null && alive !== null) {
+    const contrast =
+      contrastSource === null ? null : await readContrast(contrastSource, signal, alive);
     arms.push(
       signalVerdict({
         signal,
@@ -352,8 +431,10 @@ async function main(argv: readonly string[]): Promise<number> {
         alive,
         aliveCount: countLiteral(corpus, alive),
         expect,
+        contrast,
       })
     );
+    falsifier = ` · ${falsifierClause(contrast)}`;
   }
 
   if (against !== null && against !== '') {
@@ -393,7 +474,7 @@ async function main(argv: readonly string[]): Promise<number> {
   // The denominator, on every verdict, naming the artefacts a conclusion is
   // scoped to. A must-be-ABSENT reading is a fact about THESE bytes; a change
   // in a lazily loaded chunk is legitimately absent from all of them.
-  return report(arms, `over ${read.join(' ')}`, tail);
+  return report(arms, `over ${read.join(' ')}${falsifier}`, tail);
 }
 
 function identityArm(commit: string, served: string): ArmVerdict {

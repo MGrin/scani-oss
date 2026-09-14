@@ -231,12 +231,29 @@ export function countLiteral(haystack: string, needle: string): number {
 
 export type Expectation = 'present' | 'absent';
 
+/**
+ * The same signal and alive literals counted over a SECOND artefact, where the
+ * signal must read the opposite of what `--expect` asks of the deploy (SC-1172).
+ *
+ * `null` means no contrast was supplied, and that is a reading of its own rather
+ * than a default: see {@link signalVerdict}.
+ */
+export type ContrastReading =
+  | {
+      readonly kind: 'read';
+      readonly source: string;
+      readonly signalCount: number;
+      readonly aliveCount: number;
+    }
+  | { readonly kind: 'unreadable'; readonly source: string; readonly why: string };
+
 export interface SignalReading {
   readonly signal: string;
   readonly signalCount: number;
   readonly alive: string;
   readonly aliveCount: number;
   readonly expect: Expectation;
+  readonly contrast: ContrastReading | null;
 }
 
 export type ArmState = 'pass' | 'fail' | 'unverified' | 'unavailable';
@@ -261,17 +278,35 @@ export interface ArmVerdict {
  * The `2` on deploy 2 is what turns that `0` into an ABSENCE rather than a
  * possibly-dead read.
  *
- * `alive` must be a substring of `signal`. An unrelated token would go on
- * reading non-zero after the signal moved, which is an alive arm that cannot
- * fail — the same defect this function exists to prevent, one level in.
+ * Without a contrast, `alive` must be a substring of `signal`. An unrelated
+ * token would go on reading non-zero after the signal moved, which is an alive
+ * arm that cannot fail — the same defect this function exists to prevent, one
+ * level in. With a contrast the signal's power to move is shown directly, so
+ * alive only has to prove each read happened, and an independent token may do
+ * that: a key prefix shares no substring that survives rotating the key.
+ *
+ * ## A PASS needs a contrast, because alive proves the READ and never the SIGNAL
+ *
+ * Measured 2026-09-12 on the SC-1168 landing deploy, shipped with analytics
+ * disabled: the signal was the analytics ingest HOST, alive its vendor name,
+ * and it read SERVED with alive=2 while the project key read 0. The host is a
+ * module-level constant, emitted whether or not the config resolved, so the
+ * signal was a constant and the green said nothing about the question. Nothing about one fetch can tell a conditional token from an
+ * unconditional one. A second artefact where the same token reads the OPPOSITE
+ * — the previous deployment, or a local build of the unconfigured state — can,
+ * so a pass without one is UNVERIFIED and says the falsifier was NOT TAKEN.
+ *
+ * A FAIL needs none: a token absent where it was expected is a measured
+ * absence however little it could discriminate, and the direction of that
+ * error is a false alarm, never a false green.
  */
 export function signalVerdict(r: SignalReading): ArmVerdict {
   const arm = `signal '${r.signal}' (expect ${r.expect})`;
-  if (!r.signal.includes(r.alive)) {
+  if (!r.signal.includes(r.alive) && r.contrast === null) {
     return {
       arm,
       state: 'unverified',
-      detail: `alive literal '${r.alive}' is not a substring of the signal, so it can stay non-zero after the signal moves and could never report a dead read`,
+      detail: `alive literal '${r.alive}' is not a substring of the signal, so it can stay non-zero after the signal moves and could never report a dead read. An independent alive token is accepted only beside --contrast, which shows the signal moving`,
     };
   }
   if (r.aliveCount === 0) {
@@ -282,18 +317,68 @@ export function signalVerdict(r: SignalReading): ArmVerdict {
     };
   }
   const counts = `signal=${r.signalCount} alive=${r.aliveCount}`;
-  if (r.expect === 'present') {
-    return r.signalCount > 0
-      ? { arm, state: 'pass', detail: `${counts} — in the served bytes` }
-      : {
-          arm,
-          state: 'fail',
-          detail: `${counts} — a MEASURED absence: the read happened and the shape is not there`,
-        };
+  const found = r.signalCount > 0;
+  if (found !== (r.expect === 'present')) {
+    return {
+      arm,
+      state: 'fail',
+      detail:
+        r.expect === 'present'
+          ? `${counts} — a MEASURED absence: the read happened and the shape is not there`
+          : `${counts} — expected absent and it is present`,
+    };
   }
-  return r.signalCount === 0
-    ? { arm, state: 'pass', detail: `${counts} — a MEASURED absence` }
-    : { arm, state: 'fail', detail: `${counts} — expected absent and it is present` };
+  const measured = r.expect === 'present' ? 'in the served bytes' : 'a MEASURED absence';
+  const opposite = r.expect === 'present' ? '0' : 'non-zero';
+  const c = r.contrast;
+  if (c === null) {
+    return {
+      arm,
+      state: 'unverified',
+      detail: `${counts} — ${measured}, but the falsifier was NOT TAKEN: nothing shows this signal can read ${opposite}, and a token the build emits unconditionally reads exactly this. Pass --contrast <origin|file|dir> where it must read ${opposite}`,
+    };
+  }
+  if (c.kind === 'unreadable') {
+    return {
+      arm,
+      state: 'unverified',
+      detail: `${counts} — ${measured}, but the contrast ${c.source} could not be read (${c.why}), so the signal was never shown able to read ${opposite}`,
+    };
+  }
+  const contrastCounts = `signal=${c.signalCount} alive=${c.aliveCount}`;
+  if (c.aliveCount === 0) {
+    return {
+      arm,
+      state: 'unverified',
+      detail: `${counts} — ${measured}, but alive counted 0 on the contrast ${c.source} (${contrastCounts}), so that read is VOID and its signal count says nothing`,
+    };
+  }
+  if (c.signalCount > 0 === found) {
+    return {
+      arm,
+      state: 'unverified',
+      detail: `${counts} — ${measured}, and the contrast ${c.source} reads the same way (${contrastCounts}). The signal did not move between the two, so it cannot separate them: this is a constant, not evidence`,
+    };
+  }
+  return {
+    arm,
+    state: 'pass',
+    detail: `${counts} — ${measured}; contrast ${c.source} ${contrastCounts}, so the signal is shown able to read ${opposite}`,
+  };
+}
+
+/**
+ * The clause every verdict line carries when `--signal` was asked for, so a
+ * quoted verdict says whether a falsifier was ever taken (SC-1172) — the same
+ * reasoning as `gate-db`'s `concurrency NOT SAMPLED`, where the absence of a
+ * reading is printed rather than left to look like a zero.
+ */
+export function falsifierClause(contrast: ContrastReading | null): string {
+  if (contrast === null) return 'signal falsifier NOT TAKEN — no --contrast';
+  if (contrast.kind === 'unreadable') {
+    return `signal falsifier UNREADABLE — ${contrast.source}: ${contrast.why}`;
+  }
+  return `signal falsifier ${contrast.source} signal=${contrast.signalCount} alive=${contrast.aliveCount}`;
 }
 
 /**
