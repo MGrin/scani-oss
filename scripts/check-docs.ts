@@ -31,9 +31,8 @@
 // `main` unnoticed, one of them a value a user is shown that SC-258 says must
 // be in the glossary before it is translated. It is now in AGENTS.md's
 // before-pushing list, which is the gate that actually runs on this machine,
-// and in `ci.yml` as `validate-docs`, which runs only while a billing block is
-// not keeping the private repo's Actions from starting — and that flaps
-// (SC-128, SC-414, SC-1023), so the local list is the copy to rely on.
+// and in CI as `validate-docs`. The local list is still the copy to rely on:
+// it runs before a push rather than after one.
 //
 // Only errors fail. Warnings exit 0 and stay warnings on purpose: the
 // env-coverage check has too low a signal-to-noise ratio to block a PR, and a
@@ -815,12 +814,12 @@ function checkMarkdownPlacement(): void {
 // Check 11 — every .mdx page compiles
 // =============================================================================
 //
-// Nothing else a developer runs compiles MDX (SC-469). The checks above read
+// Before SC-469, nothing a developer ran compiled MDX. The checks above read
 // Markdown as text, `bun run test` does not build the site, and the only
-// compiler behind `apps/frontend/docs/src/content/**/*.mdx` is the Starlight
-// build in the OSS deploy workflow. Actions billing on the private repo flaps
-// and has blocked for most of that repo's history, so an MDX syntax error
-// there lands on `main` and is found by the docs deploy, after merge.
+// compiler behind `apps/frontend/docs/src/content/**/*.mdx` was the Starlight
+// build in the docs deploy workflow — so an MDX syntax error landed on `main`
+// and was found after merge. This check compiles every page wherever
+// `docs:check` runs.
 //
 // SC-453 is the measured instance: two Markdown autolinks,
 //
@@ -1292,6 +1291,32 @@ function checkDocsSiteRepoLinks(): void {
   }
 }
 
+// =============================================================================
+// Check 15 — AGENTS.md stays within the ceiling declared in its first line
+// =============================================================================
+
+function checkAgentInstructionsSize(): void {
+  const NAME = 'agent-instructions-size';
+  const body = read('AGENTS.md');
+  const firstLine = body.split('\n', 1)[0] ?? '';
+  const stamp = firstLine.match(/^<!-- agents-md ceiling: ([1-9][0-9]*) lines -->$/);
+  if (!stamp) {
+    fail(NAME, 'AGENTS.md:1 must be `<!-- agents-md ceiling: N lines -->`');
+    return;
+  }
+
+  const ceiling = Number.parseInt(stamp[1]!, 10);
+  const lineCount = body === '' ? 0 : body.split('\n').length - (body.endsWith('\n') ? 1 : 0);
+  if (lineCount > ceiling) {
+    fail(
+      NAME,
+      `AGENTS.md has ${lineCount} lines, above its stamped ${ceiling}-line ceiling. ` +
+        'Move a complete category into an appropriate path-scoped rule or doc; do not raise ' +
+        'the stamp to the current size.'
+    );
+  }
+}
+
 const CHECKS: Array<() => void> = [
   checkDataProviderRouters,
   checkApiRouters,
@@ -1307,6 +1332,7 @@ const CHECKS: Array<() => void> = [
   checkQueueBackendClaims,
   checkPackageInventory,
   checkDocsSiteRepoLinks,
+  checkAgentInstructionsSize,
 ];
 
 for (const check of CHECKS) {

@@ -68,6 +68,22 @@ function withDoc(doc: string): { exitCode: number; output: string } {
 // something rather than matching nothing. Asserted before every use.
 const A_REAL_BULLET = /^- `packages\/infra\/deadline`.*$/m;
 
+const STAMP = /^<!-- agents-md ceiling: ([1-9][0-9]*) lines -->$/m;
+
+// The committed file under a stamp of `ceiling`, padded to exactly `lines`.
+// The stamp is rewritten rather than read, so neither test depends on how far
+// the committed file sits below its own ceiling — at exactly the ceiling,
+// padding to it would add nothing and the doc would equal ORIGINAL.
+function stampedAt(ceiling: number, lines: number): string {
+  expect(ORIGINAL).toMatch(STAMP);
+  const body = ORIGINAL.replace(STAMP, `<!-- agents-md ceiling: ${ceiling} lines -->`)
+    .trimEnd()
+    .split('\n');
+  expect(body.length).toBeLessThan(lines);
+  const padded = [...body, ...Array.from({ length: lines - body.length }, () => '<!-- pad -->')];
+  return `${padded.join('\n')}\n`;
+}
+
 describe('docs:check derives AGENTS.md package list from the tree', () => {
   test('the committed tree is green — the baseline every assertion below needs', () => {
     const { exitCode, output } = runCheck();
@@ -155,6 +171,33 @@ describe('docs:check derives AGENTS.md package list from the tree', () => {
 
     expect(output).toContain('cannot read it');
     expect(output).not.toContain('omits');
+    expect(exitCode).toBe(1);
+  });
+});
+
+describe('docs:check enforces the AGENTS.md ceiling stamp', () => {
+  const lines = ORIGINAL.trimEnd().split('\n').length + 1;
+
+  test('a file at exactly its stamped ceiling is accepted', () => {
+    const { exitCode, output } = withDoc(stampedAt(lines, lines));
+
+    expect(output).not.toContain('agent-instructions-size');
+    expect(exitCode).toBe(0);
+  });
+
+  test('one line over the stamped ceiling is refused and reports both counts', () => {
+    const { exitCode, output } = withDoc(stampedAt(lines, lines + 1));
+
+    expect(output).toContain('agent-instructions-size');
+    expect(output).toContain(`${lines + 1} lines`);
+    expect(output).toContain(`${lines}-line ceiling`);
+    expect(exitCode).toBe(1);
+  });
+
+  test('a file whose stamp is gone is refused rather than unchecked', () => {
+    const { exitCode, output } = withDoc(ORIGINAL.replace(STAMP, '# no stamp'));
+
+    expect(output).toContain('agent-instructions-size');
     expect(exitCode).toBe(1);
   });
 });
