@@ -1565,6 +1565,8 @@
         "placeholder": "日付を選択"
       },
       "recordPicker": {
+        "announceMatches_other": "{{count}} 件一致",
+        "announceSimilar_other": "類似の記録 {{count}} 件",
         "change": "{{label}}を変更",
         "changeAction": "変更",
         "searching": "検索しています…",
