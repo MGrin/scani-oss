@@ -26,9 +26,13 @@ import { describe, expect, test } from 'bun:test';
 
 const FIXTURE = 'packages/infra/queue/tests/fixtures/span-over-job-dispatch.fixture.ts';
 
+type Delivery = { built: number; received: number; flushed: boolean; waitedMs: number };
+
 type FixtureResult = {
   iterations: number;
   processorCalls: number;
+  armA_delivery: Delivery;
+  armB_delivery: Delivery;
   armA_directCallTransactions: number;
   armB_dispatchTransactions: number;
   armB_names: string[];
@@ -72,10 +76,21 @@ describe('a Sentry span over BullMQ job dispatch', () => {
     expect(result.processorCalls).toBe(result.iterations * 2);
   });
 
+  // SC-1192. Delivery is asserted apart from dispatch, so a recurrence of the
+  // full-gate zero names its layer: built 0 is a span that never started,
+  // built > received is envelopes lost on the way to the sink.
+  test('every transaction the client built reached the sink', () => {
+    for (const d of [result.armA_delivery, result.armB_delivery]) {
+      expect(d).toEqual({ ...d, received: d.built });
+    }
+  });
+
   test('calling the processor directly transmits NO transaction', () => {
     // The population, so the zero is a measurement rather than an abstention:
     // the same client, in the same process, transmitted arm B's transactions.
+    expect(result.armB_delivery.built).toBeGreaterThan(0);
     expect(result.armB_dispatchTransactions).toBeGreaterThan(0);
+    expect(result.armA_delivery.built).toBe(0);
     expect(result.armA_directCallTransactions).toBe(0);
   });
 
