@@ -29,6 +29,24 @@ DATABASE_URL=postgres://user:pass@host:5432/scani?sslmode=require
 POSTGRES_POOL_MAX=5   # only if behind a connection pooler
 ```
 
+**Every sslmode except `disable` verifies the server.** The api, worker,
+data-provider and migrate images connect with `verify-full` whatever the
+URL says, because `sslmode=require` on its own encrypts without checking
+who answered. Neon, Supabase and Render present publicly trusted
+certificates and need nothing more. A server behind a private CA — AWS
+RDS and Aurora, or your own — needs its CA bundle mounted and named in
+two variables, with the URL left as it is:
+
+```ini
+NODE_EXTRA_CA_CERTS=/certs/rds-global-bundle.pem   # api, worker, data-provider, migrate
+PGSSLROOTCERT=/certs/rds-global-bundle.pem         # the worker's pg_dump backup
+```
+
+Without them the connection is refused with
+`unable to verify the first certificate`. Only
+`sslmode=disable` skips TLS, and only an in-network Postgres should use
+it.
+
 Then comment out the `postgres` service in `docker-compose.prod.yml`:
 
 ```yaml

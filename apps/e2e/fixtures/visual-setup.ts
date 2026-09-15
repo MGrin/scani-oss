@@ -9,6 +9,7 @@ import {
   type SessionContent,
 } from '../visual/session-provenance';
 import { signIn } from './auth';
+import { assertStackUp } from './stack-probes';
 import { createAccount, createHolding, findDatabaseTokenId, trpcMutate } from './ui';
 
 // `import.meta.dir` is Bun-only and this module is loaded by the Playwright
@@ -197,24 +198,6 @@ const FORECAST_BOOK = [
     anchor: '2027-03-28',
   },
 ] as const;
-
-async function assertStackUp(): Promise<void> {
-  const probes: Array<[label: string, url: string]> = [
-    ['api', `${API_BASE_URL}/health`],
-    ['frontend', BASE_URL],
-  ];
-  for (const [label, url] of probes) {
-    try {
-      const res = await fetch(url, { signal: AbortSignal.timeout(3_000) });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    } catch (err) {
-      throw new Error(
-        `${label} not reachable at ${url} (${(err as Error).message}). ` +
-          'Start the stack first: `bun dev:stack` from the repo root.'
-      );
-    }
-  }
-}
 
 /**
  * What this session actually holds, or `null` if it is not signed in.

@@ -145,7 +145,12 @@ describe('it dumps, verifies and uploads', () => {
     expect(argv).toContain('--format=custom');
     expect(argv).toContain('--no-owner');
     expect(argv).toContain('--no-privileges');
-    expect(argv).toContain('postgresql://u:p@db.example/neondb?sslmode=require');
+    // SC-784: Neon's `sslmode=require` reaches pg_dump as verify-full against
+    // the OS root store, because to libpq `require` verifies nothing.
+    expect(argv).toContain(
+      'postgresql://u:p@db.example/neondb?sslmode=verify-full&sslrootcert=system'
+    );
+    expect(argv.some((arg) => arg.includes('sslmode=require'))).toBe(false);
   });
 
   test('removes the staged archive, so /tmp does not fill one day at a time', async () => {

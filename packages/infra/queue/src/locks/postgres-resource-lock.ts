@@ -1,3 +1,4 @@
+import { verifiedPgConnectionString } from '@scani/config';
 import { createComponentLogger } from '@scani/logging';
 import { Pool } from 'pg';
 import { Service } from 'typedi';
@@ -34,7 +35,10 @@ export class PostgresResourceLock extends ResourceLock {
   private pool: Pool | null = null;
 
   configure(connectionString: string): void {
-    this.pool = new Pool({ connectionString, max: 4 });
+    this.pool = new Pool({
+      connectionString: verifiedPgConnectionString(connectionString),
+      max: 4,
+    });
   }
 
   async close(): Promise<void> {

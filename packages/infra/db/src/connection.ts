@@ -1,4 +1,4 @@
-import { getNodeEnv } from '@scani/config';
+import { getNodeEnv, postgresJsSsl } from '@scani/config';
 import { createComponentLogger, logConfig } from '@scani/logging';
 import { drizzle as drizzlePostgres } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
@@ -51,18 +51,8 @@ if (IS_CRON_JOB) {
 // - Prepared statements (faster repeated queries)
 // - Type caching (fetch_types: true)
 // - Larger connection pools (server-side limit, not pooler-limited)
-const sslMode: postgres.Options<Record<string, postgres.PostgresType>>['ssl'] = (() => {
-  try {
-    const url = new URL(finalDatabaseUrl);
-    const param = url.searchParams.get('sslmode');
-    if (param === 'disable') return false;
-    if (param === 'require' || param === 'verify-ca' || param === 'verify-full') return 'require';
-    const local = ['localhost', '127.0.0.1', '::1'];
-    return local.includes(url.hostname) ? false : 'require';
-  } catch {
-    return 'require';
-  }
-})();
+// verify-full for every hosted database; see `postgresJsSsl` (SC-784).
+const sslMode = postgresJsSsl(finalDatabaseUrl);
 
 // Pool size — override via `POSTGRES_POOL_MAX` if you're on a pooled
 // endpoint (Neon pgBouncer caps far below direct). Default 20 matches
