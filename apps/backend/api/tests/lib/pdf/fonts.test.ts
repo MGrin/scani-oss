@@ -302,7 +302,7 @@ describe('what the run ordering assumes about the faces', () => {
  * It is also the thing SC-201 changes. When these expectations flip, the
  * ordering is what stands between a reader and a misplaced name.
  */
-describe('no right-to-left character can reach the page today', () => {
+describe('Arabic reaches the page; every other RTL script is still marked', () => {
   /**
    * The must-be-FOUND control. `supports()` returning false for everything
    * would satisfy every assertion below while reading no faces at all.
@@ -312,15 +312,22 @@ describe('no right-to-left character can reach the page today', () => {
     expect(drawn('Б')).toBe('Б');
   });
 
-  it('an Arabic name is marked, so a mixed line is pure ASCII', () => {
-    expect(type.supports('بنك')).toBe(false);
-    expect(drawn('بنك ABC')).toBe(`${UNSUPPORTED_MARK} ABC`);
+  /**
+   * The expectation SC-201 flipped, and it was written expecting to be flipped
+   * — the block header above it said so. It now asserts the opposite in the
+   * same shape, because "Arabic is drawn" and "Arabic is marked" are equally
+   * easy to satisfy accidentally and only one of them is true.
+   */
+  it('an Arabic name is drawn, not marked', () => {
+    expect(type.supports('بنك')).toBe(true);
+    expect(drawn('بنك ABC')).toBe('بنك ABC');
   });
 
-  /** One representative letter per script whose placement the ordering now
-   *  handles but whose glyphs are still not bundled. */
+  /** One representative letter per script whose placement the ordering
+   *  handles but whose glyphs are still not bundled. Arabic has left this
+   *  list; the other four have not, and that is the point of keeping it. */
   it('nor does any other joining or right-to-left script', () => {
-    for (const sample of ['ب', 'א', 'ܐ', 'ހ', 'ߊ']) {
+    for (const sample of ['א', 'ܐ', 'ހ', 'ߊ']) {
       expect(type.supports(sample)).toBe(false);
     }
   });
@@ -334,6 +341,101 @@ describe('no right-to-left character can reach the page today', () => {
     for (const control of ['‏', '؜', '‫', '‮', '⁧']) {
       expect(type.supports(control)).toBe(false);
     }
+  });
+});
+
+/**
+ * What a partial gap does to a word whose letters JOIN (SC-201).
+ *
+ * `fonts.ts` said in prose that a per-codepoint mark "would not be safe for a
+ * joining or RTL script, where what breaks is placement and no coverage check
+ * can see it". These are that sentence, mechanised.
+ *
+ * The mechanism, measured on the shipped face: one `doc.text` is one
+ * `font.layout`, so a run boundary is a SHAPING boundary. `layout('بنك')` gives
+ * glyph ids 560 59 114; the same three characters laid out one at a time give
+ * 237 227 554 — isolated forms. A `[?]` dropped between two Arabic letters
+ * therefore leaves the letters around it set as though they stood alone, and
+ * the page looks fine.
+ */
+describe('a gap inside a joining word', () => {
+  /** U+061D is one of four codepoints in the Arabic block the face lacks. */
+  const UNCOVERED_ARABIC = '؝';
+
+  it('marks the whole word rather than splitting it', () => {
+    // NOT `[?]` between two fragments: `بن[?]ك` would set بن and ك in isolated
+    // forms, which reads as different letters rather than as damaged ones.
+    expect(drawn(`بن${UNCOVERED_ARABIC}ك`)).toBe(UNSUPPORTED_MARK);
+  });
+
+  it('the control: the same word without the gap is drawn whole, in one run', () => {
+    // Without this, a `shape` that marked EVERY Arabic word would satisfy the
+    // assertion above. One run is the load-bearing half — two runs would be
+    // two `font.layout` calls and the joining would be lost.
+    expect(drawn('بنك')).toBe('بنك');
+    expect(type.shape('بنك', 'sans')).toHaveLength(1);
+  });
+
+  it('a gap outside the word does not take the word with it', () => {
+    // The clustering must be maximal-run, not whole-string: an unrelated
+    // uncovered character elsewhere on the line is still its own mark.
+    expect(drawn(`بنك ${UNCOVERED_ARABIC}`)).toBe(`بنك ${UNSUPPORTED_MARK}`);
+  });
+
+  it('leaves a non-joining script marked per codepoint, exactly as before', () => {
+    // The regression this could most easily cause. Han neither joins nor
+    // reorders, so its gaps must still degrade locally — clustering Arabic
+    // must not have widened the unit of failure for anybody else.
+    expect(drawn('三\u{2a6d6}菱')).toBe(`三${UNSUPPORTED_MARK}菱`);
+  });
+});
+
+/**
+ * The zero-width joining controls, which no bundled face covers.
+ *
+ * Before SC-201 these were marked, which is the worst of both worlds: an
+ * INVISIBLE character became a visible `[?]` and split the word it was there to
+ * shape. They are ordinary in Persian and Urdu names, so this is not an exotic
+ * case — it is the common one for two of the languages Arabic script serves.
+ */
+describe('ZWNJ and ZWJ', () => {
+  it('are drawn through rather than marked, and keep the word in one run', () => {
+    for (const control of ['‌', '‍']) {
+      const text = `بن${control}ك`;
+      expect(type.supports(text)).toBe(true);
+      expect(drawn(text)).toBe(text);
+      expect(type.shape(text, 'sans')).toHaveLength(1);
+    }
+  });
+
+  it('and the pass-through is exactly two codepoints wide', () => {
+    // The control, and it guards the direction that would do harm. These two
+    // are let through because they carry SHAPING and nothing else; the other
+    // invisible uncovered characters carry DIRECTION, and a name that can force
+    // a direction on its line is the thing the block above exists to prevent.
+    // Widening the set to "everything invisible" would delete that silently,
+    // so RLM and friends are asserted still marked right here.
+    // ALM is handled separately below — it is the one of the five that LIVES
+    // inside the Arabic block, so the clustering rule reaches it.
+    for (const control of ['‏', '‫', '‮', '⁧']) {
+      expect(type.supports(control)).toBe(false);
+      // Marked IN PLACE, so the letters either side do fall into separate runs
+      // and set as isolated forms. That is accepted rather than overlooked, and
+      // the distinction is the whole point of the block above: this failure is
+      // LOUD. A reader sees a `[?]` sitting in the middle of the word and knows
+      // something was removed. The case SC-201 had to fix was the silent one,
+      // where the mark replaced a letter that should have been there and the
+      // rest of the word merely looked subtly wrong. Swallowing a direction
+      // control to keep the word in one run would trade a visible mark for an
+      // invisible reordering, which is the trade this file refuses everywhere.
+      expect(drawn(`ب${control}ك`)).toBe(`ب${UNSUPPORTED_MARK}ك`);
+    }
+    // ALM sits in the Arabic block, so it clusters WITH the letters and takes
+    // the whole word rather than being marked between them. Both answers are
+    // right and they differ only in how much they destroy — and for a direction
+    // control smuggled into a name, destroying more is the safer of the two.
+    expect(type.supports('؜')).toBe(false);
+    expect(drawn('ب؜ك')).toBe(UNSUPPORTED_MARK);
   });
 });
 

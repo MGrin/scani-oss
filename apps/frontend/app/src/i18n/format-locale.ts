@@ -1,4 +1,5 @@
 import { AUTO_REGION, type FormatLocale, setFormatLocale } from '@scani/shared';
+import { loadFontsForLanguage } from './script-fonts';
 
 /**
  * The browser half of the formatting locale (SC-201).
@@ -87,9 +88,10 @@ export interface DocumentLocaleTarget {
  *   place it is decided. The layout pass that seam was cut for has now run:
  *   `@scani/ui` and `src/v3` are scanned for physical inline properties by
  *   `tests/v3/rtl-logical-properties.test.ts`, machine data sits in `dir="ltr"`
- *   islands, and four RTL visual baselines photograph the result. What a reader
- *   still cannot do is REACH it — `offered-languages.ts` holds `ar` out of the
- *   picker until the Arabic web and PDF faces land, which is the last step.
+ *   islands, and four RTL visual baselines photograph the result. **A reader
+ *   reaches it by choosing Arabic**, which they can as of the font slice —
+ *   `offered-languages.ts` holds nothing. This is the first `dir="rtl"` any
+ *   reader of this app has been able to produce.
  *
  * `lang` gets the base language, not the format tag: it describes the TEXT, and
  * a reader on English copy with German dates is reading English.
@@ -102,5 +104,9 @@ export function applyFormatLocale(
   const locale = setFormatLocale(language, region);
   target.documentElement.lang = locale.language;
   target.documentElement.dir = locale.dir;
+  // Fetched from the RESOLVED language rather than the argument, so junk in
+  // localStorage cannot ask for a face (SC-201). Deliberately not awaited: the
+  // interface must not wait on a font, and `script-fonts` never rejects.
+  void loadFontsForLanguage(locale.language);
   return locale;
 }

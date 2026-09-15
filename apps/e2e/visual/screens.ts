@@ -121,18 +121,29 @@ export const FORECAST_AS_OF = FIXED_NOW.toISOString().slice(0, 10);
  * deliberate rather than a shortcut — the copy being readable is what lets a
  * reviewer see WHAT moved instead of guessing at an unfamiliar script.
  *
- * It is also the only thing available. `<html dir>` follows the chosen
- * language, and no reader can select their way to `dir="rtl"`, so the harness
- * sets the attribute the language would have set. **The reason has moved and
- * the sentence has not, twice now:** it was "there is no `ar.json`" until
- * SC-201 wrote both Arabic locale files, and it is now `HELD_LANGUAGES` in the
- * app's `offered-languages.ts`, which keeps `ar` out of the picker until the
- * Arabic web and PDF faces land. When that hold lifts, this harness can
- * photograph Arabic SCRIPT rather than a mirrored English layout — and until
- * then no baseline here can catch a shaping or font-fallback defect, which is
- * a limit of the instrument rather than a gap in the coverage. The spec
- * re-reads it after the capture for that reason: an attribute set from outside
- * the app is one the app could put back, and an LTR picture filed under an RTL
+ * `<html dir>` follows the chosen language, and the harness sets the attribute
+ * the language would have set rather than choosing the language.
+ *
+ * **That used to be the only thing available and it no longer is — this is the
+ * third premise the same sentence has had.** It was "there is no `ar.json`"
+ * until SC-201 wrote both Arabic locale files; then "`HELD_LANGUAGES` keeps
+ * `ar` out of the picker" until SC-201's font slice emptied that set. A reader
+ * can select Arabic today, so the harness COULD switch the language. It does
+ * not, and the reason is now a choice rather than a limit: switching the
+ * language changes every string in the shot at the same moment as the layout,
+ * and a reviewer reading a diff cannot separate two variables at once.
+ *
+ * **The cost of that choice is stated rather than implied: no baseline here
+ * can catch an Arabic shaping or font-fallback defect**, because no Arabic
+ * glyph is in any of these pictures. That is a gap in the coverage now, not a
+ * limit of the instrument — an Arabic screen is a photograph somebody can take
+ * — and it is filed as SC-1200 rather than fixed here, because it is a NEW
+ * baseline with a new reviewing question rather than a change to these four,
+ * and a picture added in the same commit as the font it checks is a picture
+ * whose first `--update` nobody can falsify.
+ *
+ * The spec re-reads the attribute after the capture: one set from outside the
+ * app is one the app could put back, and an LTR picture filed under an RTL
  * name is a baseline that agrees with itself forever.
  */
 type VisualDirection = 'rtl';
