@@ -48,6 +48,9 @@
       "submit": "Continuar com e-mail",
       "subtitle": "Introduza o seu e-mail para iniciar sessão ou criar uma conta",
       "title": "Bem-vindo"
+    },
+    "exits": {
+      "label": "Mais sobre a Scani"
     }
   },
   "currency": {
@@ -876,6 +879,14 @@
         "subject": "Assunto",
         "value": "Valor",
         "withheld": "Retido — todas as colunas de valor, ganho/perda e conversão foram removidas de propósito"
+      },
+      "statement": {
+        "total": "Total",
+        "pageOf": "Página {{page}} de {{pages}}",
+        "account": "Conta",
+        "characters": "Caracteres",
+        "unsupportedNote": "{{mark}} assinala um carácter que estes tipos de letra não conseguem apresentar — as exportações CSV e XLSX contêm o nome completo.",
+        "noRows": "Não há linhas nesta seleção."
       },
       "workbook": {
         "currency": "{{header}} ({{currency}})",

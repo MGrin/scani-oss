@@ -1565,6 +1565,8 @@
         "placeholder": "日付を選択"
       },
       "recordPicker": {
+        "announceMatches_other": "{{count}} 件一致",
+        "announceSimilar_other": "類似の記録 {{count}} 件",
         "change": "{{label}}を変更",
         "changeAction": "変更",
         "searching": "検索しています…",
@@ -1798,7 +1800,8 @@
         "ownDocs": "{{name}} の公式ドキュメント",
         "unverifiedTitle": "{{name}} のキーを確認できませんでした",
         "unverifiedDetail": "{{name}} から応答がなかったため、キーが正しいかどうか判断できません。何も保存していません。1分ほど待って再試行してください。"
-      }
+      },
+      "demoNote": "ここで入力した内容は保存されません。これはデモです。"
     },
     "tokens": {
       "custom": {

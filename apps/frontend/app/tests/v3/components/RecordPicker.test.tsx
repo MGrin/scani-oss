@@ -106,3 +106,67 @@ describe('a field that may not be cut opts out', () => {
     expect(uncapped).not.toInclude('keep typing to narrow');
   });
 });
+
+/**
+ * The list announces itself (SC-999).
+ *
+ * Typing into the institution field made `Add "Kraken"` appear with nothing
+ * written to any live region, so a screen-reader user had no way to know the
+ * create row existed. The region is read out of the markup by its attributes,
+ * and each case that must speak has a case beside it that must stay silent — a
+ * region that always held text would pass the first and prove nothing.
+ */
+describe('the picker tells a screen reader what appeared', () => {
+  function announced(props: Partial<Parameters<typeof RecordPicker>[0]>): string {
+    const markup = html(
+      <RecordPicker
+        value={null}
+        onSelect={() => {}}
+        onClear={() => {}}
+        query="Kraken"
+        onQueryChange={() => {}}
+        open
+        onOpenChange={() => {}}
+        options={[]}
+        ariaLabel="institution"
+        placeholder="Search institutions"
+        emptyLabel="No institution by that name"
+        createLabel={(q) => `Add "${q}"`}
+        onCreate={() => {}}
+        {...props}
+      />
+    );
+    const m = markup.match(/<p role="status" aria-live="polite" class="sr-only">([^<]*)<\/p>/);
+    if (!m) throw new Error('the live region is not in the markup at all');
+    return (m[1] as string).replaceAll('&quot;', '"');
+  }
+
+  test('no match: the empty state and the create row are both announced', () => {
+    expect(announced({})).toBe('No institution by that name. Add "Kraken"');
+  });
+
+  test('a label that already ends its sentence is not given a second full stop', () => {
+    // Found in the browser, not by the case above: the real empty label is
+    // "Nothing by that name yet." and the first join announced "yet.." (SC-999).
+    expect(announced({ emptyLabel: 'Nothing by that name yet.' })).toBe(
+      'Nothing by that name yet. Add "Kraken"'
+    );
+  });
+
+  test('matches are counted, and the create row still follows them', () => {
+    expect(announced({ options: options(2) })).toBe('2 matches. Add "Kraken"');
+    expect(announced({ options: options(1), createLabel: undefined, onCreate: undefined })).toBe(
+      '1 match'
+    );
+  });
+
+  test('a near-duplicate is announced instead of the empty state it contradicts', () => {
+    expect(announced({ suggestions: options(1) })).toBe('1 similar record. Add "Kraken"');
+  });
+
+  test('the region is mounted but silent while closed, loading or untyped', () => {
+    expect(announced({ open: false })).toBe('');
+    expect(announced({ isLoading: true })).toBe('');
+    expect(announced({ query: '   ' })).toBe('');
+  });
+});

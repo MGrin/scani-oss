@@ -151,6 +151,13 @@ const EXAMPLES: Record<string, { physical: string; logical: string }> = {
     physical: '<button className="right-4" />',
     logical: '<button className="end-4" />',
   },
+  'no physical inline spacing or dividers': {
+    // The logical form moves the spacing onto the container, which is why this
+    // example carries `flex` and the physical one does not need it: `space-x-`
+    // works on any parent, and `gap-x-` is what replaces it on a flex or grid.
+    physical: '<div className="space-x-2" />',
+    logical: '<div className="flex gap-x-2" />',
+  },
 };
 
 describe('the physical-inline rule set', () => {

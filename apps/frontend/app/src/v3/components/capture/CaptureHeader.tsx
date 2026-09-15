@@ -5,6 +5,7 @@ import { ArrowLeft } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { V3_BASE } from '../../lib/ui-version';
+import { DemoCaptureNote } from './DemoCaptureNote';
 
 /**
  * The top of a capture form — the way out, what this screen takes, and one line
@@ -35,6 +36,10 @@ export function CaptureHeader({
       </Button>
       <h1 className="text-title">{title}</h1>
       <p className="text-body text-muted-foreground">{description}</p>
+      {/* SC-1207. Here rather than on each page: every capture screen takes
+          input the demo will refuse, and a note added per page is a note the
+          next capture screen forgets. Renders nothing outside the demo. */}
+      <DemoCaptureNote />
     </div>
   );
 }

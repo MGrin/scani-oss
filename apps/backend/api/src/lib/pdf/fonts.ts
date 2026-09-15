@@ -62,6 +62,12 @@ import sansVietnamese from '@fontsource/ibm-plex-sans/files/ibm-plex-sans-vietna
 import boldVietnamese from '@fontsource/ibm-plex-sans/files/ibm-plex-sans-vietnamese-600-normal.woff' with {
   type: 'file',
 };
+import sansArabic from '@fontsource/ibm-plex-sans-arabic/files/ibm-plex-sans-arabic-arabic-400-normal.woff' with {
+  type: 'file',
+};
+import boldArabic from '@fontsource/ibm-plex-sans-arabic/files/ibm-plex-sans-arabic-arabic-600-normal.woff' with {
+  type: 'file',
+};
 import hanJapanese from '@fontsource/noto-sans-jp/files/noto-sans-jp-japanese-400-normal.woff' with {
   type: 'file',
 };
@@ -105,9 +111,23 @@ import type { Face } from './layout';
  * four pan-CJK cuts, and the characters outside them keep exactly the behaviour
  * they have always had: {@link UNSUPPORTED_MARK}, per codepoint, plus the
  * metadata line. **That is what makes partial coverage safe here** — Han neither
- * joins nor reorders, so a gap degrades loudly and locally. It would not be safe
- * for a joining or RTL script, where what breaks is placement and no coverage
- * check can see it (SC-763).
+ * joins nor reorders, so a gap degrades loudly and locally.
+ *
+ * **Arabic is bundled as of SC-201, and the sentence that used to close this
+ * paragraph was the reason it could not be.** It said a per-codepoint mark
+ * "would not be safe for a joining or RTL script, where what breaks is placement
+ * and no coverage check can see it" (SC-763). That was exactly right, and the
+ * mechanism is sharper than "placement": one `doc.text` is one `font.layout`,
+ * so a run boundary is a SHAPING boundary. A `[?]` dropped between two Arabic
+ * letters leaves both halves of the word set in isolated forms — measured,
+ * `layout('بنك')` gives glyph ids 560 59 114 and the same three characters one
+ * at a time give 237 227 554.
+ *
+ * So the mark is no longer per codepoint for a script whose letters join: it is
+ * per CLUSTER. A joining word we cannot set completely becomes one mark rather
+ * than a word with a hole in it, because half a word in isolated forms reads as
+ * a different word rather than as a damaged one. Han is untouched by that rule
+ * and its gaps still degrade per codepoint, which `fonts.test.ts` pins.
  *
  * **Why these two files.** Measured coverage, from the same fontkit parse this
  * module uses: JP 6887 codepoints, SC 7947, union 10036 for 2.94 MB against a
@@ -155,6 +175,13 @@ const SANS: readonly Source[] = [
   ['Sans-Cyrillic-Ext', sansCyrillicExt],
   ['Sans-Greek', sansGreek],
   ['Sans-Vietnamese', sansVietnamese],
+  // Arabic is LAST on purpose, and it is the one entry where order matters
+  // (SC-201). It shares exactly three codepoints with the Plex cuts above —
+  // U+0020, U+00A0 and U+FFFF — so probing Latin first keeps space and
+  // no-break space on the face the rest of the line already uses. Neither
+  // joins, so nothing is lost by resolving them elsewhere, and a shared space
+  // means a two-word Arabic name arrives as three runs either way.
+  ['Sans-Arabic', sansArabic],
 ];
 
 const BOLD: readonly Source[] = [
@@ -164,6 +191,7 @@ const BOLD: readonly Source[] = [
   ['Bold-Cyrillic-Ext', boldCyrillicExt],
   ['Bold-Greek', boldGreek],
   ['Bold-Vietnamese', boldVietnamese],
+  ['Bold-Arabic', boldArabic],
 ];
 
 const MONO: readonly Source[] = [
@@ -223,7 +251,92 @@ export interface Run {
 interface LoadedFace {
   name: string;
   bytes: Buffer;
+  /** What the face's `cmap` CLAIMS. Necessary, and not sufficient — see `canSet`. */
   covers: Set<number>;
+  font: fontkit.Font;
+  /** `canSet`'s answers, per code point, so each is paid for once per process. */
+  settable: Map<number, boolean>;
+}
+
+/**
+ * Whether `face` can actually lay out `point` — not merely whether it says so.
+ *
+ * **A face's `cmap` can claim a character its glyph table cannot produce, and
+ * fontkit then throws rather than refusing (SC-201 → SC-1201).** Every Plex
+ * Mono subset maps U+0020, U+00A0, U+000D and U+0000, and `font.layout(' ')`
+ * on each throws `RangeError: Out of bounds access` from `_getCBox`. Those are
+ * the glyphs with no outline, and fontkit misreads an empty entry in these
+ * `.woff` files. Measured across all nineteen bundled faces: every Mono subset
+ * fails U+0000, U+000D, U+0020 and U+00A0 (Latin also U+00AD); every NON-Latin
+ * Sans and Bold subset fails U+0020 and U+00A0; `ibm-plex-sans-latin` at both
+ * weights and both Han files fail none. The Latin Sans face is first in the
+ * Sans and Bold stacks, and that ordering is the only reason a space ever
+ * rendered at all.
+ *
+ * So a space in a numeric column, which is set in Mono first, threw inside
+ * pdfkit and **produced no PDF**. A date with a time reaches it
+ * (`cellText` writes `2026-09-15 05:31`), and so would every thousands
+ * separator in a language that groups with a space.
+ *
+ * **Probed lazily and memoised, because the eager version cannot run.**
+ * Validating every claimed code point at load was measured and did not finish
+ * inside two minutes — the two Han files carry ~7,000 code points each. A
+ * statement uses a few hundred distinct characters, so the probe costs one
+ * `layout` per character per face actually reached, once per process.
+ *
+ * **Why not `.woff2`, which lays these out correctly.** It does, and it cannot
+ * be EMBEDDED: fontkit's subsetter throws the same `RangeError` from
+ * `_addGlyph` when pdfkit writes the font into the document. Layout-clean and
+ * embed-broken is worse than the defect it replaces, because it fails on every
+ * export rather than on some.
+ *
+ * A face that cannot set a character is skipped exactly like one that does not
+ * map it, so the stack below it answers: for a space in Mono, that is Plex
+ * Sans, which is the fall-through `STACKS` already documents for a text cell
+ * in a figure column.
+ */
+const NO_BREAK_SPACE = String.fromCharCode(0xa0);
+const SPACE_SEPARATOR = /^\p{Zs}$/u;
+
+/**
+ * The face that will draw a space no face can set, as U+00A0 (SC-1202).
+ *
+ * `fr-FR` groups thousands with U+202F NARROW NO-BREAK SPACE and **no bundled
+ * face maps it** — zero of nineteen, measured — so every separator in a French
+ * figure was a `[?]`. U+2009 and U+2007 are in the same position in every face
+ * but Latin Sans. A space is the one character whose glyph carries no
+ * information beyond its width and whether a line may break at it, so drawing
+ * U+00A0 instead keeps both the meaning and the no-break behaviour, a hair
+ * wider. Marking it would print `1[?]234[?]567,89`, which reads as a broken
+ * number rather than a narrow gap.
+ *
+ * Keyed on the Unicode `Zs` class rather than a list of the three we measured,
+ * so a locale that picks another exotic space is covered without a change
+ * here — and the renderer still learns nothing about which locale did. Only
+ * reached when no face can set the character itself: U+2009 still draws as
+ * U+2009 in the one face that maps it.
+ */
+function spaceStandIn(point: number, stack: readonly LoadedFace[]): LoadedFace | undefined {
+  if (!SPACE_SEPARATOR.test(String.fromCodePoint(point))) return undefined;
+  return stack.find((face) => canSet(face, 0xa0));
+}
+
+function canSet(face: LoadedFace, point: number): boolean {
+  if (!face.covers.has(point)) return false;
+  const known = face.settable.get(point);
+  if (known !== undefined) return known;
+  let ok: boolean;
+  try {
+    // `advanceWidth` is read, not just `layout` called: `layout` succeeds for
+    // some glyphs whose metrics are what throws, and pdfkit reads both.
+    for (const glyph of face.font.layout(String.fromCodePoint(point)).glyphs)
+      void glyph.advanceWidth;
+    ok = true;
+  } catch {
+    ok = false;
+  }
+  face.settable.set(point, ok);
+  return ok;
 }
 
 export interface Typesetter {
@@ -273,7 +386,13 @@ export async function loadTypesetter(): Promise<Typesetter> {
       // character is unsupported. Loud beats that.
       if (!('characterSet' in font))
         throw new Error(`pdf font ${name} is a collection, not a face`);
-      faces.set(name, { name, bytes, covers: new Set(font.characterSet) });
+      faces.set(name, {
+        name,
+        bytes,
+        covers: new Set(font.characterSet),
+        font,
+        settable: new Map(),
+      });
     })
   );
 
@@ -294,12 +413,53 @@ export async function loadTypesetter(): Promise<Typesetter> {
       return shape(text, stacks[face]);
     },
     supports(text) {
+      // Through `covered`, so this agrees with `shape` about the joining
+      // controls AND about the space stand-in. Two answers to "can we set
+      // this?" that disagree is how a statement gets the metadata note while
+      // nothing on the page is marked — or, after SC-1202, how a French
+      // statement gets the note over figures that are drawn in full.
       return [...text].every((character) =>
-        stacks.sans.some((face) => face.covers.has(character.codePointAt(0) as number))
+        covered(character.codePointAt(0) as number, stacks.sans)
       );
     },
   };
   return cached;
+}
+
+/**
+ * The zero-width controls that carry JOINING information and nothing else.
+ *
+ * No bundled face covers either — measured across all ten subsets — so before
+ * SC-201 they were marked, which is the worst possible answer: an invisible
+ * character became a visible `[?]` **and** split the word it was there to
+ * shape. They are passed through to the current run instead, where fontkit
+ * reads them.
+ *
+ * DELIBERATELY NOT the whole `Default_Ignorable` set. RLM, ALM, RLE, RLO and
+ * FSI are also invisible and also uncovered, and `fonts.test.ts` marks them on
+ * purpose — a name must not be able to force a direction on the line it sits
+ * in. Widening this set to "everything invisible" would quietly delete that.
+ */
+const JOINING_CONTROLS: ReadonlySet<number> = new Set([0x200c, 0x200d]);
+
+/**
+ * Does this codepoint belong to a script whose letters JOIN?
+ *
+ * Arabic, Syriac, Thaana and N'Ko. Only Arabic is bundled; the others are here
+ * because the rule below is about what happens when coverage is MISSING, and
+ * for an unbundled joining script that is every character.
+ */
+function joins(point: number): boolean {
+  return (
+    (point >= 0x0600 && point <= 0x06ff) || // Arabic
+    (point >= 0x0700 && point <= 0x074f) || // Syriac
+    (point >= 0x0750 && point <= 0x077f) || // Arabic Supplement
+    (point >= 0x0780 && point <= 0x07bf) || // Thaana
+    (point >= 0x07c0 && point <= 0x07ff) || // N'Ko
+    (point >= 0x08a0 && point <= 0x08ff) || // Arabic Extended-A
+    (point >= 0xfb50 && point <= 0xfdff) || // Presentation Forms-A
+    (point >= 0xfe70 && point <= 0xfeff) // Presentation Forms-B
+  );
 }
 
 function shape(text: string, stack: readonly LoadedFace[]): Run[] {
@@ -315,21 +475,105 @@ function shape(text: string, stack: readonly LoadedFace[]): Run[] {
 
   // Iterated by code point, not by unit, so an astral character is one decision
   // rather than two halves of one that no face claims.
-  for (const character of text) {
-    const point = character.codePointAt(0) as number;
-    const hit = stack.find((face) => face.covers.has(point));
-    if (hit) {
-      marked = false;
-      push(hit.name, character);
+  //
+  // **CLUSTERED FIRST, because for a joining script the unit of failure is the
+  // WORD and not the character (SC-201).** A `[?]` in the middle of an Arabic
+  // word is a run boundary, and a run boundary is a SHAPING boundary: one
+  // `doc.text` is one `font.layout`, so the letters either side of the mark
+  // lose their joining and set as isolated forms. Measured on the shipped face:
+  // `layout('بنك')` gives glyphs 560 59 114, the same three characters one at a
+  // time give 237 227 554. Nothing detects that — the mark is drawn correctly
+  // and the word around it is quietly wrong — which is exactly the failure the
+  // Han note above says a per-codepoint mark cannot be trusted with here.
+  for (const cluster of clusters(text)) {
+    const points = [...cluster].map((c) => c.codePointAt(0) as number);
+    const joined = points.some(joins);
+
+    if (joined && !points.every((p) => covered(p, stack))) {
+      // One mark for the whole word. A word we cannot set completely is a word
+      // we cannot set: half of it in isolated forms reads as a different word
+      // rather than as a damaged one.
+      if (!marked) {
+        marked = true;
+        push(fallback.name, UNSUPPORTED_MARK);
+      }
       continue;
     }
-    // A run of unrepresentable characters collapses to a single marker. Six of
-    // them in a row is not six times as much information as one, and printing
-    // six would make the name three times wider than it is.
-    if (marked) continue;
-    marked = true;
-    push(fallback.name, UNSUPPORTED_MARK);
+
+    for (const character of cluster) {
+      const point = character.codePointAt(0) as number;
+      // A joining control rides along with whatever run is open: it is
+      // invisible, it is covered by nothing, and marking it would both show a
+      // box and cut the word.
+      if (JOINING_CONTROLS.has(point)) {
+        if (runs.length > 0) {
+          marked = false;
+          (runs[runs.length - 1] as Run).text += character;
+        }
+        continue;
+      }
+      // `canSet`, not `covers.has`: a face can claim a code point and still
+      // throw when its metrics are read, which is the export that died in
+      // SC-1201. `covered` above is widened the same way, so the word-level
+      // gate and this loop cannot disagree about what is drawable.
+      const hit = stack.find((face) => canSet(face, point));
+      if (hit) {
+        marked = false;
+        push(hit.name, character);
+        continue;
+      }
+      // A space no face can set is drawn as U+00A0 rather than marked
+      // (SC-1202): a space's glyph carries nothing but its width, so a French
+      // thousands separator is a hair wider instead of `1[?]234[?]567,89`.
+      const space = spaceStandIn(point, stack);
+      if (space) {
+        marked = false;
+        push(space.name, NO_BREAK_SPACE);
+        continue;
+      }
+      // A run of unrepresentable characters collapses to a single marker. Six
+      // of them in a row is not six times as much information as one, and
+      // printing six would make the name three times wider than it is.
+      if (marked) continue;
+      marked = true;
+      push(fallback.name, UNSUPPORTED_MARK);
+    }
   }
 
   return runs;
+}
+
+function covered(point: number, stack: readonly LoadedFace[]): boolean {
+  return (
+    JOINING_CONTROLS.has(point) ||
+    stack.some((face) => canSet(face, point)) ||
+    spaceStandIn(point, stack) !== undefined
+  );
+}
+
+/**
+ * Split into the units a mark may replace: maximal runs of joining-script
+ * characters, and everything else one character at a time.
+ *
+ * Not `Intl.Segmenter` with `granularity: 'word'` — that would also glue Latin
+ * words together, changing where a mark lands in scripts whose behaviour is
+ * correct today, and this must not alter the Han or Cyrillic result at all.
+ */
+function clusters(text: string): string[] {
+  const out: string[] = [];
+  let current = '';
+  for (const character of text) {
+    const point = character.codePointAt(0) as number;
+    if (joins(point) || (current !== '' && JOINING_CONTROLS.has(point))) {
+      current += character;
+      continue;
+    }
+    if (current !== '') {
+      out.push(current);
+      current = '';
+    }
+    out.push(character);
+  }
+  if (current !== '') out.push(current);
+  return out;
 }

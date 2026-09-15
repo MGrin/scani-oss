@@ -102,7 +102,15 @@ export function GenericJobResult({ result }: { result: unknown }) {
         <summary className="cursor-pointer text-label text-muted-foreground">
           {t('v3.jobs.generic.rawResult')}
         </summary>
-        <pre className="mt-3 overflow-x-auto whitespace-pre-wrap break-all font-mono text-caption text-muted-foreground">
+        {/* `dir="ltr"` because this is machine output, not prose (SC-201).
+            JSON's braces, quotes and colons are bidi NEUTRALS, so under
+            `dir="rtl"` each line reorders around them and a payload carrying
+            any Arabic value renders as a shuffle of its own punctuation. The
+            reader is here to paste it into an issue. */}
+        <pre
+          dir="ltr"
+          className="mt-3 overflow-x-auto whitespace-pre-wrap break-all font-mono text-caption text-muted-foreground"
+        >
           {JSON.stringify(result, null, 2)}
         </pre>
       </details>

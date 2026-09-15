@@ -1,4 +1,5 @@
 import { AUTO_REGION, type FormatLocale, setFormatLocale } from '@scani/shared';
+import { loadFontsForLanguage } from './script-fonts';
 
 /**
  * The browser half of the formatting locale (SC-201).
@@ -83,11 +84,14 @@ export interface DocumentLocaleTarget {
  *   hyphenation and font fallback key on. There is no `lang` anywhere in this
  *   app today — `index.html` ships whatever Vite's template had — so this is
  *   the first time the document says what language it is in.
- * - **`dir`** is the whole of RTL at the document level, and setting it here is
- *   deliberately NOT a claim that the interface is mirrored. It is not: SC-201
- *   step 3 is the layout pass, and no Arabic locale file exists, so no reader
- *   can reach `dir="rtl"` yet. What this gives is the seam in one place, so
- *   that pass changes CSS rather than hunting for where direction is decided.
+ * - **`dir`** is the whole of RTL at the document level, and this is the one
+ *   place it is decided. The layout pass that seam was cut for has now run:
+ *   `@scani/ui` and `src/v3` are scanned for physical inline properties by
+ *   `tests/v3/rtl-logical-properties.test.ts`, machine data sits in `dir="ltr"`
+ *   islands, and four RTL visual baselines photograph the result. **A reader
+ *   reaches it by choosing Arabic**, which they can as of the font slice —
+ *   `offered-languages.ts` holds nothing. This is the first `dir="rtl"` any
+ *   reader of this app has been able to produce.
  *
  * `lang` gets the base language, not the format tag: it describes the TEXT, and
  * a reader on English copy with German dates is reading English.
@@ -100,5 +104,9 @@ export function applyFormatLocale(
   const locale = setFormatLocale(language, region);
   target.documentElement.lang = locale.language;
   target.documentElement.dir = locale.dir;
+  // Fetched from the RESOLVED language rather than the argument, so junk in
+  // localStorage cannot ask for a face (SC-201). Deliberately not awaited: the
+  // interface must not wait on a font, and `script-fonts` never rejects.
+  void loadFontsForLanguage(locale.language);
   return locale;
 }

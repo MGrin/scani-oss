@@ -73,6 +73,23 @@ export const PHYSICAL_INLINE_RULES: readonly InlineAxisRule[] = [
     pattern: /(?:^|[\s'"`:[])-?(?:left|right)-(?:\w|\[)/,
     except: CENTRING,
   },
+  {
+    /**
+     * `space-x-*` and `divide-x-*` are physical, and they are the one family
+     * that survived the whole RTL pass because they do not LOOK physical
+     * (SC-201). Tailwind compiles them to `margin-left` / `border-left` on
+     * `> * + *`, and nothing flips that under `[dir="rtl"]` — so the gap
+     * between the first two children moves to the wrong side of the run and a
+     * stray one appears after the last. Three survived here.
+     *
+     * Write `gap-x-*` on the flex or grid container. The `*-reverse` utilities
+     * are deliberately NOT excepted: they flip the axis for every direction
+     * rather than for RTL, so a correct one has to be paired with an `rtl:`
+     * variant, and that is a second spelling of what `gap-x-` already says.
+     */
+    title: 'no physical inline spacing or dividers',
+    pattern: /(?:^|[\s'"`:[])-?(?:space-x|divide-x)-(?:\w|\[)/,
+  },
 ] as const;
 
 /** The hits a rule actually reports, once its legitimate matches are removed. */

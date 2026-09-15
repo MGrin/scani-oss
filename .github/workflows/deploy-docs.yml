@@ -28,11 +28,29 @@ on:
       - '.github/actions/setup-bun/**'
       - 'bun.lock'
       - 'package.json'
+      # What `bun install` and `bun` read besides the lockfile (SC-1161): a
+      # dependency added in ANY workspace can change which transitive copy
+      # the docs build resolves, which is what broke a deploy in SC-634.
+      - 'bunfig.toml'
+      - 'patches/**'
+      - 'apps/*/package.json'
+      - 'apps/*/*/package.json'
+      - 'packages/*/*/package.json'
   pull_request:
     branches: [main]
     paths:
       - 'apps/frontend/docs/**'
       - '.github/workflows/deploy-docs.yml'
+      # The same inputs as the push arm (SC-1161). A pull request that only
+      # moved `bun.lock` skipped the build that would have caught SC-634.
+      - '.github/actions/setup-bun/**'
+      - 'bun.lock'
+      - 'package.json'
+      - 'bunfig.toml'
+      - 'patches/**'
+      - 'apps/*/package.json'
+      - 'apps/*/*/package.json'
+      - 'packages/*/*/package.json'
   workflow_dispatch:
 
 # `pages: write` + `id-token: write` are what `actions/deploy-pages`

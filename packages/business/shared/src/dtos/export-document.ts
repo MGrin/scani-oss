@@ -38,7 +38,14 @@ export const ExportValueDto = z.discriminatedUnion('kind', [
     style: z.enum(['plain', 'money', 'percent']).optional(),
     currency: z.string().optional(),
   }),
-  z.object({ kind: z.literal('date'), value: z.string(), withTime: z.boolean() }),
+  z.object({
+    kind: z.literal('date'),
+    value: z.string(),
+    withTime: z.boolean(),
+    /** How the PDF prints it, in the reader's locale (SC-1199). The CSV and the
+     *  workbook ignore it and keep `value`, which a machine can parse. */
+    display: z.string().optional(),
+  }),
 ]);
 
 export type ExportValueDtoType = z.infer<typeof ExportValueDto>;
@@ -102,6 +109,76 @@ export type ExportProvenanceDtoType = z.infer<typeof ExportProvenanceDto>;
  */
 export const PDF_MAX_ROWS = 2_000;
 
+/**
+ * Every word the statement sets that is not the reader's data (SC-1199).
+ *
+ * The headers, group labels, subject, scope and provenance details already
+ * arrive translated — the client builds them. What did not were the renderer's
+ * own few words, `TOTAL` and `Page 2 of 3` and the metadata labels, which were
+ * English literals in `statement.ts`, and the generated time, which the server
+ * formatted in `en-GB`. They travel here instead, so **the renderer stays a
+ * printer**: nothing under `apps/backend/api` knows what a language is, and a
+ * language the app adds later needs no server change.
+ *
+ * Two fields are TEMPLATES rather than strings, because the renderer supplies
+ * the value and the translation supplies the word order: `pageOf` carries
+ * `{{page}}` and `{{pages}}`, `unsupportedNote` carries `{{mark}}`. The
+ * renderer substitutes; it never concatenates.
+ *
+ * `generatedAt` and `rowCount` are ALREADY FORMATTED — a date and a figure in
+ * the reader's locale are the client's to produce, for the reason above.
+ *
+ * **Optional, and the renderer falls back to today's English when it is
+ * absent.** The api deploys to Fly and the app to Pages, not atomically, and an
+ * installed PWA can run a build for days. A required field would turn every
+ * export from such a client into a validation error and no document; a fallback
+ * gives it exactly the statement it got before. `pdf-export.ts` always sends it,
+ * and its test says so.
+ */
+export const StatementTextDto = z.object({
+  total: z.string(),
+  pageOf: z.string(),
+  account: z.string(),
+  generated: z.string(),
+  generatedAt: z.string(),
+  rows: z.string(),
+  rowCount: z.string().optional(),
+  amounts: z.string(),
+  amountsWithheld: z.string(),
+  characters: z.string(),
+  unsupportedNote: z.string(),
+  noRows: z.string(),
+});
+
+export type StatementTextDtoType = z.infer<typeof StatementTextDto>;
+
+const notADigit = (value: string) => !/\p{Nd}/u.test(value);
+
+/**
+ * The two characters a statement's figures are written with, in the reader's
+ * locale — `1 234,56` in French, `1.234,56` in Spanish (SC-1199).
+ *
+ * Separators and not a locale tag, so the renderer still knows no language: it
+ * rounds through `Decimal` exactly as before and only spells the result. That
+ * ASSUMES grouping every three digits, which two characters cannot express;
+ * `offered-language-formats.test.ts` fails the build on an offered locale that
+ * groups otherwise, rather than letting it print wrong figures.
+ *
+ * Digits are refused: a separator that is a digit makes a figure unreadable,
+ * and one that equals the other makes it ambiguous. Optional for the stale
+ * client `StatementTextDto` describes, which gets `1,234.56` as before.
+ */
+export const FigureSeparatorsDto = z
+  .object({
+    group: z.string().min(1).max(2).refine(notADigit),
+    decimal: z.string().length(1).refine(notADigit),
+  })
+  .refine((separators) => separators.group !== separators.decimal, {
+    message: 'The group and decimal separators must differ',
+  });
+
+export type FigureSeparatorsDtoType = z.infer<typeof FigureSeparatorsDto>;
+
 export const RenderPdfInput = z.object({
   /** Only the first sheet is rendered — a PDF is one statement. */
   sheet: ExportSheetDto.refine((sheet) => sheet.rows.length <= PDF_MAX_ROWS, {
@@ -120,6 +197,8 @@ export const RenderPdfInput = z.object({
       { message: 'Groups must account for every row exactly once' }
     ),
   provenance: ExportProvenanceDto,
+  text: StatementTextDto.optional(),
+  figures: FigureSeparatorsDto.optional(),
 });
 
 export type RenderPdfInputType = z.infer<typeof RenderPdfInput>;
