@@ -145,6 +145,14 @@
         "field": "Field",
         "value": "Value"
       },
+      "statement": {
+        "total": "Total",
+        "pageOf": "Page {{page}} of {{pages}}",
+        "account": "Account",
+        "characters": "Characters",
+        "unsupportedNote": "{{mark}} marks a character these fonts cannot set — the CSV and XLSX exports carry the full name.",
+        "noRows": "No rows in this selection."
+      },
       "download": {
         "shared": "Sent to your share sheet",
         "sharedDetail": "Choose Save to Files to keep {{fileName}}.",

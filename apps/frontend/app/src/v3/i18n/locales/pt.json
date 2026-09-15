@@ -555,6 +555,12 @@
         "searchPlaceholder": "Pesquisar moedas…"
       },
       "recordPicker": {
+        "announceMatches_one": "{{count}} correspondência",
+        "announceMatches_many": "{{count}} correspondências",
+        "announceMatches_other": "{{count}} correspondências",
+        "announceSimilar_one": "{{count}} registo semelhante",
+        "announceSimilar_many": "{{count}} registos semelhantes",
+        "announceSimilar_other": "{{count}} registos semelhantes",
         "change": "Alterar {{label}}",
         "changeAction": "Alterar",
         "searching": "A pesquisar…",
