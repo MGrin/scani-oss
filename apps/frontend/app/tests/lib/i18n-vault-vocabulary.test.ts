@@ -62,6 +62,12 @@ const TREES: readonly (readonly [string, string])[] = [
  */
 const FORBIDDEN: Record<string, RegExp> = {
   en: /\b(strongbox|safe[- ]?deposit|cold storage|custody|custodian|vault door)\b/i,
+  // `صندوق` and `حفظ` are NOT here: the first is the everyday word for a box
+  // and for a fund, the second the ordinary verb for keeping something, and
+  // both appear in correct copy. The strongbox reading in Arabic is a specific
+  // noun (خزنة / خزينة / قاصة / قبو), and custody is a phrase. Arabic renders
+  // Vault as حصّالة, a money box, which shares none of these.
+  ar: /(خزنة|خزينة|خزائن|خزنات|قاصة|قبو|صندوق حديدي|صندوق أمانات|أمين الحفظ|جهة حافظة|حفظ الأصول|وصاية على الأصول|تخزين بارد|التخزين البارد|محفظة باردة|المحفظة الباردة)/,
   es: /(caja fuerte|cofre|bóveda|boveda|custodia|almacenamiento en frío)/i,
   // `garde` alone is NOT here on purpose. It matches six correct strings in
   // this very bundle — `Garde {{count}} transferts hors de la file`,
@@ -181,6 +187,7 @@ describe('vault vocabulary', () => {
   test('each language pattern fires on a planted strongbox rendering', () => {
     const planted: Record<string, string> = {
       en: 'A vault is a strongbox for your holdings.',
+      ar: 'الحصّالة خزنة لحيازاتك.',
       es: 'Un objetivo es una caja fuerte para tus posiciones.',
       fr: 'Un objectif est un coffre-fort pour vos positions.',
       id: 'Target tabungan adalah brankas untuk posisi Anda.',

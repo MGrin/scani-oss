@@ -1,0 +1,1076 @@
+{
+  "$meta": {
+    "name": "Arabic",
+    "nativeName": "العربية"
+  },
+  "auth": {
+    "signIn": {
+      "title": "مرحبًا بك",
+      "subtitle": "يُرجى إدخال بريدك الإلكتروني لتسجيل الدخول أو إنشاء حساب Scani",
+      "emailLabel": "البريد الإلكتروني",
+      "emailPlaceholder": "عنوان البريد الإلكتروني",
+      "emailRequired": "البريد الإلكتروني مطلوب",
+      "emailInvalid": "يُرجى إدخال عنوان بريد إلكتروني صالح",
+      "submit": "المتابعة بالبريد الإلكتروني",
+      "offline": "لا يوجد اتصال بالإنترنت. سنرسل الرمز فور عودة الاتصال.",
+      "hintCode": "سنرسل إليك رمزًا من 6 أرقام لتسجيل الدخول.",
+      "hintLink": "سنرسل إليك رابطًا آمنًا لتسجيل الدخول.",
+      "newAccount": "أول مرة في Scani؟ سيُنشأ حسابك في Scani تلقائيًا."
+    },
+    "code": {
+      "title": "إدخال رمز التحقق",
+      "sentTo": "أرسلنا رمزًا من 6 أرقام إلى {{email}}",
+      "differentEmail": "استخدام بريد إلكتروني آخر"
+    },
+    "linkSent": {
+      "title": "يُرجى تفقّد بريدك الإلكتروني",
+      "subtitle": "أرسلنا إليك رابطًا آمنًا لتسجيل الدخول",
+      "body": "يُرجى فتح الرابط الوارد في رسالة البريد الإلكتروني للدخول إلى حسابك في Scani. إن كانت هذه أول مرة، فسننشئ لك حسابًا في Scani تلقائيًا.",
+      "resend": "إرسال رسالة أخرى"
+    },
+    "callback": {
+      "signingInTitle": "جارٍ تسجيل دخولك…",
+      "signingInSubtitle": "يُرجى الانتظار ريثما نتأكد من هويتك",
+      "signingInBody": "لن يستغرق ذلك سوى لحظة.",
+      "successTitle": "مرحبًا بك!",
+      "successSubtitle": "تم تسجيل دخولك بنجاح",
+      "successBody": "جارٍ نقلك إلى لوحة المعلومات…",
+      "errorTitle": "خطأ في المصادقة",
+      "errorSubtitle": "حدثت مشكلة أثناء تسجيل دخولك",
+      "tryAgain": "المحاولة مرة أخرى",
+      "support": "إذا استمرت المشكلة، يُرجى التواصل مع الدعم.",
+      "linkFailed": "فشلت المصادقة",
+      "unreachable": "تعذّر الوصول إلى الخادم لإتمام تسجيل دخولك. يُرجى فحص الاتصال وفتح الرابط مرة أخرى.",
+      "expired": "انتهت صلاحية رابط تسجيل الدخول أو تعذّر التأكد منه. يُرجى طلب رابط جديد."
+    },
+    "failure": {
+      "offline": "لا يوجد اتصال بالإنترنت، لذا تعذّر الوصول إلى Scani. سنعيد المحاولة تلقائيًا فور عودة الاتصال.",
+      "timeout": "استغرق Scani وقتًا طويلًا للرد. يُرجى فحص الاتصال والنقر على «متابعة» مرة أخرى.",
+      "unreachable": "تعذّر الوصول إلى Scani. يُرجى فحص الاتصال والنقر على «متابعة» مرة أخرى.",
+      "server": "حدث خطأ ما. يُرجى المحاولة مرة أخرى."
+    }
+  },
+  "currency": {
+    "unknownName": "عملة {{symbol}}"
+  },
+  "vendors": {
+    "paidWindow_zero": "المدفوع خلال آخر {{count}} شهر",
+    "paidWindow_one": "المدفوع خلال آخر {{count}} شهر",
+    "paidWindow_two": "المدفوع خلال آخر {{count}} شهرين",
+    "paidWindow_few": "المدفوع خلال آخر {{count}} أشهر",
+    "paidWindow_many": "المدفوع خلال آخر {{count}} شهرًا",
+    "paidWindow_other": "المدفوع خلال آخر {{count}} شهر",
+    "receivedWindow_zero": "المُستلَم خلال آخر {{count}} شهر",
+    "receivedWindow_one": "المُستلَم خلال آخر {{count}} شهر",
+    "receivedWindow_two": "المُستلَم خلال آخر {{count}} شهرين",
+    "receivedWindow_few": "المُستلَم خلال آخر {{count}} أشهر",
+    "receivedWindow_many": "المُستلَم خلال آخر {{count}} شهرًا",
+    "receivedWindow_other": "المُستلَم خلال آخر {{count}} شهر",
+    "projectedPerMonth": "المتوقَّع شهريًا",
+    "projectedIncomePerMonth": "الدخل المتوقَّع شهريًا",
+    "paidAllTime": "المدفوع منذ البداية",
+    "receivedAllTime": "المُستلَم منذ البداية",
+    "withUnconverted": "{{base}} + {{rest}} دون تحويل عملة",
+    "unpriced_zero": "{{count}} عملية سداد بلا مبلغ مُسجَّل، ولم تُحتسب في هذا الإجمالي.",
+    "unpriced_one": "{{count}} عملية سداد بلا مبلغ مُسجَّل، ولم تُحتسب في هذا الإجمالي.",
+    "unpriced_two": "{{count}} عمليتان للسداد بلا مبلغ مُسجَّل، ولم تُحتسبا في هذا الإجمالي.",
+    "unpriced_few": "{{count}} عمليات سداد بلا مبلغ مُسجَّل، ولم تُحتسب في هذا الإجمالي.",
+    "unpriced_many": "{{count}} عملية سداد بلا مبلغ مُسجَّل، ولم تُحتسب في هذا الإجمالي.",
+    "unpriced_other": "{{count}} عملية سداد بلا مبلغ مُسجَّل، ولم تُحتسب في هذا الإجمالي.",
+    "kind": {
+      "income": "دخل",
+      "both": "مصروفات ودخل",
+      "unclassified": "الاتجاه غير مُسجَّل"
+    }
+  },
+  "nav": {
+    "sections": {
+      "portfolio": "المحفظة الاستثمارية",
+      "organization": "الهيكل",
+      "activity": "النشاط",
+      "payments": "المدفوعات"
+    },
+    "home": "الرئيسية",
+    "holdings": "الحيازات",
+    "accounts": "الحسابات",
+    "institutions": "المؤسسات",
+    "groups": "المجموعات",
+    "entities": "الكيانات",
+    "vaults": "الحصّالات",
+    "tokens": "التوكنات",
+    "jobs": "المهام",
+    "settings": "الإعدادات",
+    "signOut": "تسجيل الخروج",
+    "more": "المزيد",
+    "add": "إضافة",
+    "addData": "إضافة بيانات",
+    "addDataButton": "إضافة بيانات",
+    "paymentsOverview": "نظرة عامة",
+    "recurringPayments": "المدفوعات المتكررة",
+    "vendors": "الأطراف المقابلة",
+    "review": "المراجعة",
+    "files": "الملفات",
+    "payments": "المدفوعات",
+    "money": "المال"
+  },
+  "settings": {
+    "title": "الإعدادات",
+    "subtitle": "إدارة تفضيلاتك",
+    "profile": "الملف الشخصي",
+    "name": "الاسم",
+    "namePlaceholder": "اسمك",
+    "email": "البريد الإلكتروني",
+    "preferences": "التفضيلات",
+    "baseCurrency": "العملة الأساسية",
+    "language": "اللغة",
+    "languageHint": "الترجمات من إسهام المجتمع. النصوص غير المترجمة تظهر بالإنجليزية.",
+    "region": "المنطقة",
+    "regionAuto": "اتباع لغة الواجهة",
+    "regionHint": "تظهر التواريخ والأرقام هكذا: {{sample}}.",
+    "saving": "جارٍ الحفظ…",
+    "autoSave": "تُحفظ التغييرات تلقائيًا",
+    "account": "حساب Scani",
+    "signOut": "تسجيل الخروج"
+  },
+  "ui": {
+    "dataView": {
+      "noun": {
+        "holdings_zero": "الحيازات",
+        "holdings_one": "الحيازة",
+        "holdings_two": "الحيازات",
+        "holdings_few": "الحيازات",
+        "holdings_many": "الحيازات",
+        "holdings_other": "الحيازات",
+        "holdings_counted_zero": "{{count}} حيازة",
+        "holdings_counted_one": "{{count}} حيازة",
+        "holdings_counted_two": "{{count}} حيازتان",
+        "holdings_counted_few": "{{count}} حيازات",
+        "holdings_counted_many": "{{count}} حيازة",
+        "holdings_counted_other": "{{count}} حيازة",
+        "payments_zero": "الدفعات",
+        "payments_one": "الدفعة",
+        "payments_two": "الدفعات",
+        "payments_few": "الدفعات",
+        "payments_many": "الدفعات",
+        "payments_other": "الدفعات",
+        "payments_counted_zero": "{{count}} دفعة",
+        "payments_counted_one": "{{count}} دفعة",
+        "payments_counted_two": "{{count}} دفعتان",
+        "payments_counted_few": "{{count}} دفعات",
+        "payments_counted_many": "{{count}} دفعة",
+        "payments_counted_other": "{{count}} دفعة",
+        "vendors_zero": "الأطراف المقابلة",
+        "vendors_one": "الطرف المقابل",
+        "vendors_two": "الأطراف المقابلة",
+        "vendors_few": "الأطراف المقابلة",
+        "vendors_many": "الأطراف المقابلة",
+        "vendors_other": "الأطراف المقابلة",
+        "vendors_counted_zero": "{{count}} طرف مقابل",
+        "vendors_counted_one": "{{count}} طرف مقابل",
+        "vendors_counted_two": "{{count}} طرفان مقابلان",
+        "vendors_counted_few": "{{count}} أطراف مقابلة",
+        "vendors_counted_many": "{{count}} طرفًا مقابلًا",
+        "vendors_counted_other": "{{count}} طرف مقابل",
+        "accounts_zero": "الحسابات",
+        "accounts_one": "الحساب",
+        "accounts_two": "الحسابات",
+        "accounts_few": "الحسابات",
+        "accounts_many": "الحسابات",
+        "accounts_other": "الحسابات",
+        "accounts_counted_zero": "{{count}} حساب",
+        "accounts_counted_one": "{{count}} حساب",
+        "accounts_counted_two": "{{count}} حسابان",
+        "accounts_counted_few": "{{count}} حسابات",
+        "accounts_counted_many": "{{count}} حسابًا",
+        "accounts_counted_other": "{{count}} حساب",
+        "institutions_zero": "المؤسسات",
+        "institutions_one": "المؤسسة",
+        "institutions_two": "المؤسسات",
+        "institutions_few": "المؤسسات",
+        "institutions_many": "المؤسسات",
+        "institutions_other": "المؤسسات",
+        "institutions_counted_zero": "{{count}} مؤسسة",
+        "institutions_counted_one": "{{count}} مؤسسة",
+        "institutions_counted_two": "{{count}} مؤسستان",
+        "institutions_counted_few": "{{count}} مؤسسات",
+        "institutions_counted_many": "{{count}} مؤسسة",
+        "institutions_counted_other": "{{count}} مؤسسة",
+        "groups_zero": "المجموعات",
+        "groups_one": "المجموعة",
+        "groups_two": "المجموعات",
+        "groups_few": "المجموعات",
+        "groups_many": "المجموعات",
+        "groups_other": "المجموعات",
+        "groups_counted_zero": "{{count}} مجموعة",
+        "groups_counted_one": "{{count}} مجموعة",
+        "groups_counted_two": "{{count}} مجموعتان",
+        "groups_counted_few": "{{count}} مجموعات",
+        "groups_counted_many": "{{count}} مجموعة",
+        "groups_counted_other": "{{count}} مجموعة",
+        "vaults_zero": "الحصّالات",
+        "vaults_one": "الحصّالة",
+        "vaults_two": "الحصّالات",
+        "vaults_few": "الحصّالات",
+        "vaults_many": "الحصّالات",
+        "vaults_other": "الحصّالات",
+        "vaults_counted_zero": "{{count}} حصّالة",
+        "vaults_counted_one": "{{count}} حصّالة",
+        "vaults_counted_two": "{{count}} حصّالتان",
+        "vaults_counted_few": "{{count}} حصّالات",
+        "vaults_counted_many": "{{count}} حصّالة",
+        "vaults_counted_other": "{{count}} حصّالة",
+        "jobs_zero": "المهام",
+        "jobs_one": "المهمة",
+        "jobs_two": "المهام",
+        "jobs_few": "المهام",
+        "jobs_many": "المهام",
+        "jobs_other": "المهام",
+        "jobs_counted_zero": "{{count}} مهمة",
+        "jobs_counted_one": "{{count}} مهمة",
+        "jobs_counted_two": "{{count}} مهمتان",
+        "jobs_counted_few": "{{count}} مهام",
+        "jobs_counted_many": "{{count}} مهمة",
+        "jobs_counted_other": "{{count}} مهمة",
+        "files_zero": "الملفات",
+        "files_one": "الملف",
+        "files_two": "الملفات",
+        "files_few": "الملفات",
+        "files_many": "الملفات",
+        "files_other": "الملفات",
+        "files_counted_zero": "{{count}} ملف",
+        "files_counted_one": "{{count}} ملف",
+        "files_counted_two": "{{count}} ملفان",
+        "files_counted_few": "{{count}} ملفات",
+        "files_counted_many": "{{count}} ملفًا",
+        "files_counted_other": "{{count}} ملف",
+        "integrations_zero": "التكاملات",
+        "integrations_one": "التكامل",
+        "integrations_two": "التكاملات",
+        "integrations_few": "التكاملات",
+        "integrations_many": "التكاملات",
+        "integrations_other": "التكاملات",
+        "integrations_counted_zero": "{{count}} تكامل",
+        "integrations_counted_one": "{{count}} تكامل",
+        "integrations_counted_two": "{{count}} تكاملان",
+        "integrations_counted_few": "{{count}} تكاملات",
+        "integrations_counted_many": "{{count}} تكاملًا",
+        "integrations_counted_other": "{{count}} تكامل",
+        "reviewItems_zero": "العناصر",
+        "reviewItems_one": "العنصر",
+        "reviewItems_two": "العناصر",
+        "reviewItems_few": "العناصر",
+        "reviewItems_many": "العناصر",
+        "reviewItems_other": "العناصر",
+        "reviewItems_counted_zero": "{{count}} عنصر",
+        "reviewItems_counted_one": "{{count}} عنصر",
+        "reviewItems_counted_two": "{{count}} عنصران",
+        "reviewItems_counted_few": "{{count}} عناصر",
+        "reviewItems_counted_many": "{{count}} عنصرًا",
+        "reviewItems_counted_other": "{{count}} عنصر",
+        "transfers_zero": "التحويلات",
+        "transfers_one": "التحويل",
+        "transfers_two": "التحويلات",
+        "transfers_few": "التحويلات",
+        "transfers_many": "التحويلات",
+        "transfers_other": "التحويلات",
+        "transfers_counted_zero": "{{count}} تحويل",
+        "transfers_counted_one": "{{count}} تحويل",
+        "transfers_counted_two": "{{count}} تحويلان",
+        "transfers_counted_few": "{{count}} تحويلات",
+        "transfers_counted_many": "{{count}} تحويلًا",
+        "transfers_counted_other": "{{count}} تحويل",
+        "hiddenHoldings_zero": "الحيازات المخفية",
+        "hiddenHoldings_one": "الحيازة المخفية",
+        "hiddenHoldings_two": "الحيازات المخفية",
+        "hiddenHoldings_few": "الحيازات المخفية",
+        "hiddenHoldings_many": "الحيازات المخفية",
+        "hiddenHoldings_other": "الحيازات المخفية",
+        "hiddenHoldings_counted_zero": "{{count}} حيازة مخفية",
+        "hiddenHoldings_counted_one": "{{count}} حيازة مخفية",
+        "hiddenHoldings_counted_two": "{{count}} حيازتان مخفيتان",
+        "hiddenHoldings_counted_few": "{{count}} حيازات مخفية",
+        "hiddenHoldings_counted_many": "{{count}} حيازة مخفية",
+        "hiddenHoldings_counted_other": "{{count}} حيازة مخفية",
+        "customTokens_zero": "التوكنات المخصصة",
+        "customTokens_one": "التوكن المخصص",
+        "customTokens_two": "التوكنات المخصصة",
+        "customTokens_few": "التوكنات المخصصة",
+        "customTokens_many": "التوكنات المخصصة",
+        "customTokens_other": "التوكنات المخصصة",
+        "customTokens_counted_zero": "{{count}} توكن مخصص",
+        "customTokens_counted_one": "{{count}} توكن مخصص",
+        "customTokens_counted_two": "{{count}} توكنان مخصصان",
+        "customTokens_counted_few": "{{count}} توكنات مخصصة",
+        "customTokens_counted_many": "{{count}} توكنًا مخصصًا",
+        "customTokens_counted_other": "{{count}} توكن مخصص"
+      },
+      "accounts": {
+        "col": {
+          "account": "الحساب",
+          "holdings": "الحيازات",
+          "institution": "المؤسسة",
+          "lastSynced": "آخر مزامنة",
+          "type": "النوع",
+          "value": "القيمة"
+        },
+        "config": {
+          "search": "البحث",
+          "details": "تفاصيل {{name}}"
+        },
+        "empty": {
+          "anAccountIsCreatedForYou": "يُنشأ الحساب تلقائيًا عند ربط تكامل أو استيراد كشف حساب.",
+          "noAccountsYet": "لا توجد حسابات بعد"
+        },
+        "filter": {
+          "contents": "المحتوى",
+          "group": "المجموعة",
+          "institution": "المؤسسة",
+          "type": "النوع"
+        },
+        "group": {
+          "institution": "المؤسسة",
+          "type": "النوع"
+        },
+        "sort": {
+          "holdings": "الحيازات",
+          "name": "الاسم",
+          "value": "القيمة"
+        },
+        "option": {
+          "holdsSomething": "غير فارغ",
+          "empty": "فارغ"
+        }
+      },
+      "answeredTransfers": {
+        "col": {
+          "answer": "الإجابة",
+          "answered": "مُجاب عنه",
+          "from": "من",
+          "left": "المبلغ الخارج",
+          "when": "الوقت"
+        },
+        "config": {
+          "searchAnsweredTransfers": "البحث في التحويلات المُجاب عنها"
+        },
+        "empty": {
+          "answersYouGiveInTheTransfer": "الإجابات المُقدَّمة في قائمة مراجعة التحويلات تظهر هنا، ليُمكن الرجوع إليها وتغيير أي منها.",
+          "noTransfersAnsweredYet": "لم تُقدَّم إجابة عن أي تحويل بعد"
+        },
+        "filter": {
+          "answered": "مُجاب عنه"
+        },
+        "sort": {
+          "answered": "مُجاب عنه",
+          "asset": "الأصل",
+          "when": "الوقت"
+        }
+      },
+      "customTokens": {
+        "col": {
+          "price": "السعر",
+          "priceUpdated": "تحديث السعر",
+          "token": "التوكن",
+          "type": "النوع"
+        },
+        "config": {
+          "searchCustomTokens": "البحث في التوكنات المخصصة"
+        },
+        "empty": {
+          "createOneForAnAssetNo": "يُرجى إنشاء توكن لأصل لا يتتبّعه أي مزوّد أسعار — كأسهم في شركة خاصة، أو حيازة مادية. التوكن وسعره مُتاحان لجميع مستخدمي Scani.",
+          "noCustomTokensYet": "لا توجد توكنات مخصصة بعد"
+        },
+        "filter": {
+          "type": "النوع"
+        },
+        "group": {
+          "type": "النوع"
+        },
+        "sort": {
+          "priceUpdated": "تحديث السعر",
+          "symbol": "الرمز"
+        }
+      },
+      "files": {
+        "col": {
+          "invoices": "الفواتير",
+          "kind": "الصنف",
+          "name": "الاسم",
+          "size": "الحجم",
+          "uploaded": "تاريخ الرفع"
+        },
+        "config": {
+          "searchFiles": "البحث في الملفات"
+        },
+        "empty": {
+          "invoicesScreenshotsAndStatementFilesYou": "الفواتير ولقطات الشاشة وملفات كشوف الحساب المرفوعة تُحفظ هنا، مع كل ما استُخرج منها.",
+          "noFilesYet": "لا توجد ملفات بعد"
+        },
+        "filter": {
+          "invoices": "الفواتير",
+          "kind": "الصنف"
+        },
+        "group": {
+          "invoices": "الفواتير",
+          "kind": "الصنف"
+        },
+        "sort": {
+          "kind": "الصنف",
+          "name": "الاسم",
+          "size": "الحجم",
+          "uploaded": "تاريخ الرفع"
+        }
+      },
+      "groups": {
+        "col": {
+          "accounts": "الحسابات",
+          "group": "المجموعة",
+          "holdings": "الحيازات",
+          "value": "القيمة"
+        },
+        "config": {
+          "searchGroups": "البحث في المجموعات",
+          "value": "القيمة"
+        },
+        "empty": {
+          "aGroupIsYourOwnLabel": "المجموعة تسمية خاصة بك تجمع بها حيازات وحسابات — «التقاعد»، «الخاضع للضريبة»، «الحساب المشترك».",
+          "noGroupsYet": "لا توجد مجموعات بعد"
+        },
+        "filter": {
+          "members": "الأعضاء"
+        },
+        "sort": {
+          "accounts": "الحسابات",
+          "holdings": "الحيازات",
+          "name": "الاسم",
+          "value": "القيمة"
+        },
+        "option": {
+          "hasMembers": "تضم أعضاء",
+          "empty": "فارغة"
+        }
+      },
+      "hiddenHoldings": {
+        "col": {
+          "account": "الحساب",
+          "balance": "الرصيد",
+          "reason": "السبب",
+          "token": "التوكن"
+        },
+        "config": {
+          "searchHidden": "البحث في المخفي"
+        },
+        "empty": {
+          "everythingYouOwnIsCountedOnYourDashboard": "كل ما في ملكيتك محتسب في لوحة المعلومات.",
+          "nothingIsHidden": "لا شيء مخفي"
+        },
+        "filter": {
+          "reason": "السبب"
+        },
+        "group": {
+          "institution": "المؤسسة"
+        },
+        "sort": {
+          "balance": "الرصيد",
+          "symbol": "الرمز"
+        },
+        "option": {
+          "hiddenByYou": "مخفي بقرار منك",
+          "likelyScam": "احتيال مرجَّح"
+        }
+      },
+      "holdings": {
+        "col": {
+          "account": "الحساب",
+          "amount": "الكمية",
+          "gainLoss": "الربح / الخسارة",
+          "holding": "الحيازة",
+          "institution": "المؤسسة",
+          "price": "السعر",
+          "value": "القيمة"
+        },
+        "config": {
+          "searchHoldings": "البحث في الحيازات"
+        },
+        "empty": {
+          "description": "يُرجى ربط منصة تداول، أو استيراد كشف حساب، أو إضافة حيازة يدويًا — وكلها تظهر هنا.",
+          "title": "لا توجد حيازات بعد"
+        },
+        "filter": {
+          "account": "الحساب",
+          "group": "المجموعة",
+          "institution": "المؤسسة",
+          "type": "النوع",
+          "quality": "جودة البيانات",
+          "price": "السعر"
+        },
+        "groupBy": {
+          "account": "الحساب",
+          "institution": "المؤسسة",
+          "type": "النوع"
+        },
+        "sort": {
+          "amount": "الكمية",
+          "pnl": "الربح / الخسارة",
+          "price": "السعر",
+          "symbol": "الرمز",
+          "value": "القيمة"
+        },
+        "qualityOption": {
+          "duplicateSymbol": "رمز مُدرَج تحت أكثر من صف توكن",
+          "lookalike": "رمز منتحِل لرمز آخر",
+          "zeroBalance": "رصيد صفري",
+          "noRecentPrice": "لا يوجد سعر حديث",
+          "noPriceSource": "لا يوجد مصدر سعر يمكن استخدامه",
+          "negativeOpening": "رصيد افتتاحي مُستنتَج سالب",
+          "noCoverage": "لا يوجد صف تغطية"
+        },
+        "priceOption": {
+          "stale": "سعر متقادم"
+        }
+      },
+      "institutions": {
+        "col": {
+          "accounts": "الحسابات",
+          "institution": "المؤسسة",
+          "type": "النوع",
+          "value": "القيمة"
+        },
+        "config": {
+          "searchInstitutions": "البحث في المؤسسات"
+        },
+        "empty": {
+          "anInstitutionAppearsHereTheFirst": "تظهر المؤسسة هنا أول مرة يجلب فيها استيراد أو تكامل حسابًا منها.",
+          "noInstitutionsYet": "لا توجد مؤسسات بعد"
+        },
+        "filter": {
+          "type": "النوع"
+        },
+        "group": {
+          "type": "النوع"
+        },
+        "sort": {
+          "accounts": "الحسابات",
+          "name": "الاسم",
+          "value": "القيمة"
+        }
+      },
+      "integrations": {
+        "col": {
+          "kind": "الصنف",
+          "service": "الخدمة",
+          "whatItSyncs": "ما تتم مزامنته"
+        },
+        "config": {
+          "search": "البحث"
+        },
+        "empty": {
+          "noServicesToConnect": "لا توجد خدمات للربط",
+          "scaniShipsItsIntegrationsWithThe": "يأتي Scani بتكاملاته مدمجة في التطبيق، لذا فإن القائمة الفارغة تعني أن تحميل الكتالوج قد فشل، لا أنه لا توجد تكاملات متاحة."
+        },
+        "filter": {
+          "kind": "الصنف"
+        },
+        "group": {
+          "kind": "الصنف"
+        },
+        "sort": {
+          "name": "الاسم"
+        }
+      },
+      "jobs": {
+        "col": {
+          "detail": "التفاصيل",
+          "job": "المهمة",
+          "started": "وقت البدء",
+          "status": "الحالة"
+        },
+        "config": {
+          "searchJobs": "البحث في المهام"
+        },
+        "empty": {
+          "importsParsesAndPriceRefreshesRun": "مهام الاستيراد وقراءة الملفات وتحديث الأسعار تعمل في الخلفية، وتعرض تقدّمها هنا أثناء عملها.",
+          "noBackgroundJobsYet": "لا توجد مهام في الخلفية بعد"
+        },
+        "filter": {
+          "status": "الحالة"
+        },
+        "group": {
+          "status": "الحالة"
+        },
+        "sort": {
+          "started": "وقت البدء",
+          "status": "الحالة"
+        }
+      },
+      "kitchenSink": {
+        "col": {
+          "24h": "24 ساعة",
+          "holding": "الحيازة",
+          "institution": "المؤسسة",
+          "price": "السعر",
+          "units": "الوحدات",
+          "value": "القيمة"
+        },
+        "config": {
+          "searchHoldings": "البحث في الحيازات"
+        },
+        "empty": {
+          "connectAnExchangeOrImportAStatementAndYourPositionsAppearHere": "يُرجى ربط منصة تداول أو استيراد كشف حساب، وستظهر حيازاتك هنا.",
+          "noHoldingsYet": "لا توجد حيازات بعد"
+        },
+        "filter": {
+          "institution": "المؤسسة",
+          "type": "النوع"
+        },
+        "group": {
+          "institution": "المؤسسة",
+          "type": "النوع"
+        },
+        "sort": {
+          "change": "التغيّر",
+          "name": "الاسم",
+          "value": "القيمة"
+        }
+      },
+      "payments": {
+        "col": {
+          "amount": "المبلغ",
+          "cadence": "التكرار",
+          "direction": "الاتجاه",
+          "status": "الحالة",
+          "vendor": "الطرف المقابل"
+        },
+        "config": {
+          "searchByVendor": "البحث حسب الطرف المقابل"
+        },
+        "empty": {
+          "addABillOrRecurringIncomeAndScaniTracksEveryDateItFallsDue": "يُرجى إضافة مصروف أو دخل متكرر، وسيتتبّع Scani كل تاريخ استحقاق له.",
+          "noRecurringPaymentsYet": "لا توجد دفعات متكررة بعد"
+        },
+        "filter": {
+          "direction": "الاتجاه",
+          "status": "الحالة",
+          "vendor": "الطرف المقابل"
+        },
+        "group": {
+          "direction": "الاتجاه",
+          "status": "الحالة"
+        },
+        "sort": {
+          "amount": "المبلغ",
+          "status": "الحالة",
+          "vendor": "الطرف المقابل"
+        },
+        "option": {
+          "active": "نشطة",
+          "paused": "متوقفة مؤقتًا",
+          "ended": "منتهية",
+          "bill": "مصروف",
+          "income": "دخل"
+        }
+      },
+      "review": {
+        "col": {
+          "amount": "المبلغ",
+          "arrived": "وقت الوصول",
+          "detail": "التفاصيل",
+          "item": "العنصر"
+        },
+        "config": {
+          "searchReview": "البحث في المراجعة"
+        },
+        "empty": {
+          "importsLandHereWhenTheyFinish": "يصل كل استيراد إلى هنا عند اكتماله، بانتظار تأكيد قبل احتساب حيازاته.",
+          "nothingNeedsYourReview": "لا شيء بانتظار مراجعتك"
+        },
+        "filter": {
+          "type": "النوع"
+        },
+        "group": {
+          "type": "النوع"
+        },
+        "sort": {
+          "arrived": "وقت الوصول",
+          "item": "العنصر"
+        }
+      },
+      "transferReview": {
+        "col": {
+          "from": "من",
+          "ifItWasASale": "لو كان بيعًا",
+          "left": "المبلغ الخارج",
+          "when": "الوقت",
+          "whyItIsHere": "سبب ظهوره هنا"
+        },
+        "config": {
+          "searchTransfers": "البحث في التحويلات"
+        },
+        "empty": {
+          "everyTransferIsAccountedFor": "جميع التحويلات محسومة",
+          "moneyMovingBetweenYourOwnAccounts": "الأموال المنتقلة بين حساباتك تُطابَق تلقائيًا. وكل ما يتعذّر على المطابقة حسمه بمفردها يصل إلى هنا بانتظار إجابتك."
+        },
+        "sort": {
+          "asset": "الأصل",
+          "value": "القيمة",
+          "when": "الوقت"
+        }
+      },
+      "vaults": {
+        "col": {
+          "progress": "التقدّم",
+          "saved": "المُدَّخر",
+          "target": "المبلغ المستهدف",
+          "vault": "الحصّالة"
+        },
+        "config": {
+          "searchVaults": "البحث في الحصّالات"
+        },
+        "empty": {
+          "aVaultIsASavingsGoal": "الحصّالة هدف ادخاري: يُرجى تسميتها، وتحديد المبلغ المستهدف، وإرفاق الحيازات المحتسبة لها.",
+          "noVaultsYet": "لا توجد حصّالات بعد"
+        },
+        "filter": {
+          "status": "الحالة"
+        },
+        "sort": {
+          "name": "الاسم",
+          "progress": "التقدّم",
+          "saved": "المُدَّخر",
+          "target": "المبلغ المستهدف"
+        },
+        "option": {
+          "stillSaving": "الادخار مستمر",
+          "targetReached": "تم بلوغ المبلغ المستهدف"
+        }
+      },
+      "vendors": {
+        "col": {
+          "category": "الفئة",
+          "kind": "الصنف",
+          "payments": "المدفوعات",
+          "vendor": "الطرف المقابل",
+          "perMonth": "شهريًا"
+        },
+        "config": {
+          "searchVendors": "البحث في الأطراف المقابلة"
+        },
+        "empty": {
+          "aVendorIsCreatedForYou": "يُنشأ الطرف المقابل تلقائيًا أول مرة تُسند إليه دفعة. ويمكن أيضًا إضافته من هنا.",
+          "noVendorsYet": "لا توجد أطراف مقابلة بعد"
+        },
+        "group": {
+          "billsIncome": "مصروفات / دخل",
+          "category": "الفئة"
+        },
+        "sort": {
+          "name": "الاسم",
+          "payments": "المدفوعات"
+        }
+      },
+      "upcoming": {
+        "empty": {
+          "nothingDue_zero": "لا شيء مستحق خلال {{count}} يوم قادم",
+          "nothingDue_one": "لا شيء مستحق خلال {{count}} يوم قادم",
+          "nothingDue_two": "لا شيء مستحق خلال {{count}} يومين قادمين",
+          "nothingDue_few": "لا شيء مستحق خلال {{count}} أيام قادمة",
+          "nothingDue_many": "لا شيء مستحق خلال {{count}} يومًا قادمًا",
+          "nothingDue_other": "لا شيء مستحق خلال {{count}} يوم قادم",
+          "noPayments": "لا توجد دفعات متكررة بعد",
+          "outsideWindow": "مواعيد استحقاق دفعاتك الثابتة تقع خارج هذه الفترة.",
+          "addOne": "يُرجى إضافة مصروف أو دخل متكرر، وستظهر تواريخه القادمة هنا."
+        }
+      },
+      "itemCount_zero": "{{count}} عنصر",
+      "itemCount_one": "{{count}} عنصر",
+      "itemCount_two": "{{count}} عنصران",
+      "itemCount_few": "{{count}} عناصر",
+      "itemCount_many": "{{count}} عنصرًا",
+      "itemCount_other": "{{count}} عنصر",
+      "nameList": {
+        "all": "{{head}} و{{last}}",
+        "more": "{{head}} و{{count}} أخرى"
+      },
+      "toolbar": {
+        "refine": "تحسين العرض",
+        "refineAria": "التصفية والفرز والتجميع",
+        "select": "تحديد",
+        "done": "تم",
+        "export": "تصدير",
+        "search": "البحث في {{noun}}",
+        "filteredOf": "{{shown}} من {{counted}}",
+        "loadedSoFar": "المُحمَّل حتى الآن: {{counted}}",
+        "filteredOfLoaded": "{{shown}} من {{counted}} مُحمَّلة حتى الآن",
+        "loadMore": "تحميل المزيد",
+        "loadingMore": "جارٍ تحميل المزيد…",
+        "selected": "المحدَّد: {{counted}}",
+        "removeFilter": "إزالة عامل التصفية {{label}}: {{value}}"
+      },
+      "table": {
+        "clearSelection": "إلغاء التحديد",
+        "selectAll": "تحديد الكل",
+        "selectRow": "تحديد {{name}}",
+        "sortBy": "الفرز حسب {{header}}",
+        "rowCount_zero": "{{count}} صف",
+        "rowCount_one": "{{count}} صف",
+        "rowCount_two": "{{count}} صفان",
+        "rowCount_few": "{{count}} صفوف",
+        "rowCount_many": "{{count}} صفًا",
+        "rowCount_other": "{{count}} صف",
+        "rowActions": "التفاصيل"
+      },
+      "empty": {
+        "clearSearchAndFilters": "مسح البحث وعوامل التصفية",
+        "noMatchSearch": "لا شيء من {{noun}} يطابق «{{search}}»",
+        "noMatchFilters": "لا شيء من {{noun}} يطابق عوامل التصفية هذه",
+        "noMatchLoaded": "لا توجد نتائج مطابقة فيما حُمِّل",
+        "loadedOnly": "يقتصر البحث والتصفية على ما حُمِّل حتى الآن ({{counted}}). يُرجى تحميل المزيد لتوسيع نطاقهما.",
+        "filteredBy": "مُصفّاة حسب {{list}}."
+      },
+      "bulk": {
+        "delete": "حذف",
+        "deleteCount": "حذف {{counted}}"
+      },
+      "refine": {
+        "title": "تحسين العرض",
+        "filter": "التصفية",
+        "sortBy": "الفرز حسب",
+        "groupBy": "التجميع حسب",
+        "any": "أي قيمة",
+        "noGrouping": "بلا تجميع",
+        "lowToHigh": "من الأدنى إلى الأعلى",
+        "highToLow": "من الأعلى إلى الأدنى",
+        "clearAll": "مسح الكل",
+        "done": "تم",
+        "expand": "عرض كل الخيارات",
+        "collapse": "عرض خيارات أقل",
+        "close": "إغلاق تحسين العرض",
+        "liveCount": "{{counted}} · تُطبَّق التغييرات فور إجرائها"
+      },
+      "export": {
+        "title": "تصدير",
+        "whatToExport": "ما يُراد تصديره",
+        "format": "التنسيق",
+        "separator": "الفاصل",
+        "privacy": "الخصوصية",
+        "hideAmounts": "إخفاء المبالغ",
+        "hideAmountsDetail": "يُزيل كل عمود للقيمة والربح/الخسارة والمبالغ بعد تحويل العملة. ويذكر الملف أنها حُجبت.",
+        "cancel": "إلغاء",
+        "preparing": "جارٍ التجهيز…",
+        "expand": "عرض كل الخيارات",
+        "collapse": "عرض خيارات أقل",
+        "close": "إغلاق التصدير",
+        "separatorComma": "فاصلة",
+        "separatorCommaDetail": "a,b,c — الخيار المعتاد",
+        "separatorSemicolon": "فاصلة منقوطة",
+        "separatorSemicolonDetail": "a;b;c — لجدول بيانات مضبوط على إعدادات إقليمية أوروبية",
+        "formatCsv": "CSV (.csv)",
+        "formatCsvDetail": "نص عادي. يُفتح في أي مكان، ويُستورد إلى أي برنامج.",
+        "formatXlsx": "Excel (.xlsx)",
+        "formatXlsxDetail": "تبقى الأرقام أرقامًا، وتبقى العناوين ثابتة أثناء التمرير.",
+        "formatPdf": "PDF (.pdf)",
+        "formatPdfDetail": "كشف يمكن إرساله إلى محاسب أو بنك أو مالك عقار.",
+        "onScreenNow": "ما يظهر على الشاشة الآن",
+        "ignoresFilters": "يتجاهل عوامل التصفية والبحث",
+        "nothingTitle": "لا شيء للتصدير",
+        "nothingFiltered": "لا شيء يطابق عوامل التصفية هذه، لذا لا يوجد ما يُوضع في ملف.",
+        "nothingAtAll": "لا يوجد شيء هنا بعد، لذا لا يوجد ما يُوضع في ملف.",
+        "action": "تصدير {{counted}}",
+        "scopeThese": "المحدَّد فقط: {{counted}}",
+        "scopeAllShort": "الكل: {{counted}}",
+        "scopeAllLoadedShort": "كل المُحمَّل: {{counted}}",
+        "scopeAll": "الكل: {{counted}}",
+        "scopeAllLoaded": "كل المُحمَّل حتى الآن: {{counted}}",
+        "scopeFiltered": "بعد التصفية — {{shown}} من {{counted}}",
+        "scopeFilteredLoaded": "بعد التصفية — {{shown}} من {{counted}} مُحمَّلة حتى الآن",
+        "loadedOnly": "الصفوف المُحمَّلة حتى الآن فقط — لم يُجلب الباقي قط",
+        "partialSet": "ليست المجموعة كاملة",
+        "partialSetDetail": "صُدِّر فقط ما حُمِّل على الشاشة: {{counted}}.",
+        "errorContext": "تصدير {{noun}}",
+        "groupedBy": "مُجمَّعة حسب",
+        "search": "البحث",
+        "sortedBy": "مُرتَّبة حسب",
+        "sortedAscending": "{{label}}، من الأدنى إلى الأعلى",
+        "sortedDescending": "{{label}}، من الأعلى إلى الأدنى",
+        "subjectDescription": "يمكن تنزيل {{subject}} في ملف خاص بك."
+      },
+      "forecast": {
+        "empty": {
+          "nothingToProject": "لا شيء لتوقّعه",
+          "noPayments": "لا توجد دفعات متكررة بعد",
+          "allPausedOrUnpriced": "كل الدفعات المُسجَّلة متوقفة مؤقتًا أو منتهية، أو ليس لها مبلغ يمكن توقّعه.",
+          "addOne": "يُرجى إضافة مصروف أو دخل متكرر، وستظهر التوقعات هنا."
+        }
+      }
+    },
+    "brand": {
+      "logoAlt": "شعار {{name}}"
+    },
+    "toast": {
+      "errorTitle": "حدث خطأ ما",
+      "successTitle": "تم بنجاح",
+      "unknownError": "خطأ غير معروف",
+      "viewDetails": "عرض التفاصيل",
+      "dismiss": "تجاهل",
+      "viewDetailsAlt": "عرض تفاصيل الخطأ في وحدة التحكم",
+      "detail": "{{context}}: {{message}}"
+    },
+    "export": {
+      "pdfUnavailable": "التصدير بصيغة PDF غير متاح هنا",
+      "nothingToExport": "لا شيء للتصدير",
+      "pdfTooManyRows": "الحد الأقصى لعدد الصفوف في ملف PDF هو {{max}}، وعدد الصفوف هنا {{rows}} — يُرجى التصدير بصيغة CSV أو Excel بدلًا من ذلك، أو تضييق النطاق.",
+      "xlsxChunk": "أداة كتابة ملفات Excel",
+      "workbook": {
+        "currency": "{{header}} ({{currency}})",
+        "currencyConverted": "{{header}} ({{currency}}، بعد تحويل العملة)",
+        "currencyColumn": "عملة {{header}}"
+      },
+      "provenance": {
+        "exportedFrom": "صُدِّر من",
+        "subject": "الموضوع",
+        "scope": "النطاق",
+        "generated": "تاريخ الإنشاء",
+        "rows": "الصفوف",
+        "amounts": "المبالغ",
+        "withheld": "محجوبة — أُزيل عمدًا كل عمود للقيمة والربح/الخسارة والمبالغ بعد تحويل العملة",
+        "aboutSheet": "حول التصدير",
+        "field": "الحقل",
+        "value": "القيمة"
+      },
+      "download": {
+        "shared": "أُرسل إلى قائمة المشاركة",
+        "sharedDetail": "يُرجى اختيار «حفظ في الملفات» للاحتفاظ بـ{{fileName}}.",
+        "saved": "تم التصدير",
+        "savedDetail": "{{subject}} في {{fileName}}"
+      }
+    },
+    "errors": {
+      "offline": {
+        "title": "تعذّر الوصول إلى الخادم",
+        "detail": "يُرجى فحص الاتصال. لم يتغيّر شيء."
+      },
+      "session": {
+        "title": "انتهت جلستك",
+        "detail": "يُرجى تسجيل الدخول مجددًا لعرض {{subject}}."
+      },
+      "timeout": {
+        "title": "استغرق الخادم وقتًا طويلًا",
+        "detail": "انتهت مهلة طلب {{verb}} {{subject}}. لم يطرأ أي تغيير على بياناتك."
+      },
+      "rateLimit": {
+        "title": "طلبات كثيرة جدًا",
+        "detail": "طلب الخادم إبطاء الوتيرة. يُرجى الانتظار قليلًا ثم إعادة المحاولة."
+      },
+      "generic": {
+        "title": "تعذّر {{verb}} {{subject}}",
+        "detail": "أعاد الخادم خطأً. لم يطرأ أي تغيير على بياناتك."
+      },
+      "rejected": {
+        "detail": "{{reason}}. لم يطرأ أي تغيير على بياناتك."
+      },
+      "chunk": {
+        "message": "تعذّر تحميل {{chunk}}. يُرجى فحص الاتصال والمحاولة مرة أخرى — إذا حُدِّث التطبيق أثناء فتح علامة التبويب هذه، فإن إعادة تحميل الصفحة ستحل المشكلة.",
+        "title": "تعذّر تحميل {{chunk}}",
+        "detail": "لم يُنزَّل جزء من التطبيق. يحدث هذا عادةً بسبب انقطاع الاتصال، أو صدور تحديث أثناء فتح علامة التبويب.",
+        "reload": "إعادة تحميل الصفحة"
+      },
+      "crash": {
+        "title": "حدث خطأ ما",
+        "detail": "حدث خطأ غير متوقع. لم يطرأ أي تغيير على بياناتك.",
+        "home": "الانتقال إلى لوحة المعلومات"
+      },
+      "tryAgain": "المحاولة مرة أخرى",
+      "retry": "إعادة المحاولة",
+      "verb": {
+        "load": "تحميل",
+        "create": "إنشاء",
+        "save": "حفظ",
+        "connect": "ربط"
+      }
+    },
+    "magicCode": {
+      "prompt": "يُرجى إدخال الرمز المكوّن من 6 أرقام المُرسل إلى بريدك الإلكتروني",
+      "verify": "تأكيد الرمز",
+      "resend": "إعادة إرسال الرمز",
+      "digit": "الرقم {{index}}",
+      "expiry": "تنتهي صلاحية الرمز خلال 10 دقائق"
+    },
+    "update": {
+      "updating": "جارٍ التحديث… يُرجى الانتظار",
+      "available": "يتوفر إصدار جديد",
+      "action": "تحديث",
+      "dismiss": "تجاهل"
+    },
+    "dialog": {
+      "close": "إغلاق"
+    },
+    "sheet": {
+      "close": "إغلاق"
+    },
+    "loading": {
+      "label": "جارٍ التحميل…"
+    },
+    "numeric": {
+      "noValue": "لا توجد قيمة"
+    },
+    "confirmAction": {
+      "cancel": "إلغاء"
+    },
+    "loadingRamp": {
+      "stalled": "لا يزال الانتظار مستمرًا لاستجابة الخادم. لم يتغيّر شيء.",
+      "retry": "المحاولة مرة أخرى",
+      "loading": "جارٍ تحميل {{label}}"
+    },
+    "peek": {
+      "recordDetail": "تفاصيل السجل",
+      "loading": "جارٍ التحميل",
+      "notFound": "غير موجود",
+      "notOnList": "لم يُعثر على {{noun}} في هذه القائمة. ربما أُزيل العنصر، أو أن الرابط لم يعد صالحًا.",
+      "expand": "عرض التفاصيل كاملة",
+      "collapse": "عرض أقل"
+    },
+    "amountInput": {
+      "readAsWhole": "قُرئت القيمة على أنها {{amount}} — هذا الحقل يقبل الأعداد الصحيحة فقط.",
+      "readAsDecimal": "قُرئت القيمة على أنها {{amount}} — الفاصلة والنقطة كلتاهما تعنيان فاصلة عشرية هنا. يُرجى حذف الفاصل إن كان المقصود آلافًا."
+    },
+    "theme": {
+      "label": "المظهر",
+      "system": "النظام",
+      "light": "فاتح",
+      "dark": "داكن",
+      "trigger": "المظهر: {{theme}}"
+    },
+    "install": {
+      "headline": "تثبيت {{appName}} على هاتفك",
+      "installAction": "تثبيت",
+      "howAction": "كيف؟",
+      "sheetDescription": "إضافة أيقونة إلى الشاشة الرئيسية لفتح التطبيق بملء الشاشة كأي تطبيق مثبّت.",
+      "safariOnly": "على iOS، يدعم Safari وحده إضافة التطبيقات إلى الشاشة الرئيسية. يُرجى فتح هذه الصفحة في Safari، ثم اتباع الخطوات أدناه.",
+      "dismissPrompt": "إغلاق اقتراح التثبيت",
+      "iosStep1": "يُرجى النقر على زر المشاركة <icon/> في شريط أدوات Safari.",
+      "iosStep2": "يُرجى تمرير قائمة المشاركة والنقر على <icon/> <b>إضافة إلى الشاشة الرئيسية</b>.",
+      "iosStep3": "يُرجى التأكيد بالنقر على <b>إضافة</b>. سيُفتح {{appName}} الآن من الشاشة الرئيسية كأي تطبيق أصلي.",
+      "androidStep1": "يُرجى النقر على قائمة <b>⋮</b> في الزاوية العلوية من المتصفح.",
+      "androidStep2": "يُرجى اختيار <b>تثبيت التطبيق</b> (Chrome) أو <b>إضافة إلى الشاشة الرئيسية</b> (Firefox / Samsung Internet).",
+      "androidStep3": "يُرجى التأكيد. سيعمل {{appName}} من درج التطبيقات مثل أي تطبيق مثبّت آخر."
+    },
+    "accountPicker": {
+      "loading": "جارٍ تحميل حساباتك…",
+      "searchPlaceholder": "البحث في الحسابات",
+      "noMatch": "لا يوجد حساب يطابق «{{query}}»",
+      "shownOf": "عرض {{shown}} من {{total}}"
+    }
+  },
+  "offline": {
+    "title": "تعذّر الوصول إلى Scani",
+    "subtitleOnline": "جهازك متصل بالإنترنت، لكن خادم Scani لم يستجب.",
+    "subtitleOffline": "لا يوجد اتصال على هذا الجهاز حاليًا.",
+    "bodySignedIn": "لا يزال تسجيل دخولك قائمًا باسم {{email}}. لم يُسجَّل خروجك — كل ما في الأمر أنه لا يمكن تحميل بياناتك حتى يستجيب الخادم.",
+    "bodyUnknown": "لا يمكن تحميل أي شيء حتى يستجيب الخادم.",
+    "reassurance": "ستُعاد المحاولة تلقائيًا فور عودة الاتصال.",
+    "retry": "المحاولة مرة أخرى",
+    "retrying": "جارٍ إعادة المحاولة…",
+    "signInDifferent": "تسجيل الدخول ببريد إلكتروني آخر",
+    "connectionIssue": "مشكلة في الاتصال",
+    "connectionIssueRetrying": "مشكلة في الاتصال — جارٍ إعادة المحاولة"
+  }
+}

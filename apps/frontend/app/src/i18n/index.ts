@@ -3,6 +3,7 @@ import i18n from 'i18next';
 import LanguageDetector from 'i18next-browser-languagedetector';
 import { initReactI18next } from 'react-i18next';
 import { registerDurationFormatter } from './duration-format';
+import { isOfferedLanguage } from './offered-languages';
 import { resolveUiLocale } from './resolve-ui-locale';
 
 // Auto-discover every JSON file under `locales/`. Adding `es.json` (or
@@ -26,6 +27,7 @@ const availableLanguages: AvailableLanguage[] = [];
 
 for (const [path, mod] of Object.entries(localeModules)) {
   const code = path.replace(/^\.\/locales\//, '').replace(/\.json$/, '');
+  if (!isOfferedLanguage(code)) continue;
   const translation = { ...mod.default };
   const meta = (translation.$meta as LocaleMeta | undefined) ?? {};
   delete translation.$meta;
