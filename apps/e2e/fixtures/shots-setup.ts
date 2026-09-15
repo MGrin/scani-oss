@@ -3,6 +3,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { type Browser, chromium, type Page } from '@playwright/test';
 import { signIn } from './auth';
+import { assertStackUp } from './stack-probes';
 import { createAccount, createHolding } from './ui';
 
 // `import.meta.dir` is Bun-only and this module is loaded by the Playwright
@@ -85,24 +86,6 @@ export function slugify(route: string): string {
   const trimmed = route.replace(/^\/+|\/+$/g, '');
   if (trimmed.length === 0) return 'index';
   return trimmed.replace(/[^a-zA-Z0-9]+/g, '-');
-}
-
-async function assertStackUp(): Promise<void> {
-  const probes: Array<[label: string, url: string]> = [
-    ['api', `${API_BASE_URL}/health`],
-    ['frontend', BASE_URL],
-  ];
-  for (const [label, url] of probes) {
-    try {
-      const res = await fetch(url, { signal: AbortSignal.timeout(3_000) });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    } catch (err) {
-      throw new Error(
-        `${label} not reachable at ${url} (${(err as Error).message}). ` +
-          'Start the stack first: `bun dev:stack` from the repo root.'
-      );
-    }
-  }
 }
 
 async function isSignedIn(page: Page): Promise<boolean> {
