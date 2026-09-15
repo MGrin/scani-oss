@@ -48,6 +48,9 @@
       "timeout": "Scani 响应超时。请检查网络后再次点击“继续”。",
       "unreachable": "我们无法连接 Scani。请检查网络后再次点击“继续”。",
       "server": "出了点问题。请重试。"
+    },
+    "exits": {
+      "label": "了解更多关于 Scani"
     }
   },
   "currency": {
