@@ -24,7 +24,17 @@ COPY --parents apps/*/package.json apps/*/*/package.json packages/*/*/package.js
 
 # Filter to api's workspace dep graph only — skips deps reachable only
 # through @scani/worker / data-provider / frontend workspaces.
-RUN bun install --frozen-lockfile --filter @scani/backend --linker=hoisted
+#
+# `--omit=peer` keeps Next.js out (SC-804). `better-auth` declares `next` as an
+# OPTIONAL peer, and bun installs an optional peer whenever `bun.lock` already
+# resolves it — which it does, for the frontends — so this stage downloaded
+# `next` and its swc binaries for a server that never imports them.
+# `--omit=optional` does not reach optional peers, and `--production` keeps it.
+# The flag drops REQUIRED peers too, so elysia's (`file-type`, `openapi-types`)
+# are declared in apps/backend/api/package.json, where a dependency is not a
+# peer and survives. `scripts/tests/backend-images-omit-peers.test.ts` fails
+# when a required peer of this graph is left undeclared.
+RUN bun install --frozen-lockfile --filter @scani/backend --linker=hoisted --omit=peer
 
 # ---------- build ----------
 FROM oven/bun:${BUN_VERSION} AS build
