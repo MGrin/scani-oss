@@ -37,6 +37,7 @@
         "cryptoWallet": "Monedero cripto",
         "other": "Otro"
       },
+      "demoNote": "Nada de lo que introduzcas aquí se guarda: esto es una demo.",
       "file": {
         "extension": "un .{{ext}}",
         "noExtension": "ninguna extensión de archivo",
