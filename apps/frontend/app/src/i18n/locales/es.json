@@ -877,6 +877,14 @@
         "value": "Valor",
         "withheld": "Retenidos — todas las columnas de valor, de ganancia o pérdida y de conversión se han eliminado a propósito"
       },
+      "statement": {
+        "total": "Total",
+        "pageOf": "Página {{page}} de {{pages}}",
+        "account": "Cuenta",
+        "characters": "Caracteres",
+        "unsupportedNote": "{{mark}} indica un carácter que estas fuentes no pueden mostrar; las exportaciones CSV y XLSX incluyen el nombre completo.",
+        "noRows": "No hay filas en esta selección."
+      },
       "workbook": {
         "currency": "{{header}} ({{currency}})",
         "currencyColumn": "Divisa de {{header}}",

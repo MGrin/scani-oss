@@ -877,6 +877,14 @@
         "value": "Valor",
         "withheld": "Retido — todas as colunas de valor, ganho/perda e conversão foram removidas de propósito"
       },
+      "statement": {
+        "total": "Total",
+        "pageOf": "Página {{page}} de {{pages}}",
+        "account": "Conta",
+        "characters": "Caracteres",
+        "unsupportedNote": "{{mark}} assinala um carácter que estes tipos de letra não conseguem apresentar — as exportações CSV e XLSX contêm o nome completo.",
+        "noRows": "Não há linhas nesta seleção."
+      },
       "workbook": {
         "currency": "{{header}} ({{currency}})",
         "currencyColumn": "Moeda de {{header}}",

@@ -267,6 +267,32 @@ interface LoadedFace {
  * Sans, which is the fall-through `STACKS` already documents for a text cell
  * in a figure column.
  */
+const NO_BREAK_SPACE = String.fromCharCode(0xa0);
+const SPACE_SEPARATOR = /^\p{Zs}$/u;
+
+/**
+ * The face that will draw a space no face can set, as U+00A0 (SC-1202).
+ *
+ * `fr-FR` groups thousands with U+202F NARROW NO-BREAK SPACE and **no bundled
+ * face maps it** — zero of nineteen, measured — so every separator in a French
+ * figure was a `[?]`. U+2009 and U+2007 are in the same position in every face
+ * but Latin Sans. A space is the one character whose glyph carries no
+ * information beyond its width and whether a line may break at it, so drawing
+ * U+00A0 instead keeps both the meaning and the no-break behaviour, a hair
+ * wider. Marking it would print `1[?]234[?]567,89`, which reads as a broken
+ * number rather than a narrow gap.
+ *
+ * Keyed on the Unicode `Zs` class rather than a list of the three we measured,
+ * so a locale that picks another exotic space is covered without a change
+ * here — and the renderer still learns nothing about which locale did. Only
+ * reached when no face can set the character itself: U+2009 still draws as
+ * U+2009 in the one face that maps it.
+ */
+function spaceStandIn(point: number, stack: readonly LoadedFace[]): LoadedFace | undefined {
+  if (!SPACE_SEPARATOR.test(String.fromCodePoint(point))) return undefined;
+  return stack.find((face) => canSet(face, 0xa0));
+}
+
 function canSet(face: LoadedFace, point: number): boolean {
   if (!face.covers.has(point)) return false;
   const known = face.settable.get(point);
@@ -359,9 +385,16 @@ export async function loadTypesetter(): Promise<Typesetter> {
       return shape(text, stacks[face]);
     },
     supports(text) {
-      return [...text].every((character) =>
-        stacks.sans.some((face) => canSet(face, character.codePointAt(0) as number))
-      );
+      // Agrees with `shape` about the space stand-in, or a French statement
+      // would carry the "characters were replaced" note over figures that are
+      // drawn in full.
+      return [...text].every((character) => {
+        const point = character.codePointAt(0) as number;
+        return (
+          stacks.sans.some((face) => canSet(face, point)) ||
+          spaceStandIn(point, stacks.sans) !== undefined
+        );
+      });
     },
   };
   return cached;
@@ -386,6 +419,12 @@ function shape(text: string, stack: readonly LoadedFace[]): Run[] {
     if (hit) {
       marked = false;
       push(hit.name, character);
+      continue;
+    }
+    const space = spaceStandIn(point, stack);
+    if (space) {
+      marked = false;
+      push(space.name, NO_BREAK_SPACE);
       continue;
     }
     // A run of unrepresentable characters collapses to a single marker. Six of
