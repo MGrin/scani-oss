@@ -1565,6 +1565,8 @@
         "placeholder": "Pilih tanggal"
       },
       "recordPicker": {
+        "announceMatches_other": "{{count}} hasil",
+        "announceSimilar_other": "{{count}} catatan serupa",
         "change": "Ubah {{label}}",
         "changeAction": "Ubah",
         "searching": "Mencari…",

@@ -164,6 +164,35 @@ export function RecordPicker({
   const canCreate = Boolean(createLabel && onCreate);
   const shown = options.slice(0, maxRows);
   const withheld = options.length - shown.length;
+  const trimmed = query.trim();
+
+  // What a screen reader hears when the list below changes (SC-999). The list
+  // is plain buttons under a plain input, so nothing else tells a non-sighted
+  // user that matches, a near-duplicate or the create row just appeared — they
+  // could only find them by tabbing on spec. Empty while closed, loading or
+  // untyped, so focusing the field announces nothing.
+  const announcement =
+    open && !isLoading && trimmed
+      ? [
+          options.length > 0
+            ? t('v3.form.recordPicker.announceMatches', { count: options.length })
+            : suggestions?.length
+              ? null
+              : emptyLabel,
+          suggestions?.length
+            ? t('v3.form.recordPicker.announceSimilar', { count: suggestions.length })
+            : null,
+          canCreate && createLabel ? createLabel(trimmed) : null,
+        ]
+          .filter((part): part is string => Boolean(part))
+          // A caller's label may already end its sentence ("Nothing by that
+          // name yet."), and a plain join read that as "yet.." aloud.
+          .reduce(
+            (spoken, part) =>
+              spoken ? `${spoken}${/[.!?…。！？]$/.test(spoken) ? '' : '.'} ${part}` : part,
+            ''
+          )
+      : '';
 
   return (
     <div className="relative" ref={containerRef}>
@@ -183,6 +212,12 @@ export function RecordPicker({
         className="text-body"
         disabled={disabled}
       />
+
+      {/* Mounted before it has anything to say: a live region that appears
+          together with its text is not reliably announced. */}
+      <p role="status" aria-live="polite" className="sr-only">
+        {announcement}
+      </p>
 
       {open ? (
         // z-20: above the surface, below the sheets and drawers at 100 (§6 of

@@ -1565,6 +1565,8 @@
         "placeholder": "选择一个日期"
       },
       "recordPicker": {
+        "announceMatches_other": "{{count}} 个匹配项",
+        "announceSimilar_other": "{{count}} 条相似记录",
         "change": "更改{{label}}",
         "changeAction": "更改",
         "searching": "搜索中…",

@@ -555,6 +555,12 @@
         "searchPlaceholder": "Buscar divisas…"
       },
       "recordPicker": {
+        "announceMatches_one": "{{count}} coincidencia",
+        "announceMatches_many": "{{count}} coincidencias",
+        "announceMatches_other": "{{count}} coincidencias",
+        "announceSimilar_one": "{{count}} registro similar",
+        "announceSimilar_many": "{{count}} registros similares",
+        "announceSimilar_other": "{{count}} registros similares",
         "change": "Cambiar {{label}}",
         "changeAction": "Cambiar",
         "searching": "Buscando…",

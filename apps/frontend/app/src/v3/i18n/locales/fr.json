@@ -89,6 +89,12 @@
         "placeholder": "Choisir une date"
       },
       "recordPicker": {
+        "announceMatches_one": "{{count}} résultat",
+        "announceMatches_many": "{{count}} résultats",
+        "announceMatches_other": "{{count}} résultats",
+        "announceSimilar_one": "{{count}} élément similaire",
+        "announceSimilar_many": "{{count}} éléments similaires",
+        "announceSimilar_other": "{{count}} éléments similaires",
         "change": "Modifier {{label}}",
         "changeAction": "Modifier",
         "searching": "Recherche…",
