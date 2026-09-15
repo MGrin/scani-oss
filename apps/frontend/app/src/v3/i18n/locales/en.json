@@ -1716,6 +1716,10 @@
         "placeholder": "Pick a date"
       },
       "recordPicker": {
+        "announceMatches_one": "{{count}} match",
+        "announceMatches_other": "{{count}} matches",
+        "announceSimilar_one": "{{count}} similar record",
+        "announceSimilar_other": "{{count}} similar records",
         "change": "Change {{label}}",
         "changeAction": "Change",
         "searching": "Searching…",
