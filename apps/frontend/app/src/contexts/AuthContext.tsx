@@ -1,8 +1,9 @@
 import { isPWA, logPWAInfo } from '@scani/ui/lib/pwa-utils';
 import { useQueryClient } from '@tanstack/react-query';
 import type React from 'react';
-import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { AuthContext } from '@/contexts/auth-context';
 import { authClient } from '@/lib/auth-client';
 import {
   AUTH_CALL_TIMEOUT_MS,
@@ -70,7 +71,7 @@ export interface AuthAttemptResult {
   kind?: AuthFailureKind;
 }
 
-interface AuthContextType {
+export interface AuthContextType {
   user: AuthUser | null;
   /** This deployment is the read-only demo (SC-466). Nobody signed in. */
   isDemo: boolean;
@@ -90,8 +91,6 @@ interface AuthContextType {
   signOut: () => Promise<void>;
   resetPassword: (email: string) => Promise<{ error?: string }>;
 }
-
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 function toAuthUser(user: {
   id: string;
