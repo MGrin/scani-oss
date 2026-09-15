@@ -1800,7 +1800,8 @@
         "ownDocs": "dokumentasi resmi {{name}}",
         "unverifiedTitle": "Tidak dapat memeriksa kunci {{name}} Anda",
         "unverifiedDetail": "{{name}} tidak menjawab, jadi kami tidak bisa memastikan apakah kuncinya benar. Tidak ada yang tersimpan — coba lagi sebentar lagi."
-      }
+      },
+      "demoNote": "Demo ini hanya-baca — coba salah satu cara ini; apa pun yang Anda masukkan tidak disimpan."
     },
     "tokens": {
       "custom": {

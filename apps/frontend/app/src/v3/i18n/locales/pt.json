@@ -37,6 +37,7 @@
         "cryptoWallet": "Carteira de cripto",
         "other": "Outro"
       },
+      "demoNote": "Esta demonstração é apenas de leitura — experimente qualquer uma destas opções; nada do que introduzir é guardado.",
       "file": {
         "extension": "um ficheiro .{{ext}}",
         "noExtension": "um ficheiro sem qualquer extensão",
