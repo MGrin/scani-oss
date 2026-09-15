@@ -157,17 +157,17 @@
       "capturedAt": "2026-09-15T08:43:01.538Z"
     },
     "kitchen-sink-desktop-rtl": {
-      "head": "4aedb08a52c336647675d6d6e13f9c6a65d73e9b",
-      "renderedDigest": "9ce43807a1c7827c04d1e65326b1a7b7a38b79fd199507e7fd6f40734b3daed9",
-      "dirty": ["apps/frontend/app/src/v3/pages/KitchenSinkPage.tsx"],
-      "dirtyCount": 1,
+      "head": "d75c368fcea39d5eea8576b467bf87c82922b72a",
+      "renderedDigest": "a2f5815b60be4c1dd99ff9927c5800467adb28fa3284c4a8505c484b3202cc0a",
+      "dirty": [],
+      "dirtyCount": 0,
       "base": {
-        "ref": "4aedb08a52c336647675d6d6e13f9c6a65d73e9b",
+        "ref": "aec169b5eb8e357ce17e10c3cc5ba11a27ddde8c",
         "confirmed": true,
         "behind": 0
       },
-      "sha256": "d36cdd1ff27e421ca2a6763bd4ca1b2767647709a41c5dbfa6f4fa78c553fa79",
-      "capturedAt": "2026-09-15T08:43:01.538Z"
+      "sha256": "3f91e4103c23ee54ce95c3eedbec6381c870dca64925c712a14ca9d9b7522ffe",
+      "capturedAt": "2026-09-15T13:13:10.776Z"
     },
     "kitchen-sink-phone": {
       "head": "4aedb08a52c336647675d6d6e13f9c6a65d73e9b",
