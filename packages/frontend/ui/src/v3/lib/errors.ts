@@ -92,10 +92,38 @@ export function describeQueryError(
 
   const status = httpStatus(error);
 
-  if (status === 401 || status === 403) {
+  if (status === 401) {
     return {
       title: t('ui.errors.session.title'),
       detail: t('ui.errors.session.detail', { subject }),
+      retryLabel: t('ui.errors.tryAgain'),
+    };
+  }
+
+  // A 403 IS NOT A 401, and collapsing them told a false story with an
+  // impossible remedy (SC-1210). 401 is "we do not know who you are", where
+  // *sign in again* is the answer. 403 is "we know, and we will not do that" —
+  // the session is fine, so signing in again changes nothing, and on the demo
+  // there is nowhere to do it: `App.tsx` redirects `/auth` to `/` whenever
+  // `isDemo`, so the one instruction the copy gave could not be followed.
+  //
+  // Measured on demo.scani.xyz 2026-09-15: filling manual entry and pressing
+  // Save returned `FORBIDDEN` carrying *"This is a read-only demo — every
+  // other write is refused by the server"*, and the reader was shown *"Your
+  // session ended. Sign in again to see these holdings."*
+  //
+  // The server's sentence is the answer here, exactly as it is for a 400, so
+  // this reuses that branch's copy rather than inventing any. Six api call
+  // sites besides the demo middleware throw `FORBIDDEN` with prose written for
+  // a reader — document and file-import ownership, screenshots, the forecast
+  // as-of guard — and all of them were reaching this same false claim.
+  if (status === 403) {
+    const reason = rejectionReason(error);
+    return {
+      title: t('ui.errors.generic.title', { verb, subject }),
+      detail: reason
+        ? t('ui.errors.rejected.detail', { reason: reason.replace(/[.!]$/, '') })
+        : t('ui.errors.generic.detail'),
       retryLabel: t('ui.errors.tryAgain'),
     };
   }
