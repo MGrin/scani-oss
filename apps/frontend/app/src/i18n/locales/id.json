@@ -48,6 +48,9 @@
       "timeout": "Scani terlalu lama menjawab. Periksa koneksi Anda lalu ketuk Lanjutkan lagi.",
       "unreachable": "Kami tidak dapat menghubungi Scani. Periksa koneksi Anda lalu ketuk Lanjutkan lagi.",
       "server": "Terjadi kesalahan. Coba lagi."
+    },
+    "exits": {
+      "label": "Selengkapnya tentang Scani"
     }
   },
   "currency": {
@@ -765,6 +768,14 @@
         "aboutSheet": "Tentang",
         "field": "Bidang",
         "value": "Nilai"
+      },
+      "statement": {
+        "total": "Total",
+        "pageOf": "Halaman {{page}} dari {{pages}}",
+        "account": "Akun",
+        "characters": "Karakter",
+        "unsupportedNote": "{{mark}} menandai karakter yang tidak dapat ditampilkan oleh font ini — ekspor CSV dan XLSX memuat nama lengkapnya.",
+        "noRows": "Tidak ada baris dalam pilihan ini."
       },
       "download": {
         "shared": "Dikirim ke lembar berbagi Anda",

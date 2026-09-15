@@ -1553,7 +1553,8 @@
         "ownDocs": "la documentation de {{name}}",
         "unverifiedTitle": "Impossible de vérifier vos clés {{name}}",
         "unverifiedDetail": "{{name}} n’a pas répondu : nous ne pouvons donc pas dire si les clés sont correctes. Rien n’a été enregistré — réessayez dans une minute."
-      }
+      },
+      "demoNote": "Rien de ce que vous saisissez ici n'est enregistré — c'est une démo."
     },
     "jobs": {
       "importSomething": "Importer quelque chose",

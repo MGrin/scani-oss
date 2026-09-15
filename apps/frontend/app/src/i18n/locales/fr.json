@@ -48,6 +48,9 @@
       "timeout": "Scani a mis trop de temps à répondre. Vérifiez votre connexion et appuyez à nouveau sur Continuer.",
       "unreachable": "Nous n’avons pas pu joindre Scani. Vérifiez votre connexion et appuyez à nouveau sur Continuer.",
       "server": "Un problème est survenu. Réessayez."
+    },
+    "exits": {
+      "label": "En savoir plus sur Scani"
     }
   },
   "currency": {
@@ -843,6 +846,14 @@
         "aboutSheet": "À propos",
         "field": "Champ",
         "value": "Valeur"
+      },
+      "statement": {
+        "total": "Total",
+        "pageOf": "Page {{page}} sur {{pages}}",
+        "account": "Compte",
+        "characters": "Caractères",
+        "unsupportedNote": "{{mark}} signale un caractère que ces polices ne peuvent pas afficher — les exports CSV et XLSX contiennent le nom complet.",
+        "noRows": "Aucune ligne dans cette sélection."
       },
       "download": {
         "shared": "Envoyé vers votre feuille de partage",

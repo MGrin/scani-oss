@@ -336,3 +336,61 @@ describe('no right-to-left character can reach the page today', () => {
     }
   });
 });
+
+/**
+ * SC-1202. No bundled face maps U+202F, which is what `fr-FR` groups thousands
+ * with, so every separator in a French figure was a `[?]`. A space no face can
+ * set is now drawn as U+00A0.
+ *
+ * The samples are `Intl`'s REAL output rather than a literal, so this tracks
+ * the character a locale actually emits — and each is checked for the
+ * separator it is meant to carry first, so a CLDR change that picked a
+ * different one reads as a broken premise rather than as a pass. Characters
+ * are built from code points: a no-break space is invisible in review.
+ */
+describe('a space no face can set', () => {
+  const NBSP = String.fromCharCode(0xa0);
+  const NNBSP = String.fromCharCode(0x202f);
+  const french = new Intl.NumberFormat('fr-FR', { minimumFractionDigits: 2 }).format(1234567.89);
+  const russian = new Intl.NumberFormat('ru-RU', { minimumFractionDigits: 2 }).format(1234567.89);
+  const drawn = (runs: { text: string }[]) => runs.map((run) => run.text).join('');
+
+  it('the samples carry the separators this is about', () => {
+    expect(french).toContain(NNBSP);
+    expect(russian).toContain(NBSP);
+    expect(russian).not.toContain(NNBSP);
+  });
+
+  it('draws a French figure with no mark, its separators as U+00A0', async () => {
+    const type = await loadTypesetter();
+    for (const face of ['mono', 'sans'] as const) {
+      const text = drawn(type.shape(french, face));
+      expect(text).not.toContain(UNSUPPORTED_MARK);
+      expect(text).toBe(french.replaceAll(NNBSP, NBSP));
+    }
+    expect(type.supports(french)).toBe(true);
+  });
+
+  it('leaves a Russian figure exactly as it was — the control', async () => {
+    const type = await loadTypesetter();
+    expect(drawn(type.shape(russian, 'mono'))).toBe(russian);
+    expect(type.supports(russian)).toBe(true);
+  });
+
+  it('keeps a space that a face CAN set as itself', async () => {
+    // U+2009 is mapped by Latin Sans. The stand-in is for a space nothing can
+    // draw, not a normalisation of every space into one.
+    const type = await loadTypesetter();
+    const thin = String.fromCharCode(0x2009);
+    expect(drawn(type.shape(`1${thin}234`, 'sans'))).toBe(`1${thin}234`);
+  });
+
+  it('substitutes only spaces — an unmapped letter is still marked', async () => {
+    // The must-be-marked control: a stand-in keyed too broadly would hide real
+    // coverage gaps behind blank space, which is worse than a `[?]`.
+    const type = await loadTypesetter();
+    expect(drawn(type.shape(`a${String.fromCodePoint(0x1d11e)}b`, 'sans'))).toContain(
+      UNSUPPORTED_MARK
+    );
+  });
+});

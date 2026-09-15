@@ -1227,11 +1227,7 @@
         "stopEstimating_two": "إيقاف تقديرهما",
         "stopEstimating_few": "إيقاف تقديرها",
         "stopEstimating_many": "إيقاف تقديرها",
-        "stopEstimating_other": "إيقاف تقديرها",
-        "verdictOk": "الوضع مطمئن حتى",
-        "verdictRunsOut": "ينفد المال",
-        "declineLabel": "الرصيد بمعدل الإنفاق الأخير، حتى {{month}}",
-        "methodTitle": "طريقة الحساب"
+        "stopEstimating_other": "إيقاف تقديرها"
       }
     },
     "jobs": {
@@ -2333,7 +2329,8 @@
         "ownDocs": "الوثائق الرسمية لـ {{name}}",
         "unverifiedTitle": "تعذّر فحص مفاتيح {{name}} الخاصة بك",
         "unverifiedDetail": "لم يستجب {{name}}، لذا لا يمكننا معرفة ما إذا كانت المفاتيح صحيحة. لم يُحفظ شيء — يُرجى إعادة المحاولة بعد دقيقة."
-      }
+      },
+      "demoNote": "لا يُحفظ شيء مما تُدخله هنا — هذا هو العرض التوضيحي."
     },
     "documents": {
       "fileRemoved": "ملف محذوف",
