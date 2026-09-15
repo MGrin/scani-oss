@@ -12,15 +12,14 @@ import type { EmailStrings } from '../strings';
  * «تأكيد» carries both verify and confirm, because the تحقّق root is reserved
  * for realized gains.
  *
- * **The letter is still laid out left-to-right.** `layout.ts` emits
- * `<html lang>` and no `dir`, so this bundle renders Arabic text in an
- * unmirrored frame. That is deliberate sequencing rather than an oversight:
- * `ar` is held out of the app's language picker (`offered-languages.ts`), so
- * nothing can select it and no Arabic letter can be sent until the
- * right-to-left pass wires `dir` here and in the app.
+ * `dir: 'rtl'` is the only bundle that sets it, and it is what puts `dir` on
+ * `<html>`. The three physical `align="right"` cells left in this package are
+ * in `weekly-digest` and `integration-alert`, neither of which is translated,
+ * so nothing an Arabic reader receives depends on one.
  */
 export const ar: EmailStrings = {
   lang: 'ar',
+  dir: 'rtl',
   layout: {
     footer:
       'وصلتك هذه الرسالة لأن أحدهم طلب تسجيل الدخول إلى {appLink} باستخدام هذا العنوان. إن لم يكن هذا الطلب منك، فيمكنك تجاهل الرسالة بأمان — لم يُتخذ أي إجراء على حسابك.',

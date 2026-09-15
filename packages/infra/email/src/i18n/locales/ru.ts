@@ -10,6 +10,7 @@ import type { EmailStrings } from '../strings';
  */
 export const ru: EmailStrings = {
   lang: 'ru',
+  dir: 'ltr',
   layout: {
     footer:
       'Вы получили это письмо, потому что кто-то запросил вход в {appLink} с этого адреса. Если это были не вы, просто проигнорируйте письмо — с аккаунтом ничего не произошло.',

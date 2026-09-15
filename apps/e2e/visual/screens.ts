@@ -122,9 +122,15 @@ export const FORECAST_AS_OF = FIXED_NOW.toISOString().slice(0, 10);
  * reviewer see WHAT moved instead of guessing at an unfamiliar script.
  *
  * It is also the only thing available. `<html dir>` follows the chosen
- * language, `supportedLngs` is computed from the locale directory, and there
- * is no `ar.json` yet — so no reader can select their way to `dir="rtl"` and
- * the harness sets the attribute the language would have set. The spec
+ * language, and no reader can select their way to `dir="rtl"`, so the harness
+ * sets the attribute the language would have set. **The reason has moved and
+ * the sentence has not, twice now:** it was "there is no `ar.json`" until
+ * SC-201 wrote both Arabic locale files, and it is now `HELD_LANGUAGES` in the
+ * app's `offered-languages.ts`, which keeps `ar` out of the picker until the
+ * Arabic web and PDF faces land. When that hold lifts, this harness can
+ * photograph Arabic SCRIPT rather than a mirrored English layout — and until
+ * then no baseline here can catch a shaping or font-fallback defect, which is
+ * a limit of the instrument rather than a gap in the coverage. The spec
  * re-reads it after the capture for that reason: an attribute set from outside
  * the app is one the app could put back, and an LTR picture filed under an RTL
  * name is a baseline that agrees with itself forever.
