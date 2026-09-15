@@ -150,12 +150,12 @@ export function AccountField({
           onValueChange={(typeId) => onDraftChange({ typeId })}
           disabled={disabled}
         >
-          <SelectTrigger className="text-body" aria-label={t('v3.capture.account.typeLabel')}>
+          <SelectTrigger aria-label={t('v3.capture.account.typeLabel')}>
             <SelectValue placeholder={t('v3.capture.account.typePlaceholder')} />
           </SelectTrigger>
           <SelectContent>
             {(types.data ?? []).map((type) => (
-              <SelectItem key={type.id} value={type.id} className="text-body">
+              <SelectItem key={type.id} value={type.id}>
                 {type.name}
               </SelectItem>
             ))}
