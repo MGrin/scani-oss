@@ -16,12 +16,16 @@ on:
     paths:
       - 'docker-readmes/**'
       - 'scripts/sync-dockerhub-readme.ts'
+      - 'scripts/lib/docker-images.ts'
       - '.github/workflows/sync-dockerhub-readmes.yml'
+      - 'bunfig.toml'
   pull_request:
     paths:
       - 'docker-readmes/**'
       - 'scripts/sync-dockerhub-readme.ts'
+      - 'scripts/lib/docker-images.ts'
       - '.github/workflows/sync-dockerhub-readmes.yml'
+      - 'bunfig.toml'
   workflow_dispatch:
 
 permissions:

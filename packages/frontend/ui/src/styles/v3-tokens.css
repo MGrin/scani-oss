@@ -212,9 +212,18 @@
      * These names are only defined here, inside the v3 scope. The preset reads
      * them as `var(--font-sans, <the Tailwind default>)`, so outside v3 the
      * fallback is the whole original stack and v2 is byte-identical. */
+    /* `IBM Plex Sans Arabic` sits AFTER the Latin face rather than replacing it,
+     * and is named here unconditionally (SC-201). A family a document never
+     * loads costs nothing: the browser walks the stack per GLYPH, so Latin text
+     * resolves at the first entry and only Arabic codepoints fall through — on
+     * the eight other languages this line is dead weight of zero bytes.
+     * `apps/frontend/app/src/i18n/script-fonts.ts` is what actually fetches it,
+     * and only when Arabic is the chosen language. Naming it here and loading
+     * it there is deliberate: the stack belongs with the other type tokens,
+     * while a dynamic `import()` is only permitted under `apps/frontend/*`. */
     --font-sans:
-      'IBM Plex Sans Variable', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji',
-      'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
+      'IBM Plex Sans Variable', 'IBM Plex Sans Arabic', ui-sans-serif, system-ui, sans-serif,
+      'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
     --font-mono:
       'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono',
       'Courier New', monospace;

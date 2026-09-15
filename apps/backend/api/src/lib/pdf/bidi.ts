@@ -63,9 +63,16 @@ interface Placed extends Run {
  * because those are not the same text: an unsupported character has already
  * become `UNSUPPORTED_MARK` by then, and levels resolved against the original
  * would be indexed against characters that are not on the page. Resolving
- * against what is actually drawn is also the more useful answer — today every
- * RTL character IS a marker, so a mixed line is pure ASCII and this correctly
- * leaves it alone.
+ * against what is actually drawn is also the more useful answer.
+ *
+ * **That reasoning used to end "today every RTL character IS a marker, so a
+ * mixed line is pure ASCII and this correctly leaves it alone". It stopped
+ * being true when SC-201 bundled an Arabic face**, and the distinction matters
+ * because the two readings agree on every input this module was tested against.
+ * The code needed no change — resolving against drawn text is right either way
+ * — but it is no longer doing nothing: a mixed Arabic/Latin line now really
+ * does resolve to more than one level, reverse, and mirror, which is the case
+ * this file was written for and had never once run on.
  */
 export function visualRuns(runs: readonly Run[]): Run[] {
   const text = runs.map((run) => run.text).join('');

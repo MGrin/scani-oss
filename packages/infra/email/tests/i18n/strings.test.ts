@@ -65,6 +65,19 @@ describe('resolving a language', () => {
 const DECLARED_SHARED_WITH_ENGLISH: ReadonlyArray<readonly [language: string, key: string]> = [];
 
 /**
+ * The keys that describe the bundle rather than translate anything (SC-201).
+ *
+ * `lang` is the bundle's own name and `dir` its reading direction; both are
+ * SUPPOSED to be the same token in several bundles, and neither is prose. Named
+ * once because three separate passes below filter them and they were already
+ * spelled out twice each — adding `dir` to two of the three would have left the
+ * third reporting `es.dir` through `zh.dir` as eight English strings leaking
+ * into translated letters, which is what it did before this existed.
+ */
+const METADATA_KEYS: ReadonlySet<string> = new Set(['lang', 'dir']);
+const isMetadata = (path: string): boolean => METADATA_KEYS.has(path);
+
+/**
  * Every `<language>.<key>` whose string a translated bundle repeats verbatim
  * from English, and the size of the population it examined.
  *
@@ -87,8 +100,7 @@ function repeatsEnglish(bundles: Readonly<Record<string, EmailStrings>>): {
   for (const [code, bundle] of Object.entries(bundles)) {
     if (code === 'en') continue;
     for (const [path, value] of leaves(bundle)) {
-      // Not a translation — the bundle's own name, and it is SUPPOSED to differ.
-      if (path === 'lang') continue;
+      if (isMetadata(path)) continue;
       compared += 1;
       if (english.get(path) !== value) continue;
       if (declared.has(`${code}.${path}`)) continue;
@@ -114,7 +126,7 @@ function withLeaf(
 }
 
 describe('no translated bundle repeats an English string (SC-802)', () => {
-  const englishLeaves = leaves(EMAIL_STRINGS.en).filter(([path]) => path !== 'lang');
+  const englishLeaves = leaves(EMAIL_STRINGS.en).filter(([path]) => !isMetadata(path));
   const translated = Object.keys(EMAIL_STRINGS).filter((code) => code !== 'en');
 
   test('every leaf of every translated bundle was compared', () => {
@@ -223,7 +235,7 @@ describe('the fallback is the WHOLE letter, never a key of it', () => {
     letter.html.includes(escapeHtml(fragment));
 
   const distinctive = leaves(EMAIL_STRINGS.en)
-    .filter(([path]) => path !== 'lang')
+    .filter(([path]) => !isMetadata(path))
     .filter(([, value]) => value.replace(/\{\w+\}/g, '').trim().length > 24)
     .map(([path, value]) => [path, value.split('{')[0]?.trim() ?? value] as const)
     .filter(([, fragment]) => fragment.length > 24);
@@ -271,7 +283,11 @@ describe('the fallback is the WHOLE letter, never a key of it', () => {
     // six different letters differ from any single subject for free.
     for (const { code, letters } of translated) {
       letters.forEach((letter, i) => {
-        expect([code, i, letter.html.includes(`<html lang="${code}">`)]).toEqual([code, i, true]);
+        expect([code, i, letter.html.includes(`<html lang="${code}" dir=`)]).toEqual([
+          code,
+          i,
+          true,
+        ]);
         expect([
           code,
           i,
@@ -296,7 +312,7 @@ describe('the fallback is the WHOLE letter, never a key of it', () => {
   test('English is still English', () => {
     const letter = renderMagicLinkEmail({ brand: SCANI_BRAND, url: 'https://x', language: 'en' });
     expect(letter.subject).toBe('Sign in to Scani');
-    expect(letter.html).toContain('<html lang="en">');
+    expect(letter.html).toContain('<html lang="en" dir="ltr">');
     // …and an unknown language gets exactly that letter, byte for byte.
     expect(renderMagicLinkEmail({ brand: SCANI_BRAND, url: 'https://x', language: 'de' })).toEqual(
       letter

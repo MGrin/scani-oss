@@ -22,6 +22,7 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -35,12 +36,27 @@ import { ScrollArea } from '@scani/ui/ui/scroll-area';
 import { Segmented, SegmentedItem } from '@scani/ui/ui/segmented';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@scani/ui/ui/select';
 import { Separator } from '@scani/ui/ui/separator';
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@scani/ui/ui/sheet';
+import {
+  Sheet,
+  SheetContent,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from '@scani/ui/ui/sheet';
 import { Skeleton } from '@scani/ui/ui/skeleton';
 import { Switch } from '@scani/ui/ui/switch';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@scani/ui/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@scani/ui/ui/tabs';
 import { Textarea } from '@scani/ui/ui/textarea';
+import {
+  Toast,
+  ToastAction,
+  ToastDescription,
+  ToastProvider,
+  ToastTitle,
+  ToastViewport,
+} from '@scani/ui/ui/toast';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@scani/ui/ui/tooltip';
 import { AccountPicker, type AccountPickerOption } from '@scani/ui/v3/components/AccountPicker';
 import { DeltaPill } from '@scani/ui/v3/components/charts/DeltaPill';
@@ -73,8 +89,13 @@ const KITCHEN_SINK_BASE = '/kitchen-sink';
  * either way — what the pane decides is which token set they resolve against,
  * which is the whole point of having them here.
  *
- * Toast is omitted: it is app-level plumbing (a `<Toaster>` at the root), not
- * a primitive that renders in place.
+ * The overlays themselves are photographed CLOSED — an open modal is a fixed
+ * full-viewport layer with a backdrop, and on this page it would dim every
+ * other primitive in every shot. What an overlay lays out when it is open is
+ * rendered IN PLACE instead, under "Overlay contents": the dialog and sheet
+ * footers and a live toast. Those are the three rows whose inline spacing
+ * differs between LTR and RTL (`space-x-*` against `gap-x-*`), and until
+ * SC-1197 no shot rendered any of them, so a change to them moved no baseline.
  */
 
 const THEMES = ['light', 'dark'] as const;
@@ -638,6 +659,37 @@ function Specimens() {
             </TooltipTrigger>
             <TooltipContent>Last priced 6 minutes ago</TooltipContent>
           </Tooltip>
+        </div>
+      </Section>
+
+      <Section title="Overlay contents">
+        {/* SC-1197. Rendered in place rather than opened; see the docblock.
+            Two actions in each footer and an action on the toast, because the
+            spacing under test is BETWEEN siblings: a row of one would render
+            identically whichever utility spaced it. */}
+        <div className="flex max-w-lg flex-col gap-4">
+          <div className="rounded-lg border border-border p-4">
+            <DialogFooter>
+              <Button variant="outline">Cancel</Button>
+              <Button variant="destructive">Delete holding</Button>
+            </DialogFooter>
+          </div>
+          <div className="rounded-lg border border-border p-4">
+            <SheetFooter>
+              <Button variant="outline">Reset</Button>
+              <Button>Apply filters</Button>
+            </SheetFooter>
+          </div>
+          <ToastProvider duration={Number.POSITIVE_INFINITY}>
+            <Toast open>
+              <div className="grid gap-1">
+                <ToastTitle>Holding deleted</ToastTitle>
+                <ToastDescription>Kraken · Main no longer lists Bitcoin.</ToastDescription>
+              </div>
+              <ToastAction altText="Undo the deletion">Undo</ToastAction>
+            </Toast>
+            <ToastViewport className="static inset-auto z-auto max-h-none p-0 sm:p-0 md:max-w-none [padding-top:0] sm:[padding-top:0] sm:[padding-bottom:0]" />
+          </ToastProvider>
         </div>
       </Section>
 
