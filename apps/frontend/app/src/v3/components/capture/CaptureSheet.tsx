@@ -30,6 +30,7 @@ import {
   captureContextQuery,
   captureHref,
 } from '../../lib/capture';
+import { DemoCaptureNote } from './DemoCaptureNote';
 
 /**
  * How data gets in — the centre tab, and a menu rather than a page.
@@ -169,6 +170,9 @@ export function CaptureSheet({ open, onOpenChange }: CaptureSheetProps) {
           <SheetHeader className="pe-8 text-start">
             <SheetTitle className="text-title">{t(TITLE_KEY)}</SheetTitle>
             <SheetDescription className="text-caption">{t(DESCRIPTION_KEY)}</SheetDescription>
+            {/* SC-1207. The sheet is where a visitor chooses which write to
+                attempt, so it is where the demo has to say what a write does. */}
+            <DemoCaptureNote />
           </SheetHeader>
           <div className="pt-4">
             <CaptureList contextQuery={contextQuery} />
@@ -189,6 +193,9 @@ export function CaptureSheet({ open, onOpenChange }: CaptureSheetProps) {
         <BottomDrawerHeader>
           <BottomDrawerTitle>{t(TITLE_KEY)}</BottomDrawerTitle>
           <BottomDrawerDescription>{t(DESCRIPTION_KEY)}</BottomDrawerDescription>
+          {/* Identical to the desktop branch: the phone is where the demo is
+              most likely to be met from a link, not less. */}
+          <DemoCaptureNote />
         </BottomDrawerHeader>
         <BottomDrawerBody>
           <CaptureList contextQuery={contextQuery} />

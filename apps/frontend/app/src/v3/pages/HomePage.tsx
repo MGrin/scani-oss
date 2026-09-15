@@ -112,6 +112,46 @@ function useNetWorthSeriesPrefetch(): void {
   }, [utils]);
 }
 
+/**
+ * The name of the page, in the heading tree (SC-1206).
+ *
+ * This screen had **no `h1` at all** once it had data, so a screen reader's
+ * heading navigation — which starts at the top level — landed mid-content on
+ * "Allocation" with nothing above it naming where the reader was. Measured on
+ * `demo.scani.xyz` 2026-09-15: `/` read 0, `/holdings` read 1 on the same
+ * build, so the zero was a reading rather than a selector that had stopped
+ * matching.
+ *
+ * **It is a rendering branch, not an oversight.** The empty state names itself
+ * through `FirstRunPanel`'s own `h1`, so a fresh account read 1 and every
+ * account with data read 0 — which is every real user, and nobody looking at a
+ * new one. That is why it survived: the first screen anybody builds against is
+ * the one that was already correct.
+ *
+ * `nav.home` rather than a string of its own, and that is the point rather
+ * than thrift: `useDocumentTitle(t('nav.home'))` is two lines below, so the
+ * tab, the title and the heading cannot drift into three names for one screen.
+ *
+ * **`sr-only` rather than a visible title**, which is the one place this does
+ * not match the list routes. `/holdings` and its siblings wear a visible `h1`
+ * because they have a title area; the dashboard deliberately does not — the
+ * net-worth hero is its identity, and a heading row above it would push every
+ * block down, including the fold that `home-allocation-fold-desktop` exists to
+ * pin. So the level is restored without redesigning the screen, and the five
+ * committed home baselines are unaffected. Nothing here is a visual change.
+ *
+ * It sits OUTSIDE `PageLayout` and `DashboardGrid` rather than as their first
+ * child, which is the part that makes that claim true. `sr-only` is
+ * `position: absolute`, so the element has no size — but a flex or grid `gap`
+ * is charged between CHILDREN, not between rendered boxes, so a zero-height
+ * first child still pushes everything below it down by a gap. Layout-neutral
+ * means neither container may count it.
+ */
+function HomeHeading() {
+  const { t } = useTranslation();
+  return <h1 className="sr-only">{t('nav.home')}</h1>;
+}
+
 export function HomePage() {
   const { t } = useTranslation();
   useDocumentTitle(t('nav.home'));
@@ -130,29 +170,35 @@ export function HomePage() {
   // take the whole screen down.
   if (overview.isError && overview.data === undefined) {
     return (
-      <PageLayout>
-        <QueryError
-          error={overview.error}
-          subject={t('v3.home.loadingLabel')}
-          onRetry={() => void overview.refetch()}
-        />
-      </PageLayout>
+      <>
+        <HomeHeading />
+        <PageLayout>
+          <QueryError
+            error={overview.error}
+            subject={t('v3.home.loadingLabel')}
+            onRetry={() => void overview.refetch()}
+          />
+        </PageLayout>
+      </>
     );
   }
 
   if (overview.data === undefined) {
     return (
-      <PageLayout>
-        {/* Nothing for 300ms. The home screen is the app's cold start *and*
-            its most-revisited surface — on the second visit the overview is
-            in cache and this renders nothing at all, which is the point. */}
-        <LoadingRamp
-          phase={loadingPhase}
-          skeleton={<HomeSkeleton />}
-          label={t('v3.home.loadingLabel')}
-          onRetry={() => void overview.refetch()}
-        />
-      </PageLayout>
+      <>
+        <HomeHeading />
+        <PageLayout>
+          {/* Nothing for 300ms. The home screen is the app's cold start *and*
+              its most-revisited surface — on the second visit the overview is
+              in cache and this renders nothing at all, which is the point. */}
+          <LoadingRamp
+            phase={loadingPhase}
+            skeleton={<HomeSkeleton />}
+            label={t('v3.home.loadingLabel')}
+            onRetry={() => void overview.refetch()}
+          />
+        </PageLayout>
+      </>
     );
   }
 
@@ -193,53 +239,59 @@ export function HomePage() {
   }
 
   return (
-    <DashboardGrid>
-      {/* Above everything, because it qualifies everything: with the api
+    <>
+      <HomeHeading />
+      <DashboardGrid>
+        {/* Above everything, because it qualifies everything: with the api
           unreachable this screen renders a full portfolio to the cent off the
           cache and used to say nothing at all about how old it was (SC-71 9.1).
           `overview` is the query the net worth, the totals and the top
           holdings all come from, so its state is the honest one to report. */}
-      {overview.isError ? (
-        <DashboardItem span="full">
-          <StaleNotice onRetry={() => void overview.refetch()} />
-        </DashboardItem>
-      ) : null}
+        {overview.isError ? (
+          <DashboardItem span="full">
+            <StaleNotice onRetry={() => void overview.refetch()} />
+          </DashboardItem>
+        ) : null}
 
-      {/* The hero takes the full row rather than sharing it. It is the one
+        {/* The hero takes the full row rather than sharing it. It is the one
           block the screen exists for, and its chart is the only element here
           that turns width directly into resolution — a wider trace is a longer
           readable history, not just a bigger picture. */}
-      <DashboardItem span="full">
-        <HeroBlock total={total} currency={currency} />
-      </DashboardItem>
-
-      {/* Full width because it is an alert: a row that has to be noticed
-          cannot be the narrow one in a row of three. */}
-      {reviewCount > 0 ? (
         <DashboardItem span="full">
-          <AttentionRow count={reviewCount} />
+          <HeroBlock total={total} currency={currency} />
         </DashboardItem>
-      ) : null}
 
-      {/* Three columns of standing facts. None is worth a full row alone, and
+        {/* Full width because it is an alert: a row that has to be noticed
+          cannot be the narrow one in a row of three. */}
+        {reviewCount > 0 ? (
+          <DashboardItem span="full">
+            <AttentionRow count={reviewCount} />
+          </DashboardItem>
+        ) : null}
+
+        {/* Three columns of standing facts. None is worth a full row alone, and
           putting them on one line is what keeps six blocks from becoming six
           screens on a desktop. On a phone they are the same three blocks in the
           same order, stacked. */}
-      <DashboardItem span="third">
-        <AllocationBlock />
-      </DashboardItem>
+        <DashboardItem span="third">
+          <AllocationBlock />
+        </DashboardItem>
 
-      {/* Ahead of top holdings, as on v2: what is due is time-sensitive in a
+        {/* Ahead of top holdings, as on v2: what is due is time-sensitive in a
           way a holdings ranking is not, so it takes the earlier slot. */}
-      <DashboardItem span="third">
-        <UpcomingBlock currency={currency} />
-      </DashboardItem>
+        <DashboardItem span="third">
+          <UpcomingBlock currency={currency} />
+        </DashboardItem>
 
-      <DashboardItem span="third">
-        <TopHoldingsBlock holdings={overview.data.topHoldings} total={total} currency={currency} />
-      </DashboardItem>
+        <DashboardItem span="third">
+          <TopHoldingsBlock
+            holdings={overview.data.topHoldings}
+            total={total}
+            currency={currency}
+          />
+        </DashboardItem>
 
-      {/* Halves rather than thirds: both carry a name beside a figure and a
+        {/* Halves rather than thirds: both carry a name beside a figure and a
           second line beneath it, and at a third of 1440 the name is what gives
           way.
 
@@ -249,13 +301,14 @@ export function HomePage() {
           since an item left holding no child still spends six columns and a
           `gap-6` on nothing. CSS rather than lifting the queries up here: the
           page has no business knowing what makes a vault list empty. */}
-      <DashboardItem span="half" className="empty:hidden">
-        <GroupsBlock />
-      </DashboardItem>
+        <DashboardItem span="half" className="empty:hidden">
+          <GroupsBlock />
+        </DashboardItem>
 
-      <DashboardItem span="half" className="empty:hidden">
-        <VaultsBlock />
-      </DashboardItem>
-    </DashboardGrid>
+        <DashboardItem span="half" className="empty:hidden">
+          <VaultsBlock />
+        </DashboardItem>
+      </DashboardGrid>
+    </>
   );
 }

@@ -1954,7 +1954,8 @@
         "ownDocs": "{{name}}'s own documentation",
         "unverifiedTitle": "Couldn't check your {{name}} keys",
         "unverifiedDetail": "{{name}} didn't answer, so we can't say whether the keys are right. Nothing was saved — try again in a minute."
-      }
+      },
+      "demoNote": "Nothing you enter here is saved — this is the demo."
     },
     "tokens": {
       "custom": {
