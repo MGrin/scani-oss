@@ -23,7 +23,12 @@ COPY --parents apps/*/package.json apps/*/*/package.json packages/*/*/package.js
 # does NOT depend on @scani/providers-google-sheets (cloud-mode skips
 # Google Sheets — per-user sheet config is backend-side DB state), so
 # this filter drops `googleapis` (~180MB) from the image entirely.
-RUN bun install --frozen-lockfile --filter @scani/data-provider --linker=hoisted
+#
+# `--omit=peer` keeps Next.js out, as in apps/backend/api/Dockerfile (SC-804):
+# `better-auth`'s optional `next` peer is otherwise installed because bun.lock
+# resolves it for the frontends. elysia's required `file-type` peer is declared
+# in this app's package.json so the flag cannot drop it.
+RUN bun install --frozen-lockfile --filter @scani/data-provider --linker=hoisted --omit=peer
 
 # ---------- build ----------
 FROM oven/bun:${BUN_VERSION} AS build
