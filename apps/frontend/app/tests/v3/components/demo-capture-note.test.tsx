@@ -66,6 +66,19 @@ describe('the demo capture note', () => {
     expect(source).toContain(KEY);
   });
 
+  test('names the outcome rather than calling the deployment read-only', () => {
+    // Operator ruling, 2026-09-15. This note sits three lines from API-key
+    // permissions on the integration screens, where "read-only" is a property
+    // of the KEY the reader is about to paste. The most precise word for the
+    // deployment is the one most likely to be read as being about something
+    // else, so the sentence says what happens to the entry instead.
+    expect(en.v3.capture.demoNote.toLowerCase()).not.toContain('read-only');
+    // Control: the shell's banner is where "read-only" still belongs — nothing
+    // above is a repo-wide ban, and a reading of zero there would mean this
+    // test is looking at the wrong file.
+    expect(en.v3.shell.demo.banner.toLowerCase()).toContain('read-only');
+  });
+
   test('says it in one key, not in a literal anybody can respell', async () => {
     const source = await readV3Source(NOTE);
     expect(source).not.toContain(en.v3.capture.demoNote);

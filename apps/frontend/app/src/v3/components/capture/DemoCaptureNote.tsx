@@ -18,6 +18,12 @@ import { useIsDemo } from '@/contexts/AuthContext';
  * the only one that survives someone opening a console"* — and a demo exists to
  * be poked. So this states the outcome rather than forbidding the attempt.
  *
+ * The sentence deliberately does NOT say "read-only". On the integration
+ * screens this note sits three lines from API-key permissions, where read-only
+ * is a property of the KEY the reader is about to paste — so the one word that
+ * describes the deployment most precisely is also the one most likely to be
+ * read as being about something else. It names the outcome instead.
+ *
  * Renders nothing anywhere but the demo, which is why callers mount it
  * unconditionally and why the committed visual baselines are unaffected — the
  * same shape as `DemoBanner`.

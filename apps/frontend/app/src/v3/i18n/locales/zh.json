@@ -1801,7 +1801,7 @@
         "unverifiedTitle": "无法校验你的 {{name}} 密钥",
         "unverifiedDetail": "{{name}} 没有响应，因此我们无法确定密钥是否正确。没有保存任何内容——请过一分钟再试。"
       },
-      "demoNote": "这是只读演示——可以随意尝试，但输入的内容不会保存。"
+      "demoNote": "在这里输入的内容不会保存——这是演示。"
     },
     "tokens": {
       "custom": {
