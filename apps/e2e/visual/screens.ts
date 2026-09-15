@@ -411,6 +411,19 @@ export const VISUAL_SCREENS: readonly VisualScreen[] = [
   // so that a reviewer has a bounded set of image pairs to actually look at.
   // A mirrored baseline nobody reviews is worth less than none, for the same
   // reason `screens.ts` keeps the LTR list short.
+  //
+  // WHAT A GREEN KITCHEN SINK COVERS, BY STATE (SC-1197). The Dialog, Sheet,
+  // Popover and Tooltip are photographed CLOSED — their triggers only. What an
+  // open Dialog and Sheet lay out is photographed through their FOOTERS,
+  // rendered in place under "Overlay contents", and a Toast is photographed
+  // VISIBLE there too; an open modal is a full-viewport layer that would dim
+  // every other primitive. So the open popover and tooltip panels, and the
+  // dialog and sheet chrome (backdrop, close button, slide-in edge), are in NO
+  // baseline. Before SC-1197 the footers and the toast were in none either: the
+  // `space-x-*` -> `gap-x-*` fix at exactly those sites (SC-201) moved no pixel,
+  // and a green said nothing about it. Measured when this was added: swapping
+  // one footer's `space-x-2` for `gap-x-2` moves this shot by 1757 pixels and
+  // leaves `kitchen-sink-desktop` and `kitchen-sink-phone` identical.
   {
     name: 'kitchen-sink-desktop-rtl',
     route: '/kitchen-sink',
