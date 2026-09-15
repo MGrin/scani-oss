@@ -113,6 +113,47 @@ describe('resolveFormatLocale', () => {
     expect(new Intl.DateTimeFormat(locale.dateLocale).resolvedOptions().locale).toBe('en');
   });
 
+  test('every Arabic tag formats in Western digits and the Gregorian calendar, whatever the region', () => {
+    const at = new Date('2026-09-15T12:00:00Z');
+    for (const region of [AUTO_REGION, ...FORMAT_REGIONS, 'SA']) {
+      const locale = resolveFormatLocale('ar-SA', region);
+      const money = new Intl.NumberFormat(locale.numberLocale, {
+        style: 'currency',
+        currency: 'GBP',
+      });
+      const date = new Intl.DateTimeFormat(locale.dateLocale, {
+        dateStyle: 'medium',
+        timeZone: 'UTC',
+      });
+      expect(money.resolvedOptions().numberingSystem).toBe('latn');
+      expect(date.resolvedOptions().calendar).toBe('gregory');
+      expect(date.resolvedOptions().numberingSystem).toBe('latn');
+      expect(money.format(-1234.5)).toContain('1,234.50');
+      expect(date.format(at)).toContain('2026');
+    }
+  });
+
+  test('control: without the pin, CLDR gives Arabic-Indic digits and a Hijri year', () => {
+    // If this ever passes with the pin removed, the test above is measuring a
+    // default rather than the constant, and would stay green over its deletion.
+    const at = new Date('2026-09-15T12:00:00Z');
+    expect(new Intl.NumberFormat('ar-EG').format(1234.5)).not.toContain('1');
+    expect(
+      new Intl.DateTimeFormat('ar-SA', { timeZone: 'UTC' }).resolvedOptions().calendar
+    ).not.toBe('gregory');
+    expect(
+      new Intl.DateTimeFormat('ar-SA', { timeZone: 'UTC', year: 'numeric' }).format(at)
+    ).not.toContain('2026');
+  });
+
+  test('the pin is Arabic-only: no other language changes its tags', () => {
+    for (const code of Object.keys(LANGUAGE_FORMATS).filter((c) => c !== 'ar')) {
+      const locale = resolveFormatLocale(code, AUTO_REGION);
+      expect(locale.dateLocale).not.toContain('-u-');
+      expect(locale.numberLocale).not.toContain('-u-');
+    }
+  });
+
   test('every language SC-201 ships has a row, and Arabic is the only rtl one', () => {
     for (const code of ['en', 'ru', 'fr', 'es', 'pt', 'zh', 'ja', 'ar', 'id']) {
       expect(LANGUAGE_FORMATS[code]).toBeDefined();

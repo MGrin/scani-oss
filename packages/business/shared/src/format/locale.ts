@@ -60,7 +60,28 @@ export interface LanguageFormat {
    */
   readonly numberRegion?: string;
   readonly dir: TextDirection;
+  /**
+   * A BCP-47 `-u-` extension every tag in this language carries, whatever
+   * region the reader picked. Only Arabic sets it — see `WESTERN_DIGITS_GREGORIAN`.
+   */
+  readonly extension?: string;
 }
+
+/**
+ * Western digits and the Gregorian calendar, stated rather than inherited (SC-201).
+ *
+ * **Arabic is the one language whose CLDR defaults change what a figure looks
+ * like.** Measured on Bun's ICU, 2026-09-15: `ar-EG` formats `-1,234.50 UK£`
+ * as `-١٬٢٣٤٫٥٠ UK£`, and `ar-SA` also switches the calendar, so a date comes
+ * out as `٤ ربيع الآخر ١٤٤٨ هـ`. Bare `ar` and `ar-AE` happen to give Western
+ * digits today, and that is a default, not a promise. Amounts, prices and
+ * tickers here are read against exchange and bank statements printed in 0-9,
+ * so the digits must not depend on which Arabic region the reader picked, or
+ * on which CLDR a browser ships.
+ *
+ * One constant, so offering native digits later is a one-line change.
+ */
+const WESTERN_DIGITS_GREGORIAN = 'u-ca-gregory-nu-latn';
 
 /**
  * Language → the region its formats default to.
@@ -79,7 +100,7 @@ export interface LanguageFormat {
  */
 export const LANGUAGE_FORMATS: Readonly<Record<string, LanguageFormat>> = {
   en: { region: 'GB', numberRegion: 'US', dir: 'ltr' },
-  ar: { region: 'EG', dir: 'rtl' },
+  ar: { region: 'EG', dir: 'rtl', extension: WESTERN_DIGITS_GREGORIAN },
   es: { region: 'ES', dir: 'ltr' },
   fr: { region: 'FR', dir: 'ltr' },
   id: { region: 'ID', dir: 'ltr' },
@@ -212,12 +233,13 @@ export function resolveFormatLocale(
 
   const dateRegion = chosen === AUTO_REGION ? defaults.region : chosen;
   const numberRegion = chosen === AUTO_REGION ? (defaults.numberRegion ?? defaults.region) : chosen;
+  const extension = defaults.extension ? `-${defaults.extension}` : '';
 
   return {
     language: base,
     region: chosen,
-    dateLocale: `${base}-${dateRegion}`,
-    numberLocale: `${base}-${numberRegion}`,
+    dateLocale: `${base}-${dateRegion}${extension}`,
+    numberLocale: `${base}-${numberRegion}${extension}`,
     dir: defaults.dir,
   };
 }
