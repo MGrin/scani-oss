@@ -1,4 +1,21 @@
-const MAILPIT_URL = process.env.MAILPIT_URL ?? 'http://localhost:8026';
+export const MAILPIT_URL = process.env.MAILPIT_URL ?? 'http://localhost:8026';
+
+/**
+ * Every Mailpit request goes through here (SC-796). A bare `fetch` against a
+ * stopped Mailpit throws `TypeError: fetch failed` naming nothing, and it threw
+ * out of the polling loop on the first try, so the loop's own deadline message
+ * could never print. With no signal, a listening-but-stuck Mailpit hung.
+ */
+async function mailpitFetch(url: string): Promise<Response> {
+  try {
+    return await fetch(url, { signal: AbortSignal.timeout(5_000) });
+  } catch (err) {
+    throw new Error(
+      `mailpit not reachable at ${url} (${(err as Error).message}). ` +
+        'Start the stack first: `bun dev:stack` from the repo root.'
+    );
+  }
+}
 
 export interface MailpitMessage {
   ID: string;
@@ -16,6 +33,8 @@ export interface MailpitMessageBody {
 }
 
 export class MailpitClient {
+  constructor(private readonly baseUrl: string = MAILPIT_URL) {}
+
   /**
    * Poll Mailpit for a message addressed to `recipient`. Returns the
    * first match. Throws after `timeoutMs` if none found.
@@ -30,8 +49,8 @@ export class MailpitClient {
     const deadline = Date.now() + (opts.timeoutMs ?? 10_000);
     const query = `to:${recipient}`;
     while (Date.now() < deadline) {
-      const res = await fetch(
-        `${MAILPIT_URL}/api/v1/search?query=${encodeURIComponent(query)}&limit=1`
+      const res = await mailpitFetch(
+        `${this.baseUrl}/api/v1/search?query=${encodeURIComponent(query)}&limit=1`
       );
       if (res.ok) {
         const json = (await res.json()) as { messages?: MailpitMessage[] };
@@ -46,7 +65,7 @@ export class MailpitClient {
   }
 
   async getBody(messageId: string): Promise<MailpitMessageBody> {
-    const res = await fetch(`${MAILPIT_URL}/api/v1/message/${messageId}`);
+    const res = await mailpitFetch(`${this.baseUrl}/api/v1/message/${messageId}`);
     if (!res.ok) throw new Error(`Failed to fetch message ${messageId}: ${res.status}`);
     return (await res.json()) as MailpitMessageBody;
   }
