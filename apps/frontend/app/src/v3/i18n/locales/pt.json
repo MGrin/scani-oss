@@ -37,6 +37,7 @@
         "cryptoWallet": "Carteira de cripto",
         "other": "Outro"
       },
+      "demoNote": "Nada do que introduzir aqui é guardado — isto é uma demonstração.",
       "file": {
         "extension": "um ficheiro .{{ext}}",
         "noExtension": "um ficheiro sem qualquer extensão",
@@ -555,6 +556,12 @@
         "searchPlaceholder": "Pesquisar moedas…"
       },
       "recordPicker": {
+        "announceMatches_one": "{{count}} correspondência",
+        "announceMatches_many": "{{count}} correspondências",
+        "announceMatches_other": "{{count}} correspondências",
+        "announceSimilar_one": "{{count}} registo semelhante",
+        "announceSimilar_many": "{{count}} registos semelhantes",
+        "announceSimilar_other": "{{count}} registos semelhantes",
         "change": "Alterar {{label}}",
         "changeAction": "Alterar",
         "searching": "A pesquisar…",

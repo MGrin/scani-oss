@@ -267,7 +267,15 @@ export function JobDetailHeader({ job }: { job: JobDetailHeaderJob }) {
             //
             // `whitespace-pre-wrap` and the mono face stay: an upstream
             // rejection code is still something people copy verbatim.
-            <p className="whitespace-pre-wrap rounded-md border border-border-strong bg-surface-hover p-2 font-mono text-caption">
+            // `dir="ltr"` for the same reason the mono face is here (SC-201):
+            // this is an upstream system's sentence, not ours, and it arrives
+            // with brackets, quotes and codes that are bidi neutrals. Under
+            // `dir="rtl"` they reorder, and a rejection code copied verbatim
+            // out of a reordered line is no longer the code.
+            <p
+              dir="ltr"
+              className="whitespace-pre-wrap rounded-md border border-border-strong bg-surface-hover p-2 font-mono text-caption"
+            >
               {job.userFacingError}
             </p>
           ) : null}

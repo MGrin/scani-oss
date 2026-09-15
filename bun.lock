@@ -24,6 +24,7 @@
         "@elysiajs/trpc": "^1.1.0",
         "@fontsource/ibm-plex-mono": "^5.3.0",
         "@fontsource/ibm-plex-sans": "^5.3.0",
+        "@fontsource/ibm-plex-sans-arabic": "^5.3.0",
         "@fontsource/noto-sans-jp": "^5.3.0",
         "@fontsource/noto-sans-sc": "^5.3.0",
         "@scani/cloud-client": "workspace:*",
@@ -138,6 +139,7 @@
       "name": "@scani/frontend-v2",
       "version": "0.0.0",
       "dependencies": {
+        "@fontsource/ibm-plex-sans-arabic": "^5.3.0",
         "@scani/backend": "workspace:*",
         "@scani/shared": "workspace:*",
         "@scani/ui": "workspace:*",
@@ -749,6 +751,8 @@
     "@fontsource/ibm-plex-mono": ["@fontsource/ibm-plex-mono@5.3.0", "", {}, "sha512-eTgnZjZEGk1QtD3ZstF+Vclo2HLAni8YMy34/DxllwZvyz1lR/1RF/xTiAquOBO7MvqBx8D2Ig2WCPMVfdZu7Q=="],
 
     "@fontsource/ibm-plex-sans": ["@fontsource/ibm-plex-sans@5.3.0", "", {}, "sha512-CbE4CbbEEZJX860XyUiRpsksXIQR8Rp2XDva2VO53NJox9tVNtusrysd2x5YkUEY3ErQ66W1IiiQL8/wihhw5w=="],
+
+    "@fontsource/ibm-plex-sans-arabic": ["@fontsource/ibm-plex-sans-arabic@5.3.0", "", {}, "sha512-ZZ4g+JDgQY0NqSh4o0MNWU1sHQmtcee1g++aKAwyJvZxnT5y51JXsN1cIXnaQaMd40dcbK6QFYa+Z1LbaiNuqA=="],
 
     "@fontsource/noto-sans-jp": ["@fontsource/noto-sans-jp@5.3.0", "", {}, "sha512-OZbBzZ8LrFRs2RFT2Cc0HUV2C2ZeSfyEXhDJWR0EZuZaraJfRubpvrFmUnCljuBDEkw8Vn6CE/+nf9dj9b+0lg=="],
 

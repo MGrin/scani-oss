@@ -1,7 +1,15 @@
 import { LANGUAGE_HEADER } from '@scani/shared';
 import { emailOTPClient, magicLinkClient } from 'better-auth/client/plugins';
 import { createAuthClient } from 'better-auth/react';
-import i18n from '@/i18n';
+// The i18next SINGLETON, not `@/i18n` — the same object at run time, since
+// `src/i18n/index.ts` configures this very instance and re-exports it, and
+// `main.tsx` imports that module at boot so it is initialised before any
+// request goes out. What the direct import avoids is the LOAD: `@/i18n`
+// discovers locales with `import.meta.glob`, a Vite-only API that is
+// `undefined` under `bun test`, so anything reaching this file transitively
+// — `AuthContext`, and therefore any component that asks whether this is the
+// demo — threw before a single test ran (SC-1207).
+import i18n from 'i18next';
 import { apiBaseUrl } from '@/lib/api-base-url';
 import { fetchWithDeadline } from '@/lib/auth-network';
 

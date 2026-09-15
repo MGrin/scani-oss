@@ -42,7 +42,7 @@ export function layout({
   // anchor survives and nothing a brand carries can open a tag.
   const footerHtml = footerNote ?? fill(escapeHtml(strings.layout.footer), { appLink });
   return `<!doctype html>
-<html lang="${strings.lang}">
+<html lang="${strings.lang}" dir="${strings.dir}">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">

@@ -206,6 +206,7 @@ describe('tokenTypeLabel', () => {
     const dir = resolve(import.meta.dir, '../../../src/v3/i18n/locales');
     const codes = readdirSync(dir).filter((f) => f.endsWith('.json'));
     expect(codes.map((f) => f.replace(/\.json$/, '')).sort()).toEqual([
+      'ar',
       'en',
       'es',
       'fr',

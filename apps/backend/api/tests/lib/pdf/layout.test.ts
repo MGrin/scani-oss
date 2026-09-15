@@ -9,6 +9,7 @@ import {
   formatFigure,
   GROUP_HEADING_HEIGHT,
   headerText,
+  LATIN_FIGURES,
   layoutColumns,
   MARGIN,
   type Measure,
@@ -61,7 +62,7 @@ function sheet(overrides: Partial<ExportSheetDtoType> = {}): ExportSheetDtoType 
 
 describe('layoutColumns', () => {
   it('starts at the left margin and ends at the right one', () => {
-    const columns = layoutColumns(sheet(), measure);
+    const columns = layoutColumns(sheet(), measure, LATIN_FIGURES);
     expect(columns[0]?.x).toBe(MARGIN.left);
     const last = columns[columns.length - 1];
     expect((last?.x ?? 0) + (last?.width ?? 0)).toBeCloseTo(MARGIN.left + PORTRAIT.contentWidth, 5);
@@ -75,7 +76,8 @@ describe('layoutColumns', () => {
         numericColumns: headers.map(() => false),
         rows: [headers.map((header) => ({ kind: 'text', value: `${header} value` }) as const)],
       }),
-      measure
+      measure,
+      LATIN_FIGURES
     );
     const total = columns.reduce((sum, column) => sum + column.width, 0);
     expect(total).toBeLessThanOrEqual(PORTRAIT.contentWidth + 0.001);
@@ -95,10 +97,14 @@ describe('layoutColumns', () => {
           ],
         ],
       }),
-      measure
+      measure,
+      LATIN_FIGURES
     );
     const figure = columns[2];
-    const printed = formatFigure({ kind: 'number', value: '12345678.90', decimals: 2 });
+    const printed = formatFigure(
+      { kind: 'number', value: '12345678.90', decimals: 2 },
+      LATIN_FIGURES
+    );
     expect(measure(printed, TYPE.rowFigure)).toBeLessThanOrEqual((figure?.width ?? 0) - 1);
   });
 
@@ -117,7 +123,8 @@ describe('layoutColumns', () => {
           ],
         ],
       }),
-      measure
+      measure,
+      LATIN_FIGURES
     );
     const dates = columns[2];
     expect(measure('2026-08-14', TYPE.rowText)).toBeLessThanOrEqual((dates?.width ?? 0) - 1);
@@ -132,7 +139,8 @@ describe('layoutColumns', () => {
         numericColumns: [false, false, true],
         rows: [[{ kind: 'text', value: 'BTC' }, { kind: 'text', value: 'n' }, money('12.40')]],
       }),
-      measure
+      measure,
+      LATIN_FIGURES
     );
     const gain = columns[2];
     expect(measure(headerText('Gain / loss'), TYPE.columnHeader)).toBeLessThanOrEqual(
@@ -141,7 +149,7 @@ describe('layoutColumns', () => {
   });
 
   it('marks the numeric columns, which is what right-aligns them', () => {
-    expect(layoutColumns(sheet(), measure).map((column) => column.numeric)).toEqual([
+    expect(layoutColumns(sheet(), measure, LATIN_FIGURES).map((column) => column.numeric)).toEqual([
       false,
       false,
       true,
@@ -151,7 +159,7 @@ describe('layoutColumns', () => {
 
 describe('chooseGeometry', () => {
   it('keeps a narrow list on portrait paper', () => {
-    expect(chooseGeometry(sheet(), measure).landscape).toBe(false);
+    expect(chooseGeometry(sheet(), measure, LATIN_FIGURES).landscape).toBe(false);
   });
 
   it('turns the page when the columns genuinely do not fit', () => {
@@ -161,7 +169,7 @@ describe('chooseGeometry', () => {
       numericColumns: headers.map(() => false),
       rows: [headers.map(() => ({ kind: 'text', value: 'a fairly long cell value' }) as const)],
     });
-    expect(chooseGeometry(wide, measure).landscape).toBe(true);
+    expect(chooseGeometry(wide, measure, LATIN_FIGURES).landscape).toBe(true);
   });
 });
 
@@ -319,7 +327,8 @@ describe('totalsRow', () => {
           [{ kind: 'text', value: 'BTC' }, { kind: 'text', value: 'K' }, money('1000.50')],
           [{ kind: 'text', value: 'ETH' }, { kind: 'text', value: 'K' }, money('2000.25')],
         ],
-      })
+      }),
+      LATIN_FIGURES
     );
     expect(totals[2]).toBe('3,000.75');
     expect(totals[0]).toBeNull();
@@ -336,7 +345,8 @@ describe('totalsRow', () => {
         numericColumns: [true],
         totalColumns: [false],
         rows: [[money('10.00')], [money('20.00')]],
-      })
+      }),
+      LATIN_FIGURES
     );
     expect(totals[0]).toBeNull();
   });
@@ -348,7 +358,8 @@ describe('totalsRow', () => {
         numericColumns: [true],
         totalColumns: undefined,
         rows: [[money('10.00')]],
-      })
+      }),
+      LATIN_FIGURES
     );
     expect(totals[0]).toBeNull();
   });
@@ -360,7 +371,8 @@ describe('totalsRow', () => {
           [{ kind: 'text', value: 'A' }, { kind: 'text', value: 'K' }, money('10.00', 'EUR')],
           [{ kind: 'text', value: 'B' }, { kind: 'text', value: 'K' }, money('10.00', 'GBP')],
         ],
-      })
+      }),
+      LATIN_FIGURES
     );
     expect(totals[2]).toBeNull();
   });
@@ -377,7 +389,8 @@ describe('totalsRow', () => {
             { kind: 'number', value: '12.40', decimals: 2, style: 'percent' },
           ],
         ],
-      })
+      }),
+      LATIN_FIGURES
     );
     expect(totals).toEqual([null, null]);
   });
@@ -389,7 +402,8 @@ describe('totalsRow', () => {
         numericColumns: [true],
         totalColumns: [true],
         rows: [[{ kind: 'blank' }], [{ kind: 'blank' }]],
-      })
+      }),
+      LATIN_FIGURES
     );
     expect(totals[0]).toBeNull();
   });
@@ -401,7 +415,8 @@ describe('totalsRow', () => {
         numericColumns: [true],
         totalColumns: [true],
         rows: [[money('0.10')], [money('0.20')]],
-      })
+      }),
+      LATIN_FIGURES
     );
     expect(totals[0]).toBe('0.30');
   });
@@ -474,7 +489,7 @@ describe('buildBlocks', () => {
         { label: 'Ledger', rowCount: 1 },
       ],
     });
-    const blocks = buildBlocks(withGroups, totalsRow(withGroups));
+    const blocks = buildBlocks(withGroups, totalsRow(withGroups, LATIN_FIGURES));
     expect(blocks.map((block) => block.kind)).toEqual([
       'heading',
       'row',
@@ -491,9 +506,9 @@ describe('buildBlocks', () => {
       numericColumns: [false],
       rows: [[{ kind: 'text', value: 'BTC' }]],
     });
-    expect(buildBlocks(plain, totalsRow(plain)).some((block) => block.kind === 'totals')).toBe(
-      false
-    );
+    expect(
+      buildBlocks(plain, totalsRow(plain, LATIN_FIGURES)).some((block) => block.kind === 'totals')
+    ).toBe(false);
   });
 });
 
@@ -541,39 +556,47 @@ describe('accountLabel', () => {
 
 describe('formatFigure', () => {
   it('groups thousands, because this is the output meant to be read', () => {
-    expect(formatFigure({ kind: 'number', value: '1234567.89', decimals: 2, style: 'money' })).toBe(
-      '1,234,567.89'
-    );
+    expect(
+      formatFigure(
+        { kind: 'number', value: '1234567.89', decimals: 2, style: 'money' },
+        LATIN_FIGURES
+      )
+    ).toBe('1,234,567.89');
   });
 
   it('rounds rather than truncating', () => {
     // `0.867` printed as `0.86` is neither the figure nor a correct rounding of
     // it, in a document going to an accountant.
-    expect(formatFigure({ kind: 'number', value: '0.867', decimals: 2, style: 'money' })).toBe(
-      '0.87'
-    );
+    expect(
+      formatFigure({ kind: 'number', value: '0.867', decimals: 2, style: 'money' }, LATIN_FIGURES)
+    ).toBe('0.87');
   });
 
   it('keeps a quantity at the precision it arrived with', () => {
-    expect(formatFigure({ kind: 'number', value: '0.42130000', style: 'plain' })).toBe(
-      '0.42130000'
-    );
+    expect(
+      formatFigure({ kind: 'number', value: '0.42130000', style: 'plain' }, LATIN_FIGURES)
+    ).toBe('0.42130000');
   });
 
   it('keeps the sign in front of the grouping', () => {
-    expect(formatFigure({ kind: 'number', value: '-1234.50', decimals: 2, style: 'money' })).toBe(
-      '-1,234.50'
-    );
+    expect(
+      formatFigure(
+        { kind: 'number', value: '-1234.50', decimals: 2, style: 'money' },
+        LATIN_FIGURES
+      )
+    ).toBe('-1,234.50');
   });
 
   it('marks a percent as one', () => {
-    expect(formatFigure({ kind: 'number', value: '12.4', decimals: 2, style: 'percent' })).toBe(
-      '12.40%'
-    );
+    expect(
+      formatFigure({ kind: 'number', value: '12.4', decimals: 2, style: 'percent' }, LATIN_FIGURES)
+    ).toBe('12.40%');
   });
 
   it('prints a value it cannot parse rather than dropping it', () => {
-    expect(formatFigure({ kind: 'number', value: 'n/a', style: 'plain' })).toBe('n/a');
+    expect(formatFigure({ kind: 'number', value: 'n/a', style: 'plain' }, LATIN_FIGURES)).toBe(
+      'n/a'
+    );
   });
 
   /**
@@ -587,12 +610,15 @@ describe('formatFigure', () => {
    * this holds is that a price arriving with more of them is printed with them.
    */
   it('prints a sub-cent price at the decimals the sheet declared for it', () => {
-    const price = formatFigure({
-      kind: 'number',
-      value: '0.00007715',
-      decimals: 8,
-      style: 'money',
-    });
+    const price = formatFigure(
+      {
+        kind: 'number',
+        value: '0.00007715',
+        decimals: 8,
+        style: 'money',
+      },
+      LATIN_FIGURES
+    );
     expect(price).toBe('0.00007715');
     // The row now multiplies out to the total printed beside it.
     expect(Number(price) * 4_200_000).toBeCloseTo(324.03, 2);
@@ -601,16 +627,65 @@ describe('formatFigure', () => {
 
 describe('cellText', () => {
   it('leaves a blank blank', () => {
-    expect(cellText({ kind: 'blank' })).toBe('');
+    expect(cellText({ kind: 'blank' }, LATIN_FIGURES)).toBe('');
   });
 
   it('shows a date without its stored midnight', () => {
-    expect(cellText({ kind: 'date', value: '2026-08-14T00:00:00.000Z', withTime: false })).toBe(
-      '2026-08-14'
+    expect(
+      cellText({ kind: 'date', value: '2026-08-14T00:00:00.000Z', withTime: false }, LATIN_FIGURES)
+    ).toBe('2026-08-14');
+    expect(
+      cellText({ kind: 'date', value: '2026-08-14T09:31:00.000Z', withTime: true }, LATIN_FIGURES)
+    ).toBe('2026-08-14 09:31');
+  });
+
+  it('prints the date the client formatted when it sent one, and the raw value when not', () => {
+    const date = { kind: 'date', value: '2026-08-14T00:00:00.000Z', withTime: false } as const;
+    expect(cellText({ ...date, display: '14 août 2026' }, LATIN_FIGURES)).toBe('14 août 2026');
+    expect(cellText({ ...date, display: '' }, LATIN_FIGURES)).toBe('2026-08-14');
+  });
+});
+
+/**
+ * The reader's separators (SC-1199). The renderer is handed two characters and
+ * no locale, so these are the real `Intl` outputs a client would send — French
+ * groups with U+202F, Spanish with a period — rather than characters typed in.
+ */
+describe("figures in the reader's separators", () => {
+  const separators = (locale: string) => {
+    const parts = new Intl.NumberFormat(locale).formatToParts(1234567.5);
+    return {
+      group: parts.find((part) => part.type === 'group')?.value ?? '',
+      decimal: parts.find((part) => part.type === 'decimal')?.value ?? '',
+    };
+  };
+  const french = separators('fr-FR');
+  const spanish = separators('es-ES');
+
+  it('the samples carry the separators this is about', () => {
+    expect(french).toEqual({ group: '\u202f', decimal: ',' });
+    expect(spanish).toEqual({ group: '.', decimal: ',' });
+  });
+
+  it('spells a figure with them, rounding exactly as before', () => {
+    const value = { kind: 'number', value: '-1234567.867', decimals: 2, style: 'money' } as const;
+    expect(formatFigure(value, french)).toBe('-1\u202f234\u202f567,87');
+    expect(formatFigure(value, spanish)).toBe('-1.234.567,87');
+    // Control: the Latin spelling of the same value is unchanged.
+    expect(formatFigure(value, LATIN_FIGURES)).toBe('-1,234,567.87');
+  });
+
+  it('and a total with the same two, so the sum reads like its rows', () => {
+    const totals = totalsRow(
+      sheet({
+        headers: ['Value (EUR)'],
+        numericColumns: [true],
+        totalColumns: [true],
+        rows: [[money('1000.50', 'EUR')], [money('2500.25', 'EUR')]],
+      }),
+      spanish
     );
-    expect(cellText({ kind: 'date', value: '2026-08-14T09:31:00.000Z', withTime: true })).toBe(
-      '2026-08-14 09:31'
-    );
+    expect(totals).toEqual(['3.500,75']);
   });
 });
 

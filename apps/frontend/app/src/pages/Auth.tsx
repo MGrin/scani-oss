@@ -5,7 +5,7 @@ import { ScaniLogo } from '@scani/ui/components/ScaniLogo';
 import { isPWA } from '@scani/ui/lib/pwa-utils';
 import { Alert, AlertDescription } from '@scani/ui/ui/alert';
 import { Button } from '@scani/ui/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@scani/ui/ui/card';
+import { Card, CardContent, CardDescription, CardHeader } from '@scani/ui/ui/card';
 import { Input } from '@scani/ui/ui/input';
 import { Label } from '@scani/ui/ui/label';
 import type { TFunction } from 'i18next';
@@ -16,6 +16,7 @@ import { useTranslation } from 'react-i18next';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useOnlineStatus } from '@/hooks/useOnlineStatus';
+import { AuthPageExits } from '../components/AuthPageExits';
 
 interface AuthFormData {
   email: string;
@@ -173,11 +174,13 @@ export function Auth() {
           <div className="w-full max-w-md space-y-8 flex flex-col items-center">
             <div className="flex items-center gap-3">
               <ScaniLogo className="h-10 w-10" />
-              <span className="text-3xl font-semibold tracking-tight">Scani</span>
+              <h1 className="text-3xl font-semibold tracking-tight">Scani</h1>
             </div>
             <Card className="w-full">
               <CardHeader className="space-y-1">
-                <CardTitle className="text-2xl text-center">{t('auth.code.title')}</CardTitle>
+                <h2 className="text-2xl text-center font-semibold leading-none tracking-tight">
+                  {t('auth.code.title')}
+                </h2>
                 <CardDescription className="text-center">
                   {t('auth.code.sentTo', { email: userEmail })}
                 </CardDescription>
@@ -202,6 +205,7 @@ export function Auth() {
                 </Button>
               </CardContent>
             </Card>
+            <AuthPageExits />
           </div>
         </div>
       );
@@ -221,11 +225,13 @@ export function Auth() {
         <div className="w-full max-w-md space-y-8 flex flex-col items-center">
           <div className="flex items-center gap-3">
             <ScaniLogo className="h-10 w-10" />
-            <span className="text-3xl font-semibold tracking-tight">Scani</span>
+            <h1 className="text-3xl font-semibold tracking-tight">Scani</h1>
           </div>
           <Card className="w-full">
             <CardHeader className="space-y-1">
-              <CardTitle className="text-2xl text-center">{t('auth.linkSent.title')}</CardTitle>
+              <h2 className="text-2xl text-center font-semibold leading-none tracking-tight">
+                {t('auth.linkSent.title')}
+              </h2>
               <CardDescription className="text-center">
                 {t('auth.linkSent.subtitle')}
               </CardDescription>
@@ -246,6 +252,7 @@ export function Auth() {
               </Button>
             </CardContent>
           </Card>
+          <AuthPageExits />
         </div>
       </div>
     );
@@ -264,11 +271,13 @@ export function Auth() {
       <div className="w-full max-w-md space-y-8 flex flex-col items-center">
         <div className="flex items-center gap-3">
           <ScaniLogo className="h-10 w-10" />
-          <span className="text-3xl font-semibold tracking-tight">Scani</span>
+          <h1 className="text-3xl font-semibold tracking-tight">Scani</h1>
         </div>
         <Card className="w-full">
           <CardHeader className="space-y-1">
-            <CardTitle className="text-2xl text-center">{t('auth.signIn.title')}</CardTitle>
+            <h2 className="text-2xl text-center font-semibold leading-none tracking-tight">
+              {t('auth.signIn.title')}
+            </h2>
             <CardDescription className="text-center">{t('auth.signIn.subtitle')}</CardDescription>
           </CardHeader>
           <CardContent>
@@ -317,6 +326,7 @@ export function Auth() {
             </form>
           </CardContent>
         </Card>
+        <AuthPageExits />
       </div>
     </div>
   );

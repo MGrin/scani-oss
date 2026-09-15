@@ -1565,6 +1565,8 @@
         "placeholder": "选择一个日期"
       },
       "recordPicker": {
+        "announceMatches_other": "{{count}} 个匹配项",
+        "announceSimilar_other": "{{count}} 条相似记录",
         "change": "更改{{label}}",
         "changeAction": "更改",
         "searching": "搜索中…",
@@ -1798,7 +1800,8 @@
         "ownDocs": "{{name}} 的官方文档",
         "unverifiedTitle": "无法校验你的 {{name}} 密钥",
         "unverifiedDetail": "{{name}} 没有响应，因此我们无法确定密钥是否正确。没有保存任何内容——请过一分钟再试。"
-      }
+      },
+      "demoNote": "在这里输入的内容不会保存——这是演示。"
     },
     "tokens": {
       "custom": {

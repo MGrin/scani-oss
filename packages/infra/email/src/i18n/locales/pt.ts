@@ -21,6 +21,7 @@ import type { EmailStrings } from '../strings';
  */
 export const pt: EmailStrings = {
   lang: 'pt',
+  dir: 'ltr',
   layout: {
     footer:
       'Recebe esta mensagem porque alguém pediu para iniciar sessão em {appLink} com este endereço. Se não foi você, pode ignorá-la sem problema — não foi feito nada na conta.',

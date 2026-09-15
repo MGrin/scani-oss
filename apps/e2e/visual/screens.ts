@@ -121,12 +121,29 @@ export const FORECAST_AS_OF = FIXED_NOW.toISOString().slice(0, 10);
  * deliberate rather than a shortcut — the copy being readable is what lets a
  * reviewer see WHAT moved instead of guessing at an unfamiliar script.
  *
- * It is also the only thing available. `<html dir>` follows the chosen
- * language, `supportedLngs` is computed from the locale directory, and there
- * is no `ar.json` yet — so no reader can select their way to `dir="rtl"` and
- * the harness sets the attribute the language would have set. The spec
- * re-reads it after the capture for that reason: an attribute set from outside
- * the app is one the app could put back, and an LTR picture filed under an RTL
+ * `<html dir>` follows the chosen language, and the harness sets the attribute
+ * the language would have set rather than choosing the language.
+ *
+ * **That used to be the only thing available and it no longer is — this is the
+ * third premise the same sentence has had.** It was "there is no `ar.json`"
+ * until SC-201 wrote both Arabic locale files; then "`HELD_LANGUAGES` keeps
+ * `ar` out of the picker" until SC-201's font slice emptied that set. A reader
+ * can select Arabic today, so the harness COULD switch the language. It does
+ * not, and the reason is now a choice rather than a limit: switching the
+ * language changes every string in the shot at the same moment as the layout,
+ * and a reviewer reading a diff cannot separate two variables at once.
+ *
+ * **The cost of that choice is stated rather than implied: no baseline here
+ * can catch an Arabic shaping or font-fallback defect**, because no Arabic
+ * glyph is in any of these pictures. That is a gap in the coverage now, not a
+ * limit of the instrument — an Arabic screen is a photograph somebody can take
+ * — and it is filed as SC-1200 rather than fixed here, because it is a NEW
+ * baseline with a new reviewing question rather than a change to these four,
+ * and a picture added in the same commit as the font it checks is a picture
+ * whose first `--update` nobody can falsify.
+ *
+ * The spec re-reads the attribute after the capture: one set from outside the
+ * app is one the app could put back, and an LTR picture filed under an RTL
  * name is a baseline that agrees with itself forever.
  */
 type VisualDirection = 'rtl';
@@ -411,6 +428,19 @@ export const VISUAL_SCREENS: readonly VisualScreen[] = [
   // so that a reviewer has a bounded set of image pairs to actually look at.
   // A mirrored baseline nobody reviews is worth less than none, for the same
   // reason `screens.ts` keeps the LTR list short.
+  //
+  // WHAT A GREEN KITCHEN SINK COVERS, BY STATE (SC-1197). The Dialog, Sheet,
+  // Popover and Tooltip are photographed CLOSED — their triggers only. What an
+  // open Dialog and Sheet lay out is photographed through their FOOTERS,
+  // rendered in place under "Overlay contents", and a Toast is photographed
+  // VISIBLE there too; an open modal is a full-viewport layer that would dim
+  // every other primitive. So the open popover and tooltip panels, and the
+  // dialog and sheet chrome (backdrop, close button, slide-in edge), are in NO
+  // baseline. Before SC-1197 the footers and the toast were in none either: the
+  // `space-x-*` -> `gap-x-*` fix at exactly those sites (SC-201) moved no pixel,
+  // and a green said nothing about it. Measured when this was added: swapping
+  // one footer's `space-x-2` for `gap-x-2` moves this shot by 1757 pixels and
+  // leaves `kitchen-sink-desktop` and `kitchen-sink-phone` identical.
   {
     name: 'kitchen-sink-desktop-rtl',
     route: '/kitchen-sink',
