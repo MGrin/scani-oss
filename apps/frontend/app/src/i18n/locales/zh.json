@@ -766,6 +766,14 @@
         "field": "字段",
         "value": "值"
       },
+      "statement": {
+        "total": "合计",
+        "pageOf": "第 {{page}} 页，共 {{pages}} 页",
+        "account": "账户",
+        "characters": "字符",
+        "unsupportedNote": "{{mark}} 表示这些字体无法显示的字符——CSV 和 XLSX 导出文件包含完整名称。",
+        "noRows": "所选范围内没有行。"
+      },
       "download": {
         "shared": "已发送到你的分享面板",
         "sharedDetail": "选择“存储到文件”即可保存 {{fileName}}。",

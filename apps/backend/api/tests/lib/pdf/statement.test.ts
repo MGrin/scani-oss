@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'bun:test';
-import { inflateSync } from 'node:zlib';
 import type { ExportValueDtoType } from '@scani/shared';
 import { loadTypesetter, UNSUPPORTED_MARK } from '../../../src/lib/pdf/fonts';
 import {
@@ -8,6 +7,7 @@ import {
   type StatementInput,
   UNSUPPORTED_NOTE,
 } from '../../../src/lib/pdf/statement';
+import { drawnCodepoints } from './drawn-codepoints';
 
 /**
  * The renderer end to end, at the only level worth asserting on bytes: that a
@@ -187,71 +187,6 @@ describe('non-Latin names', () => {
    * moved three assertions in `fonts.test.ts` to fix.
    */
   describe('a Han codepoint outside the shipped subset', () => {
-    /**
-     * Unicode maps out of every subset font pdfkit embedded. pdfkit compresses
-     * them, so they have to be inflated; a stream that is not a CMap inflates to
-     * something without `beginbfchar` and is skipped.
-     *
-     * This reads the DOCUMENT rather than the renderer's intent. `supports()`
-     * returning false is what the renderer decided; this is what reached the
-     * page.
-     */
-    /**
-     * A CMap destination is UTF-16BE, so an astral character arrives as a
-     * SURROGATE PAIR — eight hex digits, not four. Taking the first four would
-     * decode `U+20000` to `0xD840`, which means an assertion that a rare Han
-     * codepoint is absent could never fail whatever the document contained.
-     * That is the vacuous-control shape this ticket family is about, so the
-     * pair is decoded rather than truncated.
-     */
-    function decodeDestination(hex: string): number {
-      const units: number[] = [];
-      for (let index = 0; index + 4 <= hex.length; index += 4) {
-        units.push(Number.parseInt(hex.slice(index, index + 4), 16));
-      }
-      return String.fromCharCode(...units).codePointAt(0) as number;
-    }
-
-    function drawnCodepoints(pdf: Buffer): Set<number> {
-      const found = new Set<number>();
-      const latin1 = pdf.toString('latin1');
-      const streams = /stream\r?\n/g;
-      let match: RegExpExecArray | null = streams.exec(latin1);
-      while (match !== null) {
-        const start = match.index + match[0].length;
-        const end = latin1.indexOf('endstream', start);
-        if (end > 0) {
-          let text = '';
-          try {
-            text = inflateSync(pdf.subarray(start, end)).toString('latin1');
-          } catch {
-            text = '';
-          }
-          // Two syntaxes, and reading only one of them silently under-reports.
-          // pdfkit writes the ARRAY form of `bfrange` — `<lo> <hi> [<d> <d> …]`,
-          // where every element is a destination — so a naive pair match reads
-          // the range bounds as if they were codepoints and misses most of the
-          // real ones.
-          for (const range of text.matchAll(
-            /<[0-9a-fA-F]{4}>\s*<[0-9a-fA-F]{4}>\s*\[([^\]]*)\]/g
-          )) {
-            for (const item of (range[1] as string).matchAll(/<([0-9a-fA-F]{4,})>/g)) {
-              found.add(decodeDestination(item[1] as string));
-            }
-          }
-          for (const block of text.matchAll(/beginbfchar([\s\S]*?)endbfchar/g)) {
-            for (const pair of (block[1] as string).matchAll(
-              /<[0-9a-fA-F]{4}>\s*<([0-9a-fA-F]{4,})>/g
-            )) {
-              found.add(decodeDestination(pair[1] as string));
-            }
-          }
-        }
-        match = streams.exec(latin1);
-      }
-      return found;
-    }
-
     /** The first Han codepoint the bundled faces do not cover. */
     async function rareHan(): Promise<string> {
       const type = await loadTypesetter();
@@ -499,5 +434,29 @@ describe('a space in a figure column', () => {
       .join('');
     expect(drawn).toBe(`1${NBSP}234`);
     expect(drawn).not.toContain(UNSUPPORTED_MARK);
+  });
+
+  it('still EMBEDS the Mono face after a space falls through it', async () => {
+    // Embedding is where the `.woff2` attempt threw the same RangeError, from
+    // pdfkit's subsetter at the end of the render — so a shaping test alone
+    // cannot see a repair that moves the crash there.
+    const embedded = async (value: StatementInput) =>
+      [
+        ...(await renderStatement(value))
+          .toString('latin1')
+          .matchAll(/\/BaseFont\s*\/\w+\+([\w-]+)/g),
+      ].map((match) => match[1]);
+    for (const value of ['a b', `1${NBSP}234`]) {
+      expect(await embedded(figure(value))).toContain('IBMPlexMono-Medium');
+    }
+    // Control: a statement with no figure column embeds no Mono, so the reading
+    // above is about the figure and not a face that is always there.
+    const words = input(1, {
+      headers: ['Holding'],
+      numericColumns: [false],
+      totalColumns: [false],
+      rows: [[{ kind: 'text', value: 'Holding' }]],
+    });
+    expect((await embedded(words)).some((name) => name?.startsWith('IBMPlexMono'))).toBe(false);
   });
 });

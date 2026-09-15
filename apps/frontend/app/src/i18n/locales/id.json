@@ -766,6 +766,14 @@
         "field": "Bidang",
         "value": "Nilai"
       },
+      "statement": {
+        "total": "Total",
+        "pageOf": "Halaman {{page}} dari {{pages}}",
+        "account": "Akun",
+        "characters": "Karakter",
+        "unsupportedNote": "{{mark}} menandai karakter yang tidak dapat ditampilkan oleh font ini — ekspor CSV dan XLSX memuat nama lengkapnya.",
+        "noRows": "Tidak ada baris dalam pilihan ini."
+      },
       "download": {
         "shared": "Dikirim ke lembar berbagi Anda",
         "sharedDetail": "Pilih Simpan ke File untuk menyimpan {{fileName}}.",

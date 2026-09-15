@@ -844,6 +844,14 @@
         "field": "Champ",
         "value": "Valeur"
       },
+      "statement": {
+        "total": "Total",
+        "pageOf": "Page {{page}} sur {{pages}}",
+        "account": "Compte",
+        "characters": "Caractères",
+        "unsupportedNote": "{{mark}} signale un caractère que ces polices ne peuvent pas afficher — les exports CSV et XLSX contiennent le nom complet.",
+        "noRows": "Aucune ligne dans cette sélection."
+      },
       "download": {
         "shared": "Envoyé vers votre feuille de partage",
         "sharedDetail": "Choisissez Enregistrer dans Fichiers pour conserver {{fileName}}.",
