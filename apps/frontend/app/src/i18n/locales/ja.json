@@ -766,6 +766,14 @@
         "field": "項目",
         "value": "内容"
       },
+      "statement": {
+        "total": "合計",
+        "pageOf": "{{page}} / {{pages}} ページ",
+        "account": "アカウント",
+        "characters": "文字",
+        "unsupportedNote": "{{mark}} はこのフォントで表示できない文字を示します。CSV と XLSX のエクスポートには完全な名前が含まれます。",
+        "noRows": "この選択には行がありません。"
+      },
       "download": {
         "shared": "共有シートに送りました",
         "sharedDetail": "{{fileName}} を保存するには「ファイルに保存」を選んでください。",
