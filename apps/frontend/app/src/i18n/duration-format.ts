@@ -1,3 +1,4 @@
+import { resolveFormatLocale } from '@scani/shared';
 import type { i18n as I18n } from 'i18next';
 
 /** The units a server-produced duration may name (SC-434). */
@@ -40,7 +41,9 @@ export function registerDurationFormatter(i18n: I18n): void {
     if (typeof unit !== 'string' || !DURATION_UNITS.has(unit) || !Number.isFinite(count)) {
       return String(value);
     }
-    return new Intl.NumberFormat(lng || 'en', {
+    // The format tag, not the bare language: it carries a language's pinned
+    // numbering system, so an Arabic count reads `3`, never `٣` (SC-201).
+    return new Intl.NumberFormat(resolveFormatLocale(lng).numberLocale, {
       style: 'unit',
       unit,
       unitDisplay: 'long',
