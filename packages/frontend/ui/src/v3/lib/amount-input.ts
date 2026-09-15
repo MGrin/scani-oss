@@ -190,7 +190,7 @@ function findDecimalSeparator(input: string): number {
  *
  * Measured in Bun 1.3.14 across every row of `LANGUAGE_FORMATS`. `en`, `ja` and
  * `zh` group with `,`; `es`, `id` (and `en-DE`, `pt-BR`) group with `.`; `fr`
- * groups with U+202F, `pt` and `ru` with U+00A0, `ar` with U+066C. So a comma
+ * groups with U+202F, and `pt` and `ru` with U+00A0. `ar` groups with `,` because it is pinned to Western digits (SC-201). So a comma
  * is a live doubt in English and none at all in Spanish, where a comma is the
  * decimal point and `1.234` is the thousand — and in Russian neither character
  * groups, which is the reported defect: the notice announced a doubt about
@@ -278,26 +278,24 @@ export function formatAmountForDisplay(value: string, suffix = ''): string {
  * what the field had just written, and a paste became the empty value with
  * nothing said. That breaks the round-trip `MINUS_SIGN` above exists for.
  *
- * Scoped to the locale the app is formatting in rather than to every numbering
- * system, because that is the scope of the promise: the app prints in one
- * locale, so reading that one back is what makes a copy-paste survive.
+ * Scoped to the reader's LANGUAGE rather than to every numbering system. The
+ * digits read are the ones the language's own CLDR default prints, which is the
+ * format tag with its `-u-` extension removed.
  *
- * **A locale whose digits and decimal point are already ASCII takes no path
- * through here beyond the bidi strip**, so every existing language — every
- * one that has a locale file — parses byte-for-byte as before.
+ * **Since SC-201 pinned Arabic to Western digits, that is not the tag the app
+ * prints in.** `ar-EG-u-ca-gregory-nu-latn` writes `1,234.56`, which takes the
+ * ASCII path below like every other language. But an Arabic keypad still types
+ * `١٬٢٣٤٫٥٦`, and reading that off the pinned tag would find no digit it knows
+ * and hand back the empty value, with nothing said. So the native figures are
+ * read from `ar-EG`, and the field accepts both.
  *
- * **Known limitation, for whoever lands the `ar` locale file.** The digits are
- * converted on the way *in*, so while the field is focused a reader typing on
- * an Arabic keypad watches their digits turn ASCII; the blurred echo is
- * Arabic-Indic again. Acceptable while no reader can select `ar` — the row
- * exists in `LANGUAGE_FORMATS` but `supportedLngs` is computed from the locale
- * directory — and it is the half of the field an Arabic locale has to look at
- * anyway, alongside the RTL work `LANGUAGE_FORMATS` is explicit about not
- * having done.
+ * **A language whose native digits and decimal point are already ASCII takes
+ * no path through here beyond the bidi strip**, so every other language parses
+ * byte-for-byte as before.
  */
 function toAsciiFigures(raw: string): string {
   const plain = raw.replace(BIDI_MARKS, '');
-  const figures = figuresFor(getFormatLocale().numberLocale);
+  const figures = figuresFor(new Intl.Locale(getFormatLocale().numberLocale).baseName);
   if (figures.ascii) return plain;
 
   let out = '';
