@@ -133,17 +133,72 @@ describe('resolveFormatLocale', () => {
     }
   });
 
-  test('control: without the pin, CLDR gives Arabic-Indic digits and a Hijri year', () => {
-    // If this ever passes with the pin removed, the test above is measuring a
-    // default rather than the constant, and would stay green over its deletion.
+  /**
+   * The control READS the unpinned default; it never asserts what that default
+   * is (SC-201).
+   *
+   * Its job is to show the pin is what produces `latn` and `gregory`, and it
+   * can only do that where the unpinned tag resolves to something else. That
+   * is a property of the ICU data the runtime was built with, not of this
+   * repository. Measured 2026-09-15: bun on macOS gives `ar-EG` -> `arab` and
+   * `ar-SA` -> `islamic-umalqura`, and the Verifier's Linux agent already
+   * gives `ar-SA` -> `gregory`. The old control asserted the macOS reading and
+   * turned main red on a machine where nothing was wrong.
+   *
+   * So each half is skipped WITH THE READING IN ITS NAME when the default
+   * already equals the pinned value. A skip says what went unchecked; a
+   * silently passing control would be indistinguishable from a working one on
+   * the day the pin is deleted.
+   */
+  const UNPINNED_DIGITS = new Intl.NumberFormat('ar-EG').resolvedOptions().numberingSystem;
+  const UNPINNED_CALENDAR = new Intl.DateTimeFormat('ar-SA', { timeZone: 'UTC' }).resolvedOptions()
+    .calendar;
+
+  test.skipIf(UNPINNED_DIGITS === 'latn')(
+    `control: unpinned ar-EG digits are ${UNPINNED_DIGITS}, so the pin is what makes them latn`,
+    () => {
+      expect(new Intl.NumberFormat('ar-EG').format(1234.5)).not.toContain('1');
+      // The pinned side of the same comparison, so the two readings sit together.
+      const pinned = resolveFormatLocale('ar-SA', AUTO_REGION);
+      expect(new Intl.NumberFormat(pinned.numberLocale).format(1234.5)).toContain('1,234.5');
+    }
+  );
+
+  test.skipIf(UNPINNED_CALENDAR === 'gregory')(
+    `control: unpinned ar-SA calendar is ${UNPINNED_CALENDAR}, so the pin is what makes it gregory`,
+    () => {
+      const at = new Date('2026-09-15T12:00:00Z');
+      expect(
+        new Intl.DateTimeFormat('ar-SA', { timeZone: 'UTC' }).resolvedOptions().calendar
+      ).not.toBe('gregory');
+      expect(
+        new Intl.DateTimeFormat('ar-SA', { timeZone: 'UTC', year: 'numeric' }).format(at)
+      ).not.toContain('2026');
+      const pinned = resolveFormatLocale('ar-SA', AUTO_REGION);
+      expect(
+        new Intl.DateTimeFormat(pinned.dateLocale, { timeZone: 'UTC', year: 'numeric' }).format(at)
+      ).toContain('2026');
+    }
+  );
+
+  test('the pin holds whatever this runtime’s Arabic defaults are', () => {
+    // Runs everywhere, including where both controls above skip, and asserts
+    // the claim that matters: the pin's OUTPUT. It does NOT on its own prove
+    // the pin is load-bearing — an ICU build that already agreed would satisfy
+    // it. That is the controls' job, and where one of them skips, its name is
+    // the record that the question went unasked on this runtime.
     const at = new Date('2026-09-15T12:00:00Z');
-    expect(new Intl.NumberFormat('ar-EG').format(1234.5)).not.toContain('1');
-    expect(
-      new Intl.DateTimeFormat('ar-SA', { timeZone: 'UTC' }).resolvedOptions().calendar
-    ).not.toBe('gregory');
-    expect(
-      new Intl.DateTimeFormat('ar-SA', { timeZone: 'UTC', year: 'numeric' }).format(at)
-    ).not.toContain('2026');
+    const pinned = resolveFormatLocale('ar-SA', AUTO_REGION);
+    const date = new Intl.DateTimeFormat(pinned.dateLocale, {
+      timeZone: 'UTC',
+      dateStyle: 'medium',
+    });
+    expect(new Intl.NumberFormat(pinned.numberLocale).resolvedOptions().numberingSystem).toBe(
+      'latn'
+    );
+    expect(date.resolvedOptions().calendar).toBe('gregory');
+    expect(date.resolvedOptions().numberingSystem).toBe('latn');
+    expect(date.format(at)).toContain('2026');
   });
 
   test('the pin is Arabic-only: no other language changes its tags', () => {
