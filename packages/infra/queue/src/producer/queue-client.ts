@@ -1,3 +1,4 @@
+import { verifiedPgConnectionString } from '@scani/config';
 import { createComponentLogger } from '@scani/logging';
 import { createPostgresBackend, type PostgresQueueBackend, Queue } from 'bullmq';
 
@@ -51,7 +52,7 @@ export class QueueClient {
       name,
       {
         connection: {
-          connectionString: config.connection,
+          connectionString: verifiedPgConnectionString(config.connection),
           schema: config.schema ?? DEFAULT_QUEUE_SCHEMA,
         },
       } as never,
