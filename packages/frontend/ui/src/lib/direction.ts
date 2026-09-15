@@ -39,10 +39,14 @@ export const MIRROR_IN_RTL = 'rtl:-scale-x-100';
  * during render.** In the app that read would be correct: `applyFormatLocale`
  * writes `<html dir>` from a `useMemo` in a provider, above the tree, so a
  * language change re-renders everything below it with the attribute already
- * set. The visual harness does not go through that path — there is no `ar.json`
- * yet, so no reader can select their way to RTL and `v3-screens.spec.ts`
- * assigns the attribute from `page.evaluate` after mount, with nothing to make
- * React re-render. A render-time read would therefore be right in production
+ * set. The visual harness does not go through that path — no reader can select
+ * their way to RTL, so `v3-screens.spec.ts` assigns the attribute from
+ * `page.evaluate` after mount, with nothing to make React re-render.
+ *
+ * (The reason no reader can is no longer "there is no `ar.json`": both Arabic
+ * locale files exist as of SC-201. It is `HELD_LANGUAGES` in the app's
+ * `offered-languages.ts`, which keeps `ar` out of the picker until the Arabic
+ * web and PDF faces land. The conclusion is unchanged and the premise is not.) A render-time read would therefore be right in production
  * and stale in the one instrument that photographs RTL, and `--update` would
  * write an LTR axis into an RTL baseline that agrees with itself forever. That
  * is `assertStillInDirection`'s failure one level down, and it is why the

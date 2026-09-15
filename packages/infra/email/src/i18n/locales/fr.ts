@@ -13,6 +13,7 @@ import type { EmailStrings } from '../strings';
  */
 export const fr: EmailStrings = {
   lang: 'fr',
+  dir: 'ltr',
   layout: {
     footer:
       'Vous recevez cet e-mail parce que quelqu’un a demandé à se connecter à {appLink} avec cette adresse. Si ce n’était pas vous, vous pouvez ignorer ce message sans risque — aucune action n’a été effectuée sur le compte.',

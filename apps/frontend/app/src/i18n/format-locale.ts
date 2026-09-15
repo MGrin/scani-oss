@@ -83,11 +83,13 @@ export interface DocumentLocaleTarget {
  *   hyphenation and font fallback key on. There is no `lang` anywhere in this
  *   app today — `index.html` ships whatever Vite's template had — so this is
  *   the first time the document says what language it is in.
- * - **`dir`** is the whole of RTL at the document level, and setting it here is
- *   deliberately NOT a claim that the interface is mirrored. It is not: SC-201
- *   step 3 is the layout pass, and no Arabic locale file exists, so no reader
- *   can reach `dir="rtl"` yet. What this gives is the seam in one place, so
- *   that pass changes CSS rather than hunting for where direction is decided.
+ * - **`dir`** is the whole of RTL at the document level, and this is the one
+ *   place it is decided. The layout pass that seam was cut for has now run:
+ *   `@scani/ui` and `src/v3` are scanned for physical inline properties by
+ *   `tests/v3/rtl-logical-properties.test.ts`, machine data sits in `dir="ltr"`
+ *   islands, and four RTL visual baselines photograph the result. What a reader
+ *   still cannot do is REACH it — `offered-languages.ts` holds `ar` out of the
+ *   picker until the Arabic web and PDF faces land, which is the last step.
  *
  * `lang` gets the base language, not the format tag: it describes the TEXT, and
  * a reader on English copy with German dates is reading English.

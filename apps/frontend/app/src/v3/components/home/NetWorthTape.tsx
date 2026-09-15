@@ -158,7 +158,17 @@ export function NetWorthTape({ value, currency, className }: NetWorthTapeProps) 
           cells, and under `dir="rtl"` every one of those reverses. A screenshot
           of the phone home caught `$193,150.00` rendering as `00.051,391 $` —
           the columns in reverse order AND the digits inside them reversed.
-          `<Numeric>` is unaffected because it prints a single formatted string.
+          `<Numeric>` is unaffected — but NOT for the reason this comment gave
+          until SC-201, and the correction is worth carrying because it points
+          at a change somebody would otherwise make. It does not always print a
+          single string: with `indicator="both"` the arrow is a separate
+          `aria-hidden` span beside the text. What keeps it safe is that the
+          two are one bidi RUN with no `dir` of their own, so the arrow — a
+          neutral — takes the paragraph direction and lands at the READING
+          start in either one. Wrapping `Numeric` in a `dir="ltr"` island to
+          "match this one" would pin the arrow to the physical left and put it
+          at the reading END of an Arabic line, which is the defect this
+          comment is about, introduced by the fix for it.
           It sits on the `aria-hidden` wrapper so the `sr-only` sibling above —
           ordinary localised prose — still follows the document. */}
       <span aria-hidden="true" dir="ltr" className="font-display text-display">

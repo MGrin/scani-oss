@@ -116,7 +116,13 @@ function RuleRow({ rule }: { rule: TransferReviewRule }) {
         {/* The whole key. A rule is revoked by recognising it, and the two
             addresses a reader most needs to tell apart differ in one
             character. */}
-        <code className="break-all text-caption text-muted-foreground">
+        {/* `dir="ltr"` is what makes the sentence above true under RTL
+            (SC-201): a counterparty key is chain-qualified, so it carries
+            colons and hyphens, which are bidi neutrals. Under `dir="rtl"` the
+            segments either side of one reorder — and two addresses differing
+            in one character is exactly the comparison that cannot survive
+            having its halves swapped. */}
+        <code dir="ltr" className="break-all text-caption text-muted-foreground">
           {rule.matchCounterparty}
         </code>
         <p className="text-caption text-muted-foreground">
