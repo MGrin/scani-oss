@@ -398,3 +398,106 @@ describe('run ordering is on the only path to the page', () => {
     expect(source).toMatch(/visualRuns\(\s*pen\.type\.shape\(/);
   });
 });
+
+/**
+ * SC-1201. **A space in a figure column produced no PDF at all.**
+ *
+ * Figure columns are set in Plex Mono first, and every Mono subset's `cmap`
+ * maps U+0020 and U+00A0 to a glyph fontkit cannot lay out: `font.layout(' ')`
+ * throws `RangeError: Out of bounds access`. `covers` believed the `cmap`, so
+ * the space went to Mono, and pdfkit threw on the way out. Not a wrong glyph
+ * and not a `[?]` — the export failed.
+ *
+ * **Asserted through `renderStatement` and nowhere lower, because that is where
+ * it lived.** `shape()` never threw: it returned one tidy `Mono` run with the
+ * space inside, which is exactly what a unit test on shaping would have
+ * approved. The failure was downstream of every function this suite called by
+ * name, and this whole file was green over it — its fixture puts `Kraken · Main`
+ * in a TEXT column and never a space in a numeric one.
+ *
+ * The separator is the one that ships: `Intl.NumberFormat` groups `ru-RU` and
+ * `pt-PT` with U+00A0. Written as an escape rather than read back from `Intl`,
+ * because a CLDR update that changed which character a locale emits would
+ * otherwise quietly change what this protects — and as an ESCAPE rather than
+ * the raw character, because a no-break space is indistinguishable from a
+ * space in review.
+ *
+ * **`fr-FR` is deliberately NOT here, and the reason is a second defect rather
+ * than an omission.** French groups with U+202F NARROW NO-BREAK SPACE, and no
+ * bundled face maps it — zero of nineteen, measured — so it renders as `[?]`.
+ * That is a coverage gap, not this crash: it produced a PDF before this fix and
+ * produces the same PDF after. Listing it under "renders" would pass over a
+ * figure reading `1[?]234[?]567,89`, because a page count cannot see a mark.
+ * It is SC-1202.
+ */
+describe('a space in a figure column', () => {
+  const NBSP = '\u00a0';
+
+  function figure(value: string): StatementInput {
+    return input(1, {
+      headers: ['Holding', 'When', 'Value'],
+      numericColumns: [false, true, true],
+      totalColumns: [false, false, false],
+      rows: [
+        [
+          { kind: 'text', value: 'Holding' },
+          { kind: 'text', value },
+          { kind: 'text', value },
+        ],
+      ],
+    });
+  }
+
+  // The four that always rendered — the control. If the fix had broken the
+  // path that was never broken, these are what would say so.
+  it.each([
+    'ab',
+    'a:b',
+    '05:31',
+    '2026-09-15',
+  ])('renders %p, which never contained a space', async (value) => {
+    expect(pageCount(await renderStatement(figure(value)))).toBe(1);
+  });
+
+  it.each([
+    ['an ASCII space', 'a b'],
+    ['a date with a time, which is how an ordinary export reaches it', '2026-09-15 05:31'],
+    ['ru-RU and pt-PT grouping (U+00A0)', `1${NBSP}234${NBSP}567,89`],
+  ])('renders %s', async (_, value) => {
+    expect(pageCount(await renderStatement(figure(value)))).toBe(1);
+  });
+
+  it('draws the space in a face that can set it, and the digits still in Mono', async () => {
+    // The fix is a fall-through, not a substitution: the digits either side
+    // must stay in the figure face, or a column of amounts stops lining up.
+    const type = await loadTypesetter();
+    const runs = type.shape('2026-09-15 05:31', 'mono');
+    expect(runs.map((run) => run.text).join('')).toBe('2026-09-15 05:31');
+    expect(runs.filter((run) => /\d/.test(run.text)).every((run) => run.font === 'Mono')).toBe(
+      true
+    );
+    // FOUND before it is judged. Before the fix the space sat inside a single
+    // `Mono` run, so `find` returned nothing and `undefined` is "not Mono" —
+    // this assertion passed over the defect it names until the line above it
+    // was added.
+    const space = runs.find((run) => run.text === ' ');
+    expect(space).toBeDefined();
+    expect(space?.font).not.toBe('Mono');
+  });
+
+  it('is never reported as an unsupported character', async () => {
+    // A guard on the FIX, not a falsifier for the crash, and it passes either
+    // side of it on purpose. The tempting wrong repair is to stop trusting a
+    // face that throws and mark the character instead — which removes the
+    // crash and puts `[?]` between a date and its time on every statement that
+    // has one. A face that cannot set a space is skipped, never marked.
+    const type = await loadTypesetter();
+    for (const blank of [' ', NBSP]) expect(type.supports(blank)).toBe(true);
+    const drawn = type
+      .shape(`1${NBSP}234`, 'mono')
+      .map((run) => run.text)
+      .join('');
+    expect(drawn).toBe(`1${NBSP}234`);
+    expect(drawn).not.toContain(UNSUPPORTED_MARK);
+  });
+});
