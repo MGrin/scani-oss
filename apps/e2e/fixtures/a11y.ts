@@ -223,6 +223,16 @@ export const INTERACTIVE_TARGETS = [
  *   "inline" exception.
  * - `[data-a11y-target=inline]` is the opt-out for the same case where the
  *   markup is not a `<p>`; it has to be spelled out at the call site.
+ * - Radix's toast focus proxies are keyboard guards, not tap targets (SC-1197).
+ *   While a toast is open, `ToastViewport` renders a visually hidden
+ *   `span tabindex=0` on each side of its list, so Tab can reach the toasts,
+ *   and a finger never can. They carry no data attribute. The only thing
+ *   marking them is the structure Radix renders: direct children of the
+ *   `role=region` wrapper, which Radix labels `Notifications (<hotkey>)`.
+ *   The rule matches that structure, never a size. A relabelled viewport, or a
+ *   1×1 `tabindex=0` span anywhere else, is still measured. The live toast
+ *   `/kitchen-sink` gained is what first rendered them inside the walk, as
+ *   four 1×1 offenders (two proxies per theme pane).
  *
  * Nothing is exempted here speculatively. A control type that is not rendered
  * today cannot be shown to need an exemption, and pre-writing one would put
@@ -236,6 +246,8 @@ export const EXEMPT_TARGETS = [
   'input[type="checkbox"]',
   'input[type="radio"]',
   '[data-a11y-target=inline]',
+  // Radix toast focus proxies: keyboard guards beside the toast list, not tap targets.
+  '[role="region"][aria-label^="Notifications ("] > span[tabindex="0"]',
 ].join(', ');
 
 /**
