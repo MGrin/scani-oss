@@ -2,6 +2,7 @@ import { describe, expect, it } from 'bun:test';
 import { readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import type { StatementTextDtoType } from '@scani/shared';
+import { isOfferedLanguage } from '../../../../../frontend/app/src/i18n/offered-languages';
 import { loadTypesetter, UNSUPPORTED_MARK } from '../../../src/lib/pdf/fonts';
 import { headerText } from '../../../src/lib/pdf/layout';
 import {
@@ -20,9 +21,17 @@ import { drawnCodepoints } from './drawn-codepoints';
  * the page.
  *
  * **Derived from the locale directory, never a list.** Eight languages render
- * here today and Arabic will the day its locale file lands, with nothing to
- * edit — and a floor assertion stands above them, because `it.each` over an
- * empty array registers no tests and bun reports that as a clean run.
+ * here today and a new one will with nothing to edit. A floor assertion stands
+ * above them, because `it.each` over an empty array registers no tests and bun
+ * reports that as a clean run.
+ *
+ * **A held language is named, not checked (SC-201).** Arabic's locale file
+ * lands before the faces that can set Arabic script, so a statement in its
+ * words cannot reach the page yet. Checking it would make the branch that adds
+ * the words red until the branch that adds the faces merges. The hold in
+ * `offered-languages.ts` already says a language is not ready. The PR that
+ * lifts it is the PR that ships the faces, so that is where this check turns
+ * on for it.
  *
  * The words are read from the locale FILES the app ships rather than through
  * i18next, whose test preload registers English and Russian only — a file read
@@ -48,12 +57,12 @@ function at(tree: Tree, path: string): string {
   return value;
 }
 
-const locales = [
-  ['en', UI_EN] as const,
-  ...readdirSync(APP_LOCALES)
-    .filter((file) => file.endsWith('.json') && file !== 'en.json')
-    .map((file) => [file.replace(/\.json$/, ''), join(APP_LOCALES, file)] as const),
-];
+const shipped = readdirSync(APP_LOCALES)
+  .filter((file) => file.endsWith('.json') && file !== 'en.json')
+  .map((file) => [file.replace(/\.json$/, ''), join(APP_LOCALES, file)] as const);
+
+const locales = [['en', UI_EN] as const, ...shipped.filter(([code]) => isOfferedLanguage(code))];
+const held = shipped.filter(([code]) => !isOfferedLanguage(code)).map(([code]) => code);
 
 /** The words one locale file gives the statement — the keys `statementText` in
  *  `pdf-export.ts` reads, with the two formatted values supplied here. */
@@ -116,6 +125,16 @@ describe('every locale the app ships sets the statement in its own words', () =>
     expect(locales.length).toBeGreaterThanOrEqual(8);
     expect(locales.map(([code]) => code)).toContain('en');
     expect(locales.map(([code]) => code)).toContain('ja');
+  });
+
+  it('a held language is skipped by name, and only while it is held', () => {
+    // Every shipped file is either checked below or listed here, so a skip can
+    // never be silent. When the hold lifts, this list empties and the language
+    // is in `locales` above.
+    expect([...locales.map(([code]) => code), ...held].sort()).toEqual(
+      ['en', ...shipped.map(([code]) => code)].sort()
+    );
+    for (const code of held) expect(isOfferedLanguage(code)).toBe(false);
   });
 
   it.each(
