@@ -189,3 +189,26 @@ describe('the Russian reader', () => {
     expect(i18n.exists('v3.jobs.notices.providerHorizon')).toBe(true);
   });
 });
+
+/**
+ * SC-201. The duration is worded by `Intl`, so it takes the language's pinned
+ * numbering system or it takes CLDR's. `ar-EG` is what a browser detection
+ * can hand i18next, and its CLDR default is Arabic-Indic digits.
+ */
+describe('an Arabic reader', () => {
+  const format = (lng: string) =>
+    i18n.services.formatter?.format(3, 'duration', lng, { durationUnit: 'day' });
+
+  test('gets a duration count in Western digits, whichever Arabic region was detected', () => {
+    for (const lng of ['ar', 'ar-EG', 'ar-SA']) {
+      expect(format(lng)).toContain('3');
+      expect(format(lng)).not.toContain('٣');
+    }
+  });
+
+  test('control: the same unit in the bare CLDR tag is Arabic-Indic', () => {
+    expect(
+      new Intl.NumberFormat('ar-EG', { style: 'unit', unit: 'day', unitDisplay: 'long' }).format(3)
+    ).toContain('٣');
+  });
+});
