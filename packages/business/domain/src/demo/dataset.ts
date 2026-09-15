@@ -1001,19 +1001,39 @@ function buildInvestmentFlows(ctx: LedgerContext): {
     'Ledger'
   );
 
+  // The bitcoin the orphan below sends away, taken to self-custody first. No
+  // fee on purpose: it is the 0.22 BTC that used to leave Kraken directly, so
+  // every balance and the user and group totals end where they did before
+  // SC-961 moved the orphan onto the wallet.
+  move(
+    'kraken-btc',
+    'btc-wallet-btc',
+    'BTC',
+    monthDay(ctx.startDate, 12, 13),
+    0.22,
+    0.22,
+    'Ledger'
+  );
+
   // THE THIRD UNANSWERED ONE — a crypto withdrawal with no matching deposit
   // anywhere Scani can see, which is the exact case SC-150's queue exists for
   // and the one where the answer changes a realized-gain figure.
+  //
+  // It leaves a WALLET, not the exchange (SC-961). The destination picker
+  // bands an account on the source's chain as `same_network`, and an exchange
+  // has no chain — so from Kraken the band could not fire even with a second
+  // Bitcoin wallet in the persona. From Ledger — Bitcoin, the empty Sparrow
+  // wallet is exactly that band.
   const orphanDay = monthDay(ctx.startDate, 14, 26);
   events.push({
-    holdingKey: 'kraken-btc',
+    holdingKey: 'btc-wallet-btc',
     day: orphanDay,
     hour: 17,
     kind: 'withdraw',
     delta: -0.22,
     priceNativeSymbol: 'USD',
     priceNative: ctx.prices.usd('BTC', ctx.dayIndex(orphanDay)),
-    source: 'kraken-api',
+    source: 'etherscan',
     externalId: `demo-move-out-orphan-${orphanDay}`,
     counterparty: 'bc1q...8f2a',
     description: 'Withdrawal, destination unrecorded',

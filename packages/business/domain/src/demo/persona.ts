@@ -331,6 +331,20 @@ export const DEMO_ACCOUNTS: readonly AccountSpec[] = [
     wallet: { address: 'bc1qdem00000000000000000000000000000000000', chainId: '0' },
     description: 'Self-custody, cold storage',
   },
+  // Empty, and that is the point (SC-961). The review queue's `same_network`
+  // band needs a second account on the chain an unanswered withdrawal left,
+  // one that does not already hold the token. With one wallet per chain the
+  // band could not appear anywhere in the demo, so a regression in it was
+  // invisible to every browser look. A hot wallet connected and not yet funded
+  // is the ordinary way a person has one.
+  {
+    key: 'btc-hot-wallet',
+    institution: 'Bitcoin',
+    name: 'Sparrow — Bitcoin',
+    typeCode: 'crypto',
+    wallet: { address: 'bc1qdem0h0t000000000000000000000000000000', chainId: '0' },
+    description: 'Hot wallet, connected and not yet funded',
+  },
   {
     key: 'sol-wallet',
     institution: 'Solana',

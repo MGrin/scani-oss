@@ -1,5 +1,11 @@
 import { z } from 'zod';
 
+export {
+  postgresJsSsl,
+  verifiedLibpqConnectionString,
+  verifiedPgConnectionString,
+} from './postgres-tls';
+
 /**
  * Read NODE_ENV at runtime, not build time.
  *

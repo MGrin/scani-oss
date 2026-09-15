@@ -133,7 +133,7 @@ describe('demo dataset — every surface has something on it', () => {
     expect(new Set(dataset.payments.map((row) => row.direction))).toEqual(
       new Set(['outflow', 'inflow'])
     );
-    expect(dataset.wallets).toHaveLength(3);
+    expect(dataset.wallets).toHaveLength(4);
     expect(new Set(dataset.wallets.map((row) => row.institution)).size).toBe(3);
   });
 
@@ -247,7 +247,7 @@ describe('demo dataset — a wallet account is shaped like an imported one', () 
     // pass against an empty set.
     expect(importerKeys.size).toBe(6);
 
-    expect(walletAccounts).toHaveLength(3);
+    expect(walletAccounts).toHaveLength(4);
     for (const account of walletAccounts) {
       expect(new Set(Object.keys(account.metadata as object))).toEqual(importerKeys);
     }
@@ -255,7 +255,7 @@ describe('demo dataset — a wallet account is shaped like an imported one', () 
 
   it('gives each wallet a chainId the transaction pipeline actually dispatches on', () => {
     // `sourceForChainId` is the production function, so this cannot pass on a
-    // plausible-looking string. Two of the three are non-EVM sentinels — `'0'`
+    // plausible-looking string. Two of the three chains are non-EVM sentinels — `'0'`
     // and `'-2'` — which is exactly the shape a value invented from memory
     // would get wrong.
     const sources = walletAccounts.map((account) =>
@@ -271,7 +271,7 @@ describe('demo dataset — a wallet account is shaped like an imported one', () 
     // `AccountService.deleteAccount` reads it to decide whether to clean up
     // the wallet. An id pointing at no row is worse than a null one.
     const walletIds = new Set(dataset.wallets.map((row) => row.id));
-    expect(walletIds.size).toBe(3);
+    expect(walletIds.size).toBe(4);
     for (const account of walletAccounts) {
       expect(walletIds).toContain((account.metadata as { userWalletId: string }).userWalletId);
     }
@@ -288,16 +288,45 @@ describe('demo dataset — a wallet account is shaped like an imported one', () 
     for (const account of others) expect(account.metadata).toEqual({});
   });
 
-  it('still cannot make TransferReviewService offer a same_network destination', () => {
-    // Recorded rather than fixed, because it is a DATASET fact and not a
-    // metadata one: `same_network` needs two accounts sharing a chainId, and
-    // the persona has one wallet per chain. Adding the six fields removed the
-    // structural reason the band could never fire; this is the remaining one,
-    // and it is filed separately. Pinned so the next reader learns it from a
-    // test rather than from a two-band list that looks entirely correct.
-    const chainIds = walletAccounts.map(
-      (account) => (account.metadata as { chainId: string }).chainId
+  it('gives an unanswered outflow a same_network destination to offer', () => {
+    // SC-961. `TransferReviewService.destinationsFor` bands an account
+    // `same_network` when its chainId equals the SOURCE account's and it holds
+    // none of the token. Before this the band was unreachable on seeded data
+    // twice over: one wallet per chain, and every unanswered outflow left an
+    // account with no chain at all. So a regression in the banding was
+    // invisible to every browser look at the demo's review queue.
+    //
+    // The predicate is restated over the plan because this file has no
+    // database; the same answer through the real service against a seeded
+    // database is recorded on SC-961.
+    const accountByKey = new Map(dataset.accounts.map((row) => [row.key, row]));
+    const holdingByKey = new Map(dataset.holdings.map((row) => [row.key, row]));
+    const chainOf = (accountKey: string): string | undefined =>
+      (accountByKey.get(accountKey)?.metadata as { chainId?: string }).chainId;
+
+    const unanswered = dataset.transactions.filter(
+      (tx) =>
+        (tx.kind === 'withdraw' || tx.kind === 'transfer_out') &&
+        tx.transferGroupId === null &&
+        tx.transferReview === null
     );
-    expect(new Set(chainIds).size).toBe(chainIds.length);
+    // Control: the queue the demo shows. Zero here would pass the search below
+    // vacuously.
+    expect(unanswered).toHaveLength(3);
+
+    const offered = unanswered.flatMap((tx) => {
+      const source = holdingByKey.get(tx.holdingKey);
+      const sourceChain = source ? chainOf(source.accountKey) : undefined;
+      if (!source || !sourceChain) return [];
+      return dataset.accounts
+        .filter(
+          (account) =>
+            account.key !== source.accountKey &&
+            chainOf(account.key) === sourceChain &&
+            !dataset.holdings.some((h) => h.accountKey === account.key && h.symbol === tx.symbol)
+        )
+        .map((account) => `${tx.symbol} from ${source.accountKey} -> ${account.key}`);
+    });
+    expect(offered).toEqual(['BTC from btc-wallet -> btc-hot-wallet']);
   });
 });

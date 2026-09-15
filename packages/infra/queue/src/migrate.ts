@@ -1,3 +1,4 @@
+import { verifiedPgConnectionString } from '@scani/config';
 import { createComponentLogger } from '@scani/logging';
 import { runMigrations } from 'bullmq';
 import { Pool } from 'pg';
@@ -27,7 +28,7 @@ export async function runQueueMigrations(
   connectionString: string,
   schema: string = DEFAULT_QUEUE_SCHEMA
 ): Promise<void> {
-  const pool = new Pool({ connectionString });
+  const pool = new Pool({ connectionString: verifiedPgConnectionString(connectionString) });
   try {
     const client = await pool.connect();
     try {
