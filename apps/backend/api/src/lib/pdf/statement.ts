@@ -1,8 +1,10 @@
 import {
   type ExportSheetDtoType,
+  type FigureSeparatorsDtoType,
   type RenderPdfInputType,
   SCANI_MARK,
   SCANI_VIOLET,
+  type StatementTextDtoType,
 } from '@scani/shared';
 import PDFDocument from 'pdfkit';
 /**
@@ -35,6 +37,7 @@ import {
   GUTTER,
   HEADER_HEIGHT,
   headerText,
+  LATIN_FIGURES,
   layoutColumns,
   MARGIN,
   type Measure,
@@ -257,12 +260,13 @@ function drawRow(
   pen: Pen,
   columns: Column[],
   row: RenderPdfInputType['sheet']['rows'][number],
-  y: number
+  y: number,
+  figures: FigureSeparatorsDtoType
 ): void {
   columns.forEach((column, index) => {
     const cell = row[index];
     if (!cell) return;
-    const text = cellText(cell);
+    const text = cellText(cell, figures);
     if (!text) return;
     put(pen, text, column.x, y, cellStyle(column), INK, {
       width: column.width - GUTTER,
@@ -303,7 +307,8 @@ function drawTotals(
   geo: Geometry,
   columns: Column[],
   totals: readonly (string | null)[],
-  y: number
+  y: number,
+  word: string
 ): void {
   rule(pen, geo, y + 6, RULE, 1);
   const top = y + 16;
@@ -320,13 +325,22 @@ function drawTotals(
   // so it never collides with a figure on a narrow page.
   const label = columns[first];
   if (label) {
-    put(pen, 'TOTAL', MARGIN.left, top + 1, TYPE.totalLabel, MUTED, {
+    // Small caps like the column headings, through the same function so the
+    // two cannot be cased differently.
+    put(pen, headerText(word), MARGIN.left, top + 1, TYPE.totalLabel, MUTED, {
       width: Math.max(label.x - MARGIN.left - GUTTER, 0),
     });
   }
 }
 
-function drawFooter(pen: Pen, geo: Geometry, page: number, total: number, subject: string): void {
+function drawFooter(
+  pen: Pen,
+  geo: Geometry,
+  page: number,
+  total: number,
+  subject: string,
+  pageOf: string
+): void {
   const doc = pen.doc;
   const y = geo.height - MARGIN.bottom + 16;
   // The footer sits *below* the bottom margin, and pdfkit adds a page whenever
@@ -340,7 +354,8 @@ function drawFooter(pen: Pen, geo: Geometry, page: number, total: number, subjec
   put(pen, `Scani · ${subject}`, MARGIN.left, y, TYPE.footer, MUTED, {
     width: geo.contentWidth / 2,
   });
-  put(pen, `Page ${page} of ${total}`, MARGIN.left + geo.contentWidth / 2, y, TYPE.footer, MUTED, {
+  const numbered = fill(pageOf, { page: String(page), pages: String(total) });
+  put(pen, numbered, MARGIN.left + geo.contentWidth / 2, y, TYPE.footer, MUTED, {
     width: geo.contentWidth / 2,
     align: 'right',
   });
@@ -364,6 +379,59 @@ function drawFooter(pen: Pen, geo: Geometry, page: number, total: number, subjec
  * of this sentence goes quiet the day the sentence is reworded (SC-782).
  */
 export const UNSUPPORTED_NOTE = `${UNSUPPORTED_MARK} marks a character these fonts cannot set — the CSV and XLSX exports carry the full name.`;
+
+/**
+ * The statement's own words when the client sent none (SC-1199).
+ *
+ * Exactly what every statement said before they became translatable, so a
+ * client too old to send `text` gets the document it always got rather than a
+ * validation error — see `StatementTextDto` for why that client exists. This is
+ * NOT a locale default and the renderer does not choose it for anybody: a
+ * current client always sends `text`, and its test says so.
+ *
+ * `generatedAt` and `rowCount` are absent on purpose. They are values, not
+ * words, and the fallback for a value is the renderer's own formatting of it.
+ */
+const ENGLISH: Omit<StatementTextDtoType, 'generatedAt' | 'rowCount'> = {
+  total: 'Total',
+  pageOf: 'Page {{page}} of {{pages}}',
+  account: 'Account',
+  generated: 'Generated',
+  rows: 'Rows',
+  amounts: 'Amounts',
+  amountsWithheld: 'Withheld on purpose — this statement carries no figures',
+  characters: 'Characters',
+  unsupportedNote: UNSUPPORTED_NOTE.replace(UNSUPPORTED_MARK, '{{mark}}'),
+  noRows: 'No rows in this selection.',
+};
+
+/**
+ * `{{name}}` → value, and nothing else.
+ *
+ * The translation owns word order — Japanese puts the page count before the
+ * page — so the renderer substitutes into the sentence it is handed and never
+ * builds one. A placeholder a translation left out is left out; one it
+ * misspelled stays visible, which is the reading a reviewer can see.
+ */
+function fill(template: string, values: Record<string, string>): string {
+  return template.replace(/\{\{(\w+)\}\}/g, (whole, name: string) => values[name] ?? whole);
+}
+
+/** The words this statement sets, and the two values the client may have
+ *  formatted for it. Exported for the test that proves a client which sends
+ *  every word gets none of `ENGLISH` back, and one that sends none gets all
+ *  of it. */
+export function statementText(input: StatementInput): StatementTextDtoType {
+  const sent = input.text;
+  return {
+    ...ENGLISH,
+    ...sent,
+    generatedAt: sent?.generatedAt ?? statementTimestamp(input.provenance.generatedAt),
+    rowCount:
+      sent?.rowCount ??
+      (input.provenance.rowCount === undefined ? undefined : String(input.provenance.rowCount)),
+  };
+}
 
 /** The first page's masthead and metadata block. Returns the y the table starts
  *  at, so pagination and drawing cannot disagree about it. */
@@ -391,20 +459,21 @@ function drawMasthead(
   // the workbook carries as an About sheet, so a reader comparing three files
   // of the same export sees the same facts in all three. Plus the account,
   // which only this format states: a statement is a document about *someone*.
+  const text = statementText(input);
   const meta: [string, string][] = [
-    ['Account', input.account],
-    ['Generated', statementTimestamp(provenance.generatedAt)],
-    ...(provenance.rowCount === undefined
-      ? []
-      : ([['Rows', String(provenance.rowCount)]] as [string, string][])),
+    [text.account, input.account],
+    [text.generated, text.generatedAt],
+    ...(text.rowCount === undefined ? [] : ([[text.rows, text.rowCount]] as [string, string][])),
     ...provenance.details.map((detail): [string, string] => [detail.label, detail.value]),
     ...(provenance.amountsWithheld
-      ? ([['Amounts', 'Withheld on purpose — this statement carries no figures']] as [
+      ? ([[text.amounts, text.amountsWithheld]] as [string, string][])
+      : []),
+    ...(substituted
+      ? ([[text.characters, fill(text.unsupportedNote, { mark: UNSUPPORTED_MARK })]] as [
           string,
           string,
         ][])
       : []),
-    ...(substituted ? ([['Characters', UNSUPPORTED_NOTE]] as [string, string][]) : []),
   ];
 
   const labelWidth = 96;
@@ -440,14 +509,20 @@ export interface StatementInput extends RenderPdfInputType {
  */
 export function documentText(input: StatementInput, sheet: ExportSheetDtoType): string[] {
   const { provenance } = input;
+  const text = statementText(input);
   return [
+    // The statement's own words, now that they can be in any script: a label
+    // in a face no bundled font covers must be disclosed like a name would be.
+    ...Object.values(text).filter((value): value is string => value !== undefined),
     provenance.subject,
     provenance.scope,
     input.account,
     ...provenance.details.flatMap((detail) => [detail.label, detail.value]),
     ...sheet.headers,
     ...(sheet.groups ?? []).map((group) => group.label),
-    ...sheet.rows.flatMap((row) => row.map((cell) => cellText(cell))),
+    ...sheet.rows.flatMap((row) =>
+      row.map((cell) => cellText(cell, input.figures ?? LATIN_FIGURES))
+    ),
   ];
 }
 
@@ -473,9 +548,11 @@ export async function renderStatement(input: StatementInput): Promise<Buffer> {
   // `string | Buffer` — the same Buffer `registerFont` already accepts below.
   const startWithOwnFace = { font: type.primary as unknown as string };
 
+  const figures = input.figures ?? LATIN_FIGURES;
   const geo = chooseGeometry(
     sheet,
-    measurer({ doc: type.register(new PDFDocument(startWithOwnFace)), type })
+    measurer({ doc: type.register(new PDFDocument(startWithOwnFace)), type }),
+    figures
   );
 
   const doc = new PDFDocument({
@@ -497,8 +574,9 @@ export async function renderStatement(input: StatementInput): Promise<Buffer> {
   doc.on('data', (chunk: Uint8Array) => chunks.push(chunk));
   const finished = new Promise<void>((resolve) => doc.on('end', () => resolve()));
 
-  const totals = totalsRow(sheet);
-  const columns = layoutColumns(sheet, measurer(pen), geo.contentWidth);
+  const text = statementText(input);
+  const totals = totalsRow(sheet, figures);
+  const columns = layoutColumns(sheet, measurer(pen), figures, geo.contentWidth);
   const blocks = buildBlocks(sheet, totals);
 
   // Measure the masthead by drawing it on the real first page, then flow the
@@ -524,10 +602,10 @@ export async function renderStatement(input: StatementInput): Promise<Buffer> {
       if (block.kind === 'heading') {
         drawGroupHeading(pen, geo, block.label, block.count, y);
       } else if (block.kind === 'totals') {
-        drawTotals(pen, geo, columns, totals, y);
+        drawTotals(pen, geo, columns, totals, y, text.total);
       } else {
         const row = sheet.rows[block.index];
-        if (row) drawRow(pen, columns, row, y);
+        if (row) drawRow(pen, columns, row, y, figures);
         // A hairline *under* each row rather than a box around it, and never
         // under the last row of a run — a rule with nothing beneath it reads as
         // a total, which is a line this document uses for something else.
@@ -538,10 +616,10 @@ export async function renderStatement(input: StatementInput): Promise<Buffer> {
     });
 
     if (page.length === 0) {
-      put(pen, 'No rows in this selection.', MARGIN.left, y + 6, TYPE.rowText, MUTED);
+      put(pen, text.noRows, MARGIN.left, y + 6, TYPE.rowText, MUTED);
     }
 
-    drawFooter(pen, geo, index + 1, pages.length, provenance.subject);
+    drawFooter(pen, geo, index + 1, pages.length, provenance.subject, text.pageOf);
   });
 
   doc.end();

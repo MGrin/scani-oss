@@ -48,6 +48,9 @@
       "timeout": "Scaniからの応答に時間がかかりすぎました。接続を確認して、もう一度「続ける」をタップしてください。",
       "unreachable": "Scaniに接続できませんでした。接続を確認して、もう一度「続ける」をタップしてください。",
       "server": "問題が発生しました。もう一度お試しください。"
+    },
+    "exits": {
+      "label": "Scani について"
     }
   },
   "currency": {
@@ -765,6 +768,14 @@
         "aboutSheet": "このファイルについて",
         "field": "項目",
         "value": "内容"
+      },
+      "statement": {
+        "total": "合計",
+        "pageOf": "{{page}} / {{pages}} ページ",
+        "account": "アカウント",
+        "characters": "文字",
+        "unsupportedNote": "{{mark}} はこのフォントで表示できない文字を示します。CSV と XLSX のエクスポートには完全な名前が含まれます。",
+        "noRows": "この選択には行がありません。"
       },
       "download": {
         "shared": "共有シートに送りました",
