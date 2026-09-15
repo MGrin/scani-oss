@@ -12,6 +12,7 @@
  * — no DB connection is opened at all.
  */
 
+import { postgresJsSsl } from '@scani/config';
 import * as schema from '@scani/db';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
@@ -24,18 +25,7 @@ let dbClient: CloudDb | null = null;
 export function getCloudDb(databaseUrl: string): CloudDb {
   if (dbClient) return dbClient;
 
-  const sslMode = (() => {
-    try {
-      const url = new URL(databaseUrl);
-      const param = url.searchParams.get('sslmode');
-      if (param === 'disable') return false;
-      if (param === 'require') return 'require' as const;
-      const local = ['localhost', '127.0.0.1', '::1'];
-      return local.includes(url.hostname) ? false : ('require' as const);
-    } catch {
-      return 'require' as const;
-    }
-  })();
+  const sslMode = postgresJsSsl(databaseUrl);
 
   sql = postgres(databaseUrl, {
     max: 5,

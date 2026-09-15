@@ -455,6 +455,7 @@
       "name": "@scani/queue",
       "version": "1.0.0",
       "dependencies": {
+        "@scani/config": "workspace:*",
         "@scani/deadline": "workspace:*",
         "@scani/logging": "workspace:*",
         "bullmq": "^6.2.0",
