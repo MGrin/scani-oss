@@ -406,16 +406,14 @@ describe('SC-1161 — the derivation, on a fixture tree', () => {
 
   test("a script's imports are inputs even behind a shebang, and an unparseable one is reported", () => {
     const repo = fixture({
-      'scripts/up.ts': "#!/usr/bin/env bun\nimport { x } from './lib/ports';\nx();\n",
-      'scripts/lib/ports.ts': 'export const x = () => 1;\n',
-      'scripts/broken.ts': 'import {{ nope',
+      'tools/up.ts': "#!/usr/bin/env bun\nimport { x } from './lib/ports';\nx();\n",
+      'tools/lib/ports.ts': 'export const x = () => 1;\n',
+      'tools/broken.ts': 'import {{ nope',
     });
-    expect(gaps(repo, workflow('scripts/up.ts', 'bun scripts/up.ts'))).toContain(
-      'scripts/lib/ports.ts'
-    );
-    const [job] = gatedJobs([workflow('scripts/**', 'bun scripts/broken.ts')]);
+    expect(gaps(repo, workflow('tools/up.ts', 'bun tools/up.ts'))).toContain('tools/lib/ports.ts');
+    const [job] = gatedJobs([workflow('tools/**', 'bun tools/broken.ts')]);
     expect(
-      inputsOf(job as GatedJob, repo, [workflow('scripts/**', 'bun scripts/broken.ts')]).unresolved
-    ).toEqual(['import graph unreadable: scripts/broken.ts']);
+      inputsOf(job as GatedJob, repo, [workflow('tools/**', 'bun tools/broken.ts')]).unresolved
+    ).toEqual(['import graph unreadable: tools/broken.ts']);
   });
 });
