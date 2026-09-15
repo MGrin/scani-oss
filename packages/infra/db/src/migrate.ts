@@ -17,6 +17,7 @@
 import { existsSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { postgresJsSsl } from '@scani/config';
 import postgres from 'postgres';
 import { decideTarget, describeTarget, formatTarget, refusalMessage } from './migrate-target';
 import { applyMigrations, parseAssumeAppliedThrough } from './migration-runner';
@@ -81,22 +82,8 @@ export async function runDrizzleMigrations(): Promise<number> {
 
   console.log('🔄 Starting database migrations...');
 
-  // Decide SSL mode from the URL (sslmode=disable for local dev, otherwise
-  // default to require for hosted Postgres). Explicit sslmode in the URL wins.
-  const sslMode = (() => {
-    try {
-      const url = new URL(DATABASE_URL);
-      const param = url.searchParams.get('sslmode');
-      if (param === 'disable') return false;
-      if (param === 'require' || param === 'verify-full' || param === 'verify-ca')
-        return 'require' as const;
-      // No sslmode in URL: default to require except for local loopback hosts.
-      const local = ['localhost', '127.0.0.1', '::1'];
-      return local.includes(url.hostname) ? false : ('require' as const);
-    } catch {
-      return 'require' as const;
-    }
-  })();
+  // verify-full for every hosted database; see `postgresJsSsl` (SC-784).
+  const sslMode = postgresJsSsl(DATABASE_URL);
 
   console.log(`📍 PostgreSQL connection (ssl=${sslMode})`);
 

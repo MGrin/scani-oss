@@ -13,6 +13,7 @@
     "type-check": "tsgo --noEmit -p tsconfig.test.json"
   },
   "dependencies": {
+    "@scani/config": "workspace:*",
     "@scani/deadline": "workspace:*",
     "@scani/logging": "workspace:*",
     "bullmq": "^6.2.0",
