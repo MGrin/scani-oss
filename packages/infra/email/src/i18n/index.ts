@@ -1,3 +1,4 @@
+import { ar } from './locales/ar';
 import { en } from './locales/en';
 import { es } from './locales/es';
 import { fr } from './locales/fr';
@@ -20,6 +21,7 @@ export { fill } from './strings';
  * here (SC-201).
  */
 export const EMAIL_STRINGS: Readonly<Record<string, EmailStrings>> = {
+  ar,
   en,
   es,
   fr,

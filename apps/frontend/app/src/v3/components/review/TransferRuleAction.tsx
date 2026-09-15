@@ -175,7 +175,10 @@ export function TransferRuleAction({
                 <span className="text-caption text-muted-foreground">
                   {t('v3.review.rules.field.counterparty')}
                 </span>
-                <code className="break-all text-caption text-muted-foreground">
+                {/* `dir="ltr"`: a counterparty key is machine data carrying
+                    bidi-neutral separators, and under `dir="rtl"` the segments
+                    either side of one swap places (SC-201). */}
+                <code dir="ltr" className="break-all text-caption text-muted-foreground">
                   {item.counterparty}
                 </code>
               </div>
@@ -184,9 +187,12 @@ export function TransferRuleAction({
               <span className="text-caption text-muted-foreground">
                 {t('v3.review.rules.field.key')}
               </span>
-              {/* Every character, selectable. The truncated form the list
-                  renders is twelve characters two addresses can share. */}
-              <code className="break-all text-caption">{item.counterpartyKey}</code>
+              {/* Every character, selectable, and in that order — see the
+                  `dir="ltr"` note above. The truncated form the list renders is
+                  twelve characters two addresses can share. */}
+              <code dir="ltr" className="break-all text-caption">
+                {item.counterpartyKey}
+              </code>
               {item.counterparty !== item.counterpartyKey ? (
                 <span className="text-caption text-muted-foreground">
                   {t('v3.review.rules.field.keyHint')}

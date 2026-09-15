@@ -1716,6 +1716,10 @@
         "placeholder": "Pick a date"
       },
       "recordPicker": {
+        "announceMatches_one": "{{count}} match",
+        "announceMatches_other": "{{count}} matches",
+        "announceSimilar_one": "{{count}} similar record",
+        "announceSimilar_other": "{{count}} similar records",
         "change": "Change {{label}}",
         "changeAction": "Change",
         "searching": "Searching…",
@@ -1950,7 +1954,8 @@
         "ownDocs": "{{name}}'s own documentation",
         "unverifiedTitle": "Couldn't check your {{name}} keys",
         "unverifiedDetail": "{{name}} didn't answer, so we can't say whether the keys are right. Nothing was saved — try again in a minute."
-      }
+      },
+      "demoNote": "Nothing you enter here is saved — this is the demo."
     },
     "tokens": {
       "custom": {

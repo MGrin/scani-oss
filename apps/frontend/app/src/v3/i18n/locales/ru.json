@@ -218,6 +218,14 @@
         "placeholder": "Выберите дату"
       },
       "recordPicker": {
+        "announceMatches_one": "{{count}} совпадение",
+        "announceMatches_few": "{{count}} совпадения",
+        "announceMatches_many": "{{count}} совпадений",
+        "announceMatches_other": "{{count}} совпадения",
+        "announceSimilar_one": "{{count}} похожая запись",
+        "announceSimilar_few": "{{count}} похожие записи",
+        "announceSimilar_many": "{{count}} похожих записей",
+        "announceSimilar_other": "{{count}} похожей записи",
         "change": "Изменить: {{label}}",
         "changeAction": "Изменить",
         "searching": "Ищем…",
@@ -2529,7 +2537,8 @@
         "ownDocs": "Собственная документация {{name}}",
         "unverifiedTitle": "Не удалось проверить ключи {{name}}",
         "unverifiedDetail": "{{name}} не ответил, поэтому мы не знаем, верны ли ключи. Ничего не сохранено — попробуйте через минуту."
-      }
+      },
+      "demoNote": "Ничего из введённого здесь не сохраняется — это демо."
     },
     "review": {
       "page": {

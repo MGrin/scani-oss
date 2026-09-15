@@ -1,4 +1,9 @@
-import { Decimal, type ExportSheetDtoType, type ExportValueDtoType } from '@scani/shared';
+import {
+  Decimal,
+  type ExportSheetDtoType,
+  type ExportValueDtoType,
+  type FigureSeparatorsDtoType,
+} from '@scani/shared';
 
 /**
  * The arithmetic behind the statement — type sizes, column widths, what a cell
@@ -193,15 +198,19 @@ export function headerText(header: string): string {
 
 /** How wide each column would like to be: its header, its widest cell, and its
  *  total, each measured in the style it is actually drawn in. */
-function columnDemands(sheet: ExportSheetDtoType, measure: Measure): number[] {
-  const totals = totalsRow(sheet);
+function columnDemands(
+  sheet: ExportSheetDtoType,
+  measure: Measure,
+  figures: FigureSeparatorsDtoType
+): number[] {
+  const totals = totalsRow(sheet, figures);
   return sheet.headers.map((header, index) => {
     const style = sheet.numericColumns[index] === true ? TYPE.rowFigure : TYPE.rowText;
     let widest = measure(headerText(header), TYPE.columnHeader);
     for (const row of sheet.rows) {
       const cell = row[index];
       if (!cell) continue;
-      const text = cellText(cell);
+      const text = cellText(cell, figures);
       if (text) widest = Math.max(widest, measure(text, style));
     }
     const total = totals[index];
@@ -223,8 +232,12 @@ function columnDemands(sheet: ExportSheetDtoType, measure: Measure): number[] {
  * The threshold is *natural* demand, so a list that fits stays portrait and
  * only the genuinely wide ones turn.
  */
-export function chooseGeometry(sheet: ExportSheetDtoType, measure: Measure): Geometry {
-  const natural = columnDemands(sheet, measure).reduce((sum, value) => sum + value, 0);
+export function chooseGeometry(
+  sheet: ExportSheetDtoType,
+  measure: Measure,
+  figures: FigureSeparatorsDtoType
+): Geometry {
+  const natural = columnDemands(sheet, measure, figures).reduce((sum, value) => sum + value, 0);
   return geometry(natural > PORTRAIT.contentWidth);
 }
 
@@ -260,9 +273,10 @@ export function chooseGeometry(sheet: ExportSheetDtoType, measure: Measure): Geo
 export function layoutColumns(
   sheet: ExportSheetDtoType,
   measure: Measure,
+  figures: FigureSeparatorsDtoType,
   available = PORTRAIT.contentWidth
 ): Column[] {
-  const demand = columnDemands(sheet, measure);
+  const demand = columnDemands(sheet, measure, figures);
   const rigid = sheet.headers.map((_, index) => isRigid(sheet, index));
 
   const rigidDemand = demand.reduce((sum, value, index) => sum + (rigid[index] ? value : 0), 0);
@@ -371,16 +385,22 @@ export function truncate(
 }
 
 /** What a cell prints. The figures arrive pre-formatted by the same code that
- *  writes the CSV, so this only chooses notation, never rounding. */
-export function cellText(value: ExportValueDtoType): string {
+ *  writes the CSV, so this only chooses notation, never rounding.
+ *
+ *  `figures` is REQUIRED, never defaulted, because the width pass and the draw
+ *  pass must spell a figure identically: one defaulting to `LATIN_FIGURES`
+ *  while the other printed `1 234,56` is the `GAIN / L…` bug in another form.
+ *  A date prints the client's `display` when it sent one (SC-1199). */
+export function cellText(value: ExportValueDtoType, figures: FigureSeparatorsDtoType): string {
   switch (value.kind) {
     case 'blank':
       return '';
     case 'text':
       return value.value;
     case 'number':
-      return formatFigure(value);
+      return formatFigure(value, figures);
     case 'date':
+      if (value.display) return value.display;
       return value.withTime ? value.value.replace('T', ' ').slice(0, 16) : value.value.slice(0, 10);
   }
 }
@@ -395,7 +415,10 @@ export function cellText(value: ExportValueDtoType): string {
  * not already rounded — `decimals` comes from the cell, the digits come from the
  * decimal string, and the grouping is inserted into the integer part only.
  */
-export function formatFigure(value: ExportValueDtoType & { kind: 'number' }): string {
+export function formatFigure(
+  value: ExportValueDtoType & { kind: 'number' },
+  figures: FigureSeparatorsDtoType
+): string {
   const fraction = value.value.split('.')[1] ?? '';
   const decimals = value.decimals ?? (value.style === 'money' ? 2 : fraction.length);
 
@@ -411,15 +434,19 @@ export function formatFigure(value: ExportValueDtoType & { kind: 'number' }): st
     return value.value;
   }
 
-  return group(fixed) + (value.style === 'percent' ? '%' : '');
+  return group(fixed, figures) + (value.style === 'percent' ? '%' : '');
 }
 
-function group(fixed: string): string {
+/** What a client too old to send separators gets, and what every figure was
+ *  written with before SC-1199. */
+export const LATIN_FIGURES: FigureSeparatorsDtoType = { group: ',', decimal: '.' };
+
+function group(fixed: string, figures: FigureSeparatorsDtoType): string {
   const negative = fixed.startsWith('-');
   const bare = negative ? fixed.slice(1) : fixed;
   const [whole = '0', rest] = bare.split('.');
-  const grouped = whole.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-  return `${negative ? '-' : ''}${grouped}${rest ? `.${rest}` : ''}`;
+  const grouped = whole.replace(/\B(?=(\d{3})+(?!\d))/g, figures.group);
+  return `${negative ? '-' : ''}${grouped}${rest ? `${figures.decimal}${rest}` : ''}`;
 }
 
 /**
@@ -451,7 +478,10 @@ function group(fixed: string): string {
  * Summed through `Decimal`, in the currency's own precision, so the printed
  * total is the sum of the printed rows and not a float's opinion of it.
  */
-export function totalsRow(sheet: ExportSheetDtoType): (string | null)[] {
+export function totalsRow(
+  sheet: ExportSheetDtoType,
+  figures: FigureSeparatorsDtoType
+): (string | null)[] {
   return sheet.headers.map((_, index) => {
     if (sheet.totalColumns?.[index] !== true) return null;
     let sum = new Decimal(0);
@@ -470,7 +500,7 @@ export function totalsRow(sheet: ExportSheetDtoType): (string | null)[] {
       }
       seen += 1;
     }
-    return seen > 0 ? group(sum.toFixed(2)) : null;
+    return seen > 0 ? group(sum.toFixed(2), figures) : null;
   });
 }
 

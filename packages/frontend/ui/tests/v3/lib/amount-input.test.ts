@@ -108,7 +108,7 @@ describe('parseAmountInput — the one genuine ambiguity', () => {
  */
 const GROUPS_WITH: Readonly<Record<string, string>> = {
   en: ',',
-  ar: '\u066c',
+  ar: ',',
   es: '.',
   fr: '\u202f',
   id: '.',
@@ -299,13 +299,11 @@ describe('formatAmountForDisplay — the SC-415 defect', () => {
   });
 
   it('spells the fraction in the same digits as the whole part', () => {
-    // `ar` has no locale file yet, so no reader can reach this — but a mixed
-    // reading (Arabic-Indic thousands, ASCII cents) is what a fraction
-    // appended by hand would produce, so it is pinned before it can ship.
+    // Arabic is pinned to Western digits (SC-201), so both halves are ASCII.
+    // What this still guards is the mixed reading: Western thousands beside
+    // native cents, or the reverse, from a fraction appended by hand.
     setFormatLocale('ar');
-    expect(formatAmountForDisplay('1234.56')).toBe(
-      '\u0661\u066c\u0662\u0663\u0664\u066b\u0665\u0666'
-    );
+    expect(formatAmountForDisplay('1234.56')).toBe('1,234.56');
   });
 });
 
@@ -324,15 +322,18 @@ describe('formatAmountForDisplay — the echo still disambiguates', () => {
 });
 
 describe('parseAmountInput — reads back what the field printed (SC-416)', () => {
-  it('reads the Arabic-Indic figure the app itself writes', () => {
+  it('reads the Arabic-Indic figure an Arabic keypad types', () => {
     setFormatLocale('ar');
     // The exact string from the ticket, measured in Bun 1.3.14:
     // Intl.NumberFormat('ar-EG').format(1234.56) -> ١٬٢٣٤٫٥٦
-    const printed = formatAmountForDisplay('1234.56');
-    expect(printed).toBe('\u0661\u066c\u0662\u0663\u0664\u066b\u0665\u0666');
-    // Before: the `[^0-9.,]` strip left nothing and the field went empty in
-    // silence, on the value it had just displayed.
-    expect(parseAmountInput(printed, { decimalScale: 8 }).value).toBe('1234.56');
+    // The app no longer prints it — Arabic is pinned to Western digits
+    // (SC-201) — but a keypad still types it, and the pinned tag knows none of
+    // these characters. Before: the `[^0-9.,]` strip left nothing and the field
+    // went empty in silence.
+    const typed = '\u0661\u066c\u0662\u0663\u0664\u066b\u0665\u0666';
+    expect(typed).toBe(new Intl.NumberFormat('ar-EG').format(1234.56));
+    expect(parseAmountInput(typed, { decimalScale: 8 }).value).toBe('1234.56');
+    expect(formatAmountForDisplay('1234.56')).toBe('1,234.56');
   });
 
   it('keeps the sign through the invisible mark Intl puts in front of it', () => {

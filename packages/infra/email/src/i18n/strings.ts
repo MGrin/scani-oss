@@ -34,6 +34,23 @@
 export interface EmailStrings {
   /** BCP-47 tag for `<html lang>`. Not a translation — the bundle's own name. */
   readonly lang: string;
+  /**
+   * `<html dir>` — stated by every bundle, not implied by its absence (SC-201).
+   *
+   * Direction lives on the bundle rather than being looked up because this
+   * package may not import `@scani/shared`, where `LANGUAGE_FORMATS` already
+   * holds it: `packages/infra/*` must not depend on `packages/business/*`, and
+   * `infra-folder-rule.test.ts` fails the build on it.
+   *
+   * **Required rather than optional, and that is the whole decision here.** An
+   * optional `dir` makes "left-to-right" and "nobody thought about it" the same
+   * bundle, which is the shape that lets the next language ship unmirrored —
+   * and it also puts a key on one bundle that the others lack, which
+   * `strings.test.ts` correctly reads as an incomplete translation. A mail
+   * client has no stylesheet of ours and no script, so this attribute is the
+   * whole of right-to-left in a letter.
+   */
+  readonly dir: 'ltr' | 'rtl';
   readonly layout: {
     /** `{appLink}` is an anchor, already escaped. */
     readonly footer: string;
