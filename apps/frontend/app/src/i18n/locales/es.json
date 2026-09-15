@@ -48,6 +48,9 @@
       "submit": "Continuar con el correo",
       "subtitle": "Introduce tu correo para iniciar sesión o crear una cuenta",
       "title": "Bienvenido"
+    },
+    "exits": {
+      "label": "Más sobre Scani"
     }
   },
   "currency": {

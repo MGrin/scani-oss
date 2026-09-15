@@ -48,6 +48,9 @@
       "timeout": "Scani terlalu lama menjawab. Periksa koneksi Anda lalu ketuk Lanjutkan lagi.",
       "unreachable": "Kami tidak dapat menghubungi Scani. Periksa koneksi Anda lalu ketuk Lanjutkan lagi.",
       "server": "Terjadi kesalahan. Coba lagi."
+    },
+    "exits": {
+      "label": "Selengkapnya tentang Scani"
     }
   },
   "currency": {

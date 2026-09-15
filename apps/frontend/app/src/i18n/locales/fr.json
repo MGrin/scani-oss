@@ -48,6 +48,9 @@
       "timeout": "Scani a mis trop de temps à répondre. Vérifiez votre connexion et appuyez à nouveau sur Continuer.",
       "unreachable": "Nous n’avons pas pu joindre Scani. Vérifiez votre connexion et appuyez à nouveau sur Continuer.",
       "server": "Un problème est survenu. Réessayez."
+    },
+    "exits": {
+      "label": "En savoir plus sur Scani"
     }
   },
   "currency": {
