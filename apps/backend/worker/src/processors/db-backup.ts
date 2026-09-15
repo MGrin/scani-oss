@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { unlink } from 'node:fs/promises';
+import { verifiedLibpqConnectionString } from '@scani/config';
 import { DB_BACKUP_SCHEDULE } from '@scani/jobs';
 import { createComponentLogger } from '@scani/logging';
 import { ScheduledJobProcessor } from '@scani/queue';
@@ -117,7 +118,16 @@ export class DbBackupProcessor extends ScheduledJobProcessor {
     // requires re-assembling a Neon URI's query parameters by hand, and
     // getting that subtly wrong fails at 06:00 into a job nobody watches.
     const proc = Bun.spawn(
-      ['pg_dump', '--format=custom', '--no-owner', '--no-privileges', '--file', path, databaseUrl],
+      [
+        'pg_dump',
+        '--format=custom',
+        '--no-owner',
+        '--no-privileges',
+        '--file',
+        path,
+        // verify-full against the OS root store; see `verifiedLibpqConnectionString` (SC-784).
+        verifiedLibpqConnectionString(databaseUrl),
+      ],
       // `env` is passed explicitly, and it is not decoration: measured
       // 2026-08-29, `Bun.spawn` resolves the executable against the process's
       // ORIGINAL environment and ignores a later `process.env.PATH` write

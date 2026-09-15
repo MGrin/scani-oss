@@ -1,4 +1,5 @@
 import i18n from 'i18next';
+import { isOfferedLanguage } from '@/i18n/offered-languages';
 
 /**
  * v3's strings, loaded with v3's code (SC-169).
@@ -27,6 +28,7 @@ const localeModules = import.meta.glob<{ default: Record<string, unknown> }>('./
 
 for (const [path, mod] of Object.entries(localeModules)) {
   const code = path.replace(/^\.\/locales\//, '').replace(/\.json$/, '');
+  if (!isOfferedLanguage(code)) continue;
   // Deep-merge, and do not overwrite: the shell bundle is already registered
   // and this adds a disjoint branch to it.
   i18n.addResourceBundle(code, 'translation', mod.default, true, false);

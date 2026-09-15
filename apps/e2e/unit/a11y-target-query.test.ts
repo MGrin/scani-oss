@@ -193,4 +193,44 @@ describe('EXEMPT_TARGETS', () => {
   ] as const)('does not exempt %s', (_label, html) => {
     expect(matched(EXEMPT_TARGETS, html)).toBe(false);
   });
+
+  /**
+   * SC-1197. The markup `@radix-ui/react-toast` renders while a toast is open:
+   * a focus proxy on each side of the list, inside the labelled region. The
+   * toast's own action is a real target and sits in the same region.
+   */
+  const OPEN_TOAST =
+    '<div role="region" aria-label="Notifications (F8)" tabindex="-1">' +
+    '<span tabindex="0"></span>' +
+    '<ol tabindex="-1"><li role="status" tabindex="0" data-radix-collection-item="">' +
+    '<button>Undo</button></li></ol>' +
+    '<span tabindex="0"></span>' +
+    '</div>';
+
+  test('exempts exactly the two Radix toast focus proxies, and nothing else in the toast', () => {
+    // The walk selects them first. An exemption for something the walk never
+    // measured would describe nothing.
+    expect(matchCount('span[tabindex="0"]', OPEN_TOAST)).toBe(2);
+    expect(matched(INTERACTIVE_TARGETS, '<span tabindex="0"></span>')).toBe(true);
+    // Exactly two, the proxies: not the Undo button, and not the list item.
+    expect(matchCount(EXEMPT_TARGETS, OPEN_TOAST)).toBe(2);
+    expect(matchCount(EXEMPT_TARGETS, OPEN_TOAST.replace(/<span tabindex="0"><\/span>/g, ''))).toBe(
+      0
+    );
+  });
+
+  test.each([
+    ['a tabindex=0 span with no region around it', '<div><span tabindex="0"></span></div>'],
+    [
+      'a tabindex=0 span in some other region',
+      '<div role="region" aria-label="Holdings"><span tabindex="0"></span></div>',
+    ],
+    [
+      'a tabindex=0 span nested deeper in the toast region',
+      '<div role="region" aria-label="Notifications (F8)"><div><span tabindex="0"></span></div></div>',
+    ],
+  ] as const)('still measures %s — the proxy rule is structural, not a size', (_label, html) => {
+    expect(matched(INTERACTIVE_TARGETS, html)).toBe(true);
+    expect(matched(EXEMPT_TARGETS, html)).toBe(false);
+  });
 });

@@ -2,6 +2,7 @@ import type { EmailStrings } from '../strings';
 
 export const zh: EmailStrings = {
   lang: 'zh',
+  dir: 'ltr',
   layout: {
     footer:
       '你收到这封邮件，是因为有人用这个地址请求登录 {appLink}。如果不是你本人操作，可以放心忽略这封邮件——账户没有发生任何变化。',

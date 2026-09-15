@@ -107,11 +107,24 @@ describe('the interface is deferred', () => {
 
 describe('every dynamic import handles its own failure', () => {
   /**
-   * `warm-interface.ts` is the one exemption and it earns it: it is a
-   * best-effort prefetch that catches, and whose result nothing awaits. The
-   * real load still goes through `lazyRoute`.
+   * Both exemptions earn it the same way: best-effort, nothing awaits the
+   * result, and each catches its own rejection — so neither can reach a render.
+   *
+   * - `lib/warm-interface.ts` prefetches; the real load still goes through
+   *   `lazyRoute`.
+   * - `i18n/script-fonts.ts` fetches the Arabic web face for `ar` readers
+   *   (SC-201). `importChunk` is the wrong wrapper rather than a missing one:
+   *   it exists to put a READABLE FAILURE in front of a reader when a route
+   *   chunk will not load, and a font that does not arrive must do the
+   *   opposite — degrade silently to the next family in the stack. Routing it
+   *   through `importChunk` would turn a cosmetic miss into an error boundary.
+   *
+   * The proof obligation below is over this LIST, not over one path. It named
+   * `warm-interface.ts` directly until SC-201, so adding an entry here bought
+   * an exemption with no proof attached — which is the shape of an escape
+   * hatch rather than a declared exception.
    */
-  const EXEMPT = ['lib/warm-interface.ts'];
+  const EXEMPT = ['lib/warm-interface.ts', 'i18n/script-fonts.ts'];
 
   test('no import() is left to reject into the render path', async () => {
     const offenders: string[] = [];
@@ -135,8 +148,8 @@ describe('every dynamic import handles its own failure', () => {
     expect(offenders).toEqual([]);
   });
 
-  test('the exemption really does swallow its own rejection', async () => {
-    const source = await read(join(SRC, 'lib/warm-interface.ts'));
+  test.each(EXEMPT)('%s really does swallow its own rejection', async (exempt) => {
+    const source = await read(join(SRC, exempt));
     expect(source).toMatch(/\.catch\(/);
   });
 

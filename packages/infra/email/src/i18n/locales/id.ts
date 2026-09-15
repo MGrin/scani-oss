@@ -11,6 +11,7 @@ import type { EmailStrings } from '../strings';
  */
 export const id: EmailStrings = {
   lang: 'id',
+  dir: 'ltr',
   layout: {
     footer:
       'Anda menerima email ini karena ada yang meminta akses masuk ke {appLink} menggunakan alamat ini. Jika itu bukan Anda, abaikan saja pesan ini — tidak ada tindakan apa pun yang dilakukan pada akun.',

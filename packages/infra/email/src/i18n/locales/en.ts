@@ -3,6 +3,7 @@ import type { EmailStrings } from '../strings';
 /** The English letter — and the one every language without a bundle gets. */
 export const en: EmailStrings = {
   lang: 'en',
+  dir: 'ltr',
   layout: {
     footer:
       "You're getting this email because someone requested sign-in to {appLink} using this address. If that wasn't you, you can safely ignore this message — no account action was taken.",

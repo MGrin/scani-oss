@@ -1,3 +1,4 @@
+import { verifiedPgConnectionString } from '@scani/config';
 import { createComponentLogger } from '@scani/logging';
 import { withSpan } from '@scani/logging/sentry';
 import {
@@ -110,7 +111,10 @@ export class WorkerClient {
     this.dlq = new Queue(
       config.dlqName ?? DEFAULT_DLQ_NAME,
       {
-        connection: { connectionString: config.connection, schema: config.schema ?? 'bullmq' },
+        connection: {
+          connectionString: verifiedPgConnectionString(config.connection),
+          schema: config.schema ?? 'bullmq',
+        },
       } as never,
       createPostgresBackend
     );
@@ -228,7 +232,10 @@ export class WorkerClient {
       queueName,
       (job, token) => this.runJob(job, token),
       {
-        connection: { connectionString: cfg.connection, schema: cfg.schema ?? 'bullmq' },
+        connection: {
+          connectionString: verifiedPgConnectionString(cfg.connection),
+          schema: cfg.schema ?? 'bullmq',
+        },
         concurrency: cfg.concurrency ?? 1,
         // SC-963. Neon suspends a compute only after 300s with no query, so an
         // idle worker has to leave the database alone for longer than that.

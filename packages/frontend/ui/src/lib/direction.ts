@@ -39,13 +39,25 @@ export const MIRROR_IN_RTL = 'rtl:-scale-x-100';
  * during render.** In the app that read would be correct: `applyFormatLocale`
  * writes `<html dir>` from a `useMemo` in a provider, above the tree, so a
  * language change re-renders everything below it with the attribute already
- * set. The visual harness does not go through that path — there is no `ar.json`
- * yet, so no reader can select their way to RTL and `v3-screens.spec.ts`
+ * set. The visual harness does not go through that path: `v3-screens.spec.ts`
  * assigns the attribute from `page.evaluate` after mount, with nothing to make
- * React re-render. A render-time read would therefore be right in production
- * and stale in the one instrument that photographs RTL, and `--update` would
- * write an LTR axis into an RTL baseline that agrees with itself forever. That
- * is `assertStillInDirection`'s failure one level down, and it is why the
+ * React re-render.
+ *
+ * **This paragraph has been re-premised twice and is now premised on the
+ * harness rather than on the product**, which is the version that cannot go
+ * stale the next time a language ships. It read "there is no `ar.json`" until
+ * SC-201 wrote both Arabic locale files, then "`HELD_LANGUAGES` keeps `ar` out
+ * of the picker" until SC-201's font slice emptied that set — and a reader CAN
+ * now select their way to RTL by choosing Arabic. Neither fact was ever the
+ * reason: the harness photographs RTL by setting the attribute from outside
+ * React, and it would do that even if every reader could reach it, because
+ * switching the LANGUAGE would change every string in the shot at the same
+ * moment as the layout and a reviewer cannot read two variables at once.
+ *
+ * A render-time read would therefore be right in production and stale in the
+ * one instrument that photographs RTL, and `--update` would write an LTR axis
+ * into an RTL baseline that agrees with itself forever. That is
+ * `assertStillInDirection`'s failure one level down, and it is why the
  * attribute is watched instead of sampled.
  *
  * Scoped to `<html>` deliberately: that is the only element either path writes.

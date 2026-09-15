@@ -2,6 +2,7 @@ import type { EmailStrings } from '../strings';
 
 export const ja: EmailStrings = {
   lang: 'ja',
+  dir: 'ltr',
   layout: {
     footer:
       'このメールは、どなたかがこのアドレスで {appLink} へのサインインをリクエストしたためにお送りしています。心当たりがない場合は、そのまま破棄していただいて問題ありません。アカウントには何の操作も行われていません。',

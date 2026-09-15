@@ -79,6 +79,66 @@ describe('describeQueryError — the branches say different things', () => {
     expect(describeQueryError({ data: { httpStatus: 401 } }, 'x').title).toBe('Your session ended');
   });
 
+  /**
+   * SC-1210. A 403 used to share the 401 branch, so a refusal said *"Your
+   * session ended. Sign in again to see these holdings."* — false about the
+   * session, and prescribing something that cannot be done: on the demo,
+   * `App.tsx` redirects `/auth` to `/` whenever `isDemo`, so there is nowhere
+   * to sign in again.
+   *
+   * Measured on demo.scani.xyz 2026-09-15 by filling manual entry and pressing
+   * Save. The server had said *"This is a read-only demo — 'x' and every other
+   * write is refused by the server"*; the reader was told their session ended.
+   */
+  test('a refusal does not claim the session ended', () => {
+    const demoRefusal = {
+      data: { httpStatus: 403 },
+      message:
+        "This is a read-only demo — 'holdings.createManual' and every other write is refused",
+    };
+    const copy = describeQueryError(demoRefusal, 'these holdings', 'save');
+
+    expect(copy.title).not.toInclude('session');
+    expect(copy.detail).not.toInclude('Sign in');
+  });
+
+  /** The server's sentence IS the answer for a 403, the same way it is for a
+   *  400 — and it is the only place the reader learns the deployment refuses
+   *  writes rather than that something broke. */
+  test('a refusal carries the server’s own reason', () => {
+    const copy = describeQueryError(
+      {
+        data: { httpStatus: 403 },
+        message: 'Account does not belong to the current user',
+      },
+      'this import',
+      'save'
+    );
+
+    expect(copy.detail).toInclude('Account does not belong to the current user');
+    expect(copy.detail).toInclude('untouched');
+    expect(copy.title).toBe("Couldn't save this import");
+  });
+
+  /**
+   * CONTROL, and the arm that keeps the branch honest: not every 403 carries
+   * prose. A `TRPCError` thrown with no message arrives carrying its own CODE
+   * as the message, which `rejectionReason` refuses — and the fallback must be
+   * the generic sentence rather than the session claim this ticket removed.
+   */
+  test('a refusal with nothing written for a reader falls back to generic, never to the session claim', () => {
+    const copy = describeQueryError(
+      { data: { httpStatus: 403 }, message: 'FORBIDDEN' },
+      'x',
+      'save'
+    );
+
+    expect(copy.title).toBe("Couldn't save x");
+    expect(copy.detail).toInclude('untouched');
+    expect(copy.detail).not.toInclude('FORBIDDEN');
+    expect(copy.title).not.toInclude('session');
+  });
+
   test('rate limiting asks for a wait, since an instant retry cannot work', () => {
     const copy = describeQueryError({ data: { httpStatus: 429 } }, 'x');
     expect(copy.detail).toInclude('Wait');

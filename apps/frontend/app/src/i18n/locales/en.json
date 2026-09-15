@@ -48,6 +48,9 @@
       "timeout": "Scani took too long to answer. Check your connection and tap Continue again.",
       "unreachable": "We couldn't reach Scani. Check your connection and tap Continue again.",
       "server": "Something went wrong. Try again."
+    },
+    "exits": {
+      "label": "More about Scani"
     }
   },
   "currency": {
