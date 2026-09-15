@@ -1,8 +1,9 @@
 import { isPWA, logPWAInfo } from '@scani/ui/lib/pwa-utils';
 import { useQueryClient } from '@tanstack/react-query';
 import type React from 'react';
-import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { AuthContext } from '@/contexts/auth-context';
 import { authClient } from '@/lib/auth-client';
 import {
   AUTH_CALL_TIMEOUT_MS,
@@ -70,7 +71,7 @@ export interface AuthAttemptResult {
   kind?: AuthFailureKind;
 }
 
-interface AuthContextType {
+export interface AuthContextType {
   user: AuthUser | null;
   /** This deployment is the read-only demo (SC-466). Nobody signed in. */
   isDemo: boolean;
@@ -90,8 +91,6 @@ interface AuthContextType {
   signOut: () => Promise<void>;
   resetPassword: (email: string) => Promise<{ error?: string }>;
 }
-
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 function toAuthUser(user: {
   id: string;
@@ -328,20 +327,4 @@ export function useAuth() {
     throw new Error('useAuth must be used within an AuthProvider');
   }
   return context;
-}
-
-/**
- * Is this the demo — asked from a component that may render without the
- * provider above it (SC-1207).
- *
- * `useAuth` throws in that case, which is right for anything that needs a
- * session: a sign-out button with nowhere to send the request is a bug, not a
- * variant. A demo NOTICE is the other shape — it is an additive label, and no
- * provider means no `demo.status` probe has run, so the honest answer is "not
- * the demo" rather than an exception. The safe direction: a missing label
- * costs a sentence, a wrongly-shown one tells a paying user their data is not
- * being saved.
- */
-export function useIsDemo(): boolean {
-  return useContext(AuthContext)?.isDemo ?? false;
 }

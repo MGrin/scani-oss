@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import { useIsDemo } from '@/contexts/AuthContext';
+import { useIsDemo } from '@/contexts/auth-context';
 
 /**
  * What a write will actually do, said where the write is offered (SC-1207).

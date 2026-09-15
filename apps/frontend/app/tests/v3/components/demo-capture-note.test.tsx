@@ -14,9 +14,8 @@ import { readV3Source } from '../helpers/v3-sources';
  * (SC-1207).
  *
  * A text scan rather than a render, and the reason is the component's own
- * shape: `DemoCaptureNote` reads `isDemo` from `AuthContext`, which has no
- * exported context and no test provider, so `renderToStaticMarkup` of it
- * throws outside a real `AuthProvider` — and `mock.module` is global in bun,
+ * shape: `DemoCaptureNote` reads `isDemo` from the auth context, which has no
+ * test provider, so a demo render needs a real `AuthProvider` — and `mock.module` is global in bun,
  * so mocking `@/contexts/AuthContext` for one file would leak the mock into
  * every other test in the process. The same reasoning as `layout.test.ts` and
  * `token-hygiene.test.ts`: each failure below type-checks, lints and renders,
@@ -29,6 +28,7 @@ import { readV3Source } from '../helpers/v3-sources';
 const NOTE = 'components/capture/DemoCaptureNote.tsx';
 const KEY = 'v3.capture.demoNote';
 const LOCALES = join(import.meta.dir, '../../../src/v3/i18n/locales');
+const APP = join(import.meta.dir, '../../..');
 
 /** Every `<DemoCaptureNote />` mount in a file, comments included — a mount
  *  inside a comment is not a mount, but neither call site has one, and
@@ -116,4 +116,30 @@ describe('the demo capture note', () => {
       );
     }
   });
+
+  test('loads where VITE_API_URL is not set, as on the public mirror', () => {
+    // Every private checkout carries VITE_API_URL in `.env`, so a test run
+    // there cannot see a module that needs it at load. Upstream CI has no
+    // `.env`, and there the note used to reach `auth-client` through
+    // `AuthContext.tsx`, which threw before any test registered. That crashed
+    // this file and `sheet-shells.dom.tsx` on scani-oss#556. A separate
+    // process is the only way to load a module fresh with the variable blank,
+    // since this process has already imported both.
+    const load = (module: string) =>
+      Bun.spawnSync([process.execPath, '-e', `await import('${module}')`], {
+        cwd: APP,
+        env: { ...process.env, VITE_API_URL: '' },
+      });
+
+    const note = load('./src/v3/components/capture/DemoCaptureNote.tsx');
+    expect(note.stderr.toString()).not.toContain('VITE_API_URL is required');
+    expect(note.exitCode).toBe(0);
+
+    // Control: the provider module still needs the variable. If this stopped
+    // failing, the blank value never reached the child process, and the pass
+    // above would prove nothing.
+    const provider = load('./src/contexts/AuthContext.tsx');
+    expect(provider.stderr.toString()).toContain('VITE_API_URL is required');
+    expect(provider.exitCode).not.toBe(0);
+  }, 30_000);
 });
