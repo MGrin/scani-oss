@@ -223,7 +223,66 @@ export interface Run {
 interface LoadedFace {
   name: string;
   bytes: Buffer;
+  /** What the face's `cmap` CLAIMS. Necessary, and not sufficient — see `canSet`. */
   covers: Set<number>;
+  font: fontkit.Font;
+  /** `canSet`'s answers, per code point, so each is paid for once per process. */
+  settable: Map<number, boolean>;
+}
+
+/**
+ * Whether `face` can actually lay out `point` — not merely whether it says so.
+ *
+ * **A face's `cmap` can claim a character its glyph table cannot produce, and
+ * fontkit then throws rather than refusing (SC-201 → SC-1201).** Every Plex
+ * Mono subset maps U+0020, U+00A0, U+000D and U+0000, and `font.layout(' ')`
+ * on each throws `RangeError: Out of bounds access` from `_getCBox`. Those are
+ * the glyphs with no outline, and fontkit misreads an empty entry in these
+ * `.woff` files. Measured across all nineteen bundled faces: every Mono subset
+ * fails U+0000, U+000D, U+0020 and U+00A0 (Latin also U+00AD); every NON-Latin
+ * Sans and Bold subset fails U+0020 and U+00A0; `ibm-plex-sans-latin` at both
+ * weights and both Han files fail none. The Latin Sans face is first in the
+ * Sans and Bold stacks, and that ordering is the only reason a space ever
+ * rendered at all.
+ *
+ * So a space in a numeric column, which is set in Mono first, threw inside
+ * pdfkit and **produced no PDF**. A date with a time reaches it
+ * (`cellText` writes `2026-09-15 05:31`), and so would every thousands
+ * separator in a language that groups with a space.
+ *
+ * **Probed lazily and memoised, because the eager version cannot run.**
+ * Validating every claimed code point at load was measured and did not finish
+ * inside two minutes — the two Han files carry ~7,000 code points each. A
+ * statement uses a few hundred distinct characters, so the probe costs one
+ * `layout` per character per face actually reached, once per process.
+ *
+ * **Why not `.woff2`, which lays these out correctly.** It does, and it cannot
+ * be EMBEDDED: fontkit's subsetter throws the same `RangeError` from
+ * `_addGlyph` when pdfkit writes the font into the document. Layout-clean and
+ * embed-broken is worse than the defect it replaces, because it fails on every
+ * export rather than on some.
+ *
+ * A face that cannot set a character is skipped exactly like one that does not
+ * map it, so the stack below it answers: for a space in Mono, that is Plex
+ * Sans, which is the fall-through `STACKS` already documents for a text cell
+ * in a figure column.
+ */
+function canSet(face: LoadedFace, point: number): boolean {
+  if (!face.covers.has(point)) return false;
+  const known = face.settable.get(point);
+  if (known !== undefined) return known;
+  let ok: boolean;
+  try {
+    // `advanceWidth` is read, not just `layout` called: `layout` succeeds for
+    // some glyphs whose metrics are what throws, and pdfkit reads both.
+    for (const glyph of face.font.layout(String.fromCodePoint(point)).glyphs)
+      void glyph.advanceWidth;
+    ok = true;
+  } catch {
+    ok = false;
+  }
+  face.settable.set(point, ok);
+  return ok;
 }
 
 export interface Typesetter {
@@ -273,7 +332,13 @@ export async function loadTypesetter(): Promise<Typesetter> {
       // character is unsupported. Loud beats that.
       if (!('characterSet' in font))
         throw new Error(`pdf font ${name} is a collection, not a face`);
-      faces.set(name, { name, bytes, covers: new Set(font.characterSet) });
+      faces.set(name, {
+        name,
+        bytes,
+        covers: new Set(font.characterSet),
+        font,
+        settable: new Map(),
+      });
     })
   );
 
@@ -295,7 +360,7 @@ export async function loadTypesetter(): Promise<Typesetter> {
     },
     supports(text) {
       return [...text].every((character) =>
-        stacks.sans.some((face) => face.covers.has(character.codePointAt(0) as number))
+        stacks.sans.some((face) => canSet(face, character.codePointAt(0) as number))
       );
     },
   };
@@ -317,7 +382,7 @@ function shape(text: string, stack: readonly LoadedFace[]): Run[] {
   // rather than two halves of one that no face claims.
   for (const character of text) {
     const point = character.codePointAt(0) as number;
-    const hit = stack.find((face) => face.covers.has(point));
+    const hit = stack.find((face) => canSet(face, point));
     if (hit) {
       marked = false;
       push(hit.name, character);
