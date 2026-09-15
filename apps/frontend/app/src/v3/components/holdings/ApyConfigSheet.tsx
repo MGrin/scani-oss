@@ -116,12 +116,12 @@ export function ApyConfigSheet({ open, onOpenChange, holding }: ApyConfigSheetPr
               value={draft.frequency}
               onValueChange={(value) => patch({ frequency: value as ApyDraft['frequency'] })}
             >
-              <SelectTrigger id="v3-apy-frequency" className="h-11 text-body">
+              <SelectTrigger id="v3-apy-frequency" className="h-11">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
                 {PAYOUT_FREQUENCIES.map((code) => (
-                  <SelectItem key={code} value={code} className="text-body">
+                  <SelectItem key={code} value={code}>
                     {t(frequencyLabelKey(code))}
                   </SelectItem>
                 ))}
@@ -136,12 +136,12 @@ export function ApyConfigSheet({ open, onOpenChange, holding }: ApyConfigSheetPr
               value={String(draft.dayOfWeek)}
               onValueChange={(value) => patch({ dayOfWeek: Number(value) })}
             >
-              <SelectTrigger id="v3-apy-day-of-week" className="h-11 text-body">
+              <SelectTrigger id="v3-apy-day-of-week" className="h-11">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
                 {[0, 1, 2, 3, 4, 5, 6].map((day) => (
-                  <SelectItem key={day} value={String(day)} className="text-body">
+                  <SelectItem key={day} value={String(day)}>
                     {weekdayName(day)}
                   </SelectItem>
                 ))}
@@ -176,12 +176,12 @@ export function ApyConfigSheet({ open, onOpenChange, holding }: ApyConfigSheetPr
                   value={String(draft.month)}
                   onValueChange={(value) => patch({ month: Number(value) })}
                 >
-                  <SelectTrigger id="v3-apy-month" className="h-11 text-body">
+                  <SelectTrigger id="v3-apy-month" className="h-11">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
                     {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((month) => (
-                      <SelectItem key={month} value={String(month)} className="text-body">
+                      <SelectItem key={month} value={String(month)}>
                         {monthName(month)}
                       </SelectItem>
                     ))}
