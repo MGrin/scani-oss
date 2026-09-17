@@ -184,7 +184,7 @@ export class WeeklyDigestService {
     // nothing in the portfolio counts toward a total — none at all, or every
     // one hidden, inactive or scam-flagged.
     const today = totals.get(asOf);
-    if (!today) return { skipped: 'no-holdings' };
+    if (today === undefined) return { skipped: 'no-holdings' };
 
     const currentValue = today;
     const baselineDate = shiftDays(asOf, -DIGEST_WINDOW_DAYS);

@@ -133,6 +133,16 @@ describe('WeeklyDigestService — the figures', () => {
     expect(outcome.skipped).toBe('no-holdings');
   });
 
+  test('included holdings that sum to exactly zero still send (SC-1228)', async () => {
+    // Present-but-zero is a portfolio nothing could price, not an empty one.
+    const outcome = await makeService({
+      userRows: [{ snapshotDate: '2026-08-18', totalValue: '0', holdingsTotal: 1 }],
+      holdingRows: [{ snapshotDate: '2026-08-18', holdingId: 'holding-btc', totalValue: '0' }],
+    }).buildFor(USER, NOW);
+    expect(outcome.skipped).toBeUndefined();
+    expect(outcome.digest?.netWorth).toBe('$0.00');
+  });
+
   test('a missed rollup night compares against the nearest earlier row', async () => {
     const outcome = await makeService({
       userRows: [
