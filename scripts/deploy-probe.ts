@@ -247,7 +247,24 @@ interface Attempt {
   stale: Stale | null;
 }
 
-async function run(argv: readonly string[]): Promise<number> {
+/**
+ * The clock the wait runs on and where its lines go. The wait decides a NUMBER
+ * of reads, so a test drives it on a clock that moves only when it sleeps and
+ * a slow read under load cannot spend the budget (SC-1220).
+ */
+export interface ProbeIo {
+  now(): number;
+  sleep(ms: number): Promise<void>;
+  print(line: string): void;
+}
+
+const REAL_IO: ProbeIo = {
+  now: () => Date.now(),
+  sleep: (ms) => Bun.sleep(ms),
+  print: (line) => console.log(line),
+};
+
+export async function run(argv: readonly string[], io: ProbeIo = REAL_IO): Promise<number> {
   const waitFlag = flag(argv, '--wait');
   const wait = waitFlag === null ? DEFAULT_WAIT_S : Number(waitFlag);
   if (waitFlag === '' || !Number.isFinite(wait) || wait < 0) {
@@ -255,25 +272,25 @@ async function run(argv: readonly string[]): Promise<number> {
     return EXIT_UNKNOWN;
   }
   const pollMs = Math.max(1, Math.min(MAX_POLL_S, wait / 12)) * 1000;
-  const started = Date.now();
+  const started = io.now();
   for (let reads = 1; ; reads += 1) {
     const lines: string[] = [];
     const attempt: Attempt = { exact: argv.includes('--exact'), stale: null };
     const code = await main(argv, (l) => lines.push(l), attempt);
-    const elapsed = Date.now() - started;
+    const elapsed = io.now() - started;
     // A non-zero wait always buys a second read: under load one read can take
     // longer than a short wait, which would otherwise report "no second read"
     // for a wait that was asked for. The overshoot is one poll, at most 10s.
     const budget = elapsed + pollMs <= wait * 1000 || (reads === 1 && wait > 0);
     if (code === EXIT_REFUSED && attempt.stale !== null && budget) {
-      await Bun.sleep(pollMs);
+      await io.sleep(pollMs);
       continue;
     }
     const verdict = lines.pop();
-    for (const l of lines) console.log(l);
+    for (const l of lines) io.print(l);
     const note = waitNote(reads, Math.round(elapsed / 1000), wait, code, attempt.stale);
-    if (note !== null) console.log(note);
-    if (verdict !== undefined) console.log(verdict);
+    if (note !== null) io.print(note);
+    if (verdict !== undefined) io.print(verdict);
     return code;
   }
 }

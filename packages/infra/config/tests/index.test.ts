@@ -260,12 +260,25 @@ describe('checkEnvIsolatedUrl', () => {
     // js/polynomial-redos). The pre-fix regex `\/\/[^:]+:[^@]+@` could
     // be coerced into polynomial backtracking with many '//' and no '@';
     // the bounded character classes keep this fast.
-    const evil = `redis://localhost:6379/${'/'.repeat(50000)}`;
-    const start = performance.now();
-    const result = checkEnvIsolatedUrl({ url: evil, varName: 'REDIS_URL', isProduction: true });
-    const elapsed = performance.now() - start;
-    expect(result.ok).toBe(false);
-    expect(elapsed).toBeLessThan(50);
+    //
+    // It asserts how the cost GROWS, not what it is (SC-1220): `< 50ms` read
+    // 54.5ms on a loaded nightly, and load slows both sizes alike. Eight times
+    // the input costs 8.0x here and 63-64x with the pre-fix regex (measured
+    // 2026-09-17, best of 7 each), so 24x sits between them with margin on
+    // both sides.
+    const cost = (n: number): number => {
+      const url = `redis://localhost:6379/${'/'.repeat(n)}`;
+      let best = Number.POSITIVE_INFINITY;
+      for (let i = 0; i < 7; i++) {
+        const start = performance.now();
+        const result = checkEnvIsolatedUrl({ url, varName: 'REDIS_URL', isProduction: true });
+        best = Math.min(best, performance.now() - start);
+        expect(result.ok).toBe(false);
+      }
+      return best;
+    };
+    const small = cost(50_000);
+    expect(cost(400_000) / small).toBeLessThan(24);
   });
 
   test('allowCrossEnv opts out of the check', () => {
