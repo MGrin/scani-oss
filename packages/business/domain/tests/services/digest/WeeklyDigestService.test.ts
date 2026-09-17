@@ -31,9 +31,21 @@ function makeService(opts: {
   bills?: Array<{ vendorName: string; dueDate: string; expectedAmount: string | null }>;
   pending?: number;
 }): WeeklyDigestService {
+  // The figures come from the included per-holding rows (SC-1228); the
+  // user-scope row only says a rollup ran. A test that names no holding rows
+  // gets one holding per user row carrying the same value, so the two agree.
+  const holdingRows =
+    opts.holdingRows ??
+    (opts.userRows ?? [])
+      .filter((r) => r.holdingsTotal > 0)
+      .map((r) => ({
+        snapshotDate: r.snapshotDate,
+        holdingId: 'holding-all',
+        totalValue: r.totalValue,
+      }));
   Container.set(PortfolioValueDailyRepository, {
     findRange: async () => opts.userRows ?? [],
-    findIncludedHoldingScopeRange: async () => opts.holdingRows ?? [],
+    findIncludedHoldingScopeRange: async () => holdingRows,
   });
   Container.set(HoldingRepository, {
     findByIds: async (ids: string[]) => ids.map((id) => ({ id, tokenId: `token-${id}` })),
@@ -101,6 +113,24 @@ describe('WeeklyDigestService — the figures', () => {
     expect(outcome.digest?.change?.amount).toBe('+$2,500.00');
     expect(outcome.digest?.change?.percent).toBe('+2.5%');
     expect(outcome.digest?.change?.direction).toBe('up');
+  });
+
+  test('the headline is the included holdings, not the user-scope row (SC-1228)', async () => {
+    // The user-scope row counts a holding the dashboard leaves out; the
+    // included per-holding rows do not. The mail must quote the second.
+    const outcome = await makeService({
+      userRows: [{ snapshotDate: '2026-08-18', totalValue: '501000', holdingsTotal: 2 }],
+      holdingRows: [{ snapshotDate: '2026-08-18', holdingId: 'holding-btc', totalValue: '1000' }],
+    }).buildFor(USER, NOW);
+    expect(outcome.digest?.netWorth).toBe('$1,000.00');
+  });
+
+  test('a snapshot whose holdings are all excluded is skipped as no-holdings', async () => {
+    const outcome = await makeService({
+      userRows: [{ snapshotDate: '2026-08-18', totalValue: '501000', holdingsTotal: 1 }],
+      holdingRows: [],
+    }).buildFor(USER, NOW);
+    expect(outcome.skipped).toBe('no-holdings');
   });
 
   test('a missed rollup night compares against the nearest earlier row', async () => {
