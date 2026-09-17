@@ -2,7 +2,10 @@ import { formatCurrency } from '@scani/shared';
 import { Container, Service } from 'typedi';
 import { HoldingRepository } from '../../repositories/HoldingRepository';
 import { PaymentOccurrenceRepository } from '../../repositories/PaymentOccurrenceRepository';
-import { PortfolioValueDailyRepository } from '../../repositories/PortfolioValueDailyRepository';
+import {
+  type IncludedHoldingScopeRow,
+  PortfolioValueDailyRepository,
+} from '../../repositories/PortfolioValueDailyRepository';
 import { TokenRepository } from '../../repositories/TokenRepository';
 import { TransferReviewService } from '../TransferReviewService';
 
@@ -101,6 +104,16 @@ function signed(delta: number, currency: string): string {
   return formatted;
 }
 
+/** Each date's summed value over the included per-holding rows. */
+function totalsByDate(rows: readonly IncludedHoldingScopeRow[]): Map<string, number> {
+  const totals = new Map<string, number>();
+  for (const row of rows) {
+    const date = String(row.snapshotDate).slice(0, 10);
+    totals.set(date, (totals.get(date) ?? 0) + Number(row.totalValue));
+  }
+  return totals;
+}
+
 function percentOf(delta: number, from: number): string | null {
   if (from === 0) return null;
   const pct = (delta / Math.abs(from)) * 100;
@@ -112,10 +125,17 @@ function percentOf(delta: number, from: number): string | null {
  * Assembles one user's weekly digest out of rows the product already writes.
  *
  * Nothing here computes a valuation. The headline and the movers both come
- * from `portfolio_value_daily`, which the nightly rollup fills at 04:00 — so
- * the digest and the dashboard cannot disagree about what a portfolio is
- * worth, and a Monday morning mail costs a handful of indexed reads rather
- * than a re-valuation of every holding in the userbase.
+ * from `portfolio_value_daily`, which the nightly rollup fills at 04:00, and a
+ * Monday morning mail costs a handful of indexed reads rather than a
+ * re-valuation of every holding in the userbase.
+ *
+ * BOTH READ THE PER-HOLDING ROWS, NEVER THE USER-SCOPE ROW (SC-1228). The
+ * user-scope row is the rollup's own sum, and it is not the dashboard's: it
+ * counts inactive holdings, which `isIncludedInTotal` leaves out, so a large
+ * holding excluded from the app's total was quoted in the mail. The per-holding
+ * rows come through `findIncludedHoldingScopeRange`, which applies that rule in
+ * SQL — the same read the app's net-worth chart sums. The user-scope row is
+ * still read, but only to say whether the rollup ran and when.
  *
  * `buildFor` returns a SKIP REASON rather than null when it declines. The
  * three reasons need three different people to do three different things — a
@@ -151,29 +171,43 @@ export class WeeklyDigestService {
       return { skipped: 'stale-snapshot' };
     }
 
-    // The guardrail on SC-460: 8 of 15 accounts would otherwise receive a
-    // digest reporting nothing. `holdings_total` counts every holding in
-    // scope, so zero here means the account has no portfolio at all.
-    if (current.holdingsTotal === 0) return { skipped: 'no-holdings' };
+    const included = await this.rollups.findIncludedHoldingScopeRange(
+      user.id,
+      user.baseCurrencyId,
+      from,
+      now
+    );
+    const totals = totalsByDate(included);
 
-    const currentValue = Number(current.totalValue);
+    // The guardrail on SC-460: 8 of 15 accounts would otherwise receive a
+    // digest reporting nothing. No included holding on the snapshot date means
+    // nothing in the portfolio counts toward a total — none at all, or every
+    // one hidden, inactive or scam-flagged.
+    const today = totals.get(asOf);
+    if (!today) return { skipped: 'no-holdings' };
+
+    const currentValue = today;
     const baselineDate = shiftDays(asOf, -DIGEST_WINDOW_DAYS);
-    // The newest row at or before the baseline: an exact hit on most weeks,
+    // The newest date at or before the baseline: an exact hit on most weeks,
     // the nearest earlier one when a rollup night failed.
-    const baseline = rows.filter((r) => String(r.snapshotDate) <= baselineDate).at(-1);
+    const baseline = [...totals.keys()]
+      .filter((d) => d <= baselineDate)
+      .sort()
+      .at(-1);
 
     let change: DigestChange | null = null;
     if (baseline) {
-      const delta = currentValue - Number(baseline.totalValue);
+      const baselineValue = totals.get(baseline) as number;
+      const delta = currentValue - baselineValue;
       change = {
         amount: signed(delta, currency),
-        percent: percentOf(delta, Number(baseline.totalValue)),
+        percent: percentOf(delta, baselineValue),
         direction: directionOf(delta),
       };
     }
 
     const [movers, bills, reviewSummary] = await Promise.all([
-      this.moversFor(user, asOf, baseline ? String(baseline.snapshotDate) : null, currency),
+      this.moversFor(included, asOf, baseline ?? null, currency),
       this.billsFor(user.id, isoDate(now)),
       this.review.pendingSummary(user.id),
     ]);
@@ -192,18 +226,12 @@ export class WeeklyDigestService {
   }
 
   private async moversFor(
-    user: { id: string; baseCurrencyId: string },
+    rows: readonly IncludedHoldingScopeRow[],
     asOf: string,
     baselineDate: string | null,
     currency: string
   ): Promise<DigestMover[]> {
     if (!baselineDate) return [];
-    const rows = await this.rollups.findIncludedHoldingScopeRange(
-      user.id,
-      user.baseCurrencyId,
-      new Date(`${baselineDate}T00:00:00.000Z`),
-      new Date(`${asOf}T00:00:00.000Z`)
-    );
 
     const deltas = new Map<string, { start: number | null; end: number | null }>();
     for (const row of rows) {
