@@ -98,6 +98,61 @@ async function listeners(name: string): Promise<number> {
 }
 
 /**
+ * When the worker's LISTEN came back, as Postgres timed it (SC-1225).
+ *
+ * The re-LISTEN is the first thing the worker does when its idle wait ends —
+ * measured 2026-09-17 on this fixture, the wake is three queries 1ms apart and
+ * `Subscribe to the shared job-notification channel` is the first of them, 17ms
+ * before the job starts. That makes it the EVENT that ends the silent window,
+ * where `startedAt - 250ms` was a guess about how long a wake takes.
+ *
+ * Postgres's own `query_start` is returned rather than the polling instant: the
+ * other two queries of the wake burst land 1-2ms after the LISTEN and would sit
+ * INSIDE a window bounded by when this function happened to look.
+ */
+async function reListenedAt(name: string, withinMs: number): Promise<number> {
+  const deadline = Date.now() + withinMs;
+  while (Date.now() < deadline) {
+    const r = await pool.query(
+      `select extract(epoch from query_start) * 1000 as at ${LISTENERS} order by query_start limit 1`,
+      [name]
+    );
+    const at = r.rows[0]?.at;
+    if (at !== undefined) return Number(at);
+    await Bun.sleep(25);
+  }
+  throw new Error(`${name} did not LISTEN again within ${withinMs}ms`);
+}
+
+/**
+ * How many queries the worker's own connections issued in a window, by
+ * Postgres's clock.
+ *
+ * `pg_stat_activity` keeps only the LAST query per backend, so this counts
+ * backends whose most recent query landed in the window rather than every query
+ * — enough for "did it touch the database at all", which is the claim, and the
+ * control below is what shows it can still come back non-zero.
+ *
+ * WHAT IT CANNOT SEE, measured while building that control: a query from a
+ * connection that has since CLOSED. The backend is gone from the view, so the
+ * query is invisible however recent it was — a falsifier that opened a
+ * connection, queried and closed it read zero and looked like a working check
+ * reporting silence. The worker holds its connections open across the whole
+ * window, which is why this is sound for the subject and not in general; the
+ * control keeps its connection open for exactly that reason.
+ */
+async function queriesBetween(name: string, fromMs: number, toMs: number): Promise<number> {
+  const r = await pool.query(
+    `select count(*)::int as n from pg_stat_activity
+      where (application_name = $1 or application_name like $2)
+        and query_start > to_timestamp($3) + interval '50 milliseconds'
+        and query_start < to_timestamp($4)`,
+    [name, `${name}:%`, fromMs / 1000, toMs / 1000]
+  );
+  return r.rows[0]?.n ?? -1;
+}
+
+/**
  * What a Neon suspend does to the one connection the worker holds open. Returns
  * once a reading shows NO listener, and the time of the cut that got there.
  *
@@ -213,21 +268,21 @@ describe('an idle worker with a far-future delayed job still starts new work pro
     expect(await listeners(name)).toBe(0);
     await queue.add('while-suspended', {});
 
+    // The window closes at the re-LISTEN, which is an EVENT in the worker's own
+    // wake (SC-1225). It used to close at `startedAt - 250`, and that 250ms was
+    // a guess about how long a wake takes: the wake is a burst of three queries
+    // ending with the job starting, so on a loaded box the whole burst lands
+    // INSIDE the "silent" window and the count reads 3. Nightly #3 read exactly
+    // that — those three queries, not a violation — and a red main Verifier
+    // stops the deploy. Bounded by the event, load cannot move it.
+    const silentUntil = await reListenedAt(name, (CAP_S + 4) * 1_000);
     const startedAt = await waitFor(() => started.get('while-suspended'), (CAP_S + 3) * 1_000);
     // The bound: no later than the timer that was already running.
     expect(startedAt - killedAt).toBeLessThan((CAP_S + 2) * 1_000); // [wall-clock]
 
-    // Lazy: between the kill and the timer the worker issued nothing at all —
-    // no reconnect, no stalled check, no probe.
-    const silentUntil = startedAt - 250;
-    const touched = await pool.query(
-      `select count(*)::int as n from pg_stat_activity
-       where (application_name = $1 or application_name like $2)
-         and query_start > to_timestamp($3) + interval '50 milliseconds'
-         and query_start < to_timestamp($4)`,
-      [name, `${name}:%`, killedAt / 1000, silentUntil / 1000]
-    );
-    expect(touched.rows[0]?.n).toBe(0);
+    // Lazy: between the kill and that re-LISTEN the worker issued nothing at
+    // all — no reconnect, no stalled check, no probe.
+    expect(await queriesBetween(name, killedAt, silentUntil)).toBe(0);
 
     // And it listens again: the next job arrives on a NOTIFY, not a timer.
     await Bun.sleep(500);
@@ -235,6 +290,44 @@ describe('an idle worker with a far-future delayed job still starts new work pro
     await queue.add('after-reconnect', {});
     const againStartedAt = await waitFor(() => started.get('after-reconnect'), (CAP_S + 3) * 1_000);
     expect(againStartedAt - againAt).toBeLessThan(3_000); // [wall-clock]
+  });
+
+  /**
+   * CONTROL for the silent window (SC-1225). The arm above asserts the worker
+   * touched nothing between the cut and its re-LISTEN; this asserts the same
+   * window can come back non-zero, by issuing one query inside it on a
+   * connection carrying the worker's own `application_name`.
+   *
+   * It is what separates "the worker was quiet" from "the count cannot see a
+   * query" — which is the failure the window's old wall-clock bound had in the
+   * opposite direction, and a count that can only read zero would be worse than
+   * the guess it replaced.
+   */
+  test('CONTROL: a query inside the silent window is counted', async () => {
+    const CAP_S = 4;
+    const { name, queue, started } = await idleWorker({
+      maximumBlockTimeout: CAP_S,
+      drainDelay: CAP_S,
+      stalledInterval: 1_000,
+    });
+    await queue.add('prime', {});
+    await waitFor(() => started.get('prime'), 5_000);
+    await Bun.sleep(300);
+
+    const killedAt = await cutListener(name);
+    await queue.add('while-suspended', {});
+
+    // A genuine query from a connection Postgres attributes to this worker,
+    // 200ms into the window rather than at its edge.
+    await Bun.sleep(200);
+    const impostor = new Pool({ connectionString: withAppName(databaseUrl!, name), max: 1 });
+    try {
+      await impostor.query('select 1');
+      const silentUntil = await reListenedAt(name, (CAP_S + 4) * 1_000);
+      expect(await queriesBetween(name, killedAt, silentUntil)).toBeGreaterThanOrEqual(1);
+    } finally {
+      await impostor.end();
+    }
   });
 });
 
@@ -280,7 +373,39 @@ describe('a job enqueued while the LISTEN connection is down (SC-1144)', () => {
     // Last, so nothing slow stands between the cut and the enqueue.
     await cutListener(name);
     const listenersAtEnqueue = await listeners(name);
-    return { queue, started, wakes, listenersAtEnqueue, url: `http://127.0.0.1:${server.port}` };
+    return {
+      name,
+      queue,
+      started,
+      wakes,
+      worker,
+      listenersAtEnqueue,
+      url: `http://127.0.0.1:${server.port}`,
+    };
+  }
+
+  /**
+   * Enqueue, then read the listener count AGAIN (SC-1225).
+   *
+   * The zero read in the fixture above is taken BEFORE the add, and the Judge's
+   * review of SC-1220 (bus #9421/#9422) found what that leaves open: if the
+   * worker re-LISTENs in the gap, the NOTIFY for this job reaches a live
+   * connection, the job arrives on the listener rather than the timer, and
+   * every arm below still passes — vacuously, having exercised the path it
+   * exists to rule out.
+   *
+   * Reading after the add is what closes it: the job's own NOTIFY had nobody to
+   * reach only if nobody was listening AT that moment.
+   */
+  async function addWithNobodyListening(
+    queue: PgQueue,
+    name: string,
+    job: string
+  ): Promise<number> {
+    const addedAt = Date.now();
+    await queue.add(job, {});
+    expect(await listeners(name)).toBe(0);
+    return addedAt;
   }
 
   function wakeClient(url: string | undefined, secret: string) {
@@ -290,10 +415,9 @@ describe('a job enqueued while the LISTEN connection is down (SC-1144)', () => {
   }
 
   test('with the wake, it starts in seconds, and the worker listens again', async () => {
-    const { queue, started, wakes, listenersAtEnqueue, url } = await suspendedWorker();
+    const { name, queue, started, wakes, listenersAtEnqueue, url } = await suspendedWorker();
     expect(listenersAtEnqueue).toBe(0);
-    const addedAt = Date.now();
-    await queue.add('while-suspended', {});
+    const addedAt = await addWithNobodyListening(queue, name, 'while-suspended');
     expect(await wakeClient(url, SECRET).ping()).toBe('woken');
     expect(wakes.n).toBe(1);
     const startedAt = await waitFor(() => started.get('while-suspended'), (CAP_S + 3) * 1_000);
@@ -313,10 +437,9 @@ describe('a job enqueued while the LISTEN connection is down (SC-1144)', () => {
   // two facts that leave the timer as the only way in: nobody was listening
   // when the job was enqueued, and nothing woke the worker (SC-1220).
   test('CONTROL: with the wake disabled, it waits for the timer', async () => {
-    const { queue, started, wakes, listenersAtEnqueue } = await suspendedWorker();
+    const { name, queue, started, wakes, listenersAtEnqueue } = await suspendedWorker();
     expect(listenersAtEnqueue).toBe(0);
-    const addedAt = Date.now();
-    await queue.add('while-suspended', {});
+    const addedAt = await addWithNobodyListening(queue, name, 'while-suspended');
     expect(await wakeClient(undefined, SECRET).ping()).toBe('unconfigured');
     const startedAt = await waitFor(() => started.get('while-suspended'), (CAP_S + 3) * 1_000);
     expect(wakes.n).toBe(0);
@@ -324,13 +447,34 @@ describe('a job enqueued while the LISTEN connection is down (SC-1144)', () => {
   });
 
   test('a failed wake costs nothing: the job still starts within the timer bound', async () => {
-    const { queue, started, wakes, listenersAtEnqueue, url } = await suspendedWorker();
+    const { name, queue, started, wakes, listenersAtEnqueue, url } = await suspendedWorker();
     expect(listenersAtEnqueue).toBe(0);
-    const addedAt = Date.now();
-    await queue.add('while-suspended', {});
+    const addedAt = await addWithNobodyListening(queue, name, 'while-suspended');
     expect(await wakeClient(url, 'another_secret_of_at_least_32_characters').ping()).toBe('failed');
     const startedAt = await waitFor(() => started.get('while-suspended'), (CAP_S + 3) * 1_000);
     expect(wakes.n).toBe(0);
     expect(startedAt - addedAt).toBeLessThan((CAP_S + 2) * 1_000); // [wall-clock]
+  });
+
+  /**
+   * CONTROL for the post-add read (SC-1225). The three arms above assert that
+   * nobody was listening at the moment their job was enqueued; this asserts the
+   * same read can come back ONE, on a worker deliberately made to listen again
+   * before the add.
+   *
+   * Without it, `expect(await listeners(name)).toBe(0)` could be passing because
+   * the query matches nothing at all — the same vacuity it was added to close,
+   * one level down. `interruptIdleWait` is the production wake path, so the
+   * re-LISTEN here is the worker's own, not a fixture's imitation of one.
+   */
+  test('CONTROL: the post-add read sees a listener when the worker has re-LISTENed', async () => {
+    const { name, queue, worker } = await suspendedWorker();
+    expect(await listeners(name)).toBe(0);
+
+    interruptIdleWait(worker);
+    await reListenedAt(name, (CAP_S + 4) * 1_000);
+
+    await queue.add('while-listening', {});
+    expect(await listeners(name)).toBe(1);
   });
 });
