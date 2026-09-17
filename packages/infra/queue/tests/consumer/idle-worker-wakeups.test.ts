@@ -16,9 +16,9 @@ import { interruptIdleWait, serveWorkerWake, WorkerWakeClient } from '../../src/
  * reconnect wakes the compute straight back up.
  *
  * These drive the real Postgres backend. Each latency arm is a job that must
- * start within a stated bound; the lost-LISTEN arm also asserts the job DID
- * wait for the timer, which is what shows the notification really was lost
- * rather than the arm passing on a NOTIFY it never exercised.
+ * start within a stated bound; the lost-LISTEN arms also count the worker's
+ * listeners at the enqueue, which is what shows the notification really was
+ * lost rather than the arm passing on a NOTIFY it never exercised.
  */
 
 const databaseUrl = process.env.DATABASE_URL;
@@ -89,6 +89,41 @@ async function waitFor<T>(read: () => T | undefined, withinMs: number): Promise<
   throw new Error(`condition not met within ${withinMs}ms`);
 }
 
+const LISTENERS = `from pg_stat_activity
+  where application_name = $1 and query like '%LISTEN bullmq_jobs;%'`;
+
+async function listeners(name: string): Promise<number> {
+  const r = await pool.query(`select count(*)::int as n ${LISTENERS}`, [name]);
+  return r.rows[0]?.n ?? -1;
+}
+
+/**
+ * What a Neon suspend does to the one connection the worker holds open. Returns
+ * once a reading shows NO listener, and the time of the cut that got there.
+ *
+ * Counted, not slept (SC-1220). These arms need the NOTIFY for the next job to
+ * reach nobody, and they used to show it by the job starting LATE — a lower
+ * bound, which load breaks from the other side: a slow setup lets the worker's
+ * timer come due before the enqueue, and a loaded CI run read 603ms against
+ * `> 3500`. A listener count of zero at the enqueue is the fact itself. A timer
+ * that fires mid-cut listens again, so this cuts again rather than trusting one.
+ */
+async function cutListener(name: string): Promise<number> {
+  for (let attempt = 0; attempt < 10; attempt++) {
+    const killed = await pool.query(`select pg_terminate_backend(pid) ${LISTENERS}`, [name]);
+    // After the terminate returns, as before: until then the listener is alive
+    // and the worker may still query, which the silent window must not count.
+    const cutAt = Date.now();
+    // The control: a query matching nothing would make every zero below vacuous.
+    if (attempt === 0) expect(killed.rows.length).toBe(1);
+    for (let poll = 0; poll < 40; poll++) {
+      if ((await listeners(name)) === 0) return cutAt;
+      await Bun.sleep(25);
+    }
+  }
+  throw new Error(`the LISTEN connection of ${name} would not stay cut`);
+}
+
 function uniqueQueue(): string {
   return `sc963-${crypto.randomUUID().slice(0, 8)}`;
 }
@@ -137,8 +172,10 @@ describe('an idle worker with a far-future delayed job still starts new work pro
   // already rules out the 900s timer they exist to distinguish from. Every
   // UPPER bound on elapsed time in this file is tagged `// [wall-clock]`, so
   // the deploy preflight reads its failure as the box rather than a
-  // regression (SC-1149). Lower bounds are not: a slow box cannot make a job
-  // start sooner, so their failure is still evidence about the code.
+  // regression (SC-1149). The delayed job's lower bound is not: its clock is the
+  // job's own delay, which no setup can spend. A bound measured from the
+  // ENQUEUE against a timer armed during the setup was, and a slow setup made
+  // that job start sooner (SC-1220) — those arms count listeners instead.
   test('an immediate job starts within 3s, off the NOTIFY, not the 900s timer', async () => {
     const { queue, started } = await idleWorker({ maximumBlockTimeout: 900, drainDelay: 900 });
     const addedAt = Date.now();
@@ -171,22 +208,12 @@ describe('an idle worker with a far-future delayed job still starts new work pro
     await waitFor(() => started.get('prime'), 5_000);
     await Bun.sleep(300);
 
-    // What a Neon suspend does to the one connection the worker holds open.
-    const killed = await pool.query(
-      `select pg_terminate_backend(pid) as ok, pid from pg_stat_activity
-       where application_name = $1 and query like '%LISTEN bullmq_jobs;%'`,
-      [name]
-    );
-    expect(killed.rows.length).toBe(1);
-    const killedAt = Date.now();
-
-    await Bun.sleep(200);
-    const addedAt = Date.now();
+    const killedAt = await cutListener(name);
+    // The control: the NOTIFY for this job really had nobody to reach.
+    expect(await listeners(name)).toBe(0);
     await queue.add('while-suspended', {});
 
     const startedAt = await waitFor(() => started.get('while-suspended'), (CAP_S + 3) * 1_000);
-    // The control: the job WAITED, so the NOTIFY really had nobody to reach.
-    expect(startedAt - addedAt).toBeGreaterThan(1_500);
     // The bound: no later than the timer that was already running.
     expect(startedAt - killedAt).toBeLessThan((CAP_S + 2) * 1_000); // [wall-clock]
 
@@ -236,23 +263,24 @@ describe('a job enqueued while the LISTEN connection is down (SC-1144)', () => {
     await queue.add('prime', {});
     await waitFor(() => started.get('prime'), 5_000);
     await Bun.sleep(300);
-    const killed = await pool.query(
-      `select pg_terminate_backend(pid) from pg_stat_activity
-       where application_name = $1 and query like '%LISTEN bullmq_jobs;%'`,
-      [name]
-    );
-    expect(killed.rows.length).toBe(1);
-    await Bun.sleep(200);
 
+    const wakes = { n: 0 };
     const server = serveWorkerWake({
       port: 0,
       hostname: '127.0.0.1',
       secret: SECRET,
-      onWake: () => interruptIdleWait(worker),
+      onWake: () => {
+        wakes.n += 1;
+        interruptIdleWait(worker);
+      },
       version: {},
     });
     open.push({ close: async () => server.stop() });
-    return { queue, worker, started, url: `http://127.0.0.1:${server.port}` };
+
+    // Last, so nothing slow stands between the cut and the enqueue.
+    await cutListener(name);
+    const listenersAtEnqueue = await listeners(name);
+    return { queue, started, wakes, listenersAtEnqueue, url: `http://127.0.0.1:${server.port}` };
   }
 
   function wakeClient(url: string | undefined, secret: string) {
@@ -262,10 +290,12 @@ describe('a job enqueued while the LISTEN connection is down (SC-1144)', () => {
   }
 
   test('with the wake, it starts in seconds, and the worker listens again', async () => {
-    const { queue, started, url } = await suspendedWorker();
+    const { queue, started, wakes, listenersAtEnqueue, url } = await suspendedWorker();
+    expect(listenersAtEnqueue).toBe(0);
     const addedAt = Date.now();
     await queue.add('while-suspended', {});
     expect(await wakeClient(url, SECRET).ping()).toBe('woken');
+    expect(wakes.n).toBe(1);
     const startedAt = await waitFor(() => started.get('while-suspended'), (CAP_S + 3) * 1_000);
     expect(startedAt - addedAt).toBeLessThan(2_500); // [wall-clock]
 
@@ -278,23 +308,29 @@ describe('a job enqueued while the LISTEN connection is down (SC-1144)', () => {
 
   // The control. Without it the arm above could pass on a NOTIFY that still
   // reached a live connection, and would say nothing about the wake.
+  //
+  // It used to show the wait as `> 3500ms` after the enqueue. It now shows the
+  // two facts that leave the timer as the only way in: nobody was listening
+  // when the job was enqueued, and nothing woke the worker (SC-1220).
   test('CONTROL: with the wake disabled, it waits for the timer', async () => {
-    const { queue, started } = await suspendedWorker();
+    const { queue, started, wakes, listenersAtEnqueue } = await suspendedWorker();
+    expect(listenersAtEnqueue).toBe(0);
     const addedAt = Date.now();
     await queue.add('while-suspended', {});
     expect(await wakeClient(undefined, SECRET).ping()).toBe('unconfigured');
     const startedAt = await waitFor(() => started.get('while-suspended'), (CAP_S + 3) * 1_000);
-    expect(startedAt - addedAt).toBeGreaterThan(3_500);
+    expect(wakes.n).toBe(0);
     expect(startedAt - addedAt).toBeLessThan((CAP_S + 2) * 1_000); // [wall-clock]
   });
 
   test('a failed wake costs nothing: the job still starts within the timer bound', async () => {
-    const { queue, started, url } = await suspendedWorker();
+    const { queue, started, wakes, listenersAtEnqueue, url } = await suspendedWorker();
+    expect(listenersAtEnqueue).toBe(0);
     const addedAt = Date.now();
     await queue.add('while-suspended', {});
     expect(await wakeClient(url, 'another_secret_of_at_least_32_characters').ping()).toBe('failed');
     const startedAt = await waitFor(() => started.get('while-suspended'), (CAP_S + 3) * 1_000);
-    expect(startedAt - addedAt).toBeGreaterThan(3_500);
+    expect(wakes.n).toBe(0);
     expect(startedAt - addedAt).toBeLessThan((CAP_S + 2) * 1_000); // [wall-clock]
   });
 });
