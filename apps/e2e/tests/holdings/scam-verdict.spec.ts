@@ -46,6 +46,14 @@ test.describe('holdings: a scam verdict is per user', () => {
     });
 
     await page.goto(`/holdings/${mine.id}`);
+    // On a phone the peek rests at half height and `Mark as scam` lives in its
+    // scrolling body, below that fold; expanding is what a reader does to reach
+    // it. The desktop sheet has no such control and shows the body whole.
+    // Keyed on the width the drawer is used below (`lg`), not on whether the
+    // control is visible yet: that reads false while the drawer animates in.
+    if ((page.viewportSize()?.width ?? 0) < 1024) {
+      await page.getByRole('button', { name: 'Show full detail' }).click();
+    }
     await page.getByRole('button', { name: 'Mark as scam', exact: true }).click();
     await page.getByRole('button', { name: 'Mark USD as a scam' }).click();
 
@@ -54,7 +62,14 @@ test.describe('holdings: a scam verdict is per user', () => {
 
     await page.goto('/tokens');
     await page.getByRole('radio', { name: 'Hidden' }).click();
-    await page.getByText('USD', { exact: true }).first().click();
+    // The same row is a table cell on desktop and a button on a phone or
+    // tablet, whose name starts with the symbol and whose text has no node
+    // that is exactly `USD` (iPad e2e). Either is the row to open.
+    await page
+      .getByRole('button', { name: /^USD\b/ })
+      .or(page.getByText('USD', { exact: true }))
+      .first()
+      .click();
     await page.getByRole('button', { name: 'Not a scam' }).click();
 
     await expect.poll(() => visibleHoldingIds(page)).toContain(mine.id);
