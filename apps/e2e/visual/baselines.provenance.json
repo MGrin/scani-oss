@@ -40,17 +40,17 @@
       }
     },
     "holdings-desktop-ar": {
-      "head": "59e56e17878be840350c5eb3ec710a8781e77cc5",
-      "renderedDigest": "b4fbb290371fea7897752350e7d2588e0a0183c94985ff0eb789c9487ad063ed",
-      "dirty": ["apps/e2e/visual/screens.ts", "apps/e2e/visual/v3-screens.spec.ts"],
-      "dirtyCount": 2,
+      "head": "0c9a464a152f08f53ff9a2b8169f9179d403e96e",
+      "renderedDigest": "9f9aa37b66b43ef61d5d245cd57a3aeb3bcdb4a5bd6f15bb4c6f36f489074427",
+      "dirty": [],
+      "dirtyCount": 0,
       "base": {
-        "ref": "59e56e17878be840350c5eb3ec710a8781e77cc5",
+        "ref": "0c9a464a152f08f53ff9a2b8169f9179d403e96e",
         "confirmed": true,
         "behind": 0
       },
-      "sha256": "7352148e21cd14ee43337979f8f24489be020cd103c298e28501d65e6c933046",
-      "capturedAt": "2026-09-18T09:04:50.324Z"
+      "sha256": "e2821abad81a344f336e03031a2091cd6fcb8ba0f3a5f4f7558ff378e57327ae",
+      "capturedAt": "2026-09-18T23:00:50.909Z"
     },
     "holdings-desktop-rtl": {
       "sha256": "d4e9fdd2afefa243b90865ac565a36ef2c3c781f2b39abb532237801b03d882f",
@@ -170,17 +170,17 @@
       "capturedAt": "2026-09-18T22:27:19.446Z"
     },
     "kitchen-sink-desktop-rtl": {
-      "head": "d75c368fcea39d5eea8576b467bf87c82922b72a",
-      "renderedDigest": "a2f5815b60be4c1dd99ff9927c5800467adb28fa3284c4a8505c484b3202cc0a",
+      "head": "0c9a464a152f08f53ff9a2b8169f9179d403e96e",
+      "renderedDigest": "9f9aa37b66b43ef61d5d245cd57a3aeb3bcdb4a5bd6f15bb4c6f36f489074427",
       "dirty": [],
       "dirtyCount": 0,
       "base": {
-        "ref": "aec169b5eb8e357ce17e10c3cc5ba11a27ddde8c",
+        "ref": "0c9a464a152f08f53ff9a2b8169f9179d403e96e",
         "confirmed": true,
         "behind": 0
       },
-      "sha256": "3f91e4103c23ee54ce95c3eedbec6381c870dca64925c712a14ca9d9b7522ffe",
-      "capturedAt": "2026-09-15T13:13:10.776Z"
+      "sha256": "f21160072e77d0c8e652a0dc991e435a91089b4a21f86df122afc223b24ef205",
+      "capturedAt": "2026-09-18T23:00:50.909Z"
     },
     "kitchen-sink-phone": {
       "head": "499e65090670cc5f9a28774a71c5ab07fa2af7fc",
