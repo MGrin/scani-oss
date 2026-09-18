@@ -2,9 +2,8 @@ import { db } from '@scani/db/connection';
 import * as schema from '@scani/db/schema';
 import { createComponentLogger } from '@scani/logging';
 import Decimal from 'decimal.js';
-import { and, eq, lt } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { Container, Service } from 'typedi';
-import { SCAM_PROBABILITY_THRESHOLD } from '../../lib/constants';
 import { isIncludedInTotal } from '../../lib/holding-inclusion';
 import { isPriceStale } from '../../lib/price-freshness';
 import {
@@ -12,6 +11,7 @@ import {
   createPortfolioRedisKey,
   getOrComputeFromCache,
 } from '../../lib/request-cache';
+import { effectiveScamProbability, notScamFor } from '../../lib/scam-verdict';
 import { TokenPriceRepository } from '../../repositories/TokenPriceRepository';
 import { TokenRepository } from '../../repositories/TokenRepository';
 import { PricingService } from '../pricing/PricingService';
@@ -204,7 +204,7 @@ export class PortfolioValuationService {
     const conditions = [
       eq(schema.holdings.userId, userId),
       eq(schema.holdings.isHidden, false),
-      lt(schema.tokens.isScamProbability, SCAM_PROBABILITY_THRESHOLD),
+      notScamFor(),
     ];
     if (accountId) {
       conditions.push(eq(schema.holdings.accountId, accountId));
@@ -222,6 +222,8 @@ export class PortfolioValuationService {
         tokenSymbol: schema.tokens.symbol,
         tokenName: schema.tokens.name,
         token: schema.tokens,
+        // The owner's score, not the shared one (SC-1160).
+        scamProbability: effectiveScamProbability(),
       })
       .from(schema.holdings)
       .innerJoin(schema.tokens, eq(schema.holdings.tokenId, schema.tokens.id))
@@ -404,7 +406,7 @@ export class PortfolioValuationService {
         computed?.value != null &&
         isIncludedInTotal(
           { isHidden: holding.isHidden, isActive: holding.isActive },
-          { isScamProbability: holding.token.isScamProbability }
+          { isScamProbability: holding.scamProbability }
         )
       ) {
         return sum.add(new Decimal(computed.value));

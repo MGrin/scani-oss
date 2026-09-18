@@ -81,6 +81,7 @@ function renderList(search: string, qualitySets: DataQualitySets | undefined): s
       onSetAmount: () => undefined,
       onRecordMovement: () => undefined,
       onToggleActive: () => undefined,
+      onMarkScam: () => undefined,
       onRefreshPrice: () => undefined,
       onRefreshBalance: () => undefined,
       refreshingPriceId: null,

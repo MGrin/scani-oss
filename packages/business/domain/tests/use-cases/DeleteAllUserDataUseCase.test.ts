@@ -136,6 +136,9 @@ async function seed(tx: DatabaseTransaction): Promise<void> {
     institutionId: institution.id,
     externalId: 'native',
   });
+  await tx
+    .insert(schema.userTokenScamVerdicts)
+    .values({ userId, tokenId: token.id, verdict: 'scam' });
   await tx.insert(schema.transferReviewRules).values({
     userId,
     matchCounterparty: randomUUID(),

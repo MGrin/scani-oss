@@ -32,6 +32,7 @@ import { tokenTypeLabel } from '../../lib/tokens';
 import { HoldingAmountFact } from './HoldingAmountFact';
 import { HoldingDeleteAction } from './HoldingDeleteAction';
 import { HoldingLabelFact } from './HoldingLabelFact';
+import { HoldingScamAction } from './HoldingScamAction';
 import { HoldingStatusAction } from './HoldingStatusAction';
 import { HoldingTrend } from './HoldingTrend';
 import { RealizedLedger } from './RealizedLedger';
@@ -79,6 +80,9 @@ export interface HoldingPeekContext {
   onToggleActive: (holding: HoldingWithDetails) => void;
   /** True while an activate/deactivate write is in flight. */
   isTogglingActive?: boolean;
+  /** Record the reader's own verdict that this token is a scam (SC-1160). */
+  onMarkScam: (holding: HoldingWithDetails) => void;
+  isMarkingScam?: boolean;
   onRefreshPrice: (holding: HoldingWithDetails) => void;
   onRefreshBalance: (holding: HoldingWithDetails) => void;
   /** The holding whose price / balance job is in flight, if any. */
@@ -466,6 +470,12 @@ export function holdingPeekSpec(holding: HoldingWithDetails, ctx: HoldingPeekCon
           currency={ctx.currency}
           onToggle={ctx.onToggleActive}
           isPending={ctx.isTogglingActive}
+        />
+        <HoldingScamAction
+          holding={holding}
+          currency={ctx.currency}
+          onMarkScam={ctx.onMarkScam}
+          isPending={ctx.isMarkingScam}
         />
         <HoldingDeleteAction
           holding={holding}

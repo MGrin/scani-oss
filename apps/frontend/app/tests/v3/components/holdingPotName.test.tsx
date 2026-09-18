@@ -78,6 +78,7 @@ function configFor(holdings: HoldingWithDetails[]) {
       onSetAmount: () => undefined,
       onRecordMovement: () => undefined,
       onToggleActive: () => undefined,
+      onMarkScam: () => undefined,
       onRefreshPrice: () => undefined,
       onRefreshBalance: () => undefined,
       refreshingPriceId: null,

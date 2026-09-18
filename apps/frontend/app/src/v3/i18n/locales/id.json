@@ -874,6 +874,13 @@
         "deactivateAction": "Nonaktifkan",
         "activateAction": "Aktifkan"
       },
+      "scam": {
+        "markAction": "Tandai sebagai penipuan",
+        "confirm": "Tandai {{symbol}} sebagai penipuan",
+        "consequence": "{{symbol}} berhenti dihitung dalam total portofolio Anda — <value/> berkurang darinya — dan pindah ke kepemilikan tersembunyi Anda. Hanya Anda yang melihat ini: portofolio orang lain tidak berubah. Pilih Bukan penipuan di sana untuk membatalkannya.",
+        "marked": "{{symbol}} ditandai sebagai penipuan untuk Anda",
+        "markingContext": "Menandai token sebagai penipuan"
+      },
       "toast": {
         "deleted": "Kepemilikan dihapus",
         "deletingContext": "Menghapus kepemilikan",
@@ -1848,10 +1855,7 @@
         "unhiding": "Menampilkan kembali kepemilikan",
         "restoring": "Memulihkan token",
         "notScam": "Bukan penipuan",
-        "clearFlag": "Hapus tanda penipuan untuk semua orang",
-        "clearFlagConsequence": "{{symbol}} ({{name}}) berhenti ditandai sebagai penipuan bagi setiap pengguna Scani, bukan hanya Anda — token ini muncul lagi di pencarian token dan pencarian harga di seluruh akun. Lakukan ini hanya jika Anda sudah memeriksa kontraknya sendiri.",
-        "holdingRestored": "{{symbol}} kembali di dasbor Anda",
-        "tokenRestored": "{{symbol}} dipulihkan di pencarian token"
+        "holdingRestored": "{{symbol}} kembali di dasbor Anda"
       },
       "page": {
         "title": "Token",

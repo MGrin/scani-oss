@@ -38,6 +38,7 @@ schema-only summary.
 |---|---|---|
 | `token_types` | `fiat`, `crypto`, `public-stock`, `private-company`, `other`. | [Tokens](/concepts/tokens/) |
 | `tokens` | Tradeable assets. Unique key: `(symbol, typeId, marketSegment)` (migration 0055). `providerMetadata` jsonb is namespaced per provider. `unpriceableUntil` is the price-backfill cooldown gate. | |
+| `user_token_scam_verdicts` | One user's `scam` / `not_scam` verdict on a token, overriding the shared `tokens.is_scam_probability` for that user only. Unique key: `(userId, tokenId)`. `source` is `user` or `migrated`. | [Token identity](/concepts/token-identity/) |
 | `token_prices` | Historical prices. Unique key: `(tokenId, baseTokenId, timestamp, granularity)`. Granularity: `daily`, `intraday`, `tx-exact`. **No USD-canonical column.** | [Pricing](/concepts/pricing/) |
 | `token_price_edit_history` | Append-only log of manual price edits for `private-company` / `other` tokens. | [Manual assets](/concepts/manual-assets/) |
 

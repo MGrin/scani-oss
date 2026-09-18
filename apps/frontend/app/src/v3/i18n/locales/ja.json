@@ -874,6 +874,13 @@
         "deactivateAction": "無効化",
         "activateAction": "有効化"
       },
+      "scam": {
+        "markAction": "詐欺として報告",
+        "confirm": "{{symbol}} を詐欺として報告",
+        "consequence": "{{symbol}} がポートフォリオの合計に算入されなくなり（<value/> が減ります）、非表示の保有資産に移動します。これはあなただけに適用され、他の人のポートフォリオは変わりません。元に戻すには、そこで「詐欺ではない」を選んでください。",
+        "marked": "{{symbol}} をあなたの詐欺として報告しました",
+        "markingContext": "トークンを詐欺として報告"
+      },
       "toast": {
         "deleted": "保有資産を削除しました",
         "deletingContext": "保有資産を削除しています",
@@ -1848,10 +1855,7 @@
         "unhiding": "保有資産を再表示しています",
         "restoring": "トークンを復元しています",
         "notScam": "詐欺ではない",
-        "clearFlag": "全員に対して詐欺の判定を解除",
-        "clearFlagConsequence": "{{symbol}}（{{name}}）が、あなただけでなくすべてのScaniユーザーに対して詐欺として扱われなくなり、トークン検索と価格取得にアカウント全体で再び現れます。ご自身でコントラクトを確認したうえでのみ実行してください。",
-        "holdingRestored": "{{symbol}} がダッシュボードに戻りました",
-        "tokenRestored": "{{symbol}} をトークン検索に復元しました"
+        "holdingRestored": "{{symbol}} がダッシュボードに戻りました"
       },
       "page": {
         "title": "トークン",

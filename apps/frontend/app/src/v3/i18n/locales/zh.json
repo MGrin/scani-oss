@@ -874,6 +874,13 @@
         "deactivateAction": "停用",
         "activateAction": "启用"
       },
+      "scam": {
+        "markAction": "标记为骗局",
+        "confirm": "将 {{symbol}} 标记为骗局",
+        "consequence": "{{symbol}} 将不再计入你的投资组合合计——合计减少 <value/>——并移到你的隐藏持仓中。只对你生效：其他人的投资组合不会改变。在那里选择“不是骗局”即可撤销。",
+        "marked": "已为你将 {{symbol}} 标记为骗局",
+        "markingContext": "将代币标记为骗局"
+      },
       "toast": {
         "deleted": "持仓已删除",
         "deletingContext": "正在删除持仓",
@@ -1848,10 +1855,7 @@
         "unhiding": "正在取消隐藏该持仓",
         "restoring": "正在恢复该标的",
         "notScam": "不是骗局",
-        "clearFlag": "为所有人清除骗局标记",
-        "clearFlagConsequence": "{{symbol}}（{{name}}）将对所有 Scani 用户取消骗局标记，而不只是对你——它会在标的搜索和全账号的价格查询中重新出现。只有在你自己核查过合约之后才这么做。",
-        "holdingRestored": "{{symbol}} 已回到你的仪表盘",
-        "tokenRestored": "{{symbol}} 已在标的搜索中恢复"
+        "holdingRestored": "{{symbol}} 已回到你的仪表盘"
       },
       "page": {
         "title": "标的",

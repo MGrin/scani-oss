@@ -17,6 +17,7 @@
     "./lib/request-cache": "./src/lib/request-cache.ts",
     "./lib/returns/fx-attribution": "./src/lib/returns/fx-attribution.ts",
     "./lib/returns/twr": "./src/lib/returns/twr.ts",
+    "./lib/scam-verdict": "./src/lib/scam-verdict.ts",
     "./lib/transfer-matching": "./src/lib/transfer-matching.ts",
     "./lib/transfer-unlink": "./src/lib/transfer-unlink.ts",
     "./lib/upstream-event": "./src/lib/upstream-event.ts",
