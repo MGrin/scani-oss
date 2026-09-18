@@ -5,7 +5,10 @@ import {
   bucketMovements,
   DEFAULT_FORECAST_HORIZON,
   type ForecastMovementRow,
+  materialCaveats,
+  monthAfter,
   monthSequence,
+  observedDecline,
   project,
   runway,
   windowTotals,
@@ -292,5 +295,188 @@ describe('windowTotals', () => {
     expect(totals.outflow.get(EUR)?.toString()).toBe('2000');
     expect(totals.outflow.get(GBP)?.toString()).toBe('90');
     expect(totals.inflow.get(GBP)?.toString()).toBe('4000');
+  });
+});
+
+describe('monthAfter', () => {
+  test('counts calendar months from the one today falls in, across a year end', () => {
+    expect(monthAfter('2026-03-04', 0)).toBe('2026-03');
+    expect(monthAfter('2026-03-04', 11)).toBe('2027-02');
+    expect(monthAfter('2026-12-31', 1)).toBe('2027-01');
+  });
+});
+
+describe('observedDecline', () => {
+  /**
+   * The claim is that the money is GONE, not that it goes below zero by
+   * exactly one month's spending. A stray negative also drags
+   * `ProjectionChart`'s y-axis — anchored at `min(0, …balances)` — down to a
+   * rounded tick, which spent a third of the chart on empty space under the
+   * answer.
+   */
+  test('ends exactly at zero on the month the balance is spent', () => {
+    const points = observedDecline('10000', '4000', '2026-03-04', 2);
+    expect(points.map((point) => point.month)).toEqual(['2026-04', '2026-05', '2026-06']);
+    expect(points.map((point) => point.balance.toString())).toEqual(['6000', '2000', '0']);
+    // The last month cannot spend a full month's drain out of a balance that
+    // no longer holds one, and the tooltip reads this figure.
+    expect(points.map((point) => point.outflow.toString())).toEqual(['4000', '4000', '2000']);
+  });
+
+  test('the last month is the one the runway sentence names', () => {
+    const months = 2;
+    const points = observedDecline('10000', '4000', '2026-03-04', months);
+    expect(points.at(-1)?.month).toBe(monthAfter('2026-03-04', months + 1));
+  });
+
+  test('credits no inflow — observed burn is already a net departure rate', () => {
+    const points = observedDecline('9000', '3000', '2026-03-04', 3);
+    expect(points.every((point) => point.inflow.isZero())).toBe(true);
+  });
+});
+
+/**
+ * THE SEAM, EXECUTED — the show/hide table in
+ * `docs/technical/2026-09-06_sc1068-forecast-materiality-seam.md`, so the
+ * document cannot drift from the rule it describes.
+ *
+ * Every figure here is SYNTHETIC and was invented to span the cases. The
+ * profiles differ in exactly one dimension each, which is what makes a row
+ * evidence rather than an illustration: A shows on all three arms, B on none,
+ * C only on illiquid, D only on the unknown-magnitude arm.
+ */
+describe('materialCaveats', () => {
+  const profile = (over: Partial<Parameters<typeof materialCaveats>[0]> = {}) =>
+    materialCaveats({
+      liquid: { amount: '120000', illiquid: { count: 2, amount: '45000' } },
+      perMonth: '9000',
+      perMonthMedian: '5000',
+      notCountedOutflows: 3,
+      denominatorIsMeasured: true,
+      ...over,
+    });
+
+  const kinds = (list: ReturnType<typeof materialCaveats>) => list.map((entry) => entry.kind);
+
+  test('A — a swingy book raises all three', () => {
+    expect(kinds(profile()).sort()).toEqual(['illiquid', 'notCounted', 'spread']);
+  });
+
+  test('B — a tight book raises none, which is the case the rule exists for', () => {
+    expect(
+      kinds(
+        profile({
+          liquid: { amount: '18000', illiquid: { count: 1, amount: '1200' } },
+          perMonth: '3000',
+          perMonthMedian: '2900',
+          notCountedOutflows: 0,
+        })
+      )
+    ).toEqual([]);
+  });
+
+  test('C — a property position that dwarfs the balance shows', () => {
+    expect(
+      kinds(
+        profile({
+          liquid: { amount: '40000', illiquid: { count: 1, amount: '300000' } },
+          perMonth: '2500',
+          perMonthMedian: '2400',
+          notCountedOutflows: 0,
+        })
+      )
+    ).toEqual(['illiquid']);
+  });
+
+  /**
+   * D against C is the pair that matters: the same KIND of caveat, separated
+   * with no percentage anywhere. C is worth 120 months of burn and shows; D is
+   * worth 0.4 of one and does not.
+   */
+  test('D — a small illiquid position does not, and nothing else about it changed', () => {
+    expect(
+      kinds(
+        profile({
+          liquid: { amount: '90000', illiquid: { count: 1, amount: '3000' } },
+          perMonth: '8000',
+          perMonthMedian: '7600',
+          notCountedOutflows: 1,
+        })
+      )
+    ).toEqual(['notCounted']);
+  });
+
+  /**
+   * The threshold is the answer's own unit, so the boundary is exactly one
+   * month of burn and it is inclusive: a caveat worth precisely one month can
+   * move a figure printed in whole months.
+   */
+  test('the boundary is one month of burn, inclusive', () => {
+    const at = profile({
+      liquid: { amount: '90000', illiquid: { count: 1, amount: '8000' } },
+      perMonth: '8000',
+      perMonthMedian: '8000',
+      notCountedOutflows: 0,
+    });
+    const under = profile({
+      liquid: { amount: '90000', illiquid: { count: 1, amount: '7999.99' } },
+      perMonth: '8000',
+      perMonthMedian: '8000',
+      notCountedOutflows: 0,
+    });
+    expect(kinds(at)).toEqual(['illiquid']);
+    expect(kinds(under)).toEqual([]);
+  });
+
+  /**
+   * Arm 2, and the asymmetry is the whole of it. Unpriced holdings are not
+   * even an input here: counting them can only LENGTHEN the runway, so the
+   * stated figure is a floor and the reader is not misled by acting on it.
+   * Unanswered outflows can only shorten it, so any at all is material.
+   */
+  test('an unknown magnitude that can only shorten the runway is material at one row', () => {
+    expect(
+      kinds(
+        profile({
+          liquid: { amount: '18000', illiquid: { count: 0, amount: '0' } },
+          perMonth: '3000',
+          perMonthMedian: '3000',
+          notCountedOutflows: 1,
+        })
+      )
+    ).toEqual(['notCounted']);
+  });
+
+  /**
+   * There is no denominator, so there is no question to answer. Returning an
+   * empty list rather than every caveat is the same rule
+   * `projectedShareOfObserved` follows: a share of nothing is not zero.
+   */
+  test('no burn means no seam — nothing is material against a denominator that does not exist', () => {
+    expect(kinds(profile({ perMonth: null }))).toEqual([]);
+  });
+
+  /**
+   * The spread arm asks whether the MEDIAN of those months would give a
+   * different answer than their MEAN. Under an override the user has replaced
+   * the statistic, so their figure against the measured median compares two
+   * different things — and raises the caveat on the strength of their own
+   * correction. Found by exercising it in a browser: an override near three
+   * times the measured mean surfaced "those months ranged …" beside a runway
+   * that no longer had anything to do with those months.
+   *
+   * The control is the first assertion: the SAME numbers with the denominator
+   * measured DO raise it, so the absence below is this guard rather than the
+   * arm failing to fire.
+   */
+  test("the spread arm is silent when the denominator is the user's own figure", () => {
+    const over = {
+      liquid: { amount: '220000', illiquid: { count: 0, amount: '0' } },
+      perMonth: '25000',
+      perMonthMedian: '7552',
+      notCountedOutflows: 0,
+    };
+    expect(kinds(profile({ ...over, denominatorIsMeasured: true }))).toEqual(['spread']);
+    expect(kinds(profile({ ...over, denominatorIsMeasured: false }))).toEqual([]);
   });
 });

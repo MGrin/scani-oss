@@ -95,10 +95,21 @@ describe('SC-657 — the home runway divides by observed alone', () => {
     expect(observedBranch).toContain('<Link');
 
     // The half a link test cannot see: the destination's HERO figure is the
-    // observed one. `observedMonths` gates the runway tile there, so a page
-    // that went back to leading with `runway(runwayProjection)` fails here.
+    // observed one, so a page that went back to leading with
+    // `runway(runwayProjection)` fails here.
+    //
+    // SC-1068 changed the SHAPE of that gate without changing the fact. The
+    // hero is now the DATE, gated on `runwayMonth`, and the month count reads
+    // underneath it — so the assertion follows the derivation instead: the
+    // gate is computed from `observedMonths`, and the branch it opens reaches
+    // the observed sentence. Both arms are needed. A page leading with the
+    // committed walk fails the first; one that kept an observed-derived gate
+    // and then printed the book's figure fails the second.
     expect(FORECAST_SOURCE).toContain("t('v3.money.forecast.observedRunway'");
-    expect(FORECAST_SOURCE).toMatch(/observedMonths !== null \?[\s\S]{0,120}observedRunway/);
+    expect(FORECAST_SOURCE).toMatch(
+      /runwayMonth =[\s\S]{0,400}monthAfter\(forecast\.today, observedMonths\)/
+    );
+    expect(FORECAST_SOURCE).toMatch(/runwayMonth !== null \?[\s\S]{0,1200}observedRunway/);
   });
 
   /**

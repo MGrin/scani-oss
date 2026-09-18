@@ -1240,7 +1240,11 @@
         "stopEstimating_two": "إيقاف تقديرهما",
         "stopEstimating_few": "إيقاف تقديرها",
         "stopEstimating_many": "إيقاف تقديرها",
-        "stopEstimating_other": "إيقاف تقديرها"
+        "stopEstimating_other": "إيقاف تقديرها",
+        "verdictOk": "الوضع مطمئن حتى",
+        "verdictRunsOut": "ينفد المال",
+        "declineLabel": "الرصيد بمعدل الإنفاق الأخير، حتى {{month}}",
+        "methodTitle": "طريقة الحساب"
       },
       "suggestions": {
         "title": "يبدو متكررًا",

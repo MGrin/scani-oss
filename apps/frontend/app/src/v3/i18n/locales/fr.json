@@ -2929,7 +2929,11 @@
         "useLastSettled_other": "Utiliser leurs derniers montants réglés",
         "stopEstimating_one": "Ne plus l’estimer",
         "stopEstimating_many": "Ne plus les estimer",
-        "stopEstimating_other": "Ne plus les estimer"
+        "stopEstimating_other": "Ne plus les estimer",
+        "verdictOk": "Tout va bien jusqu'en",
+        "verdictRunsOut": "L'argent s'épuise",
+        "declineLabel": "Solde au rythme des dépenses récentes, jusqu’en {{month}}",
+        "methodTitle": "Comment ce calcul est fait"
       },
       "suggestions": {
         "title": "Semble récurrent",
