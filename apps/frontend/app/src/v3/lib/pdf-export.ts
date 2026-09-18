@@ -169,7 +169,7 @@ export function useInstallPdfExport(): void {
         );
       }
 
-      const { dateLocale, numberLocale } = getFormatLocale();
+      const { dateLocale, numberLocale, dir } = getFormatLocale();
       const { base64 } = await utils.client.exports.renderPdf.mutate({
         sheet: withDisplayDates(sheet, dateLocale),
         provenance: {
@@ -179,6 +179,7 @@ export function useInstallPdfExport(): void {
         },
         text: statementText(workbook.provenance.generatedAt, workbook.provenance.rowCount),
         figures: figureSeparators(numberLocale),
+        direction: dir,
       });
 
       // `Uint8Array.fromBase64` is not in Safari 17, which is the floor this

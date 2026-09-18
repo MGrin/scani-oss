@@ -110,6 +110,23 @@ const META_LINE_HEIGHT = 13;
 interface Pen {
   doc: PDFKit.PDFDocument;
   type: Typesetter;
+  /** The content box a right-to-left page is mirrored across (SC-1198). Absent
+   *  on a left-to-right page, and on the throwaway document that only measures,
+   *  which places nothing. */
+  mirror?: { left: number; width: number };
+}
+
+/**
+ * Where a box that starts `x` from the page's START edge sits physically.
+ *
+ * Every caller in this file places things in LOGICAL coordinates — `x` counts
+ * from the edge a reader begins at — and this is the one place that turns them
+ * into a page coordinate. Mirroring the box and not only its text is what moves
+ * the table's first column, the mark and the metadata labels to the right edge,
+ * which is the half `bidi.ts` could never do: it orders runs inside a line.
+ */
+function physicalX(pen: Pen, x: number, width: number): number {
+  return pen.mirror ? 2 * pen.mirror.left + pen.mirror.width - x - width : x;
 }
 
 /** How wide `runs` set, in the style they will be drawn in.
@@ -172,27 +189,25 @@ function put(
   y: number,
   style: TypeStyle,
   colour: string,
-  // `align` stays PHYSICAL, and SC-968 deliberately left it that way. Making it
-  // logical means resolving `start`/`end` against a base direction, and the
-  // render input has none to resolve against: `RenderPdfInput` carries a sheet
-  // and a provenance block and no locale, language or direction anywhere in
-  // either. Renaming the two values without an input that can select between
-  // them would be an abstraction with nothing driving it, and it would read as
-  // though the document had been made direction-aware when it had not.
+  // `x` and `align` are LOGICAL since SC-1198, which gave the render input a
+  // direction to resolve them against: `start` is the edge a reader begins at.
   //
-  // Nothing is misplaced by that. Alignment decides where a box of text sits in
-  // its column; `laidOut` decides the order inside the box, and that is the
-  // half a right-to-left name needs. Mirroring the TABLE — column order, the
-  // mark, the footer — is SC-201's own step and is the thing that would supply
-  // the missing direction (`@scani/shared`'s `LANGUAGE_FORMATS` already carries
-  // `ar: { dir: 'rtl' }` for it).
-  options: { width?: number; align?: 'left' | 'right' } = {}
+  // `figure` is the exception and stays physically right in both directions. A
+  // figure is a left-to-right string of Western digits, and its decimal point
+  // lines up with the one above it only when their RIGHT edges do — that
+  // alignment is the reason the column is set in mono (SC-94), and a column
+  // aligned to its end in a right-to-left page would move every decimal.
+  options: { width?: number; align?: 'start' | 'end' | 'figure' } = {}
 ): void {
   const width = options.width;
   const shown = width === undefined ? text : truncate(text, width, style, measurer(pen));
   const runs = laidOut(pen, shown, style);
-  let cursor =
-    options.align === 'right' && width !== undefined ? x + width - runsWidth(pen, runs, style) : x;
+  const drawn = runsWidth(pen, runs, style);
+  const box = width ?? drawn;
+  const left = physicalX(pen, x, box);
+  const align = options.align ?? 'start';
+  const flushRight = align === 'figure' || (align === 'end') !== (pen.mirror !== undefined);
+  let cursor = flushRight ? left + box - drawn : left;
   for (const run of runs) {
     const spacing = tracking(style, run.text);
     pen.doc.font(run.font).fontSize(style.size).fillColor(colour);
@@ -250,7 +265,7 @@ function drawColumnHeaders(pen: Pen, geo: Geometry, columns: Column[], y: number
   for (const column of columns) {
     put(pen, headerText(column.header), column.x, y, TYPE.columnHeader, MUTED, {
       width: column.width - GUTTER,
-      align: column.numeric ? 'right' : 'left',
+      align: column.numeric ? 'figure' : 'start',
     });
   }
   rule(pen, geo, y + HEADER_HEIGHT - 8, RULE, 0.8);
@@ -270,7 +285,7 @@ function drawRow(
     if (!text) return;
     put(pen, text, column.x, y, cellStyle(column), INK, {
       width: column.width - GUTTER,
-      align: column.numeric ? 'right' : 'left',
+      align: column.numeric ? 'figure' : 'start',
     });
   });
 }
@@ -287,7 +302,7 @@ function drawGroupHeading(pen: Pen, geo: Geometry, label: string, count: number,
     top + 1,
     TYPE.groupCount,
     MUTED,
-    { width: geo.contentWidth * 0.3, align: 'right' }
+    { width: geo.contentWidth * 0.3, align: 'end' }
   );
   rule(pen, geo, top + 15, RULE, 0.5);
 }
@@ -318,10 +333,10 @@ function drawTotals(
     if (total === null || total === undefined) return;
     put(pen, total, column.x, top, TYPE.totalFigure, INK, {
       width: column.width - GUTTER,
-      align: 'right',
+      align: 'figure',
     });
   });
-  // The word sits in whatever room is left to the left of the leftmost total,
+  // The word sits in whatever room is left before the first total,
   // so it never collides with a figure on a narrow page.
   const label = columns[first];
   if (label) {
@@ -357,7 +372,7 @@ function drawFooter(
   const numbered = fill(pageOf, { page: String(page), pages: String(total) });
   put(pen, numbered, MARGIN.left + geo.contentWidth / 2, y, TYPE.footer, MUTED, {
     width: geo.contentWidth / 2,
-    align: 'right',
+    align: 'end',
   });
   doc.page.margins.bottom = restore;
 }
@@ -442,7 +457,7 @@ function drawMasthead(
   substituted: boolean
 ): number {
   const { provenance } = input;
-  drawMark(pen, MARGIN.left, MARGIN.top - 2, 26);
+  drawMark(pen, physicalX(pen, MARGIN.left, 26), MARGIN.top - 2, 26);
 
   put(pen, provenance.subject, MARGIN.left + 38, MARGIN.top, TYPE.title, INK, {
     width: geo.contentWidth - 38,
@@ -568,7 +583,13 @@ export async function renderStatement(input: StatementInput): Promise<Buffer> {
       Subject: provenance.scope,
     },
   });
-  const pen: Pen = { doc: type.register(doc), type };
+  const pen: Pen = {
+    doc: type.register(doc),
+    type,
+    ...(input.direction === 'rtl'
+      ? { mirror: { left: MARGIN.left, width: geo.contentWidth } }
+      : {}),
+  };
 
   const chunks: Uint8Array[] = [];
   doc.on('data', (chunk: Uint8Array) => chunks.push(chunk));
@@ -616,7 +637,7 @@ export async function renderStatement(input: StatementInput): Promise<Buffer> {
     });
 
     if (page.length === 0) {
-      put(pen, text.noRows, MARGIN.left, y + 6, TYPE.rowText, MUTED);
+      put(pen, text.noRows, MARGIN.left, y + 6, TYPE.rowText, MUTED, { width: geo.contentWidth });
     }
 
     drawFooter(pen, geo, index + 1, pages.length, provenance.subject, text.pageOf);
