@@ -367,3 +367,215 @@ export function windowTotals(buckets: readonly MonthBucket[]): {
   }
   return { outflow, inflow };
 }
+
+/**
+ * The month `count` months after the one `today` falls in, `YYYY-MM`.
+ *
+ * `monthSequence` already walks calendar months correctly across a year
+ * boundary; this is that walk's last element, named so a caller asking for one
+ * date does not have to build a list and index it.
+ */
+export function monthAfter(today: string, count: number): string {
+  // `count + 1` because the sequence starts with the month `today` is in.
+  return monthSequence(today, count + 1).at(-1) as string;
+}
+
+/**
+ * THE LINE THE HEADLINE RUNWAY ALREADY IS (SC-1068).
+ *
+ * SC-1068 asks the view to lead with a verdict, a date, and the
+ * balance-over-time line. The line that was on this page is the RECURRING
+ * BOOK's walk, and on a book whose income is a recurring payment while the
+ * spending happens outside the tracked perimeter it RISES — measured on the
+ * demo seed, a balance climbing across the window under a headline saying the
+ * money lasts a fixed number of months. Two answers stacked, disagreeing in
+ * SIGN, which is the defect SC-661 removed from this block and would have been
+ * rebuilt one component down.
+ *
+ * So the line under the verdict is the verdict: `liquid − burn × t`, walked to
+ * the month it reaches zero. It introduces no arithmetic — it is
+ * `observedRunwayMonths`' own division drawn instead of rounded, so the chart
+ * and the sentence cannot disagree, and the x-intercept IS the date the
+ * sentence names.
+ *
+ * Straight by construction, and that is the honest shape: a mean has none. The
+ * book's own walk keeps its wiggle, its chart and its horizon control, in the
+ * block below that is explicitly about the book.
+ *
+ * `outflow` carries the monthly drain so the chart's tooltip can answer "what
+ * leaves in March"; `inflow` is zero because observed burn is a NET departure
+ * rate and crediting an inflow here would double-count whatever funded it.
+ */
+export function observedDecline(
+  liquidAmount: string,
+  perMonth: string,
+  today: string,
+  months: number
+): ProjectedPoint[] {
+  const drain = new Decimal(perMonth);
+  let balance = new Decimal(liquidAmount);
+  const points: ProjectedPoint[] = [];
+  // `months + 2`, sliced past the current month: the walk ends ON the month the
+  // balance is spent, which is one step past the last month it survives. A
+  // series stopping at `months` never reaches zero, so the date the sentence
+  // names would be the one point the chart does not draw.
+  for (const month of monthSequence(today, months + 2).slice(1)) {
+    const spent = Decimal.min(drain, balance);
+    balance = balance.minus(spent);
+    // THE LAST MONTH IS CLAMPED TO ZERO, AND IT IS NOT COSMETIC. Left to run
+    // negative the final point is an overdraft nothing in this model predicts —
+    // the claim is that the money is gone, not that it goes below zero by
+    // exactly one month's spending — and `ProjectionChart` anchors its y-axis
+    // at `min(0, ...balances)`, so a stray negative pushed the axis down to a
+    // rounded tick and spent a third of the chart drawing empty space under
+    // the answer. `spent` is what actually leaves in that month for the same
+    // reason: the tooltip may not report a full month's drain out of a balance
+    // that no longer holds one.
+    points.push({ month, balance, outflow: spent, inflow: new Decimal(0) });
+    if (balance.lessThanOrEqualTo(0)) break;
+  }
+  return points;
+}
+
+/**
+ * THE SEAM — what makes a caveat material enough to sit beside the answer
+ * (SC-1068 decision 2, mgrin 2026-09-05).
+ *
+ * The full argument, the candidates it rules out and a show/hide table over
+ * four synthetic profiles are in
+ * `docs/technical/2026-09-06_sc1068-forecast-materiality-seam.md`. The short
+ * version, because a threshold nobody can defend at the call site is the thing
+ * that ticket forbids:
+ *
+ * ## The threshold is not a free parameter
+ *
+ * It is inherited from the precision the answer is already stated at. The page
+ * says "about N months" and names a month. **A caveat that cannot move the
+ * answer by one month cannot move anything the reader can see.** That is why
+ * there is no percentage here to argue about: the unit is the answer's own.
+ *
+ * ## Why not a share of the balance, which is what everyone reaches for first
+ *
+ * It is UNCOMPUTABLE for six of the eight caveats this surface can raise, and
+ * not for want of plumbing — the quantity does not exist. `unpriceable` is
+ * `{ count }` because a holding with no price has no value to report
+ * (`LiquidAssetsService.ts:67`, against `illiquid: { count, amount }` at `:61`);
+ * `ObservedBurnExcluded` is four bare numbers and `staleValued` a fifth
+ * (`ObservedBurnService.ts:105,107,109,111,183`). It also asks the wrong
+ * denominator: the answer is `liquid ÷ burn`, so materiality to it depends on
+ * burn, and a share-of-balance rule would give two identical balance sheets
+ * with different spending the identical caveat set.
+ *
+ * ## And not direction alone, which mgrin's own example refutes
+ *
+ * "Show it only if omitting it flatters you" hides illiquid — omitting an
+ * illiquid position makes the runway SHORTER, not longer — and an illiquid
+ * position big enough to change the runway is the one caveat decision 2 names
+ * as having to show.
+ *
+ * ## Two arms
+ *
+ * 1. **Magnitude known** → material iff it is worth at least one month of
+ *    burn. Computed on the caveat's OWN amount rather than as two floored
+ *    runways differenced: the second form flickers on a rounding boundary, so
+ *    the same position would show one week and hide the next with nothing
+ *    about it having changed, and a reader who noticed would have learned
+ *    about a floor rather than about their money.
+ * 2. **Magnitude unknown** → material iff including it could only make the
+ *    answer WORSE. Unclassified, untracked and unvalued outflows show, because
+ *    counting them shortens the runway. Unpriced holdings do not, because
+ *    counting them lengthens it and the stated runway is then a floor — the
+ *    direction this codebase errs in everywhere else. They stay reachable
+ *    behind the disclosure.
+ *
+ * ## What this deliberately does not decide
+ *
+ * The burn provenance split, the stale-quote count and the "mean of N complete
+ * months" method line are CONFIDENCE statements: they do not change the
+ * number, they change how much of it you should believe. There is no
+ * "including it" to compute, so asking whether they move the answer returns
+ * *cannot say* for every account, which would make this filter always-show —
+ * no filter at all. They are not returned here and the view keeps them behind
+ * the disclosure. That placement reverses an argument attributed to mgrin at
+ * `ForecastView.tsx` (the `PROVENANCE SITS ABOVE THE EXCLUDED SENTENCE` and
+ * `THE ASK COMES LAST` comments) and is with him.
+ */
+export type MaterialCaveat =
+  | { kind: 'illiquid'; count: number; amount: string }
+  | { kind: 'spread' }
+  | { kind: 'notCounted'; count: number };
+
+/**
+ * One month of burn, the unit the answer is stated in. Not tunable: raising it
+ * would state the answer to a precision the page does not print, and lowering
+ * it below one month would surface caveats that cannot move a figure given in
+ * whole months.
+ */
+function movesTheAnswer(amount: string, perMonth: string): boolean {
+  const drain = new Decimal(perMonth);
+  if (drain.lessThanOrEqualTo(0)) return false;
+  return new Decimal(amount).abs().dividedBy(drain).greaterThanOrEqualTo(1);
+}
+
+export function materialCaveats(input: {
+  liquid: { amount: string; illiquid: { count: number; amount: string } };
+  /** The denominator actually in use — the override where there is one. */
+  perMonth: string | null;
+  /** For the alternative-answer arm; `null` where there is no observed burn. */
+  perMonthMedian: string | null;
+  /**
+   * `perMonth` IS the measured mean, rather than a figure the user substituted
+   * for it.
+   *
+   * The spread arm asks *would the MEDIAN of these months give a different
+   * answer than their MEAN* — a question that exists only while the mean is
+   * the denominator. Under an override the user has replaced the statistic, so
+   * comparing their figure against the measured median compares two different
+   * things and raises the caveat on the strength of their own correction.
+   *
+   * Found by exercising it: an override roughly three times the measured mean
+   * surfaced "those months ranged …" beside a runway that no longer had
+   * anything to do with those months.
+   */
+  denominatorIsMeasured: boolean;
+  /** `unclassified + untracked + unvalued`. `internal` is excluded on purpose:
+   *  a destination inside the perimeter means the money demonstrably did not
+   *  leave, so its absence from the burn is the answer rather than a gap. */
+  notCountedOutflows: number;
+}): MaterialCaveat[] {
+  const { liquid, perMonth, perMonthMedian, notCountedOutflows, denominatorIsMeasured } = input;
+  const caveats: MaterialCaveat[] = [];
+  if (perMonth === null) return caveats;
+
+  if (liquid.illiquid.count > 0 && movesTheAnswer(liquid.illiquid.amount, perMonth)) {
+    caveats.push({
+      kind: 'illiquid',
+      count: liquid.illiquid.count,
+      amount: liquid.illiquid.amount,
+    });
+  }
+
+  // The spread is an ALTERNATIVE-ANSWER statement, not a confidence one, so
+  // the same unit applies: it is material exactly when the median would give a
+  // different runway. On a tight book that is never, and the line is noise; on
+  // a book whose mean sits well above its middle month it is arguably the most
+  // important thing on the page, because it is one runway against another on
+  // the same balance.
+  if (perMonthMedian !== null && denominatorIsMeasured) {
+    const mean = new Decimal(perMonth);
+    const median = new Decimal(perMonthMedian);
+    if (mean.greaterThan(0) && median.greaterThan(0)) {
+      const byMean = new Decimal(liquid.amount).dividedBy(mean).floor();
+      const byMedian = new Decimal(liquid.amount).dividedBy(median).floor();
+      if (!byMean.equals(byMedian)) caveats.push({ kind: 'spread' });
+    }
+  }
+
+  // Arm 2. No magnitude exists for these, and counting them can only shorten
+  // the runway, so any at all is material.
+  if (notCountedOutflows > 0) {
+    caveats.push({ kind: 'notCounted', count: notCountedOutflows });
+  }
+
+  return caveats;
+}

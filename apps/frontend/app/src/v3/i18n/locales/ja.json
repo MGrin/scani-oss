@@ -578,7 +578,11 @@
         "estimatedCount_other": "金額が変動する支払{{count}}件は、誰かが入力した概算ではなく、最後に決済した金額で計算しています。",
         "couldEstimate_other": "そのうち{{count}}件は過去に決済があるため、その金額を代わりに使えます。",
         "useLastSettled_other": "最後に決済した金額を使う",
-        "stopEstimating_other": "概算をやめる"
+        "stopEstimating_other": "概算をやめる",
+        "verdictOk": "大丈夫なのは",
+        "verdictRunsOut": "資金が尽きるのは",
+        "declineLabel": "最近の支出ペースでの残高、{{month}}まで",
+        "methodTitle": "この計算の内訳"
       }
     },
     "groups": {

@@ -1162,7 +1162,11 @@
         "stopEstimating_one": "Не оценивать его",
         "stopEstimating_few": "Не оценивать их",
         "stopEstimating_many": "Не оценивать их",
-        "stopEstimating_other": "Не оценивать их"
+        "stopEstimating_other": "Не оценивать их",
+        "verdictOk": "Всё в порядке до",
+        "verdictRunsOut": "Деньги закончатся",
+        "declineLabel": "Баланс при недавнем уровне трат, до {{month}}",
+        "methodTitle": "Как это посчитано"
       }
     },
     "holdings": {

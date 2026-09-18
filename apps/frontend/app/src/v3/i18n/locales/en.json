@@ -653,7 +653,11 @@
         "useLastSettled_one": "Use its last settled amount",
         "useLastSettled_other": "Use their last settled amounts",
         "stopEstimating_one": "Stop estimating it",
-        "stopEstimating_other": "Stop estimating them"
+        "stopEstimating_other": "Stop estimating them",
+        "verdictOk": "You're OK until",
+        "verdictRunsOut": "Money runs out",
+        "declineLabel": "Balance at recent spending, to {{month}}",
+        "methodTitle": "How this is worked out"
       }
     },
     "groups": {
