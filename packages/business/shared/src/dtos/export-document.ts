@@ -199,6 +199,15 @@ export const RenderPdfInput = z.object({
   provenance: ExportProvenanceDto,
   text: StatementTextDto.optional(),
   figures: FigureSeparatorsDto.optional(),
+  /**
+   * Which side of the page the statement starts from (SC-1198) — `rtl` mirrors
+   * the columns, the masthead, the metadata block and the footer.
+   *
+   * A direction and not a language, for the reason `figures` is separators: the
+   * renderer still knows no language. Optional for the stale client
+   * `StatementTextDto` describes, which gets the left-to-right page it always got.
+   */
+  direction: z.enum(['ltr', 'rtl']).optional(),
 });
 
 export type RenderPdfInputType = z.infer<typeof RenderPdfInput>;
