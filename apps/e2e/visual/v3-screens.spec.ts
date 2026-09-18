@@ -418,6 +418,11 @@ async function assertPinnedBytes(
  */
 async function applyDirection(page: Page, screen: VisualScreen): Promise<void> {
   if (!screen.dir) return;
+  // A screen that names a LANGUAGE is already in its direction, written by
+  // `applyFormatLocale` from that language (SC-1200). Setting it from here too
+  // would pass whether or not the language path works, which is the one thing
+  // that screen exists to check.
+  if (screen.language) return;
   await page.evaluate((dir) => {
     document.documentElement.dir = dir;
   }, screen.dir);
@@ -483,6 +488,92 @@ async function assertStillInDirection(page: Page, screen: VisualScreen, fail: Fa
  * `home-phone-rtl` and `home-empty-phone`, none of which any existing guard
  * had an opinion about.
  */
+/** The URL to photograph: a screen naming a language asks the app's own
+ *  detector for it (`lookupQuerystring: 'lng'`), rather than being handed a
+ *  direction from outside (SC-1200). */
+function routeFor(screen: VisualScreen): string {
+  if (!screen.language) return screen.route;
+  return `${screen.route}${screen.route.includes('?') ? '&' : '?'}lng=${screen.language}`;
+}
+
+/** The family `script-fonts.ts` loads for Arabic, and the family name a
+ *  fallback would NOT match. Spelled here rather than imported: a test that
+ *  reads the constant it is checking agrees with a typo. */
+const ARABIC_FAMILY = 'IBM Plex Sans Arabic';
+
+/**
+ * That the picture holds Arabic script, set in the face the app ships (SC-1200).
+ *
+ * The gap this closes is that a picture cannot report a font that did not
+ * arrive: a silent load failure renders in a system fallback, `--update`
+ * records it, and every run afterwards agrees. So the DOM is asked three
+ * questions a baseline cannot answer, and they fail rather than photograph.
+ *
+ * The negative arm runs on every other screen, which is what makes the
+ * positive one worth reading: the faces are loaded for `ar` alone, so a build
+ * that loaded them unconditionally — or a check that could only say yes —
+ * turns the whole rest of this suite red.
+ */
+async function assertScriptFace(page: Page, screen: VisualScreen, fail: Fail): Promise<void> {
+  const seen = await page.evaluate(
+    async ({ family, text }) => {
+      await document.fonts.ready;
+      const loaded = [...document.fonts].filter(
+        (face) => face.family.includes(family) && face.status === 'loaded'
+      ).length;
+      return {
+        loaded,
+        // `check` asks whether every character of the sample can be set in that
+        // family as it is currently available — the question a fallback answers
+        // no to.
+        settable: document.fonts.check(`16px "${family}"`, text),
+        arabicLetters: (document.body.innerText.match(/\p{Script=Arabic}/gu) ?? []).length,
+        latinLetters: (document.body.innerText.match(/\p{Script=Latin}/gu) ?? []).length,
+        lang: document.documentElement.lang,
+      };
+    },
+    { family: ARABIC_FAMILY, text: 'الحساب' }
+  );
+
+  if (!screen.language) {
+    if (seen.loaded > 0) {
+      fail(
+        `${screen.name}: ${seen.loaded} ${ARABIC_FAMILY} face(s) loaded on a screen that asked ` +
+          'for no language. The faces are meant to load for `ar` alone, so either the language ' +
+          'leaked or they are now loaded for everybody — and the Arabic baseline stops proving ' +
+          'anything the moment they are.'
+      );
+    }
+    return;
+  }
+
+  if (!seen.lang.startsWith(screen.language)) {
+    fail(
+      `${screen.name}: asked for ?lng=${screen.language} and <html lang> read "${seen.lang}". ` +
+        'The detector did not take the query string, so this picture is of another language.'
+    );
+  }
+  // MOSTLY Arabic, not merely some. The first route tried for this was the
+  // kitchen sink, whose fixture copy is never translated: a handful of Arabic
+  // letters somewhere passed an any-character test over a picture of mirrored
+  // English, which is the shot `*-rtl` already takes.
+  if (seen.arabicLetters <= seen.latinLetters) {
+    fail(
+      `${screen.name}: ${seen.arabicLetters} Arabic letters against ${seen.latinLetters} Latin, so ` +
+        'this is a picture of mostly-English copy and cannot be read for shaping. The locale ' +
+        'did not resolve, or this route sets copy that is not translated (SC-1200).'
+    );
+  }
+  if (seen.loaded === 0 || !seen.settable) {
+    fail(
+      `${screen.name}: Arabic is on the page and ${ARABIC_FAMILY} is ` +
+        `${seen.loaded === 0 ? 'not loaded' : 'loaded but cannot set it'}, so it is drawn in a ` +
+        'system fallback. That is exactly the defect no baseline can report — the picture is ' +
+        'legible, the letters may even join, and the face is not ours (SC-1200).'
+    );
+  }
+}
+
 function assertBaselineNotCollapsed(
   screen: string,
   before: number | null,
@@ -710,7 +801,7 @@ function declare(screen: VisualScreen): void {
     // baseline this run was measured against still exists is now.
     const baselinePath = testInfo.snapshotPath(`${screen.name}.png`);
     const baselineBefore = baselineBytes(baselinePath);
-    await page.goto(screen.route);
+    await page.goto(routeFor(screen));
     await settle(page, loads, screen.name);
     await applyDirection(page, screen);
     if (screen.element) {
@@ -753,6 +844,7 @@ function declare(screen: VisualScreen): void {
     );
     await assertPhotographedOnce(page, loads, screen.name, fail);
     await assertStillInDirection(page, screen, fail);
+    await assertScriptFace(page, screen, fail);
     await assertPinnedBytes(page, network, screen, fail);
     await assertAllocationFolded(page, screen, fail);
     assertForecastPinned(screen, forecastReads, fail);

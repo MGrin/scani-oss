@@ -148,6 +148,25 @@ export const FORECAST_AS_OF = FIXED_NOW.toISOString().slice(0, 10);
  */
 type VisualDirection = 'rtl';
 
+/**
+ * A language to photograph the app IN (SC-1200).
+ *
+ * The four `dir` screens above photograph English copy in a mirrored layout,
+ * which is a choice and not a limit — but it means no baseline holds an Arabic
+ * glyph, so an Arabic shaping or font-fallback defect is invisible to all of
+ * them. This is the other question, and it needs the real language path rather
+ * than an attribute set from outside: `?lng=<language>` goes through the app's
+ * own detector (`i18n/index.ts` reads `lookupQuerystring: 'lng'`), so
+ * `applyFormatLocale` writes both `lang` and `dir`, and `script-fonts.ts` runs
+ * and fetches the faces exactly as it does for a reader.
+ *
+ * A screen declaring one is read for SHAPING — do the letters join — and for
+ * the FACE — is this Plex Sans Arabic or a system fallback. Layout is already
+ * covered by the mirrored-English pairs, and this shot is deliberately NOT
+ * their replacement.
+ */
+type VisualLanguage = 'ar';
+
 export interface VisualScreen {
   /**
    * Baseline file stem. Renaming one orphans its PNG, which is why
@@ -167,6 +186,15 @@ export interface VisualScreen {
    * moved.
    */
   dir?: VisualDirection;
+  /**
+   * Load the app in this language, through `?lng=`; see `VisualLanguage`.
+   *
+   * A screen declaring one must ALSO declare the `dir` that language implies,
+   * and the spec does not set it: `assertStillInDirection` then reads the
+   * attribute the APP wrote, so a language path that stopped writing `dir`
+   * fails rather than quietly photographing an LTR page.
+   */
+  language?: VisualLanguage;
   viewport: VisualViewport;
   /**
    * Viewport height, in CSS pixels, for screens taller than the device.
@@ -456,6 +484,24 @@ export const VISUAL_SCREENS: readonly VisualScreen[] = [
       'the table whose numeric columns align to the trailing one. A logical utility that is ' +
       'wrong is not a crash and not a type error; it is a control whose padding is on the ' +
       'opposite side, which is visible here and nowhere else.',
+  },
+  {
+    name: 'holdings-desktop-ar',
+    route: '/holdings',
+    viewport: 'desktop',
+    language: 'ar',
+    dir: 'rtl',
+    institutionMark: true,
+    why:
+      'The one baseline with Arabic script in it, read for two things the mirrored-English ' +
+      'shots cannot show: whether the letters JOIN, and whether they are set in IBM Plex Sans ' +
+      'Arabic or in whatever the system falls back to. SC-201 loads three Arabic faces for `ar` ' +
+      'alone and adds the family to --font-sans; a load that 404s, a misspelled family name or ' +
+      'a weight that never arrives leaves every other shot byte-identical and green. Holdings ' +
+      'rather than the kitchen sink because the kitchen sink is fixture copy that is never ' +
+      'translated, so it would photograph mirrored English; this route sets the sidebar, the ' +
+      'headings and the table headers in Arabic at both weights. Read it for the script, not ' +
+      'the layout — `holdings-desktop-rtl` owns that question.',
   },
   {
     name: 'home-phone-rtl',
