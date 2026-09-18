@@ -93,7 +93,30 @@ export function Numeric({
             direction as a sign. A thin space rather than a margin: it keeps the
             arrow inside the text run, where it cannot shift the digit grid. */}
         {showArrow ? <span aria-hidden="true">{`${parts.arrow} `}</span> : null}
-        {parts.text}
+        {/* `dir="ltr"` on the FIGURE ALONE, and both halves of that are
+            load-bearing (SC-1229).
+
+            WHY IT IS NEEDED: a currency symbol does not always LEAD. ICU gives
+            Arabic `U+200F 193,150.00 U+00A0 US$`, symbol trailing. A trailing
+            `$` is a European terminator with no digit beside it, so it degrades
+            to a NEUTRAL; sitting between `US` (L) and the end of an RTL
+            paragraph (R) it takes the embedding direction and is laid out to
+            the LEFT of `US`. Every money figure in the holdings table and the
+            value card read `$US 193,150.00`. English hides this, because its
+            symbol LEADS, where it is adjacent to the digits and takes theirs.
+
+            WHY NOT `<bdi>`: `<bdi>` is `dir="auto"`, which resolves from the
+            first STRONG character — and that is the `U+200F` RLM ICU puts in
+            front. It would isolate the token and still lay it out RTL.
+
+            WHY THE ARROW STAYS OUTSIDE: with `delta` this renders two nodes,
+            and the arrow is a neutral that takes the PARAGRAPH direction, so it
+            lands at the reading start in either one. Pulled into the island it
+            would pin to the physical left — the reading END of an Arabic line.
+            `NetWorthTape.tsx` records that as the defect a careless version of
+            this very fix introduces (SC-201). Wrapping the text alone is what
+            holds both properties at once. */}
+        <span dir="ltr">{parts.text}</span>
       </span>
     </span>
   );
