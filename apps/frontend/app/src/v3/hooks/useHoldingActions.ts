@@ -88,6 +88,16 @@ export function useHoldingActions() {
     },
   });
 
+  // The reader's own verdict (SC-1160): it moves the holding out of THEIR
+  // totals and onto the hidden list, and changes nothing for anyone else.
+  const markScamMutation = trpc.tokens.markAsScam.useMutation({
+    onError: (err) => showError(err, t('v3.holdings.scam.markingContext')),
+    onSettled: () => {
+      void invalidatePortfolioQueries(utils);
+      void utils.holdings.getHidden.invalidate();
+    },
+  });
+
   // Price refresh runs async on the worker. The enqueue mutation resolves
   // immediately with a jobId; `useHoldingRefresh` subscribes to it to show an
   // inline spinner and emit the terminal toast — which is why the two context
@@ -127,6 +137,11 @@ export function useHoldingActions() {
         editOutflow?: ManualOutflowAnswer;
       }
     ) => updateMutation.mutate({ id, data }),
+    markScam: (tokenId: string, symbol: string) =>
+      markScamMutation.mutate(
+        { tokenId },
+        { onSuccess: () => showSuccess(t('v3.holdings.scam.marked', { symbol })) }
+      ),
     refreshPrice: (id: string) =>
       refreshPriceMutation.mutate({ id, requestId: crypto.randomUUID() }),
     refreshBalance: (holdingId: string) =>
@@ -142,6 +157,7 @@ export function useHoldingActions() {
     isDeleting: deleteMutation.isPending,
     isBulkDeleting: bulkDeleteMutation.isPending,
     isUpdating: updateMutation.isPending,
+    isMarkingScam: markScamMutation.isPending,
     isRefreshingPrice: refreshPriceMutation.isPending,
     isRefreshingBalance: refreshBalanceMutation.isPending,
   };

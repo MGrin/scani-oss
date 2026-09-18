@@ -942,7 +942,14 @@
         "updated": "Posição atualizada",
         "updatingContext": "A atualizar a posição"
       },
-      "trendLabel": "Valor de {{symbol}} ao longo dos últimos {{period}}"
+      "trendLabel": "Valor de {{symbol}} ao longo dos últimos {{period}}",
+      "scam": {
+        "confirm": "Marcar {{symbol}} como burla",
+        "consequence": "{{symbol}} deixa de contar para o total do seu portefólio — <value/> saem dele — e passa para as suas posições ocultas. Só o utilizador vê isto: o portefólio de mais ninguém muda. Escolha «Não é burla» aí para anular.",
+        "markAction": "Marcar como burla",
+        "marked": "{{symbol}} marcado como burla para si",
+        "markingContext": "A marcar o token como burla"
+      }
     },
     "home": {
       "allocation": {
@@ -2691,12 +2698,9 @@
     },
     "tokens": {
       "actions": {
-        "clearFlag": "Retirar a sinalização de burla para toda a gente",
-        "clearFlagConsequence": "{{symbol}} ({{name}}) deixa de estar sinalizado como burla para todos os utilizadores do Scani, e não só para si — reaparece na pesquisa de tokens e na procura de preços em todas as contas. Só faça isto se tiver verificado o contrato por si próprio.",
         "holdingRestored": "{{symbol}} está de volta ao seu painel",
         "notScam": "Não é burla",
         "restoring": "A repor o token",
-        "tokenRestored": "{{symbol}} reposto na pesquisa de tokens",
         "unhiding": "A mostrar a posição"
       },
       "create": {

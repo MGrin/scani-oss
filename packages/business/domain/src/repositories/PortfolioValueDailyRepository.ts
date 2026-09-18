@@ -6,9 +6,9 @@ import type {
 } from '@scani/db/schema';
 import * as schema from '@scani/db/schema';
 import { createComponentLogger } from '@scani/logging';
-import { and, asc, desc, eq, gte, inArray, lt, lte, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, lte, sql } from 'drizzle-orm';
 import { Service } from 'typedi';
-import { SCAM_PROBABILITY_THRESHOLD } from '../lib/constants';
+import { notScamFor } from '../lib/scam-verdict';
 
 export interface PortfolioValueDailyRow {
   userId: string;
@@ -162,7 +162,7 @@ export class PortfolioValueDailyRepository {
             lte(schema.portfolioValueDaily.snapshotDate, toStr),
             eq(schema.holdings.isHidden, false),
             eq(schema.holdings.isActive, true),
-            lt(schema.tokens.isScamProbability, SCAM_PROBABILITY_THRESHOLD),
+            notScamFor(),
             ...(holdingIds ? [inArray(schema.portfolioValueDaily.scopeId, [...holdingIds])] : [])
           )
         )

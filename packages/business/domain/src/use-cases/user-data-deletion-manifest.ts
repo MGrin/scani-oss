@@ -148,6 +148,12 @@ export const USER_DATA_TABLE_DISPOSITIONS: readonly TableDisposition[] = [
   },
   {
     kind: 'delete',
+    table: schema.userTokenScamVerdicts,
+    userColumn: schema.userTokenScamVerdicts.userId,
+    echo: schema.userTokenScamVerdicts.id,
+  },
+  {
+    kind: 'delete',
     table: schema.transferReviewRules,
     userColumn: schema.transferReviewRules.userId,
     echo: schema.transferReviewRules.id,

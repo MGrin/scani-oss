@@ -137,19 +137,17 @@ describe('the version is a promise about the stored number', () => {
 
     expect(offenders).toEqual([]);
     // A scan that matches nothing passes vacuously and protects nothing. There
-    // are TWO such writes today — the repository's stamp
-    // (`TokenRepository.ts`, `scamScoreVersion`) and `tokens.unmarkAsScam`
-    // (`routers/tokens.ts`, `scamScoreSource: 'user'`) — so this pins the scan
-    // to something it can actually see.
+    // is ONE such write today — the repository's stamp (`TokenRepository.ts`,
+    // `scamScoreVersion`) — so this pins the scan to something it can see.
     //
-    // It was three until 2026-09-12. `tokens.markAsScam` wrote the third, and
-    // it was deleted as never-called surface (SC-1152): production recorded
-    // zero calls to it over 14d 18h and nothing in the tree called it. So the
-    // scam probability now has a user path that CLEARS it and none that SETS
-    // it — a flag is written only by the heuristic scorer. Lowering this floor
-    // is therefore recording what the tree holds, not weakening the guard: the
-    // offenders assertion above is unchanged and still reads 0.
-    expect(compliant).toBeGreaterThanOrEqual(2);
+    // It was three until 2026-09-12, when `tokens.markAsScam` was deleted
+    // (SC-1152), and two until SC-1160, when `tokens.unmarkAsScam` stopped
+    // writing `scamScoreSource: 'user'` onto the shared row and began recording
+    // the caller's own verdict in `user_token_scam_verdicts` instead. So no
+    // user path writes this column any more; only the heuristic scorer does.
+    // Lowering the floor records what the tree holds — the offenders assertion
+    // above is unchanged and still reads 0.
+    expect(compliant).toBeGreaterThanOrEqual(1);
   });
 
   test('the token-creation path stamps a version', async () => {

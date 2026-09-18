@@ -942,7 +942,14 @@
         "updated": "Posición actualizada",
         "updatingContext": "Actualizando la posición"
       },
-      "trendLabel": "Valor de {{symbol}} en {{period}}"
+      "trendLabel": "Valor de {{symbol}} en {{period}}",
+      "scam": {
+        "confirm": "Marcar {{symbol}} como fraude",
+        "consequence": "{{symbol}} deja de contar en el total de tu cartera — <value/> sale de él — y pasa a tus posiciones ocultas. Solo lo ves tú: la cartera de nadie más cambia. Elige «No es un fraude» allí para deshacerlo.",
+        "markAction": "Marcar como fraude",
+        "marked": "{{symbol}} marcado como fraude para ti",
+        "markingContext": "Marcando el token como fraude"
+      }
     },
     "home": {
       "allocation": {
@@ -2691,12 +2698,9 @@
     },
     "tokens": {
       "actions": {
-        "clearFlag": "Retirar el aviso de fraude para todo el mundo",
-        "clearFlagConsequence": "{{symbol}} ({{name}}) deja de estar marcado como fraudulento para todos los usuarios de Scani, no solo para ti — reaparece en la búsqueda de tokens y en las consultas de precios de todas las cuentas. Haz esto solo si has comprobado el contrato tú mismo.",
         "holdingRestored": "{{symbol}} ha vuelto a tu panel",
         "notScam": "No es un fraude",
         "restoring": "Restaurando el token",
-        "tokenRestored": "{{symbol}} restaurado en la búsqueda de tokens",
         "unhiding": "Mostrando de nuevo la posición"
       },
       "create": {

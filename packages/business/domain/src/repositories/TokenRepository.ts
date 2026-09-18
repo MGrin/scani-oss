@@ -355,9 +355,9 @@ export class TokenRepository extends BaseRepository<Token, NewToken> {
       .where(
         and(
           eq(schema.tokenTypes.code, 'crypto'),
-          // A user's explicit verdict is not a stale score. `markAsScam` /
-          // `unmarkAsScam` write into the same column, and recomputing over
-          // them would silently undo a decision a human made on purpose.
+          // A human's verdict is not a stale score. Only `heuristic` rows are
+          // ours to recompute; a user's own verdict lives in
+          // `user_token_scam_verdicts` since SC-1160 and never reaches here.
           eq(schema.tokens.scamScoreSource, 'heuristic'),
           sql`${schema.tokens.scamScoreVersion} IS DISTINCT FROM ${version}`
         )

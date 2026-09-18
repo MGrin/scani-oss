@@ -76,6 +76,11 @@ Two flags on `tokens` are managed alongside identity:
   [inclusion rule](/decisions/holding-inclusion-rule/). The score is
   populated by enrichment passes that consult provider hints
   (CoinGecko's `is_scam`, DeFiLlama's blacklist, …).
+  A user can override it **for themselves only**: *Mark as scam* and
+  *Not a scam* write a row to `user_token_scam_verdicts`, and every
+  holdings read resolves that user's verdict first
+  (`lib/scam-verdict.ts`). Nothing writes a verdict back to the shared
+  score — flagging a token for everyone is a decision a person takes.
 - `unpriceableUntil` — timestamp. Set when the historical-price
   backfill has tried and failed to find prices, so the next pass
   skips this token instead of re-asking the same providers. Cleared

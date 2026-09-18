@@ -193,8 +193,10 @@ export const tokens = pgTable(
     scamScoreVersion: integer('scam_score_version'),
     // `unscored` = the function never ran, which is every non-crypto token —
     // their 0 is the absence of a verdict, not a stale one. `heuristic` =
-    // produced by `calculateScamProbability` and recomputable. `user` = an
-    // explicit verdict from markAsScam/unmarkAsScam, never overwritten.
+    // produced by `calculateScamProbability` and recomputable. `user` = a
+    // verdict a user once wrote HERE, globally; nothing writes it since SC-1160,
+    // whose migration converted every such row to per-user verdicts in
+    // `user_token_scam_verdicts`. The rescorer still skips it.
     // Defaults to `unscored` so a new non-crypto row is right by default
     // (SC-286).
     scamScoreSource: text('scam_score_source').notNull().default('unscored'),

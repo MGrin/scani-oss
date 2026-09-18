@@ -13,7 +13,7 @@
 import { randomUUID } from 'node:crypto';
 import { db } from '@scani/db/connection';
 import * as schema from '@scani/db/schema';
-import { SCAM_PROBABILITY_THRESHOLD } from '@scani/domain/lib/constants';
+import { notScamFor } from '@scani/domain/lib/scam-verdict';
 import { PortfolioValueDailyRepository, UserJobRepository } from '@scani/domain/repositories';
 import { HIDE_CLOSED_HOLDINGS_STALE_DAYS } from '@scani/domain/use-cases';
 import { PORTFOLIO_HISTORY_BACKFILL, PORTFOLIO_HISTORY_LOOKBACK_DAYS } from '@scani/jobs';
@@ -455,7 +455,6 @@ export const portfolioRouter = router({
     const userId = dbUser.id;
 
     const staleInterval = sql.raw(`'${HIDE_CLOSED_HOLDINGS_STALE_DAYS} days'`);
-    const scamThreshold = sql.raw(String(SCAM_PROBABILITY_THRESHOLD));
 
     /**
      * One row per holding the reader can actually see, carrying every fact the
@@ -497,7 +496,7 @@ export const portfolioRouter = router({
         JOIN token_types tt ON tt.id = t.type_id
         WHERE h.user_id = ${userId}
           AND h.is_hidden = false
-          AND t.is_scam_probability < ${scamThreshold}
+          AND ${notScamFor('h', 't')}
       ),
       -- A symbol the reader holds under more than one TOKEN row. The
       -- catalogue-wide version of this counted every duplicate symbol in

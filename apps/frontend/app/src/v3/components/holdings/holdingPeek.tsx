@@ -32,6 +32,7 @@ import { tokenTypeLabel } from '../../lib/tokens';
 import { HoldingAmountFact } from './HoldingAmountFact';
 import { HoldingDeleteAction } from './HoldingDeleteAction';
 import { HoldingLabelFact } from './HoldingLabelFact';
+import { HoldingScamAction } from './HoldingScamAction';
 import { HoldingStatusAction } from './HoldingStatusAction';
 import { HoldingTrend } from './HoldingTrend';
 import { RealizedLedger } from './RealizedLedger';
@@ -79,6 +80,9 @@ export interface HoldingPeekContext {
   onToggleActive: (holding: HoldingWithDetails) => void;
   /** True while an activate/deactivate write is in flight. */
   isTogglingActive?: boolean;
+  /** Record the reader's own verdict that this token is a scam (SC-1160). */
+  onMarkScam: (holding: HoldingWithDetails) => void;
+  isMarkingScam?: boolean;
   onRefreshPrice: (holding: HoldingWithDetails) => void;
   onRefreshBalance: (holding: HoldingWithDetails) => void;
   /** The holding whose price / balance job is in flight, if any. */
@@ -531,13 +535,32 @@ export function holdingPeekSpec(holding: HoldingWithDetails, ctx: HoldingPeekCon
     // each with its own lots under it is not a run of label/value pairs — the
     // same reason the transfer-review chooser is here (SC-150). It renders
     // itself away on the holdings that never disposed of anything, which is
-    // most of them, so `content` is empty in the ordinary case.
+    // most of them.
+    //
+    // `Mark as scam` sits here too, in the scrolling body, and not in
+    // `actions` with Deactivate and Delete. `actions` is the drawer's FIXED
+    // header on a phone, promised on screen at the 50% rest height; a fifth
+    // button wrapped that row to a third line and put this button, its
+    // confirmation and Delete under the fold, where nothing can scroll to
+    // them (SC-1160, found by the iPhone e2e). The body scrolls, so it is
+    // reachable at every snap point, and a rare verdict does not need to
+    // compete with Record a movement for the first screen.
     content: (
-      <RealizedLedger
-        holdingId={holding.id}
-        currency={ctx.currency}
-        symbol={holding.token.symbol}
-      />
+      <>
+        <RealizedLedger
+          holdingId={holding.id}
+          currency={ctx.currency}
+          symbol={holding.token.symbol}
+        />
+        <div className="flex">
+          <HoldingScamAction
+            holding={holding}
+            currency={ctx.currency}
+            onMarkScam={ctx.onMarkScam}
+            isPending={ctx.isMarkingScam}
+          />
+        </div>
+      </>
     ),
     sections,
   };
