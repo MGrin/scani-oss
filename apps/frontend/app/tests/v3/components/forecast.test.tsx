@@ -561,20 +561,35 @@ describe('SC-661 — provenance of the counted burn', () => {
   });
 
   /**
-   * PLACEMENT IS PART OF THE FIX. The excluded line is a small caveat about 4
-   * EXCLUDED rows; this is a large claim about 76% of the value that IS
-   * COUNTED. Opposite operations — adjacent and in the wrong order, the larger
-   * claim reads as a footnote to the smaller one and a reader who has just been
-   * told some rows were left out stops there.
+   * PLACEMENT IS STILL PART OF THE FIX, AND SC-1068 KEPT IT BY MAKING THE TWO
+   * NON-ADJACENT.
+   *
+   * SC-661's hazard was ADJACENCY IN THE WRONG ORDER: a small caveat about
+   * excluded rows sitting immediately above a large claim about the value that
+   * IS counted, so the larger claim read as a footnote to the smaller one. It
+   * held provenance first to stop that.
+   *
+   * The excluded line is now a MATERIAL caveat — it has no magnitude and
+   * counting those rows can only shorten the runway — so it sits beside the
+   * answer, and provenance is a confidence statement inside the derivation.
+   * They are in different blocks with a disclosure control between them, which
+   * is a stronger form of the same guarantee than an ordering was: neither can
+   * be read as a footnote to the other, whatever order the document is in.
+   *
+   * So the assertion is the SEPARATION rather than the sequence, and it fails
+   * the moment either one drifts back next to the other.
    */
-  test('provenance comes BEFORE the excluded-rows sentence', () => {
+  test('the excluded-rows caveat sits beside the answer, provenance behind the disclosure', () => {
     const html = render(BOOK, '10000', withBurn());
-    const provenance = html.indexOf('Who classified the money');
     const excluded = html.indexOf('outflows are not counted');
+    const disclosure = html.indexOf('How this is worked out');
+    const provenance = html.indexOf('Who classified the money');
 
-    expect(provenance).toBeGreaterThan(-1);
     expect(excluded).toBeGreaterThan(-1);
-    expect(provenance).toBeLessThan(excluded);
+    expect(disclosure).toBeGreaterThan(-1);
+    expect(provenance).toBeGreaterThan(-1);
+    expect(excluded).toBeLessThan(disclosure);
+    expect(disclosure).toBeLessThan(provenance);
   });
 
   /**
@@ -594,11 +609,15 @@ describe('SC-661 — provenance of the counted burn', () => {
 
     expect(html).toInclude('2 counted outflows were valued from stale quotes');
     // It is a claim about counted value, like provenance and unlike the
-    // excluded line, so it sits on that side of the break.
+    // excluded line, so it sits on that side of the break — which since
+    // SC-1068 means inside the derivation, after provenance, while the
+    // excluded line has been promoted out of it entirely.
     const stale = html.indexOf('valued from stale quotes');
     const excluded = html.indexOf('outflows are not counted');
+    const disclosure = html.indexOf('How this is worked out');
     expect(html.indexOf('Who classified the money')).toBeLessThan(stale);
-    expect(stale).toBeLessThan(excluded);
+    expect(excluded).toBeLessThan(disclosure);
+    expect(disclosure).toBeLessThan(stale);
   });
 
   test('and says nothing when every counted outflow had a current quote', () => {
@@ -750,14 +769,21 @@ describe('SC-661 — answering the measured drain', () => {
    */
   test('the ask comes AFTER the basis, the provenance and the exclusions', () => {
     const html = render(BOOK, '10000', withAnswer({ kind: 'none' }));
+    const basis = html.indexOf('Mean of 6 complete months');
     const provenance = html.indexOf('Who classified the money');
     const excluded = html.indexOf('outflows are not counted');
     const ask = html.indexOf('Is this what you spend?');
 
+    expect(basis).toBeGreaterThan(-1);
     expect(provenance).toBeGreaterThan(-1);
     expect(excluded).toBeGreaterThan(-1);
-    expect(ask).toBeGreaterThan(excluded);
-    expect(excluded).toBeGreaterThan(provenance);
+    // Unchanged inside the derivation: what the figure is, then who classified
+    // it, then the ask. SC-1068 moved the exclusions ABOVE all three, beside
+    // the answer, which strengthens this argument rather than weakening it —
+    // the ask is now the last thing after everything, in either block.
+    expect(basis).toBeLessThan(provenance);
+    expect(provenance).toBeLessThan(ask);
+    expect(excluded).toBeLessThan(ask);
   });
 });
 
@@ -908,5 +934,160 @@ describe('ForecastView — estimating a variable payment from history (SC-625)',
 
     expect(html).toInclude('1 variable payment has no estimate');
     expect(html).not.toInclude('Use its last settled amount');
+  });
+});
+
+/**
+ * SC-1068 — the view answers "will I be OK, and when not".
+ *
+ * The ticket's falsifier is a READING, not a test: at 390px the verdict and
+ * the date must be legible without scrolling and the count of qualifications
+ * BEFORE the answer must be zero. A string render cannot measure pixels, so
+ * what is asserted here is the half that is a fact about the document — that
+ * the answer is first, and that a caveat which cannot move it is not beside
+ * it. The pixel half was measured in a browser and is in the PR.
+ *
+ * Every figure below is synthetic: €10,000 liquid against a €1,250 mean is
+ * eight months, and eight months after 2026-03 is 2026-11.
+ */
+describe('SC-1068 — the answer comes first, and carries its date', () => {
+  const withBurn = (over: Record<string, unknown> = {}) => ({
+    forecast: { ...wire(BOOK, '10000'), observedBurn: observedBurn(over) },
+  });
+
+  test('the date is the headline, and the duration reads under it', () => {
+    const html = render(BOOK, '10000', withBurn());
+    expect(html).toInclude('Nov 2026');
+    expect(html).toInclude('About 8 months at recent spending');
+  });
+
+  /**
+   * TWO STATES AND NO THIRD (mgrin, 2026-09-07). A "getting tight" band between
+   * them was offered and declined: a band needs a number somebody has to
+   * defend, and the date already carries the nuance it would have
+   * approximated.
+   *
+   * The boundary is `horizonMonths` — the window the runway block already
+   * declares it answers over — so it is not a new parameter. €10,000 against a
+   * €1,250 mean is 8 months and lands INSIDE the twelve; €20,000 is 16 and
+   * reaches past it. One fixture either side, and each asserts the other
+   * verdict is ABSENT, which is what makes the pair a test rather than two
+   * illustrations.
+   */
+  test('a runway ending inside the window says the money runs out', () => {
+    const html = render(BOOK, '10000', withBurn());
+    expect(html).toInclude('Money runs out');
+    expect(html).not.toInclude('You&#x27;re OK until');
+  });
+
+  test('one reaching past it says you are OK, and still names the date', () => {
+    const html = render(BOOK, '20000', {
+      forecast: { ...wire(BOOK, '20000'), observedBurn: observedBurn() },
+    });
+    expect(html).toInclude('You&#x27;re OK until');
+    expect(html).not.toInclude('Money runs out');
+    // The date is on BOTH sides — the split tells the reader which side they
+    // are on, and the figure tells them by how much.
+    expect(html).toInclude('About 16 months at recent spending');
+  });
+
+  /**
+   * THE FALSIFIER, in the half a document can answer. Nothing that qualifies
+   * the figure may appear before the figure. The control is the second
+   * assertion: each of these strings IS on the page, so a passing test is the
+   * ordering holding rather than the block failing to render.
+   */
+  test('no qualification appears before the answer', () => {
+    const html = render(BOOK, '10000', withBurn({ staleValued: 2 }));
+    const answer = html.indexOf('Money runs out');
+
+    for (const qualification of [
+      'Counting ',
+      'Mean of 6 complete months',
+      'Who classified the money',
+      'valued from stale quotes',
+      'outflows are not counted',
+      'Is this what you spend?',
+      'left out as illiquid',
+    ]) {
+      expect(html).toInclude(qualification);
+      expect(html.indexOf(qualification)).toBeGreaterThan(answer);
+    }
+  });
+
+  /**
+   * THE SEAM, END TO END. The fixture's illiquid position is €250,000 against
+   * a €1,250 mean — two hundred months of burn — so it shows. Halve the
+   * balance's drain requirement by raising the mean far above it and the same
+   * position stops mattering; that is the discriminating pair, and neither arm
+   * involves a percentage.
+   */
+  test('an illiquid position worth months of burn sits beside the answer', () => {
+    const html = render(BOOK, '10000', withBurn());
+    const answer = html.indexOf('Money runs out');
+    const disclosure = html.indexOf('How this is worked out');
+    const illiquid = html.indexOf('left out as illiquid');
+
+    expect(illiquid).toBeGreaterThan(answer);
+    expect(illiquid).toBeLessThan(disclosure);
+  });
+
+  test('one that cannot move the answer is in the derivation instead', () => {
+    const html = render(BOOK, '10000', {
+      forecast: {
+        ...wire(BOOK, '10000'),
+        // €300 against a €1,250 mean is under a quarter of one month.
+        liquid: {
+          ...wire(BOOK, '10000').liquid,
+          illiquid: { count: 1, amount: '300' },
+        },
+        observedBurn: observedBurn(),
+      },
+    });
+    const disclosure = html.indexOf('How this is worked out');
+    const illiquid = html.indexOf('left out as illiquid');
+
+    // Still on the page — this ticket is about precedence, never deletion.
+    expect(illiquid).toBeGreaterThan(-1);
+    expect(illiquid).toBeGreaterThan(disclosure);
+  });
+
+  /**
+   * A book funded from outside the tracked perimeter PROJECTS UPWARD, and that
+   * is the one line that may not sit under a verdict saying the money runs
+   * out. The chart beside the answer is the verdict drawn — `liquid − burn ×
+   * t` — and the book's own walk keeps its chart in the block below.
+   */
+  test('the line under the answer is the runway, not the book', () => {
+    const html = render(BOOK, '10000', withBurn());
+    const decline = html.indexOf('Balance at recent spending, to Nov 2026');
+    const bookChart = html.indexOf('Projected balance over the next');
+
+    expect(decline).toBeGreaterThan(-1);
+    expect(bookChart).toBeGreaterThan(-1);
+    expect(decline).toBeLessThan(bookChart);
+  });
+
+  /**
+   * The ticket names this the one part of the view that asks a question a
+   * person actually has. It was measured 1153px below the fold on a 390px
+   * phone, past the whole derivation and the book's chart.
+   */
+  test('the affordability checker comes before the recurring book', () => {
+    const html = render(BOOK, '10000', withBurn());
+    expect(html.indexOf('Can I afford it?')).toBeLessThan(html.indexOf('What&#x27;s projected'));
+  });
+
+  /**
+   * The account with no perimeter exits has no measured rate to divide, so
+   * there is no date to name and the committed walk is the only answer there
+   * is. It must not silently render a blank hero.
+   */
+  test('with no observed burn the committed walk still answers', () => {
+    const html = render(BOOK, '10000');
+    expect(html).not.toInclude('Money runs out');
+    expect(html).not.toInclude('You&#x27;re OK until');
+    expect(html).toInclude('Lasts beyond');
+    expect(html).toInclude('The book nets');
   });
 });

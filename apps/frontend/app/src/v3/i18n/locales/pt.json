@@ -1740,7 +1740,11 @@
         "useLastSettled_many": "Usar os seus últimos montantes liquidados",
         "useLastSettled_one": "Usar o seu último montante liquidado",
         "useLastSettled_other": "Usar os seus últimos montantes liquidados",
-        "working": "A apurar…"
+        "working": "A apurar…",
+        "verdictOk": "Tudo bem até",
+        "verdictRunsOut": "O dinheiro acaba",
+        "declineLabel": "Saldo ao ritmo de gastos recente, até {{month}}",
+        "methodTitle": "Como isto é calculado"
       },
       "group": {
         "overdue": "Em atraso"
