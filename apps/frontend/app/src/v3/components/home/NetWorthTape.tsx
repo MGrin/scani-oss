@@ -162,13 +162,22 @@ export function NetWorthTape({ value, currency, className }: NetWorthTapeProps) 
           until SC-201, and the correction is worth carrying because it points
           at a change somebody would otherwise make. It does not always print a
           single string: with `indicator="both"` the arrow is a separate
-          `aria-hidden` span beside the text. What keeps it safe is that the
-          two are one bidi RUN with no `dir` of their own, so the arrow — a
-          neutral — takes the paragraph direction and lands at the READING
-          start in either one. Wrapping `Numeric` in a `dir="ltr"` island to
-          "match this one" would pin the arrow to the physical left and put it
-          at the reading END of an Arabic line, which is the defect this
-          comment is about, introduced by the fix for it.
+          `aria-hidden` span beside the text.
+
+          WHAT KEEPS IT SAFE CHANGED IN SC-1229, and the half that matters here
+          did not. `Numeric` now pins `dir="ltr"` on the FIGURE, because a
+          currency symbol that TRAILS — Arabic's `US$` — was being split by the
+          paragraph direction and rendered `$US`. The ARROW is deliberately left
+          outside that island: it is a neutral with no `dir` of its own, so it
+          still takes the paragraph direction and still lands at the READING
+          start in either one. So this comment's claim used to be "neither half
+          carries a `dir`" and is now "the arrow does not", which is the half it
+          was ever really about.
+
+          Wrapping `Numeric` — arrow included — in a `dir="ltr"` island to
+          "match this one" is still the defect: it would pin the arrow to the
+          physical left and put it at the reading END of an Arabic line,
+          introduced by the fix for something else.
           It sits on the `aria-hidden` wrapper so the `sr-only` sibling above —
           ordinary localised prose — still follows the document. */}
       <span aria-hidden="true" dir="ltr" className="font-display text-display">
