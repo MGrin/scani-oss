@@ -207,11 +207,9 @@ export function EntitiesPage() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value={UNASSIGNED_ENTITY} className="text-body">
-                    {t('v3.ownership.unassigned')}
-                  </SelectItem>
+                  <SelectItem value={UNASSIGNED_ENTITY}>{t('v3.ownership.unassigned')}</SelectItem>
                   {entities.map((entity) => (
-                    <SelectItem key={entity.id} value={entity.id} className="text-body">
+                    <SelectItem key={entity.id} value={entity.id}>
                       {entity.name}
                     </SelectItem>
                   ))}
