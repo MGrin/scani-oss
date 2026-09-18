@@ -96,6 +96,7 @@ import { Container } from 'typedi';
 // Side-effect imports so each processor's @Service decorator runs and
 // the class registers with the typedi Container before WorkerClient
 // pulls them out and registers them.
+import { isPostgresTransientError } from './lib/postgres-transient-error';
 import { AlertSweepProcessor } from './processors/alert-sweep';
 import { ApyPayoutsProcessor } from './processors/apy-payouts';
 import { BackfillCounterpartyProcessor } from './processors/backfill-counterparty';
@@ -575,17 +576,16 @@ async function main(): Promise<void> {
   // tries to write Sync to a half-closed socket and dereferences a
   // null `write` (`TypeError: null is not an object (evaluating
   // 'v.write')` — Sentry, 2026-05-07 03:31 UTC). Bubbled all the way
-  // up, that took down the worker mid-cron.
+  // up, that took down the worker mid-cron. The match lives in
+  // `lib/postgres-transient-error.ts`, and why it no longer names `v` (SC-1231).
   //
   // postgres.js auto-reconnects on the next query, so logging+swallowing
   // here lets the next BullMQ job re-acquire a fresh connection from
   // the pool. We still report to Sentry so a rising error rate is
   // visible, and we still exit on truly fatal errors (any non-Postgres
   // / non-write-after-close TypeError) so we don't paper over real bugs.
-  const POSTGRES_TRANSIENT_ERROR =
-    /CONNECTION_CLOSED|null is not an object \(evaluating 'v\.write'\)|write after end/i;
   process.on('uncaughtException', (error: Error) => {
-    if (POSTGRES_TRANSIENT_ERROR.test(error.message)) {
+    if (isPostgresTransientError(error.message)) {
       logger.warn(
         { error: error.message },
         '⚠️ Transient postgres connection error — driver will reconnect'
@@ -599,7 +599,7 @@ async function main(): Promise<void> {
   });
   process.on('unhandledRejection', (reason: unknown) => {
     const err = reason instanceof Error ? reason : new Error(String(reason));
-    if (POSTGRES_TRANSIENT_ERROR.test(err.message)) {
+    if (isPostgresTransientError(err.message)) {
       logger.warn({ error: err.message }, '⚠️ Transient postgres rejection — driver will reconnect');
       sentryCapture(err);
       return;
