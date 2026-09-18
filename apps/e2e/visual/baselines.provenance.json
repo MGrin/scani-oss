@@ -157,17 +157,17 @@
       "capturedAt": "2026-09-11T09:35:45.749Z"
     },
     "kitchen-sink-desktop": {
-      "head": "4aedb08a52c336647675d6d6e13f9c6a65d73e9b",
-      "renderedDigest": "9ce43807a1c7827c04d1e65326b1a7b7a38b79fd199507e7fd6f40734b3daed9",
-      "dirty": ["apps/frontend/app/src/v3/pages/KitchenSinkPage.tsx"],
-      "dirtyCount": 1,
+      "head": "499e65090670cc5f9a28774a71c5ab07fa2af7fc",
+      "renderedDigest": "9f9aa37b66b43ef61d5d245cd57a3aeb3bcdb4a5bd6f15bb4c6f36f489074427",
+      "dirty": [],
+      "dirtyCount": 0,
       "base": {
-        "ref": "4aedb08a52c336647675d6d6e13f9c6a65d73e9b",
+        "ref": "4c7499a7ecb93f609f1de5d601f5b90afd2d915a",
         "confirmed": true,
         "behind": 0
       },
-      "sha256": "3f30bba06df4790a695d91885dc5567e213c671f6c97b69f83a5b539987e8faa",
-      "capturedAt": "2026-09-15T08:43:01.538Z"
+      "sha256": "ff1ad5d28798f65c8f3f42da9d7ec7dcea6f08321a4b2f37f750a77ec5b43840",
+      "capturedAt": "2026-09-18T22:27:19.446Z"
     },
     "kitchen-sink-desktop-rtl": {
       "head": "d75c368fcea39d5eea8576b467bf87c82922b72a",
@@ -183,17 +183,17 @@
       "capturedAt": "2026-09-15T13:13:10.776Z"
     },
     "kitchen-sink-phone": {
-      "head": "4aedb08a52c336647675d6d6e13f9c6a65d73e9b",
-      "renderedDigest": "9ce43807a1c7827c04d1e65326b1a7b7a38b79fd199507e7fd6f40734b3daed9",
-      "dirty": ["apps/frontend/app/src/v3/pages/KitchenSinkPage.tsx"],
-      "dirtyCount": 1,
+      "head": "499e65090670cc5f9a28774a71c5ab07fa2af7fc",
+      "renderedDigest": "9f9aa37b66b43ef61d5d245cd57a3aeb3bcdb4a5bd6f15bb4c6f36f489074427",
+      "dirty": [],
+      "dirtyCount": 0,
       "base": {
-        "ref": "4aedb08a52c336647675d6d6e13f9c6a65d73e9b",
+        "ref": "4c7499a7ecb93f609f1de5d601f5b90afd2d915a",
         "confirmed": true,
         "behind": 0
       },
-      "sha256": "ed3170b84a5e67a826740bf9b10c7f173286044ec6777a7baffab7f397ee147c",
-      "capturedAt": "2026-09-15T08:43:01.538Z"
+      "sha256": "b1805ac29627e4e17646aa7ce7c54506c8ffdffc0bec889677dbfc6f9ffe8e2c",
+      "capturedAt": "2026-09-18T22:27:19.446Z"
     },
     "payment-form-phone": {
       "head": "e50d9281d7f96143d3f0a4c93703a2eddc368dcf",
