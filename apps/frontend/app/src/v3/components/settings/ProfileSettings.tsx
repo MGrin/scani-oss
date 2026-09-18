@@ -180,7 +180,7 @@ export function ProfileSettings() {
                 value={i18n.resolvedLanguage ?? i18n.language}
                 onValueChange={(code) => void i18n.changeLanguage(code)}
               >
-                <SelectTrigger id="settings-language" className="text-body">
+                <SelectTrigger id="settings-language">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -208,7 +208,7 @@ export function ProfileSettings() {
               })}
             >
               <Select value={region} onValueChange={setRegion}>
-                <SelectTrigger id="settings-region" className="text-body">
+                <SelectTrigger id="settings-region">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>

@@ -178,10 +178,7 @@ export function CostBasisSettings() {
             value={chosen ?? state.method}
             onValueChange={(value) => setChosen(value as CostBasisMethodDto)}
           >
-            <SelectTrigger
-              aria-label={t('v3.settings.costBasis.chooserLabel')}
-              className="text-body"
-            >
+            <SelectTrigger aria-label={t('v3.settings.costBasis.chooserLabel')}>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>

@@ -597,17 +597,14 @@ export function PaymentFormPage() {
                 onValueChange={(next) => setIntervalUnit(next as IntervalUnit)}
                 disabled={isSaving}
               >
-                <SelectTrigger
-                  className="text-body"
-                  aria-label={t('v3.money.paymentForm.repeatUnit')}
-                >
+                <SelectTrigger aria-label={t('v3.money.paymentForm.repeatUnit')}>
                   {/* Radix renders the placeholder for the empty value, which
                       is what an invoice with no stated cadence leaves here. */}
                   <SelectValue placeholder={t('v3.money.paymentForm.repeatUnitPlaceholder')} />
                 </SelectTrigger>
                 <SelectContent>
                   {INTERVAL_UNITS.map((unit) => (
-                    <SelectItem key={unit.value} value={unit.value} className="text-body">
+                    <SelectItem key={unit.value} value={unit.value}>
                       {t(unit.labelKey)}
                     </SelectItem>
                   ))}
