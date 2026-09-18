@@ -39,6 +39,19 @@
         "behind": 0
       }
     },
+    "holdings-desktop-ar": {
+      "head": "59e56e17878be840350c5eb3ec710a8781e77cc5",
+      "renderedDigest": "b4fbb290371fea7897752350e7d2588e0a0183c94985ff0eb789c9487ad063ed",
+      "dirty": ["apps/e2e/visual/screens.ts", "apps/e2e/visual/v3-screens.spec.ts"],
+      "dirtyCount": 2,
+      "base": {
+        "ref": "59e56e17878be840350c5eb3ec710a8781e77cc5",
+        "confirmed": true,
+        "behind": 0
+      },
+      "sha256": "7352148e21cd14ee43337979f8f24489be020cd103c298e28501d65e6c933046",
+      "capturedAt": "2026-09-18T09:04:50.324Z"
+    },
     "holdings-desktop-rtl": {
       "sha256": "d4e9fdd2afefa243b90865ac565a36ef2c3c781f2b39abb532237801b03d882f",
       "capturedAt": null,
