@@ -74,6 +74,9 @@ import hanJapanese from '@fontsource/noto-sans-jp/files/noto-sans-jp-japanese-40
 import hanSimplified from '@fontsource/noto-sans-sc/files/noto-sans-sc-chinese-simplified-400-normal.woff' with {
   type: 'file',
 };
+import hanTraditional from '@fontsource/noto-sans-tc/files/noto-sans-tc-chinese-traditional-400-normal.woff' with {
+  type: 'file',
+};
 import * as fontkit from 'fontkit';
 import type { Face } from './layout';
 
@@ -213,6 +216,12 @@ const MONO: readonly Source[] = [
  * the case that motivated SC-782. Where a name is simplified-only — `银` is in
  * SC and not in JP — the second file covers it.
  *
+ * TC last (SC-785): it carries 652 Han codepoints neither of the others has —
+ * the Traditional-only tail, in names from Taiwan and Hong Kong — and adds no
+ * UI locale. It is here because a name is data, whatever language the
+ * statement's words are in. Last, so a codepoint the three share keeps the
+ * glyph it had before this file was added.
+ *
  * The `-400-` files report `usWeightClass=400` and `subfamilyName=Regular`;
  * `fullName` reads `Noto Sans JP Thin Regular`, which is Fontsource's naming
  * artefact from instancing the variable source and NOT a thin cut. Measured
@@ -221,6 +230,7 @@ const MONO: readonly Source[] = [
 const HAN: readonly Source[] = [
   ['Han-JP', hanJapanese],
   ['Han-SC', hanSimplified],
+  ['Han-TC', hanTraditional],
 ];
 
 /**
@@ -266,10 +276,10 @@ interface LoadedFace {
  * Mono subset maps U+0020, U+00A0, U+000D and U+0000, and `font.layout(' ')`
  * on each throws `RangeError: Out of bounds access` from `_getCBox`. Those are
  * the glyphs with no outline, and fontkit misreads an empty entry in these
- * `.woff` files. Measured across all nineteen bundled faces: every Mono subset
+ * `.woff` files. Measured across all twenty bundled faces: every Mono subset
  * fails U+0000, U+000D, U+0020 and U+00A0 (Latin also U+00AD); every NON-Latin
  * Sans and Bold subset fails U+0020 and U+00A0; `ibm-plex-sans-latin` at both
- * weights and both Han files fail none. The Latin Sans face is first in the
+ * weights and all three Han files fail none. The Latin Sans face is first in the
  * Sans and Bold stacks, and that ordering is the only reason a space ever
  * rendered at all.
  *
@@ -280,7 +290,7 @@ interface LoadedFace {
  *
  * **Probed lazily and memoised, because the eager version cannot run.**
  * Validating every claimed code point at load was measured and did not finish
- * inside two minutes — the two Han files carry ~7,000 code points each. A
+ * inside two minutes — each of the three Han files carries ~7,000 code points. A
  * statement uses a few hundred distinct characters, so the probe costs one
  * `layout` per character per face actually reached, once per process.
  *
@@ -302,7 +312,7 @@ const SPACE_SEPARATOR = /^\p{Zs}$/u;
  * The face that will draw a space no face can set, as U+00A0 (SC-1202).
  *
  * `fr-FR` groups thousands with U+202F NARROW NO-BREAK SPACE and **no bundled
- * face maps it** — zero of nineteen, measured — so every separator in a French
+ * face maps it** — zero of twenty, measured — so every separator in a French
  * figure was a `[?]`. U+2009 and U+2007 are in the same position in every face
  * but Latin Sans. A space is the one character whose glyph carries no
  * information beyond its width and whether a line may break at it, so drawing
