@@ -468,7 +468,7 @@
         "col": {
           "kind": "Nature",
           "service": "Service",
-          "whatItSyncs": "Ce qu’elle synchronise"
+          "about": "À propos"
         },
         "config": {
           "search": "Rechercher"

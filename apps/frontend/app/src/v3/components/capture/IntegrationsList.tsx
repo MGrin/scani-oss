@@ -104,7 +104,7 @@ export function IntegrationsList({
       },
       {
         key: 'description',
-        headerKey: 'ui.dataView.integrations.col.whatItSyncs',
+        headerKey: 'ui.dataView.integrations.col.about',
         render: (integration) => (
           <span className="text-muted-foreground">
             {integration.institution.description ?? '—'}

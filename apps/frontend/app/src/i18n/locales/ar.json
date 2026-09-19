@@ -561,7 +561,7 @@
         "col": {
           "kind": "الصنف",
           "service": "الخدمة",
-          "whatItSyncs": "ما تتم مزامنته"
+          "about": "نبذة"
         },
         "config": {
           "search": "البحث"
