@@ -35,6 +35,10 @@ grace="${WATCHDOG_KILL_GRACE_S:-10}"
 marker="${WATCHDOG_MARKER:-/tmp/memory-watchdog.stopped}"
 ping_cmd="${WATCHDOG_PING_CMD:-}"
 ping_strikes_needed="${WATCHDOG_PING_STRIKES:-6}"
+# An unarmed probe protects nothing, and a wrong password looks exactly like a
+# Redis still loading, so after this many reads with no PONG it says so, and
+# again every REPORT_EVERY reads until it arms.
+ping_unarmed_warn="${WATCHDOG_PING_UNARMED_WARN:-60}"
 
 available_mb() {
   awk '/^MemAvailable:/ { printf "%d", $2 / 1024; found = 1 } END { if (!found) print "" }' "$meminfo" 2>/dev/null
@@ -74,6 +78,8 @@ while kill -0 "$pid" 2>/dev/null; do
       if [ "$ping_misses" -ge "$ping_strikes_needed" ]; then
         stop_worker "liveness ping missed ${ping_misses} reads in a row"
       fi
+    elif [ "$tick" -ge "$ping_unarmed_warn" ] && [ $(((tick - ping_unarmed_warn) % report_every)) -eq 0 ]; then
+      echo "memory-watchdog: liveness ping NOT ARMED after ${tick} reads — no PONG yet (a wrong password reads the same as a Redis still loading), so a Redis hang is NOT being watched" >&2
     fi
   fi
   if [ -z "$avail" ]; then

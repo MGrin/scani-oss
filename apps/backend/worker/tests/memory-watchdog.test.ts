@@ -138,6 +138,28 @@ describe('the liveness ping (SC-1269)', () => {
     expect(await new Response(watchdog.stderr).text()).toContain('liveness ping missed');
   });
 
+  test('a probe that never arms says so rather than protecting nothing in silence', async () => {
+    const path = meminfo(600);
+    const p = ping(path, 'NOAUTH Authentication required.');
+    const { victim, watchdog } = start(path, { ...p.env, WATCHDOG_PING_UNARMED_WARN: '3' });
+    await Bun.sleep(400);
+    expect(alive(victim.pid)).toBe(true);
+    victim.kill('SIGKILL');
+    await watchdog.exited;
+    expect(await new Response(watchdog.stderr).text()).toContain('liveness ping NOT ARMED');
+  });
+
+  test('an armed probe says so once', async () => {
+    const path = meminfo(600);
+    const p = ping(path, 'PONG');
+    const { victim, watchdog } = start(path, p.env);
+    await Bun.sleep(300);
+    victim.kill('SIGKILL');
+    await watchdog.exited;
+    const out = await new Response(watchdog.stdout).text();
+    expect(out.match(/liveness ping armed/g)?.length).toBe(1);
+  });
+
   test('a Redis that never answered (still loading at boot) does not trip it', async () => {
     const path = meminfo(600);
     const p = ping(path, 'LOADING');
