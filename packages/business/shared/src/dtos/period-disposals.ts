@@ -10,14 +10,12 @@ import { disposalLotMatchSchema } from './realized-ledger';
  * chosen window — which is what a person asks when they want to know what
  * their year did rather than what one position did.
  *
- * **Explicitly not tax output, on the same terms as the ledger it is built
- * from.** `docs/technical/2026-08-14_why-no-tax-statement.md` sets out eleven
- * reasons the ledger underneath is not tax-grade, and the errors it documents
- * are structured and run one way, upward. Nothing here may acquire a tax
- * framing — not a heading, not a filename, not a route. A window happening to
- * be a calendar year does not make it a tax year, and the shape deliberately
- * takes two instants rather than a year number so that nothing in the contract
- * implies a jurisdiction's idea of where a year starts.
+ * **The contract under SC-90's tax-year statement** (mgrin re-scoped it on
+ * 2026-09-11). The window is still two instants: `taxYearDisposalsSchema` below
+ * adds the year, its start and the zone the instants were read in, so nothing
+ * here guesses a jurisdiction. `docs/technical/2026-08-14_why-no-tax-statement.md`
+ * records the eleven ways the ledger underneath falls short of tax-grade; the
+ * counts below are how a statement discloses them, and it must.
  *
  * ## The window is half-open, `[periodStart, periodEnd)`
  *
@@ -124,3 +122,35 @@ export const periodDisposalsSchema = z.object({
 });
 
 export type PeriodDisposals = z.infer<typeof periodDisposalsSchema>;
+
+/**
+ * Where a tax year starts (SC-90). `jan-1` is the calendar year, `apr-1` NZ,
+ * HK, JP and IN, `apr-6` the UK, `jul-1` AU. There is no default: the
+ * cost-basis method is not the jurisdiction, so the caller always names it.
+ */
+export const TAX_YEAR_STARTS = ['jan-1', 'apr-1', 'apr-6', 'jul-1'] as const;
+export const taxYearStartSchema = z.enum(TAX_YEAR_STARTS);
+export type TaxYearStart = z.infer<typeof taxYearStartSchema>;
+
+/**
+ * One tax year's disposals: the window above, derived from a year number and
+ * its start, with the zone its boundaries were read in. `timeZoneSource` says
+ * whether that zone is the user's own or the UTC fallback used when none is
+ * stored, so a boundary a day off is visible as such rather than silent.
+ */
+export const taxYearDisposalsSchema = periodDisposalsSchema.extend({
+  /**
+   * ISO instant the figures were computed. A closed year is re-walked on every
+   * read, so a statement is stamped with this beside its method; two
+   * statements that differ can then be told apart (Operator ruling, bus #12532).
+   */
+  generatedAt: z.string(),
+  taxYear: z.object({
+    year: z.number().int(),
+    yearStart: taxYearStartSchema,
+    timeZone: z.string(),
+    timeZoneSource: z.enum(['user', 'utc-fallback']),
+  }),
+});
+
+export type TaxYearDisposals = z.infer<typeof taxYearDisposalsSchema>;

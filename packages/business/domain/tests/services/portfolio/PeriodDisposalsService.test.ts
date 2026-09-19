@@ -2,8 +2,9 @@ process.env.DATABASE_URL = process.env.DATABASE_URL || 'postgresql://dummy:dummy
 
 import { describe, expect, test } from 'bun:test';
 import type { HoldingCoverage, HoldingTransaction } from '@scani/db/schema';
-import { DISPOSAL_OUTCOMES } from '@scani/shared';
+import { Decimal, DISPOSAL_OUTCOMES } from '@scani/shared';
 import { Container } from 'typedi';
+import { taxYearWindow } from '../../../src/lib/tax-year';
 import { HoldingCoverageRepository } from '../../../src/repositories/HoldingCoverageRepository';
 import { HoldingRepository } from '../../../src/repositories/HoldingRepository';
 import { HoldingTransactionRepository } from '../../../src/repositories/HoldingTransactionRepository';
@@ -642,5 +643,137 @@ describe('PeriodDisposalsService.forPeriod — the upper bound is `asOf`, not `w
     // accident of ordering.
     expect(fifo.rows[0]?.costBasis.toString()).toBe('100');
     expect(fifo.rows[0]?.gain?.toString()).toBe('200');
+  });
+});
+
+/**
+ * SC-90, mgrin's ruling of 2026-09-11: the tax-year query must be "proven
+ * against today's realized totals". Consecutive tax years partition time, so
+ * the gains they report must add up to the lifetime ledger's — over BOTH
+ * walkers, and with a disposal sitting exactly on a year boundary, which is
+ * the row an inclusive or off-zone boundary would count twice or lose.
+ */
+describe('tax years add up to the lifetime realized total (SC-90)', () => {
+  const component = ['kraken', 'wallet'];
+  /** A singleton `h` (walkLots) beside a transfer component (walkComponent). */
+  function portfolio(): Map<string, HoldingTransaction[]> {
+    const boundary = taxYearWindow(2024, 'apr-6', 'Europe/London').from.toISOString();
+    return new Map([
+      [
+        'h',
+        [
+          tx({
+            holdingId: 'h',
+            kind: 'buy',
+            quantity: '4',
+            occurredAt: '2023-01-01',
+            priceNative: '100',
+          }),
+          tx({
+            holdingId: 'h',
+            kind: 'sell',
+            quantity: '-2',
+            occurredAt: '2023-06-01',
+            priceNative: '200',
+          }),
+          tx({
+            holdingId: 'h',
+            kind: 'sell',
+            quantity: '-2',
+            occurredAt: boundary,
+            priceNative: '150',
+          }),
+        ],
+      ],
+      [
+        'kraken',
+        [
+          tx({
+            holdingId: 'kraken',
+            kind: 'buy',
+            quantity: '10',
+            occurredAt: '2023-01-01',
+            priceNative: '100',
+          }),
+          tx({
+            holdingId: 'kraken',
+            kind: 'transfer_out',
+            quantity: '-10',
+            occurredAt: '2024-03-01',
+            transferGroupId: 'g1',
+          }),
+        ],
+      ],
+      [
+        'wallet',
+        [
+          tx({
+            holdingId: 'wallet',
+            kind: 'transfer_in',
+            quantity: '10',
+            occurredAt: '2024-03-01',
+            transferGroupId: 'g1',
+          }),
+          tx({
+            holdingId: 'wallet',
+            kind: 'sell',
+            quantity: '-10',
+            occurredAt: '2024-06-01',
+            priceNative: '300',
+          }),
+        ],
+      ],
+    ]);
+  }
+  const harness = () =>
+    makeService({
+      userHoldingIds: ['h', ...component],
+      componentOf: (seed) => (component.includes(seed) ? component : [seed]),
+      txsByHolding: portfolio(),
+    });
+  const LIFETIME = { from: new Date('1970-01-01T00:00:00Z'), to: ASOF };
+
+  test('UK tax years sum to the lifetime gain, boundary disposal counted once', async () => {
+    const { service } = harness();
+    const lifetime = await service.forPeriod('u', USD, LIFETIME, undefined, ASOF);
+    // 2×(200−100) + 2×(150−100) on h, 10×(300−100) across the transfer.
+    expect(lifetime.totals.gain.toString()).toBe('2300');
+
+    let sum = new Decimal(0);
+    let rows = 0;
+    for (const year of [2021, 2022, 2023, 2024, 2025]) {
+      const r = await service.forPeriod(
+        'u',
+        USD,
+        taxYearWindow(year, 'apr-6', 'Europe/London'),
+        undefined,
+        ASOF
+      );
+      sum = sum.add(r.totals.gain);
+      rows += r.rows.length;
+    }
+    expect(sum.toString()).toBe(lifetime.totals.gain.toString());
+    expect(rows).toBe(lifetime.rows.length);
+  });
+
+  test('the boundary disposal falls in the year it opens, not the one it closes', async () => {
+    const { service } = harness();
+    const closing = await service.forPeriod(
+      'u',
+      USD,
+      taxYearWindow(2023, 'apr-6', 'Europe/London'),
+      undefined,
+      ASOF
+    );
+    const opening = await service.forPeriod(
+      'u',
+      USD,
+      taxYearWindow(2024, 'apr-6', 'Europe/London'),
+      undefined,
+      ASOF
+    );
+    // CONTROL: the two years disagree, so neither total is the lifetime one read twice.
+    expect(closing.totals.gain.toString()).toBe('200');
+    expect(opening.totals.gain.toString()).toBe('2100');
   });
 });

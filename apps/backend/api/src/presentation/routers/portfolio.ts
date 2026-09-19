@@ -14,10 +14,18 @@ import { randomUUID } from 'node:crypto';
 import { db } from '@scani/db/connection';
 import * as schema from '@scani/db/schema';
 import { notScamFor } from '@scani/domain/lib/scam-verdict';
+import { taxYearWindow, taxYearZone } from '@scani/domain/lib/tax-year';
 import { PortfolioValueDailyRepository, UserJobRepository } from '@scani/domain/repositories';
+import { PeriodDisposalsService } from '@scani/domain/services';
 import { HIDE_CLOSED_HOLDINGS_STALE_DAYS } from '@scani/domain/use-cases';
 import { PORTFOLIO_HISTORY_BACKFILL, PORTFOLIO_HISTORY_LOOKBACK_DAYS } from '@scani/jobs';
 import { BullMqEnqueueService } from '@scani/queue';
+import {
+  parseCostBasisMethod,
+  type TaxYearDisposals,
+  taxYearStartSchema,
+  toDisposalLotMatchDto,
+} from '@scani/shared';
 import { TRPCError } from '@trpc/server';
 import Decimal from 'decimal.js';
 import { and, eq, sql } from 'drizzle-orm';
@@ -682,4 +690,76 @@ export const portfolioRouter = router({
       },
     };
   }),
+  /**
+   * One tax year's disposals across the whole portfolio (SC-90).
+   *
+   * mgrin re-scoped SC-90 on 2026-09-11 to build the tax-year statement; this is
+   * its query. `yearStart` has no default because the cost-basis method is not
+   * the jurisdiction (bus #12480), and the boundaries are read in the user's
+   * stored zone, or UTC named as the fallback. The method is the account's
+   * stored one and cannot be requested (SC-957).
+   *
+   * The engine is `PeriodDisposalsService`, unchanged: the window bounds what is
+   * reported, never what is walked. Every caveat the ledger knows rides along —
+   * `byBasisQuality` for short or stale history, `byOutcome` for transfers still
+   * awaiting review — and the statement built on this must show them.
+   */
+  taxYear: protectedProcedure
+    .input(
+      strictInput(
+        z.object({ year: z.number().int().min(1970).max(9999), yearStart: taxYearStartSchema })
+      )
+    )
+    .query(async ({ ctx, input }): Promise<TaxYearDisposals> => {
+      const { dbUser } = await requireAuth(ctx);
+      const baseCurrencyId = dbUser.baseCurrencyId ?? null;
+      const method = parseCostBasisMethod(dbUser.costBasisMethod);
+      const zone = taxYearZone(dbUser.timezone ?? null);
+      const window = taxYearWindow(input.year, input.yearStart, zone.timeZone);
+      const header = {
+        generatedAt: new Date().toISOString(),
+        periodStart: window.from.toISOString(),
+        periodEnd: window.to.toISOString(),
+        taxYear: {
+          year: input.year,
+          yearStart: input.yearStart,
+          timeZone: zone.timeZone,
+          timeZoneSource: zone.source,
+        },
+      };
+      if (!baseCurrencyId) {
+        // Every figure is denominated in the base currency, so without one
+        // there is no ledger to report — not an empty one.
+        return {
+          ...header,
+          baseCurrencyId: null,
+          costBasisMethod: method,
+          rows: [],
+          rowCount: 0,
+          byOutcome: { realized: 0, unpriced: 0, unreviewed: 0, retained: 0, awaiting_pair: 0 },
+          byBasisQuality: { known: 0, partial: 0, unknown: 0 },
+          totals: { proceeds: '0', costBasis: '0', gain: '0' },
+        };
+      }
+      const result = await Container.get(PeriodDisposalsService).forPeriod(
+        dbUser.id,
+        baseCurrencyId,
+        window,
+        method
+      );
+      return {
+        ...header,
+        baseCurrencyId,
+        costBasisMethod: result.method,
+        rows: result.rows.map(toDisposalLotMatchDto),
+        rowCount: result.rows.length,
+        byOutcome: result.byOutcome,
+        byBasisQuality: result.byBasisQuality,
+        totals: {
+          proceeds: result.totals.proceeds.toString(),
+          costBasis: result.totals.costBasis.toString(),
+          gain: result.totals.gain.toString(),
+        },
+      };
+    }),
 });
