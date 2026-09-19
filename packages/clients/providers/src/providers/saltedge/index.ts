@@ -21,6 +21,7 @@ import { createOutflowLimiter } from '@scani/rate-limiter';
 import Decimal from 'decimal.js';
 import type { ProviderFactory } from '../../core/boot';
 import type { BalanceProvider, Capability, TransactionsProvider } from '../../core/capabilities';
+import type { IntegrationManifest } from '../../core/integration-manifest';
 import type {
   HoldingSnapshot,
   ProviderContext,
@@ -28,6 +29,7 @@ import type {
   WithUserCreds,
 } from '../../core/types';
 import { SaltEdgeClient } from './client';
+import { saltedgeManifest } from './manifest';
 
 const INSTITUTION_CODE = 'saltedge';
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -67,7 +69,15 @@ export class SaltEdgeProvider implements BalanceProvider, TransactionsProvider {
   readonly capabilities: readonly Capability[] = ['current-balances', 'transactions'];
   readonly transactionHistoryHorizonMs = HISTORY_HORIZON_MS;
 
-  constructor(private readonly client: SaltEdgeClient | null) {}
+  /**
+   * Only a keyed deployment lists Salt Edge among the integrations: an
+   * unkeyed one would offer a button whose every press fails.
+   */
+  readonly manifest: IntegrationManifest | undefined;
+
+  constructor(private readonly client: SaltEdgeClient | null) {
+    this.manifest = client ? saltedgeManifest : undefined;
+  }
 
   canFetchBalances(c: string): boolean {
     return this.client !== null && c === INSTITUTION_CODE;

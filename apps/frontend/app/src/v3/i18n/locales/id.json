@@ -1806,7 +1806,19 @@
         "credentials": "Kredensial",
         "ownDocs": "dokumentasi resmi {{name}}",
         "unverifiedTitle": "Tidak dapat memeriksa kunci {{name}} Anda",
-        "unverifiedDetail": "{{name}} tidak menjawab, jadi kami tidak bisa memastikan apakah kuncinya benar. Tidak ada yang tersimpan — coba lagi sebentar lagi."
+        "unverifiedDetail": "{{name}} tidak menjawab, jadi kami tidak bisa memastikan apakah kuncinya benar. Tidak ada yang tersimpan — coba lagi sebentar lagi.",
+        "redirect": {
+          "permissions": "Anda masuk di halaman bank Anda sendiri. Scani mendapat akses hanya-baca dan tidak pernah melihat kata sandi bank Anda.",
+          "howItWorks": "Cara kerjanya",
+          "continue": "Lanjut ke {{name}}",
+          "returnDocTitle": "Menautkan bank Anda",
+          "okTitle": "Bank tertaut",
+          "okBody": "Akun dan transaksi Anda sedang diimpor di latar belakang. Semuanya muncul di Aset setelah selesai.",
+          "toHoldings": "Buka Aset",
+          "failTitle": "Bank Anda tidak tertaut",
+          "failBody": "Salt Edge melaporkan {{reason}}. Tidak ada yang disimpan, dan Anda bisa mencoba lagi.",
+          "tryAgain": "Coba lagi"
+        }
       },
       "demoNote": "Apa pun yang Anda masukkan di sini tidak disimpan — ini demo."
     },
