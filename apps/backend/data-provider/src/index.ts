@@ -29,6 +29,7 @@ import { tronFactory } from '@scani/providers/providers/tron';
 import { yahooFinanceFactory } from '@scani/providers/providers/yahoo-finance';
 import {
   createOutflowLimiter,
+  edgeLockRefusal,
   observeRedisReachability,
   pingWithin,
   type StrandReport,
@@ -170,6 +171,9 @@ interface RequestWithTracking extends Request {
 }
 
 const app = new Elysia()
+  // SC-1264. First, so a request that went round Cloudflare reaches nothing.
+  // Inert until SCANI_EDGE_LOCK=enforce.
+  .onRequest(({ request }) => edgeLockRefusal(request) ?? undefined)
   .onBeforeHandle(({ request, set }) => {
     // Cap inbound body size before parsing. tRPC envelopes plus the
     // largest legitimate AI request (a base64-encoded screenshot) are
