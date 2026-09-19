@@ -2008,6 +2008,15 @@
       },
       "vendorSpend": {
         "notSubtracted": "No se descuenta de lo que debes — son dos cifras distintas."
+      },
+      "suggestions": {
+        "title": "Parece recurrente",
+        "claim": "{{payee}} parece un pago mensual de <value></value>.",
+        "accept": "Añadir como recurrente",
+        "dismiss": "No es recurrente",
+        "evidence_one": "Basado en {{count}} pago:",
+        "evidence_many": "Basado en {{count}} pagos:",
+        "evidence_other": "Basado en {{count}} pagos:"
       }
     },
     "notFound": {

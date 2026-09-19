@@ -654,6 +654,14 @@
         "useLastSettled_other": "Use their last settled amounts",
         "stopEstimating_one": "Stop estimating it",
         "stopEstimating_other": "Stop estimating them"
+      },
+      "suggestions": {
+        "title": "Looks recurring",
+        "claim": "{{payee}} looks like a monthly payment of <value></value>.",
+        "accept": "Add as recurring",
+        "dismiss": "Not recurring",
+        "evidence_one": "Based on {{count}} payment:",
+        "evidence_other": "Based on {{count}} payments:"
       }
     },
     "groups": {

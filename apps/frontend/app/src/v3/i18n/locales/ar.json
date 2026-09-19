@@ -1228,6 +1228,18 @@
         "stopEstimating_few": "إيقاف تقديرها",
         "stopEstimating_many": "إيقاف تقديرها",
         "stopEstimating_other": "إيقاف تقديرها"
+      },
+      "suggestions": {
+        "title": "يبدو متكررًا",
+        "claim": "يبدو أن {{payee}} دفعة شهرية بقيمة <value></value>.",
+        "accept": "إضافة كدفعة متكررة",
+        "dismiss": "ليست متكررة",
+        "evidence_zero": "بناءً على {{count}} دفعة:",
+        "evidence_one": "بناءً على دفعة واحدة:",
+        "evidence_two": "بناءً على دفعتين:",
+        "evidence_few": "بناءً على {{count}} دفعات:",
+        "evidence_many": "بناءً على {{count}} دفعة:",
+        "evidence_other": "بناءً على {{count}} دفعة:"
       }
     },
     "jobs": {

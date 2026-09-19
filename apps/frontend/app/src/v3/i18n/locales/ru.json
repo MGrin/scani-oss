@@ -1163,6 +1163,16 @@
         "stopEstimating_few": "Не оценивать их",
         "stopEstimating_many": "Не оценивать их",
         "stopEstimating_other": "Не оценивать их"
+      },
+      "suggestions": {
+        "title": "Похоже на регулярный платёж",
+        "claim": "{{payee}} похоже на ежемесячный платёж: <value></value>.",
+        "accept": "Добавить как регулярный",
+        "dismiss": "Не регулярный",
+        "evidence_one": "По {{count}} платежу:",
+        "evidence_few": "По {{count}} платежам:",
+        "evidence_many": "По {{count}} платежам:",
+        "evidence_other": "По {{count}} платежам:"
       }
     },
     "holdings": {
