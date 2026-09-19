@@ -15,7 +15,8 @@
       "offline": "你目前处于离线状态。网络恢复后我们会立即发送验证码。",
       "hintCode": "我们会向你发送 6 位验证码用于登录。",
       "hintLink": "我们会向你发送一个安全的登录链接。",
-      "newAccount": "第一次使用 Scani？我们会自动为你创建账户。"
+      "newAccount": "第一次使用 Scani？我们会自动为你创建账户。",
+      "humanCheckFailed": "无法加载人机验证。请为 challenges.cloudflare.com 停用拦截器，然后重新加载。"
     },
     "code": {
       "title": "输入验证码",

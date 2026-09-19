@@ -2,6 +2,7 @@ import { safeRedirectPath } from '@scani/shared/utils/safe-redirect';
 import { emailErrorReason } from '@scani/shared/validators/email';
 import { MagicCodeInput } from '@scani/ui/components/MagicCodeInput';
 import { ScaniLogo } from '@scani/ui/components/ScaniLogo';
+import { useTurnstile } from '@scani/ui/components/Turnstile';
 import { isPWA } from '@scani/ui/lib/pwa-utils';
 import { Alert, AlertDescription } from '@scani/ui/ui/alert';
 import { Button } from '@scani/ui/ui/button';
@@ -65,6 +66,13 @@ function resolveAuthForm(values: AuthFormData, t: TFunction): ResolverResult<Aut
 export function Auth() {
   const { t } = useTranslation();
   const { user, loading, authenticate, verifyCode } = useAuth();
+  // Human check before any sign-in mail (SC-1266); renders nothing unkeyed.
+  const turnstile = useTurnstile(import.meta.env.VITE_TURNSTILE_SITE_KEY);
+  // The offline retry fires later from an effect; it must send the token
+  // current THEN, not the one captured when the retry was queued.
+  const turnstileToken = useRef(turnstile.token);
+  turnstileToken.current = turnstile.token;
+  const needsHumanCheck = turnstile.required && !turnstile.token;
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [error, setError] = useState<string | null>(null);
@@ -109,7 +117,9 @@ export function Auth() {
       setError(null);
       setUserEmail(email);
 
-      const result = await authenticate(email);
+      const result = await authenticate(email, turnstileToken.current);
+      // Each token is single-use, whatever the outcome.
+      turnstile.reset();
 
       // Only a failure the network itself caused is worth waiting on: a
       // rejected address will still be rejected when the wifi is back.
@@ -120,7 +130,7 @@ export function Auth() {
 
       setIsLoading(false);
     },
-    [authenticate]
+    [authenticate, turnstile.reset]
   );
 
   // Recovery, not just an error message. The reader may have put the phone
@@ -151,7 +161,8 @@ export function Auth() {
 
   const handleResendCode = async () => {
     setError(null);
-    const result = await authenticate(userEmail);
+    const result = await authenticate(userEmail, turnstileToken.current);
+    turnstile.reset();
     if (result.error) {
       setError(result.error);
       throw new Error(result.error);
@@ -186,6 +197,7 @@ export function Auth() {
                 </CardDescription>
               </CardHeader>
               <CardContent>
+                {turnstile.widget}
                 <MagicCodeInput
                   onSubmit={handleCodeSubmit}
                   onResend={handleResendCode}
@@ -312,7 +324,12 @@ export function Auth() {
                 {errors.email && <p className="text-sm text-red-600">{errors.email.message}</p>}
               </div>
 
-              <Button type="submit" className="w-full" disabled={isLoading}>
+              {turnstile.widget}
+              {turnstile.failed && (
+                <p className="text-sm text-red-600">{t('auth.signIn.humanCheckFailed')}</p>
+              )}
+
+              <Button type="submit" className="w-full" disabled={isLoading || needsHumanCheck}>
                 {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 {t('auth.signIn.submit')}
               </Button>
