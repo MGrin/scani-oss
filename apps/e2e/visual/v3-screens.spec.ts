@@ -6,6 +6,7 @@ import {
 } from '../fixtures/visual-network';
 import {
   VISUAL_ALLOCATION_SESSION_FILE,
+  VISUAL_BURN_SESSION_FILE,
   VISUAL_EMPTY_SESSION_FILE,
   VISUAL_FORECAST_SESSION_FILE,
   VISUAL_SESSION_FILE,
@@ -14,6 +15,7 @@ import { BASELINE_SHRINK_ALLOW_ENV, baselineBytes, baselineCollapse } from './ca
 import { describeSpinner, ROUTE_PENDING, readPendingRoutes } from './route-pending';
 import {
   ALLOCATION_DIMENSION_STORAGE_KEY,
+  BURN_AS_OF,
   FIXED_NOW,
   FOLDING_DIMENSION,
   FORECAST_AS_OF,
@@ -45,6 +47,7 @@ const SESSION_FILE: Record<VisualSession, string> = {
   empty: VISUAL_EMPTY_SESSION_FILE,
   allocation: VISUAL_ALLOCATION_SESSION_FILE,
   forecast: VISUAL_FORECAST_SESSION_FILE,
+  burn: VISUAL_BURN_SESSION_FILE,
 };
 
 /**
@@ -93,6 +96,7 @@ function trpcProcedures(url: URL): string[] {
 interface ForecastReads {
   todays: string[];
   errors: string[];
+  staleValued: number[];
 }
 
 /**
@@ -108,8 +112,9 @@ interface ForecastReads {
  * sees the request after this one has rewritten it.
  */
 async function pinForecastClock(page: Page, screen: VisualScreen): Promise<ForecastReads | null> {
-  if (!screen.forecastAsOf) return null;
-  const reads: ForecastReads = { todays: [], errors: [] };
+  if (!screen.forecastAsOf && !screen.burnAsOf) return null;
+  const asOf = pinnedAsOf(screen);
+  const reads: ForecastReads = { todays: [], errors: [], staleValued: [] };
 
   await page.route(
     (url) => trpcProcedures(url).includes(FORECAST_PROCEDURE),
@@ -120,8 +125,8 @@ async function pinForecastClock(page: Page, screen: VisualScreen): Promise<Forec
       const parsed = (raw ? JSON.parse(raw) : {}) as Record<string, unknown>;
       const input =
         url.searchParams.get('batch') === '1'
-          ? { ...parsed, [index]: { ...(parsed[index] as object), asOf: FORECAST_AS_OF } }
-          : { ...parsed, asOf: FORECAST_AS_OF };
+          ? { ...parsed, [index]: { ...(parsed[index] as object), asOf } }
+          : { ...parsed, asOf };
       url.searchParams.set('input', JSON.stringify(input));
       await route.fallback({ url: url.toString() });
     }
@@ -133,9 +138,11 @@ async function pinForecastClock(page: Page, screen: VisualScreen): Promise<Forec
     if (index === -1) return;
     const body = (await response.json().catch(() => null)) as unknown;
     const entry = (Array.isArray(body) ? body[index] : body) as {
-      result?: { data?: { today?: unknown } };
+      result?: { data?: { today?: unknown; observedBurn?: { staleValued?: unknown } | null } };
       error?: { message?: string };
     } | null;
+    const stale = entry?.result?.data?.observedBurn?.staleValued;
+    if (typeof stale === 'number') reads.staleValued.push(stale);
     const today = entry?.result?.data?.today;
     if (typeof today === 'string') reads.todays.push(today);
     else reads.errors.push(entry?.error?.message ?? `HTTP ${response.status()}`);
@@ -144,7 +151,12 @@ async function pinForecastClock(page: Page, screen: VisualScreen): Promise<Forec
   return reads;
 }
 
-/** That every forecast on the page was dated from `FORECAST_AS_OF`. Checked on
+/** The day a screen's forecast is dated from — see `burnAsOf` in `screens.ts`. */
+function pinnedAsOf(screen: VisualScreen): string {
+  return screen.burnAsOf ? BURN_AS_OF : FORECAST_AS_OF;
+}
+
+/** That every forecast on the page was dated from its pinned day. Checked on
  *  a passing capture too — see `forecastAsOf` in `screens.ts`. */
 function assertForecastPinned(screen: VisualScreen, reads: ForecastReads | null, fail: Fail): void {
   if (!reads) return;
@@ -161,11 +173,21 @@ function assertForecastPinned(screen: VisualScreen, reads: ForecastReads | null,
         'response, so nothing says which day this picture of a forecast is dated from.'
     );
   }
-  const wrong = reads.todays.filter((today) => today !== FORECAST_AS_OF);
+  // SC-1219: the caption this screen exists for renders only on a stale count,
+  // so a clean line here is a seed that never reached the component.
+  if (screen.staleValued && !reads.staleValued.some((n) => n > 0)) {
+    fail(
+      `${screen.name}: declares staleValued and no forecast on the page counted a stale-valued ` +
+        `payment (read: ${reads.staleValued.join(', ') || 'none'}). The burn seed's stale row ` +
+        'did not reach the observed drain — see BURN_BOOK in fixtures/visual-setup.ts.'
+    );
+  }
+  const asOf = pinnedAsOf(screen);
+  const wrong = reads.todays.filter((today) => today !== asOf);
   if (wrong.length > 0) {
     fail(
       `${screen.name}: a forecast on this page is dated ${wrong.join(', ')}, not ` +
-        `${FORECAST_AS_OF}. The asOf rewrite did not reach it, so this is a picture of the ` +
+        `${asOf}. The asOf rewrite did not reach it, so this is a picture of the ` +
         'real date and would change next month.'
     );
   }
