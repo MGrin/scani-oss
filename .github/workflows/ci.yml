@@ -540,17 +540,19 @@ jobs:
       - name: Wait for stack health
         run: bun apps/e2e/scripts/wait-for-stack.ts
 
-      # SC-494. This step runs playwright DIRECTLY rather than through
-      # `apps/e2e/scripts/run.ts`, so the runner's stack-discovery never
-      # happens here and `fixtures/db.ts` has nothing to read. It used to work
-      # by accident: the fixture's hardcoded fallbacks were
-      # `mgrin-e2e-suite-postgres-1` and `scani`, which are exactly what CI
-      # produces — correct here and silently wrong in every checkout that is
-      # not this job.
+      # SC-745. The suite runs THROUGH `apps/e2e/scripts/run.ts` (its
+      # `test:e2e` script), the same runner every local run uses, so the
+      # service URLs, the database the fixtures query (SC-494) and
+      # `DATA_PROVIDER_URL` are computed in one place instead of being copied
+      # here by hand. The stack above is already
+      # up, so the runner takes Mode A: it reuses it and NEVER tears it down —
+      # `Stop stack` below still owns that, and `Stack logs` still sees it.
       #
-      # So CI declares them, and derives the container from the project name it
-      # already sets rather than repeating the literal. There is no default to
-      # fall back on any more: the fixture refuses and says NO QUERY WAS MADE.
+      # ALL FOUR VIEWPORTS, deliberately (a maintainer decision, 2026-09-19):
+      # a bare run of the runner takes only the desktop pair, and the mobile
+      # projects are the ones that caught an iPhone-only regression that day.
+      # `scripts/tests/e2e-ci-runs-every-viewport.test.ts` fails if this list
+      # drifts from `apps/e2e/fixtures/devices.ts` or the suite shrinks.
       # THE ONE BUDGET SIZED FOR A RED RUN RATHER THAN A GREEN ONE, and the
       # reason is measured. A green suite is 4m18s-8m42s (n=51, p50 6m16s,
       # p99 8m40s). A FAILING suite is far slower, because each failure pays a
@@ -564,16 +566,9 @@ jobs:
       # run was killed, so how much longer it needed is not in the data.
       - name: Run Playwright suite
         timeout-minutes: 15
-        run: cd apps/e2e && bunx playwright test
+        run: cd apps/e2e && bun run test:e2e -- --project=chromium --project=webkit --project=iphone --project=ipad
         env:
           CI: "true"
-          PLAYWRIGHT_BASE_URL: http://localhost:5173
-          POSTGRES_CONTAINER: ${{ env.COMPOSE_PROJECT_NAME }}-postgres-1
-          # compose's `POSTGRES_DB`, and this repo sets no `SCANI_DEV_DB`.
-          E2E_DB_NAME: scani
-          API_BASE_URL: http://localhost:3011
-          MAILPIT_URL: http://localhost:8026
-          DATABASE_URL: postgres://scani:scani@localhost:5433/scani?sslmode=disable
 
       - name: Upload Playwright report on failure
         if: failure()
