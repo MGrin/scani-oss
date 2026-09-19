@@ -1128,6 +1128,12 @@
           "caption": "Lo que ganó tu propio dinero, contando cuándo lo añadiste y retiraste.",
           "approximate": "Más de una tasa encaja con tus aportes y retiradas, así que tómala como aproximada."
         },
+        "benchmarks": {
+          "label": "Comparado con",
+          "caption": "Comprado y mantenido los mismos días, en tu moneda.",
+          "btc": "Bitcoin",
+          "sp500": "S&P 500 (SPY, solo precio)"
+        },
         "perYear": "<value/> al año",
         "perYearUnit": "al año",
         "since": "Desde el {{date}}.",

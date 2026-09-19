@@ -18,6 +18,7 @@ const VIEW: ReturnsView = {
   twr: { cumulative: 70.2, annualized: 42.5 },
   xirr: { rate: 44.5, approximate: false },
   fx: null,
+  benchmarks: [],
   since: '2025-03-20',
   partial: false,
 };
@@ -58,5 +59,21 @@ describe('the returns card (SC-1159)', () => {
     expect(html).toContain(copy.fx.label);
     expect(html).toContain('61.5');
     expect(html).toContain('5.4');
+  });
+
+  test('the benchmark lines appear only when there are some', () => {
+    expect(render(VIEW)).not.toContain(copy.benchmarks.label);
+    const html = render({
+      ...VIEW,
+      benchmarks: [
+        { key: 'btc', cumulative: 92.3 },
+        { key: 'sp500', cumulative: 13.8 },
+      ],
+    });
+    expect(html).toContain(copy.benchmarks.label);
+    expect(html).toContain(copy.benchmarks.btc);
+    expect(html).toContain(copy.benchmarks.sp500.replace('&', '&amp;'));
+    expect(html).toContain('92.3');
+    expect(html).toContain('13.8');
   });
 });
