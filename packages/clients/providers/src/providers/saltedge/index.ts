@@ -122,6 +122,36 @@ export class SaltEdgeProvider implements BalanceProvider, TransactionsProvider {
     return events;
   }
 
+  /** One Salt Edge customer per Scani user; `identifier` is the user id. */
+  async createCustomer(identifier: string): Promise<string> {
+    const customer = await this.requireClient().post<{ customer_id: string }>('/api/v6/customers', {
+      identifier,
+    });
+    return customer.customer_id;
+  }
+
+  /**
+   * A session on Salt Edge's hosted widget, which is mandatory in v6: Scani
+   * cannot render a bank login itself. The user is redirected to the returned
+   * url, full page — an iframe breaks for OAuth banks.
+   */
+  async createConnectSession(input: {
+    customerId: string;
+    returnTo: string;
+    fromDate: string;
+  }): Promise<string> {
+    const scopes = ['accounts', 'transactions'];
+    const session = await this.requireClient().post<{ connect_url: string }>(
+      '/api/v6/connections/connect',
+      {
+        customer_id: input.customerId,
+        consent: { scopes, from_date: input.fromDate },
+        attempt: { fetch_scopes: scopes, from_date: input.fromDate, return_to: input.returnTo },
+      }
+    );
+    return session.connect_url;
+  }
+
   private async activeAccounts(
     ctx: WithUserCreds<ProviderContext>
   ): Promise<{ connectionId: string; account: SaltEdgeAccount }[]> {

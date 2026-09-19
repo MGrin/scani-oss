@@ -73,7 +73,16 @@ export class SaltEdgeClient {
     return out;
   }
 
-  private async get<T>(pathAndQuery: string): Promise<T> {
+  async post<T>(path: string, data: unknown): Promise<T> {
+    const reply = await this.send<{ data: T }>('POST', path, JSON.stringify({ data }));
+    return reply.data;
+  }
+
+  private get<T>(pathAndQuery: string): Promise<T> {
+    return this.send<T>('GET', pathAndQuery, '');
+  }
+
+  private async send<T>(method: 'GET' | 'POST', pathAndQuery: string, body: string): Promise<T> {
     const url = `${this.baseUrl}${pathAndQuery}`;
     const headers: Record<string, string> = {
       Accept: 'application/json',
@@ -84,12 +93,12 @@ export class SaltEdgeClient {
     if (this.creds.privateKeyPem) {
       const expiresAt = String(Math.floor(this.now() / 1000) + SIGNATURE_TTL_SECONDS);
       const signer = createSign('RSA-SHA256');
-      signer.update(signatureBase(expiresAt, 'GET', url, ''));
+      signer.update(signatureBase(expiresAt, method, url, body));
       headers['Expires-at'] = expiresAt;
       headers.Signature = signer.sign(this.creds.privateKeyPem, 'base64');
     }
     const response = await this.limiter.execute(() =>
-      this.fetchImpl(url, { method: 'GET', headers })
+      this.fetchImpl(url, { method, headers, body: method === 'POST' ? body : undefined })
     );
     if (!response.ok) throw ProviderError.fromHttp(INSTITUTION_CODE, response);
     return (await response.json()) as T;

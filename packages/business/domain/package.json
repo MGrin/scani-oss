@@ -31,6 +31,7 @@
     "./repositories/UserRepository": "./src/repositories/UserRepository.ts",
     "./services/TransferReviewService": "./src/services/TransferReviewService.ts",
     "./services/holdings/HoldingService": "./src/services/holdings/HoldingService.ts",
+    "./services/integrations/SaltEdgeConnectionService": "./src/services/integrations/SaltEdgeConnectionService.ts",
     "./services/holdings/OpeningBalanceReconciliationService": "./src/services/holdings/OpeningBalanceReconciliationService.ts",
     "./services/portfolio/RealizedLedgerService": "./src/services/portfolio/RealizedLedgerService.ts",
     "./services/pricing/CostBasisService": "./src/services/pricing/CostBasisService.ts",

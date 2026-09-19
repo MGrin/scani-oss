@@ -26,6 +26,7 @@ export * from './payments';
 export * from './portfolio';
 export * from './protocol-native-decimals';
 export * from './push';
+export * from './saltedge';
 export * from './token-identity-authority';
 export * from './tokens';
 export * from './transfer-review-rules';
