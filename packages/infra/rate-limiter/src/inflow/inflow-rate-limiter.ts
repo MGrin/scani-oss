@@ -1,4 +1,5 @@
 import { loadRateLimiterConfig, type RateLimiterConfig } from '../config';
+import { cameThroughEdge } from '../edge';
 
 // Fixed-window admission limiter for *inbound* HTTP requests. Distinct
 // from the outflow family: the contract here is `tryConsume(req)` returning
@@ -36,13 +37,16 @@ export interface InflowRateLimiterOptions {
  * Off Fly the edge headers are tried in order, and `X-Forwarded-For` only by
  * its **rightmost** entry, which is the one a proxy appended. If an app on Fly
  * is ever put behind Cloudflare's proxy, `fly-client-ip` becomes Cloudflare's
- * address and this must change with it.
+ * address; a valid `x-scani-edge` header marks exactly those requests.
  */
 export function defaultInflowKey(
   req: Request,
   config: RateLimiterConfig = loadRateLimiterConfig()
 ): string {
   const h = req.headers;
+  // Past Cloudflare (SC-1264), `fly-client-ip` is Cloudflare's address and the
+  // client's is in `cf-connecting-ip`, which Cloudflare overwrites.
+  if (cameThroughEdge(req, config)) return h.get('cf-connecting-ip') || 'edge:no-client-ip';
   if (config.FLY_APP_NAME) return h.get('fly-client-ip') || 'fly:no-client-ip';
   return (
     h.get('cf-connecting-ip') ||
