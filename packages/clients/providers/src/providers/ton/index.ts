@@ -33,6 +33,8 @@ import type {
   WithUserCreds,
 } from '../../core/types';
 import { fetchWithTimeout } from '../../core/utils/fetch';
+import { PageCapWatch } from '../../core/utils/page-cap';
+import { WALLET_HISTORY_ROW_CAP } from '../../core/wallet-limits';
 
 const TON_INSTITUTION_CODE = 'ton';
 const NANOTONS_PER_TON = 1_000_000_000;
@@ -183,6 +185,8 @@ export class TonProvider
     }
 
     const events: TransactionEvent[] = [];
+    const capped = new PageCapWatch();
+    let pages = 0;
     let cursor: { lt: string; hash: string } | null = null;
     while (true) {
       const params = new URLSearchParams({
@@ -209,7 +213,13 @@ export class TonProvider
           events.push(event);
         }
       }
+      pages += 1;
       if (txs.length < TX_PAGE_LIMIT) break;
+      // The address is the requester's choice, so its size is too (SC-1271).
+      if (events.length >= WALLET_HISTORY_ROW_CAP) {
+        capped.note({ walk: 'the address history', pages, rows: events.length });
+        break;
+      }
       const last = txs[txs.length - 1];
       if (!last) break;
       // Toncenter cursor: pass the last row's lt + hash back. The next
@@ -217,6 +227,7 @@ export class TonProvider
       cursor = { lt: last.transaction_id.lt, hash: last.transaction_id.hash };
     }
 
+    capped.retract(ctx, this.providerKey);
     return events.filter((e) => {
       if (ctx.since && e.occurredAt < ctx.since) return false;
       if (ctx.until && e.occurredAt > ctx.until) return false;
