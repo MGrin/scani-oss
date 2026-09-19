@@ -12,6 +12,7 @@ import { useReviewFeed } from '../../hooks/useReviewFeed';
 import { useViewPreference } from '../../hooks/useViewPreference';
 import {
   DEFAULT_HOME_PERIOD,
+  fromFirstRecord,
   HOME_METRIC_KEYS,
   HOME_METRICS,
   HOME_PERIOD_KEYS,
@@ -130,10 +131,14 @@ export function HeroBlock({ total, currency }: HeroBlockProps) {
 
   const { items: reviewItems } = useReviewFeed();
 
-  const points = series.data?.series ?? [];
+  const points = fromFirstRecord(series.data?.series ?? []);
+  const firstRecord = points[0]?.date;
+  const unmeasured = (series.data?.unmeasuredDates ?? []).filter(
+    (date) => firstRecord !== undefined && date >= firstRecord
+  );
   const today = todayDateString();
   const delta = resolvePeriodDelta(points, total);
-  const trend = netWorthChartPoints(points, total, today, series.data?.unmeasuredDates);
+  const trend = netWorthChartPoints(points, total, today, unmeasured);
   // Only for net worth: the PnL series still carries its uncovered days as
   // rows, so its curve breaks on its own and the axis needs no explaining.
   const measuredThrough = metric === 'pnl' ? null : lastMeasuredBeforeToday(trend, today);
