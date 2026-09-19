@@ -15,7 +15,7 @@ import { db } from '@scani/db/connection';
 import * as schema from '@scani/db/schema';
 import { notScamFor } from '@scani/domain/lib/scam-verdict';
 import { PortfolioValueDailyRepository, UserJobRepository } from '@scani/domain/repositories';
-import { ReturnsService } from '@scani/domain/services';
+import { BenchmarkReturnService, ReturnsService } from '@scani/domain/services';
 import { HIDE_CLOSED_HOLDINGS_STALE_DAYS } from '@scani/domain/use-cases';
 import { PORTFOLIO_HISTORY_BACKFILL, PORTFOLIO_HISTORY_LOOKBACK_DAYS } from '@scani/jobs';
 import { BullMqEnqueueService } from '@scani/queue';
@@ -253,8 +253,14 @@ export const portfolioRouter = router({
     });
     // An account with no base currency has no rollup rows to measure, so
     // there is nothing to show and nothing has gone wrong.
-    if (outcome.status !== 'ok') return { returns: null };
-    return { returns: withoutPeriodSeries(outcome.returns) };
+    if (outcome.status !== 'ok') return { returns: null, benchmarks: [] };
+    const window = outcome.returns.effectiveWindow;
+    // Over exactly the days the portfolio was measured on, so the comparison
+    // starts and ends where the return does (SC-464).
+    const benchmarks = window
+      ? await Container.get(BenchmarkReturnService).over(window, outcome.returns.baseCurrencyId)
+      : [];
+    return { returns: withoutPeriodSeries(outcome.returns), benchmarks };
   }),
 
   getNetWorthSeries: protectedProcedure

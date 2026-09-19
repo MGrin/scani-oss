@@ -248,6 +248,11 @@ export { ReviewFeedService } from './ReviewFeedService';
 // returns/
 export { AssetCurrencyService } from './returns/AssetCurrencyService';
 export {
+  type BenchmarkReturn,
+  BenchmarkReturnService,
+  measuredDayInstant,
+} from './returns/BenchmarkReturnService';
+export {
   type ExternalFlow,
   type ExternalFlowSeries,
   ExternalFlowService,

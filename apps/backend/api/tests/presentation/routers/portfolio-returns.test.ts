@@ -1,6 +1,10 @@
 import { describe, expect, test } from 'bun:test';
 import type * as schema from '@scani/db/schema';
-import { type ReturnsRequest, ReturnsService } from '@scani/domain/services';
+import {
+  BenchmarkReturnService,
+  type ReturnsRequest,
+  ReturnsService,
+} from '@scani/domain/services';
 import { restoreContainerAfterAll } from '@scani/domain/test-helpers';
 import { Container } from 'typedi';
 import { makeAuthedCaller } from '../../helpers/test-caller';
@@ -14,6 +18,14 @@ const USER = {
   id: '00000000-0000-4000-8000-00000000000a',
   email: 'a@scani.local',
 } as typeof schema.users.$inferSelect;
+
+const benchmarkWindows: Array<{ from: string; to: string }> = [];
+Container.set(BenchmarkReturnService, {
+  over: async (window: { from: string; to: string }) => {
+    benchmarkWindows.push(window);
+    return [{ key: 'btc', cumulative: '0.5' }];
+  },
+} as unknown as BenchmarkReturnService);
 
 function stub(outcome: unknown) {
   const asked: ReturnsRequest[] = [];
@@ -64,10 +76,21 @@ describe('portfolio.getReturns (SC-1159)', () => {
     expect(returns?.twr && 'periods' in returns.twr).toBe(false);
   });
 
+  test('benchmarks are measured over the window the return was (SC-464)', async () => {
+    benchmarkWindows.length = 0;
+    stub({ status: 'ok', returns: RESULT });
+    const { benchmarks } = await makeAuthedCaller(USER).portfolio.getReturns({
+      window: { kind: 'ytd' },
+    });
+    expect(benchmarkWindows).toEqual([{ from: '2026-01-01', to: '2026-09-19' }]);
+    expect(benchmarks).toEqual([{ key: 'btc', cumulative: '0.5' }]);
+  });
+
   test('no base currency is nothing to show, not an error', async () => {
     stub({ status: 'no-base-currency' });
     expect(await makeAuthedCaller(USER).portfolio.getReturns({ window: { kind: 'all' } })).toEqual({
       returns: null,
+      benchmarks: [],
     });
   });
 
