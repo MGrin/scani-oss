@@ -13,7 +13,9 @@
         "searchPlaceholder": "Pesquisar nas suas contas…",
         "type": "Tipo",
         "typeLabel": "Tipo de conta",
-        "typePlaceholder": "Poupança, corretagem, cripto…"
+        "typePlaceholder": "Poupança, corretagem, cripto…",
+        "firstPlaceholder": "Dê um nome à sua primeira conta…",
+        "noneYet": "Ainda não há contas — escreva um nome para adicionar a primeira."
       },
       "blocker": {
         "accountType": "escolha o tipo da conta",

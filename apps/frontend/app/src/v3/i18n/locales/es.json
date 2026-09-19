@@ -13,7 +13,9 @@
         "searchPlaceholder": "Busca en tus cuentas…",
         "type": "Tipo",
         "typeLabel": "Tipo de cuenta",
-        "typePlaceholder": "Ahorro, valores, cripto…"
+        "typePlaceholder": "Ahorro, valores, cripto…",
+        "firstPlaceholder": "Ponle nombre a tu primera cuenta…",
+        "noneYet": "Aún no hay cuentas: escribe un nombre para añadir la primera."
       },
       "blocker": {
         "accountType": "elige el tipo de la cuenta",
