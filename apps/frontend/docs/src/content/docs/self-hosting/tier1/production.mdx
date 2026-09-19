@@ -105,7 +105,8 @@ another orchestrator:
   The api's `/readyz` endpoint returns **503** with a `Schema
   not ready: missing tables …` payload, and the worker logs
   `⏳ Awaiting schema readiness …` in a restart loop. Run the
-  migrate command, then `docker compose restart api worker`.
+  migrate command, then
+  `docker compose -f docker-compose.prod.yml restart api worker`.
 </Aside>
 
 ## What's in the compose file
@@ -197,8 +198,9 @@ iterating on a new migration locally.
 ### When to run it
 
 - **First install:** before the first `docker compose -f docker-compose.prod.yml up -d`.
-- **Every upgrade:** after `docker compose pull` and before
-  `docker compose up -d` / `restart`. Some upgrades ship schema
+- **Every upgrade:** after `docker compose -f docker-compose.prod.yml pull`
+  and before `docker compose -f docker-compose.prod.yml up -d` / `restart`.
+  Some upgrades ship schema
   changes; some don't. Always running migrate first is safe and
   cheap.
 
