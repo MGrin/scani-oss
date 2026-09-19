@@ -30,6 +30,7 @@ import type { AIInferenceProvider, AIResult, AIUsage } from '@scani/providers/co
 import { ProviderRegistry } from '@scani/providers/core/registry';
 import { isValidDecimalString } from '@scani/shared';
 import { Container, Service } from 'typedi';
+import { AiSpendBudget } from '../ai/AiSpendBudget';
 import { INVOICE_EXTRACTION_PROMPT, PROMPT_VERSION } from './invoicePrompt';
 import { extractText } from './pdfExtraction';
 
@@ -85,9 +86,17 @@ const EMPTY_RESULT: InvoiceExtractionResult = { invoices: [], usage: { upstreamC
 
 @Service()
 export class InvoiceExtractionService {
-  async extract(bytes: Uint8Array, mimeType: string): Promise<InvoiceExtractionResult> {
+  private readonly budget = Container.get(AiSpendBudget);
+
+  async extract(
+    userId: string,
+    bytes: Uint8Array,
+    mimeType: string
+  ): Promise<InvoiceExtractionResult> {
     const provider = this.getProvider();
     if (!provider) return EMPTY_RESULT;
+    // Either path below is one model call; the budget refuses before it (SC-1265).
+    await this.budget.reserve(userId, 1);
 
     if (mimeType === PDF_MIME_TYPE && provider.parseDocumentText) {
       // Route on the text we can ACTUALLY read, not on whether every page
