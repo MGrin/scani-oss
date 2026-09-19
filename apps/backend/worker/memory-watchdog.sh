@@ -20,6 +20,12 @@
 # sets a `redis-cli ping` when this machine hosts Redis), the command runs every
 # read. It arms on its first PONG, so a Redis still loading its AOF at boot
 # cannot trip it, and PING_STRIKES consecutive misses stop <pid> the same way.
+#
+# The 09-19 incident could not say WHICH process grew: Fly keeps 100 log lines
+# and they had rolled. With WATCHDOG_HISTORY_FILE set (the entrypoint points it
+# at the persistent volume), one line of available memory and each watched
+# process's RSS is appended every HISTORY_EVERY reads, rotated at
+# HISTORY_MAX_KB, so it survives the restart the watchdog itself causes.
 set -u
 
 pid="$1"
@@ -39,17 +45,33 @@ ping_strikes_needed="${WATCHDOG_PING_STRIKES:-6}"
 # Redis still loading, so after this many reads with no PONG it says so, and
 # again every REPORT_EVERY reads until it arms.
 ping_unarmed_warn="${WATCHDOG_PING_UNARMED_WARN:-60}"
+history="${WATCHDOG_HISTORY_FILE:-}"
+history_every="${WATCHDOG_HISTORY_EVERY:-12}"
+history_max_kb="${WATCHDOG_HISTORY_MAX_KB:-1024}"
+# Another process worth recording beside <pid>: the embedded Redis.
+also_pid="${WATCHDOG_ALSO_PID:-}"
 
 available_mb() {
   awk '/^MemAvailable:/ { printf "%d", $2 / 1024; found = 1 } END { if (!found) print "" }' "$meminfo" 2>/dev/null
 }
 
 rss_mb() {
-  awk '/^VmRSS:/ { printf "%d", $2 / 1024 }' "/proc/$pid/status" 2>/dev/null
+  awk '/^VmRSS:/ { printf "%d", $2 / 1024 }' "/proc/${1:-$pid}/status" 2>/dev/null
+}
+
+record() {
+  [ -n "$history" ] || return 0
+  line="$(date -u +%Y-%m-%dT%H:%M:%SZ) available=${1}MB worker_rss=$(rss_mb)MB"
+  [ -n "$also_pid" ] && line="$line other_rss=$(rss_mb "$also_pid")MB"
+  echo "$line" >> "$history" 2>/dev/null || return 0
+  size_kb=$(($(wc -c < "$history" 2>/dev/null || echo 0) / 1024))
+  [ "$size_kb" -ge "$history_max_kb" ] && mv -f "$history" "$history.1" 2>/dev/null
+  return 0
 }
 
 stop_worker() {
   echo "memory-watchdog: STOPPING worker pid $pid — $1 (SC-1269)" >&2
+  [ -n "$history" ] && echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) STOPPING: $1" >> "$history" 2>/dev/null
   : > "$marker"
   kill -TERM "$pid" 2>/dev/null
   waited=0
@@ -86,6 +108,7 @@ while kill -0 "$pid" 2>/dev/null; do
     # Could not read memory: say so once per report period rather than act on it.
     [ $((tick % report_every)) -eq 1 ] && echo "memory-watchdog: MemAvailable unreadable from $meminfo; not acting" >&2
   else
+    [ $(((tick - 1) % history_every)) -eq 0 ] && record "$avail"
     if [ $((tick % report_every)) -eq 1 ]; then
       echo "memory-watchdog: available=${avail}MB worker_rss=$(rss_mb)MB floor=${floor_mb}MB"
     fi

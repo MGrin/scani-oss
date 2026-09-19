@@ -4,7 +4,7 @@
  * whether the process survives.
  */
 import { afterEach, describe, expect, test } from 'bun:test';
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -176,5 +176,51 @@ describe('the liveness ping (SC-1269)', () => {
     await Bun.sleep(600);
     expect(alive(victim.pid)).toBe(true);
     expect(existsSync(marker(path))).toBe(false);
+  });
+});
+
+describe('the memory history (SC-1269)', () => {
+  const history = (path: string) => join(path, '..', 'history.log');
+  const read = (file: string) => (existsSync(file) ? readFileSync(file, 'utf8') : '');
+
+  test('records available memory and each watched process, one line per period', async () => {
+    const path = meminfo(600);
+    const other = Bun.spawn(['sleep', '60']);
+    victims.push(other);
+    const { victim, watchdog } = start(path, {
+      WATCHDOG_HISTORY_FILE: history(path),
+      WATCHDOG_HISTORY_EVERY: '1',
+      WATCHDOG_ALSO_PID: String(other.pid),
+    });
+    await Bun.sleep(400);
+    victim.kill('SIGKILL');
+    await watchdog.exited;
+    const lines = read(history(path)).trim().split('\n');
+    expect(lines.length).toBeGreaterThan(2);
+    expect(lines[0]).toMatch(
+      /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ available=600MB worker_rss=\d*MB other_rss=\d*MB$/
+    );
+  });
+
+  test('a stop is written to the history, so it survives the restart it causes', async () => {
+    const path = meminfo(40);
+    const { watchdog } = start(path, { WATCHDOG_HISTORY_FILE: history(path) });
+    await watchdog.exited;
+    expect(read(history(path))).toContain('STOPPING: available=40MB');
+  });
+
+  test('rotates at the size cap rather than growing without bound', async () => {
+    const path = meminfo(600);
+    writeFileSync(history(path), 'x'.repeat(2048));
+    const { victim, watchdog } = start(path, {
+      WATCHDOG_HISTORY_FILE: history(path),
+      WATCHDOG_HISTORY_EVERY: '1',
+      WATCHDOG_HISTORY_MAX_KB: '2',
+    });
+    await Bun.sleep(300);
+    victim.kill('SIGKILL');
+    await watchdog.exited;
+    expect(existsSync(`${history(path)}.1`)).toBe(true);
+    expect(read(history(path)).length).toBeLessThan(2048);
   });
 });
