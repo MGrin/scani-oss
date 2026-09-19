@@ -16,6 +16,7 @@ import {
 } from '../../lib/accounts';
 import { V3_ROUTES } from '../../lib/routes';
 import { useOpenCapture } from '../capture/CaptureSheetContext';
+import { ReturnsBlock } from '../home/ReturnsBlock';
 import { EntityValueSummary } from './EntityValueSummary';
 import { InstitutionMark } from './InstitutionMark';
 
@@ -164,6 +165,7 @@ export function InstitutionsList({ institutions, currency, types, query }: Insti
             ? [{ label: t('v3.entities.institution.description'), value: institution.description }]
             : []),
         ],
+        content: <ReturnsBlock scope={{ kind: 'institution', id: institution.id }} />,
         actions: (
           <>
             <Button asChild variant="outline" size="sm">

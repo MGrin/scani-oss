@@ -16,17 +16,20 @@ import {
 import { VIEW_PREFERENCE_KEYS } from '../../lib/view-preference';
 
 /**
- * How the portfolio did, two ways (SC-1159) — see `lib/returns.ts` for why
- * both. Renders nothing until there is history to measure: a card of dashes
+ * How the portfolio, or one account or institution in it, did, two ways
+ * (SC-1159) — see `lib/returns.ts` for why both. Renders nothing until there is history to measure: a card of dashes
  * above a portfolio added today tells a newcomer nothing.
  */
-export function ReturnsBlock() {
+/** Omitted = the whole portfolio. */
+export type ReturnsCardScope = { kind: 'account' | 'institution'; id: string };
+
+export function ReturnsBlock({ scope }: { scope?: ReturnsCardScope } = {}) {
   const [windowKey, setWindowKey] = useViewPreference<ReturnsWindow>(
     VIEW_PREFERENCE_KEYS.homeReturnsWindow,
     'ytd',
     RETURNS_WINDOW_KEYS
   );
-  const query = trpc.portfolio.getReturns.useQuery({ window: { kind: windowKey } });
+  const query = trpc.portfolio.getReturns.useQuery({ window: { kind: windowKey }, scope });
   const view = returnsView(query.data?.returns);
   // Keep the card standing while another window loads, so the switch does not
   // collapse and re-grow the row it sits in.
