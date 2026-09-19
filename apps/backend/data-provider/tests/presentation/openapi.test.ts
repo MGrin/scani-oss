@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { buildOpenApiDocument } from '../../src/presentation/openapi';
 import { appRouter } from '../../src/presentation/router';
+import { internalProcedure } from '../../src/presentation/trpc';
 
 /**
  * The published spec is the Cloud API's shopfront: `cloud.scani.xyz`
@@ -44,7 +45,26 @@ describe('OpenAPI document', () => {
     // exactly the nine procedures the PR says it did.
     // (26 since SC-208 added `storage.readObject` + `storage.writeObject`;
     // 24 since SC-167 added `storage.objectExists`.)
-    expect(everyOperation().length).toBe(17);
+    // 8 since SC-1277 hid the 9 internal ones: 17 - 9.
+    expect(everyOperation().length).toBe(8);
+  });
+
+  // SC-1277: the reference is what a new Cloud customer reads, and it listed
+  // `email.send` and the eight `storage.*` — calls their key is refused with
+  // 403 (SC-585). The set is DERIVED from the router, by the guard middleware
+  // `internalProcedure` adds, so the next internal procedure is caught too.
+  test('lists no procedure a Cloud key is refused', () => {
+    // biome-ignore lint/suspicious/noExplicitAny: tRPC keeps middlewares off its public types
+    const guard = (internalProcedure as any)._def.middlewares.at(-1);
+    // biome-ignore lint/suspicious/noExplicitAny: as above, for the router's procedure map
+    const procedures = (appRouter as any)._def.procedures as Record<string, any>;
+    const internal = Object.entries(procedures)
+      .filter(([, procedure]) => procedure._def.middlewares.includes(guard))
+      .map(([name]) => `/trpc/${name}`);
+
+    expect(internal).toContain('/trpc/email.send');
+    expect(internal.length).toBe(9);
+    expect(Object.keys(paths).filter((path) => internal.includes(path))).toEqual([]);
   });
 
   test('no operation publishes an empty response schema', () => {

@@ -82,7 +82,7 @@ export function buildOpenApiDocument(
   const doc = generateOpenApiDocument(router, {
     title: 'Scani Cloud API',
     description:
-      'Scani-managed third-party integration surface (pricing, chains, tokens, AI, OG, storage, email). ' +
+      'Scani-managed third-party integration surface: chains, tokens, Open Graph metadata and the contact form. ' +
       'All endpoints listed here are tRPC procedures reachable over HTTP at ' +
       '`/trpc/<router>.<procedure>`. Authenticate with `Authorization: Bearer scani_sk_…`. ' +
       'For TypeScript callers, the typed `@scani/cloud-client` (httpBatchLink) is the ' +

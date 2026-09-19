@@ -20,10 +20,13 @@ const sendInput = z.object({
   html: z.string().optional(),
 });
 
+// Every procedure here is internal: a Cloud key is refused (SC-585), so
+// `openapi.enabled: false` keeps them out of the public reference (SC-1277).
 export const emailRouter = router({
   send: internalProcedure
     .meta({
       openapi: {
+        enabled: false,
         method: 'POST',
         path: '/trpc/email.send',
         tags: ['email'],

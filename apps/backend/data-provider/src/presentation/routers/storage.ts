@@ -30,10 +30,13 @@ const storage = (): StorageService => Container.get(StorageService);
 // decoded into a Buffer, rather than after.
 const WRITE_OBJECT_MAX_BASE64_CHARS = Math.ceil((256 * 1024 * 4) / 3);
 
+// Every procedure here is internal: a Cloud key is refused (SC-585), so
+// `openapi.enabled: false` keeps them out of the public reference (SC-1277).
 export const storageRouter = router({
   presignUpload: internalProcedure
     .meta({
       openapi: {
+        enabled: false,
         method: 'POST',
         path: '/trpc/storage.presignUpload',
         tags: ['storage'],
@@ -65,6 +68,7 @@ export const storageRouter = router({
   presignDownload: internalProcedure
     .meta({
       openapi: {
+        enabled: false,
         method: 'GET',
         path: '/trpc/storage.presignDownload',
         tags: ['storage'],
@@ -88,6 +92,7 @@ export const storageRouter = router({
   objectExists: internalProcedure
     .meta({
       openapi: {
+        enabled: false,
         method: 'POST',
         path: '/trpc/storage.objectExists',
         tags: ['storage'],
@@ -121,6 +126,7 @@ export const storageRouter = router({
   readTempBlob: internalProcedure
     .meta({
       openapi: {
+        enabled: false,
         method: 'POST',
         path: '/trpc/storage.readTempBlob',
         tags: ['storage'],
@@ -160,6 +166,7 @@ export const storageRouter = router({
   readObject: internalProcedure
     .meta({
       openapi: {
+        enabled: false,
         method: 'POST',
         path: '/trpc/storage.readObject',
         tags: ['storage'],
@@ -212,6 +219,7 @@ export const storageRouter = router({
   writeObject: internalProcedure
     .meta({
       openapi: {
+        enabled: false,
         method: 'POST',
         path: '/trpc/storage.writeObject',
         tags: ['storage'],
@@ -251,6 +259,7 @@ export const storageRouter = router({
   copyObject: internalProcedure
     .meta({
       openapi: {
+        enabled: false,
         method: 'POST',
         path: '/trpc/storage.copyObject',
         tags: ['storage'],
@@ -289,6 +298,7 @@ export const storageRouter = router({
   deleteTempBlob: internalProcedure
     .meta({
       openapi: {
+        enabled: false,
         method: 'POST',
         path: '/trpc/storage.deleteTempBlob',
         tags: ['storage'],
