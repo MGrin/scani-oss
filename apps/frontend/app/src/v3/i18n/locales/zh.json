@@ -194,6 +194,10 @@
       },
       "runway": {
         "label": "资金可支撑"
+      },
+      "bankReconnect": {
+        "notice_other": "{{count}} 家银行已停止同步，需要重新连接。",
+        "action": "重新连接"
       }
     },
     "money": {
@@ -1817,7 +1821,15 @@
           "toHoldings": "前往持仓",
           "failTitle": "银行未能关联",
           "failBody": "Salt Edge 报告:{{reason}}。没有保存任何内容,你可以重试。",
-          "tryAgain": "重试"
+          "tryAgain": "重试",
+          "banks": {
+            "title": "你的银行",
+            "label": "银行 {{n}}",
+            "syncing": "正在同步",
+            "needsReconnect": "需要重新连接",
+            "reconnect": "重新连接",
+            "hint": "银行授权会在一段时间后过期，之后银行将停止同步。重新连接会续期授权，并保留所有已导入的数据。"
+          }
         }
       },
       "demoNote": "在这里输入的内容不会保存——这是演示。"

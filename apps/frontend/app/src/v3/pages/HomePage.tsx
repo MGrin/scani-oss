@@ -12,6 +12,10 @@ import { useOpenCapture } from '../components/capture/CaptureSheetContext';
 import { StaleNotice } from '../components/feedback/StaleNotice';
 import { AllocationBlock } from '../components/home/AllocationBlock';
 import { AttentionRow } from '../components/home/AttentionRow';
+import {
+  BankReconnectLine,
+  useBanksNeedingReconnect,
+} from '../components/home/BankReconnectNotice';
 import { FirstRun } from '../components/home/FirstRun';
 import { GroupsBlock } from '../components/home/GroupsBlock';
 import { HeroBlock } from '../components/home/HeroBlock';
@@ -158,6 +162,7 @@ export function HomePage() {
   const overview = trpc.dashboard.getOverview.useQuery();
   const openCapture = useOpenCapture();
   const { count: reviewCount } = useReviewFeed();
+  const banksNeedingReconnect = useBanksNeedingReconnect();
   const loadingPhase = useDelayedLoading(overview.isLoading);
   useNetWorthSeriesPrefetch();
 
@@ -250,6 +255,12 @@ export function HomePage() {
         {overview.isError ? (
           <DashboardItem span="full">
             <StaleNotice onRetry={() => void overview.refetch()} />
+          </DashboardItem>
+        ) : null}
+
+        {banksNeedingReconnect > 0 ? (
+          <DashboardItem span="full">
+            <BankReconnectLine count={banksNeedingReconnect} />
           </DashboardItem>
         ) : null}
 

@@ -2,7 +2,7 @@ import { type DatabaseTransaction, getDb } from '@scani/db';
 import { institutions, saltedgeConnections, saltedgeCustomers } from '@scani/db/schema';
 import { ProviderRegistry } from '@scani/providers/core/registry';
 import { SaltEdgeProvider } from '@scani/providers/providers/saltedge';
-import { eq } from 'drizzle-orm';
+import { and, asc, eq } from 'drizzle-orm';
 import { Container, Service } from 'typedi';
 import { IntegrationCredentialsService } from '../users/IntegrationCredentialsService';
 
@@ -11,6 +11,10 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 /** How far back a new connection asks the bank for; each bank caps it lower. */
 const CONSENT_HISTORY_DAYS = 2 * 365;
 
+function consentFromDate(now: Date): string {
+  return new Date(now.getTime() - CONSENT_HISTORY_DAYS * DAY_MS).toISOString().slice(0, 10);
+}
+
 type SaltEdgeCallbackKind = 'success' | 'fail' | 'notify' | 'destroy' | 'consent';
 
 interface SaltEdgeCallbackData {
@@ -18,6 +22,15 @@ interface SaltEdgeCallbackData {
   customerId: string;
   /** `error_class` on a fail callback; the revoke reason on a consent one. */
   errorClass?: string;
+}
+
+export interface SaltEdgeConnectionView {
+  connectionId: string;
+  status: string;
+  lastError: string | null;
+  updatedAt: Date;
+  /** Anything but `active`: an expired or revoked consent, or a failed link. */
+  needsReconnect: boolean;
 }
 
 type SaltEdgeCallbackOutcome =
@@ -77,10 +90,58 @@ export class SaltEdgeConnectionService {
     now = new Date()
   ): Promise<string> {
     const customerId = await this.ensureCustomer(userId, tx);
-    const fromDate = new Date(now.getTime() - CONSENT_HISTORY_DAYS * DAY_MS)
-      .toISOString()
-      .slice(0, 10);
-    return this.provider().createConnectSession({ customerId, returnTo, fromDate });
+    return this.provider().createConnectSession({
+      customerId,
+      returnTo,
+      fromDate: consentFromDate(now),
+    });
+  }
+
+  /** The user's linked banks, oldest first. */
+  async listConnections(
+    userId: string,
+    tx?: DatabaseTransaction
+  ): Promise<SaltEdgeConnectionView[]> {
+    const rows = await (tx ?? getDb())
+      .select({
+        connectionId: saltedgeConnections.connectionId,
+        status: saltedgeConnections.status,
+        lastError: saltedgeConnections.lastError,
+        updatedAt: saltedgeConnections.updatedAt,
+      })
+      .from(saltedgeConnections)
+      .where(eq(saltedgeConnections.userId, userId))
+      .orderBy(asc(saltedgeConnections.createdAt));
+    return rows.map((row) => ({ ...row, needsReconnect: row.status !== 'active' }));
+  }
+
+  /**
+   * The widget url that renews consent on one of the user's connections. The
+   * ownership check comes first: a connection id is Salt Edge's, and a guessed
+   * one must never open a session on someone else's bank.
+   */
+  async startReconnect(
+    userId: string,
+    connectionId: string,
+    returnTo: string,
+    tx?: DatabaseTransaction,
+    now = new Date()
+  ): Promise<string> {
+    const [owned] = await (tx ?? getDb())
+      .select({ id: saltedgeConnections.id })
+      .from(saltedgeConnections)
+      .where(
+        and(
+          eq(saltedgeConnections.userId, userId),
+          eq(saltedgeConnections.connectionId, connectionId)
+        )
+      );
+    if (!owned) throw new Error('Salt Edge connection not found');
+    return this.provider().createReconnectSession({
+      connectionId,
+      returnTo,
+      fromDate: consentFromDate(now),
+    });
   }
 
   async applyCallback(

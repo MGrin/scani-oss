@@ -216,6 +216,11 @@
       },
       "runway": {
         "label": "Money lasts"
+      },
+      "bankReconnect": {
+        "notice_one": "{{count}} bank stopped syncing and needs reconnecting.",
+        "notice_other": "{{count}} banks stopped syncing and need reconnecting.",
+        "action": "Reconnect"
       }
     },
     "money": {
@@ -1971,7 +1976,15 @@
           "toHoldings": "Go to Holdings",
           "failTitle": "Your bank wasn't linked",
           "failBody": "Salt Edge reported {{reason}}. Nothing was saved, and you can try again.",
-          "tryAgain": "Try again"
+          "tryAgain": "Try again",
+          "banks": {
+            "title": "Your banks",
+            "label": "Bank {{n}}",
+            "syncing": "Syncing",
+            "needsReconnect": "Needs reconnecting",
+            "reconnect": "Reconnect",
+            "hint": "A bank's permission runs out after a while, and the bank then stops syncing. Reconnecting renews it and keeps everything already imported."
+          }
         }
       },
       "demoNote": "Nothing you enter here is saved — this is the demo."

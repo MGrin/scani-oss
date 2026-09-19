@@ -114,7 +114,15 @@
           "toHoldings": "Ir para Posições",
           "failTitle": "Seu banco não foi vinculado",
           "failBody": "A Salt Edge informou {{reason}}. Nada foi salvo e você pode tentar de novo.",
-          "tryAgain": "Tentar de novo"
+          "tryAgain": "Tentar de novo",
+          "banks": {
+            "title": "Seus bancos",
+            "label": "Banco {{n}}",
+            "syncing": "Sincronizando",
+            "needsReconnect": "Precisa ser reconectado",
+            "reconnect": "Reconectar",
+            "hint": "A permissão de um banco expira depois de um tempo, e o banco deixa de sincronizar. Reconectar renova a permissão e mantém tudo o que já foi importado."
+          }
         }
       },
       "integrations": {
@@ -1118,6 +1126,12 @@
         "ofTarget": "de <target></target>",
         "progress": "{{name}}: {{percent}}% da meta",
         "title": "Objetivos"
+      },
+      "bankReconnect": {
+        "notice_one": "{{count}} banco parou de sincronizar e precisa ser reconectado.",
+        "notice_many": "{{count}} de bancos pararam de sincronizar e precisam ser reconectados.",
+        "notice_other": "{{count}} bancos pararam de sincronizar e precisam ser reconectados.",
+        "action": "Reconectar"
       }
     },
     "jobs": {

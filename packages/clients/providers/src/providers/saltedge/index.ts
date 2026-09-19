@@ -159,7 +159,39 @@ export class SaltEdgeProvider implements BalanceProvider, TransactionsProvider {
       {
         customer_id: input.customerId,
         consent: { scopes, from_date: input.fromDate },
-        attempt: { fetch_scopes: scopes, from_date: input.fromDate, return_to: input.returnTo },
+        attempt: {
+          fetch_scopes: scopes,
+          fetch_from_date: input.fromDate,
+          return_to: input.returnTo,
+        },
+        // The return page reads it to tell a failed link from a good one.
+        return_error_class: true,
+      }
+    );
+    return session.connect_url;
+  }
+
+  /**
+   * A widget session that renews consent on an existing connection, which is
+   * how an `inactive` one (consent expired or revoked) comes back. Keeping the
+   * connection keeps its accounts, so nothing already imported is duplicated.
+   */
+  async createReconnectSession(input: {
+    connectionId: string;
+    returnTo: string;
+    fromDate: string;
+  }): Promise<string> {
+    const scopes = ['accounts', 'transactions'];
+    const session = await this.requireClient().post<{ connect_url: string }>(
+      `/api/v6/connections/${encodeURIComponent(input.connectionId)}/reconnect`,
+      {
+        consent: { scopes, from_date: input.fromDate },
+        attempt: {
+          fetch_scopes: scopes,
+          fetch_from_date: input.fromDate,
+          return_to: input.returnTo,
+        },
+        return_error_class: true,
       }
     );
     return session.connect_url;

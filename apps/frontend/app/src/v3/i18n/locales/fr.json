@@ -1060,6 +1060,12 @@
       },
       "runway": {
         "label": "Autonomie financière"
+      },
+      "bankReconnect": {
+        "notice_one": "{{count}} banque ne se synchronise plus et doit être reconnectée.",
+        "notice_many": "{{count}} de banques ne se synchronisent plus et doivent être reconnectées.",
+        "notice_other": "{{count}} banques ne se synchronisent plus et doivent être reconnectées.",
+        "action": "Reconnecter"
       }
     },
     "holdings": {
@@ -1567,7 +1573,15 @@
           "toHoldings": "Aller aux Avoirs",
           "failTitle": "Votre banque n'a pas été liée",
           "failBody": "Salt Edge a signalé {{reason}}. Rien n'a été enregistré et vous pouvez réessayer.",
-          "tryAgain": "Réessayer"
+          "tryAgain": "Réessayer",
+          "banks": {
+            "title": "Vos banques",
+            "label": "Banque {{n}}",
+            "syncing": "Synchronisée",
+            "needsReconnect": "À reconnecter",
+            "reconnect": "Reconnecter",
+            "hint": "L'autorisation d'une banque expire au bout d'un certain temps, et la banque cesse alors de se synchroniser. La reconnecter la renouvelle et conserve tout ce qui a déjà été importé."
+          }
         }
       },
       "demoNote": "Rien de ce que vous saisissez ici n'est enregistré — c'est une démo."

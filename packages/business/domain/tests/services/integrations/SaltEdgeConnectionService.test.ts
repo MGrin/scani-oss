@@ -21,6 +21,11 @@ function makeService(opts: { customerId?: string; configured?: boolean } = {}) {
     return opts.customerId ?? 'cust-1';
   };
   provider.createConnectSession = async (input) => `https://connect.example/?c=${input.customerId}`;
+  const reconnects: { connectionId: string; returnTo: string }[] = [];
+  provider.createReconnectSession = async (input) => {
+    reconnects.push({ connectionId: input.connectionId, returnTo: input.returnTo });
+    return `https://connect.example/?r=${input.connectionId}`;
+  };
   Container.set(ProviderRegistry, {
     getBalanceFetcher: (code: string) =>
       opts.configured === false || code !== 'saltedge' ? null : provider,
@@ -32,7 +37,7 @@ function makeService(opts: { customerId?: string; configured?: boolean } = {}) {
     },
   } as unknown as IntegrationCredentialsService);
   const service = new SaltEdgeConnectionService();
-  return { service, created, stored };
+  return { service, created, stored, reconnects };
 }
 
 describe('SaltEdgeConnectionService.ensureCustomer', () => {
@@ -145,6 +150,71 @@ describe('SaltEdgeConnectionService.applyCallback', () => {
       );
       expect(outcome).toEqual({ kind: 'ignored', reason: 'unknown-customer' });
       expect(await row(tx)).toBeUndefined();
+    });
+  });
+});
+
+describe('SaltEdgeConnectionService — reconnecting a bank', () => {
+  type Tx = Parameters<Parameters<typeof withTestDb>[0]>[0];
+  async function link(
+    tx: Tx,
+    userId: string,
+    customerId: string,
+    connectionId: string,
+    status: string
+  ) {
+    await tx.insert(schema.saltedgeCustomers).values({ userId, customerId }).onConflictDoNothing();
+    await tx.insert(schema.saltedgeConnections).values({
+      userId,
+      customerId,
+      connectionId,
+      status,
+      lastError: status === 'active' ? null : 'expired',
+    });
+  }
+
+  test("lists only the user's own banks, and says which need reconnecting", async () => {
+    await withTestDb(async (tx) => {
+      const me = await makeUser(tx);
+      const other = await makeUser(tx);
+      await link(tx, me.id, 'cust-me', 'conn-ok', 'active');
+      await link(tx, me.id, 'cust-me', 'conn-expired', 'inactive');
+      await link(tx, me.id, 'cust-me', 'conn-failed', 'failed');
+      await link(tx, other.id, 'cust-other', 'conn-theirs', 'inactive');
+      const { service } = makeService();
+      const rows = await service.listConnections(me.id, tx);
+      expect(rows.map((r) => [r.connectionId, r.needsReconnect]).sort()).toEqual([
+        ['conn-expired', true],
+        ['conn-failed', true],
+        ['conn-ok', false],
+      ]);
+    });
+  });
+
+  test('reconnect opens a widget session on that connection', async () => {
+    await withTestDb(async (tx) => {
+      const me = await makeUser(tx);
+      await link(tx, me.id, 'cust-me', 'conn-expired', 'inactive');
+      const { service, reconnects } = makeService();
+      expect(await service.startReconnect(me.id, 'conn-expired', 'https://app/return', tx)).toBe(
+        'https://connect.example/?r=conn-expired'
+      );
+      expect(reconnects).toEqual([
+        { connectionId: 'conn-expired', returnTo: 'https://app/return' },
+      ]);
+    });
+  });
+
+  test("reconnecting someone else's bank is refused before Salt Edge is asked", async () => {
+    await withTestDb(async (tx) => {
+      const me = await makeUser(tx);
+      const other = await makeUser(tx);
+      await link(tx, other.id, 'cust-other', 'conn-theirs', 'inactive');
+      const { service, reconnects } = makeService();
+      await expect(
+        service.startReconnect(me.id, 'conn-theirs', 'https://app/return', tx)
+      ).rejects.toThrow(/not found/i);
+      expect(reconnects).toEqual([]);
     });
   });
 });

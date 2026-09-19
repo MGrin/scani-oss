@@ -292,6 +292,44 @@ describe('SaltEdgeProvider — customers and connect sessions', () => {
     expect(body.data.consent.scopes).toEqual(['accounts', 'transactions']);
     expect(body.data.attempt.return_to).toBe('https://app.example/return');
     expect(body.data.attempt.fetch_scopes).toEqual(['accounts', 'transactions']);
+    // v6 names the attempt's window `fetch_from_date`; `from_date` there is not
+    // a field, so the bank would fall back to its own default depth.
+    expect(body.data.attempt.fetch_from_date).toBe('2024-09-19');
+    expect(body.data.attempt.from_date).toBeUndefined();
+    // The return page tells a failed link from a good one by `error_class`,
+    // which Salt Edge appends to `return_to` only when asked.
+    expect(body.data.return_error_class).toBe(true);
+  });
+
+  test('createReconnectSession renews consent on the same connection', async () => {
+    const api = postApi({ connect_url: 'https://www.saltedge.com/connect?token=r' });
+    const p = new SaltEdgeProvider(
+      new SaltEdgeClient(creds, limiter(), { baseUrl: BASE, fetchImpl: api.fetchImpl })
+    );
+    const url = await p.createReconnectSession({
+      connectionId: 'conn-7',
+      returnTo: 'https://app.example/return',
+      fromDate: '2024-09-19',
+    });
+    expect(url).toBe('https://www.saltedge.com/connect?token=r');
+    expect(api.calls[0]?.url).toBe(`${BASE}/api/v6/connections/conn-7/reconnect`);
+    const body = JSON.parse(api.calls[0]?.body ?? '{}');
+    expect(body.data.consent).toEqual({
+      scopes: ['accounts', 'transactions'],
+      from_date: '2024-09-19',
+    });
+    expect(body.data.attempt.return_to).toBe('https://app.example/return');
+    expect(body.data.attempt.fetch_from_date).toBe('2024-09-19');
+    expect(body.data.return_error_class).toBe(true);
+  });
+
+  test('a connection id is path-escaped, never spliced raw', async () => {
+    const api = postApi({ connect_url: 'u' });
+    const p = new SaltEdgeProvider(
+      new SaltEdgeClient(creds, limiter(), { baseUrl: BASE, fetchImpl: api.fetchImpl })
+    );
+    await p.createReconnectSession({ connectionId: '../customers', returnTo: 'r', fromDate: 'd' });
+    expect(api.calls[0]?.url).toBe(`${BASE}/api/v6/connections/..%2Fcustomers/reconnect`);
   });
 
   test('a signed POST signs the body it sends', async () => {

@@ -114,7 +114,15 @@
           "toHoldings": "Ir a Posiciones",
           "failTitle": "Tu banco no se vinculó",
           "failBody": "Salt Edge informó {{reason}}. No se guardó nada y puedes intentarlo de nuevo.",
-          "tryAgain": "Intentar de nuevo"
+          "tryAgain": "Intentar de nuevo",
+          "banks": {
+            "title": "Tus bancos",
+            "label": "Banco {{n}}",
+            "syncing": "Sincronizando",
+            "needsReconnect": "Hay que volver a conectarlo",
+            "reconnect": "Volver a conectar",
+            "hint": "El permiso de un banco caduca pasado un tiempo, y entonces deja de sincronizarse. Volver a conectarlo lo renueva y conserva todo lo ya importado."
+          }
         }
       },
       "integrations": {
@@ -1118,6 +1126,12 @@
         "ofTarget": "de <target></target>",
         "progress": "{{name}}: {{percent}} % de la meta",
         "title": "Objetivos"
+      },
+      "bankReconnect": {
+        "notice_one": "{{count}} banco dejó de sincronizarse y hay que volver a conectarlo.",
+        "notice_many": "{{count}} de bancos dejaron de sincronizarse y hay que volver a conectarlos.",
+        "notice_other": "{{count}} bancos dejaron de sincronizarse y hay que volver a conectarlos.",
+        "action": "Volver a conectar"
       }
     },
     "jobs": {

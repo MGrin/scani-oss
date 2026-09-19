@@ -31,7 +31,7 @@ Located in `apps/backend/api/src/presentation/routers/`.
 | `portfolio` | Dashboard headline + chart series (reads `portfolio_value_daily`). |
 | `dashboard` | Aggregate dashboard data — composes calls to `portfolio` + per-scope rollups. |
 | `integrations` | Connect / disconnect provider integrations (Binance OAuth, exchange API keys, brokerage tokens, wallets). Owns encrypt/decrypt of credentials. |
-| `saltedge` | `startConnect` opens a Salt Edge hosted-widget session to link a bank and returns its URL; the return page is fixed server-side. Salt Edge's signed callbacks arrive on the plain HTTP route `POST /webhooks/saltedge/:kind`, mounted only when `SALTEDGE_CALLBACK_PUBLIC_KEY` is set. |
+| `saltedge` | `startConnect` opens a Salt Edge hosted-widget session to link a bank and returns its URL; the return page is fixed server-side. `connections` lists the caller's linked banks and which need reconnecting; `startReconnect` renews consent on one of them, refusing another user's connection with `NOT_FOUND`. Salt Edge's signed callbacks arrive on the plain HTTP route `POST /webhooks/saltedge/:kind`, mounted only when `SALTEDGE_CALLBACK_PUBLIC_KEY` is set. |
 | `wallet` | Add on-chain wallets; list the chains that are supported. |
 | `screenshots` | Upload screenshot to S3, enqueue `screenshot-parse` job. |
 | `file-import` | Upload CSV / file, enqueue `file-import` job. |

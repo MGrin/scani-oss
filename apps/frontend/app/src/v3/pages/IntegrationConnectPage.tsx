@@ -14,6 +14,7 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useParams } from 'react-router-dom';
 import { trpc } from '@/lib/trpc';
+import { BankReconnectList } from '../components/capture/BankReconnectList';
 import { CaptureHeader } from '../components/capture/CaptureHeader';
 import { CaptureSubmit } from '../components/capture/CaptureSubmit';
 import type { Integration } from '../components/capture/IntegrationsList';
@@ -151,6 +152,7 @@ function RedirectConnect({ integration }: { integration: Integration }) {
         backTo={V3_CAPTURE_ROUTES.integrations}
         backLabel={t('v3.capture.integration.allServices')}
       />
+      <BankReconnectList institutionName={institution.name} />
       <Block>
         <FieldSet title={t('v3.capture.integration.redirect.howItWorks')}>
           <ol className="flex list-decimal flex-col gap-1.5 ps-5 text-body text-muted-foreground marker:text-caption">
