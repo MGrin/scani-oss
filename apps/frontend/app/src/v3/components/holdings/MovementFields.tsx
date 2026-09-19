@@ -2,8 +2,10 @@ import { HOLDING_MOVEMENT_DIRECTIONS, type HoldingMovementDirection } from '@sca
 import { Input } from '@scani/ui/ui/input';
 import { Segmented, SegmentedItem } from '@scani/ui/ui/segmented';
 import { AmountInput } from '@scani/ui/v3/components/AmountInput';
+import { resolveNumeric } from '@scani/ui/v3/lib/numeric';
 import { useTranslation } from 'react-i18next';
 import type { MovementForm } from '../../hooks/useMovementForm';
+import { amountDecimals } from '../../lib/holdings';
 import { MOVEMENT_OUTFLOW_OPTIONS, type MovementHolding } from '../../lib/movement-form';
 import { AccountTargetFields } from '../capture/AccountTargetFields';
 import { DateField } from '../form/DateField';
@@ -69,7 +71,12 @@ export function MovementWhatFields({ form, holding, holdings, disabled }: Moveme
         hint={
           form.selected
             ? t('v3.holdings.movement.currentBalance', {
-                amount: form.selected.amount,
+                // Formatted as the holdings table shows it, so the reader can
+                // match the two figures.
+                amount: resolveNumeric(form.selected.amount, {
+                  format: 'plain',
+                  decimals: amountDecimals(form.selected.amount),
+                }).text,
                 symbol: form.selected.token.symbol,
               })
             : undefined
