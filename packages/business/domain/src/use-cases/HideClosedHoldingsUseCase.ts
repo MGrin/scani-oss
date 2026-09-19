@@ -1,3 +1,4 @@
+import type { DatabaseTransaction } from '@scani/db';
 import { db } from '@scani/db/connection';
 import { createComponentLogger } from '@scani/logging';
 import { sql } from 'drizzle-orm';
@@ -29,7 +30,7 @@ export class HideClosedHoldingsUseCase {
   // Idempotent: re-running a closed holding is a no-op (it's already
   // hidden). Re-opening a position via a new tx makes the next sweep
   // skip it (latest_tx_at advances; balance > 0).
-  async execute(): Promise<HideClosedHoldingsSummary> {
+  async execute(tx?: DatabaseTransaction): Promise<HideClosedHoldingsSummary> {
     const start = Date.now();
     const cutoff = new Date(Date.now() - STALE_DAYS * 24 * 60 * 60 * 1000);
 
@@ -37,7 +38,7 @@ export class HideClosedHoldingsUseCase {
     // balance=0 whose newest tx (if any) is older than the cutoff, and
     // hide it. The CTE narrows candidates first; the cutoff applies in
     // the UPDATE so re-opened positions get a chance to skip the sweep.
-    const rows = (await db.execute<{ id: string; symbol: string }>(sql`
+    const rows = (await (tx ?? db).execute<{ id: string; symbol: string }>(sql`
       WITH candidates AS (
         SELECT h.id, t.symbol,
                (SELECT MAX(occurred_at) FROM holding_transactions WHERE holding_id = h.id) AS latest_tx
