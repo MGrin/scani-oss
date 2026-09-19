@@ -103,7 +103,19 @@
         "title": "Ligar um serviço",
         "unverifiedDetail": "O {{name}} não respondeu, por isso não podemos dizer se as chaves estão certas. Nada foi guardado — tente novamente daqui a um minuto.",
         "unverifiedTitle": "Não foi possível verificar as suas chaves do {{name}}",
-        "whereToGet": "Onde as obter"
+        "whereToGet": "Onde as obter",
+        "redirect": {
+          "permissions": "Você entra na página do seu próprio banco. O Scani recebe acesso somente leitura e nunca vê a senha do seu banco.",
+          "howItWorks": "Como funciona",
+          "continue": "Continuar para {{name}}",
+          "returnDocTitle": "Vinculando seu banco",
+          "okTitle": "Banco vinculado",
+          "okBody": "Suas contas e transações estão sendo importadas em segundo plano. Elas aparecem em Posições quando terminar.",
+          "toHoldings": "Ir para Posições",
+          "failTitle": "Seu banco não foi vinculado",
+          "failBody": "A Salt Edge informou {{reason}}. Nada foi salvo e você pode tentar de novo.",
+          "tryAgain": "Tentar de novo"
+        }
       },
       "integrations": {
         "uploadInstead": "Carregar antes um extrato"

@@ -1806,7 +1806,19 @@
         "credentials": "凭据",
         "ownDocs": "{{name}} 的官方文档",
         "unverifiedTitle": "无法校验你的 {{name}} 密钥",
-        "unverifiedDetail": "{{name}} 没有响应，因此我们无法确定密钥是否正确。没有保存任何内容——请过一分钟再试。"
+        "unverifiedDetail": "{{name}} 没有响应，因此我们无法确定密钥是否正确。没有保存任何内容——请过一分钟再试。",
+        "redirect": {
+          "permissions": "你在自己银行的页面上登录。Scani 只获得只读权限,永远看不到你的银行密码。",
+          "howItWorks": "工作方式",
+          "continue": "前往 {{name}}",
+          "returnDocTitle": "正在关联你的银行",
+          "okTitle": "银行已关联",
+          "okBody": "你的账户和交易正在后台导入,完成后会显示在持仓中。",
+          "toHoldings": "前往持仓",
+          "failTitle": "银行未能关联",
+          "failBody": "Salt Edge 报告:{{reason}}。没有保存任何内容,你可以重试。",
+          "tryAgain": "重试"
+        }
       },
       "demoNote": "在这里输入的内容不会保存——这是演示。"
     },

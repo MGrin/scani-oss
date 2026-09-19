@@ -317,3 +317,19 @@ describe('SaltEdgeProvider — customers and connect sessions', () => {
     await expect(new SaltEdgeProvider(null).createCustomer('u')).rejects.toThrow(/not configured/);
   });
 });
+
+describe('SaltEdgeProvider — manifest', () => {
+  test('keyed: listed as a redirect integration on the seeded institution, with no form', () => {
+    const p = new SaltEdgeProvider(new SaltEdgeClient(creds, limiter(), { baseUrl: BASE }));
+    expect(p.manifest).toMatchObject({
+      providerKey: 'saltedge',
+      institutionName: 'Salt Edge',
+      connectFlow: 'redirect',
+      credentialFields: [],
+    });
+  });
+
+  test('unkeyed: no manifest, so the integrations list never offers it', () => {
+    expect(new SaltEdgeProvider(null).manifest).toBeUndefined();
+  });
+});

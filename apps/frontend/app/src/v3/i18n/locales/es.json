@@ -103,7 +103,19 @@
         "title": "Conectar un servicio",
         "unverifiedDetail": "{{name}} no ha respondido, así que no podemos decir si las claves son correctas. No se ha guardado nada — inténtalo de nuevo dentro de un minuto.",
         "unverifiedTitle": "No se han podido comprobar tus claves de {{name}}",
-        "whereToGet": "Dónde conseguirlas"
+        "whereToGet": "Dónde conseguirlas",
+        "redirect": {
+          "permissions": "Inicias sesión en la página de tu propio banco. Scani obtiene acceso de solo lectura y nunca ve la contraseña de tu banco.",
+          "howItWorks": "Cómo funciona",
+          "continue": "Continuar a {{name}}",
+          "returnDocTitle": "Vinculando tu banco",
+          "okTitle": "Banco vinculado",
+          "okBody": "Tus cuentas y movimientos se están importando en segundo plano. Aparecerán en Posiciones cuando termine.",
+          "toHoldings": "Ir a Posiciones",
+          "failTitle": "Tu banco no se vinculó",
+          "failBody": "Salt Edge informó {{reason}}. No se guardó nada y puedes intentarlo de nuevo.",
+          "tryAgain": "Intentar de nuevo"
+        }
       },
       "integrations": {
         "uploadInstead": "Subir un extracto en su lugar"

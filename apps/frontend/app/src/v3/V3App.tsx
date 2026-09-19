@@ -41,6 +41,7 @@ import { NotFoundPage } from './pages/NotFoundPage';
 import { PaymentFormPage } from './pages/PaymentFormPage';
 import { RecordMovementPage } from './pages/RecordMovementPage';
 import { ReviewPage } from './pages/ReviewPage';
+import { SaltEdgeReturnPage } from './pages/SaltEdgeReturnPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { TokensPage } from './pages/TokensPage';
 import { TransferRulesPage } from './pages/TransferRulesPage';
@@ -142,6 +143,10 @@ export function V3App() {
             <Route
               path={relative(V3_CAPTURE_ROUTES.invoiceUpload)}
               element={<InvoiceUploadPage />}
+            />
+            <Route
+              path={`${relative(V3_CAPTURE_ROUTES.integrations)}/saltedge/return`}
+              element={<SaltEdgeReturnPage />}
             />
             <Route
               path={`${relative(V3_CAPTURE_ROUTES.integrations)}/:providerKey`}
