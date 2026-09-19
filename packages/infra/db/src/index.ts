@@ -58,8 +58,10 @@ export {
 // resolver quirk; no table needs a hand-written re-export here.
 export * from './schema/index';
 export {
+  checkIndexDrift,
   checkSchemaDrift,
   type DatabaseColumnRow,
+  describeIndexDrift,
   describeSchemaDrift,
   diffSchema,
   expectedSchema,
