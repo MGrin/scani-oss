@@ -49,6 +49,11 @@ const envSchema = z.object({
   // magic-link callback URLs that resolve to /api/auth/magic-link/verify.
   BACKEND_URL: inProd ? httpsUrlInProduction : urlSchema.default('http://localhost:3001'),
 
+  // Salt Edge's callback-signing public key (PEM), from their v6 docs. Unset
+  // leaves the callback routes unmounted, which is the state until the
+  // integration is switched on (SC-1244).
+  SALTEDGE_CALLBACK_PUBLIC_KEY: z.string().optional(),
+
   // Cookie domain shared by app.<domain> and api.<domain> so the session
   // cookie reaches both hosts (e.g. `.scani.xyz`). Leave unset in dev
   // where same-port cookies just work.

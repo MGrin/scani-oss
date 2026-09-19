@@ -21,6 +21,7 @@ import { paymentsRouter } from './routers/payments';
 import { portfolioRouter } from './routers/portfolio';
 import { pushRouter } from './routers/push';
 import { reviewRouter } from './routers/review';
+import { saltedgeRouter } from './routers/saltedge';
 import { screenshotsRouter } from './routers/screenshots';
 import { sessionsRouter } from './routers/sessions';
 import { storageRouter } from './routers/storage';
@@ -83,6 +84,9 @@ export const appRouter = router({
 
   // Integration authentication (protected) - Credential validation and storage
   integrations: integrationsRouter,
+
+  // Salt Edge (protected) - Link a bank through the hosted widget
+  saltedge: saltedgeRouter,
 
   // File import (protected) - Bank statement parsing (CSV, OFX)
   fileImport: fileImportRouter,
