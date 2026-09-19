@@ -406,7 +406,7 @@
         "col": {
           "kind": "种类",
           "service": "服务",
-          "whatItSyncs": "同步内容"
+          "about": "简介"
         },
         "config": {
           "search": "搜索"
