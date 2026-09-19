@@ -5,6 +5,7 @@ import { Numeric } from '@scani/ui/v3/components/Numeric';
 import { resolveNumeric } from '@scani/ui/v3/lib/numeric';
 import { useId } from 'react';
 import { Area, AreaChart, CartesianGrid, ReferenceLine, Tooltip, XAxis, YAxis } from 'recharts';
+import { axisFormat } from '../../lib/axis-format';
 import type { PnLChartPoint, TrendPoint } from '../../lib/home';
 
 /**
@@ -170,6 +171,7 @@ export function PortfolioChart({
   const values = isPnl ? pnl.map((point) => point.total) : netWorth.map((point) => point.value);
   const color = resolveTone(metric, values);
   const isolated = isolatedIndices(values);
+  const axis = axisFormat(values);
 
   return (
     <ChartFrame label={label} height={height}>
@@ -199,7 +201,7 @@ export function PortfolioChart({
           tick={AXIS_TICK}
           // Compact through `<Numeric>`'s own formatter, so an axis tick and
           // the figure above the chart round the same way.
-          tickFormatter={(value: number) => resolveNumeric(value, { currency, compact: true }).text}
+          tickFormatter={(value: number) => resolveNumeric(value, { currency, ...axis }).text}
           // Grown with the tick size above: a compact figure set at the type
           // floor no longer fits the 56px this gutter used to be.
           width={64}

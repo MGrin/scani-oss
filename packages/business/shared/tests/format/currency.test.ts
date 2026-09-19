@@ -120,3 +120,13 @@ describe('formatBytes', () => {
     expect(formatBytes(-1)).toBe('—');
   });
 });
+
+describe('formatCompact decimals', () => {
+  test('one decimal of the unit by default above a thousand', () => {
+    expect(formatCompact(1_432, 'USD', { locale: 'en-US' })).toBe('$1.4K');
+  });
+
+  test('honours decimals above a thousand, so a chart axis can separate close ticks', () => {
+    expect(formatCompact(1_432, 'USD', { locale: 'en-US', decimals: 2 })).toBe('$1.43K');
+  });
+});
