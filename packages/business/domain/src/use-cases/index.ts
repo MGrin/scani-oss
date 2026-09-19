@@ -16,6 +16,10 @@ export {
   AttachHoldingToVaultUseCase,
 } from './AttachHoldingToVaultUseCase';
 export {
+  BackfillBenchmarkPricesUseCase,
+  type BenchmarkBackfillResult,
+} from './BackfillBenchmarkPricesUseCase';
+export {
   BackfillHistoricalPricesUseCase,
   type BackfillSummary,
 } from './BackfillHistoricalPricesUseCase';
