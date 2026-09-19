@@ -47,6 +47,7 @@ export {
 } from './CreatePaymentFromExtractionUseCase';
 export { DeleteAccountUseCase } from './DeleteAccountUseCase';
 export { DeleteAllUserDataUseCase } from './DeleteAllUserDataUseCase';
+export { DeleteCloudAccountUseCase } from './DeleteCloudAccountUseCase';
 export {
   type DeleteHoldingResult,
   DeleteHoldingUseCase,

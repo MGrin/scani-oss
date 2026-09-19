@@ -1,9 +1,10 @@
 import * as schema from '@scani/db/schema';
 import { withTransaction } from '@scani/db/transaction';
 import { createComponentLogger } from '@scani/logging';
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
 import type { PgTable } from 'drizzle-orm/pg-core';
 import { Container, Service } from 'typedi';
+import { pendingSignInIds } from '../lib/pending-sign-in';
 import { DeleteAllUserDataUseCase } from './DeleteAllUserDataUseCase';
 
 const logger = createComponentLogger('use-case:delete-account');
@@ -54,7 +55,12 @@ export class DeleteAccountUseCase {
         await tx.delete(schema.userAccounts).where(eq(schema.userAccounts.userId, userId));
         await tx
           .delete(schema.userVerifications)
-          .where(inArray(schema.userVerifications.id, pendingSignInIds(tx, user.email)));
+          .where(
+            inArray(
+              schema.userVerifications.id,
+              pendingSignInIds(tx, schema.userVerifications, user.email)
+            )
+          );
         await tx.delete(schema.users).where(eq(schema.users.id, userId));
         return true;
       },
@@ -66,26 +72,4 @@ export class DeleteAccountUseCase {
     logger.warn({ userId }, 'Account deleted');
     return { deleted: true };
   }
-}
-
-/**
- * Better Auth's verification rows carry no user id. Email-OTP keys them
- * `<type>-otp-<email>`; magic-link keys them on a token and stores
- * `{"email":…}` as the value. Both are compared as exact strings, never with
- * LIKE: an underscore is common in an address and is a LIKE wildcard, so a
- * pattern built from one would reach another user's rows.
- */
-function pendingSignInIds(tx: Parameters<Parameters<typeof withTransaction>[0]>[0], email: string) {
-  const otpSuffix = `-otp-${email}`;
-  const linkPrefix = `{"email":${JSON.stringify(email)}`;
-  const v = schema.userVerifications;
-  return tx
-    .select({ id: v.id })
-    .from(v)
-    .where(
-      sql`(right(${v.identifier}, ${otpSuffix.length}) = ${otpSuffix}) or (${and(
-        sql`left(${v.value}, ${linkPrefix.length}) = ${linkPrefix}`,
-        sql`substr(${v.value}, ${linkPrefix.length + 1}, 1) in (',', '}')`
-      )})`
-    );
 }
