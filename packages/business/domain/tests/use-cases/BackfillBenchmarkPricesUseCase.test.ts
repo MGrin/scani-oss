@@ -77,7 +77,30 @@ const [usd] = await db
   .limit(1);
 const USD = usd?.id as string;
 
+// The span starts at the earliest measured portfolio day, and a fresh gate
+// database has none, so one is seeded here rather than read from whatever an
+// earlier test left behind.
+const seededUserId = crypto.randomUUID();
+await db.insert(schema.users).values({
+  id: seededUserId,
+  email: `benchmark-${seededUserId}@example.invalid`,
+  name: 'Benchmark span',
+  emailVerified: true,
+});
+await db.insert(schema.portfolioValueDaily).values({
+  userId: seededUserId,
+  scopeKind: 'user',
+  scopeId: seededUserId,
+  snapshotDate: '2025-03-20',
+  baseCurrencyId: USD,
+  totalValue: '100',
+  coverageQuality: 'full',
+  holdingsWithKnownValue: 1,
+  holdingsTotal: 1,
+});
+
 afterAll(async () => {
+  await db.delete(schema.users).where(eq(schema.users.id, seededUserId));
   const after = await benchmarkTokenIds();
   const created = [...after.btc, ...after.spy].filter(
     (id) => ![...before.btc, ...before.spy].includes(id)

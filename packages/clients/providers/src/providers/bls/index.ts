@@ -51,6 +51,7 @@ export class BlsClient {
   private readonly limiter: OutflowRateLimiter = createOutflowLimiter({
     maxRequests: 1,
     windowMs: 1000,
+    namespace: 'bls',
   });
 
   /**
