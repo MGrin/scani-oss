@@ -194,6 +194,28 @@
       },
       "runway": {
         "label": "Uang bertahan"
+      },
+      "returns": {
+        "title": "Imbal hasil",
+        "chooseWindow": "Pilih periode",
+        "window": {
+          "ytd": "YTD",
+          "1y": "1T",
+          "all": "Semua"
+        },
+        "twr": {
+          "label": "Imbal hasil investasi",
+          "caption": "Kinerja aset Anda, terlepas dari dana yang Anda tambah atau tarik."
+        },
+        "xirr": {
+          "label": "Imbal hasil uang Anda",
+          "caption": "Hasil uang Anda sendiri, dengan memperhitungkan kapan Anda menambah dan menariknya.",
+          "approximate": "Lebih dari satu tingkat cocok dengan setoran dan penarikan Anda, jadi anggap ini perkiraan."
+        },
+        "perYear": "<value/> per tahun",
+        "perYearUnit": "per tahun",
+        "since": "Sejak {{date}}.",
+        "partial": "Beberapa hari tidak dapat dihargai sepenuhnya, jadi angka ini mungkin kurang tepat."
       }
     },
     "money": {

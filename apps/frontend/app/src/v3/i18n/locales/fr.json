@@ -1060,6 +1060,28 @@
       },
       "runway": {
         "label": "Autonomie financière"
+      },
+      "returns": {
+        "title": "Rendements",
+        "chooseWindow": "Choisir la période",
+        "window": {
+          "ytd": "Année",
+          "1y": "1 an",
+          "all": "Tout"
+        },
+        "twr": {
+          "label": "Rendement des placements",
+          "caption": "La performance de vos avoirs, quels que soient vos apports ou retraits."
+        },
+        "xirr": {
+          "label": "Rendement de votre argent",
+          "caption": "Ce qu’a rapporté votre propre argent, selon le moment des apports et des retraits.",
+          "approximate": "Plusieurs taux correspondent à vos apports et retraits : considérez-le comme approximatif."
+        },
+        "perYear": "<value/> par an",
+        "perYearUnit": "par an",
+        "since": "Depuis le {{date}}.",
+        "partial": "Certains jours n’ont pas pu être entièrement valorisés, ces chiffres peuvent donc être inexacts."
       }
     },
     "holdings": {

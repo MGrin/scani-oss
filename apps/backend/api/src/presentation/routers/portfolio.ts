@@ -15,6 +15,7 @@ import { db } from '@scani/db/connection';
 import * as schema from '@scani/db/schema';
 import { notScamFor } from '@scani/domain/lib/scam-verdict';
 import { PortfolioValueDailyRepository, UserJobRepository } from '@scani/domain/repositories';
+import { ReturnsService } from '@scani/domain/services';
 import { HIDE_CLOSED_HOLDINGS_STALE_DAYS } from '@scani/domain/use-cases';
 import { PORTFOLIO_HISTORY_BACKFILL, PORTFOLIO_HISTORY_LOOKBACK_DAYS } from '@scani/jobs';
 import { BullMqEnqueueService } from '@scani/queue';
@@ -33,6 +34,7 @@ import {
   unmeasuredDates,
   userNetWorthDaily,
 } from '../../lib/net-worth-series';
+import { withoutPeriodSeries } from '../../lib/returns-response';
 import { strictInput } from '../lib/strict-input';
 import { requireAuth } from '../middleware/auth';
 import { protectedProcedure, router } from '../trpc';
@@ -213,7 +215,38 @@ async function assertScopeOwnership(
   if (!row[0]) throw new TRPCError({ code: 'NOT_FOUND', message: 'Institution not found' });
 }
 
+/**
+ * The windows Home's returns card offers (SC-1159). User scope only, no custom
+ * range and no per-period series: those are what a later screen asks for, and
+ * a parameter nothing sends is the never-called surface SC-756 deleted.
+ */
+const ReturnsInput = z.object({
+  window: z.discriminatedUnion('kind', [
+    z.object({ kind: z.literal('ytd') }),
+    z.object({ kind: z.literal('1y') }),
+    z.object({ kind: z.literal('all') }),
+  ]),
+});
+
 export const portfolioRouter = router({
+  /**
+   * Time- and money-weighted return over a window, from the SC-457 engine.
+   * Deleted by SC-756 as a route with no screen; it returns with one, Home's
+   * returns card, and only with what that card reads.
+   */
+  getReturns: protectedProcedure.input(strictInput(ReturnsInput)).query(async ({ ctx, input }) => {
+    const { dbUser } = await requireAuth(ctx);
+    const outcome = await Container.get(ReturnsService).compute({
+      userId: dbUser.id,
+      scope: { kind: 'user' },
+      window: input.window,
+    });
+    // An account with no base currency has no rollup rows to measure, so
+    // there is nothing to show and nothing has gone wrong.
+    if (outcome.status !== 'ok') return { returns: null };
+    return { returns: withoutPeriodSeries(outcome.returns) };
+  }),
+
   getNetWorthSeries: protectedProcedure
     .input(strictInput(NetWorthSeriesInput))
     .query(async ({ ctx, input }) => {

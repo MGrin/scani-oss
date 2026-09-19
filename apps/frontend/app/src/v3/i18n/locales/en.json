@@ -216,6 +216,28 @@
       },
       "runway": {
         "label": "Money lasts"
+      },
+      "returns": {
+        "title": "Returns",
+        "chooseWindow": "Choose the period",
+        "window": {
+          "ytd": "YTD",
+          "1y": "1Y",
+          "all": "All"
+        },
+        "twr": {
+          "label": "Investment return",
+          "caption": "How your holdings did, whatever you added or took out."
+        },
+        "xirr": {
+          "label": "Your money's return",
+          "caption": "What your own money earned, counting when you added and withdrew it.",
+          "approximate": "More than one rate fits your deposits and withdrawals, so treat this as approximate."
+        },
+        "perYear": "<value/> a year",
+        "perYearUnit": "a year",
+        "since": "Since {{date}}.",
+        "partial": "Some days could not be fully priced, so these figures may be off."
       }
     },
     "money": {

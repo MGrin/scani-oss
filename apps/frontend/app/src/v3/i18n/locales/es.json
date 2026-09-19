@@ -1106,6 +1106,28 @@
         "ofTarget": "de <target></target>",
         "progress": "{{name}}: {{percent}} % de la meta",
         "title": "Objetivos"
+      },
+      "returns": {
+        "title": "Rentabilidad",
+        "chooseWindow": "Elige el periodo",
+        "window": {
+          "ytd": "Año",
+          "1y": "1 A",
+          "all": "Todo"
+        },
+        "twr": {
+          "label": "Rentabilidad de la inversión",
+          "caption": "Cómo les fue a tus activos, sin importar lo que añadiste o retiraste."
+        },
+        "xirr": {
+          "label": "Rentabilidad de tu dinero",
+          "caption": "Lo que ganó tu propio dinero, contando cuándo lo añadiste y retiraste.",
+          "approximate": "Más de una tasa encaja con tus aportes y retiradas, así que tómala como aproximada."
+        },
+        "perYear": "<value/> al año",
+        "perYearUnit": "al año",
+        "since": "Desde el {{date}}.",
+        "partial": "Algunos días no pudieron valorarse del todo, así que estas cifras pueden no ser exactas."
       }
     },
     "jobs": {
