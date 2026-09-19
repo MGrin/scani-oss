@@ -61,3 +61,21 @@ describe('EmailService — high-level methods', () => {
     });
   });
 });
+
+describe('EmailService — disposable recipients (SC-1260)', () => {
+  test('an OTP to a throwaway inbox is not sent, and the call still resolves', async () => {
+    const svc = new CapturingEmailService();
+    await svc.sendOtp({ to: 'scani4zze0af5@uberip.com', code: '424242', type: 'sign-in' });
+    await svc.sendMagicLink({ to: 'x@mail.tm', url: 'https://x' });
+    await svc.send({ from: 'a@scani.xyz', to: 'x@eu.mailinator.com', subject: 's', text: 't' });
+    expect(svc.sent).toEqual([]);
+  });
+
+  test('the same calls to an ordinary address are sent', async () => {
+    const svc = new CapturingEmailService();
+    await svc.sendOtp({ to: 'alice@example.com', code: '424242', type: 'sign-in' });
+    await svc.sendMagicLink({ to: 'alice@example.com', url: 'https://x' });
+    await svc.send({ from: 'a@scani.xyz', to: 'alice@example.com', subject: 's', text: 't' });
+    expect(svc.sent).toHaveLength(3);
+  });
+});
