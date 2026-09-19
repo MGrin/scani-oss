@@ -109,6 +109,15 @@ a self-host deployment can skip it entirely.
 | `SMTP_URL` | package | `smtp://user:pass@host:port` for any SMTP server. |
 | `SMTP_FROM` | package | The from address for outbound mail. |
 
+## Human check (Cloudflare Turnstile)
+
+Both optional; unset, sign-in and the contact form work with no check. Set the site key and deploy the frontends before setting the secret, or every sign-in is refused.
+
+| Variable | Owner | What it does |
+|---|---|---|
+| `VITE_TURNSTILE_SITE_KEY` | app, cloud, landing (frontend) | Public site key for the Turnstile widget on sign-in and the contact form. Baked at build time. |
+| `TURNSTILE_SECRET` | api, data-provider | Verifies the widget's token before an unauthenticated request sends mail. A missing or rejected token is refused (403); Cloudflare unreachable is refused (503). |
+
 ## Logging
 
 | Variable | Owner | What it does |
