@@ -120,3 +120,47 @@ describe('contactRouter.submit — rate limiting', () => {
     });
   });
 });
+
+// SC-1266. The human check runs after the rate limiter and before any mail:
+// a refused or unverifiable submission sends nothing at all.
+describe('contactRouter.submit — human check', () => {
+  test("the form's token is what gets checked", async () => {
+    const seen: (string | undefined)[] = [];
+    const caller = contactRouter.createCaller(
+      buildUnauthedContext({
+        clientIp: '203.0.113.60',
+        checkHuman: async (token) => {
+          seen.push(token);
+          return { ok: true, checked: true };
+        },
+      })
+    );
+    await caller.submit(validInput({ turnstileToken: 'tok-1' }));
+    expect(seen).toEqual(['tok-1']);
+    expect(fake.sent.length).toBeGreaterThan(0);
+  });
+
+  test('a refused check is FORBIDDEN and sends no mail', async () => {
+    const caller = contactRouter.createCaller(
+      buildUnauthedContext({
+        clientIp: '203.0.113.61',
+        checkHuman: async () => ({ ok: false, reason: 'rejected' }),
+      })
+    );
+    await expect(caller.submit(validInput())).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    expect(fake.sent).toEqual([]);
+  });
+
+  test('a check that could not be completed sends no mail either', async () => {
+    const caller = contactRouter.createCaller(
+      buildUnauthedContext({
+        clientIp: '203.0.113.62',
+        checkHuman: async () => ({ ok: false, reason: 'unavailable' }),
+      })
+    );
+    await expect(caller.submit(validInput())).rejects.toMatchObject({
+      code: 'INTERNAL_SERVER_ERROR',
+    });
+    expect(fake.sent).toEqual([]);
+  });
+});

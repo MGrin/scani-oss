@@ -25,6 +25,7 @@ import {
   renderContactReceivedEmail,
   SCANI_BRAND,
 } from '@scani/email';
+import { TURNSTILE_MESSAGES } from '@scani/http-fetch';
 import { createComponentLogger } from '@scani/logging';
 import { createOutflowLimiter, getSharedRedis } from '@scani/rate-limiter';
 import { TRPCError } from '@trpc/server';
@@ -78,6 +79,8 @@ export const contactRouter = router({
         topic: z.enum(TOPICS).default('support'),
         message: z.string().trim().min(10).max(4000),
         referrer: z.string().max(200).optional(),
+        // Cloudflare Turnstile token from the form's widget (SC-1266).
+        turnstileToken: z.string().max(2048).optional(),
       })
     )
     .output(okOutput)
@@ -91,6 +94,15 @@ export const contactRouter = router({
           code: 'TOO_MANY_REQUESTS',
           message: `Too many messages; retry in ${Math.ceil(budget.retryAfterMs / 1000)}s`,
         });
+      }
+
+      const human = await ctx.checkHuman(input.turnstileToken);
+      if (!human.ok) {
+        throw new TRPCError(
+          human.reason === 'unavailable'
+            ? { code: 'INTERNAL_SERVER_ERROR', message: TURNSTILE_MESSAGES.unavailable }
+            : { code: 'FORBIDDEN', message: TURNSTILE_MESSAGES.failed }
+        );
       }
 
       const name = input.name.trim();
