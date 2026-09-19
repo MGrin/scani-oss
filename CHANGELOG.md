@@ -19,6 +19,28 @@ version heading stays there permanently, above every future release. This
 comment is deliberately in that position; explanatory prose should not be.
 -->
 
+## [0.47.0](https://github.com/MGrin/scani-oss/compare/v0.46.0...v0.47.0) (2026-09-19)
+
+
+### Features
+
+* **ai:** cap AI spend per user per day and across everyone per hour (SC-1265) ([fe27382](https://github.com/MGrin/scani-oss/commit/fe27382c4770f124b33c5b62848d6f740f70305a))
+* **api:** an api can refuse requests that went round Cloudflare (SC-1264) ([47b601e](https://github.com/MGrin/scani-oss/commit/47b601e440e9507b142b4e151c2440aae10bae9f))
+
+
+### Bug Fixes
+
+* **app:** Home's history starts at the first holding (SC-1248) ([5f5e862](https://github.com/MGrin/scani-oss/commit/5f5e862ab6cbc685f16ac539a4006554ec97076e))
+* **app:** the movement form shows the current balance as the holdings table does (SC-1253) ([ab550b9](https://github.com/MGrin/scani-oss/commit/ab550b99fd2f6910f756b202cef90626a9ab8030))
+* **app:** the picker no longer offers to create a name it already lists (SC-1274) ([9d32ede](https://github.com/MGrin/scani-oss/commit/9d32ede98d8e910d3b462fb7d0b9dbc8dfe1d9a2))
+* **data-provider:** cap the cloud console's sign-in and OTP sends (SC-1260) ([fe7da81](https://github.com/MGrin/scani-oss/commit/fe7da812847821e3d141156756bf28a4ab206ab6))
+* **email:** no mail is sent to a throwaway inbox (SC-1260) ([e9a4f95](https://github.com/MGrin/scani-oss/commit/e9a4f95384e8bfcbb21a6c95d4310b3ed7bb95d6))
+* **email:** read an address's domain without a polynomial regex (SC-1260) ([d5ee1fa](https://github.com/MGrin/scani-oss/commit/d5ee1fa568e876b5db3c7cdaef92ba9a62c0a8d5))
+* **email:** strip spaces before a trailing &gt; when reading a domain (SC-1260) ([53cc241](https://github.com/MGrin/scani-oss/commit/53cc2414fc22f7221e4f6972efaabf9f2bf48174))
+* **rate-limiter:** on Fly, per-IP limits key on fly-client-ip alone (SC-1262) ([99df28b](https://github.com/MGrin/scani-oss/commit/99df28bfdccdacb8e29d5fead2d1809ae118d05e))
+* **wallets:** bound how much one wallet import may read (SC-1271) ([bb88380](https://github.com/MGrin/scani-oss/commit/bb88380012975df1b1b2aeb78aa938a37fb3d422))
+* **worker:** stop the worker before the VM runs out of memory (SC-1269) ([2618be0](https://github.com/MGrin/scani-oss/commit/2618be05ba22b9fb5d2b939e99ad02addc1d360e))
+
 ## [0.46.0](https://github.com/MGrin/scani-oss/compare/v0.45.0...v0.46.0) (2026-09-19)
 
 
