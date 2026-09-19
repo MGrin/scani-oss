@@ -74,6 +74,11 @@ describe('the tax-year result carries its generation time', () => {
     byBasisQuality: { known: 0, partial: 0, unknown: 0 },
     totals: { proceeds: '0', costBasis: '0', gain: '0' },
     taxYear: { year: 2024, yearStart: 'jan-1', timeZone: 'UTC', timeZoneSource: 'utc-fallback' },
+    income: {
+      rows: [],
+      totals: { interest: '0', reward: '0' },
+      unvalued: { interest: 0, reward: 0, airdrop: 0 },
+    },
   };
 
   test('with generatedAt it parses', () => {
@@ -85,5 +90,57 @@ describe('the tax-year result carries its generation time', () => {
 
   test('without generatedAt it is refused', () => {
     expect(taxYearDisposalsSchema.safeParse(minimal).success).toBe(false);
+  });
+});
+
+/**
+ * The income section (mgrin, 2026-09-11): interest and rewards totalled,
+ * airdrops listed with no total. The wire type has no airdrop total to fill, so
+ * no client can print one.
+ */
+describe('the tax-year result carries income, with no airdrop total', () => {
+  const base = {
+    periodStart: '2024-01-01T00:00:00.000Z',
+    periodEnd: '2025-01-01T00:00:00.000Z',
+    generatedAt: '2026-09-19T08:00:00.000Z',
+    baseCurrencyId: 'usd',
+    costBasisMethod: 'fifo',
+    rows: [],
+    rowCount: 0,
+    byOutcome: { realized: 0, unpriced: 0, unreviewed: 0, retained: 0, awaiting_pair: 0 },
+    byBasisQuality: { known: 0, partial: 0, unknown: 0 },
+    totals: { proceeds: '0', costBasis: '0', gain: '0' },
+    taxYear: { year: 2024, yearStart: 'jan-1', timeZone: 'UTC', timeZoneSource: 'utc-fallback' },
+  };
+  const income = {
+    rows: [
+      {
+        transactionId: 't',
+        holdingId: 'h',
+        tokenId: 'eth',
+        kind: 'airdrop',
+        receivedAt: '2024-06-01T00:00:00.000Z',
+        quantity: '3',
+        value: '6000',
+        stale: false,
+      },
+    ],
+    totals: { interest: '0', reward: '0' },
+    unvalued: { interest: 0, reward: 0, airdrop: 0 },
+  };
+
+  test('with income it parses', () => {
+    expect(taxYearDisposalsSchema.safeParse({ ...base, income }).success).toBe(true);
+  });
+
+  test('without income it is refused', () => {
+    expect(taxYearDisposalsSchema.safeParse(base).success).toBe(false);
+  });
+
+  test('an airdrop total is refused', () => {
+    const withAirdropTotal = { ...income, totals: { ...income.totals, airdrop: '6000' } };
+    expect(taxYearDisposalsSchema.safeParse({ ...base, income: withAirdropTotal }).success).toBe(
+      false
+    );
   });
 });
