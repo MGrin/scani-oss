@@ -1287,7 +1287,8 @@
         "signingOutOthers": "Signing out the other sessions",
         "togglingNotifications": "Changing your notification setting",
         "sendingTestNotification": "Sending a test notification",
-        "changingCostBasis": "Changing how your gains are worked out"
+        "changingCostBasis": "Changing how your gains are worked out",
+        "makingTaxYearStatement": "Making your tax-year statement"
       },
       "costBasis": {
         "title": "Cost basis",
@@ -1305,6 +1306,54 @@
         "changeConfirm": "Recalculate my gains on {{method}}",
         "changeInFlight": "Your gains are being recalculated.",
         "recomputing": "Recalculating your gains — figures across the app are still settling."
+      },
+      "taxYear": {
+        "title": "Tax-year statement",
+        "intro": "One tax year's sales, interest and rewards as a PDF, worked out from your ledger. Choose the date your tax year starts, then the year.",
+        "yearLabel": "Tax year",
+        "yearStartLabel": "Your tax year starts on",
+        "yearStartPlaceholder": "Choose a start date",
+        "starts": {
+          "jan-1": "1 January (calendar year)",
+          "apr-1": "1 April (NZ, Hong Kong, Japan, India)",
+          "apr-6": "6 April (UK)",
+          "jul-1": "1 July (Australia)"
+        },
+        "download": "Download PDF",
+        "caveat": "Figures can change if past data or the method changes; keep the PDF you filed.",
+        "pdf": {
+          "subject": "Tax-year statement",
+          "headers": {
+            "date": "Date",
+            "asset": "Asset",
+            "quantity": "Quantity",
+            "acquired": "Acquired",
+            "amount": "Amount",
+            "costBasis": "Cost basis",
+            "gain": "Gain",
+            "daysHeld": "Days held"
+          },
+          "groups": {
+            "disposals": "Sales and disposals",
+            "interest": "Interest",
+            "rewards": "Rewards",
+            "airdrops": "Airdrops"
+          },
+          "details": {
+            "year": "Tax year",
+            "method": "Method",
+            "timeZone": "Time zone",
+            "gainTotal": "Realized gain",
+            "interestTotal": "Interest",
+            "rewardTotal": "Rewards",
+            "airdropNote": "Airdrops",
+            "caveat": "Note",
+            "basisIncomplete": "Partial basis",
+            "awaitingReview": "Awaiting review",
+            "unvaluedIncome": "Unvalued income"
+          },
+          "airdropNote": "Listed, not totalled"
+        }
       }
     },
     "feedback": {

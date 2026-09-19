@@ -2628,7 +2628,8 @@
         "sendingTestNotification": "A enviar uma notificação de teste",
         "signingOutOthers": "A terminar as outras sessões",
         "togglingNotifications": "A alterar a sua definição de notificações",
-        "changingCostBasis": "A alterar como os seus ganhos são calculados"
+        "changingCostBasis": "A alterar como os seus ganhos são calculados",
+        "makingTaxYearStatement": "Preparando sua declaração do ano fiscal"
       },
       "profile": {
         "baseCurrencyHint": "Todos os valores da aplicação são convertidos para esta.",
@@ -2673,6 +2674,54 @@
         "changeConfirm": "Recalcular os meus ganhos com {{method}}",
         "changeInFlight": "Os seus ganhos estão a ser recalculados.",
         "recomputing": "A recalcular os seus ganhos — os números da aplicação ainda estão a assentar."
+      },
+      "taxYear": {
+        "title": "Declaração do ano fiscal",
+        "intro": "As vendas, juros e recompensas de um ano fiscal em PDF, calculados a partir do seu registro. Escolha a data em que seu ano fiscal começa e depois o ano.",
+        "yearLabel": "Ano fiscal",
+        "yearStartLabel": "Seu ano fiscal começa em",
+        "yearStartPlaceholder": "Escolha uma data de início",
+        "starts": {
+          "jan-1": "1º de janeiro (ano civil)",
+          "apr-1": "1º de abril (NZ, Hong Kong, Japão, Índia)",
+          "apr-6": "6 de abril (Reino Unido)",
+          "jul-1": "1º de julho (Austrália)"
+        },
+        "download": "Baixar PDF",
+        "caveat": "Os valores podem mudar se os dados passados ou o método mudarem; guarde o PDF que você entregou.",
+        "pdf": {
+          "subject": "Declaração do ano fiscal",
+          "headers": {
+            "date": "Data",
+            "asset": "Ativo",
+            "quantity": "Quantidade",
+            "acquired": "Adquirido",
+            "amount": "Valor",
+            "costBasis": "Custo base",
+            "gain": "Ganho",
+            "daysHeld": "Dias"
+          },
+          "groups": {
+            "disposals": "Vendas e alienações",
+            "interest": "Juros",
+            "rewards": "Recompensas",
+            "airdrops": "Airdrops"
+          },
+          "details": {
+            "year": "Ano fiscal",
+            "method": "Método",
+            "timeZone": "Fuso horário",
+            "gainTotal": "Ganho realizado",
+            "interestTotal": "Juros",
+            "rewardTotal": "Recompensas",
+            "airdropNote": "Airdrops",
+            "caveat": "Observação",
+            "basisIncomplete": "Base parcial",
+            "awaitingReview": "A revisar",
+            "unvaluedIncome": "Sem valor"
+          },
+          "airdropNote": "Listados, sem total"
+        }
       }
     },
     "shell": {
