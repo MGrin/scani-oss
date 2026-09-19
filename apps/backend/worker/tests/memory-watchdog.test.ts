@@ -36,7 +36,7 @@ function write(path: string, availableMb: number | null) {
 
 const marker = (path: string) => join(path, '..', 'stopped');
 
-function start(path: string) {
+function start(path: string, extra: Record<string, string> = {}) {
   const victim = Bun.spawn(['sleep', '60']);
   victims.push(victim);
   const watchdog = Bun.spawn(['sh', SCRIPT, String(victim.pid)], {
@@ -49,6 +49,7 @@ function start(path: string) {
       WATCHDOG_REPORT_EVERY: '1000',
       WATCHDOG_KILL_GRACE_S: '1',
       WATCHDOG_MARKER: marker(path),
+      ...extra,
     },
     stdout: 'pipe',
     stderr: 'pipe',
@@ -112,5 +113,46 @@ describe('memory-watchdog.sh (SC-1269)', () => {
     const { victim, watchdog } = start(meminfo(600));
     victim.kill('SIGKILL');
     expect(await watchdog.exited).toBe(0);
+  });
+});
+
+describe('the liveness ping (SC-1269)', () => {
+  // The probe reads a file, so a test can make Redis answer, stop answering, or never start.
+  function ping(path: string, answer: string) {
+    const file = join(path, '..', 'pong');
+    writeFileSync(file, answer);
+    return { file, env: { WATCHDOG_PING_CMD: `cat ${file}`, WATCHDOG_PING_STRIKES: '3' } };
+  }
+
+  test('once armed, consecutive misses stop the worker and say why', async () => {
+    const path = meminfo(600);
+    const p = ping(path, 'PONG');
+    const { victim, watchdog } = start(path, p.env);
+    await Bun.sleep(300);
+    expect(alive(victim.pid)).toBe(true);
+    writeFileSync(p.file, '');
+    expect(await watchdog.exited).toBe(0);
+    expect(existsSync(marker(path))).toBe(true);
+    await victim.exited;
+    expect(victim.signalCode).toBe('SIGTERM');
+    expect(await new Response(watchdog.stderr).text()).toContain('liveness ping missed');
+  });
+
+  test('a Redis that never answered (still loading at boot) does not trip it', async () => {
+    const path = meminfo(600);
+    const p = ping(path, 'LOADING');
+    const { victim } = start(path, p.env);
+    await Bun.sleep(600);
+    expect(alive(victim.pid)).toBe(true);
+    expect(existsSync(marker(path))).toBe(false);
+  });
+
+  test('a Redis that keeps answering leaves the worker alone', async () => {
+    const path = meminfo(600);
+    const p = ping(path, 'PONG');
+    const { victim } = start(path, p.env);
+    await Bun.sleep(600);
+    expect(alive(victim.pid)).toBe(true);
+    expect(existsSync(marker(path))).toBe(false);
   });
 });

@@ -14,6 +14,12 @@
 # reading and stops <pid> (TERM, then KILL); the entrypoint then exits non-zero
 # and Fly restarts the machine. Every REPORT_EVERY reads it logs one memory line,
 # so the next incident leaves evidence past Fly's 100-line log buffer.
+#
+# A hang with memory to spare is the other half: during that incident the
+# embedded Redis stopped answering. With WATCHDOG_PING_CMD set (the entrypoint
+# sets a `redis-cli ping` when this machine hosts Redis), the command runs every
+# read. It arms on its first PONG, so a Redis still loading its AOF at boot
+# cannot trip it, and PING_STRIKES consecutive misses stop <pid> the same way.
 set -u
 
 pid="$1"
@@ -27,6 +33,8 @@ grace="${WATCHDOG_KILL_GRACE_S:-10}"
 # shuts down cleanly and exits 0, and the machine's restart policy is
 # on-failure, so without it a watchdog stop would leave the worker down.
 marker="${WATCHDOG_MARKER:-/tmp/memory-watchdog.stopped}"
+ping_cmd="${WATCHDOG_PING_CMD:-}"
+ping_strikes_needed="${WATCHDOG_PING_STRIKES:-6}"
 
 available_mb() {
   awk '/^MemAvailable:/ { printf "%d", $2 / 1024; found = 1 } END { if (!found) print "" }' "$meminfo" 2>/dev/null
@@ -36,11 +44,38 @@ rss_mb() {
   awk '/^VmRSS:/ { printf "%d", $2 / 1024 }' "/proc/$pid/status" 2>/dev/null
 }
 
+stop_worker() {
+  echo "memory-watchdog: STOPPING worker pid $pid — $1 (SC-1269)" >&2
+  : > "$marker"
+  kill -TERM "$pid" 2>/dev/null
+  waited=0
+  while kill -0 "$pid" 2>/dev/null && [ "$waited" -lt "$grace" ]; do
+    sleep 1
+    waited=$((waited + 1))
+  done
+  kill -KILL "$pid" 2>/dev/null
+  exit 0
+}
+
 strikes=0
 tick=0
+ping_armed=0
+ping_misses=0
 while kill -0 "$pid" 2>/dev/null; do
   avail="$(available_mb)"
   tick=$((tick + 1))
+  if [ -n "$ping_cmd" ]; then
+    if [ "$(sh -c "$ping_cmd" 2>/dev/null)" = "PONG" ]; then
+      [ "$ping_armed" -eq 0 ] && echo "memory-watchdog: liveness ping armed"
+      ping_armed=1
+      ping_misses=0
+    elif [ "$ping_armed" -eq 1 ]; then
+      ping_misses=$((ping_misses + 1))
+      if [ "$ping_misses" -ge "$ping_strikes_needed" ]; then
+        stop_worker "liveness ping missed ${ping_misses} reads in a row"
+      fi
+    fi
+  fi
   if [ -z "$avail" ]; then
     # Could not read memory: say so once per report period rather than act on it.
     [ $((tick % report_every)) -eq 1 ] && echo "memory-watchdog: MemAvailable unreadable from $meminfo; not acting" >&2
@@ -54,16 +89,7 @@ while kill -0 "$pid" 2>/dev/null; do
       strikes=0
     fi
     if [ "$strikes" -ge "$strikes_needed" ]; then
-      echo "memory-watchdog: STOPPING worker pid $pid — available=${avail}MB under ${floor_mb}MB for ${strikes} reads, worker_rss=$(rss_mb)MB (SC-1269)" >&2
-      : > "$marker"
-      kill -TERM "$pid" 2>/dev/null
-      waited=0
-      while kill -0 "$pid" 2>/dev/null && [ "$waited" -lt "$grace" ]; do
-        sleep 1
-        waited=$((waited + 1))
-      done
-      kill -KILL "$pid" 2>/dev/null
-      exit 0
+      stop_worker "available=${avail}MB under ${floor_mb}MB for ${strikes} reads, worker_rss=$(rss_mb)MB"
     fi
   fi
   sleep "$interval"
