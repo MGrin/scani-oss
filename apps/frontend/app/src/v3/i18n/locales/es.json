@@ -1132,7 +1132,7 @@
           "label": "Comparado con",
           "caption": "Bitcoin y el S&P 500 comprados y mantenidos los mismos días, en tu moneda; los precios de EE. UU. en los mismos meses.",
           "btc": "Bitcoin",
-          "sp500": "S&P 500 (SPY)",
+          "sp500": "S&P 500 (SPY, solo precio)",
           "usInflation": "Inflación de EE. UU. (CPI-U)"
         },
         "perYear": "<value/> al año",
