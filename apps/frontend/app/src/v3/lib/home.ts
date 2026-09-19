@@ -2,7 +2,13 @@ import { ALLOCATION_OTHER_KEY, type AllocationInput } from '@scani/ui/v3/lib/cha
 import { toFiniteNumber } from '@scani/ui/v3/lib/numeric';
 import type { TFunction } from 'i18next';
 import { tokenDisplayName } from '@/lib/utils';
-import { compareGroupAmounts, type GroupValue, groupAmount, groupValuesById } from './groups';
+import {
+  allInactiveGroupAmount,
+  compareGroupAmounts,
+  type GroupValue,
+  groupAmount,
+  groupValuesById,
+} from './groups';
 import { V3_ROUTES } from './routes';
 import { tokenTypeLabel } from './tokens';
 
@@ -914,6 +920,12 @@ export interface GroupRow {
   sublabel: string;
   /** Base-currency value of everything in the group, or `null` if unpriced. */
   value: number | null;
+  /**
+   * What the group's holdings are worth when every one is inactive, else
+   * `null` (SC-1128). Shown muted and badged instead of `value`, never summed
+   * or sorted on: `value` stays 0 for such a group.
+   */
+  inactiveValue: number | null;
 }
 
 /**
@@ -959,6 +971,7 @@ export function groupRows(
           .filter(Boolean)
           .join(' · ') || t('v3.home.groups.empty'),
       value: groupAmount(valueById.get(group.id)),
+      inactiveValue: allInactiveGroupAmount(valueById.get(group.id)),
     }))
     .sort((a, b) => compareGroupAmounts(a.value, b.value, 'desc'));
 }

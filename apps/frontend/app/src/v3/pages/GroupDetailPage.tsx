@@ -169,7 +169,7 @@ export function GroupDetailPage() {
   // Every holding inactive: headline what they are worth under a label that
   // says so, as the holdings list does (SC-1122, SC-1128). The inactive-count
   // sentence would then restate the whole group, so it gives way to one line.
-  const allInactiveAmount = allInactiveGroupAmount(groupValue, membership.holdings);
+  const allInactiveAmount = allInactiveGroupAmount(groupValue);
   const allInactive = allInactiveAmount !== null;
 
   return (

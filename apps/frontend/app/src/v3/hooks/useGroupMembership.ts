@@ -67,19 +67,12 @@ export function useGroupMembership(groupId: string) {
     return [...holdings, ...accounts];
   }, [holdingsQuery.data, accountsQuery.data, t]);
 
-  // The group's holdings as full rows, for figures the member entries do not
-  // carry (SC-1128). `holding.groups` is the effective membership, so this is
-  // the set the group's valuation reads.
-  const holdings = useMemo(
-    () =>
-      (holdingsQuery.data?.holdings ?? []).filter((holding) =>
-        holding.groups.some((group) => group.id === groupId)
-      ),
-    [holdingsQuery.data, groupId]
-  );
-
   const members: MemberEntry[] = useMemo(() => {
-    const holdingIds = new Set(holdings.map((holding) => holding.id));
+    const holdingIds = new Set(
+      (holdingsQuery.data?.holdings ?? [])
+        .filter((holding) => holding.groups.some((group) => group.id === groupId))
+        .map((holding) => holding.id)
+    );
     const accountIds = new Set(
       (accountsQuery.data ?? [])
         .filter((account) => account.groups.some((group) => group.id === groupId))
@@ -90,7 +83,7 @@ export function useGroupMembership(groupId: string) {
         entry.kind === 'holding' ? holdingIds.has(entry.id) : accountIds.has(entry.id)
       )
       .sort(compareMembers);
-  }, [all, holdings, accountsQuery.data, groupId]);
+  }, [all, holdingsQuery.data, accountsQuery.data, groupId]);
 
   const candidates = useMemo(() => candidatesFor(all, members), [all, members]);
 
@@ -133,7 +126,6 @@ export function useGroupMembership(groupId: string) {
 
   return {
     members,
-    holdings,
     candidates,
     pendingIds,
     isLoading: holdingsQuery.isLoading || accountsQuery.isLoading,
