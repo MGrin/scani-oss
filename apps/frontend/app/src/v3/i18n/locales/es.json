@@ -2804,7 +2804,7 @@
         "backToVaults": "Objetivos",
         "colour": "Color",
         "countingToward_many": "Cuentan para este objetivo ({{count}})",
-        "countingToward_one": "Cuentan para este objetivo ({{count}})",
+        "countingToward_one": "Cuenta para este objetivo ({{count}})",
         "countingToward_other": "Cuentan para este objetivo ({{count}})",
         "dangerZone": "Zona sensible",
         "deleteCommit": "Eliminar este objetivo",
