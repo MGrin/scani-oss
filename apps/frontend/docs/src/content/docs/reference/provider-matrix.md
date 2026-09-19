@@ -53,6 +53,7 @@ leave your api.
 | Interactive Brokers | _user-supplied Flex Web Service token_ | balance, transaction | Flex token + query ID configured per user. |
 | Wise | _user-supplied API token_ | balance, transaction | |
 | Airwallex | _user-supplied Client ID + API key_ | balance, transaction | Client ID + API key exchanged for a 30-min bearer token per call. |
+| Salt Edge | `SALTEDGE_APP_ID`, `SALTEDGE_SECRET`, optional `SALTEDGE_PRIVATE_KEY` | balance, transaction | Bank accounts through Salt Edge's hosted connect widget. **Not usable yet**: the connect flow is still being built, so no user can link a bank. |
 
 ## Blockchains
 
@@ -100,6 +101,7 @@ work with per-user credentials only.
 | Binance, Coinbase, Bybit, OKX | Solid for balance + recent transactions. Edge cases on multi-account / sub-account setups. |
 | KuCoin, Gate, HTX, Bitstamp, Gemini, MEXC, Bitget | Functional. Less battle-tested. |
 | IBKR (Flex), Wise, Airwallex | Functional. Flex query setup is the main user friction. |
+| Salt Edge | In development. The provider exists; connecting a bank does not. |
 | Bitcoin, Tron, TON, ENS | Functional. Public RPCs are slow on big wallets. |
 | OpenAI Vision | Solid for screenshots; quality degrades on dark-mode or non-English UIs. |
 | Perplexity, DeepSeek | Optional supplements; not required. |
