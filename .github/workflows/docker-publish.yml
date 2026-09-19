@@ -164,5 +164,10 @@ jobs:
           # frontend-app container handles `/api` → backend at runtime,
           # so the SPA can be deployed against any backend host without
           # rebuilding.
+          #
+          # And the commit, so the image's `/version.json` names what it serves
+          # (SC-1187, SC-1208). On a `v*` tag push `github.sha` is the release
+          # commit; the Dockerfile's `ARG SCANI_COMMIT` hands it to the build.
           build-args: |
             ${{ matrix.image == 'frontend-app' && 'VITE_API_URL=/api' || '' }}
+            ${{ matrix.image == 'frontend-app' && format('SCANI_COMMIT={0}', github.sha) || '' }}
