@@ -101,7 +101,7 @@ export class FileImportProcessor extends UserJobProcessor<FileImportJob, FileImp
     await ctx.reportStatus(`Parsing ${data.fileType.toUpperCase()} statement…`);
     const parsed = await parseStatement(buf.toString('utf-8'), `import.${data.fileType}`, {
       aiColumnDetector: (headers, sampleRows) =>
-        csvColumnDetection.detectColumns(headers, sampleRows),
+        csvColumnDetection.detectColumns(data.userId, headers, sampleRows),
     });
 
     logger.info(

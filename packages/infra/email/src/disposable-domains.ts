@@ -40,7 +40,8 @@ export function emailDomain(address: string): string | null {
     .toLowerCase();
   // A loop, not a trailing-class regex: that one is polynomial on input like
   // many tabs, and this runs on whatever a caller typed.
-  while (domain.endsWith('.') || domain.endsWith('>')) domain = domain.slice(0, -1);
+  domain = domain.trimEnd();
+  while (domain.endsWith('.') || domain.endsWith('>')) domain = domain.slice(0, -1).trimEnd();
   return domain.length > 0 ? domain : null;
 }
 
