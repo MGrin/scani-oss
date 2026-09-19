@@ -174,6 +174,11 @@ export {
   type UpdatePaymentInput,
 } from './payments/PaymentService';
 export {
+  type RecurringSuggestion,
+  RecurringSuggestionService,
+  SuggestionNotFoundError,
+} from './payments/RecurringSuggestionService';
+export {
   generateOccurrences,
   type PaymentOccurrenceCandidate,
   type RecurrenceIntervalUnit,
