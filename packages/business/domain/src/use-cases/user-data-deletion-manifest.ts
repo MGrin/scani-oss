@@ -196,6 +196,21 @@ export const USER_DATA_TABLE_DISPOSITIONS: readonly TableDisposition[] = [
     userColumn: schema.userCostBasisMethodChanges.userId,
     echo: schema.userCostBasisMethodChanges.id,
   },
+  // Salt Edge's copy of the bank data is not ours to delete from here; the
+  // customer on their side is removed through their API, which the
+  // go-live step owns (SC-1244).
+  {
+    kind: 'delete',
+    table: schema.saltedgeConnections,
+    userColumn: schema.saltedgeConnections.userId,
+    echo: schema.saltedgeConnections.id,
+  },
+  {
+    kind: 'delete',
+    table: schema.saltedgeCustomers,
+    userColumn: schema.saltedgeCustomers.userId,
+    echo: schema.saltedgeCustomers.userId,
+  },
 
   // Last, so the ids it returns are the complete set the post-commit BullMQ
   // purge has to walk.

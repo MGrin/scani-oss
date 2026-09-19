@@ -84,4 +84,10 @@ export interface IntegrationManifest {
    * configuration on their holdings).
    */
   defaultAccountTypeCode?: AccountTypeCode;
+  /**
+   * `redirect`: the user links the account on the provider's own hosted page
+   * and there is no credential form to render (Salt Edge, SC-1244). Unset is
+   * the credential form every other integration uses.
+   */
+  connectFlow?: 'redirect';
 }

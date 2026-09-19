@@ -1,5 +1,6 @@
 import { safeExternalUrl } from '@scani/shared';
 import { useDocumentTitle } from '@scani/ui/hooks/useDocumentTitle';
+import { Button } from '@scani/ui/ui/button';
 import { Input } from '@scani/ui/ui/input';
 import { Skeleton } from '@scani/ui/ui/skeleton';
 import { Textarea } from '@scani/ui/ui/textarea';
@@ -13,6 +14,7 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useParams } from 'react-router-dom';
 import { trpc } from '@/lib/trpc';
+import { BankReconnectList } from '../components/capture/BankReconnectList';
 import { CaptureHeader } from '../components/capture/CaptureHeader';
 import { CaptureSubmit } from '../components/capture/CaptureSubmit';
 import type { Integration } from '../components/capture/IntegrationsList';
@@ -113,7 +115,64 @@ export function IntegrationConnectPage() {
 
   // Keyed on the provider so moving between two services never carries one
   // service's half-typed secret into the other's form.
+  if (integration.connectFlow === 'redirect') {
+    return <RedirectConnect key={integration.providerKey} integration={integration} />;
+  }
   return <ConnectForm key={integration.providerKey} integration={integration} />;
+}
+
+/**
+ * An integration linked on the provider's own hosted page (Salt Edge, SC-1244):
+ * no credential form, one button that leaves the app. A full-page navigation,
+ * not a popup or an iframe — bank OAuth breaks inside an iframe, and the
+ * installed PWA has no URL bar a popup could fall back on.
+ */
+function RedirectConnect({ integration }: { integration: Integration }) {
+  const { t } = useTranslation();
+  const startConnect = trpc.saltedge.startConnect.useMutation();
+  const [error, setError] = useState<string | null>(null);
+  const { instructions, institution } = integration;
+
+  const go = async () => {
+    setError(null);
+    try {
+      const { connectUrl } = await startConnect.mutateAsync();
+      window.location.assign(connectUrl);
+    } catch (err) {
+      const copy = connectErrorCopy(t, err, institution.name);
+      setError(`${copy.title}. ${copy.detail}`);
+    }
+  };
+
+  return (
+    <PageLayout>
+      <CaptureHeader
+        title={t('v3.capture.integration.connectNamed', { name: institution.name })}
+        description={t('v3.capture.integration.redirect.permissions')}
+        backTo={V3_CAPTURE_ROUTES.integrations}
+        backLabel={t('v3.capture.integration.allServices')}
+      />
+      <BankReconnectList institutionName={institution.name} />
+      <Block>
+        <FieldSet title={t('v3.capture.integration.redirect.howItWorks')}>
+          <ol className="flex list-decimal flex-col gap-1.5 ps-5 text-body text-muted-foreground marker:text-caption">
+            {instructions.steps.map((step) => (
+              <li key={step}>{step}</li>
+            ))}
+          </ol>
+        </FieldSet>
+      </Block>
+      {error ? (
+        <p role="alert" className="text-body text-destructive">
+          {error}
+        </p>
+      ) : null}
+      <Button onClick={go} disabled={startConnect.isPending} className="gap-2 self-start">
+        {t('v3.capture.integration.redirect.continue', { name: institution.name })}
+        <ExternalLink className="size-4" aria-hidden="true" />
+      </Button>
+    </PageLayout>
+  );
 }
 
 function ConnectForm({ integration }: { integration: Integration }) {

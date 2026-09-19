@@ -103,7 +103,27 @@
         "title": "Conectar un servicio",
         "unverifiedDetail": "{{name}} no ha respondido, así que no podemos decir si las claves son correctas. No se ha guardado nada — inténtalo de nuevo dentro de un minuto.",
         "unverifiedTitle": "No se han podido comprobar tus claves de {{name}}",
-        "whereToGet": "Dónde conseguirlas"
+        "whereToGet": "Dónde conseguirlas",
+        "redirect": {
+          "permissions": "Inicias sesión en la página de tu propio banco. Scani obtiene acceso de solo lectura y nunca ve la contraseña de tu banco.",
+          "howItWorks": "Cómo funciona",
+          "continue": "Continuar a {{name}}",
+          "returnDocTitle": "Vinculando tu banco",
+          "okTitle": "Banco vinculado",
+          "okBody": "Tus cuentas y movimientos se están importando en segundo plano. Aparecerán en Posiciones cuando termine.",
+          "toHoldings": "Ir a Posiciones",
+          "failTitle": "Tu banco no se vinculó",
+          "failBody": "Salt Edge informó {{reason}}. No se guardó nada y puedes intentarlo de nuevo.",
+          "tryAgain": "Intentar de nuevo",
+          "banks": {
+            "title": "Tus bancos",
+            "label": "Banco {{n}}",
+            "syncing": "Sincronizando",
+            "needsReconnect": "Hay que volver a conectarlo",
+            "reconnect": "Volver a conectar",
+            "hint": "El permiso de un banco caduca pasado un tiempo, y entonces deja de sincronizarse. Volver a conectarlo lo renueva y conserva todo lo ya importado."
+          }
+        }
       },
       "integrations": {
         "uploadInstead": "Subir un extracto en su lugar"
@@ -1106,6 +1126,12 @@
         "ofTarget": "de <target></target>",
         "progress": "{{name}}: {{percent}} % de la meta",
         "title": "Objetivos"
+      },
+      "bankReconnect": {
+        "notice_one": "{{count}} banco dejó de sincronizarse y hay que volver a conectarlo.",
+        "notice_many": "{{count}} de bancos dejaron de sincronizarse y hay que volver a conectarlos.",
+        "notice_other": "{{count}} bancos dejaron de sincronizarse y hay que volver a conectarlos.",
+        "action": "Volver a conectar"
       }
     },
     "jobs": {

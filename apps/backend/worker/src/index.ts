@@ -44,6 +44,7 @@ import { krakenFactory } from '@scani/providers/providers/kraken';
 import { kucoinFactory } from '@scani/providers/providers/kucoin';
 import { mexcFactory } from '@scani/providers/providers/mexc';
 import { okxFactory } from '@scani/providers/providers/okx';
+import { saltedgeFactory } from '@scani/providers/providers/saltedge';
 import { solanaFactory } from '@scani/providers/providers/solana';
 import { tonFactory } from '@scani/providers/providers/ton';
 import { tronFactory } from '@scani/providers/providers/tron';
@@ -252,6 +253,7 @@ async function main(): Promise<void> {
         // Brokers + fiat.
         ibkrFactory,
         wiseFactory,
+        saltedgeFactory,
         airwallexFactory,
         // AI: STUB_AI=1 registers a fixed-payload provider FIRST so the
         // e2e suite gets deterministic screenshot-parse results without

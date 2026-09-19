@@ -116,6 +116,7 @@ import { krakenFactory } from '@scani/providers/providers/kraken';
 import { kucoinFactory } from '@scani/providers/providers/kucoin';
 import { mexcFactory } from '@scani/providers/providers/mexc';
 import { okxFactory } from '@scani/providers/providers/okx';
+import { saltedgeFactory } from '@scani/providers/providers/saltedge';
 import { solanaFactory } from '@scani/providers/providers/solana';
 import { tonFactory } from '@scani/providers/providers/ton';
 import { tronFactory } from '@scani/providers/providers/tron';
@@ -124,6 +125,7 @@ import { googleSheetsFactory } from '@scani/providers-google-sheets';
 import { createBetterAuth } from './auth/better-auth';
 import { buildCorsOrigins, buildTrustedOrigins } from './config/browser-origins';
 import { initializeContainer } from './config/container';
+import { registerSaltEdgeCallbackRoutes } from './integrations/saltedge-callback';
 import { isLivenessProbe } from './lib/liveness';
 import { registerAdminDataRoutes } from './presentation/http/admin-data';
 import { registerAdminJobsRoutes } from './presentation/http/admin-jobs';
@@ -183,6 +185,7 @@ try {
       // Brokers + fiat.
       ibkrFactory,
       wiseFactory,
+      saltedgeFactory,
       airwallexFactory,
       // AI: STUB_AI=1 registers a fixed-payload provider FIRST so the
       // e2e suite gets deterministic AI results without an OpenAI key.
@@ -620,6 +623,7 @@ if (!demoConfig.enabled) {
   registerAdminDataRoutes(app, redisConnection);
   // One-click, no-login digest opt-out (SC-460). Public by design.
   registerUnsubscribeRoutes(app);
+  registerSaltEdgeCallbackRoutes(app, env);
 } else {
   logger.warn(
     {},

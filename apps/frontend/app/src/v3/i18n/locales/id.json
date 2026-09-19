@@ -194,6 +194,10 @@
       },
       "runway": {
         "label": "Uang bertahan"
+      },
+      "bankReconnect": {
+        "notice_other": "{{count}} bank berhenti menyinkronkan dan perlu dihubungkan ulang.",
+        "action": "Hubungkan ulang"
       }
     },
     "money": {
@@ -1806,7 +1810,27 @@
         "credentials": "Kredensial",
         "ownDocs": "dokumentasi resmi {{name}}",
         "unverifiedTitle": "Tidak dapat memeriksa kunci {{name}} Anda",
-        "unverifiedDetail": "{{name}} tidak menjawab, jadi kami tidak bisa memastikan apakah kuncinya benar. Tidak ada yang tersimpan — coba lagi sebentar lagi."
+        "unverifiedDetail": "{{name}} tidak menjawab, jadi kami tidak bisa memastikan apakah kuncinya benar. Tidak ada yang tersimpan — coba lagi sebentar lagi.",
+        "redirect": {
+          "permissions": "Anda masuk di halaman bank Anda sendiri. Scani mendapat akses hanya-baca dan tidak pernah melihat kata sandi bank Anda.",
+          "howItWorks": "Cara kerjanya",
+          "continue": "Lanjut ke {{name}}",
+          "returnDocTitle": "Menautkan bank Anda",
+          "okTitle": "Bank tertaut",
+          "okBody": "Akun dan transaksi Anda sedang diimpor di latar belakang. Semuanya muncul di Aset setelah selesai.",
+          "toHoldings": "Buka Aset",
+          "failTitle": "Bank Anda tidak tertaut",
+          "failBody": "Salt Edge melaporkan {{reason}}. Tidak ada yang disimpan, dan Anda bisa mencoba lagi.",
+          "tryAgain": "Coba lagi",
+          "banks": {
+            "title": "Bank Anda",
+            "label": "Bank {{n}}",
+            "syncing": "Menyinkronkan",
+            "needsReconnect": "Perlu dihubungkan ulang",
+            "reconnect": "Hubungkan ulang",
+            "hint": "Izin bank berakhir setelah beberapa waktu, lalu bank berhenti menyinkronkan. Menghubungkan ulang akan memperbaruinya dan menyimpan semua yang sudah diimpor."
+          }
+        }
       },
       "demoNote": "Apa pun yang Anda masukkan di sini tidak disimpan — ini demo."
     },

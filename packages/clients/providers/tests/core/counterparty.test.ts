@@ -104,6 +104,38 @@ describe('extractCounterparty — airwallex', () => {
   });
 });
 
+describe('extractCounterparty — saltedge', () => {
+  // Shape from Salt Edge v6 `transaction`: `description` is always present,
+  // `extra.payee` / `extra.payer` only when the bank sends them.
+  test('money out names the payee', () => {
+    const raw = { id: 't1', description: 'CARD 1234 TESCO', extra: { payee: 'Tesco Stores' } };
+    expect(extractCounterparty('saltedge-api', raw, 'withdraw')).toEqual({
+      counterparty: 'Tesco Stores',
+      description: 'CARD 1234 TESCO',
+    });
+  });
+
+  test('money in names the payer, not the payee', () => {
+    const raw = { description: 'SALARY', extra: { payer: 'Acme Ltd', payee: 'Me' } };
+    expect(extractCounterparty('saltedge-api', raw, 'deposit')).toEqual({
+      counterparty: 'Acme Ltd',
+      description: 'SALARY',
+    });
+  });
+
+  test('with no payee or payer the description stands in for both', () => {
+    const raw = { description: 'Direct debit Octopus Energy', extra: {} };
+    expect(extractCounterparty('saltedge-api', raw, 'withdraw')).toEqual({
+      counterparty: 'Direct debit Octopus Energy',
+      description: 'Direct debit Octopus Energy',
+    });
+  });
+
+  test('a blank row yields nothing', () => {
+    expect(extractCounterparty('saltedge-api', { description: '  ' }, 'withdraw')).toEqual({});
+  });
+});
+
 describe('extractCounterparty — asset-centric sources have no payee, by design', () => {
   // Crypto exchange trades and chain swaps have no counterparty to find —
   // returning {} for them is correct, not a gap. No extractor is
@@ -151,7 +183,7 @@ describe('extractCounterparty — must never throw on an unexpected shape', () =
     { description: [] },
   ];
 
-  for (const source of ['wise-api', 'wise', 'airwallex-api', 'airwallex']) {
+  for (const source of ['wise-api', 'wise', 'airwallex-api', 'airwallex', 'saltedge-api']) {
     for (const [i, value] of junk.entries()) {
       test(`${source} shape ${i} returns {} rather than throwing`, () => {
         let out: ReturnType<typeof extractCounterparty> | undefined;

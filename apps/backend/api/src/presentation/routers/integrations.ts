@@ -176,6 +176,7 @@ export const integrationsRouter = router({
           providerKey: manifest.providerKey,
           credentialFields: manifest.credentialFields,
           instructions: manifest.instructions,
+          connectFlow: manifest.connectFlow ?? ('form' as const),
           institution: {
             id: row.institution.id,
             name: row.institution.name,

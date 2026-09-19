@@ -143,6 +143,7 @@ describe('the capture header', () => {
 function integration(providerKey: string, name: string, typeCode: string | null): Integration {
   return {
     providerKey,
+    connectFlow: 'form',
     credentialFields: [],
     instructions: { steps: [] },
     institution: {

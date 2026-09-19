@@ -40,6 +40,7 @@ export const CEX_SOURCE_TO_INSTITUTION: Record<string, string> = {
   'gemini-api': 'gemini',
   'ibkr-api': 'ibkr',
   'airwallex-api': 'airwallex',
+  'saltedge-api': 'saltedge',
 };
 
 /** Exchange/broker transaction-import source tags. */
