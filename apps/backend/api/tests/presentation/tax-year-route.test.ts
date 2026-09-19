@@ -144,3 +144,85 @@ describe('the tax-year result carries income, with no airdrop total', () => {
     );
   });
 });
+
+/**
+ * `exports.taxYearPdf` takes the year and the WORDS; the server computes every
+ * figure. A request carrying its own sheet is refused, so a client cannot print
+ * a number the ledger did not produce.
+ */
+describe('exports.taxYearPdf input', () => {
+  const schema = inputSchemaFor('exports.taxYearPdf');
+  const labels = {
+    subject: 'Tax year statement',
+    headers: {
+      date: 'Date',
+      asset: 'Asset',
+      quantity: 'Quantity',
+      acquired: 'Acquired',
+      amount: 'Amount',
+      costBasis: 'Cost basis',
+      gain: 'Gain',
+      daysHeld: 'Days held',
+    },
+    groups: {
+      disposals: 'Disposals',
+      interest: 'Interest',
+      rewards: 'Rewards',
+      airdrops: 'Airdrops',
+    },
+    details: {
+      year: 'Year',
+      method: 'Method',
+      timeZone: 'Zone',
+      gainTotal: 'Gain',
+      interestTotal: 'Interest',
+      rewardTotal: 'Rewards',
+      airdropNote: 'Airdrops',
+      caveat: 'Note',
+      basisIncomplete: 'Incomplete basis',
+      awaitingReview: 'Awaiting review',
+      unvaluedIncome: 'Unvalued income',
+    },
+    methods: { fifo: 'FIFO', uk_section_104: 'Section 104' },
+    yearStarts: { 'jan-1': '1 Jan', 'apr-1': '1 Apr', 'apr-6': '6 Apr', 'jul-1': '1 Jul' },
+    airdropNote: 'listed, not totalled',
+    caveat: 'figures can change if past data or the method changes; keep the PDF you filed',
+  };
+  const ok = { year: 2024, yearStart: 'apr-6', labels };
+
+  test('year, start and labels are accepted — so a refusal below means something', () => {
+    expect(schema.safeParse(ok).success).toBe(true);
+  });
+
+  test('a request with no caveat is refused', () => {
+    expect(schema.safeParse({ ...ok, labels: { ...labels, caveat: '' } }).success).toBe(false);
+    expect(
+      schema.safeParse({ ...ok, labels: { ...labels, methods: { fifo: 'FIFO' } } }).success
+    ).toBe(false);
+  });
+
+  test('a request carrying its own sheet is refused', () => {
+    expect(schema.safeParse({ ...ok, sheet: { rows: [] } }).success).toBe(false);
+  });
+
+  test("the statement's own words travel too, so the page is in the reader's language", () => {
+    const text = {
+      total: 'Итого',
+      pageOf: 'Страница {{page}} из {{pages}}',
+      account: 'Аккаунт',
+      generated: 'Создано',
+      generatedAt: '19 сентября 2026 г. в 08:00 UTC',
+      rows: 'Строк',
+      amounts: 'Суммы',
+      amountsWithheld: 'скрыты',
+      characters: 'Символы',
+      unsupportedNote: 'примечание',
+      noRows: 'Нет строк',
+    };
+    expect(schema.safeParse({ ...ok, text }).success).toBe(true);
+  });
+
+  test('yearStart has no default here either', () => {
+    expect(schema.safeParse({ year: 2024, labels }).success).toBe(false);
+  });
+});
