@@ -517,7 +517,7 @@
         "addPayment": "Add a payment"
       },
       "recurringSummary": {
-        "projectedEachMonth": "Projected each month",
+        "projectedEachMonth": "Projected bills each month",
         "estimatedFromHistory_one": "Includes {{count}} variable payment estimated from its last settled amount.",
         "estimatedFromHistory_other": "Includes {{count}} variable payments estimated from their last settled amounts.",
         "notCounted_one": "{{count}} variable payment has no estimate and is not counted.",
