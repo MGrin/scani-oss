@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 import type { OutflowRateLimiter } from '@scani/rate-limiter';
+import { WALLET_HISTORY_ROW_CAP } from '../../src/core/wallet-limits';
 import { SolanaProvider } from '../../src/providers/solana';
 import { __resetJupiterCacheForTests } from '../../src/providers/solana/jupiter';
 
@@ -657,3 +658,39 @@ test.skipIf(process.env.SCANI_LIVE !== '1' || !process.env.HELIUS_API_KEY)(
   },
   60_000
 );
+
+describe('SolanaProvider.fetchTransactions over an address with no end (SC-1271)', () => {
+  test('stops at the row cap and retracts the history claim', async () => {
+    const p = new SolanaProvider(passthroughLimiter(), 'https://mainnet.helius-rpc.com/?api-key=k');
+    const retractions: string[] = [];
+    let pages = 0;
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (url: string) => {
+      if (url.toString().includes('lite-api.jup.ag')) return new Response('[]', { status: 200 });
+      pages += 1;
+      return new Response(
+        JSON.stringify(
+          Array.from({ length: 100 }, (_, i) => ({
+            signature: `sig${pages}_${i}`,
+            timestamp: 1_700_000_000 - pages,
+            accountData: [
+              { account: VALID_SOL, nativeBalanceChange: 1_000, tokenBalanceChanges: [] },
+            ],
+          }))
+        ),
+        { status: 200 }
+      );
+    }) as unknown as typeof fetch;
+    try {
+      const events = await p.fetchTransactions({
+        ...ctx,
+        retractHistoryClaim: (r: string) => retractions.push(r),
+      } as never);
+      expect(events.length).toBeGreaterThanOrEqual(WALLET_HISTORY_ROW_CAP);
+      expect(pages).toBe(WALLET_HISTORY_ROW_CAP / 100);
+      expect(retractions).toHaveLength(1);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+});
