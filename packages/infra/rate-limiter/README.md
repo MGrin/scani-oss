@@ -155,9 +155,15 @@ correct behaviour for tests.
 
 ## Inflow keying
 
-`defaultInflowKey(req)` extracts the client identity from edge-proxy
-headers, in priority order: `cf-connecting-ip` → `fly-client-ip` →
-`x-real-ip` → rightmost entry of `x-forwarded-for` → `UA|Origin|Method`.
+On Fly (`FLY_APP_NAME` set), `defaultInflowKey(req)` keys on
+`fly-client-ip` alone, which Fly's proxy sets, and a request without it
+shares one bucket. Every other header reaches a Fly-direct app exactly as
+the client sent it: trusting `cf-connecting-ip` first let one caller rotate
+it past every per-IP cap (SC-1262).
+
+Off Fly it tries edge headers in priority order: `cf-connecting-ip` →
+`fly-client-ip` → `x-real-ip` → rightmost entry of `x-forwarded-for` →
+`UA|Origin|Method`.
 
 The `x-forwarded-for` *rightmost* matters: Fly and Cloudflare APPEND
 the real client IP at the tail, so the leftmost values are

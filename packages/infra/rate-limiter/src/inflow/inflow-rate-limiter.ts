@@ -1,3 +1,5 @@
+import { loadRateLimiterConfig, type RateLimiterConfig } from '../config';
+
 // Fixed-window admission limiter for *inbound* HTTP requests. Distinct
 // from the outflow family: the contract here is `tryConsume(req)` returning
 // `{ ok, retryAfterSec }`, so the HTTP layer can reject up-front with a
@@ -20,19 +22,28 @@ export interface InflowRateLimiterOptions {
 }
 
 /**
- * Request-origin keying. Trust edge-provider headers
- * (`cf-connecting-ip` for Cloudflare, `fly-client-ip` for Fly,
- * `x-real-ip` for generic proxies) — those are set by trusted infra
- * and overwritten at the edge, so clients can't forge them.
+ * Request-origin keying.
  *
- * `X-Forwarded-For` is only used as a last-resort fallback and only
- * the **rightmost** entry is trusted: Fly and Cloudflare APPEND the
- * real client IP at the tail, so the leftmost values are
- * attacker-controlled. If we keyed on the whole list a caller could
- * rotate a random prefix and trivially bypass the counter.
+ * **On Fly, only `fly-client-ip` counts** (SC-1262). Fly's proxy sets that
+ * header itself; every other header here arrives from the client untouched,
+ * because nothing else sits in front of a Fly-direct app. Trusting
+ * `cf-connecting-ip` first let a caller rotate it per request and walk past
+ * every per-IP cap — about a thousand sign-in attempts a minute against a
+ * 6-an-hour limit, 2026-09-19. A request with no `fly-client-ip` (a probe
+ * from inside the private network) shares one bucket rather than falling
+ * through to a header the client chose.
+ *
+ * Off Fly the edge headers are tried in order, and `X-Forwarded-For` only by
+ * its **rightmost** entry, which is the one a proxy appended. If an app on Fly
+ * is ever put behind Cloudflare's proxy, `fly-client-ip` becomes Cloudflare's
+ * address and this must change with it.
  */
-export function defaultInflowKey(req: Request): string {
+export function defaultInflowKey(
+  req: Request,
+  config: RateLimiterConfig = loadRateLimiterConfig()
+): string {
   const h = req.headers;
+  if (config.FLY_APP_NAME) return h.get('fly-client-ip') || 'fly:no-client-ip';
   return (
     h.get('cf-connecting-ip') ||
     h.get('fly-client-ip') ||
@@ -61,7 +72,7 @@ export abstract class InflowRateLimiter {
     this.windowSec = Math.max(1, Math.floor(opts.windowMs / 1000));
     this.max = Math.max(1, opts.max);
     this.namespace = opts.namespace;
-    this.keyFn = opts.key ?? defaultInflowKey;
+    this.keyFn = opts.key ?? ((req) => defaultInflowKey(req));
   }
 
   async tryConsume(
