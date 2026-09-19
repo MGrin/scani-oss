@@ -32,8 +32,16 @@ function stubWindow(stored: Record<string, string>) {
   return data;
 }
 
+const hadWindow = 'window' in globals;
+const originalWindow = globals.window;
+
+// Delete the key rather than assigning `undefined`: `window = undefined` leaves
+// `'window' in globalThis` true for every later file in the process, and
+// mount-dom.test.tsx asserts exactly that it is false. Under `--shard=2/2` the
+// two share a process and the leak went red there (SC-1236).
 afterEach(() => {
-  globals.window = undefined;
+  if (hadWindow) globals.window = originalWindow;
+  else delete globals.window;
 });
 
 const CUTS = ['token_type', 'institution', 'account', 'group'] as const;
