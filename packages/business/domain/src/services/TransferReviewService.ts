@@ -1111,13 +1111,11 @@ export class TransferReviewService {
         // position in this token, so "create one here" describes the money
         // arriving in a second copy of the position it departed.
         //
-        // It is the one row mgrin was offered on production, and the entity
-        // boundary is what made it the ONLY one: with a single assigned
-        // account (SC-859) every other is across the boundary and skipped
-        // above, leaving the source itself. What is left after this `continue`
-        // is an EMPTY list, which is the correct answer for a movement whose
-        // two ends are on different sets of books — and a different defect,
-        // SC-930, owns what that empty list then says.
+        // It is the one row the reported portfolio was offered on production:
+        // until SC-1151 the entity boundary skipped every other account above,
+        // leaving the source itself. With that filter gone, the list is empty
+        // after this `continue` only when the reader has no other account at
+        // all, which is what the picker's empty sentence says (SC-930).
         if (account.accountId === sourceAccountId) continue;
         destinations.push({
           accountId: account.accountId,
