@@ -75,6 +75,7 @@
         "@elysiajs/trpc": "^1.1.0",
         "@scani/config": "workspace:*",
         "@scani/db": "workspace:*",
+        "@scani/deadline": "workspace:*",
         "@scani/email": "workspace:*",
         "@scani/http-fetch": "workspace:*",
         "@scani/logging": "workspace:*",

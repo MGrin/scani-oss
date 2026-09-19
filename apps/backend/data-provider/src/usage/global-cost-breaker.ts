@@ -30,6 +30,7 @@
  * probe the cap value.
  */
 
+import { StoreCommandTimeoutError, withDeadline } from '@scani/deadline';
 import type { Redis } from 'ioredis';
 
 export interface GlobalCostBreakerConfig {
@@ -46,6 +47,24 @@ export interface GlobalCostBreakerConfig {
 
 const BUCKET_TTL_SECONDS = 7200; // 2 × bucket size, see header.
 const KEY_PREFIX = 'global:cost:hour:';
+
+/**
+ * The fail-open below needs something to REJECT, and the shared client never
+ * does: it is built `maxRetriesPerRequest: null`, so a command issued while
+ * Redis is down waits for a connection that may not return. Measured on a dead
+ * port before this bound (SC-1027): `shouldAllow()` still pending after 4000ms
+ * — every metered request hung in the middleware instead of failing open.
+ * 250ms follows the inflow limiter and `PortfolioValueCache`.
+ */
+const REDIS_TIMEOUT_MS = 250;
+
+function bounded<T>(work: Promise<T>, operation: string): Promise<T> {
+  return withDeadline(
+    work,
+    REDIS_TIMEOUT_MS,
+    () => new StoreCommandTimeoutError('redis', operation, REDIS_TIMEOUT_MS)
+  );
+}
 
 export class GlobalCostBreaker {
   private readonly cap: number;
@@ -77,7 +96,7 @@ export class GlobalCostBreaker {
   async currentSpendUsd(): Promise<number> {
     if (!this.enabled()) return 0;
     try {
-      const raw = await this.redis.get(this.bucketKey());
+      const raw = await bounded(this.redis.get(this.bucketKey()), 'GET global cost bucket');
       if (!raw) return 0;
       const n = Number.parseFloat(raw);
       return Number.isFinite(n) ? n : 0;
@@ -113,11 +132,17 @@ export class GlobalCostBreaker {
     if (!this.enabled() || !Number.isFinite(costUsd) || costUsd <= 0) return 0;
     try {
       const key = this.bucketKey();
-      const next = await this.redis.incrbyfloat(key, costUsd);
+      const next = await bounded(
+        this.redis.incrbyfloat(key, costUsd),
+        'INCRBYFLOAT global cost bucket'
+      );
       // Set TTL only on first write; subsequent writes don't reset
       // it (we want the bucket to age out at its hour-aligned
       // boundary, not to slide).
-      await this.redis.expire(key, BUCKET_TTL_SECONDS, 'NX').catch(() => undefined);
+      await bounded(
+        this.redis.expire(key, BUCKET_TTL_SECONDS, 'NX'),
+        'EXPIRE global cost bucket'
+      ).catch(() => undefined);
       const total = Number.parseFloat(next);
       return Number.isFinite(total) ? total : 0;
     } catch {
