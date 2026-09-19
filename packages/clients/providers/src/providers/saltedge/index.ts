@@ -57,6 +57,9 @@ interface SaltEdgeTransaction {
   amount: number | string;
   currency_code: string;
   status?: string;
+  /** Read from the stored raw payload by the counterparty extractor. */
+  description?: string;
+  extra?: { payee?: string; payer?: string };
 }
 
 function tokenIdentity(currency: string): Partial<NewToken> {

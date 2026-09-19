@@ -75,6 +75,29 @@ function extractAirwallex(raw: unknown): CounterpartyExtraction {
 }
 
 /**
+ * saltedge: `SaltEdgeTransaction` (`providers/saltedge/index.ts`) — Salt
+ * Edge v6 `{ id, made_on, amount, currency_code, description, extra }`.
+ * `extra.payee` and `extra.payer` are the structured names when the bank
+ * sends them, and which one is the other party depends on the direction;
+ * the statement line is always `description`, which stands in when neither
+ * name is there.
+ */
+function extractSaltEdge(raw: unknown, kind?: string): CounterpartyExtraction {
+  const root = asRecord(raw);
+  const extra = asRecord(root?.extra);
+  const description = asNonEmptyString(root?.description);
+  const named =
+    kind && INFLOW_KINDS.has(kind)
+      ? asNonEmptyString(extra?.payer)
+      : kind && OUTFLOW_KINDS.has(kind)
+        ? asNonEmptyString(extra?.payee)
+        : undefined;
+  const counterparty = named ?? description;
+  if (!counterparty) return {};
+  return description ? { counterparty, description } : { counterparty };
+}
+
+/**
  * etherscan: a normal-transaction / token-transfer row — `{ from, to,
  * hash, value, ... }`. Both sides are always present, so which one is
  * the counterparty depends on which way the value moved: for an outflow
@@ -120,6 +143,7 @@ const EXTRACTORS: Record<string, (raw: unknown, kind?: string) => CounterpartyEx
   wise: extractWise,
   'airwallex-api': extractAirwallex,
   airwallex: extractAirwallex,
+  'saltedge-api': extractSaltEdge,
   etherscan: extractEtherscan,
 };
 
