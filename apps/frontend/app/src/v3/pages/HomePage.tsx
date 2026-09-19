@@ -18,6 +18,7 @@ import { HeroBlock } from '../components/home/HeroBlock';
 import { TopHoldingsBlock } from '../components/home/TopHoldingsBlock';
 import { UpcomingBlock } from '../components/home/UpcomingBlock';
 import { VaultsBlock } from '../components/home/VaultsBlock';
+import { AccountDeletionNotice } from '../components/settings/AccountDeletionNotice';
 import {
   DEFAULT_HOME_PERIOD,
   HOME_PERIOD_KEYS,
@@ -226,6 +227,7 @@ export function HomePage() {
   if (overview.data.counts.holdings === 0) {
     return (
       <PageLayout className="items-start">
+        <AccountDeletionNotice />
         <FirstRun onOpenCapture={openCapture} />
         {/* The empty screen is exactly where a dead job hides best, and this
             branch used to return before the attention row (SC-153). Someone
@@ -242,6 +244,10 @@ export function HomePage() {
     <>
       <HomeHeading />
       <DashboardGrid>
+        {/* Before everything else: an account its owner asked to delete, and
+          believes is gone, is still here (SC-1276). Renders nothing otherwise. */}
+        <AccountDeletionNotice className="col-span-full" />
+
         {/* Above everything, because it qualifies everything: with the api
           unreachable this screen renders a full portfolio to the cent off the
           cache and used to say nothing at all about how old it was (SC-71 9.1).

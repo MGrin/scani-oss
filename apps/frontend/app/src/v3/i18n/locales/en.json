@@ -1180,7 +1180,11 @@
         "deleteConsequence": "Everything in this account goes, including every file you uploaded and its stored copy. Your login remains, with nothing in it. This cannot be undone.",
         "deleteInFlight": "Your data is being deleted.",
         "deleted": "All your data has been deleted",
-        "deleteFailed": "The delete failed"
+        "deleteFailed": "The delete failed",
+        "accountIntro": "Deleting your account removes the data above and the login itself. You are signed out and cannot sign back in to it.",
+        "accountTrigger": "Delete my account",
+        "accountConfirm": "Delete my account",
+        "accountConsequence": "Your data, your login and every signed-in device go. Signing up again with this email starts a new, empty account. This cannot be undone."
       },
       "export": {
         "title": "Your data",
@@ -1305,6 +1309,12 @@
         "changeConfirm": "Recalculate my gains on {{method}}",
         "changeInFlight": "Your gains are being recalculated.",
         "recomputing": "Recalculating your gains — figures across the app are still settling."
+      },
+      "accountDeletion": {
+        "failed": "Your account deletion did not complete, so the account is still here.",
+        "failedFallback": "Try again, or contact support and we will remove it.",
+        "pending": "Your account is being deleted.",
+        "retry": "Try again"
       }
     },
     "feedback": {

@@ -2544,7 +2544,11 @@
         "deleteIntro": "Eliminar os seus dados remove tudo o que existe nesta conta: posições, ligações, pagamentos e os ficheiros que carregou. O acesso em si mantém-se, vazio.",
         "deleteTrigger": "Eliminar todos os meus dados",
         "deleted": "Todos os seus dados foram eliminados",
-        "deleting": "A eliminar…"
+        "deleting": "A eliminar…",
+        "accountIntro": "Eliminar a sua conta apaga os dados acima e o próprio acesso. A sessão é terminada e não poderá voltar a entrar nela.",
+        "accountTrigger": "Eliminar a minha conta",
+        "accountConfirm": "Eliminar a minha conta",
+        "accountConsequence": "Os seus dados, o seu acesso e todos os dispositivos com sessão iniciada desaparecem. Registar-se novamente com este email cria uma conta nova e vazia. Não é possível anular."
       },
       "dataQuality": {
         "duplicateChip": "{{symbol}}×{{count}}",
@@ -2673,6 +2677,12 @@
         "changeConfirm": "Recalcular os meus ganhos com {{method}}",
         "changeInFlight": "Os seus ganhos estão a ser recalculados.",
         "recomputing": "A recalcular os seus ganhos — os números da aplicação ainda estão a assentar."
+      },
+      "accountDeletion": {
+        "failed": "A eliminação da sua conta não foi concluída, por isso a conta continua aqui.",
+        "failedFallback": "Tente novamente ou contacte o suporte e nós removemo-la.",
+        "pending": "A sua conta está a ser eliminada.",
+        "retry": "Tentar novamente"
       }
     },
     "shell": {

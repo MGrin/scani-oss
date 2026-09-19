@@ -774,7 +774,11 @@
         "deleteConsequence": "Tout ce que contient ce compte disparaît, y compris chaque fichier que vous avez importé et sa copie stockée. Votre identifiant de connexion reste, sans rien dedans. Cette action est irréversible.",
         "deleteInFlight": "Vos données sont en cours de suppression.",
         "deleted": "Toutes vos données ont été supprimées",
-        "deleteFailed": "La suppression a échoué"
+        "deleteFailed": "La suppression a échoué",
+        "accountIntro": "Supprimer votre compte efface les données ci-dessus et l’identifiant lui-même. Vous êtes déconnecté et ne pourrez plus vous y reconnecter.",
+        "accountTrigger": "Supprimer mon compte",
+        "accountConfirm": "Supprimer mon compte",
+        "accountConsequence": "Vos données, votre identifiant et tous les appareils connectés disparaissent. Vous réinscrire avec cette adresse crée un nouveau compte vide. Action irréversible."
       },
       "export": {
         "title": "Vos données",
@@ -903,6 +907,12 @@
         "changeConfirm": "Recalculer mes plus-values avec {{method}}",
         "changeInFlight": "Vos plus-values sont en cours de recalcul.",
         "recomputing": "Recalcul de vos plus-values — les chiffres de l'application sont encore en train de se stabiliser."
+      },
+      "accountDeletion": {
+        "failed": "La suppression de votre compte n’a pas abouti : le compte est toujours là.",
+        "failedFallback": "Réessayez, ou contactez le support et nous le supprimerons.",
+        "pending": "Votre compte est en cours de suppression.",
+        "retry": "Réessayer"
       }
     },
     "home": {

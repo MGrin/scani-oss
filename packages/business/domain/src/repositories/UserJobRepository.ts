@@ -492,6 +492,34 @@ export class UserJobRepository {
     return updated.length > 0;
   }
 
+  /**
+   * The newest account deletion that did not finish (SC-1276). A completed one
+   * leaves no row — it cascades with `users` — so a standing row is either
+   * still running or failed, and the owner, signed out when it was queued,
+   * would otherwise believe the account is gone. A dismissed failure is one
+   * they have already been told about.
+   */
+  async findUnfinishedAccountDeletion(
+    userId: string,
+    transaction?: DatabaseTransaction
+  ): Promise<UserJob | null> {
+    const db = this.getDb(transaction);
+    const [row] = await db
+      .select()
+      .from(schema.userJobs)
+      .where(
+        and(
+          eq(schema.userJobs.userId, userId),
+          eq(schema.userJobs.jobName, 'user-data-delete'),
+          sql`${schema.userJobs.payloadSummary} ->> 'deleteAccount' = 'true'`,
+          isNull(schema.userJobs.dismissedAt)
+        )
+      )
+      .orderBy(desc(schema.userJobs.createdAt))
+      .limit(1);
+    return (row as UserJob | undefined) ?? null;
+  }
+
   /** Count of in-flight jobs for the top-nav badge. */
   async countActive(userId: string, transaction?: DatabaseTransaction): Promise<number> {
     const db = this.getDb(transaction);

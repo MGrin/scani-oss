@@ -1077,7 +1077,11 @@
         "deleteConsequence": "这个账号里的所有内容都会被删除，包括你上传的每一个文件及其存储副本。你的登录账号会保留，但里面空无一物。此操作无法撤销。",
         "deleteInFlight": "你的数据正在删除中。",
         "deleted": "你的全部数据已删除",
-        "deleteFailed": "删除失败"
+        "deleteFailed": "删除失败",
+        "accountIntro": "删除账户会删除上面的数据以及登录本身。你将被登出，且无法再登录此账户。",
+        "accountTrigger": "删除我的账户",
+        "accountConfirm": "删除我的账户",
+        "accountConsequence": "你的数据、登录以及所有已登录的设备都会被删除。用此邮箱重新注册会得到一个新的空账户。此操作无法撤销。"
       },
       "export": {
         "title": "你的数据",
@@ -1198,6 +1202,12 @@
         "changeConfirm": "按{{method}}重新计算我的盈亏",
         "changeInFlight": "你的盈亏正在重新计算。",
         "recomputing": "正在重新计算你的盈亏 — 应用中的数字仍在调整。"
+      },
+      "accountDeletion": {
+        "failed": "你的账户删除未完成，因此账户仍然存在。",
+        "failedFallback": "请重试，或联系支持团队，我们会为你删除。",
+        "pending": "你的账户正在删除中。",
+        "retry": "重试"
       }
     },
     "feedback": {

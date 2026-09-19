@@ -1077,7 +1077,11 @@
         "deleteConsequence": "Semua isi akun ini akan hilang, termasuk setiap berkas yang Anda unggah beserta salinan tersimpannya. Login Anda tetap ada, tanpa isi apa pun. Tindakan ini tidak dapat dibatalkan.",
         "deleteInFlight": "Data Anda sedang dihapus.",
         "deleted": "Semua data Anda telah dihapus",
-        "deleteFailed": "Penghapusan gagal"
+        "deleteFailed": "Penghapusan gagal",
+        "accountIntro": "Menghapus akun Anda menghapus data di atas beserta login-nya. Anda akan keluar dan tidak dapat masuk lagi ke akun ini.",
+        "accountTrigger": "Hapus akun saya",
+        "accountConfirm": "Hapus akun saya",
+        "accountConsequence": "Data Anda, login Anda, dan semua perangkat yang masuk akan dihapus. Mendaftar lagi dengan email ini membuat akun baru yang kosong. Tindakan ini tidak dapat dibatalkan."
       },
       "export": {
         "title": "Data Anda",
@@ -1198,6 +1202,12 @@
         "changeConfirm": "Hitung ulang keuntungan saya dengan {{method}}",
         "changeInFlight": "Keuntungan Anda sedang dihitung ulang.",
         "recomputing": "Menghitung ulang keuntungan Anda — angka di seluruh aplikasi masih menyesuaikan."
+      },
+      "accountDeletion": {
+        "failed": "Penghapusan akun Anda tidak selesai, jadi akun ini masih ada.",
+        "failedFallback": "Coba lagi, atau hubungi dukungan dan kami akan menghapusnya.",
+        "pending": "Akun Anda sedang dihapus.",
+        "retry": "Coba lagi"
       }
     },
     "feedback": {

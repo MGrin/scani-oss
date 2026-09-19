@@ -2544,7 +2544,11 @@
         "deleteIntro": "Eliminar tus datos borra todo lo que hay en esta cuenta: posiciones, conexiones, pagos y los archivos que has subido. El acceso en sí se mantiene, pero vacío.",
         "deleteTrigger": "Eliminar todos mis datos",
         "deleted": "Se han eliminado todos tus datos",
-        "deleting": "Eliminando…"
+        "deleting": "Eliminando…",
+        "accountIntro": "Eliminar tu cuenta borra los datos anteriores y el propio inicio de sesión. Se cerrará tu sesión y no podrás volver a entrar en ella.",
+        "accountTrigger": "Eliminar mi cuenta",
+        "accountConfirm": "Eliminar mi cuenta",
+        "accountConsequence": "Se eliminan tus datos, tu inicio de sesión y todos los dispositivos conectados. Registrarte de nuevo con este correo crea una cuenta nueva y vacía. No se puede deshacer."
       },
       "dataQuality": {
         "duplicateChip": "{{symbol}}×{{count}}",
@@ -2673,6 +2677,12 @@
         "changeConfirm": "Recalcular mis ganancias con {{method}}",
         "changeInFlight": "Tus ganancias se están recalculando.",
         "recomputing": "Recalculando tus ganancias: las cifras de la aplicación aún se están asentando."
+      },
+      "accountDeletion": {
+        "failed": "La eliminación de tu cuenta no se completó, así que la cuenta sigue aquí.",
+        "failedFallback": "Inténtalo de nuevo o contacta con soporte y la eliminaremos.",
+        "pending": "Tu cuenta se está eliminando.",
+        "retry": "Reintentar"
       }
     },
     "shell": {

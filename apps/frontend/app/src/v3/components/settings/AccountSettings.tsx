@@ -2,7 +2,7 @@ import { Button } from '@scani/ui/ui/button';
 import { showError, showSuccess } from '@scani/ui/ui/use-toast';
 import { Block } from '@scani/ui/v3/components/Block';
 import { ConfirmAction } from '@scani/ui/v3/components/ConfirmAction';
-import { LogOut, Trash2 } from 'lucide-react';
+import { LogOut, Trash2, UserX } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
@@ -10,6 +10,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { trpc } from '@/lib/trpc';
 import { useJobStatus } from '@/v3/hooks/useJobStatus';
 import { V3_BASE } from '../../lib/ui-version';
+import { AccountDeletionNotice } from './AccountDeletionNotice';
 
 /**
  * Leaving, and the one action on this screen that cannot be undone.
@@ -55,6 +56,18 @@ export function AccountSettings() {
     onError: (error) => showError(error, t('v3.settings.pending.deletingData')),
   });
 
+  const [confirmAccount, setConfirmAccount] = useState(false);
+
+  // Signs out on ENQUEUE, not on completion (SC-1276): the job deletes the
+  // session this page is using, so a completion event could never reach it.
+  const deleteAccount = trpc.users.deleteAccount.useMutation({
+    onSuccess: () => {
+      setConfirmAccount(false);
+      void signOut();
+    },
+    onError: (error) => showError(error, t('v3.settings.pending.deletingData')),
+  });
+
   const status = useJobStatus(jobId);
 
   useEffect(() => {
@@ -87,10 +100,11 @@ export function AccountSettings() {
     // a while, which is exactly long enough for someone to change it.
   }, [jobId, status.state, status.userFacingError, navigate, utils, t]);
 
-  const deleting = deleteAll.isPending || jobId !== null;
+  const deleting = deleteAll.isPending || jobId !== null || deleteAccount.isPending;
 
   return (
     <Block className="flex flex-col gap-4 p-4">
+      <AccountDeletionNotice />
       <div className="flex flex-col gap-2">
         <h2 className="text-label text-muted-foreground">{t('settings.account')}</h2>
         <Button variant="outline" className="self-start" onClick={() => void signOut()}>
@@ -119,6 +133,29 @@ export function AccountSettings() {
           open={confirmDelete}
           onOpenChange={setConfirmDelete}
           onConfirm={() => deleteAll.mutate({ requestId: crypto.randomUUID() })}
+        />
+      </div>
+
+      <div className="flex flex-col items-start gap-2 border-t border-border pt-4">
+        <p className="text-body text-muted-foreground">{t('v3.settings.account.accountIntro')}</p>
+        <ConfirmAction
+          label={
+            <>
+              <UserX className="me-2 size-4" aria-hidden="true" />
+              {deleteAccount.isPending
+                ? t('v3.settings.account.deleting')
+                : t('v3.settings.account.accountTrigger')}
+            </>
+          }
+          triggerClassName="text-destructive hover:text-destructive"
+          confirmLabel={t('v3.settings.account.accountConfirm')}
+          consequence={t('v3.settings.account.accountConsequence')}
+          destructive
+          isPending={deleteAccount.isPending}
+          disabledReason={deleting ? t('v3.settings.account.deleteInFlight') : undefined}
+          open={confirmAccount}
+          onOpenChange={setConfirmAccount}
+          onConfirm={() => deleteAccount.mutate({ requestId: crypto.randomUUID() })}
         />
       </div>
     </Block>
