@@ -2,6 +2,23 @@
 # container boot — `${API_UPSTREAM}` and `${CSP_CONNECT_SRC}` are
 # expanded from the env vars of the same name.
 
+# The X-Robots-Tag a response carries, scoped the way `robots.txt` is
+# (SC-1111). `ROBOTS_POLICY` is still the one knob and still moves all three
+# mechanisms together; this only stops the header claiming more than the
+# policy grants. Under `index-root` the root document is offered and nothing
+# else is — `robots.txt` says so with an anchored `Allow: /$`, and until this
+# map the header said `index, follow` on every deep route and every invented
+# path, contradicting it. Under `noindex` both arms resolve to the same value.
+#
+# `$request_uri` and not `$uri`: `/` reaches the document through an internal
+# redirect to `/index.html`, which rewrites `$uri` but not the request line. A
+# direct `/index.html` is the same document at a second address, so it is not
+# offered.
+map $request_uri $robots_tag {
+    default             "noindex, nofollow";
+    "~^/(\?.*)?$"       "${ROBOTS_DIRECTIVE}";
+}
+
 server {
     listen       80 default_server;
     listen       [::]:80 default_server;
