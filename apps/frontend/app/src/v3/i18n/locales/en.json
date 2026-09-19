@@ -242,7 +242,7 @@
           "label": "Compared with",
           "caption": "Bought and held over the same days, in your currency.",
           "btc": "Bitcoin",
-          "sp500": "S&P 500 (SPY)"
+          "sp500": "S&P 500 (SPY, price only)"
         },
         "perYear": "<value/> a year",
         "perYearUnit": "a year",

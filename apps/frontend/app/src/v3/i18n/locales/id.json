@@ -220,7 +220,7 @@
           "label": "Dibandingkan dengan",
           "caption": "Dibeli dan ditahan pada hari yang sama, dalam mata uang Anda.",
           "btc": "Bitcoin",
-          "sp500": "S&P 500 (SPY)"
+          "sp500": "S&P 500 (SPY, harga saja)"
         },
         "perYear": "<value/> per tahun",
         "perYearUnit": "per tahun",

@@ -1132,7 +1132,7 @@
           "label": "Comparado con",
           "caption": "Comprado y mantenido los mismos días, en tu moneda.",
           "btc": "Bitcoin",
-          "sp500": "S&P 500 (SPY)"
+          "sp500": "S&P 500 (SPY, solo precio)"
         },
         "perYear": "<value/> al año",
         "perYearUnit": "al año",
