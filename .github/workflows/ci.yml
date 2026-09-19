@@ -566,7 +566,7 @@ jobs:
       # run was killed, so how much longer it needed is not in the data.
       - name: Run Playwright suite
         timeout-minutes: 15
-        run: cd apps/e2e && bun run test:e2e --project=chromium --project=webkit --project=iphone --project=ipad
+        run: cd apps/e2e && bun run test:e2e -- --project=chromium --project=webkit --project=iphone --project=ipad
         env:
           CI: "true"
 
