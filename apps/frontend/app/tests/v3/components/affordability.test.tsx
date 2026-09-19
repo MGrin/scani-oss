@@ -121,3 +121,16 @@ describe('SC-661 — affordability answers against observed burn', () => {
     expect(html).not.toInclude('It costs 3 months of runway.');
   });
 });
+
+// A typed "GBP" that was never picked from the list left "Check it" grey and
+// silent; the repo's rule is that a disabled button says what is missing
+// (SC-1258, the CaptureSubmit rule).
+describe('SC-1258 — a disabled Check it says what is missing', () => {
+  test('before anything is entered it names the amount and the currency', () => {
+    expect(render()).toInclude('To continue: enter the amount, pick a currency from the list.');
+  });
+
+  test('while the rates are missing it says nothing about the fields', () => {
+    expect(render({ disabled: true })).not.toInclude('To continue:');
+  });
+});
