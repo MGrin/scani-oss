@@ -29,6 +29,19 @@ export interface GroupValue {
    * total that silently omits it understates the group.
    */
   unpricedSymbols: string[];
+  /**
+   * Base-currency total of the group's INACTIVE holdings we could price, and
+   * how many inactive holdings the group has (SC-1128).
+   *
+   * Never part of `value`, and never added to anything: a closed position is
+   * in no portfolio total. It exists so a group made only of closed positions
+   * can say what they are worth under a label that says they are inactive,
+   * rather than headlining zero over a list of rows that each carry a value.
+   * Hidden and scam holdings never reach this service (the repository drops
+   * them), so they are in neither figure.
+   */
+  inactiveValue: string;
+  inactiveHoldings: number;
 }
 
 export interface GroupValuationResult {
@@ -133,13 +146,15 @@ export class GroupValuationService extends BaseService {
     const groups = await this.groupRepository.findByUser(userId);
 
     const activeById = new Map<string, ValuableHolding>();
+    const inactiveById = new Map<string, ValuableHolding>();
     for (const entry of holdingsWithDetails) {
-      if (!entry.holding.isActive) continue;
-      activeById.set(entry.holding.id, entry);
+      (entry.holding.isActive ? activeById : inactiveById).set(entry.holding.id, entry);
     }
 
+    // One membership read for both sets, so an inactive holding is judged by
+    // the same rule as an active one (SC-1128).
     const membership = await this.groupRepository.findGroupsForHoldings(
-      [...activeById.values()].map(({ holding }) => ({
+      holdingsWithDetails.map(({ holding }) => ({
         id: holding.id,
         accountId: holding.accountId,
       }))
@@ -152,17 +167,27 @@ export class GroupValuationService extends BaseService {
     const visible = new Set(groups.map((group) => group.id));
     const membersByGroup = new Map<string, Set<string>>();
     const ungroupedMembers = new Set<string>();
-    for (const holdingId of activeById.keys()) {
+    const inactiveByGroup = new Map<string, Set<string>>();
+    const ungroupedInactive = new Set<string>();
+    const place = (
+      holdingId: string,
+      byGroup: Map<string, Set<string>>,
+      ungroupedSet: Set<string>
+    ): void => {
       const memberOf = (membership.get(holdingId) ?? []).filter((group) => visible.has(group.id));
       if (memberOf.length === 0) {
-        ungroupedMembers.add(holdingId);
-        continue;
+        ungroupedSet.add(holdingId);
+        return;
       }
       for (const group of memberOf) {
-        const members = membersByGroup.get(group.id);
+        const members = byGroup.get(group.id);
         if (members) members.add(holdingId);
-        else membersByGroup.set(group.id, new Set([holdingId]));
+        else byGroup.set(group.id, new Set([holdingId]));
       }
+    };
+    for (const holdingId of activeById.keys()) place(holdingId, membersByGroup, ungroupedMembers);
+    for (const holdingId of inactiveById.keys()) {
+      place(holdingId, inactiveByGroup, ungroupedInactive);
     }
 
     return {
@@ -172,10 +197,19 @@ export class GroupValuationService extends BaseService {
           group.id,
           membersByGroup.get(group.id) ?? new Set<string>(),
           activeById,
-          priceMap
+          priceMap,
+          inactiveByGroup.get(group.id) ?? new Set<string>(),
+          inactiveById
         ),
       })),
-      ungrouped: this.sumMembers('ungrouped', ungroupedMembers, activeById, priceMap),
+      ungrouped: this.sumMembers(
+        'ungrouped',
+        ungroupedMembers,
+        activeById,
+        priceMap,
+        ungroupedInactive,
+        inactiveById
+      ),
     };
   }
 
@@ -183,7 +217,9 @@ export class GroupValuationService extends BaseService {
     groupId: string,
     memberIds: ReadonlySet<string>,
     activeById: Map<string, ValuableHolding>,
-    priceMap: Map<string, string>
+    priceMap: Map<string, string>,
+    inactiveIds: ReadonlySet<string>,
+    inactiveById: Map<string, ValuableHolding>
   ): GroupValue {
     let total = new Decimal(0);
     let holdingsCounted = 0;
@@ -210,11 +246,25 @@ export class GroupValuationService extends BaseService {
       holdingsCounted += 1;
     }
 
+    // A separate sum on purpose: nothing below may flow into `total`.
+    let inactiveTotal = new Decimal(0);
+    for (const holdingId of inactiveIds) {
+      const member = inactiveById.get(holdingId);
+      if (!member) continue;
+      const price = priceMap.get(member.token.id);
+      if (price === undefined) continue;
+      inactiveTotal = inactiveTotal.add(
+        new Decimal(member.holding.balance).mul(new Decimal(price))
+      );
+    }
+
     return {
       groupId,
       value: total.toString(),
       holdingsCounted,
       unpricedSymbols: [...unpriced].sort(),
+      inactiveValue: inactiveTotal.toString(),
+      inactiveHoldings: inactiveIds.size,
     };
   }
 }

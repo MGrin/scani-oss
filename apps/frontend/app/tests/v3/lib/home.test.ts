@@ -693,6 +693,29 @@ describe('groupRows', () => {
     value,
     holdingsCounted,
     unpricedSymbols: [],
+    inactiveValue: '0',
+    inactiveHoldings: 0,
+  });
+
+  /**
+   * SC-1128. A group of only closed positions carries what they are worth for
+   * display, and still ranks on its 0: a group of closed positions is not
+   * bigger than one holding money.
+   */
+  test('an all-inactive group shows its inactive worth and still sorts as 0', () => {
+    const rows = groupRows(
+      GROUPS,
+      [
+        valued('g1', '40000', 6),
+        { ...valued('g2', '0', 0), inactiveValue: '900000', inactiveHoldings: 1 },
+      ],
+      t
+    );
+    expect(rows.map((row) => [row.id, row.value, row.inactiveValue])).toEqual([
+      ['g1', 40000, null],
+      ['g2', 0, 900000],
+      ['g3', null, null],
+    ]);
   });
 
   test('value comes from the groups aggregate, biggest first', () => {
@@ -716,10 +739,7 @@ describe('groupRows', () => {
   test('an empty group reads zero; one we could not price reads as no figure', () => {
     const rows = groupRows(
       GROUPS,
-      [
-        valued('g3', '0', 0),
-        { groupId: 'g1', value: '0', holdingsCounted: 0, unpricedSymbols: ['AAPL'] },
-      ],
+      [valued('g3', '0', 0), { ...valued('g1', '0', 0), unpricedSymbols: ['AAPL'] }],
       t
     );
     expect(rows.find((row) => row.id === 'g3')?.value).toBe(0);
