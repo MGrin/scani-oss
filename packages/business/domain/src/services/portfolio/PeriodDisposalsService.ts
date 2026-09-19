@@ -54,11 +54,11 @@ function zeroed<K extends string>(keys: readonly K[]): Record<K, number> {
  * enumeration of a user's holdings, and a LOWER bound on the rows. This is
  * those two, and nothing else — the arithmetic is entirely the existing walk's.
  *
- * **Not tax output, and it may not become it.** See
- * `docs/technical/2026-08-14_why-no-tax-statement.md`, and the same note on
- * `RealizedLedgerService` and on the `period-disposals` contract. The window is
- * two instants rather than a year number precisely so nothing here encodes a
- * jurisdiction's idea of where a year begins.
+ * **The engine under SC-90's tax-year statement** (mgrin re-scoped it on
+ * 2026-09-11). It still encodes no jurisdiction: the window is two instants,
+ * and `taxYearWindow` in `lib/tax-year.ts` is where a year number and its start
+ * become those instants. What the statement must disclose about the ledger
+ * underneath is recorded in `docs/technical/2026-08-14_why-no-tax-statement.md`.
  *
  * ## The two bounds are NOT symmetric, and this is the whole of the design
  *
