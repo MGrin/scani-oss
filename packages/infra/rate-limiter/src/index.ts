@@ -1,3 +1,9 @@
+export {
+  loadRateLimiterConfig,
+  type RateLimiterConfig,
+  resetRateLimiterConfig,
+} from './config';
+
 import type { Redis } from 'ioredis';
 import { InMemoryInflowRateLimiter } from './inflow/in-memory';
 import type { InflowRateLimiter, InflowRateLimiterOptions } from './inflow/inflow-rate-limiter';
