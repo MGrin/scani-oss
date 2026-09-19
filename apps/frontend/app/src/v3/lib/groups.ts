@@ -1,4 +1,6 @@
+import type { HoldingWithDetails } from '@scani/shared';
 import type { TFunction } from 'i18next';
+import { allExcludedFromTotal, excludedFromTotal } from './holdings';
 
 /**
  * What a group is worth, and what that figure is allowed to claim.
@@ -38,6 +40,34 @@ export function groupAmount(value: GroupValue | undefined): number | null {
   if (value.holdingsCounted === 0 && value.unpricedSymbols.length > 0) return null;
   const parsed = Number.parseFloat(value.value);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+/**
+ * The figure to headline when every holding in the group is inactive, or
+ * `null` in every other case (SC-1128, the group half of SC-1122).
+ *
+ * `GroupValuationService` values active holdings only, so a group of nothing
+ * but closed positions headlined zero over a list of rows that each carry a
+ * value. That zero is technically right and says nothing. SC-1122 fixed the
+ * same shape on the holdings list by headlining the inactive total under a
+ * label that says so; this is that, for the group page.
+ *
+ * `holdings` is the group's EFFECTIVE membership, meaning each holding's own
+ * `groups`, which `GroupRepository` resolves as own row, plus the account's
+ * groups, minus exclusions. That is the same expression the valuation reads, so
+ * the rows judged here are the rows the server left out, not an approximation.
+ *
+ * Unpriced symbols keep the ordinary reading: a group whose active positions
+ * could not be priced is UNKNOWN (`groupAmount` returns null), and an
+ * inactive-value headline there would replace "we do not know" with a figure.
+ */
+export function allInactiveGroupAmount(
+  value: GroupValue | undefined,
+  holdings: readonly HoldingWithDetails[]
+): number | null {
+  if (!value || value.holdingsCounted !== 0 || value.unpricedSymbols.length > 0) return null;
+  if (!allExcludedFromTotal(holdings)) return null;
+  return excludedFromTotal(holdings).value;
 }
 
 /**

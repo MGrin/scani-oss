@@ -1,8 +1,10 @@
 import '../../i18n-preload';
 
 import { describe, expect, test } from 'bun:test';
+import type { HoldingWithDetails } from '@scani/shared';
 import i18n from 'i18next';
 import {
+  allInactiveGroupAmount,
   compareGroupAmounts,
   type GroupValue,
   groupAmount,
@@ -23,6 +25,57 @@ function value(partial: Partial<GroupValue> = {}): GroupValue {
     ...partial,
   };
 }
+
+/** A group member row, with the fields `countsTowardTotal` reads set to a
+ *  plain visible, non-scam holding so only `isActive` varies. */
+function member(isActive: boolean, value: number | null): HoldingWithDetails {
+  return {
+    isActive,
+    value,
+    isHidden: false,
+    token: { isScamProbability: 0 },
+  } as HoldingWithDetails;
+}
+
+/**
+ * SC-1128, the group half of SC-1122. A group of nothing but inactive holdings
+ * headlined zero over rows that each carry a value.
+ */
+describe('allInactiveGroupAmount', () => {
+  const none = value({ value: '0', holdingsCounted: 0 });
+
+  test('every holding inactive: the headline is what they are worth', () => {
+    expect(allInactiveGroupAmount(none, [member(false, 120), member(false, 30.5)])).toBe(150.5);
+  });
+
+  test('an inactive holding with no price counts as nothing, not as unknown', () => {
+    expect(allInactiveGroupAmount(none, [member(false, 40), member(false, null)])).toBe(40);
+  });
+
+  test('one active holding keeps the ordinary figure, however small', () => {
+    expect(
+      allInactiveGroupAmount(value({ holdingsCounted: 1 }), [member(true, 1), member(false, 900)])
+    ).toBeNull();
+  });
+
+  /**
+   * The server counted nothing but the client sees an active row: the two
+   * disagree, and the server's figure wins rather than a client guess.
+   */
+  test('the server counted nothing but a row is active: no override', () => {
+    expect(allInactiveGroupAmount(none, [member(true, 5), member(false, 900)])).toBeNull();
+  });
+
+  test('an unpriced active position keeps the group UNKNOWN, not an inactive total', () => {
+    const unknown = value({ value: '0', holdingsCounted: 0, unpricedSymbols: ['XYZ'] });
+    expect(allInactiveGroupAmount(unknown, [member(false, 50)])).toBeNull();
+  });
+
+  test('an empty group is not "all inactive", and no value yet is no override', () => {
+    expect(allInactiveGroupAmount(none, [])).toBeNull();
+    expect(allInactiveGroupAmount(undefined, [member(false, 50)])).toBeNull();
+  });
+});
 
 describe('groupAmount', () => {
   test('a priced group reads its total', () => {
