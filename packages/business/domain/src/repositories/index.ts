@@ -81,6 +81,10 @@ export {
   type EmailStream,
   UserRepository,
 } from './UserRepository';
+export {
+  type ScamVerdict,
+  UserTokenScamVerdictRepository,
+} from './UserTokenScamVerdictRepository';
 export { type StaleWalletTarget, UserWalletRepository } from './UserWalletRepository';
 export { VaultRepository } from './VaultRepository';
 export {

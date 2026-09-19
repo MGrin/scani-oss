@@ -1,6 +1,7 @@
 import { getCloudClient } from '@scani/cloud-client/runtime';
 import type { DbType } from '@scani/db/connection';
 import type * as schema from '@scani/db/schema';
+import { type ScamVerdict, UserTokenScamVerdictRepository } from '@scani/domain/repositories';
 import { TokenPriceRepository } from '@scani/domain/repositories/TokenPriceRepository';
 import { CurrencyConverter, TokenPriceHistoryService, TokenService } from '@scani/domain/services';
 import { createComponentLogger } from '@scani/logging';
@@ -12,6 +13,7 @@ import Container from 'typedi';
 import { z } from 'zod';
 import { LruCache } from '../../lib/lru-cache';
 import { enqueueCurrencyRateRefresh } from '../lib/currency-rate-refresh';
+import { enqueuePortfolioRollup } from '../lib/portfolio-rollup';
 import { requireAuth } from '../middleware/auth';
 import { protectedProcedure, router } from '../trpc';
 
@@ -63,6 +65,31 @@ function mapProviderTypeToDbType(providerType: string): string {
  * upstream API keys. The DB search step stays local since the api owns
  * its own tokens table.
  */
+async function setOwnScamVerdict(
+  ctx: Parameters<typeof requireAuth>[0],
+  tokenId: string,
+  verdict: ScamVerdict
+): Promise<{ success: true; tokenId: string }> {
+  const { dbUser } = await requireAuth(ctx);
+  const token = await Container.get(TokenService).getTokenById(tokenId);
+
+  await Container.get(UserTokenScamVerdictRepository).setVerdict(dbUser.id, token.id, verdict);
+  tokensLogger.info(
+    { userId: dbUser.id, tokenId: token.id, symbol: token.symbol, verdict },
+    'User set their own scam verdict'
+  );
+
+  emitEntityChange({
+    entityType: 'token',
+    operationType: 'update',
+    entityId: token.id,
+    userId: dbUser.id,
+    data: { scamProbability: verdict === 'scam' ? 1 : 0 },
+  });
+  void enqueuePortfolioRollup(dbUser.id);
+  return { success: true as const, tokenId: token.id };
+}
+
 export function createTokensRouter(db: DbType, schemaObj: typeof schema) {
   return router({
     // Get all active tokens with their types
@@ -365,49 +392,27 @@ export function createTokensRouter(db: DbType, schemaObj: typeof schema) {
       }),
 
     /**
-     * Clears a user's scam verdict — resets `is_scam_probability` to 0. Any
-     * authenticated user. Used by the undo path in the ScamActionButton
-     * confirmation dialog.
+     * The caller's own scam verdict on a token (SC-1160): `markAsScam` says it
+     * IS one, `unmarkAsScam` says it is not. Both write
+     * `user_token_scam_verdicts` for the caller and nothing else — mgrin ruled
+     * on 2026-09-14 that one user's verdict must not change the token for
+     * anybody else, and that a global verdict is a human decision taken from
+     * those rows. Backs `HiddenHoldingActions` and the holding sheet's action.
      *
-     * It has no inverse on this router any more. The mutation it used to
-     * reverse was deleted as never-called surface (SC-1152), so a scam
-     * probability is now written only by the heuristic scorer.
+     * `unmarkAsScam` used to write `is_scam_probability = 0,
+     * scam_score_source = 'user'` on the SHARED row, which the rescorer never
+     * recomputes: one click un-flagged a token for every user, permanently.
+     *
+     * The rollup is re-enqueued because a verdict moves the holding into or out
+     * of the caller's totals, exactly as un-hiding it does.
      */
+    markAsScam: protectedProcedure
+      .input(strictInput(z.object({ tokenId: z.string().uuid() })))
+      .mutation(async ({ input, ctx }) => setOwnScamVerdict(ctx, input.tokenId, 'scam')),
+
     unmarkAsScam: protectedProcedure
       .input(strictInput(z.object({ tokenId: z.string().uuid() })))
-      .mutation(async ({ input, ctx }) => {
-        const { dbUser } = await requireAuth(ctx);
-
-        const [token] = await db
-          .select({ id: schemaObj.tokens.id, symbol: schemaObj.tokens.symbol })
-          .from(schemaObj.tokens)
-          .where(eq(schemaObj.tokens.id, input.tokenId))
-          .limit(1);
-
-        if (!token) {
-          throw new Error('Token not found');
-        }
-
-        await db
-          .update(schemaObj.tokens)
-          .set({ isScamProbability: 0, scamScoreSource: 'user', updatedAt: new Date() })
-          .where(eq(schemaObj.tokens.id, input.tokenId));
-
-        tokensLogger.info(
-          { userId: dbUser.id, tokenId: token.id, symbol: token.symbol },
-          'Token unmarked as scam by user'
-        );
-
-        emitEntityChange({
-          entityType: 'token',
-          operationType: 'update',
-          entityId: token.id,
-          userId: dbUser.id,
-          data: { scamProbability: 0 },
-        });
-
-        return { success: true as const, tokenId: token.id };
-      }),
+      .mutation(async ({ input, ctx }) => setOwnScamVerdict(ctx, input.tokenId, 'not_scam')),
 
     /**
      * Create a custom token (private-company / other) with an initial

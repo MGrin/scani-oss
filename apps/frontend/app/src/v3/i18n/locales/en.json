@@ -968,6 +968,13 @@
         "deactivateAction": "Deactivate",
         "activateAction": "Activate"
       },
+      "scam": {
+        "markAction": "Mark as scam",
+        "confirm": "Mark {{symbol}} as a scam",
+        "consequence": "{{symbol}} stops counting toward your portfolio total — <value/> comes off it — and moves to your hidden holdings. Only you see this: nobody else's portfolio changes. Choose Not a scam there to undo it.",
+        "marked": "{{symbol}} marked as a scam for you",
+        "markingContext": "Marking the token as a scam"
+      },
       "toast": {
         "deleted": "Holding deleted",
         "deletingContext": "Deleting holding",
@@ -2002,10 +2009,7 @@
         "unhiding": "Unhiding the holding",
         "restoring": "Restoring the token",
         "notScam": "Not a scam",
-        "clearFlag": "Clear the scam flag for everyone",
-        "clearFlagConsequence": "{{symbol}} ({{name}}) stops being flagged as a scam for every Scani user, not just you — it reappears in token search and in price lookups account-wide. Only do this if you have checked the contract yourself.",
-        "holdingRestored": "{{symbol}} is back on your dashboard",
-        "tokenRestored": "{{symbol}} restored in token search"
+        "holdingRestored": "{{symbol}} is back on your dashboard"
       },
       "page": {
         "title": "Tokens",

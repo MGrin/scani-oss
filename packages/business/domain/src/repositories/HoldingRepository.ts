@@ -1,9 +1,9 @@
 import { BaseRepository, type DatabaseTransaction } from '@scani/db';
 import type { Holding, NewHolding, Token } from '@scani/db/schema';
 import * as schema from '@scani/db/schema';
-import { and, asc, eq, gt, inArray, isNull, lt, ne, sql } from 'drizzle-orm';
+import { and, asc, eq, gt, inArray, isNull, ne, sql } from 'drizzle-orm';
 import { Service } from 'typedi';
-import { SCAM_PROBABILITY_THRESHOLD } from '../lib/constants';
+import { effectiveScamProbability, notScamFor } from '../lib/scam-verdict';
 
 /**
  * Type for holdings with full details including token, account, and institution info
@@ -67,10 +67,7 @@ export class HoldingRepository extends BaseRepository<Holding, NewHolding> {
   ): Promise<Holding[]> {
     try {
       const database = this.getDb(transaction);
-      const conditions = [
-        eq(schema.holdings.userId, userId),
-        lt(schema.tokens.isScamProbability, SCAM_PROBABILITY_THRESHOLD),
-      ];
+      const conditions = [eq(schema.holdings.userId, userId), notScamFor()];
       if (!includeHidden) {
         conditions.push(eq(schema.holdings.isHidden, false));
       }
@@ -347,7 +344,7 @@ export class HoldingRepository extends BaseRepository<Holding, NewHolding> {
       // `includeScamTokens=true` so the operator can still see and act on
       // freshly-flagged holdings.
       if (!includeScamTokens) {
-        conditions.push(lt(schema.tokens.isScamProbability, SCAM_PROBABILITY_THRESHOLD));
+        conditions.push(notScamFor());
       }
       const whereConditions = and(...conditions);
 
@@ -370,6 +367,8 @@ export class HoldingRepository extends BaseRepository<Holding, NewHolding> {
           holdingCreatedAt: schema.holdings.createdAt,
           // Token data with type
           token: schema.tokens,
+          // The OWNER's score, not the shared one (SC-1160).
+          tokenScamProbability: effectiveScamProbability(),
           tokenTypeCode: schema.tokenTypes.code,
           tokenTypeName: schema.tokenTypes.name,
           // Account data with type
@@ -421,6 +420,7 @@ export class HoldingRepository extends BaseRepository<Holding, NewHolding> {
         },
         token: {
           ...r.token,
+          isScamProbability: r.tokenScamProbability,
           typeCode: r.tokenTypeCode,
           typeName: r.tokenTypeName,
         },
@@ -463,7 +463,7 @@ export class HoldingRepository extends BaseRepository<Holding, NewHolding> {
       const database = this.getDb(transaction);
       const conditions = [eq(schema.holdings.accountId, accountId)];
       if (!includeScamTokens) {
-        conditions.push(lt(schema.tokens.isScamProbability, SCAM_PROBABILITY_THRESHOLD));
+        conditions.push(notScamFor());
       }
       if (!includeHidden) {
         conditions.push(eq(schema.holdings.isHidden, false));
@@ -638,12 +638,7 @@ export class HoldingRepository extends BaseRepository<Holding, NewHolding> {
         .selectDistinct({ tokenId: schema.holdings.tokenId })
         .from(schema.holdings)
         .innerJoin(schema.tokens, eq(schema.holdings.tokenId, schema.tokens.id))
-        .where(
-          and(
-            eq(schema.holdings.isHidden, false),
-            lt(schema.tokens.isScamProbability, SCAM_PROBABILITY_THRESHOLD)
-          )
-        );
+        .where(and(eq(schema.holdings.isHidden, false), notScamFor()));
 
       return results.map((row) => row.tokenId);
     } catch (error) {

@@ -44,6 +44,7 @@ const CONTEXT: HoldingPeekContext = {
   onSetAmount: () => undefined,
   onRecordMovement: () => undefined,
   onToggleActive: () => undefined,
+  onMarkScam: () => undefined,
   onRefreshPrice: () => undefined,
   onRefreshBalance: () => undefined,
   refreshingPriceId: null,

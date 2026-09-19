@@ -3,7 +3,7 @@ import type { Group, NewGroup } from '@scani/db/schema';
 import * as schema from '@scani/db/schema';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { Service } from 'typedi';
-import { SCAM_PROBABILITY_THRESHOLD } from '../lib/constants';
+import { notScamFor } from '../lib/scam-verdict';
 
 /**
  * Groups, and the three states a (holding, group) pair can be in.
@@ -104,7 +104,7 @@ export class GroupRepository extends BaseRepository<Group, NewGroup> {
             JOIN tokens tk ON tk.id = h.token_id
             WHERE h.user_id = "groups"."user_id"
               AND h.is_hidden = false
-              AND tk.is_scam_probability < ${SCAM_PROBABILITY_THRESHOLD}
+              AND ${notScamFor('h', 'tk')}
               AND (
                 EXISTS (
                   SELECT 1 FROM holding_groups hg

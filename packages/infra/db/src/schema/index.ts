@@ -31,6 +31,7 @@ export * from './tokens';
 export * from './transfer-review-rules';
 export * from './user-integration-credentials';
 export * from './user-jobs';
+export * from './user-token-scam-verdicts';
 export * from './user-wallets';
 export * from './users';
 export * from './vaults';

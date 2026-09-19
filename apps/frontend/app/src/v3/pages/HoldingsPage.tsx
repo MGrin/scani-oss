@@ -215,6 +215,8 @@ export function HoldingsPage() {
       onToggleActive: (holding) =>
         actions.updateHolding(holding.id, { isActive: !holding.isActive }),
       isTogglingActive: actions.isUpdating,
+      onMarkScam: (holding) => actions.markScam(holding.token.id, holding.token.symbol),
+      isMarkingScam: actions.isMarkingScam,
       onRefreshPrice: refresh.refreshPrice,
       onRefreshBalance: refresh.refreshBalance,
       refreshingPriceId: refresh.refreshingPriceId,

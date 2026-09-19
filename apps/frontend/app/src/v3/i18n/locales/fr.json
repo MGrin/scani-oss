@@ -513,10 +513,7 @@
         "unhiding": "Réaffichage de la position",
         "restoring": "Restauration du jeton",
         "notScam": "Ce n’est pas une fraude",
-        "clearFlag": "Retirer le signalement de fraude pour tout le monde",
-        "clearFlagConsequence": "{{symbol}} ({{name}}) cesse d’être signalé comme frauduleux pour tous les utilisateurs de Scani, pas seulement pour vous — il réapparaît dans la recherche de jetons et dans les relevés de prix, pour tous les comptes. Ne faites cela que si vous avez vérifié le contrat vous-même.",
-        "holdingRestored": "{{symbol}} est de retour sur votre tableau de bord",
-        "tokenRestored": "{{symbol}} restauré dans la recherche de jetons"
+        "holdingRestored": "{{symbol}} est de retour sur votre tableau de bord"
       },
       "page": {
         "title": "Jetons",
@@ -1240,6 +1237,13 @@
         "activateConsequence": "{{symbol}} dans {{account}} compte de nouveau dans le total de votre portefeuille — <value/> y revient.",
         "deactivateAction": "Désactiver",
         "activateAction": "Activer"
+      },
+      "scam": {
+        "markAction": "Signaler comme fraude",
+        "confirm": "Signaler {{symbol}} comme fraude",
+        "consequence": "{{symbol}} cesse de compter dans le total de votre portefeuille — <value/> en sort — et passe dans vos positions masquées. Vous seul le voyez : le portefeuille de personne d’autre ne change. Choisissez « Ce n’est pas une fraude » pour l’annuler.",
+        "marked": "{{symbol}} signalé comme fraude pour vous",
+        "markingContext": "Signalement du jeton comme fraude"
       },
       "toast": {
         "deleted": "Position supprimée",
