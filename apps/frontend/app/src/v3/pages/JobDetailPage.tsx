@@ -35,6 +35,8 @@ import { V3_ROUTES } from '../lib/routes';
  * retries on a follow-up enqueue), and a naive "live wins" merge flips a
  * finished job back to "active" on screen.
  */
+const ROW_CATCH_UP_POLLS = 30;
+
 export function JobDetailPage() {
   const { t } = useTranslation();
   const { jobId = '' } = useParams<{ jobId: string }>();
@@ -44,9 +46,13 @@ export function JobDetailPage() {
     {
       enabled: Boolean(jobId),
       // Until the row catches up with a live terminal state, poll it: that row
-      // is where the outcome's meaning lives (SC-1275).
-      refetchInterval: (data) =>
-        displayedJobState(data?.state ?? 'unknown', live.state).refetch ? 1000 : false,
+      // is where the outcome's meaning lives (SC-1275). Bounded, so a row that
+      // never catches up stops costing a request a second; a reload still works.
+      refetchInterval: (data, query) =>
+        displayedJobState(data?.state ?? 'unknown', live.state).refetch &&
+        query.state.dataUpdateCount < ROW_CATCH_UP_POLLS
+          ? 1000
+          : false,
     }
   );
   useDocumentTitle(
