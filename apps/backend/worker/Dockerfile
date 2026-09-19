@@ -188,6 +188,7 @@ COPY --from=build --chown=app:app /app/apps/backend/worker/dist/server /app/serv
 # build-time `__dirname` baked into the binary, which is /app/node_modules/...
 COPY --from=build --chown=app:app /app/node_modules/bullmq/dist/esm/postgres /app/node_modules/bullmq/dist/esm/postgres
 COPY --chown=app:app apps/backend/worker/docker-entrypoint.sh /app/docker-entrypoint.sh
-RUN chmod +x /app/docker-entrypoint.sh
+COPY --chown=app:app apps/backend/worker/memory-watchdog.sh /app/memory-watchdog.sh
+RUN chmod +x /app/docker-entrypoint.sh /app/memory-watchdog.sh
 
 CMD ["/app/docker-entrypoint.sh"]
