@@ -1,7 +1,7 @@
 import { Container, Service } from 'typedi';
 import { BaseService } from '../BaseService';
 import { AIRouter } from './AIRouter';
-import { AiBudgetExceededError, AiSpendBudget } from './AiSpendBudget';
+import { AiBudgetExceededError } from './AiSpendBudget';
 
 // AI-driven CSV column mapping — sends headers + 2 sample rows and asks
 // the LLM to guess which column is `date`, `amount`, `balance`, etc.
@@ -9,7 +9,6 @@ import { AiBudgetExceededError, AiSpendBudget } from './AiSpendBudget';
 @Service()
 export class CsvColumnDetectionService extends BaseService {
   private readonly aiRouter = Container.get(AIRouter);
-  private readonly budget = Container.get(AiSpendBudget);
 
   constructor() {
     super('CsvColumnDetectionService');
@@ -22,18 +21,6 @@ export class CsvColumnDetectionService extends BaseService {
   ): Promise<Record<string, string> | null> {
     if (!this.aiRouter.hasAvailableProvider()) {
       this.logWarning('No AI provider available for CSV column detection');
-      return null;
-    }
-
-    // Over budget reads exactly like "no AI provider": the statement parser
-    // falls back to its own column heuristics, and no model is called.
-    try {
-      await this.budget.reserve(userId, 1);
-    } catch (error) {
-      if (!(error instanceof AiBudgetExceededError)) throw error;
-      this.logWarning('AI budget spent; CSV columns left to the heuristics', {
-        scope: error.scope,
-      });
       return null;
     }
 
@@ -62,6 +49,7 @@ Rules:
 
     try {
       const result = await this.aiRouter.completeText(prompt, {
+        userId,
         maxTokens: 150,
         temperature: 0,
         jsonMode: true,
@@ -89,6 +77,14 @@ Rules:
 
       return Object.keys(validated).length > 0 ? validated : null;
     } catch (error) {
+      // Over budget reads exactly like "no AI provider": the statement parser
+      // falls back to its own column heuristics (SC-1265).
+      if (error instanceof AiBudgetExceededError) {
+        this.logWarning('AI budget spent; CSV columns left to the heuristics', {
+          scope: error.scope,
+        });
+        return null;
+      }
       this.logWarning('AI CSV column detection failed', {
         error: error instanceof Error ? error.message : error,
       });
