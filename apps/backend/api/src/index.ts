@@ -125,6 +125,7 @@ import { googleSheetsFactory } from '@scani/providers-google-sheets';
 import { createBetterAuth } from './auth/better-auth';
 import { buildCorsOrigins, buildTrustedOrigins } from './config/browser-origins';
 import { initializeContainer } from './config/container';
+import { registerSaltEdgeCallbackRoutes } from './integrations/saltedge-callback';
 import { isLivenessProbe } from './lib/liveness';
 import { registerAdminDataRoutes } from './presentation/http/admin-data';
 import { registerAdminJobsRoutes } from './presentation/http/admin-jobs';
@@ -622,6 +623,7 @@ if (!demoConfig.enabled) {
   registerAdminDataRoutes(app, redisConnection);
   // One-click, no-login digest opt-out (SC-460). Public by design.
   registerUnsubscribeRoutes(app);
+  registerSaltEdgeCallbackRoutes(app, env);
 } else {
   logger.warn(
     {},

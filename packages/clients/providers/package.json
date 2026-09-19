@@ -44,6 +44,7 @@
     "./providers/bitstamp": "./src/providers/bitstamp/index.ts",
     "./providers/ibkr": "./src/providers/ibkr/index.ts",
     "./providers/saltedge": "./src/providers/saltedge/index.ts",
+    "./providers/saltedge/callback": "./src/providers/saltedge/callback.ts",
     "./providers/wise": "./src/providers/wise/index.ts",
     "./providers/airwallex": "./src/providers/airwallex/index.ts",
     "./providers/yahoo-finance": "./src/providers/yahoo-finance/index.ts",
