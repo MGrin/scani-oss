@@ -68,7 +68,13 @@
         "hours_one": "{{count, number}}h ago",
         "hours_other": "{{count, number}}h ago",
         "days_one": "{{count, number}}d ago",
-        "days_other": "{{count, number}}d ago"
+        "days_other": "{{count, number}}d ago",
+        "inMinutes_one": "in {{count, number}}m",
+        "inMinutes_other": "in {{count, number}}m",
+        "inHours_one": "in {{count, number}}h",
+        "inHours_other": "in {{count, number}}h",
+        "inDays_one": "in {{count, number}}d",
+        "inDays_other": "in {{count, number}}d"
       }
     },
     "notFound": {

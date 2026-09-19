@@ -61,7 +61,10 @@
         "justNow": "刚刚",
         "minutes_other": "{{count, number}} 分钟前",
         "hours_other": "{{count, number}} 小时前",
-        "days_other": "{{count, number}} 天前"
+        "days_other": "{{count, number}} 天前",
+        "inMinutes_other": "{{count, number}} 分钟后",
+        "inHours_other": "{{count, number}} 小时后",
+        "inDays_other": "{{count, number}} 天后"
       }
     },
     "notFound": {

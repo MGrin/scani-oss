@@ -61,7 +61,10 @@
         "justNow": "baru saja",
         "minutes_other": "{{count, number}} mnt lalu",
         "hours_other": "{{count, number}} jam lalu",
-        "days_other": "{{count, number}} hr lalu"
+        "days_other": "{{count, number}} hr lalu",
+        "inMinutes_other": "{{count, number}} mnt lagi",
+        "inHours_other": "{{count, number}} jam lagi",
+        "inDays_other": "{{count, number}} hr lagi"
       }
     },
     "notFound": {
