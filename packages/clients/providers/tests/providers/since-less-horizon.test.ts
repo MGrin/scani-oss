@@ -149,10 +149,11 @@ describe('a since-less run declares how far back it actually reaches', () => {
 describe('every provider that substitutes a look-back declares it', () => {
   const sources = providerSources().filter((entry) => substitutedWindow(entry.source) !== null);
 
-  // Seven, and the list is the point: bybit and bitget substitute a window too
-  // and already declare it, because SC-166 fixed them by hand. The scan
-  // reproduces that population without being told it, which is what makes it
-  // worth trusting on the eighth provider nobody has looked at yet.
+  // The list is the point: bybit and bitget substitute a window too and
+  // already declare it, because SC-166 fixed them by hand. The scan reproduces
+  // that population without being told it, which is what makes it worth
+  // trusting on the next provider nobody has looked at yet — saltedge was the
+  // eighth (SC-1244).
   test('the scan finds every provider that substitutes a window', () => {
     expect(sources.map((s) => s.name).sort()).toEqual([
       'airwallex',
@@ -161,6 +162,7 @@ describe('every provider that substitutes a look-back declares it', () => {
       'bybit',
       'gate',
       'mexc',
+      'saltedge',
       'wise',
     ]);
   });
