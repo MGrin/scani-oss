@@ -245,3 +245,75 @@ describe('saltedgeFactory', () => {
     expect(recorded[0]?.keyed).toBe(false);
   });
 });
+
+describe('SaltEdgeProvider — customers and connect sessions', () => {
+  function postApi(reply: unknown) {
+    const calls: Call[] = [];
+    const fetchImpl = (async (input: string | URL, init?: RequestInit) => {
+      calls.push({
+        method: init?.method ?? 'GET',
+        url: String(input),
+        headers: Object.fromEntries(new Headers(init?.headers).entries()),
+        body: typeof init?.body === 'string' ? init.body : '',
+      });
+      return new Response(JSON.stringify({ data: reply }), { status: 200 });
+    }) as typeof fetch;
+    return { calls, fetchImpl };
+  }
+
+  test('createCustomer posts the identifier and returns the customer id', async () => {
+    const api = postApi({ customer_id: 'cust-9', identifier: 'user-1' });
+    const p = new SaltEdgeProvider(
+      new SaltEdgeClient(creds, limiter(), { baseUrl: BASE, fetchImpl: api.fetchImpl })
+    );
+    expect(await p.createCustomer('user-1')).toBe('cust-9');
+    expect(api.calls[0]?.method).toBe('POST');
+    expect(api.calls[0]?.url).toBe(`${BASE}/api/v6/customers`);
+    expect(JSON.parse(api.calls[0]?.body ?? '{}')).toEqual({ data: { identifier: 'user-1' } });
+  });
+
+  test('createConnectSession asks for accounts and transactions and returns the widget url', async () => {
+    const api = postApi({
+      connect_url: 'https://www.saltedge.com/connect?token=t',
+      expires_at: 'x',
+    });
+    const p = new SaltEdgeProvider(
+      new SaltEdgeClient(creds, limiter(), { baseUrl: BASE, fetchImpl: api.fetchImpl })
+    );
+    const url = await p.createConnectSession({
+      customerId: 'cust-9',
+      returnTo: 'https://app.example/return',
+      fromDate: '2024-09-19',
+    });
+    expect(url).toBe('https://www.saltedge.com/connect?token=t');
+    const body = JSON.parse(api.calls[0]?.body ?? '{}');
+    expect(api.calls[0]?.url).toBe(`${BASE}/api/v6/connections/connect`);
+    expect(body.data.customer_id).toBe('cust-9');
+    expect(body.data.consent.scopes).toEqual(['accounts', 'transactions']);
+    expect(body.data.attempt.return_to).toBe('https://app.example/return');
+    expect(body.data.attempt.fetch_scopes).toEqual(['accounts', 'transactions']);
+  });
+
+  test('a signed POST signs the body it sends', async () => {
+    const { privateKey, publicKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
+    const pem = privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
+    const api = postApi({ customer_id: 'c' });
+    const p = new SaltEdgeProvider(
+      new SaltEdgeClient({ ...creds, privateKeyPem: pem }, limiter(), {
+        baseUrl: BASE,
+        fetchImpl: api.fetchImpl,
+      })
+    );
+    await p.createCustomer('u');
+    const call = api.calls[0];
+    const verifier = createVerify('RSA-SHA256');
+    verifier.update(
+      signatureBase(call?.headers['expires-at'] ?? '', 'POST', call?.url ?? '', call?.body ?? '')
+    );
+    expect(verifier.verify(publicKey, call?.headers.signature ?? '', 'base64')).toBe(true);
+  });
+
+  test('unkeyed, starting a connection refuses rather than pretending', async () => {
+    await expect(new SaltEdgeProvider(null).createCustomer('u')).rejects.toThrow(/not configured/);
+  });
+});
