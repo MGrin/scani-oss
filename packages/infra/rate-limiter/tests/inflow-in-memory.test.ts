@@ -121,7 +121,7 @@ describe('extractXffTail', () => {
 });
 
 describe('defaultInflowKey on Fly (SC-1262)', () => {
-  const FLY = { FLY_APP_NAME: 'scani-backend' };
+  const FLY = { FLY_APP_NAME: 'example-app' };
 
   test('keys on fly-client-ip and ignores every client-settable header', () => {
     const key = defaultInflowKey(
@@ -144,7 +144,7 @@ describe('defaultInflowKey on Fly (SC-1262)', () => {
 
   test('a rotated cf-connecting-ip from one Fly client still gets 429', async () => {
     const saved = process.env.FLY_APP_NAME;
-    process.env.FLY_APP_NAME = 'scani-backend';
+    process.env.FLY_APP_NAME = 'example-app';
     try {
       const limiter = new InMemoryInflowRateLimiter({
         windowMs: 3_600_000,
