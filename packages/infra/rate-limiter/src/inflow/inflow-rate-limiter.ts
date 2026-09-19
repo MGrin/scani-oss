@@ -1,3 +1,5 @@
+import { loadRateLimiterConfig, type RateLimiterConfig } from '../config';
+
 // Fixed-window admission limiter for *inbound* HTTP requests. Distinct
 // from the outflow family: the contract here is `tryConsume(req)` returning
 // `{ ok, retryAfterSec }`, so the HTTP layer can reject up-front with a
@@ -38,10 +40,10 @@ export interface InflowRateLimiterOptions {
  */
 export function defaultInflowKey(
   req: Request,
-  env: Record<string, string | undefined> = process.env
+  config: RateLimiterConfig = loadRateLimiterConfig()
 ): string {
   const h = req.headers;
-  if (env.FLY_APP_NAME) return h.get('fly-client-ip') || 'fly:no-client-ip';
+  if (config.FLY_APP_NAME) return h.get('fly-client-ip') || 'fly:no-client-ip';
   return (
     h.get('cf-connecting-ip') ||
     h.get('fly-client-ip') ||

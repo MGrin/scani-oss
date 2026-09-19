@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'bun:test';
-import { defaultInflowKey, extractXffTail, InMemoryInflowRateLimiter } from '../src/index';
+import {
+  defaultInflowKey,
+  extractXffTail,
+  InMemoryInflowRateLimiter,
+  resetRateLimiterConfig,
+} from '../src/index';
 
 function req(headers: Record<string, string> = {}, method = 'GET'): Request {
   return new Request('http://test/', { method, headers });
@@ -145,6 +150,7 @@ describe('defaultInflowKey on Fly (SC-1262)', () => {
   test('a rotated cf-connecting-ip from one Fly client still gets 429', async () => {
     const saved = process.env.FLY_APP_NAME;
     process.env.FLY_APP_NAME = 'example-app';
+    resetRateLimiterConfig();
     try {
       const limiter = new InMemoryInflowRateLimiter({
         windowMs: 3_600_000,
@@ -164,6 +170,7 @@ describe('defaultInflowKey on Fly (SC-1262)', () => {
     } finally {
       if (saved === undefined) delete process.env.FLY_APP_NAME;
       else process.env.FLY_APP_NAME = saved;
+      resetRateLimiterConfig();
     }
   });
 });
