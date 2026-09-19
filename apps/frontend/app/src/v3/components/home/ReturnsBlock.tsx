@@ -80,6 +80,21 @@ export function ReturnsCard({
                 ) : null
               }
             />
+            {view.fx ? (
+              <ReturnRow
+                label={t('v3.home.returns.fx.label')}
+                caption={
+                  <Trans
+                    i18nKey="v3.home.returns.fx.caption"
+                    components={{
+                      value: <Numeric value={view.fx.asset} format="percent" decimals={1} delta />,
+                    }}
+                  />
+                }
+                value={view.fx.currency}
+                note={null}
+              />
+            ) : null}
             <ReturnRow
               label={t('v3.home.returns.xirr.label')}
               caption={
@@ -111,7 +126,7 @@ function ReturnRow({
   note,
 }: {
   label: string;
-  caption: string;
+  caption: ReactNode;
   value: number | null;
   note: ReactNode;
 }) {

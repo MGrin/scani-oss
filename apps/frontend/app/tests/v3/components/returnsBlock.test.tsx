@@ -17,6 +17,7 @@ function render(view: ReturnsView | null): string {
 const VIEW: ReturnsView = {
   twr: { cumulative: 70.2, annualized: 42.5 },
   xirr: { rate: 44.5, approximate: false },
+  fx: null,
   since: '2025-03-20',
   partial: false,
 };
@@ -49,5 +50,13 @@ describe('the returns card (SC-1159)', () => {
     expect(html).toContain('—');
     // Control: the time-weighted figure beside it still rendered.
     expect(html).toContain('70.2');
+  });
+
+  test('the exchange-rate row appears only with a split', () => {
+    expect(render(VIEW)).not.toContain(copy.fx.label);
+    const html = render({ ...VIEW, fx: { asset: 61.5, currency: 5.4 } });
+    expect(html).toContain(copy.fx.label);
+    expect(html).toContain('61.5');
+    expect(html).toContain('5.4');
   });
 });

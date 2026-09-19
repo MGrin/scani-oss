@@ -26,6 +26,7 @@ function returns(overrides: Record<string, unknown> = {}): Input {
       staleValuedFlows: 0,
       flowsAfterLastMeasuredDay: 0,
     },
+    attribution: null,
     ...overrides,
   } as unknown as Input;
 }
@@ -72,5 +73,32 @@ describe('returnsView (SC-1159)', () => {
       coverage: { ...(base as { coverage: object }).coverage, daysNotFullyCovered: 3 },
     });
     expect(returnsView(partial)?.partial).toBe(true);
+  });
+
+  test('the exchange-rate split is shown when rates moved the result', () => {
+    const view = returnsView(
+      returns({
+        attribution: { assetReturn: '0.2', currencyReturn: '0.05', unattributedPeriods: 0 },
+      })
+    );
+    expect(view?.fx?.asset).toBeCloseTo(20, 2);
+    expect(view?.fx?.currency).toBeCloseTo(5, 2);
+  });
+
+  test('no split, or rates that did nothing, shows no split', () => {
+    expect(returnsView(returns())?.fx).toBeNull();
+    const baseOnly = returns({
+      attribution: { assetReturn: '0.25', currencyReturn: '0', unattributedPeriods: 0 },
+    });
+    expect(returnsView(baseOnly)?.fx).toBeNull();
+  });
+
+  test('a split that could not cover every period marks the window partial', () => {
+    const view = returnsView(
+      returns({
+        attribution: { assetReturn: '0.2', currencyReturn: '0.05', unattributedPeriods: 2 },
+      })
+    );
+    expect(view?.partial).toBe(true);
   });
 });

@@ -1119,6 +1119,10 @@
           "label": "Rentabilidade do investimento",
           "caption": "Como os seus ativos se saíram, independentemente do que adicionou ou retirou."
         },
+        "fx": {
+          "label": "Dos quais, câmbio",
+          "caption": "Os seus ativos fizeram <value/> nas suas próprias moedas; o resto foram as moedas a mexer face à sua."
+        },
         "xirr": {
           "label": "Rentabilidade do seu dinheiro",
           "caption": "O que o seu próprio dinheiro rendeu, contando quando o adicionou e retirou.",

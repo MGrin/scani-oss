@@ -28,6 +28,14 @@ export interface ReturnsView {
   twr: { cumulative: number; annualized: number | null } | null;
   /** Percent per year. `approximate` when more than one rate fits the flows. */
   xirr: { rate: number; approximate: boolean } | null;
+  /**
+   * The investment return split into what the holdings did in their own
+   * currencies and what exchange rates did (SC-458). They compound, so the two
+   * multiply to the whole rather than adding up to it. Null when there is no
+   * split, or when rates did nothing because everything is in the base
+   * currency.
+   */
+  fx: { asset: number; currency: number } | null;
   /** The first measured day, when the reader should know where "since" starts. */
   since: string | null;
   /** Some of the window could not be fully priced or valued. */
@@ -56,6 +64,10 @@ export function returnsView(returns: Returns | null | undefined): ReturnsView | 
       : null;
   if (!twr && !xirr) return null;
 
+  const asset = percent(returns.attribution?.assetReturn);
+  const currency = percent(returns.attribution?.currencyReturn);
+  const fx = asset !== null && currency !== null && currency !== 0 ? { asset, currency } : null;
+
   // `all` resolves to the epoch and is narrowed to the first measured day, so
   // its start is only known from the answer. A year or YTD states its own
   // start, and needs saying only when history begins after it.
@@ -71,7 +83,8 @@ export function returnsView(returns: Returns | null | undefined): ReturnsView | 
     coverage.daysNotFullyCovered > 0 ||
     coverage.skippedPeriods > 0 ||
     coverage.unvaluedFlows > 0 ||
-    coverage.staleValuedFlows > 0;
+    coverage.staleValuedFlows > 0 ||
+    (returns.attribution?.unattributedPeriods ?? 0) > 0;
 
-  return { twr, xirr, since, partial };
+  return { twr, xirr, fx, since, partial };
 }
