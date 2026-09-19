@@ -1,8 +1,9 @@
 import { afterAll, describe, expect, test } from 'bun:test';
 import { db } from '@scani/db/connection';
 import * as schema from '@scani/db/schema';
+import { BlsClient } from '@scani/providers/providers/bls';
 import Decimal from 'decimal.js';
-import { eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { Container } from 'typedi';
 import { HistoricalPriceBackfillService } from '../../../src/services/pricing/HistoricalPriceBackfillService';
 import { PriceGraphService } from '../../../src/services/pricing/PriceGraphService';
@@ -34,10 +35,23 @@ describe('measuredDayInstant', () => {
 
 describe('BenchmarkReturnService.over', () => {
   const created: string[] = [];
+  const CPI = 'CUUR0000SA0';
+  const CPI_MONTHS = ['2026-01-01', '2026-06-01'];
+  let cpiBefore: Array<typeof schema.inflationIndexMonthly.$inferSelect> = [];
 
   afterAll(async () => {
     if (created.length > 0)
       await db.delete(schema.tokens).where(inArray(schema.tokens.id, created));
+    // Put back whatever those two months held before this test wrote them.
+    await db
+      .delete(schema.inflationIndexMonthly)
+      .where(
+        and(
+          eq(schema.inflationIndexMonthly.seriesId, CPI),
+          inArray(schema.inflationIndexMonthly.month, CPI_MONTHS)
+        )
+      );
+    if (cpiBefore.length > 0) await db.insert(schema.inflationIndexMonthly).values(cpiBefore);
   });
 
   test('end over start in the base currency, and null where a price is missing', async () => {
@@ -63,7 +77,8 @@ describe('BenchmarkReturnService.over', () => {
       .from(schema.tokens)
       .where(eq(schema.tokens.symbol, 'USD'))
       .limit(1);
-    const ensured = await Container.get(BackfillBenchmarkPricesUseCase).execute({
+    Container.set(BlsClient, { fetchMonthly: async () => [] } as unknown as BlsClient);
+    const { prices: ensured } = await Container.get(BackfillBenchmarkPricesUseCase).execute({
       usdTokenId: usd?.id as string,
     });
     for (const r of ensured) if (!before.has(r.tokenId)) created.push(r.tokenId);
@@ -79,15 +94,41 @@ describe('BenchmarkReturnService.over', () => {
       },
     } as unknown as PriceGraphService);
 
+    // SC-1255. US CPI of 200 in January and 210 in June. Any real values for
+    // those months are saved first and restored after.
+    cpiBefore = await db
+      .select()
+      .from(schema.inflationIndexMonthly)
+      .where(
+        and(
+          eq(schema.inflationIndexMonthly.seriesId, CPI),
+          inArray(schema.inflationIndexMonthly.month, CPI_MONTHS)
+        )
+      );
+    for (const [month, value] of [
+      ['2026-01-01', '200'],
+      ['2026-06-01', '210'],
+    ] as const) {
+      await db
+        .insert(schema.inflationIndexMonthly)
+        .values({ seriesId: CPI, month, value, source: 'test' })
+        .onConflictDoUpdate({
+          target: [schema.inflationIndexMonthly.seriesId, schema.inflationIndexMonthly.month],
+          set: { value },
+        });
+    }
+
     const result = await new BenchmarkReturnService().over(
       { from: '2026-01-01', to: '2026-06-30' },
       'token-GBP',
       NOW
     );
 
+    // Inflation is never converted into the base currency: an index is a rate.
     expect(result).toEqual([
       { key: 'btc', cumulative: '0.5' },
       { key: 'sp500', cumulative: null },
+      { key: 'us_inflation', cumulative: '0.05' },
     ]);
     expect(asked.filter((a) => a.token === btc).map((a) => a.at)).toEqual([
       '2026-01-01T23:59:59.999Z',

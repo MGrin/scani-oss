@@ -1084,9 +1084,10 @@
         },
         "benchmarks": {
           "label": "Comparé à",
-          "caption": "Acheté et conservé sur les mêmes jours, dans votre devise.",
+          "caption": "Bitcoin et le S&P 500 achetés et conservés sur les mêmes jours, dans votre devise ; les prix américains sur les mêmes mois.",
           "btc": "Bitcoin",
-          "sp500": "S&P 500 (SPY, prix seul)"
+          "sp500": "S&P 500 (SPY, prix seul)",
+          "usInflation": "Inflation américaine (CPI-U)"
         },
         "perYear": "<value/> par an",
         "perYearUnit": "par an",

@@ -29,6 +29,7 @@ export type BenchmarkKey = Benchmarks[number]['key'];
 export const BENCHMARK_LABEL_KEYS: Record<BenchmarkKey, string> = {
   btc: 'v3.home.returns.benchmarks.btc',
   sp500: 'v3.home.returns.benchmarks.sp500',
+  us_inflation: 'v3.home.returns.benchmarks.usInflation',
 };
 
 export interface ReturnsView {

@@ -1,13 +1,19 @@
 import { db } from '@scani/db/connection';
 import * as schema from '@scani/db/schema';
 import Decimal from 'decimal.js';
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, desc, eq, isNull, lte } from 'drizzle-orm';
 import { Container, Service } from 'typedi';
-import { BENCHMARKS, type Benchmark } from '../../lib/returns/benchmarks';
+import {
+  BENCHMARKS,
+  type Benchmark,
+  type BenchmarkKey,
+  monthOf,
+  US_INFLATION,
+} from '../../lib/returns/benchmarks';
 import { PriceGraphService } from '../pricing/PriceGraphService';
 
 export interface BenchmarkReturn {
-  key: Benchmark['key'];
+  key: BenchmarkKey;
   /** Cumulative, as a fraction. Null when either end has no price. */
   cumulative: string | null;
 }
@@ -43,6 +49,52 @@ export class BenchmarkReturnService {
   ): Promise<BenchmarkReturn[]> {
     const start = measuredDayInstant(window.from, now);
     const end = measuredDayInstant(window.to, now);
+    const [prices, inflation] = await Promise.all([
+      this.priceBenchmarks(start, end, baseCurrencyId),
+      this.inflationOver(window),
+    ]);
+    return inflation ? [...prices, inflation] : prices;
+  }
+
+  /**
+   * US CPI between the months the window's first and last measured days fall
+   * in. Never converted: an index is a rate, and a currency move does not
+   * change what US prices did. Null when either month is unpublished — CPI
+   * for a month lands mid-way through the next one.
+   */
+  private async inflationOver(window: {
+    from: string;
+    to: string;
+  }): Promise<BenchmarkReturn | null> {
+    const [opening, closing] = await Promise.all([
+      this.indexAt(monthOf(window.from)),
+      this.indexAt(monthOf(window.to)),
+    ]);
+    if (!opening || !closing || opening.lte(0)) return null;
+    return { key: US_INFLATION.key, cumulative: closing.div(opening).minus(1).toString() };
+  }
+
+  /** The series' value for `month`, or the latest published before it. */
+  private async indexAt(month: string): Promise<Decimal | null> {
+    const [row] = await db
+      .select({ value: schema.inflationIndexMonthly.value })
+      .from(schema.inflationIndexMonthly)
+      .where(
+        and(
+          eq(schema.inflationIndexMonthly.seriesId, US_INFLATION.seriesId),
+          lte(schema.inflationIndexMonthly.month, month)
+        )
+      )
+      .orderBy(desc(schema.inflationIndexMonthly.month))
+      .limit(1);
+    return row ? new Decimal(row.value) : null;
+  }
+
+  private async priceBenchmarks(
+    start: Date,
+    end: Date,
+    baseCurrencyId: string
+  ): Promise<BenchmarkReturn[]> {
     return Promise.all(
       BENCHMARKS.map(async (benchmark) => {
         const tokenId = await this.tokenIdOf(benchmark);
