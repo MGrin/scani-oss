@@ -81,8 +81,10 @@ import { Container } from 'typedi';
 import '@scani/jobs';
 import {
   awaitSchemaReady,
+  checkIndexDrift,
   checkSchemaDrift,
   db,
+  describeIndexDrift,
   describeSchemaDrift,
   endConnectionTracking,
   getActiveConnectionsCount,
@@ -884,6 +886,27 @@ app
       }
     }
 
+    // SC-946. Index drift, both directions and full definitions — REPORTED,
+    // never gated, and not one of `checks`, for the reason given at
+    // `providerCredentials` below. The comparison was proven clean against a
+    // freshly migrated database, and production may carry an index no
+    // migration made; gating on it before a production reading would 503 the
+    // next deploy on a difference nobody has looked at. It moves into `checks`
+    // once a production reading shows it clean.
+    let indexes: { status: 'clean' | 'drift' | 'unread'; latencyMs?: number; detail?: string };
+    if (!checks.db.ok) {
+      indexes = { status: 'unread', detail: 'the database check failed' };
+    } else {
+      try {
+        const report = await checkIndexDrift();
+        indexes = report.ok
+          ? { status: 'clean', latencyMs: report.latencyMs }
+          : { status: 'drift', latencyMs: report.latencyMs, detail: describeIndexDrift(report) };
+      } catch (err) {
+        indexes = { status: 'unread', detail: err instanceof Error ? err.message : String(err) };
+      }
+    }
+
     const tRedis = performance.now();
     try {
       // BOUNDED, and that bound is the whole point (SC-294).
@@ -1011,6 +1034,7 @@ app
       status: allOk ? 'ok' : 'degraded',
       timestamp: new Date().toISOString(),
       checks,
+      indexes,
       providerCredentials: Container.get(ProviderCredentialReport).healthPayload(),
     };
   })

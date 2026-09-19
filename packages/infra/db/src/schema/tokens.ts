@@ -1,4 +1,4 @@
-import { relations } from 'drizzle-orm';
+import { relations, sql } from 'drizzle-orm';
 import {
   boolean,
   index,
@@ -9,6 +9,7 @@ import {
   text,
   timestamp,
   unique,
+  uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core';
 import { holdings } from './holdings';
@@ -230,11 +231,25 @@ export const tokens = pgTable(
     symbolIdx: index('idx_tokens_symbol').on(table.symbol),
     typeIdIdx: index('idx_tokens_type_id').on(table.typeId),
     unpriceableUntilIdx: index('idx_tokens_unpriceable_until').on(table.unpriceableUntil),
-    // Note: the 3-tuple unique constraint and EVM contract jsonb index
-    // are created in migration 0055 directly — Drizzle's `unique()` /
-    // `index()` builders can't express `COALESCE(...)` or expression
-    // indexes over jsonb paths. Drizzle's introspection won't see them
-    // but the database enforces them.
+    // Both were created by hand in `0000_clean_start` and left undeclared on
+    // the belief that drizzle could not express them; `.on()` takes `sql`, so
+    // it can. Undeclared, they were invisible to every check that reads this
+    // file (SC-946).
+    symbolTypeSegmentUq: uniqueIndex('tokens_symbol_type_segment_unique').on(
+      table.symbol,
+      table.typeId,
+      sql`COALESCE(${table.marketSegment}, '')`
+    ),
+    etherscanContractIdx: index('tokens_etherscan_contract_idx')
+      .on(
+        sql`(${table.providerMetadata} -> 'etherscan') ->> 'chainId'`,
+        sql`(${table.providerMetadata} -> 'etherscan') ->> 'contractAddress'`
+      )
+      .where(sql`${table.providerMetadata} ? 'etherscan'`),
+    lookalikeOfIdx: index('idx_tokens_lookalike_of')
+      .on(table.lookalikeOf)
+      .where(sql`${table.lookalikeOf} IS NOT NULL`),
+    scamScoreVersionIdx: index('idx_tokens_scam_score_version').on(table.scamScoreVersion),
   })
 );
 

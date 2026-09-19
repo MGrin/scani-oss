@@ -263,7 +263,7 @@ export const userCostBasisMethodChanges = pgTable(
     // that figure computed under" is answered by walking back from now.
     userChangedAtIdx: index('idx_user_cost_basis_method_changes_user_changed_at').on(
       table.userId,
-      table.changedAt
+      table.changedAt.desc()
     ),
   })
 );
