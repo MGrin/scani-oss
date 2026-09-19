@@ -1,4 +1,5 @@
-import { describe, expect, test } from 'bun:test';
+import { afterAll, describe, expect, test } from 'bun:test';
+import Redis from 'ioredis';
 import { RedisLifecyclePublisher } from '../../src/lifecycle/redis-lifecycle-publisher';
 
 interface StubRedisCall {
@@ -67,5 +68,34 @@ describe('RedisLifecyclePublisher — wire shape (must match RealTimeUpdatesServ
   test('warns + skips when not configured rather than throwing', async () => {
     const pub = new RedisLifecyclePublisher();
     await expect(pub.publish('u', 'j', { state: 'active' })).resolves.toBeUndefined();
+  });
+});
+
+/**
+ * SC-1027. "Best-effort, continuing" needs the publish to REJECT, and the
+ * shared client never does: it is built exactly as below,
+ * `maxRetriesPerRequest: null`. `UserJobProcessor` awaits this on every job,
+ * so before the bound a Redis outage parked every user job here (measured:
+ * still pending after 4000ms). Nothing listens on port 1.
+ */
+describe('RedisLifecyclePublisher against an unreachable Redis (SC-1027)', () => {
+  const dead = new Redis('redis://127.0.0.1:1', { maxRetriesPerRequest: null });
+  dead.on('error', () => undefined);
+  afterAll(() => dead.disconnect());
+
+  const PENDING = Symbol('pending');
+  const within = <T>(work: Promise<T>, ms: number) =>
+    Promise.race([work, new Promise<typeof PENDING>((r) => setTimeout(() => r(PENDING), ms))]);
+
+  test('a publish gives up inside its bound and the job carries on', async () => {
+    const pub = new RedisLifecyclePublisher();
+    pub.configure(dead);
+    const started = performance.now();
+    expect(await within(pub.publish('user-1', 'job-1', { state: 'active' }), 2000)).toBeUndefined();
+    expect(performance.now() - started).toBeLessThan(1000);
+  });
+
+  test('the control: the client itself still never answers', async () => {
+    expect(await within(dead.publish('rt:user:x', '{}'), 1000)).toBe(PENDING);
   });
 });
