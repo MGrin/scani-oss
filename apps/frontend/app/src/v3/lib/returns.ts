@@ -22,6 +22,14 @@ export const RETURNS_WINDOWS: readonly { key: ReturnsWindow; labelKey: string }[
 export const RETURNS_WINDOW_KEYS: readonly ReturnsWindow[] = RETURNS_WINDOWS.map((w) => w.key);
 
 type Returns = NonNullable<RouterOutputs['portfolio']['getReturns']['returns']>;
+type Benchmarks = RouterOutputs['portfolio']['getReturns']['benchmarks'];
+
+export type BenchmarkKey = Benchmarks[number]['key'];
+
+export const BENCHMARK_LABEL_KEYS: Record<BenchmarkKey, string> = {
+  btc: 'v3.home.returns.benchmarks.btc',
+  sp500: 'v3.home.returns.benchmarks.sp500',
+};
 
 export interface ReturnsView {
   /** Percent, not a fraction. `annualized` is null under a year. */
@@ -36,6 +44,11 @@ export interface ReturnsView {
    * currency.
    */
   fx: { asset: number; currency: number } | null;
+  /**
+   * What BTC and the S&P 500 did over the same measured days, in percent and
+   * in the base currency (SC-464). Only the ones with a price at both ends.
+   */
+  benchmarks: { key: BenchmarkKey; cumulative: number }[];
   /** The first measured day, when the reader should know where "since" starts. */
   since: string | null;
   /** Some of the window could not be fully priced or valued. */
@@ -52,7 +65,10 @@ function percent(fraction: string | null | undefined): number | null {
  * for either figure. The card then renders nothing rather than a row of dashes
  * over a portfolio added today.
  */
-export function returnsView(returns: Returns | null | undefined): ReturnsView | null {
+export function returnsView(
+  returns: Returns | null | undefined,
+  benchmarks: Benchmarks = []
+): ReturnsView | null {
   if (!returns) return null;
 
   const cumulative = percent(returns.twr?.cumulative);
@@ -86,5 +102,10 @@ export function returnsView(returns: Returns | null | undefined): ReturnsView | 
     coverage.staleValuedFlows > 0 ||
     (returns.attribution?.unattributedPeriods ?? 0) > 0;
 
-  return { twr, xirr, fx, since, partial };
+  const compared = benchmarks.flatMap((b) => {
+    const cumulative = percent(b.cumulative);
+    return cumulative === null ? [] : [{ key: b.key, cumulative }];
+  });
+
+  return { twr, xirr, fx, benchmarks: compared, since, partial };
 }

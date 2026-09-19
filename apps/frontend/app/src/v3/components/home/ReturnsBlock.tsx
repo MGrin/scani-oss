@@ -7,6 +7,7 @@ import { Trans, useTranslation } from 'react-i18next';
 import { trpc } from '@/lib/trpc';
 import { useViewPreference } from '../../hooks/useViewPreference';
 import {
+  BENCHMARK_LABEL_KEYS,
   RETURNS_WINDOW_KEYS,
   RETURNS_WINDOWS,
   type ReturnsView,
@@ -30,7 +31,7 @@ export function ReturnsBlock({ scope }: { scope?: ReturnsCardScope } = {}) {
     RETURNS_WINDOW_KEYS
   );
   const query = trpc.portfolio.getReturns.useQuery({ window: { kind: windowKey }, scope });
-  const view = returnsView(query.data?.returns);
+  const view = returnsView(query.data?.returns, query.data?.benchmarks);
   // Keep the card standing while another window loads, so the switch does not
   // collapse and re-grow the row it sits in.
   if (!view && !query.isFetching) return null;
@@ -109,6 +110,30 @@ export function ReturnsCard({
               note={view.xirr ? t('v3.home.returns.perYearUnit') : null}
             />
           </dl>
+          {view.benchmarks.length > 0 ? (
+            <div className="border-t border-border px-4 py-3">
+              <p className="text-label">{t('v3.home.returns.benchmarks.label')}</p>
+              <p className="text-caption text-muted-foreground">
+                {t('v3.home.returns.benchmarks.caption')}
+              </p>
+              <dl className="mt-2 flex flex-col gap-1">
+                {view.benchmarks.map((benchmark) => (
+                  <div key={benchmark.key} className="flex items-baseline justify-between gap-3">
+                    <dt className="text-caption">{t(BENCHMARK_LABEL_KEYS[benchmark.key])}</dt>
+                    <dd className="shrink-0">
+                      <Numeric
+                        value={benchmark.cumulative}
+                        format="percent"
+                        decimals={1}
+                        delta
+                        className="text-caption"
+                      />
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
+          ) : null}
           {view.since || view.partial ? (
             <p className="border-t border-border px-4 py-3 text-caption text-muted-foreground">
               {view.since ? t('v3.home.returns.since', { date: formatDate(view.since) }) : null}

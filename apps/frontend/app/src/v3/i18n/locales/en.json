@@ -238,6 +238,12 @@
           "caption": "What your own money earned, counting when you added and withdrew it.",
           "approximate": "More than one rate fits your deposits and withdrawals, so treat this as approximate."
         },
+        "benchmarks": {
+          "label": "Compared with",
+          "caption": "Bought and held over the same days, in your currency.",
+          "btc": "Bitcoin",
+          "sp500": "S&P 500 (SPY)"
+        },
         "perYear": "<value/> a year",
         "perYearUnit": "a year",
         "since": "Since {{date}}.",

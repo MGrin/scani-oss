@@ -216,6 +216,12 @@
           "caption": "计入你存入和取出资金的时间后，你自己的钱赚了多少。",
           "approximate": "有不止一个利率符合你的存取款，因此请视为近似值。"
         },
+        "benchmarks": {
+          "label": "对比",
+          "caption": "在相同日期买入并持有，以您的货币计。",
+          "btc": "比特币",
+          "sp500": "标普 500（SPY）"
+        },
         "perYear": "每年 <value/>",
         "perYearUnit": "每年",
         "since": "自 {{date}} 起。",

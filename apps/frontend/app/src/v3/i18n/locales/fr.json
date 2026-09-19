@@ -1082,6 +1082,12 @@
           "caption": "Ce qu’a rapporté votre propre argent, selon le moment des apports et des retraits.",
           "approximate": "Plusieurs taux correspondent à vos apports et retraits : considérez-le comme approximatif."
         },
+        "benchmarks": {
+          "label": "Comparé à",
+          "caption": "Acheté et conservé sur les mêmes jours, dans votre devise.",
+          "btc": "Bitcoin",
+          "sp500": "S&P 500 (SPY)"
+        },
         "perYear": "<value/> par an",
         "perYearUnit": "par an",
         "since": "Depuis le {{date}}.",

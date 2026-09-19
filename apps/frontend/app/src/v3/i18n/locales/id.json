@@ -216,6 +216,12 @@
           "caption": "Hasil uang Anda sendiri, dengan memperhitungkan kapan Anda menambah dan menariknya.",
           "approximate": "Lebih dari satu tingkat cocok dengan setoran dan penarikan Anda, jadi anggap ini perkiraan."
         },
+        "benchmarks": {
+          "label": "Dibandingkan dengan",
+          "caption": "Dibeli dan ditahan pada hari yang sama, dalam mata uang Anda.",
+          "btc": "Bitcoin",
+          "sp500": "S&P 500 (SPY)"
+        },
         "perYear": "<value/> per tahun",
         "perYearUnit": "per tahun",
         "since": "Sejak {{date}}.",

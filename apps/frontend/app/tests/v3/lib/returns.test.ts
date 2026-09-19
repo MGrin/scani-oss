@@ -101,4 +101,16 @@ describe('returnsView (SC-1159)', () => {
     );
     expect(view?.partial).toBe(true);
   });
+
+  test('benchmarks become percents, and one with no price is left out', () => {
+    const view = returnsView(returns(), [
+      { key: 'btc', cumulative: '0.923' },
+      { key: 'sp500', cumulative: null },
+    ]);
+    expect(view?.benchmarks).toEqual([{ key: 'btc', cumulative: expect.closeTo(92.3, 6) }]);
+  });
+
+  test('no benchmarks is an empty list, not a reason to hide the card', () => {
+    expect(returnsView(returns())?.benchmarks).toEqual([]);
+  });
 });
