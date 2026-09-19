@@ -12,7 +12,7 @@ import { useJobStatus } from '@/v3/hooks/useJobStatus';
 import { JobDetailHeader } from '../components/jobs/JobDetailHeader';
 import { jobLabelFor } from '../lib/job-labels';
 import { resolveV3ReviewRenderer } from '../lib/job-result';
-import { deriveJobOutcomeState, displayedJobState } from '../lib/jobs';
+import { deriveJobOutcomeState, displayedJobState, rowCatchUpInterval } from '../lib/jobs';
 import { V3_ROUTES } from '../lib/routes';
 
 /**
@@ -35,8 +35,6 @@ import { V3_ROUTES } from '../lib/routes';
  * retries on a follow-up enqueue), and a naive "live wins" merge flips a
  * finished job back to "active" on screen.
  */
-const ROW_CATCH_UP_POLLS = 30;
-
 export function JobDetailPage() {
   const { t } = useTranslation();
   const { jobId = '' } = useParams<{ jobId: string }>();
@@ -46,13 +44,9 @@ export function JobDetailPage() {
     {
       enabled: Boolean(jobId),
       // Until the row catches up with a live terminal state, poll it: that row
-      // is where the outcome's meaning lives (SC-1275). Bounded, so a row that
-      // never catches up stops costing a request a second; a reload still works.
+      // is where the outcome's meaning lives (SC-1275).
       refetchInterval: (data, query) =>
-        displayedJobState(data?.state ?? 'unknown', live.state).refetch &&
-        query.state.dataUpdateCount < ROW_CATCH_UP_POLLS
-          ? 1000
-          : false,
+        rowCatchUpInterval(data?.state ?? 'unknown', live.state, query.state.dataUpdateCount),
     }
   );
   useDocumentTitle(

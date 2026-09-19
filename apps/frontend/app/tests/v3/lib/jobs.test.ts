@@ -13,6 +13,8 @@ import {
   jobBucketOptions,
   jobNeedsAction,
   jobStateLabel,
+  ROW_CATCH_UP_POLLS,
+  rowCatchUpInterval,
   summariseJobPayload,
 } from '../../../src/v3/lib/jobs';
 
@@ -272,5 +274,22 @@ describe('displayedJobState (SC-1275)', () => {
   test('a live non-terminal state is shown while the row lags', () => {
     expect(displayedJobState('queued', 'active')).toEqual({ state: 'active', refetch: false });
     expect(displayedJobState('queued', 'unknown')).toEqual({ state: 'queued', refetch: false });
+  });
+});
+
+describe('rowCatchUpInterval (SC-1275)', () => {
+  test('polls every second while the row lags a live terminal state', () => {
+    expect(rowCatchUpInterval('active', 'completed', 0)).toBe(1000);
+    expect(rowCatchUpInterval('active', 'failed', ROW_CATCH_UP_POLLS - 1)).toBe(1000);
+  });
+
+  test('stops at the cap, so a row that never catches up cannot poll forever', () => {
+    expect(rowCatchUpInterval('active', 'completed', ROW_CATCH_UP_POLLS)).toBe(false);
+    expect(rowCatchUpInterval('active', 'completed', ROW_CATCH_UP_POLLS + 100)).toBe(false);
+  });
+
+  test('never polls when there is nothing to catch up to', () => {
+    expect(rowCatchUpInterval('completed', 'completed', 0)).toBe(false);
+    expect(rowCatchUpInterval('queued', 'active', 0)).toBe(false);
   });
 });

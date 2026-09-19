@@ -324,3 +324,21 @@ export function displayedJobState(
   if (isTerminalState(liveState)) return { state: rowState, refetch: true };
   return { state: liveState !== 'unknown' ? liveState : rowState, refetch: false };
 }
+
+/**
+ * How long a job page waits between fetches of a row that lags a live terminal
+ * state, or `false` to stop. Bounded: a row that never catches up would
+ * otherwise cost a request a second for as long as the page stays open, and
+ * nothing would say so. A reload still reads the row.
+ */
+export const ROW_CATCH_UP_POLLS = 30;
+
+export function rowCatchUpInterval(
+  rowState: string,
+  liveState: string,
+  fetchesSoFar: number
+): number | false {
+  return displayedJobState(rowState, liveState).refetch && fetchesSoFar < ROW_CATCH_UP_POLLS
+    ? 1000
+    : false;
+}
