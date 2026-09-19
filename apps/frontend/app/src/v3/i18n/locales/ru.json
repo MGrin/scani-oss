@@ -980,7 +980,7 @@
         "addPayment": "Добавить платёж"
       },
       "recurringSummary": {
-        "projectedEachMonth": "Прогноз на месяц",
+        "projectedEachMonth": "Прогноз счетов на месяц",
         "estimatedFromHistory_one": "Включая {{count}} платёж с плавающей суммой, оценённый по последнему закрытому платежу.",
         "estimatedFromHistory_few": "Включая {{count}} платежа с плавающей суммой, оценённых по последним закрытым платежам.",
         "estimatedFromHistory_many": "Включая {{count}} платежей с плавающей суммой, оценённых по последним закрытым платежам.",

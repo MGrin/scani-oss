@@ -999,7 +999,7 @@
         "addPayment": "إضافة دفعة"
       },
       "recurringSummary": {
-        "projectedEachMonth": "المتوقَّع شهريًا",
+        "projectedEachMonth": "الفواتير المتوقَّعة شهريًا",
         "estimatedFromHistory_zero": "يشمل {{count}} دفعة متغيرة المبلغ مُقدَّرة وفق آخر مبلغ تمّت تسويته لها.",
         "estimatedFromHistory_one": "يشمل دفعة واحدة متغيرة المبلغ مُقدَّرة وفق آخر مبلغ تمّت تسويته لها.",
         "estimatedFromHistory_two": "يشمل دفعتين متغيرتَي المبلغ مُقدَّرتين وفق آخر مبلغ تمّت تسويته لكل منهما.",

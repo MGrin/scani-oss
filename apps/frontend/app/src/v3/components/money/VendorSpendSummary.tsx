@@ -13,7 +13,7 @@ import { ConvertedTotal } from '../ConvertedTotal';
 /**
  * What the vendors on screen cost, over the rows actually shown.
  *
- * Two figures, never one. "Projected each month" is a claim about the future
+ * Two figures, never one. "Projected bills each month" is a claim about the future
  * — what the standing payments pointed at these vendors add up to — and
  * "Paid" is a claim about the past. Netting them, or showing either alone
  * under a label as vague as "spend", would answer a question the reader did
