@@ -23,6 +23,7 @@ import Decimal from 'decimal.js';
 import { and, eq, sql } from 'drizzle-orm';
 import { Container } from 'typedi';
 import { z } from 'zod';
+import { lacksCoverage } from '../../lib/data-quality-flags';
 import {
   type AggregatedDailyPoint,
   aggregateIncludedHoldingRows,
@@ -486,6 +487,7 @@ export const portfolioRouter = router({
       dup_symbol: boolean;
       opening_negative: boolean;
       has_coverage: boolean;
+      has_transactions: boolean;
     }>(sql`
       WITH shown AS (
         SELECT h.id, h.token_id, h.balance::numeric AS balance_n,
@@ -549,7 +551,8 @@ export const portfolioRouter = router({
         (s.type_code = 'fiat') AS is_fiat,
         (s.symbol IN (SELECT symbol FROM dup)) AS dup_symbol,
         (c.opening_balance_quantity::numeric < 0) AS opening_negative,
-        (c.holding_id IS NOT NULL) AS has_coverage
+        (c.holding_id IS NOT NULL) AS has_coverage,
+        (lt.last_tx_at IS NOT NULL) AS has_transactions
       FROM shown s
       LEFT JOIN last_tx lt ON lt.holding_id = s.id
       LEFT JOIN holding_coverage c ON c.holding_id = s.id
@@ -568,6 +571,7 @@ export const portfolioRouter = router({
       dup_symbol: boolean;
       opening_negative: boolean;
       has_coverage: boolean;
+      has_transactions: boolean;
     }>;
 
     // `total` describes the reader's whole holdings table rather than the
@@ -606,7 +610,7 @@ export const portfolioRouter = router({
       noRecentPrice: idsWhere(unpriced),
       noPriceSource: idsWhere(noSource),
       negativeOpening: idsWhere((row) => row.opening_negative),
-      noCoverage: idsWhere((row) => !row.has_coverage),
+      noCoverage: idsWhere(lacksCoverage),
     } as const;
 
     /**
