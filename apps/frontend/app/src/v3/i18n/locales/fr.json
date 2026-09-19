@@ -884,7 +884,8 @@
         "signingOutOthers": "Déconnexion des autres sessions",
         "togglingNotifications": "Modification de votre réglage de notifications",
         "sendingTestNotification": "Envoi d’une notification de test",
-        "changingCostBasis": "Modification du mode de calcul de vos plus-values"
+        "changingCostBasis": "Modification du mode de calcul de vos plus-values",
+        "makingTaxYearStatement": "Préparation de votre relevé de l'année fiscale"
       },
       "costBasis": {
         "title": "Prix de revient",
@@ -903,6 +904,54 @@
         "changeConfirm": "Recalculer mes plus-values avec {{method}}",
         "changeInFlight": "Vos plus-values sont en cours de recalcul.",
         "recomputing": "Recalcul de vos plus-values — les chiffres de l'application sont encore en train de se stabiliser."
+      },
+      "taxYear": {
+        "title": "Relevé de l'année fiscale",
+        "intro": "Les ventes, intérêts et récompenses d'une année fiscale en PDF, calculés à partir de votre registre. Choisissez la date de début de votre année fiscale, puis l'année.",
+        "yearLabel": "Année fiscale",
+        "yearStartLabel": "Votre année fiscale commence le",
+        "yearStartPlaceholder": "Choisissez une date de début",
+        "starts": {
+          "jan-1": "1er janvier (année civile)",
+          "apr-1": "1er avril (NZ, Hong Kong, Japon, Inde)",
+          "apr-6": "6 avril (Royaume-Uni)",
+          "jul-1": "1er juillet (Australie)"
+        },
+        "download": "Télécharger le PDF",
+        "caveat": "Les montants peuvent changer si les données passées ou la méthode changent ; conservez le PDF déclaré.",
+        "pdf": {
+          "subject": "Relevé de l'année fiscale",
+          "headers": {
+            "date": "Date",
+            "asset": "Actif",
+            "quantity": "Quantité",
+            "acquired": "Acquis le",
+            "amount": "Montant",
+            "costBasis": "Prix de revient",
+            "gain": "Plus-value",
+            "daysHeld": "Jours"
+          },
+          "groups": {
+            "disposals": "Ventes et cessions",
+            "interest": "Intérêts",
+            "rewards": "Récompenses",
+            "airdrops": "Airdrops"
+          },
+          "details": {
+            "year": "Année fiscale",
+            "method": "Méthode",
+            "timeZone": "Fuseau horaire",
+            "gainTotal": "Plus-value nette",
+            "interestTotal": "Intérêts",
+            "rewardTotal": "Récompenses",
+            "airdropNote": "Airdrops",
+            "caveat": "Remarque",
+            "basisIncomplete": "Base partielle",
+            "awaitingReview": "À vérifier",
+            "unvaluedIncome": "Non valorisés"
+          },
+          "airdropNote": "Listés, sans total"
+        }
       }
     },
     "home": {

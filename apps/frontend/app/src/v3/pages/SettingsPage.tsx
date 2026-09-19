@@ -9,6 +9,7 @@ import { MaintenanceSettings } from '../components/settings/MaintenanceSettings'
 import { NotificationSettings } from '../components/settings/NotificationSettings';
 import { ProfileSettings } from '../components/settings/ProfileSettings';
 import { SessionsSettings } from '../components/settings/SessionsSettings';
+import { TaxYearStatementSettings } from '../components/settings/TaxYearStatementSettings';
 
 /**
  * Everything about the account rather than the portfolio.
@@ -51,6 +52,7 @@ export function SettingsPage() {
       <NotificationSettings />
       <SessionsSettings />
       <DataExportSettings />
+      <TaxYearStatementSettings />
       <MaintenanceSettings />
       <DataQualitySettings />
       <AccountSettings />

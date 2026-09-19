@@ -1181,7 +1181,8 @@
         "signingOutOthers": "他のセッションをサインアウトしています",
         "togglingNotifications": "通知の設定を変更しています",
         "sendingTestNotification": "テスト通知を送信しています",
-        "changingCostBasis": "損益の計算方法を変更しています"
+        "changingCostBasis": "損益の計算方法を変更しています",
+        "makingTaxYearStatement": "課税年度の明細書を作成しています"
       },
       "costBasis": {
         "title": "取得原価の計算方法",
@@ -1198,6 +1199,54 @@
         "changeConfirm": "{{method}}で損益を計算し直す",
         "changeInFlight": "損益を計算し直しています。",
         "recomputing": "損益を計算し直しています。アプリ全体の数値はまだ確定していません。"
+      },
+      "taxYear": {
+        "title": "課税年度の明細書",
+        "intro": "1 課税年度分の売却・利息・報酬を、記録から計算して PDF にします。課税年度の開始日を選び、次に年を選んでください。",
+        "yearLabel": "課税年度",
+        "yearStartLabel": "課税年度の開始日",
+        "yearStartPlaceholder": "開始日を選択",
+        "starts": {
+          "jan-1": "1月1日(暦年)",
+          "apr-1": "4月1日(NZ・香港・日本・インド)",
+          "apr-6": "4月6日(英国)",
+          "jul-1": "7月1日(オーストラリア)"
+        },
+        "download": "PDF をダウンロード",
+        "caveat": "過去のデータや計算方法が変わると数値も変わることがあります。提出した PDF は保管してください。",
+        "pdf": {
+          "subject": "課税年度の明細書",
+          "headers": {
+            "date": "日付",
+            "asset": "資産",
+            "quantity": "数量",
+            "acquired": "取得日",
+            "amount": "金額",
+            "costBasis": "取得原価",
+            "gain": "損益",
+            "daysHeld": "保有日数"
+          },
+          "groups": {
+            "disposals": "売却・処分",
+            "interest": "利息",
+            "rewards": "報酬",
+            "airdrops": "エアドロップ"
+          },
+          "details": {
+            "year": "課税年度",
+            "method": "計算方法",
+            "timeZone": "タイムゾーン",
+            "gainTotal": "実現損益",
+            "interestTotal": "利息",
+            "rewardTotal": "報酬",
+            "airdropNote": "エアドロップ",
+            "caveat": "注記",
+            "basisIncomplete": "原価が不完全",
+            "awaitingReview": "確認待ち",
+            "unvaluedIncome": "未評価の収入"
+          },
+          "airdropNote": "一覧のみ、合計なし"
+        }
       }
     },
     "feedback": {

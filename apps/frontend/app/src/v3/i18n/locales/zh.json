@@ -1181,7 +1181,8 @@
         "signingOutOthers": "正在结束其他会话",
         "togglingNotifications": "正在更改你的通知设置",
         "sendingTestNotification": "正在发送测试通知",
-        "changingCostBasis": "正在更改盈亏的计算方式"
+        "changingCostBasis": "正在更改盈亏的计算方式",
+        "makingTaxYearStatement": "正在生成纳税年度报表"
       },
       "costBasis": {
         "title": "成本基础",
@@ -1198,6 +1199,54 @@
         "changeConfirm": "按{{method}}重新计算我的盈亏",
         "changeInFlight": "你的盈亏正在重新计算。",
         "recomputing": "正在重新计算你的盈亏 — 应用中的数字仍在调整。"
+      },
+      "taxYear": {
+        "title": "纳税年度报表",
+        "intro": "将一个纳税年度的卖出、利息和奖励从你的账本中计算出来并生成 PDF。先选择纳税年度的起始日期,再选择年份。",
+        "yearLabel": "纳税年度",
+        "yearStartLabel": "你的纳税年度起始于",
+        "yearStartPlaceholder": "选择起始日期",
+        "starts": {
+          "jan-1": "1月1日(自然年)",
+          "apr-1": "4月1日(新西兰、香港、日本、印度)",
+          "apr-6": "4月6日(英国)",
+          "jul-1": "7月1日(澳大利亚)"
+        },
+        "download": "下载 PDF",
+        "caveat": "如果过往数据或计算方法发生变化,数字可能会变;请保留你提交的 PDF。",
+        "pdf": {
+          "subject": "纳税年度报表",
+          "headers": {
+            "date": "日期",
+            "asset": "资产",
+            "quantity": "数量",
+            "acquired": "取得日期",
+            "amount": "金额",
+            "costBasis": "成本",
+            "gain": "收益",
+            "daysHeld": "持有天数"
+          },
+          "groups": {
+            "disposals": "卖出与处置",
+            "interest": "利息",
+            "rewards": "奖励",
+            "airdrops": "空投"
+          },
+          "details": {
+            "year": "纳税年度",
+            "method": "计算方法",
+            "timeZone": "时区",
+            "gainTotal": "已实现收益",
+            "interestTotal": "利息",
+            "rewardTotal": "奖励",
+            "airdropNote": "空投",
+            "caveat": "说明",
+            "basisIncomplete": "成本不完整",
+            "awaitingReview": "待确认",
+            "unvaluedIncome": "未估值收入"
+          },
+          "airdropNote": "仅列出,不合计"
+        }
       }
     },
     "feedback": {

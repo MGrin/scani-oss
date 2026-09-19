@@ -70,8 +70,9 @@ or a private-equity stake. That symmetry is the design — see
   your portfolio.
 - **Not a tax engine.** Cost basis, realized PnL, and FIFO/LIFO lot
   selection are tracked (see [Portfolio value rollup](/concepts/rollup/)),
-  but Scani does not file returns or render jurisdiction-specific tax
-  reports.
+  and Settings produces a tax-year statement — one year's disposals and
+  income as a PDF, cut at the start date you choose — but Scani does not
+  file returns or apply any jurisdiction's tax rules.
 - **Not a market-data terminal.** Pricing is for portfolio valuation, not
   high-frequency trading. Intra-day prices land on the minute scale, not
   the millisecond.

@@ -1181,7 +1181,8 @@
         "signingOutOthers": "Mengeluarkan sesi lainnya",
         "togglingNotifications": "Mengubah pengaturan notifikasi Anda",
         "sendingTestNotification": "Mengirim notifikasi uji coba",
-        "changingCostBasis": "Mengubah cara keuntungan Anda dihitung"
+        "changingCostBasis": "Mengubah cara keuntungan Anda dihitung",
+        "makingTaxYearStatement": "Membuat laporan tahun pajak Anda"
       },
       "costBasis": {
         "title": "Dasar biaya",
@@ -1198,6 +1199,54 @@
         "changeConfirm": "Hitung ulang keuntungan saya dengan {{method}}",
         "changeInFlight": "Keuntungan Anda sedang dihitung ulang.",
         "recomputing": "Menghitung ulang keuntungan Anda — angka di seluruh aplikasi masih menyesuaikan."
+      },
+      "taxYear": {
+        "title": "Laporan tahun pajak",
+        "intro": "Penjualan, bunga, dan imbalan satu tahun pajak dalam PDF, dihitung dari catatan Anda. Pilih tanggal mulai tahun pajak Anda, lalu tahunnya.",
+        "yearLabel": "Tahun pajak",
+        "yearStartLabel": "Tahun pajak Anda dimulai pada",
+        "yearStartPlaceholder": "Pilih tanggal mulai",
+        "starts": {
+          "jan-1": "1 Januari (tahun kalender)",
+          "apr-1": "1 April (NZ, Hong Kong, Jepang, India)",
+          "apr-6": "6 April (Inggris)",
+          "jul-1": "1 Juli (Australia)"
+        },
+        "download": "Unduh PDF",
+        "caveat": "Angka dapat berubah jika data lama atau metodenya berubah; simpan PDF yang Anda laporkan.",
+        "pdf": {
+          "subject": "Laporan tahun pajak",
+          "headers": {
+            "date": "Tanggal",
+            "asset": "Aset",
+            "quantity": "Jumlah",
+            "acquired": "Diperoleh",
+            "amount": "Nilai",
+            "costBasis": "Harga pokok",
+            "gain": "Laba",
+            "daysHeld": "Hari"
+          },
+          "groups": {
+            "disposals": "Penjualan dan pelepasan",
+            "interest": "Bunga",
+            "rewards": "Imbalan",
+            "airdrops": "Airdrop"
+          },
+          "details": {
+            "year": "Tahun pajak",
+            "method": "Metode",
+            "timeZone": "Zona waktu",
+            "gainTotal": "Laba terealisasi",
+            "interestTotal": "Bunga",
+            "rewardTotal": "Imbalan",
+            "airdropNote": "Airdrop",
+            "caveat": "Catatan",
+            "basisIncomplete": "Basis parsial",
+            "awaitingReview": "Perlu ditinjau",
+            "unvaluedIncome": "Tanpa nilai"
+          },
+          "airdropNote": "Didaftar, tanpa total"
+        }
       }
     },
     "feedback": {
