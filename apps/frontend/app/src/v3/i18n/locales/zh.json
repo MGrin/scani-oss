@@ -194,6 +194,28 @@
       },
       "runway": {
         "label": "资金可支撑"
+      },
+      "returns": {
+        "title": "收益",
+        "chooseWindow": "选择期间",
+        "window": {
+          "ytd": "年初至今",
+          "1y": "1年",
+          "all": "全部"
+        },
+        "twr": {
+          "label": "投资收益",
+          "caption": "无论你存入或取出多少，持仓本身的表现。"
+        },
+        "xirr": {
+          "label": "你的资金收益",
+          "caption": "计入你存入和取出资金的时间后，你自己的钱赚了多少。",
+          "approximate": "有不止一个利率符合你的存取款，因此请视为近似值。"
+        },
+        "perYear": "每年 <value/>",
+        "perYearUnit": "每年",
+        "since": "自 {{date}} 起。",
+        "partial": "部分日期无法完全估值，因此这些数字可能不准确。"
       }
     },
     "money": {
