@@ -218,7 +218,7 @@
         },
         "benchmarks": {
           "label": "Dibandingkan dengan",
-          "caption": "Dibeli dan ditahan pada hari yang sama, dalam mata uang Anda.",
+          "caption": "Bitcoin dan S&P 500 dibeli dan ditahan pada hari yang sama, dalam mata uang Anda; harga di AS pada bulan yang sama.",
           "btc": "Bitcoin",
           "sp500": "S&P 500 (SPY)",
           "usInflation": "Inflasi AS (CPI-U)"

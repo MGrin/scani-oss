@@ -240,7 +240,7 @@
         },
         "benchmarks": {
           "label": "Compared with",
-          "caption": "Bought and held over the same days, in your currency.",
+          "caption": "Bitcoin and the S&P 500 bought and held over the same days, in your currency; US prices over the same months.",
           "btc": "Bitcoin",
           "sp500": "S&P 500 (SPY)",
           "usInflation": "US inflation (CPI-U)"
