@@ -12,7 +12,7 @@ import { useJobStatus } from '@/v3/hooks/useJobStatus';
 import { JobDetailHeader } from '../components/jobs/JobDetailHeader';
 import { jobLabelFor } from '../lib/job-labels';
 import { resolveV3ReviewRenderer } from '../lib/job-result';
-import { deriveJobOutcomeState } from '../lib/jobs';
+import { deriveJobOutcomeState, displayedJobState } from '../lib/jobs';
 import { V3_ROUTES } from '../lib/routes';
 
 /**
@@ -38,8 +38,17 @@ import { V3_ROUTES } from '../lib/routes';
 export function JobDetailPage() {
   const { t } = useTranslation();
   const { jobId = '' } = useParams<{ jobId: string }>();
-  const jobQuery = trpc.jobs.getMine.useQuery({ jobId }, { enabled: Boolean(jobId) });
   const live = useJobStatus(jobId || null);
+  const jobQuery = trpc.jobs.getMine.useQuery(
+    { jobId },
+    {
+      enabled: Boolean(jobId),
+      // Until the row catches up with a live terminal state, poll it: that row
+      // is where the outcome's meaning lives (SC-1275).
+      refetchInterval: (data) =>
+        displayedJobState(data?.state ?? 'unknown', live.state).refetch ? 1000 : false,
+    }
+  );
   useDocumentTitle(
     jobQuery.data ? jobLabelFor(t, jobQuery.data.jobName).label : t('v3.jobs.page.title')
   );
@@ -63,8 +72,7 @@ export function JobDetailPage() {
   }
 
   const job = jobQuery.data;
-  const isTerminal = job.state === 'completed' || job.state === 'failed';
-  const state = isTerminal ? job.state : live.state !== 'unknown' ? live.state : job.state;
+  const { state } = displayedJobState(job.state, live.state);
   const result = job.result ?? live.result;
 
   return (

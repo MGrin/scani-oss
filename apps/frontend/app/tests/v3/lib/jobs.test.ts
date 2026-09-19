@@ -5,6 +5,7 @@ import i18n from 'i18next';
 import {
   compareJobs,
   deriveJobOutcomeState,
+  displayedJobState,
   isJobRunning,
   type JobRow,
   jobBucket,
@@ -245,5 +246,31 @@ describe('summariseJobPayload', () => {
 
   test('survives a payload that is not an object', () => {
     expect(summariseJobPayload(t, 'wallet-import', 'oops')).toBeNull();
+  });
+});
+
+describe('displayedJobState (SC-1275)', () => {
+  test('a live terminal state asks for the row instead of being shown', () => {
+    expect(displayedJobState('active', 'completed')).toEqual({ state: 'active', refetch: true });
+    expect(displayedJobState('active', 'failed')).toEqual({ state: 'active', refetch: true });
+  });
+
+  test('so a finished CSV import whose row lags never reads as waiting on the user', () => {
+    const { state } = displayedJobState('active', 'completed');
+    const row = { jobId: 'j', jobName: 'file-import', createdAt: new Date(), state };
+    expect(jobNeedsAction({ ...row, actionTakenAt: null })).toBe(false);
+  });
+
+  test('a terminal row wins, and needs no refetch', () => {
+    expect(displayedJobState('completed', 'active')).toEqual({
+      state: 'completed',
+      refetch: false,
+    });
+    expect(displayedJobState('failed', 'unknown')).toEqual({ state: 'failed', refetch: false });
+  });
+
+  test('a live non-terminal state is shown while the row lags', () => {
+    expect(displayedJobState('queued', 'active')).toEqual({ state: 'active', refetch: false });
+    expect(displayedJobState('queued', 'unknown')).toEqual({ state: 'queued', refetch: false });
   });
 });
