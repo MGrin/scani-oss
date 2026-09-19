@@ -1,3 +1,4 @@
+import { turnstileHeaders } from '@scani/ui/components/Turnstile';
 import { isPWA, logPWAInfo } from '@scani/ui/lib/pwa-utils';
 import { useQueryClient } from '@tanstack/react-query';
 import type React from 'react';
@@ -86,7 +87,8 @@ export interface AuthContextType {
   /** Re-ask the server. Used by the offline screen's Retry, and automatically
    *  when connectivity returns. */
   retrySession: () => Promise<void>;
-  authenticate: (email: string) => Promise<AuthAttemptResult>;
+  /** `turnstileToken` rides as a header; the server checks it once keyed (SC-1266). */
+  authenticate: (email: string, turnstileToken?: string | null) => Promise<AuthAttemptResult>;
   verifyCode: (email: string, token: string) => Promise<AuthAttemptResult>;
   signOut: () => Promise<void>;
   resetPassword: (email: string) => Promise<{ error?: string }>;
@@ -211,7 +213,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const authenticate = async (email: string): Promise<AuthAttemptResult> => {
+  const authenticate = async (
+    email: string,
+    turnstileToken?: string | null
+  ): Promise<AuthAttemptResult> => {
+    const fetchOptions = { headers: turnstileHeaders(turnstileToken) };
     const runningAsPWA = isPWA();
     if (import.meta.env.DEV) {
       logPWAInfo();
@@ -228,7 +234,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // why those are not the same value. It costs nothing today: reaching this
     // branch means the app is already installed, which means an account.
     if (runningAsPWA) {
-      return attempt(() => authClient.emailOtp.sendVerificationOtp({ email, type: 'sign-in' }));
+      return attempt(() =>
+        authClient.emailOtp.sendVerificationOtp({ email, type: 'sign-in', fetchOptions })
+      );
     }
 
     // The demo's tag, if this visit carried one, rides out on the callbackURL
@@ -236,7 +244,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // the only part of this sign-in the server still holds after the email
     // round trip — see `lib/signup-source.ts`.
     const callbackURL = withSignupSource(`${window.location.origin}/auth/callback`);
-    return attempt(() => authClient.signIn.magicLink({ email, callbackURL }));
+    return attempt(() => authClient.signIn.magicLink({ email, callbackURL, fetchOptions }));
   };
 
   const verifyCode = async (email: string, code: string): Promise<AuthAttemptResult> => {
