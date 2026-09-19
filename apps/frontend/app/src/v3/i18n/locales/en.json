@@ -229,6 +229,10 @@
           "label": "Investment return",
           "caption": "How your holdings did, whatever you added or took out."
         },
+        "fx": {
+          "label": "Of which, exchange rates",
+          "caption": "Your holdings did <value/> in their own currencies; the rest was currencies moving against yours."
+        },
         "xirr": {
           "label": "Your money's return",
           "caption": "What your own money earned, counting when you added and withdrew it.",

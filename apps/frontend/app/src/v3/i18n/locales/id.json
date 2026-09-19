@@ -207,6 +207,10 @@
           "label": "Imbal hasil investasi",
           "caption": "Kinerja aset Anda, terlepas dari dana yang Anda tambah atau tarik."
         },
+        "fx": {
+          "label": "Di antaranya, kurs",
+          "caption": "Aset Anda menghasilkan <value/> dalam mata uangnya sendiri; sisanya dari pergerakan kurs terhadap mata uang Anda."
+        },
         "xirr": {
           "label": "Imbal hasil uang Anda",
           "caption": "Hasil uang Anda sendiri, dengan memperhitungkan kapan Anda menambah dan menariknya.",

@@ -1119,6 +1119,10 @@
           "label": "Rentabilidad de la inversión",
           "caption": "Cómo les fue a tus activos, sin importar lo que añadiste o retiraste."
         },
+        "fx": {
+          "label": "De ello, tipos de cambio",
+          "caption": "Tus activos hicieron <value/> en sus propias monedas; el resto fue el movimiento de las divisas frente a la tuya."
+        },
         "xirr": {
           "label": "Rentabilidad de tu dinero",
           "caption": "Lo que ganó tu propio dinero, contando cuándo lo añadiste y retiraste.",

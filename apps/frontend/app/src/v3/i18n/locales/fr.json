@@ -1073,6 +1073,10 @@
           "label": "Rendement des placements",
           "caption": "La performance de vos avoirs, quels que soient vos apports ou retraits."
         },
+        "fx": {
+          "label": "Dont taux de change",
+          "caption": "Vos avoirs ont fait <value/> dans leur propre devise ; le reste vient des devises face à la vôtre."
+        },
         "xirr": {
           "label": "Rendement de votre argent",
           "caption": "Ce qu’a rapporté votre propre argent, selon le moment des apports et des retraits.",
