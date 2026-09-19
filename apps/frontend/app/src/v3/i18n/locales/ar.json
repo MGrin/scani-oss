@@ -1054,6 +1054,7 @@
         "chooseVendor": "اختيار طرف مقابل",
         "pickCurrency": "اختيار عملة من القائمة",
         "setAnchorDate": "تحديد تاريخ الاستحقاق الأساسي",
+        "chooseDate": "اختر تاريخًا",
         "chooseCadence": "اختيار وتيرة التكرار",
         "setRepeatCount": "تحديد عدد صالح لمرات التكرار"
       },

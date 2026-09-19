@@ -505,6 +505,7 @@
         "chooseVendor": "pilih vendor",
         "pickCurrency": "pilih mata uang dari daftar",
         "setAnchorDate": "tetapkan tanggal patokan",
+        "chooseDate": "pilih tanggal",
         "chooseCadence": "pilih seberapa sering ini berulang",
         "setRepeatCount": "tetapkan jumlah pengulangan yang valid"
       },
