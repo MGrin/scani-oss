@@ -1748,7 +1748,9 @@
         "noResults": "Tidak ada akun bernama itu di sini.",
         "addNamed": "Tambahkan “{{name}}”",
         "addNew": "Tambahkan akun baru",
-        "pickExisting": "Pilih akun yang sudah ada"
+        "pickExisting": "Pilih akun yang sudah ada",
+        "firstPlaceholder": "Beri nama akun pertama Anda…",
+        "noneYet": "Belum ada akun — ketik nama untuk menambahkan yang pertama."
       },
       "page": {
         "uploadAndRead": "Unggah dan baca",

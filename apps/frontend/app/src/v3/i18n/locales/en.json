@@ -1902,7 +1902,9 @@
         "noResults": "No account by that name here.",
         "addNamed": "Add “{{name}}”",
         "addNew": "Add a new account",
-        "pickExisting": "Pick an existing account"
+        "pickExisting": "Pick an existing account",
+        "firstPlaceholder": "Name your first account…",
+        "noneYet": "No accounts yet — type a name to add your first."
       },
       "page": {
         "uploadAndRead": "Upload and read it",
