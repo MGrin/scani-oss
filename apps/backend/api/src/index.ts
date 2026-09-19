@@ -16,6 +16,7 @@ import { DataProviderHealthMonitor } from '@scani/cloud-client/health-monitor';
 import { probeDataProvider } from '@scani/cloud-client/health-probe';
 import { getNodeEnv, isNodeEnvProduction, servedVersion } from '@scani/config';
 import { assertDemoOnlyDatabase } from '@scani/domain/demo';
+import { turnstileRefusal } from '@scani/http-fetch';
 import { createComponentLogger, createTimer, logger, sanitizeUrl } from '@scani/logging';
 import { flushSentry, initSentry, captureException as sentryCapture } from '@scani/logging/sentry';
 import { setSharedRedis } from '@scani/rate-limiter';
@@ -688,6 +689,13 @@ app
           retryAfterSec: res.retryAfterSec,
         };
       }
+    }
+    // A human check before any mail goes out (SC-1266); inert until the
+    // secret is set.
+    const humanCheck = await turnstileRefusal(request, env.TURNSTILE_SECRET);
+    if (humanCheck) {
+      set.status = humanCheck.status;
+      return { error: 'Forbidden', message: humanCheck.message };
     }
     const cloneHeaders = new Headers();
     for (const [k, v] of Object.entries(headers ?? {})) {

@@ -31,6 +31,7 @@ export function buildAuthedContext(
     // data-provider's fly.toml), so a test that does not care reads the
     // enforcing case rather than the off one.
     hourlyRequestLimit: 1000,
+    checkHuman: async () => ({ ok: true, checked: false }),
     ...overrides,
   };
 }
@@ -68,6 +69,7 @@ export function buildUnauthedContext(
     usage: createUsageContext(),
     clientIp: null,
     hourlyRequestLimit: 1000,
+    checkHuman: async () => ({ ok: true, checked: false }),
     ...overrides,
   };
 }

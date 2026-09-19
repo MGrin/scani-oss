@@ -1,3 +1,4 @@
+import { type TurnstileVerdict, verifyTurnstile } from '@scani/http-fetch';
 import type { OutflowRateLimiter } from '@scani/rate-limiter';
 import { initTRPC, TRPCError } from '@trpc/server';
 import type { OpenApiMeta } from 'trpc-openapi';
@@ -47,6 +48,13 @@ export interface DataProviderContext {
    * about the number a customer is told.
    */
   hourlyRequestLimit: number | null;
+  /**
+   * Cloudflare Turnstile for the public procedures that send mail (SC-1266).
+   * On the context for the same reason as `hourlyRequestLimit`: the builder
+   * already holds the parsed env. Passes unchecked while TURNSTILE_SECRET is
+   * unset.
+   */
+  checkHuman: (token: string | undefined) => Promise<TurnstileVerdict>;
 }
 
 /**
@@ -105,6 +113,8 @@ export function buildCreateContext({ env, getCloudDb, getBetterAuth }: BuildCont
   // the process lifetime, so this is one read at wiring time instead of one
   // per request.
   const hourlyRequestLimit = effectiveHourlyRequestLimit(env.CLOUD_QUOTA_HOURLY_DEFAULT);
+  const checkHuman = (token: string | undefined) =>
+    verifyTurnstile({ secret: env.TURNSTILE_SECRET, token });
 
   return async ({ req }: { req: Request }): Promise<DataProviderContext> => {
     const requestId = req.headers.get('x-request-id') ?? crypto.randomUUID();
@@ -179,6 +189,7 @@ export function buildCreateContext({ env, getCloudDb, getBetterAuth }: BuildCont
       usage: createUsageContext(),
       clientIp,
       hourlyRequestLimit,
+      checkHuman,
     };
   };
 }
