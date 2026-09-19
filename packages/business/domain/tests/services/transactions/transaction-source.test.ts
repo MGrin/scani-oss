@@ -4,12 +4,25 @@ import {
   sourceForChainId,
   sourceForProvider,
 } from '../../../src/services/transactions/transaction-source';
+import {
+  CEX_SOURCE_TO_INSTITUTION,
+  isWalletDerivedSource,
+} from '../../../src/services/transactions/transaction-sources';
 
 describe('sourceForProvider', () => {
   test('maps CEX/broker names case-insensitively', () => {
     expect(sourceForProvider('Kraken')).toBe('kraken-api');
     expect(sourceForProvider('Interactive Brokers')).toBe('ibkr-api');
     expect(sourceForProvider('AIRWALLEX')).toBe('airwallex-api');
+  });
+
+  // The institution is seeded as 'Salt Edge', and the callback enqueues the
+  // import with that name. Without a source, both the first import and the
+  // hourly transaction sync skip the bank's history in silence (SC-1244).
+  test('a Salt Edge bank resolves to a source the coordinator dispatches', () => {
+    expect(sourceForProvider('Salt Edge')).toBe('saltedge-api');
+    expect(CEX_SOURCE_TO_INSTITUTION['saltedge-api']).toBe('saltedge');
+    expect(isWalletDerivedSource('saltedge-api')).toBe(false);
   });
 
   test('returns null for a blockchain — chains resolve by chain id, not name', () => {

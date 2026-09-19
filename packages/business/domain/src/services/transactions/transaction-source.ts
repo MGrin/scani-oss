@@ -23,6 +23,7 @@ const PROVIDER_SOURCE_MAP: Record<string, string> = {
   ibkr: 'ibkr-api',
   'interactive brokers': 'ibkr-api',
   airwallex: 'airwallex-api',
+  'salt edge': 'saltedge-api',
 };
 
 export function sourceForProvider(provider: string): string | null {
