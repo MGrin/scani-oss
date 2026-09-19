@@ -194,6 +194,7 @@ export {
   GroupValuationService,
   type GroupValue,
 } from './portfolio/GroupValuationService';
+export { IncomeService } from './portfolio/IncomeService';
 export {
   type DisposalTotals,
   type DisposalWindow,

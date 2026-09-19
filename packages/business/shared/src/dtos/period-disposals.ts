@@ -133,6 +133,40 @@ export const taxYearStartSchema = z.enum(TAX_YEAR_STARTS);
 export type TaxYearStart = z.infer<typeof taxYearStartSchema>;
 
 /**
+ * One receipt of investment income (SC-90). `value` is base currency at
+ * receipt, valued the way cost basis values the lot the same receipt opens; null
+ * when no price route resolved, and counted in `unvalued` rather than zeroed.
+ */
+export const incomeRowSchema = z.object({
+  transactionId: z.string(),
+  holdingId: z.string(),
+  tokenId: z.string(),
+  kind: z.enum(['interest', 'reward', 'airdrop']),
+  receivedAt: z.string(),
+  quantity: z.string(),
+  value: z.string().nullable(),
+  stale: z.boolean(),
+});
+
+/**
+ * Income over the tax year (mgrin, 2026-09-11): interest and rewards are
+ * totalled; airdrops are listed and have NO total. `totals` is strict, so a
+ * server that ever sent an airdrop total would fail its own contract rather
+ * than hand a client a figure the statement must not assert.
+ */
+export const taxYearIncomeSchema = z.object({
+  rows: z.array(incomeRowSchema),
+  totals: z.object({ interest: z.string(), reward: z.string() }).strict(),
+  unvalued: z.object({
+    interest: z.number().int().nonnegative(),
+    reward: z.number().int().nonnegative(),
+    airdrop: z.number().int().nonnegative(),
+  }),
+});
+
+export type TaxYearIncome = z.infer<typeof taxYearIncomeSchema>;
+
+/**
  * One tax year's disposals: the window above, derived from a year number and
  * its start, with the zone its boundaries were read in. `timeZoneSource` says
  * whether that zone is the user's own or the UTC fallback used when none is
@@ -151,6 +185,7 @@ export const taxYearDisposalsSchema = periodDisposalsSchema.extend({
     timeZone: z.string(),
     timeZoneSource: z.enum(['user', 'utc-fallback']),
   }),
+  income: taxYearIncomeSchema,
 });
 
 export type TaxYearDisposals = z.infer<typeof taxYearDisposalsSchema>;

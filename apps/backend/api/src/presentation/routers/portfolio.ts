@@ -16,7 +16,7 @@ import * as schema from '@scani/db/schema';
 import { notScamFor } from '@scani/domain/lib/scam-verdict';
 import { taxYearWindow, taxYearZone } from '@scani/domain/lib/tax-year';
 import { PortfolioValueDailyRepository, UserJobRepository } from '@scani/domain/repositories';
-import { PeriodDisposalsService } from '@scani/domain/services';
+import { IncomeService, PeriodDisposalsService } from '@scani/domain/services';
 import { HIDE_CLOSED_HOLDINGS_STALE_DAYS } from '@scani/domain/use-cases';
 import { PORTFOLIO_HISTORY_BACKFILL, PORTFOLIO_HISTORY_LOOKBACK_DAYS } from '@scani/jobs';
 import { BullMqEnqueueService } from '@scani/queue';
@@ -732,6 +732,11 @@ export const portfolioRouter = router({
         // there is no ledger to report — not an empty one.
         return {
           ...header,
+          income: {
+            rows: [],
+            totals: { interest: '0', reward: '0' },
+            unvalued: { interest: 0, reward: 0, airdrop: 0 },
+          },
           baseCurrencyId: null,
           costBasisMethod: method,
           rows: [],
@@ -741,14 +746,29 @@ export const portfolioRouter = router({
           totals: { proceeds: '0', costBasis: '0', gain: '0' },
         };
       }
-      const result = await Container.get(PeriodDisposalsService).forPeriod(
-        dbUser.id,
-        baseCurrencyId,
-        window,
-        method
-      );
+      const [result, income] = await Promise.all([
+        Container.get(PeriodDisposalsService).forPeriod(dbUser.id, baseCurrencyId, window, method),
+        Container.get(IncomeService).forPeriod(dbUser.id, baseCurrencyId, window),
+      ]);
       return {
         ...header,
+        income: {
+          rows: income.rows.map((row) => ({
+            transactionId: row.transactionId,
+            holdingId: row.holdingId,
+            tokenId: row.tokenId,
+            kind: row.kind,
+            receivedAt: row.receivedAt.toISOString(),
+            quantity: row.quantity.toString(),
+            value: row.value?.toString() ?? null,
+            stale: row.stale,
+          })),
+          totals: {
+            interest: income.totals.interest.toString(),
+            reward: income.totals.reward.toString(),
+          },
+          unvalued: income.unvalued,
+        },
         baseCurrencyId,
         costBasisMethod: result.method,
         rows: result.rows.map(toDisposalLotMatchDto),
