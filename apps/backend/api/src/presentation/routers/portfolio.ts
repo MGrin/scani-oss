@@ -226,19 +226,29 @@ const ReturnsInput = z.object({
     z.object({ kind: z.literal('1y') }),
     z.object({ kind: z.literal('all') }),
   ]),
+  // Omitted = user-wide, for Home. An account or institution is its detail
+  // panel asking about itself, and is checked as the chart's scope is.
+  scope: z
+    .object({
+      kind: z.enum(['account', 'institution']),
+      id: z.string().uuid(),
+    })
+    .optional(),
 });
 
 export const portfolioRouter = router({
   /**
    * Time- and money-weighted return over a window, from the SC-457 engine.
-   * Deleted by SC-756 as a route with no screen; it returns with one, Home's
-   * returns card, and only with what that card reads.
+   * Deleted by SC-756 as a route with no screen; it returns with one, the
+   * returns card on Home and on account and institution detail, and only with
+   * what that card reads.
    */
   getReturns: protectedProcedure.input(strictInput(ReturnsInput)).query(async ({ ctx, input }) => {
     const { dbUser } = await requireAuth(ctx);
+    if (input.scope) await assertScopeOwnership(dbUser.id, input.scope);
     const outcome = await Container.get(ReturnsService).compute({
       userId: dbUser.id,
-      scope: { kind: 'user' },
+      scope: input.scope ?? { kind: 'user' },
       window: input.window,
     });
     // An account with no base currency has no rollup rows to measure, so

@@ -10,7 +10,10 @@ import { makeAuthedCaller } from '../../helpers/test-caller';
 
 restoreContainerAfterAll();
 
-const USER = { id: 'user-a', email: 'a@scani.local' } as typeof schema.users.$inferSelect;
+const USER = {
+  id: '00000000-0000-4000-8000-00000000000a',
+  email: 'a@scani.local',
+} as typeof schema.users.$inferSelect;
 
 function stub(outcome: unknown) {
   const asked: ReturnsRequest[] = [];
@@ -50,7 +53,13 @@ describe('portfolio.getReturns (SC-1159)', () => {
     const { returns } = await makeAuthedCaller(USER).portfolio.getReturns({
       window: { kind: 'ytd' },
     });
-    expect(asked).toEqual([{ userId: 'user-a', scope: { kind: 'user' }, window: { kind: 'ytd' } }]);
+    expect(asked).toEqual([
+      {
+        userId: '00000000-0000-4000-8000-00000000000a',
+        scope: { kind: 'user' },
+        window: { kind: 'ytd' },
+      },
+    ]);
     expect(returns?.twr?.cumulative).toBe('0.3');
     expect(returns?.twr && 'periods' in returns.twr).toBe(false);
   });
@@ -69,5 +78,16 @@ describe('portfolio.getReturns (SC-1159)', () => {
         window: { kind: 'custom' } as unknown as { kind: 'ytd' },
       })
     ).rejects.toThrow();
+  });
+
+  test('an account the caller does not own is not found, and the engine is never asked', async () => {
+    const asked = stub({ status: 'ok', returns: RESULT });
+    await expect(
+      makeAuthedCaller(USER).portfolio.getReturns({
+        window: { kind: 'ytd' },
+        scope: { kind: 'account', id: '00000000-0000-4000-8000-000000000001' },
+      })
+    ).rejects.toThrow('Account not found');
+    expect(asked).toEqual([]);
   });
 });
