@@ -1,12 +1,16 @@
 import { db } from '@scani/db/connection';
 import * as schema from '@scani/db/schema';
 import { GroupRepository, UserRepository } from '@scani/domain/repositories';
-import { RenderPdfInput } from '@scani/shared';
+import { RenderPdfInput, taxYearPdfLabelsSchema, taxYearStartSchema } from '@scani/shared';
+import { TRPCError } from '@trpc/server';
 import { desc, eq, inArray } from 'drizzle-orm';
 import { Container } from 'typedi';
+import { z } from 'zod';
 import { toNetWorthHistoryRow, userNetWorthDaily } from '../../lib/net-worth-series';
 import { accountLabel } from '../../lib/pdf/layout';
 import { renderStatement } from '../../lib/pdf/statement';
+import { taxYearDocument } from '../../lib/pdf/tax-year-sheet';
+import { computeTaxYear } from '../../lib/tax-year';
 import { strictInput } from '../lib/strict-input';
 import { requireAuth } from '../middleware/auth';
 import { protectedProcedure, router } from '../trpc';
@@ -80,6 +84,74 @@ export const exportsRouter = router({
       const { dbUser } = await requireAuth(ctx);
       const pdf = await renderStatement({
         ...input,
+        account: accountLabel(dbUser.name, dbUser.email),
+      });
+      await Container.get(UserRepository).markFirstExport(dbUser.id);
+      return { base64: pdf.toString('base64') };
+    }),
+
+  /**
+   * SC-90's tax-year statement as a PDF. The figures are computed here, with
+   * the same code as `portfolio.taxYear`; the client sends only the words, so
+   * the document cannot carry a number the ledger did not produce. Stamped with
+   * the method, the generation time, the zone and the v1 caveat (Operator
+   * ruling, bus #12532).
+   */
+  taxYearPdf: protectedProcedure
+    .input(
+      strictInput(
+        z.object({
+          year: z.number().int().min(1970).max(9999),
+          yearStart: taxYearStartSchema,
+          labels: taxYearPdfLabelsSchema,
+          text: RenderPdfInput.shape.text,
+          figures: RenderPdfInput.shape.figures,
+          direction: RenderPdfInput.shape.direction,
+        })
+      )
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { dbUser } = await requireAuth(ctx);
+      const result = await computeTaxYear(dbUser, input);
+      if (!result.baseCurrencyId) {
+        throw new TRPCError({
+          code: 'PRECONDITION_FAILED',
+          message: 'Set a base currency before generating a tax-year statement',
+        });
+      }
+      const tokenIds = [
+        ...new Set([
+          result.baseCurrencyId,
+          ...result.rows.map((r) => r.tokenId),
+          ...result.income.rows.map((r) => r.tokenId),
+        ]),
+      ];
+      const tokens = await db
+        .select({ id: schema.tokens.id, symbol: schema.tokens.symbol })
+        .from(schema.tokens)
+        .where(inArray(schema.tokens.id, tokenIds));
+      const symbols = new Map(tokens.map((t) => [t.id, t.symbol]));
+      const { sheet, provenance } = taxYearDocument(result, input.labels, {
+        currency: symbols.get(result.baseCurrencyId) ?? result.baseCurrencyId,
+        symbolOf: (tokenId) => symbols.get(tokenId) ?? tokenId,
+      });
+      const document = RenderPdfInput.safeParse({
+        sheet,
+        provenance,
+        text: input.text,
+        figures: input.figures,
+        direction: input.direction,
+      });
+      if (!document.success) {
+        // The row cap is the realistic cause: a year with more rows than a PDF
+        // holds is refused with the engine's own message, never truncated.
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: document.error.issues[0]?.message ?? 'This statement cannot be rendered',
+        });
+      }
+      const pdf = await renderStatement({
+        ...document.data,
         account: accountLabel(dbUser.name, dbUser.email),
       });
       await Container.get(UserRepository).markFirstExport(dbUser.id);

@@ -14,18 +14,11 @@ import { randomUUID } from 'node:crypto';
 import { db } from '@scani/db/connection';
 import * as schema from '@scani/db/schema';
 import { notScamFor } from '@scani/domain/lib/scam-verdict';
-import { taxYearWindow, taxYearZone } from '@scani/domain/lib/tax-year';
 import { PortfolioValueDailyRepository, UserJobRepository } from '@scani/domain/repositories';
-import { IncomeService, PeriodDisposalsService } from '@scani/domain/services';
 import { HIDE_CLOSED_HOLDINGS_STALE_DAYS } from '@scani/domain/use-cases';
 import { PORTFOLIO_HISTORY_BACKFILL, PORTFOLIO_HISTORY_LOOKBACK_DAYS } from '@scani/jobs';
 import { BullMqEnqueueService } from '@scani/queue';
-import {
-  parseCostBasisMethod,
-  type TaxYearDisposals,
-  taxYearStartSchema,
-  toDisposalLotMatchDto,
-} from '@scani/shared';
+import { type TaxYearDisposals, taxYearStartSchema } from '@scani/shared';
 import { TRPCError } from '@trpc/server';
 import Decimal from 'decimal.js';
 import { and, eq, sql } from 'drizzle-orm';
@@ -41,6 +34,7 @@ import {
   unmeasuredDates,
   userNetWorthDaily,
 } from '../../lib/net-worth-series';
+import { computeTaxYear } from '../../lib/tax-year';
 import { strictInput } from '../lib/strict-input';
 import { requireAuth } from '../middleware/auth';
 import { protectedProcedure, router } from '../trpc';
@@ -712,74 +706,6 @@ export const portfolioRouter = router({
     )
     .query(async ({ ctx, input }): Promise<TaxYearDisposals> => {
       const { dbUser } = await requireAuth(ctx);
-      const baseCurrencyId = dbUser.baseCurrencyId ?? null;
-      const method = parseCostBasisMethod(dbUser.costBasisMethod);
-      const zone = taxYearZone(dbUser.timezone ?? null);
-      const window = taxYearWindow(input.year, input.yearStart, zone.timeZone);
-      const header = {
-        generatedAt: new Date().toISOString(),
-        periodStart: window.from.toISOString(),
-        periodEnd: window.to.toISOString(),
-        taxYear: {
-          year: input.year,
-          yearStart: input.yearStart,
-          timeZone: zone.timeZone,
-          timeZoneSource: zone.source,
-        },
-      };
-      if (!baseCurrencyId) {
-        // Every figure is denominated in the base currency, so without one
-        // there is no ledger to report — not an empty one.
-        return {
-          ...header,
-          income: {
-            rows: [],
-            totals: { interest: '0', reward: '0' },
-            unvalued: { interest: 0, reward: 0, airdrop: 0 },
-          },
-          baseCurrencyId: null,
-          costBasisMethod: method,
-          rows: [],
-          rowCount: 0,
-          byOutcome: { realized: 0, unpriced: 0, unreviewed: 0, retained: 0, awaiting_pair: 0 },
-          byBasisQuality: { known: 0, partial: 0, unknown: 0 },
-          totals: { proceeds: '0', costBasis: '0', gain: '0' },
-        };
-      }
-      const [result, income] = await Promise.all([
-        Container.get(PeriodDisposalsService).forPeriod(dbUser.id, baseCurrencyId, window, method),
-        Container.get(IncomeService).forPeriod(dbUser.id, baseCurrencyId, window),
-      ]);
-      return {
-        ...header,
-        income: {
-          rows: income.rows.map((row) => ({
-            transactionId: row.transactionId,
-            holdingId: row.holdingId,
-            tokenId: row.tokenId,
-            kind: row.kind,
-            receivedAt: row.receivedAt.toISOString(),
-            quantity: row.quantity.toString(),
-            value: row.value?.toString() ?? null,
-            stale: row.stale,
-          })),
-          totals: {
-            interest: income.totals.interest.toString(),
-            reward: income.totals.reward.toString(),
-          },
-          unvalued: income.unvalued,
-        },
-        baseCurrencyId,
-        costBasisMethod: result.method,
-        rows: result.rows.map(toDisposalLotMatchDto),
-        rowCount: result.rows.length,
-        byOutcome: result.byOutcome,
-        byBasisQuality: result.byBasisQuality,
-        totals: {
-          proceeds: result.totals.proceeds.toString(),
-          costBasis: result.totals.costBasis.toString(),
-          gain: result.totals.gain.toString(),
-        },
-      };
+      return computeTaxYear(dbUser, input);
     }),
 });

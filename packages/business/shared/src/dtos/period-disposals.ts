@@ -189,3 +189,60 @@ export const taxYearDisposalsSchema = periodDisposalsSchema.extend({
 });
 
 export type TaxYearDisposals = z.infer<typeof taxYearDisposalsSchema>;
+
+/**
+ * The words on a tax-year PDF, supplied by the client in the reader's language.
+ * Words only: every figure on the document is computed by the server from the
+ * ledger, so a client cannot print a number the ledger did not produce.
+ */
+export const taxYearPdfLabelsSchema = z.object({
+  subject: z.string().min(1),
+  headers: z.object({
+    date: z.string(),
+    asset: z.string(),
+    quantity: z.string(),
+    acquired: z.string(),
+    amount: z.string(),
+    costBasis: z.string(),
+    gain: z.string(),
+    daysHeld: z.string(),
+  }),
+  groups: z.object({
+    disposals: z.string(),
+    interest: z.string(),
+    rewards: z.string(),
+    airdrops: z.string(),
+  }),
+  /** Labels for the block above the table. Its label column truncates past about 18 characters. */
+  details: z.object({
+    year: z.string(),
+    method: z.string(),
+    timeZone: z.string(),
+    gainTotal: z.string(),
+    interestTotal: z.string(),
+    rewardTotal: z.string(),
+    airdropNote: z.string(),
+    caveat: z.string(),
+    /** Rows whose cost basis is partial or unknown (short or stale history). */
+    basisIncomplete: z.string(),
+    /** Outflows still waiting on the owner's answer or on a transfer pair. */
+    awaitingReview: z.string(),
+    /** Income receipts no price route could value. */
+    unvaluedIncome: z.string(),
+  }),
+  /** Each cost-basis method in words, so the statement never prints a code. */
+  methods: z.object({ fifo: z.string().min(1), uk_section_104: z.string().min(1) }),
+  /** Each tax-year start in words. */
+  yearStarts: z.object({
+    'jan-1': z.string().min(1),
+    'apr-1': z.string().min(1),
+    'apr-6': z.string().min(1),
+    'jul-1': z.string().min(1),
+  }),
+  /** What the airdrops line says instead of a total. */
+  airdropNote: z.string().min(1),
+  /** The v1 caveat (Operator ruling, bus #12532). Required: a statement without it is not issued. */
+  caveat: z.string().min(1),
+});
+
+export type TaxYearPdfLabels = z.infer<typeof taxYearPdfLabelsSchema>;
