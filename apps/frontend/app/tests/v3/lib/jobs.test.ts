@@ -5,6 +5,7 @@ import i18n from 'i18next';
 import {
   compareJobs,
   deriveJobOutcomeState,
+  displayedJobState,
   isJobRunning,
   type JobRow,
   jobBucket,
@@ -12,6 +13,8 @@ import {
   jobBucketOptions,
   jobNeedsAction,
   jobStateLabel,
+  ROW_CATCH_UP_POLLS,
+  rowCatchUpInterval,
   summariseJobPayload,
 } from '../../../src/v3/lib/jobs';
 
@@ -245,5 +248,48 @@ describe('summariseJobPayload', () => {
 
   test('survives a payload that is not an object', () => {
     expect(summariseJobPayload(t, 'wallet-import', 'oops')).toBeNull();
+  });
+});
+
+describe('displayedJobState (SC-1275)', () => {
+  test('a live terminal state asks for the row instead of being shown', () => {
+    expect(displayedJobState('active', 'completed')).toEqual({ state: 'active', refetch: true });
+    expect(displayedJobState('active', 'failed')).toEqual({ state: 'active', refetch: true });
+  });
+
+  test('so a finished CSV import whose row lags never reads as waiting on the user', () => {
+    const { state } = displayedJobState('active', 'completed');
+    const row = { jobId: 'j', jobName: 'file-import', createdAt: new Date(), state };
+    expect(jobNeedsAction({ ...row, actionTakenAt: null })).toBe(false);
+  });
+
+  test('a terminal row wins, and needs no refetch', () => {
+    expect(displayedJobState('completed', 'active')).toEqual({
+      state: 'completed',
+      refetch: false,
+    });
+    expect(displayedJobState('failed', 'unknown')).toEqual({ state: 'failed', refetch: false });
+  });
+
+  test('a live non-terminal state is shown while the row lags', () => {
+    expect(displayedJobState('queued', 'active')).toEqual({ state: 'active', refetch: false });
+    expect(displayedJobState('queued', 'unknown')).toEqual({ state: 'queued', refetch: false });
+  });
+});
+
+describe('rowCatchUpInterval (SC-1275)', () => {
+  test('polls every second while the row lags a live terminal state', () => {
+    expect(rowCatchUpInterval('active', 'completed', 0)).toBe(1000);
+    expect(rowCatchUpInterval('active', 'failed', ROW_CATCH_UP_POLLS - 1)).toBe(1000);
+  });
+
+  test('stops at the cap, so a row that never catches up cannot poll forever', () => {
+    expect(rowCatchUpInterval('active', 'completed', ROW_CATCH_UP_POLLS)).toBe(false);
+    expect(rowCatchUpInterval('active', 'completed', ROW_CATCH_UP_POLLS + 100)).toBe(false);
+  });
+
+  test('never polls when there is nothing to catch up to', () => {
+    expect(rowCatchUpInterval('completed', 'completed', 0)).toBe(false);
+    expect(rowCatchUpInterval('queued', 'active', 0)).toBe(false);
   });
 });
