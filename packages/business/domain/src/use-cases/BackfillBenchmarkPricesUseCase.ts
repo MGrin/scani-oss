@@ -1,13 +1,26 @@
 import { db } from '@scani/db/connection';
 import * as schema from '@scani/db/schema';
 import { createComponentLogger } from '@scani/logging';
-import { and, eq, isNull, max, min } from 'drizzle-orm';
+import { BlsClient } from '@scani/providers/providers/bls';
+import { and, eq, isNull, max, min, sql } from 'drizzle-orm';
 import { Container, Service } from 'typedi';
-import { BENCHMARKS, type Benchmark, benchmarkDaysToFetch } from '../lib/returns/benchmarks';
+import {
+  BENCHMARKS,
+  type Benchmark,
+  benchmarkDaysToFetch,
+  US_INFLATION,
+} from '../lib/returns/benchmarks';
 import { TokenRepository } from '../repositories/TokenRepository';
 import { HistoricalPriceBackfillService } from '../services/pricing/HistoricalPriceBackfillService';
 
 const logger = createComponentLogger('use-case:backfill-benchmark-prices');
+
+export interface InflationBackfillResult {
+  seriesId: string;
+  months: number;
+  /** Set when BLS could not be read; the price benchmarks still ran. */
+  error?: string;
+}
 
 export interface BenchmarkBackfillResult {
   key: Benchmark['key'];
@@ -30,8 +43,12 @@ export interface BenchmarkBackfillResult {
 export class BackfillBenchmarkPricesUseCase {
   private readonly backfillService = Container.get(HistoricalPriceBackfillService);
   private readonly tokenRepository = Container.get(TokenRepository);
+  private readonly bls = Container.get(BlsClient);
 
-  async execute(opts: { usdTokenId: string; now?: Date }): Promise<BenchmarkBackfillResult[]> {
+  async execute(opts: {
+    usdTokenId: string;
+    now?: Date;
+  }): Promise<{ prices: BenchmarkBackfillResult[]; inflation: InflationBackfillResult | null }> {
     const now = opts.now ?? new Date();
     // Yesterday: today's close does not exist yet.
     const through = new Date(now.getTime() - 24 * 60 * 60 * 1000);
@@ -73,7 +90,51 @@ export class BackfillBenchmarkPricesUseCase {
       logger.info(result, 'Benchmark history backfilled');
       results.push(result);
     }
-    return results;
+    const inflation = earliestNeeded ? await this.backfillInflation(earliestNeeded, now) : null;
+    return { prices: results, inflation };
+  }
+
+  /**
+   * US CPI, every month from the earliest measured portfolio day's year. One
+   * request whatever the gap: BLS answers up to ten years at once, and a
+   * published month can be revised, so re-reading the span costs nothing
+   * and keeps the stored values current.
+   */
+  private async backfillInflation(
+    earliestNeeded: Date,
+    now: Date
+  ): Promise<InflationBackfillResult> {
+    const seriesId = US_INFLATION.seriesId;
+    try {
+      const points = await this.bls.fetchMonthly(
+        seriesId,
+        earliestNeeded.getUTCFullYear(),
+        now.getUTCFullYear()
+      );
+      if (points.length > 0) {
+        await db
+          .insert(schema.inflationIndexMonthly)
+          .values(
+            points.map((p) => ({
+              seriesId,
+              month: p.month,
+              value: p.value,
+              source: US_INFLATION.source,
+            }))
+          )
+          .onConflictDoUpdate({
+            target: [schema.inflationIndexMonthly.seriesId, schema.inflationIndexMonthly.month],
+            set: { value: sql`excluded.value`, fetchedAt: sql`now()` },
+          });
+      }
+      const result = { seriesId, months: points.length };
+      logger.info(result, 'Inflation index backfilled');
+      return result;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.error({ seriesId, error: message }, 'Inflation index backfill failed');
+      return { seriesId, months: 0, error: message };
+    }
   }
 
   /** The benchmark's token row, created if no user has ever held it. */

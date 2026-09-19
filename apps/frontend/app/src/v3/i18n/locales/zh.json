@@ -220,7 +220,8 @@
           "label": "对比",
           "caption": "在相同日期买入并持有，以您的货币计。",
           "btc": "比特币",
-          "sp500": "标普 500（SPY）"
+          "sp500": "标普 500（SPY）",
+          "usInflation": "美国通胀（CPI-U）"
         },
         "perYear": "每年 <value/>",
         "perYearUnit": "每年",

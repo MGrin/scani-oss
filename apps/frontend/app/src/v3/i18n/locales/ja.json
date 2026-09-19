@@ -220,7 +220,8 @@
           "label": "比較対象",
           "caption": "同じ期間に購入して保有した場合、あなたの通貨で。",
           "btc": "ビットコイン",
-          "sp500": "S&P 500（SPY）"
+          "sp500": "S&P 500（SPY）",
+          "usInflation": "米国のインフレ率（CPI-U）"
         },
         "perYear": "年率 <value/>",
         "perYearUnit": "年率",

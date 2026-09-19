@@ -1132,7 +1132,8 @@
           "label": "Comparado com",
           "caption": "Comprado e mantido nos mesmos dias, na sua moeda.",
           "btc": "Bitcoin",
-          "sp500": "S&P 500 (SPY)"
+          "sp500": "S&P 500 (SPY)",
+          "usInflation": "Inflação dos EUA (CPI-U)"
         },
         "perYear": "<value/> ao ano",
         "perYearUnit": "ao ano",

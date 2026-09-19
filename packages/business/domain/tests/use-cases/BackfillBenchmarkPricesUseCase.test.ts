@@ -1,6 +1,7 @@
 import { afterAll, describe, expect, test } from 'bun:test';
 import { db } from '@scani/db/connection';
 import * as schema from '@scani/db/schema';
+import { BlsClient } from '@scani/providers/providers/bls';
 import { and, eq, inArray, isNull } from 'drizzle-orm';
 import { Container } from 'typedi';
 import { HistoricalPriceBackfillService } from '../../src/services/pricing/HistoricalPriceBackfillService';
@@ -13,6 +14,16 @@ import { restoreContainerAfterAll } from '../../test/helpers/container';
  */
 
 restoreContainerAfterAll();
+
+const blsAsked: Array<{ seriesId: string; startYear: number; endYear: number }> = [];
+let blsFails = false;
+Container.set(BlsClient, {
+  fetchMonthly: async (seriesId: string, startYear: number, endYear: number) => {
+    blsAsked.push({ seriesId, startYear, endYear });
+    if (blsFails) throw new Error('BLS down');
+    return [];
+  },
+} as unknown as BlsClient);
 
 const calls: Array<{ tokenId: string; baseTokenId: string; days: Date[] }> = [];
 Container.set(HistoricalPriceBackfillService, {
@@ -76,7 +87,9 @@ afterAll(async () => {
 
 describe('BackfillBenchmarkPricesUseCase (SC-464)', () => {
   test('asks for USD history of BTC and SPY, creating a token nobody held', async () => {
-    const results = await Container.get(BackfillBenchmarkPricesUseCase).execute({
+    const { prices: results, inflation } = await Container.get(
+      BackfillBenchmarkPricesUseCase
+    ).execute({
       usdTokenId: USD,
     });
     const after = await benchmarkTokenIds();
@@ -85,6 +98,21 @@ describe('BackfillBenchmarkPricesUseCase (SC-464)', () => {
     expect(results.map((r) => r.key)).toEqual(['btc', 'sp500']);
     expect(calls.map((c) => c.baseTokenId)).toEqual([USD, USD]);
     expect(calls.map((c) => c.tokenId)).toEqual(results.map((r) => r.tokenId));
+    // SC-1255: US CPI is read in the same run, for the same span.
+    expect(inflation?.seriesId).toBe('CUUR0000SA0');
+    expect(blsAsked.at(-1)?.seriesId).toBe('CUUR0000SA0');
+  });
+
+  test('BLS failing does not stop the price benchmarks (SC-1255)', async () => {
+    blsFails = true;
+    calls.length = 0;
+    const { prices, inflation } = await Container.get(BackfillBenchmarkPricesUseCase).execute({
+      usdTokenId: USD,
+    });
+    blsFails = false;
+    expect(prices.map((r) => r.key)).toEqual(['btc', 'sp500']);
+    expect(calls).toHaveLength(2);
+    expect(inflation?.error).toBe('BLS down');
   });
 
   test('a second run reuses the same tokens rather than creating more', async () => {

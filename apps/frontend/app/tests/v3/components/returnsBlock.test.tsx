@@ -68,6 +68,7 @@ describe('the returns card (SC-1159)', () => {
       benchmarks: [
         { key: 'btc', cumulative: 92.3 },
         { key: 'sp500', cumulative: 13.8 },
+        { key: 'us_inflation', cumulative: 3.1 },
       ],
     });
     expect(html).toContain(copy.benchmarks.label);
@@ -75,5 +76,6 @@ describe('the returns card (SC-1159)', () => {
     expect(html).toContain(copy.benchmarks.sp500.replace('&', '&amp;'));
     expect(html).toContain('92.3');
     expect(html).toContain('13.8');
+    expect(html).toContain(copy.benchmarks.usInflation);
   });
 });
