@@ -33,6 +33,8 @@ import type {
   WithUserCreds,
 } from '../../core/types';
 import { fetchWithTimeout } from '../../core/utils/fetch';
+import { PageCapWatch } from '../../core/utils/page-cap';
+import { WALLET_HISTORY_ROW_CAP } from '../../core/wallet-limits';
 
 interface BlockchainInfoAddress {
   address: string;
@@ -247,6 +249,7 @@ export class BitcoinProvider
     }
 
     const events: TransactionEvent[] = [];
+    const capped = new PageCapWatch();
     let offset = 0;
     while (true) {
       const url = `https://blockchain.info/rawaddr/${address}?limit=${TX_PAGE_SIZE}&offset=${offset}`;
@@ -261,6 +264,15 @@ export class BitcoinProvider
         if (event) events.push(event);
       }
       if (txs.length < TX_PAGE_SIZE) break;
+      // The address is the requester's choice, so its size is too (SC-1271).
+      if (events.length >= WALLET_HISTORY_ROW_CAP) {
+        capped.note({
+          walk: 'the address history',
+          pages: offset / TX_PAGE_SIZE + 1,
+          rows: events.length,
+        });
+        break;
+      }
       if (ctx.since) {
         const oldestOnPage = Math.min(...txs.map((tx) => tx.time)) * 1000;
         if (oldestOnPage < ctx.since.getTime() - BLOCK_TIME_SKEW_MS) break;
@@ -268,6 +280,7 @@ export class BitcoinProvider
       offset += TX_PAGE_SIZE;
     }
 
+    capped.retract(ctx, this.providerKey);
     return events.filter((e) => {
       if (ctx.since && e.occurredAt < ctx.since) return false;
       if (ctx.until && e.occurredAt > ctx.until) return false;

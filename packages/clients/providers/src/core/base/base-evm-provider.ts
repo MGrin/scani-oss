@@ -73,6 +73,7 @@ import type {
   WithUserCreds,
 } from '../types';
 import { inferCounterSign } from '../utils/enforce-tx-sign';
+import { WALLET_HISTORY_ROW_CAP } from '../wallet-limits';
 
 /**
  * Per-chain configuration. The concrete `etherscan` provider holds
@@ -185,6 +186,9 @@ function tokenLegGroupKey(row: EvmTokenTxRow): string {
 }
 
 export abstract class BaseEvmProvider implements ProviderBase {
+  /** Rows one history stream may collect before the walk stops (SC-1271). */
+  protected historyRowCap = WALLET_HISTORY_ROW_CAP;
+
   abstract readonly providerKey: string;
   abstract readonly capabilities: readonly Capability[];
 
@@ -408,10 +412,26 @@ export abstract class BaseEvmProvider implements ProviderBase {
     onRow: (row: T) => void
   ): Promise<boolean> {
     let startBlock = 0;
+    let collected = 0;
     while (true) {
       const page = await fetchPage(startBlock);
       for (const row of page.rows) onRow(row);
+      collected += page.rows.length;
       const lastRow = page.rows[page.rows.length - 1];
+      // The address is the requester's choice, so its size is too (SC-1271):
+      // stop at the cap and report the walk as short, like any other stop.
+      if (page.hitPageCap && collected >= this.historyRowCap) {
+        this.logger.warn(
+          {
+            providerKey: this.providerKey,
+            chainId: chain.chainId,
+            stream: streamLabel,
+            rows: collected,
+          },
+          'History walk reached its row cap; stopping'
+        );
+        return true;
+      }
       // A page that did not hit the cap IS the tail; an empty one is a tail
       // too. Either way the stream ended where the chain did.
       if (!page.hitPageCap || !lastRow) return false;
