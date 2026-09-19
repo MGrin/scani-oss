@@ -23,6 +23,10 @@ describe('isDisposableEmail (SC-1260)', () => {
     expect(isDisposableEmail(address)).toBe(false);
   });
 
+  test('a long run of trailing dots is stripped in linear time', () => {
+    expect(emailDomain(`x@mail.tm${'.'.repeat(50_000)}`)).toBe('mail.tm');
+  });
+
   test('reads the domain after the last @', () => {
     expect(emailDomain('"a@b"@Example.COM')).toBe('example.com');
   });

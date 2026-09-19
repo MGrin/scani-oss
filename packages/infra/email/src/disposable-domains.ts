@@ -34,11 +34,13 @@ const DISPOSABLE_DOMAINS: ReadonlySet<string> = new Set([
 export function emailDomain(address: string): string | null {
   const at = address.trim().lastIndexOf('@');
   if (at < 0) return null;
-  const domain = address
+  let domain = address
     .trim()
     .slice(at + 1)
-    .replace(/[>.\s]+$/, '')
     .toLowerCase();
+  // A loop, not a trailing-class regex: that one is polynomial on input like
+  // many tabs, and this runs on whatever a caller typed.
+  while (domain.endsWith('.') || domain.endsWith('>')) domain = domain.slice(0, -1);
   return domain.length > 0 ? domain : null;
 }
 
