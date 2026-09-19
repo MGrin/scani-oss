@@ -19,7 +19,12 @@
  * deployment without a CloudDb.
  */
 
-import { LocalEmailService, renderContactReceivedEmail, SCANI_BRAND } from '@scani/email';
+import {
+  isDisposableEmail,
+  LocalEmailService,
+  renderContactReceivedEmail,
+  SCANI_BRAND,
+} from '@scani/email';
 import { createComponentLogger } from '@scani/logging';
 import { createOutflowLimiter, getSharedRedis } from '@scani/rate-limiter';
 import { TRPCError } from '@trpc/server';
@@ -90,6 +95,14 @@ export const contactRouter = router({
 
       const name = input.name.trim();
       const email = input.email.trim().toLowerCase();
+
+      // SC-1260. A throwaway inbox cannot be replied to, so its message is
+      // noise in the support inbox. Same answer as a delivery, so a scripted
+      // caller learns nothing from it.
+      if (isDisposableEmail(email)) {
+        log.warn({ topic: input.topic }, 'Contact form from a disposable address dropped');
+        return { ok: true };
+      }
       const topicLabel = TOPIC_LABELS[input.topic];
       const emailService = Container.get(LocalEmailService);
 
