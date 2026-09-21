@@ -33,6 +33,8 @@ import type {
   WithUserCreds,
 } from '../../core/types';
 import { fetchWithTimeout } from '../../core/utils/fetch';
+import { PageCapWatch } from '../../core/utils/page-cap';
+import { WALLET_HISTORY_ROW_CAP } from '../../core/wallet-limits';
 import { tronBase58ToHex } from './address';
 
 const TRON_INSTITUTION_CODE = 'tron';
@@ -197,12 +199,14 @@ export class TronProvider
 
     const walletHex = tronBase58ToHex(address).toLowerCase();
 
+    const capped = new PageCapWatch();
     const [native, trc20] = await Promise.all([
-      this.fetchNativeTxs(address, walletHex),
-      this.fetchTrc20Txs(address),
+      this.fetchNativeTxs(address, walletHex, capped),
+      this.fetchTrc20Txs(address, capped),
     ]);
 
     const events = [...native, ...trc20];
+    capped.retract(ctx, this.providerKey);
     return events.filter((e) => {
       if (ctx.since && e.occurredAt < ctx.since) return false;
       if (ctx.until && e.occurredAt > ctx.until) return false;
@@ -260,11 +264,17 @@ export class TronProvider
   // Internals — transactions
   // ============================================================
 
-  private async fetchNativeTxs(address: string, walletHex: string): Promise<TransactionEvent[]> {
+  private async fetchNativeTxs(
+    address: string,
+    walletHex: string,
+    capped: PageCapWatch
+  ): Promise<TransactionEvent[]> {
     const events: TransactionEvent[] = [];
     for await (const row of this.paginate<TronNativeTxRow>(
       `${this.apiUrl}/v1/accounts/${encodeURIComponent(address)}/transactions`,
-      { only_confirmed: 'true' }
+      { only_confirmed: 'true' },
+      'the TRX transfer history',
+      capped
     )) {
       const event = this.toNativeEvent(row, walletHex);
       if (event) events.push(event);
@@ -272,11 +282,13 @@ export class TronProvider
     return events;
   }
 
-  private async fetchTrc20Txs(address: string): Promise<TransactionEvent[]> {
+  private async fetchTrc20Txs(address: string, capped: PageCapWatch): Promise<TransactionEvent[]> {
     const events: TransactionEvent[] = [];
     for await (const row of this.paginate<TronTrc20Row>(
       `${this.apiUrl}/v1/accounts/${encodeURIComponent(address)}/transactions/trc20`,
-      { only_confirmed: 'true' }
+      { only_confirmed: 'true' },
+      'the TRC-20 transfer history',
+      capped
     )) {
       const event = this.toTrc20Event(row, address);
       if (event) events.push(event);
@@ -286,9 +298,13 @@ export class TronProvider
 
   private async *paginate<T>(
     baseUrl: string,
-    extraParams: Record<string, string>
+    extraParams: Record<string, string>,
+    walk: string,
+    capped: PageCapWatch
   ): AsyncGenerator<T> {
     let fingerprint: string | undefined;
+    let rowsSeen = 0;
+    let pages = 0;
     while (true) {
       const params = new URLSearchParams({
         limit: String(TX_PAGE_LIMIT),
@@ -299,8 +315,15 @@ export class TronProvider
       const response = (await this.callJson(url)) as TronPaginatedResponse<T> | null;
       const rows = response?.data ?? [];
       for (const row of rows) yield row;
+      rowsSeen += rows.length;
+      pages += 1;
       const nextFingerprint = response?.meta?.fingerprint;
       if (!nextFingerprint || rows.length === 0) break;
+      // The address is the requester's choice, so its size is too (SC-1271).
+      if (rowsSeen >= WALLET_HISTORY_ROW_CAP) {
+        capped.note({ walk, pages, rows: rowsSeen });
+        break;
+      }
       fingerprint = nextFingerprint;
     }
   }

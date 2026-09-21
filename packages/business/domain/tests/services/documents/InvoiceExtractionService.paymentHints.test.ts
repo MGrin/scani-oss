@@ -4,6 +4,7 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import type { AIInferenceProvider, AIResult } from '@scani/providers/core/capabilities';
 import { ProviderRegistry } from '@scani/providers/core/registry';
 import { Container } from 'typedi';
+import { AiSpendBudget } from '../../../src/services/ai/AiSpendBudget';
 import { InvoiceExtractionService } from '../../../src/services/documents/InvoiceExtractionService';
 import { INVOICE_EXTRACTION_PROMPT } from '../../../src/services/documents/invoicePrompt';
 import { restoreContainerAfterAll } from '../../../test/helpers/container';
@@ -29,6 +30,9 @@ function stubProvider(data: unknown): void {
 }
 
 function service(): InvoiceExtractionService {
+  Container.set(AiSpendBudget, {
+    reserve: async () => {},
+  } as unknown as AiSpendBudget);
   const instance = new InvoiceExtractionService();
   Container.set(InvoiceExtractionService, instance);
   return instance;
@@ -36,7 +40,7 @@ function service(): InvoiceExtractionService {
 
 async function extractOne(invoice: Record<string, unknown>) {
   stubProvider({ invoices: [{ vendorNameRaw: 'Acme Corp', lineItems: [], ...invoice }] });
-  const result = await service().extract(IMAGE_BYTES, 'image/png');
+  const result = await service().extract('u1', IMAGE_BYTES, 'image/png');
   const [first] = result.invoices;
   if (!first) throw new Error('expected one extracted invoice');
   return first;
@@ -160,7 +164,7 @@ describe('InvoiceExtractionService — payment hints alongside the rest of the i
       ],
     });
 
-    const { invoices } = await service().extract(IMAGE_BYTES, 'image/png');
+    const { invoices } = await service().extract('u1', IMAGE_BYTES, 'image/png');
 
     expect(invoices).toHaveLength(2);
     expect(invoices[0]?.paymentStatus).toBe('paid');

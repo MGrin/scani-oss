@@ -88,6 +88,14 @@ describe('contactRouter.submit — delivery', () => {
     expect(receipt?.to).toBe('jane@example.com');
   });
 
+  test('a submission from a throwaway inbox answers ok and mails nobody (SC-1260)', async () => {
+    const caller = contactRouter.createCaller(buildUnauthedContext({ clientIp: '203.0.113.60' }));
+    await expect(caller.submit(validInput({ email: 'pentest@uberip.com' }))).resolves.toEqual({
+      ok: true,
+    });
+    expect(fake.sent).toEqual([]);
+  });
+
   test('surfaces INTERNAL_SERVER_ERROR when the ops notification fails to send', async () => {
     fake.failNext = true;
     const caller = contactRouter.createCaller(buildUnauthedContext({ clientIp: '203.0.113.21' }));

@@ -54,6 +54,7 @@ import type {
   WithUserCreds,
 } from '../../core/types';
 import { fetchWithTimeout } from '../../core/utils/fetch';
+import { WALLET_TOKEN_DISCOVERY_CAP } from '../../core/wallet-limits';
 import { ETHERSCAN_CHAINS, findChainConfig } from './chains';
 import { resolveEnsName } from './ens';
 import { isLikelySpamToken } from './spam-filter';
@@ -693,6 +694,10 @@ export class EtherscanProvider
 
     const uniqueTokens = new Map<string, { name: string; symbol: string; decimals: number }>();
     for (const tx of discoverData.result ?? []) {
+      // One balance call per token, all at once below: a wallet that touched
+      // thousands of tokens would otherwise hold the worker for an hour
+      // (SC-1271). Newest first, so the cap keeps the recent ones.
+      if (uniqueTokens.size >= WALLET_TOKEN_DISCOVERY_CAP) break;
       const contract = tx.contractAddress.toLowerCase();
       if (uniqueTokens.has(contract)) continue;
       const info = {

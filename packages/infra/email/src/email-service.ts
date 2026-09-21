@@ -1,3 +1,5 @@
+import { createComponentLogger } from '@scani/logging';
+import { emailDomain, isDisposableEmail } from './disposable-domains';
 import { renderMagicLinkEmail, renderOtpEmail, renderVerificationEmail } from './templates';
 import {
   type EmailBrand,
@@ -6,6 +8,8 @@ import {
   type OtpType,
   SCANI_BRAND,
 } from './types';
+
+const log = createComponentLogger('email');
 
 export abstract class EmailService {
   protected abstract sendMessage(message: EmailMessage): Promise<void>;
@@ -79,7 +83,16 @@ export abstract class EmailService {
   // the data-provider's `email.send` tRPC relay, which receives an
   // already-rendered payload from a remote api in cloud mode.
   async send(message: EmailMessage): Promise<void> {
+    if (this.refuses(message.to)) return;
     await this.sendMessage(message);
+  }
+
+  // SC-1260. Resolves rather than throws, so every caller — an auth endpoint
+  // included — answers exactly as it would for a delivered message.
+  private refuses(to: string): boolean {
+    if (!isDisposableEmail(to)) return false;
+    log.warn({ domain: emailDomain(to) }, 'Not sending to a disposable address');
+    return true;
   }
 
   // Single delivery path: applies the brand's `from` address, then hands
@@ -89,6 +102,7 @@ export abstract class EmailService {
     brand: EmailBrand;
     content: EmailContent;
   }): Promise<void> {
+    if (this.refuses(input.to)) return;
     await this.sendMessage({
       from: input.brand.from,
       to: input.to,
