@@ -42,6 +42,7 @@ import { Container } from 'typedi';
 import { z } from 'zod';
 import { resolveForecastAsOf } from '../lib/forecast-as-of';
 import { strictInput } from '../lib/strict-input';
+import { assertTokensVisible } from '../lib/token-visibility';
 import { requireAuth } from '../middleware/auth';
 import { protectedProcedure, router } from '../trpc';
 
@@ -187,6 +188,7 @@ export const paymentsRouter = router({
   create: protectedProcedure
     .input(strictInput(CreatePaymentInputSchema))
     .mutation(async ({ ctx, input }) => {
+      await assertTokensVisible(ctx.userId, [input.currencyTokenId]);
       const payment = await Container.get(PaymentService).create(ctx.userId, input);
       return serializePayment(payment);
     }),
@@ -210,6 +212,7 @@ export const paymentsRouter = router({
   createFromExtraction: protectedProcedure
     .input(strictInput(CreatePaymentFromExtractionInputSchema))
     .mutation(async ({ ctx, input }) => {
+      await assertTokensVisible(ctx.userId, [input.currencyTokenId]);
       try {
         const payment = await withTransaction(
           (tx) => Container.get(CreatePaymentFromExtractionUseCase).execute(ctx.userId, input, tx),
@@ -231,6 +234,7 @@ export const paymentsRouter = router({
     .input(strictInput(UpdatePaymentInputSchema))
     .mutation(async ({ ctx, input }) => {
       const { paymentId, ...patch } = input;
+      await assertTokensVisible(ctx.userId, [patch.currencyTokenId]);
       const updated = await Container.get(PaymentService).update(ctx.userId, paymentId, patch);
       return serializePayment(updated);
     }),

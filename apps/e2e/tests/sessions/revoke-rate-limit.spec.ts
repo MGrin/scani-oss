@@ -21,7 +21,7 @@ test.describe('sessions: revoke rate limit', () => {
     const statuses: number[] = [];
     for (let i = 0; i < 12; i++) {
       const res = await page.request.post(`${API_BASE_URL}/trpc/sessions.revoke`, {
-        data: { token: 'bogus-token-for-rate-test' },
+        data: { id: 'bogus-session-id-for-rate-test' },
         headers: { 'content-type': 'application/json', origin: 'http://localhost:5173' },
       });
       statuses.push(res.status());

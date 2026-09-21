@@ -1,7 +1,15 @@
 import { getCloudClient } from '@scani/cloud-client/runtime';
 import type { DbType } from '@scani/db/connection';
 import type * as schema from '@scani/db/schema';
-import { type ScamVerdict, UserTokenScamVerdictRepository } from '@scani/domain/repositories';
+import {
+  CUSTOM_TOKEN_TYPE_CODES,
+  customTokenVisibleTo,
+} from '@scani/domain/lib/custom-token-visibility';
+import {
+  type ScamVerdict,
+  TokenRepository,
+  UserTokenScamVerdictRepository,
+} from '@scani/domain/repositories';
 import { TokenPriceRepository } from '@scani/domain/repositories/TokenPriceRepository';
 import { CurrencyConverter, TokenPriceHistoryService, TokenService } from '@scani/domain/services';
 import { createComponentLogger } from '@scani/logging';
@@ -21,8 +29,6 @@ const tokensLogger = createComponentLogger('router:tokens');
 const tokenService = Container.get(TokenService);
 const tokenPriceHistoryService = Container.get(TokenPriceHistoryService);
 const tokenPriceRepository = Container.get(TokenPriceRepository);
-
-const CUSTOM_TOKEN_TYPE_CODES = ['private-company', 'other'] as const;
 
 import { SCAM_PROBABILITY_THRESHOLD } from '@scani/domain/lib/constants';
 import { strictInput } from '../lib/strict-input';
@@ -71,7 +77,10 @@ async function setOwnScamVerdict(
   verdict: ScamVerdict
 ): Promise<{ success: true; tokenId: string }> {
   const { dbUser } = await requireAuth(ctx);
-  const token = await Container.get(TokenService).getTokenById(tokenId);
+  // Another user's custom token is not found here, exactly as a wrong id is
+  // (SC-1285) — this procedure answered for any id and was an existence oracle.
+  const token = await Container.get(TokenRepository).findVisibleById(tokenId, dbUser.id);
+  if (!token) throw new TRPCError({ code: 'NOT_FOUND', message: 'Token not found' });
 
   await Container.get(UserTokenScamVerdictRepository).setVerdict(dbUser.id, token.id, verdict);
   tokensLogger.info(
@@ -94,7 +103,8 @@ export function createTokensRouter(db: DbType, schemaObj: typeof schema) {
   return router({
     // Get all active tokens with their types
     // KEEP
-    getAll: protectedProcedure.query(async () => {
+    getAll: protectedProcedure.query(async ({ ctx }) => {
+      const { dbUser } = await requireAuth(ctx);
       const tokens = await db
         .select({
           id: schemaObj.tokens.id,
@@ -114,7 +124,8 @@ export function createTokensRouter(db: DbType, schemaObj: typeof schema) {
         .where(
           and(
             eq(schemaObj.tokens.isActive, true),
-            lt(schemaObj.tokens.isScamProbability, SCAM_PROBABILITY_THRESHOLD)
+            lt(schemaObj.tokens.isScamProbability, SCAM_PROBABILITY_THRESHOLD),
+            customTokenVisibleTo(dbUser.id)
           )
         )
         .orderBy(schemaObj.tokens.symbol);
@@ -155,7 +166,15 @@ export function createTokensRouter(db: DbType, schemaObj: typeof schema) {
         if (!base) return { baseTokenId: null, baseSymbol: null, rates: [] };
 
         const uniqueIds = Array.from(new Set(input.currencyTokenIds));
-        const tokens = await tokenService.getTokensByIds(uniqueIds);
+        // Another user's custom token answers as an unknown id would — no
+        // symbol, no rate — rather than pricing it in the caller's base (SC-1285).
+        const visibleIds = await Container.get(TokenRepository).findVisibleIds(
+          uniqueIds,
+          dbUser.id
+        );
+        const tokens = await tokenService.getTokensByIds(
+          uniqueIds.filter((id) => visibleIds.has(id))
+        );
         const tokenById = new Map(tokens.map((token) => [token.id, token]));
         const at = new Date();
         const converter = Container.get(CurrencyConverter);
@@ -201,7 +220,8 @@ export function createTokensRouter(db: DbType, schemaObj: typeof schema) {
           })
         )
       )
-      .query(async ({ input }) => {
+      .query(async ({ ctx, input }) => {
+        const { dbUser } = await requireAuth(ctx);
         const query = input.query.toUpperCase();
         // Escape LIKE metacharacters so a user-supplied query like
         // `_____` doesn't become a wildcard that matches any 5-char
@@ -228,6 +248,7 @@ export function createTokensRouter(db: DbType, schemaObj: typeof schema) {
             and(
               eq(schemaObj.tokens.isActive, true),
               lt(schemaObj.tokens.isScamProbability, SCAM_PROBABILITY_THRESHOLD),
+              customTokenVisibleTo(dbUser.id),
               sql`(UPPER(${schemaObj.tokens.symbol}) LIKE ${likePattern} ESCAPE '\\' OR UPPER(${
                 schemaObj.tokens.name
               }) LIKE ${likePattern} ESCAPE '\\')`
@@ -416,9 +437,11 @@ export function createTokensRouter(db: DbType, schemaObj: typeof schema) {
 
     /**
      * Create a custom token (private-company / other) with an initial
-     * manual price in the base currency the user chose. Custom tokens
-     * are shared globally (any user can see them) and any user can edit
-     * the price later via `updateCustomPrice`. The initial price is
+     * manual price in the base currency the user chose. The token is private
+     * to its creator (SC-1285, mgrin 2026-09-21): nobody else lists it, prices
+     * it, reads its history or holds it. `CONFLICT` means the CALLER already
+     * has one with this symbol — another user's never conflicts, so the answer
+     * says nothing about what anybody else has created. The initial price is
      * recorded in both `token_prices` and `token_price_edit_history`.
      */
     createCustom: protectedProcedure
@@ -487,9 +510,11 @@ export function createTokensRouter(db: DbType, schemaObj: typeof schema) {
       }),
 
     /**
-     * Append a manual price update to a custom token. Writes a new row to
-     * `token_prices` (source='manual') and a row to
+     * Append a manual price update to a custom token the caller owns. Writes
+     * a new row to `token_prices` (source='manual') and a row to
      * `token_price_edit_history` atomically. Rejects non-custom tokens.
+     * Another user's custom token is `NOT_FOUND` with the same message a wrong
+     * id gets (SC-1285) — on 2026-09-19 one account re-priced another's.
      */
     updateCustomPrice: protectedProcedure
       .input(
@@ -545,8 +570,9 @@ export function createTokensRouter(db: DbType, schemaObj: typeof schema) {
       }),
 
     /**
-     * Return the edit history of a custom token's price, with the
-     * editor's email/name for display.
+     * The edit history of a custom token the caller owns, with the editor's
+     * email/name on the caller's own edits only. Any other token returns an
+     * empty list, as a token with no history does (SC-1285).
      */
     getPriceEditHistory: protectedProcedure
       .input(
@@ -557,12 +583,19 @@ export function createTokensRouter(db: DbType, schemaObj: typeof schema) {
           })
         )
       )
-      .query(async ({ input }) => {
-        return await tokenPriceHistoryService.getPriceEditHistory(input.tokenId, input.limit);
+      .query(async ({ ctx, input }) => {
+        const { dbUser } = await requireAuth(ctx);
+        return await tokenPriceHistoryService.getPriceEditHistory(
+          input.tokenId,
+          dbUser.id,
+          input.limit
+        );
       }),
 
     /**
-     * List custom tokens (types private-company and other) with the price
+     * List the CALLER's custom tokens (types private-company and other) — never
+     * anybody else's (SC-1285): on 2026-09-19 this returned every user's
+     * private-company names and prices to an attacker. With the price
      * that is actually in force for them and the base currency it was
      * recorded in. Used by the /tokens catalog page.
      *
@@ -602,7 +635,11 @@ export function createTokensRouter(db: DbType, schemaObj: typeof schema) {
         })
         .from(schemaObj.tokens)
         .where(
-          and(inArray(schemaObj.tokens.typeId, customTypeIds), eq(schemaObj.tokens.isActive, true))
+          and(
+            inArray(schemaObj.tokens.typeId, customTypeIds),
+            eq(schemaObj.tokens.isActive, true),
+            eq(schemaObj.tokens.createdByUserId, dbUser.id)
+          )
         )
         .orderBy(schemaObj.tokens.symbol);
 

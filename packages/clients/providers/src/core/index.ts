@@ -16,3 +16,4 @@ export * from './testing';
 export * from './types';
 export * from './utils/fetch';
 export * from './utils/fiat-codes';
+export { isBurnAddress, WALLET_HISTORY_ROW_CAP, WALLET_TOKEN_DISCOVERY_CAP } from './wallet-limits';

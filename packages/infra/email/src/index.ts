@@ -1,4 +1,5 @@
 export { type EmailConfig, loadEmailConfig, resetEmailConfig } from './config';
+export { isDisposableEmail } from './disposable-domains';
 export { EmailService } from './email-service';
 export { LocalEmailService } from './local-email-service';
 export {

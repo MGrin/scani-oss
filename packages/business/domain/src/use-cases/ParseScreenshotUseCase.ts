@@ -70,6 +70,7 @@ export class ParseScreenshotUseCase {
     const portfolio = isPdf
       ? await this.parsePdfText(input)
       : await this.screenshotService.parseScreenshot(input.imageBase64, {
+          userId: input.userId,
           provider: input.provider,
           accountType: input.accountType,
           expectedCurrency: input.expectedCurrency,
@@ -140,6 +141,7 @@ export class ParseScreenshotUseCase {
     }
     logger.info({ textLength: text.length }, 'Extracted PDF text, sending to AI');
     return this.screenshotService.parseDocumentText(text, {
+      userId: input.userId,
       provider: input.provider,
       accountType: input.accountType,
       expectedCurrency: input.expectedCurrency,

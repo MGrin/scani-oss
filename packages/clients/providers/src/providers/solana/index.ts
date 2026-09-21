@@ -69,6 +69,8 @@ import type {
   WithUserCreds,
 } from '../../core/types';
 import { fetchWithTimeout } from '../../core/utils/fetch';
+import { PageCapWatch } from '../../core/utils/page-cap';
+import { WALLET_HISTORY_ROW_CAP } from '../../core/wallet-limits';
 import { resolveJupiterMint } from './jupiter';
 
 const SOL_INSTITUTION_CODE = 'solana';
@@ -259,6 +261,8 @@ export class SolanaProvider
     }
 
     const events: TransactionEvent[] = [];
+    const capped = new PageCapWatch();
+    let pages = 0;
     let before: string | undefined;
     while (true) {
       const url = this.buildEnhancedTxUrl(address, apiKey, before);
@@ -276,12 +280,19 @@ export class SolanaProvider
       for (const tx of page) {
         events.push(...this.toTransactionEvents(tx, address, mintMap));
       }
+      pages += 1;
       const last = page[page.length - 1];
       if (!last?.signature || page.length < HELIUS_PAGE_LIMIT) break;
+      // The address is the requester's choice, so its size is too (SC-1271).
+      if (events.length >= WALLET_HISTORY_ROW_CAP) {
+        capped.note({ walk: 'the address history', pages, rows: events.length });
+        break;
+      }
       if (ctx.since && new Date(last.timestamp * 1000) < ctx.since) break;
       before = last.signature;
     }
 
+    capped.retract(ctx, this.providerKey);
     return events.filter((e) => {
       if (ctx.since && e.occurredAt < ctx.since) return false;
       if (ctx.until && e.occurredAt > ctx.until) return false;
