@@ -30,6 +30,7 @@ function baseCurrency(): Token {
     iconUrl: null,
     lastPricingAttemptAt: null,
     lookalikeOf: null,
+    createdByUserId: null,
     unpriceableUntil: null,
     providerMetadata: {},
     isScamProbability: 0,

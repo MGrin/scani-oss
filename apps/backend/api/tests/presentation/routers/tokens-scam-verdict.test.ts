@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import type * as schema from '@scani/db/schema';
-import { UserTokenScamVerdictRepository } from '@scani/domain/repositories';
-import { PortfolioValueCache, TokenService } from '@scani/domain/services';
+import { TokenRepository, UserTokenScamVerdictRepository } from '@scani/domain/repositories';
+import { PortfolioValueCache } from '@scani/domain/services';
 import { restoreContainerAfterAll } from '@scani/domain/test-helpers';
 import { BullMqEnqueueService } from '@scani/queue';
 import { RedisRealtimeUpdatesService } from '@scani/realtime';
@@ -29,9 +29,9 @@ function stubAll() {
       writes.push([userId, tokenId, verdict]);
     },
   } as unknown as UserTokenScamVerdictRepository);
-  Container.set(TokenService, {
-    getTokenById: async (id: string) => ({ id, symbol: 'ZZZ' }),
-  } as unknown as TokenService);
+  Container.set(TokenRepository, {
+    findVisibleById: async (id: string) => ({ id, symbol: 'ZZZ' }),
+  } as unknown as TokenRepository);
   Container.set(PortfolioValueCache, { bust: async () => {} } as unknown as PortfolioValueCache);
   Container.set(BullMqEnqueueService, { add: async () => {} } as unknown as BullMqEnqueueService);
   Container.set(RedisRealtimeUpdatesService, {

@@ -40,6 +40,7 @@ function makeService(): { service: TokenPriceHistoryService; created: CreateArgs
     findBySymbolAndType: async (_symbol: string, typeId: string) =>
       // The base-currency lookup must resolve; the duplicate check must not.
       typeId === 'type-fiat' ? { id: 'base-token', symbol: 'USD' } : null,
+    findOwnedBySymbolAndType: async () => null,
     create: async (args: CreateArgs) => {
       created.push(args);
       return { id: 'created-token', ...args };
