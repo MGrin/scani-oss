@@ -7,6 +7,7 @@ import { CreateAccountDto, CreateInstitutionDto, HOLDING_LABEL_MAX_LENGTH } from
 import Container from 'typedi';
 import { z } from 'zod';
 import { strictInput } from '../lib/strict-input';
+import { assertTokensVisible } from '../lib/token-visibility';
 import { requireAuth } from '../middleware/auth';
 import { protectedProcedure, router } from '../trpc';
 
@@ -63,6 +64,10 @@ export const batchOperationsRouter = router({
       if (!dbUser.baseCurrencyId) {
         throw new Error('User must have a base currency set');
       }
+      await assertTokensVisible(
+        dbUser.id,
+        input.newHoldings.map((h) => h.tokenId)
+      );
       const jobId = await Container.get(BullMqEnqueueService).add(MANUAL_HOLDINGS_CREATE, {
         userId: dbUser.id,
         requestId: input.requestId,
