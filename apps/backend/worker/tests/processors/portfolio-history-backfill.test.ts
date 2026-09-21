@@ -10,6 +10,7 @@ import {
   CHUNK_LOCK_WAIT_MS,
   LOCK_HELD_RETRY_DELAY_MS,
   LOCK_HELD_RETRY_REQUEST_ID,
+  RollupMemoryStop,
   resumableProgress,
   runChunkedRollup,
   scheduleLockHeldRetry,
@@ -148,6 +149,46 @@ describe('runChunkedRollup (SC-1283)', () => {
     expect(out.daysComputed).toBe(40);
     expect(sleeps).toEqual([CHUNK_LOCK_WAIT_MS, CHUNK_LOCK_WAIT_MS]);
     expect(calls[0]).toEqual(calls[2]!);
+  });
+
+  it('stops before a chunk when memory is short, with progress at that chunk', async () => {
+    const { calls, rollup } = rollupRecorder();
+    let saved: PortfolioHistoryRollupProgress = { anchor, nextDayOffset: 0 };
+    const stopAt = 2 * PORTFOLIO_HISTORY_CHUNK_DAYS;
+    const run = runChunkedRollup('user-1', 400, saved, {
+      rollup,
+      saveProgress: async (p) => {
+        saved = p;
+      },
+      onChunk: async () => {},
+      memoryStopReason: () => (calls.length === 2 ? 'worker RSS 600 MB is over' : null),
+    });
+    await expect(run).rejects.toBeInstanceOf(RollupMemoryStop);
+    await expect(run).rejects.toThrow(`before day offset ${stopAt} of 400`);
+    // The chunk that did not fit was never started, and the next attempt
+    // starts at it.
+    expect(calls.map((c) => c.from)).toEqual([0, PORTFOLIO_HISTORY_CHUNK_DAYS]);
+    expect(saved).toEqual({ anchor, nextDayOffset: stopAt });
+  });
+
+  it('checks memory before every chunk, the first included', async () => {
+    const { rollup } = rollupRecorder();
+    let checks = 0;
+    await runChunkedRollup(
+      'user-1',
+      100,
+      { anchor, nextDayOffset: 0 },
+      {
+        rollup,
+        saveProgress: async () => {},
+        onChunk: async () => {},
+        memoryStopReason: () => {
+          checks++;
+          return null;
+        },
+      }
+    );
+    expect(checks).toBe(Math.ceil(100 / PORTFOLIO_HISTORY_CHUNK_DAYS));
   });
 
   it('gives up with the offset named when the lock never frees', async () => {

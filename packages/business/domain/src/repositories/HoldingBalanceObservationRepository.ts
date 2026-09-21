@@ -1,7 +1,7 @@
 import { BaseRepository, type DatabaseTransaction } from '@scani/db';
 import type { HoldingBalanceObservation, NewHoldingBalanceObservation } from '@scani/db/schema';
 import * as schema from '@scani/db/schema';
-import { and, asc, desc, eq, gte, inArray, lte, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, lte, sql } from 'drizzle-orm';
 import { Service } from 'typedi';
 
 /**
@@ -179,33 +179,64 @@ export class HoldingBalanceObservationRepository extends BaseRepository<
     }
   }
 
-  // Bulk fetch — every observation for ANY of `holdingIds`, all times,
-  // chronologically ordered, grouped by holdingId. Used by the rollup
-  // pre-fetch so BalanceAtTimeService can do its anchor lookups
-  // in-memory instead of one DB query per (holding, day, scope).
-  async findForHoldingsAll(
+  // Every observation BalanceAtTimeService can read for these instants, per
+  // holding and time-ordered: the first one, and the nearest at-or-before and
+  // at-or-after each instant, with any rows tied on a chosen timestamp. Its
+  // scans answer the same over this as over the whole history, which the
+  // rollup used to prefetch for every 30-day chunk: 112k rows on the portfolio
+  // that took the worker's memory to zero (SC-1283).
+  async findAnchorsForInstants(
     holdingIds: string[],
+    instants: Date[],
     transaction?: DatabaseTransaction
   ): Promise<Map<string, HoldingBalanceObservation[]>> {
     const out = new Map<string, HoldingBalanceObservation[]>();
     if (holdingIds.length === 0) return out;
+    for (const id of holdingIds) out.set(id, []);
     try {
       const database = this.getDb(transaction);
-      const results = await database
+      const obs = schema.holdingBalanceObservations;
+      const ids = sql`ARRAY[${sql.join(
+        holdingIds.map((id) => sql`${id}`),
+        sql`, `
+      )}]::uuid[]`;
+      const ats =
+        instants.length === 0
+          ? sql`ARRAY[]::timestamptz[]`
+          : sql`ARRAY[${sql.join(
+              instants.map((at) => sql`${at.toISOString()}`),
+              sql`, `
+            )}]::timestamptz[]`;
+      const chosen = sql`
+        WITH h AS (SELECT unnest(${ids}) AS id), d AS (SELECT unnest(${ats}) AS at)
+        SELECT h.id, f.observed_at FROM h CROSS JOIN LATERAL (
+          SELECT o.observed_at FROM holding_balance_observations o
+          WHERE o.holding_id = h.id ORDER BY o.observed_at ASC LIMIT 1) f
+        UNION
+        SELECT h.id, a.observed_at FROM h CROSS JOIN d CROSS JOIN LATERAL (
+          SELECT o.observed_at FROM holding_balance_observations o
+          WHERE o.holding_id = h.id AND o.observed_at >= d.at
+          ORDER BY o.observed_at ASC LIMIT 1) a
+        UNION
+        SELECT h.id, b.observed_at FROM h CROSS JOIN d CROSS JOIN LATERAL (
+          SELECT o.observed_at FROM holding_balance_observations o
+          WHERE o.holding_id = h.id AND o.observed_at <= d.at
+          ORDER BY o.observed_at DESC LIMIT 1) b`;
+      const rows = await database
         .select()
-        .from(schema.holdingBalanceObservations)
-        .where(inArray(schema.holdingBalanceObservations.holdingId, holdingIds))
-        .orderBy(asc(schema.holdingBalanceObservations.observedAt));
-      for (const id of holdingIds) out.set(id, []);
-      for (const row of results as HoldingBalanceObservation[]) {
-        const bucket = out.get(row.holdingId);
-        if (bucket) bucket.push(row);
-      }
+        .from(obs)
+        .where(sql`(${obs.holdingId}, ${obs.observedAt}) IN (${chosen})`)
+        .orderBy(asc(obs.observedAt));
+      for (const row of rows) out.get(row.holdingId)?.push(row);
       return out;
     } catch (error) {
       this.logger.error(
-        { count: holdingIds.length, error: error instanceof Error ? error.message : error },
-        'Failed bulk-fetch observations for holdings'
+        {
+          count: holdingIds.length,
+          instants: instants.length,
+          error: error instanceof Error ? error.message : error,
+        },
+        'Failed anchor-fetch observations for holdings'
       );
       throw error;
     }

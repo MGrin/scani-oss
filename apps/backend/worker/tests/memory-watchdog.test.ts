@@ -78,6 +78,20 @@ describe('memory-watchdog.sh (SC-1269)', () => {
     expect(await new Response(watchdog.stderr).text()).toContain('STOPPING worker pid');
   });
 
+  // 96 MB was too late: on 2026-09-21 the box went from 240 MB to 0 inside one
+  // backfill chunk, and at 0 the watchdog's own TERM/KILL loop could not run
+  // for about four minutes (SC-1283).
+  test('the default floor is 160 MB', async () => {
+    const low = meminfo(150);
+    const stopped = start(low, { WATCHDOG_MIN_AVAILABLE_MB: '' });
+    expect(await stopped.watchdog.exited).toBe(0);
+    expect(await new Response(stopped.watchdog.stderr).text()).toContain('under 160MB');
+
+    const above = start(meminfo(200), { WATCHDOG_MIN_AVAILABLE_MB: '' });
+    await Bun.sleep(400);
+    expect(alive(above.victim.pid)).toBe(true);
+  });
+
   test('leaves the worker alone while memory is above the floor', async () => {
     const path = meminfo(600);
     const { victim } = start(path);
