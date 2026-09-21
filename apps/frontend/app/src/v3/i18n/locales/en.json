@@ -1336,6 +1336,10 @@
         "needsCurrency_other": "{{count}} transactions — needs a currency",
         "needsCurrencyWithType_one": "{{count}} transaction · {{fileType}} — needs a currency",
         "needsCurrencyWithType_other": "{{count}} transactions · {{fileType}} — needs a currency",
+        "needsDateOrder_one": "{{count}} transaction — needs a date order",
+        "needsDateOrder_other": "{{count}} transactions — needs a date order",
+        "needsDateOrderWithType_one": "{{count}} transaction · {{fileType}} — needs a date order",
+        "needsDateOrderWithType_other": "{{count}} transactions · {{fileType}} — needs a date order",
         "chains_one": "{{count}} chain",
         "chains_other": "{{count}} chains",
         "candidatesAcross_one": "{{count}} candidate across {{chains}}",
@@ -2570,6 +2574,13 @@
           "apply": "Import with this currency",
           "applying": "Re-importing…",
           "subject": "this file"
+        },
+        "dateOrder": {
+          "title": "Is the day or the month first in these dates?",
+          "body": "Every date in this file reads both ways — 03/04 could be 3 April or 4 March — and the file does not say which. Nothing has been imported yet.",
+          "samples": "As written in the file",
+          "dayFirst": "Day first — 31/12",
+          "monthFirst": "Month first — 12/31"
         }
       },
       "manual": {

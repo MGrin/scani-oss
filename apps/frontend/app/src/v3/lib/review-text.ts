@@ -94,6 +94,13 @@ export function reviewDetailText(
             fileType: detail.fileType.toUpperCase(),
           })
         : texts.t('v3.review.item.needsCurrency', { count: detail.transactions });
+    case 'datesNeedOrder':
+      return detail.fileType
+        ? texts.t('v3.review.item.needsDateOrderWithType', {
+            count: detail.transactions,
+            fileType: detail.fileType.toUpperCase(),
+          })
+        : texts.t('v3.review.item.needsDateOrder', { count: detail.transactions });
     case 'walletCandidates': {
       // A sweep that found nothing says so: it explains an otherwise-empty
       // review without the reader opening the job.

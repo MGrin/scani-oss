@@ -3,6 +3,7 @@ export {
   parseCsvStatement,
   statementFeeFromRawPayload,
 } from './csv-parser';
+export type { AmbiguousDateOrder, DateOrder } from './dates';
 export { detectBankTemplate, detectFormat } from './format-detector';
 export { parseIbCsvStatement } from './ib-csv-parser';
 export { parseOfxStatement } from './ofx-parser';
@@ -19,6 +20,7 @@ export { BANK_TEMPLATES } from './types';
 import { createComponentLogger } from '@scani/logging';
 import Papa from 'papaparse';
 import { parseCsvStatement } from './csv-parser';
+import type { DateOrder } from './dates';
 import { detectFormat } from './format-detector';
 import { parseIbCsvStatement } from './ib-csv-parser';
 import { parseOfxStatement } from './ofx-parser';
@@ -36,6 +38,8 @@ export interface ParseStatementOptions {
   bankTemplate?: string;
   customMapping?: CsvColumnMapping;
   aiColumnDetector?: AIColumnDetector;
+  /** The user's answer to an earlier parse's `ambiguousDateOrder`. */
+  dateOrder?: DateOrder;
 }
 
 /**
@@ -80,7 +84,7 @@ export async function parseStatement(
   filename?: string,
   options?: ParseStatementOptions
 ): Promise<ParseResult> {
-  const { bankTemplate, customMapping, aiColumnDetector } = options ?? {};
+  const { bankTemplate, customMapping, aiColumnDetector, dateOrder } = options ?? {};
   const format = detectFormat(content, filename);
 
   if (!format) {
@@ -94,7 +98,7 @@ export async function parseStatement(
 
   switch (format) {
     case 'csv': {
-      let result = parseCsvStatement(content, bankTemplate, customMapping);
+      let result = parseCsvStatement(content, bankTemplate, customMapping, { dateOrder });
 
       if (!customMapping && !bankTemplate && aiColumnDetector) {
         const hasBalance = result.transactions.some(
@@ -125,7 +129,7 @@ export async function parseStatement(
                   currency: aiMapping.currency || undefined,
                   balance: aiMapping.balance || undefined,
                 };
-                result = parseCsvStatement(content, undefined, mergedMapping);
+                result = parseCsvStatement(content, undefined, mergedMapping, { dateOrder });
                 result.warnings.push('Column mapping detected by AI');
                 logger.info({ aiMapping }, 'Successfully re-parsed CSV with AI column mapping');
               }
@@ -157,7 +161,7 @@ export async function parseStatement(
     }
 
     case 'qif': {
-      const result = parseQifStatement(content);
+      const result = parseQifStatement(content, { dateOrder });
       result.holdings = extractHoldingsFromTransactions(
         result.transactions,
         result.detectedCurrency

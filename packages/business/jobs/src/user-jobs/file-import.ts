@@ -16,6 +16,9 @@ export interface FileImportJob extends UserJobBase {
   // no detectable per-row currency. Set by the user via the
   // currency-picker UI on the failed first attempt's job-detail page.
   defaultCurrency?: string;
+  // The user's answer when the first attempt could not tell `03/04` apart
+  // as day-first or month-first (SC-1291). Set by the date-order prompt.
+  dateOrder?: 'day-first' | 'month-first';
 }
 
 export const fileImportSchema: z.ZodType<FileImportJob> = z.object({
@@ -27,6 +30,7 @@ export const fileImportSchema: z.ZodType<FileImportJob> = z.object({
   accountId: z.string().min(1),
   enrich: z.boolean().optional(),
   defaultCurrency: z.string().min(1).max(8).optional(),
+  dateOrder: z.enum(['day-first', 'month-first']).optional(),
 });
 
 const JOB_ID_SEP = '_';

@@ -2108,6 +2108,13 @@
           "apply": "Импортировать в этой валюте",
           "applying": "Импортируем заново…",
           "subject": "этот файл"
+        },
+        "dateOrder": {
+          "title": "В этих датах сначала идёт день или месяц?",
+          "body": "Каждую дату в этом файле можно прочитать двумя способами — 03/04 может быть 3 апреля или 4 марта, — а в файле не указано, каким. Пока ничего не импортировано.",
+          "samples": "Как записано в файле",
+          "dayFirst": "Сначала день — 31/12",
+          "monthFirst": "Сначала месяц — 12/31"
         }
       },
       "manual": {
@@ -2575,6 +2582,14 @@
         "needsCurrencyWithType_few": "{{count}} операции · {{fileType}} — нужна валюта",
         "needsCurrencyWithType_many": "{{count}} операций · {{fileType}} — нужна валюта",
         "needsCurrencyWithType_other": "{{count}} операции · {{fileType}} — нужна валюта",
+        "needsDateOrder_one": "{{count}} операция — нужен порядок дат",
+        "needsDateOrder_few": "{{count}} операции — нужен порядок дат",
+        "needsDateOrder_many": "{{count}} операций — нужен порядок дат",
+        "needsDateOrder_other": "{{count}} операции — нужен порядок дат",
+        "needsDateOrderWithType_one": "{{count}} операция · {{fileType}} — нужен порядок дат",
+        "needsDateOrderWithType_few": "{{count}} операции · {{fileType}} — нужен порядок дат",
+        "needsDateOrderWithType_many": "{{count}} операций · {{fileType}} — нужен порядок дат",
+        "needsDateOrderWithType_other": "{{count}} операции · {{fileType}} — нужен порядок дат",
         "chains_one": "{{count}} сеть",
         "chains_few": "{{count}} сети",
         "chains_many": "{{count}} сетей",
